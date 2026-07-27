@@ -12,11 +12,6 @@ class QueryPlanStepRegistry
 public:
     using StepCreateFunction = std::function<QueryPlanStepPtr(IQueryPlanStep::Deserialization &)>;
 
-    /// How a step's payload serialization may evolve on the wire.
-    /// A step starts at payload format version 1. Appending fields an old reader may safely
-    /// ignore bumps only the step format version. A change an old reader must understand to
-    /// execute correctly maps that step format version to a minimum plan version here, and the
-    /// writer must not emit it for older streams.
     /// How one payload format version differs from the one before it. A reader that knows an
     /// older format prefix-reads an `Append` and lets the frame skip the rest, which would give it
     /// garbage for a `Restructure`.
@@ -26,20 +21,29 @@ public:
         Restructure,
     };
 
+    /// One payload format version of a step. A step starts at format version 1 and every change to
+    /// its payload adds the next version here, so a change can never reach the wire unclassified.
+    struct PayloadFormat
+    {
+        PayloadChange change;
+        /// The oldest plan version that may carry this format. 0 means any: a reader that skips
+        /// what it does not know needs nothing from this format.
+        UInt64 min_plan_version = 0;
+    };
+
     struct StepSerializationInfo
     {
-        UInt64 max_step_format_version = 1;
-        /// Required for every format version from 2 up to the maximum. Raising the maximum without
-        /// saying what changed is what lets an older reader misread a restructured payload, so
-        /// registration refuses it.
-        std::map<UInt64, PayloadChange> payload_changes;
-        /// step format version -> minimum plan version that may carry it.
-        /// Versions not listed are ignorable-extended and safe to prefix-read.
-        std::map<UInt64, UInt64> min_plan_version_for_step_version;
+        /// Payload format versions from 2 up, contiguous. Empty for a step whose payload has never
+        /// changed.
+        std::map<UInt64, PayloadFormat> payload_formats;
+
         /// The plan version this step name first appeared in. A step name unknown to a reader is
         /// inherently must-understand, so plans containing the step need at least this version.
         /// 0 means "as old as serialization itself" (folded to the base version).
         UInt64 introduced_in_plan_version = 0;
+
+        /// The newest payload format this server writes and knows in full.
+        UInt64 maxFormatVersion() const { return payload_formats.empty() ? 1 : payload_formats.rbegin()->first; }
 
         /// The oldest payload format whose reader can prefix-read `format_version`: everything
         /// after the last restructure is an append onto it, so a reader that knows that much reads
@@ -47,14 +51,27 @@ public:
         UInt64 prefixReadableFrom(UInt64 format_version) const
         {
             UInt64 base = 1;
-            for (const auto & [version, change] : payload_changes)
+            for (const auto & [version, format] : payload_formats)
             {
                 if (version > format_version)
                     break;
-                if (change == PayloadChange::Restructure)
+                if (format.change == PayloadChange::Restructure)
                     base = version;
             }
             return base;
+        }
+
+        /// The oldest plan version able to read a payload of `format_version`.
+        UInt64 minPlanVersionForFormat(UInt64 format_version) const
+        {
+            UInt64 required = introduced_in_plan_version;
+            for (const auto & [version, format] : payload_formats)
+            {
+                if (version > format_version)
+                    break;
+                required = std::max(required, format.min_plan_version);
+            }
+            return required;
         }
     };
 
@@ -77,9 +94,6 @@ public:
 
     /// nullptr if the step name is not registered.
     const StepSerializationInfo * getStepSerializationInfo(const std::string & name) const;
-
-    /// All registered serialization names (for test harnesses; do not hardcode counts).
-    std::vector<std::string> getAllStepNames() const;
 
 private:
     struct Entry

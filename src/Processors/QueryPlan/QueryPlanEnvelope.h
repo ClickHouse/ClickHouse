@@ -45,9 +45,8 @@ struct PlanOutline
         /// by the writer from the step's registry info, its value-dependent requirements, header
         /// types and settings. Lets a rejection name the blocking step.
         UInt64 min_reader_plan_version = 0;
-        bool has_output_header = false;
         String step_description;
-        SharedHeader header;                    /// nullptr iff !has_output_header
+        SharedHeader header;                    /// nullptr for a step with no output header
         std::vector<SettingEntry> settings;
         UInt64 payload_size = 0;                /// size of this node's slice of the payload section
         String extension_bytes;                      /// empty in v4; skipped by readers that do not know it
@@ -98,6 +97,9 @@ struct QueryPlanOutlineValidationResult
 {
     /// Human-readable issues; empty means the reader is able to decode the whole plan.
     std::vector<String> issues;
+    /// The tree the outline describes, so the caller does not rebuild what was checked here.
+    /// Meaningful only when `ok()`.
+    PlanOutlineShape shape;
 
     bool ok() const { return issues.empty(); }
     /// All issues joined into one message, so a mixed-version error reports everything at once.
@@ -112,7 +114,7 @@ struct QueryPlanOutlineValidationResult
 /// It does not check that payload bytes are well-formed, nor that referenced tables exist.
 /// Collects all issues over a syntactically parseable outline.
 QueryPlanOutlineValidationResult validateQueryPlanOutline(
-    const PlanOutline & outline, UInt64 plan_version, UInt64 head_min_reader_plan_version);
+    const PlanOutline & outline, UInt64 head_min_reader_plan_version);
 
 /// The oldest plan version whose readers understand this type's binary encoding. All current
 /// encodings predate the outline format, so this returns the base version; a new `BinaryTypeIndex`

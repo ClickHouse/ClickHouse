@@ -86,10 +86,6 @@ static constexpr auto DBMS_DEFAULT_QUERY_PLAN_SERIALIZATION_VERSION = 4;
 /// of inferring it from the version. 0 is never written. Every new layout takes the next value and
 /// names the plan version that introduced it.
 static constexpr auto DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE = 1;
-/// The plan version that introduced the outline body. A new kind adds its own constant here, and
-/// `planVersionIntroducingFormatKind` maps it, so a nested plan of that kind raises the enclosing
-/// plan's "needed to read" version instead of being discovered deep inside the set section.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FORMAT_KIND_OUTLINE = 4;
 /// First version with the outline-first framed envelope.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE = 4;
 /// First query-plan serialization version that carries the parallel-replicas flag (bit 32) on a

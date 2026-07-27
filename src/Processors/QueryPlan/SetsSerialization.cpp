@@ -170,11 +170,12 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
     }
 }
 
-/// The oldest plan version whose readers know a body layout.
+/// The oldest plan version whose readers know a body layout. Every new kind is added here with the
+/// plan version that introduced it.
 static UInt64 planVersionIntroducingFormatKind(UInt64 format_kind)
 {
     if (format_kind == DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE)
-        return DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FORMAT_KIND_OUTLINE;
+        return DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Nested query plan has unknown body layout {}", format_kind);
 }
 

@@ -47,12 +47,12 @@ void writeOutlineBody(const PlanOutline & outline, WriteBuffer & out)
         writeVarUInt(node.payload_prefix_readable_from, out);
         writeVarUInt(node.min_reader_plan_version, out);
 
-        UInt8 node_flags = node.has_output_header ? 1 : 0;
+        UInt8 node_flags = node.header ? 1 : 0;
         writeIntBinary(node_flags, out);
 
         writeStringBinary(node.step_description, out);
 
-        if (node.has_output_header)
+        if (node.header)
             serializeQueryPlanHeader(*node.header, out);
 
         writeVarUInt(node.settings.size(), out);
@@ -123,11 +123,9 @@ PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 
         if (node_flags & ~UInt8(1))
             throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
                 "Query plan node carries unknown flags {:#x}", UInt32(node_flags));
-        node.has_output_header = node_flags & 1;
-
         readStringBinary(node.step_description, in, MAX_OUTLINE_FIELD_BYTES);
 
-        if (node.has_output_header)
+        if (node_flags & 1)
             node.header = std::make_shared<const Block>(deserializeQueryPlanHeader(in, max_type_complexity));
 
         UInt64 settings_count = readCappedVarUInt(in, MAX_OUTLINE_SETTINGS_PER_NODE, "settings");
@@ -259,7 +257,7 @@ PlanOutlineShape reconstructOutlineShape(const PlanOutline & outline)
 }
 
 QueryPlanOutlineValidationResult validateQueryPlanOutline(
-    const PlanOutline & outline, UInt64 plan_version, UInt64 head_min_reader_plan_version)
+    const PlanOutline & outline, UInt64 head_min_reader_plan_version)
 {
     QueryPlanOutlineValidationResult result;
     const auto & registry = QueryPlanStepRegistry::instance();
@@ -272,8 +270,8 @@ QueryPlanOutlineValidationResult validateQueryPlanOutline(
 
     /// Structural issues are collected first but do not stop the metadata scan below: a caller
     /// upgrading versions wants every unknown step and setting named, not just the first problem.
-    auto shape = reconstructOutlineShape(outline);
-    for (const auto & issue : shape.issues)
+    result.shape = reconstructOutlineShape(outline);
+    for (const auto & issue : result.shape.issues)
         result.issues.push_back(issue);
 
     const size_t root_index = outline.nodes.size() - 1;
@@ -282,21 +280,9 @@ QueryPlanOutlineValidationResult validateQueryPlanOutline(
     {
         const auto & node = outline.nodes[i];
 
-        if (!registry.hasStep(node.step_name))
-        {
+        const auto * info = registry.getStepSerializationInfo(node.step_name);
+        if (!info)
             result.issues.push_back(fmt::format("unknown step '{}'", node.step_name));
-        }
-        else if (const auto * info = registry.getStepSerializationInfo(node.step_name))
-        {
-            /// A step format version that requires a newer plan version than the envelope carries
-            /// is a writer violation. Versions above this binary's known maximum are legitimate
-            /// ignorable extensions (prefix-read at payload time) as long as the mapping allows.
-            for (const auto & [step_version, min_plan_version] : info->min_plan_version_for_step_version)
-                if (node.step_format_version >= step_version && plan_version < min_plan_version)
-                    result.issues.push_back(fmt::format(
-                        "step '{}' format version {} requires plan version at least {}, envelope has {}",
-                        node.step_name, node.step_format_version, min_plan_version, plan_version));
-        }
 
         if (node.step_format_version == 0)
             result.issues.push_back(fmt::format("step '{}' has format version 0", node.step_name));
@@ -310,16 +296,16 @@ QueryPlanOutlineValidationResult validateQueryPlanOutline(
                 "not a format it could have",
                 node.step_name, i, node.step_format_version, node.payload_prefix_readable_from));
 
-        if (const auto * info = registry.getStepSerializationInfo(node.step_name))
+        if (info)
         {
-            if (node.step_format_version > info->max_step_format_version)
+            const UInt64 known_formats = info->maxFormatVersion();
+            if (node.step_format_version > known_formats)
             {
-                if (node.payload_prefix_readable_from > info->max_step_format_version)
+                if (node.payload_prefix_readable_from > known_formats)
                     result.issues.push_back(fmt::format(
                         "step '{}' (node #{}) has payload format {} readable only by format {} and up, "
                         "this server knows up to {}",
-                        node.step_name, i, node.step_format_version, node.payload_prefix_readable_from,
-                        info->max_step_format_version));
+                        node.step_name, i, node.step_format_version, node.payload_prefix_readable_from, known_formats));
             }
             /// For a format this server knows, the writer's claim is checkable against the step's
             /// own history: a writer understating it would have old readers accept bytes they must
@@ -330,22 +316,19 @@ QueryPlanOutlineValidationResult validateQueryPlanOutline(
                     "server's history of that step says {}",
                     node.step_name, i, node.step_format_version, node.payload_prefix_readable_from,
                     info->prefixReadableFrom(node.step_format_version)));
-        }
 
-        /// Writer-honesty cross-checks: a node's declared "needed to read" version must cover the
-        /// static requirements this binary knows about, and the head value must cover every node.
-        /// A writer that undercounted would otherwise make old readers silently misexecute.
-        if (const auto * info = registry.getStepSerializationInfo(node.step_name))
-        {
-            UInt64 static_requirement = info->introduced_in_plan_version;
-            for (const auto & [step_version, min_plan_version] : info->min_plan_version_for_step_version)
-                if (node.step_format_version >= step_version)
-                    static_requirement = std::max(static_requirement, min_plan_version);
+            /// Writer-honesty cross-check: a node's declared "needed to read" version must cover the
+            /// requirements this binary knows about. A writer that undercounted would otherwise make
+            /// old readers silently misexecute.
+            const UInt64 static_requirement = info->minPlanVersionForFormat(node.step_format_version);
             if (static_requirement > node.min_reader_plan_version)
                 result.issues.push_back(fmt::format(
                     "step '{}' (node #{}) declares reader version {} but its registry info requires {}",
                     node.step_name, i, node.min_reader_plan_version, static_requirement));
         }
+
+        /// The head value must cover every node, or a reader would accept a plan on a promise the
+        /// nodes do not keep.
         if (node.min_reader_plan_version > head_min_reader_plan_version)
             result.issues.push_back(fmt::format(
                 "step '{}' (node #{}) requires reader version {} above the plan's declared {}",
@@ -353,7 +336,7 @@ QueryPlanOutlineValidationResult validateQueryPlanOutline(
 
         /// Parents read their input headers from their children, so only the root may lack one.
         /// In post-order the root is the last node.
-        if (i != root_index && !node.has_output_header)
+        if (i != root_index && !node.header)
             result.issues.push_back(fmt::format("non-root step '{}' (node #{}) has no output header", node.step_name, i));
 
         for (const auto & setting : node.settings)
@@ -435,7 +418,7 @@ String formatQueryPlanOutline(const PlanOutline & outline)
         if (!node.step_description.empty())
             writeString(fmt::format(" ({})", node.step_description), out);
 
-        if (node.has_output_header && node.header)
+        if (node.header)
         {
             writeString(" -> ", out);
             bool first = true;

@@ -74,10 +74,7 @@ public:
 class TestTailStep : public ISourceStep
 {
 public:
-    TestTailStep(SharedHeader header_, UInt64 declared_format_version_)
-        : ISourceStep(std::move(header_)), declared_format_version(declared_format_version_)
-    {
-    }
+    explicit TestTailStep(SharedHeader header_) : ISourceStep(std::move(header_)) { }
 
     String getName() const override { return "TestTailStep"; }
 
@@ -85,19 +82,16 @@ public:
 
     bool isSerializable() const override { return true; }
 
+    /// Writes a payload its deserializer never reads, which is the tail the reader has to judge.
     void serialize(Serialization & ctx) const override
     {
-        ctx.step_format_version = declared_format_version;
         writeVarUInt(UInt64(12345), ctx.out);
     }
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx)
     {
-        return std::make_unique<TestTailStep>(ctx.output_header, 1);
+        return std::make_unique<TestTailStep>(ctx.output_header);
     }
-
-private:
-    UInt64 declared_format_version;
 };
 
 /// Its deserializer throws, so any reader that actually builds the plan fails on it.
@@ -134,9 +128,7 @@ void registerStepsOnce()
 
         /// A step whose payload format v2 is must-understand: requires plan version 5.
         QueryPlanStepRegistry::StepSerializationInfo info;
-        info.max_step_format_version = 2;
-        info.payload_changes[2] = QueryPlanStepRegistry::PayloadChange::Restructure;
-        info.min_plan_version_for_step_version[2] = 5;
+        info.payload_formats[2] = {QueryPlanStepRegistry::PayloadChange::Restructure, /*min_plan_version=*/5};
         QueryPlanStepRegistry::instance().registerStep("TestGatedStep", TestSourceStep::deserialize, std::move(info));
 
         /// Known up to payload format 1, so a tail is only acceptable above that.
@@ -378,14 +370,13 @@ TEST(QueryPlanSerialization, SkippingDrainsThePlanWithoutBuildingIt)
     EXPECT_EQ(rest, "sentinel");
 }
 
-TEST(QueryPlanSerialization, EnvelopeIsCopiedWhenTheStreamIsNotFullyBuffered)
+TEST(QueryPlanSerialization, PlanArrivingInPiecesIsRead)
 {
     registerStepsOnce();
     const std::string bytes = serializePlan(makeChainPlan(4));
 
-    /// Two pieces, so the whole envelope is never available at once and the reader has to copy it
-    /// out instead of pointing into the buffer. That is the path a socket takes for a plan bigger
-    /// than what has arrived so far; a single memory buffer would always take the other one.
+    /// Two pieces, so no frame is ever fully available when the reader starts on it. That is what
+    /// a socket delivers for a plan bigger than what has arrived so far.
     const size_t split = bytes.size() / 2;
     ConcatReadBuffer::Buffers pieces;
     pieces.emplace_back(std::make_unique<ReadBufferFromMemory>(bytes.data(), split));
@@ -402,11 +393,11 @@ TEST(QueryPlanSerialization, PayloadFormatBumpMustSayWhatChanged)
     registerStepsOnce();
     auto & registry = QueryPlanStepRegistry::instance();
 
-    /// Raising the maximum without classifying the change is refused: an unclassified bump is
-    /// what lets an older reader prefix-read a restructured payload.
+    /// A format version that skips the one before it is refused: the skipped change was never
+    /// classified, and that is what lets an older reader prefix-read a restructured payload.
     {
         QueryPlanStepRegistry::StepSerializationInfo info;
-        info.max_step_format_version = 2;
+        info.payload_formats[3] = {QueryPlanStepRegistry::PayloadChange::Append};
         EXPECT_THROW(
             registry.registerStep("TestUnclassifiedBump", TestSourceStep::deserialize, std::move(info)),
             Exception);
@@ -416,8 +407,7 @@ TEST(QueryPlanSerialization, PayloadFormatBumpMustSayWhatChanged)
     /// how far back the payload can be prefix-read.
     {
         QueryPlanStepRegistry::StepSerializationInfo info;
-        info.max_step_format_version = 2;
-        info.payload_changes[2] = QueryPlanStepRegistry::PayloadChange::Restructure;
+        info.payload_formats[2] = {QueryPlanStepRegistry::PayloadChange::Restructure};
         EXPECT_NO_THROW(
             registry.registerStep("TestClassifiedRestructure", TestSourceStep::deserialize, std::move(info)));
     }
@@ -425,8 +415,7 @@ TEST(QueryPlanSerialization, PayloadFormatBumpMustSayWhatChanged)
     /// An append needs nothing beyond the classification: older readers prefix-read it.
     {
         QueryPlanStepRegistry::StepSerializationInfo info;
-        info.max_step_format_version = 2;
-        info.payload_changes[2] = QueryPlanStepRegistry::PayloadChange::Append;
+        info.payload_formats[2] = {QueryPlanStepRegistry::PayloadChange::Append};
         EXPECT_NO_THROW(
             registry.registerStep("TestClassifiedAppend", TestSourceStep::deserialize, std::move(info)));
     }
@@ -435,10 +424,9 @@ TEST(QueryPlanSerialization, PayloadFormatBumpMustSayWhatChanged)
 TEST(QueryPlanSerialization, PrefixReadableBaseFollowsTheLastRestructure)
 {
     QueryPlanStepRegistry::StepSerializationInfo info;
-    info.max_step_format_version = 4;
-    info.payload_changes[2] = QueryPlanStepRegistry::PayloadChange::Append;
-    info.payload_changes[3] = QueryPlanStepRegistry::PayloadChange::Restructure;
-    info.payload_changes[4] = QueryPlanStepRegistry::PayloadChange::Append;
+    info.payload_formats[2] = {QueryPlanStepRegistry::PayloadChange::Append};
+    info.payload_formats[3] = {QueryPlanStepRegistry::PayloadChange::Restructure};
+    info.payload_formats[4] = {QueryPlanStepRegistry::PayloadChange::Append};
 
     /// Appends stack onto whatever came before; a restructure resets the base to itself.
     EXPECT_EQ(info.prefixReadableFrom(1), 1u);
@@ -522,7 +510,7 @@ TEST(QueryPlanSerialization, PayloadTailIsRejectedAtAKnownStepFormat)
     registerStepsOnce();
 
     QueryPlan plan;
-    plan.addStep(std::make_unique<TestTailStep>(makeTestHeader(), /*declared_format_version=*/1));
+    plan.addStep(std::make_unique<TestTailStep>(makeTestHeader()));
 
     /// Format 1 is a format this build knows in full, so bytes the step did not read mean the
     /// stream is corrupt rather than newer.
@@ -588,7 +576,6 @@ PlanOutline makeTestOutline()
     leaf.step_name = "TestSource";
     leaf.step_format_version = 1;
     leaf.min_reader_plan_version = 4;
-    leaf.has_output_header = true;
     leaf.header = makeTestHeader();
     leaf.payload_size = 0;
     outline.nodes.push_back(std::move(leaf));
@@ -598,7 +585,6 @@ PlanOutline makeTestOutline()
     root.step_name = "Expression";
     root.step_format_version = 1;
     root.min_reader_plan_version = 4;
-    root.has_output_header = true;
     root.header = makeTestHeader();
     outline.nodes.push_back(std::move(root));
 
@@ -659,7 +645,6 @@ TEST(QueryPlanSerialization, PayloadTailIsSkippedForANewerStepFormat)
     node.step_format_version = 5;
     node.payload_prefix_readable_from = 1;
     node.min_reader_plan_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
-    node.has_output_header = true;
     node.header = makeTestHeader();
     node.payload_size = payload.str().size();
     outline.nodes.push_back(std::move(node));
@@ -686,7 +671,7 @@ TEST(QueryPlanOutline, WriteReadRoundTrip)
     EXPECT_EQ(restored.nodes[1].step_name, "Expression");
     EXPECT_EQ(restored.nodes[1].child_count, 1u);
     EXPECT_EQ(restored.nodes[1].step_description, "test description");
-    ASSERT_TRUE(restored.nodes[1].has_output_header);
+    ASSERT_TRUE(restored.nodes[1].header);
     EXPECT_EQ(restored.nodes[1].header->columns(), 2u);
     EXPECT_EQ(restored.nodes[0].payload_size, 42u);
     ASSERT_EQ(restored.nodes[0].settings.size(), 1u);
@@ -702,11 +687,10 @@ TEST(QueryPlanOutline, ValidationCollectsAllIssues)
     auto outline = makeTestOutline();
 
     outline.nodes[0].step_name = "NoSuchStep";
-    outline.nodes[0].has_output_header = false;
     outline.nodes[0].header = nullptr;
     outline.nodes[1].settings.push_back({.name = "no_such_setting", .flags = 0, .value = ""});
 
-    auto result = validateQueryPlanOutline(outline, /*plan_version=*/4, /*head_min_reader_plan_version=*/4);
+    auto result = validateQueryPlanOutline(outline, /*head_min_reader_plan_version=*/4);
     ASSERT_FALSE(result.ok());
     /// All three problems reported at once, not just the first.
     EXPECT_EQ(result.issues.size(), 3u) << result.describe();
@@ -722,26 +706,25 @@ TEST(QueryPlanOutline, ValidationAcceptsIgnorableUnknownSetting)
     outline.nodes[0].settings.push_back(
         {.name = "future_setting", .flags = PlanOutline::SettingEntry::FLAG_IGNORABLE, .value = ""});
 
-    EXPECT_TRUE(validateQueryPlanOutline(outline, 4, 4).ok());
+    EXPECT_TRUE(validateQueryPlanOutline(outline, 4).ok());
 }
 
 TEST(QueryPlanOutline, ValidationChecksStepVersionAgainstRegistryInfo)
 {
     registerStepsOnce();
 
+    /// Format version 2 of this step requires a reader of plan version 5, and the node says so.
     auto outline = makeTestOutline();
     outline.nodes[1].step_name = "TestGatedStep";
     outline.nodes[1].step_format_version = 2;
     outline.nodes[1].payload_prefix_readable_from = 2;
     outline.nodes[1].min_reader_plan_version = 5;
+    EXPECT_TRUE(validateQueryPlanOutline(outline, 5).ok());
 
-    /// Format version 2 of this step requires plan version 5.
-    EXPECT_FALSE(validateQueryPlanOutline(outline, 4, 5).ok());
-    EXPECT_TRUE(validateQueryPlanOutline(outline, 5, 5).ok());
-
-    /// A version above the known maximum is an ignorable extension when no mapping forbids it.
+    /// A version above the known maximum is an ignorable extension: the payload is prefix-readable
+    /// from a format this server knows, and nothing the registry says forbids it.
     outline.nodes[1].step_format_version = 3;
-    EXPECT_TRUE(validateQueryPlanOutline(outline, 5, 5).ok());
+    EXPECT_TRUE(validateQueryPlanOutline(outline, 5).ok());
 }
 
 TEST(QueryPlanOutline, ValidationCrossChecksDeclaredReaderVersions)
@@ -753,14 +736,14 @@ TEST(QueryPlanOutline, ValidationCrossChecksDeclaredReaderVersions)
     auto outline = makeTestOutline();
     outline.nodes[1].step_name = "TestGatedStep";
     outline.nodes[1].step_format_version = 2;
-    auto result = validateQueryPlanOutline(outline, 5, 5);
+    auto result = validateQueryPlanOutline(outline, 5);
     ASSERT_FALSE(result.ok());
     EXPECT_NE(result.describe().find("registry info requires 5"), std::string::npos);
 
     /// A node requiring more than the plan's declared head value is reported too.
     outline = makeTestOutline();
     outline.nodes[1].min_reader_plan_version = 5;
-    result = validateQueryPlanOutline(outline, 5, 4);
+    result = validateQueryPlanOutline(outline, 4);
     ASSERT_FALSE(result.ok());
     EXPECT_NE(result.describe().find("above the plan's declared"), std::string::npos);
 }
@@ -806,7 +789,7 @@ TEST(QueryPlanOutline, ValidationChecksTreeStructureAndSetOrder)
     auto outline = makeTestOutline();
 
     outline.nodes[1].child_count = 2;  /// Declares two children, only one subtree precedes it.
-    EXPECT_FALSE(validateQueryPlanOutline(outline, 4, 4).ok());
+    EXPECT_FALSE(validateQueryPlanOutline(outline, 4).ok());
     outline.nodes[1].child_count = 1;
 
     PlanOutline::SetEntry set1;
@@ -819,7 +802,7 @@ TEST(QueryPlanOutline, ValidationChecksTreeStructureAndSetOrder)
     set2.kind = 200;  /// Unknown kind.
     outline.sets = {set1, set2};  /// Also not sorted by hash.
 
-    auto result = validateQueryPlanOutline(outline, 4, 4);
+    auto result = validateQueryPlanOutline(outline, 4);
     ASSERT_FALSE(result.ok());
     EXPECT_EQ(result.issues.size(), 2u) << result.describe();
 }
@@ -947,12 +930,12 @@ TEST(QueryPlanOutline, ValidationRefusesPayloadItCannotPrefixRead)
     auto appended = makeTestOutline();
     appended.nodes[0].step_format_version = 5;
     appended.nodes[0].payload_prefix_readable_from = 1;
-    EXPECT_TRUE(validateQueryPlanOutline(appended, 4, 4).ok());
+    EXPECT_TRUE(validateQueryPlanOutline(appended, 4).ok());
 
     auto restructured = makeTestOutline();
     restructured.nodes[0].step_format_version = 5;
     restructured.nodes[0].payload_prefix_readable_from = 5;
-    auto result = validateQueryPlanOutline(restructured, 4, 4);
+    auto result = validateQueryPlanOutline(restructured, 4);
     EXPECT_FALSE(result.ok());
     EXPECT_NE(result.describe().find("readable only by format 5"), std::string::npos) << result.describe();
 }
@@ -962,17 +945,17 @@ TEST(QueryPlanOutline, ValidationRejectsMalformedChildCounts)
     registerStepsOnce();
 
     /// Nothing to be the root.
-    EXPECT_FALSE(validateQueryPlanOutline(PlanOutline{}, 4, 4).ok());
+    EXPECT_FALSE(validateQueryPlanOutline(PlanOutline{}, 4).ok());
 
     /// The first node cannot have children: nothing precedes it.
     auto under_run = makeTestOutline();
     under_run.nodes[0].child_count = 1;
-    EXPECT_FALSE(validateQueryPlanOutline(under_run, 4, 4).ok());
+    EXPECT_FALSE(validateQueryPlanOutline(under_run, 4).ok());
 
     /// Two leaves leave two unattached subtrees, so there is no single root.
     auto two_roots = makeTestOutline();
     two_roots.nodes[1].child_count = 0;
-    auto result = validateQueryPlanOutline(two_roots, 4, 4);
+    auto result = validateQueryPlanOutline(two_roots, 4);
     EXPECT_FALSE(result.ok());
     EXPECT_NE(result.describe().find("single root"), std::string::npos) << result.describe();
 }
@@ -1076,7 +1059,7 @@ TEST(QueryPlanOutline, ExtensionBytesAreSkippedForFutureLayouts)
 
     /// A reader that does not understand the extra bytes still reconstructs the shape.
     EXPECT_EQ(restored.nodes[0].extension_bytes, "future outline fields");
-    EXPECT_TRUE(validateQueryPlanOutline(restored, 4, 4).ok());
+    EXPECT_TRUE(validateQueryPlanOutline(restored, 4).ok());
     EXPECT_FALSE(formatQueryPlanOutline(restored).empty());
 }
 

@@ -26,13 +26,17 @@ void QueryPlanStepRegistry::registerStep(const std::string & name, StepCreateFun
     if (steps.contains(name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query plan step '{}' is already registered", name);
 
-    for (UInt64 format_version = 2; format_version <= info.max_step_format_version; ++format_version)
+    /// Payload formats run 2, 3, ... without gaps: a version that appears without the one before it
+    /// would mean a payload change nobody classified, and older readers decide whether they may
+    /// prefix-read a payload from exactly these entries.
+    UInt64 expected_version = 2;
+    for (const auto & [format_version, format] : info.payload_formats)
     {
-        auto change = info.payload_changes.find(format_version);
-        if (change == info.payload_changes.end())
+        if (format_version != expected_version)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Query plan step '{}' declares payload format version {} without saying how it "
-                "differs from {}", name, format_version, format_version - 1);
+                "Query plan step '{}' declares payload format version {} but says nothing about {}",
+                name, format_version, expected_version);
+        ++expected_version;
     }
 
     steps[name] = Entry{std::move(create_function), std::move(info)};
@@ -63,15 +67,6 @@ const QueryPlanStepRegistry::StepSerializationInfo * QueryPlanStepRegistry::getS
     if (it == steps.end())
         return nullptr;
     return &it->second.info;
-}
-
-std::vector<std::string> QueryPlanStepRegistry::getAllStepNames() const
-{
-    std::vector<std::string> names;
-    names.reserve(steps.size());
-    for (const auto & [name, entry] : steps)
-        names.push_back(name);
-    return names;
 }
 
 void registerExpressionStep(QueryPlanStepRegistry & registry);

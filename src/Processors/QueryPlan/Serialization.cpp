@@ -82,10 +82,6 @@ Block deserializeQueryPlanHeader(ReadBuffer & in, size_t max_type_complexity)
     return Block(std::move(columns));
 }
 
-/// The version a plan is written with for a peer that supports up to `max_supported_version`.
-/// v4+ peers accept streams by the content's needed-to-read version, so they all get the writer's
-/// own version (one byte string serves a whole mixed v4+ fleet); only pre-outline peers need the
-/// stream clamped down to what they can parse.
 /// The version to write: what the query asked for, or the server default, never above what this
 /// binary can write. `requested_version` of 0 means the query did not ask.
 static UInt64 writerSerializationVersion(UInt64 requested_version)
@@ -119,6 +115,10 @@ static UInt64 writerSerializationVersion(UInt64 requested_version)
     return writer_version;
 }
 
+/// The version a plan is written with for a peer that supports up to `max_supported_version`.
+/// v4+ peers accept streams by the content's needed-to-read version, so they all get the writer's
+/// own version (one byte string serves a whole mixed v4+ fleet); only pre-outline peers need the
+/// stream clamped down to what they can parse.
 static UInt64 effectiveSerializationVersion(size_t max_supported_version, UInt64 requested_version)
 {
     const UInt64 writer_version = writerSerializationVersion(requested_version);
@@ -260,8 +260,7 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
         outline_node.step_description = node->step->getStepDescription();
 
         const auto * info = step_registry.getStepSerializationInfo(outline_node.step_name);
-        outline_node.has_output_header = node->step->hasOutputHeader();
-        if (outline_node.has_output_header)
+        if (node->step->hasOutputHeader())
             outline_node.header = node->step->getOutputHeader();
 
         QueryPlanSerializationSettings settings;
@@ -271,7 +270,7 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
         WriteBufferFromOwnString payload;
         IQueryPlanStep::Serialization ctx{payload, registry};
         ctx.version = flags.version;
-        ctx.step_format_version = info ? info->max_step_format_version : 1;
+        ctx.step_format_version = info ? info->maxFormatVersion() : 1;
         node->step->serialize(ctx);
         payload.finalize();
 
@@ -279,7 +278,7 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
         /// outline must advertise the format of the bytes actually written. Lowering is the only
         /// intended move: a format above the registered maximum was never classified, so nothing
         /// would have told older readers whether they may prefix-read it.
-        const UInt64 registered_max = info ? info->max_step_format_version : 1;
+        const UInt64 registered_max = info ? info->maxFormatVersion() : 1;
         if (ctx.step_format_version == 0 || ctx.step_format_version > registered_max)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Step {} wrote payload format {} but is registered up to {}",
@@ -295,12 +294,7 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
         /// actually written, its value-dependent requirements, and the header's type encodings.
         UInt64 node_min_reader = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
         if (info)
-        {
-            node_min_reader = std::max(node_min_reader, info->introduced_in_plan_version);
-            for (const auto & [step_version, min_plan_version] : info->min_plan_version_for_step_version)
-                if (ctx.step_format_version >= step_version)
-                    node_min_reader = std::max(node_min_reader, min_plan_version);
-        }
+            node_min_reader = std::max(node_min_reader, info->minPlanVersionForFormat(ctx.step_format_version));
         node_min_reader = std::max(node_min_reader, ctx.min_reader_version);
         if (outline_node.header)
             for (const auto & column : *outline_node.header)
@@ -415,7 +409,7 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(
 
     /// One pass over the outline reports every problem at once (unknown steps, unsupported step
     /// versions, unknown settings) instead of failing on the first byte deep inside a payload.
-    auto validation = validateQueryPlanOutline(outline, flags.version, min_reader_plan_version);
+    auto validation = validateQueryPlanOutline(outline, min_reader_plan_version);
     if (!validation.ok())
     {
         skip_rest_of_body();
@@ -424,13 +418,7 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(
     }
 
     const size_t node_count = outline.nodes.size();
-
-    /// Validation already reported any structural issue; rebuilding here must therefore succeed.
-    auto shape = reconstructOutlineShape(outline);
-    if (!shape.ok())
-        throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
-            "Query plan cannot be deserialized: {}", shape.issues.front());
-    const auto & children_indices = shape.children;
+    const auto & children_indices = validation.shape.children;
 
     /// Every declared frame is checked against the envelope before a single step is built, so a
     /// plan whose sizes do not add up is rejected without constructing anything. Subtracting from
@@ -490,7 +478,7 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(
             input_headers.push_back(nodes_by_index[child_index]->step->getOutputHeader());
         }
 
-        SharedHeader output_header = outline_node.has_output_header
+        SharedHeader output_header = outline_node.header
             ? outline_node.header
             : std::make_shared<const Block>();
 
@@ -534,7 +522,7 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(
         if (!payload.eof())
         {
             const auto * info = step_registry.getStepSerializationInfo(outline_node.step_name);
-            UInt64 known_format_version = info ? info->max_step_format_version : 1;
+            UInt64 known_format_version = info ? info->maxFormatVersion() : 1;
             if (outline_node.step_format_version <= known_format_version)
                 throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
                     "Step {} left {} of its {} payload bytes unread at step format version {}, "
@@ -673,6 +661,16 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "The query plan requires serialization version {} while this server supports up to {}",
                 min_reader_plan_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+        }
+
+        /// A writer cannot need a reader newer than itself: everything it wrote, it wrote at its own
+        /// version. A stream saying otherwise is malformed, whatever the two numbers are.
+        if (min_reader_plan_version > version)
+        {
+            skipPlanBody(in, body_size);
+            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+                "The query plan was written at version {} but says it needs a reader of version {}",
+                version, min_reader_plan_version);
         }
 
         return deserializeEnvelope(in, context, flags, max_type_complexity, min_reader_plan_version, body_size);
