@@ -231,6 +231,8 @@ static struct InitFiu
     ONCE(database_iceberg_gcs) \
     REGULAR(rmt_delay_execute_drop_range) \
     REGULAR(rmt_delay_commit_part) \
+    REGULAR(rmt_alter_fail_before_zk_multi) \
+    REGULAR(atomic_db_fail_before_commit_alter_table) \
     ONCE(local_object_storage_network_error_during_remove) \
     REGULAR(lightweight_show_tables) \
     REGULAR(smt_part_update_duplicated_part) \

@@ -15,6 +15,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTimeSeries.h>
 #include <base/isSharedPtrUnique.h>
+#include <Common/FailPoint.h>
 #include <Common/PoolId.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
@@ -47,6 +48,12 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int UNFINISHED;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char atomic_db_fail_before_commit_alter_table[];
 }
 
 
@@ -452,6 +459,11 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
 
     if (table_id.uuid != actual_table_id.uuid)
         throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER, "Cannot alter table because it was renamed");
+
+    fiu_do_on(FailPoints::atomic_db_fail_before_commit_alter_table,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before committing the table metadata ALTER");
+    });
 
     auto txn = query_context->getZooKeeperMetadataTransaction();
     if (txn && !query_context->isInternalSubquery())

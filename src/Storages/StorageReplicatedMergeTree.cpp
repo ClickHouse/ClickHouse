@@ -265,6 +265,7 @@ namespace FailPoints
     extern const char replicated_table_remove_zk_before_get_children[];
     extern const char replicated_table_remove_zk_before_final_multi[];
     extern const char check_table_inject_retryable_zk_error[];
+    extern const char rmt_alter_fail_before_zk_multi[];
 }
 
 namespace ErrorCodes
@@ -6974,6 +6975,15 @@ void StorageReplicatedMergeTree::alter(
         /// query-scoped pin (which would otherwise keep returning the entry snapshot).
         auto current_metadata = getInMemoryMetadataUncached(query_context);
 
+        /// The local settings/comment change is prepared before the ZooKeeper CAS below and published
+        /// only after it succeeds (see the commit block after the ZOK break), so a rejected CAS leaves
+        /// no divergent local state. These hold the prepared, not-yet-published change for this iteration.
+        bool settings_are_changed = false;
+        bool comment_is_changed = false;
+        std::optional<PreparedSettingsChange> prepared_settings;
+        std::optional<IDatabase::PreparedAlterTable> prepared_settings_comment_alter;
+        std::optional<StorageInMemoryMetadata> settings_comment_metadata_to_publish;
+
         ReplicatedMergeTreeTableMetadata future_metadata_in_zk(*this, current_metadata);
         if (ast_to_str(future_metadata.sorting_key.definition_ast) != ast_to_str(current_metadata->sorting_key.definition_ast))
         {
@@ -7020,8 +7030,8 @@ void StorageReplicatedMergeTree::alter(
         String new_columns_str = future_metadata.columns.toString(true);
         ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "columns", new_columns_str, -1));
 
-        bool settings_are_changed = (ast_to_str(current_metadata->settings_changes) != ast_to_str(future_metadata.settings_changes));
-        bool comment_is_changed = (current_metadata->comment != future_metadata.comment);
+        settings_are_changed = (ast_to_str(current_metadata->settings_changes) != ast_to_str(future_metadata.settings_changes));
+        comment_is_changed = (current_metadata->comment != future_metadata.comment);
 
         if (settings_are_changed || comment_is_changed)
         {
@@ -7037,19 +7047,16 @@ void StorageReplicatedMergeTree::alter(
             /// future_metadata while metadata_copy grows). Check its size before mutating any in-memory state.
             checkMetadataDoesNotExceedMaxQuerySize(table_id, metadata_copy, query_context);
 
-            /// Just change settings
-            if (settings_are_changed)
-                changeSettings(metadata_copy.settings_changes, table_lock_holder);
-
+            /// Prepare the local settings/comment change (build the new settings, write the durable .sql
+            /// to a temporary file) but do not publish it yet. It is committed only after the ZooKeeper CAS
+            /// below succeeds, so a rejected ALTER leaves settings, in-memory metadata and .sql unchanged.
             /// The comment is not replicated as of today, but we can implement it later.
-            if (comment_is_changed)
-            {
-                /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
-                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-                setInMemoryMetadata(metadata_copy);
-            }
+            if (settings_are_changed)
+                prepared_settings = prepareSettingsChange(metadata_copy.settings_changes);
 
-            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy, /*validate_new_create_query=*/true);
+            prepared_settings_comment_alter = DatabaseCatalog::instance().getDatabase(table_id.database_name)
+                ->prepareAlterTable(query_context, table_id, metadata_copy, /*validate_new_create_query=*/true);
+            settings_comment_metadata_to_publish = std::move(metadata_copy);
         }
 
         /// We can be sure, that in case of successful commit in zookeeper our
@@ -7122,6 +7129,11 @@ void StorageReplicatedMergeTree::alter(
             ops.emplace_back(zkutil::makeSetRequest(metadata_zk_path, getObjectDefinitionFromCreateQuery(ast), -1));
         }
 
+        fiu_do_on(FailPoints::rmt_alter_fail_before_zk_multi,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before the ALTER metadata CAS");
+        });
+
         Coordination::Responses results;
         Coordination::Error rc = zookeeper->tryMulti(ops, results);
 
@@ -7151,6 +7163,31 @@ void StorageReplicatedMergeTree::alter(
                 alter_entry->znode_name = alter_path.substr(alter_path.find_last_of('/') + 1);
                 LOG_DEBUG(log, "Created log entry {} to update table metadata to version {}",
                           alter_entry->znode_name, alter_entry->alter_version);
+            }
+
+            /// The CAS succeeded. Now commit the prepared local settings/comment change: the durable
+            /// .sql rename (the coordinator commit for a Replicated database, though branch T never
+            /// carries settings/comment there), then publish it in memory. These run after the pivot,
+            /// so a rejected CAS above (continue / throw) never leaves them applied. A .sql.tmp left by
+            /// a rejected iteration is overwritten on retry and dropped on startup by DatabaseOnDisk.
+            if (settings_are_changed || comment_is_changed)
+            {
+                DatabaseCatalog::instance().getDatabase(table_id.database_name)->commitAlterTable(
+                    table_id,
+                    prepared_settings_comment_alter->table_metadata_tmp_path,
+                    prepared_settings_comment_alter->table_metadata_path,
+                    prepared_settings_comment_alter->statement,
+                    query_context);
+
+                if (settings_are_changed && prepared_settings)
+                    applySettingsChange(std::move(*prepared_settings));
+
+                if (comment_is_changed)
+                {
+                    /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+                    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+                    setInMemoryMetadata(*settings_comment_metadata_to_publish);
+                }
             }
             break;
         }
