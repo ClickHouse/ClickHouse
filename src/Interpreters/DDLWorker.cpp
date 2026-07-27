@@ -886,7 +886,11 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
 
     pcg64 rng(randomSeed());
 
-    execute_on_single_replica_lock = createSimpleZooKeeperLock(zookeeper, shard_path, "lock", task.host_id_str);
+    /// throw_if_lost = false: cleanupQueue removes the whole entry subtree (including this lock node)
+    /// once the entry becomes outdated, so a missing lock node at unlock time is expected here.
+    /// A lock taken over by another session is still reported as a logical error.
+    execute_on_single_replica_lock
+        = createSimpleZooKeeperLock(zookeeper, shard_path, "lock", task.host_id_str, /*throw_if_lost=*/false);
 
     Stopwatch stopwatch;
 
