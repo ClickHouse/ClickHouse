@@ -1184,13 +1184,25 @@ def main():
             )
         elif failed_tests:
             memory_limit = stateless_memory_limit(Info().job_name)
+            # The rerun must mirror the main run's environment or its verdict is
+            # meaningless: without `--replicated-database`/`--s3-storage`/... a
+            # config-specific failure cannot reproduce and is labelled `flaky`.
+            # Forwarding was lost in d59310d5ec741e (RETRIES did it: 1607bd45d66f79).
+            # shard/zookeeper default as in `run_tests` (both forms of a pair is an
+            # argparse error); options go BEFORE `--` (after it, `test` eats them).
+            diag_options = runner_options
+            if "--no-shard" not in diag_options:
+                diag_options += " --shard"
+            if "--no-zookeeper" not in diag_options:
+                diag_options += " --zookeeper"
             diag_command = (
                 f"clickhouse-test --testname --check-zookeeper-session --hung-check"
                 f" --memory-limit {memory_limit} --trace --capture-client-stacktrace"
-                f" --queries ./tests/queries --shard --zookeeper"
+                f" --queries ./tests/queries"
                 f" --diagnose-random-settings"
                 f" --random-settings-diagnostics-dir {diagnostics_dir}"
                 f" --no-random-settings --no-random-merge-tree-settings"
+                f" {diag_options}"
                 f" -- {' '.join(failed_tests)}"
             )
             print(f"Running diagnostics for {len(failed_tests)} test(s)...")
