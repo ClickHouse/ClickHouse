@@ -21,6 +21,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # http_make_head_request = 0 keeps the request counts exact: it defaults to true and the
 # stress runner randomizes it, and a HEAD probe issues its own requests through the same
 # counter.
+# parallel_replicas_for_cluster_engines = 0 keeps the read on the initiator. With parallel
+# replicas enabled, url() is served by StorageURLCluster, so the HTTP reads happen in
+# secondary queries on the replicas and neither system.processes nor the initiator's
+# system.query_log row ever reports ReadWriteBufferFromHTTPRequestsSent.
 
 PORT=$(python3 -c "
 import socket
@@ -83,7 +87,7 @@ ${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID_READ" --query "
     SELECT * FROM url('http://127.0.0.1:$PORT/', 'TSV', 'c1 UInt64')
     SETTINGS max_execution_time = 5, http_receive_timeout = 10, http_max_tries = 3,
              http_retry_initial_backoff_ms = 20000, http_retry_max_backoff_ms = 30000,
-             http_make_head_request = 0
+             http_make_head_request = 0, parallel_replicas_for_cluster_engines = 0
 " 2>&1 | grep -o -m1 -e TIMEOUT_EXCEEDED -e POCO_EXCEPTION
 ELAPSED_MS=$(( ($(date +%s%N) - START) / 1000000 ))
 requests_sent "$QUERY_ID_READ"
@@ -98,7 +102,7 @@ ${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID_BACKOFF" --query "
     SELECT * FROM url('http://127.0.0.1:$PORT/', 'TSV', 'c1 UInt64')
     SETTINGS max_execution_time = 0, http_receive_timeout = 2, http_max_tries = 4,
              http_retry_initial_backoff_ms = 20000, http_retry_max_backoff_ms = 30000,
-             http_make_head_request = 0
+             http_make_head_request = 0, parallel_replicas_for_cluster_engines = 0
 " > /dev/null 2> "$BACKOFF_ERR" &
 CLIENT_PID=$!
 
