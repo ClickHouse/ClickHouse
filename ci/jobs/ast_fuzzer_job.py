@@ -3,6 +3,7 @@ import logging
 import os
 import random
 import re
+import shutil
 import sys
 import traceback
 from pathlib import Path
@@ -41,6 +42,15 @@ JOB_ARTIFACTS = (
 # Single definition shared by the OOM leniency below and _sanitizer_findings, so
 # the two can never disagree about what counts as benign.
 SANITIZER_OOM_PATTERN = r"Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9"
+
+# External tools FuzzerLogParser shells out to. It runs `rg ... | head -n10`
+# without pipefail, and Shell.get_output only checks the pipeline's final exit
+# status, so a missing `rg` is masked by `head` exiting 0: the parser reports no
+# diagnostic and returns UNKNOWN_ERROR WITHOUT raising, which is
+# indistinguishable from a genuinely unrecognizable report. Their availability is
+# therefore checked explicitly, so an UNKNOWN_ERROR can be classified as "the
+# parser could not run" rather than "there is nothing to find".
+_PARSER_TOOLS = ("rg", "head")
 
 # Per-run classification inputs that must not survive into a later run on a
 # reused praktika worktree: ci/tmp is gitignored, so praktika's `git clean -ffd`
@@ -175,13 +185,16 @@ def _sanitizer_findings(workspace: Path) -> SanitizerReports:
       name-based test would promote every benign report to a real finding.
 
     A report the parser cannot classify is reported separately instead of being
-    discarded. Two distinct ways that happens, both observed: the parser raises
-    (a missing `rg`/`head` on PATH surfaces as a non-zero exit code), and a
+    discarded. Three distinct ways that happens, all observed: the parser raises
+    (both `rg` and `head` missing from PATH surfaces as a non-zero exit code); a
     report that cannot be READ parses to `UNKNOWN_ERROR` without raising - the
     container runs as root and the reports are chown'd afterwards, so a
-    permission problem is a plausible CI trigger. Readability is what separates
-    that from the legitimate "present but holds no recognizable diagnostic" case,
-    so it is tested directly rather than through a proxy such as file size.
+    permission problem is a plausible CI trigger; and `rg` alone missing from
+    PATH also parses to `UNKNOWN_ERROR` without raising, because `head` exits 0
+    for the whole pipeline. An UNKNOWN_ERROR is therefore only accepted as the
+    legitimate "present but holds no recognizable diagnostic" case once the
+    report is readable AND the parser had every tool it shells out to. Both are
+    tested directly rather than through a proxy such as file size.
     """
     findings = []
     unreadable = []
@@ -198,6 +211,20 @@ def _sanitizer_findings(workspace: Path) -> SanitizerReports:
             if not os.access(report, os.R_OK):
                 logging.warning("Sanitizer report %s is not readable", report)
                 unreadable.append((str(report), "report file is not readable"))
+                continue
+            missing_tools = [t for t in _PARSER_TOOLS if shutil.which(t) is None]
+            if missing_tools:
+                logging.warning(
+                    "Sanitizer report %s could not be parsed: missing %s",
+                    report,
+                    ", ".join(missing_tools),
+                )
+                unreadable.append(
+                    (
+                        str(report),
+                        "parser tool(s) not available: " + ", ".join(missing_tools),
+                    )
+                )
                 continue
             # No recognizable diagnostic (empty/truncated/garbage report).
             continue

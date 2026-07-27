@@ -33,7 +33,8 @@ else is) and pin:
   - a missing/malformed status.tsv still names the report (that path ends in
     `complete_job`, which calls `sys.exit`),
   - a report that cannot be classified at all fails CLOSED with its own named
-    sub-result instead of leaving the run green,
+    sub-result instead of leaving the run green - whether the parser raised, the
+    report could not be read, or a tool the parser shells out to was missing,
   - the merged-log parse, which selects whichever record was concatenated first,
     does not emit a FAIL row for a record the per-report pass calls benign,
   - stale state from a previous run - status.tsv above all - is removed before
@@ -41,6 +42,7 @@ else is) and pin:
 """
 
 import os
+import shutil
 import sys
 import textwrap
 
@@ -117,6 +119,13 @@ UBSAN_HEADERLESS_REPORT = textwrap.dedent("""\
         #0 0xaa in DB::overflowHere(long) src/Ub.cpp:42:13
         #1 0xbb in DB::overflowCaller() src/Ub.cpp:55:3
     """)
+
+# What the parser sees for a report it cannot READ: its `rg` finds nothing, so
+# the diagnostic comes back empty exactly as for a garbage report. The body is
+# non-empty because the upload filter skips zero-byte files, and a report the job
+# cannot read still has its real size on disk - an empty body would make the
+# "the report is attached" assertion pass or fail for the wrong reason.
+UNREADABLE_REPORT_BODY = "\x00\x01 unreadable to this job\n"
 
 SERVER_LOG_SHUTDOWN = (
     "2026.07.21 10:00:00.000000 [ 1 ] {} <Trace> Application: Received signal 15\n"
@@ -649,8 +658,10 @@ def test_early_abort_still_names_the_report(run_job, status_tsv):
 # 20. A report the parser cannot classify must fail CLOSED. Swallowing the parse
 #     error would leave the run green on an unexamined report, which is exactly
 #     the hidden-finding outcome this classification exists to prevent. There are
-#     two distinct ways it happens and each needs its own case: the parser raises,
-#     and the report cannot be READ (which returns UNKNOWN_ERROR without raising).
+#     three distinct ways it happens and each needs its own case: the parser
+#     raises, the report cannot be READ, and a tool the parser shells out to is
+#     missing from PATH. Only the first raises; the other two return
+#     UNKNOWN_ERROR, indistinguishably from a genuinely unrecognizable report.
 def _assert_parse_failure_is_reported(result, report_name):
     assert result.status != Result.Status.OK, result.info
     named = _names(result)
@@ -680,56 +691,101 @@ def test_parser_exception_does_not_leave_the_run_green(run_job, monkeypatch):
     _assert_parse_failure_is_reported(result, "sanitizer.log.914")
 
 
-@pytest.mark.skipif(
-    os.geteuid() == 0, reason="root bypasses file permissions, so chmod 000 is not enforced"
-)
+def _deny_read(monkeypatch, report_name):
+    """Emulate a report the job cannot read, without using permission bits.
+
+    A file the job cannot read is unreadable to BOTH consumers, so both facets
+    have to be emulated: the parser shells out to `rg`, gets nothing and returns
+    UNKNOWN_ERROR (measured: a chmod-000 report parses to exactly that, no
+    raise), and the production `os.access(report, os.R_OK)` check is what tells
+    that apart from a readable report holding no diagnostic. This patches the
+    predicate; the callers seed the report body EMPTY, which is what the parser
+    sees for an unreadable file. Patching only the predicate would leave a
+    readable real report, which the parser names, so the branch under test would
+    never be reached.
+
+    Permission bits are deliberately not used: the `CI Tests` job that runs this
+    file runs as root (`ci/defs/job_configs.py` marks it `+root+`, so
+    `ci/praktika/runner.py` omits `--user`), and root bypasses file permissions,
+    so a chmod-based fixture would have to skip in CI - leaving this fail-closed
+    behavior with no coverage on the only job that runs the file.
+
+    The production check stays `os.access`, the honest observable property.
+    Everything other than the named report is delegated to the real `os.access`.
+    """
+    real_access = os.access
+
+    def _access(path, mode, *args, **kwargs):
+        if mode == os.R_OK and os.path.basename(str(path)) == report_name:
+            return False
+        return real_access(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(job.os, "access", _access)
+
+
 @pytest.mark.parametrize("status_tsv", ["0\t0\t0", "0\t0\t143"])
-def test_unreadable_report_does_not_leave_the_run_green(run_job, status_tsv):
+def test_unreadable_report_does_not_leave_the_run_green(
+    run_job, monkeypatch, status_tsv
+):
     # The container runs as root and the reports are chown'd afterwards, so an
     # unreadable report is a plausible CI state, not a synthetic one.
-    report = run_job.workspace / "sanitizer.log.914"
-
-    def _make_unreadable():
-        report.chmod(0)
-
-    try:
-        result = run_job(
-            status_tsv=status_tsv,
-            reports=(("sanitizer.log.914", MSAN_UAF_REPORT),),
-            after_seed=_make_unreadable,
-        )
-    finally:
-        if report.exists():
-            report.chmod(0o644)
+    _deny_read(monkeypatch, "sanitizer.log.914")
+    result = run_job(
+        status_tsv=status_tsv,
+        reports=(("sanitizer.log.914", UNREADABLE_REPORT_BODY),),
+    )
     _assert_parse_failure_is_reported(result, "sanitizer.log.914")
 
 
 # 21. An unclassifiable report also vetoes the sanitized-build OOM leniency: it
 #     may BE the real finding the leniency would forgive.
-@pytest.mark.skipif(
-    os.geteuid() == 0, reason="root bypasses file permissions, so chmod 000 is not enforced"
-)
-def test_unreadable_report_vetoes_the_oom_leniency(run_job):
-    report = run_job.workspace / "sanitizer.log.914"
-
-    def _make_unreadable():
-        report.chmod(0)
-
-    try:
-        result = run_job(
-            status_tsv="1\t0\t0",
-            reports=(
-                ("sanitizer.log.500", BENIGN_ALLOC_REPORT),
-                ("sanitizer.log.914", MSAN_UAF_REPORT),
-            ),
-            after_seed=_make_unreadable,
-        )
-    finally:
-        if report.exists():
-            report.chmod(0o644)
+def test_unreadable_report_vetoes_the_oom_leniency(run_job, monkeypatch):
+    _deny_read(monkeypatch, "sanitizer.log.914")
+    result = run_job(
+        status_tsv="1\t0\t0",
+        reports=(
+            ("sanitizer.log.500", BENIGN_ALLOC_REPORT),
+            ("sanitizer.log.914", UNREADABLE_REPORT_BODY),
+        ),
+    )
     assert result.status != Result.Status.OK
     assert "considered passed" not in result.info
     _assert_parse_failure_is_reported(result, "sanitizer.log.914")
+
+
+# 21b. A missing parser tool is the third way a report goes unclassified, and the
+#      only one that raises nothing: `parse_failure` runs `rg ... | head -n10`
+#      without pipefail, so with `rg` absent the pipeline still exits 0 and the
+#      parser returns UNKNOWN_ERROR for a perfectly readable real report. Left
+#      unhandled, that is the hidden-report outcome this classification exists to
+#      prevent, reached through a second door.
+def test_missing_parser_tool_does_not_leave_the_run_green(
+    run_job, monkeypatch, tmp_path
+):
+    # PATH is restricted for real rather than `shutil.which` being patched, so
+    # this drives the actual mechanism: the parser's own `rg` invocation fails,
+    # `head` still exits 0 for the pipeline, and the report - readable, real, and
+    # holding a use-after-free - parses to UNKNOWN_ERROR without raising.
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    for tool in ("bash", "sh", "head", "tail", "cat", "grep", "sed", "dmesg", "zstd"):
+        found = shutil.which(tool)
+        if found:
+            (fake_bin / tool).symlink_to(found)
+    assert shutil.which("head", path=str(fake_bin)), "fixture needs head on PATH"
+    assert not shutil.which("rg", path=str(fake_bin)), "fixture must hide rg"
+    monkeypatch.setenv("PATH", str(fake_bin))
+    result = run_job(
+        status_tsv="0\t0\t0", reports=(("sanitizer.log.914", MSAN_UAF_REPORT),)
+    )
+    _assert_parse_failure_is_reported(result, "sanitizer.log.914")
+    sub = next(
+        r for r in result.results if r.name == job.SANITIZER_PARSE_FAILURE_NAME
+    )
+    # The missing tool is named, so the CIDB row is diagnosable rather than an
+    # opaque "could not classify".
+    assert "rg" in sub.info, sub.info
+    assert "not available" in sub.info, sub.info
 
 
 # 22. The watchdog's "terminated by signal 9" matches the same OOM pattern but is
