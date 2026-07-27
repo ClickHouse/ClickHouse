@@ -322,6 +322,12 @@ namespace QueryPlanFormat
     {
         using ActionType = ActionsDAG::ActionType;
 
+        /// A masked secret carrier (a folded constant, which may be a FUNCTION node with a constant
+        /// column, not only a COLUMN node) must render as `[HIDDEN]` regardless of its node type,
+        /// before we dispatch into formatting its value or its child expression.
+        if (node->is_masked_secret)
+            return "[HIDDEN]";
+
         switch (node->type)
         {
             case ActionType::INPUT:

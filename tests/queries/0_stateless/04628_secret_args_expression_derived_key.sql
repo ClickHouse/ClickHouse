@@ -33,3 +33,8 @@ EXPLAIN QUERY TREE run_passes = 0 SELECT encrypt('aes-128-ecb', 'SEKRIT_PLAINTEX
 -- ActionsDAG dump must not print it.
 SELECT countIf(explain LIKE '%SEKRIT_SUBQKEY16%') AS subquery_dag_leaks
 FROM viewExplain('EXPLAIN PLAN', 'actions = 1, pretty = 1', (SELECT encrypt('aes-128-ecb', toString(number), k) FROM (SELECT 'SEKRIT_SUBQKEY16' AS k, number FROM numbers(1))));
+
+-- The folded secret key can also be an expression over several constant columns, so it is a FUNCTION
+-- node carrying a constant, not a plain constant column; the plan dump must still hide it.
+SELECT countIf(explain LIKE '%SEKRIT%') AS concat_dag_leaks
+FROM viewExplain('EXPLAIN PLAN', 'actions = 1, pretty = 1', (SELECT encrypt('aes-128-ecb', toString(number), concat(k1, k2)) FROM (SELECT 'SEKRIT_C' AS k1, 'ONCKEY16' AS k2, number FROM numbers(1))));

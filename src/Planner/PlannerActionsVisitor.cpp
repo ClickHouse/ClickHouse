@@ -1216,8 +1216,9 @@ static void markFoldedSecretConstants(const FunctionNode & function_node, const 
 
     auto mark = [&](size_t index)
     {
-        if (index < children.size() && children[index]->type == ActionsDAG::ActionType::COLUMN
-            && children[index]->column && !children[index]->is_masked_secret)
+        /// Any node carrying a constant column is a folded secret value, whether it is a plain COLUMN
+        /// node or a FUNCTION node folded to a constant (e.g. `concat(k1, k2)`); flag either.
+        if (index < children.size() && children[index]->column && !children[index]->is_masked_secret)
             const_cast<ActionsDAG::Node *>(children[index])->is_masked_secret = true;
     };
 
