@@ -390,16 +390,22 @@ def main():
         manual_server_sections_by_name = {
             section.name: section for section in manual_server_sections
         }
-        assert (
-            manual_server_sections_by_name[
-                "auth_use_forwarded_address"
-            ].default_value
-            == "false"
-        )
-        assert (
-            manual_server_sections_by_name["bcrypt_workfactor"].default_value
-            == "12"
-        )
+        expected_manual_server_defaults = {
+            "auth_use_forwarded_address": "false",
+            "bcrypt_workfactor": "12",
+            "disable_tunneling_for_https_requests_over_http_proxy": "false",
+            "http_server_default_response": '"Ok.\\n"',
+            "interserver_listen_host": "listen_host",
+            "replica_group_name": '""',
+            "table_engines_require_grant": "false",
+            "tcp_port_secure": "9440",
+            "workload_path": "<path>/workload/",
+        }
+        for name, default_value in expected_manual_server_defaults.items():
+            assert (
+                manual_server_sections_by_name[name].default_value
+                == default_value
+            )
         manual_server_page = mod.SettingPage(
             base_route=server_family["base_route"],
             parts=("other",),
@@ -407,23 +413,25 @@ def main():
             match_prefix="",
             match_mode="token",
             sections=[
-                manual_server_sections_by_name["auth_use_forwarded_address"],
-                manual_server_sections_by_name["bcrypt_workfactor"],
+                manual_server_sections_by_name[name]
+                for name in expected_manual_server_defaults
             ],
         )
         manual_server_explorer = mod._settings_explorer_component(
             [manual_server_page], server_family
         )
-        assert (
-            '"name":"auth_use_forwarded_address",'
-            '"href":"/reference/settings/server-settings/settings/other'
-            '#auth_use_forwarded_address","default":"false"'
-        ) in manual_server_explorer
-        assert (
-            '"name":"bcrypt_workfactor",'
-            '"href":"/reference/settings/server-settings/settings/other'
-            '#bcrypt_workfactor","default":"12"'
-        ) in manual_server_explorer
+        for name, default_value in expected_manual_server_defaults.items():
+            expected_setting = {
+                "name": name,
+                "href": (
+                    "/reference/settings/server-settings/settings/other"
+                    f"#{name}"
+                ),
+                "default": default_value,
+            }
+            assert json.dumps(
+                expected_setting, separators=(",", ":")
+            ) in manual_server_explorer
 
         regrouped = mod.group_session_settings([
             mod.SettingSection(

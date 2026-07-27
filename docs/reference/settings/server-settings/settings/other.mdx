@@ -1398,7 +1398,7 @@ Replica group name for database Replicated.
 The cluster created by Replicated database will consist of replicas in the same group.
 DDL queries will only wait for the replicas in the same group.
 
-Empty by default.
+- **Default:** `""`
 
 **Example**
 
@@ -1472,6 +1472,8 @@ Example:
 ## table_engines_require_grant {#table_engines_require_grant}
 
 If set to true, users require a grant to create a table with a specific engine e.g. `GRANT TABLE ENGINE ON TinyLog to user`.
+
+- **Default:** `false`
 
 <Note>
 By default, for backward compatibility creating table with a specific table engine ignores grant, however you can change this behaviour by setting this to true.
