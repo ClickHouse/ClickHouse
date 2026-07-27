@@ -161,6 +161,24 @@ SELECT a, v, w FROM p1 LEFT JOIN p2 USING (a) PREWHERE toTypeName(arrayMap(z -> 
 -- WHERE runs after the join, so there the promoted type is the correct one.
 SELECT a, v, w FROM p1 FULL JOIN p2 USING (a) WHERE toTypeName(arrayMap(z -> tuple(* EXCEPT w), [1])) = 'Array(Tuple(Nullable(UInt8), Nullable(UInt64)))' ORDER BY a SETTINGS join_use_nulls = 1;
 
+SELECT '--- 13: USING key sourced from the SELECT projection, matcher inside a lambda';
+-- `analyzer_compatibility_join_using_top_level_identifier` makes the USING key resolve to the
+-- projection alias `id`, so the key is absent from the left table's own columns. The membership
+-- check that suppresses the synthetic merged key must be read from the join-owning scope: a lambda
+-- body resolves in a fresh child scope whose `table_expression_node_to_data` is empty, so the check
+-- would silently pass and the matcher would see the merged key instead of the right table's column.
+-- Oracle is the same matcher at the top level, where the check always ran on the owning scope.
+SELECT a + 1 AS id, arrayMap(z -> tuple(* EXCEPT a), [1]) AS matcher FROM (SELECT 1 AS a UNION ALL SELECT 9 AS a) AS q1 FULL JOIN (SELECT 2 AS id) AS q2 USING (id) ORDER BY a NULLS LAST SETTINGS join_use_nulls = 1, analyzer_compatibility_join_using_top_level_identifier = 1;
+SELECT a + 1 AS id, * EXCEPT a FROM (SELECT 1 AS a UNION ALL SELECT 9 AS a) AS q1 FULL JOIN (SELECT 2 AS id) AS q2 USING (id) ORDER BY a NULLS LAST SETTINGS join_use_nulls = 1, analyzer_compatibility_join_using_top_level_identifier = 1;
+-- Same shape with join_use_nulls = 0: the merged key is still wrong without the fix, so this pins
+-- the membership check independently of any Nullable promotion.
+SELECT a + 1 AS id, arrayMap(z -> tuple(* EXCEPT a), [1]) AS matcher FROM (SELECT 1 AS a UNION ALL SELECT 9 AS a) AS q1 FULL JOIN (SELECT 2 AS id) AS q2 USING (id) ORDER BY a NULLS LAST SETTINGS join_use_nulls = 0, analyzer_compatibility_join_using_top_level_identifier = 1;
+SELECT a + 1 AS id, * EXCEPT a FROM (SELECT 1 AS a UNION ALL SELECT 9 AS a) AS q1 FULL JOIN (SELECT 2 AS id) AS q2 USING (id) ORDER BY a NULLS LAST SETTINGS join_use_nulls = 0, analyzer_compatibility_join_using_top_level_identifier = 1;
+-- Control: with the compatibility setting off the USING key comes from the table, the check's
+-- suppression branch is not taken, and the matcher must keep matching the merged key.
+SELECT a AS x, arrayMap(z -> tuple(*), [1]) AS matcher FROM (SELECT 1 AS a, 5 AS id UNION ALL SELECT 9 AS a, 7 AS id) AS q1 FULL JOIN (SELECT 5 AS id) AS q2 USING (id) ORDER BY a NULLS LAST SETTINGS join_use_nulls = 1;
+SELECT a AS x, * FROM (SELECT 1 AS a, 5 AS id UNION ALL SELECT 9 AS a, 7 AS id) AS q1 FULL JOIN (SELECT 5 AS id) AS q2 USING (id) ORDER BY a NULLS LAST SETTINGS join_use_nulls = 1;
+
 DROP TABLE t1;
 DROP TABLE t2;
 DROP TABLE t3;

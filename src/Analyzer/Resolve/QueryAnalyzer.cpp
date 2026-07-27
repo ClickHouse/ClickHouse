@@ -2213,13 +2213,16 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                       * In this case `id` is not present in the left table expression,
                       * so asterisk should return `id` from the right table expression.
                       */
-                    auto is_column_from_parent_scope = [&scope](const QueryTreeNodePtr & using_node_from_table)
+                    /// `table_expression_node_to_data` is populated only on the join-owning scope, so a
+                    /// lambda's child scope would find it empty and never suppress the merged key.
+                    auto is_column_from_parent_scope = [&nearest_query_scope](const QueryTreeNodePtr & using_node_from_table)
                     {
                         if (using_node_from_table->getNodeType() != QueryTreeNodeType::COLUMN)
                             return false;
                         const auto & using_column_from_table = using_node_from_table->as<ColumnNode &>();
-                        auto table_expression_data_it = scope.table_expression_node_to_data.find(using_column_from_table.getColumnSource());
-                        if (table_expression_data_it != scope.table_expression_node_to_data.end())
+                        const auto & table_expression_node_to_data = nearest_query_scope->table_expression_node_to_data;
+                        auto table_expression_data_it = table_expression_node_to_data.find(using_column_from_table.getColumnSource());
+                        if (table_expression_data_it != table_expression_node_to_data.end())
                         {
                             const auto & table_expression_data = table_expression_data_it->second;
                             const auto & column_name = using_column_from_table.getColumnName();

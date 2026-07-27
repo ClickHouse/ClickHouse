@@ -163,3 +163,16 @@
 9	90	\N
 1	10	11
 9	90	\N
+--- 13: USING key sourced from the SELECT projection, matcher inside a lambda
+2	[(2)]
+10	[(NULL)]
+2	2
+10	\N
+2	[(2)]
+10	[(0)]
+2	2
+10	0
+1	[(5,1)]
+9	[(7,9)]
+1	5	1
+9	7	9
