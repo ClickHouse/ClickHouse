@@ -271,12 +271,19 @@ namespace
             if (!table_function_node_ptr)
                 return;
 
-            if (FunctionSecretArgumentsFinder::Result secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node_ptr).getResult(); secret_arguments.count)
+            if (FunctionSecretArgumentsFinder::Result secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node_ptr).getResult(); secret_arguments.hasSecrets())
             {
                 auto & argument_nodes = table_function_node_ptr->getArguments().getNodes();
 
+                std::vector<size_t> positions_to_mask = secret_arguments.extra_named_positions;
                 for (size_t n = secret_arguments.start; n < secret_arguments.start + secret_arguments.count; ++n)
+                    positions_to_mask.push_back(n);
+
+                for (size_t n : positions_to_mask)
                 {
+                    if (n >= argument_nodes.size())
+                        continue;
+
                     ConstantNode * constant_node = nullptr;
                     if (secret_arguments.are_named)
                     {

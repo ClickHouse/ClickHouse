@@ -814,6 +814,14 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
             if (!settings.show_secrets)
             {
+                if (secret_arguments.isExtraNamedPosition(i))
+                {
+                    /// `key = '[HIDDEN]'`, without hiding the arguments around it.
+                    if (!formatNamedArgWithHiddenValue(argument.get(), ostr, settings, state, nested_dont_need_parens))
+                        ostr << "'[HIDDEN]'";
+                    continue;
+                }
+
                 if (secret_arguments.start <= i && i < secret_arguments.start + secret_arguments.count)
                 {
                     if (secret_arguments.are_named)

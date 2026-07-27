@@ -72,9 +72,9 @@ public:
         String database;
         TableNameOrQuery table_or_query;
 
-        String ssl_ca;
-        String ssl_cert;
-        String ssl_key;
+        /// TLS/SSL credentials. The file paths in it may only come from the server configuration
+        /// file, see `validateSSLParams`.
+        mysqlxx::SSLParams ssl_params;
 
         bool replace_query = false;
         String on_duplicate_clause;
@@ -88,6 +88,12 @@ public:
     static Configuration processNamedCollectionResult(
         const NamedCollection & named_collection, MySQLSettings & storage_settings,
         ContextPtr context_, bool require_table_or_query = true);
+
+    /// Reads the TLS/SSL credentials from a named collection.
+    /// The paths `ssl_ca`, `ssl_cert` and `ssl_key` are only accepted from a collection defined in the
+    /// server configuration file, and only if the query did not override them. Everywhere else the
+    /// credentials have to be given as contents, in `ssl_ca_pem`, `ssl_cert_pem` and `ssl_key_pem`.
+    static mysqlxx::SSLParams getSSLParams(const NamedCollection & named_collection);
 
     static ColumnsDescription getTableStructureFromData(
         mysqlxx::PoolWithFailover & pool_,

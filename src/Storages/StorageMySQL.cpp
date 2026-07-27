@@ -327,12 +327,64 @@ SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMeta
         local_context->getSettingsRef()[Setting::mysql_max_rows_to_insert]);
 }
 
+mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_collection)
+{
+    /// A path to a certificate or a key is only accepted from the server configuration file: the
+    /// server opens the file with its own privileges, so taking a path from SQL would let anyone who
+    /// can define a MySQL source probe the local filesystem, and authenticate with a client
+    /// certificate they are not allowed to read themselves.
+    const bool from_config = named_collection.getSourceId() == NamedCollection::SourceId::CONFIG;
+
+    auto get_path = [&](const std::string & key, const std::string & contents_key)
+    {
+        auto value = named_collection.getOrDefault<String>(key, "");
+        if (value.empty())
+            return value;
+
+        if (!from_config)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`{}` can only be specified in a named collection defined in the server configuration file. "
+                "Pass the contents of the file in `{}` instead",
+                key, contents_key);
+
+        if (named_collection.isQueryOverridden(key))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`{}` cannot be overridden in a query. "
+                "Pass the contents of the file in `{}` instead",
+                key, contents_key);
+
+        return value;
+    };
+
+    auto get_contents = [&](const std::string & contents_key, const std::string & path, const std::string & key)
+    {
+        auto value = named_collection.getOrDefault<String>(contents_key, "");
+        if (!value.empty() && !path.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "`{}` and `{}` cannot be specified at the same time", key, contents_key);
+        return value;
+    };
+
+    mysqlxx::SSLParams ssl_params;
+    ssl_params.ca_path = get_path("ssl_ca", "ssl_ca_pem");
+    ssl_params.cert_path = get_path("ssl_cert", "ssl_cert_pem");
+    ssl_params.key_path = get_path("ssl_key", "ssl_key_pem");
+    ssl_params.ca_pem = get_contents("ssl_ca_pem", ssl_params.ca_path, "ssl_ca");
+    ssl_params.cert_pem = get_contents("ssl_cert_pem", ssl_params.cert_path, "ssl_cert");
+    ssl_params.key_pem = get_contents("ssl_key_pem", ssl_params.key_path, "ssl_key");
+    return ssl_params;
+}
+
 StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     const NamedCollection & named_collection, MySQLSettings & storage_settings, ContextPtr context_, bool require_table_or_query)
 {
     StorageMySQL::Configuration configuration;
 
-    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port", "ssl_ca", "ssl_cert", "ssl_key"};
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments
+        = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port",
+           "ssl_ca", "ssl_cert", "ssl_key", "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem"};
     auto mysql_settings_names = storage_settings.getAllRegisteredNames();
     for (const auto & name : mysql_settings_names)
         optional_arguments.insert(name);
@@ -374,9 +426,7 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     }
     configuration.replace_query = named_collection.getOrDefault<UInt64>("replace_query", false);
     configuration.on_duplicate_clause = named_collection.getOrDefault<String>("on_duplicate_clause", "");
-    configuration.ssl_ca = named_collection.getOrDefault<String>("ssl_ca", "");
-    configuration.ssl_cert = named_collection.getOrDefault<String>("ssl_cert", "");
-    configuration.ssl_key = named_collection.getOrDefault<String>("ssl_key", "");
+    configuration.ssl_params = getSSLParams(named_collection);
 
     storage_settings.loadFromNamedCollection(named_collection);
 

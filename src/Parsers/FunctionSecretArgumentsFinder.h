@@ -59,10 +59,20 @@ public:
         std::string replacement;
         /// Whether to wrap a result using full argument replacement in quotes.
         bool quote_replacement = true;
+        /// Positions of further named arguments (`key = value`) to hide, used when the secret arguments
+        /// are not consecutive, e.g. `mysql(collection, password = ..., table = ..., ssl_key_pem = ...)`.
+        /// Marking them separately keeps the arguments in between visible. They are always hidden as
+        /// `key = '[HIDDEN]'`.
+        std::vector<size_t> extra_named_positions;
+
+        bool isExtraNamedPosition(size_t index) const
+        {
+            return std::find(extra_named_positions.begin(), extra_named_positions.end(), index) != extra_named_positions.end();
+        }
 
         bool hasSecrets() const
         {
-            return count != 0 || !nested_maps.empty();
+            return count != 0 || !nested_maps.empty() || !extra_named_positions.empty();
         }
     };
 
@@ -184,12 +194,21 @@ protected:
         {
             /// mysql(named_collection, ..., password = 'password', ...)
             findSecretNamedArgument("password", 1);
+            findTLSCredentialsSecretArguments(1);
         }
         else
         {
             /// mysql('host:port', 'database', 'table', 'user', 'password', ...)
             markSecretArgument(4);
         }
+    }
+
+    /// TLS credentials that are passed as the literal contents of a certificate or a key file, rather
+    /// than as a path to it, must be hidden the same way a password is.
+    void findTLSCredentialsSecretArguments(size_t start)
+    {
+        for (const auto & key : {"ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem"})
+            findExtraSecretNamedArgument(key, start);
     }
 
     void findMongoDBSecretArguments()
@@ -831,6 +850,7 @@ protected:
         {
             /// MySQL(named_collection, ..., password = 'password', ...)
             findSecretNamedArgument("password", 1);
+            findTLSCredentialsSecretArguments(1);
         }
         else
         {
@@ -1011,6 +1031,37 @@ protected:
             return true;
         }
         return false;
+    }
+
+    /// Marks one more named argument as secret without widening the main masked range, so that several
+    /// secret named arguments can be hidden without hiding the arguments that happen to sit between them.
+    void markExtraSecretNamedArgument(size_t index)
+    {
+        if (index >= function->arguments->size())
+            return;
+
+        /// The first marked argument still establishes the range, which keeps the common case of a single
+        /// secret argument exactly as it was.
+        if (!result.count)
+        {
+            markSecretArgument(index, /* argument_is_named= */ true);
+            return;
+        }
+
+        if ((index >= result.start && index < result.start + result.count) || result.isExtraNamedPosition(index))
+            return;
+
+        result.extra_named_positions.push_back(index);
+    }
+
+    bool findExtraSecretNamedArgument(std::string_view key, size_t start = 0)
+    {
+        ssize_t arg_idx = findNamedArgument(nullptr, key, start);
+        if (arg_idx < 0)
+            return false;
+
+        markExtraSecretNamedArgument(static_cast<size_t>(arg_idx));
+        return true;
     }
 
     /// Masks the secret-bearing named arguments of an S3 named collection: `secret_access_key`,
