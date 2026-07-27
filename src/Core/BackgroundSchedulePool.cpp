@@ -310,13 +310,8 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t initial_size
     }
     catch (...)
     {
-        /// Failing to spawn a schedule pool's initial threads (e.g. a transient CANNOT_SCHEDULE_TASK
-        /// when the global thread pool is momentarily saturated) is recoverable, so propagate it
-        /// instead of aborting the server. Tear down first: any already-spawned, still-joinable
-        /// ThreadFromGlobalPool aborts from its destructor during unwinding (see
-        /// ThreadFromGlobalPoolImpl::~ThreadFromGlobalPoolImpl), so join() must run before the throw.
-        /// join() is null-safe for the delayed thread and leaves the object cleanly destructible
-        /// (threads empty, delayed_thread null).
+        /// `~ThreadFromGlobalPoolImpl` aborts on a still-joinable thread, so `join()` must run
+        /// before the throw to tear down already-spawned workers.
         LOG_ERROR(
             logger,
             "Couldn't get {} threads from global thread pool: {}",

@@ -310,12 +310,9 @@ TEST(BackgroundSchedulePool, CtorThrowsInsteadOfAbortOnSpawnFailure)
     EXPECT_TRUE(threw_cannot_schedule) << "constructor must throw CANNOT_SCHEDULE_TASK, not abort, when it cannot spawn initial threads";
 }
 
-/// The case above always fails the very first spawn, so `threads` is still empty and the
-/// constructor's teardown has nothing to join. Failing a *later* spawn leaves already started,
-/// still joinable threads behind, and `~ThreadFromGlobalPoolImpl` aborts the process for those,
-/// so the constructor must join them before propagating. A partial fault probability makes some
-/// construction fail after at least one worker started; without the teardown this test aborts
-/// rather than fails, which is exactly the failure mode being guarded against.
+/// The case above fails the first spawn, so `threads` is empty and the teardown has nothing to
+/// join. A partial fault probability makes some constructions fail after a worker already
+/// started, which is what exercises the join. Without it this test aborts rather than fails.
 TEST(BackgroundSchedulePool, CtorJoinsPartiallySpawnedThreadsOnFailure)
 {
     CannotAllocateThreadFaultInjector::setFaultProbability(0.5);

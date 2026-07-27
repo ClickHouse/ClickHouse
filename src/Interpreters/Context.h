@@ -1602,11 +1602,8 @@ public:
     BackgroundSchedulePoolPtr getIcebergSchedulePool() const;
     BackgroundSchedulePoolPtr getStreamingSchedulePool() const;
 
-    /// Non-creating accessors: return the pool only if it has already been created, null
-    /// otherwise. For callers that must observe the pools without instantiating them (the
-    /// read-only system.background_schedule_pool table must be side-effect-free). They return
-    /// a `shared_ptr` so the pool stays alive for as long as the caller uses it, even if a
-    /// concurrent `shutdown` clears the member.
+    /// Return the pool only if it has already been created, null otherwise, so that reading
+    /// `system.background_schedule_pool` does not instantiate one.
     BackgroundSchedulePoolPtr getBufferFlushSchedulePoolIfExists() const;
     BackgroundSchedulePoolPtr getSchedulePoolIfExists() const;
     BackgroundSchedulePoolPtr getMessageBrokerSchedulePoolIfExists() const;
