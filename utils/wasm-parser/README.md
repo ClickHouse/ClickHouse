@@ -37,8 +37,8 @@ Stripped, 320 translation units, `-Oz` with full LTO and `-fvirtual-function-eli
 
 | build | bytes | gzip -9 |
 | --- | ---: | ---: |
-| parse and format | 1168420 | 362693 |
-| `--no-formatting` | 926077 | 297843 |
+| parse and format | 1168631 | 362812 |
+| `--no-formatting` | 926506 | 297990 |
 
 The first version of this build was 2.7 MB. Most of what went is listed under "What is left out";
 the rest came from compiling for size rather than speed, from dropping locale support, and from
@@ -74,12 +74,26 @@ piecemeal. `formatImpl` is virtual, every AST class overrides it, and the linker
 116 implementations as long as one call goes through that slot - so the only way to leave it out
 is to leave out the last call, which is what `-DCLICKHOUSE_PARSER_NO_FORMATTING` does.
 
-That means it also has to stay out of parsing. Several parsers used to build a string by parsing a
-fragment into an AST and formatting that AST back - `CAST(x AS T)` and `x::T` store `T` as a string
+The awkward part is that parsing itself formats, in the few places that have to keep a fragment of
+the query as a string rather than as a subtree: `CAST(x AS T)` and `x::T` store `T` as a string
 literal, `EPHEMERAL` stores the column type inside `defaultValueOfTypeName`, and
-`(EXPLAIN ... SELECT ...)` becomes `viewExplain('<kind>', '<settings>', ...)`. They now take the
-text straight from the query instead (`textBetween` in `Parsers/TokenIterator.h`), which is both
-cheaper and closer to what the user wrote.
+`(EXPLAIN ... SELECT ...)` becomes `viewExplain('<kind>', '<settings>', ...)`. All four go through
+`astText`, which formats normally and uses the query text - `textBetween` in
+`Parsers/TokenIterator.h` - when there is no formatter.
+
+The query text is not a general substitute. It is what the user wrote, line breaks and all, and the
+formatted spelling is the canonical one that ends up in table metadata:
+
+```sql
+CREATE TABLE t (x UInt8, e Enum8
+    (
+        'hello' = 1
+    ) DEFAULT CAST(x AS Enum8('hello' = 1)))
+```
+
+stores `CAST(x, 'Enum8(\'hello\' = 1)')` today, and would store the newlines and the indentation if
+the parser kept the source text - `SHOW CREATE TABLE` would then print them back. A build that only
+answers whether a query parses never looks at the string, so there it does not matter.
 
 ## Where the remaining size is
 
