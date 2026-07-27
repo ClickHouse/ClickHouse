@@ -79,11 +79,13 @@ extern const RocksDBSettingsBool optimize_for_bulk_insert;
 namespace FailPoints
 {
 extern const char rocksdb_rename_throw_filesystem_error[];
+extern const char rocksdb_rename_fail_reopen[];
 }
 
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int FAULT_INJECTED;
 extern const int LOGICAL_ERROR;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ROCKSDB_ERROR;
@@ -318,6 +320,17 @@ void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &
     initDB();
 }
 
+void StorageEmbeddedRocksDB::initDBForRename()
+{
+    /// initDB() is also called from the constructor and from truncate(); the failpoint is applied
+    /// here so that only rename() can be made to fail.
+    fiu_do_on(FailPoints::rocksdb_rename_fail_reopen,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while reopening RocksDB after a rename");
+    });
+    initDB();
+}
+
 void StorageEmbeddedRocksDB::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     /// A directory given explicitly in the engine arguments does not belong to the table's
@@ -347,8 +360,7 @@ void StorageEmbeddedRocksDB::rename(const String & new_path_to_table_data, const
                 });
                 renameNoReplace(old_rocksdb_dir, new_rocksdb_dir);
                 rocksdb_dir = new_rocksdb_dir;
-                initDB();
-                handle_unusable = false;
+                initDBForRename();
             }
             catch (...)
             {
@@ -360,7 +372,7 @@ void StorageEmbeddedRocksDB::rename(const String & new_path_to_table_data, const
                         renameNoReplace(new_rocksdb_dir, old_rocksdb_dir);
                     rocksdb_dir = old_rocksdb_dir;
                     if (!rocksdb_ptr)
-                        initDB();
+                        initDBForRename();
                 }
                 catch (...)
                 {
@@ -738,6 +750,9 @@ void StorageEmbeddedRocksDB::initDB()
 
         rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
     }
+
+    /// The handle is usable again, whatever left it unusable before.
+    handle_unusable = false;
 }
 
 class ReadFromEmbeddedRocksDB : public SourceStepWithFilter

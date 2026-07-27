@@ -20,3 +20,7 @@
 11 rename failed 1
 11 table still readable 4
 11 table still reloadable 4
+12 rename failed 1
+12 full scan refuses 1
+12 key lookup refuses 1
+12 reloaded 3

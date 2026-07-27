@@ -150,5 +150,7 @@ private:
     bool read_only;
 
     void initDB() TSA_NO_THREAD_SAFETY_ANALYSIS;
+    /// initDB() plus a fault-injection point that only rename() can trip.
+    void initDBForRename() TSA_NO_THREAD_SAFETY_ANALYSIS;
 };
 }
