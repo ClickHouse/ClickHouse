@@ -1,0 +1,67 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>threads</name>
+            <values>
+                <value>1</value>
+                <value>0</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- 16 payload columns -->
+    <create_query>
+        CREATE TABLE sort_wide_16 (
+            k1 UInt64, k2 UInt64,
+            p01 UInt64, p02 UInt64, p03 UInt64, p04 UInt64,
+            p05 UInt64, p06 UInt64, p07 UInt64, p08 UInt64,
+            p09 UInt64, p10 UInt64, p11 UInt64, p12 UInt64,
+            p13 UInt64, p14 UInt64, p15 UInt64, p16 UInt64
+        ) ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO sort_wide_16
+        SELECT rand64() AS k1, rand64() AS k2,
+            rand64(), rand64(), rand64(), rand64(),
+            rand64(), rand64(), rand64(), rand64(),
+            rand64(), rand64(), rand64(), rand64(),
+            rand64(), rand64(), rand64(), rand64()
+        FROM numbers(500000)
+    </fill_query>
+
+    <!-- 64 payload columns -->
+    <create_query>
+        CREATE TABLE sort_wide_64 (
+            k1 UInt64, k2 UInt64,
+            p01 UInt64, p02 UInt64, p03 UInt64, p04 UInt64, p05 UInt64, p06 UInt64, p07 UInt64, p08 UInt64,
+            p09 UInt64, p10 UInt64, p11 UInt64, p12 UInt64, p13 UInt64, p14 UInt64, p15 UInt64, p16 UInt64,
+            p17 UInt64, p18 UInt64, p19 UInt64, p20 UInt64, p21 UInt64, p22 UInt64, p23 UInt64, p24 UInt64,
+            p25 UInt64, p26 UInt64, p27 UInt64, p28 UInt64, p29 UInt64, p30 UInt64, p31 UInt64, p32 UInt64,
+            p33 UInt64, p34 UInt64, p35 UInt64, p36 UInt64, p37 UInt64, p38 UInt64, p39 UInt64, p40 UInt64,
+            p41 UInt64, p42 UInt64, p43 UInt64, p44 UInt64, p45 UInt64, p46 UInt64, p47 UInt64, p48 UInt64,
+            p49 UInt64, p50 UInt64, p51 UInt64, p52 UInt64, p53 UInt64, p54 UInt64, p55 UInt64, p56 UInt64,
+            p57 UInt64, p58 UInt64, p59 UInt64, p60 UInt64, p61 UInt64, p62 UInt64, p63 UInt64, p64 UInt64
+        ) ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO sort_wide_64
+        SELECT rand64(), rand64(),
+            rand64(), rand64(), rand64(), rand64(), rand64(), rand64(), rand64(), rand64(),
+            rand64(), rand64(), rand64(), rand64(), rand64(), rand64(), rand64(), rand64(),
+            rand64(), rand64(), rand64(), rand64(), rand64(), rand64(), rand64(), rand64(),
+            rand64(), rand64(), rand64(), rand64(), rand64(), rand64(), rand64(), rand64(),
+            rand64(), rand64(), rand64(), rand64(), rand64(), rand64(), rand64(), rand64(),
+            rand64(), rand64(), rand64(), rand64(), rand64(), rand64(), rand64(), rand64(),
+            rand64(), rand64(), rand64(), rand64(), rand64(), rand64(), rand64(), rand64(),
+            rand64(), rand64(), rand64(), rand64(), rand64(), rand64(), rand64(), rand64()
+        FROM numbers(800000)
+    </fill_query>
+
+    <query>SELECT * FROM sort_wide_16 ORDER BY k1, k2 FORMAT Null SETTINGS max_threads = {threads}</query>
+    <query>SELECT * FROM sort_wide_64 ORDER BY k1, k2 FORMAT Null SETTINGS max_threads = {threads}</query>
+
+    <drop_query>DROP TABLE IF EXISTS sort_wide_16</drop_query>
+    <drop_query>DROP TABLE IF EXISTS sort_wide_64</drop_query>
+</test>

@@ -19,11 +19,15 @@ using FunctionNotILike = FunctionsStringSearch<NotILikeImpl>;
 
 REGISTER_FUNCTION(NotILike)
 {
-    FunctionDocumentation::Description description = "Checks whether a string does not match a pattern, case-insensitive. The pattern can contain special characters `%` and `_` for SQL LIKE matching.";
-    FunctionDocumentation::Syntax syntax = "notILike(haystack, pattern)";
+    FunctionDocumentation::Description description = "Checks whether a string does not match a pattern, case-insensitive. The pattern can contain special characters `%` and `_` for SQL LIKE matching. Supports the optional `ESCAPE` clause (see `like`).";
+    FunctionDocumentation::Syntax syntax = R"(
+notILike(haystack, pattern[, escape_character])
+-- haystack NOT ILIKE pattern [ESCAPE 'escape_character']
+    )";
     FunctionDocumentation::Arguments arguments = {
         {"haystack", "The input string to search in.", {"String", "FixedString"}},
-        {"pattern", "The SQL LIKE pattern to match against. `%` matches any number of characters (including zero), `_` matches exactly one character.", {"String"}}
+        {"pattern", "The SQL LIKE pattern to match against. `%` matches any number of characters (including zero), `_` matches exactly one character.", {"String"}},
+        {"escape_character", "Optional single-character string to use as the escape character instead of `\\`. Default: `\\`.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the string does not match the pattern (case-insensitive), otherwise `0`.", {"UInt8"}};
     FunctionDocumentation::Examples examples =

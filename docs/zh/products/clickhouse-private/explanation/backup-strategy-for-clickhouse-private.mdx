@@ -1,0 +1,43 @@
+---
+noindex: true
+title: "ClickHouse Private 的备份策略"
+sidebarTitle: "备份策略"
+description: "本文介绍 ClickHouse Private 特有的备份行为和限制。"
+---
+
+本文介绍 ClickHouse Private 特有的备份行为和限制。有关 ClickHouse 备份的一般概念 (完整备份与增量备份、备份链、SQL 语法) ，请参阅 [ClickHouse 上游备份文档](https://clickhouse.com/docs/operations/backup/overview)。如需分步操作说明，请参阅 [备份与恢复 (手动) ](/zh/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual) 或 [通过 API 管理备份](/zh/products/clickhouse-private/guides/manage-backups-via-the-private-api)。
+
+<div id="backup-location">
+  ## 备份位置
+</div>
+
+备份存储在 **亚马逊 S3** 中。每个集群的备份都会按其 S3 键前缀进行归类 (可在 CR 的 `spec.s3.keyPrefix` 中找到) ，这可确保不同集群的备份即使共享同一个 S3 bucket，也能彼此隔离。
+
+<div id="manual-vs-api-driven-backups">
+  ## 手动备份与 API 驱动备份
+</div>
+
+ClickHouse Private 支持两种备份方式：
+
+* **手动 (SQL)&#x20;**&#x20;-- 直接在 server pod (容器组) 上执行 `BACKUP`/`RESTORE` 语句。可完全控制备份范围和 S3 路径。请参阅 [备份与恢复 (手动) ](/zh/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual)。
+* **API 驱动** -- 使用 Private API REST 端点，由其创建由 operator 管理的 `Backup` 自定义资源。请参阅 [通过 API 管理备份](/zh/products/clickhouse-private/guides/manage-backups-via-the-private-api) 和 [API 参考文档](/zh/products/clickhouse-private/reference/clickhouse-private-api-reference)。
+
+<div id="backup-pod-designation">
+  ## Backup pod (容器组) 的指定
+</div>
+
+在 MultiSTS 架构中，恰好有一个副本会被指定为 **backup pod (容器组)&#x20;**&#x20;(即 ReplicaStateMap 中的 `isBackupPod: true`) 。备份操作始终在该 pod (容器组) 上执行。为避免干扰备份操作，operator 会在缩容期间避免将 backup pod (容器组) 标记为废弃。
+
+<div id="restore-limitation">
+  ## 恢复限制
+</div>
+
+Private API **不允许将备份恢复到创建该备份的同一集群** (`instance_id == target_instance_id`) 。这可以避免给正在运行的生产集群带来额外负载，并降低数据被覆盖的风险。推荐做法是新建一个集群，然后将备份恢复到该集群中。
+
+如果你必须恢复到同一集群 (例如恢复某个特定表) ，请直接在 server pod (容器组) 上手动执行 SQL 命令。
+
+<div id="incremental-backup-chain-integrity">
+  ## 增量备份链完整性
+</div>
+
+将 S3 生命周期策略与增量备份配合使用时，请确保过期规则不会在仍有增量备份依赖某个全量备份时将其删除。否则，一旦该全量备份被删除，其所在备份链中的所有增量备份都将无法恢复。

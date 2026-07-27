@@ -10,6 +10,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+bool MergeTreeReaderIndex::canSkipAnyMark() const
+{
+    /// `canSkipMark` only ever returns true when a skip-index or projection-index read result is present.
+    /// `lazy_materializing_rows` alone affects row-level filtering inside a granule and never returns
+    /// true from `canSkipMark`, so a reader configured only for lazy materialization does not skip
+    /// whole marks.
+    return index_read_result
+        && (index_read_result->skip_index_read_result || index_read_result->projection_index_read_result);
+}
+
 MergeTreeReaderIndex::MergeTreeReaderIndex(const IMergeTreeReader * main_reader_, MergeTreeIndexReadResultPtr index_read_result_, const PaddedPODArray<UInt64> * lazy_materializing_rows_)
     : IMergeTreeReader(
           main_reader_->data_part_info_for_read,
@@ -91,7 +101,7 @@ size_t MergeTreeReaderIndex::readRows(
         /// If there are rows to read, apply bitmap filtering.
         if (max_rows_to_read > 0)
         {
-            auto mutable_filter_column = filter_column->assumeMutable();
+            auto mutable_filter_column = IColumn::mutate(std::move(filter_column));
             auto & filter_data = static_cast<ColumnUInt8 &>(*mutable_filter_column).getData();
             index_read_result->projection_index_read_result->appendToFilter(filter_data, starting_row, max_rows_to_read);
             filter_column = std::move(mutable_filter_column);
@@ -119,7 +129,7 @@ size_t MergeTreeReaderIndex::readRows(
         /// If there are rows to read, apply bitmap filtering.
         if (max_rows_to_read > 0)
         {
-            auto mutable_filter_column = filter_column->assumeMutable();
+            auto mutable_filter_column = IColumn::mutate(std::move(filter_column));
             auto & filter_data = static_cast<ColumnUInt8 &>(*mutable_filter_column).getData();
             size_t old_size = filter_data.size();
             filter_data.resize(old_size + max_rows_to_read);
@@ -150,19 +160,19 @@ bool MergeTreeReaderIndex::canSkipMark(size_t mark, size_t /*current_task_last_m
 {
     if (index_read_result && index_read_result->skip_index_read_result)
     {
-        auto skip_index_read_result = index_read_result->skip_index_read_result;
-        chassert(mark < skip_index_read_result->granules_selected.size());
+        const auto & skip_index_read_result = *index_read_result->skip_index_read_result;
+        chassert(mark < skip_index_read_result.granules_selected.size());
 
-        if (!skip_index_read_result->granules_selected.at(mark))
+        if (!skip_index_read_result.granules_selected.at(mark))
             return true;
 
-        if (skip_index_read_result->threshold_tracker && skip_index_read_result->threshold_tracker->isSet())
+        if (skip_index_read_result.threshold_tracker && skip_index_read_result.threshold_tracker->isSet())
         {
-            if (skip_index_read_result->min_max_index_for_top_k) /// index may not have been materialized for this part
+            if (skip_index_read_result.min_max_index_for_top_k) /// index may not have been materialized for this part
             {
-                auto granule_num = skip_index_read_result->min_max_index_for_top_k->granules_map[mark];
-                if (!skip_index_read_result->threshold_tracker->isValueInsideThreshold(
-                        skip_index_read_result->min_max_index_for_top_k->granules[granule_num].min_or_max_value))
+                auto granule_num = skip_index_read_result.min_max_index_for_top_k->granules_map[mark];
+                if (!skip_index_read_result.threshold_tracker->isValueInsideThreshold(
+                        skip_index_read_result.min_max_index_for_top_k->granules[granule_num].min_or_max_value))
                     return true;
             }
         }

@@ -8,8 +8,6 @@ title: 'Table Engines'
 doc_type: 'reference'
 ---
 
-# Table engines
-
 The table engine (type of table) determines:
 
 - How and where data is stored, where to write it to, and where to read it from.

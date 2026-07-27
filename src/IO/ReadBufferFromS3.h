@@ -17,6 +17,10 @@
 
 namespace DB
 {
+
+class BlobStorageLogWriter;
+using BlobStorageLogWriterPtr = std::shared_ptr<BlobStorageLogWriter>;
+
 /**
  * Perform S3 HTTP GET request and provide response to read.
  */
@@ -27,6 +31,9 @@ private:
     String bucket;
     String key;
     String version_id;
+    /// ETag observed at read setup; each GET response ETag is checked against it to catch an
+    /// in-place overwrite mid-read (instead of stitching two object generations). Empty means skip.
+    String expected_etag;
     const S3::S3RequestSettings request_settings;
 
     /// These variables are atomic because they can be used for `logging only`
@@ -56,7 +63,9 @@ public:
         size_t read_until_position_ = 0,
         bool restricted_seek_ = false,
         std::optional<size_t> file_size = std::nullopt,
-        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] {return nullptr;}
+        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] {return nullptr;},
+        BlobStorageLogWriterPtr blob_storage_log_ = {},
+        const String & expected_etag_ = {}
         );
 
     ~ReadBufferFromS3() override = default;
@@ -82,6 +91,9 @@ public:
 
     bool supportsReadAt() override { return true; }
 
+    /// nextImpl fills the caller's set() buffer only when built for external-buffer use.
+    bool supportsExternalBufferMode() const override { return use_external_buffer; }
+
     /// Buffer may issue several requests, so theoretically metadata may be different for different requests.
     /// This method returns metadata from the last request. If there were no requests, it will throw exception.
     ObjectMetadata getObjectMetadataFromTheLastRequest() const;
@@ -90,7 +102,7 @@ public:
 
     std::string getStopReason() const { return stop_reason; }
 
-    std::optional<size_t> getRemoteFileSize() const override;
+    std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override;
 
 private:
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> initialize(size_t attempt);
@@ -117,6 +129,8 @@ private:
     bool read_all_range_successfully = false;
 
     const S3CredentialsRefreshCallback credentials_refresh_callback;
+
+    mutable BlobStorageLogWriterPtr blob_storage_log;
 };
 
 }

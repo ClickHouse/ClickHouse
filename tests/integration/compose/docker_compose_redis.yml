@@ -4,6 +4,6 @@ services:
         restart: always
         ports:
             - ${REDIS_EXTERNAL_PORT:-6379}:${REDIS_INTERNAL_PORT:-6379}
-        command: redis-server --requirepass "clickhouse" --databases 32
+        command: redis-server --requirepass "clickhouse" --databases 256
         stop_grace_period: 5s
         cpus: 3

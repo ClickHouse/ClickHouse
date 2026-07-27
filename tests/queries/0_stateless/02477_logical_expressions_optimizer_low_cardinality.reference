@@ -1,6 +1,6 @@
 SELECT a
 FROM t_logical_expressions_optimizer_low_cardinality
-WHERE (a = \'x\') OR (a = \'y\')
+WHERE or(equals(a, \'x\'), equals(a, \'y\'))
 QUERY id: 0
   PROJECTION COLUMNS
     a LowCardinality(String)
@@ -16,13 +16,13 @@ QUERY id: 0
           FUNCTION id: 6, function_name: in, function_type: ordinary, result_type: LowCardinality(UInt8)
             ARGUMENTS
               LIST id: 7, nodes: 2
-                COLUMN id: 8, column_name: a, result_type: LowCardinality(String), source_id: 3
-                CONSTANT id: 9, constant_value: Tuple_(\'x\', \'y\'), constant_value_type: Tuple(String, String)
-          CONSTANT id: 10, constant_value: UInt64_0, constant_value_type: UInt8
+                COLUMN id: 2, column_name: a, result_type: LowCardinality(String), source_id: 3
+                CONSTANT id: 8, constant_value: Tuple_(\'x\', \'y\'), constant_value_type: Tuple(String, String)
+          CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
 SELECT a
 FROM t_logical_expressions_optimizer_low_cardinality
-WHERE (a = \'x\') OR (\'y\' = a)
+WHERE or(equals(a, \'x\'), equals(\'y\', a))
 QUERY id: 0
   PROJECTION COLUMNS
     a LowCardinality(String)
@@ -38,13 +38,13 @@ QUERY id: 0
           FUNCTION id: 6, function_name: in, function_type: ordinary, result_type: LowCardinality(UInt8)
             ARGUMENTS
               LIST id: 7, nodes: 2
-                COLUMN id: 8, column_name: a, result_type: LowCardinality(String), source_id: 3
-                CONSTANT id: 9, constant_value: Tuple_(\'x\', \'y\'), constant_value_type: Tuple(String, String)
-          CONSTANT id: 10, constant_value: UInt64_0, constant_value_type: UInt8
+                COLUMN id: 2, column_name: a, result_type: LowCardinality(String), source_id: 3
+                CONSTANT id: 8, constant_value: Tuple_(\'x\', \'y\'), constant_value_type: Tuple(String, String)
+          CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
 SELECT a
 FROM t_logical_expressions_optimizer_low_cardinality
-WHERE (a != \'x\') AND (a != \'y\')
+WHERE and(notEquals(a, \'x\'), notEquals(a, \'y\'))
 QUERY id: 0
   PROJECTION COLUMNS
     a LowCardinality(String)
@@ -60,13 +60,13 @@ QUERY id: 0
           FUNCTION id: 6, function_name: notIn, function_type: ordinary, result_type: LowCardinality(UInt8)
             ARGUMENTS
               LIST id: 7, nodes: 2
-                COLUMN id: 8, column_name: a, result_type: LowCardinality(String), source_id: 3
-                CONSTANT id: 9, constant_value: Tuple_(\'x\', \'y\'), constant_value_type: Tuple(String, String)
-          CONSTANT id: 10, constant_value: \'UInt8\', constant_value_type: String
+                COLUMN id: 2, column_name: a, result_type: LowCardinality(String), source_id: 3
+                CONSTANT id: 8, constant_value: Tuple_(\'x\', \'y\'), constant_value_type: Tuple(String, String)
+          CONSTANT id: 9, constant_value: \'UInt8\', constant_value_type: String
   SETTINGS enable_analyzer=1
 SELECT a
 FROM t_logical_expressions_optimizer_low_cardinality
-WHERE (a != \'x\') AND (\'y\' != a)
+WHERE and(notEquals(a, \'x\'), notEquals(\'y\', a))
 QUERY id: 0
   PROJECTION COLUMNS
     a LowCardinality(String)
@@ -82,13 +82,13 @@ QUERY id: 0
           FUNCTION id: 6, function_name: notIn, function_type: ordinary, result_type: LowCardinality(UInt8)
             ARGUMENTS
               LIST id: 7, nodes: 2
-                COLUMN id: 8, column_name: a, result_type: LowCardinality(String), source_id: 3
-                CONSTANT id: 9, constant_value: Tuple_(\'x\', \'y\'), constant_value_type: Tuple(String, String)
-          CONSTANT id: 10, constant_value: \'UInt8\', constant_value_type: String
+                COLUMN id: 2, column_name: a, result_type: LowCardinality(String), source_id: 3
+                CONSTANT id: 8, constant_value: Tuple_(\'x\', \'y\'), constant_value_type: Tuple(String, String)
+          CONSTANT id: 9, constant_value: \'UInt8\', constant_value_type: String
   SETTINGS enable_analyzer=1
 SELECT a
 FROM t_logical_expressions_optimizer_low_cardinality
-WHERE (b = 0) OR (b = 1)
+WHERE or(equals(b, 0), equals(b, 1))
 QUERY id: 0
   PROJECTION COLUMNS
     a LowCardinality(String)
@@ -109,12 +109,12 @@ QUERY id: 0
           FUNCTION id: 10, function_name: equals, function_type: ordinary, result_type: UInt8
             ARGUMENTS
               LIST id: 11, nodes: 2
-                COLUMN id: 12, column_name: b, result_type: UInt32, source_id: 3
-                CONSTANT id: 13, constant_value: UInt64_1, constant_value_type: UInt8
+                COLUMN id: 8, column_name: b, result_type: UInt32, source_id: 3
+                CONSTANT id: 12, constant_value: UInt64_1, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
 SELECT a
 FROM t_logical_expressions_optimizer_low_cardinality
-WHERE (b != 0) AND (b != 1)
+WHERE and(notEquals(b, 0), notEquals(b, 1))
 QUERY id: 0
   PROJECTION COLUMNS
     a LowCardinality(String)
@@ -135,6 +135,6 @@ QUERY id: 0
           FUNCTION id: 10, function_name: notEquals, function_type: ordinary, result_type: UInt8
             ARGUMENTS
               LIST id: 11, nodes: 2
-                COLUMN id: 12, column_name: b, result_type: UInt32, source_id: 3
-                CONSTANT id: 13, constant_value: UInt64_1, constant_value_type: UInt8
+                COLUMN id: 8, column_name: b, result_type: UInt32, source_id: 3
+                CONSTANT id: 12, constant_value: UInt64_1, constant_value_type: UInt8
   SETTINGS enable_analyzer=1

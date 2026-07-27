@@ -10,6 +10,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <DataTypes/EnumValues.h>
 
@@ -638,7 +639,7 @@ inline std::unique_ptr<IStringSource> createDynamicStringSource(const IColumn & 
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of string column: {}", col.getName());
 }
 
-using StringSources = std::vector<std::unique_ptr<IStringSource>>;
+using StringSources = VectorWithMemoryTracking<std::unique_ptr<IStringSource>>;
 
 
 struct GenericArraySource : public ArraySourceImpl<GenericArraySource>

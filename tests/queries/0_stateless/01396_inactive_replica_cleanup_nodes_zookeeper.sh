@@ -28,10 +28,12 @@ $CLICKHOUSE_CLIENT --query "
 $CLICKHOUSE_CLIENT --max_execution_time 600 --insert_keeper_fault_injection_probability=0 --max_block_size 1 --min_insert_block_size_rows 1 --min_insert_block_size_bytes 1 --max_insert_threads 16 --query "INSERT INTO r1 SELECT * FROM numbers_mt(${SCALE})"
 
 
-# Now wait for cleanup thread to reduce ZK log entries
+# Now wait for cleanup thread to reduce ZK log entries.
+# Require count to be a number: [[ "" -lt N ]] is true in bash, so a transient
+# empty read would otherwise break the loop early before cleanup has run.
 for _ in {1..120}; do
     count=$($CLICKHOUSE_CLIENT --query "SELECT numChildren FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/$SHARD' AND name = 'log'" 2>/dev/null)
-    [[ $count -lt $((SCALE / 4)) ]] && break
+    [[ $count =~ ^[0-9]+$ ]] && [[ $count -lt $((SCALE / 4)) ]] && break
     sleep 1
 done
 

@@ -7,8 +7,6 @@ title: 'Settings profiles'
 doc_type: 'reference'
 ---
 
-# Settings profiles
-
 A settings profile is a collection of settings grouped under the same name.
 
 :::note

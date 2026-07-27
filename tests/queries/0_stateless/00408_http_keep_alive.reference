@@ -1,9 +1,9 @@
 < Connection: Keep-Alive
-< Keep-Alive: timeout=10, max=?
+< Keep-Alive: timeout=30, max=?
 < Connection: Keep-Alive
-< Keep-Alive: timeout=10, max=?
+< Keep-Alive: timeout=30, max=?
 < Connection: Keep-Alive
-< Keep-Alive: timeout=10, max=?
+< Keep-Alive: timeout=30, max=?
 wait_for_async_insert=0
 good async insert
 < Connection: Keep-Alive

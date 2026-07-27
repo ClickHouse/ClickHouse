@@ -1,0 +1,73 @@
+=== Correctness ===
+250	1872500
+250	1872500
+=== Plan structure ===
+1
+1
+=== PK and IN-set pruning ===
+total_marks=56, selected_marks=10, set_rows=N
+=== Selected after index ===
+Selected 2/2 parts by partition key, 2 parts by primary key, 10/62 marks by primary key, 10 marks to read from 2 ranges
+=== Fallback (set truncated) ===
+250	1872500
+=== Full EXPLAIN ===
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        Union
+          InputSelector
+            LazyFinalKeyAnalysis
+              CreatingSet
+                Expression
+                  Expression
+                    ReadFromMergeTree (default.t_lazy_final_combined)
+                    Indexes:
+                      PrimaryKey
+                        Keys:
+                          key
+                        Condition: and((key in (-Inf, 5499]), (key in [500, +Inf)))
+                        Parts: 2/2
+                        Granules: 56/62
+                        Search Algorithm: binary search
+                      Ranges: 2
+            JoinLazyColumnsStep
+              LazyReadReplacingFinal
+                Expression
+                  Aggregating
+                    Expression
+                      Expression
+                        ReadFromMergeTree (default.t_lazy_final_combined)
+                        Indexes:
+                          PrimaryKey
+                            Condition: true
+                            Parts: 2/2
+                            Granules: 56/62
+                          Ranges: 2
+              LazilyReadFromMergeTree
+            ReadFromMergeTree (default.t_lazy_final_combined)
+            Indexes:
+              PrimaryKey
+                Keys:
+                  key
+                Condition: and((key in (-Inf, 5499]), (key in [500, +Inf)))
+                Parts: 4/4
+                Granules: 68/78
+                Search Algorithm: binary search
+              NonIntersectingSplit
+                Description: Split non-intersecting parts for lazy FINAL
+                Parts: 2/4
+                Granules: 56/68
+              Ranges: 2
+          ReadFromMergeTree (default.t_lazy_final_combined)
+          Indexes:
+            PrimaryKey
+              Keys:
+                key
+              Condition: and((key in (-Inf, 5499]), (key in [500, +Inf)))
+              Parts: 2/2
+              Granules: 12/16
+              Search Algorithm: binary search
+            Ranges: 2
+=== Set plan reads only needed columns ===
+                    Header: key UInt64

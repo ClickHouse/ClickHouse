@@ -6,8 +6,6 @@ title: 'Functions for Working with Dates and Times'
 doc_type: 'reference'
 ---
 
-# Functions for working with dates and times
-
 Most functions in this section accept an optional time zone argument, e.g. `Europe/Amsterdam`. In this case, the time zone is the specified one instead of the local (default) one.
 
 **Example**
@@ -27,7 +25,7 @@ SELECT
 ```
 
 :::note
-For SQL standard compatibility the following functions, `NOW`, `CURRENT_TIMESTAMP`, `TODAY`, and `CURRENT_DATE` can be used without parentheses.
+For SQL standard compatibility the following functions, `NOW`, `CURRENT_TIMESTAMP`, `LOCALTIME`, `LOCALTIMESTAMP`, `TODAY`, and `CURRENT_DATE` can be used without parentheses.
 :::
 
 <!-- 

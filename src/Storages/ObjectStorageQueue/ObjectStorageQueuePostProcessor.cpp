@@ -34,6 +34,17 @@ namespace S3AuthSetting
 {
     extern const S3AuthSettingsString access_key_id;
     extern const S3AuthSettingsString secret_access_key;
+    extern const S3AuthSettingsString session_token;
+    extern const S3AuthSettingsString role_arn;
+    extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString external_id;
+    extern const S3AuthSettingsString http_client;
+    extern const S3AuthSettingsString service_account;
+    extern const S3AuthSettingsString metadata_service;
+    extern const S3AuthSettingsString request_token_path;
+    extern const S3AuthSettingsString google_adc_client_id;
+    extern const S3AuthSettingsString google_adc_client_secret;
+    extern const S3AuthSettingsString google_adc_refresh_token;
 }
 
 #endif
@@ -178,14 +189,15 @@ void ObjectStorageQueuePostProcessor::doWithRetries(std::function<void()> action
     }
 }
 
-static StoredObject applyMovePrefixIfPresent(const StoredObject & src, const String & move_prefix)
+static StoredObject applyMovePrefixIfPresent(const StoredObject & src, const String & move_prefix, bool preserve_path)
 {
     if (move_prefix.empty())
     {
         return src;
     }
-    const String file_name = fileName(src.remote_path);
-    const String remote_path = fs::path(move_prefix) / file_name;
+    const String suffix = preserve_path ? src.remote_path : fileName(src.remote_path);
+    chassert(!suffix.starts_with('/'));
+    const String remote_path = fs::path(move_prefix) / suffix;
     return StoredObject(remote_path);
 }
 
@@ -207,7 +219,7 @@ static AzureBlobStorage::ConnectionParams getAzureConnectionParams(
 
 #endif
 
-void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & objects, const String & move_prefix) const
+void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & objects, const String & move_prefix, bool preserve_path) const
 {
     auto read_settings = getReadSettings();
     auto write_settings = getWriteSettings();
@@ -229,7 +241,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
                 try
                 {
                     doWithRetries([&]{
-                        auto object_to = applyMovePrefixIfPresent(object_from, move_prefix);
+                        auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, preserve_path);
                         LOG_TRACE(log, "Copying object {} to {}", object_from.remote_path, object_to.remote_path);
                         object_storage->copyObject(
                             object_from,
@@ -297,6 +309,24 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             );
             s3_settings->auth_settings[S3AuthSetting::access_key_id] = move_access_key_id;
             s3_settings->auth_settings[S3AuthSetting::secret_access_key] = move_secret_access_key;
+            /// The move uses its own explicit keys, so drop every server-managed mechanism inherited from
+            /// `<s3>` config (role_arn STS, GCP OAuth, and the server's temporary session_token) that would
+            /// otherwise use the server's identity on top of those keys.
+            s3_settings->auth_settings[S3AuthSetting::session_token] = "";
+            s3_settings->auth_settings[S3AuthSetting::role_arn] = "";
+            s3_settings->auth_settings[S3AuthSetting::role_session_name] = "";
+            s3_settings->auth_settings[S3AuthSetting::external_id] = "";
+            s3_settings->auth_settings[S3AuthSetting::http_client] = "";
+            s3_settings->auth_settings[S3AuthSetting::service_account] = "";
+            s3_settings->auth_settings[S3AuthSetting::metadata_service] = "";
+            s3_settings->auth_settings[S3AuthSetting::request_token_path] = "";
+            s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = "";
+            s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = "";
+            s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = "";
+            /// The move uses its own explicit keys, so also drop the request-auth material (headers/access
+            /// headers and SSE-C/SSE-KMS keys) merged from the server `<s3>` config: otherwise the server's
+            /// headers or encryption keys would be sent to the user-supplied move destination.
+            s3_settings->auth_settings.clearServerManagedRequestAuth();
             std::shared_ptr<S3::Client> dst_client = getClient(
                 move_uri,
                 *s3_settings,
@@ -321,7 +351,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                             *src_client,
                             src_bucket,
                             object_from.remote_path);
-                        auto object_to = applyMovePrefixIfPresent(object_from, move_prefix);
+                        auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, settings.after_processing_move_preserve_path);
 
                         LOG_INFO(log, "Copying {} ({} Bytes) to bucket {}", object_from.remote_path, object_size, dst_uri.bucket);
                         copyS3File(
@@ -366,7 +396,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
     }
     else if (!move_prefix.empty())
     {
-        moveWithinBucket(objects, move_prefix);
+        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path);
     }
     else
     {
@@ -413,7 +443,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                         Azure::Storage::Blobs::BlobClient blobClient = src_client->GetBlobClient(object_from.remote_path);
                         auto properties = blobClient.GetProperties().Value;
                         auto blob_size = properties.BlobSize;
-                        auto object_to = applyMovePrefixIfPresent(object_from, move_prefix);
+                        auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, settings.after_processing_move_preserve_path);
                         auto request_settings = azure_storage->getSettings();
                         auto read_settings = getReadSettings();
                         const auto read_settings_to_use = azure_storage->patchSettings(read_settings);
@@ -460,7 +490,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
     }
     else if (!move_prefix.empty())
     {
-        moveWithinBucket(objects, move_prefix);
+        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path);
     }
     else
     {

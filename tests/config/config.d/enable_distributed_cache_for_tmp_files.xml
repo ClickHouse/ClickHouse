@@ -1,0 +1,3 @@
+<clickhouse>
+    <temporary_data_in_distributed_cache>1</temporary_data_in_distributed_cache>
+</clickhouse>

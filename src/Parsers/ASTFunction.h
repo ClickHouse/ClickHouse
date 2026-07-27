@@ -5,6 +5,8 @@
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/NullsAction.h>
 
+#include <initializer_list>
+
 
 namespace DB
 {
@@ -142,6 +144,9 @@ boost::intrusive_ptr<ASTFunction> makeASTOperator(const String & name, Args &&..
     function->setIsOperator(true);
     return function;
 }
+
+/// Creates an AST for a lambda: `(param_names...) -> body`.
+boost::intrusive_ptr<ASTFunction> makeASTLambda(std::initializer_list<String> param_names, ASTPtr && body);
 
 /// Adds a parameters to aggregate function.
 inline boost::intrusive_ptr<ASTFunction> addParametersToAggregateFunction(boost::intrusive_ptr<ASTFunction> && function) { return std::move(function); }

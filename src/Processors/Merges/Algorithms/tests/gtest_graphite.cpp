@@ -87,7 +87,7 @@ struct  PatternForCheck
 };
 
 
-bool checkRule(const Graphite::Pattern & pattern, const struct PatternForCheck & pattern_check,
+static bool checkRule(const Graphite::Pattern & pattern, const struct PatternForCheck & pattern_check,
     const std::string & typ, const std::string & path, std::string & message)
 {
     bool rule_type_eq = (pattern.rule_type == pattern_check.rule_type);
@@ -107,7 +107,7 @@ bool checkRule(const Graphite::Pattern & pattern, const struct PatternForCheck &
     return false;
 }
 
-std::ostream & operator<<(std::ostream & stream, const PatternForCheck & a)
+static std::ostream & operator<<(std::ostream & stream, const PatternForCheck & a)
 {
     stream << "{ rule_type = " << ruleTypeStr(a.rule_type);
     if (!a.regexp_str.empty())
@@ -294,6 +294,51 @@ TEST(GraphiteTest, testSelectPattern)
         if (!checkRule(*rule.second, t.aggregation_want, "aggregation", t.path, message))
             ADD_FAILURE() << message << ", got\n" << *rule.second << "\n, want\n" << t.aggregation_want << "\n";
     }
+}
+
+
+TEST(GraphiteTest, testParamsEqualityComparesFunctionParameters)
+{
+    tryRegisterAggregateFunctions();
+
+    auto make_params = [](const char * function_with_params)
+    {
+        std::string xml = std::string(R"END(<clickhouse>
+<graphite_rollup>
+    <pattern>
+        <regexp>\.quantile$</regexp>
+        <function>)END") + function_with_params + R"END(</function>
+    </pattern>
+    <default>
+        <function>avg</function>
+        <retention>
+            <age>0</age>
+            <precision>60</precision>
+        </retention>
+    </default>
+</graphite_rollup>
+</clickhouse>
+)END";
+        auto config = loadConfigurationFromString(xml);
+        ContextMutablePtr context = getContext().context;
+        return setGraphitePatterns(context, config);
+    };
+
+    Graphite::Params quantile_50 = make_params("quantile(0.5)");
+    Graphite::Params quantile_50_again = make_params("quantile(0.5)");
+    Graphite::Params quantile_90 = make_params("quantile(0.9)");
+    Graphite::Params max_func = make_params("max");
+
+    /// Same function name and parameters compare equal.
+    EXPECT_TRUE(quantile_50 == quantile_50_again);
+    /// Different function name compares unequal (always did).
+    EXPECT_FALSE(quantile_50 == max_func);
+    /// Same function name but different parameters must compare unequal, matching
+    /// Pattern::updateHash which hashes both the name and the parameters. Without this
+    /// (issue #106798 follow-up), a GraphiteMergeTree part adopted between configs with
+    /// quantile(0.5) and quantile(0.9) would keep its merge level and the destination
+    /// would skip the rollup under its own parameters.
+    EXPECT_FALSE(quantile_50 == quantile_90);
 }
 
 

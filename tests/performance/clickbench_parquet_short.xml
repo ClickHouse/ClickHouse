@@ -1,0 +1,93 @@
+<!--
+    Performance regression guard for short ClickBench queries on top of a single
+    Parquet file read via the `file()` table function.
+
+    Motivation: changes to the single-file Parquet read path (e.g. row-group
+    bucketing across multiple sources, footer-cache invalidation, count-cache
+    bypass) can dramatically slow down "short" ClickBench queries — the ones
+    that finish in well under a second on a real `hits.parquet`. A per-query
+    startup floor of even ~50 ms is enough to make `SELECT COUNT(*)` and the
+    light aggregate queries several times slower.
+
+    To detect this without downloading the multi-GB ClickBench parquet, we
+    generate a synthetic file that mirrors the ClickBench `hits` schema
+    (columns, types, column count) and is split into many small row groups, so
+    that any per-row-group / per-bucket overhead in the read path is amplified.
+
+    The queries here are intentionally the "short" subset of ClickBench
+    (Q1, Q2, Q3, Q4, Q7, Q19) plus a single longer text-scan query (Q20) as a
+    counterweight: a healthy change should keep all of them roughly stable or
+    improve the heavy one.
+-->
+<test>
+    <settings>
+        <max_memory_usage>30000000000</max_memory_usage>
+    </settings>
+
+    <fill_query><![CDATA[
+        INSERT INTO FUNCTION file('test_clickbench_hits.parquet', Parquet)
+        SELECT * FROM generateRandom('
+            WatchID Int64, JavaEnable Int16, Title String, GoodEvent Int16,
+            EventTime DateTime, EventDate Date, CounterID Int32, ClientIP Int32,
+            RegionID Int32, UserID Int64, CounterClass Int16, OS Int16,
+            UserAgent Int16, URL String, Referer String, IsRefresh Int16,
+            RefererCategoryID Int16, RefererRegionID Int32, URLCategoryID Int16,
+            URLRegionID Int32, ResolutionWidth Int16, ResolutionHeight Int16,
+            ResolutionDepth Int16, FlashMajor Int16, FlashMinor Int16,
+            FlashMinor2 String, NetMajor Int16, NetMinor Int16,
+            UserAgentMajor Int16, UserAgentMinor String, CookieEnable Int16,
+            JavascriptEnable Int16, IsMobile Int16, MobilePhone Int16,
+            MobilePhoneModel String, Params String, IPNetworkID Int32,
+            TraficSourceID Int16, SearchEngineID Int16, SearchPhrase String,
+            AdvEngineID Int16, IsArtifical Int16, WindowClientWidth Int16,
+            WindowClientHeight Int16, ClientTimeZone Int16,
+            ClientEventTime DateTime, SilverlightVersion1 Int16,
+            SilverlightVersion2 Int16, SilverlightVersion3 Int32,
+            SilverlightVersion4 Int16, PageCharset String, CodeVersion Int32,
+            IsLink Int16, IsDownload Int16, IsNotBounce Int16, FUniqID Int64,
+            OriginalURL String, HID Int32, IsOldCounter Int16, IsEvent Int16,
+            IsParameter Int16, DontCountHits Int16, WithHash Int16,
+            HitColor String, LocalEventTime DateTime, Age Int16, Sex Int16,
+            Income Int16, Interests Int16, Robotness Int16, RemoteIP Int32,
+            WindowName Int32, OpenerName Int32, HistoryLength Int16,
+            BrowserLanguage String, BrowserCountry String, SocialNetwork String,
+            SocialAction String, HTTPError Int16, SendTiming Int32,
+            DNSTiming Int32, ConnectTiming Int32, ResponseStartTiming Int32,
+            ResponseEndTiming Int32, FetchTiming Int32,
+            SocialSourceNetworkID Int16, SocialSourcePage String,
+            ParamPrice Int64, ParamOrderID String, ParamCurrency String,
+            ParamCurrencyID Int16, OpenstatServiceName String,
+            OpenstatCampaignID String, OpenstatAdID String,
+            OpenstatSourceID String, UTMSource String, UTMMedium String,
+            UTMCampaign String, UTMContent String, UTMTerm String,
+            FromTag String, HasGCLID Int16, RefererHash Int64, URLHash Int64,
+            CLID Int32', 1, 16, 2)
+        LIMIT 1000000
+        SETTINGS output_format_parquet_row_group_size = 50000
+    ]]></fill_query>
+
+    <!-- Q1: trivial COUNT(*); reads only metadata, regresses if the
+         trivial-count cache is bypassed or the footer is parsed N times. -->
+    <query><![CDATA[SELECT COUNT(*) FROM file('test_clickbench_hits.parquet', Parquet) FORMAT Null]]></query>
+
+    <!-- Q2: filtered COUNT; very cheap, exposes per-source startup overhead. -->
+    <query><![CDATA[SELECT COUNT(*) FROM file('test_clickbench_hits.parquet', Parquet) WHERE AdvEngineID <> 0 FORMAT Null]]></query>
+
+    <!-- Q3: light aggregate over three small numeric columns. -->
+    <query><![CDATA[SELECT SUM(AdvEngineID), COUNT(*), AVG(ResolutionWidth) FROM file('test_clickbench_hits.parquet', Parquet) FORMAT Null]]></query>
+
+    <!-- Q4: single-column scan (Int64). -->
+    <query><![CDATA[SELECT AVG(UserID) FROM file('test_clickbench_hits.parquet', Parquet) FORMAT Null]]></query>
+
+    <!-- Q7: MIN/MAX over a Date column; small payload, should be fast. -->
+    <query><![CDATA[SELECT MIN(EventDate), MAX(EventDate) FROM file('test_clickbench_hits.parquet', Parquet) FORMAT Null]]></query>
+
+    <!-- Q19: point-lookup style filter; regression-sensitive when the file
+         read path adds per-bucket overhead. -->
+    <query><![CDATA[SELECT UserID FROM file('test_clickbench_hits.parquet', Parquet) WHERE UserID = 435090932899640449 FORMAT Null]]></query>
+
+    <!-- Q20: heavy LIKE scan on URL; counterweight — improvements to bucketed
+         parallel reads should make this faster, not slower. -->
+    <query><![CDATA[SELECT COUNT(*) FROM file('test_clickbench_hits.parquet', Parquet) WHERE URL LIKE '%google%' FORMAT Null]]></query>
+
+</test>

@@ -371,7 +371,7 @@ void AllowedClientHosts::addLikePattern(const String & pattern)
         local_host = true;
     else if ((pattern == "%") || (pattern == "0.0.0.0/0") || (pattern == "::/0"))
         any_host = true;
-    else if (boost::range::find(like_patterns, pattern) == name_regexps.end())
+    else if (boost::range::find(like_patterns, pattern) == like_patterns.end())
         like_patterns.push_back(pattern);
 }
 
@@ -539,7 +539,7 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
             for (const auto & host : resolved_hosts.value())
             {
                 Poco::RegularExpression re(name_regexp_);
-                Poco::RegularExpression::Match match;
+                Poco::RegularExpression::Match match{};
                 if (re.match(host, match) != 0)
                 {
                     return true;

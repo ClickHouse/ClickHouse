@@ -1,0 +1,413 @@
+---
+description: 'GROUP BY 子句文档'
+sidebarTitle: 'GROUP BY'
+slug: /sql-reference/statements/select/group-by
+title: 'GROUP BY 子句'
+doc_type: 'reference'
+---
+
+`GROUP BY` 子句会将 `SELECT` 查询切换为聚合模式，其工作方式如下：
+
+* `GROUP BY` 子句包含一个表达式列表 (或单个表达式，此时视为长度为 1 的列表) 。该列表充当“分组键”，其中每个单独的表达式称为“键表达式”。
+* [SELECT](/zh/reference/statements/select/index)、[HAVING](/zh/reference/statements/select/having) 和 [ORDER BY](/zh/reference/statements/select/order-by) 子句中的所有表达式都**必须**基于键表达式进行计算，**或**基于作用于非键表达式 (包括普通列) 的[聚合函数](/zh/reference/functions/aggregate-functions/index)进行计算。换句话说，从表中选出的每一列，要么用于键表达式，要么位于聚合函数内部，但不能同时用于两者。
+* 聚合 `SELECT` 查询的结果中包含的行数，将等于源表中“分组键”唯一值的数量。通常，这会显著减少行数，往往会减少几个数量级，但并非总是如此：如果所有“分组键”值都互不相同，行数将保持不变。
+
+如果你想按列号而不是列名对表中的数据进行分组，请启用设置 [enable&#95;positional&#95;arguments](/zh/reference/settings/session-settings#enable_positional_arguments)。
+
+<Note>
+  还有一种对表执行聚合的方式。如果查询只在聚合函数内部使用表列，则可以省略 `GROUP BY` 子句，此时会假定按空键集进行聚合。这类查询始终只返回一行。
+</Note>
+
+<div id="null-processing">
+  ## NULL 的处理
+</div>
+
+对于分组，ClickHouse 将 [NULL](/zh/reference/syntax#null) 视为一个值，并且 `NULL==NULL`。这与大多数其他上下文中对 `NULL` 的处理方式不同。
+
+下面的示例说明了这意味着什么。
+
+假设你有这样一张表：
+
+```text
+┌─x─┬────y─┐
+│ 1 │    2 │
+│ 2 │ ᴺᵁᴸᴸ │
+│ 3 │    2 │
+│ 3 │    3 │
+│ 3 │ ᴺᵁᴸᴸ │
+└───┴──────┘
+```
+
+查询 `SELECT sum(x), y FROM t_null_big GROUP BY y` 的结果如下：
+
+```text
+┌─sum(x)─┬────y─┐
+│      4 │    2 │
+│      3 │    3 │
+│      5 │ ᴺᵁᴸᴸ │
+└────────┴──────┘
+```
+
+你可以看到，对于 `y = NULL`，`GROUP BY` 会对 `x` 求和，就好像 `NULL` 是一个实际的值一样。
+
+如果向 `GROUP BY` 传递多个键，结果会返回所选项的所有组合，就好像 `NULL` 是一个特定的值一样。
+
+<div id="rollup-modifier">
+  ## ROLLUP 修饰符
+</div>
+
+`ROLLUP` 修饰符用于根据 `GROUP BY` 列表中键表达式的顺序计算小计。小计行会附加在结果表之后。
+
+小计按相反的顺序计算：先为列表中的最后一个键表达式计算小计，再为前一个计算，依此类推，直到第一个键表达式。
+
+在小计行中，已“grouped”的键表达式的值会被设为 `0` 或空字符串。
+
+<Note>
+  请注意，[HAVING](/zh/reference/statements/select/having) 子句可能会影响小计结果。
+</Note>
+
+**示例**
+
+假设有表 t：
+
+```text
+┌─year─┬─month─┬─day─┐
+│ 2019 │     1 │   5 │
+│ 2019 │     1 │  15 │
+│ 2020 │     1 │   5 │
+│ 2020 │     1 │  15 │
+│ 2020 │    10 │   5 │
+│ 2020 │    10 │  15 │
+└──────┴───────┴─────┘
+```
+
+```sql title="Query"
+SELECT year, month, day, count(*) FROM t GROUP BY ROLLUP(year, month, day);
+```
+
+由于 `GROUP BY` 部分包含三个键表达式，因此结果中会有四个表，小计按从右到左的顺序逐级“汇总”：
+
+* `GROUP BY year, month, day`;
+* `GROUP BY year, month` (此时 `day` 列补零) ；
+* `GROUP BY year` (此时 `month` 和 `day` 列都补零) ；
+* 以及总计 (此时三个键表达式列都为零) 。
+
+```text title="Response"
+┌─year─┬─month─┬─day─┬─count()─┐
+│ 2020 │    10 │  15 │       1 │
+│ 2020 │     1 │   5 │       1 │
+│ 2019 │     1 │   5 │       1 │
+│ 2020 │     1 │  15 │       1 │
+│ 2019 │     1 │  15 │       1 │
+│ 2020 │    10 │   5 │       1 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│ 2019 │     1 │   0 │       2 │
+│ 2020 │     1 │   0 │       2 │
+│ 2020 │    10 │   0 │       2 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│ 2019 │     0 │   0 │       2 │
+│ 2020 │     0 │   0 │       4 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│    0 │     0 │   0 │       6 │
+└──────┴───────┴─────┴─────────┘
+```
+
+同一个查询也可以用 `WITH` 关键字来写。
+
+```sql title="Query"
+SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
+```
+
+**另请参阅**
+
+* [group&#95;by&#95;use&#95;nulls](/zh/reference/settings/session-settings#group_by_use_nulls) 设置，用于兼容 SQL 标准。
+
+<div id="cube-modifier">
+  ## CUBE 修饰符
+</div>
+
+`CUBE` 修饰符用于计算 `GROUP BY` 列表中键表达式各种组合的小计。小计行会添加在结果表之后。
+
+在小计行中，所有“已分组”键表达式的值都将被设为 `0` 或空字符串。
+
+<Note>
+  请注意，[HAVING](/zh/reference/statements/select/having) 子句可能会影响小计结果。
+</Note>
+
+**示例**
+
+考虑表 t：
+
+```text
+┌─year─┬─month─┬─day─┐
+│ 2019 │     1 │   5 │
+│ 2019 │     1 │  15 │
+│ 2020 │     1 │   5 │
+│ 2020 │     1 │  15 │
+│ 2020 │    10 │   5 │
+│ 2020 │    10 │  15 │
+└──────┴───────┴─────┘
+```
+
+```sql title="Query"
+SELECT year, month, day, count(*) FROM t GROUP BY CUBE(year, month, day);
+```
+
+由于 `GROUP BY` 部分包含三个键表达式，因此结果中会有八个表，分别对应所有键表达式组合的小计：
+
+* `GROUP BY year, month, day`
+* `GROUP BY year, month`
+* `GROUP BY year, day`
+* `GROUP BY year`
+* `GROUP BY month, day`
+* `GROUP BY month`
+* `GROUP BY day`
+* 以及总计。
+
+未包含在 `GROUP BY` 中的列会以零填充。
+
+```text title="Response"
+┌─year─┬─month─┬─day─┬─count()─┐
+│ 2020 │    10 │  15 │       1 │
+│ 2020 │     1 │   5 │       1 │
+│ 2019 │     1 │   5 │       1 │
+│ 2020 │     1 │  15 │       1 │
+│ 2019 │     1 │  15 │       1 │
+│ 2020 │    10 │   5 │       1 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│ 2019 │     1 │   0 │       2 │
+│ 2020 │     1 │   0 │       2 │
+│ 2020 │    10 │   0 │       2 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│ 2020 │     0 │   5 │       2 │
+│ 2019 │     0 │   5 │       1 │
+│ 2020 │     0 │  15 │       2 │
+│ 2019 │     0 │  15 │       1 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│ 2019 │     0 │   0 │       2 │
+│ 2020 │     0 │   0 │       4 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│    0 │     1 │   5 │       2 │
+│    0 │    10 │  15 │       1 │
+│    0 │    10 │   5 │       1 │
+│    0 │     1 │  15 │       2 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│    0 │     1 │   0 │       4 │
+│    0 │    10 │   0 │       2 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│    0 │     0 │   5 │       3 │
+│    0 │     0 │  15 │       3 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│    0 │     0 │   0 │       6 │
+└──────┴───────┴─────┴─────────┘
+```
+
+同一个查询也可以用 `WITH` 关键字来写。
+
+```sql title="Query"
+SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
+```
+
+**另请参见**
+
+* 用于兼容 SQL 标准的 [group&#95;by&#95;use&#95;nulls](/zh/reference/settings/session-settings#group_by_use_nulls) 设置项。
+
+<div id="with-totals-modifier">
+  ## WITH TOTALS 修饰符
+</div>
+
+如果指定了 `WITH TOTALS` 修饰符，则会额外计算出一行。该行的键列包含默认值 (零或空字符串) ，聚合函数列则包含基于所有行计算出的值 (即“总计”值) 。
+
+这个额外的行仅会在 `JSON*`、`TabSeparated*` 和 `Pretty*` 格式中生成，并与其他行分开输出：
+
+* 在 `XML` 和 `JSON*` 格式中，这一行会作为单独的 `totals` 字段输出。
+* 在 `TabSeparated*`、`CSV*` 和 `Vertical` 格式中，这一行位于主结果之后，前面有一个空行 (也就是在其他数据之后) 。
+* 在 `Pretty*` 格式中，这一行会在主结果后作为单独的表输出。
+* 在 `Template` 格式中，这一行会按照指定模板输出。
+* 在其他格式中不可用。
+
+<Note>
+  totals 会在 `SELECT` 查询结果中输出，但不会在 `INSERT INTO ... SELECT` 中输出。
+</Note>
+
+存在 [HAVING](/zh/reference/statements/select/having) 时，`WITH TOTALS` 的执行方式可能不同。其行为取决于 `totals_mode` 设置。
+
+<div id="configuring-totals-processing">
+  ### 配置 totals 处理
+</div>
+
+默认情况下，`totals_mode = 'before_having'`。在这种情况下，`totals` 会基于所有行进行计算，包括未通过 HAVING 和 `max_rows_to_group_by` 的行。
+
+其他可选值只会将通过 HAVING 的行计入 `totals`，并且在设置 `max_rows_to_group_by` 和 `group_by_overflow_mode = 'any'` 时行为有所不同。
+
+`after_having_exclusive` – 不包含未通过 `max_rows_to_group_by` 的行。换句话说，如果省略 `max_rows_to_group_by`，`totals` 的行数将小于或等于其原本的行数。
+
+`after_having_inclusive` – 将所有未通过 `max_rows_to_group_by` 的行都包含在 `totals` 中。换句话说，如果省略 `max_rows_to_group_by`，`totals` 的行数将大于或等于其原本的行数。
+
+`after_having_auto` – 统计通过 HAVING 的行数。如果该数量超过某个阈值 (默认为 50%) ，则将所有未通过 `max_rows_to_group_by` 的行都包含在 `totals` 中；否则不包含这些行。
+
+`totals_auto_threshold` – 默认为 0.5，即 `after_having_auto` 的系数。
+
+如果未使用 `max_rows_to_group_by` 和 `group_by_overflow_mode = 'any'`，则所有 `after_having` 变体都相同，可以使用其中任意一个 (例如 `after_having_auto`) 。
+
+你可以在子查询中使用 `WITH TOTALS`，包括 [JOIN](/zh/reference/statements/select/join) 子句中的子查询 (在这种情况下，相应的总计值会合并) 。
+
+<div id="group-by-all">
+  ## GROUP BY ALL
+</div>
+
+`GROUP BY ALL` 等同于列出 `SELECT` 中所有非聚合函数的表达式。
+
+例如：
+
+```sql
+SELECT
+    a * 2,
+    b,
+    count(c),
+FROM t
+GROUP BY ALL
+```
+
+与……相同
+
+```sql
+SELECT
+    a * 2,
+    b,
+    count(c),
+FROM t
+GROUP BY a * 2, b
+```
+
+对于一种特殊情况：如果某个函数的参数同时包含聚合函数和其他字段，那么 `GROUP BY` 键将包含我们能从中提取出的尽可能多的非聚合字段。
+
+例如：
+
+```sql
+SELECT
+    substring(a, 4, 2),
+    substring(substring(a, 1, 2), 1, count(b))
+FROM t
+GROUP BY ALL
+```
+
+与……一样
+
+```sql
+SELECT
+    substring(a, 4, 2),
+    substring(substring(a, 1, 2), 1, count(b))
+FROM t
+GROUP BY substring(a, 4, 2), substring(a, 1, 2)
+```
+
+<div id="examples">
+  ## 示例
+</div>
+
+示例：
+
+```sql
+SELECT
+    count(),
+    median(FetchTiming > 60 ? 60 : FetchTiming),
+    count() - sum(Refresh)
+FROM hits
+```
+
+与 MySQL 不同 (这也符合标准 SQL) ，对于既不在键中、也不在聚合函数中的列，你无法获取其某个值 (常量表达式除外) 。要规避这一限制，可以使用 &#39;any&#39; 聚合函数 (获取遇到的第一个值) 或 &#39;min/max&#39;。
+
+示例：
+
+```sql
+SELECT
+    domainWithoutWWW(URL) AS domain,
+    count(),
+    any(Title) AS title -- 获取每个域名中第一个出现的页面标题。
+FROM hits
+GROUP BY domain
+```
+
+对于每个不同的键值，`GROUP BY` 都会计算出一组聚合函数值。
+
+<div id="grouping-sets-modifier">
+  ## `GROUPING SETS` 修饰符
+</div>
+
+这是最通用的一种修饰符。
+该修饰符允许手动指定多个聚合键集合 (grouping sets) 。
+系统会分别对每个 grouping set 执行聚合，之后再将所有结果合并。
+如果某列未出现在某个 grouping set 中，则会以默认值填充。
+
+换句话说，上述修饰符都可以通过 `GROUPING SETS` 来表示。
+尽管带有 `ROLLUP`、`CUBE` 和 `GROUPING SETS` 修饰符的查询在语法上等价，但它们的执行方式可能不同。
+`GROUPING SETS` 会尝试并行执行所有操作，而 `ROLLUP` 和 `CUBE` 则会在单个线程中完成聚合结果的最终合并。
+
+当源列包含默认值时，可能很难区分某一行是否属于以这些列作为键的聚合结果。
+为了解决这个问题，必须使用 `GROUPING` 函数。
+
+**示例**
+
+以下两个查询是等价的。
+
+```sql
+-- 查询 1
+SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
+
+-- 查询 2
+SELECT year, month, day, count(*) FROM t GROUP BY
+GROUPING SETS
+(
+    (year, month, day),
+    (year, month),
+    (year),
+    ()
+);
+```
+
+**另请参阅**
+
+* 用于兼容 SQL 标准的 [group&#95;by&#95;use&#95;nulls](/zh/reference/settings/session-settings#group_by_use_nulls) 设置。
+
+<div id="implementation-details">
+  ## 实现细节
+</div>
+
+聚合是列式 DBMS 最重要的功能之一，因此其实现也是 ClickHouse 中优化程度最高的部分之一。默认情况下，聚合在内存中使用哈希表完成。它有 40 多种专门化实现，会根据“分组键”的数据类型自动选择。
+
+<div id="group-by-optimization-depending-on-table-sorting-key">
+  ### 取决于表排序键的 GROUP BY 优化
+</div>
+
+如果表按某个键排序，且 `GROUP BY` 表达式至少包含排序键的前缀或单射函数，则可以更高效地进行聚合。在这种情况下，当从表中读取到新键时，聚合的中间结果即可完成最终计算并发送给客户端。此行为由 [optimize&#95;aggregation&#95;in&#95;order](/zh/reference/settings/session-settings#optimize_aggregation_in_order) 设置启用。这种优化可以减少聚合期间的内存使用量，但在某些情况下也可能会降低查询执行速度。
+
+<div id="group-by-in-external-memory">
+  ### 外部内存中的 GROUP BY
+</div>
+
+您可以启用将临时数据转储到磁盘，以限制 `GROUP BY` 期间的内存使用量。
+[max&#95;bytes&#95;before&#95;external&#95;group&#95;by](/zh/reference/settings/session-settings#max_bytes_before_external_group_by) 设置决定了将 `GROUP BY` 临时数据转储到文件系统时的 RAM 使用阈值。如果设为 0 (默认值) ，则表示禁用。
+或者，您也可以设置 [max&#95;bytes&#95;ratio&#95;before&#95;external&#95;group&#95;by](/zh/reference/settings/session-settings#max_bytes_ratio_before_external_group_by)，这样只有当查询使用的内存达到一定阈值时，才允许 `GROUP BY` 使用外部内存。
+
+使用 `max_bytes_before_external_group_by` 时，我们建议将 `max_memory_usage` 设为其大约两倍 (或者将 `max_bytes_ratio_before_external_group_by` 设为 `0.5`) 。这是因为聚合分为两个阶段：读取数据并生成中间数据 (1) ，以及合并中间数据 (2) 。只有在阶段 1 才会将数据转储到文件系统。如果临时数据没有被转储，那么阶段 2 可能需要最多与阶段 1 相同数量的内存。
+
+例如，如果 [max&#95;memory&#95;usage](/zh/reference/settings/session-settings#max_memory_usage) 设置为 10000000000，并且您希望使用外部聚合，那么将 `max_bytes_before_external_group_by` 设为 10000000000、将 `max_memory_usage` 设为 20000000000 是合理的。触发外部聚合时 (如果至少发生过一次临时数据转储) ，RAM 的最大消耗只会比 `max_bytes_before_external_group_by` 略高一点。
+
+对于分布式查询处理，外部聚合会在远程服务器上执行。为了让发起请求的服务器只使用少量 RAM，请将 `distributed_aggregation_memory_efficient` 设为 1。
+
+在合并已写入磁盘的数据时，以及在启用 `distributed_aggregation_memory_efficient` 设置后合并来自远程服务器的结果时，最多会消耗总 RAM 的 `1/256 * the_number_of_threads`。
+
+启用外部聚合后，如果数据量小于 `max_bytes_before_external_group_by` (即数据未写入磁盘) ，则查询运行速度与未启用外部聚合时一样快。如果有任何临时数据被写入磁盘，运行时间将延长数倍 (大约三倍) 。
+
+如果您在 `GROUP BY` 之后使用带有 [LIMIT](/zh/reference/statements/select/limit) 的 [ORDER BY](/zh/reference/statements/select/order-by)，那么 RAM 使用量取决于 `LIMIT` 中的数据量，而不是整张表的数据量。但如果 `ORDER BY` 没有 `LIMIT`，不要忘记启用外部排序 (`max_bytes_before_external_sort`) 。

@@ -61,7 +61,7 @@ public:
 
     struct Element
     {
-        ElementType type;
+        ElementType type{};
         String table_name;
         String database_name;
         String new_table_name; /// usually the same as `table_name`, can be different in case of using AS <new_name>

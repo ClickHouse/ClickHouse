@@ -7,8 +7,6 @@ title: 'Data Types in ClickHouse'
 doc_type: 'reference'
 ---
 
-# Data Types in ClickHouse
-
 This section describes the data types supported by ClickHouse, for example [integers](int-uint.md), [floats](float.md) and [strings](string.md).
 
 System table [system.data_type_families](/operations/system-tables/data_type_families) provides an

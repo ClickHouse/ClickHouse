@@ -1,0 +1,290 @@
+#include <Storages/Statistics/StatisticsBasic.h>
+
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
+#include <Interpreters/convertFieldToType.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Common/FieldVisitorToString.h>
+
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+/// Serialized feature bits inside a `basic` statistics blob. Stored as a UInt8 right after
+/// `row_count` so new sub-statistics can be added without bumping the global file version: a
+/// reader that doesn't know about a bit simply skips the block (size is implied by the bits).
+enum BasicFeatureMask : UInt8
+{
+    NumericMinMax = 1u << 0,
+    StringLengthSum = 1u << 1,
+    NullCount = 1u << 2,
+};
+
+UInt64 countNullsInColumn(const ColumnPtr & column)
+{
+    /// `ColumnConst(Nullable(...))` reaches us from pipelines like `INSERT ... SELECT NULL`;
+    /// `convertToFullColumnIfConst` unwraps it so the Nullable/LowCardinality branches below
+    /// can see the real column.
+    auto full = column->convertToFullColumnIfConst()->convertToFullColumnIfSparse();
+
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(full.get()))
+    {
+        const auto & null_map = nullable->getNullMapData();
+        return std::count(null_map.begin(), null_map.end(), 1);
+    }
+
+    if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(full.get()))
+    {
+        if (!lc->nestedIsNullable())
+            return 0;
+
+        size_t null_index = lc->getDictionary().getNullValueIndex();
+        const auto & indexes = lc->getIndexes();
+        UInt64 cnt = 0;
+        for (size_t i = 0, n = indexes.size(); i < n; ++i)
+            if (indexes.getUInt(i) == null_index)
+                ++cnt;
+        return cnt;
+    }
+
+    return 0;
+}
+
+const NullMap * tryGetNullMap(const IColumn & column)
+{
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
+        return &nullable->getNullMapData();
+    return nullptr;
+}
+
+/// Sum byte lengths of *non-NULL* values in `column`. `LowCardinality` is expanded before
+/// reading the null map so that `LowCardinality(Nullable(...))` rows are excluded correctly
+/// (the null map lives on the inner `Nullable`, not the outer LC).
+UInt64 sumNonNullStringBytes(const ColumnPtr & column)
+{
+    auto full = column
+        ->convertToFullColumnIfConst()
+        ->convertToFullColumnIfSparse()
+        ->convertToFullColumnIfLowCardinality();
+    const NullMap * null_map = tryGetNullMap(*full);
+
+    ColumnPtr values = full;
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(values.get()))
+        values = nullable->getNestedColumnPtr();
+
+    const size_t column_size = column->size();
+    if (const auto * fs = typeid_cast<const ColumnFixedString *>(values.get()))
+    {
+        UInt64 non_null = column_size;
+        if (null_map)
+            non_null -= std::count(null_map->begin(), null_map->end(), 1);
+        return fs->getN() * non_null;
+    }
+    if (const auto * s = typeid_cast<const ColumnString *>(values.get()))
+    {
+        return s->byteSize();
+    }
+    return 0;
+}
+
+}
+
+
+StatisticsBasic::StatisticsBasic(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
+    : IStatistics(description)
+    , data_type(removeLowCardinalityAndNullable(removeNullable(data_type_)))
+{
+    tracks_numeric = data_type->isValueRepresentedByNumber();
+    tracks_string = isStringOrFixedString(data_type);
+    tracks_null = isNullableOrLowCardinalityNullable(data_type_);
+}
+
+void StatisticsBasic::build(const ColumnPtr & column)
+{
+    const size_t column_size = column->size();
+    const UInt64 nulls_in_block = tracks_null ? countNullsInColumn(column) : 0;
+
+    if (tracks_null)
+        null_count += nulls_in_block;
+
+    /// Skip the min/max update for blocks with no non-NULL rows. `ColumnNullable::getExtremes`
+    /// returns the `POSITIVE_INFINITY/POSITIVE_INFINITY` sentinel for an all-NULL block, which
+    /// would otherwise be merged into the running bounds and poison the stored max for the
+    /// whole part as soon as the sentinel meets a real bound from another block.
+    if (tracks_numeric && nulls_in_block < column_size)
+    {
+        Field min_field;
+        Field max_field;
+        column->getExtremes(min_field, max_field, 0, column_size);
+
+        if (!min_field.isNull() && (min.isNull() || min_field < min))
+            min = min_field;
+        if (!max_field.isNull() && (max.isNull() || max_field > max))
+            max = max_field;
+    }
+
+    if (tracks_string)
+        string_total_bytes += sumNonNullStringBytes(column);
+
+    row_count += column_size;
+}
+
+void StatisticsBasic::merge(const StatisticsPtr & other_stats)
+{
+    const auto * other = typeid_cast<const StatisticsBasic *>(other_stats.get());
+    if (!other)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot merge Basic statistics with a different type");
+
+    if (tracks_numeric)
+    {
+        if (!other->min.isNull() && (min.isNull() || other->min < min))
+            min = other->min;
+        if (!other->max.isNull() && (max.isNull() || other->max > max))
+            max = other->max;
+    }
+    if (tracks_string)
+        string_total_bytes += other->string_total_bytes;
+    if (tracks_null)
+        null_count += other->null_count;
+
+    row_count += other->row_count;
+}
+
+void StatisticsBasic::serialize(WriteBuffer & buf)
+{
+    writeIntBinary(row_count, buf);
+
+    UInt8 mask = 0;
+    if (tracks_numeric)
+        mask |= BasicFeatureMask::NumericMinMax;
+    if (tracks_string)
+        mask |= BasicFeatureMask::StringLengthSum;
+    if (tracks_null)
+        mask |= BasicFeatureMask::NullCount;
+    writeIntBinary(mask, buf);
+
+    if (tracks_numeric)
+    {
+        writeFieldBinary(min, buf);
+        writeFieldBinary(max, buf);
+    }
+    if (tracks_string)
+        writeIntBinary(string_total_bytes, buf);
+    if (tracks_null)
+        writeIntBinary(null_count, buf);
+}
+
+void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
+{
+    readIntBinary(row_count, buf);
+
+    UInt8 mask = 0;
+    readIntBinary(mask, buf);
+
+    if (mask & BasicFeatureMask::NumericMinMax)
+    {
+        min = readFieldBinary(buf);
+        max = readFieldBinary(buf);
+    }
+
+    if (mask & BasicFeatureMask::StringLengthSum)
+    {
+        readIntBinary(string_total_bytes, buf);
+    }
+
+    if (mask & BasicFeatureMask::NullCount)
+    {
+        readIntBinary(null_count, buf);
+    }
+}
+
+std::optional<Float64> StatisticsBasic::estimateLess(const Field & val) const
+{
+    if (!tracks_numeric)
+        return std::nullopt;
+    if (row_count == 0 || min.isNull() || max.isNull())
+        return std::nullopt;
+
+    /// Total non-NULL rows known to the part: the linear-interpolation domain.
+    const UInt64 non_null = (tracks_null && null_count <= row_count) ? (row_count - null_count) : row_count;
+    if (non_null == 0)
+        return 0.0;
+
+    return StatisticsUtils::interpolateLessLinear(val, min, max, non_null, data_type);
+}
+
+String StatisticsBasic::getNameForLogs() const
+{
+    String result = "Basic: ";
+    bool first = true;
+    auto sep = [&](const char * label)
+    {
+        if (!first)
+            result += ", ";
+        result += label;
+        result += '=';
+        first = false;
+    };
+
+    if (tracks_numeric)
+    {
+        sep("minmax");
+        result += "(" + applyVisitor(FieldVisitorToString(), min) + ", " + applyVisitor(FieldVisitorToString(), max) + ")";
+    }
+    if (tracks_string)
+    {
+        sep("string_length_avg");
+        result += std::to_string(getStringLengthAvg());
+    }
+    if (tracks_null)
+    {
+        sep("null_count");
+        result += std::to_string(null_count);
+    }
+    if (first)
+        result += "(empty)";
+    return result;
+}
+
+Int64 StatisticsBasic::getStringLengthAvg() const
+{
+    /// Denominator = number of non-NULL rows we summed bytes over. When the column is Nullable
+    /// we subtract `null_count`; otherwise every processed row contributed.
+    const UInt64 non_null = (tracks_null && null_count <= row_count) ? (row_count - null_count) : row_count;
+    if (non_null == 0)
+        return 0;
+    return static_cast<Int64>(string_total_bytes / non_null);
+}
+
+bool basicStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
+{
+    auto inner = removeLowCardinalityAndNullable(removeNullable(data_type));
+    if (inner->isValueRepresentedByNumber())
+        return true;
+    if (isStringOrFixedString(inner))
+        return true;
+    /// Pure null-count tracking (e.g. `Nullable(Array(...))`) is also useful.
+    return isNullableOrLowCardinalityNullable(data_type);
+}
+
+StatisticsPtr basicStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
+{
+    return std::make_shared<StatisticsBasic>(description, data_type);
+}
+
+}

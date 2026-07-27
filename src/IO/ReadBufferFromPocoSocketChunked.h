@@ -86,7 +86,7 @@ public:
 
     bool hasBufferedData() const;
 
-    bool poll(size_t timeout_microseconds) const;
+    bool poll(size_t timeout_microseconds) override;
 
     Poco::Net::SocketAddress peerAddress() { return peer_address; }
     Poco::Net::SocketAddress ourAddress() { return our_address; }

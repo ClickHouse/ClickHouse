@@ -4,6 +4,7 @@
 -- Data layout: 2 parts x 2 granules each (index_granularity = 1, ORDER BY tuple()).
 --   Part 1: (1, '{"a": {"b": 1}, "c": "hello"}'), (2, '{"a": {"d": 2}, "e": "world"}')
 --   Part 2: (3, '{"x": {"y": 3}, "z": "test"}'), (4, '{"p": {"q": 4}, "r": "foo"}')
+SET explain_query_plan_default = 'legacy';
 
 -- =============================================================================
 -- Section 1: Equals

@@ -23,8 +23,8 @@ StorageDummy::StorageDummy(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setVirtuals(createVirtuals(original_storage_snapshot_));
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 QueryProcessingStage::Enum StorageDummy::getQueryProcessingStage(
@@ -36,8 +36,11 @@ QueryProcessingStage::Enum StorageDummy::getQueryProcessingStage(
     return QueryProcessingStage::FetchColumns;
 }
 
-VirtualColumnsDescription StorageDummy::createVirtuals()
+VirtualColumnsDescription StorageDummy::createVirtuals(const StorageSnapshotPtr & original_storage_snapshot)
 {
+    if (original_storage_snapshot)
+        return original_storage_snapshot->metadata->virtuals;
+
     VirtualColumnsDescription desc;
     desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
     desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);

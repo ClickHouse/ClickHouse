@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cassert>
 #include <cstddef>
 #include <memory>
 #include <mutex>
@@ -13,8 +12,6 @@
 
 #include <boost/core/noncopyable.hpp>
 
-#include <Common/PODArray.h>
-#include <Columns/ColumnNullable.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <IO/ReadBuffer.h>
@@ -46,7 +43,7 @@ struct JoinKeyRow
 
     void reset();
 
-    std::vector<ColumnPtr> row;
+    Columns row;
 };
 
 /// Remembers previous key if it was joined in previous block
@@ -81,13 +78,13 @@ public:
             , current(begin_)
             , chunk(std::move(chunk_))
         {
-            assert(length > 0 && begin + length <= chunk.getNumRows());
+            chassert(length > 0 && begin + length <= chunk.getNumRows());
         }
 
-        size_t begin;
-        size_t length;
+        size_t begin{};
+        size_t length{};
 
-        size_t current;
+        size_t current{};
         Chunk chunk;
     };
 
@@ -108,7 +105,7 @@ public:
     bool next()
     {
         /// advance right to one row, when right finished, advance left to next block
-        assert(!left.empty() && !right.empty());
+        chassert(!left.empty() && !right.empty());
 
         if (finished())
             return false;
@@ -261,6 +258,9 @@ private:
     void getEmptyResultColumns(MutableColumns & result_cols, size_t pos) const;
     MutableColumns getEmptyResultColumns() const;
     Columns getEmptyResultColumns(size_t pos) const;
+    /// Types of the columns produced by getEmptyResultColumns() (left header ++ right header),
+    /// used to fill non-joined rows with the proper type default instead of a raw zero.
+    DataTypes getOutputTypes() const;
 
     Chunk createBlockWithDefaults(size_t source_num);
     Chunk createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows) const;

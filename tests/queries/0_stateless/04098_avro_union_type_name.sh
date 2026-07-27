@@ -8,7 +8,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 DATA_DIR=$CUR_DIR/data_avro
-CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_variant_type=1"
+# enable_nullable_tuple_type is required so an Avro [null, record] union is inferred as
+# Nullable(Tuple(...)); it defaults to off, in which case such a union becomes a plain Tuple.
+CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_variant_type=1 --enable_nullable_tuple_type=1"
 
 file_name="$CLICKHOUSE_DATABASE"_union_type_name.avro
 cp "$DATA_DIR/union_type_name.avro" "$CLICKHOUSE_USER_FILES/$file_name"

@@ -38,8 +38,11 @@ namespace
 template <typename T>
 struct AggregateFunctionGroupUniqArrayData
 {
+    /// CRC32 for integer keys, like uniqExact.
+    using Hash = std::conditional_t<is_integer<T>, HashCRC32<T>, DefaultHash<T>>;
+
     /// When creating, the hash table must be small.
-    using Set = HashSetWithStackMemory<T, DefaultHash<T>, 4>;
+    using Set = HashSetWithStackMemory<T, Hash, 4>;
 
     Set value;
 };
@@ -71,14 +74,15 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
+    /// `final` devirtualizes the per-row call in addBatchSinglePlace (this class has subclasses).
+    void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const final
     {
         if (limit_num_elems && this->data(place).value.size() >= max_elems)
             return;
         this->data(place).value.insert(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         if (!limit_num_elems)
             this->data(place).value.merge(this->data(rhs).value);
@@ -187,7 +191,7 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         auto & set = this->data(place).value;
-        size_t size;
+        size_t size = 0;
         readVarUInt(size, buf);
 
         for (size_t i = 0; i < size; ++i)
@@ -200,19 +204,19 @@ public:
         if (limit_num_elems && set.size() >= max_elems)
             return;
 
-        bool inserted;
-        State::Set::LookupResult it;
+        bool inserted = false;
+        State::Set::LookupResult it = nullptr;
         auto key_holder = getKeyHolder<is_plain_column>(*columns[0], row_num, *arena);
         set.emplace(key_holder, it, inserted);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & cur_set = this->data(place).value;
         auto & rhs_set = this->data(rhs).value;
 
-        bool inserted;
-        State::Set::LookupResult it;
+        bool inserted = false;
+        State::Set::LookupResult it = nullptr;
         for (auto & rhs_elem : rhs_set)
         {
             if (limit_num_elems && cur_set.size() >= max_elems)
@@ -336,6 +340,7 @@ AggregateFunctionPtr createAggregateFunctionGroupUniqArray(
 
 }
 
+void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

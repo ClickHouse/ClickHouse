@@ -38,7 +38,7 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
     {
         if (id_mode)
             return parse<UUID>(name_);
-        assert(access_control);
+        chassert(access_control);
         return access_control->getID<SettingsProfile>(name_);  /// NOLINT(clang-analyzer-core.CallAndMessage)
     };
 
@@ -287,9 +287,9 @@ SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessC
     return res;
 }
 
-std::vector<UUID> SettingsProfileElements::toProfileIDs() const
+UUIDs SettingsProfileElements::toProfileIDs() const
 {
-    std::vector<UUID> res;
+    UUIDs res;
     for (const auto & elem : *this)
     {
         if (elem.parent_profile)

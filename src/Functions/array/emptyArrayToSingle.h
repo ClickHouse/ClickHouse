@@ -7,7 +7,7 @@ namespace DB
 
 /** emptyArrayToSingle(arr) - replace empty arrays with arrays of one element with a default value.
   */
-class FunctionEmptyArrayToSingle : public IFunction
+class FunctionEmptyArrayToSingle final : public IFunction
 {
 public:
     static constexpr auto name = "emptyArrayToSingle";

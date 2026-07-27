@@ -1,0 +1,103 @@
+---
+slug: /managing-data/materialized-views-versus-projections
+sidebarTitle: 'Visões materializadas vs projeções'
+title: 'Visões materializadas versus projeções'
+hide_title: false
+description: 'Artigo que compara visões materializadas e projeções no ClickHouse, incluindo seus casos de uso, desempenho e limitações.'
+doc_type: 'reference'
+keywords: ['visões materializadas', 'projeções', 'diferenças']
+---
+
+> Uma dúvida comum entre os usuários é quando devem usar visões materializadas ou
+> projeções. Neste artigo, vamos explorar as principais diferenças entre as duas e por que você
+> pode preferir uma à outra em determinados cenários.
+
+<div id="key-differences">
+  ## Resumo das principais diferenças
+</div>
+
+A tabela abaixo resume as principais diferenças entre visões materializadas e projeções em vários aspectos a considerar.
+
+| Aspecto                                                                                 | Visões materializadas                                                                                                                                                                                                                                                                                                                                                                                                                 | Projeções                                                                                                                                                                                                                                                                                             |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Armazenamento e localização dos dados                                                   | Armazenam seus resultados em uma **tabela de destino separada e explícita**, atuando como gatilhos de inserção durante o `INSERT` em uma tabela de origem.                                                                                                                                                                                                                                                                            | As projeções criam layouts de dados otimizados que são fisicamente **armazenados junto com os dados da tabela principal** e ficam invisíveis para o usuário.                                                                                                                                          |
+| Mecanismo de atualização                                                                | Operam **de forma síncrona** no `INSERT` para a tabela de origem (no caso de visões materializadas incrementais). Observação: elas também podem ser **agendadas** usando visões materializadas atualizáveis.                                                                                                                                                                                                                            | Atualizações **assíncronas** em segundo plano após o `INSERT` na tabela principal.                                                                                                                                                                                                                    |
+| Interação com consultas                                                                 | Trabalhar com visões materializadas exige consultar a **tabela de destino diretamente**, o que significa que você precisa estar ciente da existência das visões materializadas ao escrever consultas.                                                                                                                                                                                                                                 | As projeções são **selecionadas automaticamente** pelo otimizador de consultas do ClickHouse e são transparentes, no sentido de que o usuário não precisa modificar suas consultas na tabela com a projeção para usá-la. A partir da versão 25.6, também é possível filtrar por mais de uma projeção. |
+| Tratamento de `UPDATE` / `DELETE`                                                       | **Não reagem automaticamente** a operações `UPDATE` ou `DELETE` na tabela de origem, pois as visões materializadas não têm conhecimento da tabela de origem, atuando apenas como gatilhos de inserção *em* uma tabela de origem. Isso pode levar a dados potencialmente desatualizados entre as tabelas de origem e de destino e exige soluções alternativas ou atualização completa periódica. (via visão materializada atualizável). | Por padrão, são **incompatíveis com linhas `DELETED`** (especialmente exclusões leves). `lightweight_mutation_projection_mode` (v24.7+) pode habilitar compatibilidade.                                                                                                                               |
+| Suporte a `JOIN`                                                                        | Sim. Visões materializadas atualizáveis podem ser usadas para desnormalização complexa. Visões materializadas incrementais só são acionadas em inserções na tabela mais à esquerda.                                                                                                                                                                                                                                                     | Não. Operações `JOIN` não são suportadas em definições de projeção para filtrar os dados materializados. No entanto, consultas que fazem join de tabelas com projeções funcionam normalmente — as projeções otimizam o acesso a tabelas individuais.                                                  |
+| Cláusula `WHERE` na definição                                                           | Sim. Cláusulas `WHERE` podem ser incluídas para filtrar os dados antes da materialização.                                                                                                                                                                                                                                                                                                                                             | Não. Cláusulas `WHERE` não são suportadas em definições de projeção para filtrar os dados materializados.                                                                                                                                                                                             |
+| Capacidades de encadeamento                                                             | Sim, a tabela de destino de uma visão materializada pode ser a origem de outra visão materializada, permitindo pipelines de vários estágios.                                                                                                                                                                                                                                                                                          | Não. Projeções não podem ser encadeadas.                                                                                                                                                                                                                                                              |
+| Motores de tabela aplicáveis                                                            | Podem ser usadas com vários motores de tabela de origem, mas as tabelas de destino geralmente pertencem à família `MergeTree`.                                                                                                                                                                                                                                                                                                        | **Disponíveis apenas** para motores de tabela da família `MergeTree`.                                                                                                                                                                                                                                 |
+| Tratamento de falhas                                                                    | Falhas durante a inserção de dados significam perda de dados na tabela de destino, o que pode levar a inconsistências.                                                                                                                                                                                                                                                                                                                | As falhas são tratadas **silenciosamente** em segundo plano. As consultas podem misturar de forma transparente partes materializadas e não materializadas.                                                                                                                                            |
+| Sobrecarga operacional                                                                  | Exige criação explícita da tabela de destino e, muitas vezes, backfill manual. Gerenciar a consistência com `UPDATE`/`DELETE` aumenta a complexidade.                                                                                                                                                                                                                                                                                 | As projeções são mantidas automaticamente e sincronizadas e, em geral, têm menor carga operacional.                                                                                                                                                                                                   |
+| Compatibilidade com consultas `FINAL`                                                   | Geralmente compatíveis, mas frequentemente exigem `GROUP BY` na tabela de destino.                                                                                                                                                                                                                                                                                                                                                    | **Não funcionam** com consultas `FINAL`.                                                                                                                                                                                                                                                              |
+| Materialização preguiçosa                                                               | Sim.                                                                                                                                                                                                                                                                                                                                                                                                                                  | Monitore problemas de compatibilidade de projeção ao usar recursos de materialização. Pode ser necessário definir `query_plan_optimize_lazy_materialization = false`                                                                                                                                  |
+| Réplicas paralelas                                                                      | Sim.                                                                                                                                                                                                                                                                                                                                                                                                                                  | Não.                                                                                                                                                                                                                                                                                                  |
+| [`optimize_read_in_order`](/pt-BR/reference/settings/session-settings#optimize_read_in_order) | Sim.                                                                                                                                                                                                                                                                                                                                                                                                                                  | Sim.                                                                                                                                                                                                                                                                                                  |
+| Atualizações leves e exclusões leves                                                    | Sim.                                                                                                                                                                                                                                                                                                                                                                                                                                  | Não.                                                                                                                                                                                                                                                                                                  |
+
+<div id="choose-between">
+  ## Comparação entre visões materializadas e projeções
+</div>
+
+<div id="choosing-materialized-views">
+  ### Quando escolher visões materializadas
+</div>
+
+Você deve considerar o uso de visões materializadas quando:
+
+* Estiver trabalhando com **ETL em tempo real e pipelines de dados em vários estágios:** você precisa realizar transformações complexas, agregações ou direcionar os dados à medida que eles chegam, possivelmente em vários estágios ao encadear visões.
+* Precisar de **desnormalização complexa**: você precisa fazer JOIN prévio de dados de várias fontes (tabelas, subconsultas ou dicionários) em uma única tabela otimizada para consultas, especialmente se atualizações completas periódicas com o uso de visões materializadas atualizáveis forem aceitáveis.
+* Quiser **controle explícito de schema**: você precisa de uma tabela de destino separada e distinta, com seu próprio schema e engine para os resultados pré-computados, oferecendo maior flexibilidade para modelagem de dados.
+* Quiser **filtrar durante a ingestão**: você precisa filtrar os dados *antes* de serem materializados, reduzindo o volume de dados gravados na tabela de destino.
+
+<div id="avoid-materialized-views">
+  ### Quando evitar visões materializadas
+</div>
+
+Considere evitar o uso de visões materializadas quando:
+
+* **Os dados de origem são atualizados ou excluídos com frequência**: Sem estratégias adicionais para garantir a consistência entre as tabelas de origem e de destino, as visões materializadas incrementais podem ficar desatualizadas e inconsistentes.
+* **Simplicidade e otimização automática são preferíveis**: Se você quiser evitar o gerenciamento de tabelas de destino separadas.
+
+<div id="choosing-projections">
+  ### Quando escolher projeções
+</div>
+
+Você deve considerar o uso de projeções quando:
+
+* **Otimizar consultas para uma única tabela**: seu objetivo principal é acelerar consultas em uma única tabela base, oferecendo ordens de classificação alternativas, otimizando filtros em colunas que não fazem parte da chave primária ou pré-computando agregações para uma única tabela.
+* Você quer **transparência nas consultas**: quer que as consultas tenham como alvo a tabela original sem modificações, contando com o ClickHouse para escolher a melhor organização de dados para uma determinada consulta.
+
+<div id="avoid-projections">
+  ### Quando evitar projeções
+</div>
+
+Você deve considerar evitar o uso de projeções quando:
+
+* **São necessárias transformações complexas de dados ou ETL em vários estágios**: definições de projeção não oferecem suporte a operações `JOIN`, não podem ser encadeadas para criar pipelines de várias etapas e não dão suporte a alguns recursos de SQL, como funções de janela ou instruções `CASE` complexas. Embora consultas em tabelas com projeções possam usar `JOIN` livremente, as próprias projeções não são adequadas para transformações de dados complexas.
+* **É necessária a filtragem explícita dos dados materializados**: projeções não oferecem suporte a cláusulas `WHERE` em sua definição para filtrar os dados materializados na própria projeção.
+* **São usados motores de tabela que não são da família MergeTree**: projeções estão disponíveis exclusivamente para tabelas que usam a família de motores `MergeTree`.
+* Consultas com `FINAL` são essenciais: projeções não funcionam com consultas `FINAL`, que às vezes são usadas para desduplicação.
+* Você precisa de [réplicas paralelas](/pt-BR/products/cloud/features/infrastructure/parallel-replicas), pois elas não têm suporte com projeções.
+
+<div id="summary">
+  ## Resumo
+</div>
+
+Visões materializadas e projeções são ferramentas poderosas para otimizar consultas e transformar dados e, em geral, recomendamos não tratá-las como uma escolha excludente. Em vez disso, elas podem ser usadas de forma complementar
+para extrair o máximo das suas consultas. Assim, a escolha entre visões materializadas
+e projeções no ClickHouse depende, na prática, do seu caso de uso específico e dos seus
+padrões de acesso.
+
+Como regra geral, você deve considerar o uso de visões materializadas quando
+precisar agregar dados de uma ou mais tabelas de origem em uma tabela de destino ou
+realizar transformações complexas em escala. Visões materializadas são excelentes para transferir
+o trabalho de agregações custosas do tempo de consulta para o tempo de inserção. Elas são uma
+ótima opção para rollups diários ou mensais, dashboards em tempo real ou resumos de dados.
+
+Por outro lado, você deve usar projeções quando precisar otimizar consultas
+que filtram por colunas diferentes daquelas usadas na chave primária
+da tabela, que determina a ordenação física dos dados em disco. Elas são particularmente
+úteis quando não é mais possível alterar a chave primária de uma tabela ou quando
+seus padrões de acesso são mais diversos do que a chave primária consegue atender.

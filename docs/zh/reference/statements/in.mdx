@@ -1,0 +1,311 @@
+---
+description: 'IN 运算符的文档，不包括 NOT IN、GLOBAL IN 和 GLOBAL NOT IN 运算符（这些运算符在其他章节单独介绍）'
+slug: /sql-reference/operators/in
+title: 'IN 运算符'
+doc_type: 'reference'
+---
+
+`IN`、`NOT IN`、`GLOBAL IN` 和 `GLOBAL NOT IN` 运算符将单独介绍，因为其功能较为复杂。
+
+该运算符的左侧为单个列或一个 Tuple。
+
+示例：
+
+```sql
+SELECT UserID IN (123, 456) FROM ...
+SELECT (CounterID, UserID) IN ((34, 123), (101500, 456)) FROM ...
+```
+
+如果左侧是索引中的单个列，右侧是一组常量，则系统将使用该索引处理查询。
+
+不要显式列举过多的值 (例如数百万个) 。如果数据集较大，请将其放入临时表中 (例如，请参阅[用于查询处理的外部数据](/zh/reference/engines/table-engines/special/external-data)章节) ，然后使用子查询。
+
+该运算符的右侧可以是一组常量表达式、一组包含常量表达式的 Tuple (如上述示例所示) ，或者数据库表的名称，或括号中的 `SELECT` 子查询。
+
+出于历史兼容性考虑，当右侧为单个 `tuple` 表达式时，该表达式的解释方式取决于 `IN` 运算符左侧的内容——既可被解释为一组值，也可被解释为单个 Tuple 值。若左侧为标量值，ClickHouse 会将该右侧 `tuple` 表达式中的各元素视为独立的 `IN` 值：
+
+```sql title="Query"
+SELECT
+    1 IN (tuple(1, 2)) AS one_in_tuple,
+    2 IN (tuple(1, 2)) AS two_in_tuple,
+    3 IN (tuple(1, 2)) AS three_in_tuple;
+```
+
+```text title="Response"
+┌─one_in_tuple─┬─two_in_tuple─┬─three_in_tuple─┐
+│            1 │            1 │              0 │
+└──────────────┴──────────────┴────────────────┘
+```
+
+其行为类似于 `SELECT 1 IN (1, 2)`。如果左侧也是一个 Tuple，则右侧将被解释为 Tuple 值的集合：
+
+```sql title="Query"
+SELECT tuple(1, 2) IN (tuple(1, 2)) AS tuple_in_tuple;
+```
+
+```text title="Response"
+┌─tuple_in_tuple─┐
+│              1 │
+└────────────────┘
+```
+
+此特殊处理仅适用于右侧为单个 `tuple` 表达式的情况。标量左侧无法与包含多个 tuple 值的右侧进行匹配：
+
+```sql title="Query"
+SELECT 1 IN (tuple(1, 2), tuple(3, 4));
+```
+
+```text title="Response"
+Code: 43. DB::Exception: Unsupported types for IN. First argument type UInt8. Second argument type Tuple(Tuple(UInt8, UInt8), Tuple(UInt8, UInt8)). (ILLEGAL_TYPE_OF_ARGUMENT)
+```
+
+ClickHouse 允许 `IN` 子查询左右两侧的类型不同。
+在这种情况下，它会将右侧的值转换为左侧的类型，
+如同对右侧应用了 [accurateCastOrNull](/zh/reference/functions/regular-functions/type-conversion-functions#accurateCastOrNull) 函数。
+
+这意味着数据类型将变为 [Nullable](/zh/reference/data-types/nullable)，若转换无法执行，则返回 [NULL](/zh/reference/settings/formats#input_format_null_as_default)。
+
+**示例**
+
+```sql title="Query"
+SELECT '1' IN (SELECT 1);
+```
+
+```text title="Response"
+┌─in('1', _subquery49)─┐
+│                    1 │
+└──────────────────────┘
+```
+
+如果运算符右侧是表名 (例如 `UserID IN users`) ，则等价于子查询 `UserID IN (SELECT * FROM users)`。当需要处理随查询一起发送的外部数据时，可使用此方式。例如，可将查询与一组已加载到 &#39;users&#39; 临时表中的用户 ID 一起发送，并对其进行过滤。
+
+如果运算符右侧是使用 Set 引擎的表名 (一个始终驻留在 RAM 中的预备数据集) ，则该数据集不会在每次查询时重新创建。
+
+子查询可以指定多个列来过滤元组。
+
+示例：
+
+```sql title="Query"
+SELECT (CounterID, UserID) IN (SELECT CounterID, UserID FROM ...) FROM ...
+```
+
+`IN` 运算符左右两侧的列应为相同类型。
+
+`IN` 运算符和子查询可以出现在查询的任何位置，包括聚合函数和 lambda 函数中。
+示例：
+
+```sql title="Query"
+SELECT
+    EventDate,
+    avg(UserID IN
+    (
+        SELECT UserID
+        FROM test.hits
+        WHERE EventDate = toDate('2014-03-17')
+    )) AS ratio
+FROM test.hits
+GROUP BY EventDate
+ORDER BY EventDate ASC
+```
+
+```text title="Response"
+┌──EventDate─┬────ratio─┐
+│ 2014-03-17 │        1 │
+│ 2014-03-18 │ 0.807696 │
+│ 2014-03-19 │ 0.755406 │
+│ 2014-03-20 │ 0.723218 │
+│ 2014-03-21 │ 0.697021 │
+│ 2014-03-22 │ 0.647851 │
+│ 2014-03-23 │ 0.648416 │
+└────────────┴──────────┘
+```
+
+对于 3 月 17 日之后的每一天，统计由在 3 月 17 日访问过该网站的用户贡献的页面浏览量占比。
+`IN` 子句中的子查询始终只会在单个服务器上执行一次。不存在相关子查询。
+
+<div id="null-processing">
+  ## NULL 处理
+</div>
+
+在请求处理过程中，`IN` 运算符认为，与 [NULL](/zh/reference/settings/formats#input_format_null_as_default) 进行运算的结果始终为 `0`，无论 `NULL` 位于运算符左侧还是右侧。如果 [transform&#95;null&#95;in = 0](/zh/reference/settings/session-settings#transform_null_in)，则任何数据集中都不会包含 `NULL` 值；它们彼此不对应，也无法比较。
+
+下面是一个使用 `t_null` 表的示例：
+
+```text
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+│ 2 │    3 │
+└───┴──────┘
+```
+
+运行查询 `SELECT x FROM t_null WHERE y IN (NULL,3)` 将得到以下结果：
+
+```text
+┌─x─┐
+│ 2 │
+└───┘
+```
+
+你可以看到，`y = NULL` 的那一行被从查询结果中排除了。这是因为 ClickHouse 无法判断 `NULL` 是否属于 `(NULL,3)` 这个 Set，因此会返回 `0` 作为该运算的结果，而 `SELECT` 会将这一行排除在最终输出之外。
+
+```sql
+SELECT y IN (NULL, 3)
+FROM t_null
+```
+
+```text
+┌─in(y, tuple(NULL, 3))─┐
+│                     0 │
+│                     1 │
+└───────────────────────┘
+```
+
+<div id="distributed-subqueries">
+  ## Distributed 子查询
+</div>
+
+对于带有子查询的 `IN` 运算符 (与 `JOIN` 运算符类似) ，有两种选项：普通的 `IN` / `JOIN` 和 `GLOBAL IN` / `GLOBAL JOIN`。两者在分布式查询处理中的执行方式上存在差异。
+
+<Note>
+  请注意，下面介绍的算法可能会因 [设置](/zh/reference/settings/session-settings) `distributed_product_mode` 的设置不同而表现不同。
+</Note>
+
+使用常规 `IN` 时，查询会被发送到远程服务器，每台服务器分别执行 `IN` 或 `JOIN` 子句中的子查询。
+
+使用 `GLOBAL IN` / `GLOBAL JOIN` 时，系统会首先执行所有子查询，并将结果收集到临时表中。随后，这些临时表会被发送到每个远程服务器，查询将在各服务器上使用这些临时数据执行。
+
+对于 `GLOBAL ... JOIN`，哪一侧作为子查询进行计算取决于 JOIN 的类型：对于 `LEFT` 和 `INNER` JOIN，计算右表；对于 `RIGHT` JOIN，则计算左表，因为右表是保留侧，需从各分片中读取。
+
+对于非 Distributed 查询，请使用常规的 `IN` / `JOIN`。
+
+在分布式查询处理中，使用 `IN` / `JOIN` 子句中的子查询时请务必谨慎。
+
+我们来看一些示例。假设集群中的每台服务器都有一个普通的 **local&#95;table** 表。每台服务器还有一个 **distributed&#95;table** 表，其类型为 **Distributed**，该表覆盖集群中的所有服务器。
+
+针对 **distributed&#95;table** 的查询会被分发到所有远程服务器，并在这些服务器上使用 **local&#95;table** 执行。
+
+例如，以下查询
+
+```sql
+SELECT uniq(UserID) FROM distributed_table
+```
+
+将作为以下内容发送至所有远程服务器
+
+```sql
+SELECT uniq(UserID) FROM local_table
+```
+
+并在每个节点上并行执行，直到中间结果可以被合并为止。随后，中间结果将返回至请求服务器并在其上完成合并，最终结果再发送至客户端。
+
+现在来看一个使用 `IN` 的查询：
+
+```sql
+SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
+```
+
+* 两个站点受众的交集计算。
+
+此查询将以如下形式发送到所有远程服务器
+
+```sql
+SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
+```
+
+换句话说，`IN` 子句中的数据集将在每台服务器上独立收集，且仅基于各服务器本地存储的数据。
+
+只有当您已针对此情况做好规划，并将数据分散到集群各服务器上，使同一个 UserID 的数据完整地存储在同一台服务器上时，此方式才能正确且高效地运行。在这种情况下，每台服务器均可在本地获取所有所需数据。否则，结果将不准确。我们将这种查询变体称为 &quot;local IN&quot;。
+
+要修正数据随机分布在集群服务器上时查询的执行方式，可以在子查询中指定 **distributed&#95;table**。该查询如下所示：
+
+```sql
+SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
+```
+
+此查询将以如下形式发送到所有远程服务器
+
+```sql
+SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
+```
+
+子查询将在每个远程服务器上开始执行。由于该子查询使用了分布式表，每个远程服务器上的子查询将被重新发送至所有远程服务器，具体形式如下：
+
+```sql
+SELECT UserID FROM local_table WHERE CounterID = 34
+```
+
+例如，如果集群中有 100 台服务器，执行整个查询将需要发起 10,000 个基本请求，这通常是不可接受的。
+
+在这种情况下，应始终使用 `GLOBAL IN` 而非 `IN`。下面来看看它对以下查询的工作原理：
+
+```sql
+SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID GLOBAL IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
+```
+
+请求方服务器将执行子查询：
+
+```sql
+SELECT UserID FROM distributed_table WHERE CounterID = 34
+```
+
+结果将存入 RAM 中的临时表。然后，该请求将以如下形式发送至每个远程服务器：
+
+```sql
+SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL IN _data1
+```
+
+临时表 `_data1` 会随查询一起发送到每台远程服务器 (临时表的名称由实现决定) 。
+
+这比使用普通的 `IN` 更优。不过，请注意以下几点：
+
+1. 创建临时表时，数据不会自动去重。为了减少网络传输的数据量，请在子查询中指定 DISTINCT。 (普通的 &#96;IN&#96;&#96; 不需要这样做。)
+2. 临时表会被发送到所有远程服务器。传输过程不会考虑网络拓扑。例如，如果有 10 台远程服务器位于相对于请求方服务器非常偏远的数据中心，那么数据将通过通往该远程数据中心的链路传输 10 次。使用 `GLOBAL IN` 时，应尽量避免使用大型数据集。
+3. 向远程服务器传输数据时，网络带宽限制无法配置。这样可能会导致网络过载。
+4. 请尽量将数据分布到各台服务器上，以避免经常使用 `GLOBAL IN`。
+5. 如果你经常需要使用 `GLOBAL IN`，请规划 ClickHouse 集群的部署位置，使同一组副本不要分布在多个数据中心，而是只位于一个数据中心内，并确保它们之间具备高速网络，这样查询就可以完全在单个数据中心内完成处理。
+
+在 `GLOBAL IN` 子句中指定本地表也是合理的，例如，当该本地表仅在请求方服务器上可用，而你希望远程服务器也能使用其中的数据时。
+
+<div id="distributed-subqueries-and-max_rows_in_set">
+  ### 分布式子查询与 max_rows_in_set
+</div>
+
+你可以使用 [`max_rows_in_set`](/zh/reference/settings/session-settings#max_rows_in_set) 和 [`max_bytes_in_set`](/zh/reference/settings/session-settings#max_bytes_in_set) 来控制分布式查询期间传输的数据量。
+
+如果 `GLOBAL IN` 查询返回大量数据，这一点尤为重要。请看下面的 SQL：
+
+```sql
+SELECT * FROM table1 WHERE col1 GLOBAL IN (SELECT col1 FROM table2 WHERE <some_predicate>)
+```
+
+如果 `some_predicate` 的选择性不够高，就会返回大量数据并引发性能问题。在这种情况下，最好限制通过网络传输的数据量。另外请注意，[`set_overflow_mode`](/zh/reference/settings/session-settings#set_overflow_mode) 默认设置为 `throw`，这意味着当达到这些阈值时会抛出异常。
+
+<div id="distributed-subqueries-and-max_parallel_replicas">
+  ### 分布式子查询与 max_parallel_replicas
+</div>
+
+当 [max&#95;parallel&#95;replicas](#distributed-subqueries-and-max_parallel_replicas) 大于 1 时，分布式查询会进一步改写。
+
+例如，如下所示：
+
+```sql
+SELECT CounterID, count() FROM distributed_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
+SETTINGS max_parallel_replicas=3
+```
+
+在每个服务器上都会转换为：
+
+```sql
+SELECT CounterID, count() FROM local_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
+SETTINGS parallel_replicas_count=3, parallel_replicas_offset=M
+```
+
+其中，`M` 的取值介于 `1` 到 `3` 之间，具体取决于本地查询是在哪个副本上执行的。
+
+这些设置会影响查询中的每个 MergeTree 家族表，其效果与对每个表应用 `SAMPLE 1/3 OFFSET (M-1)/3` 相同。
+
+因此，只有当两个表具有相同的复制方案，并且都按 UserID 或其子键进行采样时，添加 [max&#95;parallel&#95;replicas](#distributed-subqueries-and-max_parallel_replicas) 设置才会得到正确结果。特别是，如果 `local_table_2` 没有采样键，就会产生错误结果。同样的规则也适用于 `JOIN`。
+
+如果 `local_table_2` 不满足这些要求，一种变通办法是使用 `GLOBAL IN` 或 `GLOBAL JOIN`。
+
+如果表没有采样键，则可以使用更灵活的 [parallel&#95;replicas&#95;custom&#95;key](/zh/reference/settings/session-settings#parallel_replicas_custom_key) 选项，从而实现不同且更优的行为。

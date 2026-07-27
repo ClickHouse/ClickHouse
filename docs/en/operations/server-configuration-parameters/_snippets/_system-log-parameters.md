@@ -15,3 +15,15 @@ The following settings can be configured by sub-tags:
 | `reserved_size_rows`               | Pre-allocated memory size in lines for the logs.                                                                                                        | `8192`              |                                                                                                                    |
 | `buffer_size_rows_flush_threshold` | Threshold for amount of lines. If the threshold is reached, flushing logs to the disk is launched in background.                                        | `max_size_rows / 2` |                                                                                                                    |
 | `flush_on_crash`                   | Sets whether logs should be dumped to the disk in case of a crash.                                                                                      | `false`             |                                                                                                                    |
+
+Additionally, the following server-level setting controls the default flush policy for all system log tables:
+
+```xml
+<default_system_log_flush_policy>
+    <skip_alias_columns>true</skip_alias_columns>
+</default_system_log_flush_policy>
+```
+
+| Setting              | Description                                                                                              | Default |
+|----------------------|----------------------------------------------------------------------------------------------------------|---------|
+| `skip_alias_columns` | When `true`, ALIAS columns are omitted from system log table schemas. Required for S3-backed system logs. | `false` |

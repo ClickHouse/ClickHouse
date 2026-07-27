@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
+# Random settings limits: send_table_structure_on_insert_with_inline_data=(1, 1)
+# This test checks for the specific client-side error message
+# "data for INSERT was parsed from query" produced when `clickhouse-client` parses inline
+# `INSERT FORMAT TSV` data and also receives data on stdin. With
+# `send_table_structure_on_insert_with_inline_data=0` the client stops emitting that prefix
+# (the parsing moves server-side), so the `grep -F -c` checks in this test return 0 instead of
+# 1. Pin the legacy path; this test is about the client-side exception wording, not about which
+# side parses inline data.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

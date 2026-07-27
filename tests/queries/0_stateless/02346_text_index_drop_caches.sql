@@ -16,7 +16,12 @@ CREATE TABLE tab
     s String,
     INDEX idx(s) TYPE text(tokenizer = sparseGrams(3, 10))
 )
-ENGINE = MergeTree ORDER BY tuple();
+ENGINE = MergeTree ORDER BY tuple()
+-- Pin the posting list layout to its defaults. Randomized `text_index_posting_list_block_size`
+-- splits the posting list of the searched token into multiple blocks, in which case the skip-index
+-- analysis path does not read the posting list (it relies on the rows range instead) and the postings
+-- cache is never consulted, so `TextIndexPostingsCacheMisses` stays 0 and the asserted miss is lost.
+SETTINGS text_index_posting_list_codec = 'none', text_index_posting_list_block_size = 1048576;
 
 INSERT INTO tab SELECT 'tkn' || toString(number) || 'nkt' FROM numbers(200000);
 

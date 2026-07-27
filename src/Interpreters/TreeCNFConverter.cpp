@@ -129,7 +129,7 @@ bool traversePushOr(ASTPtr & node, size_t num_atoms, size_t max_atoms)
 
     if (func && func->name == "or")
     {
-        assert(func->arguments->children.size() == 2);
+        chassert(func->arguments->children.size() == 2);
         size_t and_node_id = func->arguments->children.size();
         for (size_t i = 0; i < func->arguments->children.size(); ++i)
         {

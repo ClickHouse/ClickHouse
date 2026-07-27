@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas
-
 -- Tests if a text index ILIKE evaluation by scanning the inverted index dictionary is properly applied.
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 
@@ -114,10 +114,10 @@ ENGINE = MergeTree
 ORDER BY (id)
 SETTINGS index_granularity = 1;
 
-INSERT INTO tab SELECT number, 'Hello ClickHouse' FROM numbers(1024);
-INSERT INTO tab SELECT number, 'Hello World, ClickHouse is fast!' FROM numbers(1024);
-INSERT INTO tab SELECT number, 'Hallo xClickHouse' FROM numbers(1024);
-INSERT INTO tab SELECT number, 'ClickHousez rocks' FROM numbers(1024);
+INSERT INTO tab SELECT number, 'Hello ClickHouse' FROM numbers(10);
+INSERT INTO tab SELECT number, 'Hello World, ClickHouse is fast!' FROM numbers(10);
+INSERT INTO tab SELECT number, 'Hallo xClickHouse' FROM numbers(10);
+INSERT INTO tab SELECT number, 'ClickHousez rocks' FROM numbers(10);
 
 SELECT '-- Text index for ILIKE function should choose none for non-existent token';
 SELECT trimLeft(explain) AS explain FROM (
@@ -126,28 +126,28 @@ SELECT trimLeft(explain) AS explain FROM (
 ) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
 
-SELECT '-- Text index for ILIKE function should choose 1 part and 1024 granules (lowercase pattern matches uppercase token)';
+SELECT '-- Text index for ILIKE function should choose 1 part and 10 granules (lowercase pattern matches uppercase token)';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
     SELECT count() FROM tab WHERE message ILIKE '%world%'
 ) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
 
-SELECT '-- Text index for ILIKE function should choose same 1 part and 1024 granules (uppercase pattern, case-insensitive)';
+SELECT '-- Text index for ILIKE function should choose same 1 part and 10 granules (uppercase pattern, case-insensitive)';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
     SELECT count() FROM tab WHERE message ILIKE '%WORLD%'
 ) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
 
-SELECT '-- Text index for ILIKE function should choose 2 parts and 2048 granules out of 4 parts and 4096 granules';
+SELECT '-- Text index for ILIKE function should choose 2 parts and 20 granules out of 4 parts and 40 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
     SELECT count() FROM tab WHERE message ILIKE '%hello%'
 ) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
 
-SELECT '-- Text index for ILIKE function should choose all 4 parts and 4096 granules';
+SELECT '-- Text index for ILIKE function should choose all 4 parts and 40 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
     SELECT count() FROM tab WHERE message ILIKE '%clickhouse%'
@@ -178,6 +178,104 @@ SELECT count() FROM tab WHERE message ILIKE '%A%' SETTINGS use_skip_indexes = 0;
 
 SELECT count() FROM tab WHERE message NOT ILIKE '%A%';
 SELECT count() FROM tab WHERE message NOT ILIKE '%A%' SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
+SELECT 'Test results are same with/without the like optimization with array tokenizer';
+
+-- With the array tokenizer each row value is stored as a whole token in the index dictionary.
+
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    tag String,
+    INDEX idx(tag) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY (id);
+
+INSERT INTO tab(id, tag) VALUES
+    (1, 'ClickHouseServer'),
+    (2, 'clickhouseclient'),
+    (3, 'ClickHouseCloud'),
+    (4, 'ClickhouseSQL');
+
+SET use_text_index_like_evaluation_by_dictionary_scan = 0;
+
+SELECT '-- without optimization';
+
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%clickhouse%';
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%CLICKHOUSE%';
+SELECT groupArray(id) FROM tab WHERE tag NOT ILIKE '%clickhouse%';
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%nonexistent%';
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%sql%';
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%server%';
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%clickhouse%' AND tag ILIKE '%cloud%';
+
+SELECT '-- with optimization';
+
+SET use_text_index_like_evaluation_by_dictionary_scan = 1;
+
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%clickhouse%';
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%CLICKHOUSE%';
+SELECT groupArray(id) FROM tab WHERE tag NOT ILIKE '%clickhouse%';
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%nonexistent%';
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%sql%';
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%server%';
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%clickhouse%' AND tag ILIKE '%cloud%';
+
+DROP TABLE tab;
+
+SELECT 'Text index analysis for ILIKE with array tokenizer';
+
+SET use_text_index_like_evaluation_by_dictionary_scan = 1;
+
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    tag String,
+    INDEX idx(tag) TYPE text(tokenizer = array) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY (id)
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab SELECT number, 'ClickHouseServer' FROM numbers(10);
+INSERT INTO tab SELECT number, 'clickhouseclient' FROM numbers(10);
+INSERT INTO tab SELECT number, 'ClickHouseCloud' FROM numbers(10);
+INSERT INTO tab SELECT number, 'ClickHouseSQL' FROM numbers(10);
+
+SELECT '-- Text index for ILIKE function with array tokenizer should choose none for non-existent token';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE tag ILIKE '%nonexistent%'
+) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT '-- Text index for ILIKE function with array tokenizer should choose 1 part and 10 granules';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE tag ILIKE '%server%'
+) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT '-- Text index for ILIKE function with array tokenizer should choose 1 part and 10 granules (uppercase pattern, case-insensitive)';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE tag ILIKE '%SERVER%'
+) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT '-- Text index for ILIKE function with array tokenizer should choose all 4 parts and 40 granules';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE tag ILIKE '%clickhouse%'
+) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
 
 DROP TABLE tab;
 
@@ -310,5 +408,61 @@ SET use_text_index_like_evaluation_by_dictionary_scan = 1;
 SELECT '-- with optimization (must produce same results)';
 SELECT groupArray(id) FROM tab WHERE message ILIKE '%foo%';
 SELECT groupArray(id) FROM tab WHERE message NOT ILIKE '%foo%';
+
+DROP TABLE tab;
+
+SELECT 'Test ILIKE optimization is applied for lcase/ucase preprocessor aliases';
+
+-- lcase and ucase are aliases of lower and upper, so they are also pure case folding and must
+-- be recognized as such (the function name is canonicalized) so that ILIKE uses the index.
+-- Two rows (one per granule) are enough to show the non-matching granule is pruned.
+
+SET use_text_index_like_evaluation_by_dictionary_scan = 1;
+
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, preprocessor = lcase(message)) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'Hello World'), (2, 'Goodbye Planet');
+
+SELECT '-- lcase: results match a full scan (case-insensitive)';
+SELECT count() FROM tab WHERE message ILIKE '%world%';
+SELECT count() FROM tab WHERE message ILIKE '%world%' SETTINGS use_skip_indexes = 0;
+
+SELECT '-- lcase: the index prunes the non-matching granule';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE message ILIKE '%WORLD%'
+) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, preprocessor = ucase(message)) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'Hello World'), (2, 'Goodbye Planet');
+
+SELECT '-- ucase: results match a full scan (case-insensitive)';
+SELECT count() FROM tab WHERE message ILIKE '%world%';
+SELECT count() FROM tab WHERE message ILIKE '%world%' SETTINGS use_skip_indexes = 0;
+
+SELECT '-- ucase: the index prunes the non-matching granule';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE message ILIKE '%WORLD%'
+) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
 
 DROP TABLE tab;

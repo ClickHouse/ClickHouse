@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-encrypted-storage
+# Tags: no-ordinary-database
 
 # Regression test for PR #99775:
 # getVisibleDataPartsVectorInPartitions used Active state twice instead of

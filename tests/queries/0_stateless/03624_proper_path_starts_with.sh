@@ -8,8 +8,12 @@ BAD_PATH_PARENT=$(echo "${USER_FILES_PATH}" | sed 's:/*$::')/../BAD
 # Remove the trailing slashes and add extra characters to the folder name
 BAD_PATH_EXTRA=$(echo "${USER_FILES_PATH}" | sed 's:/*$::')_BAD
 
-$CLICKHOUSE_CLIENT --query "CREATE TABLE t (a UInt64) ENGINE=File('CSV', '${BAD_PATH_PARENT}') -- { serverError DATABASE_ACCESS_DENIED }"
-$CLICKHOUSE_CLIENT --query "CREATE TABLE t (a UInt64) ENGINE=File('CSV', '${BAD_PATH_EXTRA}') -- { serverError DATABASE_ACCESS_DENIED }"
+# Use a test-specific table name to avoid collisions with other tests that use `t`
+# in the same database (in particular under stress mode where databases are reused).
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_03624, tdot_03624, tdotdot_03624, tdotdotin_03624"
+
+$CLICKHOUSE_CLIENT --query "CREATE TABLE t_03624 (a UInt64) ENGINE=File('CSV', '${BAD_PATH_PARENT}') -- { serverError DATABASE_ACCESS_DENIED }"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE t_03624 (a UInt64) ENGINE=File('CSV', '${BAD_PATH_EXTRA}') -- { serverError DATABASE_ACCESS_DENIED }"
 
 # Check the behaviour with dots in the path
 # We allow paths like ./file or .file or ..file or a/../s.csv
@@ -20,9 +24,7 @@ GOOD_PATH_WITH_DOTS=$(echo "${USER_FILES_PATH}/..file_that_does_not_exist_but_is
 GOOD_PATH_WITH_DOTS_BUT_INSIDE=$(echo "${USER_FILES_PATH}/..a/../s.csv")
 BAD_PATH_PARENT_AFTER_SOME_DOTS=$(echo "${USER_FILES_PATH}" | sed 's:/*$::')/.DIR/../../BAD
 
-$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS tdot, tdotdot, tdotdotin"
-
-$CLICKHOUSE_CLIENT --query "CREATE TABLE tdot (a UInt64) ENGINE=File('CSV', '${GOOD_PATH_WITH_DOT}')"
-$CLICKHOUSE_CLIENT --query "CREATE TABLE tdotdot (a UInt64) ENGINE=File('CSV', '${GOOD_PATH_WITH_DOTS}')"
-$CLICKHOUSE_CLIENT --query "CREATE TABLE tdotdotin (a UInt64) ENGINE=File('CSV', '${GOOD_PATH_WITH_DOTS_BUT_INSIDE}')"
-$CLICKHOUSE_CLIENT --query "CREATE TABLE t (a UInt64) ENGINE=File('CSV', '${BAD_PATH_PARENT_AFTER_SOME_DOTS}') -- { serverError DATABASE_ACCESS_DENIED }"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE tdot_03624 (a UInt64) ENGINE=File('CSV', '${GOOD_PATH_WITH_DOT}')"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE tdotdot_03624 (a UInt64) ENGINE=File('CSV', '${GOOD_PATH_WITH_DOTS}')"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE tdotdotin_03624 (a UInt64) ENGINE=File('CSV', '${GOOD_PATH_WITH_DOTS_BUT_INSIDE}')"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE t_03624 (a UInt64) ENGINE=File('CSV', '${BAD_PATH_PARENT_AFTER_SOME_DOTS}') -- { serverError DATABASE_ACCESS_DENIED }"

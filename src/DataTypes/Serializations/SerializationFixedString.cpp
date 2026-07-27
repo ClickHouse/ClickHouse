@@ -5,6 +5,7 @@
 #include <Columns/ColumnConst.h>
 
 #include <Formats/FormatSettings.h>
+#include <Formats/ParseError.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -108,15 +109,15 @@ void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffe
 {
     ColumnFixedString::Chars & data = typeid_cast<ColumnFixedString &>(column).getChars();
 
-    size_t skipped_bytes;
+    size_t skipped_bytes = 0;
 
     if (unlikely(__builtin_mul_overflow(rows_offset, n, &skipped_bytes)))
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
     istr.ignore(skipped_bytes);
 
     size_t initial_size = data.size();
-    size_t max_bytes;
-    size_t new_data_size;
+    size_t max_bytes = 0;
+    size_t new_data_size = 0;
 
     if (unlikely(__builtin_mul_overflow(limit, n, &max_bytes)))
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
@@ -211,6 +212,8 @@ static inline bool tryRead(const SerializationFixedString & self, IColumn & colu
     catch (...) // Ok: tryRead is a try-pattern
     {
         data.resize_assume_reserved(prev_size);
+        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
+        rethrowIfNotParseError();
         return false;
     }
 }

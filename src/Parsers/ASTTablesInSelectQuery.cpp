@@ -1,6 +1,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTStreamSettings.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
@@ -38,6 +39,7 @@ ASTPtr ASTTableExpression::clone() const
     CLONE(sample_size);
     CLONE(sample_offset);
     CLONE(column_aliases);
+    CLONE(stream_settings);
 
     return res;
 }
@@ -160,6 +162,18 @@ void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & s
             sample_offset->format(ostr, settings, state, frame);
         }
     }
+
+    if (stream_settings)
+    {
+        ostr << settings.nl_or_ws << indent_str << "STREAM";
+
+        const auto & typed_stream_settings = stream_settings->as<ASTStreamSettings &>();
+        if (typed_stream_settings.settings.cursor_tree.has_value())
+        {
+            ostr << ' ';
+            stream_settings->format(ostr, settings, state, frame);
+        }
+    }
 }
 
 
@@ -237,7 +251,6 @@ void ASTTableJoin::formatImplBeforeTable(WriteBuffer & ostr, const FormatSetting
 
 void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parens = false;
     frame.expression_list_prepend_whitespace = false;
 
     if (using_expression_list)
@@ -251,26 +264,13 @@ void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings
     {
         ostr << " ON ";
 
-       /** If there is an alias for the whole expression we wrap the ON clause in parens in two cases:
-         *  1. collapse_identical_nodes_to_aliases is true (meaning old analyzer is being used) AND the alias was
-         *     defined earlier in the query
-         *  2. collapse_identical_nodes_to_aliases is false (the analyzer) - because we will not make any substitutions
-         */
-        bool on_need_parens = false;
-        auto on_alias = on_expression->tryGetAlias();
-        if (!on_alias.empty())
-        {
-            bool was_alias_defined_earlier = state.printed_asts_with_alias.contains(
-                {frame.current_select, on_alias, on_expression->getTreeHash(/*ignore_aliases=*/true)});
-            on_need_parens = settings.collapse_identical_nodes_to_aliases ? !was_alias_defined_earlier : true;
-        }
-
-
-        if (on_need_parens)
-            ostr << "(";
+        /// If there is an alias for the whole expression, it must be wrapped in parentheses:
+        /// `ON a = b AS x` would attach the alias to `b` on re-parse instead of to the whole
+        /// condition. Setting `need_parens` makes the generic aliased-expression handling
+        /// produce the wrap (and, with `collapse_identical_nodes_to_aliases`, correctly print
+        /// just the alias when the expression was already printed earlier in the query).
+        frame.need_parens = !on_expression->tryGetAlias().empty();
         on_expression->format(ostr, settings, state, frame);
-        if (on_need_parens)
-            ostr << ")";
     }
 }
 

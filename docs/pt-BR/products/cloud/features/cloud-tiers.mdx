@@ -1,0 +1,267 @@
+---
+sidebarTitle: 'Tier do ClickHouse Cloud'
+slug: /cloud/manage/cloud-tiers
+title: 'Tier do ClickHouse Cloud'
+description: 'Tier disponíveis no ClickHouse Cloud'
+keywords: ['tier do ClickHouse Cloud', 'planos de serviço', 'tier de preços na nuvem', 'tier de serviço na nuvem']
+doc_type: 'reference'
+---
+
+Há vários tiers disponíveis no ClickHouse Cloud.
+Os tiers são atribuídos no nível da organização. Portanto, todos os serviços de uma organização pertencem ao mesmo tier.
+Esta página explica quais tiers são mais adequados ao seu caso de uso específico.
+
+**Resumo dos tiers do ClickHouse Cloud:**
+
+<table>
+  <thead>
+    <tr>
+      <th />
+
+      <th>[Basic](#basic)</th>
+      <th>[Scale (Recomendado)](#scale)</th>
+      <th>[Enterprise](#enterprise)</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr className="table-category-header">
+      <td>**Recursos do serviço**</td>
+
+      <td colspan="3" />
+    </tr>
+
+    <tr>
+      <td>Número de serviços</td>
+      <td>✓ Ilimitado</td>
+      <td>✓ Ilimitado</td>
+      <td>✓ Ilimitado</td>
+    </tr>
+
+    <tr>
+      <td>Armazenamento</td>
+      <td>✓ Máximo de 1 TB por serviço</td>
+      <td>✓ Ilimitado</td>
+      <td>✓ Ilimitado</td>
+    </tr>
+
+    <tr>
+      <td>Memória</td>
+      <td>✓ 8-12 GiB de memória total</td>
+      <td>✓ Configurável</td>
+      <td>✓ Configurável</td>
+    </tr>
+
+    <tr>
+      <td>Disponibilidade</td>
+      <td>✓ 1 zona</td>
+      <td>✓ 2+ zonas</td>
+      <td>✓ 2+ zonas</td>
+    </tr>
+
+    <tr>
+      <td>Backups</td>
+      <td>✓ 1 backup a cada 24h, mantido por 1 dia</td>
+      <td>✓ Configurável</td>
+      <td>✓ Configurável</td>
+    </tr>
+
+    <tr>
+      <td>Escalonamento vertical</td>
+
+      <td />
+
+      <td>✓ Escalonamento automático</td>
+      <td>✓ Automático para perfis padrão, manual para perfis personalizados</td>
+    </tr>
+
+    <tr>
+      <td>Escalonamento horizontal</td>
+
+      <td />
+
+      <td>✓ Escalonamento manual</td>
+      <td>✓ Escalonamento manual</td>
+    </tr>
+
+    <tr>
+      <td>ClickPipes</td>
+      <td>✓</td>
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>Upgrades antecipados</td>
+
+      <td />
+
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>Separação compute-compute</td>
+
+      <td />
+
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>Exportar backups para sua própria conta na nuvem</td>
+      <td>✓</td>
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>Upgrades programados</td>
+
+      <td />
+
+      <td />
+
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>Perfis de hardware personalizados</td>
+
+      <td />
+
+      <td />
+
+      <td>✓</td>
+    </tr>
+
+    <tr className="table-category-header">
+      <td>**Segurança**</td>
+
+      <td colspan="3" />
+    </tr>
+
+    <tr>
+      <td>SAML/SSO</td>
+
+      <td />
+
+      <td />
+
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>MFA</td>
+      <td>✓</td>
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>SOC 2 Type II</td>
+      <td>✓</td>
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>ISO 27001</td>
+      <td>✓</td>
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>Rede privada</td>
+
+      <td />
+
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>Acesso baseado em função do S3</td>
+
+      <td />
+
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>Criptografia transparente de dados (CMEK para TDE)</td>
+
+      <td />
+
+      <td />
+
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>HIPAA</td>
+
+      <td />
+
+      <td />
+
+      <td>✓</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="basic">
+  ## Basic
+</div>
+
+* Opção econômica compatível com implantações de réplica única.
+* Ideal para casos de uso departamentais com menores volumes de dados que não exigem garantias rígidas de confiabilidade.
+
+<Note>
+  Os serviços no tier Basic foram projetados para ter tamanho fixo e não permitem escalonamento, nem automático nem manual.
+  Você pode fazer upgrade para o tier Scale ou para o tier Enterprise para escalar seus serviços.
+</Note>
+
+<div id="scale">
+  ## Scale
+</div>
+
+Projetado para workloads que exigem SLAs mais robustos (implantações com 2 ou mais réplicas), escalabilidade e segurança avançada.
+
+* Oferece suporte a recursos como:
+  * [Suporte a rede privada](/pt-BR/products/cloud/guides/security/connectivity/private-networking/index).
+  * [Compute-compute separation](/pt-BR/products/cloud/features/infrastructure/warehouses#what-is-compute-compute-separation).
+  * Opções de [escalabilidade flexível](/pt-BR/products/cloud/features/autoscaling/overview) (aumentar/reduzir verticalmente, expandir/reduzir horizontalmente).
+  * [Backups configuráveis](/pt-BR/products/cloud/guides/backups/configurable-backups)
+
+<div id="enterprise">
+  ## Enterprise
+</div>
+
+Atende a implantações de grande escala e de missão crítica com requisitos rigorosos de segurança e conformidade.
+
+* Tudo no Scale, **mais**
+* Escalabilidade flexível: perfis padrão (`proporção de 1:4 entre vCPU e memória`), além de perfis personalizados `HighMemory (proporção de 1:8)`.
+* Oferece os mais altos níveis de garantia de desempenho e resiliência.
+* Compatível com segurança de nível empresarial:
+  * Single Sign On (SSO)
+  * Criptografia avançada: para serviços AWS e GCP. Os serviços são criptografados com nossa chave por padrão, e ela pode ser alternada para a chave do cliente para habilitar Customer Managed Encryption Keys (CMEK).
+* Permite atualizações agendadas: você pode selecionar o dia da semana/a janela de tempo para as atualizações, tanto dos lançamentos do banco de dados quanto da Cloud.
+* Oferece conformidade com [HIPAA](/pt-BR/products/cloud/reference/security/compliance-overview#hipaa-since-2024) e PCI.
+
+<Note>
+  Serviços com réplica única em todos os três tiers devem ter tamanho fixo (`8 GiB`, `12 GiB`)
+</Note>
+
+<div id="upgrading-to-a-different-tier">
+  ## Fazendo upgrade para outro tier
+</div>
+
+Você sempre pode fazer upgrade de Basic para Scale ou de Scale para Enterprise. O downgrade entre tiers exige desabilitar recursos premium.
+
+***
+
+Se você tiver alguma dúvida sobre os tipos de serviço, consulte a [página de preços](https://clickhouse.com/pricing) ou entre em contato com support@clickhouse.com.

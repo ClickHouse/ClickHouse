@@ -161,7 +161,7 @@ void ReplicatedMergeTreeAttachThread::runImpl()
         return;
     }
 
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
 
     const auto & replica_path = storage.replica_path;
     /// May it be ZK lost not the whole root, so the upper check passed, but only the /replicas/replica

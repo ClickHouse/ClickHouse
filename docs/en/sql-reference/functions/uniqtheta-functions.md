@@ -6,8 +6,6 @@ title: 'uniqTheta Functions'
 doc_type: 'reference'
 ---
 
-# uniqTheta functions
-
 uniqTheta functions work for two uniqThetaSketch objects to do set operation calculations such as  ∪ / ∩ / × (union/intersect/not), it is to return a new uniqThetaSketch object contain the result.
 
 A uniqThetaSketch object is to be constructed by aggregation function uniqTheta with -State.

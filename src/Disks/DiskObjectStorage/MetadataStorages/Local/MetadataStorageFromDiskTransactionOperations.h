@@ -44,7 +44,7 @@ private:
     const mode_t mode;
     IDisk & disk;
 
-    mode_t old_mode;
+    mode_t old_mode{};
 };
 
 struct WriteFileOperation final : public IMetadataOperation

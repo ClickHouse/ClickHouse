@@ -1,0 +1,80 @@
+--- variantType per row ---
+None
+Array(Int32)
+Array(Int32)
+Int32
+Int32
+String
+String
+--- variantElement (each arm) ---
+\N
+\N
+\N
+1
+42
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+hello
+world
+[]
+[1,2,3]
+[]
+[]
+[]
+[]
+[]
+--- variantElement with default value ---
+\N
+\N
+\N
+1
+42
+\N
+\N
+--- null handling (isNull / isNotNull) ---
+1	0
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+--- count by variant type ---
+None	1
+Array(Int32)	2
+Int32	2
+String	2
+--- MergeTree round-trip ---
+1	Int32	1
+2	String	hi
+3	Array(Int32)	[10,20]
+4	None	\N
+--- sort/compare across arms (type first, then value) ---
+[]
+[1,2,3]
+1
+42
+hello
+world
+--- nested Variant via array of Variant ---
+[1,'hi']
+--- Variant already models null (no Nullable wrapping) ---
+1
+\N
+--- error: CAST from non-member type ---
+--- error: variantElement with unknown type ---
+--- filter on variant arm ---
+hello
+world
+1
+42
+--- Distinct over Variant ---
+None
+Array(Int32)
+Int32
+String

@@ -1,7 +1,6 @@
 -- Tags: no-fasttest, no-parallel
 
 set engine_file_truncate_on_insert=1;
-set output_format_parquet_use_custom_encoder = 1;
 set output_format_parquet_row_group_size = 100;
 set input_format_parquet_filter_push_down = 0;
 set input_format_parquet_page_filter_push_down = 0;

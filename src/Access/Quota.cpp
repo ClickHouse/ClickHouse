@@ -16,7 +16,11 @@ bool Quota::equal(const IAccessEntity & other) const
     if (!IAccessEntity::equal(other))
         return false;
     const auto & other_quota = typeid_cast<const Quota &>(other);
-    return (all_limits == other_quota.all_limits) && (key_type == other_quota.key_type) && (to_roles == other_quota.to_roles);
+    return (all_limits == other_quota.all_limits)
+        && (key_type == other_quota.key_type)
+        && (ipv4_prefix_bits == other_quota.ipv4_prefix_bits)
+        && (ipv6_prefix_bits == other_quota.ipv6_prefix_bits)
+        && (to_roles == other_quota.to_roles);
 }
 
 std::vector<UUID> Quota::findDependencies() const
@@ -51,6 +55,8 @@ void Quota::clearAllExceptDependencies()
 {
     all_limits.clear();
     key_type = QuotaKeyType::NONE;
+    ipv4_prefix_bits.reset();
+    ipv6_prefix_bits.reset();
 }
 
 }

@@ -7,8 +7,6 @@ title: 'format'
 doc_type: 'reference'
 ---
 
-# format Table Function
-
 Parses data from arguments according to specified input format. If structure argument is not specified, it's extracted from the data.
 
 ## Syntax {#syntax}
@@ -31,8 +29,7 @@ A table with data parsed from `data` argument according to specified format and 
 
 Without `structure` argument:
 
-**Query:**
-```sql
+```sql title="Query"
 SELECT * FROM format(JSONEachRow,
 $$
 {"a": "Hello", "b": 111}
@@ -42,9 +39,7 @@ $$
 $$)
 ```
 
-**Result:**
-
-```response
+```response title="Response"
 ┌───b─┬─a─────┐
 │ 111 │ Hello │
 │ 123 │ World │
@@ -53,8 +48,7 @@ $$)
 └─────┴───────┘
 ```
 
-**Query:**
-```sql
+```sql title="Query"
 DESC format(JSONEachRow,
 $$
 {"a": "Hello", "b": 111}
@@ -64,9 +58,7 @@ $$
 $$)
 ```
 
-**Result:**
-
-```response
+```response title="Response"
 ┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ b    │ Nullable(Float64) │              │                    │         │                  │                │
 │ a    │ Nullable(String)  │              │                    │         │                  │                │
@@ -75,8 +67,7 @@ $$)
 
 With `structure` argument:
 
-**Query:**
-```sql
+```sql title="Query"
 SELECT * FROM format(JSONEachRow, 'a String, b UInt32',
 $$
 {"a": "Hello", "b": 111}
@@ -86,8 +77,7 @@ $$
 $$)
 ```
 
-**Result:**
-```response
+```response title="Response"
 ┌─a─────┬───b─┐
 │ Hello │ 111 │
 │ World │ 123 │

@@ -42,7 +42,7 @@ enum class ErrorHandling : uint8_t
     Null
 };
 
-class FunctionFormatQuery : public IFunction
+class FunctionFormatQuery final : public IFunction
 {
 public:
     FunctionFormatQuery(ContextPtr context, String name_, OutputFormatting output_formatting_, ErrorHandling error_handling_)

@@ -7,8 +7,6 @@ title: 'redis'
 doc_type: 'reference'
 ---
 
-# redis Table Function
-
 This table function allows integrating ClickHouse with [Redis](https://redis.io/).
 
 ## Syntax {#syntax}

@@ -1,5 +1,4 @@
 #pragma once
-#include "config.h"
 #include <Storages/IStorage.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -16,8 +15,6 @@ namespace DB
                 ASTPtr inner_table_function_ast_ = nullptr);
 
         std::string getName() const override { return "Loop"; }
-
-        StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
         QueryProcessingStage::Enum
         getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
