@@ -263,6 +263,18 @@ static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & co
     return data_compressed_size ? data_compressed_size : part.getBytesOnDisk();
 }
 
+/// Mirror the cache-write eligibility predicate in `MergeTreeReaderWide::readRows`: only wide parts
+/// of a table with a non-nil UUID that are not projection parts ever write to the shared columns
+/// cache (compact parts use a reader that never writes to it; projection parts and nil-UUID tables
+/// are rejected there as well). A reader is created per part - the base part and every patch part -
+/// so this has to be evaluated for each of them separately.
+static bool partCanWriteToColumnsCache(const IMergeTreeDataPart & part)
+{
+    return part.getType() == MergeTreeDataPartType::Wide
+        && !part.isProjectionPart()
+        && part.storage.getStorageID().uuid != UUIDHelpers::Nil;
+}
+
 /// Columns from different prewhere steps are read independently, so it makes sense to use the heaviest set of columns among them as an estimation.
 static Names
 getHeaviestSetOfColumnsAmongPrewhereSteps(const IMergeTreeDataPart & part, const NamesAndTypesLists & prewhere_steps_columns, const Settings & settings)
@@ -449,38 +461,38 @@ void MergeTreeReadPoolBase::accountColumnsCacheWriteEstimate(
     if (!budget || budget->writes_disabled.load(std::memory_order_relaxed))
         return;
 
-    /// Mirror the cache-write eligibility predicate in `MergeTreeReaderWide::readRows`:
-    /// only wide parts of a table with a non-nil UUID that are not projection parts ever
-    /// write to the shared columns cache (compact parts use a reader that never writes to
-    /// it; projection parts and nil-UUID tables are rejected there as well). Charging the
-    /// per-query write budget for parts that can never be cached would let a large
-    /// uncacheable scan latch `writes_disabled` and suppress cache writes for later
-    /// eligible wide parts of a mixed-format or mixed-database query.
-    const auto & data_part = *part_with_ranges.data_part;
-    if (data_part.getType() != MergeTreeDataPartType::Wide
-        || data_part.isProjectionPart()
-        || data_part.storage.getStorageID().uuid == UUIDHelpers::Nil)
-        return;
-
-    /// Columns read from the base part: result columns plus columns required for
-    /// defaults, prewhere and mutation steps. Estimating from the pool's result
-    /// columns alone would let a query that reads a small result column set but heavy
-    /// prewhere/mutation columns pass the gate while writing much more data than
-    /// estimated. Patch-part columns are read from separate parts and are accounted
-    /// for below.
-    const auto all_read_columns = read_task_info.task_columns.getAllColumnNames();
-
-    /// Don't apply the estimate gate when there are no columns (e.g. some
-    /// projection paths build the column list later). getSizeOfColumns falls back
-    /// to the whole-part size in that case, which would falsely trip the gate.
-    if (all_read_columns.empty())
-        return;
-
     size_t estimate_budget = settings[Setting::columns_cache_max_estimated_compressed_bytes_to_write_to_cache];
     if (estimate_budget == 0)
         estimate_budget = owned_columns_cache->maxSizeInBytes() / 2;
 
-    size_t part_estimated_bytes = estimateSelectedColumnsSize(part_with_ranges, all_read_columns, settings);
+    /// Eligibility is a property of every part a reader is created for, not of the task:
+    /// the base part and each patch part get their own reader and can have different
+    /// formats. A compact base part can have a wide patch part (which does write to the
+    /// cache), and a wide base part can have a compact patch part (which never does).
+    /// Both parts of the estimate are therefore gated by `partCanWriteToColumnsCache`
+    /// independently, so the accounted bytes match the set of readers that can really
+    /// write, and a query is neither allowed to write unaccounted bytes nor charged for
+    /// bytes it can never cache.
+    size_t part_estimated_bytes = 0;
+
+    if (partCanWriteToColumnsCache(*part_with_ranges.data_part))
+    {
+        /// Columns read from the base part: result columns plus columns required for
+        /// defaults, prewhere and mutation steps. Estimating from the pool's result
+        /// columns alone would let a query that reads a small result column set but heavy
+        /// prewhere/mutation columns pass the gate while writing much more data than
+        /// estimated. Patch-part columns are read from separate parts and are accounted
+        /// for below.
+        const auto all_read_columns = read_task_info.task_columns.getAllColumnNames();
+
+        /// Don't apply the estimate gate when there are no columns (e.g. some
+        /// projection paths build the column list later). getSizeOfColumns falls back
+        /// to the whole-part size in that case, which would falsely trip the gate.
+        if (all_read_columns.empty())
+            return;
+
+        part_estimated_bytes += estimateSelectedColumnsSize(part_with_ranges, all_read_columns, settings);
+    }
 
     /// `getAllColumnNames` covers only the main and prewhere columns, which are read
     /// from the base part sized above. Readers for patch parts (from lightweight
@@ -505,14 +517,25 @@ void MergeTreeReadPoolBase::accountColumnsCacheWriteEstimate(
             = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(read_task_info.patch_parts[i].part.get());
         if (!patch_part_info)
         {
-            /// Cannot size this patch part's columns. Fail closed: stop caching for
-            /// the rest of the query rather than under-counting the write budget.
+            /// Cannot tell whether this patch part's reader can write to the cache, nor
+            /// size its columns. Fail closed: stop caching for the rest of the query
+            /// rather than under-counting the write budget.
             budget->writes_disabled.store(true, std::memory_order_relaxed);
             return;
         }
 
-        part_estimated_bytes += getSizeOfColumns(*patch_part_info->getDataPart(), patch_column_names, settings);
+        const auto & patch_part = *patch_part_info->getDataPart();
+        if (!partCanWriteToColumnsCache(patch_part))
+            continue;
+
+        part_estimated_bytes += getSizeOfColumns(patch_part, patch_column_names, settings);
     }
+
+    /// Nothing in this task can be written to the cache: charging the per-query budget
+    /// for it would let a large uncacheable scan latch `writes_disabled` and suppress
+    /// cache writes for later eligible parts of a mixed-format or mixed-database query.
+    if (part_estimated_bytes == 0)
+        return;
 
     /// Accumulate into the query-wide total and compare against the budget, so
     /// the gate enforces a true per-query budget across all pools. Readers
