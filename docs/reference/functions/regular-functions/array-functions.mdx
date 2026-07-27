@@ -5067,7 +5067,7 @@ It is ok to have ASCII NULL bytes in strings, and they will be counted as well.
 length(x)
 ```
 
-**Aliases**: `CARDINALITY`, `OCTET_LENGTH`
+**Aliases**: `OCTET_LENGTH`, `CARDINALITY`
 
 **Arguments**
 
@@ -5197,40 +5197,41 @@ SELECT notEmpty([1,2]);
 Introduced in: v26.7.0
 
 Applies a randomized Hadamard transform to a float vector: `y = (1/sqrt(k)) * (H * D * x)`, where
-`D` is a diagonal matrix of deterministic +/-1 signs chosen by `seed`, `H` is the Walsh-Hadamard
-matrix, and the input is zero-padded to `m`, the next power of two of its length.
+`D` is a diagonal matrix of deterministic +/-1 signs chosen by `seed` and `H` is the Walsh-Hadamard
+transform.
 
 The transform is an orthogonal, **norm-preserving** rotation that spreads a vector's energy evenly
 across coordinates, making the per-coordinate distribution approximately Gaussian and
 data-independent. It is useful as a preprocessing step before scalar quantization, and -- when
 truncated -- as a Johnson-Lindenstrauss / subsampled-randomized-Hadamard (SRHT) random projection.
 
-When the input length is `2^k * m` with `m` in `{12, 20}` (orders that have a Hadamard matrix, e.g.
-`768 = 64 * 12`, `1536 = 128 * 12`, `3072 = 256 * 12`, `2560 = 128 * 20`), an exact Kronecker
-transform `H_(2^k) (x) H_m` is used instead of padding, so the output keeps the input dimension
-rather than growing to the next power of two.
+The full transform (no truncation) keeps the input length. It is exact for the following lengths:
 
-Order `9` has no `+/-1` Hadamard matrix (those exist only for orders `1`, `2`, and multiples of
-`4`), so for the `2^k * 9` family (e.g. `1152 = 128 * 9`, `2304 = 256 * 9`) the small factor is a
-real orthogonal Discrete Hartley Transform matrix `C_9` applied with float multiplies -- the exact
-Kronecker transform `H_(2^k) (x) C_9`, again without padding. This exact `C_9` path is used only for
-the full transform: its rows do not have the uniform leverage of a `+/-1` Hadamard matrix, so a
-truncated prefix of them would be a position-biased projection rather than a valid SRHT one.
-Consequently, a truncating `output_dims` (smaller than the input length) on the `2^k * 9` family
-falls back to the zero-padded power-of-two transform, which does keep that property.
+- a power of two (a plain fast Walsh-Hadamard transform);
+- `2^k * m` with `m` in `{12, 20}` (orders that have a `+/-1` Hadamard matrix, e.g. `768 = 64 * 12`,
+  `1536 = 128 * 12`, `3072 = 256 * 12`, `2560 = 128 * 20`), applied as the exact Kronecker transform
+  `H_(2^k) (x) H_m` (no float multiplies);
+- `2^k * m` with any other odd `m` up to `64` (orders that have no `+/-1` Hadamard matrix -- those
+  exist only for orders `1`, `2`, and multiples of `4`), applied as the exact Kronecker transform
+  `H_(2^k) (x) C_m`, where `C_m` is a real orthogonal Discrete Hartley Transform matrix. This covers
+  the remaining embedding families such as `3584 = 512 * 7`, `1152 = 128 * 9`, `1408 = 128 * 11`.
 
-All other lengths are zero-padded to `m`, the next power of two.
+A full transform of a length whose largest odd factor exceeds `64` has no exact form and would need
+zero-padding to a longer power of two; it is **rejected with an exception** rather than silently
+returning a longer vector. Use a supported length, or pass `output_dims` to compute a truncated
+projection of an arbitrary length (see below).
 
 The result has the same element type as the input; an empty input array returns an empty array.
 
 - `seed` (optional, default `0`): selects the sign pattern; the same seed always yields the same
   transform.
 - `output_dims` (optional, default the transform length): keeps only the first `output_dims`
-  coordinates. The `1/sqrt(output_dims)` scaling keeps the result norm-preserving for the full
-  transform and norm-preserving in expectation when truncated. It must not exceed the transform
-  length (the next power of two, or the input length for the exact Kronecker case). Truncating the
-  `2^k * 9` family uses the zero-padded power-of-two transform rather than the exact `C_9` one, so
-  that the truncated projection keeps the uniform-leverage (SRHT) property.
+  coordinates, turning the transform into a random projection that accepts **any** length. The
+  `1/sqrt(output_dims)` scaling keeps the result norm-preserving for the full transform and
+  norm-preserving in expectation when truncated. It must not exceed the transform length. Because a
+  truncated prefix of the Discrete Hartley factor `C_m` does not have the uniform leverage of a
+  `+/-1` Hadamard matrix, a truncating `output_dims` on a Hartley-family length (or on any length
+  without an exact factor) uses the zero-padded power-of-two transform, which does keep that property.
 
 **Syntax**
 
@@ -5242,18 +5243,18 @@ randomHadamardTransform(vector[, seed[, output_dims]])
 
 - `vector` — Vector to transform. [`Array(BFloat16)`](/reference/data-types/array) or [`Array(Float32)`](/reference/data-types/array) or [`Array(Float64)`](/reference/data-types/array)
 - `seed` — Optional. Seed for the deterministic +/-1 signs (default 0). [`UInt*`](/reference/data-types/int-uint)
-- `output_dims` — Optional. Truncate the result to this many leading coordinates (default: the full transform length, which is the input length for exact Kronecker dimensions and otherwise the next power of two). [`UInt*`](/reference/data-types/int-uint)
+- `output_dims` — Optional. Truncate the result to this many leading coordinates (default: the full transform length, which equals the input length for every supported dimension). Passing output_dims also enables the transform for lengths that have no exact full-transform form. [`UInt*`](/reference/data-types/int-uint)
 
 **Returned value**
 
-The transformed vector (same element type as the input). Its length is the transform length: the input length for exact Kronecker dimensions, otherwise the input padded to the next power of two; optionally truncated to output_dims. [`Array(BFloat16)`](/reference/data-types/array) or [`Array(Float32)`](/reference/data-types/array) or [`Array(Float64)`](/reference/data-types/array)
+The transformed vector (same element type as the input). Its length is the transform length (the input length for a full transform of a supported dimension), optionally truncated to output_dims. [`Array(BFloat16)`](/reference/data-types/array) or [`Array(Float32)`](/reference/data-types/array) or [`Array(Float64)`](/reference/data-types/array)
 
 **Examples**
 
-**Full transform (length padded to a power of two)**
+**Full transform of a power-of-two length**
 
 ```sql title=Query
-SELECT length(randomHadamardTransform([1, 2, 3]::Array(Float32)))
+SELECT length(randomHadamardTransform([1, 2, 3, 4]::Array(Float32)))
 ```
 
 ```response title=Response
@@ -5270,7 +5271,7 @@ SELECT round(arraySum(x -> x * x, randomHadamardTransform([1, 2, 3, 4]::Array(Fl
 0
 ```
 
-**Truncated projection to 3 dimensions**
+**Truncated projection to 3 dimensions (accepts any length)**
 
 ```sql title=Query
 SELECT length(randomHadamardTransform([1, 2, 3, 4, 5, 6, 7, 8]::Array(Float32), 42, 3))
@@ -5280,7 +5281,7 @@ SELECT length(randomHadamardTransform([1, 2, 3, 4, 5, 6, 7, 8]::Array(Float32), 
 3
 ```
 
-**Exact transform of a 2^k * 9 dimension keeps the input length (no padding)**
+**Exact transform of a 2^k * m dimension keeps the input length (no padding)**
 
 ```sql title=Query
 SELECT length(randomHadamardTransform(CAST(range(1152), 'Array(Float32)')))
