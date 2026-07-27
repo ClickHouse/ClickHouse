@@ -154,6 +154,7 @@ SELECT countIf(explain LIKE '%AggregatingInOrderTransform%') > 0 FROM (EXPLAIN P
 SELECT
     (SELECT groupArray(a) FROM (SELECT DISTINCT a FROM aio_differ ORDER BY a) SETTINGS optimize_distinct_in_order = 1)
   = (SELECT groupArray(a) FROM (SELECT DISTINCT a FROM aio_differ ORDER BY a) SETTINGS optimize_distinct_in_order = 0);
+SELECT countIf(explain LIKE '%DistinctSortedStreamTransform%') > 0 FROM (EXPLAIN PIPELINE SELECT DISTINCT a FROM aio_differ SETTINGS optimize_distinct_in_order = 1);
 SELECT
     (SELECT count() FROM (SELECT a FROM aio_differ LIMIT 1 BY a) SETTINGS optimize_limit_by_in_order = 1)
   = (SELECT count() FROM (SELECT a FROM aio_differ LIMIT 1 BY a) SETTINGS optimize_limit_by_in_order = 0);
@@ -163,11 +164,13 @@ SELECT countIf(explain LIKE '%LimitBySortedStreamTransform%') > 0 FROM (EXPLAIN 
 SELECT
     (SELECT groupArray((a, b, sb)) FROM (SELECT a, b, sum(b) AS sb FROM aio_asc GROUP BY a, b ORDER BY a, b) SETTINGS optimize_aggregation_in_order = 1)
   = (SELECT groupArray((a, b, sb)) FROM (SELECT a, b, sum(b) AS sb FROM aio_asc GROUP BY a, b ORDER BY a, b) SETTINGS optimize_aggregation_in_order = 0);
+SELECT countIf(explain LIKE '%AggregatingInOrderTransform%') > 0 FROM (EXPLAIN PIPELINE SELECT a, b, sum(b) FROM aio_asc GROUP BY a, b SETTINGS optimize_aggregation_in_order = 1);
 
 -- 8. Prefix-only GROUP BY, which never consumed the reversed column: correct before and after.
 SELECT
     (SELECT groupArray((a, sb)) FROM (SELECT a, sum(b) AS sb FROM aio_mixed GROUP BY a ORDER BY a) SETTINGS optimize_aggregation_in_order = 1)
   = (SELECT groupArray((a, sb)) FROM (SELECT a, sum(b) AS sb FROM aio_mixed GROUP BY a ORDER BY a) SETTINGS optimize_aggregation_in_order = 0);
+SELECT countIf(explain LIKE '%AggregatingInOrderTransform%') > 0 FROM (EXPLAIN PIPELINE SELECT a, sum(b) FROM aio_mixed GROUP BY a SETTINGS optimize_aggregation_in_order = 1);
 
 -- 9. DISTINCT and LIMIT BY over the reverse key itself: unaffected siblings of the fixed builder.
 -- Result equality alone would hold whether or not they are optimized, so it cannot detect the
