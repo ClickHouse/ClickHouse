@@ -149,6 +149,7 @@ static struct InitFiu
     ONCE(create_empty_part_inject_stale_dir) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(async_insert_flush_pause_in_executor) \
+    PAUSEABLE(system_replicas_schedule_requests_pause) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
     REGULAR(replicated_merge_tree_all_replicas_stale) \
     REGULAR(zero_copy_lock_zk_fail_before_op) \
