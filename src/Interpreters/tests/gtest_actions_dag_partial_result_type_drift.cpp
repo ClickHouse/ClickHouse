@@ -194,11 +194,13 @@ GTEST_TEST(ActionsDAGPartialResultTypeDrift, WrapperOnlyDriftFoldsNoValueForOneR
         << "a drifted argument must not fold to a definitive value for the one-row callers";
 }
 
-/// The zero-row fallback builds an empty column of the node's declared result type, but a few result
-/// types cannot be instantiated: everything deriving from `IDataTypeDummy` throws `NOT_IMPLEMENTED`
-/// from `createColumn`. A captured lambda is an ordinary `FUNCTION` node whose result type is
-/// `DataTypeFunction`, so if one of its captured arguments is bound to a differently-typed header
-/// column, skipping the fold must not turn into that error - the column is simply left null.
+/// The zero-row fallback builds an empty column of the node's declared result type, but one result
+/// type cannot be instantiated: `DataTypeFunction` inherits `IDataTypeDummy::createColumn`, which
+/// throws `NOT_IMPLEMENTED`. (`DataTypeNothing` and `DataTypeSet` derive from the same base but do
+/// override `createColumn`, so they are built normally.) A captured lambda is an ordinary `FUNCTION`
+/// node whose result type is `DataTypeFunction`, so if one of its captured arguments is bound to a
+/// differently-typed header column, skipping the fold must not turn into that error - the column is
+/// simply left null.
 GTEST_TEST(ActionsDAGPartialResultTypeDrift, DriftOnNonInstantiableResultTypeIsSkippedCleanly)
 {
     tryRegisterFunctions();
