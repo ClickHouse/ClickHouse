@@ -165,6 +165,35 @@ node_include_from_zk = cluster_include_from_zk.add_instance(
     stay_alive=True,
 )
 
+# Compatibility case: the *users* config may declare `<include_from from_zk="/path"/>`
+# (`ConfigProcessor::processConfig` runs `doIncludesRecursive` on the `<include_from>` node itself, so
+# the substitution source path can come from ZooKeeper). That path cannot be resolved at
+# config-validation time, so the top-level tags the source legitimately contributes are unknown to the
+# validator and the whole check is skipped rather than rejecting a previously valid config.
+cluster_users_include_from_zk = ClickHouseCluster(
+    __file__, name="users_include_from_zk"
+)
+node_users_include_from_zk = cluster_users_include_from_zk.add_instance(
+    "node_users_include_from_zk",
+    main_configs=["configs/config.d/include_from_zk_initial.xml"],
+    with_zookeeper=True,
+    stay_alive=True,
+)
+
+# Regression case: a non-regular *users* config must not disable the unknown-option check for the
+# whole server config. `ConfigProcessor::parseConfig` accepts a non-regular config path (e.g. a pipe
+# such as `/dev/fd/N`), and the scan cannot re-read such a file — but the users config is a separate
+# tree that contributes no top-level key to the validated server config, so an unrelated typo in the
+# main config must still be reported.
+cluster_non_regular_users_config = ClickHouseCluster(
+    __file__, name="non_regular_users_config"
+)
+node_non_regular_users_config = cluster_non_regular_users_config.add_instance(
+    "node_non_regular_users_config",
+    main_configs=["configs/config.d/non_regular_users_config_initial.xml"],
+    stay_alive=True,
+)
+
 # Negative case: a non-static handler (e.g. `redirect`) ignores `response_content`. Only a
 # `static` handler consumes a `config://` reference, so the validator must NOT exempt a top-level
 # key referenced from `response_content` on a non-static handler — doing so would let a genuinely
@@ -553,6 +582,20 @@ def start_include_from_zk_cluster():
     cluster_include_from_zk.start()
     yield
     cluster_include_from_zk.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_users_include_from_zk_cluster():
+    cluster_users_include_from_zk.start()
+    yield
+    cluster_users_include_from_zk.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_non_regular_users_config_cluster():
+    cluster_non_regular_users_config.start()
+    yield
+    cluster_non_regular_users_config.shutdown()
 
 
 @pytest.fixture(scope="module")
@@ -1768,3 +1811,117 @@ def test_dead_handler_group_config_ref_not_exempted(start_dead_handler_group_clu
     # `http_handlers` prefix, so the payload section is the only key that triggers the rejection.)
     assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_dead_handler_group_exception
     assert "secret_dead_handler_payload" in caught_dead_handler_group_exception
+
+
+def test_users_config_include_from_from_zk_accepted(start_users_include_from_zk_cluster):
+    # The active users config declares `<include_from from_zk="/unknown_users_include_from_source"/>`:
+    # `ConfigProcessor::processConfig` runs `doIncludesRecursive` on the `<include_from>` node itself
+    # before reading its value, so the substitution source *path* comes from ZooKeeper. Resolving it
+    # needs a connection unavailable at config-validation time, so the validator cannot parse the
+    # source and cannot know which top-level tags it legitimately contributes. Since the source file
+    # here lives under `config.d/` (so its `<my_users_substitution_root>` tag really is merged into the
+    # server config as a top-level key), enumerating the exemptions is required to accept it — the
+    # validator therefore skips the whole check instead of rejecting a previously valid config, and the
+    # reload must succeed.
+    zk = cluster_users_include_from_zk.get_kazoo_client("zoo1")
+    source_path = "/etc/clickhouse-server/config.d/users_zk_include_source.xml"
+    source = (
+        "<clickhouse>"
+        "<my_users_substitution_root>"
+        "<users_1>::1</users_1>"
+        "</my_users_substitution_root>"
+        "</clickhouse>"
+    )
+    users_config_path = "/etc/clickhouse-server/users.d/users_include_from_zk.xml"
+    users_config = (
+        "<clickhouse>"
+        '<include_from from_zk="/unknown_users_include_from_source"/>'
+        "</clickhouse>"
+    )
+    try:
+        zk.create(
+            path="/unknown_users_include_from_source",
+            value=source_path.encode(),
+            makepath=True,
+        )
+        node_users_include_from_zk.replace_config(source_path, source)
+        node_users_include_from_zk.replace_config(users_config_path, users_config)
+        node_users_include_from_zk.query("SYSTEM RELOAD CONFIG")
+        assert node_users_include_from_zk.query("SELECT 1").strip() == "1"
+    finally:
+        node_users_include_from_zk.exec_in_container(
+            ["bash", "-c", f"rm -f {users_config_path} {source_path}"]
+        )
+        try:
+            zk.delete(path="/unknown_users_include_from_source")
+        except Exception:
+            pass
+        node_users_include_from_zk.query("SYSTEM RELOAD CONFIG")
+
+
+def test_non_regular_users_config_still_checks_server_config(
+    start_non_regular_users_config_cluster,
+):
+    # `<users_config>` points at a FIFO — a supported delivery path, since
+    # `ConfigProcessor::parseConfig` has an explicit carve-out for a non-regular config file ("Suppose
+    # non regular file parsed as XML, such as pipe: /dev/fd/X"). The scan cannot re-read such a file,
+    # so the users config's `<include_from>` directives stay invisible; but the users config is a
+    # separate `ConfigProcessor` tree that contributes no top-level key to the *server* config, so this
+    # must NOT disable the unknown-option check for the whole server config. An unrelated typo in the
+    # main config (`<max_thred_pool_size>`) must therefore still be rejected.
+    node = node_non_regular_users_config
+    pipe_path = "/etc/clickhouse-server/users_pipe.xml"
+    users_config_path = "/etc/clickhouse-server/config.d/users_config_pipe.xml"
+    typo_config_path = "/etc/clickhouse-server/config.d/typo_with_pipe_users_config.xml"
+    try:
+        # Serve a copy of the active users config through the FIFO, and merge the very same
+        # `users.d` fragments into it (`getConfigMergeFiles` derives the directory from the config
+        # file name, so `users_pipe.d` must point at `users.d`), so the effective users config is
+        # unchanged and access control keeps working.
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "cp /etc/clickhouse-server/users.xml /etc/clickhouse-server/users_pipe_source.xml && "
+                "ln -sfn /etc/clickhouse-server/users.d /etc/clickhouse-server/users_pipe.d && "
+                f"mkfifo {pipe_path}",
+            ]
+        )
+        # A FIFO yields EOF once every writer closes, so keep refilling it for each read.
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "nohup bash -c 'while true; do "
+                f"cat /etc/clickhouse-server/users_pipe_source.xml > {pipe_path}; "
+                "done' >/dev/null 2>&1 &",
+            ],
+            detach=True,
+        )
+        node.replace_config(
+            users_config_path,
+            f"<clickhouse><users_config>{pipe_path}</users_config></clickhouse>",
+        )
+        # The non-regular users config alone must not break a valid config.
+        node.query("SYSTEM RELOAD CONFIG")
+        assert node.query("SELECT 1").strip() == "1"
+
+        node.replace_config(
+            typo_config_path,
+            "<clickhouse><max_thred_pool_size>100</max_thred_pool_size></clickhouse>",
+        )
+        error = node.query_and_get_error("SYSTEM RELOAD CONFIG")
+        assert "UNKNOWN_ELEMENT_IN_CONFIG" in error
+        assert "max_thred_pool_size" in error
+    finally:
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"rm -f {typo_config_path} {users_config_path} {pipe_path} "
+                "/etc/clickhouse-server/users_pipe.d "
+                "/etc/clickhouse-server/users_pipe_source.xml; "
+                "pkill -f 'users_pipe_source.xml' || true",
+            ]
+        )
+        node.query("SYSTEM RELOAD CONFIG")

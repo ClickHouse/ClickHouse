@@ -2572,11 +2572,31 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// not merged into the server config, so it is intentionally excluded here.
         std::unordered_set<std::string> merge_files;
 
-        /// A scanned config file that exists but is not a regular file (e.g. a pipe such as
+        /// A scanned *server*-config file that exists but is not a regular file (e.g. a pipe such as
         /// `/dev/fd/X`). `ConfigProcessor::parseConfig` explicitly accepts such a path, but it cannot
         /// be re-read here (see the bail-out below), so the scan cannot see its `<include .../>`
         /// directives and the whole check is skipped — fail open, never refuse to start a valid config.
-        std::string non_regular_config_path;
+        ///
+        /// Only *server*-config files set this: they are the files whose top-level tags (and whose
+        /// `<include .../>` expansions) become top-level keys of the validated config. A non-regular
+        /// *users* config is a separate tree that contributes no top-level server key, so it must not
+        /// disable validation of the server config — see the warning at its scan site below.
+        std::string non_regular_server_config_path;
+
+        /// A scanned *users*-config file that exists but is not a regular file. Recorded only to warn:
+        /// unlike a server-config file it contributes no top-level server key, so the check keeps
+        /// running (see the warning at the scan site below).
+        std::string non_regular_users_config_path;
+
+        /// Whether the active users config (or a fragment merged into it) declares
+        /// `<include_from from_zk="..."/>`. `ConfigProcessor` resolves that substitution against
+        /// ZooKeeper (`processConfig` runs `doIncludesRecursive` on the `<include_from>` node itself
+        /// before reading its value), which is impossible here — validation runs before `<zookeeper>`
+        /// is itself validated. The users-side substitution source is therefore unknown, so a source
+        /// file kept under `config.d`/`conf.d` (whose top-level tags would otherwise be exempted
+        /// below) could be rejected as unknown. Bail out instead — fail open, exactly like the
+        /// unresolvable top-level `<include from_zk=.../>` case.
+        bool has_unresolvable_users_include_from_from_zk = false;
 
         /// Returns true iff the file is an actual merge candidate — i.e. it exists, parses, and has
         /// a root the merger accepts. Only such files contribute their top-level tags to the merged
@@ -2588,7 +2608,10 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 return false;
             if (!fs::is_regular_file(p))
             {
-                non_regular_config_path = p.string();
+                if (is_server_file)
+                    non_regular_server_config_path = p.string();
+                else
+                    non_regular_users_config_path = p.string();
                 return false;
             }
             try
@@ -2639,6 +2662,16 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                                 const String env_name = elem->getAttribute("from_env");
                                 if (const char * env_val = std::getenv(env_name.c_str())) // NOLINT(concurrency-mt-unsafe)
                                     src = env_val;
+                            }
+                            else if (elem->hasAttribute("from_zk"))
+                            {
+                                /// `ConfigProcessor::processConfig` runs `doIncludesRecursive` on the
+                                /// `<include_from>` node itself before reading its value, so the path may
+                                /// come from ZooKeeper. That cannot be resolved at config-validation
+                                /// time, leaving the users-side substitution source unknown, so record it
+                                /// and bail out below rather than risk rejecting the source's top-level
+                                /// tags — fail open, never refuse to start a valid config.
+                                has_unresolvable_users_include_from_from_zk = true;
                             }
                         }
                         if (!src.empty())
@@ -2785,7 +2818,12 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// unrecognized top-level key would be rejected even though the very same config was valid
         /// before this check existed. Skip the whole check in this rare case — fail open, exactly like
         /// a non-regular `<include_from>` source below — and log so a genuine typo remains visible.
-        if (!non_regular_config_path.empty())
+        ///
+        /// Scoped to *server*-config files on purpose: the users config is a separate
+        /// `ConfigProcessor` tree that contributes no top-level key to the validated server config, so
+        /// a non-regular `users_config` must not silence the check for the whole server config (a typo
+        /// such as `<max_thred_pool_size>` in `config.xml` has to stay visible).
+        if (!non_regular_server_config_path.empty())
         {
             LOG_WARNING(
                 getLogger("ServerSettings"),
@@ -2793,7 +2831,38 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 "file, so the top-level keys its <include> directives contribute cannot be determined "
                 "at config-validation time.",
                 config_path,
-                non_regular_config_path);
+                non_regular_server_config_path);
+            return;
+        }
+
+        /// A users config that is not a regular file cannot be re-read either, so a users-side
+        /// `<include_from>` it declares stays invisible. Unlike a server-config file it contributes no
+        /// top-level server key, so keep validating; the only thing lost is the exemption for the
+        /// top-level tags of a substitution source that both that users config points at *and* is
+        /// itself merged into the server config. Warn so such a setup is diagnosable — the fix is
+        /// `<skip_check_for_incorrect_settings>` — rather than disabling the check for everything.
+        if (!non_regular_users_config_path.empty())
+        {
+            LOG_WARNING(
+                getLogger("ServerSettings"),
+                "The users config file '{}' is not a regular file, so its <include_from> directives "
+                "cannot be read at config-validation time. Still checking '{}' for unknown config "
+                "options; use <skip_check_for_incorrect_settings> if this rejects a valid config.",
+                non_regular_users_config_path,
+                config_path);
+        }
+
+        /// The users-side `<include_from>` path itself comes from ZooKeeper, so the substitution source
+        /// — and hence the set of top-level tags it legitimately contributes — cannot be determined
+        /// here. Skip the whole check, mirroring the top-level `<include from_zk=.../>` bail-out below.
+        if (has_unresolvable_users_include_from_from_zk)
+        {
+            LOG_WARNING(
+                getLogger("ServerSettings"),
+                "Not checking for unknown config options in '{}': the users config contains "
+                "<include_from from_zk=.../>, whose substitution source cannot be resolved without a "
+                "ZooKeeper connection at config-validation time.",
+                config_path);
             return;
         }
 
