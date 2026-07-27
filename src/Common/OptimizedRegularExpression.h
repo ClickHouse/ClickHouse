@@ -7,6 +7,10 @@
 
 namespace DB
 {
+
+class CaseSensitiveStringSearcher;
+class ASCIICaseInsensitiveStringSearcher;
+
 /** Uses two ways to optimize a regular expression:
   * 1. If the regular expression is trivial (reduces to finding a substring in a string),
   *     then replaces the search with strstr or strcasestr.
@@ -24,16 +28,6 @@ namespace DB
   *
   * NOTE: Multi-character metasymbols such as \Pl are handled incorrectly.
   */
-
-
-namespace impl
-{
-template <bool CaseSensitive, bool ASCII>
-class StringSearcher;
-}
-
-using ASCIICaseSensitiveStringSearcher = impl::StringSearcher<true, true>;
-using ASCIICaseInsensitiveStringSearcher = impl::StringSearcher<false, true>;
 
 
 namespace OptimizedRegularExpressionDetails
@@ -90,12 +84,28 @@ public:
 
     unsigned match(const char * subject, size_t subject_size, MatchVec & matches) const
     {
-        return match(subject, subject_size, matches, number_of_subpatterns + 1);
+        return match(subject, subject_size, 0, matches, number_of_subpatterns + 1);
+    }
+
+    /// Search starting at `start_pos` (a byte offset into `subject`), while keeping the whole `subject` available as
+    /// context. This is required for the correct evaluation of zero-width assertions such as `^`, `$` and `\b`: they
+    /// must see the characters surrounding `start_pos`. Iterative "match all" functions must use this overload and
+    /// advance `start_pos` instead of shifting the `subject` pointer, otherwise every continuation point looks like the
+    /// beginning of the text. The returned match offsets are relative to `subject` (not to `start_pos`).
+    unsigned match(const char * subject, size_t subject_size, size_t start_pos, MatchVec & matches) const
+    {
+        return match(subject, subject_size, start_pos, matches, number_of_subpatterns + 1);
     }
 
     bool match(const char * subject, size_t subject_size) const;
     bool match(const char * subject, size_t subject_size, Match & match) const;
-    unsigned match(const char * subject, size_t subject_size, MatchVec & matches, unsigned limit) const;
+
+    unsigned match(const char * subject, size_t subject_size, MatchVec & matches, unsigned limit) const
+    {
+        return match(subject, subject_size, 0, matches, limit);
+    }
+
+    unsigned match(const char * subject, size_t subject_size, size_t start_pos, MatchVec & matches, unsigned limit) const;
 
     unsigned getNumberOfSubpatterns() const { return number_of_subpatterns; }
 
@@ -119,7 +129,7 @@ private:
     bool has_capture{};
     bool required_substring_is_prefix;
     bool is_case_insensitive;
-    std::unique_ptr<ASCIICaseSensitiveStringSearcher> case_sensitive_substring_searcher;
+    std::unique_ptr<CaseSensitiveStringSearcher> case_sensitive_substring_searcher;
     std::unique_ptr<ASCIICaseInsensitiveStringSearcher> case_insensitive_substring_searcher;
     std::unique_ptr<re2::RE2> re2;
     unsigned number_of_subpatterns;

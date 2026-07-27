@@ -1,0 +1,438 @@
+---
+title: 'JSONスキーマ推論'
+slug: /integrations/data-formats/json/inference
+description: 'JSONスキーマ推論の使用方法'
+keywords: ['json', 'スキーマ', '推論', 'スキーマ推論']
+doc_type: 'guide'
+---
+
+ClickHouseはJSONデータの構造を自動的に推定できます。これにより、たとえばディスク上やS3バケット内のJSONデータを`clickhouse-local`で直接クエリしたり、ClickHouseにデータをロードする前にスキーマを自動的に作成したりできます。
+
+<div id="when-to-use-type-inference">
+  ## 型推論を使用する場合
+</div>
+
+* **構造が一定している** - 型を推論しようとしているデータに、必要なすべてのキーが含まれている場合です。型推論は、データを[最大行数](/ja/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference)または[最大バイト数](/ja/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference)までサンプリングして行われます。サンプル範囲より後のデータに追加のカラムがあっても、それらは無視されるためクエリできません。
+* **型が一定している** - 特定のキーのデータ型には互換性が必要です。つまり、ある型から別の型へ自動的に型変換できる必要があります。
+
+より動的な JSON で、新しいキーが追加され、同じパスに対して複数の型を取りうる場合は、[「半構造化データと動的データの操作」](/ja/guides/clickhouse/data-formats/json/inference#working-with-semi-structured-data)を参照してください。
+
+<div id="detecting-types">
+  ## 型の検出
+</div>
+
+以下では、JSON の構造が一貫しており、各パスに対応する型が 1 つだけであることを前提とします。
+
+これまでの例では、`NDJSON` フォーマットの [Python PyPI dataset](https://clickpy.clickhouse.com/) の簡易版を使用してきました。この節では、より複雑な入れ子構造を持つデータセット、つまり 250 万件の学術論文を含む [arXiv dataset](https://www.kaggle.com/datasets/Cornell-University/arxiv?resource=download) を見ていきます。`NDJSON` として配布されるこのデータセットでは、各行が公開済みの学術論文 1 件を表します。行の例を以下に示します。
+
+```json
+{
+  "id": "2101.11408",
+  "submitter": "Daniel Lemire",
+  "authors": "Daniel Lemire",
+  "title": "Number Parsing at a Gigabyte per Second",
+  "comments": "Software at https://github.com/fastfloat/fast_float and\n https://github.com/lemire/simple_fastfloat_benchmark/",
+  "journal-ref": "Software: Practice and Experience 51 (8), 2021",
+  "doi": "10.1002/spe.2984",
+  "report-no": null,
+  "categories": "cs.DS cs.MS",
+  "license": "http://creativecommons.org/licenses/by/4.0/",
+  "abstract": "With disks and networks providing gigabytes per second ....\n",
+  "versions": [
+    {
+      "created": "Mon, 11 Jan 2021 20:31:27 GMT",
+      "version": "v1"
+    },
+    {
+      "created": "Sat, 30 Jan 2021 23:57:29 GMT",
+      "version": "v2"
+    }
+  ],
+  "update_date": "2022-11-07",
+  "authors_parsed": [
+    [
+      "Lemire",
+      "Daniel",
+      ""
+    ]
+  ]
+}
+```
+
+このデータには、前の例よりもはるかに複雑なスキーマが必要です。以下では、このスキーマを定義するプロセスの概要を示し、`Tuple` や `Array` などの複雑な型を導入します。
+
+このデータセットは、`s3://datasets-documentation/arxiv/arxiv.json.gz` にある公開 S3 バケットに保存されています。
+
+上記のデータセットには、ネストされた JSON オブジェクトが含まれていることがわかります。スキーマは作成してバージョン管理すべきですが、スキーマ推論を使うと、データから型を推論できます。これにより、スキーマ DDL を自動生成できるため、手動で作成する必要がなくなり、開発プロセスを高速化できます。
+
+<Info>
+  **フォーマットの自動検出**
+
+  スキーマの検出に加えて、JSON スキーマ推論では、ファイル拡張子と内容からデータのフォーマットも自動的に推論します。その結果、上記のファイルは自動的に NDJSON として検出されます。
+</Info>
+
+[s3 関数](/ja/reference/functions/table-functions/s3) を `DESCRIBE` コマンドとともに使用すると、推論される型を確認できます。
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name───────────┬─type────────────────────────────────────────────────────────────────────┐
+│ id             │ Nullable(String)                                                        │
+│ submitter      │ Nullable(String)                                                        │
+│ authors        │ Nullable(String)                                                        │
+│ title          │ Nullable(String)                                                        │
+│ comments       │ Nullable(String)                                                        │
+│ journal-ref    │ Nullable(String)                                                        │
+│ doi            │ Nullable(String)                                                        │
+│ report-no      │ Nullable(String)                                                        │
+│ categories     │ Nullable(String)                                                        │
+│ license        │ Nullable(String)                                                        │
+│ abstract       │ Nullable(String)                                                        │
+│ versions       │ Array(Tuple(created Nullable(String),version Nullable(String)))         │
+│ update_date    │ Nullable(Date)                                                          │
+│ authors_parsed │ Array(Array(Nullable(String)))                                          │
+└────────────────┴─────────────────────────────────────────────────────────────────────────┘
+```
+
+<Info>
+  **NULL を避ける**
+
+  多くのカラムが Nullable として検出されていることがわかります。[Nullable](/ja/reference/data-types/nullable#storage-features) 型は、どうしても必要な場合を除いて使用しないことを推奨します。Nullable を適用するタイミングの挙動は、[schema&#95;inference&#95;make&#95;columns&#95;nullable](/ja/reference/settings/formats#schema_inference_make_columns_nullable) で制御できます。
+</Info>
+
+ほとんどのカラムは自動的に `String` として検出され、`update_date` カラムは正しく `Date` として検出されています。`versions` カラムはオブジェクトのリストを格納するために `Array(Tuple(created String, version String))` として作成され、`authors_parsed` はネストされた配列を表す `Array(Array(String))` として定義されています。
+
+<Info>
+  **型推論の制御**
+
+  日付および日時の自動検出は、それぞれ設定 [`input_format_try_infer_dates`](/ja/reference/settings/formats#input_format_try_infer_dates) と [`input_format_try_infer_datetimes`](/ja/reference/settings/formats#input_format_try_infer_datetimes) で制御できます (いずれもデフォルトで有効です) 。オブジェクトをタプルとして推論するかどうかは、設定 [`input_format_json_try_infer_named_tuples_from_objects`](/ja/reference/settings/formats#input_format_json_try_infer_named_tuples_from_objects) で制御されます。数値の自動検出など、JSON のスキーマ推論を制御するその他の設定については、[こちら](/ja/concepts/features/interfaces/schema-inference#text-formats) を参照してください。
+</Info>
+
+<div id="querying-json">
+  ## JSON のクエリ
+</div>
+
+以下では、JSON が一貫した構造を持ち、各 パス ごとに型が 1 つだけであることを前提としています。
+
+スキーマ推論を利用すれば、JSON データをそのままクエリできます。以下では、日付と配列が自動的に検出されることを利用して、年ごとの上位の著者を求めます。
+
+```sql
+SELECT
+ toYear(update_date) AS year,
+ authors,
+    count() AS c
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+GROUP BY
+    year,
+ authors
+ORDER BY
+    year ASC,
+ c DESC
+LIMIT 1 BY year
+```
+
+```response
+┌─year─┬─authors────────────────────────────────────┬───c─┐
+│ 2007 │ The BABAR Collaboration, B. Aubert, et al  │  98 │
+│ 2008 │ The OPAL collaboration, G. Abbiendi, et al │  59 │
+│ 2009 │ Ashoke Sen                                 │  77 │
+│ 2010 │ The BABAR Collaboration, B. Aubert, et al  │ 117 │
+│ 2011 │ Amelia Carolina Sparavigna                 │  21 │
+│ 2012 │ ZEUS Collaboration                         │ 140 │
+│ 2013 │ CMS Collaboration                          │ 125 │
+│ 2014 │ CMS Collaboration                          │  87 │
+│ 2015 │ ATLAS Collaboration                        │ 118 │
+│ 2016 │ ATLAS Collaboration                        │ 126 │
+│ 2017 │ CMS Collaboration                          │ 122 │
+│ 2018 │ CMS Collaboration                          │ 138 │
+│ 2019 │ CMS Collaboration                          │ 113 │
+│ 2020 │ CMS Collaboration                          │  94 │
+│ 2021 │ CMS Collaboration                          │  69 │
+│ 2022 │ CMS Collaboration                          │  62 │
+│ 2023 │ ATLAS Collaboration                        │ 128 │
+│ 2024 │ ATLAS Collaboration                        │ 120 │
+└──────┴────────────────────────────────────────────┴─────┘
+
+18 rows in set. Elapsed: 20.172 sec. Processed 2.52 million rows, 1.39 GB (124.72 thousand rows/s., 68.76 MB/s.)
+```
+
+スキーマ推論により、スキーマを指定しなくてもJSONファイルをクエリでき、アドホックなデータ分析を迅速化できます。
+
+<div id="creating-tables">
+  ## テーブルの作成
+</div>
+
+スキーマ推論を利用して、テーブルのスキーマを作成できます。次の `CREATE AS EMPTY` コマンドを実行すると、テーブルの DDL が推論され、テーブルが作成されます。この操作ではデータは読み込まれません。
+
+```sql
+CREATE TABLE arxiv
+ENGINE = MergeTree
+ORDER BY update_date EMPTY
+AS SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+SETTINGS schema_inference_make_columns_nullable = 0
+```
+
+テーブルのスキーマを確認するには、`SHOW CREATE TABLE` コマンドを使用します。
+
+```sql
+SHOW CREATE TABLE arxiv
+
+CREATE TABLE arxiv
+(
+    `id` String,
+    `submitter` String,
+    `authors` String,
+    `title` String,
+    `comments` String,
+    `journal-ref` String,
+    `doi` String,
+    `report-no` String,
+    `categories` String,
+    `license` String,
+    `abstract` String,
+    `versions` Array(Tuple(created String, version String)),
+    `update_date` Date,
+    `authors_parsed` Array(Array(String))
+)
+ENGINE = MergeTree
+ORDER BY update_date
+```
+
+上記がこのデータの正しいスキーマです。スキーマ推論は、データをサンプリングしながら1行ずつ読み取って行われます。カラムの値はフォーマットに従って抽出され、各値の型を判定するために再帰的なパーサーとヒューリスティクスが使用されます。スキーマ推論でデータから読み取る行数とバイト数の上限は、設定 [`input_format_max_rows_to_read_for_schema_inference`](/ja/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference) (デフォルトは25000) と [`input_format_max_bytes_to_read_for_schema_inference`](/ja/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference) (デフォルトは32MB) で制御されます。検出結果が正しくない場合は、[こちら](/ja/reference/settings/formats#schema_inference_make_columns_nullable) に記載されているようにヒントを指定できます。
+
+<div id="creating-tables-from-snippets">
+  ### スニペットからテーブルを作成する
+</div>
+
+上の例では、S3 上のファイルを使ってテーブルのスキーマを作成しています。1 行だけのスニペットからスキーマを作成したい場合もあるでしょう。その場合は、以下のように [format](/ja/reference/functions/table-functions/format) 関数を使用します。
+
+```sql
+CREATE TABLE arxiv
+ENGINE = MergeTree
+ORDER BY update_date EMPTY
+AS SELECT *
+FROM format(JSONEachRow, '{"id":"2101.11408","submitter":"Daniel Lemire","authors":"Daniel Lemire","title":"Number Parsing at a Gigabyte per Second","comments":"Software at https://github.com/fastfloat/fast_float and","doi":"10.1002/spe.2984","report-no":null,"categories":"cs.DS cs.MS","license":"http://creativecommons.org/licenses/by/4.0/","abstract":"Withdisks and networks providing gigabytes per second ","versions":[{"created":"Mon, 11 Jan 2021 20:31:27 GMT","version":"v1"},{"created":"Sat, 30 Jan 2021 23:57:29 GMT","version":"v2"}],"update_date":"2022-11-07","authors_parsed":[["Lemire","Daniel",""]]}') SETTINGS schema_inference_make_columns_nullable = 0
+
+SHOW CREATE TABLE arxiv
+
+CREATE TABLE arxiv
+(
+    `id` String,
+    `submitter` String,
+    `authors` String,
+    `title` String,
+    `comments` String,
+    `doi` String,
+    `report-no` String,
+    `categories` String,
+    `license` String,
+    `abstract` String,
+    `versions` Array(Tuple(created String, version String)),
+    `update_date` Date,
+    `authors_parsed` Array(Array(String))
+)
+ENGINE = MergeTree
+ORDER BY update_date
+```
+
+<div id="loading-json-data">
+  ## JSON データの取り込み
+</div>
+
+以下では、JSON が一貫した構造を持ち、各パスに対して型が 1 つだけであることを前提としています。
+
+前のコマンドで、データを取り込めるテーブルを作成しました。これで、次の `INSERT INTO SELECT` を使ってデータをテーブルに挿入できます。
+
+```sql
+INSERT INTO arxiv SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+```
+
+```response
+0 rows in set. Elapsed: 38.498 sec. Processed 2.52 million rows, 1.39 GB (65.35 thousand rows/s., 36.03 MB/s.)
+Peak memory usage: 870.67 MiB.
+```
+
+ファイルなどのほかのソースからデータを読み込む例については、[こちら](/ja/reference/statements/insert-into)を参照してください。
+
+読み込み後はデータをクエリできます。必要に応じてフォーマット `PrettyJSONEachRow` を使用すると、行を元の構造のまま表示できます。
+
+```sql
+SELECT *
+FROM arxiv
+LIMIT 1
+FORMAT PrettyJSONEachRow
+
+{
+  "id": "0704.0004",
+  "submitter": "David Callan",
+  "authors": "David Callan",
+  "title": "A determinant of Stirling cycle numbers counts unlabeled acyclic",
+  "comments": "11 pages",
+  "journal-ref": "",
+  "doi": "",
+  "report-no": "",
+  "categories": "math.CO",
+  "license": "",
+  "abstract": "  We show that a determinant of Stirling cycle numbers counts unlabeled acyclic\nsingle-source automata.",
+  "versions": [
+    {
+      "created": "Sat, 31 Mar 2007 03:16:14 GMT",
+      "version": "v1"
+    }
+  ],
+  "update_date": "2007-05-23",
+  "authors_parsed": [
+    [
+      "Callan",
+      "David"
+    ]
+  ]
+}
+```
+
+```response
+1 row in set. Elapsed: 0.009 sec.
+```
+
+<div id="handling-errors">
+  ## エラーへの対処
+</div>
+
+不正なデータが含まれることがあります。たとえば、型が合っていない特定のカラムや、フォーマットが不正な JSON オブジェクト などです。このような場合、データによって insert エラーが発生しても一定数の行を無視できるように、設定 [`input_format_allow_errors_num`](/ja/reference/settings/formats#input_format_allow_errors_num) と [`input_format_allow_errors_ratio`](/ja/reference/settings/formats#input_format_allow_errors_ratio) を使用できます。さらに、推論を補助するために [hints](/ja/reference/settings/formats#schema_inference_hints) を指定することもできます。
+
+<div id="working-with-semi-structured-data">
+  ## 半構造化データと動的データの操作
+</div>
+
+前の例では JSON を使用しましたが、そこではキー名と型があらかじめ決まっている静的なものでした。しかし、実際にはそうでないことがよくあります。キーが追加されたり、キーの型が変わったりすることがあります。これはオブザーバビリティデータのようなユースケースでは一般的です。
+
+ClickHouse では、専用の [`JSON`](/ja/reference/data-types/newjson) 型によってこれに対応しています。
+
+JSON が非常に動的で、一意なキーが多く、同じキーに複数の型が現れることが分かっている場合は、`JSONEachRow` でスキーマ推論を使い、各キーに対応するカラムを推論しようとすることは推奨しません。データが改行区切りの JSON フォーマットであっても同様です。
+
+次の例では、上記の [Python PyPI dataset](https://clickpy.clickhouse.com/) を拡張したデータセットを使用します。ここでは、ランダムなキーと値のペアを持つ任意の `tags` カラムを追加しています。
+
+```json
+{
+  "date": "2022-09-22",
+  "country_code": "IN",
+  "project": "clickhouse-connect",
+  "type": "bdist_wheel",
+  "installer": "bandersnatch",
+  "python_minor": "",
+  "system": "",
+  "version": "0.2.8",
+  "tags": {
+    "5gTux": "f3to*PMvaTYZsz!*rtzX1",
+    "nD8CV": "value"
+  }
+}
+```
+
+このデータのサンプルは、改行区切りの JSON フォーマットで一般公開されています。このファイルに対してスキーマ推論を試みると、応答が極めて冗長になるため、パフォーマンスがあまり良くないことがわかります。
+
+```sql
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz')
+
+-- 結果は省略
+```
+
+```response
+9 rows in set. Elapsed: 127.066 sec.
+```
+
+ここでの主な問題は、推論に `JSONEachRow` フォーマットが使われていることです。これは **JSON の各キーごとにカラム型を 1 つ推論** しようとするもので、つまり [`JSON`](/ja/reference/data-types/newjson) 型を使わずに、データに静的なスキーマを適用しようとしていることになります。
+
+一意なカラムが数千もある場合、この推論方法では時間がかかります。代わりに、`JSONAsObject` フォーマットを使用できます。
+
+`JSONAsObject` は入力全体を 1 つの JSON オブジェクトとして扱い、[`JSON`](/ja/reference/data-types/newjson) 型の単一カラムに格納するため、動的に変化しやすい JSON ペイロードやネストされた JSON ペイロードにより適しています。
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', 'JSONAsObject')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name─┬─type─┐
+│ json │ JSON │
+└──────┴──────┘
+
+1 row in set. Elapsed: 0.005 sec.
+```
+
+このフォーマットは、カラムに相互に整合しない複数の型がある場合にも不可欠です。たとえば、以下のような改行区切りのJSONを含む `sample.json` ファイルを考えてみましょう。
+
+```json
+{"a":1}
+{"a":"22"}
+```
+
+この場合、ClickHouse は型の競合を吸収し、カラム `a` を `Nullable(String)` として扱えます。
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/sample.json')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name─┬─type─────────────┐
+│ a    │ Nullable(String) │
+└──────┴──────────────────┘
+
+1 row in set. Elapsed: 0.081 sec.
+```
+
+<Info>
+  **型変換**
+
+  この型変換は、いくつかの設定で制御できます。上記の例は、設定 [`input_format_json_read_numbers_as_strings`](/ja/reference/settings/formats#input_format_json_read_numbers_as_strings) に依存しています。
+</Info>
+
+ただし、一部の型同士には互換性がありません。次の例を見てみましょう。
+
+```json
+{"a":1}
+{"a":{"b":2}}
+```
+
+この場合、ここで型変換を行うことはできません。そのため、`DESCRIBE` コマンドは失敗します。
+
+```sql
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json')
+```
+
+```response
+Elapsed: 0.755 sec.
+```
+
+```sql
+Received exception from server (version 24.12.1):
+Code: 636. DB::Exception: Received from sql-clickhouse.clickhouse.com:9440. DB::Exception: The table structure cannot be extracted from a JSON format file. Error:
+Code: 53. DB::Exception: Automatically defined type Tuple(b Int64) for column 'a' in row 1 differs from type defined by previous rows: Int64. You can specify the type for this column using setting schema_inference_hints.
+```
+
+この場合、`JSONAsObject` は各行を単一の [`JSON`](/ja/reference/data-types/newjson) 型 (同じカラムに複数の型を持たせることをサポート) として扱います。これは不可欠です。
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', JSONAsObject)
+SETTINGS enable_json_type = 1, describe_compact_output = 1
+```
+
+```response
+┌─name─┬─type─┐
+│ json │ JSON │
+└──────┴──────┘
+
+1 row in set. Elapsed: 0.010 sec.
+```
+
+<div id="further-reading">
+  ## 関連情報
+</div>
+
+データ型推論の詳細については、[こちら](/ja/concepts/features/interfaces/schema-inference)のドキュメントを参照してください。

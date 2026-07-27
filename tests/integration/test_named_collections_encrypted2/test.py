@@ -345,7 +345,7 @@ def test_named_collection_grants_visibility_in_system_grants(cluster):
     node1.query("GRANT SHOW NAMED COLLECTIONS ON barfoo TO grants_vis_user")
     node1.query("GRANT ALTER NAMED COLLECTION ON foobar TO grants_vis_user")
 
-    grants = node1.query(
+    node1.query(
         """
         SELECT access_type, database, table, column
         FROM system.grants

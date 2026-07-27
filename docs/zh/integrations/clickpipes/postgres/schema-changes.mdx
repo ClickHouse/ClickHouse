@@ -1,0 +1,22 @@
+---
+title: 'Schema 变更传播支持'
+slug: /integrations/clickpipes/postgres/schema-changes
+description: '介绍 ClickPipes 可检测到的源表 schema 变更类型的页面'
+doc_type: 'reference'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'data ingestion', 'real-time sync']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+ClickPipes for Postgres 可以检测源表中的 schema 变更，并且在某些情况下会自动将这些变更同步到目标端表。下面说明了各类 DDL 操作的处理方式：
+
+[//]: # "TODO 补充本页内容：rename、数据类型变更以及 truncate 时的行为，并提供如何处理不兼容 schema 变更的指导。"
+
+| Schema 变更类型                                          | 行为                                                                      |
+| ---------------------------------------------------- | ----------------------------------------------------------------------- |
+| 添加新列 (`ALTER TABLE ADD COLUMN ...`)                  | 在该表发生插入/更新/删除后会自动传播。对于 schema 变更后复制的所有行，新列都会被填充                         |
+| 添加带默认值的新列 (`ALTER TABLE ADD COLUMN ... DEFAULT ...`) | 在该表发生插入/更新/删除后会自动传播。对于 schema 变更后复制的所有行，新列都会被填充，但现有行如果不执行完整表刷新，则不会显示默认值 |
+| 删除现有列 (`ALTER TABLE DROP COLUMN ...`)                | 可以检测到，但**不会**传播。对于 schema 变更后复制的所有行，被删除的列都会填充为 `NULL`                   |
+
+请注意，新增列会在某个批次同步结束时才传播，这可能发生在达到同步时间间隔或拉取批次大小之后。有关如何控制同步的更多信息，请参见[此处](/zh/integrations/clickpipes/postgres/controlling-sync)

@@ -1,16 +1,11 @@
 import pytest
 import logging
 import pyspark
-import os
 import subprocess
 
 
 from helpers.cluster import ClickHouseCluster, minio_access_key, minio_secret_key
 from helpers.s3_tools import (
-    AzureUploader,
-    LocalUploader,
-    S3Uploader,
-    LocalDownloader,
     prepare_s3_bucket,
 )
 from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
@@ -47,10 +42,6 @@ def check_spark(spark):
     logging.info(f"Dataframe: {spark.sql('SELECT * FROM spark_catalog.db.lol2').show()}")
 
 def get_spark(cluster : ClickHouseCluster):
-    iceberg_version = "1.4.3"
-    spark_version = "3.5.1"
-    hadoop_aws_version = "3.3.4"
-    jdk_bundle = "1.12.262"
 
     builder = (
         pyspark.sql.SparkSession.builder \

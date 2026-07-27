@@ -30,15 +30,15 @@ namespace
     }
 
     /// Parses a configuration like this:
-    /// <!-- <type>expose_metrics</type> (Implied, not actually parsed) -->
+    /// <!-- <type>metrics</type> (Implied, not actually parsed) -->
     /// <metrics>true</metrics>
     /// <asynchronous_metrics>true</asynchronous_metrics>
     /// <events>true</events>
     /// <errors>true</errors>
-    PrometheusRequestHandlerConfig parseExposeMetricsConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    PrometheusRequestHandlerConfig parseMetricsConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
     {
         PrometheusRequestHandlerConfig res;
-        res.type = PrometheusRequestHandlerConfig::Type::ExposeMetrics;
+        res.type = PrometheusRequestHandlerConfig::Type::Metrics;
         res.expose_info = config.getBool(config_prefix + ".info", true);
         res.expose_metrics = config.getBool(config_prefix + ".metrics", true);
         res.expose_asynchronous_metrics = config.getBool(config_prefix + ".asynchronous_metrics", true);
@@ -50,92 +50,138 @@ namespace
         return res;
     }
 
-    /// Extracts a qualified table name from the config. It can be set either as
-    ///     <table>mydb.prometheus</table>
-    /// or
-    ///     <database>mydb</database>
-    ///     <table>prometheus</table>
-    QualifiedTableName parseTableNameFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    /// Reads the database and table names of the time series table from the configuration.
+    /// If either the database name or the table name isn't set in the configuration then we take it from the URL
+    /// query parameters 'database' or 'table'.
+    void parseTableNameFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, PrometheusRequestHandlerConfig & res)
     {
-        QualifiedTableName res;
-        res.table = config.getString(config_prefix + ".table", "prometheus");
-        res.database = config.getString(config_prefix + ".database", "");
-        if (res.database.empty())
-            res = QualifiedTableName::parseFromString(res.table);
-        if (res.database.empty())
-            res.database = "default";
-        return res;
+        res.time_series_table_name.database = config.getString(config_prefix + ".database", "");
+        res.time_series_table_name.table = config.getString(config_prefix + ".table", "");
+
+        /// When the table is given as a qualified `database.table` name, we resolve it now and set the database name
+        /// so it can't be overridden by URL query parameters.
+        if (res.time_series_table_name.database.empty() && !res.time_series_table_name.table.empty())
+        {
+            if (auto parsed = QualifiedTableName::tryParseFromString(res.time_series_table_name.table); parsed && !parsed->database.empty())
+                res.time_series_table_name = *parsed;
+        }
     }
 
-    /// Parses a configuration like this:
-    /// <!-- <type>remote_write</type> (Implied, not actually parsed) -->
-    /// <table>db.time_series_table_name</table>
-    PrometheusRequestHandlerConfig parseRemoteWriteConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    /// Parses the optional <user> element and stores it as credentials in the connection config.
+    void parseUserFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, PrometheusRequestHandlerConfig & res)
     {
-        PrometheusRequestHandlerConfig res;
-        res.type = PrometheusRequestHandlerConfig::Type::RemoteWrite;
-        res.time_series_table_name = parseTableNameFromConfig(config, config_prefix);
-        parseCommonConfig(config, res);
-        return res;
-    }
-
-    /// Parses a configuration like this:
-    /// <!-- <type>remote_read</type> (Implied, not actually parsed) -->
-    /// <table>db.time_series_table_name</table>
-    PrometheusRequestHandlerConfig parseRemoteReadConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
-    {
-        PrometheusRequestHandlerConfig res;
-        res.type = PrometheusRequestHandlerConfig::Type::RemoteRead;
-        res.time_series_table_name = parseTableNameFromConfig(config, config_prefix);
-        parseCommonConfig(config, res);
         if (config.has(config_prefix + ".user"))
         {
             AlwaysAllowCredentials credentials(config.getString(config_prefix + ".user"));
             res.connection_config.credentials.emplace(credentials);
         }
-        return res;
     }
 
     /// Parses a configuration like this:
-    /// <!-- <type>query_api</type> (Implied, not actually parsed) -->
+    /// <!-- <type>write</type> (Implied, not actually parsed) -->
     /// <table>db.time_series_table_name</table>
-    PrometheusRequestHandlerConfig parseQueryAPIConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    PrometheusRequestHandlerConfig parseWriteConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
     {
         PrometheusRequestHandlerConfig res;
-        res.type = PrometheusRequestHandlerConfig::Type::QueryAPI;
-        res.time_series_table_name = parseTableNameFromConfig(config, config_prefix);
+        res.type = PrometheusRequestHandlerConfig::Type::Write;
+        parseTableNameFromConfig(config, config_prefix, res);
         parseCommonConfig(config, res);
-        if (config.has(config_prefix + ".user"))
-        {
-            AlwaysAllowCredentials credentials(config.getString(config_prefix + ".user"));
-            res.connection_config.credentials.emplace(credentials);
-        }
         return res;
     }
 
     /// Parses a configuration like this:
-    /// <type>expose_metrics</type>
+    /// <!-- <type>read</type> (Implied, not actually parsed) -->
+    /// <table>db.time_series_table_name</table>
+    PrometheusRequestHandlerConfig parseReadConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    {
+        PrometheusRequestHandlerConfig res;
+        res.type = PrometheusRequestHandlerConfig::Type::Read;
+        parseTableNameFromConfig(config, config_prefix, res);
+        parseCommonConfig(config, res);
+        parseUserFromConfig(config, config_prefix, res);
+        return res;
+    }
+
+    /// Parses a configuration like this:
+    /// <!-- <type>query</type> (Implied, not actually parsed) -->
+    /// <table>db.time_series_table_name</table>
+    PrometheusRequestHandlerConfig parseQueryConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    {
+        PrometheusRequestHandlerConfig res;
+        res.type = PrometheusRequestHandlerConfig::Type::Query;
+        parseTableNameFromConfig(config, config_prefix, res);
+        parseCommonConfig(config, res);
+        parseUserFromConfig(config, config_prefix, res);
+        return res;
+    }
+
+    /// Parses a configuration like this:
+    /// <!-- <type>api_v1</type> (Implied, not actually parsed) -->
+    /// <table>db.time_series_table_name</table>
+    PrometheusRequestHandlerConfig parseAPIv1Config(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    {
+        PrometheusRequestHandlerConfig res;
+        res.type = PrometheusRequestHandlerConfig::Type::APIv1;
+        parseTableNameFromConfig(config, config_prefix, res);
+        parseCommonConfig(config, res);
+        parseUserFromConfig(config, config_prefix, res);
+        return res;
+    }
+
+    /// Parses the protocol type specified in the <type> element of a handler's configuration.
+    PrometheusRequestHandlerConfig::Type parseHandlerType(std::string_view full_type)
+    {
+        /// Strip a "prometheus_" prefix from the type (e.g. "prometheus_write" -> "write").
+        /// "prometheus" alone is an alias for "metrics".
+        std::string_view type = full_type;
+        if (type == "prometheus")
+            type = "metrics";
+        else if (type.starts_with("prometheus_"))
+            type = type.substr(strlen("prometheus_"));
+
+        /// The "expose_metrics", "remote_write", "remote_read" and "query_api" names are kept
+        /// as deprecated aliases for the current "metrics", "write", "read" and "query" names.
+        if (type == "metrics" || type == "expose_metrics")
+            return PrometheusRequestHandlerConfig::Type::Metrics;
+        if (type == "write" || type == "remote_write")
+            return PrometheusRequestHandlerConfig::Type::Write;
+        if (type == "read" || type == "remote_read")
+            return PrometheusRequestHandlerConfig::Type::Read;
+        if (type == "query" || type == "query_api")
+            return PrometheusRequestHandlerConfig::Type::Query;
+        if (type == "api_v1")
+            return PrometheusRequestHandlerConfig::Type::APIv1;
+
+        throw Exception(
+            ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown type {} is specified in the configuration for a prometheus protocol", full_type);
+    }
+
+    /// Parses a configuration like this:
+    /// <type>metrics</type>
     /// <metrics>true</metrics>
     /// <asynchronous_metrics>true</asynchronous_metrics>
     /// <events>true</events>
     /// <errors>true</errors>
     /// -OR-
-    /// <type>remote_write</type>
+    /// <type>write</type>
     /// <table>db.time_series_table_name</table>
     PrometheusRequestHandlerConfig parseHandlerConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
     {
-        String type = config.getString(config_prefix + ".type");
-
-        if (type == "expose_metrics")
-            return parseExposeMetricsConfig(config, config_prefix);
-        if (type == "remote_write")
-            return parseRemoteWriteConfig(config, config_prefix);
-        if (type == "remote_read")
-            return parseRemoteReadConfig(config, config_prefix);
-        if (type == "query_api")
-            return parseQueryAPIConfig(config, config_prefix);
-        throw Exception(
-            ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown type {} is specified in the configuration for a prometheus protocol", type);
+        auto type = parseHandlerType(config.getString(config_prefix + ".type"));
+        switch (type)
+        {
+            case PrometheusRequestHandlerConfig::Type::Metrics:
+                return parseMetricsConfig(config, config_prefix);
+            case PrometheusRequestHandlerConfig::Type::Write:
+                return parseWriteConfig(config, config_prefix);
+            case PrometheusRequestHandlerConfig::Type::Read:
+                return parseReadConfig(config, config_prefix);
+            case PrometheusRequestHandlerConfig::Type::Query:
+                return parseQueryConfig(config, config_prefix);
+            case PrometheusRequestHandlerConfig::Type::APIv1:
+                return parseAPIv1Config(config, config_prefix);
+        }
+        UNREACHABLE();
     }
 
     /// Returns true if the protocol represented by a passed config can be handled.
@@ -143,7 +189,7 @@ namespace
     {
         /// The standalone ClickHouse Keeper can only expose its metrics.
         /// It can't handle other Prometheus protocols.
-        return !for_keeper || (config.type == PrometheusRequestHandlerConfig::Type::ExposeMetrics);
+        return !for_keeper || (config.type == PrometheusRequestHandlerConfig::Type::Metrics);
     }
 
     /// Creates a writer which serializes exposing metrics.
@@ -199,7 +245,7 @@ namespace
         }
         else
         {
-            auto parsed_config = parseExposeMetricsConfig(config, "prometheus");
+            auto parsed_config = parseMetricsConfig(config, "prometheus");
             if (auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, for_keeper))
             {
                 String endpoint = config.getString("prometheus.endpoint", "/metrics");
@@ -234,7 +280,10 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
 {
     auto headers = parseHTTPResponseHeadersWithCommons(config, config_prefix, common_headers);
 
-    auto parsed_config = parseExposeMetricsConfig(config, config_prefix + ".handler");
+    const String handler_config_prefix = config_prefix + ".handler";
+
+    PrometheusRequestHandlerConfig parsed_config = parseHandlerConfig(config, handler_config_prefix);
+
     auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, /* for_keeper= */ false, headers);
     chassert(handler);  /// `handler` can't be nullptr here because `for_keeper` is false.
     handler->addFiltersFromConfig(config, config_prefix);
@@ -252,7 +301,7 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRuleDefaults(
     if (!config.has("prometheus") || config.getInt("prometheus.port", 0) || config.has("prometheus.handlers"))
         return nullptr;
 
-    auto parsed_config = parseExposeMetricsConfig(config, "prometheus");
+    auto parsed_config = parseMetricsConfig(config, "prometheus");
     String endpoint = config.getString("prometheus.endpoint", "/metrics");
     auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, /* for_keeper= */ false);
     chassert(handler);  /// `handler` can't be nullptr here because `for_keeper` is false.

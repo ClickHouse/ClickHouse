@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemPartsColumns.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
@@ -101,7 +102,8 @@ void StorageSystemPartsColumns::processNextStorage(
     };
 
     std::unordered_map<String, ColumnInfo> columns_info;
-    for (const auto & column : info.storage->getInMemoryMetadataPtr(context, false)->getColumns())
+    auto metadata_snapshot = info.storage->getInMemoryMetadataPtr(context, false);
+    for (const auto & column : metadata_snapshot->getColumns())
     {
         ColumnInfo column_info;
         if (column.default_desc.expression)
@@ -120,6 +122,7 @@ void StorageSystemPartsColumns::processNextStorage(
     for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
         const auto & part = all_parts[part_number];
+        const auto part_metadata_snapshot = part->getMetadataSnapshot();
         auto part_state = all_parts_state[part_number];
         auto columns_size = part->getTotalColumnsSize();
 
@@ -152,7 +155,7 @@ void StorageSystemPartsColumns::processNextStorage(
             size_t res_index = 0;
 
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->partition.serializeToString(part->getMetadataSnapshot()));
+                columns[res_index++]->insert(part->partition.serializeToString(part_metadata_snapshot));
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->name);
             if (columns_mask[src_index++])
@@ -435,3 +438,6 @@ void StorageSystemPartsColumns::processNextStorage(
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemPartsColumns) }

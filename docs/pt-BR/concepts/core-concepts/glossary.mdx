@@ -1,0 +1,166 @@
+---
+sidebarTitle: 'Glossário'
+description: 'Esta página contém uma lista de termos e expressões comumente usados no ClickHouse, bem como suas definições.'
+title: 'Glossário'
+slug: /concepts/glossary
+keywords: ['glossário', 'definições', 'terminologia']
+doc_type: 'reference'
+---
+
+{/* no-glossary */}
+
+<div id="atomicity">
+  ## Atomicidade
+</div>
+
+A atomicidade garante que uma transação (uma série de operações de banco de dados) seja tratada como uma única unidade indivisível. Isso significa que ou todas as operações da transação são executadas, ou nenhuma é. Um exemplo de transação atômica é a transferência de dinheiro de uma conta bancária para outra. Se qualquer etapa da transferência falhar, a transação falha, e o dinheiro permanece na primeira conta. A atomicidade garante que nenhum dinheiro seja perdido nem criado.
+
+<div id="block">
+  ## Bloco
+</div>
+
+Um bloco é uma unidade lógica usada para organizar o processamento e o armazenamento de dados. Cada bloco contém dados colunares, processados em conjunto para melhorar o desempenho durante a execução de consultas. Ao processar dados em blocos, o ClickHouse aproveita os núcleos de CPU com eficiência, minimizando falhas de cache e viabilizando a execução vetorizada. O ClickHouse usa vários algoritmos de compressão, como LZ4, ZSTD e Delta, para comprimir dados em blocos.
+
+<div id="cluster">
+  ## Cluster
+</div>
+
+Um conjunto de nós (servidores) que trabalham em conjunto para armazenar e processar dados.
+
+<div id="cmek">
+  ## CMEK
+</div>
+
+As chaves de criptografia gerenciadas pelo cliente (CMEK) permitem que os clientes usem a chave do seu serviço de gerenciamento de chaves (KMS) para criptografar a chave de dados em disco do ClickHouse e proteger seus dados em repouso.
+
+<div id="dictionary">
+  ## Dicionário
+</div>
+
+Um dicionário é um mapeamento de pares chave-valor útil para vários tipos de listas de referência. É um recurso poderoso que permite usar dicionários de forma eficiente em consultas, o que muitas vezes é mais eficiente do que usar um `JOIN` com tabelas de referência.
+
+<div id="distributed-table">
+  ## Tabela distribuída
+</div>
+
+Uma tabela distribuída no ClickHouse é um tipo especial de tabela que não armazena dados por si só, mas oferece uma visão unificada para o processamento distribuído de consultas em vários servidores de um cluster.
+
+<div id="granule">
+  ## Grânulo
+</div>
+
+Um grânulo é um lote de linhas em um bloco não comprimido. Ao ler dados, o ClickHouse acessa grânulos, e não linhas individuais, o que permite um processamento de dados mais rápido em cargas de trabalho analíticas. Um grânulo contém 8192 linhas por padrão. O índice primário contém uma entrada por grânulo.
+
+<div id="incremental-materialized-view">
+  ## View materializada incremental
+</div>
+
+No ClickHouse, trata-se de um tipo de visão materializada que processa e agrega dados no momento da inserção. Quando novos dados são inseridos na tabela de origem, a visão materializada executa uma consulta SQL de agregação predefinida apenas sobre os blocos recém-inseridos e grava os resultados agregados em uma tabela de destino.
+
+<div id="lightweight-update">
+  ## Atualização leve
+</div>
+
+Uma atualização leve no ClickHouse é um recurso experimental que permite atualizar linhas em uma tabela usando a sintaxe padrão do SQL UPDATE, mas, em vez de reescrever colunas inteiras ou partes de dados (como nas mutações tradicionais), ela cria &quot;patch parts&quot; contendo apenas as colunas e linhas atualizadas. Essas atualizações ficam imediatamente visíveis em consultas SELECT por meio da aplicação dos patches, mas os dados físicos só são atualizados durante mesclagens subsequentes.
+
+<div id="mark-file">
+  ## Arquivo de marcas
+</div>
+
+Um arquivo de marcas no ClickHouse é um arquivo que armazena &quot;marcas&quot;, ou seja, entradas de índice que ajudam o ClickHouse a localizar rapidamente onde determinados intervalos de dados estão armazenados nos arquivos de dados.
+
+<div id="materialized-view">
+  ## Visão materializada
+</div>
+
+Uma visão materializada no ClickHouse é um mecanismo que executa automaticamente uma consulta nos dados à medida que são inseridos em uma tabela de origem, armazenando os resultados transformados ou agregados em uma tabela de destino separada para consultas mais rápidas.
+
+<div id="mergetree">
+  ## MergeTree
+</div>
+
+Um MergeTree no ClickHouse é um engine de tabela projetado para altas taxas de ingestão e grandes volumes de dados. É o principal engine de armazenamento do ClickHouse, oferecendo recursos como armazenamento colunar, particionamento personalizado, índices primários esparsos e suporte a operações de mesclagem de dados em segundo plano.
+
+<div id="mutation">
+  ## Mutação
+</div>
+
+Uma mutação no ClickHouse é uma operação que modifica ou exclui dados existentes em uma tabela, normalmente por meio de comandos como ALTER TABLE ... UPDATE ou ALTER TABLE ... DELETE. As mutações são implementadas como processos assíncronos em segundo plano que reescrevem por completo as partes de dados afetadas pela alteração, em vez de modificar as linhas no local.
+
+<div id="on-the-fly-mutation">
+  ## Mutação on-the-fly
+</div>
+
+As mutações on-the-fly no ClickHouse são um mecanismo que permite que atualizações ou exclusões passem a ficar visíveis em consultas `SELECT` subsequentes imediatamente após o envio da mutação, sem precisar esperar que o processo de mutação em segundo plano termine.
+
+<div id="parts">
+  ## Partes
+</div>
+
+Um arquivo físico em disco que armazena uma parte dos dados da tabela. Isso é diferente de uma partição, que é uma divisão lógica dos dados de uma tabela criada por meio de uma chave de particionamento.
+
+<div id="partitioning-key">
+  ## Chave de particionamento
+</div>
+
+No ClickHouse, uma chave de particionamento é uma expressão SQL definida na cláusula PARTITION BY ao criar uma tabela. Ela determina como os dados são agrupados logicamente em partições em disco. Cada valor único da chave de particionamento forma sua própria partição física, permitindo operações eficientes de gerenciamento de dados, como excluir, mover ou arquivar partições inteiras.
+
+<div id="primary-key">
+  ## Chave primária
+</div>
+
+No ClickHouse, uma chave primária determina a ordem em que os dados são armazenados em disco e é usada para criar um índice esparso que acelera a filtragem nas consultas. Ao contrário dos bancos de dados tradicionais, a chave primária no ClickHouse não impõe unicidade — várias linhas podem ter o mesmo valor de chave primária.
+
+<div id="projection">
+  ## Projeção
+</div>
+
+Uma projeção no ClickHouse é uma tabela oculta, mantida automaticamente, que armazena dados em uma ordem diferente ou com agregações pré-computadas para acelerar consultas, especialmente as que filtram colunas que não fazem parte da chave primária principal.
+
+<div id="refreshable-materialized-view">
+  ## View materializada atualizável
+</div>
+
+Uma view materializada atualizável é um tipo de visão materializada que reexecuta periodicamente sua consulta sobre todo o conjunto de dados e armazena o resultado em uma tabela de destino. Diferentemente das views materializadas incrementais, as views materializadas atualizáveis são atualizadas conforme um agendamento e podem dar suporte a consultas complexas, incluindo JOINs e UNIONs, sem restrições.
+
+<div id="replica">
+  ## Réplica
+</div>
+
+Uma cópia dos dados armazenados em um banco de dados do ClickHouse. Você pode ter qualquer número de réplicas dos mesmos dados para redundância e confiabilidade. As réplicas são usadas em conjunto com o motor de tabela ReplicatedMergeTree, que permite ao ClickHouse manter várias cópias dos dados sincronizadas entre diferentes servidores.
+
+<div id="shard">
+  ## Shard
+</div>
+
+Um subconjunto de dados. O ClickHouse sempre tem pelo menos um shard para seus dados. Se você não dividir os dados entre vários servidores, eles serão armazenados em um único shard. O sharding dos dados entre vários servidores pode ser usado para distribuir a carga se ela exceder a capacidade de um único servidor.
+
+<div id="skipping-index">
+  ## Índice de skipping
+</div>
+
+Índices de skipping são usados para armazenar pequenas quantidades de metadados no nível de vários grânulos consecutivos, o que permite ao ClickHouse evitar examinar linhas irrelevantes. Índices de skipping oferecem uma alternativa mais leve às projeções.
+
+<div id="sorting-key">
+  ## Chave de ordenação
+</div>
+
+No ClickHouse, uma chave de ordenação define a ordem física das linhas em disco. Se você não especificar uma chave primária, o ClickHouse usa a chave de ordenação como chave primária. Se especificar ambas, a chave primária deve ser um prefixo da chave de ordenação.
+
+<div id="sparse-index">
+  ## Índice esparso
+</div>
+
+Um tipo de indexação em que o índice primário contém uma entrada para um grupo de linhas, em vez de para uma única linha. A entrada correspondente a um grupo de linhas é chamada de marca. Com índices esparsos, o ClickHouse primeiro identifica grupos de linhas que podem corresponder à consulta e depois os processa separadamente para encontrar uma correspondência. Por isso, o índice primário é pequeno o bastante para ser carregado na memória.
+
+<div id="table-engine">
+  ## Motor de tabela
+</div>
+
+Os motores de tabela no ClickHouse determinam como os dados são gravados, armazenados e acessados. O MergeTree é o motor de tabela mais comum e permite inserir rapidamente grandes volumes de dados, que são processados em segundo plano.
+
+<div id="ttl">
+  ## TTL
+</div>
+
+Time To Live (TTL) é um recurso do ClickHouse que move, exclui ou consolida automaticamente colunas ou linhas após um determinado período. Isso permite gerenciar o armazenamento com mais eficiência, pois você pode excluir, mover ou arquivar os dados que não precisa mais acessar com frequência.

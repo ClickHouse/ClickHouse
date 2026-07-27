@@ -1,0 +1,82 @@
+---
+slug: /integrations/integration-development/building-integrations
+title: 'Building integrations with ClickHouse'
+sidebarTitle: 'Building integrations'
+description: 'Orientation on ingestion, consumption, wire protocols, and client conventions for ClickHouse integrations.'
+keywords: ['partner', 'integration', 'ingestion', 'consumption', 'ClickPipes', 'language clients', 'user-agent']
+doc_type: 'guide'
+---
+
+This page orients you to the integration surface so you can scope ingestion and consumption work. For validation and publishing, continue with [Testing your integration](/resources/develop-contribute/integrations/testing-your-integration) and [Documenting your integration](/resources/develop-contribute/integrations/documenting-your-integration).
+
+## Ingestion {#ingestion}
+
+Two paths bring data into ClickHouse. Choose based on whether your product should own the ingestion plane or delegate it.
+
+### Path A: ClickPipes (managed, ClickHouse Cloud only) {#path-a-clickpipes}
+
+If you prefer not to build and operate ingestion infrastructure, [ClickPipes](/integrations/clickpipes/home) is the managed service that pulls from your customer's sources into their ClickHouse Cloud service. ClickPipes handles scaling, parallelization, retries, and lag reporting.
+
+Supported sources today include:
+
+- **Streaming:** Apache Kafka (including MSK, Confluent Cloud, Redpanda, Azure Event Hubs, WarpStream), Amazon Kinesis
+- **Object storage:** Amazon S3 (and S3-compatible stores), Google Cloud Storage, Azure Blob Storage
+- **CDC:** PostgreSQL, MySQL, MongoDB, BigQuery
+
+### Path B: Self-driven ingestion via an official language client {#path-b-language-client}
+
+If you own the pipeline, use one of the [official language clients](/integrations/language-clients/index). They handle serialization, batching, TLS, compression, and connection pooling. You pass runtime primitives; the client handles the wire format.
+
+- Official clients: Python, Go, Java, JavaScript, Rust, C#, C++
+- Both wire protocols: HTTP (all clients) and native TCP (Go and C++ clients only)
+- Auth: username and password over TLS by default; mTLS and SSL client-certificate auth are supported by all major clients
+- Data format is usually an implementation detail. Clients convert runtime types to ClickHouse Native or RowBinary format. If you already produce Arrow, Parquet, JSONEachRow, or another format, most clients expose a raw-bytes API for pre-serialized data
+- For throughput, batch **10K–100K rows** and aim for roughly **one insert per second** as an upper bound for synchronous inserts. If client-side batching is impractical, use [asynchronous inserts](/concepts/features/operations/insert/asyncinserts) to shift batching to the server
+
+See also: [Bulk inserts](/concepts/features/operations/insert/bulkinserts).
+
+## Consumption {#consumption}
+
+HTTP and native TCP both carry queries. Native is binary and lower overhead. HTTP works through load balancers and proxies. Both are first-class; pick based on infrastructure, not feature gaps.
+
+- **Application code:** use the same [official language clients](/integrations/language-clients/index) as for ingestion
+- **BI and SQL tools:** ClickHouse ships an official [JDBC v2 driver](/integrations/language-clients/java/index) (Java) and an [ODBC driver](/concepts/features/interfaces/odbc). Tableau, Looker, Power BI, Metabase, Apache Superset, and Grafana integrate via these drivers or dedicated connectors maintained by ClickHouse and partners
+- **Result format:** clients typically own serialization. You can request Arrow, Parquet, or other columnar formats on the wire if your product needs them
+
+### Result-set sizing {#result-set-sizing}
+
+Most analytical queries return small result sets (aggregates, summaries, top-N), and the wire is rarely the bottleneck. ClickHouse tables can hold billions of rows, and an unbounded `SELECT *` over a large fact table can move terabytes. **Shape the request in your application:** use `LIMIT`, pagination, streaming reads, and explicit column lists. If you build user-facing analytics, treat unbounded result sets as a UX problem, not a transport problem.
+
+ClickHouse has a rich type system: arrays, tuples, maps, JSON, nested, LowCardinality, and more. Official clients map these to idiomatic language types. If your product surfaces ClickHouse data to end users, plan a type-mapping strategy early.
+
+## Next steps {#next-steps}
+
+Pick a path and prototype against a [ClickHouse Cloud trial](https://clickhouse.com/cloud), then register your integration in the [partner portal](https://clickhouse.com/partners).
+
+## User-agent string convention {#user-agent-string-convention}
+
+HTTP clients should set a `User-Agent` string that identifies your integration. ClickHouse parses this server-side to track adoption, surface usage telemetry, and inform the roadmap.
+
+Format:
+
+```text
+<app_name>/<app_version> <client_name>/<client_version> (<comment>; <key1>: <value1>; <key2>: <value2>)
+```
+
+Examples:
+
+- `clickhouse-java/0.8.0`
+- `my-analytics-app/3.1.2 clickhouse-js/1.2.0 (env: staging; region: us-east-1; lv: node/20.10)`
+
+Rules:
+
+- No whitespace in client name or version
+- If you include a comment, it must come first
+- Standard metadata keys: `lv` (language or framework version), `os`, `arch`
+- TCP and native protocol clients report client name and version via protocol fields, not `User-Agent`
+
+If you use JDBC, see [client identification](/integrations/language-clients/java/jdbc#client-identification) for how the driver sets `User-Agent` and related fields.
+
+## Sandbox and trial access {#sandbox-and-trial-access}
+
+[ClickHouse Cloud](https://clickhouse.com/cloud) offers a free trial for development and integration validation. If you are a House Mate partner, you can request additional development credits through the [partner portal](https://clickhouse.com/partners).

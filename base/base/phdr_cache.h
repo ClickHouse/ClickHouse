@@ -14,7 +14,14 @@
   */
 void updatePHDRCache();
 
-/** Check if "dl_iterate_phdr" will be lock-free
-  * to determine if some features like Query Profiler can be used.
+/** Whether capturing a stack trace from within an async signal handler is safe on this
+  * platform/build. This gates features that unwind in a signal handler (the Query Profiler)
+  * or that depend on such a source (the TraceCollector).
+  *
+  * - Linux: true once `updatePHDRCache` has installed the lock-free `dl_iterate_phdr` (libunwind
+  *   calls `dl_iterate_phdr` while unwinding `.eh_frame`, and glibc's takes a loader lock).
+  * - musl: always true, its `dl_iterate_phdr` is inherently lock-free.
+  * - macOS: always true, unwinding uses frame-pointer `backtrace` which never calls
+  *   `dl_iterate_phdr`, so no cache is needed.
   */
-bool hasPHDRCache();
+bool hasAsyncSignalSafeUnwind();

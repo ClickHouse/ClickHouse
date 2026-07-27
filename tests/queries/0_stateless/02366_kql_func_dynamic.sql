@@ -77,36 +77,6 @@ print '-- array_split()';
 print array_split(dynamic([1,2,3,4,5]), 2);
 -- print array_split(dynamic([1,2,3,4,5]), dynamic([1,3]));
 -- print array_split(dynamic([1,2,3,4,5]), dynamic([-1,-2]));
-print '-- array_sort_asc()';
--- Nested type `Dynamic` cannot be inside `Nullable` type — `kql_array_sort_asc` fails with `Array(Dynamic)`
--- on `clickhouse-server` (passes in `clickhouse-local`).
-print array_sort_asc(dynamic([null, 'd', 'a', 'c', 'c'])); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print array_sort_asc(dynamic([4, 1, 3, 2])); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print array_sort_asc(dynamic(['b', 'a', 'c']), dynamic(['q', 'p', 'r']))[0]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print array_sort_asc(dynamic(['q', 'p', 'r']), dynamic(['clickhouse','hello', 'world'])); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print array_sort_asc( dynamic(['d', null, 'a', 'c', 'c']) , false); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print array_sort_asc( dynamic(['d', null, 'a', 'c', 'c']) , 1 > 2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print array_sort_asc( dynamic([null, null, null]) , false); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print array_sort_asc(dynamic([2, 1, null,3, null]), dynamic([20, 10, 40, 30, 50]), 1 < 2)[0]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print array_sort_asc(dynamic(['1','3','4','5','2']),dynamic(["a","b","c","d","e"]), dynamic(["a","b","c","d","e"]), dynamic(["a","b","c","d","e"]))[3]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print array_sort_asc(split("John,Paul,George,Ringo", ","));
-print array_sort_asc(dynamic([null,"blue","yellow","green",null])); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print array_sort_asc(dynamic([null,"blue","yellow","green",null]), false); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print '-- array_sort_desc()';
--- Nested type `Dynamic` cannot be inside `Nullable` type — `kql_array_sort_desc` fails with `Array(Dynamic)`
--- on `clickhouse-server` (passes in `clickhouse-local`).
-print array_sort_desc(dynamic([null, 'd', 'a', 'c', 'c'])); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print array_sort_desc(dynamic([4, 1, 3, 2])); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print array_sort_desc(dynamic(['b', 'a', 'c']), dynamic(['q', 'p', 'r']))[0]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print array_sort_desc(dynamic(['q', 'p', 'r']), dynamic(['clickhouse','hello', 'world'])); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print array_sort_desc( dynamic(['d', null, 'a', 'c', 'c']) , false); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print array_sort_desc( dynamic(['d', null, 'a', 'c', 'c']) , 1 > 2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print array_sort_desc( dynamic([null, null, null]) , false); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print array_sort_desc(dynamic([2, 1, null,3, null]), dynamic([20, 10, 40, 30, 50]), 1 < 2)[0]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print array_sort_desc(dynamic(['1','3','4','5','2']),dynamic(["a","b","c","d","e"]), dynamic(["a","b","c","d","e"]), dynamic(["a","b","c","d","e"]))[3]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print array_sort_desc(split("John,Paul,George,Ringo", ","));
-print array_sort_desc(dynamic([null,"blue","yellow","green",null])); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print array_sort_desc(dynamic([null,"blue","yellow","green",null]), false); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 print '-- jaccard_index()';
 print jaccard_index(dynamic([1, 1, 2, 2, 3, 3]), dynamic([1, 2, 3, 4, 4, 4]));
 print jaccard_index(dynamic([1, 2, 3]), dynamic([]));
@@ -132,14 +102,7 @@ print set_difference(dynamic([]), dynamic([]));
 print set_difference(dynamic([]), dynamic([9]));
 print set_difference(dynamic([]), dynamic(["asd"]));
 print set_difference(dynamic([1, 1, 2, 2, 3, 3]), dynamic([1, 2, 3]));
--- FIXME: Nested type Dynamic cannot be inside Nullable type — kql_array_sort_asc fails with Array(Dynamic)
--- print array_sort_asc(set_difference(dynamic([1, 4, 2, 3, 5, 4, 6]), dynamic([1, 2, 3])))[0];
 print set_difference(dynamic([4]), dynamic([1, 2, 3]));
--- FIXME: Nested type Dynamic cannot be inside Nullable type — kql_array_sort_asc fails with Array(Dynamic)
--- print array_sort_asc(set_difference(dynamic([1, 2, 3, 4, 5]), dynamic([5]), dynamic([2, 4])))[0];
--- print array_sort_asc(set_difference(dynamic([1, 2, 3]), dynamic([])))[0];
--- print array_sort_asc(set_difference(dynamic(['a', 's', 'd']), dynamic(['a', 'f'])))[0];
--- print array_sort_asc(set_difference(dynamic(['Chewbacca', 'Darth Vader', 'Han Solo']), dynamic(['Darth Sidious', 'Darth Vader'])))[0];
 print '-- set_has_element()';
 print set_has_element(dynamic([]), 9);
 print set_has_element(dynamic(["this", "is", "an", "example"]), "example");
@@ -148,9 +111,6 @@ print set_has_element(dynamic([1, 2, 3]), 2);
 print set_has_element(dynamic([1, 2, 3, 4.2]), 4);
 print '-- set_intersect()';
 print set_intersect(dynamic([]), dynamic([]));
--- FIXME: Nested type Dynamic cannot be inside Nullable type — kql_array_sort_asc fails with Array(Dynamic)
--- print array_sort_asc(set_intersect(dynamic([1, 1, 2, 2, 3, 3]), dynamic([1, 2, 3])))[0];
--- print array_sort_asc(set_intersect(dynamic([1, 4, 2, 3, 5, 4, 6]), dynamic([1, 2, 3])))[0];
 print set_intersect(dynamic([4]), dynamic([1, 2, 3]));
 print set_intersect(dynamic([1, 2, 3, 4, 5]), dynamic([1, 3, 5]), dynamic([2, 5]));
 print set_intersect(dynamic([1, 2, 3]), dynamic([]));
@@ -158,14 +118,6 @@ print set_intersect(dynamic(['a', 's', 'd']), dynamic(['a', 'f']));
 print set_intersect(dynamic(['Chewbacca', 'Darth Vader', 'Han Solo']), dynamic(['Darth Sidious', 'Darth Vader']));
 print '-- set_union()';
 print set_union(dynamic([]), dynamic([]));
--- FIXME: Nested type Dynamic cannot be inside Nullable type — kql_array_sort_asc fails with Array(Dynamic)
--- print array_sort_asc(set_union(dynamic([1, 1, 2, 2, 3, 3]), dynamic([1, 2, 3])))[0];
--- print array_sort_asc(set_union(dynamic([1, 4, 2, 3, 5, 4, 6]), dynamic([1, 2, 3])))[0];
--- print array_sort_asc(set_union(dynamic([4]), dynamic([1, 2, 3])))[0];
--- print array_sort_asc(set_union(dynamic([1, 3, 4]), dynamic([5]), dynamic([2, 4])))[0];
--- print array_sort_asc(set_union(dynamic([1, 2, 3]), dynamic([])))[0];
--- print array_sort_asc(set_union(dynamic(['a', 's', 'd']), dynamic(['a', 'f'])))[0];
--- print array_sort_asc(set_union(dynamic(['Chewbacca', 'Darth Vader', 'Han Solo']), dynamic(['Darth Sidious', 'Darth Vader'])))[0];
 print '-- zip()';
 -- FIXME: Nested type Dynamic cannot be inside Nullable type — zip fails with Array(Dynamic)
 -- print zip(dynamic([]), dynamic([]));

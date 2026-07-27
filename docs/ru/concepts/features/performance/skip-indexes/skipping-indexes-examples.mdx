@@ -1,0 +1,275 @@
+---
+slug: /optimize/skipping-indexes/examples
+sidebarTitle: 'Индексы пропуска данных — примеры'
+description: 'Сводные примеры индексов пропуска данных'
+title: 'Примеры индексов пропуска данных'
+doc_type: 'guide'
+keywords: ['индексы пропуска данных', 'пропуск данных', 'производительность', 'индексирование', 'рекомендации']
+---
+
+На этой странице собраны примеры индексов пропуска данных в ClickHouse: показано, как объявлять каждый тип, когда их использовать и как проверять, что они действительно применяются. Все эти возможности поддерживаются [таблицами семейства MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree).
+
+**Синтаксис индекса:**
+
+```sql
+INDEX name expr TYPE type(...) [GRANULARITY N]
+```
+
+ClickHouse поддерживает шесть типов индекса пропуска данных:
+
+| Тип индекса                                         | Описание                                                                               |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| **minmax**                                          | Отслеживает минимальное и максимальное значение в каждой грануле                       |
+| **set(N)**                                          | Хранит до N различных значений в каждой грануле                                        |
+| **text**                                            | Инвертированный индекс по токенизированным строковым данным для полнотекстового поиска |
+| **bloom&#95;filter([false&#95;positive&#95;rate])** | Вероятностный фильтр для проверки существования                                        |
+| **ngrambf&#95;v1**                                  | N-граммный bloom-фильтр для поиска по подстрокам                                       |
+| **tokenbf&#95;v1**                                  | Bloom-фильтр на основе токенов для полнотекстового поиска                              |
+
+В каждом разделе приведены примеры с тестовыми данными и показано, как проверить использование индекса при выполнении запроса.
+
+<div id="minmax-index">
+  ## Индекс MinMax
+</div>
+
+Индекс `minmax` лучше всего подходит для диапазонных предикатов по слабо отсортированным данным или по столбцам, коррелирующим с `ORDER BY`.
+
+```sql
+-- Определить в CREATE TABLE
+CREATE TABLE events
+(
+  ts DateTime,
+  user_id UInt64,
+  value UInt32,
+  INDEX ts_minmax ts TYPE minmax GRANULARITY 1
+)
+ENGINE=MergeTree
+ORDER BY ts;
+
+-- Или добавить позже и материализовать
+ALTER TABLE events ADD INDEX ts_minmax ts TYPE minmax GRANULARITY 1;
+ALTER TABLE events MATERIALIZE INDEX ts_minmax;
+
+-- Запрос, использующий индекс
+SELECT count() FROM events WHERE ts >= now() - 3600;
+
+-- Проверить использование
+EXPLAIN indexes = 1
+SELECT count() FROM events WHERE ts >= now() - 3600;
+```
+
+См. [разобранный пример](/ru/concepts/best-practices/using-data-skipping-indices#example) с `EXPLAIN` и отсечением.
+
+<div id="set-index">
+  ## Индекс Set
+</div>
+
+Используйте индекс `set`, когда локальная (на уровне блока) мощность мала; он неэффективен, если в каждом блоке много различных значений.
+
+```sql
+ALTER TABLE events ADD INDEX user_set user_id TYPE set(100) GRANULARITY 1;
+ALTER TABLE events MATERIALIZE INDEX user_set;
+
+SELECT * FROM events WHERE user_id IN (101, 202);
+
+EXPLAIN indexes = 1
+SELECT * FROM events WHERE user_id IN (101, 202);
+```
+
+Процесс создания и материализации, а также результат до и после, показаны в [руководстве по основным операциям](/ru/concepts/features/performance/skip-indexes/skipping-indexes#basic-operation).
+
+<div id="textindex-for-full-text-search">
+  ## Текстовый индекс (text) для полнотекстового поиска
+</div>
+
+`text` — это инвертированный индекс для токенизированных текстовых данных.
+Он специально разработан для задач полнотекстового поиска и обеспечивает эффективный и детерминированный поиск токенов и терминов.
+Рекомендуется для сценариев, связанных с обработкой естественного языка или крупномасштабным поиском по тексту.
+
+Подробнее и примеры см. в разделе [Полнотекстовый поиск с текстовыми индексами](/ru/reference/engines/table-engines/mergetree-family/textindexes).
+
+```sql
+ALTER TABLE logs ADD INDEX msg_text msg TYPE text(tokenizer = splitByNonAlpha);
+ALTER TABLE logs MATERIALIZE INDEX msg_text;
+
+SELECT count() FROM logs WHERE hasAllTokens(msg, 'exception');
+```
+
+Более подробный пример обсервабилити см. в документации [здесь](/ru/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search).
+
+Текстовый индекс полностью детерминирован и гибко настраивается с точки зрения токенизации и обработки текста, но требует несколько больше места в хранилище по сравнению с индексами на основе фильтра Блума,
+
+<div id="generic-bloom-filter-scalar">
+  ## Универсальный bloom-фильтр (скалярный)
+</div>
+
+Индекс `bloom_filter` хорошо подходит для проверки равенства и принадлежности множеству через `IN` в сценариях поиска &quot;иголки в стоге сена&quot;. Он принимает необязательный параметр — уровень ложноположительных срабатываний (по умолчанию 0.025).
+
+```sql
+ALTER TABLE events ADD INDEX value_bf value TYPE bloom_filter(0.01) GRANULARITY 3;
+ALTER TABLE events MATERIALIZE INDEX value_bf;
+
+SELECT * FROM events WHERE value IN (7, 42, 99);
+
+EXPLAIN indexes = 1
+SELECT * FROM events WHERE value IN (7, 42, 99);
+```
+
+<div id="n-gram-bloom-filter-ngrambf-v1-for-substring-search">
+  ## N-граммный bloom-фильтр (ngrambf_v1) для поиска по подстрокам *(Устарело)*
+</div>
+
+<Note>
+  Использование индексов `ngrambf_v1` для полнотекстового поиска устарело в версиях ClickHouse `>= 26.2`; вместо них рекомендуется использовать индексы `text` (подробнее см. [здесь](/ru/reference/engines/table-engines/mergetree-family/textindexes)).
+</Note>
+
+Индекс `ngrambf_v1` разбивает строки на n-граммы. Он хорошо подходит для запросов `LIKE '%...%'`. Поддерживаются String/FixedString/Map (через mapKeys/mapValues), а также настраиваемые размер, количество хеш-функций и seed. Подробнее см. в документации по [N-граммному bloom-фильтру](/ru/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter).
+
+```sql
+-- Создание индекса для поиска подстрок
+ALTER TABLE logs ADD INDEX msg_ngram msg TYPE ngrambf_v1(3, 10000, 3, 7) GRANULARITY 1;
+ALTER TABLE logs MATERIALIZE INDEX msg_ngram;
+
+-- Поиск подстрок
+SELECT count() FROM logs WHERE msg LIKE '%timeout%';
+
+EXPLAIN indexes = 1
+SELECT count() FROM logs WHERE msg LIKE '%timeout%';
+```
+
+[В этом руководстве](/ru/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search) приведены практические примеры и объясняется, когда использовать token, а когда ngram.
+
+**Вспомогательные функции для оптимизации параметров:**
+
+Четыре параметра ngrambf&#95;v1 (размер n-граммы, размер битмапа, хеш-функции, seed) существенно влияют на производительность и использование памяти. Используйте эти функции, чтобы рассчитать оптимальный размер битмапа и количество хеш-функций на основе ожидаемого объёма n-грамм и требуемой частоты ложноположительных срабатываний:
+
+```sql
+CREATE FUNCTION bfEstimateFunctions AS
+(total_grams, bits) -> round((bits / total_grams) * log(2));
+
+CREATE FUNCTION bfEstimateBmSize AS
+(total_grams, p_false) -> ceil((total_grams * log(p_false)) / log(1 / pow(2, log(2))));
+
+-- Пример расчёта для 4300 n-грамм, p_false = 0.0001
+SELECT bfEstimateBmSize(4300, 0.0001) / 8 AS size_bytes;  -- ~10304
+SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) AS k; -- ~13
+```
+
+См. [документацию по параметрам](/ru/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) для получения подробных рекомендаций по настройке.
+
+<div id="token-bloom-filter-tokenbf-v1-for-word-based-search">
+  ## Token bloom-фильтр (`tokenbf_v1`) для поиска по словам *(Устарело)*
+</div>
+
+<Note>
+  Использование индексов `tokenbf_v1` для полнотекстового поиска устарело в версиях ClickHouse `>= 26.2`; вместо них рекомендуется использовать индексы `text` (подробнее см. [здесь](/ru/reference/engines/table-engines/mergetree-family/textindexes)).
+</Note>
+
+Индексы `tokenbf_v1` индексируют токены, разделённые небуквенно-цифровыми символами. Их следует использовать с [`hasToken`](/ru/reference/functions/regular-functions/string-search-functions#hasToken), шаблонами слов для `LIKE` или операторами `=`/`IN`. Поддерживаются типы `String`/`FixedString`/`Map`.
+
+Подробнее см. на страницах [Token bloom-фильтр](/ru/reference/engines/table-engines/mergetree-family/mergetree#token-bloom-filter) и [Типы bloom-фильтра](/ru/concepts/features/performance/skip-indexes/skipping-indexes#skip-index-types).
+
+```sql
+ALTER TABLE logs ADD INDEX msg_token lower(msg) TYPE tokenbf_v1(10000, 7, 7) GRANULARITY 1;
+ALTER TABLE logs MATERIALIZE INDEX msg_token;
+
+-- Поиск по слову (регистронезависимый, с помощью lower)
+SELECT count() FROM logs WHERE hasToken(lower(msg), 'exception');
+
+EXPLAIN indexes = 1
+SELECT count() FROM logs WHERE hasToken(lower(msg), 'exception');
+```
+
+См. примеры по обсервабилити и рекомендации по выбору между токенами и n-граммами [здесь](/ru/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search).
+
+<div id="add-indexes-during-create-table-multiple-examples">
+  ## Добавление индексов при CREATE TABLE (несколько примеров)
+</div>
+
+Индексы пропуска данных также поддерживают составные выражения и типы `Map`/`Tuple`/`Nested`. Это показано в примере ниже:
+
+```sql
+CREATE TABLE t
+(
+  u64 UInt64,
+  s String,
+  m Map(String, String),
+
+  INDEX idx_bf u64 TYPE bloom_filter(0.01) GRANULARITY 3,
+  INDEX idx_minmax u64 TYPE minmax GRANULARITY 1,
+  INDEX idx_set u64 * length(s) TYPE set(1000) GRANULARITY 4,
+  INDEX idx_ngram s TYPE ngrambf_v1(3, 10000, 3, 7) GRANULARITY 1,
+  INDEX idx_token mapKeys(m) TYPE tokenbf_v1(10000, 7, 7) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY u64;
+```
+
+<div id="materializing-on-existing-data-and-verifying">
+  ## Материализация на существующих данных и проверка
+</div>
+
+Вы можете добавить индекс к существующим частям данных с помощью `MATERIALIZE`, а отсечение проверить с помощью `EXPLAIN` или трассировочных логов, как показано ниже:
+
+```sql
+ALTER TABLE t MATERIALIZE INDEX idx_bf;
+
+EXPLAIN indexes = 1
+SELECT count() FROM t WHERE u64 IN (123, 456);
+
+-- Необязательно: подробная информация об отсечении данных
+SET send_logs_level = 'trace';
+```
+
+Этот [разобранный пример minmax](/ru/concepts/best-practices/using-data-skipping-indices#example) демонстрирует структуру вывода EXPLAIN и количество отсечений.
+
+<div id="when-use-and-when-to-avoid">
+  ## Когда использовать индексы пропуска данных, а когда — нет
+</div>
+
+**Используйте индексы пропуска данных, когда:**
+
+* Значения, по которым выполняется фильтрация, разреженно распределены внутри блоков данных
+* Есть сильная корреляция со столбцами `ORDER BY`, либо шаблоны ингестии данных группируют схожие значения
+* Выполняется текстовый поиск по большим наборам логов (типы `ngrambf_v1`/`tokenbf_v1`)
+
+**Избегайте индексов пропуска данных, когда:**
+
+* Большинство блоков, скорее всего, содержит хотя бы одно подходящее значение (поэтому блоки всё равно будут прочитаны)
+* Фильтрация выполняется по столбцам с высокой мощностью без корреляции с порядком данных
+
+<Info>
+  **Важные замечания**
+
+  Если значение встречается в блоке данных хотя бы один раз, ClickHouse должен прочитать весь блок. Тестируйте индексы на реалистичных датасетах и подбирайте гранулярность и параметры конкретного типа на основе фактических измерений производительности.
+</Info>
+
+<div id="temporarily-ignore-or-force-indexes">
+  ## Временно игнорировать индексы или принудительно задействовать их
+</div>
+
+Отключайте определённые индексы по имени для отдельных запросов во время тестирования и диагностики. При необходимости также доступны настройки, позволяющие принудительно использовать индексы. См. [`ignore_data_skipping_indices`](/ru/reference/settings/session-settings#ignore_data_skipping_indices).
+
+```sql
+-- Игнорировать индекс по имени
+SELECT * FROM logs
+WHERE hasToken(lower(msg), 'exception')
+SETTINGS ignore_data_skipping_indices = 'msg_token';
+```
+
+<div id="notes-and-caveats">
+  ## Примечания и ограничения
+</div>
+
+* Индекс пропуска данных поддерживается только для [таблиц семейства MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree); отсечение данных происходит на уровне гранулы/блока.
+* Индексы на основе bloom-фильтров являются вероятностными (ложноположительные срабатывания приводят к дополнительным чтениям, но не к пропуску корректных данных).
+* Bloom-фильтры и другие индексы пропуска данных следует проверять с помощью `EXPLAIN` и трассировки; настраивайте гранулярность, чтобы сбалансировать степень отсечения и размер индекса.
+
+<div id="related-docs">
+  ## Связанная документация
+</div>
+
+* [Руководство по индексам пропуска данных](/ru/concepts/features/performance/skip-indexes/skipping-indexes)
+* [Руководство по рекомендациям](/ru/concepts/best-practices/using-data-skipping-indices)
+* [Управление индексами пропуска данных](/ru/reference/statements/alter/skipping-index)
+* [Информация о системной таблице](/ru/reference/system-tables/data_skipping_indices)

@@ -1,0 +1,123 @@
+---
+slug: /integrations/integration-development/documenting-your-integration
+sidebarTitle: '为你的集成编写文档'
+title: '为你的 ClickHouse 集成编写文档'
+description: '如何为 clickhouse-docs 贡献集成页面，包括必需的章节和可直接复制粘贴的模板骨架。'
+keywords: ['合作伙伴', '集成', '文档', '贡献', '拉取请求', '集成文档']
+doc_type: 'guide'
+---
+
+本网站上的集成文档为最终用户提供了一个统一的地方来了解和排查相关配置。本页介绍应包含哪些内容、文件应放在哪里，以及如何发起拉取请求。
+
+如果你还没有阅读，请先参阅[构建集成](/zh/resources/develop-contribute/integrations/building-integrations)和[测试你的集成](/zh/resources/develop-contribute/integrations/testing-your-integration)。
+
+<div id="where-docs-live">
+  ## 文档位置
+</div>
+
+* **仓库：** [`ClickHouse/clickhouse-docs`](https://github.com/ClickHouse/clickhouse-docs)
+* **格式：** Markdown，使用 Docusaurus 构建
+* **位置：** `/docs/integrations/<category>/<your-integration>/`，其中 `<category>` 体现你的产品类别 (`data-visualization`、`data-ingestion`、`language-clients` 等)
+* **流程：** 向 `main` 分支提交拉取请求。ClickHouse 集成团队会进行审核。首次贡献者需要在机器人于 PR 中提示时签署贡献者许可协议 (Contributor License Agreement)
+
+此仓库中的集成页面是终端用户的主要参考资料。你可以在集成页面中添加指向你网站上补充文档的链接，以提供产品特有的详细信息。
+
+优秀示例：[Tableau](/zh/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse) 和 [Metabase](/zh/integrations/connectors/data-visualization/metabase-and-clickhouse)。
+
+<div id="choosing-a-category">
+  ## 选择类别
+</div>
+
+选择最符合产品功能的类别。在提交 PR 之前，先浏览 [集成](/zh/integrations/home) 下现有的类别。如果不确定，请在 PR 描述中注明你建议的类别，集成 团队会帮助确定该页面应归入哪里。
+
+<div id="required-sections">
+  ## 必需章节
+</div>
+
+每个集成页面都应涵盖以下内容，最好按此顺序组织：
+
+1. **用途。** 用两到三句话说明该集成解决什么问题。避免使用营销式文案。读者通常是正在评估部署方案的工程师
+2. **前置条件和支持版本矩阵。** 说明用户需要预先安装什么，以及你支持哪些版本，**同时涵盖 ClickHouse Cloud 和自托管 (开源)&#x20;**。用一个小表格通常效果很好
+3. **设置流程。** 提供分步说明，帮助用户建立可用的连接；对于 Cloud 和自托管之间存在差异的地方 (主机、端口、TLS) ，要**并列说明**
+4. **身份验证。** 说明你支持哪些身份验证方式 (至少包括基于 TLS 的用户名和密码，以及 mTLS、SSL 客户端证书、IP 允许列表说明 (如适用) )
+5. **端到端示例。** 至少提供一个从连接到获得有意义结果的真实示例。使用一个 [ClickHouse 示例数据集](/zh/get-started/sample-datasets/index)，以便读者能够复现
+6. **已知限制和性能特征。** 包括类型系统缺口、结果集阈值、吞吐量说明以及不支持的功能。如实说明这些内容可以减少支持负担
+7. **故障排查。** 列出常见错误及其解决方法。对于第一版来说，两到三个高频案例就足够了
+
+<div id="style-notes">
+  ## 风格说明
+</div>
+
+* **同时说明 Cloud 和 自托管。** Cloud 通常使用端口 `8443` 上的 HTTPS 和端口 `9440` 上的原生 TCP。自托管 默认使用 `8123` 和 `9000`
+* **使用 Docusaurus admonitions** (`:::note`、`:::warning`、`:::tip`) 来呈现提示信息，不要使用加粗段落
+* **通过链接提供更深入的内容。** 对于 data types、formats、JDBC、ClickPipes 及类似主题，请链接到现有文档，而不是重复解释
+* **不要加入营销内容。** 此处的 集成 页面属于技术参考文档。宣传内容应放在你们自己的网站上；我们可以从合作伙伴目录链接过去
+
+<div id="copy-paste-skeleton">
+  ## 复制粘贴模板
+</div>
+
+填写方括号中的内容，保存为 `/docs/integrations/<category>/<your-integration>/index.md`，然后提交一个 PR。
+
+```markdown
+# [您的产品] 与 ClickHouse
+
+[One to three sentences: what the integration does and why a
+ClickHouse user would want it.]
+
+## 前置条件
+
+- [Your product, version X.Y or later]
+- ClickHouse Cloud, or self-hosted ClickHouse version [X.Y] or later
+- [Anything else: driver, plugin, network access requirements]
+
+### 版本矩阵
+
+| [Your product] | ClickHouse Cloud | ClickHouse open source | Notes    |
+| -------------- | ---------------- | ---------------------- | -------- |
+| X.Y            | ✅               | ✅ 24.x+               | [if any] |
+
+## 设置
+
+### 连接到 ClickHouse Cloud
+
+1. In the ClickHouse Cloud console, select your service and click **Connect**.
+2. Choose **HTTPS**. Copy the host, port (8443), username, and password.
+3. In [your product], [steps to configure the connection].
+
+### 连接到自托管 ClickHouse
+
+1. [How to point at a self-hosted instance — host, port 8123 or 9000, TLS notes.]
+2. In [your product], [steps to configure the connection].
+
+## 身份验证
+
+[List supported auth modes — username/password over TLS, mTLS, etc. — and how
+to configure each.]
+
+## 示例：查询 [dataset] 数据集
+
+[Walkthrough using one of the ClickHouse example datasets, end-to-end.]
+
+## 已知限制
+
+- [Types not yet supported, e.g., deeply nested JSON]
+- [Result-set size thresholds or other performance notes]
+- [Feature gaps]
+
+## 故障排查
+
+### [Common error message]
+
+[Cause and resolution.]
+
+### [Another common error]
+
+[Cause and resolution.]
+```
+
+<div id="review">
+  ## 审核
+</div>
+
+ClickHouse 集成团队会审核 PR，确保其在技术上准确无误，且同时涵盖 Cloud 和自托管场景，并符合文档风格要求。在 PR 中持续迭代，直到审核者批准。获得批准后才能合并。

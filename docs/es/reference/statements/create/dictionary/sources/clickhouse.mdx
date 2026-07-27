@@ -1,0 +1,66 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/clickhouse
+title: 'Fuente de diccionario de ClickHouse'
+sidebarTitle: 'ClickHouse'
+description: 'Configure una tabla de ClickHouse como fuente de un diccionario.'
+doc_type: 'reference'
+---
+
+Ejemplo de configuración:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(CLICKHOUSE(
+        host 'example01-01-1'
+        port 9000
+        user 'default'
+        password ''
+        db 'default'
+        table 'ids'
+        where 'id=10'
+        secure 1
+        query 'SELECT id, value_1, value_2 FROM default.ids'
+    ));
+    ```
+  </Tab>
+
+  <Tab title="Archivo de configuración">
+    ```xml
+    <source>
+        <clickhouse>
+            <host>example01-01-1</host>
+            <port>9000</port>
+            <user>default</user>
+            <password></password>
+            <db>default</db>
+            <table>ids</table>
+            <where>id=10</where>
+            <secure>1</secure>
+            <query>SELECT id, value_1, value_2 FROM default.ids</query>
+        </clickhouse>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Campos de configuración:
+
+| Configuración      | Descripción                                                                                                                                                                                                                                                      |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host`             | El host de ClickHouse. Si es un host local, la consulta se procesa sin actividad de red. Para mejorar la tolerancia a fallos, puede crear una tabla [Distributed](/es/reference/engines/table-engines/special/distributed) y usarla en configuraciones posteriores. |
+| `port`             | El puerto del servidor ClickHouse.                                                                                                                                                                                                                               |
+| `user`             | Nombre del usuario de ClickHouse.                                                                                                                                                                                                                                |
+| `password`         | Contraseña del usuario de ClickHouse.                                                                                                                                                                                                                            |
+| `db`               | Nombre de la base de datos.                                                                                                                                                                                                                                      |
+| `table`            | Nombre de la tabla.                                                                                                                                                                                                                                              |
+| `where`            | El criterio de selección. Opcional.                                                                                                                                                                                                                              |
+| `invalidate_query` | Consulta para comprobar el estado del diccionario. Opcional. Lea más en la sección [Actualización de datos del diccionario mediante LIFETIME](/es/reference/statements/create/dictionary/lifetime).                                                                 |
+| `secure`           | Use SSL para la conexión.                                                                                                                                                                                                                                        |
+| `query`            | La consulta personalizada. Opcional.                                                                                                                                                                                                                             |
+
+<Note>
+  Los campos `table` o `where` no se pueden usar junto con el campo `query`. Además, se debe declarar uno de los campos `table` o `query`.
+</Note>

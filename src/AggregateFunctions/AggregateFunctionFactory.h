@@ -4,6 +4,7 @@
 #include <Parsers/NullsAction.h>
 #include <Common/FunctionDocumentation.h>
 #include <Common/IFactoryWithAliases.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Names.h>
 
 #include <functional>
@@ -22,7 +23,7 @@ class Context;
 class IDataType;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = std::vector<DataTypePtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
 
 class ASTFunction;
 
@@ -118,6 +119,8 @@ private:
     /// Same as above for `IGNORE NULLS` modifier
     ActionMap ignore_nulls;
     std::optional<AggregateFunctionWithProperties> getAssociatedFunctionByNullsAction(const String & name, NullsAction action) const;
+    /// Name-only variant: the registered name that `name` resolves to under `action` (see the definition).
+    String getAssociatedNameByNullsAction(const String & name, NullsAction action) const;
 
     /// Case insensitive aggregate functions will be additionally added here with lowercased name.
     AggregateFunctions case_insensitive_aggregate_functions;

@@ -257,12 +257,12 @@ Normalizes a UTF-8 string according to the [NFKC normalization form](https://en.
         "Usage example",
         R"(
 SELECT
-    '① ② ③' AS original,                            -- Circled number characters
-    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized;  -- Converts to 1 2 3
+    '① ② ③' AS original,                           -- Circled number characters
+    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized  -- Converts to 1 2 3
     )",
         R"(
 ┌─original─┬─nfkc_normalized─┐
-│ ① ② ③  │ 1 2 3           │
+│ ① ② ③    │ 1 2 3           │
 └──────────┴─────────────────┘
     )"
     }
@@ -282,8 +282,8 @@ Normalizes a UTF-8 string according to the [NFKD normalization form](https://en.
         "Usage example",
         R"(
 SELECT
-    'H₂O²' AS original,                            -- H + subscript 2 + O + superscript 2
-    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized;  -- Converts to H 2 O 2
+    'H₂O²' AS original,                           -- H + subscript 2 + O + superscript 2
+    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized  -- Converts to H 2 O 2
         )",
         R"(
 ┌─original─┬─nfkd_normalized─┐

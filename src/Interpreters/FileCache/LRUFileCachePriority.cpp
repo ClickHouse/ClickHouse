@@ -81,7 +81,8 @@ LRUFileCachePriority::LRUFileCachePriority(
     : IFileCachePriority(queue_type_, max_size_, max_elements_)
     , description(description_)
     , log(getLogger("LRUFileCachePriority" + (description.empty() ? "" : "(" + description + ")")))
-    , eviction_pos(queue.end())
+    , reserve_eviction_pos(queue.end())
+    , background_eviction_pos(queue.end())
     , queue_id(randomSeed())
 {
     if (state_)
@@ -396,7 +397,8 @@ LRUFileCachePriority::iterateImpl(
             continue;
         }
 
-        auto locked_key = entry.key_metadata->tryLock();
+        auto key_metadata = entry.key_metadata.lock();
+        auto locked_key = key_metadata ? key_metadata->tryLock() : nullptr;
         if (!locked_key)
         {
             /// locked_key == nullptr means that the cache key of
@@ -523,12 +525,12 @@ EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
 }
 
 bool LRUFileCachePriority::collectCandidatesForEviction(
-    const EvictionInfo & eviction_info,
+    EvictionInfo & eviction_info,
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
     InvalidatedEntriesInfos & invalidated_entries,
     IFileCachePriority::IteratorPtr /* reservee */,
-    bool continue_from_last_eviction_pos,
+    EvictionCursor eviction_cursor,
     size_t max_candidates_size,
     bool /* is_total_space_cleanup */,
     const OriginInfo &,
@@ -558,15 +560,19 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
 
     auto lock = cache_guard.readLock();
 
+    const bool use_cursor = eviction_cursor != EvictionCursor::FromHead;
+
     auto start_pos = queue.begin();
-    auto current_eviction_pos = getEvictionPos(lock);
-    if (continue_from_last_eviction_pos
-        && current_eviction_pos != LRUQueue::iterator{}
-        && current_eviction_pos != queue.end()
-        && start_pos != current_eviction_pos)
+    if (use_cursor)
     {
-        ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionReusedIterator);
-        start_pos = current_eviction_pos;
+        auto current_eviction_pos = getEvictionPos(eviction_cursor, lock);
+        if (current_eviction_pos != LRUQueue::iterator{}
+            && current_eviction_pos != queue.end()
+            && start_pos != current_eviction_pos)
+        {
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionReusedIterator);
+            start_pos = current_eviction_pos;
+        }
     }
 
     auto iteration_pos = iterateImpl(
@@ -600,8 +606,8 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     },
     stat, invalidated_entries, lock);
 
-    if (continue_from_last_eviction_pos)
-        setEvictionPos(iteration_pos, lock);
+    if (use_cursor)
+        setEvictionPos(eviction_cursor, iteration_pos, lock);
 
     lock.unlock();
 
@@ -713,10 +719,12 @@ bool LRUFileCachePriority::tryIncreasePriority(
     CachePriorityGuard & queue_guard,
     CacheStateGuard &)
 {
-    auto lock = queue_guard.writeLock();
+    auto lock = queue_guard.tryWriteLock();
+    if (!lock.owns_lock())
+        return false;
+
     const auto & entry = iterator.getEntry();
     chassert(entry->getState() == Entry::State::Active);
-    entry->hits += 1;
 
     auto it = dynamic_cast<const LRUFileCachePriority::LRUIterator &>(iterator).get();
     moveEvictionPosIfEqual(it, lock);
@@ -812,6 +820,7 @@ void LRUFileCachePriority::LRUIterator::incrementSize(
 void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
 {
     assertValid();
+    chassert(size);
 
     auto entry_ptr = entry.lock();
     chassert(entry_ptr);
@@ -822,7 +831,8 @@ void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
              "Decrement size with {} in LRU queue entry {}",
              size, entry_ptr->toString());
 
-    cache_priority->state->sub(size, 0);
+    const bool became_empty = entry_ptr->size == size;
+    cache_priority->state->sub(size, /* elements */became_empty ? 1 : 0);
     entry_ptr->size -= size;
 }
 
@@ -843,7 +853,8 @@ bool LRUFileCachePriority::LRUIterator::assertValid() const
 
 void LRUFileCachePriority::shuffle(const CachePriorityGuard::WriteLock &)
 {
-    chassert(TSA_SUPPRESS_WARNING_FOR_READ(eviction_pos) == queue.end());
+    chassert(TSA_SUPPRESS_WARNING_FOR_READ(reserve_eviction_pos) == queue.end());
+    chassert(TSA_SUPPRESS_WARNING_FOR_READ(background_eviction_pos) == queue.end());
     std::vector<LRUQueue::iterator> its;
     its.reserve(queue.size());
     for (auto it = queue.begin(); it != queue.end(); ++it)
@@ -911,22 +922,51 @@ void LRUFileCachePriority::releaseImpl(size_t size, size_t elements)
     //LOG_TEST(log, "Released {} by size and {} by elements", size, elements);
 }
 
-LRUFileCachePriority::LRUQueue::iterator LRUFileCachePriority::getEvictionPos(const CachePriorityGuard::ReadLock &) const
+LRUFileCachePriority::LRUQueue::iterator & LRUFileCachePriority::evictionPos(EvictionCursor cursor)
 {
-    std::lock_guard lk(eviction_pos_mutex);
-    return eviction_pos;
+    switch (cursor)
+    {
+        case EvictionCursor::Reserve:
+            return reserve_eviction_pos;
+        case EvictionCursor::Background:
+            return background_eviction_pos;
+        case EvictionCursor::FromHead:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "EvictionCursor::FromHead has no persistent cursor");
+    }
 }
 
-void LRUFileCachePriority::setEvictionPos(LRUQueue::iterator it, const CachePriorityGuard::ReadLock &)
+const LRUFileCachePriority::LRUQueue::iterator & LRUFileCachePriority::evictionPos(EvictionCursor cursor) const
+{
+    switch (cursor)
+    {
+        case EvictionCursor::Reserve:
+            return reserve_eviction_pos;
+        case EvictionCursor::Background:
+            return background_eviction_pos;
+        case EvictionCursor::FromHead:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "EvictionCursor::FromHead has no persistent cursor");
+    }
+}
+
+LRUFileCachePriority::LRUQueue::iterator LRUFileCachePriority::getEvictionPos(EvictionCursor cursor, const CachePriorityGuard::ReadLock &) const
 {
     std::lock_guard lk(eviction_pos_mutex);
-    eviction_pos = it;
+    return evictionPos(cursor);
+}
+
+void LRUFileCachePriority::setEvictionPos(EvictionCursor cursor, LRUQueue::iterator it, const CachePriorityGuard::ReadLock &)
+{
+    std::lock_guard lk(eviction_pos_mutex);
+    evictionPos(cursor) = it;
 }
 
 void LRUFileCachePriority::moveEvictionPosIfEqual(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &)
 {
     std::lock_guard lk(eviction_pos_mutex);
-    if (eviction_pos != LRUQueue::iterator{} && eviction_pos == it)
-        eviction_pos = std::next(it);
+    for (auto * pos : {&reserve_eviction_pos, &background_eviction_pos})
+    {
+        if (*pos != LRUQueue::iterator{} && *pos == it)
+            *pos = std::next(it);
+    }
 }
 }

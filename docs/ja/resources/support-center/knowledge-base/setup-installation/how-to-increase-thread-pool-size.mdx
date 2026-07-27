@@ -1,0 +1,37 @@
+---
+title: "ClickHouse のスレッド数を増やす方法"
+description: "`max_thread_pool_size`、`thread_pool_queue_size`、`max_thread_pool_free_size` などの設定を調整して、ClickHouse のグローバルスレッドプールを構成する方法を学びます。"
+date: 2023-03-01
+tags: ['パフォーマンスと最適化']
+keywords: ['使用可能なスレッド']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="increasing-the-number-of-threads-in-clickhouse">
+  ## ClickHouse のスレッド数を増やす
+</div>
+
+ClickHouse は、**グローバルスレッドプール** のスレッドを使用してクエリを処理するほか、マージやミューテーションといったバックグラウンド処理も実行します。クエリを処理するアイドル状態のスレッドがない場合は、プール内に新しいスレッドが作成されます。
+
+グローバルスレッドプールの最大サイズは `max_thread_pool_size` 設定によって決まり、デフォルトは 10,000 です。この値は設定ファイルで変更できます。ここでは 20,000 に設定します。
+
+```xml
+<max_thread_pool_size>20000</max_thread_pool_size>
+```
+
+`max_thread_pool_size` を変更する場合は、`thread_pool_queue_size` も同じ値に設定することを推奨します。`thread_pool_queue_size` 設定は、グローバルスレッドプールにスケジュールできるジョブの最大数を示します。
+
+```xml
+<thread_pool_queue_size>20000</thread_pool_queue_size>
+```
+
+`max_thread_pool_free_size` 設定を使うと、サーバーにアイドル状態のスレッドが多い場合にリソースを解放することもできます。デフォルト値は 1,000 で、グローバルスレッドプールのアイドルスレッド数は 1,000 を超えません。次の例では、この値を 2,000 に増やしています。
+
+```xml
+<max_thread_pool_free_size>2000</max_thread_pool_free_size>
+```
+
+上記の設定や、グローバルスレッドプールに影響するその他の設定の詳細については、[ドキュメント](/ja/reference/settings/server-settings/settings#max_thread_pool_size)を参照してください。

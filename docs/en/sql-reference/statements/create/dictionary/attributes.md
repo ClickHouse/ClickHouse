@@ -135,6 +135,8 @@ PRIMARY KEY field1, field2
 
 For a query to the `dictGet*` function, a tuple is passed as the key. Example: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
+When the composite key consists of a single attribute, the key value can be passed directly, without wrapping it in `tuple`. For example, both `dictGetString('dict_name', 'attr_name', 'key')` and `dictGetString('dict_name', 'attr_name', tuple('key'))` are valid.
+
 ## Attributes {#attributes}
 
 Configuration example:

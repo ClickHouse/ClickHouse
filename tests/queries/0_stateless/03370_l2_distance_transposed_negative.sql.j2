@@ -58,7 +58,9 @@ CREATE TABLE qbit (id UInt32, vec QBit(BFloat16, 5)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, [0,1,2,3,4]);
 INSERT INTO qbit VALUES (2, [1,2,3,4,5]);
 
-WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, L2DistanceTransposed(vec.1, vec.2, id, reference_vec) AS dist FROM qbit ORDER BY id; -- { serverError TOO_MANY_ARGUMENTS_FOR_FUNCTION }
+-- `id` is not a constant, so this is not a valid internal optimized form; and the first argument is not a QBit, so it is not the
+-- user-facing form (which now accepts an optional 4th `dims` argument) either.
+WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, L2DistanceTransposed(vec.1, vec.2, id, reference_vec) AS dist FROM qbit ORDER BY id; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 DROP TABLE qbit;
 
 -- Check if full column as third argument throws
@@ -68,11 +70,12 @@ SELECT L2DistanceTransposed([1, 2, 3]::QBit(Float32, 3), [1, 2, 3]::Array(Float3
 SELECT L2DistanceTransposed(); -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
 SELECT L2DistanceTransposed(''); -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
 
--- Check if size mismatch throws
-SELECT L2DistanceTransposed([1.0, 2.0, 3.0]::QBit(Float32, 3), [1, 2, 3, 4]::Array(Float32), 32); -- { serverError BAD_ARGUMENTS }
+-- Check if a reference vector shorter than the number of used dimensions throws (a longer one is truncated, see
+-- 04501_qbit_distance_transposed_truncate_reference)
+SELECT L2DistanceTransposed([1.0, 2.0, 3.0]::QBit(Float32, 3), [1, 2]::Array(Float32), 32); -- { serverError BAD_ARGUMENTS }
 
--- Check if non-const reference vector of wrong size throws
-SELECT L2DistanceTransposed([1.0, 2.0, 3.0]::QBit(Float32, 3), range(rand() % 5 + 5)::Array(Float32), 32); -- { serverError BAD_ARGUMENTS }
+-- Check if a non-const reference vector shorter than the number of used dimensions throws
+SELECT L2DistanceTransposed([1.0, 2.0, 3.0]::QBit(Float32, 3), range(rand() % 3)::Array(Float32), 32); -- { serverError BAD_ARGUMENTS }
 
 -- Do not allow non-constant size
 SELECT L2DistanceTransposed(''::FixedString(1), materialize(3), [1,2,3]::Array(Float32)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

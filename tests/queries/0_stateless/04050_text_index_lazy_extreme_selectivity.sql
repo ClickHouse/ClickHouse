@@ -2,8 +2,6 @@
 -- Verifies that lazy posting list apply mode produces correct results under extreme
 -- selectivity differences (dense vs ultrarare tokens).
 
-SET allow_experimental_text_index_lazy_apply = 1;
-
 DROP TABLE IF EXISTS t_text_idx_extreme;
 
 CREATE TABLE t_text_idx_extreme

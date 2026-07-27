@@ -68,7 +68,9 @@ public:
     DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
         ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
-    Strings getAllTableNames(ContextPtr context) const override;
+    VectorWithMemoryTracking<String> getAllTableNames(ContextPtr context) const override;
+
+    StoragePtr detachTableUnlocked(const String & table_name) TSA_REQUIRES(mutex) override;
 
     void alterTable(
         ContextPtr context,
@@ -87,6 +89,10 @@ public:
     static void setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr context, bool replicated);
 
 protected:
+    /// Erase pending async load/startup task references for a table. Must hold `mutex`.
+    /// Shared by detachTableUnlocked and the Atomic rename detach path (issue #91777).
+    void eraseAsyncLoadState(const String & table_name) TSA_REQUIRES(mutex);
+
     virtual void commitAlterTable(
         const StorageID & table_id,
         const String & table_metadata_tmp_path,

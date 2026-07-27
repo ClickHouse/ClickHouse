@@ -1,0 +1,350 @@
+---
+description: "Page présentant des recommandations d'utilisation pour ClickHouse open source"
+sidebarTitle: "Recommandations d'utilisation de l'OSS"
+slug: /operations/tips
+title: "Recommandations d'utilisation de l'OSS"
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/fr/_self_managed_only_automated.mdx';
+
+<SelfManaged />
+
+<div id="cpu-scaling-governor">
+  ## Gouverneur de fréquence du CPU
+</div>
+
+Utilisez toujours le gouverneur `performance`. Le gouverneur `on-demand` fonctionne nettement moins bien lorsque la charge reste constamment élevée.
+
+```bash
+$ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+```
+
+<div id="cpu-limitations">
+  ## Limitations du CPU
+</div>
+
+Les processeurs peuvent surchauffer. Utilisez `dmesg` pour vérifier si la fréquence d’horloge du CPU a été limitée à cause d’une surchauffe.
+Cette limitation peut également être imposée de l’extérieur, au niveau du datacenter. Vous pouvez utiliser `turbostat` pour la surveiller sous charge.
+
+<div id="ram">
+  ## RAM
+</div>
+
+Pour de petits volumes de données (jusqu&#39;à ~200 Go de données compressées), il est préférable d&#39;utiliser autant de mémoire que de données.
+Pour de grands volumes de données et pour le traitement de requêtes interactives (en ligne), vous devez utiliser une quantité raisonnable de RAM (128 Go ou plus) afin que la partie active des données tienne dans le cache de pages.
+Même pour des volumes de données d&#39;environ 50 To par serveur, l&#39;utilisation de 128 Go de RAM améliore significativement les performances des requêtes par rapport à 64 Go.
+
+Ne désactivez pas l&#39;overcommit. La commande `cat /proc/sys/vm/overcommit_memory` doit renvoyer 0 ou 1. Exécutez
+
+```bash
+$ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
+```
+
+Utilisez `perf top` pour surveiller le temps que le noyau consacre à la gestion de la mémoire.
+Les huge pages permanentes n&#39;ont pas non plus besoin d&#39;être allouées.
+
+<div id="using-less-than-16gb-of-ram">
+  ### Utilisation de moins de 16 GB de RAM
+</div>
+
+La quantité de RAM recommandée est de 32 GB ou plus.
+
+Si votre système dispose de moins de 16 GB de RAM, vous pouvez rencontrer diverses exceptions liées à la mémoire, car les paramètres par défaut ne sont pas adaptés à cette quantité de mémoire. Vous pouvez utiliser ClickHouse sur un système disposant de peu de RAM (jusqu&#39;à 2 GB), mais ces configurations nécessitent des ajustements supplémentaires et ne permettent qu&#39;un faible débit d’ingestion.
+
+Lors de l&#39;utilisation de ClickHouse avec moins de 16 GB de RAM, nous recommandons ce qui suit :
+
+* Réduisez la taille du mark cache dans le `config.xml`. Elle peut être définie à seulement 500 MB, mais elle ne peut pas être définie à zéro.
+* Réduisez le nombre de threads de traitement des requêtes à `1`.
+* Réduisez `max_block_size` à `8192`. Des valeurs aussi basses que `1024` peuvent rester pratiques.
+* Réduisez `max_download_threads` à `1`.
+* Définissez `input_format_parallel_parsing` et `output_format_parallel_formatting` à `0`.
+* Désactivez l&#39;écriture dans les tables de logs, car cela amène la tâche de merge en arrière-plan à réserver de la RAM pour effectuer des merges des tables de logs. Désactivez `asynchronous_metric_log`, `metric_log`, `text_log`, `trace_log`.
+
+Notes supplémentaires :
+
+* Pour vider la mémoire mise en cache par l’allocateur mémoire, vous pouvez exécuter la commande `SYSTEM JEMALLOC PURGE`.
+* Nous ne recommandons pas d&#39;utiliser les intégrations S3 ou Kafka sur des machines disposant de peu de mémoire, car elles nécessitent une quantité importante de mémoire pour les buffers.
+
+<div id="storage-subsystem">
+  ## Sous-système de stockage
+</div>
+
+Si votre budget permet d&#39;utiliser des SSD, utilisez des SSD.
+Sinon, utilisez des HDD. Des disques SATA à 7 200 tr/min feront l&#39;affaire.
+
+Privilégiez un grand nombre de serveurs équipés de disques locaux plutôt qu&#39;un plus petit nombre de serveurs reliés à des baies de disques.
+En revanche, pour stocker des archives rarement interrogées, les baies conviennent.
+
+<div id="raid">
+  ## RAID
+</div>
+
+Lorsque vous utilisez des HDD, vous pouvez les configurer en RAID-10, RAID-5, RAID-6 ou RAID-50.
+Sous Linux, le RAID logiciel est préférable (avec `mdadm`).
+Lors de la création d’un RAID-10, sélectionnez la disposition `far`.
+Si votre budget le permet, choisissez RAID-10.
+
+LVM seul (sans RAID ni `mdadm`) convient, mais créer un RAID avec LVM ou le combiner avec `mdadm` est une option moins éprouvée, avec davantage de risques d’erreurs
+(sélection d’une taille de chunk incorrecte ; mauvais alignement des chunks ; choix d’un type de RAID incorrect ; oubli du nettoyage des disques). Si vous maîtrisez
+LVM, rien ne s’oppose à son utilisation.
+
+Si vous avez plus de 4 disques, utilisez RAID-6 (de préférence) ou RAID-50, plutôt que RAID-5.
+Lorsque vous utilisez RAID-5, RAID-6 ou RAID-50, augmentez toujours stripe&#95;cache&#95;size, car la valeur par défaut n’est généralement pas le meilleur choix.
+
+```bash
+$ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
+```
+
+Calculez la valeur exacte à partir du nombre de disques et de la taille de bloc à l’aide de la formule : `2 * num_devices * chunk_size_in_bytes / 4096`.
+
+Une taille de bloc de 64 KB suffit pour la plupart des configurations RAID. La taille d’écriture moyenne de clickhouse-server est d’environ 1 MB (1024 KB) ; la taille de stripe recommandée est donc également de 1 MB. Si nécessaire, la taille de bloc peut être optimisée en la définissant sur 1 MB divisé par le nombre de disques sans parité dans la grappe RAID, afin que chaque écriture soit parallélisée sur tous les disques sans parité disponibles.
+Ne définissez jamais une taille de bloc trop petite ou trop grande.
+
+Vous pouvez utiliser RAID-0 sur SSD.
+Que vous utilisiez RAID ou non, utilisez toujours la réplication pour sécuriser les données.
+
+Activez le NCQ avec une file d’attente longue. Pour les HDD, choisissez l’ordonnanceur mq-deadline ou CFQ, et pour les SSD, choisissez noop. Ne réduisez pas le paramètre &#39;readahead&#39;.
+Pour les HDD, activez le cache d’écriture.
+
+Assurez-vous que [`fstrim`](https://en.wikipedia.org/wiki/Trim_\(computing\)) est activé pour les disques NVME et SSD sur votre système d’exploitation (généralement via une tâche cron ou un service systemd).
+
+<div id="file-system">
+  ## Système de fichiers
+</div>
+
+Ext4 est l’option la plus fiable. Définissez l’option de montage `noatime`. XFS fonctionne également bien.
+La plupart des autres systèmes de fichiers devraient aussi convenir.
+
+FAT-32 et exFAT ne sont pas pris en charge en raison de l’absence de liens physiques.
+
+N’utilisez pas de systèmes de fichiers compressés, car ClickHouse assure lui-même la compression, et de façon plus efficace.
+Il est déconseillé d’utiliser des systèmes de fichiers chiffrés, car vous pouvez utiliser le chiffrement intégré de ClickHouse, qui est plus performant.
+
+Bien que ClickHouse puisse fonctionner sur NFS, ce n’est pas l’idéal.
+
+<div id="linux-kernel">
+  ## Noyau Linux
+</div>
+
+N&#39;utilisez pas de noyau Linux obsolète.
+
+<div id="network">
+  ## Réseau
+</div>
+
+Si vous utilisez IPv6, augmentez la taille du cache de routage.
+Le noyau Linux antérieur à la version 3.2 présentait de nombreux problèmes dans son implémentation d’IPv6.
+
+Utilisez si possible un réseau d’au moins 10 Gb/s. Un réseau à 1 Gb/s fonctionnera également, mais il sera nettement moins performant pour mettre à jour des répliques contenant des dizaines de téraoctets de données, ou pour traiter des requêtes distribuées avec une grande quantité de données intermédiaires.
+
+<div id="huge-pages">
+  ## Huge Pages
+</div>
+
+Réglez toujours les transparent huge pages sur `madvise`. Sur les anciens noyaux (avant la version 5.9), un réglage de THP sur `always` peut entraîner une dégradation importante des performances : le noyau passe trop de temps à défragmenter la mémoire, en particulier sur les systèmes dotés de plus de 64 Go de RAM. Le noyau 5.9 a introduit la compaction proactive, qui gère bien mieux les THP, mais ClickHouse affiche toujours un avertissement au démarrage si THP est défini sur `always` ; `madvise` reste donc le réglage recommandé, quelle que soit la version du noyau.
+
+```bash
+$ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+```
+
+Si vous souhaitez modifier de façon permanente le paramètre des transparent huge pages, modifiez le fichier `/etc/default/grub` pour ajouter `transparent_hugepage=madvise` à l’option `GRUB_CMDLINE_LINUX_DEFAULT` :
+
+```bash
+$ GRUB_CMDLINE_LINUX_DEFAULT="transparent_hugepage=madvise ..."
+```
+
+Après cela, exécutez la commande `sudo update-grub`, puis redémarrez pour appliquer les changements.
+
+<div id="hypervisor-configuration">
+  ## Configuration de l’hyperviseur
+</div>
+
+Si vous utilisez OpenStack, définissez
+
+```ini
+cpu_mode=host-passthrough
+```
+
+dans `nova.conf`.
+
+Si vous utilisez libvirt, définissez
+
+```xml
+<cpu mode='host-passthrough'/>
+```
+
+dans la configuration XML.
+
+C’est important pour que ClickHouse puisse récupérer les bonnes informations avec l’instruction `cpuid`.
+Sinon, vous risquez d’avoir des plantages `Illegal instruction` si l’hyperviseur s’exécute sur d’anciens modèles de CPU.
+
+<div id="zookeeper">
+  ## ClickHouse Keeper et ZooKeeper
+</div>
+
+ClickHouse Keeper est recommandé en remplacement de ZooKeeper pour les clusters ClickHouse. Consultez la documentation de [ClickHouse Keeper](/fr/guides/oss/deployment-and-scaling/keeper/index)
+
+Si vous souhaitez continuer à utiliser ZooKeeper, il est préférable d&#39;utiliser une version récente de ZooKeeper — 3.4.9 ou ultérieure. La version fournie avec les distributions Linux stables peut être obsolète.
+
+Vous ne devez jamais utiliser de scripts écrits manuellement pour transférer des données entre différents clusters ZooKeeper, car le résultat sera incorrect pour les nœuds séquentiels. N&#39;utilisez jamais l&#39;utilitaire &quot;zkcopy&quot; pour la même raison : https://github.com/ksprojects/zkcopy/issues/15
+
+Si vous souhaitez scinder un cluster ZooKeeper existant en deux, la bonne méthode consiste à augmenter le nombre de ses répliques, puis à le reconfigurer en deux clusters indépendants.
+
+Vous pouvez exécuter ClickHouse Keeper sur le même serveur que ClickHouse dans des environnements de test, ou dans des environnements avec un faible taux d’ingestion.
+Pour les environnements de production, nous recommandons d&#39;utiliser des serveurs distincts pour ClickHouse et ZooKeeper/Keeper, ou de placer les fichiers de ClickHouse et ceux de Keeper sur des disques distincts. En effet, ZooKeeper/Keeper sont très sensibles à la latence disque et ClickHouse peut utiliser toutes les ressources système disponibles.
+
+Vous pouvez avoir des observateurs ZooKeeper dans un ensemble, mais les serveurs ClickHouse ne doivent pas interagir avec eux.
+
+Ne modifiez pas le paramètre `minSessionTimeout` : des valeurs élevées peuvent affecter la stabilité des redémarrages de ClickHouse.
+
+Avec les paramètres par défaut, ZooKeeper est une bombe à retardement :
+
+> Le serveur ZooKeeper ne supprime pas les fichiers des anciens snapshots et logs avec la configuration par défaut (voir `autopurge`), et cela relève de la responsabilité de l&#39;opérateur.
+
+Cette bombe doit être désamorcée.
+
+La configuration ZooKeeper (3.5.1) ci-dessous est utilisée dans un grand environnement de production :
+
+zoo.cfg:
+
+```bash
+# http://hadoop.apache.org/zookeeper/docs/current/zookeeperAdmin.html
+
+# The number of milliseconds of each tick
+tickTime=2000
+# The number of ticks that the initial
+# synchronization phase can take
+# This value is not quite motivated
+initLimit=300
+# The number of ticks that can pass between
+# sending a request and getting an acknowledgement
+syncLimit=10
+
+maxClientCnxns=2000
+
+# It is the maximum value that client may request and the server will accept.
+# It is Ok to have high maxSessionTimeout on server to allow clients to work with high session timeout if they want.
+# But we request session timeout of 30 seconds by default (you can change it with session_timeout_ms in ClickHouse config).
+maxSessionTimeout=60000000
+# the directory where the snapshot is stored.
+dataDir=/opt/zookeeper/{{ '{{' }} cluster['name'] {{ '}}' }}/data
+# Place the dataLogDir to a separate physical disc for better performance
+dataLogDir=/opt/zookeeper/{{ '{{' }} cluster['name'] {{ '}}' }}/logs
+
+autopurge.snapRetainCount=10
+autopurge.purgeInterval=1
+
+# To avoid seeks ZooKeeper allocates space in the transaction log file in
+# blocks of preAllocSize kilobytes. The default block size is 64M. One reason
+# for changing the size of the blocks is to reduce the block size if snapshots
+# are taken more often. (Also, see snapCount).
+preAllocSize=131072
+
+# Clients can submit requests faster than ZooKeeper can process them,
+# especially if there are a lot of clients. To prevent ZooKeeper from running
+# out of memory due to queued requests, ZooKeeper will throttle clients so that
+# there is no more than globalOutstandingLimit outstanding requests in the
+# system. The default limit is 1000.
+# globalOutstandingLimit=1000
+
+# ZooKeeper logs transactions to a transaction log. After snapCount transactions
+# are written to a log file a snapshot is started and a new transaction log file
+# is started. The default snapCount is 100000.
+snapCount=3000000
+
+# If this option is defined, requests will be will logged to a trace file named
+# traceFile.year.month.day.
+#traceFile=
+
+# Leader accepts client connections. Default value is "yes". The leader machine
+# coordinates updates. For higher update throughput at thes slight expense of
+# read throughput the leader can be configured to not accept clients and focus
+# on coordination.
+leaderServes=yes
+
+standaloneEnabled=false
+dynamicConfigFile=/etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/zoo.cfg.dynamic
+```
+
+Version de Java :
+
+```text
+openjdk 11.0.5-shenandoah 2019-10-15
+OpenJDK Runtime Environment (build 11.0.5-shenandoah+10-adhoc.heretic.src)
+OpenJDK 64-Bit Server VM (build 11.0.5-shenandoah+10-adhoc.heretic.src, mixed mode)
+```
+
+Paramètres JVM :
+
+```bash
+NAME=zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}
+ZOOCFGDIR=/etc/$NAME/conf
+
+# TODO this is really ugly
+# How to find out, which jars are needed?
+# seems, that log4j requires the log4j.properties file to be in the classpath
+CLASSPATH="$ZOOCFGDIR:/usr/build/classes:/usr/build/lib/*.jar:/usr/share/zookeeper-3.6.2/lib/audience-annotations-0.5.0.jar:/usr/share/zookeeper-3.6.2/lib/commons-cli-1.2.jar:/usr/share/zookeeper-3.6.2/lib/commons-lang-2.6.jar:/usr/share/zookeeper-3.6.2/lib/jackson-annotations-2.10.3.jar:/usr/share/zookeeper-3.6.2/lib/jackson-core-2.10.3.jar:/usr/share/zookeeper-3.6.2/lib/jackson-databind-2.10.3.jar:/usr/share/zookeeper-3.6.2/lib/javax.servlet-api-3.1.0.jar:/usr/share/zookeeper-3.6.2/lib/jetty-http-9.4.24.v20191120.jar:/usr/share/zookeeper-3.6.2/lib/jetty-io-9.4.24.v20191120.jar:/usr/share/zookeeper-3.6.2/lib/jetty-security-9.4.24.v20191120.jar:/usr/share/zookeeper-3.6.2/lib/jetty-server-9.4.24.v20191120.jar:/usr/share/zookeeper-3.6.2/lib/jetty-servlet-9.4.24.v20191120.jar:/usr/share/zookeeper-3.6.2/lib/jetty-util-9.4.24.v20191120.jar:/usr/share/zookeeper-3.6.2/lib/jline-2.14.6.jar:/usr/share/zookeeper-3.6.2/lib/json-simple-1.1.1.jar:/usr/share/zookeeper-3.6.2/lib/log4j-1.2.17.jar:/usr/share/zookeeper-3.6.2/lib/metrics-core-3.2.5.jar:/usr/share/zookeeper-3.6.2/lib/netty-buffer-4.1.50.Final.jar:/usr/share/zookeeper-3.6.2/lib/netty-codec-4.1.50.Final.jar:/usr/share/zookeeper-3.6.2/lib/netty-common-4.1.50.Final.jar:/usr/share/zookeeper-3.6.2/lib/netty-handler-4.1.50.Final.jar:/usr/share/zookeeper-3.6.2/lib/netty-resolver-4.1.50.Final.jar:/usr/share/zookeeper-3.6.2/lib/netty-transport-4.1.50.Final.jar:/usr/share/zookeeper-3.6.2/lib/netty-transport-native-epoll-4.1.50.Final.jar:/usr/share/zookeeper-3.6.2/lib/netty-transport-native-unix-common-4.1.50.Final.jar:/usr/share/zookeeper-3.6.2/lib/simpleclient-0.6.0.jar:/usr/share/zookeeper-3.6.2/lib/simpleclient_common-0.6.0.jar:/usr/share/zookeeper-3.6.2/lib/simpleclient_hotspot-0.6.0.jar:/usr/share/zookeeper-3.6.2/lib/simpleclient_servlet-0.6.0.jar:/usr/share/zookeeper-3.6.2/lib/slf4j-api-1.7.25.jar:/usr/share/zookeeper-3.6.2/lib/slf4j-log4j12-1.7.25.jar:/usr/share/zookeeper-3.6.2/lib/snappy-java-1.1.7.jar:/usr/share/zookeeper-3.6.2/lib/zookeeper-3.6.2.jar:/usr/share/zookeeper-3.6.2/lib/zookeeper-jute-3.6.2.jar:/usr/share/zookeeper-3.6.2/lib/zookeeper-prometheus-metrics-3.6.2.jar:/usr/share/zookeeper-3.6.2/etc"
+
+ZOOCFG="$ZOOCFGDIR/zoo.cfg"
+ZOO_LOG_DIR=/var/log/$NAME
+USER=zookeeper
+GROUP=zookeeper
+PIDDIR=/var/run/$NAME
+PIDFILE=$PIDDIR/$NAME.pid
+SCRIPTNAME=/etc/init.d/$NAME
+JAVA=/usr/local/jdk-11/bin/java
+ZOOMAIN="org.apache.zookeeper.server.quorum.QuorumPeerMain"
+ZOO_LOG4J_PROP="INFO,ROLLINGFILE"
+JMXLOCALONLY=false
+JAVA_OPTS="-Xms{{ '{{' }} cluster.get('xms','128M') {{ '}}' }} \
+    -Xmx{{ '{{' }} cluster.get('xmx','1G') {{ '}}' }} \
+    -Xlog:safepoint,gc*=info,age*=debug:file=/var/log/$NAME/zookeeper-gc.log:time,level,tags:filecount=16,filesize=16M
+    -verbose:gc \
+    -XX:+UseG1GC \
+    -Djute.maxbuffer=8388608 \
+    -XX:MaxGCPauseMillis=50"
+```
+
+Initialisation de Salt :
+
+```text
+description "zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }} centralized coordination service"
+
+start on runlevel [2345]
+stop on runlevel [!2345]
+
+respawn
+
+limit nofile 8192 8192
+
+pre-start script
+    [ -r "/etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/environment" ] || exit 0
+    . /etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/environment
+    [ -d $ZOO_LOG_DIR ] || mkdir -p $ZOO_LOG_DIR
+    chown $USER:$GROUP $ZOO_LOG_DIR
+end script
+
+script
+    . /etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/environment
+    [ -r /etc/default/zookeeper ] && . /etc/default/zookeeper
+    if [ -z "$JMXDISABLE" ]; then
+        JAVA_OPTS="$JAVA_OPTS -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.local.only=$JMXLOCALONLY"
+    fi
+    exec start-stop-daemon --start -c $USER --exec $JAVA --name zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }} \
+        -- -cp $CLASSPATH $JAVA_OPTS -Dzookeeper.log.dir=${ZOO_LOG_DIR} \
+        -Dzookeeper.root.logger=${ZOO_LOG4J_PROP} $ZOOMAIN $ZOOCFG
+end script
+```
+
+<div id="antivirus-software">
+  ## Logiciel antivirus
+</div>
+
+Si vous utilisez un logiciel antivirus, configurez-le pour qu’il ignore les dossiers contenant les fichiers de données de ClickHouse (`/var/lib/clickhouse`) ; sinon, les performances risquent d’être dégradées et vous pourriez rencontrer des erreurs inattendues lors de l’ingestion des données et des fusions en arrière-plan.
+
+<div id="related-content">
+  ## Contenus associés
+</div>
+
+* [Vous débutez avec ClickHouse ? Voici 13 « péchés mortels » et comment les éviter](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse)

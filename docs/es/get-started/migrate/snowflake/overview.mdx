@@ -1,0 +1,189 @@
+---
+sidebarTitle: 'Descripción general'
+slug: /migrations/snowflake-overview
+description: 'Migración de Snowflake a ClickHouse'
+keywords: ['Snowflake']
+title: 'Migración de Snowflake a ClickHouse'
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+> Este documento ofrece una introducción a la migración de datos de Snowflake a ClickHouse.
+
+Snowflake es un data warehouse en la nube centrado principalmente en migrar a la nube cargas de trabajo heredadas de data warehousing on-premise.
+Está bien optimizado para ejecutar
+informes de larga duración a gran escala. A medida que los conjuntos de datos migran a la nube, los propietarios de los datos empiezan
+a pensar en qué otras formas pueden extraer valor de ellos, incluido el uso de
+estos conjuntos de datos para impulsar aplicaciones en tiempo real en casos de uso internos y externos.
+Cuando esto ocurre, a menudo se dan cuenta de que necesitan una base de datos optimizada para
+la analítica en tiempo real, como ClickHouse.
+
+<div id="comparison">
+  ## Comparación
+</div>
+
+En esta sección, compararemos las características principales de ClickHouse y Snowflake.
+
+<div id="similarities">
+  ### Similitudes
+</div>
+
+Snowflake es una plataforma de data warehousing en la nube que ofrece una solución escalable
+y eficiente para almacenar, procesar y analizar grandes volúmenes de
+datos.
+Al igual que ClickHouse, Snowflake no se basa en tecnologías existentes, sino que utiliza
+su propio motor de consultas SQL y una arquitectura personalizada.
+
+La arquitectura de Snowflake se describe como un híbrido entre una arquitectura de almacenamiento compartido (disco compartido)
+y una arquitectura sin recursos compartidos (shared-nothing). Una arquitectura de almacenamiento compartido es
+aquella en la que los datos son accesibles desde todos los nodos de cómputo mediante almacenamiento de
+objetos como S3. Una arquitectura sin recursos compartidos es aquella en la que cada nodo de cómputo
+almacena localmente una parte del conjunto total de datos para responder a las consultas. Esto, en
+teoría, ofrece lo mejor de ambos modelos: la simplicidad de una arquitectura de disco compartido
+y la escalabilidad de una arquitectura sin recursos compartidos.
+
+Este diseño se basa fundamentalmente en el almacenamiento de objetos como medio de almacenamiento principal,
+que escala casi de forma infinita con acceso concurrente y, al mismo tiempo, ofrece alta
+resiliencia y garantías de rendimiento escalable.
+
+La siguiente imagen de [docs.snowflake.com](https://docs.snowflake.com/en/user-guide/intro-key-concepts)
+muestra esta arquitectura:
+
+<Image img="/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp" size="md" alt="Arquitectura de Snowflake" />
+
+Por el contrario, como producto de código abierto y alojado en la nube, ClickHouse puede implementarse
+tanto en arquitecturas de disco compartido como sin recursos compartidos. Esta última es típica de las
+implementaciones autogestionadas. Aunque permite escalar fácilmente la CPU y la memoria,
+las configuraciones sin recursos compartidos introducen los desafíos clásicos de la gestión de datos y la
+sobrecarga asociada a la replicación de datos, especialmente durante los cambios de membresía.
+
+Por esta razón, ClickHouse Cloud utiliza una arquitectura de almacenamiento compartido
+conceptualmente similar a la de Snowflake. Los datos se almacenan una sola vez en un almacenamiento de objetos
+(copia única), como S3 o GCS, lo que proporciona un almacenamiento prácticamente infinito con
+sólidas garantías de redundancia. Cada nodo tiene acceso a esta copia única de los
+datos y a sus propias Local SSD para fines de caché. Los nodos, a su vez, pueden
+escalarse para proporcionar recursos adicionales de CPU y memoria según sea necesario. Al igual que Snowflake,
+las propiedades de escalabilidad de S3 resuelven la limitación clásica de las arquitecturas
+de disco compartido (cuellos de botella de E/S de disco y red) al garantizar que el rendimiento de E/S
+disponible para los nodos actuales de un clúster no se vea afectado a medida que se añaden
+nodos adicionales.
+
+<Image img="/images/cloud/onboard/discover/use_cases/cloud_architecture.webp" size="md" alt="Arquitectura de ClickHouse Cloud" />
+
+<div id="differences">
+  ### Diferencias
+</div>
+
+Además de los formatos de almacenamiento subyacentes y los motores de consulta, estas arquitecturas
+difieren en algunos aspectos sutiles:
+
+* Los recursos de cómputo en Snowflake se proporcionan mediante el concepto de [warehouses](https://docs.snowflake.com/en/user-guide/warehouses).
+  Estos constan de varios nodos, cada uno de un tamaño determinado. Aunque Snowflake
+  no publica la arquitectura específica de sus warehouses, se
+  [acepta generalmente](https://select.dev/posts/snowflake-warehouse-sizing)
+  que cada nodo consta de 8 vCPU, 16 GiB y 200 GB de almacenamiento local (para caché).
+  El número de nodos depende de un tamaño predefinido; por ejemplo, un x-small tiene un nodo,
+  un small 2, medium 4, large 8, etc. Estos warehouses son independientes de los datos
+  y pueden utilizarse para consultar cualquier base de datos alojada en almacenamiento de objetos. Cuando están inactivos
+  y no reciben carga de consultas, los warehouses se ponen en pausa y se reanudan cuando llega
+  una consulta. Aunque los costes de almacenamiento siempre se reflejan en la facturación, los warehouses
+  solo se cobran cuando están activos.
+
+* ClickHouse Cloud utiliza un principio similar de nodos con almacenamiento
+  de caché local. En lugar de tamaños predefinidos, los usuarios implementan un servicio con una cantidad total
+  de cómputo y RAM disponible. Esto, a su vez, se escala automáticamente
+  de forma transparente (dentro de límites definidos) según la carga de consultas, ya sea
+  verticalmente, aumentando (o reduciendo) los recursos de cada nodo, o
+  horizontalmente, aumentando o reduciendo el número total de nodos. Los nodos de ClickHouse
+  Cloud tienen una relación CPU-memoria de 1, a diferencia de la de Snowflake.
+  Aunque es posible un acoplamiento más flexible, los servicios están acoplados a los
+  datos, a diferencia de los warehouses de Snowflake. Los nodos también se pondrán en pausa si están inactivos y
+  se reanudarán cuando reciban consultas. También puede cambiar manualmente el tamaño de los servicios si
+  es necesario.
+
+* La caché de consultas de ClickHouse Cloud es específica de cada nodo, a diferencia de
+  la de Snowflake, que se ofrece en una capa de servicio independiente del
+  warehouse. Según benchmarks, la caché de nodos de ClickHouse Cloud ofrece mejor rendimiento
+  que la de Snowflake.
+
+* Snowflake y ClickHouse Cloud adoptan enfoques distintos para el escalado con el fin de
+  aumentar la concurrencia de consultas. Snowflake lo aborda mediante una funcionalidad
+  conocida como [multi-cluster warehouses](https://docs.snowflake.com/en/user-guide/warehouses-multicluster#benefits-of-multi-cluster-warehouses).
+  Esta funcionalidad le permite añadir clústeres a un warehouse. Aunque esto no ofrece
+  ninguna mejora en la latencia de las consultas, sí proporciona paralelización adicional y
+  permite una mayor concurrencia de consultas. ClickHouse lo consigue añadiendo más memoria
+  y CPU a un servicio mediante escalado vertical u horizontal. No exploramos las
+  capacidades de estos servicios para escalar a niveles más altos de concurrencia en este blog,
+  sino que nos centramos en la latencia, pero reconocemos que este trabajo debería realizarse
+  para contar con una comparación completa. Sin embargo, cabría esperar que ClickHouse rindiera
+  bien en cualquier prueba de concurrencia, ya que Snowflake limita explícitamente el número
+  de consultas concurrentes permitidas para un [warehouse a 8 de forma predeterminada](https://docs.snowflake.com/en/sql-reference/parameters#max-concurrency-level).
+  En comparación, ClickHouse Cloud permite ejecutar hasta 1000 consultas por
+  nodo.
+
+* La capacidad de Snowflake para cambiar el tamaño del cómputo de un dataset, junto con los rápidos
+  tiempos de reanudación de los warehouses, hace que la experiencia para consultas ad hoc
+  sea excelente. Para casos de uso de data warehouse y lago de datos, esto proporciona una
+  ventaja sobre otros sistemas.
+
+<div id="real-time-analytics">
+  ### Analítica en tiempo real
+</div>
+
+Según datos públicos de [benchmark](https://benchmark.clickhouse.com/#system=+%E2%98%81w|%EF%B8%8Fr|C%20c|nfe\&type=-\&machine=-ca2|gl|6ax|6ale|3al\&cluster_size=-\&opensource=-\&tuned=+n\&metric=hot\&queries=-),
+ClickHouse supera a Snowflake en aplicaciones de analítica en tiempo real en las siguientes áreas:
+
+* **Latencia de consulta**: Las consultas de Snowflake tienen una mayor latencia incluso
+  cuando se aplica clustering a las tablas para optimizar el rendimiento. En nuestras
+  pruebas, Snowflake requiere más del doble de capacidad de cómputo para lograr un rendimiento
+  equivalente al de ClickHouse en consultas en las que se aplica un filtro que forma parte
+  de la clave de clustering de Snowflake o de la clave primaria de ClickHouse. Aunque
+  la [persistent caché de consultas](https://docs.snowflake.com/en/user-guide/querying-persisted-results) de Snowflake
+  compensa parte de estos problemas de latencia, resulta ineficaz en los casos
+  en que los criterios de filtrado son más diversos. La eficacia de esta caché de consultas
+  también puede verse afectada por cambios en los datos subyacentes, ya que las
+  entradas de la caché se invalidan cuando cambia la tabla. Aunque este no es el caso en
+  el benchmark de nuestra aplicación, una implementación real requeriría que se insertaran
+  datos nuevos y más recientes. Tenga en cuenta que la caché de consultas de ClickHouse es
+  específica de cada nodo y no es [transactionally consistent](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design),
+  lo que la hace [más adecuada ](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)
+  para la analítica en tiempo real. Los usuarios también tienen un control granular sobre su uso,
+  ya que pueden controlarla [por consulta](/es/reference/settings/session-settings#use_query_cache),
+  su [tamaño preciso](/es/reference/settings/session-settings#query_cache_max_size_in_bytes),
+  si una [consulta se almacena en caché](/es/reference/settings/session-settings#enable_writes_to_query_cache)
+  (límites de duración o número mínimo de ejecuciones), y si
+  solo se [usa pasivamente](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design#using-logs-and-settings).
+
+* **Menor costo**: Los warehouses de Snowflake pueden configurarse para suspenderse después
+  de un período de inactividad de las consultas. Una vez suspendidos, no se generan cargos.
+  En la práctica, esta comprobación de inactividad [solo puede reducirse a 60 s](https://docs.snowflake.com/en/sql-reference/sql/alter-warehouse).
+  Los warehouses se reanudan automáticamente en varios segundos una vez que se recibe una consulta.
+  Como Snowflake solo cobra por los recursos cuando un warehouse
+  está en uso, este comportamiento se adapta a workloads que suelen permanecer inactivos, como
+  las consultas ad hoc.
+
+  Sin embargo, muchos workloads de analítica en tiempo real requieren ingestión continua de datos en tiempo real
+  y consultas frecuentes que no se benefician de quedar inactivos (como
+  los dashboards orientados al cliente). Esto significa que los warehouses a menudo deben estar completamente
+  activos y generando cargos. Esto elimina la ventaja de costos del estado inactivo, así
+  como cualquier ventaja de rendimiento que pueda estar asociada con la capacidad de Snowflake
+  para recuperar un estado operativo con mayor rapidez que las alternativas. Este requisito de estado
+  activo, combinado con el menor costo por segundo de ClickHouse Cloud
+  en ese estado, hace que ClickHouse Cloud ofrezca un
+  costo total significativamente menor para este tipo de workloads.
+
+* **Precios predecibles de las funcionalidades:** Funcionalidades como las vistas materializadas
+  y el clustering (equivalente al `ORDER BY` de ClickHouse) son necesarias para alcanzar
+  los niveles más altos de rendimiento en casos de uso de analítica en tiempo real. Estas
+  funcionalidades generan cargos adicionales en Snowflake, lo que exige no solo un
+  tier superior, que incrementa los costos por crédito en 1,5 veces, sino también
+  costos de mantenimiento en segundo plano difíciles de predecir. Por ejemplo, las vistas materializadas generan un
+  costo de mantenimiento en segundo plano, al igual que el clustering, que es difícil de prever
+  antes de su uso. En contraste, estas funcionalidades no generan ningún costo adicional en
+  ClickHouse Cloud, salvo un mayor uso de CPU y memoria en el momento de la inserción,
+  normalmente insignificante fuera de casos de uso con altas cargas de inserción. Hemos
+  observado en nuestro benchmark que estas diferencias, junto con menores latencias de consulta
+  y una mayor compresión, dan como resultado costos significativamente más bajos con
+  ClickHouse.

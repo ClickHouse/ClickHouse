@@ -1,3 +1,4 @@
+SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS t_skip_index_in;
 
 CREATE TABLE t_skip_index_in

@@ -571,3 +571,19 @@ TEST_F(DistributedQueryTest, ShuffleHashJoin)
     executeTestWithExchangeKind("Persisted");
     executeTestWithExchangeKind("Streaming");
 }
+
+/// v1 for legacy-port-only sources (rolling-upgrade safe); v2 once a per-replica port appears.
+TEST(DistributedTaskSerializationVersion, LowersToV1ForLegacyPorts)
+{
+    const UInt64 server_exchange_port = 9000;
+
+    ExchangeStreamSources sources;
+    EXPECT_EQ(chooseTaskSerializationVersion(sources, server_exchange_port), UInt64(1));
+
+    sources.stream_hosts["s1"] = {"host1", 9000};
+    sources.stream_hosts["s2"] = {"host2", 9000};
+    EXPECT_EQ(chooseTaskSerializationVersion(sources, server_exchange_port), UInt64(1));
+
+    sources.stream_hosts["s3"] = {"host3", 9224};
+    EXPECT_EQ(chooseTaskSerializationVersion(sources, server_exchange_port), UInt64(2));
+}
