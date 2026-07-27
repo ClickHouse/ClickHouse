@@ -87,6 +87,7 @@ FILES_OVERHEAD_PER_PART_COMPACT = (
     + FILES_OVERHEAD_METADATA_VERSION
     + FILES_OVERHEAD_COLUMNS_SUBSTREAMS
 )
+FILES_OVERHEAD_PER_INVALIDATED_COLUMN = 1
 
 
 def create_table(node, table_name, **additional_settings):
@@ -413,7 +414,7 @@ def test_attach_detach_partition(cluster, node_name):
 
     node.query("ALTER TABLE s3_test ATTACH PARTITION '2020-01-03'")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
-    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2)
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2 + FILES_OVERHEAD_PER_INVALIDATED_COLUMN)
 
     node.query("ALTER TABLE s3_test DROP PARTITION '2020-01-03'")
     wait_for_delete_empty_parts(node, "s3_test")
@@ -432,7 +433,7 @@ def test_attach_detach_partition(cluster, node_name):
         settings={"allow_drop_detached": 1},
     )
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(0)"
-    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 0)
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD)
 
     check_no_objects_after_drop(cluster)
 
@@ -535,7 +536,8 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
         cluster,
         FILES_OVERHEAD * 2
         + FILES_OVERHEAD_PER_PART_WIDE * 4
-        - FILES_OVERHEAD_METADATA_VERSION * 2,
+        - FILES_OVERHEAD_METADATA_VERSION * 2
+        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
     )
 
     # Add new partitions to source table, but with different values and replace them from copied table.
@@ -553,7 +555,8 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
         cluster,
         FILES_OVERHEAD * 2
         + FILES_OVERHEAD_PER_PART_WIDE * 6
-        - FILES_OVERHEAD_METADATA_VERSION * 2,
+        - FILES_OVERHEAD_METADATA_VERSION * 2
+        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
     )
 
     node.query("ALTER TABLE s3_test REPLACE PARTITION '2020-01-03' FROM s3_clone")
@@ -568,7 +571,8 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
         cluster,
         FILES_OVERHEAD * 2
         + FILES_OVERHEAD_PER_PART_WIDE * 4
-        - FILES_OVERHEAD_METADATA_VERSION * 2,
+        - FILES_OVERHEAD_METADATA_VERSION * 2
+        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 4,
     )
 
     node.query("DROP TABLE s3_clone SYNC")
@@ -580,7 +584,8 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
         cluster,
         FILES_OVERHEAD
         + FILES_OVERHEAD_PER_PART_WIDE * 4
-        - FILES_OVERHEAD_METADATA_VERSION * 2,
+        - FILES_OVERHEAD_METADATA_VERSION * 2
+        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
     )
 
     node.query("ALTER TABLE s3_test FREEZE")
@@ -590,7 +595,8 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
         cluster,
         FILES_OVERHEAD
         + FILES_OVERHEAD_PER_PART_WIDE * 4
-        - FILES_OVERHEAD_METADATA_VERSION * 2,
+        - FILES_OVERHEAD_METADATA_VERSION * 2
+        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
     )
 
     node.query("DROP TABLE s3_test SYNC")
