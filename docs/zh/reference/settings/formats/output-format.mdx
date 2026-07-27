@@ -93,6 +93,16 @@ Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd
 
 在 Arrow 格式中，始终对字典索引使用 64 位整数
 
+<div id="output_format_arrow_use_native_writer">
+  ## output_format_arrow_use_native_writer
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "新增设置：对 Arrow 和 ArrowStream 格式使用原生 ClickHouse 写入器，而不是基于 Apache Arrow 库的写入器。"}]}]} />
+
+对 Arrow 和 ArrowStream 格式使用原生 ClickHouse 写入器，而不是基于 Apache Arrow 库的写入器。
+
 <div id="output_format_arrow_use_signed_indexes_for_dictionary">
   ## output_format_arrow_use_signed_indexes_for_dictionary
 </div>

@@ -85,6 +85,16 @@ Ignorer la casse lors de la correspondance entre les colonnes Arrow et les colon
 
 Ignorer les colonnes dont les types ne sont pas pris en charge lors de l’inférence du schéma pour le format Arrow
 
+<div id="input_format_arrow_use_native_reader">
+  ## input_format_arrow_use_native_reader
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "Nouveau paramètre permettant d’utiliser le lecteur natif de ClickHouse pour les formats Arrow et ArrowStream au lieu de la bibliothèque Apache Arrow."}]}]} />
+
+Utilisez le lecteur natif de ClickHouse pour les formats Arrow et ArrowStream à la place de celui basé sur la bibliothèque Apache Arrow.
+
 <div id="input_format_avro_allow_missing_fields">
   ## input_format_avro_allow_missing_fields
 </div>

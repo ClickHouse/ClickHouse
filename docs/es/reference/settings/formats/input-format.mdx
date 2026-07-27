@@ -85,6 +85,16 @@ No distingue entre mayúsculas y minúsculas al hacer coincidir las columnas de 
 
 Omitir columnas con tipos no compatibles durante la inferencia de esquema para el formato Arrow
 
+<div id="input_format_arrow_use_native_reader">
+  ## input_format_arrow_use_native_reader
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "Nueva configuración para usar el lector nativo de ClickHouse para los formatos Arrow y ArrowStream en lugar del lector basado en la biblioteca Apache Arrow."}]}]} />
+
+Use el lector nativo de ClickHouse para los formatos Arrow y ArrowStream en lugar del lector basado en la biblioteca Apache Arrow.
+
 <div id="input_format_avro_allow_missing_fields">
   ## input_format_avro_allow_missing_fields
 </div>

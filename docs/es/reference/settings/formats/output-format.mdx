@@ -93,6 +93,16 @@ Genera como datos binarios sin procesar los tipos de Output que no tienen conver
 
 Usa siempre enteros de 64 bits para los índices de diccionario en formato Arrow
 
+<div id="output_format_arrow_use_native_writer">
+  ## output_format_arrow_use_native_writer
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "Nueva configuración para usar el escritor nativo de ClickHouse para los formatos Arrow y ArrowStream en lugar de la biblioteca Apache Arrow."}]}]} />
+
+Use el escritor nativo de ClickHouse para los formatos Arrow y ArrowStream en lugar del que se basa en la biblioteca Apache Arrow.
+
 <div id="output_format_arrow_use_signed_indexes_for_dictionary">
   ## output_format_arrow_use_signed_indexes_for_dictionary
 </div>

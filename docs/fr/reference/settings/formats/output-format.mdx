@@ -93,6 +93,16 @@ Les types de sortie sans conversion sont émis sous forme de données binaires b
 
 Toujours utiliser des entiers sur 64 bits pour les index de dictionnaire au format Arrow
 
+<div id="output_format_arrow_use_native_writer">
+  ## output_format_arrow_use_native_writer
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "Nouveau paramètre permettant d'utiliser le module d'écriture natif de ClickHouse pour les formats Arrow et ArrowStream au lieu de la bibliothèque Apache Arrow."}]}]} />
+
+Utilisez le module d&#39;écriture natif de ClickHouse pour les formats Arrow et ArrowStream au lieu de celui basé sur la bibliothèque Apache Arrow.
+
 <div id="output_format_arrow_use_signed_indexes_for_dictionary">
   ## output_format_arrow_use_signed_indexes_for_dictionary
 </div>

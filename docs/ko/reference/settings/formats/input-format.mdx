@@ -85,6 +85,16 @@ Arrow 컬럼과 CH 컬럼을 매칭할 때 대소문자를 구분하지 않습�
 
 Arrow 포맷의 스키마 추론 시 지원되지 않는 타입의 컬럼을 건너뜁니다
 
+<div id="input_format_arrow_use_native_reader">
+  ## input_format_arrow_use_native_reader
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "Apache Arrow 라이브러리 기반 reader 대신 Arrow 및 ArrowStream 포맷에 ClickHouse 네이티브 reader를 사용하기 위한 새로운 설정입니다."}]}]} />
+
+Apache Arrow 라이브러리 기반 reader 대신 Arrow 및 ArrowStream 포맷에 ClickHouse 네이티브 reader를 사용합니다.
+
 <div id="input_format_avro_allow_missing_fields">
   ## input_format_avro_allow_missing_fields
 </div>

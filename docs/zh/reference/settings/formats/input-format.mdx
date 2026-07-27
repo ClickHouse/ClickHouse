@@ -85,6 +85,16 @@ ClickHouse 便可只读取所需的字节范围，从而减少内存使用。
 
 在对 Arrow 格式进行 schema 推断 时，跳过类型不受支持的列
 
+<div id="input_format_arrow_use_native_reader">
+  ## input_format_arrow_use_native_reader
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "新增设置：在 Arrow 和 ArrowStream 格式中使用 ClickHouse 原生读取器，而不是 Apache Arrow 库。"}]}]} />
+
+在 Arrow 和 ArrowStream 格式中使用 ClickHouse 原生读取器，而不是基于 Apache Arrow 库的读取器。
+
 <div id="input_format_avro_allow_missing_fields">
   ## input_format_avro_allow_missing_fields
 </div>

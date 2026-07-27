@@ -130,7 +130,7 @@ const FormatSettingsExplorer = () => {
     },
     {
       label: "input_format_*",
-      count: 124,
+      count: 125,
       settings: [
         { name: "input_format_allow_errors_num", href: "/zh/reference/settings/formats/input-format#input_format_allow_errors_num" },
         { name: "input_format_allow_errors_ratio", href: "/zh/reference/settings/formats/input-format#input_format_allow_errors_ratio" },
@@ -141,6 +141,7 @@ const FormatSettingsExplorer = () => {
           name: "input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference",
           href: "/zh/reference/settings/formats/input-format#input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference"
         },
+        { name: "input_format_arrow_use_native_reader", href: "/zh/reference/settings/formats/input-format#input_format_arrow_use_native_reader" },
         { name: "input_format_avro_allow_missing_fields", href: "/zh/reference/settings/formats/input-format#input_format_avro_allow_missing_fields" },
         { name: "input_format_avro_null_as_default", href: "/zh/reference/settings/formats/input-format#input_format_avro_null_as_default" },
         { name: "input_format_binary_decode_types_in_binary_format", href: "/zh/reference/settings/formats/input-format#input_format_binary_decode_types_in_binary_format" },
@@ -285,7 +286,7 @@ const FormatSettingsExplorer = () => {
     },
     {
       label: "output_format_*",
-      count: 103,
+      count: 104,
       settings: [
         { name: "output_format_always_write_decimal_point_in_float_and_decimal", href: "/zh/reference/settings/formats/output-format#output_format_always_write_decimal_point_in_float_and_decimal" },
         { name: "output_format_arrow_compression_method", href: "/zh/reference/settings/formats/output-format#output_format_arrow_compression_method" },
@@ -295,6 +296,7 @@ const FormatSettingsExplorer = () => {
         { name: "output_format_arrow_string_as_string", href: "/zh/reference/settings/formats/output-format#output_format_arrow_string_as_string" },
         { name: "output_format_arrow_unsupported_types_as_binary", href: "/zh/reference/settings/formats/output-format#output_format_arrow_unsupported_types_as_binary" },
         { name: "output_format_arrow_use_64_bit_indexes_for_dictionary", href: "/zh/reference/settings/formats/output-format#output_format_arrow_use_64_bit_indexes_for_dictionary" },
+        { name: "output_format_arrow_use_native_writer", href: "/zh/reference/settings/formats/output-format#output_format_arrow_use_native_writer" },
         { name: "output_format_arrow_use_signed_indexes_for_dictionary", href: "/zh/reference/settings/formats/output-format#output_format_arrow_use_signed_indexes_for_dictionary" },
         { name: "output_format_avro_codec", href: "/zh/reference/settings/formats/output-format#output_format_avro_codec" },
         { name: "output_format_avro_confluent_subject", href: "/zh/reference/settings/formats/output-format#output_format_avro_confluent_subject" },
@@ -502,6 +504,7 @@ const FormatSettingsExplorer = () => {
     input_format_arrow_allow_missing_columns: "/reference/settings/formats/input-format",
     input_format_arrow_case_insensitive_column_matching: "/reference/settings/formats/input-format",
     input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference: "/reference/settings/formats/input-format",
+    input_format_arrow_use_native_reader: "/reference/settings/formats/input-format",
     input_format_avro_allow_missing_fields: "/reference/settings/formats/input-format",
     input_format_avro_null_as_default: "/reference/settings/formats/input-format",
     input_format_binary_decode_types_in_binary_format: "/reference/settings/formats/input-format",
@@ -633,6 +636,7 @@ const FormatSettingsExplorer = () => {
     output_format_arrow_string_as_string: "/reference/settings/formats/output-format",
     output_format_arrow_unsupported_types_as_binary: "/reference/settings/formats/output-format",
     output_format_arrow_use_64_bit_indexes_for_dictionary: "/reference/settings/formats/output-format",
+    output_format_arrow_use_native_writer: "/reference/settings/formats/output-format",
     output_format_arrow_use_signed_indexes_for_dictionary: "/reference/settings/formats/output-format",
     output_format_avro_codec: "/reference/settings/formats/output-format",
     output_format_avro_confluent_subject: "/reference/settings/formats/output-format",

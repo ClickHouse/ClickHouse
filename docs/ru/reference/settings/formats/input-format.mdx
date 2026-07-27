@@ -85,6 +85,16 @@ ClickHouse может читать только нужные диапазоны 
 
 Пропускать столбцы с неподдерживаемыми типами при определении схемы для формата Arrow
 
+<div id="input_format_arrow_use_native_reader">
+  ## input_format_arrow_use_native_reader
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "Новая настройка: использовать встроенный модуль чтения ClickHouse для форматов Arrow и ArrowStream вместо библиотеки Apache Arrow."}]}]} />
+
+Используйте встроенный модуль чтения ClickHouse для форматов Arrow и ArrowStream вместо варианта на основе библиотеки Apache Arrow.
+
 <div id="input_format_avro_allow_missing_fields">
   ## input_format_avro_allow_missing_fields
 </div>

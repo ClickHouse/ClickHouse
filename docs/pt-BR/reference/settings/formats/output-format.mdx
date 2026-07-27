@@ -93,6 +93,16 @@ Produz, como dados binários brutos, tipos sem conversão. Se false - esses tipo
 
 Sempre usa inteiros de 64 bits para índices de dicionário no formato Arrow
 
+<div id="output_format_arrow_use_native_writer">
+  ## output_format_arrow_use_native_writer
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "Nova configuração para usar o mecanismo nativo de gravação do ClickHouse para os formatos Arrow e ArrowStream em vez da biblioteca Apache Arrow."}]}]} />
+
+Use o mecanismo nativo de gravação do ClickHouse para os formatos Arrow e ArrowStream em vez do baseado na biblioteca Apache Arrow.
+
 <div id="output_format_arrow_use_signed_indexes_for_dictionary">
   ## output_format_arrow_use_signed_indexes_for_dictionary
 </div>
