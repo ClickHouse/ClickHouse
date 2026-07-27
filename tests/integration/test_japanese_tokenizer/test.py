@@ -84,8 +84,8 @@ def test_wrong_sha_fails_closed(started_cluster):
 
 
 def test_dictionary_from_s3(started_cluster):
+    # Dictionary fetched from MinIO via the S3 client.
     skip_if_no_mecab(node_s3)
-    # The dictionary is fetched from MinIO over the S3 client (http endpoint + credentials).
     assert (
         node_s3.query("SELECT tokens('日本語の形態素解析エンジン', 'japanese')").strip()
         == "['日本語','の','形態','素','解析','エンジン']"
