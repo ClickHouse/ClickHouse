@@ -301,48 +301,126 @@ std::vector<ColumnPtr> collectSuspectMaterializations(const DataTypePtr & type, 
     return {};
 }
 
-/// Build a single-row representative value of a non-suspect type for executing a typed `CAST` during the
-/// DDL-time probe. The plain default value is degenerate for wrappers that would hide the payload structure
-/// from the consumers of the cast result: a `Nullable` default row is NULL (the `Variant`/`Dynamic`
-/// adaptors short-circuit on it) and an `Array`/`Map` default is empty (element-level consumers never
-/// run), so recurse through them, materializing a non-NULL row and one-element containers instead.
-ColumnPtr makeRepresentativeColumn(const DataTypePtr & type)
+/// Build the single-row representative values of a non-suspect type for executing a typed `CAST` during
+/// the DDL-time probe. The plain default value is degenerate for wrappers that would hide the payload
+/// structure from the consumers of the cast result: a `Nullable` default row is NULL (the
+/// `Variant`/`Dynamic` adaptors short-circuit on it) and an `Array`/`Map` default is empty (element-level
+/// consumers never run), so recurse through them, materializing a non-NULL row and one-element containers
+/// instead.
+///
+/// A `Variant` source needs *several* representatives, not one: a cast of a `Variant` to a carrier
+/// preserves whichever alternative each row currently stores (`createVariantToDynamicWrapper`), so the
+/// payload of the result is not fixed by a single representative row. The default `Variant` row is NULL,
+/// and narrowing the consumer's domain to it would accept e.g. `length(CAST(v, 'Dynamic'))` for
+/// `v Variant(String, UInt32)`, which throws `ILLEGAL_TYPE_OF_ARGUMENT` during TTL execution as soon as a
+/// row stores the `UInt32` alternative. So every alternative is materialized and the cast is probed with
+/// each of them; the union of the outputs is the domain the consumers are validated against.
+std::vector<ColumnPtr> makeRepresentativeColumns(const DataTypePtr & type, std::string_view expression_kind)
 {
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
     {
-        auto nested = makeRepresentativeColumn(nullable_type->getNestedType());
-        return ColumnNullable::create(IColumn::mutate(std::move(nested)), ColumnUInt8::create(1, UInt8(0)));
+        auto nested = makeRepresentativeColumns(nullable_type->getNestedType(), expression_kind);
+        std::vector<ColumnPtr> result;
+        result.reserve(nested.size());
+        for (const auto & payload : nested)
+            result.push_back(ColumnNullable::create(IColumn::mutate(payload), ColumnUInt8::create(1, UInt8(0))));
+        return result;
+    }
+
+    if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get()))
+    {
+        const auto & variant_types = variant_type->getVariants();
+        std::vector<ColumnPtr> result;
+        for (size_t discr = 0; discr < variant_types.size(); ++discr)
+        {
+            for (const auto & payload : makeRepresentativeColumns(variant_types[discr], expression_kind))
+            {
+                auto variant_column = variant_type->createColumn();
+                assert_cast<ColumnVariant &>(*variant_column).insertIntoVariantFrom(
+                    static_cast<ColumnVariant::Discriminator>(discr), *payload, 0);
+                result.push_back(std::move(variant_column));
+            }
+            if (result.size() > max_probe_combinations)
+                throwTooManyProbeCombinations(expression_kind);
+        }
+        return result;
     }
 
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
     {
-        auto nested = makeRepresentativeColumn(array_type->getNestedType());
-        auto offsets = ColumnArray::ColumnOffsets::create();
-        offsets->getData().push_back(1);
-        return ColumnArray::create(IColumn::mutate(std::move(nested)), std::move(offsets));
+        auto nested = makeRepresentativeColumns(array_type->getNestedType(), expression_kind);
+        std::vector<ColumnPtr> result;
+        result.reserve(nested.size());
+        for (const auto & payload : nested)
+        {
+            auto offsets = ColumnArray::ColumnOffsets::create();
+            offsets->getData().push_back(1);
+            result.push_back(ColumnArray::create(IColumn::mutate(payload), std::move(offsets)));
+        }
+        return result;
     }
 
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()); tuple_type && !tuple_type->getElements().empty())
     {
         const auto & element_types = tuple_type->getElements();
-        Columns elements(element_types.size());
+        std::vector<std::vector<ColumnPtr>> element_payloads(element_types.size());
+        size_t total_combinations = 1;
         for (size_t i = 0; i < element_types.size(); ++i)
-            elements[i] = makeRepresentativeColumn(element_types[i]);
-        return ColumnTuple::create(std::move(elements));
+        {
+            element_payloads[i] = makeRepresentativeColumns(element_types[i], expression_kind);
+            total_combinations *= element_payloads[i].size();
+            if (total_combinations > max_probe_combinations)
+                throwTooManyProbeCombinations(expression_kind);
+        }
+
+        /// The cartesian product of the element representatives, by a mixed-radix counter.
+        std::vector<ColumnPtr> result;
+        result.reserve(total_combinations);
+        std::vector<size_t> selection(element_types.size(), 0);
+        while (true)
+        {
+            Columns elements(element_types.size());
+            for (size_t i = 0; i < element_types.size(); ++i)
+                elements[i] = element_payloads[i][selection[i]];
+            result.push_back(ColumnTuple::create(std::move(elements)));
+
+            size_t i = 0;
+            while (i < selection.size() && ++selection[i] == element_payloads[i].size())
+            {
+                selection[i] = 0;
+                ++i;
+            }
+            if (i == selection.size())
+                break;
+        }
+        return result;
     }
 
     if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
-        return ColumnMap::create(IColumn::mutate(makeRepresentativeColumn(map_type->getNestedType())));
+    {
+        auto nested = makeRepresentativeColumns(map_type->getNestedType(), expression_kind);
+        std::vector<ColumnPtr> result;
+        result.reserve(nested.size());
+        for (const auto & payload : nested)
+            result.push_back(ColumnMap::create(IColumn::mutate(payload)));
+        return result;
+    }
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
     {
-        auto nested = makeRepresentativeColumn(low_cardinality_type->getDictionaryType());
-        auto column = type->createColumn();
-        column->insert((*nested)[0]);
-        return column;
+        auto nested = makeRepresentativeColumns(low_cardinality_type->getDictionaryType(), expression_kind);
+        std::vector<ColumnPtr> result;
+        result.reserve(nested.size());
+        for (const auto & payload : nested)
+        {
+            auto column = type->createColumn();
+            column->insert((*payload)[0]);
+            result.push_back(std::move(column));
+        }
+        return result;
     }
 
-    return type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+    return {type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst()};
 }
 
 /// Reject TTL expressions that feed an AggregateFunction state into a function which cannot consume it
@@ -406,14 +484,15 @@ ColumnPtr makeRepresentativeColumn(const DataTypePtr & type)
 ///   and only ever record the second branch, hiding the aggregate-state payload of the first one.
 /// When either condition fails, the node keeps the fail-closed static enumeration of its result type.
 ///
-/// A typed `CAST` is the exception to the first condition: its output payload type is fixed by the
-/// *source type* alone (the cast wrapper fills a single discriminator derived from it), independent of
-/// the values. So `CAST(s, 'Dynamic')` with `s String` can only ever store the `String` payload, and
-/// probing its consumer with the static enumeration would reject a valid TTL such as
+/// A typed `CAST` is the exception to the first condition: its output payloads are fixed by the *source
+/// type* alone (the cast wrapper fills the discriminators derived from it), independent of the values. So
+/// `CAST(s, 'Dynamic')` with `s String` can only ever store the `String` payload, and probing its consumer
+/// with the static enumeration would reject a valid TTL such as
 /// `DELETE WHERE length(CAST(s, 'Dynamic')) > 3` over synthetic `AggregateFunction`/`UInt64` payloads
-/// the cast can never produce. An untainted `CAST` is instead executed once on a representative source
-/// value (non-NULL, one-element containers - the plain default would hide nested payload structure) and
-/// its actual output is propagated to the consumers.
+/// the cast can never produce. An untainted `CAST` is instead executed on the representative values of its
+/// source type (non-NULL, one-element containers - the plain default would hide nested payload structure -
+/// and one value per `Variant` alternative, which the cast preserves row by row) and the union of its
+/// actual outputs is propagated to the consumers.
 void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::string_view expression_kind)
 {
     /// Per-node "candidate" materializations: the single-row columns whose payloads the node can produce
@@ -513,23 +592,63 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
                     const auto & function_name = node->function_base->getName();
                     if (function_name == "CAST" || function_name == "_CAST")
                     {
-                        ColumnsWithTypeAndName representative_arguments = arguments;
+                        /// A source type can need more than one representative value (a `Variant` needs
+                        /// one per alternative), so run the cast over the cartesian product of them and
+                        /// propagate the union of the outputs.
+                        std::vector<size_t> representative_indexes;
+                        std::vector<std::vector<ColumnPtr>> representative_columns;
+                        size_t total_combinations = 1;
                         for (size_t i = 0; i < node->children.size(); ++i)
-                            if (!node->children[i]->column)
-                                representative_arguments[i].column = makeRepresentativeColumn(node->children[i]->result_type);
-
-                        try
                         {
-                            ColumnPtr cast_result = node->function_base->execute(
-                                representative_arguments, node->result_type, /*input_rows_count=*/ 1, /*dry_run=*/ true);
-                            candidates.push_back(cast_result->convertToFullColumnIfConst());
+                            if (node->children[i]->column)
+                                continue;
+                            representative_indexes.push_back(i);
+                            representative_columns.push_back(
+                                makeRepresentativeColumns(node->children[i]->result_type, expression_kind));
+                            total_combinations *= representative_columns.back().size();
                         }
-                        catch (...) /// Ok: any failure here only means we cannot narrow the domain.
+
+                        /// Too many source combinations to enumerate (or none at all): the node itself is
+                        /// valid, only the narrowing is given up, so fall back to the static enumeration
+                        /// instead of failing the whole expression.
+                        if (total_combinations == 0 || total_combinations > max_probe_combinations)
                         {
-                            /// The cast failed on the synthetic representative value (a data-dependent
-                            /// error, e.g. an unparseable default string). The node itself needs no
-                            /// validation - fail closed to the static enumeration for its consumers.
                             candidates = collectSuspectMaterializations(node->result_type, expression_kind);
+                        }
+                        else
+                        {
+                            std::vector<size_t> selection(representative_indexes.size(), 0);
+                            while (true)
+                            {
+                                ColumnsWithTypeAndName representative_arguments = arguments;
+                                for (size_t r = 0; r < representative_indexes.size(); ++r)
+                                    representative_arguments[representative_indexes[r]].column
+                                        = representative_columns[r][selection[r]];
+
+                                try
+                                {
+                                    ColumnPtr cast_result = node->function_base->execute(
+                                        representative_arguments, node->result_type, /*input_rows_count=*/ 1, /*dry_run=*/ true);
+                                    candidates.push_back(cast_result->convertToFullColumnIfConst());
+                                }
+                                catch (...) /// Ok: any failure here only means we cannot narrow the domain.
+                                {
+                                    /// The cast failed on a synthetic representative value (a data-dependent
+                                    /// error, e.g. an unparseable default string). The node itself needs no
+                                    /// validation - fail closed to the static enumeration for its consumers.
+                                    candidates = collectSuspectMaterializations(node->result_type, expression_kind);
+                                    break;
+                                }
+
+                                size_t r = 0;
+                                while (r < selection.size() && ++selection[r] == representative_columns[r].size())
+                                {
+                                    selection[r] = 0;
+                                    ++r;
+                                }
+                                if (r == selection.size())
+                                    break;
+                            }
                         }
                     }
                     else

@@ -1075,3 +1075,47 @@ CREATE TABLE test_ttl_cast_plain_string_reject
 ENGINE = MergeTree()
 ORDER BY tuple()
 TTL d + INTERVAL 1 DAY DELETE WHERE isNotNull(finalizeAggregation(CAST(s, 'Dynamic'))); -- { serverError BAD_TTL_EXPRESSION }
+
+DROP TABLE IF EXISTS test_ttl_cast_variant_source_reject;
+
+-- A `Variant` source is the exception to the "one representative value" rule: the cast preserves
+-- whichever alternative each row stores, so the payload of the result is not fixed by a single
+-- representative. Probing only the default (NULL) row would accept this expression, but a row storing
+-- the `UInt32` alternative makes `length` throw `ILLEGAL_TYPE_OF_ARGUMENT` during TTL execution.
+CREATE TABLE test_ttl_cast_variant_source_reject
+(
+    v Variant(String, UInt32),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL d + INTERVAL 1 DAY DELETE WHERE length(CAST(v, 'Dynamic')) > 3; -- { serverError BAD_TTL_EXPRESSION }
+
+-- Narrowing is still exact for a `Variant` source: every alternative is probed, and a consumer that
+-- handles all of them is accepted (`length` works on both `String` and `Array(UInt32)`), without being
+-- confronted with synthetic payloads the cast can never produce.
+CREATE TABLE test_ttl_cast_variant_source_accept
+(
+    v Variant(String, Array(UInt32)),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL d + INTERVAL 1 DAY DELETE WHERE length(CAST(v, 'Dynamic')) > 3;
+
+DROP TABLE test_ttl_cast_variant_source_accept;
+
+SET allow_suspicious_ttl_expressions = 1;
+
+CREATE TABLE test_ttl_cast_variant_source_suspicious
+(
+    v Variant(String, UInt32),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL d + INTERVAL 1 DAY DELETE WHERE length(CAST(v, 'Dynamic')) > 3;
+
+DROP TABLE test_ttl_cast_variant_source_suspicious;
+
+SET allow_suspicious_ttl_expressions = 0;
