@@ -8778,7 +8778,7 @@ Name of the named collection used by `aiEmbed` when the call does not pass `cred
     COMMON_SETTINGS(M, ALIAS)          \
     OBSOLETE_SETTINGS(M, ALIAS)        \
     FORMAT_FACTORY_SETTINGS(M, ALIAS)  \
-    OBSOLETE_FORMAT_SETTINGS(M, ALIAS)
+    OBSOLETE_FORMAT_SETTINGS(M, ALIAS) \
 
 // clang-format on
 
@@ -8839,7 +8839,7 @@ void SettingsImpl::setProfile(const String & profile_name, const Poco::Util::Abs
     {
         if (key == "constraints")
             continue;
-        if (key == "profile" || key.starts_with("profile[")) /// Inheritance of profiles from the current one.
+        if (key == "profile" || key.starts_with("profile["))   /// Inheritance of profiles from the current one.
             setProfile(config.getString(elem + "." + key), config);
         else
             set(key, config.getString(elem + "." + key));
