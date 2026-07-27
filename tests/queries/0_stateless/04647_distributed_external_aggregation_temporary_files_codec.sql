@@ -26,11 +26,13 @@ FORMAT Null;
 SYSTEM FLUSH LOGS system.query_log;
 
 -- The spill has to happen on the shard (`is_initial_query = 0`), otherwise the test would pass
--- without exercising the deserialized plan at all.
+-- without exercising the deserialized plan at all. The shard rows are not filtered by
+-- `current_database`: the serialized plan carries fully qualified table names, so the shard query
+-- is logged with the default database rather than the database of the test. The `log_comment` is
+-- unique to this test and is propagated to the shard, so it identifies the rows on its own.
 SELECT sum(ProfileEvents['ExternalProcessingCompressedBytesTotal']) > 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= (SELECT ts FROM start_ts)
-    AND current_database = currentDatabase()
     AND type != 1
     AND is_initial_query = 0
     AND log_comment = '04647_distributed_external_aggregation_temporary_files_codec';
