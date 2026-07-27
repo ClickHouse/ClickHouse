@@ -680,6 +680,11 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
             "Iceberg truncate is experimental. "
             "To allow its usage, enable setting allow_insert_into_iceberg");
 
+    if (!catalog && data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Cannot truncate Iceberg table {} with iceberg_metadata_file_path set",
+        "Remove iceberg_metadata_file_path from the table configuration to truncate");
+
     const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
 
     // Iceberg commits use optimistic concurrency: the commit asserts the table's current
@@ -705,7 +710,8 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
             context,
             log.get(),
             persistent_components.table_uuid,
-            persistent_components.metadata_compression_method);
+            persistent_components.metadata_compression_method,
+            /* ignore_explicit_metadata_file_path */ true);
 
         auto metadata_object = getMetadataJSONObject(
             metadata_file_path,

@@ -315,3 +315,59 @@ def test_iceberg_truncate_snapshot_summary(started_cluster_iceberg_no_spark):
     assert s_truncate["total-delete-files"] == "0", s_truncate
     assert s_truncate["total-position-deletes"] == "0", s_truncate
     assert s_truncate["total-equality-deletes"] == "0", s_truncate
+
+
+def test_iceberg_truncate_rejected_when_pinned_to_explicit_metadata_file(started_cluster_iceberg_no_spark):
+    """A direct-path (catalog-less) Iceberg table pinned to a specific metadata file via the
+    `iceberg_metadata_file_path` setting freezes its reads at that snapshot — the setting is a
+    time-travel / reproducible-read feature. A `TRUNCATE` would write a fresh snapshot that the
+    table's own reads never observe (they keep resolving the pinned file), so it must be rejected
+    with `BAD_ARGUMENTS` rather than silently committing an invisible truncate. Catalog-backed
+    tables are intentionally exempt: the catalog re-resolves the effective metadata location on
+    every access, so the pin is refreshed rather than stale."""
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    write_settings = {"allow_insert_into_iceberg": 1}
+
+    suffix = get_uuid_str()
+    # Both ClickHouse tables below point at the SAME Iceberg table directory on local disk.
+    table_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/iceberg_truncate_pinned_{suffix}"
+    engine = f"IcebergLocal(local, path = '{table_path}', format = Parquet)"
+
+    live_table = f"iceberg_truncate_live_{suffix}"
+    pinned_table = f"iceberg_truncate_pinned_{suffix}"
+
+    # 1. Create + populate the live table. For a catalog-less table ClickHouse writes metadata
+    #    files with deterministic, non-UUID names: CREATE writes `metadata/v1.metadata.json` (the
+    #    empty snapshot) and this INSERT writes `metadata/v2.metadata.json` (three rows).
+    instance.query(
+        f"CREATE TABLE {live_table} (x Int) ENGINE = {engine}",
+        settings=write_settings,
+    )
+    instance.query(f"INSERT INTO {live_table} VALUES (1), (2), (3)", settings=write_settings)
+    assert instance.query(f"SELECT count() FROM {live_table}").strip() == "3"
+
+    # 2. Attach a SECOND table over the same directory, pinned to the now-stale empty v1 snapshot.
+    #    `IF NOT EXISTS` makes the engine attach to the existing metadata instead of trying to
+    #    re-initialize `v1` (`createInitial` sees the existing metadata files and would otherwise
+    #    raise `TABLE_ALREADY_EXISTS`).
+    instance.query(
+        f"""
+        CREATE TABLE IF NOT EXISTS {pinned_table} (x Int) ENGINE = {engine}
+        SETTINGS iceberg_metadata_file_path = 'metadata/v1.metadata.json'
+        """,
+        settings=write_settings,
+    )
+    # The pin genuinely freezes reads at the empty v1 snapshot — precisely why a truncate here
+    # would be invisible to readers of this table.
+    assert instance.query(f"SELECT count() FROM {pinned_table}").strip() == "0"
+
+    # 3. TRUNCATE on the pinned table must be rejected up front, and the error must name the
+    #    offending setting so the user knows the remedy.
+    error = instance.query_and_get_error(f"TRUNCATE TABLE {pinned_table}", settings=write_settings)
+    assert "BAD_ARGUMENTS" in error, error
+    assert "iceberg_metadata_file_path" in error, error
+
+    # 4. The same operation on the unpinned (auto-discovering) table over the same data is still
+    #    allowed — the guard is scoped to pinned tables only, not to local Iceberg tables at large.
+    instance.query(f"TRUNCATE TABLE {live_table}", settings=write_settings)
+    assert instance.query(f"SELECT count() FROM {live_table}").strip() == "0"
