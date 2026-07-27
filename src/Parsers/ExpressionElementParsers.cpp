@@ -2505,7 +2505,7 @@ bool ParserInterpolateElement::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         expr = ident;
 
     auto elem = make_intrusive<ASTInterpolateElement>();
-    elem->column = ident->getColumnName();
+    elem->column = getIdentifierName(ident);
     elem->expr = expr;
     elem->children.push_back(expr);
 

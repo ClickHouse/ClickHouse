@@ -273,9 +273,13 @@ void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings
         auto on_alias = on_expression->tryGetAlias();
         if (!on_alias.empty())
         {
-            bool was_alias_defined_earlier = state.printed_asts_with_alias.contains(
-                {frame.current_select, on_alias, on_expression->getTreeHash(/*ignore_aliases=*/true)});
-            on_need_parens = settings.collapse_identical_nodes_to_aliases ? !was_alias_defined_earlier : true;
+            /// Only case 1 needs to know whether the alias was printed before, and answering that
+            /// hashes the whole ON expression - so do not ask unless the answer is used.
+            if (!settings.collapse_identical_nodes_to_aliases)
+                on_need_parens = true;
+            else
+                on_need_parens = !state.printed_asts_with_alias.contains(
+                    {frame.current_select, on_alias, on_expression->getTreeHash(/*ignore_aliases=*/true)});
         }
 
 
