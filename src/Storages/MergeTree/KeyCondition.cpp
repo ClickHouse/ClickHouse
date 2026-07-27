@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/BoolMask.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Core/AccurateComparison.h>
@@ -30,6 +31,7 @@
 #include <Common/MortonUtils.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSet.h>
@@ -387,6 +389,17 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             }
         },
         {
+            /// For a non-NULL constant `c`, `key <=> c` matches the same rows as `key = c`.
+            /// The NULL-constant case (`<=>` meaning "is NULL") is rejected earlier, before the atom is built.
+            "isNotDistinctFrom",
+            [] (RPNElement & out, const Field & value)
+            {
+                out.function = RPNElement::FUNCTION_IN_RANGE;
+                out.range = Range(value);
+                return true;
+            }
+        },
+        {
             "less",
             [] (RPNElement & out, const Field & value)
             {
@@ -696,6 +709,24 @@ const KeyCondition::AtomMap KeyCondition::atom_map
         }
 };
 
+/// The `isNull`/`isNotNull` atoms (and the `key IS NOT DISTINCT FROM NULL` branch that reuses them)
+/// deliberately ignore the key monotonic-functions chain ("nulls are kept"): they narrow a Nullable
+/// index to the NULL granule as if the wrapper were absent. That is only sound for a BARE key. A
+/// monotonic wrapper can change which rows are NULL or whether the predicate is even defined:
+///   - `ifNull(k, 0)` / `coalesce(k, 0)` / `assumeNotNull(k)` map NULL to a non-NULL value, so
+///     `isNull(wrapper(k))` is actually always false;
+///   - `CAST(k, 'UInt32')` throws on a NULL row;
+///   - `toDateTime(k)` on a `Date32` key or `intDiv(k, c)` throw on out-of-range / illegal non-NULL
+///     values, so the predicate should raise on some granules rather than be pruned.
+/// Reusing the bare `isNull` atom in any of these cases would match the NULL granule and mark it
+/// exact-true, so exact-count / implicit-projection paths return wrong results. We therefore reuse the
+/// null atom only when the key is not wrapped at all; a wrapped key falls back to a full scan, which is
+/// always correct.
+static bool monotonicChainSupportsNullAtom(const KeyCondition::MonotonicFunctionsChain & chain)
+{
+    return chain.empty();
+}
+
 /// Functions with range inversion cannot be relaxed. It will become stricter instead.
 /// For example:
 /// create table test(d Date, k Int64, s String) Engine=MergeTree order by toYYYYMM(d);
@@ -745,6 +776,7 @@ static std::string_view reverseComparisonOperator(std::string_view op)
 {
     if (op == "equals") return "equals";
     if (op == "notEquals") return "notEquals";
+    if (op == "isNotDistinctFrom") return "isNotDistinctFrom";
     if (op == "less") return "greater";
     if (op == "greater") return "less";
     if (op == "lessOrEquals") return "greaterOrEquals";
@@ -897,6 +929,14 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
     const ActionsDAG::Node * const_node = node.children[c0 ? 0 : 1];
     const std::string_view canonical_op = c0 ? mirrored : std::string_view{op_name};
 
+    /// A NULL constant only reaches here through `isNotDistinctFrom` (`= NULL` is folded away).
+    /// `coalesce(k, 0) <=> NULL` is always false because `coalesce(k, 0)` is never NULL, but the
+    /// branch decomposition below would emit `(y_0 <=> NULL) OR ...` = `isNull(k) OR ...`, wrongly
+    /// narrowing a Nullable index to the NULL granule. Decline so `extractAtomFromTree` handles it
+    /// (its `isNotDistinctFrom` NULL branch declines NULL-erasing wrappers, giving a full scan).
+    if (const_node->column && const_node->column->isNullAt(0))
+        return nullptr;
+
     if (coalesce_node->type != ActionsDAG::ActionType::FUNCTION)
         return nullptr;
 
@@ -997,6 +1037,36 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
     return &inverted_dag.addFunction(or_func, std::move(or_children), "");
 }
 
+/// True if `node` is a two-argument `ifNull(X, 0)` / `coalesce(X, 0)` with a falsy numeric-zero
+/// constant fallback - the exact shape `tryRewriteCoalesceCondition` peels to its inner predicate `X`
+/// in boolean context. Shared with `predicateIsBooleanResult` so the boolean-result gate and the
+/// actual peel stay in sync.
+static bool isFalsyZeroCoalesceCondition(const ActionsDAG::Node & node)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION)
+        return false;
+
+    const auto & name = node.function_base->getName();
+    if (name != "coalesce" && name != "ifNull")
+        return false;
+
+    if (node.children.size() != 2)
+        return false;
+
+    const ActionsDAG::Node * fallback = node.children[1];
+    if (fallback->type != ActionsDAG::ActionType::COLUMN || !fallback->column || !isColumnConst(*fallback->column))
+        return false;
+
+    const Field fallback_value = (*fallback->column)[0];
+    switch (fallback_value.getType())
+    {
+        case Field::Types::UInt64:  return fallback_value.safeGet<UInt64>() == 0;
+        case Field::Types::Int64:   return fallback_value.safeGet<Int64>() == 0;
+        case Field::Types::Float64: return fallback_value.safeGet<Float64>() == 0.0;
+        default: return false;
+    }
+}
+
 /// Rewrite an `ifNull(X, 0)` / `coalesce(X, 0)` used as a condition to `X` for key analysis, so the wrapped
 /// predicate becomes a prunable key atom. `ifNull(X, 0)` is truthy exactly when `X` is truthy, for any
 /// `X`, so no whitelist of inner functions is needed; but its value differs from `X` on NULL rows, so
@@ -1014,34 +1084,220 @@ static const ActionsDAG::Node * tryRewriteCoalesceCondition(
     if (name != "coalesce" && name != "ifNull")
         return nullptr;
 
+    if (!isFalsyZeroCoalesceCondition(node))
+        return nullptr;
+
+    /// The unwrapped predicate replaces the boolean wrapper, so it stays in boolean context.
+    return &cloneDAGWithInversionPushDown(*node.children[0], inverted_dag, inputs_mapping, context, false, /* boolean_context */ true);
+}
+
+/// Boolean-valued functions (result in {0, 1, NULL}) that are NOT `atom_map` atoms: the logical
+/// connectives (handled structurally by `cloneDAGWithInversionPushDown`) and boolean comparisons
+/// `KeyCondition` does not prune (`isDistinctFrom`, `ilike`, `notILike`). The prunable boolean atoms
+/// are taken directly from `atom_map` (see `predicateIsBooleanResult`), so this only holds the extras.
+static const std::unordered_set<std::string_view> extra_boolean_result_functions
+{
+    "not", "and", "or", "isDistinctFrom", "ilike", "notILike",
+};
+
+/// A positive boolean wrapper `wrapper(X, ...)` is truth-equivalent to bare `X` ONLY IF `X` is
+/// boolean-valued (in {0, 1, NULL}). Otherwise, e.g. for `k` UInt32, `k <=> true` / `k != false` /
+/// `k IN (true)` mean `k = 1` / `k != 0` / `k = 1`, NOT "k is truthy", so peeling the wrapper would
+/// be wrong. This checks the boolean-result-ness of the predicate after peeling the non-semantic
+/// wrappers that `cloneDAGWithInversionPushDown` strips transparently (alias, `materialize`, trivial
+/// `CAST`). Peeling here keeps equivalent wrapped forms (`CAST(k = 42, 'UInt8') IS TRUE`,
+/// `materialize(k = 42) IS TRUE`) from diverging: otherwise the wrapped predicate reaches the gate as
+/// `CAST` / `materialize` (not boolean-valued), the rewrite declines, and the later clone strips the
+/// wrapper anyway, leaving the un-prunable `isNotDistinctFrom(equals(k, 42), true)` in the DAG. The
+/// caller still clones the ORIGINAL `predicate`, so the recursion strips the same wrappers under
+/// boolean context.
+///
+/// The allowlist is derived from `KeyCondition::atom_map` (the single source of truth for the atoms
+/// `KeyCondition` can actually prune: comparisons, `in`/`notIn`, `has`, `empty`/`notEmpty`, `like`,
+/// `startsWith`/`startsWithUTF8`, `match`, `isNull`/`isNotNull`, `pointInPolygon`), plus the boolean
+/// connectives and boolean comparisons that are not atoms (`extra_boolean_result_functions`). This
+/// way `startsWith(s, 'ab') IS TRUE` and `has([1, 10], id) IS TRUE` peel to the prunable atom instead
+/// of being left behind.
+///
+/// When `allow_coalesce_rewrite` is set, an inner falsy-zero `ifNull(Y, 0)` / `coalesce(Y, 0)` is
+/// itself boolean-valued exactly when `Y` is (`ifNull(Y, 0)` is in {0, 1, NULL} iff `Y` is), so the
+/// gate recurses into `Y`. This composes the outer positive-boolean-wrapper peel with the existing
+/// `tryRewriteCoalesceCondition`: `ifNull(k = 42, 0) IS TRUE` passes the gate, the outer peel enters
+/// boolean context, and the recursion in `cloneDAGWithInversionPushDown` then unwraps the `ifNull`
+/// to the prunable `k = 42`. Without this the gate rejects `ifNull` (not an atom / extra), the outer
+/// peel declines, and the fallback clone with `boolean_context = false` denies the coalesce rewrite
+/// its chance too, leaving `isNotDistinctFrom(ifNull(equals(k, 42), 0), true)` at `Condition: true`.
+static bool predicateIsBooleanResult(const ActionsDAG::Node * predicate, bool allow_coalesce_rewrite)
+{
+    const ActionsDAG::Node * unwrapped = predicate;
+    while (unwrapped->type == ActionsDAG::ActionType::ALIAS
+           || (unwrapped->type == ActionsDAG::ActionType::FUNCTION
+               && (unwrapped->function_base->getName() == "materialize" || isTrivialCast(*unwrapped))))
+    {
+        if (unwrapped->children.empty())
+            return false;
+        unwrapped = unwrapped->children.front();
+    }
+
+    if (unwrapped->type != ActionsDAG::ActionType::FUNCTION)
+        return false;
+
+    /// `ifNull(Y, 0)` / `coalesce(Y, 0)` is boolean-valued iff `Y` is - recurse so the outer peel
+    /// composes with the coalesce rewrite (only when that rewrite is enabled).
+    if (allow_coalesce_rewrite && isFalsyZeroCoalesceCondition(*unwrapped))
+        return predicateIsBooleanResult(unwrapped->children[0], allow_coalesce_rewrite);
+
+    const auto & unwrapped_name = unwrapped->function_base->getName();
+    return KeyCondition::atom_map.contains(unwrapped_name)
+        || extra_boolean_result_functions.contains(unwrapped_name);
+}
+
+/// Rewrite a positive boolean wrapper around a predicate `X` to bare `X` for key analysis, so a
+/// wrapped predicate like `(k = 42) IS TRUE` or `(k = 42) != false` becomes a prunable key atom on
+/// `k`. Two truth-equivalent wrapper forms the analyzer produces are handled:
+///   - `X IS TRUE`, lowered to `isNotDistinctFrom(X, true)`  (const `true` == numeric 1)
+///   - `X != false`, i.e. `notEquals(X, false)`               (const `false` == numeric 0)
+/// Both are truth-equivalent to `X` ONLY IF `X` is boolean-valued (see `predicateIsBooleanResult`):
+/// for such `X`, `X <=> true` equals `X` on non-NULL values and is `false` (not NULL) on NULL, and
+/// `X != false` equals `X` on all values including NULL; in a truth-tested position both `false` and
+/// `NULL` reject the row, matching bare `X`. Like `tryRewriteCoalesceCondition`, it changes the value
+/// on NULL rows (for the `IS TRUE` form), so the caller restricts it to non-inverted boolean position.
+/// Returns nullptr if the pattern does not match.
+static const ActionsDAG::Node * tryRewriteIsTrueCondition(
+    const ActionsDAG::Node & node,
+    const String & name,
+    ActionsDAG & inverted_dag,
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
+    const ContextPtr & context)
+{
+    /// `X IS TRUE` -> `X <=> true` (const 1); `X != false` -> `X != 0` (const 0).
+    UInt64 expected_const = 0;
+    if (name == "isNotDistinctFrom")
+        expected_const = 1;
+    else if (name == "notEquals")
+        expected_const = 0;
+    else
+        return nullptr;
+
+    if (node.children.size() != 2)
+        return nullptr;
+
+    auto is_const = [](const ActionsDAG::Node & n)
+    {
+        return n.type == ActionsDAG::ActionType::COLUMN && n.column && isColumnConst(*n.column);
+    };
+
+    /// Find the `X <op> const` shape. `isNotDistinctFrom` and `notEquals` are both symmetric, so the
+    /// constant may be on either side.
+    const bool c0 = is_const(*node.children[0]);
+    const bool c1 = is_const(*node.children[1]);
+    if (c0 == c1)
+        return nullptr;
+
+    const ActionsDAG::Node * predicate = node.children[c0 ? 1 : 0];
+    const ActionsDAG::Node * const_node = node.children[c0 ? 0 : 1];
+
+    /// The constant must be exactly `true` (numeric 1) for `<=>` or `false` (numeric 0) for `!=`.
+    /// `X IS FALSE` (`X <=> false`) and `X != true` (`X != 1`) are NOT truth-equivalent to `X`, so
+    /// they are not rewritten here.
+    const Field const_value = (*const_node->column)[0];
+    if (const_value.getType() != Field::Types::UInt64 || const_value.safeGet<UInt64>() != expected_const)
+        return nullptr;
+
+    if (!predicateIsBooleanResult(predicate, context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite]))
+        return nullptr;
+
+    /// The unwrapped predicate replaces the boolean wrapper, so it stays in boolean context.
+    return &cloneDAGWithInversionPushDown(*predicate, inverted_dag, inputs_mapping, context, false, /* boolean_context */ true);
+}
+
+/// Rewrite `X IN (<all-true const set>)`, e.g. `(k = 42) IN (true)`, to bare `X` for key analysis,
+/// so the inner `k = 42` becomes a prunable key atom. For a boolean-valued `X`, `X IN (true)` matches
+/// exactly the rows where `X` is true, i.e. it is truth-equivalent to `X`. This is only sound when
+/// EVERY element of the set is exactly `true` (numeric 1) and non-NULL:
+///   - `X IN (false)` matches `NOT X` (declined), `X IN (true, false)` matches "X is 0 or 1"
+///     (always-true for non-NULL boolean, declined), and a NULL element changes NULL handling.
+///   - the `X` boolean-result gate is the same as `tryRewriteIsTrueCondition`: `k IN (true)` for a
+///     non-boolean `k` means `k = 1`, not "k truthy".
+/// Only literal/constant sets whose elements are available at analysis time are handled; subquery
+/// sets that are not yet built decline (return nullptr) and fall back to the existing behavior.
+/// Returns nullptr if the pattern does not match.
+static const ActionsDAG::Node * tryRewriteInTruthyCondition(
+    const ActionsDAG::Node & node,
+    const String & name,
+    ActionsDAG & inverted_dag,
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
+    const ContextPtr & context)
+{
+    /// Only the plain `in`; `notIn` is negation and `globalIn`/`nullIn` have different NULL semantics.
+    if (name != "in")
+        return nullptr;
+
     if (node.children.size() != 2)
         return nullptr;
 
     const ActionsDAG::Node * predicate = node.children[0];
-    const ActionsDAG::Node * fallback = node.children[1];
+    const ActionsDAG::Node * set_node = node.children[1];
 
-    if (fallback->type != ActionsDAG::ActionType::COLUMN || !fallback->column || !isColumnConst(*fallback->column))
+    /// The right argument must be a constant column wrapping a prepared set.
+    if (set_node->type != ActionsDAG::ActionType::COLUMN || !set_node->column)
         return nullptr;
 
-    const Field fallback_value = (*fallback->column)[0];
-    switch (fallback_value.getType())
+    const auto * column_set = checkAndGetColumn<const ColumnSet>(&set_node->column->getDataColumn());
+    if (!column_set)
+        return nullptr;
+
+    auto future_set = column_set->getData();
+    if (!future_set)
+        return nullptr;
+
+    /// Only single-column sets: `X` is a scalar predicate, so a tuple/multi-column set is not this shape.
+    if (future_set->getTypes().size() != 1)
+        return nullptr;
+
+    /// Gate on the (cheap) boolean-result check of the left-hand side BEFORE materializing the set.
+    /// The rewrite only applies when `X` is boolean-valued, which is a property of the predicate alone
+    /// and independent of the set. Checking it first avoids the `O(set size)` ordered-set
+    /// materialization (`buildOrderedSetInplace` + `getSetElements`) for common large non-boolean
+    /// filters like `user_id IN (1, 2, ... huge literal list)`, which would otherwise be built and
+    /// iterated only to be discarded here. This mirrors the discipline in `tryPrepareSetIndexForIn`
+    /// where ordered-set materialization happens only for `IN` predicates usable for key analysis.
+    if (!predicateIsBooleanResult(predicate, context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite]))
+        return nullptr;
+
+    /// Only inspect a set that is ALREADY built. `get()` returns a non-null set for literal-tuple
+    /// (`IN (true)`) and storage sets, which are available at planning time, and nullptr for a
+    /// subquery set that has not run yet. We must NOT force-build here: this rewrite runs during
+    /// key-condition DAG cloning for every query, so forcing the set would execute the `IN` subquery
+    /// purely for analysis, e.g. `X IN (SELECT throwIf(1))` would throw even when no index is used
+    /// (see 02707_skip_index_with_in). buildOrderedSetInplace on an already-built set is then cheap
+    /// (no subquery) and just materializes its ordered elements.
+    if (!future_set->get())
+        return nullptr;
+
+    auto prepared_set = future_set->buildOrderedSetInplace(context);
+    if (!prepared_set || !prepared_set->hasExplicitSetElements())
+        return nullptr;
+
+    const Columns set_elements = prepared_set->getSetElements();
+    if (set_elements.size() != 1)
+        return nullptr;
+
+    const IColumn & elements = *set_elements.front();
+    const size_t num_elements = elements.size();
+    /// Empty set: `X IN ()` is always false, not equivalent to `X`. Decline.
+    if (num_elements == 0)
+        return nullptr;
+
+    /// Every element must be exactly `true` (non-NULL numeric 1).
+    for (size_t i = 0; i < num_elements; ++i)
     {
-        case Field::Types::UInt64:
-            if (fallback_value.safeGet<UInt64>() != 0)
-                return nullptr;
-            break;
-        case Field::Types::Int64:
-            if (fallback_value.safeGet<Int64>() != 0)
-                return nullptr;
-            break;
-        case Field::Types::Float64:
-            if (fallback_value.safeGet<Float64>() != 0.0)
-                return nullptr;
-            break;
-        default: return nullptr;
+        const Field element = elements[i];
+        if (element.getType() != Field::Types::UInt64 || element.safeGet<UInt64>() != 1)
+            return nullptr;
     }
 
-    /// The unwrapped predicate replaces the boolean wrapper, so it stays in boolean context.
+    /// The unwrapped predicate replaces the `IN` wrapper, so it stays in boolean context.
     return &cloneDAGWithInversionPushDown(*predicate, inverted_dag, inputs_mapping, context, false, /* boolean_context */ true);
 }
 
@@ -1161,6 +1417,13 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 /// We match columns by name, so it is important to fill name correctly.
                 /// So, use empty string to make it automatically.
                 res = &inverted_dag.addFunction(function_builder, children, "");
+                handled_inversion = true;
+            }
+            else if (!need_inversion
+                && boolean_context
+                && ((res = tryRewriteIsTrueCondition(node, name, inverted_dag, inputs_mapping, context)) != nullptr
+                    || (res = tryRewriteInTruthyCondition(node, name, inverted_dag, inputs_mapping, context)) != nullptr))
+            {
                 handled_inversion = true;
             }
             else if (!need_inversion
@@ -1420,6 +1683,17 @@ KeyCondition::KeyCondition(
 }
 
 KeyCondition::KeyCondition(
+    const ActionsDAGWithInversionPushDown & filter_dag,
+    ContextPtr context,
+    const KeyDescription & key_description,
+    bool single_point_,
+    bool skip_analysis_)
+    : KeyCondition(filter_dag, context, key_description.column_names, key_description.expression, single_point_, skip_analysis_)
+{
+    key_order = KeyOrder(key_description.reverse_flags);
+}
+
+KeyCondition::KeyCondition(
     ThisIsPrivate, ColumnIndices key_columns_, size_t num_key_columns_, bool single_point_,
     bool date_time_overflow_behavior_ignore_)
     : has_filter(true)
@@ -1506,8 +1780,22 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     {
         /// When cache is missed, we calculate the whole column where the field comes from. This will avoid repeated calculation.
         ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
-        field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
-        (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size(), /* dry_run = */ false);
+        /// Strip outer `LowCardinality` from the argument column and type before executing, keeping the
+        /// cached result full too. A monotonic-function chain is built against the outer-LowCardinality
+        /// stripped key type (`applyFunctionChainToColumn` strips it the same way), so a specialized
+        /// wrapper such as the UInt8->Bool `CAST` does `checkAndGetColumn<ColumnUInt8>` on the raw
+        /// column and aborts with a bad cast on a `ColumnLowCardinality` (e.g. a `LowCardinality(Bool)`
+        /// key compared with a `LowCardinality` constant). `removeLowCardinality` /
+        /// `convertToFullColumnIfLowCardinality` are no-ops for non-LC inputs.
+        if (args[0].column && args[0].column->lowCardinality())
+        {
+            args[0].column = args[0].column->convertToFullColumnIfLowCardinality();
+            args[0].type = removeLowCardinality(args[0].type);
+        }
+        field.columns->emplace_back(ColumnWithTypeAndName {nullptr, removeLowCardinality(func->getResultType()), result_name});
+        (*columns)[result_idx].column
+            = func->execute(args, (*columns)[result_idx].type, args.front().column->size(), /* dry_run = */ false)
+                  ->convertToFullColumnIfLowCardinality();
     }
 
     return {field.columns, field.row_idx, result_idx};
@@ -3092,13 +3380,18 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                     auto func_name = func->function_base->getName();
                     auto func_base = func->function_base;
 
+                    /// Monotonicity is asked over the function's argument type, which is the output
+                    /// type of the node's single non-constant child (the descent loop above has
+                    /// already established that exactly one such child exists).
+                    const auto * input_child = func->children.front()->column ? func->children.back() : func->children.front();
+
                     /// If its cumulative monotonicity direction is negative, applying it to the constant
                     /// reverses range comparisons. For example, with `ORDER BY (intDiv(c0, 5) / -7)`,
                     /// `c0 < 0` becomes `divide(intDiv(c0, 5), -7) > divide(intDiv(0, 5), -7)`.
                     ///
                     /// Directions compose by parity: each non-increasing function reverses the current
                     /// direction, so two non-increasing functions preserve the original comparison.
-                    auto monotonicity = func_base->getMonotonicityForRange(*func->result_type, Field(), Field());
+                    auto monotonicity = func_base->getMonotonicityForRange(*input_child->result_type, Field(), Field());
                     if (!monotonicity.is_positive)
                         chain_is_positive = !chain_is_positive;
 
@@ -3563,6 +3856,13 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             /// empty/notEmpty produce a meaningful range only for String key columns.
             if ((func_name == "empty" || func_name == "notEmpty") && !isString(*key_expr_type))
                 return false;
+
+            /// The `isNull`/`isNotNull` atoms ignore the monotonic-functions chain (nulls are kept), so
+            /// they are sound only for a bare key. A wrapped key (`isNull(ifNull(k, 0))`,
+            /// `isNull(toDateTime(date32_k))`, ...) would otherwise be analyzed like `isNull(k)` and
+            /// wrongly prune a granule the predicate does not cover; decline and fall back to a scan.
+            if ((func_name == "isNull" || func_name == "isNotNull") && !monotonicChainSupportsNullAtom(chain))
+                return false;
         }
         else if (num_args == 2)
         {
@@ -3610,6 +3910,36 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             /// If the const operand is null, the atom will be always false
             if (const_value.isNull())
             {
+                /// `key <=> NULL` means "key IS NULL", not "key = NULL". Reuse the existing `isNull`
+                /// atom (same handling as bare `key IS NULL`) so a Nullable PK / minmax index prunes
+                /// to the NULL granule exactly, instead of declining and scanning every granule.
+                if (func_name == "isNotDistinctFrom")
+                {
+                    size_t key_arg_pos = 1 - const_arg_pos;
+                    auto key_arg = func.getArgumentAt(key_arg_pos);
+                    if (!isKeyPossiblyWrappedByMonotonicFunctions(
+                            key_arg, info, key_column_num, argument_num_of_space_filling_curve, key_expr_type, chain))
+                        return false;
+
+                    if (key_column_num == static_cast<size_t>(-1))
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
+
+                    /// The `isNull` atom ignores the monotonic-functions chain (nulls are kept), so it is
+                    /// sound only for a bare key. A wrapped key (`ifNull(k, 0) IS NOT DISTINCT FROM NULL`
+                    /// is always false; `toDateTime(date32_k) IS NOT DISTINCT FROM NULL` may raise) would
+                    /// otherwise be analyzed like `isNull(k)` and prune a granule the predicate does not
+                    /// cover (wrong results); decline and fall back to a scan.
+                    if (!monotonicChainSupportsNullAtom(chain))
+                        return false;
+
+                    out.key_columns.push_back(key_column_num);
+                    out.monotonic_functions_chain = std::move(chain);
+                    out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
+
+                    const auto atom_it = atom_map.find("isNull");
+                    return atom_it->second(out, const_value);
+                }
+
                 out.function = RPNElement::ALWAYS_FALSE;
                 return true;
             }
@@ -3678,7 +4008,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             {
                 condition_is_relaxed = true;
             }
-            else if (func_name == "equals" || func_name == "notEquals")
+            else if (func_name == "equals" || func_name == "notEquals" || func_name == "isNotDistinctFrom")
             {
                 bool is_injective = false;
                 if (!canConstantBeWrappedByDeterministicFunctions(
@@ -3745,6 +4075,34 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
                     if (!should_keep_original_string_constant)
                     {
+                        /// A `FixedString(N)` constant is stored as a `String` Field of N bytes,
+                        /// right-padded with '\0', and compared zero-padded, so it can match more than
+                        /// the single padded value while `convertFieldToType` below builds a point
+                        /// range from the padding:
+                        ///   - against a `String` key it matches the family `value` + trailing '\0'*
+                        ///     (`'abc'`, `'abc\0'`, ...), not a point;
+                        ///   - against a narrower `FixedString(M)` key (N > M) it keeps the N padded
+                        ///     bytes, which no longer map into the key domain.
+                        /// Either way the point range is unsound and prunes matching granules, so
+                        /// decline index analysis (fall back to a full scan). A wider-or-equal
+                        /// `FixedString(M)` key (M >= N) pads the constant into exactly one key value,
+                        /// so pruning stays correct and is left untouched.
+                        /// Strip `LowCardinality` and `Nullable` first: a wrapped constant such as
+                        /// `toFixedString(x, N)` with a non-literal length (`LowCardinality(FixedString(N))`)
+                        /// or `CAST(... AS LowCardinality(Nullable(FixedString(N))))` carries the same padded
+                        /// bytes and comparison semantics. `tryGetConstant` only peels an outer `Nullable`, so
+                        /// a `LowCardinality(Nullable(FixedString(N)))` constant reaches here with the inner
+                        /// `Nullable` intact; peel both wrappers so no variant slips past this guard (the key
+                        /// type is already `LowCardinality`/`Nullable`-stripped above).
+                        const auto const_type_unwrapped = removeLowCardinalityAndNullable(const_type);
+                        if (WhichDataType(const_type_unwrapped).isFixedString() && isStringOrFixedString(key_expr_type_not_null))
+                        {
+                            const size_t const_bytes = const_value.safeGet<String>().size();
+                            const auto * fixed_key = typeid_cast<const DataTypeFixedString *>(key_expr_type_not_null.get());
+                            if (!fixed_key || fixed_key->getN() < const_bytes)
+                                return false;
+                        }
+
                         const_value = convertFieldToType(const_value, *key_expr_type_not_null);
                         if (const_value.isNull())
                             return false;
@@ -4287,6 +4645,35 @@ KeyCondition::Description KeyCondition::getDescription() const
   * This is important because it is easy for us to check the feasibility of the condition over the hyperrectangle,
   *  and therefore, feasibility of condition on the range of tuples will be checked by feasibility of condition
   *  over at least one hyperrectangle from which this range consists.
+  *
+  * A key column may be sorted in reverse (`ORDER BY (x, y DESC)`, see KeyOrder). The boundary
+  * tuples are still the physical values at the marks, and the decomposition produces the same three
+  * groups of rows; what changes is the y-interval covering the first and the last group. To see how,
+  * revisit why the ascending decomposition above is correct:
+  *
+  * - The rows with x == x1 lie between the left boundary (x1, y1) and the end of the x1 group. Within
+  *   the group they are ordered by y, so their y values start at y1 and move in y's sort direction:
+  *   upward for ascending y, giving [x1] × [y1 .. +inf), but downward for descending y, giving
+  *   [x1] × (-inf .. y1].
+  * - Symmetrically, the rows with x == x2 lie before the right boundary (x2, y2), so their y values
+  *   approach y2 from the opposite side: [x2] × (-inf .. y2] for ascending y, but [x2] × [y2 .. +inf)
+  *   for descending y.
+  * - The middle rectangle is unchanged: it covers rows whose x lies strictly between x1 and x2 with
+  *   any y, and whether a value lies strictly between two others does not depend on sort direction.
+  *
+  * So for descending y, the same range [ x1 y1 .. x2 y2 ] given x1 != x2 is the union of:
+  * [x1]       × (-inf .. y1]
+  * (x1 .. x2) × (-inf .. +inf)
+  * [x2]       × [y2 .. +inf)
+  *
+  * The same rule covers a descending column in any position. At the first column where the boundaries
+  * differ, the two boundary values delimit that column's interval, and on a descending column the left
+  * boundary holds the larger value, so the operands swap: with x descending, the middle rectangle is
+  * (x2 .. x1); and when the boundaries agree on x and differ first at a descending last column y, the
+  * interval is the closed [y2 .. y1]. This is why every Range built from boundary values below picks
+  * its operands and its bounded side through KeyOrder (see values_between, values_after_left_boundary
+  * and values_before_right_boundary): a boundary value stays attached to its physical boundary, and
+  * the column's direction decides which side of the value interval it bounds.
   */
 
 /** For the range between tuples, determined by left_keys, left_bounded, right_keys, right_bounded,
@@ -4302,6 +4689,7 @@ static BoolMask forAnyHyperrectangle(
     bool right_bounded,
     Hyperrectangle & hyperrectangle, /// This argument is modified in-place for the callback
     const DataTypes & data_types,
+    const KeyOrder & key_order,
     size_t prefix_size,
     BoolMask initial_mask,
     const Hyperrectangle * key_bounds,
@@ -4310,6 +4698,24 @@ static BoolMask forAnyHyperrectangle(
     auto universe = [&](size_t i) -> Range
     {
         return key_bounds ? (*key_bounds)[i] : Range::createWholeUniverseTypeAware(data_types[i]);
+    };
+
+    auto values_between = [&](size_t col, bool included) -> Range
+    {
+        return key_order.isReversed(col) ? Range(right_keys[col], included, left_keys[col], included)
+                                         : Range(left_keys[col], included, right_keys[col], included);
+    };
+
+    auto values_after_left_boundary = [&](size_t col, bool included) -> Range
+    {
+        return key_order.isReversed(col) ? Range::createRightBounded(left_keys[col], included, universe(col))
+                                         : Range::createLeftBounded(left_keys[col], included, universe(col));
+    };
+
+    auto values_before_right_boundary = [&](size_t col, bool included) -> Range
+    {
+        return key_order.isReversed(col) ? Range::createLeftBounded(right_keys[col], included, universe(col))
+                                         : Range::createRightBounded(right_keys[col], included, universe(col));
     };
 
     if (!left_bounded && !right_bounded)
@@ -4337,11 +4743,11 @@ static BoolMask forAnyHyperrectangle(
     if (prefix_size + 1 == key_size)
     {
         if (left_bounded && right_bounded)
-            hyperrectangle[prefix_size] = Range(left_keys[prefix_size], true, right_keys[prefix_size], true);
+            hyperrectangle[prefix_size] = values_between(prefix_size, true);
         else if (left_bounded)
-            hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], true, universe(prefix_size));
+            hyperrectangle[prefix_size] = values_after_left_boundary(prefix_size, true);
         else if (right_bounded)
-            hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], true, universe(prefix_size));
+            hyperrectangle[prefix_size] = values_before_right_boundary(prefix_size, true);
 
         return callback(hyperrectangle);
     }
@@ -4349,11 +4755,11 @@ static BoolMask forAnyHyperrectangle(
     /// (x1 .. x2) × (-inf .. +inf)
 
     if (left_bounded && right_bounded)
-        hyperrectangle[prefix_size] = Range(left_keys[prefix_size], false, right_keys[prefix_size], false);
+        hyperrectangle[prefix_size] = values_between(prefix_size, false);
     else if (left_bounded)
-        hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], false, universe(prefix_size));
+        hyperrectangle[prefix_size] = values_after_left_boundary(prefix_size, false);
     else if (right_bounded)
-        hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], false, universe(prefix_size));
+        hyperrectangle[prefix_size] = values_before_right_boundary(prefix_size, false);
 
     for (size_t i = prefix_size + 1; i < key_size; ++i)
         hyperrectangle[i] = universe(i);
@@ -4373,7 +4779,8 @@ static BoolMask forAnyHyperrectangle(
         result = BoolMask::combine(
             result,
             forAnyHyperrectangle(
-                key_size, left_keys, right_keys, true, false, hyperrectangle, data_types, prefix_size + 1, initial_mask, key_bounds, callback));
+                key_size, left_keys, right_keys, true, false, hyperrectangle, data_types, key_order,
+                prefix_size + 1, initial_mask, key_bounds, callback));
 
         if (result.isComplete())
             return result;
@@ -4387,7 +4794,8 @@ static BoolMask forAnyHyperrectangle(
         result = BoolMask::combine(
             result,
             forAnyHyperrectangle(
-                key_size, left_keys, right_keys, false, true, hyperrectangle, data_types, prefix_size + 1, initial_mask, key_bounds, callback));
+                key_size, left_keys, right_keys, false, true, hyperrectangle, data_types, key_order,
+                prefix_size + 1, initial_mask, key_bounds, callback));
     }
 
     return result;
@@ -4427,6 +4835,7 @@ static BoolMask forAnySparseHyperrectangle(
     bool right_bounded,
     Hyperrectangle & sparse_hyperrectangle,
     const DataTypes & sparse_data_types,
+    const KeyOrder & key_order,
     size_t prefix_size,
     BoolMask initial_mask,
     const Hyperrectangle * key_bounds,
@@ -4442,6 +4851,26 @@ static BoolMask forAnySparseHyperrectangle(
     auto universe = [&](size_t sparse_pos, size_t key_index) -> Range
     {
         return key_bounds ? (*key_bounds)[key_index] : Range::createWholeUniverseTypeAware(sparse_data_types[sparse_pos]);
+    };
+
+    auto values_between = [&](size_t key_index, size_t sparse_pos, bool included) -> Range
+    {
+        return key_order.isReversed(key_index) ? Range(sparse_right_keys[sparse_pos], included, sparse_left_keys[sparse_pos], included)
+                                               : Range(sparse_left_keys[sparse_pos], included, sparse_right_keys[sparse_pos], included);
+    };
+
+    auto values_after_left_boundary = [&](size_t key_index, size_t sparse_pos, bool included) -> Range
+    {
+        return key_order.isReversed(key_index)
+            ? Range::createRightBounded(sparse_left_keys[sparse_pos], included, universe(sparse_pos, key_index))
+            : Range::createLeftBounded(sparse_left_keys[sparse_pos], included, universe(sparse_pos, key_index));
+    };
+
+    auto values_before_right_boundary = [&](size_t key_index, size_t sparse_pos, bool included) -> Range
+    {
+        return key_order.isReversed(key_index)
+            ? Range::createLeftBounded(sparse_right_keys[sparse_pos], included, universe(sparse_pos, key_index))
+            : Range::createRightBounded(sparse_right_keys[sparse_pos], included, universe(sparse_pos, key_index));
     };
 
 #ifndef NDEBUG
@@ -4491,17 +4920,15 @@ static BoolMask forAnySparseHyperrectangle(
             const size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[prefix_size]);
             if (left_bounded && right_bounded)
             {
-                sparse_hyperrectangle[sparse_pos] = Range(sparse_left_keys[sparse_pos], true, sparse_right_keys[sparse_pos], true);
+                sparse_hyperrectangle[sparse_pos] = values_between(prefix_size, sparse_pos, true);
             }
             else if (left_bounded)
             {
-                sparse_hyperrectangle[sparse_pos] = Range::createLeftBounded(
-                    sparse_left_keys[sparse_pos], true, universe(sparse_pos, prefix_size));
+                sparse_hyperrectangle[sparse_pos] = values_after_left_boundary(prefix_size, sparse_pos, true);
             }
             else if (right_bounded)
             {
-                sparse_hyperrectangle[sparse_pos] = Range::createRightBounded(
-                    sparse_right_keys[sparse_pos], true, universe(sparse_pos, prefix_size));
+                sparse_hyperrectangle[sparse_pos] = values_before_right_boundary(prefix_size, sparse_pos, true);
             }
         }
 
@@ -4515,17 +4942,15 @@ static BoolMask forAnySparseHyperrectangle(
         const size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[prefix_size]);
         if (left_bounded && right_bounded)
         {
-            sparse_hyperrectangle[sparse_pos] = Range(sparse_left_keys[sparse_pos], false, sparse_right_keys[sparse_pos], false);
+            sparse_hyperrectangle[sparse_pos] = values_between(prefix_size, sparse_pos, false);
         }
         else if (left_bounded)
         {
-            sparse_hyperrectangle[sparse_pos] = Range::createLeftBounded(
-                sparse_left_keys[sparse_pos], false, universe(sparse_pos, prefix_size));
+            sparse_hyperrectangle[sparse_pos] = values_after_left_boundary(prefix_size, sparse_pos, false);
         }
         else if (right_bounded)
         {
-            sparse_hyperrectangle[sparse_pos] = Range::createRightBounded(
-                sparse_right_keys[sparse_pos], false, universe(sparse_pos, prefix_size));
+            sparse_hyperrectangle[sparse_pos] = values_before_right_boundary(prefix_size, sparse_pos, false);
         }
     }
 
@@ -4571,6 +4996,7 @@ static BoolMask forAnySparseHyperrectangle(
                 false,
                 sparse_hyperrectangle,
                 sparse_data_types,
+                key_order,
                 prefix_size + 1,
                 initial_mask,
                 key_bounds,
@@ -4602,6 +5028,7 @@ static BoolMask forAnySparseHyperrectangle(
                 true,
                 sparse_hyperrectangle,
                 sparse_data_types,
+                key_order,
                 prefix_size + 1,
                 initial_mask,
                 key_bounds,
@@ -4619,12 +5046,14 @@ BoolMask KeyCondition::checkInRange(
     BoolMask initial_mask,
     const Hyperrectangle * key_bounds) const
 {
+    chassert(key_order.compareTuples(left_keys, right_keys, used_key_size) <= 0);
+
     Hyperrectangle key_ranges;
     key_ranges.reserve(used_key_size);
     for (size_t i = 0; i < used_key_size; ++i)
         key_ranges.push_back(Range::createWholeUniverseTypeAware(data_types[i]));
 
-    return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, 0, initial_mask, key_bounds,
+    return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, key_order, 0, initial_mask, key_bounds,
         [&] (const Hyperrectangle & key_ranges_hyperrectangle)
     {
         return checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
@@ -4693,6 +5122,7 @@ BoolMask KeyCondition::checkInRange(
         /*right_bounded*/ true,
         sparse_key_ranges,
         sparse_data_types,
+        key_order,
         /*prefix_size*/ 0,
         initial_mask,
         key_bounds,
@@ -5619,7 +6049,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & sparse_hyperrectangle,
     const DataTypes & sparse_data_types) const
 {
-    std::vector<BoolMask> rpn_stack;
+    absl::InlinedVector<BoolMask, 16> rpn_stack;
 
     auto get_sparse_info = [&](size_t key_column) -> std::pair<bool, size_t>
     {
@@ -6634,6 +7064,9 @@ void KeyCondition::extractSingleColumnConditions(std::vector<std::pair<size_t, s
 
             ColumnIndices one_key_column = {{*key_column_names[i], i}};
             auto condition = std::make_shared<KeyCondition>(ThisIsPrivate(), std::move(one_key_column), num_key_columns, single_point, date_time_overflow_behavior_ignore);
+
+            /// The split conditions keep the original key column positions, so the key order carries over.
+            condition->key_order = key_order;
             add_rpn_ranges(*condition, *this, ranges);
             out_column_conditions.emplace_back(i, std::move(condition));
         }
