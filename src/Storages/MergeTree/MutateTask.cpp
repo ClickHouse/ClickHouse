@@ -137,11 +137,11 @@ static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & dat
 /// mutations can take the partial path again). The file is also discarded when found corrupted, which
 /// lands here too.
 ///
-/// The guard is `hasDynamicStructure`, not the broader `hasDynamicSubcolumns`: only a data-dependent
-/// dynamic structure (`Dynamic`, `JSON`) makes state-less enumeration incomplete. A plain `Map` (and a
-/// plain `Variant`) reports `hasDynamicSubcolumns` too, but its serialization enumerates all physical
-/// streams without a column/state, so forcing a full rewrite for it would be needless (it would turn a
-/// cheap single-column mutation of an old part into a rewrite of all the `Map` data).
+/// The guard is `hasDynamicSubcolumns`: only a data-dependent dynamic structure (`Dynamic`, `JSON`)
+/// makes state-less enumeration incomplete. In this branch a plain `Map` (and a plain `Variant`) does
+/// not report `hasDynamicSubcolumns`, so it keeps the cheap partial-mutation path (its serialization
+/// enumerates all physical streams without a column/state). On master the narrow predicate is called
+/// `hasDynamicStructure`.
 static bool hasDynamicColumnsWithoutRecordedSubstreams(const MergeTreeData::DataPartPtr & data_part)
 {
     if (!isWidePart(data_part))
@@ -150,7 +150,7 @@ static bool hasDynamicColumnsWithoutRecordedSubstreams(const MergeTreeData::Data
     const auto & columns_substreams = data_part->getColumnsSubstreams();
     for (const auto & column : data_part->getColumns())
     {
-        if (column.type->hasDynamicStructure() && !columns_substreams.tryGetColumnSubstreams(column.name))
+        if (column.type->hasDynamicSubcolumns() && !columns_substreams.tryGetColumnSubstreams(column.name))
             return true;
     }
 
@@ -815,7 +815,7 @@ static std::unordered_map<String, size_t> getStreamCounts(
         {
             for (const auto & substream : *recorded_substreams)
             {
-                if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", source_part_checksums))
+                if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, source_part_checksums))
                     ++stream_counts[*stream_name];
             }
             continue;
