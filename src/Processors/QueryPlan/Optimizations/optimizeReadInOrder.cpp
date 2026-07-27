@@ -732,6 +732,9 @@ struct InputOrder
 {
     InputOrderInfoPtr input_order;
     SortDescription sort_description;
+    /// False when a Merge table's children read the matched prefix in opposite physical directions,
+    /// so that a single sort_description cannot describe all of them.
+    bool children_directions_agree = true;
 };
 
 /// For the case when the order of keys is not important (GROUP BY / DISTINCT)
@@ -740,7 +743,8 @@ InputOrder buildInputOrderFromUnorderedKeys(
     const std::optional<ActionsDAG> & dag,
     const Names & unordered_keys,
     const ActionsDAG & sorting_key_dag,
-    const Names & sorting_key_columns)
+    const Names & sorting_key_columns,
+    const std::vector<bool> & sorting_key_reverse_flags)
 {
     MatchedTrees::Matches matches;
     FixedColumns fixed_key_columns;
@@ -815,6 +819,10 @@ InputOrder buildInputOrderFromUnorderedKeys(
     while (!not_matched_keys.empty() && next_sort_key < sorting_key_columns.size())
     {
         const auto & sorting_key_column = sorting_key_columns[next_sort_key];
+        /// A reverse (DESC) sorting-key column is read in the opposite physical direction,
+        /// so sort_description must carry that sign (same as buildInputOrderFromSortDescription does).
+        const int reverse_indicator
+            = (!sorting_key_reverse_flags.empty() && sorting_key_reverse_flags[next_sort_key]) ? -1 : 1;
 
         /// Direction for current sort key.
         int current_direction = 0;
@@ -899,7 +907,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
             /// Prefix sort description for reading will be (negate(y) DESC, negate(x) DESC),
             /// Sort description for GROUP BY will be (negate(y) DESC, negate(x) DESC, z).
             //std::cerr << "---- adding " << std::string(*group_by_key_it) << std::endl;
-            sort_description.emplace_back(SortColumnDescription(std::string(*group_by_key_it), current_direction));
+            sort_description.emplace_back(SortColumnDescription(std::string(*group_by_key_it), current_direction * reverse_indicator));
             order_key_prefix_descr.emplace_back(SortColumnDescription(std::string(*group_by_key_it), current_direction));
             not_matched_keys.erase(group_by_key_it);
         }
@@ -1090,7 +1098,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
     return buildInputOrderFromUnorderedKeys(
         fixed_columns,
         dag, unordered_keys,
-        sorting_key.expression->getActionsDAG(), sorting_key_columns);
+        sorting_key.expression->getActionsDAG(), sorting_key_columns, sorting_key.reverse_flags);
 }
 
 InputOrder buildInputOrderFromUnorderedKeys(
@@ -1105,7 +1113,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
     return buildInputOrderFromUnorderedKeys(
         fixed_columns,
         dag, unordered_keys,
-        sorting_key.expression->getActionsDAG(), sorting_key_columns);
+        sorting_key.expression->getActionsDAG(), sorting_key_columns, sorting_key.reverse_flags);
 }
 
 InputOrder buildInputOrderFromUnorderedKeys(
@@ -1139,7 +1147,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
         auto table_order_info = buildInputOrderFromUnorderedKeys(
             combined_fixed_columns,
             combined_dag, unordered_keys,
-            sorting_key.expression->getActionsDAG(), sorting_key_columns);
+            sorting_key.expression->getActionsDAG(), sorting_key_columns, sorting_key.reverse_flags);
 
         if (!table_order_info.input_order)
             return {};
@@ -1148,6 +1156,8 @@ InputOrder buildInputOrderFromUnorderedKeys(
             order_info = table_order_info;
         else if (*order_info.input_order != *table_order_info.input_order)
             return {};
+        else if (order_info.sort_description != table_order_info.sort_description)
+            order_info.children_directions_agree = false;
 
         ++table_idx;
     }
@@ -1337,6 +1347,11 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
             merge,
             fixed_columns,
             dag, keys);
+
+        /// Aggregation in order merges the children's streams with a single direction-aware
+        /// comparator, which cannot serve children sorted in opposite physical directions.
+        if (!order_info.children_directions_agree)
+            return {};
 
         if (order_info.input_order)
         {
