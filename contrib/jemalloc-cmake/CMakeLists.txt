@@ -82,9 +82,10 @@ endif ()
 # `bitmap_unset` in `bin_dalloc_locked_step` corrupting `edata_t` and surfacing much later
 # as a SIGSEGV in `edata_list_inactive_remove` on the background decay thread.
 #
-# x86-64 only: `include_linux_e2k/.../jemalloc_internal_defs.h.in` `#undef`s these macros
-# unconditionally (every other platform comments those lines out), so a `-D` is silently
-# cancelled there.
+# x86-64 only: `include_linux_e2k/.../jemalloc_internal_defs.h.in` carries a bare
+# `#undef JEMALLOC_OPT_SAFETY_CHECKS` (:374) where all 12 other platform headers keep that
+# line commented out, so on e2k the safety definition below would be silently cancelled.
+# Restricting the option to x86-64 is therefore the conservative choice.
 option (ENABLE_JEMALLOC_SAFETY_CHECKS "Enable jemalloc sized-deallocation and double-free safety checks (diagnostic lane; x86-64 only)")
 if (ENABLE_JEMALLOC_SAFETY_CHECKS AND NOT ARCH_AMD64)
     message (${RECONFIGURE_MESSAGE_LEVEL} "ENABLE_JEMALLOC_SAFETY_CHECKS is supported on x86-64 only. Use -DENABLE_JEMALLOC_SAFETY_CHECKS=0")

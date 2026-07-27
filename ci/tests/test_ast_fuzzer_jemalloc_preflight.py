@@ -14,8 +14,10 @@ via `system.jemalloc_stats` and fails the job with `ERROR` (never `SKIPPED`, whi
 counts as success via `Result.is_ok()` and would be cached as one) when it is not
 `true` or cannot be read at all.
 
-The last test pins the *guard*, not the helper: the four pre-existing AST fuzzer
-paramsets must not run the probe.
+The last tests pin the *guard*, not the helper: the four pre-existing AST fuzzer
+paramsets must not run the probe, and the marker that selects the lane must be
+derived from `BuildTypes.AMD_JEMALLOC_SAFETY` rather than hardcoded (a hardcoded
+copy would stop matching after a build-type rename and disarm the lane silently).
 """
 
 import os
@@ -25,10 +27,22 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+# `ci/defs/defs.py` does `from praktika import ...` rather than
+# `from ci.praktika import ...`, so the `ci/` directory itself must be on the path
+# for `import praktika` to resolve to `ci/praktika`. CI configures this via the
+# praktika runner (`PYTHONPATH=./ci:.`); we replicate it here.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import ci.jobs.ast_fuzzer_job as m
+from ci.defs.defs import BuildTypes
+from ci.defs.job_configs import JobConfigs
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
+
+# The check name the workflow really resolves for this lane, taken from the job
+# config rather than hand-copied: `Job.Config.get_job_name_with_parameter` builds it
+# from `BuildTypes.AMD_JEMALLOC_SAFETY`.
+JEMALLOC_SAFETY_JOB_NAME = JobConfigs.jemalloc_safety_ast_fuzzer_job[0].name
 
 
 # --- parse_jemalloc_safety_checks_flag ------------------------------------------------
@@ -161,7 +175,45 @@ def guard(monkeypatch, tmp_path):
 
 
 def test_guard_runs_preflight_for_the_jemalloc_safety_paramset(guard):
-    assert guard("AST fuzzer (amd_jemalloc_safety)") == 1
+    # Drive the guard with the check name the workflow ACTUALLY resolves, not a
+    # hand-copied literal: `Job.Config.get_job_name_with_parameter` derives it from
+    # `BuildTypes.AMD_JEMALLOC_SAFETY`, so a rename of the build type must not leave
+    # this test green while the lane runs unguarded.
+    assert guard(JEMALLOC_SAFETY_JOB_NAME) == 1
+
+
+def test_marker_tracks_the_build_type():
+    """The marker must follow `BuildTypes.AMD_JEMALLOC_SAFETY`, not drift from it.
+
+    `JEMALLOC_SAFETY_CHECK_MARKER` is kept a literal in the job script (importing
+    `ci.defs.defs` there would require `./ci` itself on `sys.path`, which the
+    developer-facing entry points do not all set), so the coupling to the build type
+    is asserted here instead. Without it the constant fails *open*: after a rename
+    the guard stops matching, the preflight never runs, and the lane silently
+    degrades into an ordinary `amd_debug` fuzz session - exactly one of the
+    degradation modes the preflight exists to catch.
+    """
+    assert m.JEMALLOC_SAFETY_CHECK_MARKER in BuildTypes.AMD_JEMALLOC_SAFETY.lower()
+    # ... and reaches the resolved check name, which is what the guard actually sees.
+    assert m.JEMALLOC_SAFETY_CHECK_MARKER in JEMALLOC_SAFETY_JOB_NAME.lower()
+
+
+def test_marker_does_not_match_the_pre_existing_build_types():
+    """The marker must select ONLY the jemalloc-safety lane.
+
+    A marker that also matched another build type would make every AST fuzzer
+    paramset run the preflight and fail those jobs on an ordinary `amd_debug`
+    artifact.
+    """
+    others = [
+        v
+        for k, v in vars(BuildTypes).items()
+        if not k.startswith("_")
+        and isinstance(v, str)
+        and v != BuildTypes.AMD_JEMALLOC_SAFETY
+    ]
+    assert others, "no other build types found - the reflection above broke"
+    assert [v for v in others if m.JEMALLOC_SAFETY_CHECK_MARKER in v.lower()] == []
 
 
 @pytest.mark.parametrize(

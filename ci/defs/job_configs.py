@@ -201,7 +201,16 @@ class JobConfigs:
         command="python3 ./ci/jobs/ci_tests_job.py",
         timeout=1200,
         run_in_docker=f"clickhouse/integration-tests-runner+root+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
-        digest_config=Job.CacheDigestConfig(include_paths=["./ci"]),
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci",
+                # ci/tests asserts that this file still defines BOTH jemalloc safety
+                # macros (see test_jemalloc_safety_checks_cmake.py); without the path
+                # here the assertion would be cache-skipped exactly on the commits
+                # that change what it guards.
+                "./contrib/jemalloc-cmake/CMakeLists.txt",
+            ]
+        ),
         post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
     )
     fast_test = Job.Config(

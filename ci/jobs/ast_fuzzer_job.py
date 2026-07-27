@@ -102,6 +102,15 @@ def _format_status_error(exc: Exception, log_paths) -> str:
 # Substring that marks the WeeklyJemallocSafety paramset
 # (`AST fuzzer (amd_jemalloc_safety)`). Only that lane runs the preflight below;
 # the other paramsets are unaffected.
+#
+# The check name is derived from the paramset's build type by
+# `Job.Config.get_job_name_with_parameter`, so this value must track
+# `BuildTypes.AMD_JEMALLOC_SAFETY`: a copy that stopped following it would make the
+# guard silently miss the lane after a build-type rename, which is one of the
+# degradation modes the preflight exists to catch. That coupling is asserted in
+# `ci/tests/test_ast_fuzzer_jemalloc_preflight.py` (the constant is kept literal
+# here so this job script does not have to import `ci.defs.defs`, which needs `./ci`
+# itself on `sys.path`).
 JEMALLOC_SAFETY_CHECK_MARKER = "jemalloc_safety"
 
 # jemalloc reports `JEMALLOC_OPT_SAFETY_CHECKS` in its own stats dump as
@@ -133,10 +142,15 @@ def assert_jemalloc_safety_checks_armed(clickhouse_binary: Path) -> None:
     still runs green as an ordinary `amd_debug` run and the lane is vacuous. So
     read the value out of the artifact rather than trusting the compile line.
 
-    Only `config.opt_safety_checks` is asserted: `JEMALLOC_OPT_SIZE_CHECKS` has no
-    mallctl (it appears in neither `ctl.c` nor `stats.c`), so it cannot be read at
-    runtime. Both macros come from the same cmake option, and the PR's per-gate
-    measurements cover the size gate separately.
+    Only `config.opt_safety_checks` is asserted here, because it is the only one of
+    the option's two macros with a runtime observable: `JEMALLOC_OPT_SIZE_CHECKS`
+    has no mallctl (it appears in neither `ctl.c` nor `stats.c`), and exposing one
+    would mean patching the `contrib/jemalloc` submodule. That second macro is
+    load-bearing too - it is the sole gate on `maybe_check_alloc_ctx`, the
+    "mismatch in slab bit" check - so it is asserted at build-configuration level
+    instead, by `ci/tests/test_jemalloc_safety_checks_cmake.py`, which pins that
+    both macros are still defined together in
+    `contrib/jemalloc-cmake/CMakeLists.txt`.
     """
     command = f'{clickhouse_binary} local --query "{JEMALLOC_SAFETY_STATS_QUERY}"'
     exit_code, stdout, stderr = Shell.get_res_stdout_stderr(command, verbose=True)
