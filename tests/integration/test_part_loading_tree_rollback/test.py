@@ -41,14 +41,27 @@ def started_cluster():
         cluster.shutdown()
 
 
-def table_data_path(table):
-    """Data directory of an attached table, with a trailing slash."""
+def table_data_path(table, part):
+    """
+    Directory holding the parts of `table`, with a trailing slash, derived from the directory the
+    server actually wrote `part` into.
+
+    `system.parts.path` rather than `system.tables.data_paths`: `path` is
+    `DataPartStorageOnDiskBase::getFullPath` for that one part, i.e. the exact directory the
+    fabricated siblings must be created next to. `data_paths` is an array over the whole storage
+    policy, so `arrayElement(data_paths, 1)` picks a volume rather than the part's own location and
+    silently addresses the wrong directory once a table has more than one data path.
+    """
     path = node.query(
-        "SELECT arrayElement(data_paths, 1) FROM system.tables"
-        f" WHERE database = 'default' AND name = '{table}'"
+        "SELECT path FROM system.parts"
+        f" WHERE database = 'default' AND table = '{table}'"
+        f" AND name = '{part}' AND active"
     ).strip()
     assert path
-    return path.rstrip("/") + "/"
+    parent, _, part_dir = path.rstrip("/").rpartition("/")
+    # Fail loudly rather than fabricating parts in some parent of the real directory.
+    assert part_dir == part, f"unexpected part directory {part_dir} for part {part}"
+    return parent + "/"
 
 
 def write_file(path, content):
@@ -133,6 +146,12 @@ def create_table_with_one_part(table):
     `Current value of max_source_parts_bytes is zero`). A merge would rewrite the part set these
     tests assert on.
 
+    `storage_policy = 'default'` is pinned rather than inherited: the fabricated `txn_version.txt`
+    below is a raw plaintext file, which only parses on a local disk (on an object-storage disk every
+    file in a part directory has to be in `DiskObjectStorageMetadata` format). That assumption is
+    what the stateless tests left implicit, so it is stated here instead of taken from whatever
+    default policy a job's config happens to expose.
+
     `DETACH` must be `SYNC`: an asynchronous detach leaves the storage instance tracked in
     `DatabaseAtomic::detached_tables` while another subsystem still holds a `StoragePtr`
     (`ServerAsynchronousMetrics` iterates a snapshot of them), and the later `ATTACH` then throws
@@ -141,11 +160,12 @@ def create_table_with_one_part(table):
     node.query(f"DROP TABLE IF EXISTS {table} SYNC")
     node.query(
         f"CREATE TABLE {table} (x UInt32) ENGINE = MergeTree ORDER BY x"
-        " SETTINGS max_bytes_to_merge_at_max_space_in_pool = 0"
+        " SETTINGS max_bytes_to_merge_at_max_space_in_pool = 0,"
+        " storage_policy = 'default'"
     )
     stop_merges(table)
     node.query(f"INSERT INTO {table} VALUES (42)")
-    data_path = table_data_path(table)
+    data_path = table_data_path(table, "all_1_1_0")
     node.query(f"DETACH TABLE {table} SYNC")
     return data_path
 
