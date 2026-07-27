@@ -449,7 +449,7 @@ def test_check_database(started_cluster):
         node.query(
             "SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
         )
-    
+
         assert "fault when checking database" in node.query_and_get_error(
             f"CHECK DATABASE {CATALOG_NAME}"
         )
@@ -528,10 +528,23 @@ def test_select(started_cluster):
     )
 
     assert num_rows == int(
-        node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
+        node.query(
+            # Regression test: a session temp table used to be pinned by the query context
+            # captured in the S3 client refresher and cached with the manifest file in the
+            # global IcebergMetadataFilesCache, crashing the graceful restart below with a
+            # use-after-free. The SELECT * is required: it reads a manifest file (count()
+            # alone is served from the snapshot summary). All statements must stay in one
+            # node.query call = one session.
+            f"CREATE TEMPORARY TABLE pin_me (x UInt8) ENGINE = Memory;"
+            f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}` FORMAT Null;"
+            f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`"
+        )
     )
 
     assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE table = '{namespace}.{table_name}' and database = '{CATALOG_NAME}'").strip()) == 1
+
+    # Replays the graceful shutdown; the teardown sanitizer check catches the UAF if it regresses.
+    node.restart_clickhouse()
 
 
 def test_hide_sensitive_info(started_cluster):
@@ -923,7 +936,10 @@ def test_optimize_manifest_with_catalog(started_cluster):
         ["snapshots"],
         ["metadata-log"],
         ["snapshot-log"],
-        ["snapshots", "metadata-log", "snapshot-log"],
+        # `refs` is likewise optional (an object, not an array): e.g. empty-table metadata
+        # created by external engines may omit it entirely.
+        ["refs"],
+        ["refs", "snapshots", "metadata-log", "snapshot-log"],
     ],
 )
 def test_insert_into_table_without_optional_metadata_arrays(started_cluster, fields_to_remove):
