@@ -315,7 +315,9 @@ If additional filter conditions can be evaluated using the [primary key](mergetr
 
 - If the filter leaves all marks in a part unchanged, ClickHouse performs post-filtering on the part: the vector similarity index runs on the full part, then the `WHERE` clause is applied to the index hits.
 
-- If the filter removes one or more marks within a part (partial primary key pruning), ClickHouse still uses the vector similarity index on the surviving marks. The search runs as `filtered_search` with a row filter derived from the primary-key ranges, not as a brute-force scan over those rows.
+- If the filter removes one or more marks within a part (partial primary key pruning), ClickHouse still uses the vector similarity index on the surviving marks, provided that enough of the part survives. The search runs as `filtered_search` with a row filter derived from the primary-key ranges, not as a brute-force scan over those rows.
+
+  Setting [vector_search_min_surviving_pk_fraction](../../../operations/settings/settings#vector_search_min_surviving_pk_fraction) (default: `0.5`) is the minimum fraction of the marks of a part that must survive primary key analysis for this to happen. For a more selective primary key condition, the index is skipped for the part and exact distances are computed for the surviving rows, because the filtered graph traversal is slower than a brute-force scan of a small number of rows. Set it to `0` to always use the index.
 
   Approximate search under a tight row filter may return fewer than `LIMIT` neighbors even when more qualifying rows exist in the part. That is expected for an approximate index; the row count need not match a query that scans the surviving ranges without the vector index.
 

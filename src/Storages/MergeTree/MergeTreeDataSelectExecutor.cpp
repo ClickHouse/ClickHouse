@@ -2716,6 +2716,29 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     /// Partial PK: still run vector index and restrict hits to surviving marks.
     const bool all_match = (marks_count == ranges.getNumberOfMarks());
 
+    /// The vector similarity index is built for the whole part. If the primary key pruned some of the marks, the surviving mark ranges
+    /// are pushed into the index as a row filter (`filtered_search`). This is faster than a brute-force scan only if a large enough
+    /// fraction of the part survives: under a very selective primary key condition, the graph traversal rejects most of the visited
+    /// neighbours and becomes much slower than computing exact distances for the few surviving rows. In that case, skip the index and
+    /// let the query read the surviving mark ranges as before.
+    if (index_helper->isVectorSimilarityIndex() && !all_match)
+    {
+        const double surviving_fraction = static_cast<double>(ranges.getNumberOfMarks()) / static_cast<double>(marks_count);
+        if (surviving_fraction < static_cast<double>(reader_settings.vector_search_min_surviving_pk_fraction))
+        {
+            LOG_TRACE(
+                log,
+                "Skipping vector similarity index {} for part {}: only {} of {} marks survived primary key analysis, which is below "
+                "'vector_search_min_surviving_pk_fraction' = {}",
+                backQuote(index_helper->index.name),
+                part->name,
+                ranges.getNumberOfMarks(),
+                marks_count,
+                reader_settings.vector_search_min_surviving_pk_fraction);
+            return {ranges, in_read_hints};
+        }
+    }
+
     MarkRanges index_ranges;
     for (const auto & range : ranges)
     {

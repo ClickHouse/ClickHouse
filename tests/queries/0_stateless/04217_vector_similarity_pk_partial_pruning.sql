@@ -6,6 +6,9 @@ SET allow_experimental_vector_similarity_index = 1;
 SET enable_analyzer = 1;
 SET query_plan_max_limit_for_lazy_materialization = 10000;
 SET log_queries = 1;
+-- Most cases below assert that the vector index is used for a partially pruned part, no matter how small the surviving
+-- slice is, so disable the selectivity threshold. The default threshold itself is covered by the last case.
+SET vector_search_min_surviving_pk_fraction = 0;
 
 DROP TABLE IF EXISTS tab_pk_partial;
 
@@ -226,6 +229,51 @@ FROM
     SETTINGS use_skip_indexes = 1
 );
 
+-- The row counts and the PK membership above do not cover the cross-granule hint merge itself: a regression that drops
+-- the hints of one granule, or pairs distances with the wrong rows, can still return three in-filter rows. `id <= 2 OR
+-- id >= 6` is aligned with the mark boundaries, so both skip-index granules are searched, no row is removed by the
+-- residual predicate, and the index result must match the brute-force baseline exactly - including the order and the
+-- distance of every row, which a wrong row-to-distance merge would break.
+SELECT 'pk_multi_granule_ordered_ids_and_distances_match_exact_knn_without_skip_indexes';
+WITH [toFloat32(0.), toFloat32(2.)] AS reference_vec
+SELECT
+    (
+        SELECT groupArray((id, round(L2Distance(vec, reference_vec), 4)))
+        FROM
+        (
+            SELECT id, vec
+            FROM tab_pk_partial
+            WHERE (id <= 2) OR (id >= 6)
+            ORDER BY L2Distance(vec, reference_vec) ASC
+            LIMIT 3
+            SETTINGS use_skip_indexes = 1
+        )
+    ) = (
+        SELECT groupArray((id, round(L2Distance(vec, reference_vec), 4)))
+        FROM
+        (
+            SELECT id, vec
+            FROM tab_pk_partial
+            WHERE (id <= 2) OR (id >= 6)
+            ORDER BY L2Distance(vec, reference_vec) ASC
+            LIMIT 3
+            SETTINGS use_skip_indexes = 0
+        )
+    );
+
+SELECT 'pk_multi_granule_expected_ordered_ids_and_distances';
+WITH [toFloat32(0.), toFloat32(2.)] AS reference_vec
+SELECT groupArray((id, round(L2Distance(vec, reference_vec), 4)))
+FROM
+(
+    SELECT id, vec
+    FROM tab_pk_partial
+    WHERE (id <= 2) OR (id >= 6)
+    ORDER BY L2Distance(vec, reference_vec) ASC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 1
+);
+
 -- OR with disjoint PK ranges in one skip-index granule.
 SELECT id
 FROM tab_pk_partial
@@ -281,6 +329,60 @@ FROM
     ORDER BY L2Distance(vec, reference_vec) ASC
     LIMIT 3
     SETTINGS use_skip_indexes = 0
+);
+
+-- Selectivity threshold: if less than 'vector_search_min_surviving_pk_fraction' of the marks of the part survive primary
+-- key analysis, the vector index is not used for the part (filtered_search over a small row filter is slower than exact
+-- distances for the few surviving rows, and it post-filters, so it can also return fewer rows).
+-- `id >= 9` leaves 2 of the 4 marks (the primary key range of the preceding mark ends at the boundary value 9).
+SELECT id
+FROM tab_pk_partial
+WHERE id >= 9
+ORDER BY L2Distance(vec, [toFloat32(0.), toFloat32(2.)]) ASC
+LIMIT 3
+SETTINGS use_skip_indexes = 1, vector_search_min_surviving_pk_fraction = 0.75, log_comment = '04217-pk-below-threshold'
+FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 'pk_below_threshold_vector_index_not_used';
+SELECT max(ProfileEvents['USearchSearchCount'])
+FROM system.query_log
+WHERE current_database = currentDatabase()
+    AND type = 'QueryFinish'
+    AND log_comment = '04217-pk-below-threshold'
+    AND event_date >= yesterday()
+    AND event_time >= now() - 600;
+
+-- Below the threshold the result is exact, like before this feature existed.
+SELECT 'pk_below_threshold_ordered_ids';
+WITH [toFloat32(0.), toFloat32(2.)] AS reference_vec
+SELECT groupArray(id)
+FROM
+(
+    SELECT id
+    FROM tab_pk_partial
+    WHERE id >= 9
+    ORDER BY L2Distance(vec, reference_vec) ASC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 1, vector_search_min_surviving_pk_fraction = 0.75
+);
+
+-- The same query with the threshold disabled goes through the index: the surviving marks of the granule are searched
+-- first (`id >= 9` keeps the mark holding ids 6, 7, 8 too, because the primary key ranges end at the mark boundary),
+-- and the nearest neighbours found there are then removed by the exact `id >= 9` predicate. Fewer rows than `LIMIT`
+-- (here: none) is the expected post-filtering behavior and the reason for the threshold above.
+SELECT 'pk_below_threshold_index_path_postfilters';
+WITH [toFloat32(0.), toFloat32(2.)] AS reference_vec
+SELECT groupArray(id)
+FROM
+(
+    SELECT id
+    FROM tab_pk_partial
+    WHERE id >= 9
+    ORDER BY L2Distance(vec, reference_vec) ASC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 1, vector_search_min_surviving_pk_fraction = 0
 );
 
 DROP TABLE tab_pk_partial;

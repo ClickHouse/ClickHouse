@@ -30,10 +30,9 @@ FROM numbers(100);
 
 -- Test vector search on indexed column (vec1) with different filter strategies
 --
--- With the PK filter below, auto and postfilter strategies may produce usable
--- vector row hints when the vector index is available. PREWHERE vs Filter
--- placement can differ across planner configurations, so this test keeps the
--- EXPLAIN reference stable.
+-- With the PK filter below, vector index analysis does not produce usable row
+-- hints for auto and postfilter strategies, so implicit PREWHERE is restored.
+-- The vector index must still be used during index analysis before that fallback.
 -- The prefilter strategy explicitly prefers PREWHERE and brute force distance
 -- calculation.
 

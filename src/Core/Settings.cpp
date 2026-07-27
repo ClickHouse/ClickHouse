@@ -7954,6 +7954,11 @@ If a vector search query has a WHERE clause, this setting determines if it is ev
     DECLARE_WITH_ALIAS(Float, vector_search_index_fetch_multiplier, 1.0, R"(
 Multiply the number of fetched nearest neighbors from the vector similarity index by this number. This is applied for post-filtering with other predicates, for partial primary-key pruning when the primary key condition leaves only a subset of marks in a part, and when setting 'vector_search_with_rescoring = 1'. Valid range: [1.0, 1000.0]. Values outside this range are rejected.
 )", 0, vector_search_postfilter_multiplier) \
+    DECLARE(Float, vector_search_min_surviving_pk_fraction, 0.5, R"(
+If the primary key condition prunes a part only partially, the vector similarity index is used for the surviving marks (the primary key ranges are pushed into the index as a row filter). This pays off only if a large enough part of the data survives: for a highly selective primary key condition, the filtered graph traversal rejects most neighbours and is slower than a brute-force scan of the few surviving rows.
+
+This setting is the minimum fraction of the marks of a part that must survive primary key analysis for the vector similarity index to be used. If fewer marks survive, ClickHouse skips the vector similarity index for the part and computes exact distances for the surviving rows instead. Valid range: [0.0, 1.0]. `0` always uses the index, `1` uses it only if the primary key prunes nothing.
+)", 0) \
     DECLARE(Bool, vector_search_use_quantized_codes, false, R"(
 Enables a two-stage approximate vector search without index (brute force scan) over a `Quantized`-compressed column. When enabled, `ORDER BY L2Distance|cosineDistance(vec, reference) LIMIT k` against a column encoded with a `Quantized(...)` codec will
 1. scan and filter the quantized vectors (this step produces `k * vector_search_index_fetch_multiplier` results), and
