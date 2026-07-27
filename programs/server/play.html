@@ -5842,9 +5842,31 @@ if (main_container && typeof ResizeObserver !== 'undefined') {
 }
 
 let check_credentials_request_num = 0;
+/// The connection tuple the credential indication was last checked against, or `null` while nothing
+/// has been checked yet. The commit on leaving the connection surface is licensed by the
+/// `connection_edited` latch, which is set from `input`; but `#user` and `#password` are
+/// browser-autofillable, and autofilling a saved login does not always fire `input` on them (the
+/// Documentation link above has to work around exactly the same thing). Relying on the latch alone
+/// would therefore keep the badge painted for the credentials the page was loaded with while the
+/// fields already hold different ones, and leaving the surface would not re-check them. Comparing the
+/// current tuple against the one that produced the indication catches a value change no matter what
+/// raised it, so autofill is committed like a typed edit.
+let checked_connection = null;
+function connectionTuple() {
+    return JSON.stringify([url_elem.value, user_elem.value, password_elem.value]);
+}
+/// The connection no longer matches what the indication reflects, so leaving the surface must
+/// re-check it. `connection_edited` still matters on its own: an edit that ends up back at the last
+/// checked tuple (typing and undoing) has already cleared the indication via `resetCredentialsStatus`,
+/// and the fields must be repainted.
+function connectionNeedsCheck() {
+    return connection_edited || checked_connection !== connectionTuple();
+}
 function checkCredentials() {
     ++check_credentials_request_num;
     const current_check_credentials_request_num = check_credentials_request_num;
+    /// The indication this request is about to produce belongs to the tuple it is sent with.
+    checked_connection = connectionTuple();
     getServerStatus(url_elem.value, user_elem.value, password_elem.value).then(json => {
         if (current_check_credentials_request_num == check_credentials_request_num) {
             if (json) {
@@ -5896,9 +5918,9 @@ function resetCredentialsStatus() {
 /// and logging a spurious failed login; and a `url` keystroke that happens to hit a reachable
 /// intermediate endpoint would send the credentials there. The commit runs `checkURL(true)`, which
 /// pings the url and only then probes the credentials, so an unreachable server leaves the fields
-/// neutral rather than blaming them. The `connection_edited` guard means merely tabbing through the
-/// fields, without changing anything, emits no request. This subsumes the old paste handlers: a pasted
-/// value is committed by the following focus change just like typed input.
+/// neutral rather than blaming them. The commit is licensed by `connectionNeedsCheck`, so merely
+/// tabbing through the fields, without changing anything, emits no request. This subsumes the old
+/// paste handlers: a pasted value is committed by the following focus change just like typed input.
 ///
 /// `focusout` bubbles, so a single document-level listener catches focus leaving any element of the
 /// surface (including the 🔑 button, which is not inside `#inputs`). Where focus lands cannot be read
@@ -5946,8 +5968,10 @@ document.addEventListener('pointerdown', (event) => {
 document.addEventListener('pointerup', () => { pointer_down_inside_inputs = false; });
 document.addEventListener('pointercancel', () => { pointer_down_inside_inputs = false; });
 let connection_edited = false;
-/// `connection_edited` means "the user has changed the connection in this editing session", and it is
-/// what licenses the commit below to authenticate against the server. Only a real interaction may set
+/// `connection_edited` means "the user has changed the connection in this editing session"; together
+/// with the `checked_connection` tuple comparison (see `connectionNeedsCheck`, which also catches a
+/// change that raised no `input` at all) it is what licenses the commit below to authenticate against
+/// the server. Only a real interaction may set
 /// it: `window.onpopstate` replays synthetic `input` events on these fields to reproduce the side
 /// effects of a connection change when a Back/Forward restores a different connection, and that
 /// replay clears the password (it is never persisted to history). Latching on it would leave the
@@ -5967,6 +5991,10 @@ function onCredentialInput(event) {
 function commitConnection() {
     connection_edited = false;
     commit_deferred = false;
+    /// A typed edit already cleared the indication on the first keystroke, but a value change that
+    /// raised no `input` (an autofilled saved login) did not: drop the badge left over from the
+    /// previous tuple instead of showing it until the new check answers.
+    resetCredentialsStatus();
     checkURL(true);
 }
 document.addEventListener('focusout', (event) => {
@@ -5984,16 +6012,16 @@ document.addEventListener('focusout', (event) => {
         /// interaction stayed in the connection UI, so this is not a commit. Defer it to the next
         /// transition that really leaves the surface.
         if (pointer_was_inside) {
-            if (connection_edited) { commit_deferred = true; }
+            if (connectionNeedsCheck()) { commit_deferred = true; }
             return;
         }
         /// The page itself lost focus (browser address bar, another window) — the user may be
         /// mid-switch to a different server, so this is not a commit; defer it as above.
         if (!document.hasFocus()) {
-            if (connection_edited) { commit_deferred = true; }
+            if (connectionNeedsCheck()) { commit_deferred = true; }
             return;
         }
-        if (!connection_edited) { return; }
+        if (!connectionNeedsCheck()) { return; }
         commitConnection();
     });
 });
@@ -9070,6 +9098,10 @@ window.onpopstate = function(event) {
         } finally {
             restoring_connection_from_history = false;
         }
+        /// Same reason the latches are dropped: the fields hold a restored connection, not an edit, so
+        /// take it as the baseline the (now cleared) indication reflects. Otherwise the tuple would
+        /// differ from the last checked one and merely focusing a field and leaving again would commit.
+        checked_connection = connectionTuple();
     }
     const tab = resolveTabForState(event.state);
     /// Keep this history entry's identity in sync with the tab it actually resolves to, restamping
