@@ -394,4 +394,59 @@ TEST(PaimonIncrementalRead, DetectsRecreateOnReusedTargetSnapshotPath)
         << "identity probe must see the recreate that the targeted snapshot load cannot";
 }
 
+/// An external DROP is not atomic: it can remove `snapshot-N` files while `schema/schema-0` is still
+/// the old one.  In that interleaving neither guard on the collecting side can tell the removal from
+/// a Paimon compaction gap — the existence probe sees a missing file, and the pre-commit identity
+/// re-validation still sees the unchanged old `timeMillis` — so the watermark does advance past
+/// snapshots that the DROP, not compaction, removed.  What must not happen is the recreated table
+/// inheriting that watermark under the reused `keeper_path` and skipping its first snapshots, so the
+/// watermark is committed together with the table generation it belongs to and discarded when that
+/// generation no longer matches.  This test walks exactly that ordering.
+TEST(PaimonIncrementalRead, DiscardsWatermarkFromAnEarlierTableGeneration)
+{
+    ScopedTempDir tmp("paimon_watermark_generation");
+    auto table = tmp.path / "test.db" / "test_table";
+    auto schema0 = table / Paimon::PAIMON_SCHEMA_DIR / (std::string(Paimon::PAIMON_SCHEMA_PREFIX) + "0");
+    const auto snapshot_path = [&](int id)
+    { return table / Paimon::PAIMON_SNAPSHOT_DIR / (std::string(Paimon::PAIMON_SNAPSHOT_PREFIX) + std::to_string(id)); };
+
+    writeFile(schema0, R"({"version":3,"timeMillis":1000})");
+    for (int id : {1, 2, 3})
+        writeFile(snapshot_path(id), makeSnapshotJson(id));
+
+    auto storage = makeLocalObjectStorage(tmp.path.string());
+    PaimonTableClient client(storage, table.string(), getContext().context);
+
+    /// Identity latched when the ClickHouse table was created, and a watermark committed for it.
+    const Int64 old_generation = PaimonMetadata::readSchemaZeroTimeMillis(client);
+    EXPECT_EQ(old_generation, 1000);
+    EXPECT_TRUE(PaimonMetadata::isCommittedWatermarkFromSameTable(old_generation, old_generation));
+
+    /// First half of a non-atomic external DROP: `snapshot-2` is gone, `schema-0` is untouched.
+    fs::remove(snapshot_path(2));
+    EXPECT_TRUE(PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot_path(2).string()))
+        << "a deleted snapshot file is indistinguishable from a compaction gap at this point";
+    EXPECT_EQ(PaimonMetadata::readSchemaZeroTimeMillis(client), old_generation)
+        << "the identity re-validation before the commit cannot see this half of the DROP either";
+    /// So a watermark may legitimately be committed for snapshot 3 under the old generation here.
+
+    /// Second half: the re-CREATE rewrites `schema-0` and restarts snapshot numbering from 1.  The
+    /// recreated table's own snapshot-1 is byte-comparable to the old one, so only the generation
+    /// marker distinguishes the two watermarks.
+    fs::remove_all(table);
+    writeFile(schema0, R"({"version":3,"timeMillis":2000})");
+    writeFile(snapshot_path(1), makeSnapshotJson(1));
+
+    const Int64 new_generation = PaimonMetadata::readSchemaZeroTimeMillis(client);
+    EXPECT_EQ(new_generation, 2000);
+    EXPECT_FALSE(PaimonMetadata::isCommittedWatermarkFromSameTable(old_generation, new_generation))
+        << "the watermark of the dropped table must not be inherited by the recreated one";
+    EXPECT_TRUE(PaimonMetadata::isCommittedWatermarkFromSameTable(new_generation, new_generation));
+
+    /// Watermarks written before generation tracking carry no marker and keep the previous
+    /// behaviour, and a table whose identity was not latched has nothing to compare against.
+    EXPECT_TRUE(PaimonMetadata::isCommittedWatermarkFromSameTable(std::nullopt, new_generation));
+    EXPECT_TRUE(PaimonMetadata::isCommittedWatermarkFromSameTable(old_generation, 0));
+}
+
 #endif

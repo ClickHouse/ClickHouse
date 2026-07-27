@@ -659,7 +659,11 @@ ObjectIterator PaimonMetadata::iterate(
             /// (fail-close); the collected batch is discarded and re-read after the user recreates
             /// the ClickHouse table.
             validateTableIdentity();
-            stream_state->setCommittedSnapshot(*last_consumed_snapshot_id);
+            /// The watermark is recorded together with the table generation it belongs to, so a
+            /// watermark advanced past `snapshot-N` files that a non-atomic external DROP removed
+            /// before it touched `schema-0` (indistinguishable from a compaction gap here) cannot
+            /// later be inherited by the recreated table — see getCommittedSnapshotId.
+            stream_state->setCommittedSnapshot(*last_consumed_snapshot_id, persistent_components.schema0_time_millis);
         }
     }
     else
@@ -678,11 +682,51 @@ bool PaimonMetadata::isIncrementalReadEnabled() const
     return persistent_components.hasStreamState();
 }
 
+bool PaimonMetadata::isCommittedWatermarkFromSameTable(std::optional<Int64> committed_table_identity, Int64 current_table_identity)
+{
+    /// Identity was not latched at create time: there is nothing to compare against, so the
+    /// watermark is taken at face value (same as before identity tracking existed).
+    if (current_table_identity == 0)
+        return true;
+    /// A watermark written before identity tracking existed carries no generation marker.  It is
+    /// attributed to the current table: that is the pre-existing behaviour, and the marker is
+    /// recorded on the next commit, so this window closes after one committed batch.
+    if (!committed_table_identity.has_value())
+        return true;
+    return *committed_table_identity == current_table_identity;
+}
+
 std::optional<Int64> PaimonMetadata::getCommittedSnapshotId() const
 {
     if (!persistent_components.hasStreamState())
         return std::nullopt;
-    return persistent_components.stream_state->getCommittedSnapshotId();
+
+    auto committed_snapshot_id = persistent_components.stream_state->getCommittedSnapshotId();
+    if (!committed_snapshot_id.has_value())
+        return std::nullopt;
+
+    /// The watermark is a bare snapshot id, so it is only meaningful for the table generation it was
+    /// committed for.  An external DROP is not atomic: it can remove `snapshot-N` files while
+    /// `schema/schema-0` is still the old one, and such a missing snapshot is indistinguishable from
+    /// a compaction gap for the existence probe in getSnapshotsBetween — so the watermark can be
+    /// advanced past snapshots that the DROP, not compaction, removed.  A re-CREATE at the same path
+    /// then restarts snapshot numbering from 1, and inheriting that watermark under the reused
+    /// `keeper_path` would skip the new table's data.  The recorded generation marker catches it:
+    /// the recreated table has a different `schema-0` `timeMillis`, so the stale watermark is
+    /// discarded and the new table is read from its beginning instead of being partly skipped.
+    auto committed_table_identity = persistent_components.stream_state->getCommittedTableIdentity();
+    if (!isCommittedWatermarkFromSameTable(committed_table_identity, persistent_components.schema0_time_millis))
+    {
+        LOG_WARNING(log,
+            "Committed snapshot {} in Keeper at {} belongs to a different generation of the underlying Paimon table "
+            "(recorded schema-0 timeMillis {}, current {}); discarding it and reading the current table from its "
+            "first snapshot instead of skipping data.",
+            *committed_snapshot_id, persistent_components.stream_state->getKeeperPath(),
+            *committed_table_identity, persistent_components.schema0_time_millis);
+        return std::nullopt;
+    }
+
+    return committed_snapshot_id;
 }
 
 void PaimonMetadata::commitSnapshot(Int64 snapshot_id)
@@ -692,7 +736,7 @@ void PaimonMetadata::commitSnapshot(Int64 snapshot_id)
         LOG_WARNING(log, "commitSnapshot called but incremental read is disabled");
         return;
     }
-    persistent_components.stream_state->setCommittedSnapshot(snapshot_id);
+    persistent_components.stream_state->setCommittedSnapshot(snapshot_id, persistent_components.schema0_time_millis);
 }
 
 void PaimonMetadata::scheduleBackgroundRefresh()

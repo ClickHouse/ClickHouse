@@ -19,6 +19,8 @@ namespace DB
 /// Keeper path structure:
 ///   {keeper_path}/
 ///   ├── committed_snapshot      # Last consumed snapshot ID (advanced at read time)
+///   ├── committed_table_identity # `schema-0` `timeMillis` of the table generation the
+///   │                            # watermark above belongs to (written in the same transaction)
 ///   ├── processing_lock         # Ephemeral lock to prevent concurrent incremental reads
 ///   └── replicas/
 ///       └── {replica_name}/
@@ -55,14 +57,20 @@ public:
     /// Get the last committed snapshot ID, returns -1 if none
     std::optional<Int64> getCommittedSnapshotId() const;
 
+    /// Get the table-generation marker (`schema-0` `timeMillis`) the committed watermark was
+    /// persisted for, if it was recorded.  Absent for a watermark written before identity
+    /// tracking existed, or when the identity was not latched at create time.
+    std::optional<Int64> getCommittedTableIdentity() const;
+
     /// Acquire processing lock (ephemeral). Throws on contention.
     void acquireProcessingLock();
 
     /// Release processing lock (best-effort).
     void releaseProcessingLock();
 
-    /// Commit snapshot as successfully processed
-    void setCommittedSnapshot(Int64 snapshot_id);
+    /// Commit snapshot as successfully processed, together with the table generation
+    /// (`schema-0` `timeMillis`) it belongs to.  Pass 0 when the identity is not latched.
+    void setCommittedSnapshot(Int64 snapshot_id, Int64 table_identity);
 
     /// Initialize Keeper nodes if they don't exist
     void initializeKeeperNodes();
@@ -106,6 +114,7 @@ private:
 
     // Keeper node names
     static constexpr auto COMMITTED_SNAPSHOT_NODE = "committed_snapshot";
+    static constexpr auto COMMITTED_TABLE_IDENTITY_NODE = "committed_table_identity";
     static constexpr auto PROCESSING_LOCK_NODE = "processing_lock";
     static constexpr auto REPLICAS_NODE = "replicas";
     static constexpr auto IS_ACTIVE_NODE = "is_active";

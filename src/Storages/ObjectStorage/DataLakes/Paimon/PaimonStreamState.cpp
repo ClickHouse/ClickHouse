@@ -67,6 +67,16 @@ std::optional<Int64> PaimonStreamState::getCommittedSnapshotId() const
     return parse<Int64>(*value);
 }
 
+std::optional<Int64> PaimonStreamState::getCommittedTableIdentity() const
+{
+    auto component_guard = Coordination::setCurrentComponent("PaimonStreamState::getCommittedTableIdentity");
+    auto value = readFromKeeper(fs_keeper_path / COMMITTED_TABLE_IDENTITY_NODE);
+    if (!value)
+        return std::nullopt;
+
+    return parse<Int64>(*value);
+}
+
 void PaimonStreamState::acquireProcessingLock()
 {
     auto component_guard = Coordination::setCurrentComponent("PaimonStreamState::acquireProcessingLock");
@@ -211,14 +221,15 @@ void PaimonStreamState::deactivate()
     LOG_INFO(log, "Paimon replica {} deactivated", replica_name);
 }
 
-void PaimonStreamState::setCommittedSnapshot(Int64 snapshot_id)
+void PaimonStreamState::setCommittedSnapshot(Int64 snapshot_id, Int64 table_identity)
 {
     auto component_guard = Coordination::setCurrentComponent("PaimonStreamState::setCommittedSnapshot");
     std::lock_guard lock(mutex);
 
-    LOG_DEBUG(log, "Committing snapshot {} to Keeper", snapshot_id);
+    LOG_DEBUG(log, "Committing snapshot {} (table identity {}) to Keeper", snapshot_id, table_identity);
 
     auto committed_path = fs_keeper_path / COMMITTED_SNAPSHOT_NODE;
+    auto identity_path = fs_keeper_path / COMMITTED_TABLE_IDENTITY_NODE;
 
     Coordination::Requests ops;
 
@@ -228,6 +239,21 @@ void PaimonStreamState::setCommittedSnapshot(Int64 snapshot_id)
         ops.emplace_back(zkutil::makeSetRequest(committed_path, toString(snapshot_id), -1));
     else
         ops.emplace_back(zkutil::makeCreateRequest(committed_path, toString(snapshot_id), zkutil::CreateMode::Persistent));
+
+    /// The watermark is a bare snapshot id, and snapshot numbering restarts from 1 in a table that
+    /// an external DROP + re-CREATE laid out at the same path, so the id alone does not say which
+    /// table generation it belongs to.  Record the generation marker in the same transaction, so a
+    /// watermark is never observable without the identity it was committed for.  `table_identity`
+    /// is 0 when the identity was not latched at create time (see PaimonMetadata::validateTableIdentity);
+    /// nothing is known to record then, and the node is left as is.
+    if (table_identity != 0)
+    {
+        keeper->checkExistsAndGetCreateAncestorsOps(identity_path, ops);
+        if (keeper->exists(identity_path))
+            ops.emplace_back(zkutil::makeSetRequest(identity_path, toString(table_identity), -1));
+        else
+            ops.emplace_back(zkutil::makeCreateRequest(identity_path, toString(table_identity), zkutil::CreateMode::Persistent));
+    }
 
     Coordination::Responses responses;
     auto code = keeper->tryMulti(ops, responses);
