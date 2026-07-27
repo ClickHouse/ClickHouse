@@ -419,7 +419,6 @@
     "exclude_materialize_skip_indexes_on_insert": "/reference/settings/session-settings/other",
     "execute_exists_as_scalar_subquery": "/reference/settings/session-settings/other",
     "explain_query_plan_default": "/reference/settings/session-settings/other",
-    "explain_syntax_single_record": "/reference/settings/session-settings/other",
     "external_storage_connect_timeout_sec": "/reference/settings/session-settings/external-storage",
     "external_storage_max_read_bytes": "/reference/settings/session-settings/external-storage",
     "external_storage_max_read_rows": "/reference/settings/session-settings/external-storage",
