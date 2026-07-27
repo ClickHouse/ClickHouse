@@ -184,7 +184,9 @@ def test_split_cache_system_files_no_eviction(started_cluster, storage_policy):
         `wait_for_cache_initialized` only reports that the cache became usable; background
         loading keeps adding System segments afterwards. Sample until the set stops changing,
         otherwise a partially populated snapshot is compared and the assertions below measure
-        that race instead of eviction.
+        that race instead of eviction. Failing to stabilize is itself a test failure, not a
+        signal to fall back to whatever was last observed: a returned-but-still-moving set
+        would let the caller compare against a partial snapshot, defeating this wait entirely.
         """
         previous = None
         for _ in range(max_attempts):
@@ -193,7 +195,10 @@ def test_split_cache_system_files_no_eviction(started_cluster, storage_policy):
                 return current
             previous = current
             time.sleep(0.5)
-        return previous
+        raise Exception(
+            f"System segment set for cache '{filesystem_cache_name}' did not stabilize "
+            f"after {max_attempts} attempts"
+        )
 
     baseline = wait_for_stable_system_segments()
     assert len(baseline) > 0
