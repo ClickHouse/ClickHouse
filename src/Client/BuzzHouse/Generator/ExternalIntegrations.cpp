@@ -1715,7 +1715,7 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
         rg.nextInFullRange(),
         escapeJSON(t.getDatabaseName()),
         escapeJSON(t.getBaseName(false)),
-        t.file_format.has_value() ? InOutFormat_Name(t.file_format.value()).substr(6) : "any",
+        t.file_format.value_or("any"),
         t.isDeterministic() ? "1" : "0");
     for (const auto & entry : entries)
     {
@@ -1853,7 +1853,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
                           te->add_params()->set_svalue(minio.secret);
                           if (t.isAnyIcebergEngine() && t.file_format.has_value() && rg.nextMediumNumber() < 96)
                           {
-                              te->add_params()->set_svalue(InOutFormat_Name(t.file_format.value()).substr(6));
+                              te->add_params()->set_svalue(t.file_format.value());
                               if (t.file_comp.has_value() && rg.nextMediumNumber() < 96)
                               {
                                   te->add_params()->set_svalue(t.file_comp.value());
@@ -1888,7 +1888,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
         te->add_params()->set_svalue(fmt::format("{}:{}", host, port));
         te->add_params()->set_svalue(t.topic.value()); /// topic
         te->add_params()->set_svalue(t.group.value()); /// group
-        te->add_params()->set_in_out(t.file_format.has_value() ? t.file_format.value() : InOutFormat::INOUT_CSV);
+        te->add_params()->set_in_out(t.file_format.value_or("CSV"));
     }
 }
 

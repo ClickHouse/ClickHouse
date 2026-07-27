@@ -25,6 +25,18 @@
    a false-positive oracle mismatch. (`IS TRUE` itself is only accepted since
    https://github.com/ClickHouse/ClickHouse/pull/99997; before that the
    unpatched oracle was a guaranteed `SYNTAX_ERROR`.)
+4. Stop `GeneralQueryPartitioningWhere.check` from turning an `IgnoreMeException`
+   into an `AssertionError`. When the WHERE-stripped baseline query hits an
+   expected (whitelisted) error, `ComparatorHelper.getResultSetFirstColumnAsString`
+   sees a `null` result set and throws `IgnoreMeException` - a "skip this
+   iteration" control-flow signal, not a bug. The upstream oracle catches it in
+   `catch (Exception e)` and, for simple queries (no joins, <= 2 tables),
+   re-throws it as `AssertionError: null` ("You probably triggered an error in
+   the DBMS ..."). Against ClickHouse that fires constantly, so the WHERE oracle
+   (and the QUERY_PARTITIONING composite, which contains it) is a guaranteed
+   false-positive failure. Let the `IgnoreMeException` propagate instead; genuine
+   unexpected errors (a re-thrown `SQLException`, or an `AssertionError` with a
+   message) are unaffected and still reported.
 """
 
 import argparse
@@ -105,6 +117,39 @@ def patch_norec_oracle(repo: pathlib.Path) -> None:
     src.write_text(text.replace(old_postfix, new_postfix))
 
 
+def patch_where_oracle(repo: pathlib.Path) -> None:
+    src = (
+        repo / "src" / "sqlancer" / "general" / "oracle"
+        / "GeneralQueryPartitioningWhere.java"
+    )
+    text = src.read_text()
+    # The baseline (WHERE-stripped) query's catch block escalates any exception
+    # to an AssertionError for simple queries. An IgnoreMeException here is the
+    # benign "expected error, skip this iteration" signal and must propagate
+    # instead - otherwise every whitelisted error on a simple select becomes a
+    # false-positive `AssertionError: null`.
+    anchor = (
+        "        } catch (Exception e) {\n"
+        "            if (select.getJoinList().size() == 0 && select.getFromList().size() <= 2) {\n"
+    )
+    replacement = (
+        "        } catch (Exception e) {\n"
+        "            // ClickHouse patch: an IgnoreMeException means the baseline query hit an\n"
+        "            // expected/whitelisted error and was skipped (null result set); it is a\n"
+        "            // skip-this-iteration signal, not a DBMS bug, so propagate it instead of\n"
+        "            // escalating it into a false-positive AssertionError below.\n"
+        "            if (e instanceof sqlancer.IgnoreMeException) {\n"
+        "                throw e;\n"
+        "            }\n"
+        "            if (select.getJoinList().size() == 0 && select.getFromList().size() <= 2) {\n"
+    )
+    if anchor not in text:
+        sys.exit(f"failed to locate the WHERE-oracle catch block in {src}")
+    if text.count(anchor) != 1:
+        sys.exit(f"expected exactly one WHERE-oracle catch block in {src}")
+    src.write_text(text.replace(anchor, replacement))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("repo", help="Path to the SQLancer++ checkout")
@@ -122,6 +167,7 @@ def main() -> None:
     patch_pom(repo, version)
     patch_jdbc_properties(repo)
     patch_norec_oracle(repo)
+    patch_where_oracle(repo)
 
 
 if __name__ == "__main__":

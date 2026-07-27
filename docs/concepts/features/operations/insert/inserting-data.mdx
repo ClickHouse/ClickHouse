@@ -172,8 +172,7 @@ We'll be using the [Hacker News dataset](/get-started/sample-datasets/hacker-new
     
 
 <Steps>
-<Step>
-### Download the CSV {#download-csv}
+<Step title="Download the CSV" id="download-csv">
 
 Run the following command to download a CSV version of the dataset from our public S3 bucket:
 
@@ -183,8 +182,7 @@ wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hackne
 
 At 4.6GB, and 28m rows, this compressed file should take 5-10 minutes to download.
 </Step>
-<Step>
-### Create the table {#create-table}
+<Step title="Create the table" id="create-table">
 
 With `clickhouse-server` running, you can create an empty table with the following schema directly from the command line using `clickhouse-client` in batch mode:
 
@@ -214,8 +212,7 @@ _EOF
 
 If there are no errors, then the table has been successfully created. In the command above single quotes are used around the heredoc delimiter (`_EOF`) to prevent any interpolation. Without single quotes it would be necessary to escape the backticks around the column names. 
 </Step>
-<Step>
-### Insert the data from the command line {#insert-data-via-cmd}
+<Step title="Insert the data from the command line" id="insert-data-via-cmd">
 
 Next run the command below to insert the data from the file you downloaded earlier into your table:
 
@@ -242,8 +239,7 @@ clickhouse-client --query "SELECT formatReadableQuantity(count(*)) FROM hackerne
 28.74 million
 ```
 </Step>
-<Step>
-### inserting data via command line with curl {#insert-using-curl}
+<Step title="inserting data via command line with curl" id="insert-using-curl">
 
 In the previous steps you first downloaded the csv file to your local machine using `wget`. It is also possible to directly insert the data from the remote URL using a single command.
 

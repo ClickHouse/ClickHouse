@@ -272,8 +272,8 @@ export const IntegrationGrid = () => {
       return {
         slug: item.slug.startsWith("/") ? item.slug : `/${item.slug}`,
         docsLink: item.docsLink,
-        integration_logo: item.logo?.url ? `https://staging-cms.clickhouse.com${item.logo.url}` : "",
-        integration_logo_dark: item.logo_dark?.url ? `https://staging-cms.clickhouse.com${item.logo_dark.url}` : undefined,
+        integration_logo: item.logo?.url ? `https://clickhouse.com${item.logo.url}` : "",
+        integration_logo_dark: item.logo_dark?.url ? `https://clickhouse.com${item.logo_dark.url}` : undefined,
         integration_type: integrationTypes,
         integration_title: item.name,
         integration_tier: integrationTier
@@ -296,27 +296,6 @@ export const IntegrationGrid = () => {
       }
       const fetchIntegrations = async () => {
         try {
-          const base = typeof window !== "undefined" && window.location.pathname.startsWith("/docs") ? "/docs" : ""
-          const fallbackResponse = await fetch(base + "https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/integrations-fallback.json", {
-            cache: "force-cache"
-          })
-
-          if (fallbackResponse.ok) {
-            const fallbackData = await fallbackResponse.json()
-            const transformedData = transformCMSData(fallbackData.data || [])
-            setIntegrations(transformedData)
-            cacheIntegrations(transformedData)
-            setError(null)
-            setLoading(false)
-            console.log("Dados de integrações de fallback carregados")
-          } else {
-            console.warn("Arquivo de fallback não disponível, tentando apenas o CMS")
-          }
-        } catch (fallbackErr) {
-          console.error("Falha ao carregar dados de integrações de fallback:", fallbackErr)
-        }
-
-        try {
           const controller = new AbortController()
           const timeoutId = setTimeout(() => {
             controller.abort()
@@ -336,7 +315,7 @@ export const IntegrationGrid = () => {
           clearTimeout(timeoutId)
 
           if (!response.ok) {
-            throw new Error(`Erro HTTP! status: ${response.status}`)
+            throw new Error(`HTTP error! status: ${response.status}`)
           }
 
           const data = await response.json()
@@ -349,7 +328,7 @@ export const IntegrationGrid = () => {
         } catch (cmsErr) {
           if (cmsErr instanceof Error) {
             if (cmsErr.name === "AbortError") {
-              console.log("A requisição ao CMS foi cancelada por timeout, usando dados de fallback")
+              console.log("A requisição ao CMS foi cancelada por timeout")
             } else {
               console.error("Erro ao carregar integrações do CMS:", cmsErr.message)
             }
@@ -663,7 +642,7 @@ export const IntegrationGrid = () => {
               style={{ padding: "6px 12px" }}
               onClick={() => setSelectedFilter("All")}
             >
-              Todos
+              All
             </button>
             {integrationTypes.map((type) => (
               <button
@@ -691,7 +670,7 @@ export const IntegrationGrid = () => {
               style={{ padding: "6px 12px" }}
               onClick={() => setSelectedTier("All")}
             >
-              Todos os níveis
+              All tiers
             </button>
             {integrationTiers.map((tier) => (
               <button

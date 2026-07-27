@@ -19,8 +19,7 @@ import { Image } from "/snippets/components/Image.jsx";
 * The initial load process requires a user-provided Google Cloud Storage (GCS) bucket for staging. We recommend creating a dedicated bucket for your ClickPipe following the [official documentation](https://docs.cloud.google.com/storage/docs/creating-buckets). In the future, the intermediary bucket will be provided and managed by ClickPipes.
 
 <Steps>
-<Step>
-## Select the data source {#1-select-the-data-source}
+<Step title="Select the data source" id="1-select-the-data-source">
 
 **1.** In ClickHouse Cloud, select **Data sources** in the main navigation menu and click **Create ClickPipe**.
 
@@ -30,8 +29,7 @@ import { Image } from "/snippets/components/Image.jsx";
 
     <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="Select BigQuery tile" size="lg" border/>
 </Step>
-<Step>
-## Set up your ClickPipe connection {#2-setup-your-clickpipe-connection}
+<Step title="Set up your ClickPipe connection" id="2-setup-your-clickpipe-connection">
 
 To set up a new ClickPipe, you must provide details on how to connect to and authenticate with your BigQuery data warehouse, as well as a staging GCS bucket.
 
@@ -45,13 +43,11 @@ To set up a new ClickPipe, you must provide details on how to connect to and aut
 
 **4.** Click **Next** to validate.
 </Step>
-<Step>
-## Configure your ClickPipe {#3-configure-your-clickpipe}
+<Step title="Configure your ClickPipe" id="3-configure-your-clickpipe">
 
 Depending on the size of your BigQuery dataset, or the total size of the tables you want to sync, you might need to adjust the default ingestion settings for the ClickPipe.
 </Step>
-<Step>
-## Configure tables {#4-configure-tables}
+<Step title="Configure tables" id="4-configure-tables">
 
 **1.** Select the ClickHouse database where you want the BigQuery tables to be replicated to. You can select an existing database or create a new one.
 
@@ -67,8 +63,7 @@ Depending on the size of your BigQuery dataset, or the total size of the tables 
 
     <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp" alt="Permissions" size="lg" border/>
 </Step>
-<Step>
-## Configure permissions {#6-configure-permissions}
+<Step title="Configure permissions" id="6-configure-permissions">
 
 Finally, you can configure permissions for the internal ClickPipes user.
 
@@ -76,8 +71,7 @@ Finally, you can configure permissions for the internal ClickPipes user.
 - `Full access`: full access to the cluster. Required if you use materialized views or dictionary with the destination table.
 - `Only destination`: insert permissions to the destination table only.
 </Step>
-<Step>
-## Complete setup {#7-complete-setup}
+<Step title="Complete setup" id="7-complete-setup">
 
 Click **Create ClickPipe** to complete the setup. You'll be redirected to the overview page, where you can the progress of the initial load and click through to see the details for your BigQuery ClickPipes.
 

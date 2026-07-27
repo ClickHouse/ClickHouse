@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <filesystem>
 #include <mutex>
 #include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
@@ -53,6 +54,7 @@ class MarkCache;
 class UncompressedCache;
 class MergeTreeTransaction;
 class PackedFilesReader;
+struct IMergeTreeIndex;
 
 struct MergeTreeReadTaskInfo;
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
@@ -64,6 +66,8 @@ class DeleteBitmapCache;
 using DeleteBitmapCachePtr = std::shared_ptr<DeleteBitmapCache>;
 
 class VersionMetadata;
+class WriteBuffer;
+class ReadBuffer;
 enum class DataPartRemovalState : uint8_t
 {
     NOT_ATTEMPTED,
@@ -106,7 +110,8 @@ public:
         const MergeTreePartInfo & info_,
         const MutableDataPartStoragePtr & data_part_storage_,
         Type part_type_,
-        const IMergeTreeDataPart * parent_part_);
+        const IMergeTreeDataPart * parent_part_,
+        bool part_may_exist_on_disk = true);
 
     virtual bool isStoredOnReadonlyDisk() const = 0;
     virtual bool isStoredOnRemoteDisk() const = 0;
@@ -128,6 +133,12 @@ public:
 
     /// Returns true if there is materialized index with specified name in part.
     bool hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const;
+
+    /// True iff any of @index's substreams (base plus side streams like .dct/.pst for text indices)
+    /// is stored inside this part's skp_idx.packed archive. Probing every substream, not just
+    /// .idx/.idx2, keeps a mixed-layout index from looking absent and losing its packed side
+    /// streams. Returns false on storages without a packed archive.
+    bool isSkipIndexInPackedArchive(const IMergeTreeIndex & skip_index) const;
 
     /// Return information about column size on disk for all columns in part
     ColumnSize getTotalColumnsSize() const;
@@ -152,6 +163,13 @@ public:
     void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t new_metadata_version);
 
     void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_);
+
+    /// Re-home the small, part-lifetime metadata that build paths may populate outside the
+    /// dedicated MergeTree arena (`partition`, `ttl_infos`, `expired_columns`, and for patch parts
+    /// `source_parts_set`) into that arena. A cheap copy of small objects; call once these members
+    /// are final. `columns` / `serializations` are handled by `setColumns`, the minmax index by
+    /// `setMinMaxIndex` / the population sites.
+    void moveMetadataToDedicatedArena();
 
     /// Version of metadata for part (columns, pk and so on)
     int32_t getMetadataVersion() const { return metadata_version; }
@@ -238,11 +256,6 @@ public:
     std::pair<time_t, time_t> getMinMaxTime() const;
 
     bool isEmpty() const { return rows_count == 0; }
-
-    /// Compute part block id for zero level part. Otherwise throws an exception.
-    /// If token is not empty, block id is calculated based on it instead of block data
-    UInt128 getPartBlockIDHash() const;
-    String getNewPartBlockID() const;
 
     /// Returns true if it's a zero level part.
     bool isZeroLevel() const { return info.min_block == info.max_block; }
@@ -384,6 +397,7 @@ public:
 
         void update(const Block & block, const NamesAndTypesList & columns);
         void merge(const MinMaxIndex & other);
+        Names getProbablyWrittenFiles(const IMergeTreeDataPart & part) const;
         /// For Store
         static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);
         /// For Load
@@ -407,6 +421,14 @@ public:
 
     /// Columns with values, that all have been zeroed by expired ttl
     NameSet expired_columns;
+
+    NameSet invalidated_system_columns;
+    bool isSystemColumnInvalidated(const String & column_name) const;
+    static void writeInvalidatedSystemColumns(WriteBuffer & out, const NameSet & columns);
+    static NameSet readInvalidatedSystemColumns(ReadBuffer & in);
+    static void writeInvalidatedSystemColumnsFile(IDataPartStorage & storage, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
+    static void writeInvalidatedSystemColumnsFile(IDisk & disk, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
+    static void writeInvalidatedSystemColumnsFile(IDiskTransaction & transaction, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
 
     CompressionCodecPtr default_codec;
 
@@ -452,6 +474,13 @@ public:
     UInt64 getExistingBytesOnDisk() const;
 
     size_t getFileSizeOrZero(const String & file_name) const;
+
+    /// Size of a stream's file (data or marks), resolving its on-disk name (original or hashed)
+    /// from checksums; a stream with no checksums entry falls back to the storage (which serves
+    /// e.g. members of skp_idx.packed). Callers get a size without knowing the on-disk name or
+    /// whether the stream is standalone or bundled in an archive.
+    size_t getFileSizeOrZeroResolved(const String & stream_name, const String & extension) const;
+
     auto getFilesChecksums() const { return checksums.files; }
 
     /// Moves a part to detached/ directory and adds prefix to its name
@@ -486,6 +515,11 @@ public:
 
     /// Calculate column and secondary indices sizes on disk.
     void calculateColumnsAndSecondaryIndicesSizesOnDisk() const;
+
+    /// Returns the list of part files in the order they should be written to disk. This list is used to optimize
+    /// the layout of files in packed storage.
+    /// The list can be incomplete, in that case the remaining files should be written in any order.
+    virtual Strings getPreferredFileOrder() const { return COMMON_METADATA_FILES; }
 
     std::optional<String> getRelativePathForPrefix(const String & prefix, bool detached = false, bool broken = false) const;
 
@@ -537,6 +571,12 @@ public:
     /// columns.txt or checksums.txt itself.
     NameSet getFileNamesWithoutChecksums() const;
 
+    /// UNIQUE KEY — real filesystem path of the part's dense-index backing
+    /// file, or `std::nullopt` if absent (legacy part, not-yet-written, or
+    /// non-UK table). Treat as an opaque "is there an on-disk dense index
+    /// for this part?" probe; the backend code owns the format.
+    std::optional<String> getDenseIndexBackingPath() const;
+
     /// UNIQUE KEY — cache-key identity for this part. Prefers the part's
     /// UUID when set (stable across ATTACH / rename); falls back to
     /// disk:path otherwise (unique within the process, sufficient for an
@@ -561,6 +601,9 @@ public:
     static constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
 
     static constexpr auto METADATA_VERSION_FILE_NAME = "metadata_version.txt";
+
+    /// File that lists persisted system columns whose stored values became stale.
+    static constexpr auto INVALIDATED_SYSTEM_COLUMNS_FILE_NAME = "invalidated_system_columns.txt";
 
     /// One of part files which is used to check how many references (I'd like
     /// to say hardlinks, but it will confuse even more) we have for the part
@@ -642,6 +685,11 @@ public:
         const String & extension,
         const IDataPartStorage & storage_);
 
+    /// Resolve a stream's on-disk name (original or hashed) against this part: checksums first
+    /// (no I/O), then the storage, which also resolves streams with no checksums entry (e.g. a
+    /// substream bundled in skp_idx.packed). Mirrors getFileSizeOrZeroResolved.
+    std::optional<String> getStreamNameOrHashResolved(const String & name, const String & extension) const;
+
     static std::optional<String> getStreamNameForColumn(
         const String & column_name,
         const ISerialization::SubstreamPath & substream_path,
@@ -677,6 +725,20 @@ public:
     void removeIfNeeded();
 
 protected:
+    inline static const Strings COMMON_METADATA_FILES =
+    {
+        "uuid.txt",
+        "checksums.txt",
+        "columns.txt",
+        "columns_substreams.txt",
+        "count.txt",
+        "metadata_version.txt",
+        "default_compression_codec.txt",
+        "serialization.json",
+        "partition.dat",
+        "ttl.txt",
+    };
+
     /// Primary key (correspond to primary.idx file).
     /// Lazily loaded in RAM. Contains each index_granularity-th value of primary key tuple.
     /// Note that marks (also correspond to primary key) are not always in RAM, but cached. See MarkCache.h.
@@ -790,6 +852,9 @@ private:
 
     /// Reads columns substreams from columns_substreams.txt.
     void loadColumnsSubstreams();
+
+    /// Reads invalidated_system_columns.txt if present.
+    void loadInvalidatedSystemColumns();
 
     /// Loads marks index granularity into memory
     virtual void loadIndexGranularity();

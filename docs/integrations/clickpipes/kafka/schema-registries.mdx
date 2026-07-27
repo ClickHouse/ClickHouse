@@ -34,7 +34,7 @@ To integrate with a schema registry during ClickPipes configuration, you must us
 
 ClickPipes connects to the schema registry over HTTPS at the URL you provide. The schema registry does not need to be publicly accessible.
 
-If your Kafka brokers are reached through a [reverse private endpoint](/integrations/clickpipes/aws-privatelink) (AWS PrivateLink or GCP Private Service Connect), the schema registry can use the same private connectivity. ClickPipes resolves the registry hostname through the reverse private endpoint's private DNS, so a registry hosted privately alongside your brokers is reachable as long as its hostname resolves to the reverse private endpoint's private IP addresses (via the endpoint's private DNS support or a custom private DNS mapping).
+If your Kafka brokers are reached through a [reverse private endpoint](/integrations/clickpipes/aws-privatelink) (AWS PrivateLink or GCP Private Service Connect), the schema registry can use the same private connectivity. ClickPipes resolves the registry hostname through the reverse private endpoint's private DNS, so a registry hosted privately alongside your brokers is reachable as long as its hostname resolves to the reverse private endpoint's private IP addresses (via the endpoint's private DNS support or a [custom private DNS mapping](/integrations/clickpipes/aws-privatelink#custom-private-dns)).
 
 Keep the following in mind:
 
