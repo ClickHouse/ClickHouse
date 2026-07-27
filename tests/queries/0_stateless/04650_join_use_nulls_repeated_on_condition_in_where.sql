@@ -149,7 +149,7 @@ SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_ou
 -- Also non-regression, for the same reason as the case above: `makeNullableOrLowCardinalityNullable`
 -- early-returns on `isLowCardinalityNullable`, so promoting this column is a no-op and the `ON` and
 -- `WHERE` copies of the predicate are computed on the identical type. Kept as the negative half of
--- the LowCardinality wrapper matrix.
+-- the `LowCardinality` wrapper matrix.
 CREATE TABLE t2_lc_nullable (id Int64, reviewer Int64, tag LowCardinality(Nullable(String))) ENGINE = Memory;
 INSERT INTO t2_lc_nullable VALUES (1, 100, 'x'), (2, 200, NULL);
 
