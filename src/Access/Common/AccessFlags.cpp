@@ -1,4 +1,6 @@
 #include <Access/Common/AccessFlags.h>
+
+#include <array>
 #include <Access/Common/AccessType.h>
 #include <Common/Exception.h>
 #include <boost/algorithm/string/case_conv.hpp>
@@ -232,6 +234,18 @@ namespace
             it_parent->second->addChild(std::move(node));
         }
 
+        /// One entry per access type. Expanding `makeNode` at each of the 258 call sites instead
+        /// compiled to 35 KB, since every call has to materialize four string views; driving it
+        /// from a table costs a loop and some rodata.
+        struct NodeDescriptor
+        {
+            AccessType access_type;
+            std::string_view name;
+            std::string_view aliases;
+            NodeType node_type;
+            std::string_view parent_group_name;
+        };
+
         void makeNodes()
         {
             std::unordered_map<std::string_view, NodePtr> owned_nodes;
@@ -239,11 +253,19 @@ namespace
             size_t next_flag = 0;
 
 #           define MAKE_ACCESS_FLAGS_NODE(name, aliases, node_type, parent_group_name) \
-                makeNode(AccessType::name, #name, aliases, node_type, #parent_group_name, nodes, owned_nodes, next_flag);
+                NodeDescriptor{AccessType::name, #name, aliases, node_type, #parent_group_name},
 
+            static constexpr std::array node_descriptors
+            {
                 APPLY_FOR_ACCESS_TYPES(MAKE_ACCESS_FLAGS_NODE)
+            };
 
 #           undef MAKE_ACCESS_FLAGS_NODE
+
+            for (const auto & descriptor : node_descriptors)
+                makeNode(
+                    descriptor.access_type, descriptor.name, descriptor.aliases, descriptor.node_type,
+                    descriptor.parent_group_name, nodes, owned_nodes, next_flag);
 
             if (!owned_nodes.contains("NONE"))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "'NONE' not declared");
