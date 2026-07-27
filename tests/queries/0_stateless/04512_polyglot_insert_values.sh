@@ -36,9 +36,19 @@ $CLICKHOUSE_CLIENT -q "SELECT sum(flag), count() FROM b"
 # appears in the data section, so it must be absent from the logged query.
 query_id="${CLICKHOUSE_DATABASE}_04512_log"
 $CLICKHOUSE_CLIENT $POLY --query_id="$query_id" -q "INSERT INTO b VALUES (123)"
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+
+# A query_log entry can be written after the client has already received the response, so retry
+# the flush until the entry shows up instead of assuming a single flush is enough.
+data_leak_check=""
+for _ in {1..100}
+do
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+    data_leak_check=$($CLICKHOUSE_CLIENT -q "SELECT query NOT LIKE '%123%' AND query ILIKE 'INSERT INTO%' FROM system.query_log WHERE query_id = '$query_id' AND type = 'QueryStart' AND current_database = currentDatabase()")
+    [ -n "$data_leak_check" ] && break
+    sleep 0.3
+done
 echo "--- query_log omits the inline INSERT data (expect: 1) ---"
-$CLICKHOUSE_CLIENT -q "SELECT query NOT LIKE '%123%' AND query ILIKE 'INSERT INTO%' FROM system.query_log WHERE query_id = '$query_id' AND type = 'QueryStart' AND current_database = currentDatabase()"
+echo "$data_leak_check"
 
 # Multi-statement input is still rejected in polyglot dialect.
 $CLICKHOUSE_CLIENT $POLY -q "SELECT 1; SELECT 2" 2>&1 | grep -om1 "SYNTAX_ERROR"
@@ -101,7 +111,18 @@ $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
 # came from the server instead, query_log would record the query_id as ExceptionBeforeStart.
 oversized_id="${CLICKHOUSE_DATABASE}_04512_oversized"
 $CLICKHOUSE_CLIENT $POLY --multiquery --max_query_size 100 --query_id="$oversized_id" -q "INSERT INTO t VALUES $big_values" 2>&1 | grep -om1 "counts towards max_query_size"
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+
+# This assertion is about the ABSENCE of a log entry, so a single flush could pass spuriously
+# while the entry is still in flight. Run a marker query afterwards and wait until the marker is
+# in query_log: by then the server has certainly logged anything it received before it.
+marker_id="${CLICKHOUSE_DATABASE}_04512_marker"
+$CLICKHOUSE_CLIENT --query_id="$marker_id" -q "SELECT 1" > /dev/null
+for _ in {1..100}
+do
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+    [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE query_id = '$marker_id'")" != "0" ] && break
+    sleep 0.3
+done
 echo "--- oversized query in multiquery mode is rejected on the client, without a server round trip (expect: 0) ---"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE query_id = '$oversized_id'"
 
