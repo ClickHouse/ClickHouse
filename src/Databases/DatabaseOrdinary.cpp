@@ -37,6 +37,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/AsyncLoader.h>
+#include <base/sleep.h>
 #include <Interpreters/TransactionLog.h>
 
 namespace fs = std::filesystem;

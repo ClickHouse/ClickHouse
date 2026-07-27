@@ -21,6 +21,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/scope_guard.h>
+#include <base/sleep.h>
 #include <base/sort.h>
 #include <boost/algorithm/string/join.hpp>
 #include <Poco/Net/HTTPRequest.h>

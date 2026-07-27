@@ -3,9 +3,17 @@
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
+#include <Common/SilkScheduler.h>
 #include <IO/WriteHelpers.h>
 
 #include <base/scope_guard.h>
+#include <base/sleep.h>
+
+#include "config.h"
+
+#if USE_SILK
+#include <silk/fibers/fiber.h>
+#endif
 
 #include <atomic>
 #include <limits>
@@ -52,6 +60,21 @@ Throttler::Throttler(size_t max_speed_, size_t limit_, const char * limit_exceed
     , tokens(static_cast<double>(max_burst))
     , parent(parent_)
 {}
+
+void Throttler::sleep(UInt64 nanoseconds)
+{
+#if USE_SILK
+    /// Blocking on a fiber would stall the borrowed carrier OS thread and every
+    /// fiber queued behind it; suspend just this fiber instead. Plain threads
+    /// and proxy fibers (id 0) keep the blocking sleep.
+    if (currentSilkFiberId() != 0)
+    {
+        silk::FiberScheduler::sleep(nanoseconds);
+        return;
+    }
+#endif
+    sleepForNanoseconds(nanoseconds);
+}
 
 bool Throttler::throttle(size_t amount, size_t max_block_ns)
 {
