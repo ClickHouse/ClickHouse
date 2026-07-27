@@ -1,0 +1,145 @@
+---
+title: "如何确认查询是否使用了 PROJECTION？"
+date: 2022-07-10
+description: "了解如何通过样本数据测试并使用 EXPLAIN，检查 ClickHouse 查询是否使用了 PROJECTION。"
+tags: ['数据建模']
+keywords: ['PROJECTION']
+---
+
+<div id="question">
+  ## 问题
+</div>
+
+如何判断是否使用了PROJECTION？
+
+<div id="answer">
+  ## 解答
+</div>
+
+1. 创建一个示例数据库
+
+```
+CREATE database db1;
+```
+
+2. 创建一个示例表，并将 column1 用作主键
+
+```
+CREATE table db1.table1_projections
+(
+ column1 Int32,
+ column2 Int32
+)
+engine = MergeTree()
+order by column1;
+```
+
+3. 添加PROJECTION `for_column2`，将 column2 用作主键
+
+```
+ALTER table db1.table1_projections add projection for_column2
+(
+  select * 
+  order by column2
+);
+```
+
+4. 插入测试数据
+
+*这会向 column1 和 column2 插入 100000 行随机数
+
+```
+INSERT INTO db1.table1_projections
+select 
+ floor(randNormal(50, 5)) as column1,
+ floor(randUniform(1, 100)) as column2
+from numbers(100000);
+```
+
+5. 检查样本数据
+
+```
+clickhouse-cloud :) SELECT * from db1.table1_projections limit 5;
+
+SELECT *
+FROM db1.table1_projections
+LIMIT 5
+
+Query id: d6940799-b507-4a5e-9843-df55ebe818ab
+
+┌─column1─┬─column2─┐
+│      28 │      41 │
+│      29 │      12 │
+│      30 │      73 │
+│      30 │      75 │
+│      30 │      70 │
+└─────────┴─────────┘
+```
+
+6. 测试其是否使用了包含 column1 的原始表：
+
+```
+clickhouse-cloud :) explain indexes = 1 
+                    SELECT count() from db1.table1_projections where column1 > 50;
+
+EXPLAIN indexes = 1
+SELECT count()
+FROM db1.table1_projections
+WHERE column1 > 50
+
+Query id: e04d5236-1a05-4f1f-9502-7e41986beb44
+
+┌─explain────────────────────────────────────────────┐
+│ Expression ((Projection + Before ORDER BY))        │
+│   Aggregating                                      │
+│     Expression (Before GROUP BY)                   │
+│       Filter (WHERE)                               │
+│         ReadFromMergeTree (db1.table1_projections) │
+│         Indexes:                                   │
+│           PrimaryKey                               │
+│             Condition: true                        │
+│             Parts: 1/1                             │
+│             Granules: 12/12                        │
+└────────────────────────────────────────────────────┘
+```
+
+*注意，这里读取的是 `db1.table1_projections`
+
+7. 在 WHERE 子句中使用 column2，测试从PROJECTION中读取
+
+```
+clickhouse-cloud :) explain indexes = 1 
+                    SELECT * from db1.table1_projections where column2 > 50;
+
+EXPLAIN indexes = 1
+SELECT *
+FROM db1.table1_projections
+WHERE column2 > 50
+
+Query id: d2b20e01-93bf-4b60-a370-4aac7b454267
+
+┌─explain─────────────────────────────────────┐
+│ Expression ((Projection + Before ORDER BY)) │
+│   Filter                                    │
+│     ReadFromMergeTree (for_column2)         │
+│     Indexes:                                │
+│       PrimaryKey                            │
+│         Keys:                               │
+│           column2                           │
+│         Condition: (column2 in [51, +Inf))  │
+│         Parts: 1/1                          │
+│         Granules: 6/12                      │
+└─────────────────────────────────────────────┘
+```
+
+*请注意，现在使用的是 `for_column2` PROJECTION。
+
+**更多信息**
+
+PROJECTION：
+[https://clickhouse.com/docs/sql-reference/statements/alter/projection](https://clickhouse.com/docs/sql-reference/statements/alter/projection)
+
+`numbers` 表函数： [https://clickhouse.com/docs/sql-reference/table-functions/numbers](https://clickhouse.com/docs/sql-reference/table-functions/numbers)s
+
+关于生成随机数据的博客：
+[https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse)

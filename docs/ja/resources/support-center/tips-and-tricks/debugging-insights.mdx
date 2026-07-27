@@ -1,0 +1,214 @@
+---
+slug: /community-wisdom/debugging-insights
+sidebarTitle: 'デバッグの知見'
+doc_type: 'guide'
+keywords: [
+  'ClickHouse トラブルシューティング',
+  'ClickHouse エラー',
+  '遅いクエリ',
+  'メモリの問題', 
+  '接続の問題',
+  'パフォーマンス最適化',
+  'データベースエラー',
+  '設定の問題',
+  'デバッグ',
+  '解決策'
+]
+title: 'Lessons - デバッグの知見'
+description: '遅いクエリ、メモリエラー、接続の問題、設定の問題など、ClickHouse でよくある問題の解決策を見つけましょう。'
+---
+
+*このガイドは、コミュニティミートアップで得られた知見をまとめたコレクションの一部です。実運用に役立つ解決策や知見をさらに知りたい場合は、[問題別に見る](/ja/resources/support-center/tips-and-tricks/community-wisdom)ことができます。*
+*運用コストの高さに悩んでいますか？ [コスト最適化](/ja/resources/support-center/tips-and-tricks/cost-optimization) に関するコミュニティ知見ガイドをご覧ください。*
+
+<div id="essential-system-tables">
+  ## 重要なシステムテーブル
+</div>
+
+以下のシステムテーブルは、本番環境でのデバッグに不可欠です:
+
+<div id="system-errors">
+  ### system.errors
+</div>
+
+ClickHouse インスタンスで現在発生しているすべてのエラーを表示します。
+
+```sql
+SELECT name, value, changed 
+FROM system.errors 
+WHERE value > 0 
+ORDER BY value DESC;
+```
+
+<div id="system-replicas">
+  ### system.replicas
+</div>
+
+クラスターの健全性を監視するためのレプリケーションラグとステータス情報が含まれます。
+
+```sql
+SELECT database, table, replica_name, absolute_delay, queue_size, inserts_in_queue
+FROM system.replicas 
+WHERE absolute_delay > 60
+ORDER BY absolute_delay DESC;
+```
+
+<div id="system-replication-queue">
+  ### system.replication_queue
+</div>
+
+レプリケーションの問題を診断するための詳細情報を提供します。
+
+```sql
+SELECT database, table, replica_name, position, type, create_time, last_exception
+FROM system.replication_queue 
+WHERE last_exception != ''
+ORDER BY create_time DESC;
+```
+
+<div id="system-merges">
+  ### system.merges
+</div>
+
+現在実行中のマージ処理を表示し、処理が滞っているプロセスを特定できます。
+
+```sql
+SELECT database, table, elapsed, progress, is_mutation, total_size_bytes_compressed
+FROM system.merges 
+ORDER BY elapsed DESC;
+```
+
+<div id="system-parts">
+  ### system.parts
+</div>
+
+パーツ数の監視や断片化の問題の特定に不可欠です。
+
+```sql
+SELECT database, table, count() as part_count
+FROM system.parts 
+WHERE active = 1
+GROUP BY database, table
+ORDER BY count() DESC;
+```
+
+<div id="common-production-issues">
+  ## 本番環境でよくある問題
+</div>
+
+<div id="disk-space-problems">
+  ### ディスク容量の問題
+</div>
+
+レプリケーション構成でディスク容量が枯渇すると、問題が連鎖的に発生します。1 つのノードで空き容量がなくなると、他のノードは引き続きそのノードとの同期を試みるため、ネットワークトラフィックが急増し、原因の切り分けが難しくなります。実際、コミュニティメンバーの 1 人は、単なるディスク容量不足が原因だった問題のデバッグに 4 時間を費やしました。特定のクラスターのディスクストレージを監視するには、この[クエリ](/ja/resources/support-center/knowledge-base/queries-sql/useful-queries-for-troubleshooting#show-disk-storage-number-of-parts-number-of-rows-in-systemparts-and-marks-across-databases)を参照してください。
+
+AWS を使用している場合は、デフォルトの汎用 EBS ボリュームには 16TB の上限があることに注意してください。
+
+<div id="too-many-parts-error">
+  ### パーツが多すぎるエラー
+</div>
+
+小さな insert を高頻度で行うと、パフォーマンス上の問題が発生します。コミュニティでは、1 秒あたり 10 回を超える insert では、ClickHouse がパーツを十分な速さでマージできず、「パーツが多すぎる」エラーが発生しやすいことが確認されています。
+
+**解決策:**
+
+* 30 秒または 200MB をしきい値としてデータをバッチ化する
+* 自動バッチ化のために async&#95;insert を有効にする
+* サーバー側でバッチ化するために buffer table を使用する
+* バッチサイズを制御できるように Kafka を設定する
+
+[公式の推奨事項](/ja/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous): 1 回の insert あたり最低 1,000 行、理想的には 10,000〜100,000 行。
+
+<div id="data-quality-issues">
+  ### 無効なタイムスタンプに関する問題
+</div>
+
+任意のタイムスタンプを付けてデータを送信するアプリケーションでは、パーティションの問題が発生します。その結果、現実的でない日付 (1998年や2050年など) のデータを含むパーティションが作成され、ストレージで予期しない動作を引き起こします。
+
+<div id="alter-operation-risks">
+  ### `ALTER` 操作のリスク
+</div>
+
+複数テラバイト規模のテーブルに対する大規模な `ALTER` 操作は、多くのリソースを消費し、場合によってはデータベースをロックしてしまうことがあります。コミュニティで共有されたある事例では、14TB のデータで Integer を Float に変更した結果、データベース全体がロックされ、バックアップから再構築する必要が生じました。
+
+**負荷の高いミューテーションを監視する:**
+
+```sql
+SELECT database, table, mutation_id, command, parts_to_do, is_done
+FROM system.mutations 
+WHERE is_done = 0;
+```
+
+まずは小規模なデータセットでスキーマ変更をテストしてください。
+
+<div id="memory-and-performance">
+  ## メモリとパフォーマンス
+</div>
+
+<div id="external-aggregation">
+  ### 外部集約
+</div>
+
+メモリ使用量の多い処理では、外部集約を有効にします。処理速度は遅くなりますが、ディスクにスピルすることでメモリ不足によるクラッシュを防げます。これには `max_bytes_before_external_group_by` を使用します。これは、大規模な `GROUP BY` 操作でメモリ不足によるクラッシュを防ぐのに役立ちます。この設定の詳細は[こちら](/ja/reference/settings/session-settings#max_bytes_before_external_group_by)をご覧ください。
+
+```sql
+SELECT 
+    column1,
+    column2,
+    COUNT(*) as count,
+    SUM(value) as total
+FROM large_table
+GROUP BY column1, column2
+SETTINGS max_bytes_before_external_group_by = 1000000000; -- 1GBのしきい値
+```
+
+<div id="async-insert-details">
+  ### 非同期 INSERT の詳細
+</div>
+
+非同期 INSERT では、パフォーマンス向上のために、小規模な INSERT がサーバー側で自動的にバッチ処理されます。確認応答を返す前に、データがディスクに書き込まれるまで待機するかどうかを設定できます。即時に返すほうが高速ですが、耐久性は低くなります。新しいバージョンでは、バッチ内の重複データを処理するための重複排除もサポートされています。
+
+**関連ドキュメント**
+
+* [INSERT 戦略の選択](/ja/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts)
+
+<div id="distributed-table-configuration">
+  ### 分散テーブルの設定
+</div>
+
+デフォルトでは、分散テーブルへの insert は単一スレッドで実行されます。並列処理を有効にし、データを各分片へ即座に送信するには、`insert_distributed_sync` を有効にします。
+
+分散テーブルを使用する際は、一時データの蓄積を監視してください。
+
+<div id="performance-monitoring-thresholds">
+  ### パフォーマンス監視のしきい値
+</div>
+
+コミュニティで推奨される監視しきい値:
+
+* パーティションあたりのパーツ数: できれば 100 未満
+* 挿入遅延: 0 を維持すること
+* 挿入レート: 最適なパフォーマンスのため、1 秒あたりおよそ 1 回までに抑える
+
+**関連ドキュメント**
+
+* [カスタムパーティションキー](/ja/reference/engines/table-engines/mergetree-family/custom-partitioning-key)
+
+<div id="quick-reference">
+  ## クイックリファレンス
+</div>
+
+| 問題            | 検知                        | 対処法                                   |
+| ------------- | ------------------------- | ------------------------------------- |
+| ディスク容量        | `system.parts` の総バイト数を確認  | 使用量を監視し、スケーリングを計画する                   |
+| パーツが多すぎる      | テーブルごとのパーツ数を確認            | insert をバッチ化し、async&#95;insert を有効にする |
+| レプリケーションラグ    | `system.replicas` の遅延を確認  | ネットワークを監視し、レプリカを再起動する                 |
+| 不適切なデータ       | パーティションの日付を検証する           | タイムスタンプの検証を実装する                       |
+| 進行しないミューテーション | `system.mutations` の状態を確認 | まず少量のデータでテストする                        |
+
+<div id="video-sources">
+  ### 関連ビデオ
+</div>
+
+* [ClickHouseの運用から得た10の教訓](https://www.youtube.com/watch?v=liTgGiTuhJE)
+* [ClickHouseの高速・同時実行・整合性を備えた非同期挿入](https://www.youtube.com/watch?v=AsMPEfN5QtM)

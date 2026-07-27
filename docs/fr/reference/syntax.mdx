@@ -1,0 +1,547 @@
+---
+description: 'Documentation sur la syntaxe'
+sidebarTitle: 'Syntaxe'
+slug: /sql-reference/syntax
+title: 'Syntaxe'
+doc_type: 'reference'
+---
+
+Dans cette section, nous allons examiner la syntaxe SQL de ClickHouse.
+ClickHouse utilise une syntaxe basée sur SQL, mais propose également un certain nombre d’extensions et d’optimisations.
+
+<div id="query-parsing">
+  ## Analyse syntaxique des requêtes
+</div>
+
+Il existe deux types de parseurs dans ClickHouse :
+
+* *Un parseur SQL complet* (un analyseur par descente récursive).
+* *Un parseur de format de données* (un parseur de flux rapide).
+
+Le parseur SQL complet est utilisé dans tous les cas, sauf pour la requête `INSERT`, qui utilise les deux parseurs.
+
+Examinons la requête ci-dessous :
+
+```sql
+INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
+```
+
+Comme cela a déjà été mentionné, la requête `INSERT` utilise les deux parseurs.
+Le fragment `INSERT INTO t VALUES` est analysé par le parseur complet,
+et les données `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` sont analysées par le parseur de format de données, ou parseur de flux rapide.
+
+<Accordion title="Activer le parseur complet">
+  Vous pouvez également activer le parseur complet pour les données
+  en utilisant le paramètre [`input_format_values_interpret_expressions`](/fr/reference/settings/formats#input_format_values_interpret_expressions).
+
+  Lorsque le paramètre mentionné ci-dessus est défini sur `1`,
+  ClickHouse essaie d’abord d’analyser les valeurs avec le parseur de flux rapide.
+  En cas d’échec, ClickHouse essaie d’utiliser le parseur complet pour les données, en les traitant comme une [expression](#expressions) SQL.
+</Accordion>
+
+Les données peuvent avoir n’importe quel format.
+Lorsqu’une query est reçue, le server ne charge en RAM que [max&#95;query&#95;size](/fr/reference/settings/session-settings#max_query_size) octets au plus de la requête
+(par défaut, 1 Mo), et le reste est analysé en flux.
+Cela permet d’éviter les problèmes liés aux requêtes `INSERT` volumineuses, qui constituent la méthode recommandée pour insérer vos données dans ClickHouse.
+
+Lors de l’utilisation du format [`Values`](/fr/reference/formats/Values) dans une requête `INSERT`,
+il peut sembler que les données sont analysées de la même manière que les expressions dans une requête `SELECT`, mais ce n’est pas le cas.
+Le format `Values` est beaucoup plus limité.
+
+Le reste de cette section porte sur le parseur complet.
+
+<Note>
+  Pour plus d’informations sur les parseurs de format, consultez la section [Formats](/fr/reference/formats/index).
+</Note>
+
+<div id="spaces">
+  ## Espaces
+</div>
+
+* Il peut y avoir un nombre quelconque de caractères d’espacement entre les éléments syntaxiques (y compris au début et à la fin d’une requête).
+* Les caractères d’espacement comprennent l’espace, la tabulation, le saut de ligne, le retour chariot (CR) et le saut de page.
+
+<div id="comments">
+  ## Commentaires
+</div>
+
+ClickHouse prend en charge les commentaires de style SQL et de style C :
+
+* Les commentaires de style SQL commencent par `--`, `#!` ou `# ` et se poursuivent jusqu&#39;à la fin de la ligne. L&#39;espace après `--` et `#!` peut être omis.
+* Commentaires de style C :
+  * `//` (ou plus de 2 caractères `/`) suivi de texte jusqu&#39;à la fin de la ligne. Les espaces après `/` ne sont pas obligatoires.
+  * Peuvent s&#39;étendre de `/*` à `*/` pour les commentaires sur plusieurs lignes. Les espaces ne sont pas non plus obligatoires.
+  * Les commentaires de style C peuvent être imbriqués.
+
+Par exemple :
+
+```sql
+/*
+ * Compute the number of days between two dates.
+ * /* Returns NULL if either argument is NULL */
+ */
+SELECT
+    dateDiff('day', toDate('2024-01-01'), toDate('2024-12-31')) AS days_in_year, -- 365
+    dateDiff('day', toDate('2020-01-01'), today()) AS days_since  #! since 2020
+    ///////////////////////////////////////////////////////////////////
+    # TODO: add hour/minute variants
+```
+
+<div id="keywords">
+  ## Mots-clés
+</div>
+
+Dans ClickHouse, les mots-clés peuvent être *sensibles à la casse* ou *insensibles à la casse* selon le contexte.
+
+Les mots-clés sont **insensibles à la casse** lorsqu&#39;ils correspondent à :
+
+* la norme SQL. Par exemple, `SELECT`, `select` et `SeLeCt` sont tous valides.
+* l&#39;implémentation de certains SGBD populaires (MySQL ou Postgres). Par exemple, `DateTime` est identique à `datetime`.
+
+<Note>
+  Vous pouvez vérifier si un nom de type de données est sensible à la casse dans la table [system.data&#95;type&#95;families](/fr/reference/system-tables/data_type_families).
+</Note>
+
+Contrairement au SQL standard, tous les autres mots-clés (y compris les noms de fonctions) sont **sensibles à la casse**.
+
+En outre, les mots-clés ne sont pas réservés.
+Ils ne sont traités comme tels que dans le contexte approprié.
+Si vous utilisez des [identifiants](#identifiers) portant le même nom que des mots-clés, mettez-les entre guillemets doubles ou entre accents graves.
+
+Par exemple, la requête suivante est valide si la table `table_name` possède une colonne nommée `"FROM"` :
+
+```sql
+SELECT "FROM" FROM table_name
+```
+
+<div id="identifiers">
+  ## Identifiants
+</div>
+
+Les identifiants sont :
+
+* Les noms de cluster, de base de données, de table, de partition et de colonne.
+* Les [fonctions](#functions).
+* Les [types de données](/fr/reference/data-types/index).
+* Les [alias d&#39;expressions](#expression-aliases).
+
+Les identifiants peuvent être entre guillemets ou non, bien que la seconde option soit préférable.
+
+Les identifiants non entre guillemets doivent correspondre à la regex `^[a-zA-Z_][0-9a-zA-Z_]*$` et ne peuvent pas être identiques à des [mots-clés](#keywords).
+Consultez le tableau ci-dessous pour voir des exemples d&#39;identifiants valides et invalides :
+
+| Identifiants valides                           | Identifiants invalides                 |
+| ---------------------------------------------- | -------------------------------------- |
+| `xyz`, `_internal`, `Id_with_underscores_123_` | `1x`, `tom@gmail.com`, `äußerst_schön` |
+
+Si vous souhaitez utiliser des identifiants identiques à des mots-clés ou inclure d&#39;autres symboles dans les identifiants, entourez-les de guillemets doubles ou d&#39;accents graves, par exemple : `"id"`, `` `id` ``.
+
+<Note>
+  Les mêmes règles d&#39;échappement qui s&#39;appliquent aux identifiants entre guillemets s&#39;appliquent également aux littéraux de chaîne. Voir [String](#string) pour plus de détails.
+</Note>
+
+<Tip>
+  **Évitez d&#39;utiliser des points dans les noms de colonnes**
+
+  Les noms de colonnes contenant des points, les colonnes partageant un préfixe commun suivi d&#39;un point et les colonnes de type `Array` peuvent chacune être interprétées comme faisant partie d&#39;une structure `Nested` aplatie lorsque `flatten_nested = 1` (valeur par défaut). Cela peut entraîner une validation inattendue de la longueur des tableaux lors des insertions, ainsi que des restrictions de renommage.
+
+  Évitez autant que possible d&#39;utiliser des points dans les noms de colonnes.
+  Utilisez des traits de soulignement (`_`) ou un autre séparateur à la place des points dans les noms de colonnes, sauf si vous avez intentionnellement besoin de la sémantique `Nested`.
+</Tip>
+
+<div id="literals">
+  ## Littéraux
+</div>
+
+Dans ClickHouse, un littéral est une valeur représentée directement dans une requête.
+En d&#39;autres termes, il s&#39;agit d&#39;une valeur fixe qui ne change pas pendant l&#39;exécution de la requête.
+
+Les littéraux peuvent être :
+
+* [String](#string)
+* [Numériques](#numeric)
+* [Composés](#compound)
+* [`NULL`](#null)
+* [Heredocs](#heredoc) (littéraux de chaîne personnalisés)
+
+Nous examinons chacun d&#39;eux plus en détail dans les sections ci-dessous.
+
+<div id="string">
+  ### String
+</div>
+
+Les littéraux de chaîne de caractères doivent être entourés de guillemets simples. Les guillemets doubles ne sont pas pris en charge.
+
+L’échappement fonctionne de l’une des manières suivantes :
+
+* en utilisant un guillemet simple en préfixe : le caractère guillemet simple `'` (et uniquement ce caractère) peut alors être échappé sous la forme `''`, ou
+* en utilisant une barre oblique inverse en préfixe avec l’une des séquences d’échappement prises en charge ci-dessous, listées dans le tableau suivant.
+
+<Note>
+  La barre oblique inverse perd sa signification spéciale, c’est-à-dire qu’elle est interprétée littéralement si elle précède un caractère autre que ceux listés ci-dessous.
+</Note>
+
+| Échappement pris en charge                 | Description                                                                                         |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `\xHH`                                     | Spécification d’un caractère sur 8 bits suivie d’un nombre quelconque de chiffres hexadécimaux (H). |
+| `\N`                                       | réservé, ne fait rien (par ex. `SELECT 'a\Nb'` renvoie `ab`)                                        |
+| `\a`                                       | alerte                                                                                              |
+| `\b`                                       | retour arrière                                                                                      |
+| `\e`                                       | caractère d’échappement                                                                             |
+| `\f`                                       | saut de page                                                                                        |
+| `\n`                                       | saut de ligne                                                                                       |
+| `\r`                                       | retour chariot                                                                                      |
+| `\t`                                       | tabulation horizontale                                                                              |
+| `\v`                                       | tabulation verticale                                                                                |
+| `\0`                                       | caractère nul                                                                                       |
+| `\\`                                       | barre oblique inverse                                                                               |
+| `\'` (ou `''`)                             | guillemet simple                                                                                    |
+| `\"`                                       | guillemet double                                                                                    |
+| `` ` ``                                    | accent grave                                                                                        |
+| `\/`                                       | barre oblique                                                                                       |
+| `\=`                                       | signe égal                                                                                          |
+| Caractères de contrôle ASCII (c &lt;= 31). |                                                                                                     |
+
+<Note>
+  Dans les littéraux de chaîne de caractères, vous devez au minimum échapper `'` et `\` à l’aide des codes d’échappement `\'` (ou : `''`) et `\\`.
+</Note>
+
+<div id="numeric">
+  ### Numérique
+</div>
+
+Les littéraux numériques sont analysés comme suit :
+
+* Si le littéral est précédé d&#39;un signe moins `-`, le jeton est ignoré et le résultat est négativé après l&#39;analyse.
+* Le littéral numérique est d&#39;abord analysé comme un entier non signé sur 64 bits, à l&#39;aide de la fonction [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul).
+  * Si la valeur est précédée de `0b` ou de `0x`/`0X`, le nombre est analysé respectivement en binaire ou en hexadécimal.
+  * Si la valeur est négative et que sa valeur absolue est supérieure à 2<sup>63</sup>, une erreur est renvoyée.
+* En cas d&#39;échec, la valeur est ensuite analysée comme un nombre à virgule flottante à l&#39;aide de la fonction [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof).
+* Sinon, une erreur est renvoyée.
+
+Les valeurs littérales sont converties vers le plus petit type pouvant les contenir.
+Par exemple :
+
+* `1` est analysé comme `UInt8`
+* `256` est analysé comme `UInt16`.
+
+<Info>
+  **Important**
+
+  Les valeurs entières de plus de 64 bits (`UInt128`, `Int128`, `UInt256`, `Int256`) doivent être converties vers un type plus grand pour être analysées correctement :
+
+  ```sql
+  -170141183460469231731687303715884105728::Int128
+  340282366920938463463374607431768211455::UInt128
+  -57896044618658097711785492504343953926634992332820282019728792003956564819968::Int256
+  115792089237316195423570985008687907853269984665640564039457584007913129639935::UInt256
+  ```
+
+  Cela contourne l&#39;algorithme ci-dessus et analyse l&#39;entier à l&#39;aide d&#39;une routine prenant en charge une précision arbitraire.
+
+  Sinon, le littéral sera analysé comme un nombre à virgule flottante et sera donc sujet à une perte de précision due à la troncature.
+</Info>
+
+Pour en savoir plus, voir [Types de données](/fr/reference/data-types/index).
+
+Les traits de soulignement `_` à l&#39;intérieur des littéraux numériques sont ignorés et peuvent être utilisés pour améliorer la lisibilité.
+
+Les littéraux numériques suivants sont pris en charge :
+
+| Littéral numérique                                      | Exemples                                        |
+| ------------------------------------------------------- | ----------------------------------------------- |
+| **Entiers**                                             | `1`, `10_000_000`, `18446744073709551615`, `01` |
+| **Décimaux**                                            | `0.1`                                           |
+| **Notation exponentielle**                              | `1e100`, `-1e-100`                              |
+| **Nombres à virgule flottante**                         | `123.456`, `inf`, `nan`                         |
+| **Hexadécimal**                                         | `0xc0fe`                                        |
+| **Chaîne hexadécimale compatible avec le standard SQL** | `x'c0fe'`                                       |
+| **Binaire**                                             | `0b1101`                                        |
+| **Chaîne binaire compatible avec le standard SQL**      | `b'1101'`                                       |
+
+<Note>
+  Les littéraux octaux ne sont pas pris en charge afin d&#39;éviter les erreurs d&#39;interprétation accidentelles.
+</Note>
+
+<div id="compound">
+  ### Composés
+</div>
+
+Les tableaux se construisent avec `[]` : `[1, 2, 3]`. Les tuples se construisent avec `()` : `(1, 'Hello, world!', 2)`.
+Techniquement, il ne s&#39;agit pas de littéraux, mais respectivement d&#39;expressions utilisant l&#39;opérateur de création de tableau et l&#39;opérateur de création de tuple.
+Un tableau doit contenir au moins un élément, et un tuple au moins deux.
+
+<Note>
+  Il existe un cas particulier lorsque des tuples apparaissent dans la clause `IN` d&#39;une requête `SELECT`.
+  Les résultats d&#39;une requête peuvent inclure des tuples, mais les tuples ne peuvent pas être enregistrés dans une base de données (sauf pour les tables utilisant le moteur [Memory](/fr/reference/engines/table-engines/special/memory)).
+</Note>
+
+<div id="null">
+  ### NULL
+</div>
+
+`NULL` est utilisé pour indiquer qu&#39;une valeur est manquante.
+Pour stocker `NULL` dans un champ de table, celui-ci doit être de type [Nullable](/fr/reference/data-types/nullable).
+
+<Note>
+  Voici les points à retenir concernant `NULL` :
+
+  * Selon le format de données (en entrée ou en sortie), `NULL` peut avoir une représentation différente. Pour plus d&#39;informations, consultez les [formats de données](/fr/reference/formats/index).
+  * Le traitement de `NULL` comporte des subtilités. Par exemple, si au moins un des arguments d&#39;une opération de comparaison est `NULL`, le résultat de cette opération est également `NULL`. Il en va de même pour la multiplication, l&#39;addition et d&#39;autres opérations. Nous vous recommandons de consulter la documentation de chaque opération.
+  * Dans les requêtes, vous pouvez tester `NULL` à l&#39;aide des opérateurs [`IS NULL`](/fr/reference/functions/regular-functions/functions-for-nulls#isNull) et [`IS NOT NULL`](/fr/reference/functions/regular-functions/functions-for-nulls#isNotNull), ainsi que des fonctions associées `isNull` et `isNotNull`.
+</Note>
+
+<div id="heredoc">
+  ### Heredoc
+</div>
+
+Un [heredoc](https://en.wikipedia.org/wiki/Here_document) permet de définir une chaîne (souvent sur plusieurs lignes) tout en conservant la mise en forme d’origine.
+Un heredoc se définit comme un littéral de chaîne personnalisé, placé entre deux symboles `$`.
+
+Par exemple :
+
+```sql
+SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
+
+┌─'SHOW CREATE VIEW my_view'─┐
+│ SHOW CREATE VIEW my_view   │
+└────────────────────────────┘
+```
+
+<Note>
+  * Une valeur située entre deux heredocs est traitée « telle quelle ».
+</Note>
+
+<Tip>
+  * Vous pouvez utiliser un heredoc pour inclure des extraits de code SQL, HTML ou XML, etc.
+</Tip>
+
+<div id="defining-and-using-query-parameters">
+  ## Définition et utilisation des paramètres de requête
+</div>
+
+Les paramètres de requête vous permettent d’écrire des requêtes génériques contenant des placeholders abstraits au lieu d’identifiants concrets.
+Lorsqu’une requête avec des paramètres de requête est exécutée,
+tous les placeholders sont résolus et remplacés par les valeurs réelles des paramètres de requête.
+
+Les paramètres de requête peuvent être définis de plusieurs façons :
+
+* `SET param_<name>=<value>` — à l’aide d’une commande `SET` dans une requête.
+* `--param_<name>='<value>'` — comme argument de `clickhouse-client` en ligne de commande.
+* `param_<name>=<value>` — comme paramètre de query string d’URL pour l’interface HTTP.
+
+Un paramètre de requête peut être référencé dans une requête à l’aide de `{<name>: <datatype>}`, où `<name>` est le nom du paramètre de requête et `<datatype>` le type de données vers lequel il est converti.
+
+<Accordion title="Exemple avec la commande SET">
+  Par exemple, le SQL suivant définit des paramètres nommés `a`, `b`, `c` et `d` - chacun avec un type de données différent :
+
+  ```sql
+  SET param_a = 13;
+  SET param_b = 'str';
+  SET param_c = '2022-08-04 18:30:53';
+  SET param_d = {'10': [11, 12], '13': [14, 15]};
+
+  SELECT
+     {a: UInt32},
+     {b: String},
+     {c: DateTime},
+     {d: Map(String, Array(UInt8))};
+
+  13    str    2022-08-04 18:30:53    {'10':[11,12],'13':[14,15]}
+  ```
+</Accordion>
+
+<Accordion title="Exemple avec clickhouse-client">
+  Si vous utilisez `clickhouse-client`, les paramètres sont spécifiés sous la forme `--param_name=value`. Par exemple, le paramètre suivant porte le nom `message` et est récupéré en tant que `String` :
+
+  ```bash
+  clickhouse-client --param_message='hello' --query="SELECT {message: String}"
+
+  hello
+  ```
+
+  Si le paramètre de requête représente le nom d’une base de données, d’une table, d’une fonction ou d’un autre identifiant, utilisez `Identifier` comme type. Par exemple, la requête suivante renvoie les lignes d’une table nommée `uk_price_paid` :
+
+  ```sql
+  SET param_mytablename = "uk_price_paid";
+  SELECT * FROM {mytablename:Identifier};
+  ```
+</Accordion>
+
+<Accordion title="Exemple avec l’interface HTTP">
+  Les paramètres de requête peuvent être transmis comme paramètres de query string d’URL avec le préfixe `param_`. Par exemple :
+
+  ```bash
+  curl -s "http://localhost:8123/?param_message=hello" --data-binary "SELECT {message: String}"
+
+  hello
+  ```
+</Accordion>
+
+<Accordion title="Exemple avec l’interface web">
+  L’interface web intégrée (`play.html`) détecte automatiquement les placeholders de paramètres `{name:Type}` dans la requête et affiche des champs de saisie libellés pour chaque paramètre. Les valeurs des paramètres sont incluses dans la requête HTTP et également conservées dans l’URL de la page pour les favoris et le partage.
+</Accordion>
+
+<Note>
+  Les paramètres de requête ne sont pas des substitutions de texte génériques pouvant être utilisées à des emplacements arbitraires dans n’importe quelle requête SQL.
+  Ils sont principalement conçus pour fonctionner dans les instructions `SELECT` à la place d’identifiants ou de littéraux.
+</Note>
+
+<div id="functions">
+  ## Fonctions
+</div>
+
+Les appels de fonction s’écrivent sous la forme d’un identifiant suivi d’une liste d’arguments (éventuellement vide) entre `()`.
+Contrairement au SQL standard, les parenthèses sont obligatoires, même lorsque la liste d’arguments est vide.
+Par exemple :
+
+```sql
+now()
+```
+
+Il existe également :
+
+* [Fonctions régulières](/fr/reference/functions/regular-functions/overview).
+* [Fonctions d’agrégation](/fr/reference/functions/aggregate-functions/index).
+
+Certaines fonctions d’agrégation peuvent comporter deux listes d’arguments entre parenthèses. Par exemple :
+
+```sql
+quantile (0.9)(x) 
+```
+
+Ces fonctions d&#39;agrégation sont dites &quot;paramétriques&quot;,
+et les arguments de la première liste sont appelés &quot;paramètres&quot;.
+
+<Note>
+  La syntaxe des fonctions d&#39;agrégation sans paramètres est la même que celle des fonctions régulières.
+</Note>
+
+<div id="operators">
+  ## Opérateurs
+</div>
+
+Les opérateurs sont transformés en leurs fonctions correspondantes lors de l’analyse syntaxique d’une requête, en tenant compte de leur priorité et de leur associativité.
+
+Par exemple, l’expression
+
+```text
+1 + 2 * 3 + 4
+```
+
+est transformé en
+
+```text
+plus(plus(1, multiply(2, 3)), 4)`
+```
+
+<div id="data-types-and-database-table-engines">
+  ## Types de données et moteurs de table de la base de données
+</div>
+
+Les types de données et les moteurs de table dans la requête `CREATE` s’écrivent de la même manière que les identifiants ou les fonctions.
+Autrement dit, ils peuvent comporter ou non une liste d’arguments entre parenthèses.
+
+Pour plus d’informations, consultez les sections :
+
+* [Types de données](/fr/reference/data-types/index)
+* [Moteurs de table](/fr/reference/engines/table-engines/index)
+* [CREATE](/fr/reference/statements/create/index).
+
+<div id="expressions">
+  ## Expressions
+</div>
+
+Une expression peut être l’un des éléments suivants :
+
+* une fonction
+* un identifiant
+* un littéral
+* l’application d’un opérateur
+* une expression entre parenthèses
+* une sous-requête
+* un astérisque
+
+Elle peut également contenir un [alias](#expression-aliases).
+
+Une liste d’expressions se compose d’une ou plusieurs expressions séparées par des virgules.
+Les fonctions et les opérateurs peuvent, à leur tour, prendre des expressions comme arguments.
+
+Une expression constante est une expression dont le résultat est connu lors de l’analyse de la requête, c’est-à-dire avant l’exécution.
+Par exemple, les expressions portant sur des littéraux sont des expressions constantes.
+
+<div id="expression-aliases">
+  ## Alias d’expression
+</div>
+
+Un alias est un nom défini par l’utilisateur pour une [expression](#expressions) dans une requête.
+
+```sql
+expr AS alias
+```
+
+Les éléments de la syntaxe ci-dessus sont expliqués ci-dessous.
+
+| Élément de syntaxe | Description                                                                                                                                                                      | Exemple                                                                 | Remarques                                                                                                                                                            |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AS`               | Mot-clé utilisé pour définir des alias. Vous pouvez définir l&#39;alias d&#39;un nom de table ou d&#39;un nom de colonne dans une clause `SELECT` sans utiliser le mot-clé `AS`. | `SELECT table_name_alias.column_name FROM table_name table_name_alias`. | Dans la fonction [CAST](/fr/reference/functions/regular-functions/type-conversion-functions#CAST), le mot-clé `AS` a un autre sens. Voir la description de la fonction. |
+| `expr`             | Toute expression prise en charge par ClickHouse.                                                                                                                                 | `SELECT column_name * 2 AS double FROM some_table`                      |                                                                                                                                                                      |
+| `alias`            | Nom de `expr`. Les alias doivent respecter la syntaxe des [identifiants](#identifiers).                                                                                          | `SELECT "table t".column_name FROM table_name AS "table t"`.            |                                                                                                                                                                      |
+
+<div id="notes-on-usage">
+  ### Notes sur l’utilisation
+</div>
+
+* Les alias sont globaux à une requête ou une sous-requête, et vous pouvez définir un alias dans n’importe quelle partie d’une requête pour n’importe quelle expression. Par exemple :
+
+```sql
+SELECT (1 AS n) + 2, n`.
+```
+
+* Les alias n’apparaissent pas dans les sous-requêtes ni d’une sous-requête à l’autre. Par exemple, lors de l’exécution de la requête suivante, ClickHouse génère l’exception `Unknown identifier: num` :
+
+```sql
+`SELECT (SELECT sum(b.a) + num FROM b) - a.a AS num FROM a`
+```
+
+* Si un alias est défini pour les colonnes de résultat dans la clause `SELECT` d&#39;une sous-requête, ces colonnes sont visibles dans la requête externe. Par exemple :
+
+```sql
+SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
+```
+
+* Faites attention aux alias qui coïncident avec des noms de colonne ou de table. Considérons l’exemple suivant :
+
+```sql
+CREATE TABLE t
+(
+    a Int,
+    b Int
+)
+ENGINE = TinyLog();
+
+SELECT
+    argMax(a, b),
+    sum(b) AS b
+FROM t;
+
+Received exception from server (version 18.14.17):
+Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: Aggregate function sum(b) is found inside another aggregate function in query.
+```
+
+Dans l’exemple précédent, nous avons déclaré la table `t` avec la colonne `b`.
+Ensuite, lors de la sélection des données, nous avons défini l’alias `sum(b) AS b`.
+Comme les alias sont globaux,
+ClickHouse a remplacé le littéral `b` dans l’expression `argMax(a, b)` par l’expression `sum(b)`.
+Cette substitution a provoqué l’exception.
+
+<Note>
+  Vous pouvez modifier ce comportement par défaut en définissant [prefer&#95;column&#95;name&#95;to&#95;alias](/fr/reference/settings/session-settings#prefer_column_name_to_alias) sur `1`.
+</Note>
+
+<div id="asterisk">
+  ## Astérisque
+</div>
+
+Dans une requête `SELECT`, un astérisque peut remplacer une expression.
+Pour plus d’informations, consultez la section [SELECT](/fr/reference/statements/select/index#asterisk).

@@ -1,0 +1,46 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/redis
+title: 'Redis 딕셔너리 소스'
+sidebarTitle: 'Redis'
+description: 'ClickHouse에서 Redis를 딕셔너리 소스로 구성합니다.'
+doc_type: 'reference'
+---
+
+설정 예시:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(REDIS(
+        host 'localhost'
+        port 6379
+        storage_type 'simple'
+        db_index 0
+    ))
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml
+    <source>
+        <redis>
+            <host>localhost</host>
+            <port>6379</port>
+            <storage_type>simple</storage_type>
+            <db_index>0</db_index>
+        </redis>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+설정 필드:
+
+| 설정             | 설명                                                                                                                                                                                                                                                                                     |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host`         | Redis 호스트입니다.                                                                                                                                                                                                                                                                          |
+| `port`         | Redis 서버의 포트입니다.                                                                                                                                                                                                                                                                       |
+| `storage_type` | 키 처리에 사용되는 Redis 내부 저장소의 구조입니다. `simple`은 평면 키-값 맵을 사용하며, 단순 키 레이아웃과 단일 컬럼 복합 키 레이아웃(`complex_key_cache`, `complex_key_direct` 등)을 지원합니다. `hash_map`은 Redis 해시를 사용하며 복합 복합 키에 필요합니다. 정확히 2개의 키 컬럼이 있어야 합니다. 키 컬럼은 정수 또는 문자열 유형이어야 합니다. 범위 레이아웃은 지원되지 않습니다. 기본값은 `simple`입니다. 선택 사항입니다. |
+| `db_index`     | Redis 논리 DB의 숫자 인덱스입니다. 기본값은 `0`입니다. 선택 사항입니다.                                                                                                                                                                                                                                         |

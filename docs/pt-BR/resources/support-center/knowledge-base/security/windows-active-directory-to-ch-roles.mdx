@@ -1,0 +1,298 @@
+---
+title: Mapeamento de grupos de segurança do Active Directory do Windows para roles do ClickHouse
+description: "Exemplo de mapeamento de grupos de segurança do Active Directory do Windows para roles do ClickHouse"
+date: 2024-05-20
+tags: ['Ferramentas e utilitários']
+keywords: ['Windows']
+---
+
+<div id="example">
+  ## Exemplo
+</div>
+
+Este exemplo mostra como usuários do AD que pertencem a diferentes grupos de segurança do AD podem receber acesso por role no ClickHouse. Também mostra como um usuário pode ser adicionado a vários grupos de usuários do AD para receber acesso concedido por várias roles.
+
+Neste ambiente, temos o seguinte:
+
+* Um domínio do Windows Active Directory: `marsnet2.local`
+* Um cluster do ClickHouse, `cluster_1S_3R`, com 3 nós em uma configuração de cluster com 1 shard e 3 réplicas
+* 3 usuários do AD
+
+| AD User                     | Descrição                                    |
+| --------------------------- | -------------------------------------------- |
+| clickhouse&#95;ad&#95;admin | usuário Admin do ClickHouse                  |
+| clickhouse&#95;db1&#95;user | Usuário com acesso a db1.table1              |
+| clickhouse&#95;db2&#95;user | Usuário com acesso a db2.table1              |
+| ch&#95;db1&#95;db2&#95;user | Usuário com acesso a db1.table1 e db2.table1 |
+
+* 3 grupos de segurança do AD
+
+| AD Group                            | Descrição                              |
+| ----------------------------------- | -------------------------------------- |
+| clickhouse&#95;ad&#95;admins        | grupo de Admins do ClickHouse          |
+| clickhouse&#95;ad&#95;db1&#95;users | Grupo mapeado para acesso a db1.table1 |
+| clickhouse&#95;ad&#95;db2&#95;users | Grupo mapeado para acesso a db2.table1 |
+
+* Exemplo de ambiente AD e estrutura de UO:
+
+<Image img={ad_env} size="md" alt="Exemplo de ambiente AD e estrutura de UO" />
+
+* Exemplo de configuração de grupo de segurança do AD:
+
+<Image img={ad_group} size="md" alt="Exemplo de configuração de grupo de segurança do AD" />
+
+* Exemplo de configuração de usuário do AD:
+
+<Image img={ad_user} size="md" alt="Exemplo de configuração de usuário do AD" />
+
+1. Em Usuários e Grupos do Windows AD, adicione cada usuário ao(s) respectivo(s) grupo(s); eles serão mapeados para as roles do ClickHouse (exemplo na próxima etapa).
+
+| AD Security Group           | ClickHouse Role                                                             |
+| --------------------------- | --------------------------------------------------------------------------- |
+| clickhouse&#95;ad&#95;admin | clickhouse&#95;ad&#95;admins                                                |
+| clickhouse&#95;db1&#95;user | clickhouse&#95;ad&#95;db1&#95;users                                         |
+| clickhouse&#95;db2&#95;user | clickhouse&#95;ad&#95;db2&#95;users                                         |
+| ch&#95;db1&#95;db2&#95;user | clickhouse&#95;ad&#95;db1&#95;users and clickhouse&#95;ad&#95;db2&#95;users |
+
+* Exemplo de associação de usuários a grupos:
+
+<Image img={ad_user_group} size="md" alt="Exemplo de associação de usuários a grupos" />
+
+2. No `config.xml` do ClickHouse, adicione a configuração `ldap_servers` a cada nó do ClickHouse.
+
+```
+<ldap_servers>
+	<marsnet2_ad>
+		<host>marsdc1.marsnet2.local</host>
+		<port>389</port>
+		<bind_dn>{user_name}@marsnet2.local</bind_dn>
+		<user_dn_detection>
+			<base_dn>OU=Users,OU=ClickHouse,DC=marsnet2,DC=local</base_dn>
+			<search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
+		</user_dn_detection>
+		<enable_tls>no</enable_tls>
+	</marsnet2_ad>
+</ldap_servers>
+```
+
+| xml tag                   | Descrição                                                                                                             | Valor de exemplo                                    |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| ldap&#95;servers          | Tag usada para definir os servidores LDAP que serão usados pelo ClickHouse                                            | NA                                                  |
+| marsnet&#95;ad            | Esta tag é arbitrária e serve apenas como rótulo para identificar o servidor na seção `<user_directories>`            | NA                                                  |
+| host                      | FQDN ou endereço IP do servidor ou domínio do Active Directory                                                        | marsdc1.marsnet2.local                              |
+| port                      | Porta do Active Directory, normalmente 389 sem SSL ou 636 com SSL                                                     | 389                                                 |
+| bind&#95;dn               | Usuário que será usado para fazer o bind no AD; pode ser um usuário dedicado se usuários comuns não tiverem permissão | `{user_name}@marsnet2.local`                        |
+| user&#95;dn&#95;detection | Configurações de como o ClickHouse localizará os usuários no AD                                                       | NA                                                  |
+| base&#95;dn               | Caminho da OU no AD a partir do qual a busca pelos usuários será iniciada                                             | OU=Users,OU=ClickHouse,DC=marsnet2,DC=local         |
+| search&#95;filter         | filtro de busca LDAP para localizar o usuário no AD                                                                   | `(&(objectClass=user)(sAMAccountName={user_name}))` |
+
+Consulte a documentação para ver o conjunto completo de opções:
+[https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-server-definition](https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-server-definition)
+
+3. No `config.xml` do ClickHouse, adicione a configuração `<user_directories>` com entradas `<ldap>` em cada nó do ClickHouse.
+
+```
+<user_directories>
+	<users_xml>
+		<path>users.xml</path>
+	</users_xml>
+	<local_directory>
+		<path>/var/lib/clickhouse/access/</path>
+	</local_directory>
+	<ldap>
+		<server>marsnet2_ad</server>
+		<role_mapping>
+			<base_dn>OU=Groups,OU=ClickHouse,DC=marsnet2,DC=local</base_dn>
+			<search_filter>(&amp;(objectClass=group)(member={user_dn}))</search_filter>
+			<attribute>CN</attribute>
+			<scope>subtree</scope>
+			<prefix>clickhouse_</prefix>
+		</role_mapping>
+	</ldap>
+</user_directories>
+```
+
+| xml tag              | Descrição                                                                                            | Valor de exemplo                             |
+| -------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| user&#95;directories | Define quais autenticadores serão usados                                                             | NA                                           |
+| ldap                 | Contém as configurações dos servidores LDAP, neste caso, o AD que será usado                         | NA                                           |
+| server               | Esta é a tag definida na seção `<ldap_servers>`                                                      | marsnet2&#95;ad                              |
+| role&#95;mapping     | Define como os usuários autenticados serão mapeados entre grupos do AD e roles do ClickHouse         | NA                                           |
+| base&#95;dn          | Caminho do AD que o sistema usará para iniciar a busca por grupos do AD                              | OU=Groups,OU=ClickHouse,DC=marsnet2,DC=local |
+| search&#95;filter    | Filtro de busca LDAP para localizar os grupos do AD                                                  | `(&(objectClass=group)(member={user_dn}))`   |
+| attribute            | Qual atributo do AD deve ser usado para identificar o usuário                                        | CN                                           |
+| scope                | Em quais níveis do base DN o sistema deve buscar os grupos                                           | subtree                                      |
+| prefix               | Prefixo dos nomes dos grupos no AD; esse prefixo será removido para localizar as roles no ClickHouse | clickhouse&#95;                              |
+
+Consulte a documentação para ver o conjunto completo de opções:
+[https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-external-user-directory](https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-external-user-directory)
+
+**note:::**
+Como os grupos de segurança do AD foram prefixados no exemplo — ou seja, `clickhouse_ad_db1_users` — quando o sistema os recuperar, o prefixo será removido e o sistema procurará uma role do ClickHouse chamada `ad_db1_users` para fazer o mapeamento com `clickhouse_ad_db1_users`.
+**:::**
+
+4. Crie bancos de dados de exemplo.
+
+```
+create database db1 on cluster 'cluster_1S_3R';
+create database db2 on cluster 'cluster_1S_3R';
+```
+
+5. Crie tabelas de exemplo.
+
+```
+create table db1.table1 on cluster 'cluster_1S_3R'
+(
+  id Int32,
+  column1 String
+)
+engine = MergeTree()
+order by id;
+
+create table db2.table1 on cluster 'cluster_1S_3R
+(
+  id Int32,
+  column1 String
+)
+engine = MergeTree()
+order by id;
+```
+
+6. Insira dados de exemplo.
+
+```
+insert into db1.table1
+values
+(1, 'a');
+
+insert into db2.table1
+values
+(2, 'b');
+```
+
+7. Crie roles no ClickHouse.
+
+```
+create role ad_admins on cluster 'cluster_1S_3R';
+create role ad_db1_users on cluster 'cluster_1S_3R';
+create role ad_db2_users on cluster 'cluster_1S_3R';
+```
+
+8. Conceda os privilégios aos roles.
+
+```
+GRANT SHOW, SELECT, INSERT, ALTER, CREATE, DROP, UNDROP TABLE, TRUNCATE, OPTIMIZE, BACKUP, KILL QUERY, KILL TRANSACTION, MOVE PARTITION BETWEEN SHARDS, ACCESS MANAGEMENT, SYSTEM, dictGet, displaySecretsInShowAndSelect, INTROSPECTION, SOURCES, CLUSTER ON *.* on cluster 'cluster_1S_3R' TO ad_admins WITH GRANT OPTION;
+
+GRANT SELECT ON db1.table1 on cluster 'cluster_1S_3R' TO ad_db1_users;
+
+GRANT SELECT ON db2.table1 on cluster 'cluster_1S_3R' TO ad_db2_users;
+```
+
+9. Teste o acesso do usuário restrito db1.
+   Por exemplo:
+
+```
+root@chnode1:/etc/clickhouse-server# clickhouse-client --user clickhouse_db1_user --password MyPassword123  --secure --port 9440 --host chnode1.marsnet.local
+ClickHouse client version 24.1.3.31 (official build).
+Connecting to chnode1.marsnet.local:9440 as user clickhouse_db1_user.
+Connected to ClickHouse server version 24.1.3.
+
+clickhouse :) select * from db1.table1;
+
+SELECT *
+FROM db1.table1
+
+Query id: b04b92d6-5b8b-40a2-a92a-f06f15774930
+
+┌─id─┬─column1─┐
+│  1 │ a       │
+└────┴─────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+
+clickhouse :) select * from db2.table1;
+
+SELECT *
+FROM db2.table1
+
+Query id: 7f7eaa44-7b47-4184-807a-6968a56057ad
+
+Elapsed: 0.115 sec.
+
+Received exception from server (version 24.1.3):
+Code: 497. DB::Exception: Received from chnode1.marsnet.local:9440. DB::Exception: clickhouse_db1_user: Not enough privileges. To execute this query, it's necessary to have the grant SELECT(id, column1) ON db2.table1. (ACCESS_DENIED)
+```
+
+10. Teste o acesso do usuário que tem acesso aos dois bancos de dados, db1 e db2.
+    Por exemplo:
+
+```
+root@chnode1:/etc/clickhouse-server# clickhouse-client --user ch_db1_db2_user --password MyPassword123  --secure --port 9440 --host chnode1.marsnet.local
+ClickHouse client version 24.1.3.31 (official build).
+Connecting to chnode1.marsnet.local:9440 as user ch_db1_db2_user.
+Connected to ClickHouse server version 24.1.3.
+
+clickhouse :) select * from db1.table1;
+
+SELECT *
+FROM db1.table1
+
+Query id: 23084744-08c2-48bd-8635-a23438812026
+
+┌─id─┬─column1─┐
+│  1 │ a       │
+└────┴─────────┘
+
+1 row in set. Elapsed: 0.005 sec.
+
+clickhouse :) select * from db2.table1;
+
+SELECT *
+FROM db2.table1
+
+Query id: f9954ec4-d8d9-4b5a-9f68-a7aa79a1bb4a
+
+┌─id─┬─column1─┐
+│  2 │ b       │
+└────┴─────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+11. Teste o acesso do usuário Admin.
+    Por exemplo:
+
+```
+root@chnode1:/etc/clickhouse-server# clickhouse-client --user clickhouse_ad_admin --password MyPassword123  --secure --port 9440 --host chnode1.marsnet.local
+ClickHouse client version 24.1.3.31 (official build).
+Connecting to chnode1.marsnet.local:9440 as user clickhouse_ad_admin.
+Connected to ClickHouse server version 24.1.3.
+
+clickhouse :) create table db1.table2 on cluster 'cluster_1S_3R'
+(
+  id Int32,
+  column1 String
+)
+engine = MergeTree()
+order by id;
+
+CREATE TABLE db1.table2 ON CLUSTER cluster_1S_3R
+(
+    `id` Int32,
+    `column1` String
+)
+ENGINE = MergeTree
+ORDER BY id
+
+Query id: 6041fd32-4294-44bd-b442-3fdd41333e6f
+
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode1.marsnet.local │ 9440 │      0 │       │                   2 │                2 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode2.marsnet.local │ 9440 │      0 │       │                   1 │                1 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode3.marsnet.local │ 9440 │      0 │       │                   0 │                0 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+```

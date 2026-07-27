@@ -1,0 +1,31 @@
+---
+title: Alter Delete
+---
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
+```
+
+يحذف البيانات المطابقة لعبارة التصفية المحددة. ويُنفَّذ على شكل [mutation](/ar/reference/statements/alter/index#mutations).
+
+<Note>
+  تجعل البادئة `ALTER TABLE` هذه الصياغة مختلفة عن معظم الأنظمة الأخرى التي تدعم SQL. والمقصود من ذلك الإشارة إلى أن هذه العملية، بخلاف الاستعلامات المشابهة في قواعد بيانات OLTP، هي عملية ثقيلة غير مخصّصة للاستخدام المتكرر. وتُعد `ALTER TABLE` عملية ثقيلة تتطلب دمج البيانات الأساسية قبل حذفها. بالنسبة إلى جداول MergeTree، فكّر في استخدام استعلام [`DELETE FROM`](/ar/reference/statements/delete)، لأنه ينفّذ حذفًا خفيفًا وقد يكون أسرع بكثير.
+</Note>
+
+يجب أن يكون `filter_expr` من النوع `UInt8`. ويحذف الاستعلام الصفوف في الجدول التي تكون قيمة هذه العبارة فيها غير صفرية.
+
+يمكن أن يحتوي استعلام واحد على عدة أوامر مفصولة بفواصل.
+
+يُحدَّد تزامن معالجة الاستعلام بواسطة إعداد [mutations&#95;sync](/ar/reference/settings/session-settings#mutations_sync). ويكون غير متزامن افتراضيًا.
+
+**انظر أيضًا**
+
+* [Mutations](/ar/reference/statements/alter/index#mutations)
+* [تزامن استعلامات ALTER](/ar/reference/statements/alter/index#synchronicity-of-alter-queries)
+* إعداد [mutations&#95;sync](/ar/reference/settings/session-settings#mutations_sync)
+
+<div id="related-content">
+  ## محتوى ذي صلة
+</div>
+
+* مدونة: [التعامل مع التحديثات والحذف في ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

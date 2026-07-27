@@ -1,0 +1,129 @@
+---
+description: 'Configuraciones que restringen la complejidad de las consultas.'
+sidebarTitle: 'Restricciones de complejidad de las consultas'
+slug: /operations/settings/query-complexity
+title: 'Restricciones de complejidad de las consultas'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## Descripción general
+</div>
+
+Como parte de la [configuración](/es/concepts/features/configuration/settings/overview), ClickHouse ofrece
+la posibilidad de imponer restricciones sobre la complejidad de las consultas. Esto ayuda a proteger frente a
+consultas que pueden consumir muchos recursos, lo que garantiza una ejecución
+más segura y predecible, especialmente al usar la interfaz de usuario.
+
+Casi todas las restricciones solo se aplican a las consultas `SELECT`, y en el
+procesamiento distribuido de consultas, las restricciones se aplican por separado en cada servidor.
+
+Por lo general, ClickHouse comprueba las restricciones solo después de que las partes de datos se hayan
+procesado por completo, en lugar de comprobarlas para cada fila. Esto puede
+dar lugar a situaciones en las que se infrinjan las restricciones mientras se está
+procesando la parte de datos.
+
+<div id="overflow_mode_setting">
+  ## Ajustes de `overflow_mode`
+</div>
+
+La mayoría de las restricciones también tienen un ajuste `overflow_mode`, que define qué ocurre
+cuando se supera el límite y puede tomar uno de estos dos valores:
+
+* `throw`: lanzar una excepción (predeterminado).
+* `break`: detener la ejecución de la consulta y devolver un resultado parcial, como si los
+  datos de origen se hubieran agotado.
+
+<div id="group_by_overflow_mode_settings">
+  ## Configuración de `group_by_overflow_mode`
+</div>
+
+La configuración `group_by_overflow_mode` también puede tomar
+el valor `any`:
+
+* `any` : continúa la agregación para las claves que ya entraron en el conjunto, pero no
+  agrega nuevas claves al conjunto.
+
+<div id="relevant-settings">
+  ## Lista de ajustes
+</div>
+
+Los siguientes ajustes se utilizan para aplicar restricciones a la complejidad de las consultas.
+
+<Note>
+  Las restricciones sobre la «cantidad máxima de algo» pueden tomar el valor `0`,
+  lo que significa que es «sin restricciones».
+</Note>
+
+| Ajuste                                                                                                                        | Descripción breve                                                                                                                                                     |
+| ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`max_memory_usage`](/es/reference/settings/session-settings#max_memory_usage)                                                   | La cantidad máxima de RAM que puede usarse para ejecutar una consulta en un solo servidor.                                                                            |
+| [`max_memory_usage_for_user`](/es/reference/settings/session-settings#max_memory_usage_for_user)                                 | La cantidad máxima de RAM que puede usarse para ejecutar las consultas de un usuario en un solo servidor.                                                             |
+| [`max_rows_to_read`](/es/reference/settings/session-settings#max_rows_to_read)                                                   | El número máximo de filas que pueden leerse de una tabla al ejecutar una consulta.                                                                                    |
+| [`max_bytes_to_read`](/es/reference/settings/session-settings#max_bytes_to_read)                                                 | El número máximo de bytes (de datos sin comprimir) que pueden leerse de una tabla al ejecutar una consulta.                                                           |
+| [`read_overflow_mode_leaf`](/es/reference/settings/session-settings#read_overflow_mode_leaf)                                     | Establece qué sucede cuando el volumen de datos leídos supera uno de los límites de los nodos hoja                                                                    |
+| [`max_rows_to_read_leaf`](/es/reference/settings/session-settings#max_rows_to_read_leaf)                                         | El número máximo de filas que pueden leerse de una tabla local en un nodo hoja al ejecutar una consulta distribuida                                                   |
+| [`max_bytes_to_read_leaf`](/es/reference/settings/session-settings#max_bytes_to_read_leaf)                                       | El número máximo de bytes (de datos sin comprimir) que pueden leerse de una tabla local en un nodo hoja al ejecutar una consulta distribuida.                         |
+| [`read_overflow_mode_leaf`](/es/reference/settings/session-settings#read_overflow_mode_leaf)                                     | Establece qué sucede cuando el volumen de datos leídos supera uno de los límites de los nodos hoja.                                                                   |
+| [`max_rows_to_group_by`](/es/reference/settings/session-settings#max_rows_to_group_by)                                           | El número máximo de claves únicas recibidas de la agregación.                                                                                                         |
+| [`group_by_overflow_mode`](/es/reference/settings/session-settings#group_by_overflow_mode)                                       | Establece qué sucede cuando el número de claves únicas para la agregación supera el límite                                                                            |
+| [`max_bytes_before_external_group_by`](/es/reference/settings/session-settings#max_bytes_before_external_group_by)               | Habilita o deshabilita la ejecución de cláusulas `GROUP BY` en memoria externa.                                                                                       |
+| [`max_bytes_ratio_before_external_group_by`](/es/reference/settings/session-settings#max_bytes_ratio_before_external_group_by)   | La proporción de la memoria disponible que puede usarse para `GROUP BY`. Una vez alcanzada, se usa memoria externa para la agregación.                                |
+| [`max_bytes_before_external_sort`](/es/reference/settings/session-settings#max_bytes_before_external_sort)                       | Habilita o deshabilita la ejecución de cláusulas `ORDER BY` en memoria externa.                                                                                       |
+| [`max_bytes_ratio_before_external_sort`](/es/reference/settings/session-settings#max_bytes_ratio_before_external_sort)           | La proporción de la memoria disponible que puede usarse para `ORDER BY`. Una vez alcanzada, se usa ordenación externa.                                                |
+| [`max_rows_to_sort`](/es/reference/settings/session-settings#max_rows_to_sort)                                                   | El número máximo de filas antes de ordenar. Permite limitar el consumo de memoria durante la ordenación.                                                              |
+| [`max_bytes_to_sort`](/es/reference/settings/session-settings#max_rows_to_sort)                                                  | El número máximo de bytes antes de ordenar.                                                                                                                           |
+| [`sort_overflow_mode`](/es/reference/settings/session-settings#sort_overflow_mode)                                               | Establece qué sucede si el número de filas recibidas antes de ordenar supera uno de los límites.                                                                      |
+| [`max_result_rows`](/es/reference/settings/session-settings#max_result_rows)                                                     | Limita el número de filas del resultado.                                                                                                                              |
+| [`max_result_bytes`](/es/reference/settings/session-settings#max_result_bytes)                                                   | Limita el tamaño del resultado en bytes (sin comprimir)                                                                                                               |
+| [`result_overflow_mode`](/es/reference/settings/session-settings#result_overflow_mode)                                           | Establece qué hacer si el volumen del resultado supera uno de los límites.                                                                                            |
+| [`max_execution_time`](/es/reference/settings/session-settings#max_execution_time)                                               | El tiempo máximo de ejecución de la consulta, en segundos.                                                                                                            |
+| [`timeout_overflow_mode`](/es/reference/settings/session-settings#timeout_overflow_mode)                                         | Establece qué hacer si la consulta se ejecuta durante más tiempo que `max_execution_time` o si el tiempo estimado de ejecución supera `max_estimated_execution_time`. |
+| [`max_execution_time_leaf`](/es/reference/settings/session-settings#max_execution_time_leaf)                                     | Semánticamente similar a `max_execution_time`, pero solo se aplica en los nodos hoja para consultas distribuidas o remotas.                                           |
+| [`timeout_overflow_mode_leaf`](/es/reference/settings/session-settings#timeout_overflow_mode_leaf)                               | Establece qué sucede cuando la consulta en un nodo hoja se ejecuta durante más tiempo que `max_execution_time_leaf`.                                                  |
+| [`min_execution_speed`](/es/reference/settings/session-settings#min_execution_speed)                                             | Velocidad mínima de ejecución en filas por segundo.                                                                                                                   |
+| [`min_execution_speed_bytes`](/es/reference/settings/session-settings#min_execution_speed_bytes)                                 | El número mínimo de bytes procesados por segundo durante la ejecución.                                                                                                |
+| [`max_execution_speed`](/es/reference/settings/session-settings#max_execution_speed)                                             | El número máximo de filas procesadas por segundo durante la ejecución.                                                                                                |
+| [`max_execution_speed_bytes`](/es/reference/settings/session-settings#max_execution_speed_bytes)                                 | El número máximo de bytes procesados por segundo durante la ejecución.                                                                                                |
+| [`timeout_before_checking_execution_speed`](/es/reference/settings/session-settings#timeout_before_checking_execution_speed)     | Comprueba que la velocidad de ejecución no sea demasiado lenta (no inferior a `min_execution_speed`) una vez transcurrido el tiempo especificado, en segundos.        |
+| [`max_estimated_execution_time`](/es/reference/settings/session-settings#max_estimated_execution_time)                           | Tiempo máximo estimado de ejecución de la consulta, en segundos.                                                                                                      |
+| [`max_columns_to_read`](/es/reference/settings/session-settings#max_columns_to_read)                                             | El número máximo de columnas que se pueden leer de una tabla en una sola consulta.                                                                                    |
+| [`max_temporary_columns`](/es/reference/settings/session-settings#max_temporary_columns)                                         | El número máximo de columnas temporales que deben mantenerse en RAM simultáneamente al ejecutar una consulta, incluidas las columnas constantes.                      |
+| [`max_temporary_non_const_columns`](/es/reference/settings/session-settings#max_temporary_non_const_columns)                     | El número máximo de columnas temporales que deben mantenerse en RAM simultáneamente al ejecutar una consulta, sin contar las columnas constantes.                     |
+| [`max_subquery_depth`](/es/reference/settings/session-settings#max_subquery_depth)                                               | Establece qué ocurre si una consulta tiene más subconsultas anidadas que el número especificado.                                                                      |
+| [`max_ast_depth`](/es/reference/settings/session-settings#max_ast_depth)                                                         | La profundidad máxima de anidamiento del árbol sintáctico de una consulta.                                                                                            |
+| [`max_ast_elements`](/es/reference/settings/session-settings#max_ast_elements)                                                   | El número máximo de elementos en el árbol sintáctico de una consulta.                                                                                                 |
+| [`max_rows_in_set`](/es/reference/settings/session-settings#max_rows_in_set)                                                     | El número máximo de filas de un conjunto de datos en la cláusula IN creada a partir de una subconsulta.                                                               |
+| [`max_bytes_in_set`](/es/reference/settings/session-settings#max_bytes_in_set)                                                   | El número máximo de bytes (de datos sin comprimir) usados por un conjunto en la cláusula IN creada a partir de una subconsulta.                                       |
+| [`set_overflow_mode`](/es/reference/settings/session-settings#max_bytes_in_set)                                                  | Establece qué ocurre cuando el volumen de datos supera alguno de los límites.                                                                                         |
+| [`max_rows_in_distinct`](/es/reference/settings/session-settings#max_rows_in_distinct)                                           | El número máximo de filas distintas al usar DISTINCT.                                                                                                                 |
+| [`max_bytes_in_distinct`](/es/reference/settings/session-settings#max_bytes_in_distinct)                                         | El número máximo de bytes del estado (en bytes sin comprimir) en memoria que utiliza una tabla hash al usar DISTINCT.                                                 |
+| [`distinct_overflow_mode`](/es/reference/settings/session-settings#distinct_overflow_mode)                                       | Establece qué ocurre cuando el volumen de datos supera alguno de los límites.                                                                                         |
+| [`max_rows_to_transfer`](/es/reference/settings/session-settings#max_rows_to_transfer)                                           | El tamaño máximo (en filas) que puede pasarse a un servidor remoto o guardarse en una tabla temporal cuando se ejecuta la sección GLOBAL IN/JOIN.                     |
+| [`max_bytes_to_transfer`](/es/reference/settings/session-settings#max_bytes_to_transfer)                                         | El número máximo de bytes (datos sin comprimir) que se puede pasar a un servidor remoto o guardar en una tabla temporal cuando se ejecuta la sección GLOBAL IN/JOIN.  |
+| [`transfer_overflow_mode`](/es/reference/settings/session-settings#transfer_overflow_mode)                                       | Establece qué ocurre cuando el volumen de datos supera alguno de los límites.                                                                                         |
+| [`max_rows_in_join`](/es/reference/settings/session-settings#max_rows_in_join)                                                   | Limita el número de filas de la tabla hash que se utiliza al unir tablas.                                                                                             |
+| [`max_bytes_in_join`](/es/reference/settings/session-settings#max_bytes_in_join)                                                 | El tamaño máximo, en bytes, de la tabla hash utilizada al unir tablas.                                                                                                |
+| [`join_overflow_mode`](/es/reference/settings/session-settings#join_overflow_mode)                                               | Define qué acción realiza ClickHouse cuando se alcanza cualquiera de los siguientes límites de join.                                                                  |
+| [`max_partitions_per_insert_block`](/es/reference/settings/session-settings#max_partitions_per_insert_block)                     | Limita el número máximo de particiones en un único bloque insertado y lanza una excepción si el bloque contiene demasiadas particiones.                               |
+| [`throw_on_max_partitions_per_insert_block`](/es/reference/settings/session-settings#throw_on_max_partitions_per_insert_block)   | Permite controlar el comportamiento cuando se alcanza `max_partitions_per_insert_block`.                                                                              |
+| [`max_temporary_data_on_disk_size_for_user`](/es/reference/settings/session-settings#throw_on_max_partitions_per_insert_block)   | La cantidad máxima de datos, en bytes, consumida por archivos temporales en disco para todas las consultas del usuario que se ejecutan simultáneamente.               |
+| [`max_temporary_data_on_disk_size_for_query`](/es/reference/settings/session-settings#max_temporary_data_on_disk_size_for_query) | La cantidad máxima de datos, en bytes, consumida por archivos temporales en disco para todas las consultas que se ejecutan simultáneamente.                           |
+| [`max_sessions_for_user`](/es/reference/settings/session-settings#max_sessions_for_user)                                         | Número máximo de sesiones simultáneas por usuario autenticado en el servidor ClickHouse.                                                                              |
+| [`max_partitions_to_read`](/es/reference/settings/session-settings#max_partitions_to_read)                                       | Limita el número máximo de particiones a las que se puede acceder en una sola consulta.                                                                               |
+
+<div id="obsolete-settings">
+  ## Configuraciones obsoletas
+</div>
+
+<Note>
+  Las siguientes configuraciones están obsoletas
+</Note>
+
+<div id="max-pipeline-depth">
+  ### max_pipeline_depth
+</div>
+
+Profundidad máxima del pipeline. Corresponde al número de transformaciones por las que pasa cada
+bloque de datos durante el procesamiento de la consulta. Se contabiliza dentro de los límites de un
+único servidor. Si la profundidad del pipeline es mayor, se lanza una excepción.

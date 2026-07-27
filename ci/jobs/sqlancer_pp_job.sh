@@ -11,16 +11,36 @@
 # clickhouse-server's HTTP port (8123).
 #
 # Mirrors `sqlancer_job.sh` in shape so the praktika report consumer remains
-# happy: emits a `result.json` with one entry per oracle plus attached log
-# files.
+# happy: emits a `result_<normalized_job_name>.json` with one entry per oracle
+# plus attached log files.
 
 set -exu
+
+# Capture the job start timestamp so the result file can report a real
+# `start_time`/`duration`. Praktika's CIDB inserter rejects a `null` `start_time`
+# (it calls `datetime.utcfromtimestamp(start_time)`, which fails on `None`).
+JOB_START_TIME=$(date +%s)
 
 TMP_PATH=$(readlink -f ./ci/tmp/)
 OUTPUT_PATH="$TMP_PATH/sqlancer_pp_output"
 PID_FILE="$TMP_PATH/clickhouse-server.pid"
 CLICKHOUSE_BIN="$TMP_PATH/clickhouse"
-RESULT_FILE="$TMP_PATH/result.json"
+
+# Praktika reads the job result from `./ci/tmp/result_<normalized_job_name>.json`,
+# where the normalization matches `Utils.normalize_string` in `ci/praktika/utils.py`
+# (see `sqlancer_job.sh`, which does the same). Writing a plain `result.json` here
+# is what made Praktika report ERROR "Job killed or terminated, no Result provided"
+# and drop every oracle result and attached log - the job's real FAIL/OK status
+# was written to a file Praktika never reads. `JOB_NAME` is not propagated into
+# the docker container, so read it from the serialized environment Praktika dumps.
+NORMALIZED_JOB_NAME=$(python3 -c '
+import sys
+sys.path.insert(0, ".")
+from ci.praktika._environment import _Environment
+from ci.praktika.utils import Utils
+print(Utils.normalize_string(_Environment.get().JOB_NAME))
+')
+RESULT_FILE="$TMP_PATH/result_${NORMALIZED_JOB_NAME}.json"
 
 mkdir -p "$OUTPUT_PATH"
 
@@ -142,12 +162,26 @@ done
 
 ATTACHED_FILES_ARRAY+=("$OUTPUT_PATH/clickhouse-server.log" "$OUTPUT_PATH/clickhouse-server.log.err")
 
+# On failure, attach the per-database reproducer logs as an artifact. With
+# `--log-each-select true` SQLancer++ writes every statement of each generated
+# database to `logs/<dbms>/databaseN-cur.log`; the failing database's log is the
+# exact CREATE/INSERT/.../SELECT sequence to reproduce the bug (the oracle's own
+# "Check the *-cur.log" hint points here). Only on failure, and gzip-compressed,
+# to avoid uploading a large log on clean runs.
+SQLANCER_PP_LOG_DIR="/sqlancer-pp/logs"
+if [[ "$OVERALL_STATUS" != "success" && -d "$SQLANCER_PP_LOG_DIR" ]]; then
+    reproducer_archive="$OUTPUT_PATH/sqlancer_pp_reproducer_logs.tar.gz"
+    if tar -C "$(dirname "$SQLANCER_PP_LOG_DIR")" -czf "$reproducer_archive" "$(basename "$SQLANCER_PP_LOG_DIR")"; then
+        ATTACHED_FILES_ARRAY+=("$reproducer_archive")
+    fi
+fi
+
 {
     printf '{\n'
     printf '  "name": "SQLancerPP",\n'
     printf '  "status": "%s",\n' "$OVERALL_STATUS"
-    printf '  "start_time": null,\n'
-    printf '  "duration": null,\n'
+    printf '  "start_time": %d,\n' "$JOB_START_TIME"
+    printf '  "duration": %d,\n' "$(( $(date +%s) - JOB_START_TIME ))"
     printf '  "results": [\n'
 
     for i in "${!TEST_RESULTS[@]}"; do
