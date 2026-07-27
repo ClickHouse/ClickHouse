@@ -1160,14 +1160,17 @@ def import_ci_checks_results(path, results):
     """Import `ci-checks.tsv` rows into the previous subtask's results.
 
     Returns True when the file was importable. A file with no data row at all -
-    empty, or only the header lines - is reported and NOT imported: assigning an
-    empty row set would silently drop every query the shard ran. A file that lost
-    individual rows still imports the intact ones and reports how many it
-    skipped, because degrading beats dying. An absent file is the atomic
-    publish's own failure signal - `upload_results` deliberately leaves the
-    final path missing when the write fails - so it must warn here rather than
-    reach `open`, whose `FileNotFoundError` would escape `main()` and kill the
-    job before praktika uploads the artifacts.
+    empty, or only the header lines - is reported and left unimported. That
+    distinction is a diagnostic one, not a data-preserving one: every subtask
+    `main()` appends before this call is built without a `results=` argument, so
+    the assignment target's row list is empty either way and there is nothing an
+    empty assignment could destroy. A file that lost individual rows still
+    imports the intact ones and reports how many it skipped, because degrading
+    beats dying. An absent file is the atomic publish's own failure signal -
+    `upload_results` deliberately leaves the final path missing when the write
+    fails - so it must warn here rather than reach `open`, whose
+    `FileNotFoundError` would escape `main()` and kill the job before praktika
+    uploads the artifacts.
     """
     if not Path(path).is_file():
         print("WARNING: compare.sh did not generate ci-checks.tsv file")

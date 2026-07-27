@@ -21,6 +21,7 @@ as clean: a row cut inside a number still parses, so an unterminated trailing
 line has to be dropped rather than trusted.
 """
 
+import ast
 import inspect
 import os
 import sys
@@ -349,10 +350,11 @@ def test_import_assigns_parsed_rows_and_prints_no_warning(tmp_path, capsys):
 
 
 def test_import_of_a_truncated_file_warns_and_assigns_nothing(tmp_path, capsys):
-    # The branch the whole fix exists for. An incomplete file must be reported
-    # and left unimported: assigning its partial row set would silently
-    # under-report the queries the shard ran. The sentinel proves the assignment
-    # did not happen, which is what an inverted `if not complete:` would break.
+    # An incomplete file must be reported and left unimported, so the warning
+    # names the real cause instead of the shard going red with no explanation.
+    # The sentinel proves the assignment did not happen, which is what an
+    # inverted `if not complete:` would break. It is the report that differs:
+    # the real target's row list is empty before the call either way.
     path = _write(tmp_path, NAMES + "\n" + "UInt32\tLowCardinality(Str")
     target, results = _import_stub()
     assert import_ci_checks_results(path, results) is False
@@ -417,6 +419,53 @@ def test_ci_checks_import_is_wired_into_main():
     assert "did not generate ci-checks.tsv" in helper_source, (
         "import_ci_checks_results() must report the absent-file case too, "
         "otherwise the shard goes red with no query rows and no explanation."
+    )
+
+
+def test_no_subtask_main_appends_carries_rows_to_preserve():
+    # Why `if not complete: return False` is a diagnostic and not a data guard.
+    # Reading it as data preservation invites the opposite fix - treating a
+    # partial parse as non-importable to "avoid overwriting" the target - which
+    # would trade a reported warning for a silent one. Every element main()
+    # appends before the import site is built without a `results=` argument, so
+    # the assignment target's row list is empty whatever the parse returned.
+    # Asserted over the append sites themselves rather than one simulated run,
+    # because it has to hold for every stage entry point `--param` can select.
+    tree = ast.parse(inspect.getsource(performance_tests))
+    main_node = next(
+        n
+        for n in tree.body
+        if isinstance(n, ast.FunctionDef) and n.name == "main"
+    )
+    call_line = min(
+        n.lineno
+        for n in ast.walk(main_node)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Name)
+        and n.func.id == "import_ci_checks_results"
+    )
+    appends = [
+        n.args[0]
+        for n in ast.walk(main_node)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Attribute)
+        and n.func.attr == "append"
+        and isinstance(n.func.value, ast.Name)
+        and n.func.value.id == "results"
+        and n.lineno < call_line
+    ]
+    assert appends, "expected results.append() calls before the import site"
+    with_rows = [
+        ast.unparse(a)
+        for a in appends
+        if isinstance(a, ast.Call)
+        and any(k.arg == "results" for k in a.keywords)
+    ]
+    assert not with_rows, (
+        "A subtask appended before the ci-checks.tsv import now carries "
+        f"sub-results of its own: {with_rows}. The importer assigns over "
+        "results[-2].results, so that assignment is no longer harmless and the "
+        "docstring's reasoning needs revisiting."
     )
 
 
