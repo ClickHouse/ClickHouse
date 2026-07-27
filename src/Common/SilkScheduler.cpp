@@ -1,22 +1,89 @@
 #include <Common/SilkScheduler.h>
 
-#if USE_SILK
-
-#include <IO/SilkFiberJob.h>
-#include <Common/CurrentThread.h>
-
-#include <silk/util/init.h>
-#include <Common/SilkSchedulerOptions.h>
-#include <silk/fibers/fiber.h>
-
 #include <atomic>
-#include <utility>
 
 namespace DB
 {
 
 namespace
 {
+    std::atomic<bool> silk_configured_but_not_started{false};
+}
+
+bool isSilkConfiguredButNotStarted()
+{
+    return silk_configured_but_not_started.load();
+}
+
+void setSilkConfiguredButNotStarted(bool value)
+{
+    silk_configured_but_not_started.store(value);
+}
+
+}
+
+#if USE_SILK
+
+#include <IO/SilkFiberJob.h>
+#include <Common/CurrentThread.h>
+#include <Common/ErrnoException.h>
+
+#include <silk/util/init.h>
+#include <Common/SilkSchedulerOptions.h>
+#include <silk/fibers/fiber.h>
+
+#include <sys/syscall.h>
+#include <unistd.h>
+
+#include <utility>
+
+/// Neither the x86_64 nor the aarch64 glibc sysroots we build the Silk targets with ship
+/// `<linux/io_uring.h>` (its syscall numbers postdate those sysroots' frozen kernel headers), so
+/// `__NR_io_uring_setup` isn't defined either. Silk only supports these two architectures (see
+/// contrib/silk-cmake/CMakeLists.txt), and the syscall was assigned the same number on both
+/// (io_uring's syscalls are part of Linux's "generic" table, unified across architectures since
+/// their introduction). A constexpr rather than a fallback `#define`: defining a
+/// double-underscore macro trips `-Wreserved-macro-identifier` under `-Weverything -Werror`.
+#if defined(__NR_io_uring_setup)
+constexpr long NR_IO_URING_SETUP = __NR_io_uring_setup;
+#elif defined(__x86_64__) || defined(__aarch64__)
+constexpr long NR_IO_URING_SETUP = 425;
+#else
+    #error "Unsupported architecture for the io_uring probe"
+#endif
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int IO_URING_INIT_FAILED;
+}
+
+namespace
+{
+
+/// Probes that `io_uring_setup(2)` actually works before starting the scheduler, so a container
+/// with io_uring blocked (seccomp profile, or `kernel.io_uring_disabled`) fails server startup
+/// loudly instead of leaving every disk-group connection to hang or silently misbehave later.
+/// Raw syscall rather than `silk`/liburing: this TU intentionally does not link liburing (its
+/// symbols aren't visible here), and - as noted above - we can't even name the real
+/// `struct io_uring_params` for lack of the header. A zeroed, generously oversized scratch buffer
+/// is safe to pass either way: the real ABI-frozen struct is 120 bytes and has not grown since
+/// `io_uring`'s introduction, and we never read the buffer back, only whether the call succeeds.
+/// This only proves the syscall is reachable; it does not exercise submission, polling, or any
+/// other ring behaviour.
+void probeIoUringAvailable()
+{
+    alignas(8) unsigned char io_uring_setup_params[128] = {};
+    int fd = static_cast<int>(syscall(NR_IO_URING_SETUP, /*entries*/ 4, io_uring_setup_params));
+    if (fd < 0)
+        throw ErrnoException(ErrorCodes::IO_URING_INIT_FAILED,
+            "Cannot start the Silk fiber scheduler: io_uring_setup failed - io_uring is unavailable "
+            "(commonly blocked by container seccomp profiles or kernel.io_uring_disabled); unset "
+            "disk_connections_use_silk or enable io_uring");
+    [[maybe_unused]] int rc = close(fd);
+}
 
 std::atomic<bool> silk_scheduler_initialized{false};
 
@@ -55,6 +122,7 @@ silk::FiberScheduler::Options makeServerSilkSchedulerOptions()
 
 void initializeSilkScheduler()
 {
+    probeIoUringAvailable();
     silk::initialize();
     silk::FiberScheduler::Options options = makeServerSilkSchedulerOptions();
     silk::FiberScheduler::initialize(&options);

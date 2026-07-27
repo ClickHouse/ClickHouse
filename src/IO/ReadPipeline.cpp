@@ -42,6 +42,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -454,9 +455,35 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     /// gate the caller applied to the pool: no `prefetch_pool` attached means the caller
     /// requires synchronous reads (`remote_filesystem_read_method='read'`), fibers included.
     executor_options.use_fiber_runner = settings.reader_executor.use_fiber_runner && executor_options.prefetch_pool != nullptr;
-    if (executor_options.use_fiber_runner && !isSilkSchedulerInitialized())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Setting reader_executor_use_fibers requires the server setting disk_connections_use_silk (Silk scheduler is not running)");
+    if (executor_options.use_fiber_runner)
+    {
+        /// Three distinct reasons the fiber runner can be unavailable, each needing its own
+        /// message so an operator can tell what to actually do about it:
+#if !USE_SILK
+        /// (c) This build has no Silk support at all. Catch it here, before `ReaderExecutor`'s
+        /// own ctor-level `#if USE_SILK` gate would throw the same code with a less specific
+        /// message - this call site knows the setting name the user actually needs to react to.
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Setting reader_executor_use_fibers requires a build with Silk support");
+#else
+        if (!isSilkSchedulerInitialized())
+        {
+            /// (b) The setting is on, but the scheduler was never started. The scheduler only
+            /// ever starts once, at boot; the hot-reload half-state below happens when the
+            /// setting is turned on later via `SYSTEM RELOAD CONFIG`, where it now looks "on" in
+            /// `system.server_settings` even though nothing behaves as if it were.
+            if (isSilkConfiguredButNotStarted())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Setting reader_executor_use_fibers requires the Silk scheduler: server setting "
+                    "disk_connections_use_silk is set, but the Silk scheduler was not started at boot; "
+                    "a server restart is required");
+            /// (a) The setting is genuinely off.
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Setting reader_executor_use_fibers requires the server setting disk_connections_use_silk "
+                "(Silk scheduler is not running)");
+        }
+#endif
+    }
     executor_options.long_connection_limit = long_connection_limit;
     if (settings.reader_executor.log_enabled)
     {
