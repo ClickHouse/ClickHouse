@@ -1,5 +1,9 @@
 -- Reading a dynamic subcolumn (a path inside `JSON`) through a `Buffer` table.
 
+-- The first half of the test uses a `Buffer` table whose structure differs from the destination on purpose,
+-- and `StorageBuffer` reports every such difference with a warning - do not send these warnings to the client.
+SET send_logs_level = 'fatal';
+
 DROP TABLE IF EXISTS t_buffer_dynamic_subcolumn_dst;
 DROP TABLE IF EXISTS t_buffer_dynamic_subcolumn;
 
