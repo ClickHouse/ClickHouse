@@ -601,21 +601,27 @@ void StackTrace::tryCapture()
     __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
 }
 
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
-
 /// ClickHouse uses bundled libc++ so type names will be the same on every system thus it's safe to hardcode them
 constexpr std::pair<std::string_view, std::string_view> replacements[]
     = {{"::__1", ""}, {"std::basic_string<char, std::char_traits<char>, std::allocator<char>>", "String"}};
 
-// Demangle @c symbol_name if it's not from __functional header (as such functions don't provide any useful
-// information but pollute stack traces).
+// Hide the name of `std::function` plumbing frames (the `__func`/`__value_func`/`__policy_func`
+// trampolines from libc++'s `__functional` headers): their demangled names are huge - they spell out
+// the whole captured lambda type - and they say nothing that the surrounding frames don't already say.
 // Replace parts from @c replacements with shorter aliases
-static String collapseDemangledNames(std::optional<std::string_view> file, String symbol_name)
+String StackTrace::collapseDemangledNames(std::optional<std::string_view> file, String symbol_name)
 {
     if (symbol_name.empty())
         return "?";
 
-    if (file.has_value())
+    /// The file of a frame is the source line the *instruction* maps to, which is not necessarily
+    /// where the enclosing function is defined: a compiler-generated or inlined `std::function`
+    /// operation puts a line-table entry pointing into `__functional` in the middle of an ordinary
+    /// function. Requiring the symbol to be a libc++ one as well keeps the frame of such a function
+    /// named - it is the only useful part of the frame, and dropping it left `trace_full` in
+    /// `system.crash_log` with a bare `?` for the frame that actually crashed. This is much more
+    /// likely in a ThinLTO build, where `std::function` calls are inlined across translation units.
+    if (file.has_value() && symbol_name.starts_with("std::"))
     {
         std::string_view file_copy = file.value();
         if (auto trim_pos = file_copy.find_last_of('/'); trim_pos != std::string_view::npos)
@@ -637,8 +643,6 @@ static String collapseDemangledNames(std::optional<std::string_view> file, Strin
 
     return symbol_name;
 }
-
-#endif
 
 struct StackTraceRefTriple
 {
@@ -695,7 +699,7 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         }
 
         if (frame.symbol.has_value())
-            out << collapseDemangledNames(frame.file, frame.symbol.value());
+            out << StackTrace::collapseDemangledNames(frame.file, frame.symbol.value());
         else
             out << "?";
 
