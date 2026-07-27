@@ -3,6 +3,7 @@
 #include <base/defines.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOutput.h>
+#include <Core/IdentifierName.h>
 #include <Core/UUID.h>
 
 
@@ -39,6 +40,10 @@ public:
     // Once database or table are set they cannot be assigned with empty value
     void setDatabase(const String & name);
     void setTable(const String & name);
+
+    /// Set the name together with its quote pin; used to write resolved canonical spellings back.
+    void setDatabase(const String & name, IdentifierPartQuote quote);
+    void setTable(const String & name, IdentifierPartQuote quote);
 
     void cloneTableOptions(ASTQueryWithTableAndOutput & cloned) const;
 };

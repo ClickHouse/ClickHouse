@@ -6,6 +6,7 @@
 #include <IO/WriteBuffer.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 
@@ -74,7 +75,12 @@ ASTPtr ArrayJoinNode::toASTImpl(const ConvertToASTOptions & options) const
 
         /// We must check that it has an alias (not empty) as otherwise we try to set it and not all IAST classes support it (LOGICAL_ERROR)
         if (array_join_expression->hasAlias())
-            array_join_expression_ast->setAlias(array_join_expression->getAlias());
+        {
+            if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(array_join_expression_ast.get()))
+                ast_with_alias->setAlias(array_join_expression->getAlias(), array_join_expression->getAliasQuote());
+            else
+                array_join_expression_ast->setAlias(array_join_expression->getAlias());
+        }
         array_join_expressions_ast->children.push_back(std::move(array_join_expression_ast));
     }
 

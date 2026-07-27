@@ -144,6 +144,10 @@ struct IdentifierResolveScope
     /// Argument can be expression like constant, column, function or table expression
     std::unordered_map<std::string, QueryTreeNodePtr> expression_argument_name_to_node;
 
+    /// Argument names registered from a double-quoted definition (quoted lambda argument or
+    /// recursive CTE name); under `standard` matching they are excluded from folded lookups.
+    std::unordered_set<std::string> pinned_expression_argument_names;
+
     ScopeAliases aliases;
 
     /// Store current scope aliases defined in WITH clause if `enable_scopes_for_with_statement` setting is disabled.

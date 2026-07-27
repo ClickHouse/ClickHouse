@@ -3530,7 +3530,7 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
                     case 0: {
                         /// Compound identifier form: `c` -> `c.null`, resolved as a subcolumn
                         auto parts = ident->name_parts;
-                        parts.push_back(subcolumn);
+                        parts.push_back(IdentifierPart{subcolumn});
                         new_child = make_intrusive<ASTIdentifier>(std::move(parts));
                         break;
                     }
@@ -3551,9 +3551,9 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
                         /// JSON dynamic-path access: `j.a` / `j.k0.k1`; missing JSON paths read as NULL
                         static const Strings json_paths = {"a", "b", "k0", "k1"};
                         auto parts = ident->name_parts;
-                        parts.push_back(pickRandomly(fuzz_rand, json_paths));
+                        parts.push_back(IdentifierPart{pickRandomly(fuzz_rand, json_paths)});
                         if (fuzz_rand() % 2 == 0)
-                            parts.push_back(pickRandomly(fuzz_rand, json_paths));
+                            parts.push_back(IdentifierPart{pickRandomly(fuzz_rand, json_paths)});
                         new_child = make_intrusive<ASTIdentifier>(std::move(parts));
                         break;
                     }
@@ -3706,7 +3706,7 @@ ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
                 /// Move alias to the end of the identifier (most of the time) or somewhere else.
                 /// Skip parameterized identifiers: their empty placeholder parts would trip
                 /// chassert(!part.empty()) when rebuilt via the non-param ctor below.
-                Strings clone_parts = id->name_parts;
+                Strings clone_parts = id->name_parts.spellings();
                 int name_parts_size = static_cast<int>(id->name_parts.size());
                 const int index = (fuzz_rand() % 2) == 0 ? (name_parts_size - 1) : (fuzz_rand() % name_parts_size);
 

@@ -7775,6 +7775,8 @@ StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where
     }
     if (exc)
         throw Exception(*exc);
+    /// Canonicalize before UUID stamping, so everything downstream (access checks, caches, logs) sees canonical names.
+    resolved = DatabaseCatalog::instance().resolveStorageIDNames(std::move(resolved), shared_from_this());
     if (!resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
         resolved.uuid = DatabaseCatalog::instance().getDatabase(resolved.database_name)->tryGetTableUUID(resolved.table_name);
     return resolved;
@@ -7790,6 +7792,8 @@ StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace wh
         SharedLockGuard lock(mutex);
         resolved = resolveStorageIDImpl(std::move(storage_id), where, nullptr);
     }
+    if (resolved)
+        resolved = DatabaseCatalog::instance().resolveStorageIDNames(std::move(resolved), shared_from_this());
     if (resolved && !resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
     {
         auto db = DatabaseCatalog::instance().tryGetDatabase(resolved.database_name);
@@ -7872,6 +7876,8 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
             return StorageID::createEmpty();
         }
         storage_id.database_name = current_database;
+        /// The implicit current database is canonical already; keep it exact.
+        storage_id.database_name_quote = IdentifierPartQuote::DoubleQuoted;
         /// NOTE There is no guarantees that table actually exists in database.
         return storage_id;
     }

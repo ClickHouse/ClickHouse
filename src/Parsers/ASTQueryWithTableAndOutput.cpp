@@ -33,6 +33,27 @@ void ASTQueryWithTableAndOutput::setTable(const String & name)
         set(table, make_intrusive<ASTIdentifier>(name));
 }
 
+static ASTPtr makeQuotedIdentifier(const String & name, IdentifierPartQuote quote)
+{
+    IdentifierName parts(std::vector<String>{name});
+    parts.front().quote = quote;
+    return make_intrusive<ASTIdentifier>(std::move(parts));
+}
+
+void ASTQueryWithTableAndOutput::setDatabase(const String & name, IdentifierPartQuote quote)
+{
+    reset(database);
+    if (!name.empty())
+        set(database, makeQuotedIdentifier(name, quote));
+}
+
+void ASTQueryWithTableAndOutput::setTable(const String & name, IdentifierPartQuote quote)
+{
+    reset(table);
+    if (!name.empty())
+        set(table, makeQuotedIdentifier(name, quote));
+}
+
 void ASTQueryWithTableAndOutput::cloneTableOptions(ASTQueryWithTableAndOutput & cloned) const
 {
     if (database)

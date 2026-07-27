@@ -99,6 +99,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
+#include <Core/IdentifierName.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -137,6 +138,7 @@ namespace Setting
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
+    extern const SettingsNameMatchMode column_and_query_name_matching;
     extern const SettingsBool compile_sort_description;
     extern const SettingsBool count_distinct_optimization;
     extern const SettingsUInt64 cross_to_inner_join_rewrite;
@@ -401,7 +403,7 @@ ContextPtr getSubqueryContext(const ContextPtr & context)
     return subquery_context;
 }
 
-void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, const String & database, const Settings & settings)
+void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, const String & database, ContextPtr context, const Settings & settings)
 {
     ASTSelectQuery & select = query->as<ASTSelectQuery &>();
 
@@ -410,7 +412,7 @@ void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, cons
         QueryAliasesNoSubqueriesVisitor(aliases).visit(with);
     QueryAliasesNoSubqueriesVisitor(aliases).visit(select.select());
 
-    CrossToInnerJoinVisitor::Data cross_to_inner{tables, aliases, database};
+    CrossToInnerJoinVisitor::Data cross_to_inner{tables, aliases, database, context};
     cross_to_inner.cross_to_inner_join_rewrite = static_cast<UInt8>(std::min<UInt64>(settings[Setting::cross_to_inner_join_rewrite], 2));
     CrossToInnerJoinVisitor(cross_to_inner).visit(query);
 
@@ -583,6 +585,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     // the case of unsupported settings combination: enabled PRs + enabled AutoPR. Since it is not supported, we just
     // disable both which is technically a correct behaviour: AutoPR is allowed to execute the query without PRs.
     const Settings & settings = context->getSettingsRef();
+
+    if (settings[Setting::column_and_query_name_matching] != NameMatchMode::Sensitive)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Setting 'column_and_query_name_matching' is not supported by the old analyzer, set 'allow_experimental_analyzer = 1'");
+
     if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
         && settings[Setting::automatic_parallel_replicas_mode] != 0)
@@ -715,7 +722,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Rewrite JOINs
     if (!has_input && joined_tables.tablesCount() > 1)
     {
-        rewriteMultipleJoins(query_ptr, joined_tables.tablesWithColumns(), context->getCurrentDatabase(), context->getSettingsRef());
+        rewriteMultipleJoins(query_ptr, joined_tables.tablesWithColumns(), context->getCurrentDatabase(), context, context->getSettingsRef());
 
         joined_tables.reset(getSelectQuery());
         joined_tables.resolveTables();

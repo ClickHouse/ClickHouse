@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/FoldedNameIndex.h>
 #include <Core/UUID.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Disks/IDisk.h>
@@ -288,6 +289,10 @@ public:
 
     /// Get the table for work. Return nullptr if there is no table.
     virtual StoragePtr tryGetTable(const String & name, ContextPtr context) const = 0;
+
+    /// Resolve a case-foldable table reference under `standard` name matching. The default throws
+    /// NOT_IMPLEMENTED: engines without a folded lookup must not silently stay case-sensitive.
+    virtual FoldedNameIndex::ResolutionResult resolveTableName(const IdentifierPart & name, ContextPtr context) const;
 
     virtual StoragePtr getTable(const String & name, ContextPtr context) const;
 

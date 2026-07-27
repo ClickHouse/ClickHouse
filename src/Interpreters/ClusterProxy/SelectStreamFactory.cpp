@@ -86,6 +86,8 @@ ASTPtr rewriteSelectQuery(
         {
             RestoreQualifiedNamesVisitor::Data data;
             data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query->as<ASTSelectQuery &>(), 0));
+            /// Qualified names in the analyzed query carry canonical spellings, so match them canonically.
+            data.distributed_table.resolveCanonicalNames(context);
             data.remote_table.database = remote_database;
             data.remote_table.table = remote_table;
             RestoreQualifiedNamesVisitor(data).visit(modified_query_ast);

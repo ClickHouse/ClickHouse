@@ -33,19 +33,29 @@ InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, Contex
 {
 }
 
+namespace
+{
+
+void writeCanonicalNameBack(const ASTPtr & node, const String & canonical)
+{
+    auto * identifier = node ? node->as<ASTIdentifier>() : nullptr;
+    if (!identifier || canonical.empty())
+        return;
+    identifier->setShortName(canonical);
+    identifier->name_parts.front().quote = IdentifierPartQuote::DoubleQuoted;
+}
+
+/// An implicit database taken from the session context is canonical already.
+IdentifierPartQuote quoteForDatabaseNode(const ASTPtr & node)
+{
+    return node ? identifierPartQuoteFromAST(node) : IdentifierPartQuote::DoubleQuoted;
+}
+
+}
 
 BlockIO InterpreterRenameQuery::execute()
 {
     const auto & rename = query_ptr->as<const ASTRenameQuery &>();
-
-    if (!rename.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
-    {
-        DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable);
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
-    }
-
-    getContext()->checkAccess(getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable));
 
     String current_database = getContext()->getCurrentDatabase();
 
@@ -59,10 +69,52 @@ BlockIO InterpreterRenameQuery::execute()
     /// Don't allow to drop tables (that we are renaming); don't allow to create tables in places where tables will be renamed.
     TableGuards table_guards;
 
+    auto & database_catalog = DatabaseCatalog::instance();
+
     for (const auto & elem : rename.getElements())
     {
         descriptions.emplace_back(elem, current_database);
-        const auto & description = descriptions.back();
+        auto & description = descriptions.back();
+
+        /// Canonicalize references to existing objects and write them back, so access checks,
+        /// ON CLUSTER dispatch, DDL guards and the rename agree. A new name stays as written.
+        if (rename.database)
+        {
+            description.from_database_name = database_catalog.resolveDatabaseNameSpelling(
+                description.from_database_name, identifierPartQuoteFromAST(elem.from.database), getContext());
+            writeCanonicalNameBack(elem.from.database, description.from_database_name);
+        }
+        else
+        {
+            StorageID from_id{description.from_database_name, description.from_table_name};
+            from_id.database_name_quote = quoteForDatabaseNode(elem.from.database);
+            from_id.table_name_quote = identifierPartQuoteFromAST(elem.from.table);
+            from_id = database_catalog.resolveStorageIDNames(std::move(from_id), getContext());
+            description.from_database_name = from_id.database_name;
+            description.from_table_name = from_id.table_name;
+            writeCanonicalNameBack(elem.from.database, description.from_database_name);
+            writeCanonicalNameBack(elem.from.table, description.from_table_name);
+
+            if (rename.exchange || rename.rename_if_cannot_exchange)
+            {
+                /// An exchange destination is an existing object too: a unique match selects it,
+                /// an ambiguous one throws, and an absent one keeps the new name as written.
+                StorageID to_id{description.to_database_name, description.to_table_name};
+                to_id.database_name_quote = quoteForDatabaseNode(elem.to.database);
+                to_id.table_name_quote = identifierPartQuoteFromAST(elem.to.table);
+                to_id = database_catalog.resolveStorageIDNames(std::move(to_id), getContext());
+                description.to_database_name = to_id.database_name;
+                description.to_table_name = to_id.table_name;
+                writeCanonicalNameBack(elem.to.database, description.to_database_name);
+                writeCanonicalNameBack(elem.to.table, description.to_table_name);
+            }
+            else
+            {
+                description.to_database_name = database_catalog.resolveDatabaseNameSpelling(
+                    description.to_database_name, quoteForDatabaseNode(elem.to.database), getContext());
+                writeCanonicalNameBack(elem.to.database, description.to_database_name);
+            }
+        }
 
         UniqueTableName from(description.from_database_name, description.from_table_name);
         UniqueTableName to(description.to_database_name, description.to_table_name);
@@ -71,7 +123,15 @@ BlockIO InterpreterRenameQuery::execute()
         table_guards[to];
     }
 
-    auto & database_catalog = DatabaseCatalog::instance();
+    if (!rename.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
+    {
+        DDLQueryOnClusterParams params;
+        params.access_to_check = getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable);
+        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+    }
+
+    /// Check access against the resolved names, so the check covers the object the query acts on.
+    getContext()->checkAccess(getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable, descriptions));
 
     /// Must do it in consistent order.
     for (auto & table_guard : table_guards)
@@ -250,6 +310,35 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
     }
 
     return {};
+}
+
+AccessRightsElements InterpreterRenameQuery::getRequiredAccess(InterpreterRenameQuery::RenameType type, const RenameDescriptions & descriptions) const
+{
+    AccessRightsElements required_access;
+    const auto & rename = query_ptr->as<const ASTRenameQuery &>();
+    for (const auto & elem : descriptions)
+    {
+        if (type == RenameType::RenameTable)
+        {
+            required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.from_database_name, elem.from_table_name);
+            required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.to_database_name, elem.to_table_name);
+            if (rename.exchange)
+            {
+                required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.from_database_name, elem.from_table_name);
+                required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.to_database_name, elem.to_table_name);
+            }
+        }
+        else if (type == RenameType::RenameDatabase)
+        {
+            required_access.emplace_back(AccessType::SELECT | AccessType::DROP_DATABASE, elem.from_database_name);
+            required_access.emplace_back(AccessType::CREATE_DATABASE | AccessType::INSERT, elem.to_database_name);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type of rename query");
+        }
+    }
+    return required_access;
 }
 
 AccessRightsElements InterpreterRenameQuery::getRequiredAccess(InterpreterRenameQuery::RenameType type) const

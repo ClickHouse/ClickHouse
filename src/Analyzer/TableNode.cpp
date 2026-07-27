@@ -161,7 +161,9 @@ bool TableNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
     const auto & rhs_typed = assert_cast<const TableNode &>(rhs);
     if (storage_id != rhs_typed.storage_id
         || table_expression_modifiers != rhs_typed.table_expression_modifiers
-        || temporary_table_name != rhs_typed.temporary_table_name)
+        || temporary_table_name != rhs_typed.temporary_table_name
+        || temporary_table_name_quote != rhs_typed.temporary_table_name_quote
+        || pinned_column_names != rhs_typed.pinned_column_names)
         return false;
 
     /// Parameterized views: two calls with different argument values share the same `StorageID` but
@@ -185,6 +187,8 @@ void TableNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     {
         state.update(temporary_table_name.size());
         state.update(temporary_table_name);
+        if (temporary_table_name_quote != IdentifierPartQuote::Unquoted)
+            state.update(static_cast<UInt8>(temporary_table_name_quote));
     }
     else
     {
@@ -194,6 +198,12 @@ void TableNode::updateTreeHashImpl(HashState & state, CompareOptions) const
         auto full_name = storage_id.hasDatabase() ? storage_id.getFullNameNotQuoted() : storage_id.getTableName();
         state.update(full_name.size());
         state.update(full_name);
+    }
+
+    for (const auto & pinned_name : pinned_column_names)
+    {
+        state.update(pinned_name.size());
+        state.update(pinned_name);
     }
 
     if (table_expression_modifiers)
@@ -210,6 +220,8 @@ QueryTreeNodePtr TableNode::cloneImpl() const
     auto result_table_node = std::make_shared<TableNode>(storage, storage_id, storage_lock, storage_snapshot);
     result_table_node->table_expression_modifiers = table_expression_modifiers;
     result_table_node->temporary_table_name = temporary_table_name;
+    result_table_node->temporary_table_name_quote = temporary_table_name_quote;
+    result_table_node->pinned_column_names = pinned_column_names;
 
     result_table_node->materialized_cte = materialized_cte;
 
@@ -224,7 +236,7 @@ ASTPtr TableNode::toASTImpl(const ConvertToASTOptions & /* options */) const
 boost::intrusive_ptr<ASTTableIdentifier> TableNode::toASTIdentifier() const
 {
     if (!temporary_table_name.empty())
-        return make_intrusive<ASTTableIdentifier>(temporary_table_name);
+        return make_intrusive<ASTTableIdentifier>(IdentifierName({IdentifierPart{temporary_table_name, temporary_table_name_quote}}));
 
     // In case of cross-replication we don't know what database is used for the table.
     // `storage_id.hasDatabase()` can return false only on the initiator node.

@@ -226,6 +226,12 @@ public:
     String to_database;
     String to_table;
 
+    /// Quoting of the secondary table name parts as written in the query.
+    IdentifierPartQuote from_database_quote = IdentifierPartQuote::Unquoted;
+    IdentifierPartQuote from_table_quote = IdentifierPartQuote::Unquoted;
+    IdentifierPartQuote to_database_quote = IdentifierPartQuote::Unquoted;
+    IdentifierPartQuote to_table_quote = IdentifierPartQuote::Unquoted;
+
     String snapshot_name;
     IAST * snapshot_desc{};
 

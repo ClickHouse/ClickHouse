@@ -423,8 +423,40 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (table_id)
     {
+        /// Write the canonical names back, so access checks and distributed DDL act on the object being altered.
         query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
+        query_ptr->as<ASTAlterQuery &>().setTable(table_id.table_name);
         table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+    }
+
+    /// `MOVE PARTITION TO TABLE` and `REPLACE PARTITION FROM` name secondary tables: canonicalize
+    /// them once, before access checks and ON CLUSTER dispatch, and pin them as exact.
+    auto canonicalize_secondary_table
+        = [&](String & database_name, IdentifierPartQuote & database_quote, String & table_name, IdentifierPartQuote & table_quote)
+    {
+        if (table_name.empty())
+            return;
+        String resolved_database = database_name.empty() ? getContext()->getCurrentDatabase() : database_name;
+        if (resolved_database.empty())
+            return;
+        StorageID secondary_id{resolved_database, table_name};
+        secondary_id.database_name_quote = database_name.empty() ? IdentifierPartQuote::DoubleQuoted : database_quote;
+        secondary_id.table_name_quote = table_quote;
+        secondary_id = DatabaseCatalog::instance().resolveStorageIDNames(secondary_id, getContext());
+        if (!database_name.empty())
+        {
+            database_name = secondary_id.database_name;
+            database_quote = IdentifierPartQuote::DoubleQuoted;
+        }
+        table_name = secondary_id.table_name;
+        table_quote = IdentifierPartQuote::DoubleQuoted;
+    };
+
+    for (const auto & child : alter.command_list->children)
+    {
+        auto & command_ast = child->as<ASTAlterCommand &>();
+        canonicalize_secondary_table(command_ast.to_database, command_ast.to_database_quote, command_ast.to_table, command_ast.to_table_quote);
+        canonicalize_secondary_table(command_ast.from_database, command_ast.from_database_quote, command_ast.from_table, command_ast.from_table_quote);
     }
 
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
@@ -501,6 +533,14 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
 {
     BlockIO res;
+
+    /// Canonicalize the database first, so the access check, ON CLUSTER dispatch and DDL guard act on the same object.
+    if (alter.database)
+        query_ptr->as<ASTAlterQuery &>().setDatabase(
+            DatabaseCatalog::instance().resolveDatabaseNameSpelling(
+                alter.getDatabase(), identifierPartQuoteFromAST(alter.database), getContext()),
+            IdentifierPartQuote::DoubleQuoted);
+
     /// ALTER DATABASE has no table and no UPDATE commands, so the `_row_exists` marker check never applies.
     getContext()->checkAccess(getRequiredAccess(nullptr));
     AlterCommands alter_commands;

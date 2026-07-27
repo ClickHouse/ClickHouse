@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Core/IdentifierName.h>
+
 #include <Interpreters/WindowDescription.h>
 
 #include <Parsers/IAST.h>
@@ -11,6 +13,8 @@ namespace DB
 struct ASTWindowDefinition : public IAST
 {
     std::string parent_window_name;
+    /// Quoting of the parent window name as written in the query.
+    IdentifierPartQuote parent_window_name_quote = IdentifierPartQuote::Unquoted;
 
     ASTPtr partition_by;
 
@@ -47,6 +51,8 @@ protected:
 struct ASTWindowListElement : public IAST
 {
     String name;
+    /// Quoting of the window name as written in the query.
+    IdentifierPartQuote name_quote = IdentifierPartQuote::Unquoted;
 
     // ASTWindowDefinition
     ASTPtr definition;

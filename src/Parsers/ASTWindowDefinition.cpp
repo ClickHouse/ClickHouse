@@ -12,6 +12,7 @@ ASTPtr ASTWindowDefinition::clone() const
     auto result = make_intrusive<ASTWindowDefinition>();
 
     result->parent_window_name = parent_window_name;
+    result->parent_window_name_quote = parent_window_name_quote;
 
     if (partition_by)
     {
@@ -152,6 +153,7 @@ ASTPtr ASTWindowListElement::clone() const
     auto result = make_intrusive<ASTWindowListElement>();
 
     result->name = name;
+    result->name_quote = name_quote;
     result->definition = definition->clone();
     result->children.push_back(result->definition);
 

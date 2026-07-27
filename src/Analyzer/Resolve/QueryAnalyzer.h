@@ -230,7 +230,7 @@ private:
         const NamesAndTypes & matched_columns,
         IdentifierResolveScope & scope);
 
-    void updateMatchedColumnsFromJoinUsing(QueryTreeNodesWithNames & result_matched_column_nodes_with_names, bool is_qualified_matcher, const Identifier & matched_qualified_identifier, IdentifierResolveScope & scope);
+    void updateMatchedColumnsFromJoinUsing(QueryTreeNodesWithNames & result_matched_column_nodes_with_names, bool is_qualified_matcher, const Identifier & matched_qualified_identifier, const IdentifierName & matched_qualified_identifier_name, IdentifierResolveScope & scope);
 
     QueryTreeNodesWithNames resolveQualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
@@ -265,7 +265,7 @@ private:
 
     void validateGroupByKeyType(const DataTypePtr & group_by_key_type, const IdentifierResolveScope & scope) const;
 
-    void resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpolate_node_list, IdentifierResolveScope & scope);
+    void resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpolate_node_list, IdentifierResolveScope & scope, const NamesAndTypes & projection_columns);
 
     void resolveWindowNodeList(QueryTreeNodePtr & window_node_list, IdentifierResolveScope & scope);
 

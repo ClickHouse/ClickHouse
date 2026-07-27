@@ -3,6 +3,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Identifier.h>
 #include <Analyzer/TableExpressionModifiers.h>
+#include <Core/IdentifierName.h>
 
 namespace DB
 {
@@ -17,8 +18,11 @@ namespace DB
 class IdentifierNode final : public IQueryTreeNode
 {
 public:
-    /// Construct identifier node with identifier
+    /// Construct identifier node with identifier, all parts are considered unquoted
     explicit IdentifierNode(Identifier identifier_);
+
+    /// Construct identifier node from a structured name that preserves per-part quoting
+    explicit IdentifierNode(IdentifierName identifier_name_);
 
     /** Construct identifier node with identifier and table expression modifiers
       * when identifier node is part of JOIN TREE.
@@ -27,10 +31,18 @@ public:
       */
     explicit IdentifierNode(Identifier identifier_, TableExpressionModifiers table_expression_modifiers_);
 
+    explicit IdentifierNode(IdentifierName identifier_name_, TableExpressionModifiers table_expression_modifiers_);
+
     /// Get identifier
     const Identifier & getIdentifier() const
     {
         return identifier;
+    }
+
+    /// Get structured name with per-part quoting; part spellings always mirror the identifier
+    const IdentifierName & getIdentifierName() const
+    {
+        return identifier_name;
     }
 
     /// Return true if identifier node has table expression modifiers, false otherwise
@@ -63,6 +75,7 @@ protected:
 
 private:
     Identifier identifier;
+    IdentifierName identifier_name;
     std::optional<TableExpressionModifiers> table_expression_modifiers;
 
     static constexpr size_t children_size = 0;

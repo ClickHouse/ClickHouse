@@ -35,7 +35,16 @@ namespace ErrorCodes
 
 BlockIO InterpreterOptimizeQuery::execute()
 {
-    const auto & ast = query_ptr->as<ASTOptimizeQuery &>();
+    auto & ast = query_ptr->as<ASTOptimizeQuery &>();
+
+    /// Canonicalize first and write back, so the ON CLUSTER access check, DDL entry and local access check see the same object.
+    auto resolved_id = getContext()->tryResolveStorageID(ast);
+    if (resolved_id && resolved_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+    {
+        if (ast.database)
+            ast.setDatabase(resolved_id.database_name, IdentifierPartQuote::DoubleQuoted);
+        ast.setTable(resolved_id.table_name, IdentifierPartQuote::DoubleQuoted);
+    }
 
     if (!ast.cluster.empty())
     {
@@ -44,9 +53,9 @@ BlockIO InterpreterOptimizeQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
-    getContext()->checkAccess(getRequiredAccess());
-
     auto table_id = getContext()->resolveStorageID(ast);
+    getContext()->checkAccess(AccessType::OPTIMIZE, table_id.database_name, table_id.table_name);
+
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);

@@ -50,6 +50,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -352,14 +353,39 @@ BlockIO InterpreterSystemQuery::execute()
 {
     auto & query = query_ptr->as<ASTSystemQuery &>();
 
+    using Type = ASTSystemQuery::Type;
+
+    /// Canonicalize first and write back, so the ON CLUSTER access check, DDL entry and local access
+    /// checks see the same object. `RELOAD DICTIONARY` looks dictionaries up by plain name, which does not fold.
+    if (query.type != Type::RELOAD_DICTIONARY)
+    {
+        if (query.table)
+        {
+            StorageID id_in_query(query.getDatabase(), query.getTable());
+            id_in_query.database_name_quote = identifierPartQuoteFromAST(query.database);
+            id_in_query.table_name_quote = identifierPartQuoteFromAST(query.table);
+            if (auto resolved = getContext()->tryResolveStorageID(id_in_query, Context::ResolveOrdinary))
+            {
+                if (query.database)
+                    query.setDatabase(resolved.database_name, IdentifierPartQuote::DoubleQuoted);
+                query.setTable(resolved.table_name, IdentifierPartQuote::DoubleQuoted);
+            }
+        }
+        else if (query.database)
+        {
+            query.setDatabase(
+                DatabaseCatalog::instance().resolveDatabaseNameSpelling(
+                    query.getDatabase(), identifierPartQuoteFromAST(query.database), getContext()),
+                IdentifierPartQuote::DoubleQuoted);
+        }
+    }
+
     if (!query.cluster.empty())
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccessForDDLOnCluster();
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
-
-    using Type = ASTSystemQuery::Type;
 
     /// Use global context with fresh system profile settings
     auto system_context = Context::createCopy(getContext()->getGlobalContext());
@@ -377,6 +403,9 @@ BlockIO InterpreterSystemQuery::execute()
     else if (query.table)
     {
         StorageID id_in_query(query.getDatabase(), query.getTable());
+        /// Carry the quote pins into resolution, so double-quoted parts stay exact.
+        id_in_query.database_name_quote = identifierPartQuoteFromAST(query.database);
+        id_in_query.table_name_quote = identifierPartQuoteFromAST(query.table);
         /// `IF EXISTS` (currently parsed for `SYSTEM SYNC REPLICA`) must suppress
         /// `UNKNOWN_DATABASE` in addition to `UNKNOWN_TABLE`. Plain `resolveStorageID`
         /// throws on a missing database before the per-handler `if_exists` check is

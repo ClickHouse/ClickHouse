@@ -4,6 +4,7 @@
 #include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DDLGuard.h>
+#include <Core/FoldedNameIndex.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
@@ -153,6 +154,12 @@ public:
     /// database_name must be not empty
     DatabasePtr getDatabase(std::string_view database_name) const;
     DatabasePtr tryGetDatabase(std::string_view database_name) const;
+
+    /// `standard` matching: rewrite database/table to the canonical spellings they fold to. Throws on an
+    /// ambiguous fold; leaves unknown names untouched. Skips internal queries, UUIDs and the temporary database.
+    StorageID resolveStorageIDNames(StorageID table_id, ContextPtr context_) const;
+    /// Same for a bare database reference: returns the canonical spelling; throws on an ambiguous fold.
+    String resolveDatabaseNameSpelling(const String & database_name, IdentifierPartQuote quote, ContextPtr context_) const;
     DatabasePtr getDatabase(const UUID & uuid) const;
     DatabasePtr tryGetDatabase(const UUID & uuid) const;
     bool isDatabaseExist(std::string_view database_name) const;
@@ -331,6 +338,7 @@ private:
     mutable std::mutex databases_mutex;
 
     Databases databases TSA_GUARDED_BY(databases_mutex);
+    FoldedNameIndex database_name_index TSA_GUARDED_BY(databases_mutex);
     Databases databases_without_datalake_catalogs TSA_GUARDED_BY(databases_mutex);
     Databases databases_without_remote TSA_GUARDED_BY(databases_mutex);
     UUIDToStorageMap uuid_map;

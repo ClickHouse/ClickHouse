@@ -44,7 +44,7 @@ static void wrapWithSelectOrderBy(QueryTreeNodePtr & query_root, ContextPtr cont
     String unique_column_name = "__subquery_column_" + toString(UUIDHelpers::generateV4());
     auto subquery_projection_columns = query_node->getProjectionColumns();
     query_node->clearProjectionColumns();
-    query_node->setProjectionAliasesToOverride({unique_column_name});
+    query_node->setProjectionAliasesToOverride({IdentifierPart{unique_column_name, IdentifierPartQuote::Unquoted}});
     query_node->resolveProjectionColumns(subquery_projection_columns);
     query_node->setIsSubquery(true);
 

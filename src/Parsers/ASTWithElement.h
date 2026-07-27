@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/IdentifierName.h>
 #include <Parsers/IAST.h>
 
 
@@ -11,6 +12,8 @@ class ASTWithElement : public IAST
 {
 public:
     String name;
+    /// Quoting of the CTE name as written in the query.
+    IdentifierPartQuote name_quote = IdentifierPartQuote::Unquoted;
     ASTPtr subquery;
     ASTPtr aliases;
 

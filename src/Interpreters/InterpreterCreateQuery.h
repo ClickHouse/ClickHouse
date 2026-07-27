@@ -104,6 +104,9 @@ private:
     TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create, LoadingStrictnessLevel mode);
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
     void validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database);
+    /// Under `standard` column matching, reject view bodies whose column spellings rely on case
+    /// folding: the stored query must analyze in sensitive-mode sessions too.
+    void validateViewSelectColumnSpellings(const ASTCreateQuery & create) const;
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 

@@ -7931,6 +7931,44 @@ Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting
     DECLARE(Bool, enforce_strict_identifier_format, false, R"(
 If enabled, only allow identifiers containing alphanumeric characters and underscores.
 )", 0) \
+    DECLARE(NameMatchMode, database_and_table_name_matching, NameMatchMode::Sensitive, R"(
+Controls how database and table names in queries are matched against existing objects.
+
+Possible values:
+- `sensitive` — Names must match exactly (default).
+- `standard` — SQL-standard-like matching. A name component that is not double-quoted is matched
+  through an ASCII-case-folded namespace: `SELECT * FROM MyBase.MyTable` finds a database and table
+  whose names fold to `mydb` / `mytable`, and the exact spelling gets no priority over other case
+  variants. If several existing objects fold to the same name, the reference is ambiguous and the
+  query fails with the full sorted candidate list. Double-quoted components (`"MyBase"`) are always
+  matched exactly. Backtick-quoted components fold like unquoted ones.
+
+The mode applies to references to existing objects. Names of newly created objects are stored as
+written; creating an unquoted database or table whose name differs only in character case from an
+existing one is rejected, while a double-quoted new name is allowed and later matched exactly.
+)", 0) \
+    DECLARE(NameMatchMode, column_and_query_name_matching, NameMatchMode::Sensitive, R"(
+Controls how column names and other query-scope names — subcolumns, aliases, CTE names, lambda
+arguments and similar — are matched during SELECT query analysis. Requires the analyzer
+(`allow_experimental_analyzer = 1`); with the old analyzer, queries fail when the mode is not
+`sensitive`.
+
+Possible values:
+- `sensitive` — Names must match exactly (default).
+- `standard` — SQL-standard-like matching. An identifier part that is not double-quoted is matched
+  through an ASCII-case-folded namespace: `SELECT MyCol FROM t` finds a column whose name folds to
+  `mycol`, and the exact spelling gets no priority over other case variants. If several names fold
+  to the same key, the reference is ambiguous and the query fails with the full sorted candidate
+  list. Double-quoted parts (`"MyCol"`) are always matched exactly. Backtick-quoted parts fold like
+  unquoted ones.
+
+Double-quoted definitions are pinned within the query being analyzed: a folded reference does not
+match a double-quoted alias, CTE column or similar definition, only a double-quoted exact-spelling
+reference does. Quoting is not persisted in stored metadata, so definitions inside a stored view or
+table reloaded from metadata are not pinned.
+
+Database and table names are covered by the separate setting `database_and_table_name_matching`.
+)", 0) \
     DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(
 SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.
 )", 0) \

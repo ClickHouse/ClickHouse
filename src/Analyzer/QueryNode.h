@@ -136,10 +136,17 @@ public:
         return cte_name;
     }
 
-    /// Set query node CTE name
-    void setCTEName(std::string cte_name_value)
+    /// Get quoting of the CTE name as written in the query
+    IdentifierPartQuote getCTENameQuote() const
+    {
+        return cte_name_quote;
+    }
+
+    /// Set query node CTE name. The quote flag is always updated together with the name.
+    void setCTEName(std::string cte_name_value, IdentifierPartQuote cte_name_quote_value = IdentifierPartQuote::Unquoted)
     {
         cte_name = std::move(cte_name_value);
+        cte_name_quote = cte_name_quote_value;
     }
 
     /// Returns true if query node is a MATERIALIZED CTE, false otherwise
@@ -679,9 +686,21 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-    void setProjectionAliasesToOverride(Names pr_aliases)
+    void setProjectionAliasesToOverride(std::vector<IdentifierPart> pr_aliases)
     {
         projection_aliases_to_override = std::move(pr_aliases);
+    }
+
+    /// Sorted projection column names with double-quoted definitions (`AS "Name"` or `AS t("Name")`).
+    /// Under `standard` matching only double-quoted exact-spelling references match them.
+    const Names & getPinnedProjectionColumnNames() const
+    {
+        return pinned_projection_column_names;
+    }
+
+    void setPinnedProjectionColumnNames(Names pinned_names)
+    {
+        pinned_projection_column_names = std::move(pinned_names);
     }
 
 protected:
@@ -709,8 +728,11 @@ private:
     bool is_limit_by_all = false;
 
     std::string cte_name;
+    /// Double quotes pin the CTE name to exact-case matching under `standard` name matching.
+    IdentifierPartQuote cte_name_quote = IdentifierPartQuote::Unquoted;
     NamesAndTypes projection_columns;
-    Names projection_aliases_to_override;
+    std::vector<IdentifierPart> projection_aliases_to_override;
+    Names pinned_projection_column_names;
     ContextMutablePtr context;
     SettingsChanges settings_changes;
 

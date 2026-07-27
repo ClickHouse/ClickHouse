@@ -1,3 +1,4 @@
+#include <Parsers/ASTIdentifier.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 
@@ -192,6 +193,8 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         /// Insert query parser does not fill table_id because table and
         /// database can be parameters and be filled after parsing.
         StorageID local_table_id(query.getDatabase(), query.getTable());
+        local_table_id.database_name_quote = identifierPartQuoteFromAST(query.database);
+        local_table_id.table_name_quote = identifierPartQuoteFromAST(query.table);
         query.table_id = current_context->resolveStorageID(local_table_id);
     }
 

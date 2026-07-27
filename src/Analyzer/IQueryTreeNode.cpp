@@ -116,8 +116,17 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
             !lhs_node_to_compare->isEqualImpl(*rhs_node_to_compare, compare_options))
             return false;
 
-        if (compare_options.compare_aliases && lhs_node_to_compare->alias != rhs_node_to_compare->alias)
-            return false;
+        if (compare_options.compare_aliases)
+        {
+            if (lhs_node_to_compare->alias != rhs_node_to_compare->alias)
+                return false;
+
+            /// A double-quoted alias pins the name under `standard` matching, so it is part of identity.
+            if (!lhs_node_to_compare->alias.empty()
+                && (lhs_node_to_compare->alias_quote == IdentifierPartQuote::DoubleQuoted)
+                    != (rhs_node_to_compare->alias_quote == IdentifierPartQuote::DoubleQuoted))
+                return false;
+        }
 
         const auto & lhs_children = lhs_node_to_compare->children;
         const auto & rhs_children = rhs_node_to_compare->children;
@@ -223,6 +232,8 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
         {
             hash_state.update(node_to_process->alias.size());
             hash_state.update(node_to_process->alias);
+            if (node_to_process->alias_quote == IdentifierPartQuote::DoubleQuoted)
+                hash_state.update(true);
         }
 
         node_to_process->updateTreeHashImpl(hash_state, compare_options);
@@ -298,7 +309,7 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
             continue;
 
         node_clone->original_ast = node_to_clone->original_ast;
-        node_clone->setAlias(node_to_clone->alias);
+        node_clone->setAlias(node_to_clone->alias, node_to_clone->alias_quote);
         node_clone->parenthesized = node_to_clone->parenthesized;
         node_clone->children = node_to_clone->children;
         node_clone->weak_pointers = node_to_clone->weak_pointers;
@@ -365,8 +376,8 @@ ASTPtr IQueryTreeNode::toAST(const ConvertToASTOptions & options) const
 {
     auto converted_node = toASTImpl(options);
 
-    if (auto * /*ast_with_alias*/ _ = dynamic_cast<ASTWithAlias *>(converted_node.get()))
-        converted_node->setAlias(alias);
+    if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(converted_node.get()))
+        ast_with_alias->setAlias(alias, alias_quote);
 
     converted_node->setParenthesized(parenthesized);
 

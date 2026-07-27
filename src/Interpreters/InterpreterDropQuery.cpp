@@ -98,6 +98,38 @@ BlockIO InterpreterDropQuery::execute()
 BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_ptr)
 {
     auto & drop = drop_query_ptr->as<ASTDropQuery &>();
+
+    /// Canonicalize first and write back, so the ON CLUSTER access check, DDL entry and local execution act on the same object.
+    if (drop.table && drop.database && !drop.isTemporary())
+    {
+        auto table_id = DatabaseCatalog::instance().resolveStorageIDNames(StorageID(drop), getContext());
+        drop.setDatabase(table_id.database_name, IdentifierPartQuote::DoubleQuoted);
+        drop.setTable(table_id.table_name, IdentifierPartQuote::DoubleQuoted);
+    }
+    else if (drop.database && !drop.table)
+    {
+        drop.setDatabase(
+            DatabaseCatalog::instance().resolveDatabaseNameSpelling(
+                drop.getDatabase(), identifierPartQuoteFromAST(drop.database), getContext()),
+            IdentifierPartQuote::DoubleQuoted);
+    }
+    else if (drop.table && !drop.database && !drop.cluster.empty() && !drop.isTemporary())
+    {
+        /// The cluster entry replays with exact matching, so qualify and canonicalize an unqualified
+        /// name here. A session temporary table shadows the current-database one and stays as written.
+        bool is_session_temporary = static_cast<bool>(getContext()->tryResolveStorageID(
+            StorageID{"", drop.getTable()}, Context::ResolveExternal));
+        if (!is_session_temporary && !getContext()->getCurrentDatabase().empty())
+        {
+            StorageID table_id{getContext()->getCurrentDatabase(), drop.getTable()};
+            table_id.database_name_quote = IdentifierPartQuote::DoubleQuoted;
+            table_id.table_name_quote = identifierPartQuoteFromAST(drop.table);
+            table_id = DatabaseCatalog::instance().resolveStorageIDNames(std::move(table_id), getContext());
+            drop.setDatabase(table_id.database_name, IdentifierPartQuote::DoubleQuoted);
+            drop.setTable(table_id.table_name, IdentifierPartQuote::DoubleQuoted);
+        }
+    }
+
     if (!drop.cluster.empty() && drop.table && !drop.if_empty && !maybeRemoveOnCluster(current_query_ptr, getContext()))
     {
         DDLQueryOnClusterParams params;
@@ -164,7 +196,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
     {
         if (context_->tryResolveStorageID(table_id, Context::ResolveExternal))
             return executeToTemporaryTable(table_id.getTableName(), query.kind);
-        query.setDatabase(table_id.database_name = context_->getCurrentDatabase());
+        /// The implicit current database is canonical already; keep it exact.
+        query.setDatabase(table_id.database_name = context_->getCurrentDatabase(), IdentifierPartQuote::DoubleQuoted);
+        table_id.database_name_quote = IdentifierPartQuote::DoubleQuoted;
     }
 
     if (query.isTemporary())
@@ -173,6 +207,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             return {};
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Temporary table {} doesn't exist", backQuoteIfNeed(table_id.table_name));
     }
+
+    /// Canonicalize first, so the DDL guard, access checks and the drop act on the same object.
+    table_id = DatabaseCatalog::instance().resolveStorageIDNames(std::move(table_id), context_);
 
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, nullptr) : nullptr);
 
@@ -466,7 +503,10 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     if (query.kind != ASTDropQuery::Kind::Detach && query.kind != ASTDropQuery::Kind::Drop && query.kind != ASTDropQuery::Kind::Truncate)
         return {};
 
-    const auto & database_name = query.getDatabase();
+    /// Resolve the canonical database name first, so the guard, the access check and the drop
+    /// itself all act on the same object.
+    const String database_name = DatabaseCatalog::instance().resolveDatabaseNameSpelling(
+        query.getDatabase(), identifierPartQuoteFromAST(query.database), getContext());
     auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
 
     database = tryGetDatabase(database_name, query.if_exists);
@@ -875,9 +915,10 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))
     {
         /// We create and execute `drop` query for internal table.
+        /// The names are exact catalog names; pin them so they are not re-folded against case siblings.
         auto drop_query = make_intrusive<ASTDropQuery>();
-        drop_query->setDatabase(target_table_id.database_name);
-        drop_query->setTable(target_table_id.table_name);
+        drop_query->setDatabase(target_table_id.database_name, IdentifierPartQuote::DoubleQuoted);
+        drop_query->setTable(target_table_id.table_name, IdentifierPartQuote::DoubleQuoted);
         drop_query->kind = kind;
         drop_query->sync = sync;
         drop_query->if_exists = true;

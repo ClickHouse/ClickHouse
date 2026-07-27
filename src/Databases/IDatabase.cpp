@@ -32,6 +32,14 @@ namespace ErrorCodes
 
 }
 
+FoldedNameIndex::ResolutionResult IDatabase::resolveTableName(const IdentifierPart & name, ContextPtr) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "Database engine {} does not support `standard` table name matching. "
+        "Double-quote the table name {} to match it exactly",
+        getEngineName(), backQuoteIfNeed(name.spelling));
+}
+
 StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
 {
     if (auto storage = tryGetTable(name, context))

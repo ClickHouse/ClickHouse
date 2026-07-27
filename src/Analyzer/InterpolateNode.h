@@ -52,6 +52,13 @@ public:
 
     const std::string & getExpressionName() const { return expression_name; }
 
+    /// Rewrite the stored target to the canonical column name so downstream matching
+    /// works when a `standard`-mode lookup resolved a differently-cased target.
+    void setExpressionName(std::string name) { expression_name = std::move(name); }
+
+    /// Original target spelling with quotes, captured at construction (unrecoverable after resolution).
+    const IdentifierName & getExpressionIdentifierName() const { return expression_identifier_name; }
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
@@ -63,8 +70,10 @@ protected:
 
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
-    /// Initial name from column identifier.
+    /// Initial name from column identifier, canonicalized when a `standard`-mode lookup resolves the target.
     std::string expression_name;
+    /// Original spelling with per-part quoting, for pin checks and AST round trips.
+    IdentifierName expression_identifier_name;
 
 private:
     static constexpr size_t expression_child_index = 0;

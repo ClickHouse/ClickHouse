@@ -1,4 +1,5 @@
 #include <Databases/DatabaseOverlay.h>
+#include <set>
 
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -15,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int BAD_ARGUMENTS;
@@ -40,6 +42,46 @@ bool DatabaseOverlay::isTableExist(const String & table_name, ContextPtr context
             return true;
     }
     return false;
+}
+
+FoldedNameIndex::ResolutionResult DatabaseOverlay::resolveTableName(const IdentifierPart & name, ContextPtr context_) const
+{
+    /// Merge the children's resolutions; the same canonical name in several children is one
+    /// object for our purposes (the earlier child shadows the later, as in tryGetTable).
+    std::set<String> canonical_names;
+    for (const auto & db : databases)
+    {
+        FoldedNameIndex::ResolutionResult child;
+        try
+        {
+            child = db->resolveTableName(name, context_);
+        }
+        catch (const Exception & e)
+        {
+            /// A child without folded lookup (e.g. Filesystem) contributes exact-only tables;
+            /// they are still reachable by their exact spelling through the regular path.
+            if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
+                continue;
+            throw;
+        }
+        if (child.outcome == FoldedNameIndex::Outcome::Matched)
+            canonical_names.insert(child.canonical);
+        else if (child.outcome == FoldedNameIndex::Outcome::Ambiguous)
+            canonical_names.insert(child.candidates.begin(), child.candidates.end());
+    }
+
+    FoldedNameIndex::ResolutionResult result;
+    if (canonical_names.empty())
+        return result;
+    if (canonical_names.size() == 1)
+    {
+        result.outcome = FoldedNameIndex::Outcome::Matched;
+        result.canonical = *canonical_names.begin();
+        return result;
+    }
+    result.outcome = FoldedNameIndex::Outcome::Ambiguous;
+    result.candidates.assign(canonical_names.begin(), canonical_names.end());
+    return result;
 }
 
 StoragePtr DatabaseOverlay::tryGetTable(const String & table_name, ContextPtr context_) const
