@@ -204,6 +204,15 @@ private:
     /// registered (see the implementation for the reasoning). Both steps are idempotent.
     void registerReplicaThenEnsureNestedTables();
 
+    /// Check the coordination identity this handler resolved (the macro-expanded
+    /// materialized_postgresql_keeper_path and materialized_postgresql_replica_name) against the identity
+    /// persisted in the metadata of the nested tables this replica already owns, throwing BAD_ARGUMENTS on a
+    /// mismatch. The expansion happens against the *current* server configuration, so a change of the macros
+    /// it goes through would silently move this replica's coordination bookkeeping to a different Keeper
+    /// identity than the shared data it already holds. Idempotent and a no-op for a replica that has no
+    /// nested tables yet.
+    void assertCoordinationIdentityMatchesNestedTables() const;
+
     /// Publish this replica's naming-affecting settings at <keeper_path>/naming (first replica) or check
     /// them against the already published ones (joining replica), throwing BAD_ARGUMENTS on a mismatch.
     /// All coordinated replicas derive the ClickHouse names of the shared nested tables from the shared

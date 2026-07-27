@@ -64,7 +64,11 @@ namespace ErrorCodes
         "the registration is ownership-checked, so a name already registered by another replica is rejected. " \
         "It must also resolve to a single Keeper node name: an empty value or a value containing `/` is rejected, " \
         "because a nested path under `<keeper_path>/replicas` would break the last-replica bookkeeping that " \
-        "decides when the shared replication slot and publication are removed.", 0) \
+        "decides when the shared replication slot and publication are removed. Together with " \
+        "`materialized_postgresql_keeper_path` it forms the coordination identity of the replica, which must " \
+        "stay the same for the lifetime of the setup: both are re-expanded from the server configuration on " \
+        "every startup, so a configuration-only change of a macro they expand through is refused (it would " \
+        "move the coordination bookkeeping away from the shared data this replica already holds).", 0) \
 
 DECLARE_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS, MATERIALIZED_POSTGRESQL_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS, MaterializedPostgreSQLSettings, MaterializedPostgreSQLSetting)

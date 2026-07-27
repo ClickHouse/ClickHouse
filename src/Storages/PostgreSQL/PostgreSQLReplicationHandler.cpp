@@ -31,6 +31,9 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Interpreters/getTableOverride.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -1617,6 +1620,11 @@ void PostgreSQLReplicationHandler::registerReplicaThenEnsureNestedTables()
     /// handler's constructor) keeps `DROP DATABASE` of a misconfigured setup possible.
     assertValidCoordinationReplicaName(coordination_replica_name);
 
+    /// For the same reason, refuse to proceed when the expanded coordination identity no longer matches the
+    /// one persisted in the nested tables this replica already owns. Runs before any Keeper node is created
+    /// under the (possibly new) path.
+    assertCoordinationIdentityMatchesNestedTables();
+
     ensureCoordinatedNamingCompatible();
     ensureCoordinatedTableSetCompatible();
 
@@ -1657,6 +1665,82 @@ void PostgreSQLReplicationHandler::registerReplicaThenEnsureNestedTables()
             }
         }
         throw;
+    }
+}
+
+
+void PostgreSQLReplicationHandler::assertCoordinationIdentityMatchesNestedTables() const
+{
+    /// `coordination_keeper_path` and `coordination_replica_name` are expanded from the *current* server
+    /// configuration every time the handler is constructed, but the nested Replicated/SharedReplacingMergeTree
+    /// tables of this replica were created with the expansion that was in effect back then, and they keep it
+    /// verbatim in their persisted engine arguments (the shared tree's Keeper path and this replica's name in
+    /// it). The <keeper_path>/replicas/<name> registration is persistent as well. So a configuration-only
+    /// change of a macro these settings go through (or of an intermediate config macro they expand through)
+    /// would make this handler elect a leader, register and tear down under one identity while the shared
+    /// data it already owns lives under another: the old /replicas subtree could never drain (leaking the
+    /// shared replication slot, publication and snapshot marker forever), and leader election could even be
+    /// split from the shared nested-table path.
+    ///
+    /// The expanded identity is therefore treated as immutable for a setup that already exists, and the
+    /// nested-table metadata is its authoritative record. Recovering the old identity from it and silently
+    /// continuing under it is deliberately NOT done: the settings are what the user asked for, and quietly
+    /// ignoring them would hide the misconfiguration. Refuse fail-close instead, so the setup keeps working
+    /// as soon as the configuration is restored. Expanding the settings at CREATE time and persisting the
+    /// literals is not an option either: `materialized_postgresql_replica_name` must stay per-replica, and a
+    /// coordinated single-table engine may be created through a `Replicated` database, which replicates the
+    /// CREATE query verbatim to every replica.
+    for (const auto & [table_name, materialized_storage] : materialized_storages)
+    {
+        if (!materialized_storage->tryGetNested())
+            continue;
+
+        const auto nested_id = materialized_storage->getNestedStorageID();
+        auto database = DatabaseCatalog::instance().tryGetDatabase(nested_id.database_name);
+        if (!database)
+            continue;
+
+        /// The persisted definition is what matters here, so ask for it with a context that has no query
+        /// context: `DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl` otherwise regenerates the
+        /// definition from the live settings, which is exactly the value this check must not trust.
+        ASTPtr create_ast = database->tryGetCreateTableQuery(nested_id.table_name, getContext()->getGlobalContext());
+        const auto * create_query = create_ast ? create_ast->as<ASTCreateQuery>() : nullptr;
+        if (!create_query || !create_query->storage || !create_query->storage->engine)
+            continue;
+
+        /// Both replicated nested engines take the fully expanded Keeper path and replica name as their first
+        /// two arguments (see `getCreateNestedTableQuery`). Anything else is not a coordinated nested table.
+        const auto & engine = *create_query->storage->engine;
+        if (!engine.arguments || engine.arguments->children.size() < 2)
+            continue;
+
+        const auto * path_literal = engine.arguments->children[0]->as<ASTLiteral>();
+        const auto * replica_name_literal = engine.arguments->children[1]->as<ASTLiteral>();
+        if (!path_literal || !replica_name_literal
+            || path_literal->value.getType() != Field::Types::String
+            || replica_name_literal->value.getType() != Field::Types::String)
+            continue;
+
+        const String persisted_zookeeper_path = path_literal->value.safeGet<String>();
+        const String persisted_replica_name = replica_name_literal->value.safeGet<String>();
+
+        const auto expected_spec = makeNestedEngineSpec(table_name);
+        if (persisted_zookeeper_path == expected_spec.zookeeper_path && persisted_replica_name == expected_spec.replica_name)
+            continue;
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The coordination identity of this MaterializedPostgreSQL replica changed after it was created: "
+            "materialized_postgresql_keeper_path and materialized_postgresql_replica_name now expand to '{}' "
+            "and '{}', while the existing nested table for `{}` was created as a replica named '{}' of the "
+            "shared replicated tree at '{}'. The expanded coordination identity must stay the same for the "
+            "lifetime of a coordinated setup - the registration under <keeper_path>/replicas and the shared "
+            "nested tables are persistent, so continuing would leak the shared replication slot, publication "
+            "and snapshot marker, and could split leader election from the shared data. Restore the "
+            "configuration (most likely the macros these settings expand through) to the values this replica "
+            "was created with, or drop this replica's coordinated MaterializedPostgreSQL engine and recreate "
+            "it on the new coordination path",
+            coordination_keeper_path, coordination_replica_name, table_name,
+            persisted_replica_name, persisted_zookeeper_path);
     }
 }
 

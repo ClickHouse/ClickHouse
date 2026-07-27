@@ -2221,3 +2221,82 @@ def test_alter_mutable_setting_on_demoted_leader(started_cluster):
 
     standby_node.start_clickhouse()
     check_tables_are_synchronized(standby_node, "test_table")
+
+
+def test_coordination_identity_must_stay_stable_across_restart(started_cluster):
+    # `materialized_postgresql_keeper_path` and `materialized_postgresql_replica_name` are expanded from
+    # the *current* server configuration on every startup, while the nested replicated tables keep the
+    # expansion they were created with in their engine arguments and the <keeper_path>/replicas/<name>
+    # registration is persistent. A configuration-only change of a macro they expand through must
+    # therefore be refused: otherwise this replica would elect, register and tear down under a different
+    # Keeper identity than the shared data it already owns, the old /replicas subtree could never drain
+    # (leaking the shared slot, publication and snapshot marker forever) and leader election could be
+    # split from the shared nested-table path.
+    keeper_path_resolved = "/clickhouse/mat_pg/1/identity_test"
+    identity_settings = [
+        "materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree'",
+        "materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{shard}/identity_test'",
+        "materialized_postgresql_replica_name = '{replica}'",
+        "materialized_postgresql_tables_list = 'test_table'",
+    ]
+    macros_config = "/etc/clickhouse-server/config.d/macros.xml"
+    rejection_line = "coordination identity of this MaterializedPostgreSQL replica changed"
+
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+    try:
+        pg_manager.create_materialized_db(
+            ip=cluster.postgres_ip,
+            port=cluster.postgres_port,
+            settings=identity_settings,
+        )
+        check_tables_are_synchronized(instance, "test_table")
+
+        rejection_baseline = int(instance.count_in_log(rejection_line))
+
+        # Rename this replica in the server configuration only, and restart. The database metadata is
+        # unchanged, so `{replica}` now expands to a name this setup has never been registered under.
+        instance.replace_in_config(
+            macros_config, "coord_instance1", "coord_instance1_renamed"
+        )
+        instance.restart_clickhouse()
+
+        wait_for_new_log_occurrence(
+            instance, rejection_line, rejection_baseline, timeout=90
+        )
+
+        # The startup is refused before anything is registered or created under the new identity: the
+        # only registration is still the original one.
+        assert (
+            instance.query(
+                f"SELECT name FROM system.zookeeper "
+                f"WHERE path = '{keeper_path_resolved}/replicas' ORDER BY name"
+            ).split()
+            == ["coord_instance1"]
+        )
+
+        # Restoring the configuration makes the retrying startup succeed and replication resume - the
+        # refusal keeps the setup intact rather than breaking it.
+        instance.replace_in_config(
+            macros_config, "coord_instance1_renamed", "coord_instance1"
+        )
+        instance.restart_clickhouse()
+
+        instance.query(
+            "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+        )
+        check_tables_are_synchronized(instance, "test_table")
+        assert int(instance.query("SELECT count() FROM test_database.test_table")) == 200
+    finally:
+        # Never leave the renamed macro behind: every other test on this node depends on it.
+        instance.replace_in_config(
+            macros_config, "coord_instance1_renamed", "coord_instance1"
+        )
+        if not instance.get_process_pid("clickhouse"):
+            instance.start_clickhouse()
+        pg_manager.drop_materialized_db()
+
+    assert not replication_slot_exists()
+    assert not publication_exists()
