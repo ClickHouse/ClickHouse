@@ -10,17 +10,28 @@ Int32 / toInt8(-1)	1	1
 Int32 / toInt64(-1)	1	1
 Nullable(Int64) / toInt64(-1)	1	1
 LowCardinality(Int64) / toInt64(-1)	1	1
+Array(Int64) / toInt64(-1)	1	1
+Array(Int32) / toInt32(-1)	1	1
+Array(Array(Int64)) / toInt64(-1)	1	1
+Array(LowCardinality(Int64)) / toInt64(-1)	1	1
+Tuple(Int64, Int64) / toInt64(-1)	1	1
+Tuple(Int64, Int8) / toInt64(-1)	1	1
 wrong ORDER BY: the keyed order must equal the Memory oracle
 ORDER BY intDiv(a, -1)	[-9223372036854775808,-5,5,9223372036854775807]	[-9223372036854775808,-5,5,9223372036854775807]
+ORDER BY intDiv(Array(Int64), -1)	[[-9223372036854775808],[-5],[5],[9223372036854775807]]	[[-9223372036854775808],[-5],[5],[9223372036854775807]]
 preserved pruning: the guard must not fire outside the wrap
-single-point range at the minimum	2	2
+single-point range at the minimum	8	8
+single-point range at the minimum still prunes	1
+single-point range at the minimum prunes correctly	0	0
 ordinary intDiv still prunes	1
 range excluding the minimum still prunes	1
 range excluding the minimum answers	1	1
 divisor -2 still prunes	1
 divisor -2 answers	1	1
-UInt8 / toUInt8(255)	4	4
-UInt16 / toUInt16(65535)	4	4
+UInt8 / toUInt8(255)	1	1
+UInt8 / toUInt8(255) still prunes	1
+UInt16 / toUInt16(65535)	1	1
+UInt16 / toUInt16(65535) still prunes	1
 Float divisor still prunes	1
 Float divisor answers	1	1
 Float divisor keeps read-in-order	1
@@ -28,3 +39,7 @@ Int128 divisor keeps read-in-order	1
 Int16 dividend keeps read-in-order	1
 half-bounded range prunes exactly	1
 half-bounded range answers	17	17
+Array dividend, positive divisor still prunes	1
+Array dividend, positive divisor answers	1	1
+Array(UInt8) element is not a carrier, still prunes	1
+Array(UInt8) element is not a carrier, answers	1	1

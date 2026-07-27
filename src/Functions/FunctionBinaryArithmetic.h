@@ -3561,6 +3561,13 @@ public:
                         return {true, is_constant_positive, false};
                     }
 
+                    // The same wrap through a compound dividend (see
+                    // `intDivCompoundDividendWrapsInsteadOfThrowing`). The endpoints are `Array`/`Tuple`
+                    // Fields, whose element-wise containment of the wrap point is not cheaply modelled,
+                    // so reject unconditionally rather than trying to decide per element.
+                    if (name_view == "intDiv" && intDivCompoundDividendWrapsInsteadOfThrowing(arg_type, divisor_type, constant))
+                        return {false, true, false, false};
+
                     // Mirror case: a signed dividend with an unsigned constant divisor whose high bit
                     // is set reinterprets the divisor as negative (see `intDivConstReinterpretsNegative`),
                     // so the function is monotonic decreasing even though the raw constant looks positive.
@@ -3717,8 +3724,7 @@ public:
                 // `intDiv(unsigned, signed-integer-const)` is a step function (see
                 // `intDivRangeCrossesSignedWrap`): a range crossing the discontinuity is non-monotonic,
                 // so reject it (no pruning); a range on one side is monotonic on that range but not
-                // always-monotonic. The wrap is exclusive to the signed-integer divisor path; a Float
-                // divisor computes through floating point and never wraps.
+                // always-monotonic. The wrap is exclusive to the signed-integer divisor path.
                 if (name_view == "intDiv" && isUInt(arg_type) && isInt(divisor_type))
                 {
                     if (intDivRangeCrossesSignedWrap(arg_type, left_point, right_point))
@@ -3736,6 +3742,13 @@ public:
                         return {false, true, false, false};
                     return {true, is_constant_positive, false, is_strict};
                 }
+
+                // The same wrap through a compound dividend (see
+                // `intDivCompoundDividendWrapsInsteadOfThrowing`). The endpoints are `Array`/`Tuple`
+                // Fields, whose element-wise containment of the wrap point is not cheaply modelled, so
+                // reject unconditionally rather than trying to decide per element.
+                if (name_view == "intDiv" && intDivCompoundDividendWrapsInsteadOfThrowing(arg_type, divisor_type, constant))
+                    return {false, true, false, false};
 
                 // Mirror case: a signed dividend with an unsigned constant divisor whose high bit
                 // is set reinterprets the divisor as negative (see `intDivConstReinterpretsNegative`),
@@ -3903,10 +3916,11 @@ public:
     /// `b == -1` and deliberately avoids the FPE, silently producing the wrapped value instead. Only
     /// operand pairs taking that vectorized path can therefore be mis-pruned, and those are exactly the
     /// registered specializations with a signed dividend: an `Int32`/`Int64` dividend and a native signed
-    /// divisor. Every other pair throws (on `ENGINE=Memory` too, i.e. at runtime), so it is not a
-    /// monotonicity problem. Returns true when this operand pair divides by an effective `-1` through
-    /// that FPE-suppressing path. `arg_type` and `divisor_type` are already stripped of
-    /// Nullable/LowCardinality.
+    /// divisor. Every other SCALAR pair throws (on `ENGINE=Memory` too, i.e. at runtime), so it is not a
+    /// monotonicity problem; a compound dividend whose elements are of a wrapping type is a separate
+    /// carrier, see `intDivCompoundDividendWrapsInsteadOfThrowing`. Returns true when this scalar operand
+    /// pair divides by an effective `-1` through that FPE-suppressing path. `arg_type` and `divisor_type`
+    /// are already stripped of Nullable/LowCardinality.
     static bool intDivWrapsInsteadOfThrowing(const DataTypePtr & arg_type, const DataTypePtr & divisor_type, const Field & constant)
     {
         if (!isInt32(arg_type) && !isInt64(arg_type))
@@ -3914,6 +3928,39 @@ public:
         if (!isNativeInt(divisor_type))
             return false;
         return accurateEquals(constant, Field(-1));
+    }
+
+    /// Same defect one type wrapper up: an `Array`/`Tuple` dividend divided by a scalar constant is
+    /// evaluated element-wise (`executeArrayWithNumericImpl` / `tupleIntDivByNumber` unpack to the element
+    /// type and re-enter the arithmetic), so an element type that wraps instead of throwing makes the
+    /// compound result non-monotonic exactly as the scalar case does. `getMonotonicityForRange` sees only
+    /// the OUTER type, so the scalar predicate above cannot detect it. A `Tuple` is a carrier as soon as
+    /// ANY of its elements is: the verdict is about the outer comparison, and one wrapping element is
+    /// enough to break its order. Nesting is followed recursively (`Array(Array(Int64))` is a measured
+    /// carrier), stripping Nullable/LowCardinality at each level like the scalar path does.
+    static bool intDivCompoundDividendWrapsInsteadOfThrowing(
+        const DataTypePtr & arg_type, const DataTypePtr & divisor_type, const Field & constant)
+    {
+        const auto unwrapped = removeNullable(recursiveRemoveLowCardinality(arg_type));
+
+        if (const auto * array_type = typeid_cast<const DataTypeArray *>(unwrapped.get()))
+        {
+            const auto & nested = array_type->getNestedType();
+            return intDivWrapsInsteadOfThrowing(removeNullable(recursiveRemoveLowCardinality(nested)), divisor_type, constant)
+                || intDivCompoundDividendWrapsInsteadOfThrowing(nested, divisor_type, constant);
+        }
+
+        if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(unwrapped.get()))
+        {
+            for (const auto & element : tuple_type->getElements())
+            {
+                if (intDivWrapsInsteadOfThrowing(removeNullable(recursiveRemoveLowCardinality(element)), divisor_type, constant)
+                    || intDivCompoundDividendWrapsInsteadOfThrowing(element, divisor_type, constant))
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     /// Does [left_point, right_point] contain the signed minimum of the computation width, i.e. the single
