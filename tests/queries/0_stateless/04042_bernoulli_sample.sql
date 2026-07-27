@@ -314,6 +314,20 @@ SELECT
         query_plan_join_swap_table = 0, enable_join_runtime_filters = 0,
         allow_experimental_parallel_reading_from_replicas = 0, use_statistics = 0,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0);
+SELECT 'bernoulli samples of two tables are correlated, not independent';
+-- Documented behavior (see docs/en/sql-reference/statements/select/sample.md): rows are chosen by
+-- their position within a part and the per-part stream is derived from `bernoulli_sample_seed` and
+-- the position of the part in the query, NOT from table identity. So two reads with a matching part
+-- layout and the same seed keep the SAME row positions: sampling both sides of an aligned join
+-- retains about p*N rows, not the p*p*N that independent sampling would give. This pins the
+-- contract so that a change to per-table seeding cannot silently diverge from the documentation.
+SELECT
+    (SELECT count() FROM t_bernoulli_join_l SAMPLE 0.1 SETTINGS bernoulli_sample_seed = 42)
+    =
+    (SELECT count() FROM (SELECT x FROM t_bernoulli_join_l SAMPLE 0.1) AS a
+        INNER JOIN (SELECT x FROM t_bernoulli_join_r SAMPLE 0.1) AS b USING (x)
+        SETTINGS bernoulli_sample_seed = 42)
+SETTINGS bernoulli_sample_seed = 42;
 DROP TABLE t_bernoulli_join_l;
 DROP TABLE t_bernoulli_join_r;
 
@@ -322,11 +336,13 @@ SELECT 'bernoulli sample with STREAM is rejected';
 -- table_expression_modifiers, and ReadFromMergeTree::selectRangesToRead returns before getSampling,
 -- so the per-part Bernoulli filter is never built in the streaming subplan. SAMPLE + STREAM would
 -- therefore silently return the full (unsampled) table. The analyzer must reject the combination up
--- front. On Linux this is SYNTAX_ERROR (the modifier-compatibility guard in
+-- front. With the analyzer on Linux this is SYNTAX_ERROR (the modifier-compatibility guard in
 -- validateTableExpressionModifiers); on non-Linux platforms STREAM itself is unsupported, so
--- SUPPORT_IS_DISABLED fires first.
+-- SUPPORT_IS_DISABLED fires first. With the old analyzer `validateTableExpressionModifiers` never
+-- runs, but streaming reads are not implemented there at all (`InterpreterSelectQuery`), so
+-- NOT_IMPLEMENTED fires instead. Every path rejects the combination up front, which is what matters.
 SELECT count() FROM t_bernoulli SAMPLE 0.1 STREAM
-SETTINGS allow_experimental_bernoulli_sample = 1, enable_streaming_queries = 1; -- { serverError SYNTAX_ERROR, SUPPORT_IS_DISABLED }
+SETTINGS allow_experimental_bernoulli_sample = 1, enable_streaming_queries = 1; -- { serverError SYNTAX_ERROR, SUPPORT_IS_DISABLED, NOT_IMPLEMENTED }
 
 DROP TABLE t_bernoulli;
 DROP TABLE t_bernoulli_empty;
