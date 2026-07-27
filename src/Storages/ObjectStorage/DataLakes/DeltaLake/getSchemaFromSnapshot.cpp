@@ -623,7 +623,7 @@ namespace
 /// Visitor that walks a kernel `SharedSchema` and builds the Delta `StructType.fields` JSON, preserving the
 /// exact Delta types. Unlike `SchemaVisitor`, it does not collapse `binary`->`String` or
 /// `timestamp_ntz`->`DateTime64`, so a schema round-tripped through it stays byte-identical to the `_delta_log`.
-struct DeltaJsonSchemaVisitor
+struct DeltaJSONSchemaVisitor
 {
     struct Node
     {
@@ -705,7 +705,7 @@ struct DeltaJsonSchemaVisitor
 template <typename Func>
 void deltaVisitGuarded(void * data, Func && func)
 {
-    auto * v = static_cast<DeltaJsonSchemaVisitor *>(data);
+    auto * v = static_cast<DeltaJSONSchemaVisitor *>(data);
     if (v->exception)
         return;
     try
@@ -720,7 +720,7 @@ void deltaVisitGuarded(void * data, Func && func)
 
 uintptr_t deltaMakeFieldList(void * data, uintptr_t reserve)
 {
-    auto * v = static_cast<DeltaJsonSchemaVisitor *>(data);
+    auto * v = static_cast<DeltaJSONSchemaVisitor *>(data);
     if (v->exception)
         return 0;
     try
@@ -740,22 +740,22 @@ uintptr_t deltaMakeFieldList(void * data, uintptr_t reserve)
 
 void deltaPushPrimitive(void * data, uintptr_t sibling, ffi::KernelStringSlice name, bool nullable, std::string type)
 {
-    deltaVisitGuarded(data, [&](DeltaJsonSchemaVisitor & v)
+    deltaVisitGuarded(data, [&](DeltaJSONSchemaVisitor & v)
     {
-        DeltaJsonSchemaVisitor::Node node;
+        DeltaJSONSchemaVisitor::Node node;
         node.name.assign(name.ptr, name.len);
         node.nullable = nullable;
-        node.kind = DeltaJsonSchemaVisitor::Node::Kind::Primitive;
+        node.kind = DeltaJSONSchemaVisitor::Node::Kind::Primitive;
         node.primitive = std::move(type);
         v.listAt(sibling).push_back(std::move(node));
     });
 }
 
-void deltaPushComplex(void * data, uintptr_t sibling, ffi::KernelStringSlice name, bool nullable, uintptr_t child_list_id, DeltaJsonSchemaVisitor::Node::Kind kind)
+void deltaPushComplex(void * data, uintptr_t sibling, ffi::KernelStringSlice name, bool nullable, uintptr_t child_list_id, DeltaJSONSchemaVisitor::Node::Kind kind)
 {
-    deltaVisitGuarded(data, [&](DeltaJsonSchemaVisitor & v)
+    deltaVisitGuarded(data, [&](DeltaJSONSchemaVisitor & v)
     {
-        DeltaJsonSchemaVisitor::Node node;
+        DeltaJSONSchemaVisitor::Node node;
         node.name.assign(name.ptr, name.len);
         node.nullable = nullable;
         node.kind = kind;
@@ -784,15 +784,15 @@ void deltaVisitDecimal(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu,
 
 void deltaVisitVariant(void * d, uintptr_t, ffi::KernelStringSlice n, bool, const ffi::CStringMap *)
 {
-    deltaVisitGuarded(d, [&](DeltaJsonSchemaVisitor &)
+    deltaVisitGuarded(d, [&](DeltaJSONSchemaVisitor &)
     {
         throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unsupported Variant data type: {}", std::string(n.ptr, n.len));
     });
 }
 
-void deltaVisitStruct(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *, uintptr_t c) { deltaPushComplex(d, s, n, nu, c, DeltaJsonSchemaVisitor::Node::Kind::Struct); }
-void deltaVisitArray(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *, uintptr_t c) { deltaPushComplex(d, s, n, nu, c, DeltaJsonSchemaVisitor::Node::Kind::Array); }
-void deltaVisitMap(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *, uintptr_t c) { deltaPushComplex(d, s, n, nu, c, DeltaJsonSchemaVisitor::Node::Kind::Map); }
+void deltaVisitStruct(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *, uintptr_t c) { deltaPushComplex(d, s, n, nu, c, DeltaJSONSchemaVisitor::Node::Kind::Struct); }
+void deltaVisitArray(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *, uintptr_t c) { deltaPushComplex(d, s, n, nu, c, DeltaJSONSchemaVisitor::Node::Kind::Array); }
+void deltaVisitMap(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *, uintptr_t c) { deltaPushComplex(d, s, n, nu, c, DeltaJSONSchemaVisitor::Node::Kind::Map); }
 
 }
 
@@ -801,7 +801,7 @@ Poco::JSON::Array::Ptr getDeltaSchemaFieldsFromSnapshot(ffi::SharedSnapshot * sn
     using KernelSharedSchema = KernelPointerWrapper<ffi::SharedSchema, ffi::free_schema>;
     KernelSharedSchema schema(ffi::logical_schema(snapshot));
 
-    DeltaJsonSchemaVisitor visitor;
+    DeltaJSONSchemaVisitor visitor;
     ffi::EngineSchemaVisitor ffi_visitor{
         .data = &visitor,
         .make_field_list = &deltaMakeFieldList,
