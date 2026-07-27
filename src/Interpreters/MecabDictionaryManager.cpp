@@ -16,6 +16,15 @@
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/IArchiveReader.h>
 
+#if USE_AWS_S3
+#include <IO/ReadBufferFromS3.h>
+#include <IO/S3/Client.h>
+#include <IO/S3/URI.h>
+#include <IO/S3AuthSettings.h>
+#include <IO/S3RequestSettings.h>
+#include <aws/core/auth/AWSCredentials.h>
+#endif
+
 #include <Poco/String.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -35,7 +44,26 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int CANNOT_LOAD_CONFIG;
+    extern const int SUPPORT_IS_DISABLED;
 }
+
+#if USE_AWS_S3
+namespace S3AuthSetting
+{
+    extern const S3AuthSettingsString access_key_id;
+    extern const S3AuthSettingsString secret_access_key;
+    extern const S3AuthSettingsString session_token;
+    extern const S3AuthSettingsString region;
+    extern const S3AuthSettingsString server_side_encryption_customer_key_base64;
+    extern const S3AuthSettingsString role_arn;
+    extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString external_id;
+    extern const S3AuthSettingsBool use_environment_credentials;
+    extern const S3AuthSettingsBool use_insecure_imds_request;
+    extern const S3AuthSettingsBool no_sign_request;
+    extern const S3AuthSettingsUInt64 expiration_window_seconds;
+}
+#endif
 
 MecabDictionary::MecabDictionary(std::unique_ptr<MeCab::Model> model_, String dictionary_dir_)
     : model(std::move(model_)), dictionary_dir(std::move(dictionary_dir_))
@@ -49,6 +77,11 @@ namespace
 
 constexpr auto CONFIG_PREFIX = "tokenizer.japanese";
 constexpr auto SYSTEM_DICTIONARY_FILE = "sys.dic";
+
+std::string configKey(std::string_view name)
+{
+    return std::string(CONFIG_PREFIX) + '.' + std::string(name);
+}
 
 String toHexLowercase(std::string_view bytes)
 {
@@ -64,11 +97,92 @@ String toHexLowercase(std::string_view bytes)
     return out;
 }
 
-/// Opens a read buffer for the archive: http(s) URLs (also covers pre-signed/public S3 URLs) or a
-/// local filesystem path.
+/// True if S3 auth is configured under <japanese>; then an http(s) location uses the S3 client.
+bool hasS3Configuration(const ContextPtr & context)
+{
+    const auto & config = context->getConfigRef();
+    return config.has(configKey("access_key_id"))
+        || config.has(configKey("no_sign_request"))
+        || config.has(configKey("use_environment_credentials"))
+        || config.has(configKey("region"));
+}
+
+#if USE_AWS_S3
+/// Reads an S3 object. The endpoint comes from the URL, so any S3-compatible service works (not only
+/// AWS); credentials/region are read from the <japanese> config.
+std::unique_ptr<ReadBuffer> openS3Source(const String & location, const ContextPtr & context)
+{
+    const auto auth_settings = S3::S3AuthSettings(context->getConfigRef(), context->getSettingsRef(), CONFIG_PREFIX);
+    const S3::URI uri(location);
+
+    static constexpr unsigned s3_max_redirects = 10;
+    static constexpr unsigned s3_retry_attempts = 10;
+
+    S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
+        auth_settings[S3AuthSetting::region],
+        context->getRemoteHostFilter(),
+        s3_max_redirects,
+        S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = s3_retry_attempts},
+        /*s3_slow_all_threads_after_network_error=*/true,
+        /*s3_slow_all_threads_after_retryable_error=*/false,
+        /*enable_s3_requests_logging=*/false,
+        /*for_disk_s3=*/false,
+        /*opt_disk_name=*/{},
+        /*request_throttler=*/{},
+        uri.uri.getScheme());
+    client_configuration.endpointOverride = uri.endpoint;
+
+    S3::ClientSettings client_settings{
+        .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = false,
+        .gcs_issue_compose_request = false,
+        .is_s3express_bucket = S3::isS3ExpressEndpoint(uri.endpoint),
+    };
+
+    auto client = S3::ClientFactory::instance().create(
+        client_configuration,
+        client_settings,
+        auth_settings[S3AuthSetting::access_key_id],
+        auth_settings[S3AuthSetting::secret_access_key],
+        auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64],
+        auth_settings.server_side_encryption_kms_config,
+        auth_settings.headers,
+        S3::CredentialsConfiguration{
+            .use_environment_credentials = auth_settings[S3AuthSetting::use_environment_credentials],
+            .use_insecure_imds_request = auth_settings[S3AuthSetting::use_insecure_imds_request],
+            .expiration_window_seconds = auth_settings[S3AuthSetting::expiration_window_seconds],
+            .no_sign_request = auth_settings[S3AuthSetting::no_sign_request],
+            .role_arn = auth_settings[S3AuthSetting::role_arn],
+            .role_session_name = auth_settings[S3AuthSetting::role_session_name],
+            .external_id = auth_settings[S3AuthSetting::external_id],
+        },
+        auth_settings[S3AuthSetting::session_token]);
+
+    return std::make_unique<ReadBufferFromS3>(
+        std::move(client), uri.bucket, uri.key, uri.version_id, S3::S3RequestSettings{}, context->getReadSettings());
+}
+#endif
+
+/// Picks the transport by location: s3://|gs://|oss:// or http(s) with S3 auth -> S3 client;
+/// other http(s) -> plain download; otherwise a local file.
 std::unique_ptr<ReadBuffer> openArchiveSource(const String & location, const ContextPtr & context)
 {
-    if (location.starts_with("http://") || location.starts_with("https://"))
+    const bool is_http = location.starts_with("http://") || location.starts_with("https://");
+    const bool is_s3_scheme = location.starts_with("s3://") || location.starts_with("gs://") || location.starts_with("oss://");
+    const bool use_s3 = is_s3_scheme || (is_http && hasS3Configuration(context));
+
+    if (use_s3)
+    {
+#if USE_AWS_S3
+        return openS3Source(location, context);
+#else
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot load the MeCab dictionary from '{}': this ClickHouse build has no S3 support", location);
+#endif
+    }
+
+    if (is_http)
     {
         Poco::URI uri(location);
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
@@ -135,12 +249,11 @@ MecabDictionaryPtr createModel(const fs::path & dictionary_dir)
     const String dictionary_dir_str = dictionary_dir.string();
     const String rc_file_str = rc_file.string();
 
-    std::vector<char *> argv;
-    argv.push_back(const_cast<char *>("mecab"));
-    argv.push_back(const_cast<char *>("-d"));
-    argv.push_back(const_cast<char *>(dictionary_dir_str.c_str()));
-    argv.push_back(const_cast<char *>("-r"));
-    argv.push_back(const_cast<char *>(rc_file_str.c_str()));
+    std::vector<char *> argv{
+        const_cast<char *>("mecab"),
+        const_cast<char *>("-d"), const_cast<char *>(dictionary_dir_str.c_str()),
+        const_cast<char *>("-r"), const_cast<char *>(rc_file_str.c_str()),
+    };
 
     std::unique_ptr<MeCab::Model> model(MeCab::createModel(static_cast<int>(argv.size()), argv.data()));
     if (!model)
@@ -175,25 +288,23 @@ MecabDictionaryPtr MecabDictionaryManager::getJapaneseDictionary()
             ErrorCodes::NO_ELEMENTS_IN_CONFIG,
             "The Japanese tokenizer requires a dictionary configured under <tokenizer><japanese> in the server configuration");
 
-    const String sha = Poco::toLower(config.getString(std::string(CONFIG_PREFIX) + ".dictionarySha", ""));
+    const String sha = Poco::toLower(config.getString(configKey("dictionarySha"), ""));
 
     /// Reuse the cached dictionary if the configuration still points at the same one.
     if (cached_dictionary && cached_sha == sha)
         return cached_dictionary;
 
-    cached_dictionary = loadJapaneseDictionary();
+    cached_dictionary = loadJapaneseDictionary(context, sha);
     cached_sha = sha;
     return cached_dictionary;
 }
 
-MecabDictionaryPtr MecabDictionaryManager::loadJapaneseDictionary()
+MecabDictionaryPtr MecabDictionaryManager::loadJapaneseDictionary(const ContextPtr & context, const String & expected_sha)
 {
-    auto context = Context::getGlobalContextInstance();
     const auto & config = context->getConfigRef();
     LoggerPtr log = getLogger("MecabDictionaryManager");
 
-    const String location = config.getString(std::string(CONFIG_PREFIX) + ".dictionaryLocation", "");
-    const String expected_sha = Poco::toLower(config.getString(std::string(CONFIG_PREFIX) + ".dictionarySha", ""));
+    const String location = config.getString(configKey("dictionaryLocation"), "");
 
     if (location.empty())
         throw Exception(

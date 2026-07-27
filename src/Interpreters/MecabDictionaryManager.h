@@ -5,6 +5,7 @@
 #if USE_MECAB
 
 #include <base/types.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <memory>
 #include <mutex>
@@ -49,7 +50,7 @@ public:
     MecabDictionaryPtr getJapaneseDictionary();
 
 private:
-    MecabDictionaryPtr loadJapaneseDictionary();
+    MecabDictionaryPtr loadJapaneseDictionary(const ContextPtr & context, const String & expected_sha);
 
     std::mutex mutex;
     MecabDictionaryPtr cached_dictionary;
