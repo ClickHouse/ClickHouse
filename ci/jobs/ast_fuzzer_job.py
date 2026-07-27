@@ -2,6 +2,7 @@
 import logging
 import os
 import random
+import re
 import sys
 import traceback
 from pathlib import Path
@@ -96,6 +97,77 @@ def _format_status_error(exc: Exception, log_paths) -> str:
         f"Fuzzer runner wrote an unparseable status.tsv ({exc}). This is a "
         f"fuzzer-harness bug. Traceback:\n{tb}" + tails_str
     )
+
+
+# Substring that marks the WeeklyJemallocSafety paramset
+# (`AST fuzzer (amd_jemalloc_safety)`). Only that lane runs the preflight below;
+# the other paramsets are unaffected.
+JEMALLOC_SAFETY_CHECK_MARKER = "jemalloc_safety"
+
+# jemalloc reports `JEMALLOC_OPT_SAFETY_CHECKS` in its own stats dump as
+# `config.opt_safety_checks` (`contrib/jemalloc/src/stats.c:1534`), which
+# `system.jemalloc_stats` exposes verbatim.
+JEMALLOC_SAFETY_STATS_QUERY = (
+    "SELECT extract(stats, 'config\\.opt_safety_checks: [a-z]+') "
+    "FROM system.jemalloc_stats"
+)
+
+_JEMALLOC_SAFETY_FLAG_RE = re.compile(r"config\.opt_safety_checks:\s*(true|false)\b")
+
+
+def parse_jemalloc_safety_checks_flag(probe_output: str) -> bool | None:
+    """`True`/`False` read off a `config.opt_safety_checks` line; `None` if absent."""
+    match = _JEMALLOC_SAFETY_FLAG_RE.search(probe_output or "")
+    if match is None:
+        return None
+    return match.group(1) == "true"
+
+
+def assert_jemalloc_safety_checks_armed(clickhouse_binary: Path) -> None:
+    """Abort the job unless the consumed binary really has the jemalloc gate armed.
+
+    `ENABLE_JEMALLOC_SAFETY_CHECKS` is a compile-time cmake option, and a
+    silently-ignored one is this lane's primary failure mode: if the `-D` is lost
+    (option refactored, build type renamed, a platform header gaining a bare
+    `#undef`, or the `ARCH_AMD64` guard turning the option off), the fuzz session
+    still runs green as an ordinary `amd_debug` run and the lane is vacuous. So
+    read the value out of the artifact rather than trusting the compile line.
+
+    Only `config.opt_safety_checks` is asserted: `JEMALLOC_OPT_SIZE_CHECKS` has no
+    mallctl (it appears in neither `ctl.c` nor `stats.c`), so it cannot be read at
+    runtime. Both macros come from the same cmake option, and the PR's per-gate
+    measurements cover the size gate separately.
+    """
+    command = f'{clickhouse_binary} local --query "{JEMALLOC_SAFETY_STATS_QUERY}"'
+    exit_code, stdout, stderr = Shell.get_res_stdout_stderr(command, verbose=True)
+    armed = parse_jemalloc_safety_checks_flag(stdout)
+    if armed:
+        logging.info("jemalloc preflight: config.opt_safety_checks: true")
+        return
+
+    if armed is None:
+        read = (
+            f"no `config.opt_safety_checks` line in the probe output "
+            f"(exit code {exit_code}, stdout {stdout!r}, stderr {stderr!r})"
+        )
+    else:
+        read = "`config.opt_safety_checks: false`"
+    Result.create_from(
+        status=Result.Status.ERROR,
+        info=(
+            "jemalloc preflight failed: this lane requires a binary built with "
+            "-DENABLE_JEMALLOC_SAFETY_CHECKS=1, expected "
+            f"`config.opt_safety_checks: true`, got {read}. Without the gate the "
+            "fuzz session cannot attribute a sized-deallocation mismatch or a "
+            "double free and the lane produces no signal, so it is failed instead "
+            "of run. Likely causes: the build job did not pass the cmake option, "
+            "the consumed artifact is from a different build type, the ARCH_AMD64 "
+            "guard in contrib/jemalloc-cmake/CMakeLists.txt turned the option off, "
+            "or a platform jemalloc_internal_defs.h.in cancels the definition with "
+            "a bare #undef. Probe: "
+            f"clickhouse local --query \"{JEMALLOC_SAFETY_STATS_QUERY}\""
+        ),
+    ).complete_job()
 
 
 def get_run_command(
@@ -218,6 +290,9 @@ def run_fuzz_job(check_name: str):
     clickhouse_binary = Path(cwd) / "ci/tmp/clickhouse"
     assert clickhouse_binary.exists(), "ClickHouse binary not found"
     clickhouse_binary.chmod(clickhouse_binary.stat().st_mode | 0o111)
+
+    if JEMALLOC_SAFETY_CHECK_MARKER in check_name.lower():
+        assert_jemalloc_safety_checks_armed(clickhouse_binary)
 
     docker_image = DockerImage.get_docker_image(IMAGE_NAME).pull_image()
 
