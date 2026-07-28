@@ -7,7 +7,7 @@ doc_type: 'справочник'
 keywords: ['ClickStack', 'json', 'map', 'атрибуты', 'схема', 'обсервабилити']
 ---
 
-import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 [Схема по умолчанию](/ru/clickstack/ingesting-data/schemas) в ClickStack хранит атрибуты ресурсов, областей видимости, логов и спанов в столбцах `Map(LowCardinality(String), String)`. ClickHouse также поддерживает строго типизированный [тип `JSON`](/ru/reference/formats/JSON/JSON), а в ClickStack есть его поддержка в статусе бета в качестве замены `Map`.
 
