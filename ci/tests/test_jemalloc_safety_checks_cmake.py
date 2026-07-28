@@ -119,46 +119,64 @@ def _strip_cmake_comments(text: str) -> str:
 
 
 _OPTION_BLOCK_OPEN_RE = re.compile(rf"^if \(\s*{OPTION_NAME}\s*\)\s*$")
-_CMAKE_IF_RE = re.compile(r"^if\s*\(")
-_CMAKE_ENDIF_RE = re.compile(r"^endif\s*\(")
+# Every CMake construct that opens a scope CMake may never enter, or may enter zero
+# times, is counted - not just `if`/`endif`. A `foreach` over an empty list runs its
+# body no times, so a definition inside it is as conditional as one in a branch.
+_CMAKE_BLOCK_OPEN_RE = re.compile(r"^(?:if|foreach|while|function|macro|block)\s*\(")
+_CMAKE_BLOCK_CLOSE_RE = re.compile(
+    r"^end(?:if|foreach|while|function|macro|block)\s*\("
+)
+# `else`/`elseif` open no scope: they end the arm CMake runs when the option is on.
+_CMAKE_ARM_RE = re.compile(r"^(?:else|elseif)\s*\(")
 _PRIVATE_DEFINITIONS_RE = re.compile(
     r"target_compile_definitions\s*\(\s*_jemalloc\s+PRIVATE\s+(.*?)\)", re.S
 )
 
 
-def _definitions_block_lines(text: str) -> list[tuple[int, str]]:
-    """`(depth, line)` for every line of the `ENABLE_JEMALLOC_SAFETY_CHECKS` block.
+def _definitions_block_lines(text: str) -> list[tuple[int, str, bool]]:
+    """`(depth, line, in_first_arm)` for the `ENABLE_JEMALLOC_SAFETY_CHECKS` block.
 
     Located by content (it must contain `target_compile_definitions`) rather than by
     line number, so reformatting the file does not break the guard. Comments are
     stripped first, so every consumer below sees only active code.
 
-    Control flow is tracked by *depth* rather than matched with a regex: `if`/`endif`
-    are counted regardless of indentation, so a nested branch cannot be mistaken for
-    part of the block's own top level. A regex ending at the first column-0
-    `endif ()` swallows an indented inner `endif ()` and reports a block spanning the
-    nested branch, which lets a `target_compile_definitions` CMake may never reach look
-    like the active one.
+    Control flow is tracked by *depth* rather than matched with a regex: every block
+    opener/closer pair is counted regardless of indentation, so a nested construct
+    cannot be mistaken for part of the block's own top level. A regex ending at the
+    first column-0 `endif ()` swallows an indented inner `endif ()` and reports a block
+    spanning the nested branch, which lets a `target_compile_definitions` CMake may
+    never reach look like the active one.
+
+    `in_first_arm` is the second half of the same question: a depth-1 `else ()` /
+    `elseif (...)` belongs to the option block's *own* `if`, so it opens no depth, and
+    the lines after it are what CMake runs when the option is **off**. It goes false at
+    the first such arm; a nested (`depth > 1`) `else`/`elseif` leaves it alone, since
+    the whole inner construct is already excluded by the depth test.
     """
     stripped = _strip_cmake_comments(text)
-    blocks: list[list[tuple[int, str]]] = []
-    current: list[tuple[int, str]] | None = None
+    blocks: list[list[tuple[int, str, bool]]] = []
+    current: list[tuple[int, str, bool]] | None = None
     depth = 0
+    in_first_arm = True
     for line in stripped.splitlines():
         if current is None:
             if _OPTION_BLOCK_OPEN_RE.match(line):
                 current = []
                 depth = 1
+                in_first_arm = True
             continue
         token = line.lstrip()
-        if _CMAKE_ENDIF_RE.match(token):
+        if _CMAKE_BLOCK_CLOSE_RE.match(token):
             depth -= 1
             if depth == 0:
                 blocks.append(current)
                 current = None
                 continue
-        current.append((depth, line))
-        if _CMAKE_IF_RE.match(token):
+        elif _CMAKE_ARM_RE.match(token) and depth == 1:
+            in_first_arm = False
+            continue
+        current.append((depth, line, in_first_arm))
+        if _CMAKE_BLOCK_OPEN_RE.match(token):
             depth += 1
     # Unbalanced control flow means the depths below are meaningless, so fail closed
     # rather than reading an invocation out of a block whose extent is unknown.
@@ -169,7 +187,9 @@ def _definitions_block_lines(text: str) -> list[tuple[int, str]]:
     )
 
     with_definitions = [
-        b for b in blocks if any("target_compile_definitions" in line for _, line in b)
+        b
+        for b in blocks
+        if any("target_compile_definitions" in line for _, line, _ in b)
     ]
     assert with_definitions, (
         f"no `if ({OPTION_NAME}) ... endif ()` block containing "
@@ -185,18 +205,24 @@ def _definitions_block_lines(text: str) -> list[tuple[int, str]]:
 def _private_definitions_arguments(text: str) -> str:
     """Argument text of the block's `target_compile_definitions(_jemalloc PRIVATE ...)`.
 
-    Only invocations at the block's own top level (depth 1) count. A nested one is
-    conditional by definition - CMake may never enter that branch - so it cannot stand
-    in for the definitions the option promises. Several unconditional invocations are
-    unioned, so splitting the macros across two top-level calls stays legal.
+    Only invocations CMake runs unconditionally when the option is on count: depth 1
+    (the block's own top level) *and* inside the block's first arm. A nested one is
+    conditional by definition - CMake may never enter that branch, or may run a loop
+    body zero times - and one in an `else`/`elseif` arm runs precisely when the option
+    is off, so neither can stand in for the definitions the option promises. Several
+    unconditional invocations are unioned, so splitting the macros across two top-level
+    calls stays legal.
 
-    `re.S` so the definitions may be reflowed across lines; a reflowed invocation is at
-    depth 1 when its opening line is, and its continuation lines carry no `if`/`endif`.
+    `re.S` so the definitions may be reflowed across lines; a reflowed invocation is
+    unconditional when its opening line is, and its continuation lines carry no block
+    keyword.
     """
     block_lines = _definitions_block_lines(text)
-    top_level = "\n".join(line for depth, line in block_lines if depth == 1)
+    top_level = "\n".join(
+        line for depth, line, first_arm in block_lines if depth == 1 and first_arm
+    )
     arguments = _PRIVATE_DEFINITIONS_RE.findall(top_level)
-    block = "\n".join(line for _, line in block_lines)
+    block = "\n".join(line for _, line, _ in block_lines)
     assert arguments, (
         f"{JEMALLOC_CMAKE_REL}: the `{OPTION_NAME}` block must define its macros with "
         "`target_compile_definitions(_jemalloc PRIVATE ...)`. The macros are "
@@ -205,7 +231,9 @@ def _private_definitions_arguments(text: str) -> str:
         f"different `config_opt_*` view of jemalloc's headers than jemalloc itself. "
         "The invocation must also sit at the block's own top level: a nested one does "
         "not count, because CMake may never enter that branch, and then the option "
-        "would define nothing while this guard stayed green.\n"
+        "would define nothing while this guard stayed green. Nor does one in an "
+        "`else ()` / `elseif (...)` arm of that same block: that arm is what CMake "
+        "runs when the option is *off*.\n"
         f"block was:\n{block}"
     )
     return "\n".join(arguments)
@@ -404,6 +432,77 @@ _INLINE_TWO_TOP_LEVEL_CALLS = (
     "endif ()\n"
 )
 
+# An `else ()` / `elseif (...)` arm of the option block's *own* `if` sits at depth 1 too,
+# and it is what CMake runs when the option is *off* - so a definition there is the exact
+# opposite of unconditional. `foreach` / `while` bodies are the same class from the other
+# direction: CMake may run them zero times.
+
+_INLINE_ELSE_ARM = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_OPT_SAFETY_CHECKS)\n"
+    "else ()\n"
+    "    target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "endif ()\n"
+)
+
+_INLINE_ELSEIF_ARM = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_OPT_SAFETY_CHECKS)\n"
+    "elseif (SOME_CONDITION)\n"
+    "    target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "endif ()\n"
+)
+
+_INLINE_FOREACH_BODY = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_OPT_SAFETY_CHECKS)\n"
+    "    foreach (item IN LISTS MAYBE_EMPTY_LIST)\n"
+    "        target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "    endforeach ()\n"
+    "endif ()\n"
+)
+
+_INLINE_WHILE_BODY = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_OPT_SAFETY_CHECKS)\n"
+    "    while (SOME_CONDITION)\n"
+    "        target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "    endwhile ()\n"
+    "endif ()\n"
+)
+
+# A *nested* `else ()` must not end the option block's own first arm: the whole inner
+# construct is already excluded by depth, and the depth-1 invocation after it is still
+# unconditional (it defines only the safety macro, so the size macro must read absent -
+# but were the flag cleared by the inner `else`, that invocation would vanish too and the
+# guard would raise instead of reporting a missing macro).
+_INLINE_NESTED_INNER_ELSE = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    if (SOME_CONDITION)\n"
+    "    else ()\n"
+    "        target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "    endif ()\n"
+    "    target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_OPT_SAFETY_CHECKS)\n"
+    "endif ()\n"
+)
+
+# The armed path defines nothing at all and both macros live solely in the `else ()` arm:
+# the vacuous-lane shape this file exists to reject, and the runtime preflight cannot see
+# the size gate at all.
+_INLINE_ELSE_ARM_ONLY = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    '    message (STATUS "safety checks requested")\n'
+    "else ()\n"
+    "    target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "endif ()\n"
+)
+
 
 @pytest.mark.parametrize(
     "label, text, size_macro_expected",
@@ -416,6 +515,15 @@ _INLINE_TWO_TOP_LEVEL_CALLS = (
             False,
         ),
         ("dead if (FALSE) branch", _INLINE_NESTED_DEAD_BRANCH, False),
+        ("the option block's own else arm", _INLINE_ELSE_ARM, False),
+        ("the option block's own elseif arm", _INLINE_ELSEIF_ARM, False),
+        ("foreach body, may run zero times", _INLINE_FOREACH_BODY, False),
+        ("while body, may run zero times", _INLINE_WHILE_BODY, False),
+        (
+            "nested inner else, unconditional call after",
+            _INLINE_NESTED_INNER_ELSE,
+            False,
+        ),
         ("two unconditional invocations", _INLINE_TWO_TOP_LEVEL_CALLS, True),
     ],
 )
@@ -435,6 +543,17 @@ def test_wholly_nested_definitions_leave_no_invocation_to_read():
     """Every invocation nested: the guard must report a missing top-level one."""
     with pytest.raises(AssertionError, match="own top level"):
         _private_definitions_arguments(_INLINE_NESTED_IF_ELSE)
+
+
+def test_definitions_only_in_the_else_arm_leave_no_invocation_to_read():
+    """The armed path defines nothing: the guard must not read the `else` arm instead.
+
+    This is the vacuous-lane shape in full - `ENABLE_JEMALLOC_SAFETY_CHECKS` on defines
+    neither macro, so the fuzzer runs with both detectors gone, and the AST fuzzer job's
+    runtime preflight cannot notice the size gate's absence (no mallctl).
+    """
+    with pytest.raises(AssertionError, match="own top level"):
+        _private_definitions_arguments(_INLINE_ELSE_ARM_ONLY)
 
 
 def test_unbalanced_control_flow_fails_closed():
