@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <exception>
 #include <string>
+#include <typeinfo>
 
 namespace DB
 {
@@ -293,7 +294,9 @@ extern "C"
 
 void * __cxa_allocate_exception(size_t size) noexcept
 {
-    static char buffer[512];
+    /// The exception object is constructed in place here, so the storage has to be aligned for any
+    /// type that can be thrown, not just for `char`.
+    alignas(std::max_align_t) static char buffer[512];
     return size <= sizeof(buffer) ? static_cast<void *>(buffer) : nullptr;
 }
 
@@ -301,11 +304,19 @@ void __cxa_free_exception(void *) noexcept
 {
 }
 
-[[noreturn]] void __cxa_throw(void * thrown, void *, void (*)(void *))
+[[noreturn]] void __cxa_throw(void * thrown, void * type_info, void (*)(void *))
 {
-    /// `DB::Exception` derives from `Poco::Exception`, whose `what()` is the message.
-    const auto * as_std_exception = static_cast<const std::exception *>(static_cast<const Poco::Exception *>(thrown));
-    std::fprintf(stderr, "ClickHouse parser: unrecoverable error: %s\n", as_std_exception->what());
+    /// Only `DB::Exception` may be read as such: the thrown object is untyped here, and everything
+    /// else - `std::bad_alloc` from `operator new`, a `Poco` exception from a `Poco::Net` address
+    /// parser - would be a reinterpretation of an unrelated object. For those, the type name is all
+    /// that can be reported safely. This is not a `dynamic_cast`, so a hypothetical class derived
+    /// from `DB::Exception` also falls into the second case rather than into undefined behavior.
+    const auto * thrown_type = static_cast<const std::type_info *>(type_info);
+    const char * message = thrown_type && *thrown_type == typeid(DB::Exception)
+        ? static_cast<const DB::Exception *>(thrown)->what()
+        : (thrown_type ? thrown_type->name() : "unknown exception");
+
+    std::fprintf(stderr, "ClickHouse parser: unrecoverable error: %s\n", message);
     std::abort();
 }
 
