@@ -126,15 +126,19 @@ std::optional<size_t> PipelineReadBuffer::tryGetFileSize()
 void PipelineReadBuffer::setReadUntilPosition(size_t position)
 {
     /// `position` is in this buffer's coordinates - the executor's logical file
-    /// offset (the post-decryption .bin offset that marks address). Advertise it
-    /// as the read extent so the executor bounds its long connection there.
+    /// offset (the post-decryption .bin offset that marks address). The BOUNDARY
+    /// is owned here (exposure clamp + EOF); the executor still receives it as
+    /// the read extent to bound its long connection.
+    chassert(!read_until || position >= *read_until);
+    read_until = position;
     executor->setReadExtent(position);
 }
 
 void PipelineReadBuffer::setReadUntilEnd()
 {
-    /// Read to the file end: clear the extent. A read that runs to EOF drains its
-    /// connection naturally, so no explicit bound is needed.
+    /// Read to the file end: clear the boundary. A read that runs to EOF drains
+    /// its connection naturally, so no explicit bound is needed.
+    read_until.reset();
     executor->setReadExtent(std::nullopt);
 }
 
@@ -275,6 +279,14 @@ bool PipelineReadBuffer::nextImpl()
     }
     chain.advance(consumed);
 
+    /// The boundary EOF is OURS: never ask the executor at/past `read_until` -
+    /// a later advance resumes, first from whatever the chain retained.
+    if (read_until && read_position >= *read_until)
+    {
+        LOG_TRACE(log, "nextImpl: at read_until {}, reporting EOF", *read_until);
+        return false;
+    }
+
     if (chain.atEnd())
     {
         LOG_TRACE(log, "nextImpl: chain exhausted, requesting next window at position {}", read_position);
@@ -291,6 +303,13 @@ bool PipelineReadBuffer::nextImpl()
     /// The executor serves plaintext (it decrypts each window in `readNextWindow`),
     /// so the span is exposed directly - no copy, no decrypt on the read path.
     auto span = chain.peek();
+    /// Expose only up to the boundary; the surplus stays in the chain
+    /// (unconsumed) and serves the resume after the next advance.
+    if (read_until && span.offset + span.size > *read_until)
+    {
+        chassert(*read_until > span.offset);
+        span.size = *read_until - span.offset;
+    }
 
     /// Report the read so `MergeTreeReadPool`'s slow-read backoff still sees it.
     if (profile_callback)

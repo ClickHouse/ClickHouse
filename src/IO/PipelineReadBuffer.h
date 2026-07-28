@@ -62,6 +62,13 @@ private:
     bool rewindIntoHeld(size_t new_pos);
 
     std::unique_ptr<ReaderExecutor> executor;
+    /// The consumer's advertised read boundary (`setReadUntilPosition`), owned
+    /// HERE: exposure is clamped at it and EOF is reported at it, while the
+    /// executor may serve (and the chain may retain) bytes beyond - a later
+    /// advance resumes from the retained chain without a new request. Monotone
+    /// (MergeTree only advances it). `nullopt` = read to the file end.
+    std::optional<size_t> read_until;
+
     /// Trailing retention (`Options::hold_consumed`): consumed spans are parked
     /// in `held` (up to this many bytes) so a backward seek within them
     /// re-serves from memory instead of refetching.
