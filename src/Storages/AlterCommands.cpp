@@ -28,7 +28,6 @@
 #include <Interpreters/Context.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageView.h>
-#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageDummy.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -382,21 +381,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.constraint_name = ast_constraint_decl.name;
 
         command.if_not_exists = command_ast->if_not_exists;
-
-        return command;
-    }
-    if (command_ast->type == ASTAlterCommand::MODIFY_CONSTRAINT)
-    {
-        AlterCommand command;
-        command.ast = command_ast->clone();
-        command.constraint_decl = command_ast->constraint_decl->clone();
-        command.type = AlterCommand::MODIFY_CONSTRAINT;
-
-        const auto & ast_constraint_decl = command_ast->constraint_decl->as<ASTConstraintDeclaration &>();
-
-        command.constraint_name = ast_constraint_decl.name;
-
-        command.if_exists = command_ast->if_exists;
 
         return command;
     }
@@ -921,26 +905,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         constraints.erase(erase_it);
         metadata.constraints = ConstraintsDescription(constraints);
     }
-    else if (type == MODIFY_CONSTRAINT)
-    {
-        auto constraints = metadata.constraints.getConstraints();
-        auto modify_it = std::find_if(
-            constraints.begin(),
-            constraints.end(),
-            [this](const ASTPtr & constraint_ast) { return constraint_ast->as<ASTConstraintDeclaration &>().name == constraint_name; });
-
-        if (modify_it == constraints.end())
-        {
-            if (if_exists)
-                return;
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong constraint name. Cannot find constraint `{}` to modify",
-                    constraint_name);
-        }
-
-        /// Replace the declaration in place so the constraint keeps its position.
-        *modify_it = constraint_decl;
-        metadata.constraints = ConstraintsDescription(constraints);
-    }
     else if (type == ADD_PROJECTION)
     {
         auto projection = ProjectionDescription::getProjectionFromAST(
@@ -1022,7 +986,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         {
             if (MergeTreeSettings::hasBuiltin(change.name))
             {
-                effective_settings.applyChange(change, context, /*is_loading_from_existing_metadata=*/true);
+                effective_settings.applyChange(change);
                 any_mt_setting = true;
             }
         }
@@ -1422,8 +1386,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
     if (metadata_copy.primary_key.definition_ast != nullptr)
     {
-        metadata_copy.primary_key = KeyDescription::getPrimaryKeyFromAST(
-            metadata_copy.primary_key.definition_ast, metadata_copy.sorting_key, metadata_copy.columns, metadata_copy.virtuals, context);
+        metadata_copy.primary_key.recalculateWithNewAST(metadata_copy.primary_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
     }
     else
     {
@@ -1452,13 +1415,12 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
         metadata_copy.sampling_key.recalculateWithNewAST(metadata_copy.sampling_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
 
     /// Changes in columns may lead to changes in secondary indices
-    const ColumnsDescription columns_with_virtuals = metadata_copy.getColumnsWithVirtuals();
     for (auto & index : metadata_copy.secondary_indices)
     {
         try
         {
             index = IndexDescription::getIndexFromAST(
-                index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, context);
+                index.definition_ast, metadata_copy.columns, index.isImplicitlyCreated(), index.escape_filenames, context);
         }
         catch (const Exception & exception)
         {
@@ -1683,14 +1645,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     auto all_columns = metadata->columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
-    /// Columns whose default is evaluated at insert time (DEFAULT, MATERIALIZED); their expressions
-    /// must not reference virtual columns. An external-target (`TO`) materialized view forwards inserts
-    /// to its target using the target metadata and never evaluates its own column defaults, so a default
-    /// over a virtual column is inert there and is left out of this set.
-    NameSet insert_time_default_columns;
-    bool defaults_evaluated_at_insert_time = true;
-    if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
-        defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
     for (size_t i = 0; i < size(); ++i)
@@ -2057,10 +2011,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     final_column_name));
 
                 default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
-
-                if (defaults_evaluated_at_insert_time
-                    && (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized))
-                    insert_time_default_columns.insert(final_column_name);
             } /// if we change data type for column with default
             else if (all_columns.has(column_name) && command.data_type)
             {
@@ -2077,10 +2027,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
 
                 default_expr_list->children.emplace_back(setAlias(column_in_table.default_desc.expression->clone(), tmp_column_name));
-
-                if (defaults_evaluated_at_insert_time
-                    && (column_in_table.default_desc.kind == ColumnDefaultKind::Default || column_in_table.default_desc.kind == ColumnDefaultKind::Materialized))
-                    insert_time_default_columns.insert(final_column_name);
             }
         }
     }
@@ -2091,7 +2037,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     if (!is_parameterized_view && all_columns.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot DROP or CLEAR all columns");
 
-    validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context, insert_time_default_columns);
+    validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
 }
 
 bool AlterCommands::hasNonReplicatedAlterCommand() const

@@ -21,7 +21,6 @@ namespace DB
 {
 
 class PipelineExecutor;
-class QueryStatus;
 
 class StorageMaterializedView;
 class ASTRefreshStrategy;
@@ -253,13 +252,6 @@ private:
         /// but we still use the same in-memory structs (CoordinationZnode etc), as if it's coordinated (with one replica).
         bool coordinated = false;
 
-        /// Permanent, non-resumable "coordination unavailable" state. Set when a coordinated view is
-        /// attached/restored on a Keeper missing feature flags required for coordination (MULTI_READ,
-        /// CREATE_IF_NOT_EXISTS). The view stays Disabled and refuses to resume; `coordinated` is left
-        /// true so it never silently degrades into an uncoordinated local refresh (which would corrupt
-        /// the replicated target table of a non-APPEND view in a Replicated database).
-        bool unavailable = false;
-
         bool read_only = false;
         String path;
         String replica_name;
@@ -281,7 +273,7 @@ private:
             Finished,
         };
 
-        /// Protects interrupt_execution, executor and executing_query_status.
+        /// Protects interrupt_execution and executor.
         /// Can be locked while holding `mutex`.
         std::mutex executor_mutex;
         /// If there's a refresh in progress, it can be aborted by setting this flag and cancel()ling
@@ -289,9 +281,6 @@ private:
         /// `out_of_schedule_refresh_requested`, etc.
         std::atomic_bool interrupt_execution {false};
         PipelineExecutor * executor = nullptr;
-        /// Process-list entry of the in-flight refresh query, so interruptExecution() can mark it
-        /// killed. Set/cleared together with `executor`.
-        std::shared_ptr<QueryStatus> executing_query_status;
         /// Interrupts internal CREATE/EXCHANGE/DROP queries that refresh does. Only used during shutdown.
         StopSource cancel_ddl_queries;
         Progress progress;
@@ -429,11 +418,6 @@ private:
     /// with should_reread_znodes = true, and returns false.
     /// If coordination is disabled, just update in-memory struct without writing to zookeeper.
     bool updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool only_running_znode = false);
-
-    /// Enter the permanent, non-resumable "coordination unavailable" state (sets
-    /// coordination.unavailable, stops the view, records the reason). Called when a coordinated view
-    /// is attached/restored on a Keeper that lacks the feature flags coordination requires.
-    void markCoordinationUnavailable();
 
     void setState(RefreshState s, std::unique_lock<std::mutex> & lock);
     void scheduleRefresh(std::lock_guard<std::mutex> & lock);

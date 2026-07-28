@@ -817,7 +817,7 @@ namespace
         Float64 tmp_float = 0;
         /// Check if it's a float value, and if so, don't try to infer DateTime from it,
         /// because it will lead to inferring DateTime instead of simple Float64 in some cases.
-        if (tryReadFloatTextPrecise(tmp_float, buf) && buf.eof())
+        if (tryReadFloatText(tmp_float, buf) && buf.eof())
             return true;
 
         return false;
@@ -1740,9 +1740,7 @@ static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullabl
         const auto * map_type = assert_cast<const DataTypeMap *>(type.get());
         auto key_type = adjustNullableRecursively(map_type->getKeyType(), make_nullable, settings);
         auto value_type = adjustNullableRecursively(map_type->getValueType(), make_nullable, settings);
-        /// Map keys can never be Nullable; strip it inside LowCardinality too
-        /// (e.g. a dictionary-encoded ORC map key inferred as LowCardinality(String)).
-        return key_type && value_type ? std::make_shared<DataTypeMap>(removeNullableOrLowCardinalityNullable(key_type), value_type) : nullptr;
+        return key_type && value_type ? std::make_shared<DataTypeMap>(removeNullable(key_type), value_type) : nullptr;
     }
 
     if (which.isLowCardinality())

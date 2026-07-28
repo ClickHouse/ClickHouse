@@ -348,7 +348,7 @@ public:
 
 class FinalizingViewsTransform final : public IProcessor
 {
-    static InputPorts initPorts(Blocks headers)
+    static InputPorts initPorts(std::vector<Block> headers)
     {
         InputPorts res;
         for (auto & header : headers)
@@ -357,7 +357,7 @@ class FinalizingViewsTransform final : public IProcessor
     }
 
 public:
-    FinalizingViewsTransform(Blocks headers, std::vector<StorageID> views, InsertDependenciesBuilder::ConstPtr insert_dependencies_, ViewErrorsRegistryPtr views_error_registry_)
+    FinalizingViewsTransform(std::vector<Block> headers, std::vector<StorageID> views, InsertDependenciesBuilder::ConstPtr insert_dependencies_, ViewErrorsRegistryPtr views_error_registry_)
         : IProcessor(initPorts(std::move(headers)), {Block()})
         , output(outputs.front())
         , insert_dependencies(insert_dependencies_)
@@ -945,11 +945,25 @@ VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDepend
     {
         auto & chain = result_chains.emplace_back(std::move(processor_list));
         chain.attachResources(std::move(resources));
-        chain.setNumThreads(getViewProcessingNumThreads());
+        chain.setNumThreads(init_context->getSettingsRef()[Setting::max_threads]);
         chain.setConcurrencyControl(init_context->getSettingsRef()[Setting::use_concurrency_control]);
     }
 
     return result_chains;
+}
+
+
+Chain InsertDependenciesBuilder::createRedefineDeduplicationInfoWithDataHashTransformChain() const
+{
+    const auto & dependent_views_ids = dependent_views.at(root_view);
+    if (dependent_views_ids.empty())
+        return {};
+
+    auto output_header = output_headers.at(root_view);
+
+    Chain chain;
+    chain.addSink(std::make_shared<RedefineDeduplicationInfoWithDataHashTransform>(output_header));
+    return chain;
 }
 
 
@@ -968,6 +982,7 @@ Chain InsertDependenciesBuilder::createChainWithDependencies() const
     // When *Log storages push data to the dependent views, then `skip_destination_table` is true, data is pushed to the views only, not to the destination table
     if (!init_storage->noPushingToViewsOnInserts() || skip_destination_table)
     {
+        result = Chain::concat(std::move(result), createRedefineDeduplicationInfoWithDataHashTransformChain());
         result = Chain::concat(std::move(result), createPostSink(root_view));
     }
 
@@ -979,7 +994,7 @@ Chain InsertDependenciesBuilder::createChainWithDependencies() const
         result.addSink(std::make_shared<NullSinkToStorage>(output_headers.at(root_view)));
     }
 
-    result.setNumThreads(getViewProcessingNumThreads());
+    result.setNumThreads(init_context->getSettingsRef()[Setting::max_threads]);
     result.setConcurrencyControl(init_context->getSettingsRef()[Setting::use_concurrency_control]);
 
     result.addInsertDependenciesBuilder(shared_from_this());
@@ -1355,7 +1370,7 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
     }
 
 
-    auto counting = std::make_shared<CountingTransform>(output_header, insert_context->getQuota(), insert_context->getNormalizedQueryHash());
+    auto counting = std::make_shared<CountingTransform>(output_header, insert_context->getQuota());
     counting->setProcessListElement(insert_context->getProcessListElement());
     counting->setProgressCallback(insert_context->getProgressCallback());
     counting->setRuntimeData(thread_groups.at(view_id));
@@ -1523,7 +1538,7 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
     VectorWithMemoryTracking<Chain> view_chains;
     view_chains.reserve(dependent_views_ids.size());
 
-    Blocks output_view_chains_headers;
+    std::vector<Block> output_view_chains_headers;
     output_view_chains_headers.reserve(dependent_views_ids.size());
 
     for (const auto & child_view_id : dependent_views_ids)
@@ -1602,10 +1617,6 @@ void InsertDependenciesBuilder::logQueryView(StorageID view_id, std::exception_p
     if (!thread_group)
         return;
 
-    auto views_log = init_context->getQueryViewsLog();
-    if (!views_log)
-        return;
-
     const auto & view_type = view_types.at(view_id);
     const auto & inner_table_id = inner_tables.at(view_id);
 
@@ -1615,45 +1626,50 @@ void InsertDependenciesBuilder::logQueryView(StorageID view_id, std::exception_p
     if (min_query_duration && elapsed_ms <= min_query_duration)
         return;
 
+    QueryViewsLogElement element;
+
+    auto event_time = std::chrono::system_clock::now();
+    element.event_time = timeInSeconds(event_time);
+    element.event_time_microseconds = timeInMicroseconds(event_time);
+
+    element.view_duration_ms = elapsed_ms;
+    element.initial_query_id = CurrentThread::getQueryId();
+
+    element.view_name = view_id.getFullTableName();
+    element.view_uuid = view_id.uuid;
+    element.view_type = view_type;
+    element.view_query = getCleanQueryAst(select_queries.at(view_id), select_contexts.at(view_id));
+    element.view_target = inner_table_id.getFullTableName();
+
+    element.peak_memory_usage = thread_group->memory_tracker.getPeak() > 0 ? thread_group->memory_tracker.getPeak() : 0;
+
+    auto profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+
+    element.read_rows = (*profile_counters)[ProfileEvents::SelectedRows];
+    element.read_bytes = (*profile_counters)[ProfileEvents::SelectedBytes];
+    element.written_rows = (*profile_counters)[ProfileEvents::InsertedRows];
+    element.written_bytes = (*profile_counters)[ProfileEvents::InsertedBytes];
+
+    if (settings[Setting::log_profile_events] != 0)
+        element.profile_counters = std::move(profile_counters);
+
+    element.status = event_status;
+    element.exception_code = 0;
+    if (exception)
+    {
+        element.exception_code = getExceptionErrorCode(exception);
+        element.exception = getExceptionMessage(exception, false);
+        if (settings[Setting::calculate_text_stack_trace])
+            element.stack_trace = getExceptionStackTraceString(exception);
+    }
+
     try
     {
-        views_log->add([&](QueryViewsLogElement & element)
-        {
-            auto event_time = std::chrono::system_clock::now();
-            element.event_time = timeInSeconds(event_time);
-            element.event_time_microseconds = timeInMicroseconds(event_time);
+        auto views_log = init_context->getQueryViewsLog();
+        if (!views_log)
+            return;
 
-            element.view_duration_ms = elapsed_ms;
-            element.initial_query_id = CurrentThread::getQueryId();
-
-            element.view_name = view_id.getFullTableName();
-            element.view_uuid = view_id.uuid;
-            element.view_type = view_type;
-            element.view_query = getCleanQueryAst(select_queries.at(view_id), select_contexts.at(view_id));
-            element.view_target = inner_table_id.getFullTableName();
-
-            element.peak_memory_usage = thread_group->memory_tracker.getPeak() > 0 ? thread_group->memory_tracker.getPeak() : 0;
-
-            auto profile_counters = thread_group->performance_counters.getPartiallyAtomicSnapshot();
-
-            element.read_rows = profile_counters[ProfileEvents::SelectedRows];
-            element.read_bytes = profile_counters[ProfileEvents::SelectedBytes];
-            element.written_rows = profile_counters[ProfileEvents::InsertedRows];
-            element.written_bytes = profile_counters[ProfileEvents::InsertedBytes];
-
-            if (settings[Setting::log_profile_events] != 0)
-                element.profile_counters = std::move(profile_counters);
-
-            element.status = event_status;
-            element.exception_code = 0;
-            if (exception)
-            {
-                element.exception_code = getExceptionErrorCode(exception);
-                element.exception = getExceptionMessage(exception, false);
-                if (settings[Setting::calculate_text_stack_trace])
-                    element.stack_trace = getExceptionStackTraceString(exception);
-            }
-        });
+        views_log->add(std::move(element));
     }
     catch (...)
     {
@@ -1701,15 +1717,6 @@ QueryViewsLogElement::ViewStatus InsertDependenciesBuilder::getQueryViewStatus(s
 bool InsertDependenciesBuilder::isViewsInvolved() const
 {
     return isView(init_table_id) || !dependent_views.at(root_view).empty();
-}
-
-
-size_t InsertDependenciesBuilder::getViewProcessingNumThreads() const
-{
-    const auto & settings = init_context->getSettingsRef();
-    if (settings[Setting::parallel_view_processing] || !isViewsInvolved())
-        return static_cast<size_t>(settings[Setting::max_threads]);
-    return 1;
 }
 
 

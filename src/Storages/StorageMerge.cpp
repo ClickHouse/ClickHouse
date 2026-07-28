@@ -2004,16 +2004,16 @@ SELECT * FROM WatchLog;
 
 ## Virtual columns {#virtual-columns}
 
-- `_table` — The name of the table from which data was read. Type: [String](/reference/data-types/string).
+- `_table` — The name of the table from which data was read. Type: [String](../../../sql-reference/data-types/string.md).
 
     If you filter on `_table`, (for example `WHERE _table='xyz'`) only tables which satisfy the filter condition are read.
 
-- `_database` — Contains the name of the database from which data was read. Type: [String](/reference/data-types/string).
+- `_database` — Contains the name of the database from which data was read. Type: [String](../../../sql-reference/data-types/string.md).
 
 **See Also**
 
-- [Virtual columns](/reference/engines/table-engines/index#table_engines-virtual_columns)
-- [merge](/reference/functions/table-functions/merge) table function
+- [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
+- [merge](../../../sql-reference/table-functions/merge.md) table function
 )DOCS_MD",
         .syntax = "ENGINE = Merge(db_name, tables_regexp)",
         .related = {"Distributed"}});
