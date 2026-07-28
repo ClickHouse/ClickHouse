@@ -38,10 +38,21 @@ SELECT secondary_indices_compressed_bytes > 0 FROM system.parts WHERE table = 't
 -- Their checksums must be in checksums.txt, otherwise `CHECK TABLE` fails.
 CHECK TABLE t_skip_idx_checksums SETTINGS check_query_single_value_result = 0;
 
--- The preserved index must still be usable: it must actually prune granules (1/20), not just
--- appear by name. v is not the primary key, so only the minmax skip index can eliminate granules.
+-- Every preserved index must still be usable, per index rather than in aggregate: `CHECK TABLE`
+-- passes and the aggregate size stays positive even when one index is silently omitted, and a
+-- single pruning query can be served by whichever index survived. Assert each one's own
+-- `EXPLAIN indexes = 1` entry, so losing any single index reddens this test.
+--
+-- `mm_v` (minmax over the non-primary-key monotone `v`) narrows 20 granules to 1.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_skip_idx_checksums WHERE v = 1042) WHERE explain ILIKE '%Name: mm_v%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_skip_idx_checksums WHERE v = 1042) WHERE explain ILIKE '%Granules: 1/20%';
+-- `set_v` runs after `mm_v` on the same predicate, so it is asserted by name on its own line.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_skip_idx_checksums WHERE v = 1042) WHERE explain ILIKE '%Name: set_v%';
+-- `bf_s` needs a predicate on `s`, and an absent value lets it drop every granule.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_skip_idx_checksums WHERE s = 'absent') WHERE explain ILIKE '%Name: bf_s%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_skip_idx_checksums WHERE s = 'absent') WHERE explain ILIKE '%Granules: 0/20%';
 SELECT count() FROM t_skip_idx_checksums WHERE v = 1042;
+SELECT count() FROM t_skip_idx_checksums WHERE s = 'absent';
 
 DROP TABLE t_skip_idx_checksums;
 
