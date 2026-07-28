@@ -23,6 +23,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_unaligned_array_join;
     extern const SettingsBool optimize_functions_to_subcolumns;
 }
@@ -87,6 +88,16 @@ public:
         /// The join tree must be a single ARRAY JOIN directly over a table.
         auto * array_join_node = query_node->getJoinTree()->as<ArrayJoinNode>();
         if (!array_join_node)
+            return;
+
+        /// A non-LEFT ARRAY JOIN drops rows whose array is empty, so a non-empty table whose arrays
+        /// are all empty leaves the aggregation with no input at all, and
+        /// `empty_result_for_aggregation_by_empty_set` then asks for an empty result. sum() over the
+        /// base table rows would instead aggregate a non-empty input and return a single 0 row.
+        /// Whether every array is empty is not known here, so decline for the whole setting.
+        /// LEFT keeps one row per input row, so its input is empty only when the table is, which the
+        /// rewritten sum() reproduces.
+        if (!array_join_node->isLeft() && settings[Setting::empty_result_for_aggregation_by_empty_set])
             return;
 
         auto * table_node = array_join_node->getTableExpression()->as<TableNode>();

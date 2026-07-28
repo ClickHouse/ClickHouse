@@ -80,4 +80,34 @@ SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT id, count() FROM t_coun
 -- With the setting disabled, the optimization must not fire (backward compatible).
 SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj ARRAY JOIN arr AS value SETTINGS optimize_functions_to_subcolumns = 0) WHERE explain ILIKE '%arr.size0%';
 
+SELECT 'A non-LEFT ARRAY JOIN over only-empty arrays leaves the aggregation with no input, so empty_result_for_aggregation_by_empty_set must keep returning an empty result and the rewrite must decline.';
+DROP TABLE IF EXISTS t_count_aj_empty;
+CREATE TABLE t_count_aj_empty (id UInt64, arr Array(UInt64), m Map(String, UInt64)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_count_aj_empty SELECT number, [], map() FROM numbers(3);
+-- Every array is empty, so INNER ARRAY JOIN emits no row at all: the result must be empty, not 0.
+SELECT count() FROM t_count_aj_empty ARRAY JOIN arr SETTINGS empty_result_for_aggregation_by_empty_set = 1;
+SELECT count(*) FROM t_count_aj_empty ARRAY JOIN arr SETTINGS empty_result_for_aggregation_by_empty_set = 1;
+SELECT count() FROM t_count_aj_empty ARRAY JOIN m SETTINGS empty_result_for_aggregation_by_empty_set = 1;
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj_empty ARRAY JOIN arr SETTINGS empty_result_for_aggregation_by_empty_set = 1) WHERE explain ILIKE '%arr.size0%';
+-- The setting is per-query-scope, so an inner SELECT that carries it must decline on its own.
+SELECT * FROM (SELECT count() FROM t_count_aj_empty ARRAY JOIN arr SETTINGS empty_result_for_aggregation_by_empty_set = 1);
+-- LEFT ARRAY JOIN emits one row per input row, so its aggregation input is empty only when the table
+-- is: the rewrite stays enabled and both paths agree.
+SELECT count() FROM t_count_aj_empty LEFT ARRAY JOIN arr SETTINGS empty_result_for_aggregation_by_empty_set = 1;
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj_empty LEFT ARRAY JOIN arr SETTINGS empty_result_for_aggregation_by_empty_set = 1) WHERE explain ILIKE '%arr.size0%';
+-- An empty table yields an empty aggregation input either way, so both keywords must return no row.
+DROP TABLE IF EXISTS t_count_aj_norows;
+CREATE TABLE t_count_aj_norows (id UInt64, arr Array(UInt64)) ENGINE = MergeTree ORDER BY id;
+SELECT count() FROM t_count_aj_norows ARRAY JOIN arr SETTINGS empty_result_for_aggregation_by_empty_set = 1;
+SELECT count() FROM t_count_aj_norows LEFT ARRAY JOIN arr SETTINGS empty_result_for_aggregation_by_empty_set = 1;
+-- With the setting off, the non-LEFT rewrite must still fire and stay equal to the unoptimized path.
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj_empty ARRAY JOIN arr SETTINGS empty_result_for_aggregation_by_empty_set = 0) WHERE explain ILIKE '%arr.size0%';
+SELECT (SELECT count() FROM t_count_aj_empty ARRAY JOIN arr SETTINGS empty_result_for_aggregation_by_empty_set = 0) = (SELECT count() FROM t_count_aj_empty ARRAY JOIN arr SETTINGS empty_result_for_aggregation_by_empty_set = 0, optimize_functions_to_subcolumns = 0);
+-- A table with some non-empty arrays keeps a non-empty aggregation input, so the setting changes
+-- nothing there and the results must match the unoptimized path.
+SELECT (SELECT count() FROM t_count_aj ARRAY JOIN arr SETTINGS empty_result_for_aggregation_by_empty_set = 1) = (SELECT count() FROM t_count_aj ARRAY JOIN arr SETTINGS empty_result_for_aggregation_by_empty_set = 1, optimize_functions_to_subcolumns = 0);
+SELECT (SELECT count() FROM t_count_aj LEFT ARRAY JOIN arr SETTINGS empty_result_for_aggregation_by_empty_set = 1) = (SELECT count() FROM t_count_aj LEFT ARRAY JOIN arr SETTINGS empty_result_for_aggregation_by_empty_set = 1, optimize_functions_to_subcolumns = 0);
+DROP TABLE t_count_aj_norows;
+DROP TABLE t_count_aj_empty;
+
 DROP TABLE t_count_aj;
