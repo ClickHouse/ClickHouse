@@ -19,13 +19,13 @@ import ExampleFiles from '/snippets/ar/_working_example.mdx';
 import CloudTip from '/snippets/ar/_cloud_tip.mdx';
 
 > في هذا المثال، ستتعلّم كيفية إعداد عنقود ClickHouse بسيط يوفّر
-> كلاً من التكرار والتوسعة. ويتكوّن من شظيتين ونسختين متماثلتين، مع
+> كلاً من التكرار والتوسعة. ويتكوّن من شاردين ونسختين متماثلتين، مع
 > عنقود ClickHouse Keeper من 3 عقد لإدارة التناسق والحفاظ على النصاب
 > داخل العنقود.
 
 تظهر أدناه معمارية العنقود الذي ستقوم بإعداده:
 
-<Image img="/images/deployment-guides/replication-sharding-examples/both.webp" size="md" alt="مخطط المعمارية لشظيتين ونسخة متماثلة واحدة" />
+<Image img="/images/deployment-guides/replication-sharding-examples/both.webp" size="md" alt="مخطط المعمارية لشاردين ونسخة متماثلة واحدة" />
 
 <DedicatedKeeperServers />
 
@@ -38,9 +38,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
 * Docker مُثبّت على جهازك
 
 <Steps>
-  <Step>
-    ## إعداد بنية الدليل وبيئة الاختبار
-
+  <Step title="إعداد بنية الدليل وبيئة الاختبار" id="set-up">
     <ExampleFiles />
 
     في هذا الدليل العملي، ستستخدم [Docker compose](https://docs.docker.com/compose/) لإعداد مجموعة ClickHouse. يمكن تعديل هذا الإعداد ليعمل على أجهزة محلية منفصلة، أو أجهزة افتراضية، أو نُسَخ سحابية كذلك.
@@ -170,9 +168,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     <ConfigExplanation />
   </Step>
 
-  <Step>
-    ## تهيئة عقد ClickHouse
-
+  <Step title="تهيئة عقد ClickHouse" id="configure-clickhouse-servers">
     ### إعداد الخادم
 
     قم الآن بتعديل كل ملف تهيئة فارغ `config.xml` الموجود في
@@ -250,7 +246,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     </clickhouse>
     ```
 
-    | Directory                                                 | File                                                                                                                                                                             |
+    | الدليل                                                    | File                                                                                                                                                                             |
     | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
     | `fs/volumes/clickhouse-01/etc/clickhouse-server/config.d` | [`config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_2S_2R/fs/volumes/clickhouse-01/etc/clickhouse-server/config.d/config.xml) |
     | `fs/volumes/clickhouse-02/etc/clickhouse-server/config.d` | [`config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_2S_2R/fs/volumes/clickhouse-02/etc/clickhouse-server/config.d/config.xml) |
@@ -319,9 +315,9 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     </remote_servers>
     ```
 
-    يُحدِّد القسم `<cluster_2S_2R></cluster_2S_2R>` layout الـ cluster،
+    يُحدِّد القسم `<cluster_2S_2R></cluster_2S_2R>` تخطيط الكلستر،
     ويعمل بوصفه template لاستعلامات DDL الموزَّعة، وهي الاستعلامات التي تُنفَّذ
-    عبر الـ cluster باستخدام جملة `ON CLUSTER`.
+    عبر الكلستر باستخدام جملة `ON CLUSTER`.
 
     #### تهيئة Keeper
 
@@ -417,9 +413,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     </Note>
   </Step>
 
-  <Step>
-    ## إعداد ClickHouse Keeper
-
+  <Step title="إعداد ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
     بعد ذلك، ستُعِد ClickHouse Keeper، والذي يُستخدم للتنسيق.
 
     ### إعداد Keeper
@@ -437,9 +431,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     <CloudTip />
   </Step>
 
-  <Step>
-    ## اختبر الإعداد
-
+  <Step title="اختبر الإعداد" id="test-the-setup">
     تأكد من أن Docker قيد التشغيل على جهازك.
     ابدأ الـ cluster باستخدام الأمر `docker-compose up` من الدليل الجذر `cluster_2S_2R`:
 
@@ -522,9 +514,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     في الخطوة التالية، ستنشئ جدولًا على العنقود.
   </Step>
 
-  <Step>
-    ## إنشاء قاعدة بيانات
-
+  <Step title="إنشاء قاعدة بيانات" id="creating-a-database">
     الآن، بعد أن تحققت من أن العنقود مُعَدّ بشكل صحيح ويعمل، ستعيد إنشاء الجدول نفسه المستخدم في الدليل العملي لمجموعة البيانات النموذجية [أسعار العقارات في المملكة المتحدة](/ar/get-started/sample-datasets/uk-price-paid).
     ويحتوي على نحو 30 مليون صفّ من أسعار العقارات المدفوعة
     للعقارات في إنجلترا وويلز منذ عام 1995.
@@ -582,9 +572,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## أنشئ جدولًا على العنقود
-
+  <Step title="أنشئ جدولًا على العنقود" id="creating-a-table">
     الآن بعد إنشاء قاعدة البيانات، أنشئ جدولًا مع النسخ المتماثل.
 
     شغّل الاستعلام التالي من أي عميل على أي مضيف:
@@ -655,9 +643,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## إدراج البيانات في جدول موزّع
-
+  <Step title="إدراج البيانات في جدول موزّع" id="inserting-data-using-distributed">
     لإدراج البيانات في الجدول، لا يمكن استخدام `ON CLUSTER` لأنه لا ينطبق
     على استعلامات DML (لغة معالجة البيانات) مثل `INSERT` و`UPDATE`
     و`DELETE`. ولإدراج البيانات، يجب استخدام محرّك الجدول
@@ -752,12 +738,12 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
   ## الخلاصة
 </div>
 
-تتمثل ميزة طوبولوجيا العنقود هذه، التي تضم شظيتين ونسختين متماثلتين، في أنها توفر كلاً من قابلية التوسع وتحمل الأعطال.
-تُوزَّع البيانات عبر مضيفين منفصلين، مما يقلل متطلبات التخزين وعمليات الإدخال/الإخراج لكل عقدة، بينما تُعالَج الاستعلامات بالتوازي عبر كلتا الشظيتين لتحسين الأداء وكفاءة استخدام الذاكرة.
-والأهم من ذلك أن العنقود يمكنه تحمّل فقدان عقدة واحدة ومواصلة خدمة الاستعلامات دون انقطاع، إذ تتوفر لكل شظية نسخة متماثلة احتياطية على عقدة أخرى.
+تتمثل ميزة بنية العُنقود هذه، التي تضم شاردين ونسختين متماثلتين، في أنها توفّر كلاً من قابلية التوسع وتحمل الأعطال.
+تُوزَّع البيانات عبر مضيفين منفصلين، مما يقلّل متطلبات التخزين وعمليات الإدخال/الإخراج لكل عقدة، بينما تُعالَج الاستعلامات بالتوازي عبر كلا الشاردين لتحسين الأداء وكفاءة استخدام الذاكرة.
+والأهم من ذلك أن العُنقود يستطيع تحمّل فقدان عقدة واحدة ومواصلة خدمة الاستعلامات دون انقطاع، إذ تتوفر لكل شارد نسخة متماثلة احتياطية على عقدة أخرى.
 
-يتمثل العيب الرئيسي لطوبولوجيا العنقود هذه في زيادة عبء التخزين، إذ تتطلب سعة تخزينية مضاعفة مقارنة بإعداد لا يستخدم نسخًا متماثلة، لأن كل شظية تكون مكررة.
-إضافة إلى ذلك، ورغم أن العنقود يمكنه الاستمرار بعد تعطل عقدة واحدة، فإن فقدان عقدتين في الوقت نفسه قد يجعل العنقود خارج الخدمة، وذلك بحسب العقد التي تتعطل وكيفية توزيع الشظايا.
-وتحقق هذه الطوبولوجيا توازنًا بين الإتاحة والكلفة، مما يجعلها مناسبة لبيئات production التي تتطلب مستوى معينًا من تحمل الأعطال دون تكلفة معاملات نسخ أعلى.
+أما العيب الرئيسي في بنية العُنقود هذه فهو زيادة العبء التخزيني—إذ تتطلب سعة تخزين مضاعفة مقارنة بإعداد لا يحتوي على نسخ متماثلة، لأن كل شارد يكون مكرراً.
+بالإضافة إلى ذلك، ورغم أن العُنقود يمكنه الصمود أمام تعطل عقدة واحدة، فإن فقدان عقدتين في الوقت نفسه قد يجعل العُنقود غير قابل للتشغيل، وذلك بحسب العقد التي تتعطل وكيفية توزيع الشاردات.
+تحقق هذه البنية توازناً بين الإتاحة والتكلفة، مما يجعلها مناسبة لبيئات production التي تتطلب مستوى معيناً من تحمل الأعطال من دون كلفة عوامل نسخ متماثل أعلى.
 
-للتعرّف على كيفية معالجة ClickHouse Cloud للاستعلامات، بما يوفر كلاً من قابلية التوسع وتحمل الأعطال، راجع قسم [&quot;النسخ المتماثلة المتوازية&quot;](/ar/products/cloud/features/infrastructure/parallel-replicas).
+للتعرّف على كيفية معالجة ClickHouse Cloud للاستعلامات، بما يوفّر كلاً من قابلية التوسع وتحمل الأعطال، راجع قسم [&quot;Parallel Replicas&quot;](/ar/products/cloud/features/infrastructure/parallel-replicas).

@@ -76,22 +76,23 @@ void AsynchronousReadBufferFromFileDescriptor::prefetch(Priority priority)
 
 void AsynchronousReadBufferFromFileDescriptor::appendToPrefetchLog(FilesystemPrefetchState state, int64_t size, const std::unique_ptr<Stopwatch> & execution_watch)
 {
-    FilesystemReadPrefetchesLogElement elem
+    prefetches_log->add([&](FilesystemReadPrefetchesLogElement & element)
     {
-        .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
-        .query_id = query_id,
-        .path = getFileName(),
-        .offset = file_offset_of_buffer_end,
-        .size = size,
-        .prefetch_submit_time = last_prefetch_info.submit_time,
-        .execution_watch = execution_watch ? std::optional<Stopwatch>(*execution_watch) : std::nullopt,
-        .priority = last_prefetch_info.priority,
-        .state = state,
-        .thread_id = getThreadId(),
-        .reader_id = current_reader_id,
-    };
-
-    prefetches_log->add(std::move(elem));
+        element = FilesystemReadPrefetchesLogElement
+        {
+            .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
+            .query_id = query_id,
+            .path = getFileName(),
+            .offset = file_offset_of_buffer_end,
+            .size = size,
+            .prefetch_submit_time = last_prefetch_info.submit_time,
+            .execution_watch = execution_watch ? std::optional<Stopwatch>(*execution_watch) : std::nullopt,
+            .priority = last_prefetch_info.priority,
+            .state = state,
+            .thread_id = getThreadId(),
+            .reader_id = current_reader_id,
+        };
+    });
 }
 
 

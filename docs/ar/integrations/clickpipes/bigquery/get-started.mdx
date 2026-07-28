@@ -21,9 +21,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * تتطلب عملية التحميل الأولي حاوية Google Cloud Storage ‏(GCS) يوفّرها المستخدم لأغراض التخزين المرحلي. نوصي بإنشاء حاوية مخصصة لـ ClickPipe الخاص بك وفقًا لـ[الوثائق الرسمية](https://docs.cloud.google.com/storage/docs/creating-buckets). مستقبلاً، ستُوفَّر الحاوية الوسيطة وتُدار بواسطة ClickPipes.
 
 <Steps>
-  <Step>
-    ## اختر مصدر البيانات
-
+  <Step title="اختر مصدر البيانات" id="1-select-the-data-source">
     **1.** في ClickHouse Cloud، اختر **Data sources** من قائمة التنقل الرئيسية، ثم انقر على **Create ClickPipe**.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="اختر عمليات الاستيراد" size="lg" border />
@@ -33,9 +31,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="اختر لوحة BigQuery" size="lg" border />
   </Step>
 
-  <Step>
-    ## أعدّ اتصال ClickPipe الخاص بك
-
+  <Step title="أعدّ اتصال ClickPipe الخاص بك" id="2-setup-your-clickpipe-connection">
     لإعداد ClickPipe جديد، يجب تقديم تفاصيل الاتصال بمخزن بيانات BigQuery والمصادقة عليه، بالإضافة إلى حاوية GCS مرحلية.
 
     **1.** ارفع مفتاح `.json` الخاص بحساب الخدمة الذي أنشأته لـ ClickPipes. تأكد من أن حساب الخدمة يمتلك الحد الأدنى المطلوب من [الأذونات](/ar/integrations/clickpipes/bigquery/overview#permissions).
@@ -49,15 +45,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     **4.** انقر على **Next** للتحقق.
   </Step>
 
-  <Step>
-    ## اضبط ClickPipe الخاص بك
-
+  <Step title="اضبط ClickPipe الخاص بك" id="3-configure-your-clickpipe">
     استنادًا إلى حجم مجموعة بيانات BigQuery لديك، أو الحجم الإجمالي للجداول التي تريد مزامنتها، قد تحتاج إلى تعديل إعدادات الاستيعاب الافتراضية لـ ClickPipe.
   </Step>
 
-  <Step>
-    ## اضبط الجداول
-
+  <Step title="اضبط الجداول" id="4-configure-tables">
     **1.** اختر قاعدة بيانات ClickHouse التي تريد نسخ جداول BigQuery إليها. يمكنك اختيار قاعدة بيانات موجودة أو إنشاء قاعدة جديدة.
 
     **2.** اختر الجداول، وعند الحاجة الأعمدة، التي تريد نسخها. لن تظهر إلا مجموعات البيانات التي يملك حساب الخدمة المقدم صلاحية الوصول إليها.
@@ -73,9 +65,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp" alt="الأذونات" size="lg" border />
   </Step>
 
-  <Step>
-    ## اضبط الأذونات
-
+  <Step title="اضبط الأذونات" id="6-configure-permissions">
     أخيرًا، يمكنك ضبط أذونات مستخدم ClickPipes الداخلي.
 
     **Permissions:** سينشئ ClickPipes مستخدمًا مخصصًا لكتابة البيانات إلى الجدول الوجهة. يمكنك اختيار دور لهذا المستخدم الداخلي باستخدام دور مخصص أو أحد الأدوار المحددة مسبقًا:
@@ -84,9 +74,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     * `Only destination`: أذونات إدراج إلى الجدول الوجهة فقط.
   </Step>
 
-  <Step>
-    ## أكمل الإعداد
-
+  <Step title="أكمل الإعداد" id="7-complete-setup">
     انقر على **Create ClickPipe** لإكمال الإعداد. ستتم إعادة توجيهك إلى صفحة النظرة العامة، حيث يمكنك متابعة تقدم التحميل الأولي والنقر للاطلاع على تفاصيل BigQuery ClickPipes الخاصة بك.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="الأذونات" size="lg" border />
