@@ -144,9 +144,9 @@ KILLS_PROCESSES_BY_CMDLINE_TAG = "kills-processes-by-cmdline"
 
 
 def find_benign_lsan_ptrace_probe_lines(lines, kills_processes_by_cmdline):
-    """Return indexes of LSan TestPTrace() lines that are safe to drop from a sanitizer log.
+    """Return indexes of LSan TestPTrace lines that are safe to drop from a sanitizer log.
 
-    TestPTrace() forks a short-lived child that issues one throwaway ptrace call to find out
+    TestPTrace forks a short-lived child that issues one throwaway ptrace call to find out
     whether ptrace is blocked, and prints these two lines back to back if that child dies from a
     signal. Neither line can be whitelisted on its own, because the same pair also reports a real
     seccomp ptrace block, so two conditions must hold together.
@@ -157,8 +157,8 @@ def find_benign_lsan_ptrace_probe_lines(lines, kills_processes_by_cmdline):
     untouched.
 
     Second, the reported signal must not be SIGSYS, which is how seccomp kills the child when it
-    really denies the ptrace call. The signal alone is not enough to decide: TestPTrace() ignores
-    the result of its internal_waitpid() and reads a possibly untouched wstatus, so a wait
+    really denies the ptrace call. The signal alone is not enough to decide: TestPTrace ignores
+    the result of its internal_waitpid and reads a possibly untouched wstatus, so a wait
     interrupted by EINTR reports a stale signal number - measured on a seccomp-blocked probe raced
     with SIGINT, 812 of 2000 real blocks were reported with a stale non-SIGSYS signal, and 2000 of
     2000 reported SIGSYS without the race. Requiring the tag as well confines that upstream

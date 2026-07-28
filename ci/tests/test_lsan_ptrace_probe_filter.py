@@ -1,7 +1,7 @@
 """
-Regression tests for the LSan `TestPTrace()` sanitizer-log filter in tests/clickhouse-test.
+Regression tests for the LSan `TestPTrace` sanitizer-log filter in tests/clickhouse-test.
 
-compiler-rt's `TestPTrace()` (contrib/llvm-project/compiler-rt/lib/sanitizer_common/
+compiler-rt's `TestPTrace` (contrib/llvm-project/compiler-rt/lib/sanitizer_common/
 sanitizer_stoptheworld_linux_libcdep.cpp) forks a short-lived child that issues one throwaway
 `ptrace` call to find out whether `ptrace` is blocked before the stop-the-world tracer attaches to
 the real threads.  If that child dies from a signal, LSan prints two lines back to back:
@@ -14,8 +14,8 @@ test carries the kills-processes-by-cmdline tag (only such a test can kill the p
 inherits the client's argv), and the reported signal is not SIGSYS (which is how seccomp kills the
 child when it really denies the ptrace call).
 
-The tag is load-bearing rather than cosmetic.  TestPTrace() ignores the result of its
-internal_waitpid() and reads a possibly untouched wstatus, so an EINTR-interrupted wait reports a
+The tag is load-bearing rather than cosmetic.  `TestPTrace` ignores the result of its
+`internal_waitpid` and reads a possibly untouched `wstatus`, so an EINTR-interrupted wait reports a
 stale signal number: with a SIGINT raced against a genuinely seccomp-blocked probe, 812 of 2000
 real blocks reported a stale non-SIGSYS signal, versus 0 of 2000 without the race.  Requiring the
 tag confines that upstream misreport to the one test that already tolerates it and leaves every
@@ -43,7 +43,7 @@ KILLS_PROCESSES_BY_CMDLINE_TAG = _ct["KILLS_PROCESSES_BY_CMDLINE_TAG"]
 RunnerTestCase = _ct["TestCase"]
 RunnerTestSuite = _ct["TestSuite"]
 
-# compiler-rt's Report() prefixes every line with ==PID==.
+# compiler-rt's `Report` prefixes every line with ==PID==.
 _PID = 4242
 _WARNING = f"=={_PID}=={LSAN_PTRACE_WARNING}. LeakSanitizer may hang."
 _UAF = f"=={_PID}==ERROR: AddressSanitizer: heap-use-after-free on address 0x602000000010"
