@@ -162,9 +162,10 @@ SELECT d, dynamicType(d) FROM format(TSV, 'd Dynamic', '007');
 SELECT d, dynamicType(d) FROM format(CSV, 'd Dynamic', '0.0');
 
 -- 15. TSKV also uses the Escaped rule, so a leading-zero decimal now infers Float64 there too. TSKV
--- decodes escape sequences before inferring but parses the original bytes when reading, so a decimal
--- written as an escape sequence infers a type its own value path cannot read. That asymmetry is
--- pre-existing and independent of leading zeros, and it is deliberately not addressed here.
+-- decodes escape sequences before inferring but parses the original bytes when reading, so a field whose
+-- escapes were decoded must keep inferring String. Nested values are out of that guard's reach, so an
+-- escaped number inside an array still infers a numeric element type. The escaped forms below use unhex
+-- so the exact wire bytes are unambiguous: 783D305C783245350A is `x=0\x2E5` plus a newline.
 SELECT 'group 15: TSKV plain values';
 DESC format(TSKV, 'x=0.5\n');
 SELECT * FROM format(TSKV, 'x=0.5\n');
@@ -174,3 +175,16 @@ SELECT 'group 15: TSKV null representation and escapes';
 DESC format(TSKV, 'x=\\N\ty=1\n');
 SELECT x IS NULL, y FROM format(TSKV, 'x=\\N\ty=1\n');
 SELECT * FROM format(TSKV, 'x=a\\tb\n');
+SELECT 'group 15: TSKV decoded escape must stay String and read back';
+DESC format(TSKV, unhex('783D305C783245350A'));
+SELECT * FROM format(TSKV, unhex('783D305C783245350A'));
+SELECT 'group 15: the same holds without a leading zero';
+DESC format(TSKV, unhex('783D315C783245350A'));
+SELECT * FROM format(TSKV, unhex('783D315C783245350A'));
+DESC format(TSKV, unhex('783D315C7833300A'));
+SELECT * FROM format(TSKV, unhex('783D315C7833300A'));
+SELECT 'group 15: a non-numeric decoded escape is unaffected';
+DESC format(TSKV, unhex('783D615C783245620A'));
+SELECT * FROM format(TSKV, unhex('783D615C783245620A'));
+DESC format(TSKV, unhex('783D305C700A'));
+SELECT * FROM format(TSKV, unhex('783D305C700A'));

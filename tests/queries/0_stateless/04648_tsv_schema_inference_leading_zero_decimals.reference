@@ -131,3 +131,16 @@ x	Nullable(String)
 y	Nullable(Int64)					
 1	1
 a\tb
+group 15: TSKV decoded escape must stay String and read back
+x	Nullable(String)					
+0.5
+group 15: the same holds without a leading zero
+x	Nullable(String)					
+1.5
+x	Nullable(String)					
+10
+group 15: a non-numeric decoded escape is unaffected
+x	Nullable(String)					
+a.b
+x	Nullable(String)					
+0\\p
