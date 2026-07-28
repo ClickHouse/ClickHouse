@@ -711,7 +711,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     /// Remove duplicated columns from USING(...).
     optimizeUsing(select_query);
 
-    /// Note: `optimize_or_like_chain` is a new-analyzer-only optimization (`ConvertOrLikeChainPass`);
+    /// Note: `optimize_or_like_chain` is an analyzer-only optimization (`ConvertOrLikeChainPass`);
     /// the old analyzer does not rewrite `OR LIKE` chains.
 }
 

@@ -65,7 +65,9 @@ struct MaterializedCTE
     TemporaryTableHolder extractTableHolder()
     {
         chassert(table_holder.has_value());
-        return std::move(*table_holder);
+        TemporaryTableHolder result = std::move(*table_holder);
+        table_holder.reset();
+        return result;
     }
 
     /// Temporary table storage.

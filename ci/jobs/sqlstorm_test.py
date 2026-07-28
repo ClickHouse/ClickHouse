@@ -10,6 +10,8 @@ from praktika.info import Info
 from praktika.result import Result
 from praktika.utils import Shell, Utils
 
+from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
+
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
 # Thresholds based on baseline run with ClickHouse 26.3 and ClickHouse-dialect queries.
@@ -68,6 +70,7 @@ class ClickHouseBinary:
 
         print("Starting ClickHouse server")
         print("Command: ", self.start_cmd)
+        kill_leftover_server_processes()
         self.log_fd = open(self.log_file, "w")
         self.proc = subprocess.Popen(
             self.start_cmd, stderr=subprocess.STDOUT, stdout=self.log_fd, shell=True

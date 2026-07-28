@@ -1,0 +1,58 @@
+{
+  "group": "Bring Your Own Cloud",
+  "pages": [
+    {
+      "group": "Visão geral",
+      "pages": [
+        "pt-BR/products/bring-your-own-cloud/overview/overview",
+        "pt-BR/products/bring-your-own-cloud/overview/architecture"
+      ]
+    },
+    {
+      "group": "Configuração",
+      "pages": [
+        "pt-BR/products/bring-your-own-cloud/configuration/configurations",
+        "pt-BR/products/bring-your-own-cloud/configuration/connect",
+        "pt-BR/products/bring-your-own-cloud/configuration/operations"
+      ]
+    },
+    {
+      "group": "Onboarding",
+      "pages": [
+        "pt-BR/products/bring-your-own-cloud/onboarding/aws",
+        "pt-BR/products/bring-your-own-cloud/onboarding/standard",
+        {
+          "group": "Personalização",
+          "pages": [
+            "pt-BR/products/bring-your-own-cloud/onboarding/customization-aws",
+            "pt-BR/products/bring-your-own-cloud/onboarding/customization-gcp"
+          ]
+        },
+        {
+          "group": "Rede",
+          "pages": [
+            "pt-BR/products/bring-your-own-cloud/onboarding/network-aws",
+            "pt-BR/products/bring-your-own-cloud/onboarding/network-gcp"
+          ],
+          "root": "pt-BR/products/bring-your-own-cloud/onboarding/network"
+        },
+        "pt-BR/products/bring-your-own-cloud/onboarding/new-region",
+        "pt-BR/products/bring-your-own-cloud/onboarding/azure-private-preview"
+      ]
+    },
+    {
+      "group": "Referência",
+      "pages": [
+        "pt-BR/products/bring-your-own-cloud/reference/network-security",
+        "pt-BR/products/bring-your-own-cloud/reference/privilege",
+        "pt-BR/products/bring-your-own-cloud/reference/clickhouse-data-access",
+        "pt-BR/products/bring-your-own-cloud/reference/observability-aws",
+        "pt-BR/products/bring-your-own-cloud/reference/billable-aws-services",
+        "pt-BR/products/bring-your-own-cloud/reference/cost-model-aws",
+        "pt-BR/products/bring-your-own-cloud/reference/aws-service-limits",
+        "pt-BR/products/bring-your-own-cloud/reference/faq",
+        "pt-BR/products/bring-your-own-cloud/reference/faq-aws"
+      ]
+    }
+  ]
+}

@@ -16,6 +16,27 @@ integration:
 
 是的，MySQL ClickPipe 支持 MariaDB 10.0 及更高版本。其配置与 MySQL 非常相似，默认使用 GTID 复制。
 
+<div id="mariadb-compressed-column-unsupported">
+  ### 为什么我的管道会因不受支持的 MariaDB COMPRESSED 列而失败？
+</div>
+
+如果您的管道失败，并出现了类似以下内容的错误：
+
+```text
+table <database>.<table> has MariaDB COMPRESSED column(s) [<columns>], which cannot be replicated via CDC;
+convert them to a non-compressed type or remove the table from the mirror
+```
+
+这意味着该表中有一个或多个列使用了 MariaDB 的[列压缩](https://mariadb.com/kb/en/storage-engine-independent-column-compression/) (`COLUMN_FORMAT COMPRESSED`) 。我们无法从 binlog 中解压这些值，因此受影响的表无法通过 CDC (变更数据捕获) 复制。
+
+要解决此问题：
+
+* 在源端**将压缩列改为非压缩类型** (或从管道中移除某个表) ：
+  ```sql
+  ALTER TABLE <table> MODIFY <column> <type>; -- 不使用 COLUMN_FORMAT COMPRESSED
+  ```
+* 重新同步该表或管道
+
 <div id="does-the-clickpipe-support-planetscale-vitess">
   ### MySQL ClickPipe 是否支持 PlanetScale、Vitess 或 TiDB？
 </div>
