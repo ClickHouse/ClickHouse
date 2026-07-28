@@ -59,7 +59,8 @@
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Formats/FormatFactory.h>
-#include <Interpreters/convertFieldToType.h>
+#include <Columns/IColumn.h>
+#include <Interpreters/convertColumnToType.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageView.h>
@@ -751,17 +752,26 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
             scope.scope_node->formatASTForErrorMessage());
 
 
+    /// Convert the constant column-natively (no `Field`) and rebuild the `ConstantNode` from the
+    /// resulting column.
+    const IColumn & value = *limit_offset_constant_node->getColumn();
+    const DataTypePtr & value_type = limit_offset_constant_node->getResultType();
+
+    auto make_result = [&](const ColumnPtr & converted, const DataTypePtr & result_type)
+    {
+        auto result_constant_node = std::make_shared<ConstantNode>(
+            ConstantValue(ConstantValue::wrapToColumnConst(converted), result_type));
+        result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
+        expression_node = std::move(result_constant_node);
+    };
+
     // We support limit in the range [INT64_MIN, UINT64_MAX] for integral limit or (0, 1) for fractional limit
     // Consider the nonnegative limit case first as they are more common
     {
-        Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeUInt64());
-
-        if (!converted_value.isNull())
+        auto uint_type = std::make_shared<DataTypeUInt64>();
+        if (ColumnPtr converted = convertColumnToTypeOrNull(value, value_type, uint_type))
         {
-            auto result_constant_node = std::make_shared<ConstantNode>(std::move(converted_value), std::make_shared<DataTypeUInt64>());
-            result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
-
-            expression_node = std::move(result_constant_node);
+            make_result(converted, uint_type);
             return;
         }
     }
@@ -769,29 +779,21 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
     // If we are here, then the number is either negative or outside the supported range or float
     // Consider the negative limit value case
     {
-        Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeInt64());
-
-        if (!converted_value.isNull())
+        auto int_type = std::make_shared<DataTypeInt64>();
+        if (ColumnPtr converted = convertColumnToTypeOrNull(value, value_type, int_type))
         {
-            auto result_constant_node = std::make_shared<ConstantNode>(std::move(converted_value), std::make_shared<DataTypeInt64>());
-            result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
-
-            expression_node = std::move(result_constant_node);
+            make_result(converted, int_type);
             return;
         }
     }
 
     {
-        Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeFloat64());
-        if (!converted_value.isNull())
+        auto float_type = std::make_shared<DataTypeFloat64>();
+        if (ColumnPtr converted = convertColumnToTypeOrNull(value, value_type, float_type))
         {
-            auto value = converted_value.safeGet<Float64>();
-            if (value < 1 && value > 0)
+            if (auto value_float = converted->getFloat64(0); value_float < 1 && value_float > 0)
             {
-                auto result_constant_node = std::make_shared<ConstantNode>(Field(value), std::make_shared<DataTypeFloat64>());
-                result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
-
-                expression_node = std::move(result_constant_node);
+                make_result(converted, float_type);
                 return;
             }
         }
@@ -4514,6 +4516,10 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
                 if (auto * identifier_node = nodes[0]->as<IdentifierNode>())
                 {
+                    bool previous_parameterized_view_arguments_in_resolve_process = parameterized_view_arguments_in_resolve_process;
+                    parameterized_view_arguments_in_resolve_process = true;
+                    SCOPE_EXIT({ parameterized_view_arguments_in_resolve_process = previous_parameterized_view_arguments_in_resolve_process; });
+
                     resolveExpressionNode(nodes[1], scope, /* allow_lambda_expression */false, /* allow_table_function */false);
                     if (auto * constant = nodes[1]->as<ConstantNode>())
                     {
