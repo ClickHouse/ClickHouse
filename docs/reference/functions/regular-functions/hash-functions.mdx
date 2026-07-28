@@ -2574,6 +2574,44 @@ SELECT xxHash64('Hello, world!');
 └───────────────────────────┘
 ```
 
+## xxHash64Spark {#xxHash64Spark}
+
+Introduced in: v26.7.0
+
+Calculates a [xxHash](http://cyan4973.github.io/xxHash/) from a string using the same seed as Spark.
+
+This function is the same as [`xxHash64`](#xxHash64), but it uses seed `42` and returns the result as `Int64`.
+Only `String` and `NULL` inputs are supported.
+For `NULL`, the function returns `42`, matching Spark's seed behavior.
+
+**Syntax**
+
+```sql
+xxHash64Spark(arg)
+```
+
+**Arguments**
+
+- `arg` — Input string to hash. [`String`](/reference/data-types/string)
+
+**Returned value**
+
+Returns the computed 64-bit hash of the input string. [`Int64`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT xxHash64Spark('ABC');
+```
+
+```response title=Response
+┌─xxHash64Spark('ABC')─┐
+│  4105715581806190027 │
+└──────────────────────┘
+```
+
 ## xxh3 {#xxh3}
 
 Introduced in: v22.12.0
