@@ -792,6 +792,18 @@ CONV_FN(EnumDefValue, edf)
     ret += std::to_string(edf.number());
 }
 
+CONV_FN(EnumDef, edef)
+{
+    ret += "(";
+    EnumDefValueToString(ret, edef.first_value());
+    for (int i = 0; i < edef.other_values_size(); i++)
+    {
+        ret += ", ";
+        EnumDefValueToString(ret, edef.other_values(i));
+    }
+    ret += ")";
+}
+
 static void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard, const BottomTypeName & btn)
 {
     using BottomTypeNameType = BottomTypeName::BottomOneOfCase;
@@ -891,9 +903,14 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
             const QBit & qq = btn.qbit();
 
             ret += "QBit(";
-            ret += FloatingPoints_Name(qq.subtype());
+            ret += qq.has_int8() ? "Int8" : FloatingPoints_Name(qq.floats());
             ret += ", ";
             ret += std::to_string(qq.dimension());
+            if (qq.has_stride())
+            {
+                ret += ", ";
+                ret += std::to_string(qq.stride());
+            }
             ret += ")";
         }
         break;
@@ -996,14 +1013,7 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
                         {
                             ret += edef.bits() ? "16" : "8";
                         }
-                        ret += "(";
-                        EnumDefValueToString(ret, edef.first_value());
-                        for (int i = 0; i < edef.other_values_size(); i++)
-                        {
-                            ret += ", ";
-                            EnumDefValueToString(ret, edef.other_values(i));
-                        }
-                        ret += ")";
+                        EnumDefToString(ret, edef);
                     }
                     break;
                     default: ret += "Int";
@@ -1211,27 +1221,9 @@ CONV_FN(ExprBetween, ebetween)
 
 CONV_FN(ExplainQuery, explain);
 
-CONV_FN(ExprIn, ein)
+CONV_FN(ExprInType, ein)
 {
-    const ExprList & elist = ein.expr();
-
-    if (elist.extra_exprs_size() == 0)
-    {
-        ExprToString(ret, elist.expr());
-    }
-    else
-    {
-        ret += "(";
-        ExprListToString(ret, ein.expr());
-        ret += ")";
-    }
-    ret += " ";
-    if (ein.global())
-        ret += "GLOBAL ";
-    if (ein.not_())
-        ret += "NOT ";
-    ret += "IN ";
-    using InType = ExprIn::InOneofCase;
+    using InType = ExprInType::InOneofCase;
     switch (ein.in_oneof_case())
     {
         case InType::kSingleExpr: ExprToString(ret, ein.single_expr()); break;
@@ -1254,13 +1246,36 @@ CONV_FN(ExprIn, ein)
     }
 }
 
+CONV_FN(ExprIn, ein)
+{
+    const ExprList & elist = ein.expr();
+
+    if (elist.extra_exprs_size() == 0)
+    {
+        ExprToString(ret, elist.expr());
+    }
+    else
+    {
+        ret += "(";
+        ExprListToString(ret, ein.expr());
+        ret += ")";
+    }
+    ret += " ";
+    if (ein.global())
+        ret += "GLOBAL ";
+    if (ein.not_())
+        ret += "NOT ";
+    ret += "IN ";
+    ExprInTypeToString(ret, ein.in_type());
+}
+
 CONV_FN(ExprAny, eany)
 {
     ExprToString(ret, eany.expr());
     BinaryOperatorToString(ret, static_cast<BinaryOperator>(((static_cast<int>(eany.op()) % 8) + 1)));
-    ret += eany.anyall() == AnyAllSome::AAS_ALL ? "ALL" : eany.anyall() == AnyAllSome::AAS_SOME ? "SOME" : "ANY";
+    ret += ExprAny_AnyAllSome_Name(eany.anyall()).substr(4);
     ret += "(";
-    ExplainQueryToString(ret, eany.sel());
+    ExprInTypeToString(ret, eany.in_type());
     ret += ")";
 }
 
@@ -1628,7 +1643,7 @@ CONV_FN(WindowDef, wdef)
 
 CONV_FN(IntervalExpr, ie)
 {
-    if (ie.interval() <= IntervalExpr::YEAR)
+    if (!ie.use_extract() && ie.interval() <= IntervalExpr::YEAR)
     {
         ret += "INTERVAL (";
         ExprToString(ret, ie.expr());
@@ -1886,20 +1901,10 @@ CONV_FN(FileFunc, ff)
         ClusterToString(ret, false, ff.cluster());
     }
     appendSQLStringLiteral(ret, ff.path());
-    if (ff.has_informat())
+    if (ff.has_format())
     {
         ret += ", ";
-        appendSQLStringLiteral(ret, InFormat_Name(ff.informat()).substr(3));
-    }
-    else if (ff.has_outformat())
-    {
-        ret += ", ";
-        appendSQLStringLiteral(ret, OutFormat_Name(ff.outformat()).substr(4));
-    }
-    else if (ff.has_inoutformat())
-    {
-        ret += ", ";
-        appendSQLStringLiteral(ret, InOutFormat_Name(ff.inoutformat()).substr(6));
+        appendSQLStringLiteral(ret, ff.format());
     }
     if (ff.has_structure())
     {
@@ -1916,7 +1921,7 @@ CONV_FN(FileFunc, ff)
 CONV_FN(FormatFunc, ff)
 {
     ret += "format(";
-    ret += InFormat_Name(ff.format()).substr(3);
+    ret += ff.format();
     if (ff.has_structure())
     {
         ret += ", ";
@@ -2282,20 +2287,10 @@ CONV_FN(URLFunc, url)
         ClusterToString(ret, false, url.cluster());
     }
     appendSQLStringLiteral(ret, url.uurl());
-    if (url.has_informat())
+    if (url.has_format())
     {
         ret += ", ";
-        appendSQLStringLiteral(ret, InFormat_Name(url.informat()).substr(3));
-    }
-    else if (url.has_outformat())
-    {
-        ret += ", ";
-        appendSQLStringLiteral(ret, OutFormat_Name(url.outformat()).substr(4));
-    }
-    else if (url.has_inoutformat())
-    {
-        ret += ", ";
-        appendSQLStringLiteral(ret, InOutFormat_Name(url.inoutformat()).substr(6));
+        appendSQLStringLiteral(ret, url.format());
     }
     if (url.has_structure())
     {
@@ -3154,15 +3149,9 @@ CONV_FN(ColumnDef, cdf)
     }
 }
 
-CONV_FN(IndexDef, idef)
+/// The `TYPE type(params) [GRANULARITY n]` tail shared by table indexes and hypothetical indexes
+static void IndexDefTypeToString(String & ret, const IndexDef & idef)
 {
-    ret += "INDEX ";
-    if (idef.has_idx())
-    {
-        SQLIdentifierToString(ret, idef.idx());
-        ret += " ";
-    }
-    ExprToString(ret, idef.expr());
     ret += " TYPE ";
     ret += IndexType_Name(idef.type()).substr(4);
     if (idef.params_size())
@@ -3183,6 +3172,18 @@ CONV_FN(IndexDef, idef)
         ret += " GRANULARITY ";
         ret += std::to_string(idef.granularity());
     }
+}
+
+CONV_FN(IndexDef, idef)
+{
+    ret += "INDEX ";
+    if (idef.has_idx())
+    {
+        SQLIdentifierToString(ret, idef.idx());
+        ret += " ";
+    }
+    ExprToString(ret, idef.expr());
+    IndexDefTypeToString(ret, idef);
 }
 
 CONV_FN(ProjectionSelectDef, psdef)
@@ -3290,9 +3291,9 @@ CONV_FN(TableEngineParam, tep)
     switch (tep.table_engine_param_oneof_case())
     {
         case TableEngineParamType::kCols: ColumnPathToString(ret, 0, tep.cols()); break;
-        case TableEngineParamType::kIn: ret += InFormat_Name(tep.in()).substr(3); break;
-        case TableEngineParamType::kOut: ret += OutFormat_Name(tep.out()).substr(4); break;
-        case TableEngineParamType::kInOut: ret += InOutFormat_Name(tep.in_out()).substr(6); break;
+        case TableEngineParamType::kIn: ret += tep.in(); break;
+        case TableEngineParamType::kOut: ret += tep.out(); break;
+        case TableEngineParamType::kInOut: ret += tep.in_out(); break;
         case TableEngineParamType::kJoinOp: ret += JoinType_Name(tep.join_op()).substr(2); break;
         case TableEngineParamType::kJoinConst: ret += JoinConst_Name(tep.join_const()).substr(2); break;
         case TableEngineParamType::kDatabase: SQLIdentifierToString(ret, tep.database()); break;
@@ -3535,6 +3536,7 @@ CONV_FN(SQLObjectName, son)
         case SQLObjectNameType::kDatabase: SQLIdentifierToString(ret, son.database()); break;
         case SQLObjectNameType::kFunction: SQLIdentifierToString(ret, son.function()); break;
         case SQLObjectNameType::kPolicy: SQLIdentifierToString(ret, son.policy()); break;
+        case SQLObjectNameType::kIndex: SQLIdentifierToString(ret, son.index()); break;
         default: ret += "t0";
     }
 }
@@ -3545,6 +3547,8 @@ static String SQLObjectToString(const SQLObject obj)
         return "ROW POLICY";
     if (obj == SQLObject::MASKING_POLICY)
         return "MASKING POLICY";
+    if (obj == SQLObject::HYPOTHETICAL_INDEX)
+        return "HYPOTHETICAL INDEX";
     return SQLObject_Name(obj);
 }
 
@@ -3553,6 +3557,11 @@ CONV_FN(Drop, dt)
     const bool is_table = dt.sobject() == SQLObject::TABLE;
 
     ret += "DROP ";
+    if (dt.sobject() == SQLObject::HYPOTHETICAL_INDEX && dt.all())
+    {
+        ret += "ALL HYPOTHETICAL INDEXES";
+        return;
+    }
     if ((is_table || dt.sobject() == SQLObject::VIEW) && dt.is_temp())
     {
         ret += "TEMPORARY ";
@@ -3577,7 +3586,9 @@ CONV_FN(Drop, dt)
     {
         ClusterToString(ret, true, dt.cluster());
     }
-    if ((dt.sobject() == SQLObject::ROW_POLICY || dt.sobject() == SQLObject::MASKING_POLICY) && dt.has_target())
+    if ((dt.sobject() == SQLObject::ROW_POLICY || dt.sobject() == SQLObject::MASKING_POLICY
+         || dt.sobject() == SQLObject::HYPOTHETICAL_INDEX)
+        && dt.has_target())
     {
         ret += " ON ";
         ExprSchemaTableToString(ret, dt.target());
@@ -3657,7 +3668,7 @@ CONV_FN(Insert, insert)
             SettingValuesToString(ret, insert.setting_values());
         }
         ret += " FORMAT ";
-        ret += InFormat_Name(insert_file.format()).substr(3);
+        ret += insert_file.format();
     }
     else if (insert.has_query())
     {
@@ -3677,9 +3688,10 @@ CONV_FN(PartitionExpr, pexpr)
     {
         case PartitionType::kPart: appendSQLStringLiteral(ret, pexpr.part()); break;
         case PartitionType::kPartition:
-            ret += "$piddef$";
+            /// The partition key value expression, e.g. `202101` or `(202101, 'x')`. It is emitted
+            /// verbatim: the generator only fills this with a re-parseable value read from
+            /// `system.parts.partition` (see FuzzConfig::tableGetRandomPartitionValue).
             ret += pexpr.partition();
-            ret += "$piddef$";
             break;
         case PartitionType::kPartitionId:
             ret += "ID ";
@@ -3805,8 +3817,10 @@ CONV_FN(Truncate, trunc)
 
 CONV_FN(CheckTable, ct)
 {
-    ret += "CHECK TABLE ";
-    ExprSchemaTableToString(ret, ct.est());
+    ret += "CHECK ";
+    ret += SQLObjectToString(ct.sobject());
+    ret += " ";
+    SQLObjectNameToString(ret, ct.object());
     if (ct.has_single_partition())
     {
         ret += " ";
@@ -3820,7 +3834,7 @@ CONV_FN(CheckTable, ct)
     if (ct.has_format())
     {
         ret += " FORMAT ";
-        ret += OutFormat_Name(ct.format()).substr(4);
+        ret += ct.format();
     }
 }
 
@@ -3853,7 +3867,7 @@ CONV_FN(DescribeStatement, ds)
     if (ds.has_format())
     {
         ret += " FORMAT ";
-        ret += OutFormat_Name(ds.format()).substr(4);
+        ret += ds.format();
     }
 }
 
@@ -3927,7 +3941,7 @@ CONV_FN(OptimizeTable, ot)
     if (ot.has_format())
     {
         ret += " FORMAT ";
-        ret += OutFormat_Name(ot.format()).substr(4);
+        ret += ot.format();
     }
 }
 
@@ -3946,6 +3960,7 @@ CONV_FN(Exchange, et)
         case SQLObject::FUNCTION: ret += "FUNCTIONS"; break;
         case SQLObject::ROW_POLICY: ret += "ROW POLICIES"; break;
         case SQLObject::MASKING_POLICY: ret += "MASKING POLICIES"; break;
+        case SQLObject::HYPOTHETICAL_INDEX: ret += "HYPOTHETICAL INDEXES"; break;
     }
     ret += " ";
     SQLObjectNameToString(ret, et.object1());
@@ -4620,6 +4635,12 @@ CONV_FN(AlterItem, alter)
             ret += "MODIFY COLUMN ";
             AddColumnToString(ret, alter.modify_column());
             break;
+        case AlterType::kAddEnumValues:
+            ret += "MODIFY COLUMN ";
+            ColumnPathToString(ret, 0, alter.add_enum_values().col());
+            ret += " ADD ENUM VALUES";
+            EnumDefToString(ret, alter.add_enum_values().new_values());
+            break;
         case AlterType::kCommentColumn:
             ret += "COMMENT COLUMN ";
             ColumnPathToString(ret, 0, alter.comment_column().col());
@@ -4741,6 +4762,10 @@ CONV_FN(AlterItem, alter)
             ret += "DROP CONSTRAINT ";
             SQLIdentifierToString(ret, alter.remove_constraint());
             break;
+        case AlterType::kModifyConstraint:
+            ret += "MODIFY ";
+            ConstraintDefToString(ret, alter.modify_constraint());
+            break;
         case AlterType::kDetachPartition:
             ret += "DETACH ";
             SinglePartitionExprToString(ret, alter.detach_partition());
@@ -4752,10 +4777,6 @@ CONV_FN(AlterItem, alter)
         case AlterType::kDropDetachedPartition:
             ret += "DROP DETACHED ";
             SinglePartitionExprToString(ret, alter.drop_detached_partition());
-            break;
-        case AlterType::kForgetPartition:
-            ret += "FORGET ";
-            SinglePartitionExprToString(ret, alter.forget_partition());
             break;
         case AlterType::kAttachPartition:
             ret += "ATTACH ";
@@ -4989,7 +5010,7 @@ CONV_FN(TopSelect, top)
     if (top.has_format())
     {
         ret += " FORMAT ";
-        ret += OutFormat_Name(top.format()).substr(4);
+        ret += top.format();
     }
 }
 
@@ -5537,15 +5558,10 @@ CONV_FN(BackupRestore, backup)
         ret += " ";
         ret += BackupRestore_SyncOrAsync_Name(backup.sync());
     }
-    if (backup.has_informat())
+    if (backup.has_format())
     {
         ret += " FORMAT ";
-        ret += InFormat_Name(backup.informat()).substr(3);
-    }
-    else if (backup.has_outformat())
-    {
-        ret += " FORMAT ";
-        ret += OutFormat_Name(backup.outformat()).substr(4);
+        ret += backup.format();
     }
 }
 
@@ -5592,15 +5608,10 @@ CONV_FN(Kill, kil)
         ret += " ";
         ret += Kill_KillOption_Name(kil.option());
     }
-    if (kil.has_informat())
+    if (kil.has_format())
     {
         ret += " FORMAT ";
-        ret += InFormat_Name(kil.informat()).substr(3);
-    }
-    else if (kil.has_outformat())
-    {
-        ret += " FORMAT ";
-        ret += OutFormat_Name(kil.outformat()).substr(4);
+        ret += kil.format();
     }
     if (kil.has_setting_values())
     {
@@ -5785,6 +5796,31 @@ CONV_FN(CreatePolicy, cp)
     }
 }
 
+CONV_FN(CreateHypotheticalIndex, hi)
+{
+    const IndexDef & idef = hi.create_def();
+
+    ret += "CREATE HYPOTHETICAL INDEX ";
+    if (hi.if_not_exists())
+    {
+        ret += "IF NOT EXISTS ";
+    }
+    if (idef.has_idx())
+    {
+        SQLIdentifierToString(ret, idef.idx());
+    }
+    else
+    {
+        ret += "hi0";
+    }
+    ret += " ON ";
+    ExprSchemaTableToString(ret, hi.est());
+    ret += " (";
+    ExprToString(ret, idef.expr());
+    ret += ")";
+    IndexDefTypeToString(ret, idef);
+}
+
 CONV_FN(SQLQueryInner, query)
 {
     using QueryType = SQLQueryInner::QueryInnerOneofCase;
@@ -5819,6 +5855,7 @@ CONV_FN(SQLQueryInner, query)
         case QueryType::kShow: ShowStatementToString(ret, query.show()); break;
         case QueryType::kCreatePolicy: CreatePolicyToString(ret, query.create_policy()); break;
         case QueryType::kSnapshotQuery: SnapshotQueryToString(ret, query.snapshot_query()); break;
+        case QueryType::kCreateHypoIndex: CreateHypotheticalIndexToString(ret, query.create_hypo_index()); break;
         default: ret += "SELECT 1";
     }
 }

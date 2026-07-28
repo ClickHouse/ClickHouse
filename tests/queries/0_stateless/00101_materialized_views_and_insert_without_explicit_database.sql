@@ -38,7 +38,7 @@ CREATE TABLE tmp (date Date, name String) ENGINE = Memory;
 CREATE MATERIALIZED VIEW tmp_mv ENGINE = AggregatingMergeTree(date, (date, name), 8192) AS SELECT date, name, countState() AS cc FROM tmp GROUP BY date, name;
 CREATE TABLE tmp_mv2 AS tmp_mv;
 CREATE TABLE tmp_mv3 AS tmp_mv ENGINE = Memory;
-CREATE MATERIALIZED VIEW tmp_mv4 ENGINE = AggregatingMergeTree(date, date, 8192) POPULATE AS SELECT DISTINCT * FROM tmp_mv;
+CREATE MATERIALIZED VIEW tmp_mv4 ENGINE = AggregatingMergeTree(date, (date, name), 8192) POPULATE AS SELECT DISTINCT * FROM tmp_mv;
 
 DROP TABLE tmp_mv;
 DROP TABLE tmp_mv2;

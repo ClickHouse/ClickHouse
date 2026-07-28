@@ -1,0 +1,958 @@
+---
+sidebarTitle: '存储过程与查询参数'
+keywords: ['clickhouse', '存储过程', '预处理语句', '查询参数', 'UDF', '参数化视图']
+description: 'ClickHouse 存储过程、预处理语句和查询参数指南'
+slug: /guides/developer/stored-procedures-and-prepared-statements
+title: 'ClickHouse 中的存储过程和查询参数'
+doc_type: 'guide'
+---
+
+如果你习惯使用传统关系型数据库，可能会想在 ClickHouse 中寻找存储过程和预处理语句。
+本指南将介绍 ClickHouse 对这些概念的处理方式，并提供推荐的替代方案。
+
+<div id="alternatives-to-stored-procedures">
+  ## ClickHouse 中存储过程的替代方案
+</div>
+
+ClickHouse 不支持包含控制流逻辑 (`IF`/`ELSE`、循环等) 的传统存储过程。
+这是由 ClickHouse 作为分析型数据库的架构特性决定的有意设计选择。
+对于分析型数据库，通常不建议使用循环，因为执行 O(n) 个简单查询往往比执行更少但更复杂的查询更慢。
+
+ClickHouse 主要针对以下场景进行了优化：
+
+* **分析型工作负载** - 在大型数据集上执行复杂聚合
+* **批处理** - 高效处理海量数据
+* **声明式查询** - 只描述要检索哪些数据，而不是描述如何处理这些数据的 SQL 查询
+
+带有过程式逻辑的存储过程与这些优化方向背道而驰。相应地，ClickHouse 提供了更符合其优势的替代方案。
+
+<div id="user-defined-functions">
+  ### 用户自定义函数 (UDFs)
+</div>
+
+用户自定义函数可让您在不使用控制流的情况下封装可复用的逻辑。ClickHouse 支持两种类型：
+
+<div id="lambda-based-udfs">
+  #### 基于 Lambda 的 UDF
+</div>
+
+使用 SQL 表达式和 Lambda 语法创建函数：
+
+<Accordion title="示例数据">
+  ```sql
+  -- 创建 products 表
+  CREATE TABLE products (
+      product_id UInt32,
+      product_name String,
+      price Decimal(10, 2)
+  )
+  ENGINE = MergeTree()
+  ORDER BY product_id;
+
+  -- 插入样本数据
+  INSERT INTO products (product_id, product_name, price) VALUES
+  (1, 'Laptop', 899.99),
+  (2, 'Wireless Mouse', 24.99),
+  (3, 'USB-C Cable', 12.50),
+  (4, 'Monitor', 299.00),
+  (5, 'Keyboard', 79.99),
+  (6, 'Webcam', 54.95),
+  (7, 'Desk Lamp', 34.99),
+  (8, 'External Hard Drive', 119.99),
+  (9, 'Headphones', 149.00),
+  (10, 'Phone Stand', 15.99);
+  ```
+</Accordion>
+
+```sql
+-- 简单计算函数
+CREATE FUNCTION calculate_tax AS (price, rate) -> price * rate;
+
+SELECT
+    product_name,
+    price,
+    calculate_tax(price, 0.08) AS tax
+FROM products;
+```
+
+```sql
+-- 使用 if() 的条件逻辑
+CREATE FUNCTION price_tier AS (price) ->
+    if(price < 100, 'Budget',
+       if(price < 500, 'Mid-range', 'Premium'));
+
+SELECT
+    product_name,
+    price,
+    price_tier(price) AS tier
+FROM products;
+```
+
+```sql
+-- 字符串操作
+CREATE FUNCTION format_phone AS (phone) ->
+    concat('(', substring(phone, 1, 3), ') ',
+           substring(phone, 4, 3), '-',
+           substring(phone, 7, 4));
+
+SELECT format_phone('5551234567');
+-- 结果：(555) 123-4567
+```
+
+**限制：**
+
+* 不支持循环或复杂控制流
+* 不能修改数据 (`INSERT`/`UPDATE`/`DELETE`)
+* 不允许使用递归函数
+
+完整语法请参见 [`CREATE FUNCTION`](/zh/reference/statements/create/function)。
+
+<div id="executable-udfs">
+  #### 可执行 UDF
+</div>
+
+对于更复杂的逻辑，可使用调用外部程序的可执行 UDF：
+
+```xml
+<!-- /etc/clickhouse-server/sentiment_analysis_function.xml -->
+<functions>
+    <function>
+        <type>executable</type>
+        <name>sentiment_score</name>
+        <return_type>Float32</return_type>
+        <argument>
+            <type>String</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>python3 /opt/scripts/sentiment.py</command>
+    </function>
+</functions>
+```
+
+```sql
+-- 使用 executable UDF
+SELECT
+    review_text,
+    sentiment_score(review_text) AS score
+FROM customer_reviews;
+```
+
+可执行 UDF 可使用任何语言 (Python、Node.js、Go 等) 实现任意逻辑。
+
+详情请参阅 [可执行 UDF](/zh/reference/functions/regular-functions/udf)。
+
+<div id="parameterized-views">
+  ### 参数化视图
+</div>
+
+参数化视图的行为类似于返回数据集的函数。
+它们非常适合用于带动态过滤条件的可复用查询：
+
+<Accordion title="示例的样本数据">
+  ```sql
+  -- 创建 sales 表
+  CREATE TABLE sales (
+    date Date,
+    product_id UInt32,
+    product_name String,
+    category String,
+    quantity UInt32,
+    revenue Decimal(10, 2),
+    sales_amount Decimal(10, 2)
+  )
+  ENGINE = MergeTree()
+  ORDER BY (date, product_id);
+
+  -- 插入样本数据
+  INSERT INTO sales VALUES
+  ('2024-01-05', 12345, 'Laptop Pro', 'Electronics', 2, 1799.98, 1799.98),
+  ('2024-01-06', 12345, 'Laptop Pro', 'Electronics', 1, 899.99, 899.99),
+  ('2024-01-10', 12346, 'Wireless Mouse', 'Electronics', 5, 124.95, 124.95),
+  ('2024-01-15', 12347, 'USB-C Cable', 'Accessories', 10, 125.00, 125.00),
+  ('2024-01-20', 12345, 'Laptop Pro', 'Electronics', 3, 2699.97, 2699.97),
+  ('2024-01-25', 12348, 'Monitor 4K', 'Electronics', 2, 598.00, 598.00),
+  ('2024-02-01', 12345, 'Laptop Pro', 'Electronics', 1, 899.99, 899.99),
+  ('2024-02-05', 12349, 'Keyboard Mechanical', 'Accessories', 4, 319.96, 319.96),
+  ('2024-02-10', 12346, 'Wireless Mouse', 'Electronics', 8, 199.92, 199.92),
+  ('2024-02-15', 12350, 'Webcam HD', 'Electronics', 3, 164.85, 164.85);
+  ```
+</Accordion>
+
+```sql
+-- 创建参数化视图
+CREATE VIEW sales_by_date AS
+SELECT
+    date,
+    product_id,
+    sum(quantity) AS total_quantity,
+    sum(revenue) AS total_revenue
+FROM sales
+WHERE date BETWEEN {start_date:Date} AND {end_date:Date}
+GROUP BY date, product_id;
+```
+
+```sql
+-- 使用参数查询视图
+SELECT *
+FROM sales_by_date(start_date='2024-01-01', end_date='2024-01-31')
+WHERE product_id = 12345;
+```
+
+<div id="common-use-cases">
+  #### 常见用例
+</div>
+
+* 按日期范围动态筛选
+* 按用户切分数据
+* [多租户数据访问](/zh/products/cloud/guides/best-practices/multitenancy)
+* 报表模板
+* [数据脱敏](/zh/products/cloud/guides/security/data-masking)
+
+```sql
+-- 更复杂的参数化视图
+CREATE VIEW top_products_by_category AS
+SELECT
+    category,
+    product_name,
+    revenue,
+    rank
+FROM (
+    SELECT
+        category,
+        product_name,
+        revenue,
+        rank() OVER (PARTITION BY category ORDER BY revenue DESC) AS rank
+    FROM (
+        SELECT
+            category,
+            product_name,
+            sum(sales_amount) AS revenue
+        FROM sales
+        WHERE category = {category:String}
+            AND date >= {min_date:Date}
+        GROUP BY category, product_name
+    )
+)
+WHERE rank <= {top_n:UInt32};
+
+-- 使用示例
+SELECT * FROM top_products_by_category(
+    category='Electronics',
+    min_date='2024-01-01',
+    top_n=10
+);
+```
+
+更多信息，请参见[参数化视图](/zh/reference/statements/create/view#parameterized-view)一节。
+
+<div id="materialized-views">
+  ### Materialized views
+</div>
+
+materialized views 非常适合对原本通常由存储过程完成的高成本聚合进行预计算。如果你使用的是传统数据库，可以将 materialized view 视为一种 **插入触发器**：它会在数据插入源表时自动进行转换和聚合：
+
+```sql
+-- 源表
+CREATE TABLE page_views (
+    user_id UInt64,
+    page String,
+    timestamp DateTime,
+    session_id String
+)
+ENGINE = MergeTree()
+ORDER BY (user_id, timestamp);
+
+-- 维护聚合统计信息的 materialized view
+CREATE MATERIALIZED VIEW daily_user_stats
+ENGINE = SummingMergeTree()
+ORDER BY (date, user_id)
+AS SELECT
+    toDate(timestamp) AS date,
+    user_id,
+    count() AS page_views,
+    uniq(session_id) AS sessions,
+    uniq(page) AS unique_pages
+FROM page_views
+GROUP BY date, user_id;
+
+-- 向源表插入样本数据
+INSERT INTO page_views VALUES
+(101, '/home', '2024-01-15 10:00:00', 'session_a1'),
+(101, '/products', '2024-01-15 10:05:00', 'session_a1'),
+(101, '/checkout', '2024-01-15 10:10:00', 'session_a1'),
+(102, '/home', '2024-01-15 11:00:00', 'session_b1'),
+(102, '/about', '2024-01-15 11:05:00', 'session_b1'),
+(101, '/home', '2024-01-16 09:00:00', 'session_a2'),
+(101, '/products', '2024-01-16 09:15:00', 'session_a2'),
+(103, '/home', '2024-01-16 14:00:00', 'session_c1'),
+(103, '/products', '2024-01-16 14:05:00', 'session_c1'),
+(103, '/products', '2024-01-16 14:10:00', 'session_c1'),
+(102, '/home', '2024-01-17 10:30:00', 'session_b2'),
+(102, '/contact', '2024-01-17 10:35:00', 'session_b2');
+
+-- 查询预聚合数据
+SELECT
+    user_id,
+    sum(page_views) AS total_views,
+    sum(sessions) AS total_sessions
+FROM daily_user_stats
+WHERE date BETWEEN '2024-01-01' AND '2024-01-31'
+GROUP BY user_id;
+```
+
+<div id="refreshable-materialized-views">
+  #### 可刷新materialized view
+</div>
+
+对于按计划执行的批处理 (例如每晚运行的存储过程) ：
+
+```sql
+-- 每天凌晨 2 点自动刷新
+CREATE MATERIALIZED VIEW monthly_sales_report
+REFRESH EVERY 1 DAY OFFSET 2 HOUR
+AS SELECT
+    toStartOfMonth(order_date) AS month,
+    region,
+    product_category,
+    count() AS order_count,
+    sum(amount) AS total_revenue,
+    avg(amount) AS avg_order_value
+FROM orders
+WHERE order_date >= today() - INTERVAL 13 MONTH
+GROUP BY month, region, product_category;
+
+-- 查询始终获取最新数据
+SELECT * FROM monthly_sales_report
+WHERE month = toStartOfMonth(today());
+```
+
+有关高级用法，请参阅 [级联 materialized views](/zh/concepts/features/materialized-views/cascading-materialized-views)。
+
+<div id="external-orchestration">
+  ### 外部编排
+</div>
+
+对于复杂的业务逻辑、ETL 工作流或多步骤流程，始终可以借助各种编程语言的客户端，在 ClickHouse 外部实现相关逻辑。
+
+<div id="using-application-code">
+  #### 使用应用代码
+</div>
+
+下面通过并排对比，展示如何将 MySQL 存储过程改写为借助 ClickHouse 和应用代码来实现：
+
+<Tabs>
+  <Tab title="MySQL 存储过程">
+    ```sql
+    DELIMITER $$
+
+    CREATE PROCEDURE process_order(
+        IN p_order_id INT,
+        IN p_customer_id INT,
+        IN p_order_total DECIMAL(10,2),
+        OUT p_status VARCHAR(50),
+        OUT p_loyalty_points INT
+    )
+    BEGIN
+        DECLARE v_customer_tier VARCHAR(20);
+        DECLARE v_previous_orders INT;
+        DECLARE v_discount DECIMAL(10,2);
+
+        -- 开始事务
+        START TRANSACTION;
+
+        -- 获取客户信息
+        SELECT tier, total_orders
+        INTO v_customer_tier, v_previous_orders
+        FROM customers
+        WHERE customer_id = p_customer_id;
+
+        -- 根据层级计算折扣
+        IF v_customer_tier = 'gold' THEN
+            SET v_discount = p_order_total * 0.15;
+        ELSEIF v_customer_tier = 'silver' THEN
+            SET v_discount = p_order_total * 0.10;
+        ELSE
+            SET v_discount = 0;
+        END IF;
+
+        -- 插入订单记录
+        INSERT INTO orders (order_id, customer_id, order_total, discount, final_amount)
+        VALUES (p_order_id, p_customer_id, p_order_total, v_discount,
+                p_order_total - v_discount);
+
+        -- 更新客户统计信息
+        UPDATE customers
+        SET total_orders = total_orders + 1,
+            lifetime_value = lifetime_value + (p_order_total - v_discount),
+            last_order_date = NOW()
+        WHERE customer_id = p_customer_id;
+
+        -- 计算积分（每消费1美元获得1积分）
+        SET p_loyalty_points = FLOOR(p_order_total - v_discount);
+
+        -- 插入积分交易记录
+        INSERT INTO loyalty_points (customer_id, points, transaction_date, description)
+        VALUES (p_customer_id, p_loyalty_points, NOW(),
+                CONCAT('Order #', p_order_id));
+
+        -- 检查客户是否需要升级
+        IF v_previous_orders + 1 >= 10 AND v_customer_tier = 'bronze' THEN
+            UPDATE customers SET tier = 'silver' WHERE customer_id = p_customer_id;
+            SET p_status = 'ORDER_COMPLETE_TIER_UPGRADED_SILVER';
+        ELSEIF v_previous_orders + 1 >= 50 AND v_customer_tier = 'silver' THEN
+            UPDATE customers SET tier = 'gold' WHERE customer_id = p_customer_id;
+            SET p_status = 'ORDER_COMPLETE_TIER_UPGRADED_GOLD';
+        ELSE
+            SET p_status = 'ORDER_COMPLETE';
+        END IF;
+
+        COMMIT;
+    END$$
+
+    DELIMITER ;
+
+    -- 调用存储过程
+    CALL process_order(12345, 5678, 250.00, @status, @points);
+    SELECT @status, @points;
+    ```
+  </Tab>
+
+  <Tab title="ClickHouse 应用代码">
+    <Info>
+      **查询参数**
+
+      下面的示例演示了如何在 ClickHouse 中使用查询参数。
+      如果你还不熟悉 ClickHouse 中的查询参数，请先阅读[&quot;ClickHouse 中预处理语句的替代方案&quot;](/zh/guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements#alternatives-to-prepared-statements-in-clickhouse)。
+    </Info>
+
+    ```python
+    # 使用 clickhouse-connect 的 Python 示例
+    import clickhouse_connect
+    from datetime import datetime
+    from decimal import Decimal
+
+    client = clickhouse_connect.get_client(host='localhost')
+
+    def process_order(order_id: int, customer_id: int, order_total: Decimal) -> tuple[str, int]:
+        """
+        Processes an order with business logic that would be in a stored procedure.
+        Returns: (status_message, loyalty_points)
+
+        Note: ClickHouse is optimized for analytics, not OLTP transactions.
+        For transactional workloads, use an OLTP database (PostgreSQL, MySQL)
+        and sync analytics data to ClickHouse for reporting.
+        """
+
+        # 步骤 1：获取客户信息
+        result = client.query(
+            """
+            SELECT tier, total_orders
+            FROM customers
+            WHERE customer_id = {cid: UInt32}
+            """,
+            parameters={'cid': customer_id}
+        )
+
+        if not result.result_rows:
+            raise ValueError(f"Customer {customer_id} not found")
+
+        customer_tier, previous_orders = result.result_rows[0]
+
+        # 步骤 2：根据层级计算折扣（Python 中的业务逻辑）
+        discount_rates = {'gold': 0.15, 'silver': 0.10, 'bronze': 0.0}
+        discount = order_total * Decimal(str(discount_rates.get(customer_tier, 0.0)))
+        final_amount = order_total - discount
+
+        # 步骤 3：插入订单记录
+        client.command(
+            """
+            INSERT INTO orders (order_id, customer_id, order_total, discount,
+                               final_amount, order_date)
+            VALUES ({oid: UInt32}, {cid: UInt32}, {total: Decimal64(2)},
+                    {disc: Decimal64(2)}, {final: Decimal64(2)}, now())
+            """,
+            parameters={
+                'oid': order_id,
+                'cid': customer_id,
+                'total': float(order_total),
+                'disc': float(discount),
+                'final': float(final_amount)
+            }
+        )
+
+        # 步骤 4：计算新的客户统计数据
+        new_order_count = previous_orders + 1
+
+        # 对于分析型数据库，优先使用 INSERT 而非 UPDATE
+        # 此处使用 ReplacingMergeTree 模式
+        client.command(
+            """
+            INSERT INTO customers (customer_id, tier, total_orders, last_order_date,
+                                  update_time)
+            SELECT
+                customer_id,
+                tier,
+                {new_count: UInt32} AS total_orders,
+                now() AS last_order_date,
+                now() AS update_time
+            FROM customers
+            WHERE customer_id = {cid: UInt32}
+            """,
+            parameters={'cid': customer_id, 'new_count': new_order_count}
+        )
+
+        # 步骤 5：计算并记录积分
+        loyalty_points = int(final_amount)
+
+        client.command(
+            """
+            INSERT INTO loyalty_points (customer_id, points, transaction_date, description)
+            VALUES ({cid: UInt32}, {pts: Int32}, now(),
+                    {desc: String})
+            """,
+            parameters={
+                'cid': customer_id,
+                'pts': loyalty_points,
+                'desc': f'Order #{order_id}'
+            }
+        )
+
+        # 步骤 6：检查是否触发层级升级（Python 中的业务逻辑）
+        status = 'ORDER_COMPLETE'
+
+        if new_order_count >= 10 and customer_tier == 'bronze':
+            # 升级至白银层级
+            client.command(
+                """
+                INSERT INTO customers (customer_id, tier, total_orders, last_order_date,
+                                      update_time)
+                SELECT
+                    customer_id, 'silver' AS tier, total_orders, last_order_date,
+                    now() AS update_time
+                FROM customers
+                WHERE customer_id = {cid: UInt32}
+                """,
+                parameters={'cid': customer_id}
+            )
+            status = 'ORDER_COMPLETE_TIER_UPGRADED_SILVER'
+
+        elif new_order_count >= 50 and customer_tier == 'silver':
+            # 升级至黄金层级
+            client.command(
+                """
+                INSERT INTO customers (customer_id, tier, total_orders, last_order_date,
+                                      update_time)
+                SELECT
+                    customer_id, 'gold' AS tier, total_orders, last_order_date,
+                    now() AS update_time
+                FROM customers
+                WHERE customer_id = {cid: UInt32}
+                """,
+                parameters={'cid': customer_id}
+            )
+            status = 'ORDER_COMPLETE_TIER_UPGRADED_GOLD'
+
+        return status, loyalty_points
+
+    # 调用该函数
+    status, points = process_order(
+        order_id=12345,
+        customer_id=5678,
+        order_total=Decimal('250.00')
+    )
+
+    print(f"Status: {status}, Loyalty Points: {points}")
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="key-differences">
+  #### 关键差异
+</div>
+
+1. **控制流** - MySQL 存储过程使用 `IF/ELSE` 和 `WHILE` 循环。在 ClickHouse 中，这类逻辑应在应用代码 (Python、Java 等) 中实现
+2. **事务** - MySQL 支持用于 ACID 事务的 `BEGIN/COMMIT/ROLLBACK`。ClickHouse 是面向分析的数据库，针对只追加工作负载进行了优化，而非事务性更新
+3. **更新** - MySQL 使用 `UPDATE` 语句。对于可变数据，ClickHouse 更适合使用 `INSERT`，并配合 [ReplacingMergeTree](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree) 或 [CollapsingMergeTree](/zh/reference/engines/table-engines/mergetree-family/collapsingmergetree)
+4. **变量和状态** - MySQL 存储过程可以声明变量 (`DECLARE v_discount`) 。在 ClickHouse 中，状态应由应用代码管理
+5. **错误处理** - MySQL 支持 `SIGNAL` 和异常处理程序。在应用代码中，请使用所选编程语言的原生错误处理机制 (try/catch)
+
+<Tip>
+  **何时使用各自的方法：**
+
+  * **OLTP 工作负载** (订单、支付、用户账户) → 使用带存储过程的 MySQL/PostgreSQL
+  * **分析型工作负载** (报表、聚合、时间序列) → 使用 ClickHouse，并由应用程序进行编排
+  * **混合架构** → 两者结合使用！将事务型数据从 OLTP 流式传输到 ClickHouse 进行分析
+</Tip>
+
+<div id="using-workflow-orchestration-tools">
+  #### 使用工作流编排工具
+</div>
+
+* **Apache Airflow** - 调度并监控由 ClickHouse 查询构成的复杂 DAG
+* **dbt** - 使用基于 SQL 的工作流转换数据
+* **Prefect/Dagster** - 基于 Python 的现代编排工具
+* **Custom schedulers** - Cron 作业、Kubernetes CronJob 等
+
+**使用外部编排的优势：**
+
+* 完整的编程语言能力
+* 更完善的错误处理和重试逻辑
+* 与外部系统集成 (API、其他数据库)
+* 版本控制和测试
+* 监控和告警
+* 更灵活的调度
+
+<div id="alternatives-to-prepared-statements-in-clickhouse">
+  ## ClickHouse 中预处理语句的替代方案
+</div>
+
+虽然 ClickHouse 没有传统关系型数据库意义上的“预处理语句”，但它提供了**查询参数**，可实现相同的目的：以安全的参数化查询方式防止 SQL 注入。
+
+<div id="query-parameters-syntax">
+  ### 语法
+</div>
+
+定义查询参数有两种方式：
+
+<div id="method-1-using-set">
+  #### 方法 1：使用 `SET`
+</div>
+
+<Accordion title="示例表和数据">
+  ```sql
+  -- 创建 user_events 表（ClickHouse 语法）
+  CREATE TABLE user_events (
+      event_id UInt32,
+      user_id UInt64,
+      event_name String,
+      event_date Date,
+      event_timestamp DateTime
+  ) ENGINE = MergeTree()
+  ORDER BY (user_id, event_date);
+
+  -- 为多个用户和事件插入示例数据
+  INSERT INTO user_events (event_id, user_id, event_name, event_date, event_timestamp) VALUES
+  (1, 12345, 'page_view', '2024-01-05', '2024-01-05 10:30:00'),
+  (2, 12345, 'page_view', '2024-01-05', '2024-01-05 10:35:00'),
+  (3, 12345, 'add_to_cart', '2024-01-05', '2024-01-05 10:40:00'),
+  (4, 12345, 'page_view', '2024-01-10', '2024-01-10 14:20:00'),
+  (5, 12345, 'add_to_cart', '2024-01-10', '2024-01-10 14:25:00'),
+  (6, 12345, 'purchase', '2024-01-10', '2024-01-10 14:30:00'),
+  (7, 12345, 'page_view', '2024-01-15', '2024-01-15 09:15:00'),
+  (8, 12345, 'page_view', '2024-01-15', '2024-01-15 09:20:00'),
+  (9, 12345, 'page_view', '2024-01-20', '2024-01-20 16:45:00'),
+  (10, 12345, 'add_to_cart', '2024-01-20', '2024-01-20 16:50:00'),
+  (11, 12345, 'purchase', '2024-01-25', '2024-01-25 11:10:00'),
+  (12, 12345, 'page_view', '2024-01-28', '2024-01-28 13:30:00'),
+  (13, 67890, 'page_view', '2024-01-05', '2024-01-05 11:00:00'),
+  (14, 67890, 'add_to_cart', '2024-01-05', '2024-01-05 11:05:00'),
+  (15, 67890, 'purchase', '2024-01-05', '2024-01-05 11:10:00'),
+  (16, 12345, 'page_view', '2024-02-01', '2024-02-01 10:00:00'),
+  (17, 12345, 'add_to_cart', '2024-02-01', '2024-02-01 10:05:00');
+  ```
+</Accordion>
+
+```sql
+SET param_user_id = 12345;
+SET param_start_date = '2024-01-01';
+SET param_end_date = '2024-01-31';
+
+SELECT
+    event_name,
+    count() AS event_count
+FROM user_events
+WHERE user_id = {user_id: UInt64}
+    AND event_date BETWEEN {start_date: Date} AND {end_date: Date}
+GROUP BY event_name;
+```
+
+<div id="method-2-using-cli-parameters">
+  #### 方法 2：使用 CLI 参数
+</div>
+
+```bash
+clickhouse-client \
+    --param_user_id=12345 \
+    --param_start_date='2024-01-01' \
+    --param_end_date='2024-01-31' \
+    --query="SELECT count() FROM user_events
+             WHERE user_id = {user_id: UInt64}
+             AND event_date BETWEEN {start_date: Date} AND {end_date: Date}"
+```
+
+<div id="parameter-syntax">
+  ### 参数语法
+</div>
+
+参数通过以下语法引用：`{parameter_name: DataType}`
+
+* `parameter_name` - 参数名称 (不含 `param_` 前缀)
+* `DataType` - 用于将参数转换为该类型的 ClickHouse 数据类型
+
+<div id="data-type-examples">
+  ### 数据类型示例
+</div>
+
+<Accordion title="示例中的表和样本数据">
+  ```sql
+  -- 1. 为字符串和数值测试创建表
+  CREATE TABLE IF NOT EXISTS users (
+      name String,
+      age UInt8,
+      salary Float64
+  ) ENGINE = Memory;
+
+  INSERT INTO users VALUES
+      ('John Doe', 25, 75000.50),
+      ('Jane Smith', 30, 85000.75),
+      ('Peter Jones', 20, 50000.00);
+
+  -- 2. 为日期和时间戳测试创建表
+  CREATE TABLE IF NOT EXISTS events (
+      event_date Date,
+      event_timestamp DateTime
+  ) ENGINE = Memory;
+
+  INSERT INTO events VALUES
+      ('2024-01-15', '2024-01-15 14:30:00'),
+      ('2024-01-15', '2024-01-15 15:00:00'),
+      ('2024-01-16', '2024-01-16 10:00:00');
+
+  -- 3. 为数组测试创建表
+  CREATE TABLE IF NOT EXISTS products (
+      id UInt32,
+      name String
+  ) ENGINE = Memory;
+
+  INSERT INTO products VALUES (1, 'Laptop'), (2, 'Monitor'), (3, 'Mouse'), (4, 'Keyboard');
+
+  -- 4. 为 Map（类似结构体）测试创建表
+  CREATE TABLE IF NOT EXISTS accounts (
+      user_id UInt32,
+      status String,
+      type String
+  ) ENGINE = Memory;
+
+  INSERT INTO accounts VALUES
+      (101, 'active', 'premium'),
+      (102, 'inactive', 'basic'),
+      (103, 'active', 'basic');
+
+  -- 5. 为标识符测试创建表
+  CREATE TABLE IF NOT EXISTS sales_2024 (
+      value UInt32
+  ) ENGINE = Memory;
+
+  INSERT INTO sales_2024 VALUES (100), (200), (300);
+  ```
+</Accordion>
+
+<Tabs>
+  <Tab title="字符串和数值">
+    ```sql
+    SET param_name = 'John Doe';
+    SET param_age = 25;
+    SET param_salary = 75000.50;
+
+    SELECT name, age, salary FROM users
+    WHERE name = {name: String}
+      AND age >= {age: UInt8}
+      AND salary <= {salary: Float64};
+    ```
+  </Tab>
+
+  <Tab title="日期和时间">
+    ```sql
+    SET param_date = '2024-01-15';
+    SET param_timestamp = '2024-01-15 14:30:00';
+
+    SELECT * FROM events
+    WHERE event_date = {date: Date}
+       OR event_timestamp > {timestamp: DateTime};
+    ```
+  </Tab>
+
+  <Tab title="数组">
+    ```sql
+    SET param_ids = [1, 2, 3, 4, 5];
+
+    SELECT * FROM products WHERE id IN {ids: Array(UInt32)};
+    ```
+  </Tab>
+
+  <Tab title="Map">
+    ```sql
+    SET param_filters = {'target_status': 'active'};
+
+    SELECT user_id, status, type FROM accounts
+    WHERE status = arrayElement(
+        mapValues({filters: Map(String, String)}),
+        indexOf(mapKeys({filters: Map(String, String)}), 'target_status')
+    );
+    ```
+  </Tab>
+
+  <Tab title="标识符">
+    ```sql
+    SET param_table = 'sales_2024';
+
+    SELECT count() FROM {table: Identifier};
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+有关在[编程语言客户端](/zh/integrations/language-clients/index)中使用查询参数的信息，请参阅相应编程语言客户端的文档。
+
+<div id="limitations-of-query-parameters">
+  ### 查询参数的局限性
+</div>
+
+查询参数**不是通用的文本替换机制**。它们有以下特定限制：
+
+1. 它们**主要用于 SELECT 语句** - 对 SELECT 查询的支持最完善
+2. 它们**只能用作标识符或字面量** - 不能替换任意 SQL 片段
+3. 它们对 **DDL 的支持有限** - 在 `CREATE TABLE` 中支持，但在 `ALTER TABLE` 中不支持
+
+**适用的情况：**
+
+```sql
+-- ✓ WHERE 子句中的值
+SELECT * FROM users WHERE id = {user_id: UInt64};
+
+-- ✓ 表/数据库名称
+SELECT * FROM {db: Identifier}.{table: Identifier};
+
+-- ✓ IN 子句中的值
+SELECT * FROM products WHERE id IN {ids: Array(UInt32)};
+
+-- ✓ CREATE TABLE
+CREATE TABLE {table_name: Identifier} (id UInt64, name String) ENGINE = MergeTree() ORDER BY id;
+```
+
+**以下方式行不通：**
+
+```sql
+-- ✗ SELECT 中的列名（谨慎使用 Identifier）
+SELECT {column: Identifier} FROM users;  -- 支持有限
+
+-- ✗ 任意 SQL 片段
+SELECT * FROM users {where_clause: String};  -- 不支持
+
+-- ✗ ALTER TABLE 语句
+ALTER TABLE {table: Identifier} ADD COLUMN new_col String;  -- 不支持
+
+-- ✗ 多条语句
+{statements: String};  -- 不支持
+```
+
+<div id="security-best-practices">
+  ### 安全最佳实践
+</div>
+
+**始终使用查询参数传递用户输入：**
+
+```python
+# ✓ 安全 - 使用参数
+user_input = request.get('user_id')
+result = client.query(
+    "SELECT * FROM orders WHERE user_id = {uid: UInt64}",
+    parameters={'uid': user_input}
+)
+
+# ✗ 危险 - 存在 SQL 注入风险！
+user_input = request.get('user_id')
+result = client.query(f"SELECT * FROM orders WHERE user_id = {user_input}")
+```
+
+**验证输入类型：**
+
+```python
+def get_user_orders(user_id: int, start_date: str):
+    # 查询前验证类型
+    if not isinstance(user_id, int) or user_id <= 0:
+        raise ValueError("Invalid user_id")
+
+    # 参数确保类型安全
+    return client.query(
+        """
+        SELECT * FROM orders
+        WHERE user_id = {uid: UInt64}
+            AND order_date >= {start: Date}
+        """,
+        parameters={'uid': user_id, 'start': start_date}
+    )
+```
+
+<div id="mysql-protocol-prepared-statements">
+  ### MySQL 协议预处理语句
+</div>
+
+ClickHouse 的 [MySQL 接口](/zh/concepts/features/interfaces/mysql) 对预处理语句 (`COM_STMT_PREPARE`、`COM_STMT_EXECUTE`、`COM_STMT_CLOSE`) 仅提供有限支持，主要是为了让 Tableau Online 这类会将查询封装为预处理语句的工具能够连接。
+
+**主要限制：**
+
+* **不支持参数绑定** - 不能将 `?` 占位符与绑定参数配合使用
+* 查询会被存储，但在 `PREPARE` 阶段不会被解析
+* 该实现非常精简，仅用于兼容特定的 BI 工具
+
+**以下示例无法工作：**
+
+```sql
+-- 这种带参数的 MySQL 风格预处理语句在 ClickHouse 中不起作用
+PREPARE stmt FROM 'SELECT * FROM users WHERE id = ?';
+EXECUTE stmt USING @user_id;  -- 不支持参数绑定
+```
+
+<Tip>
+  **请改用 ClickHouse 的原生查询参数。** 它们在所有 ClickHouse 接口中都提供完整的参数绑定支持、类型安全，以及 SQL 注入防护：
+
+  ```sql
+  -- ClickHouse 原生查询参数（推荐）
+  SET param_user_id = 12345;
+  SELECT * FROM users WHERE id = {user_id: UInt64};
+  ```
+</Tip>
+
+更多详情，请参阅 [MySQL 接口文档](/zh/concepts/features/interfaces/mysql) 和 [关于 MySQL 支持的博文](https://clickhouse.com/blog/mysql-support-in-clickhouse-the-journey)。
+
+<div id="summary">
+  ## 摘要
+</div>
+
+<div id="summary-stored-procedures">
+  ### ClickHouse 中存储过程的替代方案
+</div>
+
+| 传统存储过程模式   | ClickHouse 替代方案                                   |
+| ---------- | ------------------------------------------------- |
+| 简单计算和转换    | 用户自定义函数 (UDFs)                                    |
+| 可复用的参数化查询  | 参数化视图                                             |
+| 预计算聚合      | materialized views                                |
+| 定时批处理      | 可刷新materialized view                              |
+| 复杂的多步骤 ETL | 链式 materialized views 或外部编排 (Python、Airflow、dbt)  |
+| 带控制流的业务逻辑  | 应用代码                                              |
+
+<div id="summary-query-parameters">
+  ### 查询参数的用途
+</div>
+
+查询参数可用于：
+
+* 防止 SQL 注入
+* 实现类型安全的参数化查询
+* 在应用程序中进行动态过滤
+* 复用查询模板
+
+<div id="related-documentation">
+  ## 相关文档
+</div>
+
+* [`CREATE FUNCTION`](/zh/reference/statements/create/function) - 用户自定义函数
+* [`CREATE VIEW`](/zh/reference/statements/create/view) - 视图，包括参数化视图和 materialized view
+* [SQL 语法 - 查询参数](/zh/reference/syntax#defining-and-using-query-parameters) - 完整的参数语法
+* [级联 Materialized Views](/zh/concepts/features/materialized-views/cascading-materialized-views) - 高级 materialized view 模式
+* [可执行 UDF](/zh/reference/functions/regular-functions/udf) - 外部函数的执行

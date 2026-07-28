@@ -32,6 +32,7 @@ private:
 
     bool with_ties;
     const SortDescription description;
+    bool is_shard_limit = false;
 
     Chunk previous_row_chunk;  /// for WITH TIES, contains only sort columns
     std::vector<size_t> sort_column_positions;
@@ -86,6 +87,9 @@ public:
 
     InputPort & getInputPort() { return inputs.front(); }
     OutputPort & getOutputPort() { return outputs.front(); }
+
+    void markAsShardLimit() { is_shard_limit = true; }
+    bool isShardLimit() const { return is_shard_limit; }
 
     void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit_at_least.swap(counter); }
     void setInputPortHasCounter(size_t pos) { ports_data[pos].input_port_has_counter = true; }

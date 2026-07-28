@@ -8,22 +8,13 @@ using namespace DB;
 
 using ResourceTest = ResourceTestClass;
 
-TEST(SchedulerFairPolicy, Factory)
-{
-    ResourceTest t;
-
-    Poco::AutoPtr<Poco::Util::XMLConfiguration> cfg = new Poco::Util::XMLConfiguration();
-    SchedulerNodePtr fair = SchedulerNodeFactory::instance().get("fair", t.getEventQueue(), *cfg, "");
-    EXPECT_TRUE(dynamic_cast<FairPolicy *>(fair.get()) != nullptr);
-}
-
 TEST(SchedulerFairPolicy, FairnessWeights)
 {
     ResourceTest t;
 
     t.add<FairPolicy>("/");
-    t.add<FifoQueue>("/A", "<weight>1.0</weight>");
-    t.add<FifoQueue>("/B", "<weight>3.0</weight>");
+    t.add<FifoQueue>("/A", SchedulerNodeInfo(1.0));
+    t.add<FifoQueue>("/B", SchedulerNodeInfo(3.0));
 
     t.enqueue("/A", {10, 10, 10, 10, 10, 10, 10, 10});
     t.enqueue("/B", {10, 10, 10, 10, 10, 10, 10, 10});

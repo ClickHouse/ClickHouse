@@ -1,7 +1,7 @@
 SET explain_query_plan_default = 'legacy';
 SET enable_analyzer=1;
 SET enable_parallel_replicas=0;
-SET enable_join_runtime_filters=1;
+SET enable_join_runtime_filters=1, join_runtime_filter_min_probe_rows = 0;
 SET query_plan_join_swap_table=0;
 SET query_plan_remove_unused_columns=0; -- Explicitly disable to keep the behavior of the test unchanged
 

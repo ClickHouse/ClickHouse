@@ -1,0 +1,199 @@
+---
+title: '원격 ClickHouse 서버에 쿼리하는 방법'
+sidebarTitle: '원격 ClickHouse 쿼리하기'
+slug: /chdb/guides/query-remote-clickhouse
+description: '이 가이드에서는 chDB에서 원격 ClickHouse 서버에 쿼리하는 방법을 알아봅니다.'
+keywords: ['chdb', 'clickhouse']
+doc_type: 'guide'
+---
+
+이 가이드에서는 chDB에서 원격 ClickHouse 서버에 쿼리하는 방법을 알아봅니다.
+
+<div id="setup">
+  ## 설정
+</div>
+
+먼저 가상 환경을 생성합니다:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+이제 chDB를 설치하겠습니다.
+버전 2.0.2 이상인지 확인하십시오:
+
+```bash
+pip install "chdb>=2.0.2"
+```
+
+이제 pandas와 ipython을 설치하겠습니다:
+
+```bash
+pip install pandas ipython
+```
+
+이 가이드의 나머지 부분에서는 명령 실행에 `ipython`을 사용합니다. 다음을 실행해 시작할 수 있습니다:
+
+```bash
+ipython
+```
+
+Python 스크립트나 평소 사용하는 노트북에서도 해당 코드를 사용할 수 있습니다.
+
+<div id="an-intro-to-clickpy">
+  ## ClickPy 소개
+</div>
+
+쿼리할 원격 ClickHouse 서버는 [ClickPy](https://clickpy.clickhouse.com)입니다.
+ClickPy는 PyPI 패키지의 모든 다운로드를 추적하며, UI를 통해 패키지 통계를 살펴볼 수 있습니다.
+이 데이터베이스는 `play` 사용자로 쿼리할 수 있습니다.
+
+[GitHub 리포지토리](https://github.com/ClickHouse/clickpy)에서 ClickPy에 대해 자세히 알아볼 수 있습니다.
+
+<div id="querying-the-clickpy-clickhouse-service">
+  ## ClickPy ClickHouse 서비스에서 쿼리하기
+</div>
+
+chDB를 임포트하겠습니다:
+
+```python
+import chdb
+```
+
+`remoteSecure` 함수를 사용하여 ClickPy를 쿼리하겠습니다.
+이 함수는 최소한 host name, table name, username을 인수로 받습니다.
+
+다음 쿼리를 작성하면 [`openai` package](https://clickpy.clickhouse.com/dashboard/openai)의 일별 다운로드 수를 Pandas 데이터프레임으로 반환할 수 있습니다:
+
+```python
+query = """
+SELECT
+    toStartOfDay(date)::Date32 AS x,
+    sum(count) AS y
+FROM remoteSecure(
+  'clickpy-clickhouse.clickhouse.com', 
+  'pypi.pypi_downloads_per_day', 
+  'play'
+)
+WHERE project = 'openai'
+GROUP BY x
+ORDER BY x ASC
+"""
+
+openai_df = chdb.query(query, "DataFrame")
+openai_df.sort_values(by=["x"], ascending=False).head(n=10)
+```
+
+```text
+               x        y
+2392  2024-10-02  1793502
+2391  2024-10-01  1924901
+2390  2024-09-30  1749045
+2389  2024-09-29  1177131
+2388  2024-09-28  1157323
+2387  2024-09-27  1688094
+2386  2024-09-26  1862712
+2385  2024-09-25  2032923
+2384  2024-09-24  1901965
+2383  2024-09-23  1777554
+```
+
+이제 [`scikit-learn`](https://clickpy.clickhouse.com/dashboard/scikit-learn)의 다운로드 수를 반환하도록 같은 방식으로 진행합니다:
+
+```python
+query = """
+SELECT
+    toStartOfDay(date)::Date32 AS x,
+    sum(count) AS y
+FROM remoteSecure(
+  'clickpy-clickhouse.clickhouse.com', 
+  'pypi.pypi_downloads_per_day', 
+  'play'
+)
+WHERE project = 'scikit-learn'
+GROUP BY x
+ORDER BY x ASC
+"""
+
+sklearn_df = chdb.query(query, "DataFrame")
+sklearn_df.sort_values(by=["x"], ascending=False).head(n=10)
+```
+
+```text
+               x        y
+2392  2024-10-02  1793502
+2391  2024-10-01  1924901
+2390  2024-09-30  1749045
+2389  2024-09-29  1177131
+2388  2024-09-28  1157323
+2387  2024-09-27  1688094
+2386  2024-09-26  1862712
+2385  2024-09-25  2032923
+2384  2024-09-24  1901965
+2383  2024-09-23  1777554
+```
+
+<div id="merging-pandas-dataframes">
+  ## Pandas 데이터프레임 머지하기
+</div>
+
+이제 두 개의 데이터프레임이 있으므로, 날짜(`x` 컬럼)를 기준으로 다음과 같이 머지할 수 있습니다:
+
+```python
+df = openai_df.merge(
+  sklearn_df, 
+  on="x", 
+  suffixes=("_openai", "_sklearn")
+)
+df.head(n=5)
+```
+
+```text
+            x  y_openai  y_sklearn
+0  2018-02-26        83      33971
+1  2018-02-27        31      25211
+2  2018-02-28         8      26023
+3  2018-03-01         8      20912
+4  2018-03-02         5      23842
+```
+
+그런 다음 Open AI 다운로드 수를 `scikit-learn` 다운로드 수와 비교한 비율은 다음과 같이 계산할 수 있습니다:
+
+```python
+df['ratio'] = df['y_openai'] / df['y_sklearn']
+df.head(n=5)
+```
+
+```text
+            x  y_openai  y_sklearn     ratio
+0  2018-02-26        83      33971  0.002443
+1  2018-02-27        31      25211  0.001230
+2  2018-02-28         8      26023  0.000307
+3  2018-03-01         8      20912  0.000383
+4  2018-03-02         5      23842  0.000210
+```
+
+<div id="querying-pandas-dataframes">
+  ## Pandas 데이터프레임 쿼리하기
+</div>
+
+다음으로, 가장 높고 가장 낮은 비율을 기록한 날짜를 찾는다고 해보겠습니다.
+다시 chDB로 돌아가 해당 값을 계산해 보겠습니다:
+
+```python
+chdb.query("""
+SELECT max(ratio) AS bestRatio,
+       argMax(x, ratio) AS bestDate,
+       min(ratio) AS worstRatio,
+       argMin(x, ratio) AS worstDate
+FROM Python(df)
+""", "DataFrame")
+```
+
+```text
+   bestRatio    bestDate  worstRatio   worstDate
+0   0.693855  2024-09-19    0.000003  2020-02-09
+```
+
+Pandas 데이터프레임 쿼리에 대해 자세히 알아보려면 [Pandas 데이터프레임 개발자 가이드](/ko/chdb/guides/querying-pandas)를 참조하십시오.

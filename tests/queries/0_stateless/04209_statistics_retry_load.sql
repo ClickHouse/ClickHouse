@@ -4,7 +4,7 @@ SET allow_statistics = 1;
 SET materialize_statistics_on_insert = 1;
 
 DROP TABLE IF EXISTS t;
-CREATE TABLE t (a UInt64 STATISTICS(minmax), b UInt64)
+CREATE TABLE t (a UInt64 STATISTICS(basic), b UInt64)
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0;
 
