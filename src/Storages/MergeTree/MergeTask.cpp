@@ -593,7 +593,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         if (global_ctx->parent_part)
         {
             auto & parent_storage = global_ctx->parent_part->getDataPartStorage();
-            auto placement = parent_storage.createProjection(local_tmp_part_basename);
+            auto placement = parent_storage.createProjection(local_tmp_part_basename, global_ctx->data->getProjectionStorageFormat());
             auto data_part_storage = parent_storage.getProjectionStorageForWrite(placement, /*use_parent_transaction=*/ false);
             builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage, getReadSettings());
             builder->withParentPart(global_ctx->parent_part);

@@ -1111,7 +1111,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
 
     /// createProjection sweeps any stale same-named leftover and registers the dir; only its descriptor
     /// unlocks a writable projection storage, so a packed reader can never seed from stale contents.
-    auto placement = parent_part->getDataPartStorage().createProjection(IDataPartStorage::Projection::dirName(part_name, is_temp));
+    auto placement = parent_part->getDataPartStorage().createProjection(IDataPartStorage::Projection::dirName(part_name, is_temp), data.getProjectionStorageFormat());
 
     auto new_data_part = parent_part->getProjectionPartBuilderForWrite(placement, &projection).withPartType(part_type).build();
     auto projection_part_storage = new_data_part->getDataPartStoragePtr();

@@ -1104,16 +1104,23 @@ std::optional<Projection> DataPartStorageOnDiskBase::tryGetProjection(const std:
     return it->second;
 }
 
-Projection DataPartStorageOnDiskBase::projectionPlacement(const std::string & dir_name) const
+Projection DataPartStorageOnDiskBase::projectionPlacement(const std::string & dir_name, ProjectionStorageFormat format) const
 {
-    const auto format = getProjectionStorageFormat();
-    if (format == ProjectionStorageFormat::NONE)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Cannot choose a layout for projection {} in part {}: storage has no projection storage format configured",
-            dir_name, getRelativePath());
-
+    chassert(format != ProjectionStorageFormat::NONE);
     auto [name, is_temp] = splitProjectionDirName(dir_name);
     return Projection{this, std::move(name), format, is_temp};
+}
+
+Projection DataPartStorageOnDiskBase::resolveProjectionForRead(const std::string & dir_name) const
+{
+    if (auto owned = tryGetProjection(dir_name))
+        return *owned;
+
+    /// Not owned: broken/missing, or a manifest desync. Probe disk for the actual layout; nested placeholder if absent in both.
+    auto probed = detectProjections({.candidates = Strings{dir_name}});
+    if (!probed.empty())
+        return probed.begin()->second;
+    return projectionPlacement(dir_name, ProjectionStorageFormat::LEGACY_NESTED);
 }
 
 void DataPartStorageOnDiskBase::addProjection(Projection projection_)
@@ -1309,8 +1316,7 @@ void DataPartStorageOnDiskBase::remove(
             return;
         /// A checksums-referenced projection the owned set does not know (e.g. its dir is lost) resolves to where it would live; exists()
         /// then skips it.
-        auto owned = tryGetProjection(proj_name);
-        auto projection = owned ? *owned : projectionPlacement(proj_name);
+        auto projection = resolveProjectionForRead(proj_name);
         if (!projection.exists())
             return;
 

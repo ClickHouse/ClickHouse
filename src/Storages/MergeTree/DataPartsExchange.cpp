@@ -826,8 +826,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
         auto v = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
         auto s = std::make_shared<DataPartStorageOnDiskFull>(v, part_relative_path, part_dir);
-        /// Fetched projection dirs don't exist yet; create them in this replica's configured layout.
-        s->setProjectionStorageFormat(data.getProjectionStorageFormat());
         s->setZeroCopyReplicationEnabled((*data_settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication]);
         s->setProjections({});
         return std::pair{std::move(v), std::move(s)};
@@ -874,7 +872,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
             MergeTreeData::DataPart::Checksums projection_checksum;
 
-            part_storage_for_loading->createProjection(IDataPartStorage::Projection::dirName(projection_name, false));
+            /// Fetched projection dirs don't exist yet; create them in this replica's configured layout.
+            part_storage_for_loading->createProjection(IDataPartStorage::Projection::dirName(projection_name, false), data.getProjectionStorageFormat());
             auto projection_part_storage = part_storage_for_loading->getProjectionStorage(IDataPartStorage::Projection::dirName(projection_name, false), true);
 
             downloadBaseOrProjectionPartToDisk(

@@ -75,9 +75,6 @@ std::shared_ptr<IMergeTreeDataPart> MergeTreeDataPartBuilder::build()
     if (!part_storage)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create part {}, because part storage is not set", name);
 
-    if (part_storage->getProjectionStorageFormat() == IDataPartStorage::ProjectionStorageFormat::NONE)
-        part_storage->setProjectionStorageFormat(data.getProjectionStorageFormat());
-
     part_storage->setZeroCopyReplicationEnabled((*data.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication]);
 
     if (parent_part && data.format_version == MERGE_TREE_DATA_OLD_FORMAT_VERSION)

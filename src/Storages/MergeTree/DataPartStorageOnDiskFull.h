@@ -29,7 +29,7 @@ public:
     std::vector<std::string> getRemotePaths(const std::string & file_name) const override;
     String getUniqueId() const override;
 
-    Projection createProjection(const std::string & dir_name) override;
+    Projection createProjection(const std::string & dir_name, ProjectionStorageFormat format) override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & name,

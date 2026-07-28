@@ -29,7 +29,7 @@ public:
     bool hasProjection(const std::string & dir_name) const override;
     Projection getProjection(const std::string & dir_name) const override;
     std::optional<Projection> tryGetProjection(const std::string & dir_name) const override;
-    Projection projectionPlacement(const std::string & dir_name) const override;
+    Projection projectionPlacement(const std::string & dir_name, ProjectionStorageFormat format) const override;
 
     std::pair<std::string, std::string> getProjectionRootAndDir(const std::string & dir_name, ProjectionStorageFormat format) const override;
     bool existsProjectionDir(const std::string & dir_name, ProjectionStorageFormat format) const override;
@@ -40,13 +40,6 @@ public:
     void removeProjectionResidue(const Projection & placement) override;
 
     void setZeroCopyReplicationEnabled(bool value) override { zero_copy_replication_enabled = value; }
-
-    ProjectionStorageFormat getProjectionStorageFormat() const override { return projection_storage_format; }
-    void setProjectionStorageFormat(ProjectionStorageFormat format) override
-    {
-        chassert(format != ProjectionStorageFormat::NONE);
-        projection_storage_format = format;
-    }
 
     std::string getFullPath() const override;
     std::string getRelativePath() const override;
@@ -215,6 +208,10 @@ protected:
     void addProjection(Projection projection_);
     void dropProjection(const std::string & dir_name);
 
+    /// Descriptor for a READ handle: the owned one if present, else probed from disk across both layouts (a not-owned name is a
+    /// broken/missing projection or a manifest desync). Nested placeholder when absent in both layouts.
+    Projection resolveProjectionForRead(const std::string & dir_name) const;
+
     /// Shared tail of freeze/clonePart: the copy owns exactly what the source owned (temps are
     /// transient and not copied), plus the zero-copy flag; entries are re-parented to dest_storage.
     void seedFrozenCopy(IDataPartStorage & dest_storage) const;
@@ -285,9 +282,6 @@ protected:
     std::string part_dir;
     DiskTransactionPtr transaction;
     bool has_shared_transaction = false;
-
-    /// Layout for projection directories created through this storage.
-    ProjectionStorageFormat projection_storage_format = ProjectionStorageFormat::NONE;
 
     /// Zero-copy replication policy; default true keeps residue blobs (fail-safe until seeded).
     bool zero_copy_replication_enabled = true;

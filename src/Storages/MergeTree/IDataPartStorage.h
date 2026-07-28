@@ -204,19 +204,13 @@ public:
     virtual Projection getProjection(const std::string & dir_name) const = 0;
     virtual std::optional<Projection> tryGetProjection(const std::string & dir_name) const = 0;
 
-    /// "Where would it live": descriptor for a not-owned name via the configured format; registers nothing.
-    virtual Projection projectionPlacement(const std::string & dir_name) const = 0;
+    /// "Where would it live": descriptor for a name in the given layout; registers nothing.
+    virtual Projection projectionPlacement(const std::string & dir_name, ProjectionStorageFormat format) const = 0;
 
     /// {disk-relative root, physical dir basename} of a (hypothetical) projection dir; the layout arithmetic behind Projection's accessors.
     /// Absolute path for logging = getDiskPath()/root/dir.
     virtual std::pair<std::string, std::string> getProjectionRootAndDir(const std::string & dir_name, ProjectionStorageFormat format) const = 0;
     virtual bool existsProjectionDir(const std::string & dir_name, ProjectionStorageFormat format) const = 0;
-
-    /// Layout used when this storage creates a projection directory
-    virtual ProjectionStorageFormat getProjectionStorageFormat() const = 0;
-
-    /// Configure the layout for projection directories this storage will create
-    virtual void setProjectionStorageFormat(ProjectionStorageFormat format) = 0;
 
     /// Whether the table runs zero-copy replication, i.e. blobs may be shared cross-replica invisibly to the
     /// local refcount. Default true = fail-safe: residue sweeps then keep remote blobs. Seeded by the part builder.
@@ -442,9 +436,9 @@ public:
 
     /// The only three operations that mutate projection directories; each keeps the owned set true.
 
-    /// Creates the on-disk directory for a projection sub-part and records it in the owned set. Sweeps a stale leftover directory at the
-    /// target first (tmp part names repeat across attempts).
-    virtual Projection createProjection(const std::string & dir_name) = 0;
+    /// Creates the on-disk directory for a projection sub-part in the given layout and records it in the owned set. Sweeps a stale
+    /// leftover directory at the target first (tmp part names repeat across attempts).
+    virtual Projection createProjection(const std::string & dir_name, ProjectionStorageFormat format) = 0;
 
     /// Only a temporary projection may be removed alone; a normal one goes only with its parent part.
     virtual void removeProjection(const Projection & projection) = 0;

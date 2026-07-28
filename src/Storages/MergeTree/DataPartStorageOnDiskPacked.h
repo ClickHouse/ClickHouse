@@ -55,7 +55,7 @@ public:
         bool remove_new_dir_if_exists,
         bool fsync_part_dir) override;
 
-    Projection createProjection(const std::string & dir_name) override;
+    Projection createProjection(const std::string & dir_name, ProjectionStorageFormat format) override;
 
     void changeRootPath(const std::string & from_root, const std::string & to_root) override;
 

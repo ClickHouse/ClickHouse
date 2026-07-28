@@ -111,9 +111,8 @@ TEST(ProjectionStorageSchemaDeathTest, RemoveLiveProjectionAborts)
 {
     ::testing::FLAGS_gtest_death_test_style = "threadsafe";
     PartStorageFixture fixture;
-    fixture.storage->setProjectionStorageFormat(IDataPartStorage::ProjectionStorageFormat::FLAT);
     fixture.storage->setProjections({});
-    fixture.storage->createProjection("p_1.tmp_proj");
+    fixture.storage->createProjection("p_1.tmp_proj", IDataPartStorage::ProjectionStorageFormat::FLAT);
     fixture.storage->renameProjection(fixture.storage->getProjection("p_1.tmp_proj"), "p.proj", /*fsync=*/ false);
 
     /// Only temporary projections may be removed individually; removing a live one is a logical error.
@@ -124,14 +123,13 @@ TEST(ProjectionStorageSchemaDeathTest, WriteAccessRequiresOwnedProjection)
 {
     ::testing::FLAGS_gtest_death_test_style = "threadsafe";
     PartStorageFixture fixture;
-    fixture.storage->setProjectionStorageFormat(IDataPartStorage::ProjectionStorageFormat::FLAT);
     fixture.storage->setProjections({});
 
     /// A placement that never went through createProjection does not unlock writable storage.
-    EXPECT_LOGICAL_ERROR(fixture.storage->getProjectionStorageForWrite(fixture.storage->projectionPlacement("p.proj"), true));
+    EXPECT_LOGICAL_ERROR(fixture.storage->getProjectionStorageForWrite(fixture.storage->projectionPlacement("p.proj", IDataPartStorage::ProjectionStorageFormat::FLAT), true));
 
     /// The descriptor produced by createProjection does.
-    auto placement = fixture.storage->createProjection("p.proj");
+    auto placement = fixture.storage->createProjection("p.proj", IDataPartStorage::ProjectionStorageFormat::FLAT);
     EXPECT_NE(fixture.storage->getProjectionStorageForWrite(placement, true), nullptr);
 }
 
@@ -146,10 +144,9 @@ TEST(ProjectionStorageSchema, EmptySchemaIsValid)
 TEST(ProjectionStorageSchema, CreateRenameRemoveMaintainCache)
 {
     PartStorageFixture fixture;
-    fixture.storage->setProjectionStorageFormat(IDataPartStorage::ProjectionStorageFormat::FLAT);
     fixture.storage->setProjections({});
 
-    fixture.storage->createProjection("p_1.tmp_proj");
+    fixture.storage->createProjection("p_1.tmp_proj", IDataPartStorage::ProjectionStorageFormat::FLAT);
     ASSERT_TRUE(fixture.storage->hasProjection("p_1.tmp_proj"));
     ASSERT_TRUE(std::filesystem::exists(fixture.base_path / "all_1_1_0.p_1.tmp_proj"));
 
@@ -159,7 +156,7 @@ TEST(ProjectionStorageSchema, CreateRenameRemoveMaintainCache)
     EXPECT_FALSE(std::filesystem::exists(fixture.base_path / "all_1_1_0.p_1.tmp_proj"));
     ASSERT_TRUE(std::filesystem::exists(fixture.base_path / "all_1_1_0.p.proj"));
 
-    fixture.storage->createProjection("q.tmp_proj");
+    fixture.storage->createProjection("q.tmp_proj", IDataPartStorage::ProjectionStorageFormat::FLAT);
     fixture.storage->removeProjection(fixture.storage->getProjection("q.tmp_proj"));
     EXPECT_FALSE(fixture.storage->hasProjection("q.tmp_proj"));
     EXPECT_FALSE(std::filesystem::exists(fixture.base_path / "all_1_1_0.q.tmp_proj"));
@@ -189,9 +186,8 @@ TEST(ProjectionStorageSchema, DetectProjectionsBothLayouts)
 TEST(ProjectionStorageSchema, RenameFsyncsSiblingNamespace)
 {
     PartStorageFixture fixture;
-    fixture.storage->setProjectionStorageFormat(IDataPartStorage::ProjectionStorageFormat::FLAT);
     fixture.storage->setProjections({});
-    fixture.storage->createProjection("p.proj");
+    fixture.storage->createProjection("p.proj", IDataPartStorage::ProjectionStorageFormat::FLAT);
 
     /// Publish (parent moves last): a sync on the root makes the sibling moves durable, then the moved
     /// part dir; the trailing parent sync collapses to the disk root here (empty path -> not re-synced).
@@ -208,7 +204,6 @@ TEST(ProjectionStorageSchema, RenameFsyncsSiblingNamespace)
     /// A sibling-less rename keeps the historical single sync on the moved dir
     /// (02361_fsync_profile_events pins the event count).
     PartStorageFixture plain;
-    plain.storage->setProjectionStorageFormat(IDataPartStorage::ProjectionStorageFormat::FLAT);
     plain.storage->setProjections({});
     plain.disk->sync_guard_paths.clear();
     plain.storage->rename("", "all_2_2_0", nullptr, false, /*fsync_part_dir=*/ true);
@@ -218,18 +213,16 @@ TEST(ProjectionStorageSchema, RenameFsyncsSiblingNamespace)
 TEST(ProjectionStorageSchema, RenameProjectionFsyncsEnclosingDir)
 {
     PartStorageFixture fixture;
-    fixture.storage->setProjectionStorageFormat(IDataPartStorage::ProjectionStorageFormat::FLAT);
     fixture.storage->setProjections({});
 
     /// FLAT: the rename entry lives in the parts root.
-    fixture.storage->createProjection("p_1.tmp_proj");
+    fixture.storage->createProjection("p_1.tmp_proj", IDataPartStorage::ProjectionStorageFormat::FLAT);
     fixture.disk->sync_guard_paths.clear();
     fixture.storage->renameProjection(fixture.storage->getProjection("p_1.tmp_proj"), "p.proj", /*fsync=*/ true);
     EXPECT_EQ(fixture.disk->sync_guard_paths, (Strings{""}));
 
     /// NESTED: the rename entry lives in the part dir.
-    fixture.storage->setProjectionStorageFormat(IDataPartStorage::ProjectionStorageFormat::LEGACY_NESTED);
-    fixture.storage->createProjection("q_1.tmp_proj");
+    fixture.storage->createProjection("q_1.tmp_proj", IDataPartStorage::ProjectionStorageFormat::LEGACY_NESTED);
     fixture.disk->sync_guard_paths.clear();
     fixture.storage->renameProjection(fixture.storage->getProjection("q_1.tmp_proj"), "q.proj", /*fsync=*/ true);
     EXPECT_EQ(fixture.disk->sync_guard_paths, (Strings{"all_1_1_0"}));

@@ -54,8 +54,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskFull::getProjectionStorage(const 
     /// into existence only through createProjection. Not arena-scoped: callers use this as a short-lived filesystem handle (CHECK TABLE,
     /// mutation hardlink/copy, existence probes); part-lifetime projection storage is created via getProjectionPartBuilder, which scopes
     /// the arena itself.
-    auto owned = tryGetProjection(dir_name);
-    const auto projection = owned ? *owned : projectionPlacement(dir_name);
+    const auto projection = resolveProjectionForRead(dir_name);
 
     auto [proj_root, proj_dir] = getProjectionRootAndDir(projection.dirName(), projection.format);
     auto projection_storage = std::shared_ptr<DataPartStorageOnDiskFull>(new DataPartStorageOnDiskFull(
@@ -63,7 +62,6 @@ MutableDataPartStoragePtr DataPartStorageOnDiskFull::getProjectionStorage(const 
         std::move(proj_root),
         std::move(proj_dir),
         use_parent_transaction ? transaction : nullptr));
-    projection_storage->projection_storage_format = projection_storage_format;
     projection_storage->zero_copy_replication_enabled = zero_copy_replication_enabled;
     /// A projection sub-part owns no projections of its own.
     projection_storage->setProjections({});
@@ -73,15 +71,13 @@ MutableDataPartStoragePtr DataPartStorageOnDiskFull::getProjectionStorage(const 
 DataPartStoragePtr DataPartStorageOnDiskFull::getProjectionStorage(const std::string & dir_name) const
 {
     /// See the mutable overload.
-    auto owned = tryGetProjection(dir_name);
-    const auto projection = owned ? *owned : projectionPlacement(dir_name);
+    const auto projection = resolveProjectionForRead(dir_name);
 
     auto [proj_root, proj_dir] = getProjectionRootAndDir(projection.dirName(), projection.format);
     auto projection_storage = std::make_shared<DataPartStorageOnDiskFull>(
         volume,
         std::move(proj_root),
         std::move(proj_dir));
-    projection_storage->projection_storage_format = projection_storage_format;
     projection_storage->zero_copy_replication_enabled = zero_copy_replication_enabled;
     projection_storage->setProjections({});
     return projection_storage;
@@ -270,9 +266,9 @@ void DataPartStorageOnDiskFull::copyFileFrom(const IDataPartStorage & source, co
         getReadSettings());
 }
 
-IDataPartStorage::Projection DataPartStorageOnDiskFull::createProjection(const std::string & dir_name)
+IDataPartStorage::Projection DataPartStorageOnDiskFull::createProjection(const std::string & dir_name, ProjectionStorageFormat format)
 {
-    auto projection = projectionPlacement(dir_name);
+    auto projection = projectionPlacement(dir_name, format);
 
     /// A leftover directory is residue of a failed operation on a same-named part (tmp part names repeat).
     removeProjectionResidue(projection);
