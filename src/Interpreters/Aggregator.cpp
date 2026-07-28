@@ -227,6 +227,65 @@ namespace
             memcpy(staged, key.bytes.data(), key.bytes.size());
     }
 
+    /// The count-record dedup primitive shared by the publish and seal walks. A duplicate key
+    /// can only be one of its group's survivors, the records staged in [group_begin, out) with
+    /// the same few hash bits (usually zero or one): merge the run lengths instead of staging
+    /// another copy of the key, with equal hashes of distinct keys split by the byte
+    /// comparison. Otherwise the record is appended at `out` and the cursors advance.
+    ///
+    /// The overflow-split policy lives here and only here: a survivor whose multiplicity would
+    /// exceed 32 bits is skipped, because a later survivor of the same key (from a previous
+    /// overflow split) may still have capacity, and otherwise the record starts a fresh
+    /// survivor of the same key.
+    void ALWAYS_INLINE mergeOrAppendStagedCount(
+        DB::AdaptiveAggregationSession::StagedKeys & keys,
+        DB::PaddedPODArray<UInt32> & multiplicities,
+        const UInt64 hash,
+        const KeyBytesRef & key,
+        const UInt32 multiplicity,
+        const size_t group_begin,
+        size_t & out,
+        UInt64 & byte_pos)
+    {
+        const size_t size = key.bytes.size();
+        for (size_t j = group_begin; j < out; ++j)
+        {
+            if (keys.routing_hashes[j] != hash)
+                continue;
+            const UInt64 j_end = (j + 1 == out) ? byte_pos : keys.key_offsets[j + 1];
+            if (j_end - keys.key_offsets[j] != size || !stagedKeyEquals(keys.key_bytes.data() + keys.key_offsets[j], key))
+                continue;
+            if (static_cast<UInt64>(multiplicities[j]) + multiplicity > std::numeric_limits<UInt32>::max())
+                continue;
+            multiplicities[j] += multiplicity;
+            return;
+        }
+
+        keys.routing_hashes[out] = hash;
+        multiplicities[out] = multiplicity;
+        keys.key_offsets[out] = byte_pos;
+        copyStagedKeyBytes(keys.key_bytes.data() + byte_pos, key);
+        byte_pos += size;
+        ++out;
+    }
+
+    /// Applies `f` to the two-level method the variant currently holds. The adaptive session
+    /// only ever materializes two-level variants, so any other type is a logical error.
+    template <typename F>
+    void visitTwoLevelVariant(DB::AggregatedDataVariants & variants, F && f)
+    {
+#define M(NAME) \
+    else if (variants.type == DB::AggregatedDataVariants::Type::NAME) \
+        f(*variants.NAME);
+
+        if (false) {} /// NOLINT
+        APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+#undef M
+        else
+            throw DB::Exception(
+                DB::ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant in the adaptive drain path.");
+    }
+
     /// Emplace one staged key into the table. String-like keys were staged as raw characters
     /// and are rebuilt here. `key_storage` selects the ownership: at merge time the delayed
     /// blocks are retained on the shared state until after the merged buckets are converted, so
@@ -2448,36 +2507,7 @@ void NO_INLINE Aggregator::buildDeduplicatedCountChunk(
                 size,
                 scratch_pool,
                 [&](const KeyBytesRef & key)
-                {
-                    /// A duplicate key can only be one of this group's survivors (usually zero
-                    /// or one): merge the run lengths instead of staging another copy of the
-                    /// key. Equal hashes of distinct keys are split by the byte comparison.
-                    for (size_t j = group_out_begin; j < out; ++j)
-                    {
-                        if (keys.routing_hashes[j] != hash)
-                            continue;
-                        const UInt64 j_end = (j + 1 == out) ? byte_pos : keys.key_offsets[j + 1];
-                        if (j_end - keys.key_offsets[j] != size
-                            || !stagedKeyEquals(keys.key_bytes.data() + keys.key_offsets[j], key))
-                            continue;
-                        /// A survivor whose multiplicity would overflow is skipped: a later
-                        /// survivor of the same key (from a previous overflow split) may still
-                        /// have capacity, and otherwise the record is appended as a fresh
-                        /// survivor of the same key.
-                        if (static_cast<UInt64>(multiplicities[j]) + adaptive.miss_multiplicities[idx]
-                            > std::numeric_limits<UInt32>::max())
-                            continue;
-                        multiplicities[j] += adaptive.miss_multiplicities[idx];
-                        return;
-                    }
-
-                    keys.routing_hashes[out] = hash;
-                    multiplicities[out] = adaptive.miss_multiplicities[idx];
-                    keys.key_offsets[out] = byte_pos;
-                    copyStagedKeyBytes(keys.key_bytes.data() + byte_pos, key);
-                    byte_pos += size;
-                    ++out;
-                });
+                { mergeOrAppendStagedCount(keys, multiplicities, hash, key, adaptive.miss_multiplicities[idx], group_out_begin, out, byte_pos); });
         }
     }
 
@@ -2804,41 +2834,11 @@ void Aggregator::sealValueStagedChunkDeduplicated(
             {
                 const auto & ref = refs[order[i]];
                 const auto & mini = *minis[ref.mini];
-                const UInt32 mini_multiplicity = multiplicities_of(mini)[ref.index];
-                const std::string_view mini_key = mini.keys.keyBytesAt(ref.index);
-                const size_t size = mini_key.size();
 
                 /// Batch key bytes live in the minis' padded staged arrays.
-                const KeyBytesRef key{mini_key, ReadablePadding::AtLeast15Bytes};
-
-                bool merged = false;
-                for (size_t j = group_out_begin; j < out; ++j)
-                {
-                    if (keys.routing_hashes[j] != ref.hash)
-                        continue;
-                    const UInt64 j_end = (j + 1 == out) ? byte_pos : keys.key_offsets[j + 1];
-                    if (j_end - keys.key_offsets[j] != size
-                        || !stagedKeyEquals(keys.key_bytes.data() + keys.key_offsets[j], key))
-                        continue;
-                    /// The seal target bounds the chunk's bytes, not the logical rows a merged
-                    /// record represents: a survivor whose multiplicity would overflow is
-                    /// skipped in favor of one with remaining capacity, or a fresh survivor of
-                    /// the same key.
-                    if (static_cast<UInt64>(multiplicities[j]) + mini_multiplicity > std::numeric_limits<UInt32>::max())
-                        continue;
-                    multiplicities[j] += mini_multiplicity;
-                    merged = true;
-                    break;
-                }
-                if (merged)
-                    continue;
-
-                keys.routing_hashes[out] = ref.hash;
-                multiplicities[out] = mini_multiplicity;
-                keys.key_offsets[out] = byte_pos;
-                copyStagedKeyBytes(keys.key_bytes.data() + byte_pos, key);
-                byte_pos += size;
-                ++out;
+                const KeyBytesRef key{mini.keys.keyBytesAt(ref.index), ReadablePadding::AtLeast15Bytes};
+                mergeOrAppendStagedCount(
+                    keys, multiplicities, ref.hash, key, multiplicities_of(mini)[ref.index], group_out_begin, out, byte_pos);
             }
         }
     }
@@ -3031,17 +3031,13 @@ void Aggregator::drainAdaptiveBucketForMerge(
         records_available += block->keys.recordsForBucket(bucket_index);
 
     size_t drained = 0;
-
-#define M(NAME) \
-    else if (dest.type == AggregatedDataVariants::Type::NAME) \
-        drained = drainAdaptiveBucketBacklog<AdaptiveKeyStorage::BorrowFromChunk>( \
-            *dest.NAME, arena, backlog, bucket_index, records_available, places_scratch, is_cancelled);
-
-    if (false) {} // NOLINT
-    APPLY_FOR_VARIANTS_TWO_LEVEL(M)
-#undef M
-    else
-        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant in the adaptive drain path.");
+    visitTwoLevelVariant(
+        dest,
+        [&](auto & method)
+        {
+            drained = drainAdaptiveBucketBacklog<AdaptiveKeyStorage::BorrowFromChunk>(
+                method, arena, backlog, bucket_index, records_available, places_scratch, is_cancelled);
+        });
 
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationDrainedRecords, drained);
     shared.undrained_records.fetch_sub(drained, std::memory_order_relaxed);
@@ -3303,14 +3299,13 @@ void Aggregator::drainStagedChunksEarly(AdaptiveAggregationSession & shared, Ada
                 continue;
             Arena * arena = routing.aggregates_pools.at(b).get();
 
-#define M(NAME) \
-    else if (routing.type == AggregatedDataVariants::Type::NAME) \
-        drained_records += drainAdaptiveBucketBacklog<AdaptiveKeyStorage::CopyToArena>( \
-            *routing.NAME, arena, single, b, records, places_scratch, is_cancelled);
-
-            if (false) {} // NOLINT
-            APPLY_FOR_VARIANTS_TWO_LEVEL(M)
-#undef M
+            visitTwoLevelVariant(
+                routing,
+                [&](auto & method)
+                {
+                    drained_records += drainAdaptiveBucketBacklog<AdaptiveKeyStorage::CopyToArena>(
+                        method, arena, single, b, records, places_scratch, is_cancelled);
+                });
         }
         single[0].reset();
         chunk.reset();
