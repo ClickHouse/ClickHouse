@@ -12,8 +12,8 @@ SET allow_suspicious_low_cardinality_types = 1;
 SET query_plan_merge_filters = 1;
 
 -- The closing controls read `EXPLAIN` output as text. Measured: every string they match survives the `PRETTY`
--- default, so this is defence-in-depth against a future layout change in that renderer, matching 477 other
--- stateless tests that pin it.
+-- default, so this is defence-in-depth against a future layout change in that renderer, consistent with the many
+-- existing stateless tests that name the renderer explicitly.
 SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_mt_04648 SETTINGS ignore_drop_queries_probability = 0;
@@ -26,6 +26,8 @@ DROP TABLE IF EXISTS t_zero_mt_04648 SETTINGS ignore_drop_queries_probability = 
 DROP TABLE IF EXISTS t_zero_mem_04648 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS t_dt_mt_04648 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS t_dt_mem_04648 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_dec_mt_04648 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_dec_mem_04648 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS t_lc_mt_04648 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS t_lc_mem_04648 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS t_wide_mt_04648 SETTINGS ignore_drop_queries_probability = 0;
@@ -105,6 +107,23 @@ SELECT
     (SELECT count() FROM t_dt_mt_04648 WHERE a < toDateTime64('2020-01-06 00:00:00', 3, 'UTC') AND toUnixTimestamp64Nano(a) = 1578268800000000000) AS mergetree,
     (SELECT count() FROM t_dt_mem_04648 WHERE a < toDateTime64('2020-01-06 00:00:00', 3, 'UTC') AND toUnixTimestamp64Nano(a) = 1578268800000000000) AS oracle;
 
+-- The two cases above throw from the transform that applies the chain to an endpoint. A chain can also throw one step
+-- earlier, while its monotonicity is being decided: `plus`/`minus` by a constant decide it by evaluating the function
+-- on both endpoints (`FunctionBinaryArithmeticWithConstants::getMonotonicityForRange`), so an endpoint that overflows
+-- makes the decision itself throw. `decimal_check_overflow` is what turns that overflow into an exception, and it is
+-- the whole point of the case, so it is pinned rather than left to the default: at `0` the addition wraps silently and
+-- this case degrades into asserting nothing (measured: base returns `1 1` instead of throwing).
+CREATE TABLE t_dec_mt_04648 (a Decimal64(0)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+CREATE TABLE t_dec_mem_04648 (a Decimal64(0)) ENGINE = Memory;
+INSERT INTO t_dec_mt_04648 VALUES (9000000000), (1), (2), (3);
+INSERT INTO t_dec_mem_04648 VALUES (9000000000), (1), (2), (3);
+
+SELECT 'DECIMAL_OVERFLOW while deciding monotonicity, not while applying the chain';
+SELECT
+    (SELECT count() FROM t_dec_mt_04648 WHERE a < 4 AND a + toDecimal64(0.5, 10) = toDecimal64(2.5, 10)) AS mergetree,
+    (SELECT count() FROM t_dec_mem_04648 WHERE a < 4 AND a + toDecimal64(0.5, 10) = toDecimal64(2.5, 10)) AS oracle
+SETTINGS decimal_check_overflow = 1;
+
 CREATE TABLE t_lc_mt_04648 (a LowCardinality(Int8)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
 CREATE TABLE t_lc_mem_04648 (a LowCardinality(Int8)) ENGINE = Memory;
 INSERT INTO t_lc_mt_04648 VALUES (-128), (-100), (-50), (50);
@@ -121,8 +140,8 @@ SELECT
 --
 -- Exact ranges are only ever requested by the trivial-count path, which `optimize_use_projections` and
 -- `optimize_use_implicit_projections` gate - the CI runner randomizes both, and with either off these cases
--- degrade into duplicates of the ones above. Hence a statement-level `SETTINGS` clause on each: a session
--- `SET` would lose to the runner, which passes them as client options.
+-- degrade into duplicates of the ones above. Hence a statement-level `SETTINGS` clause on each, which scopes the
+-- pin to the statements that need it and leaves every other case running under whatever the runner drew.
 
 CREATE TABLE t_wide_mt_04648 (a Int8) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
 CREATE TABLE t_wide_mem_04648 (a Int8) ENGINE = Memory;
@@ -352,6 +371,8 @@ DROP TABLE t_zero_mt_04648 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_zero_mem_04648 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_dt_mt_04648 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_dt_mem_04648 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE t_dec_mt_04648 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE t_dec_mem_04648 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_lc_mt_04648 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_lc_mem_04648 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_wide_mt_04648 SETTINGS ignore_drop_queries_probability = 0;
