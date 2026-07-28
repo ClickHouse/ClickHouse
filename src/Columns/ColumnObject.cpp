@@ -1813,7 +1813,7 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
         /// For this reason we first call ColumnDynamic::reserve with resulting size to preallocate memory for
         /// discriminators and offsets and ColumnDynamic::prepareVariantsForSquashing to preallocate memory
         /// for all variants inside Dynamic.
-        dynamic_paths_ptrs[path]->reserve(total_size);
+        dynamic_paths_ptrs[path]->reserve(total_size * factor);
         dynamic_paths_ptrs[path]->prepareVariantsForSquashing(source_dynamic_columns, factor);
     }
 }
