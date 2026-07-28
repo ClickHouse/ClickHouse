@@ -1,0 +1,16 @@
+-- two String keys, hash
+7000	23560
+-- two String keys, parallel_hash
+7000	23560
+-- mixed OR disjuncts, duplicates, small output blocks
+20000	1990000
+-- RIGHT JOIN, two String keys, parallel_hash
+6000	1000	18450
+-- Nullable key in composite
+6666	660222
+-- LowCardinality String in composite
+6700	661650
+-- ASOF with mixed equality prefix
+1901	528300
+-- composite IN (Set)
+7000

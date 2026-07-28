@@ -1,0 +1,50 @@
+<test>
+  <!-- Joins and IN whose keys use the generic `hashed` layout (SipHash128 of all key columns per row) -->
+
+  <!-- Two String keys -->
+  <query>
+    SELECT max(length(r.s1))
+    FROM (SELECT toString(number % 50000000) AS s1, toString(number % 50000000) AS s2 FROM numbers_mt(1e7)) AS l
+    INNER JOIN (SELECT toString(number) AS s1, toString(number) AS s2 FROM numbers_mt(5e6)) AS r
+    ON l.s1 = r.s1 AND l.s2 = r.s2
+    FORMAT Null
+  </query>
+
+  <!-- Hash join algorithm -->
+  <query>
+    SELECT max(length(r.s1))
+    FROM (SELECT toString(number % 10000000) AS s1, toString(number % 10000000) AS s2 FROM numbers_mt(1e7)) AS l
+    INNER JOIN (SELECT toString(number) AS s1, toString(number) AS s2 FROM numbers_mt(1e6)) AS r
+    ON l.s1 = r.s1 AND l.s2 = r.s2
+    FORMAT Null SETTINGS join_algorithm = 'hash'
+  </query>
+
+  <!-- Five UInt64 keys -->
+  <query>
+    SELECT max(r.k1)
+    FROM (SELECT number % 50000000 AS k1, number % 50000000 + 1 AS k2, number % 50000000 + 2 AS k3,
+                 number % 50000000 + 3 AS k4, number % 50000000 + 4 AS k5 FROM numbers_mt(1e7)) AS l
+    INNER JOIN (SELECT number AS k1, number + 1 AS k2, number + 2 AS k3,
+                       number + 3 AS k4, number + 4 AS k5 FROM numbers_mt(5e6)) AS r
+    ON l.k1 = r.k1 AND l.k2 = r.k2 AND l.k3 = r.k3 AND l.k4 = r.k4 AND l.k5 = r.k5
+    FORMAT Null
+  </query>
+
+  <!-- Mixed key kinds in OR clauses -->
+  <query>
+    SELECT max(r.i)
+    FROM (SELECT number % 10000000 AS i, toString(number % 10000000) AS s FROM numbers_mt(1e7)) AS l
+    INNER JOIN (SELECT number AS i, toString(number) AS s FROM numbers_mt(1e6)) AS r
+    ON l.i = r.i OR l.s = r.s
+    FORMAT Null
+  </query>
+
+  <!-- Composite-key IN -->
+  <query>
+    SELECT count()
+    FROM numbers_mt(1e7)
+    WHERE (number % 50000000, toString(number % 50000000)) IN
+          (SELECT number, toString(number) FROM numbers_mt(5e6))
+    FORMAT Null
+  </query>
+</test>
