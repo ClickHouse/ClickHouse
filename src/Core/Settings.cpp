@@ -6482,11 +6482,13 @@ Possible values:
 )", 0) \
     DECLARE(Bool, query_plan_read_in_order_through_join, true, "Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.", 0) \
     DECLARE(Bool, query_plan_read_in_order_through_spilling_join, true, R"(
-Allow [`query_plan_read_in_order_through_join`](#query_plan_read_in_order_through_join) (and the `ORDER BY ... LIMIT` through `JOIN` optimization) to also apply to a hash join that has an automatic spill-to-disk threshold configured with [`max_bytes_before_external_join`](#max_bytes_before_external_join) or [`max_bytes_ratio_before_external_join`](#max_bytes_ratio_before_external_join).
+Allow [`query_plan_read_in_order_through_join`](#query_plan_read_in_order_through_join) to also apply to a hash join that has an automatic spill-to-disk threshold configured with [`max_bytes_before_external_join`](#max_bytes_before_external_join) or [`max_bytes_ratio_before_external_join`](#max_bytes_ratio_before_external_join).
 
 Such a join can only promise to preserve the order of the left table if it never spills, because spilling scatters rows into buckets by hash. When the optimization applies, the join is therefore kept in memory and the spill threshold no longer triggers: the right-side table is bounded by the memory tracker instead, as if no automatic spilling were configured.
 
-Set to `0` to keep the conservative behavior of never propagating reading in order through a join that may spill. Queries that rely on spilling to stay within the memory limit, and that would otherwise become eligible for these optimizations, keep working as before.
+Set to `0` to keep the conservative behavior of never propagating reading in order through a join that may spill. Queries that rely on spilling to stay within the memory limit, and that would otherwise become eligible for the optimization, keep working as before.
+
+This setting controls only the propagation of reading in order through the join. It does not gate the separate `ORDER BY ... LIMIT` through `JOIN` optimization, which pushes a `Sort` and a `Limit` down to the preserved side of the join and never relies on the join preserving any order; that one applies to spill-capable joins regardless of this setting.
 )", 0) \
     DECLARE(Bool, query_plan_aggregation_in_order, true, R"(
 Toggles the aggregation in-order query-plan-level optimization.
