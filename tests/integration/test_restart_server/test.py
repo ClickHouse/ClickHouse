@@ -35,3 +35,16 @@ def test_flushes_async_insert_queue():
     )
     node.restart_clickhouse()
     assert node.query("SELECT * FROM flush_test") == "world\t23456\n"
+
+
+def test_server_startup_notify_socket_exception():
+    # Regression test.
+    # Make sure after an exception is thrown from systemdNotify during startup
+    # the server does not segfault on further queries.
+    node.stop_clickhouse()
+    node.start_clickhouse(environment={"NOTIFY_SOCKET": "bad"}, wait_start=False)
+
+    node.wait_for_log_line("Shut down storages", timeout=180, look_behind_lines=1)
+    assert "Connection refused" in node.query_and_get_error("SELECT 1")
+
+    node.start_clickhouse()

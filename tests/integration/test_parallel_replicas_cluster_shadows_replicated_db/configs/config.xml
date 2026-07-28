@@ -1,0 +1,29 @@
+<clickhouse>
+    <logger>
+        <level>trace</level>
+    </logger>
+    <!--
+        A configured cluster that deliberately shares its name with the `Replicated` database created by the
+        test. `Context::getCluster` resolves this configured cluster before the same-named database, so it is
+        this cluster (not the database's own cluster) that ends up driving parallel replicas.
+    -->
+    <remote_servers>
+        <shadow_db>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </shadow_db>
+    </remote_servers>
+</clickhouse>

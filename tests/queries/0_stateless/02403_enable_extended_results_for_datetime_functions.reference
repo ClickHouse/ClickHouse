@@ -92,5 +92,5 @@ toStartOfFifteenMinutes;toDateTime64;false	2056-03-09 16:43:16
 type;toStartOfFifteenMinutes;toDateTime64;false	DateTime(\'UTC\')
 timeSlot;toDateTime64;false	2056-03-09 16:58:16
 type;timeSlot;toDateTime64;false	DateTime(\'UTC\')
-toStartOfDay;toDate32;false	2056-03-09 06:28:16
+toStartOfDay;toDate32;false	1970-01-01 00:00:00
 type;toStartOfDay;toDate32;false	DateTime(\'UTC\')
