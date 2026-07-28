@@ -2151,10 +2151,17 @@ class TestCase:
             # If --database is not specified, we will create temporary database with
             # unique name and we will recreate and drop it for each test
             def random_str(length=8):
-                alphabet = string.ascii_lowercase + string.digits
+                # Alternate letters and digits so the name never contains two consecutive
+                # characters of the same class - hence no English word (or digit run) can
+                # ever appear in it. The name is embedded into DDL, paths and table names,
+                # and tests assert substring absence over those (e.g. LIKE '%auto%');
+                # a fully random name produces such words once in ~340k runs (seen in CI:
+                # test_q2autogn). 26^4 * 10^4 ~ 4.6e9 names keep collisions negligible.
                 # NOTE: it is important not to use default random generator, since it shares state.
+                rng = random.SystemRandom()
                 return "".join(
-                    random.SystemRandom().choice(alphabet) for _ in range(length)
+                    rng.choice(string.ascii_lowercase if i % 2 == 0 else string.digits)
+                    for i in range(length)
                 )
 
             database = f"test_{random_str()}"
