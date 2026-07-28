@@ -1,4 +1,5 @@
 #include <optional>
+#include <unordered_map>
 #include <Core/Settings.h>
 #include <IO/NullWriteBuffer.h>
 #include <Poco/Util/Application.h>
@@ -1111,12 +1112,17 @@ void Aggregator::executeImpl(
 }
 
 template <typename Method>
-void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, Arena & pool, std::vector<AggregateDataPtr> * destroyed_states) const
+void NO_INLINE Aggregator::trimHeapAndPruneHashTable(
+    Method & method, Arena & pool, std::vector<DestroyedState> * destroyed_states, size_t current_row) const
 {
     using DataType = typename Method::Data;
     using KeyType = typename Method::Key;
 
-    if constexpr (!requires(DataType d, KeyType k) { d.erase(k); } || Method::low_cardinality_optimization)
+    /// Skip-only trim: shrink the heap, leave the hash table alone. Correctness never depends on
+    /// pruning — the sort above the aggregation discards any group an eviction left incomplete —
+    /// so this only forfeits the memory win. `FixedHashTable` methods (`UInt8`/`UInt16` keys) land
+    /// here and lose nothing: they are direct-addressed arrays bounded at 256/65536 slots.
+    if constexpr (!requires(DataType d, KeyType k) { d.erase(k); })
     {
         ProfileEvents::increment(ProfileEvents::AggregationTopKKeysEvicted, method.top_k_heap.trimAndCompact([](size_t) {}));
     }
@@ -1130,7 +1136,7 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, Arena & po
         {
             if (!mapped)
                 return;
-            destroyed_states->push_back(mapped);
+            destroyed_states->push_back({.slot = mapped, .row = current_row});
             for (size_t j = 0; j < aggregate_functions.size(); ++j)
                 aggregate_functions[j]->destroy(mapped + offsets_of_aggregate_states[j]);
             /// Arena allocations are not reclaimable; reuse the slot instead.
@@ -1395,8 +1401,11 @@ void NO_INLINE Aggregator::executeImplBatch(
                 {
                     if (method.top_k_heap.needsTrim())
                     {
-                        trimHeapAndPruneHashTable(method, *aggregates_pool, nullptr);
-                        /// Boundary moved / keys erased — see the general path below.
+                        /// No `destroyed_states`: the count lives inline in the mapped value, so
+                        /// there is nothing to destroy or recycle and no `places` array to fix up.
+                        trimHeapAndPruneHashTable(method, *aggregates_pool, nullptr, i);
+                        /// Boundary moved / keys erased / state caches stale — see the general path
+                        /// below for why `resetCache` is mandatory rather than an optimization.
                         skip_bitmap = nullptr;
                         state.resetCache();
                     }
@@ -1452,17 +1461,15 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     state.resetCache();
 
-    [[maybe_unused]] std::vector<AggregateDataPtr> destroyed_states;
+    [[maybe_unused]] std::vector<DestroyedState> destroyed_states;
 
     /// For all rows.
     if (!no_more_keys)
     {
         [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
-        [[maybe_unused]] size_t reusable_free_states = 0;
         if constexpr (top_k)
         {
             destroyed_states.clear();
-            reusable_free_states = method.top_k_heap.free_states.size();
             if (method.top_k_heap.size() >= params.top_k->keys)
                 skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, key_start, key_end);
         }
@@ -1513,12 +1520,14 @@ void NO_INLINE Aggregator::executeImplBatch(
 
                 if constexpr (top_k)
                 {
+                    /// Slots reclaimed by a trim are reusable immediately, including within this
+                    /// same batch: the `places` fixup below is row-aware, so an entry written
+                    /// before the slot was destroyed is dropped while one written after it was
+                    /// handed to this new key is kept.
                     auto & free_states = method.top_k_heap.free_states;
-                    if (reusable_free_states > 0)
+                    if (!free_states.empty())
                     {
-                        --reusable_free_states;
-                        aggregate_data = free_states[reusable_free_states];
-                        free_states[reusable_free_states] = free_states.back();
+                        aggregate_data = free_states.back();
                         free_states.pop_back();
                     }
                 }
@@ -1552,9 +1561,15 @@ void NO_INLINE Aggregator::executeImplBatch(
             {
                 if (method.top_k_heap.needsTrim())
                 {
-                    trimHeapAndPruneHashTable(method, *aggregates_pool, &destroyed_states);
+                    trimHeapAndPruneHashTable(method, *aggregates_pool, &destroyed_states, i);
 
+                    /// The trim moved the eviction boundary, so the precomputed bitmap is stale.
                     skip_bitmap = nullptr;
+                    /// Mandatory, not an optimization: the trim erased keys and destroyed their
+                    /// aggregate states, and the state's caches may still refer to both. For
+                    /// `LowCardinality` those are the per-dictionary-index `visit_cache` /
+                    /// `mapped_cache`, so erasing keys under a live state is only safe as long as
+                    /// this call stays here.
                     state.resetCache();
                 }
             }
@@ -1568,10 +1583,25 @@ void NO_INLINE Aggregator::executeImplBatch(
         {
             if (!destroyed_states.empty())
             {
-                std::unordered_set<AggregateDataPtr> destroyed_set(destroyed_states.begin(), destroyed_states.end());
+                /// A slot destroyed while processing row `r` must not receive the rows of the
+                /// evicted group, which are exactly the entries at rows `<= r`; entries at later
+                /// rows were written after the slot was handed to a new key and belong to that
+                /// key. So store the exclusive bound `r + 1`, and keep the largest one when the
+                /// same slot is evicted more than once in a batch (destroy, re-issue, destroy).
+                std::unordered_map<AggregateDataPtr, size_t> destroyed_before;
+                destroyed_before.reserve(destroyed_states.size());
+                for (const auto & destroyed : destroyed_states)
+                {
+                    auto & bound = destroyed_before[destroyed.slot];
+                    bound = std::max(bound, destroyed.row + 1);
+                }
+
                 for (size_t j = key_start; j < key_end; ++j)
                 {
-                    if (places[j] && destroyed_set.contains(places[j]))
+                    if (!places[j])
+                        continue;
+                    auto it = destroyed_before.find(places[j]);
+                    if (it != destroyed_before.end() && j < it->second)
                         places[j] = nullptr;
                 }
             }
