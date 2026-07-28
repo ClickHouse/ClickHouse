@@ -69,10 +69,13 @@ protected:
     /// (single- and multi-buffer) so their granule loops stay instrumented identically. Every argument
     /// except `res_columns` is optional (pass `nullptr` when a reader does not keep that cache alive at
     /// the check point); the per-reader deserialize-state maps are always included. A no-op in release.
+    /// The read-time caches of already deserialized columns are named `read_columns_cache*` here so
+    /// they do not shadow the `columns_cache` member of `IMergeTreeReader`, which is the unrelated
+    /// server-wide cache of deserialized columns.
     void validateColumnsOwnership(
         const Columns & res_columns,
-        const std::unordered_map<String, ColumnPtr> * columns_cache,
-        const std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns,
+        const std::unordered_map<String, ColumnPtr> * read_columns_cache,
+        const std::unordered_map<String, ColumnPtr> * read_columns_cache_for_subcolumns,
         const ISerialization::SubstreamsCache * substreams_cache,
         const std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> * deserialize_states_caches) const;
 

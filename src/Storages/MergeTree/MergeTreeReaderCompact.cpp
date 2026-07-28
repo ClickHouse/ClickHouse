@@ -541,8 +541,8 @@ bool MergeTreeReaderCompact::needSkipStream(size_t column_pos, const ISerializat
 
 void MergeTreeReaderCompact::validateColumnsOwnership(
     [[maybe_unused]] const Columns & res_columns,
-    [[maybe_unused]] const std::unordered_map<String, ColumnPtr> * columns_cache,
-    [[maybe_unused]] const std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns,
+    [[maybe_unused]] const std::unordered_map<String, ColumnPtr> * read_columns_cache,
+    [[maybe_unused]] const std::unordered_map<String, ColumnPtr> * read_columns_cache_for_subcolumns,
     [[maybe_unused]] const ISerialization::SubstreamsCache * substreams_cache,
     [[maybe_unused]] const std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> * deserialize_states_caches) const
 {
@@ -550,11 +550,11 @@ void MergeTreeReaderCompact::validateColumnsOwnership(
     ColumnsOwnershipValidator ownership_validator;
     if (substreams_cache)
         ownership_validator.add(*substreams_cache);
-    if (columns_cache)
-        for (const auto & [_, cached_column] : *columns_cache)
+    if (read_columns_cache)
+        for (const auto & [_, cached_column] : *read_columns_cache)
             ownership_validator.add(cached_column);
-    if (columns_cache_for_subcolumns)
-        for (const auto & [_, cached_column] : *columns_cache_for_subcolumns)
+    if (read_columns_cache_for_subcolumns)
+        for (const auto & [_, cached_column] : *read_columns_cache_for_subcolumns)
             ownership_validator.add(cached_column);
     if (deserialize_states_caches)
         for (const auto & [_, states] : *deserialize_states_caches)
