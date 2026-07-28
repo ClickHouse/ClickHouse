@@ -26,9 +26,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 このオールインワンイメージでは、1 つのコマンドでスタック全体を起動できるため、テスト、検証、または手早いローカルデプロイに最適です。
 
 <Steps>
-  <Step>
-    ## dockerでスタックをデプロイ
-
+  <Step title="dockerでスタックをデプロイ" id="deploy-stack-with-docker">
     以下のコマンドは、OpenTelemetry collector (ポート 4317 と 4318) 、HyperDX UI (ポート 8080) 、および ClickHouse (ポート 8123) を起動します。
 
     ```shell
@@ -64,9 +62,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     </Tip>
   </Step>
 
-  <Step>
-    ## ClickStack UI に移動する
-
+  <Step title="ClickStack UI に移動する" id="navigate-to-hyperdx-ui">
     [http://localhost:8080](http://localhost:8080) にアクセスして、ClickStack UI (HyperDX) を開きます。
 
     複雑さの要件を満たすユーザー名とパスワードを指定して、ユーザーを作成します。
@@ -76,9 +72,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     HyperDX は自動的にローカルクラスターに接続し、logs、traces、metrics、sessions 用のデータソースを作成するため、すぐに使い始められます。
   </Step>
 
-  <Step>
-    ## 製品を試す
-
+  <Step title="製品を試す" id="explore-the-product">
     スタックをデプロイしたら、以下のデータセットのいずれかを試してみてください。
 
     ローカルクラスターを引き続き使用する場合:
@@ -114,16 +108,14 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   ### ホステッド版
 </div>
 
-[play-clickstack.clickhouse.com](https://play-clickstack.clickstack.com) では、ローカルモードで動作する ClickStack のホステッド版を利用できます。
+[play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) では、ローカルモードで動作する ClickStack のホステッド版を利用できます。
 
 <div id="self-hosted-version">
   ### セルフホスト版
 </div>
 
 <Steps>
-  <Step>
-    ### Docker で実行する
-
+  <Step title="Docker で実行する" id="run-local-with-docker">
     セルフホストのローカルモード用イメージには、OpenTelemetry Collector、ClickStack UI、ClickHouse server があらかじめ設定された状態で含まれています。これにより、アプリケーションからのテレメトリーデータを簡単に取り込み、最小限の追加セットアップで可視化できます。セルフホスト版を使い始めるには、必要なポートを公開して Docker コンテナーを実行するだけです。
 
     ```shell
@@ -133,9 +125,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     &quot;All in one&quot; イメージとは異なり、**ローカルモードには認証が含まれていないため**、ユーザーの作成は求められません。
   </Step>
 
-  <Step>
-    ### 接続認証情報を入力する
-
+  <Step title="接続認証情報を入力する" id="complete-connection-credentials">
     独自の**外部 ClickHouse クラスター**に接続するには、接続認証情報を手動で入力できます。
 
     また、製品を手早く試したい場合は、**Connect to Demo Server** をクリックして、あらかじめ読み込まれたデータセットにアクセスし、セットアップ不要で ClickStack を試すこともできます。
