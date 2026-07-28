@@ -92,14 +92,20 @@ ParallelReadingExtension::ParallelReadingExtension(
         std::move(callback_), ProfileEvents::ParallelReplicasReadRequestMicroseconds, "ParallelReplicasReadRequest"};
 }
 
-void ParallelReadingExtension::sendInitialRequest(
+std::optional<InitialAllRangesAnnouncementResponse> ParallelReadingExtension::sendInitialRequest(
     CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request) const
 {
-    all_callback(InitialAllRangesAnnouncement{
+    return all_callback(InitialAllRangesAnnouncement{
         mode, std::move(description), number_of_current_replica, mark_segment_size, min_marks_per_request, stream_id});
 }
 
 std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadRequest(
+    CoordinationMode mode, size_t min_marks_per_request) const
+{
+    return callback(ParallelReadRequest{mode, number_of_current_replica, min_marks_per_request, {}, stream_id});
+}
+
+std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadInOrderRequest(
     CoordinationMode mode, size_t min_marks_per_request, const RangesInDataPartsDescription & description) const
 {
     return callback(ParallelReadRequest{mode, number_of_current_replica, min_marks_per_request, description, stream_id});
@@ -580,20 +586,21 @@ void MergeTreeSelectProcessor::logPredicateStatistics() const
 
         Float64 step_selectivity = static_cast<Float64>(passed_rows) / static_cast<Float64>(input_rows);
 
-        PredicateStatisticsLogElement elem;
-        elem.event_date = today;
-        elem.event_time = now;
-        elem.database = storage_id.database_name;
-        elem.table = storage_id.table_name;
-        elem.query_id = query_id;
-        elem.predicate_expression = step->actions->getActionsDAG().dumpDAG();
-        elem.input_rows = input_rows;
-        elem.passed_rows = passed_rows;
-        elem.filter_selectivity = step_selectivity;
-        elem.total_input_rows = whole_input;
-        elem.total_passed_rows = whole_passed;
-        elem.total_selectivity = whole_selectivity;
-        predicate_stats_log->add(std::move(elem));
+        predicate_stats_log->add([&](PredicateStatisticsLogElement & element)
+        {
+            element.event_date = today;
+            element.event_time = now;
+            element.database = storage_id.database_name;
+            element.table = storage_id.table_name;
+            element.query_id = query_id;
+            element.predicate_expression = step->actions->getActionsDAG().dumpDAG();
+            element.input_rows = input_rows;
+            element.passed_rows = passed_rows;
+            element.filter_selectivity = step_selectivity;
+            element.total_input_rows = whole_input;
+            element.total_passed_rows = whole_passed;
+            element.total_selectivity = whole_selectivity;
+        });
     }
 }
 

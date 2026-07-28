@@ -1,0 +1,354 @@
+---
+slug: /sql-reference/functions/geo/s2
+sidebarTitle: 'S2 ジオメトリ'
+title: 'S2 Index を扱う関数'
+description: 'S2 indexes を扱う関数のドキュメント'
+doc_type: 'reference'
+---
+
+<div id="s2index">
+  ## S2Index
+</div>
+
+[S2](https://s2geometry.io/) は、すべての地理データを球面上 (地球儀のようなもの) で表現する地理空間インデックスシステムです。
+
+S2 ライブラリでは、点は S2 Index として表現されます。これは、従来の (緯度, 経度) の組とは異なり、単位球の表面上の点を内部的に符号化した特定の数値です。 (緯度, 経度) 形式で指定された点の S2 ポイントインデックスを取得するには、[geoToS2](#geotos2) 関数を使用します。また、指定した S2 ポイントインデックスに対応する地理座標を取得するには、[s2ToGeo](#s2togeo) 関数を使用できます。
+
+<div id="geotos2">
+  ## geoToS2
+</div>
+
+指定された座標 `(longitude, latitude)` に対応する [S2](#s2index) の点索引を返します。
+
+**構文**
+
+```sql
+geoToS2(lon, lat)
+```
+
+**引数**
+
+* `lon` — 経度。[Float64](/ja/reference/data-types/float)
+* `lat` — 緯度。[Float64](/ja/reference/data-types/float)
+
+**戻り値**
+
+* S2 ポイントインデックス。[UInt64](/ja/reference/data-types/int-uint)
+
+**例**
+
+```sql title="Query"
+SELECT geoToS2(37.79506683, 55.71290588) AS s2Index;
+```
+
+```text title="Response"
+┌─────────────s2Index─┐
+│ 4704772434919038107 │
+└─────────────────────┘
+```
+
+<div id="s2togeo">
+  ## s2ToGeo
+</div>
+
+指定された [S2](#s2index) のポイントインデックスに対応する Geo 座標 `(longitude, latitude)` を返します。
+
+**構文**
+
+```sql
+s2ToGeo(s2index)
+```
+
+**引数**
+
+* `s2index` — S2 Index。[UInt64](/ja/reference/data-types/int-uint)。
+
+**戻り値**
+
+* 2 つの値からなる[タプル](/ja/reference/data-types/tuple)。
+  * `lon`。[Float64](/ja/reference/data-types/float)。
+  * `lat`。[Float64](/ja/reference/data-types/float)。
+
+**例**
+
+```sql title="Query"
+SELECT s2ToGeo(4704772434919038107) AS s2Coodrinates;
+```
+
+```text title="Response"
+┌─s2Coodrinates────────────────────────┐
+│ (37.79506681471008,55.7129059052841) │
+└──────────────────────────────────────┘
+```
+
+<div id="s2getneighbors">
+  ## s2GetNeighbors
+</div>
+
+指定された[S2](#s2index)に対応する、隣接する S2 セルのインデックスを返します。S2 システムの各セルは、4 本の測地線で囲まれた四辺形です。そのため、各セルには 4 つの隣接セルがあります。
+
+**構文**
+
+```sql
+s2GetNeighbors(s2index)
+```
+
+**引数**
+
+* `s2index` — S2 Index。[UInt64](/ja/reference/data-types/int-uint)。
+
+**戻り値**
+
+* 4つの隣接する索引からなる配列：`array[s2index1, s2index3, s2index2, s2index4]`。[Array](/ja/reference/data-types/array)([UInt64](/ja/reference/data-types/int-uint))。
+
+**例**
+
+```sql title="Query"
+SELECT s2GetNeighbors(5074766849661468672) AS s2Neighbors;
+```
+
+```text title="Response"
+┌─s2Neighbors───────────────────────────────────────────────────────────────────────┐
+│ [5074766987100422144,5074766712222515200,5074767536856236032,5074767261978329088] │
+└───────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="s2cellsintersect">
+  ## s2CellsIntersect
+</div>
+
+指定された 2 つの [S2](#s2index) セルが交差しているかどうかを判定します。
+
+**構文**
+
+```sql
+s2CellsIntersect(s2index1, s2index2)
+```
+
+**引数**
+
+* `siIndex1`, `s2index2` — S2 Index。 [UInt64](/ja/reference/data-types/int-uint).
+
+**戻り値**
+
+* `1` — セルが交差する場合。 [UInt8](/ja/reference/data-types/int-uint).
+* `0` — セルが交差しない場合。 [UInt8](/ja/reference/data-types/int-uint).
+
+**例**
+
+```sql title="Query"
+SELECT s2CellsIntersect(9926595209846587392, 9926594385212866560) AS intersect;
+```
+
+```text title="Response"
+┌─intersect─┐
+│         1 │
+└───────────┘
+```
+
+<div id="s2capcontains">
+  ## s2CapContains
+</div>
+
+球冠が S2 点を含むかどうかを判定します。球冠 は、平面で切り取られた球の一部を表します。球面上の一点と、度単位の半径で定義されます。
+
+**構文**
+
+```sql
+s2CapContains(center, degrees, point)
+```
+
+**引数**
+
+* `center` — 球冠に対応する S2 ポイントインデックス。[UInt64](/ja/reference/data-types/int-uint)
+* `degrees` — 球冠の半径 (度単位) 。[Float64](/ja/reference/data-types/float)
+* `point` — S2 ポイントインデックス。[UInt64](/ja/reference/data-types/int-uint)
+
+**戻り値**
+
+* `1` — 球冠に S2 ポイントインデックスが含まれる場合。[UInt8](/ja/reference/data-types/int-uint)
+* `0` — 球冠に S2 ポイントインデックスが含まれない場合。[UInt8](/ja/reference/data-types/int-uint)
+
+**例**
+
+```sql title="Query"
+SELECT s2CapContains(1157339245694594829, 1.0, 1157347770437378819) AS capContains;
+```
+
+```text title="Response"
+┌─capContains─┐
+│           1 │
+└─────────────┘
+```
+
+<div id="s2capunion">
+  ## s2CapUnion
+</div>
+
+指定した2つの入力 球冠 の両方を含む最小の 球冠 を求めます。球冠 は、平面で切り取られた球面の一部を表します。これは、球面上の点と、度単位の半径によって定義されます。
+
+**構文**
+
+```sql
+s2CapUnion(center1, radius1, center2, radius2)
+```
+
+**引数**
+
+* `center1`, `center2` — 2 つの入力球冠に対応する S2 ポイントインデックス。[UInt64](/ja/reference/data-types/int-uint)。
+* `radius1`, `radius2` — 2 つの入力球冠の半径 (度単位) 。[Float64](/ja/reference/data-types/float)。
+
+**戻り値**
+
+* `center` — 2 つの入力球冠を含む最小の球冠の中心に対応する S2 ポイントインデックス。[UInt64](/ja/reference/data-types/int-uint)。
+* `radius` — 2 つの入力球冠を含む最小の球冠の半径。[Float64](/ja/reference/data-types/float)。
+
+**例**
+
+```sql title="Query"
+SELECT s2CapUnion(3814912406305146967, 1.0, 1157347770437378819, 1.0) AS capUnion;
+```
+
+```text title="Response"
+┌─capUnion───────────────────────────────┐
+│ (4534655147792050737,60.2088283994957) │
+└────────────────────────────────────────┘
+```
+
+<div id="s2rectadd">
+  ## s2RectAdd
+</div>
+
+指定された S2 点を含むように、境界長方形のサイズを拡大します。S2 システムでは、長方形は `S2LatLngRect` と呼ばれる `S2Region` の一種で表され、緯度・経度空間内の長方形を表します。
+
+**構文**
+
+```sql
+s2RectAdd(s2pointLow, s2pointHigh, s2Point)
+```
+
+**引数**
+
+* `s2PointLow` — 長方形に対応する下限の S2 ポイントインデックス。[UInt64](/ja/reference/data-types/int-uint)
+* `s2PointHigh` — 長方形に対応する上限の S2 ポイントインデックス。[UInt64](/ja/reference/data-types/int-uint)
+* `s2Point` — 境界長方形に含まれるように拡張する対象の S2 ポイントインデックス。[UInt64](/ja/reference/data-types/int-uint)
+
+**戻り値**
+
+* `s2PointLow` — 拡張後の長方形に対応する下限の S2 セル ID。[UInt64](/ja/reference/data-types/int-uint)
+* `s2PointHigh` — 拡張後の長方形に対応する上限の S2 セル ID。[UInt64](/ja/reference/data-types/float)
+
+**例**
+
+```sql title="Query"
+SELECT s2RectAdd(5178914411069187297, 5177056748191934217, 5179056748191934217) AS rectAdd;
+```
+
+```text title="Response"
+┌─rectAdd───────────────────────────────────┐
+│ (5179062030687166815,5177056748191934217) │
+└───────────────────────────────────────────┘
+```
+
+<div id="s2rectcontains">
+  ## s2RectContains
+</div>
+
+指定された長方形が S2 点を含むかどうかを判定します。S2 システムでは、長方形は緯度・経度空間内の長方形を表す `S2LatLngRect` と呼ばれる `S2Region` の一種として表現されます。
+
+**構文**
+
+```sql
+s2RectContains(s2PointLow, s2PointHi, s2Point)
+```
+
+**引数**
+
+* `s2PointLow` — 長方形に対応する S2 ポイントインデックスの下限。[UInt64](/ja/reference/data-types/int-uint)
+* `s2PointHigh` — 長方形に対応する S2 ポイントインデックスの上限。[UInt64](/ja/reference/data-types/int-uint)
+* `s2Point` — 対象の S2 ポイントインデックス。[UInt64](/ja/reference/data-types/int-uint)
+
+**戻り値**
+
+* `1` — 長方形が指定された S2 ポイントを含む場合。
+* `0` — 長方形が指定された S2 ポイントを含まない場合。
+
+**例**
+
+```sql title="Query"
+SELECT s2RectContains(5179062030687166815, 5177056748191934217, 5177914411069187297) AS rectContains;
+```
+
+```text title="Response"
+┌─rectContains─┐
+│            0 │
+└──────────────┘
+```
+
+<div id="s2rectunion">
+  ## s2RectUnion
+</div>
+
+この長方形と指定された長方形の和集合を含む最小の長方形を返します。S2 システムでは、長方形は緯度・経度空間内の長方形を表す `S2LatLngRect` という S2Region の一種として表現されます。
+
+**構文**
+
+```sql
+s2RectUnion(s2Rect1PointLow, s2Rect1PointHi, s2Rect2PointLow, s2Rect2PointHi)
+```
+
+**引数**
+
+* `s2Rect1PointLow`, `s2Rect1PointHi` — 1 つ目の長方形に対応する S2 ポイントインデックスの下限値および上限値。[UInt64](/ja/reference/data-types/int-uint)。
+* `s2Rect2PointLow`, `s2Rect2PointHi` — 2 つ目の長方形に対応する S2 ポイントインデックスの下限値および上限値。[UInt64](/ja/reference/data-types/int-uint)。
+
+**戻り値**
+
+* `s2UnionRect2PointLow` — 和集合の長方形に対応する S2 セル ID の下限値。[UInt64](/ja/reference/data-types/int-uint)。
+* `s2UnionRect2PointHi` — 和集合の長方形に対応する S2 セル ID の上限値。[UInt64](/ja/reference/data-types/int-uint)。
+
+**例**
+
+```sql title="Query"
+SELECT s2RectUnion(5178914411069187297, 5177056748191934217, 5179062030687166815, 5177056748191934217) AS rectUnion;
+```
+
+```text title="Response"
+┌─rectUnion─────────────────────────────────┐
+│ (5179062030687166815,5177056748191934217) │
+└───────────────────────────────────────────┘
+```
+
+<div id="s2rectintersection">
+  ## s2RectIntersection
+</div>
+
+この長方形と指定された長方形の共通部分を含む、最小の長方形を返します。S2 システムでは、長方形は `S2LatLngRect` と呼ばれる `S2Region` の一種で表され、緯度・経度空間における長方形を表します。
+
+**構文**
+
+```sql
+s2RectIntersection(s2Rect1PointLow, s2Rect1PointHi, s2Rect2PointLow, s2Rect2PointHi)
+```
+
+**引数**
+
+* `s2Rect1PointLow`, `s2Rect1PointHi` — 1 つ目の長方形に対応する S2 ポイントインデックスの下限値および上限値。[UInt64](/ja/reference/data-types/int-uint)
+* `s2Rect2PointLow`, `s2Rect2PointHi` — 2 つ目の長方形に対応する S2 ポイントインデックスの下限値および上限値。[UInt64](/ja/reference/data-types/int-uint)
+
+**戻り値**
+
+* `s2UnionRect2PointLow` — 指定した長方形どうしの共通部分を含む長方形に対応する S2 セル ID の下限値。[UInt64](/ja/reference/data-types/int-uint)
+* `s2UnionRect2PointHi` — 指定した長方形どうしの共通部分を含む長方形に対応する S2 セル ID の上限値。[UInt64](/ja/reference/data-types/int-uint)
+
+**例**
+
+```sql title="Query"
+SELECT s2RectIntersection(5178914411069187297, 5177056748191934217, 5179062030687166815, 5177056748191934217) AS rectIntersection;
+```
+
+```text title="Response"
+┌─rectIntersection──────────────────────────┐
+│ (5178914411069187297,5177056748191934217) │
+└───────────────────────────────────────────┘
+```
