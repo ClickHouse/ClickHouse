@@ -1,15 +1,21 @@
 #include <Coordination/KeeperCommon.h>
 
+#include <limits>
 #include <string>
 #include <filesystem>
 #include <thread>
 
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/SipHash.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/IDisk.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/CoordinationSettings.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <base/find_symbols.h>
 
 namespace DB
 {
@@ -25,12 +31,27 @@ bool isLocalDisk(const IDisk & disk)
     return dynamic_cast<const DiskLocal *>(&disk) != nullptr;
 }
 
+uint64_t getLogIdxFromSnapshotPath(const std::string & snapshot_path)
+{
+    std::filesystem::path path(snapshot_path);
+    std::string filename = path.stem();
+    std::vector<std::string_view> name_parts;
+    splitInto<'_', '.'>(name_parts, filename);
+    return parse<uint64_t>(name_parts[1]);
+}
+
+std::string getCanonicalSnapshotS3Name(const std::string & snapshot_path)
+{
+    const uint64_t up_to_log_idx = getLogIdxFromSnapshotPath(snapshot_path);
+    return fmt::format("snapshot_{}.bin{}", up_to_log_idx, snapshot_path.ends_with(".zstd") ? ".zstd" : "");
+}
+
 void moveFileBetweenDisks(
     DiskPtr disk_from,
     const std::string & path_from,
     DiskPtr disk_to,
     const std::string & path_to,
-    std::function<void()> before_file_remove_op,
+    std::function<bool()> before_file_remove_op,
     LoggerPtr logger,
     const KeeperContextPtr & keeper_context)
 {
@@ -96,10 +117,124 @@ void moveFileBetweenDisks(
     if (!run_with_retries([&] { disk_to->removeFileIfExists(tmp_file_name); }, "removing temporary file"))
         return;
 
-    if (before_file_remove_op)
-        before_file_remove_op();
+    if (before_file_remove_op && !before_file_remove_op())
+    {
+        LOG_DEBUG(logger, "Move of {} to disk {} was rejected by the caller, keeping the source file", path_from, disk_to->getName());
+        return;
+    }
 
     if (!run_with_retries([&] { disk_from->removeFileIfExists(path_from); }, "removing file from source disk"))
         return;
 }
+
+/// When this function is updated, update KEEPER_CURRENT_DIGEST_VERSION!!
+uint64_t KeeperNodeStats::calculateDigest(std::string_view path, std::string_view data) const
+{
+    /// Must match calculateDigest in KeeperStorage.cpp (KEEPER_CURRENT_DIGEST_VERSION).
+    SipHash hash;
+
+    hash.update(path);
+    if (!data.empty())
+        hash.update(data);
+
+    hash.update(czxid);
+    hash.update(mzxid);
+    hash.update(getCTime());
+    hash.update(mtime);
+    hash.update(version);
+    hash.update(cversion);
+    hash.update(aversion);
+    hash.update(getEphemeralOwner()); // covers EPHEMERAL and CONTAINER flags
+    hash.update(getNumChildren());
+    hash.update(pzxid);
+
+    hash.update(isTTL());
+    if (isTTL())
+        hash.update(getTTL());
+
+    /// TODO: Hash seq num (or replace getEphemeralOwner(), getCTime(), getTTL() above with plain ephemeral_or_seq_num_or_ttl and ctime_and_flags).
+
+    uint64_t digest = hash.get64();
+
+    /// 0 means no calculated digest, it's not a valid digest value.
+    if (digest == 0)
+        digest = 1;
+
+    return digest;
+}
+
+void KeeperNodeStats::setResponseStat(Coordination::Stat & response_stat) const
+{
+    response_stat.czxid = czxid;
+    response_stat.mzxid = mzxid;
+    response_stat.ctime = getCTime();
+    response_stat.mtime = mtime;
+    response_stat.version = version;
+    response_stat.cversion = cversion;
+    response_stat.aversion = aversion;
+    response_stat.ephemeralOwner = getEphemeralOwner();
+    response_stat.dataLength = static_cast<int32_t>(data_size);
+    response_stat.numChildren = getNumChildren();
+    response_stat.pzxid = pzxid;
+}
+
+void KeeperNodeStats::makeEphemeral(int64_t ephemeral_owner)
+{
+    chassert(ephemeral_owner != 0 && ephemeral_owner != CONTAINER_EPHEMERAL_OWNER);
+    chassert(!isTTL() && !isContainer() && num_children == 0);
+    ctime_and_flags |= EPHEMERAL;
+    ephemeral_or_seq_num_or_ttl = ephemeral_owner;
+}
+
+void KeeperNodeStats::makeTTL(int64_t ttl)
+{
+    chassert(!isEphemeral() && !isContainer() && num_children == 0);
+    ctime_and_flags |= TTL;
+    ephemeral_or_seq_num_or_ttl = ttl;
+}
+
+void KeeperNodeStats::makeContainer()
+{
+    chassert(!isEphemeral() && !isTTL());
+    ctime_and_flags |= CONTAINER;
+}
+
+void KeeperNodeStats::setNumChildren(uint32_t new_num_children)
+{
+    chassert(!isEphemeral() && !isTTL());
+    chassert(new_num_children <= uint32_t(std::numeric_limits<int32_t>::max()));
+    num_children = static_cast<int32_t>(new_num_children);
+}
+
+void KeeperNodeStats::setCTime(int64_t ctime)
+{
+    /// Check that ctime fits in 64 - NUM_FLAGS bits.
+    chassert((int64_t(uint64_t(ctime) << NUM_FLAGS) >> NUM_FLAGS) == ctime);
+    ctime_and_flags = (ctime_and_flags & FLAGS_MASK) | (uint64_t(ctime) & ~FLAGS_MASK);
+}
+
+void KeeperNodeStats::increaseNumChildren()
+{
+    chassert(!isEphemeral() && !isTTL());
+    ++num_children;
+}
+
+void KeeperNodeStats::decreaseNumChildren()
+{
+    chassert(num_children > 0);
+    --num_children;
+}
+
+void KeeperNodeStats::setSeqNum(int64_t seq_num)
+{
+    chassert(!isEphemeral() && !isTTL());
+    ephemeral_or_seq_num_or_ttl = seq_num;
+}
+
+void KeeperNodeStats::increaseSeqNum()
+{
+    chassert(!isEphemeral() && !isTTL());
+    ++ephemeral_or_seq_num_or_ttl;
+}
+
 }

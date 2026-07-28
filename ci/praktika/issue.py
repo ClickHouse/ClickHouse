@@ -559,10 +559,10 @@ if __name__ == "__main__":
     Path(temp_path).mkdir(exist_ok=True)
 
     def collect_and_upload():
-        print(f"Fetching active testing issues...")
+        print("Fetching active testing issues...")
         c = TestCaseIssueCatalog.from_gh()
         c.dump()
-        print(f"Uploading to S3...")
+        print("Uploading to S3...")
         url = c.to_s3()
         print(f"Catalog uploaded to S3: {url}")
         return bool(url)
