@@ -82,7 +82,7 @@ If no values are passed to the function (when using `quantileTimingIf`), [NaN](/
 quantileTiming(level)(expr)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"expr", "Expression over a column values returning a Float*-type number. If negative values are passed to the function, the behavior is undefined. If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.", {"Float*"}}
+        {"expr", "Expression over the column values resulting in numeric data types, `Date` or `DateTime`. If negative values are passed to the function, the behavior is undefined. If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.", {"(U)Int*", "Float*", "Date", "DateTime"}}
     };
     FunctionDocumentation::Parameters parameters = {
         {"level", "Optional. Level of quantile. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates median.", {"Float*"}}
@@ -134,7 +134,7 @@ For calculating page loading time quantiles, this function is more effective and
 quantilesTiming(level1, level2, ...)(expr)
     )";
     FunctionDocumentation::Arguments arguments_quantiles = {
-        {"expr", "Expression over a column values returning a Float*-type number. If negative values are passed to the function, the behavior is undefined. If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.", {"Float*"}}
+        {"expr", "Expression over the column values resulting in numeric data types, `Date` or `DateTime`. If negative values are passed to the function, the behavior is undefined. If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.", {"(U)Int*", "Float*", "Date", "DateTime"}}
     };
     FunctionDocumentation::Parameters parameters_quantiles = {
         {"level", "Levels of quantiles. One or more constant floating-point numbers from 0 to 1. We recommend using `level` values in the range of `[0.01, 0.99]`.", {"Float*"}}
@@ -144,6 +144,9 @@ quantilesTiming(level1, level2, ...)(expr)
     {
         "Computing multiple timing quantiles",
         R"(
+CREATE TABLE t (response_time UInt32) ENGINE = Memory;
+INSERT INTO t VALUES (72), (112), (126), (145), (104), (242), (313), (168), (108);
+
 SELECT quantilesTiming(0.25, 0.5, 0.75)(response_time) FROM t;
         )",
         R"(

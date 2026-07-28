@@ -1,0 +1,64 @@
+---
+noindex: true
+title: "Run Preflight Checks"
+sidebarTitle: "Run preflight checks"
+description: "To ensure the readiness of your environment or do pre-upgrade validation, we provide preflight checks."
+---
+
+To ensure the readiness of your environment or do pre-upgrade validation, we provide preflight checks. The Preflight checks levarage [Troubleshoot](https://troubleshoot.sh/), a Kubernetes plugin for cluster diagnostics. No data will be exported during the process.
+
+The following how-to guide explains how to run the preflight checks.
+
+## Install the Plugin
+
+``` bash
+kubectl krew install preflight
+```
+
+Or refer to the [Troubleshoot documentation](https://troubleshoot.sh/docs/) for other installation options.
+
+## Copy the Preflight Helm Chart
+
+Add the preflight chart to your ECR copy step:
+
+``` text
+skopeo copy --all docker://$SOURCE_ECR_REPO/helm/preflight-check:<<PREFLIGHT_CHART_TAG>> docker://$TARGET_ECR_REPO/helm/preflight-check:<<PREFLIGHT_CHART_TAG>>
+```
+
+## Run the Checks
+
+Use `helm template` to render the preflight spec, then pipe it to `kubectl preflight`:
+
+``` ini
+ECR_HOST=0000000000.dkr.ecr.us-west-2.amazonaws.com
+CHART_VERSION=<<PREFLIGHT_CHART_TAG>>
+CLUSTER_NAME=default-xx-01
+
+helm template clickhouse-preflight \
+    oci://$ECR_HOST/helm/preflight-check \
+    --version=$CHART_VERSION \
+    --set preflight.clickhouseClusterName=$CLUSTER_NAME | \
+kubectl preflight -
+```
+
+This validates node labels, StorageClass configuration, and other requirements. It also checks upgrade readiness of an existing ClickHouse cluster and reports deprecated feature flags or new requirements.
+
+The output shows each check and its status. If a check fails, it includes recommendations on how to fix the issue.
+
+To validate against a custom StorageClass:
+
+``` text
+    --set preflight.checks.prerequisites.storageClassName=<your-storage-class>
+```
+
+### Required Permissions
+
+The user or service account executing `kubectl preflight` needs read access to the following:
+
+| Scope | Resources |
+|----|----|
+| Cluster-wide | `nodes`, `namespaces`, `persistentvolumes`, `storageclasses`, `customresourcedefinitions` |
+| Operator namespace (`clickhouse-operator-system`) | `deployments`, `replicasets`, `pods`, `services`, `configmaps`, `events` |
+| Cluster namespace (`ns-<cluster-name>`) | `statefulsets`, `pods`, `persistentvolumeclaims`, `services`, `configmaps`, `events` |
+
+A principal with the built-in `view` ClusterRole plus `view` access to the relevant namespaces is sufficient.

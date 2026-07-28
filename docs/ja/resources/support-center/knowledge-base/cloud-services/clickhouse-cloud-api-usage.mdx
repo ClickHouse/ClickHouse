@@ -1,0 +1,67 @@
+---
+title: API と cURL による ClickHouse Cloud サービスの管理
+description: API エンドポイントと cURL コマンドを使用して、ClickHouse Cloud サービスを起動、停止、再開する方法を学びます。
+date: 2023-06-07
+tags: ['Cloud の管理', 'ツールとユーティリティ']
+keywords: ['cURL', 'Cloud の管理', 'ClickHouse API']
+---
+
+<div id="how-to-start-stop-and-resume-a-cloud-service-using-the-clickhouse-api-and-curl">
+  ## ClickHouse API と cURL を使用して Cloud サービスを開始、停止、再開する方法
+</div>
+
+<div id="question">
+  ## 質問
+</div>
+
+ClickHouse Cloud サービスを API エンドポイントを使って起動、停止、再開するにはどうすればよいですか？
+
+<div id="answer">
+  ## 回答
+</div>
+
+1. アイドル状態の Cloud サービスを起動/再開するには、インスタンスに ping を送信できます。
+
+```bash
+curl -X GET https://abc123.us-west-2.aws.clickhouse.cloud:8443/ping
+```
+
+2. Cloud サービスを停止するには、`/state` エンドポイントで `stop` コマンドを使用します。構文は次のとおりです。
+
+```bash
+curl -X PATCH https://api.clickhouse.cloud/v1/organizations/<org_uuid>/services/<service_uuid>/state -u <key_id>:<key_secret> -H "Content-Type: application/json" -d ''{"command": "<stop|start>"}''
+```
+
+たとえば、次のコマンドで `2e2124ca-c5ac-459d-a6f2-abc123549d2a` サービスを停止できます。
+
+```bash
+curl -X PATCH https://api.clickhouse.cloud/v1/organizations/123abcd0-e9b5-4f55-9e42-0fb04392445c/services/2e2124ca-c5ac-459d-a6f2-abc123549d2a/state -u abc123:ABC123 -H "Content-Type: application/json" -d '{"command": "stop"}'
+```
+
+出力は以下のようになります。
+
+```response
+{"result":{"id":"2e2124ca-c5ac-459d-a6f2-abc123549d2a","name":"mars-s3","provider":"aws","regionId":"us-west-2","state":"stopping","endpoints":[{"protocol":"nativesecure","host":"abc123.us-west-2.aws.clickhouse.cloud","port":9440},{"protocol":"https","host":"abc123ntrb.us-west-2.aws.clickhouse.cloud","port":8443}],"tier":"production","idleScaling":true,"idleTimeoutMinutes":5,"minTotalMemoryGb":24,"maxTotalMemoryGb":48,"ipAccessList":[{"source":"[0.0.0.0/0](http://0.0.0.0/0)","description":"Anywhere"}],"createdAt":"2022-10-21T18:46:31Z"},"status":200}%
+```
+
+3. サービスを再度起動するには、`start` コマンドを使用します。
+
+```bash
+curl -X PATCH https://api.clickhouse.cloud/v1/organizations/123abcd0-e9b5-4f55-9e42-0fb04392445c/services/2e2124ca-c5ac-459d-a6f2-abc123549d2a/state -u abc123:ABC123 -H "Content-Type: application/json" -d '{"command": "start"}'
+```
+
+<Note>
+  サービスが取りうる状態は次のとおりです。
+
+  ```
+  "state":"stopping"
+  "state":"stopped"
+  "state":"starting"
+  "state":"running"
+  "state":"idle"
+  ```
+</Note>
+
+<Note>
+  **&quot;idle&quot;** 状態の Cloud サービスは起動済みと見なされるため、`start` コマンドを実行しても再開されたり起動したりはしません。サービスを起こすには、ステップ 1 に示した `ping` エンドポイントを使用してください。
+</Note>

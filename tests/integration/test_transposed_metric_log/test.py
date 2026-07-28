@@ -1,9 +1,7 @@
 import pytest
 
 import uuid
-import time
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(

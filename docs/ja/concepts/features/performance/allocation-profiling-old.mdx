@@ -1,0 +1,234 @@
+---
+description: 'ClickHouse のアロケーションプロファイリングについて詳述するページ'
+sidebarTitle: '25.9 より前のバージョン向けアロケーションプロファイリング'
+slug: /operations/allocation-profiling-old
+title: '25.9 より前のバージョン向けアロケーションプロファイリング'
+doc_type: 'reference'
+---
+
+ClickHouse はグローバルアロケータとして [jemalloc](https://github.com/jemalloc/jemalloc) を使用しています。jemalloc には、メモリ割り当てのサンプリングやプロファイリングのためのツールがいくつか備わっています。
+アロケーションプロファイリングをより手軽に行えるよう、Keeper の four letter word (4LW) コマンドに加えて、`SYSTEM` コマンドも用意されています。
+
+<div id="sampling-allocations-and-flushing-heap-profiles">
+  ## 割り当てのサンプリングとヒーププロファイルの書き出し
+</div>
+
+`jemalloc` で割り当てをサンプリングしてプロファイリングするには、環境変数 `MALLOC_CONF` を使用してプロファイリングを有効にした状態で ClickHouse/Keeper を起動する必要があります。
+
+```sh
+MALLOC_CONF=background_thread:true,prof:true,prof_active:true
+```
+
+`jemalloc` は割り当てをサンプリングし、その情報を内部に保存します。
+
+次を実行すると、`jemalloc` に現在のプロファイルを flush させることができます。
+
+<Tabs>
+  <Tab title="ClickHouse">
+    ```sql
+    SYSTEM JEMALLOC FLUSH PROFILE
+    ```
+  </Tab>
+
+  <Tab title="Keeper">
+    ```sh
+    echo jmfp | nc localhost 9181
+    ```
+  </Tab>
+</Tabs>
+
+デフォルトでは、ヒーププロファイルファイルは `/tmp/jemalloc_clickhouse._pid_._seqnum_.heap` に生成されます。ここで、`_pid_` は ClickHouse の PID、`_seqnum_` は現在のヒーププロファイルのグローバルなシーケンス番号です。
+Keeper の場合、デフォルトのファイルは `/tmp/jemalloc_keeper._pid_._seqnum_.heap` で、同じルールに従います。
+
+別の保存先は、`MALLOC_CONF` 環境変数に `prof_prefix` オプションを追加して指定できます。
+たとえば、ファイル名のプレフィックスを `my_current_profile` として `/data` フォルダーにプロファイルを生成したい場合は、次の環境変数を指定して ClickHouse/Keeper を実行できます。
+
+```sh
+MALLOC_CONF=background_thread:true,prof:true,prof_prefix:/data/my_current_profile
+```
+
+生成されるファイルには、PID と連番がプレフィックスとして付与されます。
+
+<div id="analyzing-heap-profiles">
+  ## ヒーププロファイルの分析
+</div>
+
+ヒーププロファイルを生成したら、次はそれを分析する必要があります。
+そのために、`jemalloc` の [jeprof](https://github.com/jemalloc/jemalloc/blob/dev/bin/jeprof.in) というツールを使用できます。インストール方法はいくつかあります。
+
+* システムのパッケージマネージャーを使用する
+* [jemalloc リポジトリ](https://github.com/jemalloc/jemalloc)をクローンし、ルートフォルダーで `autogen.sh` を実行する。これにより、`bin` フォルダー内に `jeprof` スクリプトが生成されます
+
+<Note>
+  `jeprof` はスタックトレースの生成に `addr2line` を使用するため、非常に時間がかかることがあります。
+  その場合は、このツールの[代替実装](https://github.com/gimli-rs/addr2line)をインストールすることを推奨します。
+
+  ```bash
+  git clone https://github.com/gimli-rs/addr2line.git --depth=1 --branch=0.23.0
+  cd addr2line
+  cargo build --features bin --release
+  cp ./target/release/addr2line path/to/current/addr2line
+  ```
+</Note>
+
+`jeprof` を使うと、ヒーププロファイルからさまざまなフォーマットを生成できます。
+使用方法や、このツールで利用できる各種オプションについては、`jeprof --help` を実行して確認することを推奨します。
+
+一般に、`jeprof` コマンドは次のように使用します。
+
+```sh
+jeprof path/to/binary path/to/heap/profile --output_format [ > output_file]
+```
+
+2 つのプロファイル間でどの割り当てが発生したかを比較するには、`base` 引数を設定できます。
+
+```sh
+jeprof path/to/binary --base path/to/first/heap/profile path/to/second/heap/profile --output_format [ > output_file]
+```
+
+<div id="examples">
+  ### 例
+</div>
+
+* 各プロシージャを1行ずつ記述したテキストファイルを生成する場合:
+
+```sh
+jeprof path/to/binary path/to/heap/profile --text > result.txt
+```
+
+* コールグラフ付きのPDFファイルを生成するには:
+
+```sh
+jeprof path/to/binary path/to/heap/profile --pdf > result.pdf
+```
+
+<div id="generating-flame-graph">
+  ### フレームグラフの生成
+</div>
+
+`jeprof` を使うと、フレームグラフの作成に使うコラプスされたスタックを生成できます。
+
+`--collapsed` 引数を使用する必要があります。
+
+```sh
+jeprof path/to/binary path/to/heap/profile --collapsed > result.collapsed
+```
+
+その後、コラプスされたスタックを可視化するために、さまざまなツールを利用できます。
+
+最も一般的なのは [FlameGraph](https://github.com/brendangregg/FlameGraph) で、`flamegraph.pl` というスクリプトが含まれています。
+
+```sh
+cat result.collapsed | /path/to/FlameGraph/flamegraph.pl --color=mem --title="Allocation Flame Graph" --width 2400 > result.svg
+```
+
+もう 1 つの便利なツールとして、収集したスタックをよりインタラクティブに解析できる [speedscope](https://www.speedscope.app/) があります。
+
+<div id="controlling-allocation-profiler-during-runtime">
+  ## 実行時に allocation profiler を制御する
+</div>
+
+ClickHouse/Keeper をプロファイラ有効で起動した場合、実行時にアロケーションプロファイリングを無効化/有効化するための追加コマンドを使用できます。
+これらのコマンドを使うと、特定のインターバルだけを簡単にプロファイリングできます。
+
+プロファイラを無効にするには:
+
+<Tabs>
+  <Tab title="ClickHouse">
+    ```sql
+    SYSTEM JEMALLOC DISABLE PROFILE
+    ```
+  </Tab>
+
+  <Tab title="Keeper">
+    ```sh
+    echo jmdp | nc localhost 9181
+    ```
+  </Tab>
+</Tabs>
+
+プロファイラを有効にするには:
+
+<Tabs>
+  <Tab title="ClickHouse">
+    ```sql
+    SYSTEM JEMALLOC ENABLE PROFILE
+    ```
+  </Tab>
+
+  <Tab title="Keeper">
+    ```sh
+    echo jmep | nc localhost 9181
+    ```
+  </Tab>
+</Tabs>
+
+デフォルトで有効な `prof_active` オプションを設定することで、プロファイラの初期状態を制御することもできます。
+たとえば、起動時には割り当てをサンプリングせず、起動後にだけ行いたい場合は、後からプロファイラを有効にできます。次の環境変数を指定して ClickHouse/Keeper を起動できます:
+
+```sh
+MALLOC_CONF=background_thread:true,prof:true,prof_active:false
+```
+
+プロファイラは後から有効にできます。
+
+<div id="additional-options-for-profiler">
+  ## プロファイラの追加オプション
+</div>
+
+`jemalloc` には、プロファイラに関連するさまざまなオプションがあります。これらは、`MALLOC_CONF` 環境変数を変更することで制御できます。
+たとえば、アロケーションのサンプル間隔は `lg_prof_sample` で制御できます。
+N バイトごとにヒーププロファイルをダンプしたい場合は、`lg_prof_interval` を有効にします。
+
+オプションの一覧を完全に確認するには、`jemalloc` の[リファレンスページ](https://jemalloc.net/jemalloc.3.html)を参照することをおすすめします。
+
+<div id="other-resources">
+  ## その他のリソース
+</div>
+
+ClickHouse/Keeper は、`jemalloc` に関連するメトリクスをさまざまな形で公開しています。
+
+<Warning>
+  **警告**
+
+  これらのメトリクスは相互に同期されておらず、値にずれが生じる可能性がある点に注意してください。
+</Warning>
+
+<div id="system-table-asynchronous_metrics">
+  ### システムテーブル `asynchronous_metrics`
+</div>
+
+```sql
+SELECT *
+FROM system.asynchronous_metrics
+WHERE metric LIKE '%jemalloc%'
+FORMAT Vertical
+```
+
+[リファレンス](/ja/reference/system-tables/asynchronous_metrics)
+
+<div id="system-table-jemalloc_bins">
+  ### システムテーブル `jemalloc_bins`
+</div>
+
+すべてのアリーナから集計した、異なるサイズクラス (ビン) における jemalloc アロケータ経由のメモリ割り当てに関する情報が含まれます。
+
+[リファレンス](/ja/reference/system-tables/jemalloc_bins)
+
+<div id="prometheus">
+  ### Prometheus
+</div>
+
+`asynchronous_metrics` の `jemalloc` 関連メトリクスはすべて、ClickHouse と Keeper の両方で Prometheus エンドポイント経由でも公開されています。
+
+[Reference](/ja/reference/settings/server-settings/settings#prometheus)
+
+<div id="jmst-4lw-command-in-keeper">
+  ### Keeper における `jmst` 4LW コマンド
+</div>
+
+Keeper は、[基本的なアロケータの統計情報](https://github.com/jemalloc/jemalloc/wiki/Use-Case%3A-Basic-Allocator-Statistics) を返す `jmst` 4LW コマンドをサポートしています。
+
+```sh
+echo jmst | nc localhost 9181
+```

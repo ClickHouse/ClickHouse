@@ -130,6 +130,16 @@ const std::vector<String> & ColumnsSubstreams::getColumnSubstreams(size_t column
     return columns_substreams[column_position].second;
 }
 
+const std::vector<String> * ColumnsSubstreams::tryGetColumnSubstreams(const String & column_name) const
+{
+    for (const auto & [name, substreams] : columns_substreams)
+    {
+        if (name == column_name)
+            return &substreams;
+    }
+    return nullptr;
+}
+
 ColumnsSubstreams ColumnsSubstreams::merge(const ColumnsSubstreams & left, const ColumnsSubstreams & right, const std::vector<String> & columns_order)
 {
     std::unordered_map<std::string_view, size_t> left_column_to_position;
