@@ -1,0 +1,101 @@
+=========================================
+Plan with greedy algorithm
+Output: A_Description, B_Data, C_Value, D_LookupCode
+
+Join (JOIN FillRightFirst)
+│  T3[1000] ⋈ T4[1] ⋈ (T2[1000] ⋈ T1[1])
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+│  Result rows: 1000
+│  Join conditions: R1_A_ID = A_ID
+│  Output:
+│    Left:  C_Value, D_LookupCode
+│    Right: A_Description, B_Data
+├──Join (JOIN FillRightFirst)
+│  │  T3[1000] ⋈ T4[1]
+│  │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+│  │  Result rows: 100
+│  │  Join conditions: R4_D_ID = D_ID
+│  │  Output:
+│  │    Left:  C_Value, R1_A_ID
+│  │    Right: D_LookupCode
+│  ├──ReadFromMergeTree (default.R3)
+│  │     Read type: Default
+│  │     Parts: 1 | Granules: 1
+│  │     Output: C_Value, R1_A_ID, R4_D_ID
+│  └──ReadFromMergeTree (default.R4)
+│        Read type: Default
+│        Parts: 1 | Granules: 1
+│        Output: D_LookupCode, D_ID
+│        Prewhere filter
+│        Prewhere filter column:  D_LookupCode = \'Lookup S\'
+└──Join (JOIN FillRightFirst)
+   │  T2[1000] ⋈ T1[1]
+   │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+   │  Result rows: 100
+   │  Join conditions: R1_A_ID = A_ID
+   │  Output:
+   │    Left:  B_Data
+   │    Right: A_ID, A_Description
+   ├──ReadFromMergeTree (default.R2)
+   │     Read type: Default
+   │     Parts: 1 | Granules: 1
+   │     Output: B_Data, R1_A_ID
+   └──ReadFromMergeTree (default.R1)
+         Read type: Default
+         Parts: 1 | Granules: 1
+         Output: A_Description, A_ID
+         Prewhere filter
+         Prewhere filter column:  A_Description = \'Type H\'
+5684007341784604324
+=========================================
+Plan with DPsize algorithm
+Output: A_Description, B_Data, C_Value, D_LookupCode
+
+Join (JOIN FillRightFirst)
+│  T2[1000] ⋈ (T3[1000] ⋈ T1[1] ⋈ T4[1])
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+│  Result rows: 1000
+│  Join conditions: R1_A_ID = A_ID
+│  Output:
+│    Left:  B_Data
+│    Right: A_Description, C_Value, D_LookupCode
+├──ReadFromMergeTree (default.R2)
+│     Read type: Default
+│     Parts: 1 | Granules: 1
+│     Output: B_Data, R1_A_ID
+└──Join (JOIN FillRightFirst)
+   │  T3[1000] ⋈ T1[1] ⋈ T4[1]
+   │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+   │  Result rows: 10
+   │  Join conditions: R4_D_ID = D_ID
+   │  Output:
+   │    Left:  A_Description, A_ID, C_Value
+   │    Right: D_LookupCode
+   ├──Join (JOIN FillRightFirst)
+   │  │  T3[1000] ⋈ T1[1]
+   │  │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+   │  │  Result rows: 100
+   │  │  Join conditions: R1_A_ID = A_ID
+   │  │  Output:
+   │  │    Left:  C_Value, R4_D_ID
+   │  │    Right: A_ID, A_Description
+   │  ├──ReadFromMergeTree (default.R3)
+   │  │     Read type: Default
+   │  │     Parts: 1 | Granules: 1
+   │  │     Output: C_Value, R1_A_ID, R4_D_ID
+   │  └──ReadFromMergeTree (default.R1)
+   │        Read type: Default
+   │        Parts: 1 | Granules: 1
+   │        Output: A_Description, A_ID
+   │        Prewhere filter
+   │        Prewhere filter column:  A_Description = \'Type H\'
+   └──ReadFromMergeTree (default.R4)
+         Read type: Default
+         Parts: 1 | Granules: 1
+         Output: D_LookupCode, D_ID
+         Prewhere filter
+         Prewhere filter column:  D_LookupCode = \'Lookup S\'
+5684007341784604324
+===========================================
+Fallback to greedy
+1

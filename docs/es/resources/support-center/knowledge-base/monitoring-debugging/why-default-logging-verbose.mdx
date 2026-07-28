@@ -1,0 +1,53 @@
+---
+date: 2025-01-10
+title: ¿Por qué el registro de ClickHouse es tan verboso de forma predeterminada?
+description: "Descubre por qué los desarrolladores de ClickHouse decidieron establecer, de forma predeterminada, un nivel de registro verboso."
+tags: ['Configuración']
+keywords: ['Registro predeterminado']
+---
+
+<div id="verbose-logging">
+  ## Registro detallado
+</div>
+
+Algo que suele confundir a los usuarios nuevos es que ClickHouse genera una gran cantidad de mensajes de registro, incluso con poca carga.
+
+Esto se debe a que el nivel de registro predeterminado, por motivos históricos, es `trace` (en lugar de `warning`, que sería el valor predeterminado en otras bases de datos).
+
+Los desarrolladores de ClickHouse sostienen que `trace` ofrece mucha visibilidad cuando algo sale mal.
+
+Por otro lado, un gran volumen de registros hace que la tabla del sistema `system.text_log` se llene rápidamente y requiera fusiones en segundo plano.
+
+Si la base de datos funciona de forma estable, los usuarios pueden volver a configurar el nivel de registro, como explicamos a continuación.
+
+<div id="change-the-log-level">
+  ## Cambiar el nivel de registro
+</div>
+
+Los distintos niveles de registro disponibles se documentan [aquí](/es/reference/settings/server-settings/settings#logger)
+
+Tendrás que editar el archivo de configuración del servidor ClickHouse (`/etc/clickhouse-server/config.xml`) para modificar el nivel de registro.
+
+El valor predeterminado es `trace`, pero puedes cambiarlo por el nivel que desees. Consulta el comentario a continuación:
+
+```
+<clickhouse>
+    <logger>
+        {/* Niveles posibles [1]:
+
+          - none (desactiva el registro)
+          - fatal
+          - critical
+          - error
+          - warning
+          - notice
+          - information
+          - debug
+          - trace
+          - test (no apto para uso en producción)
+
+            [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114 */}
+        <level>trace</level>
+... Resto del archivo de configuración
+</clickhouse>
+```

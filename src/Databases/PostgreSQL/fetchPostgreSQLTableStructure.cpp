@@ -69,7 +69,7 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
 }
 
 
-static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && recheck_array, bool is_nullable = false, uint16_t dimensions = 0)
+DataTypePtr convertPostgreSQLDataType(String & type, std::function<void()> recheck_array, bool is_nullable, uint16_t dimensions)
 {
     DataTypePtr res;
     bool is_array = false;

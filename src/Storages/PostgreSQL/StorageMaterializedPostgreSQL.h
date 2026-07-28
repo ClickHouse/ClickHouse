@@ -89,6 +89,11 @@ public:
     /// Used only for single MaterializedPostgreSQL storage.
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
 
+    /// Forward the size guard onto the nested table that `dropInnerTableIfAny` will
+    /// actually drop, so `CREATE OR REPLACE` cannot delete an over-limit nested table
+    /// that plain `DROP TABLE` would refuse.
+    void checkTableSizeBelowDropLimit(ContextPtr query_context) const override;
+
     bool needRewriteQueryWithFinal(const Names & column_names) const override;
 
     void read(
@@ -100,6 +105,15 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
+
+    /// Back up / restore the data of the underlying nested ReplacingMergeTree table.
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+
+    /// `backupData` delegates to the nested ReplacingMergeTree, which supports per-partition backups, so mirror
+    /// its capability here. Otherwise `BackupEntriesCollector` would reject `BACKUP TABLE ... PARTITIONS` before
+    /// the delegation can run, because `IStorage::supportsBackupPartition` defaults to `false`.
+    bool supportsBackupPartition() const override;
 
     /// This method is called only from MateriaizePostgreSQL database engine, because it needs to maintain
     /// an invariant: a table exists only if its nested table exists. This atomic variable is set to _true_

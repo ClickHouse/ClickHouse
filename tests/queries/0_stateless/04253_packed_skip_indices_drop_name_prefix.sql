@@ -4,6 +4,8 @@
 -- substream filenames, not "<prefix>." starts_with patterns, otherwise dropping `a` would also
 -- erase `a.b`'s data inside skp_idx.packed.
 
+SET explain_query_plan_default = 'legacy';
+
 DROP TABLE IF EXISTS t_drop_prefix_a;
 CREATE TABLE t_drop_prefix_a
 (
