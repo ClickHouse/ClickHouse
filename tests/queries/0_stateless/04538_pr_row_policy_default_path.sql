@@ -42,5 +42,17 @@ WHERE event_date >= yesterday() AND type = 'QueryFinish'
     AND current_database = currentDatabase()
 ORDER BY event_time DESC LIMIT 1;
 
+-- The runtime replica count cannot prove the mixed local+remote branch on a single-node cluster:
+-- the in-process local replica grabs the whole working set, so ParallelReplicasUsedCount stays 1
+-- regardless of granularity. Assert the plan structure instead. With local_plan = 1 the plan is a
+-- union of the initiator's local read (ReadFromMergeTree) AND the remote replicas
+-- (ReadFromRemoteParallelReplicas); with local_plan = 0 only the remote read is present.
+SELECT countIf(explain LIKE '%ReadFromMergeTree%') > 0,
+       countIf(explain LIKE '%ReadFromRemoteParallelReplicas%') > 0
+FROM (EXPLAIN SELECT count(), sum(x) FROM t SETTINGS parallel_replicas_local_plan = 1);
+SELECT countIf(explain LIKE '%ReadFromMergeTree%') > 0,
+       countIf(explain LIKE '%ReadFromRemoteParallelReplicas%') > 0
+FROM (EXPLAIN SELECT count(), sum(x) FROM t SETTINGS parallel_replicas_local_plan = 0);
+
 DROP ROW POLICY filter ON t;
 DROP TABLE t;
