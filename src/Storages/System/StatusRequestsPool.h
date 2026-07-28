@@ -249,7 +249,12 @@ public:
                 }
                 catch (...)
                 {
-                    tryLogCurrentException(log, "Error getting status for " + get_holder_kind() + " " + get_holder_name(req.holder_id));
+                    /// A holder that went away is an expected outcome and the consumers just skip
+                    /// its row, so it is not worth an error in the log.
+                    if (getCurrentExceptionCode() == ErrorCodes::ABORTED)
+                        LOG_DEBUG(log, "Cannot get status for {} {}: {}", get_holder_kind(), get_holder_name(req.holder_id), getCurrentExceptionMessage(false));
+                    else
+                        tryLogCurrentException(log, "Error getting status for " + get_holder_kind() + " " + get_holder_name(req.holder_id));
                     req.promise->set_exception(std::current_exception());
                 }
 
