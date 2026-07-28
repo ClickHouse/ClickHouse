@@ -11,7 +11,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
-#include <Coordination/KeeperContext.h>
 
 namespace DB
 {
@@ -54,7 +53,7 @@ class KeeperHTTPStorageHandler : public HTTPRequestHandler
 public:
     KeeperHTTPStorageHandler(
         std::shared_ptr<KeeperHTTPClient> keeper_client_,
-        KeeperContextPtr keeper_context_);
+        size_t max_request_size_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
@@ -74,7 +73,7 @@ private:
 
     LoggerPtr log;
     std::shared_ptr<KeeperHTTPClient> keeper_client;
-    KeeperContextPtr keeper_context;
+    size_t max_request_size = 0;
 };
 
 }

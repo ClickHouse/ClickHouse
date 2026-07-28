@@ -1,13 +1,6 @@
 #pragma once
 
-#include <pcg_random.hpp>
-#include "config.h"
-
-#include <DataTypes/IDataType.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
-#include <Poco/JSON/Object.h>
-
 
 namespace DB
 {
@@ -22,13 +15,13 @@ public:
     struct NextMetadataResult
     {
         Poco::JSON::Object::Ptr snapshot = nullptr;
-        /// Metadata path for the manifest list file; resolve for I/O, serialize for writing into Iceberg metadata.
-        Iceberg::IcebergPathFromMetadata manifest_list_path;
+        String metadata_path;
+        String storage_metadata_path;
     };
 
     NextMetadataResult generateNextMetadata(
         FileNamesGenerator & generator,
-        const Iceberg::IcebergPathFromMetadata & metadata_file_path,
+        const String & metadata_filename,
         Int64 parent_snapshot_id,
         Int64 added_files,
         Int64 added_records,
@@ -39,12 +32,6 @@ public:
         std::optional<Int64> user_defined_snapshot_id = std::nullopt,
         std::optional<Int64> user_defined_timestamp = std::nullopt);
 
-    /// Create a manifest-only rewrite snapshot (`replace` operation) carrying `total-*` counters forward so `OPTIMIZE ... MANIFEST` is idempotent.
-    NextMetadataResult generateManifestOnlySnapshot(
-        FileNamesGenerator & generator,
-        const Iceberg::IcebergPathFromMetadata & metadata_file_path,
-        Int64 parent_snapshot_id);
-
     void generateAddColumnMetadata(const String & column_name, DataTypePtr type);
     void generateDropColumnMetadata(const String & column_name);
     void generateModifyColumnMetadata(const String & column_name, DataTypePtr type);
@@ -54,7 +41,7 @@ private:
     Poco::JSON::Object::Ptr metadata_object;
 
     pcg64_fast gen;
-    std::uniform_int_distribution<Int64> dis;
+    std::uniform_int_distribution<Int32> dis;
 
     Int64 getMaxSequenceNumber();
     Poco::JSON::Object::Ptr getParentSnapshot(Int64 parent_snapshot_id);

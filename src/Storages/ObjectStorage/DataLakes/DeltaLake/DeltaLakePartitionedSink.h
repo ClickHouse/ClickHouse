@@ -5,6 +5,7 @@
 #include <Columns/IColumn.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Arena.h>
+#include <Common/PODArray.h>
 #include <absl/container/flat_hash_map.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
@@ -26,7 +27,7 @@ class DeltaLakeMetadataDeltaKernel;
  * Sink to write partitioned data to DeltaLake.
  * Writes a N data files, a file per partition key, and commits them to DeltaLake metadata.
  */
-class DeltaLakePartitionedSink final : public SinkToStorage, private WithContext
+class DeltaLakePartitionedSink : public SinkToStorage, private WithContext
 {
 public:
     DeltaLakePartitionedSink(
@@ -47,17 +48,6 @@ public:
 
     void onFinish() override;
 
-    /// A single partition column's logical value for one partition.
-    /// `is_null` covers the Delta null-equivalent forms (SQL NULL and empty string);
-    /// `value` is the `toString`-serialized value and is meaningless when `is_null`.
-    struct PartitionValue
-    {
-        String name;
-        String value;
-        bool is_null = false;
-    };
-    using PartitionValues = std::vector<PartitionValue>;
-
 private:
     using StorageSinkPtr = std::unique_ptr<StorageObjectStorageSink>;
 
@@ -71,14 +61,9 @@ private:
     };
     struct PartitionInfo
     {
-        explicit PartitionInfo(std::string_view partition_key_, PartitionValues partition_values_)
-            : partition_key(partition_key_), partition_values(std::move(partition_values_)) {}
+        explicit PartitionInfo(std::string_view partition_key_) : partition_key(partition_key_) {}
 
-        /// Null-tagged grouping key that uniquely identifies this partition (not a path).
         const std::string_view partition_key;
-        /// The true logical partition values; the physical directory and `partitionValues` are
-        /// built from these, never parsed back out of a path.
-        const PartitionValues partition_values;
         std::vector<DataFileInfo> data_files;
     };
     using PartitionInfoPtr = std::shared_ptr<PartitionInfo>;
@@ -99,21 +84,8 @@ private:
     IColumn::Selector chunk_row_index_to_partition_index;
     Arena partition_keys_arena;
 
-    /// Per-partition-column expressions that serialize each value with `toString`,
-    /// preserving nulls (result columns are `Nullable(String)`). Built once, in order.
-    std::vector<IPartitionStrategy::PartitionExpressionActionsAndColumnName> partition_value_actions;
-
-    /// Whether each partition column (in `partition_columns` order) is nullable in the table
-    /// schema. A null-equivalent value for a non-nullable column is rejected up front, because
-    /// Delta stores it as a JSON null, which cannot be read back into a non-nullable column.
-    std::vector<UInt8> partition_column_nullable;
-
-    /// Serialize the partition columns of `chunk` to `Nullable(String)` (one column per
-    /// partition column, in `partition_columns` order).
-    Columns computePartitionValueColumns(const Chunk & chunk) const;
-
     StorageSinkPtr createSinkForPartition(std::string_view partition_key);
-    PartitionInfoPtr getPartitionDataForPartitionKey(std::string_view partition_key, const PartitionValues & partition_values);
+    PartitionInfoPtr getPartitionDataForPartitionKey(std::string_view partition_key);
 };
 
 }

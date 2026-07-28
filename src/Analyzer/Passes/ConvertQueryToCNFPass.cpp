@@ -312,7 +312,7 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
 
             for (const auto & primary_key_node : primary_key_only_nodes)
             {
-                ComparisonGraphCompareResult actual_result = {};
+                ComparisonGraphCompareResult actual_result;
                 if (index == 0)
                     actual_result = graph.compare(primary_key_node, arguments[index]);
                 else
@@ -726,16 +726,6 @@ void optimizeWithConstraints(Analyzer::CNF & cnf, const QueryTreeNodes & table_e
 void optimizeNode(QueryTreeNodePtr & node, const QueryTreeNodes & table_expressions, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
-
-    /// Converting to CNF distributes OR terms over AND, and `CNF::toQueryTree` clones each atom for
-    /// every group it ends up in. When an atom holds a correlated subquery (e.g. `exists((SELECT ...))`
-    /// referencing an outer column), this produces several independent copies of the subquery that
-    /// share one action name. Decorrelation then adds the same synthetic column (e.g. `exists(__table2)`)
-    /// on both sides of the generated join, and `HashJoin::getNonJoinedBlocks` fails the column-count
-    /// check. A correlated subquery must be evaluated exactly once, so skip the conversion for such a
-    /// filter and keep the original expression - it executes correctly without CNF conversion.
-    if (containsCorrelatedSubquery(node))
-        return;
 
     auto cnf = tryConvertQueryToCNF(node, context);
     if (!cnf)
