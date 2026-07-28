@@ -458,7 +458,7 @@ TEST_F(ReaderExecutorTest, WindowNeverExceedsBlockSize)
         if (w.atEnd())
             break;
         EXPECT_LE(w.totalBytes(), 100u);
-        EXPECT_EQ(w.peek().offset, total);
+        EXPECT_EQ(w.peek().logical_offset, total);
         total += w.totalBytes();
         ++windows;
     }
@@ -477,7 +477,7 @@ TEST_F(ReaderExecutorTest, SeekThenRead)
     ChainedBuffers w = ex.readNextWindow();
     ASSERT_FALSE(w.atEnd());
     auto span = w.peek();
-    EXPECT_EQ(span.offset, 500u);
+    EXPECT_EQ(span.logical_offset, 500u);
     EXPECT_EQ(static_cast<unsigned char>(span.data[0]), patternByte(500));
 
     /// Seek backward and re-read.
@@ -485,7 +485,7 @@ TEST_F(ReaderExecutorTest, SeekThenRead)
     ChainedBuffers w2 = ex.readNextWindow();
     ASSERT_FALSE(w2.atEnd());
     auto span2 = w2.peek();
-    EXPECT_EQ(span2.offset, 10u);
+    EXPECT_EQ(span2.logical_offset, 10u);
     EXPECT_EQ(static_cast<unsigned char>(span2.data[0]), patternByte(10));
 }
 
@@ -898,7 +898,7 @@ TEST_F(ReaderExecutorTest, DrainFailureDoesNotAbortQuery)
     ASSERT_NO_THROW(w = ex.readNextWindow());
     ASSERT_FALSE(w.atEnd());
     const auto span = w.peek();
-    ASSERT_EQ(span.offset, 0u);
+    ASSERT_EQ(span.logical_offset, 0u);
     ASSERT_GE(span.size, block);
     for (size_t i = 0; i < block; ++i)
         ASSERT_EQ(static_cast<unsigned char>(span.data[i]), patternByte(i)) << "at " << i;
@@ -939,7 +939,7 @@ TEST_F(ReaderExecutorTest, BridgeDoesNotClobberServedWindow)
     }
     ASSERT_FALSE(held.atEnd()) << "expected a long connection to open";
     const auto span = held.peek();
-    const size_t off = span.offset;
+    const size_t off = span.logical_offset;
 
     /// A small forward gap on the open connection -> serveFromLongConnection bridges via skipForward.
     ex.seek(off + span.size + 4096);

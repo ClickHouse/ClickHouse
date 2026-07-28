@@ -57,7 +57,7 @@ bool PipelineReadBuffer::nextImpl()
     internal_buffer = Buffer(span.data, span.data + span.size);
     working_buffer = internal_buffer;
     pos = working_buffer.begin();
-    read_position = span.offset + span.size;
+    read_position = span.logical_offset + span.size;
     return true;
 }
 
