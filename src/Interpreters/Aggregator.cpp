@@ -88,6 +88,13 @@ namespace ErrorCodes
 
 namespace
 {
+/// A learning block that can cross the adaptive freeze threshold runs in slices, so the
+/// crossing is detected inside the block instead of after up to a whole block of overshoot.
+/// A slice is never shorter than this many rows: the floor bounds the dispatches a table
+/// hovering just below the threshold can spend per block, and in exchange the freeze can
+/// overshoot the threshold by at most this many keys.
+constexpr size_t adaptive_learning_slice_rows = 4'096;
+
 bool worthConvertToTwoLevel(
     size_t group_by_two_level_threshold, size_t result_size, size_t group_by_two_level_threshold_bytes, auto result_size_bytes)
 {
@@ -1050,6 +1057,86 @@ void NO_INLINE Aggregator::executeImpl(
     }
 }
 
+size_t Aggregator::executeImplUntilAdaptiveFreeze(
+    AggregatedDataVariants & result,
+    size_t row_begin,
+    size_t row_end,
+    ColumnRawPtrs & key_columns,
+    AggregateFunctionInstruction * aggregate_instructions) const
+{
+    const size_t threshold = params.adaptive_aggregator_freeze_threshold;
+
+    const auto dispatch = [&](auto & method, LastElementCacheStats & cache_stats) -> size_t
+    {
+        using Method = std::decay_t<decltype(method)>;
+
+        /// One slice at a time until the table stands at the threshold: the shortest slice
+        /// that can get it there, floored so a table hovering just below cannot degrade the
+        /// block into row-sized dispatches (the floor is also the overshoot bound). The
+        /// per-slice `after_slice` keeps the consecutive-keys cache statistics exact:
+        /// `executeImplBatch` resets the cache on entry, so the misses must be collected
+        /// slice by slice, not once at the end.
+        const auto run_slices = [&](auto & state, auto && after_slice) -> size_t
+        {
+            size_t pos = row_begin;
+            while (pos < row_end)
+            {
+                const size_t table_size = method.data.size();
+                if (table_size >= threshold)
+                    return pos;
+
+                const size_t slice = std::min(row_end - pos, std::max(threshold - table_size, adaptive_learning_slice_rows));
+                executeImpl(
+                    method,
+                    state,
+                    result.aggregates_pool,
+                    pos,
+                    pos + slice,
+                    aggregate_instructions,
+                    /*no_more_keys=*/false,
+                    /*all_keys_are_const=*/false,
+                    /*overflow_row=*/nullptr);
+                after_slice(slice);
+                pos += slice;
+            }
+            return row_end;
+        };
+
+        UInt64 total_records = cache_stats.hits + cache_stats.misses;
+        double cache_hit_rate = total_records ? static_cast<double>(cache_stats.hits) / static_cast<double>(total_records) : 1.0;
+        bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
+
+        /// The hashing state is constructed once and shared by all slices: for the serialized
+        /// and fixed-key methods its constructor does whole-block work (batch key serialization
+        /// or packing), which must not be repeated per slice.
+        if (use_cache)
+        {
+            typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+            return run_slices(state, [&](size_t rows) { cache_stats.update(rows, state.getCacheMissesSinceLastReset()); });
+        }
+        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        return run_slices(state, [](size_t) {});
+    };
+
+    #define M(NAME) \
+        else if (result.type == AggregatedDataVariants::Type::NAME) \
+            return dispatch(*result.NAME, result.consecutive_keys_cache_stats);
+
+    if (false) {} // NOLINT
+    APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+    #undef M
+
+    throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
+}
+
+void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const
+{
+    std::call_once(adaptive.session->init_flag, [&] { initAdaptiveSession(result, *adaptive.session); });
+    adaptive.freeze();
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationLocalFreezes);
+    LOG_TRACE(log, "Adaptive aggregation: local table frozen at {} keys", result.sizeWithoutOverflowRow());
+}
+
 template <bool prefetch, typename Method, typename State>
 void NO_INLINE Aggregator::executeImplBatch(
     Method & method,
@@ -1726,6 +1813,53 @@ bool Aggregator::executeOnBlock(Columns columns,
         executeFrozen(
             columns, row_begin, row_end, result, key_columns, aggregate_functions_instructions.data(), *adaptive, all_keys_are_const);
     }
+    else if (adaptive && adaptive->isLearning() && result.isConvertibleToTwoLevel() && !all_keys_are_const
+             && result.sizeWithoutOverflowRow() + (row_end - row_begin) > params.adaptive_aggregator_freeze_threshold)
+    {
+        /// The learning adaptive path, taken when this block can push the table past the freeze
+        /// threshold: the same aggregation as below, but in slices, so the crossing is detected
+        /// inside the block instead of overshooting by up to a block of new keys - everything
+        /// above the threshold is state the frozen table would replicate on every worker. The
+        /// slicer only reports the boundary; the transition is decided here. A const block
+        /// stays on the baseline path: it adds at most one key, and the between-blocks check
+        /// handles it. The admission gate rules out `max_rows_to_group_by` and the overflow
+        /// row, which is what entitles the slices to pass `no_more_keys = false` and no
+        /// overflow destination.
+        const size_t split
+            = executeImplUntilAdaptiveFreeze(result, row_begin, row_end, key_columns, aggregate_functions_instructions.data());
+        if (split < row_end)
+        {
+            if (adaptive->session->thaw_all.load(std::memory_order_relaxed))
+            {
+                /// The thaw verdict outranks the crossing: stand down now and finish the block
+                /// on the baseline path (the between-blocks hook then treats this producer as
+                /// baseline, with the ordinary conversion checks).
+                adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::RepeatedStagedKeys);
+                executeImpl(
+                    result,
+                    split,
+                    row_end,
+                    key_columns,
+                    aggregate_functions_instructions.data(),
+                    no_more_keys,
+                    /*all_keys_are_const=*/false,
+                    params.overflow_row ? result.without_key : nullptr);
+            }
+            else
+            {
+                freezeAdaptive(result, *adaptive);
+                executeFrozen(
+                    columns,
+                    split,
+                    row_end,
+                    result,
+                    key_columns,
+                    aggregate_functions_instructions.data(),
+                    *adaptive,
+                    /*all_keys_are_const=*/false);
+            }
+        }
+    }
     else
     {
         /// This is where data is written that does not fit in `max_rows_to_group_by` with `group_by_overflow_mode = any`.
@@ -1759,12 +1893,7 @@ bool Aggregator::executeOnBlock(Columns columns,
             /// the threshold, and the frozen kernel pairs it with its two-level twin.
             if (adaptive->isLearning() && result_size >= params.adaptive_aggregator_freeze_threshold
                 && result.isConvertibleToTwoLevel())
-            {
-                std::call_once(adaptive->session->init_flag, [&] { initAdaptiveSession(result, *adaptive->session); });
-                adaptive->freeze();
-                ProfileEvents::increment(ProfileEvents::AdaptiveAggregationLocalFreezes);
-                LOG_TRACE(log, "Adaptive aggregation: local table frozen at {} keys", result_size);
-            }
+                freezeAdaptive(result, *adaptive);
 
             if (adaptive->isFrozen())
             {

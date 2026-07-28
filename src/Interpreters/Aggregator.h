@@ -552,6 +552,19 @@ private:
         bool all_keys_are_const,
         AggregateDataPtr overflow_row) const;
 
+    /// The learning consume path of the adaptive aggregation, taken for a block that can push
+    /// the table past the freeze threshold: aggregates like `executeImpl`, but in slices, and
+    /// stops at the first row where the table stands at or past the threshold (the slicing
+    /// gets it there with at most a slice of overshoot). Returns that boundary, or `row_end`
+    /// when the block finished with the table still below; the transition and the routing of
+    /// the rest of the block belong to the caller.
+    size_t executeImplUntilAdaptiveFreeze(
+        AggregatedDataVariants & result,
+        size_t row_begin,
+        size_t row_end,
+        ColumnRawPtrs & key_columns,
+        AggregateFunctionInstruction * aggregate_instructions) const;
+
     /// Specialization for a particular value no_more_keys.
     template <bool prefetch, typename Method, typename State>
     void executeImplBatch(
@@ -567,6 +580,11 @@ private:
         AggregateDataPtr overflow_row) const;
 
     void initAdaptiveSession(AggregatedDataVariants & local_result, AdaptiveAggregationSession & shared) const;
+
+    /// The freeze transition: initializes the session once, flips the producer's phase, and
+    /// records the event. Owned here so the mid-block crossing and the between-blocks check
+    /// perform the identical transition.
+    void freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const;
 
     /// The frozen consume path: rows whose key the local table holds are aggregated in place,
     /// the other rows are staged per bucket and published to the shared backlogs for the
