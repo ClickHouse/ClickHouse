@@ -2654,6 +2654,8 @@ class TestCase:
 
         self.testcase_args = None
         self.runs_count = 0
+        # Set by `process_result_impl`; read by `retry_matcher_input`.
+        self.debug_log_retry_substitution = None
 
         has_no_random_settings_tag = self.tags and "no-random-settings" in self.tags
         has_no_random_merge_tree_settings_tag = (
@@ -3085,6 +3087,24 @@ class TestCase:
 
         return None, ""
 
+    def retry_matcher_input(self, description):
+        """`description` with each diagnostic dump reduced to the retry matcher's window.
+
+        `check_if_need_retry` is handed a failure's description as both stdout and stderr, so
+        every line of a dump that is only meant for a human reader is matched against
+        `MESSAGES_TO_RETRY`, whose entries are as generic as `No such file or directory`.  The
+        dumps are therefore reported at full width and matched at the historical bound.
+
+        Narrowed rather than removed: for an `.expect` test the trace is the only place the
+        spawned client's output lands (they all run with `log_user 0`), so dropping it would
+        lose the transient-error retries this matcher exists to catch.
+        """
+        substitution = self.debug_log_retry_substitution
+        if not substitution:
+            return description
+        shown, matched = substitution
+        return description.replace(shown, matched)
+
     def process_result_impl(self, proc, total_time: float) -> TestResult:
         args = self.args
         kill_output = ""
@@ -3099,18 +3119,27 @@ class TestCase:
 
         description = ""
 
-        # Trimmed SEPARATELY, so a looping .sh test's xtrace cannot consume the expect trace's
-        # budget, but both keep the 100-line bound: `run` feeds this description to
-        # `check_if_need_retry` as both stdout and stderr, and `MESSAGES_TO_RETRY` holds
-        # substrings as generic as `No such file or directory`, so a wider window would let a
-        # trace that merely mentions one retry a deterministic failure.
+        # The two diagnostic blocks are trimmed SEPARATELY, with different limits: the expect
+        # trace uses the shared default (its verdict sequence is what makes a timeout readable,
+        # and one progress-table redraw is one very long line), while the bash xtrace keeps the
+        # historical 100-line bound because `set -x` emits ~2 lines per loop iteration and some
+        # .sh tests loop millions of times.
+        #
+        # The expect trace is REPORTED at that default but MATCHED at the historical bound:
+        # `run` feeds the description to `check_if_need_retry` as both stdout and stderr, and
+        # `MESSAGES_TO_RETRY` holds substrings as generic as `No such file or directory`, so a
+        # wider report would also widen retry matching and could retry a deterministic failure.
+        # The pairing is registered on the result (`retry_substitutions`), which is what keeps
+        # the two widths from having to be threaded through all six returns below.
         debug_log = ""
+        debug_log_for_retry = ""
         if os.path.exists(self.testcase_args.debug_log_file):
             with open(self.testcase_args.debug_log_file, "rb") as stream:
                 expect_log = self.testcase_args.debug_log_file + ":\n"
                 expect_log += str(stream.read(), errors="replace", encoding="utf-8")
                 expect_log += "\n"
-            debug_log += trim_for_log(expect_log, 100)
+            debug_log += trim_for_log(expect_log)
+            debug_log_for_retry += trim_for_log(expect_log, 100)
         # Emptiness is tolerated here, unlike for the expect trace above: `shell_config.sh` opens
         # this file the moment it is sourced and only writes once a traced command runs, so a
         # zero-length one carries no diagnostics - and reporting its name would add a bare header
@@ -3122,6 +3151,12 @@ class TestCase:
                 bash_log += str(stream.read(), errors="replace", encoding="utf-8")
                 bash_log += "\n"
             debug_log += trim_for_log(bash_log, 100)
+            debug_log_for_retry += trim_for_log(bash_log, 100)
+        # Recorded for `run`, which builds the retry matcher's input from the description:
+        # the expect trace is REPORTED wide but must be MATCHED at the historical bound.
+        self.debug_log_retry_substitution = (
+            (debug_log, debug_log_for_retry) if debug_log != debug_log_for_retry else None
+        )
 
         stdout = ""
         if os.path.exists(self.stdout_file):
@@ -3712,8 +3747,9 @@ class TestCase:
                 )
 
                 result = self.process_result_impl(proc, total_time)
+                retry_input = self.retry_matcher_input(result.description)
                 result.check_if_need_retry(
-                    args, result.description, result.description, self.runs_count
+                    args, retry_input, retry_input, self.runs_count
                 )
                 # to avoid breaking CSV parser
                 result.description = result.description.replace("\0", "")
@@ -3758,10 +3794,11 @@ class TestCase:
 
                     result = self.process_result_impl(proc, total_time)
 
+                    retry_input = self.retry_matcher_input(result.description)
                     result.check_if_need_retry(
                         args,
-                        result.description,
-                        result.description,
+                        retry_input,
+                        retry_input,
                         self.runs_count,
                     )
                     # to avoid breaking CSV parser

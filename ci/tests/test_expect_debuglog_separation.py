@@ -11,11 +11,13 @@ file underneath expect and only the last spawn's record survived.  Six couplings
 from coming back, and all six are invisible to any functional test:
 
 1. the two artifacts must live at two different paths;
-2. the two report blocks must be trimmed independently, so a looping ``.sh`` test's xtrace
-   (``set -x`` emits ~2 lines per loop iteration) cannot consume the expect trace's budget -
-   and each must stay at the historical 100-line bound, because ``run`` feeds this description
-   to ``check_if_need_retry`` as both stdout and stderr, so a wider window lets a trace that
-   merely mentions a generic ``MESSAGES_TO_RETRY`` substring retry a deterministic failure;
+2. the two report blocks must be trimmed independently, the expect trace at the shared
+   default and the xtrace at its historical 100-line bound (``set -x`` emits ~2 lines per
+   loop iteration, and some ``.sh`` tests loop millions of times) - and that wider REPORT must
+   not widen what the retry matcher sees: ``run`` hands a failure's text to
+   ``check_if_need_retry`` as both stdout and stderr, and ``MESSAGES_TO_RETRY`` holds
+   substrings as generic as ``No such file or directory``, so the trace is reported wide and
+   matched at the historical bound (``retry_matcher_input``);
 3. the xtrace block must be suppressed when the file is EMPTY - ``shell_config.sh`` opens it on
    being sourced and writes only once a traced command runs, so a zero-length one carries no
    diagnostics, and reporting its name would add a bare header with an empty body;
@@ -608,6 +610,7 @@ def _describe(
     timed_out=False,
     exit_code=None,
     monkeypatch=None,
+    stubs=None,
 ):
     """Run the real ``process_result_impl`` over two artifact files and return its TestResult.
 
@@ -662,6 +665,8 @@ def _describe(
         suite=None,
         tags=set(),
     )
+    if stubs is not None:
+        stubs.append(stub)
     if exit_code is not None:
         assert not timed_out, "the two proc arms are mutually exclusive"
         assert exit_code != 0, "a zero return code does not take the EXIT_CODE branch"
@@ -756,113 +761,187 @@ def test_both_artifacts_reach_the_exit_code_description(tmp_path):
     assert failed.description.startswith("1"), failed.description
 
 
-def test_each_block_is_bounded_on_its_own_budget(tmp_path, monkeypatch):
+def test_the_two_trim_limits_differ_in_effect(tmp_path, monkeypatch):
     # The limits are also asserted from the call text below, but text cannot see whether the
     # trimmed value is the one that reaches the report: replacing `debug_log += trim_for_log(x)`
     # with `debug_log += x` while leaving `trim_for_log(x)` in place as a discarded expression
     # keeps every marker assertion AND both numeric-limit assertions green with both bounds gone.
-    # So the bounds are measured here on the returned description.
-    #
-    # Trimming the two blocks TOGETHER (one `trim_for_log` over the concatenation, as before the
-    # split) is what this measures: a looping .sh test's xtrace would then crowd the expect trace
-    # out of the shared window entirely. Each body is over the bound on its own, so under a shared
-    # bound the second block could not keep a full complement of lines.
-    limit = 100
-    over = limit + 40
+    # So the two bounds are measured here on the returned description.
+    bash_limit = 100
+    # Between the two limits: over the xtrace bound, under the expect default. One payload
+    # therefore shows the two limits differing in EFFECT and not merely in call text.
+    between = _TRIM_DEFAULT_LIMIT // 2
+    assert bash_limit < between < _TRIM_DEFAULT_LIMIT
 
-    expect_body = "".join(f"expect line {i}\n" for i in range(over))
-    bash_body = "".join(f"+ traced command {i}\n" for i in range(over))
-    both_dir = tmp_path / "both"
-    described = _describe(both_dir, expect_body, bash_body)
+    expect_body = "".join(f"expect line {i}\n" for i in range(between))
+    bash_body = "".join(f"+ traced command {i}\n" for i in range(between))
+    between_dir = tmp_path / "between"
+    described = _describe(between_dir, expect_body, bash_body)
 
-    blocks = _artifact_blocks(described.description, both_dir)
+    blocks = _artifact_blocks(described.description, between_dir)
     # What `trim_for_log` is handed is `<path>:\n` + body + `\n`, so reconstruct it and derive the
     # expected counts from the function's own arithmetic rather than from a magic number.
-    expected = {}
-    for suffix, body in (("debuglog", expect_body), ("bashlog", bash_body)):
-        count, trimmed = _trimmed_line_count(
-            str(both_dir / f"04615_some_test.expect.{suffix}") + ":\n" + body + "\n",
-            limit,
-        )
-        assert trimmed, f"the {suffix} payload is not over the bound, so it measures nothing"
-        expected[suffix] = count
-
-    for suffix, note in (
-        ("bashlog", "a looping .sh test would dump every traced line"),
-        ("debuglog", "an unbounded expect trace reaches check_if_need_retry as stdout/stderr"),
-    ):
-        assert _HIDDEN_RE.search(blocks[suffix]), f"the {suffix} block is not bounded: {note}"
-        assert len(blocks[suffix].splitlines()) == expected[suffix], (
-            suffix,
-            len(blocks[suffix].splitlines()),
-            expected[suffix],
-        )
-
-
-def test_a_bounded_expect_trace_does_not_change_the_retry_verdict(tmp_path):
-    """A trace mentioning a generic retriable substring must not retry a deterministic failure.
-
-    ``run`` hands ``result.description`` to ``check_if_need_retry`` as BOTH stdout and stderr,
-    and ``MESSAGES_TO_RETRY`` holds substrings as generic as ``No such file or directory``.  So
-    the width of the trace window is not only a report-size question: every line that survives
-    the trim is matched against that list.  Driven through the REAL ``check_if_need_retry`` and
-    the REAL ``MESSAGES_TO_RETRY`` rather than a copy of either.
-    """
-    marker = next(
-        m
-        for m in _CT_GLOBALS["MESSAGES_TO_RETRY"]
-        if m == "No such file or directory"
+    bash_expected, bash_trimmed = _trimmed_line_count(
+        str(between_dir / "04615_some_test.expect.bashlog") + ":\n" + bash_body + "\n",
+        bash_limit,
     )
+    expect_expected, expect_trimmed = _trimmed_line_count(
+        str(between_dir / "04615_some_test.expect.debuglog") + ":\n" + expect_body + "\n",
+        _TRIM_DEFAULT_LIMIT,
+    )
+    assert bash_trimmed and not expect_trimmed, (bash_trimmed, expect_trimmed)
+
+    assert _HIDDEN_RE.search(blocks["bashlog"]), (
+        "the xtrace block is not bounded at all: a looping .sh test would dump every traced line"
+    )
+    assert len(blocks["bashlog"].splitlines()) == bash_expected, (
+        len(blocks["bashlog"].splitlines()),
+        bash_expected,
+    )
+    assert not _HIDDEN_RE.search(blocks["debuglog"]), (
+        "the expect trace was cut at the xtrace's 100-line bound, which removes the middle of the "
+        "verdict sequence - the part that names the statement that blocked"
+    )
+    assert len(blocks["debuglog"].splitlines()) == expect_expected, (
+        len(blocks["debuglog"].splitlines()),
+        expect_expected,
+    )
+
+    # And the expect trace IS bounded, at its own larger limit: a payload over the default gets a
+    # separator too, so the assertion above is about WHERE the bound is, not about its absence.
+    huge = "".join(f"expect line {i}\n" for i in range(_TRIM_DEFAULT_LIMIT + 10))
+    over_dir = tmp_path / "over"
+    over = _describe(over_dir, huge, "BASH-MARKER-a07c\n")
+    over_blocks = _artifact_blocks(over.description, over_dir)
+    over_expected, over_trimmed = _trimmed_line_count(
+        str(over_dir / "04615_some_test.expect.debuglog") + ":\n" + huge + "\n",
+        _TRIM_DEFAULT_LIMIT,
+    )
+    assert over_trimmed
+    assert _HIDDEN_RE.search(over_blocks["debuglog"]), over_blocks["debuglog"][:200]
+    assert len(over_blocks["debuglog"].splitlines()) == over_expected, (
+        len(over_blocks["debuglog"].splitlines()),
+        over_expected,
+    )
+
+
+def test_the_wider_report_does_not_widen_retry_matching(tmp_path):
+    """The trace is REPORTED at the wide bound but MATCHED at the historical one.
+
+    ``run`` hands a failure's text to ``check_if_need_retry`` as BOTH stdout and stderr, and
+    ``MESSAGES_TO_RETRY`` holds substrings as generic as ``No such file or directory``, so every
+    diagnostic line that reaches that matcher can retry a deterministic failure.  Widening the
+    report for readability must therefore not widen what the matcher sees.  Driven through the
+    real ``retry_matcher_input``, ``check_if_need_retry`` and ``MESSAGES_TO_RETRY``.
+    """
+    marker = "No such file or directory"
+    assert marker in _CT_GLOBALS["MESSAGES_TO_RETRY"]
     retry_args = Namespace(check_zookeeper_session=False, dont_retry_failures=False)
 
-    def verdict(body):
-        described = _describe(tmp_path / str(abs(hash(body))), body, "BASH-MARKER-a07c\n")
-        assert described.status is _TestStatus.FAIL, described.status
-        described.check_if_need_retry(
-            retry_args, described.description, described.description, 1
+    def verdict(case, body):
+        stubs = []
+        described = _describe(
+            tmp_path / case, body, "BASH-MARKER-a07c\n", stubs=stubs
         )
-        return described.need_retry, described.description
+        assert described.status is _TestStatus.FAIL, described.status
+        # Exactly what `run` does: narrow the description through the real
+        # `retry_matcher_input`, then hand the result in as BOTH stdout and stderr. The stub is
+        # the same object `process_result_impl` recorded the substitution on.
+        retry_input = ClickHouseTestCase.retry_matcher_input(
+            stubs[0], described.description
+        )
+        described.check_if_need_retry(retry_args, retry_input, retry_input, 1)
+        return described, retry_input
 
-    # The marker sits deep enough in the trace to fall in the hidden middle of a 100-line trim,
-    # so it is dropped by the bound rather than by the payload being short.
+    # Deep enough to be inside the hidden middle of a 100-line trim, but kept by the wide bound.
     deep = [f"expect line {i}\n" for i in range(400)]
     deep[250] = f"expect: got {marker} while matching\n"
-    need_retry, description = verdict("".join(deep))
-    assert marker not in description, (
-        "the trace window is wide enough to carry a generic MESSAGES_TO_RETRY substring into the "
-        "retry input, so a deterministic failure would be retried up to MAX_RETRIES times"
+    described, retry_input = verdict("deep", "".join(deep))
+    assert marker in described.description, (
+        "the reported trace lost its middle, which is the diagnostic this PR exists to keep"
     )
-    assert not need_retry
+    assert marker not in retry_input, (
+        "a generic MESSAGES_TO_RETRY substring reached the retry matcher from the widened trace, "
+        "so a deterministic failure would be retried up to MAX_RETRIES times"
+    )
+    assert not described.need_retry
 
-    # Control: the same marker near the END of the trace IS kept (a timeout always ends the
-    # trace, which is why the tail is the half worth keeping) and DOES retry. Without this the
-    # assertion above would also pass if the blocks stopped reaching the description at all.
+    # Control: near the END of the trace the marker survives BOTH windows, so a genuine transient
+    # error still retries. Without this the assertion above would also pass if narrowing had
+    # simply dropped the trace - which would lose retry coverage for every .expect test, since
+    # they all run with `log_user 0` and the trace is the only place their output lands.
     tail = [f"expect line {i}\n" for i in range(400)]
     tail[-1] = f"expect: got {marker} while matching\n"
-    need_retry, description = verdict("".join(tail))
-    assert marker in description, description[-400:]
-    assert need_retry
+    described, retry_input = verdict("tail", "".join(tail))
+    assert marker in described.description
+    assert marker in retry_input, retry_input[-300:]
+    assert described.need_retry
+
+
+def test_run_matches_retries_against_the_narrowed_description():
+    """Every ``check_if_need_retry`` call in ``run`` must pass the NARROWED text.
+
+    The test above drives ``retry_matcher_input`` itself, so it stays green if ``run`` stops
+    calling it and hands the raw description over again - which is exactly the regression being
+    fixed.  ``run`` is not directly drivable here (it needs a server and a subprocess), so its
+    two call sites are pinned structurally instead: the stdout and stderr arguments must be the
+    value produced by ``retry_matcher_input``, not ``result.description``.
+    """
+    tree = ast.parse(textwrap.dedent(inspect.getsource(ClickHouseTestCase.run)))
+
+    narrowed = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Attribute)
+        and node.value.func.attr == "retry_matcher_input"
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    assert narrowed, "run never narrows a description for the retry matcher"
+
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "check_if_need_retry"
+    ]
+    # Both arms of the `is_valid_utf_8` branch reach the matcher, and a new one must not slip in
+    # unnoticed either.
+    assert len(calls) == 2, len(calls)
+    for call in calls:
+        stdout_arg, stderr_arg = call.args[1], call.args[2]
+        for arg in (stdout_arg, stderr_arg):
+            assert isinstance(arg, ast.Name) and arg.id in narrowed, (
+                "the retry matcher is handed the reported description rather than the narrowed "
+                f"one: {ast.unparse(call)}"
+            )
 
 
 def test_the_two_report_blocks_are_trimmed_independently():
     source = inspect.getsource(ClickHouseTestCase.process_result_impl)
 
-    expect_calls = [
-        line.strip()
-        for line in source.splitlines()
-        if "trim_for_log(expect_log" in line
-    ]
-    bash_calls = [
-        line.strip() for line in source.splitlines() if "trim_for_log(bash_log" in line
-    ]
-    assert len(expect_calls) == 1, expect_calls
-    assert len(bash_calls) == 1, bash_calls
+    def limits(argname):
+        return [
+            _trim_limit(line.strip(), argname)
+            for line in source.splitlines()
+            if f"trim_for_log({argname}" in line
+        ]
 
-    # Two separate calls, so neither artifact can crowd the other out of a shared window - but
-    # both at the historical bound, since everything that survives the trim is also matched
-    # against MESSAGES_TO_RETRY (see the retry-verdict test above).
-    assert _trim_limit(bash_calls[0], "bash_log") == 100, bash_calls[0]
-    assert _trim_limit(expect_calls[0], "expect_log") == 100, expect_calls[0]
+    # Two calls each: the reported block and the retry matcher's copy of it.
+    expect_limits = limits("expect_log")
+    bash_limits = limits("bash_log")
+    assert len(expect_limits) == 2, expect_limits
+    assert len(bash_limits) == 2, bash_limits
+
+    # The xtrace keeps the historical 100-line bound in both. The expect trace is REPORTED at
+    # the larger default - or the middle of its verdict sequence, the part that names the
+    # statement that blocked, is dropped, since one progress-table redraw is one very long line -
+    # and MATCHED at 100, so the wider report cannot widen MESSAGES_TO_RETRY matching.
+    assert bash_limits == [100, 100], bash_limits
+    assert expect_limits == [_TRIM_DEFAULT_LIMIT, 100], expect_limits
 
 
 def test_an_empty_bash_xtrace_file_produces_no_block(tmp_path):
@@ -916,7 +995,8 @@ def test_an_empty_bash_xtrace_file_produces_no_block(tmp_path):
         and isinstance(node.args[0], ast.Name)
         and node.args[0].id == "bash_log"
     ]
-    assert len(appends) == 1, (
+    # Two: the reported block, and the retry matcher's copy of it (same bound for the xtrace).
+    assert len(appends) == 2, (
         "the xtrace report block is not assembled inside the guard body"
     )
 
