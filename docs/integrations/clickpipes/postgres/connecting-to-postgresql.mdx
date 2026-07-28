@@ -7,8 +7,8 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 This page covers following options for integrating PostgreSQL with ClickHouse:
 
@@ -16,7 +16,7 @@ This page covers following options for integrating PostgreSQL with ClickHouse:
 - using the experimental `MaterializedPostgreSQL` database engine, for syncing a database in PostgreSQL with a database in ClickHouse
 
 <Tip>
-Check out our [Managed Postgres](/products/managed-postgres/overview) service. Backed by NVMe storage that is physically collocated with compute, it delivers up to 10x faster performance for workloads that are disk-bound compared to alternatives using network-attached storage like EBS and allows you to replicate your Postgres data to ClickHouse using the Postgres CDC connector in ClickPipes.
+Check out our [ClickHouse Managed Postgres](/products/managed-postgres/overview) service. Backed by NVMe storage that is physically collocated with compute, it delivers up to 10x faster performance for workloads that are disk-bound compared to alternatives using network-attached storage like EBS and allows you to replicate your Postgres data to ClickHouse using the Postgres CDC connector in ClickPipes.
 </Tip>
 
 ## Using the PostgreSQL table engine {#using-the-postgresql-table-engine}
