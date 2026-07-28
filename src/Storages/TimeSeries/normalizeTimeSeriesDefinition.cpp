@@ -366,22 +366,22 @@ namespace
         auto new_list = make_intrusive<ASTExpressionList>();
         bool changed = false;
 
-        /// If `name` exists in `original`, move it to new_list (erasing from map) and return false.
-        /// Otherwise create a new column with `type_ast`, mark `changed`, and return true.
-        auto add_column_if_missing = [&](const String & name, ASTPtr type_ast) -> bool
+        /// If `name` exists in `original`, move it to new_list (erasing from map) and return nullptr.
+        /// Otherwise create a new column with `type_ast`, mark `changed`, and return the new declaration.
+        auto add_column_if_missing = [&](const String & name, ASTPtr type_ast) -> ASTColumnDeclaration *
         {
             if (auto it = original.find(name); it != original.end())
             {
                 new_list->children.push_back(it->second);
                 original.erase(it);
-                return false;
+                return nullptr;
             }
             auto decl = make_intrusive<ASTColumnDeclaration>();
             decl->name = name;
             decl->setType(std::move(type_ast));
             new_list->children.push_back(decl);
             changed = true;
-            return true;
+            return decl.get();
         };
 
         switch (inner_table_kind)
@@ -398,17 +398,16 @@ namespace
                 /// (>90% of on-disk bytes on a scrape-like corpus). All types accepted by the validation
                 /// above are compatible: DoubleDelta takes DateTime64/DateTime/UInt32, Gorilla takes
                 /// Float64/Float32. Explicitly declared columns keep whatever the user wrote.
-                auto set_codec_for_new_column = [&](const char * codec_name)
+                auto make_codec = [](const char * codec_name)
                 {
-                    auto & decl = new_list->children.back()->as<ASTColumnDeclaration &>();
-                    decl.setCodec(makeASTFunction("CODEC",
+                    return makeASTFunction("CODEC",
                         make_intrusive<ASTIdentifier>(codec_name),
-                        makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{1}))));
+                        makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{1})));
                 };
-                if (add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type)))
-                    set_codec_for_new_column("DoubleDelta");
-                if (add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.scalar_type)))
-                    set_codec_for_new_column("Gorilla");
+                if (auto * timestamp_decl = add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type)))
+                    timestamp_decl->setCodec(make_codec("DoubleDelta"));
+                if (auto * value_decl = add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.scalar_type)))
+                    value_decl->setCodec(make_codec("Gorilla"));
 
                 break;
             }
@@ -450,15 +449,11 @@ namespace
                 /// Column "all_tags" is ephemeral - only used to calculate the "id" column.
                 if (time_series_settings[TimeSeriesSetting::use_all_tags_column_to_generate_id])
                 {
-                    if (add_column_if_missing(TimeSeriesColumnNames::AllTags,
+                    if (auto * all_tags_decl = add_column_if_missing(TimeSeriesColumnNames::AllTags,
                         makeASTDataType("Map", makeASTDataType("String"), makeASTDataType("String"))))
                     {
-                        auto & column = new_list->children.back();
-                        column = column->clone();
-                        auto & new_decl = column->as<ASTColumnDeclaration &>();
-                        new_decl.default_specifier = ColumnDefaultSpecifier::Ephemeral;
-                        new_decl.ephemeral_default = true;
-                        changed = true;
+                        all_tags_decl->default_specifier = ColumnDefaultSpecifier::Ephemeral;
+                        all_tags_decl->ephemeral_default = true;
                     }
                 }
 
