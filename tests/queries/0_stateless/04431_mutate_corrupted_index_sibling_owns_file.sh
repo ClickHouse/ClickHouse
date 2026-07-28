@@ -13,8 +13,7 @@
 # hardlinked its orphan files forward, leaving `CHECK TABLE` failing with
 # `UNEXPECTED_FILE_IN_DATA_PART` on both paths.
 #
-# no-fasttest: local-disk part-file surgery, and the text index type is not registered in the Fast
-# test build (`ENABLE_LIBRARIES` = 0).
+# `no-fasttest`: local-disk part-file surgery.
 # no-object-storage/-shared/-replicated: relies on the local on-disk file layout.
 # no-random-merge-tree-settings: pins `escape_index_filenames` and `packed_skip_index_max_bytes`,
 # which are exactly the settings the collision depends on.

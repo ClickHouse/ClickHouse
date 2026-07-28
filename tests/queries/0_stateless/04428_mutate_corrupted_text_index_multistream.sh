@@ -8,7 +8,7 @@
 # and, with positions enabled, .pos -- each with its own data file and mark. The orphan
 # scan and the `DROP INDEX` rename fallback previously enumerated only the base .idx/.idx2
 # plus one mark, so the .dct/.pst/.pos side streams of a corrupted text part were hardlinked
-# into the new part unchanged and `CHECK TABLE` kept failing with UNEXPECTED_FILE_IN_DATA_PART.
+# into the new part unchanged and `CHECK TABLE` kept failing with `UNEXPECTED_FILE_IN_DATA_PART`.
 #
 # no-fasttest: local-disk part-file surgery (see 04402/04404/04426/04427).
 # no-object-storage/-shared/-replicated: relies on local on-disk file layout.
