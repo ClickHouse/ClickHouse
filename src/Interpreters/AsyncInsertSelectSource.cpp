@@ -223,15 +223,30 @@ void buildAsyncInsertSelectPipeline(
     const Settings & settings,
     LoggerPtr log)
 {
-    if (!insert_query.table_function)
+    /// Take the destination schema snapshot and freeze the column list before building the SELECT
+    /// pipeline (which can run for a while under a slow build). Otherwise a concurrent ADD COLUMN
+    /// landing between this point and a later re-fetch would widen the schema mid-flight and make
+    /// the positional column-count check below fail spuriously.
+    StorageMetadataHandle metadata_snapshot;
+    Block insert_schema;
+    if (destination)
     {
-        auto validate_metadata = destination->getInMemoryMetadataPtr(context, false);
-        auto validate_block = InterpreterInsertQuery::getSampleBlock(
-            insert_query, destination, validate_metadata, context,
+        metadata_snapshot = destination->getInMemoryMetadataPtr(context, false);
+        insert_schema = InterpreterInsertQuery::getSampleBlock(
+            insert_query, destination, metadata_snapshot, context,
             /* no_destination */ false,
             settings[Setting::insert_allow_materialized_columns]);
-        context->checkAccess(AccessType::INSERT, insert_query.table_id, validate_block.getNames());
+
+        if (!insert_query.columns)
+        {
+            insert_query.columns = make_intrusive<ASTExpressionList>();
+            for (const auto & col : insert_schema.getColumnsWithTypeAndName())
+                insert_query.columns->children.push_back(make_intrusive<ASTIdentifier>(col.name));
+        }
     }
+
+    if (!insert_query.table_function)
+        context->checkAccess(AccessType::INSERT, insert_query.table_id, insert_schema.getNames());
 
     // Disable parallel replicas for the SELECT, matching the synchronous insert path
     // (InterpreterInsertQuery::addInsertToSelectPipeline / buildInsertPipeline).
@@ -295,31 +310,18 @@ void buildAsyncInsertSelectPipeline(
         /// crash with a materialize/Nullable type mismatch.
         select_pipeline.dropTotalsAndExtremes();
 
-        auto metadata_snapshot = destination->getInMemoryMetadataPtr(context, false);
-        auto insert_schema = InterpreterInsertQuery::getSampleBlock(
-            insert_query, destination, metadata_snapshot, context,
-            /* no_destination */ false,
-            settings[Setting::insert_allow_materialized_columns]);
-
         const auto & src_cols = select_pipeline.getHeader().getColumnsWithTypeAndName();
         const auto & dst_cols = insert_schema.getColumnsWithTypeAndName();
 
         /// Positional insert: the SELECT must produce exactly one column per insert-schema column.
         /// Validate before indexing dst_cols below so a user mismatch raises the standard exception
-        /// instead of reading past dst_cols.
+        /// instead of reading past dst_cols. insert_schema was captured before the SELECT pipeline
+        /// was built, so this compares against a schema a concurrent ADD COLUMN cannot have widened.
         if (src_cols.size() != dst_cols.size())
             throw Exception(
                 ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
                 "Number of columns in INSERT ... SELECT doesn't match: SELECT returns {}, but the target expects {}",
                 src_cols.size(), dst_cols.size());
-
-        /// Freeze column list so a concurrent ADD COLUMN does not widen the schema seen by getSampleBlock.
-        if (!insert_query.columns)
-        {
-            insert_query.columns = make_intrusive<ASTExpressionList>();
-            for (const auto & col : dst_cols)
-                insert_query.columns->children.push_back(make_intrusive<ASTIdentifier>(col.name));
-        }
 
         /// The queue flush has no defaults step, so a Nullable-to-non-Nullable column under
         /// insert_null_as_default cannot be substituted there.
