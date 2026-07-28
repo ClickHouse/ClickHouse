@@ -1858,7 +1858,10 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             /// only add commands and hence only make the mutation more expensive), so it is checked
             /// again on the final command list. Evaluated here only, so a part within budget does not
             /// pay for it.
-            if (!MutationHelpers::isHardlinkOnlyMutation(*this, part, *mutations_begin_it->second.commands))
+            /// Nothing is renamed behind the commands' back here: this table selects every applicable
+            /// mutation by version alone, so a pending rename is already among them.
+            if (!MutationHelpers::isHardlinkOnlyMutation(
+                    *this, part, *mutations_begin_it->second.commands, /*has_pending_rename=*/ false))
             {
                 LOG_DEBUG(
                     log,
@@ -2009,8 +2012,10 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         if (!commands->empty())
         {
             /// Now that the commands are final, decide on the whole set: coalescing may have turned a
-            /// mutation that only drops secondary objects into one that rewrites the part.
-            const bool hardlink_only = MutationHelpers::isHardlinkOnlyMutation(*this, part, *commands);
+            /// mutation that only drops secondary objects into one that rewrites the part. As above, no
+            /// rename can be outside this set.
+            const bool hardlink_only
+                = MutationHelpers::isHardlinkOnlyMutation(*this, part, *commands, /*has_pending_rename=*/ false);
 
             /// A mutation that only hardlinks needs space for a little metadata, not for a copy of the
             /// part, so ask for the smallest reservation the storage grants and on the part's own disk

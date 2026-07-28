@@ -35,8 +35,13 @@ bool mutationRequiresFullPartRewrite(const MergeTreeData::DataPartPtr & part, co
 /// admit it for a part larger than the free-space budget. Conservative: any doubt means false.
 /// Reads only `part`, `commands` and the storage settings, never the metadata snapshot, so it can be
 /// called while ReplicatedMergeTreeQueue's state_mutex is held.
+/// `has_pending_rename` says whether a rename outside `commands` still applies to `part`; the caller
+/// answers it, because only the caller can query its own mutation bookkeeping.
 bool isHardlinkOnlyMutation(
-    const MergeTreeData & data, const MergeTreeData::DataPartPtr & part, const MutationCommands & commands);
+    const MergeTreeData & data,
+    const MergeTreeData::DataPartPtr & part,
+    const MutationCommands & commands,
+    bool has_pending_rename);
 
 }
 

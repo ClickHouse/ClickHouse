@@ -1884,7 +1884,11 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             const auto mutation_version = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version).mutation;
             Strings mutation_ids;
             auto commands = getMutationCommandsLocked(mutation_source_part, mutation_version, mutation_ids, state_lock);
-            const bool hardlink_only = MutationHelpers::isHardlinkOnlyMutation(data, mutation_source_part, commands);
+            const bool hardlink_only = MutationHelpers::isHardlinkOnlyMutation(
+                data,
+                mutation_source_part,
+                commands,
+                hasPendingRenameForPartLocked(mutation_source_part, mutation_version, state_lock));
 
             if (hardlink_only && max_source_parts_size != 0)
                 sum_parts_size_in_bytes = 0;
@@ -2570,6 +2574,77 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommandsLocked(
     }
 
     return commands;
+}
+
+
+bool ReplicatedMergeTreeQueue::hasPendingRenameForPart(
+    const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version) const
+{
+    std::unique_lock lock(state_mutex);
+    return hasPendingRenameForPartLocked(part, desired_mutation_version, lock);
+}
+
+bool ReplicatedMergeTreeQueue::hasPendingRenameForPartLocked(
+    const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
+    std::unique_lock<SharedMutex> & /* state_lock */) const
+{
+    auto in_partition = mutations_by_partition.find(part->info.getOriginalPartitionId());
+    if (in_partition == mutations_by_partition.end())
+        return false;
+
+    const Int64 part_data_version = part->info.getDataVersion();
+    const Int64 part_metadata_version = part->getMetadataVersion();
+
+    /// The walk MutationsSnapshot::getOnFlyMutationCommandsForPart does, stopping at the first rename.
+    /// Bounded to the version being executed: a rename queued after it belongs to a later mutation.
+    bool seen_all_data_mutations = false;
+    bool seen_all_metadata_mutations = mutation_counters.num_metadata == 0;
+
+    for (const auto & [mutation_version, status] : in_partition->second | std::views::reverse)
+    {
+        if (seen_all_data_mutations && seen_all_metadata_mutations)
+            break;
+
+        if (mutation_version > desired_mutation_version)
+            continue;
+
+        const auto & entry = *status->entry;
+        const auto has_rename = [&]
+        {
+            for (const auto & command : entry.commands)
+                if (command.type == MutationCommand::Type::RENAME_COLUMN)
+                    return true;
+            return false;
+        };
+
+        /// Both dimensions: a RENAME_COLUMN is collected as a metadata mutation whichever kind of entry
+        /// carries it, so checking only the alter-versioned ones would miss it.
+        if (entry.alter_version != -1)
+        {
+            if (seen_all_metadata_mutations)
+                continue;
+
+            if (entry.alter_version > part_metadata_version)
+            {
+                if (has_rename())
+                    return true;
+            }
+            else
+                seen_all_metadata_mutations = true;
+        }
+        else if (!seen_all_data_mutations)
+        {
+            if (mutation_version > part_data_version)
+            {
+                if (has_rename())
+                    return true;
+            }
+            else
+                seen_all_data_mutations = true;
+        }
+    }
+
+    return false;
 }
 
 

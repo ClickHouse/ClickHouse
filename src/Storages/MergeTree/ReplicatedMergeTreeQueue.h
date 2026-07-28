@@ -481,6 +481,14 @@ public:
     MutationCommands getMutationCommandsLocked(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
                                                Strings & mutation_ids, std::unique_lock<SharedMutex> & /* state_mutex lock */) const;
 
+    /// Whether a rename that still applies to `part` is queued up to `desired_mutation_version`. Renames
+    /// are selected by the part's metadata version, so a mutation can be handed one it does not list.
+    bool hasPendingRenameForPart(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version) const;
+
+    /// Same, for callers that already hold the state_mutex (it is not recursive).
+    bool hasPendingRenameForPartLocked(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
+                                       std::unique_lock<SharedMutex> & /* state_mutex lock */) const;
+
     struct MutationsSnapshot : public MergeTreeData::MutationsSnapshotBase
     {
     public:

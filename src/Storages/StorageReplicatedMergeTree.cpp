@@ -4558,7 +4558,8 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                     Strings mutation_ids;
                     auto commands = queue.getMutationCommands(part, expected->first, mutation_ids);
 
-                    if (!MutationHelpers::isHardlinkOnlyMutation(*this, part, commands))
+                    if (!MutationHelpers::isHardlinkOnlyMutation(
+                            *this, part, commands, queue.hasPendingRenameForPart(part, expected->first)))
                     {
                         queue.addPartsPostponeReasons(part->name, PostponeReasons::EXCEED_MAX_PART_SIZE);
                         continue;

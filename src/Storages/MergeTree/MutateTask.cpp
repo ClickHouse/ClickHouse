@@ -197,7 +197,10 @@ bool mutationRequiresFullPartRewrite(const MergeTreeData::DataPartPtr & part, co
 }
 
 bool isHardlinkOnlyMutation(
-    const MergeTreeData & data, const MergeTreeData::DataPartPtr & part, const MutationCommands & commands)
+    const MergeTreeData & data,
+    const MergeTreeData::DataPartPtr & part,
+    const MutationCommands & commands,
+    bool has_pending_rename)
 {
     if (commands.empty())
         return false;
@@ -210,15 +213,21 @@ bool isHardlinkOnlyMutation(
     /// Only commands that splitAndModifyMutationCommands routes to `for_file_renames` alone, so that
     /// no mutations interpreter and hence no mutation pipeline is built. The CLEAR forms are excluded
     /// as scope control: they rebuild what they clear elsewhere, so they are not obviously free.
+    /// DROP STATISTICS is interpreter-free too, but excluded for space: it changes the set of
+    /// statistics, so the archive holding them is written anew, at a size this reservation does not cover.
     for (const auto & command : commands)
     {
-        const bool is_drop_of_secondary_object = command.type == MutationCommand::Type::DROP_INDEX
-            || command.type == MutationCommand::Type::DROP_PROJECTION
-            || command.type == MutationCommand::Type::DROP_STATISTICS;
+        const bool is_drop_of_secondary_object
+            = command.type == MutationCommand::Type::DROP_INDEX || command.type == MutationCommand::Type::DROP_PROJECTION;
 
         if (!is_drop_of_secondary_object || command.clear)
             return false;
     }
+
+    /// A rename outside `commands` still reaches the mutation as a synthetic RENAME_COLUMN, and it
+    /// renames a statistics entry, so the archive is written anew after all.
+    if (has_pending_rename)
+        return false;
 
     /// Copying instead of hardlinking rewrites every retained file. If the setting is already on, the
     /// mutation is knowably not free, so refuse admission instead of admitting it and failing later
@@ -231,17 +240,12 @@ bool isHardlinkOnlyMutation(
     if (!data.getPatchPartsVectorForPartition(part->info.getPartitionId()).empty())
         return false;
 
-    /// Two outputs of the partial route copy an unbounded amount of data: the packed skip-index
-    /// archive is rebuilt entry by entry, and surviving statistics are re-serialized. Require both to
-    /// be absent. Detected from the in-memory checksums (a plain map lookup) rather than by opening
-    /// the archive, so the predicate does no IO and is cheap enough for the selection loop.
-    const auto & files = part->checksums.files;
-    if (files.contains(String(SKIP_INDICES_PACKED_FILENAME)) || files.contains(String(ColumnsStatistics::FILENAME)))
+    /// The packed skip-index archive is rebuilt entry by entry, copying an unbounded amount of data, so
+    /// require it to be absent. Read from the in-memory checksums so the predicate does no IO.
+    /// Statistics need no such condition: the commands above cannot change which ones the part holds, so
+    /// processStatisticsChanges hardlinks their archive instead of rewriting it.
+    if (part->checksums.files.contains(String(SKIP_INDICES_PACKED_FILENAME)))
         return false;
-
-    for (const auto & [file_name, _] : files)
-        if (file_name.starts_with(STATS_FILE_PREFIX))
-            return false;
 
     return true;
 }
@@ -1358,17 +1362,31 @@ static NameToNameVector collectFilesForRenames(
     return rename_vector;
 }
 
-static void processStatisticsChanges(
+/// Returns true iff the source part's statistics are left as they are, so the files holding them are
+/// hardlinked and must not be written again. The caller passes that on to finalizeMutatedPart.
+static bool processStatisticsChanges(
     NameSet & files_to_skip,
     NameToNameVector & files_to_rename,
     ColumnsStatistics & all_statistics,
     const ColumnsStatistics & stats_to_recalc,
     const MutationCommands & commands_for_renames,
     const IMergeTreeDataPart & source_part,
-    StorageMetadataPtr metadata_snapshot)
+    StorageMetadataPtr metadata_snapshot,
+    bool may_preserve_statistics)
 {
     auto storage_settings = source_part.storage.getSettings();
     String statistics_file_name(ColumnsStatistics::FILENAME);
+
+    /// Whether this mutation can change which statistics the part holds. Derived from the commands and
+    /// the recalculation set, never from the lookups below: loadStatisticsPacked skips archive entries it
+    /// cannot resolve or deserialize, so a lookup can miss a column the archive still holds.
+    bool statistics_may_change = !stats_to_recalc.empty();
+    for (const auto & command : commands_for_renames)
+    {
+        statistics_may_change = statistics_may_change || command.type == MutationCommand::Type::DROP_STATISTICS
+            || command.type == MutationCommand::Type::DROP_COLUMN || command.type == MutationCommand::Type::RENAME_COLUMN
+            || command.type == MutationCommand::Type::READ_COLUMN;
+    }
 
     auto process_rename = [&](const String & from_name, const String & to_name)
     {
@@ -1416,6 +1434,11 @@ static void processStatisticsChanges(
             all_statistics[stat_name] = stat->cloneEmpty();
     }
 
+    /// Keeping them: leave every file holding them out of both lists, so the mutation hardlinks them
+    /// with their inherited checksums, and tell the caller not to write them again.
+    if (may_preserve_statistics && !statistics_may_change)
+        return true;
+
     /// Remove old statistics files.
     if (isFullPartStorage(source_part.getDataPartStorage()))
     {
@@ -1436,6 +1459,8 @@ static void processStatisticsChanges(
                 files_to_rename.emplace_back(filename, "");
         }
     }
+
+    return false;
 }
 
 /// Initialize and write to disk new part fields like checksums, columns, etc.
@@ -1447,7 +1472,8 @@ static void finalizeMutatedPart(
     const CompressionCodecPtr & codec,
     ContextPtr context,
     StorageMetadataPtr metadata_snapshot,
-    bool sync)
+    bool sync,
+    bool statistics_preserved)
 {
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
 
@@ -1489,7 +1515,9 @@ static void finalizeMutatedPart(
     const auto & statistics = all_gathered_data.statistics;
     new_data_part->setEstimates(statistics.getEstimates());
 
-    if (!statistics.empty())
+    /// Non-empty but unchanged: the files holding them were hardlinked and their inherited checksums
+    /// already describe them, so writing them again would copy identical content.
+    if (!statistics.empty() && !statistics_preserved)
     {
         if (isFullPartStorage(new_data_part->getDataPartStorage()))
         {
@@ -1676,6 +1704,9 @@ struct MutationContext
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
     NameSet files_to_skip;
     NameToNameVector files_to_rename;
+    /// True iff processStatisticsChanges left the source part's statistics alone, so finalizeMutatedPart
+    /// must not write them again. Carried, not re-derived: at the write site they are non-empty either way.
+    bool statistics_preserved = false;
 
     bool need_sync{};
     ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
@@ -2462,6 +2493,7 @@ private:
         ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(ctx->metadata_snapshot->getPartitionKey(), ctx->data->getSettings());
         ctx->all_gathered_data.statistics = ColumnsStatistics(ctx->metadata_snapshot->getColumns());
 
+        /// This task rewrites every column of the part, so there is nothing to preserve by hardlinking.
         MutationHelpers::processStatisticsChanges(
             ctx->files_to_skip,
             ctx->files_to_rename,
@@ -2469,7 +2501,8 @@ private:
             ctx->stats_to_recalc,
             ctx->for_file_renames,
             *ctx->source_part,
-            ctx->metadata_snapshot);
+            ctx->metadata_snapshot,
+            /*may_preserve_statistics=*/ false);
 
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
@@ -2582,14 +2615,17 @@ private:
     {
         ctx->all_gathered_data.statistics = ctx->source_part->loadStatistics();
 
-        MutationHelpers::processStatisticsChanges(
+        /// A mutation admitted as hardlink-only reserved space for metadata, not for a copy of the
+        /// statistics, so let this function keep them whenever its own inputs say nothing changes them.
+        ctx->statistics_preserved = MutationHelpers::processStatisticsChanges(
             ctx->files_to_skip,
             ctx->files_to_rename,
             ctx->all_gathered_data.statistics,
             ctx->stats_to_recalc,
             ctx->for_file_renames,
             *ctx->source_part,
-            ctx->metadata_snapshot);
+            ctx->metadata_snapshot,
+            /*may_preserve_statistics=*/ ctx->future_part->hardlink_only);
 
         if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
             ctx->files_to_skip.insert("ttl.txt");
@@ -2598,9 +2634,12 @@ private:
         /// must be refused before anything is created if the copy mode changed since it was admitted.
         auto settings = ctx->source_part->storage.getSettings();
 
+        /// No pending rename here even if one appeared: it is re-derived from the untouched source part
+        /// on every retry, so refusing for it could never clear. Such a mutation writes its statistics.
         if (ctx->future_part->hardlink_only
             && ((*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks]
-                || !MutationHelpers::isHardlinkOnlyMutation(*ctx->data, ctx->source_part, ctx->commands_for_part)))
+                || !MutationHelpers::isHardlinkOnlyMutation(
+                    *ctx->data, ctx->source_part, ctx->commands_for_part, /*has_pending_rename=*/ false)))
             throw Exception(
                 ErrorCodes::NOT_ENOUGH_SPACE,
                 "Mutation of part {} was admitted as hardlink-only and reserved only {}, but it would now copy the "
@@ -2945,7 +2984,8 @@ private:
             ctx->compression_codec,
             ctx->context,
             ctx->metadata_snapshot,
-            ctx->need_sync);
+            ctx->need_sync,
+            ctx->statistics_preserved);
     }
 
     enum class State : uint8_t
@@ -3507,9 +3547,12 @@ bool MutateTask::prepare()
         /// hardlink-only is validated here instead: cloning with copy_instead_of_hardlink copies the
         /// whole part, which the small reservation does not cover. Note that copying just
         /// checksums.txt for zero-copy replication (above) is a single small file and is fine.
+        /// No pending rename here: this path copies nothing extra for one, and a rename re-derived on
+        /// every retry could never clear.
         if (ctx->future_part->hardlink_only
             && (clone_params.copy_instead_of_hardlink
-                || !MutationHelpers::isHardlinkOnlyMutation(*ctx->data, ctx->source_part, ctx->commands_for_part)))
+                || !MutationHelpers::isHardlinkOnlyMutation(
+                    *ctx->data, ctx->source_part, ctx->commands_for_part, /*has_pending_rename=*/ false)))
             throw Exception(
                 ErrorCodes::NOT_ENOUGH_SPACE,
                 "Mutation of part {} was admitted as hardlink-only and reserved only {}, but cloning it would copy the "
