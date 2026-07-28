@@ -12,13 +12,9 @@ namespace DB
 namespace
 {
 
-/// A child of `list_of_selects` is not always exactly an `ASTSelectQuery`: interpreter passes rewrite
-/// the list in place. `SelectIntersectExceptQueryVisitor` replaces children with an
-/// `ASTSelectIntersectExceptQuery`, which derives from `ASTSelectQuery` and therefore does NOT match
-/// `as<ASTSelectQuery>()` (that is an exact typeid check), and `NormalizeSelectWithUnionQueryVisitor`
-/// can nest a fresh `ASTSelectWithUnionQuery`. Query parameters must remain visible for every kind,
-/// otherwise a parameterized view is classified as an ordinary one and its metadata cannot be read
-/// back (`Invalid storage definition in metadata file`).
+/// `as<ASTSelectQuery>()` is an exact typeid check, so a derived or nested child of
+/// `list_of_selects` (interpreter passes substitute both) would be skipped and its query
+/// parameters lost. The last branch is the general answer; the first two only keep the memo.
 
 bool childHasQueryParameters(const ASTPtr & child)
 {

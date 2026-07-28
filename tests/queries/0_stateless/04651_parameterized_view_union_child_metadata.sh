@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: spawns clickhouse-local and writes an on-disk metadata directory.
 
 # A parameterized view whose SELECT body is not a flat list of ASTSelectQuery children (INTERSECT/
 # EXCEPT, or a UNION chain mixing DISTINCT and ALL) used to lose its "parameterized" classification
