@@ -2637,6 +2637,42 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
     }
 }
 
+/// Index preparation casts the set values INTO the key type, while runtime membership casts the key
+/// INTO the set type (`Set::execute`; `FunctionArrayIndex::executeConst` compares with
+/// `accurateEquals` for `has`). An atom may only be used as an exact image of the predicate when
+/// both directions preserve equality, so both conversions must be checked, not just one.
+///
+/// Two cases are proven exact:
+/// - identical types (no conversion runs in either direction), compared by canonical full type name
+///   so custom names (`Bool` over `UInt8`) and nested wrappers are covered;
+/// - two plain integers: an accurate cast takes the strict `accurate::convertNumeric` path exactly
+///   when the source is int/uint/float (`can_apply_accurate_cast`), and that path yields NULL
+///   instead of truncating, so neither direction can merge or lose a value.
+///
+/// Everything else fails closed. Floats are excluded from the cross-type case because the strictness
+/// argument does not extend to values whose equality differs between the two engines that have to
+/// agree (signed zeros, NaN payloads).
+static bool setIndexConversionPreservesEquality(const DataTypePtr & key_type, const DataTypePtr & set_element_type)
+{
+    /// Apply both unwrappings here rather than relying on the caller: `LowCardinality` also has to be
+    /// stripped from nested types, otherwise an identical composite type compares unequal.
+    const auto key = removeNullable(recursiveRemoveLowCardinality(key_type));
+    const auto set = removeNullable(recursiveRemoveLowCardinality(set_element_type));
+
+    if (key->getName() == set->getName())
+        return true;
+
+    const WhichDataType key_which(key);
+    const WhichDataType set_which(set);
+
+    const bool both_integers = (key_which.isInt() || key_which.isUInt()) && (set_which.isInt() || set_which.isUInt());
+
+    /// A custom name over an integer (`Bool`) installs a cast wrapper that clamps every nonzero value
+    /// to 1, so the conversion is not injective. `Enum` carries its own type index and therefore never
+    /// reaches this point.
+    return both_integers && !key->hasCustomName() && !set->hasCustomName();
+}
+
 static bool tryPrepareSetColumnsForIndex(
     Columns & set_columns,
     DataTypes & set_types,
@@ -2706,9 +2742,17 @@ static bool tryPrepareSetColumnsForIndex(
                     transformed_set_type))
                 return false;
 
+            /// The transform overwrites `set_element_type`, so the original pair is checked here while
+            /// it is still available; the transformed pair is checked below.
+            if (!setIndexConversionPreservesEquality(set_transforming_dag.input_type, set_element_type))
+                return false;
+
             set_column = transformed_set_column;
             set_element_type = transformed_set_type;
         }
+
+        if (!setIndexConversionPreservesEquality(key_column_type, set_element_type))
+            return false;
 
         if (canBeSafelyCast(set_element_type, key_column_type))
         {

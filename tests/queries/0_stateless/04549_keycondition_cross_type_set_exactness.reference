@@ -1,0 +1,239 @@
+--- superset carriers (NOT IN over-prunes a live partition) ---
+A UInt64/String 01	1	1
+A Nullable element	1
+E Decimal(10,2)/String 1.001	1	1
+G UInt64/Decimal64(1) 1.5	1	1
+K Date/String 2024-1-1	1	1
+K Nullable element	1
+L UUID/uppercase String	1	1
+M Enum8/String 1	1	1
+P (UInt64,UInt64)/(String,String)	1	1
+R Decimal(10,2)/Decimal(20,4) 1.0010	1	1
+S Decimal(10,2)/Decimal(10,4) 1.0010	1	1
+T DateTime64(3)/DateTime64(6)	1	1
+U DateTime/DateTime64(3)	1	1
+V Int64/Decimal(10,2) 1.50	1	1
+Y UInt8/Enum16 a=257	1	1
+Z DateTime64(2)/Decimal(10,2) 1.50	1	1
+AB Date/Date32 1969-12-31	1	1
+--- under-approximating carriers (IN over-prunes a live partition) ---
+D String/UInt8 1	1	1
+D Nullable element	1
+F DateTime64(6)/DateTime64(3)	1	1
+F Nullable element	1
+H Decimal(20,0)/Float32 16777216	1	1
+I Decimal(20,0)/Float64 9007199254740992	1	1
+J DateTime/Date	1	1
+N IPv4/UInt32 16909060	1	1
+N no longer an empty set	1
+O String/FixedString(3) NUL-padded	1	1
+Q LowCardinality(String)/UInt8 1	1	1
+W UInt64/Date	1	1
+X Int64/Date	1	1
+AA UInt8/Bool true	1	1
+AC Date32/Date	1	1
+N6 Decimal(20,4)/Decimal(10,2) 1.00	1	1
+P8 UUID/UInt128 1	1	1
+P8 no longer an empty set	1
+--- arm 1: identical types stay exact (no conversion runs) ---
+arm1 String/String	1
+arm1 String/String prunes	1
+arm1 Date/Date	1
+arm1 Date/Date prunes	1
+arm1 DateTime/DateTime	1
+arm1 DateTime/DateTime prunes	1
+arm1 Decimal/Decimal 1.23	1
+arm1 Decimal/Decimal prunes	1
+arm1 DateTime64(3)/DateTime64(3)	1
+arm1 DateTime64/DateTime64 prunes	1
+arm1 UUID/UUID	1
+arm1 UUID/UUID prunes	1
+arm1 IPv4/IPv4	1
+arm1 IPv4/IPv4 prunes	1
+arm1 FixedString/FixedString	1
+arm1 FixedString/FixedString prunes	1
+arm1 Enum8/Enum8	1
+arm1 Enum8/Enum8 prunes	1
+arm1 Bool/Bool	1
+arm1 Bool/Bool prunes	1
+--- arm 1: nested LowCardinality composites must keep pruning ---
+arm1 Tuple(LC(UInt32),UInt32) result	1
+arm1 Tuple(LC(UInt32),UInt32) prunes	1
+arm1 Tuple(LC(String),UInt32) result	1
+arm1 Tuple(LC(String),UInt32) prunes	1
+--- arm 2: integer collapse regions stay exact (accurate cast is strict) ---
+collapse UInt8/UInt64 257	2
+collapse UInt8/Int64 -1	2
+collapse UInt8/UInt128 1 prunes	1
+collapse Int64/UInt64 max	2
+collapse Int64/Int32 -1	2
+collapse Int32/Int64 -2147483649	2
+collapse UInt256/UInt64 1	1
+collapse UInt256/UInt64 1 prunes	1
+collapse Int256/Int32 -1	2
+--- has(): reachable cross-type, governed by the same predicate ---
+has UInt64/Int32 result	1
+has UInt64/Int32 prunes	1
+has UInt64/Int64 -1 result	1
+has UInt64/UInt8 mixed result	1
+--- consumers of exactness ---
+numbers exact range	3
+Nullable key	1
+minmax on non-PK column	1
+transform_null_in=1	1
+transform_null_in=1 prunes	1
+--- results still correct for pairs that now lose pruning ---
+loses pruning UInt64/String 1	1	1
+loses pruning UInt64/Float64 1.5	1	1
+loses pruning UInt64/DateTime	1
+--- unchanged: identical-type float atoms (separate defect, not this fix) ---
+float signed zero subquery	0
+float signed zero literal	0
+float32 signed zero	0
+float NaN payloads	0
+float tuple key	0
+--- 12x12 integer cross product: every pair stays exact ---
+arm2 UInt8/UInt8	1	1
+arm2 UInt8/UInt16	1	1
+arm2 UInt8/UInt32	1	1
+arm2 UInt8/UInt64	1	1
+arm2 UInt8/UInt128	1	1
+arm2 UInt8/UInt256	1	1
+arm2 UInt8/Int8	1	1
+arm2 UInt8/Int16	1	1
+arm2 UInt8/Int32	1	1
+arm2 UInt8/Int64	1	1
+arm2 UInt8/Int128	1	1
+arm2 UInt8/Int256	1	1
+arm2 UInt16/UInt8	1	1
+arm2 UInt16/UInt16	1	1
+arm2 UInt16/UInt32	1	1
+arm2 UInt16/UInt64	1	1
+arm2 UInt16/UInt128	1	1
+arm2 UInt16/UInt256	1	1
+arm2 UInt16/Int8	1	1
+arm2 UInt16/Int16	1	1
+arm2 UInt16/Int32	1	1
+arm2 UInt16/Int64	1	1
+arm2 UInt16/Int128	1	1
+arm2 UInt16/Int256	1	1
+arm2 UInt32/UInt8	1	1
+arm2 UInt32/UInt16	1	1
+arm2 UInt32/UInt32	1	1
+arm2 UInt32/UInt64	1	1
+arm2 UInt32/UInt128	1	1
+arm2 UInt32/UInt256	1	1
+arm2 UInt32/Int8	1	1
+arm2 UInt32/Int16	1	1
+arm2 UInt32/Int32	1	1
+arm2 UInt32/Int64	1	1
+arm2 UInt32/Int128	1	1
+arm2 UInt32/Int256	1	1
+arm2 UInt64/UInt8	1	1
+arm2 UInt64/UInt16	1	1
+arm2 UInt64/UInt32	1	1
+arm2 UInt64/UInt64	1	1
+arm2 UInt64/UInt128	1	1
+arm2 UInt64/UInt256	1	1
+arm2 UInt64/Int8	1	1
+arm2 UInt64/Int16	1	1
+arm2 UInt64/Int32	1	1
+arm2 UInt64/Int64	1	1
+arm2 UInt64/Int128	1	1
+arm2 UInt64/Int256	1	1
+arm2 UInt128/UInt8	1	1
+arm2 UInt128/UInt16	1	1
+arm2 UInt128/UInt32	1	1
+arm2 UInt128/UInt64	1	1
+arm2 UInt128/UInt128	1	1
+arm2 UInt128/UInt256	1	1
+arm2 UInt128/Int8	1	1
+arm2 UInt128/Int16	1	1
+arm2 UInt128/Int32	1	1
+arm2 UInt128/Int64	1	1
+arm2 UInt128/Int128	1	1
+arm2 UInt128/Int256	1	1
+arm2 UInt256/UInt8	1	1
+arm2 UInt256/UInt16	1	1
+arm2 UInt256/UInt32	1	1
+arm2 UInt256/UInt64	1	1
+arm2 UInt256/UInt128	1	1
+arm2 UInt256/UInt256	1	1
+arm2 UInt256/Int8	1	1
+arm2 UInt256/Int16	1	1
+arm2 UInt256/Int32	1	1
+arm2 UInt256/Int64	1	1
+arm2 UInt256/Int128	1	1
+arm2 UInt256/Int256	1	1
+arm2 Int8/UInt8	1	1
+arm2 Int8/UInt16	1	1
+arm2 Int8/UInt32	1	1
+arm2 Int8/UInt64	1	1
+arm2 Int8/UInt128	1	1
+arm2 Int8/UInt256	1	1
+arm2 Int8/Int8	1	1
+arm2 Int8/Int16	1	1
+arm2 Int8/Int32	1	1
+arm2 Int8/Int64	1	1
+arm2 Int8/Int128	1	1
+arm2 Int8/Int256	1	1
+arm2 Int16/UInt8	1	1
+arm2 Int16/UInt16	1	1
+arm2 Int16/UInt32	1	1
+arm2 Int16/UInt64	1	1
+arm2 Int16/UInt128	1	1
+arm2 Int16/UInt256	1	1
+arm2 Int16/Int8	1	1
+arm2 Int16/Int16	1	1
+arm2 Int16/Int32	1	1
+arm2 Int16/Int64	1	1
+arm2 Int16/Int128	1	1
+arm2 Int16/Int256	1	1
+arm2 Int32/UInt8	1	1
+arm2 Int32/UInt16	1	1
+arm2 Int32/UInt32	1	1
+arm2 Int32/UInt64	1	1
+arm2 Int32/UInt128	1	1
+arm2 Int32/UInt256	1	1
+arm2 Int32/Int8	1	1
+arm2 Int32/Int16	1	1
+arm2 Int32/Int32	1	1
+arm2 Int32/Int64	1	1
+arm2 Int32/Int128	1	1
+arm2 Int32/Int256	1	1
+arm2 Int64/UInt8	1	1
+arm2 Int64/UInt16	1	1
+arm2 Int64/UInt32	1	1
+arm2 Int64/UInt64	1	1
+arm2 Int64/UInt128	1	1
+arm2 Int64/UInt256	1	1
+arm2 Int64/Int8	1	1
+arm2 Int64/Int16	1	1
+arm2 Int64/Int32	1	1
+arm2 Int64/Int64	1	1
+arm2 Int64/Int128	1	1
+arm2 Int64/Int256	1	1
+arm2 Int128/UInt8	1	1
+arm2 Int128/UInt16	1	1
+arm2 Int128/UInt32	1	1
+arm2 Int128/UInt64	1	1
+arm2 Int128/UInt128	1	1
+arm2 Int128/UInt256	1	1
+arm2 Int128/Int8	1	1
+arm2 Int128/Int16	1	1
+arm2 Int128/Int32	1	1
+arm2 Int128/Int64	1	1
+arm2 Int128/Int128	1	1
+arm2 Int128/Int256	1	1
+arm2 Int256/UInt8	1	1
+arm2 Int256/UInt16	1	1
+arm2 Int256/UInt32	1	1
+arm2 Int256/UInt64	1	1
+arm2 Int256/UInt128	1	1
+arm2 Int256/UInt256	1	1
+arm2 Int256/Int8	1	1
+arm2 Int256/Int16	1	1
+arm2 Int256/Int32	1	1
+arm2 Int256/Int64	1	1
+arm2 Int256/Int128	1	1
+arm2 Int256/Int256	1	1
