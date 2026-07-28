@@ -2147,9 +2147,7 @@ private:
         {
             QueryTreeNodePtr node;
             CompareType type;
-            /// The comparison connects expressions from different table-expression sources.
-            /// A conjunct derived through such an edge is pushable below the join, where the
-            /// original chain cannot filter, so it is kept executable (see the append site).
+            /// The two sides come from different table expressions (see the append site).
             bool crosses_source;
         };
         using QueryTreeNodeWithEquals = std::vector<ComparePairEntry>;
@@ -2213,8 +2211,7 @@ private:
                 addComparisonFilter(derived_conjunct_filters, expression_node, std::move(seed_filter), true, getContext());
             }
 
-            /// Edges to constants never cross; between expressions, differing sources (or an
-            /// expression without a single source) mark the edge as crossing.
+            /// Comparisons with a constant never cross sources.
             bool crosses_source = false;
             if (!lhs_constant && !rhs_constant)
             {
@@ -2367,18 +2364,14 @@ private:
                             {
                                 if (left.crosses_source)
                                 {
-                                    /// Derived through a comparison of different sources, this is the
-                                    /// only conjunct pushable below the join — it can filter a join
-                                    /// input the original chain cannot reach (e.g. it shrinks a hash
-                                    /// join build side) — so keep it executable.
+                                    /// Derived across a join: the only conjunct pushable to the other
+                                    /// side (e.g. it shrinks a hash join build side), keep it executable.
                                     function_node.getArguments().getNodes().push_back(and_node);
                                 }
                                 else
                                 {
-                                    /// Derived through a same-source comparison, the conjunct filters
-                                    /// nothing beyond conditions already executable at the same scan, so
-                                    /// add it as `indexHint`: index analysis still prunes by it,
-                                    /// execution skips it.
+                                    /// Within one source it filters nothing beyond the original chain,
+                                    /// so add it as `indexHint`: it still prunes, but does not execute.
                                     auto index_hint_node = std::make_shared<FunctionNode>("indexHint");
                                     index_hint_node->getArguments().getNodes().push_back(and_node);
                                     index_hint_node->resolveAsFunction(

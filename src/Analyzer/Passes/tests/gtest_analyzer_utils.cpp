@@ -33,9 +33,8 @@ static QueryTreeNodePtr resolveColumn(
             auto it = resolved_map.find(col_name);
             if (it != resolved_map.end())
                 return it->second;
-            /// Columns share one source per identifier qualifier (`t1.a` and `t1.b` -> `t1`,
-            /// unqualified columns -> a common default), so passes can compare expression sources.
-            /// The column keeps only the last identifier part as its name, so it formats bare.
+            /// One shared source per qualifier (`t1.a`, `t1.b` -> `t1`); the column keeps
+            /// only the last identifier part as its name.
             const auto & identifier = identifier_node->getIdentifier();
             String source_name = identifier.isShort() ? "__default_table" : identifier.front();
             auto & source = source_map[source_name];

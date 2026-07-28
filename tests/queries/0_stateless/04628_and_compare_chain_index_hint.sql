@@ -43,8 +43,7 @@ SELECT count() FROM t_chain_hint WHERE a = b AND b = 5 AND a != 5;
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_hint WHERE a = b AND b = 5 AND a != 5)
     WHERE explain LIKE '%function_name: indexHint%';
 
--- A condition derived across a join stays executable: it is the only filter pushable to the
--- other join input (it can e.g. shrink a hash join build side). No hint, one extra `less`.
+-- A condition derived across a join stays executable: no hint, one extra `less`.
 SELECT 'join_derived_stays_plain';
 DROP TABLE IF EXISTS t_chain_hint_r;
 CREATE TABLE t_chain_hint_r (c UInt64, d UInt64) ENGINE = MergeTree ORDER BY c

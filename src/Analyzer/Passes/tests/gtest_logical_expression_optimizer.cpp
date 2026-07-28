@@ -71,13 +71,11 @@ TEST(OptimizeAndCompareChain, compare)
     /// A non-contradicting `notEquals` seed does not block the derivation.
     test_f("a = b AND b = 5 AND a != 3", "(a = b) AND (b = 5) AND (a != 3) AND indexHint(a = 5)");
 
-    /// A conjunct derived through a comparison of different sources stays executable: it is the
-    /// only condition pushable below the join (e.g. it can shrink a hash join build side).
-    /// The qualifier picks the column's source; the printed name is the bare column.
+    /// Derived across sources -> stays executable (pushable below the join); the qualifier
+    /// picks the source, the printed name is the bare column.
     test_f("t1.a < t2.b AND t2.b < 5", "(a < b) AND (b < 5) AND (a < 5)");
     test_f("t1.a < t1.b AND t1.b < 5", "(a < b) AND (b < 5) AND indexHint(a < 5)");
-    /// Only conjuncts derived through the crossing edge itself stay executable: `t1.a < 5` is
-    /// implied by `t1.a < t1.b` and the executable derived `t1.b < 5` at the same scan.
+    /// Only the conjunct derived through the crossing edge itself stays executable.
     test_f(
         "t1.a < t1.b AND t1.b < t2.c AND t2.c < 5",
         "(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND indexHint(a < 5)");
