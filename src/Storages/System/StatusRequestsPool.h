@@ -17,6 +17,7 @@
 #include <base/defines.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
+#include <Common/escapeForFileName.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/logger_useful.h>
@@ -307,13 +308,21 @@ private:
             return holder->getStorageID();
     }
 
-    /// The deduplication key. The key spaces cannot collide: a full name always contains a dot.
+    /// The deduplication key. Names are escaped because they may contain dots on their own,
+    /// and an escaped name never contains a dash, so it cannot look like a UUID.
     static String get_holder_key(const THolderId & holder_id)
     {
         if constexpr (std::is_same_v<TBaseHolder, IDatabase>)
+        {
             return holder_id;
+        }
         else
-            return holder_id.hasUUID() ? toString(holder_id.uuid) : holder_id.getFullNameNotQuoted();
+        {
+            if (holder_id.hasUUID())
+                return toString(holder_id.uuid);
+
+            return escapeForFileName(holder_id.database_name) + "." + escapeForFileName(holder_id.table_name);
+        }
     }
 
     static TBaseHolderPtr resolve_holder(const THolderId & holder_id)
