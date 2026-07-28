@@ -45,6 +45,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
@@ -983,6 +984,12 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const TextS
             /// Candidate ranks in this token's postings. Dense candidates: one linear walk over the
             /// materialized list beats per-candidate roaring rank(); sparse: rank() wins.
             const auto & postings = token_postings[u];
+
+            if (dirs[u].num_docs != postings.cardinality())
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Corrupt text index positions: expected {} documents, but the posting list has {}",
+                    dirs[u].num_docs, postings.cardinality());
+
             auto & ranks = candidate_ranks[u];
             ranks.resize(candidates.size());
             if (const UInt64 postings_cardinality = postings.cardinality(); candidates.size() * 16 >= postings_cardinality)
