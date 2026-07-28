@@ -600,6 +600,9 @@ void ColumnReplicated::rollback(const ColumnCheckpoint & checkpoint)
 
     nested_column->rollback(*with_nested.nested);
     indexes.resizeAssumeReserve(with_nested.size);
+    /// The cache maps source ids to absolute indexes in nested_column; rolling nested_column back
+    /// invalidates them, so it must be cleared (same as filter() does when it mutates the indexes).
+    insertion_cache.clear();
 }
 
 void ColumnReplicated::forEachMutableSubcolumn(MutableColumnCallback callback)
