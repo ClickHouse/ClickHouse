@@ -23,6 +23,7 @@
 
 namespace ProfileEvents
 {
+    extern const Event AggregationOptimizedEqualRangesOfKeys;
     extern const Event AdaptiveAggregationThaws;
     extern const Event AdaptiveAggregationProbeBypasses;
     extern const Event AdaptiveAggregationStagedRecords;
@@ -341,19 +342,12 @@ void NO_INLINE Aggregator::executeFrozenImpl(
             {
                 /// Apply the whole range to the single place, mirroring the ordinary
                 /// all-keys-are-const handling.
-                PaddedPODArray<AggregateDataPtr> places;
-                places.resize_fill(row_begin + 1, nullptr);
-                places[row_begin] = found_place;
-                executeAggregateInstructions(
-                    aggregates_pool,
-                    row_begin,
-                    row_end,
-                    aggregate_instructions,
-                    places.data(),
-                    /*key_start=*/row_begin,
-                    /*has_only_one_value_since_last_reset=*/false,
-                    /*all_keys_are_const=*/true,
-                    /*use_compiled_functions=*/false);
+                for (size_t i = 0; i < aggregate_functions.size(); ++i)
+                {
+                    AggregateFunctionInstruction * inst = aggregate_instructions + i;
+                    ProfileEvents::increment(ProfileEvents::AggregationOptimizedEqualRangesOfKeys);
+                    addBatchSinglePlace(row_begin, row_end, inst, found_place + inst->state_offset, aggregates_pool);
+                }
             }
         }
         else
