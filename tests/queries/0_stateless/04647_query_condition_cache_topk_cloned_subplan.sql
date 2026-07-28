@@ -38,9 +38,11 @@ SET allow_experimental_correlated_subqueries = 1;
 -- `tab` read on the side where the `v2 IN (...)` predicate becomes a `FilterStep` above
 -- `ReadFromMergeTree`, which is what primes and then reuses a query condition cache entry. Join
 -- order randomization replaces the real statistics with random cardinalities and can swap the join
--- sides, so the entry is never written and the control reads 0. Pin it off - the shapes this test
--- covers are about cloning, not about join ordering.
+-- sides, so the entry is never written and the control reads 0. Pin the join shape - the shapes
+-- this test covers are about cloning, not about join ordering.
 SET query_plan_optimize_join_order_randomize = 0;
+SET query_plan_join_swap_table = 'false';
+SET use_hash_table_stats_for_join_reordering = 0;
 -- Decorrelation without the in-memory buffer is what emits a `CommonSubplanReferenceStep`, which
 -- `materializeQueryPlanReferences` later materializes by cloning the referenced subplan.
 SET correlated_subqueries_use_in_memory_buffer = 0;
@@ -53,6 +55,11 @@ SETTINGS index_granularity = 64,
          min_bytes_for_wide_part = 0,
          min_bytes_for_full_part_storage = 0,
          add_minmax_index_for_numeric_columns = 0;
+
+-- Query condition cache entries are keyed by part, so a background merge of `tab` invalidates every
+-- entry primed before it. The positive control below reuses an entry across two queries, which a
+-- merge landing in between turns into a miss - stop merges to make the reuse deterministic.
+SYSTEM STOP MERGES tab;
 
 INSERT INTO tab SELECT number, number, number FROM numbers(1_000_000);
 
