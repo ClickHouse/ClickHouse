@@ -101,16 +101,16 @@ void registerInputFormatBuffers(FormatFactory & factory)
 
 `Buffers` is a very simple binary format for **ephemeral** data exchange, where both the consumer and producer already know the schema and column order.
 
-Unlike [Native](./Native.md), it does **not** store column names, column types, or any extra metadata.
+Unlike [Native](/reference/formats/Native), it does **not** store column names, column types, or any extra metadata.
 
-In this format, data is written and read by [blocks](/development/architecture#block) in a binary format. Buffers uses the same per-column binary representation as the [Native](./Native.md) format and respects the same Native format settings.
+In this format, data is written and read by [blocks](/development/architecture#block) in a binary format. Buffers uses the same per-column binary representation as the [Native](/reference/formats/Native) format and respects the same Native format settings.
 
 For each block, the following sequence is written:
 1. Number of columns (UInt64, little-endian).
 2. Number of rows (UInt64, little-endian).
 3. For each column:
 - Total byte size of the serialized column data (UInt64, little-endian).
-- Serialized column data bytes, exactly as in the [Native](./Native.md) format.
+- Serialized column data bytes, exactly as in the [Native](/reference/formats/Native) format.
 
 ## Example usage {#example-usage}
 
