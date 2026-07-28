@@ -1,0 +1,12 @@
+-- { echo }
+
+-- The `values` table function evaluates its arguments column-natively (via
+-- `evaluateConstantExpressionAsColumn` + `convertColumnToType`, without materializing a `Field`).
+-- `Bool` values converted to a textual column must keep the `Bool` type ('true'/'false'), not collapse
+-- to `UInt64` ('1'/'0') - as a single value, inside a tuple (row), and inside an array column.
+SELECT * FROM values('x String', true, false);
+SELECT * FROM values('a String, b String', (true, false), (false, true));
+SELECT * FROM values('x Array(String)', [true, false]);
+SELECT * FROM values('x Nullable(String)', true, NULL, false);
+-- numeric target is value-preserving
+SELECT * FROM values('x UInt8', true, false);
