@@ -99,7 +99,7 @@ using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflow
 /// and emplaced exactly once, by one thread, instead of once per thread that saw it.
 struct StagedChunkPreparation;
 
-struct AdaptiveAggregationSharedState
+struct AdaptiveAggregationSession
 {
     static constexpr size_t NUM_BUCKETS = 256;
 
@@ -201,7 +201,7 @@ struct AdaptiveAggregationSharedState
     std::atomic<bool> thaw_all{false};
 };
 
-using AdaptiveAggregationSharedStatePtr = std::shared_ptr<AdaptiveAggregationSharedState>;
+using AdaptiveAggregationSessionPtr = std::shared_ptr<AdaptiveAggregationSession>;
 
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
@@ -360,11 +360,11 @@ public:
     /// Per-transform context of the adaptive aggregation: whether this thread's local table has
     /// frozen, per-block staging for the missed rows (the arrays are cleared but keep their
     /// capacity across blocks), and the sampling state of the probe bypass.
-    struct AdaptiveAggregationThreadContext
+    struct AdaptiveAggregationProducer
     {
-        explicit AdaptiveAggregationThreadContext(AdaptiveAggregationSharedStatePtr shared_) : shared_state(std::move(shared_)) { }
+        explicit AdaptiveAggregationProducer(AdaptiveAggregationSessionPtr shared_) : session(std::move(shared_)) { }
 
-        AdaptiveAggregationSharedStatePtr shared_state;
+        AdaptiveAggregationSessionPtr session;
         bool local_table_frozen = false;
         /// The current block's misses, one entry per delayed record, in staging order.
         PaddedPODArray<UInt32> miss_source_rows;
@@ -396,7 +396,7 @@ public:
         /// bucket-grouped chunk before they reach the backlogs (see `stageChunk`), so the
         /// merge-time drain gets a few large contiguous slices per bucket instead of one tiny
         /// slice per consumed block. Flushed by `flushPendingChunks` when the input ends.
-        std::vector<AdaptiveAggregationSharedState::StagedChunkPtr> pending_chunks;
+        std::vector<AdaptiveAggregationSession::StagedChunkPtr> pending_chunks;
         size_t pending_staged_bytes = 0;
     };
 
@@ -408,7 +408,7 @@ public:
         ColumnRawPtrs & key_columns,
         AggregateColumns & aggregate_columns, /// Passed to not create them anew for each block
         bool & no_more_keys,
-        AdaptiveAggregationThreadContext * adaptive) const;
+        AdaptiveAggregationProducer * adaptive) const;
 
     /// Drains one bucket's whole backlog into the destination variant's two-level bucket. Called
     /// by the merge task that owns the bucket, before it merges that bucket: production is over
@@ -417,13 +417,13 @@ public:
         AggregatedDataVariants & dest,
         Arena * arena,
         size_t bucket,
-        AdaptiveAggregationSharedState & shared,
+        AdaptiveAggregationSession & shared,
         std::atomic<bool> & is_cancelled) const;
 
     /// Seals and enqueues this thread's buffered staged blocks. Every producing transform calls
     /// it when its input ends, before the finish barrier, so the backlogs are complete by the
     /// time the last finisher assembles the merge.
-    void flushPendingChunks(AdaptiveAggregationThreadContext & adaptive) const;
+    void flushPendingChunks(AdaptiveAggregationProducer & adaptive) const;
 
     /// Swaps the enqueued chunks out of the backlogs and drains them chunk-major into
     /// `routing_variants` (all of one chunk's bucket slices, then the next), so each chunk
@@ -433,7 +433,7 @@ public:
     /// while memory is still over the trigger, it spills mid-drain, so the transfer itself
     /// cannot peak above the trigger. The finish path calls it with `drain_everything` to put
     /// the backlogs into disk-mergeable form when a producer has spilled.
-    void drainStagedChunksEarly(AdaptiveAggregationSharedState & shared, bool drain_everything) const;
+    void drainStagedChunksEarly(AdaptiveAggregationSession & shared, bool drain_everything) const;
 
     /** This array serves two purposes.
       *
@@ -498,10 +498,10 @@ public:
       */
     AggregatedChunks convertToChunks(AggregatedDataVariants & data_variants, bool final) const;
 
-    /// `adaptive_shared_state` (or nullptr when the adaptive aggregation is off) feeds the
+    /// `adaptive_session` (or nullptr when the adaptive aggregation is off) feeds the
     /// thaw verdict into the hash-table statistics next to the observed sizes.
     ManyAggregatedDataVariants prepareVariantsToMerge(
-        ManyAggregatedDataVariants && data_variants, AdaptiveAggregationSharedState * adaptive_shared_state) const;
+        ManyAggregatedDataVariants && data_variants, AdaptiveAggregationSession * adaptive_session) const;
 
     using BucketToChunks = std::map<Int32, AggregatedChunks>;
     /// Merge partially aggregated chunks separated to buckets into one data structure.
@@ -679,7 +679,7 @@ private:
         bool use_compiled_functions,
         AggregateDataPtr overflow_row) const;
 
-    void initAdaptiveSharedState(AggregatedDataVariants & local_result, AdaptiveAggregationSharedState & shared) const;
+    void initAdaptiveSession(AggregatedDataVariants & local_result, AdaptiveAggregationSession & shared) const;
 
     /// The frozen consume path: rows whose key the local table holds are aggregated in place,
     /// the other rows are staged per bucket and published to the shared backlogs for the
@@ -691,7 +691,7 @@ private:
         AggregatedDataVariants & result,
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
-        AdaptiveAggregationThreadContext & adaptive,
+        AdaptiveAggregationProducer & adaptive,
         bool all_keys_are_const) const;
 
     template <typename LocalMethod, typename SharedMethod>
@@ -704,7 +704,7 @@ private:
         size_t row_end,
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
-        AdaptiveAggregationThreadContext & adaptive,
+        AdaptiveAggregationProducer & adaptive,
         bool all_keys_are_const) const;
 
     /// Groups the current block's staged misses by bucket (counting sort) into one staged chunk
@@ -715,7 +715,7 @@ private:
     void publishDelayedRecords(
         const Columns & columns,
         size_t num_rows,
-        AdaptiveAggregationThreadContext & adaptive,
+        AdaptiveAggregationProducer & adaptive,
         State & local_find_state,
         Arena & scratch_pool,
         bool value_staged,
@@ -726,8 +726,8 @@ private:
     /// repeat-heavy staged stream copies each key's bytes once and the drain emplaces it once.
     template <typename SharedKey, typename State>
     void publishValueStagedRecordsSorted(
-        const AdaptiveAggregationSharedState::StagedChunkPtr & block,
-        AdaptiveAggregationThreadContext & adaptive,
+        const AdaptiveAggregationSession::StagedChunkPtr & block,
+        AdaptiveAggregationProducer & adaptive,
         State & local_find_state,
         Arena & scratch_pool,
         std::optional<UInt32> key_row_override) const;
@@ -736,25 +736,25 @@ private:
     /// goes straight to the backlogs, a small one is buffered, and the buffer is sealed into
     /// one chunk once enough bytes accumulate.
     void stageChunk(
-        AdaptiveAggregationThreadContext & adaptive,
-        AdaptiveAggregationSharedState::StagedChunkPtr block,
+        AdaptiveAggregationProducer & adaptive,
+        AdaptiveAggregationSession::StagedChunkPtr block,
         size_t staged_bytes) const;
 
     /// Merges the buffered batches into one bucket-grouped chunk of the same shape (bucket b's
     /// records are the concatenation of the batches' b-slices) and enqueues it.
-    void sealPendingChunks(AdaptiveAggregationThreadContext & adaptive) const;
+    void sealPendingChunks(AdaptiveAggregationProducer & adaptive) const;
 
     /// The value-staged variant of the seal merge: keys repeating across the batches collapse
     /// into one record with a summed run length while the records are copied into the chunk.
     void sealValueStagedChunkDeduplicated(
-        const std::vector<AdaptiveAggregationSharedState::StagedChunkPtr> & minis,
-        AdaptiveAggregationSharedState::StagedChunk & chunk) const;
+        const std::vector<AdaptiveAggregationSession::StagedChunkPtr> & minis,
+        AdaptiveAggregationSession::StagedChunk & chunk) const;
 
     static void enqueueStagedChunk(
-        AdaptiveAggregationSharedState & shared, const AdaptiveAggregationSharedState::StagedChunkPtr & block);
+        AdaptiveAggregationSession & shared, const AdaptiveAggregationSession::StagedChunkPtr & block);
 
     /// Builds the staged chunk's shared preparation on its first drained bucket.
-    void prepareStagedChunk(AdaptiveAggregationSharedState::StagedChunk & block) const;
+    void prepareStagedChunk(AdaptiveAggregationSession::StagedChunk & block) const;
 
     /// Drains one bucket's backlog into `method.data.impls[bucket_index]`. `adopt_keys` selects
     /// the key ownership: merge-time drains emplace keys pointing into the retained blocks,
@@ -764,7 +764,7 @@ private:
     size_t drainAdaptiveBucketBacklog(
         Method & method,
         Arena * arena,
-        const std::vector<AdaptiveAggregationSharedState::StagedChunkPtr> & backlog,
+        const std::vector<AdaptiveAggregationSession::StagedChunkPtr> & backlog,
         size_t bucket_index,
         size_t total_records,
         PaddedPODArray<AggregateDataPtr> & places,
@@ -775,7 +775,7 @@ private:
     void drainAdaptiveBucketImpl(
         Method & method,
         Arena * bucket_arena,
-        const AdaptiveAggregationSharedState::StagedChunk & block,
+        const AdaptiveAggregationSession::StagedChunk & block,
         size_t slice_begin,
         size_t slice_end,
         PaddedPODArray<AggregateDataPtr> & places,

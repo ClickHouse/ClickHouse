@@ -75,8 +75,8 @@ struct ManyAggregatedData
     std::atomic<UInt32> num_finished = 0;
 
     /// Set when the adaptive aggregation is enabled for this aggregation (see
-    /// `AdaptiveAggregationSharedState`); shared by all the participating transforms.
-    AdaptiveAggregationSharedStatePtr adaptive_shared_state;
+    /// `AdaptiveAggregationSession`); shared by all the participating transforms.
+    AdaptiveAggregationSessionPtr adaptive_session;
 
     explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads)
     {
@@ -157,7 +157,7 @@ private:
 
     /// Per-transform context of the adaptive aggregation; engaged when the shared state exists
     /// on `many_data`.
-    std::optional<Aggregator::AdaptiveAggregationThreadContext> adaptive_context;
+    std::optional<Aggregator::AdaptiveAggregationProducer> adaptive_context;
 
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;

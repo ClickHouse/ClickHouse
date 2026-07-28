@@ -773,7 +773,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
         if (use_adaptive_aggregator)
-            many_data->adaptive_shared_state = std::make_shared<AdaptiveAggregationSharedState>();
+            many_data->adaptive_session = std::make_shared<AdaptiveAggregationSession>();
 
         size_t counter = 0;
         pipeline.addSimpleTransform(

@@ -223,14 +223,14 @@ public:
         SharedDataPtr shared_data_,
         Arena * arena_,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
-        AdaptiveAggregationSharedStatePtr adaptive_shared_state_)
+        AdaptiveAggregationSessionPtr adaptive_session_)
         : ISource(std::make_shared<const Block>(params_->getHeader()), false)
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::move(shared_data_))
         , arena(arena_)
         , updater(std::move(updater_))
-        , adaptive_shared_state(std::move(adaptive_shared_state_))
+        , adaptive_session(std::move(adaptive_session_))
     {
     }
 
@@ -257,8 +257,8 @@ protected:
             return {};
         }
 
-        if (adaptive_shared_state)
-            params->aggregator.drainAdaptiveBucketForMerge(*data->at(0), arena, bucket_num, *adaptive_shared_state, shared_data->is_cancelled);
+        if (adaptive_session)
+            params->aggregator.drainAdaptiveBucketForMerge(*data->at(0), arena, bucket_num, *adaptive_session, shared_data->is_cancelled);
 
         auto agg_chunk = params->aggregator.mergeAndConvertOneBucketToChunk(
             *data, arena, params->final, bucket_num, shared_data->is_cancelled, updater);
@@ -275,7 +275,7 @@ private:
     SharedDataPtr shared_data;
     Arena * arena;
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
-    AdaptiveAggregationSharedStatePtr adaptive_shared_state;
+    AdaptiveAggregationSessionPtr adaptive_session;
 };
 
 /// Asks Aggregator to convert accumulated aggregation state into blocks (without merging) and pushes them to later steps.
@@ -416,14 +416,14 @@ public:
         ManyAggregatedDataVariantsPtr data_,
         size_t num_threads_,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
-        AdaptiveAggregationSharedStatePtr adaptive_shared_state_)
+        AdaptiveAggregationSessionPtr adaptive_session_)
         : IProcessor({}, {params_->getHeader()})
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::make_shared<ConvertingAggregatedToChunksWithMergingSource::SharedData>())
         , num_threads(num_threads_)
         , updater(std::move(updater_))
-        , adaptive_shared_state(std::move(adaptive_shared_state_))
+        , adaptive_session(std::move(adaptive_session_))
     {
     }
 
@@ -680,7 +680,7 @@ private:
     size_t num_threads;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
-    AdaptiveAggregationSharedStatePtr adaptive_shared_state;
+    AdaptiveAggregationSessionPtr adaptive_session;
 
     bool is_initialized = false;
     bool finished = false;
@@ -793,7 +793,7 @@ private:
         {
             /// Select Arena to avoid race conditions
             Arena * arena = nullptr;
-            if (adaptive_shared_state)
+            if (adaptive_session)
             {
                 /// The adaptive drain creates the destination's states in this arena, so give
                 /// each source a fresh one: `pools[thread]` is typically a source local's arena
@@ -809,7 +809,7 @@ private:
                 arena = first->aggregates_pools.at(thread).get();
             }
             auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSource>(
-                params, data, shared_data, arena, updater, adaptive_shared_state);
+                params, data, shared_data, arena, updater, adaptive_session);
 
             processors.emplace_back(std::move(source));
         }
@@ -868,8 +868,8 @@ AggregatingTransform::AggregatingTransform(
     , skip_merging(skip_merging_)
     , updater(std::move(updater_))
 {
-    if (many_data->adaptive_shared_state)
-        adaptive_context.emplace(many_data->adaptive_shared_state);
+    if (many_data->adaptive_session)
+        adaptive_context.emplace(many_data->adaptive_session);
 }
 
 AggregatingTransform::~AggregatingTransform() = default;
@@ -1065,7 +1065,7 @@ void AggregatingTransform::initGenerate()
             params->aggregator.writeToTemporaryFile(variants);
     }
 
-    bool adaptive_engaged = adaptive_context && adaptive_context->shared_state->initialized.load(std::memory_order_acquire);
+    bool adaptive_engaged = adaptive_context && adaptive_context->session->initialized.load(std::memory_order_acquire);
     if (adaptive_engaged)
     {
         /// Complete this thread's backlog contribution before the finish barrier below: the last
@@ -1084,13 +1084,13 @@ void AggregatingTransform::initGenerate()
         return;
     }
 
-    adaptive_engaged = adaptive_context && adaptive_context->shared_state->initialized.load(std::memory_order_acquire);
+    adaptive_engaged = adaptive_context && adaptive_context->session->initialized.load(std::memory_order_acquire);
 
     if (adaptive_engaged)
         LOG_TRACE(
             log,
             "Adaptive aggregation: {} delayed records queued for the merge-time drain",
-            adaptive_context->shared_state->undrained_records.load(std::memory_order_relaxed));
+            adaptive_context->session->undrained_records.load(std::memory_order_relaxed));
 
     /// In the case of two different aggregators existing simultaneously due to a mixed pipeline of aggregate projections,
     /// it is necessary to check whether any of the aggregators contains temporary data.
@@ -1105,7 +1105,7 @@ void AggregatingTransform::initGenerate()
 
     if (adaptive_engaged)
     {
-        auto & shared = *adaptive_context->shared_state;
+        auto & shared = *adaptive_context->session;
         if (aggregator_has_temporary_data())
         {
             /// A thawed or given-up producer spilled on the baseline path, so the merge goes
@@ -1128,17 +1128,17 @@ void AggregatingTransform::initGenerate()
         if (!skip_merging)
         {
             auto prepared_data = params->aggregator.prepareVariantsToMerge(
-                std::move(many_data->variants), adaptive_context ? adaptive_context->shared_state.get() : nullptr);
+                std::move(many_data->variants), adaptive_context ? adaptive_context->session.get() : nullptr);
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
             processors.emplace_back(std::make_shared<ConvertingAggregatedToChunksTransform>(
-                params, std::move(prepared_data_ptr), max_threads, updater, adaptive_engaged ? adaptive_context->shared_state : nullptr));
+                params, std::move(prepared_data_ptr), max_threads, updater, adaptive_engaged ? adaptive_context->session : nullptr));
         }
         else
         {
             if (updater)
                 updater->markUnsupportedCase();
 
-            auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants), /*adaptive_shared_state=*/nullptr);
+            auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants), /*adaptive_session=*/nullptr);
             Pipes pipes;
             for (auto & variant : prepared_data)
             {
