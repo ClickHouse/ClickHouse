@@ -39,18 +39,18 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ### مقاييس وقت التشغيل لـ OTel
 </div>
 
-صُممت قوالب OTel Runtime Metrics المضمنة للتطبيقات المزوّدة بـ [مقاييس وقت تشغيل OpenTelemetry](https://opentelemetry.io/docs/specs/semconv/runtime/).
+صُمِّمت قوالب OTel Runtime Metrics المضمنة للتطبيقات المُزوَّدة بمقاييس وقت التشغيل من [OpenTelemetry runtime metrics](https://opentelemetry.io/docs/specs/semconv/runtime/).
 
-| القالب                      | الوصف                                                                                  |
-| --------------------------- | -------------------------------------------------------------------------------------- |
-| **.NET Runtime Metrics**    | عمليات GC، وحجم heap، واستخدام thread pool، وعدد assemblies لتطبيقات .NET              |
-| **Go Runtime Metrics**      | عدد Goroutines، وأزمنة توقّف GC، واستخدام heap، وإحصاءات الذاكرة لتطبيقات Go           |
-| **JVM Runtime Metrics**     | ذاكرة heap وnon-heap، ومدة GC، وعدد threads، وتحميل classes للتطبيقات المستندة إلى JVM |
-| **Node.js Runtime Metrics** | تأخر event loop، واستخدام heap، واستخدام CPU، وذاكرة V8 لتطبيقات Node.js               |
+| Template                    | Description                                                                                                 |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| **.NET Runtime Metrics**    | عمليات GC، وحجم الكومة، واستخدام تجمّع مؤشرات الترابط، وأعداد التجميعات لتطبيقات .NET                       |
+| **Go Runtime Metrics**      | أعداد Goroutine، وأزمنة توقّف GC، واستخدام الكومة، وإحصاءات الذاكرة لتطبيقات Go                             |
+| **JVM Runtime Metrics**     | ذاكرة الكومة والذاكرة خارج الكومة، ومدة GC، وأعداد مؤشرات الترابط، وتحميل الفئات للتطبيقات المستندة إلى JVM |
+| **Node.js Runtime Metrics** | تأخر حلقة الأحداث، واستخدام الكومة، واستخدام CPU، وذاكرة V8 لتطبيقات Node.js                                |
 
 ملاحظات:
 
-* يُضبط كل قالب باستخدام [تصفية مخصّصة](/ar/clickstack/features/dashboards/overview#custom-filters) للخدمات التي تتطابق فيها سمة المورد [`telemetry.sdk.language`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-language) مع بيئة التشغيل الخاصة بلوحة المعلومات.
-  * قد تحتاج البيئات التي تستخدم مخططات مخصّصة لجداول المقاييس في ClickHouse إلى تعديل هذه التصفية للاستعلام عن العمودين الصحيحين: اسم الخدمة وسمات المورد.
-  * في البيئات ذات الحجم الكبير، يمكن تقليل أزمنة تحميل التصفية من خلال [تجسيد](/ar/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes) العمود `ResourceAttributes['telemetry.sdk.language']`.
-* تعتمد القوالب أحدث OTel Semantic Conventions وقت نشرها، ويجري تحديثها دوريًا مع تحديث مواصفة OTel. وبالنسبة إلى الخدمات المزوّدة بإصدارات أقدم من OTel SDKs، فقد يلزم [تحرير](/ar/clickstack/features/dashboards/overview#dashboards-editing-visualizations) التصورات للإشارة إلى أسماء مقاييس أقدم.
+* يُضبط كل قالب باستخدام [عامل تصفية مخصص](/ar/clickstack/features/dashboards/overview#custom-filters) للخدمات التي تتطابق فيها سمة المورد [`telemetry.sdk.language`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-language) مع بيئة وقت التشغيل الخاصة بلوحة المعلومات.
+  * قد تحتاج البيئات التي تستخدم مخططات جداول مقاييس ClickHouse مخصصة إلى تعديل عامل التصفية هذا للاستعلام عن عمودَي اسم الخدمة وسمات المورد الصحيحين.
+  * في البيئات كبيرة الحجم، يمكن تقليل أوقات تحميل عامل التصفية عبر [materializing](/ar/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes) العمود `ResourceAttributes['telemetry.sdk.language']`.
+* تشير القوالب إلى أحدث OTel Semantic Conventions عند نشرها، وتُحدَّث دوريًا مع تحديث OTel Spec. وبالنسبة إلى الخدمات المُزوَّدة بأدوات OTel SDKs أقدم، قد يلزم [تحرير](/ar/clickstack/features/dashboards/overview#dashboards-editing-visualizations) التصورات للإشارة إلى أسماء مقاييس أقدم.

@@ -37,9 +37,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 이 과정을 마치면 데이터가 로드된 실행 중인 ClickHouse Cloud 서비스가 준비되어, 이후 빠른 시작 시리즈를 진행하는 기반으로 활용할 수 있습니다.
 
 <Steps titleSize="h3">
-  <Step>
-    ### ClickHouse Cloud 가입하기
-
+  <Step title="ClickHouse Cloud 가입하기" id="sign-up-for-clickhouse-cloud">
     [console.clickhouse.cloud](https://console.clickhouse.cloud/)로 이동합니다. 로그인 페이지가 표시됩니다. 하단의 &quot;아직 계정이 없으신가요?&quot; 옆에 있는 **Register**를 클릭하세요.
 
     <Frame caption="새 계정을 만들려면 Register를 클릭하세요">
@@ -66,9 +64,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     확인이 완료되면 새 이메일과 비밀번호로 로그인하세요.
   </Step>
 
-  <Step>
-    ### 새 서비스 만들기
-
+  <Step title="새 서비스 만들기" id="create-a-new-service">
     처음 로그인하면 바로 서비스 구성 페이지로 이동합니다. 다음과 같이 설정하십시오.
 
     | Setting        | Recommendation                                                   |
@@ -91,9 +87,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     </Frame>
   </Step>
 
-  <Step>
-    ### 예시 데이터셋 로드하기
-
+  <Step title="예시 데이터셋 로드하기" id="load-an-example-dataset">
     왼쪽 사이드바에서 **Data sources**를 클릭하세요. 서비스로 데이터를 가져오는 여러 옵션이 표시됩니다.
 
     <Frame caption="데이터 로드 옵션이 있는 Data sources 페이지">
@@ -115,12 +109,10 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     가져오기는 1~2분 정도 걸립니다. 완료되면 바로 데이터를 쿼리할 수 있습니다.
   </Step>
 
-  <Step>
-    ### 데이터 쿼리하기
+  <Step title="데이터 쿨리하기" id="query-the-data">
+    왼쪽 사이드바에서 **SQL 콘솔**을 클릭해 내장 쿼리 편집기를 여십시오. 여기에서 브라우저에서 직접 SQL 쿨리를 작성하고 실행할 수 있으며, 별도의 외부 도구는 필요하지 않습니다.
 
-    왼쪽 사이드바에서 **SQL 콘솔**을 클릭해 내장 쿼리 편집기를 여십시오. 여기에서 브라우저에서 직접 SQL 쿼리를 작성하고 실행할 수 있으며, 별도의 외부 도구는 필요하지 않습니다.
-
-    영국 부동산 가격 데이터를 살펴볼 수 있도록 몇 가지 쿼리를 시도해 보십시오.
+    영국 부동산 가격 데이터를 살펴볼 수 있도록 몇 가지 쿨리를 시도해 보십시오.
 
     지금까지 판매된 부동산 중 가장 비싼 부동산을 찾아보겠습니다:
 
@@ -152,7 +144,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   </Step>
 </Steps>
 
-## 다음 단계
+<div id="next-steps">
+  ## 다음 단계
+</div>
 
 이제 실제 데이터 3,000만 행이 로드된 ClickHouse Cloud 서비스를 사용할 수 있습니다. 이 서비스와 데이터셋은 이후의 빠른 시작 시리즈 전반에서 사용됩니다.
 

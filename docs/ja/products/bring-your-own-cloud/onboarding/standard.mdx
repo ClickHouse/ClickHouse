@@ -42,15 +42,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 組織配下に新しい AWS アカウント、GCP プロジェクト、または Azure サブスクリプションを用意します。
 
 <Steps>
-  <Step>
-    ### クラウドプロバイダーを選択する
-
+  <Step title="クラウドプロバイダーを選択する" id="choose-cloud-provider">
     <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC で CSP を選択" background="black" />
   </Step>
 
-  <Step>
-    ### アカウント/プロジェクト/サブスクリプションのセットアップ
-
+  <Step title="アカウント/プロジェクト/サブスクリプションのセットアップ" id="account-setup">
     初期の BYOC セットアップは、[CloudFormation template (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml)、[Terraform module (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp)、または [Terraform module (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) のいずれかを使用して実行できます。これにより高権限の ID (IAM ロール/サービスアカウント/サービスプリンシパル) が作成され、ClickHouse Cloud の BYOC コントローラーがインフラストラクチャを管理できるようになります。
 
     <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="BYOC アカウントを初期化" background="black" />
@@ -73,9 +69,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ### BYOC インフラストラクチャをセットアップする
-
+  <Step title="BYOC インフラストラクチャをセットアップする" id="setup-byoc-infrastructure">
     ClickHouse Cloud コンソールから、オブジェクトストレージバケット、VPC/VNet、Kubernetes クラスターを含むインフラストラクチャをセットアップするよう案内されます。この段階で決める必要がある設定がいくつかあり、後から変更することはできません。具体的には次のとおりです。
 
     * **Region**: [サポート対象リージョン](/ja/products/cloud/reference/supported-regions) のドキュメントに記載されているすべての**パブリックリージョン**で、BYOC デプロイを利用できます。Private Region は現在サポートされていません。
@@ -92,7 +86,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   ### 最初の BYOC ClickHouse サービスを作成する
 </div>
 
-BYOC インフラストラクチャのプロビジョニングが完了したら、最初の ClickHouse サービスを作成する準備は整っています。ClickHouse Cloud コンソールを開き、BYOC 環境を選択して、画面の案内に従って新しいサービスを作成します。
+BYOC インフラストラクチャのプロビジョニングが完了したら、最初の ClickHouse サービスを起動する準備は整っています。ClickHouse Cloud コンソールを開き、BYOC 環境を選択して、画面の案内に従って新しいサービスを作成します。
 
 <Image img="/images/cloud/reference/byoc-new-service-1.webp" size="md" alt="BYOC の新しいサービスを作成" />
 

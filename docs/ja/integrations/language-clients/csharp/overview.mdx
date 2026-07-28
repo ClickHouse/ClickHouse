@@ -45,6 +45,12 @@ ClickHouse に接続するための公式 C# クライアントです。
 * .NET 9.0
 * .NET 10.0
 
+<div id="supported-clickhouse-versions">
+  ## サポートされている ClickHouse バージョン
+</div>
+
+このクライアントは、直近3つのリリースと直近2つのLTSリリースを公式にサポートしています。
+
 <div id="installation">
   ## インストール
 </div>
@@ -106,15 +112,18 @@ ClickHouse への接続を設定する方法は 2 つあります。
   ### データフォーマットとシリアライゼーション
 </div>
 
-| プロパティ                   | 型                        | デフォルト    | 接続文字列キー                   | 説明                                                                                                      |
-| ----------------------- | ------------------------ | -------- | ------------------------- | ------------------------------------------------------------------------------------------------------- |
-| UseCompression          | `bool`                   | `true`   | `Compression`             | データ転送で gzip 圧縮を有効にします                                                                                   |
-| UseCustomDecimals       | `bool`                   | `true`   | `UseCustomDecimals`       | 任意精度には `ClickHouseDecimal` を使用します。false の場合は .NET の `decimal` (128 ビット制限) を使用します                        |
-| ReadStringsAsByteArrays | `bool`                   | `false`  | `ReadStringsAsByteArrays` | `String` および `FixedString` カラムを `string` ではなく `byte[]` として読み取ります。バイナリデータに便利です                           |
-| UseFormDataParameters   | `bool`                   | `false`  | `UseFormDataParameters`   | パラメータを URL のクエリ文字列ではなくフォームデータとして送信します                                                                   |
-| ParameterTypeResolver   | `IParameterTypeResolver` | `null`   | —                         | `@` スタイルのパラメータ型対応に使用するカスタムリゾルバです。[カスタムパラメータ型対応](#parameter-type-mapping) を参照してください                      |
-| JsonReadMode            | `JsonReadMode`           | `Binary` | `JsonReadMode`            | JSON データの返却方法: `Binary` (`JsonObject` を返す) または `String` (生の JSON 文字列を返す)                                |
-| JsonWriteMode           | `JsonWriteMode`          | `String` | `JsonWriteMode`           | JSON データの送信方法: `String` (`JsonSerializer` 経由でシリアライズされ、すべての入力を受け付ける) または `Binary` (型ヒント付きの登録済み POCO のみ)  |
+| プロパティ                   | 型                        | デフォルト          | 接続文字列キー                   | 説明                                                                                                                                                                   |
+| ----------------------- | ------------------------ | -------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| UseCompression          | `bool`                   | `true`         | `Compression`             | データ転送で gzip 圧縮を有効にします                                                                                                                                                |
+| UseCustomDecimals       | `bool`                   | `true`         | `UseCustomDecimals`       | 任意精度には `ClickHouseDecimal` を使用します。false の場合は .NET の `decimal` (128 ビット制限) を使用します                                                                                     |
+| ReadStringsAsByteArrays | `bool`                   | `false`        | `ReadStringsAsByteArrays` | `String` および `FixedString` カラムを `string` ではなく `byte[]` として読み取ります。バイナリデータに便利です                                                                                        |
+| UseFormDataParameters   | `bool`                   | `false`        | `UseFormDataParameters`   | パラメータを URL のクエリ文字列ではなくフォームデータとして送信します                                                                                                                                |
+| ReadBufferSize          | `int`                    | `8192` (8 KiB) | `ReadBufferSize`          | HTTP クエリ応答の読み取りに使用するバッファのサイズ (バイト単位) です。大きな result sets でのバッファ再補充を減らすには値を増やしてください。85,000 バイト以上の値は Large Object Heap に割り当てられるため、LOH の断片化や GC の停止時間の長期化を引き起こす可能性があります。 |
+| ParameterTypeResolver   | `IParameterTypeResolver` | `null`         | —                         | `@` スタイルのパラメータ型対応に使用するカスタムリゾルバです。[カスタムパラメータ型対応](#parameter-type-mapping) を参照してください                                                                                   |
+| ParameterFormatter      | `IParameterFormatter`    | `null`         | —                         | パラメータ値のシリアライゼーションに使用するカスタムフォーマッタです。[カスタムパラメータ値フォーマット](#parameter-value-formatting) を参照してください                                                                         |
+| ReadValueConverter      | `IReadValueConverter`    | `null`         | —                         | データリーダーが返す値に適用するカスタム変換です。[カスタム読み取り値変換](#read-value-conversion) を参照してください                                                                                             |
+| JsonReadMode            | `JsonReadMode`           | `Binary`       | `JsonReadMode`            | JSON データの返却方法: `Binary` (`JsonObject` を返す) または `String` (生の JSON 文字列を返す)                                                                                             |
+| JsonWriteMode           | `JsonWriteMode`          | `String`       | `JsonWriteMode`           | JSON データの送信方法: `String` (`JsonSerializer` 経由でシリアライズされ、すべての入力を受け付ける) または `Binary` (型ヒント付きの登録済み POCO のみ)                                                               |
 
 <div id="session-management">
   ### セッション管理
@@ -162,10 +171,11 @@ ClickHouse への接続を設定する方法は 2 つあります。
   ### カスタム設定とロール
 </div>
 
-| プロパティ          | 型                             | デフォルト | 接続文字列キー         | 説明                                                |
-| -------------- | ----------------------------- | ----- | --------------- | ------------------------------------------------- |
-| CustomSettings | `IDictionary<string, object>` | 空     | `set_*` プレフィックス | ClickHouse のサーバー設定。以下の注記を参照してください                 |
-| Roles          | `IReadOnlyList<string>`       | 空     | `Roles`         | カンマ区切りの ClickHouse ロール (例: `Roles=admin,reader`)  |
+| プロパティ           | 型                                     | デフォルト | 接続文字列キー         | 説明                                                             |
+| --------------- | ------------------------------------- | ----- | --------------- | -------------------------------------------------------------- |
+| CustomSettings  | `IDictionary<string, object>`         | 空     | `set_*` プレフィックス | ClickHouse のサーバー設定。以下の注記を参照してください                              |
+| Roles           | `IReadOnlyList<string>`               | 空     | `Roles`         | カンマ区切りの ClickHouse ロール (例: `Roles=admin,reader`)               |
+| ApplicationInfo | `IReadOnlyDictionary<string, string>` | 空     | —               | アプリケーションごとのクエリの帰属先を識別するため、HTTP `User-Agent` ヘッダーに追加される自由形式のタグ。 |
 
 <Note>
   接続文字列でカスタム設定を指定する場合は、`set_` プレフィックスを使用します。たとえば `"set_max_threads=4"` のように指定します。ClickHouseClientSettings オブジェクトを使用する場合は、`set_` プレフィックスは使用しません。
@@ -203,18 +213,21 @@ Host=localhost;set_max_threads=4;set_readonly=1;set_max_memory_usage=10000000000
 
 `QueryOptions` を使用すると、クライアント レベルの設定をクエリごとに上書きできます。すべてのプロパティは省略可能で、指定した場合にのみクライアントのデフォルト値を上書きします。
 
-| プロパティ                 | 型                             | 説明                                                                                               |
-| --------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------ |
-| QueryId               | `string`                      | `system.query_log` での追跡やキャンセルに使用するカスタム クエリ識別子                                                    |
-| Database              | `string`                      | このクエリのデフォルト データベースを上書きします                                                                        |
-| Roles                 | `IReadOnlyList<string>`       | このクエリのクライアント ロールを上書きします                                                                          |
-| CustomSettings        | `IDictionary<string, object>` | このクエリに適用する ClickHouse のサーバー設定 (例: `max_threads`)                                                 |
-| CustomHeaders         | `IDictionary<string, string>` | このクエリ用の追加の HTTP ヘッダー                                                                             |
-| UseSession            | `bool?`                       | このクエリのセッションの動作を上書きします                                                                            |
-| SessionId             | `string`                      | このクエリのセッション ID (`UseSession = true` が必要)                                                         |
-| BearerToken           | `string`                      | このクエリの認証トークンを上書きします                                                                              |
-| ParameterTypeResolver | `IParameterTypeResolver`      | `@` 形式のパラメータ型対応に対するクライアント レベルのリゾルバを上書きします。詳細は [カスタム パラメータ型対応](#parameter-type-mapping) を参照してください |
-| MaxExecutionTime      | `TimeSpan?`                   | サーバー側のクエリ タイムアウト (`max_execution_time` 設定として渡されます) 。制限を超えると、サーバーがクエリをキャンセルします                    |
+| プロパティ                 | 型                             | 説明                                                                                                                                                                      |
+| --------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| QueryId               | `string`                      | `system.query_log` での追跡やキャンセルに使用するカスタム クエリ識別子                                                                                                                           |
+| Database              | `string`                      | このクエリのデフォルト データベースを上書きします                                                                                                                                               |
+| Roles                 | `IReadOnlyList<string>`       | このクエリのクライアント ロールを上書きします                                                                                                                                                 |
+| CustomSettings        | `IDictionary<string, object>` | このクエリに適用する ClickHouse のサーバー設定 (例: `max_threads`)                                                                                                                        |
+| CustomHeaders         | `IDictionary<string, string>` | このクエリ用の追加の HTTP ヘッダー                                                                                                                                                    |
+| UseSession            | `bool?`                       | このクエリのセッションの動作を上書きします                                                                                                                                                   |
+| SessionId             | `string`                      | このクエリのセッション ID (`UseSession = true` が必要)                                                                                                                                |
+| BearerToken           | `string`                      | このクエリの認証トークンを上書きします                                                                                                                                                     |
+| ParameterTypeResolver | `IParameterTypeResolver`      | `@` 形式のパラメータ型対応に対するクライアント レベルのリゾルバを上書きします。詳細は [カスタム パラメータ型対応](#parameter-type-mapping) を参照してください                                                                        |
+| ParameterFormatter    | `IParameterFormatter`         | `@` 形式のパラメータ値のシリアライゼーションに対するクライアント レベルのフォーマッタを上書きします。詳細は [カスタム パラメータ値のフォーマット](#parameter-value-formatting) を参照してください                                                    |
+| ReadValueConverter    | `IReadValueConverter`         | データ リーダーから返される値に適用されるクライアント レベルの変換を上書きします。詳細は [カスタム読み取り値変換](#read-value-conversion) を参照してください                                                                           |
+| MaxExecutionTime      | `TimeSpan?`                   | サーバー側のクエリ タイムアウト (`max_execution_time` 設定として渡されます) 。制限を超えると、サーバーがクエリをキャンセルします                                                                                           |
+| AcceptEncoding        | `string`                      | クエリごとの `Accept-Encoding` ヘッダー上書き (例: `"zstd"`、`"zstd, gzip;q=0.5"`)。また、URL で `enable_http_compression=1` も強制します。詳細は [クエリごとの転送圧縮](#per-query-accept-encoding) を参照してください。 |
 
 **例:**
 
@@ -328,7 +341,7 @@ await client.InsertBinaryAsync("my_table", columns, batch2, options);
   ### クライアントの作成
 </div>
 
-接続文字列または `ClickHouseClientSettings` オブジェクトを使用して、`ClickHouseClient` を作成します。利用可能なオプションについては、[Configuration](#configuration) セクションを参照してください。
+接続文字列または `ClickHouseClientSettings` オブジェクトを使用して、`ClickHouseClient` を作成します。利用可能なオプションについては、[設定](#configuration) セクションを参照してください。
 
 ClickHouse Cloud サービスの詳細は、ClickHouse Cloud コンソールで確認できます。
 
@@ -367,7 +380,7 @@ using var client = new ClickHouseClient(settings);
 依存関係の注入のシナリオでは、`IHttpClientFactory` を使用します。
 
 ```csharp
-// DIの設定内
+// In your DI configuration
 services.AddHttpClient("ClickHouse", client =>
 {
     client.Timeout = TimeSpan.FromMinutes(5);
@@ -376,7 +389,7 @@ services.AddHttpClient("ClickHouse", client =>
     AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
 });
 
-// ファクトリを使用してクライアントを作成する
+// Create client with factory
 var factory = serviceProvider.GetRequiredService<IHttpClientFactory>();
 var client = new ClickHouseClient("Host=localhost", factory, "ClickHouse");
 ```
@@ -574,6 +587,77 @@ while (reader.Read())
 }
 ```
 
+<div id="poco-read">
+  #### POCO の読み取り
+</div>
+
+カラムをインデックスや名前で読み取る代わりに、クエリ結果を独自のクラスへ直接ストリームできます。型をクライアントに一度登録すれば、`QueryAsync<T>` を使用できます。
+
+```csharp
+// Define a POCO matching your result columns
+public class SensorReading
+{
+    public ulong Id { get; set; }
+    public DateTime Timestamp { get; set; }
+
+    [ClickHouseColumn(Name = "sensor_name")]
+    public string SensorName { get; set; }
+    public double Value { get; set; }
+
+}
+
+// Register the type (once per client lifetime)
+client.RegisterPocoType<SensorReading>();
+
+// Stream results as typed objects
+await foreach (var reading in client.QueryAsync<SensorReading>(
+    "SELECT Id, sensor_name, Value, Timestamp FROM sensors"))
+{
+    Console.WriteLine($"{reading.SensorName}: {reading.Value}");
+}
+```
+
+<div id="poco-read-registration">
+  ##### 登録
+</div>
+
+`RegisterPocoType<T>()` は、insert と read の両方のマッピングを設定し、両方を事前に検証します。`RegisterBinaryInsertType<T>()` に変更はなく、backwards compatibility のため引き続き insert 専用です。
+
+登録する型は、次の条件を満たしている必要があります。
+
+* public の引数なしコンストラクター
+* public で `init` ではない setter を持つ public プロパティが少なくとも 1 つあること。`required` プロパティもサポートされます。
+
+<div id="poco-read-column-matching">
+  ##### カラムのマッチング
+</div>
+
+カラムのマッチングでは大文字と小文字が区別されます。結果に存在しないカラムについては、対応するプロパティはデフォルト値のままとなり、余分な結果カラムは無視されます。
+
+自動変換は行われず、型が一致しない場合は `InvalidOperationException` がスローされます。
+
+<div id="poco-read-mapto">
+  ##### 1 行をマテリアライズする
+</div>
+
+リーダーを手動で順に処理する場合は、`ClickHouseDataReader.MapTo<T>()` を使用して、リーダーを進めずに現在の行を登録済みの POCO にマテリアライズします。
+
+```csharp
+var reader = await client.ExecuteReaderAsync("SELECT Id, SensorName, Value, Timestamp FROM sensors");
+
+while (reader.Read())
+{
+    SensorReading reading = reader.MapTo<SensorReading>();
+    Console.WriteLine($"{reading.SensorName}: {reading.Value}");
+}
+```
+
+<div id="poco-read-diagnostics">
+  ##### 登録時の診断情報
+</div>
+
+`LoggerFactory` が設定されている場合、`RegisterPocoType<T>()` と `RegisterBinaryInsertType<T>()` は、どのプロパティがどのカラムにマッピングされたか、またどのプロパティがなぜスキップされたのかを示す `Debug` レベルのログ (カテゴリ `ClickHouse.Driver.Client`) を出力します。詳しくは、[ロギングと診断情報](#logging-and-diagnostics)を参照してください。
+
 ***
 
 <div id="sql-parameters">
@@ -599,6 +683,28 @@ INSERT INTO table VALUES ({val1:Int32}, {val2:Array(UInt8)})
 <Note>
   SQL の&#39;bind&#39; パラメータは HTTP URI のクエリパラメータとして渡されるため、数が多すぎると &quot;URL が長すぎる&quot; 例外が発生することがあります。この制限を回避してデータを一括挿入するには、`InsertBinaryAsync` を使用してください。
 </Note>
+
+<div id="identifier-parameters">
+  #### Identifier パラメーター
+</div>
+
+`Identifier` パラメーター型を使用すると、引用符付きの文字列リテラルの代わりに、データベース名、テーブル名、またはカラム名を安全にバインドできます。SQL では `{name:Identifier}` 構文を使用するか、`ClickHouseDbParameter.ClickHouseType = "Identifier"` を設定して使用します。
+
+```csharp
+var parameters = new ClickHouseParameterCollection();
+parameters.AddParameter("name", "my_database");
+
+await client.ExecuteNonQueryAsync("CREATE DATABASE {name:Identifier}", parameters);
+```
+
+```csharp
+var parameters = new ClickHouseParameterCollection();
+parameters.AddParameter("col", "user_id");
+
+var reader = await client.ExecuteReaderAsync("SELECT {col:Identifier} FROM t", parameters);
+```
+
+値はそのまま送信され、サーバーがそれをクォートなしのSQL識別子として置き換え、サーバー側のバッククォートによる引用とエスケープを適用します。特殊文字 (バッククォートを含む) を含む識別子も、安全にラウンドトリップできます。
 
 ***
 
@@ -628,10 +734,18 @@ var reader = await client.ExecuteReaderAsync(
 ***
 
 <div id="parameter-type-mapping">
-  ### カスタム パラメータ型対応
+  ### カスタム パラメータ型マッピング
 </div>
 
-`@` 形式のパラメータ (例: `WHERE id = @id`) を使用すると、ドライバーは .NET の値型から ClickHouse の型を自動的に推論します。たとえば、`int` は `Int32` に、`DateTime` は `DateTime` にマッピングされます。
+`@` 形式のパラメータ (例: `WHERE id = @id`) を使用すると、ドライバーは .NET の値型から ClickHouse の型を自動的に推論します。たとえば、`int` は `Int32` にマッピングされます。
+
+<Warning>
+  **推論される DateTime パラメータの挙動**
+
+  SQL に `{name:Type}` ヒントがなく、`ClickHouseType` も設定されていない `@` 形式のパラメータでは、時点を表す値は単なる `DateTime` ではなく `DateTime('UTC')` として推論されます。`Kind` が `Utc` または `Local` の `DateTime` と、すべての `DateTimeOffset` の値は `DateTime('UTC')` として送信されるため、どのサーバータイムゾーンでも同じ時点が保持されます。
+
+  明示的なヒント (`{name:DateTime}`) は推論より優先され、クエリを構築する推奨方法です。
+</Warning>
 
 これらの既定の対応を上書きするには、`ClickHouseClientSettings` で `ParameterTypeResolver` を設定します。これは、個々のパラメータごとに `ClickHouseType` を設定しなくても、すべての `DateTime` パラメータでミリ秒精度の `DateTime64(3)` を使いたい場合や、すべての `decimal` で特定の小数点以下桁数を使いたい場合に便利です。
 
@@ -651,8 +765,8 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 using var client = new ClickHouseClient(settings);
 
 var parameters = new ClickHouseParameterCollection();
-parameters.AddParameter("dt", DateTime.UtcNow);     // DateTime64(3) にマップされる
-parameters.AddParameter("amount", 99.1234m);         // Decimal64(4) にマップされる
+parameters.AddParameter("dt", DateTime.UtcNow);     // Mapped to DateTime64(3)
+parameters.AddParameter("amount", 99.1234m);         // Mapped to Decimal64(4)
 
 await client.ExecuteReaderAsync("SELECT @dt, @amount", parameters);
 ```
@@ -667,7 +781,7 @@ public class SmartDecimalResolver : IParameterTypeResolver
     public string ResolveType(Type clrType, object value, string parameterName)
     {
         if (clrType != typeof(decimal))
-            return null; // デフォルトの推論にフォールスルー
+            return null; // Fall through to default
 
         var scale = (decimal.GetBits((decimal)value)[3] >> 16) & 0x7F;
         return scale <= 4 ? $"Decimal64({scale})" : $"Decimal128({scale})";
@@ -690,6 +804,128 @@ public class SmartDecimalResolver : IParameterTypeResolver
 
 ***
 
+<div id="parameter-value-formatting">
+  ### カスタム パラメータ値のフォーマット
+</div>
+
+`IParameterFormatter` は、パラメータ値をどのようにシリアライズするかを決定するフックです。組み込みのフォーマット (例: DateTime の精度、小数のカルチャ、文字列のエスケープ、数値表現) が、スキーマや後続のツールの想定と一致しない場合に使用します。
+
+パラメータ化されたすべてのクエリにフォーマッタを適用するには、`ClickHouseClientSettings` で `ParameterFormatter` を設定します。このフォーマッタは、値、解決された ClickHouse の型名、パラメータ名を受け取り、サーバーに送信される文字列表現を返します。既定のフォーマッタに処理を委ねるには、`null` を返します。
+
+**単純な CLR 型ごとのフォーマットには `DictionaryParameterFormatter` を使用します:**
+
+```csharp
+using ClickHouse.Driver.ADO.Parameters;
+
+var settings = new ClickHouseClientSettings("Host=localhost")
+{
+    ParameterFormatter = new DictionaryParameterFormatter(new Dictionary<Type, Func<object, string>>
+    {
+        [typeof(DateTime)] = v => ((DateTime)v).ToString("yyyy-MM-ddTHH:mm:ss.ffffff",
+            System.Globalization.CultureInfo.InvariantCulture),
+        [typeof(decimal)] = v => ((decimal)v).ToString("F4",
+            System.Globalization.CultureInfo.InvariantCulture),
+    }),
+};
+using var client = new ClickHouseClient(settings);
+```
+
+**高度なユースケース向けのカスタム `IParameterFormatter`:**
+
+```csharp
+public class FixedDecimalFormatter : IParameterFormatter
+{
+    public string Format(object value, string typeName, string parameterName)
+    {
+        if (value is decimal d)
+            return d.ToString("F4", System.Globalization.CultureInfo.InvariantCulture);
+        return null; // Fall through for anything else
+    }
+}
+```
+
+`QueryOptions.ParameterFormatter` を使うと、クエリごとにフォーマッタを設定することもできます。設定した場合、クライアントレベルのフォーマッタより優先されます。
+
+**複合値:**
+
+このフォーマッタは、最上位のコレクション parameter と、複合値 (`Array`、`Tuple`、`Map`、`Nullable`、`LowCardinality`、`Variant`) 内の各要素の両方に対して実行されます。たとえば、`typeof(int)` のマッピングでは、`Array(Int32)` 内の各 `Int32` 要素が個別にフォーマットされます。
+
+**複合コンテキストでのシングルクォートによる囲み:**
+
+複合リテラル内に埋め込まれた文字列系の ClickHouse type (`String`、`FixedString`、`Enum8`、`Enum16`、`IPv4`、`IPv6`、`UUID`) では、ドライバーはフォーマッタの出力をシングルクォートで囲みますが、その内容はエスケープしません。返された文字列にエスケープされていないシングルクォートや backslash が含まれていると、複合リテラルは不正な形式となり、server はクエリを拒否します。
+
+最上位の文字列 parameter (複合値に埋め込まれていないもの) は囲まずにそのまま使用されるため、その場合は escaping は不要です。
+
+**フォーマッタの優先順位:**
+
+1. `IParameterFormatter` (`QueryOptions.ParameterFormatter` を使用し、未設定の場合は `ClickHouseClientSettings.ParameterFormatter` にフォールバック) 。これが non-null を返した場合は、その値が使用されます。
+2. `HttpParameterFormatter` に組み込まれている type 固有のフォーマット。
+
+このフォーマッタは `null` または `DBNull` の値には適用されません。これらは常に ClickHouse の null センチネル (`\N`) として serialize されます。
+
+***
+
+<div id="read-value-conversion">
+  ### カスタム読み取り値変換
+</div>
+
+`IReadValueConverter` を使用すると、CLR 型を変更せずに、データリーダーが返す値をデシリアライゼーション後に変換できます。一般的な用途としては、タイムゾーンを持たない `DateTime` カラムに対して `DateTime.Kind = Utc` を設定すること、文字列のトリミングや正規化を行うこと、あるいは JSON カラムがアプリケーションコードに渡される前に後処理することなどがあります。
+
+すべての読み取りに対してコンバーターを適用するには、`ClickHouseClientSettings` で `ReadValueConverter` を設定します。コンバーターは、ボックス化された (`GetValue`) パスとジェネリック (`GetFieldValue<T>`) パスの両方で、各カラムの各行ごとに 1 回呼び出されます。コンバーターが設定されていない場合、オーバーヘッドはゼロで、リーダーは値をそのまま返します。
+
+**単純な CLR 型単位の変換に `DictionaryReadValueConverter` を使用する:**
+
+```csharp
+using ClickHouse.Driver.ADO.Readers;
+
+var converter = new DictionaryReadValueConverter()
+    .For<DateTime>(dt => DateTime.SpecifyKind(dt, DateTimeKind.Utc))
+    .For<string>(s => s.Trim());
+
+var settings = new ClickHouseClientSettings("Host=localhost")
+{
+    ReadValueConverter = converter,
+};
+using var client = new ClickHouseClient(settings);
+```
+
+実行時の CLR 型が `For<T>` に登録されていない値は、変更されずにそのまま渡されます。ディスパッチは厳密に CLR 型で行われるため、リーダーが実際に生成する型を登録してください (例: `JsonReadMode.Binary` の JSON カラムには `For<JsonObject>` を登録します) 。
+
+**高度なシナリオ向けのカスタム `IReadValueConverter`:**
+
+ClickHouse 側の type string に基づいてディスパッチする必要がある場合 (たとえば `DateTime` と `DateTime('UTC')` を区別したい場合。どちらも同じ CLR 型として扱われます) 、`IReadValueConverter` を直接実装してください:
+
+```csharp
+public class UtcKindForNoTzDateTimeConverter : IReadValueConverter
+{
+    public object ConvertValue(object value, string columnName, string clickHouseType)
+    {
+        if (value is DateTime dt && clickHouseType == "DateTime")
+            return DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+        return value;
+    }
+
+    public T ConvertValue<T>(T value, string columnName, string clickHouseType)
+    {
+        if (typeof(T) == typeof(DateTime) && value is DateTime dt && clickHouseType == "DateTime")
+            return (T)(object)DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+        return value;
+    }
+}
+```
+
+コンバーターは、実行時の CLR 型を保持する必要があります。カラムのメタデータ (`GetFieldType`, `GetSchemaTable`) はこの仕組みを経由して振り分け直されないため、返される内容と整合している必要があります。
+
+`QueryOptions.ReadValueConverter` を使うと、クエリごとにコンバーターを設定することもできます。設定した場合は、クライアントレベルのコンバーターよりも優先されます。
+
+**ディスパッチ境界:**
+
+コンバーターは各カラムごとに、デシリアライズ済みのセル値全体を対象として 1 回だけ呼び出され、複合コンテナーの内部までは再帰的に処理しません。`Array(Int32)` カラムでは渡される値は `int[]` であり、`Tuple(Int32, String)` では `ITuple` です。
+
+このコンバーターは、ADO.NET の `ClickHouseConnection` 経由のパスで動作します。設定は、クライアントから作成される接続に引き継がれます。
+
+***
+
 <div id="raw-streaming">
   ### 生データのストリーミング
 </div>
@@ -707,6 +943,43 @@ var json = await reader.ReadToEndAsync();
 ```
 
 一般的なフォーマット: `JSONEachRow`, `CSV`, `TSV`, `Parquet`, `Native`。利用可能なオプションについては、[フォーマットのドキュメント](/ja/reference/formats/index)を参照してください。
+
+***
+
+<div id="per-query-accept-encoding">
+  ### クエリごとの転送圧縮
+</div>
+
+デフォルトでは、`Compression=true` (connection-string のデフォルト) が設定されている場合、client は `gzip, deflate` をネゴシエートし、HTTP client は stream を透過的に展開します。
+
+生のエクスポート (例: Parquet、Arrow、Native) では、接続全体の設定を変更せずに CPU と bandwidth のバランスを取るため、別のコーデック (例: `zstd` または `lz4`) をネゴシエートしたいことがあります。`QueryOptions.AcceptEncoding` と `ClickHouseCommand.AcceptEncoding` は、単一のリクエストに対して HTTP `Accept-Encoding` header を設定し、既定で付与されていた値を置き換えるとともに、URL に `enable_http_compression=1` を強制的に付与します (これは ClickHouse が `Accept-Encoding` を受け入れる前に必要とする条件です) 。
+
+```csharp
+using var result = await client.ExecuteRawResultAsync(
+    "SELECT * FROM events FORMAT Parquet",
+    options: new QueryOptions { AcceptEncoding = "zstd" });
+
+// Decode yourself or write to a file
+await using var body = await result.ReadAsStreamAsync();
+```
+
+<div id="per-query-accept-encoding-httpclient">
+  #### HttpClient の設定
+</div>
+
+ドライバーが生成する既定の `HttpClient` では、`AutomaticDecompression = GZip | Deflate` が設定されており、これらのアルゴリズムによる圧縮を透過的に展開し、レスポンスから `Content-Encoding` を取り除きます。通常のクエリではこれは望ましい動作ですが、生の圧縮データを自分で処理したい場合には適していません。
+
+その場合は、`AutomaticDecompression = DecompressionMethods.None` を設定した `HttpClient` または `HttpClientFactory` を ClickHouseClient に渡してください。
+
+<Warning>
+  `AcceptEncoding` で、設定された `HttpClient` が自動展開できないコーデックを要求している場合、安全に使えるのは `ExecuteRawResultAsync` だけです。同じクエリ処理パスで `ExecuteReaderAsync`、`ExecuteScalarAsync`、または `ExecuteNonQueryAsync` を呼び出すと、圧縮されたバイト列を通常の結果フォーマットとして解釈しようとして、意味のない結果になります。
+</Warning>
+
+<div id="per-query-accept-encoding-errors">
+  #### エラーのボディ
+</div>
+
+サーバーが 4xx/5xx で応答し、`enable_http_compression=1` が設定されている場合、正常な応答に使用されるものと同じコーデックでエラーのボディも圧縮されます。ドライバーは、BCL に含まれるコーデック (`gzip`、`deflate`、`br`/`brotli`) であればこれを展開するため、`ClickHouseServerException` に表示されるメッセージはそのまま読めます。デコードできないコーデック (`zstd`、`lz4`、…) については、ドライバーはコーデック名を示し、元のエラーテキストは `system.query_log` を参照するよう案内するプレースホルダーメッセージを返します。
 
 ***
 
@@ -1174,24 +1447,24 @@ var settings = new ClickHouseClientSettings("Host=localhost")
   #### その他の型
 </div>
 
-| ClickHouse 型            | .NET 型                              |
-| ----------------------- | ----------------------------------- |
-| UUID                    | `Guid`                              |
-| IPv4                    | `IPAddress`                         |
-| IPv6                    | `IPAddress`                         |
-| Nothing                 | `DBNull`                            |
-| Dynamic                 | 注を参照                                |
-| Array(T)                | `T[]`                               |
-| Tuple(T1, T2, ...)      | `Tuple<T1, T2, ...>` / `LargeTuple` |
-| Map(K, V)               | `Dictionary<K, V>`                  |
-| Nullable(T)             | `T?`                                |
-| Enum8                   | `string`                            |
-| Enum16                  | `string`                            |
-| LowCardinality(T)       | T と同じ                               |
-| SimpleAggregateFunction | 基底となる型と同じ                           |
-| Nested(...)             | `Tuple[]`                           |
-| Variant(T1, T2, ...)    | 注を参照                                |
-| QBit(T, dimension)      | `T[]`                               |
+| ClickHouse 型            | .NET 型                                                                                                                                 |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| UUID                    | `Guid`                                                                                                                                 |
+| IPv4                    | `IPAddress`                                                                                                                            |
+| IPv6                    | `IPAddress`                                                                                                                            |
+| Nothing                 | `DBNull`                                                                                                                               |
+| Dynamic                 | 注を参照                                                                                                                                   |
+| Array(T)                | `T[]`  (ネストされた `Array(Array(T))` はジャグ配列の `T[][]` として読み取られます。長方形データを多次元 CLR 配列として具体化するには `reader.GetFieldValue<T[,]>(ordinal)` を使用します)  |
+| Tuple(T1, T2, ...)      | `Tuple<T1, T2, ...>` / `LargeTuple`                                                                                                    |
+| Map(K, V)               | `Dictionary<K, V>`                                                                                                                     |
+| Nullable(T)             | `T?`                                                                                                                                   |
+| Enum8                   | `string`                                                                                                                               |
+| Enum16                  | `string`                                                                                                                               |
+| LowCardinality(T)       | T と同じ                                                                                                                                  |
+| SimpleAggregateFunction | 基底となる型と同じ                                                                                                                              |
+| Nested(...)             | `Tuple[]`                                                                                                                              |
+| Variant(T1, T2, ...)    | 注を参照                                                                                                                                   |
+| QBit(T, dimension)      | `T[]`                                                                                                                                  |
 
 <Note>
   Dynamic 型と Variant 型は、各行で実際に使用されている基底型に対応する型に変換されます。
@@ -1284,22 +1557,28 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 </div>
 
 | ClickHouse 型 | 受け入れ可能な .NET 型                                                    | 注記                                                                        |
-| --------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| Date            | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 型              | Unix 日数として `UInt16` に変換されます                                               |
-| Date32          | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 型              | Unix 日数として `Int32` に変換されます                                                |
-| DateTime        | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 型              | 詳細は以下を参照                                                                  |
-| DateTime32      | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 型              | `DateTime` と同じ                                                            |
-| DateTime64      | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 型              | 精度はスケールパラメータに基づきます                                                        |
-| Time            | `TimeSpan`, `int`                                                 | ±999:59:59 に丸められます。`int` は秒として扱われます                                       |
-| Time64          | `TimeSpan`, `decimal`, `double`, `float`, `int`, `long`, `string` | `string` は `[-]HHH:MM:SS[.fraction]` として解析され、±999:59:59.999999999 に丸められます |
+| ------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Date         | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 型              | Unix 日数として `UInt16` に変換されます。サポート範囲は `[1970-01-01, 2149-06-06]` です         |
+| Date32       | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 型              | Unix 日数として `Int32` に変換されます。サポート範囲は `[1900-01-01, 2299-12-31]` です          |
+| DateTime     | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 型              | 詳細は以下を参照。サポート範囲は UTC で `[1970-01-01, 2106-02-07 06:28:15]` です             |
+| DateTime32   | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 型              | `DateTime` と同じ                                                            |
+| DateTime64   | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 型              | 精度はスケールパラメータに基づきます                                                        |
+| Time         | `TimeSpan`, `int`                                                 | ±999:59:59 に丸められます。`int` は秒として扱われます                                       |
+| Time64       | `TimeSpan`, `decimal`, `double`, `float`, `int`, `long`, `string` | `string` は `[-]HHH:MM:SS[.fraction]` として解析され、±999:59:59.999999999 に丸められます |
+
+<Note>
+  **範囲外の値**
+
+  バイナリ書き込みパスでは、サポート範囲外の `Date`、`Date32`、`DateTime`、`DateTime32` の値は、`Write` 時に `ArgumentOutOfRangeException` をスローし、カラム型とサポート範囲がエラーメッセージに含まれます。以前は、範囲外の値が 32 ビット整数を介して暗黙的に切り詰められ、サーバーによって再解釈されることで、実在はするものの誤った timestamp が生成される可能性がありました。
+</Note>
 
 ドライバーは値の書き込み時に `DateTime.Kind` を考慮します。
 
-| DateTime.Kind | HTTP パラメータ                                  | バルクコピー                       |
-| ------------- | ------------------------------------------- | ---------------------------- |
-| Utc           | 時点は保持されます                                   | 時点は保持されます                    |
-| Local         | 時点は保持されます                                   | 時点は保持されます                    |
-| Unspecified   | パラメータ型の timezone の壁時計時刻として扱われます (既定では UTC)  | カラムの timezone の壁時計時刻として扱われます |
+| DateTime.Kind | HTTP パラメータ                                 | バルクコピー                       |
+| ------------- | ------------------------------------------ | ---------------------------- |
+| Utc           | 時点は保持されます                                  | 時点は保持されます                    |
+| Local         | 時点は保持されます                                  | 時点は保持されます                    |
+| Unspecified   | パラメータ型のタイムゾーンの壁時計時刻として扱われます (既定では UTC) | カラムのタイムゾーンの壁時計時刻として扱われます |
 
 `DateTimeOffset` の値では、常に正確な時点が保持されます。
 
@@ -1307,17 +1586,17 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 
 ```csharp
 var utcTime = new DateTime(2024, 1, 15, 12, 0, 0, DateTimeKind.Utc);
-// 12:00 UTC として保存
-// DateTime('Europe/Amsterdam') カラムから読み取り: 13:00 (UTC+1)
-// DateTime('UTC') カラムから読み取り: 12:00 UTC
+// Stored as 12:00 UTC
+// Read from DateTime('Europe/Amsterdam') column: 13:00 (UTC+1)
+// Read from DateTime('UTC') column: 12:00 UTC
 ```
 
 **例: 未指定の DateTime (時計上の時刻)&#x20;**
 
 ```csharp
 var wallClock = new DateTime(2024, 1, 15, 14, 30, 0, DateTimeKind.Unspecified);
-// DateTime('Europe/Amsterdam') カラムへの書き込み: アムステルダム時刻の 14:30 として保存
-// DateTime('Europe/Amsterdam') カラムからの読み取り: 14:30
+// Written to DateTime('Europe/Amsterdam') column: stored as 14:30 Amsterdam time
+// Read back from DateTime('Europe/Amsterdam') column: 14:30
 ```
 
 **推奨事項:** 最もシンプルで予測しやすい動作にするため、すべての DateTime 操作で `DateTimeKind.Utc` または `DateTimeOffset` を使用してください。これにより、サーバーのタイムゾーン、クライアントのタイムゾーン、またはカラムのタイムゾーンに関係なく、コードが常に一貫して動作します。
@@ -1479,24 +1758,24 @@ await client.InsertBinaryAsync(
   #### その他の型
 </div>
 
-| ClickHouse 型         | 受け入れ可能な .NET 型                    | 注記                                                      |
-| ----------------------- | --------------------------------- | ------------------------------------------------------- |
-| UUID                    | `Guid`, `string`                  | `string` は Guid としてパースされます                              |
-| IPv4                    | `IPAddress`, `string`             | IPv4 である必要があります。`string` は `IPAddress.Parse()` でパースされます |
-| IPv6                    | `IPAddress`, `string`             | IPv6 である必要があります。`string` は `IPAddress.Parse()` でパースされます |
-| Nothing                 | Any                               | 何も書き込みません (no-op)                                       |
-| Dynamic                 | —                                 | **未サポート** (`NotImplementedException` をスローします)           |
-| Array(T)                | `IList`, `null`                   | `null` は空配列として書き込まれます                                   |
-| Tuple(T1, T2, ...)      | `ITuple`, `IList`                 | 要素数はタプルの要素数と一致する必要があります                                 |
-| Map(K, V)               | `IDictionary`                     |                                                         |
-| Nullable(T)             | `null`, `DBNull`, または T で受け入れ可能な型 | 値の前に null フラグのバイトを書き込みます                                |
-| Enum8                   | `string`, `sbyte`, 数値型            | `string` は enum 辞書で参照されます                               |
-| Enum16                  | `string`, `short`, 数値型            | `string` は enum 辞書で参照されます                               |
-| LowCardinality(T)       | T で受け入れ可能な型                       | 基になる型に委譲します                                             |
-| SimpleAggregateFunction | 基になる型で受け入れ可能な型                    | 基になる型に委譲します                                             |
-| Nested(...)             | タプルの `IList`                      | 要素数はフィールド数と一致する必要があります                                  |
-| Variant(T1, T2, ...)    | T1, T2, ... のいずれかに一致する値           | 一致する型がない場合は `ArgumentException` をスローします                 |
-| QBit(T, dim)            | `IList`                           | Array に委譲します。次元はメタデータとしてのみ使用されます                        |
+| ClickHouse 型            | 受け入れ可能な .NET 型                    | 注記                                                                                                                                                                                    |
+| ----------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| UUID                    | `Guid`, `string`                  | `string` は Guid としてパースされます                                                                                                                                                            |
+| IPv4                    | `IPAddress`, `string`             | IPv4 である必要があります。`string` は `IPAddress.Parse()` でパースされます                                                                                                                               |
+| IPv6                    | `IPAddress`, `string`             | IPv6 である必要があります。`string` は `IPAddress.Parse()` でパースされます                                                                                                                               |
+| Nothing                 | Any                               | 何も書き込みません (no-op)                                                                                                                                                                     |
+| Dynamic                 | —                                 | **未サポート** (`NotImplementedException` をスローします)                                                                                                                                         |
+| Array(T)                | `IList`, `null`                   | `null` は空配列として書き込まれます。ネストされた型 (`Array(Array(T))` 以上) では、ジャグ配列 (`T[][]`, `List<List<T>>`) と長方形の多次元 CLR 配列 (`T[,]`, `T[,,]`, …) のどちらも受け入れられます。CLR のランクは ClickHouse のネストの深さと一致する必要があります。 |
+| Tuple(T1, T2, ...)      | `ITuple`, `IList`                 | 要素数はタプルの要素数と一致する必要があります。要素数が 7 を超える場合は、[ValueTuple の注意点](#valuetuple-caveat) を参照してください。                                                                                               |
+| Map(K, V)               | `IDictionary`                     |                                                                                                                                                                                       |
+| Nullable(T)             | `null`, `DBNull`, または T で受け入れ可能な型 | 値の前に null フラグのバイトを書き込みます                                                                                                                                                              |
+| Enum8                   | `string`, `sbyte`, 数値型            | `string` は enum 辞書で参照されます                                                                                                                                                             |
+| Enum16                  | `string`, `short`, 数値型            | `string` は enum 辞書で参照されます                                                                                                                                                             |
+| LowCardinality(T)       | T で受け入れ可能な型                       | 基になる型に委譲します                                                                                                                                                                           |
+| SimpleAggregateFunction | 基になる型で受け入れ可能な型                    | 基になる型に委譲します                                                                                                                                                                           |
+| Nested(...)             | タプルの `IList`                      | 要素数はフィールド数と一致する必要があります                                                                                                                                                                |
+| Variant(T1, T2, ...)    | T1, T2, ... のいずれかに一致する値           | 一致する型がない場合は `ArgumentException` をスローします                                                                                                                                               |
+| QBit(T, dim)            | `IList`                           | Array に委譲します。次元はメタデータとしてのみ使用されます                                                                                                                                                      |
 
 ***
 
@@ -2547,6 +2826,35 @@ dotnet ef database update
 <div id="limitations">
   ## 制限事項
 </div>
+
+<div id="valuetuple-caveat">
+  ### 要素が 8 個以上で、最後の位置にネストしたタプルがある Tuple
+</div>
+
+要素数が 7 を超える C# の `ValueTuple` 型では、コンパイラ生成のネスト方式が使われます。つまり、8 番目のジェネリック引数 (`TRest`) は、それ自体が残りの要素を保持する `ValueTuple` になります。たとえば、`(int, int, int, int, int, int, int, string, string)` は `ValueTuple<int, int, int, int, int, int, int, ValueTuple<string, string>>` にコンパイルされます。
+
+このため、ClickHouse のカラムが 8 要素のタプルで、最後の要素自体もタプルである場合に曖昧さが生じます。たとえば、`Tuple(Int32, Int32, Int32, Int32, Int32, Int32, Int32, Tuple(String, String))` のようなケースです。ドライバーは次の 2 つを区別できません。
+
+* **フラットな 9 要素タプル** (コンパイラ生成の TRest ネスト)
+* 最後の要素がネストした `Tuple(String, String)` である **8 要素タプル**
+
+どちらも同じ .NET 型 `ValueTuple<int, int, int, int, int, int, int, ValueTuple<string, string>>` になります。
+
+ドライバーは 8 番目の引数を TRest として扱い (つまりフラット化し) 、そのため最後にネストしたタプルを持つ 8 要素のケースは誤ってシリアライズされます。
+
+これは、どちらも 7 要素超で TRest ネストを使うため、`System.Tuple` と `ValueTuple` の両方に影響します。要素が 7 個以下のタプル、または最後の要素自体がタプルではないタプルは影響を受けません。
+
+**回避策:** ドライバーが TRest ネストと区別できるように、内側のタプルをさらに 1 層ラップします。
+
+```csharp
+// Instead of this (ambiguous — is it 8 elements or 9 flat?):
+Tuple.Create(1, 2, 3, 4, 5, 6, 7, Tuple.Create("a", "b"))
+
+// Do this (unambiguous — inner tuple is wrapped):
+Tuple.Create(1, 2, 3, 4, 5, 6, 7, Tuple.Create(Tuple.Create("a", "b")))
+```
+
+***
 
 <div id="aggregatefunction-columns">
   ### AggregateFunction カラム
