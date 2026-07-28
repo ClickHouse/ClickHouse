@@ -175,9 +175,11 @@ def test_delete_on_a_nearly_full_disk_replicated_is_still_deferred(start_cluster
     assert_fixture_is_meaningful("rmt_small_delete")
 
     node.query("ALTER TABLE rmt_small_delete DELETE WHERE id = 1", settings={"alter_sync": 0})
+    # A DELETE rewrites the part, so it must stay deferred rather than fill the disk.
     assert node.query_with_retry(
         """
-        SELECT notEmpty(parts_postpone_reasons) OR NOT is_done
+        SELECT arrayExists(reason -> reason = 'Exceed max source part size',
+                           mapValues(parts_postpone_reasons))
         FROM system.mutations WHERE table = 'rmt_small_delete' AND NOT is_done
         """,
         check_callback=lambda r: r.strip() == "1",

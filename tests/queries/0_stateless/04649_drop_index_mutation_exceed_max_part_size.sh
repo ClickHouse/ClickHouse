@@ -374,7 +374,8 @@ $CLICKHOUSE_CLIENT --query "
              packed_skip_index_max_bytes = 1048576;
 
     /* Its statistics-free twin. Whatever the two write in common cancels out, so the difference between
-       them is the statistics write, which the non-exempt mutation must still be performing. */
+       them isolates the statistics write that WOULD occur on regression: near nothing while the decision
+       is derived from the commands, and the whole archive again if it went back to keying on admission. */
     CREATE TABLE write_footprint_nonexempt_baseline (id UInt64,
         a UInt64, b UInt64, c UInt64, d UInt64, e UInt64, f UInt64,
         INDEX idx_id id TYPE minmax GRANULARITY 1, INDEX idx_a a TYPE minmax GRANULARITY 1)

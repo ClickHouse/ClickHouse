@@ -17,9 +17,13 @@ set -e
 # not touch must be admitted anyway; anything that rewrites the part must still be postponed.
 
 # The failpoint is server-wide, so leaving it enabled after an early exit under `set -e` would give
-# every later mutation on this server a 1 byte budget.
+# every later mutation on this server a 1 byte budget. The queue stop below is table-scoped, but an
+# early exit between stopping and starting it would leave the DROP of that table waiting forever.
 trap '$CLICKHOUSE_CLIENT --query "
     SYSTEM DISABLE FAILPOINT rmt_merge_selecting_task_max_part_size;
+" 2>/dev/null || true
+$CLICKHOUSE_CLIENT --query "
+    SYSTEM START REPLICATION QUEUES rmt_fetch_2;
 " 2>/dev/null || true' EXIT
 
 $CLICKHOUSE_CLIENT --query "
@@ -107,8 +111,101 @@ $CLICKHOUSE_CLIENT --query "
     WHERE database = currentDatabase() AND table = 'rmt_delete' AND NOT is_done;
 "
 
+##########################################################################################
+# Fetch suppression. An exempt mutation must run LOCALLY even when the result part is already
+# available elsewhere: the fetch would reserve the sender's whole part, which on the full disk this
+# feature exists for can never succeed - the reported bug with extra steps. Two replicas of one table
+# are needed because findReplicaHavingPart skips the replica itself, so with a single replica the
+# `!hardlink_only` conjunct in MutateFromLogEntryTask is unreachable and deleting it changes nothing.
+#
+# prefer_fetch_merged_part_time_threshold = 0 and prefer_fetch_merged_part_size_threshold = 0 force
+# the fetch preference on whenever it CAN apply (defaults are 3600 s and 10 GiB), so the only thing
+# left standing between the entry and a fetch is the exemption itself.
+##########################################################################################
+
+$CLICKHOUSE_CLIENT --query "
+    SET insert_keeper_fault_injection_probability = 0;
+
+    CREATE TABLE rmt_fetch_1 (event String, id UInt64,
+        INDEX idx_event event TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1)
+    ENGINE = ReplicatedMergeTree('/zookeeper/{database}/rmt_fetch/', '1') ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+             packed_skip_index_max_bytes = 0,
+             prefer_fetch_merged_part_time_threshold = 0, prefer_fetch_merged_part_size_threshold = 0,
+             merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
+
+    CREATE TABLE rmt_fetch_2 (event String, id UInt64,
+        INDEX idx_event event TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1)
+    ENGINE = ReplicatedMergeTree('/zookeeper/{database}/rmt_fetch/', '2') ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+             packed_skip_index_max_bytes = 0,
+             prefer_fetch_merged_part_time_threshold = 0, prefer_fetch_merged_part_size_threshold = 0,
+             merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
+
+    INSERT INTO rmt_fetch_1 SELECT repeat('abcdefgh', 20), number FROM numbers(20000);
+    SYSTEM SYNC REPLICA rmt_fetch_2;
+    OPTIMIZE TABLE rmt_fetch_1 FINAL;
+    SYSTEM SYNC REPLICA rmt_fetch_2;
+"
+
+# Hold replica 2 back so replica 1 finishes the mutation first and the result part exists to be
+# fetched. Without this ordering the two race and replica 2 usually mutates before anyone could have
+# offered it a fetch, which would make the case pass for the wrong reason.
+$CLICKHOUSE_CLIENT --query "SYSTEM STOP REPLICATION QUEUES rmt_fetch_2"
+
+$CLICKHOUSE_CLIENT --query "
+    ALTER TABLE rmt_fetch_1 DROP INDEX idx_event SETTINGS alter_sync = 1, mutations_sync = 1;
+"
+
+# Replica 1 is done, so its result part is now a fetch candidate for replica 2.
+$CLICKHOUSE_CLIENT --query "
+    SELECT 'rmt_fetch', 'source_ready', count() FROM system.mutations
+    WHERE database = currentDatabase() AND table = 'rmt_fetch_1' AND is_done;
+"
+
+$CLICKHOUSE_CLIENT --query "
+    SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_max_part_size;
+    SYSTEM START REPLICATION QUEUES rmt_fetch_2;
+"
+
+wait_for_mutation "rmt_fetch_2" "0000000000"
+
+# The route oracle plus the absence of any fetch. A fetch produces a DownloadPart entry and no
+# partial-route MutatePart event at all, so the two together pin the entry to the local partial route.
+$CLICKHOUSE_CLIENT --query "
+    SYSTEM FLUSH LOGS part_log;
+
+    SELECT 'rmt_fetch', 'route_partial', sum(ProfileEvents['MutationSomePartColumns']) > 0,
+        'route_full', sum(ProfileEvents['MutationAllPartColumns'])
+    FROM system.part_log
+    WHERE database = currentDatabase() AND table = 'rmt_fetch_2' AND event_type = 'MutatePart';
+
+    /* Scoped to the mutation's RESULT part, which is the active one: replica 2 also downloads the
+       pre-mutation part when it first syncs, and that fetch is expected. */
+    SELECT 'rmt_fetch', 'downloads_of_result', count() FROM system.part_log
+    WHERE database = currentDatabase() AND table = 'rmt_fetch_2' AND event_type = 'DownloadPart'
+      AND part_name IN (SELECT name FROM system.parts
+          WHERE database = currentDatabase() AND table = 'rmt_fetch_2' AND active);
+
+    SELECT 'rmt_fetch', 'pending', count() FROM system.mutations
+    WHERE database = currentDatabase() AND table = 'rmt_fetch_2' AND NOT is_done;
+
+    SELECT 'rmt_fetch', 'failed', count() FROM system.mutations
+    WHERE database = currentDatabase() AND table = 'rmt_fetch_2' AND notEmpty(latest_fail_reason);
+
+    SELECT 'rmt_fetch', 'indices_left', count() FROM system.data_skipping_indices
+    WHERE database = currentDatabase() AND table = 'rmt_fetch_2';
+
+    SELECT 'rmt_fetch', 'rows', count() FROM rmt_fetch_2;
+"
+$CLICKHOUSE_CLIENT --query "CHECK TABLE rmt_fetch_2" | while read -r line; do
+    echo "rmt_fetch	check	$line"
+done
+
 $CLICKHOUSE_CLIENT --query "
     SYSTEM DISABLE FAILPOINT rmt_merge_selecting_task_max_part_size;
     DROP TABLE rmt_drop_index SYNC;
     DROP TABLE rmt_delete SYNC;
+    DROP TABLE rmt_fetch_1 SYNC;
+    DROP TABLE rmt_fetch_2 SYNC;
 "
