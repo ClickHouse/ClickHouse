@@ -2,18 +2,24 @@
 -- `no-parallel-replicas`: `StorageObjectStorageCluster` does not delegate `supportsPrewhere`
 -- to its underlying configuration, so the fallback filter path below is not reached.
 
-SELECT '--- equality + position deletes: id - _row_number is constant within each data file ---';
-SELECT uniqExact(id - _row_number) AS offsets_in_file
+-- `id - _row_number` is asserted as an exact value per data file, not merely as a constant: a mask
+-- that replaced rather than composed would keep it constant while shifting it by the number of
+-- rows deleted before each surviving row. The expected offsets are the ones the raw Parquet data
+-- files carry, i.e. they are independent of the engine read path.
+SELECT '--- equality + position deletes: exact id - _row_number offset per data file ---';
+SELECT splitByChar('/', _path)[-1] AS file, groupUniqArray(id - _row_number) AS offsets
 FROM icebergS3(s3_conn, filename = 'deletes_db/eq_deletes_table')
-GROUP BY _path
-ORDER BY offsets_in_file;
+GROUP BY file
+ORDER BY file;
 
-SELECT '--- the same under PREWHERE, which adds the fallback filter on top of the notIn filter ---';
-SELECT uniqExact(id - _row_number) AS offsets_in_file
+-- This fixture is same-schema Parquet, so `PREWHERE` stays inside the reader (it is not stripped
+-- into a fallback filter); the reader-side mask is then composed with the equality-delete mask.
+SELECT '--- the same with reader-side PREWHERE composed with the equality-delete mask ---';
+SELECT splitByChar('/', _path)[-1] AS file, groupUniqArray(id - _row_number) AS offsets
 FROM icebergS3(s3_conn, filename = 'deletes_db/eq_deletes_table')
 PREWHERE id % 7 = 3
-GROUP BY _path
-ORDER BY offsets_in_file
+GROUP BY file
+ORDER BY file
 SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 
 SELECT '--- equality deletes only: exact physical row numbers ---';
