@@ -39,11 +39,9 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-/// Read `chunk` bytes from `buf` straight into `dest` with no intermediate copy when the buffer
-/// honors an external buffer (set()+next() read directly into `dest`); short positive `next`
-/// returns are looped so a partial fill never surfaces. Buffers that own a fixed-size internal
-/// buffer (async, mmap, O_DIRECT) cannot accept an arbitrary `dest`, so fall back to read().
-/// Returns the bytes read; less than `chunk` only at EOF.
+/// Read `chunk` bytes into `dest` with no intermediate copy when the buffer honors an external
+/// buffer; buffers with a fixed internal buffer (async, mmap, O_DIRECT) fall back to `read`. A
+/// return below `chunk` means EOF.
 static size_t readIntoBlock(ReadBuffer & buf, char * dest, size_t chunk)
 {
     if (!buf.supportsExternalBufferMode())
@@ -67,8 +65,7 @@ static size_t readIntoBlock(ReadBuffer & buf, char * dest, size_t chunk)
 void ReaderExecutor::Stats::add(Counter c, UInt64 value)
 {
     values[c] += value;
-    /// Each counter emits its ProfileEvent; cost-model counters also emit the modeled-cost
-    /// contribution (weights documented at ProfileEvents::ReaderExecutorModeledCostMicroseconds).
+    /// Each counter emits its ProfileEvent; cost-model counters also add the modeled-cost weight.
     switch (c)
     {
         case SourceRequests:
@@ -148,10 +145,8 @@ ReaderExecutor::ReaderExecutor(
 
 ReaderExecutor::~ReaderExecutor()
 {
-    /// Release any held connection (drains a small tail to complete it, frees its slot, and
-    /// accounts an incomplete drop if it was abandoned mid-response). `dropLongConnection`'s drain is
-    /// best-effort and non-throwing, but keep a guard so nothing escapes a destructor -- a throw
-    /// would `std::terminate`; the slot still releases via `long_conn`'s own destruction.
+    /// `dropLongConnection` is best-effort and non-throwing, but guard anyway so nothing escapes
+    /// the destructor.
     try
     {
         dropLongConnection();
@@ -161,8 +156,6 @@ ReaderExecutor::~ReaderExecutor()
         tryLogCurrentException(log, "Failed to release a held source connection on destruction");
     }
 
-    /// ProfileEvents are emitted instantly in `Stats::add`; `Stats` are read back here only
-    /// for this summary report (a future PR turns it into a `system.reader_executor_log` row).
     LOG_DEBUG(log,
         "Destroyed: file={} src_reqs={} from_source={} requested={} work_us={}",
         log_file_path, stats.get(Stats::SourceRequests), stats.get(Stats::BytesFromSource),
@@ -180,8 +173,8 @@ size_t ReaderExecutor::LongConnection::readInto(char * dst, size_t want)
 
 size_t ReaderExecutor::LongConnection::skipForward(size_t gap, size_t block_bytes)
 {
-    /// Discard through a scratch block: the bytes cross the wire (over-read) but the source
-    /// request is saved. Short only at EOF.
+    /// Discard through a scratch block: the bytes cross the wire but a fresh source request is
+    /// saved. Short only at EOF.
     if (gap == 0)
         return 0;
     const size_t scratch_size = std::min(gap, block_bytes);
@@ -206,9 +199,8 @@ ReaderExecutor::LongConnection::drainTail(size_t max_tail, size_t block_bytes, L
     const size_t tail = read_until - current_position;
     if (tail > max_tail)
         return {};
-    /// The drained tail is discarded -- it only lets the underlying HTTP connection return to the
-    /// keep-alive pool -- so a read error here must not abort an otherwise valid query. Swallow it
-    /// and report the failure; the caller then releases the connection as incomplete.
+    /// The drained tail only returns the connection to the keep-alive pool, so a read error here
+    /// must not abort the query: swallow it and report the failure via `DrainResult::failed`.
     try
     {
         return {.bytes = skipForward(tail, block_bytes), .failed = false};
@@ -248,8 +240,8 @@ bool ReaderExecutor::tryOpenLongConnection(const StoredObject & object, size_t o
         return false;
     }
 
-    /// Bound the held GET to the predicted run end, clamped to the object: a growing run reads
-    /// further ahead, sparse access stays small, so it never over-reads a whole object for a slice.
+    /// Bound the held GET to the predicted run end, clamped to the object -- a growing run reads
+    /// further ahead while sparse access stays small.
     const size_t phys = toPhysical(position);
     const size_t forward = clampReach(fetch_tracker.predictedEnd(), phys) - phys;
     size_t read_until_obj = object_offset + forward;
@@ -378,11 +370,9 @@ ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t m
 {
     chassert(!cache_chain.empty());
     const ByteRange window{window_offset, max_serve};
-    /// Resolve only the window START, block by block. Probe each tier there (front = fastest); the
-    /// first hit serves a block-sized slice straight from cache. If every tier misses, populate the
-    /// start cell of each writing tier and serve one block from the fetch. Coarse fetch, fine serve:
-    /// a miss fetches the whole aligned cell (the page tier needs the whole block; the disk tier
-    /// aligns), so the cell's tail primes the following windows as hits.
+    /// Resolve only the window START: probe each tier (front = fastest); a hit serves one block from
+    /// cache, an all-miss fetches the covering cell(s) and populates. Coarse fetch, fine serve -- the
+    /// fetched cell tail primes the following windows as hits.
     const auto start_piece = offset_map.map(ByteRange{window_offset, 1});
     chassert(!start_piece.empty());
     const StoredObject & object = start_piece.front().object;
@@ -418,8 +408,7 @@ ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t m
         claimed.push_back(Claimed{std::move(writer), m.cell, std::move(claim)});
     }
 
-    /// A cell a sibling is already downloading is fetched through below: its `write` lands 0 (we do
-    /// not hold its downloader role), but the source fetch still serves the bytes correctly.
+    /// A cell a sibling is already downloading is fetched through below (its `write` lands 0).
 
     /// No writing tier (all bypass): stream the window straight from source, no populate.
     if (claimed.empty())
@@ -459,9 +448,8 @@ void ReaderExecutor::dropLongConnection()
 {
     if (!long_conn)
         return;
-    /// Drain a small remaining tail so the connection completes and returns to the pool. The drain
-    /// is best-effort (`drainTail` never throws): it reports whether it stopped short of its bound
-    /// (EOF) and whether a read error interrupted it.
+    /// Drain a small remaining tail so the connection completes and returns to the pool
+    /// (best-effort; `drainTail` never throws).
     bool ended_at_eof = false;
     bool drain_failed = false;
     if (!long_conn->atBound())
@@ -475,9 +463,8 @@ void ReaderExecutor::dropLongConnection()
         drain_failed = drain.failed;
         ended_at_eof = !drain_failed && drain.bytes > 0 && !long_conn->atBound();
     }
-    /// A connection abandoned mid-response (transferred, not complete) is not pool-reusable;
-    /// one that never transferred (its lazy GET never issued) is excluded. A failed drain leaves the
-    /// connection in an unknown state, so it is always incomplete.
+    /// A connection abandoned mid-response is not pool-reusable; one that never transferred is
+    /// excluded; a failed drain leaves it in an unknown state, so it counts as incomplete.
     if (drain_failed || (long_conn->consumedAnyBytes() && !long_conn->isComplete(ended_at_eof)))
         stats.add(Stats::IncompleteConnections);
     long_conn.reset();
@@ -486,8 +473,8 @@ void ReaderExecutor::dropLongConnection()
 size_t ReaderExecutor::totalSize() const
 {
     const size_t physical = offset_map.totalSize();
-    /// An empty encrypted source has no header; a non-empty one always has the full header
-    /// (initDecryption throws on a partial file), so physical is either 0 or >= data_start_offset.
+    /// An empty source has no header; a non-empty one always has the full header, so `physical` is
+    /// either 0 or >= data_start_offset.
     if (physical == 0)
         return 0;
     return toLogical(physical);
@@ -512,9 +499,8 @@ void ReaderExecutor::initDecryption()
 
     const size_t total_source_size = offset_map.totalSize();
 
-    /// An empty underlying source (e.g. DiskObjectStorage's empty-file fallback for paths with no
-    /// storage objects) has no encryption header. Skip — subsequent reads return 0 bytes, matching
-    /// reading an empty file on an unencrypted disk.
+    /// An empty underlying source has no encryption header; skip (subsequent reads return 0 bytes,
+    /// like an empty file on an unencrypted disk).
     if (total_source_size == 0)
     {
         LOG_DEBUG(log, "initDecryption: source is empty, skipping");
@@ -658,8 +644,8 @@ ChainedBuffers ReaderExecutor::decryptWindow(ChainedBuffers && cipher)
 void ReaderExecutor::seek(size_t new_position)
 {
     LOG_TRACE(log, "seek: {} -> {}", position, new_position);
-    /// Feed the estimator; a held connection that can't continue to `new_position` is dropped
-    /// lazily by the next `readNextWindow` (its `canServeAt` check).
+    /// Feed the estimator; a held connection that can't continue is dropped lazily by the next
+    /// `readNextWindow`.
     fetch_tracker.recordSeek(toPhysical(new_position));
     position = new_position;
     reached_eof = false;
