@@ -57,9 +57,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterFactory.h>
