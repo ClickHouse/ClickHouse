@@ -391,8 +391,14 @@ def main():
             section.name: section for section in manual_server_sections
         }
         expected_manual_server_defaults = {
+            "allow_implicit_no_password": "true",
+            "allow_no_password": "true",
+            "allow_plaintext_password": "true",
             "auth_use_forwarded_address": "false",
             "bcrypt_workfactor": "12",
+            "default_password_type": "sha256_password",
+            "default_profile": "default",
+            "default_session_timeout": "60",
             "disable_tunneling_for_https_requests_over_http_proxy": "false",
             "http_server_default_response": '"Ok.\\n"',
             "interserver_listen_host": "listen_host",

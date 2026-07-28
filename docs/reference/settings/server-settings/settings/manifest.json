@@ -1332,7 +1332,7 @@
       "path": "/reference/settings/server-settings/settings/allow",
       "label": "allow_*",
       "settings": 6,
-      "characters": 1687
+      "characters": 1756
     },
     {
       "path": "/reference/settings/server-settings/settings/allow-experimental",
@@ -1434,7 +1434,7 @@
       "path": "/reference/settings/server-settings/settings/default",
       "label": "default_*",
       "settings": 4,
-      "characters": 870
+      "characters": 951
     },
     {
       "path": "/reference/settings/server-settings/settings/default-replica",
