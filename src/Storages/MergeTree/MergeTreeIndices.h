@@ -108,7 +108,7 @@ struct IMergeTreeIndexGranule
     ///
     /// See also:
     /// - IMergeTreeIndex::getSubstreams()
-    /// - IMergeTreeIndex::getDeserializedFormat()
+    /// - IMergeTreeIndex::getPhysicalFormat()
     /// - MergeTreeDataMergerMutator::collectFilesToSkip()
     /// - MergeTreeDataMergerMutator::collectFilesForRenames()
     virtual void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
@@ -263,15 +263,31 @@ struct IMergeTreeIndex
     /// Reimplement if you want new index format.
     ///
     /// NOTE: In case getSubstreams() is reimplemented,
-    /// getDeserializedFormat() should be reimplemented too,
+    /// getPhysicalFormat() should be reimplemented too,
     /// and check all previous extensions for substreams too
     /// (to avoid breaking backward compatibility).
     virtual MergeTreeIndexSubstreams getSubstreams() const { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}; }
 
-    /// Returns substreams and version for deserialization. @storage is consulted so that packed
-    /// substreams (whose virtual filenames are not in @checksums) can still be discovered via
-    /// the skp_idx.packed overlay. Passing null disables the archive check.
-    virtual MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const;
+    /// Two distinct questions are asked about a part's copy of an index, and they must not be conflated:
+    ///
+    /// - getPhysicalFormat(): what is ON DISK? Discovers the substreams and format version actually
+    ///   present in the part, including legacy layouts. Callers that manipulate the files or their
+    ///   cache entries (e.g. evicting index marks) need this, even for an index we refuse to read.
+    /// - getDeserializedFormat(): may this part's copy of the index be DESERIALIZED? Physical
+    ///   discovery plus usability checks. Every read path must use this one.
+    ///
+    /// @part's storage is consulted so that packed substreams (whose virtual filenames are not in
+    /// checksums.txt) can still be discovered via the skp_idx.packed overlay.
+    virtual MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const;
+
+    /// Deliberately NON-virtual: the usability checks below must not be bypassable by a format
+    /// override. Reimplement getPhysicalFormat() instead.
+    MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const;
+
+    /// True when @part's recorded physical types for the columns this index requires are
+    /// representation-compatible with the types the current metadata snapshot declares, i.e. when
+    /// the granules on disk decode identically under the new types.
+    bool isPartTypeCompatible(const IMergeTreeDataPart & part) const;
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 

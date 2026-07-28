@@ -937,7 +937,9 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
     {
         auto skip_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_description, *storage.getSettings());
         auto index_name = skip_index->getFileName();
-        auto index_format = skip_index->getDeserializedFormat(*this, index_name);
+        /// Physical, not usability: marks cached before an ALTER made this index unreadable still have
+        /// to be evicted, so the keys must be derived from what is actually on disk.
+        auto index_format = skip_index->getPhysicalFormat(*this, index_name);
 
         if (!index_format)
             continue;

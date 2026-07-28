@@ -1779,12 +1779,8 @@ MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
     return substreams;
 }
 
-MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat MergeTreeIndexText::getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
 {
-    for (const auto & [column, _] : getColumnsWithTypesRequiredForIndexCalc())
-        if (part.isSystemColumnInvalidated(column))
-            return {0, {}};
-
     if (!indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx", &part.getDataPartStorage()))
         return {0, {}};
 

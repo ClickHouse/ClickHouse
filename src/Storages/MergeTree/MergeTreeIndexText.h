@@ -543,7 +543,7 @@ public:
     bool isTextIndex() const override { return true; }
 
     MergeTreeIndexSubstreams getSubstreams() const override;
-    MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const override;
+    MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;

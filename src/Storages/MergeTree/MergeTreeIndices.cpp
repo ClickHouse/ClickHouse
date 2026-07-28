@@ -3,6 +3,12 @@
 #include <Storages/MergeTree/MergeTreeIndexLegacyHypothesis.h>
 
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -10,6 +16,7 @@
 #include <Common/SipHash.h>
 
 #include <numeric>
+#include <typeindex>
 
 namespace DB
 {
@@ -69,12 +76,129 @@ const NamesAndTypesList & IMergeTreeIndex::getColumnsWithTypesRequiredForIndexCa
     return index.expression->getRequiredColumnsWithTypes();
 }
 
+namespace
+{
+
+/// Is a granule written with @from decoded identically when read back as @to?
+///
+/// This deliberately duplicates part of AlterCommands' isMetadataOnlyConversion() instead of calling
+/// it. That predicate answers "does ALTER have to rewrite the data?", which is a weaker question: a
+/// JSON typed-path hint change is metadata-only there because column reads convert lazily, but a skip
+/// index granule has no such lazy path and decodes the old bytes with the new type. The two must stay
+/// free to diverge.
+///
+/// Fail-closed: anything not listed here is treated as incompatible.
+bool isRepresentationPreservingConversion(const IDataType * from, const IDataType * to)
+{
+    while (true)
+    {
+        if (from->equals(*to))
+            return true;
+
+        /// Extending an enum's value set leaves the bytes alone. Shrinking it does not: a value on
+        /// disk may no longer name a valid element, so the allowance is one-directional.
+        if (const auto * from_enum8 = typeid_cast<const DataTypeEnum8 *>(from))
+        {
+            if (const auto * to_enum8 = typeid_cast<const DataTypeEnum8 *>(to))
+                return to_enum8->contains(*from_enum8);
+        }
+
+        if (const auto * from_enum16 = typeid_cast<const DataTypeEnum16 *>(from))
+        {
+            if (const auto * to_enum16 = typeid_cast<const DataTypeEnum16 *>(to))
+                return to_enum16->contains(*from_enum16);
+        }
+
+        /// Width-preserving pairs, oriented part-side -> metadata-side. Int8 -> Enum8 is absent on
+        /// purpose: the part may hold an integer that names no element of the new enum, and keeping
+        /// the granule then prunes away rows the unindexed read rejects outright.
+        static const std::unordered_multimap<std::type_index, const std::type_info &> allowed_conversions =
+        {
+            { typeid(DataTypeEnum8),    typeid(DataTypeInt8)     },
+            { typeid(DataTypeEnum16),   typeid(DataTypeInt16)    },
+            { typeid(DataTypeDateTime), typeid(DataTypeUInt32)   },
+            { typeid(DataTypeUInt32),   typeid(DataTypeDateTime) },
+            { typeid(DataTypeDate),     typeid(DataTypeUInt16)   },
+            { typeid(DataTypeUInt16),   typeid(DataTypeDate)     },
+        };
+
+        auto it_range = allowed_conversions.equal_range(typeid(*from));
+        for (auto it = it_range.first; it != it_range.second; ++it)
+        {
+            if (it->second == typeid(*to))
+                return true;
+        }
+
+        const auto * arr_from = typeid_cast<const DataTypeArray *>(from);
+        const auto * arr_to = typeid_cast<const DataTypeArray *>(to);
+        if (arr_from && arr_to)
+        {
+            from = arr_from->getNestedType().get();
+            to = arr_to->getNestedType().get();
+            continue;
+        }
+
+        const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from);
+        const auto * nullable_to = typeid_cast<const DataTypeNullable *>(to);
+        if (nullable_from && nullable_to)
+        {
+            from = nullable_from->getNestedType().get();
+            to = nullable_to->getNestedType().get();
+            continue;
+        }
+
+        return false;
+    }
+}
+
+}
+
+bool IMergeTreeIndex::isPartTypeCompatible(const IMergeTreeDataPart & part) const
+{
+    for (const auto & [column, metadata_type] : getColumnsWithTypesRequiredForIndexCalc())
+    {
+        auto part_column = part.tryGetColumn(column);
+
+        /// The part holds no bytes of this column at all (it was added after the part was written),
+        /// so there is nothing to mis-decode.
+        if (!part_column)
+            continue;
+
+        if (part_column->type->equals(*metadata_type))
+            continue;
+
+        /// A granule of an expression index stores the EXPRESSION's result type, which can change
+        /// even when every column conversion is representation-preserving: `d + 1` yields Date for a
+        /// Date column but UInt32 once that column becomes UInt16. Recovering the expression's
+        /// part-side result type would mean running the analyzer per part on the query path, so a
+        /// non-trivial expression is refused on any type difference.
+        if (!index.isSimpleSingleColumnIndex())
+            return false;
+
+        if (!isRepresentationPreservingConversion(part_column->type.get(), metadata_type.get()))
+            return false;
+    }
+
+    return true;
+}
+
 MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
 {
     for (const auto & [column, _] : getColumnsWithTypesRequiredForIndexCalc())
         if (part.isSystemColumnInvalidated(column))
             return {0 /*unknown*/, {}};
 
+    /// The part's granules were written with types the metadata no longer declares, so decoding them
+    /// under the new types reads garbage. Report the index as not materialized in this part; the
+    /// query then answers correctly without it.
+    if (!isPartTypeCompatible(part))
+        return {0 /*unknown*/, {}};
+
+    return getPhysicalFormat(part, relative_path_prefix);
+}
+
+MergeTreeIndexFormat IMergeTreeIndex::getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
+{
     if (indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx", &part.getDataPartStorage()))
         return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
 
