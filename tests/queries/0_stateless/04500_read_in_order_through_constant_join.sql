@@ -21,6 +21,11 @@ SET optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in
 
 -- The left ReadFromMergeTree under a constant-predicate join MUST read in order. Asserting an
 -- exact positive count, so dropping the opt-in (which yields ReadType: Default) fails this line.
+--
+-- enable_analyzer is pinned on this plan probe only: the old analyzer rewrites `ON 1 = 1` to kind
+-- CROSS (`tryJoinOnConst` calls `TableJoin::resetToCross`), and the pre-existing
+-- `isInnerOrLeft` gate in `findReadingStep` rejects CROSS before `preservesLeftBlockOrder` is ever
+-- consulted. Dropping the opt-in still fails this line under both analyzers.
 SELECT countIf(explain LIKE '%InOrder%') FROM (
     EXPLAIN PLAN actions = 1
     SELECT l.k, count() FROM cj_l_04500 AS l LEFT JOIN cj_r_04500 AS r ON 1 = 1
@@ -29,7 +34,8 @@ SELECT countIf(explain LIKE '%InOrder%') FROM (
              query_plan_join_swap_table = 'false', enable_parallel_replicas = 0,
              optimize_read_in_order = 1, query_plan_read_in_order = 1,
              query_plan_read_in_order_through_join = 1
-) WHERE explain LIKE '%ReadType%';
+) WHERE explain LIKE '%ReadType%'
+SETTINGS enable_analyzer = 1;
 
 -- Result oracle: the order the optimization is allowed to rely on must actually hold, otherwise
 -- the opt-in would trade a wrong result for the speedup. uniqExact(l.k) within each GROUP BY l.k
