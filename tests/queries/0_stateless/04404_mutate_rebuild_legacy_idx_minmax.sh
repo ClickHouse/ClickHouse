@@ -18,7 +18,7 @@
 #
 # `no-random-merge-tree-settings`: the test renames a specific standalone index
 # file (skp_idx_mm_v.idx2) and depends on a fixed granule count. Randomized
-# merge-tree settings (packed_skip_index_max_bytes packs the index into
+# merge-tree settings (`packed_skip_index_max_bytes` packs the index into
 # skp_idx.packed, index_granularity_bytes / adaptive granularity change the
 # granule count) would break the file surgery. The settings the test relies on
 # are pinned explicitly in the CREATE below.
@@ -30,8 +30,8 @@
 #
 # collectFilesToSkip (skip list for the hardlink loop) and
 # remove_per_substream_checksums (stale-checksum stripper) used to enumerate the
-# index's current writer substreams via getSubstreams(). For minmax the on-disk
-# format changed from ".idx" (v1) to ".idx2" (v2), so getSubstreams() reports
+# index's current writer substreams via `getSubstreams`. For minmax the on-disk
+# format changed from ".idx" (v1) to ".idx2" (v2), so `getSubstreams` reports
 # only ".idx2". On an upgraded part that still carries a legacy
 # "skp_idx_<name>.idx" file, an ALTER UPDATE of the indexed column recomputes
 # the index and writes a fresh ".idx2", but the old ".idx" was neither added to
@@ -55,7 +55,7 @@ CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_rebuild_minmax SYNC"
 
 # v = k is monotone, so the minmax index over v prunes a point query to a
-# single granule. index_granularity = 100 over 2000 rows gives 20 granules.
+# single granule. `index_granularity` = 100 over 2000 rows gives 20 granules.
 ${CLICKHOUSE_CLIENT} -q "
 CREATE TABLE t_rebuild_minmax
 (

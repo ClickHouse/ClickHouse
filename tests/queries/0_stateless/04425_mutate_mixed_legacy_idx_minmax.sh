@@ -17,7 +17,7 @@
 #
 # `no-random-merge-tree-settings`: the test manipulates a specific standalone
 # index file (skp_idx_mm_v.idx2/.idx) and depends on a fixed granule count.
-# Randomized merge-tree settings (packed_skip_index_max_bytes packs the index
+# Randomized merge-tree settings (`packed_skip_index_max_bytes` packs the index
 # into skp_idx.packed, index_granularity_bytes / adaptive granularity change the
 # granule count) would break the file surgery. Settings the test relies on are
 # pinned in the CREATE below.
@@ -28,13 +28,13 @@
 # one covers a part POISONED by an intermediate buggy build: it carries BOTH a
 # legacy skp_idx_mm_v.idx and a fresh skp_idx_mm_v.idx2 for the same index.
 #
-# getDeserializedFormat() returns only the preferred read layout (".idx2" wins
+# `getDeserializedFormat` returns only the preferred read layout (".idx2" wins
 # for minmax), so the mutation cleanup bookkeeping (collectFilesToSkip skip-list
 # for recalc'd/dropped indices, and remove_per_substream_checksums) never saw the
 # stale ".idx" on a mixed part -- so the next ALTER UPDATE or DROP INDEX
 # hardlinked the dead ".idx" forward with a stale checksum instead of cleaning it
 # up, keeping the part mixed forever. The fix enumerates the UNION of all
-# physical substreams present via getAllSubstreamsInPart(), which reports both
+# physical substreams present via `getAllSubstreamsInPart`, which reports both
 # ".idx" and ".idx2".
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -45,7 +45,7 @@ CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_mixed_minmax SYNC"
 
 # v = k is monotone, so the minmax index over v prunes a point query to a single
-# granule. index_granularity = 100 over 2000 rows gives 20 granules.
+# granule. `index_granularity` = 100 over 2000 rows gives 20 granules.
 ${CLICKHOUSE_CLIENT} -q "
 CREATE TABLE t_mixed_minmax
 (

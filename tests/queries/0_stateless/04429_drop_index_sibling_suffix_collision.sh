@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-random-merge-tree-settings
 #
-# `no-random-merge-tree-settings`: the test pins escape_index_filenames and
-# packed_skip_index_max_bytes, which are exactly the settings the collision
+# `no-random-merge-tree-settings`: the test pins `escape_index_filenames` and
+# `packed_skip_index_max_bytes`, which are exactly the settings the collision
 # depends on.
 #
 # `no-fasttest`: the inverse cases build a text index, and the Fast test binary is
@@ -13,7 +13,7 @@
 #
 # The DROP INDEX bookkeeping has to enumerate substream suffixes speculatively
 # (the dropped index's type is already gone from metadata by then, so its real
-# substream list is unavailable). With escape_index_filenames = 0 the stream name
+# substream list is unavailable). With `escape_index_filenames` = 0 the stream name
 # is the index name verbatim, so "drop index a" + speculative suffix ".pos"
 # addresses skp_idx_a.pos.*, which is the on-disk name of an unrelated surviving
 # index literally named `a.pos`. Both the standalone and the packed-archive path
@@ -24,7 +24,7 @@ CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# $1: label, $2: escape_index_filenames, $3: packed_skip_index_max_bytes
+# $1: label, $2: `escape_index_filenames`, $3: `packed_skip_index_max_bytes`
 run_case() {
     local label="$1" escape="$2" packed="$3"
     local tbl="t_coll_${label}"
@@ -32,7 +32,7 @@ run_case() {
     ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${tbl} SYNC"
 
     # v = k and w = k are monotone, so each minmax index prunes a point query to
-    # a single granule. index_granularity = 100 over 500 rows gives 5 granules.
+    # a single granule. `index_granularity` = 100 over 500 rows gives 5 granules.
     ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE ${tbl}
     (
@@ -107,7 +107,7 @@ run_inverse_case() {
 
     # The text index's positional substream files, by their real on-disk names. The
     # assertion is file survival rather than a hasPhrase result on purpose: with
-    # escape_index_filenames = 0 the minmax index `a.pos` and the text index's own
+    # `escape_index_filenames` = 0 the minmax index `a.pos` and the text index's own
     # `.pos` substream want the same mark filename, so this table is already
     # unreadable for phrase search before any DROP INDEX runs (that write-time
     # collision is a separate, pre-existing issue). What must hold here is that

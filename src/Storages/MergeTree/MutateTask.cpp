@@ -1194,12 +1194,12 @@ static NameToNameVector collectFilesForRenames(
     /// The suffix enumeration below is speculative (the dropped index's type, and therefore its real
     /// substream list, is already gone), so a candidate can name a file that belongs to a different,
     /// surviving index whenever the two stream names coincide. That happens in both directions with
-    /// escape_index_filenames = 0, where the stream name is the index name verbatim: dropping `a`
+    /// `escape_index_filenames` = 0, where the stream name is the index name verbatim: dropping `a`
     /// reaches index `a.pos`, and dropping `a.pos` reaches the `.pos` substream of text index `a`.
     /// Collect the concrete data and mark filenames of every surviving substream so neither can be
     /// scheduled for deletion.
     ///
-    /// Ownership comes from each surviving index's OWN getSubstreams(), never from the speculative
+    /// Ownership comes from each surviving index's OWN `getSubstreams`, never from the speculative
     /// list, and only for the extension that substream declares: minmax owns no `.pos` substream at
     /// all, and a text index's `.pos` substream is stored as `.idx`, not `.idx2`. Claiming a
     /// substream or an extension the type does not write would instead protect - and therefore leak
@@ -3393,17 +3393,17 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         /// directly for each dropped name across the union of substream/extension patterns used by
         /// all skip-index types. This both detects archive_dirty for drop-only mutations and yields
         /// the exact in-archive filenames the filter must remove (avoiding a prefix collision when
-        /// two indices share a getIndexFileName prefix, e.g. "a" and "a.b" with escape_index_filenames=0).
+        /// two indices share a getIndexFileName prefix, e.g. `a` and `a.b` with `escape_index_filenames` = 0).
         static const std::array<String, 4> known_substream_suffixes = {"", ".dct", ".pst", ".pos"};
         static const std::array<String, 2> known_index_extensions = {".idx2", ".idx"};
         const bool escape_filenames = ctx->metadata_snapshot->escape_index_filenames;
 
         /// Exact in-archive filenames owned by the indices that survive this mutation, so a
         /// speculative suffix never claims one of them. The collision goes both ways when
-        /// escape_index_filenames = 0: dropping `a` reaches index `a.pos`, and dropping `a.pos`
+        /// `escape_index_filenames` = 0: dropping `a` reaches index `a.pos`, and dropping `a.pos`
         /// reaches the `.pos` substream of text index `a`.
         ///
-        /// Ownership comes from each surviving index's OWN getSubstreams(), and only for the
+        /// Ownership comes from each surviving index's OWN `getSubstreams`, and only for the
         /// extension that substream declares: minmax owns no `.pos`, and a text index's `.pos` is
         /// stored as `.idx`, not `.idx2`. Over-claiming either would protect, and so leak, the files
         /// of the index being dropped.

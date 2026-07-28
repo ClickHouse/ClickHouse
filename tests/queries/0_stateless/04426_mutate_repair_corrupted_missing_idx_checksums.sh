@@ -8,7 +8,7 @@
 # checksums.txt. Such an index is already dead (reads probe checksums and see
 # nothing, so it never prunes; CHECK TABLE fails with
 # UNEXPECTED_FILE_IN_DATA_PART). A later full-part-rewrite mutation used to take
-# the preserve path (getAllSubstreamsInPart over checksums returns no substreams)
+# the preserve path (`getAllSubstreamsInPart` over checksums returns no substreams)
 # and drop the orphan files without repairing the part, losing the index
 # forever. The fix detects the shape (index present on disk but unresolvable
 # from checksums) and forces a recalculate so the writer rebuilds the index.
@@ -26,7 +26,7 @@ CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_corrupt_minmax SYNC"
 
 # v = k is monotone, so a minmax index over v prunes a point query to a single
-# granule. index_granularity = 100 over 2000 rows gives 20 granules. m is a
+# granule. `index_granularity` = 100 over 2000 rows gives 20 granules. m is a
 # MATERIALIZED column so that DROP COLUMN m forces a full-part rewrite
 # (MutateAllPartColumnsTask).
 ${CLICKHOUSE_CLIENT} -q "

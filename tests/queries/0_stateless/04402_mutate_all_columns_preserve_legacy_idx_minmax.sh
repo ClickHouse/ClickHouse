@@ -19,7 +19,7 @@
 #
 # `no-random-merge-tree-settings`: the test renames a specific standalone
 # index file (skp_idx_mm_v.idx2) and depends on a fixed granule count. Randomized
-# merge-tree settings (packed_skip_index_max_bytes packs the index into
+# merge-tree settings (`packed_skip_index_max_bytes` packs the index into
 # skp_idx.packed, index_granularity_bytes / adaptive granularity change the
 # granule count) would break the file surgery. The settings the test relies on
 # are pinned explicitly in the CREATE below for the same reason.
@@ -27,9 +27,9 @@
 # Regression test for the backward-compatibility gap flagged on PR #109616
 # (issue #109595). A full-part-rewrite mutation (MutateAllPartColumnsTask)
 # hardlinks non-recalculated skip indices from the source part. The loop used
-# to enumerate the index's current writer substreams via getSubstreams(). For
+# to enumerate the index's current writer substreams via `getSubstreams`. For
 # minmax the on-disk format changed from ".idx" (v1) to ".idx2" (v2), so
-# getSubstreams() reports only ".idx2". On an upgraded part that still carries
+# `getSubstreams` reports only ".idx2". On an upgraded part that still carries
 # a legacy "skp_idx_<name>.idx" file the loop hardlinked the mark file but
 # never found the ".idx" data file, silently dropping the index after the
 # mutation (CHECK TABLE still passed because the orphan mark got checksummed).
@@ -50,7 +50,7 @@ CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_legacy_minmax SYNC"
 
 # v = k is monotone, so the minmax index over v prunes a point query to a
-# single granule. index_granularity = 100 over 2000 rows gives 20 granules.
+# single granule. `index_granularity` = 100 over 2000 rows gives 20 granules.
 ${CLICKHOUSE_CLIENT} -q "
 CREATE TABLE t_legacy_minmax
 (
@@ -102,7 +102,7 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT cou
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_legacy_minmax WHERE v = 42"
 
 # The on-disk size accounting must include the preserved legacy ".idx" payload.
-# calculateSecondaryIndicesSizesOnDisk() used to enumerate getSubstreams() (only
+# `calculateSecondaryIndicesSizesOnDisk` used to enumerate `getSubstreams` (only
 # ".idx2"), so on the repaired part it counted the mark file but missed the ".idx"
 # data file and reported secondary_indices_compressed_bytes = 0. The fix probes the
 # substreams actually present via getAllSubstreamsInPart(checksums, ...).

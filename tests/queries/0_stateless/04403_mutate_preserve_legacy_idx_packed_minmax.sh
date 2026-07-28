@@ -18,17 +18,17 @@
 #
 # `no-random-merge-tree-settings`: the test depends on a fixed granule count and
 # on both minmax indices living inside skp_idx.packed. The relevant settings are
-# pinned explicitly in the CREATE below (index_granularity, replace_long_file_name_to_hash,
-# min_bytes_for_wide_part, packed_skip_index_max_bytes).
+# pinned explicitly in the CREATE below (`index_granularity`, `replace_long_file_name_to_hash`,
+# `min_bytes_for_wide_part`, `packed_skip_index_max_bytes`).
 #
 # Regression test for the second backward-compatibility gap flagged on PR #109616
 # (issue #109595), in the PACKED-ARCHIVE preservation path (companion to the
 # per-file hardlink path covered by 04402). A mutation that rebuilds skp_idx.packed
 # because one packed index (mm_w) is recomputed must preload the surviving packed
 # members of the OTHER, non-recalculated index (mm_v) into the new archive. The
-# preserve loop used to enumerate the current writer substreams via getSubstreams().
+# preserve loop used to enumerate the current writer substreams via `getSubstreams`.
 # For minmax the on-disk format changed from ".idx" (v1) to ".idx2" (v2), so
-# getSubstreams() reports only ".idx2". On an upgraded part that still carries a
+# `getSubstreams` reports only ".idx2". On an upgraded part that still carries a
 # legacy "skp_idx_mm_v.idx" member inside skp_idx.packed, the loop preloaded the
 # mark member but never the ".idx" data member: the rebuilt archive kept mm_v's
 # mark but dropped its data, silently losing the index after the mutation (CHECK
@@ -52,7 +52,7 @@ CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_legacy_packed SYNC"
 
 # v = k and w = k are monotone, so each minmax index prunes a point query to a
-# single granule. index_granularity = 100 over 2000 rows gives 20 granules.
+# single granule. `index_granularity` = 100 over 2000 rows gives 20 granules.
 ${CLICKHOUSE_CLIENT} -q "
 CREATE TABLE t_legacy_packed
 (
