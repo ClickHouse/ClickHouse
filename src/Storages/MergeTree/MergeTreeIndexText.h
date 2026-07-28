@@ -291,14 +291,12 @@ struct TextIndexHeader
     {
         Initial = 0,
         WithCodec = 1,
-        /// Positions: has_positions and positions-codec bytes in the header. Redefined in place
-        /// while phrase search is experimental; parts written by earlier experimental builds must be rebuilt.
         WithPositions = 2,
     };
 
     MergeTreeIndexVersion version = static_cast<MergeTreeIndexVersion>(Version::Initial);
     IPostingListCodec::Type codec_type = IPostingListCodec::Type::None;
-    /// has_positions and positions_codec (TextIndexPositionCodec::Encoding as UInt8) are persisted for version >= WithPositions.
+    /// has_positions and positions_codec are persisted for version >= WithPositions.
     bool has_positions = false;
     UInt8 positions_codec = 0;
     DictionarySparseIndex sparse_index;
@@ -374,7 +372,6 @@ public:
     const String & getIndexIdForCaches() const { return index_id_for_caches; }
     IPostingListCodec::Type getPostingsCodecType() const { return postings_codec_type; }
     MergeTreeIndexVersion getSerializationVersion() const { return serialization_version; }
-    /// Positions on-disk codec persisted in the header (TextIndexPositionCodec::Encoding as UInt8).
     UInt8 getPositionsCodec() const { return positions_codec; }
 
     static PostingListPtr readPostingsBlock(
@@ -411,7 +408,7 @@ private:
     IPostingListCodec::Type postings_codec_type = IPostingListCodec::Type::None;
     /// On-disk serialization version of the text index header.
     MergeTreeIndexVersion serialization_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::Initial);
-    /// Positions on-disk codec persisted in the header (TextIndexPositionCodec::Encoding as UInt8).
+    /// Positions on-disk codec persisted in the header.
     UInt8 positions_codec = 0;
 };
 

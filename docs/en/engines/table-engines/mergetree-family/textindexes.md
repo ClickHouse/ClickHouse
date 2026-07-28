@@ -479,10 +479,6 @@ This argument is experimental and should only be used for testing.
 Set MergeTree setting [`allow_experimental_text_index_phrase_search`](/operations/settings/merge-tree-settings#allow_experimental_text_index_phrase_search) to enable storing positions.
 :::
 
-Positions are stored as plain per-row position lists (PForDelta-packed) in blocks of 128 consecutive posting entries, with no row ids in the position stream. Phrase search reads the posting lists first, intersects them into candidate rows, and decodes only the position blocks covering those candidates, so the amount of data read scales with the number of candidate rows rather than token occurrences — the layout is optimized for remote (object) storage reads.
-
-The on-disk positions format is not yet stable and may change in a future release.
-
 <details markdown="1">
 
 <summary>Optional advanced parameters</summary>
