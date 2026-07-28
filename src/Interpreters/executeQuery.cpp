@@ -1977,12 +1977,7 @@ static BlockIO executeQueryImpl(
             auto plan = QueryPlan::makeSets(std::move(*query_plan), context);
 
             plan.resolveStorages(context);
-            /// Runtime filters are already in this shipped fragment (added on the initiator); re-adding
-            /// them while re-optimizing would filter the coordinated read twice. Mirrors the initiator's
-            /// local-fragment path in optimizeTreeSecondPass.
-            QueryPlanOptimizationSettings fragment_optimization_settings(context);
-            fragment_optimization_settings.enable_join_runtime_filters = false;
-            plan.optimize(fragment_optimization_settings);
+            plan.optimize(QueryPlanOptimizationSettings(context));
 
             WriteBufferFromOwnString buf;
             plan.explainPlan(buf, {.header=true, .actions=true});
