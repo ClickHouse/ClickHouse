@@ -2314,7 +2314,11 @@ class TestCase:
 
         Algorithm:
         1. Re-run reproducing the original randomization (same settings and the
-           original DETACH/ATTACH state) to confirm reproducibility.
+           original DETACH/ATTACH state) to confirm reproducibility. A mix of
+           passes and failures ends the diagnosis only when DETACH/ATTACH
+           randomization was off: when it was on, the hook fires with probability
+           `reattach_tables_probability`, so a mixed outcome is the normal shape of
+           a failure it causes and the following steps have to run anyway.
         2. Re-run without any randomization to confirm the failure is
            randomization-related.
         3. If DETACH/ATTACH randomization was active, check whether the randomized
@@ -2372,14 +2376,21 @@ class TestCase:
                 )
                 return "\n".join(diagnosis_lines) + "\n"
             if ok1 > 0:
+                # A mix of passes and failures is the *expected* shape of a
+                # DETACH/ATTACH-induced failure: the hook fires with probability
+                # `reattach_tables_probability`, so the reruns where it does not fire
+                # pass. Stopping here would report a generic flake and never compare
+                # against the no-DETACH/ATTACH baseline, which is the only thing that
+                # can attribute the failure to this randomization channel.
                 diagnosis_lines.append(
-                    f"Result: Failure is flaky ({fail1}/{total1} reruns failed)."
+                    f"  Mixed outcome ({fail1}/{total1} reruns failed) — expected when the hook "
+                    f"fires with probability {self.reattach_tables_probability}; "
+                    f"continuing to the baseline."
                 )
-                return "\n".join(diagnosis_lines) + "\n"
-
-            diagnosis_lines.append(
-                "Result: Failure is reproducible with DETACH/ATTACH randomization."
-            )
+            else:
+                diagnosis_lines.append(
+                    "Result: Failure is reproducible with DETACH/ATTACH randomization."
+                )
             if self._is_global_deadline_reached(args):
                 diagnosis_lines.append("Stopping diagnosis: global time limit reached.")
                 return "\n".join(diagnosis_lines) + "\n"
@@ -2436,13 +2447,24 @@ class TestCase:
                     "Result: No failures, but no clean passes either. Inconclusive."
                 )
             return "\n".join(diagnosis_lines) + "\n"
-        if ok1 > 0:
+        if ok1 > 0 and not failed_detach:
             diagnosis_lines.append(
                 f"Result: Failure is flaky ({fail1}/{total1} reruns failed)."
             )
             return "\n".join(diagnosis_lines) + "\n"
 
-        diagnosis_lines.append("Result: Failure is reproducible.")
+        if ok1 > 0:
+            # DETACH/ATTACH randomization was active as well, and it only fires with
+            # probability `reattach_tables_probability`, so a mix of passes and
+            # failures is expected here. Keep going: the baseline and the
+            # settings-only rerun below are what attribute the failure to a channel.
+            diagnosis_lines.append(
+                f"  Mixed outcome ({fail1}/{total1} reruns failed) — expected when the hook "
+                f"fires with probability {self.reattach_tables_probability}; "
+                f"continuing to the baseline."
+            )
+        else:
+            diagnosis_lines.append("Result: Failure is reproducible.")
 
         if self._is_global_deadline_reached(args):
             diagnosis_lines.append("Stopping diagnosis: global time limit reached.")
@@ -4547,6 +4569,12 @@ def run_diagnose_from_artifacts(args, stop_testing):
                 label = ""
             elif "Culprit settings:" in diagnosis or "Culprit MergeTree settings:" in diagnosis:
                 label = "setting"
+            elif "caused by DETACH/ATTACH randomization" in diagnosis or (
+                "requires DETACH/ATTACH randomization" in diagnosis
+            ):
+                # Attributed to the DETACH/ATTACH channel — a real, reproducible
+                # finding, not a transient one.
+                label = "reproducible"
             elif "Failure is flaky" in diagnosis or "not reproducible" in diagnosis.lower():
                 label = "flaky"
             elif (
