@@ -31,7 +31,8 @@ SELECT anyRespectNulls(if(number = 0, NULL, number::Dynamic)) FROM numbers(4);
 
 -- Even NULL-skipping aggregates (count/any) must NOT be rewritten when the if result is Variant/Dynamic:
 -- the NULL branch becomes a discriminator-NULL payload row that the aggregate still processes, so the
--- -If form (which skips it) changes the result (count goes 4 -> 3, any goes \N -> 1).
+-- -If form (which skips it) changes the result (any goes \N -> 1, count over a Dynamic goes 4 -> 3).
+-- count over a Variant counts only the not-NULL values of the Variant, so it reports 3 either way.
 SELECT count(if(number = 0, NULL, number::Variant(String, UInt64))) FROM numbers(4);
 SELECT count(if(number = 0, NULL, number::Dynamic)) FROM numbers(4);
 SELECT any(if(number = 0, NULL, number::Variant(String, UInt64))) FROM numbers(4);

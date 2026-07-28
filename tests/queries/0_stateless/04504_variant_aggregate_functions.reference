@@ -10,7 +10,7 @@ uint min/max	0	1002	Nullable(UInt32)
 i32f64 min/max	-3	7	Nullable(Float64)
 all null	\N	\N
 empty	\N
-native	4	Variant(String, UInt64)	4
+native	3	Variant(String, UInt64)	4
 sumTuple	(6,10)
 merge empty	\N	\N
 merge types	Nullable(Float64)	Nullable(Float64)

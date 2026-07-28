@@ -5,7 +5,7 @@ groupUniqArray	Array(Variant(Float64, UInt8))
 topK	Array(Variant(Float64, UInt8))
 argMin arg keeps Variant	Variant(Float64, UInt8)
 argMax arg keeps Variant	Variant(Float64, UInt8)
-count	4
+count	3
 uniq	4
 uniqExact	4
 uniqCombined	4
