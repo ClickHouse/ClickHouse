@@ -663,7 +663,7 @@ static bool convertedConstantIsSetSafeZeroFree(const Field & converted_value)
 /// `stop_at_array_or_map` is `true` for `addComparisonFilter` and `false` for the two `Set` builders,
 /// and the asymmetry follows from WHO consumes the value. The fold compares two Fields with each
 /// other, so below an `Array`/`Map` boundary both sides go through the same `compareAt`, which treats
-/// any two NaNs as equal — matching semantics, nothing to reject. A `Set` instead matches a Field's
+/// any two NaNs as equal: matching semantics, nothing to reject. A `Set` instead matches a Field's
 /// HASH against a column's raw bytes, so two DIFFERENT NaN payloads (which `compareAt` calls equal)
 /// disagree there and the deeper check is required.
 static bool convertedConstantHasNoNaN(const Field & converted_value, bool stop_at_array_or_map)
@@ -706,12 +706,12 @@ static bool convertedConstantHasNoNaN(const Field & converted_value, bool stop_a
 
 /// SET-SPECIFIC (the `in` builder only). For a `Variant` EXPRESSION, `equals` runs independently per
 /// active alternative while the set holds one discriminator-bearing key, and a constant `Field`
-/// carries no discriminator — so equivalence is not decidable from the constant at all and the
+/// carries no discriminator, so equivalence is not decidable from the constant at all and the
 /// rewrite must be declined.
 ///
 /// The recursion STOPS at an `Array`/`Map` boundary, and unlike the rules above that is not a
 /// simplification: below such a boundary comparison goes through `IColumn::compareAt`, and
-/// `ColumnVariant::compareAt` compares discriminators EXACTLY — the same semantics as the set — so
+/// `ColumnVariant::compareAt` compares discriminators EXACTLY, the same semantics as the set, so
 /// those shapes are already correct and declining them would only forgo a valid rewrite. A top-level
 /// `Tuple` is decomposed into element-wise comparisons instead, so the divergence propagates through
 /// it and the recursion must.
