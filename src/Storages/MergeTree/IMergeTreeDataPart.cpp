@@ -2603,7 +2603,13 @@ std::optional<String> IMergeTreeDataPart::getRelativePathForPrefix(const String 
     if (detached && parent_part)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot detach projection");
 
-    return getDataPartStorage().getRelativePathForPrefix(storage.log.load(), prefix, detached, broken);
+    /// detached/ is a table-wide namespace: its readers scan every disk of the storage policy, so the
+    /// name must be free on all of them, not just on the disk this part happens to live on.
+    IDataPartStorage::NameTakenChecker name_taken_anywhere;
+    if (detached)
+        name_taken_anywhere = [this](const String & dir_name) { return storage.tryGetDiskForDetachedPart(dir_name) != nullptr; };
+
+    return getDataPartStorage().getRelativePathForPrefix(storage.log.load(), prefix, detached, broken, name_taken_anywhere);
 }
 
 std::optional<String> IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix, bool broken) const
