@@ -321,7 +321,15 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 
     std::string columns_part;
     if (!columns.empty())
-        columns_part = fmt::format(" AND attname IN ('{}')", boost::algorithm::join(columns, "','"));
+    {
+        /// Quote each column name individually so a name containing a quote cannot break out of the
+        /// literal (a plain join with `','` left the interpolated names unescaped).
+        Strings quoted_columns;
+        quoted_columns.reserve(columns.size());
+        for (const auto & column : columns)
+            quoted_columns.push_back(quoteStringPostgreSQL(column));
+        columns_part = fmt::format(" AND attname IN ({})", boost::algorithm::join(quoted_columns, ", "));
+    }
 
     /// Bypassing the error of the missing column `attgenerated` in the system table `pg_attribute` for PostgreSQL versions below 12.
     /// This trick involves executing a special query to the DBMS in advance to obtain the correct line with comment /// if column has GENERATED.
