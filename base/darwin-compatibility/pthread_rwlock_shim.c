@@ -233,16 +233,9 @@ int pthread_rwlock_destroy(pthread_rwlock_t * rwlock)
 
     shim_rwlock * impl = &storage->impl;
 
-    int ret = pthread_mutex_lock(&impl->lock);
-    if (ret != 0)
-        return ret;
-    if (impl->state != 0 || impl->blocked_writers != 0)
-    {
-        pthread_mutex_unlock(&impl->lock);
-        return EBUSY;
-    }
-    pthread_mutex_unlock(&impl->lock);
-
+    /* Like the donor, this does not try to detect destruction of a lock that is still held or
+     * still has waiters: POSIX leaves that undefined for the caller, and the EBUSY result is
+     * only a "may fail". */
     pthread_cond_destroy(&impl->read_signal);
     pthread_cond_destroy(&impl->write_signal);
     pthread_mutex_destroy(&impl->lock);
