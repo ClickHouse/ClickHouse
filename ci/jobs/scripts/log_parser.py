@@ -59,11 +59,49 @@ class FuzzerLogParser:
         "SET",
     ]
 
-    def __init__(self, server_log, fuzzer_log="", stderr_log="", stack_trace_str=None):
+    # The "Signal" records the harness itself can cause, split by which action
+    # produces them. Every other signal is the server's own fatal handler and stays
+    # reportable.
+    # SIGTERM from the graceful stop. Every caller that ended a server it knew was
+    # alive suppresses these, because every such path calls `clickhouse stop`.
+    SELF_STOP_SIGNAL_PATTERN = r"Received signal 15|Received termination signal"
+    # The ClickHouse watchdog reporting a SIGKILL. Suppressed ONLY by callers that
+    # actually sent one (the memory-stuck kill and the teardown escalation): a
+    # graceful stop does not produce this, so on those paths a signal-9 record is
+    # the kernel OOM killer or another independent event and must stay reportable.
+    SELF_KILL_SIGNAL_PATTERN = r"Child process was terminated by signal 9"
+
+    def __init__(
+        self,
+        server_log,
+        fuzzer_log="",
+        stderr_log="",
+        stack_trace_str=None,
+        self_killed_server=False,
+        server_sigkilled_by_harness=None,
+    ):
         self.server_log = server_log
         self.fuzzer_log = fuzzer_log
         self.stderr_log = stderr_log
         self.stack_trace_str = stack_trace_str
+        # Set when the harness itself ended a running server (memory-stuck kill,
+        # a teardown-stage watchdog escalation, or a graceful stop after the probe
+        # stage declared a live server unanswering). Only the self-inflicted
+        # signature lines are then dropped from the "Signal" match; the pattern
+        # list, its priority order and every other signal stay intact, so both a
+        # genuine earlier finding and a genuine fatal signal on the way down still
+        # win.
+        self.self_killed_server = self_killed_server
+        # Whether the harness sent SIGKILL, as opposed to only stopping the server
+        # gracefully. Defaults to the broader flag for callers that do not
+        # distinguish, but a graceful-stop-only path must pass False: `clickhouse
+        # stop` never produces the watchdog's signal-9 record, so one appearing
+        # there is the kernel OOM killer or another independent event.
+        self.server_sigkilled_by_harness = (
+            self_killed_server
+            if server_sigkilled_by_harness is None
+            else server_sigkilled_by_harness
+        )
 
     def parse_failure(self):
         files = []
@@ -120,10 +158,22 @@ class FuzzerLogParser:
                 else:
                     assert self.server_log, "No server log provided"
                     file = self.server_log
-                output = Shell.get_output(
-                    f"rg --text -A 10 -o '{pattern}' {file} | head -n10",
-                    strict=True,
-                )
+                if name == "Signal" and self.self_killed_server:
+                    # Strip our own stop/kill lines BEFORE -A expands context:
+                    # filtering after expansion leaves their context lines
+                    # behind, which then become the failure name.
+                    self_inflicted = self.SELF_STOP_SIGNAL_PATTERN
+                    if self.server_sigkilled_by_harness:
+                        self_inflicted = (
+                            f"{self_inflicted}|{self.SELF_KILL_SIGNAL_PATTERN}"
+                        )
+                    search = (
+                        f"rg -v --text '{self_inflicted}' {file}"
+                        f" | rg --text -A 10 -o '{pattern}'"
+                    )
+                else:
+                    search = f"rg --text -A 10 -o '{pattern}' {file}"
+                output = Shell.get_output(f"{search} | head -n10", strict=True)
 
             if output:
                 error_output = output
