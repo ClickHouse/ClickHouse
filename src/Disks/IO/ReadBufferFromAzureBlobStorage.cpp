@@ -14,6 +14,7 @@
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/ProfileEvents.h>
 #include <IO/SeekableReadBuffer.h>
+#include <base/sleep.h>
 
 
 namespace ProfileEvents
@@ -52,6 +53,7 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     String container_for_logging_)
     : ReadBufferFromFileBase()
     , blob_container_client(blob_container_client_)
+    , blob_client(std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path_)))
     , path(path_)
     , max_single_read_retries(max_single_read_retries_)
     , max_single_download_retries(max_single_download_retries_)
@@ -245,9 +247,6 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
 
     Azure::Core::Context azure_context = Azure::Core::Context().WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), attempt);
 
-    if (!blob_client)
-        blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
-
     size_t sleep_time_with_backoff_milliseconds = 100;
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromAzureInitMicroseconds);
 
@@ -335,9 +334,6 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
 
 std::optional<size_t> ReadBufferFromAzureBlobStorage::tryGetFileSize()
 {
-    if (!blob_client)
-        blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
-
     if (!file_size)
         file_size = blob_client->GetProperties().Value.BlobSize;
 

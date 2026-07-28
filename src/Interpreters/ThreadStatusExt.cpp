@@ -35,6 +35,12 @@
 #endif
 
 
+namespace ProfileEvents
+{
+    extern const Event RealTimeMicroseconds;
+}
+
+
 /// Implement some methods of ThreadStatus and CurrentThread here to avoid extra linking dependencies in clickhouse_common_io
 /// TODO It doesn't make sense.
 
@@ -346,7 +352,9 @@ void ThreadStatus::applyQuerySettings()
         SignalUnsafeMutationGuard guard(is_query_id_usable);
         query_id = query_context_ptr->getCurrentQueryId();
     }
-    initQueryProfiler();
+
+    if (boundToOSThread())
+        initQueryProfiler();
 
     untracked_memory_limit = settings[Setting::max_untracked_memory];
     if (settings[Setting::memory_profiler_step] && settings[Setting::memory_profiler_step] < static_cast<UInt64>(untracked_memory_limit))
@@ -374,7 +382,8 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 {
     thread_attach_time.setUp();
 
-    thread_group_->linkThread(thread_id);
+    if (boundToOSThread())
+        thread_group_->linkThread(thread_id);
     thread_group = thread_group_;
     try
     {
@@ -396,9 +405,10 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in attachToGroupImpl");
         });
 
-        initPerformanceCounters();
+        if (boundToOSThread())
+            initPerformanceCounters();
 
-        if (thread_group->os_threads_nice_value != 0)
+        if (boundToOSThread() && thread_group->os_threads_nice_value != 0)
         {
             OSThreadNiceValue::set(thread_group->os_threads_nice_value);
         }
@@ -420,8 +430,15 @@ void ThreadStatus::detachFromGroup()
     /// flush untracked memory before resetting memory_tracker parent
     flushUntrackedMemory();
 
-    finalizeQueryProfiler();
-    finalizePerformanceCounters();
+    if (boundToOSThread())
+    {
+        finalizeQueryProfiler();
+        finalizePerformanceCounters();
+    }
+    else
+    {
+        performance_counters.increment(ProfileEvents::RealTimeMicroseconds, thread_attach_time.elapsedMicroseconds());
+    }
 
     performance_counters.setParent(&ProfileEvents::global_counters);
 
@@ -432,9 +449,10 @@ void ThreadStatus::detachFromGroup()
     /// total_memory_tracker_sample_probability rather than the query's stale config.
     resolveMemorySampleConfig();
 
-    thread_group->unlinkThread();
+    if (boundToOSThread())
+        thread_group->unlinkThread();
 
-    if (thread_group->os_threads_nice_value != 0)
+    if (boundToOSThread() && thread_group->os_threads_nice_value != 0)
     {
         OSThreadNiceValue::set(0);
     }
@@ -525,6 +543,13 @@ UInt64 ThreadStatus::TimePoint::elapsedMilliseconds() const
 UInt64 ThreadStatus::TimePoint::elapsedMilliseconds(const TimePoint & current) const
 {
     return std::chrono::duration_cast<std::chrono::milliseconds>(current.point - point).count();
+}
+
+UInt64 ThreadStatus::TimePoint::elapsedMicroseconds() const
+{
+    TimePoint now;
+    now.setUp();
+    return std::chrono::duration_cast<std::chrono::microseconds>(now.point - point).count();
 }
 
 void ThreadStatus::initPerformanceCounters()

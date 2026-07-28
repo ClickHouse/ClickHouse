@@ -102,6 +102,11 @@ public:
     void setLimits(Limits disk, Limits storage, Limits http);
     void setSocketBufferSizes(SocketBufferSizes disk, SocketBufferSizes storage, SocketBufferSizes http);
     SocketBufferSizes getSocketBufferSizes(HTTPConnectionGroupType type) const;
+
+    /// Per-group switch: newly created connections of an enabled group are
+    /// built on Silk fiber sockets. Existing pooled connections are not
+    /// converted. Requires the Silk scheduler to be running.
+    void setUseSilkSockets(bool disk, bool storage, bool http);
     void dropCache();
 
     IHTTPConnectionPoolForEndpoint::Ptr getPool(HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration);

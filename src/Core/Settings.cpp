@@ -765,13 +765,23 @@ Possible values:
     DECLARE(Bool, enable_hdfs_pread, true, R"(
 Enable or disables pread for HDFS files. By default, `hdfsPread` is used. If disabled, `hdfsRead` and `hdfsSeek` will be used to read hdfs files.)", 0) \
     DECLARE(Bool, use_reader_executor, false, R"(
-Experimental. Route reads through the new pipeline `ReaderExecutor` instead of the legacy matryoshka of read buffers. Falls back to the legacy path for configurations the executor does not yet support.)", EXPERIMENTAL) \
-    DECLARE(Bool, reader_executor_use_long_connections, false, R"(
-Reuse a bounded long source connection across windows in the experimental `ReaderExecutor`. A long connection is one whose range exceeds the current read window; when disabled, the executor takes no connection-pool budget and every window opens a short-lived one-shot connection (the stateless path).)", EXPERIMENTAL) \
+Experimental. Route reads through the new pipeline `ReaderExecutor` instead of the legacy matryoshka of read buffers. Falls back to the legacy path for configurations the executor does not yet support (for example with distributed cache), in which case no `system.reader_executor_log` row is emitted.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_window_size, 8388608, R"(
+Read-ahead window size for the experimental `ReaderExecutor` (`use_reader_executor`) at normal memory pressure.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_block_size, 1048576, R"(
+`ChainedBuffers` node size for the experimental `ReaderExecutor`: the per-block allocation and drain granularity, capped at the read window (`reader_executor_window_size`).)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_min_bytes_for_seek, 2097152, R"(
 Forward-gap bound for the experimental `ReaderExecutor`: a gap up to this is skipped on the open source connection (bridged / read through) instead of issuing a separate source read or reopening. Set near the bandwidth/request cost breakeven so bridging stays cost-positive.)", EXPERIMENTAL) \
-    DECLARE(UInt64, reader_executor_max_tail_for_drain, 1048576, R"(
+    DECLARE(UInt64, reader_executor_max_tail_for_drain, 524288, R"(
 Drain bound for the experimental `ReaderExecutor`: a long source connection dropped within this many bytes of its right bound is read out to the bound first, so it completes and returns to the connection pool reusable instead of counting as an incomplete connection.)", EXPERIMENTAL) \
+    DECLARE(Bool, reader_executor_use_long_connections, false, R"(
+Reuse a bounded long source connection across windows in the experimental `ReaderExecutor`. A long connection is one whose range exceeds the current read window; when disabled, the executor takes no connection-pool budget and every window opens a short-lived one-shot connection (the stateless path).)", EXPERIMENTAL) \
+    DECLARE(Bool, reader_executor_use_fibers, false, R"(
+Run the experimental `ReaderExecutor`'s read-ahead fetch steps as Silk fibers instead of prefetch pool threads. Requires the server setting `disk_connections_use_silk` (a running Silk scheduler).)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_plan_look_ahead_max_window, 33554432, R"(
+Plan look-ahead target (bytes) for the experimental `ReaderExecutor`: residency is planned until this span is covered and reused across mark-range advances; the last probed cache segment or fill cell may extend the plan slightly past the target. Floored at `reader_executor_window_size`. The default (32 MiB) keeps the plan wider than the fill-ahead lead (16 MiB), so the plan never caps the prefetch distance.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_hold_consumed, 0, R"(
+Trailing retention window (bytes) for the experimental `ReaderExecutor`: how many already-consumed bytes the read buffer keeps in memory behind its position, so a backward seek within that distance re-serves from memory instead of refetching from the source. `0` (default) releases bytes as they are consumed.)", EXPERIMENTAL) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 
@@ -6794,6 +6804,9 @@ Cloud default value: `1`.
     DECLARE(Bool, enable_filesystem_cache_log, false, R"(
 Allows to record the filesystem caching log for each query
 )", 0) \
+    DECLARE(Bool, enable_reader_executor_log, false, R"(
+Allows recording one row per `ReaderExecutor` (at destruction) into `system.reader_executor_log`. Useful for diagnosing read pipeline behavior on a per-reader basis: per-tier byte counters (page cache, filesystem cache, source), request counts, and a latency breakdown. Disabled by default because high-fan-out queries can create many rows.
+)", EXPERIMENTAL) \
     DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, R"(
 Allow to use the filesystem cache in passive mode - benefit from the existing cache entries, but don't put more entries into the cache. If you set this setting for heavy ad-hoc queries and leave it disabled for short real-time queries, this will allows to avoid cache threshing by too heavy queries and to improve the overall system efficiency.
 )", 0) \

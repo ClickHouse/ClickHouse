@@ -2217,13 +2217,14 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
 
     const size_t old_bytes = memory.size();
     const size_t additional_bytes = current - in.position();
-    const size_t new_bytes = old_bytes + additional_bytes;
 
-    /// There are no new bytes to add to memory.
-    /// No need to do extra stuff.
-    if (new_bytes == 0)
+    /// No new bytes to append: nothing to copy, and `in.position()` may legitimately be
+    /// nullptr here (a drained buffer detaches its base pointers at EOF), which must not
+    /// reach memcpy - a null argument is undefined behavior even with zero size.
+    if (additional_bytes == 0)
         return;
 
+    const size_t new_bytes = old_bytes + additional_bytes;
     chassert(in.position() + additional_bytes <= in.buffer().end());
     memory.resize(new_bytes);
     memcpy(memory.data() + old_bytes, in.position(), additional_bytes);

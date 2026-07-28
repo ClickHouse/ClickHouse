@@ -1,5 +1,9 @@
--- Tags: no-object-storage, no-random-merge-tree-settings, no-parallel
+-- Tags: no-object-storage, no-random-merge-tree-settings, no-parallel, no-flaky-check
 -- no-s3 because read FileOpen metric
+
+-- this test checks I/O counters (FileOpen) incompatible with ReaderExecutor
+SET use_reader_executor = 0;
+
 DROP TABLE IF EXISTS nested;
 
 SET flatten_nested = 0;

@@ -454,6 +454,14 @@ How many parts to look at once.
 )", 0) \
     \
     /** Merge settings. */ \
+    DECLARE(UInt64, merge_reader_executor_window_size, 1048576, R"(
+Read window size (bytes) for merge and mutation reads through the experimental `ReaderExecutor` (`use_reader_executor`). One long connection streams the whole part, so the window does not drive the source request count; it sizes the in-flight read memory per stream.)", EXPERIMENTAL) \
+    DECLARE(UInt64, merge_reader_executor_plan_look_ahead_max_window, 8388608, R"(
+Plan window size (bytes) for merge and mutation reads through the experimental `ReaderExecutor`: residency is planned once over this span and reused across the sequential read.)", EXPERIMENTAL) \
+    DECLARE(UInt64, merge_reader_executor_fill_ahead_lead, 2097152, R"(
+Fill-ahead lead (bytes) for merge and mutation reads through the experimental `ReaderExecutor`: how far the background fill runs ahead of the consumed position.)", EXPERIMENTAL) \
+    DECLARE(UInt64, merge_reader_executor_hold_consumed, 0, R"(
+Consumed bytes kept behind the read position for merge and mutation reads through the experimental `ReaderExecutor`, serving backward hops from memory. The compact reader's per-granule returns are absorbed by the decompression layer, so retention is off by default.)", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, merge_max_block_size, 8192, R"(
 The number of rows that are read from the merged parts into memory.
 

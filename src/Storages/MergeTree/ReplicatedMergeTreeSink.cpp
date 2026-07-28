@@ -27,6 +27,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ThreadFuzzer.h>
 #include <base/scope_guard.h>
+#include <base/sleep.h>
 #include <fmt/core.h>
 #include <fmt/format.h>
 #include <algorithm>

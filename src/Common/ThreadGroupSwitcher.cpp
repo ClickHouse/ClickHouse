@@ -26,7 +26,7 @@ ThreadGroupPtr getCurrentThreadGroup()
     return current_thread->getThreadGroup();
 }
 
-ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group) noexcept
+ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, std::optional<ThreadName> thread_name, bool allow_existing_group) noexcept
     : thread_group(std::move(thread_group_))
 {
     try
@@ -45,24 +45,28 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
                 return;
             }
             else if (!allow_existing_group)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread ({}) is already attached to a group (master_thread_id {})", thread_name, prev_thread_group->master_thread_id);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread ({}) is already attached to a group (master_thread_id {})", thread_name.value_or(ThreadName::UNKNOWN), prev_thread_group->master_thread_id);
             else
             {
                 /// Borrowing a thread that owns a group: remember its name (even UNKNOWN) before the
                 /// setThreadName below renames it, so we can restore it with the group.
-                prev_thread_name = getThreadName();
-                should_restore_prev_thread_name = true;
+                if (thread_name)
+                {
+                    prev_thread_name = getThreadName();
+                    should_restore_prev_thread_name = true;
+                }
                 CurrentThread::detachFromGroupIfNotDetached();
             }
         }
 
         if (!prev_thread)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tried to attach thread ({}) to a group, but the ThreadStatus is not initialized", thread_name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tried to attach thread ({}) to a group, but the ThreadStatus is not initialized", thread_name.value_or(ThreadName::UNKNOWN));
 
         LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
         CurrentThread::attachToGroup(thread_group);
-        setThreadName(thread_name);
+        if (thread_name)
+            setThreadName(*thread_name);
 
         /// Simulate a failure after the attach succeeded (e.g. setThreadName throwing),
         /// to verify the catch block detaches from the target group and restores the

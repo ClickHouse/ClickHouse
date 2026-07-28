@@ -53,25 +53,25 @@ struct ChainedBufferNode
     std::shared_ptr<ChainedBuffer> buffer;
     size_t buffer_offset = 0;
     size_t size = 0;
-    size_t logical_offset = 0;
+    size_t offset = 0;
 
     char * data() { return buffer->data() + buffer_offset; } // NOLINT(readability-make-member-function-const)
     const char * data() const { return buffer->data() + buffer_offset; }
-    ByteRange range() const { return {logical_offset, size}; }
+    ByteRange range() const { return {offset, size}; }
 };
 
 /// Sequence of ChainedBufferNodes covering a logical range, with a built-in
 /// consumption cursor.
 ///
 /// Two invariants maintained on every `append`:
-///   1. `nodes` are sorted by `logical_offset` (stable on tie — equal-offset
+///   1. `nodes` are sorted by `offset` (stable on tie — equal-offset
 ///      nodes keep insertion order). So consumption proceeds in
 ///      monotonically-increasing logical order and `copyTo` can write
 ///      contiguous output without sorting.
 ///   2. `intervals` is a sorted, disjoint, merged coverage set —
 ///      `intervals[i].end() < intervals[i+1].offset` (strictly disjoint, no
-///      touching). Coverage queries (`covers` / `gaps` / `coveredBytes` /
-///      `range`) consult this set, so they are O(log intervals) for hits.
+///      touching). Coverage queries (`covers` / `gaps` / `range`) consult
+///      this set, so they are O(log intervals) for hits.
 ///
 /// `advance` / `tryRewind` keep both invariants in sync:
 ///   * `advance(bytes)` moves the cursor forward; nodes whose data falls
@@ -82,7 +82,7 @@ struct ChainedBufferNode
 ///     currently-held nodes; backward moves extend `intervals.front()`
 ///     so coverage queries still report the rewound-into bytes.
 ///
-/// The cursor's effective position is `nodes.front().logical_offset +
+/// The cursor's effective position is `nodes.front().offset +
 /// front_offset`. `peek()` returns the unconsumed prefix of the front
 /// node (memory stays valid until the next `advance` / `tryRewind` call).
 ///
@@ -102,7 +102,7 @@ public:
     {
         char *  data = nullptr;
         size_t  size = 0;
-        size_t  logical_offset = 0;
+        size_t  offset = 0;
     };
 
     /// True if there is no more data to read at-or-after the cursor.
@@ -119,7 +119,7 @@ public:
 
     /// Move the cursor to `new_position`. Succeeds if `new_position` is
     /// inside the currently-held nodes, i.e. in
-    /// `[nodes.front().logical_offset, nodes.back().end())`. Backward
+    /// `[nodes.front().offset, nodes.back().end())`. Backward
     /// moves restore intervals so coverage queries report the rewound
     /// bytes. Returns true on success; false leaves the chain unchanged.
     bool tryRewind(size_t new_position);
@@ -136,11 +136,8 @@ public:
     /// Sub-ranges of `req` not reachable. Empty iff `covers(req)`.
     VectorWithMemoryTracking<ByteRange> gaps(ByteRange req) const;
 
-    /// Number of bytes in `req` reachable from the cursor.
-    size_t coveredBytes(ByteRange req) const;
-
     /// Sum of node sizes still held (counts overlapping bytes twice).
-    /// `coveredBytes(range())` is the unique-byte equivalent.
+    /// The disjoint `intervals` sum is the unique-byte equivalent.
     size_t totalBytes() const;
 
     /// Alias for `atEnd()`; kept for readability at call sites that mean
@@ -155,16 +152,13 @@ public:
     /// chain's still-reachable bytes (post-advance).
     ChainedBuffers slice(ByteRange req) const;
 
-    /// Same as `slice(req)` but asserts the chain fully covers `req`.
-    ChainedBuffers extract(ByteRange req) const;
-
     /// Flatten this chain's coverage of `req` into `dst`. Asserts `covers(req)` and (debug)
     /// that the chain is non-overlapping. Returns bytes written.
     size_t copyTo(char * dst, ByteRange req) const;
 
     // ─── Diagnostics / shifting ─────────────────────────────────────────
 
-    /// Shift every node's `logical_offset` (and every interval's
+    /// Shift every node's `offset` (and every interval's
     /// `offset`) by `delta`. Used when relocating a chain's logical
     /// coordinates (e.g. stripping the encryption header).
     void shift(ssize_t delta);
@@ -205,7 +199,7 @@ private:
     /// The consumed frontier: the logical position consumption has reached (set by
     /// `advance` / `tryRewind`; a backward rewind lowers it, re-opening bytes).
     /// `append` / `slice` clamp against it -- unlike
-    /// `front().logical_offset + front_offset`, it stays correct after `advance`
+    /// `front().offset + front_offset`, it stays correct after `advance`
     /// drops the front node into a gap. `0` on a fresh chain, so out-of-order appends work.
     size_t consumed_pos = 0;
 };

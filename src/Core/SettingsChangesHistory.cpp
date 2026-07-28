@@ -41,6 +41,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"enable_reader_executor_log", false, false, "New experimental setting to write one row per ReaderExecutor at destruction into system.reader_executor_log."},
+            {"reader_executor_window_size", 8388608, 8388608, "New experimental setting to configure the read-ahead window size of the ReaderExecutor."},
+            {"reader_executor_block_size", 1048576, 1048576, "New experimental setting to configure the chained-buffer node / block size of the ReaderExecutor."},
+            {"reader_executor_plan_look_ahead_max_window", 33554432, 33554432, "New experimental setting: plan look-ahead target for the ReaderExecutor (floored at reader_executor_window_size); the default keeps the plan wider than the fill-ahead lead."},
+            {"reader_executor_hold_consumed", 0, 0, "New experimental setting: trailing retention window of the ReaderExecutor read buffer - consumed bytes kept in memory for cheap backward seeks."},
+            {"reader_executor_use_fibers", false, false, "New experimental ReaderExecutor setting (off by default): run read-ahead fetch steps as Silk fibers instead of prefetch pool threads."},
+            {"reader_executor_max_tail_for_drain", 1048576, 524288, "Lowered the drain bound: draining more than 512 KiB to complete a dropped long connection costs more than a reopen."},
             {"unique_key_probe_implementation", "auto", "auto", "New setting: selects the UNIQUE KEY probe implementation (currently only the simple baseline exists)"},
             {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."},
             {"analyzer_compatibility_apply_final_to_all_joined_tables", false, false, "New setting on master (default false = the fixed behavior). The behavior flip itself is recorded under 26.6, and the introduction for backports to older release branches (with default true) under 26.4."},
@@ -63,6 +70,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_csv_missing_nullable_as_empty_string", false, false, "New setting to read a missing value of `Nullable(String)` from CSV as an empty string instead of NULL."},
             {"use_legacy_to_time", true, false, "Use the new `toTime` function (converting values to the `Time` data type) by default instead of the legacy `toTime` (which is still available as `toTimeWithFixedDate`)."},
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
+            {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."},
             {"parallel_replicas_plan_based", false, false, "New setting"},
             {"use_paimon_metadata_files_cache", false, false, "New setting to enable in-memory caching of parsed Paimon metadata files (manifest lists and manifests). For persistent Paimon table engines it must be enabled before metadata initialization; table functions evaluate it per query. Avoids repeated downloads and deserialization of metadata files from object storage on subsequent queries."},
             {"optimize_or_like_chain", false, true, "Enable by default: optimize OR chains of LIKE/ILIKE/match into multiSearchAny (pure-substring patterns) or multiMatchAny (other patterns, when Hyperscan/Vectorscan is permitted); when neither fast path applies the original OR chain is kept unchanged."},
@@ -1324,6 +1332,13 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.8",
+        {
+            {"merge_reader_executor_window_size", 1048576, 1048576, "New setting. Read window size for merge/mutation reads through the experimental ReaderExecutor."},
+            {"merge_reader_executor_plan_look_ahead_max_window", 8388608, 8388608, "New setting. Plan window size for merge/mutation reads through the experimental ReaderExecutor."},
+            {"merge_reader_executor_fill_ahead_lead", 2097152, 2097152, "New setting. Fill-ahead lead for merge/mutation reads through the experimental ReaderExecutor."},
+            {"merge_reader_executor_hold_consumed", 0, 0, "New setting. Consumed-bytes retention for merge/mutation reads through the experimental ReaderExecutor."},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
             {"allow_experimental_text_index_phrase_search", false, false, "New setting"},

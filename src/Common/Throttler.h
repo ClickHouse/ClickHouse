@@ -4,7 +4,6 @@
 #include <Common/ProfileEvents.h>
 
 #include <mutex>
-#include <base/sleep.h>
 #include <base/types.h>
 #include <atomic>
 
@@ -72,10 +71,9 @@ public:
     void setMaxSpeed(size_t max_speed_);
 
 protected:
-    virtual void sleep(UInt64 nanoseconds)
-    {
-        sleepForNanoseconds(nanoseconds);
-    }
+    /// Blocks a plain thread; on a silk fiber suspends only the fiber, keeping
+    /// the carrier OS thread free for other fibers.
+    void sleep(UInt64 nanoseconds);
 
 private:
     void throttleImpl(size_t amount, size_t & count_value, double & tokens_value);

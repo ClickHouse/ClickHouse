@@ -157,9 +157,20 @@ struct ReadSettings
     struct ReaderExecutorSettings
     {
         bool enabled = false;
+        bool log_enabled = false;
+        size_t window_size = 8 * 1_MiB;
+        size_t block_size = 1_MiB;
+        size_t plan_look_ahead_max_window = 32 * 1_MiB;
         bool use_long_connections = true;
         size_t min_bytes_for_seek = 2 * 1_MiB;
-        size_t max_tail_for_drain = 1_MiB;
+        size_t max_tail_for_drain = 512 * 1_KiB;
+        /// Consumed bytes kept behind the read position for cheap backward seeks.
+        size_t hold_consumed = 0;
+        /// Fill-ahead (prefetch) lead. Not user-facing; internal readers
+        /// (merges) shrink it for streaming patterns.
+        size_t fill_ahead_lead = 16 * 1_MiB;
+        /// Run fetch steps as Silk fibers (requires a running Silk scheduler).
+        bool use_fiber_runner = false;
     };
     ReaderExecutorSettings reader_executor;
 
@@ -176,6 +187,8 @@ struct ReadSettings
 #if ENABLE_DISTRIBUTED_CACHE
     DistributedCacheSettings distributed_cache_settings;
 #endif
+
+    /// Use ReaderExecutor-based pipeline instead of matryoshka ReadBuffer assembly.
 
     ReadSettings adjustBufferSize(size_t file_size) const;
 
