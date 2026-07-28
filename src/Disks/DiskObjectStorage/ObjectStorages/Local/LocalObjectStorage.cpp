@@ -83,6 +83,30 @@ ObjectMetadata makeObjectMetadata(const struct stat & file_stat)
     return object_metadata;
 }
 
+/// The concurrent-disappearance class for a best-effort local listing: an entry
+/// removed mid-stat (ENOENT) or whose parent path component was concurrently
+/// replaced by a non-directory (ENOTDIR). Mirrors libc++'s own `__is_dne_error`.
+/// Every other error (EACCES, EIO, ...) is a real failure and must propagate.
+bool isVanishedEntryError(const std::error_code & error)
+{
+    return error == std::errc::no_such_file_or_directory || error == std::errc::not_a_directory;
+}
+
+/// Best-effort metadata stat for a path that has ALREADY been validated against
+/// the key prefix. Uses the non-throwing `error_code` overloads and tolerates the
+/// concurrent-disappearance class (see `isVanishedEntryError`), returning an empty
+/// optional for a vanished entry. Every other error is propagated.
+std::optional<ObjectMetadata> tryStatResolvedPath(const std::string & resolved_path)
+{
+    struct stat file_stat{};
+    if (0 != ::stat(resolved_path.c_str(), &file_stat))
+        throw fs::filesystem_error(
+            "Got unexpected error while getting file metadata", resolved_path, std::error_code(errno, std::generic_category()));
+
+    return makeObjectMetadata(file_stat);
+}
+
+
 }
 
 LocalObjectStorage::LocalObjectStorage(LocalObjectStorageSettings settings_)
@@ -593,33 +617,6 @@ void LocalObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
         removeObjectIfExists(object);
 }
 
-namespace
-{
-/// The concurrent-disappearance class for a best-effort local listing: an entry
-/// removed mid-stat (ENOENT) or whose parent path component was concurrently
-/// replaced by a non-directory (ENOTDIR). Mirrors libc++'s own `__is_dne_error`.
-/// Every other error (EACCES, EIO, ...) is a real failure and must propagate.
-bool isVanishedEntryError(const std::error_code & error)
-{
-    return error == std::errc::no_such_file_or_directory || error == std::errc::not_a_directory;
-}
-
-/// Best-effort metadata stat for a path that has ALREADY been validated against
-/// the key prefix. Uses the non-throwing `error_code` overloads and tolerates the
-/// concurrent-disappearance class (see `isVanishedEntryError`), returning an empty
-/// optional for a vanished entry. Every other error is propagated.
-std::optional<ObjectMetadata> tryStatResolvedPath(const std::string & resolved_path)
-{
-    LOG_TEST(log, "Getting metadata for path: {}", path);
-
-    struct stat file_stat{};
-    if (0 != ::stat(path.c_str(), &file_stat))
-        throw fs::filesystem_error(
-            "Got unexpected error while getting file metadata", path, std::error_code(errno, std::generic_category()));
-
-    return makeObjectMetadata(file_stat);
-}
-
 std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
 {
     LOG_TEST(log, "Getting metadata for path: {}", path);
@@ -656,7 +653,7 @@ SmallObjectDataWithMetadata LocalObjectStorage::readSmallObjectAndGetObjectMetad
     result.metadata = makeObjectMetadata(file_stat);
     return result;
 }
-}
+
 
 ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, bool) const
 {
@@ -671,13 +668,6 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, b
     object_metadata.last_modified = Poco::Timestamp::fromEpochTime(
         std::chrono::duration_cast<std::chrono::seconds>(time.time_since_epoch()).count());
     return object_metadata;
-}
-
-std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
-{
-    auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
-    LOG_TEST(log, "Getting metadata for path: {}", resolved_path);
-    return tryStatResolvedPath(resolved_path);
 }
 
 void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t/* max_keys */) const
