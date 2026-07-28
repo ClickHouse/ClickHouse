@@ -282,18 +282,45 @@ def effective_macro_state(command, macro):
 # take none, so they must not swallow the token after them.
 DEPFILE_FLAGS_WITH_OPERAND = ("-MT", "-MF", "-MQ", "-MJ")
 
+# Every extension a compiled source operand can carry in this tree's
+# `compile_commands.json`, plus the object files. Measured over a configured tree's 17284
+# entries: `.cpp` 10387, `.c` 3940, `.cc` 2659, `.asm` 124, `.cxx` 62, `.c++` 49, `.s` 40,
+# `.S` 23. Enumerating only some of them leaves the rest as stray input files, which is the
+# failure the reduction below exists to prevent - so the list is the whole set, and it is
+# only ever applied to *positional* tokens, or a joined flag whose value happens to end this
+# way (`-I/opt/dir.c++`) would be dropped as if it were a source.
+SOURCE_OPERAND_EXTENSIONS = (
+    ".c",
+    ".cc",
+    ".cpp",
+    ".cxx",
+    ".c++",
+    ".C",
+    ".s",
+    ".S",
+    ".asm",
+    ".m",
+    ".mm",
+    ".o",
+)
+
 
 def jemalloc_probe_flags(command):
     """A compile command reduced to its compiler and flags, ready for the probe.
 
     The output path, the `-c`, the depfile flags and the source/object operands go; every
-    other flag is kept verbatim, so the probe is compiled exactly as jemalloc itself is.
+    other flag is kept verbatim, so the probe is compiled exactly as the entry itself is.
 
     The reduction must leave no stray positional operand behind: a leftover path reaches
     clang as an input file, and the resulting `no such file or directory` turns the probe
-    into a false "the gates are not armed" verdict pointing at the wrong cause. That is
-    why the operand-taking depfile flags are consumed as pairs, the way `-o` is - cmake's
-    Makefile generator emits exactly `-MD -MT <target> -MF <path>`.
+    into a false verdict pointing at the wrong cause. That is why the operand-taking
+    depfile flags are consumed as pairs, the way `-o` is - cmake's Makefile generator emits
+    exactly `-MD -MT <target> -MF <path>` - and why the source extension list is the
+    complete one rather than just jemalloc's own `.c`. Both probe callers reduce with this,
+    and the leak probe's entries are C++: a left-in `.cc` operand costs 2.8s instead of
+    0.2s per probe, and for a source cmake has not generated yet (the guards run in the
+    CMAKE stage, before BUILD - 9 of a configured tree's protobuf `.pb.cc` files are in
+    that state) it fails the probe outright with no diagnostic of its own.
     """
     tokens = shlex.split(command)
     flags = []
@@ -313,7 +340,7 @@ def jemalloc_probe_flags(command):
         if token == "-c" or token.startswith("-M"):
             index += 1
             continue
-        if token.endswith((".c", ".o")):
+        if not token.startswith("-") and token.endswith(SOURCE_OPERAND_EXTENSIONS):
             index += 1
             continue
         flags.append(token)
@@ -344,21 +371,127 @@ def run_jemalloc_probe(flags, directory):
     return None if process.returncode == 0 else (process.stderr or "").strip()
 
 
+# The leak probe's `#error` texts. They are matched in the compiler's stderr to tell a real
+# leak from a probe that failed for some unrelated reason, so the two outcomes stay
+# distinguishable: only these strings mean "the macro reached this translation unit".
+JEMALLOC_LEAK_MARKER = "{macro} reaches this translation unit"
+JEMALLOC_LEAK_PROBE_SOURCE = "".join(
+    f'#ifdef {macro}\n#error "{JEMALLOC_LEAK_MARKER.format(macro=macro)}"\n#endif\n'
+    for macro in JEMALLOC_SAFETY_MACROS
+) + "int jemalloc_leak_probe_ok;\n"
+
+# The extensions clang compiles as C++. Everything else is probed as C; the language has to
+# match the entry, because a C probe compiled with C++ flags fails for reasons of its own
+# and would read as an inconclusive probe on a perfectly clean compile line.
+CXX_SOURCE_EXTENSIONS = (".cc", ".cpp", ".cxx", ".c++", ".C")
+
+# Tokens that can carry a definition the token text does not name: a response file expands
+# to arbitrary flags, and a pre-included header can `#define` anything.
+INDIRECT_DEFINITION_FLAGS = ("-include", "-imacros")
+
+
+def _may_define_either(command):
+    """Whether this compile line could possibly define either safety macro.
+
+    The prefilter in front of the leak probe. A `-D` of one of these two macros cannot reach
+    a compile line without the macro's own name appearing on that line - in any spelling,
+    joined, split, `-Wp,`-forwarded, `-Xpreprocessor`- or `-Xclang`-forwarded, since all of
+    them carry the operand as text - *unless* it arrives indirectly, and there are exactly
+    two ways for that: expanded out of an `@response` file, or `#define`d by a header the
+    line pre-includes. Those are the other two clauses; together the three are complete, and
+    the prefilter-completeness test in `ci/tests/` is what keeps them so.
+
+    Deliberately *not* a clause: `-Wp,` / `-Xpreprocessor` / `-Xclang`. Those tokens matter
+    only when a macro name is also present, which clause 1 already covers, and enumerating
+    them would re-create the spelling list this seam exists to delete.
+
+    Measured over a configured tree's 17284 entries (17217 non-jemalloc): 0 mention either
+    macro, 0 carry `-Wp,` / `-Xpreprocessor` / `-Xclang`, 0 carry an `@response` token, 130
+    carry `-include`, 0 carry `-imacros`. So 130 entries are probed and 17087 are accepted
+    on the strength of the invariant above, which is what makes asking the compiler
+    affordable at all: probing those 130 costs ~27s against the ~40 minutes of compiling
+    that follows.
+    """
+    if any(macro in command for macro in JEMALLOC_SAFETY_MACROS):
+        return True
+    tokens = shlex.split(command)
+    return any(
+        token.startswith("@") or token in INDIRECT_DEFINITION_FLAGS for token in tokens
+    )
+
+
+def run_jemalloc_leak_probe(flags, directory, language):
+    """Ask the compiler whether either safety macro is defined on this compile line.
+
+    Returns `(leaked_macros, stderr)`: the macros whose `#error` fired, and the compiler's
+    stderr. An empty list with an empty stderr means the line is clean.
+
+    A nonzero exit that carries neither `#error` marker is *inconclusive*, not a leak: a
+    missing generated header, an unrelated diagnostic under `-Werror` or an assembler that
+    does not understand `-fsyntax-only` all land here. The caller must not pass such a
+    probe, and must not report it as a leak either - hence the two return channels.
+    """
+    try:
+        process = subprocess.run(
+            flags + ["-fsyntax-only", "-x", language, "-"],
+            cwd=directory,
+            input=JEMALLOC_LEAK_PROBE_SOURCE,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as error:
+        return [], f"the probe could not be run at all: {error}"
+    stderr = (process.stderr or "").strip()
+    if process.returncode == 0:
+        return [], ""
+    leaked = [
+        macro
+        for macro in JEMALLOC_SAFETY_MACROS
+        if JEMALLOC_LEAK_MARKER.format(macro=macro) in stderr
+    ]
+    return leaked, stderr
+
+
 def assert_jemalloc_macros_stay_private(entries):
     """Fail if either macro reaches a translation unit outside jemalloc's own sources.
 
-    The macros are jemalloc-internal, so this direction stays a flag scan over the whole
-    tree: a compile probe per entry is not affordable at ~17k entries, and `PRIVATE`
-    widened to `PUBLIC` is visible on the compile line.
+    The macros are jemalloc-internal: they must stay PRIVATE to the `_jemalloc` target, or
+    the rest of ClickHouse is compiled against a different `config_opt_*` view of
+    jemalloc's headers than jemalloc itself.
+
+    Like the arming half, this half lets the **compiler** decide, because a parse cannot:
+    every driver flag that forwards its operands to the preprocessor is another spelling of
+    the same `-D` (`-Wp,-DX`, `-Wp,-D,X`, `-Xpreprocessor -D -Xpreprocessor X`,
+    `-Xclang -D -Xclang X`, and a `-D` inside an `@response` file or a pre-included header),
+    each of them verified to define, and a scanner is only ever as complete as the list of
+    spellings someone thought of. What makes compiling affordable at ~17k entries is
+    `_may_define_either`: the entries that could possibly carry a definition are probed, and
+    the rest are accepted on that helper's stated invariant.
     """
     leaked = {macro: [] for macro in JEMALLOC_SAFETY_MACROS}
     for entry in entries:
         if JEMALLOC_SOURCE_MARKER in entry["file"]:
             continue
-        states = effective_macro_states(entry["command"], JEMALLOC_SAFETY_MACROS)
-        for macro, state in states.items():
-            if state is True:
-                leaked[macro].append(entry["file"])
+        if not _may_define_either(entry["command"]):
+            continue
+        language = (
+            "c++" if entry["file"].endswith(CXX_SOURCE_EXTENSIONS) else "c"
+        )
+        macros, stderr = run_jemalloc_leak_probe(
+            jemalloc_probe_flags(entry["command"]), entry["directory"], language
+        )
+        if stderr and not macros:
+            raise AssertionError(
+                "the jemalloc leak probe is inconclusive for "
+                f"{entry['file']}: compiling a probe against that translation unit's own "
+                "flags fails without reporting either macro, so whether they reach it "
+                f"cannot be decided.\ndirectory: {entry['directory']}\n{stderr}\n"
+                "An inconclusive probe must not pass. Fix the compile line or narrow "
+                "_may_define_either so this entry is not a candidate."
+            )
+        for macro in macros:
+            leaked[macro].append(entry["file"])
     for macro, files in leaked.items():
         if files:
             files = sorted(files)
@@ -379,12 +512,13 @@ def assert_jemalloc_safety_macros_armed(compile_commands_path):
     mallctl, so a lost definition leaves the lane fuzzing green as an ordinary
     `amd_debug` session.
 
-    The arming half asks the compiler rather than parsing the compile line: the probe is
-    compiled with a jemalloc entry's own flags, so every cmake spelling, every `-D`/`-U`
-    spelling (including the forwarded `-Wp,-U` / `-Xpreprocessor -U` forms) and every
-    `#undef` arriving through an include are all answered at once. The leak half stays a
-    flag scan: it asserts the macros reach *no other* translation unit, and a compile per
-    entry over ~17k entries is not affordable.
+    Both halves ask the compiler rather than parsing the compile line, so every cmake
+    spelling, every `-D`/`-U` spelling (including the forwarded `-Wp,` / `-Xpreprocessor` /
+    `-Xclang` forms) and every `#undef` arriving through an include are answered at once.
+    The arming half compiles a probe with a jemalloc entry's own flags; the leak half
+    (`assert_jemalloc_macros_stay_private`) compiles one for each entry that
+    `_may_define_either` says could carry a definition, which is what keeps a per-entry
+    compile affordable over ~17k entries.
     """
     if not os.path.isfile(compile_commands_path):
         raise AssertionError(
@@ -451,14 +585,28 @@ def assert_jemalloc_safety_macros_absent(compile_commands_path):
     worth a definition that cannot arrive any other way. The leak direction is the positive
     check's business.
 
-    Emptiness is *not* a failure here, unlike in the positive check: `contrib/jemalloc-cmake
+    An **empty** jemalloc set is expected and passes: `contrib/jemalloc-cmake
     /CMakeLists.txt:1-11` disables jemalloc outright whenever `SANITIZE` is set to anything
-    but `undefined`, so `amd_asan_ubsan`, `amd_tsan` and `amd_msan` have no jemalloc
-    translation units at all. A missing `compile_commands.json` is tolerated for the same
-    reason - the build that promises the macros is the one that must insist on having it.
+    but `undefined`, so `amd_asan_ubsan`, `amd_tsan` and `amd_msan` genuinely have no
+    jemalloc translation units, and copying the positive check's emptiness guard here would
+    red every one of those builds.
+
+    A **missing** `compile_commands.json` is a different thing and fails closed, exactly as
+    in the positive check. All three of this guard's premises say the file is there:
+    `CMakeLists.txt:50` sets `CMAKE_EXPORT_COMPILE_COMMANDS` unconditionally, the build job
+    calls this only after a successful cmake configure, and a configured tree therefore
+    always has it. So its absence says the question could not be asked - which is not the
+    same as an answer of "neither macro is defined", and reading it as one would let a
+    flipped default through on any build whose configure step changed shape.
     """
     if not os.path.isfile(compile_commands_path):
-        return
+        raise AssertionError(
+            f"{compile_commands_path} is missing, so it cannot be verified that this "
+            "build carries neither jemalloc safety macro; CMakeLists.txt:50 sets "
+            "CMAKE_EXPORT_COMPILE_COMMANDS unconditionally and this check runs only "
+            "after a successful cmake configure, so a missing file is inconclusive "
+            "rather than evidence that the macros are absent"
+        )
     with open(compile_commands_path, "r", encoding="utf-8") as file:
         entries = json.load(file)
 

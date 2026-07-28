@@ -148,6 +148,11 @@ def _reachable_defs_headers() -> list[Path]:
 JE = "/ClickHouse/contrib/jemalloc/src/arena.c"
 JE2 = "/ClickHouse/contrib/jemalloc/src/jemalloc.c"
 OTHER = "/ClickHouse/src/Interpreters/Context.cpp"
+# A `.cc` sibling: the leak probe's language selection has to follow the entry, and the
+# reduction has to drop this operand as surely as it drops jemalloc's `.c` one.
+OTHER_CC = "/ClickHouse/contrib/orc/c++/src/Adaptor.cc"
+# A C entry outside jemalloc, so the `c` arm of that selection is exercised too.
+OTHER_C = "/ClickHouse/contrib/zlib-ng/adler32.c"
 SAFETY, SIZE = (f"-D{macro}" for macro in REQUIRED_MACROS)
 BOTH = f"{SAFETY} {SIZE}"
 SPLIT_SAFETY, SPLIT_SIZE = (f"-D {macro}" for macro in REQUIRED_MACROS)
@@ -379,6 +384,45 @@ def test_the_probe_answers_whether_each_gate_is_armed(
             ("arena.o", JE),
             (SAFETY, SIZE),
         ),
+        # Every jemalloc TU is `.c`, so reading only that extension was enough for the
+        # arming half - but the leak half probes this tree's other 13344 sources, and all
+        # 130 of its prefilter candidates are `.cc`/`.cpp`. A left-in C++ operand costs
+        # 2.8s instead of 0.2s per probe, and for a source cmake has not generated yet
+        # (both guards run in the CMAKE stage, before BUILD) it fails the probe with a
+        # `no such file or directory` that carries no `#error` marker - i.e. the
+        # inconclusive branch, on a perfectly clean compile line.
+        (
+            "every compiled-source extension is dropped, not just jemalloc's .c",
+            f"clang-21 {BOTH} -o x.o -c {OTHER_CC}",
+            (OTHER_CC,),
+            (SAFETY, SIZE),
+        ),
+        (
+            "the remaining source extensions this tree really uses",
+            "clang-21 -DKEEP -c a.cpp b.cxx c.c++ d.s e.S f.asm g.m h.mm i.C",
+            (
+                "a.cpp",
+                "b.cxx",
+                "c.c++",
+                "d.s",
+                "e.S",
+                "f.asm",
+                "g.m",
+                "h.mm",
+                "i.C",
+            ),
+            ("-DKEEP",),
+        ),
+        # ... and a flag operand that merely *looks* like a source must survive, or the
+        # reduction silently drops a real flag. Measured over a configured tree: 0 of
+        # 17284 entries carries a token ending in a source extension that is not its own
+        # source file, so this is the property that keeps the extension list safe to widen.
+        (
+            "a path-shaped flag operand is not mistaken for a source",
+            f"clang-21 {BOTH} -include /p/prefix.h -I/p/dir.c++ -o x.o -c {OTHER_CC}",
+            (OTHER_CC,),
+            (SAFETY, SIZE, "-include", "/p/prefix.h", "-I/p/dir.c++"),
+        ),
     ],
 )
 def test_the_flag_reduction_leaves_no_stray_operand(label, command, must_go, must_stay):
@@ -527,17 +571,32 @@ def test_missing_compile_commands_fails_closed(tmp_path):
 
 # --- the macros must stay PRIVATE to jemalloc -----------------------------------------
 #
-# The other direction, and the one that stays a flag scan: a compile probe per entry over
-# a configured tree's ~17k entries is not affordable, and `PRIVATE` widened to `PUBLIC` is
-# plainly visible on the compile line. The fixtures are synthetic, so no build is needed.
+# The other direction, and - since r15 - the other half that asks the compiler. It used to
+# be a flag scan, on the grounds that a probe per entry over ~17k is not affordable; the
+# scan was then caught missing a real definition four times running, each time in a
+# strictly narrower spelling of the previous one (`-D X` split, `-Wp,`/`-Xpreprocessor`,
+# `-Xclang`). The defect was never the missing spelling: a scanner is only ever as complete
+# as the list of forms someone thought of, while `-Xclang -D`, an `@response` file and an
+# `-include`d header all define just as plainly. So the verdict moved onto the compiler and
+# the affordability argument moved onto `_may_define_either`, which admits only the entries
+# that could possibly carry a definition - 130 of a configured tree's 17217 non-jemalloc
+# entries, ~27s of probing against the ~40 minutes of compiling that follows.
+#
+# The cases below therefore assert the verdict the COMPILER gives, computed in the test by
+# running it, rather than a hardcoded expectation. Hardcoding is what let the scan's answer
+# and clang's answer drift apart in the first place.
 
 
-def _macros_stay_private(entries) -> bool:
+def _macros_stay_private(entries, directory="/b") -> bool:
     """Whether the build job's leak sweep accepts these `(file, flags)` pairs."""
     try:
         assert_jemalloc_macros_stay_private(
             [
-                {"directory": "/b", "file": f, "command": f"clang-21 -c {flags} {f}"}
+                {
+                    "directory": directory,
+                    "file": f,
+                    "command": f"{ToolSet.COMPILER_C} -c {flags} {f}",
+                }
                 for f, flags in entries
             ]
         )
@@ -546,105 +605,310 @@ def _macros_stay_private(entries) -> bool:
     return True
 
 
+def _compiler_defines(tmp_path, flags, macro) -> bool:
+    """Whether the real compiler leaves `macro` defined for `flags`.
+
+    The oracle for every leak case below: the expectation is measured, not written down, so
+    a case cannot silently encode the scanner's opinion instead of the compiler's.
+    """
+    source = tmp_path / "oracle.c"
+    source.write_text(
+        f"#ifdef {macro}\nint defined_ok;\n#else\n#error not defined\n#endif\n",
+        encoding="utf-8",
+    )
+    return (
+        subprocess.run(
+            [ToolSet.COMPILER_C, "-fsyntax-only", *shlex.split(flags), str(source)],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=False,
+        ).returncode
+        == 0
+    )
+
+
+# Every spelling that reaches the leak half, each paired with the macro it decides. The
+# expectation is not written here: `test_the_leak_sweep_agrees_with_the_compiler` runs the
+# compiler on each and requires the sweep to say the same, so a spelling cannot be listed
+# as "a leak" while clang disagrees, nor pass because the scanner happens to miss it.
+_LEAK_SPELLINGS = [
+    ("clean", "", REQUIRED_MACROS[0]),
+    ("joined -D", SAFETY, REQUIRED_MACROS[0]),
+    ("split -D", SPLIT_SAFETY, REQUIRED_MACROS[0]),
+    ("-Wp,-D", f"-Wp,-D{REQUIRED_MACROS[0]}", REQUIRED_MACROS[0]),
+    ("-Wp,-D,MACRO", f"-Wp,-D,{REQUIRED_MACROS[1]}", REQUIRED_MACROS[1]),
+    (
+        "-Xpreprocessor -D -Xpreprocessor MACRO",
+        f"-Xpreprocessor -D -Xpreprocessor {REQUIRED_MACROS[0]}",
+        REQUIRED_MACROS[0],
+    ),
+    # The r15 spelling: `clang-21` honours it, and the flag scan reported it as *absent*,
+    # so a macro that really did reach a non-jemalloc TU was accepted.
+    (
+        "-Xclang -D -Xclang MACRO",
+        f"-Xclang -D -Xclang {REQUIRED_MACROS[0]}",
+        REQUIRED_MACROS[0],
+    ),
+    ("-Xclang -DMACRO", f"-Xclang -D{REQUIRED_MACROS[0]}", REQUIRED_MACROS[0]),
+    # Split across the two forwarding mechanisms, which feed one argv.
+    (
+        "-Wp,-D plus -Xpreprocessor operand",
+        f"-Wp,-D -Xpreprocessor {REQUIRED_MACROS[1]}",
+        REQUIRED_MACROS[1],
+    ),
+    # A forwarded flag beats a plain one whichever was written first, because the driver
+    # emits every plain `-D`/`-U` before any forwarded one - so both of these are decided
+    # by the forwarded member, the opposite of a left-to-right reading.
+    (
+        "plain -D cancelled by a forwarded -U",
+        f"{SAFETY} -Wp,-U{REQUIRED_MACROS[0]}",
+        REQUIRED_MACROS[0],
+    ),
+    (
+        "forwarded -D not cancelled by a later plain -U",
+        f"-Wp,-D{REQUIRED_MACROS[0]} -U{REQUIRED_MACROS[0]}",
+        REQUIRED_MACROS[0],
+    ),
+    (
+        "forwarded -D cancelled by a later forwarded -U",
+        f"-Wp,-D{REQUIRED_MACROS[0]} -Wp,-U{REQUIRED_MACROS[0]}",
+        REQUIRED_MACROS[0],
+    ),
+    ("joined -D cancelled by a joined -U", f"{SAFETY} -U{REQUIRED_MACROS[0]}", REQUIRED_MACROS[0]),
+    # Must-not-fire controls: tokens that carry the macro's name but define nothing.
+    (
+        "the name inside a -Wl, operand",
+        f"-Wl,-rpath,/opt/{REQUIRED_MACROS[0]}/lib",
+        REQUIRED_MACROS[0],
+    ),
+    (
+        "a suffixed lookalike",
+        f"{SIZE}_DISABLED",
+        REQUIRED_MACROS[1],
+    ),
+    ("unrelated forwarded flags", "-Wp,-MD -Xpreprocessor -v", REQUIRED_MACROS[0]),
+]
+
+
+@pytest.mark.parametrize("label, flags, macro", _LEAK_SPELLINGS)
+def test_the_leak_sweep_agrees_with_the_compiler(
+    compiler_probe, tmp_path, label, flags, macro
+):
+    """The sweep's verdict must be the compiler's, for every spelling.
+
+    This is the assertion the four rounds of missed spellings were failing: each fix taught
+    the scanner one more form, and the next form was found in the same afternoon. Here the
+    expectation is *measured* - the compiler is run on the same flags - so a spelling the
+    sweep does not understand fails this test instead of shipping.
+    """
+    defined = _compiler_defines(tmp_path, flags, macro)
+    accepted = _macros_stay_private([(JE, BOTH), (OTHER, flags)], directory=str(tmp_path))
+    assert accepted is not defined, (
+        f"{label}: the compiler leaves {macro} "
+        f"{'defined' if defined else 'undefined'} for {flags!r}, so the leak sweep must "
+        f"{'reject' if defined else 'accept'} the entry; it "
+        f"{'accepted' if accepted else 'rejected'} it"
+    )
+
+
+def test_a_jemalloc_entry_carrying_both_macros_is_not_a_leak(compiler_probe, tmp_path):
+    """The sweep skips jemalloc's own sources; that is the whole point of the macros."""
+    assert _macros_stay_private(
+        [(JE, BOTH), (JE2, BOTH), (OTHER, "")], directory=str(tmp_path)
+    ), "jemalloc's own translation units are where the macros belong"
+
+
 @pytest.mark.parametrize(
-    "label, entries, private_expected",
+    "file, std",
+    [(OTHER_CC, "-std=c++23"), (OTHER_C, "-std=c11")],
+)
+def test_the_leak_probe_follows_the_entrys_language(compiler_probe, tmp_path, file, std):
+    """A C++ entry must be probed as C++ and a C entry as C.
+
+    `-std=c++23` under `-x c` is rejected outright (`invalid argument '-std=c++23' not
+    allowed with 'C'`), and that failure carries no `#error` marker - so probing a `.cc`
+    entry as C raises *inconclusive* on a perfectly clean compile line, i.e. reds an
+    ordinary build. Every real candidate in a configured tree is `.cc`/`.cpp` and carries
+    `-std=c++23`, so this is the common case, not an exotic one.
+
+    ⚠️ The must-accept arm has to be a line the prefilter actually **admits**, or the probe
+    never runs and the case is vacuous whatever language it would have chosen. An empty
+    pre-included header is the cheapest such line: it makes the entry a candidate without
+    defining anything.
+    """
+    header = tmp_path / "empty-prefix.h"
+    header.write_text("/* defines nothing */\n", encoding="utf-8")
+    candidate = f"{std} -include {header}"
+    assert build_job._may_define_either(
+        f"{ToolSet.COMPILER_C} -c {candidate} {file}"
+    ), "the must-accept arm must be probed, or this case cannot see the language at all"
+    assert _macros_stay_private([(JE, BOTH), (file, candidate)], directory=str(tmp_path)), (
+        f"{file} compiled with {candidate!r} carries neither macro, so it must be accepted "
+        "- if it is not, the probe is using the wrong language for this entry"
+    )
+    assert not _macros_stay_private(
+        [(JE, BOTH), (file, f"{candidate} {SAFETY}")], directory=str(tmp_path)
+    ), f"{file} really does carry {REQUIRED_MACROS[0]}, so it must be reported"
+
+
+def test_a_leak_arriving_through_a_response_file_is_caught(compiler_probe, tmp_path):
+    """A `-D` inside an `@response` file defines without its name appearing on the line.
+
+    One of the two indirect routes `_may_define_either` admits, and the reason a
+    macro-name-only prefilter would be incomplete.
+    """
+    response = tmp_path / "flags.rsp"
+    response.write_text(f"-D{REQUIRED_MACROS[0]}\n", encoding="utf-8")
+    assert not _macros_stay_private(
+        [(JE, BOTH), (OTHER, f"@{response}")], directory=str(tmp_path)
+    ), "a -D expanded out of a response file still reaches the translation unit"
+
+
+def test_a_leak_arriving_through_a_pre_included_header_is_caught(
+    compiler_probe, tmp_path
+):
+    """The other indirect route: `-include` a header that `#define`s the macro."""
+    header = tmp_path / "prefix.h"
+    header.write_text(f"#define {REQUIRED_MACROS[1]} 1\n", encoding="utf-8")
+    assert not _macros_stay_private(
+        [(JE, BOTH), (OTHER, f"-include {header}")], directory=str(tmp_path)
+    ), "a macro defined by a pre-included header still reaches the translation unit"
+
+
+@pytest.mark.parametrize(
+    "label, flags",
     [
-        ("only jemalloc carries them", [(JE, BOTH), (JE2, BOTH), (OTHER, "")], True),
-        # `PRIVATE` widened to `PUBLIC` puts them on every dependent translation unit,
-        # which compiles the rest of ClickHouse against a different `config_opt_*` view
-        # of jemalloc's headers than jemalloc itself.
-        ("the macros leak into a non-jemalloc TU", [(JE, BOTH), (OTHER, BOTH)], False),
-        # The split spelling must be seen here too, or the leak goes unnoticed.
-        (
-            "a leak in the split spelling",
-            [(JE, BOTH), (OTHER, SPLIT_SAFETY)],
-            False,
-        ),
-        # A `-U` on the other TU is not a leak: the macro is not defined there.
-        (
-            "a cancelled definition on a non-jemalloc TU",
-            [(JE, BOTH), (OTHER, f"{SAFETY} -UJEMALLOC_OPT_SAFETY_CHECKS")],
-            True,
-        ),
-        # Token-exact: a suffixed identifier is a different macro.
-        (
-            "a suffixed lookalike on a non-jemalloc TU",
-            [(JE, BOTH), (OTHER, f"{SIZE}_DISABLED")],
-            True,
-        ),
-        # The forwarded spellings, which really do define (`clang-21 -fsyntax-only` on an
-        # `#ifdef` probe exits 0 for each). The armed half is answered by a compile, but a
-        # compile per entry over a configured tree's ~17k is not affordable, so this half
-        # stays a scan and has to know them: a leak in one of these spellings otherwise
-        # reads as absent while the macro genuinely reaches a non-jemalloc TU.
-        (
-            "a leak via -Wp,-D",
-            [(JE, BOTH), (OTHER, "-Wp,-DJEMALLOC_OPT_SAFETY_CHECKS")],
-            False,
-        ),
-        (
-            "a leak via -Xpreprocessor -D",
-            [
-                (JE, BOTH),
-                (OTHER, "-Xpreprocessor -D -Xpreprocessor JEMALLOC_OPT_SAFETY_CHECKS"),
-            ],
-            False,
-        ),
-        # The forwarded operand can arrive in its own comma-separated piece.
-        (
-            "a leak via -Wp,-D,MACRO",
-            [(JE, BOTH), (OTHER, "-Wp,-D,JEMALLOC_OPT_SIZE_CHECKS")],
-            False,
-        ),
-        # ... and split across the two mechanisms, which feed one argv.
-        (
-            "a leak split across -Wp,-D and -Xpreprocessor",
-            [(JE, BOTH), (OTHER, "-Wp,-D -Xpreprocessor JEMALLOC_OPT_SIZE_CHECKS")],
-            False,
-        ),
-        # A forwarded flag beats a plain one whichever came first, because the driver
-        # emits every plain `-D`/`-U` before any forwarded one. Both of these pairs are
-        # decided by the forwarded member, so a command-line-order reading gets both
-        # backwards - and in the second case that means missing a real leak.
-        (
-            "a plain -D cancelled by a forwarded -U",
-            [(JE, BOTH), (OTHER, f"{SAFETY} -Wp,-UJEMALLOC_OPT_SAFETY_CHECKS")],
-            True,
-        ),
-        (
-            "a forwarded -D that a later plain -U does not cancel",
-            [
-                (JE, BOTH),
-                (OTHER, f"-Wp,-DJEMALLOC_OPT_SAFETY_CHECKS -U{REQUIRED_MACROS[0]}"),
-            ],
-            False,
-        ),
-        # Two forwarded flags keep their own relative order, as one argv.
-        (
-            "a forwarded -D cancelled by a later forwarded -U",
-            [
-                (JE, BOTH),
-                (
-                    OTHER,
-                    "-Wp,-DJEMALLOC_OPT_SAFETY_CHECKS "
-                    "-Wp,-UJEMALLOC_OPT_SAFETY_CHECKS",
-                ),
-            ],
-            True,
-        ),
-        # Unrelated forwarded flags define nothing, so the new unwrapping must not
-        # over-fire on them.
-        (
-            "unrelated forwarded flags on a non-jemalloc TU",
-            [(JE, BOTH), (OTHER, "-Wp,-MD -Xpreprocessor -v")],
-            True,
-        ),
+        ("the macro's own name, in any spelling", f"-Xclang -D -Xclang {REQUIRED_MACROS[0]}"),
+        ("a response file", "@flags.rsp"),
+        ("a pre-included header", "-include prefix.h"),
+        ("-imacros, the other pre-inclusion flag", "-imacros prefix.h"),
     ],
 )
-def test_the_leak_sweep_sees_every_spelling(label, entries, private_expected):
-    assert _macros_stay_private(entries) is private_expected, (
-        f"{label}: expected the leak sweep to "
-        f"{'accept' if private_expected else 'reject'} these compile lines"
+def test_the_prefilter_admits_every_route_a_definition_can_take(label, flags):
+    """`_may_define_either` must admit every command on which a definition is possible.
+
+    The load-bearing half of the seam: entries it rejects are accepted **without a probe**,
+    so a route it does not know about passes silently - which is precisely the failure mode
+    the compile probe was introduced to end. A future exotic spelling has to fail here.
+    """
+    assert build_job._may_define_either(
+        f"{ToolSet.COMPILER_C} {flags} -c {OTHER}"
+    ), f"{label}: {flags!r} can carry a definition, so it must be probed"
+
+
+@pytest.mark.parametrize(
+    "label, flags",
+    [
+        ("an ordinary compile line", "-O2 -std=c++23 -DSOME_OTHER_MACRO"),
+        # Deliberately rejected: a forwarding token is only interesting when a macro name
+        # is also present, which the first clause already covers. Listing these would
+        # re-create the spelling enumeration the seam exists to delete.
+        ("a forwarding token with no macro name", "-Wp,-MD -Xpreprocessor -v -Xclang -O2"),
+        ("a similarly-named but different macro", "-DJEMALLOC_OPT_OTHER_CHECKS"),
+    ],
+)
+def test_the_prefilter_rejects_lines_that_cannot_define(label, flags):
+    """... and it must reject the rest, or the affordability argument is gone.
+
+    A prefilter that admits everything is a per-entry compile over ~17k entries.
+    """
+    assert not build_job._may_define_either(
+        f"{ToolSet.COMPILER_C} {flags} -c {OTHER}"
+    ), f"{label}: {flags!r} cannot define either macro, so probing it is wasted"
+
+
+@pytest.mark.parametrize(
+    "label, flags",
+    [
+        ("the name inside a -I path", f"-I/opt/{REQUIRED_MACROS[0]}/include"),
+        ("the name inside a -Wl, operand", f"-Wl,-rpath,/opt/{REQUIRED_MACROS[0]}/lib"),
+        ("a suffixed lookalike", f"-D{REQUIRED_MACROS[0]}_DISABLED"),
+    ],
+)
+def test_the_prefilter_over_admits_rather_than_narrowing_unsoundly(label, flags):
+    """A line merely *mentioning* a macro name is probed, and that is deliberate.
+
+    The obvious narrowing - require the name to appear as a whole identifier - is
+    **unsound**, because the spelling that matters most has no left word boundary:
+    in `-DJEMALLOC_OPT_SAFETY_CHECKS` the character before the name is `D`. A
+    word-boundary prefilter therefore rejects the plainest real definition there is, which
+    is far worse than probing a path that happens to contain the name.
+
+    So the prefilter is deliberately one-sided: it may admit a line that defines nothing,
+    and the compiler - never this helper - decides. The cost is nil in practice (measured
+    over a configured tree: 0 of 17217 non-jemalloc entries mention either macro at all),
+    and the corresponding must-accept verdicts are asserted against the real compiler in
+    `test_the_leak_sweep_agrees_with_the_compiler`.
+    """
+    assert build_job._may_define_either(f"{ToolSet.COMPILER_C} {flags} -c {OTHER}"), (
+        f"{label}: narrowing the prefilter to exclude {flags!r} would also exclude the "
+        "joined -D spelling, which really defines"
+    )
+
+
+def test_the_prefilter_admits_nothing_in_a_real_tree_it_need_not(compiler_probe):
+    """Every candidate the prefilter admits must be one the tree really could define on.
+
+    Asserted as the two counts the affordability argument rests on: clause 1 (the macro's
+    own name) admits nothing in a clean tree, and the indirect clauses admit only the
+    entries that genuinely pre-include or expand flags.
+    """
+    clean = f"{ToolSet.COMPILER_C} -O2 -DFOO=1 -I/x -o a.o -c {OTHER}"
+    assert not build_job._may_define_either(clean)
+    for token in ("@x.rsp", "-include x.h", "-imacros x.h", f"-D{REQUIRED_MACROS[0]}"):
+        assert build_job._may_define_either(
+            f"{ToolSet.COMPILER_C} -O2 {token} -o a.o -c {OTHER}"
+        ), f"{token!r} must be admitted"
+
+
+def test_an_inconclusive_leak_probe_raises_without_claiming_a_leak(tmp_path):
+    """A probe that cannot run must not pass - and must not be reported as a leak either.
+
+    The distinction the fail-closed rule turns on: a missing compiler, a not-yet-generated
+    source or an unrelated diagnostic all exit nonzero without either `#error` marker, and
+    calling that a leak would blame the macros for someone else's broken compile line.
+    """
+    with pytest.raises(AssertionError) as raised:
+        assert_jemalloc_macros_stay_private(
+            [
+                {
+                    "directory": str(tmp_path),
+                    "file": OTHER,
+                    "command": f"/nonexistent/clang -include x.h -c {OTHER}",
+                }
+            ]
+        )
+    message = str(raised.value)
+    assert "inconclusive" in message, f"the failure must say so; got:\n{message}"
+    assert (
+        "reaches" not in message
+    ), f"an inconclusive probe must not be reported as a leak; got:\n{message}"
+
+
+def test_an_unrelated_compile_error_is_inconclusive_not_a_leak(compiler_probe, tmp_path):
+    """The same rule for a real compiler failing for a reason of its own.
+
+    A source cmake has not generated yet is exactly this shape, and both guards run in the
+    CMAKE stage, before BUILD - so on an ordinary build this is the branch a left-in source
+    operand would take, on 9 of a configured tree's entries.
+    """
+    with pytest.raises(AssertionError) as raised:
+        assert_jemalloc_macros_stay_private(
+            [
+                {
+                    "directory": str(tmp_path),
+                    "file": OTHER,
+                    "command": (
+                        f"{ToolSet.COMPILER_C} -include "
+                        f"{tmp_path / 'absent.h'} -c {OTHER}"
+                    ),
+                }
+            ]
+        )
+    message = str(raised.value)
+    assert "inconclusive" in message and "reaches" not in message, (
+        "a missing pre-included header is inconclusive, not a leak; got:\n" f"{message}"
     )
 
 
@@ -876,14 +1140,54 @@ def test_a_build_that_did_not_request_the_option_carries_neither_macro(
     ), f"{label}: the failure must name the translation unit carrying it; got:\n{verdict}"
 
 
-def test_a_build_without_exported_compile_commands_is_tolerated(tmp_path):
-    """No compile commands, no question - and no reason to fail an ordinary build.
+def test_a_build_without_exported_compile_commands_fails_closed(tmp_path):
+    """A missing `compile_commands.json` is inconclusive, not an answer of "absent".
 
-    The build that *promises* the macros insists on having them
-    (`test_missing_compile_commands_fails_closed`); this direction is a guard against a
-    changed default, so it must not turn a missing file into a red build.
+    All three of this guard's premises say the file is there: `CMakeLists.txt:50` sets
+    `CMAKE_EXPORT_COMPILE_COMMANDS` unconditionally, the build job calls this only inside
+    `if res:` after a successful cmake configure, and a configured tree therefore always
+    has it. So its absence means the question could not be asked - and reading that as
+    "neither macro is defined" would let a flipped default through on any build whose
+    configure step changed shape.
+
+    An *empty* jemalloc set is the opposite case and still passes; the two tolerated
+    shapes are pinned in `test_a_build_that_did_not_request_the_option_carries_neither_macro`.
     """
-    assert assert_jemalloc_safety_macros_absent(str(tmp_path / "nothing.json")) is None
+    with pytest.raises(AssertionError) as raised:
+        assert_jemalloc_safety_macros_absent(str(tmp_path / "nothing.json"))
+    message = str(raised.value)
+    assert str(tmp_path / "nothing.json") in message, (
+        f"the failure must name the path it looked for; got:\n{message}"
+    )
+    for macro in REQUIRED_MACROS:
+        assert f"-D{macro} is on" not in message, (
+            f"a missing file must not be reported as {macro} being found; got:\n{message}"
+        )
+
+
+def test_both_checkers_fail_closed_on_a_missing_file(tmp_path):
+    """The two paths handle the same state, so they must not drift apart again.
+
+    They disagreed until r15: the positive check raised and this one returned `None`. An
+    asymmetry between two paths deciding the same question is the smell that one of them is
+    wrong, and the fail-open side was - so the symmetry itself is pinned, with the messages
+    required to stay distinguishable so a failure still says which direction was being
+    checked.
+    """
+    missing = str(tmp_path / "compile_commands.json")
+    messages = []
+    for checker in (
+        assert_jemalloc_safety_macros_armed,
+        assert_jemalloc_safety_macros_absent,
+    ):
+        with pytest.raises(AssertionError) as raised:
+            checker(missing)
+        messages.append(str(raised.value))
+    assert all(missing in message for message in messages)
+    assert messages[0] != messages[1], (
+        "the two directions must be distinguishable in the failure text; both said:\n"
+        f"{messages[0]}"
+    )
 
 
 class _StopBuild(Exception):
