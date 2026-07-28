@@ -612,10 +612,16 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         }
         else
         {
-            if (arguments.size() != 4)
+            /// The TLS credentials are trailing `key = value` arguments; the copy keeps them in the
+            /// stored `CREATE DATABASE` query, where they are masked when it is formatted.
+            ASTs positional_arguments = arguments;
+            configuration.ssl_params = StorageMySQL::extractSSLParamsFromArguments(positional_arguments, args.context);
+
+            if (positional_arguments.size() != 4)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.");
+                    "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments "
+                    "(optionally followed by ssl_ca_pem = '...', ssl_cert_pem = '...', ssl_key_pem = '...').");
 
 
             arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], args.context);

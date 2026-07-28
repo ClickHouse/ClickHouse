@@ -200,6 +200,7 @@ protected:
         {
             /// mysql('host:port', 'database', 'table', 'user', 'password', ...)
             markSecretArgument(4);
+            findTLSCredentialsSecretArguments(5);
         }
     }
 
@@ -856,6 +857,7 @@ protected:
         {
             /// MySQL('host:port', 'database', 'user', 'password')
             markSecretArgument(3);
+            findTLSCredentialsSecretArguments(4);
         }
     }
 

@@ -95,6 +95,13 @@ public:
     /// credentials have to be given as contents, in `ssl_ca_pem`, `ssl_cert_pem` and `ssl_key_pem`.
     static mysqlxx::SSLParams getSSLParams(const NamedCollection & named_collection);
 
+    /// Peels the trailing `ssl_ca_pem = '...'`, `ssl_cert_pem = '...'` and `ssl_key_pem = '...'`
+    /// arguments off a positional argument list (the form without a named collection) and removes them
+    /// from `arguments`, so that the caller sees only the positional arguments it knows about.
+    /// A path (`ssl_ca`, `ssl_cert`, `ssl_key`) is rejected here: it is only accepted from a named
+    /// collection defined in the server configuration file, see `getSSLParams`.
+    static mysqlxx::SSLParams extractSSLParamsFromArguments(ASTs & arguments, ContextPtr context_);
+
     static ColumnsDescription getTableStructureFromData(
         mysqlxx::PoolWithFailover & pool_,
         const String & database,

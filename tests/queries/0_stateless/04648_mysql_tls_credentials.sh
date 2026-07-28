@@ -41,6 +41,14 @@ format "MySQL database engine" \
 format "MySQL dictionary source" \
     "CREATE DICTIONARY d (id UInt32) PRIMARY KEY id SOURCE(MYSQL(NAME creds DB 'db' SSL_CERT_PEM '${SECRET}' SSL_KEY_PEM '${SECRET}')) LAYOUT(FLAT()) LIFETIME(0)"
 
+# The same without a named collection: the credentials follow the positional arguments.
+format "mysql table function, positional arguments" \
+    "SELECT * FROM mysql('127.0.0.1:3306', 'db', 't', 'u', '${SECRET}', ssl_ca_pem = '${SECRET}', ssl_key_pem = '${SECRET}')"
+format "MySQL table engine, positional arguments" \
+    "CREATE TABLE t (x Int32) ENGINE = MySQL('127.0.0.1:3306', 'db', 't', 'u', '${SECRET}', ssl_cert_pem = '${SECRET}')"
+format "MySQL database engine, positional arguments" \
+    "CREATE DATABASE d ENGINE = MySQL('127.0.0.1:3306', 'db', 'u', '${SECRET}', ssl_ca_pem = '${SECRET}')"
+
 expect_error() {
     local pattern="$1"
     shift
@@ -68,6 +76,25 @@ for key in ssl_ca ssl_cert ssl_key; do
         "SELECT * FROM mysql(mysql_04648, table = 't', ${key} = '/etc/ssl/certs/ca.crt')"
 done
 
+# Passed as a query argument without a named collection.
+for key in ssl_ca ssl_cert ssl_key; do
+    expect_error "$MESSAGE" $CLICKHOUSE_CLIENT --query \
+        "SELECT * FROM mysql('127.0.0.1:3306', 'd', 't', 'u', 'p', ${key} = '/etc/ssl/certs/ca.crt')"
+    expect_error "$MESSAGE" $CLICKHOUSE_CLIENT --query \
+        "CREATE DATABASE db_04648 ENGINE = MySQL('127.0.0.1:3306', 'd', 'u', 'p', ${key} = '/etc/ssl/certs/ca.crt')"
+done
+
+# The contents are accepted in the same place: the query gets as far as connecting, which is a
+# different error than a complaint about the number of arguments.
+echo "--- contents are accepted as a positional argument"
+if $CLICKHOUSE_CLIENT --query \
+    "SELECT * FROM mysql('127.0.0.1:1', 'd', 't', 'u', 'p', ssl_ca_pem = 'not a certificate')" 2>&1 \
+    | grep -q "NUMBER_OF_ARGUMENTS_DOESNT_MATCH"; then
+    echo "FAIL: the credentials were not recognized as arguments"
+else
+    echo "OK"
+fi
+
 # In a dictionary created with a DDL query. The source of a dictionary is instantiated when it is
 # loaded, so the reload is what surfaces the rejection if the `CREATE` itself did not.
 $CLICKHOUSE_CLIENT --query "DROP DICTIONARY IF EXISTS dict_04648"
@@ -80,4 +107,5 @@ expect_error "cannot be specified in a dictionary created with a DDL query" bash
     $CLICKHOUSE_CLIENT --query 'SYSTEM RELOAD DICTIONARY dict_04648'"
 
 $CLICKHOUSE_CLIENT --query "DROP DICTIONARY IF EXISTS dict_04648"
+$CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS db_04648"
 $CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION mysql_04648"

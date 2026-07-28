@@ -22,6 +22,7 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <mysqlxx/Transaction.h>
@@ -377,6 +378,67 @@ mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_coll
     return ssl_params;
 }
 
+mysqlxx::SSLParams StorageMySQL::extractSSLParamsFromArguments(ASTs & arguments, ContextPtr context_)
+{
+    /// The TLS credentials may follow the positional arguments as `key = value` pairs. Only the
+    /// contents are accepted there: a path is taken from the server configuration file alone, for the
+    /// reason described at `getSSLParams`.
+    static const std::initializer_list<std::pair<std::string_view, std::string_view>> tls_keys
+        = {{"ssl_ca", "ssl_ca_pem"}, {"ssl_cert", "ssl_cert_pem"}, {"ssl_key", "ssl_key_pem"}};
+
+    std::map<String, String> values;
+
+    size_t num_positional_arguments = arguments.size();
+    while (num_positional_arguments > 0)
+    {
+        const auto * function = arguments[num_positional_arguments - 1]->as<ASTFunction>();
+        if (!function || function->name != "equals" || !function->arguments || function->arguments->children.size() != 2)
+            break;
+
+        const auto * identifier = function->arguments->children[0]->as<ASTIdentifier>();
+        if (!identifier)
+            break;
+
+        const String key = identifier->name();
+        bool is_contents_key = false;
+        for (const auto & [path_key, contents_key] : tls_keys)
+        {
+            if (key == path_key)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "`{}` can only be specified in a named collection defined in the server configuration file. "
+                    "Pass the contents of the file in `{}` instead",
+                    path_key, contents_key);
+            if (key == contents_key)
+                is_contents_key = true;
+        }
+
+        /// Anything else is left in place, so that it is reported as an unexpected argument.
+        if (!is_contents_key)
+            break;
+
+        auto value = evaluateConstantExpressionOrIdentifierAsLiteral(function->arguments->children[1], context_);
+        if (!values.emplace(key, checkAndGetLiteralArgument<String>(value, key)).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument `{}` is specified more than once", key);
+
+        --num_positional_arguments;
+    }
+
+    arguments.resize(num_positional_arguments);
+
+    auto get = [&](const String & key)
+    {
+        auto it = values.find(key);
+        return it == values.end() ? String{} : it->second;
+    };
+
+    mysqlxx::SSLParams ssl_params;
+    ssl_params.ca_pem = get("ssl_ca_pem");
+    ssl_params.cert_pem = get("ssl_cert_pem");
+    ssl_params.key_pem = get("ssl_key_pem");
+    return ssl_params;
+}
+
 StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     const NamedCollection & named_collection, MySQLSettings & storage_settings, ContextPtr context_, bool require_table_or_query)
 {
@@ -442,10 +504,13 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, Con
     }
     else
     {
+        configuration.ssl_params = extractSSLParamsFromArguments(engine_args, context_);
+
         if (engine_args.size() < 5 || engine_args.size() > 7)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage MySQL requires 5-7 parameters: "
                             "MySQL('host:port' (or 'addresses_pattern'), database, table (or query), "
-                            "'user', 'password'[, replace_query, 'on_duplicate_clause']).");
+                            "'user', 'password'[, replace_query, 'on_duplicate_clause']"
+                            "[, ssl_ca_pem = '...', ssl_cert_pem = '...', ssl_key_pem = '...']).");
 
         /// The 3rd argument is either a table name, or a query passed to MySQL as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(

@@ -1419,22 +1419,26 @@ def test_mysql_ssl_paths_are_rejected_from_sql(started_cluster):
                 )
             assert "cannot be overridden in a query" in str(exception.value)
 
-        # A dictionary created with a DDL query may not name a file either.
+        # A dictionary created with a DDL query may not name a file either. The source of a
+        # dictionary is instantiated when it is loaded, so the load is what surfaces the rejection.
+        node1.query("DROP DICTIONARY IF EXISTS mysql_ssl_dictionary")
+        node1.query(
+            f"""
+            CREATE DICTIONARY mysql_ssl_dictionary (id UInt32, name String)
+            PRIMARY KEY id
+            SOURCE(MYSQL(
+                host 'mysql80' port 3306 user 'root' password '{mysql_pass}'
+                db 'clickhouse' table 'test_table' ssl_ca '{ca_path}'))
+            LAYOUT(FLAT()) LIFETIME(0)
+            """
+        )
         with pytest.raises(QueryRuntimeException) as exception:
-            node1.query(
-                f"""
-                CREATE DICTIONARY mysql_ssl_dictionary (id UInt32, name String)
-                PRIMARY KEY id
-                SOURCE(MYSQL(
-                    host 'mysql80' port 3306 user 'root' password '{mysql_pass}'
-                    db 'clickhouse' table 'test_table' ssl_ca '{ca_path}'))
-                LAYOUT(FLAT()) LIFETIME(0)
-                """
-            )
+            node1.query("SYSTEM RELOAD DICTIONARY mysql_ssl_dictionary")
         assert "cannot be specified in a dictionary created with a DDL query" in str(
             exception.value
         )
     finally:
+        node1.query("DROP DICTIONARY IF EXISTS mysql_ssl_dictionary")
         node1.query("DROP NAMED COLLECTION IF EXISTS mysql_ssl_from_sql")
 
 
