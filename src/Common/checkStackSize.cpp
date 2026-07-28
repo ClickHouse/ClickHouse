@@ -1,3 +1,20 @@
+#include <Common/checkStackSize.h>
+
+#if defined(OS_WINDOWS)
+
+/// A no-op on Windows for now. Getting this right needs the thread's real stack bounds, which
+/// live in the TIB (`NT_TIB::StackBase`/`StackLimit`) rather than behind `getrlimit`/
+/// `pthread_getattr_np`. Until then the recursion guards that call this - the parser and the
+/// analyzer passes - do not fire, so deeply nested input overflows the stack instead of throwing
+/// TOO_DEEP_RECURSION. The 8 MiB stack the link reserves (see cmake/windows/default_libs.cmake)
+/// makes that unlikely rather than impossible.
+
+void checkStackSize()
+{
+}
+
+#else
+
 #include <base/getThreadId.h>
 #include <base/defines.h> /// THREAD_SANITIZER
 #include <base/scope_guard.h>
@@ -167,3 +184,5 @@ void checkStackSize()
     if (unlikely(stack_size > max_stack_size_allowed))
         throwTooDeepRecursion(stack_bounds.address, frame_address, stack_size, stack_bounds.max_size);
 }
+
+#endif
