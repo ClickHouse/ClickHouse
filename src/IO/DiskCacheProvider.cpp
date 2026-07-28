@@ -239,32 +239,32 @@ DiskCacheReader::DiskCacheReader(
 {
 }
 
-ChainedBuffers DiskCacheReader::read(ByteRange sub)
+ChainedBuffers DiskCacheReader::read(ByteRange subrange)
 {
     ChainedBuffers result;
     if (!holder)
         return result;
 
     /// Clamp to THIS buffer's hit range: every hit buffer of a view shares one
-    /// holder spanning all hit segments, so a `read` for a `sub` outside `hit_range`
+    /// holder spanning all hit segments, so a `read` for a `subrange` outside `hit_range`
     /// would serve a neighbouring hit's bytes from the shared holder. The contract is
-    /// `sub` within `range()`; clamp defensively to the committed sub-ranges.
+    /// `subrange` within `range()`; clamp defensively to the committed sub-ranges.
     {
-        const size_t lo = std::max(sub.offset, hit_range.offset);
-        const size_t hi = std::min(sub.end(), hit_range.end());
+        const size_t lo = std::max(subrange.offset, hit_range.offset);
+        const size_t hi = std::min(subrange.end(), hit_range.end());
         if (lo >= hi)
             return result;
-        sub = ByteRange{lo, hi - lo};
+        subrange = ByteRange{lo, hi - lo};
     }
 
     /// Record before reading (deferred-bump record): a throwing pread still
     /// leaves a coherent entry that the view's dtor re-fetches and no-ops for
     /// gone segments.
     if (touch_book)
-        touch_book->touched.push_back(sub);
+        touch_book->touched.push_back(subrange);
 
-    chassert(sub.offset >= object_file_offset);
-    ByteRange sub_in_object{sub.offset - object_file_offset, sub.size};
+    chassert(subrange.offset >= object_file_offset);
+    ByteRange sub_in_object{subrange.offset - object_file_offset, subrange.size};
 
     readOverlappingSegments(result, *holder, sub_in_object, object_file_offset,
         local_throttler, anchors, stream_slot);
@@ -395,14 +395,14 @@ size_t DiskCacheWriter::write(ChainedBuffers data)
     return bytes_written;
 }
 
-ChainedBuffers DiskCacheWriter::read(ByteRange sub)
+ChainedBuffers DiskCacheWriter::read(ByteRange subrange)
 {
     ChainedBuffers result;
     if (!holder)
         return result;
 
-    chassert(sub.offset >= object_file_offset);
-    ByteRange sub_in_object{sub.offset - object_file_offset, sub.size};
+    chassert(subrange.offset >= object_file_offset);
+    ByteRange sub_in_object{subrange.offset - object_file_offset, subrange.size};
 
     /// Serve an already-committed prefix from this buffer's own held holder,
     /// downloader-independent (a fresh pread reader, no `StreamingReaderSlot`).
@@ -491,9 +491,9 @@ CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
     return c;
 }
 
-ChainedBuffers DiskCacheWriter::waitAndReadSiblingLed(ByteRange sub)
+ChainedBuffers DiskCacheWriter::waitAndReadSiblingLed(ByteRange subrange)
 {
-    /// `sub` is FILE-space. Wait until each held segment overlapping it has committed
+    /// `subrange` is FILE-space. Wait until each held segment overlapping it has committed
     /// through the overlap end, then serve the bytes from our own held segments. The caller
     /// orders this AFTER its own led writes, so a cross-thread wait cannot deadlock.
     if (holder)
@@ -505,8 +505,8 @@ ChainedBuffers DiskCacheWriter::waitAndReadSiblingLed(ByteRange sub)
             const size_t seg_file_lo = seg_range.left + object_file_offset;
             const size_t seg_file_hi = seg_range.right + 1 + object_file_offset;
 
-            const size_t lo = std::max(sub.offset, seg_file_lo);
-            const size_t hi = std::min(sub.end(), seg_file_hi);
+            const size_t lo = std::max(subrange.offset, seg_file_lo);
+            const size_t hi = std::min(subrange.end(), seg_file_hi);
             if (lo >= hi)
                 continue;
 
@@ -527,7 +527,7 @@ ChainedBuffers DiskCacheWriter::waitAndReadSiblingLed(ByteRange sub)
         }
     }
 
-    return read(sub);
+    return read(subrange);
 }
 
 CacheWriter::CacheSegmentPin DiskCacheWriter::pin(size_t frontier) const

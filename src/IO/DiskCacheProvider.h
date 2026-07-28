@@ -84,7 +84,7 @@ public:
         std::shared_ptr<DiskCacheTouchBook> touch_book_);
 
     ByteRange range() const override { return hit_range; }
-    ChainedBuffers read(ByteRange sub) override;
+    ChainedBuffers read(ByteRange subrange) override;
 
 private:
     std::shared_ptr<FileSegmentsHolder> holder;
@@ -93,7 +93,7 @@ private:
     ThrottlerPtr local_throttler;
     ReaderAnchorCache * anchors = nullptr;
     StreamingReaderSlot * stream_slot = nullptr;
-    /// The probe's shared deferred-bump book: each `read` records its `sub`
+    /// The probe's shared deferred-bump book: each `read` records its `subrange`
     /// here; the bump runs when the book's last owner dies.
     std::shared_ptr<DiskCacheTouchBook> touch_book;
     LoggerPtr log = getLogger("DiskCacheReader");
@@ -120,9 +120,9 @@ public:
         return committed_ranges;
     }
     size_t write(ChainedBuffers data) override;
-    ChainedBuffers read(ByteRange sub) override;
+    ChainedBuffers read(ByteRange subrange) override;
     FillClaim claim(ByteRange window) override;
-    ChainedBuffers waitAndReadSiblingLed(ByteRange sub) override;
+    ChainedBuffers waitAndReadSiblingLed(ByteRange subrange) override;
     CacheWriter::CacheSegmentPin pin(size_t frontier) const override;
 
 private:

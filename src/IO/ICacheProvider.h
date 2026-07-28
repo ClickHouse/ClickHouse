@@ -38,12 +38,12 @@ public:
     /// the plan asked for - the executor clamps).
     virtual ByteRange range() const = 0;
 
-    /// Read `sub` (within `range()`) as a ChainedBuffers of
-    /// file-level nodes. Records `sub` for the view's deferred LRU bump.
+    /// Read `subrange` (within `range()`) as a ChainedBuffers of
+    /// file-level nodes. Records `subrange` for the view's deferred LRU bump.
     /// A hit is readable in full: the probe splits a partially-downloaded
     /// segment at its write offset, so the hit is the committed prefix and
     /// growth is the WRITER's story (`CacheWriter::committed`).
-    virtual ChainedBuffers read(ByteRange sub) = 0;
+    virtual ChainedBuffers read(ByteRange subrange) = 0;
 };
 
 /// Held, incrementally-fillable target for ONE miss file-level range. Owns its
@@ -75,7 +75,7 @@ public:
 
     /// Serve an already-committed sub-range from this buffer's own held
     /// segments/cells, without a source round-trip.
-    virtual ChainedBuffers read(ByteRange sub) = 0;
+    virtual ChainedBuffers read(ByteRange subrange) = 0;
 
     /// One sibling-led sub-range to serve from cache (the writer that owns it + the sub-range).
 
@@ -140,9 +140,9 @@ public:
         return c;
     }
 
-    /// Wait until `sub`'s bytes are committed by the sibling downloader, then serve them
+    /// Wait until `subrange`'s bytes are committed by the sibling downloader, then serve them
     /// from this writer's own held segments (cache file). Default: plain read (no wait).
-    virtual ChainedBuffers waitAndReadSiblingLed(ByteRange sub) { return read(sub); }
+    virtual ChainedBuffers waitAndReadSiblingLed(ByteRange subrange) { return read(subrange); }
 
     /// Opaque token keeping the partial segment under `frontier`
     /// non-evictable while the live source connection streams into it.
