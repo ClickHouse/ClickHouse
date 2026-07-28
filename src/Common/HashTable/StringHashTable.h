@@ -510,12 +510,15 @@ public:
         this->dispatchWithHash(*this, key_holder, hash_value, EmplaceCallable(it, inserted));
     }
 
-    static bool keyGoesToLongStringMap(std::string_view key)
+    /// Whether the key is stored in the raw-string submap `ms`: keys over 24 bytes, and short
+    /// keys with a trailing zero byte, which the packed representations cannot distinguish
+    /// from their own padding.
+    static bool usesStringViewSubmap(std::string_view key)
     {
         return key.size() > 24 || (!key.empty() && key.back() == 0);
     }
 
-    void reserveAdditionalLongStrings(size_t additional) { ms.reserve(ms.size() + additional); }
+    void reserveAdditionalStringViewKeys(size_t additional) { ms.reserve(ms.size() + additional); }
 
     struct PrefetchCallable
     {

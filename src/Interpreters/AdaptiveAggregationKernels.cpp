@@ -924,7 +924,7 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
     const size_t size_before = impl.size();
     bool reserved = false;
     size_t processed = 0;
-    size_t sampled_long_keys = 0;
+    size_t sampled_string_view_keys = 0;
 
     auto update_reserve = [&](size_t rows)
     {
@@ -936,10 +936,10 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
             const auto expected
                 = static_cast<size_t>(static_cast<double>(total_records - processed) * insert_rate * adaptive_reserve_headroom);
 
-            if constexpr (requires { impl.reserveAdditionalLongStrings(size_t{}); })
+            if constexpr (requires { impl.reserveAdditionalStringViewKeys(size_t{}); })
             {
-                const double long_fraction = static_cast<double>(sampled_long_keys) / static_cast<double>(processed);
-                impl.reserveAdditionalLongStrings(static_cast<size_t>(static_cast<double>(expected) * long_fraction));
+                const double string_view_fraction = static_cast<double>(sampled_string_view_keys) / static_cast<double>(processed);
+                impl.reserveAdditionalStringViewKeys(static_cast<size_t>(static_cast<double>(expected) * string_view_fraction));
             }
             else
                 impl.reserve(impl.size() + expected);
@@ -957,13 +957,13 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
         const size_t slice_begin = keys.bucket_offsets[bucket_index];
         const size_t slice_end = keys.bucket_offsets[bucket_index + 1];
 
-        if constexpr (requires { impl.reserveAdditionalLongStrings(size_t{}); })
+        if constexpr (requires { impl.reserveAdditionalStringViewKeys(size_t{}); })
         {
             if (!reserved)
             {
                 for (size_t j = slice_begin; j < slice_end; ++j)
-                    if (impl.keyGoesToLongStringMap(keys.keyBytesAt(j)))
-                        ++sampled_long_keys;
+                    if (impl.usesStringViewSubmap(keys.keyBytesAt(j)))
+                        ++sampled_string_view_keys;
             }
         }
 

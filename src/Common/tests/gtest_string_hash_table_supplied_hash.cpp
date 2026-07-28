@@ -174,7 +174,7 @@ TEST(StringHashTableSuppliedHash, TwoLevelEmplaceWithSuppliedHash)
     }
 }
 
-/// `keyGoesToLongStringMap` identifies exactly the keys the dispatch stores as raw strings: for
+/// `usesStringViewSubmap` identifies exactly the keys the dispatch stores as raw strings: for
 /// them the canonical hash is the plain hash of the key bytes (what a caller staging keys for a
 /// later drain saves and reuses), and reserving long-string room ahead of their insertion keeps
 /// them all findable.
@@ -182,14 +182,14 @@ TEST(StringHashTableSuppliedHash, LongStringClassification)
 {
     using Map = StringHashMap<UInt64>;
     Map map;
-    map.reserveAdditionalLongStrings(1000);
+    map.reserveAdditionalStringViewKeys(1000);
 
     const auto keys = testKeys();
     size_t long_keys = 0;
     for (size_t i = 0; i < keys.size(); ++i)
     {
         const std::string_view key = keys[i];
-        if (Map::keyGoesToLongStringMap(key))
+        if (Map::usesStringViewSubmap(key))
         {
             ++long_keys;
             ASSERT_EQ(map.hash(key), StringHashTableHash{}(key)) << "key size " << key.size();
