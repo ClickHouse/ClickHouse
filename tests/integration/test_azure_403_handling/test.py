@@ -17,7 +17,10 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=[os.path.join(SCRIPT_DIR, "configs", "azure_disk.xml")],
+    main_configs=[
+        os.path.join(SCRIPT_DIR, "configs", "azure_disk.xml"),
+        os.path.join(SCRIPT_DIR, "configs", "blob_log.xml"),
+    ],
     with_azurite=True,
 )
 
@@ -145,3 +148,36 @@ def test_azure_auth_failure_at_merge_not_broken_part(started_cluster):
         )
     finally:
         node.query("SYSTEM DISABLE FAILPOINT azure_inject_auth_failure")
+
+
+def test_batch_delete_failure_is_logged(started_cluster):
+    # If the batch DELETE request itself fails (403), each object must still get a
+    # system.blob_storage_log Delete event (previously the whole per-object loop was skipped).
+    node.query("DROP TABLE IF EXISTS t_del SYNC")
+    node.query(
+        """
+        CREATE TABLE t_del (k UInt64) ENGINE = MergeTree ORDER BY k
+        SETTINGS storage_policy = 'azure_policy', min_bytes_for_wide_part = 0
+        """
+    )
+    for i in range(3):
+        node.query(f"INSERT INTO t_del SELECT number + {i * 100} FROM numbers(100)")
+
+    node.query("SYSTEM ENABLE FAILPOINT azure_inject_forbidden_response")
+    try:
+        # Object removal on DROP is best-effort, so the DROP may still succeed; we only assert that
+        # the failed remote batch delete produced per-object blob_storage_log Delete events.
+        try:
+            node.query("DROP TABLE t_del SYNC")
+        except Exception:
+            pass
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT azure_inject_forbidden_response")
+
+    node.query("SYSTEM FLUSH LOGS")
+    logged = node.query(
+        "SELECT count() FROM system.blob_storage_log WHERE event_type = 'Delete' AND error != ''"
+    ).strip()
+    assert int(logged) > 0, f"expected failed Delete events to be logged, got {logged}"
+
+    node.query("DROP TABLE IF EXISTS t_del SYNC")  # cleanup (failpoint disabled)
