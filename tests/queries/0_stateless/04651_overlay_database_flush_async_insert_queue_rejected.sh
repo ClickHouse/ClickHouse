@@ -43,8 +43,10 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH ASYNC INSERT QUEUE ${DB_SRC}.t, ${DB_
 echo 'the underlying database is not rejected'
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH ASYNC INSERT QUEUE ${DB_SRC}.t" 2>&1 | rejected
 
-echo 'the whole-server form is not rejected'
-${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH ASYNC INSERT QUEUE" 2>&1 | rejected
+# The whole-server form (no table list) is not covered on purpose: it drains the buffered async
+# inserts of every table on the server, so it would corrupt tests running in parallel, and the style
+# check forbids it in tests. It cannot be rejected anyway -- the fence iterates over the target list,
+# which is empty for that form.
 
 ${CLICKHOUSE_CLIENT} -nm --query "
     DROP DATABASE ${DB_OVL};

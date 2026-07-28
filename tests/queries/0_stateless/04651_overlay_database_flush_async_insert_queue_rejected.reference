@@ -8,5 +8,3 @@ one facade entry in a list rejects the whole command
 1
 the underlying database is not rejected
 0
-the whole-server form is not rejected
-0
