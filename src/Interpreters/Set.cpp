@@ -332,16 +332,24 @@ static ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & col
     // Determine which rows should be null based on precision loss
     const auto * from_type = assert_cast<const DataTypeWithSubSeconds *>(removeNullable(column_to_cast.type).get());
     auto scale = from_type->getScale();
-    if (scale >= 1)
+    constexpr bool is_time64 = std::is_same_v<DataTypeWithSubSeconds, DataTypeTime64>;
+    if (scale >= 1 || is_time64)
     {
-        Int64 scale_multiplier = common::exp10_i32(scale);
+        const Int64 scale_multiplier = scale >= 1 ? common::exp10_i32(scale) : 1;
         for (size_t row = 0; row < vec_res_size; ++row)
         {
             Int64 value = original_data[row];
-            if (value % scale_multiplier != 0)
-                precision_null_map[row] = 1; // Mark as null due to precision loss
-            else
-                precision_null_map[row] = 0;
+            bool lossy = (value % scale_multiplier) != 0;
+            if constexpr (is_time64)
+            {
+                /// Whole seconds outside the Time range are clamped by the cast, which is lossy too.
+                static constexpr Int64 max_time_seconds = 3599999; /// 999:59:59, == MAX_TIME_TIMESTAMP
+                Int64 whole = value / scale_multiplier;
+                if (value < 0 && lossy)
+                    --whole;
+                lossy = lossy || whole < -max_time_seconds || whole > max_time_seconds;
+            }
+            precision_null_map[row] = lossy ? 1 : 0;
         }
     }
 

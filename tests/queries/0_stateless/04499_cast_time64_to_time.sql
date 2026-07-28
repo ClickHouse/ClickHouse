@@ -67,3 +67,8 @@ SELECT CAST('01:02:03.0' AS Time64(1)) IN (SELECT CAST('01:02:03' AS Time));
 SELECT CAST('01:02:03.5' AS Nullable(Time64(1))) IN (SELECT CAST('01:02:03' AS Time));
 SELECT CAST('01:02:03.5' AS Nullable(Time64(1))) IN (SELECT CAST('01:02:03' AS Time)) SETTINGS transform_null_in = 1;
 SELECT materialize(CAST('2020-01-01 00:00:00.5' AS Nullable(DateTime64(1)))) IN (SELECT CAST('2020-01-01 00:00:00' AS DateTime)) SETTINGS transform_null_in = 1;
+
+-- Out-of-range whole-second Time64 probes must not match after clamping.
+SELECT CAST(toDecimal64(3600001, 0) AS Time64(0)) IN (SELECT CAST(3599999 AS Time));
+SELECT CAST(toDecimal64(-3600001, 0) AS Time64(0)) IN (SELECT CAST(-3599999 AS Time));
+SELECT CAST(toDecimal64(3599999, 0) AS Time64(0)) IN (SELECT CAST(3599999 AS Time));
