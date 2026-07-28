@@ -11,8 +11,9 @@ DROP TABLE IF EXISTS probe_dense;
 DROP TABLE IF EXISTS probe_sparse_arr;
 DROP TABLE IF EXISTS dict_source;
 
--- The attribute is never 0, so `r.v = 0` in the results below unambiguously means "key not found":
--- that is what a lookup blind to the sparse default key 0 would produce.
+-- The attribute is never 0 and join_use_nulls is pinned to 0 below, so `r.v = 0` in the results
+-- below unambiguously means "key not found": that is what a lookup blind to the sparse default
+-- key 0 would produce.
 CREATE TABLE dict_source (j UInt64, v UInt64) ENGINE = MergeTree ORDER BY j;
 INSERT INTO dict_source SELECT number, (number + 1) * 10 FROM numbers(20);
 
@@ -44,6 +45,10 @@ WHERE database = currentDatabase() AND table IN ('probe_sparse', 'probe_sparse_a
 GROUP BY table ORDER BY table;
 
 SET join_algorithm = 'direct';
+-- The assertions below distinguish a dictionary hit from a miss by the attribute value, so the
+-- representation of a miss must be fixed: with join_use_nulls = 1 a miss would be NULL instead of
+-- the default 0. The Stress check injects join_use_nulls = 1 on some threads.
+SET join_use_nulls = 0;
 
 -- FlatDictionary::hasKeys is the site that read the freed buffer.
 SELECT 'Sparse key, key presence only';
