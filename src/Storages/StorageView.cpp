@@ -49,6 +49,7 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/processColumnTransformers.h>
 #include <Parsers/QueryParameterVisitor.h>
@@ -841,7 +842,19 @@ private:
 
         auto dag = evaluateMissingDefaults(target_named, required_target_columns, target_cols, context_);
         if (dag)
-            ExpressionActions(std::move(*dag)).execute(target_named);
+        {
+            /// A target `DEFAULT` may read a *subcolumn* of another target column, as in
+            /// `CREATE TABLE t (obj Tuple(x UInt8), b UInt8 DEFAULT obj.x)`. The block forwarded
+            /// here holds whole columns only, so the defaults DAG must be preceded by the same
+            /// subcolumn-extraction step that the normal insert path uses (`AddingDefaultsTransform`,
+            /// `InsertDependenciesBuilder::createPreSink`). Without it the DAG would look for an
+            /// input named `obj.x` and fail with `NOT_FOUND_COLUMN_IN_BLOCK`, even though a direct
+            /// `INSERT INTO t (obj)` derives the default just fine. The extraction DAG is empty
+            /// when no required name is a subcolumn of an available column, so this is a no-op for
+            /// plain defaults.
+            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(target_named, dag->getRequiredColumnsNames(), context_);
+            ExpressionActions(ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(*dag))).execute(target_named);
+        }
 
         for (const auto & o : omitted)
         {
