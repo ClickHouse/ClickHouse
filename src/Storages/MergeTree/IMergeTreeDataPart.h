@@ -200,6 +200,10 @@ public:
 
     ColumnsStatistics loadStatistics() const;
     ColumnsStatistics loadStatistics(const Names & required_columns) const;
+    /// Returns column names that have statistics files in this part (packed or wide).
+    /// Used by `system.parts_columns` to discover which columns to call `getEstimates` for,
+    /// without loading the full statistics data.
+    Names getColumnsWithStatistics() const;
     /// Returns estimates for the requested columns, loading missing ones and caching them.
     /// Empty `required_columns` means "don't load statistics" and returns an empty map.
     /// When `use_cache` is false, bypasses the per-part estimates cache and loads statistics

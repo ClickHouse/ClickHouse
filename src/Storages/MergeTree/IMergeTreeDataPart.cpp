@@ -1328,6 +1328,45 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const Names & required_colu
     return loadStatisticsWide(required_columns_set);
 }
 
+Names IMergeTreeDataPart::getColumnsWithStatistics() const
+{
+    Names result;
+
+    /// Packed parts store column statistics in a single `statistics.packed` file
+    /// (indexed by `PackedFilesReader`). `checksums.files` has only the
+    /// top-level archive entry, so iterate the reader's file list instead.
+    if (auto * reader = getStatisticsPackedReader())
+    {
+        for (const auto & filename : reader->getFileNames())
+        {
+            if (filename.starts_with(STATS_FILE_PREFIX) && filename.ends_with(STATS_FILE_SUFFIX))
+            {
+                size_t prefix_len = STATS_FILE_PREFIX.size();
+                size_t suffix_len = STATS_FILE_SUFFIX.size();
+                String col_name = unescapeForFileName(filename.substr(prefix_len, filename.size() - prefix_len - suffix_len));
+                if (columns_description->has(col_name))
+                    result.push_back(std::move(col_name));
+            }
+        }
+        return result;
+    }
+
+    /// Wide parts have one `statistics_<col>.stats` checksum entry per column.
+    for (const auto & [filename, _] : checksums.files)
+    {
+        if (filename.starts_with(STATS_FILE_PREFIX) && filename.ends_with(STATS_FILE_SUFFIX))
+        {
+            size_t prefix_len = STATS_FILE_PREFIX.size();
+            size_t suffix_len = STATS_FILE_SUFFIX.size();
+            String col_name = unescapeForFileName(filename.substr(prefix_len, filename.size() - prefix_len - suffix_len));
+            if (columns_description->has(col_name))
+                result.push_back(std::move(col_name));
+        }
+    }
+
+    return result;
+}
+
 Estimates IMergeTreeDataPart::getEstimates(const Names & required_columns, bool use_cache) const
 {
     /// Empty `required_columns` means "don't load statistics".

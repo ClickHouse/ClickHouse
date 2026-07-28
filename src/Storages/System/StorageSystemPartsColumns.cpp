@@ -142,19 +142,17 @@ void StorageSystemPartsColumns::processNextStorage(
         auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
         std::optional<Estimates> estimates;
 
-        /// Lazy initialize statistics estimates if they are queried. `getEstimates` loads
-        /// exactly the columns it is asked for, so request every column that declares
-        /// statistics in the part metadata. `use_statistics_cache` is forwarded so that
+        /// Lazy initialize statistics estimates if they are queried. Discover which columns
+        /// have statistics via `getColumnsWithStatistics()` (the `getColumnsDescription()` on
+        /// parts does not carry statistics type info). Then load exactly those columns via
+        /// `getEstimates`. `use_statistics_cache` is forwarded so that
         /// `use_statistics_cache = 0` bypasses the per-part estimates cache (the system table
         /// then reflects on-disk statistics rather than a previously populated cache).
         auto find_estimate = [&](const auto & column_name)
         {
             if (!estimates.has_value())
             {
-                Names statistics_columns;
-                for (const auto & column : part->getColumnsDescription())
-                    if (!column.statistics.types_to_desc.empty())
-                        statistics_columns.push_back(column.name);
+                Names statistics_columns = part->getColumnsWithStatistics();
                 estimates = part->getEstimates(statistics_columns, context->getSettingsRef()[Setting::use_statistics_cache]);
             }
 
