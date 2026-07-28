@@ -1011,31 +1011,41 @@ def _ensure_lldb_installed():
     if _LLDB_INSTALL_ATTEMPTED:
         return
     _LLDB_INSTALL_ATTEMPTED = True
-    # Install via Homebrew on every platform, not `apt-get`. `brew install llvm`
-    # ships `lldb` and needs no root, whereas the fast-test container runs
-    # unprivileged: there `apt-get update` fails with
-    # "List directory /var/lib/apt/lists/partial is missing. - Acquire (13:
-    # Permission denied)", lldb never lands, and `print_c_stacktraces` only logs
-    # `lldb: command not found`. On macOS the runner already brew-installs llvm
-    # at provisioning (see runner-init.py), so this is just a safety net there.
-    try:
-        subprocess.run(["brew", "install", "llvm"], check=True, timeout=600)
-    except Exception as e:
-        print(f"Could not install lldb on the fly: {e}", file=sys.stderr)
-        return
-    # `brew install llvm` is keg-only — it does not symlink `lldb` onto the
-    # system PATH — so prepend the formula's bin dir, matching how the macOS
-    # job PATH is assembled in runner-init.py, or `shutil.which("lldb")` in
-    # `get_stacktraces_from_lldb` stays empty and the install is wasted.
-    try:
-        prefix = subprocess.run(
-            ["brew", "--prefix", "llvm"],
-            check=True, capture_output=True, text=True, timeout=30,
-        ).stdout.strip()
-        if prefix:
-            os.environ["PATH"] = f"{prefix}/bin:{os.environ.get('PATH', '')}"
-    except Exception as e:
-        print(f"Could not resolve brew llvm prefix: {e}", file=sys.stderr)
+    # Use the native package manager of each platform: Homebrew on macOS,
+    # `apt-get` on Linux. `brew` is not present in the Linux `clickhouse-test`
+    # containers, and the macOS runner has no `apt-get`, so a single manager
+    # cannot serve both.
+    if platform.system() == "Darwin":
+        # The macOS runner already brew-installs llvm at provisioning (see
+        # runner-init.py), so this is just a safety net there.
+        try:
+            subprocess.run(["brew", "install", "llvm"], check=True, timeout=600)
+        except Exception as e:
+            print(f"Could not install lldb on the fly: {e}", file=sys.stderr)
+            return
+        # `brew install llvm` is keg-only — it does not symlink `lldb` onto the
+        # system PATH — so prepend the formula's bin dir, matching how the macOS
+        # job PATH is assembled in runner-init.py, or `shutil.which("lldb")` in
+        # `get_stacktraces_from_lldb` stays empty and the install is wasted.
+        try:
+            prefix = subprocess.run(
+                ["brew", "--prefix", "llvm"],
+                check=True, capture_output=True, text=True, timeout=30,
+            ).stdout.strip()
+            if prefix:
+                os.environ["PATH"] = f"{prefix}/bin:{os.environ.get('PATH', '')}"
+        except Exception as e:
+            print(f"Could not resolve brew llvm prefix: {e}", file=sys.stderr)
+    else:
+        try:
+            env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
+            subprocess.run(["apt-get", "update"], check=True, env=env, timeout=60)
+            subprocess.run(
+                ["apt-get", "install", "-y", "lldb"],
+                check=True, env=env, timeout=120,
+            )
+        except Exception as e:
+            print(f"Could not install lldb on the fly: {e}", file=sys.stderr)
 
 
 # collect server stacktraces using lldb (used uniformly on Linux and macOS)
