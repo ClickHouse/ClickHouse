@@ -1,5 +1,5 @@
 -- Tags: no-fasttest
--- no-fasttest because aklomp-base64 library is required
+-- no-fasttest because simdutf library is required
 
 SELECT base64Encode(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT base64Decode(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
@@ -27,6 +27,16 @@ SELECT tryBase64Decode('foo');
 
 SELECT base64Decode('aoeo054640eu='); -- { serverError INCORRECT_DATA }
 SELECT tryBase64Decode('aoeo054640eu=');
+
+-- ASCII whitespace in the input is ignored (RFC 2045 / MIME compatible), but other garbage is still rejected
+
+SELECT base64Decode('Zm9v YmF y');
+SELECT base64Decode('Zm9vYmFy ');
+SELECT base64Decode('Zm9v\tYmFy');
+SELECT base64Decode('Zm9v\nYmFy');
+SELECT tryBase64Decode('Zm9vYmFy ');
+SELECT base64Decode('Zm9v!YmFy'); -- { serverError INCORRECT_DATA }
+SELECT tryBase64Decode('Zm9v!YmFy');
 
 -- test FixedString arguments
 

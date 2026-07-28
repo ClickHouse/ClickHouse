@@ -6,6 +6,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExplainQuery.h>
@@ -18,6 +19,9 @@
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
+#include <Common/SettingsChanges.h>
+
+#include <utility>
 
 namespace DB
 {
@@ -31,9 +35,17 @@ namespace Setting
 BlockIO InterpreterSetQuery::execute()
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
-    getContext()->checkSettingsConstraints(ast.changes, SettingSource::QUERY);
+    /// Resolve query parameters used as setting values, e.g. `SET max_threads = {threads:UInt64}`.
+    /// Work on a copy so the original AST keeps the placeholders: they are still needed by the
+    /// old-server compatibility rewrite in ClientBase::processOrdinaryQuery.
+    SettingsChanges changes = ast.changes;
+    replaceQueryParametersInSettingsChanges(changes, getContext()->getQueryParameters());
+    /// Pass as const on purpose: the non-const checkSettingsConstraints overload rewrites the
+    /// changes (dropping no-op changes), which would lose the "changed" flag for a setting
+    /// explicitly set to its current value. The original code applies const `ast.changes`.
+    getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
     auto session_context = getContext()->getSessionContext();
-    session_context->applySettingsChanges(ast.changes);
+    session_context->applySettingsChanges(changes);
     session_context->addQueryParameters(NameToNameMap{ast.query_parameters.begin(), ast.query_parameters.end()});
     session_context->resetSettingsToDefaultValue(ast.default_settings);
     return {};
@@ -43,9 +55,14 @@ BlockIO InterpreterSetQuery::execute()
 void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constraints)
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
+    /// Resolve query parameters used as setting values, e.g. `SELECT ... SETTINGS max_threads = {threads:UInt64}`.
+    /// Work on a copy so the original AST keeps the placeholders (see the note in execute()).
+    SettingsChanges changes = ast.changes;
+    replaceQueryParametersInSettingsChanges(changes, getContext()->getQueryParameters());
+    /// const on purpose - see the note in execute().
     if (!ignore_setting_constraints)
-        getContext()->checkSettingsConstraints(ast.changes, SettingSource::QUERY);
-    getContext()->applySettingsChanges(ast.changes);
+        getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
+    getContext()->applySettingsChanges(changes);
     getContext()->resetSettingsToDefaultValue(ast.default_settings);
 }
 
