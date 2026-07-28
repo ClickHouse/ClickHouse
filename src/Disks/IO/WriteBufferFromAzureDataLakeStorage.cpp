@@ -88,14 +88,22 @@ String makeAdlsGen2StagingPath(const String & blob_path_, const String & random_
     if (blob_path_.size() + suffix.size() <= MAX_BLOB_KEY_SIZE)
         return blob_path_ + suffix;
 
-    /// The suffix is what makes the name unique, so keep all of it and shorten the stem, stopping at
-    /// a UTF-8 character boundary because keys must stay valid UTF-8.
-    size_t stem_size = MAX_BLOB_KEY_SIZE - suffix.size();
-    while (stem_size > 0 && (static_cast<UInt8>(blob_path_[stem_size]) & 0xC0) == 0x80)
-        --stem_size;
-    if (stem_size == 0)
+    /// Only the basename may be shortened. Cutting by byte offset alone can land before the last
+    /// separator, which would put staging in another directory, and the sibling property is what keeps
+    /// directory-scoped credentials working.
+    const size_t slash = blob_path_.rfind('/');
+    const size_t parent_size = slash == String::npos ? 0 : slash + 1;
+    if (parent_size + suffix.size() >= MAX_BLOB_KEY_SIZE)
         return {};
-    return blob_path_.substr(0, stem_size) + suffix;
+
+    /// The suffix is what makes the name unique, so keep all of it and shorten the basename, stopping at
+    /// a UTF-8 character boundary because keys must stay valid UTF-8.
+    size_t basename_size = MAX_BLOB_KEY_SIZE - parent_size - suffix.size();
+    while (basename_size > 0 && (static_cast<UInt8>(blob_path_[parent_size + basename_size]) & 0xC0) == 0x80)
+        --basename_size;
+    if (basename_size == 0)
+        return {};
+    return blob_path_.substr(0, parent_size + basename_size) + suffix;
 }
 
 String buildAdlsGen2FileUrl(const AzureBlobStorage::Endpoint & endpoint, const String & blob_path_)
@@ -257,8 +265,8 @@ WriteBufferFromAzureDataLakeStorage::WriteBufferFromAzureDataLakeStorage(
 
 WriteBufferFromAzureDataLakeStorage::~WriteBufferFromAzureDataLakeStorage()
 {
-    /// WriteBuffer::finalize() cancels on failure, but a caller that throws between next() and
-    /// finalize(), or simply drops the buffer, never gets there. Same shape as
+    /// `WriteBuffer::finalize` cancels on failure, but a caller that throws between `next` and
+    /// `finalize`, or simply drops the buffer, never gets there. Same shape as
     /// WriteBufferFromS3::~WriteBufferFromS3 aborting its multipart upload.
     if (file_created && !published)
     {
@@ -267,7 +275,13 @@ WriteBufferFromAzureDataLakeStorage::~WriteBufferFromAzureDataLakeStorage()
         cleanupStaging();
     }
 
-    if (canceled)
+    if (publish_outcome_unknown)
+    {
+        /// Reporting the file as unchanged here would contradict the exception `publish` just threw.
+        LOG_INFO(log, "Outcome of publishing ADLS Gen2 file `{}` is unknown. It holds either its previous "
+                 "contents or the new ones, never a partial object.", blob_path);
+    }
+    else if (canceled)
     {
         LOG_INFO(log, "WriteBufferFromAzureDataLakeStorage was canceled. File `{}` is unchanged.", blob_path);
     }
@@ -380,7 +394,7 @@ void WriteBufferFromAzureDataLakeStorage::runOnceRetryingForbidden(
         catch (const Azure::Core::RequestFailedException & e)
         {
             /// A 403 is rejected without changing anything, so repeating it is safe, and
-            /// IDisk::checkAccess() relies on that while Azure is still provisioning access.
+            /// `IDisk::checkAccess` relies on that while Azure is still provisioning access.
             /// Any other failure may have taken effect, so it must not be repeated.
             const bool retryable = write_settings.is_initial_access_check
                 && e.StatusCode == Azure::Core::Http::HttpStatusCode::Forbidden;
@@ -520,6 +534,7 @@ void WriteBufferFromAzureDataLakeStorage::publish()
             /// A rename is a move, so it cannot be retried: the source is gone once it succeeds. The
             /// destination is written by this single request, so whatever happened it holds one
             /// complete object.
+            publish_outcome_unknown = true;
             throw Exception(
                 ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
                 "ADLS Gen2 commit status unknown for `{}`: publishing failed with HTTP {}: {}. The write "
@@ -626,11 +641,11 @@ void WriteBufferFromAzureDataLakeStorage::preFinalize()
     is_prefinalized = true;
     WriteBuffer::set(fake_buffer_when_prefinalized, sizeof(fake_buffer_when_prefinalized));
     /// A write with no data still has to replace the target, so staging is created here even when
-    /// appendBufferedData() never was.
+    /// `appendBufferedData` never was.
     ensureCreated();
     flushStaging();
     LOG_DEBUG(log, "Flushed ADLS Gen2 staging file `{}` ({} bytes)", staging_path, bytes_appended);
-    /// Publishes before `finalized` is set, so a failure still reaches cancelImpl().
+    /// Publishes before `finalized` is set, so a failure still reaches `cancelImpl`.
     publish();
 }
 

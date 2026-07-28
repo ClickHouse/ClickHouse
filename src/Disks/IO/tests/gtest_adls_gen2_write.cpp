@@ -9,11 +9,19 @@
 #include <string>
 #include <vector>
 
+#include <sstream>
+
 #include <base/types.h>
 #include <Common/Exception.h>
+#include <Common/Logger.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
 #include <IO/WriteSettings.h>
+
+#include <Poco/AutoPtr.h>
+#include <Poco/Channel.h>
+#include <Poco/Logger.h>
+#include <Poco/StreamChannel.h>
 
 #include <azure/core/http/policies/policy.hpp>
 #include <azure/core/http/transport.hpp>
@@ -181,7 +189,7 @@ private:
 };
 
 constexpr const char * FINAL_BLOB_PATH = "data/data-0.parquet";
-/// getContainerEndpoint() yields <host>/<container>, so this is the final object's URL path.
+/// `getContainerEndpoint` yields <host>/<container>, so this is the final object's URL path.
 constexpr const char * FINAL_URL_PATH = "mycontainer/tables/mytable/data/data-0.parquet";
 
 AzureBlobStorage::Endpoint makeOneLakeEndpoint()
@@ -266,6 +274,37 @@ void writeSomeData(WriteBufferFromAzureDataLakeStorage & buffer)
     buffer.write("hello", 5);
     buffer.next();
 }
+
+/// Redirects the writer's own logger into a string for the duration of a test, then puts back exactly
+/// what was there. The saved channel is held by an AutoPtr so replacing it cannot destroy it.
+class CapturedWriterLog
+{
+public:
+    /// Same name the writer passes to getLogger, so this is the very logger it uses.
+    CapturedWriterLog()
+        : logger(getLogger("WriteBufferFromAzureDataLakeStorage"))
+        , saved_channel(logger->getChannel(), /*shared=*/ true)
+        , saved_level(logger->getLevel())
+    {
+        logger->setChannel(channel.get());
+        logger->setLevel("information");
+    }
+
+    ~CapturedWriterLog()
+    {
+        logger->setChannel(saved_channel.get());
+        logger->setLevel(saved_level);
+    }
+
+    String text() const { return captured.str(); }
+
+private:
+    LoggerPtr logger;
+    std::ostringstream captured; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    Poco::AutoPtr<Poco::StreamChannel> channel = Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(captured));
+    Poco::AutoPtr<Poco::Channel> saved_channel;
+    int saved_level;
+};
 
 }
 
@@ -487,6 +526,50 @@ TEST(AdlsGen2Write, AmbiguousPublishYieldsCommitStatusUnknown)
     }
 }
 
+/// After an ambiguous rename the target may hold either object, so the buffer must not go on to report
+/// it as unchanged: `publish` throws without setting `published`, `finalize` cancels, and the destructor
+/// then has to describe the same outcome the exception did.
+TEST(AdlsGen2Write, AmbiguousPublishDoesNotClaimTheTargetIsUnchanged)
+{
+    String log_text;
+    {
+        CapturedWriterLog captured;
+        WriteFixture fixture;
+        fixture.transport->scriptForever(Op::Rename, {Azure::Core::Http::HttpStatusCode::ServiceUnavailable, "Busy", {}});
+
+        auto buffer = fixture.makeBuffer();
+        writeSomeData(*buffer);
+        EXPECT_THROW(buffer->finalize(), DB::Exception);
+        EXPECT_TRUE(buffer->isCanceled()) << "finalize() cancels on failure, which is what reaches the destructor";
+        EXPECT_NO_THROW(buffer.reset());
+        log_text = captured.text();
+    }
+
+    EXPECT_EQ(log_text.find("is unchanged"), String::npos) << log_text;
+    EXPECT_NE(log_text.find("Outcome of publishing"), String::npos) << log_text;
+    EXPECT_NE(log_text.find("never a partial object"), String::npos) << log_text;
+}
+
+/// The plain cancellation case keeps saying the target is unchanged, because there it provably is: no
+/// rename was ever issued.
+TEST(AdlsGen2Write, PlainCancellationStillReportsTheTargetUnchanged)
+{
+    String log_text;
+    {
+        CapturedWriterLog captured;
+        WriteFixture fixture;
+
+        auto buffer = fixture.makeBuffer();
+        writeSomeData(*buffer);
+        buffer->cancel();
+        EXPECT_NO_THROW(buffer.reset());
+        log_text = captured.text();
+    }
+
+    EXPECT_NE(log_text.find("is unchanged"), String::npos) << log_text;
+    EXPECT_EQ(log_text.find("Outcome of publishing"), String::npos) << log_text;
+}
+
 /// 408 is exactly what ClickHouse's Azure transport synthesizes for a timeout, and
 /// isRetryableAzureException excludes it while treating 403 as retryable. So the publish classifier
 /// cannot be that helper; this table pins its shape.
@@ -608,7 +691,7 @@ TEST(AdlsGen2Write, StagingAppendKeepsRetries)
     ASSERT_EQ(fixture.requestsOf(Op::Rename).size(), 1u);
 }
 
-/// IDisk::checkAccess() writes through this buffer at startup and tolerates a 403 while Azure is
+/// `IDisk::checkAccess` writes through this buffer at startup and tolerates a 403 while Azure is
 /// provisioning access; a 403 changes nothing, so retrying it is safe. An ambiguous status is not
 /// retried even then.
 TEST(AdlsGen2Write, ForbiddenRetriedDuringInitialAccessCheck)
@@ -733,7 +816,7 @@ TEST(AdlsGen2Write, StagingDeleteIsEtagConditionalAndLeavesForeignObjects)
     const auto deletes = fixture.requestsOf(Op::Delete);
     ASSERT_EQ(deletes.size(), 1u) << "a refused delete must not be retried or forced";
     EXPECT_EQ(deletes[0].header("If-Match"), "\"e-flush\"");
-    /// The refusal must not escape: cancelImpl() is noexcept.
+    /// The refusal must not escape: `cancelImpl` is `noexcept`.
     EXPECT_NO_THROW(buffer.reset());
 }
 
@@ -812,8 +895,8 @@ TEST(AdlsGen2Write, WriteOnlyCredentialCompletesSuccessfully)
     EXPECT_NO_THROW(buffer->finalize());
 }
 
-/// A caller that throws between next() and finalize() never reaches either finalize() or cancel(), so
-/// the destructor is the only place left to remove staging. WriteBuffer's own destructor tolerates
+/// A caller that throws between `next` and `finalize` never reaches either `finalize` or `cancel`, so
+/// the destructor is the only place left to remove staging. `WriteBuffer`'s own destructor tolerates
 /// this case precisely because an exception is in flight.
 TEST(AdlsGen2Write, DestructorCleansStagingWhenCallerThrows)
 {
@@ -860,6 +943,44 @@ TEST(AdlsGen2Write, PublishTargetsTheContainerWhenTheUrlCarriesTheAccount)
     ASSERT_EQ(renames.size(), 1u);
     EXPECT_EQ(renames[0].path, "myaccount/mycontainer/tables/mytable/data/data-0.parquet");
     EXPECT_EQ(renames[0].header("x-ms-rename-source"), "/" + creates[0].path);
+}
+
+/// Shortening must never cut into the parent directory: a staging object in another directory breaks
+/// both the sibling invariant and directory-scoped credentials. Where no basename fits beside the
+/// parent, the only correct answer is to report it, which `ensureCreated` turns into a clear error.
+TEST(AdlsGen2Write, StagingPathStaysASiblingForALongParentDirectory)
+{
+    const String random_suffix(16, 'q');
+    const String suffix = ".tmp." + random_suffix;
+
+    /// A parent so long that no basename fits beside it.
+    const String long_parent(1010, 'd');
+    EXPECT_TRUE(makeAdlsGen2StagingPath(long_parent + "/b", random_suffix).empty())
+        << "shortening by byte offset alone would land before the separator and stage in the container root";
+
+    /// A key that must be shortened but whose parent leaves room: still a sibling.
+    const String parent(100, 'e');
+    const String shortened = makeAdlsGen2StagingPath(parent + "/" + String(920, 'f'), random_suffix);
+    ASSERT_FALSE(shortened.empty());
+    EXPECT_LE(shortened.size(), 1024u);
+    EXPECT_TRUE(shortened.ends_with(suffix)) << shortened;
+    ASSERT_NE(shortened.rfind('/'), String::npos) << shortened;
+    EXPECT_EQ(shortened.substr(0, shortened.rfind('/')), parent);
+
+    /// The invariant across the whole reachable range of parent lengths: either a sibling of the
+    /// target, or nothing.
+    for (size_t parent_size = 1; parent_size + 2 <= 1024; ++parent_size)
+    {
+        const String key = String(parent_size, 'd') + "/" + String(std::min<size_t>(50, 1024 - parent_size - 1), 'b');
+        const String staging = makeAdlsGen2StagingPath(key, random_suffix);
+        if (staging.empty())
+            continue;
+        EXPECT_LE(staging.size(), 1024u) << staging.size();
+        ASSERT_NE(staging.rfind('/'), String::npos) << "parent_size=" << parent_size << ": " << staging;
+        EXPECT_EQ(staging.substr(0, staging.rfind('/')), key.substr(0, key.rfind('/')))
+            << "parent_size=" << parent_size;
+        EXPECT_TRUE(staging.ends_with(suffix)) << "parent_size=" << parent_size;
+    }
 }
 
 /// A staging name is a sibling in the same directory, so directory-scoped credentials keep working.

@@ -24,7 +24,9 @@ namespace DB
 ///
 /// The final target path is never created, truncated or removed by this buffer except by a single
 /// conditional atomic rename that publishes complete content: all data goes to a staging sibling
-/// object first. So a failed write leaves whatever the target held before untouched.
+/// object first. So the target is never left partial, and a failed write leaves whatever it held before
+/// untouched, with one exception: when the rename itself reports an unknown outcome, the target holds one
+/// complete object, either its previous contents or the new ones.
 class WriteBufferFromAzureDataLakeStorage : public WriteBufferFromFileBase
 {
 public:
@@ -86,7 +88,7 @@ private:
     const std::string blob_path;
     const std::string prefixed_blob_path;
     std::string staging_path;
-    /// Targets the staging object; the final path is written only by the rename in publish().
+    /// Targets the staging object; the final path is written only by the rename in `publish`.
     std::optional<Azure::Storage::Files::DataLake::DataLakeFileClient> file_client;
     /// The same staging object without SDK retries, for the single-shot guarded flush.
     std::optional<Azure::Storage::Files::DataLake::DataLakeFileClient> flush_client;
@@ -99,6 +101,8 @@ private:
     bool file_created = false;
     bool is_prefinalized = false;
     bool published = false;
+    /// The rename was issued but its outcome is unknown, so the target may hold either object.
+    bool publish_outcome_unknown = false;
     int64_t bytes_appended = 0;
 
     char fake_buffer_when_prefinalized[1] = {};
