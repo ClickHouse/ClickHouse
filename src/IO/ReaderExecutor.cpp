@@ -159,7 +159,6 @@ ReaderExecutor::ReaderExecutor(
     ReadContinuityTracker::Options continuity_options;
     continuity_options.bridgeable_gap = min_bytes_for_seek;
     fetch_tracker = ReadContinuityTracker(continuity_options);
-    consume_tracker = ReadContinuityTracker(continuity_options);
 }
 
 ReaderExecutor::ReaderExecutor(
@@ -293,22 +292,12 @@ ChainedBuffers ReaderExecutor::readNextWindow()
         return {};
     }
 
-    /// `preparePlan` no-ops at the extent (`atExtent()`), where `serveWindow` then returns
-    /// empty - the correct EOF for this extent.
     preparePlan(position_phys);
     return finishWindow(serveWindow(position_phys));
 }
 
 void ReaderExecutor::preparePlan(size_t position_phys, size_t coverage_ahead)
 {
-    /// At the read extent there is nothing to serve, so nothing to (re)plan for - a replan
-    /// here would only reset the in-flight pin. `serveWindow` returns empty - the correct
-    /// EOF for this extent; a later `setReadExtent` resumes from the new bound. (A machine
-    /// may still be in flight PAST the extent - reach-allowed read-ahead, `prefetchAllowance` -
-    /// it stays held and is collected when the serve resumes.)
-    if (atExtent())
-        return;
-
     const bool at_plan_end = read_plan.geometry() && position_phys >= read_plan.geometry()->plan_end;
 
     /// At the boundary, collect the in-flight machine BEFORE replanning. A consumed step at
@@ -353,7 +342,6 @@ ChainedBuffers ReaderExecutor::finishWindow(ChainedBuffers chain)
     stats.add(Stats::RequestedBytes, chain.range().size);
     /// Feed the consumption estimator with what was actually served (physical space).
     if (chain.range().size)
-        consume_tracker.recordReadRange(chain.range().offset, chain.range().size);
     position += chain.range().size;
     LOG_TRACE(log, "readNextWindow: got {} bytes, {} nodes, position advanced to {}",
         chain.range().size, chain.getNodes().size(), position);
@@ -405,10 +393,9 @@ void ReaderExecutor::seek(size_t new_position)
     /// prefetch hit, and the serve's pump interrupt-collects it lazily - and
     /// partially - only when it actually blocks a needed job. An eager
     /// collect-on-seek here costs a completed-then-relaunched fetch per swing.
-    /// The estimators are NOT fed: an absorbed jump is not a break in the fetch
-    /// trajectory - recording it collapses the consume reach, the allowance
-    /// falls back to the stepped extent, the producer never runs ahead and the
-    /// published residue stays empty, so every swing degrades to a one-shot.
+    /// The estimator is NOT fed: an absorbed jump is not a break in the fetch
+    /// trajectory - recording it would collapse the predicted reach and shrink
+    /// the long-connection sizing at every swing.
     const size_t cur_physical = toPhys(position);
     const size_t seek_distance
         = new_physical >= cur_physical ? new_physical - cur_physical : cur_physical - new_physical;
@@ -425,10 +412,9 @@ void ReaderExecutor::seek(size_t new_position)
     }
 
     cancelMachine(/*cancelled=*/true);
-    /// Feed the seek to both estimators; it resets their frontier, so the post-seek
-    /// plan's predicted reads feed from here.
+    /// Feed the seek to the reach estimator; it resets its frontier, so the
+    /// post-seek plan's predicted reads feed from here.
     fetch_tracker.recordSeek(new_physical);
-    consume_tracker.recordSeek(new_physical);
 
     /// A seek away from the current frontier strands the in-flight fill segment;
     /// drop its pin (the next window re-establishes it).
@@ -450,30 +436,17 @@ void ReaderExecutor::seek(size_t new_position)
 
 void ReaderExecutor::setReadExtent(std::optional<size_t> logical_end)
 {
-    if (logical_end == read_extent_end)
-        return;
-
-    /// The extent only advances or clears; it must not move below the read cursor,
-    /// which would strand already-buffered bytes beyond the new bound. MergeTree
-    /// advances the mark-range end per task and never rewinds it; a backward shrink
-    /// would need explicit buffer trimming, which the executor does not support.
-    chassert(!logical_end || *logical_end >= position);
-
-    /// An ADVANCE (or clear to EOF) does NOT invalidate an in-flight read-ahead: the
-    /// long connection is opened PAST the current extent (`longConnectionBound` =
-    /// `max(extent, reach)`), so it already covers the larger bound and keeps
-    /// streaming - one GET spans the mark ranges. Cancelling here would reset that GET
-    /// at every per-mark-range bound advance, forcing a fresh GET (and its S3
-    /// first-byte) per range - the populate-path GET amplification. The machine reads
-    /// against its immutable launch-time `extent_advertised`, so updating the live bound
-    /// cannot race it, and serving stays bounded by `clampToExtent` on the live
-    /// `read_extent_end`. Only a backward SHRINK (which MergeTree never issues - see the
-    /// assert above) would strand an over-reading prefetch past the new bound, so detach
-    /// the machine just then.
-    const bool advance_or_clear = !logical_end || (read_extent_end && *logical_end >= *read_extent_end);
-    if (!advance_or_clear)
-        cancelMachine(/*cancelled=*/true);
-    read_extent_end = logical_end;
+    /// The extent joins the single READ BOUND: monotone-max with the declared
+    /// planned end (which dominates while the per-range extent catches up), so
+    /// an advance never invalidates an in-flight read-ahead - one GET keeps
+    /// spanning the mark ranges. Clearing (read-to-EOF) lifts the bound to the
+    /// file end. Per-range EOF presentation lives in
+    /// `PipelineReadBuffer::read_until`, not here; a backward value is
+    /// absorbed by the max (the bound reflects the true end already).
+    if (!logical_end)
+        read_bound.reset();
+    else if (!read_bound || *read_bound < *logical_end)
+        read_bound = *logical_end;
 }
 
 // ─── Transient reads (readBigAt) ───────────────────────────────────────────
@@ -498,7 +471,7 @@ std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t st
     t->decryptor = decryptor;
 #endif
     t->data_start_offset = data_start_offset;
-    t->read_extent_end = start_position + read_size;
+    t->read_bound = start_position + read_size;
     t->is_transient = true;
     t->seek(start_position);
     return t;
@@ -646,7 +619,7 @@ ChainedBuffers ReaderExecutor::fetchEncryptionHeader()
     if (fetched.empty())
     {
         fetched = fetchWindowFromSource(header_range,
-            /*from_prefetch=*/false, reached_eof, MemoryPressureLevel{}, /*extent_advertised=*/true,
+            /*from_prefetch=*/false, reached_eof, MemoryPressureLevel{}, /*bound_advertised=*/true,
             /*lc=*/nullptr, /*stop=*/nullptr, stats);
         if (encryption_header_cache && pieces.size() == 1 && fetched.totalBytes() == data_start_offset)
         {
@@ -1123,7 +1096,7 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
         {
             const ByteRange piece{off, std::min(step, run_hi - off)};
             ChainedBuffers run = fetchWindowFromSource(piece, /*from_prefetch=*/true, m.reached_eof, level,
-                m.extent_advertised, m.inline_serve ? &fill_lane.conn : &m.long_conn, &m, m.stats);
+                m.bound_advertised, m.inline_serve ? &fill_lane.conn : &m.long_conn, &m, m.stats);
             pushChainToWriters(m.writer_views, piece, run, m.stats);
             if (!run.empty())
                 m.fetched_end = std::max(m.fetched_end, run.range().end());
@@ -1161,7 +1134,7 @@ static bool stopRequested(const MachineBase * stop)
 }
 
 ChainedBuffers ReaderExecutor::fetchWindowFromSource(ByteRange physical_window, bool from_prefetch,
-    bool & eof_latch, MemoryPressureLevel pressure_level, bool extent_advertised,
+    bool & eof_latch, MemoryPressureLevel pressure_level, bool bound_advertised,
     std::optional<LongConnection> * lc, const MachineBase * stop, Stats & out_stats)
 {
     /// FOREGROUND context iff the caller passed the LANE's slot (see the header doc).
@@ -1204,7 +1177,7 @@ ChainedBuffers ReaderExecutor::fetchWindowFromSource(ByteRange physical_window, 
         auto blocks = allocateBlocks(pr.size, window_block_size);
         StatTimer src_scope(out_stats, Stats::SourceReadMicroseconds);
         ChainedBuffers source_chain = readFromSource(pr.object, pr.object_offset, std::move(blocks), file_pos,
-            extent_advertised, lc, stop, out_stats);
+            bound_advertised, lc, stop, out_stats);
         HistogramMetrics::ReaderExecutorSourceReadLatency.observe(
             static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
         const size_t actual = source_chain.totalBytes();
@@ -1368,7 +1341,7 @@ void ReaderExecutor::Display::recreditCommittedPrefixes(
 ChainedBuffers ReaderExecutor::readFromSource(
     const StoredObject & object, size_t offset,
     VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> blocks, size_t file_pos,
-    bool extent_advertised, std::optional<LongConnection> * lc,
+    bool bound_advertised, std::optional<LongConnection> * lc,
     const MachineBase * stop, Stats & out_stats)
 {
     /// One-shot source read: open a connection for this fetch range, bound it so it
@@ -1447,11 +1420,11 @@ ChainedBuffers ReaderExecutor::readFromSource(
     /// Bound the read so its connection is fully consumed and reusable by the pool,
     /// rather than abandoning an open-ended GET. The read consumes exactly `want`
     /// bytes, so bound to `offset + want` whenever the end is concrete - a known
-    /// object size, or an advertised extent (`extent_advertised`) even when the size
+    /// object size, or an advertised extent (`bound_advertised`) even when the size
     /// is unknown. Only a truly unbounded source (unknown size AND no advertised
     /// extent) is left open-ended.
     const bool stateless_bounded = opened->supportsRightBoundedReads() && want > 0
-        && (!hasUnknownSize() || extent_advertised);
+        && (!hasUnknownSize() || bound_advertised);
     if (stateless_bounded)
         opened->setReadUntilPosition(offset + want);
 
@@ -1574,56 +1547,45 @@ bool ReaderExecutor::shouldOpenLongConnection(size_t phys_off) const
         = read_plan.geometry() ? read_plan.geometry()->pressure_level : MemoryPressureLevel::Normal;
     if (!prefetchEnabled(level))
         return false;
-    /// Open when the forward reach runs past the current read extent - the right boundary
-    /// where a short connection stops and the next read pays a fresh request. A long connection
-    /// continues past it instead. The reach is `boundedReach` - the SAME value `longConnectionBound`
-    /// sizes the channel with - so the trigger never opens a "long" channel the bound would then
-    /// clamp back to the extent (a reverse/scattered pattern, or a run walled off by a near wide
-    /// cached run, stays short). An extent AT the object end (a merge reading the whole part;
-    /// a full-file scan) is not a narrowing declaration - the reach is clamped to the file end,
-    /// so it could never run past it - and falls back to the same structural one-window rule
-    /// as no extent at all: a read whose reach spans more than one window is long.
+    /// STRUCTURAL rule: a read whose forward reach spans more than one window is
+    /// long - one GET amortizes over the span instead of a request per window.
+    /// The reach (`boundedReach` - the SAME value `longConnectionBound` sizes the
+    /// channel with) is capped at the READ BOUND, so a small bounded read (a
+    /// header probe, a lone reverse chunk) stays short: its capped reach cannot
+    /// span a window. A scan or merge reads to its declared end and triggers.
     const size_t file_end = hasUnknownSize() ? std::numeric_limits<size_t>::max() : toPhys(totalSize());
-    const size_t boundary = (read_extent_end && toPhys(*read_extent_end) < file_end)
-        ? toPhys(*read_extent_end)
-        : (phys_off + effectiveWindowSize(level));
-    return boundedReach(phys_off) > boundary;
+    const size_t bound_phys = read_bound ? std::min<size_t>(toPhys(*read_bound), file_end) : file_end;
+    return std::min(boundedReach(phys_off), bound_phys) > phys_off + effectiveWindowSize(level);
 }
 
 size_t ReaderExecutor::longConnectionBound(const StoredObject & object, size_t object_offset, size_t phys_offset) const
 {
-    /// The channel bound, in object-local coordinates: the forward reach, floored at the
-    /// current read extent and capped at the object end. The reach term lets a confirmed
-    /// forward run extend the channel PAST the reader's current right boundary, so one GET
-    /// spans several advancing mark ranges instead of reopening at each. The extent floor
-    /// keeps a bounded read - one reverse chunk, or a run broken by a wide cached gap - from
-    /// stranding the channel before its real end. The object end caps a GET to the single
-    /// object it streams.
-    ///
-    /// The reach (`boundedReach`: `predictedEnd` clamped at the next wide cached run) is the
-    /// read's forward trajectory, which extrapolates past the current extent. It is the same
-    /// value `shouldOpenLongConnection` triggers on, so the GET drains cleanly at a wide cached run
-    /// instead of being abandoned mid-run, and the trigger never opens a channel this bound
-    /// would clamp back to the extent. Holes strictly below the bound are bridged by
-    /// `LongConnection::canContinue` on the open GET.
+    /// The channel bound, in object-local coordinates: the forward reach, capped at
+    /// the READ BOUND and the object end. The reach (`boundedReach`: `predictedEnd`
+    /// clamped at the next wide cached run) is the read's forward trajectory - the
+    /// same value `shouldOpenLongConnection` triggers on, so the GET drains cleanly
+    /// at a wide cached run instead of being abandoned mid-run. The bound cap is the
+    /// declared end of the whole assignment (per-range extents merge into it), so
+    /// one GET spans the mark ranges and still never streams past the true end.
+    /// Holes strictly below the bound are bridged by `LongConnection::canContinue`.
     const size_t object_base = phys_offset - object_offset;
     const size_t object_end = hasUnknownSize()
         ? std::numeric_limits<size_t>::max()
         : object_base + object.bytes_size;
-    const size_t extent = read_extent_end
-        ? std::min<size_t>(toPhys(*read_extent_end), object_end)
+    const size_t bound_phys = read_bound
+        ? std::min<size_t>(toPhys(*read_bound), object_end)
         : object_end;
-    size_t phys_bound = reachPastExtent(extent, boundedReach(phys_offset));
+    size_t phys_bound = boundedReach(phys_offset);
     /// A warranted long connection opens with at least `long_connection_open_range`
     /// and never streams past `long_connection_max_bound`: it bounds an over-predicted
     /// continuous-read reach so the GET drains within the cap instead of running away.
     /// The open-range floor is for forward-spanning reads only -- a one-shot `readBigAt`
-    /// transient stays bounded to its request (no continuity, no look-ahead), so flooring
-    /// it would over-read past the requested piece of an object.
+    /// transient stays bounded to its request (no continuity, no look-ahead). The READ
+    /// BOUND caps LAST: nothing - not even the floor - streams past the declared end.
     if (!is_transient)
         phys_bound = std::max(phys_bound, phys_offset + long_connection_open_range);
     phys_bound = std::min(phys_bound, phys_offset + long_connection_max_bound);
-    phys_bound = std::min(phys_bound, object_end);
+    phys_bound = std::min(phys_bound, bound_phys);
     return phys_bound - object_base;
 }
 
@@ -1876,7 +1838,7 @@ bool ReaderExecutor::launchMachineForWindow(size_t ri, ByteRange window, IFetchM
     m->physical_window = window;
     m->retrieve_index = ri;
     m->pressure_snapshot = read_plan.geometry()->pressure_level;
-    m->extent_advertised = read_extent_end.has_value();
+    m->bound_advertised = read_bound.has_value();
     /// Inline (serve-thread) runner -> the fetch stops at the first sibling-led segment.
     m->inline_serve = (&machine_runner == local_runner.get());
     /// Record the fill-target writers now so the step can write its led segments inline during
@@ -2236,7 +2198,7 @@ bool ReaderExecutor::bankDirectRead(ByteRange window)
     /// a hung sibling leader (the election keeps losing) or a raced shrink/detach that staled
     /// the committed truth at the cursor. Empty = nothing there (EOF for this extent).
     ChainedBuffers direct = fetchWindowFromSource(window, /*from_prefetch=*/false, reached_eof,
-        read_plan.geometry()->pressure_level, read_extent_end.has_value(), &fill_lane.conn, /*stop=*/nullptr,
+        read_plan.geometry()->pressure_level, read_bound.has_value(), &fill_lane.conn, /*stop=*/nullptr,
         stats);
     if (direct.empty())
         return false;
@@ -2898,8 +2860,8 @@ ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start) const
         /// folding still expands it so the touched cache cells are filled to their
         /// boundaries, but the base does NOT inflate to `window_size` when the request
         /// is smaller.
-        chassert(read_extent_end);
-        const size_t physical_extent_end = toPhys(*read_extent_end);
+        chassert(read_bound);
+        const size_t physical_extent_end = toPhys(*read_bound);
         if (physical_start >= physical_extent_end)
             return ByteRange{physical_start, 0};
         want = std::min(physical_extent_end - physical_start, ceiling);
@@ -2907,7 +2869,7 @@ ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start) const
     else
     {
         /// The plan TARGET the iterative windowed probe grows toward. Independent of
-        /// `read_extent_end` (which only clamps the serve), so the plan survives
+        /// `read_bound` (which only clamps sizing), so the plan survives
         /// mark-range advances and is reused. An UNKNOWN-SIZE source is not planned past
         /// one window: with no file end to clamp the span, the probe would tile cache
         /// segments beyond the real EOF only for the first short read (the EOF marker)
@@ -3087,61 +3049,39 @@ size_t ReaderExecutor::fillAheadLead() const
     return fill_ahead_lead;
 }
 
-size_t ReaderExecutor::clampToExtent(size_t win_size) const
+size_t ReaderExecutor::clampToBound(size_t win_size) const
 {
-    if (!read_extent_end)
+    if (!read_bound)
         return win_size;
-    const size_t remaining = *read_extent_end > position ? *read_extent_end - position : 0;
+    const size_t remaining = *read_bound > position ? *read_bound - position : 0;
     return std::min(win_size, remaining);
 }
 
 size_t ReaderExecutor::prefetchAllowance(size_t phys_from) const
 {
     /// PRODUCER-side allowance: how many PHYSICAL bytes a fetch may take from `phys_from`
-    /// (a launch frontier or the cursor). Bounded by what exists (the file end) and by how
-    /// far the read is predicted to be CONSUMED: the extent (declared consumption - the
-    /// caller reads to there), extended past it by the CONSUMED run's reach, so the fill
-    /// does not stop and restart at every per-mark-range `setReadUntilPosition` advance.
-    /// The consumption estimator - NOT `boundedReach`, which extrapolates planned SOURCE
-    /// reads and always runs past the extent (the plan is extent-independent); keyed off
-    /// it, a one-granule point read would eagerly fetch the whole plan span. A sequential
-    /// scan EARNS extent-crossing prefetch from its observed run; a point read stops at
-    /// its granule's extent. Deliberately NOT capped at the serving horizon -
-    /// the caller applies it; the consumer's ceiling is `readCeiling`.
+    /// (a launch frontier or the cursor). Bounded by what exists (the file end) and by the
+    /// READ BOUND - the caller's declared boundary (the planned end of the whole
+    /// assignment when it knows it, else the advancing read-until): everything below it is
+    /// legitimate to fetch, nothing above it is worth speculating on. This replaced the
+    /// consumption estimator that used to EARN extent-crossing prefetch from the observed
+    /// run - with the true end declared, there is nothing to guess. Deliberately NOT
+    /// capped at the serving horizon - the caller applies it; the consumer's ceiling is
+    /// `readCeiling`.
     size_t bound = std::numeric_limits<size_t>::max();
     if (!hasUnknownSize())
         bound = toPhys(totalSize());
-    if (read_extent_end)
-    {
-        const size_t extent_phys = toPhys(*read_extent_end);
-        const size_t consumed_reach = clampReach(consume_tracker.predictedEnd(), toPhys(position));
-        bound = std::min(bound, reachPastExtent(extent_phys, consumed_reach));
-    }
+    if (read_bound)
+        bound = std::min(bound, toPhys(*read_bound));
     return bound > phys_from ? bound - phys_from : 0;
-}
-
-size_t ReaderExecutor::reachPastExtent(size_t extent_phys, size_t reach) const
-{
-    /// The ONE statement of the transient rule: a one-shot `readBigAt` transient's
-    /// extent IS its request - it never streams or fetches past it. A normal read
-    /// may extend past the extent by its earned reach - hard-capped at the caller's
-    /// PLANNED read end when it declared one (`setPlannedReadEnd`): speculation past
-    /// the last range the reader will ever be asked buys nothing. The extent itself
-    /// stays unconditionally fetchable - the edge bounds prefetch, never service.
-    if (is_transient)
-        return extent_phys;
-    size_t bounded_reach = reach;
-    if (planned_read_end)
-        bounded_reach = std::min(bounded_reach, toPhys(*planned_read_end));
-    return std::max(extent_phys, bounded_reach);
 }
 
 void ReaderExecutor::setPlannedReadEnd(size_t logical_end)
 {
     /// Advisory and monotone: streams of the same reader may announce their
     /// per-file edges in any order; the widest one wins.
-    if (!planned_read_end || *planned_read_end < logical_end)
-        planned_read_end = logical_end;
+    if (!read_bound || *read_bound < logical_end)
+        read_bound = logical_end;
 }
 
 }

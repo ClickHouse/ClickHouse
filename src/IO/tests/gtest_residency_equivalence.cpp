@@ -269,6 +269,7 @@ public:
             if (static_cast<size_t>(executor.getPosition()) != offset)
                 executor.seek(offset);
             const size_t end = offset + want;
+            executor.setPlannedReadEnd(end);
             size_t got = 0;
             while (got < want)
             {
@@ -276,7 +277,7 @@ public:
                 auto chain = executor.readNextWindow();
                 if (chain.empty())
                     break;
-                got += chain.range().size;
+                got += std::min(chain.range().size, want - got);
             }
             ASSERT_EQ(got, want);
         }
@@ -524,6 +525,7 @@ TEST_F(ResidencyEquivalence, SequentialStreamExtendsInsteadOfRebuilding)
     ReaderExecutor executor(src, objects, std::move(caches), makeOptions());
     executor.seek(start);
 
+    executor.setPlannedReadEnd(start + want);
     String served;
     while (served.size() < want)
     {
@@ -532,7 +534,12 @@ TEST_F(ResidencyEquivalence, SequentialStreamExtendsInsteadOfRebuilding)
         if (chain.empty())
             break;
         for (const auto & node : chain.getNodes())
-            served.append(node.data(), node.size);
+        {
+            const size_t take = std::min<size_t>(want - served.size(), node.size);
+            served.append(node.data(), take);
+            if (served.size() == want)
+                break;
+        }
     }
     ASSERT_EQ(served.size(), want);
     EXPECT_EQ(served, content.substr(start, want)) << "extended plans must serve the same bytes";
@@ -636,9 +643,16 @@ TEST_F(ResidencyEquivalence, CachelessInterleavedStreamsServeFromPublishedResidu
             {
                 auto chain = executor.readNextWindow();
                 ASSERT_FALSE(chain.empty()) << "pos " << pos;
+                /// The production buffer clamps EXPOSURE at its read-until; the
+                /// executor serves bound-sized windows. Take only this chunk.
                 for (const auto & node : chain.getNodes())
-                    got.append(node.data(), node.size);
-                need -= std::min(need, chain.range().size);
+                {
+                    const size_t take = std::min<size_t>(need, node.size);
+                    got.append(node.data(), take);
+                    need -= take;
+                    if (!need)
+                        break;
+                }
             }
         }
         executor.setReadExtent(FILE_SIZE);

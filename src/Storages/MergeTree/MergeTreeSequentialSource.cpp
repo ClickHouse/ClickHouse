@@ -347,6 +347,14 @@ Pipe createMergeTreeSequentialSource(
     info->part_starting_offset_in_query = data_part.part_starting_offset_in_query;
     info->const_virtual_fields.emplace("_part_index", info->part_index_in_query);
     info->const_virtual_fields.emplace("_part_starting_offset", info->part_starting_offset_in_query);
+    /// The reader's true end: the given ranges, or the whole part. Keeps the
+    /// executor's long connection spanning the ranges of a merge/mutation read
+    /// now that per-range extents no longer carry the reach past themselves.
+    if (mark_ranges)
+        for (const auto & range : *mark_ranges)
+            info->planned_last_mark = std::max(info->planned_last_mark, range.end);
+    else
+        info->planned_last_mark = info->data_part->getMarksCount();
 
     /// The part might have some rows masked by lightweight deletes
     bool has_lightweight_delete = info->data_part->hasLightweightDelete() || info->alter_conversions->hasLightweightDelete();

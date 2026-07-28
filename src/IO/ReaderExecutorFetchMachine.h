@@ -50,11 +50,11 @@ struct ReaderExecutorFetchMachine : MachineBase
     /// worker must re-add a snapshot rather than reach into shared state.
     MemoryPressureLevel pressure_snapshot{};
     /// Whether a read extent was advertised at launch: the worker reads THIS,
-    /// never the live `read_extent_end` member - a soft-cancelled machine must
+    /// never the live `read_bound` member - a soft-cancelled machine must
     /// not race `setReadExtent`. Only the bit matters: it lets a one-shot read
     /// on an unknown-size source be bounded (`readFromSource`); the serve is
     /// bounded by the live extent separately (`clampToExtent`).
-    bool extent_advertised = false;
+    bool bound_advertised = false;
     /// The schedule retrieve this machine fulfills (index into the launch-time plan's
     /// `schedule.retrieves`). Set at launch; read live by `machineFor` (is a machine
     /// running for this retrieve). Meaningful only while this machine is the live

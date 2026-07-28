@@ -129,7 +129,7 @@ public:
     /// discovery amortises across many serve windows and the plan spans past the
     /// fill-ahead lead. Touched cells may overhang the span - fill-only work via
     /// the schedule's cell closure; the geometry itself never exceeds the span.
-    /// `read_extent_end` does not size the plan, so the plan survives mark-range
+    /// The read bound does not size the plan, so the plan survives mark-range
     /// advances and is reused.
     static constexpr size_t DEFAULT_PLAN_LOOK_AHEAD_MAX_WINDOW = 4 * DEFAULT_WINDOW_SIZE; /// 32 MiB
     /// A warranted long connection opens with at least this much range and never streams
@@ -212,9 +212,9 @@ public:
     /// The caller's TRUE final read boundary (LOGICAL): the end of the last
     /// mark range this reader will ever be assigned, known to MergeTree up
     /// front while the extent advances per range. Caps the producer's earned
-    /// reach (`reachPastExtent`) and the long-connection bound - prefetch
-    /// never speculates past it; serving past it (through the extent) still
-    /// works. Advisory, monotone-max across the reader's streams.
+    /// bound - prefetch never speculates past it; serving up to a later
+    /// advanced extent still works. Advisory, monotone-max across the
+    /// reader's streams (it merges into the single `read_bound`).
     void setPlannedReadEnd(size_t logical_end);
 
     // ─── Random access (`readBigAt`) ─────────────────────────────────────
@@ -340,7 +340,7 @@ private:
     /// The ONLY logical<->physical converters. Everything inside the executor
     /// (plan, schedule, display, machines, the lane bank) is PHYSICAL
     /// (header-inclusive file coords); the consumer API (`position`,
-    /// `read_extent_end`, `totalSize`, served windows) is LOGICAL (payload
+    /// `read_bound`, `totalSize`, served windows) is LOGICAL (payload
     /// coords). Cross exactly here - raw `+/- data_start_offset` elsewhere is
     /// a bug. No byte below the header ever reaches a logical consumer, so a
     /// physical value smaller than the header is corrupt input, not a case.
@@ -393,7 +393,7 @@ private:
     /// and never opens in-fetch; it carries what its LAUNCH gave it (`launchMachineForWindow`
     /// is the other opener site).
     ChainedBuffers fetchWindowFromSource(ByteRange physical_window, bool from_prefetch,
-        bool & eof_latch, MemoryPressureLevel pressure_level, bool extent_advertised,
+        bool & eof_latch, MemoryPressureLevel pressure_level, bool bound_advertised,
         std::optional<LongConnection> * lc, const MachineBase * stop, Stats & out_stats);
 
     /// The machine fetch step (runs on the worker thread): elect the FileCache downloader
@@ -435,7 +435,7 @@ private:
     ChainedBuffers readFromSource(
         const StoredObject & object, size_t offset,
         VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> blocks, size_t file_pos,
-        bool extent_advertised, std::optional<LongConnection> * lc,
+        bool bound_advertised, std::optional<LongConnection> * lc,
         const MachineBase * stop, Stats & out_stats);
 
     /// Allocate OwnedChainedBuffers covering `size` bytes, each <= `block_size`.
@@ -685,7 +685,7 @@ private:
 
     /// TRIM phase of the plan: the look-ahead span starting at
     /// `physical_start`, clamped to the physical file end ONLY - the plan is
-    /// independent of `read_extent_end` (which clamps the serve), so it
+    /// independent of `read_bound` (which clamps sizing), so it
     /// survives mark-range advances. Exception: a transient's span is its
     /// bounded request. Empty when the start sits at/past a bound. The single
     /// place the plan is bounded.
@@ -805,25 +805,23 @@ private:
     /// Pressure suppresses prefetch upstream (`prefetchEnabled`), not the lead depth.
     size_t fillAheadLead() const;
 
-    /// Shrink `win_size` so the read does not pass `read_extent_end`.
+    /// Shrink `win_size` so the read does not pass `read_bound`.
     /// Saturates to 0 once `position` reaches the extent (recoverable:
     /// extending the extent resumes).
-    size_t clampToExtent(size_t win_size) const;
+    size_t clampToBound(size_t win_size) const;
 
     /// PRODUCER-side allowance: physical bytes a fetch may take from `phys_from`,
-    /// bounded by the file end and by `reachPastExtent` - see the definition for
+    /// bounded by the file end and by the read bound - see the definition for
     /// the past-extent rationale.
     size_t prefetchAllowance(size_t phys_from) const;
 
     /// `max(extent, reach)` - except for a `readBigAt` transient, whose extent IS
     /// its request and is never crossed. The single statement of the transient
     /// rule, shared by `prefetchAllowance` and `longConnectionBound`.
-    size_t reachPastExtent(size_t extent_phys, size_t reach) const;
 
     /// The advertised read extent (`setReadUntilPosition`) has been reached - no room left
     /// within it, though the file may continue. `readNextWindow` uses this (not the file end)
     /// to gate the (re)plan once EOF is handled separately.
-    bool atExtent() const { return read_extent_end && position >= *read_extent_end; }
 
     bool atEnd() const
     {
@@ -840,7 +838,7 @@ private:
     /// only while `readCeiling() > 0`.
     size_t readCeiling() const
     {
-        return offset_map.hasUnknownSize() ? clampToExtent(window_size) : clampToExtent(totalSize() - position);
+        return offset_map.hasUnknownSize() ? clampToBound(window_size) : clampToBound(totalSize() - position);
     }
 
     // ─── Members ─────────────────────────────────────────────────────────
@@ -872,12 +870,13 @@ private:
     /// Set when the source returned short AND the total size is unknown - the
     /// short return IS the EOF marker.
     bool reached_eof = false;
-    /// The caller-declared TRUE final read boundary (`setPlannedReadEnd`);
-    /// caps the earned reach and the long-connection bound. `nullopt` = unknown.
-    std::optional<size_t> planned_read_end;
-    /// Logical end of the advertised read region (`makeTransientForReadAt`
-    /// one-shot extent, or `setReadExtent`). `nullopt` = read to the file end.
-    std::optional<size_t> read_extent_end;
+    /// THE single read bound (LOGICAL): monotone max of the declared planned
+    /// end (`setPlannedReadEnd` - the true end of the whole assignment), the
+    /// advancing per-range extent (`setReadExtent`), and a transient's request
+    /// end. Caps sizing, prefetch and the long connection; never gates
+    /// service (per-range EOF lives in `PipelineReadBuffer::read_until`).
+    /// `nullopt` = read to the file end.
+    std::optional<size_t> read_bound;
 
 
     /// The current look-ahead plan (source of truth; geometry snapshot null
@@ -922,11 +921,6 @@ private:
     /// counts identically whether modeled as a read-through or a seek.
     /// `predictedEnd` sizes the long source connection (see `longConnectionBound`).
     ReadContinuityTracker fetch_tracker;
-    /// CONSUMPTION-pattern estimator: unlike `fetch_tracker` (planned source reads,
-    /// sizes connections), it is fed every SERVED window and every seek, so it predicts
-    /// how far the consumer will actually go. `prefetchAllowance` keys past-extent prefetch
-    /// off it.
-    ReadContinuityTracker consume_tracker;
 
     /// Logging / transient accounting.
     std::shared_ptr<ReaderExecutorLog> reader_executor_log;

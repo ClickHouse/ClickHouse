@@ -11,14 +11,19 @@
 DROP TABLE IF EXISTS t_reader_executor_lc_on;
 DROP TABLE IF EXISTS t_reader_executor_lc_off;
 
+-- min_bytes_for_full_part_storage = 0 pins FULL part storage: on a packed part the
+-- stream buffers are views into data.packed built by the part storage itself, which does
+-- not wire a long-connection limit into the read pipeline, so no long connection can open
+-- and the assertions below would read 0 regardless of this test's subject.
 CREATE TABLE t_reader_executor_lc_on (id UInt64, v UInt64, s String)
 ENGINE = MergeTree ORDER BY id
-SETTINGS storage_policy = 's3_no_cache', index_granularity = 8192, min_bytes_for_wide_part = 0;
+SETTINGS storage_policy = 's3_no_cache', index_granularity = 8192, min_bytes_for_wide_part = 0,
+         min_bytes_for_full_part_storage = 0;
 
 CREATE TABLE t_reader_executor_lc_off AS t_reader_executor_lc_on;
 
-INSERT INTO t_reader_executor_lc_on SELECT number, number * 2, repeat('x', 64) FROM numbers(500000);
-INSERT INTO t_reader_executor_lc_off SELECT number, number * 2, repeat('x', 64) FROM numbers(500000);
+INSERT INTO t_reader_executor_lc_on SELECT number, number * 2, randomPrintableASCII(64) FROM numbers(500000);
+INSERT INTO t_reader_executor_lc_off SELECT number, number * 2, randomPrintableASCII(64) FROM numbers(500000);
 
 SET use_reader_executor = 1;
 SET remote_filesystem_read_method = 'read';   -- avoid the async-prefetch stage

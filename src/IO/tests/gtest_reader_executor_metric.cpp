@@ -391,18 +391,21 @@ public:
             if (executor.getPosition() != offset)
                 executor.seek(offset);
             const size_t end = offset + want;
+            /// The TRUE end of this read, known up front - what MergeTree announces
+            /// per part (`setPlannedReadEnd`); the per-window extents below only
+            /// mirror the mark-range cadence. Long connections and prefetch size
+            /// off the bound, not the stepping extents.
+            executor.setPlannedReadEnd(end);
             size_t got = 0;
             while (got < want)
             {
                 /// Advance the right boundary one window at a time, mirroring MergeTree's
-                /// per-mark-range `setReadUntilPosition`: the executor sees the extent grow
-                /// step by step, not the whole read at once. This is what lets a long
-                /// connection's predicted reach run past the (advancing) extent and open.
+                /// per-mark-range `setReadUntilPosition`.
                 executor.setReadExtent(std::min(end, executor.getPosition() + WINDOW));
                 auto chain = executor.readNextWindow();
                 if (chain.empty())
                     break;
-                got += chain.range().size;
+                got += std::min(chain.range().size, want - got);
             }
             total += got;
         }
@@ -690,10 +693,9 @@ TEST_F(ReaderExecutorMetric, MidSegmentColdRead)
     {
         EXPECT_EQ(r.requests, 1u);
     }
-    /// Accepted pending the deferred long-connection re-tuning: the prediction over-reaches
-    /// past this single-block read, so the live connection is abandoned -> incomplete on the
-    /// live arm. The stateless one-shot read drains cleanly.
-    EXPECT_EQ(live.incomplete, 1u) << "live: the over-reaching connection is abandoned (accepted, re-tuned in a follow-up)";
+    /// The read bound (the announced end of this bounded read) caps the fetch, so nothing
+    /// over-reaches past it: both arms drain cleanly.
+    EXPECT_EQ(live.incomplete, 0u) << "live: the bound caps the fetch at the read's end";
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: the one-shot read drains cleanly";
 }
 
@@ -744,9 +746,8 @@ TEST_F(ReaderExecutorMetric, InteriorHole)
 /// Scattered point reads, each mid-way into a distinct cold segment. Each point is
 /// its own GET (seeks break reuse) and pays the [seg_start, point_offset) segment-prefix
 /// slack as over-read. Random access cost = R (one GET per touched segment) + O (per-segment
-/// prefix slack). The live arm's prediction over-reaches each point, so its connection is
-/// abandoned per point (incomplete > 0, accepted pending the deferred long-connection re-tuning);
-/// the stateless one-shot reads drain cleanly.
+/// prefix slack). The read bound caps each point's fetch at its declared end, so both arms
+/// drain cleanly (nothing over-reaches, nothing is abandoned).
 TEST_F(ReaderExecutorMetric, RandomScattered)
 {
     constexpr size_t point = BLOCK;                       /// 1 KiB per point
@@ -764,17 +765,15 @@ TEST_F(ReaderExecutorMetric, RandomScattered)
     {
         EXPECT_EQ(r.requests, n_points) << "one GET per scattered point (seeks break reuse)";
     }
-    EXPECT_EQ(live.incomplete, n_points) << "live: the over-reaching connection is abandoned per point (accepted, re-tuned in a follow-up)";
-    EXPECT_EQ(stateless.incomplete, 0u) << "stateless: each one-shot read drains at its own extent";
+    EXPECT_EQ(live.incomplete, 0u) << "live: each point's fetch is capped at its declared end";
+    EXPECT_EQ(stateless.incomplete, 0u) << "stateless: each one-shot read drains at its own bound";
 }
 
 /// Random starts, each followed by a short SEQUENTIAL run (mid-segment, cold). Same
 /// segments touched as the scattered case -> same R and O, but each run serves more
 /// useful bytes per prefix-fill. Shows random cost scales with segments touched, not
 /// bytes read (compare `fetched` in the two prints: more served for the same cost). The
-/// live arm's prediction over-reaches each run, so its connection is abandoned per run
-/// (incomplete > 0, accepted pending the deferred long-connection re-tuning); the stateless
-/// one-shot reads drain cleanly.
+/// read bound caps each run's fetch at its declared end, so both arms drain cleanly.
 TEST_F(ReaderExecutorMetric, RandomPartialSequences)
 {
     constexpr size_t run = 3 * BLOCK;                     /// 3 KiB sequential run
@@ -790,8 +789,8 @@ TEST_F(ReaderExecutorMetric, RandomPartialSequences)
     {
         EXPECT_EQ(r.requests, n_runs) << "one streamed GET per run";
     }
-    EXPECT_EQ(live.incomplete, n_runs) << "live: the over-reaching connection is abandoned per run (accepted, re-tuned in a follow-up)";
-    EXPECT_EQ(stateless.incomplete, 0u) << "stateless: each one-shot read drains at its extent";
+    EXPECT_EQ(live.incomplete, 0u) << "live: each run's fetch is capped at its declared end";
+    EXPECT_EQ(stateless.incomplete, 0u) << "stateless: each one-shot read drains at its bound";
 }
 
 /// Mostly-warm cache with a few scattered cold segments — the realistic production
