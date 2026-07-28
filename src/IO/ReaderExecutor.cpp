@@ -2454,7 +2454,7 @@ void ReaderExecutor::Display::read(ByteRange window_phys, ChainedBuffers & out, 
     const size_t prefix_end_phys = coveredPrefixEnd(covered, window_phys);
     const size_t trim_line = std::min(prefix_end_phys,
         window_phys.offset > lane.bank_keep_behind ? window_phys.offset - lane.bank_keep_behind : 0);
-    if (trim_line > window_phys.offset && !bank.empty())
+    if (!bank.empty())
     {
         const ByteRange held = bank.range();
         if (trim_line > held.offset)
