@@ -4,12 +4,12 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
-#include <shared_mutex>
 #include <variant>
 #include <vector>
 
 #include <Columns/IColumn_fwd.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/SharedMutex.h>
 #include <Common/PODArray.h>
 #include <Interpreters/AdaptiveAggregation.h>
 #include <Interpreters/Aggregator.h>
@@ -193,7 +193,7 @@ struct AdaptiveAggregationSession
         /// buckets chunk-major, and the publisher would then register the rest for a second,
         /// double-counting drain at merge time. Publishers share the lock (per-bucket mutexes
         /// still order their pushes); only a collecting sweep takes it exclusively.
-        std::shared_mutex registry_mutex;
+        SharedMutex registry_mutex;
     };
 
     StagedBacklog backlog;

@@ -60,15 +60,6 @@ namespace ProfileEvents
     extern const Event AggregationOptimizedEqualRangesOfKeys;
     extern const Event AdaptiveAggregationLocalFreezes;
     extern const Event AdaptiveAggregationGiveUps;
-    extern const Event AdaptiveAggregationThaws;
-    extern const Event AdaptiveAggregationProbeBypasses;
-    extern const Event AdaptiveAggregationStagedRecords;
-    extern const Event AdaptiveAggregationStagedRecordsMerged;
-    extern const Event AdaptiveAggregationStagedBytes;
-    extern const Event AdaptiveAggregationSealedChunks;
-    extern const Event AdaptiveAggregationDrainedRecords;
-    extern const Event AdaptiveAggregationPressureSweeps;
-    extern const Event AdaptiveAggregationPressureDrainedRecords;
 }
 
 namespace CurrentMetrics
@@ -93,7 +84,6 @@ namespace ErrorCodes
 }
 
 }
-
 
 
 namespace
