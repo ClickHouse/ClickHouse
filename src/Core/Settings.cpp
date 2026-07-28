@@ -4172,7 +4172,13 @@ previous read-in-order behavior regardless of primary key selectivity.
 Even on the query-plan path the guard is deliberately exempt in the following cases, where it keeps
 read-in-order regardless of this setting:
 - reading from a projection: a projection is selected precisely because its own sorting key satisfies
-  the `ORDER BY`, so disabling read-in-order on it would defeat the reason it was chosen;
+  the `ORDER BY`, so the only alternative plan is to read the same projection parts unordered and then
+  sort globally — the sort the projection was chosen to remove — while the projection read itself keeps
+  full parallelism, leaving no per-part serialization for the fallback to recover. Measured on 60M rows
+  in 10 parts with `max_threads = 32` and a filter the primary key cannot use, rejecting read-in-order
+  on the projection plan is 28% slower and uses 2.2x the peak memory for a bulk result and neither
+  faster nor slower for a selective one, while on the base-table plan over the same data it is 21%
+  faster — which is the case this setting exists for;
 - `optimize_aggregation_in_order` and `optimize_distinct_in_order`: there read-in-order selects a
   different, memory-bound streaming algorithm rather than merely avoiding a sort;
 - reading with parallel replicas, to avoid coordination mismatches;

@@ -662,6 +662,13 @@ std::optional<String> optimizeUseNormalProjections(
     auto storage_snapshot = reading->getStorageSnapshot();
     auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, best_candidate->projection->metadata);
 
+    /// Whether the projection's own index analysis (`merge_tree_projection_select_result_ptr`,
+    /// computed above from `query.filter_node`) ran with an actual filter. Recorded before
+    /// `splitAndFillPrewhereInfo` below consumes `query.dag`, and propagated to the projection
+    /// reading step so the read-in-order PK-selectivity guard can tell a filtered read whose
+    /// primary key pruned nothing from a plain full scan.
+    const bool projection_index_analysis_had_filter = query.filter_node != nullptr;
+
     /// Enables PREWHERE on projections to improve read efficiency and leverage query condition cache.
     if (query.dag && query.filter_node)
     {
@@ -689,6 +696,9 @@ std::optional<String> optimizeUseNormalProjections(
         best_candidate->merge_tree_projection_select_result_ptr,
         reading->isParallelReadingEnabled(),
         reading->getParallelReadingExtension());
+
+    if (auto * projection_reading_merge_tree = typeid_cast<ReadFromMergeTree *>(projection_reading.get()))
+        projection_reading_merge_tree->setIndexAnalysisHadFilter(projection_index_analysis_had_filter);
 
     /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
     filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);

@@ -1,13 +1,15 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
 -- The read-in-order PK-selectivity guard (`read_in_order_max_primary_key_ratio`) is deliberately
 -- exempt when the read comes from a projection: `optimizeUseNormalProjection` picks a normal
--- projection precisely because its own sorting key satisfies the outer `ORDER BY`, so disabling
--- read-in-order there would defeat the reason the projection was chosen. This test pins that
--- exemption, which is documented in the setting description.
+-- projection precisely because its own sorting key satisfies the outer `ORDER BY`, so the only
+-- alternative plan is to read the same projection parts unordered and sort globally — the sort the
+-- projection was chosen to remove. Measurements backing this exemption are in the setting
+-- description and next to the check in `requestReadingInOrder`.
 --
--- Note that the exemption is doubly enforced: besides the explicit `readFromProjection()` check,
--- index analysis of a projection read carries no filter DAG of its own, so `index_analysis_had_filter`
--- is false there and the guard is not even entered.
+-- The exemption is a single, load-bearing check: `optimizeUseNormalProjection` propagates
+-- `index_analysis_had_filter` to the projection reading step (it is built by `readFromParts` with a
+-- ready analysis result, so `applyFilters` never runs on it), so the guard does reach these plans and
+-- only the explicit `readFromProjection()` check keeps read-in-order. Without it the cases below flip.
 
 DROP TABLE IF EXISTS t_read_in_order_projection;
 

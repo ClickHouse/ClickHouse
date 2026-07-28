@@ -382,6 +382,12 @@ public:
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
+    /// A projection reading step is built by `readFromParts` with an already-computed analysis
+    /// result, so `applyFilters` — which is what normally records this — never runs on it.
+    /// `optimizeUseNormalProjection` calls this to tell the read-in-order PK-selectivity guard
+    /// whether the projection's own index analysis saw a filter.
+    void setIndexAnalysisHadFilter(bool value) { index_analysis_had_filter = value; }
+
     const RangesInDataParts & getParts() const { return analyzed_result_ptr ? analyzed_result_ptr->parts_with_ranges : *prepared_parts; }
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot() const { return mutations_snapshot; }
 
