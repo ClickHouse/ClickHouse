@@ -464,10 +464,6 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
     }
     catch (...)
     {
-        /// Do not let a restricted session degrade the table state, fail closed like the constructor.
-        if (getCurrentExceptionCode() == ErrorCodes::ACCESS_DENIED)
-            throw;
-
         /// A query running without hive partitioning may silently return different results.
         if (query_context->getSettingsRef()[Setting::throw_on_hive_partitioning_resolution_failure])
             throw;
