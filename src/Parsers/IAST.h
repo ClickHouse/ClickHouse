@@ -150,6 +150,11 @@ public:
     /** Get hash code, identifying this element and its subtree.
      *  Hashing by default ignores aliases (e.g. identifier aliases, function aliases, literal aliases) which is
      *  useful for common subexpression elimination. Set 'ignore_aliases = false' if you don't want that behavior.
+      *
+      * The default implementation only hashes `getID` and `children`. When adding a member that is
+      * not a child and is part of the element's meaning, hash it here as well - `sameAST` decides
+      * whether a stored table definition changed, so an unhashed member makes two different
+      * definitions compare equal.
       */
     IASTHash getTreeHash(bool ignore_aliases) const;
     void updateTreeHash(SipHash & hash_state, bool ignore_aliases) const;
@@ -488,12 +493,8 @@ private:
 };
 
 /** Whether two expressions are the same, compared by their ASTs with `getTreeHash` (aliases are
-  * significant). Use this instead of comparing formatted text: the formatting logic can change for
-  * unrelated (e.g. aesthetic) reasons, and purely cosmetic AST state that does not participate in
-  * the tree hash — such as the `parenthesized` flag that remembers redundant parentheses around an
-  * expression — must not make equal definitions compare as different ones. This matters everywhere
-  * serialized, stored expressions (table metadata in ZooKeeper, `.sql` files) are compared to check
-  * whether a table definition was altered or changed unexpectedly.
+  * significant). Use this instead of comparing formatted text, which also differs when only the
+  * formatting logic or purely cosmetic AST state (such as the `parenthesized` flag) differs.
   */
 bool sameAST(const IAST & lhs, const IAST & rhs);
 

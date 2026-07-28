@@ -6969,10 +6969,9 @@ void StorageReplicatedMergeTree::alter(
         if (!sameAST(future_metadata.table_ttl.definition_ast, current_metadata->table_ttl.definition_ast))
             future_metadata_in_zk.ttl_table = ReplicatedMergeTreeTableMetadata::formatDefinition(future_metadata.table_ttl.definition_ast);
 
-        /// The definition lists are both compared as ASTs and, when changed, serialized with the
-        /// same backward-compatible serializer the `ReplicatedMergeTreeTableMetadata` constructor
-        /// uses, so that an `ALTER` never publishes a noncanonical (parenthesized) form of a field
-        /// into `/metadata` — an older replica compares those strings verbatim.
+        /// The definition lists are compared as ASTs and, when changed, serialized with the same
+        /// serializer the `ReplicatedMergeTreeTableMetadata` constructor uses, so that an `ALTER`
+        /// never publishes a noncanonical (parenthesized) form of a field into `/metadata`.
         auto same_definitions = [](const ASTs & lhs, const ASTs & rhs)
         {
             ASTExpressionList lhs_list;

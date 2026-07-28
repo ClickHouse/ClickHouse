@@ -138,11 +138,8 @@ ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) ///
 
 bool ColumnDescription::operator==(const ColumnDescription & other) const
 {
-    /// The expressions are compared as ASTs (`sameAST`), not as formatted text, so a column
-    /// definition read back from stored metadata compares equal to the same definition written
-    /// by a server version with different formatting (e.g. `TTL (d + 1)` vs `TTL d + 1`).
-    /// Only explicit statistics are compared: implicit ones (and the auxiliary `data_type` of the
-    /// statistics description) exist only in memory and are not part of the stored definition.
+    /// Implicit statistics (and the auxiliary `data_type` of the statistics description) exist only
+    /// in memory and are not a part of the stored definition, so only explicit ones are compared.
     return name == other.name
         && type->equals(*other.type)
         && default_desc == other.default_desc

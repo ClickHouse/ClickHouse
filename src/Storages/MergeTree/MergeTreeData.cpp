@@ -10371,12 +10371,8 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (my_snapshot->getColumns().getAllPhysical().sizeOfDifference(src_snapshot->getColumns().getAllPhysical()))
         throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Tables have different structure");
 
-    /// The definitions are compared as ASTs (`sameAST`, i.e. by `getTreeHash`), not as formatted
-    /// text, so equal keys whose stored form differs only in formatting are interchangeable:
-    /// versions with #92340 keep the redundant parentheses the user wrote (`PARTITION BY (a)`),
-    /// while older versions store the canonical `PARTITION BY a`. `extractKeyExpressionList`
-    /// additionally unwraps the optional `tuple(...)`, so `a` and `tuple(a)` are the same key,
-    /// while an explicit direction (`b DESC`) stays significant.
+    /// Keys are compared as ASTs, so keys whose stored form differs only in formatting are
+    /// interchangeable. `extractKeyExpressionList` additionally unwraps the optional `tuple(...)`.
 
     if (!sameAST(*extractKeyExpressionList(my_snapshot->getSortingKeyAST()), *extractKeyExpressionList(src_snapshot->getSortingKeyAST())))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different ordering");

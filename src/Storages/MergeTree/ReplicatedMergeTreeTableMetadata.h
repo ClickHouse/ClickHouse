@@ -61,13 +61,11 @@ struct ReplicatedMergeTreeTableMetadata
     void write(WriteBuffer & out) const;
     String toString() const;
 
-    /// Serialization of a stored definition expression for Keeper in the canonical form: the
-    /// redundant parentheses the user wrote (kept in the AST since #92340) are stripped, because
-    /// an older replica compares this text against its own canonical form and would otherwise
-    /// reject an equal definition with `METADATA_MISMATCH`. Use these instead of formatting the
-    /// AST directly whenever a field of this structure is filled in.
+    /// Serialize a definition expression for Keeper in the canonical form an older replica stores
+    /// and compares this text against. Use these whenever a field of this structure is filled in,
+    /// instead of formatting the AST directly.
     /// `formatDefinition` also normalizes function names; `formatDefinitionList` (skip indices,
-    /// projections, constraints) intentionally does not — those were never normalized before.
+    /// projections, constraints) intentionally does not, as those were never normalized before.
     static String formatDefinition(const ASTPtr & ast);
     static String formatDefinitionList(const ASTs & definitions);
 
@@ -100,11 +98,9 @@ struct ReplicatedMergeTreeTableMetadata
         StorageInMemoryMetadata getNewMetadata(const ColumnsDescription & new_columns, const VirtualColumnsDescription & virtuals, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const;
     };
 
-    /// The comparisons below compare the serialized expression fields as ASTs (`sameAST`, i.e.
-    /// by `getTreeHash`), not as text: the stored form may have been written by a server version
-    /// whose formatting differs (e.g. versions with #92340 keep the redundant parentheses the
-    /// user wrote: `sorting key: (b)`). The fields are parsed purely syntactically and are not
-    /// resolved against any column set.
+    /// The comparisons below compare the serialized expression fields as ASTs, not as text, since
+    /// the stored form may have been written by a server version whose formatting differs. The
+    /// fields are parsed purely syntactically and are not resolved against any column set.
 
     bool checkEquals(
         const ReplicatedMergeTreeTableMetadata & from_zk,

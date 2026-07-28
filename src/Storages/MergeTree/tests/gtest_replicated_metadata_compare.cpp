@@ -12,13 +12,9 @@
 
 using namespace DB;
 
-/// The serialized expression fields of the replicated table metadata are compared as ASTs
-/// (`sameAST`, i.e. by `getTreeHash`), not as text. Metadata written by a version affected by
-/// #92340 keeps the redundant parentheses the user wrote (`sorting key: (b)`), while older
-/// versions store the canonical form without them; formatting may also change for unrelated
-/// aesthetic reasons. Equal definitions must compare equal in any stored form, and genuinely
-/// different definitions must still differ — including differences that live outside the AST
-/// children (index granularity, constraint type, TTL destination, projection clause roles).
+/// Equal definitions must compare equal in any stored form, and genuinely different definitions
+/// must still differ, including differences that live outside the AST children (index granularity,
+/// constraint type, TTL destination, projection clause roles).
 
 namespace
 {
@@ -64,7 +60,7 @@ ReplicatedMergeTreeTableMetadata makeMetadata(const MetadataFields & fields)
 /// The bugfix validation compiles this test against the merge-base sources, where
 /// `checkAndFindDiff` still takes a column set and a context to resolve the parsed
 /// expressions against. Dispatch on the available signature (from a template, so the
-/// discarded branch is not instantiated) — the test then builds against both sources
+/// discarded branch is not instantiated), so the test builds against both sources
 /// and demonstrates the bug at runtime instead of breaking the "before" build.
 template <typename Metadata>
 ReplicatedMergeTreeTableMetadata::Diff callCheckAndFindDiff(const Metadata & local, const Metadata & from_zk)

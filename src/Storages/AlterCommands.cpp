@@ -1288,10 +1288,8 @@ bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
     {
         if (!metadata.table_ttl.definition_ast)
             return true;
-        /// If TTL had not been changed, do not require mutations. The expressions are compared
-        /// as ASTs, so restating the same TTL in a differently formatted form (e.g. with the
-        /// redundant parentheses #92340 preserves: `TTL (d + 1)` vs `TTL d + 1`) does not
-        /// schedule an unnecessary `MATERIALIZE TTL` mutation.
+        /// If TTL had not been changed, do not require mutations. Compared as ASTs, so restating
+        /// the same TTL in a differently formatted form does not schedule a needless mutation.
         return !sameAST(metadata.table_ttl.definition_ast, ttl);
     }
 

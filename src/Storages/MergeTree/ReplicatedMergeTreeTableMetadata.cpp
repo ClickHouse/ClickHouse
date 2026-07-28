@@ -37,12 +37,8 @@ namespace ErrorCodes
     extern const int METADATA_MISMATCH;
 }
 
-/// User-written parentheses (e.g. `PRIMARY KEY (col)`, `TTL d + INTERVAL 10 YEAR GROUP BY (b)`,
-/// `PROJECTION p (WITH (b + 1) AS y SELECT (a) AS x)`) are syntactically meaningless in stored
-/// metadata: the `parenthesized` flag is purely cosmetic and does not participate in the tree
-/// hash. Strip it everywhere in the tree so the serialized form matches the canonical form older
-/// server versions store — they compare this text against their own canonical form and would
-/// otherwise reject an equal definition with `METADATA_MISMATCH`.
+/// Strip the purely cosmetic `parenthesized` flag everywhere in the tree, so that what is written
+/// to Keeper matches the canonical form an older replica stores and compares this text against.
 static void stripArtificialParens(IAST & ast)
 {
     ast.setParenthesized(false);
@@ -96,13 +92,10 @@ String ReplicatedMergeTreeTableMetadata::formatDefinitionList(const ASTs & defin
 namespace
 {
 
-/// The serialized metadata fields below are compared as ASTs (`sameAST`, i.e. by `getTreeHash`),
-/// not as text: a field in ZooKeeper may have been written by a server version whose formatting
-/// differs, e.g. versions with #92340 keep the redundant parentheses the user wrote
-/// (`sorting key: (b)`, `ttl: (d + 1)`), while older versions store the canonical form without
-/// them. The parsing here is purely syntactic — expressions are not resolved against table
-/// columns — so metadata belonging to a different column set (e.g. an `ALTER` log entry that adds
-/// a column and modifies the sorting key in one go) is compared safely.
+/// The serialized metadata fields below are compared as ASTs, not as text, because the field in
+/// ZooKeeper may have been written by a server version whose formatting differs.
+/// The parsing is purely syntactic (expressions are not resolved against table columns), so
+/// metadata belonging to a different column set is compared safely.
 
 ASTPtr parseForComparison(IParser & parser, const String & str)
 {

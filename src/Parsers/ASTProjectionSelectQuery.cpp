@@ -1,5 +1,6 @@
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
+#include <base/EnumReflection.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -54,7 +55,8 @@ void ASTProjectionSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ign
 {
     /// The children carry different roles (SELECT list, GROUP BY, ...) recorded only in `positions`.
     /// Without hashing the roles, `SELECT a GROUP BY b` and `SELECT a ORDER BY b` would hash equally.
-    for (auto expr : {Expression::WITH, Expression::SELECT, Expression::WHERE, Expression::GROUP_BY, Expression::ORDER_BY})
+    /// Iterate over all enumerators so that a newly added one is hashed without changing this code.
+    for (auto expr : magic_enum::enum_values<Expression>())
     {
         auto it = positions.find(expr);
         if (it != positions.end())
