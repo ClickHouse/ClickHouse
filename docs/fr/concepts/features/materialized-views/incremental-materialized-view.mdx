@@ -13,7 +13,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
   ## Contexte
 </div>
 
-Les vues matérialisées incrémentielles (vue matérialisée) permettent de transférer le coût du calcul du temps de requête vers le temps d&#39;insertion, ce qui accélère les requêtes `SELECT`.
+Les vues matérialisées incrémentales (vue matérialisée) permettent de transférer le coût du calcul du temps de requête vers le temps d&#39;insertion, ce qui accélère les requêtes `SELECT`.
 
 Contrairement aux bases de données transactionnelles comme Postgres, dans ClickHouse, une vue matérialisée n&#39;est qu&#39;un déclencheur qui exécute une requête sur des blocs de données au moment de leur insertion dans une table. Le résultat de cette requête est inséré dans une deuxième table « cible ». Si d&#39;autres lignes sont insérées, les résultats sont de nouveau envoyés vers la table cible, où les résultats intermédiaires sont mis à jour et fusionnés. Le résultat fusionné équivaut à l&#39;exécution de la requête sur l&#39;ensemble des données d&#39;origine.
 
@@ -1319,6 +1319,6 @@ WITH recent_users AS (
 SELECT * FROM stackoverflow.posts WHERE OwnerUserId IN (SELECT Id FROM recent_users)
 ```
 
-Dans ce cas, la CTE users est réévaluée à chaque insert dans posts, et la vue matérialisée ne se mettra pas à jour lorsque de nouveaux users sont insérés — seulement lorsque des posts le sont.
+Dans ce cas, la CTE `users` est réévaluée à chaque insertion dans `posts`, et la vue matérialisée ne se mettra pas à jour lorsque de nouvelles lignes sont insérées dans `users` — uniquement lorsqu’elles le sont dans `posts`.
 
-En règle générale, utilisez les CTE pour une logique qui s’applique à la même table source que celle à laquelle la vue matérialisée est rattachée, ou assurez-vous que les tables référencées sont de petite taille et peu susceptibles de créer des goulots d’étranglement en termes de performances. Vous pouvez aussi envisager [les mêmes optimisations que pour les JOIN avec des vues matérialisées](/fr/concepts/features/materialized-views/incremental-materialized-view#join-best-practices).
+De manière générale, utilisez les CTE pour une logique qui s’applique à la même table source à laquelle la vue matérialisée est attachée, ou assurez-vous que les tables référencées sont petites et peu susceptibles d’entraîner des goulots d’étranglement en matière de performances. Vous pouvez également envisager [les mêmes optimisations que pour les JOIN avec des vues matérialisées](/fr/concepts/features/materialized-views/incremental-materialized-view#join-best-practices).

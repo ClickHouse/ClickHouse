@@ -25,7 +25,7 @@ doc_type: 'reference'
 
 引入版本：v24.1.0
 
-使用 STL ([基于 Loess 的季节-趋势分解过程](https://www.wessa.net/download/stl.pdf)) 将时间序列数据分解为季节性、趋势和残差分量。
+使用 STL ([基于 Loess 的季节-趋势分解过程](https://www.math.unm.edu/~lil/Stat581/STL.pdf)) 将时间序列数据分解为季节性、趋势和残差分量。
 
 **语法**
 
@@ -51,26 +51,9 @@ SELECT seriesDecomposeSTL([10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 
 ```
 
 ```response title=Response
-┌───────────print_0──────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ [[
-        -13.529999, -3.1799996, 16.71,      -13.53,     -3.1799996, 16.71,      -13.53,     -3.1799996,
-        16.71,      -13.530001, -3.18,      16.710001,  -13.530001, -3.1800003, 16.710001,  -13.530001,
-        -3.1800003, 16.710001,  -13.530001, -3.1799994, 16.71,      -13.529999, -3.1799994, 16.709997
-    ],
-    [
-        23.63,     23.63,     23.630003, 23.630001, 23.630001, 23.630001, 23.630001, 23.630001,
-        23.630001, 23.630001, 23.630001, 23.63,     23.630001, 23.630001, 23.63,     23.630001,
-        23.630001, 23.63,     23.630001, 23.630001, 23.630001, 23.630001, 23.630001, 23.630003
-    ],
-    [
-        0, 0.0000019073486, -0.0000019073486, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.0000019073486, 0,
-        0
-    ],
-    [
-        10.1, 20.449999, 40.340004, 10.100001, 20.45, 40.34, 10.100001, 20.45, 40.34, 10.1, 20.45, 40.34,
-        10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.100002, 20.45, 40.34
-    ]]                                                                                                                   │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─print_0─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [[-13.529999,-3.1799996,16.71,-13.53,-3.1799996,16.71,-13.53,-3.1799996,16.71,-13.530001,-3.18,16.710001,-13.530001,-3.1800003,16.710001,-13.530001,-3.1800003,16.710001,-13.530001,-3.1799994,16.71,-13.529999,-3.1799994,16.709997],[23.63,23.63,23.630003,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.63,23.630001,23.630001,23.63,23.630001,23.630001,23.63,23.630001,23.630001,23.630001,23.630001,23.630001,23.630003],[0,0.0000019073486,-0.0000019073486,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.0000019073486,0,0],[10.1,20.449999,40.340004,10.100001,20.45,40.34,10.100001,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.100002,20.45,40.34]] │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="seriesOutliersDetectTukey">
@@ -184,6 +167,10 @@ SELECT seriesPeriodDetectFFT(arrayMap(x -> abs((x % 6) - 3), range(1000))) AS pr
 该函数模拟了 prometheus
 [group left/group right](https://prometheus.io/docs/prometheus/latest/querying/operators/#group-modifiers) 修饰符的复制逻辑。
 
+<Note>
+  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
+</Note>
+
 **语法**
 
 ```sql
@@ -229,6 +216,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 该函数模拟了 Prometheus
 [group left/group right](https://prometheus.io/docs/prometheus/latest/querying/operators/#group-modifiers) 修饰符的复制逻辑。
 
+<Note>
+  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
+</Note>
+
 **语法**
 
 ```sql
@@ -270,6 +261,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 
 从标签组中提取指定标签的值。若未找到，则返回 NULL。
 另请参见函数 [timeSeriesGroupToTags()](/zh/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags)。
+
+<Note>
+  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
+</Note>
 
 **语法**
 
@@ -360,6 +355,10 @@ SELECT timeSeriesFromGrid('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:0
 该值具有确定性：相同的输入标签始终会生成相同的键。
 它适合作为 `limitk` 和 `limit_ratio` 等采样运算符的排序键。
 
+<Note>
+  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
+</Note>
+
 **语法**
 
 ```sql
@@ -397,6 +396,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 
 返回与指定组关联的标签名称和值。
 另请参见函数 [timeSeriesTagsToGroup()](/zh/reference/functions/regular-functions/time-series-functions#timeSeriesTagsToGroup)。
+
+<Note>
+  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
+</Note>
 
 **语法**
 
@@ -442,6 +445,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 返回与指定时间序列标识符关联的标签名称和值。
 另请参见函数 [timeSeriesStoreTags()](/zh/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags)。
 
+<Note>
+  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
+</Note>
+
 **语法**
 
 ```sql
@@ -484,6 +491,10 @@ SELECT 8374283493092 AS id,
 
 返回与指定时间序列标识符相关联的标签。
 另请参见函数 [timeSeriesStoreTags()](/zh/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags)。
+
+<Note>
+  此函数是非确定性的：对于相同的参数，可能会返回不同的结果。
+</Note>
 
 **语法**
 
@@ -529,6 +540,10 @@ SELECT 8374283493092 AS id,
 其中标签 `dest_tag` 的值为拼接后的结果。
 该函数模拟了 Prometheus 函数
 [label&#95;join()](https://prometheus.io/docs/prometheus/latest/querying/functions/#label_join) 的逻辑。
+
+<Note>
+  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
+</Note>
 
 **语法**
 
@@ -615,6 +630,10 @@ SELECT timeSeriesRange('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:01:0
 另请参见函数 [timeSeriesRemoveTag()](/zh/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTag),
 [timeSeriesRemoveTags()](/zh/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTags)。
 
+<Note>
+  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
+</Note>
+
 **语法**
 
 ```sql
@@ -656,6 +675,10 @@ Introduced in：v26.1.0
 如果该组中不存在该标签，则原样返回该组。
 另请参见函数 [timeSeriesRemoveTags()](/zh/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTags)、
 [timeSeriesRemoveAllTagsExcept()](/zh/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveAllTagsExcept)。
+
+<Note>
+  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
+</Note>
 
 **Syntax**
 
@@ -703,6 +726,10 @@ Introduced in: v26.1.0
 另请参见函数 [timeSeriesRemoveTag()](/zh/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTag)、
 [timeSeriesRemoveAllTagsExcept()](/zh/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveAllTagsExcept)。
 
+<Note>
+  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
+</Note>
+
 **Syntax**
 
 ```sql
@@ -742,11 +769,15 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 
 Introduced in: v26.1.0
 
-将正则表达式 `regex` 与标签 `src_tag` 的值匹配。
+将正则表达式 `regex` 与标签 `src_tag` 的值进行匹配。
 如果匹配成功，返回组中标签 `dest_tag` 的值将为 `replacement` 的展开结果，
 同时保留输入中的原始标签。
 此函数模拟了 prometheus 函数
 [label&#95;replace()](https://prometheus.io/docs/prometheus/latest/querying/functions/#label_replace) 的逻辑。
+
+<Note>
+  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
+</Note>
 
 **Syntax**
 
@@ -839,6 +870,10 @@ Introduced in: v26.1.0
 对于空标签集，该函数始终返回 0。
 另请参见函数 [timeSeriesGroupToTags()](/zh/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags)。
 
+<Note>
+  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
+</Note>
+
 **语法**
 
 ```sql
@@ -886,6 +921,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 此函数与 [throwIf()](/zh/reference/functions/regular-functions/other-functions#throwIf) 类似，
 但使用了不同的错误代码，且错误消息的格式也不同。
 
+<Note>
+  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
+</Note>
+
 **语法**
 
 ```sql
@@ -913,17 +952,14 @@ INSERT INTO test VALUES ([('__name__', 'up')]);
 SELECT timeSeriesTagsToGroup(tags) AS group
 FROM test
 GROUP BY group
-HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- 正常
+HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- OK
 
 INSERT INTO test VALUES ([('__name__', 'up')]);
 
 SELECT timeSeriesTagsToGroup(tags) AS group
 FROM test
 GROUP BY group
-HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- 抛出异常 "Multiple series have the same tags {'__name__': 'up'}"
-```
-
-```response title=Response
+HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- Throws exception "Multiple series have the same tags {'__name__': 'up'}"
 ```
 
 {/*AUTOGENERATED_END*/}

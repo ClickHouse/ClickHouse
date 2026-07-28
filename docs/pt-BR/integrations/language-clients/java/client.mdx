@@ -22,7 +22,6 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
 
   * Maven Central (página do projeto na web): https://mvnrepository.com/artifact/com.clickhouse/client-v2
   * Builds noturnas (link do repositório): https://central.sonatype.com/repository/maven-snapshots/
-  * Artifactory das compilações Nightly antigas (link do repositório): https://s01.oss.sonatype.org/content/repositories/snapshots/
 
   <br />
 
@@ -426,7 +425,7 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
 
   ### insert(String tableName, InputStream data, ClickHouseFormat format)
 
-  Aceita dados como um `InputStream` de bytes no formato especificado. Espera-se que `data` esteja codificado no `format`.
+  Aceita dados como um `InputStream` de bytes no formato especificado. Espera-se que `data` esteja codificado em `format`.
 
   **Assinaturas**
 
@@ -675,7 +674,7 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
 
   | Método                                            | Descrição                                                                                                                                                              |
   | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | `setQueryId(String queryId)`                      | Define o ID da consulta que será atribuído à operação.                                                                                                                 |
+  | `setQueryId(String queryId)`                      | Define o ID da consulta a ser atribuído à operação.                                                                                                                    |
   | `setFormat(ClickHouseFormat format)`              | Define o formato da resposta. Consulte `RowBinaryWithNamesAndTypes` para ver a lista completa.                                                                         |
   | `setMaxExecutionTime(Integer maxExecutionTime)`   | Define o tempo de execução da operação no servidor. Não afeta o timeout de leitura.                                                                                    |
   | `waitEndOfQuery(Boolean waitEndOfQuery)`          | Solicita ao servidor que aguarde o término da consulta antes de enviar uma resposta.                                                                                   |
@@ -683,7 +682,7 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
   | `setUseTimeZone(String timeZone)`                 | Solicita ao servidor que use `timeZone` para a conversão de horário. Consulte [session&#95;timezone](/pt-BR/reference/settings/session-settings#session_timezone).           |
   | `serverSetting(String name, String value)`        | Define configurações individuais do servidor para uma operação.                                                                                                        |
   | `serverSetting(String name, Collection values)`   | Define configurações individuais do servidor com vários valores para uma operação. Os itens da coleção devem ser do tipo `String`.                                     |
-  | `setDBRoles(Collection dbRoles)`                  | Define os roles do DB a serem aplicados antes de executar uma operação. Os itens da coleção devem ser valores `String`.                                                |
+  | `setDBRoles(Collection dbRoles)`                  | Define os roles de DB a serem configurados antes da execução de uma operação. Os itens da coleção devem ser valores `String`.                                          |
   | `setOption(String option, Object value)`          | Define uma opção de configuração em formato bruto. Não se trata de uma configuração do servidor.                                                                       |
 
   ### QueryResponse
@@ -763,7 +762,7 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
 
   **Parâmetros**
 
-  `clazz` - Classe que representa o POJO usado para leitura/gravação de dados.
+  `clazz` - Classe que representa o POJO usado para ler/gravar dados.
 
   `schema` - Esquema de dados a ser usado para correspondência com propriedades POJO.
 
@@ -809,7 +808,7 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
   try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
       ClickHouseBinaryFormatReader reader = client.newBinaryFormatReader(response);
       while (reader.next() != null) {
-          
+
           Object[] uint64 = reader.getObjectArray("uint64_arr"); // Array(UInt64) -> BigInteger[]
           Object[] arr2d = reader.getObjectArray("arr2d");       // Array(Array(Int64)) -> Object[]
 

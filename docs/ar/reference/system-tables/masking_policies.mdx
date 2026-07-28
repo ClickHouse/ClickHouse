@@ -6,15 +6,13 @@ title: 'system.masking_policies'
 doc_type: 'مرجع'
 ---
 
-import CloudOnlyBadge from "/snippets/ar/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
-
-<CloudOnlyBadge />
-
 <div id="description">
   ## الوصف
 </div>
 
 تتضمن معلومات عن جميع سياسات الإخفاء المعرّفة في النظام.
+
+لا يمكن إنشاء سياسات الإخفاء وتطبيقها إلا في ClickHouse Cloud. في الإصدارات مفتوحة المصدر، يكون جدول `system.masking_policies` فارغًا دائمًا، لكنه يظل موجودًا حتى تعمل استعلامات الفحص مثل `SHOW MASKING POLICIES` وتُرجع نتيجة فارغة بدلًا من إثارة استثناء.
 
 <div id="columns">
   ## الأعمدة
