@@ -29,6 +29,8 @@
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
@@ -245,7 +247,8 @@ namespace
             auto external_table = DatabaseCatalog::instance().tryGetTable(context->tryResolveStorageID(external_table_id), context);
             if (!external_table)
                 throw Exception(ErrorCodes::UNKNOWN_TABLE, "TimeSeries: Target table {} doesn't exist", external_table_id.getNameForLogs());
-            return {external_table_id, external_table->getInMemoryMetadataPtr(context, false)->columns};
+            auto external_metadata = external_table->getInMemoryMetadataPtr(context, false);
+            return {external_table_id, external_metadata->columns};
         };
 
         auto [samples_id, samples_columns] = resolve_external(ViewTarget::Samples);
@@ -363,22 +366,22 @@ namespace
         auto new_list = make_intrusive<ASTExpressionList>();
         bool changed = false;
 
-        /// If `name` exists in `original`, move it to new_list (erasing from map) and return false.
-        /// Otherwise create a new column with `type_ast`, mark `changed`, and return true.
-        auto add_column_if_missing = [&](const String & name, ASTPtr type_ast) -> bool
+        /// If `name` exists in `original`, move it to new_list (erasing from map) and return nullptr.
+        /// Otherwise create a new column with `type_ast`, mark `changed`, and return the new declaration.
+        auto add_column_if_missing = [&](const String & name, ASTPtr type_ast) -> ASTColumnDeclaration *
         {
             if (auto it = original.find(name); it != original.end())
             {
                 new_list->children.push_back(it->second);
                 original.erase(it);
-                return false;
+                return nullptr;
             }
             auto decl = make_intrusive<ASTColumnDeclaration>();
             decl->name = name;
             decl->setType(std::move(type_ast));
             new_list->children.push_back(decl);
             changed = true;
-            return true;
+            return decl.get();
         };
 
         switch (inner_table_kind)
@@ -389,8 +392,22 @@ namespace
                 /// inner table because it depends on columns like "metric_name" or "all_tags" which don't
                 /// exist in samples.
                 add_column_if_missing(TimeSeriesColumnNames::ID, dataTypeToAST(resolved_types.id_type));
-                add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type));
-                add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.scalar_type));
+
+                /// Auto-created "timestamp" and "value" columns get time-series codecs: under generic LZ4
+                /// near-monotonic millisecond timestamps barely compress and dominate the table size
+                /// (>90% of on-disk bytes on a scrape-like corpus). All types accepted by the validation
+                /// above are compatible: DoubleDelta takes DateTime64/DateTime/UInt32, Gorilla takes
+                /// Float64/Float32. Explicitly declared columns keep whatever the user wrote.
+                auto make_codec = [](const char * codec_name)
+                {
+                    return makeASTFunction("CODEC",
+                        make_intrusive<ASTIdentifier>(codec_name),
+                        makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{1})));
+                };
+                if (auto * timestamp_decl = add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type)))
+                    timestamp_decl->setCodec(make_codec("DoubleDelta"));
+                if (auto * value_decl = add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.scalar_type)))
+                    value_decl->setCodec(make_codec("Gorilla"));
 
                 break;
             }
@@ -432,15 +449,11 @@ namespace
                 /// Column "all_tags" is ephemeral - only used to calculate the "id" column.
                 if (time_series_settings[TimeSeriesSetting::use_all_tags_column_to_generate_id])
                 {
-                    if (add_column_if_missing(TimeSeriesColumnNames::AllTags,
+                    if (auto * all_tags_decl = add_column_if_missing(TimeSeriesColumnNames::AllTags,
                         makeASTDataType("Map", makeASTDataType("String"), makeASTDataType("String"))))
                     {
-                        auto & column = new_list->children.back();
-                        column = column->clone();
-                        auto & new_decl = column->as<ASTColumnDeclaration &>();
-                        new_decl.default_specifier = ColumnDefaultSpecifier::Ephemeral;
-                        new_decl.ephemeral_default = true;
-                        changed = true;
+                        all_tags_decl->default_specifier = ColumnDefaultSpecifier::Ephemeral;
+                        all_tags_decl->ephemeral_default = true;
                     }
                 }
 
@@ -697,6 +710,35 @@ namespace
     }
 
 
+    /// The TimeSeries `tags` inner table keeps the tag columns (and the `tags`/`all_tags` Maps) outside
+    /// the sorting key, but they are functionally dependent on `id`, which is part of it: every group of
+    /// rows that a background merge collapses together shares the same `id`, hence the same values of
+    /// those columns, so this off-key layout is safe here. `AggregatingMergeTree` rejects such a layout
+    /// by default (see the `allow_dimensions_outside_sorting_key` setting and
+    /// https://github.com/ClickHouse/ClickHouse/issues/751), so enable that setting on the inner tags
+    /// engine — both when we generate it and when the user specifies an aggregating engine explicitly.
+    void allowOffKeyDimensionsForAggregatingTagsEngine(ASTStorage & storage)
+    {
+        if (!storage.engine || storage.engine->name.find("Aggregating") == std::string::npos)
+            return;
+
+        if (storage.settings)
+        {
+            /// Respect an explicit value if the user already set it.
+            for (const auto & change : storage.settings->changes)
+                if (change.name == "allow_dimensions_outside_sorting_key")
+                    return;
+        }
+        else
+        {
+            auto settings_ast = make_intrusive<ASTSetQuery>();
+            settings_ast->is_standalone = false;
+            storage.set(storage.settings, settings_ast);
+        }
+
+        storage.settings->changes.push_back(SettingChange{"allow_dimensions_outside_sorting_key", Field(static_cast<UInt64>(1))});
+    }
+
     /// Makes the definition of the default engine for an inner table.
     boost::intrusive_ptr<ASTStorage> generateInnerEngine(ViewTarget::Kind target_kind, const TimeSeriesSettings & settings)
     {
@@ -714,7 +756,8 @@ namespace
         }
         else if (target_kind == ViewTarget::Tags)
         {
-            std::string_view engine_name = settings[TimeSeriesSetting::aggregate_min_time_and_max_time]
+            const bool aggregate_min_time_and_max_time = settings[TimeSeriesSetting::aggregate_min_time_and_max_time];
+            std::string_view engine_name = aggregate_min_time_and_max_time
                 ? "AggregatingMergeTree"
                 : "ReplacingMergeTree";
             auto engine = makeASTFunction(engine_name);
@@ -726,7 +769,7 @@ namespace
             ASTs order_by_list;
             order_by_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
             order_by_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
-            if (settings[TimeSeriesSetting::store_min_time_and_max_time] && !settings[TimeSeriesSetting::aggregate_min_time_and_max_time])
+            if (settings[TimeSeriesSetting::store_min_time_and_max_time] && !aggregate_min_time_and_max_time)
             {
                 order_by_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime));
                 order_by_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MaxTime));
@@ -1034,6 +1077,12 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
 
                 if (!create_query.getTargetInnerEngine(kind))
                     create_query.setTargetInnerEngine(kind, generateInnerEngine(kind, settings));
+
+                if (kind == ViewTarget::Tags)
+                {
+                    if (auto * tags_engine = create_query.getTargetInnerEngine(kind))
+                        allowOffKeyDimensionsForAggregatingTagsEngine(*tags_engine);
+                }
             }
         }
     }

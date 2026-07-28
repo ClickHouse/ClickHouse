@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import pytest
-import logging
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster

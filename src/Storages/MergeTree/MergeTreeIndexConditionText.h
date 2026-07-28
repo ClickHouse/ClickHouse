@@ -27,6 +27,7 @@ enum class TextSearchMode : uint8_t
 {
     Any,
     All,
+    Phrase,
 };
 
 enum class TextIndexDirectReadMode : uint8_t
@@ -42,21 +43,45 @@ enum class TextIndexDirectReadMode : uint8_t
 /// Represents a single text-search function
 struct TextSearchQuery
 {
-    TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, VectorWithMemoryTracking<String> tokens_, std::vector<OptimizedRegularExpression> patterns_ = {});
+    TextSearchQuery(
+        String function_name_,
+        TextSearchMode search_mode_,
+        TextIndexDirectReadMode direct_read_mode_,
+        VectorWithMemoryTracking<String> tokens_,
+        std::vector<OptimizedRegularExpression> patterns_ = {},
+        VectorWithMemoryTracking<String> phrase_tokens_ = {});
 
+    const String & getFunctionName() const { return function_name; }
+    TextSearchMode getSearchMode() const { return search_mode; }
+    TextIndexDirectReadMode getDirectReadMode() const { return direct_read_mode; }
+    const VectorWithMemoryTracking<String> & getTokens() const { return tokens; }
+    const std::vector<OptimizedRegularExpression> & getPatterns() const { return patterns; }
+    const VectorWithMemoryTracking<String> & getPhraseTokens() const { return phrase_tokens; }
+    UInt128 getHash() const { return hash; }
+
+private:
+    void initializeHash();
+
+    /// Fields are immutable after construction, otherwise the precomputed hash becomes stale.
     String function_name;
     TextSearchMode search_mode;
     TextIndexDirectReadMode direct_read_mode;
+    /// Sorted in the constructor.
     VectorWithMemoryTracking<String> tokens;
     std::vector<OptimizedRegularExpression> patterns;
-
-    SipHash getHash() const;
+    /// Not sorted, not deduplicated.
+    VectorWithMemoryTracking<String> phrase_tokens;
+    /// Precomputed in the constructor because getHash is called on hot paths.
+    UInt128 hash{};
 };
 
 using TextSearchQueryPtr = std::shared_ptr<TextSearchQuery>;
 
 class MergeTreeIndexTextPreprocessor;
 using MergeTreeIndexTextPreprocessorPtr = std::shared_ptr<MergeTreeIndexTextPreprocessor>;
+
+class MergeTreeIndexTextPostprocessor;
+using MergeTreeIndexTextPostprocessorPtr = std::shared_ptr<MergeTreeIndexTextPostprocessor>;
 
 /// Condition for text index.
 /// Unlike conditions for other indexes, it can be used after analysis
@@ -69,7 +94,9 @@ public:
         ContextPtr context_,
         const Block & index_sample_block,
         TokenizerPtr tokenizer_,
-        MergeTreeIndexTextPreprocessorPtr preprocessor_);
+        MergeTreeIndexTextPreprocessorPtr preprocessor_,
+        MergeTreeIndexTextPostprocessorPtr postprocessor_,
+        bool has_positions_);
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
@@ -95,9 +122,11 @@ public:
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
     TextIndexPostingsCachePtr postingsCache() const { return postings_cache; }
     TokensCardinalitiesCachePtr cardinalitiesCache() const { return cardinalities_cache; }
+    bool useGlobalHeaderCache() const { return use_global_header_cache; }
 
     TokenizerPtr getTokenizer() const { return tokenizer; }
     MergeTreeIndexTextPreprocessorPtr getPreprocessor() const { return preprocessor; }
+    MergeTreeIndexTextPostprocessorPtr getPostprocessor() const { return postprocessor; }
 
 private:
     /// Uses RPN like KeyCondition
@@ -110,6 +139,7 @@ private:
             FUNCTION_HAS_ANY_ELEMENTS,
             FUNCTION_HAS_ANY_TOKENS,
             FUNCTION_HAS_ALL_TOKENS,
+            FUNCTION_HAS_PHRASE,
             FUNCTION_LIKE,
             /// Can take any value
             FUNCTION_UNKNOWN,
@@ -178,11 +208,19 @@ private:
     TextSearchMode global_search_mode = TextSearchMode::All;
     /// Reference preprocessor expression
     MergeTreeIndexTextPreprocessorPtr preprocessor;
+    bool has_preprocessor;
+    /// Reference postprocessor expression
+    MergeTreeIndexTextPostprocessorPtr postprocessor;
+    bool has_postprocessor;
+    /// Whether the index has position data for phrase queries.
+    bool has_positions = false;
     /// Cache for tokens and their infos (cardinality, etc.)
     TextIndexTokensCachePtr tokens_cache;
     /// Cache for headers of the text index
     TextIndexHeaderCachePtr header_cache;
-    /// Cache for posting lists of tokens.
+    /// Whether the global header cache is used or a local per-query one.
+    bool use_global_header_cache = false;
+    /// Cache for posting lists of tokens (and phrase-search results, keyed with the Phrase discriminator).
     TextIndexPostingsCachePtr postings_cache;
     /// Cache for tokens cardinalities
     TokensCardinalitiesCachePtr cardinalities_cache;

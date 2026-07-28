@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 Table function `remote` allows to access remote servers on-the-fly, i.e. without creating a [Distributed](../../engines/table-engines/special/distributed.md) table. Table function `remoteSecure` is same as `remote` but over a secure connection.
 
-Both functions can be used in `SELECT` and `INSERT` queries.
+Both functions can be used in `SELECT` and `INSERT` queries when the target is an ordinary `db`/`table`. When the target is itself a table function (for example `remote('127.0.0.1', numbers(10))`), the table is read-only: there is no remote table to insert into, so `INSERT` is rejected with a `NOT_IMPLEMENTED` exception.
 
 ## Syntax {#syntax}
 
@@ -35,7 +35,7 @@ remoteSecure(named_collection[, option=value [,..]])
 | `password`     | User password. If not specified, an empty password is used. Type: [String](../../sql-reference/data-types/string.md).                                                                                                                                                                                                                                             |
 | `sharding_key` | Sharding key to support distributing data across nodes. For example: `insert into remote('127.0.0.1:9000,127.0.0.2', db, table, 'default', rand())`. Type: [UInt32](../../sql-reference/data-types/int-uint.md).                                                                                                                                                 |
 
-Arguments also can be passed using [named collections](operations/named-collections.md).
+Arguments also can be passed using [named collections](/operations/named-collections.md).
 
 ## Returned value {#returned-value}
 
@@ -52,6 +52,8 @@ The `remote` table function can be useful in the following cases:
 - Queries between various ClickHouse clusters for research purposes.
 - Infrequent distributed requests that are made manually.
 - Distributed requests where the set of servers is re-defined each time.
+
+The same parameters can be used with the `Remote` and `RemoteSecure` table engines to create a persistent table instead of an ad-hoc one, see [Remote and RemoteSecure engines](../../engines/table-engines/special/distributed.md#distributed-remote-engines).
 
 ### Addresses {#addresses}
 
@@ -80,7 +82,7 @@ example01-01-1,example01-02-1
 SELECT * FROM remote('127.0.0.1', db.remote_engine_table) LIMIT 3;
 ```
 
-Or using [named collections](operations/named-collections.md):
+Or using [named collections](/operations/named-collections.md):
 
 ```sql
 CREATE NAMED COLLECTION creds AS

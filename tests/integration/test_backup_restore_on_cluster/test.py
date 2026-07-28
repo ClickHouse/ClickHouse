@@ -110,7 +110,7 @@ def test_replicated_table():
     )
 
     # Drop table on both nodes.
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     # Restore from backup on node2.
     node2.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
@@ -141,7 +141,7 @@ def test_empty_replicated_table():
     )
 
     # Drop table on both nodes.
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     # Restore from backup on node2.
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
@@ -365,6 +365,47 @@ def test_replicated_table_with_uuid_in_zkpath():
         )
 
 
+def test_replicated_table_restore_keeps_duplicate_parts():
+    try:
+        node1.query(
+            "CREATE TABLE tbl ON CLUSTER 'cluster' ("
+            "key UInt64, value String, array Array(String)"
+            ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/{uuid}', '{replica}')"
+            "ORDER BY tuple() SETTINGS replicated_deduplication_window = 0, "
+            "replicated_deduplication_window_for_async_inserts = 0"
+        )
+
+        node1.query("SYSTEM STOP MERGES ON CLUSTER 'cluster' tbl")
+
+        node1.query("INSERT INTO tbl VALUES (0, 'same', ['same'])")
+        node1.query("INSERT INTO tbl VALUES (0, 'same', ['same'])")
+        node1.query(
+            "ALTER TABLE tbl ON CLUSTER 'cluster' MODIFY SETTING "
+            "replicated_deduplication_window = 10000, "
+            "replicated_deduplication_window_for_async_inserts = 10000"
+        )
+
+        assert node1.query("SELECT count() FROM tbl") == "2\n"
+        assert (
+            node1.query("SELECT count() FROM system.parts WHERE table = 'tbl' AND active")
+            == "2\n"
+        )
+
+        backup_name = new_backup_name()
+        node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+
+        node2.query(f"RESTORE TABLE tbl AS tbl2 ON CLUSTER 'cluster' FROM {backup_name}")
+        node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl2")
+
+        expected = node1.query("SELECT count(), sum(sipHash64(*)) FROM tbl")
+        for instance in [node1, node2]:
+            assert instance.query("SELECT count() FROM tbl2") == "2\n"
+            assert instance.query("SELECT count(), sum(sipHash64(*)) FROM tbl2") == expected
+    finally:
+        node1.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' SYNC")
+        node1.query("DROP TABLE IF EXISTS tbl2 ON CLUSTER 'cluster' SYNC")
+
+
 def test_replicated_table_with_not_synced_insert():
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
@@ -385,7 +426,7 @@ def test_replicated_table_with_not_synced_insert():
     backup_name = new_backup_name()
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
@@ -415,7 +456,7 @@ def test_replicated_table_with_not_synced_merge():
     backup_name = new_backup_name()
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
@@ -587,7 +628,7 @@ def test_keeper_value_max_size():
         settings={"backup_restore_keeper_value_max_size": 50},
     )
 
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
@@ -701,7 +742,7 @@ def test_required_privileges():
     node1.query("GRANT BACKUP ON tbl TO u1")
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}", user="u1")
 
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     expected_error = "necessary to have the grant INSERT, CREATE TABLE ON default.tbl2"
     assert expected_error in node1.query_and_get_error(
@@ -716,7 +757,7 @@ def test_required_privileges():
 
     assert node2.query("SELECT * FROM tbl2") == "100\n"
 
-    node1.query(f"DROP TABLE tbl2 ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl2 ON CLUSTER 'cluster' SYNC")
     node1.query("REVOKE ALL FROM u1")
 
     expected_error = "necessary to have the grant INSERT, CREATE TABLE ON default.tbl"
@@ -830,10 +871,10 @@ def test_projection():
         "CREATE TABLE tbl ON CLUSTER 'cluster' (x UInt32, y String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}') "
         "ORDER BY y PARTITION BY x%10"
     )
-    node1.query(f"INSERT INTO tbl SELECT number, toString(number) FROM numbers(3)")
+    node1.query("INSERT INTO tbl SELECT number, toString(number) FROM numbers(3)")
 
     node1.query("ALTER TABLE tbl ADD PROJECTION prjmax (SELECT MAX(x))")
-    node1.query(f"INSERT INTO tbl VALUES (100, 'a'), (101, 'b')")
+    node1.query("INSERT INTO tbl VALUES (100, 'a'), (101, 'b')")
 
     assert (
         node1.query(
@@ -845,7 +886,7 @@ def test_projection():
     backup_name = new_backup_name()
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     assert (
         node1.query(
@@ -893,7 +934,7 @@ def test_file_deduplication():
 
     # Unique data.
     node1.query(
-        f"INSERT INTO tbl VALUES (3556), (1177), (4004), (4264), (3729), (1438), (2158), (2684), (415), (1917)"
+        "INSERT INTO tbl VALUES (3556), (1177), (4004), (4264), (3729), (1438), (2158), (2684), (415), (1917)"
     )
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl2")

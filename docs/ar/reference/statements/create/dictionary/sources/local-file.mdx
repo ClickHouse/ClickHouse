@@ -1,0 +1,45 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/local-file
+title: 'مصدر القاموس: ملف محلي'
+sidebarTitle: 'ملف محلي'
+description: 'تهيئة ملف محلي كمصدر للقاموس في ClickHouse.'
+doc_type: 'reference'
+---
+
+يحمّل مصدر الملف المحلي بيانات القاموس من ملف على نظام الملفات المحلي. ويكون ذلك مفيدًا لجداول البحث الصغيرة والثابتة التي يمكن تخزينها كملفات مسطحة بتنسيقات مثل TSV أو CSV أو أي [تنسيق مدعوم](/ar/reference/formats/index) آخر.
+
+مثال على الإعدادات:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
+    ```
+  </Tab>
+
+  <Tab title="ملف الإعدادات">
+    ```xml
+    <source>
+      <file>
+        <path>/opt/dictionaries/os.tsv</path>
+        <format>TabSeparated</format>
+      </file>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+حقول الإعدادات:
+
+| الإعداد  | الوصف                                                                               |
+| -------- | ----------------------------------------------------------------------------------- |
+| `path`   | المسار المطلق للملف.                                                                |
+| `format` | تنسيق الملف. جميع التنسيقات الموضّحة في [Formats](/ar/reference/formats/index) مدعومة. |
+
+عند إنشاء قاموس بمصدر `FILE` عبر أمر DDL (`CREATE DICTIONARY ...`)، يجب أن يكون ملف المصدر موجودًا في الدليل `user_files` لمنع مستخدمي قاعدة البيانات من الوصول إلى ملفات اعتباطية على عقدة ClickHouse.
+
+**انظر أيضًا**
+
+* [دالة القاموس](/ar/reference/functions/table-functions/dictionary)
