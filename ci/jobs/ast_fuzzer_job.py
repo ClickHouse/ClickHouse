@@ -637,6 +637,13 @@ def _early_abort_status(exc: Exception, sub_results):
     parser finding, and reporting that finding is the whole point of parsing every
     early abort; with no sub-result at all the status stays ERROR.
 
+    A parser NO-MATCH is not such a classification. The parser always yields a row
+    (UNKNOWN_ERROR / "Lost connection to server") and, with no marker to outrank it,
+    that row arrives here as a plain FAIL -- which would downgrade a genuine harness
+    fault to "the test failed" for the commonest early abort of all, one whose logs
+    say nothing attributable. ERROR is what praktika reserves for that, so only a
+    row the parser actually attributed may set the status.
+
     Every other exception is a fault of the file itself: malformed contents
     (ValueError), an unreadable file (PermissionError, i.e. the ownership repair
     did not cover it), undecodable bytes (UnicodeDecodeError).
@@ -648,7 +655,41 @@ def _early_abort_status(exc: Exception, sub_results):
     """
     if not sub_results or not isinstance(exc, FileNotFoundError):
         return Result.Status.ERROR
+    if all(_is_parser_no_match(r) for r in sub_results):
+        return Result.Status.ERROR
     return None
+
+
+def _early_abort_stopped_by_harness(marker_result, watchdog_result) -> bool:
+    """True when the harness had already stopped the server before the early abort.
+
+    Tells the parser whether a "Received signal 15" in the log is self-inflicted.
+    Three witnesses, all meaning "we got at least as far as stopping it": a
+    memory-stuck marker, a harness watchdog, or the shutdown record run-fuzzer.sh
+    writes immediately BEFORE the graceful stop (status.tsv is written only after,
+    so an abort in that window has no marker of its own).
+
+    False only for an abort BEFORE the shutdown phase -- a startup failure, where no
+    stop ever ran and a genuine server signal may be the only evidence there is.
+
+    Extracted so both polarities are testable: `run_fuzz_job` drives docker and
+    cannot run from the unit suite, and inlining this made an inverted witness test
+    pass everywhere.
+    """
+    return (
+        marker_result is not None
+        or watchdog_result is not None
+        or SERVER_STOPPING.exists()
+    )
+
+
+def _is_parser_no_match(result) -> bool:
+    """True for the parser's "found nothing attributable" row.
+
+    That row is a FAIL carrying UNKNOWN_ERROR, so it is indistinguishable from a
+    real finding by status alone; the name is what separates them.
+    """
+    return getattr(result, "name", None) == FuzzerLogParser.UNKNOWN_ERROR
 
 
 def _select_failure_result(
@@ -1168,13 +1209,8 @@ def run_fuzz_job(check_name: str):
         # "The harness had already stopped the server" is true for a classified run
         # (status.tsv is written after the graceful stop) AND for any run that got as
         # far as the shutdown phase, which run-fuzzer.sh records before stopping.
-        # Both must count: an abort in the window between the graceful stop and the
-        # status.tsv write leaves no marker, and without that witness our own
-        # "Received signal 15" would be reported as the failure.
-        stopped_by_harness = (
-            marker_result is not None
-            or watchdog_result is not None
-            or SERVER_STOPPING.exists()
+        stopped_by_harness = _early_abort_stopped_by_harness(
+            marker_result, watchdog_result
         )
         sub_results = [r for r in (marker_result, watchdog_result) if r is not None]
         selected = _parse_and_select_failure(

@@ -954,6 +954,40 @@ def test_early_abort_is_error_without_sub_results():
     )
 
 
+def test_early_abort_keeps_error_for_a_bare_parser_no_match():
+    # The missing status cell: a missing status.tsv with NO marker and NO genuine
+    # finding. The parser always yields a row, so this branch is not reached with an
+    # empty list -- _select_failure_result returns the UNKNOWN_ERROR row as a plain
+    # FAIL and Result.create_from(status=None, ...) would derive FAIL from it,
+    # relabelling the commonest early abort of all (nothing attributable in the
+    # logs) as "the test failed". ERROR is what praktika reserves for that.
+    no_match = _fail(FuzzerLogParser.UNKNOWN_ERROR)
+    assert (
+        job._early_abort_status(FileNotFoundError("status.tsv"), [no_match])
+        == Result.Status.ERROR
+    ), "a bare parser no-match must not set the top-level status"
+    assert (
+        Result.create_from(
+            name="job",
+            status=job._early_abort_status(FileNotFoundError("x"), [no_match]),
+            results=[no_match],
+        ).status
+        == Result.Status.ERROR
+    )
+    # Control, and the reason this is keyed on the NAME rather than the status: a
+    # genuine finding is the same FAIL status and must still set it.
+    real = _fail("Logical error: 'Bad cast'")
+    assert job._early_abort_status(FileNotFoundError("x"), [real]) is None
+    # And a no-match must not veto a classification standing beside it: the marker
+    # is authoritative, so the mixed list still derives from the sub-results.
+    assert (
+        job._early_abort_status(
+            FileNotFoundError("x"), [no_match, _fail(job.MEMORY_STUCK_NAME)]
+        )
+        is None
+    ), "a no-match alongside a marker must not suppress the marker's classification"
+
+
 def test_early_abort_status_is_wired_into_the_early_result():
     # Name-only wiring cannot see WHICH exception the decision uses, so pin the
     # call's arguments: passing anything but the caught exception and the
@@ -1779,6 +1813,45 @@ def test_early_abort_after_the_graceful_stop_keeps_our_sigterm_out(workspace):
     )
 
 
+def test_shutdown_witness_decides_both_ways(workspace):
+    # Drive the PRODUCTION decision helper, both polarities. The behavioral test
+    # above passes server_stopped_by_harness=True directly, so it cannot see the
+    # operand that computes it: inverting the witness to `not ... .exists()` passed
+    # all 140 tests in this file while suppressing startup signals and exposing our
+    # own shutdown SIGTERM -- precisely the two bugs, swapped.
+    assert job._early_abort_stopped_by_harness(None, None) is False, (
+        "with no witness at all the abort is a startup failure: claiming a harness "
+        "stop suppresses a genuine server signal"
+    )
+    (workspace / "server_stopping.txt").write_text("phase=shutdown\n", encoding="utf-8")
+    assert job._early_abort_stopped_by_harness(None, None) is True, (
+        "the shutdown witness must mark the stop as ours, or our own SIGTERM becomes "
+        "the failure row"
+    )
+    # A marker or watchdog is a witness on its own (status.tsv is written after the
+    # stop), independent of the file.
+    (workspace / "server_stopping.txt").unlink()
+    assert job._early_abort_stopped_by_harness(_fail(job.MEMORY_STUCK_NAME), None) is True
+    assert (
+        job._early_abort_stopped_by_harness(
+            None, _fail("Fuzzer harness watchdog fired", Result.Status.ERROR)
+        )
+        is True
+    )
+
+
+def test_teardown_block_creates_the_shutdown_witness():
+    # The Python side is useless if the runner never writes the file. Pin the actual
+    # creating statement in the extracted block, not just its name appearing there.
+    import re
+
+    block = _read_run_fuzzer_block("server teardown poll")
+    assert re.search(r"^\s*echo\s+.*>\s*server_stopping\.txt\s*$", block, re.MULTILINE), (
+        "the teardown block must CREATE server_stopping.txt; a mention alone leaves "
+        f"the post-stop window uncovered:\n{block[:400]}"
+    )
+
+
 def test_shutdown_witness_is_consulted_and_cleaned():
     # The witness only works if it is (a) read when deciding whether the stop was
     # ours and (b) cleaned pre-run like the markers -- a leftover from a previous
@@ -1787,7 +1860,15 @@ def test_shutdown_witness_is_consulted_and_cleaned():
         "the shutdown witness must be cleaned pre-run, or a stale one silences a "
         "real signal in the next run"
     )
-    assert "SERVER_STOPPING" in set(job.run_fuzz_job.__code__.co_names)
+    # The read now lives in _early_abort_stopped_by_harness (extracted so both
+    # polarities are testable), so follow it there: run_fuzz_job must still call
+    # the helper, and the helper must still be what consults the file.
+    assert "_early_abort_stopped_by_harness" in set(
+        job.run_fuzz_job.__code__.co_names
+    ), "run_fuzz_job no longer consults the shutdown witness helper"
+    assert "SERVER_STOPPING" in set(
+        job._early_abort_stopped_by_harness.__code__.co_names
+    ), "the witness helper no longer reads SERVER_STOPPING"
     # run-fuzzer.sh must write it BEFORE stopping the server, otherwise the very
     # window it exists to cover is still uncovered.
     block = _read_run_fuzzer_block("server teardown poll")
