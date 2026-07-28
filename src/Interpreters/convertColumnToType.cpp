@@ -68,8 +68,15 @@ std::optional<ColumnPtr> tryConvertNumericColumnNative(
 /// 'true'/'false' for a `Bool` field but '1'/'0' for a `UInt64` one), so re-tag `Bool` values in the
 /// reconstructed field - recursing through `Array`/`Tuple`/`Map` and unwrapping `Nullable`/
 /// `LowCardinality` - so the delegated `convertFieldToType` sees what it would for a genuine value of
-/// `from`. `Bool` is the only built-in type whose column `get` loses its `Field` tag (IPv4/IPv6/UUID/
-/// Decimal have dedicated columns and `Field` types); this is verified by `gtest_convert_column_to_type`.
+/// `from`. Verified by `gtest_convert_column_to_type`.
+///
+/// Not handled: `Bool` under `Variant` (and thus `Dynamic`/`JSON`). `ColumnVariant::get` erases the
+/// active alternative to the nested column's field, and for an ambiguous variant (e.g.
+/// `Variant(Bool, UInt8)`) the reconstructed `Field` no longer says which alternative was active, so it
+/// cannot be recovered structurally here - a `ColumnVariant`-aware path before `get` would be needed.
+/// See the header for why this is acceptable (no caller needs it; the legacy `Field` path has the same
+/// limitation). Other tag-sensitive types (IPv4/IPv6/UUID/Decimal) have dedicated columns/`Field` types
+/// and round-trip through `get` already.
 void retagBoolInField(Field & field, const DataTypePtr & type)
 {
     if (field.isNull())

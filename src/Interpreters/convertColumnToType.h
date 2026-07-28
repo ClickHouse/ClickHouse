@@ -23,11 +23,20 @@ namespace DB
   * `Field`-free). The behavior is pinned by `gtest_convert_column_to_type` against `convertFieldToType`,
   * so more column-native fast paths can be added without changing results.
   *
-  * The equivalence holds for all built-in types, including tag-sensitive conversions such as
-  * `Bool -> String`: `IColumn::get` does not round-trip the `Bool` `Field` tag (a `DataTypeBool`
+  * The equivalence holds for scalar `Bool` and for `Bool` nested under the structural carriers
+  * `Array`/`Tuple`/`Map` (and under `Nullable`/`LowCardinality`), including tag-sensitive conversions
+  * such as `Bool -> String`: `IColumn::get` does not round-trip the `Bool` `Field` tag (a `DataTypeBool`
   * column is a plain `ColumnUInt8`, so `get` yields `UInt64`), so the delegation path re-tags `Bool`
-  * values - recursing through `Array`/`Tuple`/`Map` - before calling `convertFieldToType`. `Bool` is
-  * the only built-in type that needs this; the differential test covers the tag-sensitive cases.
+  * values before calling `convertFieldToType`. The differential test pins these cases.
+  *
+  * Known limitation: `Bool` nested under `Variant` (and therefore `Dynamic`/`JSON`) is NOT faithful.
+  * `ColumnVariant::get` erases the active alternative to the nested column's field (e.g. `UInt64` for a
+  * `Bool` alternative), and for an ambiguous variant such as `Variant(Bool, UInt8)` the reconstructed
+  * `Field` no longer records which alternative was active, so it cannot be recovered structurally the
+  * way the carriers above can. Making it faithful would require a `ColumnVariant`-aware path before the
+  * generic `get`. No current caller needs `Variant`-of-`Bool` textual conversion; note that the legacy
+  * `Field` path (`convertFieldToType` on `(*column)[0]`) has the exact same limitation, so migrating a
+  * caller from it to this helper does not change that behavior.
   */
 ColumnPtr convertColumnToTypeOrNull(
     const IColumn & value,
