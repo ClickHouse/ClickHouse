@@ -996,7 +996,15 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
 
     settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation] = params.enable_producing_buckets_out_of_order_in_aggregation;
     settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge] = params.enable_parallel_single_level_merge;
-    settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = params.enable_packed_string_keys;
+
+    /// Written only when the legacy method is requested. `QueryPlanSerializationSettings` is a strict named schema:
+    /// `writeChangedBinary` writes every touched entry by name and `readBinary` throws on a name it does not know,
+    /// so writing this one unconditionally would make every serialized aggregation plan unreadable by a peer that
+    /// predates the setting - even for a query that does not group by `String`. Leaving it out keeps the receiver at
+    /// the default (the packed method), which is what the initiator asked for anyway, and a peer too old to know the
+    /// name fails closed on an explicit `false` instead of silently aggregating with the other method.
+    if (!params.enable_packed_string_keys)
+        settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = false;
 }
 
 void AggregatingStep::serialize(Serialization & ctx) const
