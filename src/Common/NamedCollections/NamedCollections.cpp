@@ -85,7 +85,7 @@ public:
     {
         Configuration::removeConfigValue(*config, key);
         [[maybe_unused]] auto removed = keys.erase(key);
-        assert(removed);
+        chassert(removed);
     }
 
     Keys getKeys(ssize_t depth, const std::string & prefix) const
@@ -260,6 +260,18 @@ bool NamedCollection::isOverridable(const Key & key, bool default_value) const
 {
     std::lock_guard lock(mutex);
     return pimpl->isOverridable(key, default_value);
+}
+
+void NamedCollection::markQueryOverridden(const Key & key)
+{
+    std::lock_guard lock(mutex);
+    query_overridden_keys.insert(key);
+}
+
+bool NamedCollection::isQueryOverridden(const Key & key) const
+{
+    std::lock_guard lock(mutex);
+    return query_overridden_keys.contains(key);
 }
 
 template <bool Locked> void NamedCollection::remove(const Key & key)

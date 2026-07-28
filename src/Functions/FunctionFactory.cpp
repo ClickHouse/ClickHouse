@@ -7,6 +7,7 @@
 
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Core/Settings.h>
 
 #include <Poco/String.h>
@@ -91,9 +92,9 @@ FunctionOverloadResolverPtr FunctionFactory::getImpl(
     return res;
 }
 
-std::vector<std::string> FunctionFactory::getAllNames() const
+Strings FunctionFactory::getAllNames() const
 {
-    std::vector<std::string> res;
+    Strings res;
     res.reserve(functions.size());
     for (const auto & func : functions)
         res.emplace_back(func.first);
@@ -122,16 +123,29 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
 {
     String name = getAliasToOrName(name_param);
     FunctionOverloadResolverPtr res;
+    const FunctionCreator * canonical_creator = nullptr;
 
     auto it = functions.find(name);
     if (functions.end() != it)
+    {
         res = it->second.first(context);
+        canonical_creator = &it->second.first;
+    }
     else
     {
         name = Poco::toLower(name);
         it = case_insensitive_functions.find(name);
         if (case_insensitive_functions.end() != it)
+        {
             res = it->second.first(context);
+            auto cn_it = case_insensitive_name_mapping.find(name);
+            if (cn_it != case_insensitive_name_mapping.end())
+            {
+                auto fn_it = functions.find(cn_it->second);
+                if (fn_it != functions.end())
+                    canonical_creator = &fn_it->second.first;
+            }
+        }
     }
 
     if (!res)
@@ -149,9 +163,15 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
         {
             it = functions.find(ToTimeWithFixedDateImpl::name);
             if (functions.end() != it)
+            {
                 res = it->second.first(context);
+                canonical_creator = &it->second.first;
+            }
         }
     }
+
+    if (canonical_creator)
+        res->setFactoryHandle(canonical_creator);
 
     return res;
 }

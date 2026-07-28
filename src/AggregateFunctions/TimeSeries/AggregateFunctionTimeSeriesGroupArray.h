@@ -358,7 +358,7 @@ public:
     {
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         data(place).merge(data(rhs), arena);
     }
@@ -379,7 +379,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        UInt16 format_version;
+        UInt16 format_version = 0;
         readBinaryLittleEndian(format_version, buf);
 
         if (format_version != FORMAT_VERSION)
@@ -389,7 +389,7 @@ public:
                 FORMAT_VERSION, format_version);
 
         Data & data = this->data(place);
-        size_t size;
+        size_t size = 0;
         readBinaryLittleEndian(size, buf);
 
         data.reserve(size, arena);

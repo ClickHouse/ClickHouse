@@ -57,15 +57,13 @@ Input table:
 
 Example of using a `Tuple`-type column as the `untuple` function parameter:
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT untuple(v6) FROM kv;
 ```
 
-Result:
 
-```text
+```text title="Response"
 ┌─_ut_1─┬─_ut_2─┐
 │    33 │ ab    │
 │    44 │ cd    │
@@ -77,15 +75,13 @@ Result:
 
 Example of using an `EXCEPT` expression:
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT untuple((* EXCEPT (v2, v3),)) FROM kv;
 ```
 
-Result:
 
-```text
+```text title="Response"
 ┌─key─┬─v1─┬─v4─┬─v5─┬─v6────────┐
 │   1 │ 10 │ 30 │ 15 │ (33,'ab') │
 │   2 │ 25 │ 40 │  6 │ (44,'cd') │

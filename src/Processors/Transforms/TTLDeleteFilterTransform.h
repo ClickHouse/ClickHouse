@@ -13,7 +13,7 @@ namespace DB
 /// Evaluates TTL delete expressions and produces a UInt8 filter column
 /// without actually filtering the block. The filter column is then used
 /// by the merging algorithm to set skip flags in row sources for vertical merge.
-class TTLDeleteFilterTransform : public ISimpleTransform
+class TTLDeleteFilterTransform final : public ISimpleTransform
 {
 public:
     static inline const String TTL_FILTER_COLUMN_NAME = "_ttl_filter";

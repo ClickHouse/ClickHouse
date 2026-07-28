@@ -14,6 +14,7 @@ namespace DB
 template <typename T>
 class ColumnVector;
 using ColumnUInt8 = ColumnVector<UInt8>;
+using ColumnUInt64 = ColumnVector<UInt64>;
 
 class IMergeTreeReader;
 class MergeTreeIndexGranularity;
@@ -42,6 +43,11 @@ struct PrewhereExprStep
     /// Some PREWHERE steps should be executed without conversions (e.g. early mutation steps)
     /// A step without alter conversion cannot be executed after step with alter conversions.
     bool perform_alter_conversions = false;
+
+    /// Columns the on-fly mutation chain will overwrite. They are exempt from
+    /// per-step alter conversion. See `MergeTreeReadersChain::executeActionsBeforePrewhere`
+    /// for usage. Empty when `perform_alter_conversions == true`.
+    NameSet columns_overwritten_by_chain;
 
     /// Version of mutation if step is a part of on-fly mutation.
     std::optional<UInt64> mutation_version;
@@ -128,17 +134,13 @@ class FilterWithCachedCount
     const IColumn::Filter * data = nullptr;
     mutable size_t cached_count_bytes = -1;
 
+    ColumnPtr sparse_indices_holder;
+    const ColumnUInt64 * sparse_indices = nullptr;
+
 public:
     explicit FilterWithCachedCount() = default;
 
-    explicit FilterWithCachedCount(const ColumnPtr & column_)
-        : const_description(*column_)
-    {
-        ColumnPtr col = column_->convertToFullIfNeeded();
-        FilterDescription desc(*col);
-        column = desc.data_holder ? desc.data_holder : col;
-        data = desc.data;
-    }
+    explicit FilterWithCachedCount(const ColumnPtr & column_);
 
     bool present() const { return !!column; }
 
@@ -149,12 +151,15 @@ public:
 
     const IColumn::Filter & getData() const { return *data; }
 
+    bool isSparse() const { return sparse_indices != nullptr; }
+    const ColumnUInt64 * getSparseIndices() const { return sparse_indices; }
+
     size_t size() const { return column->size(); }
 
     size_t countBytesInFilter() const
     {
         if (cached_count_bytes == size_t(-1))
-            cached_count_bytes = DB::countBytesInFilter(*data);
+            cached_count_bytes = sparse_indices ? sparse_indices->size() : DB::countBytesInFilter(*data);
         return cached_count_bytes;
     }
 };
@@ -291,6 +296,14 @@ public:
         /// The number of bytes read from disk.
         size_t numBytesRead() const { return num_bytes_read; }
 
+        /// Compute mark ranges for granules where all rows were filtered out by PREWHERE.
+        /// Provides fine-grained QueryConditionCache updates: captures individual filtered-out
+        /// granules even when other granules in the same batch pass the filter.
+        /// Safe to call only when use_query_condition_cache is enabled, because that flag
+        /// forces complete-granule reads (via ceilRowsToCompleteGranules), ensuring that
+        /// rows_per_granule[i] == 0 reliably means the full granule was read and filtered.
+        MarkRanges computeUnmatchedMarkRanges() const;
+
     private:
         friend class MergeTreeRangeReader;
         friend class MergeTreeReadersChain;
@@ -367,6 +380,13 @@ public:
         /// Used to compute _part_offset and align continueReadingChain streams accordingly.
         RangesInfo started_ranges;
 
+        /// When startReadingChain begins with an unfinished stream (a continued read), this holds
+        /// the stream's current mark at that point. The first
+        /// started_ranges[0].num_granules_read_before_start entries in rows_per_granule come
+        /// from that in-progress range; their marks are in_progress_start_mark + i. Set only
+        /// when the stream was unfinished at entry; absent when the stream was already done.
+        std::optional<size_t> in_progress_start_mark;
+
         /// Number of rows intended to be read per granule during the reading chain.
         ///
         /// Filled in `startReadingChain` based on initial granule layout and expected row counts.
@@ -424,6 +444,7 @@ public:
         /// Builds updated filter by cutting zeros in granules tails
         void collapseZeroTails(const IColumn::Filter & filter, const NumRows & rows_per_granule_previous, IColumn::Filter & new_filter) const;
         size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails, bool can_read_incomplete_granules_) const;
+        size_t countZeroTailsFromSparse(const ColumnUInt64 & sparse_indices, NumRows & zero_tails, bool can_read_incomplete_granules_) const;
         static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end);
 
         LoggerPtr log;
@@ -455,7 +476,7 @@ private:
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
-    const PrewhereExprStep * prewhere_info;
+    const PrewhereExprStep * prewhere_info{};
 
     Stream stream;
 

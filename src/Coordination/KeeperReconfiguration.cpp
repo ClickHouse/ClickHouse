@@ -52,7 +52,7 @@ ClusterUpdateActions leavingToClusterUpdates(const ClusterConfigPtr & cfg, std::
 
     for (std::string_view leaving_server : leaving_arr)
     {
-        int32_t id;
+        int32_t id = 0;
         if (!tryParse(id, leaving_server))
             return {};
 

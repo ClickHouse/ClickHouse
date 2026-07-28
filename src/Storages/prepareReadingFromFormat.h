@@ -13,6 +13,8 @@ namespace DB
     struct FilterDAGInfo;
     using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
 
+    class ActionsDAG;
+
     struct ReadFromFormatInfo
     {
         /// Header that will return Source from storage.
@@ -46,13 +48,29 @@ namespace DB
         FilterDAGInfoPtr row_level_filter;
     };
 
+    /// Inputs reachable by storage-level pushdown consumers. Pass to splitFilterDagForAllowedInputs to drop IN-subqueries which can't be used.
+    Block buildAllowedFilterInputs(
+        const StorageSnapshotPtr & storage_snapshot,
+        const Block & source_header,
+        const PrewhereInfoPtr & prewhere_info,
+        const FilterDAGInfoPtr & row_level_filter);
+
+    /// Eagerly materialise IN-subquery sets that a format-level KeyCondition can consume.
+    void prepareEagerKeyConditionSets(
+        const std::shared_ptr<const ActionsDAG> & filter_actions_dag,
+        const StorageSnapshotPtr & storage_snapshot,
+        const Block & source_header,
+        const PrewhereInfoPtr & prewhere_info,
+        const FilterDAGInfoPtr & row_level_filter,
+        const ContextPtr & context);
+
     struct PrepareReadingFromFormatHiveParams
     {
         /// Columns which exist inside data file.
         NamesAndTypesList file_columns;
         /// Columns which are read from path to data file.
         /// (Hive partition columns).
-        std::unordered_map<std::string, DataTypePtr> hive_partition_columns_to_read_from_file_path_map;
+        UnorderedMapWithMemoryTracking<std::string, DataTypePtr> hive_partition_columns_to_read_from_file_path_map;
     };
 
     /// Get all needed information for reading from data in some input format.
@@ -81,4 +99,10 @@ namespace DB
 
     /// Returns the serialization hints from the insertion table (if it's set in the Context).
     SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context);
+
+    /// Clamp the user-controlled max_streams_for_files_processing_in_cluster_functions setting to the
+    /// same ceiling max_threads gets. The value flows into both num_streams and max_num_streams of the
+    /// *Cluster read steps and drives pipes.reserve()/pipe.resize(); unbounded it can overflow the pipe
+    /// vector (std::length_error) or exhaust memory.
+    size_t clampClusterFunctionNumStreams(UInt64 num_streams);
 }

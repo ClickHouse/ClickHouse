@@ -46,6 +46,10 @@ target_include_directories(_ch_wasmtime SYSTEM INTERFACE ${WASMTIME_HEADER_DST})
 configure_file("${WASMTIME_HEADER_SRC}/wasmtime/conf.h.in" "${WASMTIME_HEADER_DST}/wasmtime/conf.h" NEWLINE_STYLE CRLF)
 file(COPY "${WASMTIME_HEADER_SRC}/" DESTINATION "${WASMTIME_HEADER_DST}" FILES_MATCHING REGEX "\\.hh?$")
 
+# Set IMPORTED_LOCATION before calling config_crate_flags so the localize
+# step finds the .a at the correct path (workspace root, not this subdir).
+set_target_properties(_ch_rust_wasmtime PROPERTIES
+    IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/../lib_ch_rust_wasmtime.a")
 clickhouse_config_crate_flags(_ch_rust_wasmtime)
 
 target_link_libraries(_ch_wasmtime INTERFACE _ch_rust_wasmtime)

@@ -14,6 +14,7 @@ namespace MySQLSetting
     extern const MySQLSettingsUInt64 connection_wait_timeout;
     extern const MySQLSettingsUInt64 connect_timeout;
     extern const MySQLSettingsUInt64 read_write_timeout;
+    extern const MySQLSettingsBool enable_compression;
 }
 
 namespace ErrorCodes
@@ -50,7 +51,9 @@ mysqlxx::PoolWithFailover createMySQLPoolWithFailover(
         mysql_settings[MySQLSetting::connection_max_tries],
         mysql_settings[MySQLSetting::connection_wait_timeout],
         mysql_settings[MySQLSetting::connect_timeout],
-        mysql_settings[MySQLSetting::read_write_timeout]);
+        mysql_settings[MySQLSetting::read_write_timeout],
+        false,
+        mysql_settings[MySQLSetting::enable_compression]);
 }
 
 }

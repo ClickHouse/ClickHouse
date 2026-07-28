@@ -28,7 +28,7 @@ template <
     NullSafeCmpMode cmp_mode,                                   // Null-safe mode (Equal or NotEqual)
     template <typename, typename > class CompareOp,             // EqualsOp / NotEqualsOp
     typename CompareName>                                       // NameEquals / NameNotEquals
-class FunctionsNullSafeCmp : public IFunction
+class FunctionsNullSafeCmp final : public IFunction
 {
 private:
     const ComparisonParams params;

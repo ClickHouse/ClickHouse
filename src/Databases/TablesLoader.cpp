@@ -57,11 +57,10 @@ LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
     for (auto & database_name : databases_to_load)
     {
         databases[database_name]->beforeLoadingMetadata(global_context, strictness_mode);
-        bool is_startup = LoadingStrictnessLevel::FORCE_ATTACH <= strictness_mode;
-        databases[database_name]->loadTablesMetadata(global_context, metadata, is_startup);
+        databases[database_name]->loadTablesMetadata(global_context, metadata, isLoadingFromExistingMetadata(strictness_mode));
     }
 
-    LOG_INFO(log, "Parsed metadata of {} tables in {} databases in {} sec",
+    LOG_INFO(log, "Parsed metadata of {} tables in {} databases in {:.3f} sec",
              metadata.parsed_tables.size(), databases_to_load.size(), stopwatch.elapsedSeconds());
 
     stopwatch.restart();
@@ -229,8 +228,8 @@ void TablesLoader::removeUnresolvableDependencies()
                 table_id);
         }
 
-        size_t num_dependencies;
-        size_t num_dependents;
+        size_t num_dependencies = 0;
+        size_t num_dependents = 0;
         all_loading_dependencies.getNumberOfAdjacents(table_id, num_dependencies, num_dependents);
         if (num_dependencies || !num_dependents)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} does not have dependencies and dependent tables as it expected to."

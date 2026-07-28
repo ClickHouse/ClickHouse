@@ -49,6 +49,15 @@ body:
       required: false
   - type: textarea
     attributes:
+      label: Related issues and pull requests
+      description: |
+        Use full GitHub URLs, one relationship per line.
+        * If a pull request caused this (a regression): `Caused by: <full pull request URL>`
+        * For any related issue or pull request: `Related: <full URL>`
+    validations:
+      required: false
+  - type: textarea
+    attributes:
       label: Additional context
       description: Add any other context about the problem here.
     validations:

@@ -1,0 +1,32 @@
+---
+title: Establecer un límite para el tiempo de ejecución de una consulta
+description: "Cómo establecer un límite para el tiempo máximo de ejecución de una consulta"
+date: 2022-07-10
+tags: ['Gestión de Cloud', 'Configuración']
+---
+
+<div id="question">
+  ## Pregunta
+</div>
+
+¿Cómo establezco un límite de tiempo para mis consultas?
+
+<div id="answer">
+  ## Respuesta
+</div>
+
+Puedes usar el ajuste `max_execution_time`:
+
+```sql
+clickhouse-cloud :) SELECT 1 SETTINGS max_execution_time=0.0001
+
+SELECT 1
+SETTINGS max_execution_time = 0.0001
+
+Query id: 3db752a7-b94f-4456-b3b9-ccbf290d1394
+
+0 rows in set. Elapsed: 0.113 sec.
+
+Received exception from server (version 23.5.1):
+Code: 159. DB::Exception: Received from service.aws.clickhouse.cloud:9440. DB::Exception: Timeout exceeded: elapsed 0.000557862 seconds, maximum: 0.0001. (TIMEOUT_EXCEEDED)
+```

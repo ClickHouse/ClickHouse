@@ -7,8 +7,6 @@ title: 'Users and roles settings'
 doc_type: 'reference'
 ---
 
-# Users and roles settings
-
 The `users` section of the `users.xml` configuration file contains user settings.
 
 :::note

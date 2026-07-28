@@ -1,0 +1,89 @@
+---
+description: '같은 이름으로 그룹화된 설정 모음입니다.'
+sidebarTitle: '설정 프로필'
+slug: /operations/settings/settings-profiles
+title: '설정 프로필'
+doc_type: 'reference'
+---
+
+설정 프로필은 같은 이름으로 그룹화된 설정 모음입니다.
+
+<Note>
+  ClickHouse는 설정 프로필을 관리하기 위한 [SQL 기반 워크플로](/ko/concepts/features/security/access-rights#access-control-usage)도 지원합니다. 이 방법을 사용하는 것을 권장합니다.
+</Note>
+
+프로필에는 어떤 이름이든 지정할 수 있습니다. 서로 다른 사용자에게 같은 프로필을 지정할 수 있습니다. 설정 프로필에 지정할 수 있는 가장 중요한 항목은 `readonly=1`이며, 이를 통해 읽기 전용 액세스가 보장됩니다.
+
+설정 프로필은 서로 상속할 수 있습니다. 상속을 사용하려면 프로필에 나열된 다른 설정보다 앞에 하나 이상의 `profile` 설정을 지정하십시오. 동일한 설정이 서로 다른 프로필에 정의된 경우에는 가장 나중에 정의된 값이 사용됩니다.
+
+프로필의 모든 설정을 적용하려면 `profile` 설정을 지정하십시오.
+
+예시:
+
+`web` 프로필을 설치합니다.
+
+```sql
+SET profile = 'web'
+```
+
+설정 프로필은 사용자 구성 파일에 정의합니다. 일반적으로 `users.xml` 파일입니다.
+
+예시:
+
+```xml
+<!-- 설정 프로필 -->
+<profiles>
+    <!-- 기본 설정 -->
+    <default>
+        <!-- 단일 쿼리 실행 시 최대 스레드 수 -->
+        <max_threads>8</max_threads>
+    </default>
+
+    <!-- 백그라운드 작업 설정 -->
+    <background>
+        <!-- 백그라운드 작업의 최대 스레드 수 재정의 -->
+        <max_threads>12</max_threads>
+    </background>
+
+    <!-- 사용자 인터페이스에서 실행하는 쿼리에 대한 설정 -->
+    <web>
+        <max_rows_to_read>1000000000</max_rows_to_read>
+        <max_bytes_to_read>100000000000</max_bytes_to_read>
+
+        <max_rows_to_group_by>1000000</max_rows_to_group_by>
+        <group_by_overflow_mode>any</group_by_overflow_mode>
+
+        <max_rows_to_sort>1000000</max_rows_to_sort>
+        <max_bytes_to_sort>1000000000</max_bytes_to_sort>
+
+        <max_result_rows>100000</max_result_rows>
+        <max_result_bytes>100000000</max_result_bytes>
+        <result_overflow_mode>break</result_overflow_mode>
+
+        <max_execution_time>600</max_execution_time>
+        <min_execution_speed>1000000</min_execution_speed>
+        <timeout_before_checking_execution_speed>15</timeout_before_checking_execution_speed>
+
+        <max_columns_to_read>25</max_columns_to_read>
+        <max_temporary_columns>100</max_temporary_columns>
+        <max_temporary_non_const_columns>50</max_temporary_non_const_columns>
+
+        <max_subquery_depth>2</max_subquery_depth>
+        <max_pipeline_depth>25</max_pipeline_depth>
+        <max_ast_depth>50</max_ast_depth>
+        <max_ast_elements>100</max_ast_elements>
+
+        <max_sessions_for_user>4</max_sessions_for_user>
+
+        <readonly>1</readonly>
+    </web>
+</profiles>
+```
+
+이 예시에서는 두 개의 프로필 `default`와 `web`를 지정합니다.
+
+`default` 프로필은 특별한 용도로 사용됩니다. 이 프로필은 항상 있어야 하며 서버 시작 시 적용됩니다. 즉, `default` 프로필에는 기본 설정이 들어 있습니다. 기본 프로필의 이름은 `default_profile` 서버 설정을 통해 변경할 수 있습니다.
+
+`background` 프로필도 특별한 용도로 사용됩니다. 백그라운드 작업의 설정을 재정의하기 위해 사용할 수 있습니다. 이 매개변수는 선택 사항이며, 이름은 `background_profile` 서버 설정을 통해 변경할 수 있습니다.
+
+`web` 프로필은 일반 프로필이며, `SET` 쿼리 또는 HTTP 쿼리의 URL 매개변수를 사용해 설정할 수 있습니다.

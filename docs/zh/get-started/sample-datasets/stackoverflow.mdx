@@ -1,0 +1,450 @@
+---
+description: '使用 ClickHouse 分析 Stack Overflow 数据'
+sidebarTitle: 'Stack Overflow'
+slug: /getting-started/example-datasets/stackoverflow
+title: '使用 ClickHouse 分析 Stack Overflow 数据'
+keywords: ['StackOverflow']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+此数据集包含 Stack Overflow 上的所有 `Posts`、`Users`、`Votes`、`Comments`、`Badges`、`PostHistory` 和 `PostLinks` 数据。
+
+您既可以下载预先准备好的 Parquet 版本数据，其中包含截至 2024 年 4 月的全部数据，也可以下载 XML 格式的最新数据并将其加载。Stack Overflow 会定期更新这些数据——历史上通常每 3 个月更新一次。
+
+下图展示了 Parquet 格式下可用表的 schema。
+
+<Image img="/images/getting-started/example-datasets/stackoverflow.webp" alt="Stack Overflow schema" size="md" />
+
+有关这些数据的 schema 说明，请参见[此处](https://meta.stackexchange.com/questions/2677/database-schema-documentation-for-the-public-data-dump-and-sede)。
+
+<div id="pre-prepared-data">
+  ## 预先准备好的数据
+</div>
+
+我们提供了这份数据的 Parquet 格式副本，数据更新至 2024 年 4 月。对于 ClickHouse 来说，按行数看 (6000 万条 posts) ，这个数据集并不算大，但其中包含大量文本以及较大的 String 列。
+
+```sql
+CREATE DATABASE stackoverflow
+```
+
+以下耗时针对位于 `eu-west-2` 的 96 GiB、24 vCPU ClickHouse Cloud 集群。数据集位于 `eu-west-3`。
+
+<div id="posts">
+  ### Posts
+</div>
+
+```sql
+CREATE TABLE stackoverflow.posts
+(
+    `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+    `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+    `AcceptedAnswerId` UInt32,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `Score` Int32,
+    `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+    `Body` String,
+    `OwnerUserId` Int32,
+    `OwnerDisplayName` String,
+    `LastEditorUserId` Int32,
+    `LastEditorDisplayName` String,
+    `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+    `LastActivityDate` DateTime64(3, 'UTC'),
+    `Title` String,
+    `Tags` String,
+    `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+    `CommentCount` UInt8,
+    `FavoriteCount` UInt8,
+    `ContentLicense` LowCardinality(String),
+    `ParentId` String,
+    `CommunityOwnedDate` DateTime64(3, 'UTC'),
+    `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate)
+
+INSERT INTO stackoverflow.posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 265.466 sec. Processed 59.82 million rows, 38.07 GB (225.34 thousand rows/s., 143.42 MB/s.)
+```
+
+Posts 也可按年份获取，例如 [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2020.parquet)
+
+<div id="votes">
+  ### Votes
+</div>
+
+```sql
+CREATE TABLE stackoverflow.votes
+(
+    `Id` UInt32,
+    `PostId` Int32,
+    `VoteTypeId` UInt8,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `UserId` Int32,
+    `BountyAmount` UInt8
+)
+ENGINE = MergeTree
+ORDER BY (VoteTypeId, CreationDate, PostId, UserId)
+
+INSERT INTO stackoverflow.votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 21.605 sec. Processed 238.98 million rows, 2.13 GB (11.06 million rows/s., 98.46 MB/s.)
+```
+
+Votes 也提供按年份划分的版本，例如 [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/2020.parquet)
+
+<div id="comments">
+  ### Comments
+</div>
+
+```sql
+CREATE TABLE stackoverflow.comments
+(
+    `Id` UInt32,
+    `PostId` UInt32,
+    `Score` UInt16,
+    `Text` String,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `UserId` Int32,
+    `UserDisplayName` LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY CreationDate
+
+INSERT INTO stackoverflow.comments SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 56.593 sec. Processed 90.38 million rows, 11.14 GB (1.60 million rows/s., 196.78 MB/s.)
+```
+
+Comments 也按年份提供，例如 [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/2020.parquet)
+
+<div id="users">
+  ### Users
+</div>
+
+```sql
+CREATE TABLE stackoverflow.users
+(
+    `Id` Int32,
+    `Reputation` LowCardinality(String),
+    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+    `DisplayName` String,
+    `LastAccessDate` DateTime64(3, 'UTC'),
+    `AboutMe` String,
+    `Views` UInt32,
+    `UpVotes` UInt32,
+    `DownVotes` UInt32,
+    `WebsiteUrl` String,
+    `Location` LowCardinality(String),
+    `AccountId` Int32
+)
+ENGINE = MergeTree
+ORDER BY (Id, CreationDate)
+
+INSERT INTO stackoverflow.users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 10.988 sec. Processed 22.48 million rows, 1.36 GB (2.05 million rows/s., 124.10 MB/s.)
+```
+
+<div id="badges">
+  ### Badges
+</div>
+
+```sql
+CREATE TABLE stackoverflow.badges
+(
+    `Id` UInt32,
+    `UserId` Int32,
+    `Name` LowCardinality(String),
+    `Date` DateTime64(3, 'UTC'),
+    `Class` Enum8('Gold' = 1, 'Silver' = 2, 'Bronze' = 3),
+    `TagBased` Bool
+)
+ENGINE = MergeTree
+ORDER BY UserId
+
+INSERT INTO stackoverflow.badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 6.635 sec. Processed 51.29 million rows, 797.05 MB (7.73 million rows/s., 120.13 MB/s.)
+```
+
+<div id="postlinks">
+  ### PostLinks
+</div>
+
+```sql
+CREATE TABLE stackoverflow.postlinks
+(
+    `Id` UInt64,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `PostId` Int32,
+    `RelatedPostId` Int32,
+    `LinkTypeId` Enum8('Linked' = 1, 'Duplicate' = 3)
+)
+ENGINE = MergeTree
+ORDER BY (PostId, RelatedPostId)
+
+INSERT INTO stackoverflow.postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 1.534 sec. Processed 6.55 million rows, 129.70 MB (4.27 million rows/s., 84.57 MB/s.)
+```
+
+<div id="posthistory">
+  ### PostHistory
+</div>
+
+```sql
+CREATE TABLE stackoverflow.posthistory
+(
+    `Id` UInt64,
+    `PostHistoryTypeId` UInt8,
+    `PostId` Int32,
+    `RevisionGUID` String,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `UserId` Int32,
+    `Text` String,
+    `ContentLicense` LowCardinality(String),
+    `Comment` String,
+    `UserDisplayName` String
+)
+ENGINE = MergeTree
+ORDER BY (CreationDate, PostId)
+
+INSERT INTO stackoverflow.posthistory SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posthistory/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 422.795 sec. Processed 160.79 million rows, 67.08 GB (380.30 thousand rows/s., 158.67 MB/s.)
+```
+
+<div id="original-dataset">
+  ## 原始数据集
+</div>
+
+原始数据集可在 [https://archive.org/download/stackexchange](https://archive.org/download/stackexchange) 下载，格式为压缩的 (7zip) XML；文件名前缀为 `stackoverflow.com*`。
+
+<div id="download">
+  ### 下载
+</div>
+
+```bash
+wget https://archive.org/download/stackexchange/stackoverflow.com-Badges.7z
+wget https://archive.org/download/stackexchange/stackoverflow.com-Comments.7z
+wget https://archive.org/download/stackexchange/stackoverflow.com-PostHistory.7z
+wget https://archive.org/download/stackexchange/stackoverflow.com-PostLinks.7z
+wget https://archive.org/download/stackexchange/stackoverflow.com-Posts.7z
+wget https://archive.org/download/stackexchange/stackoverflow.com-Users.7z
+wget https://archive.org/download/stackexchange/stackoverflow.com-Votes.7z
+```
+
+这些文件最大可达 35GB，下载大约需要 30 分钟，具体取决于网络连接情况——下载服务器会将速度限制在约 20MB/秒。
+
+<div id="convert-to-json">
+  ### 转换为 JSON
+</div>
+
+在撰写本文时，ClickHouse 尚不原生支持将 XML 用作输入格式。要将数据加载到 ClickHouse 中，首先需要将其转换为 NDJSON。
+
+我们建议使用 [`xq`](https://github.com/kislyuk/yq) 这个 Linux 工具将 XML 转换为 JSON，它是针对 XML 文档的简单 `jq` 封装。
+
+安装 xq 和 jq：
+
+```bash
+sudo apt install jq
+pip install yq
+```
+
+以下步骤适用于上述任一文件。这里以 `stackoverflow.com-Posts.7z` 文件为例，可按需调整。
+
+使用 [p7zip](https://p7zip.sourceforge.net/) 解压该文件。解压后会得到一个 XML 文件，本例中为 `Posts.xml`。
+
+> 这些文件的压缩比约为 4.5 倍。`Posts` 文件压缩后为 22GB，未压缩时约为 97GB。
+
+```bash
+p7zip -d stackoverflow.com-Posts.7z
+```
+
+以下命令会将 XML 文件拆分为多个文件，每个文件包含 10000 行。
+
+```bash
+mkdir posts
+cd posts
+# 以下命令将输入的 xml 文件拆分为每个包含 10000 行的子文件
+tail +3 ../Posts.xml | head -n -1 | split -l 10000 --filter='{ printf "<rows>\n"; cat - ; printf "</rows>\n"; } > $FILE' -
+```
+
+运行上述命令后，你会得到一组文件，每个文件有 10000 行。这样可以确保下一条命令的内存开销不会过高 (xml 到 JSON 的转换是在内存中完成的) 。
+
+```bash
+find . -maxdepth 1 -type f -exec xq -c '.rows.row[]' {} \; | sed -e 's:"@:":g' > posts_v2.json
+```
+
+上述命令会生成一个 `posts.json` 文件。
+
+使用以下命令将其加载到 ClickHouse 中。请注意，这里为 `posts.json` 文件指定了 schema。你需要根据数据类型进行相应调整，使其与目标表一致。
+
+```bash
+clickhouse local --query "SELECT * FROM file('posts.json', JSONEachRow, 'Id Int32, PostTypeId UInt8, AcceptedAnswerId UInt32, CreationDate DateTime64(3, \'UTC\'), Score Int32, ViewCount UInt32, Body String, OwnerUserId Int32, OwnerDisplayName String, LastEditorUserId Int32, LastEditorDisplayName String, LastEditDate DateTime64(3, \'UTC\'), LastActivityDate DateTime64(3, \'UTC\'), Title String, Tags String, AnswerCount UInt16, CommentCount UInt8, FavoriteCount UInt8, ContentLicense String, ParentId String, CommunityOwnedDate DateTime64(3, \'UTC\'), ClosedDate DateTime64(3, \'UTC\')') FORMAT Native" | clickhouse client --host <host> --secure --password <password> --query "INSERT INTO stackoverflow.posts_v2 FORMAT Native"
+```
+
+<div id="example-queries">
+  ## 示例查询
+</div>
+
+以下是几个简单的查询，帮助你快速上手。
+
+<div id="most-popular-tags-on-stack-overflow">
+  ### Stack Overflow 上最热门的标签
+</div>
+
+```sql
+SELECT
+    arrayJoin(arrayFilter(t -> (t != ''), splitByChar('|', Tags))) AS Tags,
+    count() AS c
+FROM stackoverflow.posts
+GROUP BY Tags
+ORDER BY c DESC
+LIMIT 10
+```
+
+```response
+┌─Tags───────┬───────c─┐
+│ javascript │ 2527130 │
+│ python     │ 2189638 │
+│ java       │ 1916156 │
+│ c#         │ 1614236 │
+│ php        │ 1463901 │
+│ android    │ 1416442 │
+│ html       │ 1186567 │
+│ jquery     │ 1034621 │
+│ c++        │  806202 │
+│ css        │  803755 │
+└────────────┴─────────┘
+
+10 rows in set. Elapsed: 1.013 sec. 已处理 5982 万行，1.21 GB（5907 万行/秒，1.19 GB/秒）
+峰值内存占用：224.03 MiB。
+```
+
+<div id="user-with-the-most-answers-active-accounts">
+  ### 回答最多的用户 (活跃账号)
+</div>
+
+该账号需要有 `UserId`。
+
+```sql
+SELECT
+    any(OwnerUserId) UserId,
+    OwnerDisplayName,
+    count() AS c
+FROM stackoverflow.posts WHERE OwnerDisplayName != '' AND PostTypeId='Answer' AND OwnerUserId != 0
+GROUP BY OwnerDisplayName
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─UserId─┬─OwnerDisplayName─┬────c─┐
+│  22656 │ Jon Skeet        │ 2727 │
+│  23354 │ Marc Gravell     │ 2150 │
+│  12950 │ tvanfosson       │ 1530 │
+│   3043 │ Joel Coehoorn    │ 1438 │
+│  10661 │ S.Lott           │ 1087 │
+└────────┴──────────────────┴──────┘
+
+5 rows in set. Elapsed: 0.154 sec. Processed 35.83 million rows, 193.39 MB (232.33 million rows/s., 1.25 GB/s.)
+峰值内存占用: 206.45 MiB.
+```
+
+<div id="clickhouse-related-posts-with-the-most-views">
+  ### 浏览量最高的 ClickHouse 相关文章
+</div>
+
+```sql
+SELECT
+    Id,
+    Title,
+    ViewCount,
+    AnswerCount
+FROM stackoverflow.posts
+WHERE Title ILIKE '%ClickHouse%'
+ORDER BY ViewCount DESC
+LIMIT 10
+```
+
+```response
+┌───────Id─┬─Title────────────────────────────────────────────────────────────────────────────┬─ViewCount─┬─AnswerCount─┐
+│ 52355143 │ Is it possible to delete old records from clickhouse table?                      │     41462 │           3 │
+│ 37954203 │ Clickhouse Data Import                                                           │     38735 │           3 │
+│ 37901642 │ Updating data in Clickhouse                                                      │     36236 │           6 │
+│ 58422110 │ Pandas: How to insert dataframe into Clickhouse                                  │     29731 │           4 │
+│ 63621318 │ DBeaver - Clickhouse - SQL Error [159] .. Read timed out                         │     27350 │           1 │
+│ 47591813 │ How to filter clickhouse table by array column contents?                         │     27078 │           2 │
+│ 58728436 │ How to search the string in query with case insensitive on Clickhouse database?  │     26567 │           3 │
+│ 65316905 │ Clickhouse: DB::Exception: Memory limit (for query) exceeded                     │     24899 │           2 │
+│ 49944865 │ How to add a column in clickhouse                                                │     24424 │           1 │
+│ 59712399 │ How to cast date Strings to DateTime format with extended parsing in ClickHouse? │     22620 │           1 │
+└──────────┴──────────────────────────────────────────────────────────────────────────────────┴───────────┴─────────────┘
+
+10 rows in set. Elapsed: 0.472 sec. Processed 59.82 million rows, 1.91 GB (126.63 million rows/s., 4.03 GB/s.)
+峰值内存占用: 240.01 MiB.
+```
+
+<div id="most-controversial-posts">
+  ### 争议最大的帖子
+</div>
+
+```sql
+SELECT
+    Id,
+    Title,
+    UpVotes,
+    DownVotes,
+    abs(UpVotes - DownVotes) AS Controversial_ratio
+FROM stackoverflow.posts
+INNER JOIN
+(
+    SELECT
+        PostId,
+        countIf(VoteTypeId = 2) AS UpVotes,
+        countIf(VoteTypeId = 3) AS DownVotes
+    FROM stackoverflow.votes
+    GROUP BY PostId
+    HAVING (UpVotes > 10) AND (DownVotes > 10)
+) AS votes ON posts.Id = votes.PostId
+WHERE Title != ''
+ORDER BY Controversial_ratio ASC
+LIMIT 3
+```
+
+```response
+┌───────Id─┬─Title─────────────────────────────────────────────┬─UpVotes─┬─DownVotes─┬─Controversial_ratio─┐
+│   583177 │ VB.NET Infinite For Loop                          │      12 │        12 │                   0 │
+│  9756797 │ Read console input as enumerable - one statement? │      16 │        16 │                   0 │
+│ 13329132 │ What's the point of ARGV in Ruby?                 │      22 │        22 │                   0 │
+└──────────┴───────────────────────────────────────────────────┴─────────┴───────────┴─────────────────────┘
+
+3 rows in set. Elapsed: 4.779 sec. Processed 298.80 million rows, 3.16 GB (62.52 million rows/s., 661.05 MB/s.)
+峰值内存占用：6.05 GiB.
+```
+
+<div id="attribution">
+  ## 致谢
+</div>
+
+感谢 Stack Overflow 根据 `cc-by-sa 4.0` 许可证提供这些数据，并感谢他们所做的努力；数据原始来源见 [https://archive.org/details/stackexchange](https://archive.org/details/stackexchange)。

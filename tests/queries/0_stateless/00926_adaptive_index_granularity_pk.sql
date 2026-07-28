@@ -30,22 +30,22 @@ SET max_block_size = 1;
 
 -- Test inferred limit
 SET max_rows_to_read = 5;
-SELECT toUInt32(x), y, z FROM pk WHERE x BETWEEN toDateTime(0) AND toDateTime(59);
+SELECT toUInt32(x), y, z FROM pk WHERE x BETWEEN toDateTime(0) AND toDateTime(59) ORDER BY y, z, x;
 
 SET max_rows_to_read = 9;
-SELECT toUInt32(x), y, z FROM pk WHERE x BETWEEN toDateTime(120) AND toDateTime(240);
+SELECT toUInt32(x), y, z FROM pk WHERE x BETWEEN toDateTime(120) AND toDateTime(240) ORDER BY y, z, x;
 
 -- Index is coarse, cannot read single row
 SET max_rows_to_read = 5;
-SELECT toUInt32(x), y, z FROM pk WHERE x = toDateTime(1);
+SELECT toUInt32(x), y, z FROM pk WHERE x = toDateTime(1) ORDER BY y, z, x;
 
 -- Index works on interval 00:01:00 - 00:01:59
 SET max_rows_to_read = 4;
-SELECT toUInt32(x), y, z FROM pk WHERE (x BETWEEN toDateTime(60) AND toDateTime(119)) AND y = 11;
+SELECT toUInt32(x), y, z FROM pk WHERE (x BETWEEN toDateTime(60) AND toDateTime(119)) AND y = 11 ORDER BY y, z, x;
 
 -- Cannot read less rows as PK is coarser on interval 00:01:00 - 00:02:00
 SET max_rows_to_read = 5;
-SELECT toUInt32(x), y, z FROM pk WHERE (x BETWEEN toDateTime(60) AND toDateTime(120)) AND y = 11;
+SELECT toUInt32(x), y, z FROM pk WHERE (x BETWEEN toDateTime(60) AND toDateTime(120)) AND y = 11 ORDER BY y, z, x;
 
 DROP TABLE pk;
 

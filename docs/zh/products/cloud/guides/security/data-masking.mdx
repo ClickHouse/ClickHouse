@@ -1,0 +1,504 @@
+---
+slug: /cloud/guides/data-masking
+sidebarTitle: '数据脱敏'
+title: 'ClickHouse 中的数据脱敏'
+description: 'ClickHouse 数据脱敏指南'
+keywords: ['数据脱敏']
+doc_type: 'guide'
+---
+
+数据脱敏是一种数据保护技术，它通过用保留原始数据格式和结构、但去除了个人身份信息 (PII) 或其他敏感信息的版本来替换原始数据。
+
+本指南将介绍如何在 ClickHouse 中通过多种方式实现数据脱敏：
+
+* **脱敏策略** (ClickHouse Cloud, 25.12+)：在查询时为特定用户/角色应用原生动态脱敏
+* **字符串替换函数**：使用内置函数进行基础脱敏
+* **脱敏视图**：创建包含转换逻辑的视图
+* **物化列**：在原始数据旁存储脱敏后的版本
+* **查询脱敏规则**：对日志中的敏感数据进行脱敏 (ClickHouse OSS)
+
+<div id="masking-policies">
+  ## 使用脱敏策略 (ClickHouse Cloud)
+</div>
+
+<Note>
+  从 25.12 版本起，ClickHouse Cloud 支持脱敏策略。
+</Note>
+
+[`CREATE MASKING POLICY`](/zh/reference/statements/create/masking-policy) 语句提供了一种原生方式，可在查询时为特定用户或角色动态隐藏列值。与其他方法不同，脱敏策略无需创建单独的视图，也无需存储脱敏后的数据——用户查询表时会透明地完成转换。
+
+<div id="basic-maasking-policy">
+  ### 基本数据脱敏策略
+</div>
+
+为了演示脱敏策略，我们先创建一个包含客户信息的 `orders` 表：
+
+```sql
+CREATE TABLE orders (
+    user_id UInt32,
+    name String,
+    email String,
+    phone String,
+    total_amount Decimal(10,2),
+    order_date Date,
+    shipping_address String
+)
+ENGINE = MergeTree()
+ORDER BY user_id;
+
+INSERT INTO orders VALUES
+    (1001, 'John Smith', 'john.smith@gmail.com', '555-123-4567', 299.99, '2024-01-15', '123 Main St, New York, NY 10001'),
+    (1002, 'Sarah Johnson', 'sarah.johnson@outlook.com', '555-987-6543', 149.50, '2024-01-16', '456 Oak Ave, Los Angeles, CA 90210'),
+    (1003, 'Michael Brown', 'mbrown@company.com', '555-456-7890', 599.00, '2024-01-17', '789 Pine Rd, Chicago, IL 60601'),
+    (1004, 'Emily Rogers', 'emily.rogers@yahoo.com', '555-321-0987', 89.99, '2024-01-18', '321 Elm St, Houston, TX 77001'),
+    (1005, 'David Wilson', 'dwilson@email.net', '555-654-3210', 449.75, '2024-01-19', '654 Cedar Blvd, Phoenix, AZ 85001');
+```
+
+现在为需要查看脱敏数据的用户创建一个角色：
+
+```sql
+CREATE ROLE masked_data_viewer;
+```
+
+创建一个应用于 `masked_data_viewer` 角色的数据脱敏策略：
+
+```sql
+CREATE MASKING POLICY mask_pii_data ON orders
+    UPDATE
+        name = replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****'),
+        email = replaceRegexpOne(email, '^(.{2})[^@]*(@.*)$', '\\1****\\2'),
+        phone = replaceRegexpOne(phone, '^(\\d{3})-(\\d{3})-(\\d{4})$', '\\1-***-\\3'),
+        shipping_address = replaceRegexpOne(shipping_address, '^[^,]+,\\s*(.*)$', '*** \\1')
+    TO masked_data_viewer;
+```
+
+当拥有 `masked_data_viewer` 角色的用户查询 `orders` 表时，他们会自动看到脱敏后的数据：
+
+```sql title="Query"
+SELECT * FROM orders ORDER BY user_id;
+```
+
+```response title="Response (for masked_data_viewer role)"
+┌─user_id─┬─name─────────┬─email──────────────┬─phone────────┬─total_amount─┬─order_date─┬─shipping_address──────────┐
+│    1001 │ John ****    │ jo****@gmail.com   │ 555-***-4567 │       299.99 │ 2024-01-15 │ *** New York, NY 10001    │
+│    1002 │ Sarah ****   │ sa****@outlook.com │ 555-***-6543 │        149.5 │ 2024-01-16 │ *** Los Angeles, CA 90210 │
+│    1003 │ Michael **** │ mb****@company.com │ 555-***-7890 │          599 │ 2024-01-17 │ *** Chicago, IL 60601     │
+│    1004 │ Emily ****   │ em****@yahoo.com   │ 555-***-0987 │        89.99 │ 2024-01-18 │ *** Houston, TX 77001     │
+│    1005 │ David ****   │ dw****@email.net   │ 555-***-3210 │       449.75 │ 2024-01-19 │ *** Phoenix, AZ 85001     │
+└─────────┴──────────────┴────────────────────┴──────────────┴──────────────┴────────────┴───────────────────────────┘
+```
+
+没有 `masked_data_viewer` 角色的用户会看到原始的未掩码数据。
+
+<div id="conditional-masking">
+  ### 条件掩码
+</div>
+
+你可以使用 `WHERE` 子句，仅对特定行进行掩码处理。例如，只对高价值订单进行掩码处理：
+
+```sql
+CREATE MASKING POLICY mask_high_value_orders ON orders
+    UPDATE
+        name = replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****'),
+        email = replaceRegexpOne(email, '^(.{2})[^@]*(@.*)$', '\\1****\\2')
+    WHERE total_amount > 200
+    TO masked_data_viewer;
+```
+
+<div id="multiple-policies-with-priority">
+  ### 具有优先级的多个策略
+</div>
+
+当多个脱敏策略同时作用于同一列时，请使用 `PRIORITY` 子句来控制应用哪种转换。优先级值越高，越会在最后应用：
+
+```sql
+-- 较低优先级：对所有敏感数据进行基础脱敏
+CREATE MASKING POLICY basic_masking ON orders
+    UPDATE
+        name = '****',
+        email = '****@****.com'
+    TO masked_data_viewer
+    PRIORITY 0;
+
+-- 较高优先级：更精细的脱敏处理（覆盖 basic_masking）
+CREATE MASKING POLICY refined_masking ON orders
+    UPDATE
+        name = replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****')
+    WHERE total_amount > 100
+    TO masked_data_viewer
+    PRIORITY 10;
+```
+
+在此示例中，对于 `total_amount > 100` 的订单，`refined_masking` 策略 (优先级 10) 会覆盖应用于 `name` 列的 `basic_masking` 策略 (优先级 0) ，而 `email` 仍使用基础掩码。
+
+<div id="hash-based-masking">
+  ### 基于哈希的脱敏
+</div>
+
+如果需要保持脱敏结果一致 (即相同输入始终产生相同的脱敏输出) ，请使用哈希函数：
+
+```sql
+CREATE MASKING POLICY hash_sensitive_data ON orders
+    UPDATE
+        email = concat(toString(cityHash64(email)), '@masked.com'),
+        phone = concat('555-', toString(cityHash64(phone) % 10000000))
+    TO masked_data_viewer;
+```
+
+<div id="managing-masking-policies">
+  ### 管理脱敏策略
+</div>
+
+查看所有脱敏策略：
+
+```sql
+SHOW MASKING POLICIES;
+```
+
+删除数据脱敏策略：
+
+```sql
+DROP MASKING POLICY mask_pii_data ON orders;
+```
+
+替换现有策略：
+
+```sql
+CREATE OR REPLACE MASKING POLICY mask_pii_data ON orders
+    UPDATE name = '[REDACTED]'
+    TO masked_data_viewer;
+```
+
+更多详情，请参阅 [CREATE MASKING POLICY](/zh/reference/statements/create/masking-policy) 文档。
+
+<div id="using-string-functions">
+  ## 使用字符串替换函数
+</div>
+
+对于基础的数据脱敏场景，`replace` 函数家族提供了一种便捷的脱敏方式：
+
+| Function                                                                                               | Description                                                |
+| ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| [`replaceOne`](/zh/reference/functions/regular-functions/string-replace-functions#replaceOne)             | 将 haystack 字符串中首次出现的模式替换为指定的替换字符串。                         |
+| [`replaceAll`](/zh/reference/functions/regular-functions/string-replace-functions#replaceAll)             | 将 haystack 字符串中所有出现的模式替换为指定的替换字符串。                         |
+| [`replaceRegexpOne`](/zh/reference/functions/regular-functions/string-replace-functions#replaceRegexpOne) | 将 haystack 中首次出现的、匹配正则表达式 pattern (re2 语法) 的子串替换为指定的替换字符串。 |
+| [`replaceRegexpAll`](/zh/reference/functions/regular-functions/string-replace-functions#replaceRegexpAll) | 将 haystack 中所有匹配正则表达式 pattern (re2 语法) 的子串替换为指定的替换字符串。     |
+
+例如，可以使用 `replaceOne` 函数将名称 &quot;John Smith&quot; 替换为占位符 `[CUSTOMER_NAME]`：
+
+```sql title="Query"
+SELECT replaceOne(
+    'Customer John Smith called about his account',
+    'John Smith',
+    '[CUSTOMER_NAME]'
+) AS anonymized_text;
+```
+
+```response title="Response"
+┌─anonymized_text───────────────────────────────────┐
+│ Customer [CUSTOMER_NAME] called about his account │
+└───────────────────────────────────────────────────┘
+```
+
+更通用地说，你可以使用 `replaceRegexpOne` 替换任意客户名称：
+
+```sql title="Query"
+SELECT 
+    replaceRegexpAll(
+        'Customer John Smith called. Later, Mary Johnson and Bob Wilson also called.',
+        '\\b[A-Z][a-z]+ [A-Z][a-z]+\\b',
+        '[CUSTOMER_NAME]'
+    ) AS anonymized_text;
+```
+
+```response title="Response"
+┌─anonymized_text───────────────────────────────────────────────────────────────────────┐
+│ [CUSTOMER_NAME] Smith called. Later, [CUSTOMER_NAME] and [CUSTOMER_NAME] also called. │
+└───────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+或者，你也可以使用 `replaceRegexpAll` 函数对社会安全号码进行掩码处理，只保留最后 4 位数字。
+
+```sql title="Query"
+SELECT replaceRegexpAll(
+    'SSN: 123-45-6789',
+    '(\d{3})-(\d{2})-(\d{4})',
+    'XXX-XX-\3'
+) AS masked_ssn;
+```
+
+在上述查询中，使用 `\3` 将第三个捕获组代入结果字符串中，生成：
+
+```response title="Response"
+┌─masked_ssn───────┐
+│ SSN: XXX-XX-6789 │
+└──────────────────┘
+```
+
+<div id="masked-views">
+  ## 创建经过掩码处理的 `VIEW`
+</div>
+
+可以将 [`VIEW`](/zh/reference/statements/create/view) 与前面提到的字符串函数结合使用，在向用户展示包含敏感数据的列之前，先对其进行转换。
+这样一来，原始数据保持不变，而查询该视图的用户只能看到脱敏数据。
+
+为了演示这一点，假设我们有一张存储客户订单记录的表。
+我们希望让一组员工能够查看这些信息，但不希望他们看到客户的完整信息。
+
+运行下面的查询，创建一个示例表 `orders`，并向其中插入一些虚构的客户订单记录：
+
+```sql
+CREATE TABLE orders (
+    user_id UInt32,
+    name String,
+    email String,
+    phone String,
+    total_amount Decimal(10,2),
+    order_date Date,
+    shipping_address String
+)
+ENGINE = MergeTree()
+ORDER BY user_id;
+
+INSERT INTO orders VALUES
+    (1001, 'John Smith', 'john.smith@gmail.com', '555-123-4567', 299.99, '2024-01-15', '123 Main St, New York, NY 10001'),
+    (1002, 'Sarah Johnson', 'sarah.johnson@outlook.com', '555-987-6543', 149.50, '2024-01-16', '456 Oak Ave, Los Angeles, CA 90210'),
+    (1003, 'Michael Brown', 'mbrown@company.com', '555-456-7890', 599.00, '2024-01-17', '789 Pine Rd, Chicago, IL 60601'),
+    (1004, 'Emily Rogers', 'emily.rogers@yahoo.com', '555-321-0987', 89.99, '2024-01-18', '321 Elm St, Houston, TX 77001'),
+    (1005, 'David Wilson', 'dwilson@email.net', '555-654-3210', 449.75, '2024-01-19', '654 Cedar Blvd, Phoenix, AZ 85001');
+```
+
+创建名为 `masked_orders` 的视图：
+
+```sql
+CREATE VIEW masked_orders AS
+SELECT
+    user_id,
+    replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****') AS name,
+    replaceRegexpOne(email, '^(.{0})[^@]*(@.*)$', '\\1****\\2') AS email,
+    replaceRegexpOne(phone, '^(\\d{3})-(\\d{3})-(\\d{4})$', '\\1-***-\\3') AS phone,
+    total_amount,
+    order_date,
+    replaceRegexpOne(shipping_address, '^[^,]+,\\s*(.*)$', '*** \\1') AS shipping_address
+FROM orders;
+```
+
+在上述创建视图的查询的 `SELECT` 子句中，我们使用 `replaceRegexpOne` 对 `name`、`email`、`phone` 和 `shipping_address` 字段进行转换；这些字段包含我们希望部分掩盖的敏感信息。
+
+从该视图中查询数据：
+
+```sql title="Query"
+SELECT * FROM masked_orders
+```
+
+```response title="Response"
+┌─user_id─┬─name─────────┬─email──────────────┬─phone────────┬─total_amount─┬─order_date─┬─shipping_address──────────┐
+│    1001 │ John ****    │ jo****@gmail.com   │ 555-***-4567 │       299.99 │ 2024-01-15 │ *** New York, NY 10001    │
+│    1002 │ Sarah ****   │ sa****@outlook.com │ 555-***-6543 │        149.5 │ 2024-01-16 │ *** Los Angeles, CA 90210 │
+│    1003 │ Michael **** │ mb****@company.com │ 555-***-7890 │          599 │ 2024-01-17 │ *** Chicago, IL 60601     │
+│    1004 │ Emily ****   │ em****@yahoo.com   │ 555-***-0987 │        89.99 │ 2024-01-18 │ *** Houston, TX 77001     │
+│    1005 │ David ****   │ dw****@email.net   │ 555-***-3210 │       449.75 │ 2024-01-19 │ *** Phoenix, AZ 85001     │
+└─────────┴──────────────┴────────────────────┴──────────────┴──────────────┴────────────┴───────────────────────────┘
+```
+
+请注意，从视图返回的数据会被部分屏蔽，以隐藏敏感信息。
+您还可以创建多个视图，并根据查看者所拥有的信息访问权限级别，采用不同程度的混淆处理。
+
+为确保用户只能访问返回脱敏数据的视图，而不能访问包含原始未屏蔽数据的表，您应使用 [基于角色的访问控制](/zh/products/cloud/reference/security/console-roles)，确保特定角色仅被授予从该视图执行查询的权限。
+
+首先创建角色：
+
+```sql
+CREATE ROLE masked_orders_viewer;
+```
+
+接下来，向该角色授予此视图的 `SELECT` 权限：
+
+```sql
+GRANT SELECT ON masked_orders TO masked_orders_viewer;
+```
+
+由于 ClickHouse 的角色权限是叠加生效的，因此你必须确保，那些本应只能看到脱敏视图的用户，不会通过任何角色获得对基表的 `SELECT` 权限。
+
+因此，稳妥起见，你应显式撤销对基表的访问权限：
+
+```sql
+REVOKE SELECT ON orders FROM masked_orders_viewer;
+```
+
+最后，将该角色分配给适当的用户：
+
+```sql
+GRANT masked_orders_viewer TO your_user;
+```
+
+这可确保具有 `masked_orders_viewer` 角色的用户只能看到
+视图中的脱敏数据，而无法看到表中的原始未脱敏数据。
+
+<div id="materialized-ephemeral-column-restrictions">
+  ## 使用 `MATERIALIZED` 列和列级访问限制
+</div>
+
+如果不想创建单独的视图，也可以在保留原始数据的同时存储其脱敏版本。
+为此，可以使用[物化列](/zh/reference/statements/create/table#materialized)。
+这类列的值会在插入行时根据指定的物化表达式自动计算，
+因此可以用它们创建包含脱敏数据的新列。
+
+沿用前面的示例，这次我们不再为脱敏数据单独创建一个 `VIEW`，而是使用 `MATERIALIZED` 创建脱敏列：
+
+```sql
+DROP TABLE IF EXISTS orders;
+CREATE TABLE orders (
+    user_id UInt32,
+    name String,
+    name_masked String MATERIALIZED replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****'),
+    email String,
+    email_masked String MATERIALIZED replaceRegexpOne(email, '^(.{0})[^@]*(@.*)$', '\\1****\\2'),
+    phone String,
+    phone_masked String MATERIALIZED replaceRegexpOne(phone, '^(\\d{3})-(\\d{3})-(\\d{4})$', '\\1-***-\\3'),
+    total_amount Decimal(10,2),
+    order_date Date,
+    shipping_address String,
+    shipping_address_masked String MATERIALIZED replaceRegexpOne(shipping_address, '^[^,]+,\\s*(.*)$', '*** \\1')
+)
+ENGINE = MergeTree()
+ORDER BY user_id;
+
+INSERT INTO orders VALUES
+    (1001, 'John Smith', 'john.smith@gmail.com', '555-123-4567', 299.99, '2024-01-15', '123 Main St, New York, NY 10001'),
+    (1002, 'Sarah Johnson', 'sarah.johnson@outlook.com', '555-987-6543', 149.50, '2024-01-16', '456 Oak Ave, Los Angeles, CA 90210'),
+    (1003, 'Michael Brown', 'mbrown@company.com', '555-456-7890', 599.00, '2024-01-17', '789 Pine Rd, Chicago, IL 60601'),
+    (1004, 'Emily Rogers', 'emily.rogers@yahoo.com', '555-321-0987', 89.99, '2024-01-18', '321 Elm St, Houston, TX 77001'),
+    (1005, 'David Wilson', 'dwilson@email.net', '555-654-3210', 449.75, '2024-01-19', '654 Cedar Blvd, Phoenix, AZ 85001');
+```
+
+如果你现在运行以下 SELECT 查询，就会看到脱敏数据会在写入时被“物化”，并与原始的未脱敏数据一同存储。
+需要显式选择这些脱敏列，因为默认情况下，ClickHouse 不会在 `SELECT *` 查询中自动包含物化列。
+
+```sql title="Query"
+SELECT
+    *,
+    name_masked,
+    email_masked,
+    phone_masked,
+    shipping_address_masked
+FROM orders
+ORDER BY user_id ASC
+```
+
+```response title="Response"
+   ┌─user_id─┬─name──────────┬─email─────────────────────┬─phone────────┬─total_amount─┬─order_date─┬─shipping_address───────────────────┬─name_masked──┬─email_masked───────┬─phone_masked─┬─shipping_address_masked────┐
+1. │    1001 │ John Smith    │ john.smith@gmail.com      │ 555-123-4567 │       299.99 │ 2024-01-15 │ 123 Main St, New York, NY 10001    │ John ****    │ jo****@gmail.com   │ 555-***-4567 │ **** New York, NY 10001    │
+2. │    1002 │ Sarah Johnson │ sarah.johnson@outlook.com │ 555-987-6543 │        149.5 │ 2024-01-16 │ 456 Oak Ave, Los Angeles, CA 90210 │ Sarah ****   │ sa****@outlook.com │ 555-***-6543 │ **** Los Angeles, CA 90210 │
+3. │    1003 │ Michael Brown │ mbrown@company.com        │ 555-456-7890 │          599 │ 2024-01-17 │ 789 Pine Rd, Chicago, IL 60601     │ Michael **** │ mb****@company.com │ 555-***-7890 │ **** Chicago, IL 60601     │
+4. │    1004 │ Emily Rogers  │ emily.rogers@yahoo.com    │ 555-321-0987 │        89.99 │ 2024-01-18 │ 321 Elm St, Houston, TX 77001      │ Emily ****   │ em****@yahoo.com   │ 555-***-0987 │ **** Houston, TX 77001     │
+5. │    1005 │ David Wilson  │ dwilson@email.net         │ 555-654-3210 │       449.75 │ 2024-01-19 │ 654 Cedar Blvd, Phoenix, AZ 85001  │ David ****   │ dw****@email.net   │ 555-***-3210 │ **** Phoenix, AZ 85001     │
+   └─────────┴───────────────┴───────────────────────────┴──────────────┴──────────────┴────────────┴────────────────────────────────────┴──────────────┴────────────────────┴──────────────┴────────────────────────────┘
+```
+
+为确保用户只能访问包含脱敏数据的列，你可以再次使用 [基于角色的访问控制](/zh/products/cloud/reference/security/console-roles)，确保特定角色仅被授予对 `orders` 表中脱敏列执行 select 的权限。
+
+重新创建我们之前创建的角色：
+
+```sql
+DROP ROLE IF EXISTS masked_order_viewer;
+CREATE ROLE masked_order_viewer;
+```
+
+接下来，为 `orders` 表授予 `SELECT` 权限：
+
+```sql
+GRANT SELECT ON orders TO masked_data_reader;
+```
+
+撤销对敏感列的访问权限：
+
+```sql
+REVOKE SELECT(name) ON orders FROM masked_data_reader;
+REVOKE SELECT(email) ON orders FROM masked_data_reader;
+REVOKE SELECT(phone) ON orders FROM masked_data_reader;
+REVOKE SELECT(shipping_address) ON orders FROM masked_data_reader;
+```
+
+最后，将该角色授予相应的用户：
+
+```sql
+GRANT masked_orders_viewer TO your_user;
+```
+
+如果你只想在 `orders` 表中存储脱敏后的数据，
+可以将包含敏感信息的未脱敏列标记为 [`EPHEMERAL`](/zh/reference/statements/create/table#ephemeral)，
+这样可确保这类列不会存储在表中。
+
+```sql
+DROP TABLE IF EXISTS orders;
+CREATE TABLE orders (
+    user_id UInt32,
+    name String EPHEMERAL,
+    name_masked String MATERIALIZED replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****'),
+    email String EPHEMERAL,
+    email_masked String MATERIALIZED replaceRegexpOne(email, '^(.{2})[^@]*(@.*)$', '\\1****\\2'),
+    phone String EPHEMERAL,
+    phone_masked String MATERIALIZED replaceRegexpOne(phone, '^(\\d{3})-(\\d{3})-(\\d{4})$', '\\1-***-\\3'),
+    total_amount Decimal(10,2),
+    order_date Date,
+    shipping_address String EPHEMERAL,
+    shipping_address_masked String MATERIALIZED replaceRegexpOne(shipping_address, '^([^,]+),\\s*(.*)$', '*** \\2')
+)
+ENGINE = MergeTree()
+ORDER BY user_id;
+
+INSERT INTO orders (user_id, name, email, phone, total_amount, order_date, shipping_address) VALUES
+    (1001, 'John Smith', 'john.smith@gmail.com', '555-123-4567', 299.99, '2024-01-15', '123 Main St, New York, NY 10001'),
+    (1002, 'Sarah Johnson', 'sarah.johnson@outlook.com', '555-987-6543', 149.50, '2024-01-16', '456 Oak Ave, Los Angeles, CA 90210'),
+    (1003, 'Michael Brown', 'mbrown@company.com', '555-456-7890', 599.00, '2024-01-17', '789 Pine Rd, Chicago, IL 60601'),
+    (1004, 'Emily Rogers', 'emily.rogers@yahoo.com', '555-321-0987', 89.99, '2024-01-18', '321 Elm St, Houston, TX 77001'),
+    (1005, 'David Wilson', 'dwilson@email.net', '555-654-3210', 449.75, '2024-01-19', '654 Cedar Blvd, Phoenix, AZ 85001');
+```
+
+如果运行与之前相同的查询，现在你会看到，插入到表中的只有已物化的脱敏数据：
+
+```sql title="Query"
+SELECT
+    *,
+    name_masked,
+    email_masked,
+    phone_masked,
+    shipping_address_masked
+FROM orders
+ORDER BY user_id ASC
+```
+
+```response title="Response"
+   ┌─user_id─┬─total_amount─┬─order_date─┬─name_masked──┬─email_masked───────┬─phone_masked─┬─shipping_address_masked───┐
+1. │    1001 │       299.99 │ 2024-01-15 │ John ****    │ jo****@gmail.com   │ 555-***-4567 │ *** New York, NY 10001    │
+2. │    1002 │        149.5 │ 2024-01-16 │ Sarah ****   │ sa****@outlook.com │ 555-***-6543 │ *** Los Angeles, CA 90210 │
+3. │    1003 │          599 │ 2024-01-17 │ Michael **** │ mb****@company.com │ 555-***-7890 │ *** Chicago, IL 60601     │
+4. │    1004 │        89.99 │ 2024-01-18 │ Emily ****   │ em****@yahoo.com   │ 555-***-0987 │ *** Houston, TX 77001     │
+5. │    1005 │       449.75 │ 2024-01-19 │ David ****   │ dw****@email.net   │ 555-***-3210 │ *** Phoenix, AZ 85001     │
+   └─────────┴──────────────┴────────────┴──────────────┴────────────────────┴──────────────┴───────────────────────────┘
+```
+
+<div id="use-query-masking-rules">
+  ## 使用查询脱敏规则处理日志数据
+</div>
+
+对于希望专门对日志数据进行脱敏的 ClickHouse OSS 用户，可以使用[查询脱敏规则](/zh/reference/settings/server-settings/settings#query_masking_rules) (日志脱敏) 来屏蔽数据。
+
+为此，你可以在服务器配置中定义基于正则表达式的脱敏规则。
+这些规则会在查询和所有日志消息写入服务器日志或系统表 (例如 `system.query_log`、`system.text_log` 和 `system.processes`) 之前生效。
+
+这有助于防止敏感数据仅泄露到**日志**中。
+请注意，它不会屏蔽查询结果中的数据。
+
+例如，要屏蔽社会安全号码，你可以将以下规则添加到你的[服务器配置](/zh/concepts/features/configuration/server-config/configuration-files)中：
+
+```yaml
+<query_masking_rules>
+    <rule>
+        <name>hide SSN</name>
+        <regexp>(^|\D)\d{3}-\d{2}-\d{4}($|\D)</regexp>
+        <replace>000-00-0000</replace>
+    </rule>
+</query_masking_rules>
+```

@@ -6,6 +6,7 @@
 #include <Common/Config/ConfigProcessor.h>
 
 #include <Poco/Util/MapConfiguration.h>
+#include <Examples/clickhouse_examples.h>
 
 using namespace DB;
 

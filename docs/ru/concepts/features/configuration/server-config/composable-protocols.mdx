@@ -1,0 +1,261 @@
+---
+description: 'Составные протоколы обеспечивают более гибкую настройку TCP-доступа
+  к серверу ClickHouse.'
+sidebarTitle: 'Составные протоколы'
+slug: /operations/settings/composable-protocols
+title: 'Составные протоколы'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## Обзор
+</div>
+
+Составные протоколы позволяют более гибко настраивать TCP-доступ к
+серверу ClickHouse. Такая конфигурация может использоваться наряду с
+обычной или полностью её заменять.
+
+<div id="composable-protocols-section-is-denoted-as-protocols-in-configuration-xml">
+  ## Настройка составных протоколов
+</div>
+
+Составные протоколы можно настраивать в XML-файле конфигурации. Раздел протоколов
+в XML-файле конфигурации обозначается тегами `protocols`:
+
+```xml
+<protocols>
+
+</protocols>
+```
+
+<div id="basic-modules-define-protocol-layers">
+  ### Настройка уровней протокола
+</div>
+
+Вы можете задавать уровни протокола с помощью базовых модулей. Например, чтобы задать
+уровень HTTP, можно добавить новый базовый модуль в раздел `protocols`:
+
+```xml
+<protocols>
+
+  <!-- модуль plain_http -->
+  <plain_http>
+    <type>http</type>
+  </plain_http>
+
+</protocols>
+```
+
+Модули можно настраивать с помощью следующих параметров:
+
+* `plain_http` - имя, на которое может ссылаться другой слой
+* `type` - указывает обработчик протокола, который будет создан для обработки данных.
+  Доступен следующий набор предопределённых обработчиков протоколов:
+  * `tcp` - нативный обработчик протокола ClickHouse
+  * `http` - HTTP-обработчик протокола ClickHouse
+  * `tls` - слой шифрования TLS
+  * `proxy1` - слой PROXYv1
+  * `mysql` - обработчик протокола совместимости с MySQL
+  * `postgres` - обработчик протокола совместимости с PostgreSQL
+  * `prometheus` - обработчик протокола Prometheus
+  * `interserver` - межсерверный обработчик ClickHouse
+
+<Note>
+  Обработчик протокола `gRPC` не реализован для `Composable protocols`
+</Note>
+
+<div id="endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags">
+  ### Настройка конечных точек
+</div>
+
+Конечные точки (прослушиваемые порты) обозначаются тегами `<port>` и необязательным тегом `<host>`.
+Например, чтобы настроить конечную точку на ранее добавленном HTTP-слое, мы
+можем изменить конфигурацию следующим образом:
+
+```xml
+<protocols>
+
+  <plain_http>
+
+    <type>http</type>
+    <!-- конечная точка -->
+    <host>127.0.0.1</host>
+    <port>8123</port>
+
+  </plain_http>
+
+</protocols>
+```
+
+Если тег `<host>` не указан, используется `<listen_host>` из корневой конфигурации.
+
+<div id="layers-sequence-is-defined-by-impl-tag-referencing-another-module">
+  ### Настройка последовательностей слоёв
+</div>
+
+Последовательности слоёв определяются с помощью тега `<impl>` и ссылки на другой
+модуль. Например, чтобы настроить слой TLS поверх нашего модуля plain&#95;http,
+мы можем дополнительно изменить конфигурацию следующим образом:
+
+```xml
+<protocols>
+
+  <!-- модуль http -->
+  <plain_http>
+    <type>http</type>
+  </plain_http>
+
+  <!-- модуль https, настроенный как слой tls поверх модуля plain_http -->
+  <https>
+    <type>tls</type>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8443</port>
+  </https>
+
+</protocols>
+```
+
+<div id="endpoint-can-be-attached-to-any-layer">
+  ### Подключение конечных точек к слоям
+</div>
+
+Конечные точки можно подключить к любому слою. Например, можно определить конечные точки для
+HTTP (порт 8123) и HTTPS (порт 8443):
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <https>
+    <type>tls</type>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8443</port>
+  </https>
+
+</protocols>
+```
+
+<div id="additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag">
+  ### Определение дополнительных конечных точек
+</div>
+
+Дополнительные конечные точки можно задать, указав любой модуль и опустив
+тег `<type>`. Например, можно определить конечную точку `another_http` для
+модуля `plain_http` следующим образом:
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <https>
+    <type>tls</type>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8443</port>
+  </https>
+
+  <another_http>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8223</port>
+  </another_http>
+
+</protocols>
+```
+
+<div id="custom-http-handlers-per-endpoint">
+  ### Пользовательские HTTP-обработчики для отдельных эндпоинтов
+</div>
+
+По умолчанию все записи протокола `type=http` используют одну и ту же конфигурацию
+`<http_handlers>`. Это можно переопределить, добавив тег `<handlers>`, который ссылается
+на другой раздел конфигурации. Благодаря этому каждый HTTP-порт может обслуживать
+свой набор правил HTTP-маршрутизации.
+
+Например, чтобы запустить альтернативный HTTP API на порту 8124 с собственными обработчиками:
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <alt_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8124</port>
+    <handlers>http_handlers_alt</handlers>
+  </alt_http>
+
+</protocols>
+
+<!-- Обработчики по умолчанию для plain_http (порт 8123) -->
+<http_handlers>
+    <defaults/>
+</http_handlers>
+
+<!-- Альтернативные обработчики для alt_http (порт 8124) -->
+<http_handlers_alt>
+    <rule>
+        <url>/custom</url>
+        <handler>
+            <type>predefined_query_handler</type>
+            <query>SELECT 'custom_endpoint'</query>
+        </handler>
+    </rule>
+    <defaults/>
+</http_handlers_alt>
+```
+
+В этом примере запросы к порту 8123 используют стандартные правила `<http_handlers>`,
+а запросы к порту 8124 — правила `<http_handlers_alt>`. Если `<handlers>`
+не указан, конечная точка использует значение по умолчанию — `<http_handlers>`.
+
+Раздел пользовательских обработчиков имеет тот же формат, что и
+[`<http_handlers>`](/ru/reference/settings/server-settings/settings#http_handlers).
+Изменения в разделе пользовательских обработчиков отслеживаются при перезагрузке конфигурации, и
+соответствующая конечная точка автоматически перезапускается.
+
+<div id="some-modules-can-contain-specific-for-its-layer-parameters">
+  ### Указание дополнительных параметров слоя
+</div>
+
+Некоторые модули могут содержать дополнительные параметры слоя. Например, для слоя TLS
+можно указать закрытый ключ (`privateKeyFile`) и файлы сертификатов (`certificateFile`)
+следующим образом:
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <https>
+    <type>tls</type>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8443</port>
+    <privateKeyFile>another_server.key</privateKeyFile>
+    <certificateFile>another_server.crt</certificateFile>
+  </https>
+
+</protocols>
+```

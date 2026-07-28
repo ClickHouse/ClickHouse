@@ -1,0 +1,59 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/schemas
+description: 'Tables and schemas used by ClickStack - The ClickHouse Observability Stack'
+sidebarTitle: 'Tables and schemas'
+title: 'Tables and schemas used by ClickStack'
+doc_type: 'reference'
+keywords: ['clickstack', 'schema', 'data model', 'table design', 'logs']
+---
+
+import OtelLogsSchema from '/snippets/clickstack/_schema_otel_logs.mdx';
+import OtelTracesSchema from '/snippets/clickstack/_schema_otel_traces.mdx';
+import OtelMetricsGaugeSchema from '/snippets/clickstack/_schema_otel_metrics_gauge.mdx';
+import OtelMetricsSumSchema from '/snippets/clickstack/_schema_otel_metrics_sum.mdx';
+import OtelMetricsHistogramSchema from '/snippets/clickstack/_schema_otel_metrics_histogram.mdx';
+import OtelMetricsExponentialHistogramSchema from '/snippets/clickstack/_schema_otel_metrics_exponential_histogram.mdx';
+import OtelMetricsSummarySchema from '/snippets/clickstack/_schema_otel_metrics_summary.mdx';
+import HyperdxSessionsSchema from '/snippets/clickstack/_schema_hyperdx_sessions.mdx';
+
+The ClickStack OpenTelemetry (OTel) collector uses the [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md) to create tables in ClickHouse and insert data.
+
+The following tables are created for each data type in the `default` database. You can change this target database by modifying the environment variable `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE` for the image hosting the OTel collector.
+
+## Logs {#logs}
+
+<OtelLogsSchema />
+
+## Traces {#traces}
+
+<OtelTracesSchema />
+
+## Metrics {#metrics}
+
+### Gauge metrics {#gauge}
+
+<OtelMetricsGaugeSchema />
+
+### Sum metrics {#sum}
+
+<OtelMetricsSumSchema />
+
+### Histogram metrics {#histogram}
+
+<OtelMetricsHistogramSchema />
+
+### Exponential histograms {#exponential-histograms}
+
+<Note>
+HyperDX doesn't support fetching/displaying exponential histogram metrics yet. You may configure them in the metrics source but future support is forthcoming.
+</Note>
+
+<OtelMetricsExponentialHistogramSchema />
+
+### Summary table {#summary-table}
+
+<OtelMetricsSummarySchema />
+
+## Sessions {#sessions}
+
+<HyperdxSessionsSchema />

@@ -1,0 +1,21 @@
+---
+title: 'هل يدعم ClickHouse عمليات JOIN الموزعة؟'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/distributed-join
+description: 'يدعم ClickHouse عمليات JOIN الموزعة'
+doc_type: 'reference'
+keywords: ['distributed', 'join']
+---
+
+نعم، يدعم ClickHouse عمليات JOIN الموزعة على مستوى العنقود.
+
+عندما تكون البيانات موجودة معًا على العنقود (على سبيل المثال، عندما تُجرى عملية JOIN باستخدام معرّف المستخدم، وهو أيضًا مفتاح التجزئة)، يوفّر ClickHouse طريقة لتنفيذ عملية JOIN من دون نقل البيانات عبر الشبكة.
+
+وعندما لا تكون البيانات موجودة معًا، يتيح ClickHouse تنفيذ broadcast join، حيث تُوزَّع أجزاء من البيانات المنضمّة عبر عقد العنقود.
+
+واعتبارًا من عام 2025، لا ينفّذ ClickHouse عمليات shuffle join، ما يعني أن أيًا من طرفَي عملية JOIN لا يُعاد توزيعه عبر شبكة العنقود وفقًا لمفاتيح JOIN.
+
+<Tip>
+  للحصول على معلومات عامة حول عمليات JOIN في ClickHouse، راجع صفحة [&quot;عبارة JOIN&quot;](/ar/reference/statements/select/join#supported-types-of-join).
+</Tip>

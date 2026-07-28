@@ -10,7 +10,7 @@ namespace DB
 namespace
 {
     template <typename Impl>
-    class FunctionMathConstFloat64 : public FunctionConstantBase<FunctionMathConstFloat64<Impl>, Float64, DataTypeFloat64>
+    class FunctionMathConstFloat64 final : public FunctionConstantBase<FunctionMathConstFloat64<Impl>, Float64, DataTypeFloat64>
     {
     public:
         static constexpr auto name = Impl::name;

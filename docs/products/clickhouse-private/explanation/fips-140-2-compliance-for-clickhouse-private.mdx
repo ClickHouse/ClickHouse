@@ -1,0 +1,74 @@
+---
+noindex: true
+title: "FIPS 140-2 Compliance for ClickHouse Private"
+sidebarTitle: "FIPS compliance"
+description: "This document explains what FIPS 140-2 compliance means in the context of ClickHouse Private and what changes when deploying in a FIPS-compliant configuration."
+---
+
+This document explains what FIPS 140-2 compliance means in the context of ClickHouse Private and what changes when deploying in a FIPS-compliant configuration.
+
+## What FIPS 140-2 Means for ClickHouse Private
+
+FIPS 140-2 (Federal Information Processing Standard) is a U.S. government standard for cryptographic modules. Organizations operating in government environments (such as AWS GovCloud) or handling sensitive government data are often required to ensure that all cryptographic operations use FIPS-validated algorithms and implementations.
+
+When ClickHouse Private is deployed in FIPS mode, all cryptographic operations -- including TLS connections between components, connections to AWS services, and certificate generation -- must use FIPS-compliant algorithms and libraries.
+
+## What Changes in a FIPS Deployment
+
+A FIPS deployment differs from a standard ClickHouse Private deployment in several key areas:
+
+### FIPS Server Images
+
+The ClickHouse server and keeper images must use the FIPS-specific variants. These are indicated by the `-fips` suffix on the image tag (e.g., `25.12.1.1497-fips` for server, `26.2.1.258-fips` for keeper). The FIPS images are built with FIPS-validated cryptographic libraries. The operator image does not have a separate FIPS variant.
+
+### FIPS ECR Endpoints
+
+When pulling container images from Amazon ECR, FIPS-compliant ECR endpoints must be used. These endpoints have the form `0000000000.dkr-ecr-fips.<region>.on.aws` rather than the standard ECR hostname.
+
+### FIPS S3 Endpoints
+
+ClickHouse stores data in S3, and in FIPS mode, the FIPS-compliant S3 endpoints must be configured. AWS publishes the list of FIPS endpoints for each service and region at [https://aws.amazon.com/compliance/fips/](https://aws.amazon.com/compliance/fips/).
+
+### S3 Bucket Naming Restriction
+
+In FIPS mode, the **S3 bucket name must not contain periods** (`.`). This restriction exists because FIPS S3 endpoints require virtual-host-style addressing (e.g., `https://my-bucket.s3-fips.us-gov-west-1.amazonaws.com`). When a bucket name contains periods, it breaks TLS certificate validation for virtual-host-style URLs because the periods create additional subdomain levels that do not match the wildcard certificate.
+
+This is an important consideration when setting up your S3 infrastructure. If you have existing buckets with periods in their names, they cannot be used with FIPS S3 endpoints.
+
+## Certificate Requirements
+
+A FIPS deployment requires TLS certificates for encrypted communication between all ClickHouse components. Three sets of certificates must be generated:
+
+| Certificate Set | Purpose | Files |
+|----|----|----|
+| **Server** | Secures inbound connections to clickhouse-server | `server.crt`, `server.key` |
+| **Keeper** | Secures connections to clickhouse-keeper | `keeper.crt`, `keeper.key` |
+| **Client** | Used by clickhouse-server for outbound connections (e.g., to keeper, HTTPS dictionaries) | `client.crt`, `client.key` |
+
+All three sets are signed by a common Certificate Authority (`ca.crt`).
+
+### FIPS-Compliant Algorithm Requirements
+
+When FIPS compliance is required, all certificates must be:
+
+- **Generated using FIPS-compliant algorithms** -- For example, RSA with a key size of at least 3072 bits.
+- **Created in a FIPS-enabled environment** -- The cryptographic operations during key generation and signing must use a FIPS-validated module. One approach is to use a Red Hat UBI container with FIPS mode enabled.
+- **Signed by a certificate authority** whose own key was generated in a FIPS-compliant manner.
+
+### Subject Alternative Names (SANs)
+
+Each certificate must include the correct SAN entries so that TLS validation succeeds for inter-component communication within the Kubernetes cluster. The SAN format follows the pattern:
+
+- Server: `*.c-<cluster-name>-server-headless.ns-<cluster-name>.svc.cluster.local` and `c-<cluster-name>-server-any.ns-<cluster-name>.svc.cluster.local`
+- Keeper: `*.c-<cluster-name>-keeper-headless.ns-<cluster-name>.svc.cluster.local`
+
+A unique set of certificates (excluding the CA certificate) must be created for each ClickHouse cluster being provisioned.
+
+### Certificate Expiration
+
+Certificates have a defined validity period. You should establish a process for monitoring certificate expiration and rotating certificates before they expire. A common default is 365 days, but this should be adjusted to fit your organization's security requirements.
+
+## Further Reading
+
+- For step-by-step instructions on generating FIPS-compliant certificates, see the [Configure FIPS certificates](/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse) how-to guide.
+- For how PKI and mTLS work in ClickHouse Private — certificate purpose, verification modes, and rotation behaviour — see [PKI and mTLS in ClickHouse Private](/products/clickhouse-private/explanation/pki-and-mtls-in-clickhouse-private).

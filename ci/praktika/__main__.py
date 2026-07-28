@@ -1,6 +1,7 @@
 import argparse
 import datetime
 import os
+import shlex
 import sys
 import textwrap
 
@@ -230,6 +231,16 @@ def create_parser():
         default=None,
     )
     run_parser.add_argument(
+        "--workflow-input",
+        help=(
+            "Workflow dispatch inputs as comma-separated name=value pairs "
+            "(e.g. ref=main,type=patch,dry-run=true). Written to workflow_inputs.json "
+            "so that jobs can read them via Info.get_workflow_input_value"
+        ),
+        type=str,
+        default=None,
+    )
+    run_parser.add_argument(
         "--ci",
         help=(
             "Run in CI flag. When not set, a dummy local environment is generated (for local tests)"
@@ -341,7 +352,7 @@ def main():
             for workflow in workflows:
                 print(
                     f"Workflow [{workflow.name}] has jobs:\n"
-                    "  \"" + f'"\n  "'.join([job.name for job in workflow.jobs]) + '"'
+                    "  \"" + '"\n  "'.join([job.name for job in workflow.jobs]) + '"'
                     )
             Utils.exit_with_error("Job name is required to run a job.")
 
@@ -387,7 +398,13 @@ def main():
                     run_hooks=args.ci or args.run_hooks_locally,
                     no_docker=args.no_docker,
                     param=args.param,
-                    test=" ".join(args.test),
+                    # Quote each --test value individually: an integration test
+                    # node ID can contain spaces, parentheses and quotes when the
+                    # test is parametrized with SQL (e.g.
+                    # `test.py::t[SELECT now() FROM numbers(2)]`). The runner
+                    # interpolates this string into a shell command, so each value
+                    # must survive as a single, unmangled argument.
+                    test=" ".join(shlex.quote(t) for t in args.test),
                     pr=args.pr,
                     branch=args.branch,
                     sha=args.sha,
@@ -396,6 +413,7 @@ def main():
                     path=args.path,
                     path_1=args.path_1,
                     workers=args.workers,
+                    workflow_input=args.workflow_input,
                 )
             finally:
                 sys.stdout = original_stdout

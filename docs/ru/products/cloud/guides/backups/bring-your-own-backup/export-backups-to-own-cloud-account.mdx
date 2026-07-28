@@ -1,0 +1,190 @@
+---
+sidebarTitle: 'Экспорт резервных копий'
+slug: /cloud/manage/backups/export-backups-to-own-cloud-account
+title: 'Экспорт резервных копий в собственную облачную учетную запись'
+description: 'Описывает, как экспортировать резервные копии в собственную облачную учетную запись'
+doc_type: 'guide'
+---
+
+ClickHouse Cloud поддерживает создание резервных копий в вашей собственной учетной записи у поставщика облачных услуг (CSP) (AWS S3, Google Cloud Storage или Azure Blob Storage).
+Подробнее о том, как работают резервные копии в ClickHouse Cloud, включая различия между полными и инкрементальными резервными копиями, см. в документации [backups](/ru/products/cloud/guides/backups/review-and-restore-backups).
+
+В этом руководстве показано, как создавать полные и инкрементальные резервные копии в Объектное хранилище AWS, GCP и Azure, а также как восстанавливать данные из этих резервных копий.
+
+<Note>
+  Если резервные копии экспортируются в другой Region в рамках того же облачного провайдера, взимается плата за [передачу данных](/ru/products/cloud/reference/billing/network-data-transfer).
+
+  Резервное копирование между разными облаками поддерживается только через команды backup/restore, описанные на этой странице, и не поддерживается через интерфейс.
+</Note>
+
+<div id="requirements">
+  ## Требования
+</div>
+
+Для экспорта резервных копий в собственный бакет хранилища CSP и их восстановления из него вам понадобятся следующие сведения.
+
+<div id="aws">
+  ### AWS
+</div>
+
+1. Конечная точка S3 в AWS, в формате:
+
+```text
+  s3://<bucket_name>.s3.amazonaws.com/<directory>
+```
+
+Например:
+
+```text
+  s3://testchbackups.s3.amazonaws.com/backups/
+```
+
+Где:
+
+* `testchbackups` — имя S3 бакета, в который экспортируются резервные копии.
+  * `backups` — необязательный подкаталог.
+
+2. Ключ доступа AWS и секретный ключ. Также поддерживается аутентификация с использованием ролей AWS, которую можно использовать вместо ключа доступа AWS и секретного ключа.
+
+<Note>
+  Чтобы использовать аутентификацию с использованием ролей, следуйте инструкциям по безопасному доступу к данным в S3 [здесь](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely). Кроме того, вам потребуется добавить разрешения `s3:PutObject` и `s3:DeleteObject` в политику IAM, описанную [здесь.](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role)
+</Note>
+
+<div id="azure">
+  ### Azure
+</div>
+
+1. Строка подключения к хранилищу Azure.
+2. Имя контейнера в учетной записи хранения Azure.
+3. Объект Blob в контейнере.
+
+<div id="google-cloud-storage-gcs">
+  ### Google Cloud Storage (GCS)
+</div>
+
+1. Конечная точка GCS в следующем формате:
+
+   ```text
+   https://storage.googleapis.com/<bucket_name>/
+   ```
+2. Ключ доступа HMAC и секрет HMAC.
+
+<hr />
+
+<div id="backup-restore">
+  ## Резервное копирование / восстановление
+</div>
+
+<div id="backup--restore-to-aws-s3-bucket">
+  ## Резервное копирование / восстановление в S3 бакет AWS
+</div>
+
+<div id="take-a-db-backup">
+  ### Создать резервную копию базы данных
+</div>
+
+**Полная резервная копия**
+
+```sql
+BACKUP DATABASE test_backups 
+TO S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<key secret>')
+```
+
+Где `uuid` — уникальный идентификатор, используемый для различения наборов резервных копий.
+
+<Note>
+  Для каждой новой резервной копии в этом подкаталоге нужно использовать другой UUID, иначе возникнет ошибка `BACKUP_ALREADY_EXISTS`.
+  Например, если вы создаёте ежедневные резервные копии, вам нужно будет использовать новый UUID каждый день.
+</Note>
+
+**Инкрементная резервная копия**
+
+```sql
+BACKUP DATABASE test_backups 
+TO S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<key secret>') 
+SETTINGS base_backup = S3('https://testchbackups.s3.amazonaws.com/backups/<base-backup-uuid>', '<key id>', '<key secret>')
+```
+
+<div id="restore-from-a-backup">
+  ### Восстановление из резервной копии
+</div>
+
+```sql
+RESTORE DATABASE test_backups 
+AS test_backups_restored 
+FROM S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<key secret>')
+```
+
+См.: [Настройка BACKUP/RESTORE для использования конечной точки S3](/ru/concepts/features/backup-restore/s3-endpoint) для получения дополнительных сведений.
+
+<div id="backup--restore-to-azure-blob-storage">
+  ## Резервное копирование / восстановление в Azure Blob Storage
+</div>
+
+<div id="take-a-db-backup">
+  ### Создать резервную копию базы данных
+</div>
+
+**Полная резервная копия**
+
+```sql
+BACKUP DATABASE test_backups 
+TO AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>');
+```
+
+Где `uuid` — это уникальный идентификатор, используемый для различения набора резервных копий.
+
+**Инкрементальная резервная копия**
+
+```sql
+BACKUP DATABASE test_backups 
+TO AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>/my_incremental') 
+SETTINGS base_backup = AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>')
+```
+
+<div id="restore-from-a-backup">
+  ### Восстановление из резервной копии
+</div>
+
+```sql
+RESTORE DATABASE test_backups 
+AS test_backups_restored_azure 
+FROM AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>')
+```
+
+См.: [Настройка BACKUP/RESTORE для использования конечной точки AzureBlobStorage](/ru/concepts/features/backup-restore/azure-blob-storage#configuring-backuprestore-to-use-an-azureblobstorage-endpoint) для получения более подробной информации.
+
+<div id="backup--restore-to-google-cloud-storage-gcs">
+  ## Резервное копирование / восстановление в Google Cloud Storage (GCS)
+</div>
+
+<div id="take-a-db-backup">
+  ### Создать резервную копию базы данных
+</div>
+
+**Полная резервная копия**
+
+```sql
+BACKUP DATABASE test_backups 
+TO S3('https://storage.googleapis.com/<bucket>/<uuid>', <hmac-key>', <hmac-secret>)
+```
+
+Где `uuid` — это уникальный идентификатор, используемый, чтобы отличать один набор резервных копий от другого.
+
+**Инкрементальная резервная копия**
+
+```sql
+BACKUP DATABASE test_backups 
+TO S3('https://storage.googleapis.com/test_gcs_backups/<uuid>/my_incremental', 'key', 'secret')
+SETTINGS base_backup = S3('https://storage.googleapis.com/test_gcs_backups/<uuid>', 'key', 'secret')
+```
+
+<div id="restore-from-a-backup">
+  ### Восстановление из резервной копии
+</div>
+
+```sql
+RESTORE DATABASE test_backups 
+AS test_backups_restored_gcs 
+FROM S3('https://storage.googleapis.com/test_gcs_backups/<uuid>', 'key', 'secret')
+```

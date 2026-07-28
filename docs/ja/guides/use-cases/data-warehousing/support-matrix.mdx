@@ -1,0 +1,174 @@
+---
+title: 'サポートマトリクス'
+sidebarTitle: 'サポートマトリクス'
+slug: /use-cases/data-lake/support-matrix
+description: 'ClickHouse のオープンテーブルフォーマットのインテグレーションとデータカタログ接続に関する包括的なサポートマトリクス。'
+keywords: ['データレイク', 'レイクハウス', 'サポート', 'iceberg', 'delta lake', 'hudi', 'paimon', 'カタログ', '機能']
+doc_type: 'reference'
+---
+
+このページでは、ClickHouse のデータレイクインテグレーションに関する包括的なサポートマトリクスを紹介します。各オープンテーブルフォーマットで利用できる機能、ClickHouse が接続可能なカタログ、および各カタログでサポートされている機能をまとめています。
+
+<div id="format-support">
+  ## オープンテーブルフォーマットのサポート
+</div>
+
+ClickHouse は、[Apache Iceberg](/ja/reference/engines/table-engines/integrations/iceberg)、[Delta Lake](/ja/reference/engines/table-engines/integrations/deltalake)、[Apache Hudi](/ja/reference/engines/table-engines/integrations/hudi)、[Apache Paimon](/ja/reference/functions/table-functions/paimon) の 4 つのオープンテーブルフォーマットに対応しています。サポートマトリクスを表示するには、以下からフォーマットを選択してください。
+
+**凡例:** ✅ 対応 | ⚠️ 一部対応 / 実験的 | ❌ 未対応
+
+<Tabs>
+  <Tab title="Apache Iceberg">
+    | 機能                       | ステータス | 備考                                                                                                                                                                                                                                                             |
+    | ------------------------ | :---: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | **ストレージバックエンド**          |       |                                                                                                                                                                                                                                                                |
+    | AWS S3                   |   ✅   | [`icebergS3()`](/ja/reference/functions/table-functions/iceberg) または `iceberg()` エイリアス経由                                                                                                                                                                          |
+    | GCS                      |   ✅   | [`icebergS3()`](/ja/reference/functions/table-functions/iceberg) または `iceberg()` エイリアス経由                                                                                                                                                                          |
+    | Azure Blob Storage       |   ✅   | [`icebergAzure()`](/ja/reference/functions/table-functions/iceberg) 経由                                                                                                                                                                                            |
+    | HDFS                     |   ⚠️  | [`icebergHDFS()`](/ja/reference/functions/table-functions/iceberg) 経由。非推奨。                                                                                                                                                                                        |
+    | Local filesystem         |   ✅   | [`icebergLocal()`](/ja/reference/functions/table-functions/iceberg) 経由                                                                                                                                                                                            |
+    | **アクセス方法**               |       |                                                                                                                                                                                                                                                                |
+    | テーブル関数                   |   ✅   | バックエンドごとのバリアントがある [`icebergS3()`](/ja/reference/functions/table-functions/iceberg)                                                                                                                                                                                |
+    | テーブルエンジン                 |   ✅   | バックエンドごとのバリアントがある [`IcebergS3`](/ja/reference/engines/table-engines/integrations/iceberg)                                                                                                                                                                         |
+    | クラスター分散読み取り              |   ✅   | [`icebergS3Cluster`](/ja/reference/functions/table-functions/icebergCluster)、[`icebergAzureCluster`](/ja/reference/functions/table-functions/icebergCluster)、[`icebergHDFSCluster`](/ja/reference/functions/table-functions/icebergCluster)                             |
+    | 名前付きコレクション               |   ✅   | [名前付きコレクションの定義](/ja/reference/functions/table-functions/iceberg#defining-a-named-collection)                                                                                                                                                                      |
+    |                          |       |                                                                                                                                                                                                                                                                |
+    | **読み取り機能**               |       |                                                                                                                                                                                                                                                                |
+    | 読み取りサポート                 |   ✅   | すべての ClickHouse SQL 関数を含む完全な SELECT サポート                                                                                                                                                                                                                       |
+    | パーティションプルーニング            |   ✅   | [Partition pruning](/ja/reference/engines/table-engines/integrations/iceberg#partition-pruning) を参照してください。                                                                                                                                                        |
+    | 隠しパーティション化               |   ✅   | Iceberg の transform ベースのパーティション化をサポート                                                                                                                                                                                                                          |
+    | パーティション進化                |   ✅   | 時間の経過とともにパーティション仕様が変化するテーブルの読み取りをサポート                                                                                                                                                                                                                          |
+    | スキーマ進化                   |   ✅   | カラムの追加、削除、並べ替え。[Schema evolution](/ja/reference/engines/table-engines/integrations/iceberg#schema-evolution) を参照してください。                                                                                                                                           |
+    | 型昇格 / 拡張                 |   ✅   | `int` → `long`、`float` → `double`、`decimal(P,S)` → `decimal(P',S)` (P&#39; &gt; P の場合) 。[Schema evolution](/ja/reference/engines/table-engines/integrations/iceberg#schema-evolution) を参照してください。                                                                  |
+    | タイムトラベル / スナップショット       |   ✅   | `iceberg_timestamp_ms` または `iceberg_snapshot_id` 設定で利用できます。[Time travel](/ja/reference/engines/table-engines/integrations/iceberg#time-travel) を参照してください。                                                                                                         |
+    | 位置削除                     |   ✅   | [Processing deleted rows](/ja/reference/engines/table-engines/integrations/iceberg#deleted-rows) を参照してください。                                                                                                                                                       |
+    | 等価削除                     |   ✅   | テーブルエンジンのみ。v25.8+ から対応。[Processing deleted rows](/ja/reference/engines/table-engines/integrations/iceberg#deleted-rows) を参照してください。                                                                                                                                |
+    | Merge-on-read            |   ⚠️  | 実験的機能。[delete operations](/ja/reference/functions/table-functions/iceberg#iceberg-writes-delete) をサポートしています。                                                                                                                                                      |
+    | フォーマットバージョン              |   ⚠️  | v1 と v2 をサポート。V3 はサポートされていません。                                                                                                                                                                                                                                 |
+    | 列統計                      |   ✅   |                                                                                                                                                                                                                                                                |
+    | ブルームフィルタ / puffin ファイル   |   ❌   | puffin ファイル内のブルームフィルタ索引はサポートされていません                                                                                                                                                                                                                            |
+    | 仮想カラム                    |   ✅   | `_path`、`_file`、`_size`、`_time`、`_etag`。[Virtual columns](/ja/reference/functions/table-functions/iceberg#virtual-columns) を参照してください。                                                                                                                             |
+    |                          |       |                                                                                                                                                                                                                                                                |
+    | **書き込み機能**               |       |                                                                                                                                                                                                                                                                |
+    | テーブル作成                   |   ✅   | 実験的機能。`allow_insert_into_iceberg = 1` が必要です。v25.7+ から対応。[Creating a table](/ja/reference/functions/table-functions/iceberg#create-iceberg-table) を参照してください。                                                                                                       |
+    | INSERT                   |   ✅   | 26.2 からベータ。`allow_insert_into_iceberg = 1` が必要です。[データの挿入](/ja/reference/functions/table-functions/iceberg#writes-inserts)を参照してください。                                                                                                                               |
+    | DELETE                   |   ✅   | 実験的機能です。`allow_insert_into_iceberg = 1` が必要です。`ALTER TABLE ... DELETE WHERE` 経由で実行します。[データの削除](/ja/reference/functions/table-functions/iceberg#iceberg-writes-delete)を参照してください。                                                                                   |
+    | ALTER TABLE (スキーマ変更)     |   ✅   | 実験的機能です。`allow_insert_into_iceberg = 1` が必要です。カラムの追加、削除、変更、リネームに対応します。[Schema evolution](/ja/reference/functions/table-functions/iceberg#iceberg-writes-schema-evolution)を参照してください。                                                                               |
+    | Compaction               |   ⚠️  | 実験的機能です。`allow_experimental_iceberg_compaction = 1` が必要です。position delete files を data files にマージします。[Compaction](/ja/reference/functions/table-functions/iceberg#iceberg-writes-compaction)を参照してください。その他の Iceberg compaction 操作はサポートされていません。                     |
+    | UPDATE / MERGE           |   ❌   | サポートされていません。Compaction を参照してください。                                                                                                                                                                                                                              |
+    | Copy-on-write            |   ❌   | サポートされていません                                                                                                                                                                                                                                                    |
+    | Expire snapshots         |   ❌   | サポートされていません                                                                                                                                                                                                                                                    |
+    | Remove orphan files      |   ❌   | サポートされていません                                                                                                                                                                                                                                                    |
+    | Writing partitions       |   ✅   | サポートされています。                                                                                                                                                                                                                                                    |
+    | Altering partitions      |   ❌   | ClickHouse からパーティション化方式を変更することはサポートされていません。ClickHouse は、パーティション化が変更された Iceberg table への書き込みには対応しています。                                                                                                                                                          |
+    |                          |       |                                                                                                                                                                                                                                                                |
+    | **メタデータ**                |       |                                                                                                                                                                                                                                                                |
+    | Branching and tagging    |   ❌   | Iceberg のブランチ/タグ参照はサポートされていません                                                                                                                                                                                                                                 |
+    | Metadata file resolution |   ✅   | カタログ、単純なディレクトリ一覧、&#39;version-hint&#39;、および特定のパスによるメタデータ解決をサポートします。`iceberg_metadata_file_path` および `iceberg_metadata_table_uuid` で設定できます。[Metadata file resolution](/ja/reference/engines/table-engines/integrations/iceberg#metadata-file-resolution)を参照してください。 |
+    | Data caching             |   ✅   | S3/Azure/HDFS ストレージエンジンと同じ仕組みです。[Data cache](/ja/reference/engines/table-engines/integrations/iceberg#data-cache)を参照してください。                                                                                                                                       |
+    | Metadata caching         |   ✅   | manifest と metadata files はメモリ内にキャッシュされます。デフォルトで `use_iceberg_metadata_files_cache` により有効になっています。[Metadata cache](/ja/reference/engines/table-engines/integrations/iceberg#metadata-cache)を参照してください。                                                              |
+  </Tab>
+
+  <Tab title="Delta Lake">
+    バージョン 25.6 以降、ClickHouse は Delta Lake テーブルの読み取りに Delta Lake Rust kernel を使用し、より広範な機能をサポートしています。ただし、Azure Blob Storage 上のデータにアクセスする際には既知の問題があります。そのため、Azure Blob Storage 上のデータを読み取る場合、この Kernel は無効になります。以下に、この kernel が必要な機能を示します。
+
+    | Feature                   | Status | Notes                                                                                                                                                                   |
+    | ------------------------- | :----: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | **Storage backends**      |        |                                                                                                                                                                         |
+    | AWS S3                    |    ✅   | [`deltaLake()`](/ja/reference/functions/table-functions/deltalake) または `deltaLakeS3()` を使用                                                                                 |
+    | GCS                       |    ✅   | [`deltaLake()`](/ja/reference/functions/table-functions/deltalake) または `deltaLakeS3()` を使用                                                                                 |
+    | Azure Blob Storage        |    ✅   | [`deltaLakeAzure()`](/ja/reference/functions/table-functions/deltalake) を使用                                                                                                |
+    | HDFS                      |    ❌   | サポートされていません                                                                                                                                                             |
+    | Local filesystem          |    ✅   | [`deltaLakeLocal()`](/ja/reference/functions/table-functions/deltalake) を使用                                                                                                |
+    | **Access methods**        |        |                                                                                                                                                                         |
+    | Table function            |    ✅   | バックエンドごとのバリアントを持つ [`deltaLake()`](/ja/reference/functions/table-functions/deltalake)                                                                                       |
+    | Table engine              |    ✅   | [`DeltaLake`](/ja/reference/engines/table-engines/integrations/deltalake)                                                                                                  |
+    | Cluster-distributed reads |    ✅   | [`deltaLakeCluster`](/ja/reference/functions/table-functions/deltalakeCluster), [`deltaLakeAzureCluster`](/ja/reference/functions/table-functions/deltalakeCluster)           |
+    | Named collections         |    ✅   | [Named collection](/ja/reference/functions/table-functions/deltalake#arguments)                                                                                            |
+    | **Read features**         |        |                                                                                                                                                                         |
+    | Read support              |    ✅   | すべての ClickHouse SQL 関数を含む完全な SELECT サポート                                                                                                                                |
+    | Partition pruning         |    ✅   | Delta Kernel が必要です。                                                                                                                                                     |
+    | Schema evolution          |    ✅   | Delta Kernel が必要です。                                                                                                                                                     |
+    | Time travel               |    ✅   | Delta Kernel が必要です。                                                                                                                                                     |
+    | Deletion vectors          |    ✅   |                                                                                                                                                                         |
+    | Column mapping            |    ✅   |                                                                                                                                                                         |
+    | Change data feed          |    ✅   | Delta Kernel が必要です。                                                                                                                                                     |
+    | Virtual columns           |    ✅   | `_path`, `_file`, `_size`, `_time`, `_etag`。詳細は [Virtual columns](/ja/reference/functions/table-functions/deltalake#virtual-columns) を参照してください。                            |
+    | **Write features**        |        |                                                                                                                                                                         |
+    | INSERT                    |    ✅   | Experimental。`allow_experimental_delta_lake_writes = 1` が必要です。[DeltaLake engine](/ja/reference/engines/table-engines/integrations/deltalake) を参照してください。Delta Kernel が必要です。 |
+    | DELETE / UPDATE / MERGE   |    ❌   | サポートされていません                                                                                                                                                             |
+    | CREATE empty table        |    ❌   | 新しい空の Delta Lake テーブルの作成はサポートされていません。`CREATE TABLE` 操作では、object storage 上に既存の Delta Lake が存在することを前提としています。                                                              |
+    | **Caching**               |        |                                                                                                                                                                         |
+    | Data caching              |    ✅   | S3/Azure/HDFS ストレージエンジンと同じ仕組みです。詳細は [Data cache](/ja/reference/engines/table-engines/integrations/deltalake#data-cache) を参照してください。                                         |
+  </Tab>
+
+  <Tab title="Apache Hudi">
+    | 機能                       | ステータス | 注記                                                                                                                        |
+    | ------------------------ | :---: | ------------------------------------------------------------------------------------------------------------------------- |
+    | **ストレージバックエンド**          |       |                                                                                                                           |
+    | AWS S3                   |   ✅   | [`hudi()`](/ja/reference/functions/table-functions/hudi) 経由                                                                  |
+    | GCS                      |   ✅   | [`hudi()`](/ja/reference/functions/table-functions/hudi) 経由                                                                  |
+    | Azure Blob Storage       |   ❌   | サポートされていません                                                                                                               |
+    | HDFS                     |   ❌   | サポートされていません                                                                                                               |
+    | ローカルファイルシステム             |   ❌   | サポートされていません                                                                                                               |
+    | **アクセス方法**               |       |                                                                                                                           |
+    | テーブル関数                   |   ✅   | [`hudi()`](/ja/reference/functions/table-functions/hudi)                                                                     |
+    | テーブルエンジン                 |   ✅   | [`Hudi`](/ja/reference/engines/table-engines/integrations/hudi)                                                              |
+    | クラスター分散読み取り              |   ✅   | [`hudiCluster`](/ja/reference/functions/table-functions/hudiCluster) (S3 のみ)                                                 |
+    | 名前付きコレクション               |   ✅   | [Hudi の引数](/ja/reference/functions/table-functions/hudi#arguments)                                                           |
+    | **読み取り機能**               |       |                                                                                                                           |
+    | 読み取りサポート                 |   ✅   | すべての ClickHouse SQL 関数に対応した完全な SELECT サポート                                                                                |
+    | スキーマ進化                   |   ❌   | サポートされていません                                                                                                               |
+    | タイムトラベル                  |   ❌   | サポートされていません                                                                                                               |
+    | 仮想カラム                    |   ✅   | `_path`, `_file`, `_size`, `_time`, `_etag`。[仮想カラム](/ja/reference/functions/table-functions/hudi#virtual-columns) を参照してください。 |
+    | **書き込み機能**               |       |                                                                                                                           |
+    | INSERT / DELETE / UPDATE |   ❌   | 読み取り専用のインテグレーション                                                                                                          |
+    | **キャッシュ**                |       |                                                                                                                           |
+    | データキャッシュ                 |   ❌   | サポートされていません                                                                                                               |
+  </Tab>
+
+  <Tab title="Apache Paimon">
+    | 機能                       | ステータス | 注記                                                                                                                                                                                                                                 |
+    | ------------------------ | :---: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | **ストレージバックエンド**          |       |                                                                                                                                                                                                                                    |
+    | S3                       |   ✅   | 実験的。[`paimon()`](/ja/reference/functions/table-functions/paimon) または `paimonS3()` 経由                                                                                                                                                  |
+    | GCS                      |   ✅   | 実験的。[`paimon()`](/ja/reference/functions/table-functions/paimon) または `paimonS3()` 経由                                                                                                                                                  |
+    | Azure Blob Storage       |   ✅   | 実験的。[`paimonAzure()`](/ja/reference/functions/table-functions/paimon) 経由                                                                                                                                                              |
+    | HDFS                     |   ⚠️  | 実験的。[`paimonHDFS()`](/ja/reference/functions/table-functions/paimon) 経由。非推奨。                                                                                                                                                          |
+    | ローカルファイルシステム             |   ✅   | 実験的。[`paimonLocal()`](/ja/reference/functions/table-functions/paimon) 経由                                                                                                                                                              |
+    | **アクセス方法**               |       |                                                                                                                                                                                                                                    |
+    | テーブル関数                   |   ✅   | 実験的。バックエンドごとのバリアントを備えた [`paimon()`](/ja/reference/functions/table-functions/paimon)                                                                                                                                                   |
+    | テーブルエンジン                 |   ❌   | 専用のテーブルエンジンはありません                                                                                                                                                                                                                  |
+    | クラスター分散読み取り              |   ✅   | 実験的。[`paimonS3Cluster`](/ja/reference/functions/table-functions/paimonCluster), [`paimonAzureCluster`](/ja/reference/functions/table-functions/paimonCluster), [`paimonHDFSCluster`](/ja/reference/functions/table-functions/paimonCluster) |
+    | 名前付きコレクション               |   ✅   | 実験的。[名前付きコレクションの定義](/ja/reference/functions/table-functions/paimon#defining-a-named-collection)                                                                                                                                       |
+    | **読み取り機能**               |       |                                                                                                                                                                                                                                    |
+    | 読み取りサポート                 |   ✅   | 実験的。すべての ClickHouse SQL 関数に対応する完全な SELECT サポート                                                                                                                                                                                     |
+    | スキーマ進化                   |   ❌   | サポートされていません                                                                                                                                                                                                                        |
+    | タイムトラベル                  |   ❌   | サポートされていません                                                                                                                                                                                                                        |
+    | 仮想カラム                    |   ✅   | 実験的。`_path`, `_file`, `_size`, `_time`, `_etag`。[仮想カラム](/ja/reference/functions/table-functions/paimon#virtual-columns) を参照してください。                                                                                                    |
+    | **書き込み機能**               |       |                                                                                                                                                                                                                                    |
+    | INSERT / DELETE / UPDATE |   ❌   | 読み取り専用のインテグレーション                                                                                                                                                                                                                   |
+    | **キャッシュ**                |       |                                                                                                                                                                                                                                    |
+    | データキャッシュ                 |   ❌   | サポートされていません                                                                                                                                                                                                                        |
+  </Tab>
+</Tabs>
+
+<div id="catalog-support">
+  ## カタログのサポート
+</div>
+
+ClickHouse は、[`DataLakeCatalog`](/ja/reference/engines/database-engines/datalake) データベースエンジンを使用して外部データカタログに接続できます。このエンジンにより、カタログが ClickHouse データベースとして公開されます。カタログに登録されたテーブルは自動的に表示され、標準 SQL でクエリできます。
+
+現在サポートされているカタログは次のとおりです。セットアップ手順の詳細については、各カタログのリファレンスガイドを参照してください。
+
+| カタログ                                                                         | フォーマット         |  読み取り | テーブルの作成 | INSERT | 参照ガイド                                                                       |
+| ---------------------------------------------------------------------------- | -------------- | :---: | :-----: | :----: | --------------------------------------------------------------------------- |
+| [AWS Glue Catalog](/ja/guides/use-cases/data-warehousing/glue-catalog)          | Iceberg        | ✅ ベータ |    ❌    |    ❌   | [Glue カタログガイド](/ja/guides/use-cases/data-warehousing/glue-catalog)             |
+| [BigLake Metastore](/ja/guides/use-cases/data-warehousing/biglake-catalog)      | Iceberg        | ✅ ベータ |    ❌    |    ❌   | [BigLake Metastore ガイド](/ja/guides/use-cases/data-warehousing/biglake-catalog) |
+| [Databricks Unity Catalog](/ja/guides/use-cases/data-warehousing/unity-catalog) | Delta, Iceberg | ✅ ベータ |  ✅ ベータ  |  ✅ ベータ | [Unity Catalog ガイド](/ja/guides/use-cases/data-warehousing/unity-catalog)       |
+| [Iceberg REST](/ja/guides/use-cases/data-warehousing/rest-catalog)              | Iceberg        | ✅ ベータ |    ❌    |    ❌   | [REST カタログガイド](/ja/guides/use-cases/data-warehousing/rest-catalog)             |
+| [Lakekeeper](/ja/guides/use-cases/data-warehousing/lakekeeper-catalog)          | Iceberg        | ✅ ベータ |    ❌    |    ❌   | [Lakekeeper カタログガイド](/ja/guides/use-cases/data-warehousing/lakekeeper-catalog) |
+| [Project Nessie](/ja/guides/use-cases/data-warehousing/nessie-catalog)          | Iceberg        | ✅ 実験的 |    ❌    |    ❌   | [Nessie カタログガイド](/ja/guides/use-cases/data-warehousing/nessie-catalog)         |
+| [Microsoft OneLake](/ja/guides/use-cases/data-warehousing/onelake-catalog)      | Iceberg        | ✅ ベータ |  ✅ ベータ  |  ✅ ベータ | [OneLake カタログガイド](/ja/guides/use-cases/data-warehousing/onelake-catalog)       |
+
+現在、すべてのカタログインテグレーションで実験的またはベータの設定を有効にする必要があります。Microsoft OneLake と Databricks Unity Catalog を除き、すべてのカタログは **読み取り専用** アクセスです。つまり、テーブルはクエリできますが、カタログ接続を通じて作成したり書き込んだりすることはできません。カタログから ClickHouse にデータを読み込んで分析を高速化するには、[分析高速化ガイド](/ja/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) で説明されている `INSERT INTO SELECT` を使用してください。オープンテーブルフォーマットにデータを書き戻すには、[データ書き込みガイド](/ja/guides/use-cases/data-warehousing/getting-started/writing-data) で説明されているように、スタンドアロンの Iceberg テーブルを作成してください。

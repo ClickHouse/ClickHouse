@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Types.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/register_objects.h>
 #include <Common/IFactoryWithAliases.h>
@@ -17,7 +18,6 @@
 namespace DB
 {
 
-using FunctionCreator = std::function<FunctionOverloadResolverPtr(ContextPtr)>;
 using FunctionSimpleCreator = std::function<FunctionPtr(ContextPtr)>;
 using FunctionFactoryData = std::pair<FunctionCreator, FunctionDocumentation>;
 
@@ -37,7 +37,7 @@ public:
     }
 
     /// This function is used by YQL - innovative transactional DBMS that depends on ClickHouse by source code.
-    std::vector<std::string> getAllNames() const;
+    Strings getAllNames() const;
 
     bool has(const std::string & name) const;
 
@@ -68,7 +68,7 @@ public:
     FunctionDocumentation getDocumentation(const std::string & name) const;
 
 private:
-    using Functions = std::unordered_map<std::string, Value>;
+    using Functions = std::unordered_map<std::string, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     Functions functions;
     Functions case_insensitive_functions;

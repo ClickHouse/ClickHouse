@@ -20,12 +20,13 @@ class SplitFileCachePriority : public IFileCachePriority
 public:
     class SplitIterator;
     using CachePriorityCreatorFunction
-        = std::function<IFileCachePriorityPtr(size_t max_size, size_t max_elements, double size_ratio, size_t overcommit_eviction_evict_step, String description)>;
+        = std::function<IFileCachePriorityPtr(QueueType queue_type, size_t max_size, size_t max_elements, double size_ratio, size_t overcommit_eviction_evict_step, String description)>;
     using IFileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;
     using SegmentType = FileSegmentKeyType;
     using PriorityPerType = std::array<IFileCachePriorityPtr, 3>;
 
     SplitFileCachePriority(
+        QueueType queue_type_,
         CachePriorityCreatorFunction creator_function,
         size_t max_size_,
         size_t max_elements_,
@@ -82,12 +83,12 @@ public:
         const CacheStateGuard::Lock &) override;
 
     bool collectCandidatesForEviction(
-        const EvictionInfo & eviction_info,
+        EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         InvalidatedEntriesInfos & invalidated_entries,
         IFileCachePriority::IteratorPtr reservee,
-        bool continue_from_last_eviction_pos,
+        EvictionCursor eviction_cursor,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
@@ -115,9 +116,31 @@ public:
         const OriginInfo & origin_info,
         const CacheStateGuard::Lock & lock) override;
 
-    void resetEvictionPos() override;
+    void resetEvictionPos(EvictionCursor cursor) override;
+
+    void setOnEvictCallback(OnEvictCallback callback) override
+    {
+        for (auto & p : priorities_holder)
+            if (p)
+                p->setOnEvictCallback(callback);
+        IFileCachePriority::setOnEvictCallback(std::move(callback));
+    }
 
 protected:
+    void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate) override
+    {
+        getPriority(SegmentType::Data).setInvalidateNotifier(threshold, on_invalidate);
+        getPriority(SegmentType::System).setInvalidateNotifier(threshold, on_invalidate);
+    }
+
+    size_t removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard) override
+    {
+        size_t removed = getPriority(SegmentType::Data).removeInvalidatedEntries(max_batch, cache_guard);
+        if (removed < max_batch)
+            removed += getPriority(SegmentType::System).removeInvalidatedEntries(max_batch - removed, cache_guard);
+        return removed;
+    }
+
     size_t getHoldSize() override;
 
     size_t getHoldElements() override;
@@ -153,7 +176,9 @@ public:
 
     void remove(const CachePriorityGuard::WriteLock &) override;
 
-    void invalidate() override;
+    void invalidate() noexcept override;
+
+    void invalidateBeforeRemove(const CachePriorityGuard::WriteLock &) noexcept override;
 
     void incrementSize(size_t size, const CacheStateGuard::Lock &) override;
 

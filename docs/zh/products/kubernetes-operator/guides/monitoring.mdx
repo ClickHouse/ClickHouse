@@ -1,0 +1,420 @@
+---
+position: 4
+slug: /clickhouse-operator/guides/monitoring
+title: 监控 ClickHouse Operator
+keywords: ['kubernetes', 'prometheus', '监控', '指标']
+description: '如何抓取、保护和使用 operator 的指标与健康检查端点。'
+doc_type: 'guide'
+---
+
+operator 会暴露与 Prometheus 兼容的指标以及 Kubernetes 健康探针，以便你观测其协调活动、发现卡住的控制器，并在发生故障时发出告警。
+
+本指南将介绍 operator 暴露了哪些内容、如何抓取这些内容，以及哪些查询在日常使用中最实用。
+
+<Note>
+  本指南介绍的是 **operator 进程本身** (controller manager) 。对于 ClickHouse server 指标 (查询、parts、复制延迟) ，请使用 [ClickHouse 中的 Prometheus 端点](/zh/reference/settings/server-settings/settings#prometheus) 单独进行抓取。
+</Note>
+
+<div id="endpoints">
+  ## 端点
+</div>
+
+operator 进程会在 manager pod (容器组) 内暴露两个 HTTP 端点：
+
+| 端点   | 默认端口                              | 路径                    | 用途                   |
+| ---- | --------------------------------- | --------------------- | -------------------- |
+| 指标   | `8080` (Helm) / `0` 已禁用 (二进制默认值)  | `/metrics`            | Prometheus 指标暴露格式    |
+| 健康探针 | `8081`                            | `/healthz`, `/readyz` | Kubernetes 存活性和就绪性检查 |
+
+直接运行 operator 二进制文件时，指标端点**默认关闭** (`--metrics-bind-address=0`) 。Helm 图表会通过 `metrics.enable: true` 和 `metrics.port: 8080` 启用它。
+
+健康探针端点始终启用；部署模板会将 `/healthz` 和 `/readyz` 配置为该 pod (容器组) 在端口 `8081` 上的存活探针和就绪探针。
+
+<div id="operator-binary-flags">
+  ## Operator 二进制参数
+</div>
+
+相关的 `manager` 参数 (定义在 [`cmd/main.go`](https://github.com/ClickHouse/clickhouse-operator/blob/main/cmd/main.go) 中) ：
+
+| 标志                            | 默认值                                 | 说明                                                                     |
+| ----------------------------- | ----------------------------------- | ---------------------------------------------------------------------- |
+| `--metrics-bind-address`      | `0` (禁用)                            | 指标端点的绑定地址。设为 `:8443` 以使用 HTTPS，设为 `:8080` 以使用 HTTP。保留为 `0` 可禁用指标服务器。   |
+| `--metrics-secure`            | `true`                              | 通过带身份验证/授权的 HTTPS 提供指标服务。设为 `false` 可使用纯 HTTP。                         |
+| `--metrics-cert-path`         | 空                                   | 存放指标服务器 TLS 证书文件 (`tls.crt`、`tls.key`) 的目录。                            |
+| `--metrics-cert-name`         | `tls.crt`                           | `--metrics-cert-path` 中的证书文件名。                                         |
+| `--metrics-cert-key`          | `tls.key`                           | `--metrics-cert-path` 中的密钥文件名。                                         |
+| `--enable-http2`              | `false`                             | 为指标**和 webhook**服务器启用 HTTP/2。默认关闭，以缓解 CVE-2023-44487 / CVE-2023-39325。 |
+| `--leader-elect`              | `false` (二进制程序) / `true` (Helm 图表)  | 启用 leader 选举，以确保同一时间只有一个副本执行协调。Helm 图表默认会在 `manager.args` 中设置此参数。      |
+| `--health-probe-bind-address` | `:8081`                             | `/healthz` 和 `/readyz` 的绑定地址。                                          |
+
+<Note>
+  该参数帮助文本中的 `8443` (HTTPS) / `8080` (HTTP) 约定仅作提示。Helm 图表会在 `8080` 上提供 HTTPS，因为它同时设置了 `metrics.port: 8080` 和 `metrics.secure: true`。这里不会根据端口检测模式——选择 HTTPS 还是 HTTP 取决于 `--metrics-secure`。
+</Note>
+
+<div id="enable-metrics-via-helm">
+  ## 通过 Helm 启用指标
+</div>
+
+该 Helm 图表 已为指标端口创建了一个 `Service`，并且还可选择为 prometheus-operator 创建 `ServiceMonitor`。
+
+指标端点默认已启用 (`metrics.enable: true`、端口 `8080`，并通过 `metrics.secure: true` 以 HTTPS 方式提供服务) 。通常你唯一需要修改的设置是 `prometheus.enable`，这样 Helm 图表 就会为你创建一个 `ServiceMonitor`：
+
+```yaml
+# values.yaml — minimal override
+prometheus:
+  enable: true
+```
+
+如果不使用 cert-manager，还需要设置 `certManager.enable: false`。此时，ServiceMonitor 将以 `insecureSkipVerify: true` 抓取指标，仅依赖 bearer-token 身份验证。
+
+完整的指标相关默认配置如下：
+
+```yaml
+metrics:
+  enable: true
+  port: 8080
+  secure: true            # HTTPS with authn/authz enforced on every scrape
+
+certManager:
+  enable: true            # Issues the metrics server certificate
+
+prometheus:
+  enable: false           # Set to true to render the ServiceMonitor
+  scraping_annotations: false   # Alternative: prometheus.io/scrape pod annotations
+```
+
+应用：
+
+```bash
+helm upgrade --install clickhouse-operator \
+  oci://ghcr.io/clickhouse/clickhouse-operator-helm \
+  -n clickhouse-operator-system --create-namespace \
+  -f values.yaml
+```
+
+安装后，Helm 图表 会创建：
+
+* `Service/<resource-prefix>-metrics-service` — 暴露端口 `8080` (当 `metrics.secure: true` 时使用 HTTPS) 。
+* `ServiceMonitor/<resource-prefix>-controller-manager-metrics-monitor` — 在 `prometheus.enable: true` 时创建。
+* `ClusterRole/<resource-prefix>-metrics-reader` — 为非资源 URL `/metrics` 授予 `get` 权限。
+
+<div id="securing-the-metrics-endpoint">
+  ## 保护指标端点
+</div>
+
+当 `metrics.secure: true` 时，指标服务器会对每次抓取都强制启用 TLS **和** Kubernetes 身份验证/授权。抓取器必须：
+
+1. 提供有效的 Kubernetes Bearer 令牌。
+2. 使用一个绑定到集群角色的 ServiceAccount，且该集群角色被授予对非资源 URL `/metrics` 执行 `get` 的权限。
+
+该 Helm 图表 附带了这样一个集群角色：
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: clickhouse-operator-metrics-reader
+rules:
+  - nonResourceURLs:
+      - /metrics
+    verbs:
+      - get
+```
+
+将其绑定到抓取器 (通常为 Prometheus) 使用的 ServiceAccount：
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-clickhouse-operator-metrics-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: clickhouse-operator-metrics-reader
+subjects:
+  - kind: ServiceAccount
+    name: <prometheus-sa>
+    namespace: <prometheus-namespace>
+```
+
+<Warning>
+  如果指标端点返回 `401 Unauthorized` 或 `403 Forbidden`，则说明抓取器正在使用 HTTPS，但缺少 Kubernetes Bearer 令牌、该令牌未获授权，或者其 ServiceAccount 缺少上述绑定。在共享集群中，**不建议**通过设置 `metrics.secure: false` 来禁用安全性，因为任何能够通过网络访问该 pod (容器组) 的人都可能抓取该端点。
+</Warning>
+
+<div id="servicemonitor-reference">
+  ## ServiceMonitor 参考
+</div>
+
+当 `prometheus.enable: true` 时，该 Helm 图表 会渲染出如下形态的 ServiceMonitor：
+
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: <release>-controller-manager-metrics-monitor
+  namespace: <operator-namespace>
+  labels:
+    control-plane: controller-manager
+spec:
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  endpoints:
+    - path: /metrics
+      port: https           # "http" when metrics.secure: false
+      scheme: https
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      tlsConfig:
+        serverName: <release>-metrics-service.<operator-namespace>.svc
+        ca:
+          secret:
+            name: metrics-server-cert
+            key: ca.crt
+        cert:
+          secret:
+            name: metrics-server-cert
+            key: tls.crt
+        keySecret:
+          name: metrics-server-cert
+          key: tls.key
+```
+
+如果你的 Prometheus 实例未运行 cert-manager，请设置 `tlsConfig.insecureSkipVerify: true`，并仅依赖 bearer-token 身份验证——当 `certManager.enable: false` 时，该 chart 已默认这样做。
+
+<div id="standalone-prometheus-example">
+  ## 独立 Prometheus 示例
+</div>
+
+如果您未使用 kube-prometheus-stack，该仓库在 [`examples/prometheus_secure_metrics_scraper.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/prometheus_secure_metrics_scraper.yaml) 中提供了一个完整的独立示例。它会创建一个 ServiceAccount、所需的 RBAC，以及一个用于选取该 operator 的 ServiceMonitor 的 `Prometheus` CR。
+
+<div id="health-probe-endpoints">
+  ## 健康探针端点
+</div>
+
+| Path       | 用途              | 返回值                         |
+| ---------- | --------------- | --------------------------- |
+| `/healthz` | Kubernetes 存活探针 | 只要探针服务器处于监听状态，就返回 `200 OK`。 |
+| `/readyz`  | Kubernetes 就绪探针 | 只要探针服务器处于监听状态，就返回 `200 OK`。 |
+
+这两个端点都注册了同一个简单的 Ping 检查 (`sigs.k8s.io/controller-runtime` 中的 `healthz.Ping`) 。因此，探针失败表示“manager 进程未在 `:8081` 上提供 HTTP 服务”，而不是“控制器不健康”。要检测控制器级别的问题，请改用[协调指标](#reconciliation-activity)。
+
+默认情况下，这两个端点都通过端口 `8081` 提供服务。它们接入部署的方式如下：
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8081
+  initialDelaySeconds: 15
+  periodSeconds: 20
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 8081
+  initialDelaySeconds: 5
+  periodSeconds: 10
+```
+
+探针反复失败通常意味着探针服务本身根本没有启动起来——例如，manager 在启动过程中提前退出。请检查 manager 日志，查看是否有 `unable to start manager`、RBAC 失败或 `cache did not sync` 错误。
+
+<div id="metrics-catalog">
+  ## 指标目录
+</div>
+
+该 Operator 不会注册自定义的 Prometheus 收集器。以下内容均由底层的 `controller-runtime` 和 `client-go` 库暴露。按用途分组后，最有用的序列包括：
+
+<div id="reconciliation-activity">
+  ### 协调活动
+</div>
+
+| 指标                                                 | 类型        | 标记                                                                         |
+| -------------------------------------------------- | --------- | -------------------------------------------------------------------------- |
+| `controller_runtime_reconcile_total`               | counter   | `controller`, `result` (`success` / `error` / `requeue` / `requeue_after`) |
+| `controller_runtime_reconcile_errors_total`        | counter   | `controller`                                                               |
+| `controller_runtime_reconcile_time_seconds_bucket` | histogram | `controller`                                                               |
+| `controller_runtime_active_workers`                | gauge     | `controller`                                                               |
+| `controller_runtime_max_concurrent_reconciles`     | gauge     | `controller`                                                               |
+
+`controller` 标记是 `controller-runtime` 根据通过 `For(...)` 注册的资源类型推导出来的。按当前 `internal/controller/clickhouse` 和 `internal/controller/keeper` 中的代码，它们分别对应 `clickhousecluster` 和 `keepercluster`。如果你自定义了 operator，请对 `/metrics` 执行一次性抓取以进行验证。
+
+<div id="work-queue">
+  ### 工作队列
+</div>
+
+| 指标                                            | 类型        | 标记                               |
+| --------------------------------------------- | --------- | -------------------------------- |
+| `workqueue_depth`                             | gauge     | `name`, `controller`, `priority` |
+| `workqueue_adds_total`                        | counter   | `name`, `controller`             |
+| `workqueue_retries_total`                     | counter   | `name`, `controller`             |
+| `workqueue_unfinished_work_seconds`           | gauge     | `name`, `controller`             |
+| `workqueue_longest_running_processor_seconds` | gauge     | `name`, `controller`             |
+| `workqueue_queue_duration_seconds_bucket`     | histogram | `name`, `controller`             |
+| `workqueue_work_duration_seconds_bucket`      | histogram | `name`, `controller`             |
+
+`name` 和 `controller` 这两个标记的值相同 (即控制器名称) 。
+
+<div id="api-server-traffic">
+  ### API 服务器流量
+</div>
+
+| 指标                           | 类型  | 标记                       |
+| ---------------------------- | --- | ------------------------ |
+| `rest_client_requests_total` | counter | `code`, `method`, `host` |
+
+<div id="leader-election">
+  ### Leader 选举
+</div>
+
+| 指标                              | 类型    | 标记                                   |
+| ------------------------------- | ----- | ------------------------------------ |
+| `leader_election_master_status` | gauge | `name` (= `d4ceba06.clickhouse.com`) |
+
+Helm 图表默认启用 `--leader-elect`，因此在标准 Helm 安装中会提供此指标。若直接运行该二进制文件且未使用此标志，则不会提供该指标。
+
+<div id="runtime">
+  ### 运行时
+</div>
+
+标准 Go 进程和运行时采集器——`go_goroutines`、`go_memstats_*`、`process_cpu_seconds_total`、`process_resident_memory_bytes` 等。
+
+<div id="useful-promql-queries">
+  ## 常用 PromQL 查询
+</div>
+
+<div id="health-overview">
+  ### 健康总览
+</div>
+
+```promql
+# Reconciliation rate per controller
+sum by (controller) (rate(controller_runtime_reconcile_total[5m]))
+
+# Error rate per controller (alert if > 0 sustained)
+sum by (controller) (rate(controller_runtime_reconcile_errors_total[5m]))
+
+# p99 reconcile latency
+histogram_quantile(
+  0.99,
+  sum by (le, controller) (rate(controller_runtime_reconcile_time_seconds_bucket[5m]))
+)
+```
+
+<div id="backlog-detection">
+  ### 积压检测
+</div>
+
+```promql
+# Pending items in the work queue — a sustained value > 0 indicates a backlog,
+# but short spikes during large reconciles are normal.
+avg_over_time(workqueue_depth[10m])
+
+# Reconciles that have been running for a long time
+workqueue_longest_running_processor_seconds > 60
+```
+
+<div id="throttling-and-api-pressure">
+  ### 限流与 API 压力
+</div>
+
+```promql
+# Throttled requests to the API server
+sum by (code, host) (rate(rest_client_requests_total{code=~"4..|5.."}[5m]))
+```
+
+<div id="leader-status-ha-deployment">
+  ### Leader 状态 (HA 部署)
+</div>
+
+```promql
+# Should be exactly 1 across the replica set (Helm install enables --leader-elect by default)
+sum(leader_election_master_status{name="d4ceba06.clickhouse.com"})
+```
+
+<div id="suggested-alerts">
+  ## 建议的告警
+</div>
+
+PrometheusRule 的参考起点 (请根据你的环境调整阈值) ：
+
+```yaml
+groups:
+  - name: clickhouse-operator
+    rules:
+      - alert: ClickHouseOperatorReconcileErrors
+        # > 0.1 errors/s sustained = > ~6 errors/min, filters transient conflicts.
+        expr: sum by (controller) (rate(controller_runtime_reconcile_errors_total[5m])) > 0.1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'ClickHouse operator is failing to reconcile {{ $labels.controller }}'
+
+      - alert: ClickHouseOperatorWorkqueueBacklog
+        # avg_over_time avoids alerting on transient bursts during large reconciles.
+        expr: avg_over_time(workqueue_depth[10m]) > 5
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Operator work queue backlog sustained for 30m'
+
+      - alert: ClickHouseOperatorReconcileSlow
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (le, controller) (rate(controller_runtime_reconcile_time_seconds_bucket[10m]))
+          ) > 30
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'p99 reconcile latency for {{ $labels.controller }} > 30s'
+
+      - alert: ClickHouseOperatorNoLeader
+        expr: absent(leader_election_master_status{name="d4ceba06.clickhouse.com"}) == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'No leader for the ClickHouse operator (HA deployment)'
+```
+
+只有在启用 leader 选举时，最后一条规则才有意义。
+
+<div id="verifying-the-setup">
+  ## 验证设置
+</div>
+
+下面进行一次快速的端到端检查，假设该 Helm 图表 安装在 `clickhouse-operator-system` 中：
+
+```bash
+NS=clickhouse-operator-system
+
+# The metrics Service exists and selects the manager pod
+kubectl -n $NS get svc -l control-plane=controller-manager
+
+# The ServiceMonitor exists (only with prometheus.enable=true)
+kubectl -n $NS get servicemonitor -l control-plane=controller-manager
+
+# Manager pod is Ready (readiness probe answers)
+kubectl -n $NS get pod -l control-plane=controller-manager
+
+# Direct scrape from inside the cluster (with the metrics-reader binding)
+kubectl -n $NS run curl-metrics --rm -it --restart=Never \
+  --image=curlimages/curl:8.10.1 -- sh -c '
+    TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+    curl -sk -H "Authorization: Bearer $TOKEN" \
+      https://<release>-metrics-service.'$NS'.svc:8080/metrics \
+      | head -20
+  '
+```
+
+如果抓取返回的是 Prometheus 指标暴露格式的指标，则说明端点和 RBAC 已正确配置。
+
+<div id="related-guides">
+  ## 相关指南
+</div>
+
+* [安装](/zh/products/kubernetes-operator/install/helm) — 与监控相关的 Helm 配置值。
+* [配置](/zh/products/kubernetes-operator/guides/configuration) — 与指标服务器共享的 TLS 配置。

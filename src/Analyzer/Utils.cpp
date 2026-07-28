@@ -4,6 +4,7 @@
 
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFunction.h>
 
@@ -23,8 +24,13 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/validateColumnType.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/typeid_cast.h>
+
+#include <base/unit.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -38,6 +44,7 @@
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/ConstantValue.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -49,7 +56,10 @@
 
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
+#include <Core/Streaming/CursorTree_fwd.h>
+
 #include <ranges>
+
 namespace DB
 {
 namespace Setting
@@ -63,6 +73,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int TYPE_MISMATCH;
 }
 
 bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root)
@@ -197,15 +208,25 @@ void makeUniqueColumnNamesInBlock(Block & block)
 
     for (auto & column_with_type : block)
     {
-        if (!block_column_names.contains(column_with_type.name))
-        {
-            block_column_names.insert(column_with_type.name);
+        if (block_column_names.insert(column_with_type.name).second)
             continue;
-        }
 
-        column_with_type.name += '_';
-        column_with_type.name += std::to_string(unique_column_name_counter);
-        ++unique_column_name_counter;
+        /// The base name collides with a name we have already kept or produced.
+        /// Loop until we find a suffix that is unused anywhere in the block,
+        /// including by names we are about to keep and by names we have already
+        /// renamed. Register the renamed name to prevent further collisions.
+        ///
+        /// Example: for input `a, a, a_1`, the second `a` is renamed to `a_1`
+        /// and the third column (`a_1`) is renamed to `a_2`, instead of leaving
+        /// the block with two `a_1` columns.
+        String new_name;
+        do
+        {
+            new_name = column_with_type.name + '_' + std::to_string(unique_column_name_counter);
+            ++unique_column_name_counter;
+        } while (!block_column_names.insert(new_name).second);
+
+        column_with_type.name = std::move(new_name);
     }
 }
 
@@ -248,6 +269,20 @@ bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node)
     auto * union_node = node->as<UnionNode>();
 
     return (query_node != nullptr && query_node->isCorrelated()) || (union_node != nullptr && union_node->isCorrelated());
+}
+
+bool containsCorrelatedSubquery(const QueryTreeNodePtr & node)
+{
+    if (isCorrelatedQueryOrUnionNode(node))
+        return true;
+
+    for (const auto & child : node->getChildren())
+    {
+        if (child && containsCorrelatedSubquery(child))
+            return true;
+    }
+
+    return false;
 }
 
 bool checkCorrelatedColumn(
@@ -448,6 +483,17 @@ static ASTPtr convertIntoTableExpressionAST(
         const auto & sample_offset_ratio = table_expression_modifiers->getSampleOffsetRatio();
         if (sample_offset_ratio.has_value())
             result_table_expression->sample_offset = make_intrusive<ASTSampleRatio>(*sample_offset_ratio);
+
+        const auto & stream_settings = table_expression_modifiers->getStreamSettings();
+        if (stream_settings.has_value())
+        {
+            ASTStreamSettings::StreamSettings ast_stream_settings;
+            if (stream_settings->cursor_tree)
+                ast_stream_settings.cursor_tree = cursorTreeToMap(stream_settings->cursor_tree);
+
+            result_table_expression->stream_settings = make_intrusive<ASTStreamSettings>(std::move(ast_stream_settings));
+            result_table_expression->children.push_back(result_table_expression->stream_settings);
+        }
     }
 
     return result_table_expression;
@@ -978,6 +1024,54 @@ QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_ty
     return function_node;
 }
 
+QueryTreeNodePtr foldConstantCast(const QueryTreeNodePtr & cast_node)
+{
+    const auto * cast_function = cast_node->as<FunctionNode>();
+    if (!cast_function || !cast_function->isResolved())
+        return cast_node;
+
+    auto function_base = cast_function->getFunction();
+    if (!function_base || !function_base->isSuitableForConstantFolding())
+        return cast_node;
+
+    auto argument_columns = cast_function->getArgumentColumns();
+    if (!std::all_of(argument_columns.begin(), argument_columns.end(), [](const auto & arg) { return arg.column && isColumnConst(*arg.column); }))
+        return cast_node;
+
+    auto result_type = function_base->getResultType();
+    auto executable_function = function_base->prepare(argument_columns);
+    auto column = executable_function->execute(argument_columns, result_type, 1, /* dry_run = */ true);
+    if (column && column->empty() && isColumnConst(*column))
+        column = column->cloneResized(1);
+
+    const auto * column_const = column ? typeid_cast<const ColumnConst *>(column.get()) : nullptr;
+    if (!column_const || column_const->getDataColumn().isDummy())
+        return cast_node;
+
+    /// Sanity check mirrored from resolveFunction.
+    if (!columnMatchesType(*column, *result_type))
+        return cast_node;
+
+    /// Match resolveFunction's `byteSize() < 1_MiB` guard. A large folded value is left as a `_CAST` function
+    /// by the shard, so the initiator must not fold it either, otherwise the action-node names diverge again.
+    if (column->byteSize() >= 1_MiB)
+        return cast_node;
+
+    /// Mirror resolveFunction's determinism propagation: a value folded from a non-deterministic source must
+    /// stay non-deterministic, otherwise downstream hasNonDeterministic()/assertDeterministic() see a different
+    /// contract than normal folding.
+    bool all_arguments_are_deterministic = true;
+    for (const auto & argument : cast_function->getArguments().getNodes())
+    {
+        if (const auto * argument_constant = argument->as<ConstantNode>())
+            all_arguments_are_deterministic &= argument_constant->isDeterministic();
+    }
+    const bool is_deterministic = all_arguments_are_deterministic && function_base->isDeterministic();
+
+    return std::make_shared<ConstantNode>(
+        ConstantValue{column_const->getPtr(), std::move(result_type)}, cast_node, is_deterministic);
+}
+
 void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const String & function_name, const ContextPtr & context)
 {
     auto function = FunctionFactory::instance().get(function_name, context);
@@ -1365,6 +1459,71 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type)
 {
     return getFieldFromColumnForASTLiteralImpl(column, row, data_type, false);
+}
+
+/// Verify that a subsequent reference to a MATERIALIZED CTE produced the same projection
+/// types as the storage that was created from the first reference.
+///
+/// Each reference to a MATERIALIZED CTE clones the body subquery and re-resolves it in the
+/// scope of that reference. Normally all clones must produce identical projection types
+/// (otherwise the single shared storage cannot satisfy all readers). Type drift across
+/// clones is possible when the body resolves identifiers from outer scope that take
+/// different values per call site (for example, aliases from the calling subquery's
+/// projection are inlined as different constants).
+///
+/// Without this check the planner would create the storage with one set of column types
+/// but feed it data with another set, leading to a `Bad cast` `LOGICAL_ERROR` at read time
+/// inside `MemorySource::fillPhysicalColumns`. Detecting the mismatch here turns the
+/// silent corruption into a clear analysis-time error.
+bool verifyMaterializedCTESubqueryMatchesStorage(
+    const QueryTreeNodePtr & subquery,
+    const StoragePtr & storage,
+    const ContextPtr & context,
+    const std::string & cte_name,
+    const QueryTreeNodePtr & scope_node,
+    bool throw_on_mismatch)
+{
+    const NamesAndTypes & projection_columns = subquery->as<QueryNode>()
+        ? subquery->as<QueryNode>()->getProjectionColumns()
+        : subquery->as<UnionNode>()->computeProjectionColumns();
+
+    auto storage_metadata = storage->getInMemoryMetadataPtr(context, /*throw_on_invalid=*/false);
+    const NamesAndTypesList storage_columns = storage_metadata->getColumns().getOrdinary();
+
+    if (projection_columns.size() != storage_columns.size())
+    {
+        if (!throw_on_mismatch)
+            return false;
+
+        throw Exception(ErrorCodes::TYPE_MISMATCH,
+            "Materialized CTE '{}' has inconsistent projection across references: storage has {} columns, "
+            "but this reference resolved to {}. In scope {}",
+            cte_name, storage_columns.size(), projection_columns.size(),
+            scope_node->formatASTForErrorMessage());
+    }
+
+    auto storage_it = storage_columns.begin();
+    for (size_t i = 0; i < projection_columns.size(); ++i, ++storage_it)
+    {
+        if (!projection_columns[i].type->equals(*storage_it->type))
+        {
+            if (!throw_on_mismatch)
+                return false;
+
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                "Materialized CTE '{}' has inconsistent column types across references: column '{}' has type {} in storage "
+                "but this reference resolved to type {}. This usually means the CTE body references identifiers "
+                "from outer scope (e.g. aliases from the calling subquery) that take different values per call site. "
+                "Materialized CTEs cannot have such dependencies. In scope {}",
+                cte_name,
+                storage_it->name,
+                storage_it->type->getName(),
+                projection_columns[i].type->getName(),
+                scope_node->formatASTForErrorMessage());
+        }
+    }
+
+    return true;
 }
 
 }

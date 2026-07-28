@@ -1,0 +1,7 @@
+[42]
+{'a':42}
+('a',42)
+[[[42]]]
+[1,2,3]
+id	UInt64					
+bad	Array(LowCardinality(UInt64))					

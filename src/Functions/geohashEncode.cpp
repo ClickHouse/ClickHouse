@@ -23,7 +23,7 @@ namespace
 {
 
 // geohashEncode(lon float32/64, lat float32/64, length UInt8) => string
-class FunctionGeohashEncode : public IFunction
+class FunctionGeohashEncode final : public IFunction
 {
 public:
     static constexpr auto name = "geohashEncode";

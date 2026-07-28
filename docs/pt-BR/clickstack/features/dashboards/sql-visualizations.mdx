@@ -1,0 +1,290 @@
+---
+slug: /use-cases/observability/clickstack/dashboards/sql-visualizations
+title: 'Visualizações baseadas em SQL'
+sidebarTitle: 'Visualizações baseadas em SQL'
+description: 'Criação de visualizações com consultas SQL no ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'dashboards', 'visualização', 'sql', 'observabilidade']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+O ClickStack oferece suporte a visualizações baseadas em consultas SQL puras. Isso dá a você controle total sobre a lógica da consulta, sem perder a integração com intervalos de tempo no nível do dashboard, filtros e renderização de gráficos.
+
+As visualizações baseadas em SQL são úteis quando você precisa ir além do Chart Explorer integrado — por exemplo, para fazer JOIN entre tabelas ou criar agregações complexas que não são compatíveis com o construtor de gráficos.
+
+<div id="creating-a-raw-sql-chart">
+  ## Criando uma visualização baseada em SQL
+</div>
+
+Para criar uma visualização baseada em SQL, abra o editor de tile do dashboard e selecione a aba **SQL**.
+
+<Image img="/images/use-cases/observability/sql-editor-button.webp" alt="Botão do SQL Editor" size="lg" />
+
+A partir daí:
+
+1. Selecione uma **conexão do ClickHouse** para executar a consulta.
+2. Opcionalmente, selecione uma **Source** — isso permite aplicar filtros no nível do dashboard ao seu gráfico por meio da macro `$__filters`.
+3. Escreva sua consulta SQL no editor, usando parâmetros de consulta e macros para integrá-la ao intervalo de tempo e aos filtros do dashboard.
+4. Clique no botão **play** para visualizar os resultados e depois em **Save**.
+
+<div id="query-parameters">
+  ## Parâmetros de consulta
+</div>
+
+[Parâmetros de consulta](/pt-BR/reference/syntax#defining-and-using-query-parameters) permitem que seu SQL faça referência ao intervalo de tempo e à granularidade atuais do dashboard. Eles usam a sintaxe de consultas parametrizadas do ClickHouse: `{paramName:Type}`.
+
+<div id="available-parameters">
+  ### Parâmetros disponíveis
+</div>
+
+Os parâmetros disponíveis dependem do tipo de gráfico:
+
+**Gráficos de Linha e Barra Empilhada:**
+
+| Parâmetro                       | Tipo  | Descrição                                                               |
+| ------------------------------- | ----- | ----------------------------------------------------------------------- |
+| `{startDateMilliseconds:Int64}` | Int64 | Início do intervalo de datas do dashboard (milissegundos desde epoch)   |
+| `{endDateMilliseconds:Int64}`   | Int64 | Fim do intervalo de datas do dashboard (milissegundos desde epoch)      |
+| `{intervalSeconds:Int64}`       | Int64 | Tamanho do bucket de tempo em segundos (com base na granularidade)      |
+| `{intervalMilliseconds:Int64}`  | Int64 | Tamanho do bucket de tempo em milissegundos (com base na granularidade) |
+
+**Gráficos de Tabela, Pizza e Número:**
+
+| Parâmetro                       | Tipo  | Descrição                                                             |
+| ------------------------------- | ----- | --------------------------------------------------------------------- |
+| `{startDateMilliseconds:Int64}` | Int64 | Início do intervalo de datas do dashboard (milissegundos desde epoch) |
+| `{endDateMilliseconds:Int64}`   | Int64 | Fim do intervalo de datas do dashboard (milissegundos desde epoch)    |
+
+<div id="macros">
+  ## Macros
+</div>
+
+Macros são atalhos que se expandem em expressões comuns do ClickHouse SQL. Elas são precedidas por `$__` e substituídas antes de a consulta ser enviada ao ClickHouse.
+
+<div id="time-boundary-macros">
+  ### Macros de limite de tempo
+</div>
+
+Essas macros retornam uma expressão do ClickHouse que representa a hora de início ou de término do dashboard. Elas não recebem argumentos.
+
+| Macro            | Expande para                                                          | Tipo da coluna |
+| ---------------- | --------------------------------------------------------------------- | -------------- |
+| `$__fromTime`    | `toDateTime(fromUnixTimestamp64Milli({startDateMilliseconds:Int64}))` | DateTime       |
+| `$__toTime`      | `toDateTime(fromUnixTimestamp64Milli({endDateMilliseconds:Int64}))`   | DateTime       |
+| `$__fromTime_ms` | `fromUnixTimestamp64Milli({startDateMilliseconds:Int64})`             | DateTime64     |
+| `$__toTime_ms`   | `fromUnixTimestamp64Milli({endDateMilliseconds:Int64})`               | DateTime64     |
+| `$__interval_s`  | `{intervalSeconds:Int64}`                                             | Int64          |
+
+<div id="time-filter-macros">
+  ### Macros de filtro de tempo
+</div>
+
+Essas macros geram um fragmento de cláusula `WHERE` que filtra uma coluna com base no intervalo de tempo do dashboard.
+
+| Macro                                 | Description                                                                       |
+| ------------------------------------- | --------------------------------------------------------------------------------- |
+| `$__timeFilter(column)`               | Filtra uma coluna `DateTime` com base no intervalo do dashboard                   |
+| `$__timeFilter_ms(column)`            | Filtra uma coluna `DateTime64` (milissegundos) com base no intervalo do dashboard |
+| `$__dateFilter(column)`               | Filtra uma coluna `Date` com base no intervalo do dashboard                       |
+| `$__dateTimeFilter(dateCol, timeCol)` | Filtra usando colunas `Date` e `DateTime` separadas                               |
+| `$__dt(dateCol, timeCol)`             | Alias de `$__dateTimeFilter`                                                      |
+
+**Exemplo de expansão** de `$__timeFilter(TimestampTime)`:
+
+```sql
+TimestampTime >= toDateTime(fromUnixTimestamp64Milli({startDateMilliseconds:Int64}))
+AND TimestampTime <= toDateTime(fromUnixTimestamp64Milli({endDateMilliseconds:Int64}))
+```
+
+<div id="time-interval-macros">
+  ### Macros de intervalo de tempo
+</div>
+
+Essas macros agrupam uma coluna de `timestamp` em intervalos que correspondem à granularidade do dashboard. Elas geralmente são usadas nas cláusulas `SELECT` e `GROUP BY` para gráficos de séries temporais. Estão disponíveis apenas para visualizações de linha e de barras empilhadas.
+
+| Macro                        | Descrição                                                              |
+| ---------------------------- | ---------------------------------------------------------------------- |
+| `$__timeInterval(column)`    | Agrupa uma coluna `DateTime` em intervalos de `intervalSeconds`        |
+| `$__timeInterval_ms(column)` | Agrupa uma coluna `DateTime64` em intervalos de `intervalMilliseconds` |
+
+**Expansão de exemplo** de `$__timeInterval(TimestampTime)`:
+
+```sql
+toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} second)
+```
+
+<div id="dashboard-filter-macro">
+  ### Macro de filtro do dashboard
+</div>
+
+| Macro        | Descrição                                                                                              |
+| ------------ | ------------------------------------------------------------------------------------------------------ |
+| `$__filters` | Substituído pelas condições de filtro no nível do dashboard (requer que uma Source esteja selecionada) |
+
+Quando uma **Source** é selecionada no gráfico e os filtros do dashboard estão ativos, `$__filters` se expande para as condições SQL `WHERE` correspondentes. Quando nenhuma Source é selecionada ou nenhum filtro é aplicado, ele se expande para `(1=1)`, portanto é sempre seguro incluí-lo em uma cláusula `WHERE`.
+
+<div id="how-results-are-plotted">
+  ## Como os resultados da consulta são exibidos nos gráficos
+</div>
+
+O ClickStack mapeia automaticamente as colunas do resultado para elementos do gráfico com base nos tipos de coluna. As regras de mapeamento variam conforme o tipo de gráfico.
+
+<div id="line-and-stacked-bar-charts">
+  ### Gráficos de linha e de barras empilhadas
+</div>
+
+| Papel              | Tipo de coluna                       | Descrição                                                                                   |
+| ------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------- |
+| **Timestamp**      | Primeira coluna `Date` ou `DateTime` | Usada como eixo x.                                                                          |
+| **Valor da série** | Todas as colunas numéricas           | Cada coluna numérica é plotada como uma série separada. Normalmente, são valores agregados. |
+| **Nomes de grupo** | Colunas String, Map ou Array         | Opcional. Linhas com valores de grupo diferentes são plotadas como séries separadas.        |
+
+<div id="pie-chart">
+  ### Gráfico de pizza
+</div>
+
+| Função              | Tipo de coluna               | Descrição                                                     |
+| ------------------- | ---------------------------- | ------------------------------------------------------------- |
+| **Valor da fatia**  | Primeira coluna numérica     | Determina o tamanho de cada fatia.                            |
+| **Rótulo da fatia** | colunas String, map ou Array | Opcional. Cada valor distinto se torna o rótulo de uma fatia. |
+
+<div id="number-chart">
+  ### Gráfico numérico
+</div>
+
+| Função     | Tipo de coluna           | Descrição                                                        |
+| ---------- | ------------------------ | ---------------------------------------------------------------- |
+| **Número** | Primeira coluna numérica | É exibido o valor da primeira linha da primeira coluna numérica. |
+
+<div id="table-chart">
+  ### Tabela
+</div>
+
+Todas as colunas do resultado são exibidas diretamente como colunas da tabela.
+
+<div id="examples">
+  ## Exemplos
+</div>
+
+<Info>
+  **Acesso obrigatório à tabela do sistema**
+
+  Você precisará especificar `otel_v2.otel_logs` ou `otel_v2.otel_traces` se executar os exemplos a seguir em [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com).
+</Info>
+
+<div id="example-line-chart">
+  ### Gráfico de linhas — contagem de logs ao longo do tempo por serviço
+</div>
+
+Esta consulta conta eventos de log por serviço, agrupando-os em intervalos de tempo de acordo com a granularidade do dashboard.
+
+```sql
+SELECT
+  toStartOfInterval(TimestampTime, INTERVAL {intervalSeconds:Int64} second) AS ts,
+  ServiceName,
+  count() AS count
+FROM otel_logs
+WHERE TimestampTime >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
+  AND TimestampTime < fromUnixTimestamp64Milli({endDateMilliseconds:Int64})
+  AND $__filters
+GROUP BY ServiceName, ts
+ORDER BY ts ASC
+```
+
+* `ts` (DateTime) é usado como timestamp do eixo X.
+* `count` (numérico) é exibido como o valor da série.
+* `ServiceName` (string) cria uma linha separada para cada serviço.
+
+<div id="example-line-chart-macros">
+  ### Gráfico de linhas — usando macros
+</div>
+
+A mesma consulta escrita com macros, para ficar mais concisa:
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  ServiceName,
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filters
+GROUP BY ServiceName, ts
+ORDER BY ts ASC
+```
+
+<div id="example-stacked-bar">
+  ### Gráfico de barras empilhadas — contagem de erros por nível de severidade
+</div>
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  lower(SeverityText),
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND lower(SeverityText) IN ('error', 'warn')
+  AND $__filters
+GROUP BY SeverityText, ts
+ORDER BY ts ASC
+```
+
+<div id="example-table">
+  ### Gráfico de tabela — 10 endpoints mais lentos
+</div>
+
+```sql
+SELECT
+  SpanName AS endpoint,
+  avg(Duration) / 1000 AS avg_duration_ms,
+  count() AS request_count
+FROM otel_traces
+WHERE $__timeFilter(Timestamp)
+  AND $__filters
+GROUP BY SpanName
+ORDER BY avg_duration_ms DESC
+LIMIT 10
+```
+
+<div id="example-pie">
+  ### gráfico de pizza — distribuição de solicitações por serviço
+</div>
+
+```sql
+SELECT
+  ServiceName,
+  count() AS request_count
+FROM otel_traces
+WHERE $__timeFilter(Timestamp)
+  AND $__filters
+GROUP BY ServiceName
+```
+
+* `request_count` (numérico) determina o tamanho de cada segmento.
+* `ServiceName` (string) identifica cada segmento.
+
+<div id="example-number">
+  ### Gráfico numérico — contagem total de erros
+</div>
+
+```sql
+SELECT
+  count() AS total_errors
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND SeverityText = 'error'
+  AND $__filters
+```
+
+O único valor numérico `total_errors` da primeira linha é exibido.
+
+<div id="notes">
+  ## Observações
+</div>
+
+* As visualizações baseadas em SQL são executadas com o modo `readonly` ativado — somente consultas `SELECT` são permitidas.
+* As visualizações baseadas em SQL devem conter exatamente uma única consulta SQL - várias consultas não são compatíveis.
+* O editor SQL fornece sugestões de preenchimento automático tanto para parâmetros de consulta quanto para macros.
+* É necessário selecionar uma source para aplicar os filtros do dashboard às visualizações baseadas em SQL. A source deve corresponder à tabela consultada, para garantir uma filtragem precisa.

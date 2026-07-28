@@ -1,0 +1,8 @@
+Map-named tuple of arrays with explicit columns is not aggregated
+1	([1],[10])	12
+Nested map-named tuple of arrays with explicit columns is not aggregated
+1	(([1],[10]))	12
+Map-named tuple of arrays without explicit columns is aggregated
+1	([1],[110])
+Dotted element names that merely look like a map path are not aggregated
+1	([1],[10])

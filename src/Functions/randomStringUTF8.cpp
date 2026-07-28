@@ -25,7 +25,7 @@ namespace
  * ATTENTION: Method generate only assignable code points (excluded 4-13 planes).
  * See https://en.wikipedia.org/wiki/Plane_(Unicode) */
 
-class FunctionRandomStringUTF8 : public IFunction
+class FunctionRandomStringUTF8 final : public IFunction
 {
 public:
     static constexpr auto name = "randomStringUTF8";
@@ -167,7 +167,7 @@ It is still possible that the client interacting with ClickHouse server is not a
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT randomStringUTF8(13)", R"(
 ┌─randomStringUTF8(13)─┐
-│ 𘤗𙉝д兠庇󡅴󱱎󦐪􂕌𔊹𓰛       │
+│ 󶡕𲉗𩍄ԍ╃𑄅󦨁󷌁󬾣𹼫󤓆󺜘󩶧         │
 └──────────────────────┘
         )"}
     };

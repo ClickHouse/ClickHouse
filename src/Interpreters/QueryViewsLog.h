@@ -51,7 +51,7 @@ struct QueryViewsLogElement
     UInt64 written_rows{};
     UInt64 written_bytes{};
     Int64 peak_memory_usage{};
-    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
+    std::optional<ProfileEvents::Counters::Snapshot> profile_counters;
 
     ViewStatus status = ViewStatus::QUERY_START;
     Int32 exception_code{};

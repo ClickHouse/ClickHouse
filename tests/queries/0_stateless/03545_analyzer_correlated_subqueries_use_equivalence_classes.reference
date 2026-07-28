@@ -1,12 +1,10 @@
 Expression ((Project names + Projection))
 Actions: INPUT : 0 -> __table1 Nullable(UInt64) : 0
-         INPUT :: 1 -> __table3.number UInt64 : 1
-         ALIAS __table1 :: 0 -> _subquery_1 Nullable(UInt64) : 2
-Positions: 2
+         ALIAS __table1 :: 0 -> _subquery_1 Nullable(UInt64) : 1
+Positions: 1
   Expression (Post Join Actions)
-  Actions: INPUT :: 0 -> __table3.number UInt64 : 0
-           INPUT :: 1 -> __table1 Nullable(UInt64) : 1
-  Positions: 0 1
+  Actions: INPUT :: 0 -> __table1 Nullable(UInt64) : 0
+  Positions: 0
     Join (JOIN FillRightFirst)
     Type: LEFT
     Strictness: ANY
@@ -45,8 +43,8 @@ Positions: 2
               Filter ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
               Filter column: equals(__table2.number, __table3.number) (removed)
               Actions: INPUT : 0 -> number UInt64 : 0
-                       ALIAS number : 0 -> __table2.number UInt64 : 1
-                       FUNCTION equals(number : 0, number :: 0) -> equals(__table2.number, __table3.number) UInt8 : 2
-                       ALIAS __table2.number : 1 -> __table3.number UInt64 : 0
-              Positions: 2 1 0
+                       FUNCTION equals(number : 0, number : 0) -> equals(__table2.number, __table3.number) UInt8 : 1
+                       ALIAS number : 0 -> __table2.number UInt64 : 2
+                       ALIAS number :: 0 -> __table3.number UInt64 : 3
+              Positions: 1 2 3
                 ReadFromSystemNumbers

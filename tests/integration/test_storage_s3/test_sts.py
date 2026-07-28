@@ -38,6 +38,7 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/sync_insert.xml",
+                "configs/allow_server_credentials.xml",
             ],
         )
 
@@ -91,6 +92,43 @@ def test_sts_smoke(started_cluster):
             'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/test_sts_smoke.csv',
             'CSV', 'a Int64, b Int64, c Int64',
             extra_credentials(role_arn = 'arn::role', role_session_name = 'miniorole'))
+    """
+    )
+
+
+def test_sts_external_id(started_cluster):
+    instance = started_cluster.instances["s3_with_environment_credentials"]
+
+    instance.query(
+        f"""
+        INSERT INTO FUNCTION s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/test_sts_external_id.csv', 'minio', '{minio_secret_key}')
+        SELECT number, number * 10, number * 100 FROM numbers(10) SETTINGS s3_truncate_on_insert = 1"""
+    )
+
+    # Negative: the role session is accepted by the mock STS, but the supplied
+    # external id does not match, so AssumeRole returns credentials minio rejects.
+    # This only fails if `external_id` actually reaches the AssumeRole request.
+    with pytest.raises(helpers.client.QueryRuntimeException) as ei:
+        instance.query(
+            f"""
+            SELECT sum(a), sum(b), sum(c) FROM s3(
+                'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/test_sts_external_id.csv',
+                'CSV', 'a Int64, b Int64, c Int64',
+                extra_credentials(role_arn = 'arn::role', role_session_name = 'miniorole', external_id = 'wrong_external_id'))
+                SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000
+        """
+        )
+
+    assert ei.value.returncode == 243
+    assert "HTTP response code: 403" in ei.value.stderr
+
+    # Positive: matching role session name and external id yield working credentials.
+    assert "45\t450\t4500\n" == instance.query(
+        f"""
+        SELECT sum(a), sum(b), sum(c) FROM s3(
+            'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/test_sts_external_id.csv',
+            'CSV', 'a Int64, b Int64, c Int64',
+            extra_credentials(role_arn = 'arn::role', role_session_name = 'miniorole', external_id = 'miniexternalid'))
     """
     )
 
@@ -171,7 +209,7 @@ def test_sts_credentials_cache(started_cluster):
     )
 
     for i in range(20):
-        with pytest.raises(helpers.client.QueryRuntimeException) as ei:
+        with pytest.raises(helpers.client.QueryRuntimeException):
             instance.query(
                 f"""
                 SELECT sum(a), sum(b), sum(c) FROM s3Cluster(

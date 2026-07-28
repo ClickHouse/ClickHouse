@@ -135,13 +135,13 @@ private:
     std::vector<size_t> value_column_pos;
 
     using RocksDBPtr = std::unique_ptr<rocksdb::DB>;
-    RocksDBPtr rocksdb_ptr;
+    RocksDBPtr rocksdb_ptr TSA_GUARDED_BY(rocksdb_ptr_mx);
 
     mutable SharedMutex rocksdb_ptr_mx;
     String rocksdb_dir;
     Int32 ttl;
     bool read_only;
 
-    void initDB();
+    void initDB() TSA_NO_THREAD_SAFETY_ANALYSIS;
 };
 }

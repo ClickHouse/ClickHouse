@@ -6,13 +6,11 @@ title: 'system.masking_policies'
 doc_type: 'reference'
 ---
 
-import CloudOnlyBadge from '@theme/badges/CloudOnlyBadge';
-
-<CloudOnlyBadge/>
-
 ## Description {#description}
 
 Contains information about all masking policies defined in the system.
+
+Masking policies can only be created and applied in ClickHouse Cloud. In open-source builds the `system.masking_policies` table is always empty, but it is still present so that introspection queries such as `SHOW MASKING POLICIES` work and return an empty result instead of throwing.
 
 ## Columns {#columns}
 

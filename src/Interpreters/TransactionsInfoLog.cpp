@@ -70,7 +70,7 @@ void TransactionsInfoLogElement::fillCommonFields(const TransactionInfoContext *
 
 void TransactionsInfoLogElement::appendToBlock(MutableColumns & columns) const
 {
-    assert(type != UNKNOWN);
+    chassert(type != UNKNOWN);
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
@@ -102,11 +102,12 @@ try
     if (!system_log)
         return;
 
-    TransactionsInfoLogElement elem;
-    elem.type = type;
-    elem.tid = tid;
-    elem.fillCommonFields(&context);
-    system_log->add(std::move(elem));
+    system_log->add([&](TransactionsInfoLogElement & element)
+    {
+        element.type = type;
+        element.tid = tid;
+        element.fillCommonFields(&context);
+    });
 }
 catch (...)
 {

@@ -20,7 +20,7 @@ extern const int ILLEGAL_COLUMN;
 namespace
 {
 
-class FunctionH3IsPentagon : public IFunction
+class FunctionH3IsPentagon final : public IFunction
 {
 public:
     static constexpr auto name = "h3IsPentagon";

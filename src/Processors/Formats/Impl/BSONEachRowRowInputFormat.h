@@ -95,11 +95,11 @@ private:
 
     DataTypes types;
 
-    size_t current_document_start;
-    BSONSizeT current_document_size;
+    size_t current_document_start{};
+    BSONSizeT current_document_size{};
 };
 
-class BSONEachRowSchemaReader : public IRowWithNamesSchemaReader
+class BSONEachRowSchemaReader final : public IRowWithNamesSchemaReader
 {
 public:
     BSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & settings_);
@@ -108,8 +108,8 @@ private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
-    NamesAndTypesList getDataTypesFromBSONDocument(bool skip_unsupported_types);
-    DataTypePtr getDataTypeFromBSONField(BSONType type, bool skip_unsupported_types, bool & skip);
+    NamesAndTypesList getDataTypesFromBSONDocument(bool skip_unsupported_types, size_t depth);
+    DataTypePtr getDataTypeFromBSONField(BSONType type, bool skip_unsupported_types, bool & skip, size_t depth);
 };
 
 }

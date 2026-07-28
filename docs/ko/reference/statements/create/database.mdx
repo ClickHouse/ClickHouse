@@ -1,0 +1,101 @@
+---
+description: 'CREATE DATABASE에 대한 문서'
+sidebarTitle: 'DATABASE'
+slug: /sql-reference/statements/create/database
+title: 'CREATE DATABASE'
+doc_type: 'reference'
+---
+
+새 데이터베이스를 생성합니다.
+
+```sql
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [SETTINGS ...] [COMMENT 'Comment']
+```
+
+<div id="clauses">
+  ## 절
+</div>
+
+<div id="if-not-exists">
+  ### IF NOT EXISTS
+</div>
+
+`db_name` 데이터베이스가 이미 존재하면 ClickHouse는 새 데이터베이스를 생성하지 않으며, 다음과 같이 동작합니다.
+
+* IF NOT EXISTS 절이 지정된 경우 예외를 발생시키지 않습니다.
+* IF NOT EXISTS 절이 지정되지 않은 경우 예외를 발생시킵니다.
+
+<div id="on-cluster">
+  ### ON CLUSTER
+</div>
+
+ClickHouse는 지정된 클러스터에 있는 모든 서버에 `db_name` 데이터베이스를 생성합니다. 자세한 내용은 [분산 DDL](/ko/reference/statements/distributed-ddl) 문서를 참조하십시오.
+
+<div id="engine">
+  ### ENGINE
+</div>
+
+기본적으로 ClickHouse는 자체 [Atomic](/ko/reference/engines/database-engines/atomic) 데이터베이스 엔진을 사용합니다. 이외에도 [MySQL](/ko/reference/engines/database-engines/mysql), [PostgresSQL](/ko/reference/engines/database-engines/postgresql), [MaterializedPostgreSQL](/ko/reference/engines/database-engines/materialized-postgresql), [Replicated](/ko/reference/engines/database-engines/replicated), [SQLite](/ko/reference/engines/database-engines/sqlite)가 있습니다.
+
+<div id="comment">
+  ### COMMENT
+</div>
+
+데이터베이스를 생성할 때 주석을 추가할 수 있습니다.
+
+주석은 모든 데이터베이스 엔진에서 지원됩니다.
+
+**구문**
+
+```sql
+CREATE DATABASE db_name ENGINE = engine(...) COMMENT 'Comment'
+```
+
+**예시**
+
+```sql title="Query"
+CREATE DATABASE db_comment ENGINE = Memory COMMENT 'The temporary database';
+SELECT name, comment FROM system.databases WHERE name = 'db_comment';
+```
+
+```text title="Response"
+┌─name───────┬─comment────────────────┐
+│ db_comment │ The temporary database │
+└────────────┴────────────────────────┘
+```
+
+<div id="settings">
+  ### 설정
+</div>
+
+<div id="lazy-load-tables">
+  #### lazy_load_tables
+</div>
+
+활성화하면 데이터베이스 시작 시 테이블을 완전히 로드하지 않습니다. 대신 각 테이블에 대해 경량 프록시를 생성하고, 실제 테이블 엔진은 처음 액세스할 때 구체화합니다. 이렇게 하면 많은 테이블이 있는 데이터베이스에서 실제로는 일부만 쿼리하는 경우 시작 시간과 메모리 사용량을 줄일 수 있습니다.
+
+```sql
+CREATE DATABASE db_name ENGINE = Atomic SETTINGS lazy_load_tables = 1;
+```
+
+디스크에 테이블 메타데이터를 저장하는 데이터베이스 엔진(예: `Atomic`, `Ordinary`)에 적용됩니다. 뷰, materialized view, 딕셔너리, 그리고 테이블 함수로 생성되는 테이블은 이 설정과 관계없이 항상 즉시 로드됩니다.
+
+**사용 시기:** 이 설정은 많은 수의 테이블(수백 개 또는 수천 개)이 있는 데이터베이스에서, 그중 일부에만 쿼리가 집중되는 경우에 유용합니다. 처음 접근할 때까지 테이블 엔진 객체 생성, 데이터 파트 스캔, 백그라운드 스레드 초기화를 지연하여 서버 시작 시간과 메모리 사용량을 줄여줍니다.
+
+**`system.tables`에 미치는 영향:**
+
+* 테이블에 접근하기 전에는 `system.tables`에 엔진이 `TableProxy`로 표시됩니다. 처음 접근한 후에는 실제 엔진 이름(예: `MergeTree`)이 표시됩니다.
+* `total_rows`, `total_bytes` 같은 컬럼은 실제 스토리지가 아직 생성되지 않았기 때문에 로드되지 않은 테이블에 대해 `NULL`을 반환합니다.
+
+**DDL 작업과의 상호작용:**
+
+* `SELECT`, `INSERT`, `ALTER`, `DROP`은 처음 사용할 때 실제 테이블 엔진 로드를 자동으로 트리거합니다.
+* `RENAME TABLE`은 로드를 트리거하지 않고 작동합니다.
+* 테이블이 한 번 로드되면 서버 프로세스가 실행되는 동안 계속 로드된 상태로 유지됩니다.
+
+**제한 사항:**
+
+* `system.tables` 메타데이터(예: `total_rows`, `engine`)에 의존하는 모니터링 도구는 로드되지 않은 테이블에 대해 불완전한 정보를 볼 수 있습니다.
+* 로드되지 않은 테이블에 대한 첫 번째 쿼리에는 일회성 로딩 비용(저장된 `CREATE TABLE` 문을 파싱하고 엔진을 초기화하는 작업)이 발생합니다.
+
+기본값: `0`(비활성화).

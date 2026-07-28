@@ -17,6 +17,7 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Examples/clickhouse_examples.h>
 
 /** How to test:
 
@@ -77,7 +78,7 @@ try
     WriteBufferFromFileDescriptor out(STDOUT_FILENO);
 
     if (method == 1) loop<T, readFloatTextPrecise>(in, out);
-    if (method == 2) loop<T, readFloatTextFast>(in, out);
+    if (method == 2) loop<T, readFloatImpreciseForCompatibility>(in, out);
     if (method == 3) loop<T, readFloatTextSimple>(in, out);
 
     out.finalize();

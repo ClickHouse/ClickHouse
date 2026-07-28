@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <optional>
 #include <Backups/BackupDataFileNameGeneratorType.h>
 #include <Backups/BackupInfo.h>
@@ -132,7 +133,18 @@ struct BackupSettings
     static BackupSettings fromBackupQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;
 
+    /// Returns the backup-specific settings as a string map for observability (see `system.backups`).
+    std::map<String, String> getSerializedSettings() const;
+
     static bool isAsync(const ASTBackupQuery & query);
+
+    /// Returns only the non-backup-specific settings from a `BACKUP` query.
+    /// In contrast to `fromBackupQuery`, this helper does not touch the
+    /// `base_backup_name` AST node, so it is safe to call before
+    /// `ReplaceQueryParameterVisitor` has substituted query parameters.
+    /// Used by `InterpreterSetQuery::applySettingsFromQuery` to apply core
+    /// settings (e.g. `max_execution_time`) before `ProcessList::insert`.
+    static SettingsChanges extractCoreSettingsFromQuery(const ASTBackupQuery & query);
 
     struct Util
     {

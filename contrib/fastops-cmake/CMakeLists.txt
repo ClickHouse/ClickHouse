@@ -11,27 +11,33 @@ endif()
 
 set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/fastops")
 
-set(SRCS "")
+set(SRCS
+    "${LIBRARY_DIR}/fastops/fastops.cpp"
+)
 
-if(ARCH_AMD64)
-    set (SRCS ${SRCS} "${LIBRARY_DIR}/fastops/avx/ops_avx.cpp")
+if (ARCH_AMD64)
+    list(APPEND SRCS "${LIBRARY_DIR}/fastops/avx2/ops_avx2.cpp")
+endif()
+
+if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_LESS 3)
+    # Below v3: need runtime dispatch with AVX-only and Plain fallbacks.
+    list(APPEND SRCS
+        "${LIBRARY_DIR}/fastops/avx/ops_avx.cpp"
+        "${LIBRARY_DIR}/fastops/plain/ops_plain.cpp"
+        "${LIBRARY_DIR}/fastops/core/avx_id.cpp"
+    )
     set_source_files_properties("${LIBRARY_DIR}/fastops/avx/ops_avx.cpp" PROPERTIES COMPILE_FLAGS "-mavx -DNO_AVX2")
-
-    set (SRCS ${SRCS} "${LIBRARY_DIR}/fastops/avx2/ops_avx2.cpp")
-    set_source_files_properties("${LIBRARY_DIR}/fastops/avx2/ops_avx2.cpp" PROPERTIES COMPILE_FLAGS "-mavx2 -mfma")
-
-    set (SRCS ${SRCS} "${LIBRARY_DIR}/fastops/plain/ops_plain.cpp" "${LIBRARY_DIR}/fastops/core/avx_id.cpp")
+    set_source_files_properties("${LIBRARY_DIR}/fastops/avx2/ops_avx2.cpp" PROPERTIES COMPILE_FLAGS "-mavx2 -mfma -DNO_AVX")
 elseif(ARCH_AARCH64)
-    set (SRCS ${SRCS} "${LIBRARY_DIR}/fastops/neon/ops_neon.cpp")
+    list(APPEND SRCS "${LIBRARY_DIR}/fastops/neon/ops_neon.cpp")
 
     # SVE requires arm_sve.h which is only available on Linux toolchains (not Darwin/FreeBSD).
     if(OS_LINUX)
-        set (SRCS ${SRCS} "${LIBRARY_DIR}/fastops/sve/ops_sve.cpp")
+        list(APPEND SRCS "${LIBRARY_DIR}/fastops/sve/ops_sve.cpp")
         set_source_files_properties("${LIBRARY_DIR}/fastops/sve/ops_sve.cpp" PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve")
     endif()
 endif()
 
-set (SRCS ${SRCS} "${LIBRARY_DIR}/fastops/fastops.cpp")
 
 add_library(_fastops ${SRCS})
 

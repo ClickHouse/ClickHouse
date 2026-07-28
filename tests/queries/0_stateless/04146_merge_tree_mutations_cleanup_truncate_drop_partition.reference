@@ -1,0 +1,4 @@
+mutations before TRUNCATE	1
+mutations after TRUNCATE	0
+mutations before DROP PARTITION	1
+mutations after DROP PARTITION	1

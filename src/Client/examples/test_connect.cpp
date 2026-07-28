@@ -11,6 +11,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/copyData.h>
+#include <Examples/clickhouse_examples.h>
 
 
 /** In a loop it connects to the server and immediately breaks the connection.

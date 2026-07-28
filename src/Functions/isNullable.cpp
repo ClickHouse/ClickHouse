@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/Settings.h>
@@ -17,7 +18,7 @@ namespace
 {
 
 /// Return true if the column is nullable.
-class FunctionIsNullable : public IFunction
+class FunctionIsNullable final : public IFunction
 {
 public:
     static constexpr auto name = "isNullable";

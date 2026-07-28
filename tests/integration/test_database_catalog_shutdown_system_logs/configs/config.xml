@@ -1,0 +1,20 @@
+<clickhouse>
+    <!-- Flush system logs aggressively so their flush threads keep lazily (re)creating
+         the backing MergeTree tables during shutdown, which is what races the static
+         thread pool teardown when system log shutdown is skipped. -->
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+        <flush_interval_milliseconds>500</flush_interval_milliseconds>
+    </query_log>
+    <part_log>
+        <database>system</database>
+        <table>part_log</table>
+        <flush_interval_milliseconds>500</flush_interval_milliseconds>
+    </part_log>
+    <text_log>
+        <database>system</database>
+        <table>text_log</table>
+        <flush_interval_milliseconds>500</flush_interval_milliseconds>
+    </text_log>
+</clickhouse>

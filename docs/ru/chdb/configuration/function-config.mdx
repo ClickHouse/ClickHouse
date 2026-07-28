@@ -1,0 +1,301 @@
+---
+title: 'Настройка на уровне функций'
+sidebarTitle: 'Настройка функции'
+slug: /chdb/configuration/function-config
+description: 'Настройка движка выполнения и коррекции Dtype на уровне функции'
+keywords: ['chdb', 'datastore', 'функция', 'config', 'Dtype', 'коррекция']
+doc_type: 'reference'
+---
+
+DataStore позволяет тонко управлять выполнением на уровне функций, включая выбор движка и коррекцию Dtype.
+
+<div id="function-engine">
+  ## Настройка Function Engine
+</div>
+
+Переопределите движок выполнения для отдельных функций.
+
+<div id="setting-engines">
+  ### Настройка Function Engines
+</div>
+
+```python
+from chdb.datastore.config import function_config
+
+# Принудительно использовать chdb для указанных функций
+function_config.use_chdb('length', 'substring', 'concat')
+
+# Принудительно использовать pandas для указанных функций
+function_config.use_pandas('upper', 'lower', 'capitalize')
+
+# Установить предпочтение по умолчанию
+function_config.prefer_chdb()    # По умолчанию chdb
+function_config.prefer_pandas()  # По умолчанию pandas
+
+# Сбросить в автоматический режим
+function_config.reset()
+```
+
+<div id="when-to-use">
+  ### Когда использовать
+</div>
+
+**Принудительно использовать chdb для:**
+
+* Функций, которые работают быстрее в ClickHouse
+* Функций, выигрывающих от SQL-оптимизации
+* Масштабных операций со строками и датой/временем
+
+**Принудительно использовать pandas для:**
+
+* Функций с поведением, специфичным для pandas
+* Случаев, когда требуется точная совместимость с pandas
+* Пользовательских операций со строками
+
+<div id="function-example">
+  ### Пример
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import function_config
+
+# Настройка движков функций
+function_config.use_chdb('length', 'substring')
+function_config.use_pandas('upper')
+
+ds = pd.read_csv("data.csv")
+
+# length() будет использовать chdb
+ds['name_len'] = ds['name'].str.len()
+
+# substring() будет использовать chdb  
+ds['prefix'] = ds['name'].str.slice(0, 3)
+
+# upper() будет использовать pandas
+ds['name_upper'] = ds['name'].str.upper()
+```
+
+***
+
+<div id="overlapping">
+  ## Общие функции
+</div>
+
+Более 159 функций доступны в обоих движках — chdb и pandas:
+
+| Категория        | Функции                                                                                                                                 |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **Строки**       | `length`, `upper`, `lower`, `trim`, `ltrim`, `rtrim`, `concat`, `substring`, `replace`, `reverse`, `contains`, `startswith`, `endswith` |
+| **Математика**   | `abs`, `round`, `floor`, `ceil`, `exp`, `log`, `log10`, `sqrt`, `pow`, `sin`, `cos`, `tan`                                              |
+| **Дата и время** | `year`, `month`, `day`, `hour`, `minute`, `second`, `dayofweek`, `dayofyear`, `quarter`                                                 |
+| **Агрегация**    | `sum`, `avg`, `min`, `max`, `count`, `std`, `var`, `median`                                                                             |
+
+Для общих функций движок выбирается на основе:
+
+1. Явной конфигурации функции (если задана)
+2. Глобальной настройки execution&#95;engine
+3. Автоматического выбора по контексту
+
+***
+
+<div id="chdb-only">
+  ## Функции, доступные только в chdb
+</div>
+
+Некоторые функции доступны только через ClickHouse:
+
+| Категория       | Функции                                                                            |
+| --------------- | ---------------------------------------------------------------------------------- |
+| **Array**       | `arraySum`, `arrayAvg`, `arraySort`, `arrayDistinct`, `groupArray`, `arrayElement` |
+| **JSON**        | `JSONExtractString`, `JSONExtractInt`, `JSONExtractFloat`, `JSONHas`               |
+| **URL**         | `domain`, `path`, `protocol`, `extractURLParameter`                                |
+| **IP**          | `IPv4StringToNum`, `IPv4NumToString`, `isIPv4String`                               |
+| **Geo**         | `greatCircleDistance`, `geoDistance`, `geoToH3`                                    |
+| **Hash**        | `cityHash64`, `xxHash64`, `sipHash64`, `MD5`, `SHA256`                             |
+| **Conditional** | `sumIf`, `countIf`, `avgIf`, `minIf`, `maxIf`                                      |
+
+Эти функции автоматически используют движок chdb независимо от конфигурации.
+
+***
+
+<div id="pandas-only">
+  ## Функции, доступные только в pandas
+</div>
+
+Некоторые функции доступны только через pandas:
+
+| Категория         | Функции                                              |
+| ----------------- | ---------------------------------------------------- |
+| **Apply**         | Собственные лямбда-функции, пользовательские функции |
+| **Complex Pivot** | Сводные таблицы с пользовательскими агрегациями      |
+| **Stack/Unstack** | Сложные операции преобразования формы данных         |
+| **Interpolate**   | Методы интерполяции временных рядов                  |
+
+Эти функции автоматически используют движок pandas независимо от конфигурации.
+
+***
+
+<div id="dtype-correction">
+  ## Коррекция dtype
+</div>
+
+Настройте, как DataStore корректирует типы данных между движками.
+
+<div id="correction-levels">
+  ### Уровни коррекции
+</div>
+
+```python
+from chdb.datastore.dtype_correction.config import CorrectionLevel
+from chdb.datastore.config import config
+
+# Без коррекции
+config.set_correction_level(CorrectionLevel.NONE)
+
+# Только критические типы (обработка NULL, булевы значения)
+config.set_correction_level(CorrectionLevel.CRITICAL)
+
+# Высокий приоритет (по умолчанию) — распространённые несоответствия типов
+config.set_correction_level(CorrectionLevel.HIGH)
+
+# Средний — более агрессивная коррекция
+config.set_correction_level(CorrectionLevel.MEDIUM)
+
+# Все — коррекция всех возможных типов
+config.set_correction_level(CorrectionLevel.ALL)
+```
+
+<div id="level-details">
+  ### Подробное описание уровней коррекции
+</div>
+
+| Уровень               | Описание                         | Исправляемые типы                                                              |
+| --------------------- | -------------------------------- | ------------------------------------------------------------------------------ |
+| `NONE`                | Без автоматических исправлений   | Нет                                                                            |
+| `CRITICAL`            | Критически важные исправления    | обработка NULL, преобразование булевых значений                                |
+| `HIGH` (по умолчанию) | Распространённые исправления     | точность целых чисел и чисел с плавающей точкой, дата и время, кодировка строк |
+| `MEDIUM`              | Дополнительные исправления       | точность Decimal, обработка часовых поясов                                     |
+| `ALL`                 | Максимальный уровень исправления | Все различия в типах                                                           |
+
+<div id="when-correction">
+  ### Когда требуется корректировка типов
+</div>
+
+Различия в типах могут возникать в следующих случаях:
+
+1. **ClickHouse → pandas**: Разный размер целочисленных типов (Int64 vs int64)
+2. **pandas → ClickHouse**: Преобразование объектов Python в SQL-типы
+3. **Обработка NULL**: pandas NA vs ClickHouse NULL
+4. **булевый**: Различные представления логических значений
+5. **дата и время**: Различия в часовых поясах
+
+<div id="function-example">
+  ### Пример
+</div>
+
+```python
+from chdb.datastore.dtype_correction.config import CorrectionLevel
+from chdb.datastore.config import config
+
+# Строгий режим — ожидаются точные соответствия типов
+config.set_correction_level(CorrectionLevel.NONE)
+
+# Мягкий режим — автоматическое исправление несоответствий типов
+config.set_correction_level(CorrectionLevel.ALL)
+```
+
+***
+
+<div id="api">
+  ## API конфигурации функции
+</div>
+
+<div id="function-config-object">
+  ### Объект function_config
+</div>
+
+```python
+from chdb.datastore.config import function_config
+
+# Принудительно задать движок для функций
+function_config.use_chdb(*function_names)
+function_config.use_pandas(*function_names)
+
+# Задать предпочтение по умолчанию
+function_config.prefer_chdb()
+function_config.prefer_pandas()
+
+# Сбросить до значения по умолчанию (авто)
+function_config.reset()
+
+# Проверить конфигурацию
+function_config.get_engine('length')  # Возвращает 'chdb', 'pandas' или 'auto'
+```
+
+<div id="per-call">
+  ### Переопределение на уровне отдельного вызова
+</div>
+
+Некоторые методы поддерживают переопределение движка на уровне отдельного вызова:
+
+```python
+# Использование параметра движка (где поддерживается)
+ds['result'] = ds['col'].str.upper(engine='pandas')
+```
+
+***
+
+<div id="best-practices">
+  ## Рекомендации
+</div>
+
+<div id="start-with-defaults">
+  ### 1. Начните с настроек по умолчанию
+</div>
+
+```python
+# Используйте автоматический режим, пусть DataStore решит самостоятельно
+config.use_auto()
+```
+
+<div id="configure-for-specific-workloads">
+  ### 2. Настройте для конкретных рабочих нагрузок
+</div>
+
+```python
+# Для обработки строк, оптимизированной под ClickHouse
+function_config.use_chdb('length', 'substring', 'concat')
+
+# Для поведения строк, совместимого с pandas
+function_config.use_pandas('upper', 'lower')
+```
+
+<div id="use-appropriate-correction-level">
+  ### 3. Выберите подходящий уровень коррекции
+</div>
+
+```python
+# Разработка: более мягкий режим
+config.set_correction_level(CorrectionLevel.ALL)
+
+# Продакшн: более строгий режим
+config.set_correction_level(CorrectionLevel.HIGH)
+```
+
+<div id="test-both-engines">
+  ### 4. Протестируйте оба движка
+</div>
+
+```python
+# Тестирование с chdb
+config.use_chdb()
+result_chdb = process_data()
+
+# Тестирование с pandas
+config.use_pandas()
+result_pandas = process_data()
+
+# Сравнение результатов
+assert result_chdb.equals(result_pandas)
+```

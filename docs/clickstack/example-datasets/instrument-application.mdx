@@ -1,0 +1,28 @@
+---
+slug: /use-cases/observability/clickstack/example-datasets/instrument-app
+title: 'Instrument an application with Managed ClickStack'
+sidebarTitle: 'HackerNews Analyzer demo'
+description: 'Guide to instrument a Node.js application with OpenTelemetry and send logs, metrics, and traces to Managed ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'instrumentation', 'opentelemetry', 'managed clickstack', 'observability']
+---
+
+import InstrumentApplication from '/snippets/clickstack/_instrument_application.mdx';
+
+This guide shows how to instrument a simple Node.js application using OpenTelemetry and send its logs, metrics, and traces to [Managed ClickStack](/clickstack/getting-started/managed). The backend is instrumented with no changes to the application source code.
+
+The [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) is a small Node.js app that queries the HackerNews dataset hosted in the public ClickHouse demo instance. Every chart, table, and search box is backed by a real ClickHouse query, so every interaction produces a trace whose main span is the HTTPS call from the backend out to ClickHouse.
+
+## Prerequisites {#prerequisites}
+
+- An OTel collector available and reachable, ingesting into your Managed ClickStack service. You need its OTLP endpoint and an ingestion token.
+- Node 18+ and npm.
+
+<InstrumentApplication />
+
+## Learn more {#learn-more}
+
+- [Session Replay](/clickstack/features/session-replay): feature overview, SDK options, and privacy controls.
+- [Session Replay Demo](/clickstack/example-datasets/session-replay): a self-contained demo with a local ClickStack instance.
+- [ClickStack Getting Started](/clickstack/getting-started/index): deploy ClickStack and ingest your first data.
+- [All Sample Datasets](/clickstack/example-datasets/index): other example datasets and guides.

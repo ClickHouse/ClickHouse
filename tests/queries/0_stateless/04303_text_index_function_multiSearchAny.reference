@@ -1,0 +1,47 @@
+-- multiSearchAny returns the same rows with and without the index
+1	Well, Hello ClickHouse !
+2	Well, Hello World !
+6	True World Champion
+1	Well, Hello ClickHouse !
+2	Well, Hello World !
+6	True World Champion
+Granules: 6/6
+Granules: 3/6
+-- multiSearchAnyUTF8 behaves identically
+1	Well, Hello ClickHouse !
+2	Well, Hello World !
+6	True World Champion
+Granules: 6/6
+Granules: 3/6
+-- a needle that is absent everywhere prunes all granules
+Granules: 6/6
+Granules: 0/6
+-- the index is recognized by force_data_skipping_indices
+3
+-- a single word prunes with ngrams (its sub-word grams are indexed), unlike splitByNonAlpha
+1	Well, Hello ClickHouse !
+2	Well, Hello World !
+4	Say Hello !
+1	Well, Hello ClickHouse !
+2	Well, Hello World !
+4	Say Hello !
+Granules: 6/6
+Granules: 3/6
+-- negation stays correct but cannot prune: the index proves a token is present, never that it is absent
+3	Good Weather !
+4	Say Hello !
+5	Its An OLAP Database
+3	Good Weather !
+4	Say Hello !
+5	Its An OLAP Database
+-- the "= 0" comparison form negates identically
+3	Good Weather !
+4	Say Hello !
+5	Its An OLAP Database
+Granules: 6/6
+Granules: 6/6
+-- the index is still recognized by force_data_skipping_indices (it is read, just prunes nothing)
+3
+-- an empty needle array is always false
+0
+0

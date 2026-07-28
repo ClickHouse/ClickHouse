@@ -117,7 +117,7 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
         M = TSV.toMat(tsv_content)
         hosts = [(l[0], l[1]) for l in M]  # (host, port)
         codes = [l[2] for l in M]
-        messages = [l[3] for l in M]
+        [l[3] for l in M]
 
         assert len(hosts) == num_hosts and len(set(hosts)) == num_hosts, (
             "\n" + tsv_content

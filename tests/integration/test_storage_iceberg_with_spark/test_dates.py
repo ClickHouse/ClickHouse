@@ -1,10 +1,8 @@
-import pytest
 
 from helpers.iceberg_utils import (
     create_iceberg_table,
     get_uuid_str,
-    default_upload_directory,
-    default_download_directory
+    default_upload_directory
 )
 
 
@@ -40,7 +38,7 @@ def test_date_reads(started_cluster_iceberg_with_spark):
       	  f""" INSERT INTO {TABLE_NAME} VALUES(2,DATE '1900-01-13') """
     ) 
    
-    files = default_upload_directory(
+    default_upload_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",

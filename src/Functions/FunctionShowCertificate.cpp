@@ -31,7 +31,7 @@ namespace
 {
 
 // showCertificate()
-class FunctionShowCertificate : public IFunction
+class FunctionShowCertificate final : public IFunction
 {
 public:
     static constexpr auto name = "showCertificate";

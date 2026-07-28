@@ -1,0 +1,34 @@
+---
+title: '지원되는 데이터 타입'
+slug: /integrations/clickpipes/mongodb/datatypes
+description: 'MongoDB ClickPipe의 MongoDB-ClickHouse 데이터 타입 매핑을 설명하는 페이지'
+doc_type: 'reference'
+keywords: ['clickpipes', 'mongodb', 'cdc', '데이터 수집', '실시간 동기화']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+MongoDB는 데이터 레코드를 BSON 문서로 저장합니다. ClickPipes에서는 BSON 문서를 JSON 또는 JSON String으로 ClickHouse에 수집하도록 구성할 수 있습니다. 다음 표는 지원되는 BSON-JSON 필드 타입 매핑을 보여줍니다.
+
+| MongoDB BSON 유형    | ClickHouse JSON 유형                           | 참고 사항                                                                                                                                             |
+| ------------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ObjectId           | String                                       |                                                                                                                                                   |
+| String             | String                                       |                                                                                                                                                   |
+| 32비트 정수            | Int64                                        |                                                                                                                                                   |
+| 64비트 정수            | Int64                                        |                                                                                                                                                   |
+| Double             | Float64                                      |                                                                                                                                                   |
+| Boolean            | Bool                                         |                                                                                                                                                   |
+| Date               | String                                       | ISO 8601 포맷                                                                                                                                       |
+| Regular Expression | &#123;Options: String, Pattern: String&#125; | 고정 필드가 있는 MongoDB 정규식입니다: Options(정규식 플래그) 및 Pattern(정규식 패턴)                                                                                      |
+| Timestamp          | &#123;T: Int64, I: Int64&#125;               | 고정 필드가 있는 MongoDB 내부 timestamp 포맷입니다: T(timestamp) 및 I(increment)                                                                                 |
+| Decimal128         | String                                       |                                                                                                                                                   |
+| Binary data        | &#123;Data: String, Subtype: Int64&#125;     | 고정 필드가 있는 MongoDB 바이너리 데이터입니다: Data(base64로 인코딩됨) 및 Subtype([바이너리 데이터 유형](https://www.mongodb.com/docs/manual/reference/bson-types/#binary-data)) |
+| JavaScript         | String                                       |                                                                                                                                                   |
+| Null               | Null                                         |                                                                                                                                                   |
+| Array              | Dynamic                                      | 동일한 타입으로 구성된 배열은 Array(Nullable(T))가 되며, 여러 기본 타입이 섞인 배열은 가장 일반적인 공통 타입으로 승격됩니다. 호환되지 않는 복합 타입이 섞인 배열은 튜플이 됩니다                                    |
+| Object             | Dynamic                                      | 각 중첩 필드는 재귀적으로 매핑됩니다                                                                                                                              |
+
+<Info>
+  ClickHouse의 JSON 데이터 타입에 대해 자세히 알아보려면 [문서](/ko/reference/data-types/newjson)를 참조하십시오.
+</Info>

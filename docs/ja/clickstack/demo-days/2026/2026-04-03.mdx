@@ -1,0 +1,120 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-04-03
+title: 'デモデイズ - 2026-04-03'
+sidebarTitle: '2026-04-03'
+description: 'ClickStack デモデイズ（2026-04-03）'
+doc_type: 'guide'
+keywords: ['ClickStack', 'デモデイズ']
+---
+
+<div id="new-dashboard-and-saved-search-listing-pages">
+  ## 新しいダッシュボードと保存済み検索の一覧ページ
+</div>
+
+*[@pulpdrew](https://github.com/pulpdrew) によるデモ*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/dQCkNZElwcg" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ダッシュボードと保存済み検索は、サイドバーから専用の一覧ページに移されました。チーム内でダッシュボードの数が増えてくると、従来のサイドバー方式はすぐに扱いづらくなっていました。新しいページでは、タグごとに整理されたカード表示ですべてを確認でき、名前検索やタグによる絞り込みも最初から利用できます。より情報量の多い表示を好む場合は、リスト表示も選べます。
+
+お気に入り機能も追加されました。ダッシュボードや保存済み検索にスターを付けると、一覧ページの先頭に固定され、サイドバーにも再表示されるため、すばやくアクセスできます。以前の使い勝手に近い一方で、ほかのメンバーのナビゲーションを圧迫しません。一覧ページでは、各カードにアラートのステータスアイコンや「created by / updated by」のメタデータも表示されるため、誰が何を管理しているのか、また何かが発報中かどうかをひと目で確認できます。
+
+新しいテンプレートギャラリーも追加されました。Node.js、Python、Go、Java の OTel ランタイムメトリクスに対応した 4 つのあらかじめ用意されたダッシュボードを、数クリックでインポートできます。タグと対象のメトリクスソースはインポート時に編集できるため、既存のタグ構成にそのまま組み込めます。
+
+**関連 PR:** [#1971](https://github.com/hyperdxio/hyperdx/pull/1971) ダッシュボード一覧ページを追加, [#2012](https://github.com/hyperdxio/hyperdx/pull/2012) 保存済み検索の一覧ページを追加, [#2021](https://github.com/hyperdxio/hyperdx/pull/2021) ダッシュボードと保存済み検索のお気に入り機能を追加, [#2033](https://github.com/hyperdxio/hyperdx/pull/2033) ダッシュボードと検索をタグでグループ化, [#2031](https://github.com/hyperdxio/hyperdx/pull/2031) 作成者/更新者メタデータを表示, [#2053](https://github.com/hyperdxio/hyperdx/pull/2053) ダッシュボード一覧ページにアラートアイコンを追加, [#2010](https://github.com/hyperdxio/hyperdx/pull/2010) ダッシュボードテンプレートギャラリーを追加
+
+<div id="filters-for-filters">
+  ## フィルタ用のフィルタ
+</div>
+
+*デモ: [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Tfe9kJygoEg" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ダッシュボード変数のフィルタで、独自のフィルタ条件を指定できるようになりました。ユースケースはシンプルです。たとえば Node.js のダッシュボードに「サービス名」のドロップダウンがある場合、そのドロップダウンには環境内のすべてのサービスではなく、Node.js のサービスだけを表示したいはずです。そこで、ダッシュボード変数に直接フィルタ条件を設定し、表示対象を絞り込めるようになりました。
+
+フィルタセレクタも更新され、複数選択に対応しました。サービスごとにグループ化されたダッシュボードでは、ドロップダウンから複数の値を一度に選べるため、比較がかなりしやすくなります。
+
+**関連 PR:** [#1969](https://github.com/hyperdxio/hyperdx/pull/1969) Dashboard フィルタに条件を追加; フィルタの複数選択をサポート
+
+<div id="rbac-for-predefined-dashboards">
+  ## プリセットダッシュボード向けのRBAC
+</div>
+
+*[@pulpdrew](https://github.com/pulpdrew) によるデモ*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/AZ94-quHEuw" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack のプリセットダッシュボードにも、ロールベースのアクセス制御が適用されるようになりました。以前は、これらの組み込みダッシュボードは RBAC がまったく効かず、割り当てられたロールに関係なく、どのユーザーでもアクセスできていました。この問題は現在解消されています。
+
+きめ細かな読み取り権限も、期待どおりに機能します。特定の service に対する read-only アクセスが設定されたロールでは、ユーザーが表示できるのは、その service に関連するプリセットダッシュボードのみに制限されます。そのロールのユーザーはダッシュボードとそのフィルターを表示できますが、フィルターの操作は編集できないようロックされます。デモでは、名前付き service にスコープされた &quot;services&quot; の読み取り権限を持つカスタムロールを設定し、そのロールでログインしたユーザーに、アクセス可能なダッシュボードとフィルター状態だけが正確に表示される様子を確認できます。
+
+<div id="optimizations-for-searching">
+  ## 検索の最適化
+</div>
+
+*[@knudtty](https://github.com/knudtty) によるデモ*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/uVD2FKzoHjM" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickHouse の &quot;Read in Order&quot; 最適化では、ORDER BY がテーブルの主キーと一致している場合、データを順次読み込み、LIMIT に達した時点で読み込みを停止するため、検索クエリを高速化できます。ベンチマークの結果、この最適化があっても、大規模なデータセットでは検索時に依然として必要以上のデータを取得していることがわかりました。原因は、反復処理されるパーツ数にあります。最適化が有効でも、十分に大きなテーブルではパーツ数が多く、ClickHouse はなお必要以上のデータを読み込んでしまいます。
+
+この修正では、検索クエリ用のウィンドウ付きクエリ配列の先頭に 1 分間の時間ウィンドウを追加しています。ほとんどの検索では直近 1 分間に必要なデータが含まれているため、まずこのウィンドウを当たることで、ほぼ即座に結果を返せます。そこに何も見つからない場合は、従来どおり段階的により広いウィンドウへフォールバックします。これとは別に、タイムスタンプのカラムに `toDateTime(Timestamp)` 式が使われており、それが認識されていなかったため、ORDER BY 最適化は `otel_traces` スキーマに正しく適用されていませんでした。こちらも修正されています。
+
+**関連 PR:** [#2019](https://github.com/hyperdxio/hyperdx/pull/2019) 検索に 1 分ウィンドウを使用, [#2014](https://github.com/hyperdxio/hyperdx/pull/2014) otel&#95;traces 向け ORDER BY 最適化の不備を修正
+
+<div id="copy-row-and-configurable-filter-sizes">
+  ## 行のコピーとフィルター数の設定対応
+</div>
+
+*[@knudtty](https://github.com/knudtty) によるデモ*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/e_IIKG3f6SE" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+行ビューアーで、行全体をワンクリックで取得できる copy-as-JSON ボタンが使えるようになりました。このボタンは、サイドバーの全表示ビューにも表示されます。行を LLM のプロンプトに貼り付けて、このログがコードのどこに出力されているかを確認したり、テキストをすべて手作業で選択しなくても、インシデントレポート用に完全なイベントをそのまま取得したりするのに便利です。
+
+サイドバーで取得するフィルターのオプション数は、[Query Settings] のチーム設定として変更できるようになりました。従来の固定上限では、大規模なデータセットでは利用可能なフィルター属性の一部しか表示されませんでした。これにより、チームは上限を引き上げて、より多くのリソース属性やログ属性を表示できるようになります。今回の変更には仮想化の改善も含まれており、多数のフィルターグループが表示される場合でも、フィルターパネルを高速にレンダリングできます。
+
+**関連 PR:** [#2035](https://github.com/hyperdxio/hyperdx/pull/2035) 行を JSON としてコピーするボタンを追加, [#2020](https://github.com/hyperdxio/hyperdx/pull/2020) 取得するフィルター数の新しいチーム設定, [#1979](https://github.com/hyperdxio/hyperdx/pull/1979) ネストされたフィルターグループの仮想化
+
+<div id="tabs-and-groups-in-dashboards">
+  ## ダッシュボードのタブとグループ
+</div>
+
+*[@alex-fedotyev](https://github.com/alex-fedotyev) によるデモ*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/tyumDlJuDTg" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ダッシュボードのタイルをグループに整理できるようになりました。これにより、これまでの 2 種類のコンテナー (「sections」と「groups」) を使い分ける方式が置き換えられます。従来は、ユーザーが最初にどちらのコンテナーを使うか決める必要がありました。新しい単一のグループという考え方によって、よりシンプルになっています。グループはデフォルトで折りたたみ可能で、必要に応じて枠線を表示でき、タブを追加することもできます。各タブはそれぞれ独自のタイルセットを持ち、タイルはドラッグハンドルでグループ間を移動できます。
+
+このデモでは、いくつかのカスタマイズオプションを切り替えたグループを紹介しています。具体的には、折りたたみのオン・オフ、枠線の表示・非表示、タブの有効・無効です。デモ時点では、この PR はまだレビュー中で、デザインに関するフィードバックが集められている段階でした。これが取り込まれれば、従来の 2 種類のコンテナーを使い分けるモデルに比べて、ダッシュボード作成者により柔軟で分かりやすい構成要素を提供できるはずです。
+
+**関連 PR:** [#1972](https://github.com/hyperdxio/hyperdx/pull/1972) タブと折りたたみ／枠線オプション付きのダッシュボードグループ, [#2015](https://github.com/hyperdxio/hyperdx/pull/2015) section/group を単一のグループに統合
+
+<div id="clickstack-cli">
+  ## ClickStack CLI
+</div>
+
+*デモ: [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/9XqJNhstabw" title="YouTube動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack CLI (`hdx`) は、ターミナルを離れることなく、ログやトレースの検索、tail、調査を行える新しいターミナル TUI です。ブラウザと同じ Web セッションの仕組みを使って HyperDX インスタンスに接続するため、個別に管理する API キーは必要ありません。インスタンス URL とメールアドレスを使って一回限り `hdx auth login` を実行すれば、その後は認証状態が維持されます。
+
+この TUI の画面は、Web アプリと同じ検索インターフェイスになっています。クエリ構文も同じで、ログソースの選択も同様に行え、個々のログエントリを掘り下げて確認することもできます。特に注目すべきなのが、トレースのウォーターフォールビューです。ログエントリをクリックすると、完全な分散トレースがターミナル内に直接表示されます。このデモでは、エージェント的な利用に関する初期段階の実験も紹介されています。AI エージェントに、CLI のスキーマ introspection 出力へのアクセスと、ClickHouse プロキシ経由でクエリを実行する権限を与えることで、エージェントが自律的に問題を調査できるようになります。さらにデモでは、エージェントが Web セッションを使って Playwright 経由で HyperDX UI を操作し、表示されたチャートからメトリクスを取得して、ログで見つけた内容と照合する様子も示されています。
+
+**関連 PR:** [#2043](https://github.com/hyperdxio/hyperdx/pull/2043) @hyperdx/cli パッケージを追加 — イベントの検索と tail を行うためのターミナル TUI

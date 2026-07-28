@@ -34,7 +34,7 @@ protected:
         return name;
     }
 
-    std::unordered_map<String, String> case_insensitive_name_mapping;
+    std::unordered_map<String, String> case_insensitive_name_mapping{};
 
 public:
     /// For compatibility with SQL, it's possible to specify that certain function name is case insensitive.
@@ -82,9 +82,9 @@ public:
     }
 
 
-    std::vector<String> getAllRegisteredNames() const override
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
-        std::vector<String> result;
+        VectorWithMemoryTracking<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
         std::transform(getMap().begin(), getMap().end(), std::back_inserter(result), getter);
         std::transform(aliases.begin(), aliases.end(), std::back_inserter(result), getter);
@@ -134,10 +134,10 @@ private:
     virtual String getFactoryName() const = 0;
 
     /// Alias map to data_types from previous two maps
-    AliasMap aliases;
+    AliasMap aliases{};
 
     /// Case insensitive aliases
-    AliasMap case_insensitive_aliases;
+    AliasMap case_insensitive_aliases{};
 };
 
 }

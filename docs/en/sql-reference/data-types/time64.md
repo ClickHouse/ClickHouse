@@ -8,8 +8,6 @@ title: 'Time64'
 doc_type: 'reference'
 ---
 
-# Time64
-
 Data type `Time64` represents a time-of-day with fractional seconds.
 It has no calendar date components (day, month, year).
 The `precision` parameter defines the number of fractional digits and therefore the tick size.

@@ -5,8 +5,6 @@
 #include <signal.h>
 #include <time.h>
 
-#include "config.h"
-
 #include <Common/Logger.h>
 
 

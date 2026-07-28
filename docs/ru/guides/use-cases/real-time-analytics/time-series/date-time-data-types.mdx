@@ -1,0 +1,266 @@
+---
+title: 'Типы данных даты и времени — временные ряды'
+sidebarTitle: 'Типы данных даты и времени'
+description: 'Типы данных для временных рядов в ClickHouse.'
+slug: /use-cases/time-series/date-time-data-types
+keywords: ['временные ряды', 'DateTime', 'DateTime64', 'Date', 'Time', 'Time64', 'типы данных', 'временные данные', 'временная метка']
+show_related_blogs: true
+doc_type: 'reference'
+---
+
+Для эффективного управления данными временных рядов необходим полный набор типов даты и времени, и ClickHouse предоставляет именно такой набор.
+От компактных представлений даты до высокоточных временных меток с точностью до наносекунд — эти типы разработаны так, чтобы обеспечивать баланс между эффективностью хранения и практическими требованиями различных приложений для временных рядов.
+
+Независимо от того, работаете ли вы с историческими финансовыми данными, показаниями IoT-датчиков или событиями с датой в будущем, типы даты и времени в ClickHouse обеспечивают гибкость, необходимую для работы с различными сценариями временных данных.
+Поддерживаемый набор типов позволяет оптимизировать и объем хранилища, и производительность запросов, сохраняя при этом точность, необходимую в вашем сценарии использования.
+
+* Тип [`Date`](/ru/reference/data-types/date) будет достаточен в большинстве случаев. Для хранения даты этот тип требует 2 байта и ограничивает диапазон значениями `[1970-01-01, 2149-06-06]`.
+
+* [`Date32`](/ru/reference/data-types/date32) охватывает более широкий диапазон дат. Для хранения даты требуется 4 байта, а диапазон ограничен значениями `[1900-01-01, 2299-12-31]`
+
+* [`DateTime`](/ru/reference/data-types/datetime) хранит значения дата-время с точностью до секунды и диапазоном `[1970-01-01 00:00:00, 2106-02-07 06:28:15]`. Для каждого значения требуется 4 байта.
+
+* В случаях, когда требуется более высокая точность, можно использовать [`DateTime64`](/ru/reference/data-types/datetime64). Он позволяет хранить время с точностью до наносекунд в диапазоне `[1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]`. Для каждого значения требуется 8 байт.
+
+Давайте создадим таблицу, в которой хранятся различные типы дат:
+
+```sql
+CREATE TABLE dates
+(
+    `date` Date,
+    `wider_date` Date32,
+    `datetime` DateTime,
+    `precise_datetime` DateTime64(3),
+    `very_precise_datetime` DateTime64(9)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
+Мы можем использовать функцию [`now()`](/ru/reference/functions/regular-functions/date-time-functions#now), чтобы получить текущее время, а [`now64()`](/ru/reference/functions/regular-functions/date-time-functions#now64) — чтобы получить его с указанной точностью, задаваемой первым аргументом.
+
+```sql
+INSERT INTO dates 
+SELECT now(), 
+       now()::Date32 + toIntervalYear(100),
+       now(), 
+       now64(3), 
+       now64(9) + toIntervalYear(200);
+```
+
+При этом столбцы будут заполнены значениями времени в соответствии с типом столбца:
+
+```sql
+SELECT * FROM dates
+FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+date:                  2025-03-12
+wider_date:            2125-03-12
+datetime:              2025-03-12 11:39:07
+precise_datetime:      2025-03-12 11:39:07.196
+very_precise_datetime: 2025-03-12 11:39:07.196724000
+```
+
+<div id="time-series-time-types">
+  ## Типы Time и Time64
+</div>
+
+Для случаев, когда нужно хранить значения времени суток без компонентов даты, ClickHouse предоставляет типы [`Time`](/ru/reference/data-types/time) и [`Time64`](/ru/reference/data-types/time64), добавленные в версии 25.6. Они удобны для представления повторяющихся расписаний, ежедневных шаблонов и других ситуаций, когда дату и время имеет смысл хранить отдельно.
+
+<Note>
+  Для использования `Time` и `Time64` необходимо включить настройку: `SET enable_time_time64_type = 1;`
+
+  Эти типы были добавлены в версии 25.6
+</Note>
+
+Тип `Time` хранит часы, минуты и секунды с точностью до секунды. Внутренне он представлен как знаковое 32-битное целое число и поддерживает диапазон `[-999:59:59, 999:59:59]`, что позволяет использовать значения, превышающие 24 часа. Это может быть полезно при измерении прошедшего времени или выполнении арифметических операций, результат которых выходит за пределы одних суток.
+
+Для субсекундной точности `Time64` хранит время с настраиваемой дробной частью секунд как знаковое значение Decimal64. Он принимает параметр точности (0-9), который задаёт количество цифр после запятой. Наиболее распространённые значения точности: 3 (миллисекунды), 6 (микросекунды) и 9 (наносекунды).
+
+Ни `Time`, ни `Time64` не поддерживают часовые пояса — они представляют собой значения времени суток без привязки к региону.
+
+Давайте создадим таблицу со столбцами времени:
+
+```sql
+SET enable_time_time64_type = 1;
+
+CREATE TABLE time_examples
+(
+    `event_id` UInt8,
+    `basic_time` Time,
+    `precise_time` Time64(3)
+)
+ENGINE = MergeTree
+ORDER BY event_id;
+```
+
+Значения времени можно вставлять, используя строковые литералы или числовые значения. Для `Time` числовые значения интерпретируются как секунды с 00:00:00. Для `Time64` числовые значения интерпретируются как секунды с 00:00:00, а дробная часть — в соответствии с точностью столбца:
+
+```sql
+INSERT INTO time_examples VALUES 
+    (1, '14:30:25', '14:30:25.123'),
+    (2, 52225, 52225.456),
+    (3, '26:11:10', '26:11:10.789');  -- Значения нормализуются при превышении 24 часов
+
+SELECT * FROM time_examples ORDER BY event_id;
+```
+
+```text
+┌─event_id─┬─basic_time─┬─precise_time─┐
+│        1 │ 14:30:25   │ 14:30:25.123 │
+│        2 │ 14:30:25   │ 14:30:25.456 │
+│        3 │ 26:11:10   │ 26:11:10.789 │
+└──────────┴────────────┴──────────────┘
+```
+
+Временные значения можно удобно фильтровать:
+
+```sql
+SELECT * FROM time_examples WHERE basic_time = '14:30:25';
+```
+
+<div id="time-series-timezones">
+  ## Часовые пояса
+</div>
+
+Во многих случаях требуется также хранить часовые пояса. Часовой пояс можно указать в качестве последнего аргумента для типов `DateTime` или `DateTime64`:
+
+```sql
+CREATE TABLE dtz
+(
+    `id` Int8,
+    `dt_1` DateTime('Europe/Berlin'),
+    `dt_2` DateTime,
+    `dt64_1` DateTime64(9, 'Europe/Berlin'),
+    `dt64_2` DateTime64(9)
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+Определив часовой пояс в нашем DDL, теперь мы можем вставлять значения времени в разных часовых поясах:
+
+```sql
+INSERT INTO dtz 
+SELECT 1, 
+       toDateTime('2022-12-12 12:13:14', 'America/New_York'),
+       toDateTime('2022-12-12 12:13:14', 'America/New_York'),
+       toDateTime64('2022-12-12 12:13:14.123456789', 9, 'America/New_York'),
+       toDateTime64('2022-12-12 12:13:14.123456789', 9, 'America/New_York')
+UNION ALL
+SELECT 2, 
+       toDateTime('2022-12-12 12:13:15'),
+       toDateTime('2022-12-12 12:13:15'),
+       toDateTime64('2022-12-12 12:13:15.123456789', 9),
+       toDateTime64('2022-12-12 12:13:15.123456789', 9);
+```
+
+А теперь посмотрим, что содержится в нашей таблице:
+
+```sql
+SELECT dt_1, dt64_1, dt_2, dt64_2
+FROM dtz
+FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+dt_1:   2022-12-12 18:13:14
+dt64_1: 2022-12-12 18:13:14.123456789
+dt_2:   2022-12-12 17:13:14
+dt64_2: 2022-12-12 17:13:14.123456789
+
+Row 2:
+──────
+dt_1:   2022-12-12 13:13:15
+dt64_1: 2022-12-12 13:13:15.123456789
+dt_2:   2022-12-12 12:13:15
+dt64_2: 2022-12-12 12:13:15.123456789
+```
+
+В первой строке мы вставили все значения, используя часовой пояс `America/New_York`.
+
+* `dt_1` и `dt64_1` автоматически преобразуются в `Europe/Berlin` во время выполнения запроса.
+* Для `dt_2` и `dt64_2` часовой пояс не был указан, поэтому используется локальный часовой пояс сервера — в данном случае это `Europe/London`.
+
+Во второй строке мы вставили все значения без указания часового пояса, поэтому использовался локальный часовой пояс сервера.
+Как и в первой строке, `dt_1` и `dt64_1` преобразуются в `Europe/Berlin`, а `dt_2` и `dt64_2` используют локальный часовой пояс сервера.
+
+<div id="time-series-date-time-functions">
+  ## Функции даты и времени
+</div>
+
+ClickHouse также включает набор функций, которые позволяют преобразовывать значения из одного типа данных в другой.
+
+Например, можно использовать [`toDate`](/ru/reference/functions/regular-functions/type-conversion-functions#toDate), чтобы преобразовать значение `DateTime` в тип `Date`:
+
+```sql
+SELECT
+    now() AS current_time,
+    toTypeName(current_time),
+    toDate(current_time) AS date_only,
+    toTypeName(date_only)
+FORMAT Vertical;    
+```
+
+```text
+Row 1:
+──────
+current_time:             2025-03-12 12:32:54
+toTypeName(current_time): DateTime
+date_only:                2025-03-12
+toTypeName(date_only):    Date
+```
+
+Можно использовать [`toDateTime64`](/ru/reference/functions/regular-functions/type-conversion-functions#toDateTime64), чтобы преобразовать `DateTime` в `DateTime64`:
+
+```sql
+SELECT
+    now() AS current_time,
+    toTypeName(current_time),
+    toDateTime64(current_time, 3) AS date_only,
+    toTypeName(date_only)
+FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+current_time:             2025-03-12 12:35:01
+toTypeName(current_time): DateTime
+date_only:                2025-03-12 12:35:01.000
+toTypeName(date_only):    DateTime64(3)
+```
+
+И мы можем использовать [`toDateTime`](/ru/reference/functions/regular-functions/type-conversion-functions#toDateTime), чтобы преобразовать `Date` или `DateTime64` обратно в `DateTime`:
+
+```sql
+SELECT
+    now64() AS current_time,
+    toTypeName(current_time),
+    toDateTime(current_time) AS date_time1,
+    toTypeName(date_time1),
+    today() AS current_date,
+    toTypeName(current_date),
+    toDateTime(current_date) AS date_time2,
+    toTypeName(date_time2)
+FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+current_time:             2025-03-12 12:41:00.598
+toTypeName(current_time): DateTime64(3)
+date_time1:               2025-03-12 12:41:00
+toTypeName(date_time1):   DateTime
+current_date:             2025-03-12
+toTypeName(current_date): Date
+date_time2:               2025-03-12 00:00:00
+toTypeName(date_time2):   DateTime
+```

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<clickhouse>
+    <!--
+        Keeper without <placement> configured, so /keeper/availability_zone is
+        not registered in the storage container. Combined with quorum_reads=true,
+        a Get request for that path used to take the raft commit path and
+        terminate the server (onStorageInconsistency). This test ensures the
+        request now returns ZNONODE gracefully.
+    -->
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <coordination_settings>
+            <operation_timeout_ms>5000</operation_timeout_ms>
+            <session_timeout_ms>10000</session_timeout_ms>
+            <raft_logs_level>trace</raft_logs_level>
+            <quorum_reads>true</quorum_reads>
+        </coordination_settings>
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>node</hostname>
+                <port>2888</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+
+    <zookeeper>
+        <node index="1">
+            <host>node</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+</clickhouse>

@@ -20,7 +20,7 @@ namespace DB
 
 /** A stream of blocks from a shared vector of blocks
   */
-class BlocksSource : public ISource
+class BlocksSource final : public ISource
 {
 public:
     /// Acquires shared ownership of the blocks vector

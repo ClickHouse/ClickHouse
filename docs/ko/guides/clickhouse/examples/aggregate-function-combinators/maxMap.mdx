@@ -1,0 +1,73 @@
+---
+slug: '/examples/aggregate-function-combinators/maxMap'
+title: 'maxMap'
+description: 'maxMap 조합자를 사용하는 예시'
+keywords: ['max', 'map', 'combinator', '예시', 'maxMap']
+sidebarTitle: 'maxMap'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 설명
+</div>
+
+[`맵`](/ko/reference/functions/aggregate-functions/combinators#-map) 조합자는 [`max`](/ko/reference/functions/aggregate-functions/max)
+함수에 적용할 수 있으며, `maxMap`
+집계 조합자 함수를 사용해 각 키별로 맵의 최댓값을 계산합니다.
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+이 예시에서는 서로 다른 시간 슬롯별 상태 코드와 그 개수를 저장하는 테이블(table)을 생성합니다.
+각 행(row)에는 상태 코드를 해당 개수에 매핑한 맵(Map)이 들어 있습니다. 각 시간 슬롯에서 각 상태 코드의 최대 개수를 찾기 위해
+`maxMap`을 사용합니다.
+
+```sql title="Query"
+CREATE TABLE metrics(
+    date Date,
+    timeslot DateTime,
+    status Map(String, UInt64)
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO metrics VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', (['a', 'b', 'c'], [15, 25, 35])),
+    ('2000-01-01', '2000-01-01 00:00:00', (['c', 'd', 'e'], [45, 55, 65])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['d', 'e', 'f'], [75, 85, 95])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['f', 'g', 'g'], [105, 115, 125]));
+
+SELECT
+    timeslot,
+    maxMap(status),
+FROM metrics
+GROUP BY timeslot;
+```
+
+`maxMap` 함수는 각 시간 슬롯 내에서 각 상태 코드의 최대 개수를 찾습니다. 예시:
+
+* 시간 슬롯 &#39;2000-01-01 00:00:00&#39;에서는:
+  * 상태 &#39;a&#39;: 15
+  * 상태 &#39;b&#39;: 25
+  * 상태 &#39;c&#39;: max(35, 45) = 45
+  * 상태 &#39;d&#39;: 55
+  * 상태 &#39;e&#39;: 65
+* 시간 슬롯 &#39;2000-01-01 00:01:00&#39;에서는:
+  * 상태 &#39;d&#39;: 75
+  * 상태 &#39;e&#39;: 85
+  * 상태 &#39;f&#39;: max(95, 105) = 105
+  * 상태 &#39;g&#39;: max(115, 125) = 125
+
+```response title="Response"
+   ┌────────────timeslot─┬─maxMap(status)───────────────────────┐
+1. │ 2000-01-01 00:01:00 │ {'d':75,'e':85,'f':105,'g':125}      │
+2. │ 2000-01-01 00:00:00 │ {'a':15,'b':25,'c':45,'d':55,'e':65} │
+   └─────────────────────┴──────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [`max`](/ko/reference/functions/aggregate-functions/max)
+* [`맵 조합자`](/ko/reference/functions/aggregate-functions/combinators#-map)

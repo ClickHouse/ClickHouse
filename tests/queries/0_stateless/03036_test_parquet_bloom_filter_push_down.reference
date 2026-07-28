@@ -15,7 +15,7 @@ expect rows_read = select count()
   "rows": 2,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 47419
+    "bytes_read": 9162
   }
 }
 bloom filter is on, some row groups should be skipped
@@ -34,7 +34,7 @@ expect rows_read much less than select count()
   "rows": 2,
   "statistics": {
     "rows_read": 464,
-    "bytes_read": 21703
+    "bytes_read": 4174
   }
 }
 bloom filter is on, but where predicate contains data from 2 row groups out of 3.
@@ -53,7 +53,7 @@ Rows read should be less than select count, but greater than previous selects
   "rows": 2,
   "statistics": {
     "rows_read": 536,
-    "bytes_read": 25708
+    "bytes_read": 4997
   }
 }
 bloom filter is on, but where predicate contains data from all row groups
@@ -76,7 +76,7 @@ expect rows_read = select count()
   "rows": 3,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 47419
+    "bytes_read": 17309
   }
 }
 IN check
@@ -94,7 +94,7 @@ IN check
   "rows": 2,
   "statistics": {
     "rows_read": 536,
-    "bytes_read": 25708
+    "bytes_read": 4997
   }
 }
 tuple in case, bf is off.
@@ -108,7 +108,7 @@ tuple in case, bf is off.
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 47419
+    "bytes_read": 9162
   }
 }
 tuple in case, bf is on.
@@ -122,7 +122,7 @@ tuple in case, bf is on.
   "rows": 1,
   "statistics": {
     "rows_read": 464,
-    "bytes_read": 21703
+    "bytes_read": 4174
   }
 }
 complex tuple in case, bf is off
@@ -136,7 +136,7 @@ complex tuple in case, bf is off
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 47419
+    "bytes_read": 9162
   }
 }
 complex tuple in case, bf is on
@@ -150,7 +150,7 @@ complex tuple in case, bf is on
   "rows": 1,
   "statistics": {
     "rows_read": 464,
-    "bytes_read": 21703
+    "bytes_read": 4174
   }
 }
 complex tuple in case, bf is on. Non existent
@@ -172,7 +172,7 @@ Bloom filter for json column. BF is off
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 47419
+    "bytes_read": 10600
   }
 }
 {
@@ -187,7 +187,7 @@ Bloom filter for json column. BF is off
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 47419
+    "bytes_read": 10600
   }
 }
 Bloom filter for json column. BF is on
@@ -200,7 +200,7 @@ Bloom filter for json column. BF is on
   "rows": 1,
   "statistics": {
     "rows_read": 72,
-    "bytes_read": 4005
+    "bytes_read": 933
   }
 }
 {
@@ -215,7 +215,7 @@ Bloom filter for json column. BF is on
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 47419
+    "bytes_read": 10600
   }
 }
 Bloom filter for ipv4 column. BF is off
@@ -228,7 +228,7 @@ Bloom filter for ipv4 column. BF is off
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 47419
+    "bytes_read": 12860
   }
 }
 {
@@ -243,7 +243,7 @@ Bloom filter for ipv4 column. BF is off
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 47419
+    "bytes_read": 12860
   }
 }
 Bloom filter for ipv4 column. BF is on
@@ -256,7 +256,7 @@ Bloom filter for ipv4 column. BF is on
   "rows": 1,
   "statistics": {
     "rows_read": 72,
-    "bytes_read": 4005
+    "bytes_read": 1168
   }
 }
 {
@@ -271,7 +271,7 @@ Bloom filter for ipv4 column. BF is on
   "rows": 1,
   "statistics": {
     "rows_read": 72,
-    "bytes_read": 4005
+    "bytes_read": 1168
   }
 }
 Bloom filter for ipv4 column. BF is on. Specified in the schema
@@ -284,7 +284,7 @@ Bloom filter for ipv4 column. BF is on. Specified in the schema
   "rows": 1,
   "statistics": {
     "rows_read": 72,
-    "bytes_read": 4005
+    "bytes_read": 235
   }
 }
 Bloom filter on 64 bit column read as ipv4. We explicitly deny it, should read all rg
@@ -297,7 +297,7 @@ Bloom filter on 64 bit column read as ipv4. We explicitly deny it, should read a
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 47419
+    "bytes_read": 8147
   }
 }
 BF off for parquet uint64 logical type. Should read everything
@@ -310,7 +310,7 @@ BF off for parquet uint64 logical type. Should read everything
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 47419
+    "bytes_read": 18747
   }
 }
 {
@@ -325,7 +325,7 @@ BF off for parquet uint64 logical type. Should read everything
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 47419
+    "bytes_read": 18747
   }
 }
 BF on for parquet uint64 logical type. Uint64 is stored as a signed int 64, but with logical annotation. Make sure a value greater than int64 can be queried
@@ -338,7 +338,7 @@ BF on for parquet uint64 logical type. Uint64 is stored as a signed int 64, but 
   "rows": 1,
   "statistics": {
     "rows_read": 464,
-    "bytes_read": 21711
+    "bytes_read": 8588
   }
 }
 {
@@ -353,7 +353,7 @@ BF on for parquet uint64 logical type. Uint64 is stored as a signed int 64, but 
   "rows": 1,
   "statistics": {
     "rows_read": 464,
-    "bytes_read": 21711
+    "bytes_read": 8588
   }
 }
 Uint16 is stored as physical type int32 with bidwidth = 16  and sign = false. Make sure a value greater than int16 can be queried. BF is on.
@@ -366,7 +366,7 @@ Uint16 is stored as physical type int32 with bidwidth = 16  and sign = false. Ma
   "rows": 1,
   "statistics": {
     "rows_read": 464,
-    "bytes_read": 21703
+    "bytes_read": 4840
   }
 }
 {
@@ -381,7 +381,7 @@ Uint16 is stored as physical type int32 with bidwidth = 16  and sign = false. Ma
   "rows": 1,
   "statistics": {
     "rows_read": 464,
-    "bytes_read": 21703
+    "bytes_read": 4840
   }
 }
 BF off for parquet int8 logical type. Should read everything
@@ -403,7 +403,7 @@ BF off for parquet int8 logical type. Should read everything
   "rows": 4,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 47419
+    "bytes_read": 12593
   }
 }
 {
@@ -436,7 +436,7 @@ BF off for parquet int8 logical type. Should read everything
   "rows": 4,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 47419
+    "bytes_read": 12593
   }
 }
 BF on for parquet int8 logical type. Should skip row groups
@@ -458,7 +458,7 @@ BF on for parquet int8 logical type. Should skip row groups
   "rows": 4,
   "statistics": {
     "rows_read": 536,
-    "bytes_read": 25716
+    "bytes_read": 6864
   }
 }
 {
@@ -491,7 +491,7 @@ BF on for parquet int8 logical type. Should skip row groups
   "rows": 4,
   "statistics": {
     "rows_read": 536,
-    "bytes_read": 25716
+    "bytes_read": 6864
   }
 }
 Invalid column conversion with in operation. String type can not be hashed against parquet int64 physical type. Should read everything
@@ -500,7 +500,7 @@ Invalid column conversion with in operation. String type can not be hashed again
   "rows": 0,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 47419
+    "bytes_read": 8147
   }
 }
 Transformations on key column shall not be allowed (=). Should read everything
@@ -513,7 +513,7 @@ Transformations on key column shall not be allowed (=). Should read everything
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 47419
+    "bytes_read": 8147
   }
 }
 Transformations on key column shall not be allowed (IN). Should read everything
@@ -526,6 +526,6 @@ Transformations on key column shall not be allowed (IN). Should read everything
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 47419
+    "bytes_read": 8147
   }
 }

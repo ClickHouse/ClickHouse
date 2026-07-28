@@ -1,0 +1,45 @@
+---
+title: '배포 옵션'
+slug: /infrastructure/deployment-options
+description: 'ClickHouse 고객을 위한 배포 옵션'
+keywords: ['자체 클라우드 사용', 'byoc', '프라이빗', 'Government', '자체 배포']
+doc_type: '참고'
+---
+
+ClickHouse는 다양한 고객 요구 사항을 충족할 수 있도록 여러 배포 옵션을 제공하며, 제어 수준, 컴플라이언스, 운영 오버헤드 측면에서 서로 다른 선택지를 지원합니다.
+이 문서에서는 사용 가능한 각 배포 유형을 설명하여, 아키텍처 선호도, 규제 준수 의무, 리소스 관리 전략에 맞는 최적의 솔루션을 선택할 수 있도록 합니다.
+
+<div id="clickhouse-cloud">
+  ## ClickHouse Cloud
+</div>
+
+ClickHouse Cloud는 직접 운영할 때 따르는 복잡성 없이 ClickHouse의 강력한 성능과 속도를 제공하는 완전 관리형 클라우드 네이티브 서비스입니다.
+이 옵션은 신속한 배포, 뛰어난 확장성, 그리고 최소한의 관리 부담을 우선시할 때 적합합니다.
+ClickHouse Cloud는 프로비저닝, 스케일링, 유지 관리, 업데이트를 처리하므로 사용자는 데이터 분석과 애플리케이션 개발에만 집중할 수 있습니다.
+분석 워크로드에서 안정적이고 비용 효율적인 성능을 보장할 수 있도록 활용량 기반 청구와 자동 스케일링을 제공합니다. 또한 AWS, GCP, Azure에서 사용할 수 있으며, 마켓플레이스를 통한 직접 청구 옵션도 지원합니다.
+
+[ClickHouse Cloud](/ko/get-started/setup/cloud)에서 자세히 알아보십시오.
+
+<div id="byoc">
+  ## Bring Your Own Cloud
+</div>
+
+ClickHouse Bring Your Own Cloud (BYOC)를 사용하면 조직은 관리형 서비스 계층을 활용하면서 자체 클라우드 환경에서 ClickHouse를 배포하고 운영할 수 있습니다. 이 옵션은 ClickHouse Cloud의 완전 관리형 경험과 자가 관리형 배포의 완전한 제어 사이의 간극을 메워 줍니다. ClickHouse BYOC를 사용하면 조직은 특정 컴플라이언스 및 규제 요구 사항을 충족할 수 있도록 데이터, 인프라, 보안 정책에 대한 통제권을 유지하면서도 패치 적용, 모니터링, 스케일링과 같은 운영 작업은 ClickHouse에 맡길 수 있습니다. 이 모델은 프라이빗 클라우드 배포의 유연성과 관리형 서비스의 이점을 함께 제공하므로, 엄격한 보안, 거버넌스, 데이터 레지던시 요구 사항이 있는 엔터프라이즈의 대규모 배포에 적합합니다.
+
+[Bring Your Own Cloud](/ko/products/cloud/guides/infrastructure/deployment-options/byoc/overview)에서 자세히 알아보십시오.
+
+<div id="clickhouse-private">
+  ## ClickHouse Private
+</div>
+
+ClickHouse Private는 ClickHouse Cloud를 구동하는 동일한 독자 기술을 활용하는 자체 배포형 ClickHouse 버전입니다. 이 옵션은 가장 높은 수준의 제어를 제공하므로, 엄격한 컴플라이언스, 네트워킹 및 보안 요구 사항이 있는 조직은 물론 자체 인프라를 운영할 전문성을 갖춘 팀에도 적합합니다. 또한 ClickHouse Cloud 환경에서 철저히 검증된 정기 업데이트와 업그레이드, 풍부한 기능 로드맵의 이점을 제공하며, 당사의 전문 지원 팀이 이를 뒷받침합니다.
+
+[ClickHouse Private](/ko/products/cloud/guides/infrastructure/deployment-options/clickhouse-private)에서 자세히 알아보십시오.
+
+<div id="clickhouse-government">
+  ## ClickHouse Government
+</div>
+
+ClickHouse Government는 격리되고 인증된 환경이 필요한 정부 기관 및 공공 부문 조직의 고유하고 엄격한 요구 사항을 충족하도록 설계된 ClickHouse의 자체 배포 버전입니다. 이 배포 옵션은 OpenSSL을 활용한 FIPS 140-3 컴플라이언스, 추가적인 시스템 강화, 취약점 관리를 통해 높은 수준의 보안, 컴플라이언스, 격리 환경을 제공합니다. 또한 ClickHouse Cloud의 강력한 기능을 활용하면서도, 정부 기관의 구체적인 운영 및 보안 요구 사항을 충족하기 위한 특화된 기능과 구성을 통합합니다. ClickHouse Government를 사용하면 기관은 공공 부문 요구에 맞춘 전문 지원을 바탕으로, 통제되고 인증된 인프라 내에서 민감한 데이터에 대해 고성능 분석을 수행할 수 있습니다.
+
+[ClickHouse Government](/ko/products/cloud/guides/infrastructure/deployment-options/clickhouse-government)에서 자세히 알아보십시오.

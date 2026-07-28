@@ -38,12 +38,14 @@ set -e
 trap "bash -ex /packages/preserve_logs.sh" ERR
 test_env='TEST_THE_DEFAULT_PARAMETER=15'
 echo "$test_env" >> /etc/default/clickhouse
-# Do not use systemd, and hence we need to wait until the server will be ready below
+# Do not use systemd, and hence we need to wait until the server will be ready below.
+# The init.d wrapper prints "Server started" once the pid file exists, but the TCP
+# listener can take longer to open on a slow CI host; poll for up to 30s. See #86278.
 SYSTEMCTL_SKIP_REDIRECT=1 /etc/init.d/clickhouse-server start
-for i in {1..5}; do
-    clickhouse-client -q 'SELECT version()' && break || sleep 1
+for i in {1..30}; do
+    clickhouse-client --receive_timeout=5 -q 'SELECT version()' && break || sleep 1
 done
-clickhouse-client -q 'SELECT version()'
+clickhouse-client --receive_timeout=5 -q 'SELECT version()'
 grep "$test_env" /proc/$(cat /var/run/clickhouse-server/clickhouse-server.pid)/environ"""
     keeper_test = r"""#!/bin/bash
 set -e
@@ -69,7 +71,7 @@ trap "bash -ex /packages/preserve_logs.sh" ERR
 /packages/clickhouse install
 clickhouse-server start --daemon
 for i in {1..5}; do
-    clickhouse-client -q 'SELECT version()' && break || sleep 1
+    clickhouse-client --receive_timeout=5 -q 'SELECT version()' && break || sleep 1
 done
 clickhouse-keeper start --daemon
 for i in {1..20}; do

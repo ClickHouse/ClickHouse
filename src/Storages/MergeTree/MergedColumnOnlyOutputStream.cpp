@@ -17,7 +17,8 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     CompressionCodecPtr default_codec,
     MergeTreeIndexGranularityPtr index_granularity_ptr,
     size_t part_uncompressed_bytes,
-    WrittenOffsetSubstreams * written_offset_substreams)
+    WrittenOffsetSubstreams * written_offset_substreams,
+    PackedFilesWriter * external_packed_skip_indices_writer)
     : IMergedBlockOutputStream(
           std::move(data_settings),
           data_part->getDataPartStoragePtr(),
@@ -43,6 +44,8 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         save_primary_index_in_memory,
         /*blocks_are_granules_size=*/ false);
 
+    writer_settings.external_packed_skip_indices_writer = external_packed_skip_indices_writer;
+
     writer = createMergeTreeDataPartWriter(
         data_part->getType(),
         data_part->name, data_part->storage.getLogName(), data_part->getSerializations(),
@@ -64,7 +67,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     if (!block.rows())
         return;
 
-    writer->write(block, nullptr);
+    writer->write(block, nullptr, nullptr);
     new_serialization_infos.add(block);
 }
 
@@ -82,14 +85,6 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(M
 
     for (const auto & filename : checksums_to_remove)
         all_checksums.files.erase(filename);
-
-    for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
-    {
-        checksums.addFile(
-            projection_name + ".proj",
-            projection_part->checksums.getTotalSizeOnDisk(),
-            projection_part->checksums.getTotalChecksumUInt128());
-    }
 
     auto columns = new_part->getColumns();
     auto serialization_infos = new_part->getSerializationInfos();

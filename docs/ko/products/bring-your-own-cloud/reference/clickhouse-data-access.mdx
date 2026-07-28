@@ -1,0 +1,78 @@
+---
+title: 'ClickHouse data access (BYOC)'
+slug: /cloud/reference/byoc/reference/clickhouse_data_access
+sidebarTitle: 'ClickHouse data access'
+keywords: ['BYOC', 'Bring Your Own Cloud', '데이터 접근', '직원 접근', 'system.query_log', '문제 해결 접근', '컴플라이언스']
+description: 'BYOC 배포에서 ClickHouse 직원이 고객 데이터에 대해 보유하는 접근 권한'
+doc_type: 'reference'
+---
+
+기본적으로 ClickHouse 직원은 고객 데이터에 접근할 수 없습니다. 모든 사용자 테이블과 쿼리 결과를 포함한 ClickHouse 데이터는 VPC 내부에 그대로 유지됩니다. ClickHouse가 배포와 상호작용하는 경로는 아래에 설명된 경우뿐이며, 이 중 어느 것도 고객 테이블 데이터에 대한 접근 권한을 부여하지 않습니다.
+
+<div id="routine-operations">
+  ## 정기 운영 작업
+</div>
+
+ClickHouse Cloud의 컨트롤 플레인은 고객 데이터를 읽지 않고 BYOC 배포를 운영합니다. VPC 외부로 데이터를 전송하는 구성 요소는 운영 메타데이터만 전달합니다.
+
+| 구성 요소           | VPC 외부로 나가는 항목                                        |
+| --------------- | ----------------------------------------------------- |
+| State exporter  | ClickHouse Cloud가 소유한 `SQS` 큐로 서비스 상태(헬스, 상태)를 전송합니다. |
+| Billing scraper | ClickHouse Cloud가 소유한 S3 버킷으로 CPU 및 메모리 메트릭을 전송합니다.   |
+| AlertManager    | 클러스터 상태 알림을 ClickHouse Cloud로 전송합니다.                  |
+
+쿼리 트래픽, 테이블 내용, 스키마는 이러한 경로를 통해 절대 전달되지 않습니다. 로그와 메트릭은 BYOC VPC 내부에 유지됩니다.
+
+<div id="troubleshooting-access">
+  ## 문제 해결 접근
+</div>
+
+ClickHouse 엔지니어가 배포 환경의 문제를 진단해야 하는 경우, 내부 에스컬레이션 및 승인 워크플로를 통해 필요한 시점에만 접근 권한을 요청합니다. 승인된 접근 권한은 시간 제한이 있는 인증서를 통해 부여되며, [Tailscale](/ko/products/bring-your-own-cloud/reference/network-security#tailscale-private-network)을 통해 라우팅됩니다 — 공용 인터넷은 절대 거치지 않습니다.
+
+<div id="what-engineers-can-see">
+  ### 엔지니어가 확인할 수 있는 항목
+</div>
+
+승인된 문제 해결 접근 권한이 있으면 엔지니어는 ClickHouse 시스템 테이블만 조회할 수 있습니다. 여기에는 다음이 포함됩니다.
+
+* `system.query_log` — 서비스에서 실행된 쿼리의 쿼리 텍스트와 실행 메타데이터
+* `system.tables`, `system.columns` 및 이와 유사한 시스템 테이블 — 스키마와 메타데이터
+* 진단에 사용되는 기타 `system.*` 테이블(예: 파트, 뮤테이션, 레플리카)
+
+<div id="what-engineers-cant-see">
+  ### 엔지니어가 볼 수 없는 것
+</div>
+
+엔지니어는 고객의 사용자 테이블을 읽을 수 없습니다. 접근은 시스템 테이블로만 제한됩니다.
+
+<div id="how-access-is-enforced">
+  ### 액세스가 통제되는 방식
+</div>
+
+* **승인 필요**: 모든 액세스 요청은 지정된 승인자가 있는 내부 승인 시스템을 거칩니다. 엔지니어가 스스로 액세스 권한을 부여할 수는 없습니다.
+* **시간 제한 인증서**: 승인된 각 세션마다 임시의 시간 제한 인증서가 생성됩니다. 액세스는 자동으로 만료됩니다.
+* **인증서 기반 인증**: BYOC 인스턴스에 대한 모든 사용자 액세스에는 비밀번호 기반 액세스 대신 인증서를 사용합니다.
+* **시스템 테이블(system tables) 읽기 전용**: 인증서 아이덴티티는 시스템 테이블 읽기에만 범위가 제한됩니다.
+* **데이터를 내보내지 않음**: 문제 해결 세션의 로그와 쿼리 결과는 ClickHouse 인프라로 다시 내보내지 않습니다.
+
+<div id="auditing">
+  ## 감사
+</div>
+
+엔지니어의 활동은 사용자에게 투명하게 공개되며 ClickHouse에서 감사됩니다.
+
+* **고객에게 표시됨**: ClickHouse 엔지니어가 인스턴스에서 실행하는 모든 쿼리는 쿼리 텍스트와 인증서 아이덴티티를 포함해 `system.query_log`에 표시됩니다. ClickHouse 서비스에서 직접 이를 감사할 수 있습니다.
+* **ClickHouse 측**: ClickHouse의 보안 팀은 모든 액세스 요청, 승인, Tailscale 연결에 대해 내부적으로 로그를 남기고 감사를 수행합니다.
+
+<div id="future-controls">
+  ## 향후 제어 기능
+</div>
+
+고객이 직접 승인하는 방식(Customer-controlled approval) — 각 엔지니어의 액세스 요청이 효력을 갖기 전에 승인하는 방식 — 은 로드맵에 포함되어 있습니다. 현재 승인은 ClickHouse의 내부 escalation 프로세스를 통해 처리됩니다.
+
+<div id="related">
+  ## 관련
+</div>
+
+* [BYOC 네트워크 보안](/ko/products/bring-your-own-cloud/reference/network-security) — Tailscale과 네트워크 경계의 작동 방식
+* [BYOC 권한](/ko/products/bring-your-own-cloud/reference/privilege) — BYOC 설정 과정에서 생성되는 IAM 역할

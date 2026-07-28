@@ -7,8 +7,6 @@ title: 'Variant(T1, T2, ...)'
 doc_type: 'reference'
 ---
 
-# Variant(T1, T2, ...)
-
 This type represents a union of other data types. Type `Variant(T1, T2, ..., TN)` means that each row of this type 
 has a value of either type `T1` or `T2` or ... or `TN` or none of them (`NULL` value).
 

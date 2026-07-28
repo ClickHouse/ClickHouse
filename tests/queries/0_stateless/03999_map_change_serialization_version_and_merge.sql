@@ -188,6 +188,7 @@ SETTINGS
     max_buckets_in_map = 8,
     map_buckets_strategy = 'constant',
     map_buckets_min_avg_size = 0,
+    map_buckets_coefficient = 1, -- CI may inject != 1; sqrt(4)*coeff changes bucket count from 2 to a different value
     min_bytes_for_wide_part = 1,
     min_rows_for_wide_part = 1,
     serialization_info_version = 'with_types';

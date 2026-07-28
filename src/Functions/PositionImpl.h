@@ -26,7 +26,7 @@ struct PositionCaseSensitiveASCII
     using MultiSearcherInBigHaystack = MultiVolnitsky;
 
     /// For searching single substring, that is different each time. This object is created for each row of data. It must have cheap initialization.
-    using SearcherInSmallHaystack = StdLibASCIIStringSearcher</*CaseInsensitive*/ false>;
+    using SearcherInSmallHaystack = CaseSensitiveStringSearcher;
 
     static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
     {
@@ -38,7 +38,7 @@ struct PositionCaseSensitiveASCII
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<std::string_view> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const VectorWithMemoryTracking<std::string_view> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
@@ -63,7 +63,7 @@ struct PositionCaseInsensitiveASCII
     /// `Volnitsky` is not used here, because one person has measured that this is better. It will be good if you question it.
     using SearcherInBigHaystack = ASCIICaseInsensitiveStringSearcher;
     using MultiSearcherInBigHaystack = MultiVolnitskyCaseInsensitive;
-    using SearcherInSmallHaystack = StdLibASCIIStringSearcher</*CaseInsensitive*/ true>;
+    using SearcherInSmallHaystack = ASCIICaseInsensitiveStringSearcher;
 
     static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t /*haystack_size_hint*/)
     {
@@ -75,7 +75,7 @@ struct PositionCaseInsensitiveASCII
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<std::string_view> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const VectorWithMemoryTracking<std::string_view> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
@@ -96,7 +96,7 @@ struct PositionCaseSensitiveUTF8
 {
     using SearcherInBigHaystack = VolnitskyUTF8;
     using MultiSearcherInBigHaystack = MultiVolnitskyUTF8;
-    using SearcherInSmallHaystack = StdLibASCIIStringSearcher</*CaseInsensitive*/ false>;
+    using SearcherInSmallHaystack = CaseSensitiveStringSearcher;
 
     static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
     {
@@ -108,7 +108,7 @@ struct PositionCaseSensitiveUTF8
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<std::string_view> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const VectorWithMemoryTracking<std::string_view> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
@@ -156,7 +156,7 @@ struct PositionCaseInsensitiveUTF8
         return SearcherInSmallHaystack(reinterpret_cast<const UInt8 *>(needle_data), needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<std::string_view> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const VectorWithMemoryTracking<std::string_view> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
@@ -199,7 +199,7 @@ struct PositionImpl
         size_t input_rows_count)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
+        chassert(!res_null);
 
         const UInt8 * const begin = haystack_data.data();
         const UInt8 * const end = haystack_data.data() + haystack_data.size();
@@ -324,7 +324,7 @@ struct PositionImpl
         [[maybe_unused]] ColumnUInt8 * res_null)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
+        chassert(!res_null);
 
         Impl::toLowerIfNeed(data);
         Impl::toLowerIfNeed(needle);
@@ -363,7 +363,7 @@ struct PositionImpl
         size_t input_rows_count)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
+        chassert(!res_null);
 
         ColumnString::Offset prev_haystack_offset = 0;
         ColumnString::Offset prev_needle_offset = 0;
@@ -387,6 +387,11 @@ struct PositionImpl
             {
                 /// An empty string is always at any position in `haystack`.
                 res[i] = start;
+            }
+            else if (haystack_size == 0)
+            {
+                /// A non-empty needle is never found in an empty haystack; do not pay the searcher initialization.
+                res[i] = 0;
             }
             else
             {
@@ -430,7 +435,7 @@ struct PositionImpl
         size_t input_rows_count)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
+        chassert(!res_null);
 
         /// NOTE You could use haystack indexing. But this is a rare case.
         ColumnString::Offset prev_needle_offset = 0;
@@ -450,6 +455,10 @@ struct PositionImpl
             else if (0 == needle_size)
             {
                 res[i] = start;
+            }
+            else if (haystack.empty())
+            {
+                res[i] = 0;
             }
             else
             {

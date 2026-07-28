@@ -15,7 +15,7 @@ namespace
 {
 
 /// Enumerate stream paths of data type.
-class FunctionGetTypeSerializationStreams : public IFunction
+class FunctionGetTypeSerializationStreams final : public IFunction
 {
 public:
     static constexpr auto name = "getTypeSerializationStreams";

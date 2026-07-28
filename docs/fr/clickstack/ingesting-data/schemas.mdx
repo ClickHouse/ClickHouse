@@ -1,0 +1,77 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/schemas
+description: 'Tables et schémas utilisés par ClickStack - la stack d’observabilité ClickHouse'
+sidebarTitle: 'Tables et schémas'
+title: 'Tables et schémas utilisés par ClickStack'
+doc_type: 'reference'
+keywords: ['clickstack', 'schéma', 'modèle de données', 'conception de tables', 'logs']
+---
+
+import OtelLogsSchema from '/snippets/fr/clickstack/_schema_otel_logs.mdx';
+import OtelTracesSchema from '/snippets/fr/clickstack/_schema_otel_traces.mdx';
+import OtelMetricsGaugeSchema from '/snippets/fr/clickstack/_schema_otel_metrics_gauge.mdx';
+import OtelMetricsSumSchema from '/snippets/fr/clickstack/_schema_otel_metrics_sum.mdx';
+import OtelMetricsHistogramSchema from '/snippets/fr/clickstack/_schema_otel_metrics_histogram.mdx';
+import OtelMetricsExponentialHistogramSchema from '/snippets/fr/clickstack/_schema_otel_metrics_exponential_histogram.mdx';
+import OtelMetricsSummarySchema from '/snippets/fr/clickstack/_schema_otel_metrics_summary.mdx';
+import HyperdxSessionsSchema from '/snippets/fr/clickstack/_schema_hyperdx_sessions.mdx';
+
+Le OTel collector de ClickStack utilise le [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md) pour créer des tables dans ClickHouse et y insérer des données.
+
+Les tables suivantes sont créées pour chaque type de données dans la base de données `default`. Vous pouvez modifier cette target database en modifiant la variable d’environnement `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE` de l’image qui héberge l’OTel collector.
+
+<div id="logs">
+  ## Logs
+</div>
+
+<OtelLogsSchema />
+
+<div id="traces">
+  ## Traces
+</div>
+
+<OtelTracesSchema />
+
+<div id="metrics">
+  ## Métriques
+</div>
+
+<div id="gauge">
+  ### Métriques de type Gauge
+</div>
+
+<OtelMetricsGaugeSchema />
+
+<div id="sum">
+  ### Métriques de type somme
+</div>
+
+<OtelMetricsSumSchema />
+
+<div id="histogram">
+  ### Métriques de type histogramme
+</div>
+
+<OtelMetricsHistogramSchema />
+
+<div id="exponential-histograms">
+  ### Histogrammes exponentiels
+</div>
+
+<Note>
+  HyperDX ne prend pas encore en charge la récupération et l’affichage des métriques d’histogrammes exponentiels. Vous pouvez les configurer dans la source de métriques, mais cette fonctionnalité sera bientôt disponible.
+</Note>
+
+<OtelMetricsExponentialHistogramSchema />
+
+<div id="summary-table">
+  ### table récapitulatif
+</div>
+
+<OtelMetricsSummarySchema />
+
+<div id="sessions">
+  ## Sessions
+</div>
+
+<HyperdxSessionsSchema />

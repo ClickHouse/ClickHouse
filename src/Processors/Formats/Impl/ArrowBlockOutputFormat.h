@@ -15,7 +15,7 @@ namespace DB
 
 class CHColumnToArrowColumn;
 
-class ArrowBlockOutputFormat : public IOutputFormat
+class ArrowBlockOutputFormat final : public IOutputFormat
 {
 public:
     ArrowBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, bool stream_, const FormatSettings & format_settings_);

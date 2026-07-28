@@ -1,0 +1,118 @@
+---
+description: 'توثيق واجهة برمجة تطبيقات HTTP لـ ClickHouse Keeper ولوحة المعلومات المضمّنة على الويب'
+sidebarTitle: 'واجهة برمجة تطبيقات HTTP لـ Keeper'
+slug: /operations/utilities/clickhouse-keeper-http-api
+title: 'واجهة برمجة تطبيقات HTTP لـ Keeper ولوحة المعلومات'
+doc_type: 'reference'
+---
+
+يوفّر ClickHouse Keeper واجهة برمجة تطبيقات HTTP ولوحة المعلومات مضمّنة على الويب لأغراض المراقبة، وفحوصات السلامة، وإدارة التخزين.
+تتيح هذه الواجهة للمشغّلين فحص حالة العنقود، وتنفيذ الأوامر، وإدارة مساحة تخزين Keeper عبر متصفح ويب أو عملاء HTTP.
+
+<div id="configuration">
+  ## التهيئة
+</div>
+
+لتمكين واجهة برمجة تطبيقات HTTP، أضِف القسم `http_control` إلى تهيئة `keeper_server`:
+
+```xml
+<keeper_server>
+    <!-- Other keeper_server configuration -->
+
+    <http_control>
+        <port>9182</port>
+        <!-- <secure_port>9443</secure_port> -->
+    </http_control>
+</keeper_server>
+```
+
+<div id="configuration-options">
+  ### خيارات التهيئة
+</div>
+
+| الإعداد                                   | الافتراضي | الوصف                                            |
+| ----------------------------------------- | --------- | ------------------------------------------------ |
+| `http_control.port`                       | -         | منفذ HTTP للوحة المعلومات وواجهة برمجة تطبيقات |
+| `http_control.secure_port`                | -         | منفذ HTTPS (يتطلب تهيئة SSL)                     |
+| `http_control.readiness.endpoint`         | `/ready`  | مسار مخصص لنقطة نهاية فحص الجاهزية               |
+| `http_control.storage.session_timeout_ms` | `30000`   | مهلة الجلسة لعمليات واجهة برمجة تطبيقات التخزين  |
+
+<div id="endpoints">
+  ## نقاط النهاية
+</div>
+
+<div id="dashboard">
+  ### لوحة المعلومات
+</div>
+
+* **المسار**: `/dashboard`
+* **الطريقة**: GET
+* **الوصف**: يعرض لوحة معلومات ويب مضمّنة لمراقبة Keeper وإدارته
+
+توفر لوحة المعلومات ما يلي:
+
+* تصور لحالة العنقود في الوقت الفعلي
+* مراقبة العقد (الدور، زمن الاستجابة، الاتصالات)
+* مستعرض التخزين
+* واجهة تنفيذ الأوامر
+
+<div id="readiness-probe">
+  ### مسبار الجاهزية
+</div>
+
+* **المسار**: `/ready` (قابل للتهيئة)
+* **الطريقة**: GET
+* **الوصف**: نقطة نهاية للفحص الصحي
+
+استجابة النجاح (HTTP 200):
+
+```json
+{
+  "status": "ok",
+  "details": {
+    "role": "leader",
+    "hasLeader": true
+  }
+}
+```
+
+<div id="commands-api">
+  ### واجهة برمجة تطبيقات الأوامر
+</div>
+
+* **المسار**: `/api/v1/commands/{command}`
+* **الطرق**: GET, POST
+* **الوصف**: ينفّذ أوامر Four-Letter Word أو أوامر CLI الخاصة بعميل ClickHouse Keeper
+
+معلمات الاستعلام:
+
+* `command` - الأمر المراد تنفيذه
+* `cwd` - دليل العمل الحالي للأوامر المعتمدة على المسار (الافتراضي: `/`)
+
+أمثلة:
+
+```bash
+# Four-Letter Word command
+curl http://localhost:9182/api/v1/commands/stat
+
+# ZooKeeper CLI command
+curl "http://localhost:9182/api/v1/commands/ls?command=ls%20'/'&cwd=/"
+```
+
+<div id="storage-api">
+  ### واجهة برمجة تطبيقات التخزين
+</div>
+
+* **المسار الأساسي**: `/api/v1/storage`
+* **الوصف**: واجهة برمجة تطبيقات REST لعمليات تخزين Keeper
+
+تتبع واجهة برمجة تطبيقات التخزين مبادئ REST، حيث تشير طُرق HTTP إلى نوع العملية:
+
+| العملية          | المسار                                 | الطريقة | رمز الحالة | الوصف                    |
+| ---------------- | -------------------------------------- | ------- | ---------- | ------------------------ |
+| الحصول           | `/api/v1/storage/{path}`               | GET     | 200        | الحصول على بيانات العقدة |
+| إدراج            | `/api/v1/storage/{path}?children=true` | GET     | 200        | إدراج العُقد الفرعية     |
+| التحقق من الوجود | `/api/v1/storage/{path}`               | HEAD    | 200        | التحقق من وجود العقدة    |
+| إنشاء            | `/api/v1/storage/{path}`               | POST    | 201        | إنشاء عقدة جديدة         |
+| تحديث            | `/api/v1/storage/{path}?version={v}`   | PUT     | 200        | تحديث بيانات العقدة      |
+| حذف              | `/api/v1/storage/{path}?version={v}`   | DELETE  | 204        | حذف العقدة               |

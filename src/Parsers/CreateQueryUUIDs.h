@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/ASTViewTargets.h>
+#include <Core/UUID.h>
 
 
 namespace DB

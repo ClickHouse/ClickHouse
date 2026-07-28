@@ -1,0 +1,16 @@
+<test>
+    <!-- These patterns belong to the subset that is JIT-compiled (see CompileRegexp.h). The
+         default `min_count_to_compile_regular_expression` makes them compile after a few runs,
+         so the measured runs exercise the native matcher; on the baseline they use RE2. -->
+
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(match(URL, '^https?://(?:www\\.)?([^/]+)/.*$'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(match(URL, '^https?://[^/]+/'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(match(URL, '^https?://[^/]+/[^?]*\\?'))</query>
+
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '^https?://([^/]+)'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '^https?://(?:www\\.)?([^/]+)/'))</query>
+    <query><![CDATA[SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '[?&]([^=]+)='))]]></query>
+
+    <query>SELECT count() FROM test.hits WHERE match(URL, '^https?://(?:www\\.)?([^/]+)/.*$') SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(Referer, '^https?://([^/]+)')) SETTINGS max_threads = 1</query>
+</test>

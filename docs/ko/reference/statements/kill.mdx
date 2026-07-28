@@ -1,0 +1,158 @@
+---
+description: 'KILL에 대한 문서'
+sidebarTitle: 'KILL'
+slug: /sql-reference/statements/kill
+title: 'KILL SQL 문'
+doc_type: 'reference'
+---
+
+KILL SQL 문에는 두 가지가 있습니다. 쿼리를 종료하는 문과 뮤테이션을 종료하는 문입니다.
+
+<div id="kill-query">
+  ## KILL QUERY
+</div>
+
+```sql
+KILL QUERY [ON CLUSTER cluster]
+  WHERE <where expression to SELECT FROM system.processes query>
+  [SYNC|ASYNC|TEST]
+  [FORMAT format]
+```
+
+현재 실행 중인 쿼리를 강제로 종료하려고 시도합니다.
+종료할 쿼리는 `KILL` 쿼리의 `WHERE` 절에 정의된 조건에 따라 system.processes 테이블에서 선택됩니다.
+
+예시:
+
+먼저, 아직 완료되지 않은 쿼리 목록을 확인해야 합니다. 다음 SQL 쿼리는 가장 오래 실행 중인 쿼리부터 보여줍니다.
+
+단일 ClickHouse 노드의 목록:
+
+```sql
+SELECT
+  initial_query_id,
+  query_id,
+  formatReadableTimeDelta(elapsed) AS time_delta,
+  query,
+  *
+  FROM system.processes
+  WHERE query ILIKE 'SELECT%'
+  ORDER BY time_delta DESC;
+```
+
+ClickHouse 클러스터 목록:
+
+```sql
+SELECT
+  initial_query_id,
+  query_id,
+  formatReadableTimeDelta(elapsed) AS time_delta,
+  query,
+  *
+  FROM clusterAllReplicas(default, system.processes)
+  WHERE query ILIKE 'SELECT%'
+  ORDER BY time_delta DESC;
+```
+
+쿼리를 강제 종료하세요:
+
+```sql
+-- 지정된 query_id를 가진 모든 쿼리를 강제로 종료합니다:
+KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
+
+-- 'username'이 실행한 모든 쿼리를 동기적으로 종료합니다:
+KILL QUERY WHERE user='username' SYNC
+```
+
+<Tip>
+  ClickHouse Cloud 또는 자가 관리형 클러스터에서 쿼리를 종료하는 경우, 모든 레플리카에서 쿼리가 종료되도록 반드시 `ON CLUSTER [cluster-name]` 옵션을 사용하십시오.
+</Tip>
+
+읽기 전용 사용자는 자신의 쿼리만 중지할 수 있습니다.
+
+기본적으로는 쿼리의 비동기 버전(`ASYNC`)이 사용되며, 이 버전은 쿼리가 중지되었다는 확인을 기다리지 않습니다.
+
+동기 버전(`SYNC`)은 모든 쿼리가 중지될 때까지 기다리며, 각 프로세스가 중지될 때마다 해당 정보를 표시합니다.
+응답에는 `kill_status` 컬럼이 포함되며, 이 컬럼은 다음 값을 가질 수 있습니다:
+
+1. `finished` – 쿼리가 성공적으로 종료되었습니다.
+2. `waiting` – 쿼리에 종료 신호를 보낸 후 쿼리가 끝나기를 기다리는 중입니다.
+3. 그 밖의 값은 쿼리를 중지할 수 없는 이유를 설명합니다.
+
+테스트 쿼리(`TEST`)는 사용자의 권한만 확인하고 중지할 쿼리 목록을 표시합니다.
+
+<div id="kill-mutation">
+  ## KILL MUTATION
+</div>
+
+오랫동안 실행 중이거나 완료되지 않은 뮤테이션이 있으면 ClickHouse 서비스가 원활하게 실행되지 않고 있음을 나타내는 경우가 많습니다. 뮤테이션은 비동기적으로 처리되므로 시스템의 사용 가능한 리소스를 모두 소모할 수 있습니다. 다음 중 하나를 수행해야 할 수 있습니다.
+
+* 새 뮤테이션, `INSERT`s, `SELECT`s를 모두 일시 중지하고 뮤테이션 큐가 모두 처리될 때까지 기다립니다.
+* 또는 `KILL` 명령을 보내 이러한 뮤테이션 중 일부를 수동으로 종료합니다.
+
+```sql
+KILL MUTATION
+  WHERE <where expression to SELECT FROM system.mutations query>
+  [TEST]
+  [FORMAT format]
+```
+
+현재 실행 중인 [뮤테이션](/ko/reference/statements/alter/index#mutations)을 취소하고 제거합니다. 취소할 뮤테이션은 `KILL` 쿼리의 `WHERE` 절에 지정된 필터를 사용해 [`system.mutations`](/ko/reference/system-tables/mutations) 테이블에서 선택됩니다.
+
+테스트 쿼리(`TEST`)는 사용자 권한만 확인하고 중지할 뮤테이션 목록을 표시합니다.
+
+예시:
+
+완료되지 않은 뮤테이션 수를 `count()`로 구합니다:
+
+단일 ClickHouse 노드의 뮤테이션 수:
+
+```sql
+SELECT count(*)
+FROM system.mutations
+WHERE is_done = 0;
+```
+
+레플리카로 이루어진 ClickHouse 클러스터의 뮤테이션 수:
+
+```sql
+SELECT count(*)
+FROM clusterAllReplicas('default', system.mutations)
+WHERE is_done = 0;
+```
+
+완료되지 않은 뮤테이션 목록을 조회합니다:
+
+단일 ClickHouse 노드의 뮤테이션 목록:
+
+```sql
+SELECT mutation_id, *
+FROM system.mutations
+WHERE is_done = 0;
+```
+
+ClickHouse 클러스터의 뮤테이션 목록:
+
+```sql
+SELECT mutation_id, *
+FROM clusterAllReplicas('default', system.mutations)
+WHERE is_done = 0;
+```
+
+필요에 따라 뮤테이션을 중지하십시오:
+
+```sql
+-- Cancel and remove all mutations of the single table:
+KILL MUTATION WHERE database = 'default' AND table = 'table'
+
+-- Cancel the specific mutation:
+KILL MUTATION WHERE database = 'default' AND table = 'table' AND mutation_id = 'mutation_3.txt'
+```
+
+이 쿼리는 뮤테이션이 멈춰 완료될 수 없을 때 유용합니다(예: 뮤테이션 쿼리의 일부 함수가 테이블에 저장된 데이터에 적용될 때 예외를 발생시키는 경우).
+
+뮤테이션으로 이미 적용된 변경 사항은 롤백되지 않습니다.
+
+<Note>
+  [system.mutations](/ko/reference/system-tables/mutations) 테이블의 `is_killed=1` 컬럼(ClickHouse Cloud 전용)은 뮤테이션이 완전히 종료되었음을 반드시 의미하지는 않습니다. 뮤테이션이 오랜 시간 동안 `is_killed=1` 및 `is_done=0` 상태로 남아 있을 수 있습니다. 이는 장시간 실행 중인 다른 뮤테이션이 종료된 뮤테이션을 가로막고 있을 때 발생할 수 있습니다. 이는 정상적인 상황입니다.
+</Note>

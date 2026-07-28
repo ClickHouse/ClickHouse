@@ -6,7 +6,7 @@
 
 namespace DB
 {
-class StorageObjectStorageSink : public SinkToStorage
+class StorageObjectStorageSink final : public SinkToStorage
 {
 public:
     StorageObjectStorageSink(
@@ -42,7 +42,7 @@ private:
     void cancelBuffers();
 };
 
-class PartitionedStorageObjectStorageSink : public PartitionedSink
+class PartitionedStorageObjectStorageSink final : public PartitionedSink
 {
 public:
     PartitionedStorageObjectStorageSink(

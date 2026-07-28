@@ -330,7 +330,7 @@ static int read_unicode(json_stream *json)
     return encode_utf8(json, cp);
 }
 
-int read_escaped(json_stream *json)
+static int read_escaped(json_stream *json)
 {
     int c = json->source.get(&json->source);
     if (c == END_OF_SOURCE) {

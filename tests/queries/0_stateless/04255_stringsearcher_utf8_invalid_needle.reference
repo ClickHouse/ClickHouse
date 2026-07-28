@@ -1,0 +1,26 @@
+-- ilike (Volnitsky -> UTF8CaseInsensitiveStringSearcher)
+1
+-- positionCaseInsensitiveUTF8
+0
+-- multiSearchAnyCaseInsensitiveUTF8
+0
+-- startsWithCaseInsensitiveUTF8
+0
+-- endsWithCaseInsensitiveUTF8
+0
+-- ilike with mixed valid/invalid UTF-8 needle
+1
+-- multi-row ilike
+64
+-- ilike with 1-byte truncated UTF-8 needle
+1
+-- positionCaseInsensitiveUTF8 with 1-byte truncated UTF-8 needle
+0
+-- multiSearchAnyCaseInsensitiveUTF8 with 1-byte truncated UTF-8 needle
+0
+-- startsWithCaseInsensitiveUTF8 with 1-byte truncated UTF-8 needle
+0
+-- endsWithCaseInsensitiveUTF8 with 1-byte truncated UTF-8 needle
+0
+-- multi-row ilike with 1-byte truncated UTF-8 needle
+64

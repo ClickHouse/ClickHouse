@@ -1,0 +1,102 @@
+---
+description: 'توثيق ROW POLICY'
+sidebarTitle: 'ROW POLICY'
+slug: /sql-reference/statements/create/row-policy
+title: 'CREATE ROW POLICY'
+doc_type: 'reference'
+---
+
+ينشئ [سياسة الصفوف](/ar/concepts/features/security/access-rights#row-policy-management)، أي عامل تصفية يُستخدم لتحديد الصفوف التي يمكن للمستخدم قراءتها من جدول.
+
+<Tip>
+  لا تكون سياسات الصفوف مجدية إلا للمستخدمين الذين لديهم وصول readonly. إذا كان بإمكان المستخدم تعديل جدول أو نسخ partition بين الجداول، فإن ذلك يُلغي قيود سياسات الصفوف.
+</Tip>
+
+الصياغة:
+
+```sql
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluster_name1] ON [db1.]table1|db1.*
+        [, policy_name2 [ON CLUSTER cluster_name2] ON [db2.]table2|db2.* ...]
+    [IN access_storage_type]
+    [FOR SELECT] USING condition
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+```
+
+<div id="using-clause">
+  ## عبارة USING
+</div>
+
+تتيح تحديد شرط لتصفية الصفوف. يرى المستخدم صفًا إذا كانت قيمة الشرط المحسوبة لهذا الصف غير صفرية.
+
+<div id="to-clause">
+  ## عبارة TO
+</div>
+
+في قسم `TO`، يمكنك تحديد قائمة بالمستخدمين والأدوار التي تنطبق عليها هذه السياسة. على سبيل المثال، `CREATE ROW POLICY ... TO accountant, john@localhost`.
+
+تعني الكلمة المفتاحية `ALL` جميع مستخدمي ClickHouse، بما في ذلك المستخدم الحالي. وتتيح الكلمة المفتاحية `ALL EXCEPT` استبعاد بعض المستخدمين من قائمة جميع المستخدمين، على سبيل المثال، `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
+
+<div id="as-clause">
+  ## عبارة AS
+</div>
+
+يُسمح بتفعيل أكثر من سياسة واحدة على الجدول نفسه للمستخدم نفسه في الوقت ذاته. لذلك نحتاج إلى طريقة لدمج الشروط الواردة من سياسات متعددة.
+
+افتراضيًا، تُدمَج السياسات باستخدام العامل المنطقي `OR`. على سبيل المثال، السياسات التالية:
+
+```sql
+CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter
+CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 TO peter, antonio
+```
+
+يُمكِّن المستخدم `peter` من رؤية الصفوف التي يكون فيها إما `b=1` أو `c=2`.
+
+تحدِّد عبارة `AS` كيفية دمج السياسات مع السياسات الأخرى. ويمكن أن تكون السياسات إما متساهلة أو مقيِّدة. وبشكل افتراضي، تكون السياسات متساهلة، ما يعني أنها تُدمج باستخدام المعامل المنطقي `OR`.
+
+ويمكن بدلاً من ذلك تعريف السياسة على أنها مقيِّدة. وتُدمج السياسات المقيِّدة باستخدام المعامل المنطقي `AND`.
+
+إليك الصيغة العامة:
+
+```text
+row_is_visible = (one or more of the permissive policies' conditions are non-zero) AND
+                 (all of the restrictive policies's conditions are non-zero)
+```
+
+على سبيل المثال، السياسات التالية:
+
+```sql
+CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter
+CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
+```
+
+اسمح للمستخدم `peter` برؤية الصفوف فقط إذا كان الشرطان `b=1` AND `c=2` متحققَين.
+
+تُدمَج سياسات قاعدة البيانات مع سياسات الجدول.
+
+على سبيل المثال، السياسات التالية:
+
+```sql
+CREATE ROW POLICY pol1 ON mydb.* USING b=1 TO mira, peter
+CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
+```
+
+يتيح للمستخدم `peter` رؤية صفوف table1 فقط إذا تحقّق الشرطان `b=1` AND `c=2` معًا، رغم أن أي جدول آخر في mydb لن تُطبَّق عليه للمستخدم سوى سياسة `b=1`.
+
+<div id="on-cluster-clause">
+  ## عبارة ON CLUSTER
+</div>
+
+تسمح بإنشاء سياسات الصفوف على مستوى العنقود، راجع [DDL الموزع](/ar/reference/statements/distributed-ddl).
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+`CREATE ROW POLICY filter1 ON mydb.mytable USING a<1000 TO accountant, john@localhost`
+
+`CREATE ROW POLICY filter2 ON mydb.mytable USING a<1000 AND b=5 TO ALL EXCEPT mira`
+
+`CREATE ROW POLICY filter3 ON mydb.mytable USING 1 TO admin`
+
+`CREATE ROW POLICY filter4 ON mydb.* USING 1 TO admin`

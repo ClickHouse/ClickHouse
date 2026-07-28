@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class FunctionArrayPushBack : public FunctionArrayPush
+class FunctionArrayPushBack final : public FunctionArrayPush
 {
 public:
     static constexpr auto name = "arrayPushBack";

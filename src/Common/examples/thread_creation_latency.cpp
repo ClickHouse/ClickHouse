@@ -8,6 +8,7 @@
 #include <Common/ErrnoException.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
+#include <Examples/clickhouse_examples.h>
 
 
 namespace CurrentMetrics
@@ -85,7 +86,7 @@ int mainEntryExampleThreadCreationLatency(int argc, char ** argv)
 
     test(n, "pthread_create, pthread_join each iteration", []
     {
-        pthread_t thread;
+        pthread_t thread = {};
         if (pthread_create(&thread, nullptr, g, nullptr))
             throw DB::ErrnoException(DB::ErrorCodes::PTHREAD_ERROR, "Cannot create thread");
         if (pthread_join(thread, nullptr))

@@ -1,0 +1,65 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/http
+title: 'HTTP(S) Dictionary ソース'
+sidebarTitle: 'HTTP(S)'
+description: 'ClickHouse で HTTP または HTTPS エンドポイントを Dictionary ソースとして設定します。'
+doc_type: 'reference'
+---
+
+HTTP(S) サーバーの動作は、[Dictionary のメモリ内での格納方法](/ja/reference/statements/create/dictionary/layouts/overview)によって異なります。Dictionary が `cache` および `complex_key_cache` を使用して格納されている場合、ClickHouse は `POST` メソッドでリクエストを送信し、必要なキーを取得します。
+
+設定例:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(HTTP(
+        url 'http://[::1]/os.tsv'
+        format 'TabSeparated'
+        credentials(user 'user' password 'password')
+        headers(header(name 'API-KEY' value 'key'))
+    ))
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <source>
+        <http>
+            <url>http://[::1]/os.tsv</url>
+            <format>TabSeparated</format>
+            <credentials>
+                <user>user</user>
+                <password>password</password>
+            </credentials>
+            <headers>
+                <header>
+                    <name>API-KEY</name>
+                    <value>key</value>
+                </header>
+            </headers>
+        </http>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+ClickHouse が HTTPS リソースにアクセスするには、サーバー設定で [openSSL を設定](/ja/reference/settings/server-settings/settings#openssl)する必要があります。
+
+設定フィールド:
+
+| 設定            | 説明                                                                          |
+| ------------- | --------------------------------------------------------------------------- |
+| `url`         | ソース URL。                                                                    |
+| `format`      | ファイルのフォーマット。[Formats](/ja/reference/formats/index) で説明されているすべてのフォーマットをサポートします。 |
+| `credentials` | HTTP Basic 認証。省略可能です。                                                       |
+| `user`        | 認証に必要なユーザー名。                                                                |
+| `password`    | 認証に必要なパスワード。                                                                |
+| `headers`     | HTTP リクエストで使用するすべてのカスタム HTTP ヘッダーのエントリ。省略可能です。                              |
+| `header`      | 単一の HTTP ヘッダーエントリ。                                                          |
+| `name`        | リクエスト送信時にヘッダーで使用する識別子名。                                                     |
+| `value`       | 特定の識別子名に設定する値。                                                              |
+
+DDL コマンド (`CREATE DICTIONARY ...`) を使用して Dictionary を作成する場合、データベースユーザーが任意の HTTP サーバーにアクセスするのを防ぐため、HTTP Dictionary のリモートホストは config の `remote_url_allow_hosts` セクションの内容に対して検証されます。

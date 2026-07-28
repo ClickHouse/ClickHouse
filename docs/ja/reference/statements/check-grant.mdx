@@ -1,0 +1,57 @@
+---
+description: 'CHECK GRANT のドキュメント'
+sidebarTitle: 'CHECK GRANT'
+slug: /sql-reference/statements/check-grant
+title: 'CHECK GRANT ステートメント'
+doc_type: 'reference'
+---
+
+`CHECK GRANT` クエリは、現在のユーザー/ロールに特定の権限が付与されているかどうかを確認するために使用します。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+クエリの基本構文は次のとおりです。
+
+```sql
+CHECK GRANT privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*}
+```
+
+* `privilege` — 権限の種類。
+
+<div id="examples">
+  ## 例
+</div>
+
+ユーザーに以前その権限が付与されていた場合、返される `check_grant` は `1` になります。そうでない場合、返される `check_grant` は `0` になります。
+
+`table_1.col1` が存在し、現在のユーザーに権限 `SELECT`/`SELECT(con)` またはその権限を持つロールが付与されている場合、返される値は `1` です。
+
+```sql
+CHECK GRANT SELECT(col1) ON table_1;
+```
+
+```text
+┌─result─┐
+│      1 │
+└────────┘
+```
+
+`table_2.col2` が存在しない場合、または現在のユーザーに権限 `SELECT`/`SELECT(con)` もしくはその権限を持つロールが付与されていない場合、戻り値は `0` です。
+
+```sql
+CHECK GRANT SELECT(col2) ON table_2;
+```
+
+```text
+┌─result─┐
+│      0 │
+└────────┘
+```
+
+<div id="wildcard">
+  ## ワイルドカード
+</div>
+
+権限を指定する際は、テーブル名やデータベース名の代わりにアスタリスク (`*`) を使用できます。ワイルドカードのルールについては、[ワイルドカードGRANT](/ja/reference/statements/grant#wildcard-grants)を参照してください。

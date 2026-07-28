@@ -1,0 +1,547 @@
+---
+description: '语法文档'
+sidebarTitle: '语法'
+slug: /sql-reference/syntax
+title: '语法'
+doc_type: 'reference'
+---
+
+本节将介绍 ClickHouse 的 SQL 语法。
+ClickHouse 使用基于 SQL 的语法，同时提供了多种扩展和优化。
+
+<div id="query-parsing">
+  ## 查询解析
+</div>
+
+ClickHouse 中有两种解析器：
+
+* *完整的 SQL 解析器* (递归下降解析器) 。
+* *数据格式解析器* (快速流式解析器) 。
+
+完整的 SQL 解析器用于除 `INSERT` 查询之外的所有场景，而 `INSERT` 查询会同时使用这两种解析器。
+
+让我们来看下面这个查询：
+
+```sql
+INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
+```
+
+如前所述，`INSERT` 查询会同时用到这两种解析器。
+`INSERT INTO t VALUES` 这一片段由完整解析器解析，
+而数据 `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` 则由数据格式解析器 (即快速流式解析器) 解析。
+
+<Accordion title="启用完整解析器">
+  你也可以通过 [`input_format_values_interpret_expressions`](/zh/reference/settings/formats#input_format_values_interpret_expressions) 设置，
+  为数据启用完整解析器。
+
+  当上述设置为 `1` 时，
+  ClickHouse 会先尝试用快速流式解析器解析这些值。
+  如果失败，ClickHouse 会再尝试使用完整解析器解析数据，并将其视为 SQL [表达式](#expressions)。
+</Accordion>
+
+数据可以采用任意格式。
+收到查询时，server 只会将请求中不超过 [max&#95;query&#95;size](/zh/reference/settings/session-settings#max_query_size) 字节的内容放入 RAM 中进行计算
+(默认为 1 MB) ，其余部分则以流式方式解析。
+这样可以避免大型 `INSERT` 查询带来的问题，而这也是向 ClickHouse 插入数据的推荐方式。
+
+在 `INSERT` 查询中使用 [`Values`](/zh/reference/formats/Values) 格式时，
+看起来数据的解析方式似乎与 `SELECT` 查询中的表达式相同，但实际上并非如此。
+`Values` 格式的能力要受限得多。
+
+本节其余内容将介绍完整解析器。
+
+<Note>
+  有关格式解析器的更多信息，请参见 [Formats](/zh/reference/formats/index) 部分。
+</Note>
+
+<div id="spaces">
+  ## 空格
+</div>
+
+* 语法结构之间 (包括查询的开头和结尾) 可以有任意数量的空白字符。
+* 空白字符包括空格、制表符、换行符、CR 和换页符。
+
+<div id="comments">
+  ## 注释
+</div>
+
+ClickHouse 同时支持 SQL 风格注释和 C 风格注释：
+
+* SQL 风格注释以 `--`、`#!` 或 `# ` 开头，并一直延续到行尾。`--` 和 `#!` 后的空格可以省略。
+* C 风格注释：
+  * `//` (或超过 2 个 `/` 字符) 后跟文本，并持续到行尾。`/` 后不要求有空格。
+  * 多行注释可以从 `/*` 一直延续到 `*/`。同样不要求有空格。
+  * C 风格注释可以嵌套。
+
+例如：
+
+```sql
+/*
+ * 计算两个日期之间的天数。
+ * /* 如果任一参数为 NULL，则返回 NULL */
+ */
+SELECT
+    dateDiff('day', toDate('2024-01-01'), toDate('2024-12-31')) AS days_in_year, -- 365
+    dateDiff('day', toDate('2020-01-01'), today()) AS days_since  #! since 2020
+    ///////////////////////////////////////////////////////////////////
+    # TODO: 添加小时/分钟版本
+```
+
+<div id="keywords">
+  ## 关键字
+</div>
+
+ClickHouse 中的关键字是否 *区分大小写* 或 *不区分大小写*，取决于具体上下文。
+
+在以下情况下，关键字是 **不区分大小写** 的：
+
+* SQL 标准。例如，`SELECT`、`select` 和 `SeLeCt` 都是有效的。
+* 某些流行 DBMS (MySQL 或 Postgres) 中的实现。例如，`DateTime` 与 `datetime` 等同。
+
+<Note>
+  你可以在 [system.data&#95;type&#95;families](/zh/reference/system-tables/data_type_families) 表中查看数据类型名称是否区分大小写。
+</Note>
+
+与标准 SQL 不同，所有其他关键字 (包括函数名) 都是 **区分大小写** 的。
+
+此外，关键字不是保留字。
+它们仅在相应的上下文中才被视为关键字。
+如果你使用与关键字同名的[标识符](#identifiers)，请将其括在双引号或反引号中。
+
+例如，如果表 `table_name` 中有一列名为 `"FROM"`，则以下查询是有效的：
+
+```sql
+SELECT "FROM" FROM table_name
+```
+
+<div id="identifiers">
+  ## 标识符
+</div>
+
+标识符包括：
+
+* 集群、数据库、表、分区和列名。
+* [函数](#functions)。
+* [数据类型](/zh/reference/data-types/index)。
+* [表达式别名](#expression-aliases)。
+
+标识符可以带引号，也可以不带引号，不过更推荐后者。
+
+不带引号的标识符必须匹配正则表达式 `^[a-zA-Z_][0-9a-zA-Z_]*$`，且不能与[关键字](#keywords)相同。
+有效和无效标识符的示例见下表：
+
+| 有效标识符                                          | 无效标识符                                  |
+| ---------------------------------------------- | -------------------------------------- |
+| `xyz`, `_internal`, `Id_with_underscores_123_` | `1x`, `tom@gmail.com`, `äußerst_schön` |
+
+如果你想使用与关键字相同的标识符，或者想在标识符中使用其他符号，请用双引号或反引号将其括起来，例如 `"id"`、`` `id` ``。
+
+<Note>
+  适用于带引号标识符转义的规则同样适用于字符串字面量。更多详情请参见 [String](#string)。
+</Note>
+
+<Tip>
+  **避免在列名中使用点号**
+
+  当 `flatten_nested = 1` (默认值) 时，包含点号的列名、具有相同点前缀的列，以及类型为 `Array` 的列，都可能被解释为扁平化 `Nested` 结构的一部分。这可能导致插入时出现意外的数组长度校验以及重命名限制。
+
+  如果可以，请避免在列名中使用点号。
+  除非你确实需要 `Nested` 语义，否则请使用下划线 (`_`) 或其他分隔符来代替列名中的点号。
+</Tip>
+
+<div id="literals">
+  ## 字面量
+</div>
+
+在 ClickHouse 中，字面量是指在查询中直接写出的值。
+换句话说，它是在查询执行过程中不会改变的固定值。
+
+字面量可以是：
+
+* [String](#string)
+* [数值](#numeric)
+* [复合类型](#compound)
+* [`NULL`](#null)
+* [Heredocs](#heredoc) (自定义字符串字面量)
+
+下面各节将更详细地介绍这些类型。
+
+<div id="string">
+  ### String
+</div>
+
+String 字面量必须用单引号括起来。不支持双引号。
+
+可以通过以下任一方式进行转义：
+
+* 使用前置单引号，此时单引号字符 `'` (且仅限此字符) 可转义为 `''`；或者
+* 使用前置反斜杠，并配合下表中列出的受支持转义序列。
+
+<Note>
+  如果反斜杠后面的字符未在下表中列出，则反斜杠会失去其特殊含义，也就是说会按字面值解释。
+</Note>
+
+| Supported Escape                       | Description                              |
+| -------------------------------------- | ---------------------------------------- |
+| `\xHH`                                 | 8 位字符表示法，后跟任意数量的十六进制数字 (H) 。             |
+| `\N`                                   | 保留，不执行任何操作 (例如 `SELECT 'a\Nb'` 返回 `ab`)  |
+| `\a`                                   | 响铃                                       |
+| `\b`                                   | 退格                                       |
+| `\e`                                   | 转义字符                                     |
+| `\f`                                   | 换页                                       |
+| `\n`                                   | 换行符                                      |
+| `\r`                                   | 回车                                       |
+| `\t`                                   | 水平制表符                                    |
+| `\v`                                   | 垂直制表符                                    |
+| `\0`                                   | 空字符                                      |
+| `\\`                                   | 反斜杠                                      |
+| `\'` (or `''`)                         | 单引号                                      |
+| `\"`                                   | 双引号                                      |
+| `` ` ``                                | 反引号                                      |
+| `\/`                                   | 正斜杠                                      |
+| `\=`                                   | 等号                                       |
+| ASCII control characters (c &lt;= 31). |                                          |
+
+<Note>
+  在字符串字面量中，至少需要使用转义码 `\'` (或 `''`) 和 `\\` 对 `'` 和 `\` 进行转义。
+</Note>
+
+<div id="numeric">
+  ### 数值
+</div>
+
+数值字面量按以下方式解析：
+
+* 如果字面量以前导减号 `-` 开头，则会跳过该标记，并在解析完成后对结果取负。
+* 数值字面量首先会使用 [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul) 函数解析为 64 位无符号整数。
+  * 如果值带有前缀 `0b` 或 `0x`/`0X`，则分别按二进制或十六进制解析。
+  * 如果值为负数且其绝对值大于 2<sup>63</sup>，则返回错误。
+* 如果失败，则接着使用 [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof) 函数将该值解析为浮点数。
+* 否则，返回错误。
+
+字面量值会被转换为能够容纳该值的最小类型。
+例如：
+
+* `1` 会被解析为 `UInt8`
+* `256` 会被解析为 `UInt16`。
+
+<Info>
+  **重要**
+
+  超过 64 位的整数值 (`UInt128`、`Int128`、`UInt256`、`Int256`) 必须转换为更大的类型，才能正确解析：
+
+  ```sql
+  -170141183460469231731687303715884105728::Int128
+  340282366920938463463374607431768211455::UInt128
+  -57896044618658097711785492504343953926634992332820282019728792003956564819968::Int256
+  115792089237316195423570985008687907853269984665640564039457584007913129639935::UInt256
+  ```
+
+  这样会绕过上述算法，并使用支持任意精度的解析例程来处理该整数。
+
+  否则，该字面量会被解析为浮点数，因此会因截断而损失精度。
+</Info>
+
+更多信息，请参见 [数据类型](/zh/reference/data-types/index)。
+
+数值字面量中的下划线 `_` 会被忽略，可用于提高可读性。
+
+支持以下数值字面量：
+
+| 数值字面量                 | 示例                                              |
+| --------------------- | ----------------------------------------------- |
+| **整数**                | `1`, `10_000_000`, `18446744073709551615`, `01` |
+| **小数**                | `0.1`                                           |
+| **科学计数法**             | `1e100`, `-1e-100`                              |
+| **浮点数**               | `123.456`, `inf`, `nan`                         |
+| **十六进制**              | `0xc0fe`                                        |
+| **兼容 SQL 标准的十六进制字符串** | `x'c0fe'`                                       |
+| **二进制**               | `0b1101`                                        |
+| **兼容 SQL 标准的二进制字符串**  | `b'1101'`                                       |
+
+<Note>
+  为避免解释时出现意外错误，不支持八进制字面量。
+</Note>
+
+<div id="compound">
+  ### 复合字面量
+</div>
+
+数组使用 `[]` 构造，例如 `[1, 2, 3]`。Tuple 使用 `()` 构造，例如 `(1, 'Hello, world!', 2)`。
+严格来说，这些并不是字面量，而是分别使用数组创建运算符和 Tuple 创建运算符的表达式。
+数组至少必须包含一个元素，而 Tuple 至少必须包含两个元素。
+
+<Note>
+  当 Tuple 出现在 `SELECT` 查询的 `IN` 子句中时，情况则有所不同。
+  查询结果可以包含 Tuple，但 Tuple 不能保存到数据库中 (使用 [Memory](/zh/reference/engines/table-engines/special/memory) 引擎的表除外) 。
+</Note>
+
+<div id="null">
+  ### NULL
+</div>
+
+`NULL` 用于表示值缺失。
+要在表字段中存储 `NULL`，该字段必须为 [Nullable](/zh/reference/data-types/nullable) 类型。
+
+<Note>
+  关于 `NULL`，请注意以下几点：
+
+  * 根据数据格式 (输入或输出) 的不同，`NULL` 可能有不同的表示形式。更多信息，请参见[数据格式](/zh/reference/formats/index)。
+  * `NULL` 的处理比较微妙。例如，如果比较运算的参数中至少有一个是 `NULL`，则该运算的结果也将是 `NULL`。乘法、加法和其他运算也是如此。建议查阅各个运算对应的文档。
+  * 在查询中，可以使用 [`IS NULL`](/zh/reference/functions/regular-functions/functions-for-nulls#isNull) 和 [`IS NOT NULL`](/zh/reference/functions/regular-functions/functions-for-nulls#isNotNull) 运算符，以及相关函数 `isNull` 和 `isNotNull` 来检查 `NULL`。
+</Note>
+
+<div id="heredoc">
+  ### Heredoc
+</div>
+
+[heredoc](https://en.wikipedia.org/wiki/Here_document) 是一种定义字符串 (通常是多行字符串) 的方法，同时保留原始格式。
+heredoc 是一种自定义字符串字面量，位于两个 `$` 符号之间。
+
+例如：
+
+```sql
+SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
+
+┌─'SHOW CREATE VIEW my_view'─┐
+│ SHOW CREATE VIEW my_view   │
+└────────────────────────────┘
+```
+
+<Note>
+  * 两个 heredoc 之间的值会按&quot;原样&quot;处理。
+</Note>
+
+<Tip>
+  * 你可以使用 heredoc 嵌入 SQL、HTML 或 XML 等代码片段。
+</Tip>
+
+<div id="defining-and-using-query-parameters">
+  ## 定义和使用查询参数
+</div>
+
+查询参数可让你编写通用查询，在查询中使用抽象占位符，而不是具体标识符。
+执行带有查询参数的查询时，
+所有占位符都会被解析并替换为实际的查询参数值。
+
+查询参数可以通过以下几种方式定义：
+
+* `SET param_<name>=<value>` — 在查询中使用 `SET` 命令。
+* `--param_<name>='<value>'` — 作为命令行中 `clickhouse-client` 的参数。
+* `param_<name>=<value>` — 作为 HTTP 接口的 URL 查询字符串参数。
+
+可以在查询中使用 `{<name>: <datatype>}` 引用查询参数，其中 `<name>` 是查询参数名称，`<datatype>` 是要转换成的数据类型。
+
+<Accordion title="使用 SET 命令的示例">
+  例如，下面的 SQL 定义了名为 `a`、`b`、`c` 和 `d` 的参数，每个参数的数据类型都不同：
+
+  ```sql
+  SET param_a = 13;
+  SET param_b = 'str';
+  SET param_c = '2022-08-04 18:30:53';
+  SET param_d = {'10': [11, 12], '13': [14, 15]};
+
+  SELECT
+     {a: UInt32},
+     {b: String},
+     {c: DateTime},
+     {d: Map(String, Array(UInt8))};
+
+  13    str    2022-08-04 18:30:53    {'10':[11,12],'13':[14,15]}
+  ```
+</Accordion>
+
+<Accordion title="使用 clickhouse-client 的示例">
+  如果你使用 `clickhouse-client`，参数通过 `--param_name=value` 指定。例如，下面这个参数的名称为 `message`，并以 `String` 类型读取：
+
+  ```bash
+  clickhouse-client --param_message='hello' --query="SELECT {message: String}"
+
+  hello
+  ```
+
+  如果查询参数表示数据库、表、函数或其他标识符的名称，请使用 `Identifier` 作为其类型。例如，下面的查询会返回名为 `uk_price_paid` 的表中的行：
+
+  ```sql
+  SET param_mytablename = "uk_price_paid";
+  SELECT * FROM {mytablename:Identifier};
+  ```
+</Accordion>
+
+<Accordion title="使用 HTTP 接口的示例">
+  查询参数可以通过带有 `param_` 前缀的 URL 查询字符串参数传递。例如：
+
+  ```bash
+  curl -s "http://localhost:8123/?param_message=hello" --data-binary "SELECT {message: String}"
+
+  hello
+  ```
+</Accordion>
+
+<Accordion title="使用 Web UI 的示例">
+  内置的 Web UI (`play.html`) 会自动检测查询中的 `{name:Type}` 参数占位符，并为每个参数显示带标签的输入框。参数值会包含在 HTTP 请求中，也会保存在页面 URL 中，以便添加书签和共享。
+</Accordion>
+
+<Note>
+  查询参数并不是通用的文本替换机制，不能在任意 SQL 查询的任意位置使用。
+  它们主要设计用于在 `SELECT` 语句中替代标识符或字面量。
+</Note>
+
+<div id="functions">
+  ## 函数
+</div>
+
+函数调用的写法类似于一个标识符，后面跟着一组放在 `()` 中的参数列表 (可以为空) 。
+与标准 SQL 不同，即使参数列表为空，也必须使用括号。
+例如：
+
+```sql
+now()
+```
+
+还有：
+
+* [常规函数](/zh/reference/functions/regular-functions/overview)。
+* [聚合函数](/zh/reference/functions/aggregate-functions/index)。
+
+某些聚合函数的括号内可以包含两组参数列表。例如：
+
+```sql
+quantile (0.9)(x) 
+```
+
+这些聚合函数被称为&quot;参数化&quot;函数，
+而第一组列表中的参数被称为&quot;parameters&quot;。
+
+<Note>
+  不带参数的聚合函数，其语法与常规函数相同。
+</Note>
+
+<div id="operators">
+  ## 运算符
+</div>
+
+在解析查询时，运算符会根据其优先级和结合性转换为相应的函数。
+
+例如，表达式
+
+```text
+1 + 2 * 3 + 4
+```
+
+转换为
+
+```text
+plus(plus(1, multiply(2, 3)), 4)`
+```
+
+<div id="data-types-and-database-table-engines">
+  ## 数据类型和数据库表引擎
+</div>
+
+`CREATE` 查询中的数据类型和表引擎，写法与标识符或函数相同。
+也就是说，它们可以带括号中的参数列表，也可以不带。
+
+更多信息，请参见以下章节：
+
+* [数据类型](/zh/reference/data-types/index)
+* [表引擎](/zh/reference/engines/table-engines/index)
+* [CREATE](/zh/reference/statements/create/index)。
+
+<div id="expressions">
+  ## 表达式
+</div>
+
+表达式可以是以下任意一种：
+
+* 函数
+* 标识符
+* 字面量
+* 运算符应用
+* 括号中的表达式
+* 子查询
+* 星号
+
+它也可以包含[别名](#expression-aliases)。
+
+表达式列表由一个或多个用逗号分隔的表达式组成。
+函数和运算符也可以接受表达式作为参数。
+
+常量表达式是指其结果在查询分析期间 (即执行之前) 即可确定的表达式。
+例如，仅由字面量构成的表达式就是常量表达式。
+
+<div id="expression-aliases">
+  ## 表达式别名
+</div>
+
+别名是查询中某个[表达式](#expressions)的用户自定义名称。
+
+```sql
+expr AS alias
+```
+
+上述语法各部分的说明如下。
+
+| 语法组成部分  | 描述                                                     | 示例                                                                      | 说明                                                                                                             |
+| ------- | ------------------------------------------------------ | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `AS`    | 用于定义别名的关键字。你可以在 `SELECT` 子句中不使用 `AS` 关键字，直接为表名或列名指定别名。 | `SELECT table_name_alias.column_name FROM table_name table_name_alias`. | 在 [CAST](/zh/reference/functions/regular-functions/type-conversion-functions#CAST) 函数中，`AS` 关键字还有另一种含义。请参见该函数的说明。 |
+| `expr`  | ClickHouse 支持的任意 表达式。                           | `SELECT column_name * 2 AS double FROM some_table`                      |                                                                                                                |
+| `alias` | `expr` 的名称。别名应符合 [identifiers](#identifiers) 的语法。      | `SELECT "table t".column_name FROM table_name AS "table t"`.            |                                                                                                                |
+
+<div id="notes-on-usage">
+  ### 使用说明
+</div>
+
+* 别名在查询或子查询中是全局生效的，你可以在查询的任何部分为任何表达式定义别名。例如：
+
+```sql
+SELECT (1 AS n) + 2, n`.
+```
+
+* 别名在子查询内部以及子查询之间都不可见。例如，执行以下查询时，ClickHouse 会抛出异常 `Unknown identifier: num`：
+
+```sql
+`SELECT (SELECT sum(b.a) + num FROM b) - a.a AS num FROM a`
+```
+
+* 如果在子查询的 `SELECT` 子句中为结果列定义了别名，则这些列在外层查询中也是可见的。例如：
+
+```sql
+SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
+```
+
+* 请注意避免使用与列名或表名相同的别名。以下是一个示例：
+
+```sql
+CREATE TABLE t
+(
+    a Int,
+    b Int
+)
+ENGINE = TinyLog();
+
+SELECT
+    argMax(a, b),
+    sum(b) AS b
+FROM t;
+
+从服务器收到异常（版本 18.14.17）：
+Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: Aggregate function sum(b) is found inside another aggregate function in query.
+```
+
+在前面的示例中，我们声明了包含列 `b` 的表 `t`。
+然后，在查询数据时，我们定义了别名 `sum(b) AS b`。
+由于别名是全局生效的，
+ClickHouse 将表达式 `argMax(a, b)` 中的字面量 `b` 替换成了表达式 `sum(b)`。
+这种替换导致了异常。
+
+<Note>
+  你可以将 [prefer&#95;column&#95;name&#95;to&#95;alias](/zh/reference/settings/session-settings#prefer_column_name_to_alias) 设置为 `1`，以更改这一默认行为。
+</Note>
+
+<div id="asterisk">
+  ## 星号
+</div>
+
+在 `SELECT` 查询中，星号可用于替代表达式。
+更多信息，请参见 [SELECT](/zh/reference/statements/select/index#asterisk) 一节。

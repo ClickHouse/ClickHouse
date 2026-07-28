@@ -1,0 +1,19 @@
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    QUERY id: 3, alias: __table1, is_subquery: 1, is_cte: 1, cte_name: cte
+      PROJECTION COLUMNS
+        a UInt64
+        b String
+      PROJECTION
+        LIST id: 4, nodes: 2
+          COLUMN id: 5, column_name: a, result_type: UInt64, source_id: 6
+          COLUMN id: 7, column_name: b, result_type: String, source_id: 6
+      JOIN TREE
+        TABLE id: 6, alias: __table2, table_name: default.t_cte_sample, final: 0, sample_size: 1 / 10
+1
+1

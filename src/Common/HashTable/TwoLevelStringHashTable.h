@@ -38,7 +38,12 @@ public:
     Impl impls[NUM_BUCKETS];
 
     TwoLevelStringHashTable() = default;
-    TwoLevelStringHashTable(size_t ) {} /// NOLINT
+
+    explicit TwoLevelStringHashTable(size_t size_hint)
+    {
+        for (auto & impl : impls)
+            impl.reserve(size_hint / NUM_BUCKETS);
+    }
 
     template <typename Source>
     explicit TwoLevelStringHashTable(const Source & src)
@@ -99,7 +104,7 @@ public:
         const char * p = x.data();
         // pending bits that needs to be shifted out
         const char s = (-sz & 7) * 8;
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             StringKey8 k8;
             StringKey16 k16;
@@ -174,6 +179,12 @@ public:
     void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted)
     {
         dispatch(*this, key_holder, typename Impl::EmplaceCallable{it, inserted});
+    }
+
+    template <typename KeyHolder>
+    void ALWAYS_INLINE prefetch(KeyHolder && key_holder)
+    {
+        dispatch(*this, std::forward<KeyHolder>(key_holder), typename Impl::PrefetchCallable{});
     }
 
     LookupResult ALWAYS_INLINE find(const Key x)

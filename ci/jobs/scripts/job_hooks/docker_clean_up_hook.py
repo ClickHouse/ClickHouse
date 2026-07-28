@@ -2,9 +2,11 @@ from ci.praktika.utils import Shell
 
 
 def check():
-    print("Remove all images with names starting with clickhouse/clickhouse- (forced)")
+    print(
+        "Remove all images with names starting with clickhouse/clickhouse- or clickhouse/install- (forced)"
+    )
     Shell.check(
-        "docker images --format '{{.Repository}}:{{.Tag}}' | grep '^clickhouse/clickhouse-' | xargs -r docker rmi -f",
+        "docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^clickhouse/(clickhouse|install)-' | xargs -r docker rmi -f",
         verbose=True,
     )
     print("Clean up non-latest images per each Repository")

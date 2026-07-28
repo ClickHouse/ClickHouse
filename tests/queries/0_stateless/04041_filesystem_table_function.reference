@@ -1,0 +1,12 @@
+a.txt	regular	false	0
+b.txt	regular	false	0
+c.txt	regular	false	1
+subdir	directory	false	0
+a.txt	5
+b.txt	5
+c.txt	6
+a.txt	hello
+b.txt	world
+c.txt	nested
+a.txt
+subdir	1

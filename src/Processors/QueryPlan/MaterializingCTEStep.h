@@ -68,14 +68,33 @@ public:
 
     /// Returns the subset of pre-built CTE plans that still need to be executed,
     /// atomically marking each as materialized. CTEs already marked are skipped.
-    static std::vector<std::unique_ptr<QueryPlan>> makePlansForCTEs(
-        DelayedMaterializingCTEsStep && step,
-        const QueryPlanOptimizationSettings & optimization_settings);
+    /// The plans must have already been optimized via `optimizePlans` in the
+    /// first traversal of `resolveMaterializingCTEs`.
+    static std::vector<std::unique_ptr<QueryPlan>> makePlansForCTEs(DelayedMaterializingCTEsStep && step);
+
+    /// Optimize each owned CTE's pre-built plan. Called by
+    /// `resolveMaterializingCTEs`'s first traversal; the matching second
+    /// traversal then calls `makePlansForCTEs` to claim and attach.
+    /// Safe to call even after `makePlansForCTEs` has moved a CTE's plan
+    /// out — the per-CTE check `if (cte->plan)` makes the call a no-op
+    /// for CTEs whose plan has already been claimed (which happens when a
+    /// recursive `buildSetInplace` claims the same CTE first).
+    void optimizePlans(const QueryPlanOptimizationSettings & optimization_settings);
 
 private:
     void updateOutputHeader() override { output_header = getInputHeaders().front(); }
 
     std::vector<MaterializedCTEPtr> ctes;
 };
+
+/// Strip every `DelayedMaterializingCTEsStep` node from `plan`'s tree, at
+/// any depth. Called from `DelayedCreatingSetsStep::makePlansForSets` when
+/// attaching a pre-built IN-subquery plan for runtime set construction; the
+/// strip forces the outer query plan to win `is_materialization_planned`
+/// for every referenced CTE so the outer `MaterializingCTEsStep`'s
+/// `DelayedPortsProcessor` becomes the single point that gates every
+/// reader. Nested `DelayedCreatingSetsStep` source plans (held in
+/// `subqueries`, not in the immediate node tree) are not touched.
+void removeAllDelayedMaterializingCTEsStep(QueryPlan & plan);
 
 }

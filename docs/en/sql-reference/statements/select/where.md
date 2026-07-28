@@ -7,8 +7,6 @@ doc_type: 'reference'
 keywords: ['WHERE']
 ---
 
-# WHERE clause
-
 The `WHERE` clause allows you to filter the data that comes from the[`FROM`](../../../sql-reference/statements/select/from.md) clause of `SELECT`.
 
 If there is a `WHERE` clause, it must be followed by an expression of type `UInt8`.

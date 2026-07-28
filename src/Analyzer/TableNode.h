@@ -2,6 +2,7 @@
 
 #include <Analyzer/HashUtils.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/TableLockHolder.h>
 
 #include <Interpreters/Context_fwd.h>
@@ -50,6 +51,13 @@ public:
 
     /// Replace the placeholder storage with the real StorageMemory from the temporary table holder.
     void finalizeMaterializedCTE(TemporaryTableHolder temporary_table_holder_, const ContextPtr & context_);
+
+    /// Adopt another (canonical) MaterializedCTE for this node, replacing its own.
+    /// Used to merge duplicate materialized CTEs created for cloned WITH definitions
+    /// across UNION branches. Storage, storage id, lock, snapshot and temporary table
+    /// name are updated to the canonical CTE's; the local subquery child is kept
+    /// (it is structurally equal to the canonical's).
+    void adoptMaterializedCTE(MaterializedCTEPtr materialized_cte_, const ContextPtr & context_);
 
     /** Update table node storage.
       * After this call storage, storage_id, storage_lock, storage_snapshot will be updated using new storage.
@@ -164,6 +172,7 @@ private:
     StoragePtr storage;
     StorageID storage_id;
     TableLockHolder storage_lock;
+    StorageMetadataHandle storage_metadata;
     StorageSnapshotPtr storage_snapshot;
     std::optional<TableExpressionModifiers> table_expression_modifiers;
     std::string temporary_table_name;

@@ -1,0 +1,77 @@
+---
+sidebarTitle: '一般的なアクセス管理クエリ'
+title: '一般的なアクセス管理クエリ'
+slug: /cloud/security/common-access-management-queries
+description: 'この記事では、SQLユーザーとロールを定義し、それらの権限やアクセス許可をデータベース、テーブル、行、カラムに適用する基本を紹介します。'
+keywords: ['ClickHouse Cloud', 'access management']
+doc_type: 'guide'
+---
+
+import CommonUserRolesContent from '/snippets/ja/_users-and-roles-common.mdx';
+
+<Tip>
+  **セルフマネージド**
+
+  セルフマネージドの ClickHouse を使用している場合は、[SQL ユーザーとロール](/ja/concepts/features/security/access-rights)を参照してください。
+</Tip>
+
+この記事では、SQL ユーザーとロールを定義する基本と、それらの権限やアクセス許可をデータベース、テーブル、行、カラムに適用する方法を説明します。
+
+<div id="admin-user">
+  ## Admin ユーザー
+</div>
+
+ClickHouse Cloud サービスには、サービスの作成時に `default` という admin ユーザーが作成されます。パスワードはサービス作成時に設定され、**Admin** ロールを持つ ClickHouse Cloud ユーザーであればリセットできます。
+
+ClickHouse Cloud サービスに追加の SQL ユーザーを作成する場合、それらのユーザーには SQL の username と password が必要です。管理者レベルの privileges を付与する場合は、新しいユーザーにロール `default_role` を割り当ててください。たとえば、ユーザー `clickhouse_admin` を追加する場合は次のとおりです。
+
+```sql
+CREATE USER IF NOT EXISTS clickhouse_admin
+IDENTIFIED WITH sha256_password BY 'P!@ssword42!';
+```
+
+```sql
+GRANT default_role TO clickhouse_admin;
+```
+
+<Note>
+  SQL Console を使用する場合、SQL ステートメントは `default` ユーザーとしては実行されません。代わりに、`sql-console:${cloud_login_email}` という名前のユーザーとして実行されます。ここで、`cloud_login_email` は現在クエリを実行しているユーザーのメールアドレスです。
+
+  これらの自動生成された SQL Console ユーザーには、`default` ロールが付与されます。
+</Note>
+
+<div id="passwordless-authentication">
+  ## パスワードレス認証
+</div>
+
+SQL Console で使用できるロールは 2 つあります。`default_role` と同じ権限を持つ `sql_console_admin` と、読み取り専用権限を持つ `sql_console_read_only` です。
+
+Admin ユーザーにはデフォルトで `sql_console_admin` ロールが割り当てられているため、特に変更はありません。一方、`sql_console_read_only` ロールを使うと、Admin 以外のユーザーに対して、任意のインスタンスへの読み取り専用アクセスまたはフルアクセスを付与できます。このアクセスは Admin が設定する必要があります。これらのロールは、インスタンスごとの要件に合わせて `GRANT` または `REVOKE` コマンドで調整でき、加えた変更は永続的に保持されます。
+
+<div id="granular-access-control">
+  ### きめ細かなアクセス制御
+</div>
+
+このアクセス制御機能は、ユーザーレベルできめ細かく手動設定することもできます。新しい`sql_console_*`ロールをユーザーに割り当てる前に、`sql-console-role:<email>`ネームスペースに対応する、SQL Consoleのユーザー固有のデータベースロールを作成しておく必要があります。例:
+
+```sql
+CREATE ROLE OR REPLACE sql-console-role:<email>;
+GRANT <some grants> TO sql-console-role:<email>;
+```
+
+一致するロールが検出されると、定型的なロールではなく、そのロールがユーザーに割り当てられます。これにより、`sql_console_sa_role` や `sql_console_pm_role` のようなロールを作成して特定のユーザーに付与するなど、より複雑なアクセス制御の構成が可能になります。例えば:
+
+```sql
+CREATE ROLE OR REPLACE sql_console_sa_role;
+GRANT <whatever level of access> TO sql_console_sa_role;
+CREATE ROLE OR REPLACE sql_console_pm_role;
+GRANT <whatever level of access> TO sql_console_pm_role;
+CREATE ROLE OR REPLACE `sql-console-role:christoph@clickhouse.com`;
+CREATE ROLE OR REPLACE `sql-console-role:jake@clickhouse.com`;
+CREATE ROLE OR REPLACE `sql-console-role:zach@clickhouse.com`;
+GRANT sql_console_sa_role to `sql-console-role:christoph@clickhouse.com`;
+GRANT sql_console_sa_role to `sql-console-role:jake@clickhouse.com`;
+GRANT sql_console_pm_role to `sql-console-role:zach@clickhouse.com`;
+```
+
+<CommonUserRolesContent />

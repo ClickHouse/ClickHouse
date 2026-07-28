@@ -1,0 +1,112 @@
+---
+description: 'Documentação da cláusula FROM'
+sidebarTitle: 'FROM'
+slug: /sql-reference/statements/select/from
+title: 'Cláusula FROM'
+doc_type: 'reference'
+---
+
+A cláusula `FROM` especifica a origem de onde os dados serão lidos:
+
+* [Tabela](/pt-BR/reference/engines/table-engines/index)
+* [Subconsulta](/pt-BR/reference/statements/select/index)
+* [Função de tabela](/pt-BR/reference/functions/table-functions/index)
+
+As cláusulas [JOIN](/pt-BR/reference/statements/select/join) e [ARRAY JOIN](/pt-BR/reference/statements/select/array-join) também podem ser usadas para estender a funcionalidade da cláusula `FROM`.
+
+Uma subconsulta é outra consulta `SELECT` que pode ser especificada entre parênteses dentro da cláusula `FROM`.
+
+Uma cláusula `VALUES` padrão do SQL também pode ser usada como expressão de tabela:
+
+```sql
+SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, val);
+```
+
+Veja a [função de tabela Values](/pt-BR/reference/functions/table-functions/values#sql-standard-values-clause) para mais detalhes.
+
+O `FROM` pode conter várias fontes de dados, separadas por vírgulas, o que equivale a fazer [CROSS JOIN](/pt-BR/reference/statements/select/join) entre elas.
+
+`FROM` também pode aparecer opcionalmente antes de uma cláusula `SELECT`. Esta é uma extensão do SQL padrão específica do ClickHouse que torna as instruções `SELECT` mais fáceis de ler. Exemplo:
+
+```sql
+FROM table
+SELECT *
+```
+
+<div id="final-modifier">
+  ## Modificador FINAL
+</div>
+
+Quando `FINAL` é especificado, o ClickHouse mescla completamente os dados antes de retornar o resultado. Isso também executa todas as transformações de dados que ocorrem durante as mesclagens no motor de tabela em questão.
+
+Ele se aplica à seleção de dados de tabelas que usam os seguintes motores de tabela:
+
+* `ReplacingMergeTree`
+* `SummingMergeTree`
+* `AggregatingMergeTree`
+* `CollapsingMergeTree`
+* `VersionedCollapsingMergeTree`
+
+Consultas `SELECT` com `FINAL` são executadas em paralelo. A configuração [max&#95;final&#95;threads](/pt-BR/reference/settings/session-settings#max_final_threads) limita o número de threads usados.
+
+<div id="drawbacks">
+  ### Desvantagens
+</div>
+
+Consultas que usam `FINAL` são executadas um pouco mais lentamente do que consultas semelhantes que não usam `FINAL` porque:
+
+* Os dados são mesclados durante a execução da consulta.
+* Consultas com `FINAL` podem ler colunas da chave primária além das colunas especificadas na consulta.
+
+`FINAL` exige recursos adicionais de computação e memória porque o processamento que normalmente ocorreria no momento da mesclagem precisa acontecer na memória durante a consulta. No entanto, às vezes é necessário usar `FINAL` para produzir resultados precisos (já que os dados podem ainda não ter sido totalmente mesclados). Isso é menos custoso do que executar `OPTIMIZE` para forçar uma mesclagem.
+
+Como alternativa ao uso de `FINAL`, às vezes é possível usar consultas diferentes que partem do pressuposto de que os processos em segundo plano do engine `MergeTree` ainda não ocorreram e lidar com isso aplicando uma agregação (por exemplo, para descartar duplicatas). Se você precisar usar `FINAL` em suas consultas para obter os resultados necessários, não há problema em fazer isso, mas esteja ciente do processamento adicional exigido.
+
+`FINAL` pode ser aplicado automaticamente a todas as tabelas de uma consulta usando a configuração [FINAL](/pt-BR/reference/settings/session-settings#final), por meio de uma sessão ou de um perfil de usuário.
+
+<div id="example-usage">
+  ### Exemplo de uso
+</div>
+
+Uso da palavra-chave `FINAL`
+
+```sql
+SELECT x, y FROM mytable FINAL WHERE x > 1;
+```
+
+Usando `FINAL` como configuração em nível de consulta
+
+```sql
+SELECT x, y FROM mytable WHERE x > 1 SETTINGS final = 1;
+```
+
+Usar `FINAL` como configuração em nível de sessão
+
+```sql
+SET final = 1;
+SELECT x, y FROM mytable WHERE x > 1;
+```
+
+<div id="aliases-and-final">
+  ### Aliases e FINAL
+</div>
+
+Quando uma tabela tem um alias, `FINAL` vem depois dele. Isso fica mais evidente em consultas [`JOIN`](/pt-BR/reference/statements/select/join), nas quais as tabelas geralmente usam aliases:
+
+```sql
+SELECT t1.id, t2.name
+FROM table1 AS t1 FINAL
+INNER JOIN table2 AS t2 FINAL ON t1.id = t2.id;
+```
+
+`FINAL` é um modificador da referência da tabela, portanto deve vir após a expressão completa `table [AS alias]`. Colocá-lo antes do alias (`FROM table1 FINAL AS t1`) é um erro de sintaxe.
+
+<div id="implementation-details">
+  ## Detalhes de implementação
+</div>
+
+Se a cláusula `FROM` for omitida, os dados serão lidos da tabela `system.one`.
+A tabela `system.one` contém exatamente uma linha (ela tem a mesma finalidade da tabela DUAL encontrada em outros SGBDs).
+
+Para executar uma consulta, todas as colunas listadas na consulta são extraídas da tabela apropriada. As colunas que não forem necessárias para a consulta externa são descartadas das subconsultas.
+Se uma consulta não listar nenhuma coluna (por exemplo, `SELECT count() FROM t`), ainda assim alguma coluna será extraída da tabela (de preferência, a menor), para calcular o número de linhas.

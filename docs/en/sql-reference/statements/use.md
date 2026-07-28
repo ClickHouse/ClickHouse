@@ -7,8 +7,6 @@ title: 'USE Statement'
 doc_type: 'reference'
 ---
 
-# USE Statement
-
 ```sql
 USE [DATABASE] db
 ```

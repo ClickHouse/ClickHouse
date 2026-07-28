@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-encrypted-storage, no-replicated-database
+# Tags: no-ordinary-database, no-replicated-database
 # Test: two concurrent transactions that both attempt to remove the same part
 # must produce a SERIALIZATION_ERROR for the second one.
 # Also tests that after a rollback the removal_tid is reset, so a subsequent

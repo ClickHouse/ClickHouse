@@ -1,0 +1,205 @@
+---
+description: 'Узнайте, как использовать проекции для повышения производительности
+  часто выполняемых запросов на наборе данных UK property, содержащем сведения о ценах,
+  уплаченных за недвижимость в Англии и Уэльсе'
+sidebarTitle: 'Цены на недвижимость в Великобритании'
+slug: /getting-started/example-datasets/uk-price-paid
+title: 'Набор данных о ценах на недвижимость в Великобритании'
+doc_type: 'guide'
+keywords: ['демонстрационный набор данных', 'uk property', 'пример данных', 'недвижимость', 'Начало работы']
+---
+
+import { RunnableCode } from "/snippets/ru/components/RunnableCode/RunnableCode.jsx";
+
+Эти данные содержат сведения о ценах, уплаченных за недвижимость в Англии и Уэльсе. Данные доступны с 1995 года, а размер набора данных в несжатом виде составляет около 4 GiB (при этом в ClickHouse они займут всего около 278 MiB).
+
+* Источник: https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads
+* Описание полей: https://www.gov.uk/guidance/about-the-price-paid-data
+* Содержит данные HM Land Registry © Crown copyright и права на базу данных за 2021 год. Эти данные распространяются по лицензии Open Government Licence v3.0.
+
+<div id="create-table">
+  ## Создайте таблицу
+</div>
+
+```sql
+CREATE DATABASE uk;
+
+CREATE TABLE uk.uk_price_paid
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
+    is_new UInt8,
+    duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2);
+```
+
+<div id="preprocess-import-data">
+  ## Предобработка и вставка данных
+</div>
+
+Мы будем использовать функцию `url`, чтобы потоково загрузить данные в ClickHouse. Сначала нужно предобработать часть входящих данных, а именно:
+
+* разделить `postcode` на два отдельных столбца — `postcode1` и `postcode2`, что лучше для хранения и запросов
+* преобразовать поле `time` в дату, так как оно содержит только значение времени 00:00
+* игнорировать поле [UUid](/ru/reference/data-types/uuid), поскольку для анализа оно не требуется
+* преобразовать `type` и `duration` в более наглядные поля `Enum` с помощью функции [transform](/ru/reference/functions/regular-functions/other-functions#transform)
+* преобразовать поле `is_new` из однобуквенной строки (`Y`/`N`) в поле [UInt8](/ru/reference/data-types/int-uint) со значением 0 или 1
+* удалить последние два столбца, так как у них у всех одно и то же значение (0)
+
+Функция `url` потоково загружает данные с веб-сервера в таблицу ClickHouse. Следующая команда вставляет 5 миллионов строк в таблицу `uk_price_paid`:
+
+```sql
+INSERT INTO uk.uk_price_paid
+SELECT
+    toUInt32(price_string) AS price,
+    parseDateTimeBestEffortUS(time) AS date,
+    splitByChar(' ', postcode)[1] AS postcode1,
+    splitByChar(' ', postcode)[2] AS postcode2,
+    transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+    b = 'Y' AS is_new,
+    transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+    addr1,
+    addr2,
+    street,
+    locality,
+    town,
+    district,
+    county
+FROM url(
+    'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+    'CSV',
+    'uuid_string String,
+    price_string String,
+    time String,
+    postcode String,
+    a String,
+    b String,
+    c String,
+    addr1 String,
+    addr2 String,
+    street String,
+    locality String,
+    town String,
+    district String,
+    county String,
+    d String,
+    e String'
+) SETTINGS max_http_get_redirects=10;
+```
+
+Подождите, пока завершится вставка данных — это займет одну-две минуты в зависимости от скорости сети.
+
+<div id="validate-data">
+  ## Проверьте данные
+</div>
+
+Давайте убедимся, что всё сработало, и посмотрим, сколько строк было вставлено:
+
+<RunnableCode>
+  ```sql
+  SELECT count()
+  FROM uk.uk_price_paid
+  ```
+</RunnableCode>
+
+На момент выполнения этого запроса набор данных содержал 27,450,499 строк. Теперь посмотрим, каков размер этой таблицы в ClickHouse:
+
+<RunnableCode>
+  ```sql
+  SELECT formatReadableSize(total_bytes)
+  FROM system.tables
+  WHERE name = 'uk_price_paid'
+  ```
+</RunnableCode>
+
+Обратите внимание: размер таблицы — всего 221.43 MiB!
+
+<div id="run-queries">
+  ## Выполните несколько запросов
+</div>
+
+Выполните несколько запросов, чтобы проанализировать данные:
+
+<div id="average-price">
+  ### Запрос 1. Средняя цена за год
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+     toYear(date) AS year,
+     round(avg(price)) AS price,
+     bar(price, 0, 1000000, 80
+  )
+  FROM uk.uk_price_paid
+  GROUP BY year
+  ORDER BY year
+  ```
+</RunnableCode>
+
+<div id="average-price-london">
+  ### Запрос 2. средняя цена по годам в Лондоне
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+     toYear(date) AS year,
+     round(avg(price)) AS price,
+     bar(price, 0, 2000000, 100
+  )
+  FROM uk.uk_price_paid
+  WHERE town = 'LONDON'
+  GROUP BY year
+  ORDER BY year
+  ```
+</RunnableCode>
+
+В 2020 году с ценами на жильё явно что-то произошло! Но, вероятно, это никого не удивит...
+
+<div id="most-expensive-neighborhoods">
+  ### Запрос 3. Самые дорогие районы
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      town,
+      district,
+      count() AS c,
+      round(avg(price)) AS price,
+      bar(price, 0, 5000000, 100)
+  FROM uk.uk_price_paid
+  WHERE date >= '2020-01-01'
+  GROUP BY
+      town,
+      district
+  HAVING c >= 100
+  ORDER BY price DESC
+  LIMIT 100
+  ```
+</RunnableCode>
+
+<div id="speeding-up-queries-with-projections">
+  ## Ускорение запросов с помощью проекций
+</div>
+
+Эти запросы можно ускорить с помощью проекций. Примеры для этого набора данных см. в разделе [&quot;Проекции&quot;](/ru/concepts/features/projections/projections).
+
+<div id="playground">
+  ### Протестируйте это в Песочнице ClickHouse
+</div>
+
+Этот набор данных также доступен в [онлайн-версии Песочницы ClickHouse](https://sql.clickhouse.com?query_id=TRCWH5ZETY4SEEK8ISCCAX).

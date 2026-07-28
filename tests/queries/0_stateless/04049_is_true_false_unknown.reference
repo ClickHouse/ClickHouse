@@ -1,0 +1,13 @@
+is_true	1
+is_false	1
+is_unknown	1
+is_not_false	1
+false_is_not_true	1
+null_is_not_true	1
+true_is_not_unknown	1
+expr_true	1
+expr_false	1
+expr_unknown	1
+0	0	1	0	1	0	1
+1	1	0	0	0	1	1
+-1	0	0	1	1	1	0

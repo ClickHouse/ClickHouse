@@ -24,7 +24,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 
-DB::StoragePtr createStorage(DB::DiskPtr & disk)
+static DB::StoragePtr createStorage(DB::DiskPtr & disk)
 {
     using namespace DB;
 
@@ -66,7 +66,7 @@ private:
 
 
 // Returns data written to table in Values format.
-std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr context)
+static std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr context)
 {
     using namespace DB;
     auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
@@ -106,7 +106,7 @@ std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr con
 }
 
 // Returns all table data in Values format.
-std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
+static std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
 {
     using namespace DB;
     auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);

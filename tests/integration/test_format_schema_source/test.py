@@ -3,7 +3,6 @@ import uuid
 
 import pytest
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -72,18 +71,18 @@ def test_protobuf_format_input_with_old_setting(started_cluster):
     )
     assert instance.query("SELECT * from test.simple") == "1\tabc\n2\tdef\n"
 
-    with pytest.raises(Exception) as exc:
+    with pytest.raises(Exception):
         instance.http_query(
             "INSERT INTO test.simple SETTINGS format_schema='simple:KeyValuePair' format_schema_message_name='KeyValuePair' FORMAT Protobuf",
             "\x07\x08\x01\x12\x03abc\x07\x08\x02\x12\x03def",
         )
 
-    with pytest.raises(Exception) as exc:
+    with pytest.raises(Exception):
         instance.http_query(
             "INSERT INTO test.simple SETTINGS format_schema='simple:KeyValuePair' format_schema_message_name='Tmp' FORMAT Protobuf",
             "\x07\x08\x01\x12\x03abc\x07\x08\x02\x12\x03def",
         )
-    with pytest.raises(Exception) as exc:
+    with pytest.raises(Exception):
         instance.http_query(
             "INSERT INTO test.simple SETTINGS format_schema='simple:' format_schema_message_name='Tmp' FORMAT Protobuf",
             "\x07\x08\x01\x12\x03abc\x07\x08\x02\x12\x03def",
@@ -216,7 +215,7 @@ message MessageTmp {
 
     instance.query("SYSTEM CLEAR FORMAT SCHEMA CACHE FOR Files")
     # After clearing, not work with new schema
-    with pytest.raises(Exception) as exc:
+    with pytest.raises(Exception):
         instance.http_query(
             f"SELECT * FROM test.simple SETTINGS format_schema_source='query', format_schema='{format_schema}', format_schema_message_name='MessageTmp' FORMAT Protobuf"
         )
@@ -284,7 +283,7 @@ message MessageTmp {
         == "\x07\x08\x01\x12\x03abc\x07\x08\x02\x12\x03def"
     )
     # Tests that stop working with old scheme
-    with pytest.raises(Exception) as exc:
+    with pytest.raises(Exception):
         instance.http_query(
             "SELECT * FROM test.simple SETTINGS format_schema_source='{format_schema_source}', format_schema='{new_format_schema}', format_schema_message_name='MessageTmp' FORMAT Protobuf"
         )

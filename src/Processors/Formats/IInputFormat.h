@@ -54,6 +54,7 @@ struct FileBucketInfo
     virtual void deserialize(ReadBuffer & buffer) = 0;
     virtual String getIdentifier() const = 0;
     virtual String getFormatName() const = 0;
+    virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const = 0;
 
     virtual ~FileBucketInfo() = default;
 };
@@ -127,6 +128,8 @@ public:
     virtual size_t getApproxBytesReadForChunk() const { return 0; }
 
     void needOnlyCount() { need_only_count = true; }
+
+    virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
 
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }

@@ -14,13 +14,21 @@ struct LogicalJoinInfo
 {
     String readable_relation_name;
     std::optional<UInt64> result_rows_estimation;
-    JoinLocality locality;
+    JoinLocality locality{};
 };
 
 /// Join two data streams.
 class JoinStep : public IQueryPlanStep
 {
 public:
+
+    enum class JoinStage : size_t
+    {
+        Default = 0,
+        Build = 1,
+        Probe = 2,
+    };
+
     JoinStep(
         const SharedHeader & left_header_,
         const SharedHeader & right_header_,
@@ -69,6 +77,9 @@ public:
 
     bool isOptimized() const { return optimized; }
     void setOptimized() { optimized = true; }
+
+    std::vector<size_t> getStepGroups() const override;
+    String getStepGroupName(size_t group) const override;
 
 private:
     bool optimized = false;

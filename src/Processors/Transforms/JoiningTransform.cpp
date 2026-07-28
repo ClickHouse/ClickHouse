@@ -61,7 +61,7 @@ JoiningTransform::~JoiningTransform() = default;
 
 OutputPort & JoiningTransform::getFinishedSignal()
 {
-    assert(outputs.size() == 2);
+    chassert(outputs.size() == 2);
     return outputs.back();
 }
 

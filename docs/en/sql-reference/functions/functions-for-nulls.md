@@ -7,8 +7,6 @@ keywords: ['nullable', 'functions']
 doc_type: 'reference'
 ---
 
-# Functions for working with nullable values
-
 <!-- 
 The inner content of the tags below are replaced at doc framework build time with 
 docs generated from system.functions. Please do not modify or remove the tags.

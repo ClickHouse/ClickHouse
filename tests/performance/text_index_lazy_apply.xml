@@ -1,0 +1,28 @@
+<test>
+  <settings>
+      <use_skip_indexes_on_data_read>1</use_skip_indexes_on_data_read>
+      <query_plan_direct_read_from_text_index>1</query_plan_direct_read_from_text_index>
+      <force_data_skipping_indices>idx_sp_lazy</force_data_skipping_indices>
+  </settings>
+
+  <fill_query>ALTER TABLE hits_10m_single ADD INDEX idx_sp_lazy(SearchPhrase) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking')</fill_query>
+  <fill_query>ALTER TABLE hits_10m_single MATERIALIZE INDEX idx_sp_lazy</fill_query>
+
+  <!-- Extreme selectivity difference AND: high-frequency token × low-frequency token -->
+  <query tag="materialize_sparse_and">SELECT count() FROM hits_10m_single WHERE hasAllTokens(SearchPhrase, ['the', 'market']) SETTINGS text_index_posting_list_apply_mode = 'materialize'</query>
+  <query tag="lazy_sparse_and">SELECT count() FROM hits_10m_single WHERE hasAllTokens(SearchPhrase, ['the', 'market']) SETTINGS text_index_posting_list_apply_mode = 'lazy', allow_experimental_text_index_lazy_apply = 1</query>
+
+  <!-- 4-token sparse AND -->
+  <query tag="materialize_4token_and">SELECT count() FROM hits_10m_single WHERE hasAllTokens(SearchPhrase, ['the', 'video', 'world', 'market']) SETTINGS text_index_posting_list_apply_mode = 'materialize'</query>
+  <query tag="lazy_4token_and">SELECT count() FROM hits_10m_single WHERE hasAllTokens(SearchPhrase, ['the', 'video', 'world', 'market']) SETTINGS text_index_posting_list_apply_mode = 'lazy', allow_experimental_text_index_lazy_apply = 1</query>
+
+  <!-- Single high-frequency token (baseline, difference should be small) -->
+  <query tag="materialize_single_dense">SELECT count() FROM hits_10m_single WHERE hasToken(SearchPhrase, 'video') SETTINGS text_index_posting_list_apply_mode = 'materialize'</query>
+  <query tag="lazy_single_dense">SELECT count() FROM hits_10m_single WHERE hasToken(SearchPhrase, 'video') SETTINGS text_index_posting_list_apply_mode = 'lazy', allow_experimental_text_index_lazy_apply = 1</query>
+
+  <!-- OR query (baseline, difference should be small) -->
+  <query tag="materialize_or">SELECT count() FROM hits_10m_single WHERE hasAnyTokens(SearchPhrase, ['the', 'video', 'world', 'market']) SETTINGS text_index_posting_list_apply_mode = 'materialize'</query>
+  <query tag="lazy_or">SELECT count() FROM hits_10m_single WHERE hasAnyTokens(SearchPhrase, ['the', 'video', 'world', 'market']) SETTINGS text_index_posting_list_apply_mode = 'lazy', allow_experimental_text_index_lazy_apply = 1</query>
+
+  <drop_query>ALTER TABLE hits_10m_single DROP INDEX idx_sp_lazy</drop_query>
+</test>

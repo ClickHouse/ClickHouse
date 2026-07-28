@@ -13,7 +13,7 @@ namespace DB
 {
 class ArrowFlightConnection;
 
-class ArrowFlightSource : public ISource
+class ArrowFlightSource final : public ISource
 {
     void initializeEndpoints(const String & dataset_name_);
     bool nextEndpoint();

@@ -37,7 +37,7 @@ namespace ErrorCodes
 }
 
 
-ColumnsDescription getStructureOfRemoteTableInShard(
+static ColumnsDescription getStructureOfRemoteTableInShard(
     const Cluster & cluster,
     const Cluster::ShardInfo & shard_info,
     const StorageID & table_id,
@@ -64,7 +64,8 @@ ColumnsDescription getStructureOfRemoteTableInShard(
         {
             context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
             auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, context);
-            return storage_ptr->getInMemoryMetadataPtr(context, false)->getColumns();
+            auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(context, false);
+            return metadata_snapshot->getColumns();
         }
 
         /// Request for a table description

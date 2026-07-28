@@ -58,7 +58,7 @@ ColumnPtr FlatDictionary::getColumn(
     DefaultOrFilter default_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+    chassert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     ColumnPtr result;
 
@@ -433,7 +433,7 @@ ColumnPtr FlatDictionary::getDescendants(
     PaddedPODArray<UInt64> keys_backup;
     const auto & keys = getColumnVectorData(this, key_column, keys_backup);
 
-    size_t keys_found;
+    size_t keys_found = 0;
     auto result = getKeysDescendantsArray(keys, *parent_to_child_index, level, keys_found);
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
@@ -819,6 +819,7 @@ Pipe FlatDictionary::read(const Names & column_names, size_t max_block_size, siz
     return result;
 }
 
+void registerDictionaryFlat(DictionaryFactory & factory);
 void registerDictionaryFlat(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string & full_name,
@@ -857,7 +858,10 @@ void registerDictionaryFlat(DictionaryFactory & factory)
         return std::make_unique<FlatDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 
-    factory.registerLayout("flat", create_layout, false, false);
+    factory.registerLayout("flat", create_layout, false, false, Documentation{
+        .description = "Stores the dictionary in memory as a flat array indexed by the key. This is the fastest layout, but it is only suitable for dictionaries with `UInt64` keys within a bounded, not-too-large range.",
+        .syntax = "LAYOUT(FLAT([INITIAL_ARRAY_SIZE n] [MAX_ARRAY_SIZE n]))",
+        .related = {"hashed"}});
 }
 
 

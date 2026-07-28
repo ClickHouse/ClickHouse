@@ -7,8 +7,6 @@ title: 'Replicated* table engines'
 doc_type: 'reference'
 ---
 
-# Replicated* table engines
-
 :::note
 In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
 

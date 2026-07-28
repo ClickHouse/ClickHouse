@@ -1,8 +1,12 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <Core/NamesAndTypes.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <IO/WriteBufferFromString.h>
 #include <Poco/JSON/Object.h>
 #include <Common/Exception.h>
 
@@ -197,6 +201,40 @@ TEST(SerializationInfoJSON, FromJSONOverwritesExistingData)
     EXPECT_EQ(info.getKindStack(), expected);
     EXPECT_EQ(info.getData().num_rows, 2000);
     EXPECT_EQ(info.getData().num_defaults, 1999);
+}
+
+TEST(SerializationInfoByNameJSON, WriteJSONCanBeReadBack)
+{
+    SerializationInfoSettings settings;
+    settings.ratio_of_defaults_for_sparse = 0.5;
+    settings.choose_kind = true;
+    settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
+    settings.string_serialization_version = MergeTreeStringSerializationVersion::WITH_SIZE_STREAM;
+    settings.propagate_types_serialization_versions_to_nested_types = true;
+
+    auto string_type = std::make_shared<DataTypeString>();
+    NamesAndTypesList columns
+    {
+        {"string\"with\\escapes", string_type},
+        {"tuple", std::make_shared<DataTypeTuple>(DataTypes{string_type, string_type}, Strings{"a", "b"})},
+    };
+
+    SerializationInfoByName infos(columns, settings);
+
+    WriteBufferFromOwnString out;
+    infos.writeJSON(out);
+    auto json = out.str();
+
+    EXPECT_THAT(json, testing::HasSubstr(R"("name":"string\"with\\escapes")"));
+    EXPECT_THAT(json, testing::HasSubstr(R"("subcolumns")"));
+    EXPECT_THAT(json, testing::HasSubstr(R"("types_serialization_versions")"));
+
+    auto restored = SerializationInfoByName::readJSONFromString(columns, json);
+    EXPECT_EQ(restored.getVersion(), MergeTreeSerializationInfoVersion::WITH_TYPES);
+    EXPECT_EQ(restored.getSettings().string_serialization_version, MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+    EXPECT_TRUE(restored.getSettings().propagate_types_serialization_versions_to_nested_types);
+    EXPECT_NE(restored.tryGet("string\"with\\escapes"), nullptr);
+    EXPECT_NE(restored.tryGet("tuple"), nullptr);
 }
 
 /// Malformed kind tests.

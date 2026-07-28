@@ -1,0 +1,325 @@
+---
+description: 'ClickHouse 备份与恢复概览'
+sidebarTitle: '概览'
+slug: /operations/backup/overview
+title: 'ClickHouse 中的备份与恢复'
+doc_type: 'reference'
+---
+
+import GenericSettings from '/snippets/zh/_generic_settings.mdx';
+import Syntax from '/snippets/zh/_syntax.mdx';
+import AzureSettings from '/snippets/zh/_azure_settings.mdx';
+import S3Settings from '/snippets/zh/_s3_settings.mdx';
+
+> 本节概述了 ClickHouse 中的备份与恢复。有关各种备份方法的更
+> 详细说明，请参阅侧边栏中相应方法的
+> 页面。
+
+<div id="introduction">
+  ## 简介
+</div>
+
+虽然[复制](/zh/reference/engines/table-engines/mergetree-family/replication)可以防范硬件故障，但它并不能
+防止人为失误：误删数据、删除错误的
+表，或在错误的集群上删除表，以及因软件缺陷导致的
+数据处理错误或数据损坏。
+
+很多情况下，这类失误会影响所有副本。ClickHouse 内置了
+一些保护机制来防止某些类型的错误。例如，在[默认](/zh/reference/settings/session-settings#max_table_size_to_drop)情况下，
+你不能直接删除使用 `MergeTree` 家族引擎且包含超过
+50 GB 数据的表。不过，这些保护机制并不能覆盖所有可能的情况，
+问题仍然可能发生。
+
+为了有效降低人为失误可能带来的影响，你应当**提前**
+认真制定数据备份与恢复的
+策略。
+
+每家公司可用的资源和业务需求各不相同，因此
+不存在一种适用于所有场景的 ClickHouse 备份与恢复通用方案。
+适用于 1 GB 数据的方法，很可能并不适用于数十
+PB 的数据。可选的方法有很多，它们各有优缺点，
+本文档的这一部分将对其进行介绍。比较好的做法是
+组合使用多种方法，而不是只依赖一种，以弥补各自的
+不足。
+
+<Note>
+  请记住，如果你完成了备份却从未尝试过恢复，
+  那么当你真正需要恢复时，很可能无法正常工作 (或者至少
+  恢复耗时会超出业务可接受的范围) 。因此，无论你选择哪种备份
+  方案，都务必同时将恢复流程自动化，并定期在备用的
+  ClickHouse 集群上进行演练。
+</Note>
+
+以下页面详细介绍了 ClickHouse 中可用的各种备份和
+恢复方法：
+
+| 页面                                                                                  | 描述                                |
+| ----------------------------------------------------------------------------------- | --------------------------------- |
+| [使用本地磁盘或 S3 磁盘进行备份/恢复](/zh/concepts/features/backup-restore/local-disk)                | 详细说明如何备份到本地磁盘或 S3 磁盘，以及如何从中恢复     |
+| [使用 S3 端点进行备份/恢复](/zh/concepts/features/backup-restore/s3-endpoint)                    | 详细说明如何备份到 S3 端点，以及如何从中恢复          |
+| [使用 AzureBlobStorage 进行备份/恢复](/zh/concepts/features/backup-restore/azure-blob-storage) | 详细说明如何备份到 Azure Blob 存储，以及如何从中恢复  |
+| [替代方法](/zh/concepts/features/backup-restore/alternative-methods)                       | 介绍其他备份方法                          |
+| [快照备份](/zh/concepts/features/backup-restore/snapshot)                                  | 使用云对象存储为 SharedMergeTree 表提供轻量级快照 |
+
+备份可以：
+
+* 是[全量备份或增量备份](#backup-types)
+* 是[同步或异步](#synchronous-vs-asynchronous)
+* 是[并发或非并发](#concurrent-vs-non-concurrent)
+* 是[压缩或未压缩](#compressed-vs-uncompressed)
+* 使用[命名集合](#using-named-collections)
+* 受密码保护
+* 对[系统表、日志表或访问管理表](#system-backups)进行备份
+
+<div id="backup-types">
+  ## 备份类型
+</div>
+
+备份可以分为全量备份和增量备份。全量备份是
+数据的完整副本，而增量备份则只包含自上次全量备份以来发生变化的数据。
+
+全量备份的优点在于恢复方式简单、独立 (不依赖其他备份)
+且可靠。但它们可能需要较长时间才能完成，并且
+会占用大量空间。相比之下，增量备份在时间和空间利用方面都更
+高效，但恢复数据时需要所有相关
+备份都可用。
+
+根据你的需求，你可以考虑使用：
+
+* **全量备份**，适用于较小的数据库或关键数据。
+* **增量备份**，适用于较大的数据库，或需要频繁且经济高效地执行备份的场景。
+* **两者结合**，例如每周执行一次全量备份，每天执行一次增量备份。
+
+<div id="synchronous-vs-asynchronous">
+  ## 同步与异步备份
+</div>
+
+`BACKUP` 和 `RESTORE` 命令也可以标记为 `ASYNC`。在这种情况下，
+备份命令会立即返回，备份过程则在后台运行。
+如果命令未标记为 `ASYNC`，备份过程则会同步执行，
+命令会一直阻塞，直到备份完成。
+
+<div id="concurrent-vs-non-concurrent">
+  ## 并发与非并发备份
+</div>
+
+默认情况下，ClickHouse 允许并发执行备份和恢复。这意味着你
+可以同时发起多个备份或恢复操作。不过，
+也可以通过 server 级别的设置来禁止这种行为。如果你将
+这些设置设为 false，那么任一时刻在一个 集群 上只允许运行
+一个备份或恢复操作。这有助于避免资源争用
+或操作之间可能发生的冲突。
+
+要禁止并发备份/恢复，可以分别使用以下设置：
+
+```xml
+<clickhouse>
+    <backups>
+        <allow_concurrent_backups>false</allow_concurrent_backups>
+        <allow_concurrent_restores>false</allow_concurrent_restores>
+    </backups>
+</clickhouse>
+```
+
+两者的默认值均为 true，因此默认允许并发执行备份/恢复操作。
+当这些设置在集群中为 false 时，任一时刻整个集群只允许运行一个备份/恢复
+操作。
+
+<div id="compressed-vs-uncompressed">
+  ## 压缩与未压缩备份
+</div>
+
+ClickHouse 备份支持通过 `compression_method` 和 `compression_level` 设置启用压缩。
+
+创建备份时，可指定：
+
+```sql
+BACKUP TABLE test.table
+  TO Disk('backups', 'filename.zip')
+  SETTINGS compression_method='lzma', compression_level=3
+```
+
+<div id="using-named-collections">
+  ## 使用命名集合
+</div>
+
+命名集合允许您存储可在备份/恢复操作中重复使用的键值对 (如 S3 凭据、端点和设置) 。
+它们有助于：
+
+* 对没有管理员权限的用户隐藏凭据
+* 通过集中存储复杂配置来简化命令
+* 在各类操作中保持一致性
+* 避免凭据暴露在查询日志中
+
+更多详情请参见[&quot;命名集合&quot;](/zh/concepts/features/configuration/server-config/named-collections)。
+
+<div id="system-backups">
+  ## 备份系统表、日志表或访问管理相关表
+</div>
+
+系统表也可以纳入备份和恢复工作流中，但是否纳入取决于你的具体使用场景。
+
+存储历史数据的系统表，例如带有 `_log` 后缀的表 (如
+`query_log`、`part_log`) ，可以像其他任何表一样进行备份和恢复。
+如果你的使用场景依赖于分析历史数据——例如，使用 `query_log`
+跟踪查询性能或排查问题——建议将这些表纳入备份策略。不过，如果不需要这些表中的历史数据，
+则可以将其排除，以节省备份存储空间。
+
+与访问管理相关的系统表，例如 users、roles、row&#95;policies、
+settings&#95;profiles 和 quotas，在备份和恢复操作期间会进行特殊处理。
+当这些表被包含在备份中时，其内容会被导出到一个特殊的
+`accessXX.txt` 文件中，该文件包含了用于创建
+和配置这些访问实体的等效 SQL 语句。在恢复时，恢复过程
+会解析这些文件，并重新执行 SQL 命令以重建用户、
+角色及其他配置。此功能确保 ClickHouse 集群的访问控制
+配置可以作为集群整体配置的一部分进行备份和恢复。
+
+此功能仅适用于通过 SQL 命令管理的配置
+(即[“SQL 驱动的访问控制与账户管理”](/zh/concepts/features/security/access-rights#enabling-access-control)) 。
+在 ClickHouse server 配置文件 (如 `users.xml`)
+中定义的访问配置不会包含在备份中，也无法通过此方法恢复。
+
+<div id="syntax">
+  ## 常规语法
+</div>
+
+<Syntax />
+
+<div id="command-summary">
+  ### 命令概览
+</div>
+
+上述各命令的详细说明如下：
+
+| **命令**                                                                 | **说明**                                                                  |   |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------------- | - |
+| `BACKUP`                                                               | 为指定对象创建备份                                                               |   |
+| `RESTORE`                                                              | 从备份中恢复对象                                                                |   |
+| `TABLE [db.]table_name [AS [db.]table_name_in_backup]`                 | 备份/恢复指定表 (可重命名)                                                         |   |
+| `[PARTITION[S] partition_expr [,...]]`                                 | 仅备份/恢复该表的指定分区                                                           |   |
+| `DICTIONARY [db.]dictionary_name [AS [db.]name_in_backup]`             | 备份/恢复字典对象                                                               |   |
+| `DATABASE database_name [AS database_name_in_backup]`                  | 备份/恢复整个数据库 (可重命名)                                                       |   |
+| `TEMPORARY TABLE table_name [AS table_name_in_backup]`                 | 备份/恢复临时表 (可重命名)                                                         |   |
+| `VIEW view_name [AS view_name_in_backup]`                              | 备份/恢复视图 (可重命名)                                                          |   |
+| `[EXCEPT TABLES ...]`                                                  | 备份数据库时排除特定表                                                             |   |
+| `ALL`                                                                  | 备份/恢复所有内容 (所有数据库、表等) 。在 ClickHouse 23.4 之前的版本中，`ALL` 仅适用于 `RESTORE` 命令。 |   |
+| `[EXCEPT {TABLES\|DATABASES}...]`                                      | 使用 `ALL` 时排除特定表或数据库                                                     |   |
+| `[ON CLUSTER 'cluster_name']`                                          | 在 ClickHouse 集群上执行备份/恢复                                                 |   |
+| `TO\|FROM`                                                             | 方向：`TO` 表示备份目标位置，`FROM` 表示恢复源                                           |   |
+| `File('<path>/<filename>')`                                            | 存储到本地文件系统/从本地文件系统恢复                                                     |   |
+| `Disk('<disk_name>', '<path>/')`                                       | 存储到已配置磁盘/从已配置磁盘恢复                                                       |   |
+| `S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')` | 存储到 Amazon S3 或兼容 S3 的对象存储/从中恢复                                         |   |
+| `[SETTINGS ...]`                                                       | 完整设置列表见下文                                                               |   |
+| `[ASYNC]`                                                              | 使操作以异步方式运行 (立即返回一个可监控的 ID)                                              |   |
+
+<div id="settings">
+  ### 设置
+</div>
+
+**通用备份/恢复设置**
+
+<GenericSettings />
+
+**S3 专用设置**
+
+<S3Settings />
+
+**Azure 专用设置**
+
+<AzureSettings />
+
+<div id="check-the-status-of-backups">
+  ## 管理与故障排查
+</div>
+
+`backup` 命令会返回一个 `id` 和 `status`，并且可以使用该 `id`
+查询备份状态。这对于检查长时间运行的 `ASYNC`
+备份进度非常有用。下面的示例展示了尝试覆盖现有备份文件时
+发生的失败：
+
+```sql
+BACKUP TABLE helloworld.my_first_table TO Disk('backups', '1.zip') ASYNC
+```
+
+```response
+┌─id───────────────────────────────────┬─status──────────┐
+│ 7678b0b3-f519-4e6e-811f-5a0781a4eb52 │ CREATING_BACKUP │
+└──────────────────────────────────────┴─────────────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+```sql
+SELECT
+*
+FROM system.backups
+WHERE id='7678b0b3-f519-4e6e-811f-5a0781a4eb52'
+FORMAT Vertical
+```
+
+```response highlight={5,9}
+Row 1:
+──────
+id:                7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:              Disk('backups', '1.zip')
+status:            BACKUP_FAILED
+num_files:         0
+uncompressed_size: 0
+compressed_size:   0
+error:             Code: 598. DB::Exception: Backup Disk('backups', '1.zip') already exists. (BACKUP_ALREADY_EXISTS) (version 22.8.2.11 (official build))
+start_time:        2022-08-30 09:21:46
+end_time:          2022-08-30 09:21:46
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+除了 [`system.backups`](/zh/reference/system-tables/backups) 表外，所有备份和恢复操作也会记录在系统日志表
+[`system.backup_log`](/zh/reference/system-tables/backup_log) 中：
+
+```sql
+SELECT *
+FROM system.backup_log
+WHERE id = '7678b0b3-f519-4e6e-811f-5a0781a4eb52'
+ORDER BY event_time_microseconds ASC
+FORMAT Vertical
+```
+
+```response highlight={26}
+Row 1:
+──────
+event_date:              2023-08-18
+event_time_microseconds: 2023-08-18 11:13:43.097414
+id:                      7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:                    Disk('backups', '1.zip')
+status:                  CREATING_BACKUP
+error:
+start_time:              2023-08-18 11:13:43
+end_time:                1970-01-01 03:00:00
+num_files:               0
+total_size:              0
+num_entries:             0
+uncompressed_size:       0
+compressed_size:         0
+files_read:              0
+bytes_read:              0
+
+Row 2:
+──────
+event_date:              2023-08-18
+event_time_microseconds: 2023-08-18 11:13:43.174782
+id:                      7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:                    Disk('backups', '1.zip')
+status:                  BACKUP_FAILED
+error:                   Code: 598. DB::Exception: Backup Disk('backups', '1.zip') already exists. (BACKUP_ALREADY_EXISTS) (version 23.8.1.1)
+start_time:              2023-08-18 11:13:43
+end_time:                2023-08-18 11:13:43
+num_files:               0
+total_size:              0
+num_entries:             0
+uncompressed_size:       0
+compressed_size:         0
+files_read:              0
+bytes_read:              0
+
+2 rows in set. Elapsed: 0.075 sec.
+```

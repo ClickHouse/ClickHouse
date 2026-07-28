@@ -44,8 +44,8 @@ void FrequencyHolder::loadEncodingsFrequency()
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "There is no embedded charset frequencies");
 
     String line;
-    UInt16 bigram;
-    Float64 frequency;
+    UInt16 bigram = 0;
+    Float64 frequency = 0;
     String charset_name;
 
     auto buf = std::make_unique<ReadBufferFromMemory>(resource);
@@ -83,7 +83,7 @@ void FrequencyHolder::loadEncodingsFrequency()
         {
             readIntText(bigram, buf_line);
             buf_line.ignore();
-            readFloatText(frequency, buf_line);
+            readFloatTextPrecise(frequency, buf_line);
 
             encodings_freq.back().map[bigram] = frequency;
         }
@@ -102,7 +102,7 @@ void FrequencyHolder::loadEmotionalDict()
 
     String line;
     String word;
-    Float64 tonality;
+    Float64 tonality = 0;
     size_t count = 0;
 
     auto buf = std::make_unique<ReadBufferFromMemory>(resource);
@@ -120,7 +120,7 @@ void FrequencyHolder::loadEmotionalDict()
 
         readStringUntilWhitespace(word, buf_line);
         buf_line.ignore();
-        readFloatText(tonality, buf_line);
+        readFloatTextPrecise(tonality, buf_line);
 
         std::string_view ref{string_pool.insert(word.data(), word.size()), word.size()};
         emotional_dict[ref] = tonality;

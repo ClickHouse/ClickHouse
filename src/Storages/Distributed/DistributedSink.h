@@ -36,7 +36,7 @@ class PushingPipelineExecutor;
  *  and the resulting blocks are written in a compressed Native format in separate directories for sending.
  *  For each destination address (each directory with data to send), a separate thread is created in StorageDistributed,
  *  which monitors the directory and sends data. */
-class DistributedSink : public SinkToStorage
+class DistributedSink final : public SinkToStorage
 {
 public:
     DistributedSink(
@@ -123,6 +123,9 @@ private:
         size_t shard_index = 0;
         size_t replica_index = 0;
         bool is_local_job = false;
+
+        /// The shard reported an ignorable error (see `skip_unavailable_shards_mode`); discard its data.
+        bool skip = false;
 
         Block current_shard_block;
 

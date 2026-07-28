@@ -8,8 +8,6 @@ title: 'DateTime'
 doc_type: 'reference'
 ---
 
-# DateTime
-
 Allows to store an instant in time, that can be expressed as a calendar date and a time of a day.
 
 Syntax:

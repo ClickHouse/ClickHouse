@@ -1,2 +1,6 @@
 [libfuzzer]
 timeout = 20
+
+[fuzzer_arguments]
+max_parser_depth = 100
+max_parser_backtracks = 1000

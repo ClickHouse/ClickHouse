@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -45,7 +46,7 @@ private:
 
     QueryPlanResourceHolder resources;
 
-    Processors buildReaders();
+    Pipe buildPipe();
 };
 
 }

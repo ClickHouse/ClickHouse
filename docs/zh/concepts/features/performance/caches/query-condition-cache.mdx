@@ -1,0 +1,80 @@
+---
+description: '在 ClickHouse 中使用和配置查询条件缓存功能的指南'
+sidebarTitle: '查询条件缓存'
+slug: /operations/query-condition-cache
+title: '查询条件缓存'
+doc_type: 'guide'
+---
+
+<Note>
+  只有在 [enable&#95;analyzer](/zh/reference/settings/session-settings#enable_analyzer) 设置为 true 时，查询条件缓存才会生效，而这也是默认值。
+</Note>
+
+许多真实场景中的工作负载都会针对相同或几乎相同的数据反复执行查询 (例如，在已有数据的基础上又新增了一些数据) 。
+ClickHouse 提供了多种优化技术来优化这类查询模式。
+一种方法是通过索引结构 (例如主键索引、跳过索引、projections) 或预计算 (materialized views) 来调整物理数据布局。
+另一种方法是使用 ClickHouse 的[查询缓存](/zh/concepts/features/performance/caches/query-cache)来避免重复执行查询求值。
+第一种方法的缺点是需要数据库管理员手动干预和监控。
+第二种方法则可能返回过时的结果 (因为查询缓存在事务上并不一致) ，而这是否可以接受则取决于具体用例。
+
+查询条件缓存为这两个问题提供了一种巧妙的解决方案。
+它基于这样一个思路：在相同数据上对同一个过滤条件 (例如 `WHERE col = 'xyz'`) 进行求值，始终会得到相同的结果。
+更具体地说，对于每个已求值的过滤器和每个粒度 (即一个块，默认包含 8192 行) ，查询条件缓存都会记录该粒度中是否没有任何行满足该过滤条件。
+这些信息会以单个比特的形式记录：0 表示没有任何行匹配该过滤器，1 表示至少有一行匹配。
+在前一种情况下，ClickHouse 可以在求值过滤条件时跳过相应的粒度；在后一种情况下，则必须加载该粒度并进行求值。
+
+当以下三个前置条件满足时，查询条件缓存会非常有效：
+
+* 第一，工作负载必须重复求值相同的过滤条件。如果同一个查询被多次重复执行，这种情况会自然出现；如果两个查询使用了相同的过滤器，也会出现这种情况，例如 `SELECT product FROM products WHERE quality > 3` 和 `SELECT vendor, count() FROM products WHERE quality > 3`。
+* 第二，大多数数据必须是不可变的，也就是说，在多次查询之间不会发生变化。在 ClickHouse 中，这通常成立，因为 parts 是不可变的，并且只会通过 INSERT 创建。
+* 第三，过滤器必须具有较高的选择性，也就是说，只有相对较少的行满足过滤条件。匹配过滤条件的行越少，被记录为 0 比特 (无匹配行) 的粒度就越多，后续求值过滤条件时可被“剪枝”的数据也就越多。
+
+<div id="memory-consumption">
+  ## 内存消耗
+</div>
+
+由于查询条件缓存对每个过滤条件和粒度仅存储一个比特，因此占用的内存很少。
+查询条件缓存的最大大小可通过服务器设置 [`query_condition_cache_size`](/zh/reference/settings/server-settings/settings#query_condition_cache_size) 配置 (默认值：100 MB) 。
+100 MB 的缓存大小对应 100 * 1024 * 1024 * 8 = 838,860,800 个条目。
+由于每个条目代表一个标记 (默认情况下为 8192 行) ，因此该缓存最多可覆盖单列的 6,871,947,673,600 (6.8 万亿) 行。
+在实际场景中，过滤条件通常会在多个列上求值，因此这个数字需要除以被过滤的列数。
+
+<div id="configuration-settings-and-usage">
+  ## 配置项及用法
+</div>
+
+设置 [use&#95;query&#95;condition&#95;cache](/zh/reference/settings/session-settings#use_query_condition_cache) 用于控制某个特定查询或当前会话中的所有查询是否使用查询条件缓存。
+
+例如，首次执行该查询时
+
+```sql
+SELECT col1, col2
+FROM table
+WHERE col1 = 'x'
+SETTINGS use_query_condition_cache = true;
+```
+
+将存储表中不满足谓词的范围。
+后续执行相同查询时，如果同样使用参数 `use_query_condition_cache = true`，将利用查询条件缓存以减少扫描的数据量。
+
+<div id="administration">
+  ## 管理
+</div>
+
+查询条件缓存不会在 ClickHouse 重启后保留。
+
+要清除查询条件缓存，请运行 [`SYSTEM CLEAR QUERY CONDITION CACHE`](/zh/reference/statements/system#drop-query-condition-cache)。
+
+缓存内容显示在系统表 [system.query&#95;condition&#95;cache](/zh/reference/system-tables/query_condition_cache) 中。
+要以 MB 为单位计算当前查询条件缓存的大小，请运行 `SELECT formatReadableSize(sum(entry_size)) FROM system.query_condition_cache`。
+如果你想查看单个过滤条件，可以检查 `system.query_condition_cache` 中的 `condition` 字段。请注意，该字段仅在 debug 构建中可用。
+
+自数据库启动以来，查询条件缓存的命中次数和未命中次数会在系统表 [system.events](/zh/reference/system-tables/events) 中显示为事件 &quot;QueryConditionCacheHits&quot; 和 &quot;QueryConditionCacheMisses&quot;。
+只有在设置 `use_query_condition_cache = true` 时运行的 `SELECT` 查询才会更新这两个计数器，其他查询不会影响 &quot;QueryCacheMisses&quot;。
+
+<div id="related-content">
+  ## 相关内容
+</div>
+
+* 博客：[查询条件缓存简介](https://clickhouse.com/blog/introducing-the-clickhouse-query-condition-cache)
+* [Predicate Caching: Query-Driven Secondary Indexing for Cloud Data Warehouses (Schmidt et. al., 2024)](https://doi.org/10.1145/3626246.3653395)

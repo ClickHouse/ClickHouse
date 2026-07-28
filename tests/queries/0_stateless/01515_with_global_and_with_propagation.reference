@@ -9,45 +9,53 @@
 107	7
 108	8
 109	9
-WITH 1 AS x
+WITH
+    1 AS x
 SELECT x
 FROM system.one
-WITH 1 AS x
+WITH
+    1 AS x
 SELECT *
 FROM
 (
     SELECT x
     FROM system.one
 )
-WITH 1 AS x
+WITH
+    1 AS x
 SELECT
     *,
     x
 FROM
 (
-    WITH 2 AS x
+    WITH
+        2 AS x
     SELECT x AS y
     FROM system.one
 )
 (
-    WITH 1 AS x
+    WITH
+        1 AS x
     SELECT x
     FROM system.one
 )
 UNION ALL
 (
-    WITH 1 AS x
+    WITH
+        1 AS x
     SELECT x
     FROM system.one
 )
 (
-    WITH 1 AS x
+    WITH
+        1 AS x
     SELECT x
     FROM system.one
 )
 UNION ALL
 (
-    WITH 2 AS x
+    WITH
+        2 AS x
     SELECT x
     FROM system.one
 )
@@ -56,10 +64,10 @@ WITH
     x AS
     (
         SELECT
-            number + 100 AS b,
+            plus(number, 100) AS b,
             number AS a
         FROM numbers(10)
-        WHERE number > q1
+        WHERE greater(number, q1)
     )
 SELECT *
 FROM x

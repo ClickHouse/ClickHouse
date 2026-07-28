@@ -7,6 +7,7 @@
 #include <Analyzer/SortNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
@@ -21,7 +22,7 @@ namespace Setting
 }
 
 /// Append ORDER BY rand() to an order-by list
-void addRandomOrderBy(ListNode & order_by_list_node, ContextPtr context)
+static void addRandomOrderBy(ListNode & order_by_list_node, ContextPtr context)
 {
     /// Build rand() node
     auto & function_factory = FunctionFactory::instance();
@@ -35,7 +36,7 @@ void addRandomOrderBy(ListNode & order_by_list_node, ContextPtr context)
 }
 
 /// Wrap query_root in new QueryNode that includes a random order by
-void wrapWithSelectOrderBy(QueryTreeNodePtr & query_root, ContextPtr context)
+static void wrapWithSelectOrderBy(QueryTreeNodePtr & query_root, ContextPtr context)
 {
     auto * query_node = query_root->as<QueryNode>();
 

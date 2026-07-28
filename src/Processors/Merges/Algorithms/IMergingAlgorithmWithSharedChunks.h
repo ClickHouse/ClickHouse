@@ -35,7 +35,7 @@ protected:
     struct Source
     {
         detail::SharedChunkPtr chunk;
-        bool skip_last_row;
+        bool skip_last_row{};
     };
 
     /// Sources currently being merged.

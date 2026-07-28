@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <Parsers/IAST.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -15,7 +16,7 @@ public:
     /// Ranges to lookup in json array ($[0, 1, 2, 4 to 9])
     /// Range is represented as <start, end (non-inclusive)>
     /// Single index is represented as <start, start + 1>
-    std::vector<std::pair<UInt32, UInt32>> ranges;
+    VectorWithMemoryTracking<std::pair<UInt32, UInt32>> ranges;
     bool is_star = false;
 };
 

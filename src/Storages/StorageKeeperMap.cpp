@@ -25,6 +25,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 
@@ -70,6 +71,9 @@
 #include <base/types.h>
 
 #include <boost/core/noncopyable.hpp>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 namespace DB
 {
@@ -130,7 +134,7 @@ void verifyTableId(const StorageID & table_id)
 
 }
 
-class StorageKeeperMapSink : public SinkToStorage
+class StorageKeeperMapSink final : public SinkToStorage
 {
     StorageKeeperMap & storage;
     std::unordered_map<std::string, std::string> new_values;
@@ -279,7 +283,7 @@ public:
 };
 
 template <typename KeyContainer>
-class StorageKeeperMapSource : public ISource, WithContext
+class StorageKeeperMapSource final : public ISource, WithContext
 {
     const StorageKeeperMap & storage;
     size_t max_block_size;
@@ -1033,6 +1037,10 @@ void StorageKeeperMap::drop()
 
     // used in private build
     bool do_not_drop_table_data_in_keeper = false;
+#if CLICKHOUSE_CLOUD
+    /// In case of Shared Catalog, table data in ZooKeeper will be dropped separately
+    do_not_drop_table_data_in_keeper = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::instance().isTableInLocalDropOrDetachQueue(getStorageID().uuid);
+#endif
     if (do_not_drop_table_data_in_keeper)
         return;
 
@@ -1448,13 +1456,26 @@ StorageKeeperMap::TableStatus StorageKeeperMap::getTableStatus(const ContextPtr 
 
 Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, const Names &, PaddedPODArray<UInt8> & null_map, IColumn::Offsets & /* out_offsets */) const
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::getByKeys");
+
     if (keys.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageKeeperMap supports only one key, got: {}", keys.size());
 
-    auto raw_keys = serializeKeysToRawString(keys[0]);
+    /// `StorageMetadataHandle` owns the snapshot, so it has to be bound to a named local:
+    /// `operator->` is deleted on a temporary.
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto pk_type = metadata_snapshot->getSampleBlock().getByName(primary_key).type;
+    /// `null_map` is an output parameter, so start from a clean state: `resize_fill` alone would keep
+    /// pre-existing values if the caller passed an already sized array.
+    null_map.clear();
+    null_map.resize_fill(keys[0].column->size(), 1);
+    auto raw_keys = serializeKeysToRawString(keys[0], pk_type, &null_map);
 
     if (raw_keys.size() != keys[0].column->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != {}", raw_keys.size(), keys[0].column->size());
+
+    for (auto & raw_key : raw_keys)
+        raw_key = base64Encode(raw_key, /* url_encoding */ true);
 
     return getBySerializedKeys(raw_keys, &null_map, /* version_column */ false, getContext());
 }
@@ -1462,7 +1483,8 @@ Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, const Nam
 Chunk StorageKeeperMap::getBySerializedKeys(
     const std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map, bool with_version, const ContextPtr & local_context) const
 {
-    Block sample_block = getInMemoryMetadataPtr(local_context, false)->getSampleBlock();
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    Block sample_block = metadata_snapshot->getSampleBlock();
     MutableColumns columns = sample_block.cloneEmptyColumns();
     MutableColumnPtr version_column = nullptr;
 
@@ -1471,17 +1493,24 @@ Chunk StorageKeeperMap::getBySerializedKeys(
 
     size_t primary_key_pos = getPrimaryKeyPos(sample_block, getPrimaryKey());
 
-    if (null_map)
-    {
-        null_map->clear();
-        null_map->resize_fill(keys.size(), 1);
-    }
+    if (null_map && null_map->size() != keys.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "StorageKeeperMap::getBySerializedKeys: null_map size {} does not match keys size {}",
+            null_map->size(), keys.size());
 
     Strings full_key_paths;
     full_key_paths.reserve(keys.size());
 
-    for (const auto & key : keys)
-        full_key_paths.emplace_back(fullPathForKey(key));
+    for (size_t i = 0; i < keys.size(); ++i)
+    {
+        if (null_map && !(*null_map)[i])
+        {
+            /// Use a placeholder path; the result will be discarded below.
+            full_key_paths.emplace_back(fullPathForKey({}));
+            continue;
+        }
+        full_key_paths.emplace_back(fullPathForKey(keys[i]));
+    }
 
     const auto & settings = local_context->getSettingsRef();
     ZooKeeperRetriesControl zk_retry{
@@ -1501,6 +1530,16 @@ Chunk StorageKeeperMap::getBySerializedKeys(
 
     for (size_t i = 0; i < keys.size(); ++i)
     {
+        if (null_map && !(*null_map)[i])
+        {
+            for (size_t col_idx = 0; col_idx < sample_block.columns(); ++col_idx)
+                columns[col_idx]->insert(sample_block.getByPosition(col_idx).type->getDefault());
+
+            if (version_column)
+                version_column->insert(-1);
+            continue;
+        }
+
         auto response = values[i];
 
         Coordination::Error code = response.error;
@@ -1646,7 +1685,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
                     settings[Setting::keeper_retry_max_backoff_ms],
                     local_context->getProcessListElement()}};
 
-            Coordination::Error status;
+            Coordination::Error status = {};
             zk_retry.retryLoop([&]
             {
                 auto client = getClient();
@@ -1678,7 +1717,8 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
     }
 
     chassert(commands.front().type == MutationCommand::Type::UPDATE);
-    if (commands.front().column_to_update_expression.contains(primary_key))
+    auto alter = commands.front().ast();
+    if (getColumnToUpdateExpression(*alter).contains(primary_key))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", primary_key);
 
     MutationsInterpreter::Settings settings(true);
@@ -1742,7 +1782,12 @@ StoragePtr create(const StorageFactory::Arguments & args)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageKeeperMap requires one column in primary key");
 
     // used in private build
+#if CLICKHOUSE_CLOUD
+    const auto & client_info = args.getLocalContext()->getClientInfo();
+    bool override_metadata = client_info.is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(args.getLocalContext());
+#else
     bool override_metadata = false;
+#endif
 
     return std::make_shared<StorageKeeperMap>(
         args.getContext(), args.table_id, metadata, args.query.attach, primary_key_names[0], zk_root_path, keys_limit, override_metadata);
@@ -1750,6 +1795,7 @@ StoragePtr create(const StorageFactory::Arguments & args)
 
 }
 
+void registerStorageKeeperMap(StorageFactory & factory);
 void registerStorageKeeperMap(StorageFactory & factory)
 {
     factory.registerStorage(
@@ -1758,6 +1804,120 @@ void registerStorageKeeperMap(StorageFactory & factory)
         {
             .supports_sort_order = true,
             .supports_parallel_insert = true,
+        },
+        Documentation{
+            .description = R"DOCS_MD(
+This engine allows you to use Keeper/ZooKeeper cluster as consistent key-value store with linearizable writes and sequentially consistent reads.
+
+To enable KeeperMap storage engine, you need to define a ZooKeeper path where the tables will be stored using `<keeper_map_path_prefix>` config.
+
+For example:
+
+```xml
+<clickhouse>
+    <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+</clickhouse>
+```
+
+where path can be any other valid ZooKeeper path.
+
+## Creating a table {#creating-a-table}
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = KeeperMap(root_path, [keys_limit]) PRIMARY KEY(primary_key_name)
+```
+
+Engine parameters:
+
+- `root_path` - ZooKeeper path where the `table_name` will be stored.
+This path should not contain the prefix defined by `<keeper_map_path_prefix>` config because the prefix will be automatically appended to the `root_path`.
+Additionally, format of `auxiliary_zookeeper_cluster_name:/some/path` is also supported where `auxiliary_zookeeper_cluster` is a ZooKeeper cluster defined inside `<auxiliary_zookeepers>` config.
+By default, ZooKeeper cluster defined inside `<zookeeper>` config is used.
+- `keys_limit` - number of keys allowed inside the table.
+This limit is a soft limit and it can be possible that more keys will end up in the table for some edge cases.
+- `primary_key_name` – any column name in the column list.
+- `primary key` must be specified, it supports only one column in the primary key. The primary key will be serialized in binary as a `node name` inside ZooKeeper.
+- columns other than the primary key will be serialized to binary in corresponding order and stored as a value of the resulting node defined by the serialized key.
+- queries with key `equals` or `in` filtering will be optimized to multi keys lookup from `Keeper`, otherwise all values will be fetched.
+
+Example:
+
+```sql
+CREATE TABLE keeper_map_table
+(
+    `key` String,
+    `v1` UInt32,
+    `v2` String,
+    `v3` Float32
+)
+ENGINE = KeeperMap('/keeper_map_table', 4)
+PRIMARY KEY key
+```
+
+with
+
+```xml
+<clickhouse>
+    <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+</clickhouse>
+```
+
+Each value, which is binary serialization of `(v1, v2, v3)`, will be stored inside `/keeper_map_tables/keeper_map_table/data/serialized_key` in `Keeper`.
+Additionally, number of keys will have a soft limit of 4 for the number of keys.
+
+If multiple tables are created on the same ZooKeeper path, the values are persisted until there exists at least 1 table using it.
+As a result, it is possible to use `ON CLUSTER` clause when creating the table and sharing the data from multiple ClickHouse instances.
+Of course, it's possible to manually run `CREATE TABLE` with same path on unrelated ClickHouse instances to have same data sharing effect.
+
+## Supported operations {#supported-operations}
+
+### Inserts {#inserts}
+
+When new rows are inserted into `KeeperMap`, if the key does not exist, a new entry for the key is created.
+If the key exists, and setting `keeper_map_strict_mode` is set to `true`, an exception is thrown, otherwise, the value for the key is overwritten.
+
+Example:
+
+```sql
+INSERT INTO keeper_map_table VALUES ('some key', 1, 'value', 3.2);
+```
+
+### Deletes {#deletes}
+
+Rows can be deleted using `DELETE` query or `TRUNCATE`.
+If the key exists, and setting `keeper_map_strict_mode` is set to `true`, fetching and deleting data will succeed only if it can be executed atomically.
+
+```sql
+DELETE FROM keeper_map_table WHERE key LIKE 'some%' AND v1 > 1;
+```
+
+```sql
+ALTER TABLE keeper_map_table DELETE WHERE key LIKE 'some%' AND v1 > 1;
+```
+
+```sql
+TRUNCATE TABLE keeper_map_table;
+```
+
+### Updates {#updates}
+
+Values can be updated using `ALTER TABLE` query. Primary key cannot be updated.
+If setting `keeper_map_strict_mode` is set to `true`, fetching and updating data will succeed only if it's executed atomically.
+
+```sql
+ALTER TABLE keeper_map_table UPDATE v1 = v1 * 10 + 2 WHERE key LIKE 'some%' AND v3 > 3.1;
+```
+
+## Related content {#related-content}
+
+- Blog: [Building a Real-time Analytics Apps with ClickHouse and Hex](https://clickhouse.com/blog/building-real-time-applications-with-clickhouse-and-hex-notebook-keeper-engine)
+)DOCS_MD",
+            .syntax = "ENGINE = KeeperMap(root_path[, keys_limit]) PRIMARY KEY(primary_key_name)",
         });
 }
 

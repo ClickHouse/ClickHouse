@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Formats/FormatFilterInfo.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
@@ -39,18 +40,42 @@ public:
         return data_file_names;
     }
 
+    const std::vector<UInt64> & getDataFileRowCounts() const
+    {
+        return data_file_row_counts;
+    }
+
+    const std::vector<UInt64> & getDataFileByteCounts() const
+    {
+        return data_file_byte_counts;
+    }
+
     const DataFileStatistics & getResultStatistics() const
     {
         return stats;
     }
 
+    const std::vector<DataFileStatisticsPtr> & getPerFileStatistics() const
+    {
+        return completed_file_stats;
+    }
+
 private:
     UInt64 max_data_file_num_rows;
     UInt64 max_data_file_num_bytes;
+    Poco::JSON::Array::Ptr schema;
     DataFileStatistics stats;
+    DataFileStatisticsPtr current_file_stats;
+    std::vector<DataFileStatisticsPtr> completed_file_stats;
+    /// Pre-built ColumnMapper for `startNewFile`. Traversing the Iceberg schema is invariant
+    /// for the lifetime of the writer, so we compute the mapping once and reuse it across
+    /// every rolled-over data file instead of recomputing it on each rollover.
+    ColumnMapperPtr column_mapper;
     std::optional<size_t> current_file_num_rows = std::nullopt;
     std::optional<size_t> current_file_num_bytes = std::nullopt;
     std::vector<Iceberg::IcebergPathFromMetadata> data_file_names;
+    std::vector<UInt64> data_file_row_counts;
+    std::vector<UInt64> data_file_byte_counts;
     std::unique_ptr<WriteBufferFromFileBase> buffer;
     OutputFormatPtr output_format;
     FileNamesGenerator & filename_generator;

@@ -53,8 +53,8 @@ public:
     struct FileInfo
     {
         String path;
-        UInt64 last_modify_time; /// In ms
-        size_t size;
+        UInt64 last_modify_time{}; /// In ms
+        size_t size{};
 
         explicit FileInfo() = default;
         FileInfo & operator = (const FileInfo &) = default;

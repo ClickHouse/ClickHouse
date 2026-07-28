@@ -159,23 +159,6 @@ void HedgedConnections::sendExternalTablesData(std::vector<ExternalTablesData> &
     pipeline_for_new_replicas.add(send_external_tables_data);
 }
 
-void HedgedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
-{
-    std::lock_guard lock(cancel_mutex);
-
-    if (sent_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send uuids after query is sent.");
-
-    auto send_ignored_part_uuids = [&uuids](ReplicaState & replica) { replica.connection->sendIgnoredPartUUIDs(uuids); };
-
-    for (auto & offset_state : offset_states)
-        for (auto & replica : offset_state.replicas)
-            if (replica.connection)
-                send_ignored_part_uuids(replica);
-
-    pipeline_for_new_replicas.add(send_ignored_part_uuids);
-}
-
 void HedgedConnections::sendQuery(
     const ConnectionTimeouts & timeouts,
     const String & query,
@@ -396,7 +379,7 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
             return location;
     }
 
-    int event_fd;
+    int event_fd = 0;
     while (true)
     {
         /// Get ready file descriptor from epoll and process it.
@@ -461,7 +444,7 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
 
 int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
 {
-    epoll_event event;
+    epoll_event event{};
     event.data.fd = -1;
     size_t events_count = 0;
     bool blocking = !static_cast<bool>(async_callback);

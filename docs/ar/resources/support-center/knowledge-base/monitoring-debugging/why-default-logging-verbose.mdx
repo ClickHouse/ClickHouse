@@ -1,0 +1,53 @@
+---
+date: 2025-01-10
+title: لماذا يكون تسجيل ClickHouse مفصّلًا جدًا افتراضيًا؟
+description: "تعرّف على سبب اختيار مطوّري ClickHouse تعيين مستوى تسجيل مفصّل كإعداد افتراضي."
+tags: ['الإعدادات']
+keywords: ['التسجيل الافتراضي']
+---
+
+<div id="verbose-logging">
+  ## التسجيل التفصيلي
+</div>
+
+من الأمور التي تُربك المستخدمين الجدد كثيرًا أن ClickHouse يُنتج قدرًا كبيرًا من سجلات الإخراج، حتى مع الحمل الخفيف.
+
+ويرجع ذلك إلى أن مستوى السجل الافتراضي، لأسباب تاريخية، هو `trace` (بدلًا من `warning`، الذي يكون عادةً المستوى الافتراضي في قواعد البيانات الأخرى).
+
+ويرى مطوّرو ClickHouse أن `trace` يوفّر قدرًا كبيرًا من المعلومات المفيدة إذا حدث خطأ ما.
+
+ومن ناحية أخرى، فإن كثرة السجلات تعني أن جدول النظام `system.text_log` يمتلئ بسرعة ويحتاج إلى دمجه في الخلفية.
+
+إذا كانت قاعدة البيانات تعمل بشكل مستقر، فيمكن للمستخدمين إعادة ضبط مستوى التسجيل، وهو ما نشرح كيفية القيام به أدناه.
+
+<div id="change-the-log-level">
+  ## تغيير مستوى التسجيل
+</div>
+
+مستويات التسجيل المختلفة المتاحة موثقة [هنا](/ar/reference/settings/server-settings/settings#logger)
+
+ستحتاج إلى تعديل ملف إعدادات خادم ClickHouse (`/etc/clickhouse-server/config.xml`) لتغيير مستوى التسجيل.
+
+القيمة الافتراضية هي `trace`، ولكن يمكنك تغييرها إلى المستوى المطلوب. راجع التعليق أدناه:
+
+```
+<clickhouse>
+    <logger>
+        {/* Possible levels [1]:
+
+          - none (turns off logging)
+          - fatal
+          - critical
+          - error
+          - warning
+          - notice
+          - information
+          - debug
+          - trace
+          - test (not for production usage)
+
+            [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114 */}
+        <level>trace</level>
+... Rest of the configuration file
+</clickhouse>
+```

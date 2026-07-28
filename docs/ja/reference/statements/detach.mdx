@@ -1,0 +1,73 @@
+---
+description: 'DETACH に関するドキュメント'
+sidebarTitle: 'DETACH'
+slug: /sql-reference/statements/detach
+title: 'DETACH ステートメント'
+doc_type: 'reference'
+---
+
+サーバーが、テーブル、materialized view、Dictionary、またはデータベースの存在を&quot;忘れる&quot;ようにします。
+
+**構文**
+
+```sql
+DETACH TABLE|VIEW|DICTIONARY|DATABASE [IF EXISTS] [db.]name [ON CLUSTER cluster] [PERMANENTLY] [SYNC]
+```
+
+デタッチしても、テーブル、materialized view、Dictionary、またはデータベースのデータやメタデータは削除されません。エンティティが `PERMANENTLY` でデタッチされていない場合、次回サーバーの起動時にサーバーはメタデータを読み込み、そのテーブル/ビュー/Dictionary/データベースを再度認識します。エンティティが `PERMANENTLY` でデタッチされている場合は、自動的に再度認識されることはありません。
+
+テーブル、Dictionary、またはデータベースが永続的にデタッチされているかどうかにかかわらず、いずれの場合も [ATTACH](/ja/reference/statements/attach) クエリを使用して再アタッチできます。
+システムのログテーブルも再アタッチできます (例: `query_log`、`text_log` など) 。そのほかのシステムテーブルは再アタッチできません。これらのテーブルは、次回サーバーの起動時にサーバーが再度認識します。
+
+`ATTACH MATERIALIZED VIEW` は短縮構文 (`SELECT` なし) では機能しませんが、`ATTACH TABLE` クエリを使ってアタッチできます。
+
+なお、すでに (一時的に) デタッチされているテーブルを永続的にデタッチすることはできません。ただし、いったん再アタッチしてから、あらためて永続的にデタッチすることはできます。
+
+また、デタッチされたテーブルを [DROP](/ja/reference/statements/drop#drop-table) したり、永続的にデタッチされたテーブルと同じ名前で [CREATE TABLE](/ja/reference/statements/create/table) したり、[RENAME TABLE](/ja/reference/statements/rename) クエリで別のテーブルに置き換えたりすることはできません。
+
+`SYNC` modifier は、遅延なくアクションを実行します。
+
+**例**
+
+テーブルを作成します:
+
+```sql title="Query"
+CREATE TABLE test ENGINE = MergeTree ORDER BY () AS SELECT * FROM numbers(10);
+SELECT * FROM test;
+```
+
+```text title="Response"
+┌─number─┐
+│      0 │
+│      1 │
+│      2 │
+│      3 │
+│      4 │
+│      5 │
+│      6 │
+│      7 │
+│      8 │
+│      9 │
+└────────┘
+```
+
+テーブルをデタッチする:
+
+```sql title="Query"
+DETACH TABLE test;
+SELECT * FROM test;
+```
+
+```text title="Response"
+Received exception from server (version 21.4.1):
+Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.test does not exist.
+```
+
+<Note>
+  ClickHouse Cloud では、`PERMANENTLY` 句を使用してください (例: `DETACH TABLE <table> PERMANENTLY`) 。この句を使用しない場合、アップグレード時などにクラスターが再起動すると、テーブルは再度アタッチされます。
+</Note>
+
+**関連項目**
+
+* [Materialized View](/ja/reference/statements/create/view#materialized-view)
+* [Dictionaries](/ja/reference/statements/create/dictionary)

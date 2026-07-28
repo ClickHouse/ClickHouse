@@ -20,10 +20,14 @@
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromStreamLikeEngine.h>
 #include <Processors/Sources/BlocksListSource.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/ColumnDefault.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/Kafka/Kafka2Source.h>
 #include <Storages/Kafka/KafkaConfigLoader.h>
 #include <Storages/Kafka/KafkaConsumer2.h>
 #include <Storages/Kafka/KafkaProducer.h>
@@ -37,6 +41,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -69,6 +74,7 @@ extern const Metric KafkaWrites;
 
 namespace ProfileEvents
 {
+extern const Event KafkaDirectReads;
 extern const Event KafkaBackgroundReads;
 extern const Event KafkaMessagesRead;
 extern const Event KafkaMessagesFailed;
@@ -95,7 +101,9 @@ namespace KafkaSetting
     extern const KafkaSettingsFloat input_format_allow_errors_ratio;
     extern const KafkaSettingsString kafka_broker_list;
     extern const KafkaSettingsString kafka_client_id;
+    extern const KafkaSettingsBool kafka_commit_on_select;
     extern const KafkaSettingsMilliseconds kafka_flush_interval_ms;
+    extern const KafkaSettingsMilliseconds kafka_consumer_acquire_timeout_ms;
     extern const KafkaSettingsMilliseconds kafka_consumer_reschedule_ms;
     extern const KafkaSettingsString kafka_format;
     extern const KafkaSettingsString kafka_group_name;
@@ -116,14 +124,23 @@ namespace KafkaSetting
 
 namespace fs = std::filesystem;
 
+namespace FailPoints
+{
+extern const char kafka2_remove_zk_before_get_children[];
+extern const char kafka2_remove_zk_before_final_multi[];
+}
+
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
 extern const int LOGICAL_ERROR;
+extern const int QUERY_NOT_ALLOWED;
+extern const int ABORTED;
 extern const int REPLICA_ALREADY_EXISTS;
 extern const int TABLE_IS_DROPPED;
 extern const int NO_ZOOKEEPER;
 extern const int REPLICA_IS_ALREADY_ACTIVE;
+extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -138,7 +155,7 @@ StorageKafka2::StorageKafka2(
     const String & comment,
     std::unique_ptr<KafkaSettings> kafka_settings_,
     const String & collection_name_)
-    : IStorage(table_id_)
+    : IStreamingStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , keeper(getContext()->getZooKeeper())
     , keeper_path((*kafka_settings_)[KafkaSetting::kafka_keeper_path].value)
@@ -256,7 +273,7 @@ bool StorageKafka2::activate()
     {
         /// The exception when you try to zookeeper_init usually happens if DNS does not work or the connection with ZK fails
         tryLogCurrentException(log, "Failed to establish a new ZK connection. Will try again");
-        assert(!is_active);
+        chassert(!is_active);
         return false;
     }
 
@@ -313,7 +330,7 @@ bool StorageKafka2::activate()
 
     if (!activate_in_keeper())
     {
-        assert(!is_active);
+        chassert(!is_active);
         return false;
     }
 
@@ -378,16 +395,126 @@ void StorageKafka2::assertActive() const
 }
 
 
-Pipe StorageKafka2::read(
-    const Names & /*column_names */,
-    const StorageSnapshotPtr & /* storage_snapshot */,
-    SelectQueryInfo & /* query_info */,
-    ContextPtr /* local_context */,
+class ReadFromStorageKafka2 final : public ReadFromStreamLikeEngine
+{
+public:
+    ReadFromStorageKafka2(
+        const Names & column_names_,
+        StoragePtr storage_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        SelectQueryInfo & query_info,
+        ContextPtr context_)
+        : ReadFromStreamLikeEngine{column_names_, storage_snapshot_, query_info.storage_limits, context_}
+        , column_names{column_names_}
+        , storage{storage_}
+        , storage_snapshot{storage_snapshot_}
+    {
+    }
+
+    String getName() const override { return "ReadFromStorageKafka2"; }
+
+private:
+    Pipe makePipe() final
+    {
+        auto & kafka_storage = storage->as<StorageKafka2 &>();
+        if (kafka_storage.shutdown_called)
+            throw Exception(ErrorCodes::ABORTED, "Table is detached");
+
+        ProfileEvents::increment(ProfileEvents::KafkaDirectReads);
+
+        /// Atomically check that no materialized view is attached, that no MV streamer is active,
+        /// collect indices of consumers that were successfully created (some slots may be empty if
+        /// creation failed in `startup`), and register all direct readers.
+        ///
+        /// All checks are done under `consumers_mutex` to prevent two TOCTOU races:
+        ///   1. With `threadFunc`, which performs the symmetric check (`active_direct_readers == 0`)
+        ///      before starting MV streaming — without the mutex, both sides could pass their
+        ///      checks simultaneously.
+        ///   2. With an `ATTACH MATERIALIZED VIEW` running between an earlier `getDependentViews`
+        ///      check and the `active_mv_streamers` check — that would admit a direct read while
+        ///      an MV is already attached (the MV's first streamer iteration hasn't run yet, so
+        ///      `active_mv_streamers` is still 0).
+        ///
+        /// Note: `consumers_mutex` does not synchronize with DDL itself. After we register as a
+        /// direct reader, an `ATTACH MATERIALIZED VIEW` can still happen — but in that case
+        /// `threadFunc` will see `active_direct_readers > 0` and skip streaming until the direct
+        /// read completes, so the contract "no concurrent MV streaming with direct reads" holds.
+        std::vector<size_t> valid_consumer_indices;
+        {
+            std::lock_guard lock(kafka_storage.consumers_mutex);
+
+            /// Reject direct reads whenever a materialized view is attached, even if no streamer
+            /// is currently running. Between consecutive `threadFunc` invocations (reschedule gaps),
+            /// `active_mv_streamers` is 0 while the MV is still attached, so checking the streamer
+            /// counter alone would let direct reads sneak in and produce inconsistent user behavior.
+            if (!DatabaseCatalog::instance().getDependentViews(kafka_storage.getStorageID()).empty())
+                throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka2 with attached materialized views");
+
+            if (kafka_storage.active_mv_streamers.load() > 0)
+                throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka2 with attached materialized views");
+
+            valid_consumer_indices.reserve(kafka_storage.consumers.size());
+            for (size_t i = 0; i < kafka_storage.consumers.size(); ++i)
+                if (kafka_storage.consumers[i])
+                    valid_consumer_indices.push_back(i);
+
+            if (valid_consumer_indices.empty())
+                throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "No Kafka consumers available for direct read");
+
+            kafka_storage.active_direct_readers.fetch_add(valid_consumer_indices.size());
+        }
+
+        /// If source creation fails partway, undo the count for sources that were never created.
+        /// Each successfully created Kafka2Source will decrement active_direct_readers in its destructor.
+        size_t sources_created = 0;
+        SCOPE_EXIT(
+        {
+            if (sources_created < valid_consumer_indices.size())
+                kafka_storage.active_direct_readers.fetch_sub(valid_consumer_indices.size() - sources_created);
+        });
+
+        Pipes pipes;
+        pipes.reserve(valid_consumer_indices.size());
+        auto modified_context = Context::createCopy(getContext());
+        modified_context->applySettingsChanges(kafka_storage.settings_adjustments);
+
+        for (auto consumer_index : valid_consumer_indices)
+        {
+            /// Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
+            auto source = std::make_shared<Kafka2Source>(
+                kafka_storage,
+                storage_snapshot,
+                modified_context,
+                column_names,
+                kafka_storage.log,
+                1,
+                consumer_index,
+                (*kafka_storage.kafka_settings)[KafkaSetting::kafka_commit_on_select]);
+            ++sources_created;
+            pipes.emplace_back(std::move(source));
+        }
+
+        LOG_DEBUG(kafka_storage.log, "Starting reading {} streams", pipes.size());
+        return Pipe::unitePipes(std::move(pipes));
+    }
+
+    const Names column_names;
+    StoragePtr storage;
+    StorageSnapshotPtr storage_snapshot;
+};
+
+void StorageKafka2::read(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr query_context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Direct read from the new Kafka storage is not implemented");
+    query_plan.addStep(std::make_unique<ReadFromStorageKafka2>(
+        column_names, shared_from_this(), storage_snapshot, query_info, std::move(query_context)));
 }
 
 StreamingHandleErrorMode StorageKafka2::getHandleKafkaErrorMode() const
@@ -443,12 +570,16 @@ void StorageKafka2::startup()
     const auto replica_name = (*kafka_settings)[KafkaSetting::kafka_replica_name].value;
     {
         std::lock_guard lock(consumers_mutex);
+        /// Pre-size to `num_consumers` so consumer slots are addressable by their original index even
+        /// when individual creations fail. Compacting via `push_back` would shift indices and break
+        /// the per-slot streaming task in `threadFunc`, which is scheduled by the configured slot index.
+        consumers.resize(num_consumers);
         for (size_t i = 0; i < num_consumers; ++i)
         {
             try
             {
-                consumers.push_back(
-                    std::make_shared<KeeperHandlingConsumer>(createKafkaConsumer(i), getZooKeeper(), fs_keeper_path, replica_name, i, log));
+                consumers[i] = std::make_shared<KeeperHandlingConsumer>(
+                    createKafkaConsumer(i), getZooKeeper(), fs_keeper_path, replica_name, i, log);
                 ++num_created_consumers;
             }
             catch (const cppkafka::Exception &)
@@ -460,11 +591,19 @@ void StorageKafka2::startup()
     activating_task->activateAndSchedule();
 }
 
+void StorageKafka2::scheduleStreamingTasksImpl()
+{
+    for (auto & task : tasks)
+        task->holder->schedule();
+}
+
 
 void StorageKafka2::shutdown(bool)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageKafka2::shutdown");
     shutdown_called = true;
+    /// Wake up any threads blocked in acquireConsumer waiting for a free consumer.
+    cv.notify_all();
     activating_task->deactivate();
     partialShutdown();
     LOG_TRACE(log, "Closing consumers");
@@ -636,13 +775,22 @@ bool StorageKafka2::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr keeper_to
 {
     bool completely_removed = false;
 
+    FailPointInjection::pauseFailPoint(FailPoints::kafka2_remove_zk_before_get_children);
+
     Strings children;
     if (const auto code = keeper_to_use->tryGetChildren(keeper_path, children); code == Coordination::Error::ZNONODE)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal. It's a bug");
+    {
+        /// It is possible if the Keeper session expired and the ephemeral drop lock was deleted,
+        /// allowing another process to complete the removal. The table is completely gone.
+        LOG_WARNING(log, "Table {} was already removed from Keeper, looks like a concurrent operation removed it", keeper_path);
+        return true;
+    }
 
     for (const auto & child : children)
         if (child != "dropped")
             keeper_to_use->tryRemoveRecursive(fs_keeper_path / child);
+
+    FailPointInjection::pauseFailPoint(FailPoints::kafka2_remove_zk_before_final_multi);
 
     Coordination::Requests ops;
     Coordination::Responses responses;
@@ -653,10 +801,14 @@ bool StorageKafka2::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr keeper_to
 
     if (code == Coordination::Error::ZNONODE)
     {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal of replicated table. It's a bug");
+        /// It is possible if the Keeper session expired and the ephemeral drop lock was deleted,
+        /// allowing another process to complete the removal or create a new table.
+        LOG_WARNING(
+            log,
+            "Table {} was not completely removed from Keeper, some nodes were already removed by a concurrent operation",
+            keeper_path);
     }
-    if (code == Coordination::Error::ZNOTEMPTY)
+    else if (code == Coordination::Error::ZNOTEMPTY)
     {
         LOG_ERROR(
             log,
@@ -772,10 +924,15 @@ void StorageKafka2::dropReplica()
 std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
     KeeperHandlingConsumer & consumer,
     const Stopwatch & watch,
-    const ContextPtr & modified_context)
+    const ContextPtr & modified_context,
+    size_t poll_max_block_size)
 {
+    if (poll_max_block_size == 0)
+        poll_max_block_size = getMaxBlockSize();
+
     LOG_TEST(log, "Polling consumer");
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(getContext(), false), getContext());
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
     Block non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized());
     auto virtual_header = storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
 
@@ -790,7 +947,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
         empty_buf,
         non_virtual_header,
         modified_context,
-        getMaxBlockSize(),
+        poll_max_block_size,
         std::nullopt,
         FormatParserSharedResources::singleThreaded(modified_context->getSettingsRef()));
 
@@ -839,7 +996,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
             case StreamingHandleErrorMode::DEFAULT:
             {
                 e.addMessage(
-                    "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
+                    "while parsing Kafka message (topic: {}, partition: {}, offset: {})",
                     current_msg_info->currentTopic(),
                     current_msg_info->currentPartition(),
                     current_msg_info->currentOffset());
@@ -943,7 +1100,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
 
             if (is_dead_letter)
             {
-                assert(exception_message);
+                chassert(exception_message);
                 const auto time_now = std::chrono::system_clock::now();
                 auto storage_id = getStorageID();
 
@@ -951,7 +1108,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
                 if (!dead_letter_queue)
                     LOG_WARNING(log, "Table system.dead_letter_queue is not configured, skipping message");
                 else
-                    dead_letter_queue->add(
+                    dead_letter_queue->add([&](DeadLetterQueueElement & element) { element =
                         DeadLetterQueueElement{
                             .table_engine = DeadLetterQueueElement::StreamType::Kafka,
                             .event_time = timeInSeconds(time_now),
@@ -963,8 +1120,8 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
                             .details = DeadLetterQueueElement::KafkaDetails{
                                 .topic_name = msg_info.currentTopic(),
                                 .partition = msg_info.currentPartition(),
-                                .offset = msg_info.currentPartition(),
-                                .key = msg_info.currentKey()}});
+                                .offset = msg_info.currentOffset(),
+                                .key = msg_info.currentKey()}}; });
             }
 
             total_rows = total_rows + new_rows;
@@ -988,7 +1145,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
         }
 
         if (!has_more_polled_messages
-            && (total_rows >= getMaxBlockSize() || !check_time_limit() || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
+            && (total_rows >= poll_max_block_size || !check_time_limit() || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
         {
             LOG_TRACE(
                 log,
@@ -1003,15 +1160,11 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
     auto maybe_guard = consumer.poll(msg_sink);
 
     // Return empty optional if the consumer was unable to poll any messages or the transformation of those messages resulted in no rows
-    if (!maybe_guard.has_value() || total_rows == 0)
+    if (!maybe_guard.has_value())
         return {};
 
-    /// MATERIALIZED columns can be added here, but I think
-    // they are not needed here:
-    // and it's misleading to use them here,
-    // as columns 'materialized' that way stays 'ephemeral'
-    // i.e. will not be stored anywhere
-    // If needed any extra columns can be added using DEFAULT they can be added at MV level if needed.
+    if (total_rows == 0)
+        return BlocksAndGuard{{}, std::move(*maybe_guard)};
 
     auto result_block = non_virtual_header.cloneWithColumns(executor.getResultColumns());
     auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
@@ -1028,55 +1181,105 @@ void StorageKafka2::threadFunc(size_t idx)
 {
     chassert(idx < tasks.size());
     auto task = tasks[idx];
+
+    /// Tasks are created up front for every configured slot, but consumer creation in `startup`
+    /// may fail for some slots. Skip work for empty slots without rescheduling, otherwise the
+    /// task would repeatedly enter and bail out on every reschedule for the storage's lifetime.
+    {
+        std::lock_guard lock(consumers_mutex);
+        if (idx >= consumers.size() || !consumers[idx])
+            return;
+    }
+
     std::optional<StallKind> maybe_stall_reason;
+    bool incremented_mv_streamers = false;
     try
     {
         auto table_id = getStorageID();
-        // Check if at least one direct dependency is attached
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-        if (num_views)
+        const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
+        const UInt64 refresh_epoch = task->last_seen_refresh_epoch;
+        const bool deps_ready = num_views == 0 || StorageKafkaUtils::checkDependencies(table_id, getContext());
+        const bool run_cycle = deps_ready && stream_control.claimCycle(task->last_seen_refresh_epoch);
+
+        if (num_views && run_cycle)
         {
-            auto start_time = std::chrono::steady_clock::now();
-
-            // Keep streaming as long as there are attached views and streaming is not cancelled
-            while (!task->stream_cancelled && num_created_consumers > 0)
+            /// Atomically check that no direct readers are active and register this MV streamer.
+            /// This is done under consumers_mutex to prevent a TOCTOU race with makePipe,
+            /// which performs the symmetric check (active_mv_streamers == 0) before starting
+            /// direct reads. Without the mutex, both sides could pass their checks simultaneously.
             {
-                maybe_stall_reason.reset();
-                if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
+                std::lock_guard lock(consumers_mutex);
+                if (active_direct_readers.load() > 0)
                 {
-                    ProfileEvents::increment(ProfileEvents::KafkaMVNotReady);
-                    break;
+                    LOG_DEBUG(log, "Direct readers are active, skipping MV streaming this round");
+                    /// Give back a REFRESH permit consumed by `claimCycle`, so the refresh still
+                    /// runs once the readers drain, even if the table is stopped by then.
+                    task->last_seen_refresh_epoch = refresh_epoch;
                 }
-
-                LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
-
-                // Exit the loop & reschedule if some stream stalled
-                if (maybe_stall_reason = streamToViews(idx); maybe_stall_reason.has_value())
+                else
                 {
-                    LOG_TRACE(
-                        log,
-                        "Stream stalled. Rescheduling in {} ms",
-                        (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
-                    break;
+                    active_mv_streamers.fetch_add(1);
+                    incremented_mv_streamers = true;
                 }
+            }
 
-                auto ts = std::chrono::steady_clock::now();
-                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts - start_time);
-                if (duration.count() > KAFKA_MAX_THREAD_WORK_DURATION_MS)
+            if (incremented_mv_streamers)
+            {
+                auto start_time = std::chrono::steady_clock::now();
+
+                // Keep streaming as long as there are attached views and streaming is not cancelled
+                while (!task->stream_cancelled && num_created_consumers > 0)
                 {
-                    LOG_TRACE(
-                        log,
-                        "Thread work duration limit exceeded. Rescheduling in {} ms",
-                        (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
-                    break;
+                    maybe_stall_reason.reset();
+                    if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
+                    {
+                        ProfileEvents::increment(ProfileEvents::KafkaMVNotReady);
+                        break;
+                    }
+
+                    LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
+
+                    // Exit the loop & reschedule if some stream stalled
+                    if (maybe_stall_reason = streamToViews(idx, cycle_epoch); maybe_stall_reason.has_value())
+                    {
+                        LOG_TRACE(
+                            log,
+                            "Stream stalled. Rescheduling in {} ms",
+                            (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
+                        break;
+                    }
+
+                    if (stream_control.isBlocked() || stream_control.isCancelRequested(cycle_epoch))
+                        break;
+
+                    auto ts = std::chrono::steady_clock::now();
+                    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts - start_time);
+                    if (duration.count() > KAFKA_MAX_THREAD_WORK_DURATION_MS)
+                    {
+                        LOG_TRACE(
+                            log,
+                            "Thread work duration limit exceeded. Rescheduling in {} ms",
+                            (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
+                        break;
+                    }
                 }
             }
         }
+        else if (num_views && stream_control.isBlocked())
+            LOG_DEBUG(log, "Consumption is stopped");
+        else if (num_views)
+            ProfileEvents::increment(ProfileEvents::KafkaMVNotReady);
+        else
+            LOG_DEBUG(log, "No attached views");
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+
+    if (incremented_mv_streamers)
+        active_mv_streamers.fetch_sub(1);
 
     if (!task->stream_cancelled)
     {
@@ -1088,9 +1291,10 @@ void StorageKafka2::threadFunc(size_t idx)
     }
 }
 
-std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx)
+std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx, UInt64 cycle_epoch)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageKafka2::streamToViews");
+
     // This function is written assuming that each consumer has their own thread. This means once this is changed, this
     // function should be revisited. The return values should be revisited, as stalling all consumers because of a
     // single one stalled is not a good idea.
@@ -1117,7 +1321,7 @@ std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx)
             return getStallKind(*cannot_poll_reason);
 
         LOG_TRACE(log, "Trying to consume from consumer {}", idx);
-        const auto maybe_rows = streamFromConsumer(*consumer, watch);
+        const auto maybe_rows = streamFromConsumer(*consumer, watch, cycle_epoch);
         if (maybe_rows.has_value())
         {
             const auto milliseconds = watch.elapsedMilliseconds();
@@ -1147,9 +1351,42 @@ std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx)
 
 StorageKafka2::KeeperHandlingConsumerPtr StorageKafka2::acquireConsumer(size_t idx)
 {
-    std::lock_guard lock{consumers_mutex};
-    if (idx >= consumers.size())
+    UniqueLock lock(consumers_mutex);
+
+    /// Check shutdown first: `cleanConsumers` clears the `consumers` vector during shutdown,
+    /// so a late call from an already-built direct-read source would otherwise hit the bounds
+    /// check below and surface a `LOGICAL_ERROR` instead of the expected `ABORTED` for a
+    /// detached table.
+    if (shutdown_called)
+        throw Exception(ErrorCodes::ABORTED, "Table is detached");
+
+    if (idx >= consumers.size() || !consumers[idx])
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid consumer index: {}, number of consumers is {}", idx, consumers.size());
+
+    /// Wait until the consumer is free, with a timeout to prevent deadlocks.
+    /// Two concurrent direct SELECTs each create a source per consumer. If the query engine
+    /// schedules them so that Query A holds consumer 0 and waits for consumer 1 while Query B
+    /// holds consumer 1 and waits for consumer 0, we get a deadlock. The timeout breaks it
+    /// by failing one of the queries, allowing the other to proceed.
+    auto acquire_timeout = std::chrono::milliseconds(
+        (*kafka_settings)[KafkaSetting::kafka_consumer_acquire_timeout_ms].totalMilliseconds());
+    auto deadline = std::chrono::steady_clock::now() + acquire_timeout;
+
+    /// Clang Thread Safety Analysis doesn't understand std::condition_variable::wait and std::unique_lock
+    bool ready = cv.wait_until(
+        lock.getUnderlyingLock(),
+        deadline,
+        [&, this]() TSA_NO_THREAD_SAFETY_ANALYSIS { return shutdown_called || !consumers[idx]->isInUse(); });
+
+    if (shutdown_called)
+        throw Exception(ErrorCodes::ABORTED, "Table is detached");
+
+    if (!ready)
+        throw Exception(
+            ErrorCodes::TIMEOUT_EXCEEDED,
+            "Timed out waiting for Kafka consumer {} to become available. "
+            "This may happen when multiple direct SELECTs run concurrently on the same Kafka2 table.",
+            idx);
 
     auto consumer = consumers[idx];
     const auto created_consumer = consumer->startUsing([&](IKafkaExceptionInfoSinkPtr exception_sink)
@@ -1167,7 +1404,8 @@ void StorageKafka2::releaseConsumer(KeeperHandlingConsumerPtr && consumer_ptr)
 {
     std::lock_guard lock{consumers_mutex};
     consumer_ptr->stopUsing();
-    cv.notify_one();
+    /// Use notify_all so that all threads waiting for different consumer indices get a chance to check.
+    cv.notify_all();
     CurrentMetrics::sub(CurrentMetrics::KafkaConsumersInUse);
 }
 
@@ -1189,7 +1427,7 @@ void StorageKafka2::cleanConsumers()
             std::chrono::seconds(KAFKA_CONSUMER_CLOSE_TIMEOUT_S),
             [&, this]() TSA_NO_THREAD_SAFETY_ANALYSIS
             {
-                auto it = std::find_if(consumers.begin(), consumers.end(), [](const auto & ptr) { return ptr->isInUse(); });
+                auto it = std::find_if(consumers.begin(), consumers.end(), [](const auto & ptr) { return ptr && ptr->isInUse(); });
                 return it == consumers.end();
             }))
         {
@@ -1199,7 +1437,7 @@ void StorageKafka2::cleanConsumers()
         size_t skipped = 0;
         for (const auto & consumer : consumers)
         {
-            if (!consumer->hasConsumer())
+            if (!consumer || !consumer->hasConsumer())
                 continue;
             if (consumer->isInUse())
             {
@@ -1218,7 +1456,7 @@ void StorageKafka2::cleanConsumers()
     consumers.clear();
 }
 
-std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch)
+std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch, UInt64 cycle_epoch)
 {
     // Create an INSERT query for streaming data
     auto insert = make_intrusive<ASTInsertQuery>();
@@ -1240,6 +1478,12 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer &
     auto block_io = interpreter.execute();
 
     auto maybe_blocks_and_guard = pollConsumer(consumer, watch, modified_context);
+
+    if (isConsumeCancelRequested(cycle_epoch))
+    {
+        block_io.onCancelOrConnectionLoss();
+        return std::nullopt;
+    }
 
     if (!maybe_blocks_and_guard.has_value() || maybe_blocks_and_guard->blocks.empty())
     {

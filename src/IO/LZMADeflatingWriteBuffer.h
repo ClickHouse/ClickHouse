@@ -37,7 +37,7 @@ private:
     void finalFlushBefore() override;
     void finalFlushAfter() override;
 
-    lzma_stream lstr;
+    lzma_stream lstr{};
 
     bool compress_empty = true;
 };

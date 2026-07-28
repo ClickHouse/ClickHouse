@@ -25,7 +25,7 @@ $CLICKHOUSE_CLIENT --query="CREATE TABLE csv (t DateTime('Asia/Istanbul'), s Str
 echo '"2016-01-01 01:02:03","1"
 2016-01-02 01:02:03, "2"
 1502792101,"3"
-99999,"4"' | $CLICKHOUSE_CLIENT --query="INSERT INTO csv FORMAT CSV";
+99999,"4"' | $CLICKHOUSE_CLIENT --date_time_input_format=basic --query="INSERT INTO csv FORMAT CSV";
 
 $CLICKHOUSE_CLIENT --query="SELECT * FROM csv ORDER BY s";
 $CLICKHOUSE_CLIENT --query="DROP TABLE csv";

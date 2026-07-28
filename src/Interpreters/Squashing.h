@@ -67,6 +67,7 @@ public:
 
     Chunk flush();
 
+    bool empty() const { return !accumulated; }
     void setHeader(const Block & header_) { header = std::make_shared<const Block>(header_); }
     const SharedHeader & getHeader() const { return header; }
 

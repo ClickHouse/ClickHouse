@@ -12,7 +12,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 /** A pre-aggregate stream of blocks in which each block is already aggregated.
   * Aggregate functions in blocks should not be finalized so that their states can be merged.
   */
-class MergingAggregatedTransform : public IAccumulatingTransform
+class MergingAggregatedTransform final : public IAccumulatingTransform
 {
 public:
     MergingAggregatedTransform(SharedHeader header_, Aggregator::Params params_, bool final_, GroupingSetsParamsList grouping_sets_params);

@@ -1,0 +1,16 @@
+---
+title: インジェスト用ユーザーを作成
+---
+
+`default` を再利用するのではなく、collector 専用のユーザーを作成することを推奨します。SQL Console からサービスに接続し、次を実行します。
+
+```sql
+CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY 'ClickH0u3eRocks123!';
+GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest;
+```
+
+<Tip>
+  上のスニペット内のパスワードは、十分に強力なものに置き換えてください。
+</Tip>
+
+collector は初回使用時に、`otel` データベース内にログ、トレース、メトリクス用のスキーマを作成します。本番環境向けのユーザー設定について詳しくは、[本番環境への移行](/ja/clickstack/managing/production#create-a-database-ingestion-user-managed)を参照してください。

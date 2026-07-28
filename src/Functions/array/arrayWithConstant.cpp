@@ -26,7 +26,7 @@ static constexpr size_t max_arrays_size_in_columns = 1000000000;
  * arrayWithConstant(0, 'hello') = []
  */
 
-class FunctionArrayWithConstant : public IFunction
+class FunctionArrayWithConstant final : public IFunction
 {
 public:
     static constexpr auto name = "arrayWithConstant";

@@ -1,0 +1,63 @@
+---
+sidebarTitle: 'MongoDB Atlas'
+description: 'Guia passo a passo para configurar o MongoDB Atlas como origem no ClickPipes'
+slug: /integrations/clickpipes/mongodb/source/atlas
+title: 'Guia de configuração da origem MongoDB Atlas'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'ingestão de dados', 'sincronização em tempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<div id="enable-oplog-retention">
+  ## Configurar a retenção do oplog
+</div>
+
+Uma retenção mínima do oplog de 24 horas é necessária para a replicação. Recomendamos definir a retenção do oplog para 72 horas ou mais, para garantir que o oplog não seja truncado antes da conclusão do snapshot inicial. Para definir a retenção do oplog pela UI:
+
+1. Acesse a aba `Overview` do seu cluster no console do MongoDB Atlas e clique na aba `Configuration`.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-cluster-overview-configuration.webp" alt="Acesse a configuração do cluster" size="lg" border />
+
+2. Clique em `Additional Settings` e role a tela para baixo até `More Configuration Options`.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-expand-additional-settings.webp" alt="Expanda as configurações adicionais" size="lg" border />
+
+3. Clique em `More Configuration Options` e defina a janela mínima do oplog como `72 hours` ou mais.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-set-retention-hours.webp" alt="Defina as horas de retenção do oplog" size="lg" border />
+
+4. Clique em `Review Changes` para revisar as alterações e, em seguida, em `Apply Changes` para aplicá-las.
+
+<div id="configure-database-user">
+  ## Configurar um usuário de banco de dados
+</div>
+
+Depois de fazer login no console do MongoDB Atlas, clique em `Database Access` na aba Security, na barra de navegação à esquerda. Clique em &quot;Add New Database User&quot;.
+
+O ClickPipes exige autenticação por senha:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-add-new-database-user.webp" alt="Adicionar usuário de banco de dados" size="lg" border />
+
+O ClickPipes exige um usuário com as seguintes funções:
+
+* `readAnyDatabase`
+* `clusterMonitor`
+
+Você pode encontrá-las na seção `Specific Privileges`:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-database-user-privilege.webp" alt="Configurar funções do usuário" size="lg" border />
+
+Também é possível especificar os clusters/instâncias aos quais você deseja conceder acesso ao usuário do ClickPipes:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-restrict-access.webp" alt="Restringir acesso a cluster/instância" size="lg" border />
+
+<div id="whats-next">
+  ## O que vem a seguir?
+</div>
+
+Agora você pode [criar seu ClickPipe](/pt-BR/integrations/clickpipes/mongodb/index) e começar a ingerir dados da sua instância do MongoDB no ClickHouse Cloud.
+Anote os detalhes da conexão usados na configuração da sua instância do MongoDB, pois você precisará deles durante o processo de criação do ClickPipe.

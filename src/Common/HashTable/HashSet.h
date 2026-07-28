@@ -132,8 +132,8 @@ struct HashSetCellWithSavedHash : public HashTableCell<Key, Hash, TState>
 
     size_t saved_hash;
 
-    HashSetCellWithSavedHash() : Base() {}
-    HashSetCellWithSavedHash(const Key & key_, const typename Base::State & state) : Base(key_, state) {}
+    HashSetCellWithSavedHash() : Base() {} // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `saved_hash` is set by `setHash` immediately after placement construction on insert; on the hot aggregation/join path we must avoid the redundant store
+    HashSetCellWithSavedHash(const Key & key_, const typename Base::State & state) : Base(key_, state) {} // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - see the note on the default constructor above
 
     bool keyEquals(const Key & key_) const { return bitEquals(this->key, key_); }
     bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && bitEquals(this->key, key_); }

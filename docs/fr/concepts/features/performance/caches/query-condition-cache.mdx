@@ -1,0 +1,80 @@
+---
+description: 'Guide d’utilisation et de configuration de la fonctionnalité de cache des conditions de requête dans ClickHouse'
+sidebarTitle: 'Cache des conditions de requête'
+slug: /operations/query-condition-cache
+title: 'Cache des conditions de requête'
+doc_type: 'guide'
+---
+
+<Note>
+  Le cache des conditions de requête fonctionne uniquement lorsque [enable&#95;analyzer](/fr/reference/settings/session-settings#enable_analyzer) est défini sur true, qui est la valeur par défaut.
+</Note>
+
+De nombreuses charges de travail réelles impliquent des requêtes répétées sur les mêmes données, ou presque (par exemple, des données existantes auxquelles s’ajoutent de nouvelles données).
+ClickHouse propose diverses techniques d’optimisation adaptées à ce type de query patterns.
+L’une des possibilités consiste à ajuster l’organisation physique des données à l’aide de structures d’index (par ex., index de clé primaire, skipping indexes, projections) ou de précalculs (vues matérialisées).
+Une autre consiste à utiliser le [query cache](/fr/concepts/features/performance/caches/query-cache) de ClickHouse pour éviter de réévaluer plusieurs fois les mêmes requêtes.
+L’inconvénient de la première approche est qu’elle nécessite une intervention manuelle et un suivi de la part d’un administrateur de base de données.
+La seconde approche peut renvoyer des résultats obsolètes (car le query cache n’est pas transactionnellement cohérent), ce qui peut être acceptable ou non selon le cas d’usage.
+
+Le cache des conditions de requête apporte une solution élégante à ces deux problèmes.
+Il repose sur l’idée que l’évaluation d’une condition de filtrage (par ex., `WHERE col = 'xyz'`) sur les mêmes données renverra toujours les mêmes résultats.
+Plus précisément, le cache des conditions de requête mémorise, pour chaque filtre évalué et chaque granule (= un bloc de 8192 lignes par défaut), si aucune ligne du granule ne satisfait la condition de filtrage.
+Cette information est enregistrée sous la forme d’un seul bit : un bit à 0 indique qu’aucune ligne ne correspond au filtre, tandis qu’un bit à 1 signifie qu’au moins une ligne correspondante existe.
+Dans le premier cas, ClickHouse peut ignorer le granule correspondant lors de l’évaluation du filtre ; dans le second, le granule doit être chargé et évalué.
+
+Le cache des conditions de requête est efficace si trois prérequis sont remplis :
+
+* Premièrement, la charge de travail doit évaluer de façon répétée les mêmes conditions de filtrage. Cela se produit naturellement lorsqu’une requête est répétée plusieurs fois, mais aussi lorsque deux requêtes partagent les mêmes filtres, par ex. `SELECT product FROM products WHERE quality > 3` et `SELECT vendor, count() FROM products WHERE quality > 3`.
+* Deuxièmement, la majorité des données est immuable, c’est-à-dire qu’elle ne change pas entre les requêtes. C’est généralement le cas dans ClickHouse, car les parts sont immuables et créées uniquement par des INSERTs.
+* Troisièmement, les filtres sont sélectifs, c’est-à-dire que relativement peu de lignes satisfont la condition de filtrage. Moins il y a de lignes qui correspondent à la condition de filtrage, plus de granules seront enregistrés avec un bit à 0 (aucune ligne correspondante), et plus de données pourront être écartées lors des évaluations suivantes du filtre.
+
+<div id="memory-consumption">
+  ## Consommation de mémoire
+</div>
+
+Comme le cache des conditions de requête ne stocke qu’un seul bit par condition de filtrage et par granule, il consomme très peu de mémoire.
+La taille maximale du cache des conditions de requête peut être configurée à l’aide du paramètre de serveur [`query_condition_cache_size`](/fr/reference/settings/server-settings/settings#query_condition_cache_size) (par défaut : 100 MB).
+Une taille de cache de 100 MB correspond à 100 * 1024 * 1024 * 8 = 838,860,800 entrées.
+Comme chaque entrée représente un mark (8192 lignes par défaut), le cache peut couvrir jusqu’à 6,871,947,673,600 (6,8 billions) lignes d’une seule colonne.
+En pratique, les filtres sont évalués sur plusieurs colonnes, ce nombre doit donc être divisé par le nombre de colonnes filtrées.
+
+<div id="configuration-settings-and-usage">
+  ## Paramètres de configuration et utilisation
+</div>
+
+Le paramètre [use&#95;query&#95;condition&#95;cache](/fr/reference/settings/session-settings#use_query_condition_cache) détermine si une requête spécifique ou toutes les requêtes de la session en cours utilisent le cache des conditions de requête.
+
+Par exemple, la première exécution de la requête
+
+```sql
+SELECT col1, col2
+FROM table
+WHERE col1 = 'x'
+SETTINGS use_query_condition_cache = true;
+```
+
+stockera des plages de la table qui ne satisfont pas le prédicat.
+Les exécutions suivantes de la même requête, également avec le paramètre `use_query_condition_cache = true`, utiliseront le cache des conditions de requête pour parcourir moins de données.
+
+<div id="administration">
+  ## Administration
+</div>
+
+Le cache des conditions de requête n’est pas conservé entre les redémarrages de ClickHouse.
+
+Pour vider le cache des conditions de requête, exécutez [`SYSTEM CLEAR QUERY CONDITION CACHE`](/fr/reference/statements/system#drop-query-condition-cache).
+
+Le contenu du cache s’affiche dans la table système [system.query&#95;condition&#95;cache](/fr/reference/system-tables/query_condition_cache).
+Pour calculer la taille actuelle du cache des conditions de requête en MB, exécutez `SELECT formatReadableSize(sum(entry_size)) FROM system.query_condition_cache`.
+Si vous souhaitez examiner des conditions de filtrage individuelles, vous pouvez consulter le champ `condition` dans `system.query_condition_cache`. Notez que ce champ n’est disponible que dans les versions de débogage.
+
+Le nombre de succès et d’échecs du cache des conditions de requête depuis le démarrage de la base de données est affiché sous forme d’événements « QueryConditionCacheHits » et « QueryConditionCacheMisses » dans la table système [system.events](/fr/reference/system-tables/events).
+Ces deux compteurs ne sont mis à jour que pour les requêtes `SELECT` exécutées avec le paramètre `use_query_condition_cache = true` ; les autres requêtes n’affectent pas « QueryCacheMisses ».
+
+<div id="related-content">
+  ## Contenu connexe
+</div>
+
+* Blog : [Présentation du cache des conditions de requête](https://clickhouse.com/blog/introducing-the-clickhouse-query-condition-cache)
+* [Predicate Caching: Query-Driven Secondary Indexing for Cloud Data Warehouses (Schmidt et. al., 2024)](https://doi.org/10.1145/3626246.3653395)

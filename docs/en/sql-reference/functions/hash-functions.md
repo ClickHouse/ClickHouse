@@ -6,8 +6,6 @@ title: 'Hash Functions'
 doc_type: 'reference'
 ---
 
-# Hash functions
-
 Hash functions can be used for the deterministic pseudo-random shuffling of elements.
 
 Simhash is a hash function, which returns close hash values for close (similar) arguments.
