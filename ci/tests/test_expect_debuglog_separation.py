@@ -838,11 +838,9 @@ def test_the_wider_report_does_not_widen_retry_matching(tmp_path):
     assert marker in _CT_GLOBALS["MESSAGES_TO_RETRY"]
     retry_args = Namespace(check_zookeeper_session=False, dont_retry_failures=False)
 
-    def verdict(case, body):
+    def verdict(case, body, bash="BASH-MARKER-a07c\n"):
         stubs = []
-        described = _describe(
-            tmp_path / case, body, "BASH-MARKER-a07c\n", stubs=stubs
-        )
+        described = _describe(tmp_path / case, body, bash, stubs=stubs)
         assert described.status is _TestStatus.FAIL, described.status
         # Exactly what `run` does: narrow the description through the real
         # `retry_matcher_input`, then hand the result in as BOTH stdout and stderr. The stub is
@@ -877,6 +875,25 @@ def test_the_wider_report_does_not_widen_retry_matching(tmp_path):
     assert marker in retry_input, retry_input[-300:]
     assert described.need_retry
 
+    # With BOTH artifacts oversized, the matcher's window must still be ONE historical trim over
+    # their concatenation. Trimming each separately and joining the results would give the matcher
+    # two such windows, so a marker early in the xtrace - inside the combined hidden middle, but
+    # in the kept head of its own block - would leak back in.
+    both_bash = [f"+ traced command {i}\n" for i in range(400)]
+    both_bash[5] = f"+ got {marker} while tracing\n"
+    plain_expect = "".join(f"expect line {i}\n" for i in range(400))
+    described, retry_input = verdict("both", plain_expect, "".join(both_bash))
+    assert marker in described.description, described.description[:200]
+    assert marker not in retry_input, (
+        "the retry window is one trim PER ARTIFACT rather than one over their concatenation, so "
+        "it is twice the historical size and admits markers the old single trim hid"
+    )
+    assert not described.need_retry
+    # And it really is the historical width, derived from `trim_for_log`'s own arithmetic.
+    blocks = _artifact_blocks(described.description, tmp_path / "both")
+    raw = "".join(blocks[suffix] for suffix in ("debuglog", "bashlog"))
+    assert len(retry_input.splitlines()) < len(raw.splitlines())
+
 
 def test_run_matches_retries_against_the_narrowed_description():
     """Every ``check_if_need_retry`` call in ``run`` must pass the NARROWED text.
@@ -889,35 +906,64 @@ def test_run_matches_retries_against_the_narrowed_description():
     """
     tree = ast.parse(textwrap.dedent(inspect.getsource(ClickHouseTestCase.run)))
 
-    narrowed = {
-        target.id
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Assign)
-        and isinstance(node.value, ast.Call)
-        and isinstance(node.value.func, ast.Attribute)
-        and node.value.func.attr == "retry_matcher_input"
-        for target in node.targets
-        if isinstance(target, ast.Name)
-    }
-    assert narrowed, "run never narrows a description for the retry matcher"
+    def narrowing_target(stmt):
+        """The name `stmt` assigns from ``retry_matcher_input``, if it is such an assignment."""
+        if not isinstance(stmt, ast.Assign) or not isinstance(stmt.value, ast.Call):
+            return None
+        func = stmt.value.func
+        if not isinstance(func, ast.Attribute) or func.attr != "retry_matcher_input":
+            return None
+        target = stmt.targets[0]
+        return target.id if isinstance(target, ast.Name) else None
 
-    calls = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "check_if_need_retry"
-    ]
+    def retry_calls(stmt):
+        return [
+            node
+            for node in ast.walk(stmt)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "check_if_need_retry"
+        ]
+
+    # Each matcher call is bound to the narrowing assignment in ITS OWN BLOCK, rather than to a
+    # function-wide set of names: both arms of the `is_valid_utf_8` test call their variable
+    # `retry_input`, so a set would let one arm stop narrowing while the other still contributed
+    # the name. The innermost block containing a call is the one that must narrow for it.
+    checked = 0
+    for parent in ast.walk(tree):
+        body = getattr(parent, "body", None)
+        if not isinstance(body, list):
+            continue
+        calls = [call for stmt in body for call in retry_calls(stmt)]
+        if not calls:
+            continue
+        # Attribute the calls to the INNERMOST enclosing block only: an outer block sees them
+        # too, and would be satisfied by a narrowing that is not in scope at the call.
+        if any(
+            retry_calls(stmt) and isinstance(getattr(stmt, "body", None), list)
+            for stmt in body
+        ):
+            continue
+        narrowed = [
+            target
+            for stmt in body
+            if (target := narrowing_target(stmt)) is not None
+        ]
+        assert len(narrowed) == 1, (
+            f"expected exactly one narrowing beside {len(calls)} matcher call(s), "
+            f"found {narrowed}"
+        )
+        for call in calls:
+            for arg in (call.args[1], call.args[2]):
+                assert isinstance(arg, ast.Name) and arg.id == narrowed[0], (
+                    "the retry matcher is handed the reported description rather than the "
+                    f"narrowed one: {ast.unparse(call)}"
+                )
+            checked += 1
+
     # Both arms of the `is_valid_utf_8` branch reach the matcher, and a new one must not slip in
     # unnoticed either.
-    assert len(calls) == 2, len(calls)
-    for call in calls:
-        stdout_arg, stderr_arg = call.args[1], call.args[2]
-        for arg in (stdout_arg, stderr_arg):
-            assert isinstance(arg, ast.Name) and arg.id in narrowed, (
-                "the retry matcher is handed the reported description rather than the narrowed "
-                f"one: {ast.unparse(call)}"
-            )
+    assert checked == 2, checked
 
 
 def test_the_two_report_blocks_are_trimmed_independently():
@@ -930,18 +976,27 @@ def test_the_two_report_blocks_are_trimmed_independently():
             if f"trim_for_log({argname}" in line
         ]
 
-    # Two calls each: the reported block and the retry matcher's copy of it.
     expect_limits = limits("expect_log")
     bash_limits = limits("bash_log")
-    assert len(expect_limits) == 2, expect_limits
-    assert len(bash_limits) == 2, bash_limits
+    assert len(expect_limits) == 1, expect_limits
+    assert len(bash_limits) == 1, bash_limits
 
-    # The xtrace keeps the historical 100-line bound in both. The expect trace is REPORTED at
-    # the larger default - or the middle of its verdict sequence, the part that names the
-    # statement that blocked, is dropped, since one progress-table redraw is one very long line -
-    # and MATCHED at 100, so the wider report cannot widen MESSAGES_TO_RETRY matching.
-    assert bash_limits == [100, 100], bash_limits
-    assert expect_limits == [_TRIM_DEFAULT_LIMIT, 100], expect_limits
+    # The xtrace keeps the historical 100-line bound; the expect trace must NOT, or the
+    # middle of its verdict sequence - the part that names the statement that blocked - is
+    # dropped, since one progress-table redraw is one very long line.
+    assert bash_limits == [100], bash_limits
+    assert expect_limits == [_TRIM_DEFAULT_LIMIT], expect_limits
+
+    # The retry matcher's copy is ONE trim over the concatenated RAW dumps, so its window is the
+    # one this code has always had rather than one such window per artifact. Trimming each dump
+    # separately and concatenating the results would double it.
+    retry_calls = [
+        line.strip()
+        for line in source.splitlines()
+        if "trim_for_log(raw_debug_log" in line
+    ]
+    assert len(retry_calls) == 1, retry_calls
+    assert _trim_limit(retry_calls[0], "raw_debug_log") == 100, retry_calls[0]
 
 
 def test_an_empty_bash_xtrace_file_produces_no_block(tmp_path):
@@ -995,8 +1050,7 @@ def test_an_empty_bash_xtrace_file_produces_no_block(tmp_path):
         and isinstance(node.args[0], ast.Name)
         and node.args[0].id == "bash_log"
     ]
-    # Two: the reported block, and the retry matcher's copy of it (same bound for the xtrace).
-    assert len(appends) == 2, (
+    assert len(appends) == 1, (
         "the xtrace report block is not assembled inside the guard body"
     )
 
