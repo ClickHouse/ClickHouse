@@ -13,3 +13,4 @@ Carol
 Alice	engineering
 Carol	engineering
 -- projection lacks the policy column: read is refused
+-- policy on an ALIAS column: read is refused

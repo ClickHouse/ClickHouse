@@ -7,7 +7,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -136,23 +135,9 @@ std::unique_ptr<MergeTreeProjectionRowPolicyFilter> StorageFromMergeTreeProjecti
     if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
         return nullptr;
 
-    const auto & projection_columns = projection->metadata->getColumns();
-
-    /// refuse the read when the policy needs a column the projection does not store
-    RequiredSourceColumnsVisitor::Data columns_context;
-    RequiredSourceColumnsVisitor(columns_context).visit(row_policy_filter->expression);
-    for (const auto & column_name : columns_context.requiredColumns())
-    {
-        if (!projection_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name))
-            throw Exception(ErrorCodes::ACCESS_DENIED,
-                "Cannot read from projection `{}` of table {} because a row policy references "
-                "column `{}`, which is not stored in the projection, so the row policy cannot be enforced",
-                projection->name, parent_storage_id.getNameForLogs(), column_name);
-    }
-
-    /// resolve the policy against the projection columns
+    /// Resolve the policy against the parent table columns so its referenced columns are known.
     ASTPtr expr = row_policy_filter->expression->clone();
-    auto syntax_result = TreeRewriter(context).analyze(expr, projection_columns.getAll());
+    auto syntax_result = TreeRewriter(context).analyze(expr, parent_metadata->getColumns().getAll());
     ExpressionAnalyzer analyzer(expr, syntax_result, context);
     auto dag = analyzer.getActionsDAG(false /* add_aliases */, false /* remove_unused_result */);
 
@@ -166,6 +151,19 @@ std::unique_ptr<MergeTreeProjectionRowPolicyFilter> StorageFromMergeTreeProjecti
         throw Exception(ErrorCodes::ACCESS_DENIED,
             "Cannot determine row policy filter column for projection `{}` of table {}",
             projection->name, parent_storage_id.getNameForLogs());
+
+    /// Refuse the read when the policy needs a column the projection does not store. This includes
+    /// ALIAS/DEFAULT columns: the projection stores their physical dependencies under different names
+    /// and does not carry the column itself, so the policy cannot be evaluated here. Fail closed.
+    const auto & projection_columns = projection->metadata->getColumns();
+    for (const auto & column_name : filter_actions.getRequiredColumns())
+    {
+        if (!projection_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name))
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "Cannot read from projection `{}` of table {} because a row policy needs "
+                "column `{}`, which is not stored in the projection, so the row policy cannot be enforced",
+                projection->name, parent_storage_id.getNameForLogs(), column_name);
+    }
 
     /// record the applied policies so they show up in system.query_log, like a normal table read
     if (context->hasQueryContext())

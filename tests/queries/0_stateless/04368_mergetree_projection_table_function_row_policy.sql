@@ -36,3 +36,22 @@ SELECT name FROM mergeTreeProjection(currentDatabase(), 'users_rls_proj', 'proj_
 
 DROP ROW POLICY rp_users_rls_proj ON users_rls_proj;
 DROP TABLE users_rls_proj;
+
+-- A policy on an ALIAS column fails closed: the projection stores the alias's physical dependency
+-- under a different name and does not expose the alias, so the policy cannot be evaluated here.
+DROP TABLE IF EXISTS alias_rls_proj;
+DROP ROW POLICY IF EXISTS rp_alias_rls_proj ON alias_rls_proj;
+
+CREATE TABLE alias_rls_proj (a UInt64, b UInt64, c UInt64 ALIAS b + 1) ENGINE = MergeTree ORDER BY a;
+INSERT INTO alias_rls_proj (a, b) VALUES (1, 10), (2, 20), (3, 30);
+
+ALTER TABLE alias_rls_proj ADD PROJECTION p (SELECT a, c ORDER BY a);
+ALTER TABLE alias_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+
+CREATE ROW POLICY rp_alias_rls_proj ON alias_rls_proj FOR SELECT USING c > 21 TO ALL;
+
+SELECT '-- policy on an ALIAS column: read is refused';
+SELECT a FROM mergeTreeProjection(currentDatabase(), 'alias_rls_proj', 'p') ORDER BY a; -- { serverError ACCESS_DENIED }
+
+DROP ROW POLICY rp_alias_rls_proj ON alias_rls_proj;
+DROP TABLE alias_rls_proj;
