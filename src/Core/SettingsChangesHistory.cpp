@@ -4,6 +4,8 @@
 
 #include <Common/Exception.h>
 
+#include <limits>
+
 namespace DB
 {
 
@@ -1326,6 +1328,12 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.8",
+        {
+            {"text_index_max_processed_tokens_before_flush", 100000000, 100000000, "New setting"},
+            {"text_index_max_memory_usage_before_flush", std::numeric_limits<UInt64>::max(), 1073741824, "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"},
+        });
+
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
             {"allow_experimental_text_index_phrase_search", false, false, "New setting"},
