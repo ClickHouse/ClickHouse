@@ -1,0 +1,72 @@
+<test>
+    <!-- Single-column `LowCardinality` GROUP BY, i.e. the aggregation methods built on
+         `HashMethodSingleLowCardinalityColumn` (`low_cardinality_key32`/`key64`/
+         `key_string`/`key_fixed_string`).  Existing coverage only reaches this method
+         through `single_fixed_string_groupby.xml`, and only for one type with a tiny
+         dictionary; the composite `low_cardinality_keys128/256` queries in
+         `group_by_fixed_keys.xml` use `HashMethodKeysFixed` and never touch it.
+
+         Two things are guarded here:
+
+         1. The per-dictionary-index `visit_cache` / `mapped_cache` lookup, which every
+            such aggregation pays per row.  The `_small` columns make almost every row a
+            cache hit; the `_large` ones spread lookups over a big dictionary, which is
+            also where the bookkeeping that lets the cache be invalidated cheaply is most
+            visible.
+         2. `GROUP BY <LowCardinality key> ORDER BY <key> LIMIT N`, where the top-K heap
+            prunes evicted keys out of the hash table.  The descending query at the end is
+            the adversarial shape: every key is better than the current boundary, so
+            nothing is skippable and every admission forces an eviction.
+
+         `enable_group_by_top_k_optimization` is deliberately not set: it does not exist in
+         the master binary used as the comparison baseline (see the note in
+         `topk_aggregation.xml`).  It is on by default, so the `LIMIT` queries exercise it. -->
+
+    <settings>
+        <allow_suspicious_low_cardinality_types>1</allow_suspicious_low_cardinality_types>
+    </settings>
+
+    <create_query>DROP TABLE IF EXISTS perf_lc_group_by</create_query>
+    <create_query>
+        CREATE TABLE perf_lc_group_by
+        (
+            s_small LowCardinality(String),
+            s_large LowCardinality(String),
+            n_small LowCardinality(UInt64),
+            n_large LowCardinality(UInt64)
+        ) ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO perf_lc_group_by
+        SELECT
+            'key ' || toString(number % 100),
+            'key ' || toString(number % 60000),
+            number % 100,
+            number % 60000
+        FROM numbers_mt(20000000)
+        SETTINGS max_insert_threads = 8
+    </fill_query>
+
+    <!-- Small dictionary: the index cache is hit by nearly every row. -->
+    <query>SELECT count() FROM perf_lc_group_by GROUP BY s_small FORMAT Null</query>
+    <query>SELECT count() FROM perf_lc_group_by GROUP BY n_small FORMAT Null</query>
+
+    <!-- Large dictionary: lookups spread across many distinct indexes. -->
+    <query>SELECT count() FROM perf_lc_group_by GROUP BY s_large FORMAT Null</query>
+    <query>SELECT count() FROM perf_lc_group_by GROUP BY n_large FORMAT Null</query>
+
+    <!-- Top-K over a `LowCardinality` key: eviction plus hash-table pruning. -->
+    <query>SELECT s_large, count() FROM perf_lc_group_by GROUP BY s_large ORDER BY s_large ASC LIMIT 10 FORMAT Null</query>
+    <query>SELECT n_large, count() FROM perf_lc_group_by GROUP BY n_large ORDER BY n_large ASC LIMIT 10 FORMAT Null</query>
+    <query>SELECT n_large, count() FROM perf_lc_group_by GROUP BY n_large ORDER BY n_large ASC LIMIT 1000 FORMAT Null</query>
+
+    <!-- No `ORDER BY`: the synthesized sort form. -->
+    <query>SELECT s_large, count() FROM perf_lc_group_by GROUP BY s_large LIMIT 10 FORMAT Null</query>
+
+    <!-- Descending keys: nothing can be skipped, so every admitted key must be evicted
+         and its aggregate state recycled. -->
+    <query>SELECT k, count() FROM (SELECT toLowCardinality(10000000 - number) AS k FROM numbers_mt(10000000)) GROUP BY k ORDER BY k ASC LIMIT 10 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS perf_lc_group_by</drop_query>
+</test>
