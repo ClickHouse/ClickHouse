@@ -165,9 +165,9 @@ const std::unordered_set<String> distributed_cluster_names = {
 /// Distributed sharding-key expressions. All accept an integer argument except the CRC* family, which
 /// take a String.
 const std::unordered_set<String> noncrypto_hash_functions = {
-    "cityHash64", "CRC32",       "CRC32IEEE",      "CRC64ECMA",      "farmHash64",     "halfMD5",        "intHash32",
-    "intHash64",  "metroHash64", "murmurHash2_32", "murmurHash2_64", "murmurHash3_32", "murmurHash3_64", "sipHash64",
-    "wyHash64",   "xxHash32",    "xxHash64",       "xxHash64Spark",  "xxh3",
+    "cityHash64", "CRC32",       "CRC32IEEE",      "CRC64ECMA",      "farmHash64",     "halfMD5",           "intHash32",
+    "intHash64",  "metroHash64", "murmurHash2_32", "murmurHash2_64", "murmurHash3_32", "murmurHash3_64",    "sipHash64",
+    "wyHash64",   "xxHash32",    "xxHash64",       "xxHash64Spark",  "xxh3",           "farmFingerprint64", "gccMurmurHash",
 };
 
 /// Configures a regexp column matcher with a random column-name-like glob pattern, storing the
@@ -3232,7 +3232,8 @@ DataTypePtr QueryFuzzer::getRandomType()
 
     /// Geo types are custom-named Array aliases with no TypeIndex of their own,
     /// so they are appended after the TypeIndex vector in a unified selection.
-    static constexpr const char * geo_type_names[] = {"Point", "MultiPoint", "Ring", "LineString", "MultiLineString", "Polygon", "MultiPolygon"};
+    static constexpr const char * geo_type_names[]
+        = {"Point", "MultiPoint", "Ring", "LineString", "MultiLineString", "Polygon", "MultiPolygon"};
     static constexpr size_t n_geo = std::size(geo_type_names);
     const size_t pick = fuzz_rand() % (random_types.size() + n_geo);
     if (pick >= random_types.size())
@@ -4849,6 +4850,7 @@ static const std::unordered_set<String> higher_order_map_funcs = {
     "mapExists",
     "mapAll",
     "mapSort",
+    "mapReverseSort",
 };
 
 static const std::vector<std::unordered_set<String>> & swapFuncs
@@ -4863,7 +4865,26 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Comparison operators
         comparison_comparators,
         /// Arithmetic and string operators
-        {"concat", "concatAssumeInjective", "divide", "intDiv", "intDivOrZero", "minus", "modulo", "moduloOrZero", "multiply", "plus"},
+        {"concat",
+         "concatAssumeInjective",
+         "divide",
+         "divideOrNull",
+         "intDiv",
+         "intDivOrZero",
+         "intDivOrNull",
+         "minus",
+         "modulo",
+         "moduloOrZero",
+         "moduloOrNull",
+         "moduloLegacy",
+         "positiveModulo",
+         "positiveModuloOrNull",
+         "multiply",
+         "plus",
+         "max2",
+         "min2"},
+        /// Decimal-precision arithmetic (a, b, result_scale → Decimal)
+        {"multiplyDecimal", "divideDecimal"},
         /// Date/time component extractors and truncators (date/datetime → numeric or date)
         {"toDayOfMonth",
          "toDayOfWeek",
@@ -4925,13 +4946,16 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Unix timestamp at sub-second precision (datetime64 → Int64)
         {"toUnixTimestamp64Micro", "toUnixTimestamp64Milli", "toUnixTimestamp64Nano", "toUnixTimestamp64Second"},
         /// Unix timestamp to DateTime64 (Int64 → DateTime64)
-        {"fromUnixTimestamp64Micro", "fromUnixTimestamp64Milli", "fromUnixTimestamp64Nano"},
+        {"fromUnixTimestamp64Micro", "fromUnixTimestamp64Milli", "fromUnixTimestamp64Nano", "fromUnixTimestamp64Second"},
         /// Date/time difference functions (unit, t1, t2 → Int64)
         {"dateDiff", "date_diff", "age"},
         /// Date/time formatters (datetime [, format] → String)
         {"formatDateTime", "formatDateTimeInJodaSyntax"},
         /// Date/time parsers (string [, format] → DateTime / DateTime64)
         {"parseDateTime",
+         "parseDateTime64",
+         "parseDateTime64OrNull",
+         "parseDateTime64OrZero",
          "parseDateTimeOrNull",
          "parseDateTimeOrZero",
          "parseDateTimeInJodaSyntax",
@@ -4989,7 +5013,14 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "toFloat64",
          "toFloat64OrNull",
          "toFloat64OrZero",
-         "toFloat64OrDefault"},
+         "toFloat64OrDefault",
+         "toBool"},
+        /// Explicit target-type casts (value, type name[, default] → that type)
+        {"reinterpret", "accurateCast", "accurateCastOrNull", "accurateCastOrDefault"},
+        /// Value plus a scale/unit argument (value, scale or unit → String/Interval)
+        {"toDecimalString", "toInterval"},
+        /// Row formatting (format name, columns... → String)
+        {"formatRow", "formatRowNoNewline"},
         /// Byte reinterpretation casts (single value → type with the same bytes)
         {"reinterpretAsUInt8",
          "reinterpretAsUInt16",
@@ -5038,10 +5069,10 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "toTime64OrZero"},
         /// Rounding functions (number → number)
         {"ceil", "floor", "round", "roundBankers", "roundDown", "trunc", "roundAge", "roundDuration", "roundToExp2"},
-        /// Bitwise binary operators
-        {"bitAnd", "bitOr", "bitXor"},
-        /// Bit shift operators
-        {"bitShiftLeft", "bitShiftRight"},
+        /// Bitwise binary operators and bit predicates (integer, integer[, ...] → integer/UInt8)
+        {"bitAnd", "bitOr", "bitXor", "bitHammingDistance", "bitTest", "bitTestAll", "bitTestAny"},
+        /// Bit shift and rotate operators (value, N → value)
+        {"bitShiftLeft", "bitShiftRight", "bitRotateLeft", "bitRotateRight"},
         /// String case, validity and normalization functions (string → string or UInt8)
         string_case_functions,
         /// String left/right extraction and padding
@@ -5058,6 +5089,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "hasTokenCaseInsensitive",
          "hasTokenCaseInsensitiveOrNull",
          "hasTokenOrNull",
+         "hasPhrase",
          "hasAnyTokens",
          "hasAllTokens"},
         /// Map containment checks
@@ -5081,11 +5113,29 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"cosineDistanceTransposedQuantized", "L2DistanceTransposedQuantized", "dotProductTransposedQuantized"},
         /// Vector norms (single array → Float64)
         {"L1Norm", "L2Norm", "L2SquaredNorm", "LinfNorm"},
+        /// Vector normalization (single array → array)
+        {"L1Normalize", "L2Normalize", "LinfNormalize"},
+        /// Lp vector functions taking the extra `p` degree argument
+        {"LpNorm", "LpNormalize"},
+        /// Array pair reductions (two arrays -> scalar/array)
+        {"arrayDotProduct", "arrayNormalizedGini", "hasSubstr"},
+        /// Array top/bottom-K selection (array, k -> array)
+        {"arrayTopK", "arrayBottomK"},
+        /// Ranked array enumeration (array[, depth...] -> array)
+        {"arrayEnumerateDenseRanked", "arrayEnumerateUniqRanked"},
+        /// Array construction from a length and a value (n, value -> Array)
+        {"arrayWithConstant", "range"},
         /// Array scalar reductions (array → scalar)
-        {"arrayMin", "arrayMax", "arraySum", "arrayProduct", "arrayAvg", "arrayUniq"},
+        {"arrayMin", "arrayMax", "arraySum", "arrayProduct", "arrayAvg", "arrayUniq", "arrayAutocorrelation"},
         /// Array transform functions (array → array, no lambda)
         {"arrayReverse",
          "arrayShuffle",
+         "arrayPartialShuffle",
+         "arrayEnumerateDense",
+         "arrayExcept",
+         "arrayRemove",
+         "arrayResize",
+         "emptyArrayToSingle",
          "arrayDistinct",
          "arrayCompact",
          "arrayFlatten",
@@ -5114,7 +5164,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "arraySymmetricDifference",
          "arrayZipUnaligned"},
         /// URL hierarchy generators (url → Array(String))
-        {"URLHierarchy", "URLPathHierarchy"},
+        {"URLHierarchy", "URLPathHierarchy", "extractURLParameters", "extractURLParameterNames"},
         /// Unary trig functions, logarithms, exponentials and roots (number → Float64)
         {"sin",   "sinh",    "cos",     "cosh",  "tan",   "tanh",   "asin",     "asinh",   "acos",   "acosh", "atan",
          "atanh", "log",     "log2",    "log1p", "log10", "lgamma", "intExp10", "intExp2", "ln",     "exp",   "exp2",
@@ -5124,15 +5174,44 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Non-cryptographic hash functions (→ UInt32/UInt64)
         noncrypto_hash_functions,
         /// Non-cryptographic 128-bit hash functions (→ FixedString(16))
-        {"sipHash128", "sipHash128Reference", "murmurHash3_128"},
+        {"sipHash128", "sipHash128Reference", "murmurHash3_128", "xxh3_128"},
         /// Cryptographic hashes (string → FixedString)
-        {"MD5", "SHA1", "SHA224", "SHA256", "SHA384", "SHA512", "SHA512_256"},
+        {"MD4", "MD5", "SHA1", "SHA224", "SHA256", "SHA384", "SHA512", "SHA512_256", "BLAKE3", "RIPEMD160", "keccak256"},
+        /// String-oriented non-cryptographic hashes (single String → integer)
+        {"URLHash", "hiveHash", "javaHash", "javaHashUTF16LE", "kafkaMurmurHash", "icebergHash"},
+        /// SimHash text fingerprints (string[, size] → UInt64)
+        {"ngramSimHash",
+         "ngramSimHashUTF8",
+         "ngramSimHashCaseInsensitive",
+         "ngramSimHashCaseInsensitiveUTF8",
+         "wordShingleSimHash",
+         "wordShingleSimHashUTF8",
+         "wordShingleSimHashCaseInsensitive",
+         "wordShingleSimHashCaseInsensitiveUTF8"},
+        /// MinHash text fingerprints (string[, size, hashnum] → Tuple(UInt64, UInt64))
+        {"ngramMinHash",
+         "ngramMinHashUTF8",
+         "ngramMinHashCaseInsensitive",
+         "ngramMinHashCaseInsensitiveUTF8",
+         "wordShingleMinHash",
+         "wordShingleMinHashUTF8",
+         "wordShingleMinHashCaseInsensitive",
+         "wordShingleMinHashCaseInsensitiveUTF8"},
+        /// MinHashArg text fingerprints (string[, size, hashnum] → Tuple(Array, Array))
+        {"ngramMinHashArg",
+         "ngramMinHashArgUTF8",
+         "ngramMinHashArgCaseInsensitive",
+         "ngramMinHashArgCaseInsensitiveUTF8",
+         "wordShingleMinHashArg",
+         "wordShingleMinHashArgUTF8",
+         "wordShingleMinHashArgCaseInsensitive",
+         "wordShingleMinHashArgCaseInsensitiveUTF8"},
         /// String position search (haystack, needle → UInt64)
         {"position", "positionCaseInsensitive", "positionUTF8", "positionCaseInsensitiveUTF8", "locate"},
         /// Subsequence containment checks (haystack, needle → UInt8)
         {"hasSubsequence", "hasSubsequenceUTF8", "hasSubsequenceCaseInsensitive", "hasSubsequenceCaseInsensitiveUTF8"},
         /// String character translation (str, from, to → String)
-        {"translate", "translateUTF8"},
+        {"translate", "translateUTF8", "regexpQuoteMeta"},
         /// URL component extractors (url → String or UInt16)
         {"domain",
          "domainWithoutWWW",
@@ -5148,17 +5227,37 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "firstSignificantSubdomain",
          "firstSignificantSubdomainRFC",
          "cutToFirstSignificantSubdomain",
-         "cutToFirstSignificantSubdomainRFC"},
+         "cutToFirstSignificantSubdomainRFC",
+         "cutToFirstSignificantSubdomainWithWWW",
+         "cutToFirstSignificantSubdomainWithWWWRFC",
+         "domainRFC",
+         "netloc",
+         "pathFull",
+         "portRFC"},
+        /// URL component extractors taking a custom TLD list (url, tld_list_name -> String)
+        {"cutToFirstSignificantSubdomainCustom",
+         "cutToFirstSignificantSubdomainCustomRFC",
+         "cutToFirstSignificantSubdomainCustomWithWWW",
+         "cutToFirstSignificantSubdomainCustomWithWWWRFC",
+         "firstSignificantSubdomainCustom",
+         "firstSignificantSubdomainCustomRFC"},
+        /// URL query-parameter access (url, parameter name -> String)
+        {"extractURLParameter", "cutURLParameter"},
         /// URL strip functions (url → url with component removed)
         {"cutFragment", "cutQueryString", "cutQueryStringAndFragment", "cutWWW"},
-        /// Float classification
-        {"isNaN", "isInfinite", "isFinite"},
+        /// Float classification (arity mismatch intentional: ifNotFinite takes (x, alternative))
+        {"isNaN", "isInfinite", "isFinite", "ifNotFinite"},
         /// Map accessors (map → array)
         {"mapKeys", "mapValues"},
-        /// Numeric map arithmetic (map, map → map, element-wise)
-        {"mapAdd", "mapSubtract"},
-        /// Map sorting (map → map)
-        {"mapSort", "mapReverseSort"},
+        /// Numeric map arithmetic (map, map → map, element-wise). `mapUpdate` and `mapConcat` take
+        /// the same two-map shape but merge instead of adding.
+        {"mapAdd", "mapSubtract", "mapUpdate", "mapConcat"},
+        /// Map filtering by pattern (map, pattern → map)
+        {"mapExtractKeyLike", "mapExtractValueLike"},
+        /// Two-array map builders (key array, value array[, extra] → map)
+        {"mapFromArrays", "mapPopulateSeries"},
+        /// Key-value text parsers (String → Map)
+        {"extractKeyValuePairs", "extractKeyValuePairsWithEscaping"},
         /// Map partial sorting (shared signature: limit, map → map)
         {"mapPartialSort", "mapPartialReverseSort"},
         /// Higher-order map functions (lambda, map → map or UInt8)
@@ -5167,8 +5266,34 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"hex", "bin", "base58Encode", "base64Encode", "base64URLEncode"},
         /// Binary decoding (encoded String → bytes)
         {"unhex", "unbin", "base58Decode", "tryBase58Decode", "base64Decode", "base64URLDecode", "tryBase64Decode", "tryBase64URLDecode"},
+        /// Integer bitmask expansion (single number → array/list of set bits)
+        {"bitPositionsToArray", "bitmaskToArray", "bitmaskToList"},
+        /// Space-filling curve decoders (tuple_size, code → tuple)
+        {"hilbertDecode", "mortonDecode"},
+        /// Space-filling curve encoders (variadic numbers → UInt64)
+        {"hilbertEncode", "mortonEncode"},
+        /// Variadic encoders returning String
+        {"char", "sqidEncode", "bech32Encode"},
+        /// Single-String decoders returning a structured value
+        {"bech32Decode", "sqidDecode"},
+        /// NumericIndexedVector pointwise operations (two vectors, or vector and scalar → vector)
+        {"numericIndexedVectorPointwiseAdd",
+         "numericIndexedVectorPointwiseSubtract",
+         "numericIndexedVectorPointwiseMultiply",
+         "numericIndexedVectorPointwiseDivide",
+         "numericIndexedVectorPointwiseEqual",
+         "numericIndexedVectorPointwiseNotEqual",
+         "numericIndexedVectorPointwiseLess",
+         "numericIndexedVectorPointwiseLessEqual",
+         "numericIndexedVectorPointwiseGreater",
+         "numericIndexedVectorPointwiseGreaterEqual"},
+        /// NumericIndexedVector single-vector accessors (vector → scalar/Map/String)
+        {"numericIndexedVectorAllValueSum",
+         "numericIndexedVectorCardinality",
+         "numericIndexedVectorShortDebugString",
+         "numericIndexedVectorToMap"},
         /// Sign/magnitude
-        {"abs", "sign"},
+        {"abs", "sign", "negate", "byteSwap"},
         /// JSONExtract* family (json, path → typed value)
         {"JSONExtract",
          "JSONExtractArrayRaw",
@@ -5187,7 +5312,19 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "JSONExtractUInt",
          "JSONExtractUIntCaseInsensitive"},
         /// JSON predicates / metadata (json[, path] → scalar)
-        {"JSONHas", "JSONLength", "JSONType", "JSONKey", "isValidJSON"},
+        {"JSONHas", "JSONLength", "JSONType", "JSONKey", "isValidJSON", "JSONArrayLength"},
+        /// JSON-typed column path/value introspection (JSON column -> Array/Map)
+        {"JSONAllPaths",
+         "JSONAllPathsWithTypes",
+         "JSONAllValues",
+         "JSONDynamicPaths",
+         "JSONDynamicPathsWithTypes",
+         "JSONSharedDataPaths",
+         "JSONSharedDataPathsWithTypes"},
+        /// Value -> JSON text (single value -> String)
+        {"toJSONString", "prettyPrintJSON"},
+        /// Dynamic column introspection (Dynamic -> String/UInt8)
+        {"dynamicType", "isDynamicElementInSharedData"},
         /// JSON keys / keys-and-values extractors (json[, path] → Array(...) / Map(...))
         {"JSONExtractKeys",
          "JSONExtractKeysCaseInsensitive",
@@ -5206,11 +5343,23 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "simpleJSONExtractString",
          "simpleJSONExtractUInt"},
         /// String substring extraction (str, offset[, length] → String)
-        {"substring", "substringUTF8", "mid", "substr"},
-        /// String replacement (str, pattern, replacement → String)
-        {"replaceAll", "replaceOne", "replaceRegexpAll", "replaceRegexpOne"},
-        /// String splitting (str, sep → Array(String))
-        {"splitByChar", "splitByString", "splitByRegexp", "splitByWhitespace", "splitByNonAlpha"},
+        {"substring", "substringUTF8", "mid", "substr", "bitSlice"},
+        /// String replacement (str, pattern, replacement → String); overlay* replace by position
+        /// instead of by pattern but share the three-argument shape
+        {"replaceAll", "replaceOne", "replaceRegexpAll", "replaceRegexpOne", "overlay", "overlayUTF8"},
+        /// Format-string interpolation (format/pattern, args... → String)
+        {"format", "printf"},
+        /// String splitting / tokenizing (str[, sep or tokenizer] → Array(String))
+        {"splitByChar",
+         "splitByString",
+         "splitByRegexp",
+         "splitByWhitespace",
+         "splitByNonAlpha",
+         "alphaTokens",
+         "tokens",
+         "tokensForLikePattern"},
+        /// Two-argument String→Array extractors (str, pattern/separator)
+        {"extractAllGroupsVertical", "extractAllGroupsHorizontal", "extractGroups", "reverseBySeparator"},
         /// Substring occurrence count (haystack, needle → UInt64); swapping `countMatches`
         /// in exercises regex compilation of needles that were meant as plain substrings.
         {"countMatches",
@@ -5218,10 +5367,50 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "countSubstrings",
          "countSubstringsCaseInsensitive",
          "countSubstringsCaseInsensitiveUTF8"},
-        /// Multi-pattern search (haystack, [needles] → UInt8/UInt64)
-        {"multiSearchAny", "multiSearchFirstIndex", "multiSearchFirstPosition", "multiSearchAllPositions"},
+        /// Multi-pattern search / match (haystack, [needles or patterns] → UInt8/UInt64/Array).
+        /// multiMatch* treat the array as regexps and multiSearch* as plain substrings, so swapping
+        /// between them exercises regex compilation of literals and vice versa.
+        {"multiSearchAny",
+         "multiSearchAnyUTF8",
+         "multiSearchAnyCaseInsensitive",
+         "multiSearchAnyCaseInsensitiveUTF8",
+         "multiSearchFirstIndex",
+         "multiSearchFirstIndexUTF8",
+         "multiSearchFirstIndexCaseInsensitive",
+         "multiSearchFirstIndexCaseInsensitiveUTF8",
+         "multiSearchFirstPosition",
+         "multiSearchFirstPositionUTF8",
+         "multiSearchFirstPositionCaseInsensitive",
+         "multiSearchFirstPositionCaseInsensitiveUTF8",
+         "multiSearchAllPositions",
+         "multiSearchAllPositionsUTF8",
+         "multiSearchAllPositionsCaseInsensitive",
+         "multiSearchAllPositionsCaseInsensitiveUTF8",
+         "multiMatchAny",
+         "multiMatchAnyIndex",
+         "multiMatchAllIndices",
+         "highlight"},
+        /// Fuzzy multi-pattern match (haystack, edit distance, [patterns] → UInt8/UInt64/Array)
+        {"multiFuzzyMatchAny", "multiFuzzyMatchAnyIndex", "multiFuzzyMatchAllIndices"},
         /// Integer GCD / LCM
         {"gcd", "lcm"},
+        /// Time-series group/id single-argument accessors (group or id → Map/Array/String)
+        {"timeSeriesGroupToTags",
+         "timeSeriesGroupToSamplingKey",
+         "timeSeriesIdToGroup",
+         "timeSeriesIdToTags",
+         "timeSeriesExtractTag",
+         "timeSeriesTagsToGroup"},
+        /// Time-series tag removal (group, tag(s) → group)
+        {"timeSeriesRemoveTag", "timeSeriesRemoveTags", "timeSeriesRemoveAllTagsExcept"},
+        /// Time-series tag copying (dest_group, src_group, tag(s) → group)
+        {"timeSeriesCopyTag", "timeSeriesCopyTags"},
+        /// Series analysis over a numeric array (array[, extra params] → Array/number)
+        {"seriesDecomposeSTL", "seriesOutliersDetectTukey", "seriesPeriodDetectFFT"},
+        /// Tumbling time windows (time_attr, interval[, timezone] → Tuple/DateTime)
+        {"tumble", "tumbleStart", "tumbleEnd", "windowID"},
+        /// Hopping time windows (time_attr, hop_interval, window_interval[, timezone] → Tuple/DateTime)
+        {"hop", "hopStart", "hopEnd"},
         /// Bitwise unary (integer → integer)
         {"bitNot", "bitCount"},
         /// Bitmap binary operations (Bitmap, Bitmap → Bitmap)
@@ -5231,10 +5420,15 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// IP address type casts (String → IPv4/IPv6)
         {"toIPv4", "toIPv4OrNull", "toIPv4OrZero", "toIPv4OrDefault"},
         {"toIPv6", "toIPv6OrNull", "toIPv6OrZero", "toIPv6OrDefault"},
-        /// IPv4 numeric ↔ string conversions
-        {"IPv4NumToString", "IPv4NumToStringClassC"},
-        /// IPv6 numeric ↔ string conversions
-        {"IPv6NumToString", "IPv6StringToNum"},
+        /// IP value → text conversions (single IP/numeric argument → String)
+        {"IPv4NumToString", "IPv4NumToStringClassC", "IPv6NumToString", "IPv4ToIPv6"},
+        /// Text → IP numeric conversions (single String argument; bare, OrNull and OrDefault variants)
+        {"IPv4StringToNum",
+         "IPv4StringToNumOrNull",
+         "IPv4StringToNumOrDefault",
+         "IPv6StringToNum",
+         "IPv6StringToNumOrNull",
+         "IPv6StringToNumOrDefault"},
         /// Best-effort datetime parsers (string → DateTime/DateTime64; all accept 1 arg)
         {"parseDateTimeBestEffort",
          "parseDateTimeBestEffortOrNull",
@@ -5262,7 +5456,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Window lag/lead functions (expr[, offset[, default]])
         {"lag", "lagInFrame", "lead", "leadInFrame"},
         /// Array search / index (array, value → UInt64)
-        {"indexOf", "countEqual"},
+        {"indexOf", "countEqual", "indexOfAssumeSorted"},
         /// Human-readable formatting (number → String)
         {"formatReadableSize", "formatReadableQuantity", "formatReadableTimeDelta", "formatReadableDecimalSize"},
         /// Bitmap scalar reductions (Bitmap → UInt64)
@@ -5272,15 +5466,22 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// UUID type casts (String → UUID, with error-handling variants)
         {"toUUID", "toUUIDOrDefault", "toUUIDOrNull", "toUUIDOrZero"},
         /// String/type conversion (arity mismatch for toFixedString is intentional)
-        {"toString", "toFixedString"},
+        {"toString", "toFixedString", "toStringCutToZero"},
         /// Type name introspection (any → String)
         {"toTypeName", "toColumnTypeName"},
         /// URL percent-encoding (String → String)
-        {"encodeURLComponent", "decodeURLComponent", "decodeURLFormComponent"},
+        {"encodeURLComponent", "encodeURLFormComponent", "decodeURLComponent", "decodeURLFormComponent"},
         /// XML encoding (String → String)
         {"encodeXMLComponent", "decodeXMLComponent"},
         /// Text classification (arity mismatch is intentional: naiveBayesClassifier takes (model, text), the rest take (text))
-        {"naiveBayesClassifier", "detectCharset", "detectLanguage", "detectLanguageUnknown", "detectLanguageMixed", "detectTonality"},
+        {"naiveBayesClassifier",
+         "naiveBayesClassifierWithProb",
+         "naiveBayesClassifierWithAllProbs",
+         "detectCharset",
+         "detectLanguage",
+         "detectLanguageUnknown",
+         "detectLanguageMixed",
+         "detectTonality"},
         /// Word-level NLP (language/extension + word)
         {"stem", "lemmatize", "synonyms"},
         /// AI text generation: text + optional params map
@@ -5292,26 +5493,55 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"aiClassify", "aiExtract", "aiTranslate"},
         /// Geo distance functions (lon1, lat1, lon2, lat2 → Float64)
         {"greatCircleDistance", "geoDistance", "greatCircleAngle"},
+        /// Geo coordinate projections (longitude, latitude[, zone/precision] → Tuple/String)
+        {"geoToUTM", "geoToMGRS"},
         /// Consistent hash functions (value, num_buckets → Int32)
         {"jumpConsistentHash", "kostikConsistentHash"},
         /// Keyed SipHash functions (key_tuple, value... → hash)
         {"sipHash64Keyed", "sipHash128Keyed", "sipHash128ReferenceKeyed"},
         /// Bitmap binary cardinality (Bitmap, Bitmap → UInt64)
         {"bitmapAndCardinality", "bitmapOrCardinality", "bitmapXorCardinality", "bitmapAndnotCardinality"},
-        /// Bitmap subset extraction (Bitmap, range → Bitmap)
-        {"bitmapSubsetInRange", "bitmapSubsetLimit"},
+        /// Bitmap three-argument transforms (Bitmap, arg, arg → Bitmap)
+        {"bitmapSubsetInRange", "bitmapSubsetLimit", "subBitmap", "bitmapTransform"},
         /// Tuple element-wise arithmetic (Tuple, Tuple → Tuple)
-        {"tupleDivide", "tupleIntDiv", "tupleIntDivOrZero", "tupleMinus", "tupleModulo", "tupleMultiply", "tuplePlus"},
+        {"tupleDivide", "tupleIntDiv", "tupleIntDivOrZero", "tupleMinus", "tupleModulo", "tupleMultiply", "tuplePlus", "tupleConcat"},
         /// Tuple-scalar arithmetic (Tuple, Number → Tuple)
-        {"tupleMultiplyByNumber", "tupleDivideByNumber", "tupleModuloByNumber", "tupleIntDivByNumber", "tupleIntDivOrZeroByNumber"},
+        {"tupleMultiplyByNumber",
+         "tupleDivideByNumber",
+         "tupleModuloByNumber",
+         "tupleIntDivByNumber",
+         "tupleIntDivOrZeroByNumber",
+         "tuplePositiveModuloByNumber"},
+        /// Tuple pair reductions (Tuple, Tuple → number)
+        {"dotProduct", "tupleHammingDistance"},
+        /// Single-tuple transforms (Tuple → Tuple/Array). `untuple` expands into several columns,
+        /// so swapping it in also exercises rejection outside a top-level SELECT expression.
+        {"tupleNegate", "flattenTuple", "tupleNames", "tupleToNameValuePairs", "untuple"},
         /// Snowflake ID → date-time (UInt64 → DateTime/DateTime64)
-        {"snowflakeIDToDateTime", "snowflakeIDToDateTime64"},
-        /// Date-time → Snowflake ID (DateTime/DateTime64 → UInt64)
-        {"dateTimeToSnowflakeID", "dateTime64ToSnowflakeID"},
+        {"snowflakeIDToDateTime", "snowflakeIDToDateTime64", "UUIDv7ToDateTime"},
+        /// Date-time → Snowflake ID / UUIDv7 (DateTime/DateTime64 → UInt64/UUID)
+        {"dateTimeToSnowflakeID", "dateTime64ToSnowflakeID", "dateTimeToUUIDv7"},
+        /// UUID binary/text conversion (UUID or String[, variant] → String/FixedString)
+        {"UUIDStringToNum", "UUIDNumToString", "UUIDToNum"},
+        /// Random ID generators (optional dummy expression → UUID/UInt64)
+        {"generateUUIDv4", "generateUUIDv7", "generateSnowflakeID"},
         /// IP CIDR range functions (IP, UInt8 → Tuple)
         {"IPv4CIDRToRange", "IPv6CIDRToRange"},
-        /// IP string predicates (String → UInt8)
-        {"isIPv4String", "isIPv6String"},
+        /// IP string predicates (→ UInt8); arity mismatch is intentional:
+        /// isIPAddressInRange takes (address, prefix), the rest take (address)
+        {"isIPv4String", "isIPv6String", "isIPAddressInRange"},
+        /// Geobase region lookups (region id[, geobase or language] -> id/name/number/Array);
+        /// regionIn is included despite taking (lhs, rhs) - it shares the two-argument shape
+        {"regionToName",
+         "regionToCity",
+         "regionToArea",
+         "regionToDistrict",
+         "regionToCountry",
+         "regionToContinent",
+         "regionToTopContinent",
+         "regionToPopulation",
+         "regionHierarchy",
+         "regionIn"},
         /// Optimizer barriers (any → same value): change what the planner may fold,
         /// eliminate or use for index analysis without changing the result shape
         {"identity", "indexHint", "materialize"},
@@ -5342,8 +5572,15 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Readable size / duration parsers (String → number; bare, OrNull and OrZero variants)
         {"parseReadableSize", "parseReadableSizeOrNull", "parseReadableSizeOrZero", "parseTimeDelta"},
         /// Polygon scalar predicates and measures (polygon(s) → number/UInt8),
-        /// Cartesian ↔ Spherical pairs
-        {"polygonAreaCartesian",
+        /// Cartesian ↔ Spherical pairs. The unprefixed `area`/`perimeter` functions are the
+        /// generic-geometry equivalents of the `polygonArea`/`polygonPerimeter` ones.
+        {"areaCartesian",
+         "areaSpherical",
+         "perimeterCartesian",
+         "perimeterSpherical",
+         "wkt",
+         "polygonConvexHullCartesian",
+         "polygonAreaCartesian",
          "polygonAreaSpherical",
          "polygonPerimeterCartesian",
          "polygonPerimeterSpherical",
@@ -5354,6 +5591,20 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "polygonsIntersectSpherical",
          "polygonsWithinCartesian",
          "polygonsWithinSpherical"},
+        /// WKT/WKB geometry parsers (single String → geometry)
+        {"readWKTPoint",
+         "readWKTRing",
+         "readWKTLineString",
+         "readWKTMultiLineString",
+         "readWKTPolygon",
+         "readWKTMultiPolygon",
+         "readWKTMultiPoint",
+         "readWKBPoint",
+         "readWKBLineString",
+         "readWKBMultiLineString",
+         "readWKBPolygon",
+         "readWKBMultiPolygon",
+         "readWKBMultiPoint"},
         /// Polygon set operations (polygon, polygon → polygon), Cartesian ↔ Spherical pairs
         {"polygonsIntersectionCartesian",
          "polygonsIntersectionSpherical",
@@ -5362,9 +5613,47 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "polygonsUnionCartesian",
          "polygonsUnionSpherical"},
         /// H3 per-resolution metrics (resolution UInt8 → number)
-        {"h3EdgeLengthKm", "h3EdgeLengthM", "h3HexAreaKm2", "h3HexAreaM2", "h3NumHexagons"},
-        /// H3 per-cell metrics (h3 index UInt64 → number)
-        {"h3CellAreaM2", "h3CellAreaRads2", "h3GetResolution"},
+        {"h3EdgeAngle", "h3EdgeLengthKm", "h3EdgeLengthM", "h3HexAreaKm2", "h3HexAreaM2", "h3NumHexagons"},
+        /// H3 per-cell metrics and predicates (h3 index UInt64 → number/String)
+        {"h3CellAreaM2",
+         "h3CellAreaRads2",
+         "h3GetResolution",
+         "h3IsValid",
+         "h3IsPentagon",
+         "h3IsResClassIII",
+         "h3GetBaseCell",
+         "h3ToString",
+         "h3ExactEdgeLengthKm",
+         "h3ExactEdgeLengthM",
+         "h3ExactEdgeLengthRads",
+         "h3UnidirectionalEdgeIsValid",
+         "h3GetOriginIndexFromUnidirectionalEdge",
+         "h3GetDestinationIndexFromUnidirectionalEdge"},
+        /// H3 single-cell composite accessors (h3 index UInt64 → Array/Tuple)
+        {"h3ToGeo",
+         "h3ToGeoBoundary",
+         "h3GetFaces",
+         "h3GetIndexesFromUnidirectionalEdge",
+         "h3GetUnidirectionalEdgesFromHexagon",
+         "h3GetUnidirectionalEdgeBoundary"},
+        /// H3 hierarchy and ring traversal (h3 index, resolution or k → index/Array)
+        {"h3ToParent", "h3ToCenterChild", "h3ToChildren", "h3kRing", "h3HexRing"},
+        /// Cell-pair relations (two cell indexes → number/Array)
+        {"h3IndexesAreNeighbors", "h3Distance", "h3Line", "h3GetUnidirectionalEdge", "s2CellsIntersect"},
+        /// H3 point distances (lat1, lon1, lat2, lon2 → Float64)
+        {"h3PointDistKm", "h3PointDistM", "h3PointDistRads"},
+        /// H3 polygon-to-cells (geometry, resolution[, flags] → Array)
+        {"h3PolygonToCells", "h3PolygonToCellsWithContainment"},
+        /// Coordinate encoders (longitude/latitude plus optional resolution/precision → index/String)
+        {"geoToH3", "geohashEncode", "geoToS2"},
+        /// Single-String geo decoders (String → Tuple/index)
+        {"geohashDecode", "stringToH3"},
+        /// S2 single-cell accessors (s2 index → Tuple/Array)
+        {"s2ToGeo", "s2GetNeighbors"},
+        /// S2 cap/rect predicates and extension (three index/degree arguments → UInt8/Tuple)
+        {"s2CapContains", "s2RectAdd", "s2RectContains"},
+        /// S2 cap/rect combinations (two index/radius pairs → Tuple)
+        {"s2CapUnion", "s2RectIntersection", "s2RectUnion"},
         /// Session introspection constants (no arguments → String)
         {"currentDatabase", "currentUser", "hostName", "serverUUID"},
         /// Session profile / role introspection (no arguments → Array(String))
