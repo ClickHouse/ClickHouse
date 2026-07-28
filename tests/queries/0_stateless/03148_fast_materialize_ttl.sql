@@ -55,15 +55,18 @@ SELECT COUNT(*) FROM test_fast_ttl_replica2;
 
 SELECT 'Test shortening TTL.';
 ALTER TABLE test_fast_ttl_replica1 MODIFY TTL create_time + INTERVAL 10 DAY;
+SYSTEM SYNC REPLICA test_fast_ttl_replica2;
 SELECT COUNT(*) FROM test_fast_ttl_replica2;
 
 SELECT 'Perform Merge after inserting data.';
 INSERT INTO test_fast_ttl_replica1 SELECT number, 'DDD', if(number >= 1000, date_sub(day, 20, now()), now()) from numbers(2000);
 OPTIMIZE TABLE test_fast_ttl_replica1 FINAL;
+SYSTEM SYNC REPLICA test_fast_ttl_replica2;
 SELECT COUNT(*) FROM test_fast_ttl_replica2;
 
 SELECT 'Testing for extended TTL.';
 ALTER TABLE test_fast_ttl_replica1 MODIFY TTL create_time + INTERVAL 30 DAY;
+SYSTEM SYNC REPLICA test_fast_ttl_replica2;
 SELECT COUNT(*) FROM test_fast_ttl_replica2;
 
 SELECT 'Perform Merge after inserting data.';
