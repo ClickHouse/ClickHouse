@@ -347,7 +347,7 @@ CREATE TABLE example_table ENGINE = Iceberg(
 
 ## Truncate {#truncate}
 
-ClickHouse supports `TRUNCATE TABLE` for Iceberg tables. The table schema is preserved, and all visible rows are cleared. No files are removed from object storage. Instead we create an empty metadata file preserving the table schema and atomically update the catalog. This works for REST/transactional backends. 
+ClickHouse supports `TRUNCATE TABLE` for Iceberg tables. The table schema is preserved, and all visible rows are cleared. No files are removed from object storage. Instead we create an empty metadata file preserving the table schema and atomically update the catalog. This works for REST/transactional backends.
 
 This requires `allow_experimental_insert_into_iceberg = 1`
 
