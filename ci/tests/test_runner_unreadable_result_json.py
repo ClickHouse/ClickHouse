@@ -345,3 +345,200 @@ def test_run_survives_an_unreadable_result_at_the_second_read(in_tmp_cwd, monkey
     # The print sits *after* the read, so it is direct evidence control got past it. On
     # master this line is absent from the job log, which is the reported symptom.
     assert "=== Run script finished ===" in capsys.readouterr().out
+
+
+# --- the local (no-hooks) path must not report success on an unreadable result ---------
+#
+# `python3 -m ci.praktika run` calls run() with local_run=True and run_hooks=False
+# (__main__.py:396-398), so `if run_hooks:` is skipped and _get_result_object - the only
+# place that promotes a non-completed result to ERROR - never runs. Degrading the read
+# without compensating here would exit 0 on a job that left no readable result, which
+# master does not do (it exits 1 via the unhandled JSONDecodeError).
+
+
+def _run_local_no_hooks(job_exit_code, leaves=None):
+    """Drive the default local invocation over a job that exits `job_exit_code`.
+
+    `leaves` is written from inside the faked `_run`, because
+    generate_local_run_environment ends with a PENDING dump() that would otherwise
+    overwrite anything staged before run() is called.
+    """
+    workflow = types.SimpleNamespace(name="W", dockers=[], event="push")
+    job = Job.Config(name=JOB_NAME, runs_on=["x"], command="true", run_in_docker="")
+
+    def _fake_run(self, workflow, job, **kwargs):
+        if leaves is None:
+            _write_result_file("")
+        else:
+            leaves()
+        return job_exit_code
+
+    return workflow, job, _fake_run
+
+
+def test_local_run_fails_when_job_exited_zero_but_left_an_unreadable_result(
+    in_tmp_cwd, monkeypatch
+):
+    """The job "succeeded" yet produced no evidence of it, so the command must fail.
+
+    Without this the local run exits 0 while the persisted result is not even completed -
+    a silent green on a job whose outcome is unknown.
+    """
+    workflow, job, fake_run = _run_local_no_hooks(0)
+    monkeypatch.setattr(Runner, "_run", fake_run)
+
+    with pytest.raises(SystemExit) as ex:
+        Runner().run(workflow=workflow, job=job, local_run=True, run_hooks=False)
+
+    assert ex.value.code == 1
+    persisted = Result.from_fs(JOB_NAME)
+    assert persisted.status == Result.Status.ERROR
+    assert persisted.is_completed() is True
+    # The reason the read failed stays in `info`; the compensation's own reason is an
+    # error entry, the same shape _run uses for "Job killed, exit code [N]".
+    assert "Failed to read Result json" in persisted.info
+    assert any(
+        "left no readable result" in e["message"]
+        for e in persisted.ext.get("errors", [])
+    )
+
+
+def test_local_run_still_succeeds_when_the_job_result_is_readable(
+    in_tmp_cwd, monkeypatch
+):
+    """The success path must stay success - the failure is keyed on the unreadable read,
+    not on the local run itself."""
+    workflow, job, fake_run = _run_local_no_hooks(
+        0,
+        leaves=lambda: Result(
+            name=JOB_NAME, status=Result.Status.OK, start_time=1.0, duration=1.0
+        ).dump(),
+    )
+    monkeypatch.setattr(Runner, "_run", fake_run)
+
+    Runner().run(workflow=workflow, job=job, local_run=True, run_hooks=False)
+
+    assert Result.from_fs(JOB_NAME).status == Result.Status.OK
+
+
+def test_local_run_does_not_fail_a_merely_non_completed_result(in_tmp_cwd, monkeypatch):
+    """⭐ The control that keeps the compensation narrow.
+
+    A local run whose job writes no result at all leaves the RUNNING/PENDING result that
+    the pre-run dump persisted, and exits 0 - on master too. So the new failure must key
+    on "the read failed" and not on `not result.is_completed()`: the broader condition
+    would turn this pre-existing, unrelated case red.
+    """
+    workflow, job, fake_run = _run_local_no_hooks(
+        0,
+        leaves=lambda: Result(
+            name=JOB_NAME, status=Result.Status.RUNNING, start_time=1.0, duration=None
+        ).dump(),
+    )
+    monkeypatch.setattr(Runner, "_run", fake_run)
+
+    Runner().run(workflow=workflow, job=job, local_run=True, run_hooks=False)
+
+    persisted = Result.from_fs(JOB_NAME)
+    assert persisted.status == Result.Status.RUNNING
+    assert persisted.is_completed() is False
+
+
+def test_a_failed_job_keeps_the_run_recovery_reason_and_log_tail(in_tmp_cwd, monkeypatch):
+    """A job that FAILED and left an unreadable result is already fully reported by `_run`
+    (ERROR + "Job killed" + the log tail). The compensation must not fire there and
+    overwrite that with its own, less informative reason - hence the `res` guard.
+    """
+    workflow = types.SimpleNamespace(name="W", dockers=[], event="push")
+    job = Job.Config(name=JOB_NAME, runs_on=["x"], command="true", run_in_docker="")
+
+    def _died_after_reporting(self, workflow, job, **kwargs):
+        # Exactly what the real _run persists here: the *synthesized* result (so the
+        # read-failed marker is still on it, which is what makes this a real test of the
+        # `res` guard) promoted to ERROR with the log tail attached.
+        _write_result_file("")
+        recovered = Runner._read_job_result_or_running(job)
+        assert recovered.ext.get(Runner.READ_FAILED_EXT_KEY) is True
+        recovered.add_error("Job killed, exit code [125]")
+        recovered.set_status(Result.Status.ERROR)
+        recovered.set_info("daemon-death-tail")
+        recovered.dump()
+        return 125
+
+    monkeypatch.setattr(Runner, "_run", _died_after_reporting)
+
+    with pytest.raises(SystemExit) as ex:
+        Runner().run(workflow=workflow, job=job, local_run=True, run_hooks=False)
+
+    assert ex.value.code == 1
+    persisted = Result.from_fs(JOB_NAME)
+    assert "daemon-death-tail" in persisted.info, "the log tail must survive"
+    messages = [e["message"] for e in persisted.ext.get("errors", [])]
+    assert "Job killed, exit code [125]" in messages
+    assert not any("left no readable result" in m for m in messages), (
+        "the compensation fired on the already-reported failure path"
+    )
+
+
+def test_synthesized_result_is_marked_and_a_genuine_one_is_not(in_tmp_cwd):
+    """The marker is what separates the two, so pin it on both sides."""
+    _write_result_file("")
+    assert (
+        Runner._read_job_result_or_running(_Job()).ext.get(Runner.READ_FAILED_EXT_KEY)
+        is True
+    )
+
+    Result(
+        name=JOB_NAME, status=Result.Status.RUNNING, start_time=1.0, duration=None
+    ).dump()
+    genuine = Runner._read_job_result_or_running(_Job())
+    assert genuine.status == Result.Status.RUNNING
+    assert not genuine.ext.get(Runner.READ_FAILED_EXT_KEY)
+
+
+def test_marker_survives_the_dump_round_trip(in_tmp_cwd):
+    """`_run` dumps the synthesized result, and `run` reads it back from disk - so the
+    marker has to round-trip through JSON or the compensation silently never fires."""
+    _write_result_file("")
+    Runner._read_job_result_or_running(_Job()).dump()
+    assert Result.from_fs(JOB_NAME).ext.get(Runner.READ_FAILED_EXT_KEY) is True
+
+
+def test_ci_path_promotion_is_not_duplicated_by_the_local_compensation():
+    """The compensation must stay in the `res and ...` branch of the run-script block.
+
+    Moving it under `if run_hooks:`, or dropping the `res` guard, would either lose it for
+    local runs or double-report on the CI path where _get_result_object already promotes.
+    """
+    tree, _ = _runner_ast()
+    run_fn = _function(tree, "run")
+
+    compensations = [
+        node
+        for node in ast.walk(run_fn)
+        if isinstance(node, ast.If)
+        and "READ_FAILED_EXT_KEY" in ast.unparse(node.test)
+    ]
+    assert len(compensations) == 1, (
+        "expected exactly one unreadable-result compensation in Runner.run"
+    )
+    node = compensations[0]
+    # Must be the `res` *name*, not the "res" inside "result": the guard is what keeps the
+    # compensation off the already-failed path, which _run has already reported on.
+    assert any(
+        isinstance(n, ast.Name) and n.id == "res" for n in ast.walk(node.test)
+    ), (
+        "the compensation must not fire when the job already failed - that path is "
+        "handled by the is_ok() reconciliation above it"
+    )
+    for parent in ast.walk(run_fn):
+        if isinstance(parent, ast.If) and "run_hooks" in ast.unparse(parent.test):
+            body_lines = {
+                n.lineno
+                for stmt in parent.body
+                for n in ast.walk(stmt)
+                if hasattr(n, "lineno")
+            }
+            assert node.lineno not in body_lines, (
+                "the compensation moved under `if run_hooks:` - local runs would lose it"
+            )

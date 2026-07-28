@@ -514,6 +514,13 @@ class Runner:
 
         return exit_code
 
+    # Marks a Result synthesized because the job result file was unreadable, as opposed to
+    # one a job legitimately left non-completed. Only the synthesized kind may fail a local
+    # run: a plain RUNNING/PENDING result reaching the end of a local run exits 0 both
+    # before and after this change, so keying on is_completed() alone would be a
+    # regression of its own.
+    READ_FAILED_EXT_KEY = "job_result_read_failed"
+
     @staticmethod
     def _read_job_result_or_running(job) -> Result:
         """Read the job result file, degrading to a RUNNING result if it is unreadable.
@@ -543,7 +550,7 @@ class Runner:
                 start_time=Utils.timestamp(),
                 duration=None,
                 info=f"Failed to read Result json, ex: [{e}]",
-            )
+            ).add_ext_key_value(Runner.READ_FAILED_EXT_KEY, True)
 
     def _get_result_object(
         self, job, setup_env_exit_code, prerun_exit_code, run_exit_code,
@@ -1131,6 +1138,15 @@ class Runner:
                 result.set_status(Result.Status.ERROR).set_info(
                     f"Job got terminated with an error, exit code [{run_code}]"
                 ).dump()
+            elif res and result.ext.get(self.READ_FAILED_EXT_KEY):
+                # The job exited 0 but its result is unreadable, so there is no evidence it
+                # succeeded. In CI `_get_result_object` promotes this to ERROR, but it runs
+                # under `if run_hooks:` below, which a local run skips - without this the
+                # command would exit 0 while the persisted result is not even completed.
+                info = f"Job exited [{run_code}] but left no readable result"
+                print(f"ERROR: {info}")
+                result.add_error(info).set_status(Result.Status.ERROR).dump()
+                res = False
 
             print("=== Run script finished ===\n\n")
 
