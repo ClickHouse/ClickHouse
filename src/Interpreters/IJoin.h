@@ -147,11 +147,6 @@ public:
     virtual IBlocksStreamPtr getDelayedBlocks() { return nullptr; }
     virtual bool hasDelayedBlocks() const { return false; }
 
-    /// Whether the join emits left rows in the same order they arrive. HashJoin/DirectJoin/ConcurrentHashJoin
-    /// stream the probe side, so they do. PartialMergeJoin re-sorts left blocks by the join key, so it does not;
-    /// the read-in-order-through-join optimisation in optimizeReadInOrder.cpp must not propagate through such joins.
-    virtual bool preservesLeftBlockOrder() const { return true; }
-
     virtual IBlocksStreamPtr
         getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
 
@@ -180,10 +175,10 @@ public:
     /// right columns). The read-in-order-through-join optimization relies on this to keep the
     /// left sort property, so the default is fail-closed: a join preserves the order only if it
     /// opts in by overriding this to `true`. Joins that stream the left side through once
-    /// (`HashJoin`, `DirectKeyValueJoin`, `PasteJoin`) opt in. Joins that re-scan or scatter the
-    /// left side do not: `MergeJoin` / `FullSortingMergeJoin` re-sort or re-scan left key ranges,
-    /// `GraceHashJoin` / `SpillingHashJoin` bucket by hash, and `JoinSwitcher` may become any of
-    /// them, so all inherit the `false` default.
+    /// (`HashJoin`, `DirectKeyValueJoin`, `PasteJoin`) opt in unconditionally, `ConcurrentHashJoin`
+    /// only when it does not scatter. Joins that re-scan or scatter the left side must not opt in:
+    /// `MergeJoin` / `FullSortingMergeJoin` re-sort or re-scan left key ranges, `GraceHashJoin` /
+    /// `SpillingHashJoin` bucket by hash, and `JoinSwitcher` may become any of them.
     virtual bool preservesLeftBlockOrder() const { return false; }
 
     /// Notify the join that the query plan requires left-side read-in-order preservation.

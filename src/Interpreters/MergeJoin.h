@@ -40,8 +40,6 @@ public:
     /// preserve the left stream's original order. See issues #109216 and #110662.
     bool preservesLeftBlockOrder() const override { return false; }
     const TableJoin & getTableJoin() const override { return *table_join; }
-    /// PartialMergeJoin re-scans left key ranges per right block, so it does not preserve the left
-    /// input stream order and inherits the fail-closed `IJoin::preservesLeftBlockOrder() == false`.
     bool addBlockToJoin(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     JoinResultPtr joinBlock(Block block) override;
