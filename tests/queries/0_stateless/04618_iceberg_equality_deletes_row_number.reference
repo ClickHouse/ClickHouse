@@ -1,0 +1,11 @@
+--- equality + position deletes: id - _row_number is constant within each data file ---
+1
+1
+1
+1
+--- the same under PREWHERE, which adds the fallback filter on top of the notIn filter ---
+1
+1
+--- equality deletes only: exact physical row numbers ---
+bar	3
+world	1
