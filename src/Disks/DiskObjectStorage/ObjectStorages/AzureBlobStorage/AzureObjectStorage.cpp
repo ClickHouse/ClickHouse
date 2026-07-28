@@ -164,7 +164,7 @@ bool AzureObjectStorage::exists(const StoredObject & object) const
         blob_client.GetProperties();
         return true;
     }
-    catch (const Azure::Storage::StorageException & e)
+    catch (const Azure::Core::RequestFailedException & e)
     {
         if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
             return false;
@@ -371,7 +371,7 @@ void AzureObjectStorage::removeObjectImpl(
                     path, delete_info.RawResponse ? delete_info.RawResponse->GetReasonPhrase() : "Unknown");
         }
     }
-    catch (const Azure::Storage::StorageException & e)
+    catch (const Azure::Core::RequestFailedException & e)
     {
         error_code = static_cast<Int32>(e.StatusCode);
         error_message = e.Message;
@@ -497,7 +497,7 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
                 deferred_response.GetResponse();
                 add_log_entry(object, avg_elapsed_us);
             }
-            catch (const Azure::Storage::StorageException & e)
+            catch (const Azure::Core::RequestFailedException & e)
             {
                 if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
                 {
@@ -598,7 +598,7 @@ try
 {
     return getObjectMetadata(path, with_tags);
 }
-catch (const Azure::Storage::StorageException & e)
+catch (const Azure::Core::RequestFailedException & e)
 {
     if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
         return {};

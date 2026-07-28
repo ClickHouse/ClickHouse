@@ -457,7 +457,7 @@ void copyAzureBlobStorageFile(
             }
             is_native_copy_done = true;
         }
-        catch (const Azure::Storage::StorageException & e)
+        catch (const Azure::Core::RequestFailedException & e)
         {
             if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Unauthorized)
             {

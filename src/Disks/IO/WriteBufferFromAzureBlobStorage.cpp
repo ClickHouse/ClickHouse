@@ -385,7 +385,7 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
             auto blob_client = blob_container_client->GetBlobClient(blob_path);
             blob_client.GetProperties();
         }
-        catch (const Azure::Storage::StorageException & e)
+        catch (const Azure::Core::RequestFailedException & e)
         {
             if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
                 throw Exception(
