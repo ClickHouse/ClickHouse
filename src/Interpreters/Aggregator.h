@@ -4,6 +4,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <type_traits>
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
@@ -73,9 +74,10 @@ using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflow
 /// bucket of the key's hash. A record is the key value itself with a run-length count when the
 /// only aggregate is count, and otherwise the key plus its row's aggregate-argument values,
 /// gathered into dense per-block columns at publish so the source block is released; both
-/// carry the precomputed routing hash. Nothing is drained while production runs, so the staged
-/// records accumulate until the merge (external aggregation settings are ignored on this path:
-/// spilling the staged state is not implemented yet).
+/// carry the precomputed routing hash. Nothing is drained while production runs unless memory
+/// demands it: past the external-aggregation threshold a pressure sweep drains the backlogs
+/// early into the shared routing table and, if that is not enough, spills the routing table
+/// through the ordinary external-aggregation machinery, so the memory bound holds.
 ///
 /// Two guards hand the work back to the baseline path, with its ordinary byte-triggered
 /// two-level conversion, when freezing cannot pay. A table that consumes many times the
@@ -146,9 +148,10 @@ struct AdaptiveAggregationSharedState
     /// TODO (nihalzp): Consider using a lock-free queue for the backlog, to avoid contention on the mutex.
     struct Bucket
     {
-        /// Guards the backlog list. During production the threads only append (nothing is
-        /// drained until the scan is over); afterwards the backlog is swapped out and consumed
-        /// exactly once, by the merge task that owns the bucket.
+        /// Guards the backlog list against concurrent appends, and against the swap-out of a
+        /// pressure sweep. The merge task that owns the bucket consumes what is left without
+        /// the mutex: by then production is over and the blocks stay put, because the emplaced
+        /// keys point into their staged bytes.
         std::mutex backlog_mutex;
         /// Blocks holding a non-empty slice for this bucket.
         std::vector<DelayedBlockPtr> backlog;
@@ -157,11 +160,30 @@ struct AdaptiveAggregationSharedState
     std::array<Bucket, NUM_BUCKETS> buckets;
 
     /// An empty two-level variant of the query's aggregation method, initialized by the first
-    /// thread that freezes.
+    /// thread that freezes. Under memory pressure the production-time sweeps drain staged
+    /// records into it early (see `pressureDrainStagedBlocks`); it joins the merge set when it
+    /// holds data.
     AggregatedDataVariantsPtr routing_variants;
+
+    /// Serializes pressure sweeps: one sweeper at a time sheds memory, and a single sweeper
+    /// needs no per-bucket coordination; merge-time drains run after the finish barrier and
+    /// need none either. Producers over the trigger block on it deliberately - pausing
+    /// production is the backpressure that lets the sweep win.
+    std::mutex pressure_sweep_mutex;
+    /// Makes a batch's registration in the per-bucket backlogs atomic against a sweep's
+    /// collection: a sweep that caught a half-registered chunk would drain all of its buckets
+    /// chunk-major, and the producer would then re-register the rest for a second, double-
+    /// counting drain at merge time. Producers share the lock (per-bucket mutexes still order
+    /// their pushes); only a collecting sweep takes it exclusively.
+    std::shared_mutex backlog_registry_mutex;
+    /// Whether any early drain moved records into `routing_variants`: the finish path then
+    /// includes it in the merge set.
+    std::atomic<bool> pressure_drained{false};
     std::once_flag init_flag;
     std::atomic<bool> initialized{false};
 
+    /// Records currently enqueued for the merge-time drain; pressure sweeps subtract what they
+    /// drain early. Read for logging at the finish, after every producer flushed.
     std::atomic<size_t> pending_records{0};
 
     /// The thaw sampler (see the tuning constants in `Aggregator.cpp`). At publish the threads
@@ -402,6 +424,15 @@ public:
     /// time the last finisher assembles the merge.
     void flushAdaptiveStagedBlocks(AdaptiveAggregationThreadContext & adaptive) const;
 
+    /// Swaps the enqueued chunks out of the backlogs and drains them chunk-major into
+    /// `routing_variants` (all of one chunk's bucket slices, then the next), so each chunk
+    /// frees the moment it is consumed. Runs on at most one thread at a time. The memory-
+    /// pressure valve calls it with a watermark: it stops once memory falls below it and
+    /// re-enqueues what it did not drain; whenever the routing table reaches the spill floor
+    /// while memory is still over the trigger, it spills mid-drain, so the transfer itself
+    /// cannot peak above the trigger. The finish path calls it with `drain_everything` to put
+    /// the backlogs into disk-mergeable form when a producer has spilled.
+    void drainStagedBlocksEarly(AdaptiveAggregationSharedState & shared, bool drain_everything) const;
 
     /** This array serves two purposes.
       *
@@ -748,6 +779,7 @@ private:
         size_t slice_end,
         PaddedPODArray<AggregateDataPtr> & places,
         size_t bucket_index) const;
+
 
     void executeAggregateInstructions(
         Arena * aggregates_pool,

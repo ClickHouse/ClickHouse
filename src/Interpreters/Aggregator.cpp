@@ -14,6 +14,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Common/memcpySmall.h>
 #include <bit>
+#include <unordered_set>
 #include <base/memcmpSmall.h>
 #include <Columns/ColumnTuple.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -65,6 +66,8 @@ namespace ProfileEvents
     extern const Event AdaptiveAggregationStagedBytes;
     extern const Event AdaptiveAggregationSealedChunks;
     extern const Event AdaptiveAggregationDrainedRecords;
+    extern const Event AdaptiveAggregationPressureSweeps;
+    extern const Event AdaptiveAggregationPressureDrainedRecords;
 }
 
 namespace CurrentMetrics
@@ -137,6 +140,9 @@ namespace
     /// bucket instead of one tiny slice per consumed block; a batch of at least half the target
     /// is enqueued as-is. Also bounds the coalescing buffer per thread.
     constexpr size_t adaptive_seal_target_bytes = 4 << 20;
+    /// A pressure sweep spills the routing table mid-drain only once it holds at least this many
+    /// keys, so the spilled parts stay reasonably sized instead of one tiny file per chunk.
+    constexpr size_t adaptive_pressure_spill_min_keys = 1'000'000;
 
     /// String-like keys stage their bytes: a packed reference copied as a plain value would
     /// carry a pointer into the source block, which dies when the publish compacts the
@@ -1905,6 +1911,19 @@ bool Aggregator::executeOnBlock(Columns columns,
 
             if (adaptive->local_table_frozen)
             {
+                /// The memory valve: under the same trigger the baseline uses for spilling, the
+                /// staged backlogs are drained early into the shared table, which sheds their
+                /// staging overhead and collapses duplicate keys into states. The frozen local
+                /// itself is bounded and is deliberately kept away from the baseline spill
+                /// branch below (a spilled table converts to two-level, which the frozen kernel
+                /// cannot pair with its twin).
+                if (params.max_bytes_before_external_group_by
+                    && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
+                {
+                    flushAdaptiveStagedBlocks(*adaptive);
+                    drainStagedBlocksEarly(*adaptive->shared_state, /*drain_everything=*/false);
+                }
+
                 /// Checking the constraints.
                 if (!checkLimits(result_size, no_more_keys))
                     return false;
@@ -2610,6 +2629,7 @@ void Aggregator::enqueueDelayedBlock(
     AdaptiveAggregationSharedState & shared, const AdaptiveAggregationSharedState::DelayedBlockPtr & block)
 {
     constexpr size_t num_buckets = AdaptiveAggregationSharedState::NUM_BUCKETS;
+    std::shared_lock registry_lock(shared.backlog_registry_mutex);
     for (size_t b = 0; b < num_buckets; ++b)
     {
         if (block->bucket_offsets[b] == block->bucket_offsets[b + 1])
@@ -3142,6 +3162,122 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
                 slice_begin, slice_end, places.data(), inst->state_offset, inst->batch_arguments, bucket_arena);
         }
     }
+}
+
+void Aggregator::drainStagedBlocksEarly(AdaptiveAggregationSharedState & shared, bool drain_everything) const
+{
+    /// Blocking on purpose: a producer over the memory trigger must not keep staging while the
+    /// sweep sheds - pausing production here is the backpressure that makes the bound hold.
+    /// Threads woken after another thread's sweep usually find memory back under the trigger
+    /// and leave without work.
+    std::unique_lock sweep_lock(shared.pressure_sweep_mutex);
+    if (!drain_everything
+        && getCurrentQueryMemoryUsage() < static_cast<Int64>(params.max_bytes_before_external_group_by))
+        return;
+
+    /// Collect the enqueued chunks and drop the per-bucket claims at once: each chunk is then
+    /// owned by this list alone, so it frees the moment its drain completes and memory comes
+    /// back chunk by chunk. Whatever producers enqueue after the swap waits for the next sweep
+    /// or for the merge.
+    std::vector<AdaptiveAggregationSharedState::DelayedBlockPtr> chunks;
+    {
+        std::unique_lock registry_lock(shared.backlog_registry_mutex);
+        std::unordered_set<const void *> seen;
+        for (auto & bucket : shared.buckets)
+        {
+            std::vector<AdaptiveAggregationSharedState::DelayedBlockPtr> claimed;
+            {
+                std::lock_guard bucket_lock(bucket.backlog_mutex);
+                claimed.swap(bucket.backlog);
+            }
+            for (auto & block : claimed)
+                if (seen.insert(block.get()).second)
+                    chunks.push_back(std::move(block));
+        }
+    }
+    if (chunks.empty())
+        return;
+
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureSweeps);
+
+    auto & routing = *shared.routing_variants;
+    constexpr size_t num_buckets = AdaptiveAggregationSharedState::NUM_BUCKETS;
+
+    /// Bucket b's drained states live in pool b, mirroring the merge-time layout.
+    while (routing.aggregates_pools.size() < num_buckets)
+        routing.aggregates_pools.push_back(std::make_shared<Arena>());
+
+    /// The sweep aims below the trigger with some headroom, so a query hovering at the
+    /// threshold does not fire a sweep for every published block.
+    const Int64 low_watermark = static_cast<Int64>(params.max_bytes_before_external_group_by / 4 * 3);
+
+    PaddedPODArray<AggregateDataPtr> places_scratch;
+    std::vector<AdaptiveAggregationSharedState::DelayedBlockPtr> single(1);
+    /// The sweep does not observe query cancellation (the consume path has no flag to hand it):
+    /// a cancelled query waits out at most one sweep, which is bounded by the staged data.
+    std::atomic<bool> is_cancelled{false};
+    size_t drained_records = 0;
+
+    for (auto & chunk : chunks)
+    {
+        if (!chunk->value_staged)
+            std::call_once(chunk->prepared_flag, [&] { prepareDelayedBlock(*chunk); });
+
+        single[0] = chunk;
+        for (size_t b = 0; b < num_buckets; ++b)
+        {
+            const size_t records = chunk->bucket_offsets[b + 1] - chunk->bucket_offsets[b];
+            if (!records)
+                continue;
+            Arena * arena = routing.aggregates_pools.at(b).get();
+
+#define M(NAME) \
+    else if (routing.type == AggregatedDataVariants::Type::NAME) \
+        drainAdaptiveBucketBacklog</*adopt_keys=*/false>(*routing.NAME, arena, single, b, records, places_scratch, is_cancelled);
+
+            if (false) {} // NOLINT
+            APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+#undef M
+
+            drained_records += records;
+        }
+        single[0].reset();
+        chunk.reset();
+
+        if (!drain_everything && getCurrentQueryMemoryUsage() < low_watermark)
+            break;
+
+        /// For a mostly-distinct key stream the transfer itself inflates memory (a staged
+        /// record is slimmer than a table cell plus its states), so waiting for the end of
+        /// the sweep would peak well above the trigger. Spill the routing table as soon as
+        /// it holds a reasonably sized part while memory is still above the trigger; this
+        /// applies to the finish-path full sweep as well, whose leftovers otherwise inflate
+        /// unchecked right before the external merge.
+        if (routing.size() >= adaptive_pressure_spill_min_keys
+            && getCurrentQueryMemoryUsage() > static_cast<Int64>(params.max_bytes_before_external_group_by))
+        {
+            LOG_TRACE(
+                log, "Adaptive aggregation: spilling the routing table ({} keys) under memory pressure", routing.size());
+            writeToTemporaryFile(routing);
+            while (routing.aggregates_pools.size() < num_buckets)
+                routing.aggregates_pools.push_back(std::make_shared<Arena>());
+        }
+    }
+
+    /// Chunks the watermark spared go back to the backlogs for the merge-time drain.
+    for (auto & chunk : chunks)
+        if (chunk)
+            enqueueDelayedBlock(shared, chunk);
+
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureDrainedRecords, drained_records);
+    shared.pending_records.fetch_sub(drained_records, std::memory_order_relaxed);
+    shared.pressure_drained.store(true, std::memory_order_relaxed);
+    LOG_TRACE(log, "Adaptive aggregation: pressure sweep drained {} staged records early", drained_records);
+
+    /// A routing residue below the spill floor stays in memory on purpose: a table that small
+    /// is never why memory is over the trigger, and it cannot accumulate past the floor across
+    /// sweeps - the in-loop spill catches it there. It merges (or, on the external path, gets
+    /// flushed at the finish) like any other variant.
 }
 
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size) const
