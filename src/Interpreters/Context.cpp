@@ -5461,10 +5461,6 @@ BackgroundSchedulePoolPtr Context::getStreamingSchedulePool() const
     return shared->streaming_schedule_pool;
 }
 
-/// Return the pool only if it has already been created; null otherwise. For callers that must
-/// observe the pools without creating them (the read-only system.background_schedule_pool table).
-/// Read under `shared->mutex`, which `shutdown` also holds while clearing the members, and return
-/// a `shared_ptr` so the pool cannot be destroyed while the caller uses it.
 BackgroundSchedulePoolPtr Context::getBufferFlushSchedulePoolIfExists() const
 {
     SharedLockGuard lock(shared->mutex);
