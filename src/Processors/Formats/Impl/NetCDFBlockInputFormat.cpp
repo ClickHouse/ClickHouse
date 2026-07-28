@@ -181,6 +181,12 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
     /// data of the variables keep the order they have in the file.
     if (settings.netcdf.add_dimension_columns)
     {
+        /// The name of a generated column has to differ from the name of a variable and from the
+        /// name of another generated column, or one of the columns would be unreachable.
+        std::unordered_set<String> used_column_names;
+        for (const auto & variable : header.variables)
+            used_column_names.insert(variable.name);
+
         for (size_t position = 0; position < layout.row_dimensions.size(); ++position)
         {
             size_t dimension_id = layout.row_dimensions[position];
@@ -199,11 +205,12 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
 
             /// The name of the dimension is taken by a variable that is not a coordinate variable.
             String column_name = dimension.name;
-            for (size_t attempt = 1; variable_ids.contains(column_name); ++attempt)
+            for (size_t attempt = 1; used_column_names.contains(column_name); ++attempt)
                 column_name = dimension.name + "_index" + (attempt == 1 ? "" : "_" + std::to_string(attempt));
 
             NetCDFTableLayout::Column column;
             column.name = std::move(column_name);
+            used_column_names.insert(column.name);
             column.type = std::make_shared<DataTypeUInt64>();
             column.dimension_position = position;
             layout.columns.push_back(std::move(column));

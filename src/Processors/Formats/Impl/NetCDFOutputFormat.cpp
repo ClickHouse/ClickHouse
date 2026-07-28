@@ -132,24 +132,56 @@ String makeFillValue(T value)
 /// the file back would turn that value into a NULL. The default of the netCDF library is only the
 /// first choice, and the search goes over the bit patterns of the type, because the comparison of a
 /// reader is on the bytes of a value as they are stored in the file.
+///
+/// Only a window of candidates is checked against the data at a time, so the memory of the search
+/// does not depend on the size of the column, which is already buffered in whole. A window where
+/// every candidate is taken proves that the data contains at least that many distinct values, and
+/// the window doubles after such a pass, so the number of passes over the data is logarithmic in
+/// its size.
 template <typename T>
 String chooseFillValue(const T * data, size_t size, const UInt8 * null_map, T preferred)
 {
     using Bits = std::conditional_t<sizeof(T) == 1, UInt8,
         std::conditional_t<sizeof(T) == 2, UInt16, std::conditional_t<sizeof(T) == 4, UInt32, UInt64>>>;
 
-    std::unordered_set<Bits> used;
-    used.reserve(size);
-    for (size_t i = 0; i < size; ++i)
-        if (!null_map || !null_map[i])
-            used.insert(std::bit_cast<Bits>(data[i]));
+    /// Zero means that the domain of the type does not fit in the counter, and then it is larger
+    /// than the number of values that any column can hold, so it never runs out.
+    static constexpr UInt64 domain_size = sizeof(Bits) >= sizeof(UInt64) ? 0 : (UInt64(1) << (sizeof(Bits) * 8));
+    static constexpr size_t initial_window_size = 64;
+    static constexpr size_t max_window_size = 4096;
 
-    /// Every bit pattern of the same size is a value of the type, so `used.size() + 1` distinct
-    /// candidates cannot all be taken unless the data uses the whole domain of the type.
-    auto candidate = std::bit_cast<Bits>(preferred);
-    for (size_t attempt = 0; attempt <= used.size(); ++attempt, --candidate)
-        if (!used.contains(candidate))
-            return makeFillValue<T>(std::bit_cast<T>(candidate));
+    const auto first_candidate = std::bit_cast<Bits>(preferred);
+    std::vector<UInt8> taken;
+    UInt64 checked = 0;
+    size_t window_size = initial_window_size;
+
+    while (domain_size == 0 || checked < domain_size)
+    {
+        if (domain_size != 0)
+            window_size = static_cast<size_t>(std::min<UInt64>(window_size, domain_size - checked));
+
+        /// The candidates of a window are the bit patterns that follow the preferred one, going
+        /// down, continuing where the previous window ended.
+        const auto window_begin = static_cast<Bits>(first_candidate - checked);
+        taken.assign(window_size, 0);
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            if (null_map && null_map[i])
+                continue;
+
+            UInt64 offset = static_cast<Bits>(window_begin - std::bit_cast<Bits>(data[i]));
+            if (offset < window_size)
+                taken[offset] = 1;
+        }
+
+        for (size_t offset = 0; offset < window_size; ++offset)
+            if (!taken[offset])
+                return makeFillValue<T>(std::bit_cast<T>(static_cast<Bits>(window_begin - offset)));
+
+        checked += window_size;
+        window_size = std::min(window_size * 2, max_window_size);
+    }
 
     /// The data takes every value of the type, which is only possible for the small types.
     return {};

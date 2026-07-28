@@ -46,6 +46,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"analyzer_compatibility_apply_final_to_all_joined_tables", false, false, "New setting on master (default false = the fixed behavior). The behavior flip itself is recorded under 26.6, and the introduction for backports to older release branches (with default true) under 26.4."},
             {"join_runtime_filter_min_probe_rows", 0, 1000, "New setting to control minimum probe side size for installing JOIN runtime filters. It wasn't limited before, so previous value is 0 meaning always install."},
             {"query_plan_short_circuit_constant_false_join", false, true, "New setting to short-circuit a JOIN with a constant-false ON condition so the non-contributing side is not read. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no short-circuit)."},
+            {"input_format_netcdf_fill_value_as_null", false, false, "New setting that makes the NetCDF format read the values equal to the `_FillValue` or `missing_value` attribute of a variable as NULL"},
+            {"input_format_netcdf_add_dimension_columns", false, false, "New setting that makes the NetCDF format add a column with the index along every dimension that has no coordinate variable of the same name"},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
@@ -106,8 +108,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"show_remote_databases_in_system_tables", true, true, "New setting to control whether `MySQL` and `PostgreSQL` databases are shown in `system.tables`, `system.columns` and `system.completions`."},
             {"use_constant_folding_in_index_analysis", false, false, "New setting to fold partition-level constants into the filter predicate per part during MergeTree index analysis, improving pruning for filters whose branches depend on partition values."},
             {"join_runtime_filter_size_from_hash_table_stats", false, true, "Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`."},
-            {"input_format_netcdf_fill_value_as_null", false, false, "New setting that makes the NetCDF format read the values equal to the `_FillValue` or `missing_value` attribute of a variable as NULL"},
-            {"input_format_netcdf_add_dimension_columns", false, false, "New setting that makes the NetCDF format add a column with the index along every dimension that has no coordinate variable of the same name"},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
