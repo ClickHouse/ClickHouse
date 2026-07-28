@@ -13,11 +13,11 @@
 -- preservesLeftBlockOrder() (MergeJoin / FullSortingMergeJoin return false), so this holds under both
 -- the old and the current analyzer; enable_analyzer is intentionally not pinned.
 --
--- Note this file is a coverage guard for the LIMIT BY consumer, not a fail-without-the-fix test:
--- MergeJoin already reported false before this change and full_sorting_merge is blocked by its own
--- pre-JOIN SortingStep, so every assertion below also holds without it. The assertions that do move
--- with this change are the parallel_hash ones in 04498 and the constant-join one in
--- 04500_read_in_order_through_constant_join.
+-- Note the partial_merge / prefer_partial_merge / full_sorting_merge / hash cases below are
+-- coverage guards rather than fail-without-the-fix assertions: MergeJoin already reported false
+-- before this change and full_sorting_merge is blocked by its own pre-JOIN SortingStep. The
+-- parallel_hash case at the end of this file is the one whose classification this change moves,
+-- and it does return wrong results without it.
 
 DROP TABLE IF EXISTS tl_04500;
 DROP TABLE IF EXISTS tr_04500;
@@ -107,3 +107,27 @@ SELECT count() > 0 FROM (
 
 DROP TABLE tl_04500;
 DROP TABLE tr_04500;
+
+-- parallel_hash with a single-level (key8) map is the shape whose classification this change
+-- actually moves, and LIMIT BY is affected exactly like DISTINCT and aggregation are: the join
+-- scatters the left block across slots and emits slot 0, then 1, ..., so equal a values stop
+-- being contiguous and LimitBySortedStreamTransform reopens a group it has already closed.
+-- 8 distinct a values, one row each; without the fix every a survives 8 times, so 64 rows.
+DROP TABLE IF EXISTS tl2_04500;
+DROP TABLE IF EXISTS tr2_04500;
+CREATE TABLE tl2_04500 (a UInt32, j UInt8) ENGINE = MergeTree ORDER BY (a, j);
+CREATE TABLE tr2_04500 (j UInt8, v UInt64) ENGINE = MergeTree ORDER BY j;
+INSERT INTO tl2_04500 SELECT intDiv(number, 8)::UInt32, (number % 8)::UInt8 FROM numbers(64);
+INSERT INTO tr2_04500 SELECT (number % 8)::UInt8, number FROM numbers(8);
+
+SELECT count() FROM (
+    SELECT a FROM tl2_04500 LEFT ALL JOIN tr2_04500 ON tl2_04500.j = tr2_04500.j
+    ORDER BY a LIMIT 1 BY a
+    SETTINGS join_algorithm = 'parallel_hash', max_threads = 8, query_plan_join_swap_table = 0,
+        enable_parallel_replicas = 0, optimize_read_in_order = 1, query_plan_read_in_order = 1,
+        query_plan_read_in_order_through_join = 1,
+        max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
+);
+
+DROP TABLE tl2_04500;
+DROP TABLE tr2_04500;

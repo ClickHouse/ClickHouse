@@ -13,6 +13,11 @@ INSERT INTO cj_r_04500 VALUES (1);
 
 SET explain_query_plan_default = 'legacy';
 
+-- Pin the whole read-in-order trio: the stateless runner randomizes all three, and with
+-- query_plan_read_in_order_through_join = 0 findReadingStep never traverses the join, so the
+-- InOrder assertion below would read 0 no matter what preservesLeftBlockOrder() returns.
+SET optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1;
+
 -- The left ReadFromMergeTree under a constant-predicate join MUST read in order. Asserting an
 -- exact positive count, so dropping the opt-in (which yields ReadType: Default) fails this line.
 SELECT countIf(explain LIKE '%InOrder%') FROM (
@@ -20,7 +25,9 @@ SELECT countIf(explain LIKE '%InOrder%') FROM (
     SELECT l.k, count() FROM cj_l_04500 AS l LEFT JOIN cj_r_04500 AS r ON 1 = 1
     GROUP BY l.k ORDER BY l.k
     SETTINGS optimize_aggregation_in_order = 1, max_threads = 1,
-             query_plan_join_swap_table = 'false', enable_parallel_replicas = 0
+             query_plan_join_swap_table = 'false', enable_parallel_replicas = 0,
+             optimize_read_in_order = 1, query_plan_read_in_order = 1,
+             query_plan_read_in_order_through_join = 1
 ) WHERE explain LIKE '%ReadType%';
 
 -- Result oracle: the order the optimization is allowed to rely on must actually hold, otherwise
