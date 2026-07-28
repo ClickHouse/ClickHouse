@@ -1571,6 +1571,14 @@ button.rounded-xl {
     border-radius: 4px !important;
 }
 
+/* Match navigation division dropdowns to the sidebar's 4px radius. Mintlify
+   uses an arbitrary radius on the trigger and `rounded-2xl` on the menu, so
+   neither is covered by the shared `rounded-xl` override above. */
+.nav-dropdown-trigger,
+.nav-dropdown-content {
+    border-radius: 4px !important;
+}
+
 /* Override topbar CTA button styling */
 
 #topbar-cta-button {
@@ -1654,14 +1662,14 @@ button.rounded-xl {
    query for <img>-loaded SVGs while Blink ignores it — so the same icon paints a
    different grey in Safari vs Chrome. Force a deterministic grey keyed to the
    SITE theme instead: brightness(0) collapses whatever colour the SVG picked to
-   black, then invert() sets an exact grey — identical in every browser. The five
-   colourful brand icons (clickhouse, cloud-oss, language-picker, mcp, server) are
-   not part of this grey family and are excluded. */
-img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]):not([src*="icon-server.svg"]) {
+   black, then invert() sets an exact grey — identical in every browser. The four
+   colourful brand icons (clickhouse, cloud-oss, language-picker, mcp) are not
+   part of this grey family and are excluded. */
+img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]) {
     filter: brightness(0) invert(0.31); /* rgb(79,79,79) — matches the SVGs' light value */
 }
-.dark img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]):not([src*="icon-server.svg"]),
-:is(.dark) img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]):not([src*="icon-server.svg"]) {
+.dark img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]),
+:is(.dark) img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]) {
     filter: brightness(0) invert(0.78); /* rgb(199,199,199) — matches the SVGs' dark value */
 }
 
@@ -2880,7 +2888,7 @@ div[data-radix-popper-content-wrapper]:has([role="menu"] > .nav-dropdown-item) {
 
 /* Match clickhouse.com/clickhouse navbar dropdown panel radius (8px instead
    of Mintlify's default 16px). Targets the panel that wraps `.nav-dropdown-item`. */
-div[data-radix-popper-content-wrapper]:has([role="menu"] > .nav-dropdown-item) > div {
+div[data-radix-popper-content-wrapper]:has([role="menu"] > .nav-dropdown-item) > div:not(.nav-dropdown-content) {
     border-radius: 8px !important;
 }
 
