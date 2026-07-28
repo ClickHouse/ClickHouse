@@ -2,6 +2,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
 #include <Common/VariableContext.h>
 #include <base/defines.h>
 
@@ -45,18 +46,27 @@ MemoryPressureLevel PressureLevelMachine::sample(double pressure, uint64_t now_n
     /// Classify under the lock: a concurrent `setThresholds` swaps the ladder and
     /// resets the cooldown under this same lock, so the thresholds can't change
     /// between this classification and the cooldown update below.
-    const uint8_t raw_level = rawLevel(pressure);
+    return stickUnlocked(rawLevel(pressure), now_ns);
+}
 
+MemoryPressureLevel PressureLevelMachine::stick(uint8_t raw_level, uint64_t now_ns)
+{
+    std::lock_guard lk(mutex);
+    return stickUnlocked(raw_level, now_ns);
+}
+
+MemoryPressureLevel PressureLevelMachine::stickUnlocked(uint8_t raw_level, uint64_t now_ns)
+{
     if (raw_level >= level)
     {
         /// Snap up immediately; refresh the "still elevated" timestamp.
         level = raw_level;
         last_at_or_above_ns = now_ns;
     }
-    else if (level > 0 && now_ns >= last_at_or_above_ns + COOLDOWN_NS)
+    else if (level > 0 && now_ns >= last_at_or_above_ns + cooldown_ns)
     {
         /// Step down by ONE level per cooldown — a CRITICAL → NORMAL recovery
-        /// needs ≥ 3 × COOLDOWN_NS of sustained low pressure.
+        /// needs ≥ 3 × cooldowns of sustained low pressure.
         level -= 1;
         last_at_or_above_ns = now_ns;
     }
@@ -150,12 +160,21 @@ double localMemoryPressureFromChain(MemoryTracker * start)
 
 MemoryPressureLevel MemoryPressureMonitor::currentLevel()
 {
+    const uint64_t now_ns = steadyNowNs();
     /// Server-wide pressure keeps its 60s sticky-downward cooldown.
-    const MemoryPressureLevel total_level = machine.sample(readTotalPressure(), steadyNowNs());
-    /// Per-query / per-user limits are transient: react immediately, with no
-    /// sticky state that could leak one query's pressure into another's.
-    const MemoryPressureLevel local_level =
-        machine.levelForPressure(localMemoryPressureFromChain(CurrentThread::getMemoryTracker()));
+    const MemoryPressureLevel total_level = machine.sample(readTotalPressure(), now_ns);
+
+    /// Per-query / per-user pressure: classified on the global ladder, cooled
+    /// down on the THREAD GROUP's own machine - the sticky state is scoped to
+    /// the query (it dies with the group and follows its threads and fibers),
+    /// with the shorter query cooldown. A group-less thread has nowhere to
+    /// scope sticky state to and classifies transiently, as before.
+    const double local_pressure = localMemoryPressureFromChain(CurrentThread::getMemoryTracker());
+    const MemoryPressureLevel local_raw = machine.levelForPressure(local_pressure);
+    MemoryPressureLevel local_level = local_raw;
+    if (auto group = CurrentThread::getGroup())
+        local_level = group->memory_pressure_machine.stick(static_cast<uint8_t>(local_raw), now_ns);
+
     return std::max(total_level, local_level);
 }
 

@@ -74,13 +74,29 @@ public:
 class PressureLevelMachine
 {
 public:
+    /// Server-total cooldown: RAM freed now may be re-taken by anyone, so
+    /// de-escalation is slow.
     static constexpr uint64_t COOLDOWN_NS = 60ULL * 1000ULL * 1000ULL * 1000ULL;
+    /// Query-scoped cooldown (the `ThreadGroup` machine): within one query
+    /// there is no other tenant to re-take the freed memory, so recovery is
+    /// fast - long enough to smooth alloc/free flapping at a threshold, short
+    /// enough that a query outlives its own spike.
+    static constexpr uint64_t QUERY_COOLDOWN_NS = 10ULL * 1000ULL * 1000ULL * 1000ULL;
+
+    explicit PressureLevelMachine(uint64_t cooldown_ns_ = COOLDOWN_NS) : cooldown_ns(cooldown_ns_) {}
 
     MemoryPressureLevel sample(double pressure, uint64_t now_ns);
 
+    /// The cooldown rule applied to an ALREADY-CLASSIFIED level: snap up
+    /// immediately, step down one level per `cooldown_ns` of sustained lower
+    /// classification. Split from `sample` so a scope-local machine (the
+    /// per-query `ThreadGroup` one) can keep its own sticky state while the
+    /// classification ladder stays in ONE place - the global machine.
+    MemoryPressureLevel stick(uint8_t raw_level, uint64_t now_ns);
+
     /// Map a pressure ratio to a level using the current thresholds, WITHOUT
-    /// the cooldown state machine — for transient (per-query / per-user)
-    /// pressure that must react immediately and leave no sticky state.
+    /// the cooldown state machine — the classification step, also used as-is
+    /// for a thread with no group (nowhere to scope sticky state to).
     /// Lock-free: read on the executor's per-window hot path.
     MemoryPressureLevel levelForPressure(double pressure) const;
 
@@ -91,10 +107,14 @@ private:
     /// Raw level for `pressure` against the (atomic) threshold ladder. Lock-free.
     uint8_t rawLevel(double pressure) const;
 
+    /// Callers hold `mutex`.
+    MemoryPressureLevel stickUnlocked(uint8_t raw_level, uint64_t now_ns);
+
     /// Thresholds packed as bytes `(l1 << 16) | (l2 << 8) | l3`, published as one
     /// atomic so `levelForPressure` / `rawLevel` need no lock. The mutex below
     /// guards only the cooldown state (`level`, `last_at_or_above_ns`).
     std::atomic<uint32_t> thresholds_packed{(75u << 16) | (90u << 8) | 95u};
+    const uint64_t cooldown_ns;
     mutable std::mutex mutex;
     uint8_t level{0};
     uint64_t last_at_or_above_ns{0};

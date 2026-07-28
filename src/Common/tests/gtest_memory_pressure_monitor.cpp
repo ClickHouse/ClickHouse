@@ -252,3 +252,41 @@ TEST(MemoryPressureMonitor, SetThresholdsReflectedInLevelForPressure)
     EXPECT_EQ(m.levelForPressure(0.75), MemoryPressureLevel::High);
     EXPECT_EQ(m.levelForPressure(0.95), MemoryPressureLevel::Critical);
 }
+
+TEST(MemoryPressureMonitor, StickAppliesCooldownToClassifiedLevels)
+{
+    /// The query-scoped machine: classification happens elsewhere (the global
+    /// ladder); `stick` only cools down. Custom short cooldown honored.
+    PressureLevelMachine m(/*cooldown_ns_=*/10 * SECOND);
+
+    EXPECT_EQ(m.stick(2, SECOND), MemoryPressureLevel::High);           /// snap up
+    EXPECT_EQ(m.stick(0, 2 * SECOND), MemoryPressureLevel::High);      /// sticky
+    EXPECT_EQ(m.stick(0, 12 * SECOND), MemoryPressureLevel::Elevated); /// one step per cooldown
+    EXPECT_EQ(m.stick(0, 13 * SECOND), MemoryPressureLevel::Elevated); /// next step not due yet
+    EXPECT_EQ(m.stick(0, 23 * SECOND), MemoryPressureLevel::Normal);
+}
+
+TEST(MemoryPressureMonitor, StickReSpikeRefreshesTheClock)
+{
+    PressureLevelMachine m(/*cooldown_ns_=*/10 * SECOND);
+
+    EXPECT_EQ(m.stick(3, SECOND), MemoryPressureLevel::Critical);
+    /// A re-spike at the SAME level refreshes the timestamp: the step-down
+    /// needs sustained calm, not elapsed time.
+    EXPECT_EQ(m.stick(3, 9 * SECOND), MemoryPressureLevel::Critical);
+    EXPECT_EQ(m.stick(0, 12 * SECOND), MemoryPressureLevel::Critical);
+    EXPECT_EQ(m.stick(0, 20 * SECOND), MemoryPressureLevel::High);
+}
+
+TEST(MemoryPressureMonitor, GroupMachinesAreIndependent)
+{
+    /// Two queries = two ThreadGroup machines: one query's spike leaves the
+    /// other's level untouched - the leak the group scoping exists to prevent.
+    PressureLevelMachine query_a(PressureLevelMachine::QUERY_COOLDOWN_NS);
+    PressureLevelMachine query_b(PressureLevelMachine::QUERY_COOLDOWN_NS);
+
+    EXPECT_EQ(query_a.stick(3, SECOND), MemoryPressureLevel::Critical);
+    EXPECT_EQ(query_b.stick(0, SECOND), MemoryPressureLevel::Normal);
+    EXPECT_EQ(query_a.stick(0, 2 * SECOND), MemoryPressureLevel::Critical);
+    EXPECT_EQ(query_b.stick(0, 2 * SECOND), MemoryPressureLevel::Normal);
+}
