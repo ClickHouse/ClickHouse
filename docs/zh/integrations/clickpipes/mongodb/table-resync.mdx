@@ -14,21 +14,17 @@ integration:
 
 虽然通过点击按钮重新同步单个表的功能仍在开发中，但本指南将介绍目前如何在 MongoDB ClickPipe 中实现这一操作。
 
-<div id="removing-table">
-  ### 1. 从管道中移除该表
-</div>
+<Steps>
+  <Step title="从管道中移除该表" id="removing-table">
+    可按照[表移除指南](/zh/integrations/clickpipes/mongodb/remove-table)完成此操作。
+  </Step>
 
-可参考[移除表指南](/zh/integrations/clickpipes/mongodb/remove-table)进行操作。
+  <Step title="在 ClickHouse 中截断或删除该表" id="truncate-drop-table">
+    执行此步骤是为了避免在下一步再次添加该表时出现数据重复。你可以前往 ClickHouse Cloud 的 **SQL 控制台** 选项卡，运行查询来完成此操作。
+    请注意，如果该表已存在于 ClickHouse 中且不为空，我们会通过校验阻止添加该表。
+  </Step>
 
-<div id="truncate-drop-table">
-  ### 2. 在 ClickHouse 中对该表执行 TRUNCATE 或删除操作
-</div>
-
-此步骤是为了避免在下一步重新添加该表时出现数据重复。你可以前往 ClickHouse Cloud 的 **SQL 控制台** 选项卡，运行查询来完成此操作。
-请注意，如果该表已存在于 ClickHouse 中且不为空，系统会通过校验阻止再次添加该表。
-
-<div id="add-table-again">
-  ### 3. 再次将该表添加到 ClickPipe
-</div>
-
-随后可按照[添加表指南](/zh/integrations/clickpipes/mongodb/add-table)继续操作。
+  <Step title="再次将该表添加到 ClickPipe" id="add-table-again">
+    可按照[表添加指南](/zh/integrations/clickpipes/mongodb/add-table)完成此操作。
+  </Step>
+</Steps>

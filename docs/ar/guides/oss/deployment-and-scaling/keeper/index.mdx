@@ -501,13 +501,13 @@ SYSTEM STOP MERGES;
 
 1. أوقف استيعاب البيانات إلى جميع عقد ClickHouse.
 
-2. أوقف جميع المهام التي تعمل في الخلفية على جميع عقد ClickHouse (راجع [أعلاه](#pre-migration-preparation)).
+2. أوقف جميع المهام الخلفية على جميع عقد ClickHouse (راجع [أعلاه](#pre-migration-preparation)).
 
 3. أوقف جميع عقد ZooKeeper.
 
 4. اختياري، لكنه مُوصى به: حدِّد العقدة القائدة في ZooKeeper، ثم شغّلها وأوقفها مرة أخرى. يُجبر ذلك ZooKeeper على كتابة لقطة متسقة على القرص قبل التحويل.
 
-5. شغّل `clickhouse-keeper-converter` على العقدة القائدة. إذا كان لديك الملف التنفيذي الكامل لـ ClickHouse مثبّتًا، فاستخدم الأمر الفرعي `keeper-converter` بدلًا من ذلك (`clickhouse keeper-converter`). إذا لم يكن أيٌّ منهما متاحًا، [نزّل الملف التنفيذي](/getting-started/quick-start/oss#install-clickhouse).
+5. شغّل `clickhouse-keeper-converter` على العقدة القائدة. إذا كان لديك الملف التنفيذي الكامل لـ ClickHouse مثبّتًا، فاستخدم الأمر الفرعي `keeper-converter` بدلًا من ذلك (`clickhouse keeper-converter`). إذا لم يكن أيٌّ منهما متاحًا، [نزّل الملف التنفيذي](/ar/get-started/setup/self-managed/quick-install#install-clickhouse-using-curl).
 
 ```bash
 clickhouse-keeper-converter \
@@ -524,7 +524,7 @@ clickhouse-keeper-converter \
 
 9. قارِن المقاييس بخط الأساس قبل الترحيل للتحقق من الاتساق.
 
-10. استأنف المهام التي تعمل في الخلفية، وأعد تشغيل استيعاب البيانات.
+10. استأنف المهام الخلفية، وأعد تشغيل استيعاب البيانات.
 
 <div id="consolidating-multiple-zookeeper-clusters">
   #### دمج عدة عناقيد ZooKeeper
@@ -779,270 +779,266 @@ curl 127.0.0.1:9363/metrics
 
 يوفّر هذا الدليل إعدادات بسيطة ومختصرة لتهيئة ClickHouse Keeper، مع مثال يوضّح كيفية اختبار العمليات الموزعة. يُنفَّذ هذا المثال باستخدام 3 عقد على Linux.
 
-<div id="1-configure-nodes-with-keeper-settings">
-  ### 1. تهيئة العقد باستخدام إعدادات Keeper
-</div>
+<Steps>
+  <Step title="هيِّئ العقد باستخدام إعدادات Keeper" id="1-configure-nodes-with-keeper-settings">
+    1. ثبّت 3 مثيلات ClickHouse على 3 مضيفات (`chnode1`, `chnode2`, `chnode3`). (راجع [Quick Start](/ar/get-started/setup/install) للحصول على تفاصيل حول تثبيت ClickHouse.)
 
-1. ثبّت 3 مثيلات ClickHouse على 3 مضيفات (`chnode1`, `chnode2`, `chnode3`). (راجع [Quick Start](/ar/get-started/setup/install) للحصول على تفاصيل حول تثبيت ClickHouse.)
+    2. على كل عقدة، أضِف السطر التالي للسماح بالاتصال الخارجي عبر واجهة الشبكة.
+       ```xml
+       <listen_host>0.0.0.0</listen_host>
+       ```
 
-2. على كل عقدة، أضِف السطر التالي للسماح بالاتصال الخارجي عبر واجهة الشبكة.
-   ```xml
-   <listen_host>0.0.0.0</listen_host>
-   ```
+    3. أضف إعداد ClickHouse Keeper التالي إلى الخوادم الثلاثة، مع تحديث إعداد `<server_id>` لكل خادم؛ ففي `chnode1` تكون القيمة `1`، وفي `chnode2` تكون `2`، وهكذا.
 
-3. أضف إعداد ClickHouse Keeper التالي إلى الخوادم الثلاثة، مع تحديث إعداد `<server_id>` لكل خادم؛ ففي `chnode1` تكون القيمة `1`، وفي `chnode2` تكون `2`، وهكذا.
+       ```xml
+       <keeper_server>
+           <tcp_port>9181</tcp_port>
+           <server_id>1</server_id>
+           <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+           <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
 
-   ```xml
-   <keeper_server>
-       <tcp_port>9181</tcp_port>
-       <server_id>1</server_id>
-       <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
-       <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+           <coordination_settings>
+               <operation_timeout_ms>10000</operation_timeout_ms>
+               <session_timeout_ms>30000</session_timeout_ms>
+               <raft_logs_level>warning</raft_logs_level>
+           </coordination_settings>
 
-       <coordination_settings>
-           <operation_timeout_ms>10000</operation_timeout_ms>
-           <session_timeout_ms>30000</session_timeout_ms>
-           <raft_logs_level>warning</raft_logs_level>
-       </coordination_settings>
+           <raft_configuration>
+               <server>
+                   <id>1</id>
+                   <hostname>chnode1.domain.com</hostname>
+                   <port>9234</port>
+               </server>
+               <server>
+                   <id>2</id>
+                   <hostname>chnode2.domain.com</hostname>
+                   <port>9234</port>
+               </server>
+               <server>
+                   <id>3</id>
+                   <hostname>chnode3.domain.com</hostname>
+                   <port>9234</port>
+               </server>
+           </raft_configuration>
+       </keeper_server>
+       ```
 
-       <raft_configuration>
-           <server>
-               <id>1</id>
-               <hostname>chnode1.domain.com</hostname>
-               <port>9234</port>
-           </server>
-           <server>
-               <id>2</id>
-               <hostname>chnode2.domain.com</hostname>
-               <port>9234</port>
-           </server>
-           <server>
-               <id>3</id>
-               <hostname>chnode3.domain.com</hostname>
-               <port>9234</port>
-           </server>
-       </raft_configuration>
-   </keeper_server>
-   ```
+       فيما يلي الإعدادات الأساسية المستخدمة أعلاه:
 
-   فيما يلي الإعدادات الأساسية المستخدمة أعلاه:
+       | المعلمة                   | الوصف                                                            | مثال                                                 |
+       | ------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------- |
+       | tcp&#95;port              | المنفذ الذي سيستخدمه عملاء Keeper                                | 9181، وهو المكافئ الافتراضي لـ 2181 كما في ZooKeeper |
+       | server&#95;id             | المعرّف الخاص بكل خادم ClickHouse Keeper والمستخدم في تهيئة raft | 1                                                    |
+       | coordination&#95;settings | قسم خاص بمعلمات مثل المهل الزمنية                                | timeouts: 10000, log level: trace                    |
+       | server                    | تعريف الخادم المشارك                                             | قائمة بتعريف كل خادم                                 |
+       | raft&#95;configuration    | إعدادات كل خادم في عنقود Keeper                                  | الخادم والإعدادات الخاصة بكل خادم                    |
+       | id                        | المعرّف الرقمي للخادم في خدمات Keeper                            | 1                                                    |
+       | hostname                  | اسم المضيف أو عنوان IP أو FQDN لكل خادم في عنقود Keeper          | `chnode1.domain.com`                                 |
+       | port                      | المنفذ الذي يستمع عليه لاتصالات Keeper بين الخوادم               | 9234                                                 |
 
-   | المعلمة                   | الوصف                                                            | مثال                                                 |
-   | ------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------- |
-   | tcp&#95;port              | المنفذ الذي سيستخدمه عملاء Keeper                                | 9181، وهو المكافئ الافتراضي لـ 2181 كما في ZooKeeper |
-   | server&#95;id             | المعرّف الخاص بكل خادم ClickHouse Keeper والمستخدم في تهيئة raft | 1                                                    |
-   | coordination&#95;settings | قسم خاص بمعلمات مثل المهل الزمنية                                | timeouts: 10000, log level: trace                    |
-   | server                    | تعريف الخادم المشارك                                             | قائمة بتعريف كل خادم                                 |
-   | raft&#95;configuration    | إعدادات كل خادم في عنقود Keeper                                  | الخادم والإعدادات الخاصة بكل خادم                    |
-   | id                        | المعرّف الرقمي للخادم في خدمات Keeper                            | 1                                                    |
-   | hostname                  | اسم المضيف أو عنوان IP أو FQDN لكل خادم في عنقود Keeper          | `chnode1.domain.com`                                 |
-   | port                      | المنفذ الذي يستمع عليه لاتصالات Keeper بين الخوادم               | 9234                                                 |
+    4. فعِّل مكوّن Zookeeper. سيستخدم محرّك ClickHouse Keeper:
 
-4. فعِّل مكوّن Zookeeper. سيستخدم محرّك ClickHouse Keeper:
+       ```xml
+           <zookeeper>
+               <node>
+                   <host>chnode1.domain.com</host>
+                   <port>9181</port>
+               </node>
+               <node>
+                   <host>chnode2.domain.com</host>
+                   <port>9181</port>
+               </node>
+               <node>
+                   <host>chnode3.domain.com</host>
+                   <port>9181</port>
+               </node>
+           </zookeeper>
+       ```
 
-   ```xml
-       <zookeeper>
-           <node>
-               <host>chnode1.domain.com</host>
-               <port>9181</port>
-           </node>
-           <node>
-               <host>chnode2.domain.com</host>
-               <port>9181</port>
-           </node>
-           <node>
-               <host>chnode3.domain.com</host>
-               <port>9181</port>
-           </node>
-       </zookeeper>
-   ```
+       فيما يلي الإعدادات الأساسية المستخدمة أعلاه:
 
-   فيما يلي الإعدادات الأساسية المستخدمة أعلاه:
+       | المعلمة | الوصف                                                                            | مثال                        |
+       | ------- | -------------------------------------------------------------------------------- | --------------------------- |
+       | node    | قائمة بالعُقد الخاصة باتصالات ClickHouse Keeper                                  | إدخال في الإعدادات لكل خادم |
+       | host    | اسم المضيف أو عنوان IP أو الاسم المؤهل بالكامل (FQDN) لكل عقدة ClickHouse Keeper | `chnode1.domain.com`        |
+       | port    | منفذ العميل لـ ClickHouse Keeper                                                 | 9181                        |
 
-   | المعلمة | الوصف                                                                            | مثال                        |
-   | ------- | -------------------------------------------------------------------------------- | --------------------------- |
-   | node    | قائمة بالعُقد الخاصة باتصالات ClickHouse Keeper                                  | إدخال في الإعدادات لكل خادم |
-   | host    | اسم المضيف أو عنوان IP أو الاسم المؤهل بالكامل (FQDN) لكل عقدة ClickHouse Keeper | `chnode1.domain.com`        |
-   | port    | منفذ العميل لـ ClickHouse Keeper                                                 | 9181                        |
+    5. أعد تشغيل ClickHouse وتأكد من أن كل مثيل من Keeper يعمل. نفّذ الأمر التالي على كل خادم. يُرجع الأمر `ruok` القيمة `imok` إذا كان Keeper يعمل وبحالة سليمة:
+       ```bash
+       # echo ruok | nc localhost 9181; echo
+       imok
+       ```
 
-5. أعد تشغيل ClickHouse وتأكد من أن كل مثيل من Keeper يعمل. نفّذ الأمر التالي على كل خادم. يُرجع الأمر `ruok` القيمة `imok` إذا كان Keeper يعمل وبحالة سليمة:
-   ```bash
-   # echo ruok | nc localhost 9181; echo
-   imok
-   ```
+    6. تحتوي قاعدة البيانات `system` على جدول باسم `zookeeper` يتضمن تفاصيل مثيلات ClickHouse Keeper لديك. لنعرض هذا الجدول:
 
-6. تحتوي قاعدة البيانات `system` على جدول باسم `zookeeper` يتضمن تفاصيل مثيلات ClickHouse Keeper لديك. لنعرض هذا الجدول:
+       ```sql
+       SELECT *
+       FROM system.zookeeper
+       WHERE path IN ('/', '/clickhouse')
+       ```
 
-   ```sql
-   SELECT *
-   FROM system.zookeeper
-   WHERE path IN ('/', '/clickhouse')
-   ```
+       يظهر الجدول كما يلي:
 
-   يظهر الجدول كما يلي:
+       ```response
+       ┌─name───────┬─value─┬─czxid─┬─mzxid─┬───────────────ctime─┬───────────────mtime─┬─version─┬─cversion─┬─aversion─┬─ephemeralOwner─┬─dataLength─┬─numChildren─┬─pzxid─┬─path────────┐
+       │ clickhouse │       │   124 │   124 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        2 │        0 │              0 │          0 │           2 │  5693 │ /           │
+       │ task_queue │       │   125 │   125 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        1 │        0 │              0 │          0 │           1 │   126 │ /clickhouse │
+       │ tables     │       │  5693 │  5693 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        3 │        0 │              0 │          0 │           3 │  6461 │ /clickhouse │
+       └────────────┴───────┴───────┴───────┴─────────────────────┴─────────────────────┴─────────┴──────────┴──────────┴────────────────┴────────────┴─────────────┴───────┴─────────────┘
+       ```
+  </Step>
 
-   ```response
-   ┌─name───────┬─value─┬─czxid─┬─mzxid─┬───────────────ctime─┬───────────────mtime─┬─version─┬─cversion─┬─aversion─┬─ephemeralOwner─┬─dataLength─┬─numChildren─┬─pzxid─┬─path────────┐
-   │ clickhouse │       │   124 │   124 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        2 │        0 │              0 │          0 │           2 │  5693 │ /           │
-   │ task_queue │       │   125 │   125 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        1 │        0 │              0 │          0 │           1 │   126 │ /clickhouse │
-   │ tables     │       │  5693 │  5693 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        3 │        0 │              0 │          0 │           3 │  6461 │ /clickhouse │
-   └────────────┴───────┴───────┴───────┴─────────────────────┴─────────────────────┴─────────┴──────────┴──────────┴────────────────┴────────────┴─────────────┴───────┴─────────────┘
-   ```
+  <Step title="إعداد عنقود في ClickHouse" id="2--configure-a-cluster-in-clickhouse">
+    1. لنُعِدّ عنقودًا بسيطًا يتكوّن من shardَين ونسخة replica واحدة فقط على عقدتين من العُقد. ستُستخدم العقدة الثالثة لتحقيق النصاب المطلوب في ClickHouse Keeper. حدّث الإعداد على `chnode1` و`chnode2`. يعرّف العنقود التالي shard واحدة على كل عقدة، ليصبح المجموع shardَين من دون replication. في هذا المثال، سيكون جزء من البيانات على إحدى العقد، والجزء الآخر على العقدة الثانية:
 
-<div id="2--configure-a-cluster-in-clickhouse">
-  ### 2.  تكوين عنقود في ClickHouse
-</div>
+       ```xml
+           <remote_servers>
+               <cluster_2S_1R>
+                   <shard>
+                       <replica>
+                           <host>chnode1.domain.com</host>
+                           <port>9000</port>
+                           <user>default</user>
+                           <password>ClickHouse123!</password>
+                       </replica>
+                   </shard>
+                   <shard>
+                       <replica>
+                           <host>chnode2.domain.com</host>
+                           <port>9000</port>
+                           <user>default</user>
+                           <password>ClickHouse123!</password>
+                       </replica>
+                   </shard>
+               </cluster_2S_1R>
+           </remote_servers>
+       ```
 
-1. لنُعِدّ عنقود بسيطًا يتكوّن من shardين وبـ نسخة متماثلة واحدة فقط على عقدتين. ستُستخدم العقدة الثالثة لتحقيق quorum المطلوب في ClickHouse Keeper. حدِّث الإعدادات على `chnode1` و`chnode2`. يعرّف الـ عنقود التالي shard واحدة على كل عقدة، ليصبح المجموع shardين من دون replication. في هذا المثال، سيكون بعض البيانات على إحدى العقد وبعضها على العقدة الأخرى:
+       | Parameter | Description                                                                             | Example                         |
+       | --------- | --------------------------------------------------------------------------------------- | ------------------------------- |
+       | shard     | قائمة بالنسخ replicas في تعريف العنقود                                                  | قائمة بالنسخ replicas لكل shard |
+       | replica   | قائمة بالإعدادات الخاصة بكل replica                                                     | إدخالات الإعدادات لكل replica   |
+       | host      | اسم المضيف أو عنوان IP أو الاسم المؤهل بالكامل (FQDN) للخادم الذي سيستضيف shard replica | `chnode1.domain.com`            |
+       | port      | المنفذ المستخدم للتواصل عبر بروتوكول TCP الأصلي                                         | 9000                            |
+       | user      | اسم المستخدم الذي سيُستخدم للمصادقة على مثيلات العنقود                                  | default                         |
+       | password  | كلمة مرور المستخدم المعرّف للسماح بالاتصال بمثيلات العنقود                              | `ClickHouse123!`                |
 
-   ```xml
-       <remote_servers>
-           <cluster_2S_1R>
-               <shard>
-                   <replica>
-                       <host>chnode1.domain.com</host>
-                       <port>9000</port>
-                       <user>default</user>
-                       <password>ClickHouse123!</password>
-                   </replica>
-               </shard>
-               <shard>
-                   <replica>
-                       <host>chnode2.domain.com</host>
-                       <port>9000</port>
-                       <user>default</user>
-                       <password>ClickHouse123!</password>
-                   </replica>
-               </shard>
-           </cluster_2S_1R>
-       </remote_servers>
-   ```
+    2. أعد تشغيل ClickHouse وتحقّق من إنشاء العنقود:
 
-   | المعلَمة | الوصف                                                                                           | مثال                                 |
-   | -------- | ----------------------------------------------------------------------------------------------- | ------------------------------------ |
-   | shard    | قائمة الـ نسخ المتماثلة في تعريف الـ عنقود                                                      | قائمة الـ نسخ المتماثلة لكل shard    |
-   | replica  | قائمة الإعدادات لكل نسخة متماثلة                                                                | إدخالات الإعدادات لكل نسخة متماثلة   |
-   | host     | اسم المضيف أو عنوان IP أو الاسم المؤهل بالكامل (FQDN) للخادم الذي سيستضيف نسخة متماثلة shard | `chnode1.domain.com`                 |
-   | port     | المنفذ المستخدم للتواصل عبر native TCP protocol                                                 | 9000                                 |
-   | user     | اسم المستخدم الذي سيُستخدم للمصادقة على مثيلات الـ عنقود                                        | default                              |
-   | password | كلمة مرور المستخدم المعرّف للسماح بالاتصال بمثيلات الـ عنقود                                    | `ClickHouse123!`                     |
+       ```sql
+       SHOW clusters;
+       ```
 
-2. أعد تشغيل ClickHouse وتحقّق من إنشاء الـ عنقود:
+       ينبغي أن ترى عنقودك:
 
-   ```sql
-   SHOW clusters;
-   ```
+       ```response
+       ┌─cluster───────┐
+       │ cluster_2S_1R │
+       └───────────────┘
+       ```
+  </Step>
 
-   يجب أن ترى الـ عنقود الخاص بك:
+  <Step title="إنشاء جدول موزّع واختباره" id="3-create-and-test-distributed-table">
+    1. أنشئ قاعدة بيانات جديدة على العنقود الجديد باستخدام عميل ClickHouse على `chnode1`. تؤدي عبارة `ON CLUSTER` تلقائيًا إلى إنشاء قاعدة البيانات على كلتا العقدتين.
+       ```sql
+       CREATE DATABASE db1 ON CLUSTER 'cluster_2S_1R';
+       ```
 
-   ```response
-   ┌─cluster───────┐
-   │ cluster_2S_1R │
-   └───────────────┘
-   ```
+    2. أنشئ جدولًا جديدًا في قاعدة البيانات `db1`. ومرة أخرى، يؤدي `ON CLUSTER` إلى إنشاء الجدول على كلتا العقدتين.
+       ```sql
+       CREATE TABLE db1.table1 on cluster 'cluster_2S_1R'
+       (
+           `id` UInt64,
+           `column1` String
+       )
+       ENGINE = MergeTree
+       ORDER BY column1
+       ```
 
-<div id="3-create-and-test-distributed-table">
-  ### 3. إنشاء جدول `Distributed` واختباره
-</div>
+    3. على العقدة `chnode1`، أضِف صفّين:
+       ```sql
+       INSERT INTO db1.table1
+           (id, column1)
+       VALUES
+           (1, 'abc'),
+           (2, 'def')
+       ```
 
-1. أنشئ قاعدة بيانات جديدة على الـ عنقود الجديد باستخدام عميل ClickHouse على `chnode1`. تؤدي عبارة `ON CLUSTER` إلى إنشاء قاعدة البيانات تلقائيًا على كلتا العقدتين.
-   ```sql
-   CREATE DATABASE db1 ON CLUSTER 'cluster_2S_1R';
-   ```
+    4. أضِف صفّين على العقدة `chnode2`:
+       ```sql
+       INSERT INTO db1.table1
+           (id, column1)
+       VALUES
+           (3, 'ghi'),
+           (4, 'jkl')
+       ```
 
-2. أنشئ جدولًا جديدًا في قاعدة البيانات `db1`. ومرة أخرى، ينشئ `ON CLUSTER` الجدول على كلتا العقدتين.
-   ```sql
-   CREATE TABLE db1.table1 on cluster 'cluster_2S_1R'
-   (
-       `id` UInt64,
-       `column1` String
-   )
-   ENGINE = MergeTree
-   ORDER BY column1
-   ```
+    5. لاحظ أن تشغيل عبارة `SELECT` على كل عقدة لا يُظهر إلا البيانات الموجودة على تلك العقدة. على سبيل المثال، على `chnode1`:
 
-3. على العقدة `chnode1`، أضف صفّين:
-   ```sql
-   INSERT INTO db1.table1
-       (id, column1)
-   VALUES
-       (1, 'abc'),
-       (2, 'def')
-   ```
+       ```sql
+       SELECT *
+       FROM db1.table1
+       ```
 
-4. أضف صفّين على العقدة `chnode2`:
-   ```sql
-   INSERT INTO db1.table1
-       (id, column1)
-   VALUES
-       (3, 'ghi'),
-       (4, 'jkl')
-   ```
+       ```response
+       Query id: 7ef1edbc-df25-462b-a9d4-3fe6f9cb0b6d
 
-5. لاحظ أن تشغيل تعليمة `SELECT` على كل عقدة لا يعرض إلا البيانات الموجودة على تلك العقدة. على سبيل المثال، على `chnode1`:
+       ┌─id─┬─column1─┐
+       │  1 │ abc     │
+       │  2 │ def     │
+       └────┴─────────┘
 
-   ```sql
-   SELECT *
-   FROM db1.table1
-   ```
+       2 rows in set. Elapsed: 0.006 sec.
+       ```
 
-   ```response
-   Query id: 7ef1edbc-df25-462b-a9d4-3fe6f9cb0b6d
+       على `chnode2`:
 
-   ┌─id─┬─column1─┐
-   │  1 │ abc     │
-   │  2 │ def     │
-   └────┴─────────┘
+    6. ```sql
+       SELECT *
+       FROM db1.table1
+       ```
 
-   2 rows in set. Elapsed: 0.006 sec.
-   ```
+       ```response
+       Query id: c43763cc-c69c-4bcc-afbe-50e764adfcbf
 
-   على `chnode2`:
+       ┌─id─┬─column1─┐
+       │  3 │ ghi     │
+       │  4 │ jkl     │
+       └────┴─────────┘
+       ```
 
-6. ```sql
-   SELECT *
-   FROM db1.table1
-   ```
+    7. يمكنك إنشاء جدول `Distributed` لتمثيل البيانات على الجزأين. الجداول التي تستخدم محرّك الجداول `Distributed` لا تخزّن أي بيانات خاصة بها، لكنها تتيح معالجة الاستعلامات الموزعة عبر عدة خوادم. تصل عمليات القراءة إلى جميع الأجزاء، ويمكن توزيع عمليات الكتابة عبر الأجزاء. شغّل الاستعلام التالي على `chnode1`:
+       ```sql
+       CREATE TABLE db1.dist_table (
+           id UInt64,
+           column1 String
+       )
+       ENGINE = Distributed(cluster_2S_1R,db1,table1)
+       ```
 
-   ```response
-   Query id: c43763cc-c69c-4bcc-afbe-50e764adfcbf
+    8. لاحظ أن الاستعلام عن `dist_table` يُرجع صفوف البيانات الأربعة كلها من الجزأين:
 
-   ┌─id─┬─column1─┐
-   │  3 │ ghi     │
-   │  4 │ jkl     │
-   └────┴─────────┘
-   ```
+       ```sql
+       SELECT *
+       FROM db1.dist_table
+       ```
 
-7. يمكنك إنشاء جدول `Distributed` لتمثيل البيانات على الشاردين. الجداول التي تستخدم محرك الجداول `Distributed` لا تخزّن أي بيانات خاصة بها، لكنها تتيح معالجة الاستعلامات الموزعة عبر عدة خوادم. تصل عمليات القراءة إلى جميع الشاردات، ويمكن توزيع عمليات الكتابة عبرها. شغّل الاستعلام التالي على `chnode1`:
-   ```sql
-   CREATE TABLE db1.dist_table (
-       id UInt64,
-       column1 String
-   )
-   ENGINE = Distributed(cluster_2S_1R,db1,table1)
-   ```
+       ```response
+       Query id: 495bffa0-f849-4a0c-aeea-d7115a54747a
 
-8. لاحظ أن الاستعلام عن `dist_table` يعرض الصفوف الأربعة كلها من الشاردين:
+       ┌─id─┬─column1─┐
+       │  1 │ abc     │
+       │  2 │ def     │
+       └────┴─────────┘
+       ┌─id─┬─column1─┐
+       │  3 │ ghi     │
+       │  4 │ jkl     │
+       └────┴─────────┘
 
-   ```sql
-   SELECT *
-   FROM db1.dist_table
-   ```
-
-   ```response
-   Query id: 495bffa0-f849-4a0c-aeea-d7115a54747a
-
-   ┌─id─┬─column1─┐
-   │  1 │ abc     │
-   │  2 │ def     │
-   └────┴─────────┘
-   ┌─id─┬─column1─┐
-   │  3 │ ghi     │
-   │  4 │ jkl     │
-   └────┴─────────┘
-
-   4 rows in set. Elapsed: 0.018 sec.
-   ```
+       4 rows in set. Elapsed: 0.018 sec.
+       ```
+  </Step>
+</Steps>
 
 <div id="summary">
   ### الملخص

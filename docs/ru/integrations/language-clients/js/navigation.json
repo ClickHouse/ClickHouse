@@ -1,0 +1,6 @@
+{
+  "group": "JavaScript",
+  "icon": "/images/integrations/logos/node_js.svg",
+  "pages": [],
+  "root": "ru/integrations/language-clients/js/index"
+}

@@ -236,10 +236,12 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 * `-f`, `--format`, `--output-format` — 출력 형식이며, 기본값은 `TSV`입니다.
 * `-d`, `--database` — 기본 데이터베이스이며, 기본값은 `_local`입니다.
 * `--stacktrace` — 예외 발생 시 디버그 출력을 덤프할지 여부입니다.
-* `--echo [ <bool> ]` — 실행 전에 각 쿼리를 출력합니다. 선택적 불리언 값을 받습니다. interactive mode에서는 기본적으로 활성화되고 batch mode에서는 비활성화됩니다. 참고: 이제 `--echo`는 선택적 값을 받으므로, 값 없이 사용한 `--echo` 바로 뒤에 위치 인수 쿼리를 두면 그 쿼리가 값으로 처리됩니다. 대신 `--echo --query "..."`, `--echo -q "..."`, `--echo=false` 또는 파이프로 전달된 `stdin`을 사용하십시오.
-* `--echo-formatted [ <bool> ]` — 출력되는 쿼리를 포맷합니다. 선택적 불리언 값을 받습니다. interactive mode에서는 기본적으로 활성화되고 batch mode에서는 비활성화됩니다.
-* `--echo-query-id [ <bool> ]` — 실행 전에 `query_id`를 출력합니다. 선택적 불리언 값을 받습니다. interactive mode에서는 기본적으로 활성화되고 batch mode에서는 비활성화됩니다.
+* `--echo [ <bool> ]` — 실행 전에 각 쿼리를 출력합니다. 선택적 불리언 값을 받습니다. 대화형 모드에서는 기본적으로 활성화되고 batch mode에서는 비활성화됩니다. 참고: 이제 `--echo`는 선택적 값을 받으므로, 값 없이 사용한 `--echo` 바로 뒤에 위치 인수 쿼리를 두면 그 쿼리가 값으로 처리됩니다. 대신 `--echo --query "..."`, `--echo -q "..."`, `--echo=false` 또는 파이프로 전달된 `stdin`을 사용하십시오.
+* `--echo-formatted [ <bool> ]` — 출력되는 쿼리를 포맷합니다. 선택적 불리언 값을 받습니다. 대화형 모드에서는 기본적으로 활성화되고 batch mode에서는 비활성화됩니다.
+* `--echo-query-id [ <bool> ]` — 실행 전에 `query_id`를 출력합니다. 선택적 불리언 값을 받습니다. 대화형 모드에서는 기본적으로 활성화되고 batch mode에서는 비활성화됩니다.
+* `--echo-query-separator <string>` — 포맷된 출력 쿼리 앞에 이 구분자를 출력합니다(`--echo-formatted` 필요). 이렇게 하면 직접 입력한 쿼리와 다시 포맷되어 출력된 쿼리를 더 쉽게 구분할 수 있습니다. 기본값은 빈 문자열(비활성화)입니다.
 * `--highlight`, `--hilite` `<bool>` — 명령 프롬프트와 출력되는 쿼리의 구문 강조를 전환합니다. 기본적으로 활성화됩니다. 강조는 터미널에 출력할 때만 적용됩니다.
+* `--hints <bool>` — 커서가 입력 끝에 있을 때 가장 잘 일치하는 제안에 대해 입력 중 자동 완성 힌트(인라인 &quot;ghost&quot; 텍스트)를 표시합니다. 위/아래(또는 Ctrl-Up/Ctrl-Down)로 힌트를 탐색할 수 있으며, Tab 또는 Right로 인라인 힌트를 수락할 수 있습니다. `Enter`는 힌트가 명시적으로 선택된 경우에만 해당 힌트를 수락하고, 그렇지 않으면 쿼리를 실행합니다. `Tab`은 기존 완성 목록도 엽니다. `--highlight`가 필요하며(힌트에는 색상이 필요함), 제안 기능도 필요합니다(따라서 `--disable_suggestion`도 이를 비활성화합니다). 기본적으로 활성화됩니다.
 * `--verbose` — 쿼리 실행에 대한 자세한 정보를 표시합니다.
 * `--logger.console` — 콘솔에 로그를 기록합니다.
 * `--logger.log` — 로그 파일 이름입니다.
@@ -250,7 +252,7 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 * `--help` — `clickhouse-local`의 인수 참고입니다.
 * `-V`, `--version` — 버전 정보를 출력하고 종료합니다.
 
-또한 `--config-file` 대신 더 자주 사용되는, 각 ClickHouse 구성 변수에 대응하는 인수도 있습니다.
+또한 `--config-file` 대신 더 자주 사용되는, 각 ClickHouse 구성 변수에 대응하는 인수도 있습니다。
 
 <div id="commands">
   ## 명령어
@@ -371,6 +373,36 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ├──────────┼──────────┤
 ...
 ```
+
+<div id="starting-listeners">
+  ## Starting TCP and HTTP Listeners
+</div>
+
+`clickhouse-local`은 TCP(네이티브 프로토콜) 및 HTTP 연결을 받을 수 있는 경량 서버로 전환할 수 있습니다. 이는 실행 중인 `clickhouse-local` 인스턴스의 데이터베이스와 테이블에 다른 ClickHouse 도구나 애플리케이션이 접근할 수 있도록 하려는 경우에 유용합니다. 각 들어오는 연결에는 자체 세션이 할당된다는 점에 유의하십시오. 따라서 대화형 `clickhouse-local` 세션의 임시 테이블과 세션 수준 설정은 외부 연결에서 볼 수 없습니다.
+
+리스너를 열려면 `SYSTEM START LISTEN`을 사용하고, 닫으려면 `SYSTEM STOP LISTEN`을 사용하십시오:
+
+```bash
+clickhouse-local \
+    --listen_host 127.0.0.1 \
+    --tcp_port 9000 \
+    --http_port 8123 \
+    --query "
+        SYSTEM START LISTEN TCP;
+        SYSTEM START LISTEN HTTP;
+        SELECT * FROM url('http://127.0.0.1:8123/?query=SELECT+42', LineAsString);
+        SYSTEM STOP LISTEN TCP;
+        SYSTEM STOP LISTEN HTTP;
+    "
+```
+
+`--listen_host`, `--tcp_port`, `--http_port` 옵션은 바인드 주소와 포트를 설정합니다. 기본 포트는 TCP의 경우 `9000`, HTTP의 경우 `8123`입니다.
+
+<Warning>
+  **보안**
+
+  기본적으로 `clickhouse-local`은 임시 사용자 설정으로 실행되므로, 열리는 모든 리스너는 인증 없이 열립니다. `users_config` 설정이 사용자 지정 `users.xml`을 가리키도록 지정하여(예: `--config-file` 사용) 사용자와 액세스 제어(access control)를 명시적으로 구성한 경우가 아니라면 루프백 주소(`127.0.0.1` 또는 `::1`)에 바인딩하십시오. 인증 없이 비루프백 주소에서 수신하면, 선택한 포트에 접근할 수 있는 누구에게나 로컬 인스턴스의 데이터가 노출됩니다.
+</Warning>
 
 <div id="related-content-1">
   ## 관련 콘텐츠
