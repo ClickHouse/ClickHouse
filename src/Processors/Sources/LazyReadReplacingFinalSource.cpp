@@ -339,9 +339,6 @@ void LazyReadReplacingFinalSource::work()
 
     pipeline_output = pipe.getOutputPort(0);
     processors = Pipe::detachProcessors(std::move(pipe));
-
-    for (auto & proc : processors)
-        proc->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
 }
 
 IProcessor::PipelineUpdate LazyReadReplacingFinalSource::updatePipeline()
@@ -349,6 +346,7 @@ IProcessor::PipelineUpdate LazyReadReplacingFinalSource::updatePipeline()
     inputs.emplace_back(pipeline_output->getHeader(), this);
     connect(*pipeline_output, inputs.back());
     inputs.back().setNeeded();
+    shareQueryPlanStepWithSubPipeline(processors, getQueryPlanStepGroup());
     return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
 
