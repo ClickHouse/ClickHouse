@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'ربط كتالوج Iceberg'
 title: 'كيفية ربط كتالوج Iceberg في ClickHouse Cloud'
-useCases: ['Data warehousing']
+useCases: ['مستودعات البيانات']
 products: ['Cloud']
 skillLevel: 'مبتدئ'
 description: 'تعرّف على كيفية ربط ClickHouse Cloud بكتالوج البيانات لديك والاستعلام عن جداول Iceberg.'
@@ -41,26 +41,24 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   ## ما ستبنيه
 </div>
 
-في هذا الدليل السريع، ستقوم بما يلي:
+في هذا البدء السريع، ستقوم بما يلي:
 
 * الاتصال بـ Iceberg REST Catalog في ClickHouse Cloud
-* إنشاء قاعدة بيانات ClickHouse تستند إلى هذا catalog
+* إنشاء قاعدة بيانات ClickHouse تستند إلى هذا الكتالوج
 * الاستعلام مباشرةً من ClickHouse عن جدول Iceberg موجود
 * التحقق من أن ClickHouse يقرأ البيانات من بحيرة البيانات لديك
 
-بنهاية هذا الدليل، سيكون ClickHouse Cloud متصلاً بـ كتالوج Iceberg لديك، وستتمكن من تشغيل استعلامات SQL على جداول Iceberg من دون نسخ البيانات.
+بنهاية هذا البدء السريع، سيكون ClickHouse Cloud متصلاً بكتالوج Iceberg لديك، وستتمكن من تشغيل استعلامات SQL على جداول Iceberg من دون نسخ البيانات.
 
 <Steps titleSize="h3">
-  <Step>
-    ### إنشاء اتصال DataLakeCatalog
-
+  <Step title="إنشاء اتصال DataLakeCatalog" id="create-a-datalakecatalog-connection">
     في هذه الخطوة، ستتصل بـ Data Lake Catalog لديك في ClickHouse Cloud.
 
     1. افتح خدمة ClickHouse Cloud الخاصة بك.
 
-    2. انتقل إلى **Data Sources → Connect to your Data Lake Catalog**.
+    2. انتقل إلى **Data Sources â Connect to your Data Lake Catalog**.
 
-    3. حدّد data catalog من القائمة المنسدلة.
+    3. حدّد كتالوج البيانات من القائمة المنسدلة.
 
     4. املأ النموذج ببيانات الاعتماد ومعلومات الاتصال.
        بالنسبة إلى Unity Catalog، أدخل ما يلي:
@@ -68,18 +66,16 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
        * Open Table Format (Iceberg)
        * اسم قاعدة بيانات ClickHouse. سيكون هذا هو اسم قاعدة بيانات ClickHouse التي ستجري منها الاستعلامات على جداول Iceberg.
        * معرّف مساحة العمل
-       * اسم Databricks catalog
+       * اسم كتالوج Databricks
        * معرّف العميل
        * السرّ الخاص بالعميل
 
        **أدرج الصور**
 
-    5. احفظ catalog. ينبغي أن يظهر الآن كتالوج البيانات في صفحة Data Sources مع عدد الجداول المتاحة في قاعدة البيانات.
+    5. احفظ الكتالوج. ينبغي أن يظهر الآن كتالوج البيانات في صفحة Data Sources مع عدد الجداول المتاحة في قاعدة البيانات.
   </Step>
 
-  <Step>
-    ### الاستعلام عن جدول Iceberg
-
+  <Step title="الاستعلام عن جدول Iceberg" id="query-iceberg-table">
     في هذه الخطوة، ستستعلم عن جدول Iceberg من كتالوج البيانات لديك.
 
     1. بالنقر على `Show Tables` أو `SQL Console`، ستصل إلى SQL Console
@@ -94,7 +90,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   </Step>
 </Steps>
 
-## الخطوات التالية
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
 
 الآن بعد أن اتصلت ببحيرة البيانات الخاصة بك، يمكنك تجربة كتابة جدول Iceberg في ClickHouse.
 

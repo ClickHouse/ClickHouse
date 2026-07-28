@@ -15,7 +15,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 <BackToQuickstarts />
 
 <div className="mt-2 flex flex-wrap gap-2">
-  <Badge size="lg" color="blue">リアルタイムアナリティクス</Badge>
+  <Badge size="lg" color="blue">リアルタイム分析</Badge>
   <Badge size="lg" color="blue">データウェアハウジング</Badge>
   <Badge size="lg" color="blue">オブザーバビリティ</Badge>
   <Badge size="lg" color="blue">AI/ML</Badge>
@@ -39,9 +39,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 最後には、MergeTree エンジンがほぼすべての ClickHouse テーブルの基盤である理由と、そのソートやパーティション化の選択がクエリ性能にどのように直接影響するかを理解できるようになります。
 
 <Steps titleSize="h3">
-  <Step>
-    ### MergeTree の仕組みを理解する
-
+  <Step title="MergeTree の仕組みを理解する" id="understand-how-mergetree-works">
     SQL を書く前に、MergeTree が従来のデータベーステーブルと何が違うのかを知っておくと役立ちます。
 
     MergeTree テーブルにデータを挿入しても、ClickHouse は行を 1 行ずつ書き込むわけではありません。代わりに、**data part** (ソート済みかつ圧縮された、行の小さなまとまり) を直接ディスクに書き込みます。その後、ClickHouse はそれらのパーツを時間をかけてバックグラウンドでマージしていきます。名前の由来はまさにここにあります: *merge* + *tree*。
@@ -59,9 +57,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     これで、MergeTree テーブルにおける data part、主キー、クエリ性能の関係を説明できるはずです。
   </Step>
 
-  <Step>
-    ### ソースデータをプレビューする
-
+  <Step title="ソースデータをプレビューする" id="preview-the-source-data">
     テーブルを作成する前に、`s3`テーブル関数を使ってソースファイルの内容を確認します。これにより、まず ClickHouse にデータを書き込まなくても、S3 を直接クエリできます。
 
     SQLコンソールで次を実行します。
@@ -89,9 +85,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     これを確認するには、`id`、`price`、`date`、`postcode`、`type`、`town`、`county` などのカラムを含む行が表示されることを確認してください。
   </Step>
 
-  <Step>
-    ### MergeTree テーブルを設計して作成する
-
+  <Step title="MergeTree テーブルを設計して作成する" id="design-and-create-your-mergetree-table">
     次に、適切なスキーマを持つ永続テーブルを作成します。以下のカラム型は意図して選ばれています。
 
     * `LowCardinality(String)` は、一意の値が限られているカラム (郵便番号、町名、カウンティ名) に使用します。内部的に辞書エンコーディングを使うことで、これらのカラムでのグループ化やフィルタリング時のストレージ使用量を大幅に削減し、パフォーマンスも向上させます。
@@ -130,9 +124,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     結果セルをダブルクリックして、出力全体を確認します。`ENGINE = MergeTree` を指定したにもかかわらず、ClickHouse Cloud では `SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')` でテーブルが作成されていることに注目してください。これは想定どおりの動作です。Cloud は `MergeTree` を自動的に `SharedMergeTree` に変換し、レプリケーションと共有ストレージのサポートを追加します。動作とクエリインターフェイスは変わりません。
   </Step>
 
-  <Step>
-    ### S3 からデータを読み込む
-
+  <Step title="S3 からデータを読み込む" id="load-data-from-s3">
     `s3()` テーブル関数から直接選択して、データセット全体を挿入します。ClickHouse は圧縮ファイルを S3 からストリーミングし、ソート済みのパーツとしてテーブルに書き込みます。
 
     ```sql
@@ -170,9 +162,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     約3,000万行が読み込まれていることを確認できるはずです。
   </Step>
 
-  <Step>
-    ### system.parts を使ってパーツを確認する
-
+  <Step title="system.parts を使ってパーツを確認する" id="inspect-parts-using-systemparts">
     ここで、MergeTree の内部の仕組みが見えてきます。`system.parts` テーブルには、サービス内のすべての MergeTree テーブルについて、ディスク上のすべてのデータパーツが記録されています。
 
     ```sql
@@ -211,9 +201,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     このクエリをしばらく後でもう一度実行すると、パーツ数が減っていることに気づくかもしれません。これは MergeTree の *マージ* が機能しているためです。ClickHouse はバックグラウンドで小さなパーツを継続的に大きなパーツへマージし、パーツ数を減らします。`active = true` のフィルタにより、クリーンアップ待ちの古いパーツではなく、現在のマージ済みパーツだけが表示されます。
   </Step>
 
-  <Step>
-    ### データにクエリを実行し、主キーの挙動を確認する
-
+  <Step title="データにクエリを実行し、主キーの挙動を確認する" id="query-the-data-and-observe-primary-key-behaviour">
     ここで、実際に分析クエリをいくつか実行してみましょう。まず、記録されている売上の中で最も高額なものを見つけます。
 
     ```sql
@@ -264,7 +252,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   </Step>
 </Steps>
 
-## 次のステップ
+<div id="next-steps">
+  ## 次のステップ
+</div>
 
 このクイックスタートでは、ゼロから MergeTree テーブルを作成し、S3 から英国の不動産売買レコード 3,000 万件を取り込み、ClickHouse がデータをソート済みのパーツとパーティションにどのように整理するかを確認し、主キー索引の威力を示すクエリを実行しました。
 

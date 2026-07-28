@@ -191,14 +191,22 @@ protected:
     /// internal mutex is released, while a concurrent resetReader/seed can replace or drop the
     /// cached reader. Holding a shared_ptr for the duration of use keeps the object alive and
     /// avoids a use-after-free on the cached archive index.
-    std::shared_ptr<const PackedFilesReader> getSkipIndicesPackedReader() const;
+    ///
+    /// Virtual so packed part storage can route the probe through its outer data.packed reader:
+    /// there skp_idx.packed is a virtual member of data.packed rather than a standalone disk file,
+    /// so the disk-probe default always misses.
+    virtual std::shared_ptr<const PackedFilesReader> getSkipIndicesPackedReader() const;
 
     /// Cheap pre-filtered lookup for the file-read overlay: returns the archive reader only when
     /// @name is a "skp_idx_..." substream that the archive actually contains, else nullptr. The
     /// prefix gate keeps unrelated files (checksums.txt, count.txt, columns.txt, ...) from loading
     /// or probing skp_idx.packed at all -- avoiding extra metadata I/O on remote/Keeper disks and
     /// keeping a bad/future-version archive from blocking reads of unrelated files.
-    std::shared_ptr<const PackedFilesReader> getArchiveReaderForFile(const std::string & name) const;
+    ///
+    /// Virtual so packed part storage can disable the base file-read overlay by returning nullptr:
+    /// its skp_idx.packed lives inside data.packed, so the overlay's standalone-archive read
+    /// composition is invalid there. Packed serves index substreams through its *Impl hooks instead.
+    virtual std::shared_ptr<const PackedFilesReader> getArchiveReaderForFile(const std::string & name) const;
 
     /// Copy a single archive member into @target, reading it through this storage's readFile
     /// overlay. Shared by copyPackedSkipIndicesFilesInto and filterPackedSkipIndicesArchiveTo.

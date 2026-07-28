@@ -51,17 +51,17 @@ Uma distribuição eficiente das lanes é fundamental para maximizar a utilizaç
   ### Processamento de consultas em tabelas com shards
 </div>
 
-Quando os dados da tabela são distribuídos entre vários servidores em [shards](/pt-BR/guides/oss/deployment-and-scaling/shards), cada servidor processa seu shard em paralelo. Em cada servidor, os dados locais são processados por lane de processamento paralelas, exatamente como descrito acima:
+Quando os dados da tabela são distribuídos entre vários servidores em [shards](/pt-BR/guides/oss/deployment-and-scaling/shards), cada servidor processa seu shard em paralelo. Em cada servidor, os dados locais são tratados usando lanes de processamento em paralelo, exatamente como descrito acima:
 
-<Image img="/images/guides/best-practices/query-parallelism_04.webp" size="md" alt="Vias distribuídas" />
-
-<br />
+<Image img="/images/guides/best-practices/query-parallelism_04.webp" size="md" alt="Lanes distribuídas" />
 
 <br />
 
-O servidor que recebe a consulta inicialmente coleta todos os resultados parciais dos shards e os combina no resultado global final.
+<br />
 
-Distribuir a carga das consultas entre shards permite ampliar horizontalmente o paralelismo, especialmente em ambientes de alto throughput.
+O servidor que recebe a consulta inicialmente coleta todos os sub-resultados dos shards e os combina no resultado global final.
+
+Distribuir a carga das consultas entre shards permite escalar horizontalmente o paralelismo, especialmente em ambientes de alto throughput.
 
 <Info>
   **ClickHouse Cloud usa réplicas paralelas em vez de shards**

@@ -180,16 +180,17 @@ SELECT L2Distance((1, 2), (2, 3))
 **構文**
 
 ```sql
-L2DistanceTransposed(vector1, vector2, p)
+L2DistanceTransposed(vector1, vector2, p[, used_dims])
 ```
 
 **別名**: `distanceL2Transposed`
 
 **引数**
 
-* `vectors` — ベクトル。[`QBit(T, UInt64)`](/ja/reference/data-types/qbit)
+* `vectors` — ベクトル。[`QBit(T, UInt64[, UInt64])`](/ja/reference/data-types/qbit)
 * `reference` — 参照ベクトル。[`Array(T)`](/ja/reference/data-types/array)
 * `p` — 距離計算で各ベクトル要素から使用するビット数 (1 から要素のビット幅まで) 。量子化レベルによって、精度と速度のトレードオフが決まります。ビット数を少なくすると I/O と計算は高速になりますが精度は低下し、ビット数を多くすると精度は向上しますが、その分パフォーマンスは低下します。[`UInt`](/ja/reference/data-types/int-uint)
+* `used_dims` — 任意。ストライド付き `QBit` に対して低次元 (Matryoshka) 検索を行うために読み取る先頭の次元数です。QBit の stride の倍数であり、その次元数を超えてはなりません。また、参照ベクトルは少なくともこの数だけの要素を持っている必要があります (末尾の余分な要素は無視されます) 。これらの次元をカバーする stride グループだけが読み取られます。[`UInt`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
@@ -207,8 +208,43 @@ SELECT L2DistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 
 ```response title=Response
 ┌─L2DistanceTransposed([0, 1], [1, 2], 16)─┐
-│                       1.4142135623730951 │
+│                       1.3922918381215914 │
 └──────────────────────────────────────────┘
+```
+
+<div id="L2DistanceTransposedQuantized">
+  ## L2DistanceTransposedQuantized
+</div>
+
+導入バージョン: v26.7.0
+
+`quantizeBFloat16ToInt8` のコードを持つ `QBit(Int8)` (オンザフライで逆量子化) と参照ベクトルの間の近似 [ユークリッド距離](https://en.wikipedia.org/wiki/Euclidean_distance) を計算します。`Float` の参照 (クエリ) ベクトルは、逆量子化されたコードの再構成精度である `Float32` 精度で直接比較されるため、`Float64` のクエリは `Float32` に縮小され、`BFloat16` のクエリは正確に `Float32` に拡張されます (非対称距離計算)。`Array(Int8)` の参照は、それ自体が `quantizeBFloat16ToInt8` のコードとして扱われ、その再構成レベルに逆量子化されます。`p` が切り詰めるのは保存された `QBit` コードだけである点に注意してください。`Array(Int8)` の参照は完全なクエリであり、常に完全な 8 ビット精度で再構成されるため、これは `p = 8` のときにのみ対称な量子化同士の距離になります (`p < 8` では、保存側だけがより粗い精度で読み取られます)。これは、量子化前の値が属していたのと同じ空間、つまり同じランダム回転とスケーリングを適用した後の空間になければならず、これを担保するのは呼び出し元の責任です。cosine distance はスケール不変ですが、内積と L2 距離 はそうではありません。
+
+**構文**
+
+```sql
+L2DistanceTransposedQuantized(vectors, reference, p[, used_dims])
+```
+
+**引数**
+
+* `vectors` — `quantizeBFloat16ToInt8` コードのベクトル。[`QBit(Int8, UInt64[, UInt64])`](/ja/reference/data-types/qbit)
+* `reference` — 参照 (クエリ) ベクトル: `Float` 配列 (クエリ。`Float32` 精度で比較されます。`Float64` のクエリは `Float32` に変換されます)、または `quantizeBFloat16ToInt8` コードの [`Array(Int8)`](/ja/reference/data-types/array) で、オンザフライで逆量子化されます。[`Array(Float32)`](/ja/reference/data-types/array) または [`Array(Int8)`](/ja/reference/data-types/array)
+* `p` — 使用する、格納済み `QBit` コードの上位ビット数 (1 から 8) 。ビット数が少ないほど、より粗い埋め込み量子化器が再構築され、I/O は高速になりますが精度は低下します。8 ビットはフル精度の再構築です。`p` は格納済み `QBit` のみを切り詰めます。`Array(Int8)` の参照は常に完全な 8 ビット精度で再構築されます。[`UInt`](/ja/reference/data-types/int-uint)
+* `used_dims` — 任意。ストライド付き `QBit` に対して低次元 (Matryoshka) 検索を行うために読み取る先頭の次元数です。QBit の stride の倍数であり、その次元数を超えてはなりません。また、参照ベクトルは少なくともこの数の要素を持っている必要があります (末尾の余分な要素は無視されます)。これらの次元をカバーする stride グループだけが読み取られます。[`UInt`](/ja/reference/data-types/int-uint)
+
+**戻り値**
+
+近似的な 2-ノルム距離を返します。戻り値は常に `Float64` です。[`Float64`](/ja/reference/data-types/float)
+
+**例**
+
+**基本的な使い方**
+
+```sql title=Query
+CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
+SELECT L2DistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
 ```
 
 <div id="L2Norm">
@@ -653,16 +689,17 @@ SELECT cosineDistance((1, 2), (2, 3));
 **構文**
 
 ```sql
-cosineDistanceTransposed(vector1, vector2, p)
+cosineDistanceTransposed(vector1, vector2, p[, used_dims])
 ```
 
 **別名**: `distanceCosineTransposed`
 
 **引数**
 
-* `vectors` — ベクトル。[`QBit(T, UInt64)`](/ja/reference/data-types/qbit)
+* `vectors` — ベクトル。[`QBit(T, UInt64[, UInt64])`](/ja/reference/data-types/qbit)
 * `reference` — 参照ベクトル。[`Array(T)`](/ja/reference/data-types/array)
 * `p` — 距離計算で各ベクトル要素から使用するビット数 (1 から要素のビット幅まで) 。量子化レベルによって、精度と速度のトレードオフが決まります。使用するビット数を減らすと、精度は低下しますが、I/O と計算は高速になります。一方、ビット数を増やすと精度は向上しますが、パフォーマンスは低下します。[`UInt`](/ja/reference/data-types/int-uint)
+* `used_dims` — 省略可能。ストライド付き `QBit` で低次元 (Matryoshka) 検索を行うために、先頭から読み取る次元数です。QBit の stride の倍数であり、その次元数を超えてはなりません。また、参照ベクトルには少なくともこの数の要素が必要です (末尾の余分な要素は無視されます) 。これらの次元をカバーする stride グループのみが読み取られます。[`UInt`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
@@ -680,8 +717,121 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 
 ```response title=Response
 ┌─cosineDistanceTransposed([0, 1], [1, 2], 16)─┐
-│                          0.10557281085638826 │
+│                          0.10557280905788935 │
 └──────────────────────────────────────────────┘
+```
+
+<div id="cosineDistanceTransposedQuantized">
+  ## cosineDistanceTransposedQuantized
+</div>
+
+導入バージョン: v26.7.0
+
+`quantizeBFloat16ToInt8` コードの `QBit(Int8)` (オンザフライで逆量子化) と参照ベクトルの間の近似的な [コサイン距離](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance) を計算します。戻り値が小さいほど、ベクトル同士の類似度は高くなります。`Float` の参照 (クエリ) ベクトルは、復量子化されたコードの再構成精度である `Float32` 精度で直接比較されます。つまり、`Float64` クエリは `Float32` に丸められ、`BFloat16` クエリは正確に `Float32` へ拡張されます (非対称な距離計算) 。一方、`Array(Int8)` の参照は、それ自体が `quantizeBFloat16ToInt8` コードとして扱われ、対応する再構成レベルへ復量子化されます。なお、`p` によって切り詰められるのは保存済みの `QBit` コードだけです。`Array(Int8)` の参照は完全なクエリそのものであり、常に完全な 8 ビット精度で再構成されます。そのため、これは `p = 8` の場合にのみ対称な量子化同士の距離となります (`p < 8` の場合は、保存側だけがより粗い精度で読み出されます) 。また、これは量子化前の値が属していた空間と同じ空間に存在している必要があります (つまり、同じランダム回転とスケーリングを適用した後の空間) 。これを保証するのは呼び出し側の責任です。コサイン距離はスケール不変ですが、内積と L2 距離はそうではありません。
+
+**構文**
+
+```sql
+cosineDistanceTransposedQuantized(vectors, reference, p[, used_dims])
+```
+
+**引数**
+
+* `vectors` — `quantizeBFloat16ToInt8` コードのベクトル。[`QBit(Int8, UInt64[, UInt64])`](/ja/reference/data-types/qbit)
+* `reference` — 参照 (クエリ) ベクトル: `Float` の配列 (クエリは `Float32` 精度で比較され、`Float64` のクエリは `Float32` に変換されます) 、またはオンザフライで逆量子化される `quantizeBFloat16ToInt8` コードの `Array(Int8)`。[`Array(Float32)`](/ja/reference/data-types/array) または [`Array(Int8)`](/ja/reference/data-types/array)
+* `p` — 各格納済み `QBit` コードで使用する上位ビット数 (1 ～ 8) 。ビット数が少ないほど、より粗い埋め込み量子化器が再構成されるため、精度は下がりますが I/O は高速になります。8 ビットはフル精度での再構成です。`p` で切り詰められるのは格納済み `QBit` のみで、`Array(Int8)` の参照は常に 8 ビットのフル精度で再構成されます。[`UInt`](/ja/reference/data-types/int-uint)
+* `used_dims` — 省略可。ストライド付き `QBit` に対する 低次元 (Matryoshka) 検索で読み取る先頭の次元数です。QBit の stride の倍数であり、その dimension を超えてはならず、参照ベクトルは少なくともこの数の要素を持っている必要があります (余分な末尾の要素は無視されます) 。これらの次元を含む stride グループ のみが読み取られます。[`UInt`](/ja/reference/data-types/int-uint)
+
+**戻り値**
+
+近似 コサイン距離 (cosine similarity から 1 を引いた値) を返します。戻り値は常に `Float64` です。[`Float64`](/ja/reference/data-types/float)
+
+**例**
+
+**基本的な使い方**
+
+```sql title=Query
+CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
+SELECT cosineDistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
+```
+
+<div id="dotProductTransposed">
+  ## dotProductTransposed
+</div>
+
+導入バージョン: v26.7.0
+
+2 つのベクトルの近似的な [内積](https://en.wikipedia.org/wiki/Dot_product) (インナー積) を計算します (ベクトルの値を座標とみなします) 。距離関数とは異なり、これは類似度の指標です。戻り値が大きいほど、ベクトルはより類似しています。
+
+**構文**
+
+```sql
+dotProductTransposed(vector1, vector2, p[, used_dims])
+```
+
+**別名**: `scalarProductTransposed`
+
+**引数**
+
+* `vectors` — ベクトル。[`QBit(T, UInt64[, UInt64])`](/ja/reference/data-types/qbit)
+* `reference` — 参照ベクトル。[`Array(T)`](/ja/reference/data-types/array)
+* `p` — 計算で各ベクトル要素から使用するビット数 (1 から要素のビット幅まで) 。量子化レベルによって、精度と速度のトレードオフが決まります。使用するビット数を減らすと、精度は低下しますが、I/O と計算は高速になります。一方、ビット数を増やすと精度は向上しますが、パフォーマンスは低下します。[`UInt`](/ja/reference/data-types/int-uint)
+* `used_dims` — 省略可能。ストライド付き `QBit` に対する低次元 (Matryoshka) 検索のために、読み取る先頭の次元数です。QBit の stride の倍数であり、その次元数を超えてはなりません。また、参照ベクトルは少なくともこの数の要素を持っている必要があります (余分な末尾要素は無視されます) 。これらの次元をカバーする stride グループのみが読み取られます。[`UInt`](/ja/reference/data-types/int-uint)
+
+**戻り値**
+
+2 つのベクトルの近似内積を返します。返り値は常に `Float64` です。[`Float64`](/ja/reference/data-types/float)
+
+**例**
+
+**基本的な使い方**
+
+```sql title=Query
+CREATE TABLE qbit (id UInt32, vec QBit(Float64, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, [0, 1]);
+SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
+```
+
+```response title=Response
+┌─dotProductTransposed([0, 1], [1, 2], 16)─┐
+│                                   2.0625 │
+└──────────────────────────────────────────┘
+```
+
+<div id="dotProductTransposedQuantized">
+  ## dotProductTransposedQuantized
+</div>
+
+導入バージョン: v26.7.0
+
+`quantizeBFloat16ToInt8` のコードを持つ `QBit(Int8)` と参照ベクトルの間の近似的な [内積](https://en.wikipedia.org/wiki/Dot_product) (インナー積) を計算します (`QBit(Int8)` は オンザフライで逆量子化されます) 。これは類似度の指標です。戻り値が大きいほど、ベクトルはより類似しています。`Float` の参照 (クエリ) ベクトルは、逆量子化されたコードの再構成精度である `Float32` 精度で直接比較されるため、`Float64` クエリは `Float32` に縮小され、`BFloat16` クエリは正確に `Float32` に拡張されます (非対称距離計算) 。`Array(Int8)` の参照は、それ自体が `quantizeBFloat16ToInt8` のコードとして扱われ、再構成レベルに逆量子化されます。`p` は保存された `QBit` コードのみを切り詰める点に注意してください。`Array(Int8)` の参照は完全なクエリであり、常に完全な 8 ビット精度で再構成されるため、これは `p = 8` の場合にのみ対称な量子化対量子化距離になります (`p < 8` の場合、より粗い精度で読み取られるのは保存側だけです) 。これは、量子化前の値が属していたのと同じ空間、すなわち同じランダム回転とスケーリングを適用した後の空間に属している必要があり、これを保証するのは呼び出し側の責任です。コサイン距離はスケール不変ですが、内積と L2 距離はそうではありません。
+
+**構文**
+
+```sql
+dotProductTransposedQuantized(vectors, reference, p[, used_dims])
+```
+
+**引数**
+
+* `vectors` — `quantizeBFloat16ToInt8` コードのベクトル。[`QBit(Int8, UInt64[, UInt64])`](/ja/reference/data-types/qbit)
+* `reference` — 参照 (クエリ) ベクトル: `Float` 配列 (クエリは `Float32` 精度で比較され、`Float64` クエリは `Float32` に縮小されます) 、または `quantizeBFloat16ToInt8` コードの `Array(Int8)` で、オンザフライで逆量子化されます。[`Array(Float32)`](/ja/reference/data-types/array) または [`Array(Int8)`](/ja/reference/data-types/array)
+* `p` — 使用する、格納された各 `QBit` コードの上位ビット数 (1 から 8) 。ビット数を減らすと、より粗い埋め込み量子化器が再構成され、精度は低下しますが I/O は高速になります。8 ビットはフル精度の再構成です。`p` が切り詰めるのは格納された `QBit` のみであり、`Array(Int8)` の参照は常に完全な 8 ビット精度で再構成されます。[`UInt`](/ja/reference/data-types/int-uint)
+* `used_dims` — 省略可能。ストライド付き `QBit` に対する低次元 (Matryoshka) 検索のために、読み取る先頭の次元数です。QBit の stride の倍数であり、その次元数を超えてはなりません。また、参照ベクトルは少なくともこの数の要素を持っている必要があります (末尾に余分な要素がある場合は無視されます) 。これらの次元をカバーする stride グループのみが読み取られます。[`UInt`](/ja/reference/data-types/int-uint)
+
+**戻り値**
+
+2 つのベクトルの近似内積を返します。返り値は常に Float64 です。[`Float64`](/ja/reference/data-types/float)
+
+**例**
+
+**基本的な使い方**
+
+```sql title=Query
+CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
+SELECT dotProductTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
 ```
 
 {/*AUTOGENERATED_END*/}

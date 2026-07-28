@@ -45,9 +45,7 @@ Estos puertos permiten integraciones con diversas fuentes de telemetría y hacen
 <br />
 
 <Steps>
-  <Step>
-    ### Clona el repositorio
-
+  <Step title="Clona el repositorio" id="clone-the-repo">
     Para desplegar con Docker Compose, clona el repositorio de ClickStack, sitúate en el directorio y ejecuta `docker-compose up`:
 
     ```shell
@@ -56,9 +54,7 @@ Estos puertos permiten integraciones con diversas fuentes de telemetría y hacen
     ```
   </Step>
 
-  <Step>
-    ### Accede a la UI de HyperDX
-
+  <Step title="Accede a la UI de HyperDX" id="navigate-to-hyperdx-ui">
     Visita [http://localhost:8080](http://localhost:8080) para acceder a la UI de HyperDX.
 
     Crea un usuario e introduce un nombre de usuario y una contraseña que cumplan los requisitos.
@@ -68,7 +64,7 @@ Estos puertos permiten integraciones con diversas fuentes de telemetría y hacen
     <Info>
       **Sobrescribir la conexión predeterminada**
 
-      Puedes sobrescribir la conexión predeterminada a la instancia integrada de ClickHouse. Para obtener más información, consulta [&quot;Uso de ClickHouse Cloud&quot;](#using-clickhouse-cloud).
+      Puedes sobrescribir la conexión predeterminada de la instancia integrada de ClickHouse. Para obtener más información, consulta [&quot;Uso de ClickHouse Cloud&quot;](#using-clickhouse-cloud).
     </Info>
 
     <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="UI de HyperDX" size="lg" />
@@ -76,9 +72,7 @@ Estos puertos permiten integraciones con diversas fuentes de telemetría y hacen
     Para ver un ejemplo de uso de una instancia alternativa de ClickHouse, consulta [&quot;Uso de ClickHouse Cloud&quot;](#using-clickhouse-cloud).
   </Step>
 
-  <Step>
-    ### Completa los detalles de conexión
-
+  <Step title="Completa los detalles de conexión" id="complete-connection-details">
     Para conectarte a la instancia de ClickHouse desplegada, solo tienes que hacer clic en **Create** y aceptar la configuración predeterminada.
 
     Si prefieres conectarte a tu propio **clúster externo de ClickHouse**, por ejemplo, ClickHouse Cloud, puedes introducir manualmente tus credenciales de conexión.

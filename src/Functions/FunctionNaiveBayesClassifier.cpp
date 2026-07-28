@@ -1,490 +1,384 @@
-#include <mutex>
-#include <optional>
-#include <ranges>
+#include <atomic>
+#include <string_view>
+
+#include <Access/Common/AccessFlags.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
+#include <Dictionaries/NaiveBayesDictionary.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/naiveBayesClassifier.h>
 #include <Interpreters/Context.h>
-#include <fmt/ranges.h>
-#include <Poco/Util/XMLConfiguration.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Common/Exception.h>
-#include <Common/HashTable/HashMap.h>
-#include <Common/ProfileEvents.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
-
-namespace ProfileEvents
-{
-extern const Event NaiveBayesClassifierModelsLoaded;
-extern const Event NaiveBayesClassifierModelsAllocatedBytes;
-}
 
 namespace DB
 {
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
-extern const int NO_ELEMENTS_IN_CONFIG;
-extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
 }
 
 namespace
 {
 
-
-class NBModelRegistry
+bool isStringOrNull(const IDataType & type)
 {
-public:
-    NBModelRegistry(const NBModelRegistry &) = delete;
-    NBModelRegistry & operator=(const NBModelRegistry &) = delete;
-
-    using ProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
-
-    using ByteNBC = NaiveBayesClassifier<BytePolicy>;
-    using CodeNBC = NaiveBayesClassifier<CodePointPolicy>;
-    using TokenNBC = NaiveBayesClassifier<TokenPolicy>;
-
-    using Model = std::variant<ByteNBC, CodeNBC, TokenNBC>;
-    using Models = UnorderedMapWithMemoryTracking<String, Model>;
-
-    /// Public so `std::optional::emplace` can call it; the singleton is still enforced because
-    /// `registry` is private and only reachable through `instance`.
-    explicit NBModelRegistry(ContextPtr context) { load(context); }
-
-    /// Context from the first successful call is used to build the registry; later calls only return the map.
-    /// A failed `load` rethrows and leaves the registry empty so the next caller can retry once the config is fixed.
-    /// Explicit mutex+optional avoids a TSan race seen when two threads concurrently re-attempt construction
-    /// after the first attempt throws (the C++ runtime's guard-abort edge is not always recognized by TSan).
-    static const Models & instance(ContextPtr context)
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
     {
-        std::lock_guard lock(mutex);
-        if (!registry.has_value())
-            registry.emplace(context);
-        return registry->models;
+        /// Also accept `Nullable(Nothing)` so a bare NULL literal classifies to NULL, like a typed `Nullable(String)` NULL.
+        const auto & nested = *nullable->getNestedType();
+        return isString(nested) || isNothing(nested);
     }
-
-private:
-    Models models;
-
-    void load(ContextPtr context);
-
-    static std::mutex mutex;
-    static std::optional<NBModelRegistry> registry;
-};
-
-std::mutex NBModelRegistry::mutex;
-std::optional<NBModelRegistry> NBModelRegistry::registry;
-
-void NBModelRegistry::load(ContextPtr context)
-{
-    const auto & config = context->getConfigRef();
-
-    if (!config.has("nb_models"))
-    {
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Missing 'nb_models' key in config.");
-    }
-
-    /// Iterate over each <model> element in <nb_models>
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys("nb_models", keys);
-    for (const auto & key : keys)
-    {
-        const String model_name_path = "nb_models." + key + ".name";
-        if (!config.has(model_name_path))
-        {
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Missing model name via 'name' key in <nb_models> in key {}", key);
-        }
-        const String model_name = config.getString(model_name_path);
-
-        /// Check if there is already a model with the same name
-        if (models.contains(model_name))
-        {
-            throw Exception(
-                ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
-                "Duplicate model name {} found in <nb_models>. Please use unique names for each model",
-                model_name);
-        }
-
-        const String model_data_path = "nb_models." + key + ".path";
-        const String model_n_path = "nb_models." + key + ".n";
-        const String model_mode_path = "nb_models." + key + ".mode";
-
-        if (!config.has(model_data_path))
-        {
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Missing model data path via 'path' key in <nb_models> for model {}", key);
-        }
-        if (!config.has(model_n_path))
-        {
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Missing model ngram 'n' via 'n' key in <nb_models> for model {}", key);
-        }
-        if (!config.has(model_mode_path))
-        {
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Missing model mode via 'mode' key in <nb_models> for model {}", key);
-        }
-
-        const String model_data = config.getString(model_data_path);
-        const UInt32 n = config.getInt(model_n_path);
-
-        if (n == 0)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ngram size 'n' must be greater than 0 for model {}", model_name);
-        }
-
-        /// Extract the priors from the config if they exist
-        Poco::Util::AbstractConfiguration::Keys prior_keys;
-
-        const String model_priors_path = "nb_models." + key + ".priors";
-        config.keys(model_priors_path, prior_keys);
-
-        ProbabilityMap priors;
-        double total_prior_prob = 0.0;
-        for (const auto & prior_key : prior_keys)
-        {
-            const String model_prior_path = model_priors_path + "." + prior_key;
-            if (!config.has(model_prior_path + ".class") or !config.has(model_prior_path + ".value"))
-            {
-                throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Missing 'class' or 'value' key in <priors> for model {}", model_name);
-            }
-            const UInt32 class_id = config.getInt(model_prior_path + ".class");
-            const double prior = config.getDouble(model_prior_path + ".value");
-            priors[class_id] = prior;
-            total_prior_prob += prior;
-
-            if (prior <= 0.0)
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Prior probability must be greater than 0 for model {} and class {}. Got {}",
-                    model_name,
-                    class_id,
-                    prior);
-            }
-
-            if (prior > 1.0)
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Prior probability must be less than or equal to 1 for model {} and class {}. Got {}",
-                    model_name,
-                    class_id,
-                    prior);
-            }
-        }
-
-        if (!priors.empty() && fabs(total_prior_prob - 1.0) > 1e-6)
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Sum of provided priors probability is not equal to 1.0 for model {}. Sum: {}",
-                model_name,
-                total_prior_prob);
-        }
-
-        const double alpha = config.getDouble("nb_models." + key + ".alpha", 1.0);
-
-        if (alpha <= 0.0)
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Laplace smoothing parameter 'alpha' must be greater than 0 for model {}", model_name);
-        }
-
-        const String mode = config.getString(model_mode_path);
-
-        if (mode == "byte")
-        {
-            models.emplace(
-                std::piecewise_construct,
-                std::forward_as_tuple(model_name),
-                std::forward_as_tuple(std::in_place_type<ByteNBC>, model_name, model_data, std::move(priors), n, alpha));
-        }
-        else if (mode == "codepoint")
-        {
-            models.emplace(
-                std::piecewise_construct,
-                std::forward_as_tuple(model_name),
-                std::forward_as_tuple(std::in_place_type<CodeNBC>, model_name, model_data, std::move(priors), n, alpha));
-        }
-        else if (mode == "token")
-        {
-            models.emplace(
-                std::piecewise_construct,
-                std::forward_as_tuple(model_name),
-                std::forward_as_tuple(std::in_place_type<TokenNBC>, model_name, model_data, std::move(priors), n, alpha));
-        }
-        else
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Invalid mode {} for model {}. Only 'byte', 'codepoint', and 'token' are available",
-                mode,
-                model_name);
-
-        /// Increment profile events for loaded models
-        ProfileEvents::increment(ProfileEvents::NaiveBayesClassifierModelsLoaded);
-        std::visit(
-            [&](const auto & concrete_classifier)
-            { ProfileEvents::increment(ProfileEvents::NaiveBayesClassifierModelsAllocatedBytes, concrete_classifier.getAllocatedBytes()); },
-            models.at(model_name));
-    }
-
-    if (models.empty())
-    {
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No models found under <nb_models> in config");
-    }
+    return isString(type);
 }
 
-class FunctionNaiveBayesClassifier final : public IFunction
+void validateArguments(
+    const IFunction & func,
+    const ColumnsWithTypeAndName & arguments,
+    FunctionArgumentDescriptor::TypeValidator input_validator = &isStringOrNull,
+    const char * input_description = "String or Nullable(String)")
 {
-private:
-    const NBModelRegistry::Models & models;
+    validateFunctionArguments(
+        func,
+        arguments,
+        {
+            {"dictionary_name", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
+            {"input_text", input_validator, nullptr, input_description},
+        });
+}
+
+void validateDictionaryIsNaiveBayes(const ContextPtr & context, const IFunction & func, const ColumnsWithTypeAndName & arguments)
+{
+    const String dictionary_name{arguments[0].column->getDataAt(0)};
+
+    const auto layout_type = context->getExternalDictionariesLoader().getDictionaryLayoutType(dictionary_name, context);
+    if (layout_type != "naive_bayes")
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Dictionary '{}' has layout '{}', but function {} requires a dictionary with the NAIVE_BAYES layout",
+            dictionary_name,
+            layout_type,
+            func.getName());
+}
+
+template <typename ClassifyRow>
+void executeNaiveBayes(
+    const ContextPtr & context,
+    std::atomic<bool> & access_checked,
+    const ColumnsWithTypeAndName & arguments,
+    size_t input_rows_count,
+    ClassifyRow && classify_row)
+{
+    if (input_rows_count == 0)
+        return;
+
+    const String dictionary_name{arguments[0].column->getDataAt(0)};
+
+    auto dictionary = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
+
+    if (!access_checked.load(std::memory_order_relaxed))
+    {
+        context->checkAccess(AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
+        access_checked.store(true, std::memory_order_relaxed);
+    }
+
+    const auto * nb_dict = typeid_cast<const NaiveBayesDictionary *>(dictionary.get());
+    if (!nb_dict)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary '{}' is not a Naive Bayes dictionary", dictionary_name);
+
+    const ColumnPtr & text_column = arguments[1].column;
+
+    nb_dict->visitModel(
+        [&](const auto & model)
+        {
+            NaiveBayesScratch scratch;
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                const std::string_view text = text_column->getDataAt(i);
+                classify_row(model, scratch, text, i);
+            }
+        });
+
+    /// These functions bypass `getColumn`, so record the classified rows here to keep the dictionary query
+    /// statistics consistent with the equivalent `dictGet` path.
+    nb_dict->incrementQueryCount(input_rows_count);
+}
+
+DataTypePtr makeClassProbTuple()
+{
+    return std::make_shared<DataTypeTuple>(
+        DataTypes{std::make_shared<DataTypeUInt32>(), std::make_shared<DataTypeFloat64>()}, Strings{"class_id", "probability"});
+}
+
+
+/// Common state and traits shared by the three naiveBayesClassifier* functions.
+class FunctionNaiveBayesBase : public IFunction
+{
+protected:
+    ContextPtr context;
+    mutable std::atomic<bool> access_checked{false};
 
 public:
-    static constexpr auto name = "naiveBayesClassifier";
-
-    explicit FunctionNaiveBayesClassifier(ContextPtr context_)
-        : models(NBModelRegistry::instance(context_))
+    explicit FunctionNaiveBayesBase(ContextPtr context_)
+        : context(std::move(context_))
     {
     }
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionNaiveBayesClassifier>(context); }
+    bool isVariadic() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool isDeterministic() const override { return false; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    size_t getNumberOfArguments() const override { return 2; }
+};
+
+
+/// Implements `naiveBayesClassifier(dictionary_name, input_text)`, returning the predicted class id.
+class FunctionNaiveBayesClassifier : public FunctionNaiveBayesBase
+{
+public:
+    using FunctionNaiveBayesBase::FunctionNaiveBayesBase;
+
+    static constexpr auto name = "naiveBayesClassifier";
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionNaiveBayesClassifier>(context_); }
 
     String getName() const override { return name; }
 
-    bool isVariadic() const override { return false; }
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        validateArguments(*this, arguments);
+        validateDictionaryIsNaiveBayes(context, *this, arguments);
+        DataTypePtr result_type = std::make_shared<DataTypeUInt32>();
+        return arguments[1].type->isNullable() ? makeNullable(result_type) : result_type;
+    }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnPtr
+    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    {
+        auto result_column = ColumnUInt32::create(input_rows_count);
+        auto & data = result_column->getData();
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+        const auto * input_nullable = checkAndGetColumn<ColumnNullable>(arguments[1].column.get());
+        ColumnsWithTypeAndName effective_arguments = arguments;
+        const NullMap * null_map = nullptr;
+        if (input_nullable)
+        {
+            effective_arguments[1].column = input_nullable->getNestedColumnPtr();
+            null_map = &input_nullable->getNullMapData();
+        }
 
-    size_t getNumberOfArguments() const override { return 2; }
+        executeNaiveBayes(
+            context,
+            access_checked,
+            effective_arguments,
+            input_rows_count,
+            [&](const auto & model, NaiveBayesScratch & scratch, std::string_view text, size_t i)
+            { data[i] = (null_map && (*null_map)[i]) ? 0 : model.classify(text, scratch); });
+
+        if (input_nullable)
+            return ColumnNullable::create(std::move(result_column), input_nullable->getNullMapColumnPtr());
+        return result_column;
+    }
+};
+
+
+/// Implements `naiveBayesClassifierWithProb(dictionary_name, input_text)`, returning the predicted class
+/// id together with its probability as a tuple.
+class FunctionNaiveBayesClassifierWithProb : public FunctionNaiveBayesBase
+{
+public:
+    using FunctionNaiveBayesBase::FunctionNaiveBayesBase;
+
+    static constexpr auto name = "naiveBayesClassifierWithProb";
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionNaiveBayesClassifierWithProb>(context_); }
+
+    String getName() const override { return name; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const auto model_name_argument_type = WhichDataType(arguments[0].type);
-        if (!model_name_argument_type.isStringOrFixedString())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Function {} first argument type should be String. Actual {}",
-                getName(),
-                arguments[0].type->getName());
+        validateArguments(*this, arguments);
+        validateDictionaryIsNaiveBayes(context, *this, arguments);
+        DataTypePtr result_type = makeClassProbTuple();
+        return arguments[1].type->isNullable() ? makeNullable(result_type) : result_type;
+    }
 
-        const auto input_text_argument_type = WhichDataType(arguments[1].type);
-        if (!input_text_argument_type.isStringOrFixedString())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Function {} second argument type should be String. Actual {}",
-                getName(),
-                arguments[1].type->getName());
+    ColumnPtr
+    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    {
+        auto class_col = ColumnUInt32::create(input_rows_count);
+        auto prob_col = ColumnFloat64::create(input_rows_count);
+        auto & class_data = class_col->getData();
+        auto & prob_data = prob_col->getData();
 
-        return std::make_shared<DataTypeUInt32>();
+        const auto * input_nullable = checkAndGetColumn<ColumnNullable>(arguments[1].column.get());
+        ColumnsWithTypeAndName effective_arguments = arguments;
+        const NullMap * null_map = nullptr;
+        if (input_nullable)
+        {
+            effective_arguments[1].column = input_nullable->getNestedColumnPtr();
+            null_map = &input_nullable->getNullMapData();
+        }
+
+        executeNaiveBayes(
+            context,
+            access_checked,
+            effective_arguments,
+            input_rows_count,
+            [&](const auto & model, NaiveBayesScratch & scratch, std::string_view text, size_t i)
+            {
+                /// A NULL row is masked by the null map, so leave defaults instead of classifying.
+                if (null_map && (*null_map)[i])
+                {
+                    class_data[i] = 0;
+                    prob_data[i] = 0;
+                    return;
+                }
+                auto [best_class, best_prob] = model.classifyWithProb(text, scratch);
+                class_data[i] = best_class;
+                prob_data[i] = best_prob;
+            });
+
+        Columns tuple_columns;
+        tuple_columns.emplace_back(std::move(class_col));
+        tuple_columns.emplace_back(std::move(prob_col));
+        ColumnPtr tuple_column = ColumnTuple::create(std::move(tuple_columns));
+
+        if (input_nullable)
+            return ColumnNullable::create(tuple_column, input_nullable->getNullMapColumnPtr());
+        return tuple_column;
+    }
+};
+
+
+/// Implements `naiveBayesClassifierWithAllProbs(dictionary_name, input_text)`, returning every class with its
+/// probability as an array of tuples, ordered from most to least probable.
+class FunctionNaiveBayesClassifierWithAllProbs : public FunctionNaiveBayesBase
+{
+public:
+    using FunctionNaiveBayesBase::FunctionNaiveBayesBase;
+
+    static constexpr auto name = "naiveBayesClassifierWithAllProbs";
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionNaiveBayesClassifierWithAllProbs>(context_); }
+
+    String getName() const override { return name; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        validateArguments(*this, arguments);
+        validateDictionaryIsNaiveBayes(context, *this, arguments);
+        DataTypePtr result_type = std::make_shared<DataTypeArray>(makeClassProbTuple());
+        return arguments[1].type->isNullable() ? makeNullableSafe(result_type) : result_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const auto * const_model_name_col = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
-        const auto * const_input_text_col = checkAndGetColumn<ColumnConst>(arguments[1].column.get());
-        if (const_model_name_col and const_input_text_col)
+        auto class_col = ColumnUInt32::create();
+        auto prob_col = ColumnFloat64::create();
+        auto & class_data = class_col->getData();
+        auto & prob_data = prob_col->getData();
+        auto offsets_col = ColumnArray::ColumnOffsets::create(input_rows_count);
+        auto & offsets = offsets_col->getData();
+
+        const auto * input_nullable = checkAndGetColumn<ColumnNullable>(arguments[1].column.get());
+        ColumnsWithTypeAndName effective_arguments = arguments;
+        const NullMap * null_map = nullptr;
+        if (input_nullable)
         {
-            const String model_name = const_model_name_col->getValue<String>();
-            validateModelName(model_name);
-
-            const String input_text = const_input_text_col->getValue<String>();
-            validateInputText(input_text, model_name);
-
-            UInt32 predicted_class = std::visit([&](const auto & model) { return model.classify(input_text); }, models.at(model_name));
-            return result_type->createColumnConst(input_rows_count, predicted_class);
+            effective_arguments[1].column = input_nullable->getNestedColumnPtr();
+            null_map = &input_nullable->getNullMapData();
         }
 
-        ColumnPtr model_name_column = arguments[0].column->convertToFullColumnIfConst();
-        ColumnPtr input_text_column = arguments[1].column->convertToFullColumnIfConst();
+        executeNaiveBayes(
+            context,
+            access_checked,
+            effective_arguments,
+            input_rows_count,
+            [&](const auto & model, NaiveBayesScratch & scratch, std::string_view text, size_t i)
+            {
+                /// A NULL row is skipped, leaving an empty array; if the result is Nullable it is masked to NULL below.
+                if (!(null_map && (*null_map)[i]))
+                {
+                    const auto & probabilities = model.classifyWithAllProbs(text, scratch);
+                    for (const auto & [class_id, prob] : probabilities)
+                    {
+                        class_data.push_back(class_id);
+                        prob_data.push_back(prob);
+                    }
+                }
+                offsets[i] = class_data.size();
+            });
 
-        auto result_column = ColumnVector<UInt32>::create(input_rows_count);
-        auto & data = result_column->getData();
+        Columns tuple_columns;
+        tuple_columns.emplace_back(std::move(class_col));
+        tuple_columns.emplace_back(std::move(prob_col));
+        auto nested_col = ColumnTuple::create(std::move(tuple_columns));
+        ColumnPtr array_column = ColumnArray::create(std::move(nested_col), std::move(offsets_col));
 
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            const String model_name{model_name_column->getDataAt(i)};
-            validateModelName(model_name);
-
-            const String input_text{input_text_column->getDataAt(i)};
-            validateInputText(input_text, model_name);
-
-            UInt32 predicted_class = std::visit([&](const auto & model) { return model.classify(input_text); }, models.at(model_name));
-            data[i] = predicted_class;
-        }
-
-        return result_column;
-    }
-
-private:
-    void validateModelName(const String & model_name) const
-    {
-        if (!models.contains(model_name))
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Model {} not found. Available models: {}",
-                model_name,
-                fmt::join(models | std::views::transform([](const auto & model) { return model.first; }), ", "));
-        }
-    }
-
-    void validateInputText(const String & input_text, const String & model_name) const
-    {
-        if (input_text.empty())
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Input text is empty for model {}. Please provide a non-empty string.", model_name);
-        }
+        if (input_nullable && result_type->isNullable())
+            return ColumnNullable::create(array_column, input_nullable->getNullMapColumnPtr());
+        return array_column;
     }
 };
+
 }
 
 REGISTER_FUNCTION(NaiveBayesClassifier)
 {
-    FunctionDocumentation::Description description = R"NBDOC(
-Classifies input text using a Naive Bayes model with n-grams and Laplace smoothing.
-The model must be configured in ClickHouse before use.
+    factory.registerFunction<FunctionNaiveBayesClassifier>(FunctionDocumentation{
+        .description = "Classifies input text using a "
+                       "[`NAIVE_BAYES`](/sql-reference/statements/create/dictionary/layouts/naive-bayes) dictionary. "
+                       "Returns the same predicted class value as `dictGet(dictionary_name, class_attribute, input_text)`, "
+                       "where class_attribute is the name of the class label attribute configured in the dictionary's "
+                       "[layout](/sql-reference/statements/create/dictionary/layouts/naive-bayes#layout-parameters). "
+                       "Unlike `dictGet`, the result type is always `UInt32` rather than the declared type of the class "
+                       "attribute, and `input_text` must be a `String` (no key type conversion is applied).",
+        .syntax = "naiveBayesClassifier(dictionary_name, input_text)",
+        .arguments
+        = {{"dictionary_name", "Name of a dictionary with the NAIVE_BAYES layout.", {"String"}},
+           {"input_text", "Text to classify.", {"String"}}},
+        .returned_value = {"Predicted class ID.", {"UInt32"}},
+        .examples = {{"Classify text", "SELECT naiveBayesClassifier('model', 'some text');", "0"}},
+        .introduced_in = {25, 11},
+        .category = FunctionDocumentation::Category::MachineLearning});
 
-**Implementation details**
+    factory.registerFunction<FunctionNaiveBayesClassifierWithProb>(FunctionDocumentation{
+        .description = "Classifies input text using a "
+                       "[`NAIVE_BAYES`](/sql-reference/statements/create/dictionary/layouts/naive-bayes) dictionary and "
+                       "returns the predicted class with its probability.",
+        .syntax = "naiveBayesClassifierWithProb(dictionary_name, input_text)",
+        .arguments
+        = {{"dictionary_name", "Name of a dictionary with the NAIVE_BAYES layout.", {"String"}},
+           {"input_text", "Text to classify.", {"String"}}},
+        .returned_value = {"Tuple of (class_id, probability).", {"Tuple(UInt32, Float64)"}},
+        .examples = {{"Classify with probability", "SELECT naiveBayesClassifierWithProb('model', 'some text');", "(0,0.85)"}},
+        .introduced_in = {26, 7},
+        .category = FunctionDocumentation::Category::MachineLearning});
 
-*Algorithm*
-
-Uses the Naive Bayes classification algorithm with [Laplace smoothing](https://en.wikipedia.org/wiki/Additive_smoothing) to handle unseen n-grams, based on n-gram probabilities as described [here](https://web.stanford.edu/~jurafsky/slp3/4.pdf).
-
-*Key features*
-
-- Supports n-grams of any size.
-- Three tokenization modes:
-    - `byte`: Operates on raw bytes. Each byte is one token.
-    - `codepoint`: Operates on Unicode scalar values decoded from UTF-8. Each codepoint is one token.
-    - `token`: Splits on runs of Unicode whitespace (regex `\s+`). Tokens are substrings of non-whitespace; punctuation is part of the token if adjacent (e.g. `you?` is one token).
-
-**Model configuration**
-
-Sample source code for creating a Naive Bayes model for language detection is available [here](https://github.com/nihalzp/ClickHouse-NaiveBayesClassifier-Models), along with sample models and their associated config files [here](https://github.com/nihalzp/ClickHouse-NaiveBayesClassifier-Models/tree/main/models).
-
-An example configuration for a Naive Bayes model in ClickHouse:
-
-```xml
-<clickhouse>
-    <nb_models>
-        <model>
-            <name>sentiment</name>
-            <path>/etc/clickhouse-server/config.d/sentiment.bin</path>
-            <n>2</n>
-            <mode>token</mode>
-            <alpha>1.0</alpha>
-            <priors>
-                <prior>
-                    <class>0</class>
-                    <value>0.6</value>
-                </prior>
-                <prior>
-                    <class>1</class>
-                    <value>0.4</value>
-                </prior>
-            </priors>
-        </model>
-    </nb_models>
-</clickhouse>
-```
-
-*Configuration parameters*
-
-| Parameter | Description                                                                                              | Example                                                  | Default            |
-|-----------|----------------------------------------------------------------------------------------------------------|----------------------------------------------------------|--------------------|
-| `name`    | Unique model identifier.                                                                                  | `language_detection`                                     | Required           |
-| `path`    | Full path to the model binary.                                                                            | `/etc/clickhouse-server/config.d/language_detection.bin` | Required           |
-| `mode`    | Tokenization method: `byte` (byte sequences), `codepoint` (Unicode characters) or `token` (word tokens). | `token`                                                  | Required           |
-| `n`       | N-gram size: `1` (single word), `2` (word pairs) or `3` (word triplets).                                  | `2`                                                      | Required           |
-| `alpha`   | Laplace smoothing factor used during classification for n-grams that do not appear in the model.          | `0.5`                                                    | `1.0`              |
-| `priors`  | Class probabilities (percentage of documents belonging to a class).                                       | 60% class 0, 40% class 1                                 | Equal distribution |
-
-**Model training guide**
-
-*File format*
-
-In human-readable format, for `n=1` and `token` mode, the model might look like this:
-
-```text
-<class_id> <n-gram> <count>
-0 excellent 15
-1 refund 28
-```
-
-For `n=3` and `codepoint` mode, it might look like:
-
-```text
-<class_id> <n-gram> <count>
-0 exc 15
-1 ref 28
-```
-
-The human-readable format is not used by ClickHouse directly; it must be converted to the binary format described below.
-
-*Binary format details*
-
-Each n-gram is stored as:
-1. 4-byte `class_id` (UInt, little-endian).
-2. 4-byte `n-gram` bytes length (UInt, little-endian).
-3. Raw `n-gram` bytes.
-4. 4-byte `count` (UInt, little-endian).
-
-*Preprocessing requirements*
-
-Before the model is created from the document corpus, the documents must be preprocessed to extract n-grams according to the specified `mode` and `n`:
-
-1. Add boundary markers at the start and end of each document based on the tokenization mode:
-    - `byte`: `0x01` (start), `0xFF` (end)
-    - `codepoint`: `U+10FFFE` (start), `U+10FFFF` (end)
-    - `token`: `<s>` (start), `</s>` (end)
-
-    Note: `(n - 1)` tokens are added at both the beginning and the end of the document.
-
-2. Example for `n=3` in `token` mode:
-    - Document: `ClickHouse is fast`
-    - Processed as: `<s> <s> ClickHouse is fast </s> </s>`
-    - Generated trigrams:
-        - `<s> <s> ClickHouse`
-        - `<s> ClickHouse is`
-        - `ClickHouse is fast`
-        - `is fast </s>`
-        - `fast </s> </s>`
-
-To simplify model creation for `byte` and `codepoint` modes, it may be convenient to first tokenize the document (a list of bytes for `byte` mode, a list of codepoints for `codepoint` mode), append `n - 1` start tokens at the beginning and `n - 1` end tokens at the end, then generate the n-grams and write them to the serialized file.
-)NBDOC";
-    FunctionDocumentation::Syntax syntax = "naiveBayesClassifier(model_name, input_text)";
-    FunctionDocumentation::Arguments arguments
-        = {{"model_name", "Name of the pre-configured model. The model must be defined in ClickHouse's configuration files.", {"String"}},
-           {"input_text", "Text to classify. Input is processed exactly as provided (case/punctuation preserved).", {"String"}}};
-    FunctionDocumentation::ReturnedValue returned_value
-        = {"Predicted class ID as an unsigned integer. Class IDs correspond to categories defined during model construction.", {"UInt32"}};
-    FunctionDocumentation::Examples examples
-        = {{"Classify the language of a text",
-            "SELECT naiveBayesClassifier('language', 'How are you?');",
-            R"(
-          ┌─naiveBayesClassifier('language', 'How are you?')─┐
-          │ 0                                                │
-          └──────────────────────────────────────────────────┘
-
-          Result 0 might represent English, while 1 could indicate French - class meanings depend on your training data.
-        )"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::MachineLearning;
-
-    FunctionDocumentation function_documentation
-        = {.description = description,
-           .syntax = syntax,
-           .arguments = arguments,
-           .returned_value = returned_value,
-           .examples = examples,
-           .introduced_in = introduced_in,
-           .category = category};
-
-    factory.registerFunction<FunctionNaiveBayesClassifier>(function_documentation);
+    factory.registerFunction<FunctionNaiveBayesClassifierWithAllProbs>(FunctionDocumentation{
+        .description = "Classifies input text using a "
+                       "[`NAIVE_BAYES`](/sql-reference/statements/create/dictionary/layouts/naive-bayes) dictionary and "
+                       "returns all classes with their probabilities, ordered from most to least probable.",
+        .syntax = "naiveBayesClassifierWithAllProbs(dictionary_name, input_text)",
+        .arguments
+        = {{"dictionary_name", "Name of a dictionary with the NAIVE_BAYES layout.", {"String"}},
+           {"input_text", "Text to classify.", {"String"}}},
+        .returned_value
+        = {"Array of (class_id, probability) tuples ordered from most to least probable.", {"Array(Tuple(UInt32, Float64))"}},
+        .examples = {{"All class probabilities", "SELECT naiveBayesClassifierWithAllProbs('model', 'some text');", "[(0,0.85),(1,0.15)]"}},
+        .introduced_in = {26, 7},
+        .category = FunctionDocumentation::Category::MachineLearning});
 }
 }

@@ -105,6 +105,8 @@ public:
 private:
     Slice nextBuffer();
     const flatbuf::FieldNode & nextNode();
+    /// Length of the next FieldNode without consuming it (for validating a child before decoding it).
+    Int64 peekNextNodeLength() const;
 
     /// `allow_low_cardinality` is set only for top-level fields: a dictionary-encoded field decodes into
     /// a LowCardinality column there, but a dictionary nested inside Array/Map/Tuple/Union is materialized

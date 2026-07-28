@@ -81,17 +81,23 @@ ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_mixed_minmax ATTACH PARTITION tuple()"
 echo "before_mixed:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_mixed_minmax WHERE v = 42) WHERE explain ILIKE '%Granules: 1/20%'"
 
-# Pre-cleanup size accounting: the mixed part carries BOTH data files, so
-# secondary_indices_compressed_bytes must sum both (union walk), not only the
-# preferred ".idx2". The shared ".cmrk2" mark file is counted exactly once.
+# Pre-cleanup size accounting: the mixed part carries BOTH data files, so the
+# reported index size must sum both (union walk), not only the preferred ".idx2".
+# The shared ".cmrk2" mark file is counted exactly once.
+#
+# Read this from system.data_skipping_indices, not from system.parts: the
+# system.parts secondary-index columns are served by the part-lifetime
+# `total_secondary_indices_size` accumulator, which is never reset, so an ATTACHed
+# part reports every size doubled. That is independent of this test (it reproduces
+# on unmodified master for a plain single-".idx2" part) and is tracked separately.
 MIXED_PART=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 't_mixed_minmax' AND active ORDER BY name LIMIT 1")
 DISK_DATA=$(( $(stat -c%s "${MIXED_PART}/skp_idx_mm_v.idx") + $(stat -c%s "${MIXED_PART}/skp_idx_mm_v.idx2") ))
 MRK_FILE=$(find "${MIXED_PART}" -maxdepth 1 -name 'skp_idx_mm_v.*mrk*' | head -1)
 DISK_MARKS=$(stat -c%s "${MRK_FILE}")
 echo "size_counts_both_idx_payloads:"
-${CLICKHOUSE_CLIENT} -q "SELECT secondary_indices_compressed_bytes = ${DISK_DATA} FROM system.parts WHERE database = currentDatabase() AND table = 't_mixed_minmax' AND active"
+${CLICKHOUSE_CLIENT} -q "SELECT data_compressed_bytes = ${DISK_DATA} FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't_mixed_minmax' AND name = 'mm_v'"
 echo "size_counts_marks_once:"
-${CLICKHOUSE_CLIENT} -q "SELECT secondary_indices_marks_bytes = ${DISK_MARKS} FROM system.parts WHERE database = currentDatabase() AND table = 't_mixed_minmax' AND active"
+${CLICKHOUSE_CLIENT} -q "SELECT marks_bytes = ${DISK_MARKS} FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't_mixed_minmax' AND name = 'mm_v'"
 
 # --- Case 1: rebuild mutation (ALTER UPDATE of the indexed column) ---
 # The writer produces a fresh ".idx2". The stale ".idx" must be stripped, not

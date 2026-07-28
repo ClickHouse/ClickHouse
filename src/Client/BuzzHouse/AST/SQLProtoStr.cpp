@@ -4778,10 +4778,6 @@ CONV_FN(AlterItem, alter)
             ret += "DROP DETACHED ";
             SinglePartitionExprToString(ret, alter.drop_detached_partition());
             break;
-        case AlterType::kForgetPartition:
-            ret += "FORGET ";
-            SinglePartitionExprToString(ret, alter.forget_partition());
-            break;
         case AlterType::kAttachPartition:
             ret += "ATTACH ";
             SinglePartitionExprToString(ret, alter.attach_partition());

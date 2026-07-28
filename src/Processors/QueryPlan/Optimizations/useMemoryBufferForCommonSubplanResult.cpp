@@ -33,7 +33,7 @@ void useMemoryBufferForCommonSubplanResult(QueryPlan::Node & node, const QueryPl
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Expected CommonSubplanReferenceStep to reference CommonSubplanStep, but got {}",
-            node.step->getName());
+            subplan_reference_root->step->getName());
 
     auto columns_to_use = subplan_reference->extractColumnsToUse();
 

@@ -180,16 +180,17 @@ SELECT L2Distance((1, 2), (2, 3))
 **구문**
 
 ```sql
-L2DistanceTransposed(vector1, vector2, p)
+L2DistanceTransposed(vector1, vector2, p[, used_dims])
 ```
 
 **별칭**: `distanceL2Transposed`
 
 **인수**
 
-* `vectors` — 벡터. [`QBit(T, UInt64)`](/ko/reference/data-types/qbit)
+* `vectors` — 벡터. [`QBit(T, UInt64[, UInt64])`](/ko/reference/data-types/qbit)
 * `reference` — 기준 벡터. [`Array(T)`](/ko/reference/data-types/array)
 * `p` — 거리 계산에 사용할 각 벡터 요소의 비트 수(1부터 요소의 비트 폭까지)입니다. 양자화 수준은 정밀도와 속도 사이의 균형을 결정합니다. 더 적은 비트를 사용하면 정확도는 낮아지지만 I/O 및 계산 속도는 빨라지고, 더 많은 비트를 사용하면 성능 저하를 감수하는 대신 정확도는 높아집니다. [`UInt`](/ko/reference/data-types/int-uint)
+* `used_dims` — 선택 사항입니다. stride된 `QBit`에서 축소 차원(Matryoshka) 검색을 위해 읽을 선행 차원의 수입니다. QBit stride의 배수여야 하고 차원을 초과할 수 없으며, 기준 벡터에는 최소한 이 개수만큼의 요소가 있어야 합니다(뒤에 추가로 있는 요소는 무시됩니다). 이 차원들을 포함하는 stride 그룹만 읽습니다. [`UInt`](/ko/reference/data-types/int-uint)
 
 **반환 값**
 
@@ -207,8 +208,43 @@ SELECT L2DistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 
 ```response title=Response
 ┌─L2DistanceTransposed([0, 1], [1, 2], 16)─┐
-│                       1.4142135623730951 │
+│                       1.3922918381215914 │
 └──────────────────────────────────────────┘
+```
+
+<div id="L2DistanceTransposedQuantized">
+  ## L2DistanceTransposedQuantized
+</div>
+
+도입 버전: v26.7.0
+
+`quantizeBFloat16ToInt8` 코드의 `QBit(Int8)`(실행 중 즉시 역양자화됨)와 기준 벡터 사이의 근사 [유클리드 거리](https://en.wikipedia.org/wiki/Euclidean_distance)를 계산합니다. `Float` 기준(쿼리) 벡터는 역양자화된 코드의 복원 정밀도인 `Float32` 정밀도에서 직접 비교되므로, `Float64` 쿼리는 `Float32`로 축소되고 `BFloat16` 쿼리는 여기에 정확히 맞춰 확장됩니다(비대칭 거리 계산). `Array(Int8)` 기준은 그 자체로 `quantizeBFloat16ToInt8` 코드로 간주되며 해당 복원 수준으로 역양자화됩니다. `p`는 저장된 `QBit` 코드에만 절단을 적용합니다. `Array(Int8)` 기준은 완전한 쿼리이므로 항상 전체 8비트 정밀도로 재구성되며, 따라서 이는 `p = 8`일 때만 대칭적인 양자화 대 양자화 거리입니다(`p < 8`에서는 저장된 쪽만 더 낮은 정밀도로 읽음). 이는 양자화 이전 값이 존재하던 동일한 공간(즉, 동일한 무작위 회전 및 스케일링 이후)에 있어야 하며, 이는 호출자의 책임입니다. 코사인 거리는 스케일 불변이지만, 내적과 L2 거리는 그렇지 않습니다.
+
+**구문**
+
+```sql
+L2DistanceTransposedQuantized(vectors, reference, p[, used_dims])
+```
+
+**인수**
+
+* `vectors` — `quantizeBFloat16ToInt8` 코드의 벡터. [`QBit(Int8, UInt64[, UInt64])`](/ko/reference/data-types/qbit)
+* `reference` — 기준(쿼리) 벡터: `Float` 배열(쿼리이며 `Float32` 정밀도로 비교됨 -- `Float64` 쿼리는 `Float32`로 축소됨) 또는 `quantizeBFloat16ToInt8` 코드의 `Array(Int8)`로, 사용 시 즉석에서 역양자화됩니다. [`Array(Float32)`](/ko/reference/data-types/array) 또는 [`Array(Int8)`](/ko/reference/data-types/array)
+* `p` — 사용할 저장된 `QBit` 코드의 상위 비트 수(1~8)입니다. 더 적은 비트를 사용하면 더 거친 내장 양자화기가 복원되어 I/O는 빨라지지만 정확도는 낮아집니다. 8비트는 전체 정밀도 복원입니다. `p`는 저장된 `QBit`에만 절단을 적용하며, `Array(Int8)` 기준 벡터는 항상 전체 8비트 정밀도로 복원됩니다. [`UInt`](/ko/reference/data-types/int-uint)
+* `used_dims` — 선택 사항입니다. stride된 `QBit`에서 축소 차원(Matryoshka) 검색을 위해 읽을 선행 차원의 수입니다. QBit stride의 배수여야 하고 차원을 초과할 수 없으며, 기준 벡터에는 최소한 이 개수만큼의 원소가 있어야 합니다(추가로 뒤에 있는 원소는 무시됨). 이 차원들을 포함하는 stride 그룹만 읽습니다. [`UInt`](/ko/reference/data-types/int-uint)
+
+**반환 값**
+
+근사 2-노름 거리를 반환합니다. 반환 타입은 항상 `Float64`입니다. [`Float64`](/ko/reference/data-types/float)
+
+**예시**
+
+**기본 사용법**
+
+```sql title=Query
+CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
+SELECT L2DistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
 ```
 
 <div id="L2Norm">
@@ -653,16 +689,17 @@ SELECT cosineDistance((1, 2), (2, 3));
 **구문**
 
 ```sql
-cosineDistanceTransposed(vector1, vector2, p)
+cosineDistanceTransposed(vector1, vector2, p[, used_dims])
 ```
 
 **별칭**: `distanceCosineTransposed`
 
 **인수**
 
-* `vectors` — 벡터. [`QBit(T, UInt64)`](/ko/reference/data-types/qbit)
+* `vectors` — 벡터. [`QBit(T, UInt64[, UInt64])`](/ko/reference/data-types/qbit)
 * `reference` — 기준 벡터. [`Array(T)`](/ko/reference/data-types/array)
 * `p` — 거리 계산에 사용할 각 벡터 요소의 비트 수(1부터 요소 비트 폭까지). 양자화 수준은 정밀도와 속도 간의 상충 관계를 제어합니다. 더 적은 비트를 사용하면 정확도는 낮아지지만 I/O 및 계산 속도는 빨라지고, 더 많은 비트를 사용하면 성능 저하를 감수하는 대신 정확도가 높아집니다. [`UInt`](/ko/reference/data-types/int-uint)
+* `used_dims` — 선택 사항입니다. stride된 `QBit`에서 축소 차원(Matryoshka) 검색을 수행하기 위해 읽을 선행 차원의 수입니다. QBit stride의 배수이면서 해당 차원을 초과하지 않아야 하며, 기준 벡터는 최소한 이 개수만큼의 원소를 가져야 합니다(추가로 뒤에 있는 원소는 무시됩니다). 이러한 차원을 포함하는 stride 그룹만 읽습니다. [`UInt`](/ko/reference/data-types/int-uint)
 
 **반환 값**
 
@@ -680,8 +717,121 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 
 ```response title=Response
 ┌─cosineDistanceTransposed([0, 1], [1, 2], 16)─┐
-│                          0.10557281085638826 │
+│                          0.10557280905788935 │
 └──────────────────────────────────────────────┘
+```
+
+<div id="cosineDistanceTransposedQuantized">
+  ## cosineDistanceTransposedQuantized
+</div>
+
+도입 버전: v26.7.0
+
+`quantizeBFloat16ToInt8` 코드의 `QBit(Int8)`(실행 중 필요할 때 즉시 역양자화됨)와 기준 벡터 사이의 근사 [코사인 거리](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance)를 계산합니다. 반환 값이 작을수록 벡터는 더 유사합니다. `Float` 참조(`쿼리`) 벡터는 역양자화된 코드의 복원 정밀도인 `Float32` 정밀도에서 직접 비교됩니다. 따라서 `Float64` `쿼리`는 `Float32`로 축소되고, `BFloat16` `쿼리`는 정확히 `Float32`로 확장됩니다(비대칭 거리 계산). `Array(Int8)` 참조는 그 자체로 `quantizeBFloat16ToInt8` 코드로 간주되며, 해당 복원 수준으로 역양자화됩니다. `p`는 저장된 `QBit` 코드에만 적용되어 잘린다는 점에 유의하십시오. `Array(Int8)` 참조는 완전한 쿼리이므로 항상 전체 8비트 정밀도로 복원됩니다. 따라서 이는 `p = 8`일 때만 대칭적인 양자화 대 양자화 거리이며(`p < 8`이면 저장된 쪽만 더 거친 정밀도로 읽힘), 값은 양자화 전과 동일한 공간(즉, 동일한 무작위 회전과 스케일링 이후의 공간)에 있어야 합니다. 이는 호출자가 보장해야 합니다. 코사인 거리는 스케일 불변이지만, 점곱과 L2 거리는 그렇지 않습니다.
+
+**구문**
+
+```sql
+cosineDistanceTransposedQuantized(vectors, reference, p[, used_dims])
+```
+
+**인수**
+
+* `vectors` — `quantizeBFloat16ToInt8` 코드로 이루어진 벡터입니다. [`QBit(Int8, UInt64[, UInt64])`](/ko/reference/data-types/qbit)
+* `reference` — 기준(쿼리) 벡터입니다. `Float` 배열(`Float32` 정밀도로 비교되는 쿼리이며 `Float64` 쿼리는 `Float32`로 축소됨) 또는 실행 중 즉시 역양자화되는 `quantizeBFloat16ToInt8` 코드의 `Array(Int8)`입니다. [`Array(Float32)`](/ko/reference/data-types/array) 또는 [`Array(Int8)`](/ko/reference/data-types/array)
+* `p` — 저장된 각 `QBit` 코드에서 사용할 상위 비트 수입니다(1~8). 비트 수가 적을수록 더 거친 양자화 표현으로 재구성되므로 I/O는 빨라지지만 정확도는 낮아집니다. 8비트는 전체 정밀도 재구성입니다. `p`는 저장된 `QBit`에만 적용되며, `Array(Int8)` 기준 벡터는 항상 전체 8비트 정밀도로 재구성됩니다. [`UInt`](/ko/reference/data-types/int-uint)
+* `used_dims` — 선택 사항입니다. stride된 `QBit`에서 축소 차원(Matryoshka) 검색을 수행하기 위해 읽을 선행 차원 수입니다. QBit stride의 배수여야 하고 차원을 초과할 수 없으며, 기준 벡터에는 최소한 이 개수만큼의 원소가 있어야 합니다(추가로 뒤에 있는 원소는 무시됩니다). 이러한 차원을 포함하는 stride 그룹만 읽습니다. [`UInt`](/ko/reference/data-types/int-uint)
+
+**반환 값**
+
+근사 코사인 거리(cosine similarity에서 1을 뺀 값)를 반환합니다. 반환 타입은 항상 `Float64`입니다. [`Float64`](/ko/reference/data-types/float)
+
+**예시**
+
+**기본 사용법**
+
+```sql title=Query
+CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
+SELECT cosineDistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
+```
+
+<div id="dotProductTransposed">
+  ## dotProductTransposed
+</div>
+
+도입 버전: v26.7.0
+
+두 벡터의 근사 [점곱](https://en.wikipedia.org/wiki/Dot_product)(내적)을 계산합니다(벡터의 값이 좌표입니다). 거리 함수와 달리 이것은 유사도 척도이므로 반환 값이 클수록 벡터는 더 유사합니다.
+
+**구문**
+
+```sql
+dotProductTransposed(vector1, vector2, p[, used_dims])
+```
+
+**별칭**: `scalarProductTransposed`
+
+**인수**
+
+* `vectors` — 벡터. [`QBit(T, UInt64[, UInt64])`](/ko/reference/data-types/qbit)
+* `reference` — 기준 벡터. [`Array(T)`](/ko/reference/data-types/array)
+* `p` — 계산에 사용할 각 벡터 요소의 비트 수(1부터 요소 비트 폭까지). 양자화 수준은 정밀도와 속도 간의 상충 관계를 제어합니다. 더 적은 비트를 사용하면 정확도는 낮아지지만 I/O 및 계산 속도는 빨라지고, 더 많은 비트를 사용하면 성능 저하를 감수하는 대신 정확도가 높아집니다. [`UInt`](/ko/reference/data-types/int-uint)
+* `used_dims` — 선택 사항입니다. stride된 `QBit`에서 축소 차원(Matryoshka) 검색을 위해 읽을 선행 차원의 수입니다. QBit stride의 배수여야 하고 차원을 초과해서는 안 되며, 기준 벡터는 최소한 이 수만큼의 요소를 가져야 합니다(추가로 뒤에 오는 요소는 무시됩니다). 이 차원들을 포함하는 stride 그룹만 읽습니다. [`UInt`](/ko/reference/data-types/int-uint)
+
+**반환 값**
+
+두 벡터의 근사 내적을 반환합니다. 반환 타입은 항상 `Float64`입니다. [`Float64`](/ko/reference/data-types/float)
+
+**예시**
+
+**기본 사용법**
+
+```sql title=Query
+CREATE TABLE qbit (id UInt32, vec QBit(Float64, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, [0, 1]);
+SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
+```
+
+```response title=Response
+┌─dotProductTransposed([0, 1], [1, 2], 16)─┐
+│                                   2.0625 │
+└──────────────────────────────────────────┘
+```
+
+<div id="dotProductTransposedQuantized">
+  ## dotProductTransposedQuantized
+</div>
+
+도입 버전: v26.7.0
+
+`quantizeBFloat16ToInt8` 코드의 `QBit(Int8)`와 기준 벡터 사이의 근사 [점곱](https://en.wikipedia.org/wiki/Dot_product)(내적)을 계산합니다(역양자화는 필요한 시점에 수행됨). 이것은 유사도 척도이므로 반환 값이 클수록 벡터는 더 유사합니다. `Float` 기준(쿼리) 벡터는 역양자화된 코드의 복원 정밀도인 `Float32` 정밀도에서 직접 비교되므로 `Float64` 쿼리는 `Float32`로 축소되고 `BFloat16` 쿼리는 정확히 `Float32`로 확장됩니다(비대칭 거리 계산). `Array(Int8)` 기준은 그 자체로 `quantizeBFloat16ToInt8` 코드로 처리되며 해당 복원 수준으로 역양자화됩니다. `p`는 저장된 `QBit` 코드만 잘라낸다는 점에 유의하십시오. `Array(Int8)` 기준은 완전한 쿼리이며 항상 전체 8비트 정밀도로 복원되므로, 이것이 대칭적인 양자화 대 양자화 거리 계산이 되는 경우는 `p = 8`일 때뿐입니다(`p < 8`에서는 저장된 쪽만 더 거친 정밀도로 읽음). 이는 값이 양자화되기 전과 동일한 공간(즉, 동일한 무작위 회전과 스케일링 이후)에 있어야 하며, 이는 호출자의 책임입니다. 코사인 거리는 스케일 불변이지만 점곱과 L2 거리는 그렇지 않습니다.
+
+**구문**
+
+```sql
+dotProductTransposedQuantized(vectors, reference, p[, used_dims])
+```
+
+**인수**
+
+* `vectors` — `quantizeBFloat16ToInt8` 코드의 벡터. [`QBit(Int8, UInt64[, UInt64])`](/ko/reference/data-types/qbit)
+* `reference` — 기준(쿼리) 벡터: `Float` 배열(`Float32` 정밀도로 비교되는 쿼리이며 `Float64` 쿼리는 `Float32`로 축소됨) 또는 필요 시 역양자화되는 `quantizeBFloat16ToInt8` 코드의 `Array(Int8)`입니다. [`Array(Float32)`](/ko/reference/data-types/array) 또는 [`Array(Int8)`](/ko/reference/data-types/array)
+* `p` — 사용할 저장된 각 `QBit` 코드의 상위 비트 수(1~8)입니다. 비트 수가 적을수록 정확도는 낮아지지만 더 빠른 I/O를 위해 더 거친 내장 양자화기를 재구성하며, 8비트는 전체 정밀도 재구성입니다. `p`는 저장된 `QBit`만 잘라내며, `Array(Int8)` 기준 벡터는 항상 전체 8비트 정밀도로 재구성됩니다. [`UInt`](/ko/reference/data-types/int-uint)
+* `used_dims` — 선택 사항입니다. stride된 `QBit`에서 축소 차원(Matryoshka) 검색을 위해 읽을 선행 차원의 수입니다. QBit stride의 배수여야 하고 차원을 초과해서는 안 되며, 기준 벡터는 최소한 이 수만큼의 원소를 가져야 합니다(추가 후행 원소는 무시됨). 이 차원들을 포함하는 stride 그룹만 읽습니다. [`UInt`](/ko/reference/data-types/int-uint)
+
+**반환 값**
+
+두 벡터의 근사 내적을 반환합니다. 반환 타입은 항상 `Float64`입니다. [`Float64`](/ko/reference/data-types/float)
+
+**예시**
+
+**기본 사용법**
+
+```sql title=Query
+CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
+SELECT dotProductTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
 ```
 
 {/*AUTOGENERATED_END*/}
