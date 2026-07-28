@@ -6,13 +6,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
@@ -156,106 +151,48 @@ bool isRepresentationPreservingConversion(const IDataType * from, const IDataTyp
     }
 }
 
-/// Timezone attribution of a DateTime/DateTime64: nullopt for any other type, an empty string when
-/// the type carries no timezone of its own, the zone name when it does.
-std::optional<String> tryGetTimezoneAttribution(const IDataType * type)
-{
-    if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(type))
-        return date_time->hasExplicitTimeZone() ? date_time->getTimeZone().getTimeZone() : String{};
-
-    if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(type))
-        return date_time64->hasExplicitTimeZone() ? date_time64->getTimeZone().getTimeZone() : String{};
-
-    return {};
-}
-
-/// Is a DateTime or DateTime64 reachable from @type at all?
-bool containsTimezoneAttribution(const IDataType & type)
-{
-    if (tryGetTimezoneAttribution(&type))
-        return true;
-
-    bool found = false;
-    type.forEachChild([&](const IDataType & child)
-    {
-        if (tryGetTimezoneAttribution(&child))
-            found = true;
-    });
-    return found;
-}
-
-/// Do two types that IDataType::equals() reports as equal still attribute their values to different
-/// timezones? DataTypeDateTime and DataTypeDateTime64 ignore the timezone in equals() on purpose, and
-/// they are the only types under src/DataTypes that drop a semantically load-bearing parameter: every
-/// other implementation either compares its parameters or recurses into its children.
+/// Do two types that IDataType::equals() reports as equal still mean different things?
 ///
-/// Fail-closed: a shape this cannot compare is reported as a difference, but only where a timezone is
-/// reachable at all, so a type that carries none is never refused.
-bool hasTimezoneDependentDifference(const IDataType * from, const IDataType * to)
+/// equals() answers "is the on-disk representation the same?", and several implementations
+/// deliberately drop an attribute that no byte of the representation depends on but that an index
+/// EXPRESSION does read:
+///   - DataTypeDateTime / DataTypeDateTime64 ignore the timezone, so toHour(dt) changes while the
+///     stored epoch values do not (also reached through a nested AggregateFunction argument, whose
+///     equals() compares its argument types with equals() in turn);
+///   - a custom name over a plain type (Bool over UInt8, the geo types over tuples) is invisible to
+///     the underlying DataTypeNumber<T>::equals(), which compares only typeid, so toString(v)
+///     changes from '0' to 'false'.
+///
+/// getName() is the one projection that carries every such attribute: IDataType::getName() returns
+/// the custom name when present and each composite's doGetName() renders its children's names, so
+/// this covers wrappers and nested arguments without a branch per type.
+///
+/// Only valid on the equals-equal path. On the NOT-equals path the difference is a real conversion
+/// and isRepresentationPreservingConversion() decides, where a name comparison would wrongly refuse
+/// the whole allow-list (Enum8('a'=1) -> Int8 and friends).
+bool hasSameMeaning(const IDataType & from, const IDataType & to)
 {
-    auto from_time_zone = tryGetTimezoneAttribution(from);
-    auto to_time_zone = tryGetTimezoneAttribution(to);
-    if (from_time_zone || to_time_zone)
-        return from_time_zone != to_time_zone;
+    return from.getName() == to.getName();
+}
 
-    /// equals() recurses through these, so their children line up pairwise.
-    if (const auto * from_nullable = typeid_cast<const DataTypeNullable *>(from))
-    {
-        const auto * to_nullable = typeid_cast<const DataTypeNullable *>(to);
-        return !to_nullable
-            || hasTimezoneDependentDifference(from_nullable->getNestedType().get(), to_nullable->getNestedType().get());
-    }
-
-    if (const auto * from_array = typeid_cast<const DataTypeArray *>(from))
-    {
-        const auto * to_array = typeid_cast<const DataTypeArray *>(to);
-        return !to_array
-            || hasTimezoneDependentDifference(from_array->getNestedType().get(), to_array->getNestedType().get());
-    }
-
-    if (const auto * from_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(from))
-    {
-        const auto * to_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(to);
-        return !to_low_cardinality
-            || hasTimezoneDependentDifference(
-                from_low_cardinality->getDictionaryType().get(), to_low_cardinality->getDictionaryType().get());
-    }
-
-    if (const auto * from_map = typeid_cast<const DataTypeMap *>(from))
-    {
-        const auto * to_map = typeid_cast<const DataTypeMap *>(to);
-        return !to_map
-            || hasTimezoneDependentDifference(from_map->getKeyType().get(), to_map->getKeyType().get())
-            || hasTimezoneDependentDifference(from_map->getValueType().get(), to_map->getValueType().get());
-    }
-
-    if (const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from))
-    {
-        const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to);
-        if (!to_tuple || from_tuple->getElements().size() != to_tuple->getElements().size())
-            return true;
-
-        for (size_t i = 0; i < from_tuple->getElements().size(); ++i)
-            if (hasTimezoneDependentDifference(from_tuple->getElements()[i].get(), to_tuple->getElements()[i].get()))
-                return true;
-
-        return false;
-    }
-
-    if (const auto * from_variant = typeid_cast<const DataTypeVariant *>(from))
-    {
-        const auto * to_variant = typeid_cast<const DataTypeVariant *>(to);
-        if (!to_variant || from_variant->getVariants().size() != to_variant->getVariants().size())
-            return true;
-
-        for (size_t i = 0; i < from_variant->getVariants().size(); ++i)
-            if (hasTimezoneDependentDifference(from_variant->getVariants()[i].get(), to_variant->getVariants()[i].get()))
-                return true;
-
-        return false;
-    }
-
-    return containsTimezoneAttribution(*from) || containsTimezoneAttribution(*to);
+/// The part-side type of a required column, read from the part's OWN column list.
+///
+/// IMergeTreeDataPart::tryGetColumn() answers from `columns_description`, a storage-wide interning
+/// cache (MergeTreeData::getColumnsDescriptionForColumns) whose key equality is
+/// NamesAndTypesList::operator== -> IDataType::equals() and whose hash ignores types entirely. Two
+/// parts whose column lists differ only by an attribute equals() drops therefore SHARE one entry,
+/// and whichever part is loaded first decides what both of them report. Part loading is concurrent
+/// and shuffled, so consulting it here would make the comparison below depend on load order.
+///
+/// Returns null when the part's own list has no top-level entry for @required, which is the case for
+/// a subcolumn (`j.a`): the caller then falls back to the cached description, whose subcolumn
+/// resolution is the only one available. A subcolumn cannot itself be a top-level column of the
+/// part, so no carrier of a dropped attribute is left on the cached path.
+DataTypePtr tryGetPartOwnType(const IMergeTreeDataPart & part, const String & required)
+{
+    if (auto own = part.getColumns().tryGetByName(required))
+        return own->type;
+    return nullptr;
 }
 
 }
@@ -275,11 +212,18 @@ bool IMergeTreeIndex::isPartTypeCompatible(const IMergeTreeDataPart & part) cons
         if (!part_column)
             return false;
 
-        /// equals() calls two DateTime types with different timezones equal, so a timezone-only
-        /// MODIFY COLUMN reaches here as "no difference" even though an index expression that reads
-        /// the timezone (toHour, toStartOfDay, ...) now yields different values than the granule holds.
-        if (part_column->type->equals(*metadata_type)
-            && !hasTimezoneDependentDifference(part_column->type.get(), metadata_type.get()))
+        /// Prefer the part's own uncached list; see tryGetPartOwnType() for why the cached one cannot
+        /// answer this question. tryGetColumn() above stays the EXISTENCE test: its nullopt is what
+        /// drives the refusal right above, and only it resolves subcolumns.
+        auto part_type = tryGetPartOwnType(part, column);
+        if (!part_type)
+            part_type = part_column->type;
+
+        /// A representation-preserving difference is not necessarily a meaning-preserving one: a
+        /// timezone-only MODIFY COLUMN, or UInt8 -> Bool, leaves every byte alone and so reaches here
+        /// as "equal", while an index expression that reads the dropped attribute (toHour(dt),
+        /// toString(v)) now yields different values than the granule holds.
+        if (part_type->equals(*metadata_type) && hasSameMeaning(*part_type, *metadata_type))
             continue;
 
         /// A granule of an expression index stores the EXPRESSION's result type, which can change
@@ -290,7 +234,7 @@ bool IMergeTreeIndex::isPartTypeCompatible(const IMergeTreeDataPart & part) cons
         if (!index.isSimpleSingleColumnIndex())
             return false;
 
-        if (!isRepresentationPreservingConversion(part_column->type.get(), metadata_type.get()))
+        if (!isRepresentationPreservingConversion(part_type.get(), metadata_type.get()))
             return false;
     }
 
