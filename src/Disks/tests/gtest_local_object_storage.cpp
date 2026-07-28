@@ -430,6 +430,26 @@ TEST(LocalObjectStorage, TryGetObjectMetadataToleratesNonDirectoryPathComponent)
     }
 }
 
+/// `LocalObjectStorage` derives a strong etag from the sub-second mtime, so it must be
+/// usable as a content-cache key. This is the positive counterpart to the HDFS case
+/// (weak `(mtime, size)` token): it proves that strong-etag storage still engages the
+/// caches via `ObjectMetadata::isEtagUsableAsCacheKey`.
+TEST(LocalObjectStorage, GetObjectMetadataReturnsStrongUsableEtag)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_etag");
+    const auto & root = tmp.path;
+
+    auto storage = makeLocalObjectStorage(root.string());
+
+    std::ofstream(root / "file") << "hello";
+
+    auto metadata = storage->tryGetObjectMetadata((root / "file").string(), /*with_tags=*/ false);
+    ASSERT_TRUE(metadata.has_value());
+    EXPECT_FALSE(metadata->etag.empty());
+    EXPECT_TRUE(metadata->etag_is_strong);
+    EXPECT_TRUE(metadata->isEtagUsableAsCacheKey());
+}
+
 /// Regression test for the third clickhouse-gh[bot] review on PR #107432.
 /// Tolerating the disappearance class is not enough: with a single
 /// `recursive_directory_iterator`, a vanished *directory* aborts the entire

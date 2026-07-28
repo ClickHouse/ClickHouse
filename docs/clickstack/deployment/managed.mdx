@@ -51,27 +51,23 @@ The following guide assumes you have already created a ClickHouse Cloud service.
 <Tab title="Create a new service">
 <br/>
 <Steps>
-<Step>
-### Create a new service {#create-a-service}
+<Step title="Create a new service" id="create-a-service">
 
 From the ClickHouse Cloud landing page, select `New service` to create a new service.
 
 <Image img="/images/clickstack/getting-started/new_service.webp" size="lg" alt='Service Service' border/>
 </Step>
-<Step>
-### Specify your provider, region and resource {#specify-your-region-and-resources}
+<Step title="Specify your provider, region and resource" id="specify-your-region-and-resources">
 
 <ProviderSelection/>
 </Step>
-<Step>
-### Setup ingestion {#setup-ingestion-create-new}
+<Step title="Setup ingestion" id="setup-ingestion-create-new">
 
 Once your service has been provisioned, ensure the the service is selected and click "ClickStack" from the left menu.
 
 <SetupManagedIngestion/>
 </Step>
-<Step>
-### Navigate to the ClickStack UI {#navigate-to-clickstack-ui-cloud-create-new}
+<Step title="Navigate to the ClickStack UI" id="navigate-to-clickstack-ui-cloud-create-new">
 
 <NavigateClickStackUI/>
 
@@ -84,8 +80,7 @@ Once your service has been provisioned, ensure the the service is selected and c
 <Tab title="Use an existing service">
 <br/>
 <Steps>
-<Step>
-### Select a service {#select-service}
+<Step title="Select a service" id="select-service">
 
 From the ClickHouse Cloud landing page, select the service for which you wish to enable managed ClickStack.
 
@@ -99,8 +94,7 @@ If your ClickHouse service already hosts existing workloads, such as real-time a
 
 <Image img="/images/clickstack/select_service.webp" alt="Select service" size="lg"/>
 </Step>
-<Step>
-### Navigate to the ClickStack UI {#navigate-to-the-clickstack-ui-existing}
+<Step title="Navigate to the ClickStack UI" id="navigate-to-the-clickstack-ui-existing">
 
 Select 'ClickStack' from the left navigation menu. You will be redirected to the ClickStack UI and automatically authenticated based on your ClickHouse Cloud permissions. 
 
@@ -118,8 +112,7 @@ If auto detection is successful, you should be directed to the search view where
 
 If this step is successful, that that's it — you’re all set 🎉, otherwise proceed to setting up ingestion.
 </Step>
-<Step>
-### Setup ingestion {#setup-ingestion-existing-service}
+<Step title="Setup ingestion" id="setup-ingestion-existing-service">
 
 If auto-detection fails, or you have no existing tables, you will be prompted to set up ingestion.
 
@@ -252,8 +245,7 @@ For more examples of ingesting data with Vector, see ["Ingesting with Vector"](/
 </Tab>
 </Tabs>
 </Step>
-<Step>
-### Navigate to the ClickStack UI {#navigate-to-clickstack-ui-existing-service}
+<Step title="Navigate to the ClickStack UI" id="navigate-to-clickstack-ui-existing-service">
 
 Once you have completed setting up ingestion and started to send data, select "Next".
 

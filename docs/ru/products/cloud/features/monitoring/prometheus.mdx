@@ -235,7 +235,7 @@ scrape_configs:
 
 <br />
 
-В результате Alloy будет настроен с компонентом `prometheus.remote_write` для отправки данных в конечную точку Grafana Cloud с токеном аутентификации. После этого пользователям останется только изменить конфигурацию Alloy (в Linux она находится в `/etc/alloy/config.alloy`), добавив скрейпер для конечной точки Prometheus в ClickHouse Cloud.
+В результате Alloy будет настроен с компонентом `prometheus.remote_write` для отправки данных в конечную точку Grafana Cloud с токеном аутентификации. После этого пользователям останется только изменить конфигурацию Alloy (в Linux она находится в `/etc/alloy/config.alloy`), добавив скрейпер для конечной точки Prometheus ClickHouse Cloud.
 
 Ниже показан пример конфигурации Alloy с компонентом `prometheus.scrape` для сбора метрик из конечной точки ClickHouse Cloud, а также автоматически настроенным компонентом `prometheus.remote_write`. Обратите внимание, что компонент конфигурации `basic_auth` содержит идентификатор и секрет нашего API-ключа Cloud в качестве имени пользователя и пароля соответственно.
 
@@ -285,8 +285,8 @@ prometheus.scrape "clickhouse_cloud" {
 Пользователи самоуправляемой версии Grafana могут найти инструкции по установке агента Alloy [здесь](https://grafana.com/docs/alloy/latest/get-started/install/). Мы исходим из того, что Alloy уже настроен на отправку метрик Prometheus в нужный пункт назначения. Приведённый ниже компонент `prometheus.scrape` заставляет Alloy опрашивать конечную точку ClickHouse Cloud. Мы также предполагаем, что `prometheus.remote_write` принимает собранные метрики. Если `forward_to key` отсутствует, укажите в нём целевой пункт назначения.
 
 ```yaml
-// Компонент prometheus.scrape заставляет Alloy собирать метрики с конечной точки Prometheus ClickHouse Cloud.
-  // Скорректируйте ключ forward_to в соответствии с вашим приёмником remote_write, если он отличается.
+// prometheus.scrape component causes Alloy to scrape the ClickHouse Cloud Prometheus endpoint.
+  // Adjust the forward_to key to match your remote_write receiver if it differs.
   prometheus.scrape "clickhouse_cloud" {
   targets = [{
   __address__ = "api.clickhouse.cloud",
@@ -341,11 +341,11 @@ instances:
 <Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="Интеграция Prometheus с Datadog" />
 
 <div id="related">
-  ## Похожие страницы
+  ## Связанные страницы
 </div>
 
 * [Обзор мониторинга](/ru/products/cloud/features/monitoring/overview) — Сравните все подходы к мониторингу в ClickHouse Cloud
-* [Мониторинг в Cloud Console](/ru/products/cloud/features/monitoring/cloud-console) — Встроенные панели мониторинга без необходимости использовать внешние инструменты
-* [Интеграции с сообществом и партнёрами](/ru/products/cloud/features/monitoring/integrations) — Интеграция с агентом Datadog и решения от сообщества
+* [Мониторинг в Cloud Console](/ru/products/cloud/features/monitoring/cloud-console) — Встроенные панели мониторинга, не требующие внешних инструментов
+* [Интеграции сообщества и партнеров](/ru/products/cloud/features/monitoring/integrations) — Интеграция с агентом Datadog и решения сообщества
 * [Запросы к системным таблицам](/ru/products/cloud/features/monitoring/system-tables) — Прямой доступ к системным метрикам через SQL
-* [Managed Postgres конечная точка Prometheus](/ru/products/managed-postgres/monitoring/prometheus) — Собирайте метрики из сервисов Managed Postgres
+* [Managed Postgres конечная точка Prometheus](/ru/products/managed-postgres/monitoring/prometheus) — Собирайте метрики из сервисов Managed Postgres&quot;
