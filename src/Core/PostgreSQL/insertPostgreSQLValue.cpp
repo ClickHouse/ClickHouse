@@ -1,6 +1,7 @@
 #include <Core/PostgreSQL/insertPostgreSQLValue.h>
 
 #if USE_LIBPQXX
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -13,6 +14,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Formats/ParseError.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -39,7 +41,8 @@ void insertDefaultPostgreSQLValue(IColumn & column, const IColumn & sample_colum
 void insertPostgreSQLValue(
         IColumn & column, std::string_view value,
         ExternalResultDescription::ValueType type, DataTypePtr data_type,
-        const std::unordered_map<size_t, PostgreSQLArrayInfo> & array_info, size_t idx)
+        const UnorderedMapWithMemoryTracking<size_t, PostgreSQLArrayInfo> & array_info, size_t idx)
+try
 {
     switch (type)
     {
@@ -144,7 +147,7 @@ void insertPostgreSQLValue(
             size_t max_dimension = 0;
             size_t expected_dimensions = array_info.at(idx).num_dimensions;
             const auto parse_value = array_info.at(idx).pqxx_parser;
-            std::vector<Row> dimensions(expected_dimensions + 1);
+            VectorWithMemoryTracking<Row> dimensions(expected_dimensions + 1);
 
             while (parsed.first != pqxx::array_parser::juncture::done)
             {
@@ -186,10 +189,34 @@ void insertPostgreSQLValue(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported value type");
     }
 }
+catch (const Exception & e)
+{
+    /// ClickHouse text parsers used above (parse<UUID>, LocalDate, readDateTimeText,
+    /// readDateTime64Text, deserializeWholeText for Decimal, ...) throw DB::Exception with a
+    /// CANNOT_PARSE_* / DECIMAL / INCORRECT_DATA code when a PostgreSQL text value does not fit
+    /// the declared type. Report such a type mismatch as BAD_ARGUMENTS so every declared-type
+    /// mismatch surfaces with a single, catchable error code (which the MaterializedPostgreSQL
+    /// consumer relies on to log + insert a default and keep replicating). Anything that is not a
+    /// parse error (LOGICAL_ERROR, MEMORY_LIMIT_EXCEEDED, ...) is a genuine failure - rethrow it.
+    if (e.code() == ErrorCodes::BAD_ARGUMENTS || isParseError(e.code()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot parse PostgreSQL value '{}' as {}: {}", value, data_type->getName(), e.message());
+    throw;
+}
+catch (const std::exception & e)
+{
+    /// pqxx (pqxx::from_string) and a few helpers (LocalDate::init) throw their own std::exception
+    /// hierarchy for a bad text value (e.g. 'name_0' read into a column declared as Int32, or a
+    /// malformed Date). Convert it into a DB::Exception so a type mismatch between the declared and
+    /// the actual PostgreSQL type is reported as a query error instead of escaping as a foreign
+    /// exception and aborting the server.
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Cannot parse PostgreSQL value '{}' as {}: {}", value, data_type->getName(), e.what());
+}
 
 
 void preparePostgreSQLArrayInfo(
-        std::unordered_map<size_t, PostgreSQLArrayInfo> & array_info, size_t column_idx, DataTypePtr data_type)
+        UnorderedMapWithMemoryTracking<size_t, PostgreSQLArrayInfo> & array_info, size_t column_idx, DataTypePtr data_type)
 {
     const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get());
     auto nested = array_type->getNestedType();

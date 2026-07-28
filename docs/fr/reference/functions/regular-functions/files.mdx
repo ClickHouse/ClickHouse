@@ -1,0 +1,34 @@
+---
+description: 'Documentation sur Files'
+sidebarTitle: 'Files'
+slug: /sql-reference/functions/files
+title: 'Files'
+doc_type: 'reference'
+---
+
+<div id="file">
+  ## file
+</div>
+
+Lit le contenu d’un fichier sous forme de chaîne de caractères et charge les données dans la colonne spécifiée. Le contenu du fichier n’est pas interprété.
+
+Voir aussi la fonction de table [file](/fr/reference/functions/table-functions/file).
+
+**Syntaxe**
+
+```sql
+file(path[, default])
+```
+
+**Arguments**
+
+* `path` — Le chemin du fichier relatif à [user&#95;files&#95;path](/fr/reference/settings/server-settings/settings#user_files_path). Prend en charge les caractères génériques `*`, `**`, `?`, `{abc,def}` et `{N..M}`, où `N` et `M` sont des nombres, et `'abc'`, `'def'` des chaînes.
+* `default` — La valeur renvoyée si le fichier n’existe pas ou est inaccessible. Types de données pris en charge : [String](/fr/reference/data-types/string) et [NULL](/fr/reference/settings/formats#input_format_null_as_default).
+
+**Exemple**
+
+Insertion de données à partir des fichiers a.txt et b.txt dans une table sous forme de chaînes :
+
+```sql
+INSERT INTO table SELECT file('a.txt'), file('b.txt');
+```

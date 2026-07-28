@@ -227,6 +227,10 @@ public:
     // Indices of the ORDER BY columns in block;
     std::vector<size_t> order_by_indices;
 
+    // Which input columns we actually read while computing the window functions: the PARTITION BY
+    // and ORDER BY keys and the function arguments.
+    std::vector<UInt8> should_materialize;
+
     // Per-window-function scratch spaces.
     std::vector<WindowFunctionWorkspace> workspaces;
 

@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
+#include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTDropFunctionQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
@@ -36,6 +37,7 @@ static bool isUserDefinedFunctionQuery(const ASTPtr & query)
 {
     return query->as<ASTCreateSQLFunctionQuery>()
         || query->as<ASTCreateWasmFunctionQuery>()
+        || query->as<ASTCreateFunctionWithDriverQuery>()
         || query->as<ASTDropFunctionQuery>();
 }
 
