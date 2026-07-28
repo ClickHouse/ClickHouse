@@ -355,9 +355,8 @@ struct SparseGramsTokenizer final : public ITokenizerHelper<SparseGramsTokenizer
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
-    /// Batch token delivery: generate the whole string once and hand tokens straight to the callback,
-    /// bypassing the per-token `nextInString` pull (its `std::tie` data-change check and offset
-    /// arithmetic on every token). Emits the same tokens in the same order as `nextInString`.
+    /// Streams tokens straight to the callback instead of pulling one at a time via `nextInString`.
+    /// Emits the same tokens in the same order.
     template <Fn<bool(const char *, size_t)> Callback>
     void forEachTokenImpl(const char * __restrict data, size_t length, Callback && callback) const
     {
