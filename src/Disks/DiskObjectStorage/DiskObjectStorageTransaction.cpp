@@ -7,7 +7,9 @@
 #include <IO/ForkWriteBuffer.h>
 #include <IO/WriteBuffer.h>
 #if ENABLE_DISTRIBUTED_CACHE
+#if CLICKHOUSE_CLOUD
 #include <DistributedCache/Utils.h>
+#endif
 #endif
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
