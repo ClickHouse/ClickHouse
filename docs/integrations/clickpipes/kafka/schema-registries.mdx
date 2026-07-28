@@ -81,9 +81,12 @@ There is no registry URL to configure. Every record produced by the Glue SerDe c
 
 Use whichever of the two options fits your setup. Option A is the common case for Amazon MSK.
 
-#### Option A: reuse the broker's IAM role {#glue-iam-option-a}
+#### Option A: reuse the broker's IAM identity {#glue-iam-option-a}
 
-If your Kafka ClickPipe already authenticates to MSK with IAM (either an IAM role or IAM credentials), ClickPipes uses those same credentials to read the registry. Leave the **IAM role ARN** field empty and add one statement to the role you already configured for MSK:
+If your Kafka ClickPipe already authenticates to MSK with IAM, ClickPipes uses the same IAM identity to read the registry. Leave the **IAM role ARN** field empty and add the following statement to the identity's permissions:
+
+- **IAM role:** Add the statement to the permissions policy for the role configured for MSK.
+- **IAM credentials:** Add the statement to the permissions policy for the IAM principal associated with the access key.
 
 ```json
 {
@@ -99,54 +102,63 @@ If your Kafka ClickPipe already authenticates to MSK with IAM (either an IAM rol
 }
 ```
 
-No trust policy change is needed. The trust relationship you set up for MSK already covers this.
+For role-based authentication, no trust policy change is needed; the trust relationship configured for MSK already covers this access. IAM credentials do not use a role trust policy.
 
 #### Option B: use a dedicated registry role {#glue-iam-option-b}
 
 Use this when your broker does not authenticate with IAM (SASL/SCRAM, SASL/PLAIN, mTLS), or when the registry lives in a different AWS account from the broker.
 
-1. Obtain your ClickHouse service's IAM role ARN: open the service, select the **Settings** tab, scroll to the **Network security information** section, and copy the **Service role ID (IAM)** value, an ARN of the form `arn:aws:iam::123456789012:role/CH-S3-example-service-Role`. This is referred to below as `{ClickHouse_IAM_ARN}`. Every ClickHouse service has its own role, so this value is different for each service.
+<Steps>
+<Step title="Obtain the ClickHouse service IAM role ARN" id="obtain-clickhouse-service-iam-role-arn">
 
-   <Image img="/images/cloud/security/secures3_arn.webp" alt="Service role ID (IAM)" size="lg" border/>
+Open the service, select the **Settings** tab, scroll to the **Network security information** section, and copy the **Service role ID (IAM)** value, an ARN of the form `arn:aws:iam::123456789012:role/CH-S3-example-service-Role`. This is referred to below as `{ClickHouse_IAM_ARN}`. Every ClickHouse service has its own role, so this value is different for each service.
 
-2. Create an IAM role in your AWS account. The name of the role **must start with** `ClickHouseAccessRole-`.
+<Image img="/images/cloud/security/secures3_arn.webp" alt="Service role ID (IAM)" size="lg" border/>
+</Step>
+<Step title="Create the registry IAM role" id="create-registry-iam-role">
 
-   **i. Configure the trust policy**
+Create an IAM role in your AWS account. The name of the role **must start with** `ClickHouseAccessRole-`.
 
-   Replace `{ClickHouse_IAM_ARN}` with the value from the previous step.
+**Configure the trust policy**
 
-   ```json
-   {
-     "Version": "2012-10-17",
-     "Statement": [
-       {
-         "Effect": "Allow",
-         "Principal": {
-           "AWS": "{ClickHouse_IAM_ARN}"
-         },
-         "Action": "sts:AssumeRole"
-       }
-     ]
-   }
-   ```
+Replace `{ClickHouse_IAM_ARN}` with the value from the previous step.
 
-   **ii. Configure the permission policy**
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "{ClickHouse_IAM_ARN}"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
 
-   ```json
-   {
-     "Version": "2012-10-17",
-     "Statement": [
-       {
-         "Sid": "ClickPipesGlueSchemaRegistryRead",
-         "Effect": "Allow",
-         "Action": ["glue:GetSchemaVersion"],
-         "Resource": "*"
-       }
-     ]
-   }
-   ```
+**Configure the permission policy**
 
-3. Paste the new role's ARN into the **IAM role ARN** field in the wizard.
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ClickPipesGlueSchemaRegistryRead",
+      "Effect": "Allow",
+      "Action": ["glue:GetSchemaVersion"],
+      "Resource": "*"
+    }
+  ]
+}
+```
+</Step>
+<Step title="Configure the ClickPipe" id="configure-clickpipe-registry-role">
+
+Paste the new role's ARN into the **IAM role ARN** field in the wizard.
+</Step>
+</Steps>
 
 <Note>
 **Why `Resource: "*"`.** `glue:GetSchemaVersion` is called with a schema version ID rather than a registry or schema name, so it cannot be scoped by resource. AWS's own `AWSGlueSchemaRegistryReadonlyAccess` managed policy scopes the same action to `"*"` for this reason. ClickPipes independently checks every resolved schema against the **Registry name** you configured and rejects versions from any other registry.
@@ -156,7 +168,7 @@ Use this when your broker does not authenticate with IAM (SASL/SCRAM, SASL/PLAIN
 
 | Error                                                                                              | Cause and fix                                                                                                                                                  |
 |----------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `access denied retrieving schema version …: check the IAM role grants glue:GetSchemaVersion`         | The role used for registry access is missing `glue:GetSchemaVersion`, or its trust policy doesn't name your service's role ID. Re-check the IAM setup above.     |
+| `access denied retrieving schema version …: check the IAM role grants glue:GetSchemaVersion`         | The IAM identity used for registry access is missing `glue:GetSchemaVersion`. For role-based access, the role's trust policy might also not name your service's role ID. Re-check the IAM setup above. |
 | `… is not authorized to perform: sts:AssumeRole on resource: …`                                      | The trust policy names the wrong principal. The error includes the exact role that attempted the assume. Use that value in the trust policy.                   |
 | `schema version … not found in Glue schema registry`                                                | The records reference a schema version that doesn't exist in the configured account or region. Confirm **AWS region** matches the registry's region.            |
 | `schema version … belongs to Glue registry "X", but the pipe is configured for registry "Y"`         | Your producers register schemas in a different registry than the pipe names. Correct **Registry name**, or point the producers at the right registry.            |
