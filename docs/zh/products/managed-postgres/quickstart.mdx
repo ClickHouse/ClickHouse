@@ -7,7 +7,7 @@ keywords: ['Managed Postgres', '快速入门', '开始使用', '创建数据库'
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/zh/components/Image.jsx";
 import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
 
@@ -16,14 +16,6 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
 </Visibility>
 
 <Visibility for="humans">
-  <View title="命令行客户端">
-    <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-cli-beta" />
-
-    你可以按这条路径自行操作，把它写成脚本，或交给 AI 智能体处理。如需查看控制台版本，请切换到 **Cloud UI** 视图。
-
-    <QuickstartCLI />
-  </View>
-
   <View title="Cloud UI">
     <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-beta" />
 
@@ -418,5 +410,13 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
 
     1. 首先，从 ClickHouse 服务中删除 ClickPipe 集成
     2. 然后，在 Cloud Console 中删除 Managed Postgres 实例
+  </View>
+
+  <View title="命令行客户端">
+    <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-cli-beta" />
+
+    你可以按这条路径自行操作，把它写成脚本，或交给 AI 智能体处理。如需查看控制台版本，请切换到 **Cloud UI** 视图。
+
+    <QuickstartCLI />
   </View>
 </Visibility>
