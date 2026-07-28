@@ -371,22 +371,14 @@ public:
     /// memcmp on the output preserves the same ordering as compareAt.
     virtual void serializeAsComparable(size_t n, String & out) const;
 
-    /// Batch serialize rows in column-outer fashion: one virtual dispatch per
-    /// column, tight row loop inside. The encoding of row `src` (where
-    /// `src = permutation ? (*permutation)[r] : r`) is appended to `out[r]`;
-    /// existing contents of `out[r]` are preserved, not replaced. `out` is
-    /// grown to `num_rows` if it is shorter, so the caller may pass an empty
-    /// vector.
-    /// When `null_map` is non-null (set by a Nullable wrapper), rows whose
-    /// `null_map[src]` is set are skipped: nothing is appended for them, so the
-    /// wrapper's null flag is the whole encoding of a NULL row. This keeps NULL
-    /// rows from materializing hidden nested payload and avoids a second copy.
-    /// Default implementation calls serializeAsComparable in a loop.
+    /// Batch serialize rows: append the encoding of row `src` (where
+    /// `src = permutation ? (*permutation)[r] : r`) to `out[r]`. `out` is
+    /// grown to `num_rows` if needed; existing contents are preserved.
+    /// When `null_map` is non-null, rows with `null_map[src]` set are skipped.
     ///
-    /// Precondition: when `permutation` is non-null it must contain exactly
-    /// `num_rows` entries and every entry must be < `size()`. The caller is
-    /// responsible for validating this; the implementation indexes
-    /// `(*permutation)[r]` directly without bounds checking.
+    /// Precondition: `num_rows <= size()`; `permutation` (if non-null) has
+    /// `num_rows` entries each < `size()`; `null_map` (if non-null) has at
+    /// least `size()` elements. The caller must validate; no bounds checking.
     using Permutation = IColumnPermutation;
     virtual void batchSerializeAsComparable(
         size_t num_rows,
