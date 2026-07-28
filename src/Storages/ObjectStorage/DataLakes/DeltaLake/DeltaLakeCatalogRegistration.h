@@ -10,6 +10,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <memory>
+#include <optional>
 
 namespace DB
 {
@@ -21,7 +22,7 @@ void registerDeltaTableInCatalog(
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationPtr & configuration_ptr,
-    const ColumnsDescription & columns,
+    const std::optional<ColumnsDescription> & columns,
     bool created_fresh,
     const StorageID & table_id);
 

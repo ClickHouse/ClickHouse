@@ -88,8 +88,13 @@ public:
     static DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
     static DataTypePtr getSimpleTypeByName(const String & type_name);
 
-    /// Map a non-nested ClickHouse type to its Delta primitive for CREATE TABLE, throwing `NOT_IMPLEMENTED` if it would not round-trip.
+    /// Map a non-nested ClickHouse type to its Delta primitive for CREATE TABLE, throwing `NOT_IMPLEMENTED` if it has no compatible Delta type.
     static DeltaPrimitiveType classifyDeltaPrimitive(const DataTypePtr & type);
+
+    /// Whether two schemas map to the same Delta schema. Compatible ClickHouse types compare equal (e.g.
+    /// `UInt8` and `Int16` both map to Delta `short`), so an explicit CREATE schema can be matched against an
+    /// existing table even when the stored types read back as different-but-compatible ClickHouse types.
+    static bool haveSameDeltaSchema(const NamesAndTypesList & lhs, const NamesAndTypesList & rhs);
     static DataTypePtr getFieldValue(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
     static Field getFieldValue(const String & value, DataTypePtr data_type);
 

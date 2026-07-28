@@ -728,7 +728,7 @@ void DeltaLakeMetadata::createInitial(
 
     if (register_with_catalog)
         registerDeltaTableInCatalog(
-            catalog, object_storage, configuration_ptr, *columns, created_fresh, table_id_);
+            catalog, object_storage, configuration_ptr, columns, created_fresh, table_id_);
 #endif
 }
 
@@ -884,6 +884,79 @@ DeltaPrimitiveType DeltaLakeMetadata::classifyDeltaPrimitive(const DataTypePtr &
                 "ClickHouse type `{}` has no compatible Delta Lake type for CREATE TABLE",
                 type->getName());
     }
+}
+
+namespace
+{
+
+/// Whether two ClickHouse types map to the same Delta type. Compatible types compare equal because they
+/// share a Delta primitive (e.g. `UInt8` and `Int16` are both Delta `short`, `Date` and `Date32` both `date`).
+bool deltaTypesEqual(const DataTypePtr & lhs, const DataTypePtr & rhs)
+{
+    /// Nullability maps to Delta's field/element nullability, so it must match.
+    if (lhs->isNullable() != rhs->isNullable())
+        return false;
+
+    const DataTypePtr a = removeNullable(lhs);
+    const DataTypePtr b = removeNullable(rhs);
+    const WhichDataType wa(a);
+    const WhichDataType wb(b);
+
+    if (wa.isArray() && wb.isArray())
+        return deltaTypesEqual(
+            assert_cast<const DataTypeArray &>(*a).getNestedType(),
+            assert_cast<const DataTypeArray &>(*b).getNestedType());
+
+    if (wa.isMap() && wb.isMap())
+    {
+        const auto & ma = assert_cast<const DataTypeMap &>(*a);
+        const auto & mb = assert_cast<const DataTypeMap &>(*b);
+        return deltaTypesEqual(ma.getKeyType(), mb.getKeyType())
+            && deltaTypesEqual(ma.getValueType(), mb.getValueType());
+    }
+
+    if (wa.isTuple() && wb.isTuple())
+    {
+        const auto & ta = assert_cast<const DataTypeTuple &>(*a);
+        const auto & tb = assert_cast<const DataTypeTuple &>(*b);
+        if (ta.getElementNames() != tb.getElementNames())
+            return false;
+        const auto & ea = ta.getElements();
+        const auto & eb = tb.getElements();
+        if (ea.size() != eb.size())
+            return false;
+        for (size_t i = 0; i < ea.size(); ++i)
+            if (!deltaTypesEqual(ea[i], eb[i]))
+                return false;
+        return true;
+    }
+
+    /// A nested type on one side cannot match a non-nested or differently-nested type on the other.
+    if (wa.isArray() || wb.isArray() || wa.isMap() || wb.isMap() || wa.isTuple() || wb.isTuple())
+        return false;
+
+    const auto da = DeltaLakeMetadata::classifyDeltaPrimitive(a);
+    const auto db = DeltaLakeMetadata::classifyDeltaPrimitive(b);
+    if (da != db)
+        return false;
+    /// Delta `decimal` also carries precision and scale, which must match.
+    if (da == DeltaPrimitiveType::Decimal)
+        return getDecimalPrecision(*a) == getDecimalPrecision(*b) && getDecimalScale(*a) == getDecimalScale(*b);
+    return true;
+}
+
+}
+
+bool DeltaLakeMetadata::haveSameDeltaSchema(const NamesAndTypesList & lhs, const NamesAndTypesList & rhs)
+{
+    if (lhs.size() != rhs.size())
+        return false;
+    auto it_l = lhs.begin();
+    auto it_r = rhs.begin();
+    for (; it_l != lhs.end(); ++it_l, ++it_r)
+        if (it_l->name != it_r->name || !deltaTypesEqual(it_l->type, it_r->type))
+            return false;
+    return true;
 }
 
 

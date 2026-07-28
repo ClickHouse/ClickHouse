@@ -128,7 +128,7 @@ void registerDeltaTableInCatalog(
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationPtr & configuration_ptr,
-    const ColumnsDescription & columns,
+    const std::optional<ColumnsDescription> & columns,
     bool created_fresh,
     const StorageID & table_id)
 {
@@ -136,12 +136,12 @@ void registerDeltaTableInCatalog(
     /// Register the full URI (`s3://…`, `file://…`) the kernel reads, not the scheme-less `getRawPath().path`.
     const auto location = kernel_helper->getTableLocation();
 
-    /// Schema to register: the just-committed `columns` for a fresh table; for an attach, the exact Delta
-    /// schema of the latest snapshot read straight from the `_delta_log` (ignoring read-time snapshot/CDF
-    /// settings), so types like `binary` / `timestamp_ntz` are not collapsed by the ClickHouse round-trip.
+    /// Schema to register: the just-committed `columns` for a fresh table (always present in that case); for
+    /// an attach, the exact Delta schema of the latest snapshot read straight from the `_delta_log` (ignoring
+    /// read-time snapshot/CDF settings), so types like `binary` / `timestamp_ntz` are not collapsed.
     Poco::JSON::Array::Ptr fields;
     if (created_fresh)
-        fields = buildDeltaSchemaFields(columns.getAllPhysical());
+        fields = buildDeltaSchemaFields(columns->getAllPhysical());
     else
     {
         auto snapshot = std::make_shared<DeltaLake::TableSnapshot>(

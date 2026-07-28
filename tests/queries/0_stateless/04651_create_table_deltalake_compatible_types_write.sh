@@ -26,12 +26,17 @@ SELECT n, s FROM t_dl_norm;
 "
 
 # A fresh re-attach reads the same values back, confirming the metadata matches the physical data files.
+# Re-attaching with the original compatible column types must also succeed (the CREATE is repeatable, since
+# the declared types map to the same Delta types the table was stored with).
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 1;
 CREATE TABLE t_dl_norm_reattach ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_dl_norm_reattach' ORDER BY name;
 SELECT n, s FROM t_dl_norm_reattach;
+CREATE TABLE t_dl_norm_reattach_explicit (n UInt8, s FixedString(3)) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
+SELECT n, s FROM t_dl_norm_reattach_explicit;
+DROP TABLE t_dl_norm_reattach_explicit;
 DROP TABLE t_dl_norm_reattach;
 DROP TABLE t_dl_norm;
 "

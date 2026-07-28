@@ -3,6 +3,7 @@
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
@@ -733,12 +734,14 @@ bool DeltaLakeMetadataDeltaKernel::createTable(
     {
         LOG_DEBUG(log, "Delta table already exists at `{}`; attaching to it without creating", data_path);
 
-        /// Explicit columns (a columnless CREATE never reaches here) must match the existing table's schema, else the mismatch would be silently ignored.
+        /// Explicit columns (a columnless CREATE never reaches here) must describe the same Delta schema as
+        /// the existing table (compatible types match, e.g. `UInt8` and the stored `short`), else the mismatch
+        /// would be silently ignored.
         auto kernel_helper = DB::getKernelHelper(configuration_ptr, object_storage_);
         const auto existing_schema = std::make_shared<DeltaLake::TableSnapshot>(
             /* version */ std::nullopt, kernel_helper, object_storage_, log)->getTableSchema();
         const auto declared_schema = columns.getAllPhysical();
-        if (declared_schema != existing_schema)
+        if (!DeltaLakeMetadata::haveSameDeltaSchema(declared_schema, existing_schema))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The columns specified in CREATE TABLE do not match the existing Delta table at `{}`. "
