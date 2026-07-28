@@ -466,7 +466,7 @@ partition_id % kafka_shard_count == kafka_partition_shard_num - 1
 
 Both settings must be specified together; specifying only one raises an exception. The `kafka_partition_shard_num` value must be between 1 and `kafka_shard_count` inclusive. It supports macro expansion (e.g., `'{shard}'`), which is re-expanded on each server startup. This allows the same table metadata to be shared across shards in a Replicated database, with each shard resolving its own value. Validation is performed after macro expansion.
 
-All shards should use the same `kafka_keeper_path` value. Replicas with the same `kafka_partition_shard_num` share committed offsets and intent sizes, and only compete with each other for partition locks. Changing `kafka_partition_shard_num` for an existing table is not supported - use a different `kafka_keeper_path` for a new shard assignment. Using a different `kafka_shard_count` from what was used when the table was created is a misconfiguration that may lead to incorrect behavior.
+All shards should use the same `kafka_keeper_path` value. All replicas share committed offsets and intent sizes, but only replicas with the same shard number compete with each other for partition locks (assuming all replicas have the same shard count). Changing `kafka_partition_shard_num` for an existing table is not supported - use a different `kafka_keeper_path` for a new shard assignment. Using a different `kafka_shard_count` from what was used when the table was created is a misconfiguration that may lead to incorrect behavior.
 
 Example with 3 shards consuming a 12-partition topic:
 

@@ -52,14 +52,16 @@ def kafka_produce_to_partition(kafka_cluster, topic, partition, messages, retrie
     producer.flush()
 
 
-def create_affinity_shard(instance, topic_name, shard_num, shard_count, keeper_path, table_suffix):
+def create_affinity_shard(instance, topic_name, shard_num, shard_count, keeper_path, table_suffix, replica_name=None):
     """Create a Kafka table with affinity settings, a destination MergeTree table, and a MV."""
+    if replica_name is None:
+        replica_name = f'r{shard_num}'
     instance.query(
         f"""
         CREATE TABLE test.kafka_{table_suffix} (partition_id UInt64, value UInt64)
         ENGINE = Kafka('{instance.cluster.kafka_host}:19092', '{topic_name}', '{topic_name}_cg_s{shard_num}', 'JSONEachRow', '\\n')
         SETTINGS kafka_keeper_path = '{keeper_path}',
-                 kafka_replica_name = 'r1',
+                 kafka_replica_name = '{replica_name}',
                  kafka_partition_shard_num = '{shard_num}',
                  kafka_shard_count = {shard_count}
         SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
