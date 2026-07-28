@@ -1364,6 +1364,9 @@ static NameToNameVector collectFilesForRenames(
 
 /// Returns true iff the source part's statistics are left as they are, so the files holding them are
 /// hardlinked and must not be written again. The caller passes that on to finalizeMutatedPart.
+/// `task_rewrites_all_columns` says the caller writes every column of the part anew, so nothing of the
+/// source part is carried over and there is nothing to keep. It is a property of the route, which is
+/// derived from the source part and the commands, so every replica executing one log entry agrees on it.
 static bool processStatisticsChanges(
     NameSet & files_to_skip,
     NameToNameVector & files_to_rename,
@@ -1372,7 +1375,7 @@ static bool processStatisticsChanges(
     const MutationCommands & commands_for_renames,
     const IMergeTreeDataPart & source_part,
     StorageMetadataPtr metadata_snapshot,
-    bool may_preserve_statistics)
+    bool task_rewrites_all_columns)
 {
     auto storage_settings = source_part.storage.getSettings();
     String statistics_file_name(ColumnsStatistics::FILENAME);
@@ -1435,8 +1438,10 @@ static bool processStatisticsChanges(
     }
 
     /// Keeping them: leave every file holding them out of both lists, so the mutation hardlinks them
-    /// with their inherited checksums, and tell the caller not to write them again.
-    if (may_preserve_statistics && !statistics_may_change)
+    /// with their inherited checksums, and tell the caller not to write them again. Both inputs are
+    /// derived from the source part and the commands alone, so two replicas executing one log entry
+    /// reach the same answer and produce byte-equal parts.
+    if (!task_rewrites_all_columns && !statistics_may_change)
         return true;
 
     /// Remove old statistics files.
@@ -1705,7 +1710,8 @@ struct MutationContext
     NameSet files_to_skip;
     NameToNameVector files_to_rename;
     /// True iff processStatisticsChanges left the source part's statistics alone, so finalizeMutatedPart
-    /// must not write them again. Carried, not re-derived: at the write site they are non-empty either way.
+    /// must not write them again. Carried, not re-derived: at the write site they are non-empty either
+    /// way. A property of the commands and the route, hence identical on every replica of one entry.
     bool statistics_preserved = false;
 
     bool need_sync{};
@@ -2502,7 +2508,7 @@ private:
             ctx->for_file_renames,
             *ctx->source_part,
             ctx->metadata_snapshot,
-            /*may_preserve_statistics=*/ false);
+            /*task_rewrites_all_columns=*/ true);
 
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
@@ -2615,8 +2621,11 @@ private:
     {
         ctx->all_gathered_data.statistics = ctx->source_part->loadStatistics();
 
-        /// A mutation admitted as hardlink-only reserved space for metadata, not for a copy of the
-        /// statistics, so let this function keep them whenever its own inputs say nothing changes them.
+        /// This task carries over every column it does not touch, so let this function keep the
+        /// statistics too whenever its own inputs say nothing changes them. Not keyed on the
+        /// hardlink-only admission flag: that flag reads this replica's settings and live queue state,
+        /// while two replicas executing one log entry must write byte-equal parts or one of them is
+        /// forced to fetch the whole result part.
         ctx->statistics_preserved = MutationHelpers::processStatisticsChanges(
             ctx->files_to_skip,
             ctx->files_to_rename,
@@ -2625,7 +2634,7 @@ private:
             ctx->for_file_renames,
             *ctx->source_part,
             ctx->metadata_snapshot,
-            /*may_preserve_statistics=*/ ctx->future_part->hardlink_only);
+            /*task_rewrites_all_columns=*/ false);
 
         if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
             ctx->files_to_skip.insert("ttl.txt");

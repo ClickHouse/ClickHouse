@@ -2009,6 +2009,15 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         }
 
         chassert(commands->empty() == (last_mutation_to_apply == mutations_end_it));
+
+        /// The loop above collected nothing (a size evaluation failed, or the very first mutation is
+        /// already past max_expanded_ast_elements). The part is not progressing and the size guard is
+        /// what deferred it, so keep saying so: the guard above lets an exempt mutation through without
+        /// recording a reason, and an empty parts_postpone_reasons for a stalled part tells the user
+        /// nothing.
+        if (commands->empty() && exceeds_max_source_part_size)
+            current_parts_postpone_reasons[part->name] = PostponeReasons::EXCEED_MAX_PART_SIZE;
+
         if (!commands->empty())
         {
             /// Now that the commands are final, decide on the whole set: coalescing may have turned a

@@ -7,6 +7,11 @@ reported_case	rows	20000
 reported_case	check	all_1_1_1_2	1
 reported_case	route_partial	1	route_full	0
 reported_case	statistics_kept	1
+drop_projection	pending	0
+drop_projection	projections_left	0
+drop_projection	rows	20000
+drop_projection	route_partial	1	route_full	0
+drop_projection	check	all_1_1_1_2	1
 mutation_delete	postponed	1	no_failure	1
 drop_index_compact	part_type	Compact
 drop_index_compact	postponed	1	no_failure	1
@@ -24,7 +29,7 @@ rewrite_statistics	pending	0
 rewrite_statistics	statistics_left	1
 rewrite_statistics	rows	20000
 rewrite_statistics	check	all_1_1_1_3	1
-write_footprint	keep_writes_less_than_rewrite	1	non_exempt_still_writes_statistics	1
+write_footprint	keep_writes_less_than_rewrite	1	non_exempt_preserves_statistics_too	1
 write_footprint	keep_check	all_1_1_1_2	1
 write_footprint	rewrite_check	all_1_1_1_2	1
 write_footprint	non_exempt_check	all_1_1_1_2	1

@@ -11,6 +11,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
+# Both failpoints below are server-wide, so an early exit under `set -e` would leave every later
+# mutation on this server seeing a 1 byte budget or no free threads. Best effort, on top of the
+# explicit DISABLE statements rather than instead of them.
+trap '$CLICKHOUSE_CLIENT --query "
+    SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_max_part_size;
+    SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
+" 2>/dev/null || true' EXIT
+
 # mt_select_parts_to_mutate_max_part_size forces the free-space budget of every mutation to 1 byte, so
 # every part exceeds it and no real disk pressure is needed. A mutation that only hardlinks the files it
 # does not touch must be admitted anyway; anything that rewrites the part must still be postponed.
@@ -142,6 +150,49 @@ echo "reported_case	statistics_kept	$([ "$statistics_after" = "$statistics_befor
 $CLICKHOUSE_CLIENT --query "
     SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_max_part_size;
     DROP TABLE drop_index_oversized SYNC;
+"
+
+##########################################################################################
+# DROP PROJECTION is the other command in the exempt class, so it needs its own positive case: it
+# unlinks a directory rather than a few files, and the changelog promises it.
+##########################################################################################
+
+$CLICKHOUSE_CLIENT --query "
+    CREATE TABLE drop_projection_oversized (id UInt64, s String,
+        PROJECTION proj_s (SELECT s, count() GROUP BY s))
+    ENGINE = MergeTree ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+             packed_skip_index_max_bytes = 0, deduplicate_merge_projection_mode = 'rebuild';
+    INSERT INTO drop_projection_oversized SELECT number, repeat('abcdefgh', 20) FROM numbers(20000);
+    OPTIMIZE TABLE drop_projection_oversized FINAL;
+    SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_max_part_size;
+    ALTER TABLE drop_projection_oversized DROP PROJECTION proj_s SETTINGS alter_sync = 0;
+"
+
+wait_for_mutation "drop_projection_oversized" "mutation_2.txt"
+
+$CLICKHOUSE_CLIENT --query "
+    SELECT 'drop_projection', 'pending', count() FROM system.mutations
+    WHERE database = currentDatabase() AND table = 'drop_projection_oversized' AND NOT is_done;
+
+    SELECT 'drop_projection', 'projections_left', count() FROM system.projections
+    WHERE database = currentDatabase() AND table = 'drop_projection_oversized';
+
+    SELECT 'drop_projection', 'rows', count() FROM drop_projection_oversized;
+
+    SYSTEM FLUSH LOGS part_log;
+    SELECT 'drop_projection', 'route_partial', sum(ProfileEvents['MutationSomePartColumns']) > 0,
+        'route_full', sum(ProfileEvents['MutationAllPartColumns'])
+    FROM system.part_log
+    WHERE database = currentDatabase() AND table = 'drop_projection_oversized' AND event_type = 'MutatePart';
+"
+$CLICKHOUSE_CLIENT --query "CHECK TABLE drop_projection_oversized" | while read -r line; do
+    echo "drop_projection	check	$line"
+done
+
+$CLICKHOUSE_CLIENT --query "
+    SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_max_part_size;
+    DROP TABLE drop_projection_oversized SYNC;
 "
 
 ##########################################################################################
@@ -310,9 +361,10 @@ $CLICKHOUSE_CLIENT --query "
     CREATE TABLE write_footprint_rewrite AS write_footprint_keep;
 
     /* Same shape, except that the skip indices live in a packed archive. Rebuilding that archive really
-       does copy data, so such a mutation is NOT in the exempt class - while still taking the partial route
-       and still leaving the statistics alone. It is therefore the case that shows the new behaviour is
-       confined to the exempt class rather than applied to every partial-route mutation. */
+       does copy data, so such a mutation is NOT in the exempt class for ADMISSION - while still taking the
+       partial route, and while its commands still cannot change which statistics the part holds. It is
+       therefore the case that shows the statistics decision is made from the commands rather than from the
+       admission flag: this table preserves although it was never admitted as hardlink-only. */
     CREATE TABLE write_footprint_nonexempt (id UInt64,
         a UInt64 STATISTICS(tdigest), b UInt64 STATISTICS(tdigest), c UInt64 STATISTICS(tdigest),
         d UInt64 STATISTICS(tdigest), e UInt64 STATISTICS(tdigest), f UInt64 STATISTICS(tdigest),
@@ -352,14 +404,18 @@ $CLICKHOUSE_CLIENT --query "
 
     SELECT 'write_footprint', 'keep_writes_less_than_rewrite',
         sumIf(bytes, table = 'write_footprint_keep') < sumIf(bytes, table = 'write_footprint_rewrite'),
-        /* The statistics write the non-exempt mutation performs, isolated by subtracting its
-           statistics-free twin, must exceed everything the exempt mutation writes in total. Only measured
-           quantities, so no threshold, and it separates writing the archive from writing a few more bytes
-           of metadata. */
-        'non_exempt_still_writes_statistics',
-        sumIf(bytes, table = 'write_footprint_nonexempt')
-                - sumIf(bytes, table = 'write_footprint_nonexempt_baseline')
-            > sumIf(bytes, table = 'write_footprint_keep')
+        /* Both sides are one statistics write, isolated by a same-shape twin, so the comparison needs no
+           threshold and no constant. Left: what the non-exempt partial-route mutation writes over its
+           statistics-free twin - it must be near nothing, because its commands cannot change which
+           statistics the part holds even though it was never admitted as hardlink-only. Right: what a real
+           change to the statistics set costs, measured on the identical fixture. The assertion is that the
+           first is now the smaller of the two, and it goes red both if the non-exempt route starts writing
+           the archive again and if a real change stops writing it. */
+        'non_exempt_preserves_statistics_too',
+        toInt64(sumIf(bytes, table = 'write_footprint_nonexempt'))
+                - toInt64(sumIf(bytes, table = 'write_footprint_nonexempt_baseline'))
+            < toInt64(sumIf(bytes, table = 'write_footprint_rewrite'))
+                - toInt64(sumIf(bytes, table = 'write_footprint_keep'))
     FROM (
         SELECT table, ProfileEvents['WriteBufferFromFileDescriptorWriteBytes'] AS bytes
         FROM system.part_log

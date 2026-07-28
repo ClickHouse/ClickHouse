@@ -1,0 +1,8 @@
+fixture	Wide	Full
+rmt_drop_index	pending	0
+rmt_drop_index	failed	0
+rmt_drop_index	indices_left	0
+rmt_drop_index	rows	20000
+rmt_drop_index	route_partial	1	route_full	0
+rmt_drop_index	check	all_0_0_1_1	1
+rmt_delete	postponed	1	no_failure	1

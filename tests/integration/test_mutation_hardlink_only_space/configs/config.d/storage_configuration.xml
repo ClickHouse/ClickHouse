@@ -1,0 +1,18 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <small_disk>
+                <path>/mutation_hardlink_only_small/</path>
+            </small_disk>
+        </disks>
+        <policies>
+            <small_only>
+                <volumes>
+                    <main>
+                        <disk>small_disk</disk>
+                    </main>
+                </volumes>
+            </small_only>
+        </policies>
+    </storage_configuration>
+</clickhouse>
