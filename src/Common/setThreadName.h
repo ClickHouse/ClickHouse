@@ -109,6 +109,7 @@ namespace DB
     M(MYSQL_HANDLER, "MySQLHandler") \
     M(OBJECT_STORAGE_SHUTDOWN, "ObjStorShutdwn") \
     M(ORC_FILE, "ORCFile") \
+    M(OVERWRITE_CACHE_PERSIST, "OWCachePersist") \
     M(PARALLEL_COMPRESSORS_POOL, "ParallelCompres") \
     M(PARALLEL_FORMATER, "Formatter") \
     M(PARALLEL_FORMATER_COLLECTOR, "Collector") \

@@ -1,0 +1,16 @@
+before detach	3
+after attach	3
+primary lookup	first
+index lookup	42	first
+index lookup	43	second
+replacement survives	replaced	2026-01-02 00:00:00.000
+rows after replacement	3
+lower version still ignored	replaced
+deleted key stays deleted	0
+rows after delete	2
+resurrected row survives	resurrected
+added index rebuilt	third
+truncate is persisted	0
+volatile before detach	1
+volatile after attach	0
+sync mode	durable again

@@ -1,9 +1,15 @@
 #include <Storages/StorageOverwriteCache.h>
 
+#include <Backups/BackupEntriesCollector.h>
+#include <Backups/BackupEntryFromImmutableFile.h>
+#include <Backups/BackupEntryWrappedWith.h>
+#include <Backups/IBackup.h>
+#include <Backups/RestorerFromBackup.h>
 #include <Core/Block.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/IDataType.h>
+#include <Disks/IDisk.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Interpreters/Context.h>
@@ -51,6 +57,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int CANNOT_RESTORE_TABLE;
 extern const int FAULT_INJECTED;
 extern const int LOGICAL_ERROR;
 extern const int MEMORY_LIMIT_EXCEEDED;
@@ -141,6 +148,10 @@ OverwriteCacheSettings parseSettings(const ASTStorage & storage_def)
             result.equal_version_tiebreak_columns = parseColumnList(getStringSetting(change), change.name);
         else if (change.name == "compress_segments")
             result.compress_segments = getUInt64Setting(change) != 0;
+        else if (change.name == "persist_mode")
+            result.persist_mode = parseOverwriteCachePersistMode(getStringSetting(change));
+        else if (change.name == "disk")
+            result.disk_name = getStringSetting(change);
         else
             throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting {} for storage `OverwriteCache`", backQuote(change.name));
     }
@@ -191,7 +202,8 @@ void validateColumn(const ColumnsDescription & columns, const String & name, con
 
 bool isOverwriteCacheSetting(std::string_view name)
 {
-    return name == "max_memory_bytes" || name == "equal_version_tiebreak_columns" || name == "compress_segments";
+    return name == "max_memory_bytes" || name == "equal_version_tiebreak_columns" || name == "compress_segments"
+        || name == "persist_mode" || name == "disk";
 }
 
 class OverwriteCacheSink final : public SinkToStorage
@@ -423,7 +435,9 @@ StorageOverwriteCache::StorageOverwriteCache(
     std::vector<Names> lookup_indexes_,
     ASTPtr lookup_indexes_ast_,
     OverwriteCacheSettings settings_,
-    ASTPtr settings_changes_)
+    ASTPtr settings_changes_,
+    DiskPtr disk_,
+    const String & relative_data_path_)
     : IStorage(table_id_)
     , version_column(std::move(version_column_))
     , key_columns(std::move(key_columns_))
@@ -478,6 +492,80 @@ StorageOverwriteCache::StorageOverwriteCache(
         lookup_index_positions.push_back(std::move(positions));
         lookup_index_column_types.push_back(std::move(types));
         lookup_indexes.push_back(std::make_shared<LookupIndex>());
+    }
+
+    persistence = std::make_shared<OverwriteCachePersistence>(
+        settings.persist_mode,
+        std::move(disk_),
+        relative_data_path_,
+        sample_block,
+        getPersistenceFingerprint(),
+        fmt::format("StorageOverwriteCache ({})", table_id_.getNameForLogs()));
+    loadPersistedData();
+}
+
+String StorageOverwriteCache::getPersistenceFingerprint() const
+{
+    WriteBufferFromOwnString out;
+    for (const auto & column : sample_block)
+    {
+        writeString(column.name, out);
+        writeChar(' ', out);
+        writeString(column.type->getName(), out);
+        writeChar('\n', out);
+    }
+    writeString("KEYS ", out);
+    for (const auto & name : key_columns)
+    {
+        writeString(name, out);
+        writeChar(',', out);
+    }
+    writeString("\nVERSION ", out);
+    writeString(version_column, out);
+    writeString("\nTIEBREAK ", out);
+    for (const auto & name : settings.equal_version_tiebreak_columns)
+    {
+        writeString(name, out);
+        writeChar(',', out);
+    }
+    /// Lookup indexes are deliberately absent: they are rebuilt from the segments, so `ALTER ADD INDEX`
+    /// must not invalidate a log.
+    return out.str();
+}
+
+void StorageOverwriteCache::loadPersistedData()
+{
+    if (!persistence->isEnabled())
+        return;
+
+    loading = true;
+    try
+    {
+        persistence->load([&](OverwriteCachePersistence::LoadedRecord && record)
+        {
+            if (!record.deleted_keys.empty())
+                deleteKeys(record.deleted_keys);
+            else
+                insertBlock(record.block, record.segment_id);
+        });
+    }
+    catch (...)
+    {
+        loading = false;
+        throw;
+    }
+    loading = false;
+
+    persistence->start();
+
+    /// A file whose every row lost to a later one contributes nothing, so the log stops referring to it.
+    if (!retired_during_load.empty())
+    {
+        OverwriteCachePersistence::Commit commit;
+        commit.generation = published_generation.load(std::memory_order_relaxed);
+        commit.removed = std::move(retired_during_load);
+        persistence->enqueue(std::move(commit));
+        retired_during_load.clear();
     }
 }
 
@@ -716,6 +804,11 @@ StorageOverwriteCache::RowDataPtr StorageOverwriteCache::resolveEntry(EntryId en
 
 void StorageOverwriteCache::insertBlock(const Block & input_block)
 {
+    insertBlock(input_block, 0);
+}
+
+void StorageOverwriteCache::insertBlock(const Block & input_block, UInt64 replay_segment_id)
+{
     const size_t input_rows = input_block.rows();
     if (input_rows == 0)
         return;
@@ -788,7 +881,7 @@ void StorageOverwriteCache::insertBlock(const Block & input_block)
     };
 
     FailPointInjection::pauseFailPoint(FailPoints::overwrite_cache_pause_after_lookup_catalog_snapshot);
-    std::lock_guard writer_lock(writer_mutex);
+    std::unique_lock writer_lock(writer_mutex);
     if (lookup_positions_snapshot != lookup_index_positions)
     {
         lookup_positions_snapshot = lookup_index_positions;
@@ -864,6 +957,8 @@ void StorageOverwriteCache::insertBlock(const Block & input_block)
     }
     segment->live_rows.store(block_mutation_count, std::memory_order_relaxed);
     segment->entry_ids.resize(block_mutation_count);
+    if (persistence->isEnabled())
+        segment->persistent_id = replay_segment_id ? replay_segment_id : persistence->allocateSegmentId();
 
     UInt64 prospective_bytes = total_size_bytes.load(std::memory_order_relaxed);
     if (prospective_bytes > std::numeric_limits<UInt64>::max() - segment->allocated_bytes)
@@ -876,6 +971,10 @@ void StorageOverwriteCache::insertBlock(const Block & input_block)
         compact_row->segment_row = static_cast<UInt32>(row);
         mutations[row].row = std::move(compact_row);
     }
+
+    /// Every segment this publication creates, so that it can be recorded once the publication succeeds.
+    std::vector<std::shared_ptr<RowSegment>> added_segments;
+    added_segments.push_back(segment);
 
     struct SegmentCompaction
     {
@@ -917,6 +1016,10 @@ void StorageOverwriteCache::insertBlock(const Block & input_block)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Corrupted `OverwriteCache` row-segment size");
         const UInt64 projected_dead_rows = total_rows - compaction.projected_live_rows;
         if (compaction.projected_live_rows == 0 || projected_dead_rows < (total_rows + 1) / 2)
+            continue;
+        /// Replay must not rewrite a segment: the log is not being written yet, so the rewritten segment
+        /// would have no file while the segment it replaced still has one.
+        if (loading)
             continue;
         compaction.selected = true;
         compaction.live_entries.reserve(compaction.projected_live_rows);
@@ -966,9 +1069,12 @@ void StorageOverwriteCache::insertBlock(const Block & input_block)
         }
         compacted_segment->live_rows.store(compaction.live_entries.size(), std::memory_order_relaxed);
         compacted_segment->entry_ids.reserve(compaction.live_entries.size());
+        if (persistence->isEnabled())
+            compacted_segment->persistent_id = persistence->allocateSegmentId();
         if (prospective_bytes > std::numeric_limits<UInt64>::max() - compacted_segment->allocated_bytes)
             throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "`OverwriteCache` memory accounting overflow");
         prospective_bytes += compacted_segment->allocated_bytes;
+        added_segments.push_back(compacted_segment);
 
         for (size_t row = 0; row < compaction.live_entries.size(); ++row)
         {
@@ -1322,6 +1428,38 @@ void StorageOverwriteCache::insertBlock(const Block & input_block)
         }
         recycleVersions(std::move(obsolete));
     }
+
+    if (!persistence->isEnabled())
+        return;
+
+    if (loading)
+    {
+        for (const auto & retired_segment : retired_segments)
+        {
+            if (retired_segment->persistent_id)
+                retired_during_load.push_back(retired_segment->persistent_id);
+        }
+        return;
+    }
+
+    OverwriteCachePersistence::Commit commit;
+    commit.generation = new_generation;
+    commit.added.reserve(added_segments.size());
+    for (const auto & added_segment : added_segments)
+        commit.added.push_back({added_segment->persistent_id, added_segment->columns, added_segment->entry_ids.size()});
+    commit.removed.reserve(retired_segments.size());
+    for (const auto & retired_segment : retired_segments)
+    {
+        if (retired_segment->persistent_id)
+            commit.removed.push_back(retired_segment->persistent_id);
+    }
+
+    const UInt64 sequence = persistence->enqueue(std::move(commit));
+    /// The wait releases the writer lock first, so a durable write never holds up another publication.
+    /// The log is written in order, so waiting for this sequence covers every publication before it.
+    writer_lock.unlock();
+    if (settings.persist_mode == OverwriteCachePersistMode::Sync)
+        persistence->waitDurable(sequence);
 }
 
 void StorageOverwriteCache::deleteBlock(const Block & block)
@@ -1364,7 +1502,7 @@ size_t StorageOverwriteCache::deleteKeys(const std::vector<String> & serialized_
         bool version_installed = false;
     };
 
-    std::lock_guard writer_lock(writer_mutex);
+    std::unique_lock writer_lock(writer_mutex);
 
     const UInt64 snapshot_generation = published_generation.load(std::memory_order_acquire);
 
@@ -1437,6 +1575,10 @@ size_t StorageOverwriteCache::deleteKeys(const std::vector<String> & serialized_
         const UInt64 projected_dead_rows = total_rows - compaction.projected_live_rows;
         if (compaction.projected_live_rows == 0 || projected_dead_rows < (total_rows + 1) / 2)
             continue;
+        /// Replay must not rewrite a segment, for the same reason an insert must not: the log is not being
+        /// written yet, so a rewritten segment would have no file of its own.
+        if (loading)
+            continue;
 
         /// A rewritten segment coexists with its source until the readers of the previous epoch drain, so
         /// it needs room beside it. Freeing memory must never fail for want of memory, so a segment whose
@@ -1465,6 +1607,7 @@ size_t StorageOverwriteCache::deleteKeys(const std::vector<String> & serialized_
     }
 
     UInt64 prospective_bytes = bytes_before;
+    std::vector<std::shared_ptr<RowSegment>> added_segments;
     for (auto & compaction : segment_compactions)
     {
         if (!compaction.selected)
@@ -1492,9 +1635,12 @@ size_t StorageOverwriteCache::deleteKeys(const std::vector<String> & serialized_
         }
         compacted_segment->live_rows.store(compaction.live_entries.size(), std::memory_order_relaxed);
         compacted_segment->entry_ids.reserve(compaction.live_entries.size());
+        if (persistence->isEnabled())
+            compacted_segment->persistent_id = persistence->allocateSegmentId();
         if (prospective_bytes > std::numeric_limits<UInt64>::max() - compacted_segment->allocated_bytes)
             throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "`OverwriteCache` memory accounting overflow");
         prospective_bytes += compacted_segment->allocated_bytes;
+        added_segments.push_back(compacted_segment);
 
         for (size_t row = 0; row < compaction.live_entries.size(); ++row)
         {
@@ -1593,6 +1739,39 @@ size_t StorageOverwriteCache::deleteKeys(const std::vector<String> & serialized_
         }
         recycleVersions(std::move(obsolete));
     }
+
+    if (!persistence->isEnabled())
+        return deleted_rows;
+
+    if (loading)
+    {
+        for (const auto & retired_segment : retired_segments)
+        {
+            if (retired_segment->persistent_id)
+                retired_during_load.push_back(retired_segment->persistent_id);
+        }
+        return deleted_rows;
+    }
+
+    /// A deletion has to be recorded even though it creates no segment: the segment it emptied a row of
+    /// is not superseded by anything, so replaying that segment alone would bring the key back.
+    OverwriteCachePersistence::Commit commit;
+    commit.generation = new_generation;
+    commit.deleted_keys = serialized_keys;
+    commit.added.reserve(added_segments.size());
+    for (const auto & added_segment : added_segments)
+        commit.added.push_back({added_segment->persistent_id, added_segment->columns, added_segment->entry_ids.size()});
+    commit.removed.reserve(retired_segments.size());
+    for (const auto & retired_segment : retired_segments)
+    {
+        if (retired_segment->persistent_id)
+            commit.removed.push_back(retired_segment->persistent_id);
+    }
+
+    const UInt64 sequence = persistence->enqueue(std::move(commit));
+    writer_lock.unlock();
+    if (settings.persist_mode == OverwriteCachePersistMode::Sync)
+        persistence->waitDurable(sequence);
 
     return deleted_rows;
 }
@@ -2146,11 +2325,95 @@ void StorageOverwriteCache::alter(const AlterCommands & commands, ContextPtr con
 void StorageOverwriteCache::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
     clearData();
+    persistence->truncate();
 }
 
 void StorageOverwriteCache::drop()
 {
     clearData();
+    persistence->removeAllFiles();
+}
+
+void StorageOverwriteCache::shutdown(bool)
+{
+    /// Draining the queue makes a clean restart lose nothing even in `Async` mode.
+    persistence->shutdown();
+}
+
+void StorageOverwriteCache::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
+{
+    persistence->rename(new_path_to_table_data);
+    renameInMemory(new_table_id);
+}
+
+void StorageOverwriteCache::backupData(
+    BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> &)
+{
+    if (!persistence->isEnabled())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Storage `OverwriteCache` cannot be backed up with `persist_mode = 'none'`, because it keeps no data on disk");
+
+    /// The files are immutable, so a backup copies them instead of reading the table. Retirement is held
+    /// back until every entry has been read, or a publication could delete a file the collector was told
+    /// to copy - which is why the pin travels with the entries instead of being released here.
+    auto pin = std::make_shared<OverwriteCachePersistence::BackupPin>(*persistence);
+    const auto file_names = persistence->collectFilesForBackup();
+    const auto data_path = persistence->getPath();
+    const auto disk = persistence->getDisk();
+
+    const std::filesystem::path data_path_in_backup_fs = data_path_in_backup;
+    BackupEntries backup_entries;
+    backup_entries.reserve(file_names.size());
+    for (const auto & file_name : file_names)
+    {
+        const auto file_path = std::filesystem::path(data_path) / file_name;
+        BackupEntryPtr entry = std::make_shared<BackupEntryFromImmutableFile>(
+            disk, file_path, /*copy_encrypted=*/false, disk->getFileSize(file_path));
+        backup_entries.emplace_back(data_path_in_backup_fs / file_name, wrapBackupEntryWith(std::move(entry), pin));
+    }
+
+    backup_entries_collector.addBackupEntries(std::move(backup_entries));
+}
+
+void StorageOverwriteCache::restoreDataFromBackup(
+    RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> &)
+{
+    auto backup = restorer.getBackup();
+    if (!backup->hasFiles(data_path_in_backup))
+        return;
+
+    if (!restorer.isNonEmptyTableAllowed() && total_size_rows.load(std::memory_order_relaxed))
+        RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
+
+    restorer.addDataRestoreTask(
+        [storage = std::static_pointer_cast<StorageOverwriteCache>(shared_from_this()), backup, data_path_in_backup]
+        { storage->restoreDataImpl(backup, data_path_in_backup); });
+}
+
+void StorageOverwriteCache::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup)
+{
+    const auto file_names = backup->listFiles(data_path_in_backup, /*recursive=*/false);
+    if (std::ranges::find(file_names, OverwriteCachePersistence::manifest_file_name) == file_names.end())
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Backup of storage `OverwriteCache` at {} has no {} file",
+            data_path_in_backup,
+            OverwriteCachePersistence::manifest_file_name);
+
+    /// Replacing the files means replacing the table, so the cache is dropped first and rebuilt from the
+    /// restored log rather than merged with whatever it happened to hold.
+    clearData();
+    persistence->removeAllFiles();
+
+    const std::filesystem::path data_path_in_backup_fs = data_path_in_backup;
+    for (const auto & file_name : file_names)
+    {
+        auto in = backup->readFile(data_path_in_backup_fs / file_name);
+        persistence->restoreFileFromBackup(file_name, *in);
+    }
+
+    loadPersistedData();
 }
 
 std::optional<UInt64> StorageOverwriteCache::totalRows(ContextPtr) const
@@ -2240,6 +2503,35 @@ void registerStorageOverwriteCache(StorageFactory & factory)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate lookup `INDEX` declaration");
             }
 
+            /// A temporary table cannot outlive the session that created it, so there is nothing for a log
+            /// to restore. Asking for one anyway is a request that cannot be honoured rather than a
+            /// default to quietly override.
+            const bool persist_mode_given = args.storage_def->settings
+                && std::ranges::any_of(
+                       args.storage_def->settings->changes,
+                       [](const SettingChange & change) { return change.name == "persist_mode"; });
+            if (args.query.isTemporary())
+            {
+                if (persist_mode_given && settings.persist_mode != OverwriteCachePersistMode::None)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "A temporary table of storage `OverwriteCache` cannot use `persist_mode = '{}'`, because it does not "
+                        "outlive its session",
+                        toString(settings.persist_mode));
+                settings.persist_mode = OverwriteCachePersistMode::None;
+            }
+
+            DiskPtr disk;
+            if (settings.persist_mode != OverwriteCachePersistMode::None)
+            {
+                if (args.relative_data_path.empty())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Storage `OverwriteCache` requires a data path to persist data. Use `persist_mode = 'none'` for a "
+                        "table that is not meant to survive a restart");
+                disk = args.getContext()->getDisk(settings.disk_name);
+            }
+
             return std::make_shared<StorageOverwriteCache>(
                 args.table_id,
                 args.columns,
@@ -2250,7 +2542,9 @@ void registerStorageOverwriteCache(StorageFactory & factory)
                 std::move(lookup_index_columns),
                 args.storage_def->lookup_indexes ? args.storage_def->lookup_indexes->clone() : nullptr,
                 std::move(settings),
-                args.storage_def->settings ? args.storage_def->settings->clone() : nullptr);
+                args.storage_def->settings ? args.storage_def->settings->clone() : nullptr,
+                std::move(disk),
+                args.relative_data_path);
         },
         {
             .supports_settings = true,

@@ -115,6 +115,8 @@ INSERT INTO overwrite_cache VALUES (1, 201, 'A', 1, 1, 'indexed-row');
 SELECT payload FROM overwrite_cache WHERE tag = 'A' ORDER BY user_id;
 SELECT payload FROM overwrite_cache WHERE website_type = 1 AND user_id = 201 AND tag = 'A';
 
+-- The rows are persisted, so a detach and attach replays the log instead of emptying the cache.
+-- 04633_overwrite_cache_persistence covers what replay has to reproduce.
 DETACH TABLE overwrite_cache;
 ATTACH TABLE overwrite_cache;
 SELECT payload

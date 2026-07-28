@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 The `OverwriteCache` engine stores exactly one winning row for each composite key in RAM. It is intended for bounded latest-state caches that are rebuilt from an upstream source.
 
-Data is not persisted. Restarting the server, detaching and attaching the table, or recreating the table produces an empty cache.
+Rows are held in RAM and are served from RAM, but they are also written to disk, so the cache survives a restart, a `DETACH`, and a `RENAME`. See [Persistence](#persistence). Setting `persist_mode = 'none'` gives a purely in-memory table whose content is lost on restart.
 
 ## Creating a table {#creating-a-table}
 
@@ -28,7 +28,8 @@ KEYS (website_type, user_id, tag)
 INDEX (tag), (website_type), (website_type, tag)
 SETTINGS
     max_memory_bytes = 1073741824,
-    equal_version_tiebreak_columns = 'source_sequence';
+    equal_version_tiebreak_columns = 'source_sequence',
+    persist_mode = 'async';
 ```
 
 `OverwriteCache` requires one engine argument identifying the version column and a nonempty storage-level `KEYS (...)` clause. The version column cannot also be a key column.
@@ -87,11 +88,36 @@ ALTER TABLE latest_state DROP INDEX (user_id);
 
 An added index is privately populated and becomes available to new readers only after atomic publication. If population or metadata persistence fails, the previous index catalog remains active. Dropping an index atomically publishes a catalog without that family; readers that already planned against the previous catalog retain its immutable index generation until they finish.
 
+## Persistence {#persistence}
+
+The unit of persistence is the immutable row segment. A publication builds exactly one segment, which is written to its own file, is never rewritten, and whose file is removed when the segment is released. Nothing else is written: the primary index, the lookup postings, the entry table and the version chains are all rebuilt when the table is loaded, because every indexed column must belong to the `KEYS` tuple and is therefore stored inside the segment itself. Adding or dropping a lookup index does not touch the data files.
+
+A `manifest` file holds one record per publication, in publication order: the segments it added, the segments it retired, and the keys it deleted. Deletions have to be recorded because a segment that a `DELETE` leaves partially dead is not superseded by any later segment, so replaying that segment alone would bring the deleted keys back. `manifest` records are collapsed in the background once the bookkeeping grows well past the segments it describes.
+
+Loading replays the log: it skips the added segments that a later record retired, then applies the surviving segments in publication order through ordinary winner selection. Every stored row was a winner when it was published, so the replayed state is the exact state that was lost, including the equal-version tie-break rule, which resolves in favour of the row already stored and therefore depends on insertion order. Because the segments in memory mirror the files one to one, the loaded table occupies exactly the memory it occupied before, and segment compaction is left alone during replay.
+
+Loading happens while the table is being attached, so a table whose log cannot be replayed fails to attach rather than coming up as a silently empty cache. With `async_load_databases` enabled, which is the default, the table loads in the background after startup and a query that reaches it before it is ready waits for that load, exactly as it does for a `MergeTree` table.
+
+The stored log records the columns, the `KEYS` tuple, the version column and the tie-break columns it was written for. Attaching a table whose definition no longer matches fails instead of reinterpreting the stored rows.
+
+`persist_mode` selects when a publication reaches the disk:
+
+- `async`, the default, queues the publication and makes it visible immediately. A crash can lose the tail of the log; the manifest records are framed and checksummed, so an incomplete tail is recognized and dropped rather than read as a record. This suits a cache that can be topped up from its upstream source, and re-delivering rows is harmless because winner selection ignores a row that ties on the version and the tie-break columns.
+- `sync` returns from the `INSERT` only once its publication is durable. The wait happens after the writer lock is released, so a durable write never holds up another publication, but the throughput of the table is then bounded by the disk.
+
+A clean shutdown drains the queue, so restarting the server loses nothing even in `async` mode. Publication does not outrun the disk without bound: once the queue holds enough payload, the next publication waits for the writer rather than letting the queue become a second copy of the table.
+
+If persisting fails, the error is not swallowed - the table stops accepting publications and reports the failure, instead of continuing as an in-memory table whose disk copy has silently stopped advancing.
+
+`BACKUP` copies the immutable segment files together with a self-contained `manifest`, and holds back segment retirement while it does, so a concurrent publication cannot delete a file the backup was told to copy. `RESTORE` replaces the table's files and replays them; it refuses a table that already holds rows unless `allow_non_empty_tables` is set. A table created with `persist_mode = 'none'` cannot be backed up, because it keeps nothing on disk.
+
 ## Settings {#settings}
 
 - `max_memory_bytes` — Optional hard admission limit for engine-accounted memory. If omitted, allocations remain subject to the normal ClickHouse memory tracker and query limits.
 - `equal_version_tiebreak_columns` — Optional comma-separated column names used to select a deterministic winner when versions are equal. These columns cannot be key or version columns.
-- `compress_segments` — Optional flag, `0` by default. When set to `1`, payload columns are compressed in memory. This trades a large per-row read cost for lower residency; see [Memory representation](#memory-representation).
+- `compress_segments` — Optional flag, `0` by default. When set to `1`, payload columns are compressed in memory. This trades a large per-row read cost for lower residency; see [Memory representation](#memory-representation). Segment files are always compressed, so this setting does not change them, and a table can be recreated with a different value for it over the same data.
+- `persist_mode` — `'async'` by default. One of `'async'`, `'sync'` or `'none'`; see [Persistence](#persistence).
+- `disk` — Disk holding the segment files, `'default'` by default. Ignored when `persist_mode = 'none'`.
 
 Lookup indexes are declared only through `INDEX (...)`. The legacy settings `max_index_probe_rows`, `max_index_result_rows`, `index_each_key_column`, `secondary_index_columns`, `secondary_index_segment_column`, and `max_secondary_index_rows` are not supported. Every lookup-index column must occur in `KEYS`, and duplicate tuples are rejected.
 

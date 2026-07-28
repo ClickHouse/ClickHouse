@@ -5,6 +5,7 @@
 #include <Formats/FormatSettings.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <Storages/IStorage.h>
+#include <Storages/OverwriteCachePersistence.h>
 
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
@@ -31,12 +32,16 @@ namespace DB
 {
 
 class StorageFactory;
+class IBackup;
+using BackupPtr = std::shared_ptr<const IBackup>;
 
 struct OverwriteCacheSettings
 {
     UInt64 max_memory_bytes = 0;
     Names equal_version_tiebreak_columns;
     bool compress_segments = false;
+    OverwriteCachePersistMode persist_mode = OverwriteCachePersistMode::Async;
+    String disk_name = "default";
 };
 
 class StorageOverwriteCache final : public IStorage, public IKeyValueEntity
@@ -51,6 +56,9 @@ public:
         std::vector<EntryId> entry_ids;
         UInt64 allocated_bytes = 0;
         std::atomic<UInt64> live_rows{0};
+        /// The file this segment is stored in, or zero while the table is not persisted. A segment is
+        /// immutable, so it is written once and its file is removed when the segment is released.
+        UInt64 persistent_id = 0;
     };
 
     struct RowData
@@ -126,7 +134,9 @@ public:
         std::vector<Names> lookup_indexes_,
         ASTPtr lookup_indexes_ast_,
         OverwriteCacheSettings settings_,
-        ASTPtr settings_changes_);
+        ASTPtr settings_changes_,
+        DiskPtr disk_,
+        const String & relative_data_path_);
 
     String getName() const override { return "OverwriteCache"; }
 
@@ -152,6 +162,12 @@ public:
         ContextPtr context,
         TableExclusiveLockHolder & table_lock_holder) override;
     void drop() override;
+    void shutdown(bool is_drop) override;
+    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
+
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
     void alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder & lock_holder) override;
 
@@ -184,10 +200,21 @@ public:
     void insertBlock(const Block & block);
 
 private:
+    /// While replaying the persisted log, `replay_segment_id` names the file the block came from, so that
+    /// the segment it produces keeps mirroring that file instead of being written out a second time.
+    void insertBlock(const Block & block, UInt64 replay_segment_id);
     /// Removes the keys of `block` from the cache. The rows to remove are produced by the read path,
     /// so a `DELETE` accepts exactly the predicates a `SELECT` accepts.
     void deleteBlock(const Block & block);
     size_t deleteKeys(const std::vector<String> & serialized_keys);
+
+    /// Replays the persisted log, then starts persisting. Runs from the constructor, so an `ATTACH` that
+    /// cannot restore the table fails instead of exposing an incomplete cache.
+    void loadPersistedData();
+    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
+    /// Builds the identity a persisted log is checked against. A log written for different columns, keys,
+    /// version or tie-break columns would be reinterpreted rather than rejected.
+    String getPersistenceFingerprint() const;
 
     struct EntryVersion
     {
@@ -464,6 +491,13 @@ private:
 
     std::atomic<UInt64> total_size_bytes = 0;
     std::atomic<UInt64> total_size_rows = 0;
+
+    OverwriteCachePersistencePtr persistence;
+    /// Set while the log is being replayed. Segment compaction is left alone during replay, so that the
+    /// segments in memory keep mirroring the files one to one and no rewritten segment goes unrecorded.
+    bool loading = false;
+    /// Files whose every row lost during replay. They are retired once persistence has started.
+    std::vector<UInt64> retired_during_load;
 };
 
 void registerStorageOverwriteCache(StorageFactory & factory);
