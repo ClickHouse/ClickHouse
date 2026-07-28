@@ -307,7 +307,7 @@ const ClickStack::EmbeddedResource * resolveDynamicRoute(const std::string & res
             continue;
         if (!tail.ends_with(dynamic_tail_suffix))
             continue;
-        if (tail.find('/') != std::string_view::npos)
+        if (tail.contains('/'))
             continue;
 
         return &candidate;

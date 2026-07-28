@@ -2071,7 +2071,7 @@ AzureURLParts parseAzureURL(const String & url)
     const String host = (slash_pos == String::npos) ? rest : rest.substr(0, slash_pos);
     const String path = (slash_pos == String::npos) ? "" : rest.substr(slash_pos + 1);
 
-    if (host.find('.') == String::npos)
+    if (!host.contains('.'))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Azure `{}` URL must include the storage account host, e.g. "
