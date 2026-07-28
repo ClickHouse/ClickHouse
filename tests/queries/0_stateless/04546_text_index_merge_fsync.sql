@@ -12,6 +12,7 @@
 -- correctly synced merge. The setting is randomized in CI, so it must be pinned here.
 
 SET materialize_skip_indexes_on_insert = 0;
+SET optimize_trivial_count_from_text_index = 0;
 
 DROP TABLE IF EXISTS t_txt;
 DROP TABLE IF EXISTS t_plain;
