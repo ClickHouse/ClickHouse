@@ -1,5 +1,7 @@
 #include <Common/WakeupFd.h>
 
+#if !defined(OS_WINDOWS)
+
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 
@@ -57,3 +59,5 @@ void WakeupFd::drain() const
 }
 
 }
+
+#endif

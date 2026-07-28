@@ -1,5 +1,13 @@
 #pragma once
 
+/// Not built on Windows. This is a self-pipe, and Windows pipes are not pollable alongside
+/// sockets - neither `WSAPoll` nor wepoll accepts anything but a `SOCKET` - so the wakeup for a
+/// Windows event loop has to be a loopback socket pair (or `PostQueuedCompletionStatus`) rather
+/// than this. That belongs with the `Epoll` backend for Windows, which does not exist yet; until
+/// then the only consumers, `PollingQueue` and `MergeTreeBoundsSubscription`, are not built
+/// there either. See docs/en/development/build-cross-windows.md.
+#if !defined(OS_WINDOWS)
+
 #include <Common/PipeFDs.h>
 
 namespace DB
@@ -32,3 +40,5 @@ private:
 };
 
 }
+
+#endif
