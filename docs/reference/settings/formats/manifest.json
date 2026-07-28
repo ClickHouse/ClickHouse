@@ -481,7 +481,7 @@
       "path": "/reference/settings/formats/input-format",
       "label": "input_format_*",
       "settings": 125,
-      "characters": 55723
+      "characters": 55714
     },
     {
       "path": "/reference/settings/formats/output-format",
