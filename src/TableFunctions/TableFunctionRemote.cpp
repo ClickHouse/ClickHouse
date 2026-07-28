@@ -122,7 +122,7 @@ remoteSecure(named_collection[, option=value [,..]])
 
 | Argument       | Description                                                                                                                                                                                                                                                                                                                                                        |
 |----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `addresses_expr` | A remote server address or an expression that generates multiple addresses of remote servers. Format: `host` or `host:port`.<br/><br/>    The `host` can be specified as a server name, or as a IPv4 or IPv6 address. An IPv6 address must be specified in `[]`.<br/><br/>    The `port` is the TCP port on the remote server. If the port is omitted, it uses [tcp_port](/reference/settings/server-settings/settings#tcp_port) from the server config file for table function `remote` (by default, 9000) and [tcp_port_secure](/reference/settings/server-settings/settings#tcp_port_secure) for table function `remoteSecure` (by default, 9440).<br/><br/>    For IPv6 addresses, a port is required.<br/><br/>    If only parameter `addresses_expr` is specified, `db` and `table` will use `system.one` by default.<br/><br/>    Type: [String](/reference/data-types/string). |
+| `addresses_expr` | A remote server address or an expression that generates multiple addresses of remote servers. Format: `host` or `host:port`.<br/><br/>    The `host` can be specified as a server name, or as a IPv4 or IPv6 address. An IPv6 address must be specified in `[]`.<br/><br/>    The `port` is the TCP port on the remote server. If the port is omitted, it uses [tcp_port](/reference/settings/server-settings/settings/tcp-port#tcp_port) from the server config file for table function `remote` (by default, 9000) and [tcp_port_secure](/reference/settings/server-settings/settings/tcp-port#tcp_port_secure) for table function `remoteSecure` (by default, 9440).<br/><br/>    For IPv6 addresses, a port is required.<br/><br/>    If only parameter `addresses_expr` is specified, `db` and `table` will use `system.one` by default.<br/><br/>    Type: [String](/reference/data-types/string). |
 | `db`           | Database name. Type: [String](/reference/data-types/string).                                                                                                                                                                                                                                                                                             |
 | `table`        | Table name. Type: [String](/reference/data-types/string).                                                                                                                                                                                                                                                                                               |
 | `user`         | User name. If not specified, `default` is used. Type: [String](/reference/data-types/string).                                                                                                                                                                                                                                                         |
@@ -268,8 +268,8 @@ The following pattern types are supported.
 - `{0n..0m}` - A range of numbers with leading zeroes. This pattern preserves leading zeroes in indices. For instance, `example{01..03}-1` generates `example01-1`, `example02-1` and `example03-1`.
 - `{a|b}` - Any number of variants separated by a `|`. The pattern specifies replicas. For instance, `example01-{1|2}` generates replicas `example01-1` and `example01-2`.
 
-The query will be sent to the first healthy replica. However, for `remote` the replicas are iterated in the order currently set in the [load_balancing](/reference/settings/session-settings#load_balancing) setting.
-The number of generated addresses is limited by [table_function_remote_max_addresses](/reference/settings/session-settings#table_function_remote_max_addresses) setting.
+The query will be sent to the first healthy replica. However, for `remote` the replicas are iterated in the order currently set in the [load_balancing](/reference/settings/session-settings/load-balancing#load_balancing) setting.
+The number of generated addresses is limited by [table_function_remote_max_addresses](/reference/settings/session-settings/table#table_function_remote_max_addresses) setting.
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}});
     factory.registerFunction("remoteSecure", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote", /* secure = */ true); }, {.description = R"DOC(Like the remote table function, but establishes a TLS-encrypted (secure) connection to the remote server.)DOC", .category = FunctionDocumentation::Category::TableFunction}});
     factory.registerFunction("cluster", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("cluster"); }, {.description = R"DOCS_MD(
@@ -303,7 +303,7 @@ The dataset from clusters.
 
 ## Using macros {#using_macros}
 
-`cluster_name` can contain macros — substitution in `{}`. The substituted value is taken from the [macros](/reference/settings/server-settings/settings#macros) section of the server configuration file.
+`cluster_name` can contain macros — substitution in `{}`. The substituted value is taken from the [macros](/reference/settings/server-settings/settings/other#macros) section of the server configuration file.
 
 Example:
 
@@ -325,8 +325,8 @@ Connection settings like `host`, `port`, `user`, `password`, `compression`, `sec
 
 ## Related {#related}
 
-- [skip_unavailable_shards](/reference/settings/session-settings#skip_unavailable_shards)
-- [load_balancing](/reference/settings/session-settings#load_balancing)
+- [skip_unavailable_shards](/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards)
+- [load_balancing](/reference/settings/session-settings/load-balancing#load_balancing)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true}});
     factory.registerFunction("clusterAllReplicas", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); }, {.description = R"DOC(Like the cluster table function, but queries all replicas of every shard in the cluster instead of a single replica per shard.)DOC", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true}});
 }
