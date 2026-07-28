@@ -524,18 +524,10 @@ def test_cancel_backup():
 
         kill_start_time = get_query_start_time(node_to_cancel, kill_query_id)
 
-        # Measured between two server-recorded timestamps: the start of the KILL QUERY on the
-        # node it was sent to, and the moment the initiator reached the terminal status (which
-        # is stamped after the initiator waited for the other hosts, capped on the error path
-        # by backup_restore_finish_timeout_after_error_sec, which this module's profile sets to
-        # 3 s). So the cluster-wide cancellation is inside the interval up to that cap, which is
-        # the same terminus the previous client-side stopwatch had; a host still cancelling
-        # after that is caught by the get_num_system_processes() check below. wait_status still
-        # polls over the same period, but neither endpoint can be moved by a poll: the left one
-        # was written before the polling started, and the right one is stamped by the backup
-        # thread, not by the observing SELECT. So no client round trip is added to the
-        # measurement, including the system.query_log lookup above, which runs after end_time
-        # was stamped.
+        # Both endpoints are server-recorded, so neither wait_status's polling nor the query_log
+        # lookup above can move them: the KILL's start precedes the polling, and the terminal
+        # status is stamped by the backup thread after it waited for the other hosts, capped on
+        # the error path by backup_restore_finish_timeout_after_error_sec (3 s in this module).
         time_to_cancel = seconds_between(kill_start_time, end_time)
         print(f"Cancellation took {time_to_cancel} seconds (server-side)")
 
