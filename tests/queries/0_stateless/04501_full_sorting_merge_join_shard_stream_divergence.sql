@@ -1,9 +1,9 @@
 -- Tags: no-random-merge-tree-settings
 -- Regression test for `LOGICAL_ERROR: Join is supported only for pipelines with one output port, got N and M`.
--- With `query_plan_join_shard_by_pk_ranges` enabled, a `full_sorting_merge` JOIN whose keys are a PK prefix is
+-- With `query_plan_join_shard_by_pk_ranges` enabled, a `full_sorting_merge` `JOIN` whose keys are a PK prefix is
 -- planned for sharding (`PartitionedFinishSorting` keeps several per-shard streams on each side). When a
 -- `PREWHERE` prunes one side to a different number of streams than the other, `JoinStep` falls back from the
--- by-shards pipeline to the plain YShaped pipeline, which used to require exactly one stream per side and
+-- by-shards pipeline to the plain `YShaped` pipeline, which used to require exactly one stream per side and
 -- aborted the server in debug/sanitizer builds.
 
 DROP TABLE IF EXISTS t04501;
@@ -19,6 +19,9 @@ SET max_threads = 8;
 -- Sharding is only planned on top of a read-in-order `FinishSorting`, so without this the randomized
 -- `optimize_read_in_order = 0` leaves a plain sort, nothing diverges and the test checks nothing.
 SET optimize_read_in_order = 1;
+-- `optimizeJoinByShards` skips a `ReadFromMergeTree` that reads with parallel replicas, so with them enabled
+-- nothing shards, nothing diverges and every assertion below holds vacuously.
+SET enable_parallel_replicas = 0;
 
 -- Two-way self join. `c0 > 1000` is a data-dependent range on the primary key: no part contains such a row,
 -- so the left side is fully pruned to a single stream while the sharded right side keeps several streams.
