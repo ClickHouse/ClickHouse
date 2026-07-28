@@ -1,0 +1,85 @@
+---
+sidebarTitle: 'SQL 변환 참고'
+slug: /migrations/redshift/sql-translation-reference
+description: 'Amazon Redshift에서 ClickHouse로의 SQL 변환 참고'
+keywords: ['Redshift']
+title: 'Amazon Redshift SQL 변환 가이드'
+doc_type: 'reference'
+---
+
+<div id="data-types">
+  ## 데이터 타입
+</div>
+
+ClickHouse와 Redshift 사이에서 데이터를 옮기는 사용자는 ClickHouse가 더 다양한 타입을 제공하고, 제약도 훨씬 적다는 점을 바로 알 수 있습니다. Redshift에서는 문자열 길이가 가변적이더라도 허용 가능한 길이를 지정해야 하지만, ClickHouse는 문자열을 인코딩 없이 바이트로 저장하므로 이러한 제약과 번거로움이 없습니다. 따라서 ClickHouse의 String 타입에는 길이 제한도, 길이 지정 요구 사항도 없습니다.
+
+또한 ClickHouse에서는 Redshift에 기본적으로 없는 배열, 튜플, Enum을 기본 제공 타입처럼 활용할 수 있습니다(배열/struct는 `SUPER`로 어느 정도 흉내 낼 수는 있음). 이는 많은 사용자가 자주 불편을 느끼는 부분이기도 합니다. ClickHouse는 집계 상태도 쿼리 시점은 물론 테이블에도 저장할 수 있습니다. 이를 통해 일반적으로 materialized view를 사용해 데이터를 사전 집계할 수 있으며, 자주 사용하는 쿼리의 성능을 크게 향상할 수 있습니다.
+
+아래에서는 각 Redshift 타입에 대응하는 ClickHouse 타입을 매핑합니다:
+
+| Redshift                                                                                                                             | ClickHouse                                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`SMALLINT`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-integer-types)                | [`Int8`](/ko/reference/data-types/int-uint) *                                                                                                                                                                             |
+| [`INTEGER`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-integer-types)                 | [`Int32`](/ko/reference/data-types/int-uint) *                                                                                                                                                                            |
+| [`BIGINT`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-integer-types)                  | [`Int64`](/ko/reference/data-types/int-uint) *                                                                                                                                                                            |
+| [`DECIMAL`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-decimal-or-numeric-type)       | [`UInt128`, `UInt256`, `Int128`, `Int256`](/ko/reference/data-types/int-uint), [`Decimal(P, S)`, `Decimal32(S)`, `Decimal64(S)`, `Decimal128(S)`, `Decimal256(S)`](/ko/reference/data-types/decimal) - (높은 정밀도와 넓은 범위 표현 가능) |
+| [`REAL`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-floating-point-types)             | [`Float32`](/ko/reference/data-types/float)                                                                                                                                                                               |
+| [`DOUBLE PRECISION`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-floating-point-types) | [`Float64`](/ko/reference/data-types/float)                                                                                                                                                                               |
+| [`BOOLEAN`](https://docs.aws.amazon.com/redshift/latest/dg/r_Boolean_type.html)                                                      | [`Bool`](/ko/reference/data-types/boolean)                                                                                                                                                                                |
+| [`CHAR`](https://docs.aws.amazon.com/redshift/latest/dg/r_Character_types.html#r_Character_types-char-or-character)                  | [`String`](/ko/reference/data-types/string), [`FixedString`](/ko/reference/data-types/fixedstring)                                                                                                                           |
+| [`VARCHAR`](https://docs.aws.amazon.com/redshift/latest/dg/r_Character_types.html#r_Character_types-varchar-or-character-varying) ** | [`String`](/ko/reference/data-types/string)                                                                                                                                                                               |
+| [`DATE`](https://docs.aws.amazon.com/redshift/latest/dg/r_Datetime_types.html#r_Datetime_types-date)                                 | [`Date32`](/ko/reference/data-types/date32)                                                                                                                                                                               |
+| [`TIMESTAMP`](https://docs.aws.amazon.com/redshift/latest/dg/r_Datetime_types.html#r_Datetime_types-timestamp)                       | [`DateTime`](/ko/reference/data-types/datetime), [`DateTime64`](/ko/reference/data-types/datetime64)                                                                                                                         |
+| [`TIMESTAMPTZ`](https://docs.aws.amazon.com/redshift/latest/dg/r_Datetime_types.html#r_Datetime_types-timestamptz)                   | [`DateTime`](/ko/reference/data-types/datetime), [`DateTime64`](/ko/reference/data-types/datetime64)                                                                                                                         |
+| [`GEOMETRY`](https://docs.aws.amazon.com/redshift/latest/dg/geospatial-overview.html)                                                | [Geo 데이터 타입](/ko/reference/data-types/geo)                                                                                                                                                                                |
+| [`GEOGRAPHY`](https://docs.aws.amazon.com/redshift/latest/dg/geospatial-overview.html)                                               | [Geo 데이터 타입](/ko/reference/data-types/geo) (아직 덜 발전되어 있으며, 예를 들어 좌표계는 없지만 [함수로](/ko/reference/functions/regular-functions/geo/index) 에뮬레이션할 수 있음)                                                                            |
+| [`HLLSKETCH`](https://docs.aws.amazon.com/redshift/latest/dg/r_HLLSKTECH_type.html)                                                  | [`AggregateFunction(uniqHLL12, X)`](/ko/reference/data-types/aggregatefunction)                                                                                                                                           |
+| [`SUPER`](https://docs.aws.amazon.com/redshift/latest/dg/r_SUPER_type.html)                                                          | [`Tuple`](/ko/reference/data-types/tuple), [`Nested`](/ko/reference/data-types/nested-data-structures/index), [`배열`](/ko/reference/data-types/array), [`JSON`](/ko/reference/data-types/newjson), [`맵`](/ko/reference/data-types/map) |
+| [`TIME`](https://docs.aws.amazon.com/redshift/latest/dg/r_Datetime_types.html#r_Datetime_types-time)                                 | [`DateTime`](/ko/reference/data-types/datetime), [`DateTime64`](/ko/reference/data-types/datetime64)                                                                                                                         |
+| [`TIMETZ`](https://docs.aws.amazon.com/redshift/latest/dg/r_Datetime_types.html#r_Datetime_types-timetz)                             | [`DateTime`](/ko/reference/data-types/datetime), [`DateTime64`](/ko/reference/data-types/datetime64)                                                                                                                         |
+| [`VARBYTE`](https://docs.aws.amazon.com/redshift/latest/dg/r_VARBYTE_type.html) **                                                   | [`String`](/ko/reference/data-types/string)과 [`Bit`](/ko/reference/functions/regular-functions/bit-functions) 및 [Encoding](/ko/reference/functions/regular-functions/encoding-functions#hex) 함수를 함께 사용                          |
+
+<sub><span>*</span> ClickHouse는 추가로 더 넓은 범위의 부호 없는 정수도 지원합니다. 즉, <a href="http://clickhouse.com/docs/sql-reference/data-types/int-uint">`UInt8`, `UInt32`, `UInt32` and `UInt64`</a>입니다.</sub><br />
+<sub><span>**</span>ClickHouse의 String 타입은 기본적으로 길이 제한이 없지만, <a href="http://clickhouse.com/docs/sql-reference/statements/create/table#constraints">제약 조건</a>을 사용해 특정 길이로 제한할 수 있습니다.</sub>
+
+<div id="compression">
+  ## DDL 구문
+</div>
+
+<div id="sorting-keys">
+  ### 정렬 키
+</div>
+
+ClickHouse와 Redshift에는 모두 데이터를 저장할 때의 정렬 방식을 정의하는 &quot;정렬 키&quot;라는 개념이 있습니다. Redshift에서는 `SORTKEY` 절을 사용해 정렬 키를 정의합니다:
+
+```sql
+CREATE TABLE some_table(...) SORTKEY (column1, column2)
+```
+
+이에 반해 ClickHouse는 정렬 순서를 지정할 때 `ORDER BY` 절을 사용합니다:
+
+```sql
+CREATE TABLE some_table(...) ENGINE = MergeTree ORDER BY (column1, column2)
+```
+
+대부분의 경우 기본 `COMPOUND` 유형을 사용한다면, ClickHouse에서는 Redshift와
+동일한 정렬 키(sorting key) 컬럼과 순서를 사용할 수 있습니다. Redshift에 데이터가
+추가되면 새로 추가된 데이터를 다시 정렬하고 쿼리 플래너를 위한 통계를
+업데이트하기 위해 `VACUUM` 및 `ANALYZE` 명령을 실행해야 합니다. 그렇지 않으면
+정렬되지 않은 공간이 점점 늘어납니다. ClickHouse에서는 이러한 과정이 필요하지 않습니다.
+
+Redshift는 정렬 키를 위한 몇 가지 편의 기능을 지원합니다. 첫 번째는
+자동 정렬 키(`SORTKEY AUTO` 사용)입니다. 이는 시작하기에는 적절할 수 있지만,
+정렬 키가 최적으로 설정된 경우에는 명시적 정렬 키가 최상의 성능과
+스토리지 효율성을 보장합니다. 두 번째는 `INTERLEAVED` 정렬 키로,
+쿼리에서 하나 이상의 보조 정렬 컬럼을 사용할 때 성능을 높이기 위해 정렬 키의
+일부 컬럼에 동일한 가중치를 부여합니다. ClickHouse는 명시적인 [프로젝션](/ko/concepts/features/projections/projections)을
+지원하며, 약간 다른 설정을 통해 동일한 최종 결과를 얻을 수 있습니다.
+
+&quot;primary key&quot; 개념은 ClickHouse와 Redshift에서 서로 다른 의미를 가진다는 점을
+알아두어야 합니다. Redshift에서 primary key는 제약 조건을 적용하기 위한 전통적인
+RDBMS 개념과 유사합니다. 그러나 Redshift에서는 이것이 엄격하게 적용되지는 않으며,
+대신 쿼리 플래너와 노드 간 데이터 배포를 위한 힌트 역할을 합니다. ClickHouse에서
+primary key는 희소 프라이머리 인덱스를 구성하는 데 사용되는 컬럼을 뜻하며,
+이 인덱스는 디스크에서 데이터가 정렬되도록 하여 압축을 극대화하고 프라이머리 인덱스가
+불필요하게 커지는 것을 막아 메모리 낭비를 방지합니다.

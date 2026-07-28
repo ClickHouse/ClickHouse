@@ -249,8 +249,33 @@ void Block::insertUnique(ColumnWithTypeAndName elem)
 
 void Block::erase(const std::set<size_t> & positions)
 {
-    for (auto it = positions.rbegin(); it != positions.rend(); ++it)
-        erase(*it);
+    if (positions.empty())
+        return;
+
+    if (*positions.rbegin() >= data.size())
+        throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Position out of bound in Block::erase(), max position = {}",
+            data.empty() ? 0 : data.size() - 1);
+
+    /// Compact `data` in a single pass, dropping the erased positions, then rebuild the name index once.
+    /// This is O(columns) instead of O(columns * erased) that repeated single-position erases would cost.
+    size_t next = 0;
+    auto pos_it = positions.begin();
+    for (size_t i = 0; i < data.size(); ++i)
+    {
+        if (pos_it != positions.end() && *pos_it == i)
+        {
+            ++pos_it;
+            continue;
+        }
+        if (next != i)
+            data[next] = std::move(data[i]);
+        ++next;
+    }
+    data.resize(next);
+
+    index_by_name.clear();
+    for (size_t i = 0; i < data.size(); ++i)
+        index_by_name.emplace(data[i].name, i);
 }
 
 
@@ -688,7 +713,7 @@ Block Block::sortColumns() const
     Block sorted_block;
 
     /// std::unordered_map (index_by_name) cannot be used to guarantee the sort order
-    std::vector<IndexByName::const_iterator> sorted_index_by_name(index_by_name.size());
+    VectorWithMemoryTracking<IndexByName::const_iterator> sorted_index_by_name(index_by_name.size());
     {
         size_t i = 0;
         for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)
@@ -856,7 +881,7 @@ void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out
     /// The traditional task: the largest common subsequence (LCS).
     /// Assume that order is important. If this becomes wrong once, let's simplify it: for example, make 2 sets.
 
-    std::vector<std::vector<int>> lcs(lhs.columns() + 1);
+    VectorWithMemoryTracking<VectorWithMemoryTracking<int>> lcs(lhs.columns() + 1);
     for (auto & v : lcs)
         v.resize(rhs.columns() + 1);
 
@@ -1005,7 +1030,7 @@ void materializeBlockInplace(Block & block, bool remove_special_column_represent
     }
 }
 
-Block concatenateBlocks(const std::vector<Block> & blocks)
+Block concatenateBlocks(const Blocks & blocks)
 {
     if (blocks.empty())
         return {};

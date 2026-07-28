@@ -1,6 +1,8 @@
 services:
   nessie:
-    image: ghcr.io/projectnessie/nessie:0.107.2
+    # Mirror of ghcr.io/projectnessie/nessie:0.107.2 (see compose/mirror-images.sh).
+    # Pulled via the dockerhub-proxy cache; ghcr.io is not behind the proxy.
+    image: clickhouse/projectnessie-nessie:0.107.2
     ports:
       - "${ICEBERG_REST_CATALOG_PORT}:19120"
     environment:
