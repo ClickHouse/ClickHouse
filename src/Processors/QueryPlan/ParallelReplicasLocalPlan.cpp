@@ -334,6 +334,11 @@ QueryPlanPtr createLocalPlanFragmentForParallelReplicas(
     {
         auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
 
+        /// Only the coordinated read (marked for parallel reading) is split across replicas. A JOIN's other side is
+        /// left as a plain full local read (broadcast), matching how it is read on remote replicas.
+        if (!reading->isParallelReadingFromReplicas())
+            continue;
+
         MergeTreeAllRangesCallback all_ranges_cb = [coordinator](InitialAllRangesAnnouncement announcement) -> std::optional<InitialAllRangesAnnouncementResponse>
         { return coordinator->handleInitialAllRangesAnnouncement(std::move(announcement)); };
 

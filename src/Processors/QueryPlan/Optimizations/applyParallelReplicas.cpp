@@ -1,4 +1,5 @@
 #include <memory>
+#include <optional>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
@@ -13,7 +14,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
-#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromParallelReplicas.h>
@@ -40,6 +40,30 @@ namespace QueryPlanOptimizations
 {
 
 constexpr bool debug_logging_enabled = false;
+
+/// Plan-wide collector of the MergeTree reads to distribute (defined below; used by buildPlanFragment).
+static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node * node);
+
+/// Coordinated-side child index for an eligible JOIN (the side split across replicas): 0 for INNER (ALL)
+/// and LEFT, 1 for RIGHT; nullopt otherwise (FULL/CROSS/COMMA/PASTE, INNER non-ALL). The other side is
+/// read in full by every replica.
+static std::optional<size_t> coordinatedJoinSideIndex(const QueryPlan::Node * node)
+{
+    /// The pass runs before logical joins are converted to physical (see optimizeTreeSecondPass), so an
+    /// eligible join is always a JoinStepLogical here.
+    const auto * join = typeid_cast<const JoinStepLogical *>(node->step.get());
+    if (!join)
+        return {};
+
+    const JoinKind kind = join->getJoinOperator().kind;
+    const JoinStrictness strictness = join->getJoinOperator().strictness;
+
+    if ((kind == JoinKind::Inner && strictness == JoinStrictness::All) || kind == JoinKind::Left)
+        return 0;
+    if (kind == JoinKind::Right)
+        return 1;
+    return {};
+}
 
 class ApplyParallelReplicasVisitor : public QueryPlanVisitor<ApplyParallelReplicasVisitor, debug_logging_enabled>
 {
@@ -89,9 +113,32 @@ public:
         node->children = {&union_node};
     }
 
+    /// If `node` is an eligible JOIN whose coordinated-side child is a split marker, pull the split above the
+    /// join so the whole join ships as one fragment (coordinated side read directly, other side
+    /// broadcast). `node` becomes the split and keeps lifting through the code below.
+    void liftSplitAboveJoin(QueryPlan::Node * node)
+    {
+        const auto coordinated_index = coordinatedJoinSideIndex(node);
+        if (!coordinated_index)
+            return;
+
+        auto * coordinated_child = node->children[*coordinated_index];
+        if (!typeid_cast<const ParallelReplicasSplitStep *>(coordinated_child->step.get()))
+            return;
+
+        auto & join_node = nodes.emplace_back();
+        join_node.step = std::move(node->step);
+        join_node.children = node->children;
+        join_node.children[*coordinated_index] = coordinated_child->children.front();
+
+        node->step = std::make_unique<ParallelReplicasSplitStep>(join_node.step->getOutputHeader());
+        node->children = {&join_node};
+    }
+
     void visitBottomUpImpl(QueryPlan::Node * current_node, QueryPlan::Node * parent_node)
     {
         liftSplitsAboveUnion(current_node);
+        liftSplitAboveJoin(current_node);
 
         if (!parent_node)
             return;
@@ -208,20 +255,14 @@ private:
         auto plan_fragment = std::make_unique<QueryPlan>(QueryPlan::cloneSubtree(split_node->children.front()));
 
         ContextPtr context;
-        /// Mark the reads so the shipped fragment is deserialized in parallel-reading mode on replicas.
-        Stack stack;
-        traverseQueryPlan(
-            stack,
-            *plan_fragment->getRootNode(),
-            [&](auto &) {},
-            [&](auto & node)
-            {
-                if (auto * read_step = typeid_cast<ReadFromMergeTree *>(node.step.get()))
-                {
-                    read_step->enableParallelReadingFromReplicasForSerialization();
-                    context = read_step->getContext();
-                }
-            });
+        /// Mark only the coordinated reads (collectReadsToDistribute follows a join's coordinated side) so they
+        /// are deserialized in parallel-reading mode; the other side stays unmarked and is broadcast.
+        for (auto * read_node : collectReadsToDistribute(plan_fragment->getRootNode()))
+        {
+            auto * read_step = typeid_cast<ReadFromMergeTree *>(read_node->step.get());
+            read_step->enableParallelReadingFromReplicasForSerialization();
+            context = read_step->getContext();
+        }
 
         return {std::move(plan_fragment), context};
     }
@@ -278,22 +319,13 @@ static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node *
     if (node->children.empty())
         return {};
 
-    const auto * join = typeid_cast<const JoinStep *>(node->step.get());
-    const auto * join_logical = typeid_cast<const JoinStepLogical *>(node->step.get());
-    if (join || join_logical)
+    if (typeid_cast<const JoinStepLogical *>(node->step.get()))
     {
-        const JoinKind kind = join ? join->getJoin()->getTableJoin().kind() : join_logical->getJoinOperator().kind;
-        const JoinStrictness strictness
-            = join ? join->getJoin()->getTableJoin().strictness() : join_logical->getJoinOperator().strictness;
-
         /// Distribute only the join kinds where splitting one side across replicas and concatenating the
-        /// per-replica results yields the correct join: INNER (ALL) and LEFT drive the left side, RIGHT
-        /// drives the right side (SEMI/ANTI ride on the LEFT/RIGHT kind). FULL would duplicate the
-        /// non-split side's unmatched rows; CROSS/COMMA/PASTE and other kinds are kept local.
-        if ((kind == JoinKind::Inner && strictness == JoinStrictness::All) || kind == JoinKind::Left)
-            return collectReadsToDistribute(node->children.at(0));
-        if (kind == JoinKind::Right)
-            return collectReadsToDistribute(node->children.at(1));
+        /// per-replica results yields the correct join (see coordinatedJoinSideIndex): INNER (ALL) and
+        /// LEFT coordinate the left side, RIGHT coordinates the right side. FULL/CROSS/COMMA/PASTE are kept local.
+        if (const auto coordinated_index = coordinatedJoinSideIndex(node))
+            return collectReadsToDistribute(node->children.at(*coordinated_index));
         return {};
     }
 

@@ -281,7 +281,11 @@ void optimizeTreeSecondPass(
         {
             if (optimization_settings.enable_join_runtime_filters)
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
-            convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
+            /// Keep joins logical for `applyParallelReplicas` below: it needs the final (reordered,
+            /// runtime-filtered) join shape and clones a fragment, which only `JoinStepLogical` supports.
+            /// Joins left in the outer plan are converted right after the fragment is created.
+            if (!optimization_settings.enable_parallel_replicas)
+                convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
 
     /// If join runtime filters were added re-run push down optimizations
@@ -365,6 +369,14 @@ void optimizeTreeSecondPass(
         });
 
     applyParallelReplicas(query_plan, nodes, optimization_settings);
+
+    /// Distributed joins now live inside fragments and are converted by each fragment's own
+    /// re-optimization. Convert the joins left in the outer plan (non-distributed kinds, or all of them
+    /// when nothing was distributed), which the traversal above skipped.
+    if (optimization_settings.enable_parallel_replicas)
+        traverseQueryPlan(stack, root,
+            [&](auto &) {},
+            [&](auto & frame_node) { convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings); });
 
     stack.push_back({.node = &root});
     while (!stack.empty())
@@ -490,6 +502,9 @@ void optimizeTreeSecondPass(
                 local_optimization_settings.reuse_storage_ordering_for_window_functions
                     = subquery_optimization_settings.reuse_storage_ordering_for_window_functions;
                 local_optimization_settings.enable_parallel_replicas = false;
+                /// Runtime filters are already in the cloned fragment (added on the outer plan); re-adding
+                /// them here would filter the coordinated read twice.
+                local_optimization_settings.enable_join_runtime_filters = false;
             }
 
             auto local_plan = read_from_local->extractQueryPlan();
