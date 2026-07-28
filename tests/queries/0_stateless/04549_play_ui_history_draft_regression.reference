@@ -6,6 +6,12 @@ close: the closed tab entry carries the latest draft
 close: the draft entry does not carry run=1
 close+back: the recreated tab restores the draft
 close+back: the run result snapshot is kept
+close others: only the active tab survives
+close others: the surviving tab keeps its draft
+close others: the current entry carries the draft
+close others: the URL carries the draft
+close others: the draft entry does not carry run=1
+close others: the run result snapshot is kept
 back: a newer unrun draft is preserved
 back: the editor shows the draft
 back: the entry result snapshot is adopted

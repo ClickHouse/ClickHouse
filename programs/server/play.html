@@ -8379,6 +8379,14 @@ function closeTab(id) {
 /// Close every tab except the active one: abort the other tabs' in-flight queries and drop their panels.
 function closeOtherTabs() {
     markBootstrapDirty();
+    /// A structural tab change, exactly like the leave in `switchToTab`/`addTab`/`closeTab`: the
+    /// `input` handler no longer refreshes history on each keystroke, so fold the surviving active
+    /// tab's latest unrun draft (and its parameter values) into its own entry before the other tabs
+    /// go away. Otherwise the entry — and the URL — keep the stale last-run snapshot, so a reload
+    /// before the debounced save fires, or simply copying the URL after `Close other tabs`, loses
+    /// the newer draft. The active tab always survives here, so the fold targets it.
+    captureActiveTab();
+    refreshCurrentHistoryEntry(getActiveTab());
 
     for (const tab of tabs) {
         if (tab.id === activeTabId) continue;

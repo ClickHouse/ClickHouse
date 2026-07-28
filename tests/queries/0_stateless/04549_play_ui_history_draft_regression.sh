@@ -14,7 +14,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #   - closing the ACTIVE tab folds its latest unrun draft into its own history entry before
 #     removal (`closeTab` -> `captureActiveTab` + `refreshCurrentHistoryEntry`), so a later Back
 #     that recreates the closed tab restores the draft, not the stale last-run snapshot, and the
-#     refreshed entry drops `run=1` (the draft was never run);
+#     refreshed entry drops `run=1` (the draft was never run); `Close other tabs`
+#     (`closeOtherTabs`) is the same kind of structural boundary and folds the SURVIVING active
+#     tab's draft into its entry (and the URL) before the other tabs go away;
 #   - a same-session Back-then-Forward round-trip preserves a newer unrun draft instead of
 #     clobbering it with the entry's older query (`window.onpopstate`'s `preserve_draft`). "Draft"
 #     means dirty since the tab's last history write (`tab.query !== tab.lastSavedQuery`), NOT
@@ -78,7 +80,7 @@ const FUNCS = ['toBase64', 'fromBase64', 'nextDefaultTitle', 'uniqueTitle', 'tab
     'writeHistoryEntry', 'sameParamValues', 'queryMentionsParam', 'tabReflectsRun', 'liveDivergedFromRun', 'effectiveDatabase',
     'sameServerAddress', 'effectiveConnectionUser', 'stampSelectedDatabaseConnection',
     'refreshCurrentHistoryEntry', 'saveHistory', 'syncHistory', 'resolveTabForState',
-    'markBootstrapDirty', 'switchToTab', 'addTab', 'closeTab', 'scheduleSave', 'loadFromDb',
+    'markBootstrapDirty', 'switchToTab', 'addTab', 'closeTab', 'closeOtherTabs', 'scheduleSave', 'loadFromDb',
     'persist', 'persistColorModes', 'reconcileStartup'];
 let code = FUNCS.map(f => extractTopLevel(new RegExp('^(async )?function ' + f + '\\('), f)).join('\n');
 code += '\n' + extractTopLevel(/^window\.onpopstate = /, 'window.onpopstate');
@@ -490,6 +492,27 @@ async function openPlain()
     await drain();
     assert_eq('close+back: the recreated tab restores the draft', active().query, 'SELECT 1 -- draft');
     assert_eq('close+back: the run result snapshot is kept', active().result && active().result.query, 'SELECT 1');
+
+    /// `Close other tabs` is a structural boundary of the same kind: the SURVIVING active tab's
+    /// latest unrun draft is folded into its own history entry — and into the URL — before the
+    /// other tabs are dropped. Otherwise a reload before the debounced save fires, or simply
+    /// copying the URL right after the action, would restore the stale last-run snapshot.
+    reset();
+    await run('SELECT 1');
+    sandbox.addTab();
+    await drain();
+    sandbox.switchToTab(sandbox.tabs[0].id);
+    await drain();
+    type('SELECT 2');
+    sandbox.closeOtherTabs();
+    await drain();
+    const current = () => sandbox.history.stack[sandbox.history.idx];
+    assert_eq('close others: only the active tab survives', sandbox.tabs.length, 1);
+    assert_eq('close others: the surviving tab keeps its draft', active().query, 'SELECT 2');
+    assert_eq('close others: the current entry carries the draft', current().state.query, 'SELECT 2');
+    assert_eq('close others: the URL carries the draft', sandbox.fromBase64(current().url.split('#')[1]), 'SELECT 2');
+    assert_eq('close others: the draft entry does not carry run=1', current().url.includes('run=1'), false);
+    assert_eq('close others: the run result snapshot is kept', active().result && active().result.query, 'SELECT 1');
 
     /// A same-session Back-then-Forward round-trip preserves a newer unrun draft instead of
     /// restoring the entries' older queries over it.
