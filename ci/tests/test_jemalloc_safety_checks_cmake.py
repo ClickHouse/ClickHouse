@@ -4,10 +4,10 @@
 load-bearing for the `WeeklyJemallocSafety` lane:
 
 * `JEMALLOC_OPT_SAFETY_CHECKS` arms `config_opt_safety_checks`
-  (`contrib/jemalloc-cmake/include/jemalloc/internal/jemalloc_preamble.h:188`), which
-  gates `arena_ptr_array_flush_impl`'s sized-deallocation detector.
-* `JEMALLOC_OPT_SIZE_CHECKS` arms `config_opt_size_checks` (same file, `:207`),
-  which is the **sole** gate on `maybe_check_alloc_ctx`
+  (`contrib/jemalloc-cmake/include/jemalloc/internal/jemalloc_preamble.h:188`, asserted
+  below), which gates `arena_ptr_array_flush_impl`'s sized-deallocation detector.
+* `JEMALLOC_OPT_SIZE_CHECKS` arms `config_opt_size_checks` (same file, `:207`,
+  asserted below), which is the **sole** gate on `maybe_check_alloc_ctx`
   (`jemalloc_internal_inlines_c.h:420-421`) - the check whose failure text is
   literally `"Internal heap corruption detected: mismatch in slab bit"`, i.e.
   exactly the union-view confusion this lane exists to catch.
@@ -27,8 +27,11 @@ this file pins every place such a loss can happen:
   CMake comments stripped so a commented-out macro name cannot satisfy the assertion;
 * the platform headers the option can reach (x86-64 only, since the option refuses
   every other arch), where a bare `#undef` would silently cancel the `-D`;
-* the `CI Tests` cache digest, so a commit changing either layer actually re-runs this
-  file instead of being cache-skipped.
+* the compiled `jemalloc_preamble.h`, the sole place each `-D` is converted into the
+  boolean the detector sites read, where narrowing a condition to `JEMALLOC_DEBUG`
+  alone would disarm a gate with every other layer still green;
+* the `CI Tests` cache digest, so a commit changing any of those layers actually
+  re-runs this file instead of being cache-skipped.
 """
 
 import os
@@ -50,6 +53,23 @@ from ci.defs.job_configs import JobConfigs
 REPO_ROOT = Path(__file__).resolve().parents[2]
 JEMALLOC_CMAKE = REPO_ROOT / "contrib" / "jemalloc-cmake" / "CMakeLists.txt"
 JEMALLOC_CMAKE_REL = "./contrib/jemalloc-cmake/CMakeLists.txt"
+
+# The header that actually gets compiled: `target_include_directories(_jemalloc SYSTEM
+# PUBLIC include)` (CMakeLists.txt:177) precedes `PRIVATE "${LIBRARY_DIR}/include"`
+# (:178), and the submodule's `jemalloc_preamble.h.in` is never `configure_file`d, so
+# this ClickHouse-owned copy shadows it.
+JEMALLOC_PREAMBLE = (
+    REPO_ROOT
+    / "contrib"
+    / "jemalloc-cmake"
+    / "include"
+    / "jemalloc"
+    / "internal"
+    / "jemalloc_preamble.h"
+)
+JEMALLOC_PREAMBLE_REL = (
+    "./contrib/jemalloc-cmake/include/jemalloc/internal/jemalloc_preamble.h"
+)
 
 OPTION_NAME = "ENABLE_JEMALLOC_SAFETY_CHECKS"
 REQUIRED_MACROS = ("JEMALLOC_OPT_SAFETY_CHECKS", "JEMALLOC_OPT_SIZE_CHECKS")
@@ -278,10 +298,11 @@ def test_reachable_platform_headers_keep_the_macro_undefs_inert():
     """A bare `#undef` in the configured platform header cancels the `-D`.
 
     `jemalloc_internal_defs.h` is included before the `config_opt_*` definitions are
-    read (`jemalloc_preamble.h:188` / `:207` test `defined(...)`), so an active
-    `#undef JEMALLOC_OPT_SIZE_CHECKS` there would disarm the gate while the cmake
-    option, the build and the runtime preflight all stay green. Every header the
-    option can reach must therefore keep both `#undef`s commented out.
+    read (`jemalloc_preamble.h:188` / `:207`, whose conditions are asserted by
+    `test_compiled_preamble_maps_each_macro_to_its_config_flag`, test `defined(...)`),
+    so an active `#undef JEMALLOC_OPT_SIZE_CHECKS` there would disarm the gate while
+    the cmake option, the build and the runtime preflight all stay green. Every header
+    the option can reach must therefore keep both `#undef`s commented out.
     """
     for header in _reachable_defs_headers():
         text = header.read_text(encoding="utf-8")
@@ -292,10 +313,70 @@ def test_reachable_platform_headers_keep_the_macro_undefs_inert():
                 f"({active}); it must stay commented out (`/* #undef {macro} */`). A "
                 f"bare `#undef` silently cancels the `-D{macro}` that "
                 f"{OPTION_NAME} passes, because jemalloc tests `defined({macro})` "
-                "after including this header "
-                "(contrib/jemalloc-cmake/include/jemalloc/internal/jemalloc_preamble.h"
-                ":188 and :207)."
+                f"after including this header ({JEMALLOC_PREAMBLE_REL[2:]}:188 and "
+                ":207)."
             )
+
+
+def _config_flag_condition(text: str, flag: str) -> str:
+    """The `#if`/`#ifdef`/`#elif` directives inside `static const bool <flag> = ...;`.
+
+    Backslash continuations are spliced first (the preprocessor's own rule), so a
+    condition legitimately reflowed across physical lines is still read whole. Then only
+    `#`-leading logical lines are kept, so a C block comment in an arm (the safety block
+    has one in its `#elif`) cannot be mistaken for part of a condition, and so the
+    assertion is about the condition rather than about whitespace or arm order.
+    """
+    text = re.sub(r"\\\n", " ", text)
+    match = re.search(rf"static const bool\s+{flag}\s*=(.*?);", text, re.S)
+    assert match, (
+        f"{JEMALLOC_PREAMBLE_REL}: no `static const bool {flag} = ...;` initializer "
+        "found. This header is the only place the compile-time macro becomes the "
+        "boolean jemalloc's detector sites read - re-derive this assertion against "
+        "whatever replaced it before deleting it."
+    )
+    return "\n".join(
+        line.strip()
+        for line in match.group(1).splitlines()
+        if line.strip().startswith("#")
+    )
+
+
+@pytest.mark.parametrize(
+    "macro, flag",
+    [
+        ("JEMALLOC_OPT_SAFETY_CHECKS", "config_opt_safety_checks"),
+        ("JEMALLOC_OPT_SIZE_CHECKS", "config_opt_size_checks"),
+    ],
+)
+def test_compiled_preamble_maps_each_macro_to_its_config_flag(macro, flag):
+    """Each `-D` must still be read by the flag the detector sites test.
+
+    This is the third and last layer at which the option can be silently lost. The two
+    above pin that the `-D` is passed and not cancelled; this one pins that it is
+    consumed. Narrow `config_opt_size_checks` to `#if defined(JEMALLOC_DEBUG)` and the
+    `"mismatch in slab bit"` check is disarmed while the cmake invocation, the platform
+    headers and the build all stay green - and for the size gate there is no runtime
+    observable either (no mallctl), so nothing else can notice.
+    """
+    condition = _config_flag_condition(
+        JEMALLOC_PREAMBLE.read_text(encoding="utf-8"), flag
+    )
+    # Whole identifier, not a substring: `JEMALLOC_OPT_SIZE_CHECKS_DISABLED` contains
+    # `JEMALLOC_OPT_SIZE_CHECKS` but is a different macro, and jemalloc tests the exact
+    # identifier.
+    assert re.search(rf"\b{macro}\b", condition), (
+        f"{JEMALLOC_PREAMBLE_REL}: `{flag}` no longer reads `{macro}`; its condition "
+        f"is now:\n{condition}\n"
+        f"This header is the sole conversion of `-D{macro}` into the boolean the "
+        "detector sites read, and it is the one that gets compiled because "
+        "`contrib/jemalloc-cmake/CMakeLists.txt:177` puts the cmake include tree ahead "
+        "of the submodule's (whose `jemalloc_preamble.h.in` is never configure_file'd). "
+        f"With `{macro}` dropped from the condition the gate falls back to "
+        "`JEMALLOC_DEBUG`, which the safety-check lane does not set, so the lane "
+        "rebuilds and fuzzes green with the detector gone - and `config_opt_size_checks` "
+        "has no mallctl, so the AST fuzzer job's runtime preflight cannot see it."
+    )
 
 
 def test_ci_tests_digest_covers_the_jemalloc_cmake_file():
@@ -347,3 +428,31 @@ def test_ci_tests_digest_covers_the_reachable_platform_headers():
     assert not JobConfigs.ci_tests.is_affected_by(
         ["contrib/jemalloc/src/ctl.c"]
     ), "the platform-header digest entry broadened outside jemalloc-cmake"
+
+
+def test_ci_tests_digest_covers_the_compiled_preamble():
+    """The mapping assertion above must not be cache-skipped either.
+
+    Narrowing a `config_opt_*` condition touches neither `./ci`, nor the jemalloc cmake
+    file, nor a platform header, so the compiled preamble needs its own digest entry -
+    otherwise the commit that disarms a gate is exactly the commit on which this file
+    does not run, while the safety-check build job (which digests all of `./contrib`)
+    still rebuilds and fuzzes green.
+    """
+    digest = JobConfigs.ci_tests.digest_config
+    assert JEMALLOC_PREAMBLE_REL in digest.include_paths, (
+        f"add {JEMALLOC_PREAMBLE_REL!r} to JobConfigs.ci_tests digest include_paths; "
+        f"got {digest.include_paths}"
+    )
+    assert JobConfigs.ci_tests.is_affected_by(
+        [str(JEMALLOC_PREAMBLE.relative_to(REPO_ROOT))]
+    ), "CI Tests is not invalidated by a change to the compiled jemalloc preamble"
+    # Exact file, not the directory: the other tracked headers next to it must not
+    # start re-running CI Tests.
+    assert not JobConfigs.ci_tests.is_affected_by(
+        ["contrib/jemalloc-cmake/include/jemalloc/jemalloc.h"]
+    ), "the preamble digest entry broadened to the jemalloc-cmake include tree"
+    # And it names the compiled header, not the submodule template it shadows.
+    assert not JobConfigs.ci_tests.is_affected_by(
+        ["contrib/jemalloc/include/jemalloc/internal/jemalloc_preamble.h.in"]
+    ), "the preamble digest entry points at the submodule template, not the compiled header"

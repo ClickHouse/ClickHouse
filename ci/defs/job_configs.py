@@ -204,14 +204,18 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci",
-                # ci/tests asserts that this file still defines BOTH jemalloc safety
-                # macros, and that no platform header the option can reach turns
-                # either macro's `#undef` back on (see
+                # ci/tests asserts all three layers at which
+                # ENABLE_JEMALLOC_SAFETY_CHECKS can be silently lost: that the cmake
+                # file still defines BOTH jemalloc safety macros, that no platform
+                # header the option can reach turns either macro's `#undef` back on,
+                # and that the compiled preamble still reads each macro into the
+                # boolean jemalloc's detector sites test (see
                 # test_jemalloc_safety_checks_cmake.py); without these paths here the
                 # assertions would be cache-skipped exactly on the commits that
                 # change what they guard.
                 "./contrib/jemalloc-cmake/CMakeLists.txt",
                 "./contrib/jemalloc-cmake/include_*/jemalloc/internal/jemalloc_internal_defs.h.in",
+                "./contrib/jemalloc-cmake/include/jemalloc/internal/jemalloc_preamble.h",
             ]
         ),
         post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
