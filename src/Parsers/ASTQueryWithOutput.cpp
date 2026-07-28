@@ -8,16 +8,11 @@ namespace DB
 
 void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const
 {
-    if (out_file)
-        cloned.set(cloned.out_file, out_file->clone());
-    if (format_ast)
-        cloned.set(cloned.format_ast, format_ast->clone());
-    if (settings_ast)
-        cloned.set(cloned.settings_ast, settings_ast->clone());
-    if (compression)
-        cloned.set(cloned.compression, compression->clone());
-    if (compression_level)
-        cloned.set(cloned.compression_level, compression_level->clone());
+    /// Clone the output options in the canonical order so that the cloned children
+    /// match those of a freshly parsed AST (see `output_option_members`).
+    for (auto member : output_option_members)
+        if (this->*member)
+            cloned.set(cloned.*member, (this->*member)->clone());
 }
 
 void ASTQueryWithOutput::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const

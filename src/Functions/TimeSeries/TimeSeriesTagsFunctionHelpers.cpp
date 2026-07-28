@@ -127,7 +127,7 @@ namespace
         }
 
         /// The argument can be wrapped in ColumnConst or ColumnLowCardinality.
-        if (auto full_column = column_tags_array.convertToFullIfNeeded(); full_column.get() != &column_tags_array)
+        if (auto full_column = column_tags_array.convertToFullIfWrapped()->convertToFullColumnIfLowCardinality(); full_column.get() != &column_tags_array)
         {
             extractTagsArrayFromColumn(function_name, argument_index, *full_column, out_tags_vector);
             return;
@@ -267,7 +267,7 @@ namespace
         }
 
         /// The argument can be wrapped in ColumnLowCardinality.
-        if (auto full_column = column.convertToFullIfNeeded(); full_column.get() != &column)
+        if (auto full_column = column.convertToFullIfWrapped()->convertToFullColumnIfLowCardinality(); full_column.get() != &column)
         {
             return extractGroupFromColumn(function_name, argument_index, *full_column, false);
         }
@@ -333,7 +333,7 @@ namespace
         }
 
         /// The argument can be wrapped in ColumnConst or ColumnLowCardinality.
-        if (auto full_column = column.convertToFullIfNeeded(); full_column.get() != &column)
+        if (auto full_column = column.convertToFullIfWrapped()->convertToFullColumnIfLowCardinality(); full_column.get() != &column)
         {
             extractIDFromColumn(function_name, argument_index, *full_column, out_ids);
             return;
