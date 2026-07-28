@@ -265,7 +265,9 @@ public:
         const ColumnPtr & column_needle = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[1].column : arguments[0].column;
 
         ColumnPtr column_start_pos = nullptr;
-        if constexpr (!ImplIsLike<Impl>::value)
+        /// For the implementations that accept an ESCAPE character, the third argument is that character,
+        /// not a start position - it is consumed by the needle rewrite below.
+        if constexpr (!ImplSupportsEscape<Impl>::value)
         {
             if (arguments.size() >= 3)
                 column_start_pos = arguments[2].column;
