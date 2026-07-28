@@ -1,5 +1,7 @@
 import concurrent.futures
 import threading
+import time
+import uuid
 
 import pytest
 
@@ -23,7 +25,8 @@ dst = cluster.add_instance(
 FETCH_PAUSE = "rmt_fetch_pause_before_publish_to_detached"
 DETACH_PAUSE = "merge_tree_pause_before_clone_to_detached"
 
-# Deterministic part names, and no background merge that could rename them.
+# Keeper fault injection would retry an insert and change the block numbers the part names
+# are derived from. Merges are suppressed separately, by SYSTEM STOP MERGES in create_tables.
 INSERT_SETTINGS = {"insert_keeper_fault_injection_probability": "0"}
 
 
@@ -49,6 +52,10 @@ def create_tables(name, dst_settings=""):
             SETTINGS old_parts_lifetime = 100000{settings}
         """
         )
+        # Every successful replicated insert schedules merge selection, and the tests assert
+        # exact part names and counts, so keep merges off for the life of the table. The tables
+        # are dropped at the end of each test, so there is no SYSTEM START MERGES.
+        node.query(f"SYSTEM STOP MERGES {name}")
 
 
 def wait_for_pause(node, failpoint, timeout=60):
@@ -85,14 +92,53 @@ def part_fingerprint(node, name, part):
     ).strip()
 
 
-def run_fetch_in_background(node, query, results):
+def run_fetch_in_background(node, query, results, query_id=None):
     def run():
-        _, error = node.query_and_get_answer_with_error(query)
+        _, error = node.query_and_get_answer_with_error(query, query_id=query_id)
         results.append(error)
 
     thread = threading.Thread(target=run)
     thread.start()
     return thread
+
+
+def assert_query_stays_blocked(node, query_id, results, seconds, message, timeout=30):
+    """Positive signal that `query_id` is stuck rather than merely unscheduled: wait for it to
+    appear in system.processes, then require it to still be there `seconds` later. `results` is
+    the list the query's own thread appends to, so a query that already returned is reported as
+    `message` instead of as a missing process."""
+    deadline = time.monotonic() + timeout
+    while True:
+        assert not results, message
+        running = node.query(
+            f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'"
+        ).strip()
+        if running == "1":
+            break
+        assert time.monotonic() < deadline, f"query {query_id} never started"
+        time.sleep(0.2)
+
+    until = time.monotonic() + seconds
+    while time.monotonic() < until:
+        time.sleep(0.2)
+        assert not results, message
+        running = node.query(
+            f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'"
+        ).strip()
+        assert running == "1", f"query {query_id} stopped running before it was released"
+
+
+def parts_lock_wait_us(node, query_id):
+    """Microseconds THIS query spent waiting for the data parts lock. Per-query, unlike
+    system.events, which aggregates every parts-lock wait in the server."""
+    node.query("SYSTEM FLUSH LOGS query_log")
+    value = node.query(
+        "SELECT ProfileEvents['PartsLockWaitMicroseconds'] FROM system.query_log"
+        f" WHERE query_id = '{query_id}' AND type != 'QueryStart'"
+        " ORDER BY event_time_microseconds DESC LIMIT 1"
+    ).strip()
+    assert value != "", f"no query_log row with profile events for {query_id}"
+    return int(value)
 
 
 def test_fetch_does_not_clobber_finished_detached_part(started_cluster):
@@ -173,11 +219,13 @@ def test_fetch_waits_for_concurrent_detach(started_cluster):
     dst.query(f"SYSTEM ENABLE FAILPOINT {DETACH_PAUSE}")
     fetch_results = []
     detach_results = []
+    fetch_qid = f"fetch_{uuid.uuid4()}"
     try:
         fetch = run_fetch_in_background(
             dst,
             f"ALTER TABLE {name} FETCH PARTITION tuple() FROM '/clickhouse/tables/{name}_src'",
             fetch_results,
+            query_id=fetch_qid,
         )
         wait_for_pause(dst, FETCH_PAUSE)
 
@@ -188,20 +236,18 @@ def test_fetch_waits_for_concurrent_detach(started_cluster):
         wait_for_pause(dst, DETACH_PAUSE)
 
         # Release the fetch: it must now block acquiring lockParts, which DETACH holds
-        # across its clone. Sample the wait counter first so the block is measurable.
-        locks_before = int(
-            dst.query(
-                "SELECT value FROM system.events WHERE event = 'PartsLockWaitMicroseconds'"
-            ).strip()
-            or 0
-        )
+        # across its clone. While DETACH is still paused the clone at the canonical name is
+        # partial/empty, so a fetch that ignored the lock would replace it right here.
         dst.query(f"SYSTEM NOTIFY FAILPOINT {FETCH_PAUSE}")
 
-        # Give the fetch a chance to misbehave. While DETACH is still paused the clone is
-        # partial/empty at the canonical name, so a fetch that ignored the lock would
-        # replace it here.
-        dst.query("SELECT sleep(3)")
-        assert not fetch_results, "the fetch published while DETACH still held lockParts"
+        assert_query_stays_blocked(
+            dst,
+            fetch_qid,
+            fetch_results,
+            seconds=3,
+            message="the fetch published while DETACH still held lockParts",
+        )
+        assert not detach_results, "DETACH finished before the fetch was even released"
 
         dst.query(f"SYSTEM NOTIFY FAILPOINT {DETACH_PAUSE}")
     finally:
@@ -211,16 +257,11 @@ def test_fetch_waits_for_concurrent_detach(started_cluster):
     detach.join()
     fetch.join()
 
-    # The fetch really waited on the lock rather than racing past it.
-    locks_after = int(
-        dst.query(
-            "SELECT value FROM system.events WHERE event = 'PartsLockWaitMicroseconds'"
-        ).strip()
-        or 0
-    )
-    assert locks_after > locks_before, (
-        "the fetch never blocked on lockParts (wait counter did not move):"
-        f" {locks_before} -> {locks_after}"
+    # The fetch was blocked ON THE PARTS LOCK specifically: this counter is read from the
+    # fetch query's own query_log row, so no other parts-lock wait in the server can supply it.
+    waited_us = parts_lock_wait_us(dst, fetch_qid)
+    assert waited_us > 0, (
+        f"the fetch never waited for the parts lock (PartsLockWaitMicroseconds = {waited_us})"
     )
 
     assert detach_results == [""], detach_results
@@ -256,6 +297,91 @@ def test_fetch_partition_multi_part_still_works(started_cluster):
     for part in parts.split("\n"):
         dst.query(f"ALTER TABLE {name} ATTACH PART '{part}'")
     assert dst.query(f"SELECT count() FROM {name}").strip() == "4"
+
+    dst.query(f"DROP TABLE {name} SYNC")
+    src.query(f"DROP TABLE {name} SYNC")
+
+
+def test_fetch_partition_retry_deduplicates_covering_parts(started_cluster):
+    """A retry round where two missing names resolve to the SAME covering part.
+
+    Both parts of the partition fail to publish in round 1 (their canonical names got taken
+    while the fetch was parked), so both land in missing_parts. Meanwhile the source merged
+    them, so in round 2 `getContainingPart` maps both names onto one covering part. Without
+    deduplication that part is enqueued twice, the second attempt collides with the first
+    attempt's own output, and the statement never converges.
+    """
+    name = "t_dedup"
+    create_tables(name)
+
+    for i in range(2):
+        src.query(f"INSERT INTO {name} VALUES ({i}, 'v{i}')", settings=INSERT_SETTINGS)
+        dst.query(f"INSERT INTO {name} VALUES ({i}, 'v{i}')", settings=INSERT_SETTINGS)
+    parts = src.query(
+        f"SELECT name FROM system.parts WHERE database = currentDatabase()"
+        f" AND table = '{name}' AND active ORDER BY name"
+    ).strip().split("\n")
+    assert len(parts) == 2, parts
+    assert parts == dst.query(
+        f"SELECT name FROM system.parts WHERE database = currentDatabase()"
+        f" AND table = '{name}' AND active ORDER BY name"
+    ).strip().split("\n"), "both tables must hold the same part names"
+
+    dst.query(f"SYSTEM ENABLE FAILPOINT {FETCH_PAUSE}")
+    results = []
+    fetch = run_fetch_in_background(
+        dst,
+        f"ALTER TABLE {name} FETCH PARTITION tuple() FROM '/clickhouse/tables/{name}_src'",
+        results,
+    )
+    try:
+        # The failpoint stays enabled until the setup below is complete, so every publishing
+        # thread of round 1 parks - waiting for the first one is enough to know the statement
+        # is past its detached-partition pre-check.
+        wait_for_pause(dst, FETCH_PAUSE)
+
+        # Take both canonical names, so both parts of round 1 fail and are retried.
+        for part in parts:
+            dst.query(f"ALTER TABLE {name} DETACH PART '{part}'")
+        assert detached_rows(dst, name, "name", skip_staging=True) == "\n".join(parts)
+
+        # Merge the source, so the two retried names now resolve to one covering part. The
+        # retry builds its ActiveDataPartSet from the source replica's ZooKeeper `parts` list,
+        # and that set resolves covering parts on its own, so it is enough for the covering
+        # znode to be there - the covered ones may still linger.
+        src.query(f"SYSTEM START MERGES {name}")
+        src.query(f"OPTIMIZE TABLE {name} FINAL")
+        zk_parts_path = f"/clickhouse/tables/{name}_src/replicas/r1/parts"
+        covering = None
+        for _ in range(300):
+            znodes = src.query(
+                f"SELECT name FROM system.zookeeper WHERE path = '{zk_parts_path}' ORDER BY name"
+            ).strip().split("\n")
+            new_names = [n for n in znodes if n and n not in parts]
+            if len(new_names) == 1:
+                covering = new_names[0]
+                break
+            time.sleep(0.2)
+        assert covering is not None, (
+            f"source did not produce exactly one covering part: {znodes}"
+        )
+    finally:
+        dst.query(f"SYSTEM DISABLE FAILPOINT {FETCH_PAUSE}")
+    fetch.join()
+
+    # With deduplication the covering part is enqueued once, is fetched once, and the
+    # statement converges. Without it the duplicate attempt collides with the first one's
+    # output and every remaining round fails the same way, up to the retry limit.
+    assert len(results) == 1
+    assert results[0] == "", results[0]
+
+    # Exactly the two names DETACH created, plus the covering part fetched once.
+    assert detached_rows(dst, name, "name") == "\n".join(sorted(parts + [covering]))
+    assert "tmp-fetch" not in detached_rows(dst, name, "name")
+    assert "ignored_" not in detached_rows(dst, name, "name")
+
+    dst.query(f"ALTER TABLE {name} ATTACH PART '{covering}'")
+    assert dst.query(f"SELECT count() FROM {name}").strip() == "2"
 
     dst.query(f"DROP TABLE {name} SYNC")
     src.query(f"DROP TABLE {name} SYNC")
