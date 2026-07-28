@@ -900,6 +900,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         and not is_flaky_check
         and not is_targeted_check
         and not is_bugfix_validation
+        and not is_llvm_coverage
         and not args.test
     ):
         changed_files = info.get_changed_files()
