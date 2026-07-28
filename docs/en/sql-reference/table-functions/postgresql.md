@@ -13,7 +13,7 @@ Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a
 ## Syntax {#syntax}
 
 ```sql
-postgresql({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]})
+postgresql({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]} [, SETTINGS name=value, ...])
 ```
 
 ## Arguments {#arguments}
@@ -37,6 +37,16 @@ A table object with the same columns as the original PostgreSQL table.
 :::note
 In the `INSERT` query to distinguish table function `postgresql(...)` from table name with column names list you must use keywords `FUNCTION` or `TABLE FUNCTION`. See examples below.
 :::
+
+## Settings {#settings}
+
+The connection pool used by the `postgresql` table function (and the [`PostgreSQL`](/engines/table-engines/integrations/postgresql) table engine) can be configured with a trailing `SETTINGS` clause. When a setting is not specified, it defaults to the value of the corresponding query-level `postgresql_*` setting. See the table engine's [Settings](/engines/table-engines/integrations/postgresql#settings) section for the full list of `postgresql_connection_pool_*` and `postgresql_connection_attempt_timeout` settings and their defaults.
+
+Example:
+
+```sql
+SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password', SETTINGS postgresql_connection_pool_size = 32);
+```
 
 ## Implementation Details {#implementation-details}
 

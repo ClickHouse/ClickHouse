@@ -2,7 +2,7 @@
 -- A non-equi JOIN ON predicate over a Nothing-typed column (e.g. from ARRAY JOIN [])
 -- used to abort with LOGICAL_ERROR "Unexpected expression in JOIN ON section. Expected boolean (UInt8), got 'Nothing'".
 
--- The bug and its fix live in the new analyzer's planner; the old analyzer cannot resolve
+-- The bug and its fix live in the analyzer's planner; the old analyzer cannot resolve
 -- an ARRAY JOIN alias inside JOIN ON at all, so pin the analyzer to exercise the fixed path.
 SET enable_analyzer = 1;
 

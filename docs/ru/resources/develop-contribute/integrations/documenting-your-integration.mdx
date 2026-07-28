@@ -1,0 +1,123 @@
+---
+slug: /integrations/integration-development/documenting-your-integration
+sidebarTitle: 'Документирование вашей интеграции'
+title: 'Документирование вашей интеграции с ClickHouse'
+description: 'Как добавлять страницы интеграций в clickhouse-docs, включая обязательные разделы и шаблон, который можно скопировать.'
+keywords: ['партнёр', 'интеграция', 'документация', 'участие в проекте', 'pull request', 'документация интеграций']
+doc_type: 'guide'
+---
+
+Документация по интеграциям на этом сайте даёт конечным пользователям единое место, где можно оценить конфигурацию и устранить неполадки. На этой странице описано, что нужно включить, куда помещать файлы и как создать pull request.
+
+Если вы ещё этого не сделали, начните с [Создание интеграций](/ru/resources/develop-contribute/integrations/building-integrations) и [Тестирование вашей интеграции](/ru/resources/develop-contribute/integrations/testing-your-integration).
+
+<div id="where-docs-live">
+  ## Где находится документация
+</div>
+
+* **Репозиторий:** [`ClickHouse/clickhouse-docs`](https://github.com/ClickHouse/clickhouse-docs)
+* **Формат:** Markdown, сборка с помощью Docusaurus
+* **Расположение:** `/docs/integrations/<category>/<your-integration>/`, где `<category>` отражает назначение вашего продукта (`data-visualization`, `data-ingestion`, `language-clients` и т. д.)
+* **Процесс:** откройте pull request в ветку `main`. Его проверит команда интеграций ClickHouse. Если вы вносите вклад впервые, подпишите Contributor License Agreement, когда бот попросит об этом в PR
+
+Страницы интеграций в этом репозитории — основной справочный источник для конечных пользователей. На странице интеграции можно добавить ссылку на дополнительную документацию на вашем сайте с деталями, относящимися именно к вашему продукту.
+
+Хорошие примеры: [Tableau](/ru/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse) и [Metabase](/ru/integrations/connectors/data-visualization/metabase-and-clickhouse).
+
+<div id="choosing-a-category">
+  ## Выбор категории
+</div>
+
+Выберите категорию, которая наиболее точно соответствует назначению вашего продукта. Прежде чем открывать PR, просмотрите существующие категории в разделе [Интеграции](/ru/integrations/home). Если вы не уверены, укажите предлагаемую категорию в описании PR, и команда Integrations поможет определить, где разместить эту страницу.
+
+<div id="required-sections">
+  ## Обязательные разделы
+</div>
+
+Каждая страница интеграции должна охватывать следующее, в идеале в таком порядке:
+
+1. **Назначение.** Какую проблему решает интеграция, в двух или трёх предложениях. Избегайте маркетинговых формулировок. Обычно такие материалы читают инженеры, оценивающие варианты настройки
+2. **Предварительные требования и матрица поддерживаемых версий.** Что должно быть установлено у пользователя и какие версии вы поддерживаете для **ClickHouse Cloud и самоуправляемого варианта (с открытым исходным кодом)**. Небольшая таблица здесь хорошо подойдёт
+3. **Пошаговая настройка.** Пошаговые инструкции для получения рабочего подключения, с **параллельным описанием для Cloud и самоуправляемого варианта** там, где есть различия (host, port, TLS)
+4. **Аутентификация.** Какие способы аутентификации вы поддерживаете (как минимум имя пользователя и пароль поверх TLS, а также mTLS, клиентский SSL-сертификат и примечания о списке разрешённых IP, если применимо)
+5. **Сквозной пример.** Как минимум один реалистичный пример от подключения до содержательного результата. Используйте [пример набора данных ClickHouse](/ru/get-started/sample-datasets/index), чтобы читатели могли его воспроизвести
+6. **Известные ограничения и характеристики производительности.** Пробелы в системе типов, пороговые значения результирующего набора, примечания по пропускной способности, неподдерживаемые возможности. Честность здесь сокращает число обращений в поддержку
+7. **Устранение неполадок.** Распространённые ошибки и способы их устранения. Для первой версии достаточно двух или трёх частых случаев
+
+<div id="style-notes">
+  ## Примечания по стилю
+</div>
+
+* **Показывайте оба варианта: Cloud и самоуправляемый.** Cloud обычно использует HTTPS на порту `8443` и нативный TCP на `9440`. Для самоуправляемого варианта по умолчанию используются `8123` и `9000`
+* **Используйте admonitions Docusaurus** (`:::note`, `:::warning`, `:::tip`) для выносок вместо абзацев с полужирным текстом
+* **Давайте ссылки на подробную информацию.** Ссылайтесь на существующую документацию по типам данных, форматам, JDBC, ClickPipes и похожим темам вместо того, чтобы объяснять всё заново
+* **Без маркетинга.** Страницы интеграций здесь — это технический справочник. Рекламный контент должен размещаться на вашем сайте; мы можем ссылаться на него из каталога партнёров
+
+<div id="copy-paste-skeleton">
+  ## Шаблон для копирования и вставки
+</div>
+
+Заполните разделы в квадратных скобках, сохраните файл как `/docs/integrations/<category>/<your-integration>/index.md` и откройте PR.
+
+```markdown
+# [Your product] and ClickHouse
+
+[One to three sentences: what the integration does and why a
+ClickHouse user would want it.]
+
+## Prerequisites
+
+- [Your product, version X.Y or later]
+- ClickHouse Cloud, or self-hosted ClickHouse version [X.Y] or later
+- [Anything else: driver, plugin, network access requirements]
+
+### Version matrix
+
+| [Your product] | ClickHouse Cloud | ClickHouse open source | Notes    |
+| -------------- | ---------------- | ---------------------- | -------- |
+| X.Y            | ✅               | ✅ 24.x+               | [if any] |
+
+## Setup
+
+### Connect to ClickHouse Cloud
+
+1. In the ClickHouse Cloud console, select your service and click **Connect**.
+2. Choose **HTTPS**. Copy the host, port (8443), username, and password.
+3. In [your product], [steps to configure the connection].
+
+### Connect to self-hosted ClickHouse
+
+1. [How to point at a self-hosted instance — host, port 8123 or 9000, TLS notes.]
+2. In [your product], [steps to configure the connection].
+
+## Authentication
+
+[List supported auth modes — username/password over TLS, mTLS, etc. — and how
+to configure each.]
+
+## Example: querying the [dataset] dataset
+
+[Walkthrough using one of the ClickHouse example datasets, end-to-end.]
+
+## Known limits
+
+- [Types not yet supported, e.g., deeply nested JSON]
+- [Result-set size thresholds or other performance notes]
+- [Feature gaps]
+
+## Troubleshooting
+
+### [Common error message]
+
+[Cause and resolution.]
+
+### [Another common error]
+
+[Cause and resolution.]
+```
+
+<div id="review">
+  ## Проверка
+</div>
+
+Команда интеграций ClickHouse проверяет PR на техническую точность, охват Cloud и самоуправляемых развертываний, а также на соответствие стилю документации. Дорабатывайте PR, пока ревьюеры его не одобрят. Это одобрение — обязательное условие для слияния.
