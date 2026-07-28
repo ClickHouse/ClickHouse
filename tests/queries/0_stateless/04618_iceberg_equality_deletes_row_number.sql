@@ -1,6 +1,7 @@
 -- Tags: no-fasttest, no-parallel-replicas
--- `no-parallel-replicas`: `StorageObjectStorageCluster` does not delegate `supportsPrewhere`
--- to its underlying configuration, so the fallback filter path below is not reached.
+-- `no-parallel-replicas`: see comment in `04071_iceberg_orc_prewhere_crash.sh`. The explicit
+-- `PREWHERE` below throws `ILLEGAL_PREWHERE` once the storage is wrapped in
+-- `StorageObjectStorageCluster`, which does not override `supportsPrewhere`.
 
 -- `id - _row_number` is asserted as an exact value per data file, not merely as a constant: a mask
 -- that replaced rather than composed would keep it constant while shifting it by the number of
