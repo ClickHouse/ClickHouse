@@ -33,6 +33,7 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSet.h>
@@ -2650,22 +2651,61 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
 /// truncating it, so the conversion is injective on the domain it accepts and the whole query
 /// fails loudly instead of answering from a collapsed set. The conversions that DO collapse
 /// silently are:
-///   - a text key against a non-text set element: `accurateCast('01', 'UInt8')` and
-///     `accurateCast('1', 'UInt8')` are both 1, so two distinct keys share one set value;
+///   - a text key against a set element of a DIFFERENT type, text or not;
 ///   - a loss of Decimal / DateTime64 / Time64 SCALE: 1.2345 and 1.2300 both become 1.23.
+///
+/// Composite types are walked elementwise so this predicate has the same reach as
+/// `canBeSafelyCast`, the counterpart it complements.
 static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const DataTypePtr & set_element_type)
 {
-    auto key_which = WhichDataType(key_type);
-    auto set_which = WhichDataType(set_element_type);
+    auto key_unwrapped = removeLowCardinalityAndNullable(key_type);
+    auto set_unwrapped = removeLowCardinalityAndNullable(set_element_type);
 
-    /// A text key parsed into any non-text set element loses the textual representation,
-    /// so distinct spellings of one value become indistinguishable.
-    if (key_which.isStringOrFixedString() && !set_which.isStringOrFixedString())
+    auto key_which = WhichDataType(key_unwrapped);
+    auto set_which = WhichDataType(set_unwrapped);
+
+    /// Walk matching composites elementwise, mirroring `canBeSafelyCast`. A shape mismatch is not
+    /// itself a collapse: `canBeSafelyCast` at the call site rejects those conversions already.
+    if (key_which.isArray() && set_which.isArray())
+        return keyToSetConversionMayCollapse(
+            assert_cast<const DataTypeArray &>(*key_unwrapped).getNestedType(),
+            assert_cast<const DataTypeArray &>(*set_unwrapped).getNestedType());
+
+    if (key_which.isMap() && set_which.isMap())
+    {
+        const auto & key_map = assert_cast<const DataTypeMap &>(*key_unwrapped);
+        const auto & set_map = assert_cast<const DataTypeMap &>(*set_unwrapped);
+        return keyToSetConversionMayCollapse(key_map.getKeyType(), set_map.getKeyType())
+            || keyToSetConversionMayCollapse(key_map.getValueType(), set_map.getValueType());
+    }
+
+    if (key_which.isTuple() && set_which.isTuple())
+    {
+        const auto & key_elements = assert_cast<const DataTypeTuple &>(*key_unwrapped).getElements();
+        const auto & set_elements = assert_cast<const DataTypeTuple &>(*set_unwrapped).getElements();
+        if (key_elements.size() != set_elements.size())
+            return false;
+
+        for (size_t i = 0; i < key_elements.size(); ++i)
+            if (keyToSetConversionMayCollapse(key_elements[i], set_elements[i]))
+                return true;
+
+        return false;
+    }
+
+    /// A text key is only safe against a set element of the SAME text type. Distinct text types do
+    /// not share a value representation: the runtime cast of the KEY into `FixedString(N)`
+    /// right-pads with '\0' (`toFixedString`), while building the set casts `FixedString(N)` into
+    /// `String` trimming trailing zeros, so `'a'` and `'a\0'` collapse onto one set value. A
+    /// non-text set element loses the textual representation outright (`accurateCast('01', 'UInt8')`
+    /// and `accurateCast('1', 'UInt8')` are both 1). The comparison path in this file already
+    /// declines the same padding class for a `FixedString` constant against a text key.
+    if (key_which.isStringOrFixedString() && !key_unwrapped->equals(*set_unwrapped))
         return true;
 
     /// A scale reduction maps a whole interval of key values onto one set value.
-    auto key_scale = tryGetDecimalScale(*key_type);
-    auto set_scale = tryGetDecimalScale(*set_element_type);
+    auto key_scale = tryGetDecimalScale(*key_unwrapped);
+    auto set_scale = tryGetDecimalScale(*set_unwrapped);
     if (key_scale && set_scale && *key_scale > *set_scale)
         return true;
 
@@ -2779,18 +2819,19 @@ static bool tryPrepareSetColumnsForIndex(
             /// while here we cast set values into the KEY's type. Both directions must be lossless.
             /// `canBeSafelyCast` rejects a set-to-key conversion that cannot represent every source
             /// value; `keyToSetConversionMayCollapse` rejects the mirror case, where the runtime
-            /// key-to-set cast can map two distinct keys onto one set value.
+            /// key-to-set cast can map two distinct keys onto one set value. The second conjunct is
+            /// redundant while the collapse check below returns early, and is kept on purpose so this
+            /// value stays sound if that check ever moves.
             conversion_preserves_equality = canBeSafelyCast(set_element_type, key_column_type)
                 && !keyToSetConversionMayCollapse(key_column_type, set_element_type);
 
-            /// A conversion that is safe in the set-to-key direction but can collapse distinct keys in
-            /// the runtime key-to-set direction makes the pruning set an UNDER-approximation of the
-            /// predicate: `String` key `'01'` matches the set value `1` at runtime, yet the set built
-            /// here holds only the canonical `'1'`. `relaxed` only ever forces `can_be_false = true` and
-            /// never widens `can_be_true`, so it cannot protect the positive `IN` direction here and the
-            /// atom must decline instead.
-            if (canBeSafelyCast(set_element_type, key_column_type)
-                && keyToSetConversionMayCollapse(key_column_type, set_element_type))
+            /// A conversion that can collapse distinct keys in the runtime key-to-set direction makes
+            /// the pruning set an UNDER-approximation of the predicate: `String` key `'01'` matches the
+            /// set value `1` at runtime, yet the set built here holds only the canonical `'1'`.
+            /// `relaxed` only ever forces `can_be_false = true` and never widens `can_be_true`, so it
+            /// cannot protect the positive `IN` direction here and the atom must decline instead --
+            /// regardless of how the forward set-to-key cast is classified.
+            if (keyToSetConversionMayCollapse(key_column_type, set_element_type))
                 return false;
 
             // Obtain the nullable column without reassigning set_column immediately

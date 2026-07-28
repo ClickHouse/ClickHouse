@@ -63,6 +63,40 @@ Decimal key, coarser-scale source, declined
 2
 1
 1
+DateTime64 key, coarser-scale source, declined
+2020-01-01 00:00:01.2300
+2020-01-01 00:00:01.2345
+2020-01-01 00:00:02.0000
+1
+1
+String key, FixedString source, declined
+61
+6100
+62
+1
+1
+FixedString key, narrower FixedString source, declined
+6100
+6162
+6200
+1
+1
+FixedString key, wider FixedString source, declined
+61
+1
+1
+Same-width FixedString source stays exact
+6162
+1
+1
+Tuple key, collapsing element type, declined
+61
+6100
+1
+1
+62
+1
+1
 Injective numeric narrowing stays exact
 50000
 10

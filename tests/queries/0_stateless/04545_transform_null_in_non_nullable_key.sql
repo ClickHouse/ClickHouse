@@ -8,11 +8,13 @@
 -- Regression test for issue #111340: `transform_null_in = 1`, non-Nullable key column, `IN`/`NOT IN`
 -- a subquery whose result is Nullable. Previously threw CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN (349).
 --
--- Cases A, B, D, D2, C, C2 -- C5, E, F, H, H2, I, J, G, K cover, in order: the folded-default pair,
+-- Cases A, B, D, D2, C, C2 -- C11, E, F, H, H2, I, J, G, K cover, in order: the folded-default pair,
 -- the numeric analogue and its type-level-granularity sibling, the cross-type superset direction and
--- its counterexample, the two silent-collapse families (text key / coarser-scale key) with the
--- injective-narrowing control, the `NOT has` caller, the `LowCardinality(Nullable(T))` source, the
--- multi-column set and its emptiness ordering, the all-NULL empty set, the positive `IN` direction,
+-- its counterexample, the two silent-collapse families (text key against a different type / key with a
+-- finer Decimal or DateTime64 scale) with their exactness controls (injective numeric narrowing,
+-- identical text types, identical composite element types), the `NOT has` caller, the
+-- `LowCardinality(Nullable(T))` source, the multi-column set and its emptiness ordering, the
+-- all-NULL empty set, the positive `IN` direction,
 -- and the two shapes that must stay unchanged (`Tuple(Nullable, Nullable)` key, duplicate key mapping).
 
 SET transform_null_in = 1;
@@ -146,6 +148,82 @@ SELECT d FROM t_dk WHERE d IN (SELECT CAST(1.23, 'Nullable(Decimal(10, 2))') UNI
 SELECT d FROM t_dk WHERE d NOT IN (SELECT CAST(1.23, 'Nullable(Decimal(10, 2))') UNION ALL SELECT NULL) ORDER BY d;
 SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dk WHERE d NOT IN (SELECT CAST(1.23, 'Nullable(Decimal(10, 2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dk WHERE d NOT IN (SELECT CAST(1.23, 'Nullable(Decimal(10, 2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
+
+-- Case C7: the same scale-loss family through `DateTime64`, whose scale `tryGetDecimalScale` also
+-- reports. It is the case that pins the decline as UNCONDITIONAL on the forward set-to-key cast:
+-- `canBeSafelyCast` rejects `DateTime64 -> DateTime64` (its branch only accepts a `String` target),
+-- so gating the decline on that cast would let this atom fall through and be marked merely relaxed,
+-- which cannot protect the positive `IN` direction.
+SELECT 'DateTime64 key, coarser-scale source, declined';
+DROP TABLE IF EXISTS t_dt SETTINGS ignore_drop_queries_probability = 0;
+CREATE TABLE t_dt (d DateTime64(4)) ENGINE = MergeTree ORDER BY d PARTITION BY d;
+INSERT INTO t_dt VALUES ('2020-01-01 00:00:01.2345'), ('2020-01-01 00:00:01.2300'), ('2020-01-01 00:00:02.0000');
+SELECT d FROM t_dt WHERE d IN (SELECT CAST('2020-01-01 00:00:01.23', 'Nullable(DateTime64(2))') UNION ALL SELECT NULL) ORDER BY d;
+SELECT d FROM t_dt WHERE d NOT IN (SELECT CAST('2020-01-01 00:00:01.23', 'Nullable(DateTime64(2))') UNION ALL SELECT NULL) ORDER BY d;
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt WHERE d IN (SELECT CAST('2020-01-01 00:00:01.23', 'Nullable(DateTime64(2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt WHERE d IN (SELECT CAST('2020-01-01 00:00:01.23', 'Nullable(DateTime64(2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
+
+-- Cases C6, C8, C9: the text half of the silent-collapse family is keyed on the text types being
+-- DIFFERENT, not on the set element being non-text. `String` and `FixedString(N)` do not share a
+-- value representation: casting the KEY into `FixedString(N)` right-pads with '\0', while building
+-- the set casts `FixedString(N)` into `String` trimming trailing zeros, so `'a'` and `'a\0'` collapse
+-- onto one set value. Each case must decline; C6 additionally used to throw error 349 before this PR,
+-- so leaving it exact would have converted a loud error into a silently wrong result.
+SELECT 'String key, FixedString source, declined';
+DROP TABLE IF EXISTS t_sf SETTINGS ignore_drop_queries_probability = 0;
+CREATE TABLE t_sf (s String) ENGINE = MergeTree ORDER BY s PARTITION BY s;
+-- `VALUES` cannot carry a raw NUL, so the padded twin goes in through `INSERT ... SELECT`.
+INSERT INTO t_sf SELECT 'a';
+INSERT INTO t_sf SELECT concat('a', char(0));
+INSERT INTO t_sf SELECT 'b';
+SELECT hex(s) FROM t_sf WHERE s IN (SELECT CAST('a', 'Nullable(FixedString(2))') UNION ALL SELECT NULL) ORDER BY s;
+SELECT hex(s) FROM t_sf WHERE s NOT IN (SELECT CAST('a', 'Nullable(FixedString(2))') UNION ALL SELECT NULL) ORDER BY s;
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_sf WHERE s IN (SELECT CAST('a', 'Nullable(FixedString(2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_sf WHERE s IN (SELECT CAST('a', 'Nullable(FixedString(2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
+
+SELECT 'FixedString key, narrower FixedString source, declined';
+DROP TABLE IF EXISTS t_f2 SETTINGS ignore_drop_queries_probability = 0;
+CREATE TABLE t_f2 (s FixedString(2)) ENGINE = MergeTree ORDER BY s PARTITION BY s;
+INSERT INTO t_f2 VALUES ('a'), ('ab'), ('b');
+SELECT hex(s) FROM t_f2 WHERE s IN (SELECT CAST('a', 'Nullable(FixedString(1))') UNION ALL SELECT NULL) ORDER BY s;
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_f2 WHERE s IN (SELECT CAST('a', 'Nullable(FixedString(1))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_f2 WHERE s IN (SELECT CAST('a', 'Nullable(FixedString(1))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
+
+SELECT 'FixedString key, wider FixedString source, declined';
+DROP TABLE IF EXISTS t_f1 SETTINGS ignore_drop_queries_probability = 0;
+CREATE TABLE t_f1 (s FixedString(1)) ENGINE = MergeTree ORDER BY s PARTITION BY s;
+INSERT INTO t_f1 VALUES ('a'), ('b'), ('c');
+SELECT hex(s) FROM t_f1 WHERE s IN (SELECT CAST('a', 'Nullable(FixedString(2))') UNION ALL SELECT NULL) ORDER BY s;
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_f1 WHERE s IN (SELECT CAST('a', 'Nullable(FixedString(2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_f1 WHERE s IN (SELECT CAST('a', 'Nullable(FixedString(2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
+
+-- Case C10 (CONTROL, must NOT change): IDENTICAL text types share a representation, so no padding or
+-- trimming happens and the atom stays exact. Together with cases A/B/F/J (`String`/`Nullable(String)`)
+-- this is what stops the text arm from being "fixed" by declining every text pair.
+SELECT 'Same-width FixedString source stays exact';
+SELECT hex(s) FROM t_f2 WHERE s IN (SELECT CAST('ab', 'Nullable(FixedString(2))') UNION ALL SELECT NULL) ORDER BY s;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_f2 WHERE s IN (SELECT CAST('ab', 'Nullable(FixedString(2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%in 1-element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_f2 WHERE s IN (SELECT CAST('ab', 'Nullable(FixedString(2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 1/3%';
+
+-- Case C11: the collapse test must recurse into composites, the way `canBeSafelyCast` -- the
+-- predicate it complements -- already does. A `Tuple(String, UInt64)` key against a
+-- `Tuple(FixedString(2), UInt64)` set element collapses on its FIRST element exactly as case C6 does,
+-- while a top-level-only test sees two tuples and reports no collapse.
+-- `enable_nullable_tuple_type` is set per statement so it does not leak into the rest of the file.
+SELECT 'Tuple key, collapsing element type, declined';
+DROP TABLE IF EXISTS t_tc SETTINGS ignore_drop_queries_probability = 0;
+CREATE TABLE t_tc (k Tuple(String, UInt64)) ENGINE = MergeTree ORDER BY k PARTITION BY k;
+INSERT INTO t_tc SELECT tuple('a', 1);
+INSERT INTO t_tc SELECT tuple(concat('a', char(0)), 1);
+INSERT INTO t_tc SELECT tuple('b', 2);
+SELECT hex(k.1) FROM t_tc WHERE k IN (SELECT CAST(tuple('a', 1), 'Nullable(Tuple(FixedString(2), UInt64))') UNION ALL SELECT NULL) ORDER BY k SETTINGS enable_nullable_tuple_type = 1;
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_tc WHERE k IN (SELECT CAST(tuple('a', 1), 'Nullable(Tuple(FixedString(2), UInt64))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_tc WHERE k IN (SELECT CAST(tuple('a', 1), 'Nullable(Tuple(FixedString(2), UInt64))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%Parts: 3/3%';
+-- CONTROL: identical element types recurse to no collapse, so the atom stays exact and prunes. This is
+-- what stops the recursion from being "fixed" by declining every composite pair.
+SELECT hex(k.1) FROM t_tc WHERE k IN (SELECT CAST(tuple('b', 2), 'Nullable(Tuple(String, UInt64))') UNION ALL SELECT NULL) ORDER BY k SETTINGS enable_nullable_tuple_type = 1;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_tc WHERE k IN (SELECT CAST(tuple('b', 2), 'Nullable(Tuple(String, UInt64))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%in 1-element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_tc WHERE k IN (SELECT CAST(tuple('b', 2), 'Nullable(Tuple(String, UInt64))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%Parts: 1/3%';
 
 -- Case C5 (CONTROL, must NOT change): an injective same-family numeric narrowing stays exact and
 -- keeps pruning. `castColumnAccurate` REJECTS an out-of-range `UInt64 -> UInt32` value rather than
@@ -292,4 +370,9 @@ DROP TABLE t_nkp;
 DROP TABLE t_me;
 DROP TABLE t_sk;
 DROP TABLE t_dk;
+DROP TABLE t_dt;
+DROP TABLE t_sf;
+DROP TABLE t_f2;
+DROP TABLE t_f1;
+DROP TABLE t_tc;
 DROP TABLE t_nn;
