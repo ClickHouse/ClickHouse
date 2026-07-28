@@ -2412,6 +2412,14 @@ function activePinnedColumns() {
     return tab ? tab.pinnedColumns : {};
 }
 
+/// How many streamed server log lines a result retains, and how many of them are built into the DOM
+/// per animation frame. The retention budget covers the rendered lines AND the ones still queued for
+/// the next frame (see `appendLog` and `_flushLogs`), so a high-volume stream cannot hold two full
+/// budgets at once; the per-frame chunk is also the queue's floor, so the newest lines always get
+/// through and displace the oldest rendered ones.
+const MAX_LOG_DOM_LINES = 100000;
+const MAX_LOG_LINES_PER_FRAME = 1000;
+
 class QueryResultElement extends HTMLElement
 {
     static _loadVizPromise = null;
@@ -3201,8 +3209,8 @@ class QueryResultElement extends HTMLElement
         });
         this._log_count = 0;
         /// Incoming log lines are buffered and appended to the DOM in batches (see `appendLog`),
-        /// at most `MAX_PER_FRAME` per animation frame, so a burst of many lines does not block.
-        /// The most recent `MAX_DOM_LINES` lines stay in the DOM (for native find-in-page);
+        /// at most `MAX_LOG_LINES_PER_FRAME` per animation frame, so a burst of many lines does not
+        /// block. The most recent `MAX_LOG_DOM_LINES` lines stay in the DOM (for native find-in-page);
         /// `content-visibility` keeps the off-screen ones cheap; the oldest beyond the limit are
         /// dropped (see `_flushLogs`). `_log_flush_raf` is the pending frame request (0 when none).
         this._log_buffer = [];
@@ -4752,14 +4760,21 @@ class QueryResultElement extends HTMLElement
         ++this._log_count;
 
         /// Bound the pending queue too, not just the rendered DOM. `_flushLogs` drains at most
-        /// `MAX_PER_FRAME` lines per animation frame, so a burst that arrives faster than frames
-        /// fire would grow `_log_buffer` without limit. At most `MAX_DOM_LINES` lines are ever kept
-        /// (rendered + queued); drop the oldest queued lines beyond that budget and count them like
-        /// the ones the DOM cap drops, so `logCount` still reports the true total and the "... N
-        /// earlier lines were dropped ..." marker reflects them (see `_flushLogs`).
-        const MAX_DOM_LINES = 100000;
-        if (this._log_buffer.length > MAX_DOM_LINES)
-            this._log_dropped += this._log_buffer.splice(0, this._log_buffer.length - MAX_DOM_LINES).length;
+        /// `MAX_LOG_LINES_PER_FRAME` lines per animation frame, so a burst that arrives faster than
+        /// frames fire would grow `_log_buffer` without limit. The budget is shared with the lines
+        /// already in the DOM - counting only the queue would retain up to twice `MAX_LOG_DOM_LINES`
+        /// (a full DOM plus a full queue) on the exact high-volume path this bounds - so subtract the
+        /// rendered count (the dropped-lines marker is not a log line, so it does not count).
+        /// The queue keeps at least one frame's worth of lines even when the DOM is already full: the
+        /// most recent lines must survive and displace the oldest rendered ones (that is what
+        /// `_flushLogs` does when it appends them), so retention stays within one flush chunk of the
+        /// budget instead of dropping the newest lines and freezing the view on stale ones.
+        /// Dropped lines are counted like the ones the DOM cap drops, so `logCount` still reports the
+        /// true total and the "... N earlier lines were dropped ..." marker reflects them.
+        const rendered = this._logsContent.childElementCount - (this._log_dropped_marker ? 1 : 0);
+        const queue_budget = Math.max(MAX_LOG_DOM_LINES - rendered, MAX_LOG_LINES_PER_FRAME);
+        if (this._log_buffer.length > queue_budget)
+            this._log_dropped += this._log_buffer.splice(0, this._log_buffer.length - queue_budget).length;
 
         /// Now that there is at least one log line, reveal the Logs toggle (on the owning tab, and in
         /// the shared progress line when that tab is active - see `_markLogsAvailable`).
@@ -4770,10 +4785,10 @@ class QueryResultElement extends HTMLElement
     }
 
     /// Append buffered log lines to the DOM. To keep the UI responsive when a very large burst
-    /// arrives at once, at most `MAX_PER_FRAME` lines are built per frame; if more remain, another
+    /// arrives at once, at most `MAX_LOG_LINES_PER_FRAME` lines are built per frame; if more remain, another
     /// frame is scheduled. The lines stay in the DOM (so native find-in-page can search them);
     /// `content-visibility` keeps the off-screen ones cheap to render - but not free to hold, so
-    /// retention is bounded: only the most recent `MAX_DOM_LINES` lines are kept, and the oldest
+    /// retention is bounded: only the most recent `MAX_LOG_DOM_LINES` lines are kept, and the oldest
     /// are dropped, replaced by a single marker line carrying their count (`logCount` still
     /// reports the total number of lines received).
     _flushLogs()
@@ -4782,9 +4797,8 @@ class QueryResultElement extends HTMLElement
         if (this._log_buffer.length === 0)
             return;
 
-        const MAX_PER_FRAME = 1000;
-        const chunk = this._log_buffer.length > MAX_PER_FRAME
-            ? this._log_buffer.splice(0, MAX_PER_FRAME)
+        const chunk = this._log_buffer.length > MAX_LOG_LINES_PER_FRAME
+            ? this._log_buffer.splice(0, MAX_LOG_LINES_PER_FRAME)
             : this._log_buffer.splice(0);
 
         const fragment = document.createDocumentFragment();
@@ -4792,8 +4806,7 @@ class QueryResultElement extends HTMLElement
             fragment.appendChild(this._buildLogLine(entry));
         this._logsContent.appendChild(fragment);
 
-        const MAX_DOM_LINES = 100000;
-        let excess = this._logsContent.childElementCount - (this._log_dropped_marker ? 1 : 0) - MAX_DOM_LINES;
+        let excess = this._logsContent.childElementCount - (this._log_dropped_marker ? 1 : 0) - MAX_LOG_DOM_LINES;
         if (excess > 0)
             this._log_dropped += excess;
         /// Surface the total dropped count (from the DOM cap here AND the pending-queue cap in
@@ -7564,11 +7577,31 @@ const default_format = 'JSONStringsEachRowWithProgress';
 /// reassembled into the shapes the table renderer consumes in `makeEventStreamHandler`.
 const framed_default_format = 'JSONCompactStringsEachRowWithNamesAndTypes';
 
+/// Output format names are case-insensitive in ClickHouse: `FormatFactory` looks them up by their
+/// lowercased name (see `getCreators`), so `FORMAT jsoncompactcolumns` is the same format as
+/// `FORMAT JSONCompactColumns`. The `X-ClickHouse-Format` response header, on the other hand, echoes
+/// the identifier verbatim as the query spelled it (`result_details.format = format_name` in
+/// `executeQuery.cpp`, taken from the `FORMAT` clause's identifier). Therefore EVERY dispatch on the
+/// response format - the table and chart renderers, the image MIME, the in-band exception probes -
+/// must compare a lowercased copy, or a valid non-canonical spelling silently takes another path:
+/// a chart would render as raw text, and a late in-band exception would be missed entirely, letting
+/// "Run all" continue past a failed statement.
+function formatKey(format)
+{
+    return typeof format === 'string' ? format.toLowerCase() : '';
+}
+
+/// Whether the response format is `name`, compared case-insensitively (see `formatKey`).
+function formatIs(format, name)
+{
+    return formatKey(format) === formatKey(name);
+}
+
 /// Whether the format is one of the two default result formats (the plain one or the framed one),
 /// which are rendered as a table rather than as raw text.
 function isDefaultFormat(format)
 {
-    return format === default_format || format === framed_default_format;
+    return formatIs(format, default_format) || formatIs(format, framed_default_format);
 }
 
 /// The JSON `*WithProgress` output formats can carry a query-execution failure in-band, as a
@@ -7579,15 +7612,17 @@ function isDefaultFormat(format)
 /// without framing and its plain stream is shown here. That stream must be scanned for the in-band
 /// `{"exception":...}` object - unlike the `JSONEachPacket*` framings, whose exception is a
 /// `{"packet":"exception",...}` packet. The list is pinned by `04548_play_ui_framing_fallbacks.sh`.
+/// The names are lowercased, because format names are case-insensitive and the header keeps the
+/// query's own spelling (see `formatKey`).
 const WITH_PROGRESS_JSON_FORMATS = new Set([
-    'JSONEachRowWithProgress',
-    'JSONStringsEachRowWithProgress',
-    'JSONCompactEachRowWithProgress',
-    'JSONCompactStringsEachRowWithProgress',
+    'jsoneachrowwithprogress',
+    'jsonstringseachrowwithprogress',
+    'jsoncompacteachrowwithprogress',
+    'jsoncompactstringseachrowwithprogress',
 ]);
 function formatMayWriteInBandException(format)
 {
-    return WITH_PROGRESS_JSON_FORMATS.has(format);
+    return WITH_PROGRESS_JSON_FORMATS.has(formatKey(format));
 }
 
 
@@ -7652,7 +7687,7 @@ function base64ToBytes(b64)
 /// `X-ClickHouse-Format` header instead.
 function imageMimeForFormat(format)
 {
-    return format === 'PNG' ? 'image/png' : null;
+    return formatIs(format, 'PNG') ? 'image/png' : null;
 }
 
 /// If the bytes begin with a known image signature, return the corresponding MIME type, else null.
@@ -7711,7 +7746,7 @@ const FORMATS_WITHOUT_PLAIN_TOTALS_AND_EXTREMES = new Set([
 /// `FORMATS_WITHOUT_PLAIN_TOTALS_AND_EXTREMES`).
 function plainOutputDropsTotalsAndExtremes(format)
 {
-    return FORMATS_WITHOUT_PLAIN_TOTALS_AND_EXTREMES.has(String(format ?? '').toLowerCase());
+    return FORMATS_WITHOUT_PLAIN_TOTALS_AND_EXTREMES.has(formatKey(format));
 }
 
 /// Dispatch a single parsed SSE event (a packet of a framing `EventStream` response) to the result
@@ -8216,9 +8251,11 @@ function unescapeXMLText(s)
 /// top-level `"exception"` string (or, for `GeoJSON`, a trailing `{"exception":...}` element of the
 /// `features` array) that can be read out unambiguously — a successful document of these formats
 /// never carries one. Each-row formats are intentionally absent (see `parseInbandException`).
+/// Lowercased, because format names are case-insensitive and the `X-ClickHouse-Format` header keeps
+/// the query's own spelling (see `formatKey`).
 const SINGLE_DOCUMENT_JSON_FORMATS = new Set([
-    'JSON', 'JSONStrings', 'JSONCompact', 'JSONCompactStrings',
-    'JSONColumns', 'JSONColumnsWithMetadata', 'JSONObjectEachRow', 'GeoJSON']);
+    'json', 'jsonstrings', 'jsoncompact', 'jsoncompactstrings',
+    'jsoncolumns', 'jsoncolumnswithmetadata', 'jsonobjecteachrow', 'geojson']);
 
 /// Detect a format-level exception that an output format wrote in-band after the response body had
 /// already started (`http_write_exception_in_output_format`, on by default), so the raw branch can
@@ -8258,7 +8295,11 @@ function parseInbandException(text, format)
     /// otherwise the restore would throw a `TypeError` instead of showing the saved error text.
     if (typeof format !== 'string') return null;
 
-    if (format == 'XML')
+    /// Compare the lowercased name throughout: `FORMAT xml` and `FORMAT jsoneachrowwithprogress` are
+    /// as valid as their canonical spellings, and the header echoes them verbatim (see `formatKey`).
+    const format_key = formatKey(format);
+
+    if (format_key === 'xml')
     {
         /// `XMLRowOutputFormat` writes the in-band failure as a top-level `<exception>` element, indented
         /// with a single tab as a direct child of `<result>` (see `writeException`). A row field that
@@ -8276,12 +8317,12 @@ function parseInbandException(text, format)
     /// pretty-printed `Pretty*` aliases noted above — is deliberately unsupported, so bail out. This is
     /// an explicit whitelist rather than a `startsWith('JSON')` test, which would falsely imply the
     /// each-row family is handled (and would not even match the `Pretty*` aliases).
-    if (!format.includes('WithProgress') && !SINGLE_DOCUMENT_JSON_FORMATS.has(format)) return null;
+    if (!format_key.includes('withprogress') && !SINGLE_DOCUMENT_JSON_FORMATS.has(format_key)) return null;
     if (!text.includes('"exception"')) return null;   /// cheap guard before parsing/scanning the body
 
     /// `*WithProgress` formats wrap every row, so a standalone top-level `{"exception":...}` line —
     /// always the terminal content line — is unambiguously the failure.
-    if (format.includes('WithProgress'))
+    if (format_key.includes('withprogress'))
     {
         const trimmed = text.replace(/\s+$/, '');
         const last_line = trimmed.slice(trimmed.lastIndexOf('\n') + 1);
@@ -8296,7 +8337,7 @@ function parseInbandException(text, format)
     }
 
     /// Single-document formats: parse the whole body and read the failure out of the one object.
-    if (SINGLE_DOCUMENT_JSON_FORMATS.has(format))
+    if (SINGLE_DOCUMENT_JSON_FORMATS.has(format_key))
     {
         try {
             const data = JSON.parse(text);
@@ -8346,7 +8387,10 @@ function appendBoundedTail(tail, chunk)
 ///   - `JSON` family / `JSONObjectEachRow`: the body ends with `\t"exception": "<msg>"` on its own
 ///     line followed by the closing `}` — a successful document cannot end that way (its last
 ///     top-level member is the statistics/rows trailer, a row object, or a column array, none of
-///     which put a top-level string named `exception` last);
+///     which put a top-level string named `exception` last). The line start is matched as either a
+///     newline or the start of the tail: `appendBoundedTail` re-aligns the trimmed tail to a line
+///     boundary, so the trailer's own line can BE the first line of the tail (a huge single-value
+///     document leaves nothing else in the bound), and requiring a leading newline would miss it;
 ///   - `GeoJSON`: the (single-line) body ends with `{"exception": "<msg>"}]}` — the failure element
 ///     appended to the `features` array; a nested `exception` property of a real feature closes
 ///     with an extra `}`, so the end-anchored match cannot mistake it for the trailer.
@@ -8356,10 +8400,10 @@ function parseInbandExceptionFromTail(tail, format)
 {
     const parsed = parseInbandException(tail, format);
     if (parsed !== null) return parsed;
-    if (typeof format !== 'string' || !SINGLE_DOCUMENT_JSON_FORMATS.has(format)) return null;
-    const m = format === 'GeoJSON'
+    if (!SINGLE_DOCUMENT_JSON_FORMATS.has(formatKey(format))) return null;
+    const m = formatIs(format, 'GeoJSON')
         ? tail.match(/[\[,]\{("exception": "(?:[^"\\]|\\.)*")\}\]\}\s*$/)
-        : tail.match(/\n\t("exception": "(?:[^"\\]|\\.)*")\n\}\s*$/);
+        : tail.match(/(?:^|\n)\t("exception": "(?:[^"\\]|\\.)*")\n\}\s*$/);
     if (m === null) return null;
     try { return JSON.parse('{' + m[1] + '}').exception; } catch (e) { return null; }
 }
@@ -8792,7 +8836,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 display_error = framedFailureMessage(reply, framing_kind, exception_carrier) ?? undefined;
                 return { format, reply, display_error, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind, exception_carrier };
             }
-        } else if (format == default_format) {
+        } else if (formatIs(format, default_format)) {
             is_table = true;
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
@@ -8900,7 +8944,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 display_error = stream_exception;
                 return { format, exception_tag, reply, display_error, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true, exception_carrier };
             }
-        } else if (format == 'JSONCompactColumns') {
+        } else if (formatIs(format, 'JSONCompactColumns')) {
             is_chart = true;
             reply = await response.text();
             if (posted_request_num != tab.reqNum) { return { cancelled: true }; }
@@ -9782,7 +9826,7 @@ function renderFailedSnapshot(el, data, format, tag, display_error) {
     const has_failure_signal_in_data =
         exceptionMarkerStart(data, tag) >= 0 || parseInbandException(data, format) !== null;
     if (typeof display_error === 'string' && !has_failure_signal_in_data && display_error !== data) {
-        if (format === default_format) {
+        if (formatIs(format, default_format)) {
             let fragment = document.createDocumentFragment();
             for (const line of data.split('\n')) {
                 if (line.trim().length === 0) continue;
@@ -9803,7 +9847,7 @@ function renderFailedSnapshot(el, data, format, tag, display_error) {
         return;
     }
 
-    if (format === default_format) {
+    if (formatIs(format, default_format)) {
         /// Table branch — mirror `postImpl` (rows are `{"row":...}` / `{"meta":...}` / `{"totals":...}`
         /// / `{"progress":...}` lines): replay them until the failure signal, keep the partial rows,
         /// then render the error underneath.
@@ -9979,7 +10023,7 @@ async function renderSnapshotIntoElement(el, snap, tab, matToken) {
     }
 
     let is_table = false;
-    if (format == default_format) {
+    if (formatIs(format, default_format)) {
         is_table = true;
         let fragment = document.createDocumentFragment();
         for (const line of snap.data.split('\n')) {
@@ -9987,7 +10031,7 @@ async function renderSnapshotIntoElement(el, snap, tab, matToken) {
             if (!el.update(JSON.parse(line), fragment)) { break; }
         }
         el.flushFragment(fragment);
-    } else if (format == 'JSONCompactColumns') {
+    } else if (formatIs(format, 'JSONCompactColumns')) {
         if (matToken !== tab.reqNum) return true;
         try {
             await el.renderChart(JSON.parse(snap.data), () => matToken === tab.reqNum);
@@ -10326,7 +10370,7 @@ async function materializeResult(tab) {
             el.renderError('The query failed, but its error output was not stored.');
         }
         return;
-    } else if (format == default_format) {
+    } else if (formatIs(format, default_format)) {
         is_table = true;
         let lines = result.data.split('\n');
         let fragment = document.createDocumentFragment();
@@ -10337,7 +10381,7 @@ async function materializeResult(tab) {
         }
 
         el.flushFragment(fragment);
-    } else if (format == 'JSONCompactColumns') {
+    } else if (formatIs(format, 'JSONCompactColumns')) {
         if (matToken !== tab.reqNum) { return; }
         /// renderChart awaits the uPlot loader on first use; the predicate makes it bail
         /// inside (right after the load, before mutating the DOM) if this materialization was

@@ -142,6 +142,22 @@ echo "$page" | grep -q -F 'inband_tail = appendBoundedTail(inband_tail, new_cont
 # A retried plain `JSON*EachRowWithProgress` stream is scanned for its own in-band `{"exception":...}`
 # object, keyed off the output format (`formatMayWriteInBandException`), not only the user's framing.
 echo "$page" | grep -q -F 'function formatMayWriteInBandException(' && echo 'in-band exception detector present: OK'
+# Format names are case-insensitive in ClickHouse, while `X-ClickHouse-Format` echoes the query's own
+# spelling (pinned on the wire at the end of this test), so every dispatch on the response format
+# compares a lowercased copy (`formatKey` / `formatIs`): otherwise `FORMAT jsoncompactcolumns` would
+# lose the chart renderer, and a late in-band exception of `FORMAT xml` / `FORMAT json` /
+# `FORMAT jsoneachrowwithprogress` would be missed entirely - letting "Run all" continue past a
+# failed statement. The format-name sets are therefore lowercased, and no dispatch compares the raw
+# header value against a canonically spelled name any more.
+echo "$page" | grep -q -F 'function formatKey(' && echo 'format key helper present: OK'
+echo "$page" | grep -q -F 'function formatIs(format, name)' && echo 'format comparison helper present: OK'
+echo "$page" | grep -q -F "'jsoneachrowwithprogress'," && echo 'in-band format list lowercased: OK'
+echo "$page" | grep -q -F "'json', 'jsonstrings', 'jsoncompact', 'jsoncompactstrings'," && echo 'single-document format list lowercased: OK'
+echo "$page" | grep -q -F "if (format_key === 'xml')" && echo 'xml probe case-insensitive: OK'
+[ "$(echo "$page" | grep -c -F "format_key.includes('withprogress')")" -eq 2 ] && echo 'withprogress probe case-insensitive: OK'
+[ "$(echo "$page" | grep -c -F "formatIs(format, 'JSONCompactColumns')")" -eq 3 ] && echo 'chart dispatch case-insensitive: OK'
+[ "$(echo "$page" | grep -c -F 'formatIs(format, default_format)')" -eq 6 ] && echo 'table dispatch case-insensitive: OK'
+[ "$(echo "$page" | grep -c -E "format ===? '(XML|PNG|GeoJSON|JSONCompactColumns)'|format ===? default_format|format ===? framed_default_format")" -eq 0 ] && echo 'no case-sensitive format dispatch left: OK'
 # Every URL that expects an unframed response pins `framing_output_format=None`, so a framing left in
 # the connection URL or in the HTTP session cannot leak into the plain path (the chart request, the
 # compatibility retry) or into the download.
@@ -193,9 +209,12 @@ echo "$page" | grep -q -F 'function framedFailureMessage(' && echo 'framed failu
 echo "$page" | grep -q -F "s.display_error = 'The query failed, but its error output was not stored.';" && echo 'dropped multi failures keep an error text: OK'
 # The pending log queue is bounded, not just the rendered DOM: `appendLog` drops the oldest queued
 # lines beyond the retained budget so a burst faster than the per-frame flush cannot grow it without
-# limit. The sparkline history is bounded too - `downsampleHistoryByHalf` halves every metric's
-# history in lockstep once the point cap is reached.
-echo "$page" | grep -q -F 'this._log_buffer.length - MAX_DOM_LINES' && echo 'log queue bounded: OK'
+# limit. The budget is SHARED with the lines already rendered - counting the queue alone would retain
+# a full DOM plus a full queue - and its floor is one frame's chunk, so the newest lines still get
+# through and displace the oldest rendered ones. The sparkline history is bounded too -
+# `downsampleHistoryByHalf` halves every metric's history in lockstep once the point cap is reached.
+echo "$page" | grep -q -F 'this._log_buffer.length - queue_budget' && echo 'log queue bounded: OK'
+echo "$page" | grep -q -F 'const queue_budget = Math.max(MAX_LOG_DOM_LINES - rendered, MAX_LOG_LINES_PER_FRAME);' && echo 'log budget shared with the DOM: OK'
 echo "$page" | grep -q -F 'function downsampleHistoryByHalf(' && echo 'metric history bounded: OK'
 # The Logs/Metrics view and toggle availability are tab-owned, not global: the `set-view` handler
 # records the view on the active tab and applies it only to that tab's results, `_markLogsAvailable`
@@ -396,5 +415,34 @@ ${CLICKHOUSE_CURL} -sS -D "$header_file" "${URL}&session_id=${session}&framing_o
     -d "SELECT 1 FORMAT TSV SETTINGS framing_output_format = 'JSONEachPacketString'" > "$result_file"
 grep -o -m1 'application/x-ndjson' "$header_file"
 grep -o -m1 '"packet":"data"' "$result_file"
+
+echo '--- X-ClickHouse-Format echoes the query spelling, and a lowercased FORMAT still writes its in-band exception'
+# The premise of the page's case-insensitive format dispatch: format names are case-insensitive
+# (`FormatFactory` looks them up lowercased), but `X-ClickHouse-Format` reports the identifier exactly
+# as the `FORMAT` clause spelled it. So a valid non-canonical spelling reaches the page as-is, and
+# every dispatch on that header must lowercase it - otherwise the chart path, the table path and the
+# in-band exception probes silently take the wrong branch for a perfectly valid query.
+${CLICKHOUSE_CURL} -sS -D "$header_file" "${URL}&framing_output_format=None" \
+    -d "SELECT 1 FORMAT jsoncompactcolumns" > "$result_file"
+grep -o -m1 'X-ClickHouse-Format: jsoncompactcolumns' "$header_file"
+cat "$result_file"
+# A lowercased `FORMAT xml` streams rows and then writes its failure as the same top-level
+# `<exception>` trailer at 200 OK, so the page's probe must recognize it under this spelling too.
+${CLICKHOUSE_CURL} -sS -D "$header_file" "${URL}&framing_output_format=None" \
+    -d "SELECT throwIf(number = 5) FROM numbers(10) FORMAT xml SETTINGS http_write_exception_in_output_format = 1, max_block_size = 1, max_threads = 1" > "$result_file"
+grep -c '^HTTP/1.1 200 OK' "$header_file"
+grep -o -m1 'X-ClickHouse-Format: xml' "$header_file"
+grep -o -m1 -E '^\t<exception>' "$result_file"
+# The same for a lowercased single-document `FORMAT json`: the failure is a top-level `"exception"`
+# member of the one document.
+${CLICKHOUSE_CURL} -sS -D "$header_file" "${URL}&framing_output_format=None" \
+    -d "SELECT throwIf(number = 5) FROM numbers(10) FORMAT json SETTINGS http_write_exception_in_output_format = 1, max_block_size = 1, max_threads = 1" > "$result_file"
+grep -o -m1 'X-ClickHouse-Format: json' "$header_file"
+grep -o -m1 -E '^\t"exception":' "$result_file"
+# And for a lowercased `*WithProgress` row stream: a terminal top-level `{"exception":...}` line.
+${CLICKHOUSE_CURL} -sS -D "$header_file" "${URL}&framing_output_format=None" \
+    -d "SELECT throwIf(number = 5) FROM numbers(10) FORMAT jsoneachrowwithprogress SETTINGS http_write_exception_in_output_format = 1, max_block_size = 1, max_threads = 1" > "$result_file"
+grep -o -m1 'X-ClickHouse-Format: jsoneachrowwithprogress' "$header_file"
+grep -o -m1 -F '{"exception":' "$result_file"
 
 rm -f "$result_file" "$header_file"

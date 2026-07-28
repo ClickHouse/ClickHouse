@@ -14,6 +14,15 @@ bounded in-band tail helper present: OK
 raw stream keeps in-band tail: OK
 in-band probe reads the tail: OK
 in-band exception detector present: OK
+format key helper present: OK
+format comparison helper present: OK
+in-band format list lowercased: OK
+single-document format list lowercased: OK
+xml probe case-insensitive: OK
+withprogress probe case-insensitive: OK
+chart dispatch case-insensitive: OK
+table dispatch case-insensitive: OK
+no case-sensitive format dispatch left: OK
 plain request pins framing off: OK
 download pins framing off: OK
 auxiliary requests pin framing off: OK
@@ -31,6 +40,7 @@ framed failure message helper present: OK
 framed failures persist display_error: OK
 dropped multi failures keep an error text: OK
 log queue bounded: OK
+log budget shared with the DOM: OK
 metric history bounded: OK
 view is tab-owned: OK
 toggles replayed per tab: OK
@@ -101,3 +111,15 @@ the pinned request is not framed: OK
 1
 application/x-ndjson
 "packet":"data"
+--- X-ClickHouse-Format echoes the query spelling, and a lowercased FORMAT still writes its in-band exception
+X-ClickHouse-Format: jsoncompactcolumns
+[
+	[1]
+]
+1
+X-ClickHouse-Format: xml
+	<exception>
+X-ClickHouse-Format: json
+	"exception":
+X-ClickHouse-Format: jsoneachrowwithprogress
+{"exception":
