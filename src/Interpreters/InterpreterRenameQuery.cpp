@@ -129,11 +129,18 @@ namespace
         for (const auto & rekey : rekeys)
             moving_ids.insert(rekey.id);
 
+        /// `allow_moving_occupant` must be true only for a policy's final destination: an EXCHANGE
+        /// legitimately swaps two same-short-name policies, so each one's destination is the other's
+        /// current name and both are in `rekeys`. For a transient parking name it must be false --
+        /// a later-moving policy sitting on an earlier one's parking name is a real collision that
+        /// phase 1 of the apply would hit AFTER the table rename has committed.
         const auto reject_if_taken =
-            [&](const RowPolicyName & name, const UUID & moving_id, const RowPolicyPtr & moving_policy, const char * what)
+            [&](const RowPolicyName & name, const UUID & moving_id, const RowPolicyPtr & moving_policy,
+                bool allow_moving_occupant, const char * what)
         {
             if (auto existing_id = access_control.find<RowPolicy>(name.toString());
-                existing_id && (*existing_id != moving_id) && !moving_ids.contains(*existing_id))
+                existing_id && (*existing_id != moving_id)
+                && !(allow_moving_occupant && moving_ids.contains(*existing_id)))
             {
                 throw Exception(
                     ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS,
@@ -165,14 +172,14 @@ namespace
             parking_name.short_name = policy->getShortName();
             parking_name.database = policy->getDatabase();
             parking_name.table_name = tempRekeyTableName(rekey.id, i);
-            reject_if_taken(parking_name, rekey.id, policy, "transient name used while renaming");
+            reject_if_taken(parking_name, rekey.id, policy, /*allow_moving_occupant*/ false, "transient name used while renaming");
 
             /// (3) Final destination name is taken by a policy that is NOT itself moving.
             RowPolicyName dst_name;
             dst_name.short_name = policy->getShortName();
             dst_name.database = rekey.new_database;
             dst_name.table_name = rekey.new_table;
-            reject_if_taken(dst_name, rekey.id, policy, "destination");
+            reject_if_taken(dst_name, rekey.id, policy, /*allow_moving_occupant*/ true, "destination");
         }
     }
 

@@ -24,7 +24,11 @@ default_2	cb
 -- RENAME DATABASE: database-wide and per-table policies follow
 after database rename (db-wide policy still applies -> eng only):
 1
+and the per-table policy followed too, so t2 shows eng (3) plus the id=4 row it permits:
+3
+4
 default_2
+default_2	t2
 -- failed RENAME: policy binding is preserved
 TABLE_ALREADY_EXISTS
 after failed rename (policy stays, eng only):
@@ -52,6 +56,11 @@ ACCESS_ENTITY_ALREADY_EXISTS
 after rejected rename (table not renamed, policy stays on ta, eng only):
 1
 0
+-- EXCHANGE rejected when a moving policy occupies another policy transient name
+ACCESS_ENTITY_ALREADY_EXISTS
+after rejected exchange (nothing moved: ma still holds {1,2}, and both policies are still bound):
+1
+2
 -- CREATE OR REPLACE TABLE: target row policy stays and keeps filtering
 before (eng only):
 1

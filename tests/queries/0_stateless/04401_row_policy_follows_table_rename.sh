@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database, no-parallel-replicas
+# Tags: long, no-replicated-database
 # Tag long: many cases (RENAME/EXCHANGE/cross-DB/RENAME DATABASE plus rejection paths, two of which
 #           start a separate clickhouse-local server) make a single run heavy; under the flaky-check's
 #           repeated parallel runs it exceeds the 180s soft cap. long exempts that cap and runs it ~5x
 #           instead of ~50x there, while still running once on every regular and per-test-coverage lane.
 # Tag no-replicated-database: RENAME of multiple tables in a single query is not supported there,
 #                             and database renames are handled differently.
-# Tag no-parallel-replicas: this test only checks row-policy bindings, parallel replicas are irrelevant here.
 
 # Row policies are keyed by (database, table). They must follow the table on RENAME TABLE,
 # EXCHANGE TABLES and RENAME DATABASE, otherwise the policy is orphaned on the old name and
@@ -95,12 +94,23 @@ ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${DB2}"
 ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLICKHOUSE_DATABASE}_src"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_src.t (id UInt64, dept String) ENGINE = MergeTree ORDER BY id"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO ${CLICKHOUSE_DATABASE}_src.t VALUES (1, 'eng'), (2, 'fin')"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_src.t2 (id UInt64, dept String) ENGINE = MergeTree ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${CLICKHOUSE_DATABASE}_src.t2 VALUES (3, 'eng'), (4, 'fin')"
 ${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY dbp ON ${CLICKHOUSE_DATABASE}_src.* FOR SELECT USING dept = 'eng' TO ${USER}"
+# A per-table policy in the renamed database must move to the new database keeping its table name.
+# Without this case the database-wide policy alone would keep the section green even if the per-table
+# branch of collectRowPolicyRekeysForDatabase were removed. Permissive policies are combined with OR,
+# so this one makes the 'fin' row id=4 visible in t2 -- which happens only if it followed the rename.
+${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY tbp ON ${CLICKHOUSE_DATABASE}_src.t2 FOR SELECT USING id = 4 TO ${USER}"
 run_user "RENAME DATABASE ${CLICKHOUSE_DATABASE}_src TO ${DB2}"
 echo 'after database rename (db-wide policy still applies -> eng only):'
 run_user "SELECT id FROM ${DB2}.t ORDER BY id"
+echo 'and the per-table policy followed too, so t2 shows eng (3) plus the id=4 row it permits:'
+run_user "SELECT id FROM ${DB2}.t2 ORDER BY id"
 ${CLICKHOUSE_CLIENT} --query "SELECT database FROM system.row_policies WHERE short_name = 'dbp' AND database = '${DB2}'"
+${CLICKHOUSE_CLIENT} --query "SELECT database, table FROM system.row_policies WHERE short_name = 'tbp'"
 ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY dbp ON ${DB2}.*"
+${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY tbp ON ${DB2}.t2"
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${DB2}"
 
 echo '-- failed RENAME: policy binding is preserved'
@@ -201,6 +211,27 @@ run_user "SELECT id FROM ${CLICKHOUSE_DATABASE}.ta ORDER BY id"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '${CLICKHOUSE_DATABASE}' AND name = 'tb'"
 ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY tp ON ${CLICKHOUSE_DATABASE}.ta, tp ON ${CLICKHOUSE_DATABASE}.\`${TMP_TABLE}\`"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.ta"
+
+# Same collision, but the occupant of the parking name is itself one of the moving policies (both
+# tables of an EXCHANGE carry a policy with the same short name). A moving occupant is legitimate for
+# a policy's final DESTINATION -- an EXCHANGE swaps two such policies -- but not for a transient
+# parking name: phase 1 would then hit the still-occupied name and throw after the rename committed.
+echo '-- EXCHANGE rejected when a moving policy occupies another policy transient name'
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${CLICKHOUSE_DATABASE}.ma (id UInt64, dept String) ENGINE = MergeTree ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${CLICKHOUSE_DATABASE}.ma VALUES (1, 'eng'), (2, 'fin')"
+${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY mp ON ${CLICKHOUSE_DATABASE}.ma FOR SELECT USING dept = 'eng' TO ${USER}"
+MP_ID=$(${CLICKHOUSE_CLIENT} --query "SELECT id FROM system.row_policies WHERE short_name = 'mp' AND database = '${CLICKHOUSE_DATABASE}' AND table = 'ma'")
+MP_TMP=".tmp_rename_row_policy_${MP_ID}_0"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${CLICKHOUSE_DATABASE}.\`${MP_TMP}\` (id UInt64, dept String) ENGINE = MergeTree ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${CLICKHOUSE_DATABASE}.\`${MP_TMP}\` VALUES (10, 'eng'), (20, 'fin')"
+${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY mp ON ${CLICKHOUSE_DATABASE}.\`${MP_TMP}\` FOR SELECT USING dept = 'fin' TO ${USER}"
+run_user "EXCHANGE TABLES ${CLICKHOUSE_DATABASE}.ma AND ${CLICKHOUSE_DATABASE}.\`${MP_TMP}\`" 2>&1 | grep -o -m1 "ACCESS_ENTITY_ALREADY_EXISTS"
+echo 'after rejected exchange (nothing moved: ma still holds {1,2}, and both policies are still bound):'
+run_user "SELECT id FROM ${CLICKHOUSE_DATABASE}.ma ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.row_policies WHERE short_name = 'mp' AND database = '${CLICKHOUSE_DATABASE}' AND table IN ('ma', '${MP_TMP}')"
+${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY mp ON ${CLICKHOUSE_DATABASE}.ma, mp ON ${CLICKHOUSE_DATABASE}.\`${MP_TMP}\`"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.ma"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.\`${MP_TMP}\`"
 
 # CREATE OR REPLACE TABLE / REPLACE TABLE swap a freshly built table (under a temporary name) into
 # the target name through a synthetic rename/exchange. Only the storage is replaced; the target keeps
