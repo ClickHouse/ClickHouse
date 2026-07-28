@@ -28,6 +28,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageView.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageDummy.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -1729,6 +1730,14 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
     bool revalidate_stored_defaults = false;
+    /// Columns whose default is evaluated at insert time (DEFAULT, MATERIALIZED); their expressions
+    /// must not reference virtual columns. An external-target (`TO`) materialized view forwards inserts
+    /// to its target using the target metadata and never evaluates its own column defaults, so a default
+    /// over a virtual column is inert there and is left out of this set.
+    NameSet insert_time_default_columns;
+    bool defaults_evaluated_at_insert_time = true;
+    if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
+        defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
     for (size_t i = 0; i < size(); ++i)
@@ -2144,6 +2153,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     final_column_name));
 
                 default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
+
+                if (defaults_evaluated_at_insert_time
+                    && (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized))
+                    insert_time_default_columns.insert(final_column_name);
             } /// if we change data type for column with default
             else if (all_columns.has(column_name) && command.data_type)
             {
@@ -2160,6 +2173,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
 
                 default_expr_list->children.emplace_back(setAlias(column_in_table.default_desc.expression->clone(), tmp_column_name));
+
+                if (defaults_evaluated_at_insert_time
+                    && (column_in_table.default_desc.kind == ColumnDefaultKind::Default || column_in_table.default_desc.kind == ColumnDefaultKind::Materialized))
+                    insert_time_default_columns.insert(final_column_name);
             }
         }
     }
@@ -2171,9 +2188,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot DROP or CLEAR all columns");
 
     if (revalidate_stored_defaults)
-        validateColumnsDefaultsAndGetSampleBlock(makeStoredDefaultExpressionList(all_columns), all_columns, context);
+        validateColumnsDefaultsAndGetSampleBlock(
+            makeStoredDefaultExpressionList(all_columns), all_columns, context, insert_time_default_columns);
     else
-        validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns, context);
+        validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns, context, insert_time_default_columns);
 }
 
 bool AlterCommands::hasNonReplicatedAlterCommand() const

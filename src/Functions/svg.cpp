@@ -111,7 +111,7 @@ Returns a string representation of a geometry in [SVG](https://en.wikipedia.org/
     )";
     FunctionDocumentation::Syntax syntax = "svg(geometry[, style])";
     FunctionDocumentation::Arguments arguments = {
-        {"geometry", "Geometry object (Point, Ring, Polygon, MultiPolygon).", {"Point", "Ring", "Polygon", "MultiPolygon"}},
+        {"geometry", "Geometry object (Point, MultiPoint, Ring, LineString, MultiLineString, Polygon, MultiPolygon).", {"Point", "MultiPoint", "Ring", "LineString", "MultiLineString", "Polygon", "MultiPolygon"}},
         {"style", "Optional CSS style string to apply to the SVG element.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the SVG representation of the geometry.", {"String"}};

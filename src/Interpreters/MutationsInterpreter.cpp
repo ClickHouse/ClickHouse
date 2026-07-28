@@ -148,6 +148,7 @@ void addColumnsRequiredForDefaultConversions(
     Names & required_columns,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData::DataPartPtr & part,
+    const AlterConversionsPtr & alter_conversions,
     const ContextPtr & context)
 {
     if (!part)
@@ -168,7 +169,15 @@ void addColumnsRequiredForDefaultConversions(
         if (!metadata_column)
             continue;
 
-        auto part_column = part->tryGetColumn(column_name);
+        /// A part that still carries a pre-`RENAME COLUMN` schema stores the column under its old name,
+        /// while `required_columns` uses the current metadata name. Resolve the on-part name the same way
+        /// the read path does in `injectRequiredColumnsForNullableDefaultConversions`, otherwise the
+        /// lookup misses the column and the sources of its default conversion are never added.
+        String column_name_in_part = column_name;
+        if (alter_conversions && alter_conversions->isColumnRenamed(column_name_in_part))
+            column_name_in_part = alter_conversions->getColumnOldName(column_name_in_part);
+
+        auto part_column = part->tryGetColumn(column_name_in_part);
         if (!part_column)
             continue;
 
@@ -1661,7 +1670,15 @@ void MutationsInterpreter::prepare(bool dry_run)
     for (const auto & projection : metadata_snapshot->getProjections())
     {
         if (!source.hasProjection(projection.name))
+        {
+            if (projection.with_block_number || projection.with_block_offset)
+            {
+                LOG_DEBUG(logger, "Will rebuild commit-order projection {}", projection.name);
+                materialized_projections.insert(projection.name);
+            }
+
             continue;
+        }
 
         /// Always rebuild broken projections.
         if (source.hasBrokenProjection(projection.name))
@@ -2302,7 +2319,7 @@ void MutationsInterpreter::Source::read(
     }
 
     auto storage_snapshot = getStorageSnapshot(snapshot_, context_, mutation_settings.can_execute);
-    addColumnsRequiredForDefaultConversions(required_columns, snapshot_, part, context_);
+    addColumnsRequiredForDefaultConversions(required_columns, snapshot_, part, alter_conversions, context_);
 
     if (!mutation_settings.can_execute)
     {

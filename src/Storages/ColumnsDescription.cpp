@@ -56,6 +56,7 @@
 #include <Common/typeid_cast.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/MatcherNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
@@ -1122,6 +1123,11 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
     if (!col_default_expression)
         return;
 
+    /// Track DEFAULT/MATERIALIZED columns (value computed and stored); ALIAS/EPHEMERAL are excluded.
+    if (col_decl.default_specifier == ColumnDefaultSpecifier::Default
+        || col_decl.default_specifier == ColumnDefaultSpecifier::Materialized)
+        info.insert_time_default_columns.insert(col_decl.name);
+
     /** For columns with explicitly-specified type create two expressions:
     * 1. default_expression aliased as column name with _tmp suffix
     * 2. conversion of expression (1) to explicitly-specified type alias as column name
@@ -1549,7 +1555,66 @@ NameSet getDefaultColumnNames(const ASTPtr & default_expr_list, const ColumnsDes
     return default_column_names;
 }
 
-std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, const ColumnsDescription & columns, ContextPtr context, bool get_sample_block)
+/// Reject a DEFAULT/MATERIALIZED column whose resolved expression reads a virtual column of the dummy
+/// table (directly or transitively). Only columns in insert_time_default_columns are checked; ALIAS
+/// and EPHEMERAL may reference virtuals. A declared column that shadows a virtual name is not flagged.
+void assertInsertTimeDefaultsDoNotReferenceVirtuals(
+    const QueryTreeNodePtr & projection_list,
+    const NamesAndTypes & projection_columns,
+    const QueryTreeNodePtr & fake_table_expression,
+    const VirtualColumnsDescription & virtual_columns,
+    const NameSet & declared_columns,
+    const NameSet & insert_time_default_columns)
+{
+    if (insert_time_default_columns.empty() || virtual_columns.empty())
+        return;
+
+    const auto & children = projection_list->as<ListNode &>().getNodes();
+    for (size_t i = 0; i < children.size() && i < projection_columns.size(); ++i)
+    {
+        if (!insert_time_default_columns.contains(projection_columns[i].name))
+            continue;
+
+        std::vector<const IQueryTreeNode *> stack{children[i].get()};
+        std::unordered_set<const IQueryTreeNode *> visited;
+        while (!stack.empty())
+        {
+            const auto * node = stack.back();
+            stack.pop_back();
+            if (!node || !visited.insert(node).second)
+                continue;
+
+            if (const auto * column_node = node->as<ColumnNode>())
+            {
+                /// A virtual-column reference: resolved against the dummy table, a virtual name, and not
+                /// shadowed by a declared column (a real column of that name is allowed).
+                const auto & column_name = column_node->getColumnName();
+                if (column_node->getColumnSourceOrNull() == fake_table_expression
+                    && virtual_columns.has(column_name)
+                    && !declared_columns.contains(column_name))
+                {
+                    throw Exception(
+                        ErrorCodes::UNKNOWN_IDENTIFIER,
+                        "Missing columns: '{}' while processing '{}': a DEFAULT or MATERIALIZED expression "
+                        "cannot reference the virtual column '{}'",
+                        column_name,
+                        projection_columns[i].name,
+                        column_name);
+                }
+            }
+
+            for (const auto & child : node->getChildren())
+                stack.push_back(child.get());
+        }
+    }
+}
+
+std::optional<Block> validateDefaultsWithAnalyzer(
+    ASTPtr default_expr_list,
+    const ColumnsDescription & columns,
+    ContextPtr context,
+    bool get_sample_block,
+    const NameSet & insert_time_default_columns)
 {
     if (!default_expr_list || default_expr_list->children.empty())
     {
@@ -1560,8 +1625,13 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
 
     auto execution_context = Context::createCopy(context);
 
+    NameSet table_column_names;
+    for (const auto & column : columns.getAll())
+        table_column_names.insert(column.name);
+
     auto fake_column_descriptions = clearDefaultExpressions(columns);
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
+
     QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
     GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
@@ -1582,6 +1652,15 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
     expression_list = query_node->getProjectionNode();
 
     assertNoAggregateFunctionNodes(expression_list, "in column DEFAULT expression");
+
+    const auto dummy_metadata = storage->getInMemoryMetadataPtr(execution_context, false);
+    assertInsertTimeDefaultsDoNotReferenceVirtuals(
+        expression_list,
+        query_node->getProjectionColumns(),
+        fake_table_expression,
+        dummy_metadata->virtuals,
+        table_column_names,
+        insert_time_default_columns);
 
     if (!get_sample_block)
         return {};
@@ -1619,7 +1698,12 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
     return result_block;
 }
 
-std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default_expr_list, const ColumnsDescription & columns, ContextPtr context, bool get_sample_block)
+std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(
+    ASTPtr default_expr_list,
+    const ColumnsDescription & columns,
+    ContextPtr context,
+    bool get_sample_block,
+    const NameSet & insert_time_default_columns)
 {
     if (!default_expr_list || default_expr_list->children.empty())
     {
@@ -1638,7 +1722,7 @@ std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default
     try
     {
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            return validateDefaultsWithAnalyzer(default_expr_list, columns, context, get_sample_block);
+            return validateDefaultsWithAnalyzer(default_expr_list, columns, context, get_sample_block, insert_time_default_columns);
         else
         {
             auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, columns.getAll(), {}, {}, false, /* allow_self_aliases = */ false);
@@ -1697,15 +1781,19 @@ void expandColumnMatchersInExpressionList(ASTPtr & expression_list, const Column
     expandColumnMatchersImpl(expression_list, columns, context);
 }
 
-void validateColumnsDefaults(ASTPtr default_expr_list, const ColumnsDescription & columns, ContextPtr context)
+void validateColumnsDefaults(
+    ASTPtr default_expr_list, const ColumnsDescription & columns, ContextPtr context, const NameSet & insert_time_default_columns)
 {
     /// Do not execute the default expressions as they might be heavy, e.g.: access remote servers, etc.
-    validateColumnsDefaultsAndGetSampleBlockImpl(default_expr_list, columns, context, /*get_sample_block=*/false);
+    validateColumnsDefaultsAndGetSampleBlockImpl(
+        default_expr_list, columns, context, /*get_sample_block=*/false, insert_time_default_columns);
 }
 
-Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const ColumnsDescription & columns, ContextPtr context)
+Block validateColumnsDefaultsAndGetSampleBlock(
+    ASTPtr default_expr_list, const ColumnsDescription & columns, ContextPtr context, const NameSet & insert_time_default_columns)
 {
-    auto result = validateColumnsDefaultsAndGetSampleBlockImpl(default_expr_list, columns, context, /*get_sample_block=*/true);
+    auto result = validateColumnsDefaultsAndGetSampleBlockImpl(
+        default_expr_list, columns, context, /*get_sample_block=*/true, insert_time_default_columns);
     chassert(result.has_value());
     return std::move(*result);
 }

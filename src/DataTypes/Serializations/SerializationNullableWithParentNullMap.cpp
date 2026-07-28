@@ -88,19 +88,21 @@ void SerializationNullableWithParentNullMap::deserializeBinaryBulkWithMultipleSt
     }
     settings.path.pop_back();
 
-    size_t prev_size = column->size();
+    /// Deserialize into a fresh per-range column instead of the accumulated result: the nested
+    /// serialization publishes this column's substreams into the shared substreams cache, and the null map
+    /// applied below physically removes the parent-NULL rows from them. A column that is published must
+    /// never be mutated afterwards, otherwise a reader of the whole parent column adopts the shortened
+    /// substream from the cache while computing its own offsets from the unfiltered row count.
+    ColumnPtr range_column = column->cloneEmpty();
 
-    /// The nested column (or some of its substreams) may already be in the substreams cache from
-    /// deserialization of another subcolumn, and a cached column can contain rows from multiple ranges.
-    /// Force copying only the rows of the current range from the cache, so that the number of rows appended
-    /// to `column` is exactly the size of the current range and the null representation modified below is
-    /// owned by `column` rather than shared with a column produced by another subcolumn read.
+    /// A cached column can contain rows from multiple ranges, so copy only the rows of the current range
+    /// from it, keeping `range_column` exactly the size of the current range.
     auto nested_settings = settings;
     nested_settings.insert_only_rows_in_current_range_from_substreams_cache = true;
     nested_settings.path.push_back(Substream::NullableElements);
-    nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, nested_settings, state, cache);
+    nested_serialization->deserializeBinaryBulkWithMultipleStreams(range_column, rows_offset, limit, nested_settings, state, cache);
 
-    size_t new_rows = column->size() - prev_size;
+    size_t new_rows = range_column->size();
     if (new_rows == 0)
         return;
 
@@ -115,8 +117,11 @@ void SerializationNullableWithParentNullMap::deserializeBinaryBulkWithMultipleSt
     const auto & parent_null_map_data = assert_cast<const ColumnUInt8 &>(*parent_null_map).getData();
     size_t parent_offset = parent_null_map_data.size() - parent_num_read_rows;
 
+    auto mutable_range_column = IColumn::mutate(std::move(range_column));
+    applyParentNullMapToExtractedSubcolumn(mutable_range_column, parent_null_map_data, /*column_offset=*/ 0, parent_offset);
+
     auto mutable_column = IColumn::mutate(std::move(column));
-    applyParentNullMapToExtractedSubcolumn(mutable_column, parent_null_map_data, prev_size, parent_offset);
+    mutable_column->insertRangeFrom(*mutable_range_column, 0, mutable_range_column->size());
     column = std::move(mutable_column);
 }
 
