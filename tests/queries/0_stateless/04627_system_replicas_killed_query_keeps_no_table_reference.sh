@@ -22,21 +22,22 @@ $CLICKHOUSE_CLIENT --query_id "$query_id" --max_execution_time 60 -q "
     SELECT * FROM system.replicas WHERE database = currentDatabase() FORMAT Null
 " >/dev/null 2>&1 &
 
-# Wait until the status request for our table exists. The query is paused in
-# scheduleRequests by the failpoint, so the request cannot be processed yet.
-found=0
-for _ in {1..60}
-do
-    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS text_log"
-    found=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.text_log
-        WHERE event_date >= yesterday() AND query_id = '$query_id'
-        AND message LIKE '%Making new request for table%t\\_status\\_no\\_pin%'")
-    [[ "$found" -ge 1 ]] && break
-    sleep 0.5
-done
-[[ "$found" -ge 1 ]] || echo "the status request did not appear in text_log"
+# The request for the table is created before scheduling starts, so once the query is
+# parked at the failpoint the request is queued and cannot be processed.
+$CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT system_replicas_schedule_requests_pause PAUSE"
 
 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$query_id' ASYNC FORMAT Null"
+
+# Resume the query only after the kill is visible to it, so that it abandons the request.
+cancelled=0
+for _ in {1..300}
+do
+    cancelled=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$query_id' AND is_cancelled")
+    [[ "$cancelled" -ge 1 ]] && break
+    sleep 0.1
+done
+[[ "$cancelled" -ge 1 ]] || echo "the query was not cancelled"
+
 $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT system_replicas_schedule_requests_pause"
 wait
 
