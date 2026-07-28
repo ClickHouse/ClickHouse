@@ -6,6 +6,7 @@
 #include <mutex>
 #include <shared_mutex>
 #include <type_traits>
+#include <variant>
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 
@@ -374,35 +375,66 @@ public:
 
     const Params & getParams() const { return params; }
 
-    /// Per-transform context of the adaptive aggregation: whether this thread's local table has
-    /// frozen, per-block staging for the missed rows (the arrays are cleared but keep their
-    /// capacity across blocks), and the sampling state of the probe bypass.
+    /// Per-transform context of the adaptive aggregation: the thread's lifecycle phase and its
+    /// phase-owned counters, per-block staging for the missed rows (the arrays are cleared but
+    /// keep their capacity across blocks), and the buffered chunks awaiting coalescing.
     struct AdaptiveAggregationProducer
     {
         explicit AdaptiveAggregationProducer(AdaptiveAggregationSessionPtr shared_) : session(std::move(shared_)) { }
 
+        /// The thread starts learning: the local table inserts as usual while the freeze rule
+        /// watches its growth. Rows consumed here feed the give-up rule (see `executeOnBlock`).
+        struct LearningState
+        {
+            size_t rows_seen = 0;
+        };
+
+        /// The adaptive phase proper: the local table only updates the keys it already holds
+        /// and misses are staged for the shared drain. Carries the post-freeze hit-rate
+        /// sampling: when the frozen table turns out to hold almost none of the stream's keys
+        /// (a uniform high-cardinality distribution), probing it is pure overhead on every row;
+        /// after the sample window the kernel switches to staging every row without the lookup.
+        struct FrozenState
+        {
+            size_t sampled_rows = 0;
+            size_t sampled_hits = 0;
+            bool bypass_local_probe = false;
+        };
+
+        /// Terminal: the thread aggregates exactly as with the feature off, keeping only the
+        /// reason it stood down.
+        struct BaselineState
+        {
+            enum class Reason
+            {
+                /// The give-up rule: the table stayed far below the freeze threshold across
+                /// many times that many rows, so the stream is repeat-dominated locally.
+                TooFewDistinctKeys,
+                /// The global thaw: the session-wide staged-key sample proved the whole stream
+                /// repeat-dominated (see `publishDelayedRecords`).
+                RepeatedStagedKeys,
+            };
+            Reason reason;
+        };
+
+        using Phase = std::variant<LearningState, FrozenState, BaselineState>;
+        Phase phase = LearningState{};
+
+        bool isLearning() const { return std::holds_alternative<LearningState>(phase); }
+        bool isFrozen() const { return std::holds_alternative<FrozenState>(phase); }
+        bool isBaseline() const { return std::holds_alternative<BaselineState>(phase); }
+
+        void freeze() { phase = FrozenState{}; }
+        void standDown(BaselineState::Reason reason) { phase = BaselineState{.reason = reason}; }
+
         AdaptiveAggregationSessionPtr session;
-        bool local_table_frozen = false;
+
         /// The current block's misses, one entry per delayed record, in staging order.
         PaddedPODArray<UInt32> miss_source_rows;
         PaddedPODArray<UInt64> miss_hashes;
         PaddedPODArray<UInt8> miss_buckets;
         PaddedPODArray<UInt64> miss_key_sizes;
         PaddedPODArray<UInt32> miss_multiplicities;
-
-        /// Post-freeze hit-rate sampling. When the frozen table turns out to hold almost none of
-        /// the stream's keys (a uniform high-cardinality distribution), probing it is pure
-        /// overhead on every row; after the sample window the kernel switches to staging every
-        /// row without the lookup.
-        size_t bypass_sampled_rows = 0;
-        size_t bypass_sampled_hits = 0;
-        bool bypass_local_probe = false;
-
-        /// Rows consumed while the local table was neither frozen nor given up. A thread whose
-        /// table stays far below the freeze threshold across many times that many rows is
-        /// repeat-dominated and hands itself back to the baseline path (see `executeOnBlock`).
-        size_t rows_seen_unfrozen = 0;
-        bool gave_up_freezing = false;
 
         /// Scratch for the value-staged publish grouping (see `buildDeduplicatedCountChunk`).
         std::vector<std::pair<UInt64, UInt32>> sort_pairs_scratch;

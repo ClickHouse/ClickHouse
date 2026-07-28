@@ -1928,7 +1928,7 @@ bool Aggregator::executeOnBlock(Columns columns,
             result.aggregates_pool,
             use_compiled_functions);
     }
-    else if (adaptive && adaptive->local_table_frozen)
+    else if (adaptive && adaptive->isFrozen())
     {
         /// The frozen adaptive path: hits update the local table in place, misses become delayed
         /// records of the shared table.
@@ -1948,7 +1948,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// Here all the results in the sum are taken into account, from different threads.
     Int64 result_size_bytes = use_own_tracker ? memory_tracker->get() : current_memory_usage - memory_usage_before_aggregation;
 
-    if (adaptive && !adaptive->gave_up_freezing)
+    if (adaptive && !adaptive->isBaseline())
     {
         if (adaptive->session->thaw_all.load(std::memory_order_relaxed))
         {
@@ -1957,26 +1957,25 @@ bool Aggregator::executeOnBlock(Columns columns,
             /// insertion; the records staged so far stay published and the merge drains them.
             /// A thread that has not frozen yet stands down the same way, so that it does not
             /// freeze against the verdict.
-            if (adaptive->local_table_frozen)
+            if (adaptive->isFrozen())
                 LOG_TRACE(log, "Adaptive aggregation: thawed the local table at {} keys", result_size);
-            adaptive->local_table_frozen = false;
-            adaptive->gave_up_freezing = true;
+            adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::RepeatedStagedKeys);
         }
         else
         {
             /// The freeze replaces the local two-level conversion: from now on the local table
             /// only updates the keys it already holds, so it stays single-level and bounded by
             /// the threshold, and the frozen kernel pairs it with its two-level twin.
-            if (!adaptive->local_table_frozen && result_size >= params.adaptive_aggregator_freeze_threshold
+            if (adaptive->isLearning() && result_size >= params.adaptive_aggregator_freeze_threshold
                 && result.isConvertibleToTwoLevel())
             {
                 std::call_once(adaptive->session->init_flag, [&] { initAdaptiveSession(result, *adaptive->session); });
-                adaptive->local_table_frozen = true;
+                adaptive->freeze();
                 ProfileEvents::increment(ProfileEvents::AdaptiveAggregationLocalFreezes);
                 LOG_TRACE(log, "Adaptive aggregation: local table frozen at {} keys", result_size);
             }
 
-            if (adaptive->local_table_frozen)
+            if (adaptive->isFrozen())
             {
                 /// The memory valve: under the same trigger the baseline uses for spilling, the
                 /// staged backlogs are drained early into the shared table, which sheds their
@@ -2004,17 +2003,18 @@ bool Aggregator::executeOnBlock(Columns columns,
             /// region, where the freeze would foreclose the byte-triggered conversion and its
             /// bucket-parallel merge), or the hot share is so extreme that staging the sliver of
             /// a tail cannot pay. The thread falls back to the baseline checks below, permanently.
-            adaptive->rows_seen_unfrozen += row_end - row_begin;
-            if (adaptive->rows_seen_unfrozen
-                >= adaptive_freeze_give_up_row_multiple * params.adaptive_aggregator_freeze_threshold
+            auto & learning = std::get<AdaptiveAggregationProducer::LearningState>(adaptive->phase);
+            learning.rows_seen += row_end - row_begin;
+            if (learning.rows_seen >= adaptive_freeze_give_up_row_multiple * params.adaptive_aggregator_freeze_threshold
                 && result_size < params.adaptive_aggregator_freeze_threshold)
             {
-                adaptive->gave_up_freezing = true;
+                const size_t rows_seen = learning.rows_seen;
+                adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::TooFewDistinctKeys);
                 ProfileEvents::increment(ProfileEvents::AdaptiveAggregationGiveUps);
-                LOG_TRACE(log, "Adaptive aggregation: giving up on freezing after {} rows at {} keys", adaptive->rows_seen_unfrozen, result_size);
+                LOG_TRACE(log, "Adaptive aggregation: giving up on freezing after {} rows at {} keys", rows_seen, result_size);
             }
 
-            if (!adaptive->gave_up_freezing)
+            if (!adaptive->isBaseline())
             {
                 /// Checking the constraints.
                 if (!checkLimits(result_size, no_more_keys))
@@ -2151,20 +2151,23 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     /// pressure spill re-initializing it; the mutable early-drain table must not double as a
     /// hash-policy object.
 
+    /// The kernel runs only while the producer is frozen, and phase transitions happen between
+    /// blocks, so the reference stays valid for the whole block.
+    auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
     auto update_bypass_sampling = [&](size_t hits, size_t rows)
     {
-        if (adaptive.bypass_local_probe)
+        if (frozen.bypass_local_probe)
             return;
-        adaptive.bypass_sampled_hits += hits;
-        adaptive.bypass_sampled_rows += rows;
-        if (adaptive.bypass_sampled_rows >= adaptive_bypass_sample_rows
-            && adaptive.bypass_sampled_hits * adaptive_bypass_hit_rate_inverse < adaptive.bypass_sampled_rows)
+        frozen.sampled_hits += hits;
+        frozen.sampled_rows += rows;
+        if (frozen.sampled_rows >= adaptive_bypass_sample_rows
+            && frozen.sampled_hits * adaptive_bypass_hit_rate_inverse < frozen.sampled_rows)
         {
-            adaptive.bypass_local_probe = true;
+            frozen.bypass_local_probe = true;
             ProfileEvents::increment(ProfileEvents::AdaptiveAggregationProbeBypasses);
         }
     };
-    const bool bypass_local_probe = adaptive.bypass_local_probe;
+    const bool bypass_local_probe = frozen.bypass_local_probe;
 
     if (all_keys_are_const)
     {
