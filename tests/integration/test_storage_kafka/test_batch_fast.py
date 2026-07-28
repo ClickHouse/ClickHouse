@@ -1090,9 +1090,9 @@ def test_librdkafka_compression(kafka_cluster, create_query_generator, log_line)
 
         2020.12.10 09:59:56.831507 [ 20 ] {} <Error> void DB::StorageKafka::threadFunc(size_t): Code: 27. DB::Exception: Cannot parse input: expected '"' before: 'foo"}': (while reading the value of key value): (at row 1)
 
-    To trigger this regression there should duplicated messages
+    To trigger this regression there should be duplicated messages
 
-    Orignal reproducer is:
+    Original reproducer is:
     $ gcc --version |& fgrep gcc
     gcc (GCC) 10.2.0
     $ yes foobarbaz | fold -w 80 | head -n10 >| in-…
@@ -1255,11 +1255,20 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
     k.kafka_produce(kafka_cluster, topic_name, messages)
 
     with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
+        # query_with_retry returns the last (possibly short) snapshot once its retry
+        # budget is spent, so use a larger budget like the single-view test above to
+        # let each view receive all rows before the assertion below.
         result1 = instance.query_with_retry(
-            f"SELECT * FROM test.{kafka_table}_view1", check_callback=k.kafka_check_result
+            f"SELECT * FROM test.{kafka_table}_view1",
+            check_callback=k.kafka_check_result,
+            retry_count=40,
+            sleep_time=0.75,
         )
         result2 = instance.query_with_retry(
-            f"SELECT * FROM test.{kafka_table}_view2", check_callback=k.kafka_check_result
+            f"SELECT * FROM test.{kafka_table}_view2",
+            check_callback=k.kafka_check_result,
+            retry_count=40,
+            sleep_time=0.75,
         )
 
         instance.query(f"""
@@ -2250,10 +2259,19 @@ def test_kafka_flush_by_time(kafka_cluster, create_query_generator):
 
         cancel = threading.Event()
 
+        # Reuse one producer: `k.kafka_produce` opens a new connection per call,
+        # and a single broker-version probe there can cost seconds, which is
+        # enough to miss the row count asserted below.
+        producer = k.get_kafka_producer(
+            kafka_cluster.kafka_port, k.producer_serializer, retries=15
+        )
+
         def produce():
             while not cancel.is_set():
-                messages = [json.dumps({"key": 0, "value": 0})]
-                k.kafka_produce(kafka_cluster, topic_name, messages)
+                producer.send(
+                    topic=topic_name, value=json.dumps({"key": 0, "value": 0})
+                )
+                producer.flush()
                 time.sleep(0.8)
 
         kafka_thread = threading.Thread(target=produce)
@@ -2271,6 +2289,7 @@ def test_kafka_flush_by_time(kafka_cluster, create_query_generator):
 
         cancel.set()
         kafka_thread.join()
+        producer.close()
 
         instance.query(f"""
             DROP TABLE test.{kafka_table}_consumer;

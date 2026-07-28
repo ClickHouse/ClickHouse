@@ -391,7 +391,13 @@ void applyPatchesToBlockRaw(
             };
 
             if (canApplyPatchInplace(*result_column.column))
-                result_column.column->assumeMutableRef().updateInplaceFrom(patch);
+            {
+                /// COW-safe in-place update: clone when the column is shared instead of mutating
+                /// a column still referenced by another owner via `assumeMutableRef`.
+                auto mutable_column = IColumn::mutate(std::move(result_column.column));
+                mutable_column->updateInplaceFrom(patch);
+                result_column.column = std::move(mutable_column);
+            }
             else
                 result_column.column = result_column.column->updateFrom(patch);
         }
@@ -423,7 +429,13 @@ void applyPatchesToBlockCombined(
         auto multi_patch = builder.createPatchForColumn(result_column.name, result_column, result_versions, converted_columns);
 
         if (canApplyPatchInplace(*result_column.column))
-            result_column.column->assumeMutableRef().updateInplaceFrom(multi_patch);
+        {
+            /// COW-safe in-place update: clone when the column is shared instead of mutating
+            /// a column still referenced by another owner via `assumeMutableRef`.
+            auto mutable_column = IColumn::mutate(std::move(result_column.column));
+            mutable_column->updateInplaceFrom(multi_patch);
+            result_column.column = std::move(mutable_column);
+        }
         else
             result_column.column = result_column.column->updateFrom(multi_patch);
     }
@@ -526,8 +538,8 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::BuildPatchesJoinMicroseconds);
 
-    auto block_number_column = result_block.getByName(BlockNumberColumn::name).column->convertToFullIfNeeded();
-    auto block_offset_column = result_block.getByName(BlockOffsetColumn::name).column->convertToFullIfNeeded();
+    auto block_number_column = result_block.getByName(BlockNumberColumn::name).column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+    auto block_offset_column = result_block.getByName(BlockOffsetColumn::name).column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
 
     const auto & result_block_number = assert_cast<const ColumnUInt64 &>(*block_number_column).getData();
     const auto & result_block_offset = assert_cast<const ColumnUInt64 &>(*block_offset_column).getData();
