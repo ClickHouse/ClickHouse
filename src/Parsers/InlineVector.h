@@ -2,7 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <memory>
+#include <new>
 #include <type_traits>
 
 namespace DB
@@ -20,7 +20,9 @@ class InlineVector
     static_assert(std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>);
 
 public:
-    InlineVector() = default;
+    /// `inplace` is deliberately left uninitialized: only the first `count` of its elements are
+    /// ever read, and not zeroing the rest is the whole point of keeping them inline.
+    InlineVector() = default; /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
 
     InlineVector(const InlineVector & other) { assign(other); }
 
