@@ -182,6 +182,32 @@ def test_dump_refuses_a_symlinked_temp_path(in_tmp_cwd, tmp_path):
     assert Result.from_fs(JOB_NAME).info == "pre-run"
 
 
+def test_dump_reuses_a_stale_regular_temp_file(in_tmp_cwd):
+    """`O_EXCL` is deliberately absent: a leftover temp from a previously killed dump
+    must stay reusable, or crash recovery would itself crash.
+
+    Kills the mutant that adds `| os.O_EXCL` to the `os.open` flags - it makes this
+    dump() raise FileExistsError (errno 17). `test_dump_refuses_a_symlinked_temp_path`
+    cannot substitute: O_EXCL rejects a pre-existing symlink too (with EEXIST rather
+    than ELOOP), so it fails under that mutant for the wrong reason and never observes
+    a *regular* leftover.
+    """
+    _result(status=Result.Status.RUNNING, info="pre-run").dump()
+
+    target = Result.file_name_static(JOB_NAME)
+    leftover = f"{target}.tmp.{os.getpid()}"
+    with open(leftover, "w", encoding="utf8") as f:
+        f.write('{"name": "half-written"')
+
+    _result(status=Result.Status.OK, info="landed").dump()
+
+    landed = Result.from_fs(JOB_NAME)
+    assert landed.status == Result.Status.OK
+    assert landed.info == "landed"
+    # os.replace consumed the reused temp, so no litter is left behind.
+    assert not [e for e in _temp_dir_entries() if ".tmp" in e]
+
+
 def test_dump_of_a_result_with_subresults_round_trips(in_tmp_cwd):
     """The observed failure carried 11882 sub-results; nesting must survive the rename."""
     r = _result(status=Result.Status.OK)

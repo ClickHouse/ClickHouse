@@ -27,6 +27,7 @@ import dataclasses
 import os
 import sys
 import textwrap
+import types
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
@@ -306,3 +307,41 @@ def test_run_leaves_result_running_when_job_succeeded_but_result_unreadable(in_t
     assert persisted.status == Result.Status.RUNNING
     assert persisted.is_completed() is False
     assert persisted.is_ok() is False
+
+
+# --- the second job-result read, in Runner.run itself ---------------------------------
+
+
+def test_run_survives_an_unreadable_result_at_the_second_read(in_tmp_cwd, monkeypatch, capsys):
+    """`Runner.run` reads the job result a second time outside all three of its `try`
+    blocks (runner.py:1128; runner.py:1093 on master). That read is *the* crash site of
+    the incident, and no other test executes it - both behavioral tests above drive
+    `_run` instead.
+
+    An AST pin alone cannot cover it: `Result.from_fs(name)` is
+    `cls.from_file(cls.file_name_static(name))`, so writing the equivalent
+    `Result.from_file(Result.file_name_static(job.name))` unparses differently, keeps
+    `test_no_unguarded_job_result_read_remains_in_run_or__run` green, and reinstates the
+    unhandled JSONDecodeError.
+    """
+    workflow = types.SimpleNamespace(name="W", dockers=[], event="push")
+    job = Job.Config(name=JOB_NAME, runs_on=["x"], command="true", run_in_docker="")
+
+    def _died_leaving_an_unreadable_result(self, workflow, job, **kwargs):
+        # generate_local_run_environment ends with a PENDING dump(), so the incident
+        # state has to be written here - after it, and before run() reads it back.
+        _write_result_file("")
+        return 125
+
+    monkeypatch.setattr(Runner, "_run", _died_leaving_an_unreadable_result)
+
+    with pytest.raises(SystemExit) as ex:
+        Runner().run(workflow=workflow, job=job, local_run=True, run_hooks=False)
+
+    # ⭐ Load-bearing: reaching the exit at all means the read degraded. With an
+    # unguarded read this test fails with json.decoder.JSONDecodeError instead - which
+    # is why this must not be pytest.raises(Exception).
+    assert ex.value.code == 1
+    # The print sits *after* the read, so it is direct evidence control got past it. On
+    # master this line is absent from the job log, which is the reported symptom.
+    assert "=== Run script finished ===" in capsys.readouterr().out
