@@ -9,11 +9,11 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/SelectQueryInfo.h>
 
 #include <algorithm>
 
@@ -59,12 +59,19 @@ void StorageFromMergeTreeProjection::read(
     /// row policies live on the parent table, so enforce them here or the projection leaks hidden rows
     auto row_policy = buildRowPolicyFilter(context);
 
-    /// read the policy columns too, even if the query did not ask for them
     Names read_column_names = column_names;
     if (row_policy)
+    {
+        /// read the policy columns too, even if the query did not ask for them
         for (const auto & name : row_policy->required_columns)
             if (std::find(read_column_names.begin(), read_column_names.end(), name) == read_column_names.end())
                 read_column_names.push_back(name);
+
+        /// Apply as a row-level filter so it runs ahead of any user PREWHERE, exactly like a normal
+        /// MergeTree read. A post-read FilterStep would let a PREWHERE predicate observe hidden rows first.
+        query_info.row_level_filter = std::make_shared<FilterDAGInfo>(
+            FilterDAGInfo{std::move(row_policy->dag), row_policy->filter_column_name, true /* do_remove_column */});
+    }
 
     /// A UNIQUE KEY parent rejects projection reads in the MergeTreeDataSelectExecutor
     /// constructor below (the universal projection-read chokepoint), since reading a
@@ -107,22 +114,16 @@ void StorageFromMergeTreeProjection::read(
         query_plan.addStep(std::move(read_nothing));
     }
 
-    if (row_policy)
+    /// drop the policy columns we added on top of what the query requested
+    if (row_policy && read_column_names.size() != column_names.size())
     {
-        query_plan.addStep(std::make_unique<FilterStep>(
-            query_plan.getCurrentHeader(), std::move(row_policy->dag), row_policy->filter_column_name, true /* remove filter column */));
-
-        /// drop the policy columns we added on top of what the query requested
-        if (read_column_names.size() != column_names.size())
-        {
-            auto target = storage_snapshot->getSampleBlockForColumns(column_names);
-            auto convert = ActionsDAG::makeConvertingActions(
-                query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
-                target.getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name,
-                context);
-            query_plan.addStep(std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert)));
-        }
+        auto target = storage_snapshot->getSampleBlockForColumns(column_names);
+        auto convert = ActionsDAG::makeConvertingActions(
+            query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
+            target.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name,
+            context);
+        query_plan.addStep(std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert)));
     }
 }
 

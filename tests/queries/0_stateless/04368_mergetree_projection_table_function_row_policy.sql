@@ -55,3 +55,23 @@ SELECT a FROM mergeTreeProjection(currentDatabase(), 'alias_rls_proj', 'p') ORDE
 
 DROP ROW POLICY rp_alias_rls_proj ON alias_rls_proj;
 DROP TABLE alias_rls_proj;
+
+-- A user PREWHERE must not observe rows the policy hides: the policy filter runs first, so throwIf
+-- never sees the hidden 'private' row.
+DROP TABLE IF EXISTS prewhere_rls_proj;
+DROP ROW POLICY IF EXISTS rp_prewhere_rls_proj ON prewhere_rls_proj;
+
+CREATE TABLE prewhere_rls_proj (id UInt64, secret String, val UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO prewhere_rls_proj VALUES (1, 'public', 10), (2, 'private', 20), (3, 'public', 30);
+
+ALTER TABLE prewhere_rls_proj ADD PROJECTION p (SELECT id, secret, val ORDER BY secret);
+ALTER TABLE prewhere_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+
+CREATE ROW POLICY rp_prewhere_rls_proj ON prewhere_rls_proj FOR SELECT USING secret = 'public' TO ALL;
+
+SELECT '-- user PREWHERE does not observe policy-hidden rows (expect 1, 3)';
+SELECT id FROM mergeTreeProjection(currentDatabase(), 'prewhere_rls_proj', 'p')
+PREWHERE throwIf(secret = 'private', 'row policy leak') = 0 ORDER BY id;
+
+DROP ROW POLICY rp_prewhere_rls_proj ON prewhere_rls_proj;
+DROP TABLE prewhere_rls_proj;
