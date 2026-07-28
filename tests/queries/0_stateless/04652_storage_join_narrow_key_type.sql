@@ -126,6 +126,12 @@ INSERT INTO s_i16 VALUES (2, 10);
 CREATE TABLE l_u32_ms (k UInt32) ENGINE = Memory;
 INSERT INTO l_u32_ms VALUES (2), (100000);
 SELECT sum(r.jv) FROM l_u32_ms AS l ANY LEFT JOIN s_i16 AS r USING (k); -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
+-- Wide integers decline: the narrowing is restricted to native integer widths (8/16/32/64), because
+-- whether accurateCastOrNull is a pure domain check for Int128/UInt256 needs its own verification.
+-- Today's refusal stands for a wide left key; that is a recorded residual, not a silent gap.
+CREATE TABLE l_u128 (k UInt128) ENGINE = Memory;
+INSERT INTO l_u128 VALUES (2), (4), (18446744073709551618);
+SELECT sum(r.jv) FROM l_u128 AS l ANY LEFT JOIN s_u64 AS r USING (k); -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
 
 -- 10. Wrapper matrix: every narrowing carrier is fixed AND keeps the direct lookup.
 CREATE TABLE l_nu64 (k Nullable(UInt64)) ENGINE = Memory;
@@ -158,6 +164,22 @@ SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_lcnu64 AS l ANY LEFT
 SELECT count() > 0 FROM (EXPLAIN PLAN description = 1
     SELECT sum(r.jv) FROM l_lcnu64 AS l ANY LEFT JOIN s_nu32 AS r USING (k))
 WHERE explain ILIKE '%FilledJoin%';
+-- Same width, nullability only, but mirrored: a non-nullable left key against a nullable storage key.
+-- Unlike the nullable-left direction pinned in section 8, this one has no working plan on master (the
+-- storage key still gets a _CAST and is still refused), so the narrowing rewrite must fire here. The
+-- one-sidedness of the first clause of canNarrowLeftKeyToStorageKey is what makes both true at once.
+SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_u32 AS l ANY LEFT JOIN o_nu32 AS r USING (k);
+SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_u32 AS l ANY LEFT JOIN s_nu32 AS r USING (k);
+SELECT count() > 0 FROM (EXPLAIN PLAN description = 1
+    SELECT sum(r.jv) FROM l_u32 AS l ANY LEFT JOIN s_nu32 AS r USING (k))
+WHERE explain ILIKE '%FilledJoin%';
+CREATE TABLE l_lcu32 (k LowCardinality(UInt32)) ENGINE = Memory;
+INSERT INTO l_lcu32 VALUES (2), (4), (7);
+SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_lcu32 AS l ANY LEFT JOIN o_nu32 AS r USING (k);
+SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_lcu32 AS l ANY LEFT JOIN s_nu32 AS r USING (k);
+SELECT count() > 0 FROM (EXPLAIN PLAN description = 1
+    SELECT sum(r.jv) FROM l_lcu32 AS l ANY LEFT JOIN s_nu32 AS r USING (k))
+WHERE explain ILIKE '%FilledJoin%';
 
 -- 11. LowCardinality left key: the common type drops LowCardinality, so both sides of the
 -- narrowing check must be compared through removeLowCardinalityAndNullable.
@@ -173,14 +195,18 @@ SELECT count() > 0 FROM (EXPLAIN PLAN description = 1
     SELECT sum(r.jv) FROM l_lcu64 AS l ANY LEFT JOIN s_nu32 AS r USING (k))
 WHERE explain ILIKE '%FilledJoin%';
 
--- 13. Null-safe equals reaches the same conversion, so the narrowing applies there too.
+-- 12. Null-safe equals reaches the same conversion, so the narrowing applies there too, but only for a
+-- non-nullable storage key. When the storage key is nullable as well, the null-safe rewrite wraps both
+-- keys in tuple(), and a tuple expression is not a mapped storage column, so that shape stays refused.
+-- Master refuses it too, for the same reason.
 SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_u64_oor AS l ANY LEFT JOIN o_u64 AS r ON l.k IS NOT DISTINCT FROM r.k;
 SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_u64_oor AS l ANY LEFT JOIN s_u32 AS r ON l.k IS NOT DISTINCT FROM r.k;
 SELECT count() > 0 FROM (EXPLAIN PLAN description = 1
     SELECT sum(r.jv) FROM l_u64_oor AS l ANY LEFT JOIN s_u32 AS r ON l.k IS NOT DISTINCT FROM r.k)
 WHERE explain ILIKE '%FilledJoin%';
+SELECT sum(r.jv) FROM l_u64_oor AS l ANY LEFT JOIN s_nu32 AS r ON l.k IS NOT DISTINCT FROM r.k; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
 
--- 14. RIGHT and FULL USING with the bare USING column projected. There the output key comes from the
+-- 13. RIGHT and FULL USING with the bare USING column projected. There the output key comes from the
 -- right side and a required right key is materialised from the left key column, whose type the
 -- rewrite changes, so these shapes exercise a different path than the ANY LEFT cases above.
 CREATE TABLE s_r32 (k UInt32, jv Int64) ENGINE = Join(ALL, RIGHT, k);
@@ -204,7 +230,7 @@ SELECT count() > 0 FROM (EXPLAIN PLAN description = 1
     SELECT k FROM l_r64 ALL FULL JOIN s_f32 USING (k))
 WHERE explain ILIKE '%FilledJoin%';
 
--- 12. Custom-named integer storage keys decline: Bool is a UInt8 whose comparison semantics differ,
+-- 14. Custom-named integer storage keys decline: Bool is a UInt8 whose comparison semantics differ,
 -- accurateCastOrNull(2, 'Bool') is true, so admitting it would report 14 / [7,7] instead of 7 / [7,0].
 CREATE TABLE s_bool (k Bool, jv Int64) ENGINE = Join(ANY, LEFT, k);
 INSERT INTO s_bool VALUES (true, 7);

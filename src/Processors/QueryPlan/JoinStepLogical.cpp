@@ -716,8 +716,11 @@ struct JoinPlanningContext
 /// (`accurateCastOrNull(2, 'Bool')` is `true`), so either would fabricate matches.
 static bool canNarrowLeftKeyToStorageKey(const DataTypePtr & left_type, const DataTypePtr & right_type, const DataTypePtr & common_type)
 {
-    /// A pure nullability mismatch needs no conversion on either side: the existing storage-join branch below
-    /// already keeps the right key un-cast for it. Only a genuine width mismatch reaches the new path.
+    /// Decline only when the LEFT key is the nullable one and the bare types already match: the storage-join
+    /// branch below leaves the storage key un-cast for that pair, so it has a working plan today and rewriting
+    /// it would change the plan of every such existing join (it regressed 03786_storage_join_type_conversion).
+    /// A nullable STORAGE key is the opposite case: that branch does not fire for it, the storage key still gets
+    /// a `_CAST` and is still refused, so narrowing the left key is what makes it work. The asymmetry is deliberate.
     if (right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
         return false;
 
