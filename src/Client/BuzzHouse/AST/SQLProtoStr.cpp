@@ -5485,6 +5485,32 @@ CONV_FN(SystemCommand, cmd)
             ret += " ";
             appendSQLStringLiteral(ret, cmd.restart_disk());
             break;
+        /// Background controls. They reject `ON CLUSTER`, so leave `can_set_cluster` unset
+        case CmdType::kStopBackground:
+            ret += "STOP ";
+            ExprSchemaTableToString(ret, cmd.stop_background());
+            break;
+        case CmdType::kStartBackground:
+            ret += "START ";
+            ExprSchemaTableToString(ret, cmd.start_background());
+            break;
+        case CmdType::kPauseBackground:
+            ret += "PAUSE ";
+            ExprSchemaTableToString(ret, cmd.pause_background());
+            break;
+        case CmdType::kCancelBackground:
+            ret += "CANCEL ";
+            ExprSchemaTableToString(ret, cmd.cancel_background());
+            break;
+        case CmdType::kRefreshBackground:
+            ret += "REFRESH ";
+            ExprSchemaTableToString(ret, cmd.refresh_background());
+            break;
+        case CmdType::kStopAllBackground: ret += "STOP ALL BACKGROUND"; break;
+        case CmdType::kStartAllBackground: ret += "START ALL BACKGROUND"; break;
+        case CmdType::kPauseAllBackground: ret += "PAUSE ALL BACKGROUND"; break;
+        case CmdType::kCancelAllBackground: ret += "CANCEL ALL BACKGROUND"; break;
+        case CmdType::kRefreshAllBackground: ret += "REFRESH ALL BACKGROUND"; break;
         default: ret += "FLUSH LOGS";
     }
     if (can_set_cluster && cmd.has_cluster())

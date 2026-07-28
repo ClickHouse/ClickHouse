@@ -6310,8 +6310,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 fn->arguments->children[0] = make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, group));
             }
             else if (
-                lambda_accepting_funcs.contains(fn->name)
-                && !(first_arg && first_arg->name == "lambda") && !fn->arguments->children[0]->as<ASTIdentifier>())
+                lambda_accepting_funcs.contains(fn->name) && !(first_arg && first_arg->name == "lambda")
+                && !fn->arguments->children[0]->as<ASTIdentifier>())
             {
                 const auto & group = swapFuncs[fuzz_rand() % swapFuncs.size()];
                 fn->arguments->children.insert(
@@ -7671,6 +7671,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         using Type = ASTSystemQuery::Type;
         /// Toggle paired commands to exercise both code paths with the same operand.
         /// Includes START/STOP pairs, individual/bulk reload pairs, and ENABLE/DISABLE pairs.
+        /// The view and background control verbs are absent, `cmd_rotation_sets` below covers them.
         if (fuzz_rand() % 20 == 0)
         {
             static const std::pair<Type, Type> toggleable_pairs[] = {
@@ -7685,14 +7686,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 {Type::STOP_THREAD_FUZZER, Type::START_THREAD_FUZZER},
                 {Type::STOP_PULLING_REPLICATION_LOG, Type::START_PULLING_REPLICATION_LOG},
                 {Type::STOP_CLEANUP, Type::START_CLEANUP},
-                {Type::STOP_VIEW, Type::START_VIEW},
-                {Type::STOP_VIEWS, Type::START_VIEWS},
-                {Type::STOP_REPLICATED_VIEW, Type::START_REPLICATED_VIEW},
                 {Type::STOP_VIRTUAL_PARTS_UPDATE, Type::START_VIRTUAL_PARTS_UPDATE},
                 {Type::STOP_REDUCE_BLOCKING_PARTS, Type::START_REDUCE_BLOCKING_PARTS},
-                {Type::STOP, Type::START},
-                {Type::STOP_ALL_BACKGROUND, Type::START_ALL_BACKGROUND},
                 {Type::STOP_LISTEN, Type::START_LISTEN},
+                {Type::REPLICA_UNREADY, Type::REPLICA_READY},
                 {Type::LOAD_PRIMARY_KEY, Type::UNLOAD_PRIMARY_KEY},
                 /* These are too slow
                 {Type::RELOAD_FUNCTION, Type::RELOAD_FUNCTIONS},
@@ -7739,59 +7736,57 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             static const UInt64 suspend_seconds[] = {0, 1, 2, 5, 10, 3600};
             system_query->seconds = suspend_seconds[fuzz_rand() % std::size(suspend_seconds)];
         }
-        /// Rotate among view commands that all take a table argument
+        /// Rotate among the view and background control verbs. Keep the sets apart: mixing arities
+        /// breaks the `chassert(table)` the per-table forms format through.
+        if (fuzz_rand() % 10 == 0)
         {
-            static const Type view_cmd_types[] = {
-                Type::REFRESH_VIEW,
-                Type::START_VIEW,
-                Type::START_REPLICATED_VIEW,
-                Type::STOP_VIEW,
-                Type::STOP_REPLICATED_VIEW,
-                Type::PAUSE_VIEW,
-                Type::CANCEL_VIEW,
-                Type::WAIT_VIEW,
+            static const std::unordered_set<Type> cmd_rotation_sets[] = {
+                /// Views, per table
+                {Type::REFRESH_VIEW,
+                 Type::START_VIEW,
+                 Type::START_REPLICATED_VIEW,
+                 Type::STOP_VIEW,
+                 Type::STOP_REPLICATED_VIEW,
+                 Type::PAUSE_VIEW,
+                 Type::CANCEL_VIEW,
+                 Type::WAIT_VIEW},
+                /// Views, server-wide. Only these three verbs have a plural spelling
+                {Type::START_VIEWS, Type::STOP_VIEWS, Type::PAUSE_VIEWS},
+                /// Background controls, per table
+                {Type::STOP, Type::START, Type::PAUSE, Type::CANCEL, Type::REFRESH},
+                /// Background controls, server-wide
+                {Type::STOP_ALL_BACKGROUND,
+                 Type::START_ALL_BACKGROUND,
+                 Type::PAUSE_ALL_BACKGROUND,
+                 Type::CANCEL_ALL_BACKGROUND,
+                 Type::REFRESH_ALL_BACKGROUND},
             };
-            for (const auto & t : view_cmd_types)
+            for (const auto & cmds : cmd_rotation_sets)
             {
-                if (system_query->type == t && fuzz_rand() % 10 == 0)
+                if (cmds.contains(system_query->type))
                 {
-                    system_query->type = view_cmd_types[fuzz_rand() % std::size(view_cmd_types)];
-                    break;
-                }
-            }
-        }
-        /// Rotate among background control commands that all take a table argument
-        {
-            static const Type background_cmd_types[] = {
-                Type::STOP,
-                Type::START,
-                Type::PAUSE,
-                Type::CANCEL,
-                Type::REFRESH,
-            };
-            for (const auto & t : background_cmd_types)
-            {
-                if (system_query->type == t && fuzz_rand() % 10 == 0)
-                {
-                    system_query->type = background_cmd_types[fuzz_rand() % std::size(background_cmd_types)];
+                    auto it = cmds.begin();
+                    std::advance(it, fuzz_rand() % cmds.size());
+                    system_query->type = *it;
                     break;
                 }
             }
         }
         /// Rotate among no-argument SYNC commands
+        if (fuzz_rand() % 10 == 0)
         {
-            static const Type sync_types[] = {
+            static const std::unordered_set<Type> sync_types = {
                 Type::SYNC_TRANSACTION_LOG,
                 Type::SYNC_FILE_CACHE,
                 Type::SYNC_FILESYSTEM_CACHE,
+                Type::SYNC_MERGES,
+                /// `SYNC_REPLICA` and `SYNC_DATABASE_REPLICA` take an operand, so they stay out.
             };
-            for (const auto & t : sync_types)
+            if (sync_types.contains(system_query->type))
             {
-                if (system_query->type == t && fuzz_rand() % 10 == 0)
-                {
-                    system_query->type = sync_types[fuzz_rand() % std::size(sync_types)];
-                    break;
-                }
+                auto it = sync_types.begin();
+                std::advance(it, fuzz_rand() % sync_types.size());
+                system_query->type = *it;
             }
         }
         /// Cycle WAIT FAILPOINT action between PAUSE / RESUME / UNSPECIFIED
@@ -7805,17 +7800,20 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             system_query->fail_point_action = fp_actions[fuzz_rand() % std::size(fp_actions)];
         }
         /// Rotate among failpoint commands that all take a fail_point_name argument
-        if ((system_query->type == Type::ENABLE_FAILPOINT || system_query->type == Type::DISABLE_FAILPOINT
-             || system_query->type == Type::NOTIFY_FAILPOINT || system_query->type == Type::WAIT_FAILPOINT)
-            && fuzz_rand() % 10 == 0)
+        if (fuzz_rand() % 10 == 0)
         {
-            static const Type failpoint_types[] = {
+            static const std::unordered_set<Type> failpoint_types = {
                 Type::ENABLE_FAILPOINT,
                 Type::DISABLE_FAILPOINT,
                 Type::NOTIFY_FAILPOINT,
                 Type::WAIT_FAILPOINT,
             };
-            system_query->type = failpoint_types[fuzz_rand() % std::size(failpoint_types)];
+            if (failpoint_types.contains(system_query->type))
+            {
+                auto it = failpoint_types.begin();
+                std::advance(it, fuzz_rand() % failpoint_types.size());
+                system_query->type = *it;
+            }
         }
         /// Toggle TEST VIEW between SET FAKE TIME and UNSET FAKE TIME
         if (system_query->type == Type::TEST_VIEW && fuzz_rand() % 5 == 0)
@@ -7893,8 +7891,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
         /// Rotate among no-argument cache-clear types to exercise different cache subsystems
         /// with the same surrounding query context
+        if (fuzz_rand() % 10 == 0)
         {
-            static const Type plain_cache_types[] = {
+            static const std::unordered_set<Type> plain_cache_types = {
                 Type::CLEAR_DNS_CACHE,
                 Type::CLEAR_CONNECTIONS_CACHE,
                 Type::CLEAR_MARK_CACHE,
@@ -7913,14 +7912,19 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 Type::CLEAR_ICEBERG_METADATA_CACHE,
                 Type::CLEAR_PAGE_CACHE,
                 Type::CLEAR_S3_CLIENT_CACHE,
+                Type::CLEAR_AVRO_SCHEMA_CACHE,
+                Type::CLEAR_ENCRYPTION_HEADERS_CACHE,
+                Type::CLEAR_PAIMON_METADATA_CACHE,
+                Type::CLEAR_PARQUET_METADATA_CACHE,
+                Type::CLEAR_POINT_IN_POLYGON_CACHE,
+                /// `CLEAR_{DISK_METADATA,DISTRIBUTED,FILESYSTEM,FORMAT_SCHEMA,QUERY,SCHEMA}_CACHE`
+                /// are deliberately absent: they carry an operand this rotation would not preserve.
             };
-            for (const auto & t : plain_cache_types)
+            if (plain_cache_types.contains(system_query->type))
             {
-                if (system_query->type == t && fuzz_rand() % 10 == 0)
-                {
-                    system_query->type = plain_cache_types[fuzz_rand() % std::size(plain_cache_types)];
-                    break;
-                }
+                auto it = plain_cache_types.begin();
+                std::advance(it, fuzz_rand() % plain_cache_types.size());
+                system_query->type = *it;
             }
         }
         /// Toggle between the two prewarm cache types (same optional-table structure)
@@ -7931,20 +7935,19 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 = (system_query->type == Type::PREWARM_MARK_CACHE) ? Type::PREWARM_PRIMARY_INDEX_CACHE : Type::PREWARM_MARK_CACHE;
         }
         /// Rotate among no-argument reload commands
+        if (fuzz_rand() % 10 == 0)
         {
-            static const Type reload_types[] = {
+            static const std::unordered_set<Type> reload_types = {
                 Type::RELOAD_CONFIG,
                 Type::RELOAD_USERS,
                 Type::RELOAD_ASYNCHRONOUS_METRICS,
                 Type::RELOAD_EMBEDDED_DICTIONARIES,
             };
-            for (const auto & t : reload_types)
+            if (reload_types.contains(system_query->type))
             {
-                if (system_query->type == t && fuzz_rand() % 10 == 0)
-                {
-                    system_query->type = reload_types[fuzz_rand() % std::size(reload_types)];
-                    break;
-                }
+                auto it = reload_types.begin();
+                std::advance(it, fuzz_rand() % reload_types.size());
+                system_query->type = *it;
             }
         }
         /// Fuzz RELOAD DELTA KERNEL TRACING level string
