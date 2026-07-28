@@ -31,9 +31,10 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 
+#include <base/defines.h>
+
 #include <algorithm>
 #include <memory>
-#include <ranges>
 
 namespace DB
 {
@@ -43,21 +44,21 @@ namespace
 
 struct ClassifiedPartitions
 {
-    std::vector<std::string> readable;
+    std::vector<std::string> readable_partitions;
 };
 
 ClassifiedPartitions getPartitionsClassification(
-    const std::map<String, Int64> & safe_block_numbers,
+    const std::map<String, int64_t> & safe_block_numbers,
     const std::map<String, PartitionCursor> & last_emitted_positions)
 {
     ClassifiedPartitions classification;
     for (const auto & [partition_id, safe_block_number] : safe_block_numbers)
     {
         if (!last_emitted_positions.contains(partition_id))
-            classification.readable.push_back(partition_id);
+            classification.readable_partitions.push_back(partition_id);
 
         else if (last_emitted_positions.at(partition_id).block_number <= safe_block_number)
-            classification.readable.push_back(partition_id);
+            classification.readable_partitions.push_back(partition_id);
     }
 
     return classification;
@@ -88,15 +89,15 @@ struct PipeWithResources
 QueryPlanPtr buildPartitionReadingPlan(
     const String & partition_id,
     const PartitionCursor & last_emitted_position,
-    Int64 safe_block_number,
+    const int64_t & safe_block_number,
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
     const SelectQueryInfo & query_info,
     const PrewhereInfoPtr & initial_prewhere_info,
     const ContextPtr & context,
     const Names & inner_columns,
-    size_t requested_num_streams,
-    UInt64 max_block_size,
+    const size_t & requested_num_streams,
+    const uint64_t & max_block_size,
     const SharedHeader & output_header)
 {
     auto plan = MergeTreeDataSelectExecutor(storage).read(
@@ -166,22 +167,20 @@ Names extendWithAuxiliaryColumns(Names columns)
 }
 
 std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
-    const std::map<String, Int64> & safe_block_numbers,
+    const ClassifiedPartitions & partitions_classification,
+    const std::map<String, int64_t> & safe_block_numbers,
     const std::map<String, PartitionCursor> & last_emitted_positions,
     const MergeTreeData & storage,
     const SelectQueryInfo & query_info,
     const PrewhereInfoPtr & initial_prewhere_info,
     const ContextPtr & context,
     const Names & user_requested_columns,
-    size_t requested_num_streams,
-    UInt64 max_block_size,
+    const size_t & requested_num_streams,
+    const uint64_t & max_block_size,
     const SharedHeader & output_header,
     const LoggerPtr & log)
 {
-    if (safe_block_numbers.empty())
-        return std::nullopt;
-
-    LOG_DEBUG(log, "Building new snapshot for {} partition(s): [{}]", safe_block_numbers.size(), fmt::join(safe_block_numbers | std::views::keys, ", "));
+    LOG_DEBUG(log, "Building new snapshot for {} partition(s): [{}]", partitions_classification.readable_partitions.size(), partitions_classification.readable_partitions);
 
     /// Fresh storage snapshot reused by every per-partition subplan in this iteration.
     const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
@@ -191,34 +190,29 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
     std::vector<QueryPlanPtr> per_partition_plans;
     SharedHeaders per_partition_headers;
 
-    for (const auto & [partition_id, safe_block_number] : safe_block_numbers)
+    for (const auto & partition_id : partitions_classification.readable_partitions)
     {
-        PartitionCursor last_emitted_position = last_emitted_positions.contains(partition_id)
-            ? last_emitted_positions.at(partition_id)
-            : PartitionCursor{};
+        const PartitionCursor last_emitted_position = last_emitted_positions.contains(partition_id) ? last_emitted_positions.at(partition_id) : PartitionCursor{};
+        const uint64_t safe_block_number = safe_block_numbers.at(partition_id);
 
-        const bool has_new_data_in_partition = last_emitted_position.block_number <= safe_block_number;
-        if (has_new_data_in_partition)
+        auto plan = buildPartitionReadingPlan(
+            partition_id,
+            last_emitted_position,
+            safe_block_number,
+            storage,
+            storage_snapshot,
+            query_info,
+            initial_prewhere_info,
+            context,
+            columns_to_read,
+            requested_num_streams,
+            max_block_size,
+            output_header);
+
+        if (plan)
         {
-            auto plan = buildPartitionReadingPlan(
-                partition_id,
-                last_emitted_position,
-                safe_block_number,
-                storage,
-                storage_snapshot,
-                query_info,
-                initial_prewhere_info,
-                context,
-                columns_to_read,
-                requested_num_streams,
-                max_block_size,
-                output_header);
-
-            if (plan)
-            {
-                per_partition_headers.push_back(plan->getCurrentHeader());
-                per_partition_plans.emplace_back(std::move(plan));
-            }
+            per_partition_headers.push_back(plan->getCurrentHeader());
+            per_partition_plans.emplace_back(std::move(plan));
         }
     }
 
@@ -281,7 +275,7 @@ PrewhereInfoPtr makeStreamingPrewhereInfo(PrewhereInfoPtr info)
 
     auto patched_info = std::make_shared<PrewhereInfo>(info->clone());
 
-    /// This columns are needed for cursor calculation.
+    /// These columns are needed for cursor calculation.
     patched_info->prewhere_actions.tryRestoreColumn(PartitionIdColumn::name);
     patched_info->prewhere_actions.tryRestoreColumn(BlockNumberColumn::name);
     patched_info->prewhere_actions.tryRestoreColumn(BlockOffsetColumn::name);
@@ -298,7 +292,7 @@ MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
     ContextPtr context_,
     Names user_requested_columns_,
     size_t requested_num_streams_,
-    UInt64 max_block_size_,
+    uint64_t max_block_size_,
     MergeTreeBoundsSubscriptionPtr subscription_)
     : IProcessor({}, {Block(*header_)})
     , header(std::move(header_))
@@ -336,6 +330,7 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleRunningPipeline()
     }
 
     auto chunk = input.pull(/*set_not_needed=*/true);
+    chassert(!chunk.hasRows() || chunk.getChunkInfos().has<StreamingChunkCursorInfo>());
 
     if (auto cursor = chunk.getChunkInfos().extract<StreamingChunkCursorInfo>())
     {
@@ -371,7 +366,7 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration()
     const auto safe_block_numbers = subscription->snapshot();
     const auto classification = getPartitionsClassification(safe_block_numbers, last_emitted_positions);
 
-    if (!classification.readable.empty())
+    if (!classification.readable_partitions.empty())
         return Status::Ready;
 
     if (!current_sub_pipeline.empty())
@@ -418,13 +413,14 @@ void MergeTreeCommitOrderSequentialSource::work()
     if (subscription->isDisabled())
         return;
 
-    if (classification.readable.empty())
+    if (classification.readable_partitions.empty())
         return;
 
-    for (const auto & partition_id : classification.readable)
+    for (const auto & partition_id : classification.readable_partitions)
         reading_up_to_block_numbers[partition_id] = safe_block_numbers.at(partition_id);
 
     auto result = buildNextSnapshotReadingPipeline(
+        classification,
         safe_block_numbers,
         last_emitted_positions,
         storage,
