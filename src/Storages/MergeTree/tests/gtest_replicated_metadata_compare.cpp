@@ -354,3 +354,16 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, WindowFrameIsSignificant)
     cumulative_parens.projections = "pr (SELECT (a), sum((b)) OVER (PARTITION BY (a) ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) GROUP BY a, b)";
     EXPECT_FALSE(diffOf(cumulative, cumulative_parens).projections_changed);
 }
+
+TEST(ReplicatedMergeTreeTableMetadataCompare, AliasIsFramedInTheHash)
+{
+    /// An alias is hashed right before what `getID` writes, so without a length prefix the bytes of
+    /// `fooIdentifier_bar` and of `bar AS Identifier_foo` are the same stream and two projections
+    /// with different output columns would compare equal.
+    MetadataFields unaliased;
+    unaliased.projections = "pr (SELECT fooIdentifier_bar GROUP BY a, fooIdentifier_bar, bar)";
+    MetadataFields aliased;
+    aliased.projections = "pr (SELECT bar AS Identifier_foo GROUP BY a, fooIdentifier_bar, bar)";
+    EXPECT_TRUE(diffOf(unaliased, aliased).projections_changed);
+    EXPECT_FALSE(diffOf(aliased, aliased).projections_changed);
+}
