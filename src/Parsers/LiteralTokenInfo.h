@@ -76,11 +76,20 @@ public:
         slot.value = value;
     }
 
-    /// Returns nullptr when the literal was not recorded.
+    /// Make `find` stop returning anything for `key`.
+    ///
+    /// A parser that throws a subtree away has to do this for the literals in it: the allocator can
+    /// hand the same address to the next `ASTLiteral`, and one created without token info of its own
+    /// would otherwise inherit the dead entry and be taken for a literal it has nothing to do with.
+    /// Nothing is erased - an empty range is recorded instead - so probing still stops at the first
+    /// empty slot and there are still no tombstones.
+    void forget(const ASTLiteral * key) { insert_or_assign(key, LiteralTokenInfo{}); }
+
+    /// Returns nullptr when the literal was not recorded, or was forgotten.
     const LiteralTokenInfo * find(const ASTLiteral * key) const
     {
         const Slot & slot = slotFor(slots, capacity, key);
-        return slot.key ? &slot.value : nullptr;
+        return slot.key && slot.value.begin ? &slot.value : nullptr;
     }
 
 private:

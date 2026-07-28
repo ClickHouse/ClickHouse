@@ -80,6 +80,21 @@ inline void recordLiteralTokens(const ASTLiteral * literal, IParser::Pos begin, 
     }
 }
 
+/// Forget the token positions of the literals in `ast`, which is about to be discarded - see
+/// `LiteralTokenMap::forget`. Recording positions and discarding subtrees are both ordinary things
+/// for a parser to do, so whoever does the second has to undo the first.
+void forgetLiteralTokens(const IAST & ast, Expected & expected)
+{
+    if (!expected.literal_token_map)
+        return;
+
+    if (const auto * literal = ast.as<ASTLiteral>())
+        expected.literal_token_map->forget(literal);
+
+    for (const auto & child : ast.children)
+        forgetLiteralTokens(*child, expected);
+}
+
 String ilikePatternToRegexp(const String & pattern)
 {
     return "(?i)" + likePatternToRegexp(pattern);
@@ -576,7 +591,18 @@ std::optional<String> parseDataTypeAsText(IParser::Pos & pos, Expected & expecte
     IParser::Pos type_begin = pos;
     if (!ParserDataType().parse(pos, type_ast, expected))
         return {};
-    return astText(*type_ast, textBetween(type_begin, pos));
+
+    String text = astText(*type_ast, textBetween(type_begin, pos));
+
+    /// The type AST does not outlive this function, and the literals in it - the arguments of the
+    /// type, such as the scale of a `Decimal32(3)` - are recorded in the literal token map. Their
+    /// addresses become available for reuse the moment the AST goes, and the very next literal the
+    /// caller creates is likely to land on one of them: `CAST` keeps its type as a string, so
+    /// `36610.111::Decimal32(3)` builds two literals right here. One inheriting the token range of
+    /// the scale would make `ValuesBlockInputFormat` build a template that replaces the `3`.
+    forgetLiteralTokens(*type_ast, expected);
+
+    return text;
 }
 
 ASTPtr createFunctionCast(const ASTPtr & expr_ast, String type_text)

@@ -57,6 +57,28 @@ TEST(LiteralTokenMap, InsertOverwrites)
     EXPECT_EQ(found->end, someTokenInfo(2).end);
 }
 
+TEST(LiteralTokenMap, ForgetHidesAnEntry)
+{
+    /// A parser that discards a subtree forgets the literals in it, so that a literal created at a
+    /// reused address does not inherit their token positions.
+    LiteralTokenMap map;
+    map.insert_or_assign(fakeLiteral(3), someTokenInfo(1));
+    map.forget(fakeLiteral(3));
+    EXPECT_EQ(map.find(fakeLiteral(3)), nullptr);
+
+    /// Forgetting a literal that was never recorded is allowed, and neighbours are unaffected.
+    map.insert_or_assign(fakeLiteral(4), someTokenInfo(2));
+    map.forget(fakeLiteral(5));
+    EXPECT_EQ(map.find(fakeLiteral(5)), nullptr);
+    ASSERT_NE(map.find(fakeLiteral(4)), nullptr);
+    EXPECT_EQ(map.find(fakeLiteral(4))->begin, someTokenInfo(2).begin);
+
+    /// And a forgotten address can be recorded again.
+    map.insert_or_assign(fakeLiteral(3), someTokenInfo(9));
+    ASSERT_NE(map.find(fakeLiteral(3)), nullptr);
+    EXPECT_EQ(map.find(fakeLiteral(3))->begin, someTokenInfo(9).begin);
+}
+
 TEST(LiteralTokenMap, GrowsBeyondInlineCapacity)
 {
     /// Well past the inline storage, so the table rehashes onto the heap more than once.
