@@ -1103,10 +1103,25 @@ void AggregatingTransform::initGenerate()
                 [](const Aggregator & aggregator) { return aggregator.hasTemporaryData(); });
     };
 
-    if (adaptive_engaged && aggregator_has_temporary_data())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Adaptive aggregation is engaged but an aggregator has spilled to disk; the delayed records cannot be merged.");
+    if (adaptive_engaged)
+    {
+        auto & shared = *adaptive_context->shared_state;
+        if (aggregator_has_temporary_data())
+        {
+            /// A thawed or given-up producer spilled on the baseline path, so the merge goes
+            /// external and the bucket-parallel drain will not run: put the backlogs into
+            /// disk-mergeable form by draining everything into the routing table now (the
+            /// finish barrier guarantees a quiescent, uncontended sweep). The external branch
+            /// below flushes it together with the other still-in-memory variants.
+            params->aggregator.drainStagedBlocksEarly(shared, /*drain_everything=*/true);
+        }
+        if (shared.pressure_drained.load(std::memory_order_relaxed))
+        {
+            /// Early-drained records live in the routing table: it holds part of the result
+            /// and joins the merge set like any other variant.
+            many_data->variants.push_back(shared.routing_variants);
+        }
+    }
 
     if (!aggregator_has_temporary_data())
     {
