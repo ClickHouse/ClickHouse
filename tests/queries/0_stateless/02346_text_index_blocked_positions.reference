@@ -26,3 +26,6 @@ Merge path re-encodes blocked positions
 1
 1
 1
+Blocks are read and skipped through the index
+1
+1	1

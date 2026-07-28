@@ -7,6 +7,10 @@
 -- (frequency exceptions) and 3-term phrases.
 
 SET enable_analyzer = 1;
+SET use_skip_indexes = 1;
+SET use_skip_indexes_on_data_read = 1;
+SET query_plan_direct_read_from_text_index = 1;
+SET text_index_hint_max_selectivity = 1.;
 
 SELECT 'Validation';
 
@@ -71,13 +75,9 @@ SELECT (SELECT count() FROM tab_ref WHERE hasPhrase(message, 'world clickhouse')
 
 SELECT 'Direct index read';
 
--- Pin the planner onto the positional index so the blocked candidate-driven path itself is exercised.
-SELECT count() FROM tab_blocked WHERE hasPhrase(message, 'hello clickhouse')
-SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1, text_index_hint_max_selectivity = 1.;
-SELECT count() FROM tab_blocked WHERE hasPhrase(message, 'foo foo')
-SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1, text_index_hint_max_selectivity = 1.;
-SELECT count() FROM tab_blocked WHERE hasPhrase(message, 'world hello')
-SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1, text_index_hint_max_selectivity = 1.;
+SELECT count() FROM tab_blocked WHERE hasPhrase(message, 'hello clickhouse');
+SELECT count() FROM tab_blocked WHERE hasPhrase(message, 'foo foo');
+SELECT count() FROM tab_blocked WHERE hasPhrase(message, 'world hello');
 
 DROP TABLE tab_ref;
 DROP TABLE tab_blocked;
@@ -103,7 +103,7 @@ SETTINGS allow_experimental_text_index_phrase_search = 1;
 -- Stop background merges so the separate INSERTs stay as separate parts until the explicit OPTIMIZE.
 SYSTEM STOP MERGES tab_m_blocked;
 
-INSERT INTO tab_m_blocked(id, message) VALUES (1, 'abc def foo'), (2, 'abc def bar'), (3, 'zzz foo bar'), (4, 'foo foo foo abc def');
+INSERT INTO tab_m_blocked(id, message) VALUES (1, 'abc def foo'), (2, 'abc def bar'), (3, 'zzz foo bar'), (4, 'foo foo foo abc def'), (5, 'needle clickhouse');
 INSERT INTO tab_m_blocked SELECT number + 10, 'hello clickhouse world' FROM numbers(2048);
 INSERT INTO tab_m_blocked SELECT number + 3000, 'hello world clickhouse' FROM numbers(2048);
 INSERT INTO tab_m_ref SELECT id, message FROM tab_m_blocked;
@@ -126,6 +126,20 @@ SELECT (SELECT arraySort(groupArray(id)) FROM tab_m_ref WHERE hasPhrase(message,
 SELECT (SELECT count() FROM tab_m_ref WHERE hasPhrase(message, 'hello clickhouse'))           = (SELECT count() FROM tab_m_blocked WHERE hasPhrase(message, 'hello clickhouse'));
 SELECT (SELECT count() FROM tab_m_ref WHERE hasPhrase(message, 'world clickhouse'))           = (SELECT count() FROM tab_m_blocked WHERE hasPhrase(message, 'world clickhouse'));
 SELECT (SELECT groupArray(id) FROM tab_m_ref WHERE hasPhrase(message, 'foo foo'))             = (SELECT groupArray(id) FROM tab_m_blocked WHERE hasPhrase(message, 'foo foo'));
+
+SELECT 'Blocks are read and skipped through the index';
+
+SELECT count() FROM tab_m_blocked WHERE hasPhrase(message, 'needle clickhouse') SETTINGS log_comment = '02346_blocked_positions_needle';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 
+    ProfileEvents['TextIndexBlockedPositionsBlocksRead'] > 0,
+    ProfileEvents['TextIndexBlockedPositionsBlocksSkipped'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '02346_blocked_positions_needle'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
 
 DROP TABLE tab_m_ref;
 DROP TABLE tab_m_blocked;
