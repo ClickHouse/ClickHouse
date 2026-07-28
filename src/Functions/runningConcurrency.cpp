@@ -8,6 +8,7 @@
 #include <Formats/FormatSettings.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/defines.h>
 #include <set>
@@ -55,7 +56,7 @@ namespace DB
             typename ColVecConc::MutablePtr col_concurrency = ColVecConc::create(input_rows_count);
             typename ColVecConc::Container & vec_concurrency = col_concurrency->getData();
 
-            std::multiset<typename ArgDataType::FieldType> ongoing_until;
+            MultiSetWithMemoryTracking<typename ArgDataType::FieldType> ongoing_until;
             auto begin_serializaion = arguments[0].type->getDefaultSerialization();
             auto end_serialization = arguments[1].type->getDefaultSerialization();
             for (size_t i = 0; i < input_rows_count; ++i)

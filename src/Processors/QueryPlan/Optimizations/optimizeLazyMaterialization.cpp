@@ -45,7 +45,7 @@ static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
 /// Returns two vectors of total size equal to the number of columns in the header.
 /// The first vector (size of `inputs.size()`) contains positions of the inputs in the header.
 /// The second vector contains other positions (sorted).
-std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPositions(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
+static std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPositions(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
 {
     std::unordered_map<std::string, std::list<size_t>> name_to_position;
     for (size_t i = 0; i < header.columns(); ++i)
@@ -74,7 +74,7 @@ std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPositions(c
 /// Step is always Filter or Expression
 struct PlanStepWithRequiredDAGPositions
 {
-    IQueryPlanStep * step;
+    IQueryPlanStep * step = nullptr;
     /// Positions correspond to the outputs of the internal DAG.
     /// For the FilterStep, it is before the removal of filter columns.
     std::vector<bool> required_positions;
@@ -83,7 +83,7 @@ struct PlanStepWithRequiredDAGPositions
 /// Returns a boolean mask which indicate if the header column is required.
 /// The required_output_positions is the same mask for the output header.
 /// The number of DAG outputs may differ from required_output_positions.size().
-std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block & header, std::vector<bool> required_output_positions)
+static std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block & header, std::vector<bool> required_output_positions)
 {
     std::unordered_set<const ActionsDAG::Node *> required_nodes;
     std::stack<const ActionsDAG::Node *> stack;
@@ -126,7 +126,7 @@ std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block
 }
 
 /// Add filter column to required_output_positions.
-void updateRequiredColumnsForFilterDAG(std::vector<bool> & required_output_positions, const FilterStep & filter_step)
+static void updateRequiredColumnsForFilterDAG(std::vector<bool> & required_output_positions, const FilterStep & filter_step)
 {
     const auto & expression = filter_step.getExpression();
     const auto & name = filter_step.getFilterColumnName();
@@ -160,7 +160,7 @@ struct SplitExpressionStepResult
 
 /// Split if ActionsDAG can produce unused pair of input/output which only changes the order.
 /// Remove them from the DAG.
-void removeDanglingNodes(ActionsDAG & dag)
+static void removeDanglingNodes(ActionsDAG & dag)
 {
     std::unordered_set<const ActionsDAG::Node *> used_nodes;
     for (const auto & node : dag.getNodes())
@@ -187,7 +187,7 @@ void removeDanglingNodes(ActionsDAG & dag)
 /// It's useful because the main branch of lazy materialization can return more columns than actually required.
 /// As an example, for the query `select a from table prewhere b > 0 order by c limit 1`, only column `c` is required for ORDER BY,
 /// but the column `a` is returned as well (it's needed for PREWHERE).
-void addRequiredInputDependenciesIntoNodesSet(const ActionsDAG & dag, std::unordered_set<const ActionsDAG::Node *> & nodes)
+static void addRequiredInputDependenciesIntoNodesSet(const ActionsDAG & dag, std::unordered_set<const ActionsDAG::Node *> & nodes)
 {
     std::unordered_set<const ActionsDAG::Node *> visited;
     struct Frame
@@ -242,7 +242,7 @@ void addRequiredInputDependenciesIntoNodesSet(const ActionsDAG & dag, std::unord
 }
 
 /// required_outputs are outputs of ActionsDAG, however required_inputs are inputs corresponding to the step input header.
-SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expression_step, const std::vector<bool> & required_outputs, const std::vector<bool> & required_inputs)
+static SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expression_step, const std::vector<bool> & required_outputs, const std::vector<bool> & required_inputs)
 {
     const auto & expression = expression_step.getExpression();
     const auto & inputs = expression.getInputs();
@@ -297,7 +297,7 @@ struct SplitFilterResult
     std::vector<bool> available_input_positions;
 };
 
-SplitFilterResult splitFilterStep(const FilterStep & filter_step, const std::vector<bool> & required_outputs, const std::vector<bool> & required_inputs)
+static SplitFilterResult splitFilterStep(const FilterStep & filter_step, const std::vector<bool> & required_outputs, const std::vector<bool> & required_inputs)
 {
     const auto & expression = filter_step.getExpression();
     const auto & name = filter_step.getFilterColumnName();
@@ -348,6 +348,22 @@ SplitFilterResult splitFilterStep(const FilterStep & filter_step, const std::vec
                 break;
             }
         }
+
+        /// The filter column is computed and consumed by the main half; in the lazy half it can
+        /// only be a dangling input pass-through, and the column does not exist downstream of the
+        /// main filter. Remove it here: `removeDanglingNodes` is not applied to the last lazy DAG
+        /// (its pass-through outputs form the final header), so a filter at the bottom of the
+        /// chain would otherwise keep an input that no block provides.
+        auto & lazy_outputs = split_result.second.getOutputs();
+        for (size_t i = 0; i < lazy_outputs.size(); ++i)
+        {
+            if (lazy_outputs[i]->result_name == name)
+            {
+                lazy_outputs.erase(lazy_outputs.begin() + i);
+                split_result.second.removeUnusedActions();
+                break;
+            }
+        }
     }
 
     FilterDAGInfo filter_dag_info;
@@ -358,10 +374,10 @@ SplitFilterResult splitFilterStep(const FilterStep & filter_step, const std::vec
     return { std::move(filter_dag_info), std::move(split_result.second), std::move(new_required_inputs) };
 }
 
-ActionsDAG calculateGlobalOffset(ReadFromMergeTree & reading_step)
+static ActionsDAG calculateGlobalOffset(ReadFromMergeTree & reading_step)
 {
-    bool added_part_starting_offset;
-    bool added_part_offset;
+    bool added_part_starting_offset = false;
+    bool added_part_offset = false;
     reading_step.addStartingPartOffsetAndPartOffset(added_part_starting_offset, added_part_offset);
     ActionsDAG dag;
     DataTypePtr uint64_type = std::make_shared<DataTypeUInt64>();
@@ -400,7 +416,7 @@ static ReadFromMergeTree * findReadingStep(QueryPlan::Node & node, StepStack & b
     return nullptr;
 }
 
-bool allExpressionsSuitableForLazyMaterialization(const QueryPlan::Node * node)
+static bool allExpressionsSuitableForLazyMaterialization(const QueryPlan::Node * node)
 {
     while (!node->children.empty())
     {
@@ -439,13 +455,24 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         return false;
 
     auto * sorting_step = typeid_cast<SortingStep *>(root.children.front()->step.get());
-    if (!sorting_step)
-        return false;
+    bool reading_in_order = false;
 
-    if (sorting_step->getType() != SortingStep::Type::Full && sorting_step->getType() != SortingStep::Type::FinishSorting)
-        return false;
+    /// The chain of Expression/Filter steps down to the reading step starts right below
+    /// the sorting step, or right below the limit when there is no sorting. The latter is
+    /// allowed only for FINAL with a filter (checked below): the filter cannot run before
+    /// the FINAL merge, so all columns are read for every scanned row until the limit is
+    /// reached, and deferring the unneeded ones pays off the same way as with a sort.
+    QueryPlan::Node * chain_top_node = root.children.front();
 
-    bool reading_in_order = sorting_step->getType() == SortingStep::Type::FinishSorting;
+    if (sorting_step)
+    {
+        if (sorting_step->getType() != SortingStep::Type::Full && sorting_step->getType() != SortingStep::Type::FinishSorting)
+            return false;
+
+        reading_in_order = sorting_step->getType() == SortingStep::Type::FinishSorting;
+
+        chain_top_node = root.children.front()->children.front();
+    }
 
     const auto limit = limit_step->getLimit();
     if (limit == 0 || (max_limit_for_lazy_materialization != 0 && limit > max_limit_for_lazy_materialization))
@@ -453,29 +480,29 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
     StepStack steps_to_update;
 
-    auto * sorting_node = root.children.front();
-    auto * reading_step = findReadingStep(*sorting_node->children.front(), steps_to_update);
+    auto * reading_step = findReadingStep(*chain_top_node, steps_to_update);
     if (!reading_step)
         return false;
 
     if (!canUseLazyMaterializationForReadingStep(reading_step))
         return false;
 
-    if (!allExpressionsSuitableForLazyMaterialization(sorting_node->children.front()))
+    if (!allExpressionsSuitableForLazyMaterialization(chain_top_node))
         return false;
 
-    const auto & sorting_header = *sorting_step->getOutputHeader();
+    const auto & chain_top_header = *chain_top_node->step->getOutputHeader();
     /// At this moment, required_columns are corresponding to output header columns of every step.
-    std::vector<bool> required_columns(sorting_header.columns(), false);
+    std::vector<bool> required_columns(chain_top_header.columns(), false);
 
-    for (const auto & descr : sorting_step->getSortDescription())
-        required_columns[sorting_header.getPositionByName(descr.column_name)] = true;
+    if (sorting_step)
+        for (const auto & descr : sorting_step->getSortDescription())
+            required_columns[chain_top_header.getPositionByName(descr.column_name)] = true;
 
     bool has_filter = false;
 
     std::vector<PlanStepWithRequiredDAGPositions> steps_to_split;
 
-    auto * node = sorting_node->children.front();
+    auto * node = chain_top_node;
     while (!node->children.empty())
     {
         IQueryPlanStep * step = node->step.get();
@@ -491,14 +518,29 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         if (const auto * expr_step = typeid_cast<ExpressionStep *>(step))
         {
             const auto & expr = expr_step->getExpression();
+            /// `arrayJoin` changes the number of rows produced by an expression.
+            /// Lazy materialization splits the DAG into a main half (applied before the
+            /// `LIMIT`) and a lazy half (applied after `JoinLazyColumnsStep`, i.e. after
+            /// the `LIMIT`). If `arrayJoin` ends up in the lazy half, it would expand the
+            /// already-truncated rows, producing extra rows that should have been part of
+            /// the row pool the `LIMIT` was supposed to cut from. See issue #82279.
+            /// Bail out conservatively whenever an `ExpressionStep` below the sort
+            /// contains `arrayJoin`; this is the same condition used by
+            /// `tryExecuteFunctionsAfterSorting` in `liftUpFunctions.cpp`.
+            if (expr.hasArrayJoin())
+                return false;
             /// The number of DAG outputs can be less than the number of columns in the header.
             step_to_split.required_positions.insert(step_to_split.required_positions.end(), required_columns.begin(), required_columns.begin() + expr.getOutputs().size());
             required_columns = getRequiredHeaderPositions(expr, *expr_step->getInputHeaders().front() , std::move(required_columns));
         }
         else if (const auto * filter_step = typeid_cast<FilterStep *>(step))
         {
-            updateRequiredColumnsForFilterDAG(required_columns, *filter_step);
             const auto & expr = filter_step->getExpression();
+            /// Same reasoning as above: an `arrayJoin` action in a `FilterStep`'s DAG
+            /// can be split into the lazy half and run after the `LIMIT`. See #82279.
+            if (expr.hasArrayJoin())
+                return false;
+            updateRequiredColumnsForFilterDAG(required_columns, *filter_step);
             step_to_split.required_positions.insert(step_to_split.required_positions.end(), required_columns.begin(), required_columns.begin() + expr.getOutputs().size());
             required_columns = getRequiredHeaderPositions(expr, *filter_step->getInputHeaders().front(), std::move(required_columns));
             has_filter = true;
@@ -520,6 +562,13 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     /// Disable the case with read-in-order and no filter.
     /// It's not likely we can optimize it more.
     if (reading_in_order && !has_filter)
+        return false;
+
+    /// Without a sorting step, defer columns only for FINAL with a filter: the filter cannot
+    /// be moved to PREWHERE (it would run before the FINAL merge and change its result), so
+    /// this is the only way to avoid reading all columns for every scanned row. For non-FINAL
+    /// reads, PREWHERE already covers this shape.
+    if (!sorting_step && (!read_from_merge_tree->isQueryWithFinal() || !has_filter))
         return false;
 
     std::unique_ptr<LazilyReadFromMergeTree> lazy_reading;
@@ -621,14 +670,27 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         }
     }
 
-    auto new_sorting_step = std::move(root.children.front()->step); // = std::make_unique<SortingStep>(main_plan.getCurrentHeader(), sorting_step->getSortDescription(), sorting_step->getLimit(), sorting_step->getSettings());
-    new_sorting_step->updateInputHeader(main_plan.getCurrentHeader());
-    main_plan.addStep(std::move(new_sorting_step));
+    if (sorting_step)
+    {
+        auto new_sorting_step = std::move(root.children.front()->step);
+        new_sorting_step->updateInputHeader(main_plan.getCurrentHeader());
+        main_plan.addStep(std::move(new_sorting_step));
+    }
 
     limit_step->updateInputHeader(main_plan.getCurrentHeader());
     main_plan.addStep(std::move(root.step));
 
-    auto lazy_materializing_rows = std::make_shared<LazyMaterializingRows>(read_from_merge_tree->getParts());
+    /// The lazy read re-fetches exactly the rows the main read selected, addressed by their
+    /// global row index (see LazyMaterializingRows::filterRangesAndFillRows). It must not
+    /// re-apply the vector-search rescoring row filter: that filter belongs to the main read
+    /// (which produces the shortlist for sorting), and re-applying it here against the
+    /// vector index candidate set can drop a requested row, leaving the lazy chunk shorter
+    /// than the offsets and raising a LOGICAL_ERROR in prepareLazyChunk.
+    auto lazy_parts = read_from_merge_tree->getParts();
+    for (auto & part : lazy_parts)
+        part.read_hints.use_vector_search_result_filter = false;
+
+    auto lazy_materializing_rows = std::make_shared<LazyMaterializingRows>(std::move(lazy_parts));
     lazy_reading->setLazyMaterializingRows(lazy_materializing_rows);
     lazy_plan.addStep(std::move(lazy_reading));
 

@@ -115,7 +115,7 @@ bool KeyDescription::moduloToModuloLegacyRecursive(ASTPtr node_expr)
 }
 
 /// Build expression_list_ast, column_names, and reverse_flags from key children and additional columns.
-std::tuple<ASTPtr, Names, std::vector<bool>> buildKeyColumns(
+static std::tuple<ASTPtr, Names, std::vector<bool>> buildKeyColumns(
     const ASTPtr & key_expression_list,
     const NamesAndTypesList & additional_columns)
 {
@@ -222,6 +222,25 @@ ASTPtr KeyDescription::getOriginalExpressionList() const
     }
 
     return expr_list;
+}
+
+KeyDescription KeyDescription::getPrimaryKeyFromAST(
+    const ASTPtr & definition_ast,
+    const KeyDescription & sorting_key,
+    const ColumnsDescription & columns,
+    const VirtualColumnsDescription & virtuals,
+    const ContextPtr & context)
+{
+    KeyDescription result = getKeyFromAST(definition_ast, columns, virtuals, context);
+
+    /// The primary key is a prefix of the sorting key (validated in MergeTreeData::checkProperties),
+    /// so its per-column directions are the corresponding prefix of the sorting key's.
+    if (!sorting_key.reverse_flags.empty())
+        result.reverse_flags.assign(
+            sorting_key.reverse_flags.begin(),
+            sorting_key.reverse_flags.begin() + std::min(result.column_names.size(), sorting_key.reverse_flags.size()));
+
+    return result;
 }
 
 KeyDescription KeyDescription::buildEmptyKey()

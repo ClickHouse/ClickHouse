@@ -27,8 +27,8 @@ protected:
 
     struct ColumnPositions
     {
-        size_t name;
-        size_t value;
+        size_t name{};
+        size_t value{};
         std::optional<size_t> help;
         std::optional<size_t> type;
         std::optional<size_t> labels;

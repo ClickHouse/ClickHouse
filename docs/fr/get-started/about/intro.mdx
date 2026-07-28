@@ -1,0 +1,207 @@
+---
+slug: /intro
+sidebarTitle: 'Qu’est-ce que ClickHouse ?'
+description: 'ClickHouse® est un système de gestion de base de données SQL orienté colonnes (SGBD) pour le traitement analytique en ligne (OLAP). Il est disponible à la fois en tant que logiciel open source et en tant qu’offre Cloud.'
+title: 'Qu’est-ce que ClickHouse ?'
+keywords: ['ClickHouse', 'base de données en colonnes', 'base de données OLAP', 'base de données analytique', 'base de données haute performance']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+ClickHouse® est un système de gestion de base de données (SGBD) SQL haute performance orienté colonnes pour le traitement analytique en ligne (OLAP). Il est disponible à la fois en tant que [logiciel open source](https://github.com/ClickHouse/ClickHouse) et sous forme d’[offre Cloud](https://clickhouse.com/cloud).
+
+<div id="what-are-analytics">
+  ## Qu’est-ce que l’analytique ?
+</div>
+
+L’analytique, également appelée OLAP (Online Analytical Processing), désigne des requêtes SQL comportant des calculs complexes (par exemple, des agrégations, du traitement de chaînes de caractères ou des calculs arithmétiques) sur de très grands volumes de données.
+
+Contrairement aux requêtes transactionnelles (ou OLTP, Online Transaction Processing), qui ne lisent et n’écrivent que quelques lignes par requête et s’exécutent donc en quelques millisecondes, les requêtes analytiques traitent couramment des milliards, voire des milliers de milliards de lignes.
+
+Dans de nombreux cas d’usage, les [requêtes analytiques doivent être « en temps réel »](https://clickhouse.com/engineering-resources/what-is-real-time-analytics), c’est-à-dire renvoyer un résultat en moins d’une seconde.
+
+<div id="row-oriented-vs-column-oriented-storage">
+  ## Stockage orienté lignes ou orienté colonnes
+</div>
+
+Un tel niveau de performance ne peut être atteint qu’avec la bonne « orientation » des données.
+
+Les bases de données stockent les données soit [en lignes, soit en colonnes](https://clickhouse.com/engineering-resources/what-is-columnar-database).
+
+Dans une base de données orientée lignes, les lignes successives d’une table sont stockées séquentiellement, les unes à la suite des autres. Cette disposition permet de récupérer rapidement les lignes, car les valeurs de chaque colonne d’une ligne sont stockées ensemble.
+
+ClickHouse est une base de données orientée colonnes. Dans ce type de système, les tables sont stockées sous forme de collection de colonnes, c’est-à-dire que les valeurs de chaque colonne sont stockées séquentiellement les unes à la suite des autres. Cette disposition rend plus difficile la reconstitution de lignes individuelles (car il existe désormais des écarts entre les valeurs d’une même ligne), mais les opérations sur les colonnes, comme les filtres ou l’agrégation, deviennent bien plus rapides que dans une base de données orientée lignes.
+
+La différence s’illustre le mieux avec un exemple de requête exécutée sur 100 millions de lignes de [données réelles anonymisées d’analyse du trafic web](/fr/get-started/sample-datasets/anon-web-analytics-metrica) :
+
+```sql
+SELECT MobilePhoneModel, COUNT() AS c
+FROM metrica.hits
+WHERE
+      RegionID = 229
+  AND EventDate >= '2013-07-01'
+  AND EventDate <= '2013-07-31'
+  AND MobilePhone != 0
+  AND MobilePhoneModel not in ['', 'iPad']
+GROUP BY MobilePhoneModel
+ORDER BY c DESC
+LIMIT 8;
+```
+
+Vous pouvez [exécuter cette requête dans le ClickHouse SQL Playground](https://sql.clickhouse.com?query=U0VMRUNUIE1vYmlsZVBob25lTW9kZWwsIENPVU5UKCkgQVMgYyAKRlJPTSBtZXRyaWNhLmhpdHMgCldIRVJFIAogICAgICBSZWdpb25JRCA9IDIyOSAKICBBTkQgRXZlbnREYXRlID49ICcyMDEzLTA3LTAxJyAKICBBTkQgRXZlbnREYXRlIDw9ICcyMDEzLTA3LTMxJyAKICBBTkQgTW9iaWxlUGhvbmUgIT0gMCAKICBBTkQgTW9iaWxlUGhvbmVNb2RlbCBub3QgaW4gWycnLCAnaVBhZCddIApHUk9VUCBCWSBNb2JpbGVQaG9uZU1vZGVsCk9SREVSIEJZIGMgREVTQyAKTElNSVQgODs\&chart=eyJ0eXBlIjoicGllIiwiY29uZmlnIjp7InhheGlzIjoiTW9iaWxlUGhvbmVNb2RlbCIsInlheGlzIjoiYyJ9fQ\&run_query=true) qui sélectionne et filtre [quelques-unes seulement parmi plus de 100](https://sql.clickhouse.com/?query=U0VMRUNUIG5hbWUKRlJPTSBzeXN0ZW0uY29sdW1ucwpXSEVSRSBkYXRhYmFzZSA9ICdtZXRyaWNhJyBBTkQgdGFibGUgPSAnaGl0cyc7\&tab=results\&run_query=true) colonnes existantes, et renvoie le résultat en quelques millisecondes :
+
+<Image img="/images/column-oriented-example-query.webp" alt="Exemple de requête dans une base de données orientée colonnes" size="lg" />
+
+Comme vous pouvez le voir dans la section des statistiques du schéma ci-dessus, la requête a traité 100 millions de lignes en 92 millisecondes, soit un débit de plus d’un milliard de lignes par seconde, ou un peu moins de 7 Go de données transférées par seconde.
+
+**SGBD orienté lignes**
+
+Dans une base de données orientée lignes, même si la requête ci-dessus ne traite que quelques-unes des colonnes existantes, le système doit tout de même charger du disque vers la mémoire les données d’autres colonnes. Cela s’explique par le fait que les données sont stockées sur le disque en fragments appelés [blocs](https://en.wikipedia.org/wiki/Block_\(data_storage\)) (généralement de taille fixe, par exemple 4 Ko ou 8 Ko). Les blocs sont les plus petites unités de données lues du disque vers la mémoire. Lorsqu’une application ou une base de données demande des données, le sous-système d’E/S disque du système d’exploitation lit les blocs nécessaires sur le disque. Même si seule une partie d’un bloc est nécessaire, le bloc entier est chargé en mémoire (en raison de la conception du disque et du système de fichiers) :
+
+<Image img="/images/row-oriented.webp" alt="Structure de base de données orientée lignes" size="lg" />
+
+**SGBD orienté colonnes**
+
+Comme les valeurs de chaque colonne sont stockées séquentiellement, les unes à la suite des autres sur le disque, aucune donnée inutile n&#39;est chargée lorsque la requête ci-dessus est exécutée.
+Comme le stockage et le transfert par blocs du disque vers la mémoire sont alignés sur le mode d&#39;accès aux données des requêtes analytiques, seules les colonnes nécessaires à une requête sont lues sur le disque, ce qui évite des E/S inutiles sur des données non utilisées. C&#39;est [bien plus rapide](https://benchmark.clickhouse.com/) que le stockage par ligne, où des lignes entières (y compris des colonnes non pertinentes) sont lues :
+
+<Image img="/images/column-oriented.webp" alt="Structure d'une base de données orientée colonnes" size="lg" />
+
+<div id="data-replication-and-integrity">
+  ## Réplication et intégrité des données
+</div>
+
+ClickHouse utilise un mécanisme de réplication multi-maître asynchrone pour garantir un stockage redondant des données sur plusieurs nœuds. Une fois les données écrites sur n’importe quelle réplique disponible, toutes les autres répliques récupèrent leur copie en arrière-plan. Le système maintient des données identiques sur les différentes répliques. La récupération après la plupart des défaillances s’effectue automatiquement, ou semi-automatiquement dans les cas complexes.
+
+<div id="role-based-access-control">
+  ## Contrôle d’accès basé sur les rôles
+</div>
+
+ClickHouse assure la gestion des comptes utilisateurs à l’aide de requêtes SQL et permet de configurer un contrôle d’accès basé sur les rôles, semblable à celui que l’on trouve dans la norme ANSI SQL et dans les systèmes de gestion de bases de données relationnelles les plus répandus.
+
+<div id="sql-support">
+  ## Prise en charge de SQL
+</div>
+
+ClickHouse prend en charge un [langage de requête déclaratif fondé sur SQL](/fr/reference/home), qui est dans de nombreux cas identique à la norme ANSI SQL. Les clauses de requête prises en charge incluent [GROUP BY](/fr/reference/statements/select/group-by), [ORDER BY](/fr/reference/statements/select/order-by), les sous-requêtes dans [FROM](/fr/reference/statements/select/from), la clause [JOIN](/fr/reference/statements/select/join), l&#39;opérateur [IN](/fr/reference/statements/in), les [fonctions de fenêtre](/fr/reference/functions/window-functions/index) et les sous-requêtes scalaires.
+
+<div id="approximate-calculation">
+  ## Calcul approximatif
+</div>
+
+ClickHouse permet de privilégier les performances au détriment de la précision. Par exemple, certaines de ses fonctions d&#39;agrégation calculent de manière approximative le nombre de valeurs distinctes, la médiane et les quantiles. De plus, les requêtes peuvent être exécutées sur un échantillon des données afin d&#39;obtenir rapidement un résultat approximatif. Enfin, les agrégations peuvent être effectuées sur un nombre limité de clés plutôt que sur l&#39;ensemble des clés. Selon le degré de déséquilibre dans la répartition des clés, cela peut fournir un résultat raisonnablement précis tout en utilisant bien moins de ressources qu&#39;un calcul exact.
+
+<div id="adaptive-join-algorithms">
+  ## Algorithmes de jointure adaptatifs
+</div>
+
+ClickHouse choisit l&#39;algorithme de jointure de façon adaptative : il commence par des jointures de hachage rapides et bascule vers des jointures de fusion lorsqu&#39;il y a plus d&#39;une grande table.
+
+<div id="superior-query-performance">
+  ## Excellentes performances des requêtes
+</div>
+
+ClickHouse est réputé pour offrir des performances de requête extrêmement rapides.
+Pour comprendre pourquoi ClickHouse est si rapide, consultez le guide [Pourquoi ClickHouse est-il rapide ?](/fr/get-started/about/why-clickhouse-is-so-fast).
+
+{/*
+  ## Qu'est-ce que l'OLAP ? {#what-is-olap}
+  Les scénarios OLAP exigent des réponses en temps réel sur de grands ensembles de données pour des requêtes analytiques complexes présentant les caractéristiques suivantes :
+  - Les ensembles de données peuvent être massifs — des milliards ou des billions de lignes
+  - Les données sont organisées en tables contenant de nombreuses colonnes
+  - Seules quelques colonnes sont sélectionnées pour répondre à une requête donnée
+  - Les résultats doivent être renvoyés en millisecondes ou en secondes
+
+  ## Bases de données orientées colonnes vs orientées lignes {#column-oriented-vs-row-oriented-databases}
+  Dans un SGBD orienté lignes, les données sont stockées par lignes, toutes les valeurs associées à une ligne étant physiquement contiguës.
+
+  Dans un SGBD orienté colonnes, les données sont stockées par colonnes, les valeurs d'une même colonne étant regroupées ensemble.
+
+  ## Pourquoi les bases de données orientées colonnes sont plus performantes dans les scénarios OLAP {#why-column-oriented-databases-work-better-in-the-olap-scenario}
+
+  Les bases de données orientées colonnes sont mieux adaptées aux scénarios OLAP : elles sont au moins 100 fois plus rapides pour le traitement de la plupart des requêtes. Les raisons sont expliquées en détail ci-dessous, mais il est plus simple de l'illustrer visuellement :
+
+  Vous voyez la différence ?
+
+  La suite de cet article explique pourquoi les bases de données orientées colonnes sont bien adaptées à ces scénarios, et pourquoi ClickHouse en particulier [surpasse](/get-started/about/why-clickhouse-is-so-fast#storage-layer-concurrent-inserts-and-selects-are-isolated) les autres dans cette catégorie.
+
+  ## Pourquoi ClickHouse est-il si rapide ? {#why-is-clickhouse-so-fast}
+
+  ClickHouse exploite toutes les ressources système disponibles à leur plein potentiel afin de traiter chaque requête analytique aussi rapidement que possible. Cela est rendu possible grâce à une combinaison unique de capacités analytiques et d'une attention portée aux détails de bas niveau nécessaires à l'implémentation de la base de données OLAP la plus rapide.
+
+  Parmi les articles utiles pour approfondir ce sujet :
+  - [ClickHouse Performance](/get-started/about/why-clickhouse-is-so-fast)
+  - [Distinctive Features of ClickHouse](/get-started/about/distinctive-features)
+  - [FAQ : Pourquoi ClickHouse est-il si rapide ?](/get-started/about/why-clickhouse-is-so-fast)
+
+  ## Traitement des requêtes analytiques en temps réel {#processing-analytical-queries-in-real-time}
+
+  Dans un SGBD orienté lignes, les données sont stockées dans l'ordre suivant :
+
+  | Ligne | WatchID     | JavaEnable | Title              | GoodEvent | EventTime           |
+  |-------|-------------|------------|--------------------|-----------|---------------------|
+  | #0 | 89354350662 | 1          | Investor Relations | 1         | 2016-05-18 05:19:20 |
+  | #1 | 90329509958 | 0          | Contact us         | 1         | 2016-05-18 08:10:20 |
+  | #2 | 89953706054 | 1          | Mission            | 1         | 2016-05-18 07:38:00 |
+  | #N | ...           | ...          | ...                  | ...         | ...                   |
+
+  En d'autres termes, toutes les valeurs associées à une ligne sont physiquement contiguës.
+
+  Parmi les exemples de SGBD orientés lignes : MySQL, Postgres et MS SQL Server.
+
+  Dans un SGBD orienté colonnes, les données sont stockées de la façon suivante :
+
+  | Ligne :     | #0                 | #1                 | #2                 | #N |
+  |-------------|---------------------|---------------------|---------------------|-----|
+  | WatchID:    | 89354350662         | 90329509958         | 89953706054         | ...   |
+  | JavaEnable: | 1                   | 0                   | 1                   | ...   |
+  | Title:      | Investor Relations  | Contact us          | Mission             | ...   |
+  | GoodEvent:  | 1                   | 1                   | 1                   | ...   |
+  | EventTime:  | 2016-05-18 05:19:20 | 2016-05-18 08:10:20 | 2016-05-18 07:38:00 | ...   |
+
+  Ces exemples illustrent uniquement l'ordre dans lequel les données sont organisées. Les valeurs de colonnes différentes sont stockées séparément, tandis que les données d'une même colonne sont stockées ensemble.
+
+  Parmi les exemples de SGBD orientés colonnes : Vertica, Paraccel (Actian Matrix et Amazon Redshift), Sybase IQ, Exasol, Infobright, InfiniDB, MonetDB (VectorWise et Actian Vector), LucidDB, SAP HANA, Google Dremel, Google PowerDrill, Druid et kdb+.
+
+  L'ordre de stockage des données le plus adapté varie selon les scénarios. Le scénario d'accès aux données englobe la nature des requêtes effectuées, leur fréquence et leur proportion ; la quantité de données lues pour chaque type de requête — lignes, colonnes et octets ; la relation entre lecture et mise à jour des données ; la taille effective des données et leur localité d'utilisation ; le recours ou non aux transactions et leur niveau d'isolation ; les exigences en matière de réplication des données et d'intégrité logique ; les exigences de latence et de débit pour chaque type de requête, etc.
+
+  Plus la charge sur le système est élevée, plus il est important d'adapter sa configuration aux exigences du scénario d'utilisation, et plus cette personnalisation doit être fine. Il n'existe aucun système également bien adapté à des scénarios radicalement différents. Un système conçu pour couvrir un large éventail de scénarios traitera, sous forte charge, tous ces scénarios de façon également médiocre — ou fonctionnera bien pour un seul ou quelques-uns d'entre eux.
+
+  ### Propriétés clés du scénario OLAP {#key-properties-of-olap-scenario}
+
+  - Les tables sont « larges », c'est-à-dire qu'elles contiennent un grand nombre de colonnes.
+  - Les ensembles de données sont volumineux et les requêtes nécessitent un débit élevé lors du traitement d'une seule requête (jusqu'à des milliards de lignes par seconde par serveur).
+  - Les valeurs de colonnes sont relativement petites : des nombres et des chaînes courtes (par exemple, 60 octets par URL).
+  - Les requêtes extraient un grand nombre de lignes, mais seulement un petit sous-ensemble de colonnes.
+  - Pour les requêtes simples, des latences d'environ 50 ms sont tolérées.
+  - Il y a une grande table par requête ; toutes les autres tables sont petites.
+  - Le résultat d'une requête est nettement plus petit que les données sources. En d'autres termes, les données sont filtrées ou agrégées, de sorte que le résultat tient dans la RAM d'un seul serveur.
+  - Les requêtes sont relativement rares (généralement quelques centaines de requêtes par serveur ou moins par seconde).
+  - Les insertions s'effectuent en lots assez volumineux (\> 1 000 lignes), et non ligne par ligne.
+  - Les transactions ne sont pas nécessaires.
+
+  Il est facile de constater que le scénario OLAP diffère considérablement des autres scénarios courants (tels que l'OLTP ou l'accès clé-valeur). Il n'est donc pas judicieux de recourir à un système OLTP ou à une base de données clé-valeur pour traiter des requêtes analytiques si l'on souhaite obtenir des performances satisfaisantes. Par exemple, utiliser MongoDB ou Redis pour de l'analytique donnera des résultats très médiocres par rapport aux bases de données OLAP.
+
+  ### Entrées/sorties {#inputoutput}
+
+  1.  Pour une requête analytique, seul un petit nombre de colonnes de la table doit être lu. Dans une base de données orientée colonnes, vous pouvez lire uniquement les données dont vous avez besoin. Par exemple, si vous avez besoin de 5 colonnes sur 100, vous pouvez vous attendre à une réduction des E/S d'un facteur 20.
+  2.  Les données étant lues par paquets, elles sont plus faciles à compresser. Les données organisées par colonnes se compressent également mieux, ce qui réduit davantage le volume des E/S.
+  3.  Grâce à la réduction des E/S, davantage de données tiennent dans le cache système.
+
+  Par exemple, la requête « compter le nombre d'enregistrements pour chaque plateforme publicitaire » nécessite la lecture d'une seule colonne « identifiant de plateforme publicitaire », qui occupe 1 octet non compressé. Si la majeure partie du trafic ne provient pas de plateformes publicitaires, on peut s'attendre à un taux de compression d'au moins 10 pour cette colonne. En utilisant un algorithme de compression rapide, la décompression des données peut atteindre plusieurs gigaoctets de données non compressées par seconde. En d'autres termes, cette requête peut être traitée à raison d'environ plusieurs milliards de lignes par seconde sur un seul serveur — une vitesse effectivement atteinte en pratique.
+
+  ### CPU {#cpu}
+
+  L'exécution d'une requête nécessitant le traitement d'un grand nombre de lignes, il est préférable de distribuer toutes les opérations sur des vecteurs entiers plutôt que sur des lignes séparées, ou d'implémenter le moteur de requêtes de façon à minimiser le coût de distribution. Sans cela, même avec un sous-système disque convenable, l'interpréteur de requêtes finit inévitablement par saturer le CPU. Il est donc judicieux de stocker les données en colonnes et de les traiter, dans la mesure du possible, par colonnes.
+
+  Il existe deux façons de procéder :
+
+  1.  Un moteur vectoriel. Toutes les opérations sont écrites pour des vecteurs, plutôt que pour des valeurs séparées. Les opérations n'ont donc pas besoin d'être appelées très fréquemment, et les coûts de distribution sont négligeables. Le code des opérations contient une boucle interne optimisée.
+
+  2.  La génération de code. Le code généré pour la requête intègre tous les appels indirects.
+
+  Cette approche n'est pas utilisée dans les bases de données orientées lignes, car elle n'apporte rien pour l'exécution de requêtes simples. Il existe cependant des exceptions. Par exemple, MemSQL utilise la génération de code pour réduire la latence lors du traitement des requêtes SQL. (À titre de comparaison, les SGBD analytiques cherchent à optimiser le débit, et non la latence.)
+
+  Notez que pour l'efficacité du CPU, le langage de requête doit être déclaratif (SQL ou MDX), ou au moins vectoriel (J, K). La requête ne doit contenir que des boucles implicites, ce qui permet leur optimisation.
+  */}

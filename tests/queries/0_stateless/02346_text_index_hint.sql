@@ -1,4 +1,5 @@
 -- Tags: no-parallel-replicas
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 SET use_skip_indexes_on_data_read = 1;

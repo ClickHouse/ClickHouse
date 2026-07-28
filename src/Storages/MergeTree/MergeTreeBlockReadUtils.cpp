@@ -134,7 +134,14 @@ bool injectRequiredColumnsRecursively(
 
     /// Column doesn't have default value and don't exist in part
     /// don't need to add to required set.
-    const auto column_default = storage_snapshot->getDefault(column_name);
+    auto column_default = storage_snapshot->getDefault(column_name);
+
+    /// A subcolumn does not have its own default expression: it is extracted from the evaluated
+    /// default of the column in storage (see IMergeTreeReader::evaluateMissingDefaults),
+    /// so the columns required by that expression must be read as well.
+    if (!column_default && column_in_storage && column_in_storage->isSubcolumn())
+        column_default = storage_snapshot->getDefault(column_in_storage->getNameInStorage());
+
     ASTPtr default_expression = column_default.has_value() ? column_default->expression : nullptr;
     if (!default_expression)
         return false;
@@ -370,6 +377,7 @@ PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column)
         .remove_filter_column = remove_filter_column,
         .need_filter = true,
         .perform_alter_conversions = true,
+        .columns_overwritten_by_chain = {},
         .mutation_version = std::nullopt,
     };
 
@@ -536,7 +544,8 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             index_read_tasks,
             actions_settings,
             reader_settings.enable_multiple_prewhere_read_steps,
-            reader_settings.force_short_circuit_execution);
+            reader_settings.force_short_circuit_execution,
+            &storage_snapshot->metadata->getColumns());
 
         for (const auto & step : prewhere_actions.steps)
             add_step(*step);

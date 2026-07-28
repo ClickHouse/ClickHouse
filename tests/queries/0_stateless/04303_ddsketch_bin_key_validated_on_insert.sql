@@ -1,0 +1,39 @@
+-- A single DDSketch bin at an impossible key (2^31 - 2^10) must be rejected on INSERT, not stored to break a later merge
+-- Payloads use gamma = 2.0, whose valid key range is ~[-1021, 1023]
+
+DROP TABLE IF EXISTS t_ddsketch_bad;
+CREATE TABLE t_ddsketch_bad (s AggregateFunction(quantilesDD(0.01, 0.5), Float64)) ENGINE = MergeTree ORDER BY tuple();
+
+-- Bad key: rejected on insert, nothing persisted
+INSERT INTO t_ddsketch_bad SELECT unhex('020000000000000040000000000000000001040180F0FFFF0F000000000000F03F030C000002040000000000000000')::AggregateFunction(quantilesDD(0.01, 0.5), Float64); -- { serverError INCORRECT_DATA }
+SELECT count() FROM t_ddsketch_bad;
+
+-- In-range key (100): inserts and reads back fine
+INSERT INTO t_ddsketch_bad SELECT unhex('0200000000000000400000000000000000010401C801000000000000F03F030C000002040000000000000000')::AggregateFunction(quantilesDD(0.01, 0.5), Float64);
+SELECT count() FROM t_ddsketch_bad;
+SELECT quantilesDDMerge(0.01, 0.5)(s)[1] > 0 FROM t_ddsketch_bad;
+
+-- Direct finalization (no merge) must use the serialized gamma, not the aggregate type's accuracy
+-- this gamma=10 state with one bin at key 0 yields 1*(1+(10-1)/(10+1)) = 1.8181..., not 1.01
+SELECT finalizeAggregation(unhex('020000000000002440000000000000000001040100000000000000F03F030C000002040000000000000000')::AggregateFunction(quantilesDD(0.01, 0.5), Float64));
+
+-- Nonzero mapping offset (here -1023.5) is unsupported, merge compares mappings by gamma only and would
+-- not remap, so two same-gamma states with different offsets would merge wrong
+SELECT quantilesDDMerge(0.01, 0.5)(d) FROM (SELECT unhex('0200000000000000400000000000FC8FC001040100000000000000F03F030C000002040000000000000000')::AggregateFunction(quantilesDD(0.01, 0.5), Float64) AS d); -- { serverError INCORRECT_DATA }
+
+-- Read path rejects the same bad state too
+SELECT quantilesDDMerge(0.01, 0.5)(d) FROM (SELECT unhex('020000000000000040000000000000000001040180F0FFFF0F000000000000F03F030C000002040000000000000000')::AggregateFunction(quantilesDD(0.01, 0.5), Float64) AS d); -- { serverError INCORRECT_DATA }
+
+-- Corrupted mapping with a huge (but finite) offset
+SELECT quantilesDDMerge(0.01, 0.5)(d) FROM (SELECT unhex('02000000000000004000C84E676DC1AB430104018080808008000000000000F03F030C000002040000000000000000')::AggregateFunction(quantilesDD(0.01, 0.5), Float64) AS d); -- { serverError INCORRECT_DATA }
+
+-- gamma ~ 1 (nextafter(1.0, 2.0)) with a bin at INT_MIN, rejected before the store overflows centering the bins
+SELECT quantilesDDMerge(0.01, 0.5)(d) FROM (SELECT unhex('02010000000000F03F0000000000000000010401FFFFFFFF0F000000000000F03F030C000002040000000000000000')::AggregateFunction(quantilesDD(0.01, 0.5), Float64) AS d); -- { serverError INCORRECT_DATA }
+
+-- Key 2^32 + 123: must be checked as Int64, not truncated to 123 and accepted
+SELECT quantilesDDMerge(0.01, 0.5)(d) FROM (SELECT unhex('0200000000000000400000000000000000010401F681808020000000000000F03F030C000002040000000000000000')::AggregateFunction(quantilesDD(0.01, 0.5), Float64) AS d); -- { serverError INCORRECT_DATA }
+
+-- Degenerate gamma (1e308) makes min_possible > max_possible, so no value is mappable, any bin is rejected
+SELECT quantilesDDMerge(0.01, 0.5)(d) FROM (SELECT unhex('02A0C8EB85F3CCE17F000000000000000001040100000000000000F03F030C000002040000000000000000')::AggregateFunction(quantilesDD(0.01, 0.5), Float64) AS d); -- { serverError INCORRECT_DATA }
+
+DROP TABLE t_ddsketch_bad;

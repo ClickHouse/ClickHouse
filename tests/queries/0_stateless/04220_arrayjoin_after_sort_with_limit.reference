@@ -1,0 +1,20 @@
+-- LIMIT 30 (matches all expansions)
+5
+-- LIMIT 3 (used to return 0 rows)
+3
+-- LIMIT 1
+1
+-- LIMIT 2
+2
+-- LIMIT 4
+4
+-- LIMIT 100
+5
+-- No JOIN, LIMIT 3
+3
+-- Plain expression: optimization still applies
+1
+-- Old analyzer, LIMIT 3
+3
+-- ORDER BY arrayJoin output, LIMIT 3
+3
