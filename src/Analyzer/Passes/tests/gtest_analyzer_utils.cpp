@@ -35,12 +35,14 @@ static QueryTreeNodePtr resolveColumn(
                 return it->second;
             /// One shared source per qualifier (`t1.a`, `t1.b` -> `t1`); the column keeps
             /// only the last identifier part as its name.
-            const auto & identifier = identifier_node->getIdentifier();
-            String source_name = identifier.isShort() ? "__default_table" : identifier.front();
+            String short_name = identifier_node->getIdentifier().back();
+            Identifier qualifier = identifier_node->getIdentifier();
+            qualifier.popLast();
+            String source_name = qualifier.empty() ? "__default_table" : qualifier.getFullName();
             auto & source = source_map[source_name];
             if (!source)
                 source = std::make_shared<IdentifierNode>(Identifier(source_name));
-            auto column = std::make_shared<ColumnNode>(NameAndTypePair(identifier.back(), type), source);
+            auto column = std::make_shared<ColumnNode>(NameAndTypePair(short_name, type), source);
             resolved_map[col_name] = column;
             return column;
         }
