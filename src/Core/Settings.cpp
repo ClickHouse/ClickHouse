@@ -1701,7 +1701,7 @@ Possible values:
 The maximum number of rows in MySQL batch insertion of the MySQL storage engine
 )", 0) \
     DECLARE(Bool, mysql_map_string_to_text_in_show_columns, true, R"(
-When enabled, [String](/reference/data-types/string) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](/reference/statements/show#show-columns).
+When enabled, [String](/reference/data-types/string) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](/reference/statements/show#show_columns).
 
 Has an effect only when the connection is made through the MySQL wire protocol.
 
@@ -1709,7 +1709,7 @@ Has an effect only when the connection is made through the MySQL wire protocol.
 - 1 - Use `TEXT`.
 )", 0) \
     DECLARE(Bool, mysql_map_fixed_string_to_text_in_show_columns, true, R"(
-When enabled, [FixedString](/reference/data-types/fixedstring) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](/reference/statements/show#show-columns).
+When enabled, [FixedString](/reference/data-types/fixedstring) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](/reference/statements/show#show_columns).
 
 Has an effect only when the connection is made through the MySQL wire protocol.
 
@@ -5656,7 +5656,7 @@ Enables asynchronous connection creation and query sending while executing remot
 Enabled by default.
 )", 0) \
     DECLARE(Bool, insert_null_as_default, true, R"(
-Enables or disables the insertion of [default values](/sql-reference/statements/create/table#default-values) instead of [NULL](/sql-reference/syntax#null) into columns with not [nullable](/sql-reference/data-types/nullable) data type.
+Enables or disables the insertion of [default values](/sql-reference/statements/create/table#default_values) instead of [NULL](/sql-reference/syntax#null) into columns with not [nullable](/sql-reference/data-types/nullable) data type.
 If column type is not nullable and this setting is disabled, then inserting `NULL` causes an exception. If column type is nullable, then `NULL` values are inserted as is, regardless of this setting.
 
 This setting is applicable to [INSERT ... SELECT](/reference/statements/insert-into#inserting-the-results-of-select) queries. Note that `SELECT` subqueries may be concatenated with `UNION ALL` clause.
@@ -7578,17 +7578,17 @@ Allow to create *MergeTree tables with empty primary key when ORDER BY and PRIMA
 Allow named collections' fields override by default.
 )", 0) \
     DECLARE(SQLSecurityType, default_normal_view_sql_security, SQLSecurityType::INVOKER, R"(
-Allows to set default `SQL SECURITY` option while creating a normal view. [More about SQL security](/reference/statements/create/view#sql-security).
+Allows to set default `SQL SECURITY` option while creating a normal view. [More about SQL security](/reference/statements/create/view#sql_security).
 
 The default value is `INVOKER`.
 )", 0) \
     DECLARE(SQLSecurityType, default_materialized_view_sql_security, SQLSecurityType::DEFINER, R"(
-Allows to set a default value for SQL SECURITY option when creating a materialized view. [More about SQL security](/reference/statements/create/view#sql-security).
+Allows to set a default value for SQL SECURITY option when creating a materialized view. [More about SQL security](/reference/statements/create/view#sql_security).
 
 The default value is `DEFINER`.
 )", 0) \
     DECLARE(String, default_view_definer, "CURRENT_USER", R"(
-Allows to set default `DEFINER` option while creating a view. [More about SQL security](/reference/statements/create/view#sql-security).
+Allows to set default `DEFINER` option while creating a view. [More about SQL security](/reference/statements/create/view#sql_security).
 
 The default value is `CURRENT_USER`.
 )", 0) \
