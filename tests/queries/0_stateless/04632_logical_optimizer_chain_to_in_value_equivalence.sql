@@ -5,8 +5,9 @@
 --
 -- Every "on" row below is printed next to ground truth computed as one subquery column per
 -- comparison, so the OR/AND is over plain UInt8 columns and no equals-chain pattern is left for the
--- pass to rewrite. `rewrite OFF` is NOT a usable oracle: both builders bypass the chain-length gate
--- for a LowCardinality expression, so an OFF column would itself be wrong there.
+-- pass to rewrite. Ground truth is used throughout the file, and not just where a rewrite-OFF column
+-- would be awkward: `rewrite OFF` is not a usable fallback at all, because both builders bypass the
+-- chain-length gate for a LowCardinality expression, so an OFF column would itself be wrong there.
 
 -- The pass is analyzer-only; without this the assertions are vacuous under the old-analyzer jobs.
 SET enable_analyzer = 1;
@@ -369,9 +370,10 @@ SELECT 'plain contradiction still folds', count() FROM (EXPLAIN QUERY TREE run_p
 --     accepted at analysis time but is only EXECUTABLE when the const-string path can cast the
 --     constant, which needs the CONSTANT to be the string side. A string-family expression against
 --     e.g. an `Int64` constant therefore raises NO_COMMON_TYPE, while the constant still converts
---     losslessly into a semantic point, so all three rewrites used to answer instead. The reverse
---     direction stays rewritable and is asserted in section (b) (`date string const`,
---     `uuid string const`, `fs5 expr string const`, `enum expr string const`).
+--     losslessly into a semantic point, so all three rewrites used to answer instead. This holds for
+--     composite constants as well, not just scalar ones. The reverse direction stays rewritable and is
+--     asserted in section (b) (`date string const`, `uuid string const`, `fs5 expr string const`,
+--     `enum expr string const`).
 -- =====================================================================================
 
 SELECT '--- no common type ---';
@@ -399,9 +401,28 @@ SELECT countIf((i = 1) AND (i = 2) AND (c != 'zz')) AS safe_string_result_unaffe
 SELECT 'safe string comparison still folds', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t_strveto WHERE (i = 1) AND (i = 2) AND (c != 'zz')) WHERE explain ILIKE '%constant_value: UInt64_0%';
 SELECT 'plain contradiction still folds (string table)', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t_strveto WHERE (i = 1) AND (i = 2)) WHERE explain ILIKE '%constant_value: UInt64_0%';
 
--- A COMPOSITE source against a string-family target is deliberately NOT gated by the rule: it takes a
--- dedicated engine path. Measured to be inert either way, since such a comparison is already rejected
--- at analysis time even as a SINGLE term with no chain to rewrite, so there is nothing left to gate.
+-- A COMPOSITE constant against a string-family expression takes the same path and is gated by the same
+-- rule: `equals` accepts it at analysis time, then `executeGeneric` raises NO_COMMON_TYPE. Only the
+-- spellings whose String rendering parses back survive the round-trip guard and therefore reach the
+-- rule: a multi-element `tuple(...)` renders as `(1,2)` and an `Array` as `[1]`, so both used to be
+-- rewritten. Every consumer is covered here because each reaches the rule from its own call site.
+SELECT countIf(c = tuple(1::Int64, 2::Int64) OR c = tuple(2::Int64, 3::Int64) OR c = tuple(3::Int64, 4::Int64)) FROM t_str; -- { serverError NO_COMMON_TYPE }
+SELECT countIf(c = [1::Int64] OR c = [2::Int64] OR c = [3::Int64]) FROM t_str; -- { serverError NO_COMMON_TYPE }
+SELECT countIf(c != tuple(1::Int64, 2::Int64) AND c != tuple(2::Int64, 3::Int64) AND c != tuple(3::Int64, 4::Int64)) FROM t_str; -- { serverError NO_COMMON_TYPE }
+SELECT countIf(c != [1::Int64] AND c != [2::Int64] AND c != [3::Int64]) FROM t_str; -- { serverError NO_COMMON_TYPE }
+SELECT countIf(c = tuple(1::Int64, 2::Int64) AND c != tuple(1::Int64, 2::Int64)) FROM t_str; -- { serverError NO_COMMON_TYPE }
+SELECT countIf(c = [1::Int64] AND c != [1::Int64]) FROM t_str; -- { serverError NO_COMMON_TYPE }
+-- A FixedString expression carrier takes the same path.
+SELECT countIf(c = [1::Int64] AND c != [1::Int64]) FROM t_foldfs; -- { serverError NO_COMMON_TYPE }
+-- The `Map` rendering (`[('a',1)]`) does not parse back, so the round-trip guard already declined it
+-- before this rule existed; the row is kept so the third composite kind stays covered.
+SELECT countIf(c = map('a', 1::Int64) AND c != map('a', 1::Int64)) FROM t_str; -- { serverError NO_COMMON_TYPE }
+-- The global contradiction must not collapse either, on the plan and not only on the exception.
+SELECT countIf((i = 1) AND (i = 2) AND (c != tuple(1::Int64, 2::Int64))) FROM t_strveto; -- { serverError NO_COMMON_TYPE }
+SELECT 'composite no-common-type term vetoes the collapse', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t_strveto WHERE (i = 1) AND (i = 2) AND (c != tuple(1::Int64, 2::Int64))) WHERE explain ILIKE '%constant_value: UInt64_0%';
+-- The SINGLE-element `tuple(...)` spelling renders as `tuple(1)`, which does not parse back either, so
+-- it was already inert. It is kept to document that the distinction is about the rendering and not
+-- about the constant being composite.
 SELECT countIf(c = tuple(1::Int64) OR c = tuple(2::Int64) OR c = tuple(3::Int64)) FROM t_str; -- { serverError NO_COMMON_TYPE }
 SELECT countIf(c = tuple('ab')) FROM t_str; -- { serverError NO_COMMON_TYPE }
 

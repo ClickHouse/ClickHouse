@@ -487,18 +487,16 @@ static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant
     return converted;
 }
 
-/// True when a `Variant` is reachable anywhere in `type`. Mirrors `hasDynamicType`; a separate walk is
-/// needed because `DataTypeVariant::hasDynamicStructure()` only reports the dynamic structure of its
-/// ALTERNATIVES, so a plain `Variant(Float64, UInt64)` is not "dynamically structured".
+/// True when a `Variant` is reachable anywhere in `type`. Same shape as the walk in
+/// `validateGroupByKeyType`; a separate walk is needed because `DataTypeVariant::hasDynamicStructure()`
+/// only reports the dynamic structure of its ALTERNATIVES, so a plain `Variant(Float64, UInt64)` is not
+/// "dynamically structured".
 static bool hasVariantTypeRecursively(const DataTypePtr & type)
 {
     bool result = false;
-    /// `forEachChild` recurses into the children itself.
-    auto check = [&](const IDataType & t)
-    {
-        checkStackSize();
-        result |= isVariant(t);
-    };
+    /// `forEachChild` recurses into the children itself, and its implementations are unguarded, so a
+    /// deeply nested type is bounded by whatever limited its construction rather than by a check here.
+    auto check = [&](const IDataType & t) { result |= isVariant(t); };
     check(*type);
     type->forEachChild(check);
     return result;
@@ -628,13 +626,7 @@ static bool comparisonTypesHaveCommonType(const DataTypePtr & from_type, const D
     const auto target = removeLowCardinalityAndNullable(expr_type);
 
     if (isStringOrFixedString(target))
-    {
-        /// A composite source against a string-family target takes a dedicated engine path, so leave
-        /// that decision to the other rules.
-        if (isTuple(source) || isArray(source) || isMap(source))
-            return true;
         return tryGetLeastSupertype(DataTypes{source, target}) != nullptr;
-    }
 
     if (const auto * tuple_target = typeid_cast<const DataTypeTuple *>(target.get()))
     {

@@ -101,6 +101,7 @@ no-common-type term vetoes the collapse	0
 0
 safe string comparison still folds	1
 plain contradiction still folds (string table)	1
+composite no-common-type term vetoes the collapse	0
 --- no longer an error ---
 3	3
 0	0
