@@ -24,7 +24,7 @@ using namespace DB;
 namespace
 {
 template <class T>
-std::shared_ptr<ISource> multiColumnsSource(const std::vector<DataTypePtr> & type, const std::vector<std::vector<T>> & values, size_t times)
+std::shared_ptr<ISource> multiColumnsSource(const DataTypes & type, const std::vector<std::vector<T>> & values, size_t times)
 {
     Block header;
     for (size_t i = 0; i < type.size(); ++i)

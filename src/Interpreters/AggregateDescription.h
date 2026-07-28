@@ -30,6 +30,6 @@ struct AggregateDescription
 using AggregateDescriptions = std::vector<AggregateDescription>;
 
 void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, WriteBuffer & out);
-void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in);
+void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity);
 
 }

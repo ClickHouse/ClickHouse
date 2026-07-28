@@ -82,8 +82,8 @@ SELECT count()
 FROM format('GeoJSON', '{"type":"FeatureCollection","features":[]}')
 SETTINGS input_format_geojson_unsupported_geometry_handling = 'bogus'; -- { clientError BAD_ARGUMENTS }
 
--- An explicit "id": null is treated like an absent id (an empty string).
-SELECT id = ''
+-- An explicit "id": null is treated like an absent id: the Nullable(String) `id` becomes NULL.
+SELECT id IS NULL
 FROM format('GeoJSON', '{
     "type": "FeatureCollection",
     "features": [
