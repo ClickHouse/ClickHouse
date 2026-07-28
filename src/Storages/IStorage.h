@@ -681,11 +681,11 @@ public:
     /// NOTE: may not be equivalent to !getDataPaths().empty()
     virtual bool storesDataOnDisk() const { return false; }
 
-    /// Returns true if the table keeps its own data in local storage and does not replicate it by itself.
+    /// Returns true if the table can keep unreplicated data in local storage.
     /// Such a table cannot be created in a `Replicated` database, because its data would exist on a single
     /// replica only, while the table metadata is replicated to all of them.
-    /// Only the data of the table itself counts here. Transient auxiliary files, such as the background
-    /// `INSERT` queue of a `Distributed` table, are not table data and are not taken into account.
+    /// Transient auxiliary files are not taken into account unless they can contain user data acknowledged by an
+    /// `INSERT`, such as the background queue of a `Distributed` table.
     virtual bool hasUnreplicatedLocalTableData() const { return storesDataOnDisk() && !supportsReplication(); }
 
     /// Returns data paths if storage supports it, empty vector otherwise.
