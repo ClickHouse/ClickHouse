@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Documentation.h>
 #include <Common/NamePrompter.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Parsers/IAST_fwd.h>
@@ -77,6 +78,7 @@ public:
         /// non-replicated MergeTree variants — replicated metadata does not yet
         /// serialize `unique_key`, which would allow replicas to diverge silently.
         bool supports_unique_key = false;
+        bool supports_sql_security = false;
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
@@ -87,6 +89,7 @@ public:
     {
         CreatorFn creator_fn;
         StorageFeatures features;
+        Documentation documentation;
     };
 
     using Storages = std::unordered_map<std::string, Creator>;
@@ -114,18 +117,19 @@ public:
         .supports_parallel_insert = false,
         .supports_schema_inference = false,
         .supports_unique_key = false,
+        .supports_sql_security = false,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
-    });
+    }, Documentation documentation = {});
 
     const Storages & getAllStorages() const
     {
         return storages;
     }
 
-    std::vector<String> getAllRegisteredNames() const override
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
-        std::vector<String> result;
+        VectorWithMemoryTracking<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
         std::transform(storages.begin(), storages.end(), std::back_inserter(result), getter);
         return result;

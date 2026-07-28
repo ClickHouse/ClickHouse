@@ -179,9 +179,8 @@ def test_invalid_snapshot(started_cluster, request):
         )
 
         def snapshot_sort_key(snapshot_name):
-            snapshot_prefix_size = len("snapshot_")
-            last_log_idx = snapshot_name.split(".")[0][snapshot_prefix_size:]
-            return int(last_log_idx)
+            # snapshot_<idx>[_<uuid>].bin[.zstd] — the index is the second '_'-separated token
+            return int(snapshot_name.split("_")[1].split(".")[0])
 
         snapshots.sort(key=snapshot_sort_key)
         last_snapshot = snapshots[-1]

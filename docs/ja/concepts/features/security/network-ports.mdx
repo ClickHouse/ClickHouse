@@ -1,0 +1,32 @@
+---
+slug: /guides/sre/network-ports
+sidebarTitle: 'ネットワークポート'
+title: 'ネットワークポート'
+description: '利用可能なネットワークポートとその用途の説明'
+doc_type: 'reference'
+keywords: ['ネットワーク', 'ポート', '設定', 'セキュリティ', 'ファイアウォール']
+---
+
+<Note>
+  **default** と記載されているポートは、ポート番号が `/etc/clickhouse-server/config.xml` で設定されていることを意味します。設定をカスタマイズするには、`/etc/clickhouse-server/config.d/` にファイルを追加してください。詳しくは、[configuration file](/ja/concepts/features/configuration/server-config/configuration-files) のドキュメントを参照してください。
+</Note>
+
+| ポート   | 説明                                                                                                                                                                           | Cloud | OSS |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | --- |
+| 2181  | ZooKeeper のデフォルトサービスポート。**注: ClickHouse Keeper については `9181` を参照してください**                                                                                                      |       | ✓   |
+| 8123  | HTTP のデフォルトポート                                                                                                                                                               |       | ✓   |
+| 8443  | HTTP SSL/TLS のデフォルトポート                                                                                                                                                       | ✓     | ✓   |
+| 9000  | ネイティブプロトコル用ポート (ClickHouse TCP protocol とも呼ばれます) 。`clickhouse-server`、`clickhouse-client`、およびネイティブの ClickHouse ツールなどの ClickHouse アプリケーションやプロセスで使用されます。分散クエリのサーバー間通信にも使用されます。 |       | ✓   |
+| 9004  | MySQL エミュレーションポート                                                                                                                                                            |       | ✓   |
+| 9005  | PostgreSQL エミュレーションポート (ClickHouse で SSL が有効な場合は、セキュアな通信にも使用されます)                                                                                                            |       | ✓   |
+| 9009  | 低レベルのデータアクセス用のサーバー間通信ポート。データ交換、レプリケーション、サーバー間通信に使用されます。                                                                                                                      |       | ✓   |
+| 9010  | サーバー間通信用の SSL/TLS                                                                                                                                                            |       | ✓   |
+| 9011  | ネイティブプロトコルの PROXYv1 プロトコルポート                                                                                                                                                 |       | ✓   |
+| 9019  | JDBC ブリッジ                                                                                                                                                                    |       | ✓   |
+| 9100  | gRPC ポート                                                                                                                                                                     |       | ✓   |
+| 9181  | 推奨される ClickHouse Keeper ポート                                                                                                                                                  |       | ✓   |
+| 9234  | 推奨される ClickHouse Keeper Raft ポート (`<secure>1</secure>` が有効な場合は、セキュアな通信にも使用されます)                                                                                              |       | ✓   |
+| 9363  | Prometheus のデフォルトメトリクスポート                                                                                                                                                    |       | ✓   |
+| 9281  | 推奨されるセキュアな SSL ClickHouse Keeper ポート                                                                                                                                         |       | ✓   |
+| 9440  | ネイティブプロトコルの SSL/TLS ポート                                                                                                                                                      | ✓     | ✓   |
+| 42000 | Graphite のデフォルトポート                                                                                                                                                           |       | ✓   |

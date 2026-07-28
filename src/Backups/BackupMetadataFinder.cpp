@@ -36,12 +36,10 @@ BackupMetadataFinder::BackupMetadataFinder(
     const RestoreSettings & restore_settings_,
     const BackupPtr & backup_,
     const ContextMutablePtr & context_,
-    const ContextPtr & query_context_,
     ThreadPool & thread_pool_)
     : restore_settings(restore_settings_)
     , backup(backup_)
     , context(context_)
-    , query_context(query_context_)
     , process_list_element(context->getProcessListElement())
     , log(getLogger("BackupMetadataFinder"))
     , tables_dependencies("BackupMetadataFinder")

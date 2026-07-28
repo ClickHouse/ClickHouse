@@ -1,0 +1,9 @@
+-- optional LIST wrapper, REQUIRED element group: Array(Nullable(Tuple)) accepted (always-defined)
+[(1),(2)]	Array(Nullable(Tuple(x UInt32)))
+[(3)]	Array(Nullable(Tuple(x UInt32)))
+-- optional MAP wrapper, REQUIRED value group: Map(String, Nullable(Tuple)) accepted
+{'k1':(1),'k2':(2)}	Map(String, Nullable(Tuple(x UInt32)))
+-- optional element group with all-REQUIRED subtree under a list: struct nulls reconstructed losslessly, accepted
+[((1)),NULL,((3))]	Array(Nullable(Tuple(inner Tuple(x UInt32))))
+-- optional element group with a NULLABLE leaf under a list: leaf null map != struct null map, still rejected
+TYPE_MISMATCH

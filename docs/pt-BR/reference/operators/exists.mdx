@@ -1,0 +1,58 @@
+---
+description: 'Documentação do operador `EXISTS`'
+slug: /sql-reference/operators/exists
+title: 'EXISTS'
+doc_type: 'reference'
+---
+
+O operador `EXISTS` verifica quantos registros há no resultado de uma subconsulta. Se ele estiver vazio, o operador retornará `0`. Caso contrário, retornará `1`.
+
+`EXISTS` também pode ser usado em uma cláusula [WHERE](/pt-BR/reference/statements/select/where).
+
+<Tip>
+  Referências a tabelas e colunas da consulta principal não são compatíveis em uma subconsulta.
+</Tip>
+
+**Sintaxe**
+
+```sql
+EXISTS(subquery)
+```
+
+**Exemplo**
+
+Consulta para verificar a existência de valores em uma subconsulta:
+
+```sql title="Query"
+SELECT EXISTS(SELECT * FROM numbers(10) WHERE number > 8), EXISTS(SELECT * FROM numbers(10) WHERE number > 11)
+```
+
+```text title="Response"
+┌─in(1, _subquery1)─┬─in(1, _subquery2)─┐
+│                 1 │                 0 │
+└───────────────────┴───────────────────┘
+```
+
+Consulta com uma subconsulta que retorna várias linhas:
+
+```sql title="Query"
+SELECT count() FROM numbers(10) WHERE EXISTS(SELECT number FROM numbers(10) WHERE number > 8);
+```
+
+```text title="Response"
+┌─count()─┐
+│      10 │
+└─────────┘
+```
+
+Consulta com uma subconsulta que retorna um resultado vazio:
+
+```sql title="Query"
+SELECT count() FROM numbers(10) WHERE EXISTS(SELECT number FROM numbers(10) WHERE number > 11);
+```
+
+```text title="Response"
+┌─count()─┐
+│       0 │
+└─────────┘
+```

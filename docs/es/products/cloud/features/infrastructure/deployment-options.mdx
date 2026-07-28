@@ -1,0 +1,45 @@
+---
+title: 'Opciones de implementación'
+slug: /infrastructure/deployment-options
+description: 'Opciones de implementación disponibles para los clientes de ClickHouse'
+keywords: ['nube propia', 'byoc', 'privado', 'government', 'autogestionado']
+doc_type: 'reference'
+---
+
+ClickHouse ofrece una variedad de opciones de implementación para satisfacer diversos requisitos de los clientes, con distintos niveles de control, cumplimiento normativo y carga operativa.
+Este documento describe los distintos tipos de implementación disponibles, para ayudarle a seleccionar la solución óptima que mejor se ajuste a sus preferencias arquitectónicas específicas, obligaciones regulatorias y estrategias de gestión de recursos.
+
+<div id="clickhouse-cloud">
+  ## ClickHouse Cloud
+</div>
+
+ClickHouse Cloud es un servicio totalmente gestionado y nativo de la nube que ofrece la potencia y la velocidad de ClickHouse sin las complejidades operativas de la gestión propia.
+Esta opción es ideal si prioriza una implementación rápida, la escalabilidad y una carga administrativa mínima.
+ClickHouse Cloud se encarga del aprovisionamiento, el escalado, el mantenimiento y las actualizaciones para que los usuarios puedan centrarse por completo en el análisis de datos y el desarrollo de aplicaciones.
+Ofrece precios según el consumo y escalado automático para garantizar un rendimiento fiable y rentable en cargas de trabajo analíticas. Está disponible en AWS, GCP y Azure, con opciones de facturación directa a través del marketplace.
+
+Obtenga más información sobre [ClickHouse Cloud](/es/get-started/setup/cloud).
+
+<div id="byoc">
+  ## Bring Your Own Cloud
+</div>
+
+ClickHouse Bring Your Own Cloud (BYOC) permite a las organizaciones implementar y gestionar ClickHouse en su propio entorno de nube, aprovechando al mismo tiempo una capa de servicio gestionada. Esta opción tiende un puente entre la experiencia totalmente gestionada de ClickHouse Cloud y el control absoluto de las implementaciones autogestionadas. Con ClickHouse BYOC, los usuarios mantienen el control sobre los datos, la infraestructura y las políticas de seguridad para cumplir requisitos específicos de cumplimiento normativo y regulación, al tiempo que delegan en ClickHouse tareas operativas como la aplicación de parches, la supervisión y el escalado. Este modelo ofrece la flexibilidad de una implementación en nube privada con las ventajas de un servicio gestionado, por lo que resulta adecuado para implementaciones a gran escala en empresas con estrictos requisitos de seguridad, gobernanza y residencia de los datos.
+
+Más información sobre [Bring Your Own Cloud](/es/products/cloud/guides/infrastructure/deployment-options/byoc/overview).
+
+<div id="clickhouse-private">
+  ## ClickHouse Private
+</div>
+
+ClickHouse Private es una versión autogestionada de ClickHouse que aprovecha la misma tecnología propietaria que impulsa ClickHouse Cloud. Esta opción ofrece el máximo nivel de control, por lo que resulta ideal para organizaciones con estrictos requisitos de cumplimiento normativo, redes y seguridad, así como para equipos que cuentan con la experiencia operativa necesaria para gestionar su propia infraestructura. Se beneficia de actualizaciones y mejoras periódicas, probadas exhaustivamente en el entorno de ClickHouse Cloud, de una hoja de ruta repleta de funcionalidades y del respaldo de nuestro equipo de soporte especializado.
+
+Más información sobre [ClickHouse Private](/es/products/cloud/guides/infrastructure/deployment-options/clickhouse-private).
+
+<div id="clickhouse-government">
+  ## ClickHouse Government
+</div>
+
+ClickHouse Government es una versión autogestionada de ClickHouse diseñada para satisfacer las exigencias únicas y rigurosas de las agencias gubernamentales y las organizaciones del sector público que necesitan entornos aislados y acreditados. Esta opción de implementación proporciona un entorno altamente seguro, aislado y conforme, con especial énfasis en el cumplimiento de FIPS 140-3 mediante el uso de OpenSSL, el refuerzo adicional del sistema y la gestión de vulnerabilidades. Aprovecha las sólidas capacidades de ClickHouse Cloud e integra funciones y configuraciones especializadas para responder a los requisitos operativos y de seguridad específicos de las entidades gubernamentales. Con ClickHouse Government, las agencias pueden obtener análisis de alto rendimiento sobre datos sensibles dentro de una infraestructura controlada y acreditada, con el respaldo de soporte especializado adaptado a las necesidades del sector público.
+
+Más información sobre [ClickHouse Government](/es/products/cloud/guides/infrastructure/deployment-options/clickhouse-government).

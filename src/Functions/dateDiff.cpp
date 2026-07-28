@@ -164,7 +164,9 @@ public:
     template <typename TransformX, typename TransformY, typename T1, typename T2>
     Int64 calculate(const TransformX & transform_x, const TransformY & transform_y, T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
     {
-        auto res =  static_cast<Int64>(transform_y.execute(y, timezone_y)) - static_cast<Int64>(transform_x.execute(x, timezone_x));
+        auto res = static_cast<Int64>(
+            static_cast<UInt64>(transform_y.execute(y, timezone_y))
+            - static_cast<UInt64>(transform_x.execute(x, timezone_x)));
 
         if (is_diff)
         {
