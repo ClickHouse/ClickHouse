@@ -64,7 +64,6 @@ namespace FailPoints
 {
     extern const char object_storage_queue_fail_in_the_middle_of_file[];
     extern const char object_storage_queue_fail_commit_after_success[];
-    extern const char object_storage_queue_skip_one_file_in_batch[];
     extern const char object_storage_queue_cancel_in_generate[];
     extern const char object_storage_queue_sleep_in_generate[];
 }
@@ -274,18 +273,7 @@ ObjectStorageQueueSource::FileIterator::next()
                         new_batch[i]->getPath(),
                         /* bucket_info */ {}); /// No buckets for Unordered mode.
 
-                    /// Test-only: make the first file of a multi-file batch non-processable,
-                    /// taking the same std::nullopt path as a file grabbed by another consumer.
-                    bool force_skip = false;
-                    fiu_do_on(FailPoints::object_storage_queue_skip_one_file_in_batch,
-                    {
-                        if (new_batch.size() > 1 && i == 0)
-                            force_skip = true;
-                    });
-
-                    std::optional<ObjectStorageQueueIFileMetadata::SetProcessingResponseIndexes> set_processing_result;
-                    if (!force_skip)
-                        set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests, processing_id);
+                    auto set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests, processing_id);
                     if (set_processing_result.has_value())
                     {
                         result_indexes[i] = set_processing_result.value();
