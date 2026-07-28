@@ -1,0 +1,6 @@
+Distributed(\'test_shard_localhost\', merge(\'_db_\', concat(\'^ast\', \'_src$\')))
+6
+Distributed(\'test_shard_localhost\', merge(\'_db_\', concat(\'^ast\', \'_src$\')))
+Distributed(\'test_shard_localhost\', merge(\'_db_\', concat(\'^ast\', \'_src$\')))
+6
+Distributed(\'test_shard_localhost\', merge(\'_db_\', concat(\'^ast\', \'_src$\')))

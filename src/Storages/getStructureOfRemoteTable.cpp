@@ -42,7 +42,8 @@ static ColumnsDescription getStructureOfRemoteTableInShard(
     const Cluster::ShardInfo & shard_info,
     const StorageID & table_id,
     ContextPtr context,
-    const ASTPtr & table_func_ptr)
+    const ASTPtr & table_func_ptr,
+    bool is_insert_query)
 {
     String query;
     const Settings & settings = context->getSettingsRef();
@@ -51,8 +52,12 @@ static ColumnsDescription getStructureOfRemoteTableInShard(
     {
         if (shard_info.isLocal())
         {
-            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
-            return table_function_ptr->getActualTableStructureWithAccess(context, /*is_insert_query*/ true);
+            /// `TableFunctionFactory::get` runs `parseArguments`, which rewrites the AST in place: arguments are
+            /// literalized and some functions even erase parts of the definition (`TableFunctionObjectStorage`
+            /// removes an inline `SETTINGS` clause). The AST here can be owned by a storage that keeps reusing it
+            /// for later queries (`StorageDistributed::remote_table_function_ptr`), so analyze a copy of it.
+            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr->clone(), context);
+            return table_function_ptr->getActualTableStructureWithAccess(context, is_insert_query);
         }
 
         auto table_func_name = table_func_ptr->formatWithSecretsOneLine();
@@ -145,7 +150,8 @@ ColumnsDescription getStructureOfRemoteTable(
     const Cluster & cluster,
     const StorageID & table_id,
     ContextPtr context,
-    const ASTPtr & table_func_ptr)
+    const ASTPtr & table_func_ptr,
+    bool is_insert_query)
 {
     const auto & shards_info = cluster.getShardsInfo();
 
@@ -156,7 +162,7 @@ ColumnsDescription getStructureOfRemoteTable(
     {
         if (shard_info.isLocal())
         {
-            const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr);
+            const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr, is_insert_query);
 
             /// Columns may be empty due to a race with concurrent DDL (e.g. REPLACE TABLE or lazy storage initialization).
             /// In that case, fall through to try remote shards.
@@ -171,7 +177,7 @@ ColumnsDescription getStructureOfRemoteTable(
     {
         try
         {
-            const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr);
+            const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr, is_insert_query);
 
             /// Expect at least some columns.
             /// This is a hack to handle the empty block case returned by Connection when skip_unavailable_shards is set.

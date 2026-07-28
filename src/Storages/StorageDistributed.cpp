@@ -480,7 +480,11 @@ StorageDistributed::StorageDistributed(
         StorageID id = StorageID::createEmpty();
         id.table_name = remote_table;
         id.database_name = remote_database;
-        storage_metadata.setColumns(getStructureOfRemoteTable(*getCluster(), id, getContext(), remote_table_function_ptr));
+        /// Infer the structure for reading: this table is only ever read through - a table-function target
+        /// cannot be inserted into (`write` throws `NOT_IMPLEMENTED`), so the target must not be resolved
+        /// in insert mode, which would ask an object storage for a writable client.
+        storage_metadata.setColumns(getStructureOfRemoteTable(
+            *getCluster(), id, getContext(), remote_table_function_ptr, /*is_insert_query=*/ false));
     }
     else
         storage_metadata.setColumns(columns_);
@@ -2721,8 +2725,12 @@ void registerStorageDistributed(StorageFactory & factory)
                     {
                         /// The `StorageID` is unused for a table-function target (the function is resolved
                         /// instead), so pass an empty one, mirroring the constructor's inference path.
+                        /// Analyze in read mode: this is a read-only probe of a table that can only be read
+                        /// from, so it must not ask an object storage for a writable client (which could
+                        /// create a container or fail under read-only credentials).
                         ColumnsDescription inferred = getStructureOfRemoteTable(
-                            *cluster, StorageID::createEmpty(), local_context, remote_table_function_ptr);
+                            *cluster, StorageID::createEmpty(), local_context, remote_table_function_ptr,
+                            /*is_insert_query=*/ false);
                         if (columns.empty())
                             columns = std::move(inferred);
                     }
@@ -3191,11 +3199,14 @@ void registerStorageRemote(StorageFactory & factory)
 
             try
             {
+                /// Analyze in read mode, as above: a table-function target is read-only, so resolving it
+                /// must not request a writable object-storage client.
                 ColumnsDescription inferred = getStructureOfRemoteTable(
                     *parsed.cluster,
                     parsed.remote_table_id,
                     args.getLocalContext(),
-                    parsed.remote_table_function_ptr);
+                    parsed.remote_table_function_ptr,
+                    /*is_insert_query=*/ false);
                 if (columns.empty())
                     columns = std::move(inferred);
             }

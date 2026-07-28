@@ -296,10 +296,18 @@ void SelectStreamFactory::createForShardImpl(
             /// dictionary: `dictionary('d')` loads through `ExternalDictionariesLoader`, which reports an
             /// unknown dictionary as `BAD_ARGUMENTS` ("... not found") and has no dedicated error code, so
             /// `BAD_ARGUMENTS` counts as "backing object missing" only for the `dictionary` table function.
+            ///
+            /// `TableFunctionFactory::get` runs `parseArguments`, which rewrites the AST in place (arguments are
+            /// literalized, and `TableFunctionObjectStorage` even erases an inline `SETTINGS` clause). Here the AST
+            /// is the target definition owned by `StorageDistributed`, which is reused to build the shard query of
+            /// every later read, so probe (and materialize) a copy of it instead - a health check must never
+            /// rewrite the stored definition.
+            ASTPtr local_table_func_ptr = table_func_ptr->clone();
+
             TableFunctionPtr table_function_ptr;
             try
             {
-                table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
+                table_function_ptr = TableFunctionFactory::instance().get(local_table_func_ptr, context);
                 table_function_ptr->getActualTableStructureWithAccess(context, /*is_insert_query=*/false);
             }
             catch (const Exception & e)
@@ -328,7 +336,7 @@ void SelectStreamFactory::createForShardImpl(
             /// `registerStorageDistributed`) and must propagate. `main_table_storage` stays null when the
             /// backing object is missing, so the shared "table is absent" handling below takes over.
             if (table_function_ptr)
-                main_table_storage = table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName());
+                main_table_storage = table_function_ptr->execute(local_table_func_ptr, context, table_function_ptr->getName());
         }
         else
         {
