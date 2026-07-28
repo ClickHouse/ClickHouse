@@ -1,3 +1,5 @@
+#if !defined(OS_WINDOWS)
+
 #include <base/defines.h>
 #include <base/MemorySanitizer.h>
 #include <Common/formatReadable.h>
@@ -94,3 +96,5 @@ void FiberStack::deallocate(boost::context::stack_context & sctx) const
 
     ::free(data);
 }
+
+#endif
