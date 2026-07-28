@@ -108,4 +108,14 @@ FROM (
     WHERE explain ILIKE '%Parts: %/%'
 );
 
+-- The set-index path (IN, and `has` over a constant array) applies the same chain through
+-- MergeTreeSetIndex::checkInRange, which passes the key column's raw (still LowCardinality) type. Both
+-- of these aborted with "Bad cast from ColumnLowCardinality to ColumnNullable" until
+-- applyMonotonicFunctionsChainToRange normalized the incoming type itself.
+SELECT count() = (SELECT countIf(CAST(CAST(s, 'LowCardinality(String)'), 'String') IN ('1', '2', '3')) FROM t_04612_part)
+    FROM t_04612_part WHERE CAST(CAST(s, 'LowCardinality(String)'), 'String') IN ('1', '2', '3');
+SELECT count() = (SELECT countIf(has(['1', '2', '3'], CAST(CAST(s, 'LowCardinality(String)'), 'String'))) FROM t_04612_part)
+    FROM t_04612_part WHERE has(['1', '2', '3'], CAST(CAST(s, 'LowCardinality(String)'), 'String'));
+SELECT count() FROM t_04612_part WHERE CAST(CAST(s, 'LowCardinality(String)'), 'String') IN ('1', '2', '3');
+
 DROP TABLE t_04612_part;

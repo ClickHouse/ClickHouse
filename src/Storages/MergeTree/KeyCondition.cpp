@@ -5083,6 +5083,13 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     DataTypePtr current_type,
     bool single_point)
 {
+    /// The chain was built in `isKeyPossiblyWrappedByMonotonicFunctions` against a recursively
+    /// `LowCardinality`-stripped key type, so the type threaded through it must be stripped the same way.
+    /// Callers pass the key column's raw type, which for a `LowCardinality` key (statistics, partition
+    /// and set-index pruning all pass it unchanged) would otherwise disagree with what the first
+    /// function declared.
+    current_type = recursiveRemoveLowCardinality(current_type);
+
     for (const auto & func : functions)
     {
         /// We check the monotonicity of each function on a specific range.
@@ -5553,12 +5560,10 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (!element.monotonic_functions_chain.empty())
             {
                 key_range_storage = hyperrectangle[key_column];
-                /// The chain was built in `extractAtomFromTree` against an
-                /// `LowCardinality`-stripped key type; the runtime type must match.
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
                     *key_range_storage,
                     element.monotonic_functions_chain,
-                    recursiveRemoveLowCardinality(data_types[key_column]),
+                    data_types[key_column],
                     single_point
                 );
 
