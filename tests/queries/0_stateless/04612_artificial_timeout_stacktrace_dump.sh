@@ -12,6 +12,19 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Hang ONLY on macOS. This test exists to exercise the stacktrace dump on the
+# `Fast test (arm_darwin)` run; there is no point hanging it on Linux, where the
+# on-demand `lldb` install cannot work in the unprivileged fast-test container
+# anyway (see `_ensure_lldb_installed` in `tests/clickhouse-test`). Worse, this
+# is a plain stateless test, so on Linux it would also run in the Linux
+# `Fast test` and every `Stateless tests` job and time them all out. Those jobs
+# are transitive `needs` of `Fast test (arm_darwin)` (via the `arm_darwin` build
+# and `CORE_BLOCKING_JOB_NAMES`), so their failure trips the per-job `if:` guard
+# (`!contains(needs.*.outputs.pipeline_status, 'failure')`) and the macOS job we
+# actually care about is skipped before it can run. Exiting cleanly on Linux
+# (the reference is empty) keeps that chain green so the macOS job runs.
+[ "$(uname)" != "Darwin" ] && exit 0
+
 # Start a long-running server-side query in its own session so that
 # `clickhouse-test`'s per-test process-group kill cannot reach it. The query
 # keeps running in `system.processes` well past the end of the run, so the
