@@ -129,6 +129,7 @@ public:
     void work() override;
     PipelineUpdate updatePipeline() override;
     void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
+    void onCancel() noexcept override;
 
 protected:
     void consume(Chunk chunk);

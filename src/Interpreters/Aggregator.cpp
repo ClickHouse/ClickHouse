@@ -3261,13 +3261,16 @@ void Aggregator::drainStagedChunksEarly(AdaptiveAggregationSession & shared, Ada
 
     PaddedPODArray<AggregateDataPtr> places_scratch;
     std::vector<AdaptiveAggregationSession::StagedChunkPtr> single(1);
-    /// The sweep does not observe query cancellation (the consume path has no flag to hand it):
-    /// a cancelled query waits out at most one sweep, which is bounded by the staged data.
-    std::atomic<bool> is_cancelled{false};
     size_t drained_records = 0;
 
     for (auto & chunk : chunks)
     {
+        /// A sweep can spill gigabytes to disk; a cancelled query stops it at the next chunk
+        /// (and the per-bucket drain checks the flag as well). The undrained chunks go back
+        /// to the backlogs below, where they die with the session.
+        if (shared.cancelled.load(std::memory_order_relaxed))
+            break;
+
         single[0] = chunk;
         for (size_t b = 0; b < num_buckets; ++b)
         {
@@ -3281,7 +3284,7 @@ void Aggregator::drainStagedChunksEarly(AdaptiveAggregationSession & shared, Ada
                 [&](auto & method)
                 {
                     drained_records += drainAdaptiveBucketBacklog<AdaptiveKeyStorage::CopyToArena>(
-                        method, arena, single, b, records, places_scratch, is_cancelled);
+                        method, arena, single, b, records, places_scratch, shared.cancelled);
                 });
         }
         single[0].reset();

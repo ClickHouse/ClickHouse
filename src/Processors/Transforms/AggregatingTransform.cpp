@@ -874,6 +874,14 @@ AggregatingTransform::AggregatingTransform(
 
 AggregatingTransform::~AggregatingTransform() = default;
 
+void AggregatingTransform::onCancel() noexcept
+{
+    /// A pressure sweep checks this between chunks and buckets: it can spill gigabytes to
+    /// disk, and a cancelled query must not wait that out.
+    if (adaptive_context)
+        adaptive_context->session->cancelled.store(true, std::memory_order_relaxed);
+}
+
 size_t AggregatingTransform::getGeneratingStepGroup() const
 {
     /// After consumption finishes, this transform generates the child processors that perform

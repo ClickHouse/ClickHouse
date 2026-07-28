@@ -260,6 +260,10 @@ struct AdaptiveAggregationSession
     /// Whether any early drain moved records into `early_drain_variants`: the finish path then
     /// includes it in the merge set.
     std::atomic<bool> early_drain_started{false};
+    /// Set when the query is cancelled. The pressure sweeps check it between chunks and
+    /// buckets, so a dying query does not wait out a full sweep - which can include spilling
+    /// gigabytes to disk - before it stops.
+    std::atomic<bool> cancelled{false};
     std::once_flag init_flag;
     std::atomic<bool> initialized{false};
 
