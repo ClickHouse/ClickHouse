@@ -48,10 +48,11 @@ struct PacketReceiverTestAccess
         receiver = std::make_unique<PacketReceiver>(&connection);
     }
 
-    bool checkTimeout() { return receiver->checkTimeout(); }
+    /// All const: these mutate the owned receiver through the pointer, not this struct.
+    bool checkTimeout() const { return receiver->checkTimeout(); }
     bool isTimeoutExpired() const { return receiver->isTimeoutExpired(); }
     bool isPacketReady() const { return receiver->isPacketReady(); }
-    void setTimeout(const Poco::Timespan & t) { receiver->setTimeout(t); }
+    void setTimeout(const Poco::Timespan & t) const { receiver->setTimeout(t); }
 
     /// The receive timer's descriptor, so a test can wait for it to actually fire instead of
     /// assuming a fixed sleep was long enough.
