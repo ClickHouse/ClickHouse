@@ -21,26 +21,34 @@ private:
     /// Total number of variants in the Variant type; used for bounds-checking
     /// compact discriminators read from the wire.
     size_t num_variants;
+    /// True when the requested subcolumn was wrapped into Nullable or LowCardinality(Nullable) by
+    /// the extraction framework: that wrapper is not part of what nested_serialization serializes,
+    /// so it must be removed before recursing into it. False when the requested type is
+    /// intrinsically nullable, in which case nested_serialization requires that nullability.
+    bool nullable_added_by_extraction;
 
     SerializationVariantElement(
         const SerializationPtr & nested_,
         const String & variant_element_name_,
         ColumnVariant::Discriminator variant_discriminator_,
-        size_t num_variants_)
+        size_t num_variants_,
+        bool nullable_added_by_extraction_)
         : SerializationWrapper(nested_)
         , variant_element_name(variant_element_name_)
         , variant_discriminator(variant_discriminator_)
         , num_variants(num_variants_)
+        , nullable_added_by_extraction(nullable_added_by_extraction_)
     {
     }
 
 public:
-    static UInt128 getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_);
+    static UInt128 getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_, bool nullable_added_by_extraction_);
     static SerializationPtr create(
         const SerializationPtr & nested_,
         const String & variant_element_name_,
         ColumnVariant::Discriminator variant_discriminator_,
-        size_t num_variants_ = 0);
+        size_t num_variants_,
+        bool nullable_added_by_extraction_);
     size_t allocatedBytes() const override;
 
     void enumerateStreams(

@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-UInt128 SerializationVariantElement::getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_)
+UInt128 SerializationVariantElement::getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_, bool nullable_added_by_extraction_)
 {
     SipHash hash;
     hash.update("VariantElement");
@@ -25,6 +25,7 @@ UInt128 SerializationVariantElement::getHash(const SerializationPtr & nested_, c
     hash.update(variant_element_name_);
     hash.update(variant_discriminator_);
     hash.update(num_variants_);
+    hash.update(nullable_added_by_extraction_);
     return hash.get128();
 }
 
@@ -32,11 +33,12 @@ SerializationPtr SerializationVariantElement::create(
     const SerializationPtr & nested_,
     const String & variant_element_name_,
     ColumnVariant::Discriminator variant_discriminator_,
-    size_t num_variants_)
+    size_t num_variants_,
+    bool nullable_added_by_extraction_)
 {
     if (!nested_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_, num_variants_));
-    return ISerialization::pooled(getHash(nested_, variant_element_name_, variant_discriminator_, num_variants_), [&] { return new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_, num_variants_); });
+        return std::shared_ptr<ISerialization>(new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_));
+    return ISerialization::pooled(getHash(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_), [&] { return new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_); });
 }
 
 struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : public ISerialization::DeserializeBinaryBulkState
@@ -99,9 +101,18 @@ void SerializationVariantElement::enumerateStreams(
 
     const auto * deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateVariantElement>(data.deserialize_state) : nullptr;
     addVariantToPath(settings.path);
+    /// Remove the nullability only when the extraction added it. If the requested type is
+    /// intrinsically nullable, nested_serialization is a Nullable serialization and requires it.
+    auto nested_type = data.type;
+    auto nested_column = data.column;
+    if (nullable_added_by_extraction)
+    {
+        nested_type = nested_type ? removeNullableOrLowCardinalityNullable(nested_type) : nullptr;
+        nested_column = nested_column ? removeNullableOrLowCardinalityNullable(nested_column) : nullptr;
+    }
     auto nested_data = SubstreamData(nested_serialization)
-                       .withType(data.type ? removeNullableOrLowCardinalityNullable(data.type) : nullptr)
-                       .withColumn(data.column ? removeNullableOrLowCardinalityNullable(data.column) : nullptr)
+                       .withType(nested_type)
+                       .withColumn(nested_column)
                        .withSerializationInfo(data.serialization_info)
                        .withDeserializeState(deserialize_state ? deserialize_state->variant_element_state : nullptr);
     settings.path.back().data = nested_data;
@@ -243,9 +254,13 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
 
     /// Now we know the rows_offset and limit for our variant and can deserialize it.
 
-    /// If result column is Nullable, fill null map and extract nested column.
+    /// If the extraction added the Nullable wrapper, fill its null map from the discriminators and
+    /// extract the nested column, because nested_serialization does not know about that wrapper.
+    /// When the requested type is intrinsically nullable the wrapper belongs to nested_serialization,
+    /// which reads the element's own null map; the NULLs for rows of other variants are then produced
+    /// by the insertDefault()/insertManyDefaults() calls below.
     MutableColumnPtr mutable_column = result_column->assumeMutable();
-    if (isColumnNullable(*mutable_column))
+    if (nullable_added_by_extraction && isColumnNullable(*mutable_column))
     {
         auto & nullable_column = assert_cast<ColumnNullable &>(*mutable_column);
         NullMap & null_map = nullable_column.getNullMapData();
@@ -275,9 +290,9 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     {
         variant_element_state->variant = mutable_column->cloneEmpty();
 
-        /// When result column is LowCardinality(Nullable(T)) we should
-        /// remove Nullable from variant column before deserialization.
-        if (isColumnLowCardinalityNullable(*mutable_column))
+        /// When result column is LowCardinality(Nullable(T)) and the Nullable was added by the
+        /// extraction, we should remove it from variant column before deserialization.
+        if (nullable_added_by_extraction && isColumnLowCardinalityNullable(*mutable_column))
             assert_cast<ColumnLowCardinality &>(*variant_element_state->variant->assumeMutable()).nestedRemoveNullable();
     }
 
@@ -445,9 +460,12 @@ DataTypePtr SerializationVariantElement::VariantSubcolumnCreator::create(const D
     return make_nullable ? makeNullableOrLowCardinalityNullableSafe(prev) : prev;
 }
 
-SerializationPtr SerializationVariantElement::VariantSubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
+SerializationPtr SerializationVariantElement::VariantSubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr & prev_type) const
 {
-    return SerializationVariantElement::create(prev, variant_element_name, global_variant_discriminator, num_variants);
+    /// prev_type is the type prev serializes, i.e. the requested subcolumn before create(prev_type)
+    /// wraps it. The wrap only adds nullability when the type does not have it already.
+    const bool nullable_added = make_nullable && prev_type && !isNullableOrLowCardinalityNullable(prev_type);
+    return SerializationVariantElement::create(prev, variant_element_name, global_variant_discriminator, num_variants, nullable_added);
 }
 
 ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB::ColumnPtr & prev) const
