@@ -7,6 +7,7 @@
 #include <DataTypes/IDataType.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -59,6 +60,15 @@ static void stripArtificialParens(IAST & ast)
                 stripArtificialParens(*expr);
         if (ttl_element->recompression_codec)
             stripArtificialParens(*ttl_element->recompression_codec);
+    }
+
+    /// Same for the `parameters` and `lambda` of a projection's `APPLY` transformer.
+    if (auto * apply_transformer = ast.as<ASTColumnsApplyTransformer>())
+    {
+        if (apply_transformer->parameters)
+            stripArtificialParens(*apply_transformer->parameters);
+        if (apply_transformer->lambda)
+            stripArtificialParens(*apply_transformer->lambda);
     }
 }
 

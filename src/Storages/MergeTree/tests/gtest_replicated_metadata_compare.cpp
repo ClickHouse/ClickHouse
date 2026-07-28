@@ -295,3 +295,32 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, DeclarationIdentityIsSignificant)
     renamed_constraint.constraints = "cc2 CHECK a > 0";
     EXPECT_TRUE(diffOf(local, renamed_constraint).constraints_changed);
 }
+
+TEST(ReplicatedMergeTreeTableMetadataCompare, ApplyTransformerParametersAreSignificant)
+{
+    /// The `parameters` and `lambda` of a projection's `APPLY` transformer are not children, so
+    /// reaching only the node itself would make `APPLY quantile(0.5)` and `APPLY quantile(0.9)`
+    /// compare equal.
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    MetadataFields quantile_median;
+    quantile_median.projections = "pr (SELECT COLUMNS('b|c') APPLY quantile(0.5) GROUP BY a)";
+    MetadataFields quantile_high;
+    quantile_high.projections = "pr (SELECT COLUMNS('b|c') APPLY quantile(0.9) GROUP BY a)";
+    EXPECT_TRUE(diffOf(quantile_median, quantile_high).projections_changed);
+    EXPECT_FALSE(diffOf(quantile_median, quantile_median).projections_changed);
+
+    MetadataFields lambda_median;
+    lambda_median.projections = "pr (SELECT COLUMNS('b|c') APPLY (x -> quantile(0.5)(x)) GROUP BY a)";
+    MetadataFields lambda_high;
+    lambda_high.projections = "pr (SELECT COLUMNS('b|c') APPLY (x -> quantile(0.9)(x)) GROUP BY a)";
+    EXPECT_TRUE(diffOf(lambda_median, lambda_high).projections_changed);
+    EXPECT_FALSE(diffOf(lambda_median, lambda_median).projections_changed);
+
+    /// The same declarations written with redundant parentheses are still equal, which is what
+    /// `stripArtificialParens` has to reach through those same members.
+    MetadataFields quantile_median_parens;
+    quantile_median_parens.projections = "pr (SELECT COLUMNS('b|c') APPLY quantile((0.5)) GROUP BY (a))";
+    EXPECT_FALSE(diffOf(quantile_median, quantile_median_parens).projections_changed);
+}
