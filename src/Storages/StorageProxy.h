@@ -107,9 +107,14 @@ public:
         IStorage::renameInMemory(new_table_id);
     }
 
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/) override
     {
-        getNested()->alter(params, context, alter_lock_holder);
+        /// Re-anchor the alter lock to the nested storage. The holder passed in locks THIS proxy's
+        /// alter_lock, not the nested object's, so without re-locking here the nested storage's own
+        /// self-locking metadata writers (mutations, the replication-queue metadata apply) are not
+        /// excluded while this delegated ALTER commits. Lock order is outer (already held) -> inner.
+        auto nested_alter_lock = getNested()->lockForAlter(context);
+        getNested()->alter(params, context, nested_alter_lock);
         auto nested_metadata = getNested()->getInMemoryMetadataUncached(context);
         IStorage::setInMemoryMetadata(*nested_metadata);
     }

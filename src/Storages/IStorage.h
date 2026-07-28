@@ -327,7 +327,14 @@ public:
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
     using AlterLockHolder = std::unique_lock<std::timed_mutex>;
     AlterLockHolder lockForAlter(const Poco::Timespan & acquire_timeout);
+    /// Convenience overload using the query context's lock_acquire_timeout setting.
+    AlterLockHolder lockForAlter(ContextPtr context);
     std::optional<AlterLockHolder> tryLockForAlter(const Poco::Timespan & acquire_timeout);
+
+    /// True if `holder` locks this storage's own alter_lock. A delegating storage (Proxy/Alias) must
+    /// re-anchor the lock to the nested/target object before forwarding to its `alter`; committing
+    /// `alter` implementations assert this so a mis-forwarded holder is caught in debug builds.
+    bool holdsOwnAlterLock(const AlterLockHolder & holder) const { return holder.mutex() == &alter_lock; }
 
     /// Lock table exclusively. This lock must be acquired if you want to be
     /// sure, that no other thread (SELECT, merge, ALTER, etc.) doing something

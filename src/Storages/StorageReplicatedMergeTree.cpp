@@ -6807,6 +6807,11 @@ void StorageReplicatedMergeTree::alter(
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::alter");
     assertNotReadonly();
 
+    /// The commit below reads and writes this storage's committed metadata under the alter lock, so
+    /// the holder must lock THIS object's alter_lock. A delegating storage (Proxy/Alias) must
+    /// re-anchor the lock to this nested object rather than forwarding its own holder.
+    chassert(holdsOwnAlterLock(table_lock_holder));
+
     auto table_id = getStorageID();
     const auto & query_settings = query_context->getSettingsRef();
 

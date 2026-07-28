@@ -28,6 +28,7 @@ namespace Setting
     extern const SettingsBool parallelize_output_from_storages;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsSeconds lock_acquire_timeout;
 }
 
 namespace ErrorCodes
@@ -108,6 +109,11 @@ IStorage::AlterLockHolder IStorage::lockForAlter(const Poco::Timespan & acquire_
                         "Possible deadlock avoided. Client should retry.",
                         getStorageID().getFullTableName(), acquire_timeout.totalMilliseconds());
     return std::move(*lock);
+}
+
+IStorage::AlterLockHolder IStorage::lockForAlter(ContextPtr context)
+{
+    return lockForAlter(context->getSettingsRef()[Setting::lock_acquire_timeout]);
 }
 
 

@@ -92,6 +92,7 @@ namespace FailPoints
     extern const char mt_alter_throw_after_mutation_registered[];
     extern const char mt_throw_after_mutation_commit[];
     extern const char mt_alter_throw_in_durable_rollback[];
+    extern const char alter_pause_in_mergetree_commit[];
 }
 
 namespace Setting
@@ -454,6 +455,15 @@ void StorageMergeTree::alter(
     AlterLockHolder & table_lock_holder)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::alter");
+
+    /// The commit below reads and writes this storage's committed metadata under the alter lock, so
+    /// the holder must lock THIS object's alter_lock. A delegating storage (Proxy/Alias) must
+    /// re-anchor the lock to this nested object rather than forwarding its own holder.
+    chassert(holdsOwnAlterLock(table_lock_holder));
+
+    /// Test barrier: pause here while holding this storage's alter_lock, so a test can verify that a
+    /// concurrent ALTER on the same object (e.g. via an alias delegating to it) cannot acquire the lock.
+    FailPointInjection::pauseFailPoint(FailPoints::alter_pause_in_mergetree_commit);
 
     /// Allow MODIFY_SETTING/RESET_SETTING through even when the table is readonly,
     /// so that the `table_readonly` flag can be toggled back.

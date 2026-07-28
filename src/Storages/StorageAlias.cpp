@@ -224,7 +224,7 @@ SinkToStoragePtr StorageAlias::write(
 void StorageAlias::alter(
     const AlterCommands & params,
     ContextPtr local_context,
-    AlterLockHolder & table_lock_holder)
+    AlterLockHolder & /*table_lock_holder*/)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
 
@@ -247,7 +247,12 @@ void StorageAlias::alter(
         }
     }
 
-    target_storage->alter(params, local_context, table_lock_holder);
+    /// Re-anchor the alter lock to the target storage. The interpreter locked THIS alias's alter_lock,
+    /// which is a different object from the target's, so without re-locking here the target's own
+    /// self-locking metadata writers are not excluded and a concurrent direct ALTER on the target can
+    /// lose a committed change. Lock order is alias (already held) -> target.
+    auto target_alter_lock = target_storage->lockForAlter(local_context);
+    target_storage->alter(params, local_context, target_alter_lock);
 }
 
 void StorageAlias::truncate(
