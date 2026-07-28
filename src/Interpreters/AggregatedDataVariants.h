@@ -316,6 +316,9 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// Number of rows (different keys).
     size_t size() const;
     size_t sizeWithoutOverflowRow() const;
+    /// Memory held by the variants: the arenas (keys and states) plus the active method's
+    /// hash-table buffer, which dominates for inline states over fixed keys.
+    size_t allocatedBytes() const;
     const char * getMethodName() const;
     bool isTwoLevel() const;
     bool isConvertibleToTwoLevel() const;
