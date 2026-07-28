@@ -76,12 +76,21 @@ DESC (SELECT * FROM format(TSV, 'v Variant(AggregateFunction(0, sumMap, Array(UI
 -- validateDataType, so it is pinned here rather than changed.
 SELECT * FROM values('Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))', 'x');
 
+-- The source and the target of the materialized view cases below.
+CREATE TABLE mv_src (k UInt8) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE mv_tgt (k UInt8, v UInt8) ENGINE = MergeTree ORDER BY k;
+
 -- The check is an integrity requirement, not a suspicious type policy, so it is not gated by any
 -- setting. A nested Variant is created with no opt-in at all when the traversal of nested types is
 -- disabled, so the rejection must hold there as well.
 SET allow_suspicious_variant_types = 0, validate_experimental_and_suspicious_types_inside_nested_types = 0;
 CREATE TABLE t_collision_7 (k UInt8, v Array(Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))))) ENGINE = MergeTree ORDER BY k; -- { serverError ILLEGAL_COLUMN }
 CREATE TABLE t_collision_8 (k UInt8, v Map(String, Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))))) ENGINE = MergeTree ORDER BY k; -- { serverError ILLEGAL_COLUMN }
+-- Only the ungated check covers a materialized view: the suspicious type policy stays exempt for one,
+-- so the type the plain table above is refused for is still accepted here. This is the line that fails
+-- if the exemption is dropped from the gated branch as well.
+CREATE MATERIALIZED VIEW mv_gated TO mv_tgt (k UInt8, v Variant(UInt8, Int64)) AS SELECT k, 1 AS v FROM mv_src;
+SELECT 'mv_gated', type FROM system.columns WHERE database = currentDatabase() AND table = 'mv_gated' AND name = 'v';
 SET allow_suspicious_variant_types = 1, validate_experimental_and_suspicious_types_inside_nested_types = 1;
 
 -- Every Variant whose element names stay distinct keeps working, including a version 0 element paired
@@ -131,6 +140,18 @@ CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Memory;
 ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_attached (k UInt8, v Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))) ENGINE = Memory; -- { serverError ILLEGAL_COLUMN }
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
+-- The column list of a fresh materialized view is persisted verbatim and parsed back on reload just
+-- like a table's, so the same type is refused there too. The view writes into an existing target, which
+-- is the spelling that creates no inner table, and the colliding type is carried only by that column
+-- list: nothing in the SELECT produces it.
+CREATE MATERIALIZED VIEW mv_collision TO mv_tgt (k UInt8, v Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))) AS SELECT k, 1 AS v FROM mv_src; -- { serverError ILLEGAL_COLUMN }
+
+-- A materialized view whose element names stay distinct is created, and so is one with an inner table.
+CREATE MATERIALIZED VIEW mv_ok TO mv_tgt (k UInt8, v Variant(AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)), UInt8)) AS SELECT k, 1 AS v FROM mv_src;
+SELECT 'mv_ok', type FROM system.columns WHERE database = currentDatabase() AND table = 'mv_ok' AND name = 'v';
+CREATE MATERIALIZED VIEW mv_inner ENGINE = MergeTree ORDER BY k AS SELECT k FROM mv_src;
+SELECT 'mv_inner', count() FROM system.columns WHERE database = currentDatabase() AND table = 'mv_inner';
+
 -- A definition stored by this server is not re-checked, so tables that already exist keep loading: the
 -- short form of ATTACH remains exempt from data type validation entirely. The colliding type can no
 -- longer be reached through any accepted path, so this uses a type that the settings gated checks would
@@ -143,6 +164,11 @@ SET allow_suspicious_variant_types = 1;
 SELECT 'reattached', type FROM system.columns WHERE database = currentDatabase() AND table = 't_reattached' AND name = 'v';
 DROP TABLE t_reattached;
 
+DROP TABLE mv_ok;
+DROP TABLE mv_inner;
+DROP TABLE mv_gated;
+DROP TABLE mv_src;
+DROP TABLE mv_tgt;
 DROP TABLE t_alter_add;
 DROP TABLE t_alter_modify;
 DROP TABLE t_control;
@@ -161,3 +187,4 @@ DROP TABLE IF EXISTS t_collision_9;
 DROP TABLE IF EXISTS t_collision_10;
 DROP TABLE IF EXISTS t_collision_11;
 DROP TABLE IF EXISTS t_collision_12;
+DROP TABLE IF EXISTS mv_collision;

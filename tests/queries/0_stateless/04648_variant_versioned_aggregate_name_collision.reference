@@ -2,7 +2,10 @@ alter_add	0
 alter_modify	Variant(AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))
 Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))
 x
+mv_gated	Variant(Int64, UInt8)
 controls	19
 c11	Variant(AggregateFunction(7, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(sumMap, Array(UInt64), Array(UInt64)))
 c12	Variant(AggregateFunction(1, groupBitmap, UInt32), AggregateFunction(groupBitmap, UInt32))
+mv_ok	Variant(AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)), UInt8)
+mv_inner	1
 reattached	Variant(Int64, UInt8)

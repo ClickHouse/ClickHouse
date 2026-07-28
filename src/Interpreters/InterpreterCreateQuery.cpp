@@ -1068,16 +1068,18 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
             validateDataType(name_and_type_pair.type, validation_settings);
     }
-    else if (create.attach && !create.attach_short_syntax && !create.is_materialized_view)
+    else if (!create.attach_short_syntax && (create.attach || create.is_materialized_view))
     {
         /// The spelling is the discriminator here: a definition read back from this server's metadata is
         /// marked `attach_short_syntax` (`DatabaseOnDisk::createTableFromAST`) and stays exempt, so tables
         /// that already exist keep loading, while an ATTACH carrying a full table definition creates and
         /// persists a new table and is treated like a CREATE (as the warning below and the `need_lock_uuid`
-        /// comment already do). Only the checks that are not gated by a setting apply, so a type that
-        /// cannot be read back after a reload is refused, the suspicious type policy stays a CREATE-only
-        /// matter, and engines which require the full definition spelling keep their current behaviour for
-        /// every gated check.
+        /// comment already do). A materialized view is covered for the same reason: unless it is being
+        /// loaded from stored metadata, its own column list is a fresh definition which is persisted
+        /// verbatim and parsed back on reload. Only the checks that are not gated by a setting apply, so a
+        /// type that cannot be read back after a reload is refused, the suspicious type policy stays a
+        /// CREATE-only matter, and engines which require the full definition spelling keep their current
+        /// behaviour for every gated check.
         DataTypeValidationSettings integrity_checks_only;
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
             validateDataType(name_and_type_pair.type, integrity_checks_only);

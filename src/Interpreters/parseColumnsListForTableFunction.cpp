@@ -188,7 +188,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
             const auto original_name = variant->getName();
 
             /// The name is re-parsed at the same fixed limits that persisting a type name already uses,
-            /// namely the ones `dataTypeToAST` passes, with the size limit left off. Those limits are an
+            /// namely the same three `dataTypeToAST` passes. Those limits are an
             /// upper bound on anything that could have been stored: rendering the columns of a CREATE or
             /// an ATTACH goes through `dataTypeToAST` with exactly them, so a name they cannot handle
             /// belongs to a type which cannot be persisted at all. Reading the limits from the settings
