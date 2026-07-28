@@ -1860,6 +1860,14 @@ public:
     bool isServerCompletelyStarted() const;
     void setServerCompletelyStarted();
 
+    /// Whether a database engine conversion (Ordinary -> Atomic) is currently moving tables through a
+    /// temporary database at startup. The flag lives in the shared part so every context observes it,
+    /// including the storage-owned contexts used by the nested renames of materialized-view and
+    /// time-series inner tables. Set it only around the conversion itself, and always clear it (the
+    /// caller uses SCOPE_EXIT).
+    bool isConvertingDatabaseEngine() const;
+    void setConvertingDatabaseEngine(bool value);
+
     AsynchronousInsertQueue * tryGetAsynchronousInsertQueue() const;
     void setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr);
 

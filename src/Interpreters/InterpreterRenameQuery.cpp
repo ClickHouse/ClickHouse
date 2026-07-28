@@ -5,6 +5,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/QueryLog.h>
 #include <Access/AccessControl.h>
@@ -173,6 +174,39 @@ namespace
             dst_name.table_name = rekey.new_table;
             reject_if_taken(dst_name, rekey.id, policy, "destination");
         }
+    }
+
+    /// True if this rename replaces the storage behind a name while keeping that name, so the row
+    /// policies bound to it must stay there.
+    ///
+    /// The AST flag covers every same-process site, but a rename that goes through a Replicated
+    /// database's DDL queue is executed from the entry's SQL text, and the flag is deliberately not
+    /// part of that text, so the re-parsed AST always has it false. Only one of the flag's sites can
+    /// cross that boundary: a non-append refreshable materialized view swapping in its fresh target.
+    /// It is recognized from the parent table UUID, which does survive as a serialized entry field
+    /// and is re-published onto the query context by DatabaseReplicatedTask::makeQueryContext.
+    ///
+    /// All three conditions are required. Without `is_replicated_database_internal` the predicate
+    /// would also hold on the purely local path (RefreshTask sets the parent UUID for every
+    /// non-append refresh), which would make the AST flag dead there. Without the name equality it
+    /// would hold for any rename issued during a refresh, including a user RENAME.
+    bool keepsNameOfReplacedStorage(const ASTRenameQuery & rename, const ContextPtr & context, const RenameDescription & elem)
+    {
+        if (rename.replaces_storage_keeping_name)
+            return true;
+
+        if (!context->getClientInfo().is_replicated_database_internal)
+            return false;
+
+        auto parent_table_uuid = context->getParentTable();
+        if (!parent_table_uuid.has_value())
+            return false;
+
+        /// Match by UUID-derived equality rather than by a `.tmp.inner_id.` prefix: a user can create
+        /// a table with such a name, and a prefix would also match another view's temp table. The
+        /// non-UUID `.tmp.inner.<name>` spelling only occurs in an Ordinary database, which is never
+        /// Replicated, so the AST flag already covers it.
+        return elem.from_table_name == StorageMaterializedView::generateRefreshTempTableName(*parent_table_uuid);
     }
 
     /// Applies a set of row-policy re-keyings collision-free by routing every affected policy
@@ -389,7 +423,20 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         /// would move them onto the transient side of the swap, which is dropped right after, leaving
         /// the surviving name unfiltered -- the very escape this fix closes. See the flag's doc in
         /// ASTRenameQuery.h for the full list of such sites.
-        if (!rename.replaces_storage_keeping_name)
+        ///
+        /// The startup conversion of an Ordinary database to Atomic is a second kind of
+        /// name-preserving move: it relocates every table into a temporary database and then renames
+        /// that database back, so each moved table ends up under its original (database, table). Its
+        /// outer moves keep the table name, and for those the re-key must be skipped too - the policy
+        /// is already on the name the table will have when the conversion finishes. The nested renames
+        /// of materialized-view and time-series inner tables are different: those names genuinely
+        /// change (`.inner.<name>` -> `.inner_id.<uuid>`), so their policies must follow as usual.
+        /// In both cases the cross-database `db.*` rejection below does not apply, because the
+        /// destination database is the staging name that is renamed back to the original one.
+        const bool converting_database_engine = getContext()->isConvertingDatabaseEngine();
+        const bool conversion_keeps_table_name = converting_database_engine && elem.from_table_name == elem.to_table_name;
+
+        if (!keepsNameOfReplacedStorage(rename, getContext(), elem) && !conversion_keeps_table_name)
         {
             /// A database-wide policy (`ON db.*`) is not bound to any single table name, so it cannot
             /// follow a table that moves to a different database: the destination lookup is `new_db.tbl`
@@ -397,7 +444,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             /// unfiltered (or under an unrelated destination `db.*`). Reject such cross-database moves
             /// rather than silently dropping the filter. A same-database rename is unaffected: the
             /// `db.*` policy keeps covering the table through the ANY_TABLE_MARK fallback.
-            if (elem.from_database_name != elem.to_database_name)
+            if (elem.from_database_name != elem.to_database_name && !converting_database_engine)
             {
                 if (hasDatabaseWideRowPolicy(access_control, elem.from_database_name))
                     throw Exception(

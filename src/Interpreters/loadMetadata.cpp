@@ -1,3 +1,4 @@
+#include <base/scope_guard.h>
 #include <Common/PoolId.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/thread_local_rng.h>
@@ -528,7 +529,16 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
 
         local_context->setSetting("check_table_dependencies", false);
         local_context->setSetting("check_referential_table_dependencies", false);
-        convertOrdinaryDatabaseToAtomic(log, local_context, database, database_name, tmp_name);
+        {
+            /// The conversion moves every table through a temporary database and then renames that
+            /// database back, so the final (database, table) of each moved table is unchanged. Mark
+            /// the whole workflow so InterpreterRenameQuery can tell those internal moves from a user
+            /// rename when deciding what to do with row policies. The flag is on the shared context
+            /// part, so it is also visible to the nested inner-table renames the storages perform.
+            context->setConvertingDatabaseEngine(true);
+            SCOPE_EXIT({ context->setConvertingDatabaseEngine(false); });
+            convertOrdinaryDatabaseToAtomic(log, local_context, database, database_name, tmp_name);
+        }
 
         LOG_INFO(log, "Will start background operations after renaming tables in database {}", database_name);
         for (const auto & action : actions_to_stop)
