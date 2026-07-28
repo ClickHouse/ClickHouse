@@ -16,8 +16,10 @@ SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_hint WHERE a
 
 -- Primary key pruning still works through the hint: only the granules of `a < 1000` are read.
 SELECT 'pk_pruning';
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_chain_hint WHERE a < b AND b < 1000)
-    WHERE explain LIKE '%Granules:%' OR explain LIKE '%Condition:%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_chain_hint WHERE a < b AND b < 1000)
+    WHERE explain LIKE '%Condition: (a in (-Inf, 999])%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_chain_hint WHERE a < b AND b < 1000)
+    WHERE explain LIKE '%Granules: 1/64%';
 
 -- The derived comparison (an expensive expression here) does not leak into the PREWHERE filter.
 SELECT 'no_prewhere_leak';

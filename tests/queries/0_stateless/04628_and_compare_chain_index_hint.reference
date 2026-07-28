@@ -1,9 +1,8 @@
 derived_as_hint
 1
 pk_pruning
-Parts: 1 | Granules: 1
-Condition: (a in (-Inf, 999])
-Granules: 1/64
+1
+1
 no_prewhere_leak
 0
 results
