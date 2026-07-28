@@ -160,7 +160,6 @@ namespace
             return key;
     }
 
-    /// Emplace one staged key into the table. String-like keys were staged as raw characters
     /// How far past a key's bytes a reader may touch. The overflow-tolerant small copy and
     /// compare primitives access up to 15 bytes past the end, which is only legal for bytes
     /// living in padded containers (column chars, arenas, the staged arrays); an exact-size
@@ -228,6 +227,7 @@ namespace
             memcpy(staged, key.bytes.data(), key.bytes.size());
     }
 
+    /// Emplace one staged key into the table. String-like keys were staged as raw characters
     /// and are rebuilt here. `adopt_keys` selects the key ownership: at merge time the delayed
     /// blocks are retained on the shared state until after the merged buckets are converted, so
     /// string-like keys are emplaced pointing into the staged bytes directly, with no copy; a
