@@ -364,6 +364,7 @@ SSTIndexWriter::~SSTIndexWriter()
         }
         catch (...)
         {
+            tryLogCurrentException(getLogger("SSTIndexWriter"), "Failed to remove abandoned SST index file");
         }
     }
 #endif
