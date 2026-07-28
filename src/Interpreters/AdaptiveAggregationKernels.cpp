@@ -668,43 +668,39 @@ void NO_INLINE Aggregator::publishDelayedRecords(
     {
     auto & payload = block->payload.emplace<StagedChunk::AggregatePayload>();
 
-    keys.routing_hashes.resize(total);
+    /// The sizes are exact and final, and the chunk can sit on a backlog for the rest of the
+    /// query, so the arrays are sized without the power-of-two growth headroom.
+    keys.routing_hashes.resize_exact(total);
+    keys.key_offsets.resize_exact(total + 1);
 
-    /// Counting sort of the staged misses by bucket.
+    /// Counting sort of the staged misses by bucket: one pass over the records accumulates the
+    /// record and key-byte histograms together, one pass over the buckets turns both into
+    /// exclusive offsets.
     std::array<UInt32, num_buckets> cursor{};
-    for (const auto bucket : adaptive.miss_buckets)
-        ++cursor[bucket];
+    std::array<UInt64, num_buckets> byte_cursor{};
+    for (size_t i = 0; i < total; ++i)
+    {
+        ++cursor[adaptive.miss_buckets[i]];
+        byte_cursor[adaptive.miss_buckets[i]] += adaptive.miss_key_sizes[i];
+    }
 
     UInt32 offset = 0;
+    UInt64 byte_offset = 0;
     for (size_t b = 0; b < num_buckets; ++b)
     {
         keys.bucket_offsets[b] = offset;
         const auto count = cursor[b];
         cursor[b] = offset;
         offset += count;
-    }
-    keys.bucket_offsets[num_buckets] = offset;
 
-    std::array<UInt64, num_buckets> byte_cursor{};
-
-    keys.key_offsets.resize(total + 1);
-
-    UInt64 total_bytes = 0;
-    for (size_t i = 0; i < total; ++i)
-    {
-        byte_cursor[adaptive.miss_buckets[i]] += adaptive.miss_key_sizes[i];
-        total_bytes += adaptive.miss_key_sizes[i];
-    }
-    keys.key_bytes.resize(total_bytes);
-
-    UInt64 byte_offset = 0;
-    for (size_t b = 0; b < num_buckets; ++b)
-    {
         const auto bytes = byte_cursor[b];
         byte_cursor[b] = byte_offset;
         byte_offset += bytes;
     }
+    keys.bucket_offsets[num_buckets] = offset;
     keys.key_offsets[total] = byte_offset;
+
+    keys.key_bytes.resize_exact(byte_offset);
 
     /// The records' source row numbers in bucket-grouped order: the gather indexes that compact
     /// the argument columns below. A zero-aggregate block stages keys only, so it needs none.
@@ -713,7 +709,7 @@ void NO_INLINE Aggregator::publishDelayedRecords(
     if (params.aggregates_size != 0)
     {
         gather_indexes = ColumnUInt32::create();
-        gather_indexes->getData().resize(total);
+        gather_indexes->getData().resize_exact(total);
         gather_data = gather_indexes->getData().data();
     }
 
