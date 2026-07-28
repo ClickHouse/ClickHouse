@@ -119,6 +119,12 @@ for _ in range(num):
         extra.append(e)
     entries.append((name, o2, sz, extra))
 members = {name: d[o:o+sz] for name, o, sz, _ in entries}
+# Fail loudly rather than silently rewriting an equivalent current-format archive: if the member
+# is not found, the fixture would produce no legacy member at all and the test would pass for both
+# the fixed and the unfixed implementation.
+matches = sum(1 for n, _, _, _ in entries if n == rename_from)
+if matches != 1:
+    raise SystemExit(f"expected exactly one {rename_from} member in the archive, found {matches}")
 renamed = [(rename_to if n == rename_from else n, sz, extra) for n, _, sz, extra in entries]
 footer = 1 + 8 + sum(len(wvar(len(n))) + len(n) + 8 * num_u64 for n, _, _ in renamed)
 out = bytearray(); out.append(ver); out += struct.pack('<Q', len(renamed))
