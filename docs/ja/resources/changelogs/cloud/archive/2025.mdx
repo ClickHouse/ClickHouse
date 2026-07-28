@@ -89,7 +89,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 * **AWS Glue 向け ClickHouse Connector**
   [AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-eqvmuopqzdg7s) で提供されている公式の [AWS Glue 向け ClickHouse Connector](/ja/integrations/connectors/data-ingestion/AWS/glue) を利用できるようになりました。これは、AWS Glue の Apache
-  Spark ベースのサーバーレスエンジンを利用して、ClickHouse と他のデータソース間でデータの抽出、変換、読み込みを行うためのものです。ClickHouse と Spark 間でテーブルを作成し、データの読み書きを行う方法については、[告知ブログ記事](http://clickhouse.com/blog/clickhouse-connector-aws-glue) を参照してください。
+  Spark ベースのサーバーレスエンジンを利用して、ClickHouse と他のデータソース間でデータの抽出、変換、読み込みを行うためのものです。ClickHouse と Spark 間でテーブルを作成し、データの読み書きを行う方法については、[告知ブログ記事](https://clickhouse.com/blog/clickhouse-connector-aws-glue) を参照してください。
 * **service の最小レプリカ数の変更**
   スケールアップした service は、[再度スケールダウンして](/ja/products/cloud/features/autoscaling/overview) 単一レプリカで利用できるようになりました (以前の最小値は 2 レプリカでした) 。注: 単一レプリカの service は可用性が低くなるため、本番環境での利用は推奨されません。
 * ClickHouse Cloud は今後、デフォルトで管理者ロールに対して、service のスケーリングおよび service バージョンのアップグレードに関する通知を送信します。通知設定で各自の通知設定を調整できます。
