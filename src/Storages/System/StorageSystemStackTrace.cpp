@@ -162,6 +162,9 @@ void signalHandler(int, siginfo_t * info, void * context)
 
     /// All these methods are signal-safe.
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
+    /// The ucontext StackTrace constructor recovers internally from a fault while unwinding the
+    /// target thread (e.g. off a frame-pointer-less libsystem frame or a fiber stack on macOS),
+    /// yielding an empty trace instead of crashing the server.
     stack_trace = StackTrace(signal_context);
 
     auto query_id = CurrentThread::getQueryId();
@@ -753,6 +756,15 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
         throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Cannot set signal handler");
 
     if (sigaddset(&sa.sa_mask, STACK_TRACE_SERVICE_SIGNAL))
+        throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Cannot set signal handler");
+
+    /// This handler captures through StackTrace(ucontext), sharing one thread-local async-unwind recovery
+    /// (asynchronous_stack_unwinding + sigjmp_buf in StackTrace) with the query profiler and the debug
+    /// SIGTSTP stack dumper. Block their signals (SIGUSR1/SIGUSR2 profilers, SIGTSTP) while it runs so
+    /// none can nest and clobber that buffer, which would make the next fault's siglongjmp jump to the
+    /// wrong frame (or, if SIGTSTP cleared the flag on return, turn a recoverable unwind fault into a
+    /// fatal crash).
+    if (sigaddset(&sa.sa_mask, SIGUSR1) || sigaddset(&sa.sa_mask, SIGUSR2) || sigaddset(&sa.sa_mask, SIGTSTP))
         throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Cannot set signal handler");
 #pragma clang diagnostic pop
 

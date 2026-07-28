@@ -116,6 +116,12 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     /// Extract N
     size_t n = limit_step->getLimitForSorting();
 
+    /// LIMIT ... WITH TIES can return more rows than n. The vector search optimization
+    /// bounds the ANN search to exactly n candidates, so rows tied with the n-th row
+    /// are never retrieved. Skip the optimization and fall back to brute force.
+    if (limit_step->withTies())
+        return no_layers_updated;
+
     /// Check that the LIMIT specified by the user isn't too big - otherwise the cost of vector search outweighs the benefit.
     if (n > settings.max_limit_for_vector_search_queries)
         return no_layers_updated;

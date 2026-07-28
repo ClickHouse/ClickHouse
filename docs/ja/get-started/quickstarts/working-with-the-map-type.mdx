@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'Map 型の利用'
 title: 'ClickHouse での Map 型の利用'
-useCases: ['Observability']
+useCases: ['オブザーバビリティ']
 products: ['OSS']
 description: 'OTel の リソース属性 を実例に、ClickHouse で動的なキー・バリュー データを保存、クエリ、集計するための Map 型の使い方を学びます。'
 ---
@@ -35,9 +35,7 @@ OpenTelemetry では、すべてのトレーススパンに **リソース属性
 このクイックスタートでは、`clickhouse-local` を使って CSVファイル から実際の OTel トレースデータを `Map(LowCardinality(String), String)` カラムを持つテーブルに読み込み、Map データのクエリ、フィルタリング、集計、最適化の方法を学びます。
 
 <Steps titleSize="h3">
-  <Step>
-    ### サンプルデータをダウンロード
-
+  <Step title="サンプルデータをダウンロード" id="download-the-sample-data">
     このデータセットには、デモ用マイクロサービスアプリケーションからエクスポートされた 6,120 件の OTel トレーススパンが含まれています。各行には、動的なキー・バリューのペアを JSON map として格納した `ResourceAttributes` カラムと `SpanAttributes` カラムが含まれます。
     ファイルは、たとえば `~/data/data-otel-traces.csv` のように、簡単に参照できるディレクトリに保存してください。
 
@@ -66,9 +64,7 @@ OpenTelemetry では、すべてのトレーススパンに **リソース属性
     ```
   </Step>
 
-  <Step>
-    ### テーブルを作成してデータを読み込む
-
+  <Step title="テーブルを作成してデータを読み込む" id="create-the-table-and-load-the-data">
     `clickhouse-local` を起動し、CSV に対応するスキーマで次のテーブルを作成します。
     重要なカラムは `ResourceAttributes Map(LowCardinality(String), String)` です。OTel の属性キーは、比較的少数の同じ値が繰り返し現れるため、キー型に `LowCardinality` を使用しています。
 
@@ -107,9 +103,7 @@ OpenTelemetry では、すべてのトレーススパンに **リソース属性
     6,120行が表示されるはずです。
   </Step>
 
-  <Step>
-    ### データをクエリする
-
+  <Step title="データをクエリする" id="query-the-data">
     **特定のキーにアクセスする** — 角括弧構文を使って、map から値を取り出します。行にそのキーが存在しない場合は、値の型の既定値が返されます (`String` の場合は空文字列) ：
 
     ```sql
@@ -197,9 +191,7 @@ OpenTelemetry では、すべてのトレーススパンに **リソース属性
     ```
   </Step>
 
-  <Step>
-    ### -Map combinator を使って Map をキーごとに集計する
-
+  <Step title="-Map combinator を使って Map をキーごとに集計する" id="aggregate-across-maps-with-the--map-combinator">
     ClickHouse の `-Map` 集約コンビネータを使うと、任意の集約関数を `Map` カラムに適用し、各キーごとに独立して集計できます。結果も `Map` となり、キーごとに 1 つのエントリと、その集計済みの値が格納されます。これは、カウンターや Gauge が `Map` の値として保存される OTel メトリクスで特に有用です。
 
     これを確認するために、各行に HTTP ステータスコードごとの件数を `Map(String, UInt64)` として記録する小さなメトリクス テーブルを作成します。
@@ -233,7 +225,7 @@ OpenTelemetry では、すべてのトレーススパンに **リソース属性
     GROUP BY ServiceName;
     ```
 
-    `-Map` 接尾辞は任意の aggregate function と組み合わせて使えるため、`minMap`、`maxMap`、`avgMap` も同様に簡単に使用できます：
+    `-Map` 接尾辞は任意の集約関数と組み合わせて使えるため、`minMap`、`maxMap`、`avgMap` も同様に簡単に使えます：
 
     ```sql
     SELECT
@@ -257,9 +249,7 @@ OpenTelemetry では、すべてのトレーススパンに **リソース属性
     **OTel でこれが重要な理由:** OTel collector が 1 分ごとのステータスコードの内訳を ClickHouse に書き込む場合、`sumMap` を使えば、それらを 1 回のクエリで時間単位や日単位の totals に集計できます。`ARRAY JOIN` も unpivot も不要で、キーの全体集合を事前に把握しておく必要もありません。どの行に現れたキーも、自動的に結果に含まれます。
   </Step>
 
-  <Step>
-    ### 頻繁にクエリするキー向けに最適化する
-
+  <Step title="頻繁にクエリするキー向けに最適化する" id="optimise-for-frequently-queried-keys">
     同じ Map キーで繰り返し絞り込みを行う場合 — `host.name` はその代表例です — それをマテリアライズドカラムとして抽出できます。こうすることで、クエリのたびに Map 全体を線形走査せずに済みます。
 
     ```sql
@@ -278,15 +268,19 @@ OpenTelemetry では、すべてのトレーススパンに **リソース属性
   </Step>
 </Steps>
 
-## 要点
+<div id="key-takeaways">
+  ## 要点
+</div>
 
 * **`Map(LowCardinality(String), String)`** は OTel の属性に適した定番の型です。キー集合が変化しても柔軟に扱え、`LowCardinality` によってキーの保存効率も高く保てます。
 * **ブラケット構文** (`map['key']`) は値にアクセスする最も一般的な方法ですが、線形走査になる点には注意してください。キーが数十個の map であれば問題ありませんが、数百個になると最適とはいえません。
 * **マテリアライズドカラム** は有効な手段です。map のキーが頻繁にフィルタ条件の対象になる場合は、それを実カラムに昇格させることで、索引付きの列指向アクセスが可能になります。
 * **`mapContains`, `mapKeys`, `mapValues`, `mapFilter`** と `ARRAY JOIN` を使えば、SQL の中だけで map データを調べたり変換したりできる、豊富な手段が得られます。
-* **`-Map` aggregate combinator** (`sumMap`, `avgMap`, `maxMap` など) は、行をまたいで各キーを個別に集計します。キー集合を事前に把握していなくても OTel メトリクスのカウンターを集約するのに最適で、ほかの combinator と組み合わせることもできます (たとえば `sumMapIf`) 。
+* **`-Map` aggregate combinator** (`sumMap`, `avgMap`, `maxMap` など) は、行をまたいで各キーを個別に集計します。キー集合を事前に把握していなくても OTel メトリクスのカウンターを集約するのに最適で、ほかの集約関数コンビネータと組み合わせることもできます (たとえば `sumMapIf`) 。
 
-## 次のステップ
+<div id="next-steps">
+  ## 次のステップ
+</div>
 
 次は、以下のクイックスタートをご覧ください。
 

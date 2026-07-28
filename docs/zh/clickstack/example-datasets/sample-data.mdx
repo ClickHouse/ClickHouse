@@ -16,25 +16,19 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     以下指南假设您已完成[托管 ClickStack 入门指南](/zh/clickstack/deployment/managed)，并已[记录连接凭据](/zh/clickstack/getting-started/managed#next-steps)。
 
     <Steps>
-      <Step>
-        ### 选择服务
-
+      <Step title="选择服务" id="select-your-service-managed">
         在 ClickHouse Cloud 主页面中，选择“托管 ClickStack”服务。
 
         <Image img="/images/clickstack/select_service.webp" alt="选择服务" size="lg" />
       </Step>
 
-      <Step>
-        ### 前往 ClickStack UI (HyperDX)
-
+      <Step title="前往 ClickStack UI (HyperDX)" id="navigate-to-the-hyperdx-ui-managed">
         在左侧菜单中选择 `ClickStack`，即可进入 ClickStack UI，系统会自动完成身份验证。
 
         <Image img="/images/use-cases/observability/hyperdx.webp" alt="ClickStack UI" size="lg" />
       </Step>
 
-      <Step>
-        ### 下载示例数据
-
+      <Step title="下载示例数据" id="download-sample-data-managed">
         为了让 UI 中显示示例数据，请下载以下文件：
 
         [示例数据](https://storage.googleapis.com/hyperdx/sample.tar.gz)
@@ -42,16 +36,14 @@ import { Image } from "/snippets/zh/components/Image.jsx";
         ```shell
         # curl
         curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
-        # 或
+        # or
         # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
         ```
 
         此文件包含来自我们的公开 [OpenTelemetry demo](https://github.com/ClickHouse/opentelemetry-demo) 的示例日志、指标和链路追踪——它是一个由微服务构成的简单电商应用。将此文件复制到你选定的目录中。
       </Step>
 
-      <Step>
-        ### 加载样本数据
-
+      <Step title="加载样本数据" id="load-sample-data-managed">
         要加载这些数据，只需将其发送到已部署的 OpenTelemetry (OTel) collector 的 HTTP 端点即可。
 
         运行以下命令，将数据发送到 OTel collector：
@@ -69,18 +61,16 @@ import { Image } from "/snippets/zh/components/Image.jsx";
         done
         ```
 
-        这会模拟 OTLP 日志、trace 和指标源向 OTel collector 发送数据。在生产环境中，这些源可能是各种语言的客户端，甚至也可能是其他 OTel collector。
+        这会模拟 OTLP 日志、trace 和指标来源向 OTel collector 发送数据。在生产环境中，这些来源可能是各种语言的客户端，甚至也可能是其他 OTel collector。
 
-        返回 `Search` 视图后，你应该会看到数据已开始加载 (如果没有显示数据，请将时间范围调整为 `Last 1 hour`) ：
+        返回 `Search` 视图后，你应该会看到数据已开始加载 (如果数据没有显示，请将时间范围调整为 `Last 1 hour`) ：
 
-        <Image img="/images/use-cases/observability/hyperdx-10.webp" alt="HyperDX 搜索" size="lg" />
+        <Image img="/images/use-cases/observability/hyperdx-10.webp" alt="HyperDX search" size="lg" />
 
-        数据加载需要几分钟。请等待加载完成后再继续后续步骤。
+        数据加载需要几分钟。请等待加载完成后，再继续后续步骤。
       </Step>
 
-      <Step>
-        ### 查看会话
-
+      <Step title="查看会话" id="explore-sessions-managed">
         假设我们收到报告，称用户在支付商品时遇到了问题。我们可以使用 HyperDX 的会话回放功能查看他们的操作过程。
 
         从左侧菜单中选择 `Client Sessions`。
@@ -108,31 +98,27 @@ import { Image } from "/snippets/zh/components/Image.jsx";
         选择这个 `500` 错误。无论是 `Overview` 还是 `Column Values`，都没有指出问题的来源，只能看出这是一个意外错误，导致了 `Internal Error`。
       </Step>
 
-      <Step>
-        ### 查看链路追踪
-
+      <Step title="查看链路追踪" id="explore-traces-managed">
         导航到 `Trace` 选项卡，查看完整的分布式 trace。
 
         <Image img="/images/use-cases/observability/hyperdx-14.webp" alt="会话 trace" size="lg" />
 
-        向下滚动该 trace，查看错误的根源——`checkout` 服务的 span。选择 `Payment` 服务的 span。
+        向下滚动 trace，查看错误的源头——也就是 `checkout` 服务的 span。选择 `Payment` 服务的 span。
 
         <Image img="/images/use-cases/observability/hyperdx-15.webp" alt="Span" size="lg" />
 
-        选择 `Column Values` 选项卡并向下滚动。我们可以看到，问题与缓存已满有关。
+        选择 `Column Values` 选项卡并向下滚动。可以看到，问题与缓存已满有关。
 
         <Image img="/images/use-cases/observability/hyperdx-16.webp" alt="列值" size="lg" />
 
-        向上滚动并回到 trace 视图后，我们可以看到日志已与该 span 关联，这得益于我们之前的配置。这些日志提供了更多上下文。
+        向上滚动并返回 trace 后，可以看到日志已与该 span 关联，这是我们先前配置的结果。这些日志提供了更多上下文。
 
         <Image img="/images/use-cases/observability/hyperdx-17.webp" alt="关联的日志" size="lg" />
 
-        我们已经确认，支付服务中的缓存被占满，导致支付无法完成。
+        我们已经确认，payment 服务中的缓存正在被填满，从而导致支付无法完成。
       </Step>
 
-      <Step>
-        ### 查看日志
-
+      <Step title="查看日志" id="explore-logs-managed">
         如需进一步了解详情，我们可以返回 `Search`：
 
         从数据源中选择 `Logs`，并为 `payment` 服务添加过滤条件。
@@ -142,12 +128,10 @@ import { Image } from "/snippets/zh/components/Image.jsx";
         可以看到，虽然这个问题是最近才出现的，但受影响的支付笔数很多。此外，似乎是一个与 Visa 支付相关的缓存导致了问题。
       </Step>
 
-      <Step>
-        ### 图表指标
-
+      <Step title="图表指标" id="chart-metrics-managed">
         虽然代码中显然引入了错误，但我们可以使用指标来确认缓存大小。前往 `Chart Explorer` 视图。
 
-        选择 `Metrics` 作为数据源。完成图表构建器配置，绘制 `visa_validation_cache.size (Gauge)` 的 `Maximum`，然后点击 play 按钮。可以明显看出，缓存大小在达到最大值之前一直在增长，之后便开始产生错误。
+        选择 `Metrics` 作为数据源。完成图表构建器中的设置，绘制 `visa_validation_cache.size (Gauge)` 的 `Maximum`，然后点击 play 按钮。可以明显看出，缓存大小在达到最大值之前一直在增长，随后便开始出现错误。
 
         <Image img="/images/use-cases/observability/hyperdx-19.webp" alt="指标" size="lg" />
       </Step>
@@ -158,48 +142,40 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     以下示例假设您已按照[一体化镜像的使用说明](/zh/clickstack/getting-started/oss)启动了开源 ClickStack，并已连接到[本地 ClickHouse 实例](/zh/clickstack/getting-started/oss#complete-connection-credentials)。
 
     <Steps>
-      <Step>
-        ### 前往 ClickStack UI (HyperDX)
-
+      <Step title="前往 ClickStack UI (HyperDX)" id="navigate-to-the-hyperdx-ui">
         访问 [http://localhost:8080](http://localhost:8080) 即可进入 ClickStack UI。
 
         <Image img="/images/use-cases/observability/hyperdx.webp" alt="ClickStack UI" size="lg" />
       </Step>
 
-      <Step>
-        ### 复制摄取 API key
-
+      <Step title="复制摄取 API key" id="copy-ingestion-api-key">
         前往 [`Team Settings`](http://localhost:8080/team)，在 `API Keys` 部分复制 `Ingestion API Key`。此 API key 可确保通过 OpenTelemetry collector 进行的数据摄取安全。
 
         <Image img="/images/use-cases/observability/copy_api_key.webp" alt="复制 API key" size="lg" />
       </Step>
 
-      <Step>
-        ### 下载样本数据
+      <Step title="下载示例数据" id="download-sample-data">
+        为了让 UI 中显示示例数据，请下载以下文件：
 
-        为了在 UI 中填充样本数据，请下载以下文件：
-
-        [样本数据](https://storage.googleapis.com/hyperdx/sample.tar.gz)
+        [示例数据](https://storage.googleapis.com/hyperdx/sample.tar.gz)
 
         ```shell
         # curl
         curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
-        # 或
+        # or
         # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
         ```
 
-        此文件包含来自我们公开的 [OpenTelemetry demo](https://github.com/ClickHouse/opentelemetry-demo) 的示例日志、指标和链路追踪数据——这是一个采用微服务架构的简易电商应用。请将此文件复制到您选择的目录中。
+        此文件包含来自我们的公开 [OpenTelemetry demo](https://github.com/ClickHouse/opentelemetry-demo) 的示例日志、指标和链路追踪——它是一个由微服务构成的简单电商应用。将此文件复制到你选定的目录中。
       </Step>
 
-      <Step>
-        ### 加载样本数据
-
+      <Step title="加载样本数据" id="load-sample-data">
         要加载这些数据，只需将其发送到已部署的 OpenTelemetry (OTel) collector 的 HTTP 端点即可。
 
         首先，导出上面复制的 API key。
 
         ```shell
-        # 导出 API key
+        # export API key
         export CLICKSTACK_API_KEY=<YOUR_INGESTION_API_KEY>
         ```
 
@@ -227,9 +203,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
         数据加载需要几分钟。请等待加载完成后，再继续后续步骤。
       </Step>
 
-      <Step>
-        ### 查看会话
-
+      <Step title="查看会话" id="explore-sessions">
         假设我们收到报告，称用户在支付商品时遇到了问题。我们可以使用 HyperDX 的会话回放功能查看他们的实际体验。
 
         从左侧菜单中选择 [`Client Sessions`](http://localhost:8080/sessions?from=1747312320000\&to=1747312920000\&sessionSource=l1324572572)。
@@ -257,9 +231,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
         选择这个 `500` 错误。无论是 `Overview` 还是 `Column Values`，都无法看出问题的来源，只能知道这是一个意外错误，导致了 `Internal Error`。
       </Step>
 
-      <Step>
-        ### 查看链路追踪
-
+      <Step title="查看链路追踪" id="explore-traces">
         导航到 `Trace` 选项卡，查看完整的分布式 trace。
 
         <Image img="/images/use-cases/observability/hyperdx-14.webp" alt="会话 trace" size="lg" />
@@ -279,9 +251,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
         我们已经确认，payment 服务中的缓存正在被填满，从而导致支付无法完成。
       </Step>
 
-      <Step>
-        ### 查看日志
-
+      <Step title="查看日志" id="explore-logs">
         如需进一步了解详情，我们可以返回 [`Search` 视图](http://localhost:8080/search)：
 
         从数据源中选择 `Logs`，并对 `payment` 服务应用过滤器。
@@ -291,9 +261,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
         可以看到，虽然这是最近出现的问题，但受影响的支付数量很多。此外，似乎是一个与 Visa 支付相关的缓存导致了问题。
       </Step>
 
-      <Step>
-        ### 图表指标
-
+      <Step title="图表指标" id="chart-metrics">
         虽然代码中显然引入了错误，但我们可以使用指标来确认缓存大小。前往 `Chart Explorer` 视图。
 
         选择 `Metrics` 作为数据源。完成图表构建器中的设置，绘制 `visa_validation_cache.size (Gauge)` 的 `Maximum`，然后点击 play 按钮。可以明显看出，缓存大小在达到最大值之前一直在增长，随后便开始出现错误。

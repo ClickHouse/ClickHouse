@@ -162,7 +162,9 @@ CGROUP_VERSION = detect_cgroup_version()
 
 BASH = "/bin/bash"
 
-def shell_get_output(cmd: str, timeout: Optional[float] = None) -> str:
+def shell_get_output(
+    cmd: str, timeout: Optional[float] = None, keep_output_on_error: bool = False
+) -> str:
     try:
         res = subprocess.run(
             cmd,
@@ -177,6 +179,20 @@ def shell_get_output(cmd: str, timeout: Optional[float] = None) -> str:
             timeout=timeout,
         )
         return res.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        # stdout here is the merged stdout+stderr captured above. With
+        # keep_output_on_error the caller persists it itself (e.g. lldb exited
+        # non-zero but still printed backtraces worth saving to a file), so
+        # return it untouched. Otherwise print the failure reason — which lives
+        # in that output — bounded with trim_for_log so a command that prints
+        # many lines and only then exits non-zero cannot flood job.log.
+        if keep_output_on_error:
+            return (e.output or "").strip()
+        print(
+            f"Error running command {cmd!r}: {e}\n{trim_for_log(e.output)}",
+            file=sys.stderr,
+        )
+        return ""
     except Exception as e:
         print(f"Error running command {cmd!r}: {e}", file=sys.stderr)
         return ""
@@ -518,8 +534,10 @@ def trim_for_log(s, limit=10000):
     lines = s.splitlines()
     if len(lines) > limit:
         separator = "-" * 40 + str(len(lines) - limit) + " lines are hidden" + "-" * 40
-        return "\n".join(lines[:limit//2] + [] + [separator] + [] + lines[-limit//2:])
-    return "\n".join(lines)
+        lines = lines[:limit//2] + [separator] + lines[-limit//2:]
+    # Newline-terminate so callers do not each re-add the trailing newline that
+    # splitlines() drops (the dumps this trims are always whole-line blocks).
+    return "\n".join(lines) + "\n"
 
 
 def is_valid_utf_8(fname):
@@ -703,7 +721,11 @@ def kill_process_group(pgid, fatal_log):
             if not client_printed_stacktrace:
                 processes = [p[0] for p in pgrep(pgid=pgid, command="clickhouse")]
                 for child in processes:
-                    print(get_stacktraces_from_lldb(child))
+                    # trim_for_log: with keep_output_on_error the lldb call
+                    # returns its full output even on a non-zero exit (e.g. a
+                    # later detach/quit fails after many frames were printed),
+                    # so bound it here to keep it from flooding job.log.
+                    print(trim_for_log(get_stacktraces_from_lldb(child)))
         # NOTE: this still may leave some processes, that had been
         # created by timeout(1), since it also creates new process
         # group. But this should not be a problem with default
@@ -1032,9 +1054,22 @@ def get_stacktraces_from_lldb(pid):
     # is wedged (e.g. signal-handler deadlock on the inferior). Killing lldb
     # leaves the server process untouched.
     _ensure_lldb_installed()  # TEMPORARY: see _ensure_lldb_installed docstring.
+    # macOS restricts task_for_pid(): in --batch mode a non-root lldb cannot
+    # attach to the server on a CI runner (the user is not in the _developer
+    # group and there is no interactive authorization), so it exits 1. The
+    # runner grants passwordless sudo and root holds task_for_pid rights, so
+    # attach as root there. Linux ptrace of a same-uid process needs none of
+    # this. shutil.which resolves the absolute path because sudo resets PATH.
+    lldb = shutil.which("lldb") or "lldb"
+    sudo = "sudo " if platform.system() == "Darwin" else ""
+    # keep_output_on_error: even when lldb exits non-zero it may have printed
+    # backtraces (or an attach error) worth keeping. Returning the output lets
+    # print_c_stacktraces save the full dump to c_stacktraces.log and preview
+    # it, instead of shell_get_output flooding stderr with nothing attached.
     return shell_get_output(
-        f"lldb --batch -p {pid} -o 'thread backtrace all' -o 'detach' -o 'quit'",
+        f"{sudo}{lldb} --batch -p {pid} -o 'thread backtrace all' -o 'detach' -o 'quit'",
         timeout=30,
+        keep_output_on_error=True,
     )
 
 
@@ -1112,16 +1147,49 @@ def get_all_server_pids():
 
 
 def is_asan_build(args):
-    """Check if the server is an ASan build — attaching a debugger disables LeakSanitizer detections."""
+    """Check if the server is an ASan build — attaching a debugger disables LeakSanitizer detections.
+
+    Use the build flags collected at startup rather than a live query. This function gates
+    `print_c_stacktraces`, which runs precisely when the server is hung or dead, so a live
+    query would throw. If the flags were never collected (server never started), read the bit
+    from the binary via `clickhouse local` instead of trusting `ASAN_OPTIONS`, which is
+    exported on some runners (e.g. macOS) even for non-ASan builds and would wrongly report
+    ASan and suppress the lldb backtraces.
+    """
+    build_flags = getattr(args, "build_flags", None)
+    if build_flags is not None:
+        return BuildFlags.ADDRESS in build_flags
+    # Build flags not collected yet (server never started, e.g. the startup-failure
+    # hung-check path). Read the ASan bit straight from the binary via `clickhouse
+    # local`, which is independent of server state. ASAN_OPTIONS is not a usable
+    # signal here: the fast macOS runners export it even for non-ASan builds.
+    binary = getattr(args, "binary", "clickhouse")
+    local = find_clickhouse_command(binary, "local")
+    out = shell_get_output(
+        f"{local} --query \"SELECT count() FROM system.build_options "
+        f"WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)\"",
+        timeout=60,
+    )
+    return out.strip() not in ("", "0")
+
+
+# Full server stacktraces are written here — one file per collector, not per
+# test: print_*_stacktraces also run from the end-of-run hung check, where no
+# single test owns the dump. The CI job runs clickhouse-test from its output
+# dir and attaches these files to the report, while stdout keeps only a
+# trimmed preview. Append with a per-block header so successive dumps stay
+# separated; two --jobs workers timing out at once may still interleave (a
+# large write is not atomic), but the headers keep the result readable.
+SQL_STACKTRACES_LOG = "sql_stacktraces.log"
+C_STACKTRACES_LOG = "c_stacktraces.log"
+
+
+def _append_stacktrace_log(filename: str, block: str) -> None:
     try:
-        result = clickhouse_execute(
-            args,
-            "SELECT count() FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)",
-        )
-        return result != b"0"
-    except Exception:
-        # If we can't query the server, check environment variable as fallback.
-        return bool(os.environ.get("ASAN_OPTIONS"))
+        with open(filename, "a", encoding="utf-8") as f:
+            f.write(block if block.endswith("\n") else block + "\n")
+    except OSError as e:
+        print(f"Could not write {filename}: {e}", file=sys.stderr)
 
 
 def print_c_stacktraces(args) -> None:
@@ -1167,7 +1235,10 @@ def print_c_stacktraces(args) -> None:
         print(f"\nCollecting C stacktraces from {label} process {pid} with lldb:")
         bt = get_stacktraces_from_lldb(pid)
         if bt and len(bt) >= 1000:
-            print(f"=== PID {pid} ({label}) ===\n{bt}")
+            block = f"=== PID {pid} ({label}) ===\n{bt}"
+            _append_stacktrace_log(C_STACKTRACES_LOG, block)
+            print(trim_for_log(block, 100))
+            print(f"(full lldb backtrace saved to {C_STACKTRACES_LOG})")
         else:
             print(f"Got suspiciously small stacktraces from {pid}: {bt}")
 
@@ -1190,7 +1261,9 @@ def print_sql_stacktraces(args) -> None:
     print("\nCollecting stacktraces from system.stack_trace table:")
     bt = get_stacktraces_from_clickhouse(args)
     if bt:
-        print(bt)
+        _append_stacktrace_log(SQL_STACKTRACES_LOG, bt)
+        print(trim_for_log(bt, 100))
+        print(f"(full system.stack_trace dump saved to {SQL_STACKTRACES_LOG})")
 
 
 def get_server_pid():
@@ -1549,6 +1622,7 @@ class SettingsRandomizer:
         "execute_exists_as_scalar_subquery": lambda: random.random() > 0.05,
         "normalize_function_names": lambda: random.random() > 0.05,
         "enable_join_runtime_filters": lambda: random.random() > 0.05,
+        "join_runtime_filter_min_probe_rows": lambda: 0 if random.random() < 0.1 else random.randint(1, 10000),
         "enable_parallel_blocks_marshalling": lambda: random.random() > 0.05,
         # Default-false query_plan_* toggles: enable with 0.3 probability
         "query_plan_reuse_storage_ordering_for_window_functions": lambda: random.random() < 0.3,
@@ -4589,9 +4663,10 @@ def run_tests_array(
                 description += "\n"
 
             if cleanup_output.getvalue():
-                description += cleanup_output.getvalue()
-                if not cleanup_output.getvalue().endswith("\n"):
-                    description += "\n"
+                # Bound the timeout/cleanup diagnostic like every other dump in
+                # this file: lldb "thread backtrace all" over every server
+                # process is unbounded and otherwise floods the log/report.
+                description += trim_for_log(cleanup_output.getvalue(), 100)
 
             if is_concurrent:
                 description = (

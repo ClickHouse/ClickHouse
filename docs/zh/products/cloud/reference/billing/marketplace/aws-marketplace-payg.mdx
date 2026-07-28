@@ -23,34 +23,26 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ### 搜索 ClickHouse Cloud - Pay as you go
-
-    前往 [AWS Marketplace](https://aws.amazon.com/marketplace)，搜索 “ClickHouse Cloud - Pay As You Go”。
+  <Step title="搜索 ClickHouse Cloud - Pay as you go" id="search-payg">
+    前往 [AWS Marketplace](https://aws.amazon.com/marketplace)，搜索“ClickHouse Cloud - Pay As You Go”。
 
     <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-1.webp" alt="在 AWS Marketplace 中搜索 ClickHouse" border />
   </Step>
 
-  <Step>
-    ### 查看购买选项
-
+  <Step title="查看购买选项" id="purchase-options">
     点击该[产品页面](https://aws.amazon.com/marketplace/pp/prodview-p4gwofrqpkltu)，然后点击 **View purchase options**。
 
     <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-2.webp" alt="AWS Marketplace 查看购买选项" border />
   </Step>
 
-  <Step>
-    ### 订阅
-
+  <Step title="订阅" id="subscribe">
     在下一个页面中，点击 subscribe。
 
     <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-3.webp" alt="AWS Marketplace 订阅" border />
   </Step>
 
-  <Step>
-    ### 设置你的账户
-
-    此时，设置流程尚未完成，你的 ClickHouse Cloud 组织也尚未通过 Marketplace 计费。现在，你需要在你的 Marketplace 订阅中点击 Set up your account，跳转到 ClickHouse Cloud 完成设置。
+  <Step title="设置你的账户" id="set-up-your-account">
+    此时，设置尚未完成，你的 ClickHouse Cloud 组织也还未通过 Marketplace 计费。现在，你需要在 Marketplace 订阅中点击 Set up your account，跳转到 ClickHouse Cloud 完成设置。
 
     <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-4.webp" alt="设置你的账户" border />
 
@@ -59,18 +51,18 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     <Info>
       **新 ClickHouse Cloud 用户**
 
-      如果你是新的 ClickHouse Cloud 用户，请按照以下步骤操作。
+      如果你是新 ClickHouse Cloud 用户，请按照以下步骤操作。
     </Info>
 
     <Accordion title="新用户的步骤">
-      如果你是新的 ClickHouse Cloud 用户，请点击页面底部的 Register。系统会提示你创建新用户并验证电子邮件。完成电子邮件验证后，你可以离开 ClickHouse Cloud 登录页面，然后在 https://console.clickhouse.cloud 使用新的用户名登录。
+      如果你是新 ClickHouse Cloud 用户，请点击页面底部的 Register。系统会提示你创建新用户并验证电子邮件。完成电子邮件验证后，你可以离开 ClickHouse Cloud 登录页面，然后在 https://console.clickhouse.cloud 使用新的用户名登录。
 
       <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-5.webp" size="md" alt="ClickHouse Cloud 注册" />
 
       <Info>
         **新用户**
 
-        你还需要提供一些业务基本信息。请参见下面的截图。
+        你还需要提供一些企业基本信息。请参见下面的截图。
       </Info>
 
       <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-6.webp" size="md" alt="开始之前" />
@@ -78,17 +70,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
       <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-7.webp" size="md" alt="开始之前，续" />
     </Accordion>
 
-    如果你是现有 ClickHouse Cloud 用户，只需使用你的登录凭据登录即可。
+    如果你是现有 ClickHouse Cloud 用户，只需使用你的凭据登录即可。
   </Step>
 
-  <Step>
-    ### 将 Marketplace 订阅添加到组织
-
-    成功登录后，你可以选择创建一个新组织，并将其计费关联到此 Marketplace 订阅；或者选择一个现有组织，并将其计费关联到此订阅。
+  <Step title="将 Marketplace 订阅添加到组织" id="add-marketplace-subscription">
+    成功登录后，你可以选择创建一个新组织并将此 Marketplace 订阅用于该组织的计费，或者选择一个现有组织并将此订阅用于其计费。
 
     <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="md" alt="添加 Marketplace 订阅" border />
 
-    完成此步骤后，你的组织将连接到此 AWS 订阅，所有使用量都将通过你的 AWS 账户计费。
+    完成此步骤后，你的组织将连接到此 AWS 订阅，所有用量都将通过你的 AWS 账户计费。
 
     你可以在 ClickHouse UI 的组织计费页面中确认计费是否已关联到 AWS Marketplace。
 
