@@ -1,121 +1,118 @@
 # Test-level dependencies: the older the better. Inhibit dependabot, so we only accept manual updates.
-#
-# ClickHouse pins its CI, test and tooling dependencies on purpose and updates them manually,
-# so Dependabot should not open pull requests anywhere in this repository.
-#
-# Switching Dependabot off takes two settings per block, because its two features follow
-# different rules:
-#
-# 1. Version updates run only for the (`package-ecosystem`, directory) pairs listed in this
-#    file, and `open-pull-requests-limit: 0` turns them off.
-# 2. Security updates are triggered by Dependabot alerts against the dependency graph, not by
-#    this file. They are not subject to `open-pull-requests-limit` and are not delayed by
-#    `cooldown` - both of those apply to version updates only. The only way to suppress a
-#    security update from here is `ignore` with `dependency-name: "*"` in a block whose
-#    `package-ecosystem` and directory match the manifest that the alert points at.
-#
-# The directory has to match the manifest: `directory` is a single literal path, it is neither
-# recursive nor does it accept wildcards, so `directory: "/ci/docker"` has no effect on
-# `ci/docker/fuzzer/requirements.txt`. Use `directories` (plural) with the `**/*` globstar,
-# which does match nested directories, and list the repository root separately.
-#
-# There has to be a block for every package manager that has manifests in the repository - add
-# one whenever a new kind of manifest is introduced.
-#
-# This file only suppresses pull requests, not the alerts themselves. The repository-wide
-# switch is `Dependabot security updates` in Settings -> Code security.
 version: 2
 updates:
-  # Python: `requirements.txt` under `ci/docker`, `pyproject.toml`, `setup.py`, `utils`, tests.
-  - package-ecosystem: "pip"
-    directories:
-      - "/"
-      - "**/*"
-    schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 0
-    ignore:
-      - dependency-name: "*"
-
-  # Base images in `Dockerfile`s.
+  # Disable Dependabot for ci/docker (all ecosystems)
   - package-ecosystem: "docker"
-    directories:
-      - "/"
-      - "**/*"
+    directory: "/ci/docker"
     schedule:
       interval: "monthly"
     open-pull-requests-limit: 0
     ignore:
       - dependency-name: "*"
 
-  # Images in the Compose files of integration tests.
-  - package-ecosystem: "docker-compose"
-    directories:
-      - "/"
-      - "**/*"
+  - package-ecosystem: "pip"
+    directory: "/ci/docker"
     schedule:
       interval: "monthly"
     open-pull-requests-limit: 0
     ignore:
       - dependency-name: "*"
 
-  # Java clients and catalogs used by integration tests (`pom.xml`).
-  - package-ecosystem: "maven"
-    directories:
-      - "/"
-      - "**/*"
-    schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 0
-    ignore:
-      - dependency-name: "*"
-
-  # .NET clients used by integration tests (`*.csproj`).
-  - package-ecosystem: "nuget"
-    directories:
-      - "/"
-      - "**/*"
-    schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 0
-    ignore:
-      - dependency-name: "*"
-
-  # JavaScript, e.g. the reports UI.
   - package-ecosystem: "npm"
-    directories:
-      - "/"
-      - "**/*"
+    directory: "/ci/docker"
     schedule:
       interval: "monthly"
     open-pull-requests-limit: 0
     ignore:
       - dependency-name: "*"
 
-  # Rust crates are pinned via `Cargo.lock` and built reproducibly; updates must be done
-  # manually together with lockfile and vendored-source refreshes.
-  - package-ecosystem: "cargo"
-    directories:
-      - "/"
-      - "**/*"
-    schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 0
-    ignore:
-      - dependency-name: "*"
-
-  # Submodules in `contrib`, listed in `.gitmodules` at the repository root.
-  - package-ecosystem: "gitsubmodule"
-    directory: "/"
-    schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 0
-    ignore:
-      - dependency-name: "*"
-
-  # Actions in the workflows. For `github-actions` the directory is always the root.
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directory: "/ci/docker"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: "*"
+
+  # Disable Dependabot for tests/integration (all ecosystems)
+  - package-ecosystem: "docker"
+    directory: "/tests/integration"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: "*"
+
+  - package-ecosystem: "pip"
+    directory: "/tests/integration"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: "*"
+
+  - package-ecosystem: "npm"
+    directory: "/tests/integration"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/tests/integration"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: "*"
+
+  # Disable Dependabot for docker/test (all ecosystems)
+  - package-ecosystem: "docker"
+    directory: "/docker/test"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: "*"
+
+  - package-ecosystem: "pip"
+    directory: "/docker/test"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: "*"
+
+  - package-ecosystem: "npm"
+    directory: "/docker/test"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/docker/test"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: "*"
+
+  # Disable Dependabot for all Rust (cargo) dependencies.
+  # Rust crates are pinned via Cargo.lock and built reproducibly; updates must be
+  # done manually together with lockfile and vendored-source refreshes.
+  - package-ecosystem: "cargo"
+    directory: "/rust/chcache"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: "*"
+
+  - package-ecosystem: "cargo"
+    directory: "/rust/workspace"
     schedule:
       interval: "monthly"
     open-pull-requests-limit: 0

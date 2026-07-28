@@ -130,7 +130,7 @@ UHugeInt UHugeInt::operator<<(const UHugeInt & rhs) const
 
 UHugeInt UHugeInt::operator&(const UHugeInt & rhs) const
 {
-    UHugeInt result{};
+    UHugeInt result;
     result.lower = lower & rhs.lower;
     result.upper = upper & rhs.upper;
     return result;
@@ -138,7 +138,7 @@ UHugeInt UHugeInt::operator&(const UHugeInt & rhs) const
 
 UHugeInt UHugeInt::operator|(const UHugeInt & rhs) const
 {
-    UHugeInt result{};
+    UHugeInt result;
     result.lower = lower | rhs.lower;
     result.upper = upper | rhs.upper;
     return result;
@@ -146,7 +146,7 @@ UHugeInt UHugeInt::operator|(const UHugeInt & rhs) const
 
 UHugeInt UHugeInt::operator^(const UHugeInt & rhs) const
 {
-    UHugeInt result{};
+    UHugeInt result;
     result.lower = lower ^ rhs.lower;
     result.upper = upper ^ rhs.upper;
     return result;
@@ -154,7 +154,7 @@ UHugeInt UHugeInt::operator^(const UHugeInt & rhs) const
 
 UHugeInt UHugeInt::operator~() const
 {
-    UHugeInt result{};
+    UHugeInt result;
     result.lower = ~lower;
     result.upper = ~upper;
     return result;
@@ -174,11 +174,11 @@ UHugeInt & UHugeInt::operator-=(const UHugeInt & rhs)
 
 static UHugeInt multiply(UHugeInt lhs, UHugeInt rhs)
 {
-    UHugeInt result{};
+    UHugeInt result;
 #if ((__GNUC__ >= 5) || defined(__clang__)) && defined(__SIZEOF_INT128__)
     __uint128_t left = __uint128_t(lhs.lower) + (__uint128_t(lhs.upper) << 64);
     __uint128_t right = __uint128_t(rhs.lower) + (__uint128_t(rhs.upper) << 64);
-    __uint128_t result_u128 = {};
+    __uint128_t result_u128;
 
     result_u128 = left * right;
     result.upper = uint64_t(result_u128 >> 64);
@@ -306,13 +306,13 @@ static UHugeInt divMod(UHugeInt lhs, UHugeInt rhs, UHugeInt & remainder)
 
 static UHugeInt divide(UHugeInt lhs, UHugeInt rhs)
 {
-    UHugeInt remainder{};
+    UHugeInt remainder;
     return divMod(lhs, rhs, remainder);
 }
 
 static UHugeInt modulo(UHugeInt lhs, UHugeInt rhs)
 {
-    UHugeInt remainder{};
+    UHugeInt remainder;
     /// Here it is interested in the remainder only
     const auto u = divMod(lhs, rhs, remainder);
     UNUSED(u);
@@ -400,7 +400,7 @@ String UHugeInt::toString() const
 {
     String res;
     UHugeInt input = *this;
-    UHugeInt remainder{};
+    UHugeInt remainder;
 
     while (true)
     {
