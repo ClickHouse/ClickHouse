@@ -398,12 +398,14 @@ a.experimentalBadge {
     font-size: 0.875rem;
 }
 
-.dark .scalePlanFeatureContainer {
+.dark .scalePlanFeatureContainer,
+[data-theme='dark'] .scalePlanFeatureContainer {
     background-color: #1F1F1C;
     border: 1px solid #414141;
 }
 
-.dark .scalePlanFeatureBadge {
+.dark .scalePlanFeatureBadge,
+[data-theme='dark'] .scalePlanFeatureBadge {
     background-color: #1D64EC;
     color: #FFFFFF;
 }
