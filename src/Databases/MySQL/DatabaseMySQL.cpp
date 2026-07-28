@@ -1,5 +1,4 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <mysqlxx/Exception.h>
 #include "config.h"
 
 #if USE_MYSQL
@@ -15,6 +14,7 @@
 #    include <Databases/DatabaseFactory.h>
 #    include <Databases/MySQL/DatabaseMySQL.h>
 #    include <Databases/MySQL/FetchTablesColumnsList.h>
+#    include <mysqlxx/Exception.h>
 #    include <Disks/IDisk.h>
 #    include <IO/Operators.h>
 #    include <Interpreters/Context.h>
