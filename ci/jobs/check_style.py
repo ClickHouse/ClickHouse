@@ -589,9 +589,10 @@ def check_settings_changes_history():
     success or a non-empty error string on failure (consumed by Result.from_commands_run).
     Pure text parsing - no C++ syntax analysis.
 
-    Corrections of an already recorded entry (the same setting name removed and added again,
-    e.g. when a past release's `new_value` was recorded wrongly) are not reported by the hook:
-    they do not describe a default change made by this change, and putting them under the
+    A change that edits only SettingsChangesHistory.cpp, without changing a setting's compiled
+    default in the settings sources (Settings.cpp / FormatFactorySettings.h /
+    MergeTreeSettings.cpp), is a historical correction - fixing what a past release recorded -
+    not a default change made now, so it is allowed (the check skips). Requiring it under the
     current version block would tell `compatibility` the value changed again in this release.
 
     Fail-close: if the file changed but the hook could not fetch the diff (e.g. in the merge
@@ -609,6 +610,18 @@ def check_settings_changes_history():
         )
     if path not in changed_files:
         # The history file was not changed in this run - nothing to validate.
+        return ""
+
+    # A change that edits only SettingsChangesHistory.cpp, without changing any setting's
+    # compiled default in the settings sources, is a historical correction (fixing what a past
+    # release recorded), not a default change made now - it must not be forced into the current
+    # version block. Only enforce the current-block rule when a settings source also changed.
+    settings_sources = (
+        "src/Core/Settings.cpp",
+        "src/Core/FormatFactorySettings.h",
+        "src/Storages/MergeTree/MergeTreeSettings.cpp",
+    )
+    if not any(src in changed_files for src in settings_sources):
         return ""
 
     fetch_error = kv.get("settings_history_fetch_error")

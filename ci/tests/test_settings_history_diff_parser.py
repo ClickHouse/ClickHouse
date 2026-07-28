@@ -4,11 +4,13 @@ Tests for `parse_settings_history_changes` in
 `settings_changes_history` style check with the settings a change adds to
 `src/Core/SettingsChangesHistory.cpp`.
 
-The parser must report genuinely new records (they have to be listed under the current
-version block), but not reason-only edits and not in-place corrections of an already
-recorded entry: fixing what a past release actually did is not a default change made by
-the pull request, and recording it under the current version would tell `compatibility`
-that the value changed again in this release, which never happened.
+The parser reports new records and value changes (including an in-place edit of an existing
+entry), but not reason-only edits. Whether such a change must sit under the current version
+block is decided by the style check, not the parser: it enforces the rule only when a settings
+source file also changed, so an edit that touches only SettingsChangesHistory.cpp - a historical
+correction - is allowed there. The parser therefore reports in-place value edits; the source-file
+gate in check_settings_changes_history is what distinguishes a real default change from a
+correction.
 """
 
 import os
@@ -68,10 +70,11 @@ def test_reason_only_edit_is_ignored():
     assert parse_settings_history_changes(patch, FILE_LINES) == []
 
 
-def test_in_place_correction_of_a_historical_entry_is_ignored():
-    # PR #111841: the recorded `new_value` of a past release was wrong and is corrected in
-    # the block of the version where the change actually happened. Requiring an entry under
-    # the current version block would record a default change that never happened.
+def test_in_place_value_edit_is_reported():
+    # An in-place value edit of an existing entry (value-signature differs) is reported by the
+    # parser. Whether it is required under the current version block is up to the style check:
+    # if only SettingsChangesHistory.cpp changed it is a historical correction and is allowed,
+    # but if a settings source also changed it is a real default change and must be current.
     patch = (
         "@@ -9,3 +9,3 @@\n"
         " {\n"
@@ -79,7 +82,9 @@ def test_in_place_correction_of_a_historical_entry_is_ignored():
         '+            {"old_setting", 0, 1000, "Fixed record"},\n'
         " });\n"
     )
-    assert parse_settings_history_changes(patch, FILE_LINES) == []
+    assert parse_settings_history_changes(patch, FILE_LINES) == [
+        {"namespace": "Session", "name": "old_setting"}
+    ]
 
 
 def test_pure_removal_is_ignored():
