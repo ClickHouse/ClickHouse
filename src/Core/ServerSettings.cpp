@@ -1520,15 +1520,7 @@ The directory with user files. Used in the table function [file()](/sql-referenc
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 )", 0) \
-    DECLARE(String, dictionaries_lib_path, "/var/lib/clickhouse/dictionaries_lib/", R"(
-The directory with dictionaries lib.
-
-**Example**
-
-```xml
-<dictionaries_lib_path>/var/lib/clickhouse/dictionaries_lib/</dictionaries_lib_path>
-```
-)", 0) \
+    DECLARE(String, dictionaries_lib_path, "/var/lib/clickhouse/dictionaries_lib/", R"(The directory with shared libraries for the `library` dictionary source. The setting is deprecated: the `library` dictionary source was removed.)", SettingsTierType::OBSOLETE) \
     DECLARE(String, user_scripts_path, "/var/lib/clickhouse/user_scripts/", R"(
 The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](/sql-reference/functions/udf#executable-user-defined-functions).
 
