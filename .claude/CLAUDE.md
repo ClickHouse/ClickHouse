@@ -144,6 +144,8 @@ When writing tests, do not add "no-*" tags (like "no-parallel") unless strictly 
 
 When writing tests in tests/queries, prefer adding a new test instead of extending existing ones.
 
+When removing a feature, do not write tests asserting that the feature no longer exists (for example, a test checking that a removed function or setting now throws an error). Instead, delete the tests of the removed feature. Such tests only pin down the absence of something and become noise.
+
 When adding a new test, use `./tests/queries/0_stateless/add-test <name>` for `.sql` tests or `./tests/queries/0_stateless/add-test <name>.sh` for `.sh` tests. It assigns the next available number prefix and creates both the test and reference files.
 
 When writing C++ code, always use Allman-style braces (opening brace on a new line). This is enforced by the style check in CI.
