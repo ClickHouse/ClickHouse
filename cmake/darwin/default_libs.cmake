@@ -15,3 +15,10 @@ set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES pthre
 
 include (cmake/unwind.cmake)
 include (cmake/cxx.cmake)
+
+if (NOT SANITIZE)
+    # Replaces pthread_rwlock, which loses wakeups when waiters receive signals
+    # (e.g. from the query profiler), permanently deadlocking the process.
+    # See base/darwin-compatibility/pthread_rwlock_shim.c and FB24027930.
+    add_subdirectory(base/darwin-compatibility)
+endif ()
