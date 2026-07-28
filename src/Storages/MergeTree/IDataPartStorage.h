@@ -174,17 +174,20 @@ public:
     /// Atomically replace the owned set (entries are re-parented to this storage); {} is a valid set.
     virtual void setProjections(Projections projections) = 0;
 
-    /// Raw scan of the on-disk projection dirs across both layouts, residue included; does not touch the owned set. For disk-truth paths
-    /// only (checksums reconstruction, part consistency checks).
-    virtual Projections detectProjections() const = 0;
-
-    /// Same, but the parts-root listing was already taken by the caller (an operation processing many parts scans the directory once and
-    /// reuses it); only the nested per-part-dir half is scanned here.
-    virtual Projections detectProjections(const Strings & root_dir_entries) const = 0;
-
-    /// Resolve only the given dirName() candidates by direct probes -- no listing, O(candidates) stats. Manifest-driven paths:
-    /// checksums+metadata name every adoptable dir, so probing loses nothing.
-    virtual Projections probeProjections(const Strings & candidate_dir_names) const = 0;
+    /// Disk scan of the on-disk projection dirs across both layouts, residue included; does not touch the owned set. Disk-truth paths
+    /// only (checksums reconstruction, part consistency checks). Both narrowings default to empty:
+    ///   - candidates: probe only these dirName() entries by direct stat (O(candidates), no listing) -- manifest-driven paths, where
+    ///     checksums+metadata name every adoptable dir, so probing loses nothing;
+    ///   - root_listing: reuse a parts-root listing the caller already took (an op processing many parts lists the root once); used
+    ///     only for full discovery (ignored when candidates is set).
+    struct ProjectionScan
+    {
+        std::optional<Strings> candidates = std::nullopt;
+        std::optional<Strings> root_listing = std::nullopt;
+    };
+    /// No default argument: callers pass {} for a full scan. (A `= {}` default here cannot use ProjectionScan's member initializers
+    /// while this class is still incomplete -- C++ forbids it. The NSDMIs let a call site set just one field, e.g. {.candidates = ...}.)
+    virtual Projections detectProjections(const ProjectionScan & scan) const = 0;
 
     /// Owned-set membership by dirName().
     virtual bool hasProjection(const std::string & dir_name) const = 0;

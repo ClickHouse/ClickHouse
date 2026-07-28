@@ -24,9 +24,7 @@ public:
 
     Projections getProjections() const override;
     void setProjections(Projections projections_) override;
-    Projections detectProjections() const override;
-    Projections detectProjections(const Strings & root_dir_entries) const override;
-    Projections probeProjections(const Strings & candidate_dir_names) const override;
+    Projections detectProjections(const ProjectionScan & scan) const override;
 
     bool hasProjection(const std::string & dir_name) const override;
     Projection getProjection(const std::string & dir_name) const override;

@@ -5967,7 +5967,7 @@ void MergeTreeData::PartsTemporaryRename::tryRenameAll()
     renamed = true;
     const auto full_path = fs::path(storage.relative_data_path) / source_dir;
 
-    /// Scan the parts root once per disk and reuse it via the detectProjections(entries) overload.
+    /// Scan the parts root once per disk and reuse it via detectProjections({.root_listing = ...}).
     std::map<String, Strings> root_entries_by_disk;
     auto get_root_entries = [&](const DiskPtr & disk) -> const Strings &
     {
@@ -5990,7 +5990,7 @@ void MergeTreeData::PartsTemporaryRename::tryRenameAll()
             /// ordering.
             auto part_storage = std::make_shared<DataPartStorageOnDiskFull>(
                 std::make_shared<SingleDiskVolume>("volume_" + old_dir, disk, 0), full_path, old_dir);
-            part_storage->setProjections(part_storage->detectProjections(get_root_entries(disk)));
+            part_storage->setProjections(part_storage->detectProjections({.root_listing = get_root_entries(disk)}));
             part_storage->setZeroCopyReplicationEnabled(
                 (*storage.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication]);
             part_storage->rename(full_path, new_dir, storage.log.load(), /*remove_new_dir_if_exists=*/ false, /*fsync_part_dir=*/ false);
@@ -6013,7 +6013,7 @@ void MergeTreeData::PartsTemporaryRename::rollBackAll()
     std::exception_ptr first_exception;
     const String full_path = fs::path(storage.relative_data_path) / source_dir;
 
-    /// Scan the parts root once per disk and reuse it via the detectProjections(entries) overload.
+    /// Scan the parts root once per disk and reuse it via detectProjections({.root_listing = ...}).
     std::map<String, Strings> root_entries_by_disk;
     auto get_root_entries = [&](const DiskPtr & disk) -> const Strings &
     {
@@ -6033,7 +6033,7 @@ void MergeTreeData::PartsTemporaryRename::rollBackAll()
         {
             auto part_storage = std::make_shared<DataPartStorageOnDiskFull>(
                 std::make_shared<SingleDiskVolume>("volume_" + new_dir, disk, 0), full_path, new_dir);
-            part_storage->setProjections(part_storage->detectProjections(get_root_entries(disk)));
+            part_storage->setProjections(part_storage->detectProjections({.root_listing = get_root_entries(disk)}));
             part_storage->setZeroCopyReplicationEnabled(
                 (*storage.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication]);
             part_storage->rename(full_path, old_dir, storage.log.load(), /*remove_new_dir_if_exists=*/ false, /*fsync_part_dir=*/ false);

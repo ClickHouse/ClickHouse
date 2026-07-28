@@ -988,34 +988,58 @@ bool DataPartStorageOnDiskBase::existsProjectionDir(const std::string & dir_name
     return volume->getDisk()->existsDirectory(fs::path(root) / dir);
 }
 
-Projections DataPartStorageOnDiskBase::detectProjections() const
+Projections DataPartStorageOnDiskBase::detectProjections(const ProjectionScan & scan) const
 {
-    Strings root_dir_entries;
-    const fs::path flat_root = fs::path(root_path) / fs::path(part_dir).parent_path();
-    auto disk = volume->getDisk();
-    if (disk->existsDirectory(flat_root))
-        for (auto it = disk->iterateDirectory(flat_root); it->isValid(); it->next())
-            root_dir_entries.push_back(it->name());
-
-    return detectProjections(root_dir_entries);
-}
-
-Projections DataPartStorageOnDiskBase::detectProjections(const Strings & root_dir_entries) const
-{
-    Projections detected;
     auto disk = volume->getDisk();
 
-    auto add = [&](std::string_view dir_name, ProjectionStorageFormat format)
+    auto add_to = [&](Projections & out, std::string_view dir_name, ProjectionStorageFormat format)
     {
         auto [name, is_temp] = splitProjectionDirName(dir_name);
-        detected.emplace(String(dir_name), Projection{this, std::move(name), format, is_temp});
+        out.emplace(String(dir_name), Projection{this, std::move(name), format, is_temp});
     };
+
+    /// Manifest-driven probe: resolve only the named candidates by direct stat, no directory listing.
+    if (scan.candidates)
+    {
+        Projections probed;
+        for (const auto & dir_name : *scan.candidates)
+        {
+            if (probed.contains(dir_name))
+                continue;
+
+            /// A nested child shadows a same-named flat sibling.
+            ProjectionStorageFormat format = ProjectionStorageFormat::NONE;
+            if (existsProjectionDir(dir_name, ProjectionStorageFormat::LEGACY_NESTED))
+                format = ProjectionStorageFormat::LEGACY_NESTED;
+            else if (existsProjectionDir(dir_name, ProjectionStorageFormat::FLAT))
+                format = ProjectionStorageFormat::FLAT;
+            if (format == ProjectionStorageFormat::NONE)
+                continue;
+
+            add_to(probed, dir_name, format);
+        }
+        return probed;
+    }
+
+    /// Full discovery across both layouts. Reuse the caller's parts-root listing when given, else list the parts root here.
+    Strings root_dir_entries;
+    if (scan.root_listing)
+        root_dir_entries = *scan.root_listing;
+    else
+    {
+        const fs::path flat_root = fs::path(root_path) / fs::path(part_dir).parent_path();
+        if (disk->existsDirectory(flat_root))
+            for (auto it = disk->iterateDirectory(flat_root); it->isValid(); it->next())
+                root_dir_entries.push_back(it->name());
+    }
+
+    Projections detected;
 
     const fs::path nested_root = fs::path(root_path) / part_dir;
     if (disk->existsDirectory(nested_root))
         for (auto it = disk->iterateDirectory(nested_root); it->isValid(); it->next())
             if (Projection::dirNameType(it->name()) != Projection::Status::None)
-                add(it->name(), ProjectionStorageFormat::LEGACY_NESTED);
+                add_to(detected, it->name(), ProjectionStorageFormat::LEGACY_NESTED);
 
     /// Flat siblings live next to the part dir (handles a part under a subdirectory like "moving/all_1_1_1"); a nested child shadows a
     /// same-named flat sibling.
@@ -1026,33 +1050,10 @@ Projections DataPartStorageOnDiskBase::detectProjections(const Strings & root_di
             continue;
         const std::string stripped = entry.substr(flat_prefix.size());
         if (Projection::dirNameType(stripped) != Projection::Status::None && !detected.contains(stripped))
-            add(stripped, ProjectionStorageFormat::FLAT);
+            add_to(detected, stripped, ProjectionStorageFormat::FLAT);
     }
 
     return detected;
-}
-
-Projections DataPartStorageOnDiskBase::probeProjections(const Strings & candidate_dir_names) const
-{
-    Projections probed;
-    for (const auto & dir_name : candidate_dir_names)
-    {
-        if (probed.contains(dir_name))
-            continue;
-
-        /// A nested child shadows a same-named flat sibling (same rule as detectProjections).
-        ProjectionStorageFormat format = ProjectionStorageFormat::NONE;
-        if (existsProjectionDir(dir_name, ProjectionStorageFormat::LEGACY_NESTED))
-            format = ProjectionStorageFormat::LEGACY_NESTED;
-        else if (existsProjectionDir(dir_name, ProjectionStorageFormat::FLAT))
-            format = ProjectionStorageFormat::FLAT;
-        if (format == ProjectionStorageFormat::NONE)
-            continue;
-
-        auto [name, is_temp] = splitProjectionDirName(dir_name);
-        probed.emplace(dir_name, Projection{this, std::move(name), format, is_temp});
-    }
-    return probed;
 }
 
 Projections DataPartStorageOnDiskBase::getProjections() const
@@ -1600,7 +1601,7 @@ void DataPartStorageOnDiskBase::removeRecursive()
 {
     /// Physical teardown uses disk truth, not the owned cache: every FLAT sibling and temp projection dir on disk must go, ownership is
     /// irrelevant here.
-    const auto detected = detectProjections();
+    const auto detected = detectProjections({});
     executeWriteOperation([&](auto & disk)
     {
         for (const auto & [projection_dir, projection] : detected)
@@ -1616,7 +1617,7 @@ void DataPartStorageOnDiskBase::removeRecursive()
 void DataPartStorageOnDiskBase::removeSharedRecursive(bool keep_in_remote_fs)
 {
     /// See removeRecursive: disk truth, not the owned cache.
-    const auto detected = detectProjections();
+    const auto detected = detectProjections({});
     executeWriteOperation([&](auto & disk)
     {
         for (const auto & [projection_dir, projection] : detected)

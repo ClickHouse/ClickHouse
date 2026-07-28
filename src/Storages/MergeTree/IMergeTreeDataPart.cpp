@@ -1512,7 +1512,7 @@ void IMergeTreeDataPart::loadProjections(
             owned_projection_dirs.push_back(file_name);
     for (const auto & projection : metadata_snapshot->projections)
         owned_projection_dirs.push_back(IDataPartStorage::Projection::dirName(projection.name, false));
-    getDataPartStorage().setProjections(getDataPartStorage().probeProjections(owned_projection_dirs));
+    getDataPartStorage().setProjections(getDataPartStorage().detectProjections({.candidates = owned_projection_dirs}));
 
     for (const auto & projection : metadata_snapshot->projections)
     {
@@ -2674,7 +2674,7 @@ String IMergeTreeDataPart::getRelativePathOfActivePart() const
 void IMergeTreeDataPart::adoptOnDiskProjectionsForDetach()
 {
     IDataPartStorage::Projections adopted;
-    for (const auto & [projection_dir, projection] : getDataPartStorage().detectProjections())
+    for (const auto & [projection_dir, projection] : getDataPartStorage().detectProjections({}))
         if (!projection.is_temp)
             adopted.emplace(projection_dir, projection);
     getDataPartStorage().setProjections(std::move(adopted));
