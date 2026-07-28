@@ -208,6 +208,46 @@ TEST(ValidUntilAttachEncoding, HandEditedSpacedYearZeroFailsToLoad)
     }
 }
 
+TEST(ValidUntilAttachEncoding, HandEditedYearZeroFailsToLoadInEverySpelling)
+{
+    /// An explicit year of `0000` is not tied to the `YYYY-MM-DD` spelling: best-effort parsing accepts
+    /// several date layouts, and every one of them ends up with an internal year field of `0`, which is
+    /// indistinguishable from "the year was not specified" and is therefore replaced with the current
+    /// year. The rejection is reported by the parser itself, so it covers all of them - in particular the
+    /// day-first, slash-separated form, which does not start with the year at all.
+    for (const char * definition :
+         {"ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '01/01/0000';",
+          "ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '01/01/0000 12:00:00';",
+          "ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '01.01.0000 12:00:00 UTC';"})
+    {
+        try
+        {
+            deserializeAccessEntity(definition);
+            FAIL() << "expected the deadline to be rejected: " << definition;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_TRUE(e.message().contains("too far in the past")) << e.message();
+        }
+    }
+
+    /// A day-first date with a non-zero year keeps working, so the rejection above is not over-broad.
+    const auto entity = deserializeAccessEntity("ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '11/06/2040 08:03:20 Z';");
+    const auto * user = typeid_cast<const User *>(entity.get());
+    ASSERT_NE(user, nullptr);
+    ASSERT_EQ(user->authentication_methods.size(), 1u);
+    EXPECT_EQ(user->authentication_methods.front().getValidUntil(), 2223014600);
+
+    /// An all-digit definition is not a date at all on this path: it is the Unix-timestamp form written
+    /// by `AuthenticationData::toAST`, so a compact `'00000101'` is the (long expired) instant 101 rather
+    /// than the 1st of January of year `0000`, and it stays fail-closed without any year handling.
+    const auto numeric_entity = deserializeAccessEntity("ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '00000101';");
+    const auto * numeric_user = typeid_cast<const User *>(numeric_entity.get());
+    ASSERT_NE(numeric_user, nullptr);
+    ASSERT_EQ(numeric_user->authentication_methods.size(), 1u);
+    EXPECT_EQ(numeric_user->authentication_methods.front().getValidUntil(), 101);
+}
+
 TEST(ValidUntilAttachEncoding, DeadlineBeyondMaxIsClampedOnLoad)
 {
     /// A stored deadline above `MAX_VALID_UNTIL_TIME` (`9999-12-31 09:59:59 UTC`, the latest instant

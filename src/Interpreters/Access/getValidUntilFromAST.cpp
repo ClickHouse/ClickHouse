@@ -18,7 +18,6 @@
 
 #include <algorithm>
 #include <ctime>
-#include <string_view>
 
 namespace DB
 {
@@ -170,33 +169,26 @@ namespace DB
         }
         else
         {
-            /// `parseDateTimeBestEffort` cannot represent an explicit year of `0000`: internally, a
-            /// year field of `0` means "not specified", so it is silently replaced with the current
-            /// (or previous) year instead of being kept as-is - see the `!year` fallback in
-            /// `parseDateTimeBestEffortImpl` (src/IO/parseDateTimeBestEffort.cpp). That would make the
-            /// bound check below pass on a deadline the caller never asked for. The documented `VALID
-            /// UNTIL` syntax (docs/en/sql-reference/statements/create/user.md) is always a delimited
-            /// date starting with the year, so a leading `0000` followed by a non-digit unambiguously
-            /// means the year field itself is `0000`; reject it explicitly rather than let it round-trip
-            /// through the "year omitted" fallback.
-            /// `parseDateTimeBestEffort` skips leading spaces before it reads the year field (see the
-            /// space handling in `parseDateTimeBestEffortImpl`), so the check must skip them too;
-            /// otherwise `VALID UNTIL ' 0000-01-01 00:00:00 UTC'` would slip past it and still reach the
-            /// "year omitted" fallback.
-            std::string_view year_field = valid_until_str;
-            while (year_field.starts_with(' '))
-                year_field.remove_prefix(1);
-            if (year_field.starts_with("0000") && (year_field.size() == 4 || !isNumericASCII(year_field[4])))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "VALID UNTIL deadline is too far in the past, the earliest supported deadline is 1900-01-01 00:00:00 UTC");
-
             /// Best-effort parsing honours an explicit time zone in the string, e.g. the `UTC` suffix
             /// produced by the `ON CLUSTER` rewrite (see `formatValidUntilInUTC`).
             const auto & time_zone = DateLUT::instance("");
             const auto & utc_time_zone = DateLUT::instance("UTC");
 
-            parseDateTimeBestEffort(time, in, time_zone, utc_time_zone);
+            /// `parseDateTimeBestEffort` cannot represent an explicit year of `0000`: internally, a year
+            /// field of `0` means "not specified", so it is silently replaced with the current (or
+            /// previous) year instead of being kept as-is - see the `!year` fallback in
+            /// `parseDateTimeBestEffortImpl` (src/IO/parseDateTimeBestEffort.cpp). The bound check below
+            /// would then pass on a deadline the caller never asked for - a live one, years in the future
+            /// of the intended point in time. This concerns every spelling of a zero year the parser
+            /// accepts (`0000-01-01`, `01/01/0000`, `00000101`, ...), so it is detected by the parser
+            /// itself rather than by inspecting the string here.
+            bool has_explicit_zero_year = false;
+            parseDateTimeBestEffort(time, in, time_zone, utc_time_zone, has_explicit_zero_year);
+
+            if (has_explicit_zero_year)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "VALID UNTIL deadline is too far in the past, the earliest supported deadline is 1900-01-01 00:00:00 UTC");
         }
 
         /// Reject an absolute deadline earlier than `MIN_VALID_UNTIL_TIME` (see the constant's
