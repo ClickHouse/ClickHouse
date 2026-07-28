@@ -1155,6 +1155,27 @@ def _is_server_cmdline(cmdline: str, binary: str = "clickhouse") -> bool:
     return len(parts) > 1 and parts[1] in ("server", "--server")
 
 
+# src/Common/setThreadName.h maps ThreadName::CLICKHOUSE_WATCH to this literal,
+# and src/Daemon/BaseDaemon.cpp applies it to the watchdog parent.  15 bytes, so
+# the kernel's 16-byte comm limit does not truncate it.
+WATCHDOG_COMM = "ClickHouseWatch"
+
+
+def _process_comm(pid: int) -> str:
+    """Short process name from /proc/<pid>/comm, or "" when unreadable.
+
+    Never raises: the process can exit between the `ps` scan and this read, and
+    on non-Linux there is no /proc at all.  Both cases mean "no watchdog
+    evidence", which keeps the pid helpers usable on the abort path where an
+    exception would replace the diagnostics we came to collect.
+    """
+    try:
+        with open(f"/proc/{pid}/comm", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
 def get_all_server_pids(args):
     """Get PIDs of all clickhouse-server processes visible to the current user.
 
@@ -1164,17 +1185,28 @@ def get_all_server_pids(args):
     server with `start_new_session=True` or equivalent).  A pgid filter
     silently filters out everything we are meant to find.
 
-    A match that is the parent of another match is the watchdog, not the
-    serving process (src/Daemon/BaseDaemon.cpp): its rename to
+    Two independent watchdog tests, because the watchdog
+    (src/Daemon/BaseDaemon.cpp) can present a server argv: its rename to
     "clickhouse-watchdog" is truncated to the original argv0 length, so for a
-    bare `clickhouse` argv0 it keeps presenting a server argv.  Sibling
-    replicas share a ppid, so this must not be expressed as "drop the lowest
-    pid".
+    bare `clickhouse` argv0 it renames to exactly `clickhouse` while argv[1]
+    (`server`) survives.
+
+    1. It parents another match.  Expressed that way rather than as "drop the
+       lowest pid" because two sibling replicas share a ppid and both must
+       survive.
+    2. Its comm is the watchdog's.  Needed because (1) only holds while the
+       child is alive: after waitpid returns, the parent still logs and only
+       then _exit()s, which is precisely when the abort-path diagnostics run.
+       comm is set independently of argv, but it is inherited across fork, so
+       this is only a tie-breaker: if it would leave nothing at all, keep the
+       matches rather than reporting a crashed server.
     """
     binary = getattr(args, "binary", "clickhouse")
     matches = [p for p in pgrep() if _is_server_cmdline(p[3], binary)]
     parents = {p[1] for p in matches}
-    return [p[0] for p in matches if p[0] not in parents]
+    survivors = [p[0] for p in matches if p[0] not in parents]
+    serving = [pid for pid in survivors if _process_comm(pid) != WATCHDOG_COMM]
+    return serving or survivors
 
 
 def is_asan_build(args):
@@ -1247,8 +1279,11 @@ def print_c_stacktraces(args) -> None:
         )
         return
 
-    server_pid = get_server_pid(args)
+    # One process-table snapshot for both values.  Calling get_server_pid()
+    # here would run a second, independent `ps`; on a changing table the two
+    # could disagree and then no pid gets the "main server" label at all.
     all_pids = get_all_server_pids(args)
+    server_pid = all_pids[0] if all_pids else None
     if not all_pids:
         print(
             colored(
@@ -1299,7 +1334,7 @@ def print_sql_stacktraces(args) -> None:
 
 def get_server_pid(args):
     # Delegate to get_all_server_pids so the two helpers cannot disagree about
-    # which process is the server — they did, which is how a shell wrapper got
+    # which process is the server. They did, which is how a shell wrapper got
     # labelled "main server" while the real server was labelled "replica".
     pids = get_all_server_pids(args)
     if not pids:

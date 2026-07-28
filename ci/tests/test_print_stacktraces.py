@@ -60,10 +60,18 @@ def _set_global(ct, name, value):
     ct["get_all_server_pids"].__globals__[name] = value
 
 
-def _fake_pgrep(rows):
+def _fake_pgrep(*tables):
     # Honour the `command=` substring filter exactly as the real pgrep does, so
     # a caller reintroducing that prefilter is visible to these tests.
+    #
+    # More than one table means the process table CHANGES between calls: call N
+    # sees table N, and the last one repeats.  That is what makes a caller
+    # taking two independent snapshots visible.
+    calls = []
+
     def pgrep(ppid=None, pgid=None, command=None):
+        rows = tables[min(len(calls), len(tables) - 1)]
+        calls.append(1)
         out = list(rows)
         if ppid is not None:
             out = [p for p in out if p[1] == ppid]
@@ -74,6 +82,13 @@ def _fake_pgrep(rows):
         return out
 
     return pgrep
+
+
+def _fake_comm(comms):
+    # Stand in for /proc/<pid>/comm.  Anything not listed is a plain serving
+    # process; the real helper returns "" for an unreadable pid, which is also
+    # "not a watchdog".
+    return lambda pid: comms.get(pid, "clickhouse")
 
 
 def _make_args():
@@ -192,7 +207,9 @@ def test_is_server_cmdline(cmdline, binary, expected):
     assert ct["_is_server_cmdline"](cmdline, binary) is expected, cmdline
 
 
-# [pid, ppid, pgid, cmdline] rows in pid order, as pgrep() returns them.
+# (rows, binary, comms, expected).  Rows are [pid, ppid, pgid, cmdline] in pid
+# order, as pgrep() returns them; comms maps pid -> /proc/<pid>/comm for the
+# processes whose short name differs from the default "clickhouse".
 _GRAPH_CASES = [
     # CI shape: shell wrapper, watchdog (rename is distinct here), serving child.
     (
@@ -202,6 +219,7 @@ _GRAPH_CASES = [
             [702, 701, 600, "clickhouse-server --config-file /etc/clickhouse-server/config.xml"],
         ],
         "clickhouse",
+        {701: "ClickHouseWatch"},
         [702],
     ),
     # Bare multicall: the watchdog rename is truncated to len("clickhouse"), so
@@ -213,6 +231,7 @@ _GRAPH_CASES = [
             [802, 801, 700, "clickhouse server --config-file /etc/clickhouse-server/config.xml"],
         ],
         "clickhouse",
+        {801: "ClickHouseWatch"},
         [802],
     ),
     # No watchdog: the lone server must survive even though it has children.
@@ -222,15 +241,17 @@ _GRAPH_CASES = [
             [901, 900, 700, "some-child-of-the-server"],
         ],
         "clickhouse",
+        {},
         [900],
     ),
-    # Two independent replicas share a ppid — both must survive.
+    # Two independent replicas share a ppid, so both must survive.
     (
         [
             [910, 700, 700, "clickhouse-server --config-file /etc/clickhouse-server/config.xml"],
             [911, 700, 700, "clickhouse-server --config-file /etc/clickhouse-server/config2.xml"],
         ],
         "clickhouse",
+        {},
         [910, 911],
     ),
     # A multicall server whose cmdline does NOT contain "clickhouse-server":
@@ -242,19 +263,130 @@ _GRAPH_CASES = [
             [921, 920, 700, "/opt/ch-build server --config-file /etc/ch/cfg.xml"],
         ],
         "/opt/ch-build",
+        {},
         [921],
+    ),
+    # Orphaned bare-multicall watchdog: the serving child is already reaped, so
+    # the ppid rule alone cannot see it and would report the watchdog as the
+    # server.  This is the window in which the abort-path diagnostics run.
+    (
+        [
+            [930, 700, 700, "clickhouse server --config-file /etc/clickhouse-server/config.xml"],
+            [931, 700, 700, "clickhouse server --config-file /etc/clickhouse-server/config2.xml"],
+        ],
+        "clickhouse",
+        {930: "ClickHouseWatch"},
+        [931],
+    ),
+    # ... and the opposite direction: a genuine watchdog-less server with no
+    # children at all must still be returned (an over-strict rule would drop it).
+    (
+        [
+            [940, 700, 700, "clickhouse server --config-file /etc/clickhouse-server/config.xml"],
+        ],
+        "clickhouse",
+        {},
+        [940],
+    ),
+    # Fail-safe: an orphaned watchdog is the ONLY match.  Reporting nothing
+    # makes print_c_stacktraces claim the server crashed, which is worse than
+    # dumping the watchdog, so the list must not go empty.
+    (
+        [
+            [950, 700, 700, "clickhouse server --config-file /etc/clickhouse-server/config.xml"],
+        ],
+        "clickhouse",
+        {950: "ClickHouseWatch"},
+        [950],
+    ),
+    # comm is inherited across fork, and BaseDaemon renames the parent AFTER
+    # forking, so on a watchdog RESTART iteration the fresh serving child
+    # inherits "ClickHouseWatch".  comm alone would then reject both and fall
+    # back to keeping the watchdog too; the ppid rule is what still resolves it.
+    (
+        [
+            [970, 700, 700, "clickhouse server --config-file /etc/clickhouse-server/config.xml"],
+            [971, 970, 700, "clickhouse server --config-file /etc/clickhouse-server/config.xml"],
+        ],
+        "clickhouse",
+        {970: "ClickHouseWatch", 971: "ClickHouseWatch"},
+        [971],
+    ),
+    # An unreadable /proc/<pid>/comm (the process exited between the ps scan and
+    # the read) is not watchdog evidence.
+    (
+        [
+            [960, 700, 700, "clickhouse server --config-file /etc/clickhouse-server/config.xml"],
+        ],
+        "clickhouse",
+        {960: ""},
+        [960],
     ),
 ]
 
 
-@pytest.mark.parametrize("rows,binary,expected", _GRAPH_CASES)
-def test_get_all_server_pids_process_graph(rows, binary, expected):
+@pytest.mark.parametrize("rows,binary,comms,expected", _GRAPH_CASES)
+def test_get_all_server_pids_process_graph(rows, binary, comms, expected):
     ct = _load_clickhouse_test(require_server=False)
     args = _make_args()
     args.binary = binary
     _set_global(ct, "pgrep", _fake_pgrep(rows))
+    _set_global(ct, "_process_comm", _fake_comm(comms))
 
     assert ct["get_all_server_pids"](args) == expected
+
+
+def test_process_comm_never_raises_on_a_dead_pid():
+    # get_all_server_pids runs on the abort path, where an exception would
+    # replace the diagnostics it exists to collect.  pid 0 is never a process.
+    ct = _load_clickhouse_test(require_server=False)
+    assert ct["_process_comm"](0) == ""
+
+
+@pytest.mark.skipif(
+    not os.path.exists("/proc/self/comm"), reason="no procfs (non-Linux host)"
+)
+def test_process_comm_reads_our_own_comm():
+    # The other direction: the helper must actually read comm, not just swallow
+    # everything.  Our own comm is whatever the test runner is called.
+    ct = _load_clickhouse_test(require_server=False)
+    with open("/proc/self/comm", encoding="utf-8") as f:
+        expected = f.read().strip()
+    assert ct["_process_comm"](os.getpid()) == expected
+    assert expected
+
+
+def test_print_c_stacktraces_labels_one_main_server_on_a_changing_table():
+    # print_c_stacktraces used to call get_server_pid() and get_all_server_pids()
+    # separately, each running its own `ps`.  If the table changes in between
+    # (here: the server picked by the first scan has exited), the labelling loop
+    # finds no pid equal to server_pid and marks EVERY live server "replica" --
+    # the same "no main server in the dump" symptom this PR fixes, from a
+    # different cause.
+    ct = _load_clickhouse_test(require_server=False)
+    args = _make_args()
+    args.binary = "clickhouse"
+    first = [
+        [700, 600, 600, "clickhouse-server --config-file /etc/clickhouse-server/config.xml"],
+        [701, 600, 600, "clickhouse-server --config-file /etc/clickhouse-server/config2.xml"],
+    ]
+    second = [
+        [701, 600, 600, "clickhouse-server --config-file /etc/clickhouse-server/config2.xml"],
+    ]
+    _set_global(ct, "pgrep", _fake_pgrep(first, second))
+    _set_global(ct, "_process_comm", _fake_comm({}))
+    # lldb is not available (and not the point): return a large-enough payload so
+    # the labelled branch is exercised without attaching to anything.
+    _set_global(ct, "get_stacktraces_from_lldb", lambda pid, **kw: "frame " * 400)
+    _set_global(ct, "_append_stacktrace_log", lambda filename, block: None)
+
+    captured = io.StringIO()
+    with redirect_stdout(captured):
+        ct["print_c_stacktraces"](args)
+    output = captured.getvalue()
+
+    assert output.count("from main server process") == 1, output
+    assert "It must have crashed" not in output, output
 
 
 def test_get_server_pid_agrees_with_get_all_server_pids():
@@ -270,6 +402,9 @@ def test_get_server_pid_agrees_with_get_all_server_pids():
         [702, 701, 600, "clickhouse-server --config-file /etc/clickhouse-server/config.xml"],
     ]
     _set_global(ct, "pgrep", _fake_pgrep(rows))
+    # Fake comm too: these pids are low enough to exist on the host, and the
+    # real /proc read would make the case depend on what else is running.
+    _set_global(ct, "_process_comm", _fake_comm({}))
 
     all_pids = ct["get_all_server_pids"](args)
     assert 699 not in all_pids, all_pids
@@ -302,6 +437,7 @@ def test_get_server_memory_fraction_reads_the_server_rss():
         [702, 699, 600, "clickhouse-server --config-file /etc/clickhouse-server/config.xml"],
     ]
     _set_global(ct, "pgrep", _fake_pgrep(rows))
+    _set_global(ct, "_process_comm", _fake_comm({}))
 
     page = os.sysconf("SC_PAGE_SIZE")
     # The shell's RSS is negligible; the server's is 90% of the limit.
