@@ -180,8 +180,7 @@ private:
         return true;
     }
 
-    /// Drain the current batch of answers, refilling it via `consume` until there is a result or the
-    /// input ends.
+    /// Drain the current batch of answers, refilling it via `consume` until there is a result or the input ends.
     bool getNextIndices(SubString & out)
     {
         while (result.size() <= iter_result)
