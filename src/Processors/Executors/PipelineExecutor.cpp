@@ -375,8 +375,18 @@ void PipelineExecutor::finalizeExecution()
                 /// so the totals have to be taken into account by this condition as well.
                 if (read_progress->counters.read_rows || read_progress->counters.read_bytes
                     || read_progress->counters.total_rows_approx || read_progress->counters.total_bytes)
-                    read_progress_callback->onProgress(
-                        read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits);
+                {
+                    /// `onProgress` returns false when a read or time limit with `overflow_mode = 'break'` is
+                    /// reached (with `overflow_mode = 'throw'` it throws instead). The regular execution path in
+                    /// `ExecutionThreadContext::executeJob` cancels the processor in that case, and this replay
+                    /// has to honour the same contract: the drained trailing progress of a `RemoteSource` can be
+                    /// what crosses the threshold, and a processor that is not cancelled is free to keep reading.
+                    /// All worker threads are already joined here, so this only marks the processor as cancelled
+                    /// and lets it release its resources; it cannot interrupt work in progress.
+                    if (!read_progress_callback->onProgress(
+                            read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits))
+                        node.processor()->cancel();
+                }
             }
         }
     }
