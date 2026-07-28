@@ -24,7 +24,9 @@ select multiIf(number % 4 == 0, number, number % 4 == 1, toDate(number), number 
 
 create table test (d Dynamic) engine = Memory;
 insert into test values (NULL), (42), ('42.42'), (true), ('e10');
-select d::Float64 from test;
+-- 'e10' is not a valid number: precise float parsing (the default) rejects it, while the fast algorithm parses it leniently.
+select d::Float64 from test settings precise_float_parsing = 0;
+select d::Float64 from test settings precise_float_parsing = 1; -- {serverError CANNOT_PARSE_NUMBER}
 select d::Nullable(Float64) from test;
 select d::String from test;
 select d::Nullable(String) from test;

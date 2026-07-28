@@ -1,0 +1,174 @@
+---
+sidebarTitle: 'Por que o ClickHouse é tão rápido?'
+description: 'Ele foi projetado para ser rápido. O desempenho na execução de consultas sempre foi uma das principais prioridades durante o processo de desenvolvimento, mas outras características importantes, como facilidade de uso, escalabilidade e segurança, também foram consideradas para que o ClickHouse pudesse se tornar um sistema de produção de fato.'
+title: 'Por que o ClickHouse é tão rápido?'
+slug: /concepts/why-clickhouse-is-so-fast
+keywords: ['Arquitetura', 'VLDB', 'Desempenho']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+Muitos outros fatores contribuem para o desempenho de um banco de dados além da [forma como os dados são organizados](/pt-BR/get-started/about/intro#row-oriented-vs-column-oriented-storage).
+A seguir, explicaremos em mais detalhes o que torna o ClickHouse tão rápido, especialmente em comparação com outros bancos de dados orientados a colunas.
+
+Do ponto de vista da arquitetura, os bancos de dados consistem (no mínimo) em uma camada de armazenamento e uma camada de processamento de consultas. Enquanto a camada de armazenamento é responsável por armazenar, carregar e manter os dados das tabelas, a camada de processamento de consultas executa as consultas dos usuários. Em comparação com outros bancos de dados, o ClickHouse oferece inovações em ambas as camadas que possibilitam inserções extremamente rápidas e consultas SELECT.
+
+<div id="storage-layer-concurrent-inserts-are-isolated-from-each-other">
+  ## Camada de armazenamento: inserções simultâneas são isoladas umas das outras
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/vsykFYns0Ws?si=hE2qnOf6cDKn-otP" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+No ClickHouse, cada tabela é composta por várias &quot;partes de tabela&quot;. Uma [parte](/pt-BR/concepts/core-concepts/parts) é criada sempre que um usuário insere dados na tabela (comando INSERT). Uma consulta é sempre executada sobre todas as partes de tabela que existem no momento em que ela é iniciada.
+
+Para evitar o acúmulo excessivo de partes, o ClickHouse executa em segundo plano uma operação de [mesclagem](/pt-BR/concepts/core-concepts/merges) que combina continuamente várias partes menores em uma única parte maior.
+
+Essa abordagem tem várias vantagens: todo o processamento de dados pode ser [delegado às mesclagens de partes em segundo plano](/pt-BR/get-started/about/why-clickhouse-is-so-fast#storage-layer-merge-time-computation), mantendo as escritas de dados leves e altamente eficientes. Inserções individuais são &quot;locais&quot; no sentido de que não precisam atualizar estruturas de dados globais, isto é, estruturas por tabela. Como resultado, várias inserções simultâneas não exigem sincronização entre si nem sincronização com os dados já existentes na tabela e, portanto, podem ser realizadas quase na velocidade da E/S de disco.
+
+🤿 Aprofunde-se no assunto na seção [On-Disk Format](/pt-BR/concepts/core-concepts/academic-overview#3-1-on-disk-format) da versão web do nosso artigo da VLDB 2024.
+
+<div id="storage-layer-concurrent-inserts-and-selects-are-isolated">
+  ## Camada de armazenamento: inserts e SELECTs concorrentes são isolados
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/dvGlPh2bJFo?si=F3MSALPpe0gAoq5k" title="player de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+As inserções são totalmente isoladas das consultas SELECT, e a mesclagem das partes de dados inseridas ocorre em segundo plano, sem afetar as consultas concorrentes.
+
+🤿 Aprofunde-se neste tópico na seção [Camada de armazenamento](/pt-BR/concepts/core-concepts/academic-overview#3-storage-layer) da versão web do nosso artigo da VLDB 2024.
+
+<div id="storage-layer-merge-time-computation">
+  ## Camada de armazenamento: computação durante a mesclagem
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/_w3zQg695c0?si=g0Wa_Petn-LcmC-6" title="player de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Ao contrário de outros bancos de dados, o ClickHouse mantém as gravações de dados leves e eficientes ao realizar todas as transformações adicionais nos dados durante o processo de [mesclagem](/pt-BR/concepts/core-concepts/merges) em segundo plano. Alguns exemplos incluem:
+
+* **Mesclagens de substituição** que mantêm apenas a versão mais recente de uma linha nas partes de entrada e descartam todas as demais versões. Esses merges podem ser vistos como uma operação de limpeza durante a mesclagem.
+
+* **Mesclagens de agregação** que combinam estados intermediários de agregação na parte de entrada em um novo estado de agregação. Embora isso pareça difícil de entender, na prática, isso apenas implementa uma agregação incremental.
+
+* **Mesclagens TTL (time-to-live)** comprimem, movem ou excluem linhas com base em determinadas regras de tempo.
+
+O objetivo dessas transformações é deslocar o trabalho (computação) do momento em que as consultas do usuário são executadas para o momento da mesclagem. Isso é importante por dois motivos:
+
+Por um lado, as consultas do usuário podem ficar significativamente mais rápidas, às vezes 1000x ou mais, se puderem aproveitar dados &quot;transformados&quot;, por exemplo, dados pré-agregados.
+
+Por outro lado, a maior parte do tempo de execução das mesclagens é consumida pelo carregamento das partes de entrada e pela gravação da parte de saída. O esforço adicional para transformar os dados durante a mesclagem normalmente não afeta muito o tempo de execução das mesclagens. Toda essa mágica é completamente transparente e não afeta o resultado das consultas (além do desempenho).
+
+🤿 Aprofunde-se no assunto na seção [Merge-time Data Transformation](/pt-BR/concepts/core-concepts/academic-overview#3-3-merge-time-data-transformation) da versão web do nosso artigo da VLDB 2024.
+
+<div id="storage-layer-data-pruning">
+  ## Camada de armazenamento: poda de dados
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/UJpVAx7o1aY?si=w-AfhBcRIO-e3Ysj" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Na prática, muitas consultas são repetitivas, ou seja, são executadas sem alterações ou com apenas pequenas modificações (por exemplo, valores de parâmetros diferentes) em intervalos periódicos. Executar as mesmas consultas, ou consultas semelhantes, repetidamente permite adicionar índices ou reorganizar os dados de forma que as consultas frequentes possam acessá-los mais rapidamente. Essa abordagem também é conhecida como &quot;poda de dados&quot;, e o ClickHouse oferece três técnicas para isso:
+
+1. [Índices de chave primária](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design), que definem a ordem de ordenação dos dados da tabela. Uma chave primária bem escolhida permite avaliar filtros (como as cláusulas WHERE na consulta acima) usando buscas binárias rápidas em vez de varreduras completas de colunas. Em termos mais técnicos, o tempo de execução dessas varreduras passa a ser logarítmico, em vez de linear em relação ao volume de dados.
+
+2. [Projeções de tabela](/pt-BR/reference/statements/alter/projection), que funcionam como versões alternativas e internas de uma tabela, armazenando os mesmos dados, mas ordenados por uma chave primária diferente. As projeções podem ser úteis quando há mais de uma condição de filtro frequente.
+
+3. [Índices de salto](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes), que incorporam estatísticas adicionais dos dados às colunas, por exemplo, os valores mínimo e máximo de uma coluna, o conjunto de valores únicos etc. Os índices de salto são ortogonais às chaves primárias e às projeções de tabela e, dependendo da distribuição dos dados na coluna, podem acelerar bastante a avaliação de filtros.
+
+As três técnicas buscam ignorar o máximo possível de linhas durante leituras completas de colunas, porque a forma mais rápida de ler dados é simplesmente não lê-los.
+
+🤿 Aprofunde-se no tema na seção [Data Pruning](/pt-BR/concepts/core-concepts/academic-overview#3-2-data-pruning) da versão web do nosso artigo da VLDB 2024.
+
+<div id="storage-layer-data-compression">
+  ## Camada de armazenamento: compressão de dados
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/MH10E3rVvnM?si=duWmS_OatCLx-akH" title="Player de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Além disso, a camada de armazenamento do ClickHouse também pode, opcionalmente, comprimir os dados brutos da tabela usando diferentes codecs.
+
+Bancos de dados colunares são particularmente adequados para esse tipo de compressão, pois valores do mesmo tipo e com a mesma distribuição de dados ficam armazenados juntos.
+
+Os usuários podem [especificar](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema) que as colunas sejam comprimidas com vários algoritmos genéricos de compressão (como ZSTD) ou codecs especializados, por exemplo, Gorilla e FPC para valores de ponto flutuante, Delta e GCD para valores inteiros, ou até mesmo AES como codec de criptografia.
+
+A compressão de dados não apenas reduz o tamanho de armazenamento das tabelas do banco de dados, mas, em muitos casos, também melhora o desempenho das consultas, já que os discos locais e a E/S de rede costumam ser limitados por baixa vazão.
+
+🤿 Saiba mais na seção [On-Disk Format](/pt-BR/concepts/core-concepts/academic-overview#3-1-on-disk-format) da versão web do nosso artigo da VLDB 2024.
+
+<div id="state-of-the-art-query-processing-layer">
+  ## Camada de processamento de consultas de última geração
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/O5qecdQ7Y18?si=XVtOIuVd8NLbqyox" title="Player de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Por fim, o ClickHouse usa uma camada vetorizada de processamento de consultas que paraleliza a execução das consultas ao máximo para aproveitar todos os recursos e obter máxima velocidade e eficiência.
+
+&quot;Vetorização&quot; significa que os operadores do plano de consulta passam as linhas de resultado intermediárias em lotes, em vez de linha por linha. Isso melhora o aproveitamento dos caches de CPU e permite que os operadores apliquem instruções SIMD para processar vários valores de uma só vez. Na verdade, muitos operadores existem em várias versões - uma para cada geração de conjuntos de instruções SIMD. O ClickHouse seleciona automaticamente a versão mais recente e mais rápida com base nas capacidades do hardware em que está sendo executado.
+
+Os sistemas modernos têm dezenas de núcleos de CPU. Para usar todos os núcleos, o ClickHouse desdobra o plano de consulta em várias vias de execução, normalmente uma por núcleo. Cada via processa um intervalo distinto dos dados da tabela. Dessa forma, o desempenho do banco de dados escala &quot;verticalmente&quot; com o número de núcleos disponíveis.
+
+Se um único nó se tornar pequeno demais para armazenar os dados da tabela, mais nós poderão ser adicionados para formar um cluster. As tabelas podem ser divididas (&quot;sharded&quot;) e distribuídas entre os nós. O ClickHouse executará consultas em todos os nós que armazenam dados da tabela e, assim, escalará &quot;horizontalmente&quot; com o número de nós disponíveis.
+
+🤿 Saiba mais na seção [Camada de Processamento de Consultas](/pt-BR/concepts/core-concepts/academic-overview#4-query-processing-layer) da versão web do nosso artigo da VLDB 2024.
+
+<div id="meticulous-attention-to-detail">
+  ## Atenção meticulosa aos detalhes
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/dccGLSuYWy0?si=rQ-Jp-z5Ik_-Rb8S" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+> **&quot;ClickHouse is a freak system - you guys have 20 versions of a hash table. You guys have all these amazing things where most systems will have one hash table** **...** **ClickHouse has this amazing performance because it has all these specialized components&quot;** [Andy Pavlo, professor de bancos de dados na CMU](https://www.youtube.com/watch?v=Vy2t_wZx4Is\&t=3579s)
+
+O que distingue o ClickHouse [dos demais](https://www.youtube.com/watch?v=CAS2otEoerM) é sua atenção meticulosa à otimização de baixo nível. Criar um banco de dados que simplesmente funcione é uma coisa, mas projetá-lo para entregar velocidade em diversos tipos de consulta, estruturas de dados, distribuições e configurações de índice é onde brilha a arte desse &quot;[freak system](https://youtu.be/Vy2t_wZx4Is?si=K7MyzsBBxgmGcuGU\&t=3579)&quot;.
+
+**Tabelas hash.** Vamos usar uma tabela hash como exemplo. Tabelas hash são estruturas de dados fundamentais usadas em junções e agregações. Como programador, é preciso considerar estas decisões de projeto:
+
+* Qual função hash escolher,
+* Como resolver colisões: [endereçamento aberto](https://en.wikipedia.org/wiki/Open_addressing) ou [encadeamento](https://en.wikipedia.org/wiki/Hash_table#Separate_chaining),
+* O layout de memória: um array para chaves e valores ou arrays separados?
+* O fator de preenchimento: quando e como redimensionar? Como mover valores durante o redimensionamento?
+* Exclusões: a tabela hash deve permitir remover entradas?
+
+Uma tabela hash padrão fornecida por uma biblioteca de terceiros funcionaria, mas não seria rápida. Alto desempenho exige benchmarking e experimentação meticulosos.
+
+A [implementação de tabela hash no ClickHouse](https://clickhouse.com/blog/hash-tables-in-clickhouse-and-zero-cost-abstractions) escolhe uma entre **mais de 30 variantes pré-compiladas de tabela hash com base** nas características específicas da consulta e dos dados.
+
+**Algoritmos.** O mesmo vale para os algoritmos. Por exemplo, em ordenação, você pode considerar:
+
+* O que será ordenado: números, tuplas, strings ou estruturas?
+* Os dados estão na RAM?
+* A ordenação precisa ser estável?
+* Todos os dados devem ser ordenados ou uma ordenação parcial basta?
+
+Algoritmos que exploram as características dos dados geralmente têm desempenho melhor do que suas contrapartes genéricas. Se essas características não forem conhecidas de antemão, o sistema pode testar várias implementações e escolher a que funciona melhor em tempo de execução. Para ver um exemplo, consulte o [artigo sobre como a descompressão LZ4 é implementada no ClickHouse](https://habr.com/en/company/yandex/blog/457612/).
+
+🤿 Aprofunde-se no tema na seção [Holistic Performance Optimization](/pt-BR/concepts/core-concepts/academic-overview#4-4-holistic-performance-optimization) da versão web do nosso artigo da VLDB 2024.
+
+<div id="vldb-2024-paper">
+  ## Artigo da VLDB 2024
+</div>
+
+Em agosto de 2024, tivemos nosso primeiro artigo de pesquisa aceito e publicado na VLDB.
+A VLDB é uma conferência internacional sobre bancos de dados muito grandes e é amplamente reconhecida como uma das principais conferências na área de gerenciamento de dados.
+Entre as centenas de submissões, a VLDB geralmente tem uma taxa de aceitação de ~20%.
+
+Você pode ler o [PDF do artigo](https://www.vldb.org/pvldb/vol17/p3731-schulze.pdf) ou nossa [versão web](/pt-BR/concepts/core-concepts/academic-overview), que traz uma descrição concisa dos componentes arquiteturais e de design de sistemas mais interessantes do ClickHouse que o tornam tão rápido.
+
+Alexey Milovidov, nosso CTO e criador do ClickHouse, apresentou o artigo (slides [aqui](https://raw.githubusercontent.com/ClickHouse/clickhouse-presentations/master/2024-vldb/VLDB_2024_presentation.pdf)), seguido de uma sessão de perguntas e respostas (que terminou rápido por falta de tempo!).
+Você pode assistir à gravação da apresentação aqui:
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/7QXKBKDOkJE?si=5uFerjqPSXQWqDkF" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>

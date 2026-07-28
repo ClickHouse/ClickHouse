@@ -2,6 +2,8 @@
 
 #include <Core/Types.h>
 
+#include <map>
+
 
 namespace DB
 {
@@ -37,6 +39,9 @@ public:
     virtual const ReadSettings & getReadSettings() const = 0;
     virtual const WriteSettings & getWriteSettings() const = 0;
     virtual size_t getWriteBufferSize() const = 0;
+
+    /// Settings effectively used by this reader (e.g. S3 request settings). Empty if none.
+    virtual std::map<String, String> getSerializedSettings() const { return {}; }
 };
 
 /// Represents operations of storing to disk or uploading for writing a backup.
@@ -76,6 +81,9 @@ public:
     virtual const ReadSettings & getReadSettings() const = 0;
     virtual const WriteSettings & getWriteSettings() const = 0;
     virtual size_t getWriteBufferSize() const = 0;
+
+    /// Settings effectively used by this writer (e.g. S3 request settings). Empty if none.
+    virtual std::map<String, String> getSerializedSettings() const { return {}; }
 };
 
 }

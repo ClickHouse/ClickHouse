@@ -1,0 +1,55 @@
+---
+description: 'Documentation des modes de codage couleur par colonne dans l’interface Web SQL intégrée (`/play`)'
+sidebarTitle: 'Codage couleur de l’interface Web'
+slug: /interfaces/web-ui-color-coding
+title: 'Codage couleur de l’interface Web'
+doc_type: 'reference'
+sidebar: false
+---
+
+L’interface Web SQL intégrée (`play.html`, accessible via le chemin [`/play`](/fr/concepts/features/interfaces/http) sur n’importe quel port HTTP de ClickHouse) peut colorer les cellules de résultat afin de repérer plus facilement, d’un coup d’œil, les tendances dans une colonne. Chaque colonne dispose de son propre mode de codage couleur, activable indépendamment.
+
+<div id="switching-the-mode">
+  ## Changer de mode
+</div>
+
+Une icône 🌈 apparaît à droite de l’en-tête de chaque colonne. Cliquez dessus pour faire défiler les modes disponibles de la colonne. Sur les appareils dotés d’un pointeur permettant le survol (une souris), l’icône n’est affichée que lorsque l’en-tête est survolé, afin de rester discrète le reste du temps ; sur les appareils tactiles et autres appareils à pointeur grossier, qui ne prennent pas en charge le survol, l’icône est toujours affichée afin de pouvoir être touchée directement.
+
+L’ensemble des modes proposés par une colonne dépend de son type :
+
+* Les colonnes numériques et les colonnes `Date`/`DateTime`/`Date32`/`DateTime64` défilent successivement entre `bar` → `heatmap` → `categorical` → `none`.
+* Toutes les autres colonnes basculent entre `none` et `categorical`.
+
+Le mode par défaut est `bar` pour les colonnes numériques et `none` pour toutes les autres colonnes, y compris les colonnes de date et d’heure.
+
+<div id="modes">
+  ## Modes
+</div>
+
+* **`bar`** — dessine une barre horizontale dans la cellule, proportionnelle à la valeur. Pour les colonnes numériques, la barre part d&#39;une base zéro ; pour les colonnes `Date`/`DateTime`, elle couvre plutôt la plage `min`..`max` de la colonne, puisqu&#39;une base zéro n&#39;a pas de sens pour des timestamps.
+* **`heatmap`** — remplit tout l&#39;arrière-plan de la cellule avec une couleur qui représente la valeur mise à l&#39;échelle entre le minimum et le maximum de la colonne.
+* **`categorical`** — remplit l&#39;arrière-plan de la cellule avec une couleur dérivée du hachage de la valeur de la cellule, de sorte que les valeurs identiques reçoivent la même couleur et les valeurs différentes des couleurs différentes. Cela fonctionne pour tout type de colonne.
+* **`none`** — aucun codage couleur.
+
+Les colonnes `Date`, `DateTime`, `Date32` et `DateTime64` sont colorées d&#39;après leur valeur temporelle, interprétée en UTC afin que l&#39;échelle soit indépendante du fuseau horaire du navigateur de l&#39;utilisateur.
+
+Les couleurs d&#39;arrière-plan `heatmap` et `categorical` utilisent l&#39;espace colorimétrique `oklch` : seule la teinte varie, tandis que la luminosité et la chroma restent fixes pour chaque thème, afin que le texte de la cellule reste lisible dans les thèmes clair et sombre. L&#39;arrière-plan remplit toute la cellule même lorsqu&#39;une ligne s&#39;étend sur plusieurs lignes.
+
+<div id="categorical-emphasis">
+  ## Mise en évidence catégorielle de la sélection
+</div>
+
+En mode `categorical`, lorsque vous sélectionnez une cellule, les autres cellules qui ont la même valeur sont mises en évidence avec une police plus grasse et une couleur de texte à contraste maximal (blanc pur dans le thème sombre, noir pur dans le thème clair). La cellule sélectionnée elle-même ne l’est pas. Il est ainsi facile de repérer où cette valeur apparaît ailleurs dans la colonne.
+
+<div id="persistence">
+  ## Persistance
+</div>
+
+Les modes choisis sont mémorisés pour chaque colonne dans l’URL de la page et dans l’historique du navigateur, de sorte qu’un rechargement de la page, le partage du lien ou une navigation en arrière et en avant les préservent. Seuls les choix autres que ceux par défaut sont enregistrés, afin de conserver une URL et un historique compacts.
+
+<div id="limitations">
+  ## Limites
+</div>
+
+* La présentation verticale (transposée) sur une seule ligne n’affiche pas de codage couleur.
+* Les différences de `DateTime64(9)` inférieures à une microseconde ne sont pas différenciées dans l’échelle de couleurs, ce qui n’est pas visuellement pertinent pour un dégradé.

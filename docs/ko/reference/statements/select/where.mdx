@@ -1,0 +1,478 @@
+---
+description: 'ClickHouse의 `WHERE` 절 문서'
+sidebarTitle: 'WHERE'
+slug: /sql-reference/statements/select/where
+title: 'WHERE 절'
+doc_type: 'reference'
+keywords: ['WHERE']
+---
+
+`WHERE` 절을 사용하면 `SELECT`의 [`FROM`](/ko/reference/statements/select/from) 절에서 가져오는 데이터를 필터링할 수 있습니다.
+
+`WHERE` 절이 있으면 그 뒤에는 `UInt8` 유형의 표현식이 와야 합니다.
+이 표현식의 평가 결과가 `0`인 행은 이후 처리나 결과에서 제외됩니다.
+
+`WHERE` 절 뒤의 표현식은 [비교](/ko/reference/operators/index#comparison-operators) 및 [논리 연산자](/ko/reference/operators/index#operators-for-working-with-data-sets), 또는 여러 [일반 함수](/ko/reference/functions/regular-functions/regular-functions-index)와 함께 자주 사용됩니다.
+
+기반 테이블 엔진이 이를 지원하면 `WHERE` 표현식은 인덱스와 파티션 프루닝을 활용할 수 있도록 평가됩니다.
+
+<Info>
+  **PREWHERE**
+
+  [`PREWHERE`](/ko/reference/statements/select/prewhere)라는 필터링 최적화도 있습니다.
+  Prewhere는 필터링을 더 효율적으로 적용하기 위한 최적화입니다.
+  `PREWHERE` 절을 명시적으로 지정하지 않아도 기본적으로 활성화됩니다.
+</Info>
+
+<div id="testing-for-null">
+  ## `NULL` 검사하기
+</div>
+
+값이 [`NULL`](/ko/reference/syntax#null)인지 확인해야 하는 경우 다음을 사용합니다:
+
+* [`IS NULL`](/ko/reference/operators/index#is_null) 또는 [`isNull`](/ko/reference/functions/regular-functions/functions-for-nulls#isNull)
+* [`IS NOT NULL`](/ko/reference/operators/index#is_not_null)   또는 [`isNotNull`](/ko/reference/functions/regular-functions/functions-for-nulls#isNotNull)
+
+그렇지 않으면 `NULL`이 포함된 표현식은 절대 조건을 만족하지 않습니다.
+
+<div id="filtering-data-with-logical-operators">
+  ## 논리 연산자를 사용한 데이터 필터링
+</div>
+
+여러 조건을 결합할 때는 `WHERE` 절과 함께 다음 [논리 함수](/ko/reference/functions/regular-functions/logical-functions#and)를 사용할 수 있습니다:
+
+* [`and()`](/ko/reference/functions/regular-functions/logical-functions#and) 또는 `AND`
+* [`not()`](/ko/reference/functions/regular-functions/logical-functions#not) 또는 `NOT`
+* [`or()`](/ko/reference/functions/regular-functions/logical-functions#or) 또는 `NOT`
+* [`xor()`](/ko/reference/functions/regular-functions/logical-functions#xor)
+
+<div id="using-uint8-columns-as-a-condition">
+  ## 조건으로 UInt8 컬럼 사용하기
+</div>
+
+ClickHouse에서는 `UInt8` 컬럼을 불리언 조건으로 직접 사용할 수 있습니다. 이때 `0`은 `false`이고, 0이 아닌 모든 값(일반적으로 `1`)은 `true`입니다.
+이에 대한 예시는 [아래](#example-uint8-column-as-condition) 섹션에 있습니다.
+
+<div id="using-comparison-operators">
+  ## 비교 연산자 사용
+</div>
+
+다음 [비교 연산자](/ko/reference/operators/index#comparison-operators)를 사용할 수 있습니다:
+
+| 연산자                     | 함수                      | 설명              | 예시                              |
+| ----------------------- | ----------------------- | --------------- | ------------------------------- |
+| `a = b`                 | `equals(a, b)`          | 같음              | `price = 100`                   |
+| `a == b`                | `equals(a, b)`          | 같음(대체 구문)       | `price == 100`                  |
+| `a != b`                | `notEquals(a, b)`       | 같지 않음           | `category != 'Electronics'`     |
+| `a <> b`                | `notEquals(a, b)`       | 같지 않음(대체 구문)    | `category <> 'Electronics'`     |
+| `a < b`                 | `less(a, b)`            | 작음              | `price < 200`                   |
+| `a <= b`                | `lessOrEquals(a, b)`    | 작거나 같음          | `price <= 200`                  |
+| `a > b`                 | `greater(a, b)`         | 큼               | `price > 500`                   |
+| `a >= b`                | `greaterOrEquals(a, b)` | 크거나 같음          | `price >= 500`                  |
+| `a LIKE s`              | `like(a, b)`            | 패턴 매칭(대소문자 구분)  | `name LIKE '%top%'`             |
+| `a NOT LIKE s`          | `notLike(a, b)`         | 패턴 불일치(대소문자 구분) | `name NOT LIKE '%top%'`         |
+| `a ILIKE s`             | `ilike(a, b)`           | 패턴 매칭(대소문자 미구분) | `name ILIKE '%LAPTOP%'`         |
+| `a BETWEEN b AND c`     | `a >= b AND a <= c`     | 범위 확인(경계값 포함)   | `price BETWEEN 100 AND 500`     |
+| `a NOT BETWEEN b AND c` | `a < b OR a > c`        | 범위 밖 확인         | `price NOT BETWEEN 100 AND 500` |
+
+<div id="pattern-matching-and-conditional-expressions">
+  ## 패턴 매칭과 조건 표현식
+</div>
+
+비교 연산자 외에도 `WHERE` 절에서 패턴 매칭과 조건 표현식을 사용할 수 있습니다.
+
+| 기능          | 구문                             | 대소문자 구분 | 성능   | 적합한 용도               |
+| ----------- | ------------------------------ | ------- | ---- | -------------------- |
+| `LIKE`      | `col LIKE '%pattern%'`         | 예       | 빠름   | 대소문자를 구분하는 정확한 패턴 매칭 |
+| `ILIKE`     | `col ILIKE '%pattern%'`        | 아니요     | 더 느림 | 대소문자를 구분하지 않는 검색     |
+| `if()`      | `if(cond, a, b)`               | 해당 없음   | 빠름   | 단순한 이진 조건            |
+| `multiIf()` | `multiIf(c1, r1, c2, r2, def)` | 해당 없음   | 빠름   | 여러 조건                |
+| `CASE`      | `CASE WHEN ... THEN ... END`   | 해당 없음   | 빠름   | SQL 표준 조건 처리         |
+
+사용 예시는 [&quot;패턴 매칭과 조건 표현식&quot;](#examples-pattern-matching-and-conditional-expressions)을 참조하십시오.
+
+<div id="expressions-with-literals-columns-subqueries">
+  ## 리터럴, 컬럼 또는 서브쿼리가 있는 표현식
+</div>
+
+`WHERE` 절 뒤에 오는 표현식에는 [리터럴](/ko/reference/syntax#literals), 컬럼 또는 서브쿼리도 포함될 수 있습니다. 서브쿼리는 조건에 사용할 값을 반환하는 중첩된 `SELECT` SQL 문입니다.
+
+| 유형       | 정의         | 평가       | 성능        | 예시                         |
+| -------- | ---------- | -------- | --------- | -------------------------- |
+| **리터럴**  | 고정된 상수 값   | 쿼리 작성 시점 | 가장 빠름     | `WHERE price > 100`        |
+| **컬럼**   | 테이블 데이터 참조 | 각 행마다    | 빠름        | `WHERE price > cost`       |
+| **서브쿼리** | 중첩된 SELECT | 쿼리 실행 시점 | 경우에 따라 다름 | `WHERE id IN (SELECT ...)` |
+
+복잡한 조건에서는 리터럴, 컬럼, 서브쿼리를 함께 사용할 수 있습니다:
+
+```sql
+-- 리터럴 + 컬럼
+WHERE price > 100 AND category = 'Electronics'
+
+-- 컬럼 + 서브쿼리
+WHERE price > (SELECT AVG(price) FROM products) AND in_stock = true
+
+-- 리터럴 + 컬럼 + 서브쿼리
+WHERE category = 'Electronics' 
+  AND price < 500
+  AND id IN (SELECT product_id FROM bestsellers)
+
+-- 세 가지 모두 논리 연산자와 함께 사용
+WHERE (price > 100 OR category IN (SELECT category FROM featured))
+  AND in_stock = true
+  AND name LIKE '%Special%'
+```
+
+<div id="examples">
+  ## 예시
+</div>
+
+<div id="examples-testing-for-null">
+  ### `NULL` 검사하기
+</div>
+
+`NULL` 값이 포함된 쿼리:
+
+```sql
+CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE=MergeTree() ORDER BY x;
+INSERT INTO t_null VALUES (1, NULL), (2, 3);
+
+SELECT * FROM t_null WHERE y IS NULL;
+SELECT * FROM t_null WHERE y != 0;
+```
+
+```response
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+└───┴──────┘
+┌─x─┬─y─┐
+│ 2 │ 3 │
+└───┴───┘
+```
+
+<div id="example-filtering-with-logical-operators">
+  ### 논리 연산자를 사용한 데이터 필터링
+</div>
+
+다음 테이블과 데이터를 살펴보겠습니다:
+
+```sql
+CREATE TABLE products (
+    id UInt32,
+    name String,
+    price Float32,
+    category String,
+    in_stock Bool
+) ENGINE = MergeTree()
+ORDER BY id;
+
+INSERT INTO products VALUES
+(1, 'Laptop', 999.99, 'Electronics', true),
+(2, 'Mouse', 25.50, 'Electronics', true),
+(3, 'Desk', 299.00, 'Furniture', false),
+(4, 'Chair', 150.00, 'Furniture', true),
+(5, 'Monitor', 350.00, 'Electronics', true),
+(6, 'Lamp', 45.00, 'Furniture', false);
+```
+
+**1. `AND` - 두 조건이 모두 참이어야 합니다:**
+
+```sql
+SELECT * FROM products
+WHERE category = 'Electronics' AND price < 500;
+```
+
+```response
+   ┌─id─┬─name────┬─price─┬─category────┬─in_stock─┐
+1. │  2 │ Mouse   │  25.5 │ Electronics │ true     │
+2. │  5 │ Monitor │   350 │ Electronics │ true     │
+   └────┴─────────┴───────┴─────────────┴──────────┘
+```
+
+**2. `OR` - 하나 이상의 조건이 참이어야 합니다:**
+
+```sql
+SELECT * FROM products
+WHERE category = 'Furniture' OR price > 500;
+```
+
+```response
+   ┌─id─┬─name───┬──price─┬─category────┬─in_stock─┐
+1. │  1 │ Laptop │ 999.99 │ Electronics │ true     │
+2. │  3 │ Desk   │    299 │ Furniture   │ false    │
+3. │  4 │ Chair  │    150 │ Furniture   │ true     │
+4. │  6 │ Lamp   │     45 │ Furniture   │ false    │
+   └────┴────────┴────────┴─────────────┴──────────┘
+```
+
+**3. `NOT` - 조건을 부정합니다:**
+
+```sql
+SELECT * FROM products
+WHERE NOT in_stock;
+```
+
+```response
+   ┌─id─┬─name─┬─price─┬─category──┬─in_stock─┐
+1. │  3 │ Desk │   299 │ Furniture │ false    │
+2. │  6 │ Lamp │    45 │ Furniture │ false    │
+   └────┴──────┴───────┴───────────┴──────────┘
+```
+
+**4. `XOR` - 정확히 하나의 조건만 참이어야 합니다(둘 다 참이면 안 됨):**
+
+```sql
+SELECT *
+FROM products
+WHERE xor(price > 200, category = 'Electronics')
+```
+
+```response
+   ┌─id─┬─name──┬─price─┬─category────┬─in_stock─┐
+1. │  2 │ Mouse │  25.5 │ Electronics │ true     │
+2. │  3 │ Desk  │   299 │ Furniture   │ false    │
+   └────┴───────┴───────┴─────────────┴──────────┘
+```
+
+**5. 여러 연산자 조합하기:**
+
+```sql
+SELECT * FROM products
+WHERE (category = 'Electronics' OR category = 'Furniture')
+  AND in_stock = true
+  AND price < 400;
+```
+
+```response
+   ┌─id─┬─name────┬─price─┬─category────┬─in_stock─┐
+1. │  2 │ Mouse   │  25.5 │ Electronics │ true     │
+2. │  4 │ Chair   │   150 │ Furniture   │ true     │
+3. │  5 │ Monitor │   350 │ Electronics │ true     │
+   └────┴─────────┴───────┴─────────────┴──────────┘
+```
+
+**6. 함수 구문 사용하기:**
+
+```sql
+SELECT * FROM products
+WHERE and(or(category = 'Electronics', price > 100), in_stock);
+```
+
+```response
+   ┌─id─┬─name────┬──price─┬─category────┬─in_stock─┐
+1. │  1 │ Laptop  │ 999.99 │ Electronics │ true     │
+2. │  2 │ Mouse   │   25.5 │ Electronics │ true     │
+3. │  4 │ Chair   │    150 │ Furniture   │ true     │
+4. │  5 │ Monitor │    350 │ Electronics │ true     │
+   └────┴─────────┴────────┴─────────────┴──────────┘
+```
+
+SQL 키워드 구문(`AND`, `OR`, `NOT`, `XOR`)이 일반적으로 가독성이 더 좋지만, 함수 구문은 복잡한 표현식이나 동적 쿼리를 작성할 때 유용할 수 있습니다.
+
+<div id="example-uint8-column-as-condition">
+  ### 조건으로 UInt8 컬럼 사용하기
+</div>
+
+앞선 [예시](#example-filtering-with-logical-operators)의 테이블을 사용하면 컬럼 이름 자체를 조건으로 직접 사용할 수 있습니다:
+
+```sql
+SELECT * FROM products
+WHERE in_stock
+```
+
+```response
+   ┌─id─┬─name────┬──price─┬─category────┬─in_stock─┐
+1. │  1 │ Laptop  │ 999.99 │ Electronics │ true     │
+2. │  2 │ Mouse   │   25.5 │ Electronics │ true     │
+3. │  4 │ Chair   │    150 │ Furniture   │ true     │
+4. │  5 │ Monitor │    350 │ Electronics │ true     │
+   └────┴─────────┴────────┴─────────────┴──────────┘
+```
+
+<div id="example-using-comparison-operators">
+  ### 비교 연산자 사용
+</div>
+
+아래 예시에서는 위의 [예시](#example-filtering-with-logical-operators)에 있는 테이블과 데이터를 사용합니다. 간결성을 위해 결과는 생략합니다.
+
+**1. `true`에 대한 명시적 동등 비교(`= 1` 또는 `= true`):**
+
+```sql
+SELECT * FROM products
+WHERE in_stock = true;
+-- 또는
+WHERE in_stock = 1;
+```
+
+**2. `false`와 명시적으로 같음을 비교(`= 0` 또는 `= false`):**
+
+```sql
+SELECT * FROM products
+WHERE in_stock = false;
+-- 또는
+WHERE in_stock = 0;
+```
+
+**3. 부등 조건(`!= 0` 또는 `!= false`):**
+
+```sql
+SELECT * FROM products
+WHERE in_stock != false;
+-- 또는
+WHERE in_stock != 0;
+```
+
+**4. 보다 큼:**
+
+```sql
+SELECT * FROM products
+WHERE in_stock > 0;
+```
+
+**5. 작거나 같음:**
+
+```sql
+SELECT * FROM products
+WHERE in_stock <= 0;
+```
+
+**6. 다른 조건과 함께 사용하기:**
+
+```sql
+SELECT * FROM products
+WHERE in_stock AND price < 400;
+```
+
+**7. `IN` 연산자 사용:**
+
+아래 예시에서 `(1, true)`는 [tuple](/ko/reference/data-types/tuple)입니다.
+
+```sql
+SELECT * FROM products
+WHERE in_stock IN (1, true);
+```
+
+이 작업을 수행할 때 [배열](/ko/reference/data-types/array)도 사용할 수 있습니다:
+
+```sql
+SELECT * FROM products
+WHERE in_stock IN [1, true];
+```
+
+**8. 비교 방식 혼용:**
+
+```sql
+SELECT * FROM products
+WHERE category = 'Electronics' AND in_stock = true;
+```
+
+<div id="examples-pattern-matching-and-conditional-expressions">
+  ### 패턴 매칭과 조건 표현식
+</div>
+
+아래 예시에서는 위의 [예시](#example-filtering-with-logical-operators)에서 사용한 테이블과 데이터를 사용합니다. 간단히 보여주기 위해 결과는 생략했습니다.
+
+<div id="like-examples">
+  #### LIKE 예시
+</div>
+
+```sql
+-- 이름에 'o'가 포함된 제품 찾기
+SELECT * FROM products WHERE name LIKE '%o%';
+-- 결과: Laptop, Monitor
+
+-- 'L'로 시작하는 제품 찾기
+SELECT * FROM products WHERE name LIKE 'L%';
+-- 결과: Laptop, Lamp
+
+-- 정확히 4글자인 제품 찾기
+SELECT * FROM products WHERE name LIKE '____';
+-- 결과: Desk, Lamp
+```
+
+<div id="ilike-examples">
+  #### ILIKE 예시
+</div>
+
+```sql
+-- 'LAPTOP'에 대한 대소문자를 구분하지 않는 검색
+SELECT * FROM products WHERE name ILIKE '%laptop%';
+-- 결과: Laptop
+
+-- 대소문자를 구분하지 않는 접두사 일치
+SELECT * FROM products WHERE name ILIKE 'l%';
+-- 결과: Laptop, Lamp
+```
+
+<div id="if-examples">
+  #### IF 예시
+</div>
+
+```sql
+-- 카테고리별 다른 가격 임계값
+SELECT * FROM products
+WHERE if(category = 'Electronics', price < 500, price < 200);
+-- 결과: Mouse, Chair, Monitor
+-- (Electronics 중 $500 미만 OR Furniture 중 $200 미만)
+
+-- 재고 상태에 따른 필터
+SELECT * FROM products
+WHERE if(in_stock, price > 100, true);
+-- 결과: Laptop, Chair, Monitor, Desk, Lamp
+-- ($100 초과 재고 보유 항목 OR 재고 없는 모든 항목)
+```
+
+<div id="multiif-examples">
+  #### multiIf 예시
+</div>
+
+```sql
+-- 여러 카테고리 기반 조건
+SELECT * FROM products
+WHERE multiIf(
+    category = 'Electronics', price < 600,
+    category = 'Furniture', in_stock = true,
+    false
+);
+-- 결과: Mouse, Monitor, Chair
+-- (Electronics < $600 또는 재고 있는 Furniture)
+
+-- 단계별 필터링
+SELECT * FROM products
+WHERE multiIf(
+    price > 500, category = 'Electronics',
+    price > 100, in_stock = true,
+    true
+);
+-- 결과: Laptop, Chair, Monitor, Lamp
+```
+
+<div id="case-examples">
+  #### CASE 예시
+</div>
+
+**단순한 CASE:**
+
+```sql
+-- 카테고리별 다른 규칙
+SELECT * FROM products
+WHERE CASE category
+    WHEN 'Electronics' THEN price < 400
+    WHEN 'Furniture' THEN in_stock = true
+    ELSE false
+END;
+-- 결과: Mouse, Monitor, Chair
+```
+
+**조건식 CASE:**
+
+```sql
+-- 가격 기반 계층형 논리
+SELECT * FROM products
+WHERE CASE
+    WHEN price > 500 THEN in_stock = true
+    WHEN price > 100 THEN category = 'Electronics'
+    ELSE true
+END;
+-- 결과: Laptop, Monitor, Mouse, Lamp
+```

@@ -6,21 +6,30 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Loggers/Loggers.h>
+#include <Server/IServer.h>
+#include <Server/ProtocolServerAdapter.h>
 #include <Common/MemoryWorker.h>
 #include <Common/StatusFile.h>
 
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <optional>
 
+
+namespace Poco { class ThreadPool; }
 
 namespace DB
 {
 
-/// Lightweight Application for clickhouse-local
-/// No networking, no extra configs and working directories, no pid and status files, no dictionaries, no logging.
+class AsynchronousMetrics;
+class ServerType;
+
+/// Lightweight Application for clickhouse-local.
+/// No networking by default; TCP/HTTP listeners can be started explicitly via `SYSTEM START LISTEN`.
+/// No extra configs and working directories, no pid and status files, no dictionaries, no logging.
 /// Quiet mode by default
-class LocalServer : public ClientApplicationBase, public Loggers
+class LocalServer : public ClientApplicationBase, public Loggers, public IServer
 {
 public:
     LocalServer() = default;
@@ -29,6 +38,12 @@ public:
 
     int main(const std::vector<String> & /*args*/) override;
     bool supportsLocalMetaCommands() const override { return true; }
+
+    /// IServer interface
+    Poco::Util::LayeredConfiguration & config() const override { return ClientApplicationBase::config(); }
+    Poco::Logger & logger() const override { return ClientApplicationBase::logger(); }
+    ContextMutablePtr context() const override { return global_context; }
+    bool isCancelled() const override { return is_cancelled; }
 
 protected:
     Poco::Util::LayeredConfiguration & getClientConfiguration() override;
@@ -70,7 +85,16 @@ private:
 
     void createClientContext();
 
+    void startServers(const ServerType & server_type);
+    void stopServers(const ServerType & server_type);
+
     ServerSettings server_settings;
+
+    /// Host passed explicitly via the `--listen_host` command-line option, if any. Stored separately
+    /// from the configuration because it must act as a hard override: `config.setString("listen_host", ...)`
+    /// would only replace the first `listen_host` key, leaving lower-priority repeated `listen_host[...]`
+    /// entries from a loaded config file visible to `getMultipleValuesFromConfig` in `startServers`.
+    std::optional<String> cli_listen_host;
 
     /// Path of the config file actually loaded in `initialize`. Empty if no config file was loaded.
     /// Tracks loads from all sources: `--config-file` flag, `./config.xml`, and `getLocalConfigPath`
@@ -87,6 +111,12 @@ private:
     /// MemoryWorker periodically updates RSS and resizes the userspace page cache.
     /// Without it the page cache stays stuck at `page_cache_min_size`.
     std::optional<MemoryWorker> memory_worker;
+
+    std::atomic<bool> is_cancelled{false};
+    std::vector<ProtocolServerAdapter> servers;
+    std::mutex servers_lock;
+    std::unique_ptr<Poco::ThreadPool> server_pool;
+    std::unique_ptr<AsynchronousMetrics> async_metrics;
 };
 
 }
