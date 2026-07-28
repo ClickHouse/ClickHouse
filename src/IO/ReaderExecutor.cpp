@@ -37,7 +37,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int BAD_ARGUMENTS;
 }
 
 /// Read `chunk` bytes from `buf` straight into `dest` with no intermediate copy when the buffer
@@ -134,11 +133,6 @@ ReaderExecutor::ReaderExecutor(
     , active_metric(CurrentMetrics::ReaderExecutorActive)
 {
     offset_map.build(objects);
-    /// This executor serves known-size sources only; the builder falls back to the legacy path for
-    /// unknown-size sources, so reaching here with one is a bug (unknown-size support lands with the
-    /// page-cache PR).
-    if (offset_map.hasUnknownSize())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReaderExecutor does not support unknown-size sources");
     log_file_path = objects.empty() ? "" : objects.front().remote_path;
     LOG_DEBUG(log, "Created: source={}, objects={}, total_size={}, block_size={}, long_connections={}",
         source ? source->name() : "none", objects.size(), offset_map.totalSize(), block_size,
@@ -228,9 +222,12 @@ ReaderExecutor::LongConnection::drainTail(size_t max_tail, size_t block_bytes, L
 
 size_t ReaderExecutor::clampReach(size_t predicted_end, size_t phys_pos) const
 {
-    /// Bound the run-anchored predicted end (physical) to `[phys_pos, physical file end]`.
+    /// Bound the run-anchored predicted end (physical) to `[phys_pos, physical file end]`;
+    /// with an unknown total size there is no end to clamp to.
     size_t end = std::max(predicted_end, phys_pos);
-    return std::min(end, offset_map.totalSize());
+    if (!offset_map.hasUnknownSize())
+        end = std::min(end, offset_map.totalSize());
+    return end;
 }
 
 bool ReaderExecutor::shouldOpenLongConnection() const
@@ -255,7 +252,9 @@ bool ReaderExecutor::tryOpenLongConnection(const StoredObject & object, size_t o
     /// further ahead, sparse access stays small, so it never over-reads a whole object for a slice.
     const size_t phys = toPhysical(position);
     const size_t forward = clampReach(fetch_tracker.predictedEnd(), phys) - phys;
-    const size_t read_until_obj = std::min<size_t>(object_offset + forward, object.bytes_size);
+    size_t read_until_obj = object_offset + forward;
+    if (!offset_map.hasUnknownSize())
+        read_until_obj = std::min<size_t>(read_until_obj, object.bytes_size);
 
     auto buffer = source->open(object);
     if (buffer->supportsRightBoundedReads())
@@ -557,6 +556,13 @@ void ReaderExecutor::initDecryption()
     auto block = std::make_shared<OwnedChainedBuffer>(data_start_offset);
     const size_t got = readOneShot(object, /*object_offset=*/0, data_start_offset, block->data());
 
+    /// Under a size-unknown source a short read means EOF rather than an error: 0 bytes is an empty
+    /// object (as the size-known empty branch above), while a partial read is corruption.
+    if (offset_map.hasUnknownSize() && got == 0)
+    {
+        LOG_DEBUG(log, "initDecryption: unknown-size source returned 0 bytes (empty object), skipping");
+        return;
+    }
     if (got != data_start_offset)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
             "Encrypted source returned {} header bytes, expected {} (corrupted/truncated)",
@@ -591,14 +597,20 @@ ChainedBuffers ReaderExecutor::readNextWindow()
 
     const size_t position_physical = toPhysical(position);
 
-    /// The most this window may serve: `window_size`, clamped to the file end and the `read_until`
-    /// bound. The cache path serves at most `block_size` of it; the no-cache path serves it whole.
-    size_t max_serve = std::min(window_size, offset_map.totalSize() - position_physical);
+    /// The most this window may serve: `window_size`, clamped to the file end (when the size is
+    /// known) and to the `read_until` bound. The cache path serves at most `block_size` of it; the
+    /// no-cache path serves it whole.
+    size_t max_serve = window_size;
+    if (!offset_map.hasUnknownSize())
+        max_serve = std::min(max_serve, offset_map.totalSize() - position_physical);
     chassert(!read_until || *read_until >= position);
     if (read_until && *read_until - position < max_serve)
         max_serve = *read_until - position;
     if (max_serve == 0)
+    {
+        reached_eof = true;
         return {};
+    }
 
     ChainedBuffers chain = cache_chain.empty()
         ? readSource(position_physical, max_serve)
@@ -607,9 +619,10 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     const size_t got = chain.empty() ? 0 : chain.range().size;
     if (got == 0)
     {
+        reached_eof = true;
         long_conn.reset();
-        /// Nothing read below the source's end = truncation.
-        if (position < totalSize())
+        /// Nothing read below a known-size source's end = truncation.
+        if (!offset_map.hasUnknownSize() && position < totalSize())
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
                 "ReaderExecutor: source ended at {} of {} bytes for {}",
                 position, totalSize(), getFileName());
@@ -649,6 +662,7 @@ void ReaderExecutor::seek(size_t new_position)
     /// lazily by the next `readNextWindow` (its `canServeAt` check).
     fetch_tracker.recordSeek(toPhysical(new_position));
     position = new_position;
+    reached_eof = false;
 }
 
 }

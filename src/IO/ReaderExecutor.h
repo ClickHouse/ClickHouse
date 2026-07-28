@@ -198,10 +198,14 @@ private:
         DrainResult drainTail(size_t max_tail, size_t block_bytes, LoggerPtr log) noexcept;
     };
 
-    /// EOF is `position >= totalSize`; a `read_until` bound caps it earlier.
+    /// At known size, EOF is `position >= totalSize`. At unknown size, a short
+    /// source read latches `reached_eof`; a backward `seek` clears it. A
+    /// `read_until` bound caps EOF earlier.
     bool atEnd() const
     {
-        return position >= totalSize() || (read_until && position >= *read_until);
+        if (reached_eof || (read_until && position >= *read_until))
+            return true;
+        return !offset_map.hasUnknownSize() && position >= totalSize();
     }
 
     /// Clamp the estimator's run-anchored predicted end (physical) to `[phys_pos, physical file end]`.
@@ -252,6 +256,7 @@ private:
     size_t window_size;
     size_t block_size;
     size_t position = 0;
+    bool reached_eof = false;
     /// Hard upper bound on the logical read position; `nullopt` = read to end.
     std::optional<size_t> read_until;
 

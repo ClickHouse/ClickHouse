@@ -221,15 +221,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
     std::shared_ptr<IFileBasedSourceReader> source_reader;
     /// Read-through cache chain (front = fastest); populated below, once the source is chosen.
     CacheChain cache_chain;
-    /// This executor serves known-size sources only; fall back for unknown-size (support lands with
-    /// the page-cache PR).
-    for (const auto & object : source->objects)
-        if (object.bytes_size == StoredObject::UnknownSize)
-        {
-            LOG_DEBUG(log, "use_reader_executor: falling back to the legacy read path (unknown object size)");
-            return nullptr;
-        }
-
     if (const auto * local_src = std::get_if<LocalFileSource>(&source->source))
     {
         LOG_DEBUG(log, "build: using ReaderExecutor for local file, {} objects, path={}",
@@ -238,11 +229,13 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
     }
     else if (const auto * obj_src = std::get_if<ObjectStorageSource>(&source->source))
     {
-        /// `bytes_size` 0 from object storage (HEAD without Content-Length) is indistinguishable
-        /// from a genuinely empty object, so fall back rather than read it as empty.
+        /// An object of unknown size (HEAD without Content-Length) arrives with
+        /// `bytes_size` 0 — indistinguishable from a genuinely empty object — and
+        /// the executor cannot stream to EOF yet, so fall back rather than read it
+        /// as empty.
         for (const auto & object : source->objects)
         {
-            if (object.bytes_size == 0)
+            if (object.bytes_size == 0 || object.bytes_size == StoredObject::UnknownSize)
             {
                 LOG_DEBUG(log,
                     "use_reader_executor: falling back to the legacy read path (object size unknown)");

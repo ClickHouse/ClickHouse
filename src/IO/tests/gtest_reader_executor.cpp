@@ -612,15 +612,17 @@ TEST_F(ReaderExecutorTest, EmptyFileIsImmediateEOF)
     EXPECT_TRUE(ex.readNextWindow().atEnd());
 }
 
-TEST_F(ReaderExecutorTest, UnknownSizeSourceThrows)
+TEST_F(ReaderExecutorTest, MissingFileWithUnknownSizeThrows)
 {
-    /// This executor serves known-size sources only; the builder falls back to the legacy path for
-    /// unknown-size ones, so constructing it with an `UnknownSize` object is a bug and throws.
-    /// (Streaming unknown-size files to a learned EOF lands with the page-cache PR.)
-    StoredObject obj;
-    obj.remote_path = (tmp_dir / "u.bin").string();
-    obj.bytes_size = StoredObject::UnknownSize;
-    EXPECT_ANY_THROW(ReaderExecutor(std::make_shared<LocalSourceReader>(), {obj}, ReaderExecutor::Options{}));
+    /// `DiskLocal::prepareRead` marks an unstatable file `UnknownSize`; the
+    /// executor must then open it and surface the real error (e.g. file does not
+    /// exist) instead of treating it as an empty read.
+    StoredObject missing;
+    missing.remote_path = (tmp_dir / "does_not_exist.bin").string();
+    missing.bytes_size = StoredObject::UnknownSize;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), {missing}, ReaderExecutor::Options{.block_size = 256});
+
+    EXPECT_ANY_THROW(ex.readNextWindow());
 }
 
 TEST_F(ReaderExecutorTest, TruncatedKnownSizeFileThrows)
