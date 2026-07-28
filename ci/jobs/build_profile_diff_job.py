@@ -58,6 +58,7 @@ import dataclasses
 import datetime
 import json
 import os
+import statistics
 import subprocess
 import traceback
 from typing import Dict, List, Optional
@@ -726,8 +727,11 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
     where = f"file IN ({in_list(comparable)}) AND {trace_where}"
     # The systematic skew between the sides, as the median PR/master time
     # ratio over functions matched on both sides with a non-trivial baseline.
+    # Interpolated: `medianExact` returns the upper middle element on an even
+    # count, which overestimates the shift when a part of the functions
+    # regressed and would normalize that regression away.
     skew_rows = db.query(
-        f"""SELECT medianExact(pr_dur / base_dur) AS skew, count() AS matched
+        f"""SELECT quantileExactWeightedInterpolated(0.5)(pr_dur / base_dur, 1) AS skew, count() AS matched
         FROM (
             SELECT file, detail,
                 sumIf(dur, side = 'pr') AS pr_dur,
@@ -891,8 +895,11 @@ def compare_compile_times(db: Db, pr_side, master_shas) -> Section:
     # the skew itself is judged separately on the section level (below): a
     # heavy common header slowing down every TU by the same factor cancels out
     # of every per-TU delta by construction, so it can only be caught there.
+    # The true median (the average of the two middle ratios on an even count):
+    # the upper middle element would overestimate the shift when a part of the
+    # translation units regressed, normalizing that regression away.
     ratios = sorted(pr_durs[tu] / max(base_dur, 1) for tu, (base_dur, *_) in base_durs.items() if tu in pr_durs)
-    skew = ratios[len(ratios) // 2] if len(ratios) >= 10 else 1.0
+    skew = statistics.median(ratios) if len(ratios) >= 10 else 1.0
 
     # The aggregate cost of that shift, measured without applying the skew:
     # what the matched translation units really cost on each side.
@@ -1170,11 +1177,14 @@ def main():
             return
         # Replace any comparison posted for an older commit of this PR: leaving
         # it in place would show a stale revision as if it were the current one.
+        # only_update: a PR that never built (a doc-only change reusing master's
+        # build) has nothing to say and should not get a comment at all.
         try:
             GH.post_updateable_comment(
                 comment_tags_and_bodies={
                     COMMENT_TAG: f"### Build profile diff ({CHECK_NAME})\n\n{info_text}."
-                }
+                },
+                only_update=True,
             )
         except Exception:
             print("WARNING: failed to post/update the PR comment")

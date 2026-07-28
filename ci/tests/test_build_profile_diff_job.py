@@ -68,6 +68,13 @@ def _skew_rows(pr_number, sha, check_start_time, check_name, instance_id, dur_us
 _SKEW_BASE_ROWS = _skew_rows(0, _BASE_SHA, "2026-06-30 00:00:00", "arm_release_pr_cache_warmup", "W0", 30000000)
 _SKEW_SLOW_ROWS = _skew_rows(_PR, "prsha-uniform-slowdown", "2026-07-02 00:00:00", "arm_release", "I11", 65000000)
 _SKEW_NOISE_ROWS = _skew_rows(_PR, "prsha-machine-skew", "2026-07-02 00:00:00", "arm_release", "I12", 33000000)
+# Half of the same twelve translation units doubled (30 s -> 60 s), half
+# unchanged: the two middle ratios are 1.0 and 2.0, so the median is 1.5 and
+# the upper middle element (2.0) would erase the regressed half.
+_SKEW_HALF_ROWS = ",\n    ".join(
+    f"({_PR}, 'prsha-half-slowdown', '2026-07-02 00:00:00', 'arm_release', 'I13', '{tu}', 'ExecuteCompiler', '', {60000000 if i % 2 else 30000000})"
+    for i, tu in enumerate(_SKEW_TUS)
+)
 
 _SCHEMA = f"""
 CREATE TABLE binary_sizes
@@ -206,9 +213,13 @@ INSERT INTO binary_sizes (pull_request_number, commit_sha, check_start_time, che
     ({_PR}, 'prsha-uniform-slowdown', '2026-07-02 00:00:00', 'arm_release', 'I11', '{_MAIN}', 1500),
     ({_PR}, 'prsha-uniform-slowdown', '2026-07-02 00:00:00', 'arm_release', 'I11', '{_STRIPPED}', 1500),
     ({_PR}, 'prsha-machine-skew', '2026-07-02 00:00:00', 'arm_release', 'I12', '{_MAIN}', 1500),
-    ({_PR}, 'prsha-machine-skew', '2026-07-02 00:00:00', 'arm_release', 'I12', '{_STRIPPED}', 1500);
+    ({_PR}, 'prsha-machine-skew', '2026-07-02 00:00:00', 'arm_release', 'I12', '{_STRIPPED}', 1500),
+    ({_PR}, 'prsha-half-slowdown', '2026-07-02 00:00:00', 'arm_release', 'I13', '{_MAIN}', 1500),
+    ({_PR}, 'prsha-half-slowdown', '2026-07-02 00:00:00', 'arm_release', 'I13', '{_STRIPPED}', 1500);
 INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
     {_SKEW_BASE_ROWS};
+INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
+    {_SKEW_HALF_ROWS};
 INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
     {_SKEW_SLOW_ROWS};
 INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
@@ -693,3 +704,25 @@ def test_machine_speed_skew_alone_is_not_significant():
     assert not section.significant
     assert not section.summary
     assert "×1.10" in section.body
+
+
+def test_skew_is_the_true_median_on_an_even_translation_unit_count():
+    """A regression in half of the translation units survives normalization.
+
+    The per-TU deltas are relative to the median PR/baseline ratio. With an
+    even number of matched TUs the upper middle element is not the median: for
+    six unchanged and six doubled TUs it is the doubled ratio itself, which
+    normalizes the whole regressed half to zero and turns the unchanged half
+    into an equally large fake speedup.
+    """
+    db = FixtureDb()
+    pr_side = job.resolve_run(db, job.PR_DAYS, _PR, "prsha-half-slowdown")
+    assert pr_side is not None
+    section = job.compare_compile_times(db, pr_side, [_BASE_SHA])
+    # Ratios are six x1 and six x2: the median is x1.5, not x2.
+    assert "×1.50" in section.body
+    # Baseline 30 s adjusted to 45 s: the doubled TUs are +15 s over it.
+    assert "| `skew_tu1.cpp` | 30.0 s | 60.0 s | +15.0 s" in section.body
+    assert "| `skew_tu0.cpp` | 30.0 s | 30.0 s | -15.0 s" in section.body
+    # 6 x 30 s of real regression stays below the section-wide bar.
+    assert not section.significant

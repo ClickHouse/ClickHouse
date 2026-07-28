@@ -1705,8 +1705,12 @@ class JobConfigs:
     # comment when the change is significant. The data comes from the CI logs
     # cluster: the PR side is uploaded by the arm_release build post-hook
     # (build_profile_hook.py), the master side by master workflow builds.
-    # requires (not run_after) so that the job inherits the build's digest:
-    # it re-runs when the build re-runs and is skipped for doc-only changes.
+    # No digest_config, i.e. not cacheable: the job's output is a PR comment
+    # about one concrete commit (it embeds the head sha and links this run's
+    # report). Reusing a cached result would leave that comment describing an
+    # older commit of the PR - including a change that the head has already
+    # reverted - so the comparison is redone for every head. The job is cheap:
+    # it only queries the CI logs cluster.
     build_profile_diff_job = Job.Config(
         name=JobNames.BUILD_PROFILE_DIFF,
         runs_on=RunnerLabels.ARM_SMALL,
@@ -1716,12 +1720,6 @@ class JobConfigs:
         run_in_docker="clickhouse/stateless-test",
         requires=["Build (arm_release)"],
         command="python3 ./ci/jobs/build_profile_diff_job.py",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/build_profile_diff_job.py",
-                "./ci/jobs/scripts/log_cluster.py",
-            ],
-        ),
         timeout=1800,
         enable_gh_auth=True,
     )
