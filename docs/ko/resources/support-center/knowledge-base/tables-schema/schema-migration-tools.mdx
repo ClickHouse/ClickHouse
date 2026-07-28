@@ -1,0 +1,25 @@
+---
+date: 2023-06-07
+title: "ClickHouse용 자동 스키마 마이그레이션 도구"
+description: "ClickHouse용 자동 스키마 마이그레이션 도구와 시간이 지나면서 변화하는 데이터베이스 스키마를 관리하는 방법을 알아봅니다."
+tags: ['도구 및 유틸리티']
+keywords: ['자동 스키마 마이그레이션']
+---
+
+<div id="automatic-schema-migration-tools-for-clickhouse">
+  ## ClickHouse용 자동 스키마 마이그레이션 도구
+</div>
+
+ClickHouse에 적합한 스키마 마이그레이션 도구는 무엇인지, 그리고 시간이 지나면서 변경될 수 있는 ClickHouse 데이터베이스 스키마를 관리하는 모범 사례는 무엇인지에 대한 질문을 자주 받습니다.
+
+ClickHouse에는 표준 스키마 마이그레이션 도구가 없지만, ClickHouse를 지원하는 자동 스키마 마이그레이션 도구 중 저희가 알고 있는 것들을 아래에 정리했습니다(순서는 무작위입니다).
+
+* [Goose](https://github.com/pressly/goose)
+* [Sqitch](https://sqitch.org/docs/manual/sqitchtutorial-clickhouse/)
+* [Atlas](https://atlasgo.io/guides/clickhouse?utm_source=clickhouse\&utm_term=knowledge)
+* [Bytebase](https://www.bytebase.com/)
+* [Flyway](https://documentation.red-gate.com/fd/supported-databases-and-versions-143754067.html)
+* [Liquibase](https://www.liquibase.com/)
+* `clickhouse-migrations`라는 [간단한 커뮤니티 도구](https://github.com/VVVi/clickhouse-migrations)
+* Go로 작성된 또 다른 [커뮤니티 도구](https://github.com/golang-migrate/migrate/tree/master/database/clickhouse)
+* [Houseplant](https://houseplant.readthedocs.io)

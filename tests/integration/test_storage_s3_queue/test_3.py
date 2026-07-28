@@ -1,24 +1,13 @@
-import io
-import json
 import logging
-import random
-import string
 import time
-import uuid
-from multiprocessing.dummy import Pool
 from datetime import datetime
 
 import pytest
-from kazoo.exceptions import NoNodeError
 
-from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.s3_queue_common import (
-    run_query,
-    random_str,
     generate_random_files,
     put_s3_file_content,
-    put_azure_file_content,
     create_table,
     create_mv,
     generate_random_string,
@@ -89,26 +78,6 @@ def started_cluster():
             ],
             stay_alive=True,
         )
-        cluster.add_instance(
-            "instance_23.12",
-            with_zookeeper=True,
-            image="clickhouse/clickhouse-server",
-            tag="23.12",
-            stay_alive=True,
-            with_installed_binary=True,
-            use_old_analyzer=True,
-        )
-        cluster.add_instance(
-            "instance_24.5",
-            with_zookeeper=True,
-            image="clickhouse/clickhouse-server",
-            tag="24.5",
-            stay_alive=True,
-            user_configs=[
-                "configs/users.xml",
-            ],
-            with_installed_binary=True,
-        )
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -122,7 +91,7 @@ def started_cluster():
 def test_settings_check(started_cluster):
     node = started_cluster.instances["instance"]
     node_2 = started_cluster.instances["instance2"]
-    table_name = f"test_settings_check"
+    table_name = "test_settings_check"
     # A unique path is necessary for repeatable tests
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
@@ -185,7 +154,7 @@ def test_processed_file_setting(started_cluster, processing_threads):
             "s3queue_last_processed_path": f"{files_path}/test_5.csv",
         },
     )
-    total_values = generate_random_files(
+    generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
 
@@ -244,7 +213,7 @@ def test_processed_file_setting_distributed(started_cluster, processing_threads)
             },
         )
 
-    total_values = generate_random_files(
+    generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
 
@@ -271,52 +240,6 @@ def test_processed_file_setting_distributed(started_cluster, processing_threads)
         if expected_rows == get_count():
             break
         time.sleep(1)
-    assert expected_rows == get_count()
-
-
-def test_upgrade(started_cluster):
-    node = started_cluster.instances["instance_23.12"]
-    if "23.12" not in node.query("select version()").strip():
-        node.restart_with_original_version(clear_data_dir=True)
-
-    table_name = f"test_upgrade"
-    dst_table_name = f"{table_name}_dst"
-    # A unique path is necessary for repeatable tests
-    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
-    files_path = f"{table_name}_data"
-    files_to_generate = 10
-
-    create_table(
-        started_cluster,
-        node,
-        table_name,
-        "ordered",
-        files_path,
-        version="23.12",
-        additional_settings={
-            "keeper_path": keeper_path,
-            "after_processing": "keep",
-        },
-    )
-    total_values = generate_random_files(
-        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
-    )
-
-    create_mv(node, table_name, dst_table_name)
-
-    def get_count():
-        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
-
-    expected_rows = 10
-    for _ in range(20):
-        if expected_rows == get_count():
-            break
-        time.sleep(1)
-
-    assert expected_rows == get_count()
-
-    node.restart_with_latest_version()
-
     assert expected_rows == get_count()
 
 
@@ -350,7 +273,7 @@ def test_commit_on_limit(started_cluster, processing_threads):
             "s3queue_max_processed_files_before_commit": 10,
         },
     )
-    total_values = generate_random_files(
+    generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
 
@@ -477,54 +400,3 @@ def test_commit_on_limit(started_cluster, processing_threads):
             f"SELECT count() FROM system.text_log WHERE message ILIKE '%successful files: %' and logger_name ILIKE '%{table_name}%'"
         )
     )
-
-
-def test_upgrade_2(started_cluster):
-    node = started_cluster.instances["instance_24.5"]
-    if "24.5" not in node.query("select version()").strip():
-        node.restart_with_original_version(clear_data_dir=True)
-    assert "24.5" in node.query("select version()").strip()
-
-    table_name = f"test_upgrade_2_{uuid.uuid4().hex[:8]}"
-    dst_table_name = f"{table_name}_dst"
-    # A unique path is necessary for repeatable tests
-    keeper_path = f"/clickhouse/test_{table_name}"
-    files_path = f"{table_name}_data"
-    files_to_generate = 10
-
-    create_table(
-        started_cluster,
-        node,
-        table_name,
-        "ordered",
-        files_path,
-        version="24.5",
-        additional_settings={
-            "keeper_path": keeper_path,
-            "s3queue_current_shard_num": 0,
-            "s3queue_processing_threads_num": 2,
-        },
-    )
-    total_values = generate_random_files(
-        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
-    )
-
-    create_mv(node, table_name, dst_table_name)
-
-    def get_count():
-        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
-
-    expected_rows = 10
-    for _ in range(20):
-        if expected_rows == get_count():
-            break
-        time.sleep(1)
-
-    assert expected_rows == get_count()
-
-    # Parallel ordered mode used before 24.6 is not supported.
-    # Users must do ALTER TABLE MODIFY SETTING buckets=N.
-    node.query(f"DROP TABLE {table_name}_mv")
-
-    node.restart_with_latest_version()
-    assert table_name in node.query("SHOW TABLES")

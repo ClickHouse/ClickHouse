@@ -222,7 +222,7 @@ def _build_params(scenarios_raw, *, cli_duration, include_ids, mb, mtops):
     seen_ids = set()
     for s in scenarios_raw:
         defaults = s.pop("_defaults", {}) if isinstance(s, dict) else {}
-        eff_dur = _effective_duration(s, defaults or {}, cli_duration=cli_duration)
+        _effective_duration(s, defaults or {}, cli_duration=cli_duration)
         sid_val = s.get("id")
         if sid_val in seen_ids:
             print(f"scenario id already seen: {sid_val}")

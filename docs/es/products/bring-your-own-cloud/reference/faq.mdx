@@ -1,0 +1,72 @@
+---
+title: 'FAQ de BYOC'
+slug: /cloud/reference/byoc/reference/faq
+sidebarTitle: 'FAQ'
+keywords: ['BYOC', 'nube', 'bring your own cloud', 'FAQ']
+description: 'Implemente ClickHouse en su propia infraestructura en la nube'
+doc_type: 'reference'
+---
+
+<div id="faq">
+  ## FAQ
+</div>
+
+<div id="compute">
+  ### Cómputo
+</div>
+
+<Accordion title="¿Puedo crear varios servicios en este único clúster de EKS?">
+  Sí. La infraestructura solo debe aprovisionarse una vez por cada combinación de cuenta y región de AWS.
+</Accordion>
+
+<Accordion title="¿Qué regiones son compatibles con BYOC?">
+  Todas las **regiones públicas** que aparecen en nuestra documentación de [regiones compatibles](/es/products/cloud/reference/supported-regions) están disponibles para implementaciones de BYOC.
+</Accordion>
+
+<Accordion title="¿Habrá alguna sobrecarga de recursos? ¿Qué recursos se necesitan para ejecutar servicios distintos de las instancias de ClickHouse?">
+  Además de las propias instancias de ClickHouse (servidores de ClickHouse y ClickHouse Keeper), también ejecutamos servicios auxiliares como `clickhouse-operator`, `aws-cluster-autoscaler`, Istio y la pila de monitorización.
+
+  El consumo de recursos de estos componentes compartidos es relativamente estable y no crece de forma lineal con el número ni con el tamaño de sus servicios de ClickHouse. Como orientación aproximada, en AWS solemos usar un grupo de nodos dedicado de unas cuatro instancias EC2 `4xlarge` para ejecutar estas cargas de trabajo.
+</Accordion>
+
+<div id="network-and-security">
+  ### Red y seguridad
+</div>
+
+<Accordion title="¿Podemos revocar los permisos configurados durante la instalación una vez completada la configuración?">
+  Actualmente, esto no es posible.
+</Accordion>
+
+<Accordion title="¿Han considerado implementar en el futuro controles de seguridad para que los ingenieros de ClickHouse puedan acceder a la infraestructura del cliente con fines de Troubleshooting?">
+  Sí. Implementar un mecanismo controlado por el cliente mediante el cual los clientes puedan aprobar el acceso de los ingenieros al clúster forma parte de nuestra hoja de ruta. Por el momento, los ingenieros deben pasar por nuestro proceso interno de escalamiento para obtener acceso puntual al clúster. Esto queda registrado y es auditado por nuestro equipo de seguridad.
+</Accordion>
+
+<Accordion title="¿Cuál es el tamaño del rango de IP de la VPC creada?">
+  De forma predeterminada, usamos `10.0.0.0/16` para la VPC de BYOC. Recomendamos reservar al menos /22 para un posible escalado futuro,
+  pero, si prefiere limitar el tamaño, es posible usar /23 si es probable que quede limitado
+  a 30 pods de servidor.
+</Accordion>
+
+<Accordion title="¿Puedo decidir la frecuencia del mantenimiento?">
+  Póngase en contacto con soporte para programar ventanas de mantenimiento. Tenga en cuenta que la frecuencia mínima de actualización es semanal.
+</Accordion>
+
+<Accordion title="¿Cómo funciona la comunicación de red entre la VPC de BYOC y S3?">
+  El tráfico entre su VPC de BYOC y S3 utiliza HTTPS (puerto 443) a través de la API de AWS S3 para datos de tablas, backups y logs. Al usar endpoints de VPC de S3, este tráfico permanece dentro de la red de AWS y no atraviesa la Internet pública.
+</Accordion>
+
+<Accordion title="¿Qué puertos se usan para la comunicación interna del clúster de ClickHouse?">
+  La comunicación interna del clúster de ClickHouse dentro de la VPC de BYOC del cliente utiliza:
+
+  * Protocolo nativo de ClickHouse en el puerto 9000
+  * HTTP/HTTPS en los puertos 8123/8443
+  * Comunicación entre servidores en el puerto 9009 para la replicación y las consultas distribuidas
+</Accordion>
+
+<div id="uptime-sla">
+  ### SLA de disponibilidad
+</div>
+
+<Accordion title="¿ClickHouse ofrece un SLA de disponibilidad para BYOC?">
+  No, dado que el plano de datos está alojado en el entorno de nube del cliente, la disponibilidad del servicio depende de recursos que no están bajo el control de ClickHouse. Por lo tanto, ClickHouse no ofrece un SLA formal de disponibilidad para las implementaciones de BYOC. Si tiene alguna pregunta adicional, póngase en contacto con support@clickhouse.com.
+</Accordion>
