@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/removeUnusedColumns.h>
 
 #include <numeric>
 #include <Core/Names.h>
@@ -98,7 +99,7 @@ enum class RemoveChildrenOutputResult : UInt8
 };
 }
 
-bool canAllChildrenCanRemoveOutputs(const QueryPlan::Node & node)
+static bool canAllChildrenCanRemoveOutputs(const QueryPlan::Node & node)
 {
     return std::all_of(
         node.children.begin(),
@@ -173,7 +174,7 @@ struct ChildUpdateResult
     bool added_discarding_step = false;
 };
 
-ChildUpdateResult removeSingleChildOutput(
+static ChildUpdateResult removeSingleChildOutput(
     QueryPlan::Nodes & nodes,
     QueryPlan::Node & node,
     const size_t child_id,
@@ -236,7 +237,7 @@ ChildUpdateResult removeSingleChildOutput(
 /// returned by the parent's `removeUnusedColumns` call. If `required_input_positions` is
 /// non-empty, use those positions directly; otherwise fall back to computing positions
 /// from headers (for the case where the caller doesn't have positions yet).
-RemoveChildrenOutputResult removeChildrenOutputs(
+static RemoveChildrenOutputResult removeChildrenOutputs(
     QueryPlan::Nodes & nodes,
     QueryPlan::Node & node,
     const std::vector<std::vector<size_t>> & required_input_positions)

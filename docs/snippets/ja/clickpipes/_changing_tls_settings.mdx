@@ -1,0 +1,26 @@
+---
+title: TLS設定の変更
+---
+
+デフォルトでは、ClickPipe は TLS と証明書検証を有効にした状態で作成されます。これらのデフォルト設定は、ClickPipe の作成時に変更できます。
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/postgres/tls-settings.webp" alt="TLS 設定" />
+</Frame>
+
+または、一時停止中の ClickPipe の *Settings* タブにある *Connection settings* セクションで編集することもできます。
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/postgres/pipe-connection-settings.webp" alt="接続設定 -> 接続を編集" />
+</Frame>
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/postgres/pipe-edit-connection.webp" alt="接続を編集" />
+</Frame>
+
+各項目の意味は次のとおりです。
+
+* `Disable TLS` は、その接続で TLS を有効または無効にするトグルです。TLS を無効にすると、データはネットワーク上を平文で送信されるため、シークレットや機密データが含まれる可能性があります。
+* `Skip certificate verification` は、ソースデータベースから提示される証明書の検証を有効または無効にするトグルです。証明書検証をスキップすることによるセキュリティ上の影響を考慮してください。
+* `TLS Host` (省略可。デフォルトはソースの *Host*) は、証明書検証が有効な場合に、証明書の CN と一致している必要があるホスト名です。
+* `Upload CA` は、証明書検証が有効な場合に使用する CA を指定するために利用できます。

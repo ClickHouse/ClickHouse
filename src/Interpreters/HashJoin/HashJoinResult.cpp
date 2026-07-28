@@ -66,10 +66,11 @@ static ColumnWithTypeAndName copyLeftKeyColumnToRight(
         right_column.column = JoinCommon::filterWithBlanks(right_column.column, *null_map_filter);
 
     if (!right_column.type->equals(*right_key_type))
-    {
         right_column.column = castColumnAccurate(right_column, right_key_type);
-        right_column.type = right_key_type;
-    }
+
+    /// Types may be equal but not identical, DateTime with different timezones
+    /// share physical representation but affect expressions over the key (issue #111033)
+    right_column.type = right_key_type;
 
     right_column.column = right_column.column->convertToFullColumnIfConst();
     return right_column;
@@ -114,12 +115,18 @@ static void appendRightColumns(
     std::set<size_t> block_columns_to_erase;
     if (HashJoin::canRemoveColumnsFromLeftBlock(table_join))
     {
-        std::unordered_set<String> left_output_columns;
+        /// Keep left columns matching getOutputColumns(Left) by name AND multiplicity: it may list a
+        /// name fewer times than the physical block holds it, and the surviving count must equal
+        /// getOutputColumns(Left).size() (used as left_columns_count downstream). Cap per name.
+        std::unordered_map<std::string_view, size_t> left_output_remaining;
         for (const auto & out_column : table_join.getOutputColumns(JoinTableSide::Left))
-            left_output_columns.insert(out_column.name);
+            ++left_output_remaining[out_column.name];
         for (size_t i = 0; i < block.columns(); ++i)
         {
-            if (!left_output_columns.contains(block.getByPosition(i).name))
+            auto it = left_output_remaining.find(block.getByPosition(i).name);
+            if (it != left_output_remaining.end() && it->second > 0)
+                --it->second;
+            else
                 block_columns_to_erase.insert(i);
         }
     }
@@ -210,7 +217,7 @@ static void appendRightColumns(
     block.erase(block_columns_to_erase);
 }
 
-MutableColumns copyEmptyColumns(const MutableColumns & columns)
+static MutableColumns copyEmptyColumns(const MutableColumns & columns)
 {
     MutableColumns res_columns;
     res_columns.reserve(columns.size());
@@ -219,7 +226,7 @@ MutableColumns copyEmptyColumns(const MutableColumns & columns)
     return res_columns;
 }
 
-void applyShiftAndLimitToOffsets(const IColumn::Offsets & offsets, IColumn::Offsets & out_offsets, UInt64 shift, UInt64 limit)
+static void applyShiftAndLimitToOffsets(const IColumn::Offsets & offsets, IColumn::Offsets & out_offsets, UInt64 shift, UInt64 limit)
 {
     out_offsets.clear();
     out_offsets.resize_fill(offsets.size(), 0);

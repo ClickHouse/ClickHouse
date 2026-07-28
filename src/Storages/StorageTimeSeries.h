@@ -85,6 +85,10 @@ public:
     void drop() override;
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
 
+    /// Forward the size guard onto every inner target table that `dropInnerTableIfAny`
+    /// will actually drop.
+    void checkTableSizeBelowDropLimit(ContextPtr query_context) const override;
+
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
     void renameInMemory(const StorageID & new_table_id) override;
@@ -108,7 +112,7 @@ private:
     /// `is_inner_table` is true when the table was auto-created by TimeSeries and is owned by it.
     struct Target
     {
-        ViewTarget::Kind kind;
+        ViewTarget::Kind kind{};
         StorageID table_id = StorageID::createEmpty();
         bool is_inner_table = false;
     };

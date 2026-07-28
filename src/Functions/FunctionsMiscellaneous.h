@@ -261,7 +261,7 @@ public:
                     /// that has not been built yet cannot be substituted at plan time.
                     if (inner_node.column)
                     {
-                        if (const auto * column_set = checkAndGetColumnConstData<const ColumnSet>(inner_node.column.get()))
+                        if (const auto * column_set = typeid_cast<const ColumnSet *>(&inner_node.column->getDataColumn()))
                         {
                             auto future_set = column_set->getData();
                             if (!future_set || !future_set->get())

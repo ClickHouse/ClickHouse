@@ -1,0 +1,30 @@
+---
+slug: /integrations/integration-development
+title: '集成开发'
+sidebarTitle: '概览'
+description: '用于构建、测试和编写 ClickHouse 集成文档的指南。'
+keywords: ['集成开发', '构建集成', '合作伙伴', '集成合作伙伴']
+doc_type: 'landing-page'
+---
+
+如果您正在构建可连接到 ClickHouse 的产品，这些指南可为您提供方向。内容涵盖集成能力范围、如何验证连接器，以及如何在本站发布文档。
+
+<Info>
+  **合作伙伴门户**
+
+  使用 [合作伙伴门户](https://clickhouse.com/partners) 注册您的集成并获取合作伙伴资源。以下指南介绍了如何构建、测试并为您的连接器编写文档。
+</Info>
+
+<div id="guides">
+  ## 指南
+</div>
+
+请按以下顺序阅读：
+
+| 指南                                                                                  | 涵盖内容                               |
+| ----------------------------------------------------------------------------------- | ---------------------------------- |
+| [构建集成](/zh/resources/develop-contribute/integrations/building-integrations)            | 摄取路径和消费路径、传输协议、客户端以及 user-agent 约定 |
+| [测试你的集成](/zh/resources/develop-contribute/integrations/testing-your-integration)       | 部署模式、数据集、类型覆盖情况，以及评审前需要报告的内容       |
+| [编写你的集成文档](/zh/resources/develop-contribute/integrations/documenting-your-integration) | 必需的文档章节、风格规则，以及你的产品页面 PR 框架        |
+
+完成原型开发和测试后，请将你的集成页面添加到 [`/docs/integrations/<category>/<your-integration>/`](/zh/resources/develop-contribute/integrations/documenting-your-integration)，并向 [`clickhouse-docs`](https://github.com/ClickHouse/clickhouse-docs) 提交拉取请求。

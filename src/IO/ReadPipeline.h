@@ -5,6 +5,7 @@
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <IO/ReadSettings.h>
+#include <Common/Logger.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <functional>
@@ -22,6 +23,8 @@ class FilesystemReadPrefetchesLog;
 class PageCache;
 class IAsynchronousReader;
 class IBackup;
+class LongConnectionLimit;
+class EncryptionHeaderCache;
 struct AsyncReadCounters;
 
 using FileCachePtr = std::shared_ptr<FileCache>;
@@ -129,13 +132,13 @@ public:
         std::shared_ptr<FilesystemCacheLog> cache_log = nullptr);
 
     /// -- Memory cache stage --
-    void needMemoryCache(std::shared_ptr<PageCache> cache, String cache_path_prefix, PageCacheSettings page_cache_settings);
+    /// The cache pointer travels inside `page_cache_settings.cache`; a null cache disables the stage.
+    void needMemoryCache(String cache_path_prefix, PageCacheSettings page_cache_settings);
 
     /// Overload with a fully custom page cache key (path + file_version), bypassing the default
     /// `cache_path_prefix + object.remote_path` derivation.
     /// Used by `StorageObjectStorageSource` where the key is `"s3:" + path` with `"etag:" + etag`.
     void needMemoryCache(
-        std::shared_ptr<PageCache> cache,
         String custom_cache_path,
         String custom_file_version,
         PageCacheSettings page_cache_settings);
@@ -159,6 +162,15 @@ public:
     /// The key_finder callback is called at build time with the key fingerprint
     /// read from the encryption header. It must return the decryption key.
     void needDecryption(String path, size_t buffer_size, KeyFinderFunc key_finder);
+
+    /// Let the `ReaderExecutor` path reuse held source connections, bounded by this limit
+    /// (the executor takes the stateless one-shot path when it is unset).
+    void needLongConnectionLimit(std::shared_ptr<LongConnectionLimit> limit);
+
+    /// Let the executor cache this file's encryption headers in `cache`. Set only for encrypted disks
+    /// on random-object-key backends (see `DiskEncrypted::prepareRead`); deterministic-path backends
+    /// and url / external reads leave it null, so a reused key can't serve a stale header.
+    void needEncryptionHeaderCache(std::shared_ptr<EncryptionHeaderCache> cache) { encryption_header_cache = std::move(cache); }
 
     /// -- Build the final ReadBuffer chain --
     /// Uses the ReadSettings stored in the source stage.
@@ -194,9 +206,8 @@ private:
 
     struct MemoryCacheStage
     {
-        std::shared_ptr<PageCache> cache;
         String cache_path_prefix;
-        PageCacheSettings page_cache_settings;
+        PageCacheSettings page_cache_settings;          /// Carries the `cache` shared_ptr
         std::optional<String> custom_cache_path;        /// Override the full cache key path
         std::optional<String> custom_file_version;      /// Override the file_version in the cache key
     };
@@ -223,11 +234,31 @@ private:
 
     std::optional<SourceStage> source;
     bool gather = false;
+    std::shared_ptr<LongConnectionLimit> long_connection_limit;
     VectorWithMemoryTracking<FilesystemCacheStage> filesystem_caches;
     std::optional<MemoryCacheStage> memory_cache;
     std::optional<DistributedCacheStage> distributed_cache;
     std::optional<AsyncPrefetchStage> async_prefetch;
     VectorWithMemoryTracking<DecryptionStage> decryption_stages;
+    /// Global encryption-header cache for the executor; null unless a random-object-key disk set it.
+    std::shared_ptr<EncryptionHeaderCache> encryption_header_cache;
+
+    LoggerPtr log = getLogger("ReadPipeline");
+
+    /// Experimental `ReaderExecutor` path (gated by `use_reader_executor`).
+    /// Returns nullptr when the setting is off, the source variant is not yet
+    /// supported, or any stage the minimal executor can't handle (caches,
+    /// decryption, distributed cache) is configured — so the caller falls back
+    /// to the legacy matryoshka pipeline. When it returns a buffer, `build` must
+    /// NOT apply the `wrap*` stages.
+    std::unique_ptr<ReadBufferFromFileBase> tryBuildReaderExecutor() const;
+
+    /// Whether the memory (page) cache stage will actually be applied. It is requested via
+    /// `needMemoryCache`, but is skipped for objects of unknown size: the page cache addresses
+    /// the file by absolute offset and reads `getFileSize()` up front, which is impossible for an
+    /// object served without `Content-Length`. The source stages gate `use_external_buffer` on
+    /// this so the inner reader is not left in external-buffer mode without a driver.
+    bool usesMemoryCache() const;
 
     /// build() helpers: one per logical stage group.
     /// Each helper reads private state and returns the (partial) impl buffer.

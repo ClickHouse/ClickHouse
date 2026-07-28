@@ -146,9 +146,11 @@ Materialized views in ClickHouse are implemented more like insert triggers. If t
 
 Materialized views in ClickHouse do not have deterministic behaviour in case of errors. This means that blocks that had been already written will be preserved in the destination table, but all blocks after error will not.
 
-By default if pushing to one of views fails, then the INSERT query will fail too, and some blocks may not be written to the destination table. This can be changed using `materialized_views_ignore_errors` setting (you should set it for `INSERT` query), if you will set `materialized_views_ignore_errors=true`, then any errors while pushing to views will be ignored and all blocks will be written to the destination table.
+By default, if pushing to one of the views throws, the `INSERT` query fails. Whether the block has already reached the source table by that point is not guaranteed — it depends on insert pipeline timing, not on the view error. Retry the failed `INSERT` with insert deduplication (`insert_deduplicate`, `deduplicate_blocks_in_dependent_materialized_views`) to get exactly-once delivery to the source table and all dependent views.
 
-Also note, that `materialized_views_ignore_errors` set to `true` by default for `system.*_log` tables.
+Setting `materialized_views_ignore_errors=true` on the `INSERT` query only changes error reporting: each view error is logged as a warning and the `INSERT` query succeeds. Delivery to the failing view's destination is partial — blocks processed before the exception are kept, and the failing block plus any subsequent blocks are dropped from that view. Views downstream of that destination see only the blocks that did arrive, so their delivery is partial too. Sibling views (and their downstream chains) that did not throw are written to in full, and the source table is written to as usual. Because the `INSERT` reports success, the client gets no failure signal and no automatic retry is triggered; use this setting only when source-table writes must not be blocked by view-side problems (for example, `system.*_log` tables).
+
+`materialized_views_ignore_errors` is `true` by default for `system.*_log` tables.
 :::
 
 If you specify `POPULATE`, the existing table data is inserted into the view when creating it, as if making a `CREATE TABLE ... AS SELECT ...` . Otherwise, the query contains only the data inserted in the table after creating the view. We **do not recommend** using `POPULATE`, since data inserted in the table during the view creation will not be inserted in it.
@@ -164,8 +166,6 @@ Instead a separate `INSERT ... SELECT` can be used.
 A `SELECT` query can contain `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`. Note that the corresponding conversions are performed independently on each block of inserted data. For example, if `GROUP BY` is set, data is aggregated during insertion, but only within a single packet of inserted data. The data won't be further aggregated. The exception is when using an `ENGINE` that independently performs data aggregation, such as `SummingMergeTree`.
 
 If the materialized view uses the construction `TO [db.]name`, you can `DETACH` the view, run `ALTER` for the target table, and then `ATTACH` the previously detached (`DETACH`) view.
-
-Note that materialized view is influenced by [optimize_on_insert](/operations/settings/settings#optimize_on_insert) setting. The data is merged before the insertion into a view.
 
 Views look the same as normal tables. For example, they are listed in the result of the `SHOW TABLES` query.
 
@@ -446,11 +446,11 @@ Fun fact: the refresh query is allowed to read from the view that's being refres
 
 ## Window View {#window-view}
 
-<ExperimentalBadge/>
+<DeprecatedBadge/>
 <CloudNotSupportedBadge/>
 
-:::info
-This is an experimental feature that may change in backwards-incompatible ways in the future releases. Enable usage of window views and `WATCH` query using [allow_experimental_window_view](/operations/settings/settings#allow_experimental_window_view) setting. Input the command `set allow_experimental_window_view = 1`.
+:::warning Deprecated
+Window views are deprecated and may be removed in a future release. They remain gated behind the [allow_experimental_window_view](/operations/settings/settings#allow_experimental_window_view) setting (`SET allow_experimental_window_view = 1`) and are not recommended for new use.
 :::
 
 ```sql

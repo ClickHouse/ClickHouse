@@ -14,7 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int MALFORMED_AI_PROVIDER_RESPONSE;
 }
 
@@ -111,7 +110,8 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
 
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
-    http_request.set("x-api-key", api_key);
+    if (!api_key.empty()) /// not all providers need API key
+        http_request.set("x-api-key", api_key);
     http_request.set("anthropic-version", api_version);
     http_request.setContentLength(body.size());
 
@@ -131,9 +131,9 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
     auto status = http_response.getStatus();
     if (status != Poco::Net::HTTPResponse::HTTP_OK)
     {
-        throw Exception(
-            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-            "Anthropic provider error: {}", extractProviderError(response_body, static_cast<int>(status)));
+        throw AIProviderHTTPException(
+            status,
+            PreformattedMessage::create("Anthropic provider error: {}", extractProviderError(response_body, static_cast<int>(status))));
     }
 
     Poco::JSON::Parser parser;

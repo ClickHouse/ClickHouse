@@ -26,10 +26,10 @@ DDLRenamingMap makeRenamingMap(const ASTBackupQuery::Elements & elements)
                 const String & database_name = element.database_name;
                 const String & new_table_name = element.new_table_name;
                 const String & new_database_name = element.new_database_name;
-                assert(!table_name.empty());
-                assert(!new_table_name.empty());
-                assert(!database_name.empty());
-                assert(!new_database_name.empty());
+                chassert(!table_name.empty());
+                chassert(!new_table_name.empty());
+                chassert(!database_name.empty());
+                chassert(!new_database_name.empty());
                 map.setNewTableName({database_name, table_name}, {new_database_name, new_table_name});
                 break;
             }
@@ -38,8 +38,8 @@ DDLRenamingMap makeRenamingMap(const ASTBackupQuery::Elements & elements)
             {
                 const String & table_name = element.table_name;
                 const String & new_table_name = element.new_table_name;
-                assert(!table_name.empty());
-                assert(!new_table_name.empty());
+                chassert(!table_name.empty());
+                chassert(!new_table_name.empty());
                 map.setNewTableName({DatabaseCatalog::TEMPORARY_DATABASE, table_name}, {DatabaseCatalog::TEMPORARY_DATABASE, new_table_name});
                 break;
             }
@@ -48,8 +48,8 @@ DDLRenamingMap makeRenamingMap(const ASTBackupQuery::Elements & elements)
             {
                 const String & database_name = element.database_name;
                 const String & new_database_name = element.new_database_name;
-                assert(!database_name.empty());
-                assert(!new_database_name.empty());
+                chassert(!database_name.empty());
+                chassert(!new_database_name.empty());
                 map.setNewDatabaseName(database_name, new_database_name);
                 break;
             }

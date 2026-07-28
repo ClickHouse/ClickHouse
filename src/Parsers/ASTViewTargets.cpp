@@ -4,6 +4,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <IO/WriteHelpers.h>
+#include <Core/UUID.h>
 
 
 namespace DB

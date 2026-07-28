@@ -7,6 +7,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/EventNotifier.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
+#include <Examples/clickhouse_examples.h>
 
 
 /** This program encrypts or decrypts text values using a symmetric encryption codec like AES_128_GCM_SIV or AES_256_GCM_SIV.
@@ -75,7 +76,7 @@ int mainEntryExampleEncryptDecrypt(int argc, char ** argv)
         std::string value = argv[4];
 
         DB::ConfigProcessor processor(argv[1], false, true);
-        bool has_zk_includes;
+        bool has_zk_includes = {};
         DB::XMLDocumentPtr config_xml = processor.processConfig(&has_zk_includes);
         if (has_zk_includes)
         {

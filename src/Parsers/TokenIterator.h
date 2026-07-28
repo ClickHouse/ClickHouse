@@ -3,7 +3,6 @@
 #include <Core/Defines.h>
 #include <Parsers/Lexer.h>
 
-#include <cassert>
 #include <vector>
 
 

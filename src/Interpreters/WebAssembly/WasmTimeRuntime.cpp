@@ -83,18 +83,20 @@ auto wasmtimeToNative(const wasmtime::Val & val)
         static_assert(false, "Unsupported WasmValKind");
 }
 
-wasmtime::ValKind toWasmTimeValKind(WasmValKind value)
+static wasmtime::ValType toWasmTimeValType(WasmValKind value)
 {
-    #define M(T) \
-        if (value == WasmValKind::T) \
-            return wasmtime::ValKind::T;
-
-    APPLY_FOR_WASM_TYPES(M)
-    #undef M
+    switch (value)
+    {
+        case WasmValKind::I32: return wasmtime::ValType::i32();
+        case WasmValKind::I64: return wasmtime::ValType::i64();
+        case WasmValKind::F32: return wasmtime::ValType::f32();
+        case WasmValKind::F64: return wasmtime::ValType::f64();
+        case WasmValKind::V128: return wasmtime::ValType::v128();
+    }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-WasmValKind fromWasmTimeValKind(wasmtime::ValKind val_type)
+static WasmValKind fromWasmTimeValKind(wasmtime::ValKind val_type)
 {
     #define M(T) \
         if (wasmtime::ValKind::T == val_type) \
@@ -105,7 +107,17 @@ WasmValKind fromWasmTimeValKind(wasmtime::ValKind val_type)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-WasmVal fromWasmTimeValue(const wasmtime::Val & wasm_val)
+static WasmValKind fromWasmTimeValType(wasmtime::ValType::Ref ref)
+{
+    if (ref == wasmtime::ValType::i32()) return WasmValKind::I32;
+    if (ref == wasmtime::ValType::i64()) return WasmValKind::I64;
+    if (ref == wasmtime::ValType::f32()) return WasmValKind::F32;
+    if (ref == wasmtime::ValType::f64()) return WasmValKind::F64;
+    if (ref == wasmtime::ValType::v128()) return WasmValKind::V128;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
+}
+
+static WasmVal fromWasmTimeValue(const wasmtime::Val & wasm_val)
 {
     #define M(T) \
     { \
@@ -121,7 +133,7 @@ WasmVal fromWasmTimeValue(const wasmtime::Val & wasm_val)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-wasmtime::Val toWasmTimeValue(WasmVal val)
+static wasmtime::Val toWasmTimeValue(WasmVal val)
 {
     #define M(T) \
     { \
@@ -136,21 +148,21 @@ wasmtime::Val toWasmTimeValue(WasmVal val)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-wasmtime::FuncType toWasmFunctionType(const WasmFunctionDeclaration & host_function_decl)
+static wasmtime::FuncType toWasmFunctionType(const WasmFunctionDeclaration & host_function_decl)
 {
     auto argument_types = host_function_decl.getArgumentTypes();
     std::vector<wasmtime::ValType> param_types;
     param_types.reserve(argument_types.size());
     for (auto & argument_type : argument_types)
     {
-        param_types.emplace_back(toWasmTimeValKind(argument_type));
+        param_types.emplace_back(toWasmTimeValType(argument_type));
     }
 
     std::vector<wasmtime::ValType> result_type;
     result_type.reserve(1);
     if (auto return_type = host_function_decl.getReturnType())
     {
-        result_type.emplace_back(toWasmTimeValKind(return_type.value()));
+        result_type.emplace_back(toWasmTimeValType(return_type.value()));
     }
 
     return wasmtime::FuncType::from_iters(param_types, result_type);
@@ -168,6 +180,11 @@ struct WasmTimeRuntime::Impl
         config.epoch_interruption(true);
         config.signals_based_traps(false);
         config.wasm_exceptions(true);
+#if !defined(NDEBUG)
+        /// The Cranelift optimizer is prohibitively slow in debug builds and can
+        /// hit debug-only traps while simplifying even small modules.
+        config.cranelift_opt_level(wasmtime::OptLevel::None);
+#endif
         return config;
     }
 
@@ -202,7 +219,7 @@ struct WasmTimeStoreData
     std::shared_ptr<std::atomic_bool> stop_requested;
 };
 
-wasmtime::Result<wasmtime::DeadlineKind> epochDeadlineCallback(
+static wasmtime::Result<wasmtime::DeadlineKind> epochDeadlineCallback(
     wasmtime::Store::Context ctx, uint64_t & epoch_deadline_delta)
 {
     epoch_deadline_delta += 1;
@@ -386,7 +403,7 @@ wasmtime::Result<std::monostate, wasmtime::Trap> callHostFunction(
 }
 }
 
-WasmFunctionDeclaration buildFunctionDeclaration(std::string_view module_name, std::string_view function_name, wasmtime::FuncType::Ref function_info)
+static WasmFunctionDeclaration buildFunctionDeclaration(std::string_view module_name, std::string_view function_name, wasmtime::FuncType::Ref function_info)
 {
     if (function_info.results().size() > 1)
         throw Exception(ErrorCodes::WASM_ERROR, "Function '{}' has more than one return value", function_name);
@@ -394,14 +411,14 @@ WasmFunctionDeclaration buildFunctionDeclaration(std::string_view module_name, s
     std::optional<WasmValKind> return_type;
     if (function_info.results().size() == 1)
     {
-        return_type = fromWasmTimeValKind(function_info.results().begin()->kind());
+        return_type = fromWasmTimeValType(*function_info.results().begin());
     }
 
     std::vector<WasmValKind> argument_types;
     argument_types.reserve(function_info.params().size());
     for (auto function_argument : function_info.params())
     {
-        argument_types.emplace_back(fromWasmTimeValKind(function_argument.kind()));
+        argument_types.emplace_back(fromWasmTimeValType(function_argument));
     }
 
     return WasmFunctionDeclaration(module_name, function_name, std::move(argument_types), return_type);

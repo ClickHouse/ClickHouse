@@ -17,6 +17,8 @@ using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams
 
 class QueryPlan;
 
+class IQueryPlanStep;
+
 class PipelineExecutor;
 using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
 
@@ -49,7 +51,8 @@ public:
     ~QueryPipelineBuilder() = default;
     QueryPipelineBuilder(QueryPipelineBuilder &&) = default;
     QueryPipelineBuilder(const QueryPipelineBuilder &) = delete;
-    QueryPipelineBuilder & operator= (QueryPipelineBuilder && rhs) = default;
+    /// Not noexcept: the QueryPlanResourceHolder it owns appends on move-assignment, which can throw.
+    QueryPipelineBuilder & operator= (QueryPipelineBuilder && rhs) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
     QueryPipelineBuilder & operator= (const QueryPipelineBuilder & rhs) = delete;
 
     /// All pipes must have same header.
@@ -137,6 +140,7 @@ public:
         size_t min_block_size_rows,
         size_t min_block_size_bytes,
         size_t max_streams,
+        IQueryPlanStep * join_step,
         bool keep_left_read_in_order,
         Processors * collected_processors = nullptr);
 
@@ -146,6 +150,7 @@ public:
         JoinPtr join,
         SharedHeader & output_header,
         size_t max_block_size,
+        IQueryPlanStep * join_step,
         Processors * collected_processors = nullptr);
 
     /// Join two independent pipelines, processing them simultaneously.
@@ -155,6 +160,7 @@ public:
         JoinPtr table_join,
         SharedHeader & out_header,
         size_t max_block_size,
+        IQueryPlanStep * join_step,
         Processors * collected_processors = nullptr);
 
     static std::unique_ptr<QueryPipelineBuilder> joinPipelinesYShapedByShards(
@@ -163,6 +169,7 @@ public:
         JoinPtr table_join,
         SharedHeader & out_header,
         size_t max_block_size,
+        IQueryPlanStep * join_step,
         Processors * collected_processors = nullptr);
 
     /// Add other pipeline and execute it before current one.
@@ -185,9 +192,12 @@ public:
     size_t getNumStreams() const { return pipe.numOutputPorts(); }
 
     bool hasTotals() const { return pipe.getTotalsPort() != nullptr; }
+    bool hasExtremes() const { return pipe.getExtremesPort() != nullptr; }
 
     const Block & getHeader() const { return pipe.getHeader(); }
     const SharedHeader & getSharedHeader() const { return pipe.getSharedHeader(); }
+
+    const Processors & getProcessors() const { return pipe.getProcessors(); }
 
     void setProcessListElement(QueryStatusPtr elem);
     void setProgressCallback(ProgressCallback callback);

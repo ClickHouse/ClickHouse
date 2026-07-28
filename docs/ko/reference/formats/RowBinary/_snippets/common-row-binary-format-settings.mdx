@@ -1,0 +1,15 @@
+---
+title: 공통 RowBinary 포맷 설정
+---
+
+{/* 참고: 이 스니펫을 가져오는 모든 파일에서 재사용됩니다. */}
+
+다음 설정은 모든 `RowBinary` 계열 포맷에 공통으로 적용됩니다.
+
+| 설정                                                                                                                                    | 설명                                                                                                                                                                                                 | 기본값     |
+| ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| [`format_binary_max_string_size`](/ko/reference/settings/formats#format_binary_max_string_size)                                          | RowBinary 포맷에서 String에 허용되는 최대 크기입니다.                                                                                                                                                              | `1GiB`  |
+| [`output_format_binary_encode_types_in_binary_format`](/ko/reference/settings/formats#input_format_binary_decode_types_in_binary_format) | [`RowBinaryWithNamesAndTypes`](/ko/reference/formats/RowBinary/RowBinaryWithNamesAndTypes) 출력 형식에서는 헤더의 타입을 타입 이름 문자열 대신 [`바이너리 인코딩`](/ko/reference/data-types/data-types-binary-encoding)으로 기록할 수 있습니다. | `false` |
+| [`input_format_binary_decode_types_in_binary_format`](/ko/reference/settings/formats#input_format_binary_decode_types_in_binary_format)  | [`RowBinaryWithNamesAndTypes`](/ko/reference/formats/RowBinary/RowBinaryWithNamesAndTypes) 입력 형식에서는 헤더의 타입을 타입 이름 문자열 대신 [`바이너리 인코딩`](/ko/reference/data-types/data-types-binary-encoding)으로 읽을 수 있습니다.  | `false` |
+| [`output_format_binary_write_json_as_string`](/ko/reference/settings/formats#output_format_binary_write_json_as_string)                  | [`RowBinary`](/ko/reference/formats/RowBinary/RowBinary) 출력 형식에서는 [`JSON`](/ko/reference/data-types/newjson) 데이터 타입의 값을 `JSON` [String](/ko/reference/data-types/string) 값으로 기록할 수 있습니다.                    | `false` |
+| [`input_format_binary_read_json_as_string`](/ko/reference/settings/formats#input_format_binary_read_json_as_string)                      | [`RowBinary`](/ko/reference/formats/RowBinary/RowBinary) 입력 형식에서는 [`JSON`](/ko/reference/data-types/newjson) 데이터 타입의 값을 `JSON` [String](/ko/reference/data-types/string) 값으로 읽을 수 있습니다.                     | `false` |
