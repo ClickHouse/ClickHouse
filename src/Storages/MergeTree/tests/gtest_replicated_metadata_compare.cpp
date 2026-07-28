@@ -4,6 +4,9 @@
 #include <Common/tests/gtest_global_register.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <Parsers/ASTTTLElement.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
@@ -203,6 +206,29 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, TTLSemanticsOutsideExpressionAreSi
     recompress_lz4.ttl = "d + toIntervalYear(10) RECOMPRESS CODEC(LZ4)";
     EXPECT_TRUE(diffOf(recompress_zstd, recompress_lz4).ttl_table_changed);
     EXPECT_FALSE(diffOf(recompress_zstd, recompress_zstd).ttl_table_changed);
+}
+
+TEST(ReplicatedMergeTreeTableMetadataCompare, TTLElementCloneIsIsolated)
+{
+    /// `formatDefinition` clones the AST before canonicalizing it, so the clone must not share any
+    /// node with the metadata snapshot it was given. `recompression_codec` is not a child, so the
+    /// copy constructor leaves it shared unless `clone` handles it explicitly.
+    ParserTTLExpressionList parser;
+    ASTPtr original = parseQuery(
+        parser, "d + toIntervalYear(10) RECOMPRESS CODEC(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    const String original_text = original->formatWithSecretsOneLine();
+
+    ASTPtr copy = original->clone();
+    auto & copied_element = copy->children.at(0)->as<ASTTTLElement &>();
+    ASSERT_TRUE(copied_element.recompression_codec);
+    const auto & element = original->children.at(0)->as<const ASTTTLElement &>();
+    EXPECT_NE(copied_element.recompression_codec.get(), element.recompression_codec.get());
+
+    /// Mutating the clone the way `stripArtificialParens` does must not reach the original.
+    copied_element.recompression_codec->setParenthesized(true);
+    for (const auto & child : copied_element.recompression_codec->children)
+        child->setParenthesized(true);
+    EXPECT_EQ(original->formatWithSecretsOneLine(), original_text);
 }
 
 TEST(ReplicatedMergeTreeTableMetadataCompare, ReverseSortingKeyDiffIsApplicable)

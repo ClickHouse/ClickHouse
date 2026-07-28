@@ -27,6 +27,9 @@ ASTPtr ASTTTLElement::clone() const
         expr = expr->clone();
     for (auto & expr : clone->group_by_assignments)
         expr = expr->clone();
+    /// Not a child either, so the copy constructor left it shared with the source.
+    if (clone->recompression_codec)
+        clone->recompression_codec = clone->recompression_codec->clone();
 
     return clone;
 }
