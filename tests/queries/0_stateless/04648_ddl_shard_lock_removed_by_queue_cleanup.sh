@@ -25,12 +25,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 RDB="rdb_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 AUX="aux_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 DB_ZK="/test/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/rdb"
+TABLE_ZK="/clickhouse/tables/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/t"
 
 function cleanup()
 {
     ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${AUX} SYNC SETTINGS ignore_drop_queries_probability = 0" 2>/dev/null ||:
     ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${RDB} SYNC SETTINGS ignore_drop_queries_probability = 0" 2>/dev/null ||:
     ${CLICKHOUSE_KEEPER_CLIENT} -q "rmr '${DB_ZK}'" 2>/dev/null ||:
+    # The second replica is dropped while DETACHed, which leaves its replica znode behind, so the
+    # explicit table path has to be removed here or a re-run would find a stale replica.
+    ${CLICKHOUSE_KEEPER_CLIENT} -q "rmr '${TABLE_ZK}'" 2>/dev/null ||:
 }
 trap cleanup EXIT
 cleanup
@@ -40,8 +44,17 @@ start_time=$(${CLICKHOUSE_CLIENT} -q "SELECT now64(6)")
 # `distributed_ddl_output_mode = 'none'` on every setup statement: the per-host status rows a
 # `Replicated` database prints otherwise are not part of what this test asserts.
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode none -q "CREATE DATABASE ${RDB} ENGINE = Replicated('${DB_ZK}', 's1', 'r1')"
-${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode none -q "CREATE TABLE ${RDB}.t (x UInt64, y String) ENGINE = ReplicatedMergeTree ORDER BY x"
+# The table path is given explicitly and scoped to the per-run test prefix, so that the second
+# replica below can name the same path. The `{shard}`/`{replica}` macros are required: a
+# `Replicated` database rejects an explicit path that cannot differ between shards and replicas.
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode none -q "
+    CREATE TABLE ${RDB}.t (x UInt64, y String)
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t/{shard}', '{replica}') ORDER BY x
+    SETTINGS database_replicated_allow_replicated_engine_arguments = 3
+"
 
+# Read the resolved path back rather than re-deriving it, so the second replica provably attaches
+# to the first one's table instead of to a path this test merely believes is the same.
 table_zk=$(${CLICKHOUSE_CLIENT} -q "SELECT zookeeper_path FROM system.replicas WHERE database = '${RDB}' AND table = 't'")
 
 # Register a second replica of the same table and detach it, so it never processes the log entry.
@@ -53,6 +66,17 @@ ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode none -q "
     ENGINE = ReplicatedMergeTree('${table_zk}', 'r2') ORDER BY x
     SETTINGS database_replicated_allow_replicated_engine_arguments = 3
 "
+
+# Assert the two replicas really share one table, so a passing test cannot mean the second replica
+# silently landed on a different path and the `alter_sync = 2` wait had nothing to wait for.
+replicas=$(${CLICKHOUSE_CLIENT} -q "
+    SELECT uniqExact(zookeeper_path) = 1 AND count() = 2
+    FROM system.replicas WHERE database IN ('${RDB}', '${AUX}') AND table IN ('t', 't2')")
+if [ "$replicas" != "1" ]; then
+    echo "FAIL: the two replicas do not share one zookeeper_path, the test did not set up the race"
+    exit 1
+fi
+
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode none -q "DETACH TABLE ${AUX}.t2 SYNC"
 
 # `MODIFY COLUMN` on a `ReplicatedMergeTree` is routed to a single replica per shard
