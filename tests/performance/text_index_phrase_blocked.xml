@@ -8,7 +8,9 @@
 
   <fill_query>ALTER TABLE hits_10m_single MODIFY SETTING allow_experimental_text_index_phrase_search = 1</fill_query>
   <fill_query>ALTER TABLE hits_10m_single ADD INDEX idx_sp_blocked(SearchPhrase) TYPE text(tokenizer = 'splitByNonAlpha', support_phrase_search = 1)</fill_query>
-  <fill_query>ALTER TABLE hits_10m_single MATERIALIZE INDEX idx_sp_blocked</fill_query>
+  <!-- Building positions makes this mutation slow; wait for it so the benchmark queries measure
+       the fully materialized index and the teardown DROP INDEX does not race with it. -->
+  <fill_query>ALTER TABLE hits_10m_single MATERIALIZE INDEX idx_sp_blocked SETTINGS mutations_sync = 1</fill_query>
 
   <!-- Phrases ordered by decreasing frequency: candidate-heavy down to no candidates. -->
   <query>SELECT count() FROM hits_10m_single WHERE hasPhrase(SearchPhrase, 'video game')</query>
