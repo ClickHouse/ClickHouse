@@ -886,9 +886,9 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
 
     pcg64 rng(randomSeed());
 
-    /// `throw_if_lost = false`: `cleanupQueue` removes the whole entry subtree (including this lock
-    /// node) once the entry becomes outdated, so a missing lock node at unlock time is expected here.
-    /// A lock taken over by another session is still reported as a logical error.
+    /// `throw_if_lost = false`: this lock node is a child of the queue entry, a subtree this code does
+    /// not own, so it cannot rule out a recursive removal while the lock is held. An absent node at
+    /// unlock time is therefore not a bug here; a foreign owner still is (reported as a logical error).
     execute_on_single_replica_lock
         = createSimpleZooKeeperLock(zookeeper, shard_path, "lock", task.host_id_str, /*throw_if_lost=*/false);
 

@@ -4,9 +4,10 @@
 # no-shared-merge-tree: uses an explicit `ReplicatedMergeTree` `zookeeper_path` for the second replica.
 #
 # Regression test: the DDL shard lock at `<ddl entry>/shards/<shard>/lock` may legitimately
-# disappear while its owning session is still healthy, because `DDLWorker::cleanupQueue` removes
-# the whole entry subtree. `ZooKeeperLock::unlock` must tolerate that instead of raising
-# `LOGICAL_ERROR` "Lock is lost, node does not exist", which aborts the server.
+# disappear while its owning session is still healthy, because the lock lives inside the queue entry
+# subtree and other actors remove that subtree recursively. `ZooKeeperLock::unlock` must tolerate that
+# instead of raising `LOGICAL_ERROR` "Lock is lost, node does not exist", which aborts the server.
+# The removal below stands in for any such actor; what is asserted is `unlock`'s reaction to it.
 #
 # Synchronization invariant: the test proceeds only once the lock node is observed to EXIST, which
 # is the point at which the executor provably holds it; the node is then removed, and its absence
@@ -110,8 +111,8 @@ if [ -z "$lock_entry" ]; then
     exit 1
 fi
 
-# What `DDLWorker::cleanupQueue` does to an outdated entry: recursively remove the entry subtree,
-# which takes the live ephemeral shard lock with it.
+# Remove the entry subtree recursively, which takes the live ephemeral shard lock with it. The lock's
+# owner does not own this subtree, so it cannot rule out such a removal while the lock is held.
 ${CLICKHOUSE_KEEPER_CLIENT} -q "rmr '${DB_ZK}/log/${lock_entry}'" > /dev/null 2>&1
 
 # Assert the lock node is really gone, so a passing test cannot mean "the race was not set up".
