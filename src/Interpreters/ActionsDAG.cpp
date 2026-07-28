@@ -271,7 +271,7 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
     return addNode(std::move(node));
 }
 
-const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column)
+const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column, bool is_masked_secret)
 {
     if (!column.column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", column.name);
@@ -281,6 +281,7 @@ const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column)
     node.result_type = std::move(column.type);
     node.result_name = std::move(column.name);
     node.column = std::move(column.column);
+    node.is_masked_secret = is_masked_secret;
 
     return addNode(std::move(node));
 }
