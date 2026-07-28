@@ -1,7 +1,5 @@
 import logging
 
-import pytest
-
 from helpers.iceberg_utils import (
     default_upload_directory,
     get_creation_expression,
@@ -9,8 +7,14 @@ from helpers.iceberg_utils import (
 )
 
 NUMBER_OF_MANIFESTS = 5
-MAX_SELECT_SECONDS = 0.60
 ROWS_PER_MANIFEST = 100
+
+# Must match the delay the `iceberg_slow_manifest_read` failpoint injects.
+SLEEP_PER_MANIFEST_SECONDS = 0.40
+
+# Serial reads cost one delay each; prefetching overlaps them. The bound sits between.
+SERIAL_SECONDS = NUMBER_OF_MANIFESTS * SLEEP_PER_MANIFEST_SECONDS
+MAX_SELECT_SECONDS = 0.8 * SERIAL_SECONDS
 
 def elapsed(node, query, **kwargs):
     query_id = get_uuid_str()
@@ -25,10 +29,8 @@ def elapsed(node, query, **kwargs):
 def test_manifest_read_performance(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
 
-    # The assertion is a wall-clock bound, which sanitizers inflate far past the
-    # threshold regardless of whether the manifests are read concurrently.
-    if instance.is_built_with_sanitizer():
-        pytest.skip("Disabled for sanitizers: the wall-clock bound is not meaningful there")
+    # Skip timing asserts on slow builds.
+    slow_build = instance.is_built_with_sanitizer() or instance.is_built_with_llvm_coverage()
 
     spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_manifest_read_performance_" + get_uuid_str()
@@ -71,7 +73,14 @@ def test_manifest_read_performance(started_cluster_iceberg_with_spark):
 
     logging.info("SELECT * over %s manifests took %.3f seconds", NUMBER_OF_MANIFESTS, duration)
 
+    if slow_build:
+        logging.info(
+            "Instrumented build: skipping the %.3fs wall-clock bound", MAX_SELECT_SECONDS
+        )
+        return
+
     assert duration < MAX_SELECT_SECONDS, (
         f"SELECT * over a table with ~{NUMBER_OF_MANIFESTS} manifests took "
-        f"{duration:.3f}s, exceeding the {MAX_SELECT_SECONDS}s bound"
+        f"{duration:.3f}s, exceeding the {MAX_SELECT_SECONDS}s bound. Reading them serially "
+        f"would take about {SERIAL_SECONDS}s, so the manifests were likely not prefetched"
     )

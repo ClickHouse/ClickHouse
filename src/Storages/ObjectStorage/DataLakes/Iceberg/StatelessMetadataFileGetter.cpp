@@ -92,10 +92,10 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
         if (use_iceberg_metadata_cache)
             read_settings.enable_filesystem_cache = false;
 
-        // Test-only: simulate realistic per-object latency.
+        // Test-only: simulate per-object latency.
         fiu_do_on(FailPoints::iceberg_slow_manifest_read,
         {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            std::this_thread::sleep_for(std::chrono::milliseconds(400));
         });
 
         auto buffer = createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
