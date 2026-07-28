@@ -11,6 +11,20 @@
 namespace DB
 {
 
+void setKeeperFileDescriptorMetrics(
+    AsynchronousMetricValues & new_values, Int64 open_file_descriptor_count, std::optional<size_t> max_file_descriptor_count)
+{
+    new_values["KeeperOpenFileDescriptorCount"]
+        = {open_file_descriptor_count, "The number of open file descriptors in ClickHouse Keeper. `-1` if the value cannot be determined."};
+    if (max_file_descriptor_count.has_value())
+        new_values["KeeperMaxFileDescriptorCount"] = {
+            *max_file_descriptor_count,
+            "The maximum number of open file descriptors in ClickHouse Keeper. `-1` if the value cannot be determined."};
+    else
+        new_values["KeeperMaxFileDescriptorCount"]
+            = {-1, "The maximum number of open file descriptors in ClickHouse Keeper. `-1` if the value cannot be determined."};
+}
+
 void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousMetricValues & new_values)
 {
 #if USE_NURAFT
@@ -85,11 +99,7 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     /// it needs to be fixed and it needs to be atomic to avoid deadlock
     ///new_values["KeeperLatestSnapshotSize"] = { latest_snapshot_size, "The uncompressed size in bytes of the latest snapshot created by ClickHouse Keeper." };
 
-    new_values["KeeperOpenFileDescriptorCount"] = { open_file_descriptor_count, "The number of open file descriptors in ClickHouse Keeper. `-1` if the value cannot be determined." };
-    if (max_file_descriptor_count.has_value())
-        new_values["KeeperMaxFileDescriptorCount"] = { *max_file_descriptor_count, "The maximum number of open file descriptors in ClickHouse Keeper. `-1` if the value cannot be determined." };
-    else
-        new_values["KeeperMaxFileDescriptorCount"] = { -1, "The maximum number of open file descriptors in ClickHouse Keeper. `-1` if the value cannot be determined." };
+    setKeeperFileDescriptorMetrics(new_values, open_file_descriptor_count, max_file_descriptor_count);
 
     new_values["KeeperFollowers"] = { followers, "The number of followers of ClickHouse Keeper." };
     new_values["KeeperSyncedFollowers"] = { synced_followers, "The number of followers of ClickHouse Keeper who are also in-sync." };
