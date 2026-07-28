@@ -24,7 +24,9 @@ SELECT 'Array(Int64) / 10, range', (SELECT count() FROM t_key_arr64_04652 WHERE 
 SELECT 'Array(Int64) / 4', (SELECT count() FROM t_key_arr64_04652 WHERE intDiv(a, toInt64(4)) = [toInt64(2), toInt64(25)]) AS keyed, (SELECT count() FROM t_mem_arr64_04652 WHERE intDiv(a, toInt64(4)) = [toInt64(2), toInt64(25)]) AS oracle;
 SELECT 'Array(Int64) / 10, IN', (SELECT count() FROM t_key_arr64_04652 WHERE intDiv(a, toInt64(10)) IN ([toInt64(1), toInt64(0)], [toInt64(2), toInt64(0)])) AS keyed, (SELECT count() FROM t_mem_arr64_04652 WHERE intDiv(a, toInt64(10)) IN ([toInt64(1), toInt64(0)], [toInt64(2), toInt64(0)])) AS oracle;
 
--- Read-in-order uses the same verdict, so the sort itself was wrong.
+-- Read-in-order uses the same verdict, so the sort itself was wrong. CI randomizes
+-- `optimize_read_in_order`, and an ordinary sort answers correctly either way, so pin it.
+SET optimize_read_in_order = 1;
 SELECT 'ORDER BY intDiv(Array(Int64), 10)',
        (SELECT groupArray(x) FROM (SELECT intDiv(a, toInt64(10)) AS x FROM t_key_arr64_04652 ORDER BY intDiv(a, toInt64(10)))) AS keyed,
        (SELECT groupArray(x) FROM (SELECT intDiv(a, toInt64(10)) AS x FROM t_mem_arr64_04652 ORDER BY intDiv(a, toInt64(10)))) AS oracle;
@@ -170,6 +172,17 @@ SELECT 'divide(const, Array key)', (SELECT count() FROM t_key_arrnz_04652 WHERE 
 SELECT 'plus(Array key, Array const)', (SELECT count() FROM t_key_arr64_04652 WHERE plus(a, [toInt64(0), toInt64(0)]) = [toInt64(11), toInt64(5)]) AS keyed, (SELECT count() FROM t_mem_arr64_04652 WHERE plus(a, [toInt64(0), toInt64(0)]) = [toInt64(11), toInt64(5)]) AS oracle;
 SELECT 'minus(Array key, Array const)', (SELECT count() FROM t_key_arr64_04652 WHERE minus(a, [toInt64(0), toInt64(0)]) = [toInt64(11), toInt64(5)]) AS keyed, (SELECT count() FROM t_mem_arr64_04652 WHERE minus(a, [toInt64(0), toInt64(0)]) = [toInt64(11), toInt64(5)]) AS oracle;
 
+-- `plus`/`minus` also drop rows outright: the transformed ENDPOINTS keep their order here, so the
+-- overflow of the INTERIOR element is invisible to the endpoint check and its granule is pruned away.
+DROP TABLE IF EXISTS t_key_ovf_04652 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_mem_ovf_04652 SETTINGS ignore_drop_queries_probability = 0;
+CREATE TABLE t_key_ovf_04652 (a Array(Int64)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+CREATE TABLE t_mem_ovf_04652 (a Array(Int64)) ENGINE = Memory;
+INSERT INTO t_key_ovf_04652 VALUES ([1,0]),([1,9223372036854775807]),([2,0]);
+INSERT INTO t_mem_ovf_04652 VALUES ([1,0]),([1,9223372036854775807]),([2,0]);
+SELECT 'plus(Array key, Array const) interior overflow', (SELECT count() FROM t_key_ovf_04652 WHERE plus(a, [toInt64(0), toInt64(1)]) = [toInt64(1), toInt64(-9223372036854775808)]) AS keyed, (SELECT count() FROM t_mem_ovf_04652 WHERE plus(a, [toInt64(0), toInt64(1)]) = [toInt64(1), toInt64(-9223372036854775808)]) AS oracle;
+SELECT 'minus(Array key, Array const) interior overflow', (SELECT count() FROM t_key_ovf_04652 WHERE minus(a, [toInt64(0), toInt64(-1)]) = [toInt64(1), toInt64(-9223372036854775808)]) AS keyed, (SELECT count() FROM t_mem_ovf_04652 WHERE minus(a, [toInt64(0), toInt64(-1)]) = [toInt64(1), toInt64(-9223372036854775808)]) AS oracle;
+
 -- `Tuple * Tuple` lowers to `dotProduct`, so the varying operand is compound while the RESULT is
 -- scalar. Only a check on the argument type catches this one.
 SELECT 'multiply(Tuple key, Tuple const) = dotProduct', (SELECT count() FROM t_key_tup64_04652 WHERE multiply(a, (toInt64(1), toInt64(1))) = toInt64(110)) AS keyed, (SELECT count() FROM t_mem_tup64_04652 WHERE multiply(a, (toInt64(1), toInt64(1))) = toInt64(110)) AS oracle;
@@ -274,6 +287,8 @@ DROP TABLE t_key_arrmix_04652 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_mem_arrmix_04652 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_key_arrnz_04652 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_mem_arrnz_04652 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE t_key_ovf_04652 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE t_mem_ovf_04652 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_key_scalar_04652 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_mem_scalar_04652 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_key_prune_04652 SETTINGS ignore_drop_queries_probability = 0;

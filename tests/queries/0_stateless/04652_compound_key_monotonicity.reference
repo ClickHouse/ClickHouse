@@ -23,6 +23,8 @@ intDiv(const, Array key)	1	1
 divide(const, Array key)	1	1
 plus(Array key, Array const)	1	1
 minus(Array key, Array const)	1	1
+plus(Array key, Array const) interior overflow	1	1
+minus(Array key, Array const) interior overflow	1	1
 multiply(Tuple key, Tuple const) = dotProduct	1	1
 intDiv(Array const, scalar key)	1	1
 divide(Array const, scalar key)	1	1
