@@ -377,7 +377,7 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
     return addNode(std::move(node));
 }
 
-const ActionsDAG::Node & ActionsDAG::addColumn(ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic_constant)
+const ActionsDAG::Node & ActionsDAG::addColumn(ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic_constant, bool is_masked_secret)
 {
     if (!column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", name);
@@ -393,6 +393,7 @@ const ActionsDAG::Node & ActionsDAG::addColumn(ColumnConstPtr column, DataTypePt
     node.result_name = std::move(name);
     node.column = std::move(column);
     node.is_deterministic_constant = is_deterministic_constant;
+    node.is_masked_secret = is_masked_secret;
 
     return addNode(std::move(node));
 }
