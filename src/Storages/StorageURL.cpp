@@ -2289,15 +2289,6 @@ public:
     /// `SHOW CREATE TABLE` and `system.tables`, even though reads/writes go to the delegate.
     String getName() const override { return "URL"; }
 
-    /// Forward the delegate's subcolumn-optimization contract. `StorageProxy` forwards
-    /// `supportsSubcolumns` to the delegate (true for `File`/object storage), but not
-    /// `supportsOptimizationToSubcolumns`. Without this override the wrapper would fall back to
-    /// `IStorage::supportsOptimizationToSubcolumns`, which defaults to `supportsSubcolumns` and would
-    /// therefore report `true`, while the direct `StorageFile` and plain `StorageURL` deliberately
-    /// return `false`. `FunctionToSubcolumnsPass` reads this bit, so `ENGINE = URL('file://...')`
-    /// would otherwise receive subcolumn rewrites the backend explicitly disables.
-    bool supportsOptimizationToSubcolumns() const override { return nested->supportsOptimizationToSubcolumns(); }
-
     /// Forward the delegate's narrower PREWHERE contract. `StorageProxy` forwards `supportsPrewhere`,
     /// but not `supportedPrewhereColumns`/`canMoveConditionsToPrewhere`. Without these overrides the
     /// wrapper would fall back to `IStorage::supportedPrewhereColumns == std::nullopt` (unrestricted)

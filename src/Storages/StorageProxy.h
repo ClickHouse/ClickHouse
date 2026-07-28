@@ -20,6 +20,13 @@ public:
 
     bool isRemote() const override { return getNested()->isRemote(); }
     bool isView() const override { return getNested()->isView(); }
+    /// Engine classification is used by policy checks (e.g. the `disable_insertion_and_mutation`
+    /// guard in `InterpreterInsertQuery`, which exempts external engines), so a proxy has to report
+    /// the class of the storage it delegates to, not the `IStorage` default of a local engine.
+    bool isDataLake() const override { return getNested()->isDataLake(); }
+    bool isExternalDatabase() const override { return getNested()->isExternalDatabase(); }
+    bool isObjectStorage() const override { return getNested()->isObjectStorage(); }
+    bool isMessageQueue() const override { return getNested()->isMessageQueue(); }
     bool supportsTruncate() const override { return getNested()->supportsTruncate(); }
     bool supportsSampling() const override { return getNested()->supportsSampling(); }
     bool supportsFinal() const override { return getNested()->supportsFinal(); }

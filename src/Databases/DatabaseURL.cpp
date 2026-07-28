@@ -92,16 +92,12 @@ public:
     /// would behave differently from the same data read directly through `file`/`s3` or through
     /// `ENGINE = URL(...)` (whose wrapper, `StorageURLSchemeDispatch`, carries the same overrides):
     ///
-    /// * `supportsOptimizationToSubcolumns` defaults to `supportsSubcolumns` (true for the
-    ///   delegates), while `StorageFile`, `StorageObjectStorage` and plain `StorageURL` return
-    ///   `false`, so `FunctionToSubcolumnsPass` would apply rewrites the backend disables;
     /// * `supportedPrewhereColumns` defaults to `std::nullopt` (unrestricted) and
     ///   `canMoveConditionsToPrewhere` to `supportsPrewhere`, while the delegates keep `PREWHERE`
     ///   away from columns not materialized at `PREWHERE` time (default expressions, hive-partition
     ///   columns);
     /// * `supportsTrivialCountOptimization` defaults to `false`, while the delegates return `true`,
     ///   so `SELECT count()` would parse the external data instead of using the optimized count path.
-    bool supportsOptimizationToSubcolumns() const override { return nested->supportsOptimizationToSubcolumns(); }
     std::optional<NameSet> supportedPrewhereColumns() const override { return nested->supportedPrewhereColumns(); }
     bool canMoveConditionsToPrewhere() const override { return nested->canMoveConditionsToPrewhere(); }
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override
@@ -369,7 +365,7 @@ void registerDatabaseURL(DatabaseFactory & factory)
             "SELECT * FROM web.`daily.csv`; -- reads https://example.com/data/daily.csv",
             ""
         }},
-        .introduced_in = {26, 7},
+        .introduced_in = {26, 8},
         .related = {"Filesystem", "S3", "HDFS"}});
 }
 }

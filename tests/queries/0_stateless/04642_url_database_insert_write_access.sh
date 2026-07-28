@@ -18,17 +18,20 @@ DB="db_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 USER="user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 TABLE="${DATA_FILE}"
 
+# Note: the source grants are given one by one, and the write is only exercised as "no source grant"
+# vs. "the source is granted". A `READ`-only source grant cannot be relied upon here: with
+# `access_control_improvements.enable_read_write_grants` disabled (the default), `GRANT READ ON FILE`
+# is stored as the old-style whole-source `FILE` grant, which allows writing as well.
 ${CLICKHOUSE_CLIENT} -q "
 DROP DATABASE IF EXISTS ${DB};
 DROP USER IF EXISTS ${USER};
 CREATE DATABASE ${DB} ENGINE = URL('file://');
 CREATE USER ${USER} IDENTIFIED WITH no_password;
 GRANT SELECT, INSERT ON ${DB}.* TO ${USER};
-GRANT READ ON FILE TO ${USER};
 "
 
-echo '--- SELECT with only the read source grant'
-${CLICKHOUSE_CLIENT} --user "${USER}" -q "SELECT * FROM ${DB}.\`${TABLE}\`"
+echo '--- SELECT without the read source grant must fail'
+${CLICKHOUSE_CLIENT} --user "${USER}" -q "SELECT * FROM ${DB}.\`${TABLE}\`" 2>&1 | grep -o -m1 'ACCESS_DENIED'
 
 echo '--- INSERT without the write source grant must fail'
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "INSERT INTO ${DB}.\`${TABLE}\` VALUES (2)" 2>&1 | grep -o -m1 'ACCESS_DENIED'
@@ -38,6 +41,10 @@ echo '--- INSERT without the write source grant must fail with an asynchronous i
 # the sink is created would neither reach the user (the query has already returned success with
 # `wait_for_async_insert = 0`) nor run with the privileges the user had when the query was issued.
 ${CLICKHOUSE_CLIENT} --user "${USER}" --async_insert 1 --wait_for_async_insert 0 -q "INSERT INTO ${DB}.\`${TABLE}\` VALUES (2)" 2>&1 | grep -o -m1 'ACCESS_DENIED'
+
+echo '--- SELECT with the read source grant'
+${CLICKHOUSE_CLIENT} -q "GRANT READ ON FILE TO ${USER}"
+${CLICKHOUSE_CLIENT} --user "${USER}" -q "SELECT * FROM ${DB}.\`${TABLE}\`"
 
 echo '--- INSERT with the write source grant'
 ${CLICKHOUSE_CLIENT} -q "GRANT WRITE ON FILE TO ${USER}"
