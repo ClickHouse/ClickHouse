@@ -27,156 +27,150 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   لا تُعِد أي سياسة دورة حياة لـ AWS/GCS. هذا غير مدعوم وقد يؤدي إلى تلف الجداول.
 </Warning>
 
-<div id="1-use-s3-as-a-clickhouse-disk">
-  ## 1. استخدم S3 كقرص في ClickHouse
-</div>
+<Steps>
+  <Step title="استخدم S3 كقرص لـ ClickHouse" id="1-use-s3-as-a-clickhouse-disk">
+    ### إنشاء قرص
 
-<div id="creating-a-disk">
-  ### إنشاء قرص
-</div>
+    أنشئ ملفًا جديدًا في الدليل `config.d` الخاص بـ ClickHouse لتخزين تهيئة التخزين:
 
-أنشئ ملفًا جديدًا في الدليل `config.d` الخاص بـ ClickHouse لتخزين تهيئة التخزين:
+    ```bash
+    vim /etc/clickhouse-server/config.d/storage_config.xml
+    ```
 
-```bash
-vim /etc/clickhouse-server/config.d/storage_config.xml
-```
+    انسخ محتوى XML التالي إلى الملف الذي أُنشئ حديثًا، مع استبدال `BUCKET` و`ACCESS_KEY_ID` و`SECRET_ACCESS_KEY` بتفاصيل حاوية AWS التي تريد تخزين بياناتك فيها:
 
-انسخ محتوى XML التالي إلى الملف الذي أُنشئ حديثًا، مع استبدال `BUCKET` و`ACCESS_KEY_ID` و`SECRET_ACCESS_KEY` بتفاصيل حاوية AWS التي تريد تخزين بياناتك فيها:
-
-```xml
-<clickhouse>
-  <storage_configuration>
-    <disks>
-      <s3_disk>
-        <type>s3</type>
-        <endpoint>$BUCKET</endpoint>
-        <access_key_id>$ACCESS_KEY_ID</access_key_id>
-        <secret_access_key>$SECRET_ACCESS_KEY</secret_access_key>
-        <metadata_path>/var/lib/clickhouse/disks/s3_disk/</metadata_path>
-      </s3_disk>
-      <s3_cache>
-        <type>cache</type>
-        <disk>s3_disk</disk>
-        <path>/var/lib/clickhouse/disks/s3_cache/</path>
-        <max_size>10Gi</max_size>
-      </s3_cache>
-    </disks>
-    <policies>
-      <s3_main>
-        <volumes>
-          <main>
+    ```xml
+    <clickhouse>
+      <storage_configuration>
+        <disks>
+          <s3_disk>
+            <type>s3</type>
+            <endpoint>$BUCKET</endpoint>
+            <access_key_id>$ACCESS_KEY_ID</access_key_id>
+            <secret_access_key>$SECRET_ACCESS_KEY</secret_access_key>
+            <metadata_path>/var/lib/clickhouse/disks/s3_disk/</metadata_path>
+          </s3_disk>
+          <s3_cache>
+            <type>cache</type>
             <disk>s3_disk</disk>
-          </main>
-        </volumes>
-      </s3_main>
-    </policies>
-  </storage_configuration>
-</clickhouse>
-```
+            <path>/var/lib/clickhouse/disks/s3_cache/</path>
+            <max_size>10Gi</max_size>
+          </s3_cache>
+        </disks>
+        <policies>
+          <s3_main>
+            <volumes>
+              <main>
+                <disk>s3_disk</disk>
+              </main>
+            </volumes>
+          </s3_main>
+        </policies>
+      </storage_configuration>
+    </clickhouse>
+    ```
 
-إذا كنت بحاجة إلى تحديد إعدادات إضافية لقرص S3 — مثل تحديد `region` أو إرسال ترويسة HTTP مخصّصة `header` — فيمكنك العثور على قائمة الإعدادات ذات الصلة [هنا](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
+    إذا كنت بحاجة إلى تحديد إعدادات إضافية لقرص S3 — مثل تحديد `region` أو إرسال ترويسة HTTP مخصّصة `header` — فيمكنك العثور على قائمة الإعدادات ذات الصلة [هنا](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
 
-يمكنك أيضًا استبدال `access_key_id` و`secret_access_key` بما يلي، والذي سيحاول الحصول على بيانات الاعتماد من متغيرات البيئة وبيانات Amazon EC2 الوصفية:
+    يمكنك أيضًا استبدال `access_key_id` و`secret_access_key` بما يلي، والذي سيحاول الحصول على بيانات الاعتماد من متغيرات البيئة وبيانات Amazon EC2 الوصفية:
 
-```bash
-<use_environment_credentials>true</use_environment_credentials>
-```
+    ```bash
+    <use_environment_credentials>true</use_environment_credentials>
+    ```
 
-بعد إنشاء ملف الإعداد، تحتاج إلى تغيير ملكية الملف إلى المستخدم والمجموعة `clickhouse`:
+    بعد إنشاء ملف الإعداد، تحتاج إلى تغيير ملكية الملف إلى المستخدم والمجموعة `clickhouse`:
 
-```bash
-chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
-```
+    ```bash
+    chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
+    ```
 
-يمكنك الآن إعادة تشغيل خادم ClickHouse حتى تدخل التغييرات حيّز التنفيذ:
+    يمكنك الآن إعادة تشغيل خادم ClickHouse حتى تدخل التغييرات حيّز التنفيذ:
 
-```bash
-service clickhouse-server restart
-```
+    ```bash
+    service clickhouse-server restart
+    ```
+  </Step>
 
-<div id="2-create-a-table-backed-by-s3">
-  ## 2. إنشاء جدول يعتمد على S3
-</div>
+  <Step title="إنشاء جدول يعتمد على S3" id="2-create-a-table-backed-by-s3">
+    لاختبار أن قرص S3 قد أُعدّ على نحو صحيح، يمكننا محاولة إنشاء جدول وتنفيذ query عليه.
 
-لاختبار أننا هيّأنا قرص S3 بشكل صحيح، يمكننا محاولة إنشاء جدول وإجراء استعلام عليه.
+    أنشئ جدولًا مع تحديد storage policy الجديدة الخاصة بـ S3:
 
-أنشئ جدولًا مع تحديد سياسة التخزين الجديدة لـ S3:
+    ```sql
+    CREATE TABLE my_s3_table
+      (
+        `id` UInt64,
+        `column1` String
+      )
+    ENGINE = MergeTree
+    ORDER BY id
+    SETTINGS storage_policy = 's3_main';
+    ```
 
-```sql
-CREATE TABLE my_s3_table
-  (
-    `id` UInt64,
-    `column1` String
-  )
-ENGINE = MergeTree
-ORDER BY id
-SETTINGS storage_policy = 's3_main';
-```
+    لاحظ أننا لم نحتج إلى تحديد المحرّك على أنه `S3BackedMergeTree`. يحوّل ClickHouse نوع المحرّك تلقائيًا داخليًا إذا اكتشف أن الجدول يستخدم S3 للتخزين.
 
-لاحظ أننا لم نكن بحاجة إلى تحديد المحرّك على أنه `S3BackedMergeTree`. إذ يحوّل ClickHouse نوع المحرّك تلقائيًا داخليًا إذا اكتشف أن الجدول يستخدم S3 للتخزين.
+    أظهِر أن الجدول أُنشئ باستخدام السياسة الصحيحة:
 
-تأكّد من أن الجدول قد أُنشئ باستخدام السياسة الصحيحة:
+    ```sql
+    SHOW CREATE TABLE my_s3_table;
+    ```
 
-```sql
-SHOW CREATE TABLE my_s3_table;
-```
+    يجب أن تظهر لك النتيجة التالية:
 
-من المفترض أن تظهر لك النتيجة التالية:
+    ```response
+    ┌─statement────────────────────────────────────────────────────
+    │ CREATE TABLE default.my_s3_table
+    (
+      `id` UInt64,
+      `column1` String
+    )
+    ENGINE = MergeTree
+    ORDER BY id
+    SETTINGS storage_policy = 's3_main', index_granularity = 8192
+    └──────────────────────────────────────────────────────────────
+    ```
 
-```response
-┌─statement────────────────────────────────────────────────────
-│ CREATE TABLE default.my_s3_table
-(
-  `id` UInt64,
-  `column1` String
-)
-ENGINE = MergeTree
-ORDER BY id
-SETTINGS storage_policy = 's3_main', index_granularity = 8192
-└──────────────────────────────────────────────────────────────
-```
+    لنُدرج الآن بعض الصفوف في جدولنا الجديد:
 
-لنُدرِج الآن بعض الصفوف في جدولنا الجديد:
+    ```sql
+    INSERT INTO my_s3_table (id, column1)
+      VALUES (1, 'abc'), (2, 'xyz');
+    ```
 
-```sql
-INSERT INTO my_s3_table (id, column1)
-  VALUES (1, 'abc'), (2, 'xyz');
-```
+    لنتحقق من أنه تم إدراج الصفوف:
 
-لنتحقق من أنه تم إدراج صفوفنا:
+    ```sql
+    SELECT * FROM my_s3_table;
+    ```
 
-```sql
-SELECT * FROM my_s3_table;
-```
+    ```response
+    ┌─id─┬─column1─┐
+    │  1 │ abc     │
+    │  2 │ xyz     │
+    └────┴─────────┘
 
-```response
-┌─id─┬─column1─┐
-│  1 │ abc     │
-│  2 │ xyz     │
-└────┴─────────┘
+    2 rows in set. Elapsed: 0.284 sec.
+    ```
 
-2 rows in set. Elapsed: 0.284 sec.
-```
+    في وحدة تحكم AWS، إذا أُدرجت بياناتك بنجاح في S3، فيجب أن ترى أن ClickHouse أنشأ ملفات جديدة في الحاوية التي حددتها.
 
-في وحدة تحكم AWS، إذا أُدرِجت بياناتك بنجاح في S3، فمن المفترض أن ترى أن ClickHouse قد أنشأ ملفات جديدة في حاوية S3 التي حددتها.
+    إذا سار كل شيء بنجاح، فأنت تستخدم الآن ClickHouse مع فصل التخزين عن الحوسبة!
 
-إذا سار كل شيء بنجاح، فأنت الآن تستخدم ClickHouse مع فصل التخزين والحوسبة!
+    <Image img="/images/guides/s3_bucket_example.webp" size="md" alt="مثال على حاوية S3 باستخدام فصل الحوسبة عن التخزين" border />
+  </Step>
 
-<Image img="/images/guides/s3_bucket_example.webp" size="md" alt="مثال على حاوية S3 باستخدام فصل التخزين والحوسبة" border />
+  <Step title="إعداد النسخ المتماثل لتحمّل الأعطال (اختياري)" id="3-implementing-replication-for-fault-tolerance-optional">
+    <Warning>
+      لا تُعدّ أي سياسة دورة حياة لـ AWS/GCS. هذا غير مدعوم وقد يؤدي إلى تلف الجداول.
+    </Warning>
 
-<div id="3-implementing-replication-for-fault-tolerance-optional">
-  ## 3. تنفيذ النسخ المتماثل لتحقيق تحمّل الأعطال (اختياري)
-</div>
+    لتحمّل الأعطال، يمكنك استخدام عدة عُقد لخادم ClickHouse موزعة عبر عدة مناطق AWS، مع حاوية S3 لكل عقدة.
 
-<Warning>
-  لا تقم بتهيئة أي سياسة دورة حياة في AWS/GCS. هذا غير مدعوم وقد يؤدي إلى تلف الجداول.
-</Warning>
+    يمكن تحقيق النسخ المتماثل باستخدام أقراص S3 عبر محرك الجداول `ReplicatedMergeTree`. راجع الدليل التالي للاطلاع على التفاصيل:
 
-لتحقيق تحمّل الأعطال، يمكنك استخدام عدة عُقد لخوادم ClickHouse موزعة على عدة مناطق AWS، مع حاوية S3 لكل عقدة.
-
-يمكن تنفيذ النسخ المتماثل باستخدام أقراص S3 عبر محرك الجداول `ReplicatedMergeTree`. راجع الدليل التالي لمزيد من التفاصيل:
-
-* [نسخ شظية واحدة متماثلًا عبر منطقتين من AWS باستخدام تخزين الكائنات في S3](/ar/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#s3-multi-region).
+    * [إعداد النسخ المتماثل لشظية واحدة عبر منطقتي AWS باستخدام تخزين الكائنات S3](/ar/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#s3-multi-region).
+  </Step>
+</Steps>
 
 <div id="further-reading">
   ## للمزيد من القراءة

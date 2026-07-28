@@ -1,8 +1,8 @@
 {
   "group": "Session Settings",
-  "root": "reference/settings/session-settings",
   "directory": "none",
   "pages": [
+    "reference/settings/session-settings",
     "reference/settings/session-settings/additional",
     "reference/settings/session-settings/aggregate",
     "reference/settings/session-settings/aggregation",

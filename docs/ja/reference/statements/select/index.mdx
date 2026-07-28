@@ -36,21 +36,24 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 
 すべての句は省略可能です。ただし、`SELECT` の直後にある必須の式のリストは例外で、これについては[以下](#select-clause)で詳しく説明します。
 
-各オプション句の詳細は個別のセクションで扱っており、実行順に以下に示します。
+各オプション句の詳細は個別のセクションで扱っており、実行順に以下に示します (ただし、`SELECT` と `DISTINCT` は便宜上先頭に記載しています。これらの式は、[以下](#select-clause)で説明するように、先行する句の処理が完了した後にのみ評価されます) 。
 
 * [WITH 句](/ja/reference/statements/select/with)
 * [SELECT 句](#select-clause)
+* [ALL 句](/ja/reference/statements/select/all)
 * [DISTINCT 句](/ja/reference/statements/select/distinct)
 * [FROM 句](/ja/reference/statements/select/from)
 * [SAMPLE 句](/ja/reference/statements/select/sample)
+* [ARRAY JOIN 句](/ja/reference/statements/select/array-join)
 * [JOIN 句](/ja/reference/statements/select/join)
 * [PREWHERE 句](/ja/reference/statements/select/prewhere)
 * [WHERE 句](/ja/reference/statements/select/where)
-* [WINDOW 句](/ja/reference/functions/window-functions/index)
 * [GROUP BY 句](/ja/reference/statements/select/group-by)
-* [LIMIT BY 句](/ja/reference/statements/select/limit-by)
 * [HAVING 句](/ja/reference/statements/select/having)
+* [WINDOW 句](/ja/reference/functions/window-functions/index)
 * [QUALIFY 句](/ja/reference/statements/select/qualify)
+* [ORDER BY 句](/ja/reference/statements/select/order-by)
+* [LIMIT BY 句](/ja/reference/statements/select/limit-by)
 * [LIMIT 句](/ja/reference/statements/select/limit)
 * [OFFSET 句](/ja/reference/statements/select/offset)
 * [UNION 句](/ja/reference/statements/select/union)

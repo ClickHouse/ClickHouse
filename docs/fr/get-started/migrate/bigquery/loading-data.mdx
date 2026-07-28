@@ -28,9 +28,7 @@ Le temps nécessaire pour exporter des données de BigQuery vers ClickHouse dép
 | Total                                                                                             | 8.26 milliards | 23,577            | 3.982TB           | 8 min 3 s       | &gt; 6 jours 5 h | 53 min 45 s       |
 
 <Steps>
-  <Step>
-    ## Exporter les données d’une table vers GCS
-
+  <Step title="Exporter les données d’une table vers GCS" id="1-export-table-data-to-gcs">
     Dans cette étape, nous utilisons le [workspace SQL de BigQuery](https://cloud.google.com/bigquery/docs/bigquery-web-ui) pour exécuter nos commandes SQL. Ci-dessous, nous exportons une table BigQuery nommée `mytable` vers un bucket GCS à l’aide de l’instruction [`EXPORT DATA`](https://cloud.google.com/bigquery/docs/reference/standard-sql/other-statements).
 
     ```sql
@@ -66,9 +64,7 @@ Le temps nécessaire pour exporter des données de BigQuery vers ClickHouse dép
     * Parquet, en tant que format orienté colonnes, constitue un meilleur format d’échange, car il est nativement compressé et plus rapide à exporter pour BigQuery ainsi qu’à interroger pour ClickHouse
   </Step>
 
-  <Step>
-    ## Importation de données dans ClickHouse depuis GCS
-
+  <Step title="Importation de données dans ClickHouse depuis GCS" id="2-importing-data-into-clickhouse-from-gcs">
     Une fois l’exportation terminée, nous pouvons importer ces données dans une table de ClickHouse. Vous pouvez utiliser la [console SQL de ClickHouse](/fr/integrations/connectors/sql-clients/sql-console) ou [`clickhouse-client`](/fr/concepts/features/interfaces/cli) pour exécuter les commandes ci-dessous.
 
     Vous devez d’abord [créer votre table](/fr/reference/statements/create/table) dans ClickHouse :
@@ -121,9 +117,7 @@ Le temps nécessaire pour exporter des données de BigQuery vers ClickHouse dép
     </Info>
   </Step>
 
-  <Step>
-    ## Vérifier le bon export des données
-
+  <Step title="Vérifier le bon export des données" id="3-testing-successful-data-export">
     Pour vérifier si vos données ont bien été insérées, exécutez simplement une requête `SELECT` sur votre nouvelle table :
 
     ```sql

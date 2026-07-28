@@ -3,8 +3,9 @@
     {
       "group": "Home",
       "icon": "house",
-      "pages": [],
-      "root": "integrations/language-clients/index"
+      "pages": [
+        "integrations/language-clients/index"
+      ]
     },
     { "$ref": "js/navigation.json" },
     { "$ref": "python/navigation.json" },

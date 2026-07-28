@@ -43,26 +43,20 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ### 리포지토리 복제하기
-
+  <Step title="리포지토리 복제하기" id="clone-repository">
     ```shell
     git clone https://github.com/ClickHouse/clickstack-session-replay-demo
     cd clickstack-session-replay-demo
     ```
   </Step>
 
-  <Step>
-    ### ClickStack 시작하기
-
+  <Step title="ClickStack 시작하기" id="start-clickstack">
     ```shell
     docker-compose up -d clickstack
     ```
   </Step>
 
-  <Step>
-    ### API Key 가져오기
-
+  <Step title="API Key 가져오기" id="get-api-key">
     1. [http://localhost:8080](http://localhost:8080)에서 HyperDX를 여십시오
     2. 필요한 경우 계정을 만들거나 로그인하십시오
     3. **Team Settings → API Keys**로 이동하십시오
@@ -77,9 +71,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ### 데모 애플리케이션 시작하기
-
+  <Step title="데모 애플리케이션 시작하기" id="start-demo-app">
     ```shell
     docker-compose --profile demo up demo-app
     ```
@@ -88,16 +80,14 @@ import { Image } from "/snippets/ko/components/Image.jsx";
       `CLICKSTACK_API_KEY` 변수를 export한 동일한 터미널에서 이 명령을 실행해야 합니다.
     </Note>
 
-    브라우저에서 [http://localhost:3000](http://localhost:3000)을 열고 앱을 사용해 보십시오. 주제를 검색하고, 카테고리별로 필터링하고, 코드 예시를 보고, 항목을 북마크할 수 있습니다.
+    브라우저에서 [http://localhost:3000](http://localhost:3000)을 열고 앱을 사용해 보십시오. 주제를 검색하고, 범주별로 필터링하고, 코드 예시를 보고, 항목을 북마크할 수 있습니다.
 
     <Image img="/images/clickstack/session-replay/demo-app.webp" alt="세션 리플레이 데모 앱" />
 
     모든 상호작용은 ClickStack Browser SDK에 의해 자동으로 기록됩니다.
   </Step>
 
-  <Step>
-    ### 세션 리플레이 보기
-
+  <Step title="세션 리플레이 보기" id="view-session-replay">
     [http://localhost:8080](http://localhost:8080)의 HyperDX로 돌아가 왼쪽 사이드바에서 **Client Sessions**로 이동하십시오.
 
     <Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="세션 리플레이 검색" />
@@ -189,10 +179,10 @@ docker-compose down -v
 ```
 
 <div id="learn-more">
-  ## 더 알아보기
+  ## 자세히 알아보기
 </div>
 
-* [세션 리플레이](/ko/clickstack/features/session-replay) — 기능 개요, SDK 옵션 및 개인정보 보호 설정
-* [Browser SDK 참고](/ko/clickstack/ingesting-data/sdks/browser) — 전체 SDK 옵션 및 고급 구성
+* [세션 리플레이](/ko/clickstack/features/session-replay) — 기능 개요, SDK 옵션, 개인정보 보호 설정
+* [Browser SDK 참고](/ko/clickstack/ingesting-data/sdks/browser) — 전체 SDK 옵션과 고급 구성
 * [ClickStack 시작하기](/ko/clickstack/getting-started/index) — ClickStack 배포 및 첫 데이터 수집
-* [모든 예시 데이터셋](/ko/clickstack/example-datasets/index) — 기타 예시 데이터셋 및 가이드
+* [모든 예시 데이터셋](/ko/clickstack/example-datasets/index) — 다른 예시 데이터셋과 가이드
