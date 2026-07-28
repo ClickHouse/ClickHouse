@@ -33,46 +33,39 @@ DIAGNOSTICS_JOB_TIMEOUT = int(3600 * 2.5)
 # Time left unspent by the diagnostics stage so the job can still merge coverage
 # and upload its results. A job that hits its own timeout is recorded as ERROR
 # and skips artifact upload entirely, which starves the downstream coverage job.
-# Enforced by the outer `Shell.run` timeout on the diagnostics command.
+# The outer `Shell.run` timeout bounds the stage only while no process a rerun
+# spawns outlives it holding the runner's stdout: a per-test wrapper started
+# without its own stdio keeps that pipe open and the output reader then waits
+# for it. That is a separate `tests/clickhouse-test` defect, fixed there.
 DIAGNOSTICS_RESERVE_S = 15 * 60
 
-# Reruns `TestCase.diagnose_random_settings` performs per test on the branch these
-# jobs take (no randomized settings saved, so `max_reruns = 3` in
-# `tests/clickhouse-test`). It sizes the per-test cap heuristically only: the
-# randomized-settings branch reruns a test an unbounded number of times, so the
-# outer stage bound, not this divisor, is what guarantees the reserve.
-DIAGNOSTICS_RERUNS_PER_TEST = 3
-
 # `clickhouse-test`'s own `--timeout` default, which the main run does not
-# override (see `run_tests`). The rerun must never be more permissive than the
-# pass that failed: a rerun given more time can pass a test the main pass timed
-# out on, which reads as `Failed 0 out of 3 reruns` and is then whitewashed to
-# `OK` on coverage jobs.
+# override (see `run_tests`), so every failed test already had exactly this
+# bound. The rerun gets the same, never more and never less: with more time it
+# can pass a test the main pass timed out on (`Failed 0 out of 3 reruns`), with
+# less time a test near the limit fails only some of the reruns (`Failed 1 out
+# of 3`) - both read as `flaky`, which coverage jobs force to `OK`. A smaller
+# value would also shorten the per-test cleanup, sized from the same `--timeout`
+# (`_cleanup`), whose failure against a live server propagates as a FAIL.
 DIAGNOSTICS_MAIN_RUN_TEST_TIMEOUT_S = 600
-
-# Shortest rerun worth starting. Below this the diagnosis is given up rather than
-# begun and cut off, which would overrun the reserve.
-DIAGNOSTICS_MIN_TEST_TIMEOUT_S = 60
 
 
 def diagnostics_budget(elapsed_s, num_tests):
     """Time budget for the DIAGNOSTICS stage rerun of `num_tests` failed tests.
 
-    Returns `(stage_timeout_s, test_timeout_s)`, or `None` when too little job
-    time is left to diagnose anything. `stage_timeout_s` is the hard outer bound
-    (the stage can take an arbitrary number of runs per test on the randomized
-    settings branch, so the per-test value alone cannot bound it);
-    `test_timeout_s` sizes each individual rerun and is never larger than the
-    main run's own per-test timeout.
+    Returns `(stage_timeout_s, test_timeout_s)`, or `None` when the job has too
+    little time left to fund even one full-timeout rerun. Only the stage bound is
+    derived from the remaining time: truncating the stage is reported honestly as
+    `diagnosed N out of M failed test(s)`, while a per-test value differing from
+    the main run's fabricates a `flaky` label (see
+    `DIAGNOSTICS_MAIN_RUN_TEST_TIMEOUT_S`), so `num_tests` is deliberately not
+    part of the arithmetic - the `> 10` SKIPPED arm is the count-sensitive
+    control.
     """
     stage = DIAGNOSTICS_JOB_TIMEOUT - int(elapsed_s) - DIAGNOSTICS_RESERVE_S
-    per_test = min(
-        stage // (num_tests * DIAGNOSTICS_RERUNS_PER_TEST),
-        DIAGNOSTICS_MAIN_RUN_TEST_TIMEOUT_S,
-    )
-    if per_test < DIAGNOSTICS_MIN_TEST_TIMEOUT_S:
+    if stage < DIAGNOSTICS_MAIN_RUN_TEST_TIMEOUT_S:
         return None
-    return stage, per_test
+    return stage, DIAGNOSTICS_MAIN_RUN_TEST_TIMEOUT_S
 
 
 def stateless_memory_limit(source):
@@ -1221,6 +1214,15 @@ def main():
                 )
                 break
 
+        # Read the clock once: the budget truncates `elapsed_s`, so evaluating it
+        # for the guard and again for the unpacking can straddle a whole second
+        # and unpack `None`.
+        diag_budget = (
+            diagnostics_budget(stop_watch.duration, len(failed_tests))
+            if failed_tests
+            else None
+        )
+
         if has_errors:
             pass
         elif len(failed_tests) > 10:
@@ -1231,10 +1233,7 @@ def main():
                     info="Too many failed tests",
                 ).set_timing(stopwatch=diag_stopwatch)
             )
-        elif (
-            failed_tests
-            and diagnostics_budget(stop_watch.duration, len(failed_tests)) is None
-        ):
+        elif failed_tests and diag_budget is None:
             results.append(
                 Result(
                     name="Diagnostics",
@@ -1243,9 +1242,7 @@ def main():
                 ).set_timing(stopwatch=diag_stopwatch)
             )
         elif failed_tests:
-            diag_stage_timeout, diag_test_timeout = diagnostics_budget(
-                stop_watch.duration, len(failed_tests)
-            )
+            diag_stage_timeout, diag_test_timeout = diag_budget
             memory_limit = stateless_memory_limit(Info().job_name)
             # The rerun must mirror the main run's environment or its verdict is
             # meaningless. shard/zookeeper default as in `run_tests` (passing both

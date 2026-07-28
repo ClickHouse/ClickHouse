@@ -234,39 +234,36 @@ def test_diagnostics_command_bounds_each_rerun(parse_test_runner_args):
     assert args.test == FAILED_TESTS
 
 
-def test_diagnostics_budget_shrinks_with_elapsed_time_and_test_count():
-    """The bound must be derived from the job's remaining time, not a constant.
+def test_diagnostics_stage_budget_shrinks_with_elapsed_time():
+    """The stage bound must be derived from the job's remaining time, not a constant.
 
-    A fixed value cannot keep the stage inside the job timeout: what is left
-    depends on how long the main run already took and on how many tests the
-    stage has to rerun.
+    A fixed stage bound cannot keep the stage inside the job timeout: what is
+    left to spend depends on how long the main run already took.
     """
-    fresh = _diag_test_timeout(_build_diag_command("", elapsed=0, failed_tests=TEN))
-    late = _diag_test_timeout(
-        _build_diag_command("", elapsed=60 * 60, failed_tests=TEN)
-    )
-    assert late < fresh, (fresh, late)
-
-    three_tests = _diag_test_timeout(
-        _build_diag_command("", elapsed=60 * 60, failed_tests=TEN[:3])
-    )
-    assert late < three_tests, (three_tests, late)
+    stages = []
+    for elapsed_min in (0, 30, 60, 90, 120):
+        budget = functional_tests.diagnostics_budget(elapsed_min * 60, 1)
+        assert budget is not None, elapsed_min
+        stages.append(budget[0])
+    assert stages == sorted(stages, reverse=True), stages
+    assert stages[0] > stages[-1], stages
 
 
-def test_diagnostics_rerun_is_never_more_permissive_than_the_main_run():
-    """The rerun's per-test timeout must not exceed the main run's own.
+def test_diagnostics_rerun_gets_exactly_the_main_run_timeout():
+    """The rerun's per-test timeout must EQUAL the main run's own, both ways.
 
     The main run passes no `--timeout`, so it uses `clickhouse-test`'s 600 s
-    default. A rerun given MORE time can pass a test the main pass timed out on,
-    which reads as `Failed 0 out of 3 reruns`, is labelled `flaky` and is then
-    force-set to `OK` on coverage jobs - the exact whitewash this PR removes.
+    default. More time lets the rerun pass a test the main pass timed out on
+    (`Failed 0 out of 3 reruns`); less time makes a test near the limit fail only
+    some of the three reruns (`Failed 1 out of 3`). Both are labelled `flaky` and
+    then force-set to `OK` on coverage jobs - the exact whitewash this PR removes.
     """
     for elapsed_min, num_tests in BUDGET_MATRIX:
         budget = functional_tests.diagnostics_budget(elapsed_min * 60, num_tests)
         if budget is None:
             continue
         _, test_timeout = budget
-        assert test_timeout <= functional_tests.DIAGNOSTICS_MAIN_RUN_TEST_TIMEOUT_S, (
+        assert test_timeout == functional_tests.DIAGNOSTICS_MAIN_RUN_TEST_TIMEOUT_S, (
             elapsed_min,
             num_tests,
             test_timeout,
@@ -276,33 +273,35 @@ def test_diagnostics_rerun_is_never_more_permissive_than_the_main_run():
         )
         assert _diag_test_timeout(command) == test_timeout
 
-    # The default the main run actually gets, so the cap is pinned to a real value.
+    # The default the main run actually gets, so the value is pinned to a real one.
     assert (
         functional_tests.DIAGNOSTICS_MAIN_RUN_TEST_TIMEOUT_S == _main_run_test_timeout()
     )
 
 
 def test_diagnostics_stage_bound_leaves_the_finalization_reserve():
-    """The stage's outer bound must always end before the job timeout minus reserve.
+    """Every funded stage must end 135 minutes into the job, not later.
 
     A job that hits its own timeout is recorded as `Result.Status.ERROR`, which
     skips `complete_job` and therefore the artifact upload, so the downstream
-    coverage job loses the file these jobs provide.
+    coverage job loses the file these jobs provide. 135 = the 150-minute job
+    timeout minus the 15-minute reserve, asserted as a literal so that moving
+    either constant is caught here rather than cancelling out.
     """
     for elapsed_min, num_tests in BUDGET_MATRIX:
         budget = functional_tests.diagnostics_budget(elapsed_min * 60, num_tests)
         if budget is None:
             continue
         stage_timeout, _ = budget
-        assert (
-            elapsed_min * 60 + stage_timeout
-            <= functional_tests.DIAGNOSTICS_JOB_TIMEOUT
-            - functional_tests.DIAGNOSTICS_RESERVE_S
-        ), (elapsed_min, num_tests, stage_timeout)
+        assert elapsed_min * 60 + stage_timeout == 135 * 60, (
+            elapsed_min,
+            num_tests,
+            stage_timeout,
+        )
 
 
 def test_diagnostics_is_given_up_when_too_little_job_time_is_left():
-    """Below a usable per-test bound the stage must be skipped, not truncated.
+    """Below one full-timeout rerun the stage must be skipped, not truncated.
 
     Starting a diagnosis that cannot finish is what overruns the reserve, so the
     budget returns `None` and `main` reports a SKIPPED `Diagnostics` result.
@@ -317,9 +316,10 @@ def test_diagnostics_is_given_up_when_too_little_job_time_is_left():
         "main must skip the diagnosis when diagnostics_budget returns None, "
         "rather than starting a run that cannot finish."
     )
-    assert (
-        "diagnostics_budget(stop_watch.duration, len(failed_tests)) is None" in source
-    )
+    assert "elif failed_tests and diag_budget is None:" in source
+    # Read once: the budget truncates the elapsed seconds, so two reads of a live
+    # clock can straddle a whole second and unpack `None`.
+    assert source.count("diagnostics_budget(") == 1, source.count("diagnostics_budget(")
 
 
 def test_diagnostics_stage_has_an_outer_timeout():
@@ -328,8 +328,8 @@ def test_diagnostics_stage_has_an_outer_timeout():
     On the 23 of 37 DIAGNOSTICS-reachable flavours that save randomized settings,
     `diagnose_random_settings` reruns a test an unbounded number of times
     (two steps, up to two category probes, then ddmin), so no `tests x reruns`
-    model bounds it. Only the outer `Shell.run` timeout does. Asserted on `main`
-    source, as `Shell.run` is never executed here.
+    model bounds it. Asserted here: the command IS given an outer timeout, on
+    `main` source, as `Shell.run` is never executed in this suite.
     """
     source = inspect.getsource(functional_tests.main)
     assert (
@@ -343,14 +343,6 @@ def test_diagnostics_job_timeout_matches_the_real_job_config():
     from ci.defs.job_configs import common_ft_job_config
 
     assert functional_tests.DIAGNOSTICS_JOB_TIMEOUT == common_ft_job_config.timeout
-
-
-def test_diagnostics_reruns_per_test_matches_clickhouse_test():
-    """The divisor must equal `clickhouse-test`'s own `max_reruns`."""
-    source = open(CLICKHOUSE_TEST, encoding="utf-8").read()
-    matches = re.findall(r"^\s*max_reruns = (\d+)$", source, re.MULTILINE)
-    assert len(matches) == 1, matches
-    assert functional_tests.DIAGNOSTICS_RERUNS_PER_TEST == int(matches[0])
 
 
 @pytest.mark.parametrize("case", sorted(RUNNER_OPTIONS_CASES))
