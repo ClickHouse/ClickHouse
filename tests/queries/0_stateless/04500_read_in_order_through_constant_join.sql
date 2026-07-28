@@ -1,7 +1,8 @@
--- ConstantJoin (CROSS, comma and constant-predicate joins) emits every left row in probe order,
--- so it opts in to IJoin::preservesLeftBlockOrder(). The default is fail-closed, so without that
--- opt-in read-in-order-through-join stops propagating and aggregation-in-order, DISTINCT-in-order,
--- LIMIT BY and the ordered read all silently fall back to an unordered read. Issue #109216.
+-- ConstantJoin (CROSS, comma and constant-predicate joins) and DirectKeyValueJoin both emit every
+-- left row in probe order, so they opt in to IJoin::preservesLeftBlockOrder(). The default is
+-- fail-closed, so without those opt-ins read-in-order-through-join stops propagating and
+-- aggregation-in-order, DISTINCT-in-order, LIMIT BY and the ordered read all silently fall back to
+-- an unordered read. Issue #109216.
 
 DROP TABLE IF EXISTS cj_l_04500;
 DROP TABLE IF EXISTS cj_r_04500;
@@ -61,3 +62,37 @@ SELECT groupArray(k) = arraySort(groupArray(k)) FROM (
 
 DROP TABLE cj_l_04500;
 DROP TABLE cj_r_04500;
+
+-- DirectKeyValueJoin (join_algorithm = 'direct' over a key-value right side) looks up each left
+-- row's key once and emits it in input order. It reaches the same gate through FilledJoinStep, so
+-- its opt-in is load-bearing under the fail-closed default in exactly the same way.
+DROP TABLE IF EXISTS dj_l_04500;
+DROP DICTIONARY IF EXISTS dj_d_04500;
+DROP TABLE IF EXISTS dj_src_04500;
+
+CREATE TABLE dj_l_04500 (k UInt32, j UInt64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO dj_l_04500 SELECT number % 50, number % 20 FROM numbers(4000);
+CREATE TABLE dj_src_04500 (j UInt64, v UInt64) ENGINE = MergeTree ORDER BY j;
+INSERT INTO dj_src_04500 SELECT number, number * 10 FROM numbers(20);
+CREATE DICTIONARY dj_d_04500 (j UInt64, v UInt64) PRIMARY KEY j
+SOURCE(CLICKHOUSE(TABLE 'dj_src_04500')) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0);
+
+SELECT countIf(explain LIKE '%InOrder%') FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT l.k, count() FROM dj_l_04500 AS l LEFT JOIN dj_d_04500 AS r ON l.j = r.j
+    GROUP BY l.k ORDER BY l.k
+    SETTINGS join_algorithm = 'direct', optimize_aggregation_in_order = 1, max_threads = 1,
+             query_plan_join_swap_table = 'false', enable_parallel_replicas = 0,
+             optimize_read_in_order = 1, query_plan_read_in_order = 1,
+             query_plan_read_in_order_through_join = 1
+) WHERE explain LIKE '%ReadType%';
+
+SELECT max(u), min(u), count() FROM (
+    SELECT l.k, uniqExact(l.k) AS u FROM dj_l_04500 AS l LEFT JOIN dj_d_04500 AS r ON l.j = r.j
+    GROUP BY l.k
+) SETTINGS join_algorithm = 'direct', optimize_aggregation_in_order = 1, max_threads = 1,
+           query_plan_join_swap_table = 'false', enable_parallel_replicas = 0;
+
+DROP DICTIONARY dj_d_04500;
+DROP TABLE dj_src_04500;
+DROP TABLE dj_l_04500;
