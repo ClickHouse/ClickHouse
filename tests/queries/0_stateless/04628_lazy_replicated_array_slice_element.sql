@@ -41,6 +41,34 @@ SELECT x, big[x], arraySlice(big, 1, x), small_arr[x], arraySlice(small_arr, 1, 
 FROM (SELECT arrayMap(i -> (i + number, 't' || toString(i)), range(4)) AS big, range(number % 2) AS small_arr, [1, 4, 5] AS r FROM numbers(2)) ARRAY JOIN r AS x
 SETTINGS enable_lazy_columns_replication = 1;
 
+SELECT '-- array produced by lazy JOIN replication';
+SELECT x, big[x], arraySlice(big, x, 2)
+FROM (SELECT 42 AS k, number + 1 AS x FROM numbers(4)) AS l
+INNER JOIN (SELECT 42 AS k, materialize(arrayMap(i -> 's' || toString(i), range(5))) AS big) AS r ON l.k = r.k
+ORDER BY x
+SETTINGS enable_lazy_columns_replication = 0;
+SELECT x, big[x], arraySlice(big, x, 2)
+FROM (SELECT 42 AS k, number + 1 AS x FROM numbers(4)) AS l
+INNER JOIN (SELECT 42 AS k, materialize(arrayMap(i -> 's' || toString(i), range(5))) AS big) AS r ON l.k = r.k
+ORDER BY x
+SETTINGS enable_lazy_columns_replication = 1;
+
+SELECT '-- replication indexes of type UInt16 (more than 255 rows in a block)';
+SELECT sum(big[x + 1]), sum(length(arraySlice(big, x + 1, 3))), sum(arraySlice(big, x + 1, 3)[1])
+FROM (SELECT range(number, number + 10) AS big, range(2) AS r FROM numbers(300)) ARRAY JOIN r AS x
+SETTINGS enable_lazy_columns_replication = 0;
+SELECT sum(big[x + 1]), sum(length(arraySlice(big, x + 1, 3))), sum(arraySlice(big, x + 1, 3)[1])
+FROM (SELECT range(number, number + 10) AS big, range(2) AS r FROM numbers(300)) ARRAY JOIN r AS x
+SETTINGS enable_lazy_columns_replication = 1;
+
+SELECT '-- arrayElement with a non-constant Nullable index';
+SELECT x, big[if(x % 2 = 0, NULL, x)::Nullable(Int64)], arrayElementOrNull(big, if(x % 2 = 0, NULL, x)::Nullable(Int64))
+FROM (SELECT arrayMap(i -> 's' || toString(i + number), range(5)) AS big, [1, 2, 5, -1] AS r FROM numbers(2)) ARRAY JOIN r AS x
+SETTINGS enable_lazy_columns_replication = 0;
+SELECT x, big[if(x % 2 = 0, NULL, x)::Nullable(Int64)], arrayElementOrNull(big, if(x % 2 = 0, NULL, x)::Nullable(Int64))
+FROM (SELECT arrayMap(i -> 's' || toString(i + number), range(5)) AS big, [1, 2, 5, -1] AS r FROM numbers(2)) ARRAY JOIN r AS x
+SETTINGS enable_lazy_columns_replication = 1;
+
 SELECT '-- large array is not materialized per joined row';
 SELECT sum(length(arraySlice(big, x, 2))) + sum(length(big[x]))
 FROM (SELECT arrayMap(i -> repeat('a', 100) || toString(i + number), range(1000)) AS big, range(50) AS r FROM numbers(100)) ARRAY JOIN r AS x

@@ -240,12 +240,15 @@ struct ConstSource : public Base
 #pragma clang diagnostic pop
 
 
-/// Reads a lazily replicated array (the nested column and replication indexes of a
-/// ColumnReplicated, see ColumnReplicated.h) without materializing it: logical row i of the
-/// source is the nested row replication_indexes[i]. It repositions the base source at that
-/// nested row on every step, so all slice getters of Base (which read row_num/prev_offset)
-/// work unchanged. Base is an array source: NumericArraySource, GenericArraySource, or
-/// NullableArraySource over one of those.
+/// ReplicatedSource<Base> makes the pair (nested array column, replication indexes) look like a flat source of logical rows.
+/// Base is an array source: NumericArraySource, GenericArraySource, or NullableArraySource over one of those.
+/// nested_row represents the unreplicated data, a block of 3 array have 3 nested_rows (0, 1, 2)
+/// logical_row represents a row_index into the column as consumers see it:
+///
+/// i.e.
+///     nested column (3 rows):     A      B  C
+///     replication_indexes:        [0, 0, 1, 2, 2, 2]
+///     logical view (6 rows):      A  A  B  C  C  C
 template <typename Base>
 struct ReplicatedSource : public Base
 {

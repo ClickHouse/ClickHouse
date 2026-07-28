@@ -87,5 +87,34 @@
 1	(1,'t0')	[(1,'t0')]	0	[0]
 4	(4,'t3')	[(1,'t0'),(2,'t1'),(3,'t2'),(4,'t3')]	0	[0]
 5	(0,'')	[(1,'t0'),(2,'t1'),(3,'t2'),(4,'t3')]	0	[0]
+-- array produced by lazy JOIN replication
+1	s0	['s0','s1']
+2	s1	['s1','s2']
+3	s2	['s2','s3']
+4	s3	['s3','s4']
+1	s0	['s0','s1']
+2	s1	['s1','s2']
+3	s2	['s2','s3']
+4	s3	['s3','s4']
+-- replication indexes of type UInt16 (more than 255 rows in a block)
+90000	1800	90000
+90000	1800	90000
+-- arrayElement with a non-constant Nullable index
+1	s0	s0
+2	\N	\N
+5	s4	s4
+-1	s4	s4
+1	s1	s1
+2	\N	\N
+5	s5	s5
+-1	s5	s5
+1	s0	s0
+2	\N	\N
+5	s4	s4
+-1	s4	s4
+1	s1	s1
+2	\N	\N
+5	s5	s5
+-1	s5	s5
 -- large array is not materialized per joined row
 1

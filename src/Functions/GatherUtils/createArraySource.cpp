@@ -4,14 +4,10 @@
 #include <Functions/GatherUtils/Sources.h>
 #include <base/TypeLists.h>
 
-namespace DB
-{
 
-namespace ErrorCodes
+namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
 }
 
 namespace DB::GatherUtils

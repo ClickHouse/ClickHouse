@@ -24,7 +24,6 @@ struct IArraySource
     virtual bool isConst() const { return false; }
     virtual bool isNullable() const { return false; }
     /// True for ReplicatedSource: the source reads a lazily replicated array (ColumnReplicated)
-    /// by remapping each logical row to a row of the compact nested column.
     virtual bool isReplicated() const { return false; }
 
     virtual void accept(ArraySourceVisitor &)

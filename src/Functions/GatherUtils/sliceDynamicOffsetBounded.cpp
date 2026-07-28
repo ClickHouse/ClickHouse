@@ -12,6 +12,8 @@ namespace
 
 struct SliceDynamicOffsetBoundedSelectArraySource : public ArraySourceSelector<SliceDynamicOffsetBoundedSelectArraySource>
 {
+    static constexpr bool supports_replicated_source = true;
+
     template <typename Source>
     static void selectSource(bool is_const, bool is_nullable, Source && source,
                            const IColumn & offset_column, const IColumn & length_column, ColumnArray::MutablePtr & result)

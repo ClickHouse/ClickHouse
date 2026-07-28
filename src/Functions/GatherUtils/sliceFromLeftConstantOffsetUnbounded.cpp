@@ -13,6 +13,8 @@ namespace
 struct SliceFromLeftConstantOffsetUnboundedSelectArraySource
     : public ArraySourceSelector<SliceFromLeftConstantOffsetUnboundedSelectArraySource>
 {
+    static constexpr bool supports_replicated_source = true;
+
     template <typename Source>
     static void selectSource(bool is_const, bool is_nullable, Source && source, size_t & offset, ColumnArray::MutablePtr & result)
     {

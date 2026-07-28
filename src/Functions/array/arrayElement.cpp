@@ -65,9 +65,8 @@ public:
     String getName() const override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
-    /// A lazily replicated array argument (e.g. produced by lazy ARRAY JOIN or a lazily
-    /// replicated lambda capture) is consumed by gathering from the compact nested column.
-    /// The default implementation would materialize it whenever the index is a full column.
+    /// A lazily replicated array argument is consumed by gathering from the compact nested column.
+    /// When true it materializes the compacted representation to a full column.
     bool useDefaultImplementationForReplicatedColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
@@ -2357,7 +2356,7 @@ template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeReplicated(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    /// The index argument is a per-row number - cheap to materialize if it came replicated.
+    /// The index argument is a per-row number, materialize if it came replicated.
     ColumnsWithTypeAndName args = arguments;
     args[1].column = args[1].column->convertToFullColumnIfReplicated();
 
@@ -2368,8 +2367,7 @@ ColumnPtr FunctionArrayElement<mode>::executeReplicated(
     const auto * col_array = typeid_cast<const ColumnArray *>(replicated->getNestedColumn().get());
 
     /// Fall back to materialization for the shapes the fast path does not cover:
-    /// Replicated over Map, and LowCardinality elements (their handling is layered above
-    /// this function, see FunctionWithLowCardinalityFastPath).
+    /// Replicated over Map, and LowCardinality elements (their handling is layered above this function
     bool fast_path_supported = col_array
         && !typeid_cast<const ColumnLowCardinality *>(&col_array->getData())
         && !typeid_cast<const ColumnMap *>(&col_array->getData());
@@ -2381,8 +2379,7 @@ ColumnPtr FunctionArrayElement<mode>::executeReplicated(
 
     if (isColumnConst(*args[1].column))
     {
-        /// A constant index gives one value per nested row: execute on the compact nested
-        /// array and replicate the result lazily.
+        /// A constant index gives one value per nested row: execute on the compact nested array and replicate the result lazily.
         size_t nested_rows = col_array->size();
         ColumnsWithTypeAndName nested_args
             = {{replicated->getNestedColumn(), args[0].type, args[0].name},
@@ -2413,7 +2410,7 @@ ColumnPtr FunctionArrayElement<mode>::executeReplicated(
 
     const auto & replication_indexes = replicated->getIndexes();
     const auto & index_column = *args[1].column;
-
+    /// Core loop to build result by dispatching based on the index type
     if (!(gatherReplicated<UInt8>(index_column, replication_indexes, offsets, *data, *result, builder)
           || gatherReplicated<UInt16>(index_column, replication_indexes, offsets, *data, *result, builder)
           || gatherReplicated<UInt32>(index_column, replication_indexes, offsets, *data, *result, builder)
