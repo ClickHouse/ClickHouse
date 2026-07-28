@@ -35,7 +35,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 
 All clauses are optional, except for the required list of expressions immediately after `SELECT` which is covered in more detail [below](#select-clause).
 
-Specifics of each optional clause are covered in separate sections, which are listed in the same order as they are executed:
+Specifics of each optional clause are covered in separate sections, which are listed in the same order as they are executed (except for `SELECT` and `DISTINCT`, listed first for convenience: their expressions are evaluated only after the preceding clauses finish, as described [below](#select-clause)):
 
 - [WITH clause](../../../sql-reference/statements/select/with.md)
 - [SELECT clause](#select-clause)
@@ -45,11 +45,12 @@ Specifics of each optional clause are covered in separate sections, which are li
 - [JOIN clause](../../../sql-reference/statements/select/join.md)
 - [PREWHERE clause](../../../sql-reference/statements/select/prewhere.md)
 - [WHERE clause](../../../sql-reference/statements/select/where.md)
-- [WINDOW clause](../../../sql-reference/window-functions/index.md)
 - [GROUP BY clause](/sql-reference/statements/select/group-by)
-- [LIMIT BY clause](../../../sql-reference/statements/select/limit-by.md)
 - [HAVING clause](../../../sql-reference/statements/select/having.md)
+- [WINDOW clause](../../../sql-reference/window-functions/index.md)
 - [QUALIFY clause](../../../sql-reference/statements/select/qualify.md)
+- [ORDER BY clause](../../../sql-reference/statements/select/order-by.md)
+- [LIMIT BY clause](../../../sql-reference/statements/select/limit-by.md)
 - [LIMIT clause](../../../sql-reference/statements/select/limit.md)
 - [OFFSET clause](../../../sql-reference/statements/select/offset.md)
 - [UNION clause](../../../sql-reference/statements/select/union.md)

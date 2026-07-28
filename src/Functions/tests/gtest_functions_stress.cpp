@@ -1308,7 +1308,7 @@ struct FunctionsStressTestThread
 
             thread_status->memory_tracker.resetCounters(); // reset the peak
             thread_status->memory_tracker.setHardLimit(MEMORY_LIMIT_BYTES_PER_THREAD);
-            thread_status->untracked_memory = 0;
+            thread_status->untracked_memory.store(0);
 
             randomizeSettings();
 
@@ -1437,7 +1437,7 @@ struct FunctionsStressTestThread
             }
             stats.max(S_TIME_MAX_NS, ns);
 
-            Int64 memory_balance = thread_status->memory_tracker.get() + thread_status->untracked_memory;
+            Int64 memory_balance = thread_status->memory_tracker.get() + thread_status->untracked_memory.load();
             Int64 memory_peak = thread_status->memory_tracker.getPeak();
 
             stats.add(S_MEMORY_BALANCE, memory_balance);
@@ -2304,7 +2304,7 @@ TEST(FunctionsStress, stress)
     int num_threads = options.num_threads;
     if (num_threads <= 0)
     {
-        if (hasPHDRCache())
+        if (hasAsyncSignalSafeUnwind())
             num_threads = std::thread::hardware_concurrency();
         else
             /// In TSAN build, with too many threads, this test gets >30s stalls on lock

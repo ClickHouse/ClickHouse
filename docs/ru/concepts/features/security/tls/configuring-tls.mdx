@@ -22,9 +22,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 </Note>
 
 <Steps>
-  <Step>
-    ## Создайте развертывание ClickHouse
-
+  <Step title="Создайте развертывание ClickHouse" id="1-create-a-clickhouse-deployment">
     Это руководство написано для Ubuntu 20.04; ClickHouse на указанных ниже хостах устанавливается из DEB-пакета (через apt). Домен: `marsnet.local`:
 
     | Узел      | IP-адрес      |
@@ -38,9 +36,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     </Note>
   </Step>
 
-  <Step>
-    ## Создание TLS-сертификатов
-
+  <Step title="Создание TLS-сертификатов" id="2-create-tls-certificates">
     <Note>
       Самоподписанные сертификаты используются только в демонстрационных целях и не должны применяться в продакшн. Запросы на сертификаты должны создаваться для подписи организацией и проверяться с использованием цепочки CA, которая будет настроена в параметрах. Однако эти шаги можно использовать для настройки и тестирования параметров, а затем заменить реальными сертификатами, которые будут использоваться в дальнейшем.
     </Note>
@@ -90,9 +86,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
        ```
   </Step>
 
-  <Step>
-    ## Создайте и настройте каталог для хранения сертификатов и ключей.
-
+  <Step title="Создайте и настройте каталог для хранения сертификатов и ключей." id="3-create-and-configure-a-directory-to-store-certificates-and-keys">
     <Note>
       Это нужно сделать на каждом узле. На каждом хосте используйте соответствующие сертификаты и ключи.
     </Note>
@@ -123,9 +117,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
        ```
   </Step>
 
-  <Step>
-    ## Настройка среды с базовыми кластерами на основе ClickHouse Keeper
-
+  <Step title="Настройка среды с базовыми кластерами на основе ClickHouse Keeper" id="4-configure-the-environment-with-basic-clusters-using-clickhouse-keeper">
     Для данной среды развёртывания на каждом узле используются следующие настройки ClickHouse Keeper. У каждого сервера будет собственный `<server_id>`. (Например, `<server_id>1</server_id>` для узла `chnode1` и т. д.)
 
     <Note>
@@ -250,9 +242,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
        ```
   </Step>
 
-  <Step>
-    ## Настройте TLS-интерфейсы на узлах ClickHouse
-
+  <Step title="Настройте TLS-интерфейсы на узлах ClickHouse" id="5-configure-tls-interfaces-on-clickhouse-nodes">
     Приведенные ниже параметры настраиваются в `config.xml` сервера ClickHouse
 
     1. Задайте отображаемое имя для развертывания (необязательно):
@@ -359,9 +349,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
        ```
   </Step>
 
-  <Step>
-    ## Тестирование
-
+  <Step title="Тестирование" id="6-testing">
     1. Запустите все узлы по очереди:
        ```bash
        service clickhouse-server start
@@ -400,7 +388,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
        | 9444            | порт Raft для ClickHouse Keeper   |
 
     3. Проверьте состояние ClickHouse Keeper
-       Обычные команды [из 4 букв (4lW)](/ru/guides/oss/deployment-and-scaling/keeper/index#four-letter-word-commands) не работают с `echo` без TLS; ниже показано, как использовать их с `openssl`.
+       Обычные команды [из 4 букв (4lW)](/ru/guides/oss/deployment-and-scaling/keeper/index#four-letter-word-commands) не работают через `echo` без TLS; вот как использовать эти команды с `openssl`.
        * Запустите интерактивный сеанс в `openssl`
 
     ```bash
@@ -426,7 +414,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     ...
     ```
 
-    * Отправьте команды 4LW в сеансе OpenSSL
+    * Введите команды 4LW в сеансе OpenSSL
 
       ```bash
       mntr
