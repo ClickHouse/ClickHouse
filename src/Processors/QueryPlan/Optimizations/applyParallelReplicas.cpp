@@ -65,6 +65,21 @@ static std::optional<size_t> coordinatedJoinSideIndex(const QueryPlan::Node * no
     return {};
 }
 
+/// A prepared-lookup join (right side is a Join-engine table, dictionary or key-value storage) is a
+/// JoinStepLogicalLookup, which is neither cloneable nor serializable. Distributing a join whose subtree
+/// contains one would pull it into the shipped fragment and throw on clone, so keep such joins local.
+static bool subtreeHasLookupJoin(const QueryPlan::Node * node)
+{
+    if (!node)
+        return false;
+    if (typeid_cast<const JoinStepLogicalLookup *>(node->step.get()))
+        return true;
+    for (const auto * child : node->children)
+        if (subtreeHasLookupJoin(child))
+            return true;
+    return false;
+}
+
 class ApplyParallelReplicasVisitor : public QueryPlanVisitor<ApplyParallelReplicasVisitor, debug_logging_enabled>
 {
     QueryPlan::Nodes & nodes;
@@ -120,6 +135,11 @@ public:
     {
         const auto coordinated_index = coordinatedJoinSideIndex(node);
         if (!coordinated_index)
+            return;
+
+        /// Never lift a split into a fragment that would contain a (non-serializable) lookup join.
+        /// collectReadsToDistribute already keeps such joins local, so this is defensive.
+        if (subtreeHasLookupJoin(node))
             return;
 
         auto * coordinated_child = node->children[*coordinated_index];
@@ -321,6 +341,9 @@ static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node *
 
     if (typeid_cast<const JoinStepLogical *>(node->step.get()))
     {
+        /// A prepared-lookup join is not serializable and cannot ship in a fragment; keep it local.
+        if (subtreeHasLookupJoin(node))
+            return {};
         /// Distribute only the join kinds where splitting one side across replicas and concatenating the
         /// per-replica results yields the correct join (see coordinatedJoinSideIndex): INNER (ALL) and
         /// LEFT coordinate the left side, RIGHT coordinates the right side. FULL/CROSS/COMMA/PASTE are kept local.
