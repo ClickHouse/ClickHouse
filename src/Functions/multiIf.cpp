@@ -174,6 +174,40 @@ public:
             return true;
         };
 
+        /// Whether every branch is the same constant value. Then the result is that value regardless of the
+        /// conditions, which `if` also recognises (see the identical-branch fast path in `if.cpp` returning a
+        /// `ColumnConst`). `if` therefore keeps plain `String` for `if(cond, x, x)`, so `multiIf` has to do the
+        /// same: otherwise the result types diverge, `MultiIfToIfPass` (which rewrites only when they match)
+        /// silently stops rewriting `multiIf(cond, x, x)`, and consumers of constant string arguments such as
+        /// `arrayReduce` no longer receive a `Const(String)`.
+        auto are_all_branches_identical_constants = [&for_branches]()
+        {
+            const ColumnWithTypeAndName * first_branch = nullptr;
+            bool identical = true;
+            for_branches([&](const ColumnWithTypeAndName & arg)
+            {
+                if (!identical)
+                    return;
+
+                if (!arg.column || !isColumnConst(*arg.column))
+                {
+                    identical = false;
+                    return;
+                }
+
+                if (!first_branch)
+                {
+                    first_branch = &arg;
+                    return;
+                }
+
+                if (!removeLowCardinality(first_branch->type)->equals(*removeLowCardinality(arg.type))
+                    || (*first_branch->column)[0] != (*arg.column)[0])
+                    identical = false;
+            });
+            return identical;
+        };
+
         for_conditions([&](const ColumnWithTypeAndName & arg)
         {
             const auto & arg_type = recursiveRemoveLowCardinality(arg.type);
@@ -228,7 +262,7 @@ public:
         /// `joinGet`, `tupleElement`) expect their constant string arguments as `Const(String)`, so keep plain
         /// `String` then.
         if (optimize_if_transform_const_strings_to_lowcardinality && const_branches_count == num_branches
-            && !is_selected_branch_decided_by_constants())
+            && !is_selected_branch_decided_by_constants() && !are_all_branches_identical_constants())
         {
             if (string_branches_count == num_branches)
                 return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
