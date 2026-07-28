@@ -1652,7 +1652,7 @@ Explicit Parquet `field_id` overrides for output columns, keyed by column name o
 
 Top-level columns are addressed by name (e.g. `col_a`), and nested fields by dotted path: `arr.element` for an `Array` element, `m.key` / `m.value` for a `Map`, and `t.subfield` for a `Tuple` subfield. Paths nest naturally (`arr.element.x`, `t.element.key`).
 
-The value of the map is a string holding a non-negative `Int32` `field_id` (ClickHouse's setting parser only accepts string literals as `Map` values). IDs must be unique across the map.
+The value of the map is a string holding a non-negative `Int32` `field_id` (ClickHouse's setting parser only accepts string literals as `Map` values). IDs must be unique across the map. IDs above `2147483447` are rejected: Iceberg reserves that range for its own metadata fields, so a data column written with such an ID would be ignored when the file is read as an Iceberg table.
 
 Takes precedence over `output_format_parquet_auto_assign_field_ids` for any path that appears in the map. It cannot be combined with a datalake table that provides its own column-id mapping (e.g. Iceberg): such a table's metadata is the source of truth for `field_id`s, so putting this setting into an `ENGINE = Iceberg*` table definition is rejected with `BAD_ARGUMENTS`, and a value coming from the session or the profile is ignored for those tables.
 

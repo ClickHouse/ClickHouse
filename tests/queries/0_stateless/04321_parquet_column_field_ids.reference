@@ -77,6 +77,12 @@ is not an integer
 == error: negative id ==
 BAD_ARGUMENTS
 must be non-negative
+== error: id in the Iceberg reserved range ==
+BAD_ARGUMENTS
+reserved by Iceberg
+== max non-reserved id ==
+-- field_ids --
+a	2147483447
 == error: dotted top-level name collides with nested path (auto-assign) ==
 BAD_ARGUMENTS
 two output columns or nested fields flatten

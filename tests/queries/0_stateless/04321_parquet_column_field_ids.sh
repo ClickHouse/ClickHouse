@@ -214,6 +214,29 @@ SETTINGS engine_file_truncate_on_insert = 1,
          output_format_parquet_column_field_ids = {'a': '-1'};
 " 2>&1 | grep -oE 'BAD_ARGUMENTS|must be non-negative' | sort -u
 
+# Iceberg reserves field ids above 2147483447 for its metadata fields (e.g. `_row_id`); a data
+# column written with such an id would be silently ignored when the file is read as an Iceberg
+# table, so the override is rejected. 2147483540 is the reserved id of `_row_id`.
+echo "== error: id in the Iceberg reserved range =="
+${CLICKHOUSE_LOCAL} --query="
+INSERT INTO FUNCTION file('$WORKDIR/04321_err9.parquet', 'Parquet')
+SELECT 1 AS a
+SETTINGS engine_file_truncate_on_insert = 1,
+         output_format_parquet_column_field_ids = {'a': '2147483540'};
+" 2>&1 | grep -oE 'BAD_ARGUMENTS|reserved by Iceberg' | sort -u
+
+# The largest non-reserved id is still accepted.
+echo "== max non-reserved id =="
+F="$WORKDIR/04321_field_ids_max_user_id.parquet"
+${CLICKHOUSE_LOCAL} --query="
+INSERT INTO FUNCTION file('$F', 'Parquet')
+SELECT 1 AS a
+SETTINGS engine_file_truncate_on_insert = 1,
+         output_format_parquet_column_field_ids = {'a': '2147483447'};
+"
+echo "-- field_ids --"
+dump_field_ids "$F"
+
 # A top-level column whose name literally contains a '.' would flatten to the same dotted
 # path as a nested subfield of another column. Detected at field_id build time.
 echo "== error: dotted top-level name collides with nested path (auto-assign) =="

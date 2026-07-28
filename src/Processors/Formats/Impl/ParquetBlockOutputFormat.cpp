@@ -87,7 +87,8 @@ namespace
     ///
     ///   1. The flattened schema paths must themselves be unique — if two output columns or
     ///      nested fields flatten to the same dotted key, the build is rejected.
-    ///   2. Every entry in `overrides` is applied verbatim. Negative ids, unknown paths,
+    ///   2. Every entry in `overrides` is applied verbatim. Negative ids, ids in the range Iceberg
+    ///      reserves for its metadata fields, unknown paths,
     ///      duplicate paths and duplicate ids are rejected so users get a clear signal when
     ///      the setting drifts from the query's schema. Keys may be top-level column names
     ///      or dotted nested paths (e.g. `arr.element`, `m.key`, `m.value`, `t.subfield`).
@@ -143,6 +144,16 @@ namespace
             if (id < 0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "output_format_parquet_column_field_ids value {} must be non-negative", id);
+            /// The whole point of writing `field_id`s is Iceberg compatibility, and Iceberg reserves
+            /// the ids above `iceberg_max_user_field_id` for its own metadata fields: a data column
+            /// carrying such an id is skipped as an unrecognized reserved field when the file is read
+            /// back through Iceberg, so the data would silently disappear. Reject it instead.
+            if (id > iceberg_max_user_field_id)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids value {} for column '{}' is in the range reserved by "
+                    "Iceberg for metadata fields (ids above {}); such a column would be ignored when the file is "
+                    "read as an Iceberg table",
+                    id, name, iceberg_max_user_field_id);
             if (!known_paths.contains(name))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "output_format_parquet_column_field_ids references unknown column '{}'", name);
