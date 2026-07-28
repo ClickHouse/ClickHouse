@@ -589,6 +589,11 @@ def check_settings_changes_history():
     success or a non-empty error string on failure (consumed by Result.from_commands_run).
     Pure text parsing - no C++ syntax analysis.
 
+    Corrections of an already recorded entry (the same setting name removed and added again,
+    e.g. when a past release's `new_value` was recorded wrongly) are not reported by the hook:
+    they do not describe a default change made by this change, and putting them under the
+    current version block would tell `compatibility` the value changed again in this release.
+
     Fail-close: if the file changed but the hook could not fetch the diff (e.g. in the merge
     queue), fail rather than silently pass - a green here would defeat the purpose."""
     path = "src/Core/SettingsChangesHistory.cpp"
