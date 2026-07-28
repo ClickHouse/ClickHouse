@@ -436,6 +436,17 @@ function fuzz
     # seam (same style as MEMINFO_PATH); unset -> 300.
     probe_stage_deadline="${PROBE_STAGE_DEADLINE_SECONDS:-300}"
     probe_stage_started_at=$SECONDS
+    # Whole seconds left in the stage budget. Every wait below sizes itself from a
+    # FRESH call: a probe can consume most of the budget, so a value captured at
+    # the loop head is already stale by the time the diagnostic runs.
+    probe_stage_left() { echo $(( probe_stage_deadline - (SECONDS - probe_stage_started_at) )); }
+    # Smallest schedule a hard-bounded call can hold: 1s to TERM plus the 1s kill
+    # grace. Below this there is no bound that fits, so the call must not start.
+    probe_min_schedule=2
+    # The 1s cool-down also spends stage budget. Past expiry it would push the
+    # window over the published bound for nothing -- the loop head is about to
+    # break on the very next iteration anyway.
+    probe_stage_sleep() { if (( $(probe_stage_left) > 0 )); then sleep 1; fi; }
 
     for _ in {1..100}
     do
@@ -447,19 +458,26 @@ function fuzz
             echo "Server live check: probe stage deadline (${probe_stage_deadline}s) reached after $((SECONDS - probe_stage_started_at))s, ending probe window"
             break
         fi
-        # The deadline is only checked here, at the loop head, so cap each blocking
-        # call by what is LEFT of the aggregate budget: a probe started just before
+        # The deadline is only checked here, at the loop head, so each blocking call
+        # must fit what is LEFT of the aggregate budget: a probe started just before
         # expiry could otherwise spend 5s, then 10s on the diagnostic and 1s
         # sleeping, overrunning the published window by ~16s of the thin
-        # cancellation margin. Never below 1s, so the probe still gets to answer.
-        probe_stage_remaining=$(( probe_stage_deadline - (SECONDS - probe_stage_started_at) ))
-        (( probe_stage_remaining < 1 )) && probe_stage_remaining=1
-        # The WHOLE schedule has to fit the remaining budget: `timeout -k G S` can
-        # take S+G, so reserve the 1s kill grace out of it rather than adding to it.
+        # cancellation margin.
+        probe_stage_remaining=$(probe_stage_left)
+        # Do NOT clamp a too-small budget up to a launchable one -- that is how the
+        # bound gets exceeded rather than enforced. `timeout -k G S` can take S+G,
+        # so a schedule shorter than TERM+grace cannot be expressed at all: stop the
+        # stage instead. Zero answered probes here, so this exits exactly like the
+        # deadline break above (fail-closed exhaustion classification).
+        if (( probe_stage_remaining < probe_min_schedule ))
+        then
+            echo "Server live check: ${probe_stage_remaining}s left of the ${probe_stage_deadline}s probe stage budget cannot hold a bounded probe (needs ${probe_min_schedule}s), ending probe window"
+            break
+        fi
+        # Reserve the 1s kill grace OUT of the budget rather than adding to it.
         probe_wall=5
         (( probe_wall > probe_stage_remaining )) && probe_wall=$probe_stage_remaining
         probe_timeout=$(( probe_wall - 1 ))
-        (( probe_timeout < 1 )) && probe_timeout=1
         # `--receive_timeout` only bounds waiting for server data; a client wedged
         # before that (connect, TLS, DNS) would sit here unbounded, so wrap the probe
         # in a hard wall-clock bound too.
@@ -523,7 +541,7 @@ function fuzz
                     server_died=1
                     break
                 fi
-                sleep 1
+                probe_stage_sleep
             elif grep -F 'TOO_MANY_SIMULTANEOUS_QUERIES' err
             then
                 # Give it some time to cool down. The SHOW PROCESSLIST is only a
@@ -536,23 +554,29 @@ function fuzz
                 # external cancel. timeout covers connect/send/receive/execution.
                 # Recompute: the probe above may have consumed most of the budget,
                 # so the value captured at the loop head is stale by now.
-                probe_stage_remaining=$(( probe_stage_deadline - (SECONDS - probe_stage_started_at) ))
-                (( probe_stage_remaining < 1 )) && probe_stage_remaining=1
+                probe_stage_remaining=$(probe_stage_left)
                 # 10s total for this diagnostic: 9s to TERM plus the 1s kill grace,
-                # so the whole schedule fits the bound the PR publishes.
-                diagnostic_wall=10
-                (( diagnostic_wall > probe_stage_remaining )) && diagnostic_wall=$probe_stage_remaining
-                diagnostic_timeout=$(( diagnostic_wall - 1 ))
-                (( diagnostic_timeout < 1 )) && diagnostic_timeout=1
-                # --kill-after: plain `timeout N` sends SIGTERM at N and then waits
-                # INDEFINITELY if the child ignores it, so the bound would not be a
-                # bound at all (measured: 30s for a TERM-ignoring child under
-                # `timeout 2`). SIGKILL one second later makes it hard.
-                timeout -k 1 $diagnostic_timeout clickhouse-client --query "SHOW PROCESSLIST" ||:
+                # so the whole schedule fits the bound the PR publishes. Same rule as
+                # the probe: a budget too small to express a bound SKIPS the call
+                # rather than being clamped up past the deadline. This is only a
+                # diagnostic, so skipping it costs nothing but a log line.
+                if (( probe_stage_remaining >= probe_min_schedule ))
+                then
+                    diagnostic_wall=10
+                    (( diagnostic_wall > probe_stage_remaining )) && diagnostic_wall=$probe_stage_remaining
+                    diagnostic_timeout=$(( diagnostic_wall - 1 ))
+                    # --kill-after: plain `timeout N` sends SIGTERM at N and then waits
+                    # INDEFINITELY if the child ignores it, so the bound would not be a
+                    # bound at all (measured: 30s for a TERM-ignoring child under
+                    # `timeout 2`). SIGKILL one second later makes it hard.
+                    timeout -k 1 $diagnostic_timeout clickhouse-client --query "SHOW PROCESSLIST" ||:
+                else
+                    echo "Server live check: skipping the SHOW PROCESSLIST diagnostic, ${probe_stage_remaining}s left of the ${probe_stage_deadline}s probe stage budget"
+                fi
                 timeouts=0
                 # Server is demonstrably processing queries -> not the stuck state.
                 memory_limit_probes=0
-                sleep 1
+                probe_stage_sleep
             elif grep -F 'MEMORY_LIMIT_EXCEEDED' err
             then
                 # Server is alive but at a per-query/user memory limit (not the
@@ -560,7 +584,7 @@ function fuzz
                 # 241 breaks the consecutive server-global-stuck run.
                 timeouts=0
                 memory_limit_probes=0
-                sleep 1
+                probe_stage_sleep
             elif (( probe_status == 124 || probe_status == 137 )) || grep -F 'Timeout exceeded while' err
             then
                 # Alive but slow to answer: retry, and only treat it as a real
@@ -583,7 +607,7 @@ function fuzz
                     server_died=1
                     break
                 fi
-                sleep 1
+                probe_stage_sleep
             else
                 echo "Server live check returns $?"
                 cat err

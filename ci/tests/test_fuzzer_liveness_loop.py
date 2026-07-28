@@ -132,12 +132,14 @@ def _run_loop(
         + '\necho "SERVER_MEMORY_STUCK=$server_memory_stuck"\n'
         + '\necho "MEMORY_LIMIT_PROBES=$memory_limit_probes"\n'
     )
+    started = time.monotonic()
     out = subprocess.run(
         ["bash", "-c", script],
         capture_output=True,
         text=True,
         timeout=60,
     )
+    elapsed = time.monotonic() - started
     m = re.search(r"SERVER_DIED=(\d)", out.stdout)
     assert (
         m
@@ -151,6 +153,11 @@ def _run_loop(
         "memory_limit_probes": int(probes.group(1)) if probes else 0,
         "marker": marker.read_text(encoding="utf-8") if marker.exists() else None,
         "attempts": int(counter.read_text(encoding="utf-8")),
+        # Wall-clock cost of the whole extracted stage. Only meaningful when the
+        # mock itself blocks (`sleep` is mocked no-op), which is exactly the case
+        # the aggregate-deadline overrun tests need.
+        "elapsed": elapsed,
+        "stdout": out.stdout,
     }
 
 
@@ -641,6 +648,108 @@ def test_probe_stage_deadline_bounds_a_running_loop(tmp_path):
     assert "stage=probes reason=zero_answered_probes" in wd
 
 
+def test_probe_stage_does_not_overrun_its_deadline_at_the_boundary(tmp_path):
+    # The attempt-count test above proves the stage STOPS early, not that it stops
+    # WITHIN its advertised window -- so it stayed green while the stage overran.
+    # The overrun lived in the arithmetic at the boundary: with 1s of budget left,
+    # reserving the 1s kill grace leaves 0, which a `< 1` clamp restored to a 1s
+    # TERM timeout, so `timeout -k 1 1` could spend 2s (measured 2.013s) on a
+    # TERM-ignoring client -- plus a 1s cool-down -- all past expiry.
+    #
+    # A wedged client that ignores SIGTERM is the shape that exposes it. `sleep` is
+    # mocked no-op, so every second measured here is a real bounded client call.
+    #
+    # The deadline is 1s ON PURPOSE: that is the only value where the two forms
+    # diverge, and a looser slack makes this test VACUOUS. Measured over 3 runs
+    # each -- clamped (pre-fix): 2.01s at deadline 1, and IDENTICAL to the fixed
+    # form (2.01/3.01/4.01s) at deadlines 2/3/4, because the bad clamp is only
+    # reachable when exactly 1s of budget remains. Fixed form at deadline 1: 0.00s.
+    victim = "trap '' TERM\n/bin/sleep 30\n"
+    deadline = 1
+    res = _run_loop(
+        tmp_path,
+        victim,
+        mem_available_kb=_AMPLE_MEM_KB,
+        extra_env={"PROBE_STAGE_DEADLINE_SECONDS": str(deadline)},
+    )
+    # Tight by necessity (see above), but with a wide margin against the two
+    # measured populations: 0.00s (fixed) vs 2.01s (clamped) around a 1.5s line.
+    assert res["elapsed"] <= deadline + 0.5, (
+        f"probe stage took {res['elapsed']:.2f}s against a {deadline}s deadline: the "
+        "aggregate bound is not being enforced at the boundary"
+    )
+    # A hard-killed probe is a timeout (124/137), so it must fail closed through the
+    # probes-stage watchdog, not the catch-all branch.
+    assert res["server_died"] == 1
+    assert res["server_memory_stuck"] == 0
+    assert res["marker"] is None
+    wd = (tmp_path / "harness_watchdog.txt").read_text(encoding="utf-8")
+    assert "stage=probes" in wd
+
+
+def test_probe_stage_refuses_a_budget_too_small_for_a_bounded_call(tmp_path):
+    # The boundary fix must REFUSE to launch rather than clamp a too-small budget up
+    # to a launchable one -- clamping is exactly how the bound got exceeded instead
+    # of enforced. `timeout -k G S` costs S+G, so a budget under TERM+grace cannot
+    # express any bound: the stage has to end. Pinned via the log line so a silent
+    # return to clamping is caught even if the timing assertion above is loose.
+    victim = "trap '' TERM\n/bin/sleep 30\n"
+    res = _run_loop(
+        tmp_path,
+        victim,
+        mem_available_kb=_AMPLE_MEM_KB,
+        extra_env={"PROBE_STAGE_DEADLINE_SECONDS": "1"},
+    )
+    assert "cannot hold a bounded probe" in res["stdout"], (
+        "a probe-stage budget smaller than TERM+grace must end the stage, not be "
+        f"clamped up to a launchable value:\n{res['stdout']}"
+    )
+    # Ending the stage is still a zero-answer exit: fail closed.
+    assert res["server_died"] == 1
+    wd = (tmp_path / "harness_watchdog.txt").read_text(encoding="utf-8")
+    assert "stage=probes reason=zero_answered_probes" in wd
+
+
+def test_diagnostic_is_skipped_rather_than_run_unbounded(tmp_path):
+    # The diagnostic has the same boundary hazard as the probe, with a worse
+    # failure: clamping a 1s budget down through the reserved kill grace yields
+    # `timeout -k 1 0`, and `timeout 0` means NO LIMIT AT ALL (measured: a 4s child
+    # under `timeout -k 1 0` ran the full 4s, rc=0). So the very call this PR wraps
+    # to bound would become unbounded again -- on a thrashing server, holding the
+    # stage and a query slot toward the external cancel.
+    #
+    # A TOO_MANY probe costing ~0.9s against a 2s deadline leaves the diagnostic
+    # exactly 1s (verified by sweeping deadlines 2-7 x probe costs 0-4s: the
+    # remaining budget seen at the diagnostic takes every value 1..7, so 1 is
+    # reachable, not hypothetical). The diagnostic mock ignores SIGTERM and sleeps
+    # well past the whole stage, so an unbounded call cannot hide.
+    mock = textwrap.dedent(f"""\
+        if [[ "$*" == *PROCESSLIST* ]]; then
+            trap '' TERM
+            /bin/sleep 25
+            exit 0
+        fi
+        /bin/sleep 0.9
+        {_TOO_MANY_ERR}
+        """)
+    res = _run_loop(
+        tmp_path,
+        mock,
+        mem_available_kb=_AMPLE_MEM_KB,
+        extra_env={"PROBE_STAGE_DEADLINE_SECONDS": "2"},
+    )
+    # Skipped, so the 25s wedged diagnostic is never entered: the stage stays inside
+    # its window instead of running for the mock's full sleep.
+    assert "skipping the SHOW PROCESSLIST diagnostic" in res["stdout"], (
+        "a diagnostic budget too small to express a bound must be skipped, not run "
+        f"with an unbounded `timeout 0`:\n{res['stdout']}"
+    )
+    assert res["elapsed"] < 10, (
+        f"stage took {res['elapsed']:.1f}s: the diagnostic ran unbounded against a "
+        "2s probe-stage deadline"
+    )
+
+
 def test_non_total_241_then_success_is_healthy(tmp_path):
     # Tolerance preserved within the window: 5 user-level 241s then success.
     mock = textwrap.dedent(f"""\
@@ -853,10 +962,15 @@ def test_every_in_loop_client_invocation_is_bounded():
             )
             # The budget must be RECOMPUTED for each bound, not reused: a stale
             # value lets the diagnostic run past the aggregate deadline after the
-            # probe has already spent most of it.
+            # probe has already spent most of it. Either spelling counts as a
+            # recompute -- the inline subtraction, or a fresh call to the
+            # `probe_stage_left` helper that performs the same subtraction (pinned
+            # to actually do so by the assertion below).
             recomputes = len(
                 re.findall(
-                    r"probe_stage_remaining=\$\(\(\s*probe_stage_deadline\s*-", loop
+                    r"probe_stage_remaining=(?:\$\(\(\s*probe_stage_deadline\s*-"
+                    r"|\$\(probe_stage_left\))",
+                    loop,
                 )
             )
             capped = len(re.findall(r"=\$probe_stage_remaining\s*$", loop, re.MULTILINE))
@@ -864,6 +978,15 @@ def test_every_in_loop_client_invocation_is_bounded():
                 f"{capped} bounds are capped but the budget is only recomputed "
                 f"{recomputes} times: a stale remaining value overruns the deadline"
             )
+            # If the recompute goes through the helper, the helper must really derive
+            # from the deadline and the stage start -- otherwise the pin above could
+            # be satisfied by a function returning a constant.
+            if "probe_stage_remaining=$(probe_stage_left)" in loop:
+                assert re.search(
+                    r"probe_stage_left\(\)\s*\{\s*echo\s+\$\(\(\s*probe_stage_deadline"
+                    r"\s*-\s*\(\s*SECONDS\s*-\s*probe_stage_started_at\s*\)\s*\)\)\s*;?\s*\}",
+                    loop,
+                ), "`probe_stage_left` does not derive the remaining budget from the deadline"
         # Pin each shape to ITS OWN limit rather than a shared 60 s ceiling: the
         # liveness probe runs every iteration (5 s), while the diagnostics run once
         # per stuck detection (10 s). A generic ceiling lets a single diagnostic
@@ -933,6 +1056,36 @@ def test_probe_stage_deadline_default_is_bounded():
     assert default == 300, f"probe stage deadline default out of range: {default}s"
 
 
+def test_every_in_loop_wait_is_charged_against_the_stage_budget():
+    # Structural, because it CANNOT be behavioral: `_run_loop` mocks `sleep` to a
+    # no-op (otherwise a 60-probe test would take a minute), so a cool-down that
+    # ignores the stage budget costs zero measurable time and every behavioral test
+    # stays green -- verified by mutation (an unconditional `probe_stage_sleep` body
+    # passed all 51 tests in this file).
+    #
+    # In production each of these waits is a real second spent past the advertised
+    # window. So pin the shape: inside the probe loop the cool-down goes through the
+    # budget-guarded helper, never a bare `sleep`.
+    loop = _extract_loop()
+    body_end = loop.index("for _ in {1..100}")
+    in_loop = loop[body_end:]
+    bare = [
+        line.strip()
+        for line in in_loop.splitlines()
+        if re.match(r"^\s*sleep\s+\S+\s*$", line)
+    ]
+    assert not bare, (
+        "in-loop waits must be charged against the probe-stage budget via "
+        f"`probe_stage_sleep`, found bare: {bare}"
+    )
+    # And the helper must actually consult the budget -- otherwise the pin above is
+    # satisfied by a helper that always sleeps.
+    assert re.search(
+        r"probe_stage_sleep\(\)\s*\{\s*if\s*\(\(\s*\$\(probe_stage_left\)\s*>\s*0\s*\)\)",
+        loop,
+    ), "`probe_stage_sleep` does not skip the wait once the stage budget is spent"
+
+
 _POLLED_BLOCKS = (
     "server-liveness probe loop",
     "fuzzer-client reap poll",
@@ -952,8 +1105,15 @@ def test_polled_blocks_use_a_one_second_cadence():
     # in-loop `timeout 10 clickhouse-client ...` diagnostic is not swept in.
     for name in _POLLED_BLOCKS:
         block = _extract_block(name)
-        durations = re.findall(r"^\s*sleep\s+(\S+)\s*$", block, re.MULTILINE)
-        assert durations, f"no bare `sleep` statement found in block {name!r}"
+        # A block may spend its cadence through a guarded helper instead of a bare
+        # statement (the probe loop skips the wait once the stage budget is spent),
+        # so match the `sleep N` inside a one-line function body too. Both forms are
+        # still pinned to N == 1.
+        durations = re.findall(
+            r"^\s*sleep\s+(\S+)\s*$|\bthen\s+sleep\s+(\S+)\s*;\s*fi", block, re.MULTILINE
+        )
+        durations = [a or b for a, b in durations]
+        assert durations, f"no `sleep` statement found in block {name!r}"
         for d in durations:
             assert d == "1", f"block {name!r} polls at `sleep {d}`, not the 1s cadence"
 
