@@ -237,9 +237,21 @@ SELECT 'a'    SIMILAR TO 'a#|b' ESCAPE '#';        -- Returns: 0 (escaped: liter
 SELECT 'a|b'  SIMILAR TO 'a#|b' ESCAPE '#';        -- Returns: 1
 SELECT 'a(b)' SIMILAR TO 'a#(b#)' ESCAPE '#';      -- Returns: 1 (literal parentheses)
 
-SELECT '-- ESCAPE the escape character itself, and escaping a plain character';
+SELECT '-- ESCAPE the escape character itself';
 SELECT 'a#b'  SIMILAR TO 'a##b' ESCAPE '#';        -- Returns: 1 (## is a literal #)
-SELECT 'ab'   SIMILAR TO 'a#b' ESCAPE '#';         -- Returns: 1 (#b is a literal b)
+
+SELECT '-- Escaping an ordinary character is an error: it would have no effect, and it must not silently';
+SELECT '-- mean something different from the same sequence under the default backslash escape, where';
+SELECT '-- `\\c` is a literal backslash followed by `c`.';
+SELECT 'ab'    SIMILAR TO 'a#b' ESCAPE '#';        -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+SELECT 'a1b'   SIMILAR TO 'a#1b' ESCAPE '#';       -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+SELECT 'a-b'   SIMILAR TO 'a#-b' ESCAPE '#';       -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+SELECT '-abc-' SIMILAR TO '%#mabc#M%' ESCAPE '#';  -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+SELECT 'mabcM' SIMILAR TO '%#mabc#M%' ESCAPE '#';  -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+
+SELECT '-- The default backslash escape keeps its own rule: an unknown escape is a literal backslash';
+SELECT '\\mabc' SIMILAR TO '%\\mabc%';             -- Returns: 1
+SELECT 'mabc'   SIMILAR TO '%\\mabc%';             -- Returns: 0 (\\m is not a word boundary)
 
 SELECT '-- ESCAPE with backslash behaves like the default escape';
 SELECT 'a_b'  SIMILAR TO 'a\\_b' ESCAPE '\\';      -- Returns: 1

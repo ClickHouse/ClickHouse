@@ -488,9 +488,23 @@ String similarToPatternWithCustomEscapeToSimilarToPattern(std::string_view patte
             if (pos == end)
                 throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Invalid escape sequence at the end of SIMILAR TO pattern '{}'", pattern);
 
-            /// The escape character makes the following character a literal. Represent that literal
-            /// in the standard grammar: `\c` for characters that would otherwise be special, or the
-            /// bare character otherwise.
+            /// The escape character must be followed by a character whose special meaning it can
+            /// disable, or by itself. An escape before an ordinary character (a letter, a digit, ...)
+            /// can never be necessary - such a character is already a literal - so accepting it would
+            /// only mask a typo. It would also mean something different from the same sequence under
+            /// the default backslash escape, where `\c` denotes a literal backslash followed by `c`
+            /// (`SIMILAR TO '\m'` matches `\m`, not `m`) - silently changing what a pattern means
+            /// depending on which escape character is in force. Reject it, exactly as
+            /// `LIKE ... ESCAPE` does above.
+            if (*pos != escape_char && !needs_backslash_to_be_literal(*pos))
+                throw Exception(
+                    ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE,
+                    "Invalid escape sequence '{}{}' in SIMILAR TO pattern '{}': the escape character must be "
+                    "followed by a SIMILAR TO special character or by the escape character itself",
+                    escape_char, *pos, pattern);
+
+            /// Represent the literal in the standard grammar: `\c` for characters that would
+            /// otherwise be special, or the bare character otherwise.
             if (needs_backslash_to_be_literal(*pos))
                 res += '\\';
             res += *pos;
