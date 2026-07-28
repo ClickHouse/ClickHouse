@@ -3511,6 +3511,15 @@ public:
         if (isNaNField(left_point) || isNaNField(right_point))
             return {false, true, false, false};
 
+        const bool is_div_function = name_view == "divide" || name_view == "intDiv";
+
+        // Normalize the constant divisor once, before the branches split, so that every divisor-zero
+        // check below compares the value the division actually uses (see `substituteIPField`) instead
+        // of an IP-tagged `Field`, which has no accurate-comparison arm against a number.
+        const Field right_constant = (is_div_function && right.column && isColumnConst(*right.column))
+            ? substituteIPField((*right.column)[0])
+            : Field();
+
         // For simplicity, we treat null values as monotonicity breakers, except for variable / non-zero constant.
         if (left_point.isNull() || right_point.isNull())
         {
@@ -3519,13 +3528,13 @@ public:
                 // variable / constant
                 if (right.column && isColumnConst(*right.column))
                 {
-                    auto constant = (*right.column)[0];
+                    const Field & constant = right_constant;
                     if (accurateEquals(constant, Field(0)))
                         return {false, true, false}; // variable / 0 is undefined, let's treat it as non-monotonic
                     bool is_constant_positive = accurateLess(Field(0), constant);
 
-                    auto arg_type = removeNullable(recursiveRemoveLowCardinality(left.type));
-                    auto divisor_type = removeNullable(recursiveRemoveLowCardinality(right.type));
+                    auto arg_type = substituteIPType(removeNullable(recursiveRemoveLowCardinality(left.type)));
+                    auto divisor_type = substituteIPType(removeNullable(recursiveRemoveLowCardinality(right.type)));
 
                     // `intDiv` or `divide` by a Decimal constant computes in the decimal's native signed
                     // width (`DecimalBinaryOperation` feeds both operands into
@@ -3545,7 +3554,9 @@ public:
                     // monotonicity only when an endpoint keeps the range on one side of it.
                     if (name_view == "intDiv" && isUInt(arg_type) && isInt(divisor_type))
                     {
-                        if (intDivRangeCrossesSignedWrap(arg_type, left_point, right_point))
+                        // Only one endpoint is null here; the other can still be an IP-tagged `Field`.
+                        if (intDivRangeCrossesSignedWrap(
+                                arg_type, substituteIPField(left_point), substituteIPField(right_point)))
                             return {false, true, false, false};
                         return {true, is_constant_positive, false};
                     }
@@ -3570,9 +3581,8 @@ public:
             // Division is undefined at zero, so we must not report monotonicity:
             // - divide(const, x) or intDiv(const, x) at x = 0 (right_arg_is_zero)
             // - divide(x, 0) or intDiv(x, 0) where the constant divisor is 0 (right_const_is_zero)
-            bool is_div_function = name_view == "divide" || name_view == "intDiv";
             bool right_arg_is_zero = left.column && isColumnConst(*left.column) && accurateEquals(left_point, Field(0));
-            bool right_const_is_zero = right.column && isColumnConst(*right.column) && accurateEquals((*right.column)[0], Field(0));
+            bool right_const_is_zero = right.column && isColumnConst(*right.column) && accurateEquals(right_constant, Field(0));
 
             if (is_div_function && (right_arg_is_zero || right_const_is_zero))
                 return {false, true, false, false};
@@ -3683,14 +3693,14 @@ public:
             // variable / constant
             else if (right.column && isColumnConst(*right.column))
             {
-                auto constant = (*right.column)[0];
+                const Field & constant = right_constant;
                 if (accurateEquals(constant, Field(0)))
                     return {false, true, false, false}; // variable / 0 is undefined, let's treat it as non-monotonic
 
                 bool is_constant_positive = accurateLess(Field(0), constant);
 
-                auto arg_type = removeNullable(recursiveRemoveLowCardinality(left.type));
-                auto divisor_type = removeNullable(recursiveRemoveLowCardinality(right.type));
+                auto arg_type = substituteIPType(removeNullable(recursiveRemoveLowCardinality(left.type)));
+                auto divisor_type = substituteIPType(removeNullable(recursiveRemoveLowCardinality(right.type)));
 
                 // `intDiv` or `divide` by a Decimal constant computes in the decimal's native signed
                 // width (`DecimalBinaryOperation` feeds both operands into
@@ -3710,7 +3720,11 @@ public:
                 // divisor computes through floating point and never wraps.
                 if (name_view == "intDiv" && isUInt(arg_type) && isInt(divisor_type))
                 {
-                    if (intDivRangeCrossesSignedWrap(arg_type, left_point, right_point))
+                    // The endpoints are values of the declared key type, so an IP key yields IP-tagged
+                    // `Field`s; substitute them too (see `substituteIPField`) before comparing them
+                    // against the numeric wrap point.
+                    if (intDivRangeCrossesSignedWrap(
+                            arg_type, substituteIPField(left_point), substituteIPField(right_point)))
                         return {false, true, false, false};
                     return {true, is_constant_positive, false, is_strict};
                 }
@@ -3869,6 +3883,35 @@ public:
         const size_t divisor_width_bytes = divisor_type->getSizeOfValueInMemory();
         const Field wrap_field(UInt256(1) << (8 * divisor_width_bytes - 1));
         return accurateLessOrEqual(wrap_field, constant);
+    }
+
+    /// `IPv4`/`IPv6` operands never reach the arithmetic as themselves: both `getReturnTypeImplStatic`
+    /// and `executeImpl` substitute them with `UInt32`/`UInt128`. Apply the same substitution so the
+    /// type predicates below describe the arithmetic that actually runs.
+    static DataTypePtr substituteIPType(const DataTypePtr & type)
+    {
+        if (isIPv4(type))
+            return std::make_shared<DataTypeUInt32>();
+        if (isIPv6(type))
+            return std::make_shared<DataTypeUInt128>();
+        return type;
+    }
+
+    /// Value counterpart of `substituteIPType`: an IP-tagged `Field` has no accurate-comparison arm
+    /// against a number, so it must be converted before it is compared here. `IPv6` is stored
+    /// big-endian and the substitution casts it through `convertFromIPv6ToUInt128`, which swaps the
+    /// limbs and byte-swaps each, so a raw `toUnderType()` bit copy would yield a different number;
+    /// reuse the same cast the substitution performs.
+    static Field substituteIPField(const Field & field)
+    {
+        const bool is_ipv4 = field.getType() == Field::Types::IPv4;
+        if (!is_ipv4 && field.getType() != Field::Types::IPv6)
+            return field;
+
+        const DataTypePtr from = is_ipv4 ? DataTypePtr(std::make_shared<DataTypeIPv4>()) : std::make_shared<DataTypeIPv6>();
+        const DataTypePtr to = is_ipv4 ? DataTypePtr(std::make_shared<DataTypeUInt32>()) : std::make_shared<DataTypeUInt128>();
+        const ColumnWithTypeAndName arg{from->createColumnConst(1, field), from, ""};
+        return (*castColumn(arg, to))[0];
     }
 
 private:
