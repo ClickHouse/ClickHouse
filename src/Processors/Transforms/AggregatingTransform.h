@@ -158,7 +158,7 @@ private:
 
     /// Per-transform context of the adaptive aggregation; engaged when the shared state exists
     /// on `many_data`.
-    std::optional<Aggregator::AdaptiveAggregationProducer> adaptive_context;
+    std::optional<AdaptiveAggregationProducer> adaptive_context;
 
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;

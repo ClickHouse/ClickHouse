@@ -288,6 +288,80 @@ struct AdaptiveAggregationSession
 
 using AdaptiveAggregationSessionPtr = std::shared_ptr<AdaptiveAggregationSession>;
 
+/// Per-transform context of the adaptive aggregation: the thread's lifecycle phase and its
+/// phase-owned counters, per-block staging for the missed rows (the arrays are cleared but
+/// keep their capacity across blocks), and the buffered chunks awaiting coalescing.
+struct AdaptiveAggregationProducer
+{
+    explicit AdaptiveAggregationProducer(AdaptiveAggregationSessionPtr shared_) : session(std::move(shared_)) { }
+
+    /// The thread starts learning: the local table inserts as usual while the freeze rule
+    /// watches its growth. Rows consumed here feed the give-up rule (see `executeOnBlock`).
+    struct LearningState
+    {
+        size_t rows_seen = 0;
+    };
+
+    /// The adaptive phase proper: the local table only updates the keys it already holds
+    /// and misses are staged for the shared drain. Carries the post-freeze hit-rate
+    /// sampling: when the frozen table turns out to hold almost none of the stream's keys
+    /// (a uniform high-cardinality distribution), probing it is pure overhead on every row;
+    /// after the sample window the kernel switches to staging every row without the lookup.
+    struct FrozenState
+    {
+        size_t sampled_rows = 0;
+        size_t sampled_hits = 0;
+        bool bypass_local_probe = false;
+    };
+
+    /// Terminal: the thread aggregates exactly as with the feature off, keeping only the
+    /// reason it stood down.
+    struct BaselineState
+    {
+        enum class Reason
+        {
+            /// The give-up rule: the table stayed far below the freeze threshold across
+            /// many times that many rows, so the stream is repeat-dominated locally.
+            TooFewDistinctKeys,
+            /// The global thaw: the session-wide staged-key sample proved the whole stream
+            /// repeat-dominated (see `publishDelayedRecords`).
+            RepeatedStagedKeys,
+        };
+        Reason reason;
+    };
+
+    using Phase = std::variant<LearningState, FrozenState, BaselineState>;
+    Phase phase = LearningState{};
+
+    bool isLearning() const { return std::holds_alternative<LearningState>(phase); }
+    bool isFrozen() const { return std::holds_alternative<FrozenState>(phase); }
+    bool isBaseline() const { return std::holds_alternative<BaselineState>(phase); }
+
+    void freeze() { phase = FrozenState{}; }
+    void standDown(BaselineState::Reason reason) { phase = BaselineState{.reason = reason}; }
+
+    AdaptiveAggregationSessionPtr session;
+
+    /// The current block's misses, one entry per delayed record, in staging order.
+    PaddedPODArray<UInt32> miss_source_rows;
+    PaddedPODArray<UInt64> miss_hashes;
+    PaddedPODArray<UInt8> miss_buckets;
+    PaddedPODArray<UInt64> miss_key_sizes;
+    PaddedPODArray<UInt32> miss_multiplicities;
+
+    /// Scratch for the value-staged publish grouping (see `buildDeduplicatedCountChunk`).
+    std::vector<std::pair<UInt64, UInt32>> sort_pairs_scratch;
+    std::vector<UInt32> group_offsets_scratch;
+    std::vector<UInt32> group_cursor_scratch;
+
+    /// Small per-block staging batches buffered for coalescing: they are merged into one
+    /// bucket-grouped chunk before they reach the backlogs (see `stageChunk`), so the
+    /// merge-time drain gets a few large contiguous slices per bucket instead of one tiny
+    /// slice per consumed block. Flushed by `flushPendingChunks` when the input ends.
+    std::vector<AdaptiveAggregationSession::MutableStagedChunkPtr> pending_chunks;
+    size_t pending_staged_bytes = 0;
+};
+
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
   *
@@ -441,80 +515,6 @@ public:
     ~Aggregator();
 
     const Params & getParams() const { return params; }
-
-    /// Per-transform context of the adaptive aggregation: the thread's lifecycle phase and its
-    /// phase-owned counters, per-block staging for the missed rows (the arrays are cleared but
-    /// keep their capacity across blocks), and the buffered chunks awaiting coalescing.
-    struct AdaptiveAggregationProducer
-    {
-        explicit AdaptiveAggregationProducer(AdaptiveAggregationSessionPtr shared_) : session(std::move(shared_)) { }
-
-        /// The thread starts learning: the local table inserts as usual while the freeze rule
-        /// watches its growth. Rows consumed here feed the give-up rule (see `executeOnBlock`).
-        struct LearningState
-        {
-            size_t rows_seen = 0;
-        };
-
-        /// The adaptive phase proper: the local table only updates the keys it already holds
-        /// and misses are staged for the shared drain. Carries the post-freeze hit-rate
-        /// sampling: when the frozen table turns out to hold almost none of the stream's keys
-        /// (a uniform high-cardinality distribution), probing it is pure overhead on every row;
-        /// after the sample window the kernel switches to staging every row without the lookup.
-        struct FrozenState
-        {
-            size_t sampled_rows = 0;
-            size_t sampled_hits = 0;
-            bool bypass_local_probe = false;
-        };
-
-        /// Terminal: the thread aggregates exactly as with the feature off, keeping only the
-        /// reason it stood down.
-        struct BaselineState
-        {
-            enum class Reason
-            {
-                /// The give-up rule: the table stayed far below the freeze threshold across
-                /// many times that many rows, so the stream is repeat-dominated locally.
-                TooFewDistinctKeys,
-                /// The global thaw: the session-wide staged-key sample proved the whole stream
-                /// repeat-dominated (see `publishDelayedRecords`).
-                RepeatedStagedKeys,
-            };
-            Reason reason;
-        };
-
-        using Phase = std::variant<LearningState, FrozenState, BaselineState>;
-        Phase phase = LearningState{};
-
-        bool isLearning() const { return std::holds_alternative<LearningState>(phase); }
-        bool isFrozen() const { return std::holds_alternative<FrozenState>(phase); }
-        bool isBaseline() const { return std::holds_alternative<BaselineState>(phase); }
-
-        void freeze() { phase = FrozenState{}; }
-        void standDown(BaselineState::Reason reason) { phase = BaselineState{.reason = reason}; }
-
-        AdaptiveAggregationSessionPtr session;
-
-        /// The current block's misses, one entry per delayed record, in staging order.
-        PaddedPODArray<UInt32> miss_source_rows;
-        PaddedPODArray<UInt64> miss_hashes;
-        PaddedPODArray<UInt8> miss_buckets;
-        PaddedPODArray<UInt64> miss_key_sizes;
-        PaddedPODArray<UInt32> miss_multiplicities;
-
-        /// Scratch for the value-staged publish grouping (see `buildDeduplicatedCountChunk`).
-        std::vector<std::pair<UInt64, UInt32>> sort_pairs_scratch;
-        std::vector<UInt32> group_offsets_scratch;
-        std::vector<UInt32> group_cursor_scratch;
-
-        /// Small per-block staging batches buffered for coalescing: they are merged into one
-        /// bucket-grouped chunk before they reach the backlogs (see `stageChunk`), so the
-        /// merge-time drain gets a few large contiguous slices per bucket instead of one tiny
-        /// slice per consumed block. Flushed by `flushPendingChunks` when the input ends.
-        std::vector<AdaptiveAggregationSession::MutableStagedChunkPtr> pending_chunks;
-        size_t pending_staged_bytes = 0;
-    };
 
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     /// `adaptive` is the per-thread adaptive-aggregation context, or nullptr when the feature is off.
