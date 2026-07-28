@@ -392,7 +392,8 @@ void copyAzureBlobStorageFile(
     auto log = getLogger("copyAzureBlobStorageFile");
     bool is_native_copy_done = false;
 
-    if (settings->use_native_copy)
+    /// Server-side copy (CopyFromUri) copies the whole source blob; a ranged copy (offset>0) must go via read+write.
+    if (settings->use_native_copy && offset == 0)
     {
         /// Do native copy
         LOG_TRACE(log, "Copying Blob: {} from Container: {} using native copy", src_blob, src_container_for_logging);
