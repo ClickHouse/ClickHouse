@@ -1689,6 +1689,106 @@ def test_early_abort_keeps_a_genuine_parser_finding_over_the_marker(workspace):
     )
 
 
+def test_early_abort_reports_a_startup_crash_with_no_marker(workspace):
+    # The reported gap: a server can log a real finding and die during STARTUP --
+    # before the probe loop that writes a marker is reached, and long before
+    # status.tsv -- so the early abort had neither marker nor watchdog. Parsing was
+    # gated on one of those existing, so this class was reported as a generic
+    # harness error with the stable finding name and its reproduction files thrown
+    # away. Same shared production path, marker=None and watchdog=None.
+    server_log = workspace / "server.log"
+    server_log.write_text(
+        "2026.07.25 00:00:00.000000 [ 1 ] {} <Fatal> : Logical error: "
+        "Bad cast from type A to type B.\n",
+        encoding="utf-8",
+    )
+    selected = job._parse_and_select_failure(
+        server_log,
+        workspace / "stderr.log",
+        workspace / "fuzzer.log",
+        False,
+        None,
+        None,
+    )
+    assert selected is not None, (
+        "a genuine startup-crash finding must survive a missing status.tsv even "
+        "with no marker or watchdog to classify the run"
+    )
+    assert "Logical error" in selected.name, selected.name
+    # And it must set the top-level status rather than being reported as a generic
+    # harness ERROR: a missing status.tsv with a real finding is a test failure.
+    assert job._early_abort_status(FileNotFoundError("x"), [selected]) is None
+    # A FAULTY status.tsv is still a harness bug even with a finding attached.
+    assert (
+        job._early_abort_status(ValueError("malformed"), [selected])
+        == Result.Status.ERROR
+    )
+
+
+def test_early_abort_parses_unconditionally():
+    # Structural companion: `run_fuzz_job` drives docker and cannot run here, so pin
+    # that the parse is NOT gated on a marker/watchdog. A behavioral test on the
+    # shared helper cannot see a caller-side `if` reintroducing the gate.
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(job.run_fuzz_job))
+    calls = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Name)
+        and n.func.id == "_parse_and_select_failure"
+    ]
+    # One call site here: the early abort. The normal path parses via
+    # `_assemble_sub_results`, a separate function (pinned by its own tests).
+    assert len(calls) == 1, f"expected the early abort to parse, got {len(calls)}"
+    # The early-abort call must not sit under a test of marker_result/watchdog_result.
+    for stmt in ast.walk(tree):
+        if not isinstance(stmt, ast.If):
+            continue
+        guard = {n.id for n in ast.walk(stmt.test) if isinstance(n, ast.Name)}
+        if not guard & {"marker_result", "watchdog_result"}:
+            continue
+        for node in ast.walk(stmt):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "_parse_and_select_failure"
+            ):
+                raise AssertionError(
+                    "the early-abort parse is gated on a marker/watchdog again: a "
+                    "startup crash that dies before any marker loses its finding"
+                )
+
+
+def test_early_abort_claims_a_harness_stop_only_when_classified():
+    # `server_stopped_by_harness=True` tells the parser to ignore the server's
+    # signal line as self-inflicted. That is only true for a CLASSIFIED abort
+    # (status.tsv is written after the graceful stop). An unclassified startup
+    # failure had no stop at all, so hardcoding True there would suppress a genuine
+    # server signal -- which may be the only evidence such a crash leaves.
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(job.run_fuzz_job))
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "_parse_and_select_failure"
+        ):
+            for kw in node.keywords:
+                if kw.arg != "server_stopped_by_harness":
+                    continue
+                assert not (
+                    isinstance(kw.value, ast.Constant) and kw.value.value is True
+                ), (
+                    "server_stopped_by_harness must be conditional on the run being "
+                    "classified, not hardcoded True"
+                )
+
+
 def test_early_abort_falls_back_to_the_marker_when_the_parser_finds_nothing(workspace):
     # The marker stays the floor: a parser no-match must not erase it.
     (workspace / "server.log").write_text("nothing interesting\n", encoding="utf-8")
@@ -1792,6 +1892,14 @@ def test_early_abort_keeps_a_reap_watchdog_over_our_own_sigterm(workspace):
 def test_early_abort_declares_the_server_already_stopped(workspace):
     # Pin the ARGUMENT, not just the call: the stage checks cannot see a reap-only
     # run, so dropping this keyword silently reintroduces the SIGTERM row.
+    #
+    # The value is now CONDITIONAL (`classified`) rather than a literal True,
+    # because the early abort is also reached by an unclassified startup failure
+    # where no stop ever ran -- claiming one there would suppress a genuine server
+    # signal. So pin that the keyword is present and that it evaluates True for a
+    # classified run: the behavioral half is asserted just above (a reap-only
+    # watchdog survives our graceful-stop signal) and in
+    # test_early_abort_claims_a_harness_stop_only_when_classified.
     import ast
     import inspect
 
@@ -1816,7 +1924,28 @@ def test_early_abort_declares_the_server_already_stopped(workspace):
     )
     flag = [k for k in call.keywords if k.arg == "server_stopped_by_harness"]
     assert flag, "the early abort must declare that the harness stopped the server"
-    assert getattr(flag[0].value, "value", None) is True
+    value = flag[0].value
+    if isinstance(value, ast.Constant):
+        assert value.value is True
+    else:
+        # A name, and it must be bound to the marker/watchdog presence test in the
+        # same function -- not to something unrelated that merely happens to be
+        # truthy on the classified path.
+        assert isinstance(value, ast.Name), ast.dump(value)
+        bound = [
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.Assign)
+            and any(
+                isinstance(t, ast.Name) and t.id == value.id for t in n.targets
+            )
+        ]
+        assert len(bound) == 1, f"`{value.id}` is not assigned exactly once"
+        names = {n.id for n in ast.walk(bound[0].value) if isinstance(n, ast.Name)}
+        assert {"marker_result", "watchdog_result"} <= names, (
+            f"`{value.id}` must be derived from marker_result/watchdog_result "
+            f"presence, got {sorted(names)}"
+        )
 
 
 def test_early_abort_runs_the_parser_before_completing(workspace):

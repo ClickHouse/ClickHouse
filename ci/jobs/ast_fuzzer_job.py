@@ -622,8 +622,11 @@ def _early_abort_status(exc: Exception, sub_results):
 
     Only a MISSING/EMPTY status.tsv (FileNotFoundError, which _read_fuzzer_status
     raises for both) means "the runner aborted before reporting" -- exactly the
-    state a marker or watchdog authoritatively classifies, so there the
-    sub-results may set the top-level status.
+    state a marker, a watchdog, or a genuine parser finding authoritatively
+    classifies, so there the sub-results may set the top-level status. A startup
+    crash that dies before any marker is written reaches this path with only a
+    parser finding, and reporting that finding is the whole point of parsing every
+    early abort; with no sub-result at all the status stays ERROR.
 
     Every other exception is a fault of the file itself: malformed contents
     (ValueError), an unreadable file (PermissionError, i.e. the ownership repair
@@ -1145,24 +1148,40 @@ def run_fuzz_job(check_name: str):
         # after the marker write would relabel a real crash as the generic
         # memory-stuck row. _select_failure_result keeps the marker as the floor,
         # so a parser no-match still reports the marker/watchdog.
+        # Parse on EVERY early abort, not only when a marker/watchdog exists. The
+        # server can log a sanitizer report or a logical error and die during
+        # startup -- before the probe loop that writes a marker has even been
+        # reached, and long before status.tsv -- and `set -e` then aborts here (the
+        # PID read and `kill -0` right after the startup wait are the concrete
+        # sites). Gating the parser on a marker discarded the stable finding name
+        # and its reproduction files for exactly that class, reporting a real crash
+        # as a generic harness error.
+        classified = marker_result is not None or watchdog_result is not None
         sub_results = [r for r in (marker_result, watchdog_result) if r is not None]
-        if marker_result is not None or watchdog_result is not None:
-            selected = _parse_and_select_failure(
-                server_log,
-                stderr_log,
-                fuzzer_log,
-                buzzhouse,
-                marker_result,
-                watchdog_result,
-                # status.tsv is written AFTER the graceful stop, so reaching this
-                # branch means the harness had already stopped the server. Without
-                # this a reap-only run (which leaves the server healthy, so the
-                # stage-based checks correctly do not fire) would have its watchdog
-                # ERROR replaced by our own "Received signal 15" line.
-                server_stopped_by_harness=True,
-            )
-            if selected is not None:
-                sub_results = _with_watchdog(selected, watchdog_result)
+        selected = _parse_and_select_failure(
+            server_log,
+            stderr_log,
+            fuzzer_log,
+            buzzhouse,
+            marker_result,
+            watchdog_result,
+            # Only a CLASSIFIED abort is known to be post-graceful-stop: status.tsv
+            # is written after it, so a marker/watchdog run reaching here had its
+            # server stopped by us, and without this a reap-only run (which leaves
+            # the server healthy, so the stage checks correctly do not fire) would
+            # have its watchdog ERROR replaced by our own "Received signal 15".
+            #
+            # An unclassified abort has no such witness and is typically a startup
+            # failure where no stop ever ran, so claiming otherwise would suppress a
+            # genuine server signal -- the one line such a crash may consist of.
+            server_stopped_by_harness=classified,
+        )
+        if selected is not None:
+            # With a marker present the parser outranks it (a late abort after the
+            # marker write must not relabel a real crash as the memory-stuck row);
+            # _select_failure_result keeps the marker as the floor, so a no-match
+            # still reports it. Without one, a genuine finding is all there is.
+            sub_results = _with_watchdog(selected, watchdog_result)
         early_result = Result.create_from(
             status=_early_abort_status(e, sub_results),
             info=error_info,
