@@ -446,11 +446,11 @@ Fun fact: the refresh query is allowed to read from the view that's being refres
 
 ## Window View {#window-view}
 
-<ExperimentalBadge/>
+<DeprecatedBadge/>
 <CloudNotSupportedBadge/>
 
-:::info
-This is an experimental feature that may change in backwards-incompatible ways in the future releases. Enable usage of window views and `WATCH` query using [allow_experimental_window_view](/operations/settings/settings#allow_experimental_window_view) setting. Input the command `set allow_experimental_window_view = 1`.
+:::warning Deprecated
+Window views are deprecated and may be removed in a future release. They remain gated behind the [allow_experimental_window_view](/operations/settings/settings#allow_experimental_window_view) setting (`SET allow_experimental_window_view = 1`) and are not recommended for new use.
 :::
 
 ```sql
