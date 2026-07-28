@@ -209,7 +209,6 @@ public:
 
     /// Whether the table runs zero-copy replication, i.e. blobs may be shared cross-replica invisibly to the
     /// local refcount. Default true = fail-safe: residue sweeps then keep remote blobs. Seeded by the part builder.
-    virtual bool isZeroCopyReplicationEnabled() const = 0;
     virtual void setZeroCopyReplicationEnabled(bool value) = 0;
 
     /// Sub-part storage bound to the projection's directory.

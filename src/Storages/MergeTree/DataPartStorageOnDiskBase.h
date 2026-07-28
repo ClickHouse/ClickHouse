@@ -41,7 +41,6 @@ public:
     void syncProjectionStoragePath(const Projection & projection, IDataPartStorage & projection_storage) const override;
     void removeProjectionResidue(const Projection & placement) override;
 
-    bool isZeroCopyReplicationEnabled() const override { return zero_copy_replication_enabled; }
     void setZeroCopyReplicationEnabled(bool value) override { zero_copy_replication_enabled = value; }
 
     ProjectionStorageFormat getProjectionStorageFormat() const override { return projection_storage_format; }
@@ -292,7 +291,7 @@ protected:
     /// Layout for projection directories created through this storage.
     ProjectionStorageFormat projection_storage_format = ProjectionStorageFormat::NONE;
 
-    /// See isZeroCopyReplicationEnabled; default true keeps residue blobs (fail-safe until seeded).
+    /// Zero-copy replication policy; default true keeps residue blobs (fail-safe until seeded).
     bool zero_copy_replication_enabled = true;
 
     /// The owned projection set. ready=false: never seeded (reads throw); ready=true: authoritative (absent key = no projection). Paths are
