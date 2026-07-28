@@ -622,22 +622,22 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 
 | PostgreSQL       | ClickHouse                                                   |
 |------------------|--------------------------------------------------------------|
-| DATE             | [Date](../../sql-reference/data-types/date.md)               |
-| TIMESTAMP        | [DateTime](../../sql-reference/data-types/datetime.md)       |
-| REAL             | [Float32](../../sql-reference/data-types/float.md)           |
-| DOUBLE           | [Float64](../../sql-reference/data-types/float.md)           |
-| DECIMAL, NUMERIC | [Decimal](../../sql-reference/data-types/decimal.md) (see note below) |
-| SMALLINT         | [Int16](../../sql-reference/data-types/int-uint.md)          |
-| INTEGER          | [Int32](../../sql-reference/data-types/int-uint.md)          |
-| BIGINT           | [Int64](../../sql-reference/data-types/int-uint.md)          |
-| SERIAL           | [UInt32](../../sql-reference/data-types/int-uint.md)         |
-| BIGSERIAL        | [UInt64](../../sql-reference/data-types/int-uint.md)         |
-| TEXT, CHAR       | [String](../../sql-reference/data-types/string.md)           |
-| INTEGER          | Nullable([Int32](../../sql-reference/data-types/int-uint.md))|
-| ARRAY            | [Array](../../sql-reference/data-types/array.md)             |
+| DATE             | [Date](/reference/data-types/date)               |
+| TIMESTAMP        | [DateTime](/reference/data-types/datetime)       |
+| REAL             | [Float32](/reference/data-types/float)           |
+| DOUBLE           | [Float64](/reference/data-types/float)           |
+| DECIMAL, NUMERIC | [Decimal](/reference/data-types/decimal) (see note below) |
+| SMALLINT         | [Int16](/reference/data-types/int-uint)          |
+| INTEGER          | [Int32](/reference/data-types/int-uint)          |
+| BIGINT           | [Int64](/reference/data-types/int-uint)          |
+| SERIAL           | [UInt32](/reference/data-types/int-uint)         |
+| BIGSERIAL        | [UInt64](/reference/data-types/int-uint)         |
+| TEXT, CHAR       | [String](/reference/data-types/string)           |
+| INTEGER          | Nullable([Int32](/reference/data-types/int-uint))|
+| ARRAY            | [Array](/reference/data-types/array)             |
 
 :::note
-PostgreSQL `numeric(p, 0)` with a precision `p` greater than 76 (the maximum supported by `Decimal256`) — for example `numeric(78, 0)`, commonly used to store 256-bit integers — is mapped to [`Int256`](../../sql-reference/data-types/int-uint.md) instead of `Decimal`. Values that do not fit into the `Int256` range are rejected with an error.
+PostgreSQL `numeric(p, 0)` with a precision `p` greater than 76 (the maximum supported by `Decimal256`) — for example `numeric(78, 0)`, commonly used to store 256-bit integers — is mapped to [`Int256`](/reference/data-types/int-uint) instead of `Decimal`. Values that do not fit into the `Int256` range are rejected with an error.
 :::
 
 ## Examples of use {#examples-of-use}
