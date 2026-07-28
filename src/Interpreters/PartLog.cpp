@@ -267,41 +267,41 @@ bool PartLog::addNewPartsImpl(
             const auto & part_log_entry = parts[i];
             const auto & part = part_log_entry.part;
 
-            PartLogElement elem;
+            part_log->add([&](PartLogElement & element)
+            {
+                if (!query_id.empty())
+                    element.query_id.insert(0, query_id.data(), query_id.size());
 
-            if (!query_id.empty())
-                elem.query_id.insert(0, query_id.data(), query_id.size());
+                element.event_type = PartLogElement::NEW_PART;
 
-            elem.event_type = PartLogElement::NEW_PART;
+                // construct event_time and event_time_microseconds using the same time point
+                // so that the two times will always be equal up to a precision of a second.
+                const auto time_now = std::chrono::system_clock::now();
+                element.event_time = timeInSeconds(time_now);
+                element.event_time_microseconds = timeInMicroseconds(time_now);
+                element.duration_ms = part_log_entry.elapsed_ns / 1000000;
 
-            // construct event_time and event_time_microseconds using the same time point
-            // so that the two times will always be equal up to a precision of a second.
-            const auto time_now = std::chrono::system_clock::now();
-            elem.event_time = timeInSeconds(time_now);
-            elem.event_time_microseconds = timeInMicroseconds(time_now);
-            elem.duration_ms = part_log_entry.elapsed_ns / 1000000;
+                element.database_name = table_id.database_name;
+                element.table_name = table_id.table_name;
+                element.table_uuid = table_id.uuid;
+                element.partition_id = part->info.getPartitionId();
+                element.partition = part->partition.serializeToString(part->getMetadataSnapshot());
+                element.part_name = part->name;
+                element.disk_name = part->getDataPartStorage().getDiskName();
+                element.path_on_disk = part->getDataPartStorage().getFullPath();
+                element.deduplication_block_ids = deduplication_block_ids.empty() ? Strings() : deduplication_block_ids[i];
+                element.part_format = part->getFormat();
 
-            elem.database_name = table_id.database_name;
-            elem.table_name = table_id.table_name;
-            elem.table_uuid = table_id.uuid;
-            elem.partition_id = part->info.getPartitionId();
-            elem.partition = part->partition.serializeToString(part->getMetadataSnapshot());
-            elem.part_name = part->name;
-            elem.disk_name = part->getDataPartStorage().getDiskName();
-            elem.path_on_disk = part->getDataPartStorage().getFullPath();
-            elem.deduplication_block_ids = deduplication_block_ids.empty() ? Strings() : std::move(deduplication_block_ids[i]);
-            elem.part_format = part->getFormat();
+                element.bytes_compressed_on_disk = part->getBytesOnDisk();
+                element.bytes_uncompressed = part->getBytesUncompressedOnDisk();
+                element.rows = part->rows_count;
 
-            elem.bytes_compressed_on_disk = part->getBytesOnDisk();
-            elem.bytes_uncompressed = part->getBytesUncompressedOnDisk();
-            elem.rows = part->rows_count;
+                element.error = static_cast<UInt16>(execution_status.code);
+                element.exception = execution_status.message;
 
-            elem.error = static_cast<UInt16>(execution_status.code);
-            elem.exception = execution_status.message;
-
-            elem.profile_counters = part_log_entry.profile_counters;
-
-            part_log->add(std::move(elem));
+                if (part_log_entry.profile_counters)
+                    element.profile_counters = *part_log_entry.profile_counters;
+            });
         }
     }
     catch (...)

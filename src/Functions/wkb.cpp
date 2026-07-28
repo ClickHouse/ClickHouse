@@ -49,6 +49,8 @@ public:
             transform = std::make_shared<WKBLineStringTransform>();
         else if (arguments[0].type->getName() == WKBPolygonTransform::name)
             transform = std::make_shared<WKBPolygonTransform>();
+        else if (arguments[0].type->getName() == WKBMultiPointTransform::name)
+            transform = std::make_shared<WKBMultiPointTransform>();
         else if (arguments[0].type->getName() == WKBMultiLineStringTransform::name)
             transform = std::make_shared<WKBMultiLineStringTransform>();
         else if (arguments[0].type->getName() == WKBMultiPolygonTransform::name)
