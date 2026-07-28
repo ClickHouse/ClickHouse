@@ -3458,10 +3458,14 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         /// stored as `.idx`, not `.idx2`. Over-claiming either would protect, and so leak, the files
         /// of the index being dropped.
         ///
-        /// Only a member the survivor actually holds INSIDE THIS ARCHIVE counts: a text index is
+        /// Only an index that is ITSELF packed can own a member of this archive. A text index is
         /// never packed (`MergeTreeDataPartWriterOnDisk` excludes it), so a standalone text index `a`
         /// must not protect `skp_idx_a.pos.cmrk2` on behalf of a packed minmax index `a.pos` that is
         /// being dropped - that would retain the dropped index's packed mark.
+        ///
+        /// The test has to be on the SURVIVOR, not on the candidate filename: the survivor's
+        /// speculative name and the dropped index's real member are the same string here, so asking
+        /// whether that string is in the archive is always true exactly when it matters.
         NameSet surviving_index_owned_files;
         for (const auto & index : ctx->metadata_snapshot->getSecondaryIndices())
         {
@@ -3469,21 +3473,17 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
                 continue;
 
             auto surviving_index = index_factory.get(ctx->metadata_snapshot, index, *ctx->data->getSettings());
+            if (!source_part->isSkipIndexInPackedArchive(*surviving_index))
+                continue;
+
             const String surviving_file_name = surviving_index->getFileName();
             for (const auto & substream : surviving_index->getSubstreams())
             {
-                auto protect_in_archive = [&](const String & extension)
-                {
-                    const String candidate = surviving_file_name + substream.suffix + extension;
-                    if (source_disk_storage->isFileInPackedSkipIndicesArchive(candidate))
-                        surviving_index_owned_files.insert(candidate);
-                };
-
-                protect_in_archive(substream.extension);
+                surviving_index_owned_files.insert(surviving_file_name + substream.suffix + substream.extension);
                 /// An upgraded part may still carry minmax's legacy `.idx` for a `.idx2` substream.
                 if (substream.extension == ".idx2")
-                    protect_in_archive(".idx");
-                protect_in_archive(ctx->mrk_extension);
+                    surviving_index_owned_files.insert(surviving_file_name + substream.suffix + ".idx");
+                surviving_index_owned_files.insert(surviving_file_name + substream.suffix + ctx->mrk_extension);
             }
         }
 

@@ -217,6 +217,82 @@ run_suffix_named_drop_case() {
     ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${tbl} SYNC"
 }
 
+# A surviving index that is NOT packed must not protect a member of the archive on behalf of the
+# packed index being dropped. A text index is never packed (`MergeTreeDataPartWriterOnDisk` excludes
+# it), so a standalone text index `a` declaring a `.pst` substream must not shield the packed minmax
+# index `a.pst`, whose member really does live in `skp_idx.packed`.
+#
+# `.pst` rather than `.pos` on purpose: the text index writes its `.pst` substream to a standalone
+# file while the minmax member is virtual, so the two never contend for one filename and this case is
+# not masked by the separate write-time collision noted in `run_inverse_case`. The third index
+# `keeper` is packed and survives, which keeps the archive present after the drop.
+run_packed_survivor_not_packed_case() {
+    local label="$1"
+    local tbl="t_pkw_${label}"
+    local ref="${tbl}_ref"
+
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${tbl} SYNC"
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${ref} SYNC"
+
+    local create_settings="min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+             index_granularity = 100, replace_long_file_name_to_hash = 0,
+             escape_index_filenames = 0, packed_skip_index_max_bytes = 1048576,
+             columns_and_secondary_indices_sizes_lazy_calculation = 0"
+
+    ${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE ${tbl}
+    (
+        k UInt64,
+        s String,
+        w UInt64,
+        v UInt64,
+        INDEX a(s) TYPE text(tokenizer = ngrams(3)) GRANULARITY 1,
+        INDEX \`a.pst\` w TYPE minmax GRANULARITY 1,
+        INDEX keeper v TYPE minmax GRANULARITY 1
+    )
+    ENGINE = MergeTree ORDER BY k SETTINGS ${create_settings}"
+
+    # The reference carries the same two SURVIVING indices and never had the dropped one, so after a
+    # correct drop both archives must hold exactly the same members.
+    ${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE ${ref}
+    (
+        k UInt64,
+        s String,
+        w UInt64,
+        v UInt64,
+        INDEX a(s) TYPE text(tokenizer = ngrams(3)) GRANULARITY 1,
+        INDEX keeper v TYPE minmax GRANULARITY 1
+    )
+    ENGINE = MergeTree ORDER BY k SETTINGS ${create_settings}"
+
+    local tb
+    for tb in "${tbl}" "${ref}"; do
+        ${CLICKHOUSE_CLIENT} -q "INSERT INTO ${tb} (k, s, w, v) SELECT number, concat('hello', number % 50, ' world', number % 50), number, number FROM numbers(500)"
+        ${CLICKHOUSE_CLIENT} -q "OPTIMIZE TABLE ${tb} FINAL"
+    done
+
+    ${CLICKHOUSE_CLIENT} -q "ALTER TABLE ${tbl} DROP INDEX \`a.pst\` SETTINGS mutations_sync = 2"
+
+    local part ref_part
+    part=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active ORDER BY name LIMIT 1")
+    ref_part=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${ref}' AND active ORDER BY name LIMIT 1")
+
+    echo "${label}_dropped_index_gone:"
+    ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = '${tbl}' AND name = 'a.pst'"
+    echo "${label}_survivors_present:"
+    ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = '${tbl}'"
+    # A filesystem check cannot see a virtual archive member, so compare the archive against the
+    # reference: a retained member of the dropped index makes this archive strictly larger.
+    echo "${label}_dropped_member_not_retained:"
+    if [ "$(stat -c%s "${part}skp_idx.packed")" = "$(stat -c%s "${ref_part}skp_idx.packed")" ]; then echo 0; else echo 1; fi
+    echo "${label}_survivor_still_prunes:"
+    ${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ${tbl} WHERE v = 42) WHERE explain ILIKE '%Granules: 1/5%'"
+
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${tbl} SYNC"
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${ref} SYNC"
+}
+
 # Unescaped names are the shape that collides: the stream name is the index name
 # verbatim, so `a` + ".pos" == the stream name of index `a.pos`.
 run_case "standalone_unescaped" 0 0
@@ -233,3 +309,5 @@ run_inverse_case "inverse_escaped" 1
 # suffix and the survivor owns no such substream.
 run_suffix_named_drop_case "suffixdrop_unescaped" 0 0
 run_suffix_named_drop_case "suffixdrop_packed" 0 1048576
+# A never-packed survivor must not shield the packed dropped index's archive member.
+run_packed_survivor_not_packed_case "packedsurvivor"

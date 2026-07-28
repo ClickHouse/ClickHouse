@@ -71,3 +71,11 @@ suffixdrop_packed_survivor_still_prunes:
 1
 suffixdrop_packed_check_table:
 1
+packedsurvivor_dropped_index_gone:
+0
+packedsurvivor_survivors_present:
+2
+packedsurvivor_dropped_member_not_retained:
+0
+packedsurvivor_survivor_still_prunes:
+1
