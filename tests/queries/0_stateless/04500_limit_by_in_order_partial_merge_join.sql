@@ -73,8 +73,9 @@ SELECT count() FROM (
 );
 
 -- Plan-level guard: the read-in-order-through-join propagation must NOT reach the MergeTree read for
--- the reordering partial_merge join, so no left read is done InOrder (assertion result 0). Before the
--- fix this returned 1 and fed LimitBySortedStreamTransform a non-contiguous stream.
+-- the reordering partial_merge join, so no left read is done InOrder (assertion result 0). This shape
+-- is already correct on master (#110671 blocked it); the assertion is a coverage guard against the
+-- propagation coming back and feeding LimitBySortedStreamTransform a non-contiguous stream.
 SELECT count() FROM (
     EXPLAIN PLAN
     SELECT a FROM tl_04500 LEFT ALL JOIN tr_04500 ON tl_04500.j = tr_04500.j
