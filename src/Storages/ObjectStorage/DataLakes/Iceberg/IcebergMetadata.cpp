@@ -1117,56 +1117,21 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     }
 
 
-    /// The manifest list is the authoritative description of the snapshot content, and in
-    /// format v2+ each of its entries carries the number of rows with status ADDED and
-    /// EXISTING in the referenced manifest, so their sum is the exact live row count.
-    /// Prefer it over the `total-records` hint from the snapshot summary: writers derive
-    /// the summary as `parent total + added`, so it silently diverges from the data when
-    /// any commit in the table history dropped or rewrote manifests incorrectly, which
-    /// made SELECT count() disagree with a full scan of the very same table.
-    UInt64 manifest_list_rows = 0;
-    bool all_data_manifests_have_counts = true;
-    bool has_delete_manifests = false;
-    for (const auto & entry : actual_data_snapshot->manifest_list_entries)
-    {
-        if (entry.content_type == Iceberg::ManifestFileContentType::DATA)
-        {
-            if (entry.added_rows_count.has_value() && entry.existing_rows_count.has_value())
-                manifest_list_rows += *entry.added_rows_count + *entry.existing_rows_count;
-            else
-                all_data_manifests_have_counts = false;
-        }
-        else
-        {
-            has_delete_manifests = true;
-        }
-    }
-
-    const auto summary_total_rows = actual_data_snapshot->getTotalRows();
-
-    if (all_data_manifests_have_counts && !has_delete_manifests)
-    {
-        if (summary_total_rows.has_value() && *summary_total_rows != static_cast<size_t>(manifest_list_rows))
-            LOG_WARNING(
-                log,
-                "Iceberg snapshot summary of table {} claims {} total rows, but its manifest list describes {} rows. "
-                "The snapshot summary is inconsistent with the table data (possibly a corrupted commit in the table "
-                "history), using the row count from the manifest list",
-                persistent_components.table_location,
-                *summary_total_rows,
-                manifest_list_rows);
-        ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
-        return static_cast<size_t>(manifest_list_rows);
-    }
-
-    /// Reaching this point means some manifest list row counts are missing (legitimate in
-    /// v1 manifest lists, malformed metadata in v2+) or the snapshot has delete manifests.
-    /// Either way the snapshot summary hint is not used as a data source: it is maintained
-    /// incrementally by writers just like `total-records`, so a corrupted commit in the
-    /// table history poisons it silently -- the very bug this code guards against. Instead,
-    /// scan the manifest files: the file-level `record_count` is required in all format
-    /// versions, so summing it over the data files is exact at the cost of opening the
-    /// manifest files (served from the Iceberg metadata cache on repeated queries).
+    /// Row counts stored in the metadata layers above the manifest files are not used as
+    /// data sources, because writers derive them instead of measuring them against the data:
+    /// - the snapshot summary's `total-records` is maintained incrementally (parent total
+    ///   plus this commit's delta), so a single corrupted commit anywhere in the table
+    ///   history silently poisons every later snapshot -- observed in the wild, making
+    ///   SELECT count() disagree with a full scan of the very same table;
+    /// - the manifest-list per-entry `added_rows_count`/`existing_rows_count` are stamped
+    ///   from snapshot summary fields by some writers (ClickHouse itself among them): a
+    ///   rewritten manifest list can list every manifest with `added_rows_count = 0` taken
+    ///   from a compaction snapshot's `added-records = 0`, so trusting these counts turned
+    ///   count() into 0 on a perfectly healthy table.
+    /// The manifest files are the ground truth: the per-data-file `record_count` is a
+    /// required field in every format version, so summing it over the live data files is
+    /// exact, at the cost of opening the manifest files (served from the Iceberg metadata
+    /// cache on repeated queries).
     UInt64 result = 0;
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
@@ -1193,6 +1158,17 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
             return {};
         result += *manifest_rows;
     }
+
+    const auto summary_total_rows = actual_data_snapshot->getTotalRows();
+    if (summary_total_rows.has_value() && *summary_total_rows != static_cast<size_t>(result))
+        LOG_WARNING(
+            log,
+            "Iceberg snapshot summary of table {} claims {} total rows, but its manifest files describe {} rows. "
+            "The snapshot summary is inconsistent with the table data (possibly a corrupted commit in the table "
+            "history), using the row count from the manifest files",
+            persistent_components.table_location,
+            *summary_total_rows,
+            result);
 
     ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
     return result;

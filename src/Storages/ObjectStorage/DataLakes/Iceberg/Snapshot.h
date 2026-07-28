@@ -17,10 +17,10 @@ struct IcebergDataSnapshot
     Int64 snapshot_id;
     Int64 schema_id_on_snapshot_commit;
     /// Row-count hints from the snapshot summary. Only used to log a warning when they
-    /// disagree with the manifest-list counts; never used as a data source, because the
-    /// summary is maintained incrementally by writers and a corrupted commit in the table
-    /// history poisons it silently (`total-files-size` is equally untrustworthy and is not
-    /// even stored).
+    /// disagree with the row count derived from the manifest files; never used as a data
+    /// source, because the summary is maintained incrementally by writers and a corrupted
+    /// commit in the table history poisons it silently (`total-files-size` is equally
+    /// untrustworthy and is not even stored).
     std::optional<size_t> total_rows;
     std::optional<size_t> total_position_delete_rows;
 

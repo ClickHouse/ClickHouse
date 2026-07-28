@@ -8,7 +8,7 @@ SET send_logs_level = 'fatal';
 -- summary corrupted to claim `total-records = 100`) whose manifest list additionally has
 -- a malformed `added_rows_count = -1` (the field is required non-negative in format v2).
 -- Malformed manifest-list row counts must not make the table unreadable and must not
--- reinstate trust in the summary hint: totalRows() must fall back to scanning the
+-- reinstate trust in the summary hint: totalRows() derives the count by scanning the
 -- manifest files, whose file-level `record_count` gives the exact answer.
 
 -- Trivial count enabled (pinned: the test runner randomizes this setting): must return

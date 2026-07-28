@@ -216,30 +216,9 @@ ManifestFileCacheKeys getManifestList(
                     f_partition_spec_id);
             Int32 partition_spec_id = static_cast<Int32>(
                 manifest_list_deserializer.getValueFromRowByName(i, f_partition_spec_id, TypeIndex::Int32).safeGet<Int32>());
-
-            /// Row counts let totalRows() compute an exact count without opening manifest
-            /// files. They are required in v2+ manifest lists and optional in v1 (per the
-            /// manifest list's own format version: an externally upgraded table may still
-            /// reference v1 manifest lists). Missing, null or negative values are parsed as
-            /// absent rather than rejected -- they are only needed for the count shortcut,
-            /// so their absence must not make the table unreadable. totalRows() falls back
-            /// to scanning the manifest files, whose file-level `record_count` is required
-            /// in all format versions, and never trusts the snapshot summary hint.
-            auto read_rows_count = [&](const String & field) -> std::optional<UInt64>
-            {
-                if (!manifest_list_deserializer.hasPath(field))
-                    return std::nullopt;
-                auto value = manifest_list_deserializer.getValueFromRowByName(i, field);
-                if (value.isNull() || value.safeGet<Int64>() < 0)
-                    return std::nullopt;
-                return static_cast<UInt64>(value.safeGet<Int64>());
-            };
-            std::optional<UInt64> added_rows_count = read_rows_count(f_added_rows_count);
-            std::optional<UInt64> existing_rows_count = read_rows_count(f_existing_rows_count);
-
             manifest_file_cache_keys.emplace_back(
                 manifest_file_name, manifest_length, added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type,
-                partition_spec_id, added_rows_count, existing_rows_count);
+                partition_spec_id);
 
             insertRowToLogTable(
                 local_context,

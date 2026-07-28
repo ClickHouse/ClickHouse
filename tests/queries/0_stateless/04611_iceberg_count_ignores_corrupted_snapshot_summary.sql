@@ -4,8 +4,8 @@
 -- The fixture is a copy of the `est` table (1 row) whose snapshot summary was edited
 -- to claim `total-records = 100`. Writers maintain that hint as parent total + added,
 -- so it can silently diverge from the data when the table history contains a corrupted
--- commit. The trivial count optimization must derive the count from the manifest list
--- row counts (which are authoritative) instead of trusting the summary hint.
+-- commit. The trivial count optimization must derive the count from the manifest files'
+-- `record_count` (the ground truth) instead of trusting the summary hint.
 
 -- The corrupted summary makes the server log an expected warning; keep it out of stderr.
 SET send_logs_level = 'fatal';
