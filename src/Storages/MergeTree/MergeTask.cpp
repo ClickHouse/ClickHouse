@@ -2374,7 +2374,8 @@ bool MergeTask::MergeTextIndexStage::prepare() const
             index_ptr,
             global_ctx->merged_part_offsets,
             reader_settings,
-            global_ctx->to->getWriterSettings());
+            global_ctx->to->getWriterSettings(),
+            ctx->need_sync);
 
         ctx->merge_tasks.emplace_back(std::move(task));
     }
@@ -2965,7 +2966,8 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
         global_ctx->temporary_text_index_storage,
         std::move(writer_settings),
         global_ctx->compression_codec,
-        global_ctx->new_data_part->index_granularity_info.mark_type.getFileExtension());
+        global_ctx->new_data_part->index_granularity_info.mark_type.getFileExtension(),
+        *global_ctx->data->getSettings());
 
     /// Pass original header as output header to remove temporary columns added by the transform.
     /// This is important to make this part's plan compatible with other parts' plans that don't materialize indexes.
