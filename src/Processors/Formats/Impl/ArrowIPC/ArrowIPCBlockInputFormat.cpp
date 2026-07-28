@@ -1153,7 +1153,7 @@ The table below shows the supported data types and how they correspond to ClickH
 
 Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types can also be nested.
 
-The `DICTIONARY` type is supported for `INSERT` queries, and for `SELECT` queries there is an [`output_format_arrow_low_cardinality_as_dictionary`](/reference/settings/formats#output_format_arrow_low_cardinality_as_dictionary) setting that allows to output [LowCardinality](/reference/data-types/lowcardinality) type as a `DICTIONARY` type. Note that there might be unused values in `LowCardinality` dictionary, which can lead to unused values in Arrow `DICTIONARY` during output.
+The `DICTIONARY` type is supported for `INSERT` queries, and for `SELECT` queries there is an [`output_format_arrow_low_cardinality_as_dictionary`](/reference/settings/formats/output-format#output_format_arrow_low_cardinality_as_dictionary) setting that allows to output [LowCardinality](/reference/data-types/lowcardinality) type as a `DICTIONARY` type. Note that there might be unused values in `LowCardinality` dictionary, which can lead to unused values in Arrow `DICTIONARY` during output.
 
 Unsupported Arrow data types:
 - `JSON`
@@ -1294,7 +1294,7 @@ visualization or analytics tool without first materializing the entire dataset.
 To stream the result, send the query over ClickHouse's HTTP interface with a
 `POST` request and read the response as an Arrow stream. We disable compression
 of the Arrow output via the
-[`output_format_arrow_compression_method`](/reference/settings/formats#output_format_arrow_compression_method)
+[`output_format_arrow_compression_method`](/reference/settings/formats/output-format#output_format_arrow_compression_method)
 setting so that consumers can decode batches directly as they are received.
 
 The `ArrowStream` output is raw binary, so rather than printing it to the

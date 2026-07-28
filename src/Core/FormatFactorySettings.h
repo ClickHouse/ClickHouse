@@ -561,7 +561,7 @@ Enabled by default.
 Ignore unnecessary fields and not parse them. Enabling this may not throw exceptions on json strings of invalid format or with duplicated fields
 )", 0) \
     DECLARE(Bool, input_format_try_infer_variants, false, R"(
-If enabled, ClickHouse will try to infer type [`Variant`](../../sql-reference/data-types/variant.md) in schema inference for text formats when there is more than one possible type for column/array elements.
+If enabled, ClickHouse will try to infer type [`Variant`](/reference/data-types/variant) in schema inference for text formats when there is more than one possible type for column/array elements.
 
 Possible values:
 
@@ -685,16 +685,16 @@ Possible values: non-negative numbers. Note that if the value is too small or to
 Write data types in binary format instead of type names in Native output format
 )", 0) \
     DECLARE(Bool, output_format_native_write_json_as_string, false, R"(
-Write data of [JSON](../../sql-reference/data-types/newjson.md) column as [String](../../sql-reference/data-types/string.md) column containing JSON strings instead of default native JSON serialization.
+Write data of [JSON](/reference/data-types/newjson) column as [String](/reference/data-types/string) column containing JSON strings instead of default native JSON serialization.
 )", 0) \
     DECLARE(Bool, output_format_native_use_flattened_dynamic_and_json_serialization, false, R"(
-Write data of [JSON](../../sql-reference/data-types/newjson.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) columns in a flattened format (all types/paths as separate subcolumns).
+Write data of [JSON](/reference/data-types/newjson) and [Dynamic](/reference/data-types/dynamic) columns in a flattened format (all types/paths as separate subcolumns).
 )", 0) \
     \
     DECLARE(DateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::BestEffort, R"(
 Allows choosing a parser of the text representation of date and time.
 
-The setting does not apply to [date and time functions](../../sql-reference/functions/date-time-functions.md).
+The setting does not apply to [date and time functions](/reference/functions/regular-functions/date-time-functions).
 
 Possible values:
 
@@ -702,7 +702,7 @@ Possible values:
 
     ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
 
-- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parseDateTimeBestEffortUS)
+- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](/reference/functions/regular-functions/type-conversion-functions#parseDateTimeBestEffortUS)
 
 - `'basic'` — Use basic parser.
 
@@ -710,8 +710,8 @@ Possible values:
 
 See also:
 
-- [DateTime data type.](../../sql-reference/data-types/datetime.md)
-- [Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
+- [DateTime data type.](/reference/data-types/datetime)
+- [Functions for working with dates and times.](/reference/functions/regular-functions/date-time-functions)
 )", 0) \
     DECLARE(DateTimeOutputFormat, date_time_output_format, FormatSettings::DateTimeOutputFormat::Simple, R"(
 Allows choosing different output formats of the text representation of date and time.
@@ -732,8 +732,8 @@ Possible values:
 
 See also:
 
-- [DateTime data type.](../../sql-reference/data-types/datetime.md)
-- [Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
+- [DateTime data type.](/reference/data-types/datetime)
+- [Functions for working with dates and times.](/reference/functions/regular-functions/date-time-functions)
 )", 0) \
     DECLARE(IntervalOutputFormat, interval_output_format, FormatSettings::IntervalOutputFormat::Numeric, R"(
 Allows choosing different output formats of the text representation of interval types.
@@ -750,7 +750,7 @@ Possible values:
 
 See also:
 
--   [Interval](../../sql-reference/data-types/special-data-types/interval.md)
+-   [Interval](/reference/data-types/special-data-types/interval)
 )", 0) \
     \
     DECLARE(Bool, date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands, false, R"(
@@ -848,14 +848,14 @@ For AvroConfluent format: maximum number of retries for transient failures when 
 For AvroConfluent format: initial backoff in milliseconds before retrying a failed Confluent Schema Registry request. The backoff doubles on each subsequent retry, capped at 10 seconds. Must be greater than 0 and less than or equal to 60000.
 )", 0) \
     DECLARE(Bool, input_format_binary_read_json_as_string, false, R"(
-Read values of [JSON](../../sql-reference/data-types/newjson.md) data type as JSON [String](../../sql-reference/data-types/string.md) values in RowBinary input format.
+Read values of [JSON](/reference/data-types/newjson) data type as JSON [String](/reference/data-types/string) values in RowBinary input format.
 )", 0) \
     DECLARE(Bool, output_format_binary_write_json_as_string, false, R"(
-Write values of [JSON](../../sql-reference/data-types/newjson.md) data type as JSON [String](../../sql-reference/data-types/string.md) values in RowBinary output format.
+Write values of [JSON](/reference/data-types/newjson) data type as JSON [String](/reference/data-types/string) values in RowBinary output format.
 )", 0) \
     \
     DECLARE(Bool, output_format_json_quote_64bit_integers, false, R"(
-Controls quoting of 64-bit or bigger [integers](../../sql-reference/data-types/int-uint.md) (like `UInt64` or `Int128`) when they are output in a [JSON](/interfaces/formats/JSON) format.
+Controls quoting of 64-bit or bigger [integers](/reference/data-types/int-uint) (like `UInt64` or `Int128`) when they are output in a [JSON](/interfaces/formats/JSON) format.
 Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations.
 
 Possible values:
@@ -965,7 +965,7 @@ Controls quoting of decimals in JSON output formats.
 Disabled by default.
 )", 0) \
     DECLARE(Bool, output_format_json_quote_64bit_floats, false, R"(
-Controls quoting of 64-bit [floats](../../sql-reference/data-types/float.md) when they are output in JSON* formats.
+Controls quoting of 64-bit [floats](/reference/data-types/float) when they are output in JSON* formats.
 
 Disabled by default.
 )", 0) \
@@ -1540,7 +1540,7 @@ Enables or disables showing secrets in `SHOW` and `SELECT` queries for tables, d
 table functions, and dictionaries.
 
 User wishing to see secrets must also have
-[`display_secrets_in_show_and_select` server setting](../server-configuration-parameters/settings#display_secrets_in_show_and_select)
+[`display_secrets_in_show_and_select` server setting](/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select)
 turned on and a
 [`displaySecretsInShowAndSelect`](/sql-reference/statements/grant#displaysecretsinshowandselect) privilege.
 
@@ -1553,7 +1553,7 @@ Possible values:
 Use the precise float parsing algorithm, which always returns the closest representable value to the input. When disabled, a faster but less accurate algorithm is used that may differ from the precise result by the least significant bits.
 )", 0) \
     DECLARE(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", R"(
-Defines the behavior when [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
+Defines the behavior when [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
 
 Possible values:
 
