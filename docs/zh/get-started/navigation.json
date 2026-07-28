@@ -1,0 +1,208 @@
+{
+  "icon": "/images/icons/icon-get-started.svg",
+  "item": "开始使用",
+  "pages": [
+    {
+      "group": "开始使用",
+      "icon": "/images/menu-icon-lightning.svg",
+      "pages": [
+        "zh/get-started/quickstarts/home",
+        {
+          "expandable": true,
+          "expanded": true,
+          "group": "简介",
+          "pages": [
+            "zh/get-started/about/intro",
+            "zh/get-started/about/why-clickhouse-is-so-fast",
+            "zh/get-started/about/distinctive-features"
+          ]
+        },
+        {
+          "expanded": true,
+          "group": "用例",
+          "pages": [
+            "zh/get-started/use-cases/real-time-analytics",
+            "zh/get-started/use-cases/observability",
+            "zh/get-started/use-cases/data-warehousing",
+            "zh/get-started/use-cases/agentic-analytics"
+          ],
+          "root": "zh/get-started/use-cases/overview"
+        },
+        "zh/get-started/about/deployment-modes"
+      ],
+      "root": "zh/get-started/index"
+    },
+    {
+      "expanded": true,
+      "group": "设置",
+      "icon": "/images/menu-icon-gear.svg",
+      "pages": [
+        "zh/get-started/setup/cloud",
+        {
+          "expanded": true,
+          "group": "自管理",
+          "pages": [
+            {
+              "group": "本地开发",
+              "pages": [
+                "zh/get-started/setup/self-managed/quick-install",
+                "zh/get-started/setup/self-managed/clickhousectl",
+                "zh/get-started/setup/self-managed/docker",
+                "zh/get-started/setup/self-managed/advanced"
+              ]
+            },
+            {
+              "group": "生产服务器",
+              "pages": [
+                "zh/get-started/setup/self-managed/debian-ubuntu",
+                "zh/get-started/setup/self-managed/redhat",
+                "zh/get-started/setup/self-managed/nixos",
+                "zh/get-started/setup/self-managed/other-linux"
+              ]
+            }
+          ],
+          "root": "zh/get-started/setup/self-managed/overview"
+        }
+      ],
+      "root": "zh/get-started/setup/install"
+    },
+    {
+      "expanded": true,
+      "group": "示例数据集",
+      "icon": "/images/menu-icon-database.svg",
+      "pages": [
+        "zh/get-started/sample-datasets/playground",
+        {
+          "group": "基准测试",
+          "pages": [
+            "zh/get-started/sample-datasets/amplab-benchmark",
+            "zh/get-started/sample-datasets/brown-benchmark",
+            "zh/get-started/sample-datasets/criteo",
+            "zh/get-started/sample-datasets/job",
+            "zh/get-started/sample-datasets/star-schema",
+            "zh/get-started/sample-datasets/tpcds",
+            "zh/get-started/sample-datasets/tpch"
+          ]
+        },
+        {
+          "group": "向量搜索与嵌入向量",
+          "pages": [
+            "zh/get-started/sample-datasets/dbpedia",
+            "zh/get-started/sample-datasets/hacker-news-vector-search",
+            "zh/get-started/sample-datasets/laion",
+            "zh/get-started/sample-datasets/laion5b"
+          ]
+        },
+        {
+          "group": "Web 与社交分析",
+          "pages": [
+            "zh/get-started/sample-datasets/amazon-reviews",
+            "zh/get-started/sample-datasets/anon-web-analytics-metrica",
+            "zh/get-started/sample-datasets/github",
+            "zh/get-started/sample-datasets/github-events",
+            "zh/get-started/sample-datasets/hacker-news",
+            "zh/get-started/sample-datasets/stackoverflow",
+            "zh/get-started/sample-datasets/youtube-dislikes"
+          ]
+        },
+        {
+          "group": "地理空间与位置",
+          "pages": [
+            "zh/get-started/sample-datasets/cell-towers",
+            "zh/get-started/sample-datasets/foursquare-os-places",
+            "zh/get-started/sample-datasets/nyc-taxi"
+          ]
+        },
+        {
+          "group": "时间序列与传感器",
+          "pages": [
+            "zh/get-started/sample-datasets/environmental-sensors",
+            "zh/get-started/sample-datasets/noaa",
+            "zh/get-started/sample-datasets/tw-weather",
+            "zh/get-started/sample-datasets/wikistat"
+          ]
+        },
+        {
+          "group": "公共记录与开放数据",
+          "pages": [
+            "zh/get-started/sample-datasets/covid19",
+            "zh/get-started/sample-datasets/menus",
+            "zh/get-started/sample-datasets/nypd-complaint-data",
+            "zh/get-started/sample-datasets/ontime",
+            "zh/get-started/sample-datasets/uk-price-paid"
+          ]
+        }
+      ],
+      "root": "zh/get-started/sample-datasets/index"
+    },
+    {
+      "expanded": true,
+      "group": "迁移",
+      "icon": "/images/caret-double-right.svg",
+      "pages": [
+        {
+          "group": "PostgreSQL",
+          "pages": [
+            "zh/get-started/migrate/postgres/overview",
+            {
+              "group": "迁移指南",
+              "pages": [
+                "zh/get-started/migrate/postgres/migration-guide/migration-guide-part1",
+                "zh/get-started/migrate/postgres/migration-guide/migration-guide-part2",
+                "zh/get-started/migrate/postgres/migration-guide/migration-guide-part3"
+              ]
+            },
+            "zh/get-started/migrate/postgres/appendix"
+          ],
+          "root": "zh/get-started/migrate/postgres/index"
+        },
+        {
+          "group": "BigQuery",
+          "pages": [
+            "zh/get-started/migrate/bigquery/overview",
+            "zh/get-started/migrate/bigquery/migrating-to-clickhouse-cloud",
+            "zh/get-started/migrate/bigquery/loading-data"
+          ],
+          "root": "zh/get-started/migrate/bigquery/index"
+        },
+        {
+          "group": "Snowflake",
+          "pages": [
+            "zh/get-started/migrate/snowflake/overview",
+            "zh/get-started/migrate/snowflake/migration-guide",
+            "zh/get-started/migrate/snowflake/sql-translation-reference"
+          ]
+        },
+        {
+          "group": "Elasticsearch",
+          "pages": [
+            "zh/get-started/migrate/elastic/overview"
+          ]
+        },
+        {
+          "group": "Redshift",
+          "pages": [
+            "zh/get-started/migrate/redshift/overview",
+            "zh/get-started/migrate/redshift/migration-guide",
+            "zh/get-started/migrate/redshift/sql-translation-reference"
+          ]
+        },
+        {
+          "group": "从 OSS 到 Cloud",
+          "pages": [
+            "zh/get-started/migrate/oss-to-cloud/clickhouse-to-cloud"
+          ]
+        },
+        {
+          "group": "其他方法",
+          "pages": [
+            "zh/get-started/migrate/other-methods/clickhouse-local-etl",
+            "zh/get-started/migrate/other-methods/etl-tool-to-clickhouse",
+            "zh/get-started/migrate/other-methods/object-storage-to-clickhouse"
+          ]
+        }
+      ],
+      "root": "zh/get-started/migrate/overview"
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 -- randomHadamardTransform: deterministic randomized (Walsh-)Hadamard transform of a float vector.
 
--- Output length is the input length padded to the next power of two.
+-- The full transform keeps the input length: length 3 = 2^0 * 3 and length 100 = 2^2 * 25 both use an
+-- exact Discrete Hartley small factor (no padding to a power of two).
 SELECT length(randomHadamardTransform([1, 2, 3]::Array(Float32))),
        length(randomHadamardTransform(CAST(range(100), 'Array(Float32)')));
 
@@ -8,10 +9,10 @@ SELECT length(randomHadamardTransform([1, 2, 3]::Array(Float32))),
 SELECT round(abs(arraySum(x -> x * x, randomHadamardTransform([1, 2, 3, 4]::Array(Float32))) - 30), 4);
 SELECT round(abs(arraySum(x -> x * x, randomHadamardTransform([1, 2, 3, 4, 5, 6, 7, 8]::Array(Float32), 123)) - 204), 4);
 
--- Exact values pin the sign stream, the D then H order, and the padding/stage logic.
+-- Exact values pin the sign stream, the D then H order, and the stage logic.
 SELECT randomHadamardTransform([1, 2, 3, 4]::Array(Float32));        -- default seed
 SELECT randomHadamardTransform([1, 2, 3, 4]::Array(Float32), 42);    -- another seed
-SELECT randomHadamardTransform([1, 2, 3]::Array(Float32));           -- padded length 3 -> 4
+SELECT arrayMap(x -> round(x, 4), randomHadamardTransform([1, 2, 3]::Array(Float32))); -- exact DHT-3, length 3 (no padding)
 SELECT randomHadamardTransform([1, 2, 3, 4]::Array(BFloat16));       -- BFloat16 path
 
 -- Deterministic in the seed; the default seed is 0.

@@ -53,10 +53,8 @@ doc_type: 'guide'
 </Warning>
 
 <Steps>
-  <Step>
-    ### العثور على عناوين egress IP الخاصة بـ ClickHouse Cloud
-
-    لتهيئة قواعد firewall المستندة إلى IP، تحتاج إلى إدراج عناوين egress IP الخاصة بمنطقة ClickHouse Cloud لديك في قائمة السماح.
+  <Step title="العثور على عناوين egress IP الخاصة بـ ClickHouse Cloud" id="find-egress-ips">
+    لتهيئة قواعد جدار الحماية المستندة إلى IP، تحتاج إلى إدراج عناوين egress IP الخاصة بمنطقة ClickHouse Cloud لديك في قائمة السماح.
 
     شغّل الأمر التالي لاسترجاع قائمة بعناوين ingress IP وegress IP لكل منطقة.
     استبدل `eastus` أدناه بمنطقتك لتصفية المناطق الأخرى:
@@ -91,9 +89,7 @@ doc_type: 'guide'
     راجع [&quot;عناوين IP الخاصة بـ Cloud&quot;](/ar/products/cloud/guides/data-sources/cloud-endpoints-api) لمزيد من التفاصيل.
   </Step>
 
-  <Step>
-    ### تهيئة firewall الخاص بـ Azure Storage
-
+  <Step title="تهيئة جدار الحماية الخاص بـ Azure Storage" id="configure-firewall">
     انتقل إلى Storage Account الخاص بك في Azure Portal
 
     1. انتقل إلى **Networking** → **Firewalls and virtual networks**
@@ -106,7 +102,7 @@ doc_type: 'guide'
 
     4. انقر على Save
 
-    راجع [وثائق تهيئة Azure Storage firewalls](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security?tabs=azure-portal) لمزيد من التفاصيل.
+    راجع [وثائق تهيئة Azure Storage جدران الحماية](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security?tabs=azure-portal) لمزيد من التفاصيل.
   </Step>
 </Steps>
 

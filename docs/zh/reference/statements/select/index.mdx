@@ -36,21 +36,24 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 
 除紧跟在 `SELECT` 后面的必需表达式列表外，所有子句都是可选的；关于这部分的更详细说明，请参见[下文](#select-clause)。
 
-各可选子句的具体说明分别见单独章节，下面按其执行顺序列出：
+各可选子句的具体说明分别见单独章节，下面按其执行顺序列出 (但为了方便起见，`SELECT` 和 `DISTINCT` 先列出：如[下文](#select-clause)所述，它们的表达式只有在前面的子句执行完成后才会被计算) ：
 
 * [WITH 子句](/zh/reference/statements/select/with)
 * [SELECT 子句](#select-clause)
+* [ALL 子句](/zh/reference/statements/select/all)
 * [DISTINCT 子句](/zh/reference/statements/select/distinct)
 * [FROM 子句](/zh/reference/statements/select/from)
 * [SAMPLE 子句](/zh/reference/statements/select/sample)
+* [ARRAY JOIN 子句](/zh/reference/statements/select/array-join)
 * [JOIN 子句](/zh/reference/statements/select/join)
 * [PREWHERE 子句](/zh/reference/statements/select/prewhere)
 * [WHERE 子句](/zh/reference/statements/select/where)
-* [WINDOW 子句](/zh/reference/functions/window-functions/index)
 * [GROUP BY 子句](/zh/reference/statements/select/group-by)
-* [LIMIT BY 子句](/zh/reference/statements/select/limit-by)
 * [HAVING 子句](/zh/reference/statements/select/having)
+* [WINDOW 子句](/zh/reference/functions/window-functions/index)
 * [QUALIFY 子句](/zh/reference/statements/select/qualify)
+* [ORDER BY 子句](/zh/reference/statements/select/order-by)
+* [LIMIT BY 子句](/zh/reference/statements/select/limit-by)
 * [LIMIT 子句](/zh/reference/statements/select/limit)
 * [OFFSET 子句](/zh/reference/statements/select/offset)
 * [UNION 子句](/zh/reference/statements/select/union)
