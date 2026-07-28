@@ -2,17 +2,11 @@
 
 CI selects `sccache` for every build type (`ci/defs/defs.py`:
 `COMPILER_CACHE = COMPILER_CACHE_LEGACY = "sccache"`), so nothing reads the four
-`CH_*` variables that chcache consumes (`rust/chcache/src/config.rs`). The build
-and fast-test jobs nevertheless exported them, and one of the four required an
-`aws ssm get-parameter` call made with `strict=True`: a single transient SSM
-error therefore killed the whole job before the build started, and the ERRORed
-build dropped its dependents (including the merge-blocking Bugfix Validation
-nodes).
+`CH_*` variables that chcache consumes (`rust/chcache/src/config.rs`).
 
-These tests pin that the credential wiring stays gone: no reference to it under
-`ci/`, no `CH_*` export from the shared cache-setup helper, and no second copy
-of the block in the jobs that build a binary. The surrounding sccache/ctcache
-configuration must be unaffected.
+Invariants pinned below: no reference under `ci/`, no `CH_*` export from the
+shared cache-setup helper, no second copy of the block in the jobs that build a
+binary, and an unaffected sccache/ctcache setup.
 """
 
 import importlib
