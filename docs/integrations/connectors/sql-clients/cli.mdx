@@ -12,4 +12,34 @@ integration:
 keywords: ['clickhouse-client', 'CLI', 'command line interface', 'SQL client', 'terminal']
 ---
 
-<Content />
+`clickhouse-client` is the native command-line SQL client for ClickHouse. It supports both interactive mode (for live query execution) and batch mode (for scripting and automation). Query results can be displayed in the terminal or exported to a file, with support for all ClickHouse output [formats](/reference/formats/index), such as Pretty, CSV, JSON, and more.
+
+## Install {#install}
+
+To download ClickHouse, run:
+
+```bash
+curl https://clickhouse.com/ | sh
+```
+
+To also install it, run:
+
+```bash
+sudo ./clickhouse install
+```
+
+See [Install ClickHouse](/get-started/setup/install) for more installation options.
+
+## Connect {#connect}
+
+To connect to a ClickHouse server, run:
+
+```bash
+clickhouse-client --host <server> --port <port> --user <user> --password <password> --secure
+```
+
+For ClickHouse Cloud, use port `9440` and pass `--secure` to enable TLS.
+
+## Learn more {#learn-more}
+
+For the full reference — including all command-line options, configuration files, query formats, and advanced usage — see the [ClickHouse Client documentation](/interfaces/client).

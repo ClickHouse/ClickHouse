@@ -11,7 +11,9 @@ keywords: ['insert local files ClickHouse', 'ClickHouse local file import', 'cli
 You can use `clickhouse-client` to stream local files into your ClickHouse service. This allows you the ability to preprocess
 the data using the many powerful and convenient ClickHouse functions. Let's look at an example...
 
-1. Suppose we have a TSV file named `comments.tsv` that contains some Hacker News comments, and the header row contains column names. You need to specify an [input format](/reference/formats/index) when you insert the data, which in our case is `TabSeparatedWithNames`:
+<Steps>
+<Step title="Prepare your input file">
+Suppose we have a TSV file named `comments.tsv` that contains some Hacker News comments, and the header row contains column names. You need to specify an [input format](/reference/formats/index) when you insert the data, which in our case is `TabSeparatedWithNames`:
 
 ```text
 id      type    author  timestamp       comment children
@@ -23,8 +25,10 @@ id      type    author  timestamp       comment children
 19466980        comment onetimemanytime 2019-03-22 21:07:25     "&gt;&gt;<i>The insanity, here, is that you can&#x27;t take the land the motorhome is on and build a studio on it.</i><p>apple and oranges. The permit to built the studio makes that building legit, kinda forever. A motor home, they can chase out with a new law, or just by enforcing existing laws."      []
 19467048        comment karambahh       2019-03-22 21:15:41     "I think you&#x27;re comparing apples to oranges here.<p>If you reclaim a parking space for another use (such as building accommodation for families or an animal shelter), you&#x27;re not depriving the car of anything, it&#x27;s an expensive, large piece of metal and is not sentient.<p>Next, you&#x27;ll say that you&#x27;re depriving car owners from the practicality of parking their vehicles anywhere they like. I&#x27;m perfectly fine with depriving car owners from this convenience to allow a human being to have a roof over their head. (speaking from direct experience as I&#x27;ve just minutes ago had to park my car 1km away from home because the city is currently building housing and has restricted parking space nearby)<p>Then, some might argue that one should be ashamed of helping animals while humans are suffering. That&#x27;s the exact same train of thought with «we can&#x27;t allow more migrants in, we have to take care of our &quot;own&quot; homeless people».<p>This is a false dichotomy. Western societies inequalities are growing larger and larger. Me trying to do my part is insignificant. Me donating to human or animal causes is a small dent into the mountains of inequalities we live on top of. Us collectively, we do make a difference, by donating, voting and generally keeping our eyes open about the world we live in...<p>Finally, an entirely anecdotal pov: I&#x27;ve witnessed several times extremely poor people going out of their ways to show solidarity to animals or humans. I&#x27;ve also witnessed an awful lot of extremely wealthy individuals complaining about the poor inconveniencing them by just being there, whose wealth was a direct consequences of their ancestors exploiting whose very same poor people."      [19467512]
 ```
+</Step>
 
-2. Let's create the table for our Hacker News data:
+<Step title="Create the target table">
+Let's create the table for our Hacker News data:
 
 ```sql
 CREATE TABLE hackernews (
@@ -39,8 +43,10 @@ CREATE TABLE hackernews (
 ENGINE = MergeTree
 ORDER BY toYYYYMMDD(timestamp)
 ```
+</Step>
 
-3. We want to lowercase the `author` column, which is easily done with the [`lower` function](/reference/functions/regular-functions/string-functions#lower). We also want to split the `comment` string into tokens and store the result in the `tokens` column, which can be done using the [`extractAll` function](/reference/functions/regular-functions/string-search-functions#extractAll). You do all of this in one `clickhouse-client` command - notice how the `comments.tsv` file is piped into the `clickhouse-client` using the `<` operator:
+<Step title="Insert and transform the data">
+We want to lowercase the `author` column, which is easily done with the [`lower` function](/reference/functions/regular-functions/string-functions#lower). We also want to split the `comment` string into tokens and store the result in the `tokens` column, which can be done using the [`extractAll` function](/reference/functions/regular-functions/string-search-functions#extractAll). You do all of this in one `clickhouse-client` command - notice how the `comments.tsv` file is piped into the `clickhouse-client` using the `<` operator:
 
 ```bash
 clickhouse-client \
@@ -66,8 +72,10 @@ clickhouse-client \
 <Note>
 The `input` function is useful here as it allows us to convert the data as it's being inserted into the `hackernews` table. The argument to `input` is the format of the incoming raw data, and you will see this in many of the other table functions (where you specify a schema for the incoming data).
 </Note>
+</Step>
 
-4. That's it! The data is up in ClickHouse:
+<Step title="Verify the data">
+That's it! The data is up in ClickHouse:
 
 ```sql
 SELECT *
@@ -88,8 +96,10 @@ The result is:
 │ 5102 │ comment │ staunch      │ 2007-03-20 02:42:47 │ "Well this is exactly the kind of thing that isn't very obvious. It sounds like once you're wealthy there's a new set of rules you have to live by. It's a shame everyone has had to re-learn these things for themselves because a few bad apples can control their jealousy.<p>Very good to hear it's somewhere in your essay queue though. I'll try not to get rich before you write it, so I have some idea of what to expect :-)" │ []       │ ['Well','this','is','exactly','the','kind','of','thing','that','isn','t','very','obvious','It','sounds','like','once','you','re','wealthy','there','s','a','new','set','of','rules','you','have','to','live','by','It','s','a','shame','everyone','has','had','to','re','learn','these','things','for','themselves','because','a','few','bad','apples','can','control','their','jealousy','p','Very','good','to','hear','it','s','somewhere','in','your','essay','queue','though','I','ll','try','not','to','get','rich','before','you','write','it','so','I','have','some','idea','of','what','to','expect'] │
 
 ```
+</Step>
 
-5. Another option is to use a tool like `cat` to stream the file to `clickhouse-client`. For example, the following command has the same result as using the `<` operator:
+<Step title="Stream files with cat (alternative)">
+Another option is to use a tool like `cat` to stream the file to `clickhouse-client`. For example, the following command has the same result as using the `<` operator:
 
 ```bash
 cat comments.tsv | clickhouse-client \
@@ -111,5 +121,7 @@ cat comments.tsv | clickhouse-client \
     FORMAT TabSeparatedWithNames
 "
 ```
+</Step>
+</Steps>
 
 Visit the [docs page on `clickhouse-client`](/concepts/features/interfaces/cli) for details on how to install `clickhouse-client` on your local operating system.
