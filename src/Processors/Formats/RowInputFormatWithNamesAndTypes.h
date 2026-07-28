@@ -188,6 +188,17 @@ public:
         return (with_types || types_detected_from_data) && format_settings.with_types_use_header;
     }
 
+    /// When a types row is present but the parser is configured to ignore it
+    /// (`input_format_with_types_use_header` = 0), `readSchema` still returns those declared types
+    /// verbatim, while the parser reads the data by value instead. The inferred schema then does not
+    /// describe what is parsed, so a comparison against it would attach a misleading explanation to an
+    /// unrelated value-level parse error (e.g. a `CSVWithNamesAndTypes` types row declaring `String` for a
+    /// `UInt8` destination that happily accepts the quoted number `"1"` in the data).
+    bool schemaDescribesParsedData() const override
+    {
+        return !((with_types || types_detected_from_data) && !format_settings.with_types_use_header);
+    }
+
     /// A header row with column names auto-detected in the data of a plain format (`*_detect_header`,
     /// latched by `readSchema` in `names_detected_from_data`) makes the parser map the columns by name,
     /// like the -WithNames formats do, as long as the parser is configured to use a names header
