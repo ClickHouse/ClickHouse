@@ -1,0 +1,12 @@
+qualified with the facade name: rejected
+1
+a missing table name behind the facade is rejected too, so the fence is not an existence oracle
+1
+unqualified with the facade as the current database: rejected
+1
+one facade entry in a list rejects the whole command
+1
+the underlying database is not rejected
+0
+the whole-server form is not rejected
+0

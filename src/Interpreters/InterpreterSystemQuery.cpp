@@ -411,19 +411,30 @@ BlockIO InterpreterSystemQuery::execute()
     /// named) instead skip read-only `Overlay` facades while iterating databases — see
     /// `isReadOnlyOverlayDatabase`.
     {
-        String overlay_database_name;
-        if (table_id)
-            overlay_database_name = table_id.database_name;
-        else if (query.database)
-            overlay_database_name = query.getDatabase();
+        auto reject_if_read_only_overlay = [&](const String & database_name)
+        {
+            if (!database_name.empty() && isReadOnlyOverlayDatabase(DatabaseCatalog::instance().tryGetDatabase(database_name)))
+                throw Exception(
+                    ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+                    "Database {} is an Overlay facade (read-only). "
+                    "Run SYSTEM commands in the underlying database that owns the table",
+                    backQuote(database_name));
+        };
 
-        if (!overlay_database_name.empty()
-            && isReadOnlyOverlayDatabase(DatabaseCatalog::instance().tryGetDatabase(overlay_database_name)))
-            throw Exception(
-                ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
-                "Database {} is an Overlay facade (read-only). "
-                "Run SYSTEM commands in the underlying database that owns the table",
-                backQuote(overlay_database_name));
+        if (table_id)
+            reject_if_read_only_overlay(table_id.database_name);
+        else if (query.database)
+            reject_if_read_only_overlay(query.getDatabase());
+
+        /// `SYSTEM FLUSH ASYNC INSERT QUEUE` names its targets in `query.tables`, not in
+        /// `query.table` / `query.database`, so the checks above do not see them; without this loop
+        /// `SYSTEM FLUSH ASYNC INSERT QUEUE db_overlay.t` (or an unqualified `t` with the facade as
+        /// the current database) resolves through the facade and flushes the underlying source table.
+        /// `SYSTEM FLUSH LOGS` also uses `query.tables`, but there the entries are log names, not
+        /// tables of an arbitrary database, so it is not affected.
+        if (query.type == Type::FLUSH_ASYNC_INSERT_QUEUE)
+            for (const auto & [database, table] : query.tables)
+                reject_if_read_only_overlay(database.empty() ? getContext()->getCurrentDatabase() : database);
     }
 
     BlockIO result;
