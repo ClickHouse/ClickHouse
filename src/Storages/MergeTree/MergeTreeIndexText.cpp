@@ -1547,6 +1547,7 @@ void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
 
     const auto & filter_tokens = postprocessor_drop_filter->tokens;
 
+    /// StringHashTable::dispatch reads whole 8-byte words around short keys.
     static constexpr size_t pad_left = 8;
     const size_t total_size = std::accumulate(
         filter_tokens.begin(), filter_tokens.end(), pad_left,
@@ -1572,7 +1573,6 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
 {
     bool inserted = false;
     TokenToPostingsBuilderMap::LookupResult it;
-    ArenaKeyHolder key_holder(token, *arena);
 
     if (postprocessor_drop_filter && !postprocessor_drop_filter->drop_on_match)
     {
@@ -1585,6 +1585,7 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
     }
     else
     {
+        ArenaKeyHolder key_holder(token, *arena);
         tokens_map.emplace(key_holder, it, inserted);
 
         if (postprocessor_drop_filter)
@@ -1600,18 +1601,18 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
             else if (it->getMapped().isFiltered())
                 return;
         }
+
+        if (position_map)
+        {
+            TokenToPositionListMap::LookupResult pos_it;
+            position_map->emplace(key_holder, pos_it, inserted);
+            auto & positions_builder = pos_it->getMapped();
+            positions_builder.add(static_cast<UInt32>(current_row), token_position);
+        }
     }
 
     PostingListBuilder & posting_list_builder = it->getMapped();
     posting_list_builder.add(static_cast<UInt32>(current_row), posting_lists);
-
-    if (position_map)
-    {
-        TokenToPositionListMap::LookupResult pos_it;
-        position_map->emplace(key_holder, pos_it, inserted);
-        auto & positions_builder = pos_it->getMapped();
-        positions_builder.add(static_cast<UInt32>(current_row), token_position);
-    }
 
     ++num_processed_tokens;
 }

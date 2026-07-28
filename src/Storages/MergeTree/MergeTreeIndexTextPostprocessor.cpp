@@ -31,6 +31,7 @@ constexpr char postprocessor_lambda_arg[] = "__text_index_lambda_arg";
 /// Lambda argument used when tokenizing each element of an Array column in the row-level fallback.
 constexpr char postprocessor_element_arg[] = "__text_index_element";
 
+/// Bounds the per-granule token map state a filter can create; larger sets use the general vectorized path.
 constexpr size_t max_filter_set_size = 8192;
 
 bool isEmptyStringLiteral(const ASTPtr & ast)
