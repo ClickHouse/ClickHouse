@@ -1743,10 +1743,10 @@ class JobConfigs:
         # and inherits the default "no upstream failure" gate, so an unrelated
         # build failure skips it and would skip this job with it. With no
         # profile data for the head the job posts the "no data" text over the
-        # stale comparison (see main()) instead of leaving it. Dropping the
-        # cache-hit half of the default gate costs nothing: the job has no
-        # digest_config, so it is never a cache hit anyway.
-        run_unless_cancelled=True,
+        # stale comparison (see main()) instead of leaving it. Not
+        # `run_unless_cancelled`: that would also ignore the job filter and run
+        # this on a `release` or `do not test` PR.
+        run_on_upstream_failure=True,
     )
     llvm_coverage_job = Job.Config(
         name=JobNames.LLVM_COVERAGE,

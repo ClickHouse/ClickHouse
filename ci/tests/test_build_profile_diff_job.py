@@ -745,19 +745,22 @@ def test_the_job_runs_on_a_red_head():
     """
     from ci.defs.job_configs import JobConfigs
 
-    assert JobConfigs.build_profile_diff_job.run_unless_cancelled
-    # The gate above is only safe because the job is never a cache hit: it
-    # loses the cache-hit half of the default condition (see the job config).
-    assert JobConfigs.build_profile_diff_job.digest_config is None
+    assert JobConfigs.build_profile_diff_job.run_on_upstream_failure
+    # ... but not with the blunt flag, which would also ignore the job filter
+    # and run the comparison on a `release` or `do not test` PR.
+    assert not JobConfigs.build_profile_diff_job.run_unless_cancelled
 
 
-def test_the_generated_workflow_gates_the_job_on_cancellation_only():
-    """`run_unless_cancelled` must survive into the generated pipeline.
+def test_the_generated_workflow_keeps_only_the_upstream_half_of_the_gate():
+    """`run_on_upstream_failure` must survive into the generated pipeline.
 
     The config flag is only intent; what GitHub obeys is the `if:` expression
     praktika renders into .github/workflows/pull_request.yml. Assert the
-    rendered gate directly, so a praktika change that stops honouring the flag
-    is caught here rather than by a stale comment on someone's PR.
+    rendered gate directly: the upstream-status half is gone, and the cache /
+    job-filter half (`cache_success_base64`, which `should_skip_job` also
+    writes into) is still there. A praktika change that drops either property
+    is caught here rather than by a stale comment - or a stray job on a
+    `do not test` PR.
     """
     workflow = (
         pathlib.Path(__file__).resolve().parents[2]
@@ -767,7 +770,6 @@ def test_the_generated_workflow_gates_the_job_on_cancellation_only():
     )
     lines = workflow.read_text().splitlines()
     start = lines.index("  build_profile_diff:")
-    gate = next(
-        line for line in lines[start:] if line.startswith("    if:")
-    )
-    assert gate == "    if: ${{ !cancelled() }}", gate
+    gate = next(line for line in lines[start:] if line.startswith("    if:"))
+    assert "pipeline_status" not in gate, gate
+    assert "cache_success_base64" in gate, gate
