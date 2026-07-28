@@ -90,3 +90,91 @@ TEST(MaskURIPassword, LeavesURIsWithoutAPasswordAlone)
     EXPECT_FALSE(maskURIPassword(&uri));
     EXPECT_EQ(uri, "https://example.com/db");
 }
+
+
+namespace
+{
+
+/// The regular expressions `maskURIUserinfo` and `maskPresignedURLParameters` used to be.
+bool maskURIUserinfoWithRE2(std::string & url)
+{
+    return RE2::Replace(&url, R"(^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/?#]+@)", "\\1[HIDDEN]@");
+}
+
+bool maskPresignedURLParametersWithRE2(std::string & url)
+{
+    return RE2::GlobalReplace(
+        &url,
+        R"(([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|X-Amz-[A-Za-z0-9\-]*|X-Goog-[A-Za-z0-9\-]*)=)[^&#]*)",
+        "\\1[HIDDEN]");
+}
+
+const std::vector<std::string> url_corpus = {
+    /// Userinfo.
+    "https://user:password@bucket.s3.amazonaws.com/key",
+    "https://user@bucket/key",
+    "https://user:pass@word@bucket/key",
+    "s3://key:secret@bucket/path?query=1",
+    "s3+http://key:secret@bucket/path",
+    "https://bucket/key",
+    "https://bucket/user:pass@key",
+    "https://bucket/key?redirect=http://u:p@elsewhere",
+    "https://@bucket/key",
+    "://user:password@bucket",
+    "1https://user:password@bucket",
+    "-https://user:password@bucket",
+    "https:/user:password@bucket",
+    "user:password@bucket",
+    "https://user:password@bucket?a=b@c",
+    "https://user#:password@bucket",
+    "https://user?:password@bucket",
+
+    /// Presigned parameters.
+    "https://bucket/key?AWSAccessKeyId=AKIA&Signature=abc&Expires=1",
+    "https://bucket/key?X-Amz-Signature=abc&X-Amz-Credential=def&list-type=2",
+    "https://bucket/key?GoogleAccessId=x&X-Goog-Signature=y",
+    "https://bucket/key?X-Amz-=empty",
+    "https://bucket/key?X-Amz-Bad_Name=visible",
+    "https://bucket/key?signature=lowercase",
+    "https://bucket/key?xSignature=notamatch",
+    "https://bucket/key?Signature",
+    "https://bucket/key?Signature=",
+    "https://bucket/key?Signature=abc#fragment",
+    "https://bucket/key?a=1&Signature=abc",
+    "https://bucket/key&Signature=abc",
+    "https://bucket/key?Signature=a&Signature=b",
+    "https://bucket/key?Expires=1&Expires=2&Expires=3",
+    "https://bucket/key?Signature=a=b&next=1",
+
+    /// Both at once, and neither.
+    "https://user:password@bucket/key?X-Amz-Signature=abc&format=CSV",
+    "",
+    "?&=",
+    "https://",
+};
+
+}
+
+TEST(MaskS3URLCredentials, MatchTheRegularExpressionsTheyReplaced)
+{
+    for (const auto & input : url_corpus)
+    {
+        std::string with_scan = input;
+        std::string with_re2 = input;
+
+        EXPECT_EQ(maskURIUserinfo(with_scan), maskURIUserinfoWithRE2(with_re2)) << "userinfo return value differs for: " << input;
+        EXPECT_EQ(with_scan, with_re2) << "userinfo result differs for: " << input;
+
+        EXPECT_EQ(maskPresignedURLParameters(with_scan), maskPresignedURLParametersWithRE2(with_re2))
+            << "presign return value differs for: " << input;
+        EXPECT_EQ(with_scan, with_re2) << "presign result differs for: " << input;
+    }
+}
+
+TEST(MaskS3URLCredentials, MasksUserinfoAndPresignedParameters)
+{
+    std::string url = "https://key:secret@bucket/path?X-Amz-Signature=abcdef&format=CSV";
+    EXPECT_TRUE(maskURIUserinfo(url));
+    EXPECT_TRUE(maskPresignedURLParameters(url));
+    EXPECT_EQ(url, "https://[HIDDEN]@bucket/path?X-Amz-Signature=[HIDDEN]&format=CSV");
+}
