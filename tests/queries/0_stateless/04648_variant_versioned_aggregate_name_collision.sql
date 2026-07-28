@@ -29,11 +29,32 @@ CREATE TABLE t_collision_6 (k UInt8, v Tuple(a Variant(AggregateFunction(0, sumM
 CREATE TABLE t_collision_9 (k UInt8, v AggregateFunction(any, Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))))) ENGINE = MergeTree ORDER BY k; -- { serverError ILLEGAL_COLUMN }
 CREATE TABLE t_collision_10 (k UInt8, v Array(AggregateFunction(any, Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))))) ENGINE = MergeTree ORDER BY k; -- { serverError ILLEGAL_COLUMN }
 
--- A name is re-parsed at the depth limit the statement itself was parsed with, so an element whose own
--- nesting is deeper than what the stricter limit of DataTypeFactory allows is checked like any other.
--- Below that depth the elements here collide just the same, and skipping them would have made the
--- rejection depend on the build, because that limit is lower under sanitizers.
+-- A name is re-parsed at fixed limits, so an element whose own nesting is deeper than what the stricter
+-- limit of DataTypeFactory allows is checked like any other. Below that depth the elements here collide
+-- just the same, and skipping them would have made the rejection depend on the build, because that
+-- limit is lower under sanitizers.
 CREATE TABLE t_collision_11 (k UInt8, v Variant(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))), Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))) ENGINE = MergeTree ORDER BY k; -- { serverError ILLEGAL_COLUMN }
+
+-- Those fixed limits are not the session ones, and they must not be: none of the paths that accept a
+-- type uses the session limits for it, so reading them here would let the check be stricter than the
+-- statement which produced the type and skip exactly the colliding element. A trailing SETTINGS clause
+-- is applied only after the statement has been parsed, so the statement below is parsed at the default
+-- depth while a session driven re-parse would run at 20 and fail on these elements. The clause has to
+-- be written on the statement: a preceding SET makes the statement itself unparseable.
+CREATE TABLE t_collision_12 (k UInt8, v Variant(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64))))))))))))))))), Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))))))))))))))))))) ENGINE = MergeTree ORDER BY k SETTINGS max_parser_depth = 20; -- { serverError ILLEGAL_COLUMN }
+
+-- A CAST target type never passes through the parser of a statement at all, so it needs its own case.
+SELECT CAST(NULL, 'Variant(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64))))))))))))))))), Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))))))))))))))))))') SETTINGS max_parser_depth = 20; -- { serverError ILLEGAL_COLUMN }
+
+-- The size limit is the other way the re-parse could be the stricter one: it is a constant everywhere,
+-- so an element name longer than it would never even be tokenized. The pair below renders to names of
+-- about 269000 bytes each, which is past that constant, and it is built by a query rather than spelled
+-- out to keep this file small. A table function is used because it reaches the same check while taking
+-- its structure as a value.
+DESC (SELECT * FROM format(TSV, (SELECT 'v Variant(' ||
+    'AggregateFunction(0, sumMapFiltered([' || arrayStringConcat(range(1, 40001), ', ') || ']), Array(UInt64), Array(UInt64)), ' ||
+    'AggregateFunction(1, sumMapFiltered([' || arrayStringConcat(range(1, 40001), ', ') || ']), Array(UInt64), Array(UInt64)))'), ''))
+SETTINGS max_query_size = 10000000; -- { serverError ILLEGAL_COLUMN }
 
 -- ALTER reaches the same stored metadata, so it is refused too. The added and the modified column
 -- live on separate tables so that a build which still accepts the ADD does not then fail the whole
@@ -139,3 +160,4 @@ DROP TABLE IF EXISTS t_collision_8;
 DROP TABLE IF EXISTS t_collision_9;
 DROP TABLE IF EXISTS t_collision_10;
 DROP TABLE IF EXISTS t_collision_11;
+DROP TABLE IF EXISTS t_collision_12;

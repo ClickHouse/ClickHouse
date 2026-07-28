@@ -1070,13 +1070,14 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     }
     else if (create.attach && !create.attach_short_syntax && !create.is_materialized_view)
     {
-        /// An ATTACH that carries a full table definition creates and persists a new table, so its
-        /// columns are fresh input and not a definition this server stored earlier (see the warning
-        /// about it below and the `need_lock_uuid` comment). A definition read back from metadata is
-        /// marked `attach_short_syntax` (`DatabaseOnDisk::createTableFromAST`) and stays exempt, so
-        /// tables that already exist keep loading. Only the checks that are not gated by a setting
-        /// apply here, so a type that cannot be read back after a reload is still refused, while the
-        /// suspicious type policy deliberately remains a CREATE-only matter.
+        /// The spelling is the discriminator here: a definition read back from this server's metadata is
+        /// marked `attach_short_syntax` (`DatabaseOnDisk::createTableFromAST`) and stays exempt, so tables
+        /// that already exist keep loading, while an ATTACH carrying a full table definition creates and
+        /// persists a new table and is treated like a CREATE (as the warning below and the `need_lock_uuid`
+        /// comment already do). Only the checks that are not gated by a setting apply, so a type that
+        /// cannot be read back after a reload is refused, the suspicious type policy stays a CREATE-only
+        /// matter, and engines which require the full definition spelling keep their current behaviour for
+        /// every gated check.
         DataTypeValidationSettings integrity_checks_only;
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
             validateDataType(name_and_type_pair.type, integrity_checks_only);

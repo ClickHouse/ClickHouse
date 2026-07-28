@@ -47,8 +47,6 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
     , validate_nested_types(settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types])
     , enable_time_time64_type(settings[Setting::enable_time_time64_type])
     , allow_experimental_nullable_tuple_type(settings[Setting::allow_experimental_nullable_tuple_type])
-    , max_parser_depth(settings[Setting::max_parser_depth])
-    , max_parser_backtracks(settings[Setting::max_parser_backtracks])
 {
 }
 
@@ -189,17 +187,22 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
         {
             const auto original_name = variant->getName();
 
-            /// The name is re-parsed at the depth limit the query itself was parsed with, and not at the
-            /// lower one that `DataTypeFactory` applies to a name given as a string (150 under sanitizers,
-            /// 300 otherwise): this type was accepted by the parser of the query, so a name describing it
-            /// has to be parseable there as well, and using the stricter limit would silently skip exactly
-            /// the deeply nested elements whose names collide.
+            /// The name is re-parsed at the same fixed limits that persisting a type name already uses,
+            /// namely the ones `dataTypeToAST` passes, with the size limit left off. Those limits are an
+            /// upper bound on anything that could have been stored: rendering the columns of a CREATE or
+            /// an ATTACH goes through `dataTypeToAST` with exactly them, so a name they cannot handle
+            /// belongs to a type which cannot be persisted at all. Reading the limits from the settings
+            /// instead would let the check be stricter than the statement that produced the type, because
+            /// none of the paths accepting a type uses those settings for it: a trailing `SETTINGS
+            /// max_parser_depth` clause is applied only after the statement has been parsed, a `CAST`
+            /// target type never passes through the parser of a statement at all, and the size limit is a
+            /// constant everywhere. A stricter check would then fail to parse the name and skip exactly
+            /// the colliding element it exists to find.
             /// A name that cannot be parsed back cannot be shown to collide with another one, so such an
             /// element is skipped rather than the whole type being refused for an unrelated reason. Both a
             /// failed parse and a throw have to be handled: the depth limits are reported by throwing even
             /// on a try-parse, from `IParser::Pos::increaseDepth` (`TOO_DEEP_RECURSION`, during the parse)
-            /// and from `IAST::checkDepthImpl` (`TOO_DEEP_AST`, on a parse that succeeded), and a user can
-            /// still lower `max_parser_depth` below what a stored name needs.
+            /// and from `IAST::checkDepthImpl` (`TOO_DEEP_AST`, on a parse that succeeded).
             DataTypePtr reparsed_type;
             try
             {
@@ -213,9 +216,9 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                     /*hilite=*/false,
                     "data type",
                     /*allow_multi_statements=*/false,
-                    DBMS_DEFAULT_MAX_QUERY_SIZE,
-                    settings.max_parser_depth,
-                    settings.max_parser_backtracks,
+                    /*max_query_size=*/0,
+                    DBMS_DEFAULT_MAX_PARSER_DEPTH,
+                    DBMS_DEFAULT_MAX_PARSER_BACKTRACKS,
                     /*skip_insignificant=*/true);
                 if (reparsed_ast)
                     reparsed_type = DataTypeFactory::instance().tryGet(reparsed_ast);
