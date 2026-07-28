@@ -48,6 +48,7 @@
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSinkPatch.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -64,6 +65,8 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 
 
 namespace ProfileEvents
@@ -484,21 +487,32 @@ void StorageMergeTree::alter(
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
+    /// Check that the resulting metadata does not exceed max_query_size before mutating any in-memory state.
+    checkMetadataDoesNotExceedMaxQuerySize(table_id, new_metadata, local_context);
+
     /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())
     {
         changeSettings(new_metadata.settings_changes, table_lock_holder);
 
         if (statistics_changed)
+        {
+            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             setInMemoryMetadata(new_metadata);
+        }
 
-        /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
+        /// Safe because the early max_query_size check already passed.
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
     }
     else if (commands.isCommentAlter())
     {
-        setInMemoryMetadata(new_metadata);
-        /// It is safe to ignore exceptions here as only the comment changed, which is not validated in `alterTable`
+        {
+            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+            setInMemoryMetadata(new_metadata);
+        }
+        /// Safe because the early max_query_size check already passed.
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
     }
     else
@@ -2634,6 +2648,12 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 
             auto parts = getVisibleDataPartsVector(query_context);
 
+            /// Do not remove parts whose creating transaction has not committed yet:
+            /// removing such a part would discard a write that may still commit.
+            /// Only needed when transactions are in use; otherwise every part is already committed.
+            if (transactions_enabled.load(std::memory_order_relaxed))
+                std::erase_if(parts, [](const auto & part) { return !part->version->isVisible(Tx::MaxCommittedCSN, Tx::EmptyTID); });
+
             auto future_parts = initCoverageWithNewEmptyParts(parts);
 
             LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}. With txn {}",
@@ -3053,7 +3073,11 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         Int64 temp_index = insert_increment.get();
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, getLevelForAdoptedPart(src_data, src_part->info.level));
 
-        IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
+        IDataPartStorage::ClonePartParams clone_params
+        {
+            .txn = local_context->getCurrentTransaction(),
+            .invalidated_columns_to_write = {BlockNumberColumn::name, BlockOffsetColumn::name},
+        };
         if (replace)
         {
             /// Replace can only work on the same disk
@@ -3236,7 +3260,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     for (const DataPartPtr & src_part : src_parts)
     {
         if (!dest_table_storage->canReplacePartition(src_part))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Cannot move partition '{}' because part '{}' has inconsistent granularity with table",
                             partition_id, src_part->name);
 
@@ -3248,6 +3272,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         {
             .txn = local_context->getCurrentTransaction(),
             .copy_instead_of_hardlink = (*getSettings())[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
+            .invalidated_columns_to_write = {BlockNumberColumn::name, BlockOffsetColumn::name},
         };
 
         auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(

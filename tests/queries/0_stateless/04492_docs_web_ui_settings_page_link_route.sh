@@ -4,16 +4,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# The built-in `/docs` page rewrites a relative documentation link that does not point to a documented
-# entity into a `https://clickhouse.com/docs` URL. Two more shapes from the current corpus used to fall
-# back to the bare docs root, losing the target page and its `#anchor`:
-#   * a settings page linked with the extension and a stray slash before the fragment, e.g.
-#     `materialize_skip_indexes_on_insert` links to `merge-tree-settings.md/#materialize_skip_indexes_on_merge`;
-#   * a section overview linked with a source-relative path, e.g. `regionToPopulation` links to
-#     `../dictionaries#embedded-dictionaries`.
-# `toDocsURL` now normalizes the stray trailing slash before stripping the extension, maps the
-# `merge-tree-settings` page in `DOCS_PAGE_ROUTE`, and maps the `dictionaries` section in
-# `DOCS_SECTION_ROUTE`, so both resolve to their canonical route while keeping the `#fragment`.
+# The built-in `/docs` page retains compatibility mappings for legacy relative links to settings pages
+# and section overviews. Current embedded documentation uses site-root absolute routes instead, so it
+# preserves the intended page and anchor without depending on these mappings.
 
 URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}"
 
@@ -28,17 +21,24 @@ echo "$PAGE" | grep -oF 'so drop a trailing slash before stripping the extension
 echo "$PAGE" | grep -oF "'dictionaries': '/sql-reference/dictionaries'," | head -n1
 # ... and maps the standalone `merge-tree-settings` page to its canonical route.
 echo "$PAGE" | grep -oF "'merge-tree-settings': '/operations/settings/merge-tree-settings'," | head -n1
+# The page-load compatibility assertion feeds both original link shapes to the real `toDocsURL`.
+echo "$PAGE" | grep -oF "'merge-tree-settings.md/#materialize_skip_indexes_on_merge': 'https://clickhouse.com/docs/operations/settings/merge-tree-settings#materialize_skip_indexes_on_merge'," | head -n1
+echo "$PAGE" | grep -oF "'../dictionaries#embedded-dictionaries': 'https://clickhouse.com/docs/sql-reference/dictionaries#embedded-dictionaries'," | head -n1
+echo "$PAGE" | grep -oF 'verifyDocsURLCompatibility();' | head -n1
 
-# The regression targets exist in the corpus. `materialize_skip_indexes_on_insert` is a core setting and
-# `regionToPopulation` is a core embedded-dictionary function, so both are present even in the minimal
-# `Fast test` build (`ENABLE_LIBRARIES=0`).
+# `materialize_skip_indexes_on_insert` is a core setting and `regionToPopulation` is a core
+# embedded-dictionary function, so both are present even in the minimal `Fast test` build
+# (`ENABLE_LIBRARIES=0`). Their descriptions use current site-root absolute routes and no longer contain
+# the legacy relative forms.
 $CLICKHOUSE_CLIENT --query "
-    SELECT count() > 0
+    SELECT
+        position(description, '/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge') > 0
+            AND position(description, 'merge-tree-settings.md/#materialize_skip_indexes_on_merge') = 0
     FROM system.documentation
-    WHERE type = 'Setting' AND name = 'materialize_skip_indexes_on_insert'
-      AND position(description, 'merge-tree-settings.md/#materialize_skip_indexes_on_merge') > 0"
+    WHERE type = 'Setting' AND name = 'materialize_skip_indexes_on_insert'"
 $CLICKHOUSE_CLIENT --query "
-    SELECT count() > 0
+    SELECT
+        position(description, '/reference/statements/create/dictionary/embedded') > 0
+            AND position(description, '../dictionaries#embedded-dictionaries') = 0
     FROM system.documentation
-    WHERE type = 'Function' AND name = 'regionToPopulation'
-      AND position(description, '../dictionaries#embedded-dictionaries') > 0"
+    WHERE type = 'Function' AND name = 'regionToPopulation'"

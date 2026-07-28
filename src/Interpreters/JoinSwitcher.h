@@ -20,6 +20,7 @@ public:
     JoinSwitcher(
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader right_sample_block_,
+        bool any_take_last_row_,
         const StatsCollectingParams & stats_collecting_params_ = {});
 
     std::string getName() const override { return "JoinSwitcher"; }
@@ -80,6 +81,11 @@ public:
     {
         return join->hasDelayedBlocks();
     }
+
+    /// May switch to PartialMergeJoin at runtime, which re-sorts left blocks by the join key.
+    /// The read-in-order decision is made at plan time (before any switch), so we must be
+    /// conservative and never claim to preserve the left stream order. See issue #110662.
+    bool preservesLeftBlockOrder() const override { return false; }
 
     void onBuildPhaseFinish() override { join->onBuildPhaseFinish(); }
 

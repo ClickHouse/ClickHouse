@@ -357,7 +357,6 @@ struct FormatSettings
         bool case_insensitive_column_matching = false;
         bool filter_push_down = true;
         bool bloom_filter_push_down = true;
-        size_t dictionary_filter_push_down = 1024 * 1024;
         bool page_filter_push_down = true;
         bool use_offset_index = true;
 
@@ -539,7 +538,6 @@ struct FormatSettings
         std::unordered_set<int> skip_stripes = {};
         bool output_string_as_string = false;
         ORCCompression output_compression_method = ORCCompression::NONE;
-        bool use_fast_decoder = true;
         bool filter_push_down = true;
         UInt64 output_row_index_stride = 10'000;
         String reader_time_zone_name = "GMT";

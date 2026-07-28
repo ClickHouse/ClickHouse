@@ -22,11 +22,14 @@ picture-in-picture"
 
 <br />
 
-توجد عدة خيارات لترحيل البيانات إلى ClickHouse Cloud، وذلك بحسب مكان وجود بياناتك حاليًا:
+توجد عدة مسارات لترحيل البيانات إلى ClickHouse Cloud، وذلك بحسب مكان وجود بياناتك حاليًا:
 
-* [من بيئة self-managed إلى Cloud](/ar/get-started/migrate/oss-to-cloud/clickhouse-to-cloud): استخدم الدالة `remoteSecure` لنقل البيانات
-* [من نظام DBMS آخر](/ar/get-started/migrate/other-methods/clickhouse-local-etl): استخدم أداة ETL ‏[clickhouse-local] مع دالة الجدول المناسبة في ClickHouse لنظام DBMS الحالي لديك
-* [من أي مكان!](/ar/get-started/migrate/other-methods/etl-tool-to-clickhouse): استخدم إحدى أدوات ETL/ELT الشائعة العديدة التي تتصل بمختلف أنواع مصادر البيانات
-* [التخزين الكائني](/ar/get-started/migrate/other-methods/object-storage-to-clickhouse): أدرِج البيانات بسهولة من S3 إلى ClickHouse
-
-في مثال [الترحيل من Redshift](/ar/get-started/migrate/redshift/migration-guide)، نعرض ثلاث طرق مختلفة لترحيل البيانات إلى ClickHouse.
+| مسار الترحيل                                                             | الوصف                                                                               |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| [PostgreSQL](/ar/get-started/migrate/postgres/index)                        | رحّل بيانات PostgreSQL واستعلاماته إلى ClickHouse.                                  |
+| [BigQuery](/ar/get-started/migrate/bigquery/index)                          | رحّل مجموعات البيانات وأعباء العمل من BigQuery إلى ClickHouse Cloud.                |
+| [Snowflake](/ar/get-started/migrate/snowflake/overview)                     | رحّل بيانات Snowflake وأعباء عمل SQL إلى ClickHouse Cloud.                          |
+| [Elasticsearch](/ar/get-started/migrate/elastic/overview)                   | رحّل بيانات Elasticsearch واستعلاماته إلى ClickHouse.                               |
+| [Redshift](/ar/get-started/migrate/redshift/overview)                       | رحّل بيانات Redshift وأعباء العمل إلى ClickHouse Cloud.                             |
+| [OSS to Cloud](/ar/get-started/migrate/oss-to-cloud/clickhouse-to-cloud)    | انقل البيانات من نشر ClickHouse مُدار ذاتيًا إلى ClickHouse Cloud.                  |
+| [Other methods](/ar/get-started/migrate/other-methods/clickhouse-local-etl) | استخدم clickhouse-local أو أدوات ETL أو التخزين الكائني لسيناريوهات الترحيل الأخرى. |

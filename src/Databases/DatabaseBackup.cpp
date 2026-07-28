@@ -217,7 +217,25 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
     backup_open_params.context = getContext();
     backup_open_params.backup_info = config.backup_info;
 
-    backup = BackupFactory::instance().createBackup(backup_open_params);
+    try
+    {
+        backup = BackupFactory::instance().createBackup(backup_open_params);
+    }
+    catch (...)
+    {
+        if (mode < LoadingStrictnessLevel::FORCE_ATTACH)
+            throw;
+
+        /// It's server startup: do not prevent the server from starting if the backup is
+        /// unavailable (e.g. the backup files were removed or the underlying storage is
+        /// inaccessible). The database is loaded without any tables; restart the server once
+        /// the backup becomes available again to access its tables.
+        tryLogCurrentException(
+            log,
+            fmt::format("Cannot open backup for database {}, it will be loaded without tables", backQuoteIfNeed(getDatabaseName())));
+        backup = nullptr;
+        return;
+    }
 
     auto storage_policy_name = buildStoragePolicyName(config);
 
@@ -237,10 +255,17 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
     });
 }
 
-void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool)
+void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
 {
     if (!backup)
+    {
+        /// The backup could not be opened on server startup (see beforeLoadingMetadata).
+        /// Load the database without any tables instead of failing the whole server.
+        if (is_startup)
+            return;
+
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not initialized");
+    }
 
     size_t prev_tables_count = metadata.parsed_tables.size();
     size_t prev_total_dictionaries = metadata.total_dictionaries;

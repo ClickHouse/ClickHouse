@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeInterval.h>
 
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -34,7 +35,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/convertColumnToType.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/getTableExpressions.h>
@@ -865,7 +866,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             && !query.hasJoin()) /// Join may produce rows with nulls or default values, it's difficult to analyze if they affected or not.
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
-            if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
+            Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
+            if (const auto & column_sizes = storage->getColumnSizes(queried_columns); !column_sizes.empty())
             {
                 /// Extract column compressed sizes.
                 std::unordered_map<std::string, UInt64> column_compressed_sizes;
@@ -875,8 +877,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 SelectQueryInfo current_info;
                 current_info.query = query_ptr;
                 current_info.syntax_analyzer_result = syntax_analyzer_result;
-
-                Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
                 const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
 
                 RangesInDataParts parts_for_estimator;
@@ -1205,12 +1205,34 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     executeImpl(query_plan, std::move(input_pipe));
 
+    /// The old analyzer computes result_header from the ExpressionAnalyzer sample block,
+    /// independently of the actual query plan. A plan step may legitimately materialize a
+    /// column the sample considered constant (e.g. a remote(...) UnionStep whose shards fold
+    /// randConstant() to different values). Forcing such a full column back to a Const in the
+    /// convert target would fail in makeConvertingActions. Reconcile a local convert target:
+    /// where a column is full in the plan but Const of the same type in the result header,
+    /// take the plan's full column so the conversion keeps it full. result_header itself is
+    /// left untouched so getSampleBlock() (seen by an enclosing subquery) is unchanged.
+    ColumnsWithTypeAndName convert_target = result_header->getColumnsWithTypeAndName();
+    {
+        const auto & plan_header = *query_plan.getCurrentHeader();
+        for (auto & res_col : convert_target)
+        {
+            if (!res_col.column || !isColumnConst(*res_col.column))
+                continue;
+            const auto * plan_col = plan_header.findByName(res_col.name);
+            if (plan_col && plan_col->column && !isColumnConst(*plan_col->column)
+                && res_col.type->equals(*plan_col->type))
+                res_col.column = plan_col->column;
+        }
+    }
+
     /// We must guarantee that result structure is the same as in getSampleBlock()
-    if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), *result_header))
+    if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), Block(convert_target)))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
-            result_header->getColumnsWithTypeAndName(),
+            convert_target,
             ActionsDAG::MatchColumnsMode::Name,
             context,
             true);
@@ -1600,45 +1622,36 @@ static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & quer
 /// The LIMIT/OFFSET expression value can be either UInt64 or Float64, negative or positive.
 static std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
 {
-    const auto & [field, type] = evaluateConstantExpression(node, context);
+    const auto [column, type] = evaluateConstantExpressionAsColumn(node, context);
 
     if (!isNativeNumber(type))
         throw Exception(
             ErrorCodes::INVALID_LIMIT_EXPRESSION, "Illegal type {} of {} expression, must be numeric type", type->getName(), expr);
 
     // First check if it is nonnegative limit since they are more common
+    if (ColumnPtr converted = convertColumnToTypeOrNull(*column, type, std::make_shared<DataTypeUInt64>()))
+        return {converted->getUInt(0), 0, false};
+
+    if (ColumnPtr converted = convertColumnToTypeOrNull(*column, type, std::make_shared<DataTypeInt64>()))
     {
-        const Field converted_value = convertFieldToType(field, DataTypeUInt64());
-        if (!converted_value.isNull())
-            return {converted_value.safeGet<UInt64>(), 0, false};
+        Int64 int_value = converted->getInt(0);
+        chassert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
+
+        const UInt64 magnitude = -static_cast<UInt64>(int_value);
+        return {magnitude, 0, true};
     }
 
+    if (ColumnPtr converted = convertColumnToTypeOrNull(*column, type, std::make_shared<DataTypeFloat64>()))
     {
-        const Field converted_value = convertFieldToType(field, DataTypeInt64());
-        if (!converted_value.isNull())
-        {
-            Int64 int_value = converted_value.safeGet<Int64>();
-            chassert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
-
-            const UInt64 magnitude = -static_cast<UInt64>(int_value);
-            return {magnitude, 0, true};
-        }
-    }
-
-    {
-        Field converted_value = convertFieldToType(field, DataTypeFloat64());
-        if (!converted_value.isNull())
-        {
-            auto value = converted_value.safeGet<Float64>();
-            if (value < 1 && value > 0)
-                return {0, value, false};
-        }
+        auto value = converted->getFloat64(0);
+        if (value < 1 && value > 0)
+            return {0, value, false};
     }
 
     throw Exception(
         ErrorCodes::INVALID_LIMIT_EXPRESSION,
         "The value {} of {} expression is not representable as UInt64 or Int64 or Float64 in the range (0, 1)",
-        applyVisitor(FieldVisitorToString(), field),
+        applyVisitor(FieldVisitorToString(), (*column)[0]),
         expr);
 }
 
@@ -2949,7 +2962,6 @@ void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsA
 }
 
 static Aggregator::Params getAggregatorParams(
-    const ASTPtr & query_ptr,
     const SelectQueryExpressionAnalyzer & query_analyzer,
     const Context & context,
     const Names & keys,
@@ -2959,8 +2971,10 @@ static Aggregator::Params getAggregatorParams(
     size_t group_by_two_level_threshold,
     size_t group_by_two_level_threshold_bytes)
 {
+    /// The cache key is computed later from the query plan in setAggregationHashTableCacheKeys
+    /// (key == 0 keeps preallocation disabled until the optimization pass stamps the real key).
     const auto stats_collecting_params = StatsCollectingParams(
-        calculateCacheKey(query_ptr),
+        /*key_=*/ 0,
         settings[Setting::collect_hash_table_stats_during_aggregation],
         context.getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
         settings[Setting::max_size_to_preallocate_for_aggregation]);
@@ -3007,7 +3021,6 @@ void InterpreterSelectQuery::executeAggregation(
     const auto & keys = query_analyzer->aggregationKeys().getNames();
 
     auto aggregator_params = getAggregatorParams(
-        query_ptr,
         *query_analyzer,
         *context,
         keys,
@@ -3145,7 +3158,7 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
     for (auto & aggregate : aggregates)
         aggregate.argument_names.clear();
 
-    auto params = getAggregatorParams(query_ptr, *query_analyzer, *context, keys, aggregates, false, settings, 0, 0);
+    auto params = getAggregatorParams(*query_analyzer, *context, keys, aggregates, false, settings, 0, 0);
     const bool final = true;
 
     QueryPlanStepPtr step;
@@ -3404,6 +3417,8 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
         {
             auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset, settings[Setting::exact_rows_before_limit]);
+            if (options.is_local_shard_plan)
+                limit->markAsShardLimit();
             if (do_not_skip_offset)
                 limit->setStepDescription("preliminary LIMIT (with OFFSET)");
             else
@@ -3413,7 +3428,10 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
         }
         else if (lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
         {
-            auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset);
+            auto limit = std::make_unique<NegativeLimitStep>(
+                query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset);
+            if (options.is_local_shard_plan)
+                limit->markAsShardLimit();
 
             query_plan.addStep(std::move(limit));
         }
@@ -3423,6 +3441,8 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
             query_plan.addStep(std::move(offsets_step));
 
             auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, 0);
+            if (options.is_local_shard_plan)
+                limit->markAsShardLimit();
             query_plan.addStep(std::move(limit));
         }
         else // if (!lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
@@ -3432,6 +3452,8 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
 
             auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentHeader(), lim_info.limit_length, 0, settings[Setting::exact_rows_before_limit]);
+            if (options.is_local_shard_plan)
+                limit->markAsShardLimit();
 
             query_plan.addStep(std::move(limit));
         }
@@ -3748,11 +3770,9 @@ void InterpreterSelectQuery::initSettings()
         InterpreterSetQuery(query.settings(), context).executeForCurrentContext(options.ignore_setting_constraints);
 
     const auto & client_info = context->getClientInfo();
-    auto min_major = DBMS_MIN_MAJOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
-    auto min_minor = DBMS_MIN_MINOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
 
     if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
-        std::forward_as_tuple(client_info.connection_client_version_major, client_info.connection_client_version_minor) < std::forward_as_tuple(min_major, min_minor))
+        client_info.connection_tcp_protocol_version < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD)
     {
         /// Disable two-level aggregation due to version incompatibility.
         context->setSetting("group_by_two_level_threshold", Field(0));

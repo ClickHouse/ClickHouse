@@ -28,9 +28,7 @@ doc_type: 'guide'
 | الإجمالي                                                                                       | 8.26 billion  | 23,577             | 3.982TB      | 8 min 3 sec         | &gt; 6 days 5 hrs | 53 mins 45 secs          |
 
 <Steps>
-  <Step>
-    ## تصدير بيانات الجدول إلى GCS
-
+  <Step title="تصدير بيانات الجدول إلى GCS" id="1-export-table-data-to-gcs">
     في هذه الخطوة، نستخدم [مساحة عمل BigQuery SQL](https://cloud.google.com/bigquery/docs/bigquery-web-ui) لتنفيذ أوامر SQL. في المثال أدناه، نُصدّر جدولًا في BigQuery باسم `mytable` إلى حاوية GCS باستخدام عبارة [`EXPORT DATA`](https://cloud.google.com/bigquery/docs/reference/standard-sql/other-statements).
 
     ```sql
@@ -66,9 +64,7 @@ doc_type: 'guide'
     * يُعد Parquet، بوصفه تنسيقًا موجَّهًا بالأعمدة، تنسيقًا أفضل لتبادل البيانات لأنه مضغوط بطبيعته، كما أنه أسرع بالنسبة إلى BigQuery عند التصدير وClickHouse عند تنفيذ الاستعلامات
   </Step>
 
-  <Step>
-    ## استيراد البيانات إلى ClickHouse من GCS
-
+  <Step title="استيراد البيانات إلى ClickHouse من GCS" id="2-importing-data-into-clickhouse-from-gcs">
     بمجرد اكتمال التصدير، يمكننا استيراد هذه البيانات إلى جدول في ClickHouse. يمكنك استخدام [وحدة تحكم ClickHouse SQL](/ar/integrations/connectors/sql-clients/sql-console) أو [`clickhouse-client`](/ar/concepts/features/interfaces/cli) لتنفيذ الأوامر أدناه.
 
     يجب أولاً [إنشاء الجدول](/ar/reference/statements/create/table) في ClickHouse:
@@ -121,9 +117,7 @@ doc_type: 'guide'
     </Info>
   </Step>
 
-  <Step>
-    ## اختبار نجاح تصدير البيانات
-
+  <Step title="اختبار نجاح تصدير البيانات" id="3-testing-successful-data-export">
     لاختبار ما إذا كانت بياناتك قد أُدرجت بشكل صحيح، ما عليك سوى تنفيذ استعلام `SELECT` على جدولك الجديد:
 
     ```sql

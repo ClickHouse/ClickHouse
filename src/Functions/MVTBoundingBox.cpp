@@ -205,7 +205,7 @@ fraction of the tile size; set `margin` to `buffer / extent` to match the clip b
                 "Bounding box of the whole world at zoom 0",
                 "SELECT MVTBoundingBox(0, 0, 0) AS bbox",
                 R"(
-┌─bbox───────────────────────────────────────────┐
+┌─bbox────────────────────────────────────────────┐
 │ (-180,-85.05112877980659,180,85.05112877980659) │
 └─────────────────────────────────────────────────┘
                 )",

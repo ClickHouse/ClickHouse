@@ -917,28 +917,6 @@ namespace
                 return cur;
             }
 
-            template<typename T, NeedCheckSpace need_check_space>
-            [[nodiscard]]
-            static PosOrError readNumber6(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
-            {
-                if constexpr (need_check_space == NeedCheckSpace::Yes)
-                    RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 6, "readNumber6 requires size >= 6", fragment))
-
-                res = (*cur - '0');
-                ++cur;
-                res = res * 10 + (*cur - '0');
-                ++cur;
-                res = res * 10 + (*cur - '0');
-                ++cur;
-                res = res * 10 + (*cur - '0');
-                ++cur;
-                res = res * 10 + (*cur - '0');
-                ++cur;
-                res = res * 10 + (*cur - '0');
-                ++cur;
-                return cur;
-            }
-
             [[nodiscard]]
             static VoidOrError checkSpace(Pos cur, Pos end, size_t len, const String & msg, const String & fragment)
             {
@@ -1376,14 +1354,26 @@ namespace
             [[nodiscard]]
             static PosOrError mysqlMicrosecond(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
-                if constexpr (return_type == ReturnType::DateTime)
-                {
-                    RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 6, "mysqlMicrosecond requires size >= 6", fragment))
+                /// Like MySQL's `STR_TO_DATE`, `%f` accepts between 1 and 6 fractional digits and interprets them as
+                /// left-aligned microseconds, i.e. a shorter fragment is right-padded with zeros ('123' means 123000).
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 1, "mysqlMicrosecond requires size >= 1", fragment))
 
-                    for (size_t i = 0; i < 6; ++i)
-                        ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertNumber<NeedCheckSpace::No>(cur, end, fragment)))
+                Int32 microsecond = 0;
+                size_t num_digits = 0;
+                for (; num_digits < 6 && cur < end && *cur >= '0' && *cur <= '9'; ++num_digits)
+                {
+                    microsecond = microsecond * 10 + (*cur - '0');
+                    ++cur;
                 }
-                else
+
+                if (num_digits == 0)
+                    RETURN_ERROR(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse fragment {} from {} because read number failed",
+                        fragment,
+                        std::string_view(cur, end - cur))
+
+                if constexpr (return_type != ReturnType::DateTime)
                 {
                     if (parsed_value.scale != 6)
                         RETURN_ERROR(
@@ -1392,8 +1382,9 @@ namespace
                             fragment,
                             std::string_view(cur, end - cur),
                             std::to_string(parsed_value.scale))
-                    Int32 microsecond = 0;
-                    ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber6<Int32, NeedCheckSpace::Yes>(cur, end, fragment, microsecond)))
+
+                    for (size_t i = num_digits; i < 6; ++i)
+                        microsecond *= 10;
                     RETURN_ERROR_IF_FAILED(parsed_value.setMicrosecond(microsecond))
                 }
                 return cur;
@@ -2484,8 +2475,8 @@ SELECT parseDateTime64('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
         )",
         R"(
 ┌─parseDateTime64('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
-│                                       2025-01-04 23:00:00.123       │
-└─────────────────────────────────────────────────────────────────────┘
+│                                         2025-01-04 23:00:00.123000 │
+└────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -2512,8 +2503,8 @@ SELECT parseDateTime64OrZero('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
         )",
         R"(
 ┌─parseDateTime64OrZero('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
-│                                             2025-01-04 23:00:00.123       │
-└───────────────────────────────────────────────────────────────────────────┘
+│                                               2025-01-04 23:00:00.123000 │
+└──────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -2540,8 +2531,8 @@ SELECT parseDateTime64OrNull('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
         )",
         R"(
 ┌─parseDateTime64OrNull('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
-│                                            2025-01-04 23:00:00.123        │
-└───────────────────────────────────────────────────────────────────────────┘
+│                                               2025-01-04 23:00:00.123000 │
+└──────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -2573,8 +2564,8 @@ SELECT parseDateTimeInJodaSyntax('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')
         )",
         R"(
 ┌─parseDateTimeInJodaSyntax('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
-│                                                      2025-01-04 23:00:00 │
-└──────────────────────────────────────────────────────────────────────────┘
+│                                                     2025-01-04 23:00:00 │
+└─────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -2601,8 +2592,8 @@ SELECT parseDateTimeInJodaSyntaxOrZero('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:
         )",
         R"(
 ┌─parseDateTimeInJodaSyntaxOrZero('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
-│                                                          2025-01-04 23:00:00   │
-└────────────────────────────────────────────────────────────────────────────────┘
+│                                                           2025-01-04 23:00:00 │
+└───────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -2629,8 +2620,8 @@ SELECT parseDateTimeInJodaSyntaxOrNull('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:
         )",
         R"(
 ┌─parseDateTimeInJodaSyntaxOrNull('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
-│                                                         2025-01-04 23:00:00    │
-└────────────────────────────────────────────────────────────────────────────────┘
+│                                                           2025-01-04 23:00:00 │
+└───────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -2662,8 +2653,8 @@ SELECT parseDateTime64InJodaSyntax('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:
         )",
         R"(
 ┌─parseDateTime64InJodaSyntax('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
-│                                                          2025-01-04 23:00:00.123   │
-└────────────────────────────────────────────────────────────────────────────────────┘
+│                                                           2025-01-04 23:00:00.123 │
+└───────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -2690,8 +2681,8 @@ SELECT parseDateTime64InJodaSyntaxOrZero('2025-01-04 23:00:00.123', 'yyyy-MM-dd 
         )",
         R"(
 ┌─parseDateTime64InJodaSyntaxOrZero('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
-│                                                              2025-01-04 23:00:00.123     │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
+│                                                                 2025-01-04 23:00:00.123 │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -2718,8 +2709,8 @@ SELECT parseDateTime64InJodaSyntaxOrNull('2025-01-04 23:00:00.123', 'yyyy-MM-dd 
         )",
         R"(
 ┌─parseDateTime64InJodaSyntaxOrNull('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
-│                                                             2025-01-04 23:00:00.123      │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
+│                                                                 2025-01-04 23:00:00.123 │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

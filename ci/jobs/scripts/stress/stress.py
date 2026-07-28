@@ -178,10 +178,23 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
             client_options.append("join_algorithm='auto'")
             client_options.append("max_rows_in_join=1000")
 
-    if i > 0 and random.random() < 1 / 3:
+    # Rarely enable the query cache; independently, half the time also pin the
+    # `*_overflow_mode` settings to 'throw'.
+    if i > 0 and random.random() < 1 / 15:
         client_options.append("use_query_cache=1")
         client_options.append("query_cache_nondeterministic_function_handling='ignore'")
         client_options.append("query_cache_system_table_handling='ignore'")
+        if random.random() < 1 / 2:
+            client_options.append("read_overflow_mode='throw'")
+            client_options.append("read_overflow_mode_leaf='throw'")
+            client_options.append("group_by_overflow_mode='throw'")
+            client_options.append("sort_overflow_mode='throw'")
+            client_options.append("result_overflow_mode='throw'")
+            client_options.append("timeout_overflow_mode='throw'")
+            client_options.append("set_overflow_mode='throw'")
+            client_options.append("join_overflow_mode='throw'")
+            client_options.append("transfer_overflow_mode='throw'")
+            client_options.append("distinct_overflow_mode='throw'")
 
     if i % 5 == 1:
         client_options.append("memory_tracker_fault_probability=0.001")

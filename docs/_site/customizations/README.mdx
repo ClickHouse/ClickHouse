@@ -13,6 +13,7 @@ See Mintlify's docs on [custom scripts](https://www.mintlify.com/docs/customize/
 - `inkeep-init.js` — replaces Mintlify's native search (⌘K / navbar search bar) with the Inkeep search modal. Search-only; AI chat stays on Kapa.
 - `kapa-init.js` — bootstraps the Kapa.ai RAG widget.
 - `navbar-cta.js` — adds the "Get started" CTA to the navbar.
+- `nav-icon-preload.js` — warms the small desktop navbar dropdown SVGs at low priority as soon as the document is ready so icons are available before their menus are first opened.
 - `raise-issue-link.js` — repoints Mintlify's default "Raise issue" feedback link at the repository's Documentation issue form (`.github/ISSUE_TEMPLATE/60_documentation-issue.yaml`), pre-filling the current page path.
 - `scroll-reset.js` — restores scroll-to-top on forward client-side navigation, which Next.js skips when an announcement banner is configured. Leaves back/forward (popstate) alone so the browser/router can restore the prior position, and scrolls to the anchor on cross-page hash links.
 - `tab-nav.js` — wires the desktop top-nav tabs (Home / Database / Solutions / Integrations) to their target URLs, keeping navigation within the active locale and base path.

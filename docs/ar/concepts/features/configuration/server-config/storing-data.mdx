@@ -35,6 +35,10 @@ doc_type: 'guide'
 تخزين البيانات في `S3` و`AzureBlobStorage` و`HDFS` (غير مدعوم) باستخدام قرص من الأنواع `s3`،
 و`azure_blob_storage` و`hdfs` (غير مدعوم) على التوالي.
 
+<Note>
+  يمكن أيضًا استخدام نوع القرص `s3` مع موفري تخزين الكائنات المتوافقين مع S3، مثل Alibaba Cloud Object Storage Service. قم بتهيئة `endpoint` باستخدام نقطة النهاية المتوافقة مع S3 الخاصة بالموفر، مع مراعاة أي متطلبات توافق خاصة به.
+</Note>
+
 يتطلب إعداد القرص ما يلي:
 
 1. قسم `type`، وتكون قيمته إحدى القيم `s3` أو `azure_blob_storage` أو `hdfs` (غير مدعوم) أو `local_blob_storage` أو `web`.
