@@ -57,6 +57,10 @@ This pattern works for workloads that write and then immediately read back the s
 
 Any HTTP client that can add a query parameter works, including `curl`, [clickhouse-connect](/integrations/python), JDBC/ODBC, and others. For `clickhouse-go` (v2), use HTTP mode as noted above.
 
+### Read-after-write consistency {#read-after-write-consistency}
+
+Use the same `session_id` for a write and its subsequent read queries. Replica-aware routing sends those requests to the same replica, so the reads see the latest write even if the other replicas haven't received it yet. This provides read-after-write consistency for as long as the `session_id` continues to map to the same replica.
+
 ### Check which replica you hit {#check-which-replica}
 
 Run the `SELECT hostName()` example above again with the same `session_id`. You should get the same hostname. A different `session_id` may map to a different replica.

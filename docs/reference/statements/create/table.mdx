@@ -106,7 +106,7 @@ SELECT x, toTypeName(x) FROM t1;
 
 If the type is not `Nullable` and if `NULL` is specified, it will be treated as `Nullable`; if `NOT NULL` is specified, then no. For example, `INT NULL` is the same as `Nullable(INT)`. If the type is `Nullable` and `NULL` or `NOT NULL` modifiers are specified, the exception will be thrown.
 
-See also [data_type_default_nullable](/reference/settings/session-settings#data_type_default_nullable) setting.
+See also [data_type_default_nullable](/reference/settings/session-settings/other#data_type_default_nullable) setting.
 
 ## Default Values {#default_values}
 
@@ -341,7 +341,7 @@ Defines storage time for values. Can be specified only for MergeTree-family tabl
 
 By default, ClickHouse applies `lz4` compression in the self-managed version, and `zstd` in ClickHouse Cloud. 
 
-For `MergeTree`-engine family you can change the default compression method in the [compression](/reference/settings/server-settings/settings#compression) section of a server configuration.
+For `MergeTree`-engine family you can change the default compression method in the [compression](/reference/settings/server-settings/settings/other#compression) section of a server configuration.
 
 You can also define the compression method for each individual column in the `CREATE TABLE` query.
 
@@ -375,7 +375,7 @@ You can't decompress ClickHouse database files with external utilities like `lz4
 
 Compression is supported for the following table engines:
 
-- [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) family. Supports column compression codecs and selecting the default compression method by [compression](/reference/settings/server-settings/settings#compression) settings.
+- [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) family. Supports column compression codecs and selecting the default compression method by [compression](/reference/settings/server-settings/settings/other#compression) settings.
 - [Log](/reference/engines/table-engines/log-family/index) family. Uses the `lz4` compression method by default and supports column compression codecs.
 - [Set](/reference/engines/table-engines/special/set). Only supported the default compression.
 - [Join](/reference/engines/table-engines/special/join). Only supported the default compression.
@@ -483,7 +483,7 @@ ENGINE = MergeTree()
 
 ### Encryption Codecs {#encryption-codecs}
 
-These codecs don't actually compress data, but instead encrypt data on disk. These are only available when an encryption key is specified by [encryption](/reference/settings/server-settings/settings#encryption) settings. Note that encryption only makes sense at the end of codec pipelines, because encrypted data usually can't be compressed in any meaningful way.
+These codecs don't actually compress data, but instead encrypt data on disk. These are only available when an encryption key is specified by [encryption](/reference/settings/server-settings/settings/other#encryption) settings. Note that encryption only makes sense at the end of codec pipelines, because encrypted data usually can't be compressed in any meaningful way.
 
 Encryption codecs:
 
