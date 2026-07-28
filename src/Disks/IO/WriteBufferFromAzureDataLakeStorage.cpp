@@ -281,6 +281,15 @@ WriteBufferFromAzureDataLakeStorage::~WriteBufferFromAzureDataLakeStorage()
         LOG_INFO(log, "Outcome of publishing ADLS Gen2 file `{}` is unknown. It holds either its previous "
                  "contents or the new ones, never a partial object.", blob_path);
     }
+    else if (published && (canceled || !finalized))
+    {
+        /// `preFinalize` is public and publishes before `finalized` is set, so a caller may cancel or
+        /// drop the buffer after the target was already replaced. Reporting it as unchanged or unwritten
+        /// would describe the opposite of what happened. A clean `finalize` stays silent, as before.
+        LOG_INFO(log, "WriteBufferFromAzureDataLakeStorage for `{}` was {} after publishing. The file "
+                 "holds the new contents.",
+                 blob_path, canceled ? "canceled" : "dropped without being finalized");
+    }
     else if (canceled)
     {
         LOG_INFO(log, "WriteBufferFromAzureDataLakeStorage was canceled. File `{}` is unchanged.", blob_path);
@@ -429,7 +438,8 @@ void WriteBufferFromAzureDataLakeStorage::ensureCreated()
             throw Exception(
                 ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
                 "Cannot stage a write to ADLS Gen2 file `{}`: the object key is too long to append a "
-                "staging suffix within the {}-byte limit",
+                "staging suffix within the {}-byte limit. Staging is a sibling of the target, so only "
+                "the file name can be shortened: a shorter parent directory is what makes room",
                 blob_path, MAX_BLOB_KEY_SIZE);
         buildStagingClients();
 

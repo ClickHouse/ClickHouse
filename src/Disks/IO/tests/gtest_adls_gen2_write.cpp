@@ -550,6 +550,93 @@ TEST(AdlsGen2Write, AmbiguousPublishDoesNotClaimTheTargetIsUnchanged)
     EXPECT_NE(log_text.find("never a partial object"), String::npos) << log_text;
 }
 
+/// `preFinalize` is public and publishes there, before `finalized` is set, so a caller may cancel a
+/// buffer whose target has already been replaced. `MergedBlockOutputStream` has exactly that shape: it
+/// preFinalizes every file and its `Finalizer::Impl::cancel` later cancels all of them, so one file's
+/// failure cancels siblings that already published. Reporting those as unchanged would be backwards.
+///
+/// No fatal `ASSERT_` may run while the buffer is still live here: `WriteBuffer`'s own destructor
+/// aborts the process when a buffer is neither finalized nor cancelled and no exception is in flight
+/// (`WriteBuffer.cpp:24-35`), so a fatal assertion returning early from the test body would abort the
+/// whole binary instead of failing one test. Every check is therefore either non-fatal or made after
+/// the buffer has been disposed.
+TEST(AdlsGen2Write, CancelAfterSuccessfulPreFinalizeReportsThePublishedFile)
+{
+    String log_text;
+    size_t renames_before_cancel = 0;
+    bool finalized_before_cancel = true;
+    std::vector<RecordedRequest> deletes;
+    std::vector<RecordedRequest> final_path_requests;
+    {
+        CapturedWriterLog captured;
+        WriteFixture fixture;
+
+        auto buffer = fixture.makeBuffer();
+        writeSomeData(*buffer);
+        buffer->preFinalize();
+        /// Published, yet neither finalized nor cancelled yet: exactly the window the caller cancels in.
+        renames_before_cancel = fixture.requestsOf(Op::Rename).size();
+        finalized_before_cancel = buffer->isFinalized();
+
+        buffer->cancel();
+        EXPECT_NO_THROW(buffer.reset());
+        log_text = captured.text();
+        deletes = fixture.requestsOf(Op::Delete);
+        final_path_requests = fixture.requestsTargetingFinalPath();
+    }
+
+    ASSERT_EQ(renames_before_cancel, 1u) << "the file must be published by preFinalize for this to test anything";
+    ASSERT_FALSE(finalized_before_cancel) << "published while not finalized is the state under test";
+
+    /// The published guard holds: cancelling after publication must not delete the renamed-away staging
+    /// object, and must certainly not touch the target.
+    EXPECT_TRUE(deletes.empty());
+    ASSERT_EQ(final_path_requests.size(), 1u);
+    EXPECT_EQ(classifyRequest(final_path_requests[0]), Op::Rename);
+
+    EXPECT_EQ(log_text.find("is unchanged"), String::npos) << log_text;
+    EXPECT_NE(log_text.find("canceled after publishing"), String::npos) << log_text;
+    EXPECT_NE(log_text.find("holds the new contents"), String::npos) << log_text;
+}
+
+/// Same published-but-not-finalized state reached by dropping the buffer instead of cancelling it. The
+/// caller has to be failing for this to be legal: `WriteBuffer`'s own destructor asserts that a buffer
+/// is finalized or cancelled unless an exception is in flight, which is why the throw is not decoration
+/// and why, as above, nothing fatal may be asserted while the buffer is alive.
+TEST(AdlsGen2Write, DroppingAfterSuccessfulPreFinalizeDoesNotClaimTheFileWasNotWritten)
+{
+    String log_text;
+    size_t renames_before_drop = 0;
+    std::vector<RecordedRequest> deletes;
+    {
+        CapturedWriterLog captured;
+        WriteFixture fixture;
+
+        try
+        {
+            auto buffer = fixture.makeBuffer();
+            writeSomeData(*buffer);
+            buffer->preFinalize();
+            renames_before_drop = fixture.requestsOf(Op::Rename).size();
+            throw std::runtime_error("the caller failed after the file was published");
+        }
+        catch (const std::runtime_error &)
+        {
+        }
+
+        log_text = captured.text();
+        deletes = fixture.requestsOf(Op::Delete);
+    }
+
+    ASSERT_EQ(renames_before_drop, 1u) << "the file must be published by preFinalize for this to test anything";
+    EXPECT_TRUE(deletes.empty()) << log_text;
+
+    EXPECT_EQ(log_text.find("was not written"), String::npos) << log_text;
+    EXPECT_EQ(log_text.find("neither published nor cleaned up"), String::npos) << log_text;
+    EXPECT_NE(log_text.find("dropped without being finalized"), String::npos) << log_text;
+    EXPECT_NE(log_text.find("holds the new contents"), String::npos) << log_text;
+}
+
 /// The plain cancellation case keeps saying the target is unchanged, because there it provably is: no
 /// rename was ever issued.
 TEST(AdlsGen2Write, PlainCancellationStillReportsTheTargetUnchanged)
@@ -820,6 +907,67 @@ TEST(AdlsGen2Write, StagingDeleteIsEtagConditionalAndLeavesForeignObjects)
     EXPECT_NO_THROW(buffer.reset());
 }
 
+/// A lost response to the staging create leaves an object behind while the process is still alive: the
+/// retry is answered `PathAlreadyExists`, so this write never observed that object's ETag and cannot
+/// prove it owns it. It is left in place deliberately, because deleting an object of unknown ownership
+/// is the bug this whole change fixes. That residual is disclosed rather than papered over.
+TEST(AdlsGen2Write, LostCreateResponseLeavesTheFirstStagingObjectAndNeverDeletesIt)
+{
+    WriteFixture fixture;
+    /// The service saw the first create and answers the retry with a collision.
+    fixture.transport->script(
+        Op::Create,
+        {{Azure::Core::Http::HttpStatusCode::Conflict, "PathAlreadyExists", {}},
+         {Azure::Core::Http::HttpStatusCode::Created, {}, "\"e-second\""}});
+    fixture.transport->scriptForever(Op::Flush, {Azure::Core::Http::HttpStatusCode::InternalServerError, "InternalError", {}});
+
+    auto buffer = fixture.makeBuffer();
+    writeSomeData(*buffer);
+    EXPECT_THROW(buffer->finalize(), DB::Exception);
+    EXPECT_NO_THROW(buffer.reset());
+
+    const auto creates = fixture.requestsOf(Op::Create);
+    ASSERT_EQ(creates.size(), 2u);
+    ASSERT_NE(creates[0].path, creates[1].path);
+
+    /// The orphan: the first staging object is never deleted, and never written to either.
+    const auto deletes = fixture.requestsOf(Op::Delete);
+    ASSERT_EQ(deletes.size(), 1u);
+    EXPECT_EQ(deletes[0].path, creates[1].path) << "only the object whose ETag this write observed";
+    EXPECT_EQ(deletes[0].header("If-Match"), "\"e-second\"");
+    for (const auto & request : fixture.transport->requests)
+        if (request.path == creates[0].path)
+            EXPECT_EQ(classifyRequest(request), Op::Create) << request.method;
+
+    EXPECT_TRUE(fixture.requestsTargetingFinalPath().empty());
+}
+
+/// A lost response to the flush is the other live-process orphan. The flush took effect, so the object's
+/// ETag moved, but this write still holds the create ETag; the conditional cleanup delete is therefore
+/// refused with 412 and the object stays. Same reasoning: an object we cannot identify is not ours to
+/// remove. The refusal must not escape, since cleanup runs from a `noexcept` path.
+TEST(AdlsGen2Write, LostFlushResponseLeavesStagingInPlaceRatherThanDeletingIt)
+{
+    WriteFixture fixture;
+    fixture.transport->scriptForever(Op::Flush, {Azure::Core::Http::HttpStatusCode::InternalServerError, "InternalError", {}});
+    /// The staging object now holds post-flush content, so the create ETag no longer matches.
+    fixture.transport->scriptForever(Op::Delete, {Azure::Core::Http::HttpStatusCode::PreconditionFailed, "ConditionNotMet", {}});
+
+    auto buffer = fixture.makeBuffer();
+    writeSomeData(*buffer);
+    EXPECT_THROW(buffer->finalize(), DB::Exception);
+
+    const auto deletes = fixture.requestsOf(Op::Delete);
+    ASSERT_EQ(deletes.size(), 1u) << "a refused delete must not be retried or forced";
+    EXPECT_EQ(deletes[0].path, fixture.stagingPath());
+    EXPECT_EQ(deletes[0].header("If-Match"), "\"etag-after-create\"")
+        << "the delete is pinned to the ETag this write observed, which the flush has moved past";
+
+    EXPECT_NO_THROW(buffer.reset());
+    /// Still refused after the destructor's second attempt, and the target was never touched.
+    EXPECT_TRUE(fixture.requestsTargetingFinalPath().empty());
+}
+
 /// Cleanup is idempotent, so unlike the flush and the rename it keeps its retries: a transient failure
 /// must not silently leave an orphan. Only a refusal (the ETag no longer matches) stops it, which
 /// StagingDeleteIsEtagConditionalAndLeavesForeignObjects pins.
@@ -943,6 +1091,44 @@ TEST(AdlsGen2Write, PublishTargetsTheContainerWhenTheUrlCarriesTheAccount)
     ASSERT_EQ(renames.size(), 1u);
     EXPECT_EQ(renames[0].path, "myaccount/mycontainer/tables/mytable/data/data-0.parquet");
     EXPECT_EQ(renames[0].header("x-ms-rename-source"), "/" + creates[0].path);
+}
+
+/// The error for a key that cannot be staged has to be actionable. Since only the file name may be
+/// shortened, a key well inside the 1024-byte limit is still unwritable when its parent directory alone
+/// leaves no room, and naming the byte limit alone would send the operator after the wrong thing.
+TEST(AdlsGen2Write, KeyThatCannotBeStagedNamesTheParentDirectory)
+{
+    WriteFixture fixture;
+    /// A parent long enough that no file name fits beside it, and a short base name so the message
+    /// cannot be explained by the key as a whole being over the limit.
+    const String key = String(1010, 'd') + "/b";
+    ASSERT_LT(key.size(), 1024u) << "the key itself is within the limit; only staging does not fit";
+
+    auto buffer = std::make_unique<WriteBufferFromAzureDataLakeStorage>(
+        fixture.endpoint,
+        fixture.auth_method,
+        fixture.clientOptions(),
+        key,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        fixture.write_settings,
+        std::make_shared<AzureBlobStorage::RequestSettings>(fixture.request_settings));
+
+    try
+    {
+        writeSomeData(*buffer);
+        buffer->finalize();
+        FAIL() << "a key with no room for a staging sibling must fail the write";
+    }
+    catch (const DB::Exception & e)
+    {
+        const String message = e.message();
+        EXPECT_NE(message.find("parent directory"), String::npos) << message;
+        EXPECT_NE(message.find("sibling"), String::npos) << message;
+    }
+
+    /// Nothing was attempted against the service, so certainly not against the target.
+    EXPECT_TRUE(fixture.transport->requests.empty());
+    EXPECT_NO_THROW(buffer.reset());
 }
 
 /// Shortening must never cut into the parent directory: a staging object in another directory breaks
