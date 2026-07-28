@@ -1,8 +1,7 @@
--- The plan assertions below match analyzer-generated column identifiers (`__table2.`) in the legacy
--- `EXPLAIN` output, so both are pinned for the whole file. The old analyzer does not build the plan
--- shape that triggers this bug, so nothing is lost by pinning.
+-- The plan assertions below match analyzer-generated column identifiers (`__table2.`) in the
+-- `EXPLAIN` output, so the analyzer is pinned for the whole file. The old analyzer does not build the
+-- plan shape that triggers this bug, so nothing is lost by pinning.
 SET enable_analyzer = 1;
-SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
