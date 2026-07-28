@@ -97,6 +97,39 @@ Tuple key, collapsing element type, declined
 62
 1
 1
+Decimal key, integer source, declined
+1
+1.2345
+2
+1
+1
+1
+1.2345
+1
+Decimal key, float source, declined
+16777216
+16777217
+99
+1
+1
+Decimal key, Float64 source, declined
+9007199254740992
+9007199254740993
+1
+Time64 key, integer source, declined
+00:00:01.0000
+00:00:01.5000
+00:00:02.0000
+1
+1
+Finer-scale Decimal source stays exact
+1
+1
+1
+Scale-zero Decimal key, integer source, stays exact
+16777216
+1
+1
 Injective numeric narrowing stays exact
 50000
 10

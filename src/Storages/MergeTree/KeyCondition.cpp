@@ -2646,13 +2646,21 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
 /// asking whether the runtime `key -> set` cast can map two DISTINCT key values onto ONE set
 /// value *silently*.
 ///
-/// For same-family numeric narrowing it cannot: `castColumnAccurate` REJECTS an out-of-range
-/// value (`accurateCast(4294967297::UInt64, 'UInt32')` throws CANNOT_CONVERT_TYPE) rather than
-/// truncating it, so the conversion is injective on the domain it accepts and the whole query
-/// fails loudly instead of answering from a collapsed set. The conversions that DO collapse
-/// silently are:
+/// The classes it currently detects are:
 ///   - a text key against a set element of a DIFFERENT type, text or not;
-///   - a loss of Decimal / DateTime64 / Time64 SCALE: 1.2345 and 1.2300 both become 1.23.
+///   - a scaled key (Decimal / DateTime64 / Time64) whose runtime cast goes through
+///     `DecimalUtils::convertToImpl`, which rejects only on range overflow: a coarser target scale
+///     divides the extra digits away (1.2345 and 1.2300 both become 1.23), an integer target takes
+///     the whole part, and a float target loses mantissa precision.
+///
+/// It is a detector, not an exhaustive account of the conversions that can collapse. A conversion
+/// it does not classify is treated as merely approximate by the caller, which is weaker than
+/// declining but still stricter than the exact treatment the atom would otherwise get. Note that
+/// failing `canBeSafelyCast` at the call site does NOT by itself make an atom decline: the only
+/// path that acts on a safe forward cast is the early exit that casts the set values directly, and
+/// failing it falls through to `castColumnAccurateOrNull`, which still builds a live atom.
+/// The known residual is a non-`Nullable` set element, which takes the `else` branch below and is
+/// tracked separately.
 ///
 /// Composite types are walked elementwise so this predicate has the same reach as
 /// `canBeSafelyCast`, the counterpart it complements.
@@ -2665,7 +2673,7 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
     auto set_which = WhichDataType(set_unwrapped);
 
     /// Walk matching composites elementwise, mirroring `canBeSafelyCast`. A shape mismatch is not
-    /// itself a collapse: `canBeSafelyCast` at the call site rejects those conversions already.
+    /// itself a collapse, so it is left to the approximate treatment rather than declined here.
     if (key_which.isArray() && set_which.isArray())
         return keyToSetConversionMayCollapse(
             assert_cast<const DataTypeArray &>(*key_unwrapped).getNestedType(),
@@ -2703,14 +2711,40 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
     if (key_which.isStringOrFixedString() && !key_unwrapped->equals(*set_unwrapped))
         return true;
 
-    /// A scale reduction maps a whole interval of key values onto one set value.
-    auto key_scale = tryGetDecimalScale(*key_unwrapped);
-    auto set_scale = tryGetDecimalScale(*set_unwrapped);
-    if (key_scale && set_scale && *key_scale > *set_scale)
-        return true;
+    /// A scaled key (`Decimal`, `DateTime64`, `Time64`) is cast at runtime through
+    /// `DecimalUtils::convertToImpl`, which rejects only on RANGE overflow. Two of its branches lose
+    /// information silently, and they need different tests because they lose different things.
+    if (auto key_scale = tryGetDecimalScale(*key_unwrapped))
+    {
+        if (auto set_scale = tryGetDecimalScale(*set_unwrapped))
+        {
+            /// Same family, coarser target scale: `getWholePart`-style division drops the extra
+            /// digits, so 1.2345 and 1.2300 both become 1.23.
+            if (*key_scale > *set_scale)
+                return true;
+        }
+        else if (set_which.isInteger() && *key_scale > 0)
+        {
+            /// The integer branch takes `getWholePart`, i.e. integer division by the scale
+            /// multiplier, so every value sharing a whole part collapses onto it. A key scale of 0
+            /// makes that division the identity, which is why the test is on the scale and not
+            /// merely on the key being a `Decimal`.
+            return true;
+        }
+        else if (set_which.isFloat())
+        {
+            /// The float branch is `static_cast<To>(static_cast<Float64>(value) / multiplier)` with
+            /// no strictness check of any kind, so a key past the target's mantissa range collapses
+            /// onto its neighbour. This happens for a key scale of 0 too, hence no scale test here.
+            return true;
+        }
+    }
 
-    /// Anything else either fails the `canBeSafelyCast` check at the call site, or is a
-    /// same-family conversion whose `castColumnAccurate` rejects rather than truncates.
+    /// The conversions this predicate does not classify are treated as merely approximate by the
+    /// caller. Of those, same-family numeric narrowing is genuinely injective:
+    /// `accurate::convertNumeric` is instantiated with `strict = true` and compares the round trip,
+    /// so `accurateCast(4294967297::UInt64, 'UInt32')` throws CANNOT_CONVERT_TYPE rather than
+    /// truncating, and the query fails loudly instead of answering from a collapsed set.
     return false;
 }
 

@@ -8,11 +8,12 @@
 -- Regression test for issue #111340: `transform_null_in = 1`, non-Nullable key column, `IN`/`NOT IN`
 -- a subquery whose result is Nullable. Previously threw CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN (349).
 --
--- Cases A, B, D, D2, C, C2 -- C11, E, F, H, H2, I, J, G, K cover, in order: the folded-default pair,
+-- Cases A, B, D, D2, C, C2 -- C16, E, F, H, H2, I, J, G, K cover, in order: the folded-default pair,
 -- the numeric analogue and its type-level-granularity sibling, the cross-type superset direction and
 -- its counterexample, the two silent-collapse families (text key against a different type / key with a
--- finer Decimal or DateTime64 scale) with their exactness controls (injective numeric narrowing,
--- identical text types, identical composite element types), the `NOT has` caller, the
+-- finer Decimal or DateTime64 scale, or a scaled key against a scale-less integer or float source)
+-- with their exactness controls (injective numeric narrowing, identical text types, identical
+-- composite element types, a finer-scale source, a scale-zero key), the `NOT has` caller, the
 -- `LowCardinality(Nullable(T))` source, the multi-column set and its emptiness ordering, the
 -- all-NULL empty set, the positive `IN` direction,
 -- and the two shapes that must stay unchanged (`Tuple(Nullable, Nullable)` key, duplicate key mapping).
@@ -225,6 +226,74 @@ SELECT hex(k.1) FROM t_tc WHERE k IN (SELECT CAST(tuple('b', 2), 'Nullable(Tuple
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_tc WHERE k IN (SELECT CAST(tuple('b', 2), 'Nullable(Tuple(String, UInt64))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%in 1-element set%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_tc WHERE k IN (SELECT CAST(tuple('b', 2), 'Nullable(Tuple(String, UInt64))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%Parts: 1/3%';
 
+-- Cases C12 -- C16: the scale-loss family also fires when the set element reports NO scale at all,
+-- and the two branches of `DecimalUtils::convertToImpl` that reach it lose different things, so each
+-- needs its own case. An integer target takes the whole part (integer division by the scale
+-- multiplier), while a float target divides in `Float64` with no strictness check whatsoever. Both
+-- reject only on range overflow. These are wrong results on master too, where the atom is treated as
+-- fully exact; before this case group the fix left them merely relaxed, which does not protect the
+-- positive `IN` direction.
+SELECT 'Decimal key, integer source, declined';
+DROP TABLE IF EXISTS t_di SETTINGS ignore_drop_queries_probability = 0;
+CREATE TABLE t_di (d Decimal(10, 4)) ENGINE = MergeTree ORDER BY d PARTITION BY d;
+INSERT INTO t_di VALUES (1.0000), (1.2345), (2.0000);
+-- Both 1.0 and 1.2345 have whole part 1, so both match the set value 1 at runtime.
+SELECT d FROM t_di WHERE d IN (SELECT CAST(1, 'Nullable(UInt64)') UNION ALL SELECT NULL) ORDER BY d;
+SELECT d FROM t_di WHERE d NOT IN (SELECT CAST(1, 'Nullable(UInt64)') UNION ALL SELECT NULL) ORDER BY d;
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_di WHERE d IN (SELECT CAST(1, 'Nullable(UInt64)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_di WHERE d IN (SELECT CAST(1, 'Nullable(UInt64)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
+-- The signed sibling reaches the same branch.
+SELECT d FROM t_di WHERE d IN (SELECT CAST(1, 'Nullable(Int64)') UNION ALL SELECT NULL) ORDER BY d;
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_di WHERE d IN (SELECT CAST(1, 'Nullable(Int64)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
+
+-- Case C13: the float branch, with a key scale of ZERO. This is the case that stops the arm from
+-- being gated on `key_scale > 0`: no digits are dropped, the loss is float mantissa precision, and
+-- 16777217 collapses onto 16777216 in `Float32`.
+SELECT 'Decimal key, float source, declined';
+DROP TABLE IF EXISTS t_df SETTINGS ignore_drop_queries_probability = 0;
+CREATE TABLE t_df (d Decimal(20, 0)) ENGINE = MergeTree ORDER BY d PARTITION BY d;
+INSERT INTO t_df VALUES (16777216), (16777217), (99);
+SELECT d FROM t_df WHERE d IN (SELECT CAST(16777216, 'Nullable(Float32)') UNION ALL SELECT NULL) ORDER BY d;
+SELECT d FROM t_df WHERE d NOT IN (SELECT CAST(16777216, 'Nullable(Float32)') UNION ALL SELECT NULL) ORDER BY d;
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_df WHERE d IN (SELECT CAST(16777216, 'Nullable(Float32)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_df WHERE d IN (SELECT CAST(16777216, 'Nullable(Float32)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
+-- `Float64` collapses at its own mantissa boundary, so the arm must not be keyed on `Float32`.
+SELECT 'Decimal key, Float64 source, declined';
+DROP TABLE IF EXISTS t_dw SETTINGS ignore_drop_queries_probability = 0;
+CREATE TABLE t_dw (d Decimal(30, 0)) ENGINE = MergeTree ORDER BY d PARTITION BY d;
+INSERT INTO t_dw VALUES (9007199254740992), (9007199254740993), (99);
+SELECT d FROM t_dw WHERE d IN (SELECT CAST(9007199254740992, 'Nullable(Float64)') UNION ALL SELECT NULL) ORDER BY d;
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dw WHERE d IN (SELECT CAST(9007199254740992, 'Nullable(Float64)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
+
+-- Case C15: `Time64` shares the scale machinery, and unlike `DateTime64` it gets no help from
+-- `Set::execute`, whose sub-second precision guard is keyed on `TypeIndex::DateTime64` alone. So the
+-- integer branch really does collapse here, and the arm must reach every scaled key family rather
+-- than `Decimal` only.
+SELECT 'Time64 key, integer source, declined';
+DROP TABLE IF EXISTS t_t64 SETTINGS ignore_drop_queries_probability = 0;
+CREATE TABLE t_t64 (d Time64(4)) ENGINE = MergeTree ORDER BY d PARTITION BY d;
+INSERT INTO t_t64 VALUES ('00:00:01.0000'), ('00:00:01.5000'), ('00:00:02.0000');
+SELECT d FROM t_t64 WHERE d IN (SELECT CAST(1, 'Nullable(UInt64)') UNION ALL SELECT NULL) ORDER BY d;
+SELECT d FROM t_t64 WHERE d NOT IN (SELECT CAST(1, 'Nullable(UInt64)') UNION ALL SELECT NULL) ORDER BY d;
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_t64 WHERE d IN (SELECT CAST(1, 'Nullable(UInt64)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_t64 WHERE d IN (SELECT CAST(1, 'Nullable(UInt64)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
+
+-- Case C14 (CONTROL, must NOT change): a set scale FINER than the key's loses nothing, so the atom
+-- stays exact and keeps pruning. This is what stops the scaled-key arm from being "fixed" by
+-- declining every scaled key.
+SELECT 'Finer-scale Decimal source stays exact';
+SELECT d FROM t_di WHERE d IN (SELECT CAST(1, 'Nullable(Decimal(10, 6))') UNION ALL SELECT NULL) ORDER BY d;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_di WHERE d IN (SELECT CAST(1, 'Nullable(Decimal(10, 6))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%in 1-element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_di WHERE d IN (SELECT CAST(1, 'Nullable(Decimal(10, 6))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 1/3%';
+
+-- Case C16 (CONTROL, must NOT change): a key scale of ZERO makes the integer branch's division the
+-- identity, so nothing collapses and the atom must stay exact. This is what stops the integer arm
+-- from being keyed merely on "the key is a scaled type".
+SELECT 'Scale-zero Decimal key, integer source, stays exact';
+SELECT d FROM t_df WHERE d IN (SELECT CAST(16777216, 'Nullable(UInt64)') UNION ALL SELECT NULL) ORDER BY d;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_df WHERE d IN (SELECT CAST(16777216, 'Nullable(UInt64)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%in 1-element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_df WHERE d IN (SELECT CAST(16777216, 'Nullable(UInt64)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 1/3%';
+
 -- Case C5 (CONTROL, must NOT change): an injective same-family numeric narrowing stays exact and
 -- keeps pruning. `castColumnAccurate` REJECTS an out-of-range `UInt64 -> UInt32` value rather than
 -- truncating it, so no two keys can share a set value and the atom is genuinely exact. This control
@@ -376,3 +445,7 @@ DROP TABLE t_f2;
 DROP TABLE t_f1;
 DROP TABLE t_tc;
 DROP TABLE t_nn;
+DROP TABLE t_di;
+DROP TABLE t_df;
+DROP TABLE t_dw;
+DROP TABLE t_t64;
