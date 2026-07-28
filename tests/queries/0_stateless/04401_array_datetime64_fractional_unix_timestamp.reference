@@ -1,0 +1,42 @@
+csv_array_frac	['2026-07-09 08:24:33.954','2026-07-09 08:24:33.954']
+csv_array_frac_eq_ticks	1
+json_array_frac	['2026-07-09 08:24:33.954']
+tsv_array_frac	['2026-07-09 08:24:33.954']
+values_array_frac	1
+map_frac	{'k':'2026-07-09 08:24:33.954'}
+nullable_frac	['2026-07-09 08:24:33.954',NULL]
+neg_frac	['1925-12-12 13:14:15.123']
+csv_neg_zero_frac	1969-12-31 23:59:59.877
+json_neg_zero_frac	1969-12-31 23:59:59.123
+csv_neg_one_frac	1969-12-31 23:59:58.877
+scalar_neg_zero_frac	1969-12-31 23:59:59.877
+scalar_eq_container_neg_zero	1
+scalar_eq_container_neg_one	1
+csv_neg_shorthand	1969-12-31 23:59:59.877
+json_neg_shorthand	1969-12-31 23:59:59.123
+pos_shorthand	1970-01-01 00:00:00.123
+scalar_eq_container_neg_shorthand	1
+be_unquoted_bare_int	2026-07-09 08:24:33.954
+be_scalar_bare_s6	2026-07-09 08:24:33.954000
+be_quoted_bare_s6	['2026-07-09 08:24:33.954000']
+be_unquoted_bare_s6	['1970-01-21 15:26:25.473954']
+be_scalar_eq_quoted_bare_s6	1
+be_unquoted_differs_bare_s6	1
+int64_min_bare	-9223372036854775808
+int64_min_plus1_bare	-9223372036854775807
+int64_max_bare	9223372036854775807
+json_int64_min_bare	-9223372036854775808
+pos_whole_scalar_eq_container	1
+scale0	['2026-07-09 08:24:33']
+scale6_extra	['2026-07-09 08:24:33.954321']
+scale3_short	['2026-07-09 08:24:33.950']
+bc_bare_int_ticks	['1970-01-18 09:49:53.808']
+bc_neg_bare_int_ticks	['1969-12-15 21:49:45.256']
+dot_lhs_scalar_eq_container	1
+dot_rhs_scalar_eq_container	1
+infer_datelike_dot_is_string	Nullable(String)
+infer_datelike_dot_value	5981 10:01.000
+try_datelike_dot_is_null	\N
+datelike_dot_scalar_throw_saturates	2299-12-31 00:00:00.000
+datelike_dot_scalar_eq_try	1
+datelike_no_frac_scalar_throw_saturates	2299-12-31 00:00:00.000

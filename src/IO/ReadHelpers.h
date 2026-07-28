@@ -1159,6 +1159,71 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
     return readTimeTextFallback<ReturnType, t64_mode>(time, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
 }
 
+/// Finalizes the sign of a DateTime64/Time64 parsed from the `[-]whole.fractional` form and
+/// returns the multiplier (-1 or 1) to apply to the assembled decimal.
+/// Two independent cases (mutually exclusive on `is_negative`):
+///   1. A pre-epoch negative whole part (e.g. an ISO datetime like `1925-12-12 13:14:15.123`
+///      parses to whole < 0 without a leading '-'): fold the fraction into the internal
+///      `<whole+1>.<scale-fraction>` representation, flipping the sign when the whole rolls to 0.
+///   2. An explicit leading '-' with a zero whole part (e.g. `-0.123` s == 1969-12-31 23:59:59.877):
+///      readIntText normalises "-0" to 0, so the sign must be restored via the multiplier.
+template <typename DecimalType>
+inline int adjustFractionalDateTimeSign(DB::DecimalUtils::DecimalComponents<DecimalType> & components, bool is_negative, UInt32 scale)
+{
+    int negative_fraction_multiplier = 1;
+
+    if (!is_negative && components.whole < 0 && components.fractional != 0)
+    {
+        const auto scale_multiplier = DecimalUtils::scaleMultiplier<typename DecimalType::NativeType>(scale);
+        ++components.whole;
+        components.fractional = scale_multiplier - components.fractional;
+        if (!components.whole)
+            negative_fraction_multiplier = -1;
+    }
+
+    if (is_negative && components.whole == 0 && components.fractional != 0)
+        negative_fraction_multiplier = -1;
+
+    return negative_fraction_multiplier;
+}
+
+/// Reads the fractional digits of a DateTime64/Time64 after a consumed '.', accumulating them
+/// into `components.fractional` (padded to `scale`) and skipping any digits beyond precision.
+/// Returns the number of fractional digits present (0 when '.' is immediately followed by a
+/// non-digit). Callers reject a token that carries neither a whole part nor a fractional digit
+/// (a lone '.' or '-.'), which the padding loop would otherwise silently coerce to the epoch.
+template <typename DecimalType>
+inline size_t readFractionalDateTimePart(DB::DecimalUtils::DecimalComponents<DecimalType> & components, UInt32 scale, ReadBuffer & buf)
+{
+    size_t num_digits = 0;
+
+    /// Read digits, up to 'scale' positions.
+    for (size_t i = 0; i < scale; ++i)
+    {
+        if (!buf.eof() && isNumericASCII(*buf.position()))
+        {
+            components.fractional *= 10;
+            components.fractional += *buf.position() - '0';
+            ++buf.position();
+            ++num_digits;
+        }
+        else
+        {
+            /// Adjust to scale.
+            components.fractional *= 10;
+        }
+    }
+
+    /// Ignore digits that are out of precision.
+    while (!buf.eof() && isNumericASCII(*buf.position()))
+    {
+        ++buf.position();
+        ++num_digits;
+    }
+
+    return num_digits;
+}
+
 template <typename ReturnType>
 inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr, bool saturate_on_overflow = true)
 {
@@ -1168,8 +1233,25 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
     bool is_negative_timestamp = (!buf.eof() && *buf.position() == '-');
     bool is_empty = buf.eof();
 
+    /// Cumulative byte offset before the whole part. The whole reader consumes an optional leading
+    /// '-' plus the whole digits (it tolerates a sign-only whole such as `-.5`, leaving '.' unread).
+    /// Comparing the advance against the sign length tells us whether a whole digit was actually
+    /// consumed, without a buffer lookahead (chunk-boundary safe, unlike inspecting position()[1]).
+    size_t count_before_whole = buf.count();
+
     if (!is_empty)
     {
+        /// Recover from a whole-reader failure only for the leading-dot shorthand (`.5`, `-.5`),
+        /// where the reader consumed nothing but the optional sign and stopped at the '.'. If it
+        /// consumed date/time bytes first (e.g. `5981 10:01` before a trailing `.000`), the token
+        /// is not a fractional unix timestamp: reject it as master does, instead of feeding a bogus
+        /// whole part into the fractional branch (which overflows at large scale during inference).
+        auto recover_on_leading_dot = [&]
+        {
+            return !buf.eof() && *buf.position() == '.'
+                && buf.count() == count_before_whole + (is_negative_timestamp ? 1 : 0);
+        };
+
         if constexpr (throw_exception)
         {
             try
@@ -1184,10 +1266,14 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         }
         else
         {
-            if (!readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow))
+            if (!readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow)
+                && !recover_on_leading_dot())
                 return ReturnType(false);
         }
     }
+
+    /// A whole digit was consumed if the reader advanced past the optional leading '-'.
+    bool whole_has_digit = buf.count() > count_before_whole + (is_negative_timestamp ? 1 : 0);
 
     int negative_fraction_multiplier = 1;
 
@@ -1197,40 +1283,19 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
     {
         ++buf.position();
 
-        /// Read digits, up to 'scale' positions.
-        for (size_t i = 0; i < scale; ++i)
+        size_t fractional_digits = readFractionalDateTimePart(components, scale, buf);
+
+        /// Reject a lone '.' / '-.' (no digit before or after the point) which the scale-padding
+        /// loop would otherwise coerce to the epoch. `.5`, `5.`, `-.5`, `0.` all carry a digit.
+        if (!whole_has_digit && fractional_digits == 0)
         {
-            if (!buf.eof() && isNumericASCII(*buf.position()))
-            {
-                components.fractional *= 10;
-                components.fractional += *buf.position() - '0';
-                ++buf.position();
-            }
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime64: no digits in the fractional unix timestamp");
             else
-            {
-                /// Adjust to scale.
-                components.fractional *= 10;
-            }
+                return ReturnType(false);
         }
 
-        /// Ignore digits that are out of precision.
-        while (!buf.eof() && isNumericASCII(*buf.position()))
-            ++buf.position();
-
-        /// Fractional part (subseconds) is treated as positive by users, but represented as a negative number.
-        /// E.g. `1925-12-12 13:14:15.123` is represented internally as timestamp `-1390214744.877`.
-        /// Thus need to convert <negative_timestamp>.<fractional> to <negative_timestamp+1>.<1-0.<fractional>>
-        /// Also, setting fractional part to be negative when whole is 0 results in wrong value, in this case multiply result by -1.
-        if (!is_negative_timestamp && components.whole < 0 && components.fractional != 0)
-        {
-            const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
-            ++components.whole;
-            components.fractional = scale_multiplier - components.fractional;
-            if (!components.whole)
-            {
-                negative_fraction_multiplier = -1;
-            }
-        }
+        negative_fraction_multiplier = adjustFractionalDateTimeSign(components, is_negative_timestamp, scale);
     }
     /// 253402300800 is the time_t value for 10000-01-01 UTC (a bit over the last year supported by DateTime64).
     /// A whole-seconds value at or above it cannot be a date (DateTime64 goes up to 9999), so it is interpreted
@@ -1290,6 +1355,10 @@ inline ReturnType readTimeTextImpl(Time64 & time64, UInt32 scale, ReadBuffer & b
 
     // try to parse the whole part
     bool parse_success = false;
+    /// Cumulative byte offset before the whole part, to tell whether a whole digit was actually
+    /// consumed (the whole reader tolerates a sign-only whole such as `-.5`, leaving '.' unread).
+    /// Chunk-boundary safe, unlike inspecting position()[1].
+    size_t count_before_whole = buf.count();
     if constexpr (throw_exception)
     {
         try
@@ -1312,9 +1381,18 @@ inline ReturnType readTimeTextImpl(Time64 & time64, UInt32 scale, ReadBuffer & b
     {
         auto ok = readTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
         parse_success = ok;
-        if (!ok && (buf.eof() || *buf.position() != '.'))
+        /// Recover from a whole-reader failure only for the leading-dot shorthand (`.5`, `-.5`),
+        /// where the reader consumed nothing but the optional sign and stopped at the '.'. If it
+        /// consumed time bytes first before a trailing '.', the token is not a fractional value:
+        /// reject it (mirrors readDateTimeTextImpl, avoids feeding a bogus whole into the fraction).
+        bool recover_on_leading_dot = !buf.eof() && *buf.position() == '.'
+            && buf.count() == count_before_whole + (is_negative_timestamp ? 1 : 0);
+        if (!ok && !recover_on_leading_dot)
             return ReturnType(false);
     }
+
+    /// A whole digit was consumed if the reader advanced past the optional leading '-'.
+    bool whole_has_digit = buf.count() > count_before_whole + (is_negative_timestamp ? 1 : 0);
 
     int negative_fraction_multiplier = 1;
 
@@ -1325,43 +1403,19 @@ inline ReturnType readTimeTextImpl(Time64 & time64, UInt32 scale, ReadBuffer & b
     {
         ++buf.position();
 
-        /// Read digits, up to 'scale' positions.
-        for (size_t i = 0; i < scale; ++i)
+        size_t fractional_digits = readFractionalDateTimePart(components, scale, buf);
+
+        /// Reject a lone '.' / '-.' (no digit on either side of the point) which the scale-padding
+        /// loop would otherwise coerce to the epoch. `.5`, `5.`, `-.5` all carry a digit and pass.
+        if (!whole_has_digit && fractional_digits == 0)
         {
-            if (!buf.eof() && isNumericASCII(*buf.position()))
-            {
-                components.fractional *= 10;
-                components.fractional += *buf.position() - '0';
-                ++buf.position();
-            }
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse Time64: no digits in the fractional value");
             else
-            {
-                /// Adjust to scale.
-                components.fractional *= 10;
-            }
+                return ReturnType(false);
         }
 
-        /// Ignore digits that are out of precision.
-        while (!buf.eof() && isNumericASCII(*buf.position()))
-            ++buf.position();
-
-        /// Fractional part (subseconds) is treated as positive by users, but represented as a negative number.
-        /// E.g. `hhh:mm:ss.123` is represented internally as timestamp `-<timestamp>.877` when timestamp is negative.
-        /// Thus need to convert <negative_timestamp>.<fractional> to <negative_timestamp+1>.<1-0.<fractional>>
-        /// Also, setting fractional part to be negative when whole is 0 results in wrong value, in this case multiply result by -1.
-        if (!is_negative_timestamp && components.whole < 0 && components.fractional != 0)
-        {
-            const auto scale_multiplier = DecimalUtils::scaleMultiplier<Time64::NativeType>(scale);
-            ++components.whole;
-            components.fractional = scale_multiplier - components.fractional;
-            if (!components.whole)
-            {
-                negative_fraction_multiplier = -1;
-            }
-        }
-
-        if (is_negative_timestamp && components.whole == 0 && components.fractional != 0)
-            negative_fraction_multiplier = -1;
+        negative_fraction_multiplier = adjustFractionalDateTimeSign(components, is_negative_timestamp, scale);
     }
     /// prevent overflow (taken from DateTime)
     else if (parse_success && whole >= 10413792000LL)
