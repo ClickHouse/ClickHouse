@@ -21,7 +21,9 @@ SET SQL_query_log_maps_probe = 'probe_value';
 --   * the read method must be pread_threadpool / threadpool (MergeTreePrefetchedReadPool::checkReadMethodAllowed);
 --   * allow_prefetched_read_pool_for_* must be on;
 --   * the PartsSplitter fault injection must be off - it takes precedence in ReadFromMergeTree and
---     reads ReadType::InOrder, which uses no prefetch pool at all.
+--     reads ReadType::InOrder, which uses no prefetch pool at all;
+--   * the experimental ReaderExecutor must be off - as the read path it replaces the
+--     prefetched read pool entirely, so the counters this test asserts never populate.
 SELECT sum(k) FROM t_query_log_maps
 SETTINGS log_comment = '04640_settings_probe',
          merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
@@ -33,6 +35,7 @@ SETTINGS log_comment = '04640_settings_probe',
          filesystem_prefetches_limit = 100,
          merge_tree_min_rows_for_concurrent_read = 1,
          merge_tree_min_bytes_for_concurrent_read = 1,
+         use_reader_executor = 0,
          max_threads = 4;
 
 SYSTEM FLUSH LOGS query_log;
