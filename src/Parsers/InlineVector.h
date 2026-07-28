@@ -20,9 +20,12 @@ class InlineVector
     static_assert(std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>);
 
 public:
-    InlineVector() = default;
+    /// `inplace` is scratch space: only the first `count` elements are ever read, and `push_back` writes an
+    /// element before it becomes readable. Zero-initializing the whole array would cost N writes on every
+    /// construction of a vector that usually stays empty.
+    InlineVector() = default; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
 
-    InlineVector(const InlineVector & other) { assign(other); }
+    InlineVector(const InlineVector & other) { assign(other); } // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
 
     InlineVector & operator=(const InlineVector & other)
     {
