@@ -1,0 +1,284 @@
+{
+  "icon": "/images/icons/icon-concepts.svg",
+  "item": "Conceptos",
+  "pages": [
+    "es/concepts/index",
+    {
+      "expanded": true,
+      "group": "Fundamentos",
+      "pages": [
+        "es/concepts/core-concepts/glossary",
+        "es/concepts/core-concepts/parts",
+        "es/concepts/core-concepts/partitions",
+        "es/concepts/core-concepts/merges",
+        "es/concepts/core-concepts/primary-indexes",
+        "es/concepts/core-concepts/query-parallelism",
+        "es/concepts/core-concepts/academic-overview"
+      ],
+      "root": "es/concepts/core-concepts/index"
+    },
+    {
+      "expanded": true,
+      "group": "Conceptos de ClickHouse",
+      "pages": [
+        {
+          "group": "Vistas materializadas",
+          "pages": [
+            "es/concepts/features/materialized-views/incremental-materialized-view",
+            "es/concepts/features/materialized-views/refreshable-materialized-view",
+            "es/concepts/features/materialized-views/cascading-materialized-views"
+          ],
+          "root": "es/concepts/features/materialized-views/index"
+        },
+        {
+          "group": "Diccionarios",
+          "pages": [
+            "es/concepts/features/dictionaries/best-practices"
+          ],
+          "root": "es/concepts/features/dictionaries/index"
+        },
+        {
+          "group": "Proyecciones",
+          "pages": [
+            "es/concepts/features/projections/projections",
+            "es/concepts/features/projections/materialized-views-versus-projections"
+          ]
+        },
+        {
+          "group": "Rendimiento",
+          "pages": [
+            "es/concepts/features/performance/prewhere",
+            "es/concepts/features/performance/allocation-profiling",
+            "es/concepts/features/performance/allocation-profiling-old",
+            {
+              "group": "Cachés",
+              "pages": [
+                "es/concepts/features/performance/caches/caches",
+                "es/concepts/features/performance/caches/query-cache",
+                "es/concepts/features/performance/caches/query-condition-cache",
+                "es/concepts/features/performance/caches/userspace-page-cache"
+              ]
+            },
+            {
+              "group": "Índices de omisión",
+              "pages": [
+                "es/concepts/features/performance/skip-indexes/skipping-indexes",
+                "es/concepts/features/performance/skip-indexes/skipping-indexes-examples"
+              ]
+            },
+            "es/concepts/features/performance/lazy-materialization",
+            {
+              "group": "Solución de problemas",
+              "pages": [
+                "es/concepts/features/performance/troubleshoot/debugging-memory-issues",
+                "es/concepts/features/performance/troubleshoot/oom-canary",
+                "es/concepts/features/performance/troubleshoot/performance-test",
+                "es/concepts/features/performance/troubleshoot/sampling-query-profiler"
+              ]
+            }
+          ],
+          "root": "es/concepts/features/performance/index"
+        },
+        {
+          "group": "Operaciones",
+          "pages": [
+            {
+              "group": "Inserción",
+              "pages": [
+                "es/concepts/features/operations/insert/inserting-data",
+                "es/concepts/features/operations/insert/asyncinserts",
+                "es/concepts/features/operations/insert/bulkinserts",
+                "es/concepts/features/operations/insert/deduplication",
+                "es/concepts/features/operations/insert/deduplicating-inserts-on-retries",
+                "es/concepts/features/operations/insert/transactions"
+              ]
+            },
+            {
+              "group": "Selección",
+              "pages": [
+                "es/concepts/features/operations/select/joining-tables"
+              ]
+            },
+            {
+              "group": "Actualización",
+              "pages": [
+                "es/concepts/features/operations/update/overview",
+                "es/concepts/features/operations/update/on-fly-mutations",
+                "es/concepts/features/operations/update/replacing-merge-tree"
+              ],
+              "root": "es/concepts/features/operations/update/index"
+            },
+            {
+              "group": "Eliminación",
+              "pages": [
+                "es/concepts/features/operations/delete/overview",
+                "es/concepts/features/operations/delete/delete-mutations",
+                "es/concepts/features/operations/delete/drop-partition",
+                "es/concepts/features/operations/delete/lightweight-delete",
+                "es/concepts/features/operations/delete/truncate",
+                "es/concepts/features/operations/delete/ttl"
+              ],
+              "root": "es/concepts/features/operations/delete/index"
+            }
+          ]
+        },
+        {
+          "group": "Configuración",
+          "pages": [
+            {
+              "group": "Ajustes",
+              "pages": [
+                "es/concepts/features/configuration/settings/overview",
+                "es/concepts/features/configuration/settings/settings-query-level",
+                "es/concepts/features/configuration/settings/settings-users",
+                "es/concepts/features/configuration/settings/settings-profiles",
+                "es/concepts/features/configuration/settings/constraints-on-settings",
+                "es/concepts/features/configuration/settings/query-complexity",
+                "es/concepts/features/configuration/settings/permissions-for-queries",
+                "es/concepts/features/configuration/settings/memory-overcommit",
+                "es/concepts/features/configuration/settings/server-overload",
+                "es/concepts/features/configuration/settings/tcp-connection-limits",
+                "es/concepts/features/configuration/settings/alternative-query-languages"
+              ]
+            },
+            {
+              "group": "Configuración del servidor",
+              "pages": [
+                "es/concepts/features/configuration/server-config/configuration-files",
+                "es/concepts/features/configuration/server-config/storing-data",
+                "es/concepts/features/configuration/server-config/named-collections",
+                "es/concepts/features/configuration/server-config/workload-scheduling",
+                "es/concepts/features/configuration/server-config/quotas",
+                "es/concepts/features/configuration/server-config/composable-protocols",
+                "es/concepts/features/configuration/server-config/startup-scripts"
+              ]
+            }
+          ]
+        },
+        {
+          "group": "Seguridad y autenticación",
+          "pages": [
+            "es/concepts/features/security/access-rights",
+            "es/concepts/features/security/network-ports",
+            {
+              "group": "TLS",
+              "pages": [
+                "es/concepts/features/security/tls/configuring-tls",
+                "es/concepts/features/security/tls/configuring-tls-acme-client"
+              ],
+              "root": "es/concepts/features/security/tls/index"
+            },
+            {
+              "group": "Autenticadores externos",
+              "pages": [
+                {
+                  "group": "SSL",
+                  "pages": [
+                    "es/concepts/features/security/external-authenticators/ssl-x509",
+                    "es/concepts/features/security/ssl-user-auth"
+                  ]
+                },
+                {
+                  "group": "LDAP",
+                  "pages": [
+                    "es/concepts/features/security/external-authenticators/ldap",
+                    "es/concepts/features/security/configuring-ldap"
+                  ]
+                },
+                "es/concepts/features/security/external-authenticators/http",
+                "es/concepts/features/security/external-authenticators/kerberos",
+                "es/concepts/features/security/external-authenticators/jwt"
+              ],
+              "root": "es/concepts/features/security/external-authenticators/index"
+            }
+          ],
+          "root": "es/concepts/features/security/index"
+        },
+        {
+          "group": "Copia de seguridad y restauración",
+          "pages": [
+            "es/concepts/features/backup-restore/overview",
+            "es/concepts/features/backup-restore/local-disk",
+            "es/concepts/features/backup-restore/s3-endpoint",
+            "es/concepts/features/backup-restore/azure-blob-storage",
+            "es/concepts/features/backup-restore/snapshot",
+            "es/concepts/features/backup-restore/alternative-methods"
+          ]
+        },
+        {
+          "group": "Interfaces",
+          "pages": [
+            "es/concepts/features/interfaces/cli",
+            "es/concepts/features/interfaces/client",
+            {
+              "group": "Drivers e interfaces",
+              "pages": [
+                "es/concepts/features/interfaces/http",
+                "es/concepts/features/interfaces/tcp",
+                "es/concepts/features/interfaces/jdbc",
+                "es/concepts/features/interfaces/mysql",
+                "es/concepts/features/interfaces/odbc",
+                "es/concepts/features/interfaces/postgresql",
+                "es/concepts/features/interfaces/prometheus",
+                "es/concepts/features/interfaces/ssh",
+                "es/concepts/features/interfaces/grpc",
+                "es/concepts/features/interfaces/arrowflight"
+              ],
+              "root": "es/concepts/features/interfaces/overview"
+            },
+            "es/concepts/features/interfaces/cpp",
+            "es/concepts/features/interfaces/schema-inference",
+            "es/concepts/features/interfaces/documentation-search",
+            "es/concepts/features/interfaces/web-sql",
+            "es/concepts/features/interfaces/web-ui-color-coding",
+            "es/concepts/features/interfaces/web-ui-pinned-columns",
+            "es/concepts/features/interfaces/web-terminal",
+            {
+              "group": "Clientes de terceros",
+              "pages": [],
+              "root": "es/concepts/features/interfaces/third-party/index"
+            }
+          ],
+          "root": "es/concepts/features/interfaces/native-clients-interfaces-index"
+        },
+        {
+          "group": "Herramientas y utilidades",
+          "pages": [
+            "es/concepts/features/tools-and-utilities/backupview",
+            "es/concepts/features/tools-and-utilities/clickhouse-benchmark",
+            "es/concepts/features/tools-and-utilities/clickhouse-compressor",
+            "es/concepts/features/tools-and-utilities/clickhouse-disks",
+            "es/concepts/features/tools-and-utilities/clickhouse-format",
+            "es/concepts/features/tools-and-utilities/clickhouse-keeper-client",
+            "es/concepts/features/tools-and-utilities/clickhouse-keeper-http-api",
+            "es/concepts/features/tools-and-utilities/clickhouse-local",
+            "es/concepts/features/tools-and-utilities/clickhouse-obfuscator",
+            "es/concepts/features/tools-and-utilities/odbc-bridge",
+            "es/concepts/features/tools-and-utilities/static-files-disk-uploader"
+          ],
+          "root": "es/concepts/features/tools-and-utilities/index"
+        }
+      ],
+      "root": "es/concepts/features/index"
+    },
+    {
+      "expanded": true,
+      "group": "Buenas prácticas",
+      "pages": [
+        "es/concepts/best-practices/choosing-a-primary-key",
+        "es/concepts/best-practices/select-data-type",
+        "es/concepts/best-practices/use-materialized-views",
+        "es/concepts/best-practices/minimize-optimize-joins",
+        "es/concepts/best-practices/partitioning-keys",
+        "es/concepts/best-practices/selecting-an-insert-strategy",
+        "es/concepts/best-practices/using-data-skipping-indices",
+        "es/concepts/best-practices/avoid-mutations",
+        "es/concepts/best-practices/avoid-optimize-final",
+        "es/concepts/best-practices/avoidnullablecolumns",
+        "es/concepts/best-practices/json-type"
+      ],
+      "root": "es/concepts/best-practices/index"
+    }
+  ],
+  "root": "es/concepts/index"
+}

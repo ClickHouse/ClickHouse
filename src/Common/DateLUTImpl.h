@@ -238,6 +238,7 @@ private:
     Time offset_at_start_of_lut;
     bool offset_is_whole_number_of_hours_during_epoch;
     bool offset_is_whole_number_of_minutes_during_epoch;
+    bool offset_is_fixed;
 
     /// Time zone name.
     std::string time_zone;
@@ -482,6 +483,47 @@ public:
     // Methods only for unit-testing, it makes very little sense to use it from user code.
     auto getOffsetAtStartOfEpoch() const { return offset_at_start_of_epoch; }
     auto getTimeOffsetAtStartOfLUT() const { return offset_at_start_of_lut; }
+
+    /// Whether the UTC offset never changes within the range of the LUT (UTC and other fixed-offset
+    /// time zones). When true, every calendar day is exactly 86400 seconds, so adding days or weeks
+    /// reduces to arithmetic on the unix timestamp.
+    bool hasFixedOffset() const { return offset_is_fixed; }
+
+    /// Whether both t and t shifted by `days` days stay inside the LUT, so that in a fixed-offset
+    /// time zone addDays(t, days) equals t + days * 86400 (outside the LUT addDays takes the cctz
+    /// escape path, which saturates to the representable calendar [0000, 9999] and truncates the
+    /// sub-second division towards zero). t is given in units of 1/scale_multiplier of a second,
+    /// like a raw DateTime64 value. May return a false negative within one second of the LUT
+    /// boundaries, which merely sends such values to the exact calendar path.
+    bool dayShiftStaysWithinLUT(Int64 t, Int64 days, Int64 scale_multiplier = 1) const
+    {
+        const Int64 seconds_per_day_scaled = DATE_SECONDS_PER_DAY * scale_multiplier;
+        const Int64 lut_min_scaled = lut[0].date * scale_multiplier;
+
+        /// For the largest scales the end of the LUT does not fit in Int64. Every representable
+        /// value is then below the end, and only the lower bound needs checking.
+        Int64 lut_size_scaled = 0;
+        Int64 lut_end_scaled = 0;
+        const bool lut_end_representable =
+            !__builtin_mul_overflow(static_cast<Int64>(DATE_LUT_SIZE), seconds_per_day_scaled, &lut_size_scaled)
+            && !__builtin_add_overflow(lut_min_scaled, lut_size_scaled, &lut_end_scaled);
+
+        /// One-second margin below the upper bound: the calendar path shifts std::div(t, scale_multiplier).quot,
+        /// which truncates towards zero, so a negative t with a sub-second remainder lands one second higher
+        /// than the raw value and can hit a clamped day index while the raw result still fits.
+        const Int64 lut_end_guard = lut_end_scaled - (scale_multiplier - 1);
+
+        if (t < lut_min_scaled || (lut_end_representable && t >= lut_end_scaled))
+            return false;
+
+        Int64 shift_scaled = 0;
+        Int64 result = 0;
+        if (__builtin_mul_overflow(days, seconds_per_day_scaled, &shift_scaled)
+            || __builtin_add_overflow(t, shift_scaled, &result))
+            return false;
+
+        return result >= lut_min_scaled && (!lut_end_representable || result < lut_end_guard);
+    }
 
     static constexpr auto getDayNumOffsetEpoch()  { return daynum_offset_epoch; }
 
@@ -1963,7 +2005,10 @@ public:
 
     NO_SANITIZE_UNDEFINED Time addWeeks(Time t, Int64 delta) const
     {
-        return addDays(t, delta * 7);
+        /// Compute delta * 7 in the UInt64 domain so it wraps by construction. FillingRow::doLongJump
+        /// (WITH FILL) passes deltas from the whole Int64 range and relies on the wraparound; a signed
+        /// multiply is UB on overflow even under NO_SANITIZE_UNDEFINED. Bit-identical two's complement.
+        return addDays(t, static_cast<Int64>(static_cast<UInt64>(delta) * 7ULL));
     }
 
     UInt8 saturateDayOfMonth(Int16 year, UInt8 month, UInt8 day_of_month) const
@@ -1981,7 +2026,12 @@ public:
     {
         const Values & values = lut[toLUTIndex(v)];
 
-        Int64 month = values.month + delta;
+        /// Clamp delta to a window wide enough to reach any representable calendar month but narrow enough
+        /// that values.month + delta cannot overflow Int64. WITH FILL passes deltas from the whole Int64
+        /// range and a plain values.month + delta would be UB on overflow; the calendar saturates far
+        /// inside this window anyway, so clamping does not change any representable result.
+        static constexpr Int64 max_month_delta = 12 * (DATE_LUT_MAX_REPRESENTABLE_YEAR + 1);
+        Int64 month = values.month + std::clamp<Int64>(delta, -max_month_delta, max_month_delta);
 
         if (month > 0)
         {
@@ -2067,7 +2117,8 @@ public:
     template <typename DateOrTime>
     auto NO_SANITIZE_UNDEFINED addQuarters(DateOrTime d, Int64 delta) const
     {
-        return addMonths(d, delta * 3);
+        /// UInt64 domain for defined wraparound (see addWeeks); addMonths itself has no further multiply.
+        return addMonths(d, static_cast<Int64>(static_cast<UInt64>(delta) * 3ULL));
     }
 
     template <typename DateOrTime>
@@ -2075,7 +2126,14 @@ public:
     {
         const Values & values = lut[toLUTIndex(v)];
 
-        auto year = values.year + static_cast<Int16>(delta);
+        /// Clamp delta to a window wide enough to reach any representable year but narrow enough that
+        /// values.year + delta stays within Int16 (makeLUTIndex saturates out-of-range years). WITH FILL
+        /// passes deltas from the whole Int64 range and the UInt32 (DateTime) / DayNum (Date) carriers
+        /// reach here without a window check; the previous static_cast<Int16>(delta) narrowed e.g. 32768
+        /// to -32768 and ran the calendar backward. The calendar saturates far inside this window anyway,
+        /// so clamping does not change any representable result.
+        static constexpr Int64 max_year_delta = DATE_LUT_MAX_REPRESENTABLE_YEAR + 1;
+        Int64 year = values.year + std::clamp<Int64>(delta, -max_year_delta, max_year_delta);
         auto month = values.month;
         auto day_of_month = values.day_of_month;
 

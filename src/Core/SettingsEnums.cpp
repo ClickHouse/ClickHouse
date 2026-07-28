@@ -238,6 +238,10 @@ IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS
      {"drop", DeduplicateMergeProjectionMode::DROP},
      {"rebuild", DeduplicateMergeProjectionMode::REBUILD}})
 
+IMPLEMENT_SETTING_ENUM(UniqueKeyProbeImplementation, ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", UniqueKeyProbeImplementation::Auto},
+     {"simple", UniqueKeyProbeImplementation::Simple}})
+
 IMPLEMENT_SETTING_ENUM(AlterColumnSecondaryIndexMode, ErrorCodes::BAD_ARGUMENTS,
     {{"throw", AlterColumnSecondaryIndexMode::THROW},
      {"drop", AlterColumnSecondaryIndexMode::DROP},
@@ -474,6 +478,11 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"partition_key_only", MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY},
      {"with_block_number_offset", MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeCoordinatorDistributionAlgorithm,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"water_filling", MergeCoordinatorDistributionAlgorithm::WATER_FILLING}})
 
 IMPLEMENT_SETTING_ENUM(
     DecorrelationJoinKind,

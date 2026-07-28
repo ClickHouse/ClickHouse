@@ -28,9 +28,7 @@ pueda interactuar con el [Playground de SQL de ClickHouse](https://sql.clickhous
 Puedes ejecutar los siguientes pasos desde tu REPL de Python o mediante un script.
 
 <Steps>
-  <Step>
-    ## Instalar librerías
-
+  <Step title="Instalar librerías" id="install-libraries">
     Instala las librerías necesarias ejecutando los siguientes comandos:
 
     ```python
@@ -39,9 +37,7 @@ Puedes ejecutar los siguientes pasos desde tu REPL de Python o mediante un scrip
     ```
   </Step>
 
-  <Step>
-    ## Configura las credenciales
-
+  <Step title="Configura las credenciales" id="setup-credentials">
     A continuación, deberás proporcionar tu clave de API de Anthropic:
 
     ```python
@@ -61,9 +57,7 @@ Puedes ejecutar los siguientes pasos desde tu REPL de Python o mediante un scrip
     </Info>
   </Step>
 
-  <Step>
-    ## Inicializar el servidor MCP
-
+  <Step title="Inicializar el servidor MCP" id="initialize-mcp-and-agent">
     Ahora configure el servidor MCP de ClickHouse para que apunte al Playground de SQL de ClickHouse.
     Tendrá que convertirlas de funciones de Python a herramientas de Llama Index:
 
@@ -95,9 +89,7 @@ Puedes ejecutar los siguientes pasos desde tu REPL de Python o mediante un scrip
     ```
   </Step>
 
-  <Step>
-    ## Crear un agente
-
+  <Step title="Crear un agente" id="create-agent">
     Ahora ya estás listo para crear un agente que tenga acceso a esas herramientas. Establece en 10 el número máximo
     de invocaciones de herramientas en una sola ejecución. Puedes modificar este parámetro si quieres:
 
@@ -112,9 +104,7 @@ Puedes ejecutar los siguientes pasos desde tu REPL de Python o mediante un scrip
     ```
   </Step>
 
-  <Step>
-    ## Inicializar el LLM
-
+  <Step title="Inicializar el LLM" id="initialize-llm">
     Inicializa el modelo Claude Sonnet 4.0 con el código siguiente:
 
     ```python
@@ -123,9 +113,7 @@ Puedes ejecutar los siguientes pasos desde tu REPL de Python o mediante un scrip
     ```
   </Step>
 
-  <Step>
-    ## Ejecuta el agente
-
+  <Step title="Ejecuta el agente" id="run-agent">
     Por último, puedes hacerle una pregunta al agente:
 
     ```python

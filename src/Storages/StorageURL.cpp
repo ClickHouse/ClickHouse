@@ -2574,6 +2574,11 @@ void registerStorageURL(StorageFactory & factory)
             auto configuration = std::make_shared<StorageWebConfiguration>();
             StorageObjectStorageConfiguration::initialize(*configuration, engine_args, context, /* with_table_structure */ false);
 
+            /// Same contract as `createStorageObjectStorage`: only a user-issued `CREATE` applies the
+            /// `file_like_engine_default_partition_strategy` default; ATTACH / startup / RESTORE must
+            /// load pre-existing `{_partition_id}` tables as wildcard (see `initPartitionStrategy`).
+            configuration->is_create_query = args.mode == LoadingStrictnessLevel::CREATE;
+
             ContextMutablePtr context_copy = Context::createCopy(args.getContext());
             Settings settings_copy = args.getLocalContext()->getSettingsCopy();
             context_copy->setSettings(settings_copy);
@@ -2605,7 +2610,7 @@ void registerStorageURL(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the [File](../../../engines/table-engines/special/file.md) engine.
+Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the [File](/reference/engines/table-engines/special/file) engine.
 
 The `URL` engine is also a unified wrapper that dispatches to the right backend based on the URL scheme, so a recognized non-HTTP scheme is delegated to the matching engine — see [Dispatching by URL scheme](#scheme-dispatch) below.
 
@@ -2639,11 +2644,11 @@ For example, for engine expression `URL('http://localhost/test.gzip')`, `gzip` c
 
 ## Dispatching by URL scheme {#scheme-dispatch}
 
-The `URL` engine is a unified wrapper on top of the other file- and object-storage engines: it dispatches to the right backend based on the URL scheme. `http`/`https` (and any unrecognized scheme) are served by the `URL` engine itself; `file://` is served by the [File](../../../engines/table-engines/special/file.md) engine; `s3://`, `gs://`, `gcs://`, `oss://` by the [S3](/engines/table-engines/integrations/s3) engine; `az://`, `azure://`, `abfss://`, `abfs://` by the [AzureBlobStorage](/engines/table-engines/integrations/azureBlobStorage) engine; and `hdfs://` by the [HDFS](/engines/table-engines/integrations/hdfs) engine.
+The `URL` engine is a unified wrapper on top of the other file- and object-storage engines: it dispatches to the right backend based on the URL scheme. `http`/`https` (and any unrecognized scheme) are served by the `URL` engine itself; `file://` is served by the [File](/reference/engines/table-engines/special/file) engine; `s3://`, `gs://`, `gcs://`, `oss://` by the [S3](/engines/table-engines/integrations/s3) engine; `az://`, `azure://`, `abfss://`, `abfs://` by the [AzureBlobStorage](/engines/table-engines/integrations/azureBlobStorage) engine; and `hdfs://` by the [HDFS](/engines/table-engines/integrations/hdfs) engine.
 
 Only the S3 schemes that the S3 URI mapper resolves to a concrete endpoint without extra configuration (`s3`, plus `gs`/`gcs`/`oss`) are dispatched. Other S3-compatible vendor schemes (`cos`, `obs`, `eos`, …) are region-specific and have no default endpoint mapping, so passing such a URL to the `URL` engine is treated as an unrecognized scheme and reported as an error; use the [S3](/engines/table-engines/integrations/s3) engine directly (with `url_scheme_mappers` configured) for those backends.
 
-The [url_base](/operations/settings/settings.md#url_base) setting is applied before scheme dispatch, so a relative reference is first resolved against the base and then routed to the matching engine.
+The [url_base](/reference/settings/session-settings/url#url_base) setting is applied before scheme dispatch, so a relative reference is first resolved against the base and then routed to the matching engine.
 
 ```sql
 CREATE TABLE file_via_url (a UInt32, b String) ENGINE = URL('file://data.csv', CSV);
@@ -2656,14 +2661,14 @@ CREATE TABLE s3_via_url (a UInt32, b String) ENGINE = URL('s3://bucket/key.csv',
 respectively. For processing `POST` requests, the remote server must support
 [Chunked transfer encoding](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
 
-You can limit the maximum number of HTTP GET redirect hops using the [max_http_get_redirects](/operations/settings/settings#max_http_get_redirects) setting.
+You can limit the maximum number of HTTP GET redirect hops using the [max_http_get_redirects](/reference/settings/session-settings/max#max_http_get_redirects) setting.
 
 ## Wildcards with HTTP index pages {#wildcards-with-http-index-pages}
 
-When [allow_experimental_url_wildcard_from_index_pages](/operations/settings/settings#allow_experimental_url_wildcard_from_index_pages) is enabled, the `URL` table engine can expand wildcards by fetching HTTP index pages and extracting links from them.
+When [allow_experimental_url_wildcard_from_index_pages](/reference/settings/session-settings/allow-experimental#allow_experimental_url_wildcard_from_index_pages) is enabled, the `URL` table engine can expand wildcards by fetching HTTP index pages and extracting links from them.
 This is the same mechanism as the [`url`](/sql-reference/table-functions/url#wildcards-with-http-index-pages) table function.
 
-Expansion is limited by [max_http_index_page_size](/operations/server-configuration-parameters/settings#max_http_index_page_size) for each fetched index page and by [url_wildcard_max_directories_to_read](/operations/settings/settings#url_wildcard_max_directories_to_read) for recursive directory traversal.
+Expansion is limited by [max_http_index_page_size](/reference/settings/server-settings/settings/max#max_http_index_page_size) for each fetched index page and by [url_wildcard_max_directories_to_read](/reference/settings/session-settings/url#url_wildcard_max_directories_to_read) for recursive directory traversal.
 
 ## Example {#example}
 
@@ -2728,7 +2733,7 @@ SELECT * FROM url_engine_table
 
 ## Resolving relative URLs {#resolving-relative-urls}
 
-The [url_base](/operations/settings/settings.md#url_base) setting allows using a relative URL in the `URL` engine. When `url_base` is set, the URL passed to the engine is resolved against it per [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). For a full description of the resolution rules, see the [url table function docs](../../../sql-reference/table-functions/url.md#resolving-relative-urls).
+The [url_base](/reference/settings/session-settings/url#url_base) setting allows using a relative URL in the `URL` engine. When `url_base` is set, the URL passed to the engine is resolved against it per [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). For a full description of the resolution rules, see the [url table function docs](/reference/functions/table-functions/url#resolving-relative-urls).
 
 **Example**
 
@@ -2740,9 +2745,9 @@ SELECT * FROM url_engine_table;
 
 ## Storage settings {#storage-settings}
 
-- [engine_url_skip_empty_files](/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
-- [enable_url_encoding](/operations/settings/settings.md#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.
-- [url_base](/operations/settings/settings.md#url_base) - base URL for resolving relative URLs passed to the engine.
+- [engine_url_skip_empty_files](/reference/settings/session-settings/other#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [enable_url_encoding](/reference/settings/session-settings/enable#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.
+- [url_base](/reference/settings/session-settings/url#url_base) - base URL for resolving relative URLs passed to the engine.
 )DOCS_MD",
             .syntax = "ENGINE = URL(url[, format[, compression]])",
             .related = {"File"}});

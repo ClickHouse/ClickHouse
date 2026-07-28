@@ -24,7 +24,7 @@ doc_type: 'reference'
 
 도입된 버전: v24.1.0
 
-STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf)을 사용해 시계열 데이터를 계절성, 추세, 잔차 요소로 분해합니다.
+STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.math.unm.edu/~lil/Stat581/STL.pdf)을 사용해 시계열 데이터를 계절성, 추세, 잔차 요소로 분해합니다.
 
 **구문**
 
@@ -50,26 +50,9 @@ SELECT seriesDecomposeSTL([10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 
 ```
 
 ```response title=Response
-┌───────────print_0──────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ [[
-        -13.529999, -3.1799996, 16.71,      -13.53,     -3.1799996, 16.71,      -13.53,     -3.1799996,
-        16.71,      -13.530001, -3.18,      16.710001,  -13.530001, -3.1800003, 16.710001,  -13.530001,
-        -3.1800003, 16.710001,  -13.530001, -3.1799994, 16.71,      -13.529999, -3.1799994, 16.709997
-    ],
-    [
-        23.63,     23.63,     23.630003, 23.630001, 23.630001, 23.630001, 23.630001, 23.630001,
-        23.630001, 23.630001, 23.630001, 23.63,     23.630001, 23.630001, 23.63,     23.630001,
-        23.630001, 23.63,     23.630001, 23.630001, 23.630001, 23.630001, 23.630001, 23.630003
-    ],
-    [
-        0, 0.0000019073486, -0.0000019073486, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.0000019073486, 0,
-        0
-    ],
-    [
-        10.1, 20.449999, 40.340004, 10.100001, 20.45, 40.34, 10.100001, 20.45, 40.34, 10.1, 20.45, 40.34,
-        10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.100002, 20.45, 40.34
-    ]]                                                                                                                   │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─print_0─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [[-13.529999,-3.1799996,16.71,-13.53,-3.1799996,16.71,-13.53,-3.1799996,16.71,-13.530001,-3.18,16.710001,-13.530001,-3.1800003,16.710001,-13.530001,-3.1800003,16.710001,-13.530001,-3.1799994,16.71,-13.529999,-3.1799994,16.709997],[23.63,23.63,23.630003,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.63,23.630001,23.630001,23.63,23.630001,23.630001,23.63,23.630001,23.630001,23.630001,23.630001,23.630001,23.630003],[0,0.0000019073486,-0.0000019073486,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.0000019073486,0,0],[10.1,20.449999,40.340004,10.100001,20.45,40.34,10.100001,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.100002,20.45,40.34]] │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="seriesOutliersDetectTukey">
@@ -183,6 +166,10 @@ SELECT seriesPeriodDetectFFT(arrayMap(x -> abs((x % 6) - 3), range(1000))) AS pr
 이 함수는 Prometheus의
 [group left/group right](https://prometheus.io/docs/prometheus/latest/querying/operators/#group-modifiers) 수정자에서 사용하는 복사 로직을 따릅니다.
 
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -228,6 +215,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 이 함수는 Prometheus의
 [group left/group right](https://prometheus.io/docs/prometheus/latest/querying/operators/#group-modifiers) 수정자의 복사 로직을 따릅니다.
 
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -269,6 +260,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 
 그룹에서 지정한 태그의 값을 추출합니다. 찾을 수 없으면 NULL을 반환합니다.
 관련 항목: 함수 [timeSeriesGroupToTags()](/ko/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags).
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -354,10 +349,14 @@ SELECT timeSeriesFromGrid('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:0
 
 도입 버전: v26.4.0
 
-지정된 그룹의 태그로부터 파생된 일관된 `UInt64` 샘플링 키를 반환합니다.
+지정된 그룹의 태그로부터 파생된 안정적인 `UInt64` 샘플링 키를 반환합니다.
 
 이 값은 결정적입니다. 즉, 동일한 입력 태그는 항상 동일한 키를 생성합니다.
 `limitk`, `limit_ratio`와 같은 샘플링 연산자의 정렬 키로 사용하도록 설계되었습니다.
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -396,6 +395,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 
 지정한 그룹에 연결된 태그의 이름과 값을 반환합니다.
 관련 항목: [timeSeriesTagsToGroup()](/ko/reference/functions/regular-functions/time-series-functions#timeSeriesTagsToGroup) 함수를 참조하십시오.
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -441,6 +444,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 지정된 시계열(time series) 식별자에 연결된 태그의 이름과 값을 반환합니다.
 관련 항목: 함수 [timeSeriesStoreTags()](/ko/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags)을 참조하십시오.
 
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -483,6 +490,10 @@ SELECT 8374283493092 AS id,
 
 지정한 시계열(시계열) 식별자에 연결된 태그를 반환합니다.
 관련 항목: 함수 [timeSeriesStoreTags()](/ko/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags).
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -527,6 +538,10 @@ SELECT 8374283493092 AS id,
 이 함수는 조인된 값 사이에 구분자를 삽입하고, `dest_tag` 태그가 조인된 값으로 설정된 새로운 태그 그룹을 반환합니다.
 이 함수는 Prometheus 함수
 [label&#95;join()](https://prometheus.io/docs/prometheus/latest/querying/functions/#label_join)의 로직을 모방합니다.
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -613,6 +628,10 @@ SELECT timeSeriesRange('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:01:0
 관련 항목: 함수 [timeSeriesRemoveTag()](/ko/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTag),
 [timeSeriesRemoveTags()](/ko/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTags).
 
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -654,6 +673,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 그룹에 해당 태그가 없으면 변경 없이 그대로 반환됩니다.
 관련 항목: [timeSeriesRemoveTags()](/ko/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTags),
 [timeSeriesRemoveAllTagsExcept()](/ko/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveAllTagsExcept) 함수를 참조하십시오.
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -701,6 +724,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 관련 항목: 함수 [timeSeriesRemoveTag()](/ko/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTag),
 [timeSeriesRemoveAllTagsExcept()](/ko/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveAllTagsExcept).
 
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -745,6 +772,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 입력에 있던 원래 태그와 함께 반환됩니다.
 이 함수는 Prometheus 함수
 [label&#95;replace()](https://prometheus.io/docs/prometheus/latest/querying/functions/#label_replace)의 로직을 모방합니다.
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -837,6 +868,10 @@ SELECT 8374283493092 AS id,
 빈 태그 집합에 대해서는 함수가 항상 0을 반환합니다.
 관련 항목: [timeSeriesGroupToTags()](/ko/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags) 함수.
 
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -884,6 +919,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 이 함수는 [throwIf()](/ko/reference/functions/regular-functions/other-functions#throwIf)와 유사하지만,
 서로 다른 오류 코드를 사용하며 오류 메시지 포맷도 다르게 지정됩니다.
 
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -911,17 +950,14 @@ INSERT INTO test VALUES ([('__name__', 'up')]);
 SELECT timeSeriesTagsToGroup(tags) AS group
 FROM test
 GROUP BY group
-HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- 정상
+HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- OK
 
 INSERT INTO test VALUES ([('__name__', 'up')]);
 
 SELECT timeSeriesTagsToGroup(tags) AS group
 FROM test
 GROUP BY group
-HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- 예외 발생 "Multiple series have the same tags {'__name__': 'up'}"
-```
-
-```response title=Response
+HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- Throws exception "Multiple series have the same tags {'__name__': 'up'}"
 ```
 
 {/*AUTOGENERATED_END*/}

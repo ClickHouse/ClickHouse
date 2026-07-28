@@ -1,0 +1,60 @@
+left semi true
+0
+0
+0
+1
+1
+1
+left semi false
+0
+left anti true
+6
+left anti false
+0
+1
+right semi true
+0
+0
+1
+1
+2
+2
+right semi false
+0
+right semi true empty left
+0
+right anti true
+6
+right anti false
+0
+1
+2
+right anti true empty left
+left semi true
+0
+1
+left semi false
+0
+left anti true
+0
+left anti false
+0
+1
+right semi true
+0
+1
+2
+right semi false
+0
+right semi true empty left
+0
+right anti true
+0
+right anti false
+0
+1
+2
+right anti true empty left
+0
+1
+2
