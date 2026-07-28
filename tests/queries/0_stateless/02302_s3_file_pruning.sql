@@ -5,7 +5,7 @@ SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injectio
 
 -- { echo }
 drop table if exists test_02302;
-create table test_02302 (a UInt64) engine = S3(s3_conn, filename='test_02302_{_partition_id}', format=Parquet) partition by a;
+create table test_02302 (a UInt64) engine = S3(s3_conn, filename='test_02302_{_partition_id}', format=Parquet, partition_strategy='wildcard') partition by a;
 insert into test_02302 select number from numbers(10) settings s3_truncate_on_insert=1;
 select * from test_02302;  -- { serverError NOT_IMPLEMENTED }
 drop table test_02302;

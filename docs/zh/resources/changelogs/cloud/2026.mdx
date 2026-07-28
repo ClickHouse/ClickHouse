@@ -3,13 +3,61 @@ slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
 title: 'Cloud 更新日志 - 2026'
 description: 'ClickHouse Cloud 更新日志，介绍每个 ClickHouse Cloud 版本中的新增内容'
-doc_type: '更新日志'
-keywords: ['更新日志', '发布说明', '更新', '新功能', 'Cloud 变更']
+doc_type: 'changelog'
+keywords: ['更新日志', '发行说明', '更新', '新功能', 'Cloud 变更']
 ---
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-除这份 ClickHouse Cloud 更新日志外，另请参阅 [Cloud 兼容性](/zh/products/cloud/guides/cloud-compatibility) 页面。
+除了这份 ClickHouse Cloud 更新日志外，请参阅 [Cloud Compatibility](/zh/products/cloud/guides/cloud-compatibility) 页面。
+
+<Update label="2026 年 7 月 13 日">
+  本周更新包括通过标准 HTTPS 实现的 sticky 副本路由、自定义计费周期起始日期，以及对象存储 ClickPipes 的新初始加载控制功能。
+
+  ### 通过 HTTPS 实现 sticky 副本路由 (私有预览)
+
+  现在，您只需在常规 service URL 后添加 `?session_id=` 参数，即可通过标准 HTTPS 将查询固定到特定副本，无需使用特殊主机名或更改 DNS。这可让临时表等会话范围对象在多次查询之间保持可用，并有助于重复查询命中已预热的副本本地缓存。该功能正以私有预览形式向所有 Enterprise 客户推出，并可按需向 Scale 客户提供。现有基于子域的路由方式将继续可用，但最终会迁移到这种方法。请参阅 [replica-aware routing](/zh/manage/replica-aware-routing) 文档。
+
+  ### 自定义计费周期开始日期
+
+  您现在可以申请更改组织的计费日期，也就是每个计费周期在每月开始的日期，例如让 invoice 与自然月对齐。请提交支持工单并注明您希望的日期。计费日期按 UTC 计算，每张 invoice 覆盖从该计费日期开始至次月同一日期 (不含该日期) 之前的使用量。
+
+  ### 跳过对象存储 ClickPipes 的初始加载
+
+  对象存储 [ClickPipes](/zh/integrations/clickpipes) (S3、GCS 和 Azure Blob 存储) 现在在您创建管道时提供两种控制初始加载的方式：**Start after**，会跳过直到并包括给定对象键的文件；以及 **Skip initial load**，会完全跳过预先存在的文件，只处理新的对象通知。此前，新管道总是会回填路径中的每个文件。这两个选项对于给定管道是互斥且永久的：已跳过的回填之后无法再触发。可在 UI、Cloud API 以及 Terraform v3.18.0 及更高版本中使用。
+</Update>
+
+<Update label="2026 年 6 月 30 日">
+  本周更新包括面向 Postgres 和 ClickHouse 内部机制的新增可观测性功能、扩展后的 ClickPipes 控制能力 (包括 Kafka 恰好一次投递) ，以及多项平台新增内容：Azure Marketplace BYOC、官方 Airflow 提供商和 ClickHouse 智能体更新。
+
+  ### ClickPipes 中的 Kafka 恰好一次投递
+
+  您现在可以直接在 [ClickPipes](/zh/integrations/clickpipes/kafka/index) 导入流程中为 Kafka 导入启用恰好一次投递，并且相同选项也已通过公开 API 提供，以便进行程序化配置。
+
+  ### CDC 源的统一 TLS 控制
+
+  现在，各 CDC 源的 TLS 启用和验证级别已保持一致。OpenAPI 的 create 和 update 端点会传递 `postgres_skip_cert_verification`、`postgres_disable_tls` 和 `mongo_skip_cert_verification` 字段，因此您可以通过 API 管理证书处理。
+
+  ### Replicated 数据库重新出现在 ClickPipes 选择器中
+
+  Replicated 数据库现已再次可在 ClickPipes 目标端选择器中选择。
+
+  ### ClickHouse 智能体更新 (公开测试版)
+
+  [ClickHouse Agents](/zh/products/cloud/features/ai-ml/agents/index) 现已支持使用 Chat Projects 组织会话、显示 token 和上下文窗口用量的上下文使用量指示器、由智能体编写的技能，以及内置的 ClickHouse 最佳实践技能。此版本还包含对设置、导航、快捷键和固定功能的改进。
+
+  ### Azure Marketplace 上的 ClickHouse BYOC
+
+  ClickHouse [自备 Cloud](/zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview) 现已上架 Azure Marketplace，客户可通过专属报价购买，并部署通过其 Azure 账户计费的 BYOC。平台侧还新增了对 Azure BYOC Marketplace 列表和产品 ID 的计费支持。
+
+  ### 官方 ClickHouse Airflow 提供商
+
+  ClickHouse 的官方 Apache Airflow 提供商现已在 PyPI 上可用，并列入 Airflow 注册表，替代对旧版社区插件的依赖，以便在 ClickHouse 与其他系统之间路由数据。
+
+  ### 计费可见性和 Marketplace 改进
+
+  计费现已包含自助式信用额度历史记录表、显示已使用和已过期金额的预付费摘要，以及 GCP MPPO 电子邮件支持。
+</Update>
 
 <Update label="2026年6月3日">
   Open House 2026 周迎来了一波新发布，重点围绕两大主题：在数据所在之处运行 ClickHouse，以及将智能体驱动的 AI 辅助工作流引入平台。
@@ -159,7 +207,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
   ### ClickPipes 的 Terraform 和 OpenAPI (正式可用)
 
-  ClickHouse [Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) 中的 ClickPipes 资源现已随稳定版本正式可用，并且 [OpenAPI endpoints](/zh/api-reference/organization/get-list-of-available-organizations) 不再标记为 beta。其中包括对 CDC connectors (Postgres、MySQL、MongoDB) 的完整覆盖。更多详情请参阅 [Terraform 文档](/zh/integrations/clickpipes/programmatic-access/terraform)、[OpenAPI 文档](/zh/integrations/clickpipes/programmatic-access/openapi) 和[博客文章](https://clickhouse.com/blog/terraform-ga)。
+  ClickHouse [Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) 中的 ClickPipes 资源现已随稳定版本正式可用，并且 [OpenAPI endpoints](/zh/products/cloud/api-reference/organization/get-list-of-available-organizations) 不再标记为 beta。其中包括对 CDC connectors (Postgres、MySQL、MongoDB) 的完整覆盖。更多详情请参阅 [Terraform 文档](/zh/integrations/clickpipes/programmatic-access/terraform)、[OpenAPI 文档](/zh/integrations/clickpipes/programmatic-access/openapi) 和[博客文章](https://clickhouse.com/blog/terraform-ga)。
 </Update>
 
 <Update label="2026年4月17日">

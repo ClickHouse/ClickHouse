@@ -42,7 +42,7 @@ The backport policy described above is implemented by the automated tool in `tes
 
 The long-term goal is to extract this implementation into a standalone open-source Python tool that other projects can adopt. The target design is:
 
-- **Configurable** — all policy parameters (qualifying labels, delay window, stale PR thresholds, rolling-out behaviour, etc.) expressed as a configuration file so the tool can be adapted to match any project's backport requirements without code changes.
+- **Configurable** — all policy parameters (qualifying labels, delay window, stale PR thresholds, etc.) expressed as a configuration file so the tool can be adapted to match any project's backport requirements without code changes.
 - **Distributable** — packaged as a self-contained Python wheel installable from PyPI, with no dependency on ClickHouse's CI infrastructure.
 - **Programmable** — exposing a clean object model for pull requests, labels, and release branches so that users can script custom workflows on top of the core engine.
 
@@ -54,13 +54,11 @@ A planned part of the standalone tool is a dedicated test suite together with a 
 - pull requests carrying various combinations of backport labels,
 - release PRs with the `release` label pointing at the release branches.
 
-This lets tests exercise the full automation loop — label detection, cherry-pick branch creation, conflict handling, backport PR creation, assignee logic, rolling-out skip, and delay policy — against a real but disposable repository, without touching production state. The same infrastructure can be reused to regression-test policy changes before they are deployed.
+This lets tests exercise the full automation loop — label detection, cherry-pick branch creation, conflict handling, backport PR creation, assignee logic, and delay policy — against a real but disposable repository, without touching production state. The same infrastructure can be reused to regression-test policy changes before they are deployed.
 
 ## Active Release Branches {#active-release-branches}
 
 An active release branch is any branch whose corresponding release PR (carrying the `release` label) is still open on GitHub. The backport automation discovers these dynamically on each run, so no configuration changes are needed when a new release is cut or an old one reaches end-of-life.
-
-A release branch can be in a **rolling-out** state (its release PR carries the `rolling-out` label) during the period when a new release is being deployed. General backports are paused for rolling-out branches to avoid complicating the rollout. Version-specific labels (e.g. `v25.3-must-backport`) override this and force backporting even during a rollout.
 
 A version-specific label sets the *oldest* release the PR must reach: it is backported to that release **and to every newer active release branch**, not only to the named one. For example, `v25.3-must-backport` on a PR merged into the development branch backports to `25.3` and to every active release after it (`25.4`, `25.5`, …). If multiple version-specific labels are present, the lowest version wins, since it already covers the newer ones.
 
@@ -83,15 +81,14 @@ Labels on the original PR control whether and where backporting happens.
 
 | Label | Effect |
 |---|---|
-| `pr-must-backport` | Backport to all active release branches (skipping branches marked `rolling-out`) |
-| `pr-must-backport-force` | Backport to all active release branches, ignoring `rolling-out` restrictions |
+| `pr-must-backport` | Backport to all active release branches |
+| `pr-must-backport-force` | Backport to all active release branches (equivalent to `pr-must-backport`) |
 | `pr-critical-bugfix` | Triggers `pr-must-backport` automatically (via `AUTO_BACKPORT` in `pr_labels_and_category.py`) |
-| `v{VER}-must-backport` (e.g. `v25.3-must-backport`) | Backport to that release branch **and every newer active release branch** — the version marks the *oldest* release the PR must reach, even when the named release is itself end-of-life. With several such labels, the lowest version wins. Overrides the `rolling-out` skip for those branches |
+| `v{VER}-must-backport` (e.g. `v25.3-must-backport`) | Backport to that release branch **and every newer active release branch** — the version marks the *oldest* release the PR must reach, even when the named release is itself end-of-life. With several such labels, the lowest version wins |
 | `pr-backports-created` | Set by the bot when all required backport PRs have been created; cleared if a cherry-pick PR is reopened |
 | `pr-cherrypick` | Applied to cherry-pick PRs created by the bot |
 | `pr-backport` | Applied to backport PRs created by the bot |
 | `do not test` | Applied to cherry-pick PRs so CI does not run on them |
-| `rolling-out` | Set on a **release PR** to indicate its branch is currently being rolled out; general backports skip it |
 
 ### Branch and PR Naming {#branch-and-pr-naming}
 
@@ -116,11 +113,7 @@ For each original PR number `N` and release branch `release/X.Y`:
 - were merged after the oldest commit date found on any release branch, and
 - were updated within the last 90 days (to keep the search query efficient).
 
-#### 3. Rolling-out branch handling {#rolling-out-branch-handling}
-
-When a release PR carries the `rolling-out` label, general backport labels (`pr-must-backport`, `pr-critical-bugfix`) skip that branch. The bot closes any previously created cherry-pick or backport PRs for that branch with an explanatory comment. A version-specific label (e.g. `v25.3-must-backport`) always overrides this — for the named release and for every newer active release branch it expands to. `pr-must-backport-force` bypasses the `rolling-out` check for all branches.
-
-#### 4. Cherry-pick stage (`ReleaseBranch.create_cherrypick`) {#cherry-pick-stage}
+#### 3. Cherry-pick stage (`ReleaseBranch.create_cherrypick`) {#cherry-pick-stage}
 
 For each (original PR, release branch) pair where no cherry-pick PR exists yet:
 
@@ -134,11 +127,11 @@ For each (original PR, release branch) pair where no cherry-pick PR exists yet:
 6. Propagate `pr-bugfix` or `pr-critical-bugfix` from the original PR if applicable.
 7. Assignees are **not** set at this point; they are only added when conflicts are detected.
 
-#### 5. Auto-merge of conflict-free cherry-pick PRs {#auto-merge-conflict-free-cherry-pick-prs}
+#### 4. Auto-merge of conflict-free cherry-pick PRs {#auto-merge-conflict-free-cherry-pick-prs}
 
 If the cherry-pick PR is mergeable (no conflicts), the bot merges it automatically via the GitHub API and proceeds immediately to the backport stage.
 
-#### 6. Backport stage (`ReleaseBranch.create_backport`) {#backport-stage}
+#### 5. Backport stage (`ReleaseBranch.create_backport`) {#backport-stage}
 
 After the cherry-pick PR is merged:
 
@@ -150,11 +143,11 @@ After the cherry-pick PR is merged:
 6. Label the PR `pr-backport` (and `pr-bugfix` / `pr-critical-bugfix` if applicable).
 7. Assign the PR to the original PR's author, merger, and existing assignees (excluding robot accounts).
 
-#### 7. Completion {#completion}
+#### 6. Completion {#completion}
 
 When all release branches for a given original PR are backported, the bot adds `pr-backports-created` to the original PR.
 
-#### 8. Pre-check {#pre-check}
+#### 7. Pre-check {#pre-check}
 
 Before starting any work on a PR, `ReleaseBranch.pre_check` runs `git merge-base --is-ancestor` to verify the merge commit is not already reachable from the release branch. If it is, the PR is considered already backported and skipped.
 

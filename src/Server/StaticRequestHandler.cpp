@@ -1,11 +1,11 @@
 #include <Server/StaticRequestHandler.h>
 #include <Server/IServer.h>
 
+#include <Server/HTTP/HTTPResponseHelpers.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPResponseHeaderWriter.h>
 
 #include <Core/ServerSettings.h>
-#include <IO/CompressionMethod.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
@@ -35,53 +35,6 @@ namespace ErrorCodes
     extern const int HTTP_LENGTH_REQUIRED;
     extern const int INVALID_CONFIG_PARAMETER;
 }
-
-struct ResponseOutput
-{
-    std::unique_ptr<WriteBufferFromHTTPServerResponse> response_holder;
-    std::unique_ptr<WriteBuffer> compression_holder;
-
-    explicit ResponseOutput(std::unique_ptr<WriteBufferFromHTTPServerResponse> && buf)
-        : response_holder(std::move(buf))
-    {
-    }
-
-    void setCompressedOut(std::unique_ptr<WriteBuffer> && buf)
-    {
-        chassert(response_holder);
-        chassert(!compression_holder);
-        compression_holder = std::move(buf);
-    }
-
-    WriteBuffer * get() const
-    {
-        if (compression_holder)
-            return compression_holder.get();
-        return response_holder.get();
-    }
-};
-
-static inline ResponseOutput responseWriteBuffer(HTTPServerRequest & request, HTTPServerResponse & response)
-{
-    auto result = ResponseOutput(std::make_unique<WriteBufferFromHTTPServerResponse>(response, request.getMethod() == HTTPRequest::HTTP_HEAD));
-
-    /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
-    String http_response_compression_methods = request.get("Accept-Encoding", "");
-    CompressionMethod http_response_compression_method = CompressionMethod::None;
-
-    if (!http_response_compression_methods.empty())
-        http_response_compression_method = chooseHTTPCompressionMethod(http_response_compression_methods);
-
-    if (http_response_compression_method == CompressionMethod::None)
-        return result;
-
-    response.set("Content-Encoding", toContentEncodingName(http_response_compression_method));
-    /// HTTP `Content-Encoding: snappy` is standardized to use the snappy framing format.
-    result.setCompressedOut(wrapWriteBufferWithCompressionMethod(result.get(), http_response_compression_method, 1, 0, SnappyMode::Framed));
-
-    return result;
-}
-
 void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
     applyHTTPResponseHeaders(response, http_response_headers_override);
@@ -107,6 +60,14 @@ void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServer
     catch (...)
     {
         tryLogCurrentException("StaticRequestHandler");
+
+        /// If we are about to send an uncompressed exception body (no compression layer was set up,
+        /// e.g. the response was pre-encoded via configured `Content-Encoding`), that header would
+        /// mislabel the plain-text error and the client would fail to decode it. Drop it while the
+        /// response has not been sent yet.
+        if (!response_output.compression_holder && !response.sent() && response.has("Content-Encoding"))
+            response.erase("Content-Encoding");
+
         response_output.response_holder->cancelWithException(
             request, getCurrentExceptionCode(), getCurrentExceptionMessage(false, true), response_output.compression_holder.get());
     }

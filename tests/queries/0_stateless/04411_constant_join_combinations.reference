@@ -1,0 +1,264 @@
+cross_true
+1	10
+1	20
+2	10
+2	20
+comma_true
+1	10
+1	20
+2	10
+2	20
+all_inner_true
+1	10
+1	20
+2	10
+2	20
+all_inner_false
+all_left_true
+1	10
+1	20
+2	10
+2	20
+all_left_false
+1	0
+2	0
+all_right_true
+1	10
+1	20
+2	10
+2	20
+all_right_false
+0	10
+0	20
+all_full_true
+1	10
+1	20
+2	10
+2	20
+all_full_false
+0	10
+0	20
+1	0
+2	0
+any_inner_true
+1	10
+1	20
+2	10
+2	20
+any_inner_true_take_last
+1	10
+1	20
+2	10
+2	20
+any_inner_false
+any_left_true
+1	10
+1	20
+2	10
+2	20
+any_left_true_take_last
+1	10
+1	20
+2	10
+2	20
+any_left_false
+1	0
+2	0
+any_right_true
+1	10
+1	20
+2	10
+2	20
+any_right_true_take_last
+1	10
+1	20
+2	10
+2	20
+any_right_false
+0	10
+0	20
+rightany_left_true
+1	10
+1	20
+2	10
+2	20
+rightany_left_true_take_last
+1	10
+1	20
+2	10
+2	20
+rightany_right_true
+1	10
+1	20
+2	10
+2	20
+rightany_right_false
+0	10
+0	20
+rightany_full_true
+1	10
+1	20
+2	10
+2	20
+rightany_full_false
+0	10
+0	20
+1	0
+2	0
+left_semi_true
+1	10
+1	20
+2	10
+2	20
+left_semi_true_take_last
+1	10
+1	20
+2	10
+2	20
+left_semi_false
+right_semi_true
+1	10
+1	20
+2	10
+2	20
+right_semi_false
+left_anti_true
+1	10
+1	20
+2	10
+2	20
+left_anti_false
+1	0
+2	0
+right_anti_true
+1	10
+1	20
+2	10
+2	20
+right_anti_false
+0	10
+0	20
+any_left_empty_right
+any_right_empty_left
+left_semi_empty_right
+right_semi_empty_left
+left_anti_empty_right
+right_anti_empty_left
+cross_true
+1	10
+1	20
+2	10
+2	20
+comma_true
+1	10
+1	20
+2	10
+2	20
+all_inner_true
+1	10
+1	20
+2	10
+2	20
+all_inner_false
+all_left_true
+1	10
+1	20
+2	10
+2	20
+all_left_false
+1	0
+2	0
+all_right_true
+1	10
+1	20
+2	10
+2	20
+all_right_false
+0	10
+0	20
+all_full_true
+1	10
+1	20
+2	10
+2	20
+all_full_false
+0	10
+0	20
+1	0
+2	0
+any_inner_true
+1	10
+any_inner_true_take_last
+1	10
+any_inner_false
+any_left_true
+1	10
+2	10
+any_left_true_take_last
+1	20
+2	20
+any_left_false
+1	0
+2	0
+any_right_true
+1	10
+1	20
+any_right_true_take_last
+1	10
+1	20
+any_right_false
+0	10
+0	20
+rightany_left_true
+1	10
+2	10
+rightany_left_true_take_last
+1	10
+2	10
+rightany_right_true
+1	10
+2	10
+rightany_right_false
+0	10
+0	20
+rightany_full_true
+1	10
+2	10
+rightany_full_false
+0	10
+0	20
+1	0
+2	0
+left_semi_true
+1	10
+2	10
+left_semi_true_take_last
+1	10
+2	10
+left_semi_false
+right_semi_true
+1	10
+1	20
+right_semi_false
+left_anti_true
+left_anti_false
+1	0
+2	0
+right_anti_true
+right_anti_false
+0	10
+0	20
+any_left_empty_right
+1	0
+2	0
+any_right_empty_left
+0	10
+0	20
+left_semi_empty_right
+right_semi_empty_left
+left_anti_empty_right
+1	0
+2	0
+right_anti_empty_left
+0	10
+0	20

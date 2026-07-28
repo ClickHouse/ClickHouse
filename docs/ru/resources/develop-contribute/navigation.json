@@ -1,0 +1,65 @@
+{
+  "groups": [
+    {
+      "group": "Введение",
+      "pages": [
+        "ru/resources/develop-contribute/introduction/developer-instruction",
+        "ru/resources/develop-contribute/introduction/architecture"
+      ]
+    },
+    {
+      "group": "Сборка",
+      "pages": [
+        "ru/resources/develop-contribute/build/build",
+        "ru/resources/develop-contribute/build/build-osx",
+        "ru/resources/develop-contribute/build/build-cross-osx",
+        "ru/resources/develop-contribute/build/build-cross-arm",
+        "ru/resources/develop-contribute/build/build-cross-riscv",
+        "ru/resources/develop-contribute/build/build-cross-s390x",
+        "ru/resources/develop-contribute/build/build-cross-loongarch",
+        "ru/resources/develop-contribute/build/build-e2k"
+      ]
+    },
+    {
+      "group": "Собственный протокол",
+      "pages": [
+        "ru/resources/develop-contribute/native-protocol/basics",
+        "ru/resources/develop-contribute/native-protocol/client",
+        "ru/resources/develop-contribute/native-protocol/server",
+        "ru/resources/develop-contribute/native-protocol/columns",
+        "ru/resources/develop-contribute/native-protocol/hash"
+      ]
+    },
+    {
+      "group": "Участие в проекте",
+      "pages": [
+        "ru/resources/develop-contribute/contribute/tests",
+        "ru/resources/develop-contribute/contribute/continuous-integration",
+        "ru/resources/develop-contribute/contribute/contrib",
+        "ru/resources/develop-contribute/contribute/style",
+        "ru/resources/develop-contribute/contribute/building-and-benchmarking-deflate-qpl",
+        "ru/resources/develop-contribute/contribute/integrating-rust-libraries",
+        "ru/resources/develop-contribute/contribute/profile-guided-optimization",
+        "ru/resources/develop-contribute/contribute/backports"
+      ]
+    },
+    {
+      "group": "Разработка интеграций",
+      "pages": [
+        "ru/resources/develop-contribute/integrations/building-integrations",
+        "ru/resources/develop-contribute/integrations/testing-your-integration",
+        "ru/resources/develop-contribute/integrations/documenting-your-integration"
+      ],
+      "root": "ru/resources/develop-contribute/integrations/index"
+    },
+    {
+      "group": "Дорожная карта",
+      "pages": [
+        "ru/resources/develop-contribute/roadmap"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-contribute.svg",
+  "item": "Разработка и вклад",
+  "root": "ru/resources/develop-contribute/index"
+}

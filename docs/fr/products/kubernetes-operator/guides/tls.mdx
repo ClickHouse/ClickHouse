@@ -50,177 +50,169 @@ conversion n’est nécessaire. L’opérateur monte la paire clé/certificat da
   si `enabled: true` n’est pas défini.
 </Note>
 
-<div id="step-1-ca">
-  ## Étape 1 — Initialiser une CA avec cert-manager
-</div>
+<Steps>
+  <Step title="Créer une CA avec cert-manager" id="step-1-ca">
+    La configuration la plus reproductible consiste à utiliser une CA auto-signée qui signe ensuite le
+    certificat du serveur. Vous obtenez ainsi un `ca.crt` stable auquel les clients peuvent faire confiance.
 
-La configuration la plus reproductible consiste à utiliser une CA auto-signée, qui signe ensuite le
-certificat du serveur. Vous obtenez ainsi un `ca.crt` stable auquel les clients peuvent se fier.
-
-```yaml
-# A self-signed issuer used only to mint the CA certificate
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: selfsigned-bootstrap
-  namespace: <namespace>
-spec:
-  selfSigned: {}
----
-# The CA certificate itself
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: clickhouse-ca
-  namespace: <namespace>
-spec:
-  isCA: true
-  commonName: clickhouse-ca
-  secretName: clickhouse-ca
-  privateKey:
-    algorithm: ECDSA
-    size: 256
-  issuerRef:
-    name: selfsigned-bootstrap
+    ```yaml
+    # A self-signed issuer used only to mint the CA certificate
+    apiVersion: cert-manager.io/v1
     kind: Issuer
----
-# A CA issuer that signs leaf certificates from the CA above
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: clickhouse-ca-issuer
-  namespace: <namespace>
-spec:
-  ca:
-    secretName: clickhouse-ca
-```
-
-En production, remplacez le bootstrap autosigné par votre véritable autorité émettrice (une
-CA d’entreprise, Vault, ACME, etc.). Seule l’étape 2 change — la configuration du cluster reste
-identique.
-
-<div id="step-2-cert">
-  ## Étape 2 — Émettre le certificat serveur
-</div>
-
-Demandez un certificat final à l’issuer CA. Les `dnsNames` doivent couvrir la façon
-dont les clients accèdent aux pods. L’opérateur crée un seul Service **headless** nommé
-`<cluster-name>-clickhouse-headless`, et chaque pod de réplique est accessible à l’adresse
-`<cluster-name>-clickhouse-<shard>-<index>-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local`.
-Un joker sur le domaine du Service headless couvre toutes les répliques :
-
-```yaml
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: clickhouse-server
-  namespace: <namespace>
-spec:
-  secretName: clickhouse-cert        # <-- the Secret the operator will read
-  duration: 8760h                    # 1 year
-  renewBefore: 720h                  # rotate 30 days early
-  issuerRef:
-    name: clickhouse-ca-issuer
+    metadata:
+      name: selfsigned-bootstrap
+      namespace: <namespace>
+    spec:
+      selfSigned: {}
+    ---
+    # The CA certificate itself
+    apiVersion: cert-manager.io/v1
+    kind: Certificate
+    metadata:
+      name: clickhouse-ca
+      namespace: <namespace>
+    spec:
+      isCA: true
+      commonName: clickhouse-ca
+      secretName: clickhouse-ca
+      privateKey:
+        algorithm: ECDSA
+        size: 256
+      issuerRef:
+        name: selfsigned-bootstrap
+        kind: Issuer
+    ---
+    # A CA issuer that signs leaf certificates from the CA above
+    apiVersion: cert-manager.io/v1
     kind: Issuer
-  dnsNames:
-    - "*.<cluster-name>-clickhouse-headless.<namespace>.svc"
-    - "*.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local"
-    - "localhost"
-```
+    metadata:
+      name: clickhouse-ca-issuer
+      namespace: <namespace>
+    spec:
+      ca:
+        secretName: clickhouse-ca
+    ```
 
-<Note>
-  L’opérateur ne crée **pas** de Service à l’échelle du cluster (avec équilibrage de charge). Si vous
-  souhaitez disposer d’un point de terminaison stable unique auquel vous connecter, créez votre propre Service de type `ClusterIP`
-  ciblant les pods du cluster et ajoutez son nom DNS à `dnsNames` ci-dessus.
-</Note>
+    En production, remplacez le bootstrap autosigné par votre véritable issuer (une
+    CA d’entreprise, Vault, ACME, etc.). Seule l’étape 2 change — la configuration du cluster est
+    identique.
+  </Step>
 
-cert-manager crée le Secret `clickhouse-cert` avec `tls.crt`, `tls.key` et
-`ca.crt`, et le renouvelle avant son expiration. Vérifiez qu’il existe :
+  <Step title="Émettre le certificat serveur" id="step-2-cert">
+    Demandez un certificat final à l’issuer CA. Les `dnsNames` doivent couvrir la façon
+    dont les clients accèdent aux pods. L’opérateur crée un seul Service **headless** nommé
+    `<cluster-name>-clickhouse-headless`, et chaque pod de réplique est accessible à l’adresse
+    `<cluster-name>-clickhouse-<shard>-<index>-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local`.
+    Un joker sur le domaine du Service headless couvre toutes les répliques :
 
-```bash
-kubectl -n <namespace> get secret clickhouse-cert -o jsonpath='{.data}' | jq 'keys'
-# ["ca.crt","tls.crt","tls.key"]
-```
+    ```yaml
+    apiVersion: cert-manager.io/v1
+    kind: Certificate
+    metadata:
+      name: clickhouse-server
+      namespace: <namespace>
+    spec:
+      secretName: clickhouse-cert        # <-- the Secret the operator will read
+      duration: 8760h                    # 1 year
+      renewBefore: 720h                  # rotate 30 days early
+      issuerRef:
+        name: clickhouse-ca-issuer
+        kind: Issuer
+      dnsNames:
+        - "*.<cluster-name>-clickhouse-headless.<namespace>.svc"
+        - "*.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local"
+        - "localhost"
+    ```
 
-<div id="step-3-enable">
-  ## Étape 3 — Activer TLS sur le cluster
-</div>
+    <Note>
+      L’opérateur ne crée **pas** de Service à l’échelle du cluster (avec équilibrage de charge). Si vous
+      souhaitez disposer d’un point de terminaison stable unique auquel vous connecter, créez votre propre Service de type `ClusterIP`
+      ciblant les pods du cluster et ajoutez son nom DNS à `dnsNames` ci-dessus.
+    </Note>
 
-Configurez le cluster pour qu’il utilise le Secret :
+    cert-manager crée le Secret `clickhouse-cert` avec `tls.crt`, `tls.key` et
+    `ca.crt`, et le renouvelle avant son expiration. Vérifiez qu’il existe :
 
-```yaml
-apiVersion: clickhouse.com/v1alpha1
-kind: ClickHouseCluster
-metadata:
-  name: <cluster-name>
-  namespace: <namespace>
-spec:
-  settings:
-    tls:
-      enabled: true
-      required: true            # disable the insecure ports entirely
-      serverCertSecret:
-        name: clickhouse-cert
-```
+    ```bash
+    kubectl -n <namespace> get secret clickhouse-cert -o jsonpath='{.data}' | jq 'keys'
+    # ["ca.crt","tls.crt","tls.key"]
+    ```
+  </Step>
 
-<div id="what-the-operator-does">
-  ### Ce que fait l’opérateur
-</div>
+  <Step title="Activer le TLS sur le cluster" id="step-3-enable">
+    Faites pointer le cluster vers le Secret :
 
-Lorsque `tls.enabled: true`, l’opérateur :
+    ```yaml
+    apiVersion: clickhouse.com/v1alpha1
+    kind: ClickHouseCluster
+    metadata:
+      name: <cluster-name>
+      namespace: <namespace>
+    spec:
+      settings:
+        tls:
+          enabled: true
+          required: true            # disable the insecure ports entirely
+          serverCertSecret:
+            name: clickhouse-cert
+    ```
 
-* **Ouvre les ports sécurisés** sur chaque pod et le Service headless : `9440`
-  (TLS natif) et `8443` (HTTPS). Ils sont ajoutés en complément des ports existants.
-* **Monte le Secret** dans `/etc/clickhouse-server/tls/` et génère le
-  bloc `openSSL` de ClickHouse avec `verificationMode: relaxed`,
-  `disableProtocols: sslv2,sslv3` et `preferServerCiphers: true`. Il s’agit des
-  valeurs par défaut — voir [Personnaliser les paramètres TLS](#custom-tls-settings) pour les modifier.
+    ### Ce que fait l’opérateur
 
-Lorsque vous définissez également `required: true`, l’opérateur :
+    Lorsque `tls.enabled: true`, l’opérateur :
 
-* **Supprime les ports non sécurisés** `9000` (natif) et `8123` (HTTP) — seules les variantes TLS
-  restent disponibles, de sorte que les clients en plaintext ne peuvent plus se connecter.
-* **Bascule la probe de liveness du pod** sur le port natif sécurisé `9440`, afin que la vérification
-  d’état continue de fonctionner sans écouteur en plaintext.
+    * **Ouvre les ports sécurisés** sur chaque pod et le Service headless : `9440`
+      (TLS natif) et `8443` (HTTPS). Ils sont ajoutés en plus des ports existants.
+    * **Monte le Secret** dans `/etc/clickhouse-server/tls/` et génère le bloc
+      ClickHouse `openSSL` avec `verificationMode: relaxed`,
+      `disableProtocols: sslv2,sslv3` et `preferServerCiphers: true`. Ce sont les
+      valeurs par défaut — voir [Personnaliser les paramètres TLS](#custom-tls-settings) pour les remplacer.
 
-<Note>
-  Les ports TLS `8443` et `9440` sont réservés par le webhook **dans tous les cas**,
-  même lorsque TLS est désactivé, de sorte que l’activation ultérieure de `tls.enabled` n’entre jamais en conflit avec une
-  entrée `spec.additionalPorts`. Voir
-  [Configuration → `additionalPorts`](/fr/products/kubernetes-operator/guides/configuration#additional-ports).
-</Note>
+    Lorsque vous définissez aussi `required: true`, l’opérateur :
 
-<div id="step-4-connect">
-  ## Étape 4 — Se connecter via TLS
-</div>
+    * **Supprime les ports non sécurisés** `9000` (natif) et `8123` (HTTP) — seules les
+      variantes TLS restent, de sorte que les clients en plaintext ne peuvent plus se connecter.
+    * **Bascule la probe de liveness du pod** vers le port natif sécurisé `9440`, afin que la
+      vérification d’état continue de fonctionner sans listener en plaintext.
 
-Avec `required: true`, les clients doivent utiliser les ports sécurisés et faire confiance à la CA. Ciblez
-un pod de réplique spécifique via le Service headless (ou votre propre
-service de type `ClusterIP` si vous en avez créé un).
+    <Note>
+      Les ports TLS `8443` et `9440` sont réservés par le webhook **sans condition**,
+      même lorsque TLS est désactivé, de sorte qu’un changement ultérieur de `tls.enabled` n’entre jamais en collision avec une
+      entrée `spec.additionalPorts`. Voir
+      [Configuration → `additionalPorts`](/fr/products/kubernetes-operator/guides/configuration#additional-ports).
+    </Note>
+  </Step>
 
-**Protocole natif** (`clickhouse-client`, port `9440`) :
+  <Step title="Se connecter en TLS" id="step-4-connect">
+    Avec `required: true`, les clients doivent utiliser les ports sécurisés et faire confiance à la CA. Accédez à
+    un pod de réplique spécifique via le Service headless (ou votre propre Service de type `ClusterIP`
+    si vous en avez créé un).
 
-```bash
-clickhouse-client --secure \
-  --host <cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local \
-  --port 9440 \
-  --ca-certificate /path/to/ca.crt \
-  --query "SELECT 1"
-```
+    **Protocole natif** (`clickhouse-client`, port `9440`) :
 
-**HTTPS** (port `8443`) :
+    ```bash
+    clickhouse-client --secure \
+      --host <cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local \
+      --port 9440 \
+      --ca-certificate /path/to/ca.crt \
+      --query "SELECT 1"
+    ```
 
-```bash
-curl --cacert /path/to/ca.crt \
-  "https://<cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local:8443/?query=SELECT%201"
-```
+    **HTTPS** (port `8443`) :
 
-Récupérez `ca.crt` directement à partir du Secret pour les tests en local :
+    ```bash
+    curl --cacert /path/to/ca.crt \
+      "https://<cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local:8443/?query=SELECT%201"
+    ```
 
-```bash
-kubectl -n <namespace> get secret clickhouse-cert \
-  -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
-```
+    Récupérez `ca.crt` directement depuis le Secret pour des tests en local :
+
+    ```bash
+    kubectl -n <namespace> get secret clickhouse-cert \
+      -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
+    ```
+  </Step>
+</Steps>
 
 <div id="keeper-tls">
   ## Chiffrement du trafic Keeper

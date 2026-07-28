@@ -635,7 +635,10 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     /// Primary key is special, it exists even if not defined
     if (new_metadata.primary_key.definition_ast != nullptr)
     {
-        new_metadata.primary_key.recalculateWithNewColumns(new_metadata.columns, virtuals, context);
+        /// An explicitly defined primary key cannot express per-column directions (`DESC`), so it
+        /// inherits them from the sorting key, which is already recalculated above.
+        new_metadata.primary_key = KeyDescription::getPrimaryKeyFromAST(
+            new_metadata.primary_key.definition_ast, new_metadata.sorting_key, new_metadata.columns, virtuals, context);
     }
     else
     {
