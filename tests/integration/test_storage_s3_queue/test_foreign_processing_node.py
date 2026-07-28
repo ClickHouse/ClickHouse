@@ -67,9 +67,7 @@ def test_file_is_retried_after_foreign_processing_node_disappears(started_cluste
     files_path = f"{table_name}_data"
 
     files_to_generate = 5
-    generate_random_files(
-        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
-    )
+    generate_random_files(started_cluster, files_path, files_to_generate, start_ind=0, row_num=1)
 
     create_table(
         started_cluster,
@@ -102,12 +100,7 @@ def test_file_is_retried_after_foreign_processing_node_disappears(started_cluste
         run_with_retry(lambda x: x == files_to_generate - 1, get_count)
 
         # The file must not be committed while the foreign `processing` node is there.
-        assert (
-            node.query(
-                f"SELECT count() FROM {dst_table_name} WHERE _path LIKE '%test_2.csv'"
-            ).strip()
-            == "0"
-        )
+        assert node.query(f"SELECT count() FROM {dst_table_name} WHERE _path LIKE '%test_2.csv'").strip() == "0"
 
         # The foreign processor released the file without committing it.
         zk.delete(f"{keeper_path}/processing/{conflict_node}")
