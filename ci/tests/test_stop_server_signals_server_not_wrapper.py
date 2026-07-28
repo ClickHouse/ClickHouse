@@ -70,25 +70,43 @@ import sys
 import time
 
 pid_file, status_file, ignore_signals = sys.argv[1], sys.argv[2], sys.argv[3]
+# When given, the server exits as soon as this file appears, so that the
+# watchdog restarts it under a new pid - the `CLICKHOUSE_WATCHDOG_RESTART=1`
+# shape, driven by the test instead of by a signal so that the drift is
+# deterministic.
+restart_file = sys.argv[4] if len(sys.argv) > 4 else ""
 
-if os.fork() != 0:
-    # The watchdog half: outlive the server, as `setupWatchdog` does. `argv[0]`
-    # survives the fork, so the server below is indistinguishable from the real
-    # one to `_server_process_alive`, just as in CI.
+
+def serve(hand_over):
+    for name in ignore_signals.split():
+        signal.signal(getattr(signal, "SIG" + name), signal.SIG_IGN)
+    # Hold the data directory lock that the scraping `clickhouse local` needs.
+    # The pid file is written only once the lock is held, so a test that sees
+    # the pid file can rely on the lock being taken.
+    fd = os.open(status_file, os.O_CREAT | os.O_WRONLY, 0o644)
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    with open(pid_file, "w") as f:
+        f.write(str(os.getpid()))
+    while True:
+        if hand_over and os.path.exists(restart_file):
+            os._exit(0)
+        time.sleep(0.1)
+
+
+if os.fork() == 0:
+    serve(hand_over=bool(restart_file))
+# The watchdog half: outlive the server, as `setupWatchdog` does. `argv[0]`
+# survives the fork, so the server below is indistinguishable from the real one
+# to `_server_process_alive`, just as in CI.
+os.wait()
+if restart_file:
+    # Restart the server once, keeping the watchdog's and the wrapper's own
+    # pids - which is exactly what makes the pid snapshot taken at startup
+    # stale.
+    if os.fork() == 0:
+        serve(hand_over=False)
     os.wait()
-    sys.exit(0)
-
-for name in ignore_signals.split():
-    signal.signal(getattr(signal, "SIG" + name), signal.SIG_IGN)
-# Hold the data directory lock that the scraping `clickhouse local` needs. The
-# pid file is written only once the lock is held, so a test that sees the pid
-# file can rely on the lock being taken.
-fd = os.open(status_file, os.O_CREAT | os.O_WRONLY, 0o644)
-fcntl.flock(fd, fcntl.LOCK_EX)
-with open(pid_file, "w") as f:
-    f.write(str(os.getpid()))
-while True:
-    time.sleep(0.1)
+sys.exit(0)
 """
 
 
@@ -102,11 +120,16 @@ def _pid_alive(pid):
     return True
 
 
-def _start_fake_server(tmp_path, name="clickhouse-server", ignore_signals="TERM"):
+def _start_fake_server(
+    tmp_path, name="clickhouse-server", ignore_signals="TERM", restart_file=""
+):
     """Start wrapper shell -> watchdog -> "server", as the CI harness does.
 
     `name` is the `argv[0]` the fake server runs under - the sole thing that
     makes it the server as far as `_server_process_alive` is concerned.
+
+    With `restart_file`, the watchdog restarts the server under a new pid once
+    that file appears, modelling `CLICKHOUSE_WATCHDOG_RESTART=1`.
 
     Returns `(proc, pid)`, the pair `stop_server` iterates over: `proc` is the
     `Popen` handle on the wrapper, `pid` is what the server wrote to its pid file.
@@ -124,7 +147,7 @@ def _start_fake_server(tmp_path, name="clickhouse-server", ignore_signals="TERM"
     pid_file = tmp_path / "clickhouse-server.pid"
     status_file = tmp_path / "status"
     proc = subprocess.Popen(
-        f"{server} {script} {pid_file} {status_file} '{ignore_signals}'",
+        f"{server} {script} {pid_file} {status_file} '{ignore_signals}' {restart_file}",
         shell=True,
         cwd=tmp_path,
     )
@@ -234,6 +257,50 @@ def test_stop_server_escalates_to_kill_when_the_server_ignores_trap(
         )
     finally:
         _cleanup(proc, pid)
+
+
+def test_stop_server_stops_the_server_the_pid_file_names_now(monkeypatch, tmp_path):
+    # `CLICKHOUSE_WATCHDOG_RESTART=1` lets `BaseDaemon::setupWatchdog` respawn
+    # the server under a new pid while the wrapper and the watchdog above it keep
+    # theirs, and the new server rewrites the pid file. The pid `stop_server`
+    # snapshotted at startup is then stale: signalling it does nothing, and
+    # killing the wrapper does not stop the server - which keeps
+    # `<run_path>/status` locked and takes this replica's system tables down with
+    # it. So `stop_server` must signal whoever the pid file names at teardown
+    # time, not who it named at startup.
+    restart_file = tmp_path / "restart"
+    pid_file = tmp_path / "clickhouse-server.pid"
+    proc, startup_pid = _start_fake_server(tmp_path, restart_file=restart_file)
+    respawned_pid = 0
+    try:
+        restart_file.touch()
+        deadline = time.monotonic() + 60
+        while True:
+            current = pid_file.read_text().strip()
+            if (
+                current
+                and int(current) != startup_pid
+                and not _status_lock_is_free(tmp_path)
+            ):
+                respawned_pid = int(current)
+                break
+            assert time.monotonic() < deadline, (
+                "the fake watchdog did not bring the server back under a new pid"
+            )
+            time.sleep(0.05)
+        _make_proc(monkeypatch, tmp_path, proc, startup_pid).stop_server()
+        assert not ClickHouseProc._server_process_alive(respawned_pid), (
+            "the server outlived stop_server because its pid had drifted from "
+            "the startup snapshot"
+        )
+        assert _status_lock_is_free(tmp_path), (
+            "the status lock was still held after stop_server returned; "
+            "`clickhouse local` cannot scrape this replica's system tables"
+        )
+    finally:
+        _cleanup(proc, startup_pid)
+        if respawned_pid:
+            _cleanup(proc, respawned_pid)
 
 
 def test_stop_server_leaves_an_unrelated_process_alone(monkeypatch, tmp_path):

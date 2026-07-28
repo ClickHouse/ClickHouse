@@ -62,6 +62,9 @@ class ClickHouseProc:
     # `argv[0]` the servers are started with (see `self.command` below), used to
     # tell the server apart from a process that has been given its recycled pid.
     SERVER_ARGV0 = "clickhouse-server"
+    # How many times `stop_server` takes out a server that the watchdog brought
+    # back while the previous one was being stopped, before giving up on it.
+    RESPAWN_STOP_ATTEMPTS = 3
 
     def __init__(
         self,
@@ -763,43 +766,101 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             (self.proc_2, self.pid_file_replica_2, self.pid_2, self.run_path2),
         ):
             if proc and pid:
-                if force:
-                    # Use clickhouse stop --force when this issue is fixed
-                    # https://github.com/ClickHouse/ClickHouse/issues/99142
-                    self._signal_server(pid, signal.SIGTERM, "TERM")
-                    if self._wait_server_gone(pid, timeout=10):
-                        self._reap_server_wrapper(proc)
-                        continue
-                elif Shell.check(
-                    f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill >/dev/null",
-                    verbose=True,
-                ):
-                    continue
-                print(
-                    f"Failed to stop ClickHouse process {pid} gracefully - send TRAP signal to generate core file"
-                )
-                self._signal_server(pid, signal.SIGTRAP, "TRAP")
-                if not self._wait_server_gone(
-                    pid, timeout=self.TRAP_CORE_DUMP_TIMEOUT
-                ):
-                    # The server must not outlive this function: it holds an
-                    # exclusive lock on `<run_path>/status`, and the later
-                    # `clickhouse local` scraping of `system.*_log` from the same
-                    # data directory then fails with `CANNOT_OPEN_FILE` ("Another
-                    # server instance in same directory is already running"),
-                    # losing every system table of that replica.
-                    print(
-                        f"ClickHouse process {pid} is still alive after TRAP - send KILL signal"
-                    )
-                    self._signal_server(pid, signal.SIGKILL, "KILL")
-                    if not self._wait_server_gone(pid, timeout=60):
-                        print(
-                            f"WARNING: ClickHouse process {pid} survived KILL - "
-                            f"system tables in {run_path} will not be scraped"
-                        )
-                self._reap_server_wrapper(proc)
+                self._stop_one_server(proc, pid_file, pid, run_path, force)
 
         return self
+
+    def _stop_one_server(self, proc, pid_file, startup_pid, run_path, force):
+        """Stop one server, whatever pid it runs under now.
+
+        The pid snapshotted when the server was started can be stale by
+        teardown time: with `CLICKHOUSE_WATCHDOG_RESTART=1`,
+        `BaseDaemon::setupWatchdog` respawns the server under a new pid - and
+        the new server rewrites the pid file - while the `sh -c` wrapper and the
+        watchdog above it keep theirs. Signalling the snapshot would then be a
+        no-op on a dead pid, and killing the wrapper does not stop the server,
+        so the live server would be left holding `<run_path>/status`. Hence the
+        pid file is reread here, and again after the teardown, in case the
+        watchdog got another server up in the meantime.
+        """
+        pid = self._current_server_pid(pid_file) or startup_pid
+        if force:
+            # Use clickhouse stop --force when this issue is fixed
+            # https://github.com/ClickHouse/ClickHouse/issues/99142
+            self._signal_server(pid, signal.SIGTERM, "TERM")
+            if self._wait_server_gone(pid, timeout=10):
+                self._reap_server_wrapper(proc)
+                self._stop_respawned_server(pid_file, run_path)
+                return
+        elif Shell.check(
+            f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill >/dev/null",
+            verbose=True,
+        ):
+            self._stop_respawned_server(pid_file, run_path)
+            return
+        print(
+            f"Failed to stop ClickHouse process {pid} gracefully - send TRAP signal to generate core file"
+        )
+        self._signal_server(pid, signal.SIGTRAP, "TRAP")
+        if not self._wait_server_gone(pid, timeout=self.TRAP_CORE_DUMP_TIMEOUT):
+            # The server must not outlive this function: it holds an exclusive
+            # lock on `<run_path>/status`, and the later `clickhouse local`
+            # scraping of `system.*_log` from the same data directory then fails
+            # with `CANNOT_OPEN_FILE` ("Another server instance in same
+            # directory is already running"), losing every system table of that
+            # replica.
+            print(
+                f"ClickHouse process {pid} is still alive after TRAP - send KILL signal"
+            )
+            self._signal_server(pid, signal.SIGKILL, "KILL")
+            if not self._wait_server_gone(pid, timeout=60):
+                print(
+                    f"WARNING: ClickHouse process {pid} survived KILL - "
+                    f"system tables in {run_path} will not be scraped"
+                )
+        self._reap_server_wrapper(proc)
+        self._stop_respawned_server(pid_file, run_path)
+
+    @classmethod
+    def _current_server_pid(cls, pid_file) -> int:
+        """The pid of the live server the pid file names right now, or 0.
+
+        0 also when the file names a pid that is not a live server - it went
+        away, or the kernel has already handed its pid to something else.
+        """
+        try:
+            pid = int(Path(pid_file).read_text().strip())
+        except (OSError, ValueError):
+            return 0
+        return pid if cls._server_process_alive(pid) else 0
+
+    @classmethod
+    def _stop_respawned_server(cls, pid_file, run_path):
+        """Take out a server that came back while the previous one was stopped.
+
+        In `CLICKHOUSE_WATCHDOG_RESTART=1` mode the watchdog starts a fresh
+        server after an abnormal exit, so a new server - with a new pid in the
+        pid file - can be up and holding `<run_path>/status` by the time the
+        teardown of the previous one is over. Nothing may outlive this teardown
+        holding that lock, or the scraping of `system.*_log` loses every system
+        table of this replica.
+        """
+        for _ in range(cls.RESPAWN_STOP_ATTEMPTS):
+            pid = cls._current_server_pid(pid_file)
+            if not pid:
+                return
+            print(
+                f"ClickHouse process {pid} came up again after the teardown - send KILL signal"
+            )
+            cls._signal_server(pid, signal.SIGKILL, "KILL")
+            if not cls._wait_server_gone(pid, timeout=60):
+                break
+        pid = cls._current_server_pid(pid_file)
+        if pid:
+            print(
+                f"WARNING: ClickHouse process {pid} is still alive after the teardown - "
+                f"system tables in {run_path} will not be scraped"
+            )
 
     @classmethod
     def _server_process_alive(cls, pid) -> bool:
@@ -870,9 +931,9 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         The wrapper (and the watchdog between it and the server) normally exits
         on its own within a moment of the server going away; kill it if it does
-        not, so it is not left behind as a stray process. This is also the only
-        thing that stops a live server whose pid file went stale, since then
-        there is no pid to signal.
+        not, so it is not left behind as a stray process. It is not a way to
+        stop the server: the server is the wrapper's grandchild and survives it,
+        which is what `_stop_respawned_server` is for.
         """
         try:
             proc.wait(timeout=10)
