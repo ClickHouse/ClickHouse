@@ -36,11 +36,6 @@ void copyAzureBlobStorageFile(
     BlobStorageLogWriterPtr blob_storage_log = {});
 
 
-/// Whether copyAzureBlobStorageFile may use native server-side copy. CopyFromUri copies the whole
-/// blob, so it is valid only for a full-object copy (offset==0). Exposed for unit testing.
-bool azureCopyShouldTryNativeCopy(bool use_native_copy, size_t offset);
-
-
 /// Copies data from any seekable source to AzureBlobStorage.
 /// The same functionality can be done by using the function copyData() and the class WriteBufferFromS3
 /// however copyDataToS3File() is faster and spends less memory.

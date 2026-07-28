@@ -14,6 +14,7 @@
 
 #include <azure/core/io/body_stream.hpp>
 #include <azure/storage/files/datalake/datalake_options.hpp>
+#include <azure/core/credentials/credentials.hpp>
 
 
 namespace ProfileEvents
@@ -194,6 +195,27 @@ void WriteBufferFromAzureDataLakeStorage::runWithRetries(
 
             LOG_WARNING(log, "ADLS Gen2 {} attempt {} for `{}` failed: HTTP {}: {}. Retrying after {} ms.",
                 what, attempt, blob_path, static_cast<int>(e.StatusCode), e.Message, backoff_ms);
+
+            sleepForMilliseconds(backoff_ms);
+            backoff_ms *= 2;
+        }
+        catch (const Azure::Core::Credentials::AuthenticationException & e)
+        {
+            /// Credential/RBAC token-acquisition failures are transient during the auth-propagation
+            /// window (same rationale as 403 in isRetryableAzureException), so retry within budget.
+            if (attempt >= max_unexpected_write_error_retries)
+            {
+                log_event(static_cast<Int32>(ErrorCodes::AZURE_BLOB_STORAGE_ERROR), e.what(), watch.elapsedMicroseconds());
+                throw Exception(
+                    ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+                    "ADLS Gen2 {} failed for `{}`: authentication error: {}",
+                    what,
+                    blob_path,
+                    e.what());
+            }
+
+            LOG_WARNING(log, "ADLS Gen2 {} attempt {} for `{}` failed: authentication error: {}. Retrying after {} ms.",
+                what, attempt, blob_path, e.what(), backoff_ms);
 
             sleepForMilliseconds(backoff_ms);
             backoff_ms *= 2;

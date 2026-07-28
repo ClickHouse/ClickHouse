@@ -376,7 +376,7 @@ void copyDataToAzureBlobStorageFile(
 }
 
 
-bool azureCopyShouldTryNativeCopy(bool use_native_copy, size_t offset)
+static bool azureCopyShouldTryNativeCopy(bool use_native_copy, size_t offset)
 {
     /// Server-side CopyFromUri copies the whole source blob, so native copy is valid only for a
     /// full-object copy; a ranged copy (offset>0) must go via read+write.

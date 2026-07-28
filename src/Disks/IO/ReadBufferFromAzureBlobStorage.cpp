@@ -333,20 +333,48 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
     initialized = true;
 }
 
+namespace
+{
+    /// GetProperties() is a single request issued outside the read/download retry loops, so a
+    /// transient Azure 403 (RBAC-propagation window) would otherwise escape raw. Retry it with the
+    /// same policy the download loop uses (isRetryableAzureException + bounded exponential backoff).
+    Azure::Storage::Blobs::Models::BlobProperties getBlobPropertiesWithRetry(
+        const Azure::Storage::Blobs::BlobClient & client, size_t max_retries, const String & path, const LoggerPtr & log)
+    {
+        size_t sleep_time_with_backoff_milliseconds = 100;
+        for (size_t i = 0;; ++i)
+        {
+            try
+            {
+                return client.GetProperties().Value;
+            }
+            catch (const Azure::Core::RequestFailedException & e)
+            {
+                if (i + 1 >= max_retries || !isRetryableAzureException(e))
+                    throw;
+                LOG_TEST(log, "GetProperties for {} failed at attempt {}, retrying: {}", path, i + 1, e.Message);
+                sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
+                sleep_time_with_backoff_milliseconds *= 2;
+            }
+        }
+    }
+}
+
 std::optional<size_t> ReadBufferFromAzureBlobStorage::tryGetFileSize()
 {
     if (!blob_client)
         blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
 
     if (!file_size)
-        file_size = blob_client->GetProperties().Value.BlobSize;
+        file_size = getBlobPropertiesWithRetry(*blob_client, max_single_download_retries, path, log).BlobSize;
 
     return file_size;
 }
 
 std::optional<RemoteFileMetadata> ReadBufferFromAzureBlobStorage::getRemoteFileMetadata() const
 {
-    const auto properties = blob_container_client->GetBlobClient(path).GetProperties().Value;
+    const auto properties = getBlobPropertiesWithRetry(
+        blob_container_client->GetBlobClient(path), max_single_download_retries, path, log);
     const auto last_modification_time = std::chrono::duration_cast<std::chrono::seconds>(
         static_cast<std::chrono::system_clock::time_point>(properties.LastModified).time_since_epoch())
         .count();
