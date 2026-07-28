@@ -329,7 +329,7 @@ export const IntegrationGrid = () => {
         } catch (cmsErr) {
           if (cmsErr instanceof Error) {
             if (cmsErr.name === "AbortError") {
-              console.log("타임아웃으로 인해 CMS 요청이 중단되었습니다. 폴백 데이터를 사용합니다.")
+              console.log("타임아웃으로 인해 CMS 요청이 중단되었습니다.")
             } else {
               console.error("CMS에서 통합 목록을 로드하는 중 오류 발생:", cmsErr.message)
             }
@@ -643,7 +643,7 @@ export const IntegrationGrid = () => {
               style={{ padding: "6px 12px" }}
               onClick={() => setSelectedFilter("All")}
             >
-              전체
+              All
             </button>
             {integrationTypes.map((type) => (
               <button
@@ -671,7 +671,7 @@ export const IntegrationGrid = () => {
               style={{ padding: "6px 12px" }}
               onClick={() => setSelectedTier("All")}
             >
-              전체 티어
+              All tiers
             </button>
             {integrationTiers.map((tier) => (
               <button

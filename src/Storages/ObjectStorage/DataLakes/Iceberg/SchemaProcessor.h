@@ -17,6 +17,7 @@
 #include <Common/SharedMutex.h>
 
 #include <unordered_map>
+#include <unordered_set>
 namespace DB::Iceberg
 {
 
@@ -97,6 +98,9 @@ public:
     static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true);
 
     static std::unordered_map<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);
+
+    /// Paths whose Iceberg logical type is `string` (not `binary`); both read as DataTypeString.
+    static std::unordered_set<String> collectIcebergStringPaths(Poco::JSON::Array::Ptr schema);
 
     void registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id);
     Int32 getSchemaIdForSnapshot(Int64 snapshot_id) const;

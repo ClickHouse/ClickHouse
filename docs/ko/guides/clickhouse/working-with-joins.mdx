@@ -31,7 +31,7 @@ ClickHouse는 표준 SQL 조인을 완벽하게 지원하여 효율적인 데이
 
 영화와 배우 사이에는 [다대다 관계](https://en.wikipedia.org/wiki/Many-to-many_\(data_model\))가 있습니다.
 이 다대다 관계는 `roles` 테이블을 사용해 두 개의 [일대다 관계](https://en.wikipedia.org/wiki/One-to-many_\(data_model\))로 정규화됩니다.
-`roles` 테이블의 각 행에는 `movies` 테이블과 `actors` 테이블의 `id` 컬럼 값이 들어 있습니다.
+`roles` 테이블의 각 행에는 `movies` 테이블과 `actors` 테이블의 `id` 컬럼 값이 들어 있습니다。
 
 <div id="join-types-supported-in-clickhouse">
   ## ClickHouse에서 지원하는 JOIN 유형
@@ -238,7 +238,7 @@ LIMIT 10;
 ALL
 ```
 
-또한 앞서 언급했듯이 `RIGHT OUTER JOIN`에서는 `OUTER` 키워드를 생략할 수 있고 선택적 `ALL` 키워드를 추가할 수도 있으므로, `ALL RIGHT JOIN`이라고 작성해도 정상적으로 동작합니다.
+또한 앞서 언급했듯이 `RIGHT OUTER JOIN`에서는 `OUTER` 키워드를 생략할 수 있고, 선택 사항인 `ALL` 키워드를 추가할 수도 있으므로 `ALL RIGHT JOIN`이라고 작성해도 문제없이 동작합니다.
 
 <div id="left--right-semi-join">
   ## (LEFT / RIGHT) SEMI JOIN
@@ -457,5 +457,5 @@ final_price:        9645
   ## 요약
 </div>
 
-이 가이드에서는 ClickHouse가 모든 표준 SQL JOIN 유형은 물론, 분석 쿼리를 위한 특화된 조인도 지원하는 방식을 설명합니다.
-조인에 대한 자세한 내용은 [JOIN](/ko/reference/statements/select/join) SQL 문 설명서를 참조하십시오.
+이 가이드는 ClickHouse가 모든 표준 SQL JOIN 유형과 분석 쿼리를 위한 특수 조인을 어떻게 지원하는지 설명합니다.
+JOIN에 관한 자세한 내용은 [JOIN](/ko/reference/statements/select/join) SQL 문 문서를 참조하십시오.

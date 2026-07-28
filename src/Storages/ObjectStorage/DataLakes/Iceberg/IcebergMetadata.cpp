@@ -172,6 +172,7 @@ Iceberg::TableStateSnapshotPtr extractIcebergSnapshotIdFromMetadataObject(Storag
     chassert(std::holds_alternative<TableStateSnapshot>(storage_metadata->datalake_table_state.value()));
     return std::make_shared<TableStateSnapshot>(std::get<TableStateSnapshot>(storage_metadata->datalake_table_state.value()));
 }
+
 }
 
 Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableComponents(
@@ -656,6 +657,11 @@ void IcebergMetadata::mutate(
             "To allow its usage, enable setting allow_insert_into_iceberg");
     }
 
+    /// The per-data-file Parquet validation now lives inside `DB::Iceberg::mutate`'s
+    /// retry loop, bound to the metadata version actually being mutated. That closes
+    /// the TOCTOU gap a pre-check here would leave for concurrent writers committing
+    /// non-Parquet data files between the check and the write.
+
     DB::Iceberg::mutate(
         commands,
         context,
@@ -678,6 +684,8 @@ void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
     for (const auto & command : commands)
         if (command.type != MutationCommand::DELETE && command.type != MutationCommand::UPDATE)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg supports only DELETE and UPDATE mutations");
+
+    Iceberg::validateMutationWriteFormat(write_format);
 }
 
 void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)

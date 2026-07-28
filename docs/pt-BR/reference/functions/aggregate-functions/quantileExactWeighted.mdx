@@ -39,12 +39,12 @@ quantileExactWeighted(level)(expr, weight)
 
 **Argumentos**
 
-* `expr` — Expressão sobre os valores da coluna que resulta em tipos de dados numéricos, Date ou DateTime. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`Date`](/pt-BR/reference/data-types/date) ou [`DateTime`](/pt-BR/reference/data-types/datetime)
+* `expr` — Expressão sobre os valores da coluna que resulta em tipos de dados numéricos, `Date`, `DateTime` ou `DateTime64`. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Int128`](/pt-BR/reference/data-types/int-uint) ou [`UInt128`](/pt-BR/reference/data-types/int-uint) ou [`Int256`](/pt-BR/reference/data-types/int-uint) ou [`UInt256`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`Date`](/pt-BR/reference/data-types/date) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 * `weight` — Coluna com os pesos dos elementos da sequência. O peso é o número de ocorrências de um valor. [`UInt*`](/pt-BR/reference/data-types/int-uint)
 
 **Valor retornado**
 
-Quantil no nível especificado. [`Float64`](/pt-BR/reference/data-types/float) ou [`Date`](/pt-BR/reference/data-types/date) ou [`DateTime`](/pt-BR/reference/data-types/datetime)
+Quantil no nível especificado. Para tipos de dados numéricos, o formato de saída corresponde ao formato de entrada. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Int128`](/pt-BR/reference/data-types/int-uint) ou [`UInt128`](/pt-BR/reference/data-types/int-uint) ou [`Int256`](/pt-BR/reference/data-types/int-uint) ou [`UInt256`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`Date`](/pt-BR/reference/data-types/date) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Exemplos**
 
@@ -56,7 +56,7 @@ CREATE TABLE t (
     val Int32
 ) ENGINE = Memory;
 
--- Inserir os dados de exemplo
+-- Insert the sample data
 INSERT INTO t VALUES
 (0, 3),
 (1, 2),

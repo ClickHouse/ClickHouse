@@ -27,25 +27,19 @@ doc_type: 'guide'
 * ستحتاج إلى مفتاح API من Anthropic، أو مفتاح API من مزوّد LLM آخر
 
 <Steps>
-  <Step>
-    ## أنشئ تطبيق Slack
-
+  <Step title="أنشئ تطبيق Slack" id="create-a-slack-app">
     1. انتقل إلى [slack.com/apps](https://slack.com/apps) وانقر على `Create New App`.
     2. اختر الخيار `From scratch` وامنح تطبيقك اسمًا.
     3. حدّد مساحة العمل الخاصة بك في Slack.
   </Step>
 
-  <Step>
-    ## ثبّت التطبيق في مساحة العمل الخاصة بك
-
+  <Step title="ثبّت التطبيق في مساحة العمل الخاصة بك" id="install-the-app-to-your-workspace">
     بعد ذلك، ستحتاج إلى إضافة التطبيق الذي أنشأته في الخطوة السابقة إلى مساحة العمل الخاصة بك.
     يمكنك اتباع التعليمات الواردة في [&quot;Add apps to your Slack workspace&quot;](https://slack.com/intl/en-gb/help/articles/202035138-Add-apps-to-your-Slack-workspace)
     ضمن وثائق Slack.
   </Step>
 
-  <Step>
-    ## اضبط إعدادات تطبيق Slack
-
+  <Step title="اضبط إعدادات تطبيق Slack" id="configure-slack-app-settings">
     * انتقل إلى `App Home`
       * ضمن `Show Tabs` → `Messages Tab`: فعّل `Allow users to send Slash commands and messages from the messages tab`
       * انتقل إلى `Socket Mode`
@@ -70,9 +64,7 @@ doc_type: 'guide'
         * Save Changes
   </Step>
 
-  <Step>
-    ## أضف متغيرات البيئة (`.env`)
-
+  <Step title={<>أضف متغيرات البيئة (<code>.env</code>)</>} id="add-env-vars">
     أنشئ ملف `.env` في جذر المشروع باستخدام متغيرات البيئة التالية،
     والتي ستسمح لتطبيقك بالاتصال بـ [بيئة SQL التفاعلية الخاصة بـ ClickHouse](https://sql.clickhouse.com/).
 
@@ -91,9 +83,7 @@ doc_type: 'guide'
     أو instance على Cloud، إذا كنت تفضّل ذلك.
   </Step>
 
-  <Step>
-    ## استخدام البوت
-
+  <Step title="استخدام البوت" id="using-the-bot">
     1. **ابدأ تشغيل البوت:**
 
        ```sh

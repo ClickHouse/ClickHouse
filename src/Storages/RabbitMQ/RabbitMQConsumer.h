@@ -5,6 +5,8 @@
 #include <IO/ReadBuffer.h>
 #include <Common/ConcurrentBoundedQueue.h>
 
+#include <functional>
+
 namespace Poco
 {
 class Logger;
@@ -67,17 +69,21 @@ public:
     bool isConsumerStopped() const { return stopped.load(); }
 
     bool ackMessages(const CommitInfo & commit_info);
-    bool nackMessages(const CommitInfo & commit_info);
+    bool nackMessages(const CommitInfo & commit_info, bool requeue = false);
 
     bool hasPendingMessages() { return !received.empty(); }
 
-    void waitForMessages(std::optional<uint64_t> timeout_ms = std::nullopt)
+    void waitForMessages(std::optional<uint64_t> timeout_ms = std::nullopt, std::function<bool()> is_cancelled = {})
     {
         std::unique_lock lock(mutex);
         if (!timeout_ms)
             timeout_ms = SANITY_TIMEOUT;
-        cv.wait_for(lock, std::chrono::milliseconds(*timeout_ms), [this]{ return !received.empty() || isConsumerStopped(); });
+        cv.wait_for(lock, std::chrono::milliseconds(*timeout_ms),
+            [&]{ return !received.empty() || isConsumerStopped() || (is_cancelled && is_cancelled()); });
     }
+
+    /// Wake a source parked in `waitForMessages` so it can re-check its cancellation state.
+    void wakeUp();
 
     void closeConnections();
 

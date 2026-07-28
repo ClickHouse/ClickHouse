@@ -111,6 +111,10 @@ public:
     /// Returns true if the storage is a message queue (Kafka, RabbitMQ, NATS)
     virtual bool isMessageQueue() const { return false; }
 
+    /// Returns true if the storage continuously consumes from an external source in the background
+    /// (Kafka, RabbitMQ, NATS, S3Queue/AzureQueue).
+    virtual bool isStreamingStorage() const { return false; }
+
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 
@@ -602,6 +606,14 @@ public:
 
     /// Call when lock from previous method removed
     virtual void onActionLockRemove(StorageActionBlockType /* action_type */) {}
+
+    /// Run exactly one unit of background activity now (without resuming further activity).
+    /// No-op for tables without such activity.
+    virtual void refreshBackgroundActivity() {}
+
+    /// Abort the in-flight unit of background activity without blocking future ones, discarding its
+    /// uncommitted result so it is retried later. No-op for tables without such activity.
+    virtual void cancelBackgroundActivity() {}
 
     std::atomic<bool> is_dropped{false};
     std::atomic<bool> is_detached{false};

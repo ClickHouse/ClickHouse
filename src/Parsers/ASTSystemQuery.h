@@ -153,6 +153,16 @@ public:
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
         RESET_DDL_WORKER,
+        STOP_ALL_BACKGROUND,
+        START_ALL_BACKGROUND,
+        PAUSE_ALL_BACKGROUND,
+        CANCEL_ALL_BACKGROUND,
+        REFRESH_ALL_BACKGROUND,
+        STOP,
+        START,
+        PAUSE,
+        CANCEL,
+        REFRESH,
         END
     };
 

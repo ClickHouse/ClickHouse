@@ -14,9 +14,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 > и подключить его к демонстрационным наборам данных ClickHouse.
 
 <Steps>
-  <Step>
-    ## Установите Docker
-
+  <Step title="Установите Docker" id="install-docker">
     Для запуска LibreChat и MCP-сервера вам понадобится Docker. Чтобы установить Docker:
 
     1. Перейдите на [docker.com](https://www.docker.com/products/docker-desktop)
@@ -29,9 +27,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     Дополнительные сведения см. в [документации Docker](https://docs.docker.com/get-docker/).
   </Step>
 
-  <Step>
-    ## Клонируйте репозиторий LibreChat
-
+  <Step title="Клонируйте репозиторий LibreChat" id="clone-librechat-repo">
     Откройте терминал (командную строку или PowerShell) и клонируйте
     репозиторий LibreChat с помощью следующей команды:
 
@@ -41,9 +37,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## Создайте и отредактируйте файл `.env`
-
+  <Step title="Создайте и отредактируйте файл `.env`" id="create-and-edit-env-file">
     Скопируйте пример файла конфигурации из `.env.example` в `.env`:
 
     ```bash
@@ -73,9 +67,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     </Info>
   </Step>
 
-  <Step>
-    ## Создайте файл librechat.yaml
-
+  <Step title="Создайте файл librechat.yaml" id="create-librechat-yaml-file">
     Выполните следующую команду, чтобы создать новый файл `librechat.yaml`:
 
     ```bash
@@ -85,9 +77,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     Это создаст основной [файл конфигурации](https://www.librechat.ai/docs/configuration/librechat_yaml) для LibreChat.
   </Step>
 
-  <Step>
-    ## Добавьте MCP-сервер ClickHouse в Docker Compose
-
+  <Step title="Добавьте MCP-сервер ClickHouse в Docker Compose" id="add-clickhouse-mcp-server-to-docker-compose">
     Далее добавим MCP-сервер ClickHouse в файл Docker Compose для LibreChat,
     чтобы LLM могла взаимодействовать с
     [песочницей ClickHouse SQL](https://sql.clickhouse.com/).
@@ -123,9 +113,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     </Card>
   </Step>
 
-  <Step>
-    ## Настройка MCP Server в librechat.yaml
-
+  <Step title="Настройка MCP Server в librechat.yaml" id="configure-mcp-server-in-librechat-yaml">
     Откройте `librechat.yaml` и добавьте в конец файла следующую конфигурацию:
 
     ```yml
@@ -150,9 +138,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## Добавление локальной LLM с помощью Ollama (необязательно)
-
+  <Step title="Добавление локальной LLM с помощью Ollama (необязательно)" id="add-local-llm-using-ollama">
     ### Установка Ollama
 
     Перейдите на [сайт Ollama](https://ollama.com/download) и установите Ollama для своей системы.
@@ -191,9 +177,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## Запустите все сервисы
-
+  <Step title="Запустите все сервисы" id="start-all-services">
     В корневой папке проекта LibreChat выполните следующую команду, чтобы запустить все сервисы:
 
     ```bash
@@ -203,9 +187,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     Подождите, пока все сервисы полностью не заработают.
   </Step>
 
-  <Step>
-    ## Откройте LibreChat в браузере
-
+  <Step title="Откройте LibreChat в браузере" id="open-librechat-in-browser">
     Когда все сервисы будут запущены, откройте браузер и перейдите по адресу `http://localhost:3080/`
 
     Создайте бесплатную учетную запись LibreChat, если у вас ее еще нет, и войдите в систему. Теперь

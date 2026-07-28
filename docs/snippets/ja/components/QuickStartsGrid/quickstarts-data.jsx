@@ -112,20 +112,6 @@ export const quickStartsData = [
     ]
   },
   {
-    "id": "tutorial",
-    "title": "高度なチュートリアル",
-    "description": "ニューヨーク市のタクシーのサンプルデータセットを使って、ClickHouse でデータを取り込み、クエリする方法を学びます。",
-    "href": "/ja/get-started/quickstarts/tutorial",
-    "useCases": [
-      "real-time-analytics",
-      "data-warehousing"
-    ],
-    "products": [
-      "cloud",
-      "self-managed"
-    ]
-  },
-  {
     "id": "working-with-the-map-type",
     "title": "ClickHouse での Map 型の利用",
     "description": "OTel の リソース属性 を実例に、ClickHouse で動的なキー・バリュー データを保存、クエリ、集計するための Map 型の使い方を学びます。",
