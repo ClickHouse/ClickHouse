@@ -154,10 +154,10 @@ struct AdaptiveAggregationSession
         PaddedPODArray<UInt64> key_offsets;
         PaddedPODArray<UInt32> multiplicities;
 
-        /// Built under `prepared_flag` by the first bucket drained from this block.
-        /// Unused (and never built) for value-staged blocks.
-        std::once_flag prepared_flag;
-        std::unique_ptr<StagedChunkPreparation> prepared;
+        /// Built by the producer when the chunk is published (see `enqueueStagedChunk`), so a
+        /// published chunk is immutable and the drains read it without coordination. Never
+        /// built for value-staged blocks.
+        std::unique_ptr<const StagedChunkPreparation> prepared;
 
         ~StagedChunk();
     };
@@ -799,10 +799,14 @@ private:
         const std::vector<AdaptiveAggregationSession::StagedChunkPtr> & minis,
         AdaptiveAggregationSession::StagedChunk & chunk) const;
 
-    static void enqueueStagedChunk(
-        AdaptiveAggregationSession & shared, const AdaptiveAggregationSession::StagedChunkPtr & block);
+    /// The single publication point: finishes the chunk (builds its preparation in place) and
+    /// registers it with every bucket holding a non-empty slice. Chunks are immutable from
+    /// here on.
+    void enqueueStagedChunk(
+        AdaptiveAggregationSession & shared, const AdaptiveAggregationSession::StagedChunkPtr & block) const;
 
-    /// Builds the staged chunk's shared preparation on its first drained bucket.
+    /// Builds the staged chunk's shared preparation: the aggregate-function instructions over
+    /// its argument columns, in the chunk's own stable storage.
     void prepareStagedChunk(AdaptiveAggregationSession::StagedChunk & block) const;
 
     /// Drains one bucket's backlog into `method.data.impls[bucket_index]`. `key_storage`

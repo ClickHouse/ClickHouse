@@ -2667,9 +2667,15 @@ void NO_INLINE Aggregator::publishDelayedRecords(
 }
 
 void Aggregator::enqueueStagedChunk(
-    AdaptiveAggregationSession & shared, const AdaptiveAggregationSession::StagedChunkPtr & block)
+    AdaptiveAggregationSession & shared, const AdaptiveAggregationSession::StagedChunkPtr & block) const
 {
     constexpr size_t num_buckets = AdaptiveAggregationSession::NUM_BUCKETS;
+
+    /// Prepared here, on the publishing thread, so the chunk is immutable once any bucket can
+    /// see it. A chunk re-enqueued by a pressure sweep keeps the preparation it already has.
+    if (!block->value_staged && !block->prepared)
+        prepareStagedChunk(*block);
+
     std::shared_lock registry_lock(shared.backlog_registry_mutex);
     for (size_t b = 0; b < num_buckets; ++b)
     {
@@ -2998,12 +3004,8 @@ void Aggregator::drainAdaptiveBucketForMerge(
 
     size_t records_available = 0;
     for (const auto & block : backlog)
-    {
         records_available += block->bucket_offsets[bucket_index + 1] - block->bucket_offsets[bucket_index];
 
-        if (!block->value_staged)
-            std::call_once(block->prepared_flag, [&] { prepareStagedChunk(*block); });
-    }
     size_t drained = 0;
 
 #define M(NAME) \
@@ -3272,9 +3274,6 @@ void Aggregator::drainStagedChunksEarly(AdaptiveAggregationSession & shared, Ada
 
     for (auto & chunk : chunks)
     {
-        if (!chunk->value_staged)
-            std::call_once(chunk->prepared_flag, [&] { prepareStagedChunk(*chunk); });
-
         single[0] = chunk;
         for (size_t b = 0; b < num_buckets; ++b)
         {
