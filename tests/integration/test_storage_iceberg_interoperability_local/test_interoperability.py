@@ -1,6 +1,8 @@
-from helpers.iceberg_utils import get_uuid_str
+from helpers.iceberg_utils import get_uuid_str, iceberg_local_interop_dir
 
-ICEBERG_DIR_NODE1 = "/var/lib/clickhouse/user_files/iceberg_node1"
+# Same per-xdist-worker paths conftest uses (parallel-safe under --dist=each).
+ICEBERG_DIR_NODE1 = iceberg_local_interop_dir("node1")
+ICEBERG_DIR_NODE2 = iceberg_local_interop_dir("node2")
 
 
 def test_nodes_dont_see_each_other(started_cluster_iceberg):
@@ -55,14 +57,14 @@ def test_nodes_dont_see_each_other(started_cluster_iceberg):
         f"""
         CREATE TABLE {TABLE_NAME}
         ENGINE=IcebergLocal(local,
-            path = '/var/lib/clickhouse/user_files/iceberg_node1/default/{TABLE_NAME}')
+            path = '{ICEBERG_DIR_NODE1}/default/{TABLE_NAME}')
         """
     )
     node2.query(
         f"""
         CREATE TABLE {TABLE_NAME}
         ENGINE=IcebergLocal(local,
-            path = '/var/lib/clickhouse/user_files/iceberg_node2/default/{TABLE_NAME}')
+            path = '{ICEBERG_DIR_NODE2}/default/{TABLE_NAME}')
         """
     )
 
@@ -114,7 +116,7 @@ def test_ch_write_spark_read(started_cluster_iceberg):
         f"""
         CREATE TABLE {TABLE_NAME}
         ENGINE=IcebergLocal(local,
-            path = '/var/lib/clickhouse/user_files/iceberg_node1/default/{TABLE_NAME}')
+            path = '{ICEBERG_DIR_NODE1}/default/{TABLE_NAME}')
         """
     )
 
@@ -324,3 +326,66 @@ def test_ch_delete_spark_read(started_cluster_iceberg):
     spark_values = sorted([row.number for row in df])
     assert spark_values == list(range(10, 40)), \
         f"Spark expected values 10..39, got {spark_values}"
+
+
+def test_spark_gzip_metadata_ch_write_spark_read(started_cluster_iceberg):
+    """
+    Spark creates an Iceberg table configured for gzip-compressed metadata,
+    ClickHouse writes into it, then Spark reads back the new write.
+
+    Regression for issue #109801: ClickHouse used to name the compressed
+    metadata file `v{N}.gzip.metadata.json` (HTTP Content-Encoding token)
+    instead of the Iceberg spec extension `v{N}.gz.metadata.json`, so Spark
+    (Hadoop catalog) could not locate the metadata ClickHouse wrote.
+    """
+    node1 = started_cluster_iceberg.instances["node1"]
+    spark = started_cluster_iceberg.spark_session
+
+    TABLE_NAME = "test_gzip_meta_ch_write_spark_read_" + get_uuid_str()
+
+    # Spark creates the table with gzip metadata compression.
+    spark.sql(
+        f"""
+            CREATE TABLE node1_catalog.default.{TABLE_NAME} (
+                number INT
+            )
+            USING iceberg
+            TBLPROPERTIES (
+                'format-version' = '2',
+                'write.metadata.compression-codec' = 'gzip'
+            );
+        """
+    )
+
+    # ClickHouse points at the same location and writes, also using gzip metadata.
+    node1.query(
+        f"""
+        CREATE TABLE {TABLE_NAME}
+        ENGINE=IcebergLocal(local,
+            path = '{ICEBERG_DIR_NODE1}/default/{TABLE_NAME}')
+        """
+    )
+    ch_settings = {
+        "allow_insert_into_iceberg": 1,
+        "iceberg_metadata_compression_method": "gzip",
+    }
+    node1.query(f"INSERT INTO {TABLE_NAME} VALUES (42)", settings=ch_settings)
+    node1.query(f"INSERT INTO {TABLE_NAME} VALUES (123)", settings=ch_settings)
+
+    # ClickHouse reads its own writes.
+    assert int(node1.query(f"SELECT count() FROM {TABLE_NAME}")) == 2
+
+    # The metadata ClickHouse wrote must use the spec `gz` extension, not `gzip`.
+    listing = node1.exec_in_container(
+        ["bash", "-c", f"ls {ICEBERG_DIR_NODE1}/default/{TABLE_NAME}/metadata"]
+    )
+    assert ".gz.metadata.json" in listing
+    assert ".gzip.metadata.json" not in listing
+
+    # Spark must be able to locate and read back the write ClickHouse made.
+    spark.sql(f"REFRESH TABLE node1_catalog.default.{TABLE_NAME}")
+    df = spark.sql(
+        f"SELECT * FROM node1_catalog.default.{TABLE_NAME}"
+    ).collect()
+    spark_values = sorted([row.number for row in df])
+    assert spark_values == [42, 123], f"Spark got unexpected values: {spark_values}"

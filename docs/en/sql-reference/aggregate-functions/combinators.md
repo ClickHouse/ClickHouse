@@ -119,6 +119,106 @@ Merges the intermediate aggregation states in the same way as the -Merge combina
 
 Converts an aggregate function for tables into an aggregate function for arrays that aggregates the corresponding array items and returns an array of results. For example, `sumForEach` for the arrays `[1, 2]`, `[3, 4, 5]`and`[6, 7]`returns the result `[10, 13, 5]` after adding together the corresponding array items.
 
+## -Tuple {#-tuple}
+
+The `-Tuple` suffix can be appended to any aggregate function. The combined function takes one argument of `Tuple` type per argument of the underlying aggregate function; all tuples must have the same number of elements. The aggregation is applied independently at each element position, receiving the corresponding element from every `Tuple`, and returns a `Tuple` of results.
+
+If the first input `Tuple` has explicit element names, they are preserved in the result.
+
+Aggregate functions that handle `NULL` values themselves (`anyRespectNulls`, `anyLastRespectNulls`, the `RESPECT NULLS` modifier) do not support the `Nullable(Tuple(...))` type as an argument; use `Nullable` elements instead.
+
+**Syntax**
+
+```sql
+<aggFunction>Tuple(tuple1[, tuple2, ...])
+```
+
+**Arguments**
+
+- `tuple1[, tuple2, ...]` — Columns of `Tuple` type, one per argument of the underlying aggregate function, all with the same number of elements. Each element must be a type supported by the underlying aggregate function at that argument position.
+
+**Returned values**
+
+- A `Tuple` containing the result of applying the aggregate function to each element independently.
+
+Type: `Tuple(aggFunction(element1), aggFunction(element2), ...)`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT sumTuple(t) FROM
+(
+    SELECT tuple(toInt64(1), toFloat64(2.5)) AS t
+    UNION ALL
+    SELECT tuple(toInt64(3), toFloat64(4.5))
+    UNION ALL
+    SELECT tuple(toInt64(5), toFloat64(6.5))
+);
+```
+
+Result:
+
+```text
+┌─sumTuple(t)─┐
+│ (9,13.5)    │
+└─────────────┘
+```
+
+Using with `GROUP BY`:
+
+```sql
+SELECT
+    k,
+    avgTuple(t)
+FROM
+(
+    SELECT
+        number % 2 AS k,
+        tuple(toInt64(number), toFloat64(number) * 1.5) AS t
+    FROM numbers(6)
+)
+GROUP BY k
+ORDER BY k;
+```
+
+```text
+┌─k─┬─avgTuple(t)─┐
+│ 0 │ (2,3)       │
+│ 1 │ (3,4.5)     │
+└───┴─────────────┘
+```
+
+Using with a multi-argument aggregate function: each `Tuple` argument supplies one argument of the underlying function, and the elements are paired up by position:
+
+```text
+corrTuple((a1, a2), (b1, b2)) = (corr(a1, b1), corr(a2, b2))
+```
+
+```sql
+SELECT corrTuple((a1, a2), (b1, b2))
+FROM
+(
+    SELECT
+        toFloat64(number) AS a1,
+        toFloat64(number * 2) AS a2,
+        toFloat64(100 - number) AS b1,
+        toFloat64(number * 3) AS b2
+    FROM numbers(10)
+);
+```
+
+```text
+┌─corrTuple((a1, a2), (b1, b2))─┐
+│ (-1,1)                        │
+└───────────────────────────────┘
+```
+
+`a1` and `b1` are anticorrelated, while `a2` and `b2` are proportional, so the result is `(-1, 1)`.
+
+`-Tuple` can be combined with other combinators such as `-If`. For example: `sumTupleIf(tuple_column, cond)`.
+
 ## -Distinct {#-distinct}
 
 Every unique combination of arguments will be aggregated only once. Repeating values are ignored.

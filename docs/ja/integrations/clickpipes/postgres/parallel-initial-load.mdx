@@ -1,0 +1,69 @@
+---
+title: 'Postgres ClickPipe における並列スナップショット'
+description: 'Postgres ClickPipe の並列スナップショットを説明するドキュメント'
+slug: /integrations/clickpipes/postgres/parallel_initial_load
+sidebarTitle: '並列スナップショットの仕組み'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'data ingestion', 'real-time sync']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+このドキュメントでは、Postgres ClickPipe における並列化されたスナップショット/初期ロードの仕組みと、それを制御するために使用できるスナップショット パラメータについて説明します。
+
+<div id="overview-pg-snapshot">
+  ## 概要
+</div>
+
+初期ロードは CDC ClickPipe の最初のフェーズで、ClickPipe はこの段階で、CDC を開始する前にソースデータベース内のテーブルの過去データを ClickHouse に同期します。多くの場合、開発者はこの処理を単一スレッドで実行します。たとえば、pg&#95;dump や pg&#95;restore を使用したり、1 つのスレッドでソースデータベースから読み取って ClickHouse に書き込んだりします。
+しかし、Postgres ClickPipe ではこの処理を並列化できるため、初期ロードを大幅に高速化できます。
+
+<div id="ctid-pg-snapshot">
+  ### Postgres の CTID カラム
+</div>
+
+Postgres では、テーブル内のすべての行に CTID と呼ばれる一意の識別子があります。これはシステムカラムで、デフォルトでは表示されませんが、テーブル内の行を一意に識別するために使用できます。CTID はブロック番号とブロック内のオフセットを組み合わせたもので、これにより行に効率よくアクセスできます。
+
+<div id="logical-partitioning-pg-snapshot">
+  ### 論理パーティション化
+</div>
+
+Postgres ClickPipe は、ソーステーブルを論理的にパーティション化するために CTID カラムを使用します。まずソーステーブルに対して COUNT(*) を実行し、続いて各パーティションの CTID 範囲を取得するためのウィンドウ関数を使ったパーティション化クエリを実行して、パーティションを取得します。これにより、ClickPipe はソーステーブルを並列に読み込むことができ、各パーティションは別々のスレッドで処理されます。
+
+以下の設定について説明します。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/snapshot_params.webp" alt="スナップショット パラメータ" size="md" />
+
+<div id="numrows-pg-snapshot">
+  #### パーティションごとのスナップショット行数
+</div>
+
+この設定では、1つのパーティションを構成する行数を指定します。ClickPipe はソーステーブルをこのサイズの chunk ごとに読み取り、chunk は設定された初期ロードの並列度に基づいて並列に処理されます。デフォルト値は、パーティションあたり 100,000 行です。
+
+<div id="parallelism-pg-snapshot">
+  #### 初期ロードの並列度
+</div>
+
+この設定は、並列に処理するパーティション数を制御します。デフォルト値は 4 で、ClickPipe はソーステーブルの 4 つのパーティションを並列に読み取ります。初期ロードを高速化するためにこの値を増やすこともできますが、ソースデータベースに過度な負荷をかけないよう、ソースインスタンスのスペックに応じて妥当な値にとどめることを推奨します。ClickPipe は、ソーステーブルのサイズと各パーティションあたりの行数に基づいて、パーティション数を自動的に調整します。
+
+<div id="tables-parallel-pg-snapshot">
+  #### 並列にスナップショットするテーブル数
+</div>
+
+並列スナップショットそのものに直接関係する設定ではありませんが、この設定では初期ロード中に並列に処理するテーブル数を制御します。デフォルト値は 1 です。これはパーティションの並列度とは別に適用される点に注意してください。したがって、パーティションが 4 つ、テーブルが 2 つある場合、ClickPipe は 8 個のパーティションを並列に読み取ります。
+
+<div id="monitoring-parallel-pg-snapshot">
+  ### Postgres での並列スナップショットの監視
+</div>
+
+**pg&#95;stat&#95;activity** を確認すると、並列スナップショットが実際に動作している様子を確認できます。ClickPipe はソースデータベースに複数の接続を確立し、それぞれがソーステーブルの異なるパーティションを読み取ります。異なる CTID 範囲を持つ **FETCH** クエリが表示されていれば、ClickPipe がソーステーブルを読み取っていることを意味します。あわせて、COUNT(*) とパーティション化クエリも確認できます。
+
+<div id="limitations-parallel-pg-snapshot">
+  ### 制限事項
+</div>
+
+* スナップショットパラメータは、パイプの作成後は編集できません。変更する場合は、新しい ClickPipe を作成する必要があります。
+* 既存の ClickPipe にテーブルを追加する場合、スナップショットパラメータは変更できません。新しいテーブルにも既存のパラメータが使用されます。

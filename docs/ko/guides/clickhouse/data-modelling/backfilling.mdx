@@ -1,0 +1,720 @@
+---
+slug: /data-modeling/backfilling
+title: '데이터 백필'
+description: 'ClickHouse에서 대규모 데이터셋을 백필하는 방법'
+keywords: ['materialized views', '백필', '데이터 삽입', '안정적인 데이터 적재']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+ClickHouse를 처음 사용하는 경우든 기존 배포를 운영하는 경우든, 결국에는 과거 데이터로 테이블을 백필해야 합니다. 어떤 경우에는 비교적 간단하지만, materialized view까지 채워야 하면 더 복잡해질 수 있습니다. 이 가이드는 이러한 작업을 수행할 때 사용자 환경에 맞게 적용할 수 있는 몇 가지 절차를 설명합니다.
+
+<Note>
+  이 가이드는 사용자가 이미 [증분형 materialized view](/ko/concepts/features/materialized-views/incremental-materialized-view)와 [s3 및 gcs 같은 테이블 함수를 사용한 데이터 로딩](/ko/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse) 개념에 익숙하다고 가정합니다. 또한 이 가이드 전반에서 수행하는 삽입에 적용할 수 있는 권장 사항을 담은 [객체 스토리지에서의 삽입 성능 최적화](/ko/integrations/connectors/data-ingestion/AWS/performance) 가이드도 함께 읽어 보시기를 권장합니다.
+</Note>
+
+<div id="example-dataset">
+  ## 예시 데이터셋
+</div>
+
+이 가이드에서는 전체적으로 PyPI 데이터셋을 사용합니다. 이 데이터셋의 각 행은 `pip`와 같은 도구를 사용한 Python 패키지 다운로드 1건을 나타냅니다.
+
+예를 들어, 이 하위 집합은 `2024-12-17` 하루의 데이터를 포함하며, `https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/`에서 공개적으로 제공됩니다. 다음과 같이 쿼리할 수 있습니다:
+
+```sql
+SELECT count()
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+```
+
+```response
+┌────count()─┐
+│ 2039988137 │ -- 약 20억 4천만
+└────────────┘
+
+1 row in set. Elapsed: 32.726 sec. Processed 2.04 billion rows, 170.05 KB (62.34 million rows/s., 5.20 KB/s.)
+Peak memory usage: 239.50 MiB.
+```
+
+이 버킷의 전체 데이터셋에는 320 GB가 넘는 Parquet 파일이 포함되어 있습니다. 아래 예시에서는 의도적으로 글롭 패턴을 사용해 일부 하위 집합만 대상으로 합니다.
+
+이 날짜 이후의 데이터는 예를 들어 Kafka 또는 객체 스토리지에서 이 데이터 스트림을 수집한다고 가정합니다. 이 데이터의 스키마는 아래와 같습니다:
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+FORMAT PrettyCompactNoEscapesMonoBlock
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name───────────────┬─type────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ timestamp │ Nullable(DateTime64(6))                                                                                                                 │
+│ country_code       │ Nullable(String)                                                                                                                        │
+│ url │ Nullable(String)                                                                                                                        │
+│ project            │ Nullable(String)                                                                                                                        │
+│ file │ Tuple(filename Nullable(String), project Nullable(String), version Nullable(String), type Nullable(String))                             │
+│ installer          │ Tuple(name Nullable(String), version Nullable(String))                                                                                  │
+│ python             │ Nullable(String)                                                                                                                        │
+│ implementation     │ Tuple(name Nullable(String), version Nullable(String))                                                                                  │
+│ distro             │ Tuple(name Nullable(String), version Nullable(String), id Nullable(String), libc Tuple(lib Nullable(String), version Nullable(String))) │
+│ system │ Tuple(name Nullable(String), release Nullable(String))                                                                                  │
+│ cpu                │ Nullable(String)                                                                                                                        │
+│ openssl_version    │ Nullable(String)                                                                                                                        │
+│ setuptools_version │ Nullable(String)                                                                                                                        │
+│ rustc_version      │ Nullable(String)                                                                                                                        │
+│ tls_protocol       │ Nullable(String)                                                                                                                        │
+│ tls_cipher         │ Nullable(String)                                                                                                                        │
+└────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<Note>
+  1조 개가 넘는 행으로 이루어진 전체 PyPI 데이터셋은 공개 데모 환경 [clickpy.clickhouse.com](https://clickpy.clickhouse.com)에서 제공됩니다. 성능 향상을 위해 데모에서 materialized view를 어떻게 활용하는지와 데이터가 매일 어떻게 적재되는지 등, 이 데이터셋에 대한 자세한 내용은 [여기](https://github.com/ClickHouse/clickpy)를 참조하십시오.
+</Note>
+
+<div id="backfilling-scenarios">
+  ## 백필 시나리오
+</div>
+
+백필은 일반적으로 데이터 스트림을 특정 시점부터 수신할 때 필요합니다. 이 데이터는 [증분형 materialized view](/ko/concepts/features/materialized-views/incremental-materialized-view)를 통해 ClickHouse 테이블에 삽입되며, 블록이 삽입될 때마다 트리거됩니다. 이러한 뷰는 삽입 전에 데이터를 변환하거나 집계를 계산하고, 그 결과를 이후 다운스트림 애플리케이션에서 사용할 대상 테이블(target table)로 보낼 수 있습니다.
+
+다음 시나리오를 살펴보겠습니다:
+
+1. **기존 데이터 수집이 진행 중인 상태에서 데이터 백필** - 새 데이터가 로드되고 있으며, 과거 데이터에 대한 백필이 필요합니다. 이 과거 데이터는 이미 식별되어 있습니다.
+2. **기존 테이블에 materialized view 추가** - 과거 데이터가 이미 채워져 있고 데이터 스트리밍이 이미 진행 중인 환경에 새로운 materialized view를 추가해야 합니다.
+
+데이터는 객체 스토리지에서 백필한다고 가정합니다. 모든 경우에 데이터 삽입을 중단하지 않는 것을 목표로 합니다.
+
+과거 데이터는 객체 스토리지에서 백필할 것을 권장합니다. 가능하면 최적의 읽기 성능과 압축(네트워크 전송량 감소)을 위해 데이터를 Parquet로 내보내야 합니다. 일반적으로 파일 크기는 약 150MB가 적절하지만, ClickHouse는 [70개 이상의 파일 포맷](/ko/reference/formats/index)을 지원하며 크기에 관계없이 파일을 처리할 수 있습니다.
+
+<div id="using-duplicate-tables-and-views">
+  ## 중복 테이블과 뷰 사용
+</div>
+
+모든 시나리오에서 &quot;duplicate tables and views&quot; 개념을 활용합니다. 이 테이블과 뷰는 실시간 스트리밍 데이터에 사용되는 것들의 복사본으로, 장애 발생 시 쉽게 복구할 수 있는 수단을 제공하면서 backfill을 독립적으로 수행할 수 있게 합니다. 예시로, 다음과 같은 메인 `pypi` 테이블과 materialized view가 있으며, Python 프로젝트별 다운로드 횟수를 계산합니다:
+
+```sql
+CREATE TABLE pypi
+(
+    `timestamp` DateTime,
+    `country_code` LowCardinality(String),
+    `project` String,
+    `type` LowCardinality(String),
+    `installer` LowCardinality(String),
+    `python_minor` LowCardinality(String),
+    `system` LowCardinality(String),
+    `on` String
+)
+ENGINE = MergeTree
+ORDER BY (project, timestamp)
+
+CREATE TABLE pypi_downloads
+(
+    `project` String,
+    `count` Int64
+)
+ENGINE = SummingMergeTree
+ORDER BY project
+
+CREATE MATERIALIZED VIEW pypi_downloads_mv TO pypi_downloads
+AS SELECT
+ project,
+    count() AS count
+FROM pypi
+GROUP BY project
+```
+
+기본 테이블과 연관된 뷰에 데이터의 일부를 삽입합니다:
+
+```sql
+INSERT INTO pypi SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 15.702 sec. Processed 41.23 million rows, 3.94 GB (2.63 million rows/s., 251.01 MB/s.)
+Peak memory usage: 977.49 MiB.
+```
+
+```sql
+SELECT count() FROM pypi
+```
+
+```response
+┌──count()─┐
+│ 20612750 │ -- 20.61 million
+└──────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+```sql
+SELECT sum(count)
+FROM pypi_downloads
+```
+
+```response
+┌─sum(count)─┐
+│   20612750 │ -- 2,061만
+└────────────┘
+
+1 row in set. Elapsed: 0.006 sec. Processed 96.15 thousand rows, 769.23 KB (16.53 million rows/s., 132.26 MB/s.)
+Peak memory usage: 682.38 KiB.
+```
+
+`{101..200}` 범위의 또 다른 하위 집합을 로드하려 한다고 가정해 보겠습니다. `pypi`에 직접 삽입할 수도 있지만, 중복 테이블(duplicate table)을 생성하면 이 백필(backfill) 작업을 기존 테이블과 분리하여 독립적으로 수행할 수 있습니다.
+
+백필(backfill)이 실패하더라도 기본 테이블에는 영향을 미치지 않으므로, 중복 테이블(duplicate table)을 [TRUNCATE](/ko/concepts/features/operations/delete/truncate)한 후 작업을 반복하면 됩니다.
+
+이러한 뷰의 새 복사본을 생성하려면 `_v2` 접미사를 붙여 `CREATE TABLE AS` 절을 사용하면 됩니다:
+
+```sql
+CREATE TABLE pypi_v2 AS pypi
+
+CREATE TABLE pypi_downloads_v2 AS pypi_downloads
+
+CREATE MATERIALIZED VIEW pypi_downloads_mv_v2 TO pypi_downloads_v2
+AS SELECT
+ project,
+    count() AS count
+FROM pypi_v2
+GROUP BY project
+```
+
+이 테이블에 거의 동일한 크기의 두 번째 서브셋을 채우고 로드가 성공적으로 완료되었는지 확인합니다.
+
+```sql
+INSERT INTO pypi_v2 SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 17.545 sec. Processed 40.80 million rows, 3.90 GB (2.33 million rows/s., 222.29 MB/s.)
+Peak memory usage: 991.50 MiB.
+```
+
+```sql
+SELECT count()
+FROM pypi_v2
+```
+
+```response
+┌──count()─┐
+│ 20400020 │ -- 20.40 million
+└──────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+```sql
+SELECT sum(count)
+FROM pypi_downloads_v2
+```
+
+```response
+┌─sum(count)─┐
+│   20400020 │ -- 2,040만
+└────────────┘
+
+1 row in set. Elapsed: 0.006 sec. Processed 95.49 thousand rows, 763.90 KB (14.81 million rows/s., 118.45 MB/s.)
+Peak memory usage: 688.77 KiB.
+```
+
+이 두 번째 적재 중 어느 시점에서든 장애가 발생한 경우, `pypi_v2`와 `pypi_downloads_v2`를 간단히 [truncate](/ko/concepts/features/operations/delete/truncate)한 뒤 데이터 적재를 다시 수행할 수 있습니다.
+
+데이터 적재가 완료되었으므로, [`ALTER TABLE MOVE PARTITION`](/ko/reference/statements/alter/partition#move-partition-to-table) 절을 사용해 복제 테이블의 데이터를 메인 테이블로 이동할 수 있습니다.
+
+```sql
+ALTER TABLE pypi_v2 MOVE PARTITION () TO pypi
+```
+
+```response
+0 rows in set. Elapsed: 1.401 sec.
+```
+
+```sql
+ALTER TABLE pypi_downloads_v2 MOVE PARTITION () TO pypi_downloads
+```
+
+```response
+0 rows in set. Elapsed: 0.389 sec.
+```
+
+<Info>
+  **파티션 이름**
+
+  위의 `MOVE PARTITION` 호출은 파티션 이름 `()`를 사용합니다. 이는 이 테이블(파티션되지 않은 테이블)의 단일 파티션을 나타냅니다. 파티션된 테이블의 경우 각 파티션마다 하나씩 여러 번 `MOVE PARTITION`을 호출해야 합니다. 현재 파티션 이름은 [`system.parts`](/ko/reference/system-tables/parts) 테이블에서 확인할 수 있습니다. 예: `SELECT DISTINCT partition FROM system.parts WHERE (table = 'pypi_v2')`.
+</Info>
+
+이제 `pypi`와 `pypi_downloads`에 전체 데이터가 포함되어 있음을 확인할 수 있습니다. `pypi_downloads_v2`와 `pypi_v2`는 안전하게 삭제할 수 있습니다.
+
+```sql
+SELECT count()
+FROM pypi
+```
+
+```response
+┌──count()─┐
+│ 41012770 │ -- 4,101만
+└──────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+```sql
+SELECT sum(count)
+FROM pypi_downloads
+```
+
+```response
+┌─sum(count)─┐
+│   41012770 │ -- 4101만
+└────────────┘
+
+1 row in set. Elapsed: 0.007 sec. Processed 191.64 thousand rows, 1.53 MB (27.34 million rows/s., 218.74 MB/s.)
+```
+
+```sql
+SELECT count()
+FROM pypi_v2
+```
+
+중요하게도 `MOVE PARTITION` 작업은 경량(하드 링크 활용)이며 원자적입니다. 즉, 중간 상태 없이 성공하거나 실패합니다.
+
+아래의 백필 시나리오에서는 이 과정을 적극적으로 활용합니다.
+
+이 과정에서는 각 삽입 작업의 크기를 사용자가 직접 정해야 한다는 점에 유의하십시오.
+
+삽입 크기가 클수록, 즉 행 수가 많을수록 필요한 `MOVE PARTITION` 작업 수는 줄어듭니다. 하지만 네트워크 중단 등으로 삽입이 실패할 경우 복구 비용도 함께 고려해 균형을 맞춰야 합니다. 위험을 줄이기 위해 파일 배칭으로 이 과정을 보완할 수 있습니다. 이는 범위 쿼리(예: `WHERE timestamp BETWEEN 2024-12-17 09:00:00 AND 2024-12-17 10:00:00`) 또는 글롭 패턴을 사용해 수행할 수 있습니다. 예를 들면 다음과 같습니다.
+
+```sql
+INSERT INTO pypi_v2 SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+INSERT INTO pypi_v2 SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet')
+INSERT INTO pypi_v2 SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet')
+--모든 파일이 로드되거나 MOVE PARTITION 호출이 수행될 때까지 계속
+```
+
+<Note>
+  ClickPipes는 객체 스토리지에서 데이터를 로드할 때 이 방식을 사용하며, 대상 테이블과 해당 materialized view의 복제본을 자동으로 생성해 사용자가 위 단계를 직접 수행할 필요가 없도록 합니다. 또한 여러 worker 스레드가 각기 다른 하위 집합을 처리하고(글롭 패턴 사용), 각각 자체 복제 테이블을 사용하므로 데이터를 빠르게 로드하면서도 정확히 한 번 처리 의미 체계를 보장할 수 있습니다. 자세한 내용은 [이 블로그](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3)에서 확인할 수 있습니다.
+</Note>
+
+<div id="scenario-1-backfilling-data-with-existing-data-ingestion">
+  ## 시나리오 1: 기존 데이터 수집 중 데이터 백필
+</div>
+
+이 시나리오에서는 백필할 데이터가 격리된 버킷에 있지 않으므로 필터링이 필요하다고 가정합니다. 데이터는 이미 삽입되고 있으며, 과거 데이터를 백필해야 하는 시점을 나타내는 타임스탬프 또는 단조 증가하는 컬럼을 식별할 수 있습니다.
+
+이 프로세스는 다음 단계로 진행됩니다:
+
+1. 체크포인트를 식별합니다. 과거 데이터를 복원해야 하는 기준 시점의 타임스탬프 또는 컬럼 값입니다.
+2. 주 테이블과 materialized view의 대상 테이블 복제본을 생성합니다.
+3. (2)단계에서 생성한 대상 테이블을 가리키도록 materialized view의 복제본을 생성합니다.
+4. (2)단계에서 생성한 주 테이블 복제본에 삽입합니다.
+5. 복제 테이블의 모든 파티션을 원래 테이블로 이동합니다. 그런 다음 복제 테이블을 삭제합니다.
+
+예를 들어 PyPI 데이터에 이미 데이터가 로드되어 있다고 가정해 보겠습니다. 이 경우 최소 타임스탬프를 식별하여 &quot;체크포인트&quot;를 확인할 수 있습니다.
+
+```sql
+SELECT min(timestamp)
+FROM pypi
+```
+
+```response
+┌──────min(timestamp)─┐
+│ 2024-12-17 09:00:00 │
+└─────────────────────┘
+
+1 row in set. Elapsed: 0.163 sec. Processed 1.34 billion rows, 5.37 GB (8.24 billion rows/s., 32.96 GB/s.)
+Peak memory usage: 227.84 MiB.
+```
+
+위 내용을 통해 `2024-12-17 09:00:00` 이전의 데이터를 적재해야 한다는 것을 알 수 있습니다. 앞서와 같은 방식으로 복제 테이블과 뷰를 생성하고, timestamp에 필터를 적용해 해당 부분집합을 적재합니다.
+
+```sql
+CREATE TABLE pypi_v2 AS pypi
+
+CREATE TABLE pypi_downloads_v2 AS pypi_downloads
+
+CREATE MATERIALIZED VIEW pypi_downloads_mv_v2 TO pypi_downloads_v2
+AS SELECT project, count() AS count
+FROM pypi_v2
+GROUP BY project
+
+INSERT INTO pypi_v2 SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet')
+WHERE timestamp < '2024-12-17 09:00:00'
+```
+
+```response
+0 rows in set. Elapsed: 500.152 sec. Processed 2.74 billion rows, 364.40 GB (5.47 million rows/s., 728.59 MB/s.)
+```
+
+<Note>
+  Parquet에서 timestamp 컬럼으로 필터링하면 매우 효율적일 수 있습니다. ClickHouse는 로드할 전체 데이터 범위를 식별하기 위해 timestamp 컬럼만 읽으므로 네트워크 트래픽을 최소화합니다. min-max와 같은 Parquet 인덱스도 ClickHouse 쿼리 엔진에서 활용할 수 있습니다.
+</Note>
+
+이 삽입 작업이 완료되면 해당 파티션을 이동할 수 있습니다.
+
+```sql
+ALTER TABLE pypi_v2 MOVE PARTITION () TO pypi
+
+ALTER TABLE pypi_downloads_v2 MOVE PARTITION () TO pypi_downloads
+```
+
+과거 데이터가 별도 버킷에 분리되어 있다면 위의 시간 필터는 필요하지 않습니다. 시간 컬럼이나 단조 증가 컬럼을 사용할 수 없다면 과거 데이터를 분리하십시오.
+
+<Info>
+  **ClickHouse Cloud에서는 ClickPipes를 사용하십시오**
+
+  ClickHouse Cloud를 사용 중이고 데이터를 별도 버킷으로 분리할 수 있어 필터가 필요하지 않다면, 과거 백업을 복원할 때 ClickPipes를 사용하는 것이 좋습니다. ClickPipes는 여러 워커를 통해 로드를 병렬화하여 적재 시간을 줄일 뿐만 아니라, 위 과정을 자동화하고 기본 테이블과 materialized view 모두에 대한 복제 테이블도 생성합니다.
+</Info>
+
+<div id="scenario-2-adding-materialized-views-to-existing-tables">
+  ## 시나리오 2: 기존 테이블에 materialized view 추가하기
+</div>
+
+이미 상당한 양의 데이터가 적재되어 있고 계속해서 데이터가 삽입되는 환경에 새로운 materialized view를 추가해야 하는 경우는 흔합니다. 이때 스트림 내 특정 시점을 식별할 수 있는 타임스탬프 또는 단조 증가하는 컬럼이 있으면 유용하며, 데이터 수집을 중단하지 않아도 됩니다. 아래 예시에서는 이 두 가지 경우를 모두 가정하고, 수집 중단을 피할 수 있는 방법을 우선적으로 설명합니다.
+
+<Info>
+  **POPULATE 사용 피하기**
+
+  작은 데이터셋에서 수집을 일시 중단한 경우를 제외하면, materialized view를 백필하기 위해 [`POPULATE`](/ko/reference/statements/create/view#materialized-view) 명령을 사용하는 것은 권장하지 않습니다. 이 연산자는 원본 테이블에 삽입되는 행 일부를 놓칠 수 있으며, 이는 populate 해시가 완료된 뒤 materialized view가 생성되기 때문입니다. 또한 이 populate는 전체 데이터를 대상으로 실행되므로, 대규모 데이터셋에서는 중단이나 메모리 제한의 영향을 받기 쉽습니다.
+</Info>
+
+<div id="timestamp-or-monotonically-increasing-column-available">
+  ### Timestamp 또는 단조 증가하는 컬럼 사용 가능
+</div>
+
+이 경우, 새 materialized view에는 임의로 정한 미래 시점보다 큰 행만 포함하도록 제한하는 필터를 넣는 것이 좋습니다. 이후 이 materialized view는 메인 테이블의 과거 데이터를 사용해 해당 시점부터 백필할 수 있습니다. 백필 방식은 데이터 크기와 관련 쿼리의 복잡도에 따라 달라집니다.
+
+가장 간단한 접근 방식은 다음과 같습니다.
+
+1. 가까운 미래의 임의 시점보다 큰 행만 고려하도록 필터를 적용한 materialized view를 생성합니다.
+2. `INSERT INTO SELECT` 쿼리를 실행해 materialized view의 대상 테이블에 데이터를 삽입합니다. 이때 뷰의 집계 쿼리를 사용해 원본 테이블에서 데이터를 읽습니다.
+
+이를 더 확장해 (2)단계에서 데이터의 일부만 대상으로 하거나, materialized view용 복제 대상 테이블을 사용한 뒤 삽입이 완료되면 원본에 파티션을 ATTACH하는 방식도 사용할 수 있습니다. 이렇게 하면 장애 발생 후 복구가 더 쉬워집니다.
+
+다음 materialized view를 예로 살펴보겠습니다. 이 뷰는 시간별로 가장 인기 있는 프로젝트를 계산합니다.
+
+```sql
+CREATE TABLE pypi_downloads_per_day
+(
+    `hour` DateTime,
+    `project` String,
+    `count` Int64
+)
+ENGINE = SummingMergeTree
+ORDER BY (project, hour)
+
+CREATE MATERIALIZED VIEW pypi_downloads_per_day_mv TO pypi_downloads_per_day
+AS SELECT
+ toStartOfHour(timestamp) as hour,
+ project,
+    count() AS count
+FROM pypi
+GROUP BY
+    hour,
+ project
+```
+
+대상 테이블은 추가할 수 있지만, materialized view를 추가하기 전에 먼저 `SELECT` 절을 수정해 가까운 미래의 임의 시각보다 큰 행만 고려하는 필터를 포함합니다. 여기서는 `2024-12-17 09:00:00`이 몇 분 뒤의 시각이라고 가정합니다.
+
+```sql
+CREATE MATERIALIZED VIEW pypi_downloads_per_day_mv TO pypi_downloads_per_day
+AS SELECT
+ toStartOfHour(timestamp) AS hour,
+ project, count() AS count
+FROM pypi WHERE timestamp >= '2024-12-17 09:00:00'
+GROUP BY hour, project
+```
+
+이 뷰를 추가한 후에는 이 시점 이전의 모든 데이터를 materialized view로 백필할 수 있습니다.
+
+가장 간단한 방법은 최근에 추가된 데이터를 무시하는 필터를 사용해 기본 테이블에서 materialized view의 쿼리를 그대로 실행하고, `INSERT INTO SELECT`를 통해 그 결과를 뷰의 대상 테이블에 삽입하는 것입니다. 예를 들어, 위의 뷰는 다음과 같습니다:
+
+```sql
+INSERT INTO pypi_downloads_per_day SELECT
+ toStartOfHour(timestamp) AS hour,
+ project,
+    count() AS count
+FROM pypi
+WHERE timestamp < '2024-12-17 09:00:00'
+GROUP BY
+    hour,
+ project
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 2.830 sec. Processed 798.89 million rows, 17.40 GB (282.28 million rows/s., 6.15 GB/s.)
+Peak memory usage: 543.71 MiB.
+```
+
+<Note>
+  위 예시에서 대상 테이블은 [SummingMergeTree](/ko/reference/engines/table-engines/mergetree-family/summingmergetree)입니다. 이 경우 원래 사용한 집계 쿼리를 그대로 사용하면 됩니다. [AggregatingMergeTree](/ko/reference/engines/table-engines/mergetree-family/aggregatingmergetree)를 활용하는 더 복잡한 사용 사례에서는 집계 함수에 `-State` 함수를 사용합니다. 이에 대한 예시는 이 [통합 가이드](/ko/integrations/connectors/data-ingestion/AWS/performance#be-aware-of-merges)에서 확인할 수 있습니다.
+</Note>
+
+이 경우 집계가 비교적 가벼워 3초 이내에 완료되며 메모리도 600MiB 미만으로 사용합니다. 더 복잡하거나 실행 시간이 더 긴 집계의 경우, 앞서 설명한 복제 테이블 접근 방식을 사용해 이 과정을 더 안정적으로 만들 수 있습니다. 즉, 예를 들어 `pypi_downloads_per_day_v2` 같은 섀도 대상 테이블을 만든 뒤 여기에 삽입하고, 생성된 파티션을 `pypi_downloads_per_day`에 ATTACH하면 됩니다.
+
+materialized view의 쿼리는 더 복잡한 경우가 많고(그렇지 않다면 사용자가 굳이 뷰를 사용할 이유가 없을 것입니다!) 리소스도 더 많이 사용할 수 있습니다. 드문 경우에는 이 쿼리에 필요한 리소스가 서버 용량을 초과하기도 합니다. 이는 ClickHouse materialized view의 장점 중 하나를 잘 보여줍니다. materialized view는 증분 방식으로 동작하므로 전체 데이터셋을 한 번에 처리하지 않습니다!
+
+이 경우 사용자는 몇 가지 선택지를 가질 수 있습니다:
+
+1. 쿼리를 수정하여 범위를 backfill합니다. 예: `WHERE timestamp BETWEEN 2024-12-17 08:00:00 AND 2024-12-17 09:00:00`, `WHERE timestamp BETWEEN 2024-12-17 07:00:00 AND 2024-12-17 08:00:00` 등입니다.
+2. materialized view를 채우기 위해 [Null table engine](/ko/reference/engines/table-engines/special/null)을 사용합니다. 이 방법은 materialized view가 일반적으로 점진적으로 채워지는 방식을 재현하며, 데이터 블록(크기 조정 가능) 단위로 해당 쿼리를 실행합니다.
+
+(1)은 가장 단순한 접근 방식으로, 대부분의 경우 이것만으로도 충분합니다. 간결성을 위해 예시는 포함하지 않습니다.
+
+아래에서 (2)를 더 자세히 살펴보겠습니다.
+
+<div id="using-a-null-table-engine-for-filling-materialized-views">
+  #### materialized view를 채우기 위한 Null table engine 사용
+</div>
+
+[Null table engine](/ko/reference/engines/table-engines/special/null)은 데이터를 영구 저장하지 않는 스토리지 엔진입니다(테이블 엔진 세계의 `/dev/null`이라고 생각하면 됩니다). 언뜻 모순적으로 보일 수 있지만, materialized view는 이 테이블 엔진에 삽입된 데이터에 대해서도 계속 실행됩니다. 따라서 원본 데이터를 저장하지 않고도 materialized view를 구성할 수 있어 I/O와 그에 따른 스토리지 사용을 피할 수 있습니다.
+
+중요한 점은, 이 테이블 엔진에 연결된 모든 materialized view가 데이터가 삽입될 때 여전히 데이터 블록(block) 단위로 실행되며, 그 결과를 대상 테이블로 보낸다는 것입니다. 이러한 블록의 크기는 구성할 수 있습니다. 블록이 클수록 더 효율적일 수 있고 처리 속도도 더 빨라질 수 있지만, 더 많은 리소스(주로 메모리)를 사용합니다. 이 테이블 엔진을 사용하면 materialized view를 점진적으로, 즉 한 번에 하나의 블록씩 구성할 수 있으므로 전체 집계를 메모리에 유지할 필요가 없습니다.
+
+<Image img="/images/data-modeling/null_table_mv.webp" size="md" alt="ClickHouse의 비정규화" />
+
+<br />
+
+다음 예시를 살펴보겠습니다:
+
+```sql
+CREATE TABLE pypi_v2
+(
+    `timestamp` DateTime,
+    `project` String
+)
+ENGINE = Null
+
+CREATE MATERIALIZED VIEW pypi_downloads_per_day_mv_v2 TO pypi_downloads_per_day
+AS SELECT
+ toStartOfHour(timestamp) as hour,
+ project,
+    count() AS count
+FROM pypi_v2
+GROUP BY
+    hour,
+ project
+```
+
+여기서는 Null 테이블 `pypi_v2,`를 생성해 materialized view를 구성하는 데 사용할 행을 받습니다. 필요한 컬럼만 포함하도록 스키마를 제한한 점에 유의하십시오. 이 materialized view는 이 테이블에 삽입된 행을 대상으로(한 번에 하나의 block씩) 집계를 수행하고, 그 결과를 대상 테이블인 `pypi_downloads_per_day`로 보냅니다.
+
+<Note>
+  여기서는 `pypi_downloads_per_day`를 대상 테이블로 사용했습니다. 복원력을 더 높이려면 `pypi_downloads_per_day_v2`라는 복제 테이블을 생성하고, 앞선 예시에서처럼 이를 뷰의 대상 테이블로 사용할 수 있습니다. 삽입이 완료되면 `pypi_downloads_per_day_v2`의 파티션을 다시 `pypi_downloads_per_day`로 이동할 수 있습니다. 이렇게 하면 메모리 문제나 서버 중단으로 삽입이 실패하더라도 복구할 수 있습니다. 즉, `pypi_downloads_per_day_v2`를 TRUNCATE하고, 설정을 조정한 뒤 다시 시도하면 됩니다.
+</Note>
+
+이 materialized view를 채우려면, `pypi`에서 백필할 관련 데이터를 `pypi_v2`에 삽입하면 됩니다.
+
+```sql
+INSERT INTO pypi_v2 SELECT timestamp, project FROM pypi WHERE timestamp < '2024-12-17 09:00:00'
+```
+
+```response
+0 rows in set. Elapsed: 27.325 sec. Processed 1.50 billion rows, 33.48 GB (54.73 million rows/s., 1.23 GB/s.)
+Peak memory usage: 639.47 MiB.
+```
+
+여기서 메모리 사용량은 `639.47 MiB`입니다.
+
+<div id="tuning-performance--resources">
+  ##### 성능 및 리소스 튜닝
+</div>
+
+위 시나리오에서 성능과 리소스 사용량은 여러 요인에 의해 결정됩니다. 튜닝을 시도하기 전에, [S3 삽입 및 읽기 성능 최적화 가이드](/ko/integrations/connectors/data-ingestion/AWS/performance)의 [읽기에 스레드 사용](/ko/integrations/connectors/data-ingestion/AWS/performance#using-threads-for-reads) 섹션에 자세히 설명된 삽입 메커니즘을 먼저 이해하시기 바랍니다. 요약하면 다음과 같습니다:
+
+* **읽기 병렬성** - 읽기에 사용하는 스레드 수입니다. [`max_threads`](/ko/reference/settings/session-settings#max_threads)로 제어됩니다. ClickHouse Cloud에서는 인스턴스 크기에 따라 결정되며, 기본값은 vCPU 수입니다. 이 값을 늘리면 메모리 사용량이 증가하는 대신 읽기 성능이 향상될 수 있습니다.
+* **삽입 병렬성** - 삽입 작업에 사용되는 삽입 스레드 수입니다. [`max_insert_threads`](/ko/reference/settings/session-settings#max_insert_threads)로 제어됩니다. **참고**: 이 값은 `max_threads`를 초과할 수 없으므로, 실제 삽입 병렬성은 `min(max_insert_threads, max_threads)`입니다. ClickHouse Cloud에서는 인스턴스 크기(2~4)에 따라 결정되며, OSS에서는 1로 설정됩니다. 이 값을 늘리면 메모리 사용량이 증가하는 대신 성능이 향상될 수 있습니다.
+* **삽입 블록 크기** - 데이터는 [파티셔닝 키](/ko/reference/engines/table-engines/mergetree-family/custom-partitioning-key)를 기준으로 가져오고 파싱하여 메모리상의 삽입 블록으로 구성하는 루프에서 처리됩니다. 이렇게 구성된 블록은 정렬, 최적화, 압축을 거친 뒤 새로운 [데이터 파트](/ko/concepts/core-concepts/parts)로 저장소에 기록됩니다. 설정 [`min_insert_block_size_rows`](/ko/reference/settings/session-settings#min_insert_block_size_rows) 및 [`min_insert_block_size_bytes`](/ko/reference/settings/session-settings#min_insert_block_size_bytes)(비압축)로 제어되는 삽입 블록의 크기는 메모리 사용량과 디스크 I/O에 영향을 줍니다. 블록이 클수록 더 많은 메모리를 사용하지만 생성되는 파트 수는 줄어들어 I/O와 백그라운드 머지가 감소합니다. 이 설정은 최소 임계값을 의미하며(먼저 도달하는 값이 플러시를 트리거합니다).
+* **materialized view 블록 크기** - 기본 삽입에 적용되는 위 메커니즘과 마찬가지로, materialized view에 삽입하기 전에도 더 효율적으로 처리할 수 있도록 블록을 더 큰 단위로 병합합니다. 이러한 블록의 크기는 설정 [`min_insert_block_size_bytes_for_materialized_views`](/ko/reference/settings/session-settings#min_insert_block_size_bytes_for_materialized_views) 및 [`min_insert_block_size_rows_for_materialized_views`](/ko/reference/settings/session-settings#min_insert_block_size_rows_for_materialized_views)에 따라 결정됩니다. 블록이 클수록 처리 효율은 높아지지만, 그만큼 메모리 사용량도 증가합니다. 기본적으로 이러한 설정은 각각 소스 테이블 설정 [`min_insert_block_size_rows`](/ko/reference/settings/session-settings#min_insert_block_size_rows) 및 [`min_insert_block_size_bytes`](/ko/reference/settings/session-settings#min_insert_block_size_bytes)의 값을 따릅니다.
+
+<Note>
+  **단순한 INSERT SELECT 쿼리 팁**: 복잡한 변환 없이 `INSERT INTO t1 SELECT * FROM t2` 형태의 단순한 쿼리라면 `optimize_trivial_insert_select=1` 활성화를 고려하세요. 이 설정은(버전 24.7부터 기본적으로 비활성화됨) SELECT 병렬성을 `max_insert_threads`에 맞게 자동으로 조정하여 리소스 사용량과 생성되는 파트 수를 줄입니다. 이는 특히 테이블 간 대량 데이터 마이그레이션에 유용합니다.
+</Note>
+
+성능을 향상시키려면 [S3 삽입 및 읽기 성능 최적화 가이드](/ko/integrations/connectors/data-ingestion/AWS/performance)의 [삽입을 위한 스레드 및 블록 크기 조정](/ko/integrations/connectors/data-ingestion/AWS/performance#tuning-threads-and-block-size-for-inserts) 섹션에 설명된 지침을 따르십시오. 대부분의 경우 성능 향상을 위해 `min_insert_block_size_bytes_for_materialized_views` 및 `min_insert_block_size_rows_for_materialized_views`를 별도로 수정할 필요는 없습니다. 이 값들을 수정하는 경우, `min_insert_block_size_rows` 및 `min_insert_block_size_bytes`에 대해 설명된 모범 사례를 동일하게 적용하십시오.
+
+메모리 사용량을 최소화하려면 이러한 설정을 실험해 보십시오. 단, 성능이 저하될 수 있습니다. 앞서 사용한 쿼리를 기반으로 아래에 예시를 제시합니다.
+
+`max_insert_threads`를 1로 낮추면 메모리 오버헤드가 감소합니다.
+
+```sql
+INSERT INTO pypi_v2
+SELECT
+    timestamp,
+ project
+FROM pypi
+WHERE timestamp < '2024-12-17 09:00:00'
+SETTINGS max_insert_threads = 1
+```
+
+```response
+0 rows in set. Elapsed: 27.752 sec. Processed 1.50 billion rows, 33.48 GB (53.89 million rows/s., 1.21 GB/s.)
+Peak memory usage: 506.78 MiB.
+```
+
+`max_threads` 설정을 1로 줄이면 메모리 사용량을 더욱 낮출 수 있습니다.
+
+```sql
+INSERT INTO pypi_v2
+SELECT timestamp, project
+FROM pypi
+WHERE timestamp < '2024-12-17 09:00:00'
+SETTINGS max_insert_threads = 1, max_threads = 1
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 43.907 sec. Processed 1.50 billion rows, 33.48 GB (34.06 million rows/s., 762.54 MB/s.)
+Peak memory usage: 272.53 MiB.
+```
+
+마지막으로, `min_insert_block_size_rows`를 0으로 설정해 블록 크기를 결정하는 기준에서 제외하고, `min_insert_block_size_bytes`를 10485760(10MiB)으로 설정하면 메모리 사용량을 더 줄일 수 있습니다.
+
+```sql
+INSERT INTO pypi_v2
+SELECT
+    timestamp,
+ project
+FROM pypi
+WHERE timestamp < '2024-12-17 09:00:00'
+SETTINGS max_insert_threads = 1, max_threads = 1, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 10485760
+```
+
+```response
+0 rows in set. Elapsed: 43.293 sec. Processed 1.50 billion rows, 33.48 GB (34.54 million rows/s., 773.36 MB/s.)
+Peak memory usage: 218.64 MiB.
+```
+
+마지막으로, 블록 크기를 줄이면 파트가 더 많이 생성되어 머지 부담이 커질 수 있다는 점에 유의하십시오. [여기](/ko/integrations/connectors/data-ingestion/AWS/performance#be-aware-of-merges)에서 설명한 것처럼 이러한 설정은 신중하게 변경해야 합니다.
+
+<div id="no-timestamp-or-monotonically-increasing-column">
+  ### 타임스탬프 또는 단조 증가하는 컬럼이 없는 경우
+</div>
+
+위의 프로세스는 타임스탬프 또는 단조 증가하는 컬럼이 있는 경우를 전제로 합니다. 하지만 경우에 따라 이런 컬럼을 전혀 사용할 수 없을 수도 있습니다. 이때는 앞서 설명한 여러 단계를 활용하되, 데이터 수집을 일시 중지해야 하는 다음 프로세스를 권장합니다.
+
+1. 기본 테이블에 대한 삽입을 일시 중지합니다.
+2. `CREATE AS` 구문을 사용해 기본 대상 테이블의 복제본을 생성합니다.
+3. [`ALTER TABLE ATTACH`](/ko/reference/statements/alter/partition#attach-partitionpart)를 사용해 원본 대상 테이블의 파티션을 복제본에 ATTACH합니다. **참고:** 이 attach 작업은 앞에서 사용한 move와는 다릅니다. 하드 링크를 사용하지만 원본 테이블의 데이터는 그대로 유지됩니다.
+4. 새 materialized view를 생성합니다.
+5. 삽입을 다시 시작합니다. **참고:** 삽입은 대상 테이블만 업데이트하며 복제본은 업데이트하지 않습니다. 복제본은 원본 데이터만 참조합니다.
+6. 타임스탬프가 있는 데이터에 대해 위에서 사용한 것과 동일한 프로세스를 적용해 materialized view를 백필하며, 이때 복제 테이블을 소스로 사용합니다.
+
+다음은 PyPI와 앞서 만든 새 materialized view `pypi_downloads_per_day`를 사용하는 예시입니다(타임스탬프는 사용할 수 없다고 가정합니다):
+
+```sql
+SELECT count() FROM pypi
+```
+
+```response
+┌────count()─┐
+│ 2039988137 │ -- 20.4억
+└────────────┘
+
+집합에 1개 행. 경과 시간: 0.003초.
+```
+
+```sql
+-- (1) 삽입 일시 중지
+-- (2) 대상 테이블의 복제본 생성
+
+CREATE TABLE pypi_v2 AS pypi
+
+SELECT count() FROM pypi_v2
+```
+
+```response
+┌────count()─┐
+│ 2039988137 │ -- 20.4억
+└────────────┘
+
+세트에 1개 행. 경과 시간: 0.004초.
+```
+
+```sql
+-- (3) 원본 대상 테이블의 파티션을 복제본에 연결합니다.
+
+ALTER TABLE pypi_v2
+ (ATTACH PARTITION tuple() FROM pypi)
+
+-- (4) 새로운 materialized view를 생성합니다.
+
+CREATE TABLE pypi_downloads_per_day
+(
+    `hour` DateTime,
+    `project` String,
+    `count` Int64
+)
+ENGINE = SummingMergeTree
+ORDER BY (project, hour)
+
+CREATE MATERIALIZED VIEW pypi_downloads_per_day_mv TO pypi_downloads_per_day
+AS SELECT
+ toStartOfHour(timestamp) as hour,
+ project,
+    count() AS count
+FROM pypi
+GROUP BY
+    hour,
+ project
+
+-- (4) 삽입을 재시작합니다. 여기서는 단일 행을 삽입하여 복제합니다.
+
+INSERT INTO pypi SELECT *
+FROM pypi
+LIMIT 1
+
+SELECT count() FROM pypi
+```
+
+```response
+┌────count()─┐
+│ 2039988138 │ -- 2.04 billion
+└────────────┘
+
+1개 행이 반환되었습니다. 경과: 0.003초.
+```
+
+```sql
+-- pypi_v2의 행 수가 이전과 동일한지 확인
+
+SELECT count() FROM pypi_v2
+```
+
+```response
+┌────count()─┐
+│ 2039988137 │ -- 20.4억
+└────────────┘
+```
+
+```sql
+-- (5) 백업 pypi_v2를 사용하여 뷰를 백필합니다
+
+INSERT INTO pypi_downloads_per_day SELECT
+ toStartOfHour(timestamp) as hour,
+ project,
+    count() AS count
+FROM pypi_v2
+GROUP BY
+    hour,
+ project
+```
+
+```response
+0 rows in set. Elapsed: 3.719 sec. Processed 2.04 billion rows, 47.15 GB (548.57 million rows/s., 12.68 GB/s.)
+```
+
+```sql
+DROP TABLE pypi_v2;
+```
+
+끝에서 두 번째 단계에서는 앞서 [설명한](#timestamp-or-monotonically-increasing-column-available) 간단한 `INSERT INTO SELECT` 방식으로 `pypi_downloads_per_day`를 백필합니다. 또한 [위에서](#using-a-null-table-engine-for-filling-materialized-views) 설명한 Null 테이블 방식으로 이를 개선할 수 있으며, 복원력을 높이기 위해 필요에 따라 복제 테이블을 사용할 수도 있습니다.
+
+이 작업을 수행하려면 삽입 작업을 일시 중지해야 하지만, 중간 단계의 작업은 일반적으로 빠르게 완료되므로 데이터 중단을 최소화할 수 있습니다.

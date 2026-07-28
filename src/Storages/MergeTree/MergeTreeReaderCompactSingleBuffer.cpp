@@ -89,8 +89,17 @@ try
 
                     readData(pos, res_columns[pos], rows_to_read, rows_offset, from_mark, subcolumns_size_before_reading, *stream, columns_cache, &columns_cache_for_subcolumns, &substreams_cache);
                 }
+
+                /// Before dropping the substreams cache, verify the reference counts of the columns
+                /// shared with the result columns; see the comment near the same check in
+                /// MergeTreeReaderWide::readRows.
+                validateColumnsOwnership(res_columns, nullptr, nullptr, &substreams_cache, &deserialize_states_caches);
             }
         }
+
+        /// The same check for the full-column reads of this granule; see the comment near the same
+        /// check in MergeTreeReaderWide::readRows.
+        validateColumnsOwnership(res_columns, &columns_cache, &columns_cache_for_subcolumns, nullptr, &deserialize_states_caches);
 
         ++from_mark;
         read_rows += rows_to_read;
@@ -124,13 +133,10 @@ try
     if (initialized)
         return;
 
-    auto stream_settings = settings;
-    stream_settings.allow_different_codecs = true;
-
     stream = std::make_unique<MergeTreeReaderStreamAllOfMultipleColumns>(
         data_part_info_for_read->getDataPartStorage(), MergeTreeDataPartCompact::DATA_FILE_NAME,
         MergeTreeDataPartCompact::DATA_FILE_EXTENSION, data_part_info_for_read->getMarksCount(),
-        all_mark_ranges, stream_settings,uncompressed_cache,
+        all_mark_ranges, settings, uncompressed_cache,
         data_part_info_for_read->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION),
         marks_loader, profile_callback, clock_type);
 

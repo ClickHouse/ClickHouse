@@ -1,0 +1,42 @@
+---
+title: Sélectionner le fournisseur
+---
+
+<Info>
+  **Scale vs Enterprise**
+
+  Nous recommandons ce [niveau Scale](/fr/products/cloud/features/cloud-tiers) pour la plupart des charges de travail ClickStack. Choisissez le niveau Enterprise si vous avez besoin de fonctionnalités de sécurité avancées comme SAML, CMEK ou la conformité HIPAA. Il propose également des profils matériels personnalisés pour les déploiements ClickStack de très grande envergure. Dans ce cas, nous vous recommandons de contacter le support.
+</Info>
+
+Sélectionnez le fournisseur Cloud et la région.
+
+<img src="/images/clickstack/getting-started/region_resources.webp" alt="" />
+
+Lorsque vous indiquez les CPU et la mémoire, estimez-les en fonction de votre débit d’ingestion ClickStack attendu. Le tableau ci-dessous fournit des repères pour dimensionner ces ressources.
+
+| Volume d’ingestion mensuel | Capacité de calcul recommandée |
+| -------------------------- | ------------------------------ |
+| &lt; 10 TB / mois          | 2 vCPU × 3 répliques           |
+| 10–50 TB / mois            | 4 vCPU × 3 répliques           |
+| 50–100 TB / mois           | 8 vCPU × 3 répliques           |
+| 100–500 TB / mois          | 30 vCPU × 3 répliques          |
+| 1 PB+ / mois               | 59 vCPU × 3 répliques          |
+
+Ces recommandations reposent sur les hypothèses suivantes :
+
+* Le volume de données correspond au **volume d’ingestion non compressé** par mois et s’applique aussi bien aux logs qu’aux traces.
+* Les modèles de requêtes sont typiques des cas d’usage d’observabilité, la plupart des requêtes portant sur des **données récentes**, généralement des 24 dernières heures.
+* L’ingestion est relativement **uniforme sur l’ensemble du mois**. Si vous prévoyez un trafic irrégulier ou des pics, vous devez prévoir une marge de capacité supplémentaire.
+* Le stockage est géré séparément via le stockage objet ClickHouse Cloud et ne constitue pas un facteur limitant pour la rétention. Nous partons du principe que les données conservées plus longtemps sont rarement consultées.
+
+Des ressources de calcul supplémentaires peuvent être nécessaires pour des modes d’accès qui interrogent régulièrement des intervalles de temps plus longs, effectuent des agrégations lourdes ou prennent en charge un grand nombre d’utilisateurs simultanés.
+
+Bien que deux répliques puissent répondre aux exigences de CPU et de mémoire pour un débit d’ingestion donné, nous recommandons d’utiliser trois répliques lorsque cela est possible afin d’obtenir la même capacité totale et d’améliorer la redondance du service.
+
+<Note>
+  Ces valeurs sont **uniquement des estimations** et doivent être utilisées comme point de départ. Les besoins réels dépendent de la complexité des requêtes, de la concurrence, des politiques de rétention et de la variabilité du débit d’ingestion. Surveillez toujours l’utilisation des ressources et adaptez le dimensionnement si nécessaire.
+</Note>
+
+Une fois vos besoins définis, le provisionnement de votre service Managed ClickStack prendra რამდენიმე minutes. N’hésitez pas à explorer le reste de la [console ClickHouse Cloud](/fr/products/cloud/getting-started/intro) pendant le provisionnement.
+
+Une fois **le provisionnement terminé, l’option &#39;ClickStack&#39; dans le menu de gauche sera activée**.

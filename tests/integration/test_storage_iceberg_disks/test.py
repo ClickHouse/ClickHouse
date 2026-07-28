@@ -14,7 +14,6 @@ from helpers.s3_tools import (
     prepare_s3_bucket,
 )
 from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
-from helpers.test_tools import TSV
 
 from helpers.iceberg_utils import (
     default_upload_directory,
@@ -78,6 +77,7 @@ def generate_cluster_def(common_path, port, azure_container):
                 <endpoint>http://minio1:9001/root/var/lib/clickhouse/user_files/iceberg_data/default/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <skip_access_check>true</skip_access_check>
             </disk_s3_common>
             <disk_azure_common>
                 <type>object_storage</type>
@@ -93,6 +93,7 @@ def generate_cluster_def(common_path, port, azure_container):
                 <disk>disk_s3_common</disk>
                 <path>/tmp/s3_cache/</path>
                 <max_size>1000000000</max_size>
+                <skip_access_check>true</skip_access_check>
             </disk_s3_with_cache>
             <disk_azure_with_cache>
                 <type>cache</type>
@@ -261,6 +262,15 @@ def test_single_iceberg_file(started_cluster, format_version, storage_type, with
             f"SELECT * FROM icebergS3(path = '{storage_path}',  SETTINGS disk = '{disk_name}')"
         )
 
+    if storage_type == "local":
+        assert instance.query(
+            f"SELECT * FROM icebergLocal(path = '{storage_path}', SETTINGS disk = '{disk_name}')"
+        ) == instance.query("SELECT number, toString(number + 1) FROM numbers(100)")
+        # The disk-type mismatch check must still fire for the S3-flavoured function.
+        assert "Disk type doesn't match" in instance.query_and_get_error(
+            f"SELECT * FROM icebergS3(path = '{storage_path}', SETTINGS disk = '{disk_name}')"
+        )
+
 
 @pytest.mark.parametrize("storage_type", ["local", "s3"])
 def test_iceberg_trivial_count_optimization(started_cluster, storage_type):
@@ -387,7 +397,7 @@ def test_cluster_table_function(started_cluster, storage_type, with_cache):
     logging.info(f"Setup complete. files: {files}")
     assert len(files) == 5 + 4 * (len(started_cluster.instances) - 1)
 
-    clusters = instance.query(f"SELECT * FROM system.clusters")
+    clusters = instance.query("SELECT * FROM system.clusters")
     logging.info(f"Clusters setup: {clusters}")
 
     # Regular Query only node1
