@@ -1,5 +1,5 @@
 ---
-sidebarTitle: "Vue d’ensemble"
+sidebarTitle: 'Vue d’ensemble'
 slug: /integrations/migration/overview
 keywords: ['clickhouse', 'migrate', 'migration', 'migrating', 'data']
 title: 'Migrer des données vers ClickHouse'
@@ -22,11 +22,14 @@ picture-in-picture"
 
 <br />
 
-Il existe plusieurs options pour migrer des données vers ClickHouse Cloud, selon l’emplacement actuel de vos données :
+Il existe plusieurs parcours de migration vers ClickHouse Cloud, selon l’emplacement actuel de vos données :
 
-* [Autogéré vers Cloud](/fr/get-started/migrate/oss-to-cloud/clickhouse-to-cloud) : utilisez la fonction `remoteSecure` pour transférer les données
-* [Un autre SGBD](/fr/get-started/migrate/other-methods/clickhouse-local-etl) : utilisez l’outil ETL [clickhouse-local] ainsi que la fonction de table ClickHouse adaptée à votre SGBD actuel
-* [N’importe quelle source !](/fr/get-started/migrate/other-methods/etl-tool-to-clickhouse) : utilisez l’un des nombreux outils ETL/ELT populaires qui se connectent à toutes sortes de sources de données
-* [Stockage objet](/fr/get-started/migrate/other-methods/object-storage-to-clickhouse) : insérez facilement des données depuis S3 dans ClickHouse
-
-Dans l’exemple [Migrer depuis Redshift](/fr/get-started/migrate/redshift/migration-guide), nous présentons trois méthodes différentes pour migrer des données vers ClickHouse.
+| Parcours de migration                                                      | Description                                                                                          |
+| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| [PostgreSQL](/fr/get-started/migrate/postgres/index)                          | Migrez les données et les requêtes PostgreSQL vers ClickHouse.                                       |
+| [BigQuery](/fr/get-started/migrate/bigquery/index)                            | Migrez les jeux de données et les charges de travail de BigQuery vers ClickHouse Cloud.              |
+| [Snowflake](/fr/get-started/migrate/snowflake/overview)                       | Migrez les données Snowflake et les charges de travail SQL vers ClickHouse Cloud.                    |
+| [Elasticsearch](/fr/get-started/migrate/elastic/overview)                     | Migrez les données et les requêtes Elasticsearch vers ClickHouse.                                    |
+| [Redshift](/fr/get-started/migrate/redshift/overview)                         | Migrez les données et les charges de travail de Redshift vers ClickHouse Cloud.                      |
+| [OSS vers Cloud](/fr/get-started/migrate/oss-to-cloud/clickhouse-to-cloud)    | Transférez les données depuis un déploiement ClickHouse autogéré vers ClickHouse Cloud.              |
+| [Autres méthodes](/fr/get-started/migrate/other-methods/clickhouse-local-etl) | Utilisez clickhouse-local, des outils ETL ou le stockage objet pour d’autres scénarios de migration. |
