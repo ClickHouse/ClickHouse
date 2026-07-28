@@ -275,7 +275,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
     else if (
         (usage == TableFunctionUsage::EngineReplace && t.isSQLiteEngine()) || (usage == TableFunctionUsage::PeerTable && t.hasSQLitePeer()))
     {
-        SQLiteFunc * sfunc = tfunc->mutable_sqlite();
+        SQLiteFunc * sfunc = tfunc->mutable_sqite();
 
         sfunc->set_rdatabase(connections.getSQLitePath().generic_string());
         sfunc->set_rtable(t.getBaseName());

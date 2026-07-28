@@ -2457,7 +2457,7 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kRemote: RemoteFuncToString(ret, tf.remote()); break;
         case TableFunctionType::kMysql: MySQLFuncToString(ret, tf.mysql()); break;
         case TableFunctionType::kPostgresql: PostgreSQLFuncToString(ret, tf.postgresql()); break;
-        case TableFunctionType::kSqlite: SQLiteFuncToString(ret, tf.sqlite()); break;
+        case TableFunctionType::kSqite: SQLiteFuncToString(ret, tf.sqite()); break;
         case TableFunctionType::kObjectFunc: ObjectStoreFuncToString(ret, tf.object_func()); break;
         case TableFunctionType::kMerge: MergeFuncToString(ret, tf.merge()); break;
         case TableFunctionType::kCluster: ClusterFuncToString(ret, tf.cluster()); break;
