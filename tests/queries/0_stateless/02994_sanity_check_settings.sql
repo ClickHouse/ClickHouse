@@ -27,7 +27,7 @@ EXPLAIN PIPELINE SELECT zero + 1 AS x FROM system.zeros LIMIT 10 SETTINGS max_bl
 
 -- Verify that we clamp odd values to something slightly saner
 SET max_block_size = 9223372036854775806;
-SELECT value FROM system.settings WHERE name = 'max_bflock_size';
+SELECT value FROM system.settings WHERE name = 'max_block_size';
 
 
 SET max_threads = 9223372036854775807;
