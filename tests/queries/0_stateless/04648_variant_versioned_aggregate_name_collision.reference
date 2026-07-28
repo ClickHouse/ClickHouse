@@ -8,4 +8,7 @@ c11	Variant(AggregateFunction(7, sumMap, Array(UInt64), Array(UInt64)), Aggregat
 c12	Variant(AggregateFunction(1, groupBitmap, UInt32), AggregateFunction(groupBitmap, UInt32))
 mv_ok	Variant(AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)), UInt8)
 mv_inner	1
+inferred_refused	0
+inferred_ok	Variant(AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)), UInt8)
+inferred_susp	Variant(Int64, UInt8)
 reattached	Variant(Int64, UInt8)

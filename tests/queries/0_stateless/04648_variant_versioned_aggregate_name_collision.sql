@@ -152,6 +152,33 @@ SELECT 'mv_ok', type FROM system.columns WHERE database = currentDatabase() AND 
 CREATE MATERIALIZED VIEW mv_inner ENGINE = MergeTree ORDER BY k AS SELECT k FROM mv_src;
 SELECT 'mv_inner', count() FROM system.columns WHERE database = currentDatabase() AND table = 'mv_inner';
 
+-- A table whose columns are inferred by its engine persists them verbatim as well, and nothing checked
+-- them before: the pre construction check runs on the still empty column list. The binary type encoding
+-- of the Native format is the route which reaches inference with both elements, because it carries the
+-- version of an AggregateFunction as a separate value instead of relying on the printed name. The three
+-- payloads below are written as raw bytes rather than through this format, so the pair does not have to
+-- survive a name in order to be built. The setting has to be given on the engine itself, since File
+-- takes its format settings from the server plus its own SETTINGS clause and ignores the session ones,
+-- and the file name has to be a query parameter on its own, because that argument accepts only a
+-- literal.
+INSERT INTO FUNCTION file({CLICKHOUSE_DATABASE:String}, 'RawBLOB') SELECT unhex('010101762a0225010673756d4d617000021e041e0425000673756d4d617000021e041e040000000000000000ff') SETTINGS engine_file_truncate_on_insert = 1;
+INSERT INTO FUNCTION file({CLICKHOUSE_DATABASE_1:String}, 'RawBLOB') SELECT unhex('010101762a0225010673756d4d617000021e041e04010000000000000000ff') SETTINGS engine_file_truncate_on_insert = 1;
+INSERT INTO FUNCTION file({CLICKHOUSE_DATABASE_2:String}, 'RawBLOB') SELECT unhex('010101762a020a0100000000000000000101') SETTINGS engine_file_truncate_on_insert = 1;
+CREATE TABLE t_inferred_collision ENGINE = File(Native, {CLICKHOUSE_DATABASE:String}) SETTINGS input_format_native_decode_types_in_binary_format = 1; -- { serverError ILLEGAL_COLUMN }
+-- A refused table is dropped again rather than left half created.
+SELECT 'inferred_refused', count() FROM system.tables WHERE database = currentDatabase() AND name = 't_inferred_collision';
+CREATE TABLE t_inferred_ok ENGINE = File(Native, {CLICKHOUSE_DATABASE_1:String}) SETTINGS input_format_native_decode_types_in_binary_format = 1;
+SELECT 'inferred_ok', type FROM system.columns WHERE database = currentDatabase() AND table = 't_inferred_ok' AND name = 'v';
+-- The suspicious type policy has never applied to inferred columns and still does not, so a type the
+-- gated check refuses in a column list is accepted here. This is the line that fails if the new pass
+-- starts reading the settings.
+SET allow_suspicious_variant_types = 0;
+CREATE TABLE t_inferred_susp ENGINE = File(Native, {CLICKHOUSE_DATABASE_2:String}) SETTINGS input_format_native_decode_types_in_binary_format = 1;
+SET allow_suspicious_variant_types = 1;
+SELECT 'inferred_susp', type FROM system.columns WHERE database = currentDatabase() AND table = 't_inferred_susp' AND name = 'v';
+DROP TABLE t_inferred_ok;
+DROP TABLE t_inferred_susp;
+
 -- A definition stored by this server is not re-checked, so tables that already exist keep loading: the
 -- short form of ATTACH remains exempt from data type validation entirely. The colliding type can no
 -- longer be reached through any accepted path, so this uses a type that the settings gated checks would
@@ -188,3 +215,4 @@ DROP TABLE IF EXISTS t_collision_10;
 DROP TABLE IF EXISTS t_collision_11;
 DROP TABLE IF EXISTS t_collision_12;
 DROP TABLE IF EXISTS mv_collision;
+DROP TABLE IF EXISTS t_inferred_collision;

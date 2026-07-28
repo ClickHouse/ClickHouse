@@ -163,14 +163,9 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
     if (settings.validate_nested_types)
         type_to_check->forEachChild(validate_callback);
 
-    /// Reloading a table parses the stored type name, so a `Variant` whose elements render to the same name
-    /// after re-parsing would silently lose all but one of them (the canonical `DataTypeVariant` constructor
-    /// deduplicates by name), and reads of a column written with the original discriminators then fail.
-    /// Such a type cannot round-trip through its own name, so it must not be created. This check is an
-    /// integrity requirement rather than a suspicious-type policy, so unlike the callback above it is not
-    /// gated by any setting. The traversal below cannot use `forEachChild` alone, because
-    /// `DataTypeAggregateFunction` does not expose its argument types through it, and a `Variant` used as
-    /// an argument of an aggregate function is part of the stored name just the same.
+    /// `DataTypeVariant` deduplicates its elements by rendered name, so an element whose name does not
+    /// round-trip is silently lost when a reload parses the stored name. That is an integrity
+    /// requirement rather than a suspicious-type policy, hence not gated by a setting.
     auto check_variant_name_collisions = [&](const IDataType & data_type)
     {
         const auto * variant_type = typeid_cast<const DataTypeVariant *>(&data_type);
@@ -187,22 +182,10 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
         {
             const auto original_name = variant->getName();
 
-            /// The name is re-parsed at the same fixed limits that persisting a type name already uses,
-            /// namely the same three `dataTypeToAST` passes. Those limits are an
-            /// upper bound on anything that could have been stored: rendering the columns of a CREATE or
-            /// an ATTACH goes through `dataTypeToAST` with exactly them, so a name they cannot handle
-            /// belongs to a type which cannot be persisted at all. Reading the limits from the settings
-            /// instead would let the check be stricter than the statement that produced the type, because
-            /// none of the paths accepting a type uses those settings for it: a trailing `SETTINGS
-            /// max_parser_depth` clause is applied only after the statement has been parsed, a `CAST`
-            /// target type never passes through the parser of a statement at all, and the size limit is a
-            /// constant everywhere. A stricter check would then fail to parse the name and skip exactly
-            /// the colliding element it exists to find.
-            /// A name that cannot be parsed back cannot be shown to collide with another one, so such an
-            /// element is skipped rather than the whole type being refused for an unrelated reason. Both a
-            /// failed parse and a throw have to be handled: the depth limits are reported by throwing even
-            /// on a try-parse, from `IParser::Pos::increaseDepth` (`TOO_DEEP_RECURSION`, during the parse)
-            /// and from `IAST::checkDepthImpl` (`TOO_DEEP_AST`, on a parse that succeeded).
+            /// The limits are fixed on purpose: they are the ones `dataTypeToAST` uses when a name is
+            /// persisted, so reading them from the settings could make this check stricter than the
+            /// statement which produced the type. A name that cannot be read back proves no collision,
+            /// so it is skipped; a try-parse still throws on either depth limit, hence both arms.
             DataTypePtr reparsed_type;
             try
             {
@@ -246,10 +229,8 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
         }
     };
 
-    /// `forEachChild` already walks a whole subtree, so it is applied to a type once and never from inside
-    /// the callback it is given. The recursion below only adds the arguments of an aggregate function, which
-    /// `forEachChild` does not reach. Its depth is bounded by the depth of the type itself, which the parser
-    /// of the query already limited, so it needs no limit of its own.
+    /// `forEachChild` does not reach the argument types of an aggregate function, which is the only
+    /// reason this recursion exists.
     IDataType::ChildCallback check_type_and_aggregate_arguments;
     check_type_and_aggregate_arguments = [&](const IDataType & data_type)
     {
