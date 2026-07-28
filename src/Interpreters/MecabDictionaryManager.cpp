@@ -216,7 +216,15 @@ void extractArchive(const fs::path & archive_path, const fs::path & destination)
         if (name.ends_with("/")) /// directory entry
             continue;
 
-        const fs::path out_path = destination / name;
+        /// Guard against path traversal (Zip Slip): reject absolute paths and entries that would
+        /// escape the destination directory. We only ever write regular files at the normalized path.
+        const fs::path relative = fs::path(name).lexically_normal();
+        if (relative.is_absolute() || (!relative.empty() && *relative.begin() == ".."))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Refusing to extract Japanese dictionary entry '{}': it escapes the destination directory", name);
+
+        const fs::path out_path = destination / relative;
         fs::create_directories(out_path.parent_path());
 
         auto file_in = reader->readFile(name, /*throw_on_not_found=*/ true);
@@ -314,6 +322,15 @@ MecabDictionaryPtr MecabDictionaryManager::loadJapaneseDictionary()
             ErrorCodes::NO_ELEMENTS_IN_CONFIG,
             "Missing <tokenizer><japanese><dictionary_sha> in the server configuration. "
             "The SHA-256 of the dictionary archive is required to verify its integrity before loading");
+
+    /// Validate the SHA before using it as a path component (it keys the cache directory below).
+    bool valid_sha = expected_sha.size() == 64;
+    for (char c : expected_sha)
+        valid_sha &= (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+    if (!valid_sha)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Invalid <tokenizer><japanese><dictionary_sha> '{}': expected a 64-character hex SHA-256", expected_sha);
 
     /// Cache under the server data path, keyed by the verified SHA (download+verify happen once).
     const fs::path cache_dir = fs::path(context->getPath()) / "mecab_dictionaries" / expected_sha;

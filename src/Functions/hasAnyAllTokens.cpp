@@ -413,13 +413,12 @@ ColumnPtr ExecutableFunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
 
     ColumnPtr col_input = arguments[arg_input].column;
 
-    if (tokenizer->getType() == ITokenizer::Type::SparseGrams)
+    if (tokenizer->isStateful())
     {
-        /// The sparse gram token extractor stores an internal state which modified during the execution.
-        /// This leads to an error while executing this function multi-threaded because that state is not protected.
-        /// To avoid this case, a clone of the sparse gram token extractor will be used.
-        auto sparse_grams_tokenizer = tokenizer->clone();
-        executeStringOrArray<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, sparse_grams_tokenizer.get(), search_tokens);
+        /// Stateful tokenizers mutate internal state during execution and cannot be shared across
+        /// threads; use a per-execution clone.
+        auto stateful_tokenizer = tokenizer->clone();
+        executeStringOrArray<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, stateful_tokenizer.get(), search_tokens);
     }
     else
     {
