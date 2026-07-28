@@ -1068,6 +1068,19 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
             validateDataType(name_and_type_pair.type, validation_settings);
     }
+    else if (create.attach && !create.attach_short_syntax && !create.is_materialized_view)
+    {
+        /// An ATTACH that carries a full table definition creates and persists a new table, so its
+        /// columns are fresh input and not a definition this server stored earlier (see the warning
+        /// about it below and the `need_lock_uuid` comment). A definition read back from metadata is
+        /// marked `attach_short_syntax` (`DatabaseOnDisk::createTableFromAST`) and stays exempt, so
+        /// tables that already exist keep loading. Only the checks that are not gated by a setting
+        /// apply here, so a type that cannot be read back after a reload is still refused, while the
+        /// suspicious type policy deliberately remains a CREATE-only matter.
+        DataTypeValidationSettings integrity_checks_only;
+        for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
+            validateDataType(name_and_type_pair.type, integrity_checks_only);
+    }
 }
 
 void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database)

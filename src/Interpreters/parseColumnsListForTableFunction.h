@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <Core/Defines.h>
 #include <Storages/ColumnsDescription.h>
 
 
@@ -22,6 +23,10 @@ struct DataTypeValidationSettings
     bool validate_nested_types = true;
     bool enable_time_time64_type = true;
     bool allow_experimental_nullable_tuple_type = true;
+
+    /// Used to re-parse a rendered type name at the same depth the query itself was parsed with.
+    UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
+    UInt64 max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
 };
 
 void validateDataType(const DataTypePtr & type, const DataTypeValidationSettings & settings);

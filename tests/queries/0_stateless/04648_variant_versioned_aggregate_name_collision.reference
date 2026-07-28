@@ -5,4 +5,4 @@ x
 controls	19
 c11	Variant(AggregateFunction(7, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(sumMap, Array(UInt64), Array(UInt64)))
 c12	Variant(AggregateFunction(1, groupBitmap, UInt32), AggregateFunction(groupBitmap, UInt32))
-attached	Variant(AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(sumMap, Array(UInt64), Array(UInt64)))
+reattached	Variant(Int64, UInt8)

@@ -29,6 +29,12 @@ CREATE TABLE t_collision_6 (k UInt8, v Tuple(a Variant(AggregateFunction(0, sumM
 CREATE TABLE t_collision_9 (k UInt8, v AggregateFunction(any, Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))))) ENGINE = MergeTree ORDER BY k; -- { serverError ILLEGAL_COLUMN }
 CREATE TABLE t_collision_10 (k UInt8, v Array(AggregateFunction(any, Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))))) ENGINE = MergeTree ORDER BY k; -- { serverError ILLEGAL_COLUMN }
 
+-- A name is re-parsed at the depth limit the statement itself was parsed with, so an element whose own
+-- nesting is deeper than what the stricter limit of DataTypeFactory allows is checked like any other.
+-- Below that depth the elements here collide just the same, and skipping them would have made the
+-- rejection depend on the build, because that limit is lower under sanitizers.
+CREATE TABLE t_collision_11 (k UInt8, v Variant(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))), Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))) ENGINE = MergeTree ORDER BY k; -- { serverError ILLEGAL_COLUMN }
+
 -- ALTER reaches the same stored metadata, so it is refused too. The added and the modified column
 -- live on separate tables so that a build which still accepts the ADD does not then fail the whole
 -- run on a duplicate column name.
@@ -85,26 +91,36 @@ CREATE TABLE t_control (
     c16 Dynamic,
     c17 Array(Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), UInt8)),
     c18 AggregateFunction(any, Variant(String, UInt8)),
-    -- A deeply nested element whose name cannot be parsed back by the more restrictive parser of
-    -- DataTypeFactory, which uses a lower depth limit than the one that parsed this statement. Such a
-    -- name cannot be shown to collide with another one, so the element is skipped instead of the whole
-    -- type being refused for a reason unrelated to a name collision.
+    -- A deeply nested element, to pin that a type is not refused just for being deeper than the limit
+    -- DataTypeFactory applies to a name given as a string, which is lower under sanitizers than it is
+    -- elsewhere and lower than the limit this statement was parsed with.
     c19 Variant(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(UInt8))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))), String)
 ) ENGINE = MergeTree ORDER BY tuple();
 SELECT 'controls', count() FROM system.columns WHERE database = currentDatabase() AND table = 't_control';
 SELECT 'c11', type FROM system.columns WHERE database = currentDatabase() AND table = 't_control' AND name = 'c11';
 SELECT 'c12', type FROM system.columns WHERE database = currentDatabase() AND table = 't_control' AND name = 'c12';
 
--- Tables that already contain such a column keep loading exactly as before: data type validation is
--- skipped for ATTACH, so no stored schema is re-checked against the new rule. A Memory database is
--- used because a plain ATTACH with a column list needs a database that does not assign UUIDs. That
--- CREATE DATABASE line also matches one of the restricted functionality patterns of the cloud test
--- prefilter, so the whole file is skipped there by design and not because of a regression.
+-- An ATTACH that carries a whole table definition creates and persists a new table, so its columns are
+-- fresh input rather than a definition this server stored earlier, and the same type is refused there
+-- too. A Memory database is used because that spelling needs a database which does not assign UUIDs.
+-- That CREATE DATABASE line also matches one of the restricted functionality patterns of the cloud
+-- test prefilter, so the whole file is skipped there by design and not because of a regression.
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Memory;
-ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_attached (k UInt8, v Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))) ENGINE = Memory;
-SELECT 'attached', type FROM system.columns WHERE database = {CLICKHOUSE_DATABASE_1:String} AND table = 't_attached' AND name = 'v';
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_attached (k UInt8, v Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))) ENGINE = Memory; -- { serverError ILLEGAL_COLUMN }
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
+-- A definition stored by this server is not re-checked, so tables that already exist keep loading: the
+-- short form of ATTACH remains exempt from data type validation entirely. The colliding type can no
+-- longer be reached through any accepted path, so this uses a type that the settings gated checks would
+-- refuse instead, which pins the exemption just as well.
+CREATE TABLE t_reattached (k UInt8, v Variant(UInt8, Int64)) ENGINE = MergeTree ORDER BY k;
+SET allow_suspicious_variant_types = 0;
+DETACH TABLE t_reattached;
+ATTACH TABLE t_reattached;
+SET allow_suspicious_variant_types = 1;
+SELECT 'reattached', type FROM system.columns WHERE database = currentDatabase() AND table = 't_reattached' AND name = 'v';
+DROP TABLE t_reattached;
 
 DROP TABLE t_alter_add;
 DROP TABLE t_alter_modify;
@@ -122,3 +138,4 @@ DROP TABLE IF EXISTS t_collision_7;
 DROP TABLE IF EXISTS t_collision_8;
 DROP TABLE IF EXISTS t_collision_9;
 DROP TABLE IF EXISTS t_collision_10;
+DROP TABLE IF EXISTS t_collision_11;

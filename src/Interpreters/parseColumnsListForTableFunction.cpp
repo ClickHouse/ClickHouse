@@ -1,3 +1,4 @@
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -13,6 +14,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserDataType.h>
 #include <Parsers/parseQuery.h>
 
 namespace DB
@@ -45,6 +47,8 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
     , validate_nested_types(settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types])
     , enable_time_time64_type(settings[Setting::enable_time_time64_type])
     , allow_experimental_nullable_tuple_type(settings[Setting::allow_experimental_nullable_tuple_type])
+    , max_parser_depth(settings[Setting::max_parser_depth])
+    , max_parser_backtracks(settings[Setting::max_parser_backtracks])
 {
 }
 
@@ -169,7 +173,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
     /// gated by any setting. The traversal below cannot use `forEachChild` alone, because
     /// `DataTypeAggregateFunction` does not expose its argument types through it, and a `Variant` used as
     /// an argument of an aggregate function is part of the stored name just the same.
-    auto check_variant_name_collisions = [](const IDataType & data_type)
+    auto check_variant_name_collisions = [&](const IDataType & data_type)
     {
         const auto * variant_type = typeid_cast<const DataTypeVariant *>(&data_type);
         if (!variant_type)
@@ -179,20 +183,42 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
         if (variants.size() < 2)
             return;
 
+        ParserDataType data_type_parser;
         std::unordered_map<String, String> reparsed_to_original;
         for (const auto & variant : variants)
         {
             const auto original_name = variant->getName();
 
-            /// A name that cannot be parsed back cannot be shown to collide with another one, and the parser
-            /// used here is more restrictive about nesting depth than the one that parsed the query, so a
-            /// failure here does not mean the type is invalid. Skip such an element rather than refusing a
-            /// type whose elements may well stay distinct. The depth limits are reported by throwing even
-            /// through `tryGet`, so both outcomes have to be handled.
+            /// The name is re-parsed at the depth limit the query itself was parsed with, and not at the
+            /// lower one that `DataTypeFactory` applies to a name given as a string (150 under sanitizers,
+            /// 300 otherwise): this type was accepted by the parser of the query, so a name describing it
+            /// has to be parseable there as well, and using the stricter limit would silently skip exactly
+            /// the deeply nested elements whose names collide.
+            /// A name that cannot be parsed back cannot be shown to collide with another one, so such an
+            /// element is skipped rather than the whole type being refused for an unrelated reason. Both a
+            /// failed parse and a throw have to be handled: the depth limits are reported by throwing even
+            /// on a try-parse, from `IParser::Pos::increaseDepth` (`TOO_DEEP_RECURSION`, during the parse)
+            /// and from `IAST::checkDepthImpl` (`TOO_DEEP_AST`, on a parse that succeeded), and a user can
+            /// still lower `max_parser_depth` below what a stored name needs.
             DataTypePtr reparsed_type;
             try
             {
-                reparsed_type = DataTypeFactory::instance().tryGet(original_name);
+                String out_error;
+                const char * start = original_name.data();
+                ASTPtr reparsed_ast = tryParseQuery(
+                    data_type_parser,
+                    start,
+                    start + original_name.size(),
+                    out_error,
+                    /*hilite=*/false,
+                    "data type",
+                    /*allow_multi_statements=*/false,
+                    DBMS_DEFAULT_MAX_QUERY_SIZE,
+                    settings.max_parser_depth,
+                    settings.max_parser_backtracks,
+                    /*skip_insignificant=*/true);
+                if (reparsed_ast)
+                    reparsed_type = DataTypeFactory::instance().tryGet(reparsed_ast);
             }
             catch (...) // Ok: a name that cannot be parsed proves no collision
             {
@@ -219,8 +245,8 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
 
     /// `forEachChild` already walks a whole subtree, so it is applied to a type once and never from inside
     /// the callback it is given. The recursion below only adds the arguments of an aggregate function, which
-    /// `forEachChild` does not reach. Its depth is bounded by the parse depth limit of `DataTypeFactory`, so
-    /// it needs no limit of its own.
+    /// `forEachChild` does not reach. Its depth is bounded by the depth of the type itself, which the parser
+    /// of the query already limited, so it needs no limit of its own.
     IDataType::ChildCallback check_type_and_aggregate_arguments;
     check_type_and_aggregate_arguments = [&](const IDataType & data_type)
     {
