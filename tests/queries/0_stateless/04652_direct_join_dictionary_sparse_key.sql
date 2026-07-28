@@ -56,8 +56,12 @@ SELECT count(), countIf(r.v != 0), countIf(r.v = 0), countIf(l.j = 0 AND r.v = 1
 FROM probe_sparse AS l LEFT JOIN dict_sparse_key AS r ON l.j = r.j;
 
 -- FlatDictionary::getColumn is a second site reached through the same getByKeys call.
+-- countIf(r.v = (l.j + 1) * 10) is the dictionary contents restated inline: it equals the number of
+-- present-key rows only if every one of them carries the value belonging to its own key, so a
+-- lookup that permutes values between keys is caught even though it preserves sum(r.v).
 SELECT 'Sparse key, dictionary attribute read';
-SELECT sum(r.v), count() FROM probe_sparse AS l LEFT JOIN dict_sparse_key AS r ON l.j = r.j;
+SELECT sum(r.v), count(), countIf(r.v = (l.j + 1) * 10), countIf(r.v = 0 AND l.j >= 20)
+FROM probe_sparse AS l LEFT JOIN dict_sparse_key AS r ON l.j = r.j;
 
 -- Aggregating in order over the sparse key: the shape observed failing in CI.
 SELECT 'Sparse key, aggregation in order';
@@ -68,21 +72,32 @@ SELECT max(u), min(u), count() FROM
 SETTINGS optimize_aggregation_in_order = 1, max_threads = 1;
 
 SELECT 'Sparse key replicated by ARRAY JOIN, attribute read';
-SELECT sum(r.v), count(), countIf(r.v = 0) FROM (SELECT j FROM probe_sparse_arr ARRAY JOIN arr) AS l
+SELECT sum(r.v), count(), countIf(r.v = 0), countIf(r.v = (l.j + 1) * 10)
+FROM (SELECT j FROM probe_sparse_arr ARRAY JOIN arr) AS l
 LEFT JOIN dict_sparse_key AS r ON l.j = r.j
 SETTINGS enable_lazy_columns_replication = 1;
 
--- The values above must equal what a dense key and a non-direct join produce on the same data.
-SELECT 'Sparse result equals dense result';
+-- The whole per-key mapping, not just its total, must equal what a dense key and a non-direct join
+-- produce on the same data: a total is invariant under any permutation of values between keys.
+-- Grouping by (l.j, r.v) also exposes a key whose rows disagree with each other as extra tuples.
+SELECT 'Sparse mapping equals dense mapping';
 SELECT
-    (SELECT sum(r.v) FROM probe_sparse AS l LEFT JOIN dict_sparse_key AS r ON l.j = r.j)
-        = (SELECT sum(r.v) FROM probe_dense AS l LEFT JOIN dict_sparse_key AS r ON l.j = r.j);
+    (SELECT arraySort(groupArray((j, v, c))) FROM
+        (SELECT l.j AS j, r.v AS v, count() AS c FROM probe_sparse AS l
+         LEFT JOIN dict_sparse_key AS r ON l.j = r.j GROUP BY l.j, r.v))
+        = (SELECT arraySort(groupArray((j, v, c))) FROM
+            (SELECT l.j AS j, r.v AS v, count() AS c FROM probe_dense AS l
+             LEFT JOIN dict_sparse_key AS r ON l.j = r.j GROUP BY l.j, r.v));
 
-SELECT 'Sparse result equals hash join result';
+SELECT 'Sparse mapping equals hash join mapping';
 SELECT
-    (SELECT sum(r.v) FROM probe_sparse AS l LEFT JOIN dict_sparse_key AS r ON l.j = r.j)
-        = (SELECT sum(r.v) FROM probe_sparse AS l LEFT JOIN dict_sparse_key AS r ON l.j = r.j
-           SETTINGS join_algorithm = 'hash');
+    (SELECT arraySort(groupArray((j, v, c))) FROM
+        (SELECT l.j AS j, r.v AS v, count() AS c FROM probe_sparse AS l
+         LEFT JOIN dict_sparse_key AS r ON l.j = r.j GROUP BY l.j, r.v))
+        = (SELECT arraySort(groupArray((j, v, c))) FROM
+            (SELECT l.j AS j, r.v AS v, count() AS c FROM probe_sparse AS l
+             LEFT JOIN dict_sparse_key AS r ON l.j = r.j GROUP BY l.j, r.v
+             SETTINGS join_algorithm = 'hash'));
 
 SELECT 'Direct join is still chosen for the sparse key';
 SELECT count() > 0 FROM
