@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel
+# Tags: zookeeper, no-parallel, no-shared-merge-tree
 # - zookeeper: uses ReplicatedMergeTree
 # - no-parallel: the pause failpoint is process-global
+# - no-shared-merge-tree: targets ReplicatedMergeTreeRestartingThread; under the SharedMergeTree test
+#   mode the table becomes SharedMergeTree, SYSTEM RESTART REPLICA is rejected, the RMT failpoint never
+#   fires, and SYSTEM WAIT FAILPOINT ... PAUSE would hang until the test timeout
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
