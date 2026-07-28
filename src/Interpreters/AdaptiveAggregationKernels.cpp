@@ -196,24 +196,24 @@ namespace
     /// its purpose. Fixed-size keys were staged as values either way.
     /// `table` is the bucket's own submap: the records were grouped by the same hash dispatch
     /// at staging time, so emplacing into it directly skips the per-record two-level routing.
-    template <typename Method, DB::AdaptiveKeyStorage key_storage, typename Table>
+    template <typename Key, DB::AdaptiveKeyStorage key_storage, typename Table>
     void ALWAYS_INLINE emplaceStagedKey(
         Table & table,
         const char * key_pos,
         size_t key_size,
         size_t routing_hash,
         DB::Arena & arena,
-        typename Method::Data::LookupResult & it,
+        typename Table::LookupResult & it,
         bool & inserted)
     {
-        if constexpr (std::is_same_v<typename Method::Key, std::string_view>)
+        if constexpr (std::is_same_v<Key, std::string_view>)
         {
             if constexpr (key_storage == DB::AdaptiveKeyStorage::BorrowFromChunk)
                 table.emplace(std::string_view(key_pos, key_size), it, inserted, routing_hash);
             else
                 table.emplace(DB::ArenaKeyHolder{std::string_view(key_pos, key_size), arena}, it, inserted, routing_hash);
         }
-        else if constexpr (std::is_same_v<typename Method::Key, PackedStringRef>)
+        else if constexpr (std::is_same_v<Key, PackedStringRef>)
         {
             /// The staged routing hash IS the packed key's cached content hash
             /// (`DefaultHash<PackedStringRef>` returns it), so the rebuild reuses it instead of
@@ -228,7 +228,7 @@ namespace
         }
         else
         {
-            table.emplace(unalignedLoad<typename Method::Key>(key_pos), it, inserted, routing_hash);
+            table.emplace(unalignedLoad<Key>(key_pos), it, inserted, routing_hash);
         }
     }
 }
@@ -994,7 +994,7 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
 
                 typename Method::Data::LookupResult it;
                 bool inserted = false;
-                emplaceStagedKey<Method, key_storage>(
+                emplaceStagedKey<typename Method::Key, key_storage>(
                     impl,
                     keys.key_bytes.data() + keys.key_offsets[j],
                     keys.key_offsets[j + 1] - keys.key_offsets[j],
@@ -1057,7 +1057,7 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
         prefetch(j);
         typename Method::Data::LookupResult it;
         bool inserted = false;
-        emplaceStagedKey<Method, key_storage>(
+        emplaceStagedKey<typename Method::Key, key_storage>(
             impl,
             keys.key_bytes.data() + keys.key_offsets[j],
             keys.key_offsets[j + 1] - keys.key_offsets[j],
