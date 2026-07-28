@@ -1,0 +1,71 @@
+---
+date: 2026-02-04
+title: '如何停用崩溃报告收集'
+description: '本文将向您介绍如何在 ClickHouse Cloud 中停用崩溃报告收集'
+tags: ['Cloud 管理']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="overview">
+  ## 概览
+</div>
+
+自 **2026 年 2 月 27 日**起，ClickHouse Cloud 将在服务器发生崩溃时开始收集崩溃报告。这是我们为提升所有用户服务可靠性所作承诺的一部分。
+
+崩溃报告收集有助于我们：
+
+* 识别并了解崩溃原因
+* 更快地修复问题
+* 持续改进您的服务体验
+
+<div id="whats-collected">
+  ## 收集哪些内容
+</div>
+
+发生崩溃时，崩溃报告会捕获当时服务器状态的快照。我们希望明确说明，其中可能包含当时驻留在内存中的敏感信息，例如：
+
+* 连接凭据
+* 加密密钥
+* 查询字符串
+* 崩溃发生时内存中的其他数据
+
+<div id="how-we-protect-your-data">
+  ### 我们如何保护您的数据
+</div>
+
+我们非常重视此类数据的安全：
+
+* **区域存储**：所有数据都会保存在与您的服务相同的区域内
+* **增强安全**：我们会为所有收集的数据提供额外保护
+* **有限保留**：数据仅在调试所需期间保留，随后会被安全删除
+
+<div id="services-automatically-excluded">
+  ## 自动排除的服务
+</div>
+
+以下服务会自动排除在崩溃报告收集范围之外：
+
+* 具有 **HIPAA** 合规要求的服务
+* 具有 **PCI** 合规要求的服务
+* **BYOC** (自备 Cloud) 服务
+
+<div id="how-to-opt-out">
+  ## 如何退出
+</div>
+
+如果您不想参与崩溃报告收集，可按以下步骤退出：
+
+1. 前往 [ClickHouse Cloud 控制台](https://clickhouse.cloud)
+2. 选择您的服务
+3. 点击 **设置** 选项卡
+4. 向下滚动，找到“与 ClickHouse 共享崩溃报告”
+5. 关闭该开关即可退出
+
+<Image img="/images/crash-reports.png" size="md" alt="在 Cloud UI 中查找退出选项的位置" />
+
+<Note>
+  除了服务级别的设置外，我们还支持为 organization 配置偏好设置。如果禁用该设置 (即退出崩溃报告收集) ，则所有现有和新建服务都会自动退出。如果您将该偏好设置为 enabled (即选择加入) ，则可以在服务级别单独将其禁用，以覆盖该设置并退出。
+</Note>
+
+<Image img="/images/cloud/crash-reports-collection.png" size="md" alt="崩溃报告收集" />

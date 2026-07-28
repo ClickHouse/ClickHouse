@@ -1,0 +1,60 @@
+---
+description: '데이터 레이크에 대한 문서'
+sidebarTitle: '데이터 레이크'
+slug: /sql-reference/datalakes
+title: '데이터 레이크'
+doc_type: 'reference'
+---
+
+이 섹션에서는 ClickHouse가 데이터 레이크를 어떻게 지원하는지 살펴봅니다.
+ClickHouse는 Iceberg, Delta Lake, Hudi, AWS Glue, REST 카탈로그, Unity Catalog, Microsoft OneLake를 포함한 널리 사용되는 다양한 테이블 포맷과 데이터 카탈로그를 지원합니다.
+
+<div id="open-table-formats">
+  # 오픈 테이블 포맷
+</div>
+
+<div id="iceberg">
+  ## Iceberg
+</div>
+
+Amazon S3 및 S3 호환 서비스, HDFS, Azure, 로컬 파일 시스템에서 읽기를 지원하는 [iceberg](/ko/reference/functions/table-functions/iceberg)를 참고하십시오. [icebergCluster](/ko/reference/functions/table-functions/icebergCluster)는 `iceberg` 함수의 분산 버전입니다.
+
+<div id="delta-lake">
+  ## Delta Lake
+</div>
+
+Amazon S3, S3 호환 서비스, Azure 및 로컬 파일 시스템에서 읽기를 지원하는 [deltaLake](/ko/reference/functions/table-functions/deltalake)를 참고하십시오. [deltaLakeCluster](/ko/reference/functions/table-functions/deltalakeCluster)는 `deltaLake` 함수의 분산 버전입니다.
+
+<div id="hudi">
+  ## Hudi
+</div>
+
+Amazon S3 및 S3 호환 서비스에서 읽기를 지원하는 [hudi](/ko/reference/functions/table-functions/hudi)를 참고하십시오. [hudiCluster](/ko/reference/functions/table-functions/hudiCluster)는 `hudi` 함수의 분산 버전입니다.
+
+<div id="data-catalogs">
+  # 데이터 카탈로그
+</div>
+
+<div id="aws-glue">
+  ## AWS Glue
+</div>
+
+AWS Glue Data Catalog는 Iceberg 테이블과 함께 사용할 수 있습니다. `iceberg` 테이블 엔진에서 사용하거나 [DataLakeCatalog](/ko/reference/engines/database-engines/datalake) 데이터베이스 엔진에서 사용할 수 있습니다.
+
+<div id="iceberg-rest-catalog">
+  ## Iceberg REST 카탈로그
+</div>
+
+Iceberg REST 카탈로그는 Iceberg 테이블과 함께 사용할 수 있습니다. `iceberg` 테이블 엔진에서 사용할 수도 있고, [DataLakeCatalog](/ko/reference/engines/database-engines/datalake) 데이터베이스 엔진에서 사용할 수도 있습니다.
+
+<div id="unity-catalog">
+  ## Unity Catalog
+</div>
+
+Unity Catalog는 Delta Lake와 Iceberg 테이블 모두에 사용할 수 있습니다. `iceberg` 또는 `deltaLake` 테이블 엔진과 함께 사용하거나, [DataLakeCatalog](/ko/reference/engines/database-engines/datalake) 데이터베이스 엔진과 함께 사용할 수 있습니다.
+
+<div id="microsoft-onelake">
+  ## Microsoft OneLake
+</div>
+
+Microsoft OneLake는 Delta Lake와 Iceberg 테이블을 모두 지원합니다. [DataLakeCatalog](/ko/reference/engines/database-engines/datalake) 데이터베이스 엔진과 함께 사용할 수 있습니다.

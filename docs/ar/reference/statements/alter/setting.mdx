@@ -1,0 +1,65 @@
+---
+description: 'توثيق عمليات تعديل إعدادات الجدول'
+sidebarTitle: 'SETTING'
+slug: /sql-reference/statements/alter/setting
+title: 'عمليات تعديل إعدادات الجدول'
+doc_type: 'reference'
+---
+
+توجد مجموعة من الاستعلامات لتغيير إعدادات الجدول. يمكنك تعديل الإعدادات أو إعادة تعيينها إلى القيم الافتراضية. ويمكن لاستعلام واحد تغيير عدة إعدادات في الوقت نفسه.
+إذا لم يكن هناك إعداد بالاسم المحدد، فسيرفع الاستعلام استثناءً.
+
+**الصيغة**
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY|RESET SETTING ...
+```
+
+<Note>
+  لا تُطبَّق هذه الاستعلامات إلا على جداول [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree).
+</Note>
+
+<div id="modify-setting">
+  ## MODIFY SETTING
+</div>
+
+يغيّر إعدادات الجدول.
+
+**الصيغة**
+
+```sql
+MODIFY SETTING setting_name=value [, ...]
+```
+
+**مثال**
+
+```sql
+CREATE TABLE example_table (id UInt32, data String) ENGINE=MergeTree() ORDER BY id;
+
+ALTER TABLE example_table MODIFY SETTING max_part_loading_threads=8, max_parts_in_total=50000;
+```
+
+<div id="reset-setting">
+  ## RESET SETTING
+</div>
+
+يعيد تعيين إعدادات الجدول إلى قيمها الافتراضية. وإذا كان أحد الإعدادات مضبوطًا بالفعل على القيمة الافتراضية، فلن يُتَّخذ أي إجراء.
+
+**الصيغة**
+
+```sql
+RESET SETTING setting_name [, ...]
+```
+
+**مثال**
+
+```sql
+CREATE TABLE example_table (id UInt32, data String) ENGINE=MergeTree() ORDER BY id
+    SETTINGS max_part_loading_threads=8;
+
+ALTER TABLE example_table RESET SETTING max_part_loading_threads;
+```
+
+**انظر أيضًا**
+
+* [إعدادات MergeTree](/ar/reference/settings/merge-tree-settings)

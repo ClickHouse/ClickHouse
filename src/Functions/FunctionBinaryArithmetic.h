@@ -859,7 +859,7 @@ using namespace traits_;
 using namespace impl_;
 
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true, bool division_by_nullable = false>
-class FunctionBinaryArithmetic : public IFunction
+class FunctionBinaryArithmetic : public IFunction, WithContext
 {
     static constexpr bool is_plus = IsOperation<Op>::plus;
     static constexpr bool is_minus = IsOperation<Op>::minus;
@@ -871,10 +871,46 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_int_div = IsOperation<Op>::int_div;
     static constexpr bool is_int_div_or_zero = IsOperation<Op>::int_div_or_zero;
     static constexpr bool is_division_or_null = IsOperation<Op>::division_or_null;
-
-    ContextPtr context;
+    static constexpr bool is_div_floating_or_null = IsOperation<Op>::div_floating_or_null;
+    static constexpr bool is_int_div_or_null = IsOperation<Op>::int_div_or_null;
 
     bool check_decimal_overflow = true;
+
+    /// Date/Time overflow behavior, captured from the query context at construction time so that
+    /// executeImpl does not have to consult the context (which may have been destroyed by the time a
+    /// stored expression - e.g. a sorting key - is re-executed during a merge). See #54890.
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior{};
+
+    /// Builders for the interval/tuple special cases, resolved from the argument types at construction
+    /// time while the context is alive (see the constructor). At most one is non-null for a given
+    /// instance; a null builder means the corresponding special case does not apply. Precomputing them
+    /// keeps executeImpl free of the context.
+    ///
+    /// Caveat: the four tuple-family builders below wrap `ITupleFunction`-derived functions
+    /// (`FunctionTupleOperator`, `FunctionDateOrDateTimeOperationTupleOfIntervals`,
+    /// `FunctionTupleOperationInterval`, `FunctionTupleOperatorByNumber`, `FunctionDotProduct`) that
+    /// still hold a strong `ContextPtr` internally and use it at execute time to resolve their
+    /// element-wise sub-functions. So the tuple special cases still pin the build-time query context
+    /// (they keep working precisely because the strong reference keeps it alive); only the plain
+    /// numeric/Date/interval paths - and arrays whose element-level operation is one of those - are
+    /// fully context-free. Arrays over tuple-family elements (e.g. `[(1, 2)] + [(3, 4)]` or
+    /// `[INTERVAL 1 DAY] + [INTERVAL 1 HOUR]`) still pin the context the same way, through the
+    /// tuple-family builders cached by `array_element_function` below. Making the `ITupleFunction`
+    /// family context-free is a planned follow-up.
+    FunctionOverloadResolverPtr prepared_interval_function;
+    FunctionOverloadResolverPtr prepared_date_tuple_of_intervals_function;
+    FunctionOverloadResolverPtr prepared_merge_intervals_function;
+    FunctionOverloadResolverPtr prepared_tuple_function;
+    FunctionOverloadResolverPtr prepared_tuple_and_number_function;
+
+    /// Same-typed sibling built for the array element types. executeArraysImpl/executeArrayWithNumericImpl
+    /// evaluate the operation on the array element types, which differ from this function's (array)
+    /// argument types, so this function's precomputed builders above do not apply to them. The element
+    /// arithmetic is delegated to this sibling (whose own constructor resolves the element-level special
+    /// cases, recursively for nested arrays - including, per the caveat above, tuple-family builders that
+    /// pin the context when the element types hit one of those cases). Null when neither operand is an
+    /// array.
+    FunctionPtr array_element_function;
 
     static bool castType(const IDataType * type, auto && f)
     {
@@ -1577,7 +1613,7 @@ class FunctionBinaryArithmetic : public IFunction
             scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(time64_type->getScale());
         }
 
-        auto overflow_behavior = getDateTimeOverflowBehavior(context);
+        auto overflow_behavior = date_time_overflow_behavior;
 
         /// The valid range for the result, expressed in the result's own units:
         ///   DateTime:   seconds in [0, 2^32-1], covering ~1970 to ~2106.
@@ -1591,9 +1627,11 @@ class FunctionBinaryArithmetic : public IFunction
             const auto & res_type = assert_cast<const DataTypeDateTime64 &>(*result_type);
             result_scale = res_type.getScale();
             Int64 result_scale_mul = DecimalUtils::scaleMultiplier<Int64>(result_scale);
-            /// The min side (1900-01-01) fits in Int64 for all supported scales (0-9).
-            /// The max side (2299-12-31) overflows Int64 at scale 9; clamp to Int64 max in that case.
-            result_min = MIN_DATETIME64_TIMESTAMP * result_scale_mul;
+            /// Both ends of the representable window (0000-01-01 .. 9999-12-31) overflow Int64 once scaled at
+            /// the highest precisions, so clamp to the Int64 limits in that case instead of multiplying blindly.
+            result_min = (MIN_DATETIME64_TIMESTAMP >= std::numeric_limits<Int64>::min() / result_scale_mul)
+                ? MIN_DATETIME64_TIMESTAMP * result_scale_mul
+                : std::numeric_limits<Int64>::min();
             result_max = (MAX_DATETIME64_TIMESTAMP <= std::numeric_limits<Int64>::max() / result_scale_mul)
                 ? MAX_DATETIME64_TIMESTAMP * result_scale_mul + result_scale_mul - 1
                 : std::numeric_limits<Int64>::max();
@@ -1825,7 +1863,9 @@ class FunctionBinaryArithmetic : public IFunction
         const auto & left_offsets = left_array_col->getOffsets();
         if (!left_offsets.empty())
             rows_count = left_offsets.back();
-        auto res = executeImpl(new_arguments, result_array_type, rows_count);
+        auto res = array_element_function
+            ? array_element_function->executeImpl(new_arguments, result_array_type, rows_count)
+            : executeImpl(new_arguments, result_array_type, rows_count);
 
         return ColumnArray::create(res, typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsetsPtr());
     }
@@ -1891,7 +1931,9 @@ class FunctionBinaryArithmetic : public IFunction
 
         if (is_swapped)
             std::swap(new_arguments[1], new_arguments[0]);
-        auto res = executeImpl(new_arguments, result_array_type, rows_count);
+        auto res = array_element_function
+            ? array_element_function->executeImpl(new_arguments, result_array_type, rows_count)
+            : executeImpl(new_arguments, result_array_type, rows_count);
 
         return ColumnArray::create(res, left_array_col->getOffsetsPtr());
     }
@@ -2046,11 +2088,56 @@ class FunctionBinaryArithmetic : public IFunction
 public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionBinaryArithmetic>(context_); }
+    static FunctionPtr create(ContextPtr context_, const DataTypePtr & left_type, const DataTypePtr & right_type)
+    {
+        return std::make_shared<FunctionBinaryArithmetic>(context_, left_type, right_type);
+    }
 
-    explicit FunctionBinaryArithmetic(ContextPtr context_)
-    :   context(context_),
-        check_decimal_overflow(decimalCheckArithmeticOverflow(context_))
-    {}
+    explicit FunctionBinaryArithmetic(ContextPtr context_, const DataTypePtr & left_type = nullptr, const DataTypePtr & right_type = nullptr)
+    :   WithContext(context_),
+        check_decimal_overflow(decimalCheckArithmeticOverflow(context_)),
+        date_time_overflow_behavior(getDateTimeOverflowBehavior(context_))
+    {
+        /// Resolve the context-dependent builders for the interval/tuple special cases now, while the
+        /// context is alive, so that executeImpl never needs it. The types are known only when the
+        /// function is built for concrete arguments (via the overload resolver); functions created
+        /// without them (e.g. least/greatest, whose operation never reaches these special cases) simply
+        /// leave the builders null.
+        ///
+        /// executeImpl sees the argument types after the default implementations strip LowCardinality
+        /// and - unless the operation is division-by-nullable - Nullable, so normalize the types the
+        /// same way here to resolve exactly the builders executeImpl would.
+        if (left_type && right_type)
+        {
+            auto normalize = [](DataTypePtr type)
+            {
+                type = recursiveRemoveLowCardinality(type);
+                if constexpr (!division_by_nullable && !is_division_or_null)
+                    type = removeNullable(type);
+                return type;
+            };
+            const DataTypePtr type0 = normalize(left_type);
+            const DataTypePtr type1 = normalize(right_type);
+            prepared_interval_function = getFunctionForIntervalArithmetic(type0, type1, context_);
+            prepared_date_tuple_of_intervals_function = getFunctionForDateTupleOfIntervalsArithmetic(type0, type1, context_);
+            prepared_merge_intervals_function = getFunctionForMergeIntervalsArithmetic(type0, type1, context_);
+            prepared_tuple_function = getFunctionForTupleArithmetic(type0, type1, context_);
+            prepared_tuple_and_number_function = getFunctionForTupleAndNumberArithmetic(type0, type1, context_);
+
+            /// Array operands are handled element-wise by re-evaluating the operation on the element
+            /// types (see executeArraysImpl/executeArrayWithNumericImpl). Build that sub-function here so
+            /// those paths never re-enter executeImpl with element types the precomputed builders above
+            /// do not cover. Its own constructor recursively resolves the element-level special cases.
+            if (isArray(type0) || isArray(type1))
+            {
+                auto element_type = [](const DataTypePtr & type)
+                {
+                    return isArray(type) ? typeid_cast<const DataTypeArray &>(*type).getNestedType() : type;
+                };
+                array_element_function = create(context_, element_type(type0), element_type(type1));
+            }
+        }
+    }
 
     String getName() const override { return name; }
 
@@ -2078,7 +2165,13 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return getReturnTypeImplStatic(arguments, context);
+        /// Type resolution runs during analysis while the context is alive, but it is also re-invoked from
+        /// IFunction::compile when a stored expression (e.g. a table's sorting key) is JIT-compiled at
+        /// pipeline-build time - by then the query context that built the function may already be gone.
+        /// Only the plain-numeric path is JIT-compilable (interval/tuple/date/decimal operations are not),
+        /// and that path never dereferences the context, so lock the weak pointer instead of throwing
+        /// `Context has expired` on an expired context. See #54890.
+        return getReturnTypeImplStatic(arguments, context.lock());
     }
 
     static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context_)
@@ -2728,8 +2821,30 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         return col_res;
     }
 
+    /// Decides whether a division-or-null operation must return NULL for the given operands.
+    /// The null condition has to match exactly when the underlying operation would raise an FPE:
+    ///  - floating division (`divideOrNull`): only division by zero (the signed `INT_MIN / -1`
+    ///    overflow is a valid floating-point result, not an FPE);
+    ///  - integer division (`intDivOrNull`): division by zero and signed `INT_MIN / -1`, computed
+    ///    with the same operand casts as `DivideIntegralImpl::apply` (so mixed signed/unsigned
+    ///    operands such as `Int8(-128) / UInt8(255)` are handled like the actual division);
+    ///  - modulo (`moduloOrNull`, `positiveModuloOrNull`): for integer modulo, division by zero and
+    ///    signed `INT_MIN / -1` (the `idiv` instruction computes the quotient too, so the overflow
+    ///    raises just like division); for floating modulo, only division by zero, because the float
+    ///    modulo path never raises (`INT_MIN % -1` is a finite remainder). See `moduloLeadsToFPE`.
     template <typename A, typename B>
-    ColumnPtr executeNumeric(const ColumnsWithTypeAndName & arguments, const A & left, const B & right, const NullMap * right_nullmap) const
+    static bool divisionOrNullLeadsToNull(A a, B b)
+    {
+        if constexpr (is_div_floating_or_null)
+            return b == 0;
+        else if constexpr (is_int_div_or_null)
+            return integerDivisionLeadsToFPE(a, b);
+        else
+            return moduloLeadsToFPE(a, b);
+    }
+
+    template <typename A, typename B>
+    ColumnPtr executeNumeric(const ColumnsWithTypeAndName & arguments, const A & left, const B & right, const NullMap * right_nullmap, NullMap * result_nullmap = nullptr) const
     {
         using LeftDataType = std::decay_t<decltype(left)>;
         using RightDataType = std::decay_t<decltype(right)>;
@@ -2758,6 +2873,50 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             using ColVecT0 = ColumnVectorOrDecimal<T0>;
             using ColVecT1 = ColumnVectorOrDecimal<T1>;
             using ColVecResult = ColumnVectorOrDecimal<ResultType>;
+
+            /// Whether to avoid instantiating a dedicated kernel for this pair of types and execute
+            /// the operation via a conversion to a common type instead (to reduce the code size).
+            constexpr bool is_wide_mixed_number_pair = !std::is_same_v<T0, T1>
+                && (is_over_big_int<T0> || is_over_big_int<T1>)
+                && IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>;
+
+            /// Floating division computes `static_cast<ResultType>(a) / static_cast<ResultType>(b)`,
+            /// so converting the arguments to `ResultType` beforehand yields bit-identical results.
+            /// The same holds for `plus`, `minus` and `multiply`, but they keep their fused kernels:
+            /// they are memory-bound, and materializing a widened copy of the narrow operand made
+            /// them up to 1.6x slower on column-column arguments (the `bigint_arithm` perf test),
+            /// while their fused kernels are compact (~100 KB per translation unit for all mixed
+            /// wide pairs together). The division and modulo kernels below are compute-bound, so
+            /// the conversion does not slow them down measurably.
+            constexpr bool op_computes_in_result_type = IsOperation<Op>::div_floating || is_div_floating_or_null;
+
+            /// Integer division casts both operands to the signed type of the dividend size when
+            /// either operand is signed (`DivideIntegralImpl`), so when the dividend is at least as
+            /// wide as the divisor, pre-converting both operands to that type is exact, including
+            /// the checks for division by zero and division of the minimal signed number by minus
+            /// one (the check is done on the same type either way). A narrower dividend is exact
+            /// only when both operands are unsigned - otherwise the minimal-signed-number check
+            /// would be performed on the wider type and stop matching.
+            constexpr bool op_is_prunable_int_div = (is_int_div || is_int_div_or_zero || is_int_div_or_null)
+                && is_integer<T0> && is_integer<T1>
+                && (sizeof(T0) >= sizeof(T1) || (is_unsigned_v<T0> && is_unsigned_v<T1>));
+
+            /// Modulo is computed in the type of the wider operand (`ModuloImpl` casts the other
+            /// operand into it), so pre-converting the operands to it is exact except when the
+            /// division-by-minimal-signed-number check would move to a wider type: a narrower
+            /// signed dividend with a signed divisor, or a sign-flipping conversion of the dividend
+            /// to an equally sized signed divisor type.
+            constexpr bool op_is_prunable_modulo = (is_modulo || IsOperation<Op>::modulo_or_null || IsOperation<Op>::modulo_legacy)
+                && is_integer<T0> && is_integer<T1>
+                && (sizeof(T0) > sizeof(T1)
+                    || (!(is_signed_v<T0> && is_signed_v<T1>) && !(sizeof(T0) == sizeof(T1) && is_signed_v<T1>)));
+
+            /// `positiveModulo` additionally branches on the sign of the original divisor type when
+            /// adjusting a negative remainder (and throws for the minimal signed divisor value), so
+            /// it is only pruned for a strictly narrower unsigned divisor, where the adjustment
+            /// arithmetic provably coincides.
+            constexpr bool op_is_prunable_positive_modulo = (IsOperation<Op>::positive_modulo || IsOperation<Op>::positive_modulo_or_null)
+                && is_integer<T0> && is_integer<T1> && sizeof(T0) > sizeof(T1) && is_unsigned_v<T1>;
 
             ColumnPtr left_col = nullptr;
             ColumnPtr right_col = nullptr;
@@ -2822,6 +2981,65 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 }
                 return nullptr;
             }
+            else if constexpr (is_wide_mixed_number_pair
+                && (op_computes_in_result_type || op_is_prunable_int_div || op_is_prunable_modulo || op_is_prunable_positive_modulo))
+            {
+                /// Mixed-type pairs involving a 128/256-bit integer are rare, but their kernels are
+                /// the largest ones (wide multiplication and division do not vectorize and inline a
+                /// lot of library code), and they dominate the code size of arithmetic functions.
+                /// Do not instantiate a dedicated kernel for every such combination: convert both
+                /// arguments to a common type chosen so that the same-type kernel performs exactly
+                /// the same arithmetic as the fused kernel for the original pair would, and execute
+                /// the same-type kernel.
+                auto execute_via_common_type = [&]<typename CommonDataType>() -> ColumnPtr
+                {
+                    const auto common_type = std::make_shared<CommonDataType>();
+                    ColumnsWithTypeAndName converted_arguments
+                    {
+                        {castColumn(arguments[0], common_type), common_type, arguments[0].name},
+                        {castColumn(arguments[1], common_type), common_type, arguments[1].name},
+                    };
+
+                    ColumnPtr res = executeNumeric(converted_arguments, *common_type, *common_type, right_nullmap, result_nullmap);
+                    if (!res)
+                        return nullptr;
+
+                    /// The result type of the same-type kernel can be wider than the declared result
+                    /// type (e.g. `modulo(UInt256, UInt8)` is `UInt8` while `modulo(UInt256, UInt256)`
+                    /// is `UInt256`). Narrowing is exact: the fused kernel casts its result to the
+                    /// declared type in the same way.
+                    using CommonResultDataType = typename BinaryOperationTraits<Op, CommonDataType, CommonDataType>::ResultDataType;
+                    if constexpr (!std::is_same_v<CommonResultDataType, ResultDataType>)
+                        res = castColumn({res, std::make_shared<CommonResultDataType>(), ""}, std::make_shared<ResultDataType>());
+
+                    return res;
+                };
+
+                if constexpr (op_computes_in_result_type)
+                {
+                    return execute_via_common_type.template operator()<ResultDataType>();
+                }
+                else if constexpr (op_is_prunable_int_div)
+                {
+                    /// `DivideIntegralImpl` casts both operands to the signed type of the wider
+                    /// operand size when either operand is signed, and to the wider unsigned
+                    /// type otherwise.
+                    using WiderType = std::conditional_t<(sizeof(T0) >= sizeof(T1)), T0, T1>;
+                    using CommonType = std::conditional_t<is_signed_v<T0> || is_signed_v<T1>, make_signed_t<WiderType>, WiderType>;
+                    return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
+                }
+                else if constexpr (op_is_prunable_positive_modulo)
+                {
+                    /// See `op_is_prunable_positive_modulo`: the divisor is strictly narrower.
+                    return execute_via_common_type.template operator()<DataTypeNumber<T0>>();
+                }
+                else
+                {
+                    /// `ModuloImpl` computes in the type of the wider operand.
+                    using CommonType = std::conditional_t<(sizeof(T0) > sizeof(T1)), T0, T1>;
+                    return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
+                }
+            }
             else // can't avoid else and another indentation level, otherwise the compiler would try to instantiate
                  // ColVecResult for Decimals which would lead to a compile error.
             {
@@ -2833,6 +3051,13 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     const auto res = right_nullmap && (*right_nullmap)[0] ? ResultType() : OpImpl::process(
                         col_left_const->template getValue<T0>(),
                         col_right_const->template getValue<T1>());
+
+                    if constexpr (is_division_or_null)
+                    {
+                        if (result_nullmap)
+                            result_nullmap->resize_fill(col_left_const->size(),
+                                divisionOrNullLeadsToNull(col_left_const->template getValue<T0>(), col_right_const->template getValue<T1>()));
+                    }
 
                     return ResultDataType().createColumnConst(col_left_const->size(), toField(res));
                 }
@@ -2872,6 +3097,20 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 else
                     return nullptr;
 
+                if constexpr (is_division_or_null)
+                {
+                    if (result_nullmap)
+                    {
+                        result_nullmap->resize_fill(col_left_size, false);
+                        for (size_t i = 0; i < col_left_size; ++i)
+                        {
+                            auto a = col_left ? col_left->getData()[i] : col_left_const->template getValue<T0>();
+                            auto b = col_right ? col_right->getData()[i] : col_right_const->template getValue<T1>();
+                            (*result_nullmap)[i] = divisionOrNullLeadsToNull(a, b);
+                        }
+                    }
+                }
+
                 return col_res;
             }
         }
@@ -2909,39 +3148,39 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         }
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime/String and another is Interval.
-        if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0].type, arguments[1].type, context))
+        if (prepared_interval_function)
         {
-            return executeDateTimeIntervalPlusMinus(arguments, result_type, input_rows_count, function_builder);
+            return executeDateTimeIntervalPlusMinus(arguments, result_type, input_rows_count, prepared_interval_function);
         }
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Tuple.
-        if (auto function_builder = getFunctionForDateTupleOfIntervalsArithmetic(arguments[0].type, arguments[1].type, context))
+        if (prepared_date_tuple_of_intervals_function)
         {
-            return executeDateTimeTupleOfIntervalsPlusMinus(arguments, result_type, input_rows_count, function_builder);
+            return executeDateTimeTupleOfIntervalsPlusMinus(arguments, result_type, input_rows_count, prepared_date_tuple_of_intervals_function);
         }
 
         /// Special case when the function is plus or minus, one of arguments is Interval/Tuple of Intervals and another is Interval.
-        if (auto function_builder = getFunctionForMergeIntervalsArithmetic(arguments[0].type, arguments[1].type, context))
+        if (prepared_merge_intervals_function)
         {
-            return executeIntervalTupleOfIntervalsPlusMinus(arguments, result_type, input_rows_count, function_builder);
+            return executeIntervalTupleOfIntervalsPlusMinus(arguments, result_type, input_rows_count, prepared_merge_intervals_function);
         }
 
         /// Special case when the function is plus, minus or multiply, both arguments are tuples.
-        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0].type, arguments[1].type, context))
+        if (prepared_tuple_function)
         {
-            return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count, /* dry_run = */ false);
+            return prepared_tuple_function->build(arguments)->execute(arguments, result_type, input_rows_count, /* dry_run = */ false);
         }
 
         /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
-        if (auto function_builder = getFunctionForTupleAndNumberArithmetic(arguments[0].type, arguments[1].type, context))
+        if (prepared_tuple_and_number_function)
         {
-            return executeTupleNumberOperator(arguments, result_type, input_rows_count, function_builder);
+            return executeTupleNumberOperator(arguments, result_type, input_rows_count, prepared_tuple_and_number_function);
         }
 
         return executeImpl2(arguments, result_type, input_rows_count);
     }
 
-    ColumnPtr executeImpl2(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, const NullMap * right_nullmap = nullptr) const
+    ColumnPtr executeImpl2(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, const NullMap * right_nullmap = nullptr, NullMap * result_nullmap = nullptr) const
     {
         const auto & left_argument = arguments[0];
         const auto & right_argument = arguments[1];
@@ -2981,12 +3220,17 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             }
             else if (result_type->isNullable())
             {
+                /// Compute null map at the typed level using divisionLeadsToFPE, which handles b==0 and INT_MIN/-1 cases
+                NullMap fpe_nullmap;
+                auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, right_nullmap, &fpe_nullmap);
+
+                /// merge null maps
                 auto null_map_col = ColumnUInt8::create(input_rows_count, false);
-                PaddedPODArray<UInt8> & null_map_data = null_map_col->getData();
+                auto & null_map_data = null_map_col->getData();
                 for (size_t i = 0; i < input_rows_count; ++i)
-                    null_map_data[i] = left_argument.column->isNullAt(i) || !right_argument.column->getBool(i);
-                auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, right_nullmap);
-                return !null_map_col->empty() ? wrapInNullable(res, std::move(null_map_col)) : makeNullable(res);
+                    null_map_data[i] = fpe_nullmap[i] || left_argument.column->isNullAt(i) || right_argument.column->isNullAt(i);
+
+                return wrapInNullable(res, std::move(null_map_col));
             }
         }
 
@@ -3006,7 +3250,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 }
             };
 
-            return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap);
+            return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap, result_nullmap);
         }
 
         /// Special case - one or both arguments are IPv6
@@ -3025,7 +3269,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 }
             };
 
-            return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap);
+            return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap, result_nullmap);
         }
 
         /// Special case - Decimal op Float (or Float op Decimal): both sides are converted to
@@ -3048,7 +3292,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     {castColumn(arguments[0], float64_type), float64_type, arguments[0].name},
                     {castColumn(arguments[1], float64_type), float64_type, arguments[1].name},
                 };
-                return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap);
+                return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap, result_nullmap);
             }
         }
 
@@ -3099,7 +3343,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 return false;
             }
             else
-                return (res = executeNumeric(arguments, left, right, right_nullmap)) != nullptr;
+                return (res = executeNumeric(arguments, left, right, right_nullmap, result_nullmap)) != nullptr;
         });
 
         if (isArray(result_type))
@@ -3229,7 +3473,7 @@ public:
         const ColumnWithTypeAndName & right_,
         const DataTypePtr & return_type_,
         ContextPtr context_)
-        : Base(context_), left(left_), right(right_), return_type(return_type_)
+        : Base(context_, left_.type, right_.type), left(left_), right(right_), return_type(return_type_)
     {
     }
 
@@ -3279,6 +3523,38 @@ public:
                     if (accurateEquals(constant, Field(0)))
                         return {false, true, false}; // variable / 0 is undefined, let's treat it as non-monotonic
                     bool is_constant_positive = accurateLess(Field(0), constant);
+
+                    auto arg_type = removeNullable(recursiveRemoveLowCardinality(left.type));
+                    auto divisor_type = removeNullable(recursiveRemoveLowCardinality(right.type));
+
+                    // `intDiv` or `divide` by a Decimal constant computes in the decimal's native signed
+                    // width (`DecimalBinaryOperation` feeds both operands into
+                    // `DivideIntegralImpl<NativeResultType, NativeResultType>` for both functions): the
+                    // dividend is cast into that width and pre-multiplied by the scale, so it wraps or
+                    // truncates at a boundary that depends on the decimal width and scale, not on the
+                    // dividend width. That boundary is not cheaply modelled, so do not claim monotonicity.
+                    // Only a Decimal divisor takes this integral path; a Float divisor computes through
+                    // floating point and stays monotonic.
+                    if ((name_view == "intDiv" || name_view == "divide") && isDecimal(divisor_type))
+                        return {false, true, false, false};
+
+                    // `intDiv(unsigned, signed-integer-const)` reinterprets the dividend through a signed
+                    // cast (see `DivideIntegralImpl`/`intDivRangeCrossesSignedWrap`); a Float divisor
+                    // computes through floating point and never wraps. An unbounded range over an unsigned
+                    // domain always contains the discontinuity, so it is never always-monotonic; report
+                    // monotonicity only when an endpoint keeps the range on one side of it.
+                    if (name_view == "intDiv" && isUInt(arg_type) && isInt(divisor_type))
+                    {
+                        if (intDivRangeCrossesSignedWrap(arg_type, left_point, right_point))
+                            return {false, true, false, false};
+                        return {true, is_constant_positive, false};
+                    }
+
+                    // Mirror case: a signed dividend with an unsigned constant divisor whose high bit
+                    // is set reinterprets the divisor as negative (see `intDivConstReinterpretsNegative`),
+                    // so the function is monotonic decreasing even though the raw constant looks positive.
+                    if (name_view == "intDiv" && intDivConstReinterpretsNegative(arg_type, divisor_type, constant))
+                        is_constant_positive = false;
 
                     // division is saturated to `inf`, thus it doesn't have overflow issues.
                     return {true, is_constant_positive, true};
@@ -3412,7 +3688,42 @@ public:
                     return {false, true, false, false}; // variable / 0 is undefined, let's treat it as non-monotonic
 
                 bool is_constant_positive = accurateLess(Field(0), constant);
-                // division is saturated to `inf`, thus it doesn't have overflow issues.
+
+                auto arg_type = removeNullable(recursiveRemoveLowCardinality(left.type));
+                auto divisor_type = removeNullable(recursiveRemoveLowCardinality(right.type));
+
+                // `intDiv` or `divide` by a Decimal constant computes in the decimal's native signed
+                // width (`DecimalBinaryOperation` feeds both operands into
+                // `DivideIntegralImpl<NativeResultType, NativeResultType>` for both functions): the
+                // dividend is cast into that width and pre-multiplied by the scale, so it wraps or
+                // truncates at a boundary that depends on the decimal width and scale, not on the
+                // dividend width. That boundary is not cheaply modelled, so do not claim monotonicity.
+                // Only a Decimal divisor takes this integral path; a Float divisor computes through
+                // floating point and stays monotonic.
+                if ((name_view == "intDiv" || name_view == "divide") && isDecimal(divisor_type))
+                    return {false, true, false, false};
+
+                // `intDiv(unsigned, signed-integer-const)` is a step function (see
+                // `intDivRangeCrossesSignedWrap`): a range crossing the discontinuity is non-monotonic,
+                // so reject it (no pruning); a range on one side is monotonic on that range but not
+                // always-monotonic. The wrap is exclusive to the signed-integer divisor path; a Float
+                // divisor computes through floating point and never wraps.
+                if (name_view == "intDiv" && isUInt(arg_type) && isInt(divisor_type))
+                {
+                    if (intDivRangeCrossesSignedWrap(arg_type, left_point, right_point))
+                        return {false, true, false, false};
+                    return {true, is_constant_positive, false, is_strict};
+                }
+
+                // Mirror case: a signed dividend with an unsigned constant divisor whose high bit
+                // is set reinterprets the divisor as negative (see `intDivConstReinterpretsNegative`),
+                // so the function is monotonic decreasing even though the raw constant looks positive.
+                if (name_view == "intDiv" && intDivConstReinterpretsNegative(arg_type, divisor_type, constant))
+                    is_constant_positive = false;
+
+                // `divide` is floating-point (saturates, order-preserving), `intDiv` by a Float divisor
+                // computes through floating point, and `intDiv` with an unsigned result never wraps, so
+                // all are always monotonic.
                 return {true, is_constant_positive, true, is_strict};
             }
         }
@@ -3514,6 +3825,52 @@ public:
         return {false, true, false};
     }
 
+    /// `intDiv` casts the dividend to a signed type when the divisor is signed (see `DivideIntegralImpl`),
+    /// so an unsigned dividend whose value is >= 2^(width-1) reinterprets as negative
+    /// (e.g. `intDiv(UInt64, Int64-const)` has an `Int64` result, and `intDiv(2^63, c)` flips sign
+    /// relative to `intDiv(2^63 - 1, c)`). `intDiv` is therefore a step function with a single
+    /// discontinuity at `D = 2^(width-1)`: it is monotonic on each side of `D` but not across it.
+    /// Returns true when the range [left_point, right_point] contains `D` in its interior, i.e. when
+    /// `left_point < D <= right_point` over the unsigned input domain. A null endpoint means the range
+    /// is unbounded there, so it extends to the unsigned domain limits (0 on the left, max on the right),
+    /// which always places `D` strictly inside. Endpoint comparison of the transformed values cannot
+    /// detect this because both endpoints can map to the same output while the interior jumps.
+    /// `arg_type` is the unsigned dividend type (already stripped of Nullable/LowCardinality).
+    static bool intDivRangeCrossesSignedWrap(const DataTypePtr & arg_type, const Field & left_point, const Field & right_point)
+    {
+        const size_t width_bytes = arg_type->getSizeOfValueInMemory();
+        // `D = 2^(8 * width_bytes - 1)` is the first unsigned value that reinterprets as negative.
+        const UInt256 wrap_point = UInt256(1) << (8 * width_bytes - 1);
+        const Field wrap_field(wrap_point);
+
+        // left_point < D: a null left bound is -inf over the unsigned domain (== 0 < D), so it crosses.
+        const bool left_below = left_point.isNull() || accurateLess(left_point, wrap_field);
+        // D <= right_point: a null right bound is +inf over the unsigned domain (== max >= D), so it crosses.
+        const bool right_at_or_above = right_point.isNull() || accurateLessOrEqual(wrap_field, right_point);
+        return left_below && right_at_or_above;
+    }
+
+    /// Mirror of the unsigned-dividend wrap: when the dividend is signed and the divisor is an
+    /// unsigned constant, `DivideIntegralImpl` reinterprets the divisor through `make_signed_t` of
+    /// the wider operand type. With `sizeof(dividend) <= sizeof(divisor)` an unsigned constant whose
+    /// high bit is set (`>= 2^(8 * divisor_width - 1)`) becomes negative, so `intDiv` divides by an
+    /// effectively negative value and is monotonic decreasing even though the raw constant compares
+    /// as positive (e.g. `intDiv(Int8, toUInt8(200))` == `intDiv(Int8, toInt8(-56))`). With
+    /// `sizeof(dividend) > sizeof(divisor)` the divisor widens into the dividend's signed type and
+    /// stays positive, so no flip occurs. The signed dividend is never reinterpreted, so there is no
+    /// discontinuity (unlike `intDivRangeCrossesSignedWrap`): the function is fully monotonic, only
+    /// its direction is reversed. Returns true when the divisor reinterprets as negative.
+    static bool intDivConstReinterpretsNegative(const DataTypePtr & arg_type, const DataTypePtr & divisor_type, const Field & constant)
+    {
+        if (!isInt(arg_type) || !isUInt(divisor_type))
+            return false;
+        if (arg_type->getSizeOfValueInMemory() > divisor_type->getSizeOfValueInMemory())
+            return false;
+        const size_t divisor_width_bytes = divisor_type->getSizeOfValueInMemory();
+        const Field wrap_field(UInt256(1) << (8 * divisor_width_bytes - 1));
+        return accurateLessOrEqual(wrap_field, constant);
+    }
+
 private:
     ColumnWithTypeAndName left;
     ColumnWithTypeAndName right;
@@ -3582,9 +3939,9 @@ public:
         if constexpr (can_have_division_by_nullable)
         {
             if (division_by_nullable)
-                return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, true>::create(context));
+                return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, true>::create(context, arguments[0].type, arguments[1].type));
         }
-        return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, false>::create(context));
+        return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, false>::create(context, arguments[0].type, arguments[1].type));
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

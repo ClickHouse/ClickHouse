@@ -1,0 +1,14 @@
+--- Variant(Array(LowCardinality)): native writer + native reader round-trip ---
+['a','b']
+['a','b']
+['a','b']
+[]
+[]
+[]
+--- Variant(Tuple(LowCardinality)): native writer + native reader round-trip ---
+('0')
+('0')
+('1')
+('1')
+('2')
+('2')

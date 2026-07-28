@@ -1,0 +1,252 @@
+---
+description: 'Paramètres au niveau de la requête'
+sidebarTitle: 'Paramètres de session au niveau de la requête'
+slug: /operations/settings/query-level
+title: 'Paramètres de session au niveau de la requête'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## Vue d’ensemble
+</div>
+
+Il existe plusieurs façons d’exécuter des instructions avec des paramètres spécifiques.
+Les paramètres sont définis en couches, et chaque couche successive redéfinit les valeurs précédentes d’un paramètre.
+
+<div id="order-of-priority">
+  ## Ordre de priorité
+</div>
+
+L&#39;ordre de priorité pour définir un paramètre est le suivant :
+
+1. Appliquer un paramètre directement à un utilisateur, ou dans un profil de paramètres
+
+   * SQL (recommandé)
+   * ajout d&#39;un ou de plusieurs fichiers XML ou YAML dans `/etc/clickhouse-server/users.d`
+
+2. Paramètres de session
+
+   * Envoyez `SET setting=value` depuis la SQL Console de ClickHouse Cloud ou
+     `clickhouse client` en mode interactif. De même, vous pouvez utiliser des sessions ClickHouse
+     avec le protocole HTTP. Pour ce faire, vous devez spécifier le
+     paramètre HTTP `session_id`.
+
+3. Paramètres de requête
+
+   * Au démarrage de `clickhouse client` en mode non interactif, définissez le paramètre
+     de démarrage `--setting=value`.
+   * Lorsque vous utilisez l&#39;API HTTP, transmettez les paramètres CGI (`URL?setting_1=value&setting_2=value...`).
+   * Définissez les paramètres dans la
+     clause [SETTINGS](/fr/reference/statements/select/index#settings-in-select-query)
+     de la requête SELECT. La valeur du paramètre s&#39;applique uniquement à cette requête
+     et revient à la valeur par défaut ou à la valeur précédente une fois la requête exécutée.
+
+<div id="converting-a-setting-to-its-default-value">
+  ## Rétablir un paramètre à sa valeur par défaut
+</div>
+
+Si vous modifiez un paramètre et souhaitez le rétablir à sa valeur par défaut, définissez sa valeur sur `DEFAULT`. La syntaxe est la suivante :
+
+```sql
+SET setting_name = DEFAULT
+```
+
+Par exemple, la valeur par défaut de `async_insert` est `0`. Supposons que vous définissiez sa valeur sur `1` :
+
+```sql
+SET async_insert = 1;
+
+SELECT value FROM system.settings where name='async_insert';
+```
+
+La réponse est :
+
+```response
+┌─value──┐
+│ 1      │
+└────────┘
+```
+
+La commande suivante réinitialise sa valeur à 0 :
+
+```sql
+SET async_insert = DEFAULT;
+
+SELECT value FROM system.settings where name='async_insert';
+```
+
+Le paramètre est désormais rétabli à sa valeur par défaut :
+
+```response
+┌─value───┐
+│ 0       │
+└─────────┘
+```
+
+<div id="custom_settings">
+  ## Paramètres personnalisés
+</div>
+
+En plus des [paramètres](/fr/reference/settings/session-settings) courants, les utilisateurs peuvent définir des paramètres personnalisés.
+Les paramètres personnalisés vous permettent de transmettre des **paramètres propres à la session** qui peuvent être référencés dans des requêtes, des politiques ou des fonctions. Cela est utile lorsque vous devez :
+
+* Filtrer les données en fonction de l’identité de l’utilisateur ou de l’organisation
+* Appliquer une logique métier différente selon le contexte
+* Conserver des informations d’état d’une requête à l’autre au sein d’une session
+
+Le nom d’un paramètre personnalisé doit commencer par l’un des préfixes prédéfinis figurant dans une liste que vous définissez.
+La liste des préfixes peut être spécifiée à l’aide du paramètre du serveur [`custom_settings_prefixes`](/fr/reference/settings/server-settings/settings#custom_settings_prefixes), défini dans votre fichier de configuration du serveur.
+
+Dans l’exemple ci-dessous, `SQL_` est choisi comme préfixe personnalisé :
+
+```xml
+<custom_settings_prefixes>SQL_</custom_settings_prefixes>
+```
+
+<Note>
+  Dans ClickHouse Cloud, il n’est pas possible de spécifier un préfixe personnalisé.
+  Tous les paramètres utilisateur personnalisés commencent par le préfixe `SQL_`.
+</Note>
+
+Pour définir un paramètre personnalisé, utilisez la commande `SET` :
+
+```sql
+SET SQL_a = 123;
+```
+
+Pour obtenir la valeur actuelle d’un paramètre personnalisé, utilisez la fonction `getSetting()` :
+
+```sql
+SELECT getSetting('SQL_a');
+```
+
+<div id="examples">
+  ## Exemples
+</div>
+
+Ces exemples définissent tous la valeur du paramètre `async_insert` sur `1` et
+montrent comment examiner les paramètres sur un système en cours d’exécution.
+
+<div id="using-sql-to-apply-a-setting-to-a-user-directly">
+  ### Utiliser SQL pour attribuer directement un paramètre à un utilisateur
+</div>
+
+Cette commande crée l&#39;utilisateur `ingester` avec le paramètre `async_inset = 1` :
+
+```sql highlight={3}
+CREATE USER ingester
+IDENTIFIED WITH sha256_hash BY '7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3'
+SETTINGS async_insert = 1
+```
+
+<div id="examine-the-settings-profile-and-assignment">
+  #### Examiner le profil de paramètres et son attribution
+</div>
+
+```sql
+SHOW ACCESS
+```
+
+```response highlight={3}
+┌─ACCESS─────────────────────────────────────────────────────────────────────────────┐
+│ ...                                                                                │
+│ CREATE USER ingester IDENTIFIED WITH sha256_password SETTINGS async_insert = true  │
+│ ...                                                                                │
+└────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="using-sql-to-create-a-settings-profile-and-assign-to-a-user">
+  ### Utiliser SQL pour créer un profil de paramètres et l’affecter à un utilisateur
+</div>
+
+Cela crée le profil `log_ingest` avec le paramètre `async_inset = 1` :
+
+```sql
+CREATE
+SETTINGS PROFILE log_ingest SETTINGS async_insert = 1
+```
+
+Cela crée l’utilisateur `ingester` et lui attribue le profil de paramètres `log_ingest` :
+
+```sql highlight={3}
+CREATE USER ingester
+IDENTIFIED WITH sha256_hash BY '7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3'
+SETTINGS PROFILE log_ingest
+```
+
+<div id="using-xml-to-create-a-settings-profile-and-user">
+  ### Utiliser XML pour créer un profil de paramètres et un utilisateur
+</div>
+
+```xml title=/etc/clickhouse-server/users.d/users.xml highlight={2-6,11}
+<clickhouse>
+    <profiles>
+        <log_ingest>
+            <async_insert>1</async_insert>
+        </log_ingest>
+    </profiles>
+
+    <users>
+        <ingester>
+            <password_sha256_hex>7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3</password_sha256_hex>
+            <profile>log_ingest</profile>
+        </ingester>
+        <default replace="true">
+            <password_sha256_hex>7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3</password_sha256_hex>
+            <access_management>1</access_management>
+            <named_collection_control>1</named_collection_control>
+        </default>
+    </users>
+</clickhouse>
+```
+
+<div id="examine-the-settings-profile-and-assignment">
+  #### Examiner le profil de paramètres et son attribution
+</div>
+
+```sql
+SHOW ACCESS
+```
+
+```response highlight={3,5}
+┌─ACCESS─────────────────────────────────────────────────────────────────────────────┐
+│ CREATE USER default IDENTIFIED WITH sha256_password                                │
+│ CREATE USER ingester IDENTIFIED WITH sha256_password SETTINGS PROFILE log_ingest   │
+│ CREATE SETTINGS PROFILE default                                                    │
+│ CREATE SETTINGS PROFILE log_ingest SETTINGS async_insert = true                    │
+│ CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1                             │
+│ ...                                                                                │
+└────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="assign-a-setting-to-a-session">
+  ### Définir un paramètre pour une session
+</div>
+
+```sql
+SET async_insert =1;
+SELECT value FROM system.settings where name='async_insert';
+```
+
+```response
+┌─value──┐
+│ 1      │
+└────────┘
+```
+
+<div id="assign-a-setting-during-a-query">
+  ### Définir un paramètre dans une requête
+</div>
+
+```sql highlight={2}
+INSERT INTO YourTable
+SETTINGS async_insert=1
+VALUES (...)
+```
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* Consultez la page [Paramètres](/fr/reference/settings/session-settings) pour une description des paramètres de ClickHouse.
+* [Paramètres globaux du serveur](/fr/reference/settings/server-settings/settings)

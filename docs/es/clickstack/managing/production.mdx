@@ -1,0 +1,181 @@
+---
+slug: /use-cases/observability/clickstack/production
+title: 'Puesta en producción'
+sidebarTitle: 'Producción'
+description: 'Puesta en producción con ClickStack'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['ClickStack', 'producción', 'despliegue', 'buenas prácticas', 'operaciones']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+import ResourceEstimation from '/snippets/es/_resource_estimation.mdx';
+
+Al desplegar ClickStack en producción, hay varias consideraciones adicionales para garantizar la seguridad, la estabilidad y una configuración correcta. Estas varían según la distribución utilizada: open source o Managed.
+
+<Tabs>
+  <Tab title="ClickStack gestionado">
+    Para despliegues de producción, se recomienda [Managed ClickStack](/es/clickstack/getting-started/managed). Aplica [prácticas de seguridad](/es/products/cloud/features/security) estándar del sector de forma predeterminada, incluidas la mejora del cifrado, la autenticación y la conectividad, y controles de acceso gestionados, además de ofrecer las siguientes ventajas:
+
+    * Escalado automático de la capacidad de cómputo independiente del almacenamiento
+    * Retención de bajo costo y prácticamente ilimitada basada en almacenamiento de objetos
+    * La posibilidad de aislar de forma independiente las cargas de trabajo de lectura y escritura con Warehouses.
+    * Autenticación integrada
+    * [Backups](/es/products/cloud/features/backups/overview) automatizados
+    * Actualizaciones sin interrupciones
+
+    **Sigue estas [buenas prácticas](/es/products/cloud/guides/production-readiness) de ClickHouse Cloud al usar Managed ClickStack.**
+
+    ### Proteger la ingestión
+
+    De forma predeterminada, ClickStack OpenTelemetry Collector no está protegido cuando se despliega fuera de las distribuciones open source y no requiere autenticación en sus puertos OTLP.
+
+    Para proteger la ingestión, especifica un token de autenticación al desplegar el collector mediante la variable de entorno `OTLP_AUTH_TOKEN`. Consulta [&quot;Proteger el collector&quot;](/es/clickstack/ingesting-data/collector#securing-the-collector) para obtener más información.
+
+    #### Crear un usuario de ingestión
+
+    Se recomienda crear un usuario dedicado para el OTel collector para la ingestión en Managed ClickHouse y para garantizar que la ingestión se envíe a una base de datos específica, por ejemplo, `otel`. Consulta [&quot;Crear un usuario de ingestión&quot;](/es/clickstack/ingesting-data/collector#creating-an-ingestion-user) para obtener más información.
+
+    ### Configurar Time To Live (TTL)
+
+    Asegúrate de que [Time To Live (TTL)](/es/clickstack/managing/ttl) esté [configurado adecuadamente](/es/clickstack/managing/ttl#modifying-ttl) para tu despliegue de Managed ClickStack. Esto controla durante cuánto tiempo se conservan los datos; el valor predeterminado de 3 días a menudo debe modificarse.
+
+    ### Estimación de recursos
+
+    <ResourceEstimation />
+
+    Para obtener más información sobre cómo ajustar las hipótesis de dimensionamiento para tu entorno, consulta [&quot;Ajustar las hipótesis de dimensionamiento para tu entorno&quot;](/es/clickstack/managing/estimating-resources#refining-sizing-assumptions).
+
+    #### Aislar cargas de trabajo de observabilidad
+
+    Si estás añadiendo ClickStack a un **servicio de ClickHouse Cloud existente** que ya admite otras cargas de trabajo, como análisis de aplicaciones en tiempo real, se recomienda encarecidamente aislar el tráfico de observabilidad.
+
+    Usa [**Managed Warehouses**](/es/products/cloud/features/infrastructure/warehouses) para crear un **servicio hijo** dedicado a ClickStack. Esto te permite:
+
+    * Aislar la carga de ingestión y de consultas de las aplicaciones existentes
+    * Escalar las cargas de trabajo de observabilidad de forma independiente
+    * Evitar que las consultas de observabilidad afecten a los análisis de producción
+    * Compartir los mismos datos subyacentes entre servicios cuando sea necesario
+
+    Este enfoque garantiza que tus cargas de trabajo existentes no se vean afectadas y, al mismo tiempo, permite que ClickStack escale de forma independiente a medida que crecen los datos de observabilidad.
+
+    Para despliegues más grandes o recomendaciones de dimensionamiento personalizadas, ponte en contacto con soporte para obtener una estimación más precisa.
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    ### Seguridad de red y puertos
+
+    De forma predeterminada, Docker Compose expone puertos en el host y los hace accesibles desde fuera del contenedor, incluso si herramientas como `ufw` (Uncomplicated Firewall) están habilitadas. Este comportamiento se debe a la pila de red de Docker, que puede saltarse las reglas de firewall a nivel de host a menos que se configure explícitamente.
+
+    **Recomendación:**
+
+    Exponga únicamente los puertos necesarios para uso en producción. Normalmente, los endpoints OTLP, el servidor de API y el frontend.
+
+    Por ejemplo, elimine o comente las asignaciones de puertos innecesarias en su archivo `docker-compose.yml`:
+
+    ```yaml
+    ports:
+      - "4317:4317"  # OTLP gRPC
+      - "4318:4318"  # OTLP HTTP
+      - "8080:8080"  # Only if needed for the API
+    # Avoid exposing internal ports like ClickHouse 8123 or MongoDB 27017.
+    ```
+
+    Consulte la [documentación de redes de Docker](https://docs.docker.com/network/) para obtener más información sobre el aislamiento de contenedores y el endurecimiento del acceso.
+
+    ### Configuración del secret de sesión
+
+    En producción, debe establecer un valor aleatorio y robusto para la variable de entorno `EXPRESS_SESSION_SECRET` de la UI de ClickStack (HyperDX), a fin de proteger los datos de sesión y evitar manipulaciones.
+
+    A continuación se muestra cómo añadirlo al archivo `docker-compose.yml` para el servicio de la aplicación:
+
+    ```yaml
+      app:
+        image: ${IMAGE_NAME_HDX}:${IMAGE_VERSION}
+        ports:
+          - ${HYPERDX_API_PORT}:${HYPERDX_API_PORT}
+          - ${HYPERDX_APP_PORT}:${HYPERDX_APP_PORT}
+        environment:
+          FRONTEND_URL: ${HYPERDX_APP_URL}:${HYPERDX_APP_PORT}
+          HYPERDX_API_KEY: ${HYPERDX_API_KEY}
+          HYPERDX_API_PORT: ${HYPERDX_API_PORT}
+          HYPERDX_APP_PORT: ${HYPERDX_APP_PORT}
+          HYPERDX_APP_URL: ${HYPERDX_APP_URL}
+          HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
+          MINER_API_URL: 'http://miner:5123'
+          MONGO_URI: 'mongodb://db:27017/hyperdx'
+          NEXT_PUBLIC_SERVER_URL: http://127.0.0.1:${HYPERDX_API_PORT}
+          OTEL_SERVICE_NAME: 'hdx-oss-api'
+          USAGE_STATS_ENABLED: ${USAGE_STATS_ENABLED:-true}
+          EXPRESS_SESSION_SECRET: "super-secure-random-string"
+        networks:
+          - internal
+        depends_on:
+          - ch-server
+          - db1
+    ```
+
+    Puede generar un secret seguro con `openssl`:
+
+    ```shell
+    openssl rand -hex 32
+    ```
+
+    Evite incluir secretos en el control de versiones. En producción, considere usar herramientas de gestión de variables de entorno (p. ej., Docker Secrets, HashiCorp Vault o configuraciones de CI/CD específicas del entorno).
+
+    ### Ingestión segura
+
+    Toda la ingestión debe realizarse a través de los puertos OTLP expuestos por la distribución ClickStack del colector de OpenTelemetry (OTel). De forma predeterminada, esto requiere una API key de ingesta segura generada al inicio. Esta clave es necesaria para enviar datos a los puertos OTel y puede encontrarse en la UI de HyperDX en `Team Settings → API Keys`.
+
+    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="Claves de ingestión" size="lg" />
+
+    Además, se recomienda habilitar TLS para los endpoints OTLP.
+
+    #### Crear un usuario de ingestión
+
+    Se recomienda crear un usuario dedicado para el OTel collector para la ingestión en ClickHouse y asegurarse de que los datos se envíen a una base de datos específica, por ejemplo, `otel`. Consulte [&quot;Creación de un usuario de ingestión&quot;](/es/clickstack/ingesting-data/collector#creating-an-ingestion-user) para obtener más información.
+
+    ### ClickHouse
+
+    Los usuarios que administren su propia instancia de ClickHouse deben seguir las siguientes buenas prácticas.
+
+    #### Buenas prácticas de seguridad
+
+    Si administra su propia instancia de ClickHouse, es fundamental habilitar **TLS**, aplicar autenticación y seguir las buenas prácticas para reforzar el control de acceso. Consulte [esta entrada de blog](https://www.wiz.io/blog/clickhouse-and-wiz) para obtener más información sobre configuraciones incorrectas en entornos reales y cómo evitarlas.
+
+    ClickHouse OSS ofrece funciones de seguridad sólidas listas para usar. Sin embargo, estas requieren configuración:
+
+    * **Usa TLS** con `tcp_port_secure` y `<openSSL>` en `config.xml`. Consulta [guides/sre/configuring-tls](/es/concepts/features/security/tls/configuring-tls).
+    * **Configura una contraseña segura** para el usuario `default` o desactívalo.
+    * **Evita exponer ClickHouse externamente** salvo que así se pretenda explícitamente. De forma predeterminada, ClickHouse solo escucha en `localhost`, a menos que se modifique `listen_host`.
+    * **Utilice métodos de autenticación** como contraseñas, certificados, claves SSH o [autenticadores externos](/es/concepts/features/security/external-authenticators/index).
+    * **Restrinja el acceso** mediante el filtrado por IP y la cláusula `HOST`. Consulte [sql-reference/statements/create/user#user-host](/es/reference/statements/create/user#user-host).
+    * **Habilite el control de acceso basado en roles (RBAC)** para conceder privilegios granulares. Consulte [operations/access-rights](/es/concepts/features/security/access-rights).
+    * **Aplique cuotas y límites** mediante [cuotas](/es/concepts/features/configuration/server-config/quotas), [perfiles de configuración](/es/concepts/features/configuration/settings/settings-profiles) y modos de solo lectura.
+    * **Cifre los datos en reposo** y utilice almacenamiento externo seguro. Consulte [operations/storing-data](/es/concepts/features/configuration/server-config/storing-data) y [cloud/security/CMEK](/es/products/cloud/guides/security/cmek).
+    * **Evite codificar credenciales de forma fija.** Use [colecciones con nombre](/es/concepts/features/configuration/server-config/named-collections) o roles de IAM en ClickHouse Cloud.
+    * **Audite el acceso y las consultas** con [los logs del sistema](/es/reference/system-tables/query_log) y [los logs de sesión](/es/reference/system-tables/session_log).
+
+    Consulte también [autenticadores externos](/es/concepts/features/security/external-authenticators/index) y [configuración de complejidad de consultas](/es/concepts/features/configuration/settings/query-complexity) para gestionar usuarios y garantizar los límites de consultas y recursos.
+
+    #### Permisos de usuario para la UI de ClickStack
+
+    El usuario de ClickHouse para la UI de ClickStack solo necesita ser un usuario `readonly` con acceso para modificar las siguientes configuraciones:
+
+    * `max_rows_to_read` (al menos, hasta 1 millón)
+    * `read_overflow_mode`
+    * `cancel_http_readonly_queries_on_client_close`
+    * `wait_end_of_query`
+
+    De forma predeterminada, el usuario `default` tanto en OSS como en ClickHouse Cloud tendrá estos permisos disponibles; no obstante, se recomienda crear un nuevo usuario con dichos permisos.
+
+    ### Configurar Time To Live (TTL)
+
+    Asegúrese de que el [Time To Live (TTL)](/es/clickstack/managing/ttl) esté [configurado correctamente](/es/clickstack/managing/ttl#modifying-ttl) para su implementación de ClickStack. Esto controla durante cuánto tiempo se retienen los datos; el valor predeterminado de 3 días suele requerir ajustes.
+
+    ### Directrices de MongoDB
+
+    Consulte la [lista de comprobación de seguridad de MongoDB](https://www.mongodb.com/docs/manual/administration/security-checklist/) oficial.
+  </Tab>
+</Tabs>
