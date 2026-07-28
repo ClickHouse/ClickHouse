@@ -69,7 +69,17 @@ c1	Nullable(String)
 c1	Nullable(String)					
 c1	Nullable(String)					
 c1	Nullable(String)					
+c1	Nullable(String)					
+c1	Nullable(String)					
+c1	Nullable(String)					
+group 10: the malformed exponent is readable only because it stays String
+0.5e+
+0e+
+0.5e-
+0.5e+	String
+0e+	String
 group 10: the CSV divergence that deliberately remains
+c1	Nullable(Float64)					
 c1	Nullable(Float64)					
 c1	Nullable(Float64)					
 group 11: try_infer_integers = 1 (the default)
@@ -111,3 +121,13 @@ group 14: Dynamic runtime path
 0	Float64
 007	String
 0	Float64
+group 15: TSKV plain values
+x	Nullable(Float64)					
+0.5
+x	Nullable(String)					
+007
+group 15: TSKV null representation and escapes
+x	Nullable(String)					
+y	Nullable(Int64)					
+1	1
+a\tb

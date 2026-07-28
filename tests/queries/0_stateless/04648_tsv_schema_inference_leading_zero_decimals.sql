@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- no-fasttest: the format() table function and the Dynamic type are not available in the fast test build.
-
 -- 1. Leading-zero decimals must now infer Float64 in the TSV family, as they always did in CSV.
 SELECT 'group 1: TSV infers Float64';
 DESC format(TSV, '0.0');
@@ -90,16 +87,28 @@ DESC format(TSV, '0.0\n0.5');
 DESC format(TSV, '0.5\n1.5');
 
 -- 10. Exponent forms deliberately keep inferring String in the TSV family. Do not remove this group:
--- schema inference accepts exponent values (for example `0.5e+`) that the value parser's precise float
--- reader rejects, so admitting them here would turn a wrong type into a hard parse error.
+-- schema inference accepts exponent values whose exponent has no digits, such as `0.5e+`, that the value
+-- parser's precise float reader rejects, so admitting them here would turn a wrong type into a hard parse
+-- error.
 SELECT 'group 10: exponent forms stay String in TSV';
 DESC format(TSV, '0e5') SETTINGS input_format_try_infer_exponent_floats = 1;
 DESC format(TSV, '0E5') SETTINGS input_format_try_infer_exponent_floats = 1;
 DESC format(TSV, '0e-5') SETTINGS input_format_try_infer_exponent_floats = 1;
 DESC format(TSV, '0.5e10') SETTINGS input_format_try_infer_exponent_floats = 1;
+DESC format(TSV, '0.5e+') SETTINGS input_format_try_infer_exponent_floats = 1;
+DESC format(TSV, '0e+') SETTINGS input_format_try_infer_exponent_floats = 1;
+DESC format(TSV, '0.5e-') SETTINGS input_format_try_infer_exponent_floats = 1;
+SELECT 'group 10: the malformed exponent is readable only because it stays String';
+SELECT * FROM format(TSV, '0.5e+') SETTINGS input_format_try_infer_exponent_floats = 1;
+SELECT * FROM format(TSV, '0e+') SETTINGS input_format_try_infer_exponent_floats = 1;
+SELECT * FROM format(TSV, '0.5e-') SETTINGS input_format_try_infer_exponent_floats = 1;
+SELECT d, dynamicType(d) FROM format(TSV, 'd Dynamic', '0.5e+') SETTINGS input_format_try_infer_exponent_floats = 1;
+SELECT d, dynamicType(d) FROM format(TSV, 'd Dynamic', '0e+') SETTINGS input_format_try_infer_exponent_floats = 1;
 SELECT 'group 10: the CSV divergence that deliberately remains';
 DESC format(CSV, '0e5') SETTINGS input_format_try_infer_exponent_floats = 1;
 DESC format(CSV, '0.5e10') SETTINGS input_format_try_infer_exponent_floats = 1;
+DESC format(CSV, '0.5e+') SETTINGS input_format_try_infer_exponent_floats = 1;
+SELECT * FROM format(CSV, '0.5e+') SETTINGS input_format_try_infer_exponent_floats = 1; -- { serverError CANNOT_PARSE_NUMBER }
 
 -- 11. The integer part of the check is derived from the inferred type, so it follows
 -- input_format_try_infer_integers: with integer inference disabled, inference yields Float64, the value
@@ -151,3 +160,17 @@ SELECT 'group 14: Dynamic runtime path';
 SELECT d, dynamicType(d) FROM format(TSV, 'd Dynamic', '0.0');
 SELECT d, dynamicType(d) FROM format(TSV, 'd Dynamic', '007');
 SELECT d, dynamicType(d) FROM format(CSV, 'd Dynamic', '0.0');
+
+-- 15. TSKV also uses the Escaped rule, so a leading-zero decimal now infers Float64 there too. TSKV
+-- decodes escape sequences before inferring but parses the original bytes when reading, so a decimal
+-- written as an escape sequence infers a type its own value path cannot read. That asymmetry is
+-- pre-existing and independent of leading zeros, and it is deliberately not addressed here.
+SELECT 'group 15: TSKV plain values';
+DESC format(TSKV, 'x=0.5\n');
+SELECT * FROM format(TSKV, 'x=0.5\n');
+DESC format(TSKV, 'x=007\n');
+SELECT * FROM format(TSKV, 'x=007\n');
+SELECT 'group 15: TSKV null representation and escapes';
+DESC format(TSKV, 'x=\\N\ty=1\n');
+SELECT x IS NULL, y FROM format(TSKV, 'x=\\N\ty=1\n');
+SELECT * FROM format(TSKV, 'x=a\\tb\n');
