@@ -47,8 +47,12 @@ struct MultipartUploadMemory
 
     /// The first buffer: a writer allocates it however little data flows through it.
     UInt64 guaranteed = 0;
-    /// Every buffer that can be alive at once - the one being filled plus the ones whose uploads are in
-    /// flight - or UNLIMITED.
+    /// Every buffer that can be alive at once - the one being filled plus max_inflight_parts_for_one_file
+    /// detached ones - or UNLIMITED. A detached buffer really does coexist with the buffer being filled:
+    /// WriteBufferFromS3::nextImpl detaches the full buffer, keeps it in detached_part_data (it defers the
+    /// first upload until a second part exists) and allocates the next buffer, and TaskTracker::add erases a
+    /// finished future as soon as the task notifies, while the task - and the PartData it holds - is
+    /// destroyed only afterwards.
     UInt64 ceiling = 0;
 };
 

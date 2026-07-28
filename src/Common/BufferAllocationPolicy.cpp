@@ -125,10 +125,15 @@ MultipartUploadMemory getMultipartUploadMemory(const BufferAllocationPolicy::Set
         return result;
     }
 
-    /// The buffer being filled plus the in-flight ones, all of them priced at the largest size the policy can
+    /// The buffer being filled plus the detached ones, all of them priced at the largest size the policy can
     /// hand out: by the time a writer holds max_inflight_parts_for_one_file parts in flight, the buffer it is
-    /// filling has long grown past the first one. Saturate rather than wrap around - a configuration that
-    /// allows an enormous number of in-flight parts is indistinguishable from an unlimited one here.
+    /// filling has long grown past the first one. The extra buffer over the in-flight limit is not slack:
+    /// WriteBufferFromS3::nextImpl detaches a full buffer and allocates the next one before submitting the
+    /// first upload (it holds the part back until a second one exists), so two buffers are alive with nothing
+    /// in flight at all, and TaskTracker::add erases a finished future as soon as the task notifies, while
+    /// the task still owns its PartData for a moment longer. Saturate rather than wrap around - a
+    /// configuration that allows an enormous number of in-flight parts is indistinguishable from an unlimited
+    /// one here.
     UInt64 live_buffers = 0;
     if (__builtin_add_overflow(max_inflight_parts_for_one_file, static_cast<UInt64>(1), &live_buffers)
         || __builtin_mul_overflow(live_buffers, largest_buffer_size, &result.ceiling))
