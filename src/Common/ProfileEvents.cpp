@@ -458,6 +458,8 @@
     M(LanceCountRowsMicroseconds, "Total time spent in Lance totalRows/countRows fast-path calls.", ValueType::Microseconds) \
     M(LancePredicatePushdownComplete, "Number of Lance scans where every conjunct of the filter was pushed to Lance (or there was no residual filter).", ValueType::Number) \
     M(LancePredicatePushdownPartial, "Number of Lance scans that pushed only a subset of AND conjuncts; residual FilterStep still runs in ClickHouse.", ValueType::Number) \
+    M(LancePredicatePushdownDisabled, "Number of Lance scans with a filter where predicate pushdown was explicitly disabled.", ValueType::Number) \
+    M(LanceSnapshotIdentityMismatch, "Number of Lance operations rejected because the immutable manifest identity did not match the pinned snapshot.", ValueType::Number) \
     M(LanceLimitPushdown, "Number of Lance scans that received a row limit on the Lance scanner.", ValueType::Number) \
     M(LanceProjectedColumns, "Total number of physical columns requested across Lance scan projections.", ValueType::Number) \
     M(LanceScanUnordered, "Number of Lance scans planned with lance_scan_in_order=0 (unordered batches, higher internal fragment concurrency).", ValueType::Number) \

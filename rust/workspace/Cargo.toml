@@ -8,3 +8,6 @@ members = [
     "wasmtime",
 ]
 resolver = "2"
+
+[profile.release]
+panic = "unwind"

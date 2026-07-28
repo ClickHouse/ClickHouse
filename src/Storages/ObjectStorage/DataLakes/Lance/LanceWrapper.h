@@ -7,9 +7,11 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Interpreters/Context_fwd.h>
+#include <Storages/ObjectStorage/DataLakes/Lance/LanceTableStateSnapshot.h>
 
 #include <memory>
 #include <optional>
+#include <unordered_set>
 #include <vector>
 
 namespace DB
@@ -59,11 +61,6 @@ struct DatasetOptions
     String identityKey() const;
 };
 
-struct SnapshotInfo
-{
-    UInt64 version = 0;
-};
-
 struct FragmentInfo
 {
     UInt64 id = 0;
@@ -74,7 +71,6 @@ struct FragmentInfo
 };
 
 struct ScanDescription;
-struct TableStateSnapshot;
 class Scan;
 
 /// Query-scoped cooperative cancel token. Shared across open/plan/count/scan for one unit of work.
@@ -115,11 +111,12 @@ public:
     const DatasetOptions & options() const;
     String identityKey() const;
 
-    SnapshotInfo currentSnapshot() const;
+    TableStateSnapshot currentSnapshot() const;
     NamesAndTypesList tableSchema(
         const TableStateSnapshot & snapshot,
         ContextPtr context,
-        const CancelHandlePtr & cancel = {}) const;
+        const CancelHandlePtr & cancel = {},
+        std::unordered_set<String> * utf8_columns = nullptr) const;
     std::optional<size_t> totalRows(const TableStateSnapshot & snapshot, const CancelHandlePtr & cancel = {}) const;
     std::optional<size_t> countRows(
         const TableStateSnapshot & snapshot,

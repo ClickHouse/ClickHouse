@@ -27,13 +27,13 @@ public:
     /// Returns an existing open handle or opens once. Thread-safe.
     DatasetHandle getOrOpen(const DatasetOptions & options);
 
-    /// Record the version pinned for this identity. Second pin with a different version is an error.
-    void pinVersion(const String & identity_key, UInt64 version);
+    /// Record the immutable snapshot pinned for this identity.
+    void pinSnapshot(const String & identity_key, const TableStateSnapshot & snapshot);
 
-    std::optional<UInt64> getPinnedVersion(const String & identity_key) const;
+    std::optional<TableStateSnapshot> getPinnedSnapshot(const String & identity_key) const;
 
-    /// Require a previously opened handle for the pinned version.
-    DatasetHandle getPinned(const DatasetOptions & options, UInt64 pinned_version);
+    /// Require a previously opened handle for the pinned snapshot.
+    DatasetHandle getPinned(const DatasetOptions & options, const TableStateSnapshot & pinned_snapshot);
 
     size_t openCount() const;
     const CancelHandlePtr & getCancelHandle() const { return cancel_handle; }
@@ -52,7 +52,7 @@ private:
 
     mutable std::mutex mutex;
     std::unordered_map<String, DatasetHandle> open_datasets;
-    std::unordered_map<String, UInt64> pinned_versions;
+    std::unordered_map<String, TableStateSnapshot> pinned_snapshots;
     size_t open_count = 0;
     bool reuse_enabled = true;
     bool force_single_fragment_pack = false;

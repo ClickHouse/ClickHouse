@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.7",
         {
             {"lance_query_dataset_reuse", false, true, "New setting to reuse a single Lance dataset handle within one query (analysis + execution)."},
+            {"lance_enable_predicate_pushdown", false, true, "New setting to disable Lance predicate pushdown while retaining the complete ClickHouse filter."},
             {"lance_runtime_threads", 0, 0, "New setting for the process-wide Lance Tokio runtime worker thread count (0 = automatic bounded default)."},
             {"lance_scan_in_order", false, true, "New setting: when true (default), Lance returns batches in deterministic fragment order; false allows higher internal fragment concurrency."},
             {"lance_fragment_readahead", 0, 0, "New setting for Lance scanner fragment readahead (0 = library default; effective when lance_scan_in_order=0)."},

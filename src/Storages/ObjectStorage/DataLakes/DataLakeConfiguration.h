@@ -81,6 +81,12 @@ template <StorageConfiguration BaseStorageConfiguration, typename DataLakeMetada
 class DataLakeConfiguration : public BaseStorageConfiguration, public std::enable_shared_from_this<StorageObjectStorageConfiguration>
 {
 public:
+#if USE_AVRO
+    static constexpr bool SUPPORTS_PREWHERE = std::is_same_v<DataLakeMetadata, IcebergMetadata>;
+#else
+    static constexpr bool SUPPORTS_PREWHERE = false;
+#endif
+
     explicit DataLakeConfiguration(DataLakeStorageSettingsPtr settings_) : settings(settings_) {}
 
     bool isDataLakeConfiguration() const override { return true; }
@@ -428,11 +434,7 @@ public:
 
     bool supportsPrewhere() const override
     {
-#if USE_AVRO
-        return std::is_same_v<DataLakeMetadata, IcebergMetadata>;
-#else
-        return false;
-#endif
+        return SUPPORTS_PREWHERE;
     }
 
 private:

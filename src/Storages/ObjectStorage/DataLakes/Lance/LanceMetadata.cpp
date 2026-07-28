@@ -42,11 +42,13 @@
 #include <mutex>
 #include <numeric>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace ProfileEvents
 {
 extern const Event LancePredicatePushdownComplete;
 extern const Event LancePredicatePushdownPartial;
+extern const Event LancePredicatePushdownDisabled;
 extern const Event LanceLimitPushdown;
 extern const Event LanceProjectedColumns;
 extern const Event LanceScanUnordered;
@@ -67,6 +69,7 @@ extern const SettingsUInt64 lance_fragment_readahead;
 extern const SettingsUInt64 lance_batch_readahead;
 extern const SettingsUInt64 lance_io_buffer_size;
 extern const SettingsBool lance_enable_fragment_parallelism;
+extern const SettingsBool lance_enable_predicate_pushdown;
 extern const SettingsString lance_fragment_pack_mode;
 extern const SettingsUInt64 lance_max_fragment_packs;
 extern const SettingsUInt64 lance_min_rows_per_pack;
@@ -350,54 +353,89 @@ String quoteLanceStringLiteral(const String & value)
     return result;
 }
 
-std::optional<String> fieldToLanceLiteral(const Field & field, const DataTypePtr & data_type)
+struct LancePhysicalColumn
 {
-    if (field.isNull())
+    DataTypePtr type;
+    bool is_arrow_utf8 = false;
+};
+
+using LancePhysicalSchema = std::unordered_map<String, LancePhysicalColumn>;
+
+LancePhysicalSchema makeLancePhysicalSchema(
+    const NamesAndTypesList & schema,
+    const std::unordered_set<String> & utf8_columns)
+{
+    LancePhysicalSchema result;
+    result.reserve(schema.size());
+    for (const auto & column : schema)
+        result.emplace(column.name, LancePhysicalColumn{column.type, utf8_columns.contains(column.name)});
+    return result;
+}
+
+const ActionsDAG::Node * unwrapTransparentAlias(const ActionsDAG::Node & node)
+{
+    const ActionsDAG::Node * current = &node;
+    while (current->type == ActionsDAG::ActionType::ALIAS && current->children.size() == 1)
+        current = current->children.front();
+    return current;
+}
+
+struct LanceIdentifier
+{
+    String sql;
+    const LancePhysicalColumn * column = nullptr;
+};
+
+std::optional<LanceIdentifier> inputNodeToLanceIdentifier(
+    const ActionsDAG::Node & node,
+    const LancePhysicalSchema & physical_schema)
+{
+    const auto * input = unwrapTransparentAlias(node);
+    if (input->type != ActionsDAG::ActionType::INPUT)
         return std::nullopt;
 
-    const auto type = removeNullable(data_type);
-    const WhichDataType which(type);
+    const auto it = physical_schema.find(input->result_name);
+    if (it == physical_schema.end() || !input->result_type->equals(*it->second.type))
+        return std::nullopt;
 
-    if (which.isStringOrFixedString())
+    return LanceIdentifier{
+        .sql = quoteLanceIdentifier(input->result_name),
+        .column = &it->second,
+    };
+}
+
+bool isSupportedComparisonType(const LancePhysicalColumn & column, const String & function_name)
+{
+    if (column.type->isNullable())
+        return false;
+
+    const WhichDataType which(column.type);
+    if (which.isNativeInt())
+        return true;
+    if (which.isString() && column.is_arrow_utf8)
+        return function_name == "equals" || function_name == "notEquals";
+    return false;
+}
+
+std::optional<String> fieldToLanceLiteral(
+    const Field & field,
+    const DataTypePtr & constant_type,
+    const LancePhysicalColumn & column)
+{
+    if (field.isNull() || !constant_type->equals(*column.type))
+        return std::nullopt;
+
+    const WhichDataType which(column.type);
+    if (which.isString() && column.is_arrow_utf8)
         return quoteLanceStringLiteral(field.safeGet<String>());
-
-    if (which.isDate())
-    {
-        WriteBufferFromOwnString out;
-        writeDateText(DayNum(static_cast<UInt16>(field.safeGet<UInt64>())), out);
-        return fmt::format("DATE '{}'", out.str());
-    }
-
-    if (which.isDate32())
-    {
-        WriteBufferFromOwnString out;
-        writeDateText(ExtendedDayNum(static_cast<Int32>(field.safeGet<Int64>())), out);
-        return fmt::format("DATE '{}'", out.str());
-    }
-
-    if (which.isDateTime())
-    {
-        WriteBufferFromOwnString out;
-        const auto & time_zone = assert_cast<const DataTypeDateTime &>(*type).getTimeZone();
-        writeDateTimeText(static_cast<time_t>(field.safeGet<UInt64>()), out, time_zone);
-        return fmt::format("TIMESTAMP '{}'", out.str());
-    }
-
-    if (which.isDateTime64())
-    {
-        WriteBufferFromOwnString out;
-        const auto & date_time_type = assert_cast<const DataTypeDateTime64 &>(*type);
-        writeDateTimeText(field.safeGet<DateTime64>(), date_time_type.getScale(), out, date_time_type.getTimeZone());
-        return fmt::format("TIMESTAMP '{}'", out.str());
-    }
-
-    if (which.isNativeNumber())
+    if (which.isNativeInt())
         return applyVisitor(FieldVisitorToString(), field);
-
     return std::nullopt;
 }
 
-std::optional<String> constantNodeToLanceLiteral(const ActionsDAG::Node & node)
+std::optional<String> constantNodeToLanceLiteral(
+    const ActionsDAG::Node & node,
+    const LancePhysicalColumn & column)
 {
     if (node.type != ActionsDAG::ActionType::COLUMN || !node.column || node.column->empty())
         return std::nullopt;
@@ -405,14 +443,7 @@ std::optional<String> constantNodeToLanceLiteral(const ActionsDAG::Node & node)
     if (node.column->isNullAt(0))
         return std::nullopt;
 
-    return fieldToLanceLiteral((*node.column)[0], node.result_type);
-}
-
-std::optional<String> inputNodeToLanceIdentifier(const ActionsDAG::Node & node)
-{
-    if (node.type != ActionsDAG::ActionType::INPUT)
-        return std::nullopt;
-    return quoteLanceIdentifier(node.result_name);
+    return fieldToLanceLiteral((*node.column)[0], node.result_type, column);
 }
 
 std::optional<String> reverseComparison(const String & function_name)
@@ -458,10 +489,17 @@ struct LancePredicatePushdown
     bool is_complete = true;
 };
 
-std::optional<String> translateLancePredicateStrict(const ActionsDAG::Node & node, const ContextPtr & context);
+std::optional<String> translateLancePredicateStrict(
+    const ActionsDAG::Node & node,
+    const ContextPtr & context,
+    const LancePhysicalSchema & physical_schema);
 
 /// All-or-nothing boolean tree (used for OR and for strict translation of nested AND).
-std::optional<String> tryBuildBooleanPredicateStrict(const ActionsDAG::Node & node, const String & joiner, const ContextPtr & context)
+std::optional<String> tryBuildBooleanPredicateStrict(
+    const ActionsDAG::Node & node,
+    const String & joiner,
+    const ContextPtr & context,
+    const LancePhysicalSchema & physical_schema)
 {
     if (node.children.empty())
         return std::nullopt;
@@ -470,7 +508,7 @@ std::optional<String> tryBuildBooleanPredicateStrict(const ActionsDAG::Node & no
     predicates.reserve(node.children.size());
     for (const auto * child : node.children)
     {
-        if (auto predicate = translateLancePredicateStrict(*child, context))
+        if (auto predicate = translateLancePredicateStrict(*child, context, physical_schema))
             predicates.push_back(fmt::format("({})", *predicate));
         else
             return std::nullopt;
@@ -478,58 +516,76 @@ std::optional<String> tryBuildBooleanPredicateStrict(const ActionsDAG::Node & no
     return fmt::format("{}", fmt::join(predicates, joiner));
 }
 
-std::optional<String> tryBuildNullCheckPredicate(const ActionsDAG::Node & node, const String & function_name)
+std::optional<String> tryBuildNullCheckPredicate(
+    const ActionsDAG::Node & node,
+    const String & function_name,
+    const LancePhysicalSchema & physical_schema)
 {
     if (node.children.size() != 1)
         return std::nullopt;
 
-    auto identifier = inputNodeToLanceIdentifier(*node.children[0]);
-    if (!identifier)
+    auto identifier = inputNodeToLanceIdentifier(*node.children[0], physical_schema);
+    if (!identifier || !identifier->column->type->isNullable())
         return std::nullopt;
 
     if (function_name == "isNull")
-        return fmt::format("{} IS NULL", *identifier);
+        return fmt::format("{} IS NULL", identifier->sql);
     if (function_name == "isNotNull")
-        return fmt::format("{} IS NOT NULL", *identifier);
+        return fmt::format("{} IS NOT NULL", identifier->sql);
 
     return std::nullopt;
 }
 
-std::optional<String> tryBuildComparisonPredicate(const ActionsDAG::Node & node, const String & function_name)
+std::optional<String> tryBuildComparisonPredicate(
+    const ActionsDAG::Node & node,
+    const String & function_name,
+    const LancePhysicalSchema & physical_schema)
 {
     if (node.children.size() != 2)
         return std::nullopt;
 
+    const auto op = comparisonFunctionToLanceOperator(function_name);
+    if (!op)
+        return std::nullopt;
+
     const auto * lhs = node.children[0];
     const auto * rhs = node.children[1];
-    if (auto identifier = inputNodeToLanceIdentifier(*lhs))
+    if (auto identifier = inputNodeToLanceIdentifier(*lhs, physical_schema))
     {
-        if (auto literal = constantNodeToLanceLiteral(*rhs))
+        if (isSupportedComparisonType(*identifier->column, function_name))
         {
-            if (auto op = comparisonFunctionToLanceOperator(function_name))
-                return fmt::format("{} {} {}", *identifier, *op, *literal);
+            if (auto literal = constantNodeToLanceLiteral(*rhs, *identifier->column))
+                return fmt::format("{} {} {}", identifier->sql, *op, *literal);
         }
     }
 
-    if (auto identifier = inputNodeToLanceIdentifier(*rhs))
+    if (auto identifier = inputNodeToLanceIdentifier(*rhs, physical_schema))
     {
-        if (auto literal = constantNodeToLanceLiteral(*lhs))
+        if (isSupportedComparisonType(*identifier->column, function_name))
         {
-            if (auto op = reverseComparison(function_name))
-                return fmt::format("{} {} {}", *identifier, *op, *literal);
+            if (auto literal = constantNodeToLanceLiteral(*lhs, *identifier->column))
+            {
+                if (auto reverse_op = reverseComparison(function_name))
+                    return fmt::format("{} {} {}", identifier->sql, *reverse_op, *literal);
+            }
         }
     }
 
     return std::nullopt;
 }
 
-std::optional<String> tryBuildInPredicate(const ActionsDAG::Node & node, const ContextPtr & context)
+std::optional<String> tryBuildInPredicate(
+    const ActionsDAG::Node & node,
+    const ContextPtr & context,
+    const LancePhysicalSchema & physical_schema)
 {
     if (!context || node.children.size() != 2)
         return std::nullopt;
 
-    auto identifier = inputNodeToLanceIdentifier(*node.children[0]);
+    auto identifier = inputNodeToLanceIdentifier(*node.children[0], physical_schema);
     if (!identifier || !node.children[1]->column)
+        return std::nullopt;
+    if (!isSupportedComparisonType(*identifier->column, "equals"))
         return std::nullopt;
 
     const IColumn * column = node.children[1]->column.get();
@@ -551,15 +607,17 @@ std::optional<String> tryBuildInPredicate(const ActionsDAG::Node & node, const C
     set->checkColumnsNumber(1);
     const auto type = set->getElementsTypes()[0];
     const auto elements = set->getSetElements()[0];
+    if (!type->equals(*identifier->column->type) || elements->empty())
+        return std::nullopt;
 
     std::vector<String> literals;
     literals.reserve(elements->size());
     for (size_t i = 0; i < elements->size(); ++i)
     {
         if (elements->isNullAt(i))
-            continue;
+            return std::nullopt;
 
-        if (auto literal = fieldToLanceLiteral((*elements)[i], type))
+        if (auto literal = fieldToLanceLiteral((*elements)[i], type, *identifier->column))
             literals.push_back(*literal);
         else
             return std::nullopt;
@@ -568,37 +626,43 @@ std::optional<String> tryBuildInPredicate(const ActionsDAG::Node & node, const C
     if (literals.empty())
         return std::nullopt;
 
-    return fmt::format("{} IN ({})", *identifier, fmt::join(literals, ", "));
+    return fmt::format("{} IN ({})", identifier->sql, fmt::join(literals, ", "));
 }
 
 /// Strict (all-or-nothing) translation of a filter subtree, including nested AND/OR.
-std::optional<String> translateLancePredicateStrict(const ActionsDAG::Node & node, const ContextPtr & context)
+std::optional<String> translateLancePredicateStrict(
+    const ActionsDAG::Node & node,
+    const ContextPtr & context,
+    const LancePhysicalSchema & physical_schema)
 {
     if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
-        return translateLancePredicateStrict(*node.children.front(), context);
+        return translateLancePredicateStrict(*node.children.front(), context, physical_schema);
 
     if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
         return std::nullopt;
 
     const auto function_name = node.function_base->getName();
     if (function_name == "and")
-        return tryBuildBooleanPredicateStrict(node, " AND ", context);
+        return tryBuildBooleanPredicateStrict(node, " AND ", context, physical_schema);
 
     if (function_name == "or")
-        return tryBuildBooleanPredicateStrict(node, " OR ", context);
+        return tryBuildBooleanPredicateStrict(node, " OR ", context, physical_schema);
 
     if (function_name == "isNull" || function_name == "isNotNull")
-        return tryBuildNullCheckPredicate(node, function_name);
+        return tryBuildNullCheckPredicate(node, function_name, physical_schema);
 
     if (function_name == "in")
-        return tryBuildInPredicate(node, context);
+        return tryBuildInPredicate(node, context, physical_schema);
 
-    return tryBuildComparisonPredicate(node, function_name);
+    return tryBuildComparisonPredicate(node, function_name, physical_schema);
 }
 
 /// Partial AND: flatten conjuncts with extractConjunctionAtoms, push every atom that
 /// translates strictly (OR atoms remain all-or-nothing). Residual FilterStep stays in plan.
-LancePredicatePushdown extractLancePredicatePushdown(const ActionsDAG::Node & node, const ContextPtr & context)
+LancePredicatePushdown extractLancePredicatePushdown(
+    const ActionsDAG::Node & node,
+    const ContextPtr & context,
+    const LancePhysicalSchema & physical_schema)
 {
     const ActionsDAG::Node * root = &node;
     while (root->type == ActionsDAG::ActionType::ALIAS && root->children.size() == 1)
@@ -613,7 +677,7 @@ LancePredicatePushdown extractLancePredicatePushdown(const ActionsDAG::Node & no
     size_t failed = 0;
     for (const auto * atom : atoms)
     {
-        if (auto predicate = translateLancePredicateStrict(*atom, context))
+        if (auto predicate = translateLancePredicateStrict(*atom, context, physical_schema))
             pushed.push_back(fmt::format("({})", *predicate));
         else
             ++failed;
@@ -628,16 +692,24 @@ LancePredicatePushdown extractLancePredicatePushdown(const ActionsDAG::Node & no
     };
 }
 
-LancePredicatePushdown extractLancePredicatePushdown(const FormatFilterInfoPtr & format_filter_info)
+LancePredicatePushdown extractLancePredicatePushdown(
+    const FormatFilterInfoPtr & format_filter_info,
+    const LancePhysicalSchema & physical_schema)
 {
-    if (!format_filter_info || !format_filter_info->filter_actions_dag)
+    if (!format_filter_info)
+        return {.predicate = std::nullopt, .is_complete = true};
+
+    if (format_filter_info->prewhere_info || format_filter_info->row_level_filter)
+        return {.predicate = std::nullopt, .is_complete = false};
+
+    if (!format_filter_info->filter_actions_dag)
         return {.predicate = std::nullopt, .is_complete = true};
 
     const auto & outputs = format_filter_info->filter_actions_dag->getOutputs();
     if (outputs.size() != 1)
         return {.predicate = std::nullopt, .is_complete = false};
 
-    return extractLancePredicatePushdown(*outputs.front(), format_filter_info->context.lock());
+    return extractLancePredicatePushdown(*outputs.front(), format_filter_info->context.lock(), physical_schema);
 }
 
 std::pair<Names, NamesAndTypesList> splitVirtualColumns(
@@ -734,14 +806,13 @@ NamesAndTypesList LanceMetadata::getTableSchema(ContextPtr local_context) const
         auto session = Lance::QuerySession::get(local_context);
         auto dataset = session->getOrOpen(options);
         const auto snapshot = dataset.currentSnapshot();
-        session->pinVersion(dataset.identityKey(), snapshot.version);
-        return dataset.tableSchema(
-            Lance::TableStateSnapshot{snapshot.version}, local_context, session->getCancelHandle());
+        session->pinSnapshot(dataset.identityKey(), snapshot);
+        return dataset.tableSchema(snapshot, local_context, session->getCancelHandle());
     }
 
     auto dataset = Lance::DatasetHandle::openEphemeral(options);
     const auto snapshot = dataset.currentSnapshot();
-    return dataset.tableSchema(Lance::TableStateSnapshot{snapshot.version}, local_context);
+    return dataset.tableSchema(snapshot, local_context);
 }
 
 std::optional<DataLakeTableStateSnapshot> LanceMetadata::getTableStateSnapshot(ContextPtr local_context) const
@@ -755,15 +826,15 @@ std::optional<DataLakeTableStateSnapshot> LanceMetadata::getTableStateSnapshot(C
         const auto snapshot = dataset.currentSnapshot();
         if (snapshot.version == 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "`Lance` returned zero as the current dataset version");
-        session->pinVersion(dataset.identityKey(), snapshot.version);
-        return DataLakeTableStateSnapshot{Lance::TableStateSnapshot{snapshot.version}};
+        session->pinSnapshot(dataset.identityKey(), snapshot);
+        return DataLakeTableStateSnapshot{snapshot};
     }
 
     dataset = Lance::DatasetHandle::openEphemeral(options);
     const auto snapshot = dataset.currentSnapshot();
     if (snapshot.version == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`Lance` returned zero as the current dataset version");
-    return DataLakeTableStateSnapshot{Lance::TableStateSnapshot{snapshot.version}};
+    return DataLakeTableStateSnapshot{snapshot};
 }
 
 std::unique_ptr<StorageInMemoryMetadata> LanceMetadata::buildStorageMetadataFromState(
@@ -780,7 +851,7 @@ std::unique_ptr<StorageInMemoryMetadata> LanceMetadata::buildStorageMetadataFrom
     if (local_context && local_context->hasQueryContext())
     {
         auto session = Lance::QuerySession::get(local_context);
-        dataset = session->getPinned(options, lance_state->version);
+        dataset = session->getPinned(options, *lance_state);
         auto result = std::make_unique<StorageInMemoryMetadata>();
         result->setColumns(ColumnsDescription{
             dataset.tableSchema(*lance_state, local_context, session->getCancelHandle())});
@@ -853,7 +924,7 @@ ObjectIterator LanceMetadata::iterate(
     if (local_context && local_context->hasQueryContext())
     {
         session = Lance::QuerySession::get(local_context);
-        dataset = session->getPinned(options, snapshot.version);
+        dataset = session->getPinned(options, snapshot);
     }
     else
         dataset = Lance::DatasetHandle::openEphemeral(options);
@@ -922,7 +993,7 @@ std::optional<Pipe> LanceMetadata::read(
         if (local_context && local_context->hasQueryContext())
         {
             auto session = Lance::QuerySession::get(local_context);
-            dataset = session->getPinned(options, snapshot.version);
+            dataset = session->getPinned(options, snapshot);
             cancel_handle = session->getCancelHandle();
         }
         else
@@ -932,7 +1003,7 @@ std::optional<Pipe> LanceMetadata::read(
     {
         /// Source of truth is the query session; ObjectInfo handle is a fast path that must match.
         auto session = Lance::QuerySession::get(local_context);
-        auto session_handle = session->getPinned(getDatasetOptions(local_context), snapshot.version);
+        auto session_handle = session->getPinned(getDatasetOptions(local_context), snapshot);
         if (session_handle.identityKey() != dataset.identityKey())
         {
             throw Exception(
@@ -943,7 +1014,30 @@ std::optional<Pipe> LanceMetadata::read(
         cancel_handle = session->getCancelHandle();
     }
 
-    const auto predicate_pushdown = extractLancePredicatePushdown(format_filter_info);
+    const auto & settings = local_context->getSettingsRef();
+    const bool has_filter = format_filter_info
+        && (format_filter_info->filter_actions_dag
+            || format_filter_info->prewhere_info
+            || format_filter_info->row_level_filter);
+
+    LancePredicatePushdown predicate_pushdown;
+    std::optional<NamesAndTypesList> pinned_physical_columns;
+    if (!settings[Setting::lance_enable_predicate_pushdown])
+    {
+        predicate_pushdown = {
+            .predicate = std::nullopt,
+            .is_complete = !has_filter,
+        };
+        if (has_filter)
+            ProfileEvents::increment(ProfileEvents::LancePredicatePushdownDisabled);
+    }
+    else if (has_filter)
+    {
+        std::unordered_set<String> utf8_columns;
+        pinned_physical_columns = dataset.tableSchema(snapshot, local_context, cancel_handle, &utf8_columns);
+        const auto physical_schema = makeLancePhysicalSchema(*pinned_physical_columns, utf8_columns);
+        predicate_pushdown = extractLancePredicatePushdown(format_filter_info, physical_schema);
+    }
     /// Partial predicates must not feed countRows (would over-count). Fall back to scan + residual.
     const bool effective_need_only_count = need_only_count && predicate_pushdown.is_complete;
 
@@ -951,7 +1045,9 @@ std::optional<Pipe> LanceMetadata::read(
     bool discard_output_columns = false;
     if (!effective_need_only_count && scan_projection.empty())
     {
-        const auto schema = dataset.tableSchema(snapshot, local_context, cancel_handle);
+        if (!pinned_physical_columns)
+            pinned_physical_columns = dataset.tableSchema(snapshot, local_context, cancel_handle);
+        const auto & schema = *pinned_physical_columns;
         if (schema.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scan a `Lance` dataset without physical columns");
 
@@ -973,7 +1069,6 @@ std::optional<Pipe> LanceMetadata::read(
         ProfileEvents::increment(ProfileEvents::LanceLimitPushdown);
     ProfileEvents::increment(ProfileEvents::LanceProjectedColumns, scan_projection.size());
 
-    const auto & settings = local_context->getSettingsRef();
     const bool scan_in_order = settings[Setting::lance_scan_in_order];
     const auto to_u32_setting = [](UInt64 value, const char * setting_name) -> UInt32
     {

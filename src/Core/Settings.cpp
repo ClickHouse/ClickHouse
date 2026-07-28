@@ -5723,6 +5723,10 @@ consistency between the schema used during query analysis and the schema used du
 If enabled, Lance reuses a single dataset handle (and the process-wide Tokio runtime) within one query
 for snapshot pin, schema load, and scan. Disable only for debugging.
 )", 0) \
+    DECLARE(Bool, lance_enable_predicate_pushdown, true, R"(
+Controls only the verified Lance predicate pushdown whitelist. If disabled, no predicate is sent to
+Lance and ClickHouse evaluates the complete residual filter.
+)", 0) \
     DECLARE(UInt64, lance_runtime_threads, 0, R"(
 Number of worker threads for the process-wide Lance Tokio runtime. 0 means an automatic bounded default
 (at most 8). Only the first initialization is effective.

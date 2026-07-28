@@ -10,19 +10,27 @@ use lance::io::ObjectStoreParams;
 use lance::Dataset;
 use object_store::aws::{AmazonS3Builder, AmazonS3ConfigKey};
 use object_store::{ClientOptions, DynObjectStore, RetryConfig};
-use std::time::Duration;
+use sha2::{Digest, Sha256};
+use std::any::Any;
 use std::collections::HashMap;
 use std::error::Error as StdError;
 use std::ffi::{CStr, CString};
 use std::future::Future;
 use std::os::raw::c_char;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::pin::Pin;
 use std::ptr;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
 use tokio::runtime::{Builder as RuntimeBuilder, Runtime};
 use tokio::sync::Notify;
 use url::Url;
+
+#[cfg(not(panic = "unwind"))]
+compile_error!(
+    "The Lance C ABI requires panic=unwind so every panic is contained by its FFI guard"
+);
 
 /// Process-wide multi-thread Tokio runtime shared by all Lance FFI calls.
 static LANCE_RUNTIME: OnceLock<Runtime> = OnceLock::new();
@@ -110,6 +118,7 @@ enum ChLanceErrorKind {
     Storage = 8,
     Internal = 9,
     Cancelled = 10,
+    SnapshotMismatch = 11,
 }
 
 #[repr(u32)]
@@ -147,9 +156,17 @@ pub struct ch_lance_dataset_options {
     cancel: *mut ch_lance_cancel_handle,
 }
 
+const SNAPSHOT_DIGEST_SIZE: usize = 32;
+
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ch_lance_snapshot_info {
     version: u64,
+    manifest_id: [u8; SNAPSHOT_DIGEST_SIZE],
+    manifest_size: u64,
+    manifest_sha256: [u8; SNAPSHOT_DIGEST_SIZE],
+    has_etag: bool,
+    etag_sha256: [u8; SNAPSHOT_DIGEST_SIZE],
 }
 
 #[repr(C)]
@@ -160,7 +177,7 @@ pub struct ch_lance_string_list {
 
 #[repr(C)]
 pub struct ch_lance_scan_options {
-    version: u64,
+    snapshot: ch_lance_snapshot_info,
     projection: ch_lance_string_list,
     predicate: *const c_char,
     need_only_count: bool,
@@ -544,14 +561,23 @@ fn classify_error_source(
     None
 }
 
+fn classify_dataset_not_found(
+    source: &(dyn StdError + 'static),
+    operation: LanceOperation,
+) -> ChLanceErrorKind {
+    classify_error_source(source, operation).unwrap_or(ChLanceErrorKind::NotFound)
+}
+
 fn classify_lance_error(error: &lance::Error, operation: LanceOperation) -> ChLanceErrorKind {
     match error {
         lance::Error::InvalidInput { .. }
         | lance::Error::InvalidTableLocation { .. }
         | lance::Error::InvalidRef { .. }
         | lance::Error::DatasetAlreadyExists { .. } => ChLanceErrorKind::InvalidArgument,
-        lance::Error::DatasetNotFound { .. }
-        | lance::Error::NotFound { .. }
+        lance::Error::DatasetNotFound { source, .. } => {
+            classify_dataset_not_found(source.as_ref(), operation)
+        }
+        lance::Error::NotFound { .. }
         | lance::Error::IndexNotFound { .. }
         | lance::Error::RefNotFound { .. } => ChLanceErrorKind::NotFound,
         lance::Error::CorruptFile { .. }
@@ -742,29 +768,188 @@ async fn open_dataset(options: DatasetOpenOptions) -> FfiResult<OpenedDataset> {
     }
 }
 
-async fn checkout_exact_version(
-    dataset: &Dataset,
-    version: u64,
+fn digest_bytes(bytes: &[u8]) -> [u8; SNAPSHOT_DIGEST_SIZE] {
+    Sha256::digest(bytes).into()
+}
+
+fn snapshot_etag_identity(etag: Option<&str>) -> (bool, [u8; SNAPSHOT_DIGEST_SIZE]) {
+    match etag {
+        Some(etag) => (true, digest_bytes(etag.as_bytes())),
+        None => (false, [0; SNAPSHOT_DIGEST_SIZE]),
+    }
+}
+
+fn validate_snapshot(snapshot: &ch_lance_snapshot_info) -> FfiResult<()> {
+    if snapshot.version == 0 {
+        return Err(FfiError::invalid_argument(
+            "Lance dataset snapshot version must be non-zero",
+        ));
+    }
+    if snapshot.manifest_size == 0 {
+        return Err(FfiError::invalid_argument(
+            "Lance dataset snapshot manifest size must be non-zero",
+        ));
+    }
+    if snapshot.manifest_id.iter().all(|byte| *byte == 0) {
+        return Err(FfiError::invalid_argument(
+            "Lance dataset snapshot manifest ID must be non-zero",
+        ));
+    }
+    if snapshot.manifest_sha256.iter().all(|byte| *byte == 0) {
+        return Err(FfiError::invalid_argument(
+            "Lance dataset snapshot manifest SHA-256 must be non-zero",
+        ));
+    }
+    let etag_is_zero = snapshot.etag_sha256.iter().all(|byte| *byte == 0);
+    if snapshot.has_etag == etag_is_zero {
+        return Err(FfiError::invalid_argument(
+            "Lance dataset snapshot has an invalid e_tag digest state",
+        ));
+    }
+    Ok(())
+}
+
+unsafe fn snapshot_from_ffi(
+    snapshot: *const ch_lance_snapshot_info,
     origin: ChLanceErrorOrigin,
-) -> FfiResult<Dataset> {
-    if version == 0 {
+) -> FfiResult<ch_lance_snapshot_info> {
+    if snapshot.is_null() {
         return Err(
-            FfiError::invalid_argument("Lance dataset version must be non-zero")
+            FfiError::invalid_argument("Lance dataset snapshot pointer is null")
                 .with_origin(origin),
         );
     }
+    let snapshot = *snapshot;
+    validate_snapshot(&snapshot).map_err(|error| error.with_origin(origin))?;
+    Ok(snapshot)
+}
 
-    if version == dataset.version().version {
-        Ok(dataset.clone())
-    } else {
-        dataset.checkout_version(version).await.map_err(|err| {
-            let mut ffi_error = FfiError::from_lance(LanceOperation::CheckoutVersion, origin, err);
-            if ffi_error.kind == ChLanceErrorKind::NotFound {
-                ffi_error.kind = ChLanceErrorKind::VersionNotFound;
-            }
-            ffi_error.with_context(format!("Requested Lance dataset version {}", version))
-        })
+async fn snapshot_identity(
+    dataset: &Dataset,
+    origin: ChLanceErrorOrigin,
+) -> FfiResult<ch_lance_snapshot_info> {
+    let location = dataset.manifest_location();
+    if location.version == 0 {
+        return Err(FfiError::internal(
+            origin,
+            "Lance returned zero as the current dataset version",
+        ));
     }
+
+    let manifest_bytes = dataset
+        .object_store()
+        .read_one_all(&location.path)
+        .await
+        .map_err(|err| {
+            FfiError::from_lance(LanceOperation::CheckoutVersion, origin, err)
+                .with_context(format!("Cannot read Lance manifest {}", location.path))
+        })?;
+    let manifest_size = u64::try_from(manifest_bytes.len())
+        .map_err(|_| FfiError::internal(origin, "Lance manifest size does not fit in uint64"))?;
+    if manifest_size == 0 {
+        return Err(FfiError::new(
+            ChLanceErrorKind::CorruptData,
+            origin,
+            format!("Lance manifest {} is empty", location.path),
+        ));
+    }
+    if let Some(expected_size) = location.size {
+        if expected_size != manifest_size {
+            return Err(FfiError::new(
+                ChLanceErrorKind::CorruptData,
+                origin,
+                format!(
+                    "Lance manifest {} size mismatch: metadata {}, bytes {}",
+                    location.path, expected_size, manifest_size
+                ),
+            ));
+        }
+    }
+
+    let scheme = match format!("{:?}", location.naming_scheme).as_str() {
+        "V1" => 1_u8,
+        "V2" => 2_u8,
+        _ => {
+            return Err(FfiError::internal(
+                origin,
+                "Lance returned an unknown manifest naming scheme",
+            ))
+        }
+    };
+    let mut manifest_id_hasher = Sha256::new();
+    manifest_id_hasher.update(location.path.as_ref().as_bytes());
+    manifest_id_hasher.update([0, scheme]);
+    let manifest_id = manifest_id_hasher.finalize().into();
+    let manifest_sha256 = digest_bytes(&manifest_bytes);
+    let (has_etag, etag_sha256) = snapshot_etag_identity(location.e_tag.as_deref());
+
+    let snapshot = ch_lance_snapshot_info {
+        version: location.version,
+        manifest_id,
+        manifest_size,
+        manifest_sha256,
+        has_etag,
+        etag_sha256,
+    };
+    validate_snapshot(&snapshot).map_err(|error| error.with_origin(origin))?;
+    Ok(snapshot)
+}
+
+async fn checkout_exact_snapshot(
+    dataset: &Dataset,
+    expected: ch_lance_snapshot_info,
+    origin: ChLanceErrorOrigin,
+) -> FfiResult<Dataset> {
+    validate_snapshot(&expected).map_err(|error| error.with_origin(origin))?;
+
+    let checked_out = if expected.version == dataset.version().version {
+        dataset.clone()
+    } else {
+        dataset
+            .checkout_version(expected.version)
+            .await
+            .map_err(|err| {
+                let mut ffi_error =
+                    FfiError::from_lance(LanceOperation::CheckoutVersion, origin, err);
+                if ffi_error.kind == ChLanceErrorKind::NotFound {
+                    ffi_error.kind = ChLanceErrorKind::VersionNotFound;
+                }
+                ffi_error.with_context(format!(
+                    "Requested Lance dataset version {}",
+                    expected.version
+                ))
+            })?
+    };
+
+    let actual = snapshot_identity(&checked_out, origin)
+        .await
+        .map_err(|error| {
+            if error.kind == ChLanceErrorKind::CorruptData {
+                FfiError::new(
+                    ChLanceErrorKind::SnapshotMismatch,
+                    origin,
+                    format!(
+                        "Lance snapshot identity mismatch for manifest {} at version {}",
+                        checked_out.manifest_location().path,
+                        expected.version
+                    ),
+                )
+            } else {
+                error
+            }
+        })?;
+    if actual != expected {
+        return Err(FfiError::new(
+            ChLanceErrorKind::SnapshotMismatch,
+            origin,
+            format!(
+                "Lance snapshot identity mismatch for manifest {} at version {}",
+                checked_out.manifest_location().path,
+                expected.version
+            ),
+        ));
+    }
+    Ok(checked_out)
 }
 
 fn build_s3_store(
@@ -785,17 +970,17 @@ fn build_s3_store(
     let mut client_options = ClientOptions::new();
     let mut has_client_options = false;
     if let Some(timeout) = storage_options.get("timeout") {
-        client_options = client_options.with_timeout(
-            parse_timeout_duration(timeout)
-                .map_err(|err| FfiError::invalid_argument(err).with_origin(ChLanceErrorOrigin::S3))?,
-        );
+        client_options =
+            client_options.with_timeout(parse_timeout_duration(timeout).map_err(|err| {
+                FfiError::invalid_argument(err).with_origin(ChLanceErrorOrigin::S3)
+            })?);
         has_client_options = true;
     }
     if let Some(connect_timeout) = storage_options.get("connect_timeout") {
-        client_options = client_options.with_connect_timeout(
-            parse_timeout_duration(connect_timeout)
-                .map_err(|err| FfiError::invalid_argument(err).with_origin(ChLanceErrorOrigin::S3))?,
-        );
+        client_options =
+            client_options.with_connect_timeout(parse_timeout_duration(connect_timeout).map_err(
+                |err| FfiError::invalid_argument(err).with_origin(ChLanceErrorOrigin::S3),
+            )?);
         has_client_options = true;
     }
     if has_client_options {
@@ -820,9 +1005,7 @@ fn build_s3_store(
 
     for (key, value) in storage_options {
         // Already applied above; skip to avoid double-setting or unknown-key noise.
-        if key == "timeout"
-            || key == "connect_timeout"
-            || key == "aws_use_environment_credentials"
+        if key == "timeout" || key == "connect_timeout" || key == "aws_use_environment_credentials"
         {
             continue;
         }
@@ -883,6 +1066,23 @@ fn projection_from_ffi(list: &ch_lance_string_list) -> FfiResult<Vec<String>> {
         result.push(required_cstr_to_string(value_ptr, "projection")?);
     }
     Ok(result)
+}
+
+unsafe fn fragment_ids_from_ffi(
+    fragment_ids: *const u64,
+    fragment_ids_size: usize,
+) -> FfiResult<Option<Vec<u64>>> {
+    if fragment_ids_size == 0 {
+        return Ok(None);
+    }
+    if fragment_ids.is_null() {
+        return Err(FfiError::invalid_argument(
+            "Lance fragment id list is null but size is non-zero",
+        ));
+    }
+    Ok(Some(
+        std::slice::from_raw_parts(fragment_ids, fragment_ids_size).to_vec(),
+    ))
 }
 
 fn write_schema(
@@ -1103,8 +1303,7 @@ fn write_record_batch(
     Ok(())
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn ch_lance_runtime_ensure(
+unsafe fn ch_lance_runtime_ensure_impl(
     config: *const ch_lance_runtime_config,
     error: *mut ch_lance_error,
 ) -> bool {
@@ -1122,8 +1321,7 @@ pub unsafe extern "C" fn ch_lance_runtime_ensure(
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn ch_lance_get_runtime_stats(out: *mut ch_lance_runtime_stats) {
+unsafe fn ch_lance_get_runtime_stats_impl(out: *mut ch_lance_runtime_stats) {
     if out.is_null() {
         return;
     }
@@ -1133,8 +1331,7 @@ pub unsafe extern "C" fn ch_lance_get_runtime_stats(out: *mut ch_lance_runtime_s
     (*out).runtime_initialized = LANCE_RUNTIME_INITIALIZED.load(Ordering::Relaxed);
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn ch_lance_open_dataset(
+unsafe fn ch_lance_open_dataset_impl(
     options: *const ch_lance_dataset_options,
     error: *mut ch_lance_error,
 ) -> *mut ch_lance_dataset {
@@ -1158,10 +1355,7 @@ pub unsafe extern "C" fn ch_lance_open_dataset(
     let cancel = unsafe { optional_cancel_from_ptr((*options).cancel) };
 
     LANCE_OPEN_DATASET_CALLS.fetch_add(1, Ordering::Relaxed);
-    match block_on_lance(with_cancel(
-        cancel.as_deref(),
-        open_dataset(open_options),
-    )) {
+    match block_on_lance(with_cancel(cancel.as_deref(), open_dataset(open_options))) {
         Ok(Ok(opened)) => Box::into_raw(Box::new(ch_lance_dataset {
             dataset: opened.dataset,
             origin: opened.origin,
@@ -1177,37 +1371,32 @@ pub unsafe extern "C" fn ch_lance_open_dataset(
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn ch_lance_cancel_handle_create() -> *mut ch_lance_cancel_handle {
+unsafe fn ch_lance_cancel_handle_create_impl() -> *mut ch_lance_cancel_handle {
     Box::into_raw(Box::new(ch_lance_cancel_handle {
         inner: Arc::new(ScanCancel::new()),
     }))
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn ch_lance_cancel_handle_cancel(handle: *mut ch_lance_cancel_handle) {
+unsafe fn ch_lance_cancel_handle_cancel_impl(handle: *mut ch_lance_cancel_handle) {
     if handle.is_null() {
         return;
     }
     (*handle).inner.cancel();
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn ch_lance_cancel_handle_free(handle: *mut ch_lance_cancel_handle) {
+unsafe fn ch_lance_cancel_handle_free_impl(handle: *mut ch_lance_cancel_handle) {
     if !handle.is_null() {
         drop(Box::from_raw(handle));
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn ch_lance_free_dataset(dataset: *mut ch_lance_dataset) {
+unsafe fn ch_lance_free_dataset_impl(dataset: *mut ch_lance_dataset) {
     if !dataset.is_null() {
         drop(Box::from_raw(dataset));
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn ch_lance_current_snapshot(
+unsafe fn ch_lance_current_snapshot_impl(
     dataset: *mut ch_lance_dataset,
     snapshot: *mut ch_lance_snapshot_info,
     error: *mut ch_lance_error,
@@ -1222,26 +1411,23 @@ pub unsafe extern "C" fn ch_lance_current_snapshot(
     }
 
     let dataset = &*dataset;
-    let version = dataset.dataset.version().version;
-    if version == 0 {
-        set_error(
-            error,
-            FfiError::internal(
-                dataset.origin,
-                "Lance returned zero as the current dataset version",
-            ),
-        );
-        return false;
+    match block_on_lance(snapshot_identity(&dataset.dataset, dataset.origin)) {
+        Ok(Ok(identity)) => {
+            *snapshot = identity;
+            true
+        }
+        Ok(Err(ffi_error)) | Err(ffi_error) => {
+            set_error(error, ffi_error);
+            false
+        }
     }
-    (*snapshot).version = version;
-    true
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn ch_lance_export_schema(
+unsafe fn ch_lance_export_schema_impl(
     dataset: *mut ch_lance_dataset,
-    version: u64,
+    snapshot: *const ch_lance_snapshot_info,
     schema: *mut FFI_ArrowSchema,
+    cancel: *mut ch_lance_cancel_handle,
     error: *mut ch_lance_error,
 ) -> bool {
     clear_error(error);
@@ -1253,13 +1439,20 @@ pub unsafe extern "C" fn ch_lance_export_schema(
         return false;
     }
 
-    let dataset_handle = &mut *dataset;
+    let dataset_handle = &*dataset;
     let origin = dataset_handle.origin;
-    let dataset = match block_on_lance(checkout_exact_version(
-        &dataset_handle.dataset,
-        version,
-        origin,
-    )) {
+    let snapshot = match snapshot_from_ffi(snapshot, origin) {
+        Ok(snapshot) => snapshot,
+        Err(ffi_error) => {
+            set_error(error, ffi_error);
+            return false;
+        }
+    };
+    let source = dataset_handle.dataset.clone();
+    let cancel = optional_cancel_from_ptr(cancel);
+    let dataset = match block_on_lance(with_cancel(cancel.as_deref(), async move {
+        checkout_exact_snapshot(&source, snapshot, origin).await
+    })) {
         Ok(Ok(dataset)) => dataset,
         Ok(Err(ffi_error)) | Err(ffi_error) => {
             set_error(error, ffi_error);
@@ -1278,10 +1471,9 @@ pub unsafe extern "C" fn ch_lance_export_schema(
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn ch_lance_total_rows(
+unsafe fn ch_lance_total_rows_impl(
     dataset: *mut ch_lance_dataset,
-    version: u64,
+    snapshot: *const ch_lance_snapshot_info,
     rows: *mut u64,
     has_value: *mut bool,
     cancel: *mut ch_lance_cancel_handle,
@@ -1299,10 +1491,17 @@ pub unsafe extern "C" fn ch_lance_total_rows(
 
     let dataset = &mut *dataset;
     let origin = dataset.origin;
+    let snapshot = match snapshot_from_ffi(snapshot, origin) {
+        Ok(snapshot) => snapshot,
+        Err(ffi_error) => {
+            set_error(error, ffi_error);
+            return false;
+        }
+    };
     let source = dataset.dataset.clone();
     let cancel = optional_cancel_from_ptr(cancel);
     let count_result = block_on_lance(with_cancel(cancel.as_deref(), async move {
-        let dataset = checkout_exact_version(&source, version, origin).await?;
+        let dataset = checkout_exact_snapshot(&source, snapshot, origin).await?;
         dataset
             .count_rows(None)
             .await
@@ -1322,11 +1521,12 @@ pub unsafe extern "C" fn ch_lance_total_rows(
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn ch_lance_count_rows(
+unsafe fn ch_lance_count_rows_impl(
     dataset: *mut ch_lance_dataset,
-    version: u64,
+    snapshot: *const ch_lance_snapshot_info,
     predicate: *const c_char,
+    fragment_ids: *const u64,
+    fragment_ids_size: usize,
     rows: *mut u64,
     has_value: *mut bool,
     cancel: *mut ch_lance_cancel_handle,
@@ -1349,24 +1549,63 @@ pub unsafe extern "C" fn ch_lance_count_rows(
             return false;
         }
     };
+    let fragment_ids = match fragment_ids_from_ffi(fragment_ids, fragment_ids_size) {
+        Ok(fragment_ids) => fragment_ids,
+        Err(ffi_error) => {
+            set_error(error, ffi_error);
+            return false;
+        }
+    };
 
     let dataset = &mut *dataset;
     let origin = dataset.origin;
+    let snapshot = match snapshot_from_ffi(snapshot, origin) {
+        Ok(snapshot) => snapshot,
+        Err(ffi_error) => {
+            set_error(error, ffi_error);
+            return false;
+        }
+    };
     let source = dataset.dataset.clone();
     let cancel = optional_cancel_from_ptr(cancel);
     let count_result = block_on_lance(with_cancel(cancel.as_deref(), async move {
-        let dataset = checkout_exact_version(&source, version, origin).await?;
-        if predicate.is_empty() {
-            dataset
-                .count_rows(None)
-                .await
-                .map_err(|err| FfiError::from_lance(LanceOperation::CountRows, origin, err))
-        } else {
-            dataset
-                .count_rows(Some(predicate))
-                .await
-                .map_err(|err| FfiError::from_lance(LanceOperation::CountRows, origin, err))
+        let dataset = checkout_exact_snapshot(&source, snapshot, origin).await?;
+        let mut scanner = dataset.scan();
+        if !predicate.is_empty() {
+            scanner
+                .filter(&predicate)
+                .map_err(|err| FfiError::from_lance(LanceOperation::CountRows, origin, err))?;
         }
+        if let Some(ids) = fragment_ids {
+            let all = dataset
+                .fragments()
+                .iter()
+                .map(|fragment| (fragment.id, fragment))
+                .collect::<HashMap<_, _>>();
+            let mut selected = Vec::with_capacity(ids.len());
+            for id in &ids {
+                match all.get(id) {
+                    Some(fragment) => selected.push((**fragment).clone()),
+                    None => {
+                        return Err(FfiError::invalid_argument(format!(
+                            "Lance fragment id {} is not present in dataset version {}",
+                            id,
+                            dataset.version().version
+                        ))
+                        .with_origin(origin));
+                    }
+                }
+            }
+            scanner.with_fragments(selected);
+        }
+        scanner
+            .empty_project()
+            .map_err(|err| FfiError::from_lance(LanceOperation::CountRows, origin, err))?
+            .with_row_id();
+        scanner
+            .count_rows()
+            .await
+            .map_err(|err| FfiError::from_lance(LanceOperation::CountRows, origin, err))
     }));
 
     match count_result {
@@ -1382,8 +1621,7 @@ pub unsafe extern "C" fn ch_lance_count_rows(
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn ch_lance_total_bytes(
+unsafe fn ch_lance_total_bytes_impl(
     dataset: *mut ch_lance_dataset,
     bytes: *mut u64,
     has_value: *mut bool,
@@ -1404,10 +1642,9 @@ pub unsafe extern "C" fn ch_lance_total_bytes(
     true
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn ch_lance_list_fragments(
+unsafe fn ch_lance_list_fragments_impl(
     dataset: *mut ch_lance_dataset,
-    version: u64,
+    snapshot: *const ch_lance_snapshot_info,
     out_list: *mut *mut ch_lance_fragment_info,
     out_size: *mut usize,
     cancel: *mut ch_lance_cancel_handle,
@@ -1430,10 +1667,17 @@ pub unsafe extern "C" fn ch_lance_list_fragments(
 
     let source = (*dataset).dataset.clone();
     let origin = (*dataset).origin;
+    let snapshot = match snapshot_from_ffi(snapshot, origin) {
+        Ok(snapshot) => snapshot,
+        Err(ffi_error) => {
+            set_error(error, ffi_error);
+            return false;
+        }
+    };
     let cancel_token = cancel_arc_from_ptr(cancel);
 
     let list_result = block_on_lance(with_cancel(Some(cancel_token.as_ref()), async move {
-        let dataset = checkout_exact_version(&source, version, origin).await?;
+        let dataset = checkout_exact_snapshot(&source, snapshot, origin).await?;
         Ok::<_, FfiError>(list_fragment_infos(&dataset))
     }));
 
@@ -1457,16 +1701,16 @@ pub unsafe extern "C" fn ch_lance_list_fragments(
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn ch_lance_free_fragment_list(list: *mut ch_lance_fragment_info, size: usize) {
+unsafe fn ch_lance_free_fragment_list_impl(list: *mut ch_lance_fragment_info, size: usize) {
     if list.is_null() || size == 0 {
         return;
     }
-    drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(list, size)));
+    drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+        list, size,
+    )));
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn ch_lance_plan_scan(
+unsafe fn ch_lance_plan_scan_impl(
     dataset: *mut ch_lance_dataset,
     options: *const ch_lance_scan_options,
     error: *mut ch_lance_error,
@@ -1494,85 +1738,95 @@ pub unsafe extern "C" fn ch_lance_plan_scan(
             return std::ptr::null_mut();
         }
     };
-    let version = (*options).version;
+    let snapshot = match snapshot_from_ffi(&(*options).snapshot, (*dataset).origin) {
+        Ok(snapshot) => snapshot,
+        Err(ffi_error) => {
+            set_error(error, ffi_error);
+            return std::ptr::null_mut();
+        }
+    };
     let max_block_size = (*options).max_block_size as usize;
     let row_limit = (*options).limit;
     let scan_unordered = (*options).scan_unordered;
     let fragment_readahead = (*options).fragment_readahead;
     let batch_readahead = (*options).batch_readahead;
     let io_buffer_size = (*options).io_buffer_size;
-    let fragment_ids = if (*options).fragment_ids.is_null() || (*options).fragment_ids_size == 0 {
-        None
-    } else {
-        Some(std::slice::from_raw_parts((*options).fragment_ids, (*options).fragment_ids_size).to_vec())
-    };
+    let fragment_ids =
+        match fragment_ids_from_ffi((*options).fragment_ids, (*options).fragment_ids_size) {
+            Ok(fragment_ids) => fragment_ids,
+            Err(ffi_error) => {
+                set_error(error, ffi_error);
+                return std::ptr::null_mut();
+            }
+        };
     let source_dataset = (*dataset).dataset.clone();
     let origin = (*dataset).origin;
     let cancel = cancel_arc_from_ptr((*options).cancel);
 
     LANCE_PLAN_SCAN_CALLS.fetch_add(1, Ordering::Relaxed);
     let cancel_for_plan = Arc::clone(&cancel);
-    let stream_result = block_on_lance(with_cancel(
-        Some(cancel_for_plan.as_ref()),
-        async move {
-            let dataset = checkout_exact_version(&source_dataset, version, origin).await?;
+    let stream_result = block_on_lance(with_cancel(Some(cancel_for_plan.as_ref()), async move {
+        let dataset = checkout_exact_snapshot(&source_dataset, snapshot, origin).await?;
 
-            let mut scanner = dataset.scan();
-            if !projection.is_empty() {
-                scanner
-                    .project(&projection)
-                    .map_err(|err| FfiError::from_lance(LanceOperation::PlanScan, origin, err))?;
-            }
-            if !predicate.is_empty() {
-                scanner
-                    .filter(&predicate)
-                    .map_err(|err| FfiError::from_lance(LanceOperation::PlanScan, origin, err))?;
-            }
-            if max_block_size != 0 {
-                scanner.batch_size(max_block_size);
-            }
-            if row_limit != 0 {
-                // i64::MAX is far beyond practical row caps; saturate rather than fail open.
-                let limit_i64 = i64::try_from(row_limit).unwrap_or(i64::MAX);
-                scanner
-                    .limit(Some(limit_i64), None)
-                    .map_err(|err| FfiError::from_lance(LanceOperation::PlanScan, origin, err))?;
-            }
-            // false (zero-init) keeps ordered scan (SDK default / ClickHouse compatible).
-            scanner.scan_in_order(!scan_unordered);
-            if fragment_readahead > 0 {
-                scanner.fragment_readahead(fragment_readahead as usize);
-            }
-            if batch_readahead > 0 {
-                scanner.batch_readahead(batch_readahead as usize);
-            }
-            if io_buffer_size > 0 {
-                scanner.io_buffer_size(io_buffer_size);
-            }
-            if let Some(ids) = fragment_ids {
-                let all = dataset.fragments();
-                let mut selected = Vec::with_capacity(ids.len());
-                for id in &ids {
-                    match all.iter().find(|fragment| fragment.id == *id) {
-                        Some(fragment) => selected.push(fragment.clone()),
-                        None => {
-                            return Err(FfiError::invalid_argument(format!(
-                                "Lance fragment id {} is not present in dataset version {}",
-                                id,
-                                dataset.version().version
-                            ))
-                            .with_origin(origin));
-                        }
+        let mut scanner = dataset.scan();
+        if !projection.is_empty() {
+            scanner
+                .project(&projection)
+                .map_err(|err| FfiError::from_lance(LanceOperation::PlanScan, origin, err))?;
+        }
+        if !predicate.is_empty() {
+            scanner
+                .filter(&predicate)
+                .map_err(|err| FfiError::from_lance(LanceOperation::PlanScan, origin, err))?;
+        }
+        if max_block_size != 0 {
+            scanner.batch_size(max_block_size);
+        }
+        if row_limit != 0 {
+            // i64::MAX is far beyond practical row caps; saturate rather than fail open.
+            let limit_i64 = i64::try_from(row_limit).unwrap_or(i64::MAX);
+            scanner
+                .limit(Some(limit_i64), None)
+                .map_err(|err| FfiError::from_lance(LanceOperation::PlanScan, origin, err))?;
+        }
+        // false (zero-init) keeps ordered scan (SDK default / ClickHouse compatible).
+        scanner.scan_in_order(!scan_unordered);
+        if fragment_readahead > 0 {
+            scanner.fragment_readahead(fragment_readahead as usize);
+        }
+        if batch_readahead > 0 {
+            scanner.batch_readahead(batch_readahead as usize);
+        }
+        if io_buffer_size > 0 {
+            scanner.io_buffer_size(io_buffer_size);
+        }
+        if let Some(ids) = fragment_ids {
+            let all = dataset
+                .fragments()
+                .iter()
+                .map(|fragment| (fragment.id, fragment))
+                .collect::<HashMap<_, _>>();
+            let mut selected = Vec::with_capacity(ids.len());
+            for id in &ids {
+                match all.get(id) {
+                    Some(fragment) => selected.push((**fragment).clone()),
+                    None => {
+                        return Err(FfiError::invalid_argument(format!(
+                            "Lance fragment id {} is not present in dataset version {}",
+                            id,
+                            dataset.version().version
+                        ))
+                        .with_origin(origin));
                     }
                 }
-                scanner.with_fragments(selected);
             }
-            scanner
-                .try_into_stream()
-                .await
-                .map_err(|err| FfiError::from_lance(LanceOperation::PlanScan, origin, err))
-        },
-    ));
+            scanner.with_fragments(selected);
+        }
+        scanner
+            .try_into_stream()
+            .await
+            .map_err(|err| FfiError::from_lance(LanceOperation::PlanScan, origin, err))
+    }));
 
     match stream_result {
         Ok(Ok(stream)) => Box::into_raw(Box::new(ch_lance_scan {
@@ -1587,8 +1841,7 @@ pub unsafe extern "C" fn ch_lance_plan_scan(
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn ch_lance_next_batch(
+unsafe fn ch_lance_next_batch_impl(
     scan: *mut ch_lance_scan,
     array: *mut FFI_ArrowArray,
     schema: *mut FFI_ArrowSchema,
@@ -1684,8 +1937,7 @@ pub unsafe extern "C" fn ch_lance_next_batch(
 
 /// Request cooperative cancellation. Thread-safe w.r.t. ch_lance_next_batch.
 /// Does not free the scan or drop the stream (that happens in next_batch / free_scan).
-#[no_mangle]
-pub unsafe extern "C" fn ch_lance_cancel_scan(scan: *mut ch_lance_scan) {
+unsafe fn ch_lance_cancel_scan_impl(scan: *mut ch_lance_scan) {
     if scan.is_null() {
         return;
     }
@@ -1693,8 +1945,7 @@ pub unsafe extern "C" fn ch_lance_cancel_scan(scan: *mut ch_lance_scan) {
     (*scan).cancel.cancel();
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn ch_lance_free_scan(scan: *mut ch_lance_scan) {
+unsafe fn ch_lance_free_scan_impl(scan: *mut ch_lance_scan) {
     if !scan.is_null() {
         // Dropping the box drops the stream (if still present), which cancels queued I/O.
         // Caller must ensure no concurrent next_batch (ClickHouse Scan lifetime).
@@ -1702,9 +1953,359 @@ pub unsafe extern "C" fn ch_lance_free_scan(scan: *mut ch_lance_scan) {
     }
 }
 
+unsafe fn ch_lance_free_error_impl(error: *mut ch_lance_error) {
+    clear_error(error);
+}
+
+const MAX_PANIC_DIAGNOSTIC_BYTES: usize = 512;
+
+fn panic_diagnostic(payload: &(dyn Any + Send)) -> String {
+    let detail = payload
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| payload.downcast_ref::<&str>().copied())
+        .unwrap_or("non-string panic payload");
+    let mut end = detail.len().min(MAX_PANIC_DIAGNOSTIC_BYTES);
+    while !detail.is_char_boundary(end) {
+        end -= 1;
+    }
+    let detail = detail[..end].replace('\0', "?");
+    format!("Rust panic caught at Lance FFI boundary: {}", detail)
+}
+
+fn set_panic_error(error: *mut ch_lance_error, payload: &(dyn Any + Send)) {
+    let message = panic_diagnostic(payload);
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        set_error(
+            error,
+            FfiError::internal(ChLanceErrorOrigin::Unknown, message),
+        );
+    }));
+}
+
+fn ffi_bool_guard(
+    error: *mut ch_lance_error,
+    operation: impl FnOnce() -> bool,
+    reset_outputs: impl FnOnce(),
+) -> bool {
+    match catch_unwind(AssertUnwindSafe(operation)) {
+        Ok(result) => result,
+        Err(payload) => {
+            let _ = catch_unwind(AssertUnwindSafe(reset_outputs));
+            set_panic_error(error, payload.as_ref());
+            false
+        }
+    }
+}
+
+fn ffi_ptr_guard<T>(error: *mut ch_lance_error, operation: impl FnOnce() -> *mut T) -> *mut T {
+    match catch_unwind(AssertUnwindSafe(operation)) {
+        Ok(result) => result,
+        Err(payload) => {
+            set_panic_error(error, payload.as_ref());
+            ptr::null_mut()
+        }
+    }
+}
+
+fn ffi_void_guard(operation: impl FnOnce()) {
+    if let Err(payload) = catch_unwind(AssertUnwindSafe(operation)) {
+        let _ = catch_unwind(AssertUnwindSafe(|| {
+            eprintln!("{}", panic_diagnostic(payload.as_ref()));
+        }));
+    }
+}
+
+#[cfg(test)]
+static PANIC_NEXT_FFI_CALL: AtomicBool = AtomicBool::new(false);
+
+#[cfg(test)]
+fn maybe_inject_test_panic() {
+    if PANIC_NEXT_FFI_CALL.swap(false, Ordering::AcqRel) {
+        panic!("injected Lance FFI panic");
+    }
+}
+
+#[cfg(not(test))]
+fn maybe_inject_test_panic() {}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_runtime_ensure(
+    config: *const ch_lance_runtime_config,
+    error: *mut ch_lance_error,
+) -> bool {
+    ffi_bool_guard(
+        error,
+        || {
+            maybe_inject_test_panic();
+            ch_lance_runtime_ensure_impl(config, error)
+        },
+        || {},
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_get_runtime_stats(out: *mut ch_lance_runtime_stats) {
+    ffi_void_guard(|| {
+        if !out.is_null() {
+            ptr::write(
+                out,
+                ch_lance_runtime_stats {
+                    open_dataset_calls: 0,
+                    plan_scan_calls: 0,
+                    next_batch_calls: 0,
+                    runtime_initialized: 0,
+                },
+            );
+        }
+        ch_lance_get_runtime_stats_impl(out);
+    });
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_open_dataset(
+    options: *const ch_lance_dataset_options,
+    error: *mut ch_lance_error,
+) -> *mut ch_lance_dataset {
+    ffi_ptr_guard(error, || ch_lance_open_dataset_impl(options, error))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_cancel_handle_create() -> *mut ch_lance_cancel_handle {
+    ffi_ptr_guard(ptr::null_mut(), || {
+        maybe_inject_test_panic();
+        ch_lance_cancel_handle_create_impl()
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_cancel_handle_cancel(handle: *mut ch_lance_cancel_handle) {
+    ffi_void_guard(|| ch_lance_cancel_handle_cancel_impl(handle));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_cancel_handle_free(handle: *mut ch_lance_cancel_handle) {
+    ffi_void_guard(|| ch_lance_cancel_handle_free_impl(handle));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_free_dataset(dataset: *mut ch_lance_dataset) {
+    ffi_void_guard(|| ch_lance_free_dataset_impl(dataset));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_current_snapshot(
+    dataset: *mut ch_lance_dataset,
+    snapshot: *mut ch_lance_snapshot_info,
+    error: *mut ch_lance_error,
+) -> bool {
+    let reset = || {
+        if !snapshot.is_null() {
+            ptr::write(snapshot, ch_lance_snapshot_info::default());
+        }
+    };
+    reset();
+    ffi_bool_guard(
+        error,
+        || ch_lance_current_snapshot_impl(dataset, snapshot, error),
+        reset,
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_export_schema(
+    dataset: *mut ch_lance_dataset,
+    snapshot: *const ch_lance_snapshot_info,
+    schema: *mut FFI_ArrowSchema,
+    cancel: *mut ch_lance_cancel_handle,
+    error: *mut ch_lance_error,
+) -> bool {
+    let reset = || {
+        if !schema.is_null() {
+            ptr::write(schema, FFI_ArrowSchema::empty());
+        }
+    };
+    reset();
+    ffi_bool_guard(
+        error,
+        || ch_lance_export_schema_impl(dataset, snapshot, schema, cancel, error),
+        reset,
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_total_rows(
+    dataset: *mut ch_lance_dataset,
+    snapshot: *const ch_lance_snapshot_info,
+    rows: *mut u64,
+    has_value: *mut bool,
+    cancel: *mut ch_lance_cancel_handle,
+    error: *mut ch_lance_error,
+) -> bool {
+    let reset = || {
+        if !rows.is_null() {
+            *rows = 0;
+        }
+        if !has_value.is_null() {
+            *has_value = false;
+        }
+    };
+    reset();
+    ffi_bool_guard(
+        error,
+        || ch_lance_total_rows_impl(dataset, snapshot, rows, has_value, cancel, error),
+        reset,
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_count_rows(
+    dataset: *mut ch_lance_dataset,
+    snapshot: *const ch_lance_snapshot_info,
+    predicate: *const c_char,
+    fragment_ids: *const u64,
+    fragment_ids_size: usize,
+    rows: *mut u64,
+    has_value: *mut bool,
+    cancel: *mut ch_lance_cancel_handle,
+    error: *mut ch_lance_error,
+) -> bool {
+    let reset = || {
+        if !rows.is_null() {
+            *rows = 0;
+        }
+        if !has_value.is_null() {
+            *has_value = false;
+        }
+    };
+    reset();
+    ffi_bool_guard(
+        error,
+        || {
+            ch_lance_count_rows_impl(
+                dataset,
+                snapshot,
+                predicate,
+                fragment_ids,
+                fragment_ids_size,
+                rows,
+                has_value,
+                cancel,
+                error,
+            )
+        },
+        reset,
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_total_bytes(
+    dataset: *mut ch_lance_dataset,
+    bytes: *mut u64,
+    has_value: *mut bool,
+    error: *mut ch_lance_error,
+) -> bool {
+    let reset = || {
+        if !bytes.is_null() {
+            *bytes = 0;
+        }
+        if !has_value.is_null() {
+            *has_value = false;
+        }
+    };
+    reset();
+    ffi_bool_guard(
+        error,
+        || ch_lance_total_bytes_impl(dataset, bytes, has_value, error),
+        reset,
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_list_fragments(
+    dataset: *mut ch_lance_dataset,
+    snapshot: *const ch_lance_snapshot_info,
+    out_list: *mut *mut ch_lance_fragment_info,
+    out_size: *mut usize,
+    cancel: *mut ch_lance_cancel_handle,
+    error: *mut ch_lance_error,
+) -> bool {
+    let reset = || {
+        if !out_list.is_null() {
+            *out_list = ptr::null_mut();
+        }
+        if !out_size.is_null() {
+            *out_size = 0;
+        }
+    };
+    reset();
+    ffi_bool_guard(
+        error,
+        || ch_lance_list_fragments_impl(dataset, snapshot, out_list, out_size, cancel, error),
+        reset,
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_free_fragment_list(
+    list: *mut ch_lance_fragment_info,
+    size: usize,
+) {
+    ffi_void_guard(|| ch_lance_free_fragment_list_impl(list, size));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_plan_scan(
+    dataset: *mut ch_lance_dataset,
+    options: *const ch_lance_scan_options,
+    error: *mut ch_lance_error,
+) -> *mut ch_lance_scan {
+    ffi_ptr_guard(error, || ch_lance_plan_scan_impl(dataset, options, error))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_next_batch(
+    scan: *mut ch_lance_scan,
+    array: *mut FFI_ArrowArray,
+    schema: *mut FFI_ArrowSchema,
+    has_batch: *mut bool,
+    error: *mut ch_lance_error,
+) -> bool {
+    let reset = || {
+        if !array.is_null() {
+            ptr::write(array, FFI_ArrowArray::empty());
+        }
+        if !schema.is_null() {
+            ptr::write(schema, FFI_ArrowSchema::empty());
+        }
+        if !has_batch.is_null() {
+            *has_batch = false;
+        }
+    };
+    reset();
+    ffi_bool_guard(
+        error,
+        || ch_lance_next_batch_impl(scan, array, schema, has_batch, error),
+        reset,
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_cancel_scan(scan: *mut ch_lance_scan) {
+    ffi_void_guard(|| ch_lance_cancel_scan_impl(scan));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_free_scan(scan: *mut ch_lance_scan) {
+    ffi_void_guard(|| ch_lance_free_scan_impl(scan));
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn ch_lance_free_error(error: *mut ch_lance_error) {
-    clear_error(error);
+    ffi_void_guard(|| {
+        maybe_inject_test_panic();
+        ch_lance_free_error_impl(error);
+    });
 }
 
 #[cfg(test)]
@@ -1747,6 +2348,15 @@ mod tests {
             origin: ChLanceErrorOrigin::Unknown as u32,
             message: ptr::null_mut(),
         }
+    }
+
+    fn error_message(error: &ch_lance_error) -> String {
+        if error.message.is_null() {
+            return format!("FFI error kind {} without a message", error.kind);
+        }
+        unsafe { CStr::from_ptr(error.message) }
+            .to_string_lossy()
+            .into_owned()
     }
 
     fn make_batch(values: Vec<i32>) -> RecordBatch {
@@ -1836,7 +2446,7 @@ mod tests {
 
     fn scan_row_count(
         dataset: *mut ch_lance_dataset,
-        version: u64,
+        snapshot: ch_lance_snapshot_info,
         projection: &[CString],
         predicate: &CString,
         error: *mut ch_lance_error,
@@ -1846,7 +2456,7 @@ mod tests {
             .map(|value| value.as_ptr())
             .collect::<Vec<_>>();
         let scan_options = ch_lance_scan_options {
-            version,
+            snapshot,
             projection: ch_lance_string_list {
                 values: projection_ptrs.as_ptr(),
                 size: projection_ptrs.len(),
@@ -1894,7 +2504,7 @@ mod tests {
 
     fn scan_rows_with_options(
         dataset: *mut ch_lance_dataset,
-        version: u64,
+        snapshot: ch_lance_snapshot_info,
         scan_unordered: bool,
         fragment_readahead: u32,
         batch_readahead: u32,
@@ -1904,7 +2514,7 @@ mod tests {
         let column = CString::new("id").unwrap();
         let projection_values = [column.as_ptr()];
         let scan_options = ch_lance_scan_options {
-            version,
+            snapshot,
             projection: ch_lance_string_list {
                 values: projection_values.as_ptr(),
                 size: projection_values.len(),
@@ -1959,29 +2569,15 @@ mod tests {
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!dataset.is_null());
 
-        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
             ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
         });
 
-        let ordered_rows = scan_rows_with_options(
-            dataset,
-            snapshot.version,
-            false,
-            0,
-            0,
-            None,
-            addr_of_mut!(error),
-        );
-        let unordered_rows = scan_rows_with_options(
-            dataset,
-            snapshot.version,
-            true,
-            4,
-            2,
-            None,
-            addr_of_mut!(error),
-        );
+        let ordered_rows =
+            scan_rows_with_options(dataset, snapshot, false, 0, 0, None, addr_of_mut!(error));
+        let unordered_rows =
+            scan_rows_with_options(dataset, snapshot, true, 4, 2, None, addr_of_mut!(error));
         assert_eq!(ordered_rows, 3);
         assert_eq!(unordered_rows, ordered_rows);
 
@@ -2022,7 +2618,7 @@ mod tests {
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!dataset.is_null());
 
-        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
             ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
         });
@@ -2032,7 +2628,7 @@ mod tests {
         assert!(unsafe {
             ch_lance_list_fragments(
                 dataset,
-                snapshot.version,
+                &snapshot,
                 addr_of_mut!(list),
                 addr_of_mut!(size),
                 ptr::null_mut(),
@@ -2053,21 +2649,14 @@ mod tests {
         assert_eq!(total_rows, 6);
 
         let all_ids: Vec<u64> = infos.iter().map(|info| info.id).collect();
-        let full_rows = scan_rows_with_options(
-            dataset,
-            snapshot.version,
-            false,
-            0,
-            0,
-            None,
-            addr_of_mut!(error),
-        );
+        let full_rows =
+            scan_rows_with_options(dataset, snapshot, false, 0, 0, None, addr_of_mut!(error));
         assert_eq!(full_rows, 6);
 
         let first = [all_ids[0]];
         let first_rows = scan_rows_with_options(
             dataset,
-            snapshot.version,
+            snapshot,
             false,
             0,
             0,
@@ -2079,7 +2668,7 @@ mod tests {
         let rest = &all_ids[1..];
         let rest_rows = scan_rows_with_options(
             dataset,
-            snapshot.version,
+            snapshot,
             false,
             0,
             0,
@@ -2088,12 +2677,51 @@ mod tests {
         );
         assert_eq!(first_rows + rest_rows, full_rows);
 
+        let mut first_count = 0;
+        let mut has_first_count = false;
+        let count_ok = unsafe {
+            ch_lance_count_rows(
+                dataset,
+                &snapshot,
+                ptr::null(),
+                first.as_ptr(),
+                first.len(),
+                addr_of_mut!(first_count),
+                addr_of_mut!(has_first_count),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
+        };
+        assert!(count_ok, "{}", error_message(&error));
+        assert!(has_first_count);
+        assert_eq!(first_count as usize, first_rows);
+
+        let predicate = CString::new("id <= 4").unwrap();
+        let mut rest_count = 0;
+        let mut has_rest_count = false;
+        let count_ok = unsafe {
+            ch_lance_count_rows(
+                dataset,
+                &snapshot,
+                predicate.as_ptr(),
+                rest.as_ptr(),
+                rest.len(),
+                addr_of_mut!(rest_count),
+                addr_of_mut!(has_rest_count),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
+        };
+        assert!(count_ok, "{}", error_message(&error));
+        assert!(has_rest_count);
+        assert_eq!(rest_count, 2);
+
         // Missing fragment id → InvalidArgument.
         let missing = [u64::MAX];
         let column = CString::new("id").unwrap();
         let projection_values = [column.as_ptr()];
         let bad_options = ch_lance_scan_options {
-            version: snapshot.version,
+            snapshot,
             projection: ch_lance_string_list {
                 values: projection_values.as_ptr(),
                 size: projection_values.len(),
@@ -2116,12 +2744,14 @@ mod tests {
         unsafe { ch_lance_free_error(addr_of_mut!(error)) };
 
         // Bad version → VersionNotFound.
+        let mut missing_snapshot = snapshot;
+        missing_snapshot.version += 1_000_000;
         let mut bad_list: *mut ch_lance_fragment_info = ptr::null_mut();
         let mut bad_size: usize = 0;
         assert!(!unsafe {
             ch_lance_list_fragments(
                 dataset,
-                snapshot.version + 1_000_000,
+                &missing_snapshot,
                 addr_of_mut!(bad_list),
                 addr_of_mut!(bad_size),
                 ptr::null_mut(),
@@ -2137,7 +2767,7 @@ mod tests {
         assert!(!unsafe {
             ch_lance_list_fragments(
                 dataset,
-                snapshot.version,
+                &snapshot,
                 addr_of_mut!(bad_list),
                 addr_of_mut!(bad_size),
                 cancel,
@@ -2163,7 +2793,7 @@ mod tests {
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!dataset.is_null());
 
-        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
             ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
         });
@@ -2173,17 +2803,36 @@ mod tests {
         assert!(unsafe {
             ch_lance_export_schema(
                 dataset,
-                snapshot.version,
+                &snapshot,
                 addr_of_mut!(schema),
+                ptr::null_mut(),
                 addr_of_mut!(error),
             )
         });
+
+        let cancel = unsafe { ch_lance_cancel_handle_create() };
+        unsafe { ch_lance_cancel_handle_cancel(cancel) };
+        let mut cancelled_schema = FFI_ArrowSchema::empty();
+        assert!(!unsafe {
+            ch_lance_export_schema(
+                dataset,
+                &snapshot,
+                addr_of_mut!(cancelled_schema),
+                cancel,
+                addr_of_mut!(error),
+            )
+        });
+        assert_eq!(error.kind, ChLanceErrorKind::Cancelled as u32);
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+            ch_lance_cancel_handle_free(cancel);
+        }
 
         let column = CString::new("id").unwrap();
         let projection_values = [column.as_ptr()];
         let predicate = CString::new("id = 2").unwrap();
         let scan_options = ch_lance_scan_options {
-            version: snapshot.version,
+            snapshot,
             projection: ch_lance_string_list {
                 values: projection_values.as_ptr(),
                 size: projection_values.len(),
@@ -2227,11 +2876,15 @@ mod tests {
         }
     }
 
-    fn plan_full_scan(dataset: *mut ch_lance_dataset, version: u64, error: *mut ch_lance_error) -> *mut ch_lance_scan {
+    fn plan_full_scan(
+        dataset: *mut ch_lance_dataset,
+        snapshot: ch_lance_snapshot_info,
+        error: *mut ch_lance_error,
+    ) -> *mut ch_lance_scan {
         let column = CString::new("id").unwrap();
         let projection_values = [column.as_ptr()];
         let scan_options = ch_lance_scan_options {
-            version,
+            snapshot,
             projection: ch_lance_string_list {
                 values: projection_values.as_ptr(),
                 size: projection_values.len(),
@@ -2262,12 +2915,12 @@ mod tests {
 
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!dataset.is_null());
-        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
             ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
         });
 
-        let scan = plan_full_scan(dataset, snapshot.version, addr_of_mut!(error));
+        let scan = plan_full_scan(dataset, snapshot, addr_of_mut!(error));
         unsafe { ch_lance_cancel_scan(scan) };
 
         let mut array = FFI_ArrowArray::empty();
@@ -2301,12 +2954,12 @@ mod tests {
 
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!dataset.is_null());
-        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
             ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
         });
 
-        let scan = plan_full_scan(dataset, snapshot.version, addr_of_mut!(error));
+        let scan = plan_full_scan(dataset, snapshot, addr_of_mut!(error));
 
         let mut array = FFI_ArrowArray::empty();
         let mut batch_schema = FFI_ArrowSchema::empty();
@@ -2381,7 +3034,10 @@ mod tests {
         let t0 = Instant::now();
         cancel.cancel();
         let result = join.join().expect("worker thread");
-        assert!(t0.elapsed() < Duration::from_secs(2), "cancel did not wake promptly");
+        assert!(
+            t0.elapsed() < Duration::from_secs(2),
+            "cancel did not wake promptly"
+        );
         let err = result.expect_err("expected cancel error");
         assert_eq!(err.kind, ChLanceErrorKind::Cancelled);
     }
@@ -2400,7 +3056,7 @@ mod tests {
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!dataset.is_null());
 
-        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
             ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
         });
@@ -2410,7 +3066,7 @@ mod tests {
         let column = CString::new("id").unwrap();
         let projection_values = [column.as_ptr()];
         let scan_options = ch_lance_scan_options {
-            version: snapshot.version,
+            snapshot,
             projection: ch_lance_string_list {
                 values: projection_values.as_ptr(),
                 size: projection_values.len(),
@@ -2435,7 +3091,7 @@ mod tests {
         // Fresh handle shared with plan + next.
         let cancel2 = unsafe { ch_lance_cancel_handle_create() };
         let scan_options2 = ch_lance_scan_options {
-            version: snapshot.version,
+            snapshot,
             projection: ch_lance_string_list {
                 values: projection_values.as_ptr(),
                 size: projection_values.len(),
@@ -2488,7 +3144,7 @@ mod tests {
         let mut error = empty_error();
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!dataset.is_null());
-        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
             ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
         });
@@ -2501,7 +3157,7 @@ mod tests {
         let ok = unsafe {
             ch_lance_total_rows(
                 dataset,
-                snapshot.version,
+                &snapshot,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
                 cancel,
@@ -2525,7 +3181,10 @@ mod tests {
             parse_timeout_duration("1500ms").unwrap(),
             Duration::from_millis(1500)
         );
-        assert_eq!(parse_timeout_duration("30s").unwrap(), Duration::from_secs(30));
+        assert_eq!(
+            parse_timeout_duration("30s").unwrap(),
+            Duration::from_secs(30)
+        );
         assert_eq!(
             parse_timeout_duration("2500").unwrap(),
             Duration::from_millis(2500)
@@ -2611,7 +3270,7 @@ mod tests {
         assert!(!dataset.is_null());
         assert_eq!(error.kind, ChLanceErrorKind::None as u32);
 
-        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
             ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
         });
@@ -2621,7 +3280,7 @@ mod tests {
         assert!(unsafe {
             ch_lance_total_rows(
                 dataset,
-                snapshot.version,
+                &snapshot,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
                 ptr::null_mut(),
@@ -2637,7 +3296,7 @@ mod tests {
         assert_eq!(
             scan_row_count(
                 dataset,
-                snapshot.version,
+                snapshot,
                 &projection,
                 &predicate,
                 addr_of_mut!(error),
@@ -2688,7 +3347,7 @@ mod tests {
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!dataset.is_null());
 
-        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
             ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
         });
@@ -2698,7 +3357,7 @@ mod tests {
         assert!(unsafe {
             ch_lance_total_rows(
                 dataset,
-                snapshot.version,
+                &snapshot,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
                 ptr::null_mut(),
@@ -2721,7 +3380,7 @@ mod tests {
         assert!(unsafe {
             ch_lance_total_rows(
                 dataset,
-                snapshot.version,
+                &snapshot,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
                 ptr::null_mut(),
@@ -2733,7 +3392,7 @@ mod tests {
 
         let latest_dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!latest_dataset.is_null());
-        let mut latest_snapshot = ch_lance_snapshot_info { version: 0 };
+        let mut latest_snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
             ch_lance_current_snapshot(
                 latest_dataset,
@@ -2748,7 +3407,7 @@ mod tests {
         assert!(unsafe {
             ch_lance_total_rows(
                 latest_dataset,
-                snapshot.version,
+                &snapshot,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
                 ptr::null_mut(),
@@ -2763,7 +3422,7 @@ mod tests {
         assert!(unsafe {
             ch_lance_total_rows(
                 latest_dataset,
-                latest_snapshot.version,
+                &latest_snapshot,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
                 ptr::null_mut(),
@@ -2778,7 +3437,7 @@ mod tests {
         assert_eq!(
             scan_row_count(
                 latest_dataset,
-                snapshot.version,
+                snapshot,
                 &projection,
                 &predicate,
                 addr_of_mut!(error),
@@ -2793,6 +3452,198 @@ mod tests {
     }
 
     #[test]
+    fn ffi_rejects_same_path_same_version_recreated_dataset() {
+        let dir = write_test_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = empty_error();
+
+        let original = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!original.is_null());
+        let mut pinned = ch_lance_snapshot_info::default();
+        assert!(unsafe {
+            ch_lance_current_snapshot(original, addr_of_mut!(pinned), addr_of_mut!(error))
+        });
+        unsafe { ch_lance_free_dataset(original) };
+
+        std::fs::remove_dir_all(dir.path()).unwrap();
+        let replacement_batch = make_batch(vec![101, 102]);
+        let replacement_schema = replacement_batch.schema();
+        let replacement_reader =
+            RecordBatchIterator::new(vec![Ok(replacement_batch)].into_iter(), replacement_schema);
+        Runtime::new()
+            .unwrap()
+            .block_on(Dataset::write(
+                replacement_reader,
+                dir.path().to_str().unwrap(),
+                None,
+            ))
+            .unwrap();
+
+        let replacement = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!replacement.is_null());
+        let mut replacement_snapshot = ch_lance_snapshot_info::default();
+        assert!(unsafe {
+            ch_lance_current_snapshot(
+                replacement,
+                addr_of_mut!(replacement_snapshot),
+                addr_of_mut!(error),
+            )
+        });
+        assert_eq!(replacement_snapshot.version, pinned.version);
+        assert_ne!(replacement_snapshot.manifest_sha256, pinned.manifest_sha256);
+
+        let mut schema = FFI_ArrowSchema::empty();
+        assert!(!unsafe {
+            ch_lance_export_schema(
+                replacement,
+                &pinned,
+                addr_of_mut!(schema),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
+        });
+        assert_eq!(error.kind, ChLanceErrorKind::SnapshotMismatch as u32);
+        unsafe { ch_lance_free_error(addr_of_mut!(error)) };
+
+        let mut rows = 0;
+        let mut has_value = false;
+        assert!(!unsafe {
+            ch_lance_total_rows(
+                replacement,
+                &pinned,
+                addr_of_mut!(rows),
+                addr_of_mut!(has_value),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
+        });
+        assert_eq!(error.kind, ChLanceErrorKind::SnapshotMismatch as u32);
+        unsafe { ch_lance_free_error(addr_of_mut!(error)) };
+
+        let mut fragments = ptr::null_mut();
+        let mut fragments_size = 0;
+        assert!(!unsafe {
+            ch_lance_list_fragments(
+                replacement,
+                &pinned,
+                addr_of_mut!(fragments),
+                addr_of_mut!(fragments_size),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
+        });
+        assert_eq!(error.kind, ChLanceErrorKind::SnapshotMismatch as u32);
+        unsafe { ch_lance_free_error(addr_of_mut!(error)) };
+
+        let scan_options = ch_lance_scan_options {
+            snapshot: pinned,
+            projection: ch_lance_string_list {
+                values: ptr::null(),
+                size: 0,
+            },
+            predicate: ptr::null(),
+            need_only_count: false,
+            max_block_size: 1024,
+            limit: 0,
+            cancel: ptr::null_mut(),
+            scan_unordered: false,
+            fragment_readahead: 0,
+            batch_readahead: 0,
+            io_buffer_size: 0,
+            fragment_ids: ptr::null(),
+            fragment_ids_size: 0,
+        };
+        assert!(
+            unsafe { ch_lance_plan_scan(replacement, &scan_options, addr_of_mut!(error)) }
+                .is_null()
+        );
+        assert_eq!(error.kind, ChLanceErrorKind::SnapshotMismatch as u32);
+
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+            ch_lance_free_dataset(replacement);
+        }
+    }
+
+    #[test]
+    fn snapshot_identity_is_stable_for_local_manifest() {
+        let dir = write_test_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = empty_error();
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+
+        let mut first = ch_lance_snapshot_info::default();
+        let mut second = ch_lance_snapshot_info::default();
+        assert!(unsafe {
+            ch_lance_current_snapshot(dataset, addr_of_mut!(first), addr_of_mut!(error))
+        });
+        assert!(unsafe {
+            ch_lance_current_snapshot(dataset, addr_of_mut!(second), addr_of_mut!(error))
+        });
+        assert_eq!(first, second);
+        assert!(first.manifest_size > 0);
+
+        unsafe { ch_lance_free_dataset(dataset) };
+    }
+
+    #[test]
+    fn missing_etag_has_zero_digest() {
+        let (has_etag, etag_sha256) = snapshot_etag_identity(None);
+        assert!(!has_etag);
+        assert_eq!(etag_sha256, [0; SNAPSHOT_DIGEST_SIZE]);
+    }
+
+    #[test]
+    fn manifest_digest_changes_when_raw_bytes_change() {
+        assert_ne!(digest_bytes(b"manifest-a"), digest_bytes(b"manifest-b"));
+    }
+
+    #[test]
+    fn panic_guards_keep_all_ffi_return_classes_inside_rust() {
+        assert!(cfg!(panic = "unwind"));
+
+        let mut error = empty_error();
+        let mut output = 7_u64;
+        let ok = ffi_bool_guard(addr_of_mut!(error), || panic!("bool panic"), || output = 0);
+        assert!(!ok);
+        assert_eq!(output, 0);
+        assert_eq!(error.kind, ChLanceErrorKind::Internal as u32);
+        unsafe { ch_lance_free_error(addr_of_mut!(error)) };
+
+        let pointer =
+            ffi_ptr_guard::<ch_lance_dataset>(addr_of_mut!(error), || panic!("pointer panic"));
+        assert!(pointer.is_null());
+        assert_eq!(error.kind, ChLanceErrorKind::Internal as u32);
+        unsafe { ch_lance_free_error(addr_of_mut!(error)) };
+
+        ffi_void_guard(|| panic!("void/free panic"));
+        let process_continues = 1 + 1;
+        assert_eq!(process_continues, 2);
+
+        PANIC_NEXT_FFI_CALL.store(true, Ordering::Release);
+        assert!(!unsafe { ch_lance_runtime_ensure(ptr::null(), addr_of_mut!(error)) });
+        assert_eq!(error.kind, ChLanceErrorKind::Internal as u32);
+        unsafe { ch_lance_free_error(addr_of_mut!(error)) };
+
+        PANIC_NEXT_FFI_CALL.store(true, Ordering::Release);
+        assert!(unsafe { ch_lance_cancel_handle_create() }.is_null());
+
+        set_error(
+            addr_of_mut!(error),
+            FfiError::internal(ChLanceErrorOrigin::Unknown, "owned error"),
+        );
+        let owned_message = error.message;
+        PANIC_NEXT_FFI_CALL.store(true, Ordering::Release);
+        unsafe { ch_lance_free_error(addr_of_mut!(error)) };
+        assert_eq!(error.message, owned_message);
+        unsafe { ch_lance_free_error(addr_of_mut!(error)) };
+        assert!(error.message.is_null());
+    }
+
+    #[test]
     fn ffi_rejects_zero_dataset_version() {
         let dir = write_test_dataset();
         let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
@@ -2803,10 +3654,11 @@ mod tests {
 
         let mut rows = 0;
         let mut has_value = false;
+        let invalid_snapshot = ch_lance_snapshot_info::default();
         assert!(!unsafe {
             ch_lance_total_rows(
                 dataset,
-                0,
+                &invalid_snapshot,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
                 ptr::null_mut(),
@@ -2826,7 +3678,13 @@ mod tests {
 
         let mut schema = FFI_ArrowSchema::empty();
         assert!(!unsafe {
-            ch_lance_export_schema(dataset, 0, addr_of_mut!(schema), addr_of_mut!(error))
+            ch_lance_export_schema(
+                dataset,
+                &invalid_snapshot,
+                addr_of_mut!(schema),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
         });
         assert_eq!(error.kind, ChLanceErrorKind::InvalidArgument as u32);
         let message = unsafe { CStr::from_ptr(error.message) }
@@ -2840,7 +3698,7 @@ mod tests {
         }
 
         let scan_options = ch_lance_scan_options {
-            version: 0,
+            snapshot: invalid_snapshot,
             projection: ch_lance_string_list {
                 values: ptr::null(),
                 size: 0,
@@ -2883,10 +3741,15 @@ mod tests {
 
         let mut rows = 0;
         let mut has_value = false;
+        let mut missing_snapshot = ch_lance_snapshot_info::default();
+        missing_snapshot.version = u64::MAX;
+        missing_snapshot.manifest_id = [1; SNAPSHOT_DIGEST_SIZE];
+        missing_snapshot.manifest_size = 1;
+        missing_snapshot.manifest_sha256 = [2; SNAPSHOT_DIGEST_SIZE];
         assert!(!unsafe {
             ch_lance_total_rows(
                 dataset,
-                u64::MAX,
+                &missing_snapshot,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
                 ptr::null_mut(),
@@ -2917,7 +3780,7 @@ mod tests {
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!dataset.is_null());
 
-        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
             ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
         });
@@ -2934,7 +3797,7 @@ mod tests {
             assert_eq!(
                 scan_row_count(
                     dataset,
-                    snapshot.version,
+                    snapshot,
                     &projection,
                     &predicate,
                     addr_of_mut!(error),
@@ -2957,7 +3820,7 @@ mod tests {
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!dataset.is_null());
 
-        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
             ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
         });
@@ -2968,8 +3831,10 @@ mod tests {
         assert!(unsafe {
             ch_lance_count_rows(
                 dataset,
-                snapshot.version,
+                &snapshot,
                 predicate.as_ptr(),
+                ptr::null(),
+                0,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
                 ptr::null_mut(),
@@ -3015,8 +3880,10 @@ mod tests {
         assert!(unsafe {
             ch_lance_count_rows(
                 dataset,
-                snapshot.version,
+                &snapshot,
                 predicate.as_ptr(),
+                ptr::null(),
+                0,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
                 ptr::null_mut(),
@@ -3243,6 +4110,22 @@ mod tests {
     }
 
     #[test]
+    fn classifies_dataset_not_found_from_nested_error() {
+        for expected in [
+            ChLanceErrorKind::NotFound,
+            ChLanceErrorKind::PermissionDenied,
+            ChLanceErrorKind::Unauthenticated,
+            ChLanceErrorKind::Storage,
+        ] {
+            let source = object_store_error(expected);
+            assert_eq!(
+                classify_dataset_not_found(&source, LanceOperation::Open),
+                expected
+            );
+        }
+    }
+
+    #[test]
     fn classifies_arrow_decode_errors_as_corrupt_data() {
         let lance_error: lance::Error =
             arrow_schema::ArrowError::ParseError("invalid dataset metadata".to_string()).into();
@@ -3376,7 +4259,7 @@ mod tests {
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!dataset.is_null());
 
-        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
             ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
         });
@@ -3390,7 +4273,7 @@ mod tests {
             .map(|value| value.as_ptr())
             .collect::<Vec<_>>();
         let scan_options = ch_lance_scan_options {
-            version: snapshot.version,
+            snapshot,
             projection: ch_lance_string_list {
                 values: projection_ptrs.as_ptr(),
                 size: projection_ptrs.len(),

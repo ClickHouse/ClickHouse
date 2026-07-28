@@ -1,4 +1,5 @@
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/VarInt.h>
 #include <IO/WriteBufferFromString.h>
 #include <gtest/gtest.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
@@ -159,10 +160,23 @@ TEST(DatalakeStateSerde, IcebergObjectSerializableInfoNulloptFileStats)
 }
 
 #if USE_LANCE
+namespace
+{
+Lance::TableStateSnapshot makeLanceSnapshot(UInt64 version, UInt8 seed = 1)
+{
+    Lance::TableStateSnapshot snapshot;
+    snapshot.version = version;
+    snapshot.manifest_id.fill(seed);
+    snapshot.manifest_size = 4096;
+    snapshot.manifest_sha256.fill(seed + 1);
+    return snapshot;
+}
+}
+
 TEST(DatalakeStateSerde, LanceObjectSerializableInfoRoundTrip)
 {
     Lance::LanceObjectSerializableInfo info;
-    info.version = 7;
+    info.snapshot = makeLanceSnapshot(7);
     info.fragment_ids = {1, 3, 5, 8};
     info.pack_index = 2;
     info.pack_count = 4;
@@ -177,7 +191,7 @@ TEST(DatalakeStateSerde, LanceObjectSerializableInfoRoundTrip)
     deserialized.deserializeForClusterFunctionProtocol(read_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION);
 
     ASSERT_TRUE(read_buffer.eof());
-    ASSERT_EQ(deserialized.version, info.version);
+    ASSERT_EQ(deserialized.snapshot, info.snapshot);
     ASSERT_EQ(deserialized.fragment_ids, info.fragment_ids);
     ASSERT_EQ(deserialized.pack_index, info.pack_index);
     ASSERT_EQ(deserialized.pack_count, info.pack_count);
@@ -186,7 +200,7 @@ TEST(DatalakeStateSerde, LanceObjectSerializableInfoRoundTrip)
 TEST(DatalakeStateSerde, LanceObjectSerializableInfoEmptyFragments)
 {
     Lance::LanceObjectSerializableInfo info;
-    info.version = 1;
+    info.snapshot = makeLanceSnapshot(1);
     info.fragment_ids = {};
     info.pack_index = 0;
     info.pack_count = 1;
@@ -194,23 +208,61 @@ TEST(DatalakeStateSerde, LanceObjectSerializableInfoEmptyFragments)
     String str;
     {
         WriteBufferFromString write_buffer{str};
-        info.serializeForClusterFunctionProtocol(write_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_LANCE_METADATA);
+        info.serializeForClusterFunctionProtocol(write_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION);
     }
     ReadBufferFromMemory read_buffer(str.data(), str.size());
     Lance::LanceObjectSerializableInfo deserialized;
     deserialized.deserializeForClusterFunctionProtocol(
-        read_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_LANCE_METADATA);
+        read_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION);
 
     ASSERT_TRUE(read_buffer.eof());
-    ASSERT_EQ(deserialized.version, 1u);
+    ASSERT_EQ(deserialized.snapshot, info.snapshot);
     ASSERT_TRUE(deserialized.fragment_ids.empty());
     ASSERT_EQ(deserialized.pack_count, 1u);
+}
+
+TEST(DatalakeStateSerde, LanceObjectSerializableInfoRejectsVersionOnlyProtocol)
+{
+    Lance::LanceObjectSerializableInfo info;
+    info.snapshot = makeLanceSnapshot(1);
+
+    String str;
+    WriteBufferFromString write_buffer{str};
+    EXPECT_THROW(
+        info.serializeForClusterFunctionProtocol(
+            write_buffer,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_LANCE_METADATA),
+        Exception);
+}
+
+TEST(DatalakeStateSerde, LanceObjectSerializableInfoRejectsInvalidPack)
+{
+    Lance::LanceObjectSerializableInfo info;
+    info.snapshot = makeLanceSnapshot(1);
+    info.pack_index = 1;
+    info.pack_count = 1;
+
+    String str;
+    {
+        WriteBufferFromString write_buffer{str};
+        info.snapshot.serialize(write_buffer);
+        writeVarUInt(0, write_buffer);
+        writeVarUInt(1, write_buffer);
+        writeVarUInt(1, write_buffer);
+    }
+    ReadBufferFromMemory read_buffer(str.data(), str.size());
+    Lance::LanceObjectSerializableInfo deserialized;
+    EXPECT_THROW(
+        deserialized.deserializeForClusterFunctionProtocol(
+            read_buffer,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION),
+        Exception);
 }
 
 TEST(DatalakeStateSerde, LanceDatasetObjectInfoFromSerializableInfo)
 {
     Lance::LanceObjectSerializableInfo info;
-    info.version = 9;
+    info.snapshot = makeLanceSnapshot(9);
     info.fragment_ids = {10, 20};
     info.pack_index = 1;
     info.pack_count = 3;
@@ -223,8 +275,7 @@ TEST(DatalakeStateSerde, LanceDatasetObjectInfoFromSerializableInfo)
     ASSERT_EQ(object->pack_count, 3u);
 
     auto round_trip = object->toSerializableInfo();
-    ASSERT_EQ(round_trip.version, info.version);
+    ASSERT_EQ(round_trip.snapshot, info.snapshot);
     ASSERT_EQ(round_trip.fragment_ids, info.fragment_ids);
 }
 #endif
-

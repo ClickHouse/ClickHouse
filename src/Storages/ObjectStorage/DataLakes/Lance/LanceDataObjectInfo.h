@@ -23,7 +23,7 @@ namespace DB::Lance
 /// Credentials are never serialized; workers rebuild DatasetHandle from local configuration.
 struct LanceObjectSerializableInfo
 {
-    UInt64 version = 0;
+    TableStateSnapshot snapshot;
     std::vector<UInt64> fragment_ids;
     size_t pack_index = 0;
     size_t pack_count = 1;

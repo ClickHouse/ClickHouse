@@ -250,8 +250,8 @@ ReadSource::ReadSource(
     , object_info(std::move(object_info_))
     , dataset(std::move(dataset_))
     , scan(std::move(scan_))
-    , cancel_handle(std::move(cancel_handle_))
     , format_settings(std::move(format_settings_))
+    , cancel_handle(std::move(cancel_handle_))
 {
     if (!dataset)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Lance ReadSource requires a non-empty DatasetHandle");

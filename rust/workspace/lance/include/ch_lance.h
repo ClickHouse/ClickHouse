@@ -27,6 +27,7 @@ enum
     CH_LANCE_ERROR_INTERNAL = 9,
     /// Cooperative cancellation requested via ch_lance_cancel_scan (or equivalent).
     CH_LANCE_ERROR_CANCELLED = 10,
+    CH_LANCE_ERROR_SNAPSHOT_MISMATCH = 11,
 };
 
 typedef uint32_t ch_lance_error_origin;
@@ -76,6 +77,11 @@ typedef struct ch_lance_dataset_options
 typedef struct ch_lance_snapshot_info
 {
     uint64_t version;
+    uint8_t manifest_id[32];
+    uint64_t manifest_size;
+    uint8_t manifest_sha256[32];
+    bool has_etag;
+    uint8_t etag_sha256[32];
 } ch_lance_snapshot_info;
 
 typedef struct ch_lance_string_list
@@ -86,7 +92,7 @@ typedef struct ch_lance_string_list
 
 typedef struct ch_lance_scan_options
 {
-    uint64_t version;
+    ch_lance_snapshot_info snapshot;
     ch_lance_string_list projection;
     const char * predicate;
     bool need_only_count;
@@ -141,7 +147,7 @@ typedef struct ch_lance_runtime_stats
 bool ch_lance_runtime_ensure(const ch_lance_runtime_config * config, ch_lance_error * error);
 void ch_lance_get_runtime_stats(ch_lance_runtime_stats * out);
 
-/// Query-scoped cancel handle. Create once per ReadSource / query unit of work.
+/// Query-scoped cancel handle. Create once and share it across metadata and read operations.
 ch_lance_cancel_handle * ch_lance_cancel_handle_create(void);
 /// Thread-safe: signal cancellation. Concurrent with any in-flight open/plan/count/next_batch
 /// that was given this handle (or a scan that inherited it).
@@ -152,32 +158,39 @@ ch_lance_dataset * ch_lance_open_dataset(const ch_lance_dataset_options * option
 void ch_lance_free_dataset(ch_lance_dataset * dataset);
 
 bool ch_lance_current_snapshot(ch_lance_dataset * dataset, ch_lance_snapshot_info * snapshot, ch_lance_error * error);
-bool ch_lance_export_schema(ch_lance_dataset * dataset, uint64_t version, struct ArrowSchema * schema, ch_lance_error * error);
+bool ch_lance_export_schema(
+    ch_lance_dataset * dataset,
+    const ch_lance_snapshot_info * snapshot,
+    struct ArrowSchema * schema,
+    ch_lance_cancel_handle * cancel,
+    ch_lance_error * error);
 /// `cancel` may be null (no cooperative cancel for this call).
 bool ch_lance_total_rows(
     ch_lance_dataset * dataset,
-    uint64_t version,
+    const ch_lance_snapshot_info * snapshot,
     uint64_t * rows,
     bool * has_value,
     ch_lance_cancel_handle * cancel,
     ch_lance_error * error);
 bool ch_lance_count_rows(
     ch_lance_dataset * dataset,
-    uint64_t version,
+    const ch_lance_snapshot_info * snapshot,
     const char * predicate,
+    const uint64_t * fragment_ids,
+    size_t fragment_ids_size,
     uint64_t * rows,
     bool * has_value,
     ch_lance_cancel_handle * cancel,
     ch_lance_error * error);
 bool ch_lance_total_bytes(ch_lance_dataset * dataset, uint64_t * bytes, bool * has_value, ch_lance_error * error);
 
-/// Lists fragments for an exact dataset version (checkout_exact_version).
+/// Lists fragments for an exact immutable dataset snapshot.
 /// On success with size>0: *out_list is allocated; free with ch_lance_free_fragment_list.
 /// Empty datasets: *out_size=0 and *out_list=null.
 /// cancel may be null.
 bool ch_lance_list_fragments(
     ch_lance_dataset * dataset,
-    uint64_t version,
+    const ch_lance_snapshot_info * snapshot,
     ch_lance_fragment_info ** out_list,
     size_t * out_size,
     ch_lance_cancel_handle * cancel,

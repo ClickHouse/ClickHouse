@@ -12,6 +12,19 @@
 
 using namespace DB;
 
+namespace
+{
+Lance::TableStateSnapshot makeSnapshot(UInt64 version, UInt8 seed)
+{
+    Lance::TableStateSnapshot snapshot;
+    snapshot.version = version;
+    snapshot.manifest_id.fill(seed);
+    snapshot.manifest_size = 512;
+    snapshot.manifest_sha256.fill(seed + 1);
+    return snapshot;
+}
+}
+
 TEST(LanceQuerySession, IdentityKeyStableAndSensitiveToCredentials)
 {
     Lance::DatasetOptions a{.uri = "/tmp/ds", .use_s3 = false};
@@ -23,16 +36,17 @@ TEST(LanceQuerySession, IdentityKeyStableAndSensitiveToCredentials)
     EXPECT_NE(a.identityKey(), b.identityKey());
 }
 
-TEST(LanceQuerySession, PinVersionRejectsConflict)
+TEST(LanceQuerySession, PinSnapshotRejectsConflict)
 {
     auto context = Context::createCopy(getContext().context);
     context->makeQueryContext();
 
     auto session = Lance::QuerySession::get(context);
-    session->pinVersion("id1", 3);
-    session->pinVersion("id1", 3);
-    EXPECT_EQ(session->getPinnedVersion("id1"), 3u);
-    EXPECT_THROW(session->pinVersion("id1", 4), Exception);
+    const auto snapshot = makeSnapshot(3, 1);
+    session->pinSnapshot("id1", snapshot);
+    session->pinSnapshot("id1", snapshot);
+    EXPECT_EQ(session->getPinnedSnapshot("id1"), snapshot);
+    EXPECT_THROW(session->pinSnapshot("id1", makeSnapshot(3, 9)), Exception);
 }
 
 TEST(LanceQuerySession, GetOrOpenReusesHandleWithinSession)
