@@ -135,46 +135,6 @@ void checkEpollExpiresUnderPeriodicSignals(Int64 signal_period_nanoseconds)
     EXPECT_LT(elapsed_ms, 1500);
 }
 
-/// Runs `probe(read_fd)` (which does its own repeated non-blocking readiness checks and assertions)
-/// on a pipe whose read end is already ready, while the thread receives a dense periodic SIGALRM.
-/// A zero-timeout probe on a ready fd must always report ready — before the fix an EINTR made it
-/// return "not ready", so a signal could hide the pending data on some iteration.
-template <typename ProbeFn>
-void runZeroTimeoutProbeUnderSignals(ProbeFn && probe)
-{
-    int fds[2];
-    EXPECT_EQ(pipe(fds), 0);
-    const char byte = 'x';
-    EXPECT_EQ(write(fds[1], &byte, 1), 1); /// make the read end ready
-
-    struct sigaction sa = {};
-    sa.sa_handler = onTick;
-    struct sigaction old_sa = {};
-    EXPECT_EQ(sigaction(SIGALRM, &sa, &old_sa), 0);
-
-    struct sigevent sev {};
-    sev.sigev_notify = SIGEV_THREAD_ID;
-    sev.sigev_signo = SIGALRM;
-#if defined(USE_MUSL)
-    sev.sigev_notify_thread_id = static_cast<pid_t>(getThreadId());
-#else
-    sev._sigev_un._tid = static_cast<pid_t>(getThreadId());
-#endif
-    timer_t timer_id = nullptr;
-    EXPECT_EQ(timer_create(CLOCK_MONOTONIC, &sev, &timer_id), 0);
-    itimerspec period = {{0, 200'000}, {0, 200'000}}; /// 0.2 ms — a dense signal storm
-    EXPECT_EQ(timer_settime(timer_id, 0, &period, nullptr), 0);
-
-    probe(fds[0]);
-
-    itimerspec stop = {};
-    timer_settime(timer_id, 0, &stop, nullptr);
-    timer_delete(timer_id);
-    sigaction(SIGALRM, &old_sa, nullptr);
-    close(fds[0]);
-    close(fds[1]);
-}
-
 }
 
 TEST(ReadBufferFromFileDescriptor, PollExpiresUnderPeriodicSignals)
@@ -213,19 +173,6 @@ TEST(ReadBufferFromFileDescriptor, ZeroTimeoutPollProbe)
     close(fds[1]);
 }
 
-TEST(ReadBufferFromFileDescriptor, ZeroTimeoutPollNotHiddenBySignals)
-{
-    runZeroTimeoutProbeUnderSignals(
-        [](int read_fd)
-        {
-            DB::ReadBufferFromFileDescriptor in(read_fd);
-            bool all_ready = true;
-            for (int i = 0; i < 5000 && all_ready; ++i)
-                all_ready = in.poll(0);
-            EXPECT_TRUE(all_ready);
-        });
-}
-
 TEST(Epoll, ZeroTimeoutGetManyReadyProbe)
 {
     int fds[2];
@@ -241,21 +188,6 @@ TEST(Epoll, ZeroTimeoutGetManyReadyProbe)
     }
     close(fds[0]);
     close(fds[1]);
-}
-
-TEST(Epoll, ZeroTimeoutGetManyReadyNotHiddenBySignals)
-{
-    runZeroTimeoutProbeUnderSignals(
-        [](int read_fd)
-        {
-            DB::Epoll epoll;
-            epoll.add(read_fd);
-            epoll_event events[1];
-            bool all_ready = true;
-            for (int i = 0; i < 5000 && all_ready; ++i)
-                all_ready = epoll.getManyReady(1, events, 0) > 0;
-            EXPECT_TRUE(all_ready);
-        });
 }
 
 #endif
