@@ -5,7 +5,7 @@
 that rerun does not receive the job's own runner options
 (`--replicated-database`, `--s3-storage`, ...), a configuration-specific failure
 cannot reproduce, the diagnosis says "not reproducible", the test is labelled
-`flaky` and on `llvm_coverage` jobs it is force-set to `OK` — so a
+`flaky` and on `llvm_coverage` jobs it is force-set to `OK` - so a
 deterministically failing test is reported green in the CI report and in CIDB.
 
 These tests pin the three properties the forwarding depends on, driving the real
@@ -16,6 +16,7 @@ last-one-wins and would pin a false property).
 
 import inspect
 import os
+import re
 import runpy
 import shlex
 import stat
@@ -26,6 +27,10 @@ from types import SimpleNamespace
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+# `ci/defs/job_configs.py` does `from praktika import ...` rather than
+# `from ci.praktika import ...`, so the `ci/` directory itself must be on the
+# path for `import praktika` to resolve to `ci/praktika`.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import ci.jobs.functional_tests as functional_tests  # noqa: E402
 
@@ -75,6 +80,31 @@ RUNNER_OPTIONS_CASES = {
 
 FAILED_TESTS = ["04541_create_as_select_table_scoped_insert_grant", "04418_x"]
 
+# The stage reruns at most 10 tests (above that it is SKIPPED as "Too many
+# failed tests"), so this covers the whole reachable count range.
+TEN = [f"0454{i}_x" for i in range(10)]
+
+# (elapsed minutes, failed test count) cells the budget must hold for. The job
+# timeout is 150 minutes, so elapsed values run up to just under it.
+BUDGET_MATRIX = [
+    (elapsed, num_tests)
+    for elapsed in (0, 15, 30, 45, 60, 75, 90, 105, 120, 130, 140)
+    for num_tests in (1, 2, 3, 5, 7, 10)
+]
+
+
+def _main_run_test_timeout():
+    """`clickhouse-test`'s `--timeout` default, parsed from its own source.
+
+    The main run passes no `--timeout` (`run_tests` builds its command without
+    one), so this default is the bound every test in the main pass gets.
+    """
+    source = open(CLICKHOUSE_TEST, encoding="utf-8").read()
+    block = source[source.index('        "--timeout",') :]
+    match = re.search(r"default=(\d+),", block)
+    assert match, block[:400]
+    return int(match.group(1))
+
 
 def _diagnostics_source_block():
     """Return the diagnostics-command construction, verbatim from `main`."""
@@ -90,19 +120,25 @@ def _diagnostics_source_block():
 def _build_diag_command(runner_options, elapsed=0.0, failed_tests=None):
     """Compose the diagnostics command by EXECUTING `main`'s own source block.
 
-    The block reads module-level constants and the job's `stop_watch`, so it runs
-    against the real `functional_tests` globals with only the block's own local
-    inputs stubbed. That keeps the derived budget driven by the shipped constants
-    instead of by copies living here.
+    The block's timeouts come from the real `diagnostics_budget`, and the block
+    itself runs against the real `functional_tests` globals with only its own
+    local inputs stubbed. So the composed command is driven by the shipped
+    function and constants, never by copies living here.
     """
+    tests = FAILED_TESTS if failed_tests is None else failed_tests
+    budget = functional_tests.diagnostics_budget(elapsed, len(tests))
+    assert budget is not None, (elapsed, len(tests))
+    diag_stage_timeout, diag_test_timeout = budget
     namespace = dict(vars(functional_tests))
     namespace.update(
         {
             "runner_options": runner_options,
             "memory_limit": 12345,
             "diagnostics_dir": "/tmp/diag",
-            "failed_tests": FAILED_TESTS if failed_tests is None else failed_tests,
+            "failed_tests": tests,
             "stop_watch": SimpleNamespace(duration=elapsed),
+            "diag_stage_timeout": diag_stage_timeout,
+            "diag_test_timeout": diag_test_timeout,
         }
     )
     exec(_diagnostics_source_block(), namespace)  # noqa: S102
@@ -205,23 +241,116 @@ def test_diagnostics_budget_shrinks_with_elapsed_time_and_test_count():
     depends on how long the main run already took and on how many tests the
     stage has to rerun.
     """
-    fresh = _diag_test_timeout(_build_diag_command("", elapsed=0))
-    late = _diag_test_timeout(_build_diag_command("", elapsed=90 * 60))
+    fresh = _diag_test_timeout(_build_diag_command("", elapsed=0, failed_tests=TEN))
+    late = _diag_test_timeout(
+        _build_diag_command("", elapsed=60 * 60, failed_tests=TEN)
+    )
     assert late < fresh, (fresh, late)
 
-    one_test = _diag_test_timeout(_build_diag_command("", failed_tests=["04541_x"]))
-    ten_tests = _diag_test_timeout(
-        _build_diag_command("", failed_tests=[f"0454{i}_x" for i in range(10)])
+    three_tests = _diag_test_timeout(
+        _build_diag_command("", elapsed=60 * 60, failed_tests=TEN[:3])
     )
-    assert ten_tests < one_test, (one_test, ten_tests)
+    assert late < three_tests, (three_tests, late)
 
-    # The floor keeps a single pass possible even when the budget is exhausted.
-    exhausted = _diag_test_timeout(
-        _build_diag_command(
-            "", elapsed=10 * 3600, failed_tests=[f"0454{i}_x" for i in range(10)]
+
+def test_diagnostics_rerun_is_never_more_permissive_than_the_main_run():
+    """The rerun's per-test timeout must not exceed the main run's own.
+
+    The main run passes no `--timeout`, so it uses `clickhouse-test`'s 600 s
+    default. A rerun given MORE time can pass a test the main pass timed out on,
+    which reads as `Failed 0 out of 3 reruns`, is labelled `flaky` and is then
+    force-set to `OK` on coverage jobs - the exact whitewash this PR removes.
+    """
+    for elapsed_min, num_tests in BUDGET_MATRIX:
+        budget = functional_tests.diagnostics_budget(elapsed_min * 60, num_tests)
+        if budget is None:
+            continue
+        _, test_timeout = budget
+        assert test_timeout <= functional_tests.DIAGNOSTICS_MAIN_RUN_TEST_TIMEOUT_S, (
+            elapsed_min,
+            num_tests,
+            test_timeout,
         )
+        command = _build_diag_command(
+            "", elapsed=elapsed_min * 60, failed_tests=TEN[:num_tests]
+        )
+        assert _diag_test_timeout(command) == test_timeout
+
+    # The default the main run actually gets, so the cap is pinned to a real value.
+    assert (
+        functional_tests.DIAGNOSTICS_MAIN_RUN_TEST_TIMEOUT_S == _main_run_test_timeout()
     )
-    assert exhausted == 60, exhausted
+
+
+def test_diagnostics_stage_bound_leaves_the_finalization_reserve():
+    """The stage's outer bound must always end before the job timeout minus reserve.
+
+    A job that hits its own timeout is recorded as `Result.Status.ERROR`, which
+    skips `complete_job` and therefore the artifact upload, so the downstream
+    coverage job loses the file these jobs provide.
+    """
+    for elapsed_min, num_tests in BUDGET_MATRIX:
+        budget = functional_tests.diagnostics_budget(elapsed_min * 60, num_tests)
+        if budget is None:
+            continue
+        stage_timeout, _ = budget
+        assert (
+            elapsed_min * 60 + stage_timeout
+            <= functional_tests.DIAGNOSTICS_JOB_TIMEOUT
+            - functional_tests.DIAGNOSTICS_RESERVE_S
+        ), (elapsed_min, num_tests, stage_timeout)
+
+
+def test_diagnostics_is_given_up_when_too_little_job_time_is_left():
+    """Below a usable per-test bound the stage must be skipped, not truncated.
+
+    Starting a diagnosis that cannot finish is what overruns the reserve, so the
+    budget returns `None` and `main` reports a SKIPPED `Diagnostics` result.
+    """
+    assert functional_tests.diagnostics_budget(140 * 60, 1) is None
+    assert functional_tests.diagnostics_budget(130 * 60, 3) is None
+    # And an ordinary case is still funded, so the guard is not vacuous.
+    assert functional_tests.diagnostics_budget(60 * 60, 3) is not None
+
+    source = inspect.getsource(functional_tests.main)
+    assert 'info="Not enough job time left to diagnose"' in source, (
+        "main must skip the diagnosis when diagnostics_budget returns None, "
+        "rather than starting a run that cannot finish."
+    )
+    assert (
+        "diagnostics_budget(stop_watch.duration, len(failed_tests)) is None" in source
+    )
+
+
+def test_diagnostics_stage_has_an_outer_timeout():
+    """The per-test cap alone cannot bound the stage, so the run needs an outer one.
+
+    On the 23 of 37 DIAGNOSTICS-reachable flavours that save randomized settings,
+    `diagnose_random_settings` reruns a test an unbounded number of times
+    (two steps, up to two category probes, then ddmin), so no `tests x reruns`
+    model bounds it. Only the outer `Shell.run` timeout does. Asserted on `main`
+    source, as `Shell.run` is never executed here.
+    """
+    source = inspect.getsource(functional_tests.main)
+    assert (
+        "Shell.run(\n                diag_command, verbose=True, timeout=diag_stage_timeout\n            )"
+        in source
+    ), "the diagnostics Shell.run must be bounded by the stage timeout"
+
+
+def test_diagnostics_job_timeout_matches_the_real_job_config():
+    """The hand-copied job timeout must equal the one the job actually gets."""
+    from ci.defs.job_configs import common_ft_job_config
+
+    assert functional_tests.DIAGNOSTICS_JOB_TIMEOUT == common_ft_job_config.timeout
+
+
+def test_diagnostics_reruns_per_test_matches_clickhouse_test():
+    """The divisor must equal `clickhouse-test`'s own `max_reruns`."""
+    source = open(CLICKHOUSE_TEST, encoding="utf-8").read()
+    matches = re.findall(r"^\s*max_reruns = (\d+)$", source, re.MULTILINE)
+    assert len(matches) == 1, matches
+    assert functional_tests.DIAGNOSTICS_RERUNS_PER_TEST == int(matches[0])
 
 
 @pytest.mark.parametrize("case", sorted(RUNNER_OPTIONS_CASES))
@@ -252,7 +381,7 @@ def test_diagnostics_command_never_passes_conflicting_shard_or_zookeeper_flags(
 def test_conflicting_shard_flags_really_are_rejected(parse_test_runner_args):
     """Negative control: the conflict the conditional defaulting avoids is real.
 
-    Deliberately independent of the diagnostics command builder — this is a
+    Deliberately independent of the diagnostics command builder - this is a
     property of `tests/clickhouse-test`'s parser, and it must keep failing
     loudly if that parser ever stops declaring the flags mutually exclusive.
     """
