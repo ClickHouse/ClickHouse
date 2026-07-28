@@ -149,9 +149,17 @@ EOF
 )
 
 echo "Compiling ${#SOURCES[@]} translation units..."
-printf '%s\n' "${SOURCES[@]}" | xargs -P "$(getconf _NPROCESSORS_ONLN)" -I{} \
-    bash -c 'obj="$1/$(echo "$2" | sed "s|/|__|g; s|\.cpp$|.o|; s|\.cc$|.o|")"; shift 2; "$@" -c "$0" -o "$obj"' \
-    {} "$OUT/obj" {} "$CXX" "${CXXFLAGS[@]}" "${INCS[@]}" 2>&1 | grep -E 'error:' | head -20 || true
+# A failed translation unit must fail the build: linking whatever objects happen to be in $OUT/obj
+# would silently pick up stale ones from an earlier run. Each object is removed before its
+# compiler runs, so a failure cannot leave a previous result behind either.
+if ! printf '%s\n' "${SOURCES[@]}" | xargs -P "$(getconf _NPROCESSORS_ONLN)" -I{} \
+    bash -c 'obj="$1/$(echo "$2" | sed "s|/|__|g; s|\.cpp$|.o|; s|\.cc$|.o|")"; shift 2; rm -f "$obj"; "$@" -c "$0" -o "$obj"' \
+    {} "$OUT/obj" {} "$CXX" "${CXXFLAGS[@]}" "${INCS[@]}" > "$OUT/compile.log" 2>&1
+then
+    grep -E 'error:' "$OUT/compile.log" | head -20 || true
+    echo "Compilation failed; the full output is in $OUT/compile.log" >&2
+    exit 1
+fi
 
 echo "Linking..."
 "$CXX" "${CXXFLAGS[@]}" \
