@@ -9,6 +9,8 @@ DROP TABLE IF EXISTS t4p SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS m4p SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS t6 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS m6 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t6p SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS m6p SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS t4lc SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS m4lc SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS t4n SETTINGS ignore_drop_queries_probability = 0;
@@ -94,6 +96,16 @@ INSERT INTO m4p VALUES ('0.0.0.1'), ('0.0.0.2'), ('127.255.255.255'), ('128.0.0.
 SELECT 'c one sided', (SELECT count() FROM t4p WHERE intDiv(a, toInt8(10)) > 0 AND a < toIPv4('128.0.0.0')) = (SELECT count() FROM m4p WHERE intDiv(a, toInt8(10)) > 0 AND a < toIPv4('128.0.0.0'));
 SELECT 'c one sided bound only', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t4p WHERE a < toIPv4('128.0.0.0')) WHERE explain ILIKE '%Granules: 3/5%';
 SELECT 'c one sided prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t4p WHERE intDiv(a, toInt8(10)) > 0 AND a < toIPv4('128.0.0.0')) WHERE explain ILIKE '%Granules: 2/5%';
+-- The same pair one width up. It is the only assertion that reacts to a substituted `IPv6` width
+-- that is too narrow: that moves the wrap point down to 2^31, monotonicity is then refused for
+-- every range here, and pruning silently disappears while the answers stay correct.
+CREATE TABLE IF NOT EXISTS t6p (a IPv6) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+CREATE TABLE IF NOT EXISTS m6p (a IPv6) ENGINE = Memory;
+INSERT INTO t6p VALUES ('::1'), ('::2'), ('7fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'), ('8000::'), ('ffff::');
+INSERT INTO m6p VALUES ('::1'), ('::2'), ('7fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'), ('8000::'), ('ffff::');
+SELECT 'c ipv6 one sided', (SELECT count() FROM t6p WHERE intDiv(a, toInt8(10)) > 0 AND a < toIPv6('8000::')) = (SELECT count() FROM m6p WHERE intDiv(a, toInt8(10)) > 0 AND a < toIPv6('8000::'));
+SELECT 'c ipv6 one sided bound only', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t6p WHERE a < toIPv6('8000::')) WHERE explain ILIKE '%Granules: 3/5%';
+SELECT 'c ipv6 one sided prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t6p WHERE intDiv(a, toInt8(10)) > 0 AND a < toIPv6('8000::')) WHERE explain ILIKE '%Granules: 2/5%';
 -- `divide` computes in floating point and never wraps, so it stays monotonic in both directions.
 SELECT 'c divide pos', (SELECT count() FROM t4 WHERE divide(a, toInt8(10)) > 100000000) = (SELECT count() FROM m4 WHERE divide(a, toInt8(10)) > 100000000);
 SELECT 'c divide neg', (SELECT count() FROM t4 WHERE divide(a, toInt8(-10)) < -100000000) = (SELECT count() FROM m4 WHERE divide(a, toInt8(-10)) < -100000000);
@@ -139,6 +151,8 @@ DROP TABLE t4p SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE m4p SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t6 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE m6 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE t6p SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE m6p SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t4lc SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE m4lc SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t4n SETTINGS ignore_drop_queries_probability = 0;
