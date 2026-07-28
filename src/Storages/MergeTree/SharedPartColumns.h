@@ -207,8 +207,8 @@ private:
     {
         /// Normalized as in `SerializationGroupKey`.
         SerializationInfoSettings settings;
-        /// The effective kind encodings of every column, in bundle order, length-suffix framed
-        /// into a single string.
+        /// Per column in bundle order: `serialializeKindStackBinary` (or the type's all-default encoding when there is
+        /// no entry) plus a varuint of its length: `00 01|01 01|00 01 00 03` = dense, sparse, Tuple(sparse, dense).
         String kinds;
         /// The (position, settings) of the entries whose settings differ from the map settings.
         /// Almost always empty.

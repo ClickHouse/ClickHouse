@@ -776,13 +776,8 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t new_metadata_version)
 {
     {
-        /// Per-part metadata lives as long as the part — i.e. far longer than a query. Routing
-        /// these allocations to the dedicated parts arena keeps them off the default arena's
-        /// pages, which would otherwise be pinned by per-part survivors and unable to be returned
-        /// to the OS while query allocations come and go. The scope covers only the copy that the
-        /// part keeps; the shared bundle and serializations manage their own arena scopes around
-        /// the pieces that survive in the caches, so their transient build work stays in the
-        /// default arena.
+        /// We avoid covering the whole function with the scope so that transient work stays in the default arena (avoid contention)
+        /// The shared bundle and serializations manage their own arena scopes
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
         serialization_infos = new_infos;
     }
