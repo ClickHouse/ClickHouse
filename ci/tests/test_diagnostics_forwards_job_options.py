@@ -21,6 +21,7 @@ import shlex
 import stat
 import sys
 import textwrap
+from types import SimpleNamespace
 
 import pytest
 
@@ -31,7 +32,7 @@ import ci.jobs.functional_tests as functional_tests  # noqa: E402
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 CLICKHOUSE_TEST = os.path.join(REPO_ROOT, "tests", "clickhouse-test")
 
-# Representative `runner_options` strings, assembled exactly as `main()` does
+# Representative `runner_options` strings, assembled exactly as `main` does
 # from OPTIONS_TO_TEST_RUNNER_ARGUMENTS plus the unconditional tail.
 _COVERAGE_TAIL = (
     " --llvm-coverage --no-random-settings --no-random-merge-tree-settings  --no-long"
@@ -39,8 +40,8 @@ _COVERAGE_TAIL = (
 )
 RUNNER_OPTIONS_CASES = {
     # DBReplicated is the flavour that hid the access-control bypass in #111561.
-    # --encrypted-storage is appended by main() OUTSIDE the options map, so a
-    # map-driven case list would miss it (main() adds it only when s3/azure is on).
+    # --encrypted-storage is appended by `main` OUTSIDE the options map, so a
+    # map-driven case list would miss it (`main` adds it only when s3/azure is on).
     "DBReplicated_s3_coverage": functional_tests.OPTIONS_TO_TEST_RUNNER_ARGUMENTS[
         "s3 storage"
     ]
@@ -76,24 +77,49 @@ FAILED_TESTS = ["04541_create_as_select_table_scoped_insert_grant", "04418_x"]
 
 
 def _diagnostics_source_block():
-    """Return the diagnostics-command construction, verbatim from main()."""
+    """Return the diagnostics-command construction, verbatim from `main`."""
     source = inspect.getsource(functional_tests.main)
-    start = source.index("            diag_options = runner_options")
+    marker = "            diag_options = runner_options"
+    assert source.count(marker) == 1, "the slice start marker must be unique"
+    start = source.index(marker)
     tail = source.index("f\" -- {' '.join(failed_tests)}\"", start)
     end = source.index("\n", source.index("\n", tail) + 1)
     return textwrap.dedent(source[start:end])
 
 
-def _build_diag_command(runner_options):
-    """Compose the diagnostics command by EXECUTING main()'s own source block."""
-    namespace = {
-        "runner_options": runner_options,
-        "memory_limit": 12345,
-        "diagnostics_dir": "/tmp/diag",
-        "failed_tests": FAILED_TESTS,
-    }
+def _build_diag_command(runner_options, elapsed=0.0, failed_tests=None):
+    """Compose the diagnostics command by EXECUTING `main`'s own source block.
+
+    The block reads module-level constants and the job's `stop_watch`, so it runs
+    against the real `functional_tests` globals with only the block's own local
+    inputs stubbed. That keeps the derived budget driven by the shipped constants
+    instead of by copies living here.
+    """
+    namespace = dict(vars(functional_tests))
+    namespace.update(
+        {
+            "runner_options": runner_options,
+            "memory_limit": 12345,
+            "diagnostics_dir": "/tmp/diag",
+            "failed_tests": FAILED_TESTS if failed_tests is None else failed_tests,
+            "stop_watch": SimpleNamespace(duration=elapsed),
+        }
+    )
     exec(_diagnostics_source_block(), namespace)  # noqa: S102
     return namespace["diag_command"]
+
+
+def _diag_test_timeout(command):
+    """The `--timeout` value the diagnostics command passes, read before `--`."""
+    flags, separator, _ = command.partition(" -- ")
+    assert separator, command
+    tokens = shlex.split(flags)
+    assert "--timeout" in tokens, (
+        "The diagnostics rerun must bound each test: an unbounded rerun loop can "
+        "outlast the job timeout, which is recorded as ERROR and skips the "
+        f"artifact upload the coverage job depends on. Got: {command}"
+    )
+    return int(tokens[tokens.index("--timeout") + 1])
 
 
 @pytest.fixture(scope="module")
@@ -133,7 +159,7 @@ def test_diagnostics_command_forwards_runner_options():
     )
     assert "{diag_options}" in block
 
-    # The two positive flags must be conditional, mirroring run_tests(): passing
+    # The two positive flags must be conditional, mirroring `run_tests`: passing
     # e.g. both --shard and --no-shard is an argparse error (exit 2).
     assert '--shard --zookeeper"' not in block, (
         "--shard/--zookeeper must not be passed unconditionally: the forwarded "
@@ -151,6 +177,51 @@ def test_diagnostics_command_forwards_runner_options():
     assert "--replicated-database" in flags
     assert " --shard" in flags and " --zookeeper" in flags
     assert tests.split() == FAILED_TESTS
+
+
+def test_diagnostics_command_bounds_each_rerun(parse_test_runner_args):
+    """Each rerun must carry an explicit per-test timeout, before the separator.
+
+    Without one, `clickhouse-test` falls back to its 600 s default and the stage
+    can outlast the job timeout. That is recorded as `Result.Status.ERROR`, which
+    skips the artifact upload, so the coverage job loses its input.
+    """
+    command = _build_diag_command(" --replicated-database")
+    timeout = _diag_test_timeout(command)
+    assert timeout > 0
+
+    flags, _, tests = command.partition(" -- ")
+    assert "--timeout" in flags and "--timeout" not in tests, command
+
+    args = parse_test_runner_args(shlex.split(command)[1:])
+    assert args.timeout == timeout
+    assert args.test == FAILED_TESTS
+
+
+def test_diagnostics_budget_shrinks_with_elapsed_time_and_test_count():
+    """The bound must be derived from the job's remaining time, not a constant.
+
+    A fixed value cannot keep the stage inside the job timeout: what is left
+    depends on how long the main run already took and on how many tests the
+    stage has to rerun.
+    """
+    fresh = _diag_test_timeout(_build_diag_command("", elapsed=0))
+    late = _diag_test_timeout(_build_diag_command("", elapsed=90 * 60))
+    assert late < fresh, (fresh, late)
+
+    one_test = _diag_test_timeout(_build_diag_command("", failed_tests=["04541_x"]))
+    ten_tests = _diag_test_timeout(
+        _build_diag_command("", failed_tests=[f"0454{i}_x" for i in range(10)])
+    )
+    assert ten_tests < one_test, (one_test, ten_tests)
+
+    # The floor keeps a single pass possible even when the budget is exhausted.
+    exhausted = _diag_test_timeout(
+        _build_diag_command(
+            "", elapsed=10 * 3600, failed_tests=[f"0454{i}_x" for i in range(10)]
+        )
+    )
+    assert exhausted == 60, exhausted
 
 
 @pytest.mark.parametrize("case", sorted(RUNNER_OPTIONS_CASES))

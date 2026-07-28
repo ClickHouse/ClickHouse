@@ -25,6 +25,21 @@ temp_dir = f"{Utils.cwd()}/ci/tmp"
 # `set_memory_ratio` logic in `main`).
 SANITIZERS = ("asan", "tsan", "msan", "ubsan")
 
+# Wall-clock budget of a functional-test job, mirroring `common_ft_job_config`'s
+# `timeout` in `ci/defs/job_configs.py`. Used to bound the diagnostics stage; keep
+# the two in sync.
+DIAGNOSTICS_JOB_TIMEOUT = int(3600 * 2.5)
+
+# Time left unspent by the diagnostics stage so the job can still merge coverage
+# and upload its results. A job that hits its own timeout is recorded as ERROR
+# and skips artifact upload entirely, which starves the downstream coverage job.
+DIAGNOSTICS_RESERVE_S = 15 * 60
+
+# Reruns `TestCase.diagnose_random_settings` performs per test on the branch these
+# jobs take (no randomized settings saved, so `max_reruns = 3` in
+# `tests/clickhouse-test`).
+DIAGNOSTICS_RERUNS_PER_TEST = 3
+
 
 def stateless_memory_limit(source):
     """Per-test cgroup memory limit (`clickhouse-test --memory-limit`) for a run
@@ -1193,6 +1208,26 @@ def main():
                 diag_options += " --shard"
             if "--no-zookeeper" not in diag_options:
                 diag_options += " --zookeeper"
+            # Bound each rerun so the diagnosis cannot consume the job's remaining
+            # time. A job that hits its own timeout is recorded as ERROR, which
+            # skips the artifact upload and starves the downstream coverage job,
+            # so the stage must fit in what is left minus a finalization reserve.
+            # Spread over the reruns this stage performs, and floored so a single
+            # pass still happens.
+            diag_budget = max(
+                DIAGNOSTICS_JOB_TIMEOUT
+                - int(stop_watch.duration)
+                - DIAGNOSTICS_RESERVE_S,
+                60,
+            )
+            diag_test_timeout = max(
+                diag_budget // (len(failed_tests) * DIAGNOSTICS_RERUNS_PER_TEST), 60
+            )
+            print(
+                f"Diagnostics budget: {diag_budget}s"
+                f" (elapsed so far: {int(stop_watch.duration)}s,"
+                f" per-test timeout: {diag_test_timeout}s)"
+            )
             diag_command = (
                 f"clickhouse-test --testname --check-zookeeper-session --hung-check"
                 f" --memory-limit {memory_limit} --trace --capture-client-stacktrace"
@@ -1200,6 +1235,7 @@ def main():
                 f" --diagnose-random-settings"
                 f" --random-settings-diagnostics-dir {diagnostics_dir}"
                 f" --no-random-settings --no-random-merge-tree-settings"
+                f" --timeout {diag_test_timeout}"
                 f" {diag_options}"
                 f" -- {' '.join(failed_tests)}"
             )
