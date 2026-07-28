@@ -30,3 +30,38 @@ SELECT sum(i), sum(j), count() FROM t_proj_corr PREWHERE _part_offset < (_part_o
 SELECT sum(i), sum(j), count() FROM t_proj_corr PREWHERE _part_offset < (_part_offset + _part_starting_offset) WHERE ((SELECT _part_starting_offset) + _part_offset) >= 0 SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0, correlated_subqueries_default_join_kind = 'left', optimize_use_projections = 0;
 40	160	20
 DROP TABLE t_proj_corr;
+-- The same leak with a real (non-virtual) column set, where the consumer is the decorrelation join's
+-- one-column right side. The two statements below trip the two asserts it can reach: ConstantJoin's
+-- right-side structure check, and JoiningTransform's output port check.
+-- query_plan_remove_unused_columns = 0 is pinned because that optimization re-narrows the stream and
+-- would make these checks vacuous. `id` must stay sparse-serialized: leaked columns are not
+-- normalized by the join, so that is part of the shape being pinned.
+DROP TABLE IF EXISTS t_proj_corr_events;
+CREATE TABLE t_proj_corr_events (organisation_id UUID, session_id UUID, id UUID, timestamp UInt64, payload String, PROJECTION p_by_session (SELECT * ORDER BY session_id, timestamp)) ENGINE = MergeTree ORDER BY (organisation_id, session_id, timestamp) SETTINGS index_granularity = 3, ratio_of_defaults_for_sparse_serialization = 0.9;
+INSERT INTO t_proj_corr_events SELECT reinterpretAsUUID(number % 2), reinterpretAsUUID(1 - (number % 2)), reinterpretAsUUID(0), 1643760000, '0' FROM numbers(6);
+INSERT INTO t_proj_corr_events SELECT reinterpretAsUUID(number % 2), reinterpretAsUUID(1 - (number % 2)), reinterpretAsUUID(0), 1643760000, '0' FROM numbers(6);
+SELECT count() FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_proj_corr_events' AND active AND column = 'id' AND serialization_kind = 'Sparse';
+2
+SELECT payload, id, (SELECT timestamp) FROM t_proj_corr_events WHERE (organisation_id = reinterpretAsUUID(1)) AND (session_id = reinterpretAsUUID(0)) ORDER BY id, payload, timestamp SETTINGS read_in_order_two_level_merge_threshold = 1, query_plan_remove_unused_columns = 0, correlated_subqueries_use_in_memory_buffer = 0;
+0	00000000-0000-0000-0000-000000000000	1643760000
+0	00000000-0000-0000-0000-000000000000	1643760000
+0	00000000-0000-0000-0000-000000000000	1643760000
+0	00000000-0000-0000-0000-000000000000	1643760000
+0	00000000-0000-0000-0000-000000000000	1643760000
+0	00000000-0000-0000-0000-000000000000	1643760000
+SELECT payload, id, (SELECT timestamp) FROM t_proj_corr_events WHERE (organisation_id = reinterpretAsUUID(1)) AND (session_id = reinterpretAsUUID(0)) ORDER BY id, payload, timestamp SETTINGS read_in_order_two_level_merge_threshold = 1, query_plan_remove_unused_columns = 0, correlated_subqueries_use_in_memory_buffer = 0, correlated_subqueries_default_join_kind = 'left';
+0	00000000-0000-0000-0000-000000000000	1643760000
+0	00000000-0000-0000-0000-000000000000	1643760000
+0	00000000-0000-0000-0000-000000000000	1643760000
+0	00000000-0000-0000-0000-000000000000	1643760000
+0	00000000-0000-0000-0000-000000000000	1643760000
+0	00000000-0000-0000-0000-000000000000	1643760000
+-- Skipping the projection must not change the answer: assert projection-on equals projection-off.
+SELECT payload, id, (SELECT timestamp) FROM t_proj_corr_events WHERE (organisation_id = reinterpretAsUUID(1)) AND (session_id = reinterpretAsUUID(0)) ORDER BY id, payload, timestamp SETTINGS read_in_order_two_level_merge_threshold = 1, query_plan_remove_unused_columns = 0, correlated_subqueries_use_in_memory_buffer = 0, optimize_use_projections = 0;
+0	00000000-0000-0000-0000-000000000000	1643760000
+0	00000000-0000-0000-0000-000000000000	1643760000
+0	00000000-0000-0000-0000-000000000000	1643760000
+0	00000000-0000-0000-0000-000000000000	1643760000
+0	00000000-0000-0000-0000-000000000000	1643760000
+0	00000000-0000-0000-0000-000000000000	1643760000
+DROP TABLE t_proj_corr_events;
