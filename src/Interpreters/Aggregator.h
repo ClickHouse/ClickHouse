@@ -245,8 +245,10 @@ public:
         AdaptiveAggregationProducer * adaptive) const;
 
     /// Drains one bucket's whole backlog into the destination variant's two-level bucket. Called
-    /// by the merge task that owns the bucket, before it merges that bucket: production is over
-    /// by then and the ownership is exclusive, so no locking beyond the backlog swap is needed.
+    /// by the merge task that owns the bucket, before it merges that bucket: production finished
+    /// before the merge sources were created and the ownership is exclusive, so the backlog is
+    /// read in place without locking; the chunks stay registered because the emplaced keys
+    /// borrow their staged bytes.
     void drainAdaptiveBucketForMerge(
         AggregatedDataVariants & dest,
         Arena * arena,
@@ -584,12 +586,13 @@ private:
         bool counts_only,
         std::optional<UInt32> key_row_override = std::nullopt) const;
 
-    /// Fills a value-staged block with the current misses ordered by (bucket, hash) and merged:
+    /// Fills a value-staged block with the current misses grouped by bucket (and by a few hash
+    /// bits within it, so a duplicate can only be one of its group's survivors) and merged:
     /// duplicate keys within the block collapse into one record with a summed run length, so a
     /// repeat-heavy staged stream copies each key's bytes once and the drain emplaces it once.
     template <typename SharedKey, typename State>
     void buildDeduplicatedCountChunk(
-        const MutableStagedChunkPtr & block,
+        StagedChunk & block,
         AdaptiveAggregationProducer & adaptive,
         State & local_find_state,
         Arena & scratch_pool,

@@ -50,7 +50,8 @@ namespace
     /// String-like keys stage their bytes: a packed reference copied as a plain value would
     /// carry a pointer into the source block, which dies when the publish compacts the
     /// arguments and releases it. The staged form of both string kinds is the raw characters,
-    /// and the drain rebuilds (and for packed keys arena-persists) the table's key from them.
+    /// and the drain rebuilds the table's key from them (the pressure-time drain additionally
+    /// persists the bytes into its arena; the merge-time drain borrows them).
     template <typename Key>
     constexpr bool adaptive_key_stages_bytes = std::is_same_v<Key, std::string_view> || std::is_same_v<Key, PackedStringRef>;
 
@@ -88,7 +89,10 @@ namespace
     template <typename SharedKey, typename State, typename Callback>
     void ALWAYS_INLINE withStagedKeyBytes(State & state, size_t row, size_t size, DB::Arena & scratch, Callback && callback)
     {
-        if constexpr (requires { state.chars; state.offsets; })
+        /// The fast path requires buffers indexed by the block row directly; the low-cardinality
+        /// wrapper inherits `chars`/`offsets` bound to its dictionary (rows go through
+        /// `positions`), so it is excluded structurally rather than left to the admission gate.
+        if constexpr (requires { state.chars; state.offsets; } && !requires { state.positions; })
         {
             const char * data
                 = reinterpret_cast<const char *>(state.chars) + state.offsets[static_cast<ssize_t>(row) - 1];
@@ -251,19 +255,24 @@ namespace
             table.emplace(unalignedLoad<Key>(key_pos), it, inserted, routing_hash);
         }
     }
+
+    /// Whether the string views the state's key holders hand out point into storage that
+    /// outlives the row loop (a batch-serialized buffer or the key column itself) rather than
+    /// into per-row scratch that dies with the holder. Only the serialized methods can go
+    /// either way, and they expose the choice as `use_batch_serialize`; the run tracking in
+    /// the count kernel may only remember a previous key's view when this holds.
+    template <typename State>
+    bool ALWAYS_INLINE adaptiveKeyViewsAreBlockStable(const State & state)
+    {
+        if constexpr (requires { state.use_batch_serialize; })
+            return state.use_batch_serialize;
+        else
+            return true;
+    }
 }
 
 namespace DB
 {
-
-template <typename State>
-bool ALWAYS_INLINE adaptiveKeyViewsAreBlockStable(const State & state)
-{
-    if constexpr (requires { state.use_batch_serialize; })
-        return state.use_batch_serialize;
-    else
-        return true;
-}
 
 void Aggregator::executeFrozen(
     const Columns & columns,
@@ -294,7 +303,6 @@ void Aggregator::executeFrozen(
 #undef M
     else
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant in the adaptive frozen path.");
-
 }
 
 template <typename LocalMethod, typename SharedMethod>
@@ -443,8 +451,9 @@ void NO_INLINE Aggregator::executeFrozenImpl(
                     adaptive.miss_key_sizes.push_back(adaptiveStagedKeyBytes(staged_key).size());
 
                 /// A serialized key view points into the reused scratch arena and can only seed
-                /// the run tracking when the views are block-stable; every other key type is a
-                /// self-contained value.
+                /// the run tracking when the views are block-stable; every other key type is
+                /// either a self-contained value or, for a packed reference, points into the
+                /// block's key column, whose bytes outlive the block.
                 if constexpr (std::is_same_v<typename SharedMethod::Key, std::string_view>)
                 {
                     if (stable_key_views)
@@ -539,7 +548,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
 
 template <typename SharedKey, typename State>
 void NO_INLINE Aggregator::buildDeduplicatedCountChunk(
-    const MutableStagedChunkPtr & block,
+    StagedChunk & block,
     AdaptiveAggregationProducer & adaptive,
     State & local_find_state,
     Arena & scratch_pool,
@@ -588,8 +597,8 @@ void NO_INLINE Aggregator::buildDeduplicatedCountChunk(
     else
         total_bytes = total * sizeof(SharedKey);
 
-    auto & keys = block->keys;
-    auto & multiplicities = block->payload.emplace<StagedChunk::CountPayload>().multiplicities;
+    auto & keys = block.keys;
+    auto & multiplicities = block.payload.emplace<StagedChunk::CountPayload>().multiplicities;
     keys.routing_hashes.resize(total);
     multiplicities.resize(total);
     keys.key_offsets.resize(total + 1);
@@ -821,7 +830,7 @@ void NO_INLINE Aggregator::publishDelayedRecords(
 
     if (counts_only)
     {
-        buildDeduplicatedCountChunk<SharedKey>(block, adaptive, local_find_state, scratch_pool, key_row_override);
+        buildDeduplicatedCountChunk<SharedKey>(*block, adaptive, local_find_state, scratch_pool, key_row_override);
     }
     else
     {
@@ -1008,6 +1017,11 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
             const auto expected
                 = static_cast<size_t>(static_cast<double>(total_records - processed) * insert_rate * adaptive_reserve_headroom);
 
+            /// A string table cannot pre-size as a whole: its short keys spread over the
+            /// length-classed submaps, whose shares the sampling does not see. Only the
+            /// raw-string submap is identifiable per record, so the sampling counts the records
+            /// destined for it and only that submap is reserved; the short-key submaps grow by
+            /// their ordinary rehashing.
             if constexpr (requires { impl.reserveAdditionalStringViewKeys(size_t{}); })
             {
                 const double string_view_fraction = static_cast<double>(sampled_string_view_keys) / static_cast<double>(processed);
