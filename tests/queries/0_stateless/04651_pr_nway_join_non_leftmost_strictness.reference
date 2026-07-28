@@ -7,7 +7,7 @@ array join then inner/any: reads from remote replicas
 array join then all/inner: reads from remote replicas
 1
 array join then full: reads from remote replicas
-1
+0
 all/inner only: reads from remote replicas
 1
 all/left only: reads from remote replicas
@@ -35,3 +35,7 @@ inner/any non-leftmost under a left leftmost join: row count
 all/inner non-leftmost on a constant: rows
 2	2	7
 2	2	8
+array join then full: rows
+0	0	3
+1	1	0
+2	1	2

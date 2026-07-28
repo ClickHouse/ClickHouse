@@ -42,9 +42,10 @@ SELECT 'array join then all/inner: reads from remote replicas';
 SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
     EXPLAIN SELECT t1.c, a FROM t1 ARRAY JOIN [1, 2] AS a INNER JOIN t2 ON t1.c = t2.c ORDER BY ALL);
 
--- An ALL-strictness join after an ARRAY JOIN stays eligible: the strictness is distributive, and a
--- non-distributive KIND is the business of the FULL/GLOBAL/CROSS rule, which cannot fire here
--- because the ARRAY JOIN does not increment `joins_count`.
+-- A non-leftmost FULL join is unsafe while carrying ALL strictness: it emits unmatched right rows,
+-- which each replica would decide from its own slice of the left side. The pre-existing
+-- FULL/GLOBAL/CROSS rule cannot catch this shape, because the ARRAY JOIN does not increment
+-- `joins_count`, so the kind term of the new veto covers it.
 SELECT 'array join then full: reads from remote replicas';
 SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
     EXPLAIN SELECT t1.c, a FROM t1 ARRAY JOIN [1, 2] AS a FULL JOIN t2 ON t1.c = t2.c ORDER BY ALL);
@@ -117,6 +118,11 @@ SELECT count() FROM (SELECT * FROM t1 LEFT JOIN t2 ON t1.c = t2.c ANY INNER JOIN
 -- new veto is too narrow.
 SELECT 'all/inner non-leftmost on a constant: rows';
 SELECT t1.c, t2.c, t3.c FROM t1 INNER JOIN t2 ON t1.c = t2.c INNER JOIN t3 ON 1 ORDER BY ALL;
+
+-- Row control for the FULL half: `t2.c = 3` has no match in `t1`, so a FULL join must emit it
+-- exactly once. Applied independently on each replica and concatenated it would appear per replica.
+SELECT 'array join then full: rows';
+SELECT t1.c, a, t2.c FROM t1 ARRAY JOIN [1] AS a FULL JOIN t2 ON t1.c = t2.c ORDER BY ALL;
 
 DROP TABLE t1 SYNC;
 DROP TABLE t2 SYNC;
