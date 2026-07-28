@@ -93,56 +93,50 @@ QUERY id: 0
                       ARGUMENTS
                         LIST id: 55, nodes: 1
                           CONSTANT id: 56, constant_value: \'1996-12-31\', constant_value_type: String
-          FUNCTION id: 57, function_name: indexHint, function_type: ordinary, result_type: UInt8
+          FUNCTION id: 57, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 58, nodes: 1
-                FUNCTION id: 59, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
-                  ARGUMENTS
-                    LIST id: 60, nodes: 2
-                      COLUMN id: 61, column_name: D_DATEKEY, result_type: Date, source_id: 3
-                      CONSTANT id: 62, constant_value: UInt64_9861, constant_value_type: Date
-                        EXPRESSION
-                          FUNCTION id: 54, function_name: toDate, function_type: ordinary, result_type: Date
-                            ARGUMENTS
-                              LIST id: 55, nodes: 1
-                                CONSTANT id: 56, constant_value: \'1996-12-31\', constant_value_type: String
-          FUNCTION id: 63, function_name: indexHint, function_type: ordinary, result_type: UInt8
+              LIST id: 58, nodes: 2
+                COLUMN id: 59, column_name: D_DATEKEY, result_type: Date, source_id: 3
+                CONSTANT id: 60, constant_value: UInt64_9861, constant_value_type: Date
+                  EXPRESSION
+                    FUNCTION id: 54, function_name: toDate, function_type: ordinary, result_type: Date
+                      ARGUMENTS
+                        LIST id: 55, nodes: 1
+                          CONSTANT id: 56, constant_value: \'1996-12-31\', constant_value_type: String
+          FUNCTION id: 61, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 64, nodes: 1
-                FUNCTION id: 65, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
-                  ARGUMENTS
-                    LIST id: 66, nodes: 2
-                      COLUMN id: 67, column_name: D_DATEKEY, result_type: Date, source_id: 3
-                      CONSTANT id: 68, constant_value: UInt64_9496, constant_value_type: Date
-                        EXPRESSION
-                          FUNCTION id: 48, function_name: toDate, function_type: ordinary, result_type: Date
-                            ARGUMENTS
-                              LIST id: 49, nodes: 1
-                                CONSTANT id: 50, constant_value: \'1996-01-01\', constant_value_type: String
+              LIST id: 62, nodes: 2
+                COLUMN id: 63, column_name: D_DATEKEY, result_type: Date, source_id: 3
+                CONSTANT id: 64, constant_value: UInt64_9496, constant_value_type: Date
+                  EXPRESSION
+                    FUNCTION id: 48, function_name: toDate, function_type: ordinary, result_type: Date
+                      ARGUMENTS
+                        LIST id: 49, nodes: 1
+                          CONSTANT id: 50, constant_value: \'1996-01-01\', constant_value_type: String
+          FUNCTION id: 65, function_name: equals, function_type: ordinary, result_type: LowCardinality(UInt8)
+            ARGUMENTS
+              LIST id: 66, nodes: 2
+                COLUMN id: 67, column_name: S_NATION, result_type: LowCardinality(String), source_id: 5
+                CONSTANT id: 68, constant_value: \'UNITED KINGDOM\', constant_value_type: String
           FUNCTION id: 69, function_name: equals, function_type: ordinary, result_type: LowCardinality(UInt8)
             ARGUMENTS
               LIST id: 70, nodes: 2
-                COLUMN id: 71, column_name: S_NATION, result_type: LowCardinality(String), source_id: 5
-                CONSTANT id: 72, constant_value: \'UNITED KINGDOM\', constant_value_type: String
-          FUNCTION id: 73, function_name: equals, function_type: ordinary, result_type: LowCardinality(UInt8)
-            ARGUMENTS
-              LIST id: 74, nodes: 2
-                COLUMN id: 75, column_name: P_CATEGORY, result_type: LowCardinality(String), source_id: 7
-                CONSTANT id: 76, constant_value: \'MFGR#21\', constant_value_type: String
+                COLUMN id: 71, column_name: P_CATEGORY, result_type: LowCardinality(String), source_id: 7
+                CONSTANT id: 72, constant_value: \'MFGR#21\', constant_value_type: String
   GROUP BY
-    LIST id: 77, nodes: 3
+    LIST id: 73, nodes: 3
       COLUMN id: 2, column_name: D_YEARMONTHNUM, result_type: UInt32, source_id: 3
       COLUMN id: 4, column_name: S_CITY, result_type: LowCardinality(String), source_id: 5
       COLUMN id: 6, column_name: P_BRAND, result_type: LowCardinality(String), source_id: 7
   ORDER BY
-    LIST id: 78, nodes: 3
-      SORT id: 79, sort_direction: ASCENDING, with_fill: 0
+    LIST id: 74, nodes: 3
+      SORT id: 75, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION D_YEARMONTHNUM
           COLUMN id: 2, column_name: D_YEARMONTHNUM, result_type: UInt32, source_id: 3
-      SORT id: 80, sort_direction: ASCENDING, with_fill: 0
+      SORT id: 76, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION S_CITY
           COLUMN id: 4, column_name: S_CITY, result_type: LowCardinality(String), source_id: 5
-      SORT id: 81, sort_direction: ASCENDING, with_fill: 0
+      SORT id: 77, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION P_BRAND
           COLUMN id: 6, column_name: P_BRAND, result_type: LowCardinality(String), source_id: 7
 
@@ -156,7 +150,7 @@ ALL INNER JOIN default.lineorder AS __table5 ON __table5.LO_ORDERDATE = __table1
 ALL INNER JOIN default.customer AS __table2 ON __table5.LO_CUSTKEY = __table2.C_CUSTKEY
 ALL INNER JOIN default.supplier AS __table3 ON __table5.LO_SUPPKEY = __table3.S_SUPPKEY
 ALL INNER JOIN default.part AS __table4 ON __table5.LO_PARTKEY = __table4.P_PARTKEY
-WHERE (__table5.LO_QUANTITY >= 34) AND (__table5.LO_QUANTITY <= 44) AND (__table5.LO_ORDERDATE >= _CAST(\'1996-01-01\', \'Date\')) AND (__table5.LO_ORDERDATE <= _CAST(\'1996-12-31\', \'Date\')) AND indexHint(__table1.D_DATEKEY <= _CAST(\'1996-12-31\', \'Date\')) AND indexHint(__table1.D_DATEKEY >= _CAST(\'1996-01-01\', \'Date\')) AND (__table3.S_NATION = \'UNITED KINGDOM\') AND (__table4.P_CATEGORY = \'MFGR#21\')
+WHERE (__table5.LO_QUANTITY >= 34) AND (__table5.LO_QUANTITY <= 44) AND (__table5.LO_ORDERDATE >= _CAST(\'1996-01-01\', \'Date\')) AND (__table5.LO_ORDERDATE <= _CAST(\'1996-12-31\', \'Date\')) AND (__table1.D_DATEKEY <= _CAST(\'1996-12-31\', \'Date\')) AND (__table1.D_DATEKEY >= _CAST(\'1996-01-01\', \'Date\')) AND (__table3.S_NATION = \'UNITED KINGDOM\') AND (__table4.P_CATEGORY = \'MFGR#21\')
 GROUP BY
     __table1.D_YEARMONTHNUM,
     __table3.S_CITY,
