@@ -32,8 +32,7 @@ docker pull clickhouse/clickhouse-server
   ### Compatibilidad
 </div>
 
-* La imagen amd64 requiere compatibilidad con [las instrucciones SSE3](https://en.wikipedia.org/wiki/SSE3).
-  Prácticamente todas las CPU x86 posteriores a 2005 son compatibles con SSE3.
+* La imagen amd64 requiere compatibilidad con el [nivel de microarquitectura x86-64-v3](https://en.wikipedia.org/wiki/X86-64#Microarchitecture_levels) (AVX2, BMI1, BMI2, F16C, FMA, LZCNT, MOVBE, XSAVE). Prácticamente todas las CPU x86 posteriores a 2015 son compatibles con x86-64-v3.
 * La imagen arm64 requiere compatibilidad con la [arquitectura ARMv8.2-A](https://en.wikipedia.org/wiki/AArch64#ARMv8.2-A) y,
   además, con el registro Load-Acquire RCpc. Este registro es opcional en ARMv8.2-A y obligatorio en
   [ARMv8.3-A](https://en.wikipedia.org/wiki/AArch64#ARMv8.3-A). Se admite en instancias Graviton &gt;=2 y en instancias de Azure y GCP.
