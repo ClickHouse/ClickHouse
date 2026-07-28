@@ -238,7 +238,7 @@ namespace
     /// overflow split) may still have capacity, and otherwise the record starts a fresh
     /// survivor of the same key.
     void ALWAYS_INLINE mergeOrAppendStagedCount(
-        DB::AdaptiveAggregationSession::StagedKeys & keys,
+        DB::StagedChunk::StagedKeys & keys,
         DB::PaddedPODArray<UInt32> & multiplicities,
         const UInt64 hash,
         const KeyBytesRef & key,
@@ -2129,15 +2129,15 @@ struct StagedChunkPreparation
     Aggregator::AggregateFunctionInstructions instructions;
 };
 
-AdaptiveAggregationSession::AggregatePayload::AggregatePayload() = default;
-AdaptiveAggregationSession::AggregatePayload::AggregatePayload(AggregatePayload &&) noexcept = default;
-AdaptiveAggregationSession::AggregatePayload & AdaptiveAggregationSession::AggregatePayload::operator=(AggregatePayload &&) noexcept
+StagedChunk::AggregatePayload::AggregatePayload() = default;
+StagedChunk::AggregatePayload::AggregatePayload(AggregatePayload &&) noexcept = default;
+StagedChunk::AggregatePayload & StagedChunk::AggregatePayload::operator=(AggregatePayload &&) noexcept
     = default;
-AdaptiveAggregationSession::AggregatePayload::~AggregatePayload() = default;
+StagedChunk::AggregatePayload::~AggregatePayload() = default;
 
-void Aggregator::prepareStagedChunk(AdaptiveAggregationSession::StagedChunk & block) const
+void Aggregator::prepareStagedChunk(StagedChunk & block) const
 {
-    auto & payload = std::get<AdaptiveAggregationSession::AggregatePayload>(block.payload);
+    auto & payload = std::get<StagedChunk::AggregatePayload>(block.payload);
 
     auto prep = std::make_unique<StagedChunkPreparation>();
     prep->aggregate_columns.resize(params.aggregates_size);
@@ -2428,13 +2428,13 @@ void NO_INLINE Aggregator::executeFrozenImpl(
 
 template <typename SharedKey, typename State>
 void NO_INLINE Aggregator::buildDeduplicatedCountChunk(
-    const AdaptiveAggregationSession::MutableStagedChunkPtr & block,
+    const MutableStagedChunkPtr & block,
     AdaptiveAggregationProducer & adaptive,
     State & local_find_state,
     Arena & scratch_pool,
     std::optional<UInt32> key_row_override) const
 {
-    constexpr size_t num_buckets = AdaptiveAggregationSession::NUM_BUCKETS;
+    constexpr size_t num_buckets = ADAPTIVE_AGGREGATION_NUM_BUCKETS;
     const size_t total = adaptive.miss_hashes.size();
 
     /// Group (hash, record) pairs by (bucket, a few extra hash bits): a duplicate key always
@@ -2473,7 +2473,7 @@ void NO_INLINE Aggregator::buildDeduplicatedCountChunk(
         total_bytes += size;
 
     auto & keys = block->keys;
-    auto & multiplicities = block->payload.emplace<AdaptiveAggregationSession::CountPayload>().multiplicities;
+    auto & multiplicities = block->payload.emplace<StagedChunk::CountPayload>().multiplicities;
     keys.routing_hashes.resize(total);
     multiplicities.resize(total);
     keys.key_offsets.resize(total + 1);
@@ -2530,7 +2530,7 @@ void NO_INLINE Aggregator::publishDelayedRecords(
     bool counts_only,
     std::optional<UInt32> key_row_override) const
 {
-    constexpr size_t num_buckets = AdaptiveAggregationSession::NUM_BUCKETS;
+    constexpr size_t num_buckets = ADAPTIVE_AGGREGATION_NUM_BUCKETS;
 
     const size_t total = adaptive.miss_hashes.size();
     if (!total)
@@ -2574,7 +2574,7 @@ void NO_INLINE Aggregator::publishDelayedRecords(
         }
     }
 
-    auto block = std::make_shared<AdaptiveAggregationSession::StagedChunk>();
+    auto block = std::make_shared<StagedChunk>();
     auto & keys = block->keys;
 
     if (counts_only)
@@ -2583,7 +2583,7 @@ void NO_INLINE Aggregator::publishDelayedRecords(
     }
     else
     {
-    auto & payload = block->payload.emplace<AdaptiveAggregationSession::AggregatePayload>();
+    auto & payload = block->payload.emplace<StagedChunk::AggregatePayload>();
 
     keys.routing_hashes.resize(total);
 
@@ -2695,10 +2695,10 @@ void NO_INLINE Aggregator::publishDelayedRecords(
 
     size_t estimated_payload_bytes
         = keys.key_bytes.size() + keys.key_offsets.size() * sizeof(UInt64) + keys.routing_hashes.size() * sizeof(UInt64);
-    if (const auto * counts = std::get_if<AdaptiveAggregationSession::CountPayload>(&block->payload))
+    if (const auto * counts = std::get_if<StagedChunk::CountPayload>(&block->payload))
         estimated_payload_bytes += counts->multiplicities.size() * sizeof(UInt32);
     else
-        for (const auto & column : std::get<AdaptiveAggregationSession::AggregatePayload>(block->payload).argument_columns)
+        for (const auto & column : std::get<StagedChunk::AggregatePayload>(block->payload).argument_columns)
             if (column)
                 estimated_payload_bytes += column->byteSize();
 
@@ -2706,13 +2706,13 @@ void NO_INLINE Aggregator::publishDelayedRecords(
 }
 
 void Aggregator::publishStagedChunk(
-    AdaptiveAggregationSession & shared, AdaptiveAggregationSession::MutableStagedChunkPtr block) const
+    AdaptiveAggregationSession & shared, MutableStagedChunkPtr block) const
 {
     chassert(block->wellFormed());
 
     /// Prepared here, on the publishing thread, so the chunk is immutable once any bucket can
     /// see it.
-    if (std::holds_alternative<AdaptiveAggregationSession::AggregatePayload>(block->payload))
+    if (std::holds_alternative<StagedChunk::AggregatePayload>(block->payload))
         prepareStagedChunk(*block);
 
     shared.backlog.publish(std::move(block));
@@ -2721,7 +2721,7 @@ void Aggregator::publishStagedChunk(
 void AdaptiveAggregationSession::StagedBacklog::publish(const StagedChunkPtr & chunk)
 {
     std::shared_lock registry_lock(registry_mutex);
-    for (size_t b = 0; b < NUM_BUCKETS; ++b)
+    for (size_t b = 0; b < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++b)
     {
         if (!chunk->keys.recordsForBucket(b))
             continue;
@@ -2732,7 +2732,7 @@ void AdaptiveAggregationSession::StagedBacklog::publish(const StagedChunkPtr & c
     }
 }
 
-std::vector<AdaptiveAggregationSession::StagedChunkPtr> AdaptiveAggregationSession::StagedBacklog::takeAllForPressureDrain()
+std::vector<StagedChunkPtr> AdaptiveAggregationSession::StagedBacklog::takeAllForPressureDrain()
 {
     std::vector<StagedChunkPtr> chunks;
     std::unique_lock registry_lock(registry_mutex);
@@ -2754,7 +2754,7 @@ std::vector<AdaptiveAggregationSession::StagedChunkPtr> AdaptiveAggregationSessi
 }
 
 void Aggregator::stageChunk(
-    AdaptiveAggregationProducer & adaptive, AdaptiveAggregationSession::MutableStagedChunkPtr block, size_t estimated_payload_bytes) const
+    AdaptiveAggregationProducer & adaptive, MutableStagedChunkPtr block, size_t estimated_payload_bytes) const
 {
     /// Coalescing pays in proportion to how many batches merge into one chunk. A batch of at
     /// least half the seal target could only ever merge with one neighbor, gaining almost
@@ -2779,13 +2779,13 @@ void Aggregator::flushPendingChunks(AdaptiveAggregationProducer & adaptive) cons
 }
 
 void Aggregator::sealValueStagedChunkDeduplicated(
-    const std::vector<AdaptiveAggregationSession::MutableStagedChunkPtr> & minis,
-    AdaptiveAggregationSession::StagedChunk & chunk) const
+    const std::vector<MutableStagedChunkPtr> & minis,
+    StagedChunk & chunk) const
 {
-    constexpr size_t num_buckets = AdaptiveAggregationSession::NUM_BUCKETS;
+    constexpr size_t num_buckets = ADAPTIVE_AGGREGATION_NUM_BUCKETS;
 
-    auto multiplicities_of = [](const AdaptiveAggregationSession::StagedChunk & mini) -> const PaddedPODArray<UInt32> &
-    { return std::get<AdaptiveAggregationSession::CountPayload>(mini.payload).multiplicities; };
+    auto multiplicities_of = [](const StagedChunk & mini) -> const PaddedPODArray<UInt32> &
+    { return std::get<StagedChunk::CountPayload>(mini.payload).multiplicities; };
 
     size_t total = 0;
     UInt64 total_key_bytes = 0;
@@ -2797,7 +2797,7 @@ void Aggregator::sealValueStagedChunkDeduplicated(
     }
 
     auto & keys = chunk.keys;
-    auto & multiplicities = chunk.payload.emplace<AdaptiveAggregationSession::CountPayload>().multiplicities;
+    auto & multiplicities = chunk.payload.emplace<StagedChunk::CountPayload>().multiplicities;
     keys.routing_hashes.resize(total);
     multiplicities.resize(total);
     keys.key_offsets.resize(total + 1);
@@ -2872,7 +2872,7 @@ void Aggregator::sealValueStagedChunkDeduplicated(
 
 void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
 {
-    constexpr size_t num_buckets = AdaptiveAggregationSession::NUM_BUCKETS;
+    constexpr size_t num_buckets = ADAPTIVE_AGGREGATION_NUM_BUCKETS;
 
     auto & minis = adaptive.pending_chunks;
     const size_t num_minis = minis.size();
@@ -2885,7 +2885,7 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
         return;
     }
 
-    auto chunk = std::make_shared<AdaptiveAggregationSession::StagedChunk>();
+    auto chunk = std::make_shared<StagedChunk>();
     auto & keys = chunk->keys;
     const bool counts_only = minis.front()->countsOnly();
 
@@ -2895,8 +2895,8 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
     }
     else
     {
-    auto columns_of = [](const AdaptiveAggregationSession::StagedChunk & mini) -> const Columns &
-    { return std::get<AdaptiveAggregationSession::AggregatePayload>(mini.payload).argument_columns; };
+    auto columns_of = [](const StagedChunk & mini) -> const Columns &
+    { return std::get<StagedChunk::AggregatePayload>(mini.payload).argument_columns; };
 
     /// Bucket b's records are the concatenation of the batches' b-slices in buffer order. Every
     /// per-array pass below walks the same (bucket, batch) order, so a record keeps one position
@@ -2955,7 +2955,7 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
         keys.key_offsets[total] = byte_pos;
     }
 
-        auto & argument_columns = chunk->payload.emplace<AdaptiveAggregationSession::AggregatePayload>().argument_columns;
+        auto & argument_columns = chunk->payload.emplace<StagedChunk::AggregatePayload>().argument_columns;
         argument_columns.assign(columns_of(*minis.front()).size(), nullptr);
         for (const auto & argument_positions : aggregates_positions)
             for (const auto position : argument_positions)
@@ -3058,7 +3058,7 @@ template <AdaptiveKeyStorage key_storage, typename Method>
 size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
     Method & method,
     Arena * arena,
-    const std::vector<AdaptiveAggregationSession::StagedChunkPtr> & backlog,
+    const std::vector<StagedChunkPtr> & backlog,
     size_t bucket_index,
     size_t total_records,
     PaddedPODArray<AggregateDataPtr> & places,
@@ -3113,7 +3113,7 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
             }
         }
 
-        if (const auto * counts = std::get_if<AdaptiveAggregationSession::CountPayload>(&block.payload))
+        if (const auto * counts = std::get_if<StagedChunk::CountPayload>(&block.payload))
         {
             const auto & multiplicities = counts->multiplicities;
             constexpr size_t prefetch_look_ahead = adaptive_drain_prefetch_look_ahead;
@@ -3165,7 +3165,7 @@ template <AdaptiveKeyStorage key_storage, typename Method>
 void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
     Method & method,
     Arena * bucket_arena,
-    const AdaptiveAggregationSession::StagedChunk & block,
+    const StagedChunk & block,
     size_t slice_begin,
     size_t slice_end,
     PaddedPODArray<AggregateDataPtr> & places,
@@ -3185,7 +3185,7 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
             impl.prefetch(keys.keyBytesAt(la), keys.routing_hashes[la]);
     };
 
-    const auto & prep = *std::get<AdaptiveAggregationSession::AggregatePayload>(block.payload).prepared;
+    const auto & prep = *std::get<StagedChunk::AggregatePayload>(block.payload).prepared;
 
     /// `places` is indexed by absolute record index: the compacted argument columns hold record
     /// j's values at row j, so the batch calls below consume the [slice_begin, slice_end) range
@@ -3249,7 +3249,7 @@ void Aggregator::drainStagedChunksEarly(AdaptiveAggregationSession & shared, Ada
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureSweeps);
 
     auto & routing = *shared.early_drain_variants;
-    constexpr size_t num_buckets = AdaptiveAggregationSession::NUM_BUCKETS;
+    constexpr size_t num_buckets = ADAPTIVE_AGGREGATION_NUM_BUCKETS;
 
     /// Bucket b's drained states live in pool b, mirroring the merge-time layout.
     while (routing.aggregates_pools.size() < num_buckets)
@@ -3260,7 +3260,7 @@ void Aggregator::drainStagedChunksEarly(AdaptiveAggregationSession & shared, Ada
     const Int64 low_watermark = static_cast<Int64>(params.max_bytes_before_external_group_by / 4 * 3);
 
     PaddedPODArray<AggregateDataPtr> places_scratch;
-    std::vector<AdaptiveAggregationSession::StagedChunkPtr> single(1);
+    std::vector<StagedChunkPtr> single(1);
     size_t drained_records = 0;
 
     for (auto & chunk : chunks)

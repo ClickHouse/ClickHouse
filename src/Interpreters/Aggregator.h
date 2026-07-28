@@ -117,10 +117,16 @@ enum class AdaptiveDrainGoal
     All,
 };
 
-struct AdaptiveAggregationSession
-{
-    static constexpr size_t NUM_BUCKETS = 256;
+/// The staged records route by the two-level bucket of their key's hash, so the backlogs and
+/// the routing structures come in the same 256 buckets as the two-level hash tables.
+inline constexpr size_t ADAPTIVE_AGGREGATION_NUM_BUCKETS = 256;
 
+/// All delayed records of one consumed block, grouped by bucket. One record batch per
+/// consumed block, rather than one per (block, bucket); a thread's small batches are
+/// further coalesced into one larger chunk of the same shape before they reach the
+/// backlogs.
+struct StagedChunk
+{
     /// The bucket-grouped key side of a staged chunk, shared by both payload modes: record i's
     /// routing hash (reused by the drain's emplace) is `routing_hashes[i]` and its key bytes
     /// occupy `key_bytes[key_offsets[i], key_offsets[i + 1])`; bucket b owns the record range
@@ -131,7 +137,7 @@ struct AdaptiveAggregationSession
         PaddedPODArray<UInt64> routing_hashes;
         PaddedPODArray<char> key_bytes;
         PaddedPODArray<UInt64> key_offsets;
-        std::array<UInt32, NUM_BUCKETS + 1> bucket_offsets{};
+        std::array<UInt32, ADAPTIVE_AGGREGATION_NUM_BUCKETS + 1> bucket_offsets{};
 
         size_t size() const { return routing_hashes.size(); }
         size_t recordsForBucket(size_t bucket) const { return bucket_offsets[bucket + 1] - bucket_offsets[bucket]; }
@@ -170,38 +176,35 @@ struct AdaptiveAggregationSession
         ~AggregatePayload();
     };
 
-    /// All delayed records of one consumed block, grouped by bucket. One record batch per
-    /// consumed block, rather than one per (block, bucket); a thread's small batches are
-    /// further coalesced into one larger chunk of the same shape before they reach the
-    /// backlogs.
-    struct StagedChunk
+    StagedKeys keys;
+    std::variant<CountPayload, AggregatePayload> payload;
+
+    bool countsOnly() const { return std::holds_alternative<CountPayload>(payload); }
+
+    /// Debug-only structural invariants, checked at publication.
+    bool wellFormed() const
     {
-        StagedKeys keys;
-        std::variant<CountPayload, AggregatePayload> payload;
-
-        bool countsOnly() const { return std::holds_alternative<CountPayload>(payload); }
-
-        /// Debug-only structural invariants, checked at publication.
-        bool wellFormed() const
-        {
-            const size_t records = keys.size();
-            if (keys.key_offsets.size() != records + 1 || keys.bucket_offsets.back() != records)
+        const size_t records = keys.size();
+        if (keys.key_offsets.size() != records + 1 || keys.bucket_offsets.back() != records)
+            return false;
+        for (size_t b = 0; b < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++b)
+            if (keys.bucket_offsets[b] > keys.bucket_offsets[b + 1])
                 return false;
-            for (size_t b = 0; b < NUM_BUCKETS; ++b)
-                if (keys.bucket_offsets[b] > keys.bucket_offsets[b + 1])
-                    return false;
-            for (size_t i = 0; i < records; ++i)
-                if (keys.key_offsets[i] > keys.key_offsets[i + 1])
-                    return false;
-            if (const auto * counts = std::get_if<CountPayload>(&payload))
-                return counts->multiplicities.size() == records;
-            return true;
-        }
-    };
-    /// A published chunk is immutable; only the producer building a chunk holds it mutably.
-    using StagedChunkPtr = std::shared_ptr<const StagedChunk>;
-    using MutableStagedChunkPtr = std::shared_ptr<StagedChunk>;
+        for (size_t i = 0; i < records; ++i)
+            if (keys.key_offsets[i] > keys.key_offsets[i + 1])
+                return false;
+        if (const auto * counts = std::get_if<CountPayload>(&payload))
+            return counts->multiplicities.size() == records;
+        return true;
+    }
+};
 
+/// A published chunk is immutable; only the producer building a chunk holds it mutably.
+using StagedChunkPtr = std::shared_ptr<const StagedChunk>;
+using MutableStagedChunkPtr = std::shared_ptr<StagedChunk>;
+
+struct AdaptiveAggregationSession
+{
     /// The 256 per-bucket chunk backlogs and the locking that keeps publication atomic.
     /// TODO (nihalzp): Consider using a lock-free queue for the backlog, to avoid contention on the mutex.
     class StagedBacklog
@@ -234,7 +237,7 @@ struct AdaptiveAggregationSession
             std::vector<StagedChunkPtr> backlog;
         };
 
-        std::array<Bucket, NUM_BUCKETS> buckets;
+        std::array<Bucket, ADAPTIVE_AGGREGATION_NUM_BUCKETS> buckets;
 
         /// Makes a chunk's registration in the per-bucket backlogs atomic against a sweep's
         /// collection: a sweep that caught a half-registered chunk would drain all of its
@@ -358,7 +361,7 @@ struct AdaptiveAggregationProducer
     /// bucket-grouped chunk before they reach the backlogs (see `stageChunk`), so the
     /// merge-time drain gets a few large contiguous slices per bucket instead of one tiny
     /// slice per consumed block. Flushed by `flushPendingChunks` when the input ends.
-    std::vector<AdaptiveAggregationSession::MutableStagedChunkPtr> pending_chunks;
+    std::vector<MutableStagedChunkPtr> pending_chunks;
     size_t pending_staged_bytes = 0;
 };
 
@@ -842,7 +845,7 @@ private:
     /// repeat-heavy staged stream copies each key's bytes once and the drain emplaces it once.
     template <typename SharedKey, typename State>
     void buildDeduplicatedCountChunk(
-        const AdaptiveAggregationSession::MutableStagedChunkPtr & block,
+        const MutableStagedChunkPtr & block,
         AdaptiveAggregationProducer & adaptive,
         State & local_find_state,
         Arena & scratch_pool,
@@ -853,7 +856,7 @@ private:
     /// one chunk once enough bytes accumulate.
     void stageChunk(
         AdaptiveAggregationProducer & adaptive,
-        AdaptiveAggregationSession::MutableStagedChunkPtr block,
+        MutableStagedChunkPtr block,
         size_t estimated_payload_bytes) const;
 
     /// Merges the buffered batches into one bucket-grouped chunk of the same shape (bucket b's
@@ -863,17 +866,17 @@ private:
     /// The value-staged variant of the seal merge: keys repeating across the batches collapse
     /// into one record with a summed run length while the records are copied into the chunk.
     void sealValueStagedChunkDeduplicated(
-        const std::vector<AdaptiveAggregationSession::MutableStagedChunkPtr> & minis,
-        AdaptiveAggregationSession::StagedChunk & chunk) const;
+        const std::vector<MutableStagedChunkPtr> & minis,
+        StagedChunk & chunk) const;
 
     /// The single publication point: finishes the chunk (builds its preparation in place,
     /// checks the structural invariants in debug builds) and hands it over as immutable to
     /// the session's backlog.
-    void publishStagedChunk(AdaptiveAggregationSession & shared, AdaptiveAggregationSession::MutableStagedChunkPtr block) const;
+    void publishStagedChunk(AdaptiveAggregationSession & shared, MutableStagedChunkPtr block) const;
 
     /// Builds the staged chunk's shared preparation: the aggregate-function instructions over
     /// its argument columns, in the chunk's own stable storage.
-    void prepareStagedChunk(AdaptiveAggregationSession::StagedChunk & block) const;
+    void prepareStagedChunk(StagedChunk & block) const;
 
     /// Drains one bucket's backlog into `method.data.impls[bucket_index]`. `key_storage`
     /// selects the ownership: merge-time drains emplace keys pointing into the retained
@@ -883,7 +886,7 @@ private:
     size_t drainAdaptiveBucketBacklog(
         Method & method,
         Arena * arena,
-        const std::vector<AdaptiveAggregationSession::StagedChunkPtr> & backlog,
+        const std::vector<StagedChunkPtr> & backlog,
         size_t bucket_index,
         size_t total_records,
         PaddedPODArray<AggregateDataPtr> & places,
@@ -894,7 +897,7 @@ private:
     void drainAdaptiveBucketImpl(
         Method & method,
         Arena * bucket_arena,
-        const AdaptiveAggregationSession::StagedChunk & block,
+        const StagedChunk & block,
         size_t slice_begin,
         size_t slice_end,
         PaddedPODArray<AggregateDataPtr> & places,
