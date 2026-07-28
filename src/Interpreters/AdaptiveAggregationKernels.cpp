@@ -355,20 +355,14 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         }
         else
         {
-            const UInt64 key_size = [&]() -> UInt64
-            {
-                if constexpr (adaptive_key_stages_bytes<typename SharedMethod::Key>)
-                    return adaptiveStagedKeyBytes(key).size();
-                else
-                    return sizeof(typename SharedMethod::Key);
-            }();
             const auto bucket = static_cast<UInt8>(SharedMethod::Data::getBucketFromHash(hash));
 
             if (is_simple_count)
             {
                 adaptive.miss_hashes.push_back(hash);
                 adaptive.miss_multiplicities.push_back(static_cast<UInt32>(row_end - row_begin));
-                adaptive.miss_key_sizes.push_back(key_size);
+                if constexpr (adaptive_key_stages_bytes<typename SharedMethod::Key>)
+                    adaptive.miss_key_sizes.push_back(adaptiveStagedKeyBytes(key).size());
                 adaptive.miss_buckets.push_back(bucket);
             }
             else
@@ -378,7 +372,8 @@ void NO_INLINE Aggregator::executeFrozenImpl(
                     adaptive.miss_source_rows.push_back(static_cast<UInt32>(i));
                     adaptive.miss_hashes.push_back(hash);
                     adaptive.miss_buckets.push_back(bucket);
-                    adaptive.miss_key_sizes.push_back(key_size);
+                    if constexpr (adaptive_key_stages_bytes<typename SharedMethod::Key>)
+                        adaptive.miss_key_sizes.push_back(adaptiveStagedKeyBytes(key).size());
                 }
             }
             publishDelayedRecords<typename SharedMethod::Key>(
@@ -426,10 +421,10 @@ void NO_INLINE Aggregator::executeFrozenImpl(
             {
                 adaptive.miss_hashes.push_back(hash);
                 adaptive.miss_multiplicities.push_back(1);
+                /// Fixed-size keys stage no size: it is a compile-time constant the publish
+                /// substitutes, so the hot staging loop skips a dead store per record.
                 if constexpr (adaptive_key_stages_bytes<typename SharedMethod::Key>)
                     adaptive.miss_key_sizes.push_back(adaptiveStagedKeyBytes(staged_key).size());
-                else
-                    adaptive.miss_key_sizes.push_back(sizeof(staged_key));
 
                 /// A serialized key view points into the reused scratch arena and can only seed
                 /// the run tracking when the views are block-stable; every other key type is a
@@ -453,6 +448,51 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         return;
     }
 
+    /// The probe/staging loop, shared by the with-places and the zero-aggregates shapes: a
+    /// keyed GROUP BY without aggregate functions needs no places at all (the baseline
+    /// specializes the same way), so it skips the allocation and the per-row stores.
+    auto probe_rows = [&]<bool record_places>(AggregateDataPtr * places_data) -> size_t
+    {
+        size_t hits = 0;
+        for (size_t i = row_begin; i < row_end; ++i)
+        {
+            auto && key_holder = local_find_state.getKeyHolder(i, scratch_pool);
+            const auto & key = keyHolderGetKey(key_holder);
+            const UInt64 hash = local_method.data.hash(key);
+
+            if (!bypass_local_probe)
+            {
+                if (auto it = local_method.data.find(key, hash))
+                {
+                    ++hits;
+                    if constexpr (record_places)
+                        places_data[i] = it->getMapped();
+                    keyHolderDiscardKey(key_holder);
+                    continue;
+                }
+            }
+
+            if constexpr (record_places)
+                places_data[i] = nullptr;
+            adaptive.miss_source_rows.push_back(static_cast<UInt32>(i));
+            adaptive.miss_hashes.push_back(hash);
+            adaptive.miss_buckets.push_back(static_cast<UInt8>(SharedMethod::Data::getBucketFromHash(hash)));
+
+            if constexpr (adaptive_key_stages_bytes<typename SharedMethod::Key>)
+                adaptive.miss_key_sizes.push_back(adaptiveStagedKeyBytes(key).size());
+            keyHolderDiscardKey(key_holder);
+        }
+        return hits;
+    };
+
+    if (params.aggregates_size == 0)
+    {
+        const size_t hits = probe_rows.template operator()<false>(nullptr);
+        update_bypass_sampling(hits, row_end - row_begin);
+        publishDelayedRecords<typename SharedMethod::Key>(columns, row_end, adaptive, local_find_state, scratch_pool, /*counts_only=*/false);
+        return;
+    }
+
     AllocatorWithMemoryTracking<AggregateDataPtr> allocator;
     const size_t places_size = row_end;
     auto places_deleter = [&allocator, &places_size](auto * ptr)
@@ -462,41 +502,13 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     };
     std::unique_ptr<AggregateDataPtr[], decltype(places_deleter)> places(allocator.allocate(places_size), places_deleter);
 
-    size_t hits = 0;
-    for (size_t i = row_begin; i < row_end; ++i)
-    {
-        auto && key_holder = local_find_state.getKeyHolder(i, scratch_pool);
-        const auto & key = keyHolderGetKey(key_holder);
-        const UInt64 hash = local_method.data.hash(key);
-
-        if (!bypass_local_probe)
-        {
-            if (auto it = local_method.data.find(key, hash))
-            {
-                ++hits;
-                places[i] = it->getMapped();
-                keyHolderDiscardKey(key_holder);
-                continue;
-            }
-        }
-
-        places[i] = nullptr;
-        adaptive.miss_source_rows.push_back(static_cast<UInt32>(i));
-        adaptive.miss_hashes.push_back(hash);
-        adaptive.miss_buckets.push_back(static_cast<UInt8>(SharedMethod::Data::getBucketFromHash(hash)));
-
-        if constexpr (adaptive_key_stages_bytes<typename SharedMethod::Key>)
-            adaptive.miss_key_sizes.push_back(adaptiveStagedKeyBytes(key).size());
-        else
-            adaptive.miss_key_sizes.push_back(sizeof(typename SharedMethod::Key));
-        keyHolderDiscardKey(key_holder);
-    }
+    const size_t hits = probe_rows.template operator()<true>(places.get());
     update_bypass_sampling(hits, row_end - row_begin);
     publishDelayedRecords<typename SharedMethod::Key>(columns, row_end, adaptive, local_find_state, scratch_pool, /*counts_only=*/false);
 
     /// With no local hits every place is null and the batch pass would only skip rows; the
     /// staged records carry the block's whole contribution. Bypassed blocks are always all-miss.
-    if (params.aggregates_size && hits != 0)
+    if (hits != 0)
         executeAggregateInstructions(
             aggregates_pool,
             row_begin,
@@ -551,9 +563,14 @@ void NO_INLINE Aggregator::buildDeduplicatedCountChunk(
     for (size_t i = 0; i < total; ++i)
         pairs[cursor[group_of(i)]++] = {adaptive.miss_hashes[i], static_cast<UInt32>(i)};
 
+    /// Fixed-size keys stage no per-record size (see the kernels); the publish substitutes the
+    /// compile-time constant.
     UInt64 total_bytes = 0;
-    for (const auto size : adaptive.miss_key_sizes)
-        total_bytes += size;
+    if constexpr (adaptive_key_stages_bytes<SharedKey>)
+        for (const auto size : adaptive.miss_key_sizes)
+            total_bytes += size;
+    else
+        total_bytes = total * sizeof(SharedKey);
 
     auto & keys = block->keys;
     auto & multiplicities = block->payload.emplace<StagedChunk::CountPayload>().multiplicities;
@@ -577,7 +594,13 @@ void NO_INLINE Aggregator::buildDeduplicatedCountChunk(
         for (size_t i = group_begin; i < group_end; ++i)
         {
             const auto [hash, idx] = pairs[i];
-            const size_t size = adaptive.miss_key_sizes[idx];
+            const size_t size = [&]
+            {
+                if constexpr (adaptive_key_stages_bytes<SharedKey>)
+                    return adaptive.miss_key_sizes[idx];
+                else
+                    return sizeof(SharedKey);
+            }();
             const size_t key_row = key_row_override ? *key_row_override : adaptive.miss_source_rows[idx];
 
             /// The key bytes are read straight from the hashing state's column when it exposes
@@ -626,12 +649,22 @@ void NO_INLINE Aggregator::buildBucketGroupedAggregateChunk(
     /// Counting sort of the staged misses by bucket: one pass over the records accumulates the
     /// record and key-byte histograms together, one pass over the buckets turns both into
     /// exclusive offsets.
+    /// Fixed-size keys stage no per-record size (see the kernels); the publish substitutes the
+    /// compile-time constant.
+    const auto staged_key_size = [&](size_t record)
+    {
+        if constexpr (adaptive_key_stages_bytes<SharedKey>)
+            return adaptive.miss_key_sizes[record];
+        else
+            return sizeof(SharedKey);
+    };
+
     std::array<UInt32, num_buckets> cursor{};
     std::array<UInt64, num_buckets> byte_cursor{};
     for (size_t i = 0; i < total; ++i)
     {
         ++cursor[adaptive.miss_buckets[i]];
-        byte_cursor[adaptive.miss_buckets[i]] += adaptive.miss_key_sizes[i];
+        byte_cursor[adaptive.miss_buckets[i]] += staged_key_size(i);
     }
 
     UInt32 offset = 0;
@@ -672,7 +705,7 @@ void NO_INLINE Aggregator::buildBucketGroupedAggregateChunk(
         if (gather_data)
             gather_data[pos] = adaptive.miss_source_rows[i];
 
-        const auto size = adaptive.miss_key_sizes[i];
+        const auto size = staged_key_size(i);
         const auto byte_pos = byte_cursor[b];
         byte_cursor[b] += size;
         keys.key_offsets[pos] = byte_pos;
