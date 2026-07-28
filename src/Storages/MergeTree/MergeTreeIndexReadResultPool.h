@@ -178,10 +178,18 @@ private:
 
 using MergeTreeProjectionIndexReaderPtr = std::shared_ptr<MergeTreeProjectionIndexReader>;
 
+class MergeTreeIndexGranularity;
+
 struct MergeTreeIndexReadResult
 {
     SkipIndexReadResultPtr skip_index_read_result;
     ProjectionIndexBitmapPtr projection_index_read_result;
+
+    /// Whether index read result is useful and marks can be skipped.
+    bool canSkipAnyMark() const;
+
+    /// Whether all rows of the granule are filtered out by the present index read results.
+    bool canSkipMark(size_t mark, const MergeTreeIndexGranularity & index_granularity) const;
 };
 
 using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;
@@ -226,6 +234,9 @@ public:
     /// Cleans up the cached MergeTreeIndexReadResult for a given part if it exists.
     /// Should be called when the last task for the part has finished.
     void clear(const DataPartPtr & part);
+
+    /// Whether index read results may include a skip index part (for any part of the query).
+    bool hasSkipIndexReader() const { return skip_index_reader != nullptr; }
 
     void cancel() noexcept;
 
