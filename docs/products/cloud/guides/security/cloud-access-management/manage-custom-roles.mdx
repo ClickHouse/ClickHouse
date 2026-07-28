@@ -67,14 +67,14 @@ Review permissions assigned to your new role before finalizing. Click `Create ro
 </Step>
 </Steps>
 
-## Manage database roles with unified RBAC (beta) {#manage-database-roles-with-unified-rbac}
+## Manage database roles (beta) {#manage-database-roles}
 
 <BetaBadge/>
 
-In addition to console permissions, custom roles can include data permissions that control access to the databases of selected services. With unified RBAC, you manage console and database access in one place instead of maintaining separate roles in each database.
+In addition to console permissions, custom roles can include data permissions that control access to the databases of selected services. This lets you manage console and database access in one place instead of maintaining separate roles in each database.
 
 <Note>
-Unified RBAC is in beta and is available for services running ClickHouse version 26.4 and above.
+This feature is in beta and is available for services running ClickHouse version 26.4 and above.
 </Note>
 
 When you add data permissions to a custom role, ClickHouse Cloud creates a matching role in each selected service, prefixed with `cloud:`. For example, a custom role named `readonly` appears in the database as `cloud:readonly`. Members of the custom role receive these database permissions when they connect to the service through SQL console passwordless authentication.
