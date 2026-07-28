@@ -294,6 +294,10 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
 {
     ChainedBuffers chain;
     size_t got_total = 0;
+    /// The most this slice could yield before an artificial bound (the long-connection reach, or
+    /// the requested `want`). A `got_total` below it means the source object actually ENDED - a real
+    /// EOF - not that we merely hit a reach bound.
+    size_t effective_limit = want;
 
     auto fill = [&](size_t limit, auto && read_chunk)
     {
@@ -330,6 +334,7 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
         }
         /// Serve only up to the bound (short window); avoids draining and re-reading the tail.
         const size_t serve = std::min(want, long_conn->read_until - object_offset);
+        effective_limit = serve;
         fill(serve, from_long_conn);
         if (long_conn->atBound())
             long_conn.reset();
@@ -340,6 +345,7 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
             dropLongConnection();
         if (shouldOpenLongConnection() && tryOpenLongConnection(object, object_offset))
         {
+            effective_limit = std::min(want, long_conn->read_until - object_offset);
             fill(want, from_long_conn);
             if (long_conn && long_conn->atBound())
                 long_conn.reset();
@@ -358,6 +364,13 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
 
     stats.add(Stats::BytesFromSource, got_total);
     fetch_tracker.recordReadRange(file_base, got_total);
+
+    /// An unknown-size file is a single object, so its true end is this object's end: reading fewer
+    /// than `effective_limit` (a real EOF, not just a reach bound) latches EOF, so the next window
+    /// stops instead of re-fetching the tail block to rediscover where the file ends.
+    if (offset_map.hasUnknownSize() && got_total < effective_limit)
+        reached_eof = true;
+
     return chain;
 }
 

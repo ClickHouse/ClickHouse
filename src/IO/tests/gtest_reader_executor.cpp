@@ -92,13 +92,17 @@ unsigned char patternByte(size_t i)
 struct MockCacheState
 {
     std::vector<char> store;
+    /// Size the provider believes the file is, used only to frame blocks (block clamping). Defaults
+    /// to the real store size; a test sets it to `UnknownSize` to model an unknown-size file, where
+    /// the final block stays full-width and its whole-block `covers` check can never be satisfied.
+    size_t declared_size;
     IntervalSet resident;
     IntervalSet sibling_led;
     VectorWithMemoryTracking<ByteRange> sibling_ranges;
     bool sibling_completes_on_wait = false;
     VectorWithMemoryTracking<ByteRange> waits;
     VectorWithMemoryTracking<ByteRange> writes;
-    explicit MockCacheState(size_t file_size) : store(file_size, 0) {}
+    explicit MockCacheState(size_t file_size) : store(file_size, 0), declared_size(file_size) {}
 
     void addSibling(ByteRange r)
     {
@@ -224,7 +228,7 @@ private:
         Cursor(size_t block_size_, std::shared_ptr<MockCacheState> s_) : block_size(block_size_), state(std::move(s_)) {}
         Resolution lookAt(const StoredObject &, size_t, size_t pos_in_file) override
         {
-            const size_t file_size = state->store.size();
+            const size_t file_size = state->declared_size;
             if (pos_in_file >= file_size)
                 return Resolution{};
             const size_t block_start = pos_in_file / block_size * block_size;
@@ -696,6 +700,75 @@ TEST_F(ReaderExecutorTest, EmptyFileIsImmediateEOF)
 
     EXPECT_EQ(ex.totalSize(), 0u);
     EXPECT_TRUE(ex.readNextWindow().atEnd());
+}
+
+TEST_F(ReaderExecutorTest, ReadsPresentUnknownSizeLocalFile)
+{
+    /// A local file whose size could not be determined up front (bytes_size == UnknownSize) must
+    /// still read correctly: the executor streams it to the real EOF via short reads.
+    StoredObject obj = makeFile("u.bin", 1000);
+    obj.bytes_size = StoredObject::UnknownSize;
+    StoredObjects objects{obj};
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 256});
+    EXPECT_TRUE(ex.hasUnknownSize());
+
+    auto data = drain(ex);
+    ASSERT_EQ(data.size(), 1000u);
+    for (size_t i = 0; i < data.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+}
+
+TEST_F(ReaderExecutorTest, UnknownSizePageCacheCachesInteriorSkipsTail)
+{
+    /// Unknown-size local file with a page-cache tier: the provider is framed with an unknown
+    /// (huge) size, so interior full-width blocks populate and hit on a warm read, but the final
+    /// short block can never satisfy the whole-block `covers` check and is left uncached (re-read
+    /// from source each time) - no error, correct data. Not a regression: legacy caches nothing for
+    /// unknown-size files, whereas the executor still caches the interior.
+    StoredObject obj = makeFile("u.bin", 900);   // three 256-blocks [0,768) + a 132-byte tail
+    obj.bytes_size = StoredObject::UnknownSize;
+    StoredObjects objects{obj};
+    const size_t block = 256;
+
+    auto state = std::make_shared<MockCacheState>(/*file_size=*/900);
+    state->declared_size = StoredObject::UnknownSize;   // the provider does not know the real size
+    auto make_chain = [&]() -> CacheChain
+    {
+        CacheChain chain;
+        chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
+        return chain;
+    };
+
+    std::vector<char> cold;
+    {
+        TestThreadGroup tg;
+        ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+            ReaderExecutor::Options{.window_size = 4096, .cache_chain = make_chain()});
+        cold = drain(ex);
+        ASSERT_EQ(cold.size(), 900u);
+        EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 900u);  // cold: all from source
+    }
+    for (size_t i = 0; i < cold.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(cold[i]), patternByte(i)) << "at " << i;
+
+    /// Interior [0,768) cached; tail [768,900) not (its full-width block fails whole-block covers).
+    EXPECT_TRUE(state->resident.subtract(ByteRange{0, 768}).empty()) << "interior blocks not fully cached";
+    size_t tail_uncached = 0;
+    for (const auto & r : state->resident.subtract(ByteRange{768, 132}))
+        tail_uncached += r.size;
+    EXPECT_EQ(tail_uncached, 132u) << "expected the whole tail [768, 900) to be uncached";
+    for (const auto & wr : state->writes)
+        EXPECT_LE(wr.end(), 768u) << "a write reached into the tail block [768, 900)";
+
+    /// Warm: the interior is served from cache, only the uncached tail is re-fetched from source.
+    TestThreadGroup warm_tg;
+    ReaderExecutor warm(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 4096, .cache_chain = make_chain()});
+    auto warm_data = drain(warm);
+    ASSERT_EQ(warm_data, cold);
+    EXPECT_EQ(warm_tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 132u)
+        << "warm read should only re-fetch the uncached tail";
 }
 
 TEST_F(ReaderExecutorTest, MissingFileWithUnknownSizeThrows)
