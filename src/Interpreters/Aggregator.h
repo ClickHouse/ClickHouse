@@ -121,45 +121,82 @@ struct AdaptiveAggregationSession
 {
     static constexpr size_t NUM_BUCKETS = 256;
 
-    /// All delayed records of one consumed block, grouped by bucket: bucket b owns the slice
-    /// [bucket_offsets[b], bucket_offsets[b + 1]) of every per-record array, and `routing_hashes` (the
-    /// routing hash, reused by the drain's emplace) is filled for every record. The payload is
-    /// one of two modes:
-    ///  - value-staged (`value_staged`, simple-count aggregation only): the record is the key
-    ///    itself plus a run-length count, with no argument columns;
-    ///  - row-reference (general aggregates): record j reads its aggregate arguments from row j
-    ///    of `argument_columns`, which hold the records' values gathered at publish in the same
-    ///    bucket-grouped order, so a bucket's slice is a contiguous row range (sparse arguments
-    ///    are materialized by the gather, so the staged columns are always dense); the key bytes
-    ///    are staged as well, so the drain emplaces without constructing a hashing state per
-    ///    (block, bucket) slice.
-    ///
-    /// One record batch per consumed block, rather than one per (block, bucket); a thread's
-    /// small batches are further coalesced into one larger chunk of the same shape before they
-    /// reach the backlogs.
-    struct StagedChunk
+    /// The bucket-grouped key side of a staged chunk, shared by both payload modes: record i's
+    /// routing hash (reused by the drain's emplace) is `routing_hashes[i]` and its key bytes
+    /// occupy `key_bytes[key_offsets[i], key_offsets[i + 1])`; bucket b owns the record range
+    /// [bucket_offsets[b], bucket_offsets[b + 1]). The key bytes are staged so that the drain
+    /// emplaces without constructing a hashing state per (chunk, bucket) slice.
+    struct StagedKeys
     {
-        /// The row-reference mode's argument columns, compacted at publish (see above): only
-        /// the aggregate-argument positions are filled, kept at their original indexes so that
-        /// the instruction preparation can index the vector.
-        Columns argument_columns;
         PaddedPODArray<UInt64> routing_hashes;
-        std::array<UInt32, NUM_BUCKETS + 1> bucket_offsets{};
-
-        bool value_staged = false;
-        /// The key of the i-th record occupies `key_bytes[key_offsets[i], key_offsets[i + 1])`,
-        /// in the same bucket-grouped order as `routing_hashes`; `multiplicities[i]` is the run length
-        /// (consecutive occurrences of one key collapse into one record at staging time).
         PaddedPODArray<char> key_bytes;
         PaddedPODArray<UInt64> key_offsets;
-        PaddedPODArray<UInt32> multiplicities;
+        std::array<UInt32, NUM_BUCKETS + 1> bucket_offsets{};
 
-        /// Built by the producer when the chunk is published (see `enqueueStagedChunk`), so a
-        /// published chunk is immutable and the drains read it without coordination. Never
-        /// built for value-staged blocks.
+        size_t size() const { return routing_hashes.size(); }
+        size_t recordsForBucket(size_t bucket) const { return bucket_offsets[bucket + 1] - bucket_offsets[bucket]; }
+        std::string_view keyBytesAt(size_t i) const
+        {
+            return {key_bytes.data() + key_offsets[i], key_offsets[i + 1] - key_offsets[i]};
+        }
+    };
+
+    /// Value staging (simple-count aggregation only): the record is the key itself plus a run
+    /// length - `multiplicities[i]` is how many source rows record i represents (repeats of a
+    /// key collapse into one record at staging time).
+    struct CountPayload
+    {
+        PaddedPODArray<UInt32> multiplicities;
+    };
+
+    /// Row-reference staging (general aggregates): record i reads its aggregate arguments from
+    /// row i of `argument_columns`, which hold the records' values gathered at publish in the
+    /// same bucket-grouped order, so a bucket's slice is a contiguous row range. Only the
+    /// aggregate-argument positions are filled, kept at their original indexes so that the
+    /// instruction preparation can index the vector; sparse arguments are materialized by the
+    /// gather, so the staged columns are always dense.
+    struct AggregatePayload
+    {
+        Columns argument_columns;
+
+        /// The aggregate-function instructions over `argument_columns`, built in the chunk's
+        /// own stable storage when the chunk is published (see `enqueueStagedChunk`), so a
+        /// published chunk is immutable and the drains read it without coordination.
         std::unique_ptr<const StagedChunkPreparation> prepared;
 
-        ~StagedChunk();
+        AggregatePayload();
+        AggregatePayload(AggregatePayload &&) noexcept;
+        AggregatePayload & operator=(AggregatePayload &&) noexcept;
+        ~AggregatePayload();
+    };
+
+    /// All delayed records of one consumed block, grouped by bucket. One record batch per
+    /// consumed block, rather than one per (block, bucket); a thread's small batches are
+    /// further coalesced into one larger chunk of the same shape before they reach the
+    /// backlogs.
+    struct StagedChunk
+    {
+        StagedKeys keys;
+        std::variant<CountPayload, AggregatePayload> payload;
+
+        bool countsOnly() const { return std::holds_alternative<CountPayload>(payload); }
+
+        /// Debug-only structural invariants, checked at publication.
+        bool wellFormed() const
+        {
+            const size_t records = keys.size();
+            if (keys.key_offsets.size() != records + 1 || keys.bucket_offsets.back() != records)
+                return false;
+            for (size_t b = 0; b < NUM_BUCKETS; ++b)
+                if (keys.bucket_offsets[b] > keys.bucket_offsets[b + 1])
+                    return false;
+            for (size_t i = 0; i < records; ++i)
+                if (keys.key_offsets[i] > keys.key_offsets[i + 1])
+                    return false;
+            if (const auto * counts = std::get_if<CountPayload>(&payload))
+                return counts->multiplicities.size() == records;
+            return true;
+        }
     };
     using StagedChunkPtr = std::shared_ptr<StagedChunk>;
 
@@ -767,7 +804,7 @@ private:
         AdaptiveAggregationProducer & adaptive,
         State & local_find_state,
         Arena & scratch_pool,
-        bool value_staged,
+        bool counts_only,
         std::optional<UInt32> key_row_override = std::nullopt) const;
 
     /// Fills a value-staged block with the current misses ordered by (bucket, hash) and merged:
