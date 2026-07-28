@@ -67,6 +67,15 @@ SELECT 'Sparse key, dictionary attribute read';
 SELECT sum(r.v), count(), countIf(r.v = (l.j + 1) * 10), countIf(r.v = 0 AND l.j >= 20)
 FROM probe_sparse AS l LEFT JOIN dict_sparse_key AS r ON l.j = r.j;
 
+-- Key 0 is the sparse default, and a blanked right key is also 0, so the assertion above cannot
+-- tell a found key 0 from a lost one. Under join_use_nulls = 1 an unmatched row yields NULL for the
+-- right key, which separates the two. This statement asks for that value explicitly, so the setting
+-- the Stress check injects cannot change what it measures.
+SELECT 'Sparse default key 0 is really found';
+SELECT countIf(r.j IS NULL), countIf(l.j < 20 AND r.j IS NOT NULL), countIf(l.j = 0 AND r.j = 0)
+FROM probe_sparse AS l LEFT JOIN dict_sparse_key AS r ON l.j = r.j
+SETTINGS join_use_nulls = 1;
+
 -- Aggregating in order over the sparse key: the shape observed failing in CI.
 SELECT 'Sparse key, aggregation in order';
 SELECT max(u), min(u), count() FROM
