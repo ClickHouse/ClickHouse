@@ -29,6 +29,9 @@ P=4
 # to CI's per-test-run randomized database) -- so a bare database/table filter would also match
 # every past run's flush_query_id, silently inflating the expected count on rerun. Capture a
 # precise lower time bound before any insert runs so the lookup is scoped to this execution only.
+# The bound must be compared against flush_time_microseconds: flush_time is a second-granularity
+# DateTime, so when the whole test fits in one wall-clock second it truncates to BEFORE the
+# sub-second start_time and the filter would drop this run's own flush.
 start_time=$($CLICKHOUSE_CLIENT -q "SELECT now64(6)")
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_dedup_prewarm"
@@ -81,7 +84,7 @@ WHERE type = 'QueryFinish' AND query_id IN (
     SELECT DISTINCT flush_query_id
     FROM system.asynchronous_insert_log
     WHERE database = currentDatabase() AND table = 't_dedup_prewarm' AND status = 'Ok'
-      AND flush_time >= toDateTime64('$start_time', 6)
+      AND flush_time_microseconds >= toDateTime64('$start_time', 6)
 )"
 
 # Sanity: all N*P distinct rows are present (none wrongly deduplicated).
