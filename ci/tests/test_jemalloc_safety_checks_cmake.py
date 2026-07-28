@@ -118,20 +118,59 @@ def _strip_cmake_comments(text: str) -> str:
     return "\n".join(line.split("#", 1)[0] for line in text.splitlines())
 
 
-def _definitions_block(text: str) -> str:
-    """The `if (ENABLE_JEMALLOC_SAFETY_CHECKS) ... endif ()` block that defines macros.
+_OPTION_BLOCK_OPEN_RE = re.compile(rf"^if \(\s*{OPTION_NAME}\s*\)\s*$")
+_CMAKE_IF_RE = re.compile(r"^if\s*\(")
+_CMAKE_ENDIF_RE = re.compile(r"^endif\s*\(")
+_PRIVATE_DEFINITIONS_RE = re.compile(
+    r"target_compile_definitions\s*\(\s*_jemalloc\s+PRIVATE\s+(.*?)\)", re.S
+)
+
+
+def _definitions_block_lines(text: str) -> list[tuple[int, str]]:
+    """`(depth, line)` for every line of the `ENABLE_JEMALLOC_SAFETY_CHECKS` block.
 
     Located by content (it must contain `target_compile_definitions`) rather than by
     line number, so reformatting the file does not break the guard. Comments are
     stripped first, so every consumer below sees only active code.
+
+    Control flow is tracked by *depth* rather than matched with a regex: `if`/`endif`
+    are counted regardless of indentation, so a nested branch cannot be mistaken for
+    part of the block's own top level. A regex ending at the first column-0
+    `endif ()` swallows an indented inner `endif ()` and reports a block spanning the
+    nested branch, which lets a `target_compile_definitions` CMake may never reach look
+    like the active one.
     """
     stripped = _strip_cmake_comments(text)
-    blocks = re.findall(
-        rf"^if \(\s*{OPTION_NAME}\s*\).*?^endif \(\)",
-        stripped,
-        re.M | re.S,
+    blocks: list[list[tuple[int, str]]] = []
+    current: list[tuple[int, str]] | None = None
+    depth = 0
+    for line in stripped.splitlines():
+        if current is None:
+            if _OPTION_BLOCK_OPEN_RE.match(line):
+                current = []
+                depth = 1
+            continue
+        token = line.lstrip()
+        if _CMAKE_ENDIF_RE.match(token):
+            depth -= 1
+            if depth == 0:
+                blocks.append(current)
+                current = None
+                continue
+        current.append((depth, line))
+        if _CMAKE_IF_RE.match(token):
+            depth += 1
+    # Unbalanced control flow means the depths below are meaningless, so fail closed
+    # rather than reading an invocation out of a block whose extent is unknown.
+    assert current is None, (
+        f"{JEMALLOC_CMAKE_REL}: the `if ({OPTION_NAME})` block is never closed "
+        f"({len(current)} lines collected, `if`/`endif` unbalanced), so this guard "
+        "cannot tell which invocations are unconditional"
     )
-    with_definitions = [b for b in blocks if "target_compile_definitions" in b]
+
+    with_definitions = [
+        b for b in blocks if any("target_compile_definitions" in line for _, line in b)
+    ]
     assert with_definitions, (
         f"no `if ({OPTION_NAME}) ... endif ()` block containing "
         f"`target_compile_definitions` found in {JEMALLOC_CMAKE_REL}"
@@ -146,23 +185,30 @@ def _definitions_block(text: str) -> str:
 def _private_definitions_arguments(text: str) -> str:
     """Argument text of the block's `target_compile_definitions(_jemalloc PRIVATE ...)`.
 
-    `re.S` so the definitions may be reflowed across lines.
+    Only invocations at the block's own top level (depth 1) count. A nested one is
+    conditional by definition - CMake may never enter that branch - so it cannot stand
+    in for the definitions the option promises. Several unconditional invocations are
+    unioned, so splitting the macros across two top-level calls stays legal.
+
+    `re.S` so the definitions may be reflowed across lines; a reflowed invocation is at
+    depth 1 when its opening line is, and its continuation lines carry no `if`/`endif`.
     """
-    block = _definitions_block(text)
-    match = re.search(
-        r"target_compile_definitions\s*\(\s*_jemalloc\s+PRIVATE\s+(.*?)\)",
-        block,
-        re.S,
-    )
-    assert match, (
+    block_lines = _definitions_block_lines(text)
+    top_level = "\n".join(line for depth, line in block_lines if depth == 1)
+    arguments = _PRIVATE_DEFINITIONS_RE.findall(top_level)
+    block = "\n".join(line for _, line in block_lines)
+    assert arguments, (
         f"{JEMALLOC_CMAKE_REL}: the `{OPTION_NAME}` block must define its macros with "
         "`target_compile_definitions(_jemalloc PRIVATE ...)`. The macros are "
         "jemalloc-internal: `PRIVATE` on `_jemalloc` keeps them out of every "
         "ClickHouse translation unit, so no other target is compiled against a "
-        f"different `config_opt_*` view of jemalloc's headers than jemalloc itself.\n"
+        f"different `config_opt_*` view of jemalloc's headers than jemalloc itself. "
+        "The invocation must also sit at the block's own top level: a nested one does "
+        "not count, because CMake may never enter that branch, and then the option "
+        "would define nothing while this guard stayed green.\n"
         f"block was:\n{block}"
     )
-    return match.group(1)
+    return "\n".join(arguments)
 
 
 def _missing_macros(arguments: str) -> list[str]:
@@ -285,6 +331,125 @@ def test_size_macro_detection(label, text, size_macro_expected):
     ), f"{label}: _missing_macros disagrees with the parsed argument tokens"
 
 
+# --- the assertion's own negative cases, part two: nested control flow ----------------
+#
+# A `target_compile_definitions` inside a branch nested in the option's block is
+# conditional by definition, so it must not stand in for the definitions the option
+# promises. All four shapes below satisfied the previous non-balanced-regex helper (which
+# read the *first* invocation of an over-wide block), while the invocation CMake actually
+# always runs defines only the safety macro.
+
+_INLINE_NESTED_SIZE_FIRST = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    if (SOME_CONDITION)\n"
+    "        target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "    endif ()\n"
+    "    target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_OPT_SAFETY_CHECKS)\n"
+    "endif ()\n"
+)
+
+_INLINE_NESTED_SIZE_SECOND = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_OPT_SAFETY_CHECKS)\n"
+    "    if (SOME_CONDITION)\n"
+    "        target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "    endif ()\n"
+    "endif ()\n"
+)
+
+# The inner `endif ()` at column 0 - the spelling the old regex terminated on - must be
+# rejected exactly like the indented one.
+_INLINE_NESTED_ENDIF_COLUMN_ZERO = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "if (SOME_CONDITION)\n"
+    "target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "endif ()\n"
+    "    target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_OPT_SAFETY_CHECKS)\n"
+    "endif ()\n"
+)
+
+_INLINE_NESTED_DEAD_BRANCH = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    if (FALSE)\n"
+    "        target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "    endif ()\n"
+    "    target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_OPT_SAFETY_CHECKS)\n"
+    "endif ()\n"
+)
+
+# Both arms nested: there is no unconditional invocation at all, so the guard must not
+# find one to read - it raises with the top-level requirement instead.
+_INLINE_NESTED_IF_ELSE = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    if (SOME_CONDITION)\n"
+    "        target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "    else ()\n"
+    "        target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS)\n"
+    "    endif ()\n"
+    "endif ()\n"
+)
+
+# Control: the macros legitimately split across two unconditional invocations. Both are
+# always run, so this must keep passing.
+_INLINE_TWO_TOP_LEVEL_CALLS = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_OPT_SAFETY_CHECKS)\n"
+    "    target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "endif ()\n"
+)
+
+
+@pytest.mark.parametrize(
+    "label, text, size_macro_expected",
+    [
+        ("nested branch, size block first", _INLINE_NESTED_SIZE_FIRST, False),
+        ("nested branch, size block second", _INLINE_NESTED_SIZE_SECOND, False),
+        (
+            "nested branch, inner endif at column 0",
+            _INLINE_NESTED_ENDIF_COLUMN_ZERO,
+            False,
+        ),
+        ("dead if (FALSE) branch", _INLINE_NESTED_DEAD_BRANCH, False),
+        ("two unconditional invocations", _INLINE_TWO_TOP_LEVEL_CALLS, True),
+    ],
+)
+def test_nested_definitions_do_not_satisfy_the_guard(label, text, size_macro_expected):
+    """Only invocations at the option block's own top level count."""
+    arguments = _private_definitions_arguments(text)
+    assert ("JEMALLOC_OPT_SIZE_CHECKS" in _missing_macros(arguments)) is (
+        not size_macro_expected
+    ), (
+        f"{label}: expected -DJEMALLOC_OPT_SIZE_CHECKS "
+        f"{'present' if size_macro_expected else 'absent'}; parsed arguments were "
+        f"{arguments!r}"
+    )
+
+
+def test_wholly_nested_definitions_leave_no_invocation_to_read():
+    """Every invocation nested: the guard must report a missing top-level one."""
+    with pytest.raises(AssertionError, match="own top level"):
+        _private_definitions_arguments(_INLINE_NESTED_IF_ELSE)
+
+
+def test_unbalanced_control_flow_fails_closed():
+    """A block that is never closed makes every depth meaningless."""
+    unbalanced = (
+        "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+        "    if (SOME_CONDITION)\n"
+        "        target_compile_definitions(_jemalloc PRIVATE"
+        " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+        "endif ()\n"
+    )
+    with pytest.raises(AssertionError, match="never closed"):
+        _private_definitions_arguments(unbalanced)
+
+
 def test_definitions_are_scoped_to_the_jemalloc_target():
     """The macros are jemalloc-internal and must not leak into other targets.
 
@@ -338,7 +503,10 @@ def _preprocessor_expr_to_python(expr: str) -> str:
     return expr
 
 
-def _config_flag_value(text: str, flag: str, defined_macros: set) -> bool:
+_PRIOR_STATE_DIRECTIVE_RE_TEMPLATE = r"^[ \t]*#[ \t]*(?:undef|define)[ \t]+{macro}\b.*$"
+
+
+def _config_flag_value(text: str, flag: str, defined_macros: set, macro: str) -> bool:
     """Value of `static const bool <flag> = #if ... ;` under `defined_macros`.
 
     Walks the initializer's `#if`/`#ifdef`/`#ifndef`/`#elif`/`#else` arms and returns
@@ -354,6 +522,14 @@ def _config_flag_value(text: str, flag: str, defined_macros: set) -> bool:
     `#elif` arm contains a comment whose `;` would otherwise truncate the non-greedy
     match mid-comment.
 
+    `macro` is the compile-time macro whose state the caller is modelling. Anything in
+    this header that already changed that macro's state before the initializer is read
+    makes `defined_macros` a fiction, so such a directive fails the guard closed rather
+    than being modelled: an earlier `#undef` cancels the `-D` the lane passes exactly as
+    a platform header's bare `#undef` would, and a `#define` arms the flag independently
+    of the lane - both are changes this guard must not silently bless, and for the size
+    gate nothing else can notice (`config_opt_size_checks` has no mallctl).
+
     Fails closed - an unknown directive, a non-literal arm, or no arm selected raises
     rather than guessing.
     """
@@ -365,6 +541,26 @@ def _config_flag_value(text: str, flag: str, defined_macros: set) -> bool:
         "found. This header is the only place the compile-time macro becomes the "
         "boolean jemalloc's detector sites read - re-derive this assertion against "
         "whatever replaced it before deleting it."
+    )
+    # Block comments are already stripped, so the commented-out placeholder spelling
+    # (`/* #undef JEMALLOC_OPT_SIZE_CHECKS */`) cannot reach this. `\b` on the
+    # identifier so `JEMALLOC_OPT_SIZE_CHECKS_DISABLED` does not count, mirroring
+    # `_missing_macros`' reasoning.
+    prior_state = re.findall(
+        _PRIOR_STATE_DIRECTIVE_RE_TEMPLATE.format(macro=re.escape(macro)),
+        text[: match.start()],
+        re.M,
+    )
+    assert not prior_state, (
+        f"{JEMALLOC_PREAMBLE_REL}: an active `#undef`/`#define` of `{macro}` precedes "
+        f"the `{flag}` initializer, so its condition is no longer decided by "
+        f"the lane's `-D{macro}`. An earlier `#undef` cancels that `-D` just as a bare "
+        "`#undef` in a platform header would, and a `#define` arms the flag in builds "
+        "that never asked for it. Either way this guard's model of the macro state is "
+        f"wrong, and for `config_opt_size_checks` there is no mallctl, so the AST "
+        "fuzzer job's runtime preflight cannot see it. Re-derive this guard against "
+        "the new shape rather than letting it report a state the preprocessor does not "
+        f"compute.\ndirectives found: {prior_state}"
     )
     initializer = match.group(1)
 
@@ -447,8 +643,8 @@ def test_compiled_preamble_maps_each_macro_to_its_config_flag(macro, flag):
     today, since `JEMALLOC_DEBUG` is not defined either.
     """
     preamble = JEMALLOC_PREAMBLE.read_text(encoding="utf-8")
-    armed = _config_flag_value(preamble, flag, {macro})
-    disarmed = _config_flag_value(preamble, flag, set())
+    armed = _config_flag_value(preamble, flag, {macro}, macro)
+    disarmed = _config_flag_value(preamble, flag, set(), macro)
     context = (
         f"This header is the sole conversion of `-D{macro}` into the boolean the "
         "detector sites read, and it is the one that gets compiled because "
@@ -534,6 +730,7 @@ def _size_flag_armed_with(block: str) -> bool:
         preamble.replace(_REAL_SIZE_BLOCK, block),
         "config_opt_size_checks",
         {"JEMALLOC_OPT_SIZE_CHECKS"},
+        "JEMALLOC_OPT_SIZE_CHECKS",
     )
 
 
@@ -557,6 +754,62 @@ def test_size_flag_evaluation_detects_disarming_edits(label, block, armed_expect
         "test_compiled_preamble_maps_each_macro_to_its_config_flag fail on it; a True "
         "for one of the legitimate shapes is what keeps that test from failing "
         "spuriously."
+    )
+
+
+# --- the mapping assertion's own negative cases, part two: prior macro state ----------
+#
+# A directive earlier in the same header that changes the macro's state makes the
+# modelled `defined_macros` a fiction: an active `#undef` cancels the lane's `-D` (the
+# platform-header hazard, reappearing inside the compiled preamble), a `#define` arms the
+# flag in builds that never asked for it. Both must fail closed. The commented-out
+# placeholder spelling and a suffixed identifier must not fire.
+
+
+def _size_flag_armed_with_prologue(prologue: str) -> bool:
+    """`config_opt_size_checks` with `prologue` inserted above its initializer."""
+    preamble = JEMALLOC_PREAMBLE.read_text(encoding="utf-8")
+    assert _REAL_SIZE_BLOCK in preamble, (
+        f"{JEMALLOC_PREAMBLE_REL}: the `config_opt_size_checks` initializer no longer "
+        "matches the text these negative cases substitute; re-derive them against the "
+        "current initializer"
+    )
+    return _config_flag_value(
+        preamble.replace(_REAL_SIZE_BLOCK, prologue + _REAL_SIZE_BLOCK),
+        "config_opt_size_checks",
+        {"JEMALLOC_OPT_SIZE_CHECKS"},
+        "JEMALLOC_OPT_SIZE_CHECKS",
+    )
+
+
+@pytest.mark.parametrize(
+    "label, prologue",
+    [
+        ("active #undef", "#undef JEMALLOC_OPT_SIZE_CHECKS\n"),
+        ("active #define", "#define JEMALLOC_OPT_SIZE_CHECKS\n"),
+        ("indented #undef", "#  undef JEMALLOC_OPT_SIZE_CHECKS\n"),
+    ],
+)
+def test_prior_macro_state_directives_fail_closed(label, prologue):
+    with pytest.raises(AssertionError, match="precedes the"):
+        _size_flag_armed_with_prologue(prologue)
+
+
+@pytest.mark.parametrize(
+    "label, prologue",
+    [
+        # The spelling every reachable platform header uses for its placeholder.
+        ("commented-out placeholder", "/* #undef JEMALLOC_OPT_SIZE_CHECKS */\n"),
+        # A different identifier that merely has the macro's name as a prefix.
+        ("suffixed identifier", "#undef JEMALLOC_OPT_SIZE_CHECKS_DISABLED\n"),
+        # The other gate's macro: unrelated to this flag's state.
+        ("the other gate's macro", "#undef JEMALLOC_OPT_SAFETY_CHECKS\n"),
+    ],
+)
+def test_prior_state_guard_does_not_fire_on_inert_directives(label, prologue):
+    assert _size_flag_armed_with_prologue(prologue) is True, (
+        f"{label}: this directive does not change `JEMALLOC_OPT_SIZE_CHECKS`' state, so "
+        "the prior-state guard must not fire on it"
     )
 
 

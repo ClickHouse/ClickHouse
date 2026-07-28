@@ -7,7 +7,7 @@ from ci.defs.job_configs import JobConfigs
 #
 # Builds `amd_debug` with -DENABLE_JEMALLOC_SAFETY_CHECKS=1 and runs the AST fuzzer
 # against it. The option arms `config_opt_safety_checks` and `config_opt_size_checks`,
-# which jemalloc ships but which are `#undef` in every ClickHouse build (Debug
+# which jemalloc ships but which are not defined in any ClickHouse build (Debug
 # included), so a sized-deallocation mismatch or a double free is detected only much
 # later, as an unattributable SIGSEGV in the background decay thread (issue #85726).
 # Armed, `arena_ptr_array_flush_impl` (`arena.c`) and `maybe_check_alloc_ctx`
