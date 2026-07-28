@@ -43,6 +43,25 @@ c1	Nullable(Float64)
 c1	Nullable(Float64)					
 c1	Nullable(Float64)					
 c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+group 5: and they read back as the inferred type
+-0.5
+0.5
+0.5
+-0.5
+0.5
+-0
+-0.5
+0.5
+group 5: CSV agrees on all of them
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
 group 6: date-shaped controls stay String
 c1	Nullable(String)					
 c1	Nullable(String)					

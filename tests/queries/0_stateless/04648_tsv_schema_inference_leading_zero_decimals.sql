@@ -46,7 +46,10 @@ DESC format(TSV, '0.5f');
 DESC format(CSV, '0x10');
 DESC format(CSV, '0.1.2');
 
--- 5. Values that already worked before the fix must not move.
+-- 5. Values that already worked before the fix must not move. The check the fix rewrites only ever
+-- looked at the first byte, so any sign or bare fractional dot moved the leading zero out of its reach
+-- and these spellings inferred a float on their own. They are pinned here so that stays true, and so a
+-- future rewrite of the check cannot start demoting them.
 SELECT 'group 5: already-working values unchanged';
 DESC format(TSV, '0');
 DESC format(TSV, '1.5');
@@ -55,6 +58,25 @@ DESC format(TSV, '-0.5');
 DESC format(TSV, '-0.0');
 DESC format(TSV, '+0.5');
 DESC format(TSV, '.5');
+DESC format(TSV, '-.5');
+DESC format(TSV, '+.5');
+DESC format(TSV, '-.0');
+DESC format(TSV, '-00.5');
+DESC format(TSV, '+00.5');
+SELECT 'group 5: and they read back as the inferred type';
+SELECT * FROM format(TSV, '-0.5');
+SELECT * FROM format(TSV, '+0.5');
+SELECT * FROM format(TSV, '.5');
+SELECT * FROM format(TSV, '-.5');
+SELECT * FROM format(TSV, '+.5');
+SELECT * FROM format(TSV, '-.0');
+SELECT * FROM format(TSV, '-00.5');
+SELECT * FROM format(TSV, '+00.5');
+SELECT 'group 5: CSV agrees on all of them';
+DESC format(CSV, '-.5');
+DESC format(CSV, '+.5');
+DESC format(CSV, '-.0');
+DESC format(CSV, '-00.5');
 
 -- 6. Date-shaped controls: date inference runs before the leading-zero check, so these cannot move.
 SELECT 'group 6: date-shaped controls stay String';
