@@ -2,12 +2,16 @@ if (NOT OS_DARWIN)
     message (FATAL_ERROR "darwin-compatibility can only be used on Darwin")
 endif ()
 
-add_library(darwin-compatibility STATIC pthread_rwlock_shim.c)
-
-# Sanitizers (TSan in particular) interpose pthread_rwlock_* themselves.
-if (SANITIZE)
-    message (FATAL_ERROR "darwin-compatibility must not be linked into sanitizer builds")
+if (SANITIZE STREQUAL "thread")
+    # TSan interposes pthread_rwlock_* itself to track lock order, so a second interposition
+    # would either lose those annotations or fight over the symbols. Only TSan does this:
+    # ASan, MSan and UBSan leave these functions alone, and since they keep the query
+    # profiler enabled (see sanitize.cmake), they need the workaround as much as release
+    # builds do.
+    message (FATAL_ERROR "darwin-compatibility must not be linked into TSan builds")
 endif ()
+
+add_library(darwin-compatibility STATIC pthread_rwlock_shim.c)
 
 # The shim must be force-loaded, and must be the ONLY link entry for this archive:
 # - Lazy archive scanning cannot be relied on: `Threads::Threads` puts -lpthread in the
