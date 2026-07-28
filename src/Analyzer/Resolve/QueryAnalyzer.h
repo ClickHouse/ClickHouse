@@ -161,26 +161,19 @@ private:
 
     static void validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
-    /** Stage at which the missing-alias validation of a join operand runs. The check needs the columns of the
-      * sibling table expressions to tell a real ambiguity from a harmless missing alias, but resolving a sibling
-      * can have side effects (`resolveTableFunction` executes the table function), so an operand that is already
-      * invalid on its own must still be rejected before its siblings are resolved.
+    /** The missing-alias validation of a join operand needs the columns of the sibling table expressions to tell
+      * a real ambiguity from a harmless missing alias, but resolving a sibling can have side effects
+      * (`resolveTableFunction` executes the table function). It therefore takes the siblings that are resolved
+      * so far (`resolved_sibling_table_expressions`, which may include `table_expression_node` itself and is
+      * empty before any sibling is resolved) instead of the whole join: adding siblings can only add collisions,
+      * never remove one, so a verdict reached from a subset of them is final and the operand is rejected as
+      * early as the historical fail-fast order did.
       */
-    enum class JoinAliasValidationStage : uint8_t
-    {
-        /// Only the sibling-independent binders (unknown columns of this operand, in-scope expression aliases,
-        /// enclosing `ARRAY JOIN` aliases) are consulted, so the operand fails fast when its verdict cannot
-        /// change once the siblings are known.
-        BeforeSiblingsResolved,
-        /// The full check, including the columns of every sibling table expression of the join.
-        AfterSiblingsResolved,
-    };
-
     void validateJoinTableExpressionWithoutAlias(
         const QueryTreeNodePtr & join_node,
         const QueryTreeNodePtr & table_expression_node,
-        IdentifierResolveScope & scope,
-        JoinAliasValidationStage stage);
+        const QueryTreeNodes & resolved_sibling_table_expressions,
+        IdentifierResolveScope & scope);
 
     static void checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode & join_node, IdentifierResolveScope & scope);
 

@@ -205,6 +205,15 @@ WITH 1 AS x SELECT x FROM (SELECT 2 AS x) INNER JOIN nonexistent_table_function_
 -- first and its own error is reported.
 SELECT 1 FROM (SELECT 2 AS y) INNER JOIN nonexistent_table_function_04502() ON true; -- { serverError UNKNOWN_FUNCTION }
 
+-- The same holds for a comma join: an operand that already collides with an operand resolved before it
+-- gets its final verdict right there, so the remaining operands are not resolved. Later operands can only
+-- add collisions, never remove the one that is already found.
+SELECT x FROM (SELECT 0 AS x) AS lhs, (SELECT 1 AS x), nonexistent_table_function_04502(); -- { serverError ALIAS_REQUIRED }
+
+-- Without a collision among the operands resolved so far, the verdict needs the remaining ones, so they
+-- are resolved and the unresolvable table function reports its own error.
+SELECT x FROM (SELECT 0 AS x) AS lhs, (SELECT 1 AS y), nonexistent_table_function_04502(); -- { serverError UNKNOWN_FUNCTION }
+
 DROP TABLE item;
 DROP TABLE sales;
 DROP TABLE with_number;
