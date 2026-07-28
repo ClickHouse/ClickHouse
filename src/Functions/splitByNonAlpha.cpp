@@ -113,7 +113,7 @@ REGISTER_FUNCTION(SplitByNonAlpha)
 Splits a string separated by whitespace and punctuation characters into an array of substrings.
 
 :::note
-Setting [`splitby_max_substrings_includes_remaining_string`](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
+Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
 :::
 )";
     FunctionDocumentation::Syntax syntax = "splitByNonAlpha(s[, max_substrings])";

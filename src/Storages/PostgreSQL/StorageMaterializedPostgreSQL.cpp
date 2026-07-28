@@ -868,7 +868,7 @@ SET allow_experimental_materialized_postgresql_table=1
 ```
 :::
 
-If more than one table is required, it is highly recommended to use the [MaterializedPostgreSQL](../../../engines/database-engines/materialized-postgresql.md) database engine instead of the table engine and use the `materialized_postgresql_tables_list` setting, which specifies the tables to be replicated (will also be possible to add database `schema`). It will be much better in terms of CPU, fewer connections and fewer replication slots inside the remote PostgreSQL database.
+If more than one table is required, it is highly recommended to use the [MaterializedPostgreSQL](/reference/engines/database-engines/materialized-postgresql) database engine instead of the table engine and use the `materialized_postgresql_tables_list` setting, which specifies the tables to be replicated (will also be possible to add database `schema`). It will be much better in terms of CPU, fewer connections and fewer replication slots inside the remote PostgreSQL database.
 
 ## Creating a table {#creating-a-table}
 
@@ -890,7 +890,7 @@ PRIMARY KEY key;
 
 1. The [wal_level](https://www.postgresql.org/docs/current/runtime-config-wal.html) setting must have a value `logical` and `max_replication_slots` parameter must have a value at least `2` in the PostgreSQL config file.
 
-2. A table with `MaterializedPostgreSQL` engine must have a primary key — the same as a replica identity index (by default: primary key) of a PostgreSQL table (see [details on replica identity index](../../../engines/database-engines/materialized-postgresql.md#requirements)).
+2. A table with `MaterializedPostgreSQL` engine must have a primary key — the same as a replica identity index (by default: primary key) of a PostgreSQL table (see [details on replica identity index](/reference/engines/database-engines/materialized-postgresql#requirements)).
 
 3. Only database [Atomic](https://en.wikipedia.org/wiki/Atomicity_(database_systems)) is allowed.
 
@@ -898,9 +898,9 @@ PRIMARY KEY key;
 
 ## Virtual columns {#virtual-columns}
 
-- `_version` — Transaction counter. Type: [UInt64](../../../sql-reference/data-types/int-uint.md).
+- `_version` — Transaction counter. Type: [UInt64](/reference/data-types/int-uint).
 
-- `_sign` — Deletion mark. Type: [Int8](../../../sql-reference/data-types/int-uint.md). Possible values:
+- `_sign` — Deletion mark. Type: [Int8](/reference/data-types/int-uint). Possible values:
   - `1` — Row is not deleted,
   - `-1` — Row is deleted.
 
