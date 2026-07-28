@@ -10,8 +10,6 @@
 -- analysis paths (use_lightweight_primary_key_index_analysis 1 and 0), and every query has an
 -- EXPLAIN companion pinning the pruning decision (Parts/Granules), not only the result.
 
-SET explain_query_plan_default = 'legacy';
-
 -- { echo }
 
 SELECT 'equality on both key columns, DESC Enum second';
