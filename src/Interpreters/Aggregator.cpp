@@ -2451,6 +2451,13 @@ void NO_INLINE Aggregator::publishValueStagedRecordsSorted(
                         if (j_end - block->key_offsets[j] != size
                             || !stagedKeyEquals(block->key_bytes.data() + block->key_offsets[j], key))
                             continue;
+                        /// A survivor whose multiplicity would overflow is skipped: a later
+                        /// survivor of the same key (from a previous overflow split) may still
+                        /// have capacity, and otherwise the record is appended as a fresh
+                        /// survivor of the same key.
+                        if (static_cast<UInt64>(block->run_lengths[j]) + adaptive.miss_run_lengths[idx]
+                            > std::numeric_limits<UInt32>::max())
+                            continue;
                         block->run_lengths[j] += adaptive.miss_run_lengths[idx];
                         return;
                     }
@@ -2784,6 +2791,13 @@ void Aggregator::sealValueStagedChunkDeduplicated(
                     const UInt64 j_end = (j + 1 == out) ? byte_pos : chunk.key_offsets[j + 1];
                     if (j_end - chunk.key_offsets[j] != size
                         || !stagedKeyEquals(chunk.key_bytes.data() + chunk.key_offsets[j], key))
+                        continue;
+                    /// The seal target bounds the chunk's bytes, not the logical rows a merged
+                    /// record represents: a survivor whose multiplicity would overflow is
+                    /// skipped in favor of one with remaining capacity, or a fresh survivor of
+                    /// the same key.
+                    if (static_cast<UInt64>(chunk.run_lengths[j]) + mini.run_lengths[ref.index]
+                        > std::numeric_limits<UInt32>::max())
                         continue;
                     chunk.run_lengths[j] += mini.run_lengths[ref.index];
                     merged = true;
