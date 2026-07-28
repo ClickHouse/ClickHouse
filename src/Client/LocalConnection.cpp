@@ -1,3 +1,4 @@
+#include <Core/ProtocolDefines.h>
 #include <Client/LocalConnection.h>
 
 #include "config.h"
