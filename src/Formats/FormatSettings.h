@@ -169,6 +169,11 @@ struct FormatSettings
         bool write_json_as_string = false;
         bool read_bool_field_as_int = false;
         UInt64 max_object_size = 100000;
+        /// Max number of type nodes when decoding binary types. 0 == unlimited. The guard applies only to
+        /// untrusted input: FormatFactory populates this from input_format_binary_max_type_complexity for real
+        /// input formats. A default-constructed FormatSettings (internal decode of already-stored data) leaves
+        /// it at 0, so stored/background decode is never limited.
+        UInt64 max_binary_type_complexity = 0;
     } binary{};
 
     struct
@@ -533,7 +538,6 @@ struct FormatSettings
         std::unordered_set<int> skip_stripes = {};
         bool output_string_as_string = false;
         ORCCompression output_compression_method = ORCCompression::NONE;
-        bool use_fast_decoder = true;
         bool filter_push_down = true;
         UInt64 output_row_index_stride = 10'000;
         String reader_time_zone_name = "GMT";
