@@ -1,0 +1,58 @@
+{
+  "groups": [
+    {
+      "group": "Cloud",
+      "pages": [
+        "ko/resources/changelogs/cloud/2026",
+        {
+          "group": "아카이브",
+          "pages": [
+            "ko/resources/changelogs/cloud/archive/2025",
+            "ko/resources/changelogs/cloud/archive/2024",
+            "ko/resources/changelogs/cloud/archive/2023",
+            "ko/resources/changelogs/cloud/archive/2022"
+          ]
+        },
+        "ko/resources/changelogs/cloud/release-status",
+        {
+          "group": "Cloud 데이터베이스 릴리스 변경 로그",
+          "pages": [
+            "ko/resources/changelogs/cloud/release-notes/26_02",
+            "ko/resources/changelogs/cloud/release-notes/25_12",
+            "ko/resources/changelogs/cloud/release-notes/25_10",
+            "ko/resources/changelogs/cloud/release-notes/25_08",
+            "ko/resources/changelogs/cloud/release-notes/25_06",
+            "ko/resources/changelogs/cloud/release-notes/25_04",
+            "ko/resources/changelogs/cloud/release-notes/24_12",
+            "ko/resources/changelogs/cloud/release-notes/24_10",
+            "ko/resources/changelogs/cloud/release-notes/24_08",
+            "ko/resources/changelogs/cloud/release-notes/24_06",
+            "ko/resources/changelogs/cloud/release-notes/24_05",
+            "ko/resources/changelogs/cloud/release-notes/24_02"
+          ],
+          "root": "ko/resources/changelogs/cloud/release-notes-index"
+        }
+      ],
+      "root": "ko/resources/changelogs/cloud/index"
+    },
+    {
+      "group": "자가 관리형",
+      "pages": [
+        "ko/resources/changelogs/oss/2026",
+        "ko/resources/changelogs/oss/2025",
+        "ko/resources/changelogs/oss/2024",
+        "ko/resources/changelogs/oss/2023",
+        "ko/resources/changelogs/oss/2022",
+        "ko/resources/changelogs/oss/2021",
+        "ko/resources/changelogs/oss/2020",
+        "ko/resources/changelogs/oss/2019",
+        "ko/resources/changelogs/oss/2018",
+        "ko/resources/changelogs/oss/2017",
+        "ko/resources/changelogs/security-changelog"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-changelogs.svg",
+  "item": "변경 로그",
+  "root": "ko/resources/changelogs/cloud/2026"
+}
