@@ -21,9 +21,7 @@ description: "Создание TLS-сертификатов для ClickHouse Se
 </div>
 
 <Steps>
-  <Step>
-    ### 1. Создайте Issuer сертификатов
-
+  <Step title="1. Создайте Issuer сертификатов" id="1-create-a-certificate-issuer">
     Создайте самоподписанный `Issuer`, который будет выступать в роли центра сертификации:
 
     ```yaml
@@ -39,9 +37,7 @@ description: "Создание TLS-сертификатов для ClickHouse Se
     > **Note:** `Issuer` действует в пределах пространства имен и должен находиться в том же пространстве имен, что и ресурсы `Certificate`, которые на него ссылаются. Самоподписанный `Issuer` подходит для тестирования. Для продакшн-среды ознакомьтесь со [списком доступных вариантов `Issuer`](https://cert-manager.io/docs/configuration/issuers/).
   </Step>
 
-  <Step>
-    ### 2. Создайте ресурсы Certificate
-
+  <Step title="2. Создайте ресурсы Certificate" id="2-create-certificate-resources">
     Создайте ресурс `Certificate` для ClickHouse Server:
 
     ```yaml
@@ -64,9 +60,7 @@ description: "Создание TLS-сертификатов для ClickHouse Se
     При необходимости повторите это для Keeper, указав соответствующие `dnsNames` и `secretName`.
   </Step>
 
-  <Step>
-    ### 3. Настройте значения Helm для использования ключей секрета из cert-manager
-
+  <Step title="3. Настройте значения Helm для использования ключей секрета из cert-manager" id="3-configure-helm-values-to-use-cert-manager-secret-keys">
     По умолчанию Helm-чарт `onprem-clickhouse-cluster` ожидает ключи секрета с именами `ca.crt`, `server.crt` и `server.key`. cert-manager создает `ca.crt`, `tls.crt` и `tls.key`. Переопределите имена ключей в значениях Helm:
 
     ```yaml

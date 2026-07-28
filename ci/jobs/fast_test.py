@@ -18,7 +18,7 @@ from ci.praktika.utils import MetaClasses, Shell, Utils
 
 current_directory = Utils.cwd()
 build_dir = f"{current_directory}/ci/tmp/fast_build"
-temp_dir = f"{current_directory}/ci/tmp/"
+temp_dir = Path(current_directory) / "ci" / "tmp"
 build_dir_normalized = str(repo_path / "ci" / "tmp" / "fast_build")
 
 
@@ -97,23 +97,28 @@ def clone_submodules():
 
 def update_path_ch_config(config_file_path=""):
     print("Updating path in clickhouse config")
-    config_file_path = (
-        config_file_path or f"{temp_dir}/etc/clickhouse-server/config.xml"
-    )
-    ssl_config_file_path = f"{temp_dir}/etc/clickhouse-server/config.d/ssl_certs.xml"
+    config_dir = f"{temp_dir}/etc/clickhouse-server"
+    config_file_path = config_file_path or f"{config_dir}/config.xml"
     try:
-        with open(config_file_path, "r", encoding="utf-8") as file:
-            content = file.read()
-
-        with open(ssl_config_file_path, "r", encoding="utf-8") as file:
-            ssl_config_content = file.read()
-        content = content.replace(">/var/", f">{temp_dir}/var/")
-        content = content.replace(">/etc/", f">{temp_dir}/etc/")
-        ssl_config_content = ssl_config_content.replace(">/etc/", f">{temp_dir}/etc/")
-        with open(config_file_path, "w", encoding="utf-8") as file:
-            file.write(content)
-        with open(ssl_config_file_path, "w", encoding="utf-8") as file:
-            file.write(ssl_config_content)
+        # The server is installed under temp_dir, but the config files carry absolute
+        # /var/lib/clickhouse and /etc/clickhouse-server paths. Relocate every such path under
+        # temp_dir so that both data directories (custom local disk base, filesystem cache, backup
+        # disk) and referenced files (TLS certs, dictionaries, SSH keys, ...) resolve to the installed
+        # location instead of one that may not exist (e.g. /var/lib/clickhouse on the macOS runner).
+        # config.d files are symlinked from the repo by install.sh, so materialize each rewritten one
+        # into a real file to avoid modifying the checked-out repo.
+        configs = [Path(config_file_path)] + sorted(
+            Path(f"{config_dir}/config.d").glob("*.xml")
+        )
+        for cfg in configs:
+            text = cfg.resolve().read_text(encoding="utf-8")
+            if ">/var/" not in text and ">/etc/" not in text:
+                continue
+            text = text.replace(">/var/", f">{temp_dir}/var/")
+            text = text.replace(">/etc/", f">{temp_dir}/etc/")
+            if cfg.is_symlink():
+                cfg.unlink()
+            cfg.write_text(text, encoding="utf-8")
     except Exception as e:
         print(f"ERROR: failed to update config, exception: {e}")
         return False
@@ -173,7 +178,7 @@ def main():
     clickhouse_se_stripped_path = Path(f"{build_dir}/programs/self-extracting/clickhouse-stripped")
 
     for path in [
-        Path(temp_dir) / "clickhouse",
+        temp_dir / "clickhouse",
         clickhouse_bin_path,
         Path(current_directory) / "clickhouse",
     ]:
@@ -194,6 +199,7 @@ def main():
                 "clickhouse-format",
                 "clickhouse-obfuscator",
                 "clickhouse-su",
+                "ch",
             ):
                 Utils.link(resolved_clickhouse_bin_path, resolved_clickhouse_bin_path.parent / tool)
             Shell.check(f"chmod +x {resolved_clickhouse_bin_path}", strict=True)
@@ -358,6 +364,13 @@ def main():
         step_name = "Tests"
         print(step_name)
 
+        # Point the custom local disk base dir at the relocated server. shell_config.sh defaults
+        # CLICKHOUSE_DISKS_FILES to /var/lib/clickhouse/disks, which matches the (rewritten) config
+        # but does not exist on the macOS runner. (CLICKHOUSE_USER_FILES is already set by
+        # ClickHouseProc to the server's --user_files_path, so it must not be overridden here.)
+        os.environ["CLICKHOUSE_DISKS_FILES"] = f"{temp_dir}/var/lib/clickhouse/disks"
+        os.makedirs(os.environ["CLICKHOUSE_DISKS_FILES"], exist_ok=True)
+
         # Fast test runs lightweight SQL tests that are not CPU-bound,
         # so we can use more parallelism than the default cpu_count/2.
         nproc_fast = max(1, int(Utils.cpu_count() * 3 / 4))
@@ -392,6 +405,13 @@ def main():
         attach_files.append(clickhouse_upload_path)
     if attach_debug:
         attach_files.extend(CH.prepare_logs(info=info, all=True))
+        # clickhouse-test runs with cwd=temp_dir, so the full server stacktrace
+        # dumps it writes on a timeout / hung check land here. Attach them so
+        # the report links the full dumps (stdout keeps only a trimmed preview).
+        for stacktrace_log in ("sql_stacktraces.log", "c_stacktraces.log"):
+            path = temp_dir / stacktrace_log
+            if path.exists():
+                attach_files.append(path)
 
     CH.terminate(force=True)
 

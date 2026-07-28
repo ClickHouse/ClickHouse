@@ -28,9 +28,7 @@ pode interagir com o [Playground SQL do ClickHouse](https://sql.clickhouse.com/)
 Você pode executar as etapas a seguir no REPL do Python ou por meio de um script.
 
 <Steps>
-  <Step>
-    ## Instale as bibliotecas
-
+  <Step title="Instale as bibliotecas" id="install-libraries">
     Instale as bibliotecas necessárias executando os comandos a seguir:
 
     ```python
@@ -39,9 +37,7 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
     ```
   </Step>
 
-  <Step>
-    ## Configurar credenciais
-
+  <Step title="Configurar credenciais" id="setup-credentials">
     Em seguida, você precisará informar sua API key da Anthropic:
 
     ```python
@@ -61,9 +57,7 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
     </Info>
   </Step>
 
-  <Step>
-    ## Inicialize o ClickHouse MCP server
-
+  <Step title="Inicialize o ClickHouse MCP server" id="initialize-mcp-and-agent">
     Agora, configure o ClickHouse MCP server para apontar para o Playground do ClickHouse SQL:
 
     ```python
@@ -89,9 +83,7 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
     ```
   </Step>
 
-  <Step>
-    ## Configure o manipulador de stream
-
+  <Step title="Configure o manipulador de stream" id="configure-the-stream-handler">
     Ao trabalhar com Langchain e o ClickHouse MCP server, os resultados das consultas costumam
     ser retornados como dados em streaming, em vez de uma única resposta. Para grandes conjuntos de dados ou
     consultas analíticas complexas que podem levar tempo para serem processadas, é importante configurar
@@ -114,11 +106,11 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
                 data = chunk.get("data", {})
                 chunk_data = data.get("chunk", {})
                 
-                # Processar apenas conteúdo de texto real, ignorar streams de invocação de ferramentas
+                # Only handle actual text content, skip tool invocation streams
                 if hasattr(chunk_data, 'content'):
                     content = chunk_data.content
                     if isinstance(content, str) and not content.startswith('{"'):
-                        # Adicionar espaço após a conclusão da ferramenta, se necessário
+                        # Add space after tool completion if needed
                         if self.last_was_tool:
                             print(" ", end="", flush=True)
                             self.last_was_tool = False
@@ -131,7 +123,7 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
                                 'partial_json' not in str(item)):
                                 text = item.get('text', '')
                                 if text and not text.startswith('{"'):
-                                    # Adicionar espaço após a conclusão da ferramenta, se necessário
+                                    # Add space after tool completion if needed
                                     if self.last_was_tool:
                                         print(" ", end="", flush=True)
                                         self.last_was_tool = False
@@ -149,9 +141,7 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
     ```
   </Step>
 
-  <Step>
-    ## Chame o agente
-
+  <Step title="Chame o agente" id="call-the-agent">
     Por fim, chame seu agente e pergunte a ele quem mais contribuiu com código para o ClickHouse:
 
     ```python
@@ -174,28 +164,28 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
     Você deverá ver uma resposta semelhante à mostrada abaixo:
 
     ```response title="Response"
-    Vou te ajudar a descobrir quem fez mais commits de código no ClickHouse explorando os bancos de dados e tabelas disponíveis para localizar os dados de commits do git.
-    🔧 list_databases ✅ Posso ver que há um banco de dados `git` que provavelmente contém informações de commits do git. Vou explorar as tabelas nesse banco de dados:
-    🔧 list_tables ✅ Perfeito! Posso ver que a tabela `clickhouse_commits` no banco de dados git contém dados de commits do ClickHouse com 80.644 commits. Essa tabela tem informações sobre cada commit, incluindo o autor, linhas adicionadas/removidas, arquivos modificados, etc. Vou fazer uma consulta nessa tabela para descobrir quem fez mais commits de código com base em diferentes métricas.
-    🔧 run_select_query ✅ Vou também verificar apenas as linhas adicionadas para ver quem contribuiu com mais código novo:
-    🔧 run_select_query ✅ Com base nos dados de commits do git do ClickHouse, **Alexey Milovidov** foi quem mais contribuiu com código no ClickHouse, por várias métricas:
+    I'll help you find who has committed the most code to ClickHouse by exploring the available databases and tables to locate git commit data.
+    🔧 list_databases ✅ I can see there's a `git` database which likely contains git commit information. Let me explore the tables in that database:
+    🔧 list_tables ✅ Perfect! I can see the `clickhouse_commits` table in the git database contains ClickHouse commit data with 80,644 commits. This table has information about each commit including the author, lines added/deleted, files modified, etc. Let me query this table to find who has committed the most code based on different metrics.
+    🔧 run_select_query ✅ Let me also look at just the lines added to see who has contributed the most new code:
+    🔧 run_select_query ✅ Based on the ClickHouse git commit data, **Alexey Milovidov** has committed the most code to ClickHouse by several measures:
 
-    ## Estatísticas Principais:
+    ## Key Statistics:
 
-    1. **Maior Total de Linhas Alteradas**: Alexey Milovidov com **1.696.929 linhas alteradas no total** (853.049 adicionadas + 843.880 removidas)
-    2. **Mais Linhas Adicionadas**: Alexey Milovidov com **853.049 linhas adicionadas**
-    3. **Mais Commits**: Alexey Milovidov com **15.375 commits**
-    4. **Mais Arquivos Alterados**: Alexey Milovidov com **73.529 arquivos alterados**
+    1. **Most Total Lines Changed**: Alexey Milovidov with **1,696,929 total lines changed** (853,049 added + 843,880 deleted)
+    2. **Most Lines Added**: Alexey Milovidov with **853,049 lines added**
+    3. **Most Commits**: Alexey Milovidov with **15,375 commits**
+    4. **Most Files Changed**: Alexey Milovidov with **73,529 files changed**
 
-    ## Principais Contribuidores por Linhas Adicionadas:
+    ## Top Contributors by Lines Added:
 
-    1. **Alexey Milovidov**: 853.049 linhas adicionadas (15.375 commits)
-    2. **s-kat**: 541.609 linhas adicionadas (50 commits) 
-    3. **Nikolai Kochetov**: 219.020 linhas adicionadas (4.218 commits)
-    4. **alesapin**: 193.566 linhas adicionadas (4.783 commits)
-    5. **Vitaly Baranov**: 168.807 linhas adicionadas (1.152 commits)
+    1. **Alexey Milovidov**: 853,049 lines added (15,375 commits)
+    2. **s-kat**: 541,609 lines added (50 commits) 
+    3. **Nikolai Kochetov**: 219,020 lines added (4,218 commits)
+    4. **alesapin**: 193,566 lines added (4,783 commits)
+    5. **Vitaly Baranov**: 168,807 lines added (1,152 commits)
 
-    Alexey Milovidov é claramente o contribuidor mais prolífico do ClickHouse, o que faz sentido, pois ele é um dos criadores originais e desenvolvedores principais do projeto. Sua contribuição supera em muito a dos demais, tanto em volume total de código quanto em número de commits — com quase 16.000 commits e mais de 850.000 linhas de código adicionadas ao projeto.
+    Alexey Milovidov is clearly the most prolific contributor to ClickHouse, which makes sense as he is one of the original creators and lead developers of the project. His contribution dwarfs others both in terms of total code volume and number of commits, with nearly 16,000 commits and over 850,000 lines of code added to the project.
     ```
   </Step>
 </Steps>

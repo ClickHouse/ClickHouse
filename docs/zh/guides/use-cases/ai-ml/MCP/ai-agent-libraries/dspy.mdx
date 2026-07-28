@@ -27,9 +27,7 @@ doc_type: 'guide'
 </Info>
 
 <Steps>
-  <Step>
-    ## 安装库
-
+  <Step title="安装库" id="install-libraries">
     使用 `pip` 执行以下命令以安装所需的库：
 
     ```shell
@@ -39,9 +37,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 配置凭据
-
+  <Step title="配置凭据" id="setup-credentials">
     接下来，您需要提供 Anthropic API 密钥：
 
     ```python
@@ -69,9 +65,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 初始化 MCP 服务器
-
+  <Step title="初始化 MCP 服务器" id="initialize-mcp">
     现在，将 ClickHouse MCP 服务器配置为连接到 ClickHouse SQL playground。
 
     ```python
@@ -92,9 +86,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 初始化 LLM
-
+  <Step title="初始化 LLM" id="initialize-llm">
     接下来，使用以下代码行初始化 LLM：
 
     ```python
@@ -102,10 +94,8 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 运行 agent
-
-    最后，初始化并运行 agent：
+  <Step title="运行 agent" id="run-the-agent">
+    最后，初始化并运行代理：
 
     ```python
     class DataAnalyst(dspy.Signature):

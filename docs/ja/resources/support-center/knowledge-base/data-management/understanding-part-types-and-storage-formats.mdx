@@ -1,0 +1,184 @@
+---
+title: パーツの種類とストレージフォーマットを理解する
+description: 'ClickHouse における各種パーツタイプ（Wide と Compact）とストレージフォーマット（Full と Packed）、およびそれらがパフォーマンスにどう影響するかを学びます。'
+date: 2026-02-03
+tags: ['データの基本概念']
+keywords: ['compact パーツ', 'wide パーツ', 'full storage', 'packed storage', 'part types', 'storage formats']
+---
+
+ClickHouse では、パーツ内のデータを整理するために、互いに独立した 2 つの概念を使用します。
+
+* **パーツタイプ** (Wide vs Compact): パーツ内でカラムデータをどのように保存するか
+* **ストレージフォーマット** (Full vs Packed): パーツのファイルをディスク上でどのように保存するか
+
+<div id="part-types-wide-vs-compact">
+  ## パーツの種類: wide パーツ vs compact パーツ
+</div>
+
+パーツの種類は、データパーツ内でカラムデータがどのように配置されるかを決定します。
+
+| 種類              | 説明                                                                                 | 最適な用途                      |
+| --------------- | ---------------------------------------------------------------------------------- | -------------------------- |
+| **wide パーツ**    | 各カラムはそれぞれ専用の[マークファイル](/ja/concepts/core-concepts/glossary#mark-file)を持つ別個のファイルに格納されます | 一部のカラムだけを選択するクエリ           |
+| **compact パーツ** | すべてのカラムが、単一の[マークファイル](/ja/concepts/core-concepts/glossary#mark-file)を持つ1つのファイルに格納されます | インジェスト性能と、すべてのカラムを必要とするクエリ |
+
+<div id="when-each-type-is-used">
+  ### 各タイプの使い分け
+</div>
+
+パーツのタイプは、次のテーブル設定によって決まります。
+
+* [`min_bytes_for_wide_part`](/ja/reference/settings/merge-tree-settings#min_bytes_for_wide_part): パーツがwide パーツを使用するために必要な最小バイト数
+* [`min_rows_for_wide_part`](/ja/reference/settings/merge-tree-settings#min_rows_for_wide_part): パーツがwide パーツを使用するために必要な最小行数
+
+データパート内のバイト数または行数のいずれかが対応する設定値を下回る場合、そのパーツは `compact パーツ` 形式で保存されます。そうでない場合は、`wide パーツ` 形式が使用されます。
+
+<div id="performance-considerations">
+  ### パフォーマンスに関する考慮事項
+</div>
+
+**compact パーツ:**
+
+* より高いインジェスト性能
+* クエリで全カラムが必要な場合に最適
+* 小さなパーツでより効率的
+
+**wide パーツ:**
+
+* クエリでカラムの一部だけを選択する場合により効率的
+* 必要なカラムだけを選択的に参照する大規模なデータセットに適している
+
+compact から wide へのマージは、wide から wide へのマージよりも低速です。これは、ClickHouse が compact から wide への変換では [vertical merge](/ja/concepts/core-concepts/merges#memory-optimized-merges) アルゴリズムを使用する一方、compact から compact へのマージでは水平アルゴリズムを使用するためです。サイズに関係なく wide パーツの使用を強制したい場合は、`min_bytes_for_wide_part=0` を設定できます。
+
+これは、次のようなシナリオで役立つ場合があります。
+
+1. 多数のカラム (たとえば 600 カラム超) を持つテーブルがあり、大量の insert を行っている場合、これを 0 に設定するとパフォーマンスの向上に役立つことがあります
+2. `system.metric_log` や `system.text_log` のように、マージ中に過剰なメモリを消費しているシステムテーブルのメモリ使用量を最適化したい場合
+3. insert 量の多いテーブルを扱っていて、ストレージとマージ動作を最適化したい場合
+4. パーツフォーマットの動作を一貫させたい場合や、サイズしきい値に基づくフォーマット切り替えのオーバーヘッドを避けたい場合
+
+なお、これを 0 に設定すると特定のパフォーマンス特性は改善される可能性がありますが、wide パーツフォーマットのために S3 ストレージへの GET リクエストが増える場合があります。
+
+<div id="limitations">
+  ### 制限事項
+</div>
+
+compact パーツではカラムサイズの統計が計算されないため、監視や最適化に影響する可能性があります。`system.parts_columns` をクエリすると、compact パーツでは `column_data_compressed_bytes` と `column_data_uncompressed_bytes` に `0` が表示されます。詳細については、[「wide パーツまたは compact パーツの数とサイズを調べる」](/ja/resources/support-center/knowledge-base/troubleshooting/count-parts-by-type) を参照してください。
+
+<div id="storage-formats-full-vs-packed">
+  ## ストレージフォーマット: Full と Packed
+</div>
+
+ストレージフォーマットは、パーツのファイルがディスク上で物理的にどのように格納されるかを決定します。
+
+| フォーマット     | 説明                              | 提供状況           |
+| ---------- | ------------------------------- | -------------- |
+| **Full**   | 各ファイルはパーツディレクトリに個別に格納されます       | オープンソース版とCloud |
+| **Packed** | すべてのファイルが 1 つのアーカイブファイルにまとめられます | オープンソース版とCloud |
+
+<div id="full-storage">
+  ### Full storage
+</div>
+
+Full storage では、各 パーツ は複数の個別ファイルで構成され、それぞれがディスク上に個別に保存されます。これはデフォルトのストレージ形式です。
+
+<div id="packed-storage">
+  ### Packed ストレージ
+</div>
+
+Packed ストレージでは、すべてのパーツファイルが 1 つのアーカイブにまとめられます。これによりファイル操作の回数が大幅に減り、リクエストごとに遅延とコストが発生する S3 のようなリモートストレージでは特に重要です。
+
+**Packed ストレージの利点:**
+
+* S3/オブジェクトストレージ API 呼び出しの削減
+* 協調サービスへのメタデータ負荷の軽減
+* ストレージコストの削減 (Full ストレージは大幅に高額になる場合があります)
+* リモートストレージ上の小さなパーツでパフォーマンスが向上
+
+<div id="when-packed-storage-is-used">
+  ### Packed ストレージ が使用される条件
+</div>
+
+以下の条件の**いずれか**が true の場合、パーツは Packed ストレージ を使用します。
+
+* 非圧縮バイト数 &lt; [`min_bytes_for_full_part_storage`](/ja/reference/settings/merge-tree-settings#min_bytes_for_full_part_storage)
+* 行数 &lt; [`min_rows_for_full_part_storage`](/ja/reference/settings/merge-tree-settings#min_rows_for_full_part_storage)
+* マージレベル &lt; [`min_level_for_full_part_storage`](/ja/reference/settings/merge-tree-settings#min_level_for_full_part_storage)
+
+Packed ストレージ はオプトインです。3 つの設定はすべてデフォルトで `0` のため、いずれかの値を引き上げない限り、パーツは Full storage を使用します。
+
+<Info>
+  **ダウングレード互換性**
+
+  一度 Packed ストレージ でパーツが書き込まれると、Packed ストレージ をサポートしていない ClickHouse バージョンでは、そのパーツを読み取れなくなります。そのため、Packed ストレージ を有効にすると、そのようなバージョンへのダウングレードはできなくなります。ロールバックが不要であると確信できる場合にのみ有効にしてください。
+</Info>
+
+`min_level_for_full_part_storage` 設定は、特に継続的に挿入が発生するテーブルにおいて、オブジェクトストレージ上でパフォーマンスとコストの両方を最適化するために使用できます。
+この設定は ClickHouse バージョン 25.10 から利用可能で、`min_level_for_wide_part` と組み合わせて機能し、パーツストレージ戦略を包括的に制御できます。
+
+デフォルト値 (0) からの変更は、次のようなユースケースで検討できます。
+
+* テーブルで定常的にデータインジェストが発生する場合、初期パーツはすぐにマージされてなくなるため、最初からフルパーツ形式で保存するのは無駄になります
+* このパラメータを設定すると、挿入時にコストの高い S3 PUT リクエストが発生するのを抑えられます。たとえば、ある分析では、フルパーツを作成する挿入操作では 1 回の挿入あたり平均 31.3 回の PUT リクエストが発生したのに対し、packed パーツのみを作成する場合は 1 回の挿入あたり平均 2.22 回にとどまりました
+* Packed ストレージ では各カラムごとに個別のファイルを作成せず、すべてのデータを 1 つのファイルに書き込むため、特にカラム数の多いテーブルでは挿入操作が高速になります。
+
+推奨構成:
+
+オブジェクトストレージのデプロイメントでは `min_level_for_full_part_storage = 2` を設定してください。
+これにより、次のことが保証されます。
+
+* レベル 0 のパーツ (初回の挿入) は Packed ストレージ を使用する
+* レベル 1 のパーツも引き続き Packed ストレージ を使用する
+* レベル 2 以上のパーツのみがフルストレージ形式を使用する
+
+<Tip>
+  十分にマージが発生しない環境で、サイズの大きい書き込みがまれにしか行われないテーブルでは、この設定は避けてください。そのような場合、最初の大きな書き込みでは、直ちにフルパーツストレージを使用したほうが有利になることがあります。
+</Tip>
+
+<div id="combining-part-types-and-storage-formats">
+  ## パーツの種類とストレージフォーマットの組み合わせ
+</div>
+
+この 2 つの概念は互いに独立しているため、いずれの組み合わせも使用できます。
+
+| 組み合わせ            | 用途                        |
+| ---------------- | ------------------------- |
+| wide パーツ + Full      | ローカルストレージ上の大きなパーツ (デフォルト) |
+| wide パーツ + Packed    | オブジェクトストレージ上の大きなパーツ       |
+| compact パーツ + Full   | ローカルストレージ上の小さなパーツ         |
+| compact パーツ + Packed | オブジェクトストレージ上の小さなパーツ       |
+
+<div id="querying-part-information">
+  ## パーツ情報の確認
+</div>
+
+既存のパーツのパーツタイプとストレージタイプは、[`system.parts`](/ja/reference/system-tables/parts)テーブルを使用して確認できます。
+
+```sql
+SELECT
+    part_type,
+    part_storage_type,
+    max(level),
+    count(),
+    formatReadableSize(max(data_uncompressed_bytes)),
+    formatReadableSize(min(data_uncompressed_bytes))
+FROM system.parts
+WHERE (database != 'system') AND active
+GROUP BY
+    1,
+    2
+ORDER BY
+    1 ASC,
+    2 ASC
+```
+
+次のように表示されます:
+
+```response
+   ┌─part_type─┬─part_storage_type─┬─max(level)─┬─count()─┬─formatReadab⋯sed_bytes))─┬─formatReadab⋯sed_bytes))─┐
+1. │ Compact   │ Full              │      12688 │    2456 │ 1023.87 MiB              │ 23.78 MiB                │
+2. │ Compact   │ Packed            │      97383 │   13748 │ 127.77 MiB               │ 1.00 B                   │
+3. │ Wide      │ Full              │       7642 │    2000 │ 1.38 TiB                 │ 30.18 MiB                │
+4. │ Wide      │ Packed            │         10 │     187 │ 110.01 MiB               │ 1.30 KiB                 │
+   └───────────┴───────────────────┴────────────┴─────────┴──────────────────────────┴──────────────────────────┘
+```

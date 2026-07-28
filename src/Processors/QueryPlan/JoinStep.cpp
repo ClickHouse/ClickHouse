@@ -50,6 +50,9 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join,
     description.emplace_back("Strictness", strictness);
     description.emplace_back("Algorithm", join->getName());
 
+    if (const auto join_expression_value = table_join.getJoinExpressionValue())
+        description.emplace_back("Constant expression value", *join_expression_value ? "true" : "false");
+
     if (table_join.strictness() == JoinStrictness::Asof)
         description.emplace_back("ASOF inequality", toString(table_join.getAsofInequality()));
 

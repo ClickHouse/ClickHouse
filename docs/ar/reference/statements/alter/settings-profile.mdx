@@ -15,6 +15,7 @@ ALTER SETTINGS PROFILE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ON CLUSTER cluster_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
     [ADD|MODIFY SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...]
+    [SET variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...] ]
     [DROP SETTINGS variable [,...] ]
     [ADD PROFILES 'profile_name' [,...] ]
     [DROP PROFILES 'profile_name' [,...] ]
@@ -67,6 +68,8 @@ SHOW CREATE SETTINGS PROFILE p;
 * `DROP ALL SETTINGS` / `DROP ALL PROFILES` — يزيل جميع الإعدادات أو جميع ملفات التعريف الأصلية.
 
 يمكن دمج عدة بنود من هذه البنود في تعليمة واحدة، على سبيل المثال `DROP SETTINGS a ADD SETTINGS b = 1`.
+
+يُعد `SET variable = value` اسمًا مستعارًا لـ `MODIFY SETTINGS variable = value`. وهو متاح لأن `SET` يبدو أكثر طبيعية، ولأن كتابة عبارة `SETTINGS` الخاصة بالاستبدال عندما يكون المقصود تغييرًا تزايديًا تُعد خطأً شائعًا.
 
 <div id="examples">
   ## أمثلة

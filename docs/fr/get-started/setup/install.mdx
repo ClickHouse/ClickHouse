@@ -9,7 +9,7 @@ doc_type: 'guide'
 
 import {galaxyOnClick} from "/snippets/fr/lib/galaxy.jsx";
 
-<Card title="ClickHouse Cloud" icon="cloud" href="https://console.clickhouse.cloud/signUp?loc=docs-install-page-banner" cta="Commencer gratuitement">
+<Card title="ClickHouse Cloud" icon="cloud" href="/fr/get-started/setup/cloud" cta="Voir le guide">
   Créez immédiatement sans avoir à dimensionner ni à faire évoluer votre cluster. ClickHouse Cloud s&#39;occupe du dimensionnement, de la mise à l&#39;échelle
   , de la sécurité, de la fiabilité et des mises à niveau.
 </Card>
@@ -28,23 +28,15 @@ ClickHouse Server à partir de paquets ou de binaires pour un déploiement en pr
   pour installer et gérer des versions locales et des serveurs.
 </p>
 
-<div className="installContainer">
-  <a href="/install/quick-install" style={{textDecoration: 'none'}}>
-    <Card title="Installation rapide" />
-  </a>
+<Columns cols={4}>
+  <Card title="Installation rapide" icon="/images/install/linux.svg" href="/fr/get-started/setup/self-managed/quick-install" />
 
-  <a href="/install/clickhousectl" style={{textDecoration: 'none'}}>
-    <Card title="clickhousectl (CLI)" icon="console" />
-  </a>
+  <Card title="clickhousectl (CLI)" icon="terminal" href="/fr/get-started/setup/self-managed/clickhousectl" />
 
-  <a href="/install/docker" style={{textDecoration: 'none'}}>
-    <Card title="Docker" />
-  </a>
+  <Card title="Docker" icon="/images/install/docker.svg" href="/fr/get-started/setup/self-managed/docker" />
 
-  <a href="/install/advanced" style={{textDecoration: 'none'}}>
-    <Card title="Compilation depuis les sources" icon="code" />
-  </a>
-</div>
+  <Card title="Compilation depuis les sources" icon="code" href="/fr/get-started/setup/self-managed/advanced" />
+</Columns>
 
 <h3 className="install-group-heading">Serveur de production</h3>
 
@@ -53,20 +45,12 @@ ClickHouse Server à partir de paquets ou de binaires pour un déploiement en pr
   déploiement durable sur votre propre infrastructure.
 </p>
 
-<div className="installContainer">
-  <a href="/install/debian_ubuntu" style={{textDecoration: 'none'}}>
-    <Card title="Debian/Ubuntu" />
-  </a>
+<Columns cols={4}>
+  <Card title="Debian/Ubuntu" icon="/images/install/DebianUbuntu.svg" href="/fr/get-started/setup/self-managed/debian-ubuntu" />
 
-  <a href="/install/redhat" style={{textDecoration: 'none'}}>
-    <Card title="Redhat" />
-  </a>
+  <Card title="Redhat" icon="/images/install/redhat.svg" href="/fr/get-started/setup/self-managed/redhat" />
 
-  <a href="/install/nixos" style={{textDecoration: 'none'}}>
-    <Card title="NixOS" />
-  </a>
+  <Card title="NixOS" icon="/images/install/nixos.svg" href="/fr/get-started/setup/self-managed/nixos" />
 
-  <a href="/install/linux_other" style={{textDecoration: 'none'}}>
-    <Card title="Autres distributions Linux" />
-  </a>
-</div>
+  <Card title="Autres distributions Linux" icon="/images/install/linux.svg" href="/fr/get-started/setup/self-managed/other-linux" />
+</Columns>

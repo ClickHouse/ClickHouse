@@ -1,24 +1,29 @@
 ---
-description: 'Documentación sobre la modificación de restricciones'
+description: 'Documentación sobre la gestión de restricciones'
 sidebarTitle: 'CONSTRAINT'
 slug: /sql-reference/statements/alter/constraint
-title: 'Modificación de restricciones'
+title: 'Gestión de restricciones'
 doc_type: 'reference'
 ---
 
-Las restricciones se pueden añadir o eliminar con la siguiente sintaxis:
+Las restricciones se pueden agregar, modificar o eliminar con la siguiente sintaxis:
 
 ```sql
-ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name CHECK expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name {CHECK|ASSUME} expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY CONSTRAINT [IF EXISTS] constraint_name {CHECK|ASSUME} expression;
 ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constraint_name;
 ```
 
-Consulta más información sobre las [restricciones](/es/reference/statements/create/table#constraints).
+Al igual que con la creación de tablas, una restricción puede declararse como `CHECK` (aplicada en `INSERT`) o como `ASSUME` (en la que confía el optimizador sin comprobarla). Consulta [restricciones](/es/reference/statements/create/table#constraints) para conocer la diferencia entre ambas.
 
-Las consultas añaden o eliminan metadatos sobre las restricciones de la tabla, por lo que se procesan de inmediato.
+`MODIFY CONSTRAINT` reemplaza la declaración de una restricción existente, conservando su posición en la definición de la tabla. También puede cambiar el tipo de restricción (por ejemplo, de `CHECK` a `ASSUME`). Equivale a eliminar la restricción y volver a añadirla con la nueva declaración. Si la restricción no existe, la consulta genera un error, a menos que se especifique `IF EXISTS`.
+
+Consulta más información sobre [restricciones](/es/reference/statements/create/table#constraints).
+
+Las consultas agregan, modifican o eliminan metadatos sobre las restricciones de la tabla, por lo que se procesan de inmediato.
 
 <Tip>
-  La comprobación de restricciones **no se ejecutará** sobre los datos existentes si la restricción se añadió posteriormente.
+  La comprobación de restricciones **no se ejecutará** sobre los datos ya existentes si la restricción se añadió o modificó.
 </Tip>
 
-Todos los cambios en las tablas replicadas se difunden a ZooKeeper y también se aplicarán en otras réplicas.
+Todos los cambios en las tablas replicadas se difunden a ZooKeeper y también se aplicarán en las demás réplicas.

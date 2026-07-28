@@ -158,6 +158,12 @@ SELECT * FROM system.events LIMIT 5
 
 Общее время, затраченное на агрегирование отсортированных столбцов
 
+<div id="aggregationconvertedtotwolevel">
+  ### Агрегация, переведённая в двухуровневый режим
+</div>
+
+Сколько раз одноуровневая хеш-таблица агрегации во время выполнения преобразовывалась в двухуровневую.
+
 <div id="aggregationhashtablesinitializedastwolevel">
   ### Хеш-таблицы для агрегации, инициализированные как двухуровневые
 </div>
@@ -900,7 +906,7 @@ SELECT * FROM system.events LIMIT 5
   ### ConcurrencyControlQueriesDelayed
 </div>
 
-Общее количество выделений слотов CPU (запросов), которым пришлось ждать увеличения количества слотов
+Количество запросов, задержанных из-за нехватки ресурсов CPU-слотов. Индикатор конкуренции за ресурсы — не включает ожидание отложенного увеличения числа слотов на сервере без конкуренции за ресурсы.
 
 <div id="concurrencycontrolslotsacquired">
   ### ConcurrencyControlSlotsAcquired
@@ -918,7 +924,7 @@ SELECT * FROM system.events LIMIT 5
   ### ConcurrencyControlSlotsDelayed
 </div>
 
-Количество слотов CPU, которые не были выделены сразу и ожидали освобождения слота CPU
+Количество слотов CPU, которые не были выделены в момент распределения из-за нехватки ресурсов. Не включает слоты, удерживаемые при отложенном выделении.
 
 <div id="concurrencycontrolslotsgranted">
   ### ConcurrencyControlSlotsGranted
@@ -2287,6 +2293,24 @@ SELECT * FROM system.events LIMIT 5
 
 Количество реплик (локальная реплика учитывается один раз), для которых назначен распределённый анализ индексов
 
+<div id="distributedplanhostsused">
+  ### DistributedPlanHostsUsed
+</div>
+
+Количество уникальных хостов, которым при выполнении запроса с `make_distributed_plan` была назначена хотя бы одна задача.
+
+<div id="distributedplanlocalexecution">
+  ### DistributedPlanLocalExecution
+</div>
+
+Устанавливается в 1, если запрос make&#95;distributed&#95;plan был выполнен внутри процесса локальным исполнителем (distributed&#95;plan&#95;execute&#95;locally), а не отправлен удалённым воркерам.
+
+<div id="distributedplanremotetasks">
+  ### DistributedPlanRemoteTasks
+</div>
+
+Количество задач, переданных удалённым воркерам при выполнении запроса с `make_distributed_plan`. Ненулевое значение означает, что запрос действительно выполнялся распределённо.
+
 <div id="distributedrejectedinserts">
   ### DistributedRejectedInserts
 </div>
@@ -2743,6 +2767,12 @@ SELECT * FROM system.events LIMIT 5
 
 Количество неудачных попыток резервирования места в файловом кэше.
 
+<div id="filesystemcachefreespacekeepingthreaderrors">
+  ### FilesystemCacheFreeSpaceKeepingThreadErrors
+</div>
+
+Количество исключений, перехваченных фоновой задачей по поддержанию свободного места (сбор, удаление или завершение)
+
 <div id="filesystemcachefreespacekeepingthreadrun">
   ### FilesystemCacheFreeSpaceKeepingThreadRun
 </div>
@@ -3119,7 +3149,7 @@ SELECT * FROM system.events LIMIT 5
   ### IcebergMetadataUpdateMicroseconds
 </div>
 
-Общее время, затраченное на синхронную инициализацию итераторов данных в Iceberg.
+Общее время, затраченное на обновление метаданных хранилища Iceberg из состояния (`buildStorageMetadataFromState`).
 
 <div id="icebergminmaxindexprunedfiles">
   ### IcebergMinMaxIndexPrunedFiles
@@ -3865,6 +3895,18 @@ SELECT * FROM system.events LIMIT 5
 
 Время, затраченное на ожидание получения разделяемой блокировки хранилища Keeper
 
+<div id="keeperttlremoverequestsdropped">
+  ### KeeperTTLRemoveRequestsDropped
+</div>
+
+Количество запросов на удаление по TTL, отброшенных из-за переполнения очереди
+
+<div id="keeperttlremoverequestsenqueued">
+  ### KeeperTTLRemoveRequestsEnqueued
+</div>
+
+Количество запросов на удаление по TTL, успешно поставленных в очередь
+
 <div id="keepertotalelapsedmicroseconds">
   ### KeeperTotalElapsedMicroseconds
 </div>
@@ -4170,6 +4212,42 @@ SELECT * FROM system.events LIMIT 5
 </div>
 
 Общее время ожидания освобождения памяти в OvercommitTracker.
+
+<div id="memoryreservationadmitmicroseconds">
+  ### MemoryReservationAdmitMicroseconds
+</div>
+
+Общее время, в течение которого запрос ожидал одобрения первичного резервирования памяти
+
+<div id="memoryreservationdecreases">
+  ### MemoryReservationDecreases
+</div>
+
+Общее количество одобренных запросов на уменьшение объёма резервирования памяти
+
+<div id="memoryreservationfailed">
+  ### MemoryReservationFailed
+</div>
+
+Общее количество неудачных попыток резервирования памяти
+
+<div id="memoryreservationincreasemicroseconds">
+  ### MemoryReservationIncreaseMicroseconds
+</div>
+
+Общее время, в течение которого запрос ожидал одобрения на увеличение резервирования памяти
+
+<div id="memoryreservationincreases">
+  ### Увеличение резервирования памяти
+</div>
+
+Общее количество одобренных запросов на увеличение резервирования памяти
+
+<div id="memoryreservationkilled">
+  ### MemoryReservationKilled
+</div>
+
+Общее количество сигналов о завершении резервирования памяти
 
 <div id="memoryworkerrun">
   ### MemoryWorkerRun
@@ -5491,18 +5569,6 @@ SELECT * FROM system.events LIMIT 5
 
 Количество тактов, относящееся к выполняемой задаче
 
-<div id="polygonsaddedtopool">
-  ### PolygonsAddedToPool
-</div>
-
-В кэш (пул) для функции &#39;pointInPolygon&#39; был добавлен полигон.
-
-<div id="polygonsinpoolallocatedbytes">
-  ### PolygonsInPoolAllocatedBytes
-</div>
-
-Количество байтов, выделенных для полигонов, добавленных в кэш (пул) функции `pointInPolygon`.
-
 <div id="preferredwarmedunmergedparts">
   ### PreferredWarmedUnmergedParts
 </div>
@@ -5532,6 +5598,12 @@ SELECT * FROM system.events LIMIT 5
 </div>
 
 Количество запросов, которые должны быть разобраны и потенциально выполнены. Не включает запросы, которые не удалось разобрать или которые были отклонены из-за ограничений на размер AST, квот или количества одновременно выполняющихся запросов. Может включать внутренние запросы, инициированные самим ClickHouse. Подзапросы не учитываются.
+
+<div id="queryanalysismicroseconds">
+  ### Микросекунды анализа запроса
+</div>
+
+Общее время, затраченное на построение дерева запроса и выполнение этапов анализатора (разрешение идентификаторов, типов и выражений).
 
 <div id="querybackupthrottlerbytes">
   ### QueryBackupThrottlerBytes
@@ -5634,6 +5706,24 @@ SELECT * FROM system.events LIMIT 5
 </div>
 
 Количество случаев превышения лимита памяти при выполнении запроса.
+
+<div id="queryparsemicroseconds">
+  ### QueryParseMicroseconds
+</div>
+
+Общее время, затраченное на разбор текста запроса в AST.
+
+<div id="querypipelinebuildmicroseconds">
+  ### QueryPipelineBuildMicroseconds
+</div>
+
+Общее время, затраченное на построение QueryPipeline из оптимизированного QueryPlan.
+
+<div id="queryplanbuildmicroseconds">
+  ### QueryPlanBuildMicroseconds
+</div>
+
+Общее время, затраченное на построение QueryPlan из проанализированного дерева запроса.
 
 <div id="queryplanoptimizemicroseconds">
   ### QueryPlanOptimizeMicroseconds
@@ -6883,6 +6973,12 @@ SELECT * FROM system.events LIMIT 5
 
 Сколько HTTP-ответов было отправлено для подтверждения устаревших частей данных
 
+<div id="sharedmergetreepartitionoperationretries">
+  ### SharedMergeTreePartitionOperationRetries
+</div>
+
+Сколько раз операции на уровне партиции (DROP/MOVE/REPLACE/CLONE/TRUNCATE PARTITION) приходилось повторять multi-write в Keeper из-за параллельного изменения
+
 <div id="sharedmergetreepartskillermicroseconds">
   ### SharedMergeTreePartsKillerMicroseconds
 </div>
@@ -7369,6 +7465,18 @@ SELECT * FROM system.events LIMIT 5
 
 Количество сегментов, пропущенных из-за того, что выходная область уже была определена (все единицы для OR, все нули для побитового И) в режиме ленивого списка вхождений.
 
+<div id="textindexphrasematchmicroseconds">
+  ### TextIndexPhraseMatchMicroseconds
+</div>
+
+Общее время, затраченное на пересечение при поиске совпадений фраз roaringish.
+
+<div id="textindexpositionsdecodemicroseconds">
+  ### TextIndexPositionsDecodeMicroseconds
+</div>
+
+Общее время, затраченное на декодирование списков позиций текстового индекса (`.pos`) для поиска по фразам.
+
 <div id="textindexpostingscachehits">
   ### TextIndexPostingsCacheHits
 </div>
@@ -7584,6 +7692,18 @@ SELECT * FROM system.events LIMIT 5
 </div>
 
 Количество байтов, вытесненных из несжатого кэша.
+
+<div id="uniquekeybitmaploadmicroseconds">
+  ### UniqueKeyBitmapLoadMicroseconds
+</div>
+
+Время, затраченное на чтение и десериализацию вспомогательных файлов delete-bitmap для UNIQUE KEY при промахе кэша DeleteBitmapCache.
+
+<div id="uniquekeybitmapupdates">
+  ### UniqueKeyBitmapUpdates
+</div>
+
+Количество записанных sidecar-файлов delete-bitmap для UNIQUE KEY (по одному на каждое вытеснение / DELETE-коммит).
 
 <div id="uniquekeyindexcachehits">
   ### UniqueKeyIndexCacheHits

@@ -60,7 +60,7 @@ module "clickhouse_onboarding" {
   #### VPC بإدارة العميل
 </div>
 
-افتراضيًا، سيوفّر ClickHouse Cloud شبكة VPC مخصّصة لتحقيق عزل أفضل في نشر BYOC لديك. ومع ذلك، يمكنك أيضًا استخدام شبكة VPC موجودة في حسابك. يتطلب ذلك تهيئة محددة، ويجب التنسيق بشأنه عبر ClickHouse Support.
+افتراضيًا، سيوفّر ClickHouse Cloud شبكة VPC مخصّصة لتحقيق عزل أفضل في نشر BYOC لديك. ومع ذلك، يمكنك أيضًا استخدام شبكة VPC الحالية في حسابك. يتطلب ذلك تهيئة محددة، ويجب التنسيق بشأنه عبر ClickHouse Support.
 
 **تهيئة شبكة VPC الحالية لديك**
 
@@ -102,97 +102,87 @@ module "clickhouse_onboarding" {
   ### اختياري: إعداد إقران VPC
 </div>
 
-لإنشاء أو حذف إقران VPC لـ ClickHouse BYOC، اتبع الخطوات:
+لإنشاء إقران VPC أو حذفه لـ ClickHouse BYOC، اتبع الخطوات التالية:
 
-<div id="step-1-enable-private-load-balancer-for-clickhouse-byoc">
-  #### الخطوة 1: تفعيل موازن التحميل الخاص لـ ClickHouse BYOC
-</div>
+<Steps>
+  <Step title="تمكين موازن التحميل الخاص لـ ClickHouse BYOC" id="step-1-enable-private-load-balancer-for-clickhouse-byoc">
+    تواصل مع ClickHouse Support لتمكين Private Load Balancer.
+  </Step>
 
-تواصل مع ClickHouse Support لتفعيل موازن التحميل الخاص.
+  <Step title="إنشاء peering connection" id="step-2-create-a-peering-connection">
+    1. انتقل إلى VPC Dashboard في حساب ClickHouse BYOC.
+    2. اختر Peering Connections.
+    3. انقر على Create Peering Connection
+    4. عيّن VPC Requester إلى ClickHouse VPC ID.
+    5. عيّن VPC Accepter إلى VPC ID الهدف. (اختر حسابًا آخر إذا كان ذلك منطبقًا)
+    6. انقر على Create Peering Connection.
 
-<div id="step-2-create-a-peering-connection">
-  #### الخطوة 2: إنشاء اتصال الإقران
-</div>
+    <br />
 
-1. انتقل إلى VPC Dashboard في حساب ClickHouse BYOC.
-2. اختر Peering Connections.
-3. انقر على Create Peering Connection.
-4. اضبط VPC Requester على معرّف ClickHouse VPC.
-5. اضبط VPC Accepter على معرّف VPC الهدف. (اختر حسابًا آخر إذا كان ذلك منطبقًا)
-6. انقر على Create Peering Connection.
+    <img src="/images/cloud/reference/byoc-vpcpeering-1.webp" alt="BYOC إنشاء Peering Connection" />
 
-<br />
+    <br />
+  </Step>
 
-<img src="/images/cloud/reference/byoc-vpcpeering-1.webp" alt="BYOC إنشاء اتصال الإقران" />
+  <Step title="قبول طلب peering connection" id="step-3-accept-the-peering-connection-request">
+    انتقل إلى حساب peering، وفي صفحة (VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request) يمكن للعميل الموافقة على طلب إقران VPC هذا.
 
-<br />
+    <br />
 
-<div id="step-3-accept-the-peering-connection-request">
-  #### الخطوة 3 قبول طلب اتصال الإقران
-</div>
+    <img src="/images/cloud/reference/byoc-vpcpeering-2.webp" alt="BYOC قبول Peering Connection" />
 
-انتقل إلى حساب الإقران، وفي صفحة (VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request) يمكن للعميل الموافقة على طلب إقران VPC هذا.
+    <br />
+  </Step>
 
-<br />
+  <Step title="إضافة destination إلى route tables الخاصة بـ ClickHouse VPC" id="step-4-add-destination-to-clickhouse-vpc-route-tables">
+    في حساب ClickHouse BYOC،
 
-<img src="/images/cloud/reference/byoc-vpcpeering-2.webp" alt="BYOC قبول اتصال الإقران" />
+    1. اختر Route Tables في VPC Dashboard.
+    2. ابحث عن ClickHouse VPC ID. عدّل كل route table مرتبطة بـ private subnets.
+    3. انقر على زر Edit ضمن تبويب Routes.
+    4. انقر على Add another route.
+    5. أدخل نطاق CIDR الخاص بـ VPC الهدف في خانة Destination.
+    6. اختر “Peering Connection” ومعرّف peering connection في خانة Target.
 
-<br />
+    <br />
 
-<div id="step-4-add-destination-to-clickhouse-vpc-route-tables">
-  #### الخطوة 4: أضف الوجهة إلى جداول التوجيه في ClickHouse VPC
-</div>
+    <img src="/images/cloud/reference/byoc-vpcpeering-3.webp" alt="BYOC إضافة route table" />
 
-في حساب ClickHouse BYOC،
+    <br />
+  </Step>
 
-1. حدِّد &quot;Route Tables&quot; في &quot;VPC Dashboard&quot;.
-2. ابحث عن معرّف ClickHouse VPC. حرِّر كل جدول توجيه مرتبط بالشبكات الفرعية الخاصة.
-3. انقر على زر &quot;Edit&quot; ضمن علامة التبويب &quot;Routes&quot;.
-4. انقر على &quot;Add another route&quot;.
-5. أدخل نطاق CIDR الخاص بالـ VPC الهدف في خانة &quot;Destination&quot;.
-6. حدِّد &quot;Peering Connection&quot; ومعرّف اتصال الإقران في خانة &quot;Target&quot;.
+  <Step title="إضافة destination إلى route tables الخاصة بـ VPC الهدف" id="step-5-add-destination-to-the-target-vpc-route-tables">
+    في حساب AWS الخاص بـ peering،
 
-<br />
+    1. اختر Route Tables في VPC Dashboard.
+    2. ابحث عن VPC ID الهدف.
+    3. انقر على زر Edit ضمن تبويب Routes.
+    4. انقر على Add another route.
+    5. أدخل نطاق CIDR الخاص بـ ClickHouse VPC في خانة Destination.
+    6. اختر “Peering Connection” ومعرّف peering connection في خانة Target.
 
-<img src="/images/cloud/reference/byoc-vpcpeering-3.webp" alt="BYOC إضافة جدول توجيه" />
+    <br />
 
-<br />
+    <img src="/images/cloud/reference/byoc-vpcpeering-4.webp" alt="BYOC إضافة route table" />
 
-<div id="step-5-add-destination-to-the-target-vpc-route-tables">
-  #### الخطوة 5 إضافة الوجهة إلى جداول توجيه VPC الهدف
-</div>
+    <br />
+  </Step>
 
-في حساب AWS الخاص بالربط البيني،
+  <Step title="عدّل مجموعة الأمان للسماح بالوصول من VPC المقترنة" id="step-6-edit-security-group-to-allow-peered-vpc-access">
+    في حساب ClickHouse BYOC، تحتاج إلى تحديث إعدادات Security Group للسماح بحركة المرور من VPC المقترنة لديك. يُرجى التواصل مع ClickHouse Support لطلب إضافة Inbound rules تتضمن نطاقات CIDR الخاصة بـ VPC المقترنة لديك.
 
-1. حدّد Route Tables في VPC Dashboard.
-2. ابحث عن معرّف VPC الهدف.
-3. انقر على زر Edit ضمن علامة التبويب Routes.
-4. انقر على Add another route.
-5. أدخل نطاق CIDR الخاص بـ ClickHouse VPC في حقل Destination.
-6. حدّد “Peering Connection” ومعرّف اتصال الإقران في حقل Target.
+    ***
 
-<br />
+    يجب أن تكون خدمة ClickHouse الآن قابلة للوصول من VPC المقترنة.
 
-<img src="/images/cloud/reference/byoc-vpcpeering-4.webp" alt="BYOC إضافة جدول توجيه" />
+    للوصول إلى ClickHouse بشكل خاص، يتم توفير موازن تحميل خاص ونقطة endpoint خاصة لتأمين الاتصال من VPC المقترنة الخاصة بالمستخدم. وتتبع نقطة endpoint الخاصة تنسيق نقطة endpoint العامة مع اللاحقة `-private`. على سبيل المثال:
 
-<br />
+    * **نقطة endpoint العامة**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
+    * **نقطة endpoint الخاصة**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
 
-<div id="step-6-edit-security-group-to-allow-peered-vpc-access">
-  #### الخطوة 6: عدّل مجموعة الأمان للسماح بالوصول من VPC المقترنة
-</div>
-
-في حساب ClickHouse BYOC، تحتاج إلى تحديث إعدادات Security Group للسماح بحركة المرور من VPC المقترنة لديك. يُرجى التواصل مع ClickHouse Support لطلب إضافة Inbound rules تتضمن نطاقات CIDR الخاصة بـ VPC المقترنة لديك.
-
-***
-
-يجب أن تكون خدمة ClickHouse الآن قابلة للوصول من VPC المقترنة.
-
-للوصول إلى ClickHouse بشكل خاص، يتم توفير موازن تحميل خاص ونقطة endpoint خاصة لتأمين الاتصال من VPC المقترنة الخاصة بالمستخدم. وتتبع نقطة endpoint الخاصة تنسيق نقطة endpoint العامة مع اللاحقة `-private`. على سبيل المثال:
-
-* **نقطة endpoint العامة**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
-* **نقطة endpoint الخاصة**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
-
-اختياريًا، بعد التحقق من أن الاقتران يعمل، يمكنك طلب إزالة موازن التحميل العام لـ ClickHouse BYOC.
+    اختياريًا، بعد التحقق من أن الاقتران يعمل، يمكنك طلب إزالة موازن التحميل العام لـ ClickHouse BYOC.
+  </Step>
+</Steps>
 
 <div id="upgrade-process">
   ## عملية الترقية

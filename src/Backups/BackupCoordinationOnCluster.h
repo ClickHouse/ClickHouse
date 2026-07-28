@@ -89,7 +89,6 @@ public:
 
 private:
     void createRootNodes();
-    bool tryFinishImpl() noexcept;
 
     void serializeToMultipleZooKeeperNodes(const String & path, const String & value, const String & logging_name);
     String deserializeFromMultipleZooKeeperNodes(const String & path, const String & logging_name) const;

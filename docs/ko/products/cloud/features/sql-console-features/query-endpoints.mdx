@@ -19,38 +19,34 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   ## IP 액세스 제어
 </div>
 
-Query API 엔드포인트는 API Key 수준의 IP 허용 목록을 따릅니다. SQL 콘솔과 마찬가지로 Query API 엔드포인트는 ClickHouse 인프라 내부에서 요청을 프록시하므로 서비스 수준의 IP 허용 목록 설정은 적용되지 않습니다.
+Query API endpoint는 API Key 수준의 IP 허용 목록을 따릅니다. SQL 콘솔과 마찬가지로 Query API endpoint는 ClickHouse 인프라 내부에서 요청을 프록시하므로 서비스 수준의 IP 허용 목록 설정은 적용되지 않습니다.
 
-Query API 엔드포인트를 호출할 수 있는 클라이언트를 제한하려면 다음 단계를 수행하세요.
+Query API endpoint를 호출할 수 있는 클라이언트를 제한하려면 다음 단계를 수행하세요.
 
 <Steps>
-  <Step>
-    #### API Key 설정 열기
-
+  <Step title="API Key 설정 열기" id="open-settings">
     1. ClickHouse Cloud 콘솔에서 **Organization** → **API Keys**로 이동합니다
 
     <Image img="/images/cloud/guides/query-endpoints/console-api-keys.webp" size="md" alt="API Keys" />
 
-    2. Query API 엔드포인트에 사용하는 API Key 옆의 **Edit**를 클릭합니다
+    2. Query API endpoint에 사용하는 API Key 옆의 **Edit**를 클릭합니다
 
     <Image img="/images/cloud/guides/query-endpoints/api-key-edit.webp" size="md" alt="Edit" />
   </Step>
 
-  <Step>
-    #### 허용할 IP 주소 추가
-
+  <Step title="허용할 IP 주소 추가" id="add-ips">
     1. **Allow access to this API Key** 섹션에서 **Specific locations**를 선택합니다
     2. IP 주소 또는 CIDR 범위(예: `203.0.113.1` 또는 `203.0.113.0/24`)를 입력합니다
     3. 필요에 따라 여러 항목을 추가합니다
 
     <Image img="/images/cloud/guides/query-endpoints/specific-locations.webp" size="md" alt="Specific locations" />
 
-    Query API 엔드포인트를 생성하려면 관리자 Console Role과 적절한 권한이 부여된 API Key가 필요합니다.
+    Query API endpoint를 생성하려면 관리자 Console Role과 적절한 권한이 부여된 API Key가 필요합니다.
   </Step>
 </Steps>
 
 <Tip>
   **가이드**
 
-  몇 단계만으로 Query API 엔드포인트를 설정하는 방법은 [Query API endpoint guide](/ko/products/cloud/guides/sql-console/query-endpoints)를 참조하십시오.
+  몇 단계만으로 Query API endpoint를 설정하는 방법은 [Query API endpoint guide](/ko/products/cloud/guides/sql-console/query-endpoints)를 참조하십시오.
 </Tip>

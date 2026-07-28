@@ -771,6 +771,78 @@ SELECT polygonsIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535
 
 UInt8، 0 لـ false، و1 لـ true
 
+<div id="geometryintersectcartesian">
+  ## geometryIntersectCartesian
+</div>
+
+تُرجع true إذا تقاطع شكلان هندسيان (أي إذا اشتركا في أي نقطة أو خط أو مساحة).
+
+بخلاف [`polygonsIntersectCartesian`](#polygonsintersectcartesian)، فهي تقبل أي نوع بيانات هندسي
+(`Point`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`)، بما في ذلك النوع العام
+[`Geometry`](/ar/reference/data-types/geo#geometry)، ويمكن أن تكون الوسيطتان من نوعين مختلفين.
+
+تكون الإحداثيات في نظام الإحداثيات الديكارتية.
+
+<div id="example">
+  ### مثال
+</div>
+
+```sql
+SELECT geometryIntersectCartesian([(2., 2.), (2., 3.), (3., 3.), (3., 2.)]::Ring, [(1., 1.), (1., 4.), (4., 4.), (4., 1.)]::Ring)
+```
+
+```response
+1
+```
+
+<div id="input-parameters-3">
+  ### معلمة الإدخال
+</div>
+
+شكلان هندسيان من أي نوع من أنواع البيانات الهندسية (أو `Geometry`).
+
+<div id="returned-value">
+  ### القيمة المُعادة
+</div>
+
+UInt8، 0 للقيمة false، و1 للقيمة true
+
+<div id="geometryintersectspherical">
+  ## geometryIntersectSpherical
+</div>
+
+تُرجع `true` إذا كان شكلان هندسيان يتقاطعان (أي يشتركان في أي نقطة أو خط أو مساحة).
+
+بخلاف [`polygonsIntersectSpherical`](#polygonsintersectspherical)، فإنها تقبل أي نوع بيانات هندسي
+(`Point`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`)، بما في ذلك النوع العام
+[`Geometry`](/ar/reference/data-types/geo#geometry)، ويمكن أن تكون الوسيطتان من نوعين مختلفين.
+
+تُفسَّر الإحداثيات على أنها تقع على كرة مثالية.
+
+<div id="example">
+  ### مثال
+</div>
+
+```sql
+SELECT geometryIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]]::MultiPolygon, (4.36, 50.85)::Point)
+```
+
+```response
+1
+```
+
+<div id="input-parameters">
+  ### معلمات الإدخال
+</div>
+
+شكلان هندسيان من أي نوع من أنواع البيانات الهندسية (أو `Geometry`).
+
+<div id="returned-value">
+  ### القيمة المُعادة
+</div>
+
+UInt8، و0 لـ false، و1 لـ true
+
 <div id="polygonconvexhullcartesian">
   ## polygonConvexHullCartesian
 </div>
