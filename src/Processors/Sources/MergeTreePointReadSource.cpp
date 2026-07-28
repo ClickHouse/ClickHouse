@@ -221,7 +221,16 @@ void MergeTreePointReadSource::readOtherColumns(size_t base, size_t batch, Colum
     bool should_evaluate_missing_defaults = false;
     other_reader->fillMissingColumns(dst_columns, should_evaluate_missing_defaults, batch);
     if (should_evaluate_missing_defaults)
-        other_reader->evaluateMissingDefaults(Block{}, dst_columns);
+    {
+        /// The default expressions are evaluated over a block, so it has to carry the row count - exactly what
+        /// `MergeTreeReadersChain::executeActionsBeforePrewhere` does before the same call. Columns that were read stay
+        /// in `dst_columns` and are added to the block by `evaluateMissingDefaults` itself, but when every requested
+        /// column is missing from the part (a lazy column added by a later ALTER, with the rest of the lazy read
+        /// covered by the point-read column) the block would otherwise be empty and the evaluation has no row count.
+        Block additional_columns;
+        addDummyColumnWithRowCount(additional_columns, batch);
+        other_reader->evaluateMissingDefaults(additional_columns, dst_columns);
+    }
     other_reader->performRequiredConversions(dst_columns);
 }
 

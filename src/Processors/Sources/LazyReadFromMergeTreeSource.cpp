@@ -32,6 +32,72 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+/// The vector column of a lazy read that `MergeTreePointReadSource` can serve, and the dimension count its
+/// `Quantized(...)` codec declares.
+struct PointReadVectorColumn
+{
+    NameAndTypePair column;
+    size_t dimensions;
+};
+
+/// The single vector column the point read may serve, if the lazy header holds exactly one.
+///
+/// The step is not told which column the vector search ranks by, and only that column is worth point-reading: the
+/// others are payload the query happens to select. With one candidate there is nothing to confuse, so it must be the
+/// rescored one; with several we could point-read a payload column and leave the heavy rescored one on the granule
+/// read, which is the case this optimization exists to avoid. Then it is better not to engage at all.
+std::optional<PointReadVectorColumn> findPointReadVectorColumn(const Block & lazy_header, const ColumnsDescription & columns_desc)
+{
+    std::optional<PointReadVectorColumn> found;
+
+    for (const auto & col : lazy_header)
+    {
+        if (!columns_desc.has(col.name))
+            continue;
+
+        if (auto params = tryExtractQuantizedCodecParams(columns_desc.get(col.name).codec))
+        {
+            if (found)
+                return {};
+            found = PointReadVectorColumn{NameAndTypePair(col.name, col.type), params->dimensions};
+        }
+    }
+
+    return found;
+}
+
+/// Whether `part` may be served by the point read instead of the ordinary granule read.
+///
+/// The point read addresses the part's base `.bin` files directly and its secondary reader is built without alter
+/// conversions, so it applies none of the read-time machinery `MergeTreeReadTask` provides - data mutations, patch
+/// parts, lightweight deletes, renames, ignoring a column dropped by a pending mutation - and it cannot synthesize a
+/// column the part does not store. Instead of listing the conversions to refuse, which silently admits every kind
+/// added later, this requires a part that needs no conversion at all and stores every lazy column. Anything else, now
+/// or in the future, reads by granule.
+bool canPointReadPart(
+    const RangesInDataPart & part,
+    const PointReadVectorColumn & vector_column,
+    const Block & lazy_header,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & context)
+{
+    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part.data_part, mutations_snapshot, context);
+    if (alter_conversions->hasAnyConversions() || part.data_part->hasLightweightDelete())
+        return false;
+
+    for (const auto & col : lazy_header)
+        if (col.name != vector_column.column.name && !part.data_part->hasColumnFiles(NameAndTypePair(col.name, col.type)))
+            return false;
+
+    /// Finally the layout itself: the vector column must be stored one vector per compressed block.
+    return MergeTreePointReadSource::isEligible(part, vector_column.column, vector_column.dimensions);
+}
+
+}
+
 
 LazyReadFromMergeTreeSource::LazyReadFromMergeTreeSource(
     SharedHeader header,
@@ -223,98 +289,55 @@ IProcessor::PipelineUpdate LazyReadFromMergeTreeSource::updatePipeline()
     return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
 
+Processors LazyReadFromMergeTreeSource::tryBuildPointReadSources()
+{
+    const Block & lazy_header = outputs.front().getHeader();
+
+    auto vector_column = findPointReadVectorColumn(lazy_header, storage_snapshot->metadata->getColumns());
+    if (!vector_column)
+        return {};
+
+    for (const auto & part_with_ranges : lazy_materializing_rows->ranges_in_data_parts)
+        if (!canPointReadPart(part_with_ranges, *vector_column, lazy_header, mutations_snapshot, context))
+            return {};
+
+    /// The remaining lazy columns (in header order, minus the vector column) are read with a standard reader.
+    NamesAndTypesList other_columns;
+    for (const auto & col : lazy_header)
+        if (col.name != vector_column->column.name)
+            other_columns.emplace_back(col.name, col.type);
+
+    auto mark_cache = context->getMarkCache();
+    Processors processors;
+    auto lazy_header_ptr = std::make_shared<const Block>(lazy_header);
+    for (const auto & part_with_ranges : lazy_materializing_rows->ranges_in_data_parts)
+    {
+        auto & offsets = lazy_materializing_rows->rows_in_parts[part_with_ranges.part_index_in_query];
+        const size_t total_rows = offsets.size();
+        auto source = std::make_shared<MergeTreePointReadSource>(
+            lazy_header_ptr,
+            part_with_ranges,
+            std::move(offsets),
+            vector_column->column,
+            vector_column->dimensions,
+            other_columns,
+            storage_snapshot,
+            reader_settings,
+            mark_cache,
+            max_block_size);
+        source->addTotalRowsApprox(total_rows);
+        processors.emplace_back(std::move(source));
+    }
+
+    return processors;
+}
+
 Processors LazyReadFromMergeTreeSource::buildReaders()
 {
     const auto & ctx_settings = context->getSettingsRef();
 
-    /// Point-read fast path: if the lazy read includes a fixed-size Array column carrying a `Quantized(...)` codec, and
-    /// every part stores it one-vector-per-block, fetch each shortlisted row's single compressed block for that column
-    /// instead of decompressing whole granules. Any other lazy columns are read normally (granule read) alongside it and
-    /// merged into the same chunk. Requires the whole batch to be eligible; otherwise fall through to the ordinary
-    /// granule read below. See MergeTreePointReadSource.
-    ///
-    /// The step does not know which column the vector search ranks by, so the fast path engages only when the lazy header
-    /// holds exactly one quantized vector column - that one must be the rescored column. With several of them we could
-    /// pick the payload column and leave the heavy rescored one on the granule read, so stay on the ordinary path.
-    {
-        const Block & lazy_header = outputs.front().getHeader();
-        std::optional<NameAndTypePair> vector_column;
-        size_t point_read_dims = 0;
-        const auto & columns_desc = storage_snapshot->metadata->getColumns();
-        for (const auto & col : lazy_header)
-        {
-            if (!columns_desc.has(col.name))
-                continue;
-            if (auto params = tryExtractQuantizedCodecParams(columns_desc.get(col.name).codec))
-            {
-                if (vector_column)
-                {
-                    vector_column.reset();
-                    break;
-                }
-                vector_column = NameAndTypePair(col.name, col.type);
-                point_read_dims = params->dimensions;
-            }
-        }
-
-        if (vector_column)
-        {
-            bool all_eligible = true;
-            for (const auto & part_with_ranges : lazy_materializing_rows->ranges_in_data_parts)
-            {
-                if (!MergeTreePointReadSource::isEligible(part_with_ranges, *vector_column, point_read_dims))
-                {
-                    all_eligible = false;
-                    break;
-                }
-                /// The point read fetches the base `.bin` directly and bypasses the on-the-fly mutations, patch parts,
-                /// lightweight deletes and column renames that `MergeTreeReadTask` would otherwise apply. Fall back to
-                /// the granule read for any part that needs such conversions, so we never return stale/unconverted rows.
-                auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part_with_ranges.data_part, mutations_snapshot, context);
-                if (part_with_ranges.data_part->hasLightweightDelete()
-                    || alter_conversions->hasMutations()
-                    || alter_conversions->hasPatches()
-                    || alter_conversions->hasLightweightDelete()
-                    || !alter_conversions->getRenameMap().empty())
-                {
-                    all_eligible = false;
-                    break;
-                }
-            }
-
-            if (all_eligible)
-            {
-                /// The remaining lazy columns (in header order, minus the vector column) are read with a standard reader.
-                NamesAndTypesList other_columns;
-                for (const auto & col : lazy_header)
-                    if (col.name != vector_column->name)
-                        other_columns.emplace_back(col.name, col.type);
-
-                auto mark_cache = context->getMarkCache();
-                Processors processors;
-                auto lazy_header_ptr = std::make_shared<const Block>(lazy_header);
-                for (const auto & part_with_ranges : lazy_materializing_rows->ranges_in_data_parts)
-                {
-                    auto & offsets = lazy_materializing_rows->rows_in_parts[part_with_ranges.part_index_in_query];
-                    const size_t total_rows = offsets.size();
-                    auto source = std::make_shared<MergeTreePointReadSource>(
-                        lazy_header_ptr,
-                        part_with_ranges,
-                        std::move(offsets),
-                        *vector_column,
-                        point_read_dims,
-                        other_columns,
-                        storage_snapshot,
-                        reader_settings,
-                        mark_cache,
-                        max_block_size);
-                    source->addTotalRowsApprox(total_rows);
-                    processors.emplace_back(std::move(source));
-                }
-                return processors;
-            }
-        }
-    }
+    if (auto point_read_sources = tryBuildPointReadSources(); !point_read_sources.empty())
+        return point_read_sources;
 
     size_t sum_marks = lazy_materializing_rows->ranges_in_data_parts.getMarksCountAllParts();
     size_t sum_rows = lazy_materializing_rows->ranges_in_data_parts.getRowsCountAllParts();

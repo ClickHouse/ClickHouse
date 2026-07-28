@@ -106,5 +106,63 @@ WITH (SELECT vec FROM quantize_pr_mc_aligned WHERE id = 2500) AS ref
 SELECT 'two_vector_columns_match_row', countIf(vec2 = arrayMap(j -> toFloat32(sipHash64(j, toUInt64(id)) % 2000 / 1000.0 - 1.0), range(64))), count()
 FROM (SELECT id, vec2 FROM quantize_pr_mc_aligned ORDER BY L2Distance(vec, ref) ASC LIMIT 20 SETTINGS vector_search_index_fetch_multiplier = 20);
 
+-- The point read addresses the part's files directly, so it must decline any part that needs a read-time conversion
+-- or that does not store one of the lazy columns. Both cases below return correct results only on the granule read.
+
+-- A pending `DROP COLUMN` is metadata-only: the part keeps the old data and the reader is supposed to ignore it. If
+-- the point read served this part it would hand back the pre-drop bytes of the re-added column.
+DROP TABLE IF EXISTS quantize_pr_mc_dropped;
+
+CREATE TABLE quantize_pr_mc_dropped
+(
+    id UInt32,
+    vec Array(Float32) CODEC(Quantized('int8', 64)) SETTINGS (max_compress_block_size = 256),
+    payload String
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 512, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+SYSTEM STOP MERGES quantize_pr_mc_dropped;
+
+INSERT INTO quantize_pr_mc_dropped
+SELECT
+    number,
+    arrayMap(j -> toFloat32(number / 1000.0 + (sipHash64(number, j) % 100) / 1000.0), range(64)),
+    concat('OLD', toString(number))
+FROM numbers(2000);
+
+ALTER TABLE quantize_pr_mc_dropped DROP COLUMN payload SETTINGS alter_sync = 0, mutations_sync = 0;
+ALTER TABLE quantize_pr_mc_dropped ADD COLUMN payload String DEFAULT 'NEW' SETTINGS alter_sync = 0, mutations_sync = 0;
+
+WITH (SELECT vec FROM quantize_pr_mc_dropped WHERE id = 1000) AS ref
+SELECT 'dropped_and_readded_column', countIf(payload = 'NEW'), countIf(startsWith(payload, 'OLD')), count()
+FROM (SELECT id, payload FROM quantize_pr_mc_dropped ORDER BY L2Distance(vec, ref) ASC LIMIT 50 SETTINGS vector_search_index_fetch_multiplier = 20);
+
+DROP TABLE quantize_pr_mc_dropped;
+
+-- A column added after the part was written is absent from it and has to be synthesized from its `DEFAULT`. Here it is
+-- the only lazy column besides the vector one, so nothing else carries the row count into the default evaluation.
+DROP TABLE IF EXISTS quantize_pr_mc_added;
+
+CREATE TABLE quantize_pr_mc_added
+(
+    id UInt32,
+    vec Array(Float32) CODEC(Quantized('int8', 64)) SETTINGS (max_compress_block_size = 256)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 512, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO quantize_pr_mc_added
+SELECT number, arrayMap(j -> toFloat32(number / 1000.0 + (sipHash64(number, j) % 100) / 1000.0), range(64))
+FROM numbers(2000);
+
+ALTER TABLE quantize_pr_mc_added ADD COLUMN extra String DEFAULT 'zzz';
+
+WITH (SELECT vec FROM quantize_pr_mc_added WHERE id = 1000) AS ref
+SELECT 'added_column_default', countIf(extra = 'zzz'), count()
+FROM (SELECT extra FROM quantize_pr_mc_added ORDER BY L2Distance(vec, ref) ASC LIMIT 50 SETTINGS vector_search_index_fetch_multiplier = 20);
+
+DROP TABLE quantize_pr_mc_added;
+
 DROP TABLE quantize_pr_mc_aligned;
 DROP TABLE quantize_pr_mc_unaligned;
