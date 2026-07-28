@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/defines.h>
 #include <base/extended_types.h>
 
 #define FOR_INTEGER_TYPES(M) \
@@ -21,10 +22,8 @@
 #define INSTANTIATION(T) char * itoa(T i, char * p);
 FOR_INTEGER_TYPES(INSTANTIATION)
 
-/// On platforms where `int64_t` is not `long` (Darwin) and on 32-bit platforms where
-/// `int32_t` is not `long` either (WebAssembly), plain `long` is a distinct type that is
-/// not covered by the list above, and calls with a `long` argument would be ambiguous.
-#if defined(OS_DARWIN) || !defined(__LP64__)
+/// `long` is not covered by the list above where it is a distinct type.
+#if defined(LONG_IS_A_DISTINCT_TYPE)
 INSTANTIATION(unsigned long)
 INSTANTIATION(long)
 #endif

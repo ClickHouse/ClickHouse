@@ -547,10 +547,8 @@ char * itoa(Int256 i, char * p)
 
 FOR_MISSING_INTEGER_TYPES(DEFAULT_ITOA)
 
-/// On platforms where `int64_t` is not `long` (Darwin) and on 32-bit platforms where
-/// `int32_t` is not `long` either (WebAssembly), plain `long` is a distinct type that is
-/// not covered by the list above, and calls with a `long` argument would be ambiguous.
-#if defined(OS_DARWIN) || !defined(__LP64__)
+/// `long` is not covered by the list above where it is a distinct type.
+#if defined(LONG_IS_A_DISTINCT_TYPE)
 DEFAULT_ITOA(unsigned long)
 DEFAULT_ITOA(long)
 #endif
