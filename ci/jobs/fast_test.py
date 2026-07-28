@@ -8,7 +8,7 @@ repo_path = Path(__file__).resolve().parent.parent.parent
 repo_path_normalized = str(repo_path)
 sys.path.append(str(repo_path / "ci"))
 
-from ci.defs.defs import ToolSet, chcache_secret
+from ci.defs.defs import ToolSet
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.praktika.info import Info
@@ -231,13 +231,6 @@ def main():
             print("NOTE: Using custom AWS credentials for sccache")
         else:
             os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
-    else:
-        os.environ["CH_HOSTNAME"] = (
-            "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
-        )
-        os.environ["CH_USER"] = "ci_builder"
-        os.environ["CH_PASSWORD"] = chcache_secret.get_value()
-        os.environ["CH_USE_LOCAL_CACHE"] = "false"
 
     Utils.add_to_PATH(
         f"{os.path.dirname(clickhouse_bin_path)}:{current_directory}/tests"

@@ -50,12 +50,6 @@ azure_secret = Secret.Config(
     type=Secret.Type.AWS_SSM_PARAMETER,
 )
 
-chcache_secret = Secret.Config(
-    name="chcache_password",
-    type=Secret.Type.AWS_SSM_PARAMETER,
-    region="us-east-1",
-)
-
 SECRETS = [
     Secret.Config(
         name="dockerhub_robot_password",
@@ -77,7 +71,6 @@ SECRETS = [
         region="us-east-1",
     ),
     azure_secret,
-    chcache_secret,
     Secret.Config(
         name="/github-app/clickhouse-gh.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
