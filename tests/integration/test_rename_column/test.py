@@ -269,6 +269,37 @@ def rename_column_on_cluster(
             break
 
 
+def _num2_converged(nodes, table_name):
+    return all(
+        node.query(
+            "SELECT count() FROM system.columns "
+            "WHERE database = 'default' AND table IN ('{t}', '{t}_replicated') "
+            "AND name = 'num2'".format(t=table_name)
+        ).strip()
+        == "2"
+        for node in nodes
+    )
+
+
+def wait_for_rename_to_num2(nodes, table_name, attempts=12, poll_seconds=5):
+    # Best-effort cleanup renames + async ON CLUSTER replication can leave the
+    # column as foo2/foo3 on some replicas. Re-drive the idempotent rename-back
+    # until num2 is present on every node's Distributed and _replicated tables,
+    # so the strict queries below do not race schema convergence (UNKNOWN_IDENTIFIER).
+    tables = [table_name, "%s_replicated" % table_name]
+    for _ in range(attempts):
+        if _num2_converged(nodes, table_name):
+            return
+        for old_name in ("foo2", "foo3"):
+            for table in tables:
+                rename_column_on_cluster(nodes[0], table, old_name, "num2", 1, True)
+        time.sleep(poll_seconds)
+    if not _num2_converged(nodes, table_name):
+        raise Exception(
+            "columns did not converge to num2 for {} on all nodes".format(table_name)
+        )
+
+
 def alter_move(node, table_name, iterations=1, ignore_exception=False):
     i = 0
     while True:
@@ -809,14 +840,7 @@ def test_rename_distributed_parallel_insert_and_select(started_cluster):
         for task in tasks:
             task.get(timeout=240)
 
-        rename_column_on_cluster(node1, table_name, "foo2", "num2", 1, True)
-        rename_column_on_cluster(
-            node1, "%s_replicated" % table_name, "foo2", "num2", 1, True
-        )
-        rename_column_on_cluster(node1, table_name, "foo3", "num2", 1, True)
-        rename_column_on_cluster(
-            node1, "%s_replicated" % table_name, "foo3", "num2", 1, True
-        )
+        wait_for_rename_to_num2(nodes, table_name)
 
         insert(node1, table_name, 1000, col_names=["num", "num2"])
         select(node1, table_name, "num2")

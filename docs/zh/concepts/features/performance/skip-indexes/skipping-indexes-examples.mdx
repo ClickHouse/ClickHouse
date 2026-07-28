@@ -1,0 +1,275 @@
+---
+slug: /optimize/skipping-indexes/examples
+sidebarTitle: '数据跳过索引 - 示例'
+description: '跳过索引示例汇总'
+title: '数据跳过索引示例'
+doc_type: 'guide'
+keywords: ['跳过索引', '数据跳过', '性能', '索引', '最佳实践']
+---
+
+本页汇总了 ClickHouse 数据跳过索引的示例，说明如何声明每种类型、何时使用，以及如何验证它们是否已生效。所有功能均适用于 [MergeTree 家族表](/zh/reference/engines/table-engines/mergetree-family/mergetree)。
+
+**索引语法：**
+
+```sql
+INDEX name expr TYPE type(...) [GRANULARITY N]
+```
+
+ClickHouse 支持六种跳过索引类型：
+
+| 索引类型                                                | 描述                       |
+| --------------------------------------------------- | ------------------------ |
+| **minmax**                                          | 跟踪每个粒度中的最小值和最大值          |
+| **set(N)**                                          | 每个粒度最多存储 N 个不同值          |
+| **text**                                            | 针对分词后字符串数据的倒排索引，用于全文检索   |
+| **bloom&#95;filter([false&#95;positive&#95;rate])** | 用于存在性检查的概率型过滤器           |
+| **ngrambf&#95;v1**                                  | 用于子串搜索的 N-gram Bloom 过滤器 |
+| **tokenbf&#95;v1**                                  | 用于全文检索的基于标记的 Bloom 过滤器   |
+
+每个部分都提供了基于样本数据的示例，并演示了如何在查询执行过程中验证索引是否被使用。
+
+<div id="minmax-index">
+  ## MinMax 索引
+</div>
+
+`minmax` 索引最适合用于松散排序的数据上的范围谓词，或用于与 `ORDER BY` 相关联的列。
+
+```sql
+-- 在 CREATE TABLE 中定义
+CREATE TABLE events
+(
+  ts DateTime,
+  user_id UInt64,
+  value UInt32,
+  INDEX ts_minmax ts TYPE minmax GRANULARITY 1
+)
+ENGINE=MergeTree
+ORDER BY ts;
+
+-- 或稍后添加并物化
+ALTER TABLE events ADD INDEX ts_minmax ts TYPE minmax GRANULARITY 1;
+ALTER TABLE events MATERIALIZE INDEX ts_minmax;
+
+-- 利用索引加速的查询
+SELECT count() FROM events WHERE ts >= now() - 3600;
+
+-- 验证索引使用情况
+EXPLAIN indexes = 1
+SELECT count() FROM events WHERE ts >= now() - 3600;
+```
+
+请参阅一个演示如何使用 `EXPLAIN` 和剪枝的[完整示例](/zh/concepts/best-practices/using-data-skipping-indices#example)。
+
+<div id="set-index">
+  ## Set 索引
+</div>
+
+当本地 (按块) 基数较低时，使用 `set` 索引；如果每个块中包含大量不同值，则效果不大。
+
+```sql
+ALTER TABLE events ADD INDEX user_set user_id TYPE set(100) GRANULARITY 1;
+ALTER TABLE events MATERIALIZE INDEX user_set;
+
+SELECT * FROM events WHERE user_id IN (101, 202);
+
+EXPLAIN indexes = 1
+SELECT * FROM events WHERE user_id IN (101, 202);
+```
+
+创建/物化流程及其前后效果可参见[基本操作指南](/zh/concepts/features/performance/skip-indexes/skipping-indexes#basic-operation)。
+
+<div id="textindex-for-full-text-search">
+  ## 用于全文检索的 Text index (text)
+</div>
+
+`text` 是一种基于分词文本数据的倒排索引。
+它专为全文检索工作负载设计，可高效、确定性地进行标记和术语查找。
+推荐用于自然语言或大规模文本检索场景。
+
+更多详细信息和示例，请参阅[使用 Text Indexes 进行全文检索](/zh/reference/engines/table-engines/mergetree-family/textindexes)。
+
+```sql
+ALTER TABLE logs ADD INDEX msg_text msg TYPE text(tokenizer = splitByNonAlpha);
+ALTER TABLE logs MATERIALIZE INDEX msg_text;
+
+SELECT count() FROM logs WHERE hasAllTokens(msg, 'exception');
+```
+
+请参阅[此处](/zh/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search)文档，了解一个更完整的可观测性示例。
+
+文本索引完全具有确定性，并且可在分词和文本处理方面进行充分调优，但与基于布隆过滤器的索引相比，会带来略高的存储占用，
+
+<div id="generic-bloom-filter-scalar">
+  ## 通用 布隆过滤器 (标量)
+</div>
+
+`bloom_filter` 索引适用于“大海捞针”式的等值/IN 成员匹配。它接受一个可选参数，即假阳性率 (默认值为 0.025) 。
+
+```sql
+ALTER TABLE events ADD INDEX value_bf value TYPE bloom_filter(0.01) GRANULARITY 3;
+ALTER TABLE events MATERIALIZE INDEX value_bf;
+
+SELECT * FROM events WHERE value IN (7, 42, 99);
+
+EXPLAIN indexes = 1
+SELECT * FROM events WHERE value IN (7, 42, 99);
+```
+
+<div id="n-gram-bloom-filter-ngrambf-v1-for-substring-search">
+  ## 用于子串搜索的 N-gram 布隆过滤器 (ngrambf_v1) *(已弃用)*
+</div>
+
+<Note>
+  在 ClickHouse `>= 26.2` 版本中，使用 `ngrambf_v1` 索引进行全文搜索已弃用，建议改用 `text` 索引 (更多详情请参见[此处](/zh/reference/engines/table-engines/mergetree-family/textindexes)) 。
+</Note>
+
+`ngrambf_v1` 索引会将字符串拆分为 n-grams。它非常适合 `LIKE '%...%'` 查询。它支持 String/FixedString/Map (通过 mapKeys/mapValues) ，并支持调节大小、哈希数量和 seed。更多详情请参见 [N-gram 布隆过滤器](/zh/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) 文档。
+
+```sql
+-- 为子串搜索创建索引
+ALTER TABLE logs ADD INDEX msg_ngram msg TYPE ngrambf_v1(3, 10000, 3, 7) GRANULARITY 1;
+ALTER TABLE logs MATERIALIZE INDEX msg_ngram;
+
+-- 子串搜索
+SELECT count() FROM logs WHERE msg LIKE '%timeout%';
+
+EXPLAIN indexes = 1
+SELECT count() FROM logs WHERE msg LIKE '%timeout%';
+```
+
+[本指南](/zh/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search)通过实际示例说明了何时使用 标记，何时使用 ngram。
+
+**参数优化辅助工具：**
+
+ngrambf&#95;v1 的四个参数 (n-gram 大小、bitmap 大小、哈希函数、seed) 会显著影响性能和内存使用。请使用以下函数，根据预期的 n-gram 数量和所需的误报率，计算最优的 bitmap 大小和哈希函数数量：
+
+```sql
+CREATE FUNCTION bfEstimateFunctions AS
+(total_grams, bits) -> round((bits / total_grams) * log(2));
+
+CREATE FUNCTION bfEstimateBmSize AS
+(total_grams, p_false) -> ceil((total_grams * log(p_false)) / log(1 / pow(2, log(2))));
+
+-- 4300 个 ngram、p_false = 0.0001 的示例大小估算
+SELECT bfEstimateBmSize(4300, 0.0001) / 8 AS size_bytes;  -- ~10304
+SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) AS k; -- ~13
+```
+
+如需完整的调优指南，请参阅[参数文档](/zh/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter)。
+
+<div id="token-bloom-filter-tokenbf-v1-for-word-based-search">
+  ## 用于基于单词搜索的标记布隆过滤器 (`tokenbf_v1`) *(已弃用)*
+</div>
+
+<Note>
+  在 ClickHouse 版本 `>= 26.2` 中，使用 `tokenbf_v1` 索引进行全文搜索已被弃用，建议改用 `text` 索引 (更多详情请参见[此处](/zh/reference/engines/table-engines/mergetree-family/textindexes)) 。
+</Note>
+
+`tokenbf_v1` 会为由非字母数字字符分隔的标记建立索引。你应将其与 [`hasToken`](/zh/reference/functions/regular-functions/string-search-functions#hasToken)、`LIKE` 单词模式或等值比较/`IN` 搭配使用。它支持 `String`/`FixedString`/`Map` 类型。
+
+更多详情请参见[标记布隆过滤器](/zh/reference/engines/table-engines/mergetree-family/mergetree#token-bloom-filter)和[布隆过滤器类型](/zh/concepts/features/performance/skip-indexes/skipping-indexes#skip-index-types)页面。
+
+```sql
+ALTER TABLE logs ADD INDEX msg_token lower(msg) TYPE tokenbf_v1(10000, 7, 7) GRANULARITY 1;
+ALTER TABLE logs MATERIALIZE INDEX msg_token;
+
+-- 词语搜索（通过 lower 函数实现不区分大小写）
+SELECT count() FROM logs WHERE hasToken(lower(msg), 'exception');
+
+EXPLAIN indexes = 1
+SELECT count() FROM logs WHERE hasToken(lower(msg), 'exception');
+```
+
+请[参阅此处](/zh/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search)，查看可观测性示例以及有关标记与 ngram 的说明。
+
+<div id="add-indexes-during-create-table-multiple-examples">
+  ## 在 CREATE TABLE 时添加索引 (多个示例)
+</div>
+
+跳过索引也支持复合表达式以及 `Map`/`Tuple`/`Nested` 类型，下面的示例对此进行了演示：
+
+```sql
+CREATE TABLE t
+(
+  u64 UInt64,
+  s String,
+  m Map(String, String),
+
+  INDEX idx_bf u64 TYPE bloom_filter(0.01) GRANULARITY 3,
+  INDEX idx_minmax u64 TYPE minmax GRANULARITY 1,
+  INDEX idx_set u64 * length(s) TYPE set(1000) GRANULARITY 4,
+  INDEX idx_ngram s TYPE ngrambf_v1(3, 10000, 3, 7) GRANULARITY 1,
+  INDEX idx_token mapKeys(m) TYPE tokenbf_v1(10000, 7, 7) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY u64;
+```
+
+<div id="materializing-on-existing-data-and-verifying">
+  ## 对现有数据分区片段进行物化并验证
+</div>
+
+你可以使用 `MATERIALIZE` 为现有数据分区片段添加索引，并通过 `EXPLAIN` 或跟踪日志查看剪枝效果，如下所示：
+
+```sql
+ALTER TABLE t MATERIALIZE INDEX idx_bf;
+
+EXPLAIN indexes = 1
+SELECT count() FROM t WHERE u64 IN (123, 456);
+
+-- 可选：查看详细的剪枝信息
+SET send_logs_level = 'trace';
+```
+
+这个[minmax 示例](/zh/concepts/best-practices/using-data-skipping-indices#example)演示了 EXPLAIN 输出的结构以及剪枝数量。
+
+<div id="when-use-and-when-to-avoid">
+  ## 何时使用及何时避免使用跳过索引
+</div>
+
+**在以下情况下使用跳过索引：**
+
+* 过滤值在数据块内分布稀疏
+* 与 `ORDER BY` 列存在较强相关性，或者数据摄取模式会将相似值聚集在一起
+* 在大型日志数据集中执行文本搜索 (`ngrambf_v1`/`tokenbf_v1` 类型)
+
+**在以下情况下避免使用跳过索引：**
+
+* 大多数数据块很可能至少包含一个匹配值 (无论如何都会读取这些块)
+* 对与数据排序无相关性的高基数列进行过滤
+
+<Info>
+  **重要注意事项**
+
+  如果某个值在一个数据块中哪怕只出现一次，ClickHouse 也必须读取整个块。请使用真实数据集测试索引，并根据实际性能测量结果调整粒度和特定类型的参数。
+</Info>
+
+<div id="temporarily-ignore-or-force-indexes">
+  ## 临时忽略或强制使用索引
+</div>
+
+在测试和故障排查时，可以按名称为单个查询禁用特定索引。必要时，也可以通过设置强制使用索引。请参见 [`ignore_data_skipping_indices`](/zh/reference/settings/session-settings#ignore_data_skipping_indices)。
+
+```sql
+-- 按名称忽略索引
+SELECT * FROM logs
+WHERE hasToken(lower(msg), 'exception')
+SETTINGS ignore_data_skipping_indices = 'msg_token';
+```
+
+<div id="notes-and-caveats">
+  ## 注意事项和限制
+</div>
+
+* 跳过索引仅支持用于 [MergeTree 家族表](/zh/reference/engines/table-engines/mergetree-family/mergetree)；剪枝发生在粒度/块层级。
+* 基于布隆过滤器的索引具有概率性 (误报会导致额外读取，但不会跳过有效数据) 。
+* 布隆过滤器和其他跳过索引应使用 `EXPLAIN` 和 tracing 进行验证；调整粒度，以在剪枝效果与索引大小之间取得平衡。
+
+<div id="related-docs">
+  ## 相关文档
+</div>
+
+* [数据跳过索引指南](/zh/concepts/features/performance/skip-indexes/skipping-indexes)
+* [最佳实践指南](/zh/concepts/best-practices/using-data-skipping-indices)
+* [管理数据跳过索引](/zh/reference/statements/alter/skipping-index)
+* [系统表信息](/zh/reference/system-tables/data_skipping_indices)
