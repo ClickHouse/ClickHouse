@@ -251,7 +251,12 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
         restrict_seek,
         /* read_until_position */0,
         std::move(blob_storage_log),
-        connection_params.getContainer());
+        connection_params.getContainer(),
+        /// Pin the download to the generation the caller observed, mirroring the S3 reader: a single
+        /// logical read issues several `Download` requests, and an in-place rewrite of a fixed blob
+        /// path (data lake metadata such as Paimon `LATEST`, `schema-0` or `snapshot-N`) would
+        /// otherwise be spliced across generations instead of failing.
+        object.etag);
 }
 
 SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT

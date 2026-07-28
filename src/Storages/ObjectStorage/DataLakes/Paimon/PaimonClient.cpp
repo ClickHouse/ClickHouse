@@ -168,9 +168,10 @@ std::pair<Int32, String> PaimonTableClient::getTableSchemaInfoById(Int32 schema_
 StoredObject PaimonTableClient::makeEtagPinnedStoredObject(const String & path) const
 {
     StoredObject stored_object(path);
-    /// ETag pinning is meaningful only for S3; an empty ETag leaves the read unvalidated.
+    /// Only S3 and Azure honour a pinned ETag on read; for the other backends the extra metadata
+    /// request would buy nothing, and an empty ETag leaves the read unvalidated.
     if (getContext()->getSettingsRef()[Setting::s3_validate_etag_on_read]
-        && object_storage->getType() == ObjectStorageType::S3)
+        && (object_storage->getType() == ObjectStorageType::S3 || object_storage->getType() == ObjectStorageType::Azure))
         stored_object.etag = object_storage->getObjectMetadata(path, /*with_tags=*/false).etag;
     return stored_object;
 }
@@ -206,7 +207,7 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLatestTableSnapsho
             /// Read the hint atomically, not via createReadBuffer(): a concurrent writer
             /// rewrites this file, and createReadBuffer's AsynchronousBoundedReadBuffer caches
             /// the file size at open and aborts when a later read passes it (chassert in nextImpl).
-            /// The ETag is pinned (S3, when s3_validate_etag_on_read) so a rewrite between retried
+            /// The ETag is pinned (when s3_validate_etag_on_read) so a rewrite between retried
             /// requests throws S3_OBJECT_CHANGED_DURING_READ (falling back to listing below)
             /// instead of splicing bytes of two hint generations into a bogus snapshot id.
             auto hint_data = object_storage->readSmallObjectAndGetObjectMetadata(

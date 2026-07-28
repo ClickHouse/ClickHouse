@@ -13,6 +13,7 @@
 #include <Common/Throttler.h>
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/ProfileEvents.h>
+#include <Common/FailPoint.h>
 #include <IO/SeekableReadBuffer.h>
 
 
@@ -29,6 +30,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace FailPoints
+{
+    extern const char azure_read_inject_etag_mismatch[];
+}
+
 namespace ErrorCodes
 {
     extern const int CANNOT_SEEK_THROUGH_FILE;
@@ -37,6 +43,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_INITIALIZED;
+    /// The code is shared with the S3 reader: it means "the object was replaced under the reader",
+    /// which is not S3-specific, and reusing it keeps a single code (and a single retry-suppression
+    /// rule) for the whole object-storage family.
+    extern const int S3_OBJECT_CHANGED_DURING_READ;
 }
 
 ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
@@ -49,7 +59,8 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     bool restricted_seek_,
     size_t read_until_position_,
     BlobStorageLogWriterPtr blob_storage_log_,
-    String container_for_logging_)
+    String container_for_logging_,
+    String expected_etag_)
     : ReadBufferFromFileBase()
     , blob_container_client(blob_container_client_)
     , path(path_)
@@ -63,6 +74,7 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     , last_object_metadata(std::make_unique<std::optional<ObjectMetadata>>())
     , blob_storage_log(std::move(blob_storage_log_))
     , container_for_logging(std::move(container_for_logging_))
+    , expected_etag(std::move(expected_etag_))
 {
     if (!use_external_buffer)
     {
@@ -230,12 +242,53 @@ off_t ReadBufferFromAzureBlobStorage::getPosition()
     return offset - available();
 }
 
+void ReadBufferFromAzureBlobStorage::pinToExpectedEtag(Azure::Storage::Blobs::DownloadBlobOptions & download_options) const
+{
+    if (expected_etag.empty())
+        return;
+
+    download_options.AccessConditions.IfMatch = Azure::ETag(expected_etag);
+}
+
+void ReadBufferFromAzureBlobStorage::validateResponseEtag(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details) const
+{
+    if (expected_etag.empty())
+        return;
+
+    String response_etag = details.ETag.ToString();
+    fiu_do_on(FailPoints::azure_read_inject_etag_mismatch, { response_etag = "<injected-etag-mismatch>"; });
+
+    /// An endpoint that does not report an ETag gives nothing to compare against; the `If-Match`
+    /// header is then the only protection, so do not fail an otherwise valid read.
+    if (response_etag.empty() || response_etag == expected_etag)
+        return;
+
+    throw Exception(
+        ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+        "Azure blob {}/{} was replaced during read (etag changed from {} to {}); "
+        "retry the query, or set s3_validate_etag_on_read=0 to disable this check",
+        container_for_logging, path, expected_etag, response_etag);
+}
+
+void ReadBufferFromAzureBlobStorage::rethrowIfEtagPinFailed(const Azure::Core::RequestFailedException & e) const
+{
+    if (expected_etag.empty() || e.StatusCode != Azure::Core::Http::HttpStatusCode::PreconditionFailed)
+        return;
+
+    throw Exception(
+        ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+        "Azure blob {}/{} was replaced during read (If-Match on etag {} failed); "
+        "retry the query, or set s3_validate_etag_on_read=0 to disable this check",
+        container_for_logging, path, expected_etag);
+}
+
 void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
 {
     if (initialized)
         return;
 
     Azure::Storage::Blobs::DownloadBlobOptions download_options;
+    pinToExpectedEtag(download_options);
 
     Azure::Nullable<int64_t> length {};
     if (read_until_position != 0)
@@ -264,6 +317,7 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
 
             auto download_response = blob_client->Download(download_options, azure_context);
 
+            validateResponseEtag(download_response.Value.Details);
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
             data_stream = std::move(download_response.Value.BodyStream);
 
@@ -293,6 +347,8 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
             ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
             LOG_DEBUG(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
 
+            rethrowIfEtagPinFailed(e);
+
             if (i + 1 == max_single_download_retries || !isRetryableAzureException(e))
                 throw;
 
@@ -315,6 +371,11 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
             LOG_DEBUG(log, "Exception caught during Azure Download for file {} at attempt {}/{}: {}", path, i + 1, max_single_download_retries, getCurrentExceptionMessage(false));
             /// It doesn't make sense to retry allocator errors
             if (getCurrentExceptionCode() == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
+                throw;
+
+            /// A generation change is not transient: retrying would only pick up the newer generation
+            /// and silently mix it with what was already returned to the caller.
+            if (getCurrentExceptionCode() == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ)
                 throw;
 
             if (i + 1 == max_single_download_retries)
@@ -375,6 +436,7 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
 
             Azure::Storage::Blobs::DownloadBlobOptions download_options;
             download_options.Range = {static_cast<int64_t>(range_begin), n};
+            pinToExpectedEtag(download_options);
             Azure::Core::Context azure_context = Azure::Core::Context().WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), size_t{0});
 
             auto download_response = blob_client->Download(download_options, azure_context);
@@ -388,6 +450,7 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
                     /* error_code */ 0, /* error_message */ {});
             }
 
+            validateResponseEtag(download_response.Value.Details);
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
 
             std::unique_ptr<Azure::Core::IO::BodyStream> body_stream = std::move(download_response.Value.BodyStream);
@@ -413,6 +476,8 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
             LOG_DEBUG(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
 
+            rethrowIfEtagPinFailed(e);
+
             if (i + 1 == max_single_download_retries || !isRetryableAzureException(e))
                 throw;
 
@@ -435,6 +500,11 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             LOG_DEBUG(log, "Exception caught during Azure Download for file {} at attempt {}/{}: {}", path, i + 1, max_single_download_retries, getCurrentExceptionMessage(false));
             /// It doesn't make sense to retry allocator errors
             if (getCurrentExceptionCode() == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
+                throw;
+
+            /// A generation change is not transient: retrying would only pick up the newer generation
+            /// and silently mix it with what was already returned to the caller.
+            if (getCurrentExceptionCode() == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ)
                 throw;
 
             if (i + 1 == max_single_download_retries)

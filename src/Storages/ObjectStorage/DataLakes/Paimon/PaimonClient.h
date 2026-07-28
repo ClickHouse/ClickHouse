@@ -329,12 +329,12 @@ private:
     /// DROP + re-CREATE at a reused fixed path (schema-0, snapshot-N).  Uses readObject() rather
     /// than createReadBuffer() so the read is never wrapped in AsynchronousBoundedReadBuffer,
     /// whose size cached at open would abort (chassert in nextImpl) if a concurrent recreate grows
-    /// the object mid-read.  ETag is pinned (S3, when s3_validate_etag_on_read) so an in-place
+    /// the object mid-read.  ETag is pinned (when s3_validate_etag_on_read) so an in-place
     /// overwrite is reported as S3_OBJECT_CHANGED_DURING_READ instead of yielding torn bytes.
     Poco::JSON::Object::Ptr readMutableMetadataJSON(const String & path) const;
 
     /// Build a StoredObject for reading a mutable metadata object, with the ETag pinned
-    /// (S3, when s3_validate_etag_on_read) so a concurrent in-place rewrite is reported as
+    /// (when s3_validate_etag_on_read) so a concurrent in-place rewrite is reported as
     /// S3_OBJECT_CHANGED_DURING_READ instead of splicing bytes of two object generations
     /// across retried requests.
     StoredObject makeEtagPinnedStoredObject(const String & path) const;

@@ -34,7 +34,8 @@ public:
         bool restricted_seek_ = false,
         size_t read_until_position_ = 0,
         BlobStorageLogWriterPtr blob_storage_log_ = {},
-        String container_for_logging_ = {});
+        String container_for_logging_ = {},
+        String expected_etag_ = {});
 
     off_t seek(off_t off, int whence) override;
 
@@ -70,6 +71,22 @@ private:
     void initialize(size_t attempt);
     void setMetadataFromResponse(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details, size_t blob_size) const;
 
+    /// Pin the download to the generation of the blob that was observed when the object was listed
+    /// (`If-Match`), so that a concurrent in-place rewrite makes the request fail instead of serving
+    /// bytes of a different generation. A single logical read issues several `Download` requests
+    /// (initial download, retries, `readBigAt`), so without the pin they can be stitched together
+    /// from two generations. No-op when no expected ETag is known.
+    void pinToExpectedEtag(Azure::Storage::Blobs::DownloadBlobOptions & download_options) const;
+
+    /// Belt and braces for the `If-Match` pin: Azure is expected to answer `412 Precondition Failed`,
+    /// but validating the ETag that came back costs nothing and also covers endpoints (emulators,
+    /// gateways) that ignore the condition header.
+    void validateResponseEtag(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details) const;
+
+    /// Translate the `412` produced by the `If-Match` pin into the same non-retryable error as the
+    /// response-ETag check, instead of letting it surface as a generic Azure request failure.
+    void rethrowIfEtagPinFailed(const Azure::Core::RequestFailedException & e) const;
+
     std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;
     ContainerClientPtr blob_container_client;
     BlobClientPtr blob_client;
@@ -100,6 +117,9 @@ private:
 
     mutable BlobStorageLogWriterPtr blob_storage_log;
     String container_for_logging;
+
+    /// ETag observed when the object was listed; empty when unknown or when validation is disabled.
+    String expected_etag;
 };
 
 }
