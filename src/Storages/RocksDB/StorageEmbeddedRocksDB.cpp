@@ -380,7 +380,23 @@ void StorageEmbeddedRocksDB::rename(const String & new_path_to_table_data, const
                     /// If the data cannot be moved back, rocksdb_dir is left naming the directory
                     /// that holds it and the table refuses reads instead of answering zero rows.
                     if (moved)
-                        renameNoReplace(new_rocksdb_dir, old_rocksdb_dir);
+                    {
+                        try
+                        {
+                            renameNoReplace(new_rocksdb_dir, old_rocksdb_dir);
+                        }
+                        catch (...)
+                        {
+                            /// An empty directory cannot hold data, so removing one that occupies
+                            /// the old location and letting the data come back loses nothing.
+                            /// Anything else stays where it is and the move back keeps failing.
+                            std::error_code ec;
+                            if (!fs::is_directory(old_rocksdb_dir, ec) || !fs::is_empty(old_rocksdb_dir, ec))
+                                throw;
+                            fs::remove(old_rocksdb_dir, ec);
+                            renameNoReplace(new_rocksdb_dir, old_rocksdb_dir);
+                        }
+                    }
                     rocksdb_dir = old_rocksdb_dir;
                     if (!rocksdb_ptr)
                         initDBForRename();

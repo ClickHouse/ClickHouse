@@ -206,8 +206,8 @@ echo "13 attach from reloaded $(reloaded_count "$CLICKHOUSE_DATABASE" t13)"
 
 # 14. The directory was moved, the reopen failed, and by the time the rollback runs the source
 # directory exists again (any statement naming it recreates it). The rollback must not decide from
-# path existence whether it moved anything: moving the data back is impossible here, so the table
-# has to refuse reads and name the directory that holds its rows, not reopen an empty source.
+# path existence whether it moved anything, and an empty directory occupying the old location holds
+# no data, so it is removed and the move back retried: the table recovers completely.
 make_table "$ORD1" t14 6 "EmbeddedRocksDB"
 ORD1_DATA_DIR=$($CLIENT -q "SELECT substring(data_paths[1], 1, length(data_paths[1]) - length('t14/')) FROM system.tables WHERE database = '$ORD1' AND name = 't14'")
 RENAME_ERR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_14_rename.err"
@@ -218,20 +218,49 @@ RENAME_PID=$!
 # Returns as soon as the failed rename has paused right before its rollback; no sleeping.
 $CLIENT -q "SYSTEM WAIT FAILPOINT rocksdb_rename_pause_before_rollback PAUSE"
 mkdir -p "${ORD1_DATA_DIR}t14"
-# Only the forward reopen had to fail: with the failpoint disabled here, a rollback that reopened
-# the recreated source would succeed and answer zero rows.
+# Only the forward reopen had to fail: with the failpoint disabled here, the rollback reopens the
+# directory it moved back.
 $CLIENT -q "SYSTEM DISABLE FAILPOINT rocksdb_rename_fail_reopen"
 # DISABLE resumes the paused rollback and removes the failpoint in one step.
 $CLIENT -q "SYSTEM DISABLE FAILPOINT rocksdb_rename_pause_before_rollback"
 wait $RENAME_PID
 grep -c "FAULT_INJECTED" "$RENAME_ERR" | sed 's/^/14 rename failed /'
 rm -f "$RENAME_ERR"
-READ_ERR=$($CLIENT -q "SELECT * FROM $ORD1.t14" 2>&1)
-echo "14 full scan refuses $(echo "$READ_ERR" | grep -c "ROCKSDB_ERROR")"
-echo "14 error names destination $(echo "$READ_ERR" | grep -cF "${ORD1_DATA_DIR}t14_target")"
-echo "14 error names source $(echo "$READ_ERR" | grep -cF "${ORD1_DATA_DIR}t14/")"
-echo "14 key lookup refuses $($CLIENT -q "SELECT * FROM $ORD1.t14 WHERE k = 1" 2>&1 | grep -c "ROCKSDB_ERROR")"
-echo "14 data at destination $([ -f "${ORD1_DATA_DIR}t14_target/CURRENT" ] && echo 1 || echo 0)"
+echo "14 table still readable $($CLIENT -q "SELECT count() FROM $ORD1.t14")"
+# The reload is what proves the recovery is on disk and not just in the live object: it recomputes
+# the data directory from the table's metadata, which names the old location.
+echo "14 table still reloadable $(reloaded_count "$ORD1" t14)"
+echo "14 destination gone $([ -e "${ORD1_DATA_DIR}t14_target" ] && echo 0 || echo 1)"
+$CLIENT --force_remove_data_recursively_on_drop 1 -q "DROP TABLE IF EXISTS $ORD1.t14 SYNC"
+rm -rf "${ORD1_DATA_DIR}t14" "${ORD1_DATA_DIR}t14_target"
+
+# 15. Same double failure, but the old location is occupied by a directory that is NOT empty. Its
+# content was not created by this table, so it must be kept and the data must not be moved back:
+# the table stays attached with no usable handle and reads refuse while naming the directory that
+# actually holds the rows, instead of reporting zero rows.
+make_table "$ORD1" t15 6 "EmbeddedRocksDB"
+RENAME_ERR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_15_rename.err"
+$CLIENT -q "SYSTEM ENABLE FAILPOINT rocksdb_rename_fail_reopen"
+$CLIENT -q "SYSTEM ENABLE FAILPOINT rocksdb_rename_pause_before_rollback"
+$CLIENT -q "RENAME TABLE $ORD1.t15 TO $ORD1.t15_target" > "$RENAME_ERR" 2>&1 &
+RENAME_PID=$!
+$CLIENT -q "SYSTEM WAIT FAILPOINT rocksdb_rename_pause_before_rollback PAUSE"
+mkdir -p "${ORD1_DATA_DIR}t15"
+touch "${ORD1_DATA_DIR}t15/occupied"
+$CLIENT -q "SYSTEM DISABLE FAILPOINT rocksdb_rename_fail_reopen"
+$CLIENT -q "SYSTEM DISABLE FAILPOINT rocksdb_rename_pause_before_rollback"
+wait $RENAME_PID
+grep -c "FAULT_INJECTED" "$RENAME_ERR" | sed 's/^/15 rename failed /'
+rm -f "$RENAME_ERR"
+READ_ERR=$($CLIENT -q "SELECT * FROM $ORD1.t15" 2>&1)
+echo "15 full scan refuses $(echo "$READ_ERR" | grep -c "ROCKSDB_ERROR")"
+echo "15 error names destination $(echo "$READ_ERR" | grep -cF "${ORD1_DATA_DIR}t15_target")"
+echo "15 error names source $(echo "$READ_ERR" | grep -cF "${ORD1_DATA_DIR}t15/")"
+echo "15 key lookup refuses $($CLIENT -q "SELECT * FROM $ORD1.t15 WHERE k = 1" 2>&1 | grep -c "ROCKSDB_ERROR")"
+echo "15 data at destination $([ -f "${ORD1_DATA_DIR}t15_target/CURRENT" ] && echo 1 || echo 0)"
+echo "15 occupant kept $([ -f "${ORD1_DATA_DIR}t15/occupied" ] && echo 1 || echo 0)"
+$CLIENT --force_remove_data_recursively_on_drop 1 -q "DROP TABLE IF EXISTS $ORD1.t15 SYNC"
+rm -rf "${ORD1_DATA_DIR}t15" "${ORD1_DATA_DIR}t15_target"
 
 $CLIENT --force_remove_data_recursively_on_drop 1 -q --multiline "
     DROP TABLE IF EXISTS $CLICKHOUSE_DATABASE.t4 SYNC;
@@ -239,7 +268,6 @@ $CLIENT --force_remove_data_recursively_on_drop 1 -q --multiline "
     DROP TABLE IF EXISTS $CLICKHOUSE_DATABASE.t13 SYNC;
     DROP TABLE IF EXISTS $ORD1.t11 SYNC;
     DROP TABLE IF EXISTS $ORD1.t12 SYNC;
-    DROP TABLE IF EXISTS $ORD1.t14 SYNC;
     DROP DATABASE IF EXISTS $ORD1 SYNC;
     DROP DATABASE IF EXISTS $ORD2 SYNC;
     DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_at2 SYNC;

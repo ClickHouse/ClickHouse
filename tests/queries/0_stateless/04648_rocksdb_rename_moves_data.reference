@@ -30,8 +30,13 @@
 13 attach from count 5
 13 attach from reloaded 5
 14 rename failed 1
-14 full scan refuses 1
-14 error names destination 1
-14 error names source 0
-14 key lookup refuses 1
-14 data at destination 1
+14 table still readable 6
+14 table still reloadable 6
+14 destination gone 1
+15 rename failed 1
+15 full scan refuses 1
+15 error names destination 1
+15 error names source 0
+15 key lookup refuses 1
+15 data at destination 1
+15 occupant kept 1
