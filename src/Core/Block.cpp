@@ -211,9 +211,13 @@ static bool haveCompatibleConstantValues(const Field & actual, const Field & exp
 /// values of types that are not fixed by the column type. Two values on different alternatives can
 /// then produce equal `Field`s although the alternative itself is a part of the value and is
 /// observable (e.g. by `variantType`), so the aggregate-state relaxation must not apply inside them.
+///
+/// Only these three types are checked, not `IDataType::hasDynamicSubcolumns`: the latter is also
+/// true for a plain `Map`, which merely exposes the `m.keys` and `m.values` virtual subcolumns while
+/// the type of every value it holds is still fixed by the declared `Map(K, V)`.
 static bool typeCanHideTheValueType(const IDataType & type)
 {
-    if (isVariant(type) || type.hasDynamicSubcolumns())
+    if (isVariant(type) || isDynamic(type) || isObject(type))
         return true;
 
     bool result = false;
