@@ -230,8 +230,21 @@ std::shared_ptr<const IDictionary> StorageDictionary::getDictionary() const
     return getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, getContext());
 }
 
-void StorageDictionary::shutdown(bool)
+void StorageDictionary::shutdown(bool is_drop)
 {
+    /// On a real DROP (not a reload or server shutdown), let the dictionary delete any files it persisted.
+    /// Only inspect an already-loaded object; never force a load here, which for some dictionaries
+    /// would mean expensive work (e.g. training a model) merely to drop it.
+    if (is_drop)
+    {
+        auto registered_dictionary_name
+            = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
+        auto loadable
+            = getContext()->getExternalDictionariesLoader().getLoadResult<ExternalLoader::LoadablePtr>(registered_dictionary_name);
+        if (auto dictionary = std::dynamic_pointer_cast<const IDictionary>(loadable))
+            dictionary->removePersistentFilesOnDrop();
+    }
+
     removeDictionaryConfigurationFromRepository();
 }
 

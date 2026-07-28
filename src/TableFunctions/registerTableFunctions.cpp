@@ -80,7 +80,6 @@ void registerTableFunctions()
 #if USE_YTSAURUS
     registerTableFunctionYTsaurus(factory);
 #endif
-
 }
 
 }

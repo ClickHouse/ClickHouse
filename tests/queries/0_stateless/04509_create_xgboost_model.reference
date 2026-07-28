@@ -1,0 +1,21 @@
+Positive: an XGBOOST dictionary with explicit hyperparameters
+10
+Float64
+10
+10
+Positive: default hyperparameters (empty layout)
+10
+Positive: predict with prediction parameters
+10
+10
+Negative: prediction parameters
+Negative: predictXGBoost arguments
+Negative: predictXGBoost against a non-XGBoost dictionary
+42
+Negative: bad hyperparameters (rejected when the model trains, at first use)
+10
+Negative: non-numeric structure (rejected at first use)
+Train on demand with SYSTEM RELOAD DICTIONARY
+LOADED
+1
+LOADED

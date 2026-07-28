@@ -336,6 +336,10 @@ public:
 
     virtual std::exception_ptr getLastException() const { return {}; }
 
+    /// Called only when the dictionary is dropped (not on reload or server shutdown). Lets a
+    /// dictionary delete any files it persisted on disk. Best-effort; must not throw. Default: nothing.
+    virtual void removePersistentFilesOnDrop() const { }
+
     std::shared_ptr<IDictionary> shared_from_this()
     {
         return std::static_pointer_cast<IDictionary>(IExternalLoadable::shared_from_this());

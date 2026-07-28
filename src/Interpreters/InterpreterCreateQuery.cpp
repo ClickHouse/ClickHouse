@@ -122,6 +122,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_codecs;
+    extern const SettingsBool allow_experimental_xgboost;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_statistics;
@@ -1663,6 +1664,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         throw Exception(ErrorCodes::INCORRECT_QUERY,
             "Temporary objects (tables/views) cannot be created ON CLUSTER."
             "You should not specify a cluster for a temporary objects.");
+
+    /// The XGBoost integration (the `XGBOOST` dictionary layout) is experimental. Gate it at `CREATE` time using
+    /// the query context settings, but still allow `ATTACH` so existing dictionaries can be loaded on startup.
+    if (create.is_dictionary && !create.attach && create.dictionary && create.dictionary->layout
+        && Poco::toLower(create.dictionary->layout->layout_type) == "xgboost"
+        && !getContext()->getSettingsRef()[Setting::allow_experimental_xgboost])
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "The XGBOOST dictionary layout is experimental. Set `allow_experimental_xgboost` setting to enable it");
 
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
