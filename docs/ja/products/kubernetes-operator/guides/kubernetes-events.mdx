@@ -1,0 +1,198 @@
+---
+position: 8
+slug: /clickhouse-operator/guides/kubernetes-events
+title: Kubernetes イベント
+keywords: ['kubernetes', 'events', 'トラブルシューティング', 'リコンサイル', 'system.warnings']
+description: 'オペレーター が ClickHouseCluster および KeeperCluster オブジェクト上の Kubernetes イベントとして、リコンサイルの失敗、スケーリングの進捗、バージョンチェック、ClickHouse サーバーの警告をどのように報告するか、これらのイベントをどのように確認するか、また各イベントの Reason が何を意味するかを説明します。'
+doc_type: 'guide'
+---
+
+オペレーター は、管理している `ClickHouseCluster` および
+`KeeperCluster` オブジェクトに Kubernetes イベントを記録します。これらのイベントは、オペレーター が
+リコンサイル中に何を行ったのかをたどれるようにするものです。たとえば、どこでリソース変更に失敗したか、
+いつクラスターが Ready になったか、なぜスケーリングがブロックされたかを示し、
+通常ユーザーが目にする Log には出てこない障害も可視化します。さらに、
+カスタムリソースに人間が読みやすい履歴を直接紐付けることで、
+[メトリクス](/ja/products/kubernetes-operator/guides/monitoring)
+を補完します。
+
+`clickhouse-controller` は `ClickHouseCluster` オブジェクトにイベントを報告し、`keeper-controller` は
+`KeeperCluster` オブジェクトにイベントを報告します。リソースの
+ライフサイクルに関する失敗イベントには、対象となる管理下のオブジェクト (
+StatefulSet、Service、ConfigMap、Secret、PodDisruptionBudget、
+PersistentVolumeClaim、または version-probe Job) への参照も含まれます。
+それ以外のイベントは、クラスター自体のみを参照します。
+
+<Note>
+  Kubernetes API server では、イベントは有効期限 (TTL) の経過後に失効します。デフォルトは
+  1 時間です
+  (`--event-ttl`)。そのため、イベントは直近のアクティビティを示す一時的なシグナルであり、
+  永続的な監査証跡ではありません。
+</Note>
+
+<div id="viewing-events">
+  ## イベントの確認
+</div>
+
+最も手早く確認する方法は、カスタムリソースに対して `kubectl describe` を実行することです。最新のイベントが末尾に表示されます。
+
+```bash
+NS=<your-namespace>
+
+kubectl -n $NS describe clickhousecluster <name>
+kubectl -n $NS describe keepercluster <name>
+```
+
+イベントを直接一覧するには — たとえばリアルタイムで監視したり、失敗したものに絞り込んだりするには —
+`events` リソースにクエリを実行し、対象オブジェクトまたはタイプで絞り込みます:
+
+```bash
+# All events for one cluster, newest last
+kubectl -n $NS get events \
+  --field-selector involvedObject.name=<name> \
+  --sort-by=.lastTimestamp
+
+# Only warnings across the namespace
+kubectl -n $NS get events --field-selector type=Warning
+
+# Follow events as they arrive
+kubectl -n $NS get events --watch
+```
+
+イベントソースには報告元のコントローラーが表示されるため、
+`ClickHouseCluster` のイベント (`clickhouse-controller`) と `KeeperCluster` のイベント
+(`keeper-controller`) を見分けることができます。
+
+<div id="event-reasons">
+  ## イベント理由のリファレンス
+</div>
+
+オペレーターは、説明対象ごとにグループ化された固定の理由セットを出力します。`Normal`
+イベントは想定どおりの進行を示し、`Warning` イベントは障害またはユーザーによる対処が必要な状態を示します。
+
+<div id="resource-lifecycle">
+  ### リソースのライフサイクル
+</div>
+
+オペレーターがリコンサイル中に管理対象リソースの適用に失敗した場合、`ClickHouseCluster` と `KeeperCluster` の両方で発生します。
+
+| 理由             | 種別      | 意味                                                                                                 |
+| -------------- | ------- | -------------------------------------------------------------------------------------------------- |
+| `FailedCreate` | Warning | オペレーターは管理対象リソース (例: StatefulSet、Service、ConfigMap、Secret、PodDisruptionBudget、または Job) を作成できませんでした。 |
+| `FailedUpdate` | Warning | オペレーターはリソースを更新できませんでした。                                                                            |
+| `FailedDelete` | Warning | オペレーターは、リコンサイル中またはスケールダウン中に管理対象リソースを削除できませんでした。                                                    |
+
+<div id="cluster-readiness">
+  ### クラスターの準備状態
+</div>
+
+クラスターが準備状態のしきい値をまたいだときに、両方の Kind で発行されます。
+
+| Reason            | Type    | Meaning                                                                                                                                              |
+| ----------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ClusterReady`    | Normal  | クラスターが準備完了になりました。すべての ClickHouse 分片に少なくとも 1 つの Ready なレプリカがあるか、Keeper クォーラムで leader が存在し、十分な数の followers が稼働しています (または単一の standalone レプリカが稼働しています) 。 |
+| `ClusterNotReady` | Warning | クラスターが準備完了状態ではなくなりました。ClickHouse 分片で Ready なレプリカが 1 つも残っていないか、Keeper クォーラムで leader が失われたか、followers が不足しています。                                        |
+
+<div id="scaling">
+  ### スケーリング
+</div>
+
+オペレーターがレプリカ数を変更すると、`KeeperCluster` で発生します。
+
+| 理由                         | 種類      | 意味                                                    |
+| -------------------------- | ------- | ----------------------------------------------------- |
+| `HorizontalScaleStarted`   | Normal  | オペレーターがレプリカの追加または削除を開始しました。                           |
+| `HorizontalScaleCompleted` | Normal  | スケーリング操作が完了しました。                                      |
+| `ReplicaCreated`           | Normal  | オペレーターがクラスターにレプリカを追加しました。                             |
+| `ReplicaDeleted`           | Normal  | オペレーターがスケールダウン時にレプリカを削除しました。                          |
+| `HorizontalScaleBlocked`   | Warning | 現在の Keeper の状態ではまだ安全にスケールできないため、オペレーターがスケーリングを見送りました。 |
+
+<Note>
+  `HorizontalScaleBlocked` は、Keeper のスケール リクエストを行っても
+  何も起きないように見えるときに確認すべきイベントです。分割のリスクを
+  避けるため、オペレーターは意図的に変更を保留し、既存の
+  クォーラムを維持します。イベントメッセージには、
+  変更を妨げた制約が記載されます。
+</Note>
+
+<div id="external-secret">
+  ### External Secret
+</div>
+
+クラスターが、オペレーターで使用できない外部 Secret を参照している場合に、`ClickHouseCluster` で発行されます。External Secret 機能については、[設定ガイド](/ja/products/kubernetes-operator/guides/configuration)を参照してください。
+
+| 理由                       | 種別      | 意味                                                             |
+| ------------------------ | ------- | -------------------------------------------------------------- |
+| `ExternalSecretNotFound` | Warning | 参照先の Secret がクラスターのネームスペース内に存在しません。                            |
+| `ExternalSecretInvalid`  | Warning | Secret は存在しますが、必要なキーが不足しています (`Observe` policy の場合にのみ報告されます) 。 |
+
+<div id="version-checks">
+  ### バージョンチェック
+</div>
+
+`ClickHouseCluster` と `KeeperCluster` のバージョンチェックによって発行されます。
+`VersionProbeFailed` は、ClickHouse の version-probe Job 固有のイベントです。
+
+| 理由                        | 種別      | 意味                                                                                                                                             |
+| ------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VersionProbeFailed`      | Warning | version-probe Job が実行中の ClickHouse のバージョンを検出できませんでした。                                                                                          |
+| `VersionDiverge`          | Warning | レプリカで検出されたバージョンが、オペレーター がクラスターに対して検出したバージョンと異なります。ローリングアップデート中は表示されません。                                                                      |
+| `VersionUpgradeAvailable` | Warning | 設定された upgrade channel で新しいバージョンが利用可能であるか、実行中のバージョンがその channel に含まれていないか、またはサポート対象外であることを示します。オペレーター が自動的に upgrade を行うことはなく、このイベントは通知のみを行います。 |
+
+<div id="clickhouse-warnings">
+  ### ClickHouse server の警告
+</div>
+
+| Reason              | Type    | Meaning                                                    |
+| ------------------- | ------- | ---------------------------------------------------------- |
+| `ClickHouseWarning` | Warning | ClickHouse server 自体から報告され、`system.warnings` から再公開された警告です。 |
+
+この最後の Reason は性質が異なり、オペレーター 自身の操作を示すものではありません。各準備完了状態の
+レプリカで、オペレーター はサーバーの
+[`system.warnings`](https://clickhouse.com/docs/operations/system-tables/system_warnings) テーブルを定期的に照会し、
+各行を、どのレプリカ由来かを示すプレフィックス付きで、クラスター上の `Warning` イベントとして再公開します。これにより、ClickHouse
+自身の構成や実行時に関する警告 — 廃止された設定、低すぎる制限値、安全でないオプション —
+を、各レプリカに対して `clickhouse-client` セッションを開かなくても、`kubectl` で確認できるようになります。
+
+```bash
+kubectl -n $NS get events \
+  --field-selector reason=ClickHouseWarning,involvedObject.name=<name>
+```
+
+<div id="events-vs-metrics">
+  ## イベント、メトリクス、条件
+</div>
+
+オペレーターは、オブザーバビリティのための 3 つの手段を提供します。それぞれを最適な用途で使い分けてください。
+
+* **Events** (このガイド) — 直近の出来事を人が読める形で示し、オブジェクトに関連付けられます。
+  「このクラスターで今何が起きたか」の把握や、`kubectl describe` を使った対話的なトラブルシューティングに最適です。
+  一定時間で失効します。
+* カスタムリソース上の **`status.conditions`** — 現在の永続的な状態を示す信頼できる情報です
+  (ready、external secret valid、scale allowed、version in sync) 。
+  スクリプトや GitOps のヘルスゲートに最適です。以下で確認できます。
+  `kubectl get clickhousecluster <name> -o jsonpath='{.status.conditions}'`.
+* **[Metrics](/ja/products/kubernetes-operator/guides/monitoring)** — 永続的な数値データです。
+  ダッシュボードや、継続的なリコンサイルエラー率に対するアラートに最適です。
+
+`Warning` イベントと `False` condition は、同じ問題を 2 つの側面から表していることがよくあります。イベントは発生した瞬間とメッセージを捉え、condition は解消されるまでその状態を反映します。
+
+<div id="troubleshooting">
+  ## イベントを使ったトラブルシューティング
+</div>
+
+よく見られるシグナルと、その示す内容は次のとおりです。
+
+* **`FailedCreate` / `FailedUpdate` が繰り返し発生する** — オペレーターがリソースを適用できていません。イベントメッセージには API エラー (admission による拒否、クォータ、無効な spec) が含まれます。リコンサイルでは再試行が行われるため、一時的な原因であれば自然に解消しますが、継続する場合は spec またはクラスター側の修正が必要です。
+* **対応する `ClusterReady` を伴わない `ClusterNotReady`** — クラスターが復旧できていません。イベントメッセージには、Ready でない分片、またはクォーラムの問題が示されます。該当するポッドを確認してください。
+* **`HorizontalScaleBlocked`** — 想定されたスケール変更が、安全のため保留されています。何かを強制する前に、まずメッセージで正確な制約内容を確認してください。
+* **`ExternalSecretNotFound` / `ExternalSecretInvalid`** — Secret 名またはそのキーを修正してください。オペレーターがそれを使用できるようになると、対応する `ExternalSecretValid` condition は `True` に変わります。
+* **`ClickHouseWarning`** — 問題はオペレーターではなく ClickHouse 内にあります。メッセージは `system.warnings` の行と同様に扱ってください。
+
+<div id="related-guides">
+  ## 関連ガイド
+</div>
+
+* [オペレーターの監視](/ja/products/kubernetes-operator/guides/monitoring) — メトリクスとヘルスプローブ。イベントを補完する、継続的に確認できる情報です。
+* [スケーリング](/ja/products/kubernetes-operator/guides/scaling) — `HorizontalScaleBlocked` が何を保護し、Keeper のクォーラムがどのようにスケーリングを制約するのかを説明します。
+* [設定](/ja/products/kubernetes-operator/guides/configuration) — external-secret イベントの背後にある External Secret 機能。
