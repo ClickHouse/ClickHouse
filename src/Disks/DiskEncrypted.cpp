@@ -285,6 +285,45 @@ namespace
     {
         return typeid(one) == typeid(another);
     }
+
+    /// Create the encrypted disk prefix inside the wrapped disk and make every level it creates
+    /// durable. `mkdir` only writes the new entry into the parent directory, so it is the parent
+    /// that has to be synchronized, and for a one-level prefix that parent is the wrapped disk's
+    /// own root (the empty path). Best-effort: failing to synchronize must not prevent startup.
+    void createDirectoriesDurably(IDisk & delegate, const String & path, LoggerPtr log)
+    {
+        /// Revisit if a remote disk ever implements getDirectorySyncGuard: today it cannot
+        /// synchronize a directory, so probing for missing levels would be remote calls for nothing.
+        if (delegate.isRemote())
+        {
+            delegate.createDirectories(path);
+            return;
+        }
+
+        String anchored = path;
+        while (!anchored.empty() && anchored.back() == '/')
+            anchored.pop_back();
+
+        /// Must be collected before creating: afterwards nothing is missing any more.
+        std::vector<fs::path> created_levels;
+        for (fs::path p = anchored; !p.empty() && !delegate.existsDirectory(p.string()); p = p.parent_path())
+            created_levels.push_back(p);
+
+        delegate.createDirectories(path);
+
+        /// Deepest first: a level must exist before synchronizing the directory that holds its entry.
+        for (const auto & level : created_levels)
+        {
+            try
+            {
+                auto sync_guard = delegate.getDirectorySyncGuard(level.parent_path().string());
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("Cannot fsync directory {} of disk {} after creating {}", level.parent_path().string(), delegate.getName(), level.string()));
+            }
+        }
+    }
 }
 
 class DiskEncryptedReservation : public IReservation
@@ -330,7 +369,7 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , current_settings(std::move(settings_))
     , use_fake_transaction(config_.getBool(config_prefix_ + ".use_fake_transaction", true))
 {
-    delegate->createDirectories(disk_path);
+    createDirectoriesDurably(*delegate, disk_path, getLogger("DiskEncrypted"));
 }
 
 DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_)
@@ -342,7 +381,7 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , current_settings(std::move(settings_))
     , use_fake_transaction(true)
 {
-    delegate->createDirectories(disk_path);
+    createDirectoriesDurably(*delegate, disk_path, getLogger("DiskEncrypted"));
 }
 
 ReservationPtr DiskEncrypted::reserve(UInt64 bytes)
