@@ -88,9 +88,8 @@ public:
 
     MergeTreeIndexSubstreams getSubstreams() const override;
     MergeTreeIndexFormat getDeserializedFormat(
-        const MergeTreeDataPartChecksums & checksums,
-        const std::string & path_prefix,
-        const IDataPartStorage * storage) const override;
+        const IMergeTreeDataPart & part,
+        const std::string & relative_path_prefix) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;

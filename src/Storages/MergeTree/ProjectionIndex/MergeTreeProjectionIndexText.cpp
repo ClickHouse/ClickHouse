@@ -588,9 +588,9 @@ MergeTreeIndexSubstreams MergeTreeProjectionIndexText::getSubstreams() const
 }
 
 MergeTreeIndexFormat MergeTreeProjectionIndexText::getDeserializedFormat(
-    const MergeTreeDataPartChecksums & checksums, const std::string & /* path_prefix */, const IDataPartStorage * /* storage */) const
+    const IMergeTreeDataPart & part, const std::string & /* relative_path_prefix */) const
 {
-    if (checksums.files.contains(index.name + ".proj"))
+    if (part.checksums.files.contains(index.name + ".proj"))
         return {1, getSubstreams()};
 
     return {0 /*unknown*/, {}};

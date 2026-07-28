@@ -32,7 +32,7 @@ MergeTreeReaderTextProjectionIndex::MergeTreeReaderTextProjectionIndex(
     , projection_granule(std::move(index_granule_))
 {
     auto data_part = getDataPart();
-    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName(), &data_part->getDataPartStorage());
+    auto index_format = index.index->getDeserializedFormat(*data_part, index.index->getFileName());
     chassert(index_format);
 
     MergeTreeIndexDeserializationState state{
