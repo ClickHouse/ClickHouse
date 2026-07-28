@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/ColumnsHashingImpl.h>
+#include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <bit>
 #include <Columns/ColumnFixedString.h>
@@ -570,6 +571,10 @@ struct HashMethodKeysFixed
     }
 };
 
+/// Whether a key getter takes the selected rows and precomputes their keys in one batch.
+template <typename Method>
+concept uses_precomputed_keys = requires(Method & method) { method.precomputed_keys; };
+
 /// For the case when there is one string key.
 template <typename Value, typename Mapped, bool use_cache = true, bool need_offset = false>
 struct HashMethodHashed
@@ -584,12 +589,57 @@ struct HashMethodHashed
 
     ColumnRawPtrs key_columns;
 
+    PaddedPODArray<UInt128> precomputed_keys;
+
+    /// Hash all rows of the key columns.
     HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &)
-        : key_columns(std::move(key_columns_)) {}
+        : key_columns(std::move(key_columns_))
+    {
+        precomputeRange(0, key_columns.front()->size());
+    }
+
+    /// Hash the rows [begin, begin + count).
+    HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &, size_t begin, size_t count)
+        : key_columns(std::move(key_columns_))
+    {
+        precomputeRange(begin, count);
+    }
+
+    /// Hash an explicit row list.
+    HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &, const UInt64 * rows, size_t count)
+        : key_columns(std::move(key_columns_))
+    {
+        precomputeRows(rows, count);
+    }
 
     ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
     {
-        return hash128(row, key_columns.size(), key_columns);
+        return precomputed_keys[row];
+    }
+
+private:
+    void precomputeRange(size_t begin, size_t count)
+    {
+        if (count == 0)
+            return;
+        precomputed_keys.resize(begin + count);
+        std::vector<SipHash> states(count);
+        for (const auto * column : key_columns)
+            column->updateHashBatch(begin, count, states.data());
+        for (size_t i = 0; i < count; ++i)
+            precomputed_keys[begin + i] = states[i].get128();
+    }
+
+    void precomputeRows(const UInt64 * rows, size_t count)
+    {
+        if (count == 0)
+            return;
+        precomputed_keys.resize(rows[count - 1] + 1);
+        std::vector<SipHash> states(count);
+        for (const auto * column : key_columns)
+            column->updateHashBatch(rows, count, states.data());
+        for (size_t i = 0; i < count; ++i)
+            precomputed_keys[rows[i]] = states[i].get128();
     }
 };
 

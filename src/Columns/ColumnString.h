@@ -220,6 +220,8 @@ public:
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
+    void updateHashBatch(size_t begin, size_t n, SipHash * hashes) const override;
+    void updateHashBatch(const UInt64 * rows, size_t n, SipHash * hashes) const override;
 
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
 
