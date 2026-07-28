@@ -728,19 +728,17 @@ void NO_INLINE Aggregator::publishDelayedRecords(
         byte_cursor[b] += size;
         keys.key_offsets[pos] = byte_pos;
 
+        /// The same extraction the count path uses: states that expose their padded column
+        /// buffers hand the bytes out directly (in particular, the packed-string method does
+        /// not rebuild the key, which would re-hash its content per record), and the copy
+        /// respects the source's padding, including the empty-key case.
         const size_t key_row = key_row_override ? *key_row_override : adaptive.miss_source_rows[i];
-        auto && key_holder = local_find_state.getKeyHolder(key_row, scratch_pool);
-        const auto & key = keyHolderGetKey(key_holder);
-        if constexpr (adaptive_key_stages_bytes<SharedKey>)
-        {
-            memcpy(keys.key_bytes.data() + byte_pos, adaptiveStagedKeyBytes(key).data(), size);
-        }
-        else
-        {
-            const SharedKey widened = key;
-            memcpy(keys.key_bytes.data() + byte_pos, &widened, sizeof(widened));
-        }
-        keyHolderDiscardKey(key_holder);
+        withStagedKeyBytes<SharedKey>(
+            local_find_state,
+            key_row,
+            size,
+            scratch_pool,
+            [&](const KeyBytesRef & key) { copyStagedKeyBytes(keys.key_bytes.data() + byte_pos, key); });
     }
 
     payload.argument_columns.assign(columns.size(), nullptr);
