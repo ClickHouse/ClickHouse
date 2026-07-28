@@ -32,6 +32,10 @@ struct MergeTreeReaderSettings
 {
     /// Common read settings.
     ReadSettings read_settings;
+    /// The last mark any task of this part will read (see
+    /// `MergeTreeReadTaskInfo::planned_last_mark`); rides the per-part copy of
+    /// the reader settings into the streams. 0 = unknown.
+    size_t planned_last_mark = 0;
     /// If save_marks_in_cache is false, then, if marks are not in cache,
     ///  we will load them but won't save in the cache, to avoid evicting other data.
     bool save_marks_in_cache = false;

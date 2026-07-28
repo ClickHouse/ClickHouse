@@ -28,6 +28,7 @@ public:
     /// earned reach (see `ReaderExecutor::setReadExtent`).
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;
+    void setPlannedReadEnd(size_t position) override;
 
     /// Parquet's prefetcher takes a fast `RandomRead` path when both are true,
     /// fan-out via `readBigAt` with no shared mutex. Without these overrides

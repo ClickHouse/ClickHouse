@@ -127,6 +127,10 @@ struct MergeTreeReadTaskInfo
     DeserializationPrefixesCachePtr deserialization_prefixes_cache;
     /// Extra info for optimizations - exact row processing, calculated virtual columns.
     RangesInDataPartReadHints read_hints;
+    /// The last mark ANY task of this part will read (the end of the part's
+    /// selected ranges, fixed at pool build) - the reader's prefetch edge.
+    /// 0 = unknown.
+    size_t planned_last_mark = 0;
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;

@@ -138,6 +138,11 @@ void PipelineReadBuffer::setReadUntilEnd()
     executor->setReadExtent(std::nullopt);
 }
 
+void PipelineReadBuffer::setPlannedReadEnd(size_t position)
+{
+    executor->setPlannedReadEnd(position);
+}
+
 bool PipelineReadBuffer::supportsReadAt()
 {
     /// A `true` answer tells random-read formats (Parquet/ORC/Arrow) the source

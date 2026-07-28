@@ -148,6 +148,14 @@ void MergeTreeReaderStream::init()
         compressed_data_buffer = static_cast<CompressedReadBufferFromFile *>(read_buffer_holder.get());
     }
 
+    /// Announce the reader's TRUE final boundary in this stream's file: the end
+    /// of the LAST mark range any task of this part will read. The per-task
+    /// `adjustRightMark` keeps advancing the serve bound below it; read-ahead
+    /// must not speculate past it (`ReadBuffer::setPlannedReadEnd`).
+    if (settings.planned_last_mark)
+        if (size_t planned_right_offset = getRightOffset(std::min(settings.planned_last_mark, marks_count)))
+            data_buffer->setPlannedReadEnd(planned_right_offset);
+
     initialized = true;
 }
 

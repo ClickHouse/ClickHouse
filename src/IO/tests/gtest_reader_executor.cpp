@@ -925,6 +925,57 @@ TEST(ReaderExecutor, PrefetchWindowRespondsToMemoryPressure)
     EXPECT_EQ(critical.prefetch_window, 0u);
 }
 
+TEST(ReaderExecutor, PlannedReadEndCapsPrefetchButNotService)
+{
+    /// The caller-declared planned end bounds SPECULATION, never SERVICE: with the
+    /// edge at 512K, the earned reach must not fetch past it while the extent
+    /// advances below it; a later extent PAST the edge is still served in full.
+    String content(1u << 20, 'e');   /// 1 MiB
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", content.size());
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+    auto limit = std::make_shared<LongConnectionLimit>(0);   /// stateless window reads
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 256u << 10;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.block_size = 32u << 10;
+    executor_options.prefetch_pool = pool;
+    executor_options.long_connection_limit = limit;
+    ReaderExecutor executor(source, objects, {}, executor_options);
+
+    executor.setPlannedReadEnd(512u << 10);
+
+    String got;
+    auto consume_to = [&](size_t extent)
+    {
+        executor.setReadExtent(extent);
+        while (got.size() < extent)
+        {
+            auto chain = executor.readNextWindow();
+            if (chain.empty())
+                break;
+            for (const auto & node : chain.getNodes())
+                got.append(node.data(), node.size);
+        }
+    };
+
+    /// Two mark-range-like extents up to the planned end: the consumed run has
+    /// earned forward reach, but nothing may be fetched past 512K. The bound
+    /// holds at ANY instant - no machine targeting bytes past the edge can
+    /// even be launched - so no prefetch join is needed before reading it.
+    consume_to(256u << 10);
+    consume_to(512u << 10);
+    EXPECT_LE(inspect(executor).bytesFromSource(), 512u << 10)
+        << "speculation past the planned end is forbidden";
+
+    /// The caller asks BEYOND the edge: service must be full and correct.
+    consume_to(1u << 20);
+    EXPECT_EQ(got, content) << "reads past the planned end are served";
+}
+
 TEST(ReaderExecutor, MergeRangesNoGap)
 {
     /// Adjacent ranges — should merge into one

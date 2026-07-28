@@ -209,6 +209,14 @@ public:
     /// clear keeps it running.
     void setReadExtent(std::optional<size_t> logical_end);
 
+    /// The caller's TRUE final read boundary (LOGICAL): the end of the last
+    /// mark range this reader will ever be assigned, known to MergeTree up
+    /// front while the extent advances per range. Caps the producer's earned
+    /// reach (`reachPastExtent`) and the long-connection bound - prefetch
+    /// never speculates past it; serving past it (through the extent) still
+    /// works. Advisory, monotone-max across the reader's streams.
+    void setPlannedReadEnd(size_t logical_end);
+
     // ─── Random access (`readBigAt`) ─────────────────────────────────────
 
     /// A fresh executor for `[start_position, start_position + read_size)`,
@@ -864,6 +872,9 @@ private:
     /// Set when the source returned short AND the total size is unknown - the
     /// short return IS the EOF marker.
     bool reached_eof = false;
+    /// The caller-declared TRUE final read boundary (`setPlannedReadEnd`);
+    /// caps the earned reach and the long-connection bound. `nullopt` = unknown.
+    std::optional<size_t> planned_read_end;
     /// Logical end of the advertised read region (`makeTransientForReadAt`
     /// one-shot extent, or `setReadExtent`). `nullopt` = read to the file end.
     std::optional<size_t> read_extent_end;

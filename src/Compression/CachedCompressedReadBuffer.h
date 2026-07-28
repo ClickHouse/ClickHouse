@@ -71,6 +71,12 @@ public:
         initInput();
         file_in->setReadUntilEnd();
     }
+
+    void setPlannedReadEnd(size_t position) override
+    {
+        initInput();
+        file_in->setPlannedReadEnd(position);
+    }
 };
 
 }

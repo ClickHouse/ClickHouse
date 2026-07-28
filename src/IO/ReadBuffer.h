@@ -235,6 +235,15 @@ public:
 
     virtual void setReadUntilEnd() {}
 
+    /// The caller's TRUE final read boundary, when it knows more than the
+    /// current read-until position: a MergeTree reader advances
+    /// `setReadUntilPosition` per assigned mark range, while the end of the
+    /// LAST range the reader will ever be asked is known up front. A
+    /// read-ahead implementation must not speculate past this edge, but must
+    /// still serve reads beyond it (the edge bounds prefetch, not service).
+    /// Purely advisory; default no-op.
+    virtual void setPlannedReadEnd(size_t /* position */) {}
+
 protected:
     /// The number of bytes to ignore from the initial position of `working_buffer`
     /// buffer. Apparently this is an additional out-parameter for nextImpl(),

@@ -3124,8 +3124,24 @@ size_t ReaderExecutor::reachPastExtent(size_t extent_phys, size_t reach) const
 {
     /// The ONE statement of the transient rule: a one-shot `readBigAt` transient's
     /// extent IS its request - it never streams or fetches past it. A normal read
-    /// may extend past the extent by its earned reach.
-    return is_transient ? extent_phys : std::max(extent_phys, reach);
+    /// may extend past the extent by its earned reach - hard-capped at the caller's
+    /// PLANNED read end when it declared one (`setPlannedReadEnd`): speculation past
+    /// the last range the reader will ever be asked buys nothing. The extent itself
+    /// stays unconditionally fetchable - the edge bounds prefetch, never service.
+    if (is_transient)
+        return extent_phys;
+    size_t bounded_reach = reach;
+    if (planned_read_end)
+        bounded_reach = std::min(bounded_reach, toPhys(*planned_read_end));
+    return std::max(extent_phys, bounded_reach);
+}
+
+void ReaderExecutor::setPlannedReadEnd(size_t logical_end)
+{
+    /// Advisory and monotone: streams of the same reader may announce their
+    /// per-file edges in any order; the widest one wins.
+    if (!planned_read_end || *planned_read_end < logical_end)
+        planned_read_end = logical_end;
 }
 
 }

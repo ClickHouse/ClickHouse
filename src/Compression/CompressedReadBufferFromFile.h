@@ -67,6 +67,8 @@ public:
     void setReadUntilPosition(size_t position) override { file_in.setReadUntilPosition(position); }
 
     void setReadUntilEnd() override { file_in.setReadUntilEnd(); }
+
+    void setPlannedReadEnd(size_t position) override { file_in.setPlannedReadEnd(position); }
 };
 
 }
