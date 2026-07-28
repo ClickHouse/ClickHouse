@@ -3515,7 +3515,9 @@ public:
 
         // Normalize the constant divisor once, before the branches split, so that every divisor-zero
         // check below compares the value the division actually uses (see `substituteIPField`) instead
-        // of an IP-tagged `Field`, which has no accurate-comparison arm against a number.
+        // of an IP-tagged `Field`, which has no accurate-comparison arm against a number. For a
+        // non-division name this stays a `Null` `Field`, which compares unequal to zero without
+        // visitor dispatch, and the resulting boolean is read only under `is_div_function` anyway.
         const Field right_constant = (is_div_function && right.column && isColumnConst(*right.column))
             ? substituteIPField((*right.column)[0])
             : Field();
@@ -3900,7 +3902,7 @@ public:
     /// Value counterpart of `substituteIPType`: an IP-tagged `Field` has no accurate-comparison arm
     /// against a number, so it must be converted before it is compared here. `IPv6` is stored
     /// big-endian and the substitution casts it through `convertFromIPv6ToUInt128`, which swaps the
-    /// limbs and byte-swaps each, so a raw `toUnderType()` bit copy would yield a different number;
+    /// limbs and byte-swaps each, so a raw `toUnderType` bit copy would yield a different number;
     /// reuse the same cast the substitution performs.
     static Field substituteIPField(const Field & field)
     {

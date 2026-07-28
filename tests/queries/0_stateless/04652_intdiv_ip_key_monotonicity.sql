@@ -1,5 +1,3 @@
--- Tags: no-random-merge-tree-settings
-
 -- `intDiv`/`divide` substitute an `IPv4`/`IPv6` operand with `UInt32`/`UInt128`, so key analysis
 -- must model the substituted type and value, not the declared one. Every row below compares a keyed
 -- `MergeTree` against an `ENGINE = Memory` oracle; a `1` means key analysis agrees with execution.
@@ -7,6 +5,8 @@
 DROP TABLE IF EXISTS t4 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS m4 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS t4g1 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t4p SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS m4p SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS t6 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS m6 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS t4lc SETTINGS ignore_drop_queries_probability = 0;
@@ -83,9 +83,17 @@ CREATE TABLE IF NOT EXISTS t4g1 (a IPv4) ENGINE = MergeTree ORDER BY a SETTINGS 
 INSERT INTO t4g1 VALUES ('1.2.3.4'), ('127.255.255.255'), ('128.0.0.0'), ('200.1.1.1');
 SELECT 'c unsigned const', (SELECT count() FROM t4g1 WHERE intDiv(a, toUInt32(1000000)) = 16) = (SELECT count() FROM m4 WHERE intDiv(a, toUInt32(1000000)) = 16);
 SELECT 'c unsigned const prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t4g1 WHERE intDiv(a, toUInt32(1000000)) = 16) WHERE explain ILIKE '%Granules: 1/4%';
--- A one-sided range that stays below 2^31 is monotonic there, so it must still prune.
-SELECT 'c one sided', (SELECT count() FROM t4g1 WHERE intDiv(a, toInt8(10)) > 0 AND a < toIPv4('128.0.0.0')) = (SELECT count() FROM m4 WHERE intDiv(a, toInt8(10)) > 0 AND a < toIPv4('128.0.0.0'));
-SELECT 'c one sided prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t4g1 WHERE intDiv(a, toInt8(10)) > 0 AND a < toIPv4('128.0.0.0')) WHERE explain ILIKE '%Granules: 2/4%';
+-- A one-sided range that stays below 2^31 is monotonic there, so it must still prune. The two
+-- lowest values quotient to zero, so the `intDiv` half removes a granule that the direct bound
+-- keeps: the bound alone reads 3 granules and the conjunction reads 2. Asserting both counts is
+-- what makes the assertion catch a design that refused to prune a signed-divisor IP range at all.
+CREATE TABLE IF NOT EXISTS t4p (a IPv4) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+CREATE TABLE IF NOT EXISTS m4p (a IPv4) ENGINE = Memory;
+INSERT INTO t4p VALUES ('0.0.0.1'), ('0.0.0.2'), ('127.255.255.255'), ('128.0.0.0'), ('200.1.1.1');
+INSERT INTO m4p VALUES ('0.0.0.1'), ('0.0.0.2'), ('127.255.255.255'), ('128.0.0.0'), ('200.1.1.1');
+SELECT 'c one sided', (SELECT count() FROM t4p WHERE intDiv(a, toInt8(10)) > 0 AND a < toIPv4('128.0.0.0')) = (SELECT count() FROM m4p WHERE intDiv(a, toInt8(10)) > 0 AND a < toIPv4('128.0.0.0'));
+SELECT 'c one sided bound only', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t4p WHERE a < toIPv4('128.0.0.0')) WHERE explain ILIKE '%Granules: 3/5%';
+SELECT 'c one sided prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t4p WHERE intDiv(a, toInt8(10)) > 0 AND a < toIPv4('128.0.0.0')) WHERE explain ILIKE '%Granules: 2/5%';
 -- `divide` computes in floating point and never wraps, so it stays monotonic in both directions.
 SELECT 'c divide pos', (SELECT count() FROM t4 WHERE divide(a, toInt8(10)) > 100000000) = (SELECT count() FROM m4 WHERE divide(a, toInt8(10)) > 100000000);
 SELECT 'c divide neg', (SELECT count() FROM t4 WHERE divide(a, toInt8(-10)) < -100000000) = (SELECT count() FROM m4 WHERE divide(a, toInt8(-10)) < -100000000);
@@ -127,6 +135,8 @@ SELECT count() FROM tu32 WHERE intDiv(a, materialize(toInt8(0))) = 0; -- { serve
 DROP TABLE t4 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE m4 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t4g1 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE t4p SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE m4p SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t6 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE m6 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t4lc SETTINGS ignore_drop_queries_probability = 0;
