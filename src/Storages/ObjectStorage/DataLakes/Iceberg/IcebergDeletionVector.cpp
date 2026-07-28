@@ -1,3 +1,7 @@
+#include "config.h"
+
+#if USE_AVRO
+
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDeletionVector.h>
 
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
@@ -6,6 +10,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/ObjectStorage/DataLakes/PuffinDeletionVectorReader.h>
 #include <Storages/ObjectStorage/DataLakes/PuffinFilesCache.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -159,3 +164,5 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
 }
 
 }
+
+#endif
