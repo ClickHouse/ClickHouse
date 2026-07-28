@@ -4,7 +4,6 @@
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -29,41 +28,35 @@ void FileCacheUsageCounters::sub(size_t size_delta, size_t elements_delta) noexc
 FileCacheUsageCountersPtr FileCacheUsageTracker::getOrCreate(const String & user_id)
 {
     std::lock_guard lock(mutex);
-    auto [it, inserted] = usage_by_user.try_emplace(user_id);
-    if (inserted)
-        it->second = std::make_shared<FileCacheUsageCounters>();
-    return it->second;
+    auto & weak_usage = usage_by_user[user_id];
+    auto usage = weak_usage.lock();
+    if (!usage)
+    {
+        usage = std::make_shared<FileCacheUsageCounters>();
+        weak_usage = usage;
+    }
+    return usage;
 }
 
 std::unordered_map<String, FileCacheUsageStat> FileCacheUsageTracker::snapshot()
 {
-    static Poco::Logger * log = &Poco::Logger::get("FileCacheUsageTracker");
-
     std::lock_guard lock(mutex);
     std::unordered_map<String, FileCacheUsageStat> result;
     result.reserve(usage_by_user.size());
     for (auto it = usage_by_user.begin(); it != usage_by_user.end();)
     {
-        const auto & [user_id, usage] = *it;
-        const size_t size = usage->size.load(std::memory_order_relaxed);
-        const size_t elements = usage->elements.load(std::memory_order_relaxed);
-        if (size == 0 && elements == 0)
+        const auto & [user_id, weak_usage] = *it;
+        auto usage = weak_usage.lock();
+        if (!usage)
         {
-            if (usage.use_count() == 1)
-                it = usage_by_user.erase(it);
-            else
-                ++it;
-            continue;
-        }
-
-        if (usage.use_count() == 1)
-        {
-            LOG_ERROR(log, "Filesystem cache usage counters outlived all entries for user '{}'", user_id);
             it = usage_by_user.erase(it);
             continue;
         }
 
-        result.emplace(user_id, FileCacheUsageStat{.size = size, .elements = elements});
+        const size_t size = usage->size.load(std::memory_order_relaxed);
+        const size_t elements = usage->elements.load(std::memory_order_relaxed);
+        if (size != 0 || elements != 0)
+            result.emplace(user_id, FileCacheUsageStat{.size = size, .elements = elements});
         ++it;
     }
     return result;

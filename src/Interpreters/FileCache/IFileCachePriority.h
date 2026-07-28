@@ -54,7 +54,7 @@ public:
 
 private:
     std::mutex mutex;
-    std::unordered_map<String, FileCacheUsageCountersPtr> usage_by_user;
+    std::unordered_map<String, std::weak_ptr<FileCacheUsageCounters>> usage_by_user;
 };
 using FileCacheUsageTrackerPtr = std::shared_ptr<FileCacheUsageTracker>;
 
