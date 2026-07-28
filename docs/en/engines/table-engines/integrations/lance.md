@@ -93,8 +93,53 @@ Lance reads emit dedicated `ProfileEvents` on `system.query_log` / `system.query
 - Arrow to ClickHouse conversion time (`LanceArrowConvertMicroseconds`)
 - Count fast path (`LanceCountRows`, `LanceCountRowsMicroseconds`)
 - Predicate and limit pushdown (`LancePredicatePushdownComplete`, `LancePredicatePushdownPartial`, `LanceLimitPushdown`, `LanceProjectedColumns`)
+- Unordered scanner mode (`LanceScanUnordered` when `lance_scan_in_order = 0`)
+- Fragment packing for multi-stream reads (`LanceFragmentsListed`, `LanceFragmentPacks`, `LanceFragmentParallelismDisabled`)
 
-`LanceReadBytes` / `LanceS3ReadBytes` measure Arrow array buffer footprint observed after the Lance scanner returns a batch. They are not S3 wire GET byte counters. Fragment-level scanned/skipped counters are not exposed yet.
+`LanceReadBytes` / `LanceS3ReadBytes` measure Arrow array buffer footprint observed after the Lance scanner returns a batch. They are not S3 wire GET byte counters.
+
+## Read parallelism {#read-parallelism}
+
+Lance reads can combine two layers of concurrency:
+
+1. **ClickHouse streams (L1)** — fragments are grouped into packs; each pack becomes one pipeline object so `max_threads` can open multiple streams.
+2. **Lance scanner I/O (L2)** — within each stream, the Lance scanner can readahead fragments/batches.
+
+### Stream packing settings {#stream-packing-settings}
+
+| Setting | Default | Description |
+|---|---|---|
+| `lance_enable_fragment_parallelism` | `1` | Split the dataset into fragment packs for multi-stream reads. Set to `0` to force a single full-dataset pack. |
+| `lance_fragment_pack_mode` | `auto` | `one` (prefer one fragment per pack), `pack` (always pack to a target count), or `auto` (use `one` when fragment count ≤ target packs). |
+| `lance_max_fragment_packs` | `0` | Max packs per query (`0` = align with `max_threads`). |
+| `lance_min_rows_per_pack` | `0` | Soft minimum rows per pack when row counts are known (`0` = ignore). |
+| `lance_min_bytes_per_pack` | `0` | Soft minimum estimated bytes per pack (`0` = ignore). |
+
+Semantic guards force a **single pack** even when packing is enabled:
+
+- `LIMIT` that is eligible for scanner pushdown (and, in the current implementation, any non-zero limit on the read step)
+- `count()` / trivial count fast path
+- Ordered storage reads when applicable
+
+Partial residual filters still allow multi-pack; ClickHouse re-applies residual filters. Stream order across packs is not global; use aggregates or `ORDER BY` when order matters.
+
+Disable packing to roll back to single-stream behavior:
+
+```sql
+SET lance_enable_fragment_parallelism = 0;
+```
+
+### Scanner I/O settings {#scanner-io-settings}
+
+| Setting | Default | Description |
+|---|---|---|
+| `lance_scan_in_order` | `1` | When true, batches are returned in deterministic fragment order **within one stream**. Set to `0` to allow higher internal fragment concurrency. |
+| `lance_fragment_readahead` | `0` | Fragments to read ahead inside one scanner (`0` = library default). Effective only when `lance_scan_in_order = 0`. |
+| `lance_batch_readahead` | `0` | Batches to prefetch inside one scanner (`0` = library default). |
+| `lance_io_buffer_size` | `0` | Max bytes queued in the Lance I/O buffer (`0` = library default). Avoid very small values. |
+| `lance_runtime_threads` | `0` | Worker threads for the process-wide Lance Tokio runtime (`0` = automatic bounded default). |
+
+Related `ProfileEvents`: `LanceFragmentsListed`, `LanceFragmentPacks`, `LanceFragmentParallelismDisabled`, plus existing open/plan/scan counters.
 
 ## Limitations {#limitations}
 
@@ -105,8 +150,12 @@ Lance reads emit dedicated `ProfileEvents` on `system.query_log` / `system.query
 - Unsupported Lance or Arrow types fail with an `Unsupported Lance column` exception.
 - Non-S3 disks are rejected with `BAD_ARGUMENTS`.
 
+## Cluster table function {#cluster-table-function}
+
+For multi-node parallel reads, use [`lanceS3Cluster`](/sql-reference/table-functions/lance#cluster-reads). There is no separate `LanceS3Cluster` table engine; the cluster table function builds a distributed read on top of the same Lance metadata path as `lanceS3`.
+
 ## See also {#see-also}
 
-- [`lanceS3` table function](/sql-reference/table-functions/lance)
+- [`lanceS3` / `lanceS3Cluster` table functions](/sql-reference/table-functions/lance)
 - [`S3` table engine](/engines/table-engines/integrations/s3)
 - [`IcebergS3` table engine](/engines/table-engines/integrations/iceberg)

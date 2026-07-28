@@ -37,12 +37,19 @@ public:
     void setReuseEnabled(bool enabled) { reuse_enabled = enabled; }
     bool getReuseEnabled() const { return reuse_enabled; }
 
+    /// When true, LanceMetadata::iterate produces a single full-dataset pack
+    /// (LIMIT pushdown, count() fast path, ordered reads). Set from
+    /// ReadFromObjectStorageStep before createFileIterator.
+    void setForceSingleFragmentPack(bool enabled) { force_single_fragment_pack = enabled; }
+    bool getForceSingleFragmentPack() const { return force_single_fragment_pack; }
+
 private:
     mutable std::mutex mutex;
     std::unordered_map<String, DatasetHandle> open_datasets;
     std::unordered_map<String, UInt64> pinned_versions;
     size_t open_count = 0;
     bool reuse_enabled = true;
+    bool force_single_fragment_pack = false;
 };
 
 }

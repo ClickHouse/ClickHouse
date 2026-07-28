@@ -1487,6 +1487,7 @@ template class TableFunctionObjectStorage<DeltaLakeAzureClusterDefinition, Stora
 
 #if USE_LANCE && USE_AWS_S3
 template class TableFunctionObjectStorage<LanceS3Definition, StorageS3LanceConfiguration, true>;
+template class TableFunctionObjectStorage<LanceS3ClusterDefinition, StorageS3LanceConfiguration, true>;
 #endif
 
 #if USE_LANCE

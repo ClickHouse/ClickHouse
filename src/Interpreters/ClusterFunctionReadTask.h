@@ -3,6 +3,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
+#include <Storages/ObjectStorage/DataLakes/Lance/LanceDataObjectInfo.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 
 
@@ -26,6 +27,10 @@ struct ClusterFunctionReadTaskResponse
     DataLakeObjectMetadata data_lake_metadata;
     /// Iceberg object metadata
     std::optional<Iceberg::IcebergObjectSerializableInfo> iceberg_info;
+#if USE_LANCE
+    /// Lance fragment-pack metadata (version + fragment_ids).
+    std::optional<Lance::LanceObjectSerializableInfo> lance_info;
+#endif
 
     /// Convert received response into ObjectInfo.
     ObjectInfoPtr getObjectInfo() const;

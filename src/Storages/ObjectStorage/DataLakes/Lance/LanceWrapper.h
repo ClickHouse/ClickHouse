@@ -10,6 +10,7 @@
 
 #include <memory>
 #include <optional>
+#include <vector>
 
 namespace DB
 {
@@ -63,6 +64,15 @@ struct SnapshotInfo
     UInt64 version = 0;
 };
 
+struct FragmentInfo
+{
+    UInt64 id = 0;
+    /// nullopt if Lance did not report a row count for this fragment.
+    std::optional<UInt64> num_rows;
+    /// 0 if unknown; best-effort sum of data file sizes.
+    UInt64 size_bytes = 0;
+};
+
 struct ScanDescription;
 struct TableStateSnapshot;
 class Scan;
@@ -113,6 +123,8 @@ public:
         const std::optional<String> & predicate,
         const CancelHandlePtr & cancel = {}) const;
     std::optional<size_t> totalBytes() const;
+    /// Lists fragments for the pinned snapshot version (exact checkout).
+    std::vector<FragmentInfo> listFragments(const TableStateSnapshot & snapshot, const CancelHandlePtr & cancel = {}) const;
     Scan planScan(const ScanDescription & scan_description, const CancelHandlePtr & cancel = {}) const;
 
     ch_lance_dataset * raw() const;

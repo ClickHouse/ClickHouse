@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/Lance/LanceDataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceQuerySession.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceReadSource.h>
@@ -37,6 +38,9 @@
 
 #include <fmt/ranges.h>
 
+#include <limits>
+#include <mutex>
+#include <numeric>
 #include <unordered_map>
 
 namespace ProfileEvents
@@ -45,6 +49,10 @@ extern const Event LancePredicatePushdownComplete;
 extern const Event LancePredicatePushdownPartial;
 extern const Event LanceLimitPushdown;
 extern const Event LanceProjectedColumns;
+extern const Event LanceScanUnordered;
+extern const Event LanceFragmentsListed;
+extern const Event LanceFragmentPacks;
+extern const Event LanceFragmentParallelismDisabled;
 }
 
 namespace DB
@@ -54,6 +62,16 @@ namespace Setting
 extern const SettingsSeconds http_connection_timeout;
 extern const SettingsSeconds http_send_timeout;
 extern const SettingsSeconds http_receive_timeout;
+extern const SettingsBool lance_scan_in_order;
+extern const SettingsUInt64 lance_fragment_readahead;
+extern const SettingsUInt64 lance_batch_readahead;
+extern const SettingsUInt64 lance_io_buffer_size;
+extern const SettingsBool lance_enable_fragment_parallelism;
+extern const SettingsString lance_fragment_pack_mode;
+extern const SettingsUInt64 lance_max_fragment_packs;
+extern const SettingsUInt64 lance_min_rows_per_pack;
+extern const SettingsUInt64 lance_min_bytes_per_pack;
+extern const SettingsMaxThreads max_threads;
 }
 
 #if USE_AWS_S3
@@ -88,27 +106,153 @@ namespace DB
 namespace
 {
 
-class LanceDatasetObjectInfo final : public ObjectInfo
+struct FragmentPack
 {
-public:
-    LanceDatasetObjectInfo(String dataset_path_, Lance::TableStateSnapshot snapshot_, Lance::DatasetHandle dataset_)
-        : ObjectInfo(RelativePathWithMetadata(std::move(dataset_path_), createDatasetObjectMetadata()))
-        , snapshot(std::move(snapshot_))
-        , dataset(std::move(dataset_))
-    {
-    }
-
-    const Lance::TableStateSnapshot snapshot;
-    const Lance::DatasetHandle dataset;
-
-private:
-    static ObjectMetadata createDatasetObjectMetadata()
-    {
-        ObjectMetadata metadata;
-        metadata.is_size_known = false;
-        return metadata;
-    }
+    std::vector<UInt64> fragment_ids;
+    UInt64 weight_rows = 0;
+    UInt64 weight_bytes = 0;
 };
+
+UInt64 fragmentPackWeight(const Lance::FragmentInfo & fragment)
+{
+    if (fragment.num_rows.has_value())
+        return *fragment.num_rows;
+    if (fragment.size_bytes > 0)
+        return fragment.size_bytes;
+    return 1;
+}
+
+enum class FragmentPackMode
+{
+    One,
+    Pack,
+    Auto,
+};
+
+FragmentPackMode parseFragmentPackMode(const String & mode)
+{
+    if (mode == "one")
+        return FragmentPackMode::One;
+    if (mode == "pack")
+        return FragmentPackMode::Pack;
+    if (mode == "auto")
+        return FragmentPackMode::Auto;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid lance_fragment_pack_mode '{}'; expected one, pack, or auto", mode);
+}
+
+/// LPT (longest-processing-time): sort by weight descending, place each fragment into the lightest pack.
+std::vector<FragmentPack> partitionFragmentsIntoPacks(
+    const std::vector<Lance::FragmentInfo> & fragments,
+    size_t target_packs,
+    FragmentPackMode mode,
+    UInt64 min_rows_per_pack,
+    UInt64 min_bytes_per_pack)
+{
+    if (fragments.empty())
+        return {};
+
+    target_packs = std::max<size_t>(1, target_packs);
+
+    FragmentPackMode effective_mode = mode;
+    if (mode == FragmentPackMode::Auto)
+        effective_mode = fragments.size() <= target_packs ? FragmentPackMode::One : FragmentPackMode::Pack;
+
+    if (effective_mode == FragmentPackMode::One)
+        target_packs = std::min(target_packs, fragments.size());
+    else
+        target_packs = std::min(target_packs, fragments.size());
+
+    std::vector<size_t> order(fragments.size());
+    std::iota(order.begin(), order.end(), 0);
+    std::stable_sort(order.begin(), order.end(), [&](size_t lhs, size_t rhs)
+    {
+        return fragmentPackWeight(fragments[lhs]) > fragmentPackWeight(fragments[rhs]);
+    });
+
+    std::vector<FragmentPack> packs(target_packs);
+    std::vector<UInt64> pack_weights(target_packs, 0);
+
+    for (size_t index : order)
+    {
+        const auto & fragment = fragments[index];
+        const size_t pack_index = static_cast<size_t>(
+            std::min_element(pack_weights.begin(), pack_weights.end()) - pack_weights.begin());
+        packs[pack_index].fragment_ids.push_back(fragment.id);
+        if (fragment.num_rows)
+            packs[pack_index].weight_rows += *fragment.num_rows;
+        packs[pack_index].weight_bytes += fragment.size_bytes;
+        pack_weights[pack_index] += fragmentPackWeight(fragment);
+    }
+
+    /// Soft min-size merge: repeatedly merge the lightest non-empty pack into the next lightest
+    /// while under thresholds. Keeps at least one pack.
+    auto pack_too_small = [&](const FragmentPack & pack)
+    {
+        if (pack.fragment_ids.empty())
+            return true;
+        const bool rows_ok = min_rows_per_pack == 0 || pack.weight_rows >= min_rows_per_pack;
+        const bool bytes_ok = min_bytes_per_pack == 0 || pack.weight_bytes >= min_bytes_per_pack;
+        /// Only apply thresholds when the corresponding weight is known/positive for the pack.
+        if (min_rows_per_pack > 0 && pack.weight_rows > 0 && !rows_ok)
+            return true;
+        if (min_bytes_per_pack > 0 && pack.weight_bytes > 0 && !bytes_ok)
+            return true;
+        return false;
+    };
+
+    if (min_rows_per_pack > 0 || min_bytes_per_pack > 0)
+    {
+        while (packs.size() > 1)
+        {
+            size_t small_index = packs.size();
+            for (size_t i = 0; i < packs.size(); ++i)
+            {
+                if (pack_too_small(packs[i]))
+                {
+                    small_index = i;
+                    break;
+                }
+            }
+            if (small_index == packs.size())
+                break;
+
+            size_t merge_into = small_index == 0 ? 1 : small_index - 1;
+            for (size_t i = 0; i < packs.size(); ++i)
+            {
+                if (i == small_index || packs[i].fragment_ids.empty())
+                    continue;
+                if (pack_weights[i] < pack_weights[merge_into] || merge_into == small_index)
+                    merge_into = i;
+            }
+
+            packs[merge_into].fragment_ids.insert(
+                packs[merge_into].fragment_ids.end(),
+                packs[small_index].fragment_ids.begin(),
+                packs[small_index].fragment_ids.end());
+            packs[merge_into].weight_rows += packs[small_index].weight_rows;
+            packs[merge_into].weight_bytes += packs[small_index].weight_bytes;
+            pack_weights[merge_into] += pack_weights[small_index];
+            packs.erase(packs.begin() + static_cast<std::ptrdiff_t>(small_index));
+            pack_weights.erase(pack_weights.begin() + static_cast<std::ptrdiff_t>(small_index));
+        }
+    }
+
+    std::vector<FragmentPack> non_empty;
+    non_empty.reserve(packs.size());
+    for (auto & pack : packs)
+    {
+        if (!pack.fragment_ids.empty())
+            non_empty.push_back(std::move(pack));
+    }
+    return non_empty;
+}
+
+String makeLancePackSyntheticPath(
+    const String & dataset_path, UInt64 version, size_t pack_index, const std::vector<UInt64> & fragment_ids)
+{
+    const UInt64 first_id = fragment_ids.empty() ? 0 : fragment_ids.front();
+    return fmt::format("{}#v{}/pack{}_f{}", dataset_path, version, pack_index, first_id);
+}
 
 class LanceDatasetIterator final : public IObjectIterator
 {
@@ -117,21 +261,32 @@ public:
         String dataset_path_,
         Lance::TableStateSnapshot snapshot_,
         Lance::DatasetHandle dataset_,
+        std::vector<FragmentPack> packs_,
         IDataLakeMetadata::FileProgressCallback callback_)
         : dataset_path(std::move(dataset_path_))
         , snapshot(std::move(snapshot_))
         , dataset(std::move(dataset_))
+        , packs(std::move(packs_))
+        , total_packs(packs.size())
         , callback(std::move(callback_))
     {
     }
 
     ObjectInfoPtr next(size_t) override
     {
-        if (is_finished)
+        std::lock_guard lock(mutex);
+        if (next_index >= packs.size())
             return nullptr;
 
-        is_finished = true;
-        auto object_info = std::make_shared<LanceDatasetObjectInfo>(dataset_path, snapshot, dataset);
+        const size_t pack_index = next_index++;
+        auto & pack = packs[pack_index];
+        auto object_info = std::make_shared<LanceDatasetObjectInfo>(
+            makeLancePackSyntheticPath(dataset_path, snapshot.version, pack_index, pack.fragment_ids),
+            snapshot,
+            dataset,
+            std::move(pack.fragment_ids),
+            pack_index,
+            total_packs);
         /// Dataset-level byte totals are often unavailable; per-batch progress is reported from
         /// `Lance::ReadSource` via `ISource::progress` (auto_progress).
         if (callback)
@@ -139,7 +294,8 @@ public:
         return object_info;
     }
 
-    size_t estimatedKeysCount() override { return is_finished ? 0 : 1; }
+    /// Fixed for the iterator lifetime so initializePipeline can open multi-stream correctly.
+    size_t estimatedKeysCount() override { return total_packs; }
 
     std::optional<UInt64> getSnapshotVersion() const override { return snapshot.version; }
 
@@ -147,8 +303,11 @@ private:
     String dataset_path;
     Lance::TableStateSnapshot snapshot;
     Lance::DatasetHandle dataset;
+    std::vector<FragmentPack> packs;
+    const size_t total_packs;
     IDataLakeMetadata::FileProgressCallback callback;
-    bool is_finished = false;
+    std::mutex mutex;
+    size_t next_index = 0;
 };
 
 const LanceDatasetObjectInfo & extractLanceObjectInfo(const ObjectInfoPtr & object_info)
@@ -684,12 +843,54 @@ ObjectIterator LanceMetadata::iterate(
 
     const auto options = getDatasetOptions(local_context);
     Lance::DatasetHandle dataset;
+    std::shared_ptr<Lance::QuerySession> session;
     if (local_context && local_context->hasQueryContext())
-        dataset = Lance::QuerySession::get(local_context)->getPinned(options, snapshot.version);
+    {
+        session = Lance::QuerySession::get(local_context);
+        dataset = session->getPinned(options, snapshot.version);
+    }
     else
         dataset = Lance::DatasetHandle::openEphemeral(options);
 
-    return std::make_shared<LanceDatasetIterator>(options.uri, snapshot, std::move(dataset), std::move(callback));
+    const auto fragments = dataset.listFragments(snapshot);
+    ProfileEvents::increment(ProfileEvents::LanceFragmentsListed, fragments.size());
+
+    const auto & settings = local_context->getSettingsRef();
+    const bool enable_parallelism = settings[Setting::lance_enable_fragment_parallelism];
+    const bool session_force_single = session && session->getForceSingleFragmentPack();
+    bool force_single_pack = !enable_parallelism || session_force_single || fragments.size() <= 1;
+
+    std::vector<FragmentPack> packs;
+    if (fragments.empty())
+    {
+        packs = {};
+    }
+    else if (force_single_pack)
+    {
+        /// Empty fragment_ids means full-table scan (T2 semantics). Prefer that over listing all ids.
+        packs.push_back(FragmentPack{});
+        ProfileEvents::increment(ProfileEvents::LanceFragmentParallelismDisabled);
+    }
+    else
+    {
+        size_t target_packs = settings[Setting::lance_max_fragment_packs] == 0
+            ? static_cast<size_t>(std::max<UInt64>(1, static_cast<UInt64>(settings[Setting::max_threads])))
+            : static_cast<size_t>(std::max<UInt64>(1, settings[Setting::lance_max_fragment_packs]));
+        const auto mode = parseFragmentPackMode(settings[Setting::lance_fragment_pack_mode]);
+        packs = partitionFragmentsIntoPacks(
+            fragments,
+            target_packs,
+            mode,
+            settings[Setting::lance_min_rows_per_pack],
+            settings[Setting::lance_min_bytes_per_pack]);
+        if (packs.size() <= 1)
+            ProfileEvents::increment(ProfileEvents::LanceFragmentParallelismDisabled);
+    }
+
+    ProfileEvents::increment(ProfileEvents::LanceFragmentPacks, packs.size());
+
+    return std::make_shared<LanceDatasetIterator>(
+        options.uri, snapshot, std::move(dataset), std::move(packs), std::move(callback));
 }
 
 std::optional<Pipe> LanceMetadata::read(
@@ -758,6 +959,21 @@ std::optional<Pipe> LanceMetadata::read(
         ProfileEvents::increment(ProfileEvents::LanceLimitPushdown);
     ProfileEvents::increment(ProfileEvents::LanceProjectedColumns, scan_projection.size());
 
+    const auto & settings = local_context->getSettingsRef();
+    const bool scan_in_order = settings[Setting::lance_scan_in_order];
+    const auto to_u32_setting = [](UInt64 value, const char * setting_name) -> UInt32
+    {
+        if (value > std::numeric_limits<UInt32>::max())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is too large: {}", setting_name, value);
+        return static_cast<UInt32>(value);
+    };
+    const UInt32 fragment_readahead = to_u32_setting(settings[Setting::lance_fragment_readahead], "lance_fragment_readahead");
+    const UInt32 batch_readahead = to_u32_setting(settings[Setting::lance_batch_readahead], "lance_batch_readahead");
+    const UInt64 io_buffer_size = settings[Setting::lance_io_buffer_size];
+
+    if (!scan_in_order)
+        ProfileEvents::increment(ProfileEvents::LanceScanUnordered);
+
     Lance::ScanDescription scan
     {
         .snapshot = snapshot,
@@ -768,6 +984,11 @@ std::optional<Pipe> LanceMetadata::read(
         .limit = scan_limit,
         .need_only_count = effective_need_only_count,
         .discard_output_columns = discard_output_columns,
+        .scan_in_order = scan_in_order,
+        .fragment_readahead = fragment_readahead,
+        .batch_readahead = batch_readahead,
+        .io_buffer_size = io_buffer_size,
+        .fragment_ids = lance_object.fragment_ids,
     };
 
     ColumnsWithTypeAndName physical_columns;

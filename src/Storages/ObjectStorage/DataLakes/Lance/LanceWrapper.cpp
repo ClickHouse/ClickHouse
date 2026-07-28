@@ -17,6 +17,7 @@
 
 #include <fmt/format.h>
 
+#include <limits>
 #include <utility>
 
 namespace ProfileEvents
@@ -369,6 +370,29 @@ std::optional<size_t> DatasetHandle::totalBytes() const
     return bytes;
 }
 
+std::vector<FragmentInfo> DatasetHandle::listFragments(const TableStateSnapshot & snapshot, const CancelHandlePtr & cancel) const
+{
+    ch_lance_fragment_info * list = nullptr;
+    size_t size = 0;
+    ch_lance_error error{};
+    if (!ch_lance_list_fragments(raw(), snapshot.version, &list, &size, cancel ? cancel->raw() : nullptr, &error))
+        throwLanceError(error, fmt::format("Cannot list fragments for `Lance` dataset version {}", snapshot.version));
+
+    std::vector<FragmentInfo> result;
+    result.reserve(size);
+    for (size_t i = 0; i < size; ++i)
+    {
+        FragmentInfo info;
+        info.id = list[i].id;
+        if (list[i].num_rows != std::numeric_limits<UInt64>::max())
+            info.num_rows = list[i].num_rows;
+        info.size_bytes = list[i].size_bytes;
+        result.push_back(std::move(info));
+    }
+    ch_lance_free_fragment_list(list, size);
+    return result;
+}
+
 Scan DatasetHandle::planScan(const ScanDescription & scan_description, const CancelHandlePtr & cancel) const
 {
     std::vector<const char *> projection;
@@ -381,6 +405,8 @@ Scan DatasetHandle::planScan(const ScanDescription & scan_description, const Can
         .values = projection.empty() ? nullptr : projection.data(),
         .size = projection.size(),
     };
+    /// Keep fragment id storage alive for the duration of ch_lance_plan_scan.
+    const auto & fragment_ids = scan_description.fragment_ids;
     ch_lance_scan_options options{
         .version = scan_description.snapshot.version,
         .projection = projection_list,
@@ -389,6 +415,13 @@ Scan DatasetHandle::planScan(const ScanDescription & scan_description, const Can
         .max_block_size = scan_description.max_block_size,
         .limit = scan_description.limit.value_or(0),
         .cancel = cancel ? cancel->raw() : nullptr,
+        /// FFI uses scan_unordered so zero-init stays ordered (compatible default).
+        .scan_unordered = !scan_description.scan_in_order,
+        .fragment_readahead = scan_description.fragment_readahead,
+        .batch_readahead = scan_description.batch_readahead,
+        .io_buffer_size = scan_description.io_buffer_size,
+        .fragment_ids = fragment_ids.empty() ? nullptr : fragment_ids.data(),
+        .fragment_ids_size = fragment_ids.size(),
     };
 
     Stopwatch plan_watch;

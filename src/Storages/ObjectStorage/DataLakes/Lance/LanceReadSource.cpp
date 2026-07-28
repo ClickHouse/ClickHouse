@@ -269,6 +269,16 @@ Chunk ReadSource::generate()
 
     if (scan.need_only_count && scan.projection.empty())
     {
+        /// countRows/totalRows are dataset-wide and ignore fragment_ids. Multi-pack
+        /// must force a single full pack before reaching this path.
+        if (!scan.fragment_ids.empty())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Lance count fast path cannot run with a non-empty fragment subset "
+                "(fragment packing must force a single full pack for need_only_count)");
+        }
+
         if (isCancelled())
             return {};
 

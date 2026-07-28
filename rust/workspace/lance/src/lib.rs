@@ -168,6 +168,26 @@ pub struct ch_lance_scan_options {
     /// Soft upper bound on rows; 0 means unlimited.
     limit: u64,
     cancel: *mut ch_lance_cancel_handle,
+    /// false (zero-init): ordered scan. true: unordered (enables fragment_readahead).
+    scan_unordered: bool,
+    /// 0 = SDK default; >0 → Scanner::fragment_readahead.
+    fragment_readahead: u32,
+    /// 0 = SDK default; >0 → Scanner::batch_readahead.
+    batch_readahead: u32,
+    /// 0 = SDK default; >0 → Scanner::io_buffer_size.
+    io_buffer_size: u64,
+    /// null or size==0 → all fragments; else restrict with Scanner::with_fragments.
+    fragment_ids: *const u64,
+    fragment_ids_size: usize,
+}
+
+#[repr(C)]
+pub struct ch_lance_fragment_info {
+    id: u64,
+    /// u64::MAX if unknown.
+    num_rows: u64,
+    /// 0 if unknown.
+    size_bytes: u64,
 }
 
 #[repr(C)]
@@ -347,6 +367,22 @@ impl LanceOperation {
             Self::NextBatch => "Cannot read Lance record batch",
         }
     }
+}
+
+fn list_fragment_infos(dataset: &Dataset) -> Vec<ch_lance_fragment_info> {
+    dataset
+        .fragments()
+        .iter()
+        .map(|fragment| ch_lance_fragment_info {
+            id: fragment.id,
+            num_rows: fragment.num_rows().map(|n| n as u64).unwrap_or(u64::MAX),
+            size_bytes: fragment
+                .files
+                .iter()
+                .map(|file| file.file_size_bytes.get().map(|n| n.get()).unwrap_or(0))
+                .sum(),
+        })
+        .collect()
 }
 
 #[derive(Debug)]
@@ -1369,6 +1405,67 @@ pub unsafe extern "C" fn ch_lance_total_bytes(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn ch_lance_list_fragments(
+    dataset: *mut ch_lance_dataset,
+    version: u64,
+    out_list: *mut *mut ch_lance_fragment_info,
+    out_size: *mut usize,
+    cancel: *mut ch_lance_cancel_handle,
+    error: *mut ch_lance_error,
+) -> bool {
+    clear_error(error);
+    if !out_list.is_null() {
+        *out_list = ptr::null_mut();
+    }
+    if !out_size.is_null() {
+        *out_size = 0;
+    }
+    if dataset.is_null() || out_list.is_null() || out_size.is_null() {
+        set_error(
+            error,
+            FfiError::invalid_argument("Lance dataset or fragment list output pointer is null"),
+        );
+        return false;
+    }
+
+    let source = (*dataset).dataset.clone();
+    let origin = (*dataset).origin;
+    let cancel_token = cancel_arc_from_ptr(cancel);
+
+    let list_result = block_on_lance(with_cancel(Some(cancel_token.as_ref()), async move {
+        let dataset = checkout_exact_version(&source, version, origin).await?;
+        Ok::<_, FfiError>(list_fragment_infos(&dataset))
+    }));
+
+    match list_result {
+        Ok(Ok(infos)) => {
+            if infos.is_empty() {
+                *out_list = ptr::null_mut();
+                *out_size = 0;
+            } else {
+                let mut boxed = infos.into_boxed_slice();
+                *out_size = boxed.len();
+                *out_list = boxed.as_mut_ptr();
+                std::mem::forget(boxed);
+            }
+            true
+        }
+        Ok(Err(ffi_error)) | Err(ffi_error) => {
+            set_error(error, ffi_error);
+            false
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_free_fragment_list(list: *mut ch_lance_fragment_info, size: usize) {
+    if list.is_null() || size == 0 {
+        return;
+    }
+    drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(list, size)));
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn ch_lance_plan_scan(
     dataset: *mut ch_lance_dataset,
     options: *const ch_lance_scan_options,
@@ -1400,6 +1497,15 @@ pub unsafe extern "C" fn ch_lance_plan_scan(
     let version = (*options).version;
     let max_block_size = (*options).max_block_size as usize;
     let row_limit = (*options).limit;
+    let scan_unordered = (*options).scan_unordered;
+    let fragment_readahead = (*options).fragment_readahead;
+    let batch_readahead = (*options).batch_readahead;
+    let io_buffer_size = (*options).io_buffer_size;
+    let fragment_ids = if (*options).fragment_ids.is_null() || (*options).fragment_ids_size == 0 {
+        None
+    } else {
+        Some(std::slice::from_raw_parts((*options).fragment_ids, (*options).fragment_ids_size).to_vec())
+    };
     let source_dataset = (*dataset).dataset.clone();
     let origin = (*dataset).origin;
     let cancel = cancel_arc_from_ptr((*options).cancel);
@@ -1431,6 +1537,35 @@ pub unsafe extern "C" fn ch_lance_plan_scan(
                 scanner
                     .limit(Some(limit_i64), None)
                     .map_err(|err| FfiError::from_lance(LanceOperation::PlanScan, origin, err))?;
+            }
+            // false (zero-init) keeps ordered scan (SDK default / ClickHouse compatible).
+            scanner.scan_in_order(!scan_unordered);
+            if fragment_readahead > 0 {
+                scanner.fragment_readahead(fragment_readahead as usize);
+            }
+            if batch_readahead > 0 {
+                scanner.batch_readahead(batch_readahead as usize);
+            }
+            if io_buffer_size > 0 {
+                scanner.io_buffer_size(io_buffer_size);
+            }
+            if let Some(ids) = fragment_ids {
+                let all = dataset.fragments();
+                let mut selected = Vec::with_capacity(ids.len());
+                for id in &ids {
+                    match all.iter().find(|fragment| fragment.id == *id) {
+                        Some(fragment) => selected.push(fragment.clone()),
+                        None => {
+                            return Err(FfiError::invalid_argument(format!(
+                                "Lance fragment id {} is not present in dataset version {}",
+                                id,
+                                dataset.version().version
+                            ))
+                            .with_origin(origin));
+                        }
+                    }
+                }
+                scanner.with_fragments(selected);
             }
             scanner
                 .try_into_stream()
@@ -1719,8 +1854,14 @@ mod tests {
             predicate: predicate.as_ptr(),
             need_only_count: false,
             max_block_size: 1024,
-                    limit: 0,
-                    cancel: ptr::null_mut(),
+            limit: 0,
+            cancel: ptr::null_mut(),
+            scan_unordered: false,
+            fragment_readahead: 0,
+            batch_readahead: 0,
+            io_buffer_size: 0,
+            fragment_ids: ptr::null(),
+            fragment_ids_size: 0,
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, error) };
         assert!(!scan.is_null());
@@ -1749,6 +1890,267 @@ mod tests {
             ch_lance_free_scan(scan);
         }
         rows
+    }
+
+    fn scan_rows_with_options(
+        dataset: *mut ch_lance_dataset,
+        version: u64,
+        scan_unordered: bool,
+        fragment_readahead: u32,
+        batch_readahead: u32,
+        fragment_ids: Option<&[u64]>,
+        error: *mut ch_lance_error,
+    ) -> usize {
+        let column = CString::new("id").unwrap();
+        let projection_values = [column.as_ptr()];
+        let scan_options = ch_lance_scan_options {
+            version,
+            projection: ch_lance_string_list {
+                values: projection_values.as_ptr(),
+                size: projection_values.len(),
+            },
+            predicate: ptr::null(),
+            need_only_count: false,
+            max_block_size: 1024,
+            limit: 0,
+            cancel: ptr::null_mut(),
+            scan_unordered,
+            fragment_readahead,
+            batch_readahead,
+            io_buffer_size: 0,
+            fragment_ids: fragment_ids.map(|ids| ids.as_ptr()).unwrap_or(ptr::null()),
+            fragment_ids_size: fragment_ids.map(|ids| ids.len()).unwrap_or(0),
+        };
+        let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, error) };
+        assert!(!scan.is_null(), "plan_scan failed");
+        let mut rows = 0;
+        loop {
+            let mut array = FFI_ArrowArray::empty();
+            let mut schema = FFI_ArrowSchema::empty();
+            let mut has_batch = false;
+            assert!(unsafe {
+                ch_lance_next_batch(
+                    scan,
+                    addr_of_mut!(array),
+                    addr_of_mut!(schema),
+                    addr_of_mut!(has_batch),
+                    error,
+                )
+            });
+            if !has_batch {
+                break;
+            }
+            let struct_data = unsafe { from_ffi(array, &schema) }.unwrap();
+            rows += StructArray::from(make_array(struct_data).to_data()).len();
+        }
+        unsafe {
+            ch_lance_free_scan(scan);
+        }
+        rows
+    }
+
+    #[test]
+    fn ffi_unordered_scan_with_fragment_readahead_preserves_row_count() {
+        let dir = write_test_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = empty_error();
+
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+
+        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        assert!(unsafe {
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+        });
+
+        let ordered_rows = scan_rows_with_options(
+            dataset,
+            snapshot.version,
+            false,
+            0,
+            0,
+            None,
+            addr_of_mut!(error),
+        );
+        let unordered_rows = scan_rows_with_options(
+            dataset,
+            snapshot.version,
+            true,
+            4,
+            2,
+            None,
+            addr_of_mut!(error),
+        );
+        assert_eq!(ordered_rows, 3);
+        assert_eq!(unordered_rows, ordered_rows);
+
+        unsafe {
+            ch_lance_free_dataset(dataset);
+        }
+    }
+
+    fn write_multi_fragment_dataset() -> tempfile::TempDir {
+        use lance::dataset::WriteParams;
+        let dir = tempfile::tempdir().unwrap();
+        // 6 rows with max_rows_per_file=2 → expect 3 fragments.
+        let batch = make_batch(vec![1, 2, 3, 4, 5, 6]);
+        let schema = batch.schema();
+        let reader = RecordBatchIterator::new(vec![Ok(batch)].into_iter(), schema);
+        let params = WriteParams {
+            max_rows_per_file: 2,
+            ..Default::default()
+        };
+        Runtime::new()
+            .unwrap()
+            .block_on(Dataset::write(
+                reader,
+                dir.path().to_str().unwrap(),
+                Some(params),
+            ))
+            .unwrap();
+        dir
+    }
+
+    #[test]
+    fn ffi_list_fragments_and_subset_scan() {
+        let dir = write_multi_fragment_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = empty_error();
+
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+
+        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        assert!(unsafe {
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+        });
+
+        let mut list: *mut ch_lance_fragment_info = ptr::null_mut();
+        let mut size: usize = 0;
+        assert!(unsafe {
+            ch_lance_list_fragments(
+                dataset,
+                snapshot.version,
+                addr_of_mut!(list),
+                addr_of_mut!(size),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(size >= 2, "expected multi-fragment dataset, got {}", size);
+        assert!(!list.is_null());
+
+        let infos = unsafe { std::slice::from_raw_parts(list, size) };
+        let total_rows: u64 = infos
+            .iter()
+            .map(|info| {
+                assert_ne!(info.num_rows, u64::MAX);
+                info.num_rows
+            })
+            .sum();
+        assert_eq!(total_rows, 6);
+
+        let all_ids: Vec<u64> = infos.iter().map(|info| info.id).collect();
+        let full_rows = scan_rows_with_options(
+            dataset,
+            snapshot.version,
+            false,
+            0,
+            0,
+            None,
+            addr_of_mut!(error),
+        );
+        assert_eq!(full_rows, 6);
+
+        let first = [all_ids[0]];
+        let first_rows = scan_rows_with_options(
+            dataset,
+            snapshot.version,
+            false,
+            0,
+            0,
+            Some(&first),
+            addr_of_mut!(error),
+        );
+        assert!(first_rows > 0 && first_rows < full_rows);
+
+        let rest = &all_ids[1..];
+        let rest_rows = scan_rows_with_options(
+            dataset,
+            snapshot.version,
+            false,
+            0,
+            0,
+            Some(rest),
+            addr_of_mut!(error),
+        );
+        assert_eq!(first_rows + rest_rows, full_rows);
+
+        // Missing fragment id → InvalidArgument.
+        let missing = [u64::MAX];
+        let column = CString::new("id").unwrap();
+        let projection_values = [column.as_ptr()];
+        let bad_options = ch_lance_scan_options {
+            version: snapshot.version,
+            projection: ch_lance_string_list {
+                values: projection_values.as_ptr(),
+                size: projection_values.len(),
+            },
+            predicate: ptr::null(),
+            need_only_count: false,
+            max_block_size: 1024,
+            limit: 0,
+            cancel: ptr::null_mut(),
+            scan_unordered: false,
+            fragment_readahead: 0,
+            batch_readahead: 0,
+            io_buffer_size: 0,
+            fragment_ids: missing.as_ptr(),
+            fragment_ids_size: missing.len(),
+        };
+        let bad_scan = unsafe { ch_lance_plan_scan(dataset, &bad_options, addr_of_mut!(error)) };
+        assert!(bad_scan.is_null());
+        assert_eq!(error.kind, ChLanceErrorKind::InvalidArgument as u32);
+        unsafe { ch_lance_free_error(addr_of_mut!(error)) };
+
+        // Bad version → VersionNotFound.
+        let mut bad_list: *mut ch_lance_fragment_info = ptr::null_mut();
+        let mut bad_size: usize = 0;
+        assert!(!unsafe {
+            ch_lance_list_fragments(
+                dataset,
+                snapshot.version + 1_000_000,
+                addr_of_mut!(bad_list),
+                addr_of_mut!(bad_size),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
+        });
+        assert_eq!(error.kind, ChLanceErrorKind::VersionNotFound as u32);
+        unsafe { ch_lance_free_error(addr_of_mut!(error)) };
+
+        // Cancel list.
+        let cancel = unsafe { ch_lance_cancel_handle_create() };
+        unsafe { ch_lance_cancel_handle_cancel(cancel) };
+        assert!(!unsafe {
+            ch_lance_list_fragments(
+                dataset,
+                snapshot.version,
+                addr_of_mut!(bad_list),
+                addr_of_mut!(bad_size),
+                cancel,
+                addr_of_mut!(error),
+            )
+        });
+        assert_eq!(error.kind, ChLanceErrorKind::Cancelled as u32);
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+            ch_lance_cancel_handle_free(cancel);
+            ch_lance_free_fragment_list(list, size);
+            ch_lance_free_dataset(dataset);
+        }
     }
 
     #[test]
@@ -1789,8 +2191,14 @@ mod tests {
             predicate: predicate.as_ptr(),
             need_only_count: false,
             max_block_size: 1024,
-                    limit: 0,
-                    cancel: ptr::null_mut(),
+            limit: 0,
+            cancel: ptr::null_mut(),
+            scan_unordered: false,
+            fragment_readahead: 0,
+            batch_readahead: 0,
+            io_buffer_size: 0,
+            fragment_ids: ptr::null(),
+            fragment_ids_size: 0,
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, addr_of_mut!(error)) };
         assert!(!scan.is_null());
@@ -1831,8 +2239,14 @@ mod tests {
             predicate: ptr::null(),
             need_only_count: false,
             max_block_size: 1,
-                    limit: 0,
-                    cancel: ptr::null_mut(),
+            limit: 0,
+            cancel: ptr::null_mut(),
+            scan_unordered: false,
+            fragment_readahead: 0,
+            batch_readahead: 0,
+            io_buffer_size: 0,
+            fragment_ids: ptr::null(),
+            fragment_ids_size: 0,
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, error) };
         assert!(!scan.is_null());
@@ -2006,6 +2420,12 @@ mod tests {
             max_block_size: 1,
             limit: 0,
             cancel,
+            scan_unordered: false,
+            fragment_readahead: 0,
+            batch_readahead: 0,
+            io_buffer_size: 0,
+            fragment_ids: ptr::null(),
+            fragment_ids_size: 0,
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, addr_of_mut!(error)) };
         assert!(scan.is_null());
@@ -2025,6 +2445,12 @@ mod tests {
             max_block_size: 1,
             limit: 0,
             cancel: cancel2,
+            scan_unordered: false,
+            fragment_readahead: 0,
+            batch_readahead: 0,
+            io_buffer_size: 0,
+            fragment_ids: ptr::null(),
+            fragment_ids_size: 0,
         };
         let scan2 = unsafe { ch_lance_plan_scan(dataset, &scan_options2, addr_of_mut!(error)) };
         assert!(!scan2.is_null());
@@ -2422,8 +2848,14 @@ mod tests {
             predicate: ptr::null(),
             need_only_count: false,
             max_block_size: 1024,
-                    limit: 0,
-                    cancel: ptr::null_mut(),
+            limit: 0,
+            cancel: ptr::null_mut(),
+            scan_unordered: false,
+            fragment_readahead: 0,
+            batch_readahead: 0,
+            io_buffer_size: 0,
+            fragment_ids: ptr::null(),
+            fragment_ids_size: 0,
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, addr_of_mut!(error)) };
         assert!(scan.is_null());
@@ -2966,8 +3398,14 @@ mod tests {
             predicate: ptr::null(),
             need_only_count: false,
             max_block_size: 8192,
-                    limit: 0,
-                    cancel: ptr::null_mut(),
+            limit: 0,
+            cancel: ptr::null_mut(),
+            scan_unordered: false,
+            fragment_readahead: 0,
+            batch_readahead: 0,
+            io_buffer_size: 0,
+            fragment_ids: ptr::null(),
+            fragment_ids_size: 0,
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, addr_of_mut!(error)) };
         assert!(!scan.is_null());
@@ -2996,5 +3434,76 @@ mod tests {
             ch_lance_free_scan(scan);
             ch_lance_free_dataset(dataset);
         }
+    }
+
+    /// Generate `tests/queries/0_stateless/data_lance/multi_frag.lance` when
+    /// `LANCE_MULTI_FRAG_OUT` is set to an absolute or relative output path.
+    ///
+    /// ```text
+    /// LANCE_MULTI_FRAG_OUT=../../tests/queries/0_stateless/data_lance/multi_frag.lance \
+    ///   cargo test -p _ch_rust_lance write_stateless_multi_frag_fixture -- --exact --nocapture
+    /// ```
+    #[test]
+    fn write_stateless_multi_frag_fixture() {
+        use lance::dataset::WriteParams;
+        use std::fs;
+        use std::path::PathBuf;
+
+        let Ok(out) = std::env::var("LANCE_MULTI_FRAG_OUT") else {
+            return;
+        };
+        let out_path = PathBuf::from(&out);
+        if out_path.exists() {
+            fs::remove_dir_all(&out_path).expect("remove existing multi_frag.lance");
+        }
+        if let Some(parent) = out_path.parent() {
+            fs::create_dir_all(parent).expect("create parent for multi_frag.lance");
+        }
+
+        // 64 rows, max_rows_per_file=8 → 8 fragments.
+        let ids: Vec<i64> = (1..=64).collect();
+        let names: Vec<String> = ids.iter().map(|id| format!("n{}", id)).collect();
+        let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let batch = RecordBatch::try_from_iter(vec![
+            (
+                "id",
+                Arc::new(arrow_array::Int64Array::from(ids)) as arrow_array::ArrayRef,
+            ),
+            (
+                "name",
+                Arc::new(StringArray::from(name_refs)) as arrow_array::ArrayRef,
+            ),
+        ])
+        .unwrap();
+        let schema = batch.schema();
+        let reader = RecordBatchIterator::new(vec![Ok(batch)].into_iter(), schema);
+        let params = WriteParams {
+            max_rows_per_file: 8,
+            ..Default::default()
+        };
+        Runtime::new()
+            .unwrap()
+            .block_on(Dataset::write(
+                reader,
+                out_path.to_str().unwrap(),
+                Some(params),
+            ))
+            .expect("write multi_frag.lance");
+
+        let ds = Runtime::new()
+            .unwrap()
+            .block_on(Dataset::open(out_path.to_str().unwrap()))
+            .expect("reopen multi_frag.lance");
+        let n_frags = ds.get_fragments().len();
+        assert!(
+            n_frags >= 8,
+            "expected at least 8 fragments, got {}",
+            n_frags
+        );
+        eprintln!(
+            "Wrote multi_frag.lance to {} with {} fragments",
+            out_path.display(),
+            n_frags
+        );
     }
 }
