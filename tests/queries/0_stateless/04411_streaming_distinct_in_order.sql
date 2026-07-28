@@ -1,5 +1,4 @@
--- Tags: no-parallel-replicas, no-darwin
--- no-darwin: STREAM reads are Linux-only (server raises SUPPORT_IS_DISABLED elsewhere).
+-- Tags: no-parallel-replicas
 -- A STREAM read returns parts in commit order, not sorting-key order, so DISTINCT/aggregation/
 -- LIMIT BY in order must not be applied to it. Before the fix the query plan optimizer requested
 -- read-in-order on the streaming read, which advertised a sorting-key order that did not hold and

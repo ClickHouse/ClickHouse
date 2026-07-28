@@ -165,18 +165,18 @@ Los ClickPipes de ABS usan dos rutas de red distintas para el descubrimiento de 
 
 ClickPipes proporciona valores predeterminados razonables que cubren los requisitos de la mayoría de los casos de uso. Si tu caso de uso requiere un ajuste adicional más preciso, puedes modificar la siguiente configuración:
 
-| Configuración                        | Valor predeterminado | Descripción                                                                                                                                             |
-| ------------------------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10GB                 | Número de bytes que se procesan en un único lote de inserción.                                                                                          |
-| `Max file count`                     | 100                  | Número máximo de archivos que se procesan en un único lote de inserción.                                                                                |
+| Configuración                        | Valor predeterminado | Descripción                                                                                                                                                |
+| ------------------------------------ | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB                 | Número de bytes que se procesan en un único lote de inserción.                                                                                             |
+| `Max file count`                     | 100                  | Número máximo de archivos que se procesan en un único lote de inserción.                                                                                   |
 | `Max threads`                        | auto(3)              | [Número máximo de hilos concurrentes](/es/reference/settings/session-settings#max_threads) para el procesamiento de archivos.                              |
 | `Max insert threads`                 | 1                    | [Número máximo de hilos de inserción concurrentes](/es/reference/settings/session-settings#max_insert_threads) para el procesamiento de archivos.          |
 | `Min insert block size bytes`        | 1GB                  | [Tamaño mínimo en bytes del bloque](/es/reference/settings/session-settings#min_insert_block_size_bytes) que puede insertarse en una tabla.                |
 | `Max download threads`               | 4                    | [Número máximo de hilos de descarga concurrentes](/es/reference/settings/session-settings#max_download_threads).                                           |
-| `Object storage polling interval`    | 30s                  | Configura el período máximo de espera antes de insertar datos en el clúster de ClickHouse.                                                              |
+| `Object storage polling interval`    | 30s                  | Configura el período máximo de espera antes de insertar datos en el clúster de ClickHouse.                                                                 |
 | `Parallel distributed insert select` | 2                    | [Configuración de Parallel distributed insert select](/es/reference/settings/session-settings#parallel_distributed_insert_select).                         |
 | `Parallel view processing`           | false                | Si se habilita el envío a vistas adjuntas [de forma concurrente en lugar de secuencial](/es/reference/settings/session-settings#parallel_view_processing). |
-| `Use cluster function`               | true                 | Si los archivos se procesan en paralelo en varios nodos.                                                                                                |
+| `Use cluster function`               | true                 | Si los archivos se procesan en paralelo en varios nodos.                                                                                                   |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Configuración avanzada de ClickPipes" size="lg" border />
 

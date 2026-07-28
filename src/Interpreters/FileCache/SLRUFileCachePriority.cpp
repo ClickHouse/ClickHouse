@@ -288,7 +288,7 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
 }
 
 bool SLRUFileCachePriority::collectCandidatesForEviction(
-    const EvictionInfo & eviction_info,
+    EvictionInfo & eviction_info,
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
     InvalidatedEntriesInfos & invalidated_entries,
@@ -413,7 +413,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
 /// TODO: currently this will find only releasable entries,
 /// but since we are only downgrading, then it does not matter.
 bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
-    const EvictionInfo & eviction_info,
+    EvictionInfo & eviction_info,
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
     InvalidatedEntriesInfos & invalidated_entries,
@@ -465,8 +465,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         state_guard.lock());
 
     const bool requires_eviction = probationary_eviction_info->requiresEviction();
-    /// FIXME: const_cast is a bad practice.
-    const_cast<EvictionInfo &>(eviction_info).addOrUpdate(std::move(probationary_eviction_info));
+    eviction_info.addOrUpdate(std::move(probationary_eviction_info));
     if (requires_eviction)
     {
         /// If not enough space - we need to "downgrade" lowest priority entries
@@ -548,7 +547,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     /// As PriorityGuard::WriteLock allows to only move elements,
     /// but not increment size of any of the queues,
     /// we move elements with zero size and increase the size later in a separate callback.
-    res.addAfterEvictWriteFunc([=, this](const CachePriorityGuard::WriteLock & lk) mutable
+    res.addAfterEvictWriteCallback([=, this](const CachePriorityGuard::WriteLock & lk) mutable
     {
         for (auto & [key, key_candidates] : *downgrade_candidates)
         {
@@ -580,7 +579,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     });
 
     /// Set incrementing size callback, as explained in the previous comment.
-    res.addAfterEvictStateFunc([=, this](const CacheStateGuard::Lock & lk)
+    res.addAfterEvictStateCallback([=, this](const CacheStateGuard::Lock & lk)
     {
         fiu_do_on(FailPoints::file_cache_slru_downgrade_fail_before_finalize,
         {
