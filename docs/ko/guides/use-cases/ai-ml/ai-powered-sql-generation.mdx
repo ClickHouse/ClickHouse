@@ -8,7 +8,7 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-ClickHouse 25.7부터 [ClickHouse Client](/ko/concepts/features/interfaces/cli)와 [clickhouse-local](/ko/concepts/features/tools-and-utilities/clickhouse-local)에서 자연어 설명을 SQL 쿼리로 변환하는 [AI 기반 기능](/ko/concepts/features/interfaces/cli#ai-sql-generation)을 사용할 수 있습니다. 이 기능을 사용하면 필요한 데이터를 일반 텍스트로 설명할 수 있고, 시스템이 이를 해당 SQL 문으로 변환합니다.
+ClickHouse 25.7부터 [ClickHouse Client](/ko/concepts/features/interfaces/cli)와 [clickhouse-local](/ko/concepts/features/tools-and-utilities/clickhouse-local)에서 자연어 설명을 SQL 쿼리로 변환하는 [AI 기반 기능](/ko/concepts/features/interfaces/client#ai-sql-generation)을 사용할 수 있습니다. 이 기능을 사용하면 필요한 데이터를 일반 텍스트로 설명할 수 있고, 시스템이 이를 해당 SQL 문으로 변환합니다.
 
 이 기능은 복잡한 SQL 구문에 익숙하지 않거나 탐색적 데이터 분석을 위해 쿼리를 빠르게 생성해야 할 때 특히 유용합니다. 표준 ClickHouse 테이블에서 작동하며, 필터링, 집계, 조인을 포함한 일반적인 쿼리 패턴을 지원합니다.
 
@@ -29,7 +29,7 @@ export ANTHROPIC_API_KEY=your_api_key
 export OPENAI_API_KEY=your_api_key
 ```
 
-또는 [설정 파일을 지정할 수 있습니다](/ko/concepts/features/interfaces/cli#ai-sql-generation-configuration).
+또는 [설정 파일을 지정할 수 있습니다](/ko/concepts/features/interfaces/client#ai-sql-generation-configuration).
 
 <div id="connecting-to-the-clickhouse-sql-playground">
   ## ClickHouse SQL playground에 연결하기

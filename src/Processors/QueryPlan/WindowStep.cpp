@@ -84,6 +84,11 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 
     assertBlocksHaveEqualStructure(pipeline.getHeader(), *output_header,
         "WindowStep transform for '" + window_description.window_name + "'");
+
+    /// Intentionally no `RuntimeDataflowStatisticsCollector` here: the window is computed on the
+    /// initiator, so the columns it appends are never shipped by replicas. Collecting statistics at
+    /// this point would count the window result as replica output and inflate the automatic
+    /// parallel-replicas cost model. See `supportsDataflowStatisticsCollection` in the header.
 }
 
 void WindowStep::describeActions(FormatSettings & settings) const
