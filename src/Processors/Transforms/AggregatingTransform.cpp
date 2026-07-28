@@ -1113,7 +1113,7 @@ void AggregatingTransform::initGenerate()
             /// disk-mergeable form by draining everything into the routing table now (the
             /// finish barrier guarantees a quiescent, uncontended sweep). The external branch
             /// below flushes it together with the other still-in-memory variants.
-            params->aggregator.drainStagedChunksEarly(shared, /*drain_everything=*/true);
+            params->aggregator.drainStagedChunksEarly(shared, AdaptiveDrainGoal::All);
         }
         if (shared.early_drain_started.load(std::memory_order_relaxed))
         {

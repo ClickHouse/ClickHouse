@@ -228,14 +228,14 @@ namespace
     }
 
     /// Emplace one staged key into the table. String-like keys were staged as raw characters
-    /// and are rebuilt here. `adopt_keys` selects the key ownership: at merge time the delayed
+    /// and are rebuilt here. `key_storage` selects the ownership: at merge time the delayed
     /// blocks are retained on the shared state until after the merged buckets are converted, so
     /// string-like keys are emplaced pointing into the staged bytes directly, with no copy; a
     /// pressure-time drain instead persists them into the arena, because freeing the blocks is
     /// its purpose. Fixed-size keys were staged as values either way.
     /// `table` is the bucket's own submap: the records were grouped by the same hash dispatch
     /// at staging time, so emplacing into it directly skips the per-record two-level routing.
-    template <typename Method, bool adopt_keys, typename Table>
+    template <typename Method, DB::AdaptiveKeyStorage key_storage, typename Table>
     void ALWAYS_INLINE emplaceStagedKey(
         Table & table,
         const char * key_pos,
@@ -247,7 +247,7 @@ namespace
     {
         if constexpr (std::is_same_v<typename Method::Key, std::string_view>)
         {
-            if constexpr (adopt_keys)
+            if constexpr (key_storage == DB::AdaptiveKeyStorage::BorrowFromChunk)
                 table.emplace(std::string_view(key_pos, key_size), it, inserted, routing_hash);
             else
                 table.emplace(DB::ArenaKeyHolder{std::string_view(key_pos, key_size), arena}, it, inserted, routing_hash);
@@ -260,7 +260,7 @@ namespace
             /// store a hash, which is exactly the range the staged hash was derived from.
             const auto key = PackedStringRef::build(
                 key_pos, key_size, [routing_hash](const char *, size_t) { return static_cast<UInt32>(routing_hash); });
-            if constexpr (adopt_keys)
+            if constexpr (key_storage == DB::AdaptiveKeyStorage::BorrowFromChunk)
                 table.emplace(key, it, inserted, routing_hash);
             else
                 table.emplace(DB::ArenaPackedStringHolder{key, arena}, it, inserted, routing_hash);
@@ -1988,7 +1988,7 @@ bool Aggregator::executeOnBlock(Columns columns,
                     && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
                 {
                     flushPendingChunks(*adaptive);
-                    drainStagedChunksEarly(*adaptive->session, /*drain_everything=*/false);
+                    drainStagedChunksEarly(*adaptive->session, AdaptiveDrainGoal::UntilLowWatermark);
                 }
 
                 /// Checking the constraints.
@@ -3005,7 +3005,7 @@ void Aggregator::drainAdaptiveBucketForMerge(
 
 #define M(NAME) \
     else if (dest.type == AggregatedDataVariants::Type::NAME) \
-        drained = drainAdaptiveBucketBacklog</*adopt_keys=*/true>( \
+        drained = drainAdaptiveBucketBacklog<AdaptiveKeyStorage::BorrowFromChunk>( \
             *dest.NAME, arena, backlog, bucket_index, records_available, places_scratch, is_cancelled);
 
     if (false) {} // NOLINT
@@ -3018,7 +3018,7 @@ void Aggregator::drainAdaptiveBucketForMerge(
     shared.undrained_records.fetch_sub(drained, std::memory_order_relaxed);
 }
 
-template <bool adopt_keys, typename Method>
+template <AdaptiveKeyStorage key_storage, typename Method>
 size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
     Method & method,
     Arena * arena,
@@ -3102,7 +3102,7 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
 
                 typename Method::Data::LookupResult it;
                 bool inserted = false;
-                emplaceStagedKey<Method, adopt_keys>(
+                emplaceStagedKey<Method, key_storage>(
                     impl,
                     block.key_bytes.data() + block.key_offsets[j],
                     block.key_offsets[j + 1] - block.key_offsets[j],
@@ -3119,7 +3119,7 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
         }
         else
         {
-            drainAdaptiveBucketImpl<adopt_keys>(method, arena, block, slice_begin, slice_end, places, bucket_index);
+            drainAdaptiveBucketImpl<key_storage>(method, arena, block, slice_begin, slice_end, places, bucket_index);
         }
 
         update_reserve(slice_end - slice_begin);
@@ -3129,7 +3129,7 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
     return drained;
 }
 
-template <bool adopt_keys, typename Method>
+template <AdaptiveKeyStorage key_storage, typename Method>
 void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
     Method & method,
     Arena * bucket_arena,
@@ -3160,7 +3160,7 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
         prefetch(j);
         typename Method::Data::LookupResult it;
         bool inserted = false;
-        emplaceStagedKey<Method, adopt_keys>(
+        emplaceStagedKey<Method, key_storage>(
             impl,
             block.key_bytes.data() + block.key_offsets[j],
             block.key_offsets[j + 1] - block.key_offsets[j],
@@ -3213,14 +3213,14 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
     }
 }
 
-void Aggregator::drainStagedChunksEarly(AdaptiveAggregationSession & shared, bool drain_everything) const
+void Aggregator::drainStagedChunksEarly(AdaptiveAggregationSession & shared, AdaptiveDrainGoal goal) const
 {
     /// Blocking on purpose: a producer over the memory trigger must not keep staging while the
     /// sweep sheds - pausing production here is the backpressure that makes the bound hold.
     /// Threads woken after another thread's sweep usually find memory back under the trigger
     /// and leave without work.
     std::unique_lock sweep_lock(shared.pressure_sweep_mutex);
-    if (!drain_everything
+    if (goal == AdaptiveDrainGoal::UntilLowWatermark
         && getCurrentQueryMemoryUsage() < static_cast<Int64>(params.max_bytes_before_external_group_by))
         return;
 
@@ -3282,7 +3282,7 @@ void Aggregator::drainStagedChunksEarly(AdaptiveAggregationSession & shared, boo
 
 #define M(NAME) \
     else if (routing.type == AggregatedDataVariants::Type::NAME) \
-        drained_records += drainAdaptiveBucketBacklog</*adopt_keys=*/false>( \
+        drained_records += drainAdaptiveBucketBacklog<AdaptiveKeyStorage::CopyToArena>( \
             *routing.NAME, arena, single, b, records, places_scratch, is_cancelled);
 
             if (false) {} // NOLINT
@@ -3292,7 +3292,7 @@ void Aggregator::drainStagedChunksEarly(AdaptiveAggregationSession & shared, boo
         single[0].reset();
         chunk.reset();
 
-        if (!drain_everything && getCurrentQueryMemoryUsage() < low_watermark)
+        if (goal == AdaptiveDrainGoal::UntilLowWatermark && getCurrentQueryMemoryUsage() < low_watermark)
             break;
 
         /// For a mostly-distinct key stream the transfer itself inflates memory (a staged

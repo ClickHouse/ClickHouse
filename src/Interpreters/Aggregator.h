@@ -99,6 +99,23 @@ using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflow
 /// and emplaced exactly once, by one thread, instead of once per thread that saw it.
 struct StagedChunkPreparation;
 
+/// Who owns a staged key once it is emplaced into a table: the merge-time drain borrows the
+/// chunk's bytes (the chunks are retained until after the conversion), while a pressure-time
+/// drain copies them into the bucket's arena, because freeing the chunks is its purpose.
+enum class AdaptiveKeyStorage
+{
+    BorrowFromChunk,
+    CopyToArena,
+};
+
+/// Why an early drain runs: the memory valve stops at its watermark and re-enqueues the rest,
+/// the finish path takes everything to put the backlogs into disk-mergeable form.
+enum class AdaptiveDrainGoal
+{
+    UntilLowWatermark,
+    All,
+};
+
 struct AdaptiveAggregationSession
 {
     static constexpr size_t NUM_BUCKETS = 256;
@@ -431,9 +448,9 @@ public:
     /// pressure valve calls it with a watermark: it stops once memory falls below it and
     /// re-enqueues what it did not drain; whenever the routing table reaches the spill floor
     /// while memory is still over the trigger, it spills mid-drain, so the transfer itself
-    /// cannot peak above the trigger. The finish path calls it with `drain_everything` to put
-    /// the backlogs into disk-mergeable form when a producer has spilled.
-    void drainStagedChunksEarly(AdaptiveAggregationSession & shared, bool drain_everything) const;
+    /// cannot peak above the trigger. The finish path calls it with `AdaptiveDrainGoal::All`
+    /// to put the backlogs into disk-mergeable form when a producer has spilled.
+    void drainStagedChunksEarly(AdaptiveAggregationSession & shared, AdaptiveDrainGoal goal) const;
 
     /** This array serves two purposes.
       *
@@ -756,11 +773,11 @@ private:
     /// Builds the staged chunk's shared preparation on its first drained bucket.
     void prepareStagedChunk(AdaptiveAggregationSession::StagedChunk & block) const;
 
-    /// Drains one bucket's backlog into `method.data.impls[bucket_index]`. `adopt_keys` selects
-    /// the key ownership: merge-time drains emplace keys pointing into the retained blocks,
-    /// while pressure-time drains persist them into the bucket's arena so the blocks can be
-    /// freed (the whole point of draining early).
-    template <bool adopt_keys, typename Method>
+    /// Drains one bucket's backlog into `method.data.impls[bucket_index]`. `key_storage`
+    /// selects the ownership: merge-time drains emplace keys pointing into the retained
+    /// chunks, while pressure-time drains persist them into the bucket's arena so the chunks
+    /// can be freed (the whole point of draining early).
+    template <AdaptiveKeyStorage key_storage, typename Method>
     size_t drainAdaptiveBucketBacklog(
         Method & method,
         Arena * arena,
@@ -771,7 +788,7 @@ private:
         std::atomic<bool> & is_cancelled) const;
 
     /// Applies one staged chunk's slice [slice_begin, slice_end) to the bucket's table.
-    template <bool adopt_keys, typename Method>
+    template <AdaptiveKeyStorage key_storage, typename Method>
     void drainAdaptiveBucketImpl(
         Method & method,
         Arena * bucket_arena,
