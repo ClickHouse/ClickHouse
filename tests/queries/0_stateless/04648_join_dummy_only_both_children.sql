@@ -61,15 +61,20 @@ SELECT count() FROM t1, t2, t3, t4, t5 WHERE (t1.b = t2.b) AND (t3.a = t4.a);
 
 SELECT 'shapes that keep real output columns';
 
--- Outer joins keep real columns on both sides, so no marker is minted and no name collides.
+-- Negative controls: the enclosing join's two child headers share no column name, so each name's
+-- queue holds exactly one input node and the mapping resolves identically before and after the fix.
+-- Minting is not conditioned on join kind: measured with `EXPLAIN input_headers = 1,
+-- keep_logical_steps = 1`, the next two shapes still mint `__join_result_dummy`, but only into the
+-- left child header (beside the real column `__table3.a`), while the right child carries
+-- `__table4.a`. The third shape mints no marker at all (`__table1.c` / `__table4.c`).
 SELECT count() FROM t1 LEFT JOIN t2 ON t1.b = t2.b, t3 LEFT JOIN t4 ON t3.a = t4.a
 SETTINGS query_plan_optimize_join_order_limit = 0;
 
 SELECT count() FROM t1 JOIN t2 ON t1.b = t2.b CROSS JOIN t3 JOIN t4 ON t3.a = t4.a
 SETTINGS query_plan_optimize_join_order_limit = 0;
 
--- A derived table's output column is renamed to an alias-qualified identifier (`x.c` / `y.c`), so
--- the enclosing join sees distinct names and each name's queue holds exactly one node.
+-- A derived table projects a real column, so the enclosing join's children are named after their
+-- own table expressions (measured: `__table1.c` and `__table4.c`) instead of the shared marker.
 SELECT count() FROM (SELECT count() AS c FROM t1, t2 WHERE t1.b = t2.b) AS x,
                     (SELECT count() AS c FROM t3, t4 WHERE t3.a = t4.a) AS y
 SETTINGS query_plan_optimize_join_order_limit = 0;
