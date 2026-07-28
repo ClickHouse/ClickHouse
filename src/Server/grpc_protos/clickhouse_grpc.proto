@@ -38,7 +38,8 @@ message ExternalTable {
    string format = 4;
 
    // Compression type used to compress `data`.
-   // Supported values: none, gzip(gz), deflate, brotli(br), lzma(xz), zstd(zst), lz4, bz2.
+   // Supported values: none, gzip(gz), deflate, brotli(br), lzma(xz), zstd(zst), lz4, bz2, snappy.
+   // For snappy, the wire format is selected by the `snappy_mode` setting (see `settings` below).
    string compression_type = 6;
 
    // Settings for executing that insertion, applied after QueryInfo.settings.

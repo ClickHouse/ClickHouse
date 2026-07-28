@@ -532,6 +532,7 @@ CREATE TABLE system.parts
     `name` String,
     `uuid` UUID,
     `part_type` String,
+    `part_storage_type` String,
     `active` UInt8,
     `marks` UInt64,
     `rows` UInt64,
