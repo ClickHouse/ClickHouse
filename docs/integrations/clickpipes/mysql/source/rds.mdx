@@ -128,6 +128,16 @@ Connect to your RDS MySQL instance as an admin user and execute the following co
     GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
     ```
 
+### Using IAM authentication (optional) {#iam-authentication}
+
+Instead of a password, you can authenticate the ClickPipes user via AWS IAM role-based access. Create the user as follows, then grant it the same schema and replication privileges shown above:
+
+```sql
+CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
+```
+
+See [AWS IAM DB authentication (RDS/Aurora)](/integrations/clickpipes/postgres/auth) for the full steps to set up the IAM role and policy required for ClickPipes to authenticate this way.
+
 ## Configure network access {#configure-network-access}
 
 ### IP-based access control {#ip-based-access-control}

@@ -28,50 +28,92 @@ namespace ErrorCodes
 void registerTableFunctionFilesystem(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFilesystem>(
-        {
-            .description = R"(
-Provides access to file system to list files and return their metadata and contents. Recursively iterates directories.
+        {.description = R"DOCS_MD(
+import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-## Access control
+<CloudNotSupportedBadge/>
 
-In server mode, the function is restricted to the `user_files` directory (controlled by the `user_files_path` server config).
-Paths are resolved relative to `user_files`. Symlinks whose resolved path leaves the `user_files` subtree are skipped during traversal.
-In `clickhouse-local` mode, any path on the local filesystem is accessible.
+Recursively iterates a directory and returns a table with file metadata (paths, sizes, types, permissions, modification times) and, optionally, file contents.
 
-The `FILE` source access type is required.
+In `clickhouse-server` mode, the path must be within the [user_files_path](/reference/settings/server-settings/settings#user_files_path) directory. Symlinks inside `user_files_path` that point outside of it are followed, but only entries whose path (through the symlink) starts with `user_files_path` are returned.
 
-## Arguments
+In `clickhouse-local` mode, there are no path restrictions.
 
-- With no arguments, the function lists all files under `user_files`.
-- With a single argument, it accepts an absolute or relative path. Relative paths are resolved against `user_files`.
+## Syntax {#syntax}
 
-## Columns
+```sql
+filesystem([path])
+```
 
-- `path` (`String`) — parent directory path.
-- `name` (`String`) — file name (aliased as `file`).
-- `type` (`Enum8`) — file type: `'none'`, `'not_found'`, `'regular'`, `'directory'`, `'symlink'`, `'block'`, `'character'`, `'fifo'`, `'socket'`, `'unknown'`.
-- `size` (`Nullable(UInt64)`) — file size in bytes (NULL for non-regular files).
-- `depth` (`UInt16`) — depth relative to the root path (0 for the root and its direct children).
-- `modification_time` (`Nullable(DateTime64(6))`) — last modification time with microsecond precision.
-- `is_symlink` (`Bool`) — whether the entry is a symbolic link.
-- `content` (`Nullable(String)`) — file content for regular files, NULL otherwise.
-- `owner_read`, `owner_write`, `owner_exec`, `group_read`, `group_write`, `group_exec`, `others_read`, `others_write`, `others_exec`, `set_gid`, `set_uid`, `sticky_bit` (`Bool`) — POSIX permission bits.
+## Arguments {#arguments}
 
-## Optimizations
+| Parameter | Description |
+|-----------|-------------|
+| `path`    | The directory to list. Can be an absolute path (must be inside `user_files_path` in server mode) or a path relative to `user_files_path`. If empty or omitted, defaults to `user_files_path`. |
 
-- **Lazy content reading**: the `content` column is only read when explicitly selected. Queries that do not select `content` avoid file I/O entirely.
-- **Predicate pushdown on metadata**: filters on cheap columns (`path`, `name`, `depth`, `type`, `is_symlink`) are evaluated before reading file content, size, or modification time.
-- **Parallel traversal**: multiple threads traverse the directory tree concurrently via a shared bounded queue, enabling fast scanning of large directory trees.
-- **Streaming LIMIT**: results are streamed as the traversal proceeds, so a `LIMIT` returns once enough rows have been emitted. Note: each individual directory is enumerated in full when first visited (children are pushed into the traversal queue eagerly), so `LIMIT` cannot interrupt scanning of a single very large directory.
-)",
-            .examples
-            {
-                {"List all files under user_files", "SELECT name, size FROM filesystem()", ""},
-                {"List files with a relative path", "SELECT name, size FROM filesystem('my_data')", ""},
-                {"List files with an absolute path", "SELECT * FROM filesystem('/var/lib/clickhouse/user_files')", ""},
-            },
-            .category = FunctionDocumentation::Category::TableFunction
-        }, {}, TableFunctionFactory::Case::Insensitive);
+## Returned columns {#returned_columns}
+
+| Column              | Type                       | Description |
+|---------------------|----------------------------|-------------|
+| `path`              | `String`                   | Directory containing the entry (does not include the file/directory name itself). |
+| `name`              | `String`                   | File or directory name (the last component of the path). |
+| `file`              | `String` (ALIAS of `name`) | Alias for the `name` column. |
+| `type`              | `Enum8`                    | File type: `'none'`, `'not_found'`, `'regular'`, `'directory'`, `'symlink'`, `'block'`, `'character'`, `'fifo'`, `'socket'`, `'unknown'`. |
+| `size`              | `Nullable(UInt64)`         | File size in bytes (for regular files). `NULL` for non-regular files (directories, symlinks, etc.) and on error. |
+| `depth`             | `UInt16`                   | Recursion depth. `0` for the queried directory itself and its immediate children, `1` for entries one level deeper, and so on. |
+| `modification_time` | `Nullable(DateTime64(6))`  | Last modification time with microsecond precision. `NULL` on error. |
+| `is_symlink`        | `Bool`                     | Whether the entry is a symbolic link. |
+| `content`           | `Nullable(String)`         | File contents (for regular files). `NULL` for non-regular files (directories, symlinks, etc.). Read errors raise an exception. Reading this column triggers actual file I/O, so omit it if not needed. |
+| `owner_read`        | `Bool`                     | Owner has read permission. |
+| `owner_write`       | `Bool`                     | Owner has write permission. |
+| `owner_exec`        | `Bool`                     | Owner has execute permission. |
+| `group_read`        | `Bool`                     | Group has read permission. |
+| `group_write`       | `Bool`                     | Group has write permission. |
+| `group_exec`        | `Bool`                     | Group has execute permission. |
+| `others_read`       | `Bool`                     | Others have read permission. |
+| `others_write`      | `Bool`                     | Others have write permission. |
+| `others_exec`       | `Bool`                     | Others have execute permission. |
+| `set_gid`           | `Bool`                     | Set-GID bit. |
+| `set_uid`           | `Bool`                     | Set-UID bit. |
+| `sticky_bit`        | `Bool`                     | Sticky bit. |
+
+Only columns actually used in the query are computed, so selecting a subset of columns (especially omitting `content`) is efficient.
+
+## Examples {#examples}
+
+### List files in user_files {#list-files}
+
+```sql
+SELECT name, type, size, depth
+FROM filesystem()
+ORDER BY name;
+```
+
+### Find large files {#find-large-files}
+
+```sql
+SELECT path, name, size
+FROM filesystem()
+WHERE type = 'regular' AND size > 1000000
+ORDER BY size DESC;
+```
+
+### Read file contents {#read-contents}
+
+```sql
+SELECT name, content
+FROM filesystem('my_directory')
+WHERE name LIKE '%.csv';
+```
+
+### List only immediate children {#list-immediate}
+
+```sql
+SELECT name, type
+FROM filesystem('my_directory')
+WHERE depth = 0;
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {}, TableFunctionFactory::Case::Insensitive);
 }
 
 void TableFunctionFilesystem::parseArguments(const ASTPtr & ast_function, ContextPtr context)

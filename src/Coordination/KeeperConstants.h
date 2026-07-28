@@ -24,6 +24,7 @@ const String keeper_config_path = keeper_system_path + "/config";
 const String keeper_availability_zone_path = keeper_system_path + "/availability_zone";
 const Int64 keeper_internal_get_session_id = -1;
 const Int64 keeper_internal_ttl_garbage_collector_session_id = -2;
+const Int64 keeper_internal_container_garbage_collector_session_id = -3;
 
 /// Maximum allowed TTL value in milliseconds, matching ZooKeeper's
 /// `EphemeralType.TTL.maxValue()`. Prevents `time + ttl` from overflowing

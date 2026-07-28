@@ -19,6 +19,8 @@ Service producers publish their applications to consumers by creating Private Se
 <Image img="/images/cloud/security/gcp-psc-overview.webp" size="lg" alt="Overview of Private Service Connect" border />
 
 <Warning>
+GCP Private Service Connect supports only connections initiated from your GCP VPC to ClickHouse Cloud. It can't be used for connections initiated from ClickHouse Cloud to services in your VPC, such as a [private database](#connecting-to-a-remote-database).
+
 By default, a ClickHouse service isn't available over a Private Service connection even if the PSC connection is approved and established; you need to explicitly add the PSC ID to the allow list on an instance level by completing the [step](#add-endpoint-id-to-services-allow-list) below.
 </Warning>
 
@@ -413,13 +415,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X GET -H "Content-Type: appl
 
 ### Connecting to a remote database {#connecting-to-a-remote-database}
 
-Let's say you're trying to use the [MySQL](/reference/functions/table-functions/mysql) or [PostgreSQL](/reference/functions/table-functions/postgresql) table functions in ClickHouse Cloud and connect to your database hosted in GCP. GCP PSC can't be used to enable this connection securely. PSC is a one-way, unidirectional connection. It allows your internal network or GCP VPC to connect securely to ClickHouse Cloud, but it doesn't allow ClickHouse Cloud to connect to your internal network.
-
 According to the [GCP Private Service Connect documentation](https://cloud.google.com/vpc/docs/private-service-connect):
 
 > Service-oriented design: Producer services are published through load balancers that expose a single IP address to the consumer VPC network. Consumer traffic that accesses producer services is unidirectional and can only access the service IP address, rather than having access to an entire peered VPC network.
 
-To do this, configure your GCP VPC firewall rules to allow connections from ClickHouse Cloud to your internal/private database service. Check the [default egress IP addresses for ClickHouse Cloud regions](/products/cloud/guides/data-sources/cloud-endpoints-api), along with the [available static IP addresses](https://api.clickhouse.cloud/static-ips.json).
+To connect [MySQL](/reference/functions/table-functions/mysql) or [PostgreSQL](/reference/functions/table-functions/postgresql) table functions in ClickHouse Cloud to a database hosted in your GCP VPC, configure your GCP VPC firewall rules to allow connections from ClickHouse Cloud. Check the [default egress IP addresses for ClickHouse Cloud regions](/products/cloud/guides/data-sources/cloud-endpoints-api), along with the [available static IP addresses](https://api.clickhouse.cloud/static-ips.json).
 
 ## More information {#more-information}
 

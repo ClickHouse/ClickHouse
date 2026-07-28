@@ -951,6 +951,58 @@ def test_postgres_insert_boolean_array(started_cluster):
     cursor.execute("DROP TABLE test_bool_array")
 
 
+def test_postgres_read_boolean_array(started_cluster):
+    """Test for https://github.com/ClickHouse/ClickHouse/issues/62544
+    Reading a PostgreSQL BOOLEAN[] column through the `PostgreSQL` engine used to
+    fail with `pqxx::conversion_error: Could not convert string to t: 't'` because
+    the array parser did not understand PostgreSQL's 't'/'f' boolean text format.
+    The rows below are inserted directly in PostgreSQL (as in the issue), so the
+    values arrive over the wire exactly as '{t,t,t,f,f,f,t,t}'.
+    """
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_bool_read")
+    cursor.execute(
+        "CREATE TABLE test_bool_read (id integer, b boolean, booleans boolean[])"
+    )
+    cursor.execute(
+        "INSERT INTO test_bool_read VALUES "
+        "(1, 't', '{t,t,t,f,f,f,t,t}'), "
+        "(2, 'f', '{f,f}'), "
+        "(3, NULL, '{t,NULL,f}'), "
+        "(4, 't', NULL)"
+    )
+
+    table_func = f"postgresql('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres', 'test_bool_read', 'postgres', '{pg_pass}')"
+
+    # Reading through a `PostgreSQL` engine table with an explicit Array(Bool)
+    # schema (the exact form from the issue).
+    node1.query(
+        f"""CREATE TABLE test.test_bool_read (id Int32, b Bool, booleans Array(Bool))
+            ENGINE = PostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres', 'test_bool_read', 'postgres', '{pg_pass}')"""
+    )
+    result = node1.query("SELECT * FROM test.test_bool_read ORDER BY id")
+    expected = (
+        "1\ttrue\t[true,true,true,false,false,false,true,true]\n"
+        "2\tfalse\t[false,false]\n"
+        "3\tfalse\t[true,false,false]\n"
+        "4\ttrue\t[]\n"
+    )
+    assert result == expected
+
+    # Reading through the table function with automatic schema inference maps the
+    # boolean array to Array(Nullable(UInt8)) and keeps NULL array elements.
+    result = node1.query(f"SELECT * FROM {table_func} ORDER BY id")
+    expected = (
+        "1\t1\t[1,1,1,0,0,0,1,1]\n"
+        "2\t0\t[0,0]\n"
+        "3\t\\N\t[1,NULL,0]\n"
+        "4\t1\t[]\n"
+    )
+    assert result == expected
+
+    cursor.execute("DROP TABLE test_bool_read")
+
+
 def test_postgres_date32(started_cluster):
     """Test that PostgreSQL DATE values outside the Date (UInt16) range are correctly read.
 

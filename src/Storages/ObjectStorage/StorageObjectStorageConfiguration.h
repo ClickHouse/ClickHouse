@@ -175,7 +175,12 @@ public:
         size_t,
         FormatParserSharedResourcesPtr,
         FormatFilterInfoPtr,
-        bool) const { return std::nullopt; }
+        bool,
+        std::optional<size_t> limit = {}) const
+    {
+        (void)limit;
+        return std::nullopt;
+    }
 
     virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 
@@ -339,6 +344,14 @@ public:
     /// S3 client build can downgrade restricted server-managed credentials to anonymous instead of aborting
     /// startup (see `getClient` and the `s3_load_table_anonymously_if_credentials_restricted` server setting).
     bool is_loading_from_existing_metadata = false;
+
+    /// False when the storage is instantiated from anything other than a user-issued `CREATE`
+    /// (ATTACH, server startup, RESTORE, replicated-DDL replay). `initPartitionStrategy` must not
+    /// apply the `file_like_engine_default_partition_strategy` default to such tables: a pre-26.6
+    /// table with a `{_partition_id}` path was created under the implicit wildcard strategy, and
+    /// re-deriving `hive` from the current default on ATTACH would refuse to load it and abort
+    /// server startup/upgrade. Defaults to true so table functions keep strict validation.
+    bool is_create_query = true;
 
     /// Set for server-internal tables (e.g. the system log-pipeline S3Queue tables) so their S3 client build
     /// always downgrades restricted server-managed credentials to anonymous instead of aborting, even when the

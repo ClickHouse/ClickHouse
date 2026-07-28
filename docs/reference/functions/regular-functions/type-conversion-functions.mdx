@@ -242,8 +242,8 @@ SELECT accurateCast(42, 'UInt16')
 
 ```response title=Response
 ┌─accurateCast(42, 'UInt16')─┐
-│                        42 │
-└───────────────────────────┘
+│                         42 │
+└────────────────────────────┘
 ```
 
 **String to number**
@@ -412,12 +412,9 @@ FROM numbers(3)
 
 ```response title=Response
 ┌─formatRow('CSV', number, 'good')─┐
-│ 0,"good"
-                         │
-│ 1,"good"
-                         │
-│ 2,"good"
-                         │
+│ 0,"good"                        ↴│
+│ 1,"good"                        ↴│
+│ 2,"good"                        ↴│
 └──────────────────────────────────┘
 ```
 
@@ -431,15 +428,15 @@ SETTINGS format_custom_result_before_delimiter='<prefix>\n', format_custom_resul
 
 ```response title=Response
 ┌─formatRow('CustomSeparated', number, 'good')─┐
-│ <prefix>
-0    good
-<suffix>                   │
-│ <prefix>
-1    good
-<suffix>                   │
-│ <prefix>
-2    good
-<suffix>                   │
+│ <prefix>                                    ↴│
+│↳0	good                                     ↴│
+│↳<suffix>                                     │
+│ <prefix>                                    ↴│
+│↳1	good                                     ↴│
+│↳<suffix>                                     │
+│ <prefix>                                    ↴│
+│↳2	good                                     ↴│
+│↳<suffix>                                     │
 └──────────────────────────────────────────────┘
 ```
 
@@ -830,7 +827,7 @@ Introduced in: v24.11.0
 Parses a date and time string with sub-second precision according to a MySQL date format string.
 
 This function is the inverse of [`formatDateTime`](/reference/functions/regular-functions/date-time-functions) for DateTime64.
-It parses a String argument using a format String. Returns a DateTime64 type which can represent dates from 1900 to 2299 with sub-second precision.
+It parses a String argument using a format String. Returns a DateTime64 type which can represent dates from 0000 to 9999 with sub-second precision (high precisions cover a narrower range because the value is stored in an `Int64` number of ticks: precision 8 reaches about 4892 and precision 9 spans 1677 to 2262).
     
 
 **Syntax**
@@ -859,8 +856,8 @@ SELECT parseDateTime64('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
 
 ```response title=Response
 ┌─parseDateTime64('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
-│                                       2025-01-04 23:00:00.123       │
-└─────────────────────────────────────────────────────────────────────┘
+│                                         2025-01-04 23:00:00.123000 │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 ## parseDateTime64BestEffort {#parseDateTime64BestEffort}
@@ -1107,7 +1104,7 @@ Introduced in: v24.10.0
 Parses a date and time string with sub-second precision according to a Joda date format string.
 
 This function is the inverse of [`formatDateTimeInJodaSyntax`](/reference/functions/regular-functions/date-time-functions#formatDateTimeInJodaSyntax) for DateTime64.
-It parses a String argument using a Joda-style format String. Returns a DateTime64 type which can represent dates from 1900 to 2299 with sub-second precision.
+It parses a String argument using a Joda-style format String. Returns a DateTime64 type which can represent dates from 0000 to 9999 with sub-second precision (high precisions cover a narrower range because the value is stored in an `Int64` number of ticks: precision 8 reaches about 4892 and precision 9 spans 1677 to 2262).
 
 Refer to [Joda Time documentation](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) for the format patterns.
     
@@ -1138,8 +1135,8 @@ SELECT parseDateTime64InJodaSyntax('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:
 
 ```response title=Response
 ┌─parseDateTime64InJodaSyntax('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
-│                                                          2025-01-04 23:00:00.123   │
-└────────────────────────────────────────────────────────────────────────────────────┘
+│                                                           2025-01-04 23:00:00.123 │
+└───────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## parseDateTime64InJodaSyntaxOrNull {#parseDateTime64InJodaSyntaxOrNull}
@@ -1175,8 +1172,8 @@ SELECT parseDateTime64InJodaSyntaxOrNull('2025-01-04 23:00:00.123', 'yyyy-MM-dd 
 
 ```response title=Response
 ┌─parseDateTime64InJodaSyntaxOrNull('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
-│                                                             2025-01-04 23:00:00.123      │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
+│                                                                 2025-01-04 23:00:00.123 │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## parseDateTime64InJodaSyntaxOrZero {#parseDateTime64InJodaSyntaxOrZero}
@@ -1212,8 +1209,8 @@ SELECT parseDateTime64InJodaSyntaxOrZero('2025-01-04 23:00:00.123', 'yyyy-MM-dd 
 
 ```response title=Response
 ┌─parseDateTime64InJodaSyntaxOrZero('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
-│                                                              2025-01-04 23:00:00.123     │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
+│                                                                 2025-01-04 23:00:00.123 │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## parseDateTime64OrNull {#parseDateTime64OrNull}
@@ -1249,8 +1246,8 @@ SELECT parseDateTime64OrNull('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
 
 ```response title=Response
 ┌─parseDateTime64OrNull('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
-│                                            2025-01-04 23:00:00.123        │
-└───────────────────────────────────────────────────────────────────────────┘
+│                                               2025-01-04 23:00:00.123000 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## parseDateTime64OrZero {#parseDateTime64OrZero}
@@ -1286,8 +1283,8 @@ SELECT parseDateTime64OrZero('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
 
 ```response title=Response
 ┌─parseDateTime64OrZero('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
-│                                             2025-01-04 23:00:00.123       │
-└───────────────────────────────────────────────────────────────────────────┘
+│                                               2025-01-04 23:00:00.123000 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## parseDateTimeBestEffort {#parseDateTimeBestEffort}
@@ -1615,8 +1612,8 @@ SELECT parseDateTimeInJodaSyntax('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')
 
 ```response title=Response
 ┌─parseDateTimeInJodaSyntax('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
-│                                                      2025-01-04 23:00:00 │
-└──────────────────────────────────────────────────────────────────────────┘
+│                                                     2025-01-04 23:00:00 │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## parseDateTimeInJodaSyntaxOrNull {#parseDateTimeInJodaSyntaxOrNull}
@@ -1652,8 +1649,8 @@ SELECT parseDateTimeInJodaSyntaxOrNull('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:
 
 ```response title=Response
 ┌─parseDateTimeInJodaSyntaxOrNull('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
-│                                                         2025-01-04 23:00:00    │
-└────────────────────────────────────────────────────────────────────────────────┘
+│                                                           2025-01-04 23:00:00 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## parseDateTimeInJodaSyntaxOrZero {#parseDateTimeInJodaSyntaxOrZero}
@@ -1689,8 +1686,8 @@ SELECT parseDateTimeInJodaSyntaxOrZero('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:
 
 ```response title=Response
 ┌─parseDateTimeInJodaSyntaxOrZero('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
-│                                                          2025-01-04 23:00:00   │
-└────────────────────────────────────────────────────────────────────────────────┘
+│                                                           2025-01-04 23:00:00 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## parseDateTimeOrNull {#parseDateTimeOrNull}
@@ -1774,6 +1771,7 @@ SELECT parseDateTimeOrZero('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
 Introduced in: v1.1.0
 
 Uses the same source in-memory bytes sequence for the provided value `x` and reinterprets it to the destination type.
+When the destination type is `String`, a source `Array` is supported only if its element type is fixed size and contiguous in memory (for example, `Array(UInt8)` or `Array(FixedString(2))`); its element bytes are copied verbatim in their native in-memory order, so the result can be reinterpreted back to the original `Array` type on any architecture. Arrays whose elements are variable-length (for example, `Array(String)`) or nullable (for example, `Array(Nullable(Int32))`) are not supported.
     
 
 **Syntax**
@@ -1784,7 +1782,7 @@ reinterpret(x, type)
 
 **Arguments**
 
-- `x` — Any type. [`Any`](/reference/data-types/index)
+- `x` — Value to reinterpret. When reinterpreting to `String`, a source `Array` must have fixed-size, contiguous elements. [`Any`](/reference/data-types/index)
 - `type` — Destination type. If it is an array, then the array element type must be a fixed length type. [`String`](/reference/data-types/string)
 
 **Returned value**
@@ -1817,6 +1815,18 @@ SELECT reinterpret(x'3108b4403108d4403108b4403108d440', 'Array(Float32)') AS str
 ┌─string_to_array_of_Float32─┐
 │ [5.626,6.626,5.626,6.626]  │
 └────────────────────────────┘
+```
+
+**Array to String example**
+
+```sql title=Query
+SELECT hex(reinterpret([toUInt8(1), toUInt8(2), toUInt8(255)]::Array(UInt8), 'String')) AS array_of_UInt8_to_string
+```
+
+```response title=Response
+┌─array_of_UInt8_to_string─┐
+│ 0102FF                   │
+└──────────────────────────┘
 ```
 
 ## reinterpretAsDate {#reinterpretAsDate}
@@ -2243,8 +2253,9 @@ SELECT
 
 Introduced in: v1.1.0
 
-Reinterprets the input value as a string (assuming little endian order).
-Null bytes at the end are ignored, for example, the function returns for UInt32 value 255 a string with a single character.
+Reinterprets the input value as a string.
+For scalar values, the byte order is normalized to little endian, and null bytes at the end are ignored, for example, the function returns for UInt32 value 255 a string with a single character.
+For an `Array` of fixed-size elements, the element bytes are copied verbatim in their native in-memory order, without trimming trailing zero bytes and without normalizing to little endian, so the result can be reinterpreted back to the original `Array` type on any architecture.
     
 
 **Syntax**
@@ -2255,7 +2266,7 @@ reinterpretAsString(x)
 
 **Arguments**
 
-- `x` — Value to reinterpret to string. [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime)
+- `x` — Value to reinterpret to string. [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime) or [`Array`](/reference/data-types/array)
 
 **Returned value**
 
@@ -2275,6 +2286,18 @@ SELECT
 ┌─reinterpretAsString(toDateTime('1970-01-01 01:01:05'))─┬─reinterpretAsString(toDate('1970-03-07'))─┐
 │ A                                                      │ A                                         │
 └────────────────────────────────────────────────────────┴───────────────────────────────────────────┘
+```
+
+**Array to String example**
+
+```sql title=Query
+SELECT hex(reinterpretAsString([toUInt8(1), toUInt8(2), toUInt8(255)]::Array(UInt8))) AS array_of_UInt8_to_string
+```
+
+```response title=Response
+┌─array_of_UInt8_to_string─┐
+│ 0102FF                   │
+└──────────────────────────┘
 ```
 
 ## reinterpretAsUInt128 {#reinterpretAsUInt128}
@@ -3024,6 +3047,7 @@ Introduced in: v1.1.0
 
 Converts an input value to a value of type `Date` but returns `NULL` if an invalid argument is received.
 The same as [`toDate`](#toDate) but returns `NULL` if an invalid argument is received.
+An integer argument is interpreted the same way as by `toDate` (a number of days since 1970-01-01 if it does not exceed 65535, a Unix timestamp otherwise), and produces `NULL` if it is out of range of the `Date` type.
     
 
 **Syntax**
@@ -3034,7 +3058,7 @@ toDateOrNull(x)
 
 **Arguments**
 
-- `x` — A string representation of a date. [`String`](/reference/data-types/string)
+- `x` — A string representation of a date, or an integer number of days or a Unix timestamp. [`String`](/reference/data-types/string) or [`(U)Int8/16/32/64`](/reference/data-types/int-uint)
 
 **Returned value**
 
@@ -3050,8 +3074,8 @@ SELECT toDateOrNull('2025-12-30'), toDateOrNull('invalid')
 
 ```response title=Response
 ┌─toDateOrNull('2025-12-30')─┬─toDateOrNull('invalid')─┐
-│                 2025-12-30 │                   ᴺᵁᴸᴸ │
-└────────────────────────────┴────────────────────────┘
+│                 2025-12-30 │                    ᴺᵁᴸᴸ │
+└────────────────────────────┴─────────────────────────┘
 ```
 
 ## toDateOrZero {#toDateOrZero}
@@ -3172,9 +3196,9 @@ SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('20255-01-01 00:00:00.000', 3))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)                                          │
-└─────────────────────────┴────────────────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
 ```
 
 **As a decimal with precision**
@@ -3186,12 +3210,12 @@ SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64(1735689600.000, 3))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)                            │
-└─────────────────────────┴──────────────────────────────────────────┘
-┌───────────────────value─┬─toTypeName(toDateTime64(1546300800000, 3))─┐
-│ 2282-12-31 00:00:00.000 │ DateTime64(3)                              │
-└─────────────────────────┴────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2299-12-31 23:59:59.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
 ```
 
 **With a timezone**
@@ -3323,17 +3347,20 @@ Introduced in: v20.1.0
 
 Converts an input value to a value of type `DateTime64` but returns `NULL` if an invalid argument is received.
 The same as `toDateTime64` but returns `NULL` if an invalid argument is received.
+An integer argument is interpreted as a Unix timestamp in whole seconds and produces `NULL` if it is out of range of the `DateTime64` type.
     
 
 **Syntax**
 
 ```sql
-toDateTime64OrNull(x)
+toDateTime64OrNull(x[, precision[, timezone]])
 ```
 
 **Arguments**
 
-- `x` — A string representation of a date with time and subsecond precision. [`String`](/reference/data-types/string)
+- `x` — A string representation of a date with time and subsecond precision, or an integer Unix timestamp. [`String`](/reference/data-types/string) or [`(U)Int8/16/32/64`](/reference/data-types/int-uint)
+- `precision` — Optional. The subsecond precision of the returned value. [`UInt8`](/reference/data-types/int-uint)
+- `timezone` — Optional. Time zone of the returned value. [`String`](/reference/data-types/string)
 
 **Returned value**
 
@@ -3349,8 +3376,8 @@ SELECT toDateTime64OrNull('2025-12-30 13:44:17.123'), toDateTime64OrNull('invali
 
 ```response title=Response
 ┌─toDateTime64OrNull('2025-12-30 13:44:17.123')─┬─toDateTime64OrNull('invalid')─┐
-│                         2025-12-30 13:44:17.123 │                          ᴺᵁᴸᴸ │
-└─────────────────────────────────────────────────┴───────────────────────────────┘
+│                       2025-12-30 13:44:17.123 │                          ᴺᵁᴸᴸ │
+└───────────────────────────────────────────────┴───────────────────────────────┘
 ```
 
 ## toDateTime64OrZero {#toDateTime64OrZero}
@@ -3390,8 +3417,8 @@ SELECT toDateTime64OrZero('2025-12-30 13:44:17.123'), toDateTime64OrZero('invali
 
 ```response title=Response
 ┌─toDateTime64OrZero('2025-12-30 13:44:17.123')─┬─toDateTime64OrZero('invalid')─┐
-│                         2025-12-30 13:44:17.123 │             1970-01-01 00:00:00.000 │
-└─────────────────────────────────────────────────┴─────────────────────────────────────┘
+│                       2025-12-30 13:44:17.123 │       1970-01-01 00:00:00.000 │
+└───────────────────────────────────────────────┴───────────────────────────────┘
 ```
 
 ## toDateTimeOrDefault {#toDateTimeOrDefault}
@@ -3445,17 +3472,19 @@ Introduced in: v1.1.0
 
 Converts an input value to a value of type `DateTime` but returns `NULL` if an invalid argument is received.
 The same as [`toDateTime`](#toDateTime) but returns `NULL` if an invalid argument is received.
+An integer argument is interpreted as a Unix timestamp and produces `NULL` if it is out of range of the `DateTime` type.
     
 
 **Syntax**
 
 ```sql
-toDateTimeOrNull(x)
+toDateTimeOrNull(x[, timezone])
 ```
 
 **Arguments**
 
-- `x` — A string representation of a date with time. [`String`](/reference/data-types/string)
+- `x` — A string representation of a date with time, or an integer Unix timestamp. [`String`](/reference/data-types/string) or [`(U)Int8/16/32/64`](/reference/data-types/int-uint)
+- `timezone` — Optional. Time zone of the returned value. [`String`](/reference/data-types/string)
 
 **Returned value**
 
@@ -3473,6 +3502,18 @@ SELECT toDateTimeOrNull('2025-12-30 13:44:17'), toDateTimeOrNull('invalid')
 ┌─toDateTimeOrNull('2025-12-30 13:44:17')─┬─toDateTimeOrNull('invalid')─┐
 │                     2025-12-30 13:44:17 │                        ᴺᵁᴸᴸ │
 └─────────────────────────────────────────┴─────────────────────────────┘
+```
+
+**Integer argument with a time zone**
+
+```sql title=Query
+SELECT toDateTimeOrNull(1583851242, 'Asia/Shanghai'), toDateTimeOrNull(4294967296)
+```
+
+```response title=Response
+┌─toDateTimeOrNull(1583851242, 'Asia/Shanghai')─┬─toDateTimeOrNull(4294967296)─┐
+│                           2020-03-10 22:40:42 │                         ᴺᵁᴸᴸ │
+└───────────────────────────────────────────────┴──────────────────────────────┘
 ```
 
 ## toDateTimeOrZero {#toDateTimeOrZero}
@@ -6791,7 +6832,7 @@ SELECT
 ```
 
 ```response title=Response
-┌─toStringCutToZero('hello')─┬─toStringCutToZero('hello\\0world')─┐
+┌─toStringCutToZero('hello')─┬─toStringCutToZero('hello\0world')─┐
 │ hello                      │ hello                             │
 └────────────────────────────┴───────────────────────────────────┘
 ```
@@ -6986,8 +7027,8 @@ SELECT toTime64OrZero('12:30:45.123'), toTime64OrZero('invalid')
 
 ```response title=Response
 ┌─toTime64OrZero('12:30:45.123')─┬─toTime64OrZero('invalid')─┐
-│                   12:30:45.123 │             00:00:00.000 │
-└────────────────────────────────┴──────────────────────────┘
+│                   12:30:45.123 │              00:00:00.000 │
+└────────────────────────────────┴───────────────────────────┘
 ```
 
 ## toTimeOrNull {#toTimeOrNull}
@@ -8508,8 +8549,8 @@ SELECT toUnixTimestamp64Micro(dt64);
 
 ```response title=Response
 ┌─toUnixTimestamp64Micro(dt64)─┐
-│               1739489491011123 │
-└────────────────────────────────┘
+│             1739489491011123 │
+└──────────────────────────────┘
 ```
 
 ## toUnixTimestamp64Milli {#toUnixTimestamp64Milli}

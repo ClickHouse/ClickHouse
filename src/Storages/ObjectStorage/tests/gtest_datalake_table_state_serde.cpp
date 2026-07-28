@@ -4,7 +4,9 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
+#include <Storages/ObjectStorage/DataLakes/Lance/LanceDataObjectInfo.h>
 #include <Core/ProtocolDefines.h>
+#include "config.h"
 
 using namespace DB;
 
@@ -155,4 +157,74 @@ TEST(DatalakeStateSerde, IcebergObjectSerializableInfoNulloptFileStats)
     ASSERT_FALSE(deserialized.record_count.has_value());
     ASSERT_FALSE(deserialized.file_size_in_bytes.has_value());
 }
+
+#if USE_LANCE
+TEST(DatalakeStateSerde, LanceObjectSerializableInfoRoundTrip)
+{
+    Lance::LanceObjectSerializableInfo info;
+    info.version = 7;
+    info.fragment_ids = {1, 3, 5, 8};
+    info.pack_index = 2;
+    info.pack_count = 4;
+
+    String str;
+    {
+        WriteBufferFromString write_buffer{str};
+        info.serializeForClusterFunctionProtocol(write_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION);
+    }
+    ReadBufferFromMemory read_buffer(str.data(), str.size());
+    Lance::LanceObjectSerializableInfo deserialized;
+    deserialized.deserializeForClusterFunctionProtocol(read_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION);
+
+    ASSERT_TRUE(read_buffer.eof());
+    ASSERT_EQ(deserialized.version, info.version);
+    ASSERT_EQ(deserialized.fragment_ids, info.fragment_ids);
+    ASSERT_EQ(deserialized.pack_index, info.pack_index);
+    ASSERT_EQ(deserialized.pack_count, info.pack_count);
+}
+
+TEST(DatalakeStateSerde, LanceObjectSerializableInfoEmptyFragments)
+{
+    Lance::LanceObjectSerializableInfo info;
+    info.version = 1;
+    info.fragment_ids = {};
+    info.pack_index = 0;
+    info.pack_count = 1;
+
+    String str;
+    {
+        WriteBufferFromString write_buffer{str};
+        info.serializeForClusterFunctionProtocol(write_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_LANCE_METADATA);
+    }
+    ReadBufferFromMemory read_buffer(str.data(), str.size());
+    Lance::LanceObjectSerializableInfo deserialized;
+    deserialized.deserializeForClusterFunctionProtocol(
+        read_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_LANCE_METADATA);
+
+    ASSERT_TRUE(read_buffer.eof());
+    ASSERT_EQ(deserialized.version, 1u);
+    ASSERT_TRUE(deserialized.fragment_ids.empty());
+    ASSERT_EQ(deserialized.pack_count, 1u);
+}
+
+TEST(DatalakeStateSerde, LanceDatasetObjectInfoFromSerializableInfo)
+{
+    Lance::LanceObjectSerializableInfo info;
+    info.version = 9;
+    info.fragment_ids = {10, 20};
+    info.pack_index = 1;
+    info.pack_count = 3;
+
+    auto object = std::make_shared<LanceDatasetObjectInfo>(RelativePathWithMetadata{"s3://b/ds.lance#v9/pack1_f10"}, info);
+    ASSERT_EQ(object->snapshot.version, 9u);
+    ASSERT_EQ(object->fragment_ids, info.fragment_ids);
+    ASSERT_FALSE(static_cast<bool>(object->dataset));
+    ASSERT_EQ(object->pack_index, 1u);
+    ASSERT_EQ(object->pack_count, 3u);
+
+    auto round_trip = object->toSerializableInfo();
+    ASSERT_EQ(round_trip.version, info.version);
+    ASSERT_EQ(round_trip.fragment_ids, info.fragment_ids);
+}
+#endif
 

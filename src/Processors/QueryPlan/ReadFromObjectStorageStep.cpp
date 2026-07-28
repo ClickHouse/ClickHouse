@@ -19,6 +19,10 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
+#include "config.h"
+#if USE_LANCE
+#include <Storages/ObjectStorage/DataLakes/Lance/LanceQuerySession.h>
+#endif
 
 
 namespace DB
@@ -135,7 +139,8 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             iterator_wrapper,
             parser_shared_resources,
             format_filter_info,
-            need_only_count);
+            need_only_count,
+            limit);
 
         pipes.emplace_back(std::move(source));
     }
@@ -166,6 +171,18 @@ void ReadFromObjectStorageStep::createIterator()
         predicate = filter_actions_dag->getOutputs().at(0);
 
     auto context = getContext();
+
+#if USE_LANCE
+    /// Lance fragment packing must force a single pack when LIMIT / count / ordered
+    /// semantics would be wrong under multi-stream. Decision is query-scoped so
+    /// LanceMetadata::iterate can read it without changing IDataLakeMetadata::iterate.
+    if (boost::starts_with(configuration->getEngineName(), "Lance") && context->hasQueryContext())
+    {
+        const bool force_single_pack
+            = need_only_count || (limit.has_value() && *limit > 0) || requestReadingInOrder();
+        Lance::QuerySession::get(context)->setForceSingleFragmentPack(force_single_pack);
+    }
+#endif
 
     iterator_wrapper = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(context), object_storage, storage_snapshot->metadata, distributed_processing,

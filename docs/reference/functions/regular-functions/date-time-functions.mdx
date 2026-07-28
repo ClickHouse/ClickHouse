@@ -1611,8 +1611,8 @@ SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd
 
 ```response title=Response
 ┌─formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')─┐
-│ 2010-01-04 12:34:56                                                                     │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+│ 2010-01-04 12:34:56                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## fromDaysSinceYearZero {#fromDaysSinceYearZero}
@@ -1801,9 +1801,9 @@ SELECT fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')
 ```
 
 ```response title=Response
-┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3), 'Asia/Shanghai')─┐
-│                                                 2023-03-16 18:00:00.000 │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')─┐
+│                                                   2023-03-16 18:00:00.000 │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## fromUnixTimestamp {#fromUnixTimestamp}
@@ -2191,7 +2191,7 @@ This function is non-deterministic: it can return different results for the same
 now([timezone])
 ```
 
-**Aliases**: `localtimestamp`, `current_timestamp`
+**Aliases**: `current_timestamp`, `localtimestamp`
 
 **Arguments**
 
@@ -2933,9 +2933,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 quarter)
 ```
 
 ```response title=Response
-┌─minus(CAST('1⋯Quarter(10))─┐
-│                1996-09-16 │
-└───────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalQuarter(10))─┐
+│                                               1995-12-16 │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ## subtractSeconds {#subtractSeconds}
@@ -4843,7 +4843,7 @@ toStartOfInterval(value, INTERVAL x unit[, time_zone])
 toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 ```
 
-**Aliases**: `time_bucket`, `date_bin`
+**Aliases**: `date_bin`, `time_bucket`
 
 **Arguments**
 
@@ -5466,8 +5466,8 @@ SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')
 
 ```response title=Response
 ┌─toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')─┐
-│                                     2023-03-15 16:00:00 │
-└─────────────────────────────────────────────────────────┘
+│                                       2023-03-15 16:00:00 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 ## toUnixTimestamp {#toUnixTimestamp}
@@ -5828,7 +5828,7 @@ This function is non-deterministic: it can return different results for the same
 today()
 ```
 
-**Aliases**: `curdate`, `current_date`
+**Aliases**: `current_date`, `curdate`
 
 **Arguments**
 

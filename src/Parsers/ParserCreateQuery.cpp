@@ -1008,7 +1008,17 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         }
     }
 
-    if (!comment)
+    if (select || as_table || as_table_function)
+    {
+        auto select_comment = parseComment(pos, expected);
+        if (comment && select_comment)
+            throw Exception(
+                ErrorCodes::SYNTAX_ERROR,
+                "Comment for a table cannot be specified both before and after AS; please use only one");
+        if (!comment)
+            comment = select_comment;
+    }
+    else if (!comment)
         comment = parseComment(pos, expected);
 
     /// `AS table` and `AS table_function` are formatted before the SQL SECURITY clause position,
@@ -1278,8 +1288,13 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (!select_p.parse(pos, select, expected))
         return false;
 
+    auto select_comment = parseComment(pos, expected);
+    if (comment && select_comment)
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR,
+            "Comment for a view cannot be specified both before and after AS SELECT; please use only one");
     if (!comment)
-        comment = parseComment(pos, expected);
+        comment = select_comment;
 
     auto query = make_intrusive<ASTCreateQuery>();
     node = query;
@@ -1763,8 +1778,13 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!select_p.parse(pos, select, expected))
         return false;
 
+    auto select_comment = parseComment(pos, expected);
+    if (comment && select_comment)
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR,
+            "Comment for a view cannot be specified both before and after AS SELECT; please use only one");
     if (!comment)
-        comment = parseComment(pos, expected);
+        comment = select_comment;
 
     auto query = make_intrusive<ASTCreateQuery>();
     node = query;

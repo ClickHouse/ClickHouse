@@ -48,6 +48,7 @@
             },
             "reference/statements/attach",
             "reference/statements/check-grant",
+            "reference/statements/check-database",
             "reference/statements/check-table",
             {
               "expanded": false,
@@ -73,6 +74,7 @@
                         "reference/statements/create/dictionary/layouts/direct",
                         "reference/statements/create/dictionary/layouts/range-hashed",
                         "reference/statements/create/dictionary/layouts/hierarchical",
+                        "reference/statements/create/dictionary/layouts/naive-bayes",
                         "reference/statements/create/dictionary/layouts/polygon",
                         "reference/statements/create/dictionary/layouts/ip-trie",
                         "reference/statements/create/dictionary/layouts/regexp-tree"
@@ -676,6 +678,7 @@
             "reference/functions/table-functions/deltalakeCluster",
             "reference/functions/table-functions/dictionary",
             "reference/functions/table-functions/executable",
+            "reference/functions/table-functions/eval",
             "reference/functions/table-functions/file",
             "reference/functions/table-functions/fileCluster",
             "reference/functions/table-functions/filesystem",

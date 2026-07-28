@@ -45,7 +45,8 @@ KafkaSource::KafkaSource(
     const Names & columns,
     LoggerPtr log_,
     size_t max_block_size_,
-    bool commit_in_suffix_)
+    bool commit_in_suffix_,
+    std::optional<UInt64> cancel_epoch_)
     : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -57,6 +58,7 @@ KafkaSource::KafkaSource(
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader))
     , handle_error_mode(storage.getStreamingHandleErrorMode())
+    , cancel_epoch(cancel_epoch_.value_or(storage_.currentCancelEpoch()))
 {
 }
 
@@ -169,14 +171,29 @@ Chunk KafkaSource::generateImpl()
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
 
+    bool cancelled = false;
+
     while (true)
     {
+        if (storage.isConsumeCancelRequested(cancel_epoch))
+        {
+            cancelled = true;
+            break;
+        }
+
         size_t new_rows = 0;
         exception_message.reset();
         is_dead_letter = false;
 
         if (auto buf = consumer->consume())
         {
+            /// The cancel may have arrived while consume() was blocked polling; check again so the
+            /// just-polled message is dropped with the rest of the block rather than committed.
+            if (storage.isConsumeCancelRequested(cancel_epoch))
+            {
+                cancelled = true;
+                break;
+            }
             ProfileEvents::increment(ProfileEvents::KafkaMessagesRead);
             new_rows = executor.execute(*buf);
         }
@@ -308,6 +325,21 @@ Chunk KafkaSource::generateImpl()
         }
     }
 
+    if (cancelled || storage.isConsumeCancelRequested(cancel_epoch))
+    {
+        try
+        {
+            consumer->rewindToLastCommitted();
+        }
+        catch (const cppkafka::HandleException & e)
+        {
+            LOG_WARNING(log, "Failed to rewind to last committed offset on abort: {}", e.what());
+            consumer->cleanBlockStartOffsets();
+            consumer->markDirty();
+        }
+        return {};
+    }
+
     if (total_rows == 0)
     {
         return {};
@@ -361,6 +393,7 @@ void KafkaSource::commit()
         return;
 
     consumer->commit();
+    consumer->cleanBlockStartOffsets();
 
     broken = false;
 }

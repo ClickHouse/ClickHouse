@@ -3544,11 +3544,12 @@ toFloat64OrNull('abc'):  \N
     FunctionDocumentation::Description description_toDateOrNull = R"(
 Converts an input value to a value of type `Date` but returns `NULL` if an invalid argument is received.
 The same as [`toDate`](#toDate) but returns `NULL` if an invalid argument is received.
+An integer argument is interpreted the same way as by `toDate` (a number of days since 1970-01-01 if it does not exceed 65535, a Unix timestamp otherwise), and produces `NULL` if it is out of range of the `Date` type.
     )";
     FunctionDocumentation::Syntax syntax_toDateOrNull = "toDateOrNull(x)";
     FunctionDocumentation::Arguments arguments_toDateOrNull =
     {
-        {"x", "A string representation of a date.", {"String"}}
+        {"x", "A string representation of a date, or an integer number of days or a Unix timestamp.", {"String", "(U)Int8/16/32/64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDateOrNull = {"Returns a Date value if successful, otherwise `NULL`.", {"Date", "NULL"}};
     FunctionDocumentation::Examples examples_toDateOrNull = {
@@ -3672,11 +3673,13 @@ SELECT toTime64OrNull('12:30:45.123'), toTime64OrNull('invalid')
     FunctionDocumentation::Description description_toDateTimeOrNull = R"(
 Converts an input value to a value of type `DateTime` but returns `NULL` if an invalid argument is received.
 The same as [`toDateTime`](#toDateTime) but returns `NULL` if an invalid argument is received.
+An integer argument is interpreted as a Unix timestamp and produces `NULL` if it is out of range of the `DateTime` type.
     )";
-    FunctionDocumentation::Syntax syntax_toDateTimeOrNull = "toDateTimeOrNull(x)";
+    FunctionDocumentation::Syntax syntax_toDateTimeOrNull = "toDateTimeOrNull(x[, timezone])";
     FunctionDocumentation::Arguments arguments_toDateTimeOrNull =
     {
-        {"x", "A string representation of a date with time.", {"String"}}
+        {"x", "A string representation of a date with time, or an integer Unix timestamp.", {"String", "(U)Int8/16/32/64"}},
+        {"timezone", "Optional. Time zone of the returned value.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDateTimeOrNull = {"Returns a `DateTime` value if successful, otherwise `NULL`.", {"DateTime", "NULL"}};
     FunctionDocumentation::Examples examples_toDateTimeOrNull = {
@@ -3690,6 +3693,17 @@ SELECT toDateTimeOrNull('2025-12-30 13:44:17'), toDateTimeOrNull('invalid')
 │                     2025-12-30 13:44:17 │                        ᴺᵁᴸᴸ │
 └─────────────────────────────────────────┴─────────────────────────────┘
         )"
+    },
+    {
+        "Integer argument with a time zone",
+        R"(
+SELECT toDateTimeOrNull(1583851242, 'Asia/Shanghai'), toDateTimeOrNull(4294967296)
+        )",
+        R"(
+┌─toDateTimeOrNull(1583851242, 'Asia/Shanghai')─┬─toDateTimeOrNull(4294967296)─┐
+│                           2020-03-10 22:40:42 │                         ᴺᵁᴸᴸ │
+└───────────────────────────────────────────────┴──────────────────────────────┘
+        )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDateTimeOrNull = {1, 1};
@@ -3702,11 +3716,14 @@ SELECT toDateTimeOrNull('2025-12-30 13:44:17'), toDateTimeOrNull('invalid')
     FunctionDocumentation::Description description_toDateTime64OrNull = R"(
 Converts an input value to a value of type `DateTime64` but returns `NULL` if an invalid argument is received.
 The same as `toDateTime64` but returns `NULL` if an invalid argument is received.
+An integer argument is interpreted as a Unix timestamp in whole seconds and produces `NULL` if it is out of range of the `DateTime64` type.
     )";
-    FunctionDocumentation::Syntax syntax_toDateTime64OrNull = "toDateTime64OrNull(x)";
+    FunctionDocumentation::Syntax syntax_toDateTime64OrNull = "toDateTime64OrNull(x[, precision[, timezone]])";
     FunctionDocumentation::Arguments arguments_toDateTime64OrNull =
     {
-        {"x", "A string representation of a date with time and subsecond precision.", {"String"}}
+        {"x", "A string representation of a date with time and subsecond precision, or an integer Unix timestamp.", {"String", "(U)Int8/16/32/64"}},
+        {"precision", "Optional. The subsecond precision of the returned value.", {"UInt8"}},
+        {"timezone", "Optional. Time zone of the returned value.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDateTime64OrNull = {"Returns a DateTime64 value if successful, otherwise `NULL`.", {"DateTime64", "NULL"}};
     FunctionDocumentation::Examples examples_toDateTime64OrNull = {

@@ -52,6 +52,11 @@ public:
     /// Validate codecs AST specified by user
     void validateCodec(const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs) const;
 
+    /// Validate a full codec expression given as a string, e.g. "ZSTD(3)" or "Delta, LZ4", without a column
+    /// data type. This is the form stored in the codec-valued MergeTree settings (`marks_compression_codec`,
+    /// `primary_key_compression_codec`, `default_compression_codec`).
+    void validateCodecString(const String & compression_codec, bool sanity_check, bool allow_experimental_codecs) const;
+
     /// Get codec by AST and possible column_type. Some codecs can use
     /// information about type to improve inner settings, but every codec should
     /// be able to work without information about type. Also AST can contain

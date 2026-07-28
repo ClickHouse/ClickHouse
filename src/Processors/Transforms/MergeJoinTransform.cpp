@@ -464,7 +464,7 @@ void MergeJoinAlgorithm::setAsofInequality(ASOFJoinInequality asof_inequality_)
 void MergeJoinAlgorithm::logElapsed(double seconds)
 {
     LOG_TRACE(log,
-        "Finished pocessing in {} seconds"
+        "Finished pocessing in {:.3f} seconds"
         ", left: {} blocks, {} rows; right: {} blocks, {} rows"
         ", max blocks loaded to memory: {}",
         seconds, stat.num_blocks[0], stat.num_rows[0], stat.num_blocks[1], stat.num_rows[1],

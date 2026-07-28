@@ -1,0 +1,16 @@
+if(token IN (tuple)): listed stop words dropped
+brown end fox here quick
+2
+1
+if(token NOT IN (keep-set)): only the keep-set survives
+fox the
+if(token IN (array)): array right-hand side, same as tuple
+brown end fox here quick
+multiIf(token IN (tuple)): CASE spelling drops the same tokens
+brown end fox here quick
+FixedString index column: IN-filter drops the same stop words
+brown end fox here quick
+MATERIALIZED String index column: value computed, then IN-filter drops stop words
+brown end fox here quick
+2
+0

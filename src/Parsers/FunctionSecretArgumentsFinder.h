@@ -111,7 +111,8 @@ protected:
         else if ((function->name() == "s3") || (function->name() == "cosn") || (function->name() == "oss") ||
                  (function->name() == "deltaLake") || (function->name() == "deltaLakeS3") || (function->name() == "hudi") ||
                  (function->name() == "iceberg") || (function->name() == "gcs") || (function->name() == "icebergS3") ||
-                 (function->name() == "paimon") || (function->name() == "paimonS3"))
+                 (function->name() == "paimon") || (function->name() == "paimonS3") ||
+                 (function->name() == "lanceS3"))
         {
             /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ false);
@@ -119,7 +120,8 @@ protected:
         else if ((function->name() == "s3Cluster") || (function ->name() == "hudiCluster") ||
                  (function ->name() == "deltaLakeCluster") || (function ->name() == "deltaLakeS3Cluster") ||
                  (function ->name() == "icebergS3Cluster") || (function ->name() == "icebergCluster") ||
-                 (function ->name() == "paimonCluster") || (function ->name() == "paimonS3Cluster"))
+                 (function ->name() == "paimonCluster") || (function ->name() == "paimonS3Cluster") ||
+                 (function ->name() == "lanceS3Cluster"))
         {
             /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ true);
@@ -681,6 +683,14 @@ protected:
         else if (engine_name == "ArrowFlight")
         {
             findArrowFlightSecretArguments();
+        }
+        else if ((engine_name == "Remote") || (engine_name == "RemoteSecure"))
+        {
+            /// Remote('addresses_expr', db, table, 'user', 'password', ...)
+            /// RemoteSecure(...) - same as Remote(...)
+            /// The arguments are identical to the `remote`/`remoteSecure` table functions, so reuse
+            /// the same finder (it also handles the named-collection form `Remote(named_collection, ...)`).
+            findRemoteFunctionSecretArguments();
         }
         else if ((engine_name == "JDBC") || (engine_name == "ODBC"))
         {

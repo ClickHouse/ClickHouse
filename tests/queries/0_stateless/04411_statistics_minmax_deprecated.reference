@@ -1,0 +1,1 @@
+CREATE TABLE default.t_minmax_deprecated\n(\n    `a` UInt64 STATISTICS(basic)\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192

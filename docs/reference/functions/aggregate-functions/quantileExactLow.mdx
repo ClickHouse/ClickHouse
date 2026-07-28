@@ -38,11 +38,11 @@ quantileExactLow(level)(expr)
 
 **Arguments**
 
-- `expr` — Expression over the column values resulting in numeric data types, Date or DateTime. [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal*`](/reference/data-types/decimal) or [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime)
+- `expr` — Expression over the column values resulting in numeric data types, `Date`, `DateTime` or `DateTime64`. [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal*`](/reference/data-types/decimal) or [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64)
 
 **Returned value**
 
-Returns the quantile of the specified level. [`Float64`](/reference/data-types/float) or [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime)
+Returns the quantile of the specified level. For numeric data types the output format matches the input format. [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal*`](/reference/data-types/decimal) or [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64)
 
 **Examples**
 

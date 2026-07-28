@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <optional>
 #include <boost/noncopyable.hpp>
 #include <fmt/format.h>
 
@@ -99,6 +100,8 @@ public:
 
     /// Some data lake formats are datasets rather than file formats. They can create
     /// a custom read pipeline instead of asking FormatFactory to read a single object.
+    /// `limit` is an optional row upper bound (typically limit+offset from SourceStepWithFilter).
+    /// Default implementations ignore it; engines that can stop early (e.g. Lance) may consume it.
     virtual std::optional<Pipe> read(
         ObjectInfoPtr,
         const ReadFromFormatInfo &,
@@ -107,7 +110,12 @@ public:
         size_t,
         FormatParserSharedResourcesPtr,
         FormatFilterInfoPtr,
-        bool) const { return std::nullopt; }
+        bool,
+        std::optional<size_t> limit = {}) const
+    {
+        (void)limit;
+        return std::nullopt;
+    }
 
     /// Whether current metadata object is updateable (instead of recreation from scratch)
     /// to the latest version of table state in data lake.

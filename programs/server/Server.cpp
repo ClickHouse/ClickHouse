@@ -288,6 +288,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_size;
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_max_entries;
     extern const ServerSettingsDouble iceberg_metadata_files_cache_size_ratio;
+    extern const ServerSettingsString paimon_metadata_files_cache_policy;
+    extern const ServerSettingsUInt64 paimon_metadata_files_cache_size;
+    extern const ServerSettingsUInt64 paimon_metadata_files_cache_max_entries;
+    extern const ServerSettingsDouble paimon_metadata_files_cache_size_ratio;
     extern const ServerSettingsString parquet_metadata_cache_policy;
     extern const ServerSettingsUInt64 parquet_metadata_cache_size;
     extern const ServerSettingsUInt64 parquet_metadata_cache_max_entries;
@@ -1469,10 +1473,11 @@ try
     bool has_trace_collector = config().has("trace_log");
     LOG_INFO(log, "Query Profiler will use frame-pointer-based stack unwinding under sanitizers.");
 #else
-    bool has_trace_collector = hasPHDRCache() && config().has("trace_log");
-    if (!hasPHDRCache())
-        LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
-            " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
+    bool has_trace_collector = hasAsyncSignalSafeUnwind() && config().has("trace_log");
+    if (!hasAsyncSignalSafeUnwind())
+        LOG_INFO(log, "Query Profiler and TraceCollector are disabled because async-signal-safe stack unwinding"
+            " is not available in this build (on Linux this requires the lock-free PHDR cache, otherwise"
+            " 'dl_iterate_phdr' is not lock free and not async-signal safe).");
 #endif
 
     // Settings validation for page cache. Ensure that page_cache_max_size is > page_cache_min_size.
@@ -1629,6 +1634,17 @@ try
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
     /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
     SCOPE_EXIT_SAFE({
+        /// Stop accepting connections on the regular servers. In the normal shutdown path they are
+        /// already stopped, but on startup failure some of them can still be running: the Prometheus
+        /// endpoint is started before tables are loaded. Otherwise `server_pool.joinAll()` below
+        /// would wait forever for their listener threads.
+        {
+            std::lock_guard lock(servers_lock);
+            for (auto & server : servers)
+                if (!server.isStopping())
+                    server.stop();
+        }
+
         async_metrics->stop();
 
         /** Ask to cancel background jobs all table engines,
@@ -2326,6 +2342,17 @@ try
         LOG_INFO(log, "Lowered Iceberg metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(iceberg_metadata_files_cache_size));
     }
     global_context->setIcebergMetadataFilesCache(iceberg_metadata_files_cache_policy, iceberg_metadata_files_cache_size, iceberg_metadata_files_cache_max_entries, iceberg_metadata_files_cache_size_ratio);
+
+    String paimon_metadata_files_cache_policy = server_settings[ServerSetting::paimon_metadata_files_cache_policy];
+    size_t paimon_metadata_files_cache_size = server_settings[ServerSetting::paimon_metadata_files_cache_size];
+    size_t paimon_metadata_files_cache_max_entries = server_settings[ServerSetting::paimon_metadata_files_cache_max_entries];
+    double paimon_metadata_files_cache_size_ratio = server_settings[ServerSetting::paimon_metadata_files_cache_size_ratio];
+    if (paimon_metadata_files_cache_size > max_cache_size)
+    {
+        paimon_metadata_files_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered Paimon metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(paimon_metadata_files_cache_size));
+    }
+    global_context->setPaimonMetadataFilesCache(paimon_metadata_files_cache_policy, paimon_metadata_files_cache_size, paimon_metadata_files_cache_max_entries, paimon_metadata_files_cache_size_ratio);
 #endif
 #if USE_PARQUET
     String parquet_metadata_cache_policy = server_settings[ServerSetting::parquet_metadata_cache_policy];
@@ -2813,6 +2840,7 @@ try
                     std::min<size_t>(new_server_settings[ServerSetting::point_in_polygon_cache_size], max_cache_size_in_bytes));
 #if USE_AVRO
                 global_context->updateIcebergMetadataFilesCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updatePaimonMetadataFilesCacheConfiguration(config(), max_cache_size_in_bytes);
 #endif
 #if USE_PARQUET
                 global_context->updateParquetMetadataCacheConfiguration(config(), max_cache_size_in_bytes);
@@ -3234,6 +3262,40 @@ try
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
 
+    /// Start collecting asynchronous metrics before loading tables, so that the Prometheus endpoint
+    /// (started below) exposes meaningful values during the potentially long metadata loading phase.
+    /// This includes the OS/jemalloc metrics and the per-table metrics such as
+    /// `TotalIndexGranularityBytesInMemoryAllocated`, which let one observe memory growth as tables
+    /// are loaded. The metric computation skips not-yet-loaded tables (just like with
+    /// `async_load_databases`), and writing to `system.asynchronous_metric_log` is skipped until the
+    /// system logs are initialized below. The asynchronous metrics thread reads the `servers` lists
+    /// under `servers_lock`, so it is safe to start before the main `servers` exist.
+    async_metrics->start();
+    global_context->setAsynchronousMetrics(async_metrics.get());
+
+    /// Start the Prometheus endpoint before loading tables, so that metrics stay observable during
+    /// the potentially long metadata loading phase. Only do it for metrics-only configurations:
+    /// custom `prometheus.handlers` may serve queries (`remote_write`, `remote_read`, `query`,
+    /// `api_v1`) and must follow the regular `servers` lifecycle. The server is created in the
+    /// regular `servers` list, so runtime reconfiguration and `SYSTEM START/STOP LISTEN` handle it
+    /// as usual. The later `createServers` call skips it (`createServer` does not recreate a live
+    /// server), and the start loop for `servers` skips it too (`ProtocolServerAdapter::start` does
+    /// nothing for an already started server).
+    if (!config().has("prometheus.handlers"))
+    {
+        std::lock_guard lock(servers_lock);
+        createServers(
+            config(),
+            server_settings,
+            listen_hosts,
+            listen_try,
+            server_pool,
+            *async_metrics,
+            servers,
+            /* start_servers= */ true,
+            ServerType(ServerType::Type::PROMETHEUS));
+    }
+
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
     LoadTaskPtrs load_system_metadata_tasks;
@@ -3372,10 +3434,6 @@ try
         CertificateReloader::instance().tryLoad(config());
         CertificateReloader::instance().tryLoadClient(config());
 #endif
-
-        /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
-        async_metrics->start();
-        global_context->setAsynchronousMetrics(async_metrics.get());
 
         main_config_reloader->start();
         access_control.startPeriodicReloading();

@@ -699,6 +699,9 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
                 method,
                 level,
                 /*zstd_window_log*/ 0,
+                /// Parquet's `SNAPPY` codec is raw block compression and is special-cased above —
+                /// this dispatch never sees it, so the snappy mode here is irrelevant.
+                SnappyMode::Basic,
                 source.size(),
                 /*existing_memory*/ source.data());
             chassert(compressed_buf->position() == source.data());

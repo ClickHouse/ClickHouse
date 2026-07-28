@@ -2,12 +2,14 @@
 
 #include <cfloat>
 #include <cmath>
+#include <cstring>
 #include <numeric>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <boost/math/distributions/fisher_f.hpp>
 #include <boost/math/distributions/normal.hpp>
 #include <boost/math/distributions/students_t.hpp>
+#include <Common/TargetSpecific.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
@@ -19,6 +21,20 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+}
+
+/// Zeroes the value's bit pattern when the flag is not set. Unlike multiplying by the
+/// flag, this keeps NaN/Inf values in discarded rows from poisoning the accumulators.
+/// Unlike a branch or a ternary select, it is if-converted and vectorized.
+template <typename T>
+inline T ALWAYS_INLINE maskFloatingPoint(T x, bool keep)
+{
+    using EquivalentInteger = std::conditional_t<sizeof(T) == 4, UInt32, UInt64>;
+    EquivalentInteger bits;
+    std::memcpy(&bits, &x, sizeof(T));
+    bits &= EquivalentInteger(!keep) - 1;
+    std::memcpy(&x, &bits, sizeof(T));
+    return x;
 }
 
 
@@ -45,6 +61,97 @@ struct VarMoments
         m[2] += x * x;
         if constexpr (_level >= 3) m[3] += x * x * x;
         if constexpr (_level >= 4) m[4] += x * x * x * x;
+    }
+
+    /// How many partial accumulators the vectorized kernels below unroll into.
+    /// FP addition is not associative, so the compiler cannot unroll the reduction
+    /// itself; this exact factor is what clang needs to vectorize the loops.
+    static constexpr size_t unroll_count = 128 / sizeof(T);
+
+    MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(
+    template <typename Value>
+    void NO_INLINE
+    ), addManyImpl, MULTITARGET_FUNCTION_BODY((const Value * __restrict ptr, size_t row_begin, size_t row_end) /// NOLINT
+    {
+        T partials[_level][unroll_count]{};
+        size_t i = row_begin;
+        for (; i + unroll_count <= row_end; i += unroll_count)
+        {
+            for (size_t j = 0; j < unroll_count; ++j)
+            {
+                T x = static_cast<T>(ptr[i + j]);
+                partials[0][j] += x;
+                partials[1][j] += x * x;
+                if constexpr (_level >= 3) partials[2][j] += x * x * x;
+                if constexpr (_level >= 4) partials[3][j] += x * x * x * x;
+            }
+        }
+        m[0] += static_cast<T>(i - row_begin);
+        for (size_t k = 1; k <= _level; ++k)
+            for (size_t j = 0; j < unroll_count; ++j)
+                m[k] += partials[k - 1][j];
+        for (; i < row_end; ++i)
+            add(static_cast<T>(ptr[i]));
+    })
+    )
+
+    template <typename Value>
+    void addMany(const Value * __restrict ptr, size_t row_begin, size_t row_end)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            addManyImpl_x86_64_v4(ptr, row_begin, row_end);
+            return;
+        }
+#endif
+
+        addManyImpl(ptr, row_begin, row_end);
+    }
+
+    MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(
+    template <typename Value, bool add_if_zero>
+    void NO_INLINE
+    ), addManyConditionalImpl, MULTITARGET_FUNCTION_BODY((const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end) /// NOLINT
+    {
+        T partials[_level + 1][unroll_count]{};
+        size_t i = row_begin;
+        for (; i + unroll_count <= row_end; i += unroll_count)
+        {
+            for (size_t j = 0; j < unroll_count; ++j)
+            {
+                bool keep = !condition_map[i + j] == add_if_zero;
+                T x = maskFloatingPoint(static_cast<T>(ptr[i + j]), keep);
+                partials[0][j] += keep;
+                partials[1][j] += x;
+                partials[2][j] += x * x;
+                if constexpr (_level >= 3) partials[3][j] += x * x * x;
+                if constexpr (_level >= 4) partials[4][j] += x * x * x * x;
+            }
+        }
+        for (size_t k = 0; k <= _level; ++k)
+            for (size_t j = 0; j < unroll_count; ++j)
+                m[k] += partials[k][j];
+        for (; i < row_end; ++i)
+            if (!condition_map[i] == add_if_zero)
+                add(static_cast<T>(ptr[i]));
+    })
+    )
+
+    template <typename Value, bool add_if_zero>
+    void addManyConditional(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            addManyConditionalImpl_x86_64_v4<Value, add_if_zero>(ptr, condition_map, row_begin, row_end);
+            return;
+        }
+#endif
+
+        addManyConditionalImpl<Value, add_if_zero>(ptr, condition_map, row_begin, row_end);
     }
 
     void merge(const VarMoments & rhs)
@@ -160,6 +267,106 @@ struct CovarMoments
         xy += x * y;
     }
 
+    static constexpr size_t unroll_count = 128 / sizeof(T);
+
+    MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(
+    template <typename Value1, typename Value2>
+    void NO_INLINE
+    ), addManyImpl, MULTITARGET_FUNCTION_BODY((const Value1 * __restrict x_ptr, const Value2 * __restrict y_ptr, size_t row_begin, size_t row_end) /// NOLINT
+    {
+        T px[unroll_count]{};
+        T py[unroll_count]{};
+        T pxy[unroll_count]{};
+        size_t i = row_begin;
+        for (; i + unroll_count <= row_end; i += unroll_count)
+        {
+            for (size_t j = 0; j < unroll_count; ++j)
+            {
+                T x = static_cast<T>(x_ptr[i + j]);
+                T y = static_cast<T>(y_ptr[i + j]);
+                px[j] += x;
+                py[j] += y;
+                pxy[j] += x * y;
+            }
+        }
+        m0 += static_cast<T>(i - row_begin);
+        for (size_t j = 0; j < unroll_count; ++j)
+        {
+            x1 += px[j];
+            y1 += py[j];
+            xy += pxy[j];
+        }
+        for (; i < row_end; ++i)
+            add(static_cast<T>(x_ptr[i]), static_cast<T>(y_ptr[i]));
+    })
+    )
+
+    template <typename Value1, typename Value2>
+    void addMany(const Value1 * __restrict x_ptr, const Value2 * __restrict y_ptr, size_t row_begin, size_t row_end)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            addManyImpl_x86_64_v4(x_ptr, y_ptr, row_begin, row_end);
+            return;
+        }
+#endif
+
+        addManyImpl(x_ptr, y_ptr, row_begin, row_end);
+    }
+
+    MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(
+    template <typename Value1, typename Value2, bool add_if_zero>
+    void NO_INLINE
+    ), addManyConditionalImpl, MULTITARGET_FUNCTION_BODY((const Value1 * __restrict x_ptr, const Value2 * __restrict y_ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end) /// NOLINT
+    {
+        T p0[unroll_count]{};
+        T px[unroll_count]{};
+        T py[unroll_count]{};
+        T pxy[unroll_count]{};
+        size_t i = row_begin;
+        for (; i + unroll_count <= row_end; i += unroll_count)
+        {
+            for (size_t j = 0; j < unroll_count; ++j)
+            {
+                bool keep = !condition_map[i + j] == add_if_zero;
+                T x = maskFloatingPoint(static_cast<T>(x_ptr[i + j]), keep);
+                T y = maskFloatingPoint(static_cast<T>(y_ptr[i + j]), keep);
+                p0[j] += keep;
+                px[j] += x;
+                py[j] += y;
+                pxy[j] += x * y;
+            }
+        }
+        for (size_t j = 0; j < unroll_count; ++j)
+        {
+            m0 += p0[j];
+            x1 += px[j];
+            y1 += py[j];
+            xy += pxy[j];
+        }
+        for (; i < row_end; ++i)
+            if (!condition_map[i] == add_if_zero)
+                add(static_cast<T>(x_ptr[i]), static_cast<T>(y_ptr[i]));
+    })
+    )
+
+    template <typename Value1, typename Value2, bool add_if_zero>
+    void addManyConditional(const Value1 * __restrict x_ptr, const Value2 * __restrict y_ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            addManyConditionalImpl_x86_64_v4<Value1, Value2, add_if_zero>(x_ptr, y_ptr, condition_map, row_begin, row_end);
+            return;
+        }
+#endif
+
+        addManyConditionalImpl<Value1, Value2, add_if_zero>(x_ptr, y_ptr, condition_map, row_begin, row_end);
+    }
+
     void merge(const CovarMoments & rhs)
     {
         m0 += rhs.m0;
@@ -224,6 +431,118 @@ struct CorrMoments
         xy += x * y;
         x2 += x * x;
         y2 += y * y;
+    }
+
+    static constexpr size_t unroll_count = 128 / sizeof(T);
+
+    MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(
+    template <typename Value1, typename Value2>
+    void NO_INLINE
+    ), addManyImpl, MULTITARGET_FUNCTION_BODY((const Value1 * __restrict x_ptr, const Value2 * __restrict y_ptr, size_t row_begin, size_t row_end) /// NOLINT
+    {
+        T px[unroll_count]{};
+        T py[unroll_count]{};
+        T pxy[unroll_count]{};
+        T px2[unroll_count]{};
+        T py2[unroll_count]{};
+        size_t i = row_begin;
+        for (; i + unroll_count <= row_end; i += unroll_count)
+        {
+            for (size_t j = 0; j < unroll_count; ++j)
+            {
+                T x = static_cast<T>(x_ptr[i + j]);
+                T y = static_cast<T>(y_ptr[i + j]);
+                px[j] += x;
+                py[j] += y;
+                pxy[j] += x * y;
+                px2[j] += x * x;
+                py2[j] += y * y;
+            }
+        }
+        m0 += static_cast<T>(i - row_begin);
+        for (size_t j = 0; j < unroll_count; ++j)
+        {
+            x1 += px[j];
+            y1 += py[j];
+            xy += pxy[j];
+            x2 += px2[j];
+            y2 += py2[j];
+        }
+        for (; i < row_end; ++i)
+            add(static_cast<T>(x_ptr[i]), static_cast<T>(y_ptr[i]));
+    })
+    )
+
+    template <typename Value1, typename Value2>
+    void addMany(const Value1 * __restrict x_ptr, const Value2 * __restrict y_ptr, size_t row_begin, size_t row_end)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            addManyImpl_x86_64_v4(x_ptr, y_ptr, row_begin, row_end);
+            return;
+        }
+#endif
+
+        addManyImpl(x_ptr, y_ptr, row_begin, row_end);
+    }
+
+    MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(
+    template <typename Value1, typename Value2, bool add_if_zero>
+    void NO_INLINE
+    ), addManyConditionalImpl, MULTITARGET_FUNCTION_BODY((const Value1 * __restrict x_ptr, const Value2 * __restrict y_ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end) /// NOLINT
+    {
+        T p0[unroll_count]{};
+        T px[unroll_count]{};
+        T py[unroll_count]{};
+        T pxy[unroll_count]{};
+        T px2[unroll_count]{};
+        T py2[unroll_count]{};
+        size_t i = row_begin;
+        for (; i + unroll_count <= row_end; i += unroll_count)
+        {
+            for (size_t j = 0; j < unroll_count; ++j)
+            {
+                bool keep = !condition_map[i + j] == add_if_zero;
+                T x = maskFloatingPoint(static_cast<T>(x_ptr[i + j]), keep);
+                T y = maskFloatingPoint(static_cast<T>(y_ptr[i + j]), keep);
+                p0[j] += keep;
+                px[j] += x;
+                py[j] += y;
+                pxy[j] += x * y;
+                px2[j] += x * x;
+                py2[j] += y * y;
+            }
+        }
+        for (size_t j = 0; j < unroll_count; ++j)
+        {
+            m0 += p0[j];
+            x1 += px[j];
+            y1 += py[j];
+            xy += pxy[j];
+            x2 += px2[j];
+            y2 += py2[j];
+        }
+        for (; i < row_end; ++i)
+            if (!condition_map[i] == add_if_zero)
+                add(static_cast<T>(x_ptr[i]), static_cast<T>(y_ptr[i]));
+    })
+    )
+
+    template <typename Value1, typename Value2, bool add_if_zero>
+    void addManyConditional(const Value1 * __restrict x_ptr, const Value2 * __restrict y_ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            addManyConditionalImpl_x86_64_v4<Value1, Value2, add_if_zero>(x_ptr, y_ptr, condition_map, row_begin, row_end);
+            return;
+        }
+#endif
+
+        addManyConditionalImpl<Value1, Value2, add_if_zero>(x_ptr, y_ptr, condition_map, row_begin, row_end);
     }
 
     void merge(const CorrMoments & rhs)

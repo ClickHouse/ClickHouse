@@ -301,6 +301,12 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     FormatStateStacked nested_dont_need_parens = frame;
     nested_need_parens.need_parens = true;
     nested_dont_need_parens.need_parens = false;
+    /// `list_element_index` describes the node's position among the direct elements of the
+    /// enclosing expression list and is only meaningful one level deep. Operands reached
+    /// through an operator (tupleElement, arrayElement, etc.) are not list elements, so reset
+    /// it here; the argument-list loops below re-set it explicitly per argument when needed.
+    nested_need_parens.list_element_index = 0;
+    nested_dont_need_parens.list_element_index = 0;
 
     if (auto * query = tryGetQueryArgument())
     {

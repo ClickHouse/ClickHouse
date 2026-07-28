@@ -44,9 +44,53 @@ MergeTreeDataPartWide::MergeTreeDataPartWide(
     const String & name_,
     const MergeTreePartInfo & info_,
     const MutableDataPartStoragePtr & data_part_storage_,
-    const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, storage_settings, name_, info_, data_part_storage_, Type::Wide, parent_part_)
+    const IMergeTreeDataPart * parent_part_,
+    bool part_may_exist_on_disk)
+    : IMergeTreeDataPart(storage_, storage_settings, name_, info_, data_part_storage_, Type::Wide, parent_part_, part_may_exist_on_disk)
 {
+}
+
+Strings MergeTreeDataPartWide::getPreferredFileOrder() const
+{
+    Strings preferred_order = COMMON_METADATA_FILES;
+
+    /// Files for partition key columns MinMax indices
+    preferred_order.append_range(getMinMaxIndex()->getProbablyWrittenFiles(*this));
+
+    /// First column's marks file is used for loadIndexGranularity, so it is better to have it first.
+    auto first_column_file = getFileNameForColumn(columns.front());
+    if (first_column_file)
+        preferred_order.push_back(*first_column_file + getMarksFileExtension());
+
+    preferred_order.push_back("primary" + getIndexExtension(true));
+    preferred_order.push_back("primary" + getIndexExtension(false));
+
+    /// Files with statistics. Statistics are written as separate files
+    /// in packed parts to avoid double bufferization in packed archive.
+    /// Move statistics files before marks and data files.
+    for (const auto & [filename, _] : checksums.files)
+    {
+        if (filename.ends_with(STATS_FILE_SUFFIX))
+            preferred_order.push_back(filename);
+    }
+
+    /// Move all marks for the rest of columns before all data files.
+    for (auto column_it = std::next(columns.begin()); column_it != columns.end(); ++column_it)
+    {
+        auto column_file = getFileNameForColumn(*column_it);
+        if (column_file)
+            preferred_order.push_back(*column_file + getMarksFileExtension());
+    }
+
+    /// Files for projection columns
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    for (const auto & projection : metadata_snapshot->getProjections())
+    {
+        for (const String & name : projection.sample_block.getNames())
+            preferred_order.push_back(name + getMarksFileExtension());
+    }
+
+    return preferred_order;
 }
 
 MergeTreeReaderPtr createMergeTreeReaderWide(

@@ -30,6 +30,8 @@ struct QueryPlanOptimizationSettings
 
     explicit QueryPlanOptimizationSettings(ContextPtr from);
 
+    void keepOnlyExplicitlyEnabled(const Settings & from);
+
     /// Allows to globally disable all plan-level optimizations.
     /// Note: Even if set to 'true', individual optimizations may still be disabled via below settings.
     bool optimize_plan;
@@ -177,6 +179,7 @@ struct QueryPlanOptimizationSettings
 
     /// JOIN runtime filter settings
     bool enable_join_runtime_filters = false; /// Filter left side by set of JOIN keys collected from the right side at runtime
+    bool enable_join_runtime_filters_index_analysis = false; /// Filter left side using pk/skip indexes
     UInt64 join_runtime_filter_exact_values_limit = 0;
     UInt64 join_runtime_bloom_filter_bytes = 0;
     UInt64 join_runtime_bloom_filter_hash_functions = 0;
@@ -212,6 +215,7 @@ struct QueryPlanOptimizationSettings
     std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
 
     bool parallel_replicas_filter_pushdown = false;
+    bool enable_parallel_replicas = false;
 };
 
 }

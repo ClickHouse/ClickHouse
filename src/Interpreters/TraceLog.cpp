@@ -118,7 +118,7 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
 NamesAndAliases TraceLogElement::getNamesAndAliases()
 {
     String build_id_hex;
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     build_id_hex = SymbolIndex::instance().getBuildIDHex();
 #endif
     return
@@ -128,7 +128,7 @@ NamesAndAliases TraceLogElement::getNamesAndAliases()
 }
 
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 namespace
 {
     class AddressToLineCache
@@ -158,22 +158,33 @@ namespace
         {
             const SymbolIndex & symbol_index = SymbolIndex::instance();
 
-            if (const auto * object = symbol_index.thisObject())
+#if defined(OS_DARWIN)
+            /// DWARF for source locations lives in a .dSYM bundle on macOS (the Mach-O linker leaves it
+            /// out of the binary). Without a dSYM there is no file:line info, so `lines` stays empty for
+            /// this frame (the `symbols` column is still filled from the symbol table by the caller).
+            const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr));
+            if (!object || !object->dsym)
+                return {};
+            auto dwarf_it = dwarfs.try_emplace(object->name, object->dsym).first;
+            /// Convert the runtime address to the linked (pre-ASLR) address the dSYM's DWARF uses.
+            const uintptr_t dwarf_addr = addr - object->slide;
+#else
+            const auto * object = symbol_index.thisObject();
+            if (!object || !std::filesystem::exists(object->name))
+                return {};
+            auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
+            const uintptr_t dwarf_addr = addr;
+#endif
+            Dwarf::LocationInfo location;
+            VectorWithMemoryTracking<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
+            std::string_view result;
+            if (dwarf_it->second.findAddress(dwarf_addr, location, Dwarf::LocationInfoMode::FAST, frames))
             {
-                auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
-                if (!std::filesystem::exists(object->name))
-                    return {};
-
-                Dwarf::LocationInfo location;
-                VectorWithMemoryTracking<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
-                std::string_view result;
-                if (dwarf_it->second.findAddress(addr, location, Dwarf::LocationInfoMode::FAST, frames))
-                {
-                    setResult(result, location, frames);
-                    return result;
-                }
-                return object->name;
+                setResult(result, location, frames);
+                return result;
             }
+            /// `lines` holds source locations only; an unresolved frame stays empty rather than
+            /// borrowing the object path (that would violate the file:line:col column contract).
             return {};
         }
 
@@ -245,7 +256,7 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
 
     typeid_cast<ColumnInt64 &>(*columns[i++]).getData().push_back(increment);
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     if (symbolize)
     {
         auto & column_symbols = typeid_cast<ColumnArray &>(*columns[i++]);

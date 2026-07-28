@@ -6478,7 +6478,25 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         node->removeAlias();
     }
 
+    const bool was_group_by_all = query_node_typed.isGroupByAll();
     expandGroupByAll(query_node_typed);
+
+    /// `GROUP BY ALL` adds the SELECT expressions as grouping keys only here, after
+    /// `resolveGroupByNode` already ran its tuple unwrapping and key type validation. So a key like
+    /// `tuple(a, b)` is kept as a single key, unlike an explicit `GROUP BY tuple(a, b)` which
+    /// `expandTuplesInList` turns into the separate keys `a` and `b`, and none of the expanded keys go
+    /// through `validateGroupByKeyType`. Redo both here: otherwise the tuple elements are not
+    /// individually available after aggregation, and a later pass such as `OrderByTupleEliminationPass`
+    /// (which rewrites `ORDER BY tuple(a, b)` into `ORDER BY a, b`) would reference columns missing from
+    /// the aggregated block; and a suspicious key type such as `Variant`/`Dynamic`, which explicit
+    /// `GROUP BY` rejects, would be silently accepted. See https://github.com/ClickHouse/ClickHouse/issues/83433.
+    if (was_group_by_all)
+    {
+        expandTuplesInList(query_node_typed.getGroupBy().getNodes());
+
+        for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
+            validateGroupByKeyType(group_by_elem->getResultType(), scope);
+    }
 
     tryMoveNonAggregateHavingPredicatesToWhere(query_node, scope);
 

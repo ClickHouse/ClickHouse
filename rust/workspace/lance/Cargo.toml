@@ -15,7 +15,7 @@ object_store = { version = "0.12.5", features = ["aws"] }
 lance = { version = "2.0.1", default-features = false }
 prost = "=0.14.4"
 tempfile = "3.27.0"
-tokio = { version = "1.52.3", features = ["rt-multi-thread"] }
+tokio = { version = "1.52.3", features = ["rt-multi-thread", "sync", "macros", "time"] }
 url = "2.5.7"
 
 [dev-dependencies]

@@ -482,7 +482,12 @@ catch (...)
 #if USE_JWT_CPP && USE_SSL
 void Client::login()
 {
-    std::string host = hosts_and_ports.front().host;
+    /// `hosts_and_ports` is filled from explicit --host arguments only; the default host is added
+    /// later, in `connect`. A host given via config, --connection or the environment is still
+    /// sitting in the configuration at this point.
+    std::string host = hosts_and_ports.empty()
+        ? getClientConfiguration().getString("host", "localhost")
+        : hosts_and_ports.front().host;
     std::string auth_url = getClientConfiguration().getString("oauth-url", "");
     std::string client_id = getClientConfiguration().getString("oauth-client-id", "");
     std::string audience = getClientConfiguration().getString("oauth-audience", "");
@@ -854,6 +859,7 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("name", po::value<std::string>()->default_value("_data"), "name of the table")
         ("format", po::value<std::string>()->default_value("TabSeparated"), "data format")
         ("structure", po::value<std::string>(), "structure")
+        ("scalar", "Send as Scalar packet (not Data)")
         ("types", po::value<std::string>(), "types");
 
     /// Commandline options related to hosts and ports.
@@ -887,8 +893,9 @@ void Client::processOptions(
 
         try
         {
-            external_tables.emplace_back(external_options);
-            if (external_tables.back().file == "-")
+            auto & external_data = external_options.contains("scalar") ? external_scalars : external_tables;
+            external_data.emplace_back(external_options);
+            if (external_data.back().file == "-")
                 ++number_of_external_tables_with_stdin_source;
             if (number_of_external_tables_with_stdin_source > 1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Two or more external tables has stdin (-) set as --file field");
@@ -1256,6 +1263,11 @@ void Client::readArguments(
             }
             else
                 break;
+        }
+        /// Options with no value
+        else if (in_external_group && (arg == "--scalar"))
+        {
+            external_tables_arguments.back().emplace_back(arg);
         }
         else
         {

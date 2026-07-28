@@ -51,7 +51,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     2. 选择通知渠道：**Email**、**UI** 和/或 **Slack**。
     3. 点击 **Save**。
 
-    <Image img="/images/cloud/reference/billing/spend-alerts-config.webp" size="md" alt="组织支出告警对话框，包含支出上限、自动阈值告警和通知渠道" />
+    <Image img="/images/cloud/reference/billing/spend-alerts-config.png" size="md" alt="组织支出告警对话框，包含支出上限、自动阈值告警和通知渠道" />
   </Step>
 </Steps>
 
@@ -59,12 +59,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   ## 自动阈值告警
 </div>
 
-系统会根据你配置的支出告警金额，自动创建并触发三条告警：
+系统会根据你配置的支出告警金额，自动创建并触发四条告警：
 
 | 阈值       | 触发条件     | 示例 ($10 告警) |
 | -------- | -------- | ----------- |
 | **50%**  | 支出达到一半   | $5          |
-| **75%**  | 支出达到四分之三 | $7.50       |
+| **75%**  | 支出达到四分之三 | $8          |
+| **90%**  | 支出达到 90% | $9          |
 | **100%** | 支出达到全部金额 | $10         |
 
 <div id="notification-channels">

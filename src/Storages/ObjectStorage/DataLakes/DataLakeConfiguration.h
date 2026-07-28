@@ -255,7 +255,8 @@ public:
         size_t max_block_size,
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info,
-        bool need_only_count) const override
+        bool need_only_count,
+        std::optional<size_t> limit = {}) const override
     {
         assertInitialized();
         return current_metadata->read(
@@ -266,7 +267,8 @@ public:
             max_block_size,
             parser_shared_resources,
             format_filter_info,
-            need_only_count);
+            need_only_count,
+            limit);
     }
 
     std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr context) const override

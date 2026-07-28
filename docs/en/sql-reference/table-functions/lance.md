@@ -25,6 +25,10 @@ lanceS3(url [, NOSIGN | access_key_id, secret_access_key [, session_token]])
 lanceS3(named_collection[, option=value [,..]])
 
 lanceS3(path_to_dataset, SETTINGS disk = 'disk_name')
+
+lanceS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key [, session_token]])
+
+lanceS3Cluster(cluster_name, named_collection[, option=value [,..]])
 ```
 
 ## Arguments {#arguments}
@@ -38,6 +42,18 @@ The arguments for `lanceS3` follow the same S3 argument rules as other S3 data l
 - `named_collection` — Name of a [named collection](/operations/named-collections.md) containing S3 connection parameters.
 - `filename` — Dataset path relative to the named collection URL.
 - `SETTINGS disk = 'disk_name'` — Read through an S3 object-storage disk defined in server configuration.
+- `cluster_name` — (cluster form only) Name of a cluster used to distribute fragment packs across nodes.
+
+## Cluster reads {#cluster-reads}
+
+`lanceS3Cluster` is an experimental extension that splits a pinned Lance dataset into fragment packs on the initiator and assigns packs to workers (same pattern as `icebergS3Cluster` / `s3Cluster`).
+
+- Tasks carry the pinned dataset version and fragment ids; workers do not fall back to the latest version.
+- Credentials are not sent in tasks; each node uses its local configuration or named collection.
+- `LIMIT` pushdown and count fast paths may force a single pack, so cluster parallelism may not help those queries.
+- Prefer single-node `lanceS3` for small datasets.
+
+Fragment packing is controlled by the same settings as single-node multi-stream reads (`lance_enable_fragment_parallelism`, `lance_fragment_pack_mode`, `lance_max_fragment_packs`, and related options). See [Lance table engine](/engines/table-engines/integrations/lance#read-parallelism).
 
 Named arguments such as `access_key_id`, `secret_access_key`, `session_token`, `region`, `no_sign_request`, and `use_environment_credentials` are routed through the existing S3 configuration path.
 

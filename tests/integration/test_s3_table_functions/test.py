@@ -101,6 +101,17 @@ def set_lance_latest_version(started_cluster, remote_prefix, version):
     )
 
 
+def remove_minio_prefix(started_cluster, remote_prefix):
+    for item in started_cluster.minio_client.list_objects(
+        started_cluster.minio_bucket,
+        prefix=f"{remote_prefix.rstrip('/')}/",
+        recursive=True,
+    ):
+        started_cluster.minio_client.remove_object(
+            started_cluster.minio_bucket, item.object_name
+        )
+
+
 def skip_if_lance_s3_unavailable(instance=node):
     if instance.query("SELECT count() FROM system.table_functions WHERE name = 'lanceS3'") == "0\n":
         pytest.skip("lanceS3 table function is not available in this build")
@@ -414,6 +425,104 @@ def test_lance_s3_query_pins_dataset_version(started_cluster):
             query_executor.shutdown(wait=True)
 
 
+def test_lance_s3_pinned_version_deleted_error(started_cluster):
+    """After analysis pins a version, deleting that version's objects must fail cleanly (no hang)."""
+    skip_if_lance_s3_unavailable()
+
+    remote_prefix = "data/lance/versions_deleted.lance"
+    version_1_files = [
+        "data/101110110111010110111111ca31c045e49cba0cf12615f6a3.lance",
+        "_transactions/0-9e7942fd-8397-4e82-b2be-d4688d628047.txn",
+        "_versions/18446744073709551614.manifest",
+    ]
+    version_1_data_object = (
+        f"{remote_prefix}/data/101110110111010110111111ca31c045e49cba0cf12615f6a3.lance"
+    )
+    version_1_manifest_object = f"{remote_prefix}/_versions/18446744073709551614.manifest"
+
+    remove_minio_prefix(started_cluster, remote_prefix)
+    upload_lance_files_to_minio(
+        started_cluster,
+        remote_prefix,
+        "versions.lance",
+        version_1_files,
+    )
+    set_lance_latest_version(started_cluster, remote_prefix, 1)
+
+    failpoint = "lance_metadata_iterate_pause"
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+
+    def run_query():
+        return node.query_and_get_error(
+            """
+            SELECT id, name
+            FROM lanceS3(nc_s3, filename = 'lance/versions_deleted.lance')
+            ORDER BY id
+            """,
+            query_id="lance_pinned_version_deleted",
+            timeout=60,
+        )
+
+    query_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+    wait_future = query_executor.submit(
+        lambda: node.query(
+            f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE",
+            timeout=30,
+        )
+    )
+    query_future = query_executor.submit(run_query)
+
+    try:
+        wait_future.result(timeout=30)
+        # Snapshot is already pinned to v1; remove the pinned version's storage objects.
+        for object_name in (version_1_data_object, version_1_manifest_object):
+            started_cluster.minio_client.remove_object(
+                started_cluster.minio_bucket, object_name
+            )
+        node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+
+        deleted_error = query_future.result(timeout=60)
+        # Prefer structured codes from the Lance FFI mapping (NotFound / S3 / corrupt).
+        assert any(
+            code in deleted_error
+            for code in (
+                "FILE_DOESNT_EXIST",
+                "S3_ERROR",
+                "INCORRECT_DATA",
+                "CANNOT_OPEN_FILE",
+            )
+        ), deleted_error
+    finally:
+        try:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        finally:
+            query_executor.shutdown(wait=True)
+            remove_minio_prefix(started_cluster, remote_prefix)
+
+
+def test_lance_s3_cold_hot_reread(started_cluster):
+    """Cold then warm re-read of the same S3 dataset must return identical results."""
+    skip_if_lance_s3_unavailable()
+
+    remote_prefix = "data/lance/basic_reread.lance"
+    remove_minio_prefix(started_cluster, remote_prefix)
+    upload_lance_dataset_to_minio(
+        started_cluster,
+        remote_prefix,
+        dataset_name="basic.lance",
+    )
+
+    query = """
+        SELECT id, name, score
+        FROM lanceS3(nc_s3, filename = 'lance/basic_reread.lance')
+        ORDER BY id
+        """
+    cold = node.query(query, query_id="lance_s3_cold_read")
+    hot = node.query(query, query_id="lance_s3_hot_read")
+    assert cold == hot
+    assert cold == "1\ta\t10\n2\tb\t\\N\n3\tc\t30\n"
+
+
 def test_lance_s3_pushdown_queries(started_cluster):
     skip_if_lance_s3_unavailable()
 
@@ -511,6 +620,54 @@ def test_lance_s3_pushdown_queries(started_cluster):
             """
         )
         == "4\n7\n"
+    )
+    # Partial AND: id is pushable, lower(name) is residual-only.
+    assert (
+        node.query(
+            """
+            SELECT id
+            FROM lanceS3(nc_s3, filename = 'lance/pushdown.lance')
+            WHERE id IN (4, 7) AND lower(name) = 'x'
+            ORDER BY id
+            """
+        )
+        == "4\n7\n"
+    )
+    assert (
+        node.query(
+            """
+            SELECT id
+            FROM lanceS3(nc_s3, filename = 'lance/pushdown.lance')
+            WHERE id = 2 AND lower(name) = 'nope'
+            """
+        )
+        == ""
+    )
+    # LIMIT without WHERE (size only; any rows are fine).
+    assert (
+        node.query(
+            """
+            SELECT count()
+            FROM (
+                SELECT id
+                FROM lanceS3(nc_s3, filename = 'lance/pushdown.lance')
+                LIMIT 2
+            )
+            """
+        )
+        == "2\n"
+    )
+    assert (
+        node.query(
+            """
+            SELECT id
+            FROM lanceS3(nc_s3, filename = 'lance/pushdown.lance')
+            WHERE id IN (1, 3, 5, 7)
+            ORDER BY id
+            LIMIT 2
+            """
+        )
+        == "1\n3\n"
     )
     assert (
         node.query(

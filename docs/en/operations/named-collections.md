@@ -322,6 +322,8 @@ The description of parameters see [postgresql](../sql-reference/table-functions/
 - `username` for `user`
 - `db` for `database`.
 
+The connection-pool settings of the [PostgreSQL table engine](../engines/table-engines/integrations/postgresql.md) (`postgresql_connection_pool_size` and the other `postgresql_*` settings) can also be stored in the collection or passed as `key = value` overrides. They apply to the `PostgreSQL` table engine, the `postgresql` table function, and the `PostgreSQL` database engine; an explicit `SETTINGS` clause on a table takes precedence over the values from the collection.
+
 Parameter `addresses_expr` is used in a collection instead of `host:port`. The parameter is optional, because there are other optional ones: `host`, `hostname`, `port`. The following pseudo code explains the priority:
 
 ```sql

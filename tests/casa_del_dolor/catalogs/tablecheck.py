@@ -36,6 +36,11 @@ from integration.helpers.client import Client
 # this literal, so it cannot collide with a real value.
 _NULL_SENTINEL = "<NULL>"
 
+# ClickHouse unsigned and 128/256-bit integers have no Spark equivalent: they are clamped
+# to BIGINT/DECIMAL on the lake side, so out-of-range values wrap and the engines print
+# different strings for the same stored bytes. Matched anywhere in the type (Array, Nullable...).
+_LOSSY_CH_INT_RE = re.compile(r"\b(?:UInt(?:64|128|256)|Int128|Int256)\b")
+
 
 class SparkAndClickHouseCheck:
 
@@ -166,10 +171,27 @@ class SparkAndClickHouseCheck:
                 )
                 return False
 
+            # Big-int CH types (UInt64/128/256, Int128/256) map to Spark Long or an under-precision
+            # Decimal, so they are not losslessly representable in the lake. Exclude only those
+            # columns from the hash and keep comparing the rest; falling back to a count-only check
+            # for the whole table would let a divergence in any other column slip through.
+            uncomparable = [
+                v
+                for v in table.columns.values()
+                if self._check_type_valid_for_comparison(v.spark_type)
+                and _LOSSY_CH_INT_RE.search(v.clickhouse_type or "")
+            ]
+            if uncomparable:
+                self.logger.info(
+                    f"Excluding column(s) {','.join(c.column_name for c in uncomparable)} from the "
+                    f"value comparison for {table.get_clickhouse_path()}: not losslessly representable in the lake"
+                )
+
             order_by_cols = [
                 v
                 for v in table.columns.values()
                 if self._check_type_valid_for_comparison(v.spark_type)
+                and not _LOSSY_CH_INT_RE.search(v.clickhouse_type or "")
             ]
             if len(order_by_cols) == 0:
                 self.logger.info(
@@ -186,13 +208,20 @@ class SparkAndClickHouseCheck:
             # Decimals: match ClickHouse `toString`, which trims trailing zeros only in the
             # fractional part and drops a bare decimal point. A blunt TRIM TRAILING '0' would
             # also strip significant zeros (e.g. "10" -> "1"), causing false mismatches.
+            # `CAST(decimal AS STRING)` can emit scientific notation for a zero read from a lake
+            # file (e.g. "0E-11"), which ClickHouse never does; `format_number` always yields plain
+            # fixed-point (strip its grouping commas) and preserves full 38-digit precision.
             def spark_col_expr(col) -> str:
-                s = f"CAST({col.column_name} AS STRING)"
                 if isinstance(col.spark_type, DecimalType):
-                    s = (
-                        f"CASE WHEN {s} LIKE '%.%' "
-                        f"THEN TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM {s})) ELSE {s} END"
+                    plain = (
+                        f"regexp_replace(format_number({col.column_name}, {col.spark_type.scale}), ',', '')"
                     )
+                    s = (
+                        f"CASE WHEN {plain} LIKE '%.%' "
+                        f"THEN TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM {plain})) ELSE {plain} END"
+                    )
+                else:
+                    s = f"CAST({col.column_name} AS STRING)"
                 return f"COALESCE({s}, '{_NULL_SENTINEL}')"
 
             spark_strings = {

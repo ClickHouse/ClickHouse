@@ -231,6 +231,8 @@ public:
     void initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override;
     String getName() const override { return "JoinStepLogicalLookup"; }
 
+    QueryPlanRawPtrs getChildPlans() override;
+
     PreparedJoinStorage & getPreparedJoinStorage() { return prepared_join_storage; }
 
     bool useNulls() const { return use_nulls; }

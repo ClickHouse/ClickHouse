@@ -111,6 +111,12 @@ public:
 
     /// Get a storage for projection.
     virtual std::shared_ptr<IDataPartStorage> getProjection(const std::string & name, bool use_parent_transaction = true) = 0; // NOLINT
+
+    virtual std::shared_ptr<IDataPartStorage> getProjectionNoInitialize(const std::string & name, bool use_parent_transaction = true) // NOLINT
+    {
+        return getProjection(name, use_parent_transaction);
+    }
+
     virtual std::shared_ptr<const IDataPartStorage> getProjection(const std::string & name) const = 0;
 
     /// Part directory exists.
@@ -271,6 +277,14 @@ public:
         std::optional<int32_t> metadata_version_to_write = std::nullopt;
     };
 
+    /// For packed storage the whole data.packed archive is rewritten (copied) during a clone whenever
+    /// any file it contains must be copied instead of hardlinked, the metadata version is overwritten,
+    /// or the version is dropped. When that happens none of the archive's logical members (of the part
+    /// or its packed projections) are hardlinked from the source, so the caller must not record them as
+    /// shared blobs. Full storage hardlinks members individually and has no such archive, so it never
+    /// copies a whole archive.
+    virtual bool cloneCopiesWholeArchive(const ClonePartParams & /*params*/) const { return false; }
+
     virtual std::shared_ptr<IDataPartStorage> freeze(
         const std::string & to,
         const std::string & dir_path,
@@ -305,6 +319,10 @@ public:
 
     virtual void createDirectories() = 0;
     virtual void createProjection(const std::string & name) = 0;
+
+    /// Hint for the preferred on-disk order of files. Packed storage uses it to lay out the
+    /// single archive; storages that keep files separately can ignore it (default no-op).
+    virtual void setPreferredFileOrder(const Strings & /*file_names*/) {}
 
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & name,
@@ -391,6 +409,11 @@ private:
 inline bool isFullPartStorage(const IDataPartStorage & storage)
 {
     return storage.getType() == MergeTreeDataPartStorageType::Full;
+}
+
+inline bool isPackedPartStorage(const IDataPartStorage & storage)
+{
+    return storage.getType() == MergeTreeDataPartStorageType::Packed;
 }
 
 }
