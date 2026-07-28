@@ -9,7 +9,7 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/es/components/Image.jsx";
 
-En esta guía, aprenderá a explorar en un notebook de Marimo un conjunto de datos alojado en ClickHouse Cloud con la ayuda de [chDB](/es/products/chdb/index), un rápido motor SQL OLAP en proceso basado en ClickHouse.
+En esta guía, aprenderá a explorar en un notebook de Marimo un conjunto de datos alojado en ClickHouse Cloud con la ayuda de [chDB](/es/chdb/index), un rápido motor SQL OLAP en proceso basado en ClickHouse.
 
 **Requisitos previos:**
 
@@ -46,7 +46,7 @@ En el menú de la izquierda, haz clic en `Data sources`. Después, haz clic en `
 
 <Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="Añadir conjunto de datos de ejemplo" />
 
-Selecciona `Get started` en la tarjeta de datos de precios de propiedades pagados del Reino Unido (4 GB):
+Selecciona `Get started` en la tarjeta de datos de precios de propiedades pagados del Reino Unido (4GB):
 
 <Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="Seleccionar conjunto de datos de precios pagados del Reino Unido" />
 
@@ -95,7 +95,7 @@ Debería abrirse una nueva ventana del navegador con la interfaz de Marimo en lo
 
 <Image size="md" img="/images/use-cases/AI_ML/Marimo/4.webp" alt="Interfaz de Marimo" />
 
-Los cuadernos de Marimo se almacenan como archivos de Python sin formato, lo que facilita el control de versiones y compartirlos con otras personas.
+Los notebooks de Marimo se almacenan como archivos de Python sin formato, lo que facilita el control de versiones y compartirlos con otras personas.
 
 <div id="installing-dependencies">
   ## Instalar dependencias
@@ -313,16 +313,16 @@ WHERE town = 'LONDON'
 
 df_distribution = chdb.query(query_distribution, "DataFrame")
 
-# crear un diagrama de caja interactivo.
+# create an interactive box plot.
 fig_box = go.Figure()
 
 fig_box.add_trace(
     go.Box(
         y=df_distribution['price'],
         name=f'London {year_slider.value}',
-        boxmean='sd',  # Mostrar la media y la desviación estándar
+        boxmean='sd',  # Show mean and standard deviation
         marker_color='lightblue',
-        boxpoints='outliers'  # Mostrar los puntos atípicos
+        boxpoints='outliers'  # Show outlier points
     )
 )
 

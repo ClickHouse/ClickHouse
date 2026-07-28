@@ -1,0 +1,10 @@
+after drop	1	1	YES
+after drop	2	0	NO
+after drop	3	1	YES
+subquery select	1	0
+subquery select	2	1
+subquery select	3	0
+subquery where	1
+after delete	2	0	NO
+after update	2	1	YES
+after lightweight delete	0

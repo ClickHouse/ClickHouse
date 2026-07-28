@@ -37,192 +37,180 @@ Kafka 表引擎 允许 ClickHouse 直接从 Kafka topic 读取数据。虽然这
   #### 步骤
 </div>
 
-<div id="1-prepare">
-  ##### 1. 准备
-</div>
+<Steps>
+  <Step title="准备" id="1-prepare">
+    如果你的目标 topic 中已有数据，你可以据此调整以下内容，以适配你的数据集。或者，你也可以使用[这里](https://datasets-documentation.s3.eu-west-3.amazonaws.com/kafka/github_all_columns.ndjson)提供的 GitHub 示例数据集。为简洁起见，下面的示例使用的就是这个数据集；与[这里](https://ghe.clickhouse.tech/)提供的完整数据集相比，它采用了精简版 schema，并且只包含部分行 (具体来说，我们仅保留与 [ClickHouse 软件源](https://github.com/ClickHouse/ClickHouse) 相关的 GitHub 事件) 。不过，这仍足以让[随数据集发布](https://ghe.clickhouse.tech/)的大多数查询正常运行。
+  </Step>
 
-如果目标 topic 中已经有数据，你可以基于下面的内容调整后用于自己的数据集。或者，也可以使用[这里](https://datasets-documentation.s3.eu-west-3.amazonaws.com/kafka/github_all_columns.ndjson)提供的 GitHub 示例数据集。下面的示例使用的就是这个数据集；为简洁起见，相比[这里](https://ghe.clickhouse.tech/)提供的完整数据集，它采用了精简后的 schema 和部分行 (具体来说，我们只保留了与 [ClickHouse 仓库](https://github.com/ClickHouse/ClickHouse) 相关的 GitHub 事件) 。不过，这仍足以让[随该数据集发布](https://ghe.clickhouse.tech/)的大多数查询正常运行。
+  <Step title="配置 ClickHouse" id="2-configure-clickhouse">
+    如果您要连接到启用了安全机制的 Kafka，则此步骤必不可少。这些设置无法通过 SQL DDL 命令传入，必须在 ClickHouse 的 config.xml 中配置。这里假设您连接的是启用了 SASL 保护的实例。这是在与 Confluent Cloud 交互时最简单的方法。
 
-<div id="2-configure-clickhouse">
-  ##### 2. 配置 ClickHouse
-</div>
+    ```xml
+    <clickhouse>
+       <kafka>
+           <sasl_username>username</sasl_username>
+           <sasl_password>password</sasl_password>
+           <security_protocol>sasl_ssl</security_protocol>
+           <sasl_mechanisms>PLAIN</sasl_mechanisms>
+       </kafka>
+    </clickhouse>
+    ```
 
-如果要连接到启用安全机制的 Kafka，则必须执行此步骤。这些设置无法通过 SQL DDL 命令传入，必须在 ClickHouse 的 config.xml 中配置。这里假设你连接的是启用了 SASL 的 instance。与 Confluent Cloud 交互时，这是最简单的方法。
+    将上述代码片段放入 `conf.d/` 目录下的新文件中，或者将其合并到现有配置文件中。有关可配置的设置，请参见[此处](/zh/reference/engines/table-engines/integrations/kafka#configuration)。
 
-```xml
-<clickhouse>
-   <kafka>
-       <sasl_username>username</sasl_username>
-       <sasl_password>password</sasl_password>
-       <security_protocol>sasl_ssl</security_protocol>
-       <sasl_mechanisms>PLAIN</sasl_mechanisms>
-   </kafka>
-</clickhouse>
-```
+    我们还将创建一个名为 `KafkaEngine` 的数据库，供本教程使用：
 
-可以将上述代码片段放到 `conf.d/` 目录下的新文件中，或合并到现有配置文件中。有关可配置的设置，请参见[此处](/zh/reference/engines/table-engines/integrations/kafka#configuration)。
+    ```sql
+    CREATE DATABASE KafkaEngine;
+    ```
 
-我们还将创建一个名为 `KafkaEngine` 的数据库，用于本教程：
+    创建好数据库后，您需要切换到该数据库：
 
-```sql
-CREATE DATABASE KafkaEngine;
-```
+    ```sql
+    USE KafkaEngine;
+    ```
+  </Step>
 
-创建数据库后，你需要切换到该数据库：
+  <Step title="创建目标表" id="3-create-the-destination-table">
+    准备好目标表。为简洁起见，下面的示例使用了精简版的 GitHub schema。请注意，虽然这里使用的是 MergeTree 表引擎，但此示例也很容易改写为适用于 [MergeTree 家族](/zh/reference/engines/table-engines/mergetree-family/index) 中的任何成员。
 
-```sql
-USE KafkaEngine;
-```
+    ```sql
+    CREATE TABLE github
+    (
+        file_time DateTime,
+        event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+        actor_login LowCardinality(String),
+        repo_name LowCardinality(String),
+        created_at DateTime,
+        updated_at DateTime,
+        action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+        comment_id UInt64,
+        path String,
+        ref LowCardinality(String),
+        ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+        creator_user_login LowCardinality(String),
+        number UInt32,
+        title String,
+        labels Array(LowCardinality(String)),
+        state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+        assignee LowCardinality(String),
+        assignees Array(LowCardinality(String)),
+        closed_at DateTime,
+        merged_at DateTime,
+        merge_commit_sha String,
+        requested_reviewers Array(LowCardinality(String)),
+        merged_by LowCardinality(String),
+        review_comments UInt32,
+        member_login LowCardinality(String)
+    ) ENGINE = MergeTree ORDER BY (event_type, repo_name, created_at)
+    ```
+  </Step>
 
-<div id="3-create-the-destination-table">
-  ##### 3. 创建目标表
-</div>
+  <Step title="创建 topic 并写入数据" id="4-create-and-populate-the-topic">
+    接下来，我们将创建一个 topic。为此可以使用多种工具。如果是在本机上本地运行 Kafka，或者在 Docker 容器中运行 Kafka，[RPK](https://docs.redpanda.com/current/get-started/rpk-install/) 就很合适。我们可以运行以下命令来创建一个名为 `github`、具有 5 个分区的 topic：
 
-准备好目标表。为简洁起见，下面的示例使用了精简版的 GitHub schema。请注意，虽然这里使用的是 MergeTree 表引擎，但此示例也很容易改写为适用于 [MergeTree 家族](/zh/reference/engines/table-engines/mergetree-family/index) 中的任何成员。
+    ```bash
+    rpk topic create -p 5 github --brokers <host>:<port>
+    ```
 
-```sql
-CREATE TABLE github
-(
-    file_time DateTime,
-    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
-    actor_login LowCardinality(String),
-    repo_name LowCardinality(String),
-    created_at DateTime,
-    updated_at DateTime,
-    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
-    comment_id UInt64,
-    path String,
-    ref LowCardinality(String),
-    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
-    creator_user_login LowCardinality(String),
-    number UInt32,
-    title String,
-    labels Array(LowCardinality(String)),
-    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
-    assignee LowCardinality(String),
-    assignees Array(LowCardinality(String)),
-    closed_at DateTime,
-    merged_at DateTime,
-    merge_commit_sha String,
-    requested_reviewers Array(LowCardinality(String)),
-    merged_by LowCardinality(String),
-    review_comments UInt32,
-    member_login LowCardinality(String)
-) ENGINE = MergeTree ORDER BY (event_type, repo_name, created_at)
-```
+    如果我们是在 Confluent Cloud 上运行 Kafka，则可能更适合使用 [Confluent 命令行客户端](https://docs.confluent.io/platform/current/tutorials/examples/clients/docs/kcat.html#produce-records)：
 
-<div id="4-create-and-populate-the-topic">
-  ##### 4. 创建并填充 topic
-</div>
+    ```bash
+    confluent kafka topic create --if-not-exists github
+    ```
 
-接下来，我们将创建一个 topic。可以使用多种工具来完成这一步。如果 Kafka 运行在本地机器上，或在 Docker 容器中运行，[RPK](https://docs.redpanda.com/current/get-started/rpk-install/) 是一个不错的选择。我们可以运行以下命令来创建一个名为 `github`、包含 5 个分区的 topic：
+    现在我们需要向这个 topic 写入一些数据，这里将使用 [kcat](https://github.com/edenhill/kcat)。如果你在本地运行 Kafka 且禁用了身份验证，可以运行类似下面的命令：
 
-```bash
-rpk topic create -p 5 github --brokers <host>:<port>
-```
+    ```bash
+    cat github_all_columns.ndjson |
+    kcat -P \
+      -b <host>:<port> \
+      -t github
+    ```
 
-如果我们使用的是 Confluent Cloud 上的 Kafka，可能会更倾向于使用 [Confluent CLI](https://docs.confluent.io/platform/current/tutorials/examples/clients/docs/kcat.html#produce-records)：
+    或者，如果我们的 Kafka 集群使用 SASL 进行身份验证，则使用以下内容：
 
-```bash
-confluent kafka topic create --if-not-exists github
-```
+    ```bash
+    cat github_all_columns.ndjson |
+    kcat -P \
+      -b <host>:<port> \
+      -t github
+      -X security.protocol=sasl_ssl \
+      -X sasl.mechanisms=PLAIN \
+      -X sasl.username=<username>  \
+      -X sasl.password=<password> \
+    ```
 
-现在我们需要向这个 topic 写入一些数据，这里将使用 [kcat](https://github.com/edenhill/kcat)。如果是在本地运行 Kafka 且未启用身份验证，可以运行类似下面的命令：
+    该数据集包含 200,000 行，因此只需几秒钟即可完成摄取。如果你想使用更大的数据集，请查看 GitHub 仓库 [ClickHouse/kafka-samples](https://github.com/ClickHouse/kafka-samples) 中的[大数据集部分](https://github.com/ClickHouse/kafka-samples/tree/main/producer#large-datasets)。
+  </Step>
 
-```bash
-cat github_all_columns.ndjson |
-kcat -P \
-  -b <host>:<port> \
-  -t github
-```
+  <Step title="创建 Kafka 表引擎" id="5-create-the-kafka-table-engine">
+    下面的示例创建了一个与 MergeTree 表具有相同 schema 的表引擎。这并非严格必需，因为你可以在目标表中使用别名列或临时列。不过，这些设置很重要——请注意，这里使用 `JSONEachRow` 作为从 Kafka topic 中消费 JSON 的数据类型。其中，`github` 和 `clickhouse` 分别表示 topic 名称和消费者组名称。实际上，topics 也可以是一个值列表。
 
-或者，如果 Kafka 集群使用 SASL 进行身份验证，请使用以下内容：
+    ```sql
+    CREATE TABLE github_queue
+    (
+        file_time DateTime,
+        event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+        actor_login LowCardinality(String),
+        repo_name LowCardinality(String),
+        created_at DateTime,
+        updated_at DateTime,
+        action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+        comment_id UInt64,
+        path String,
+        ref LowCardinality(String),
+        ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+        creator_user_login LowCardinality(String),
+        number UInt32,
+        title String,
+        labels Array(LowCardinality(String)),
+        state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+        assignee LowCardinality(String),
+        assignees Array(LowCardinality(String)),
+        closed_at DateTime,
+        merged_at DateTime,
+        merge_commit_sha String,
+        requested_reviewers Array(LowCardinality(String)),
+        merged_by LowCardinality(String),
+        review_comments UInt32,
+        member_login LowCardinality(String)
+    )
+       ENGINE = Kafka('kafka_host:9092', 'github', 'clickhouse',
+                'JSONEachRow') SETTINGS kafka_thread_per_consumer = 0, kafka_num_consumers = 1;
+    ```
 
-```bash
-cat github_all_columns.ndjson |
-kcat -P \
-  -b <host>:<port> \
-  -t github
-  -X security.protocol=sasl_ssl \
-  -X sasl.mechanisms=PLAIN \
-  -X sasl.username=<username>  \
-  -X sasl.password=<password> \
-```
+    下面将讨论引擎设置和性能调优。此时，对表 `github_queue` 执行一个简单的 select 应该能读出一些行。请注意，这会将消费者 offsets 向前推进，因此如果不进行[重置](#common-operations)，这些行将无法再次读取。另请注意限制以及必需参数 `stream_like_engine_allow_direct_select.`
+  </Step>
 
-该数据集包含 200,000 行，因此几秒内即可完成摄取。如果你想处理更大的数据集，请参阅 [ClickHouse/kafka-samples](https://github.com/ClickHouse/kafka-samples) GitHub 代码仓库中的[大数据集部分](https://github.com/ClickHouse/kafka-samples/tree/main/producer#large-datasets)。
+  <Step title="创建 materialized view" id="6-create-the-materialized-view">
+    materialized view 会连接前面创建的两个表，从 Kafka 表引擎读取数据，并将其插入目标 MergeTree 表。我们可以进行多种数据转换。这里我们将执行简单的读取和插入操作。使用 * 的前提是列名完全一致 (区分大小写) 。
 
-<div id="5-create-the-kafka-table-engine">
-  ##### 5. 创建 Kafka 表引擎
-</div>
+    ```sql
+    CREATE MATERIALIZED VIEW github_mv TO github AS
+    SELECT *
+    FROM github_queue;
+    ```
 
-下面的示例创建了一个表引擎，其 schema 与 merge tree 表相同。这并非绝对必要，因为你可以在目标表中使用别名或临时列。不过，这些设置很重要——请注意，这里使用 `JSONEachRow` 作为从 Kafka topic 消费 JSON 时的数据类型。`github` 和 `clickhouse` 这两个值分别表示 topic 名称和消费者组名称。实际上，topics 也可以是一个值列表。
+    在创建时，materialized view 会连接到 Kafka 引擎并开始读取，将行插入目标表。此过程会无限期持续，之后插入到 Kafka 的消息也会被消费。你可以随时重新运行插入脚本，向 Kafka 再插入更多消息。
+  </Step>
 
-```sql
-CREATE TABLE github_queue
-(
-    file_time DateTime,
-    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
-    actor_login LowCardinality(String),
-    repo_name LowCardinality(String),
-    created_at DateTime,
-    updated_at DateTime,
-    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
-    comment_id UInt64,
-    path String,
-    ref LowCardinality(String),
-    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
-    creator_user_login LowCardinality(String),
-    number UInt32,
-    title String,
-    labels Array(LowCardinality(String)),
-    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
-    assignee LowCardinality(String),
-    assignees Array(LowCardinality(String)),
-    closed_at DateTime,
-    merged_at DateTime,
-    merge_commit_sha String,
-    requested_reviewers Array(LowCardinality(String)),
-    merged_by LowCardinality(String),
-    review_comments UInt32,
-    member_login LowCardinality(String)
-)
-   ENGINE = Kafka('kafka_host:9092', 'github', 'clickhouse',
-            'JSONEachRow') SETTINGS kafka_thread_per_consumer = 0, kafka_num_consumers = 1;
-```
+  <Step title="确认行已插入" id="7-confirm-rows-have-been-inserted">
+    确认目标表中有数据：
 
-我们将在下文讨论引擎设置和性能调优。此时，对表 `github_queue` 执行一个简单的 select 查询后，应该能读取到一些行。请注意，这会将消费者偏移量向前移动，因此如果不进行[重置](#common-operations)，就无法再次读取这些行。另请注意其中的 limit，以及必需参数 `stream_like_engine_allow_direct_select.`
+    ```sql
+    SELECT count() FROM github;
+    ```
 
-<div id="6-create-the-materialized-view">
-  ##### 6. 创建 materialized view
-</div>
+    你应该能看到 200,000 行：
 
-materialized view 会连接前面创建的两个表：从 Kafka table engine 读取数据，并将其插入目标 merge tree 表。我们可以在此过程中进行多种数据转换。这里我们只做一次简单的读取和插入。使用 * 的前提是列名完全一致 (区分大小写) 。
-
-```sql
-CREATE MATERIALIZED VIEW github_mv TO github AS
-SELECT *
-FROM github_queue;
-```
-
-创建后，materialized view 会连接到 Kafka 引擎并开始读取，将行插入目标表。该过程会持续运行，后续插入到 Kafka 的消息也会被持续消费。你可以根据需要重新运行插入脚本，向 Kafka 再插入更多消息。
-
-<div id="7-confirm-rows-have-been-inserted">
-  ##### 7. 确认数据行已插入
-</div>
-
-确认目标表中已有数据：
-
-```sql
-SELECT count() FROM github;
-```
-
-你应该会看到 200,000 行数据：
-
-```response
-┌─count()─┐
-│  200000 │
-└─────────┘
-```
+    ```response
+    ┌─count()─┐
+    │  200000 │
+    └─────────┘
+    ```
+  </Step>
+</Steps>
 
 <div id="common-operations">
   #### 常用操作
@@ -361,139 +349,137 @@ Kafka 表引擎具有至少一次 (at-least-once) 投递语义。在一些已知
 
 虽然这种用例较为少见，但也可以将 ClickHouse 数据持久化到 Kafka 中。例如，我们将手动向 Kafka 表引擎插入行。随后，同一个 Kafka 引擎会读取这些数据，其 materialized view 会将数据写入 MergeTree 表。最后，我们将演示在向 Kafka 插入数据时如何使用 materialized views，从现有 source table 中读取数据。
 
-<div id="steps">
+<div id="steps-1">
   #### 步骤
 </div>
 
 我们的初始目标如下图所示：
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_02.webp" size="lg" alt="带有插入操作的 Kafka table engine 示意图" />
+<Image img="/images/integrations/data-ingestion/kafka/kafka_02.webp" size="lg" alt="带有插入操作的 Kafka 表引擎 示意图" />
 
-我们假设你已按照 [Kafka to ClickHouse](#kafka-to-clickhouse) 中的步骤创建好这些表和视图，并且该 topic 中的数据已被完全消费。
+我们假设你已按照 [Kafka 到 ClickHouse](#kafka-to-clickhouse) 中的步骤创建好这些表和视图，并且该 topic 中的数据已被完全消费。
 
-<div id="1-inserting-rows-directly">
-  ##### 1. 直接插入行
-</div>
+<Steps>
+  <Step title="直接插入数据行" id="1-inserting-rows-directly">
+    首先，确认目标表中的行数。
 
-首先，确认目标表中的行数。
+    ```sql
+    SELECT count() FROM github;
+    ```
 
-```sql
-SELECT count() FROM github;
-```
+    此时应有 200,000 行：
 
-此时应有 200,000 行：
+    ```response
+    ┌─count()─┐
+    │  200000 │
+    └─────────┘
+    ```
 
-```response
-┌─count()─┐
-│  200000 │
-└─────────┘
-```
+    现在将行从 GitHub 目标表重新插入到 Kafka 表引擎 github&#95;queue 中。请注意，我们使用了 JSONEachRow 格式，并通过 LIMIT 将 select 限制为 100。
 
-现在，将 GitHub 目标表中的行重新插入到 Kafka 表引擎 github&#95;queue 中。请注意，这里使用的是 JSONEachRow 格式，并将 SELECT 的 LIMIT 设为 100。
+    ```sql
+    INSERT INTO github_queue SELECT * FROM github LIMIT 100 FORMAT JSONEachRow
+    ```
 
-```sql
-INSERT INTO github_queue SELECT * FROM github LIMIT 100 FORMAT JSONEachRow
-```
+    重新统计 GitHub 表中的行数，以确认其已增加 100。正如上图所示，行先通过 Kafka 表引擎插入到 Kafka 中，随后再由同一个引擎重新读取，并由我们的 materialized view 插入到 GitHub 目标表中！
 
-重新统计 GitHub 表中的行数，确认其已增加 100。如上图所示，数据行先通过 Kafka 表引擎写入 Kafka，随后再由同一引擎重新读取，并由我们的 materialized view 插入到 GitHub 目标表中！
+    ```sql
+    SELECT count() FROM github;
+    ```
 
-```sql
-SELECT count() FROM github;
-```
+    你应该会看到另外 100 行：
 
-你应该会看到新增了 100 行：
+    ```response
+    ┌─count()─┐
+    │  200100 │
+    └─────────┘
+    ```
+  </Step>
 
-```response
-┌─count()─┐
-│  200100 │
-└─────────┘
-```
+  <Step title="使用 materialized view" id="2-using-materialized-views">
+    当文档插入表中时，我们可以利用 materialized view 将消息推送到 Kafka 引擎 (以及某个 topic) 。当行插入 GitHub 表时，会触发一个 materialized view，进而将这些行重新插入到 Kafka 引擎中，并写入一个新的 topic。如下图所示：
 
-<div id="2-using-materialized-views">
-  ##### 2. 使用 materialized view
-</div>
+    <Image img="/images/integrations/data-ingestion/kafka/kafka_03.webp" size="lg" alt="带有 materialized view 的 Kafka 表引擎示意图" />
 
-当文档插入表中时，我们可以利用 materialized view 将消息推送到 Kafka 引擎 (以及某个 topic) 。当行插入 GitHub 表时，会触发一个 materialized view，进而将这些行重新插入到 Kafka 引擎中，并写入一个新的 topic。如下图所示：
+    创建一个新的 Kafka topic `github_out` 或等效项。确保 Kafka 表引擎 `github_out_queue` 指向该 topic。
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_03.webp" size="lg" alt="带有 materialized view 的 Kafka 表引擎示意图" />
+    ```sql
+    CREATE TABLE github_out_queue
+    (
+        file_time DateTime,
+        event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+        actor_login LowCardinality(String),
+        repo_name LowCardinality(String),
+        created_at DateTime,
+        updated_at DateTime,
+        action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+        comment_id UInt64,
+        path String,
+        ref LowCardinality(String),
+        ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+        creator_user_login LowCardinality(String),
+        number UInt32,
+        title String,
+        labels Array(LowCardinality(String)),
+        state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+        assignee LowCardinality(String),
+        assignees Array(LowCardinality(String)),
+        closed_at DateTime,
+        merged_at DateTime,
+        merge_commit_sha String,
+        requested_reviewers Array(LowCardinality(String)),
+        merged_by LowCardinality(String),
+        review_comments UInt32,
+        member_login LowCardinality(String)
+    )
+       ENGINE = Kafka('host:port', 'github_out', 'clickhouse_out',
+                'JSONEachRow') SETTINGS kafka_thread_per_consumer = 0, kafka_num_consumers = 1;
+    ```
 
-创建一个新的 Kafka topic `github_out` 或等效项。确保 Kafka 表引擎 `github_out_queue` 指向该 topic。
+    现在创建一个新的 materialized view `github_out_mv`，使其指向 GitHub 表，并在触发时将行插入到上述引擎中。这样一来，添加到 GitHub 表中的内容就会被推送到新的 Kafka topic。
 
-```sql
-CREATE TABLE github_out_queue
-(
-    file_time DateTime,
-    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
-    actor_login LowCardinality(String),
-    repo_name LowCardinality(String),
-    created_at DateTime,
-    updated_at DateTime,
-    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
-    comment_id UInt64,
-    path String,
-    ref LowCardinality(String),
-    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
-    creator_user_login LowCardinality(String),
-    number UInt32,
-    title String,
-    labels Array(LowCardinality(String)),
-    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
-    assignee LowCardinality(String),
-    assignees Array(LowCardinality(String)),
-    closed_at DateTime,
-    merged_at DateTime,
-    merge_commit_sha String,
-    requested_reviewers Array(LowCardinality(String)),
-    merged_by LowCardinality(String),
-    review_comments UInt32,
-    member_login LowCardinality(String)
-)
-   ENGINE = Kafka('host:port', 'github_out', 'clickhouse_out',
-            'JSONEachRow') SETTINGS kafka_thread_per_consumer = 0, kafka_num_consumers = 1;
-```
+    ```sql
+    CREATE MATERIALIZED VIEW github_out_mv TO github_out_queue AS
+    SELECT file_time, event_type, actor_login, repo_name,
+           created_at, updated_at, action, comment_id, path,
+           ref, ref_type, creator_user_login, number, title,
+           labels, state, assignee, assignees, closed_at, merged_at,
+           merge_commit_sha, requested_reviewers, merged_by,
+           review_comments, member_login
+    FROM github
+    FORMAT JsonEachRow;
+    ```
 
-现在创建一个新的 materialized view `github_out_mv`，使其指向 GitHub 表，并在触发时将行插入到上述引擎中。这样一来，添加到 GitHub 表中的内容就会被推送到新的 Kafka topic。
+    如果你向原始的 github topic (在 [Kafka 到 ClickHouse](#kafka-to-clickhouse) 中创建) 插入数据，文档就会自动出现在 &quot;github&#95;clickhouse&quot; topic 中。你可以使用原生 Kafka 工具来确认这一点。例如，下面我们使用 [kcat](https://github.com/edenhill/kcat) 向由 Confluent Cloud 托管的 github topic 插入 100 行数据：
 
-```sql
-CREATE MATERIALIZED VIEW github_out_mv TO github_out_queue AS
-SELECT file_time, event_type, actor_login, repo_name,
-       created_at, updated_at, action, comment_id, path,
-       ref, ref_type, creator_user_login, number, title,
-       labels, state, assignee, assignees, closed_at, merged_at,
-       merge_commit_sha, requested_reviewers, merged_by,
-       review_comments, member_login
-FROM github
-FORMAT JsonEachRow;
-```
+    ```sql
+    head -n 10 github_all_columns.ndjson |
+    kcat -P \
+      -b <host>:<port> \
+      -t github
+      -X security.protocol=sasl_ssl \
+      -X sasl.mechanisms=PLAIN \
+      -X sasl.username=<username> \
+      -X sasl.password=<password>
+    ```
 
-如果你向原始的 github topic (在 [Kafka to ClickHouse](#kafka-to-clickhouse) 中创建) 插入数据，文档就会自动出现在 &quot;github&#95;clickhouse&quot; topic 中。你可以使用原生 Kafka 工具来确认这一点。例如，下面我们使用 [kcat](https://github.com/edenhill/kcat) 向由 Confluent Cloud 托管的 github topic 插入 100 行数据：
+    对 `github_out` topic 执行读取操作，即可确认消息已成功投递。
 
-```sql
-head -n 10 github_all_columns.ndjson |
-kcat -P \
-  -b <host>:<port> \
-  -t github
-  -X security.protocol=sasl_ssl \
-  -X sasl.mechanisms=PLAIN \
-  -X sasl.username=<username> \
-  -X sasl.password=<password>
-```
+    ```sql
+    kcat -C \
+      -b <host>:<port> \
+      -t github_out \
+      -X security.protocol=sasl_ssl \
+      -X sasl.mechanisms=PLAIN \
+      -X sasl.username=<username> \
+      -X sasl.password=<password> \
+      -e -q |
+    wc -l
+    ```
 
-读取 `github_out` topic 应可确认消息已送达。
-
-```sql
-kcat -C \
-  -b <host>:<port> \
-  -t github_out \
-  -X security.protocol=sasl_ssl \
-  -X sasl.mechanisms=PLAIN \
-  -X sasl.username=<username> \
-  -X sasl.password=<password> \
-  -e -q |
-wc -l
-```
-
-虽然这是一个较复杂的示例，但它展示了 materialized view 与 Kafka 引擎结合使用时的强大能力。
+    尽管这是一个较为复杂的示例，但它充分展示了 materialized view 与 Kafka 引擎结合使用时的强大能力。
+  </Step>
+</Steps>
 
 <div id="clusters-and-performance">
   ### 集群与性能
