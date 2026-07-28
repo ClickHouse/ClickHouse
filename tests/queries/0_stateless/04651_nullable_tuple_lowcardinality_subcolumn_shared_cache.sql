@@ -19,12 +19,15 @@ SELECT x.a.b, x.a FROM t_04651_no_nulls;
 DROP TABLE t_04651_no_nulls;
 
 -- The reported shape: child, whole column, parent, and `assumeNotNull` over the parent in one query.
+-- `assumeNotNull` has an unspecified result on a NULL input, so its value is never asserted here: it is
+-- wrapped in `ignore` so that it is still evaluated, because what the bug breaks is its return-type
+-- post-condition and not the value it returns.
 DROP TABLE IF EXISTS t_04651_compact;
 CREATE TABLE t_04651_compact (x Tuple(a Nullable(Tuple(b LowCardinality(UInt32))))) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS index_granularity = 1, min_bytes_for_wide_part = 1000000000, write_marks_for_substreams_in_compact_parts = 1;
 INSERT INTO t_04651_compact SELECT number % 2 ? tuple(NULL) : tuple(tuple(number)) FROM numbers(4);
 SELECT toTypeName(x.a.b), toTypeName(x.a) FROM t_04651_compact LIMIT 1;
-SELECT x.a.b, x, x.a, isNull(x.a.b), assumeNotNull(x.a) FROM t_04651_compact;
+SELECT x.a.b, x, x.a, isNull(x.a.b), ignore(assumeNotNull(x.a)) FROM t_04651_compact;
 SELECT x.a.b, x.a FROM t_04651_compact;
 SELECT x.a, x.a.b FROM t_04651_compact;
 SELECT x.a.b, x.a FROM t_04651_compact SETTINGS max_block_size = 1;
@@ -47,7 +50,7 @@ INSERT INTO t_04651_leaves SELECT
     number % 2 ? tuple(NULL) : tuple(tuple(number, number))
 FROM numbers(4);
 SELECT s.a.b, s.a, f.a.b, f.a, d.a.b, d.a, m.a.b, m.a FROM t_04651_leaves;
-SELECT assumeNotNull(s.a), assumeNotNull(m.a) FROM t_04651_leaves;
+SELECT ignore(assumeNotNull(s.a)), ignore(assumeNotNull(m.a)) FROM t_04651_leaves;
 DROP TABLE t_04651_leaves;
 
 -- A leaf that is `LowCardinality(Nullable(T))` on disk must NOT be de-nullabilised: its stream really is
@@ -66,7 +69,7 @@ DROP TABLE IF EXISTS t_04651_wide;
 CREATE TABLE t_04651_wide (x Tuple(a Nullable(Tuple(b LowCardinality(UInt32))))) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;
 INSERT INTO t_04651_wide SELECT number % 2 ? tuple(NULL) : tuple(tuple(number)) FROM numbers(4);
-SELECT x.a.b, x.a, assumeNotNull(x.a) FROM t_04651_wide;
+SELECT x.a.b, x.a, ignore(assumeNotNull(x.a)) FROM t_04651_wide;
 DROP TABLE t_04651_wide;
 
 -- Top-level `Nullable(Tuple(...))` control: the element is read without the outer `Tuple` in the path.
@@ -74,7 +77,7 @@ DROP TABLE IF EXISTS t_04651_top_level;
 CREATE TABLE t_04651_top_level (id UInt8, x Nullable(Tuple(b LowCardinality(UInt32)))) ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 1, min_bytes_for_wide_part = 1000000000;
 INSERT INTO t_04651_top_level SELECT number, number % 2 ? NULL : tuple(number) FROM numbers(4);
-SELECT x.b, x, assumeNotNull(x) FROM t_04651_top_level ORDER BY id;
+SELECT x.b, x, ignore(assumeNotNull(x)) FROM t_04651_top_level ORDER BY id;
 DROP TABLE t_04651_top_level;
 
 -- Several granule ranges per block, so the cached substream carries rows of more than one range.
