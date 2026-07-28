@@ -136,6 +136,8 @@ struct StagedChunk
         const size_t records = keys.size();
         if (keys.key_offsets.size() != records + 1 || keys.bucket_offsets.back() != records)
             return false;
+        if (keys.key_offsets.back() != keys.key_bytes.size())
+            return false;
         for (size_t b = 0; b < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++b)
             if (keys.bucket_offsets[b] > keys.bucket_offsets[b + 1])
                 return false;
@@ -144,6 +146,9 @@ struct StagedChunk
                 return false;
         if (const auto * counts = std::get_if<CountPayload>(&payload))
             return counts->multiplicities.size() == records;
+        for (const auto & column : std::get<AggregatePayload>(payload).argument_columns)
+            if (column && column->size() != records)
+                return false;
         return true;
     }
 };
