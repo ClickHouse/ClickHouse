@@ -4028,7 +4028,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
             part_log_elem.rows = part->rows_count;
             part_log_elem.part_format = part->getFormat();
 
-            part_log->add(part_log_elem);
+            part_log->add([&](PartLogElement & element) { element = part_log_elem; });
         }
     }
 }
@@ -5011,20 +5011,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
     }
 
-    /// Reject deprecated statistics types (currently `minmax`) when they are introduced through
-    /// `ALTER TABLE ... MODIFY SETTING auto_statistics_types = ...`. This is a shared check reached by
-    /// both ordinary and replicated tables. Only an explicit change to the setting in this statement is
-    /// inspected, so loading or otherwise altering an existing table that already carries `minmax` in the
-    /// setting is unaffected.
-    for (const auto & command : commands)
-    {
-        if (command.type == AlterCommand::MODIFY_SETTING)
-        {
-            Field value;
-            if (command.settings_changes.tryGet("auto_statistics_types", value))
-                validateAutoStatisticsTypes(value.safeGet<String>());
-        }
-    }
 
     /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
     /// going through the experimental-codec gate that column codecs and `TTL ... RECOMPRESS` use. Enforce
@@ -7323,6 +7309,7 @@ void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr
     /// If the part has no metadata_version.txt (very old parts), the fallback in
     /// loadColumnsChecksumsIndexes will use the table's current version with a special flag.
 
+    IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*part->getDataPartStoragePtr(), "", {BlockNumberColumn::name, BlockOffsetColumn::name}, getContext()->getWriteSettings());
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
     part->removeDeleteOnDestroyMarker();
@@ -8357,6 +8344,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         builder.withPartFormatFromDisk();
         part = std::move(builder).build();
         part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
+        IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*part->getDataPartStoragePtr(), "", {BlockNumberColumn::name, BlockOffsetColumn::name}, getContext()->getWriteSettings());
         part->loadColumnsChecksumsIndexes(/* require_columns_checksums= */ false, /* check_consistency= */ true);
         /// UNIQUE KEY: a restored part may not ship its `unique_key_index.sst`
         /// (older backup, or one taken before UK). Build it here so the part is
@@ -10928,77 +10916,76 @@ try
     if (!part_log)
         return;
 
-    PartLogElement part_log_elem;
-
-    part_log_elem.event_type = type;
-
-    if (part_log_elem.event_type == PartLogElement::MERGE_PARTS
-        || part_log_elem.event_type == PartLogElement::MERGE_PARTS_START)
+    part_log->add([&](PartLogElement & element)
     {
+        element.event_type = type;
+
+        if (element.event_type == PartLogElement::MERGE_PARTS
+            || element.event_type == PartLogElement::MERGE_PARTS_START)
+        {
+            if (merge_entry)
+            {
+                element.merge_reason = PartLogElement::getMergeReasonType((*merge_entry)->merge_type);
+                element.merge_algorithm = PartLogElement::getMergeAlgorithm((*merge_entry)->merge_algorithm);
+            }
+        }
+
+        element.error = static_cast<UInt16>(execution_status.code);
+        element.exception = execution_status.message;
+
+        // construct event_time and event_time_microseconds using the same time point
+        // so that the two times will always be equal up to a precision of a second.
+        const auto time_now = std::chrono::system_clock::now();
+        element.event_time = timeInSeconds(time_now);
+        element.event_time_microseconds = timeInMicroseconds(time_now);
+
+        /// TODO: Stop stopwatch in outer code to exclude ZK timings and so on
+        element.duration_ms = elapsed_ns / 1000000;
+
+        element.database_name = table_id.database_name;
+        element.table_name = table_id.table_name;
+        element.table_uuid = table_id.uuid;
+        element.partition_id = MergeTreePartInfo::fromPartName(new_part_name, format_version).getPartitionId();
+
+        if (result_part)
+            element.partition = result_part->partition.serializeToString(result_part->getMetadataSnapshot());
+        else if (!source_parts.empty())
+            element.partition = source_parts.front()->partition.serializeToString(source_parts.front()->getMetadataSnapshot());
+
+        element.part_name = new_part_name;
+
+        if (result_part)
+        {
+            element.disk_name = result_part->getDataPartStorage().getDiskName();
+            element.path_on_disk = result_part->getDataPartStorage().getFullPath();
+            element.bytes_compressed_on_disk = result_part->getBytesOnDisk();
+            element.bytes_uncompressed = result_part->getBytesUncompressedOnDisk();
+            element.rows = result_part->rows_count;
+            element.part_format = result_part->getFormat();
+        }
+
+        element.source_part_names.reserve(source_parts.size());
+        for (const auto & source_part : source_parts)
+            element.source_part_names.push_back(source_part->name);
+
         if (merge_entry)
         {
-            part_log_elem.merge_reason = PartLogElement::getMergeReasonType((*merge_entry)->merge_type);
-            part_log_elem.merge_algorithm = PartLogElement::getMergeAlgorithm((*merge_entry)->merge_algorithm);
+            element.rows_read = (*merge_entry)->rows_read;
+            element.bytes_read_uncompressed = (*merge_entry)->bytes_read_uncompressed;
+
+            element.rows = (*merge_entry)->rows_written;
+            element.peak_memory_usage = (*merge_entry)->getMemoryTracker().getPeak();
         }
-    }
 
-    part_log_elem.error = static_cast<UInt16>(execution_status.code);
-    part_log_elem.exception = execution_status.message;
+        if (profile_counters)
+        {
+            element.profile_counters = *profile_counters;
+        }
 
-    // construct event_time and event_time_microseconds using the same time point
-    // so that the two times will always be equal up to a precision of a second.
-    const auto time_now = std::chrono::system_clock::now();
-    part_log_elem.event_time = timeInSeconds(time_now);
-    part_log_elem.event_time_microseconds = timeInMicroseconds(time_now);
+        element.mutation_ids = mutation_ids;
 
-    /// TODO: Stop stopwatch in outer code to exclude ZK timings and so on
-    part_log_elem.duration_ms = elapsed_ns / 1000000;
-
-    part_log_elem.database_name = table_id.database_name;
-    part_log_elem.table_name = table_id.table_name;
-    part_log_elem.table_uuid = table_id.uuid;
-    part_log_elem.partition_id = MergeTreePartInfo::fromPartName(new_part_name, format_version).getPartitionId();
-
-    if (result_part)
-        part_log_elem.partition = result_part->partition.serializeToString(result_part->getMetadataSnapshot());
-    else if (!source_parts.empty())
-        part_log_elem.partition = source_parts.front()->partition.serializeToString(source_parts.front()->getMetadataSnapshot());
-
-    part_log_elem.part_name = new_part_name;
-
-    if (result_part)
-    {
-        part_log_elem.disk_name = result_part->getDataPartStorage().getDiskName();
-        part_log_elem.path_on_disk = result_part->getDataPartStorage().getFullPath();
-        part_log_elem.bytes_compressed_on_disk = result_part->getBytesOnDisk();
-        part_log_elem.bytes_uncompressed = result_part->getBytesUncompressedOnDisk();
-        part_log_elem.rows = result_part->rows_count;
-        part_log_elem.part_format = result_part->getFormat();
-    }
-
-    part_log_elem.source_part_names.reserve(source_parts.size());
-    for (const auto & source_part : source_parts)
-        part_log_elem.source_part_names.push_back(source_part->name);
-
-    if (merge_entry)
-    {
-        part_log_elem.rows_read = (*merge_entry)->rows_read;
-        part_log_elem.bytes_read_uncompressed = (*merge_entry)->bytes_read_uncompressed;
-
-        part_log_elem.rows = (*merge_entry)->rows_written;
-        part_log_elem.peak_memory_usage = (*merge_entry)->getMemoryTracker().getPeak();
-    }
-
-    if (profile_counters)
-    {
-        part_log_elem.profile_counters = profile_counters;
-    }
-
-    part_log_elem.mutation_ids = mutation_ids;
-
-    part_log_elem.projections_duration_ms = projections_duration_ms;
-
-    part_log->add(std::move(part_log_elem));
+        element.projections_duration_ms = projections_duration_ms;
+    });
 }
 catch (...)
 {
