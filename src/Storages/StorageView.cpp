@@ -259,9 +259,16 @@ void validateViewSelectForInsert(const ASTSelectQuery & select, const StorageID 
 /// lambda body, so it is a local binding rather than a reference to the outer name. Recording it
 /// would make the ambiguity guard below reject a view whose WHERE merely uses the name as a lambda
 /// parameter, even though read-time semantics are unambiguous (the parameter shadows the column).
+/// An `ASTSubquery` opens its own scope and is not descended into: the identifiers inside
+/// `WHERE 1 IN (SELECT a FROM allowed)` are resolved against `allowed`, not against the view's input,
+/// so an `a` there is not a reference to the outer alias and must not arm the ambiguity guard. A
+/// *correlated* reference to the outer scope is not silently accepted either: the write-time
+/// constraint check analyses the subquery against its own tables when it builds the set, so an
+/// identifier that only exists in the outer scope raises `UNKNOWN_IDENTIFIER` there instead of
+/// evaluating an ambiguous name.
 void collectIdentifierShortNames(const ASTPtr & ast, NameSet & names, NameSet & bound_lambda_params)
 {
-    if (!ast)
+    if (!ast || ast->as<ASTSubquery>())
         return;
 
     /// A lambda is represented as `lambda(tuple(params...), body)`. Mask its parameter names while
