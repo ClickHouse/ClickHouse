@@ -2,7 +2,7 @@ The join keys are really serialized Sparse
 probe_sparse	1
 probe_sparse_arr	1
 Sparse key, key presence only
-4000	3200	800	160
+4000	3200	800	160	3200	800
 Sparse key, dictionary attribute read
 336000	4000	3200	800
 Sparse key, aggregation in order

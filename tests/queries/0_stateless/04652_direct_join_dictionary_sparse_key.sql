@@ -50,9 +50,13 @@ SET join_algorithm = 'direct';
 -- the default 0. The Stress check injects join_use_nulls = 1 on some threads.
 SET join_use_nulls = 0;
 
--- FlatDictionary::hasKeys is the site that read the freed buffer.
+-- FlatDictionary::hasKeys is the site that read the freed buffer. Its result is the presence mask,
+-- which getByKeys applies to the returned right KEY column only, so r.j is what observes the mask
+-- directly: a mask that misclassifies any row changes one of the two counts below. The attribute
+-- counts alone would not, because attributes are fetched independently of the mask.
 SELECT 'Sparse key, key presence only';
-SELECT count(), countIf(r.v != 0), countIf(r.v = 0), countIf(l.j = 0 AND r.v = 10)
+SELECT count(), countIf(r.v != 0), countIf(r.v = 0), countIf(l.j = 0 AND r.v = 10),
+       countIf(l.j < 20 AND r.j = l.j), countIf(l.j >= 20 AND r.j = 0)
 FROM probe_sparse AS l LEFT JOIN dict_sparse_key AS r ON l.j = r.j;
 
 -- FlatDictionary::getColumn is a second site reached through the same getByKeys call.
