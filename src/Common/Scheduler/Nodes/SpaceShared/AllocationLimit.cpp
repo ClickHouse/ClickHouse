@@ -113,7 +113,12 @@ void AllocationLimit::checkSoftLimit()
         return;
     }
     if (spill_requested)
-        return; // A spill is already outstanding; wait for the victim to make progress before signalling another one.
+        return; // A spill request is already outstanding; wait for the victim's reply.
+    if (decrease != nullptr)
+        return; // A release is in flight below: `allocated` still contains memory that is about to be
+                // freed, so evaluating now could signal with a stale, too-large excess. Every pending
+                // decrease ends in an `approveDecrease` at this node, whose trailing call re-evaluates
+                // with the updated `allocated`.
     if (reclaimable == 0)
         return; // Nothing reclaimable under this limit — fail-close; the hard limit governs.
 
@@ -234,26 +239,19 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
     // mutex held (see the note above); all of them can change the soft-limit picture without an approve.
     //
     // A spill reply means the victim finished handling the outstanding spill request (spilled what it
-    // could, declined, or left the queue): reopen the gate so the next victim can be signaled. The victim
-    // issues its decreases for the freed memory BEFORE finishing the spill (the `finishSpill` contract),
-    // so a pending decrease here means the released memory is not yet reflected in `allocated`: defer the
-    // re-evaluation to the trailing `checkSoftLimit` of the coming `approveDecrease`, which sees the
-    // updated `allocated`; re-evaluating now would re-signal with a stale, too-large excess. Without a
-    // pending decrease (a decline, or the decrease was already approved) re-evaluate immediately.
+    // could, declined, or left the queue): reopen the gate so the next victim can be signaled. A
+    // re-evaluation is also needed here because a structure change can newly put this node over the soft
+    // limit with reclaimable memory below (attaching the branch under a freshly inserted
+    // `AllocationLimit` when `CREATE OR REPLACE WORKLOAD` first sets a soft limit, or attaching a
+    // reclaimable subtree under an existing one), and a reported reclaimable change can start an episode
+    // (new reclaimable memory appearing while over the soft limit). Staleness is handled inside
+    // `checkSoftLimit` itself: it does not evaluate while a decrease is pending below (the victim issues
+    // its decreases before `finishSpill`), leaving the re-evaluation to the trailing call of the coming
+    // `approveDecrease`, which sees the updated `allocated`.
     if (spilled)
         spill_requested = false;
-    const bool defer_to_decrease = spilled && decrease != nullptr;
-    if ((spilled || reclaimable_changed || structure_changed) && !defer_to_decrease)
-    {
-        // Beyond the spill reply, a re-evaluation is needed here because: a structure change can newly
-        // put this node over the soft limit with reclaimable memory below (attaching the branch under a
-        // freshly inserted `AllocationLimit` when `CREATE OR REPLACE WORKLOAD` first sets a soft limit,
-        // or attaching a reclaimable subtree under an existing one — without this check such a subtree
-        // would not spill until an unrelated resize or report), and a reported reclaimable change can
-        // start an episode (new reclaimable memory appearing while over the soft limit). While a spill
-        // request is outstanding, `checkSoftLimit` returns without signaling.
+    if (spilled || reclaimable_changed || structure_changed)
         checkSoftLimit();
-    }
 }
 
 bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_constraint)

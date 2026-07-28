@@ -40,7 +40,9 @@ private:
     bool setDecrease(DecreaseRequest * new_decrease);
 
     /// Issues at most one spill signal while `allocated` exceeds `soft_limit`. Non-blocking: it never
-    /// touches `increase`/`decrease`, so it cannot stall admission. Must be called with no
+    /// touches `increase`/`decrease`, so it cannot stall admission. Does not evaluate while a decrease is
+    /// pending below (that would use a stale, too-large `allocated`); the trailing call in
+    /// `approveDecrease` re-evaluates once the release is applied. Must be called with no
     /// AllocationQueue mutex held (it descends into `selectAllocationToSpill`, which locks the queue).
     void checkSoftLimit();
 

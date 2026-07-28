@@ -1019,6 +1019,49 @@ TEST(SchedulerSpaceShared, SpillReplyDeferredToPendingDecrease)
 }
 
 
+/// No spill signal may be issued while a decrease is pending under the limit: the reply reopens the gate,
+/// but until the victim's decrease is approved, `allocated` still contains the released memory. A trigger
+/// arriving in that window from elsewhere (here: a reclaimable report from a sibling queue, processed as an
+/// event BEFORE the decrease approval) must not evaluate the soft limit against the stale size — the
+/// evaluation belongs to the approval's trailing check.
+TEST(SchedulerSpaceShared, NoSpillSignalWhileVictimDecreaseIsPending)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    AllocationLimit * limit = r.addLimit("/", 100000);
+    FairAllocation * fair = r.addFair("/fair", limit);
+    AllocationQueue * q1 = r.addQueueUnder("/fair/q1", fair);
+    AllocationQueue * q2 = r.addQueueUnder("/fair/q2", fair);
+    r.registerResource();
+    r.setSoftLimit(limit, 10000);
+
+    SpillableAllocation a(q1, "a", 15000);
+    SpillableAllocation x(q2, "x", 1000);
+    a.reportReclaimable(15000);
+    a.waitSpills(1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 6000); // need = allocated(16000) - soft(10000)
+
+    // Park the scheduler so that the victim's reply and the sibling's report are both queued as events
+    // ahead of the decrease approval (events are processed with priority over approvals).
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+
+    a.spillAndFinish(/*spilled_bytes=*/ 5000, /*reclaimable_total=*/ 10000); // reply + pending decrease
+    x.reportReclaimable(1000); // a separate activation, processed after the reply but before the approval
+
+    release.set_value();
+
+    // The next signal must be computed only after the victim's decrease is applied:
+    // need = allocated(16000 - 5000) - soft(10000) = 1000, and the victim is still the extremum.
+    // Evaluating in the window instead would signal with the stale excess of 6000.
+    a.waitSpills(2);
+    EXPECT_EQ(a.lastSpillAtLeast(), 1000);
+    EXPECT_EQ(x.spillCount(), 0u);
+}
+
+
 /// A victim that is removed mid-spill (query killed or cancelled) must not leave the gate closed forever:
 /// its removal is treated as the reply, and the next reclaimable allocation is signaled if the subtree is
 /// still over the soft limit.
