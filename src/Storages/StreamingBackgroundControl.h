@@ -55,14 +55,27 @@ public:
     /// Run a cycle now? True if not blocked, or a REFRESH is pending. Consumes exactly one pending REFRESH
     /// per call (per-worker `last_seen_refresh_epoch`). This overload assumes `last_seen_refresh_epoch` is
     /// owned by a single worker thread.
-    bool claimCycle(UInt64 & last_seen_refresh_epoch)
+    ///
+    /// `claimed_blocked_refresh`, when given, reports whether this cycle was admitted by consuming a REFRESH
+    /// permit *while the stream was blocked* - i.e. the one out-of-order cycle a `SYSTEM REFRESH` on a
+    /// stopped table is entitled to. The blocked state is sampled once, *before* the permit is consumed, and
+    /// the whole decision is made from that single sample, so neither direction of the race can misreport it:
+    /// a `STOP`/`PAUSE` landing right after an ordinary cycle was admitted cannot retroactively turn that
+    /// cycle into a refresh cycle, and a `START` landing right after a permit was consumed on a stopped table
+    /// cannot erase the claim and make the cycle waste the permit.
+    bool claimCycle(UInt64 & last_seen_refresh_epoch, bool * claimed_blocked_refresh = nullptr)
     {
+        const bool blocked = isBlocked();
         if (last_seen_refresh_epoch != refresh_epoch.load())
         {
             ++last_seen_refresh_epoch;
+            if (claimed_blocked_refresh)
+                *claimed_blocked_refresh = blocked;
             return true;
         }
-        return !isBlocked();
+        if (claimed_blocked_refresh)
+            *claimed_blocked_refresh = false;
+        return !blocked;
     }
 
     /// Run a cycle now? True if not blocked, or a REFRESH is pending. Consumes exactly one pending REFRESH
