@@ -11,6 +11,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/AsyncCallback.h>
+#include <Common/Socket.h>
 #include <Common/checkSSLReturnCode.h>
 
 namespace ProfileEvents
@@ -57,9 +58,9 @@ ssize_t WriteBufferFromPocoSocket::socketSendBytesImpl(const char * ptr, size_t 
         {
             /// In case of ERR_SSL_WANT_READ we should wait for socket to be ready for reading, otherwise - for writing.
             if (secure && checkSSLWantRead(res))
-                async_callback(socket.impl()->sockfd(), socket.getReceiveTimeout(), AsyncEventTimeoutType::RECEIVE, socket_description, AsyncEvent::READ | AsyncEvent::ERROR);
+                async_callback(Socket(socket.impl()->sockfd()).toDescriptor(), socket.getReceiveTimeout(), AsyncEventTimeoutType::RECEIVE, socket_description, AsyncEvent::READ | AsyncEvent::ERROR);
             else
-                async_callback(socket.impl()->sockfd(), socket.getSendTimeout(), AsyncEventTimeoutType::SEND, socket_description, AsyncEvent::WRITE | AsyncEvent::ERROR);
+                async_callback(Socket(socket.impl()->sockfd()).toDescriptor(), socket.getSendTimeout(), AsyncEventTimeoutType::SEND, socket_description, AsyncEvent::WRITE | AsyncEvent::ERROR);
 
             /// Try to write again.
             res = socket.impl()->sendBytes(ptr, static_cast<int>(size));

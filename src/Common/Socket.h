@@ -95,6 +95,25 @@ struct Socket
 
     /// Whether `error` means the call was interrupted and should be retried.
     static bool isInterrupted(int error);
+
+    /// The handle as an `int`, for the interfaces that still spell a socket that way -
+    /// `AsyncCallback` and the `epoll`-based event loop behind it, which pass descriptors as
+    /// `int` throughout.
+    ///
+    /// This is a bridge, not an endorsement: it is lossless only because real Windows socket
+    /// handles are small kernel handle values that fit in 32 bits, which is a property of the
+    /// implementation rather than a guarantee. It exists so that the narrowing is written once,
+    /// here, with this note attached, instead of appearing as a bare cast at each call site.
+    /// It should disappear when `AsyncCallback` takes a `Socket`, which has to wait until those
+    /// consumers can be compiled for Windows at all.
+    int toDescriptor() const
+    {
+#if defined(OS_WINDOWS)
+        return static_cast<int>(static_cast<unsigned int>(handle));
+#else
+        return handle;
+#endif
+    }
 };
 
 }
