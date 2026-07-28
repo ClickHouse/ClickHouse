@@ -694,6 +694,14 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
     query_context->setQueryKindReplicatedDatabaseInternal();
     query_context->setCurrentDatabase(database->getDatabaseName());
 
+    /// The entry is executed from its SQL text, so every field of the re-parsed AST that is not part
+    /// of that text is lost. Re-publish the parent table UUID (which does survive, as a serialized
+    /// entry field) so the executing interpreter can still tell that this entry belongs to a
+    /// refreshable materialized view's refresh - InterpreterRenameQuery needs it to keep row policies
+    /// on the target name across the refresh swap.
+    if (entry.parent_table_uuid.has_value() && !query_context->getParentTable().has_value())
+        query_context->setParentTable(*entry.parent_table_uuid);
+
     auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, database->zookeeper_path, is_initial_query, entry_path);
     query_context->initZooKeeperMetadataTransaction(txn);
 

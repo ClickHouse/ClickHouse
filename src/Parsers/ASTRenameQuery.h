@@ -59,6 +59,12 @@ public:
     /// dropped right after, which would leave the surviving name unfiltered (a row-policy escape).
     /// Internal only, never produced by the parser, and deliberately not formatted into SQL text.
     ///
+    /// Because it is not in the SQL text, the flag is LOCAL to the process that builds the AST: a
+    /// rename replicated through a Replicated database's DDL queue is executed by re-parsing the
+    /// entry's text, so it always arrives false there. Of the sites below only the refreshable-view
+    /// target install can cross that boundary, and on the far side it is recognized from the entry's
+    /// parent table UUID instead (keepsNameOfReplacedStorage in InterpreterRenameQuery.cpp).
+    ///
     /// Set it at every such site (grep for `replaces_storage_keeping_name`):
     ///   - CREATE OR REPLACE TABLE / REPLACE TABLE (InterpreterCreateQuery),
     ///   - a non-append refreshable materialized view swapping in its fresh target

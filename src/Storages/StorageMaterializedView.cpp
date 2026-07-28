@@ -91,6 +91,18 @@ String StorageMaterializedView::generateInnerTableName(const StorageID & view_id
     return ".inner." + view_id.getTableName();
 }
 
+String StorageMaterializedView::generateRefreshTempTableName(const StorageID & view_id)
+{
+    return ".tmp" + generateInnerTableName(view_id);
+}
+
+String StorageMaterializedView::generateRefreshTempTableName(const UUID & view_uuid)
+{
+    /// Only the UUID part of the id is used by generateInnerTableName when a UUID is present, so the
+    /// placeholder names cannot affect the result.
+    return generateRefreshTempTableName(StorageID{TABLE_WITH_UUID_NAME_PLACEHOLDER, TABLE_WITH_UUID_NAME_PLACEHOLDER, view_uuid});
+}
+
 /// Remove columns from target_header that does not exist in src_header
 static void removeNonCommonColumns(const Block & src_header, Block & target_header)
 {
@@ -652,7 +664,7 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
 
         auto db = DatabaseCatalog::instance().getDatabase(inner_table_id.database_name);
         String db_name = db->getDatabaseName();
-        auto new_table_name = ".tmp" + generateInnerTableName(getStorageID());
+        auto new_table_name = generateRefreshTempTableName(getStorageID());
 
         /// Pre-check the permissions. Would be awkward if we create a temporary table and can't drop it.
         refresh_context->checkAccess(AccessType::DROP_TABLE | AccessType::CREATE_TABLE | AccessType::SELECT | AccessType::INSERT, db_name);
