@@ -239,6 +239,16 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
 {
     auto settings_ptr = s3_settings.get();
 
+    /// A query can override request settings (from its SETTINGS clause or profile). Apply them to a
+    /// local copy so they affect only this read and don't stick around for later queries, same as writeObject.
+    S3::S3RequestSettings request_settings = settings_ptr->request_settings;
+    if (auto query_context = CurrentThread::tryGetQueryContext();
+        query_context && !query_context->isBackgroundContext())
+    {
+        const auto & settings = query_context->getSettingsRef();
+        request_settings.updateFromSettings(settings, /* if_changed */ true, settings[Setting::s3_validate_request_settings]);
+    }
+
     BlobStorageLogWriterPtr blob_storage_log;
     if (read_settings.remote_fs_settings.enable_blob_storage_log)
     {
@@ -252,7 +262,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
         uri.bucket,
         object.remote_path,
         uri.version_id,
-        settings_ptr->request_settings,
+        request_settings,
         patchSettings(read_settings),
         use_external_buffer,
         /* offset */0,
@@ -690,16 +700,35 @@ void S3ObjectStorage::applyNewSettings(
 
     auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
 
-    /// Apply global <s3> endpoint settings first (lowest priority).
-    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
+    auto apply_endpoint_settings = [&]
     {
-        modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
-        modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
-    }
+        if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
+        {
+            modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
+            modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
+        }
+    };
 
-    /// Apply disk config settings on top (higher priority than global <s3> section).
-    modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
-    modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
+    auto apply_config_settings = [&]
+    {
+        modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
+        modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
+    };
+
+    /// When a setting is given both in the general config and for a specific endpoint, the more specific
+    /// one should win. For a disk the config is the disk's own section (more specific than an endpoint
+    /// block), so apply it last. For S3/S3Queue tables the config is the general <s3> section (less
+    /// specific than an endpoint block), so apply the endpoint last instead. Whichever is applied last wins.
+    if (for_disk_s3)
+    {
+        apply_endpoint_settings();
+        apply_config_settings();
+    }
+    else
+    {
+        apply_config_settings();
+        apply_endpoint_settings();
+    }
 
     modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);

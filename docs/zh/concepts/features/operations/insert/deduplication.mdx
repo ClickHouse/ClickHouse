@@ -18,8 +18,8 @@ ClickHouse 在数据插入方面是为高速度而设计的。存储文件是不
 * 你的查询需要考虑到可能存在重复项
 
 <div class="transparent-table">
-  |                                                                                  |                                                                                                                                                                                     |
-  | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  |                                                                                   |                                                                                                                                                                                     |
+  | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
   | <Image img="/images/guides/developer/de_duplication.webp" alt="去重标志" size="sm" /> | ClickHouse 提供关于去重及许多其他主题的免费培训。[Deleting and Updating Data 培训模块](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs)是一个很好的入门起点。 |
 </div>
 
@@ -348,6 +348,6 @@ FROM hackernews_views_vcmt
   ## 为什么我的行没有被去重？
 </div>
 
-插入的行未被去重，其中一个原因可能是你在 `INSERT` 语句中使用了非幂等函数或表达式。比如，如果插入的行包含列定义 `createdAt DateTime64(3) DEFAULT now()`，那么这些行必然各不相同，因为每一行的 `createdAt` 列都会有一个唯一的默认值。由于每次插入的行都会生成唯一的校验和，MergeTree / ReplicatedMergeTree 表引擎无法判断这些行应被去重。
+插入的行之所以可能没有被去重，其中一个原因是你在 `INSERT` 语句中使用了非幂等函数或表达式。比如，如果插入的行包含列 `createdAt DateTime64(3) DEFAULT now()`，那么这些行一定都是唯一的，因为每一行的 `createdAt` 列都会有一个唯一的默认值。MergeTree / ReplicatedMergeTree 表引擎无法识别这些行需要去重，因为每个插入的行都会生成唯一的校验和。
 
-在这种情况下，你可以为每个批次的行指定自己的 `insert_deduplication_token`，以确保对同一批次进行多次插入时，不会导致相同的行被重复插入。有关如何使用此设置的更多信息，请参阅 [`insert_deduplication_token` 文档](/zh/reference/settings/session-settings#insert_deduplication_token)。
+在这种情况下，你可以为每个批次的行指定自己的 `insert_deduplication_token`，以确保对同一批次重复插入时，不会把相同的行再次插入。有关如何使用此设置的更多详细信息，请参阅 [`insert_deduplication_token` 文档](/zh/reference/settings/session-settings#insert_deduplication_token)。
