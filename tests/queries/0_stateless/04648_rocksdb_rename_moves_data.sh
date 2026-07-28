@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Tags: use-rocksdb, no-fasttest, no-parallel, no-ordinary-database
 # no-ordinary-database: the test needs its own database to be Atomic for the Atomic<->Ordinary directions.
-# no-parallel: named databases plus directories under the server data path.
+# no-parallel: named databases plus directories under the server data path, and the failpoints
+# used below are process-global, so two copies of this test would arm and disable them under
+# each other.
 
 # Creation of a database with Ordinary engine emits a warning.
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
@@ -202,12 +204,42 @@ wait $ATTACH_PID
 echo "13 attach from count $($CLIENT -q "SELECT count() FROM $CLICKHOUSE_DATABASE.t13")"
 echo "13 attach from reloaded $(reloaded_count "$CLICKHOUSE_DATABASE" t13)"
 
+# 14. The directory was moved, the reopen failed, and by the time the rollback runs the source
+# directory exists again (any statement naming it recreates it). The rollback must not decide from
+# path existence whether it moved anything: moving the data back is impossible here, so the table
+# has to refuse reads and name the directory that holds its rows, not reopen an empty source.
+make_table "$ORD1" t14 6 "EmbeddedRocksDB"
+ORD1_DATA_DIR=$($CLIENT -q "SELECT substring(data_paths[1], 1, length(data_paths[1]) - length('t14/')) FROM system.tables WHERE database = '$ORD1' AND name = 't14'")
+RENAME_ERR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_14_rename.err"
+$CLIENT -q "SYSTEM ENABLE FAILPOINT rocksdb_rename_fail_reopen"
+$CLIENT -q "SYSTEM ENABLE FAILPOINT rocksdb_rename_pause_before_rollback"
+$CLIENT -q "RENAME TABLE $ORD1.t14 TO $ORD1.t14_target" > "$RENAME_ERR" 2>&1 &
+RENAME_PID=$!
+# Returns as soon as the failed rename has paused right before its rollback; no sleeping.
+$CLIENT -q "SYSTEM WAIT FAILPOINT rocksdb_rename_pause_before_rollback PAUSE"
+mkdir -p "${ORD1_DATA_DIR}t14"
+# Only the forward reopen had to fail: with the failpoint disabled here, a rollback that reopened
+# the recreated source would succeed and answer zero rows.
+$CLIENT -q "SYSTEM DISABLE FAILPOINT rocksdb_rename_fail_reopen"
+# DISABLE resumes the paused rollback and removes the failpoint in one step.
+$CLIENT -q "SYSTEM DISABLE FAILPOINT rocksdb_rename_pause_before_rollback"
+wait $RENAME_PID
+grep -c "FAULT_INJECTED" "$RENAME_ERR" | sed 's/^/14 rename failed /'
+rm -f "$RENAME_ERR"
+READ_ERR=$($CLIENT -q "SELECT * FROM $ORD1.t14" 2>&1)
+echo "14 full scan refuses $(echo "$READ_ERR" | grep -c "ROCKSDB_ERROR")"
+echo "14 error names destination $(echo "$READ_ERR" | grep -cF "${ORD1_DATA_DIR}t14_target")"
+echo "14 error names source $(echo "$READ_ERR" | grep -cF "${ORD1_DATA_DIR}t14/")"
+echo "14 key lookup refuses $($CLIENT -q "SELECT * FROM $ORD1.t14 WHERE k = 1" 2>&1 | grep -c "ROCKSDB_ERROR")"
+echo "14 data at destination $([ -f "${ORD1_DATA_DIR}t14_target/CURRENT" ] && echo 1 || echo 0)"
+
 $CLIENT --force_remove_data_recursively_on_drop 1 -q --multiline "
     DROP TABLE IF EXISTS $CLICKHOUSE_DATABASE.t4 SYNC;
     DROP TABLE IF EXISTS $CLICKHOUSE_DATABASE.t9 SYNC;
     DROP TABLE IF EXISTS $CLICKHOUSE_DATABASE.t13 SYNC;
     DROP TABLE IF EXISTS $ORD1.t11 SYNC;
     DROP TABLE IF EXISTS $ORD1.t12 SYNC;
+    DROP TABLE IF EXISTS $ORD1.t14 SYNC;
     DROP DATABASE IF EXISTS $ORD1 SYNC;
     DROP DATABASE IF EXISTS $ORD2 SYNC;
     DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_at2 SYNC;

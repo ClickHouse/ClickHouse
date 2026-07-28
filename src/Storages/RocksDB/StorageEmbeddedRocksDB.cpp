@@ -80,6 +80,7 @@ namespace FailPoints
 {
 extern const char rocksdb_rename_throw_filesystem_error[];
 extern const char rocksdb_rename_fail_reopen[];
+extern const char rocksdb_rename_pause_before_rollback[];
 }
 
 namespace ErrorCodes
@@ -349,6 +350,12 @@ void StorageEmbeddedRocksDB::rename(const String & new_path_to_table_data, const
                 rocksdb_ptr = nullptr;
             }
 
+            /// Whether the directory was relocated. The rollback below must know this instead of
+            /// inferring it from the paths: the old one can exist again for a reason other than
+            /// "the move never happened", and reopening it then serves an empty table for data
+            /// that is still on disk.
+            bool moved = false;
+
             try
             {
                 fs::create_directories(parentPath(new_rocksdb_dir));
@@ -359,6 +366,7 @@ void StorageEmbeddedRocksDB::rename(const String & new_path_to_table_data, const
                         std::make_error_code(std::errc::no_such_file_or_directory));
                 });
                 renameNoReplace(old_rocksdb_dir, new_rocksdb_dir);
+                moved = true;
                 rocksdb_dir = new_rocksdb_dir;
                 initDBForRename();
             }
@@ -368,7 +376,10 @@ void StorageEmbeddedRocksDB::rename(const String & new_path_to_table_data, const
                 /// handle has to be usable again before we rethrow.
                 try
                 {
-                    if (fs::exists(new_rocksdb_dir) && !fs::exists(old_rocksdb_dir))
+                    FailPointInjection::pauseFailPoint(FailPoints::rocksdb_rename_pause_before_rollback);
+                    /// If the data cannot be moved back, rocksdb_dir is left naming the directory
+                    /// that holds it and the table refuses reads instead of answering zero rows.
+                    if (moved)
                         renameNoReplace(new_rocksdb_dir, old_rocksdb_dir);
                     rocksdb_dir = old_rocksdb_dir;
                     if (!rocksdb_ptr)

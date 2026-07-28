@@ -29,3 +29,9 @@
 13 concurrent read excluded 1
 13 attach from count 5
 13 attach from reloaded 5
+14 rename failed 1
+14 full scan refuses 1
+14 error names destination 1
+14 error names source 0
+14 key lookup refuses 1
+14 data at destination 1
