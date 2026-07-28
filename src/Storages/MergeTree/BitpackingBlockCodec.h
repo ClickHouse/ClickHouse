@@ -287,7 +287,7 @@ struct BitpackingBlockCodecImpl<false>
     /// memcpy-ing 16 bytes from the byte stream into four uint32_t words.
     ///
     /// Behavior by Bits:
-    /// - Bits == 0  : no payload is stored/consumed. (Caller may treat decoded values as zeros.)
+    /// - Bits == 0  : no payload is stored/consumed, but all `groups * 4` decoded values are written as zeros.
     /// - Bits == 32 : values are stored as raw uint32_t; copy groups*4 words and advance by groups*16 bytes.
     /// - Bits 1..31 : use four 64-bit lane accumulators (acc0..acc3) as bit reservoirs.
     ///               Refill by reading one 16-byte chunk (4×uint32_t, 32 bits per lane)
@@ -511,7 +511,7 @@ struct BitpackingBlockCodecImpl<false>
     /// (e.g. 128 integers).
     ///
     /// Special cases:
-    /// - Bits == 0  : no payload is stored/consumed. (Caller may treat decoded values as zeros.)
+    /// - Bits == 0  : no payload is stored/consumed, but all `tail` decoded values are written as zeros.
     /// - Bits == 32 : values are stored as raw uint32_t, tightly packed (tail * 4 bytes),
     ///               with no 16-byte chunk padding.
     ///
