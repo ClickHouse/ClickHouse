@@ -33,7 +33,6 @@ struct ServerSettingsImpl;
     M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, UInt64Auto) \
-    M(CLASS_NAME, InsertDeduplicationVersions) \
 
 
 SERVER_SETTINGS_SUPPORTED_TYPES(ServerSettings, DECLARE_SETTING_TRAIT)
@@ -58,6 +57,8 @@ struct ServerSettings
 
     std::vector<std::string_view> getAllRegisteredNames() const;
     std::string_view getDescription(std::string_view name) const;
+    std::string_view getTypeName(std::string_view name) const;
+    String getDefaultValueString(std::string_view name) const;
     SettingsTierType getTier(std::string_view name) const;
 
     void loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);

@@ -1,0 +1,66 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/clickhouse
+title: 'ClickHouse Dictionary ソース'
+sidebarTitle: 'ClickHouse'
+description: 'ClickHouse テーブルを Dictionary ソースとして設定します。'
+doc_type: 'reference'
+---
+
+設定例:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(CLICKHOUSE(
+        host 'example01-01-1'
+        port 9000
+        user 'default'
+        password ''
+        db 'default'
+        table 'ids'
+        where 'id=10'
+        secure 1
+        query 'SELECT id, value_1, value_2 FROM default.ids'
+    ));
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <source>
+        <clickhouse>
+            <host>example01-01-1</host>
+            <port>9000</port>
+            <user>default</user>
+            <password></password>
+            <db>default</db>
+            <table>ids</table>
+            <where>id=10</where>
+            <secure>1</secure>
+            <query>SELECT id, value_1, value_2 FROM default.ids</query>
+        </clickhouse>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+設定項目:
+
+| 設定                 | 説明                                                                                                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `host`             | ClickHouse のホストです。ローカルホストの場合、クエリはネットワーク通信を行わずに処理されます。耐障害性を向上させるには、[Distributed](/ja/reference/engines/table-engines/special/distributed) テーブルを作成し、以降の設定で指定できます。 |
+| `port`             | ClickHouse server のポートです。                                                                                                                                    |
+| `user`             | ClickHouse ユーザー名です。                                                                                                                                          |
+| `password`         | ClickHouse ユーザーのパスワードです。                                                                                                                                     |
+| `db`               | データベース名です。                                                                                                                                                   |
+| `table`            | テーブル名です。                                                                                                                                                     |
+| `where`            | 選択条件です。省略可能です。                                                                                                                                               |
+| `invalidate_query` | Dictionary の状態を確認するためのクエリです。省略可能です。詳細は [LIFETIME を使用した Dictionary データの更新](/ja/reference/statements/create/dictionary/lifetime) を参照してください。                       |
+| `secure`           | 接続に SSL を使用します。                                                                                                                                              |
+| `query`            | カスタムクエリです。省略可能です。                                                                                                                                            |
+
+<Note>
+  `table` フィールドまたは `where` フィールドは、`query` フィールドと併用できません。また、`table` フィールドまたは `query` フィールドのいずれか一方を必ず指定する必要があります。
+</Note>

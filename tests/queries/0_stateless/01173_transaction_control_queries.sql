@@ -1,4 +1,10 @@
 -- Tags: no-ordinary-database
+-- Random settings limits: send_table_structure_on_insert_with_inline_data=(1, 1)
+-- This test exercises transactional INSERTs. With `send_table_structure_on_insert_with_inline_data=0`
+-- the client takes the inline-data path, which interacts with async inserts and fails inside
+-- a transaction with `Async inserts inside transactions are not supported`. That is a separate
+-- feature-interaction issue in the inline path; pin the legacy path so the transaction-control
+-- semantics this test is about remain testable.
 
 drop table if exists mt1;
 drop table if exists mt2;

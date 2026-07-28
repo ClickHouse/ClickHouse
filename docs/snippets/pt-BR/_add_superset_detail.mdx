@@ -1,0 +1,47 @@
+---
+title: Adicionar detalhes sobre o Superset
+---
+
+<Accordion title="Inicie o Apache Superset no Docker">
+  O Superset fornece instruções para [instalar o Superset localmente usando Docker Compose](https://superset.apache.org/docs/installation/installing-superset-using-docker-compose/). Depois de clonar o repositório do Apache Superset no GitHub, você pode executar o código de desenvolvimento mais recente ou uma tag específica. Recomendamos a versão 2.0.0, pois é a versão mais recente que não está marcada como `pre-release`.
+
+  Há algumas tarefas a serem concluídas antes de executar o `docker compose`:
+
+  1. Adicione o driver oficial do ClickHouse Connect
+  2. Obtenha uma API key do Mapbox e adicione-a como variável de ambiente (opcional)
+  3. Especifique a versão do Superset a ser executada
+
+  <Tip>
+    Os comandos abaixo devem ser executados a partir do diretório raiz do repositório no GitHub, `superset`.
+  </Tip>
+
+  ## Driver oficial do ClickHouse Connect
+
+  Para disponibilizar o driver do ClickHouse Connect na implantação do Superset, adicione-o ao arquivo local de requisitos:
+
+  ```bash
+  echo "clickhouse-connect" >> ./docker/requirements-local.txt
+  ```
+
+  ## Mapbox
+
+  Isso é opcional: você pode plotar dados de localização no Superset sem uma API key do Mapbox, mas verá uma mensagem informando que deve adicionar uma chave, e a imagem de fundo do mapa ficará ausente (você verá apenas os pontos de dados, e não o fundo do mapa). O Mapbox oferece um plano gratuito caso você queira usá-lo.
+
+  Algumas das visualizações de exemplo que os guias orientam você a criar usam dados de localização, como longitude e latitude. O Superset inclui suporte a mapas do Mapbox. Para usar as visualizações do Mapbox, você precisa de uma API key do Mapbox. Cadastre-se no [plano gratuito do Mapbox](https://account.mapbox.com/auth/signup/) e gere uma API key.
+
+  Disponibilize a API key para o Superset:
+
+  ```bash
+  echo "MAPBOX_API_KEY=pk.SAMPLE-Use-your-key-instead" >> docker/.env-non-dev
+  ```
+
+  ## Implantar a versão 2.0.0 do Superset
+
+  Para implantar a versão 2.0.0, execute:
+
+  ```bash
+  git checkout 2.0.0
+  TAG=2.0.0 docker-compose -f docker-compose-non-dev.yml pull
+  TAG=2.0.0 docker-compose -f docker-compose-non-dev.yml up
+  ```
+</Accordion>
