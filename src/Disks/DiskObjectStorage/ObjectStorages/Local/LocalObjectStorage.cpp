@@ -51,6 +51,7 @@ namespace ErrorCodes
     extern const int CANNOT_STAT;
     extern const int STALE_VERSION;
     extern const int SYSTEM_ERROR;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 namespace
@@ -97,9 +98,41 @@ LocalObjectStorage::LocalObjectStorage(LocalObjectStorageSettings settings_)
         fs::create_directories(settings.key_prefix);
 }
 
+String resolvePathRelativelyToBase(const String & path, const String & base_path)
+{
+    auto configured_base = fs::path(base_path).lexically_normal();
+
+    auto is_inside = [&](const String & candidate)
+    {
+        return fileOrSymlinkPathStartsWith(candidate, configured_base.string())
+            && pathStartsWith(candidate, configured_base.string());
+    };
+
+    if (is_inside(path))
+        return path;
+
+    auto combined = (configured_base / path).lexically_normal().string();
+    if (is_inside(combined))
+        return combined;
+
+    auto path_canonical = fs::weakly_canonical(fs::path(path).lexically_normal());
+    throw Exception(
+        ErrorCodes::PATH_ACCESS_DENIED,
+        "Path `{}` which was canonicalized to `{}` is outside the table path directory : `{}`",
+        path,
+        path_canonical.string(),
+        configured_base.string());
+}
+
+String LocalObjectStorage::resolvePathRelativelyToKeyPrefix(const String & path) const
+{
+    return resolvePathRelativelyToBase(path, settings.key_prefix);
+}
+
 bool LocalObjectStorage::exists(const StoredObject & object) const
 {
-    return fs::exists(object.remote_path);
+    auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
+    return fs::exists(resolved_path);
 }
 
 ReadSettings LocalObjectStorage::patchSettings(const ReadSettings & read_settings) const
@@ -392,8 +425,9 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
     bool /* use_external_buffer */,
     bool /* restrict_seek */) const
 {
-    LOG_TEST(log, "Read object: {}", object.remote_path);
-    auto buf = createReadBufferFromFileBase(object.remote_path, patchSettings(read_settings), read_hint);
+    auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
+    LOG_TEST(log, "Read object: {}", resolved_path);
+    auto buf = createReadBufferFromFileBase(resolved_path, patchSettings(read_settings), read_hint);
 
     if (read_settings.remote_fs_settings.enable_blob_storage_log)
     {
@@ -402,7 +436,7 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
         {
             blob_storage_log->local_path = object.local_path;
             return std::make_unique<ReadBufferFromFileWithLogging>(
-                std::move(buf), object.remote_path, settings.key_prefix, std::move(blob_storage_log));
+                std::move(buf), resolved_path, settings.key_prefix, std::move(blob_storage_log));
         }
     }
 
@@ -421,11 +455,12 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     if (mode != WriteMode::Rewrite)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "LocalObjectStorage doesn't support append to files");
 
-    LOG_TEST(log, "Write object: {}", object.remote_path);
+    auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
+    LOG_TEST(log, "Write object: {}", resolved_path);
 
     /// Unlike real blob storage, in local fs we cannot create a file with non-existing prefix.
     /// So let's create it.
-    fs::create_directories(fs::path(object.remote_path).parent_path());
+    fs::create_directories(fs::path(resolved_path).parent_path());
 
     auto blob_storage_log = BlobStorageLogWriter::create(settings.disk_name);
     if (blob_storage_log)
@@ -462,7 +497,7 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     }
 
     return std::make_unique<WriteBufferFromFileWithLogging>(
-        object.remote_path,
+        resolved_path,
         buf_size,
         settings.key_prefix,
         std::move(blob_storage_log));
@@ -471,6 +506,7 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
 void LocalObjectStorage::removeObject(const StoredObject & object) const
 {
     throwIfReadonly();
+    auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
 
     /// For local object storage files are actually removed when "metadata" is removed.
     if (!exists(object))
@@ -482,7 +518,7 @@ void LocalObjectStorage::removeObject(const StoredObject & object) const
     Int32 error_code = 0;
     String error_message;
 
-    if (0 != unlink(object.remote_path.data()))
+    if (0 != unlink(resolved_path.data()))
     {
         error_code = errno;
         error_message = errnoToString();
@@ -492,14 +528,14 @@ void LocalObjectStorage::removeObject(const StoredObject & object) const
             blob_storage_log->addEvent(
                 BlobStorageLogElement::EventType::Delete,
                 /* bucket */ settings.key_prefix,
-                /* remote_path */ object.remote_path,
+                /* remote_path */ resolved_path,
                 /* local_path */ object.local_path,
                 /* data_size */ object.bytes_size,
                 elapsed,
                 error_code,
                 error_message);
 
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, object.remote_path, "Cannot unlink file {}", object.remote_path);
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, resolved_path, "Cannot unlink file {}", resolved_path);
     }
 
     auto elapsed = watch.elapsedMicroseconds();
@@ -508,15 +544,14 @@ void LocalObjectStorage::removeObject(const StoredObject & object) const
         blob_storage_log->addEvent(
             BlobStorageLogElement::EventType::Delete,
             /* bucket */ settings.key_prefix,
-            /* remote_path */ object.remote_path,
+            /* remote_path */ resolved_path,
             /* local_path */ object.local_path,
             /* data_size */ object.bytes_size,
             elapsed,
             error_code,
             error_message);
 
-    /// Remove empty directories.
-    fs::path dir = fs::path(object.remote_path).parent_path();
+    fs::path dir = fs::path(resolved_path).parent_path();
     fs::path root = fs::weakly_canonical(settings.key_prefix);
     while (dir.has_parent_path() && dir.has_relative_path() && dir != root && pathStartsWith(dir, root))
     {
@@ -544,9 +579,7 @@ void LocalObjectStorage::removeObjects(const StoredObjects & objects) const
 
 void LocalObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
-    throwIfReadonly();
-    if (exists(object))
-        removeObject(object);
+    removeObject(object);
 
     fiu_do_on(FailPoints::local_object_storage_network_error_during_remove, {
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injected error after remove object {}", object.remote_path);
@@ -570,9 +603,12 @@ bool isVanishedEntryError(const std::error_code & error)
 {
     return error == std::errc::no_such_file_or_directory || error == std::errc::not_a_directory;
 }
-}
 
-ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, bool) const
+/// Best-effort metadata stat for a path that has ALREADY been validated against
+/// the key prefix. Uses the non-throwing `error_code` overloads and tolerates the
+/// concurrent-disappearance class (see `isVanishedEntryError`), returning an empty
+/// optional for a vanished entry. Every other error is propagated.
+std::optional<ObjectMetadata> tryStatResolvedPath(const std::string & resolved_path)
 {
     LOG_TEST(log, "Getting metadata for path: {}", path);
 
@@ -620,6 +656,29 @@ SmallObjectDataWithMetadata LocalObjectStorage::readSmallObjectAndGetObjectMetad
     result.metadata = makeObjectMetadata(file_stat);
     return result;
 }
+}
+
+ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, bool) const
+{
+    auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
+    ObjectMetadata object_metadata;
+    LOG_TEST(log, "Getting metadata for path: {}", resolved_path);
+
+    auto time = fs::last_write_time(resolved_path);
+
+    object_metadata.size_bytes = fs::file_size(resolved_path);
+    object_metadata.etag = std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count());
+    object_metadata.last_modified = Poco::Timestamp::fromEpochTime(
+        std::chrono::duration_cast<std::chrono::seconds>(time.time_since_epoch()).count());
+    return object_metadata;
+}
+
+std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
+{
+    auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
+    LOG_TEST(log, "Getting metadata for path: {}", resolved_path);
+    return tryStatResolvedPath(resolved_path);
+}
 
 void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t/* max_keys */) const
 {
@@ -635,7 +694,8 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
             "Path contains an embedded NUL byte", path,
             std::make_error_code(std::errc::invalid_argument));
 
-    if (!fs::exists(path) || !fs::is_directory(path))
+    auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
+    if (!fs::exists(resolved_path) || !fs::is_directory(resolved_path))
         return;
 
     /// Listing is a best-effort snapshot driven with the non-throwing
@@ -662,7 +722,7 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
     /// opened, so an invalid path (e.g. a NUL-truncated argument) fails fast on
     /// the per-entry stat instead of recursing.
     std::vector<fs::path> pending_dirs;
-    pending_dirs.emplace_back(path);
+    pending_dirs.emplace_back(resolved_path);
 
     while (!pending_dirs.empty())
     {
@@ -706,7 +766,14 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
             }
             else
             {
-                if (auto metadata = tryGetObjectMetadata(entry_path, /*with_tags=*/ false))
+                /// `entry_path` is produced by descending the already-validated
+                /// `resolved_path` and the walk never follows symlinks, so it is
+                /// guaranteed to be under the key prefix. Stat it directly instead
+                /// of routing through `tryGetObjectMetadata`, whose per-entry
+                /// re-resolution (`fs::relative` / `fs::weakly_canonical`) uses
+                /// throwing filesystem primitives that abort the whole listing
+                /// when a churned entry vanishes mid-resolution.
+                if (auto metadata = tryStatResolvedPath(entry_path))
                     children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry_path, std::move(*metadata)));
             }
 
@@ -724,9 +791,10 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
 bool LocalObjectStorage::existsOrHasAnyChild(const std::string & path) const
 {
+    auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
     /// Unlike real object storage, existence of a prefix path can be checked by
     /// just checking existence of this prefix directly, so simple exists is enough here.
-    return exists(StoredObject(path));
+    return exists(StoredObject(resolved_path));
 }
 
 void LocalObjectStorage::copyObject( // NOLINT
