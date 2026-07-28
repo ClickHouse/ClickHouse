@@ -55,8 +55,10 @@ SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
 
 -- The RIGHT axis is decided by the strictness term alone: `ALL RIGHT` after an ARRAY JOIN stays
 -- eligible (the residual described in the PR description, which keeps
--- 03452_array_join_global_right_join_parallel_replicas exercising that path), while `ANY RIGHT` and
--- `SEMI RIGHT` are vetoed. Both directions are asserted so neither can flip unnoticed.
+-- 03452_array_join_global_right_join_parallel_replicas exercising that path), while every other
+-- strictness reachable with kind RIGHT is vetoed: `ANY`, `SEMI`, `ANTI` and the `RightAny` that
+-- `any_join_distinct_right_table_keys = 1` produces. Both directions are asserted, and each vetoed
+-- strictness has its own line, so none of them can be dropped from the veto unnoticed.
 SELECT 'array join then all/right: reads from remote replicas';
 SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
     EXPLAIN SELECT t1.c, a, t2.c FROM t1 ARRAY JOIN [1, 2] AS a RIGHT JOIN t2 ON t1.c = t2.c ORDER BY ALL);
@@ -68,6 +70,21 @@ SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
 SELECT 'array join then semi/right: reads from remote replicas';
 SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
     EXPLAIN SELECT t1.c, a FROM t1 ARRAY JOIN [1, 2] AS a SEMI RIGHT JOIN t2 ON t1.c = t2.c ORDER BY ALL);
+
+-- `ANTI RIGHT` is vetoed by the same strictness term: the parser accepts `ANTI` with kind `RIGHT`
+-- (it rejects `SEMI`/`ANTI` only for the other kinds), and `Anti` is not `ALL`.
+SELECT 'array join then anti/right: reads from remote replicas';
+SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
+    EXPLAIN SELECT t2.c FROM t1 ARRAY JOIN [1, 2] AS a ANTI RIGHT JOIN t2 ON t1.c = t2.c ORDER BY ALL);
+
+-- Under `any_join_distinct_right_table_keys = 1` the query-tree builder converts an `ANY RIGHT`
+-- join's strictness to `RightAny` (its rewrite to `SEMI LEFT` fires only for `INNER`), which is also
+-- not `ALL` and so also vetoed. The setting is statement-level on purpose: as a file-level `SET` it
+-- would change the strictness resolution of every later statement too.
+SELECT 'array join then right-any (legacy any): reads from remote replicas';
+SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
+    EXPLAIN SELECT t1.c, a, t2.c FROM t1 ARRAY JOIN [1, 2] AS a ANY RIGHT JOIN t2 ON t1.c = t2.c
+        ORDER BY ALL SETTINGS any_join_distinct_right_table_keys = 1);
 
 SELECT 'all/inner only: reads from remote replicas';
 SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (

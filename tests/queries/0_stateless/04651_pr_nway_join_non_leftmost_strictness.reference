@@ -14,6 +14,10 @@ array join then any/right: reads from remote replicas
 0
 array join then semi/right: reads from remote replicas
 0
+array join then anti/right: reads from remote replicas
+0
+array join then right-any (legacy any): reads from remote replicas
+0
 all/inner only: reads from remote replicas
 1
 all/left only: reads from remote replicas
