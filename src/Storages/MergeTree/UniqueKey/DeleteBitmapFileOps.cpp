@@ -22,37 +22,36 @@ namespace ErrorCodes
 namespace DeleteBitmapFileOps
 {
 
-std::vector<std::pair<UInt64, std::string>> enumerateFiles(const IDataPartStorage & storage)
+std::vector<BitmapFile> enumerateFiles(const IDataPartStorage & storage)
 {
-    std::vector<std::pair<UInt64, std::string>> result;
+    std::vector<BitmapFile> result;
     for (auto it = storage.iterate(); it->isValid(); it->next())
     {
         const auto & file_name = it->name();
         if (DeleteBitmap::isDeleteBitmapFile(file_name))
-            result.emplace_back(DeleteBitmap::parseBlockNumberFromFileName(file_name), file_name);
+            result.push_back({DeleteBitmap::parseCSNFromFileName(file_name), file_name});
     }
     return result;
 }
 
-std::optional<std::pair<UInt64, std::string>> pickHighest(
-    const std::vector<std::pair<UInt64, std::string>> & files)
+std::optional<BitmapFile> pickHighest(const std::vector<BitmapFile> & files)
 {
     if (files.empty())
         return std::nullopt;
 
     auto it = std::max_element(
         files.begin(), files.end(),
-        [](const auto & a, const auto & b) { return a.first < b.first; });
+        [](const BitmapFile & a, const BitmapFile & b) { return a.version < b.version; });
     return *it;
 }
 
 void writeBitmapToStorage(
     IDataPartStorage & storage,
-    UInt64 version,
+    BitmapVersion version,
     const DeleteBitmap & bitmap,
     const String & /*diag_part_name*/)
 {
-    const String final_name = DeleteBitmap::fileNameForBlockNumber(version);
+    const String final_name = DeleteBitmap::fileNameForCSN(version);
     const String tmp_name = final_name + ".tmp";
 
     /// Clear any stale `.tmp` from a previous failed attempt.
@@ -74,10 +73,10 @@ void writeBitmapToStorage(
 
 std::shared_ptr<DeleteBitmap> readBitmapFromStorage(
     const IDataPartStorage & storage,
-    UInt64 version,
+    BitmapVersion version,
     const String & diag_part_name)
 {
-    const String file_name = DeleteBitmap::fileNameForBlockNumber(version);
+    const String file_name = DeleteBitmap::fileNameForCSN(version);
     if (!storage.existsFile(file_name))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
             "Delete bitmap file '{}' does not exist in part '{}'",
@@ -89,14 +88,13 @@ std::shared_ptr<DeleteBitmap> readBitmapFromStorage(
     return std::shared_ptr<DeleteBitmap>(deserialized.release());
 }
 
-UInt64 getCurrentVersionFromStorage(const IDataPartStorage & storage)
+BitmapVersion getLastVersionFromStorage(const IDataPartStorage & storage)
 {
     auto files = enumerateFiles(storage);
     auto highest = pickHighest(files);
     if (!highest)
         return 0;
-    /// Block number from filename == version of the bitmap on disk.
-    return highest->first;
+    return highest->version;
 }
 
 }

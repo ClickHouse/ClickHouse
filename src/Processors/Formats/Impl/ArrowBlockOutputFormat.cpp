@@ -7,6 +7,17 @@
 
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
+#include <Processors/Formats/Impl/ArrowIPC/ArrowIPCBlockOutputFormat.h>
+#include <Processors/Formats/Impl/ArrowIPC/RecordBatchEncoder.h>
+#include <Core/Block.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <Common/assert_cast.h>
 
 #include <arrow/ipc/writer.h>
 #include <arrow/table.h>
@@ -79,8 +90,7 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
     auto status = writer->WriteTable(*arrow_table, format_settings.arrow.row_group_size);
 
     if (!status.ok())
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
-            "Error while writing a table: {}", status.ToString());
+        throwFromArrowStatus(status, ErrorCodes::UNKNOWN_EXCEPTION, "Error while writing a table");
 }
 
 void ArrowBlockOutputFormat::finalizeImpl()
@@ -94,8 +104,7 @@ void ArrowBlockOutputFormat::finalizeImpl()
 
     auto status = writer->Close();
     if (!status.ok())
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
-            "Error while closing a table: {}", status.ToString());
+        throwFromArrowStatus(status, ErrorCodes::UNKNOWN_EXCEPTION, "Error while closing a table");
 }
 
 void ArrowBlockOutputFormat::resetFormatterImpl()
@@ -119,8 +128,7 @@ void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> 
         writer_status = arrow::ipc::MakeFileWriter(arrow_ostream.get(), schema,options);
 
     if (!writer_status.ok())
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
-            "Error while opening a table writer: {}", writer_status.status().ToString());
+        throwFromArrowStatus(writer_status.status(), ErrorCodes::UNKNOWN_EXCEPTION, "Error while opening a table writer");
 
     writer = *writer_status;
 }
@@ -133,9 +141,12 @@ void registerOutputFormatArrow(FormatFactory & factory)
         [](WriteBuffer & buf,
            const Block & sample,
            const FormatSettings & format_settings,
-           FormatFilterInfoPtr /*format_filter_info*/)
+           FormatFilterInfoPtr /*format_filter_info*/) -> OutputFormatPtr
         {
-            return std::make_shared<ArrowBlockOutputFormat>(buf, std::make_shared<const Block>(sample), false, format_settings);
+            auto header = std::make_shared<const Block>(sample);
+            if (format_settings.arrow.output_use_native_writer)
+                return std::make_shared<ArrowIPCBlockOutputFormat>(buf, header, false, format_settings);
+            return std::make_shared<ArrowBlockOutputFormat>(buf, header, false, format_settings);
         });
     factory.markFormatHasNoAppendSupport("Arrow");
     factory.markOutputFormatNotTTYFriendly("Arrow");
@@ -146,9 +157,12 @@ void registerOutputFormatArrow(FormatFactory & factory)
         [](WriteBuffer & buf,
            const Block & sample,
            const FormatSettings & format_settings,
-          FormatFilterInfoPtr /*format_filter_info*/)
+          FormatFilterInfoPtr /*format_filter_info*/) -> OutputFormatPtr
         {
-            return std::make_shared<ArrowBlockOutputFormat>(buf, std::make_shared<const Block>(sample), true, format_settings);
+            auto header = std::make_shared<const Block>(sample);
+            if (format_settings.arrow.output_use_native_writer)
+                return std::make_shared<ArrowIPCBlockOutputFormat>(buf, header, true, format_settings);
+            return std::make_shared<ArrowBlockOutputFormat>(buf, header, true, format_settings);
         });
     factory.markFormatHasNoAppendSupport("ArrowStream");
     factory.markOutputFormatPrefersLargeBlocks("ArrowStream");

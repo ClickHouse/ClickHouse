@@ -5,7 +5,7 @@ import time
 import pytest
 
 from helpers.cluster import ClickHouseCluster, CLICKHOUSE_START_COMMAND
-from helpers.client import CommandRequest, QueryRuntimeException
+from helpers.client import QueryRuntimeException
 
 
 cluster = ClickHouseCluster(__file__)

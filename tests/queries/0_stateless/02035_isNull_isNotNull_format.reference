@@ -1,9 +1,9 @@
 -- { echo }
 explain syntax select null is null;
-SELECT _CAST(NULL, \'Nullable(Nothing)\') IS NULL
+SELECT isNull(_CAST(NULL, \'Nullable(Nothing)\'))
 FROM system.one
 explain syntax select null is not null;
-SELECT _CAST(NULL, \'Nullable(Nothing)\') IS NOT NULL
+SELECT isNotNull(_CAST(NULL, \'Nullable(Nothing)\'))
 FROM system.one
 explain syntax select isNull(null);
 SELECT isNull(_CAST(NULL, \'Nullable(Nothing)\'))
@@ -12,7 +12,7 @@ explain syntax select isNotNull(null);
 SELECT isNotNull(_CAST(NULL, \'Nullable(Nothing)\'))
 FROM system.one
 explain syntax select isNotNull(1)+isNotNull(2) from remote('127.2', system.one);
-SELECT isNotNull(1) + isNotNull(2)
+SELECT plus(isNotNull(1), isNotNull(2))
 FROM remote(\'127.2\', system.one)
 select isNotNull(1)+isNotNull(2) from remote('127.2', system.one);
 2

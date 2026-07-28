@@ -87,8 +87,12 @@ public:
 
     /** Finalize step output columns and remove unnecessary input columns.
       * If actions dag node has same name as child input column, it is added to actions output nodes.
+      *
+      * `source_const_inputs` names source-constant INPUTs to keep even if no output depends on them,
+      * so folding does not orphan-and-drop them and the column stays in the stream at distributed
+      * stage boundaries. Literals/aliases are excluded.
       */
-    void finalizeInputAndOutputColumns(const NameSet & child_input_columns);
+    void finalizeInputAndOutputColumns(const NameSet & child_input_columns, const NameSet & source_const_inputs);
 
     /// Dump step into buffer
     void dump(WriteBuffer & buffer) const;
@@ -214,8 +218,8 @@ public:
         return &steps.back()->getAvailableOutputColumns();
     }
 
-    /// Finalize chain
-    void finalize();
+    /// Finalize chain. See `ActionsChainStep::finalizeInputAndOutputColumns` for `source_const_inputs`.
+    void finalize(const NameSet & source_const_inputs = {});
 
     /// Dump chain into buffer
     void dump(WriteBuffer & buffer) const;
