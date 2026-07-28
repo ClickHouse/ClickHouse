@@ -70,7 +70,7 @@ Conéctese a su instancia de Crunchy Bridge Postgres con el usuario `postgres` y
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-La publicación `clickpipes` contendrá el conjunto de eventos de cambio generados por las tablas especificadas y más adelante se utilizará para ingestar el flujo de replicación.
+La publicación `clickpipes` define el conjunto de tablas cuyos eventos de cambio se enviarán en streaming a ClickPipes. Recomendamos no usar `FOR ALL TABLES` a menos que tenga la intención de replicar todas las tablas, ya que incluir tablas innecesarias aumenta el tráfico de WAL desde Postgres hacia ClickPipes y reduce la eficiencia general de la replicación.
 
 <div id="safe-list-clickpipes-ips">
   ## Incluir las IP de ClickPipes en la lista segura

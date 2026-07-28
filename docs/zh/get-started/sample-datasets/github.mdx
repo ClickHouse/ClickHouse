@@ -84,7 +84,6 @@ CREATE TABLE git.commits
   * https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/line&#95;changes.tsv.xz - 127.4 MB
 * Linux (2022 年 11 月 8 日)
   * https://datasets-documentation.s3.amazonaws.com/github/commits/linux/commits.tsv.xz - 44 MB
-  * https://datasets-documentation.s3.amazonaws.com/github/commits/linux/file&#95;changes.tsv.xz - 467MB
   * https://datasets-documentation.s3.amazonaws.com/github/commits/linux/line&#95;changes.tsv.xz - 1.1G
 
 要插入这些数据，请先执行以下查询来准备数据库：
@@ -1361,7 +1360,7 @@ LIMIT 100
 │ Anton Popov          │ Amos Bird        │  2127 │
 └──────────────────────┴──────────────────┴───────┘
 
-结果集中有 20 行。耗时：0.098 秒。已处理 754 万行、42.16 MB（7667 万行/秒，428.99 MB/秒）。
+20 rows in set. Elapsed: 0.098 sec. Processed 7.54 million rows, 42.16 MB (76.67 million rows/s., 428.99 MB/s.)
 ```
 
 Sankey 图表 (SuperSet) 可以很好地展示这一点。注意，我们将 `LIMIT BY` 增加到 3，以便找出每位作者对应的前 3 位“代码移除者”，从而让可视化结果更加丰富。

@@ -76,7 +76,7 @@ ClickPipes 支持 Postgres 12 及以上版本。
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` publication 将包含由指定表生成的一组变更事件，后续将用于摄取复制 stream。
+`clickpipes` publication 定义了将其变更事件流式传输到 ClickPipes 的表集合。除非你打算复制所有表，否则我们不建议使用 `FOR ALL TABLES`，因为包含不必要的表会增加从 Postgres 到 ClickPipes 的 WAL 流量，并降低整体复制效率。
 
 <div id="add-clickpipes-ips-to-firewall">
   ## 将 ClickPipes IP 地址添加到防火墙

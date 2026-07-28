@@ -24,10 +24,13 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [DROP SETTINGS variable [,...] ]
     [DROP PROFILES 'profile_name' [,...] ]
     [ADD|MODIFY SETTINGS variable [=value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE|CONST|CHANGEABLE_IN_READONLY] [,...] ]
+    [SET variable [=value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE|CONST|CHANGEABLE_IN_READONLY] [,...] ]
     [ADD PROFILES 'profile_name' [,...] ]
 ```
 
 `ALTER USER`를 사용하려면 [ALTER USER](/ko/reference/statements/grant#access-management) 권한이 필요합니다.
+
+`SET variable = value`는 `MODIFY SETTING variable = value`의 별칭입니다: 나머지 설정은 유지한 채 단일 설정만 제자리에서 변경합니다. 전체 설정 목록을 대체하고 상속된 모든 (parent) 프로필도 제거하는 단독 `SETTINGS` 절보다 이것(또는 `MODIFY SETTING`)을 사용하는 것이 좋습니다.
 
 <div id="grantees-clause">
   ## GRANTEES 절

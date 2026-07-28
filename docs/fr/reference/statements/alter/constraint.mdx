@@ -1,24 +1,29 @@
 ---
-description: 'Documentation de référence sur la gestion des contraintes'
+description: 'Documentation sur la gestion des contraintes'
 sidebarTitle: 'CONSTRAINT'
 slug: /sql-reference/statements/alter/constraint
 title: 'Gestion des contraintes'
-doc_type: 'reference'
+doc_type: 'référence'
 ---
 
-Les contraintes peuvent être ajoutées ou supprimées à l’aide de la syntaxe suivante :
+Les contraintes peuvent être ajoutées, modifiées ou supprimées à l’aide de la syntaxe suivante :
 
 ```sql
-ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name CHECK expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name {CHECK|ASSUME} expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY CONSTRAINT [IF EXISTS] constraint_name {CHECK|ASSUME} expression;
 ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constraint_name;
 ```
 
-Voir plus d&#39;informations sur les [contraintes](/fr/reference/statements/create/table#constraints).
+Comme pour la création d’une table, une contrainte peut être déclarée soit comme `CHECK` (appliquée lors d’un `INSERT`), soit comme `ASSUME` (tenue pour vraie par l’optimiseur sans être vérifiée). Voir [contraintes](/fr/reference/statements/create/table#constraints) pour la différence entre les deux.
 
-Les requêtes ajoutent ou suppriment des métadonnées relatives aux contraintes de la table ; elles sont donc traitées immédiatement.
+`MODIFY CONSTRAINT` remplace la déclaration d’une contrainte existante, tout en conservant sa position dans la définition de la table. Il peut également changer le type de contrainte (par exemple, de `CHECK` à `ASSUME`). Cela équivaut à supprimer la contrainte puis à l’ajouter de nouveau avec la nouvelle déclaration. Si la contrainte n’existe pas, la requête génère une erreur, sauf si `IF EXISTS` est spécifié.
+
+Voir aussi [contraintes](/fr/reference/statements/create/table#constraints).
+
+Les requêtes ajoutent, modifient ou suppriment les métadonnées des contraintes de la table ; elles sont donc traitées immédiatement.
 
 <Tip>
-  Si une contrainte est ajoutée, sa vérification **ne sera pas exécutée** sur les données existantes.
+  La vérification de la contrainte **ne sera pas exécutée** sur les données existantes si elle a été ajoutée ou modifiée.
 </Tip>
 
-Toutes les modifications apportées aux tables répliquées sont propagées à ZooKeeper et seront également appliquées aux autres répliques.
+Toutes les modifications apportées aux tables répliquées sont diffusées à ZooKeeper et seront également appliquées aux autres répliques.

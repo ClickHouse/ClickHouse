@@ -117,7 +117,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда метаданные Parquet не были найдены в кеше и их пришлось читать с диска.
 * `ProfileEvent_ParquetMetadataCacheWeightLost` ([UInt64](/ru/reference/data-types/int-uint)) — Приблизительное количество байтов, вытесненных из кеша метаданных Parquet.
 * `ProfileEvent_IcebergIteratorInitializationMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное на синхронную инициализацию итераторов данных Iceberg.
-* `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное на синхронную инициализацию итераторов данных Iceberg.
+* `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное на обновление метаданных хранилища Iceberg из состояния (buildStorageMetadataFromState).
 * `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество сведений об объектах, возвращённых итератором Iceberg.
 * `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество принятых анализом minmax пар «data file — position delete file» из пар, подходящих по partitioning и sequence number.
 * `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество принятых анализом minmax пар «data file — position delete file» из пар, подходящих по partitioning и sequence number.
@@ -538,8 +538,6 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
   9. Настройки, связанные с форматом частей, например &#39;enable&#95;mixed&#95;granularity&#95;parts&#39;, различаются у разных реплик.
      Сервер успешно обнаружил эту ситуацию и загрузит слитую часть с реплики, чтобы обеспечить побайтово идентичный результат.
 * `ProfileEvent_DataAfterMutationDiffersFromReplica` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда данные после мутации побайтно не совпадают с данными на других репликах. Помимо причин, описанных в &#39;DataAfterMergeDiffersFromReplica&#39;, это также возможно из-за недетерминированной мутации.
-* `ProfileEvent_PolygonsAddedToPool` ([UInt64](/ru/reference/data-types/int-uint)) — Полигон был добавлен в кэш (пул) для функции &#39;pointInPolygon&#39;.
-* `ProfileEvent_PolygonsInPoolAllocatedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество байт, выделенных для полигонов, добавленных в кэш (пул) для функции &#39;pointInPolygon&#39;.
 * `ProfileEvent_NaiveBayesClassifierModelsLoaded` ([UInt64](/ru/reference/data-types/int-uint)) — Количество загруженных моделей классификатора Naive Bayes.
 * `ProfileEvent_NaiveBayesClassifierModelsAllocatedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество байт, выделенных для моделей классификатора Naive Bayes.
 * `ProfileEvent_USearchAddCount` ([UInt64](/ru/reference/data-types/int-uint)) — Количество векторов, добавленных в индексы usearch.

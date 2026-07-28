@@ -35,12 +35,12 @@ quantilePrometheusHistogram(level)(bucket_upper_bound, cumulative_bucket_value)
 
 **参数列表**
 
-* `bucket_upper_bound` — 直方图各桶的上界。最大的桶其上界必须为 `+Inf`。[`Float64`](/zh/reference/data-types/float)
-* `cumulative_bucket_value` — 直方图各桶的累积值。这些值必须随着桶上界的增大而单调递增。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float64`](/zh/reference/data-types/float)
+* `bucket_upper_bound` — 直方图各桶的上界。最大的桶其上界必须为 `+Inf`。[`Float*`](/zh/reference/data-types/float)
+* `cumulative_bucket_value` — 直方图各桶的累积值。这些值必须随着桶上界的增大而单调递增。[`UInt*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float)
 
 **返回值**
 
-返回指定分位水平的分位数。[`Float64`](/zh/reference/data-types/float)
+返回指定分位水平的分位数。结果的浮点类型与 `bucket_upper_bound` 的类型一致。[`Float32`](/zh/reference/data-types/float) 或 [`Float64`](/zh/reference/data-types/float)
 
 **示例**
 

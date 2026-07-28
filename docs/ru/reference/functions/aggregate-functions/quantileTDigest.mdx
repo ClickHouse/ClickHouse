@@ -14,7 +14,7 @@ doc_type: 'reference'
 
 Добавленный в: v1.1.0
 
-Вычисляет приблизительный [квантиль](https://en.wikipedia.org/wiki/Quantile) числовой последовательности с помощью алгоритма [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf).
+Вычисляет приблизительный [квантиль](https://en.wikipedia.org/wiki/Quantile) числовой последовательности данных с помощью алгоритма [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf).
 
 Потребление памяти составляет `log(n)`, где `n` — количество значений. Результат зависит от порядка выполнения запроса и не является детерминированным.
 
@@ -36,11 +36,11 @@ quantileTDigest(level)(expr)
 
 **Аргументы**
 
-* `expr` — Выражение над значениями столбца, возвращающее числовой тип данных, `Date` или `DateTime`. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime)
+* `expr` — Выражение над значениями столбца, возвращающее числовой тип данных, `Date` или `DateTime`. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime)
 
 **Возвращаемое значение**
 
-Приближённое значение квантиля указанного уровня. [`Float64`](/ru/reference/data-types/float) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime)
+Приближённый квантиль указанного уровня. Для входных данных `Date` и `DateTime` выходной формат соответствует входному формату. [`Float32`](/ru/reference/data-types/float) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime)
 
 **Примеры**
 

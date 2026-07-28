@@ -22,16 +22,16 @@ A diferencia de las consultas transaccionales (u OLTP, Online Transaction Proces
 En muchos casos de uso, [las consultas analíticas deben ser &quot;en tiempo real&quot;](https://clickhouse.com/engineering-resources/what-is-real-time-analytics), es decir, devolver un resultado en menos de un segundo.
 
 <div id="row-oriented-vs-column-oriented-storage">
-  ## Almacenamiento orientado a filas vs. orientado a columna
+  ## Almacenamiento orientado a fila vs. orientado a columna
 </div>
 
 Ese nivel de rendimiento solo puede lograrse con la &quot;orientación&quot; de datos adecuada.
 
-Las bases de datos almacenan los datos [por filas o por columnas](https://clickhouse.com/engineering-resources/what-is-columnar-database).
+Las bases de datos almacenan los datos [orientadas a fila o a columna](https://clickhouse.com/engineering-resources/what-is-columnar-database).
 
-En una base de datos orientada a filas, las filas consecutivas de una tabla se almacenan secuencialmente una tras otra. Esta disposición permite recuperar filas rápidamente, ya que los valores de las columnas de cada fila se almacenan juntos.
+En una base de datos orientada a fila, las filas consecutivas de una tabla se almacenan secuencialmente una tras otra. Esta disposición permite recuperar filas rápidamente, ya que los valores de las columnas de cada fila se almacenan juntos.
 
-ClickHouse es una base de datos orientada a columna. En estos sistemas, las tablas se almacenan como una colección de columnas; es decir, los valores de cada columna se almacenan secuencialmente uno tras otro. Esta disposición hace que sea más difícil reconstruir filas individuales (ya que ahora hay huecos entre los valores de una fila), pero las operaciones sobre columnas, como los filtros o la agregación, se vuelven mucho más rápidas que en una base de datos orientada a filas.
+ClickHouse es una base de datos orientada a columna. En estos sistemas, las tablas se almacenan como una colección de columnas; es decir, los valores de cada columna se almacenan secuencialmente uno tras otro. Esta disposición hace que sea más difícil reconstruir filas individuales (ya que ahora hay huecos entre los valores de una fila), pero las operaciones sobre columnas, como los filtros o la agregación, se vuelven mucho más rápidas que en una base de datos orientada a fila.
 
 La diferencia se explica mejor con una consulta de ejemplo que se ejecuta sobre 100 millones de filas de [datos reales anonimizados de analítica web](/es/get-started/sample-datasets/anon-web-analytics-metrica):
 
@@ -55,11 +55,11 @@ Puedes [ejecutar esta consulta en el ClickHouse SQL Playground](https://sql.clic
 
 Como puedes ver en la sección de estadísticas del diagrama anterior, la consulta procesó 100 millones de filas en 92 milisegundos, con un rendimiento de algo más de 1.000 millones de filas por segundo, o algo menos de 7 GB de datos transferidos por segundo.
 
-**DBMS orientado a filas**
+**DBMS orientado a fila**
 
-En una base de datos orientada a filas, aunque la consulta anterior solo procesa unas pocas de las columnas existentes, el sistema sigue necesitando cargar en memoria desde disco los datos de otras columnas existentes. Esto se debe a que los datos se almacenan en disco en fragmentos llamados [bloques](https://en.wikipedia.org/wiki/Block_\(data_storage\)) (normalmente de tamaño fijo, p. ej., 4 KB u 8 KB). Los bloques son las unidades de datos más pequeñas que se leen del disco a la memoria. Cuando una aplicación o base de datos solicita datos, el subsistema de E/S de disco del sistema operativo lee del disco los bloques necesarios. Aunque solo se necesite una parte de un bloque, se lee el bloque completo en memoria (esto se debe al diseño del disco y del sistema de archivos):
+En una base de datos orientada a fila, aunque la consulta anterior solo procesa unas pocas de las columnas existentes, el sistema sigue necesitando cargar en memoria desde disco los datos de otras columnas existentes. Esto se debe a que los datos se almacenan en disco en fragmentos llamados [bloques](https://en.wikipedia.org/wiki/Block_\(data_storage\)) (normalmente de tamaño fijo, p. ej., 4 KB u 8 KB). Los bloques son las unidades de datos más pequeñas que se leen del disco a la memoria. Cuando una aplicación o base de datos solicita datos, el subsistema de E/S de disco del sistema operativo lee del disco los bloques necesarios. Aunque solo se necesite una parte de un bloque, se lee el bloque completo en memoria (esto se debe al diseño del disco y del sistema de archivos):
 
-<Image img="/images/row-oriented.webp" alt="Estructura de una base de datos orientada a filas" size="lg" />
+<Image img="/images/row-oriented.webp" alt="Estructura de una base de datos orientada a fila" size="lg" />
 
 **DBMS orientado a columna**
 

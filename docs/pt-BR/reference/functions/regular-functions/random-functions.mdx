@@ -39,6 +39,10 @@ Introduzido na versão: v20.5.0
 
 Inverte os bits da string de entrada `s`, com probabilidade `p` para cada bit.
 
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -82,6 +86,10 @@ Retorna um número `UInt32` aleatório com distribuição uniforme.
 Usa um gerador congruencial linear com um estado inicial obtido do sistema, o que significa que, embora pareça aleatório, não é realmente aleatório e pode ser previsível se o estado inicial for conhecido.
 Em cenários em que a aleatoriedade real é crucial, considere usar métodos alternativos, como chamadas em nível de sistema ou a integração com bibliotecas externas.
 
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -121,6 +129,10 @@ Retorna um número `UInt64` aleatório com distribuição uniforme.
 Usa um gerador congruencial linear com estado inicial obtido do sistema, o que significa que, embora pareça aleatório, não é realmente aleatório e pode ser previsível se o estado inicial for conhecido.
 Em cenários nos quais a aleatoriedade real é crucial, considere usar métodos alternativos, como chamadas em nível de sistema ou integração com bibliotecas externas.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -153,7 +165,11 @@ SELECT rand64();
 
 Introduzido em: v22.10.0
 
-Retorna um número Float64 aleatório obtido de uma [distribuição de Bernoulli](https://en.wikipedia.org/wiki/Bernoulli_distribution).
+Retorna um número Float64 aleatório extraído de uma [distribuição de Bernoulli](https://en.wikipedia.org/wiki/Bernoulli_distribution).
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -194,7 +210,11 @@ SELECT randBernoulli(.75) FROM numbers(5)
 
 Introduzido em: v22.10.0
 
-Retorna um número Float64 aleatório obtido de uma [distribuição binomial](https://en.wikipedia.org/wiki/Binomial_distribution).
+Retorna um número Float64 aleatório extraído de uma [distribuição binomial](https://en.wikipedia.org/wiki/Binomial_distribution).
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -210,7 +230,7 @@ randBinomial(experiments, probability[, x])
 
 **Valor retornado**
 
-Retorna um número aleatório Float64 gerado a partir da distribuição binomial especificada. [`UInt64`](/pt-BR/reference/data-types/int-uint)
+Retorna um número aleatório Float64 extraído da distribuição binomial especificada. [`UInt64`](/pt-BR/reference/data-types/int-uint)
 
 **Exemplos**
 
@@ -237,6 +257,10 @@ SELECT randBinomial(100, .75) FROM numbers(5)
 Introduzido em: v22.11.0
 
 Retorna um número aleatório `Float64` com distribuição uniforme entre `0` (inclusive) e `1` (exclusivo).
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -270,7 +294,11 @@ SELECT randCanonical();
 
 Introduzido em: v22.10.0
 
-Retorna um número Float64 aleatório amostrado de uma [distribuição qui-quadrado](https://en.wikipedia.org/wiki/Chi-squared_distribution).
+Retorna um número Float64 aleatório extraído de uma [distribuição qui-quadrado](https://en.wikipedia.org/wiki/Chi-squared_distribution).
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -320,6 +348,10 @@ Esta função:
 
 Ela é útil para aplicar sementes aleatórias ou identificadores consistentes a todas as linhas de um conjunto de dados
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -366,7 +398,11 @@ SELECT randConstant(10) AS random_value;
 
 Introduzido em: v22.10.0
 
-Retorna um número Float64 aleatório gerado a partir de uma [distribuição exponencial](https://en.wikipedia.org/wiki/Exponential_distribution).
+Retorna um número Float64 aleatório extraído de uma [distribuição exponencial](https://en.wikipedia.org/wiki/Exponential_distribution).
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -407,7 +443,11 @@ SELECT randExponential(1/10) FROM numbers(5)
 
 Introduzido em: v22.10.0
 
-Retorna um número Float64 aleatório de uma [distribuição F](https://en.wikipedia.org/wiki/F-distribution).
+Retorna um número Float64 aleatório extraído de uma [distribuição F](https://en.wikipedia.org/wiki/F-distribution).
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -423,7 +463,7 @@ randFisherF(d1, d2[, x])
 
 **Valor retornado**
 
-Retorna um número aleatório do tipo Float64 gerado a partir da distribuição F especificada [`Float64`](/pt-BR/reference/data-types/float)
+Retorna um número aleatório do tipo Float64 extraído da distribuição F especificada [`Float64`](/pt-BR/reference/data-types/float)
 
 **Exemplos**
 
@@ -450,6 +490,10 @@ SELECT randFisherF(10, 3) FROM numbers(5)
 Introduzido em: v22.10.0
 
 Retorna um número Float64 aleatório extraído de uma [distribuição log-normal](https://en.wikipedia.org/wiki/Log-normal_distribution).
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -493,6 +537,10 @@ Introduzido em: v22.10.0
 
 Retorna um número Float64 aleatório extraído de uma [distribuição binomial negativa](https://en.wikipedia.org/wiki/Negative_binomial_distribution).
 
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -535,6 +583,10 @@ Introduzido em: v22.10.0
 
 Retorna um número Float64 aleatório gerado a partir de uma [distribuição normal](https://en.wikipedia.org/wiki/Normal_distribution).
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -575,7 +627,11 @@ SELECT randNormal(10, 2) FROM numbers(5)
 
 Introduzido em: v22.10.0
 
-Retorna um número Float64 aleatório gerado a partir de uma [distribuição de Poisson](https://en.wikipedia.org/wiki/Poisson_distribution).
+Retorna um número Float64 aleatório extraído de uma [distribuição de Poisson](https://en.wikipedia.org/wiki/Poisson_distribution).
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -590,7 +646,7 @@ randPoisson(n[, x])
 
 **Valor retornado**
 
-Retorna um número Float64 aleatório gerado a partir da distribuição de Poisson especificada. [`UInt64`](/pt-BR/reference/data-types/int-uint)
+Retorna um número Float64 aleatório extraído da distribuição de Poisson especificada. [`UInt64`](/pt-BR/reference/data-types/int-uint)
 
 **Exemplos**
 
@@ -617,6 +673,10 @@ SELECT randPoisson(10) FROM numbers(5)
 Introduzido em: v22.10.0
 
 Retorna um número Float64 aleatório extraído de uma [distribuição t de Student](https://en.wikipedia.org/wiki/Student%27s_t-distribution).
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -658,6 +718,10 @@ SELECT randStudentT(10) FROM numbers(5)
 Introduzido em: v22.10.0
 
 Retorna um número Float64 aleatório gerado com distribuição uniforme no intervalo $[\min, \max]$.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -702,6 +766,10 @@ Introduzido em: v20.5.0
 Gera uma string aleatória de tamanho fixo com a quantidade especificada de caracteres.
 Os caracteres retornados não são necessariamente caracteres ASCII, ou seja, podem não ser imprimíveis.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -725,9 +793,9 @@ SELECT randomFixedString(13) AS rnd, toTypeName(rnd)
 ```
 
 ```response title=Response
-┌─rnd──────┬─toTypeName(randomFixedString(13))─┐
-│ j▒h㋖HɨZ'▒ │ FixedString(13)                 │
-└──────────┴───────────────────────────────────┘
+┌─rnd────────┬─toTypeName(randomFixedString(13))─┐
+│ j▒h㋖HɨZ'▒ │ FixedString(13)                   │
+└────────────┴───────────────────────────────────┘
 ```
 
 <div id="randomPrintableASCII">
@@ -739,6 +807,10 @@ Introduzido em: v20.1.0
 Gera uma string [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) aleatória com a quantidade especificada de caracteres.
 
 Se você passar `length < 0`, o comportamento da função será indefinido.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -780,6 +852,10 @@ Introduzido em: v20.5.0
 Gera uma string aleatória com a quantidade especificada de caracteres.
 Os caracteres retornados não são necessariamente caracteres ASCII, ou seja, podem não ser imprimíveis.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -818,6 +894,10 @@ Gera uma string [UTF-8](https://en.wikipedia.org/wiki/UTF-8) aleatória com o n�
 Nenhum ponto de código de [planos](https://en.wikipedia.org/wiki/Plane_\(Unicode\)) não atribuídos (planos de 4 a 13) é retornado.
 Ainda é possível que o cliente que interage com o servidor ClickHouse não consiga exibir corretamente a string UTF-8 gerada.
 
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -842,7 +922,7 @@ SELECT randomStringUTF8(13)
 
 ```response title=Response
 ┌─randomStringUTF8(13)─┐
-│ 𘤗𙉝д兠庇󡅴󱱎󦐪􂕌𔊹𓰛       │
+│ 󶡕𲉗𩍄ԍ╃𑄅󦨁󷌁󬾣𹼫󤓆󺜘󩶧         │
 └──────────────────────┘
 ```
 
