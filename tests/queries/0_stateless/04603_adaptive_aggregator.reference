@@ -86,7 +86,7 @@ Table Sparse
 1
 Sparse aggregate argument
 1
-Explicit external aggregation settings are ignored on the adaptive path
+External aggregation settings are honored on the adaptive path
 1
 1
 Analytic guard: count per key over numbers_mt

@@ -376,7 +376,7 @@ SELECT
     (SELECT sum(s), count() FROM (SELECT a % 50000 AS g, sum(v) AS s FROM test_sparse_argument GROUP BY g SETTINGS enable_adaptive_aggregator = 1));
 DROP TABLE test_sparse_argument;
 
-SELECT 'Explicit external aggregation settings are ignored on the adaptive path';
+SELECT 'External aggregation settings are honored on the adaptive path';
 SELECT
     (SELECT sum(s), count() FROM (SELECT a, sum(b) AS s FROM test GROUP BY a SETTINGS enable_adaptive_aggregator = 0))
     =

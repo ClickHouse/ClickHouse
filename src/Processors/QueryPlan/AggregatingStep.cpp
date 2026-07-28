@@ -451,11 +451,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
     const bool use_adaptive_aggregator = !use_sharded_aggregation && canUseAdaptiveAggregator(pipeline);
     params.enable_adaptive_aggregator = use_adaptive_aggregator;
-    if (use_adaptive_aggregator)
-    {
-        /// TODO (nihalzp): Support external aggregation.
-        params.max_bytes_before_external_group_by = 0;
-    }
 
     if (use_sharded_aggregation)
     {
