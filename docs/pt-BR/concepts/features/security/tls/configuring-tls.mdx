@@ -22,9 +22,7 @@ Este guia apresenta configurações simples e mínimas para configurar o ClickHo
 </Note>
 
 <Steps>
-  <Step>
-    ## Criar uma Implantação do ClickHouse
-
+  <Step title="Criar uma Implantação do ClickHouse" id="1-create-a-clickhouse-deployment">
     Este guia foi escrito com base no Ubuntu 20.04 e no ClickHouse instalado nos hosts a seguir por meio do pacote DEB (via `apt`). O domínio é `marsnet.local`:
 
     | Host      | Endereço IP   |
@@ -38,9 +36,7 @@ Este guia apresenta configurações simples e mínimas para configurar o ClickHo
     </Note>
   </Step>
 
-  <Step>
-    ## Criar certificados TLS
-
+  <Step title="Criar certificados TLS" id="2-create-tls-certificates">
     <Note>
       O uso de certificados autoassinados é apenas para fins de demonstração e não deve ser feito em produção. As solicitações de certificado devem ser criadas para serem assinadas pela organização e validadas usando a cadeia da CA que será configurada nas settings. No entanto, estas etapas podem ser usadas para configurar e testar as settings e, depois, substituídas pelos certificados reais que serão usados.
     </Note>
@@ -90,9 +86,7 @@ Este guia apresenta configurações simples e mínimas para configurar o ClickHo
        ```
   </Step>
 
-  <Step>
-    ## Crie e configure um diretório para armazenar certificados e chaves.
-
+  <Step title="Crie e configure um diretório para armazenar certificados e chaves." id="3-create-and-configure-a-directory-to-store-certificates-and-keys">
     <Note>
       Isso deve ser feito em cada nó. Use os certificados e as chaves apropriados em cada host.
     </Note>
@@ -123,9 +117,7 @@ Este guia apresenta configurações simples e mínimas para configurar o ClickHo
        ```
   </Step>
 
-  <Step>
-    ## Configure o ambiente com clusters básicos usando o ClickHouse Keeper
-
+  <Step title="Configure o ambiente com clusters básicos usando o ClickHouse Keeper" id="4-configure-the-environment-with-basic-clusters-using-clickhouse-keeper">
     Para este ambiente de implantação, as seguintes configurações do ClickHouse Keeper são utilizadas em cada nó. Cada servidor terá seu próprio `<server_id>`. (Por exemplo, `<server_id>1</server_id>` para o nó `chnode1`, e assim por diante.)
 
     <Note>
@@ -250,9 +242,7 @@ Este guia apresenta configurações simples e mínimas para configurar o ClickHo
        ```
   </Step>
 
-  <Step>
-    ## Configurar interfaces TLS nos nós do ClickHouse
-
+  <Step title="Configurar interfaces TLS nos nós do ClickHouse" id="5-configure-tls-interfaces-on-clickhouse-nodes">
     As configurações abaixo são definidas no `config.xml` do servidor ClickHouse
 
     1. Defina o nome de exibição da implantação (opcional):
@@ -359,9 +349,7 @@ Este guia apresenta configurações simples e mínimas para configurar o ClickHo
        ```
   </Step>
 
-  <Step>
-    ## Testes
-
+  <Step title="Testes" id="6-testing">
     1. Inicie todos os nós, um de cada vez:
        ```bash
        service clickhouse-server start

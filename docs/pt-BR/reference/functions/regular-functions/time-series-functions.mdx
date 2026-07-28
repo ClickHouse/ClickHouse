@@ -25,7 +25,7 @@ entre outras.
 
 Introduzido em: v24.1.0
 
-Decompõe uma série de dados usando STL [(Procedimento de Decomposição Sazonal-Tendência Baseado em Loess)](https://www.wessa.net/download/stl.pdf) em sazonalidade, tendência e um componente residual.
+Decompõe uma série de dados usando STL [(Procedimento de Decomposição Sazonal-Tendência Baseado em Loess)](https://www.math.unm.edu/~lil/Stat581/STL.pdf) em sazonalidade, tendência e um componente residual.
 
 **Sintaxe**
 
@@ -51,26 +51,9 @@ SELECT seriesDecomposeSTL([10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 
 ```
 
 ```response title=Response
-┌───────────print_0──────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ [[
-        -13.529999, -3.1799996, 16.71,      -13.53,     -3.1799996, 16.71,      -13.53,     -3.1799996,
-        16.71,      -13.530001, -3.18,      16.710001,  -13.530001, -3.1800003, 16.710001,  -13.530001,
-        -3.1800003, 16.710001,  -13.530001, -3.1799994, 16.71,      -13.529999, -3.1799994, 16.709997
-    ],
-    [
-        23.63,     23.63,     23.630003, 23.630001, 23.630001, 23.630001, 23.630001, 23.630001,
-        23.630001, 23.630001, 23.630001, 23.63,     23.630001, 23.630001, 23.63,     23.630001,
-        23.630001, 23.63,     23.630001, 23.630001, 23.630001, 23.630001, 23.630001, 23.630003
-    ],
-    [
-        0, 0.0000019073486, -0.0000019073486, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.0000019073486, 0,
-        0
-    ],
-    [
-        10.1, 20.449999, 40.340004, 10.100001, 20.45, 40.34, 10.100001, 20.45, 40.34, 10.1, 20.45, 40.34,
-        10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.100002, 20.45, 40.34
-    ]]                                                                                                                   │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─print_0─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [[-13.529999,-3.1799996,16.71,-13.53,-3.1799996,16.71,-13.53,-3.1799996,16.71,-13.530001,-3.18,16.710001,-13.530001,-3.1800003,16.710001,-13.530001,-3.1800003,16.710001,-13.530001,-3.1799994,16.71,-13.529999,-3.1799994,16.709997],[23.63,23.63,23.630003,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.63,23.630001,23.630001,23.63,23.630001,23.630001,23.63,23.630001,23.630001,23.630001,23.630001,23.630001,23.630003],[0,0.0000019073486,-0.0000019073486,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.0000019073486,0,0],[10.1,20.449999,40.340004,10.100001,20.45,40.34,10.100001,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.100002,20.45,40.34]] │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="seriesOutliersDetectTukey">
@@ -184,6 +167,10 @@ Se a tag copiada não estiver presente em `src_group`, a função também a remo
 A função imita a lógica de cópia dos modificadores
 [group left/group right](https://prometheus.io/docs/prometheus/latest/querying/operators/#group-modifiers) do Prometheus.
 
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -229,6 +216,10 @@ Se algumas das tags copiadas não estiverem presentes em `src_group`, a função
 A função reproduz a lógica de cópia dos modificadores
 [group left/group right](https://prometheus.io/docs/prometheus/latest/querying/operators/#group-modifiers) do Prometheus.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -270,6 +261,10 @@ Introduzida na versão: v26.1.0
 
 Extrai o valor de uma tag específica do grupo. Retorna NULL se não for encontrada.
 Veja também a função [timeSeriesGroupToTags()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags).
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -360,6 +355,10 @@ Retorna uma chave de amostragem `UInt64` estável derivada das tags de um grupo 
 O valor é determinístico: tags de entrada idênticas sempre produzem a mesma chave.
 Ela foi projetada para ser usada como chave de ordenação para operadores de amostragem como `limitk` e `limit_ratio`.
 
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -397,6 +396,10 @@ Introduzido em: v26.1.0
 
 Retorna os nomes e valores das tags associadas a um grupo especificado.
 Veja também a função [timeSeriesTagsToGroup()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesTagsToGroup).
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -442,13 +445,17 @@ Introduzido em: v26.1.0
 Retorna os nomes e os valores das tags associadas ao identificador especificado de uma série temporal.
 Consulte também a função [timeSeriesStoreTags()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags).
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
 timeSeriesIdToGroup(id)
 ```
 
-**Aliases**: `timeSeriesIdToTagsGroup`
+**nome alternativo**: `timeSeriesIdToTagsGroup`
 
 **Argumentos**
 
@@ -484,6 +491,10 @@ Introduzido em: v25.8.0
 
 Retorna as tags associadas a um identificador específico de uma série temporal.
 Veja também a função [timeSeriesStoreTags()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags).
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -529,6 +540,10 @@ A função insere um separador entre os valores concatenados e retorna um novo g
 com a tag `dest_tag` definida como o valor concatenado.
 Esta função reproduz a lógica da função do Prometheus
 [label&#95;join()](https://prometheus.io/docs/prometheus/latest/querying/functions/#label_join).
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -615,6 +630,10 @@ Remove todas as tags, exceto as especificadas, de um grupo de tags.
 Veja também a função [timeSeriesRemoveTag()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTag),
 [timeSeriesRemoveTags()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTags).
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -656,6 +675,10 @@ Remove uma tag específica de um grupo de tags.
 Se essa tag não existir no grupo, ele será retornado sem alterações.
 Veja também as funções [timeSeriesRemoveTags()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTags),
 [timeSeriesRemoveAllTagsExcept()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveAllTagsExcept).
+
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -703,6 +726,10 @@ Se algumas das tags especificadas não estiverem no grupo, a função as ignorar
 Consulte também a função [timeSeriesRemoveTag()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTag),
 [timeSeriesRemoveAllTagsExcept()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveAllTagsExcept).
 
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -747,6 +774,10 @@ Se houver correspondência, o valor da tag `dest_tag` no grupo retornado será a
 junto com as tags originais da entrada.
 Esta função reproduz a lógica da função do Prometheus
 [label&#95;replace()](https://prometheus.io/docs/prometheus/latest/querying/functions/#label_replace).
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -839,6 +870,10 @@ Se o mesmo grupo de tags for encontrado várias vezes durante a execução da co
 Para um conjunto vazio de tags, a função sempre retorna 0.
 Veja também a função [timeSeriesGroupToTags()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags).
 
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -880,11 +915,15 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 
 Introduzido em: v26.2.0
 
-Verifica a `condition` e, se ela for verdadeira, lança uma exceção com a seguinte mensagem:
+Verifica a `condition` e, se ela for verdadeira, lança uma exceção com a seguinte mensagem
 `Multiple series have the same tags <tags>, duplicate series in the same result set are not allowed`.
 Se a `condition` for falsa, a função retorna `0`.
 Esta função é semelhante a [throwIf()](/pt-BR/reference/functions/regular-functions/other-functions#throwIf),
 mas usa um código de erro diferente e formata a mensagem de erro de outra maneira.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -920,10 +959,7 @@ INSERT INTO test VALUES ([('__name__', 'up')]);
 SELECT timeSeriesTagsToGroup(tags) AS group
 FROM test
 GROUP BY group
-HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- Lança exceção "Multiple series have the same tags {'__name__': 'up'}"
-```
-
-```response title=Response
+HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- Throws exception "Multiple series have the same tags {'__name__': 'up'}"
 ```
 
 {/*AUTOGENERATED_END*/}
