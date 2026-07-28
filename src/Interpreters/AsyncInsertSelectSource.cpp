@@ -57,7 +57,8 @@ AsyncInsertSelectSource::AsyncInsertSelectSource(
     UInt64 wait_timeout_ms_,
     bool insert_allow_materialized_,
     StorageID table_id_,
-    bool needs_null_default_sync_)
+    bool needs_null_default_sync_,
+    InsertDependenciesBuilder::ConstPtr forced_insert_dependencies_)
     : ISource(std::make_shared<const Block>())
     , select_pipeline(std::move(select_pipeline_))
     , queue(queue_)
@@ -69,6 +70,7 @@ AsyncInsertSelectSource::AsyncInsertSelectSource(
     , insert_allow_materialized(insert_allow_materialized_)
     , table_id(std::move(table_id_))
     , needs_null_default_sync(needs_null_default_sync_)
+    , forced_insert_dependencies(std::move(forced_insert_dependencies_))
     , log(getLogger("executeQuery"))
 {
 }
@@ -102,6 +104,9 @@ Chunk AsyncInsertSelectSource::generate()
             sync_ast, insert_context,
             insert_allow_materialized,
             /* no_squash */ false, /* no_destination */ false, /* async_insert */ false);
+        /// Use the graph frozen before the SELECT ran, not one rebuilt now.
+        if (forced_insert_dependencies)
+            sync_interpreter.setForcedInsertDependencies(forced_insert_dependencies);
         sync_io.emplace(sync_interpreter.execute());
         sync_io->pipeline.setProcessListElement(context->getProcessListElement());
         sync_exec = std::make_unique<PushingPipelineExecutor>(sync_io->pipeline);
@@ -197,6 +202,9 @@ Chunk AsyncInsertSelectSource::generate()
         /// The pushed block is Preprocessed (Native-encoded). `preprocessInsertQuery` rejects an
         /// empty format, and a plain `INSERT ... SELECT` carries none, so set `Native` explicitly.
         async_query->as<ASTInsertQuery &>().format = "Native";
+        /// Not frozen here: the queue batches pushes from multiple clients under one key and
+        /// resolves the dependency graph once at flush time for the whole batch, existing
+        /// async-insert behavior unrelated to SELECT, so freezing it here would break batching.
         auto result = queue->pushQueryWithBlock(async_query, std::move(single_block), insert_context);
         /// `report_read_progress=false`: reads were already counted by the SELECT pipeline.
         waitForAsyncInsertAndReportProgress(
@@ -229,6 +237,7 @@ void buildAsyncInsertSelectPipeline(
     /// the positional column-count check below fail spuriously.
     StorageMetadataHandle metadata_snapshot;
     Block insert_schema;
+    InsertDependenciesBuilder::ConstPtr forced_insert_dependencies;
     if (destination)
     {
         metadata_snapshot = destination->getInMemoryMetadataPtr(context, false);
@@ -299,6 +308,21 @@ void buildAsyncInsertSelectPipeline(
             insert_context = Context::createCopy(context);
             overrideDeduplicationSetting(dedup, insert_context);
         }
+    }
+
+    if (destination)
+    {
+        /// Freeze the dependency graph (materialized views) before the SELECT runs, for the
+        /// synchronous fallback below. Otherwise a concurrent CREATE MATERIALIZED VIEW ... TO
+        /// <destination> could change where the fallback writes after the SELECT already read.
+        /// This does not freeze INSERT authorization: the fallback still checks access again,
+        /// right before it writes, the same way a flushed async insert rechecks access.
+        /// insert_context is the source of truth here: the builder latches the deduplication
+        /// decision at construction, and that decision depends on the SELECT's stability.
+        forced_insert_dependencies = InsertDependenciesBuilder::create(
+            destination, query_ast, std::make_shared<const Block>(insert_schema),
+            /* async_insert */ false, /* skip_destination_table */ false,
+            /* max_insert_threads */ 1, insert_context);
     }
 
     if (destination)
@@ -392,7 +416,8 @@ void buildAsyncInsertSelectPipeline(
         settings[Setting::wait_for_async_insert_timeout].totalMilliseconds(),
         settings[Setting::insert_allow_materialized_columns],
         insert_query.table_id,
-        needs_null_default_sync);
+        needs_null_default_sync,
+        forced_insert_dependencies);
     res.pipeline = QueryPipeline(Pipe(std::move(source)));
     res.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(Block())));
 }
