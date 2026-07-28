@@ -5,6 +5,11 @@
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET use_indexes_refiner_in_read_pools = 1;
+-- The CI test profile sets max_rows_to_read (see tests/config/users.d/limits.yaml), and with
+-- read_overflow_mode = 'throw' it disables applying skip indexes at data-read time entirely
+-- (the early overflow check needs row estimates from index analysis), which would leave the
+-- ranges refiner with nothing to drop.
+SET max_rows_to_read = 0;
 -- Pin the plain pools by default (the prefetched and parallel-replicas pools are
 -- enabled explicitly in dedicated queries below).
 SET enable_parallel_replicas = 0;
