@@ -1,4 +1,6 @@
-#include <Interpreters/convertFieldToType.h>
+#include <Columns/IColumn.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/convertColumnToType.h>
 #include <Planner/PlannerJoinTree.h>
 
 #include <Core/Settings.h>
@@ -79,7 +81,6 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/QueryPlan/ParallelReplicasSplitStep.h>
 
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
@@ -884,28 +885,27 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
     UInt64 limit_length = 0;
     if (main_query_node.hasLimit())
     {
-        const auto & field = main_query_node.getLimit()->as<ConstantNode &>().getValue();
-
-        const bool is_uint64 = !convertFieldToType(field, DataTypeUInt64()).isNull();
+        const auto & limit_node = main_query_node.getLimit()->as<ConstantNode &>();
+        ColumnPtr limit_uint = convertColumnToTypeOrNull(*limit_node.getColumn(), limit_node.getResultType(), std::make_shared<DataTypeUInt64>());
 
         // Negative LIMIT, skip optimization
-        if (!is_uint64)
+        if (!limit_uint)
             return 0;
 
-        limit_length = field.safeGet<UInt64>();
+        limit_length = limit_uint->getUInt(0);
     }
 
     UInt64 limit_offset = 0;
     if (main_query_node.hasOffset())
     {
-        const auto & field = main_query_node.getOffset()->as<ConstantNode &>().getValue();
-        const bool is_uint64 = !convertFieldToType(field, DataTypeUInt64()).isNull();
+        const auto & offset_node = main_query_node.getOffset()->as<ConstantNode &>();
+        ColumnPtr offset_uint = convertColumnToTypeOrNull(*offset_node.getColumn(), offset_node.getResultType(), std::make_shared<DataTypeUInt64>());
 
         // Negative OFFSET, skip optimization
-        if (!is_uint64)
+        if (!offset_uint)
             return 0;
 
-        limit_offset = field.safeGet<UInt64>();
+        limit_offset = offset_uint->getUInt(0);
     }
 
     /// `arrayJoin` in the projection expands one input row into several output rows after the
@@ -1157,7 +1157,7 @@ void pushOrderByIntoView(
     /// too few rows. Negative LIMIT values are rejected for the same reason
     /// (they are not representable as a plain `UInt64`).
     const auto * limit_node = outer->getLimit()->as<ConstantNode>();
-    if (!limit_node || convertFieldToType(limit_node->getValue(), DataTypeUInt64()).isNull())
+    if (!limit_node || !convertColumnToTypeOrNull(*limit_node->getColumn(), limit_node->getResultType(), std::make_shared<DataTypeUInt64>()))
         return;
 
     /// Validate ORDER BY: must be simple columns from this view, and must not
@@ -1960,6 +1960,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             }
                             else
                             {
+                                /// With `parallel_replicas_plan_based` the planner builds only the plain local
+                                /// plan. Deciding whether to use parallel replicas and where to place the
+                                /// local/remote boundary is done later, as an analysis of the whole plan
+                                /// (QueryPlanOptimizations::applyParallelReplicas), which inserts the split step.
                                 QueryPlan query_plan_parallel_replicas;
                                 storage->read(
                                     query_plan_parallel_replicas,
@@ -1970,9 +1974,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                                     till_stage,
                                     max_block_size,
                                     max_streams);
-                                QueryPlanStepPtr split_step = std::make_unique<DB::ParallelReplicasSplitStep>(
-                                    query_plan_parallel_replicas.getRootNode()->step->getOutputHeader(), query_context);
-                                query_plan_parallel_replicas.addStep(std::move(split_step));
                                 query_plan = std::move(query_plan_parallel_replicas);
                             }
                         }
