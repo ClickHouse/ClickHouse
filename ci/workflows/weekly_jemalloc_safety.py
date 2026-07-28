@@ -43,6 +43,11 @@ workflow = Workflow.Config(
     enable_report=True,
     enable_cidb=True,
     cron_schedules=["0 5 * * 1"],
+    # Only this hook writes the `changed_files` kv entry, which `ast_fuzzer_job.py`
+    # turns into `ci-changed-files.txt`; without it `run-fuzzer.sh` resolves NEW_TESTS
+    # empty and the fuzzer loses its `--interleave-queries-file` guidance toward newly
+    # added tests. Same reason `weekly_cfi.py` carries it.
+    pre_hooks=["python3 ./ci/jobs/scripts/workflow_hooks/store_data.py"],
 )
 
 WORKFLOWS = [

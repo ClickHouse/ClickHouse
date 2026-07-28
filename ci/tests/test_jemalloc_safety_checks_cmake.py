@@ -26,8 +26,10 @@ while removing detection, so this file pins every place such a loss can happen:
   (`ci/jobs/build_clickhouse.py`, run right after cmake configuration in the
   `amd_jemalloc_safety` build): over every `contrib/jemalloc/src/*.c` entry of the
   generated `compile_commands.json`, both macros must be effectively defined - the last
-  `-D`/`-U` on the line winning, as the preprocessor does - and no other translation
-  unit may carry them. Its cases are driven below;
+  `-D`/`-U` on the line winning, as the preprocessor does, in either the joined
+  (`-DX`) or the split (`-D X`) spelling - and no other translation unit may carry
+  them. Its cases are driven below, together with its wiring: that this build type
+  requests the option and that the build job really invokes the check;
 * the platform headers the option can reach (x86-64 only, since the option refuses
   every other arch), where a bare `#undef` would silently cancel the `-D`;
 * the compiled `jemalloc_preamble.h`, the sole place each `-D` is converted into the
@@ -35,10 +37,18 @@ while removing detection, so this file pins every place such a loss can happen:
   searched for the macro's name - narrowing a condition to `JEMALLOC_DEBUG` alone,
   turning its `||` into `&&`, inverting it or swapping its arms would each disarm a
   gate with every other layer still green;
-* the `CI Tests` cache digest, so a commit changing any of those layers actually
-  re-runs this file instead of being cache-skipped.
+* the `CI Tests` cache digest, for the two files this module reads (the platform headers
+  and the compiled preamble) plus `contrib/jemalloc-cmake/CMakeLists.txt`, whose
+  `ARCH_AMD64` guard decides *which* platform headers the header assertion has to
+  check - so a commit changing any of them re-runs this file instead of being
+  cache-skipped.
+
+The cmake file itself is not read here: whether the option's `-D`s survive is decided by
+the compile line, which the first layer reads from `compile_commands.json` instead.
 """
 
+import argparse
+import collections
 import json
 import os
 import re
@@ -54,8 +64,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 # praktika runner (`PYTHONPATH=./ci:.`); we replicate it here.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import ci.jobs.build_clickhouse as build_job
+from ci.defs.defs import BuildTypes
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.build_clickhouse import (
+    BUILD_TYPE_TO_CMAKE,
     assert_jemalloc_safety_macros_armed,
     effective_macro_state,
 )
@@ -118,6 +131,16 @@ BOTH = f"{SAFETY} {SIZE}"
 CANCELLED = f"{BOTH} -UJEMALLOC_OPT_SIZE_CHECKS"
 RESTORED = f"{SAFETY} -UJEMALLOC_OPT_SIZE_CHECKS {SIZE}"
 
+# The split spellings, where the operand is the next argv element. clang applies them
+# exactly like the joined ones, and `cmake/target.cmake:3` is `add_definitions(-D
+# OS_LINUX)`, so every entry of a configured tree carries one. Reading only the joined
+# form is wrong in both directions: a split `-U` reads as still defined (the failure
+# the lane's whole value depends on), a split `-D` as never mentioned.
+SPLIT_SAFETY, SPLIT_SIZE = (f"-D {macro}" for macro in REQUIRED_MACROS)
+SPLIT_UNDEF_SIZE = "-U JEMALLOC_OPT_SIZE_CHECKS"
+SPLIT_CANCELLED = f"{BOTH} {SPLIT_UNDEF_SIZE}"
+SPLIT_RESTORED = f"{SAFETY} {SPLIT_UNDEF_SIZE} {SIZE}"
+
 
 def _armed(tmp_path, entries) -> bool:
     """Whether the build job's assertion accepts these `(file, flags)` pairs."""
@@ -166,6 +189,48 @@ def _armed(tmp_path, entries) -> bool:
         ("suffixed lookalike", [(JE, f"{SAFETY} {SIZE}_DISABLED")], False),
         # `-DMACRO=1` is a definition too, which is what `#ifdef` tests.
         ("value form of the size macro", [(JE, f"{SAFETY} {SIZE}=1")], True),
+        # --- the split `-D NAME` / `-U NAME` spelling ---
+        #
+        # The blocker this set exists for: a split `-U` really does cancel the joined
+        # `-D`, and reading only joined tokens would accept this line while the
+        # `"mismatch in slab bit"` detector is gone - with no runtime observable, since
+        # `config_opt_size_checks` has no mallctl.
+        ("joined -D then a split -U", [(JE, SPLIT_CANCELLED)], False),
+        (
+            "split -D then a joined -U",
+            [(JE, f"{SAFETY} {SPLIT_SIZE} -UJEMALLOC_OPT_SIZE_CHECKS")],
+            False,
+        ),
+        # Ordering is still modelled rather than any `-U` being rejected on sight, in
+        # the split spelling too.
+        ("split -U then a joined -D", [(JE, SPLIT_RESTORED)], True),
+        (
+            "split -U then a split -D",
+            [(JE, f"{SAFETY} {SPLIT_UNDEF_SIZE} {SPLIT_SIZE}")],
+            True,
+        ),
+        ("split -D of both macros", [(JE, f"{SPLIT_SAFETY} {SPLIT_SIZE}")], True),
+        ("split -D with a value", [(JE, f"{SAFETY} {SPLIT_SIZE}=1")], True),
+        # Token-exact in the split spelling as well.
+        (
+            "split -D of a suffixed lookalike",
+            [(JE, f"{SAFETY} {SPLIT_SIZE}_DISABLED")],
+            False,
+        ),
+        # The leak direction must see split forms too, or the macro could reach every
+        # other translation unit unnoticed.
+        (
+            "the macros leak into a non-jemalloc TU in the split spelling",
+            [(JE, BOTH), (OTHER, SPLIT_SAFETY)],
+            False,
+        ),
+        # `-D OS_LINUX` is what every real compile line starts with: consuming the pair
+        # must not swallow the flag that follows it.
+        (
+            "a real split neighbour ahead of the joined macros",
+            [(JE, f"-D OS_LINUX {BOTH}")],
+            True,
+        ),
     ],
 )
 def test_effective_compile_line_decides_the_macro_state(
@@ -182,18 +247,27 @@ def test_effective_compile_line_decides_the_macro_state(
     )
 
 
-def test_a_substring_test_cannot_replace_the_ordered_state():
-    """`CANCELLED` vs `RESTORED` differ only in order, so the last mention must win.
+@pytest.mark.parametrize(
+    "label, cancelled, restored",
+    [
+        ("joined -U", CANCELLED, RESTORED),
+        # The same property in the split spelling, whose operand is the next argv
+        # element: `-D X -U X` is undefined and `-U X -D X` defined, exactly as joined.
+        ("split -U", SPLIT_CANCELLED, SPLIT_RESTORED),
+    ],
+)
+def test_a_substring_test_cannot_replace_the_ordered_state(label, cancelled, restored):
+    """The pair differs only in order, so the last mention must win.
 
     Both contain `-DJEMALLOC_OPT_SIZE_CHECKS`, so a naive `f"-D{macro}" in command`
     would read both as defined and miss the bypass entirely.
     """
-    assert SIZE in CANCELLED and SIZE in RESTORED, (
-        "both spellings must contain the -D, otherwise this pair no longer "
+    assert SIZE in cancelled and SIZE in restored, (
+        f"{label}: both spellings must contain the -D, otherwise this pair no longer "
         "distinguishes ordered evaluation from a substring test"
     )
-    assert effective_macro_state(CANCELLED, "JEMALLOC_OPT_SIZE_CHECKS") is False
-    assert effective_macro_state(RESTORED, "JEMALLOC_OPT_SIZE_CHECKS") is True
+    assert effective_macro_state(cancelled, "JEMALLOC_OPT_SIZE_CHECKS") is False
+    assert effective_macro_state(restored, "JEMALLOC_OPT_SIZE_CHECKS") is True
 
 
 def test_missing_compile_commands_fails_closed(tmp_path):
@@ -202,11 +276,146 @@ def test_missing_compile_commands_fails_closed(tmp_path):
         assert_jemalloc_safety_macros_armed(str(tmp_path / "compile_commands.json"))
 
 
+# --- the compile-line layer's own wiring ----------------------------------------------
+#
+# The cases above drive `assert_jemalloc_safety_macros_armed` directly, so they stay
+# green if the build job stops calling it or if the build type stops requesting the
+# option - in either case the whole layer disappears while every assertion passes.
+
+
+def test_the_lane_is_amd_debug_plus_only_the_safety_option():
+    """The build type must request the option, and differ from `amd_debug` by nothing else.
+
+    Both halves matter: without the option there is no `-D` to assert, and any other
+    difference would make the lane something other than the `amd_debug` fuzz session the
+    two confirmed SIGSEGVs came from - which is what the PR description claims it is.
+    """
+    debug = collections.Counter(BUILD_TYPE_TO_CMAKE[BuildTypes.AMD_DEBUG].split())
+    lane = collections.Counter(
+        BUILD_TYPE_TO_CMAKE[BuildTypes.AMD_JEMALLOC_SAFETY].split()
+    )
+    assert lane - debug == collections.Counter([f"-D{OPTION_NAME}=1"]), (
+        f"the {BuildTypes.AMD_JEMALLOC_SAFETY} cmake command must be the "
+        f"{BuildTypes.AMD_DEBUG} one plus exactly `-D{OPTION_NAME}=1`; it adds "
+        f"{sorted(lane - debug)}"
+    )
+    assert not debug - lane, (
+        f"the {BuildTypes.AMD_JEMALLOC_SAFETY} cmake command drops "
+        f"{sorted(debug - lane)} relative to {BuildTypes.AMD_DEBUG}, so the lane no "
+        "longer fuzzes the same build the SIGSEGVs came from"
+    )
+
+
+class _StopBuild(Exception):
+    """Sentinel raised right after the build job's jemalloc assertion decision point."""
+
+
+@pytest.fixture
+def build_job_run(monkeypatch):
+    """Run the build job's `main()` through the cmake stage; report the checker's calls.
+
+    Everything with an external effect is stubbed: no cmake is configured, no compiler
+    cache is set up, and the run stops at the first shell command after the decision
+    point. Mirrors the `guard` fixture of `test_ast_fuzzer_jemalloc_preflight.py`.
+    """
+    calls = []
+
+    class _Ok:
+        def is_ok(self):
+            return True
+
+        def set_info(self, *_args):
+            pass
+
+    class _Info:
+        pr_number = 1
+        is_local_run = True
+
+        def add_workflow_warning(self, *_args):
+            pass
+
+    class _Version:
+        def write(self):
+            pass
+
+    def _shell_check(command, *_args, **_kwargs):
+        # `ninja --version` is the first command after the decision point.
+        if isinstance(command, str) and command.startswith("ninja --version"):
+            raise _StopBuild()
+        return True
+
+    def _from_commands_run(name=None, command=None, command_args=None, **_kwargs):
+        # The assertion is passed as a callable with its argument list, so call it the
+        # way praktika would; every other step is a shell command and is skipped.
+        if callable(command):
+            command(*(command_args or []))
+        return _Ok()
+
+    monkeypatch.setattr(build_job, "Info", _Info)
+    monkeypatch.setattr(build_job, "setup_build_caches_env", lambda _info: None)
+    monkeypatch.setattr(
+        build_job.CHVersion,
+        "get_current_version",
+        staticmethod(lambda **_k: _Version()),
+    )
+    monkeypatch.setattr(build_job.Shell, "check", staticmethod(_shell_check))
+    monkeypatch.setattr(
+        build_job.Result, "from_commands_run", staticmethod(_from_commands_run)
+    )
+    monkeypatch.setattr(
+        build_job,
+        "assert_jemalloc_safety_macros_armed",
+        lambda path: calls.append(path),
+    )
+
+    def _run(build_type):
+        calls.clear()
+        monkeypatch.setattr(
+            build_job,
+            "parse_args",
+            lambda: argparse.Namespace(
+                build_type=build_type, param=build_job.JobStages.CMAKE
+            ),
+        )
+        try:
+            build_job.main()
+        except _StopBuild:
+            pass
+        return list(calls)
+
+    return _run
+
+
+def test_the_build_job_asserts_the_macros_for_this_build_type(build_job_run):
+    """The lane's build must actually run the compile-line check after cmake.
+
+    Without the call site the whole layer is dead code and every case above still
+    passes, while the lane rebuilds and fuzzes green with a detector gone.
+    """
+    calls = build_job_run(BuildTypes.AMD_JEMALLOC_SAFETY)
+    assert len(calls) == 1, (
+        f"the build job must assert the jemalloc safety macros exactly once for "
+        f"{BuildTypes.AMD_JEMALLOC_SAFETY}; it called the checker {len(calls)} times"
+    )
+    assert calls[0].endswith(
+        "compile_commands.json"
+    ), f"the checker must be pointed at the generated compile commands; got {calls[0]}"
+
+
+@pytest.mark.parametrize(
+    "build_type", [BuildTypes.AMD_DEBUG, BuildTypes.AMD_TSAN, BuildTypes.AMD_RELEASE]
+)
+def test_the_build_job_does_not_assert_the_macros_elsewhere(build_job_run, build_type):
+    """Only this build type promises the macros, so no other build may be failed by it."""
+    assert build_job_run(build_type) == []
+
+
 # `JEMALLOC_DEBUG` is not one of the macros the option passes, but the preamble's two
-# initializers each accept it as an alternative (`:188` `#elif defined(JEMALLOC_DEBUG)`,
-# `:207` `|| defined(JEMALLOC_DEBUG)`), so a platform header defining it would arm both
+# initializers each accept it as an alternative (`:191` `#elif defined(JEMALLOC_DEBUG)`,
+# `:208` `|| defined(JEMALLOC_DEBUG)`), so a platform header defining it would arm both
 # gates on its own. It belongs in this search for the same reason the two `-D` macros do.
-_PLATFORM_HEADER_MACROS = REQUIRED_MACROS + ("JEMALLOC_DEBUG",)
+DEBUG_MACRO = "JEMALLOC_DEBUG"
+_PLATFORM_HEADER_MACROS = REQUIRED_MACROS + (DEBUG_MACRO,)
 _PLATFORM_DIRECTIVE_RE_TEMPLATE = r"^\s*#\s*(?:undef|define)\s+{macro}\b.*$"
 
 
@@ -337,6 +546,12 @@ def _config_flag_value(text: str, flag: str, defined_macros: set, macro: str) ->
     of the lane - both are changes this guard must not silently bless, and for the size
     gate nothing else can notice (`config_opt_size_checks` has no mallctl).
 
+    `JEMALLOC_DEBUG` is scanned for as well, because both initializers accept it as an
+    alternative (`:191`, `:208`) and so it arms either flag on its own: with it defined
+    ahead of the initializer, `defined_macros` no longer decides the outcome and the
+    caller's `disarmed is False` half - the PR's premise that no ClickHouse build arms
+    these flags today - would be satisfied while the preprocessor computes true.
+
     Fails closed - an unknown directive, a nested conditional, a non-literal arm, or no
     arm selected raises rather than guessing.
     """
@@ -351,18 +566,26 @@ def _config_flag_value(text: str, flag: str, defined_macros: set, macro: str) ->
     )
     # Block comments are already stripped, so the commented-out placeholder spelling
     # (`/* #undef JEMALLOC_OPT_SIZE_CHECKS */`) cannot reach this. `\b` on the
-    # identifier so `JEMALLOC_OPT_SIZE_CHECKS_DISABLED` does not count.
-    prior_state = re.findall(
-        _PRIOR_STATE_DIRECTIVE_RE_TEMPLATE.format(macro=re.escape(macro)),
-        text[: match.start()],
-        re.M,
-    )
+    # identifier so `JEMALLOC_OPT_SIZE_CHECKS_DISABLED` does not count. The other
+    # *option* macro is deliberately not scanned for: it is inert for this flag.
+    prior_state = [
+        directive
+        for scanned in (macro, DEBUG_MACRO)
+        for directive in re.findall(
+            _PRIOR_STATE_DIRECTIVE_RE_TEMPLATE.format(macro=re.escape(scanned)),
+            text[: match.start()],
+            re.M,
+        )
+    ]
     assert not prior_state, (
-        f"{JEMALLOC_PREAMBLE_REL}: an active `#undef`/`#define` of `{macro}` precedes "
+        f"{JEMALLOC_PREAMBLE_REL}: an active `#undef`/`#define` of `{macro}` or of "
+        f"`{DEBUG_MACRO}` precedes "
         f"the `{flag}` initializer, so its condition is no longer decided by "
         f"the lane's `-D{macro}`. An earlier `#undef` cancels that `-D` just as a bare "
-        "`#undef` in a platform header would, and a `#define` arms the flag in builds "
-        "that never asked for it. Either way this guard's model of the macro state is "
+        "`#undef` in a platform header would, and a `#define` of either macro arms the "
+        f"flag in builds that never asked for it ({DEBUG_MACRO} is an alternative in "
+        "both initializers, so it arms the flag on its own). Either way this guard's "
+        f"model of the macro state is "
         f"wrong, and for `config_opt_size_checks` there is no mallctl, so the AST "
         "fuzzer job's runtime preflight cannot see it. Re-derive this guard against "
         "the new shape rather than letting it report a state the preprocessor does not "
@@ -609,6 +832,12 @@ def _size_flag_armed_with_prologue(prologue: str) -> bool:
         ("active #undef", "#undef JEMALLOC_OPT_SIZE_CHECKS\n"),
         ("active #define", "#define JEMALLOC_OPT_SIZE_CHECKS\n"),
         ("indented #undef", "#  undef JEMALLOC_OPT_SIZE_CHECKS\n"),
+        # `JEMALLOC_DEBUG` is an alternative in both initializers, so defining it arms
+        # the flag on its own: without it in the fail-closed set the helper reports
+        # `armed=True, disarmed=False` (both assertions of the mapping test satisfied)
+        # while `clang -E` computes the flag true with no option macro defined at all.
+        ("active #define JEMALLOC_DEBUG", "#define JEMALLOC_DEBUG\n"),
+        ("active #undef JEMALLOC_DEBUG", "#undef JEMALLOC_DEBUG\n"),
     ],
 )
 def test_prior_macro_state_directives_fail_closed(label, prologue):
@@ -625,6 +854,9 @@ def test_prior_macro_state_directives_fail_closed(label, prologue):
         ("suffixed identifier", "#undef JEMALLOC_OPT_SIZE_CHECKS_DISABLED\n"),
         # The other gate's macro: unrelated to this flag's state.
         ("the other gate's macro", "#undef JEMALLOC_OPT_SAFETY_CHECKS\n"),
+        # The widening to `JEMALLOC_DEBUG` must not over-fire on the inert forms.
+        ("commented-out JEMALLOC_DEBUG", "/* #undef JEMALLOC_DEBUG */\n"),
+        ("suffixed JEMALLOC_DEBUG", "#undef JEMALLOC_DEBUG_SOMETHING\n"),
     ],
 )
 def test_prior_state_guard_does_not_fire_on_inert_directives(label, prologue):
@@ -685,12 +917,20 @@ def test_nested_initializer_conditionals_fail_closed(label, block):
 
 
 def test_ci_tests_digest_covers_the_jemalloc_cmake_file():
-    """This guard must not be cache-skipped on the commits that change what it guards.
+    """A change to the option's arch guard must re-run the platform-header assertion.
 
-    `JobConfigs.ci_tests` digests `./ci`, which does not cover
-    `contrib/jemalloc-cmake/CMakeLists.txt`, so without an explicit entry a commit
-    that drops a macro would not re-run `CI Tests` and the assertions above would
-    never execute.
+    The `if (ENABLE_JEMALLOC_SAFETY_CHECKS AND NOT ARCH_AMD64)` guard
+    (`contrib/jemalloc-cmake/CMakeLists.txt:90-92`) is what makes
+    `REACHABLE_DEFS_HEADERS_GLOB` x86-64 only, so a commit widening it to another
+    architecture changes which platform headers
+    `test_reachable_platform_headers_do_not_change_the_macro_state` has to check - and
+    e2k's bare `#undef JEMALLOC_OPT_SAFETY_CHECKS` (`include_linux_e2k/...:374`) is
+    exactly what it would then expose. `JobConfigs.ci_tests` digests `./ci`, which does
+    not cover that cmake file, so without an explicit entry such a commit is
+    cache-skipped and the widened set is never checked.
+
+    (A macro dropped from the cmake file is caught by the build job instead, whose digest
+    already covers `./contrib/` and `with_git_submodules=True`.)
     """
     digest = JobConfigs.ci_tests.digest_config
     assert JEMALLOC_CMAKE_REL in digest.include_paths, (

@@ -161,19 +161,48 @@ JEMALLOC_SAFETY_MACROS = ("JEMALLOC_OPT_SAFETY_CHECKS", "JEMALLOC_OPT_SIZE_CHECK
 JEMALLOC_SOURCE_MARKER = "/contrib/jemalloc/src/"
 
 
-def effective_macro_state(command, macro):
-    """True if defined on this compile line, False if `-U`ed, None if never mentioned.
+def effective_macro_states(command, macros):
+    """Each macro's state on this compile line: True defined, False `-U`ed, None absent.
 
     The preprocessor applies `-D`/`-U` in command-line order, so the last mention
     wins: `-DX -UX` leaves X undefined, `-UX -DX` leaves it defined.
+
+    Both spellings of each flag count. `-D`/`-U` take their operand either joined
+    (`-DX`, `-DX=v`, `-UX`) or as the next argv element (`-D X`), and the preprocessor
+    treats the two identically - so reading only the joined form is wrong in both
+    directions: a split `-U` would be missed (the definition read as surviving, with the
+    detector actually gone) and a split `-D` would not be seen at all. The split form is
+    this repo's own idiom: `cmake/target.cmake:3` is `add_definitions(-D OS_LINUX)`, so
+    every compile line in a configured tree carries one.
+
+    All macros are answered in one pass, because splitting each of a configured tree's
+    ~17k compile lines once per macro costs about a minute.
     """
-    state = None
-    for token in shlex.split(command):
-        if token == f"-D{macro}" or token.startswith(f"-D{macro}="):
-            state = True
-        elif token == f"-U{macro}":
-            state = False
-    return state
+    states = {macro: None for macro in macros}
+    tokens = shlex.split(command)
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token in ("-D", "-U") and index + 1 < len(tokens):
+            # Consume the operand as part of the pair, so that a `-D <macro>` operand is
+            # not also read as a bare token by the joined branch below.
+            name = tokens[index + 1].split("=", 1)[0]
+            if name in states:
+                states[name] = token == "-D"
+            index += 2
+            continue
+        for macro in macros:
+            if token == f"-D{macro}" or token.startswith(f"-D{macro}="):
+                states[macro] = True
+            elif token == f"-U{macro}":
+                states[macro] = False
+        index += 1
+    return states
+
+
+def effective_macro_state(command, macro):
+    """`effective_macro_states` for a single macro."""
+    return effective_macro_states(command, (macro,))[macro]
 
 
 def assert_jemalloc_safety_macros_armed(compile_commands_path):
@@ -194,7 +223,18 @@ def assert_jemalloc_safety_macros_armed(compile_commands_path):
     with open(compile_commands_path, "r", encoding="utf-8") as file:
         entries = json.load(file)
 
-    jemalloc = [e for e in entries if JEMALLOC_SOURCE_MARKER in e["file"]]
+    # Both macros' states are read in a single pass per compile line: a configured tree
+    # has ~17k entries, and splitting each of them once per macro (twice per entry, as
+    # the states were previously also recomputed inside the comprehension's filter)
+    # costs about a minute. The states are kept per entry rather than keyed by file,
+    # because a file can legitimately appear twice with different flags (730 such
+    # entries in a configured tree today, e.g. contrib/google-protobuf sources built
+    # into two targets), and one of them being unarmed is what must not be dropped.
+    jemalloc = [
+        (e, effective_macro_states(e["command"], JEMALLOC_SAFETY_MACROS))
+        for e in entries
+        if JEMALLOC_SOURCE_MARKER in e["file"]
+    ]
     # A rename of jemalloc's source layout must not make this check vacuous.
     if not jemalloc:
         raise AssertionError(
@@ -204,12 +244,10 @@ def assert_jemalloc_safety_macros_armed(compile_commands_path):
             "vacuously"
         )
 
+    # The armed check first, over the ~67 jemalloc entries only, so the common failure
+    # (the option not passed at all) still reports without scanning the whole tree.
     for macro in JEMALLOC_SAFETY_MACROS:
-        unarmed = {
-            e["file"]: effective_macro_state(e["command"], macro)
-            for e in jemalloc
-            if effective_macro_state(e["command"], macro) is not True
-        }
+        unarmed = {e["file"]: s[macro] for e, s in jemalloc if s[macro] is not True}
         if unarmed:
             sample = sorted(unarmed)[:5]
             raise AssertionError(
@@ -224,16 +262,20 @@ def assert_jemalloc_safety_macros_armed(compile_commands_path):
                 "contrib/jemalloc-cmake/CMakeLists.txt turns the option off."
             )
 
-        leaked = sorted(
-            e["file"]
-            for e in entries
-            if JEMALLOC_SOURCE_MARKER not in e["file"]
-            and effective_macro_state(e["command"], macro) is True
-        )
-        if leaked:
+    leaked = {macro: [] for macro in JEMALLOC_SAFETY_MACROS}
+    for entry in entries:
+        if JEMALLOC_SOURCE_MARKER in entry["file"]:
+            continue
+        states = effective_macro_states(entry["command"], JEMALLOC_SAFETY_MACROS)
+        for macro, state in states.items():
+            if state is True:
+                leaked[macro].append(entry["file"])
+    for macro, files in leaked.items():
+        if files:
+            files = sorted(files)
             raise AssertionError(
-                f"-D{macro} reaches {len(leaked)} non-jemalloc translation units "
-                f"(first: {leaked[:5]}). The macro is jemalloc-internal: it must stay "
+                f"-D{macro} reaches {len(files)} non-jemalloc translation units "
+                f"(first: {files[:5]}). The macro is jemalloc-internal: it must stay "
                 "PRIVATE to the _jemalloc target, or other code is compiled against a "
                 "different config_opt_* view of jemalloc's headers than jemalloc "
                 "itself."
