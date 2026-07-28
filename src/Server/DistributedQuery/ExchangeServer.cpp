@@ -1,4 +1,5 @@
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+
 #include <Server/DistributedQuery/ExchangeServer.h>
 #include <Server/DistributedQuery/ExchangeConnections.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
@@ -270,4 +271,5 @@ void ExchangeServer::handleConnection(Poco::Net::StreamSocket socket, ExchangeCo
 }
 
 }
+
 #endif

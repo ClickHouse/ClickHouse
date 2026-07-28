@@ -12,6 +12,7 @@
 #include <Interpreters/Context.h>
 #include <IO/LimitSeekableReadBuffer.h>
 #include <IO/S3/getObjectInfo.h>
+#include <IO/S3Common.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/StdStreamFromReadBuffer.h>
@@ -221,11 +222,11 @@ namespace
                     break;
                 }
 
-                if ((outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY) && (retries < max_retries))
+                if (isTransientCompleteMultipartUploadError(outcome.GetError()) && (retries < max_retries))
                 {
-                    /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
-                    /// BTW, NO_SUCH_UPLOAD is expected error and we shouldn't retry it
-                    LOG_INFO(log, "Multipart upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Upload_id: {}, Parts: {}, will retry", dest_bucket, dest_key, multipart_upload_id, multipart_tags.size());
+                    const auto & error = outcome.GetError();
+                    const String details = error.GetExceptionName().empty() ? error.GetMessage() : error.GetExceptionName();
+                    LOG_INFO(log, "Multipart upload failed with a transient error ({}) for Bucket: {}, Key: {}, Upload_id: {}, Parts: {}, will retry", details, dest_bucket, dest_key, multipart_upload_id, multipart_tags.size());
                     continue; /// will retry
                 }
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);

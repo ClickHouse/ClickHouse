@@ -45,6 +45,12 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * .NET 9.0
 * .NET 10.0
 
+<div id="supported-clickhouse-versions">
+  ## 支持的 ClickHouse 版本
+</div>
+
+该客户端官方支持最近 3 个发行版，以及最近两个 LTS 发行版。
+
 <div id="installation">
   ## 安装
 </div>
@@ -106,15 +112,18 @@ Console.WriteLine(version);
   ### 数据格式与序列化
 </div>
 
-| 属性                      | 类型                       | 默认值      | 连接字符串键                    | 描述                                                                                      |
-| ----------------------- | ------------------------ | -------- | ------------------------- | --------------------------------------------------------------------------------------- |
-| UseCompression          | `bool`                   | `true`   | `Compression`             | 启用 gzip 压缩进行数据传输                                                                        |
-| UseCustomDecimals       | `bool`                   | `true`   | `UseCustomDecimals`       | 对任意精度值使用 `ClickHouseDecimal`；如果为 false，则使用 .NET `decimal` (128 位限制)                     |
-| ReadStringsAsByteArrays | `bool`                   | `false`  | `ReadStringsAsByteArrays` | 将 `String` 和 `FixedString` 列读取为 `byte[]`，而不是 `string`；适用于二进制数据                          |
-| UseFormDataParameters   | `bool`                   | `false`  | `UseFormDataParameters`   | 以表单数据而非 URL 查询字符串发送参数                                                                   |
-| ParameterTypeResolver   | `IParameterTypeResolver` | `null`   | —                         | 用于 `@` 风格参数类型映射的自定义解析器；请参见 [自定义参数类型映射](#parameter-type-mapping)                         |
-| JsonReadMode            | `JsonReadMode`           | `Binary` | `JsonReadMode`            | JSON 数据的返回方式：`Binary` (返回 `JsonObject`) 或 `String` (返回原始 JSON 字符串)                      |
-| JsonWriteMode           | `JsonWriteMode`          | `String` | `JsonWriteMode`           | JSON 数据的发送方式：`String` (通过 `JsonSerializer` 序列化，接受所有输入) 或 `Binary` (仅支持带有类型提示的已注册 POCO)  |
+| 属性                      | 类型                       | 默认值            | 连接字符串键                    | 描述                                                                                                                     |
+| ----------------------- | ------------------------ | -------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| UseCompression          | `bool`                   | `true`         | `Compression`             | 启用 gzip 压缩进行数据传输                                                                                                       |
+| UseCustomDecimals       | `bool`                   | `true`         | `UseCustomDecimals`       | 对任意精度值使用 `ClickHouseDecimal`；如果为 false，则使用 .NET `decimal` (128 位限制)                                                    |
+| ReadStringsAsByteArrays | `bool`                   | `false`        | `ReadStringsAsByteArrays` | 将 `String` 和 `FixedString` 列读取为 `byte[]`，而不是 `string`；适用于二进制数据                                                         |
+| UseFormDataParameters   | `bool`                   | `false`        | `UseFormDataParameters`   | 以表单数据而非 URL 查询字符串发送参数                                                                                                  |
+| ReadBufferSize          | `int`                    | `8192` (8 KiB) | `ReadBufferSize`          | 用于读取 HTTP 查询响应的缓冲区大小 (以字节为单位) 。增大此值可减少大型结果集的缓冲区重填次数。达到或超过 85,000 字节的值会分配到 Large Object Heap，这可能导致 LOH 碎片化和更长的 GC 暂停时间。 |
+| ParameterTypeResolver   | `IParameterTypeResolver` | `null`         | —                         | 用于 `@` 风格参数类型映射的自定义解析器；请参见 [自定义参数类型映射](#parameter-type-mapping)                                                        |
+| ParameterFormatter      | `IParameterFormatter`    | `null`         | —                         | 用于参数值序列化的自定义格式化器；请参见 [自定义参数值格式化](#parameter-value-formatting)                                                          |
+| ReadValueConverter      | `IReadValueConverter`    | `null`         | —                         | 应用于数据读取器返回值的自定义转换器；请参见 [自定义读取值转换](#read-value-conversion)                                                              |
+| JsonReadMode            | `JsonReadMode`           | `Binary`       | `JsonReadMode`            | JSON 数据的返回方式：`Binary` (返回 `JsonObject`) 或 `String` (返回原始 JSON 字符串)                                                     |
+| JsonWriteMode           | `JsonWriteMode`          | `String`       | `JsonWriteMode`           | JSON 数据的发送方式：`String` (通过 `JsonSerializer` 序列化，接受所有输入) 或 `Binary` (仅支持带有类型提示的已注册 POCO)                                 |
 
 <div id="session-management">
   ### 会话管理
@@ -162,10 +171,11 @@ Console.WriteLine(version);
   ### 自定义设置与角色
 </div>
 
-| 属性             | 类型                            | 默认值 | 连接字符串键     | 描述                                              |
-| -------------- | ----------------------------- | --- | ---------- | ----------------------------------------------- |
-| CustomSettings | `IDictionary<string, object>` | 空   | `set_*` 前缀 | ClickHouse 服务器设置，详见下方说明                         |
-| Roles          | `IReadOnlyList<string>`       | 空   | `Roles`    | 以逗号分隔的 ClickHouse 角色 (例如 `Roles=admin,reader`)  |
+| 属性              | 类型                                    | 默认值 | 连接字符串键     | 描述                                              |
+| --------------- | ------------------------------------- | --- | ---------- | ----------------------------------------------- |
+| CustomSettings  | `IDictionary<string, object>`         | 空   | `set_*` 前缀 | ClickHouse 服务器设置，详见下方说明                         |
+| Roles           | `IReadOnlyList<string>`               | 空   | `Roles`    | 以逗号分隔的 ClickHouse 角色 (例如 `Roles=admin,reader`)  |
+| ApplicationInfo | `IReadOnlyDictionary<string, string>` | 空   | —          | 追加到 HTTP `User-Agent` 请求头中的自由格式标签，用于按应用对查询进行归因。 |
 
 <Note>
   使用连接字符串设置自定义设置时，请使用 `set_` 前缀，例如 `set_max_threads=4`。使用 ClickHouseClientSettings 对象时，不要使用 `set_` 前缀。
@@ -203,18 +213,21 @@ Host=localhost;set_max_threads=4;set_readonly=1;set_max_memory_usage=10000000000
 
 `QueryOptions` 允许你按查询覆盖客户端级别的设置。所有属性均为可选，只有在指定时才会覆盖客户端默认值。
 
-| 属性                    | 类型                            | 说明                                                               |
-| --------------------- | ----------------------------- | ---------------------------------------------------------------- |
-| QueryId               | `string`                      | 用于在 `system.query_log` 中跟踪查询或取消查询的自定义查询标识符                       |
-| Database              | `string`                      | 覆盖此查询的默认数据库                                                      |
-| Roles                 | `IReadOnlyList<string>`       | 覆盖此查询使用的客户端角色                                                    |
-| CustomSettings        | `IDictionary<string, object>` | 此查询的 ClickHouse 服务器设置 (例如 `max_threads`)                         |
-| CustomHeaders         | `IDictionary<string, string>` | 此查询的附加 HTTP 请求头                                                  |
-| UseSession            | `bool?`                       | 覆盖此查询的会话行为                                                       |
-| SessionId             | `string`                      | 此查询的会话 ID (要求 `UseSession = true`)                               |
-| BearerToken           | `string`                      | 覆盖此查询的身份验证令牌                                                     |
-| ParameterTypeResolver | `IParameterTypeResolver`      | 覆盖客户端级别的 `@` 风格参数类型映射解析器；参见 [自定义参数类型映射](#parameter-type-mapping) |
-| MaxExecutionTime      | `TimeSpan?`                   | 服务器端查询超时 (以 `max_execution_time` 设置传递) ；超出时，服务器会取消查询             |
+| 属性                    | 类型                            | 说明                                                                                                                                                 |
+| --------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| QueryId               | `string`                      | 用于在 `system.query_log` 中跟踪查询或取消查询的自定义查询标识符                                                                                                         |
+| Database              | `string`                      | 覆盖此查询的默认数据库                                                                                                                                        |
+| Roles                 | `IReadOnlyList<string>`       | 覆盖此查询使用的客户端角色                                                                                                                                      |
+| CustomSettings        | `IDictionary<string, object>` | 此查询的 ClickHouse 服务器设置 (例如 `max_threads`)                                                                                                           |
+| CustomHeaders         | `IDictionary<string, string>` | 此查询的附加 HTTP 请求头                                                                                                                                    |
+| UseSession            | `bool?`                       | 覆盖此查询的会话行为                                                                                                                                         |
+| SessionId             | `string`                      | 此查询的会话 ID (要求 `UseSession = true`)                                                                                                                 |
+| BearerToken           | `string`                      | 覆盖此查询的身份验证令牌                                                                                                                                       |
+| ParameterTypeResolver | `IParameterTypeResolver`      | 覆盖客户端级别的 `@` 风格参数类型映射解析器；参见 [自定义参数类型映射](#parameter-type-mapping)                                                                                   |
+| ParameterFormatter    | `IParameterFormatter`         | 覆盖客户端级别的 `@` 风格参数值序列化格式化器；参见 [自定义参数值格式化](#parameter-value-formatting)                                                                              |
+| ReadValueConverter    | `IReadValueConverter`         | 覆盖应用于数据读取器返回值的客户端级别转换器；参见 [自定义读取值转换](#read-value-conversion)                                                                                       |
+| MaxExecutionTime      | `TimeSpan?`                   | 服务器端查询超时 (以 `max_execution_time` 设置传递) ；超出时，服务器会取消查询                                                                                               |
+| AcceptEncoding        | `string`                      | 按查询覆盖 `Accept-Encoding` 请求头 (例如 `"zstd"`、`"zstd, gzip;q=0.5"`)；还会在 URL 上强制设置 `enable_http_compression=1`。参见 [按查询传输压缩](#per-query-accept-encoding)。 |
 
 **示例：**
 
@@ -328,7 +341,7 @@ await client.InsertBinaryAsync("my_table", columns, batch2, options);
   ### 创建客户端
 </div>
 
-使用连接字符串或 `ClickHouseClientSettings` 对象创建 `ClickHouseClient`。可用选项请参阅[配置](#configuration)部分。
+使用连接字符串或 `ClickHouseClientSettings` object 创建 `ClickHouseClient`。可用选项请参阅[配置](#configuration)部分。
 
 你的 ClickHouse Cloud 服务的详细信息可在 ClickHouse Cloud 控制台中查看。
 
@@ -367,7 +380,7 @@ using var client = new ClickHouseClient(settings);
 对于依赖注入的场景，请使用 `IHttpClientFactory`：
 
 ```csharp
-// 在您的 DI 配置中
+// In your DI configuration
 services.AddHttpClient("ClickHouse", client =>
 {
     client.Timeout = TimeSpan.FromMinutes(5);
@@ -376,7 +389,7 @@ services.AddHttpClient("ClickHouse", client =>
     AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
 });
 
-// 使用工厂创建客户端
+// Create client with factory
 var factory = serviceProvider.GetRequiredService<IHttpClientFactory>();
 var client = new ClickHouseClient("Host=localhost", factory, "ClickHouse");
 ```
@@ -574,6 +587,77 @@ while (reader.Read())
 }
 ```
 
+<div id="poco-read">
+  #### POCO 读取
+</div>
+
+无需按索引或名称读取列，你可以将查询结果直接流式写入自定义类。只需向客户端注册一次该类型，然后使用 `QueryAsync<T>`：
+
+```csharp
+// Define a POCO matching your result columns
+public class SensorReading
+{
+    public ulong Id { get; set; }
+    public DateTime Timestamp { get; set; }
+
+    [ClickHouseColumn(Name = "sensor_name")]
+    public string SensorName { get; set; }
+    public double Value { get; set; }
+
+}
+
+// Register the type (once per client lifetime)
+client.RegisterPocoType<SensorReading>();
+
+// Stream results as typed objects
+await foreach (var reading in client.QueryAsync<SensorReading>(
+    "SELECT Id, sensor_name, Value, Timestamp FROM sensors"))
+{
+    Console.WriteLine($"{reading.SensorName}: {reading.Value}");
+}
+```
+
+<div id="poco-read-registration">
+  ##### 注册
+</div>
+
+`RegisterPocoType<T>()` 会同时设置 `insert` 和读取映射，并在一开始就验证两者。`RegisterBinaryInsertType<T>()` 保持不变，出于向后兼容性的考虑，仍然仅用于 `insert`。
+
+已注册的类型必须满足以下条件：
+
+* 具有一个公开的无参构造函数。
+* 至少有一个公开属性，并且该属性具有公开的、非 `init` 的 setter。支持 `required` 属性。
+
+<div id="poco-read-column-matching">
+  ##### 列匹配
+</div>
+
+列匹配区分大小写。缺失的结果列会使属性保持默认值；多出的结果列会被忽略。
+
+不会执行自动转换，类型不匹配时会抛出 `InvalidOperationException`。
+
+<div id="poco-read-mapto">
+  ##### 物化单行
+</div>
+
+手动迭代读取器时，可使用 `ClickHouseDataReader.MapTo<T>()` 将当前行物化为已注册的 POCO，且不会将读取器向前推进：
+
+```csharp
+var reader = await client.ExecuteReaderAsync("SELECT Id, SensorName, Value, Timestamp FROM sensors");
+
+while (reader.Read())
+{
+    SensorReading reading = reader.MapTo<SensorReading>();
+    Console.WriteLine($"{reading.SensorName}: {reading.Value}");
+}
+```
+
+<div id="poco-read-diagnostics">
+  ##### 注册诊断信息
+</div>
+
+配置了 `LoggerFactory` 后，`RegisterPocoType<T>()` 和 `RegisterBinaryInsertType<T>()` 会输出一条 `Debug` 级别的日志 (类别为 `ClickHouse.Driver.Client`) ，列出哪些属性映射到了哪些列，以及哪些属性被跳过和跳过原因。请参阅[日志和诊断](#logging-and-diagnostics)。
+
 ***
 
 <div id="sql-parameters">
@@ -599,6 +683,28 @@ INSERT INTO table VALUES ({val1:Int32}, {val2:Array(UInt8)})
 <Note>
   SQL &#39;绑定&#39;参数通过 HTTP URI 查询参数传递，因此如果使用过多，可能会导致出现 &quot;URL 过长&quot; 异常。为避免这一限制，在批量插入数据时请使用 `InsertBinaryAsync`。
 </Note>
+
+<div id="identifier-parameters">
+  #### 标识符参数
+</div>
+
+`Identifier` 参数类型允许你安全地绑定数据库、表或列名，而不是使用带引号的字符串字面量。可在 SQL 中通过 `{name:Identifier}` 语法使用，或通过设置 `ClickHouseDbParameter.ClickHouseType = "Identifier"` 来使用：
+
+```csharp
+var parameters = new ClickHouseParameterCollection();
+parameters.AddParameter("name", "my_database");
+
+await client.ExecuteNonQueryAsync("CREATE DATABASE {name:Identifier}", parameters);
+```
+
+```csharp
+var parameters = new ClickHouseParameterCollection();
+parameters.AddParameter("col", "user_id");
+
+var reader = await client.ExecuteReaderAsync("SELECT {col:Identifier} FROM t", parameters);
+```
+
+该值会原样发送，server 会将其作为不加引号的 SQL 标识符替换，并使用自身的反引号引用和转义规则。包含特殊字符 (包括反引号) 的标识符也能安全地往返传输。
 
 ***
 
@@ -631,7 +737,15 @@ var reader = await client.ExecuteReaderAsync(
   ### 自定义参数类型映射
 </div>
 
-使用 `@` 风格的参数时 (例如 `WHERE id = @id`) ，驱动程序会根据 .NET 值类型自动推断 ClickHouse 类型。例如，`int` 会映射为 `Int32`，`DateTime` 会映射为 `DateTime`。
+使用 `@` 风格的参数时 (例如 `WHERE id = @id`) ，驱动程序会根据 .NET 值类型自动推断 ClickHouse 类型。例如，`int` 会映射为 `Int32`。
+
+<Warning>
+  **推断的 DateTime 参数的行为**
+
+  对于 SQL 中没有 `{name:Type}` 提示且未设置 `ClickHouseType` 的 `@` 风格参数，表示瞬时时间的值会被推断为 `DateTime('UTC')`，而不是不带时区的 `DateTime`。`Kind` 为 `Utc` 或 `Local` 的 `DateTime`，以及所有 `DateTimeOffset` 值，都会作为 `DateTime('UTC')` 发送，从而在任何服务器时区下都能保留其对应的时间点。
+
+  显式提示 (`{name:DateTime}`) 的优先级高于自动推断，并且是构建查询的推荐方式。
+</Warning>
 
 如需覆盖这些默认映射，请在 `ClickHouseClientSettings` 上设置 `ParameterTypeResolver`。例如，如果你希望所有 `DateTime` 参数都使用具有毫秒精度的 `DateTime64(3)`，或者希望所有 Decimal 参数都使用特定的标度，而不必为每个参数单独设置 `ClickHouseType`，这会很有用。
 
@@ -651,8 +765,8 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 using var client = new ClickHouseClient(settings);
 
 var parameters = new ClickHouseParameterCollection();
-parameters.AddParameter("dt", DateTime.UtcNow);     // 映射到 DateTime64(3)
-parameters.AddParameter("amount", 99.1234m);         // 映射到 Decimal64(4)
+parameters.AddParameter("dt", DateTime.UtcNow);     // Mapped to DateTime64(3)
+parameters.AddParameter("amount", 99.1234m);         // Mapped to Decimal64(4)
 
 await client.ExecuteReaderAsync("SELECT @dt, @amount", parameters);
 ```
@@ -667,7 +781,7 @@ public class SmartDecimalResolver : IParameterTypeResolver
     public string ResolveType(Type clrType, object value, string parameterName)
     {
         if (clrType != typeof(decimal))
-            return null; // 回退到默认推断
+            return null; // Fall through to default
 
         var scale = (decimal.GetBits((decimal)value)[3] >> 16) & 0x7F;
         return scale <= 4 ? $"Decimal64({scale})" : $"Decimal128({scale})";
@@ -690,6 +804,128 @@ public class SmartDecimalResolver : IParameterTypeResolver
 
 ***
 
+<div id="parameter-value-formatting">
+  ### 自定义参数值格式化
+</div>
+
+`IParameterFormatter` 是一个 hook，用于决定参数值如何序列化。当内置格式化 (例如日期时间精度、小数区域设置、字符串转义、数值表示形式) 不符合您的 schema 或下游工具的预期时，请使用它。
+
+在 `ClickHouseClientSettings` 中设置 `ParameterFormatter`，即可为所有参数化查询启用格式化器。该格式化器会接收值、已解析的 ClickHouse 类型名称以及参数名，并返回发送到服务器的字符串表示形式。返回 `null` 则会回退到默认格式化器。
+
+**使用 `DictionaryParameterFormatter` 进行简单的按 CLR 类型格式化：**
+
+```csharp
+using ClickHouse.Driver.ADO.Parameters;
+
+var settings = new ClickHouseClientSettings("Host=localhost")
+{
+    ParameterFormatter = new DictionaryParameterFormatter(new Dictionary<Type, Func<object, string>>
+    {
+        [typeof(DateTime)] = v => ((DateTime)v).ToString("yyyy-MM-ddTHH:mm:ss.ffffff",
+            System.Globalization.CultureInfo.InvariantCulture),
+        [typeof(decimal)] = v => ((decimal)v).ToString("F4",
+            System.Globalization.CultureInfo.InvariantCulture),
+    }),
+};
+using var client = new ClickHouseClient(settings);
+```
+
+**面向高级场景的自定义 `IParameterFormatter`：**
+
+```csharp
+public class FixedDecimalFormatter : IParameterFormatter
+{
+    public string Format(object value, string typeName, string parameterName)
+    {
+        if (value is decimal d)
+            return d.ToString("F4", System.Globalization.CultureInfo.InvariantCulture);
+        return null; // Fall through for anything else
+    }
+}
+```
+
+你也可以通过 `QueryOptions.ParameterFormatter` 为每个查询设置格式化器。设置后，它的优先级高于客户端级别的格式化器。
+
+**复合值：**
+
+该格式化器既会用于顶层集合参数，也会用于复合值 (`Array`、`Tuple`、`Map`、`Nullable`、`LowCardinality`、`Variant`) 中的每个元素。例如，`typeof(int)` 映射会分别格式化 `Array(Int32)` 中的每个 `Int32` 元素。
+
+**复合上下文中的单引号包裹：**
+
+对于嵌入在复合字面量中的类字符串 ClickHouse 类型 (`String`、`FixedString`、`Enum8`、`Enum16`、`IPv4`、`IPv6`、`UUID`) ，驱动程序会用单引号包裹格式化器的输出，但不会对其内容进行转义。如果你返回的字符串中包含未转义的单引号或反斜杠，复合字面量就会格式错误，服务器会拒绝该查询。
+
+顶层字符串参数 (未嵌入复合值中) 会按原样使用，不会额外包裹，因此在这种情况下不需要转义。
+
+**格式化器优先级：**
+
+1. `IParameterFormatter` (来自 `QueryOptions.ParameterFormatter`，若未设置则回退到 `ClickHouseClientSettings.ParameterFormatter`) 。如果它返回非 null，则使用该值。
+2. `HttpParameterFormatter` 中内置的类型专用格式化。
+
+格式化器不会用于 `null` 或 `DBNull` 值；这些值始终会被序列化为 ClickHouse 的 null 标记 (`\N`) 。
+
+***
+
+<div id="read-value-conversion">
+  ### 自定义读取值转换
+</div>
+
+`IReadValueConverter` 允许你在反序列化后对数据读取器返回的值进行转换，而无需更改其 CLR 类型。典型用途包括：为不带时区的 `DateTime` 列设置 `DateTime.Kind = Utc`，修剪或规范化字符串，或在 JSON 列到达应用代码之前对其进行后处理。
+
+在 `ClickHouseClientSettings` 中设置 `ReadValueConverter`，即可为所有读取操作启用转换器。该转换器会通过装箱 (`GetValue`) 和泛型 (`GetFieldValue<T>`) 两种路径，对每一行的每一列各调用一次。未设置转换器时，没有任何额外开销——读取器会直接返回值。
+
+**使用 `DictionaryReadValueConverter` 进行简单的按 CLR 类型转换：**
+
+```csharp
+using ClickHouse.Driver.ADO.Readers;
+
+var converter = new DictionaryReadValueConverter()
+    .For<DateTime>(dt => DateTime.SpecifyKind(dt, DateTimeKind.Utc))
+    .For<string>(s => s.Trim());
+
+var settings = new ClickHouseClientSettings("Host=localhost")
+{
+    ReadValueConverter = converter,
+};
+using var client = new ClickHouseClient(settings);
+```
+
+未通过 `For<T>` 注册其运行时 CLR 类型的值会原样返回。分派基于精确的 CLR 类型，因此请注册读取器实际产生的类型 (例如，对于 `JsonReadMode.Binary` 中的 JSON 列，使用 `For<JsonObject>`) 。
+
+**用于高级场景的自定义 `IReadValueConverter`：**
+
+如果你需要根据 ClickHouse 侧的类型字符串进行分派 (例如，区分 `DateTime` 和 `DateTime('UTC')`——两者在 CLR 中都会显示为相同的类型) ，请直接实现 `IReadValueConverter`：
+
+```csharp
+public class UtcKindForNoTzDateTimeConverter : IReadValueConverter
+{
+    public object ConvertValue(object value, string columnName, string clickHouseType)
+    {
+        if (value is DateTime dt && clickHouseType == "DateTime")
+            return DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+        return value;
+    }
+
+    public T ConvertValue<T>(T value, string columnName, string clickHouseType)
+    {
+        if (typeof(T) == typeof(DateTime) && value is DateTime dt && clickHouseType == "DateTime")
+            return (T)(object)DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+        return value;
+    }
+}
+```
+
+转换器必须保留运行时 CLR 类型；列元数据 (`GetFieldType`、`GetSchemaTable`) 不会通过它改写，且必须与实际返回的内容保持一致。
+
+你也可以通过 `QueryOptions.ReadValueConverter` 为每个查询设置转换器；设置后，它的优先级高于客户端级别的转换器。
+
+**分派边界：**
+
+转换器对每一列只会以整个反序列化后的单元格值调用一次，**不会**递归处理复合容器。对于 `Array(Int32)` 列，传入的值是 `int[]`；对于 `Tuple(Int32, String)`，则是 `ITuple`。
+
+该转换器适用于 ADO.NET `ClickHouseConnection` 路径——从客户端创建的连接会继承这些设置。
+
+***
+
 <div id="raw-streaming">
   ### 原始流式传输
 </div>
@@ -707,6 +943,43 @@ var json = await reader.ReadToEndAsync();
 ```
 
 常见格式：`JSONEachRow`、`CSV`、`TSV`、`Parquet`、`Native`。所有选项请参阅[格式文档](/zh/reference/formats/index)。
+
+***
+
+<div id="per-query-accept-encoding">
+  ### 按查询设置传输压缩
+</div>
+
+默认情况下，当 `Compression=true` (connection-string 的默认值) 时，client 会协商使用 `gzip, deflate`，HTTP client 会透明地解压 stream。
+
+对于原始导出 (例如 Parquet、Arrow、Native) ，你可能希望协商使用其他 codec (例如 `zstd` 或 `lz4`) ，以便在不更改整个 connection 设置的情况下，用 CPU 换取 bandwidth。`QueryOptions.AcceptEncoding` 和 `ClickHouseCommand.AcceptEncoding` 可为单个请求设置 HTTP `Accept-Encoding` 请求头，替换原先附加的默认值，并强制在 URL 上设置 `enable_http_compression=1` (ClickHouse 要求先设置该参数，才会接受 `Accept-Encoding`) 。
+
+```csharp
+using var result = await client.ExecuteRawResultAsync(
+    "SELECT * FROM events FORMAT Parquet",
+    options: new QueryOptions { AcceptEncoding = "zstd" });
+
+// Decode yourself or write to a file
+await using var body = await result.ReadAsStreamAsync();
+```
+
+<div id="per-query-accept-encoding-httpclient">
+  #### HttpClient 配置
+</div>
+
+驱动程序构建的默认 `HttpClient` 使用 `AutomaticDecompression = GZip | Deflate`，会自动解压这些算法对应的内容，并从响应中移除 `Content-Encoding`。这对于普通查询正合适，但如果你想自己处理原始压缩数据，就不适用了。
+
+在这种情况下，请向 ClickHouseClient 传入一个 `HttpClient` 或 `HttpClientFactory`，并将 `AutomaticDecompression` 设置为 `DecompressionMethods.None`
+
+<Warning>
+  如果 `AcceptEncoding` 请求了当前配置的 `HttpClient` 无法自动解压的 codec，那么只有 `ExecuteRawResultAsync` 是安全的。在同一查询路径上调用 `ExecuteReaderAsync`、`ExecuteScalarAsync` 或 `ExecuteNonQueryAsync`，会尝试把压缩后的字节解析为常规结果格式，从而产生乱码。
+</Warning>
+
+<div id="per-query-accept-encoding-errors">
+  #### 错误响应体
+</div>
+
+当服务器返回 4xx/5xx，且设置了 `enable_http_compression=1` 时，它会使用与成功响应相同的 codec 来压缩错误响应体。对于 BCL 自带的编解码器 (`gzip`、`deflate`、`br`/`brotli`) ，驱动程序会自动解压，因此 `ClickHouseServerException` 中显示的消息是可读的。对于无法解码的编解码器 (`zstd`、`lz4`、……) ，驱动程序会返回一条占位消息，其中会标明 codec，并提示到 `system.query_log` 中查看原始错误文本。
 
 ***
 
@@ -1174,27 +1447,27 @@ var settings = new ClickHouseClientSettings("Host=localhost")
   #### 其他类型
 </div>
 
-| ClickHouse 类型           | .NET 类型                             |
-| ----------------------- | ----------------------------------- |
-| UUID                    | `Guid`                              |
-| IPv4                    | `IPAddress`                         |
-| IPv6                    | `IPAddress`                         |
-| Nothing                 | `DBNull`                            |
-| Dynamic                 | 见注释                                 |
-| Array(T)                | `T[]`                               |
-| Tuple(T1, T2, ...)      | `Tuple<T1, T2, ...>` / `LargeTuple` |
-| Map(K, V)               | `Dictionary<K, V>`                  |
-| Nullable(T)             | `T?`                                |
-| Enum8                   | `string`                            |
-| Enum16                  | `string`                            |
-| LowCardinality(T)       | 与 T 相同                              |
-| SimpleAggregateFunction | 与其底层类型相同                            |
-| Nested(...)             | `Tuple[]`                           |
-| Variant(T1, T2, ...)    | 见注释                                 |
-| QBit(T, dimension)      | `T[]`                               |
+| ClickHouse 类型           | .NET 类型                                                                                                     |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------- |
+| UUID                    | `Guid`                                                                                                      |
+| IPv4                    | `IPAddress`                                                                                                 |
+| IPv6                    | `IPAddress`                                                                                                 |
+| Nothing                 | `DBNull`                                                                                                    |
+| Dynamic                 | 见注释                                                                                                         |
+| Array(T)                | `T[]` (嵌套的 `Array(Array(T))` 会读取为交错数组 `T[][]`；使用 `reader.GetFieldValue<T[,]>(ordinal)` 将矩形数据具体化为多维 CLR 数组)  |
+| Tuple(T1, T2, ...)      | `Tuple<T1, T2, ...>` / `LargeTuple`                                                                         |
+| Map(K, V)               | `Dictionary<K, V>`                                                                                          |
+| Nullable(T)             | `T?`                                                                                                        |
+| Enum8                   | `string`                                                                                                    |
+| Enum16                  | `string`                                                                                                    |
+| LowCardinality(T)       | 与 T 相同                                                                                                      |
+| SimpleAggregateFunction | 与其底层类型相同                                                                                                    |
+| Nested(...)             | `Tuple[]`                                                                                                   |
+| Variant(T1, T2, ...)    | 见注释                                                                                                         |
+| QBit(T, dimension)      | `T[]`                                                                                                       |
 
 <Note>
-  Dynamic 和 Variant 类型会转换为每一行实际底层类型对应的类型。
+  The Dynamic 和 Variant 类型会转换为每一行实际底层类型对应的类型。
 </Note>
 
 ***
@@ -1285,21 +1558,27 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 
 | ClickHouse 类型 | 可接受的 .NET 类型                                                      | 说明                                                           |
 | ------------- | ----------------------------------------------------------------- | ------------------------------------------------------------ |
-| Date          | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 类型             | 转换为 Unix 天数，存储为 UInt16                                       |
-| Date32        | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 类型             | 转换为 Unix 天数，存储为 Int32                                        |
-| DateTime      | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 类型             | 详见下文                                                         |
+| Date          | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 类型             | 转换为 Unix 天数，存储为 UInt16；支持范围为 `[1970-01-01, 2149-06-06]`      |
+| Date32        | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 类型             | 转换为 Unix 天数，存储为 Int32；支持范围为 `[1900-01-01, 2299-12-31]`       |
+| DateTime      | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 类型             | 详见下文；支持范围为 `[1970-01-01, 2106-02-07 06:28:15]` UTC           |
 | DateTime32    | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 类型             | 与 DateTime 相同                                                |
 | DateTime64    | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 类型             | 精度取决于 scale 参数                                               |
 | Time          | `TimeSpan`, `int`                                                 | 限制为 ±999:59:59；`int` 视为秒数                                    |
 | Time64        | `TimeSpan`, `decimal`, `double`, `float`, `int`, `long`, `string` | 字符串按 `[-]HHH:MM:SS[.fraction]` 格式解析；限制为 ±999:59:59.999999999 |
 
+<Note>
+  **超出范围的值**
+
+  在二进制写入路径中，超出支持范围的 `Date`、`Date32`、`DateTime` 和 `DateTime32` 值会在 `Write` 时抛出 `ArgumentOutOfRangeException`，并指出列类型和支持范围。此前，超出范围的值可能会先经由 32 位整数被静默截断，再由服务器重新解释，从而产生看似真实但实际错误的时间戳。
+</Note>
+
 驱动在写入值时会遵循 `DateTime.Kind`：
 
-| DateTime.Kind | HTTP 参数                      | 批量写入           |
-| ------------- | ---------------------------- | -------------- |
-| Utc           | 保留精确时刻                       | 保留精确时刻         |
-| Local         | 保留精确时刻                       | 保留精确时刻         |
-| Unspecified   | 按参数类型时区中的本地时钟时间处理 (默认为 UTC)  | 按列时区中的本地时钟时间处理 |
+| DateTime.Kind | HTTP 参数                     | 批量写入           |
+| ------------- | --------------------------- | -------------- |
+| Utc           | 保留精确时刻                      | 保留精确时刻         |
+| Local         | 保留精确时刻                      | 保留精确时刻         |
+| Unspecified   | 按参数类型时区中的挂钟时间处理 (默认为 UTC) | 按列时区中的挂钟时间处理 |
 
 `DateTimeOffset` 值始终保留精确时刻。
 
@@ -1307,17 +1586,17 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 
 ```csharp
 var utcTime = new DateTime(2024, 1, 15, 12, 0, 0, DateTimeKind.Utc);
-// 存储为 12:00 UTC
-// 从 DateTime('Europe/Amsterdam') 列读取：13:00 (UTC+1)
-// 从 DateTime('UTC') 列读取：12:00 UTC
+// Stored as 12:00 UTC
+// Read from DateTime('Europe/Amsterdam') column: 13:00 (UTC+1)
+// Read from DateTime('UTC') column: 12:00 UTC
 ```
 
 **示例：未指定 DateTime (挂钟时间)&#x20;**
 
 ```csharp
 var wallClock = new DateTime(2024, 1, 15, 14, 30, 0, DateTimeKind.Unspecified);
-// 写入 DateTime('Europe/Amsterdam') 列：存储为阿姆斯特丹时间 14:30
-// 从 DateTime('Europe/Amsterdam') 列读取：14:30
+// Written to DateTime('Europe/Amsterdam') column: stored as 14:30 Amsterdam time
+// Read back from DateTime('Europe/Amsterdam') column: 14:30
 ```
 
 **建议：**为获得最简单且最可预测的行为，所有 DateTime 操作都使用 `DateTimeKind.Utc` 或 `DateTimeOffset`。这样可以确保你的代码始终保持一致，不受服务器时区、客户端时区或列时区的影响。
@@ -1479,24 +1758,24 @@ await client.InsertBinaryAsync(
   #### 其他类型
 </div>
 
-| ClickHouse 类型           | 可接受的 .NET 类型               | 说明                                          |
-| ----------------------- | -------------------------- | ------------------------------------------- |
-| UUID                    | `Guid`, `string`           | `string` 会被解析为 Guid                         |
-| IPv4                    | `IPAddress`, `string`      | 必须是 IPv4；`string` 通过 `IPAddress.Parse()` 解析 |
-| IPv6                    | `IPAddress`, `string`      | 必须是 IPv6；`string` 通过 `IPAddress.Parse()` 解析 |
-| Nothing                 | Any                        | 不写入任何内容 (空操作)                               |
-| Dynamic                 | —                          | **不支持** (抛出 `NotImplementedException`)      |
-| Array(T)                | `IList`, `null`            | `null` 会写入为空数组                              |
-| Tuple(T1, T2, ...)      | `ITuple`, `IList`          | 元素数量必须与 Tuple 元数一致                          |
-| Map(K, V)               | `IDictionary`              |                                             |
-| Nullable(T)             | `null`、`DBNull` 或 T 可接受的类型 | 会在值之前写入 null 标志字节                           |
-| Enum8                   | `string`, `sbyte`, 数值类型    | `string` 会在枚举字典中查找                          |
-| Enum16                  | `string`, `short`, 数值类型    | `string` 会在枚举字典中查找                          |
-| LowCardinality(T)       | T 可接受的类型                   | 委托给底层类型处理                                   |
-| SimpleAggregateFunction | 底层类型可接受的类型                 | 委托给底层类型处理                                   |
-| Nested(...)             | tuple 的 `IList`            | 元素数量必须与字段数量一致                               |
-| Variant(T1, T2, ...)    | 匹配 T1、T2、... 之一的值          | 如果没有匹配的类型，则抛出 `ArgumentException`           |
-| QBit(T, dim)            | `IList`                    | 委托给 Array；dimension 仅作为元数据                  |
+| ClickHouse 类型           | 可接受的 .NET 类型                  | 说明                                                                                                                                                        |
+| ----------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| UUID                    | `Guid`, `string`              | `string` 会被解析为 Guid                                                                                                                                       |
+| IPv4                    | `IPAddress`, `string`         | 必须是 IPv4；`string` 通过 `IPAddress.Parse()` 解析                                                                                                               |
+| IPv6                    | `IPAddress`, `string`         | 必须是 IPv6；`string` 通过 `IPAddress.Parse()` 解析                                                                                                               |
+| Nothing                 | Any                           | 不写入任何内容 (空操作)                                                                                                                                             |
+| Dynamic                 | —                             | **不支持** (抛出 `NotImplementedException`)                                                                                                                    |
+| Array(T)                | `IList`, `null`               | `null` 会写入为空数组。对于嵌套类型 (`Array(Array(T))` 及更深层级) ，既接受锯齿形结构 (`T[][]`, `List<List<T>>`) ，也接受矩形多维 CLR 数组 (`T[,]`, `T[,,]`, …) ；CLR 的维数必须与 ClickHouse 的嵌套深度匹配。 |
+| Tuple(T1, T2, ...)      | `ITuple`, `IList`             | 元素数量必须与 Tuple 元数一致。对于超过 7 个元素的情况，请参见 [ValueTuple 注意事项](#valuetuple-caveat)。                                                                               |
+| Map(K, V)               | `IDictionary`                 |                                                                                                                                                           |
+| Nullable(T)             | `null`, `DBNull`, or T 可接受的类型 | 会在值之前写入 null 标志字节                                                                                                                                         |
+| Enum8                   | `string`, `sbyte`, 数值类型       | `string` 会在枚举字典中查找                                                                                                                                        |
+| Enum16                  | `string`, `short`, 数值类型       | `string` 会在枚举字典中查找                                                                                                                                        |
+| LowCardinality(T)       | T 可接受的类型                      | 委托给底层类型处理                                                                                                                                                 |
+| SimpleAggregateFunction | 底层类型可接受的类型                    | 委托给底层类型处理                                                                                                                                                 |
+| Nested(...)             | tuple 的 `IList`               | 元素数量必须与字段数量一致                                                                                                                                             |
+| Variant(T1, T2, ...)    | 匹配 T1、T2、... 之一的值             | 如果没有匹配的类型，则抛出 `ArgumentException`                                                                                                                         |
+| QBit(T, dim)            | `IList`                       | 委托给 Array；dimension 仅作为元数据                                                                                                                                |
 
 ***
 
@@ -2547,6 +2826,35 @@ dotnet ef database update
 <div id="limitations">
   ## 局限性
 </div>
+
+<div id="valuetuple-caveat">
+  ### 具有 8 个以上元素且最后一位为嵌套 Tuple 的元组
+</div>
+
+元素超过 7 个的 C# `ValueTuple` 类型会采用编译器生成的嵌套方案：第 8 个泛型参数 (`TRest`) 本身也是一个 `ValueTuple`，用于承载其余元素。例如，`(int, int, int, int, int, int, int, string, string)` 会编译为 `ValueTuple<int, int, int, int, int, int, int, ValueTuple<string, string>>`。
+
+这会在 ClickHouse 列为一个 8 元素元组且最后一个元素本身也是元组时产生歧义——例如，`Tuple(Int32, Int32, Int32, Int32, Int32, Int32, Int32, Tuple(String, String))`。驱动程序无法区分以下两种情况：
+
+* **扁平的 9 元素元组** (编译器生成的 TRest 嵌套)
+* **8 元素元组**，其中最后一个元素是嵌套的 `Tuple(String, String)`
+
+这两种情况都会生成相同的 .NET 类型：`ValueTuple<int, int, int, int, int, int, int, ValueTuple<string, string>>`。
+
+驱动程序会将第 8 个参数视为 TRest (即将其展平) ，这意味着“8 元素且最后一位为嵌套元组”的情况会被错误地序列化。
+
+这同时会影响 `System.Tuple` 和 `ValueTuple`，因为两者在元素数量 &gt;7 时都会使用 TRest 嵌套。元素不超过 7 个的元组，或最后一个元素本身不是元组的元组，则不受影响。
+
+**解决方法：** 在内部元组外再包一层，这样驱动程序就能将其与 TRest 嵌套区分开来：
+
+```csharp
+// Instead of this (ambiguous — is it 8 elements or 9 flat?):
+Tuple.Create(1, 2, 3, 4, 5, 6, 7, Tuple.Create("a", "b"))
+
+// Do this (unambiguous — inner tuple is wrapped):
+Tuple.Create(1, 2, 3, 4, 5, 6, 7, Tuple.Create(Tuple.Create("a", "b")))
+```
+
+***
 
 <div id="aggregatefunction-columns">
   ### AggregateFunction 列
