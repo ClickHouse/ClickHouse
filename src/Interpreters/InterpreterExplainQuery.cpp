@@ -36,6 +36,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/Sinks/EmptySink.h>
@@ -61,6 +62,8 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 
 
@@ -753,9 +756,10 @@ static void formatHeaderExplainAnalyze(
     out << "\n";
 }
 
-static void rejectStreamingForExplainAnalyze(const QueryTreeNodePtr & query_tree)
+class RejectStreamingVisitor : public ConstInDepthQueryTreeVisitor<RejectStreamingVisitor>
 {
-    for (const auto & node : extractTableExpressions(query_tree, /*add_array_join*/ false, /*recursive*/ true))
+public:
+    void visitImpl(const QueryTreeNodePtr & node)
     {
         std::optional<TableExpressionModifiers> modifiers;
         if (const auto * table_node = node->as<TableNode>())
@@ -766,6 +770,45 @@ static void rejectStreamingForExplainAnalyze(const QueryTreeNodePtr & query_tree
         if (modifiers && modifiers->hasStream())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "EXPLAIN ANALYZE is not supported for streaming (FROM ... STREAM) queries");
+    }
+};
+
+static void rejectStreamingForExplainAnalyze(const QueryTreeNodePtr & query_tree)
+{
+    /// Walk the whole query tree, not just join-tree table expressions: a streaming read can be nested in a
+    /// WHERE/PREWHERE subquery or a CTE, which extractTableExpressions does not descend into.
+    RejectStreamingVisitor visitor;
+    visitor.visit(query_tree);
+}
+
+/// A streaming read behind a view has no table expression modifier in the outer query tree, so only the plan
+/// exposes it. Walk it exactly like StepWallClockRegistry::populateFromPlan: a read absent from the plan cannot
+/// be timed, so it must not be rejected.
+static void rejectStreamingForExplainAnalyze(const QueryPlan & plan)
+{
+    if (!plan.isInitialized())
+        return;
+
+    std::vector<const QueryPlan::Node *> stack;
+    stack.push_back(plan.getRootNode());
+
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (!node || !node->step)
+            continue;
+
+        const auto * source_step = dynamic_cast<const SourceStepWithFilter *>(node->step.get());
+        if (source_step && source_step->getQueryInfo().isStream())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "EXPLAIN ANALYZE is not supported for streaming (FROM ... STREAM) queries");
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+        for (const auto * child_plan : node->step->getChildPlans())
+            stack.push_back(child_plan->getRootNode());
     }
 }
 
@@ -852,6 +895,8 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
 
     if (query_tree)
         rejectStreamingForExplainAnalyze(query_tree);
+
+    rejectStreamingForExplainAnalyze(result->plan);
 
     result->planning_ns = watch.elapsed();
 
