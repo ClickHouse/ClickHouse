@@ -22,6 +22,11 @@ submodule.
 So the size gate is asserted here instead. Losing either macro leaves the lane green
 while removing detection, so this file pins every place such a loss can happen:
 
+* the option's own contract in `contrib/jemalloc-cmake/CMakeLists.txt`, read as text: it
+  defaults to OFF, it is restricted to x86-64, and it passes both macros to `_jemalloc`
+  as PRIVATE. None of the layers below can see any of these - the compile-line check runs
+  only for the build type that requests the option anyway - so flipping the default to
+  `ON` would arm both gates in every x86-64 build, release included;
 * the effective compiler invocation, via `assert_jemalloc_safety_macros_armed`
   (`ci/jobs/build_clickhouse.py`, run right after cmake configuration in the
   `amd_jemalloc_safety` build): over every `contrib/jemalloc/src/*.c` entry of the
@@ -37,14 +42,15 @@ while removing detection, so this file pins every place such a loss can happen:
   searched for the macro's name - narrowing a condition to `JEMALLOC_DEBUG` alone,
   turning its `||` into `&&`, inverting it or swapping its arms would each disarm a
   gate with every other layer still green;
-* the `CI Tests` cache digest, for the two files this module reads (the platform headers
-  and the compiled preamble) plus `contrib/jemalloc-cmake/CMakeLists.txt`, whose
-  `ARCH_AMD64` guard decides *which* platform headers the header assertion has to
-  check - so a commit changing any of them re-runs this file instead of being
-  cache-skipped.
+* the `CI Tests` cache digest, for all three files this module reads (the jemalloc cmake
+  file, the platform headers and the compiled preamble) - so a commit changing any of them
+  re-runs this file instead of being cache-skipped. The cmake entry is doubly needed: its
+  `ARCH_AMD64` guard also decides *which* platform headers the header assertion has to
+  check.
 
-The cmake file itself is not read here: whether the option's `-D`s survive is decided by
-the compile line, which the first layer reads from `compile_commands.json` instead.
+Whether the option's `-D`s actually survive to the compiler is still decided by the
+compile line rather than by the cmake text, which is why both layers exist: the cmake
+assertions pin the option's contract, the compile-line one pins its effect.
 """
 
 import argparse
@@ -75,6 +81,7 @@ from ci.jobs.build_clickhouse import (
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 JEMALLOC_CMAKE_REL = "./contrib/jemalloc-cmake/CMakeLists.txt"
+JEMALLOC_CMAKE = REPO_ROOT / JEMALLOC_CMAKE_REL[2:]
 
 # The header that actually gets compiled: `target_include_directories(_jemalloc SYSTEM
 # PUBLIC include)` (CMakeLists.txt:177) precedes `PRIVATE "${LIBRARY_DIR}/include"`
@@ -110,6 +117,287 @@ def _reachable_defs_headers() -> list[Path]:
         f"{OPTION_NAME} option can reach"
     )
     return headers
+
+
+# --- the option's own CMake contract --------------------------------------------------
+#
+# Three clauses of `contrib/jemalloc-cmake/CMakeLists.txt` are load-bearing, and none of
+# the layers below can see any of them: the option's default (OFF), its `ARCH_AMD64`
+# restriction, and the two `-D`s it passes. They are asserted here as *text*, because
+# `ci/jobs/ci_tests_job.py` runs this suite with neither cmake nor a build tree, so there
+# is no configured cache to query. A semantic check of the same clauses' outcome does
+# exist - `assert_jemalloc_safety_macros_armed`, driven below - but only for the one build
+# type that requests the option (`ci/jobs/build_clickhouse.py:495` gates it on
+# `BuildTypes.AMD_JEMALLOC_SAFETY`), so it can never see the default flipping for every
+# other build. The digest entry these assertions ride on already exists for the arch
+# guard's effect on `REACHABLE_DEFS_HEADERS_GLOB`.
+
+_OPTION_CALL_RE = re.compile(
+    rf'^[ \t]*option[ \t]*\([ \t]*{OPTION_NAME}[ \t]+"[^"]*"(?P<initial>.*)\)[ \t]*$',
+    re.M,
+)
+_ARCH_GUARD_CONDITION_RE = re.compile(
+    rf"^[ \t]*if[ \t]*\([ \t]*{OPTION_NAME}[ \t]+AND[ \t]+NOT[ \t]+ARCH_AMD64[ \t]*\)"
+    r"[ \t]*$",
+    re.M,
+)
+_ARCH_GUARD_SET_OFF_RE = re.compile(
+    rf"^[ \t]*set[ \t]*\([ \t]*{OPTION_NAME}[ \t]+OFF[ \t]*\)[ \t]*$", re.M
+)
+_OPTION_GUARDED_IF_RE = re.compile(
+    rf"^[ \t]*if[ \t]*\([ \t]*{OPTION_NAME}[ \t]*\)[ \t]*$", re.M
+)
+_JEMALLOC_DEFINITIONS_RE = re.compile(
+    r"^[ \t]*target_compile_definitions[ \t]*\([ \t]*_jemalloc[ \t]+"
+    r"(?P<keyword>\w+)(?P<flags>[^)]*)\)[ \t]*$",
+    re.M,
+)
+
+
+def _cmake_block_after(text: str, opening: re.Match) -> str:
+    """The body of the cmake `if` whose opening line `opening` matched."""
+    end = text.find("\nendif", opening.end())
+    return text[opening.end() : end if end != -1 else len(text)]
+
+
+def _option_initial_value(text: str) -> str:
+    """Whatever the `option()` call passes after its help string, `""` if nothing."""
+    match = _OPTION_CALL_RE.search(text)
+    assert match, (
+        f'{JEMALLOC_CMAKE_REL}: no `option ({OPTION_NAME} "...")` call found. This '
+        "call is where the option's default lives - re-derive this assertion against "
+        "whatever shape replaced it rather than letting it pass vacuously."
+    )
+    return match.group("initial").strip()
+
+
+def _option_defaults_to_off(text: str) -> bool:
+    """Whether the `option()` call leaves the option's default at cmake's OFF."""
+    return _option_initial_value(text) == ""
+
+
+def _option_is_restricted_to_x86_64(text: str) -> bool:
+    """Whether the `ARCH_AMD64` guard is present and still turns the option off."""
+    guard = _ARCH_GUARD_CONDITION_RE.search(text)
+    if not guard:
+        return False
+    return _ARCH_GUARD_SET_OFF_RE.search(_cmake_block_after(text, guard)) is not None
+
+
+def _option_defines_macro(text: str, macro: str) -> bool:
+    """Whether an `if (<option>)` block passes `-D<macro>` to `_jemalloc` PRIVATE.
+
+    Every such block is searched, not just the first: nothing stops the file from
+    guarding several things on this option, and keying on the first one would make this
+    predicate report on whichever block happens to come first.
+    """
+    for opening in _OPTION_GUARDED_IF_RE.finditer(text):
+        for call in _JEMALLOC_DEFINITIONS_RE.finditer(
+            _cmake_block_after(text, opening)
+        ):
+            if call.group("keyword") != "PRIVATE":
+                continue
+            if f"-D{macro}" in call.group("flags").split():
+                return True
+    return False
+
+
+def test_the_option_defaults_to_off():
+    """The option must stay opt-in, i.e. its `option()` call must pass no initial value.
+
+    An initial value of `ON` - or of `${ENABLE_LIBRARIES}`, the spelling `ENABLE_JEMALLOC`
+    itself uses at `:11` - arms both jemalloc gates in every x86-64 build including
+    release, which is the opposite of this diagnostic option's default-off contract, and
+    it is a user-visible change to shipped binaries from a PR whose changelog category
+    says otherwise. No other layer can see it: the compile-line oracle runs only for
+    `BuildTypes.AMD_JEMALLOC_SAFETY`, which requests the option anyway.
+
+    The sibling diagnostic option `ENABLE_JEMALLOC_UAF_SAN` (`:75`) is spelled the same
+    way - name plus help string, no initial value.
+    """
+    initial = _option_initial_value(JEMALLOC_CMAKE.read_text(encoding="utf-8"))
+    assert initial == "", (
+        f"{JEMALLOC_CMAKE_REL}: the `option ({OPTION_NAME} ...)` call now passes an "
+        f"initial value ({initial!r}), so the option no longer defaults to OFF; it arms "
+        "both jemalloc safety gates in every x86-64 build, release included"
+    )
+
+
+def test_the_option_is_restricted_to_x86_64():
+    """The `ARCH_AMD64` guard must stay intact.
+
+    It is what keeps the option away from e2k, whose platform header carries a bare
+    `#undef JEMALLOC_OPT_SAFETY_CHECKS`
+    (`include_linux_e2k/jemalloc/internal/jemalloc_internal_defs.h.in:374`) that would
+    silently cancel the option's own `-D`. It is also what makes
+    `REACHABLE_DEFS_HEADERS_GLOB` x86-64 only, so widening it means re-deriving that glob
+    and re-running `test_reachable_platform_headers_do_not_change_the_macro_state`
+    against the newly reachable headers.
+    """
+    assert _option_is_restricted_to_x86_64(
+        JEMALLOC_CMAKE.read_text(encoding="utf-8")
+    ), (
+        f"{JEMALLOC_CMAKE_REL}: the `if ({OPTION_NAME} AND NOT ARCH_AMD64)` guard that "
+        f"sets the option OFF is gone or reshaped. Without it the option reaches e2k, "
+        "where the platform header's bare `#undef JEMALLOC_OPT_SAFETY_CHECKS` cancels "
+        f"it; and {REACHABLE_DEFS_HEADERS_GLOB!r} must then be re-derived, since it is "
+        "x86-64 only precisely because of this guard."
+    )
+
+
+@pytest.mark.parametrize("macro", REQUIRED_MACROS)
+def test_the_option_defines_both_macros(macro):
+    """Both macros must be passed to `_jemalloc`, and PRIVATE.
+
+    Without both `-D`s the option is a no-op and the lane rebuilds and fuzzes green as an
+    ordinary `amd_debug` session; `JEMALLOC_OPT_SIZE_CHECKS` has no mallctl, so neither
+    the runtime preflight nor anything else downstream can notice. `PRIVATE` matters too:
+    the macros are jemalloc-internal, and the compile-line oracle's leak sweep - which
+    rejects them reaching any non-jemalloc translation unit - exists for that reason.
+    """
+    assert _option_defines_macro(JEMALLOC_CMAKE.read_text(encoding="utf-8"), macro), (
+        f"{JEMALLOC_CMAKE_REL}: the `if ({OPTION_NAME})` block no longer passes "
+        f"`-D{macro}` to `_jemalloc` as PRIVATE, so the option is a no-op for that gate "
+        "and the lane fuzzes green with the detector missing"
+    )
+
+
+# --- the CMake contract's own negative cases ------------------------------------------
+#
+# Each predicate above is driven over the real file text with one clause mutated, in the
+# `_size_flag_armed_with` shape: the helper first asserts the line being replaced is still
+# in the file, so a reshaped cmake file cannot leave these cases silently exercising text
+# that no longer exists.
+
+_REAL_OPTION_LINE = (
+    f'option ({OPTION_NAME} "Enable jemalloc sized-deallocation and double-free safety '
+    'checks (diagnostic lane; x86-64 only)")'
+)
+_REAL_ARCH_GUARD_CONDITION = f"if ({OPTION_NAME} AND NOT ARCH_AMD64)"
+_REAL_ARCH_GUARD_BLOCK = (
+    f"{_REAL_ARCH_GUARD_CONDITION}\n"
+    f'    message (${{RECONFIGURE_MESSAGE_LEVEL}} "{OPTION_NAME} is supported on '
+    f'x86-64 only. Use -D{OPTION_NAME}=0")\n'
+    f"    set ({OPTION_NAME} OFF)\n"
+    "endif ()"
+)
+_REAL_DEFINITIONS_LINE = (
+    "    target_compile_definitions(_jemalloc PRIVATE "
+    f"-D{REQUIRED_MACROS[0]} -D{REQUIRED_MACROS[1]})"
+)
+
+
+def _cmake_text_with(real: str, mutated: str) -> str:
+    """The real cmake file's text with `real` replaced by `mutated`."""
+    text = JEMALLOC_CMAKE.read_text(encoding="utf-8")
+    assert real in text, (
+        f"{JEMALLOC_CMAKE_REL}: the text these negative cases mutate is no longer "
+        f"present:\n{real}\nre-derive them against the current file so they keep "
+        "exercising the real shape"
+    )
+    return text.replace(real, mutated, 1)
+
+
+@pytest.mark.parametrize(
+    "label, mutated, accepted_expected",
+    [
+        ("unmutated", _REAL_OPTION_LINE, True),
+        (
+            "an explicit ON default",
+            _REAL_OPTION_LINE[:-1] + " ON)",
+            False,
+        ),
+        # The spelling `ENABLE_JEMALLOC` itself uses, and the likeliest way this default
+        # would be flipped by a well-meaning commit.
+        (
+            "defaulted from ENABLE_LIBRARIES",
+            _REAL_OPTION_LINE[:-1] + " ${ENABLE_LIBRARIES})",
+            False,
+        ),
+    ],
+)
+def test_default_off_predicate_detects_an_added_initial_value(
+    label, mutated, accepted_expected
+):
+    assert (
+        _option_defaults_to_off(_cmake_text_with(_REAL_OPTION_LINE, mutated))
+        is accepted_expected
+    ), f"{label}: expected the default-off predicate to {'accept' if accepted_expected else 'reject'} this `option()` call"
+
+
+@pytest.mark.parametrize(
+    "label, mutated, accepted_expected",
+    [
+        ("unmutated", _REAL_ARCH_GUARD_BLOCK, True),
+        # Rewording the diagnostic must not false-fail: only the condition and the
+        # `set(... OFF)` are load-bearing.
+        (
+            "reworded message",
+            _REAL_ARCH_GUARD_BLOCK.replace(
+                "is supported on x86-64 only.", "needs x86-64."
+            ),
+            True,
+        ),
+        ("guard block deleted", "", False),
+        (
+            "condition narrowed to the option alone",
+            _REAL_ARCH_GUARD_BLOCK.replace(
+                _REAL_ARCH_GUARD_CONDITION, f"if ({OPTION_NAME})"
+            ),
+            False,
+        ),
+        # Guarding the wrong architecture leaves the option enabled exactly where the
+        # e2k `#undef` would cancel it.
+        (
+            "wrong architecture guarded",
+            _REAL_ARCH_GUARD_BLOCK.replace("NOT ARCH_AMD64", "NOT ARCH_AARCH64"),
+            False,
+        ),
+    ],
+)
+def test_arch_guard_predicate_detects_a_weakened_guard(
+    label, mutated, accepted_expected
+):
+    assert (
+        _option_is_restricted_to_x86_64(
+            _cmake_text_with(_REAL_ARCH_GUARD_BLOCK, mutated)
+        )
+        is accepted_expected
+    ), f"{label}: expected the arch-guard predicate to {'accept' if accepted_expected else 'reject'} this guard"
+
+
+@pytest.mark.parametrize(
+    "label, mutated, accepted_expected",
+    [
+        ("unmutated", _REAL_DEFINITIONS_LINE, (True, True)),
+        # The macros are jemalloc-internal; PUBLIC leaks them into every dependent
+        # translation unit, which the compile-line oracle's leak sweep then rejects.
+        (
+            "PRIVATE widened to PUBLIC",
+            _REAL_DEFINITIONS_LINE.replace("PRIVATE", "PUBLIC"),
+            (False, False),
+        ),
+        (
+            "the size macro dropped",
+            _REAL_DEFINITIONS_LINE.replace(f" -D{REQUIRED_MACROS[1]}", ""),
+            (True, False),
+        ),
+        (
+            "the safety macro dropped",
+            _REAL_DEFINITIONS_LINE.replace(f"-D{REQUIRED_MACROS[0]} ", ""),
+            (False, True),
+        ),
+        ("the whole call deleted", "", (False, False)),
+    ],
+)
+def test_definitions_predicate_detects_a_lost_macro(label, mutated, accepted_expected):
+    text = _cmake_text_with(_REAL_DEFINITIONS_LINE, mutated)
+    accepted = tuple(_option_defines_macro(text, macro) for macro in REQUIRED_MACROS)
+    assert accepted == accepted_expected, (
+        f"{label}: expected the definitions predicate to read "
+        f"{dict(zip(REQUIRED_MACROS, accepted_expected))} for this "
+        "`target_compile_definitions` call"
+    )
 
 
 # --- the effective compile line -------------------------------------------------------
@@ -519,7 +807,7 @@ def _preprocessor_expr_to_python(expr: str) -> str:
     return expr
 
 
-_PRIOR_STATE_DIRECTIVE_RE_TEMPLATE = r"^[ \t]*#[ \t]*(?:undef|define)[ \t]+{macro}\b.*$"
+_PRIOR_STATE_DIRECTIVE_RE_TEMPLATE = r"^[ \t]*#[ \t]*(?:{kinds})[ \t]+{macro}\b.*$"
 
 
 def _config_flag_value(text: str, flag: str, defined_macros: set, macro: str) -> bool:
@@ -546,11 +834,15 @@ def _config_flag_value(text: str, flag: str, defined_macros: set, macro: str) ->
     of the lane - both are changes this guard must not silently bless, and for the size
     gate nothing else can notice (`config_opt_size_checks` has no mallctl).
 
-    `JEMALLOC_DEBUG` is scanned for as well, because both initializers accept it as an
-    alternative (`:191`, `:208`) and so it arms either flag on its own: with it defined
-    ahead of the initializer, `defined_macros` no longer decides the outcome and the
+    `JEMALLOC_DEBUG` is scanned for as well, but for `#define` only, because both
+    initializers accept it as an *alternative* (`:191`, `:208`): defining it arms either
+    flag on its own, so `defined_macros` would no longer decide the outcome and the
     caller's `disarmed is False` half - the PR's premise that no ClickHouse build arms
     these flags today - would be satisfied while the preprocessor computes true.
+    Undefining it changes neither modelled outcome, since nothing in this repo defines it
+    (no `JEMALLOC_DEBUG` in the jemalloc cmake file, and no active directive for it in
+    any reachable platform header), so a preceding `#undef JEMALLOC_DEBUG` removes a
+    macro that was never there and is treated as inert.
 
     Fails closed - an unknown directive, a nested conditional, a non-literal arm, or no
     arm selected raises rather than guessing.
@@ -567,19 +859,25 @@ def _config_flag_value(text: str, flag: str, defined_macros: set, macro: str) ->
     # Block comments are already stripped, so the commented-out placeholder spelling
     # (`/* #undef JEMALLOC_OPT_SIZE_CHECKS */`) cannot reach this. `\b` on the
     # identifier so `JEMALLOC_OPT_SIZE_CHECKS_DISABLED` does not count. The other
-    # *option* macro is deliberately not scanned for: it is inert for this flag.
+    # *option* macro is deliberately not scanned for: it is inert for this flag. The
+    # directive kinds differ per macro: the option macro's state is what `defined_macros`
+    # models, so either direction breaks the model, while `JEMALLOC_DEBUG` is only an
+    # alternative enabling condition - defining it arms the flag, undefining an absent
+    # macro changes nothing.
     prior_state = [
         directive
-        for scanned in (macro, DEBUG_MACRO)
+        for scanned, kinds in ((macro, "undef|define"), (DEBUG_MACRO, "define"))
         for directive in re.findall(
-            _PRIOR_STATE_DIRECTIVE_RE_TEMPLATE.format(macro=re.escape(scanned)),
+            _PRIOR_STATE_DIRECTIVE_RE_TEMPLATE.format(
+                kinds=kinds, macro=re.escape(scanned)
+            ),
             text[: match.start()],
             re.M,
         )
     ]
     assert not prior_state, (
-        f"{JEMALLOC_PREAMBLE_REL}: an active `#undef`/`#define` of `{macro}` or of "
-        f"`{DEBUG_MACRO}` precedes "
+        f"{JEMALLOC_PREAMBLE_REL}: an active `#undef`/`#define` of `{macro}`, or a "
+        f"`#define` of `{DEBUG_MACRO}`, precedes "
         f"the `{flag}` initializer, so its condition is no longer decided by "
         f"the lane's `-D{macro}`. An earlier `#undef` cancels that `-D` just as a bare "
         "`#undef` in a platform header would, and a `#define` of either macro arms the "
@@ -837,7 +1135,6 @@ def _size_flag_armed_with_prologue(prologue: str) -> bool:
         # `armed=True, disarmed=False` (both assertions of the mapping test satisfied)
         # while `clang -E` computes the flag true with no option macro defined at all.
         ("active #define JEMALLOC_DEBUG", "#define JEMALLOC_DEBUG\n"),
-        ("active #undef JEMALLOC_DEBUG", "#undef JEMALLOC_DEBUG\n"),
     ],
 )
 def test_prior_macro_state_directives_fail_closed(label, prologue):
@@ -857,6 +1154,12 @@ def test_prior_macro_state_directives_fail_closed(label, prologue):
         # The widening to `JEMALLOC_DEBUG` must not over-fire on the inert forms.
         ("commented-out JEMALLOC_DEBUG", "/* #undef JEMALLOC_DEBUG */\n"),
         ("suffixed JEMALLOC_DEBUG", "#undef JEMALLOC_DEBUG_SOMETHING\n"),
+        # Nothing in this repo defines `JEMALLOC_DEBUG`, so undefining it removes a macro
+        # that was never there: both modelled outcomes are unchanged. It is the spelling
+        # all 12 platform headers use for their inert placeholders, so a legitimate
+        # tidy-up adding it here must not be reported as a broken guard model. A
+        # `#define` of it is the real hazard and still fails closed above.
+        ("active #undef JEMALLOC_DEBUG", "#undef JEMALLOC_DEBUG\n"),
     ],
 )
 def test_prior_state_guard_does_not_fire_on_inert_directives(label, prologue):
@@ -917,20 +1220,20 @@ def test_nested_initializer_conditionals_fail_closed(label, block):
 
 
 def test_ci_tests_digest_covers_the_jemalloc_cmake_file():
-    """A change to the option's arch guard must re-run the platform-header assertion.
+    """A change to the cmake file must re-run the assertions about it.
 
-    The `if (ENABLE_JEMALLOC_SAFETY_CHECKS AND NOT ARCH_AMD64)` guard
+    Two sets of them. The option's own contract is read straight out of this file
+    (`test_the_option_defaults_to_off` and the two beside it), so a commit editing any of
+    those three clauses is precisely the commit on which they must run. And the
+    `if (ENABLE_JEMALLOC_SAFETY_CHECKS AND NOT ARCH_AMD64)` guard
     (`contrib/jemalloc-cmake/CMakeLists.txt:90-92`) is what makes
     `REACHABLE_DEFS_HEADERS_GLOB` x86-64 only, so a commit widening it to another
-    architecture changes which platform headers
+    architecture also changes which platform headers
     `test_reachable_platform_headers_do_not_change_the_macro_state` has to check - and
     e2k's bare `#undef JEMALLOC_OPT_SAFETY_CHECKS` (`include_linux_e2k/...:374`) is
     exactly what it would then expose. `JobConfigs.ci_tests` digests `./ci`, which does
     not cover that cmake file, so without an explicit entry such a commit is
-    cache-skipped and the widened set is never checked.
-
-    (A macro dropped from the cmake file is caught by the build job instead, whose digest
-    already covers `./contrib/` and `with_git_submodules=True`.)
+    cache-skipped and neither is checked.
     """
     digest = JobConfigs.ci_tests.digest_config
     assert JEMALLOC_CMAKE_REL in digest.include_paths, (

@@ -204,15 +204,17 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci",
-                # ci/tests asserts all three layers at which
-                # ENABLE_JEMALLOC_SAFETY_CHECKS can be silently lost: that the cmake
-                # file still defines BOTH jemalloc safety macros, that no platform
+                # ci/tests asserts the three layers at which
+                # ENABLE_JEMALLOC_SAFETY_CHECKS can be silently lost: the cmake file's
+                # own contract (the option defaults to off, is x86-64 only, and passes
+                # BOTH jemalloc safety macros to `_jemalloc` PRIVATE), that no platform
                 # header the option can reach turns either macro's `#undef` back on,
                 # and that the compiled preamble still reads each macro into the
                 # boolean jemalloc's detector sites test (see
-                # test_jemalloc_safety_checks_cmake.py); without these paths here the
-                # assertions would be cache-skipped exactly on the commits that
-                # change what they guard.
+                # test_jemalloc_safety_checks_cmake.py; the effective compile line is
+                # asserted by the safety-check build job, whose cases that file drives).
+                # Without these paths here the assertions would be cache-skipped exactly
+                # on the commits that change what they guard.
                 "./contrib/jemalloc-cmake/CMakeLists.txt",
                 "./contrib/jemalloc-cmake/include_*/jemalloc/internal/jemalloc_internal_defs.h.in",
                 "./contrib/jemalloc-cmake/include/jemalloc/internal/jemalloc_preamble.h",
