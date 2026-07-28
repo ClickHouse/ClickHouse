@@ -124,10 +124,11 @@ def _protected_docs_guard():
     # The checkout can be shallow and contain neither the merge base nor the
     # actual PR head when GitHub checked out its synthetic merge commit. Fetch
     # both revisions explicitly so the comparison does not depend on checkout
-    # depth or on whether merge-commit checkout is enabled.
+    # depth or on whether merge-commit checkout is enabled. The guard compares
+    # the two endpoint trees directly, so their ancestry is not needed.
     pull_ref = f"refs/pull/{info.pr_number}/head"
     if not Shell.check(
-        "git fetch --no-tags --filter=blob:none origin "
+        "git fetch --no-tags --depth=1 --filter=blob:none origin "
         f"{shlex.quote(merge_base)} {shlex.quote(pull_ref)}",
         verbose=True,
     ):
