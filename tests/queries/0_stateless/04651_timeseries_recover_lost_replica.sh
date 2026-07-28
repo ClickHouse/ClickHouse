@@ -72,18 +72,42 @@ function diverge_from_keeper()
     ${CLICKHOUSE_KEEPER_CLIENT} -q "set '${ZK_PATH}/metadata/${table}' '${zk_meta_orig}'"
 }
 
+# How many times recovery has finished re-creating tables so far. recoverLostReplica logs this once
+# per attempt, after the whole create loop has finished, on the database's own logger.
+function count_recovery_completions()
+{
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
+    ${CLICKHOUSE_CLIENT} -q "
+        SELECT count()
+        FROM system.text_log
+        WHERE logger_name = 'DatabaseReplicated (${DB})'
+          AND message = 'All tables are created successfully'
+        SETTINGS max_rows_to_read = 0"
+}
+
 # Recovery is asynchronous: ATTACH DATABASE only waits for the load and startup tasks, and the
 # Replicated startup task ends once the DDL worker threads are launched, so recoverLostReplica runs
-# afterwards. Poll for the RESTORED KEEPER-SIDE DEFINITION rather than for mere existence: the
-# diverged table is present the whole time, so an existence probe is satisfiable before recovery has
-# done anything. 240 * 0.5 s = 120 s is generous enough for a debug build yet leaves the unfixed
-# build well inside the runner timeout, so it reports a reference diff instead of being killed.
+# afterwards. Wait on two conditions, because neither alone is enough:
+#   * the create phase COMPLETED for this attempt (count above the baseline taken before recovery
+#     was forced). The outer table alone is not a completion signal: the TimeSeries table and its
+#     3 inner tables all sit in dependency level 0 (inner targets are not registered as
+#     dependencies) and within a level the order is unspecified, so the outer table can reappear
+#     while the inner tables the assertions below read are not created yet;
+#   * the RESTORED KEEPER-SIDE DEFINITION of this table, which is what ties the wait to this
+#     table's recovery. Mere existence would not do: the diverged table is present the whole time.
+# 240 * 0.5 s = 120 s is generous enough for a debug build yet leaves the unfixed build well inside
+# the runner timeout, so it reports a reference diff instead of being killed.
+# $1 = table, $2 = completion count captured BEFORE recovery was forced
 function wait_for_recovery()
 {
     local table="$1"
+    local base="$2"
     for _ in {1..240}; do
-        [ "$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables
-              WHERE database = '${DB}' AND name = '${table}' AND comment = ''")" = "1" ] && return
+        if [ "$(count_recovery_completions)" -gt "$base" ] \
+           && [ "$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables
+                     WHERE database = '${DB}' AND name = '${table}' AND comment = ''")" = "1" ]; then
+            return
+        fi
         sleep 0.5
     done
 }
@@ -132,9 +156,10 @@ ${CLIENT} --allow_experimental_time_series_table=1 \
     -q "CREATE TABLE ${DB}.ts_ext ENGINE = TimeSeries
         DATA ${DB}.ext_data TAGS ${DB}.ext_tags METRICS ${DB}.ext_metrics"
 
+RECOVERIES_BEFORE=$(count_recovery_completions)
 diverge_from_keeper ts_ext
 force_recovery
-wait_for_recovery ts_ext
+wait_for_recovery ts_ext "$RECOVERIES_BEFORE"
 
 ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${DB}.ts_ext"
 # Recovery restored the Keeper-side definition, i.e. the local divergence really was discarded.
@@ -161,9 +186,10 @@ SAMPLES_TABLE=$(${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.tables WHERE da
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DB}.\`${SAMPLES_TABLE}\` SELECT generateUUIDv4(), now64(3), number FROM numbers(50)"
 ${CLICKHOUSE_CLIENT} -q "SELECT sum(total_rows) FROM system.tables WHERE database = '${DB}' AND name LIKE '.inner_id.%'"
 
+RECOVERIES_BEFORE=$(count_recovery_completions)
 diverge_from_keeper ts
 force_recovery
-wait_for_recovery ts
+wait_for_recovery ts "$RECOVERIES_BEFORE"
 
 # Before the fix this stays at 3: only the orphaned inner tables survive, `ts` never comes back.
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${DB}' AND (name = 'ts' OR name LIKE '.inner_id.%')"
@@ -188,5 +214,9 @@ count_inner_drop_rejections ts
 
 # Best-effort, time-bounded cleanup. On an unfixed build the wedged inner drop never completes, so
 # DROP DATABASE blocks; without the bound the test would be killed by the runner timeout instead of
-# reporting its reference diff.
+# reporting its reference diff. Recovery also creates the two side databases it exiles the
+# data-bearing tables into (DatabaseReplicated::BROKEN_TABLES_SUFFIX and
+# BROKEN_REPLICATED_TABLES_SUFFIX), so drop those too rather than leaving them behind.
 timeout 30 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${DB} SYNC" 2>/dev/null || true
+timeout 30 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${DB}_broken_tables SYNC" 2>/dev/null || true
+timeout 30 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${DB}_broken_replicated_tables SYNC" 2>/dev/null || true
