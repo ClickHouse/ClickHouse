@@ -11,9 +11,11 @@ file underneath expect and only the last spawn's record survived.  Six couplings
 from coming back, and all six are invisible to any functional test:
 
 1. the two artifacts must live at two different paths;
-2. the two report blocks must be trimmed independently, the expect trace at the shared
-   default and the xtrace at its historical 100-line bound (``set -x`` emits ~2 lines per
-   loop iteration, and some ``.sh`` tests loop millions of times);
+2. the two report blocks must be trimmed independently, so a looping ``.sh`` test's xtrace
+   (``set -x`` emits ~2 lines per loop iteration) cannot consume the expect trace's budget -
+   and each must stay at the historical 100-line bound, because ``run`` feeds this description
+   to ``check_if_need_retry`` as both stdout and stderr, so a wider window lets a trace that
+   merely mentions a generic ``MESSAGES_TO_RETRY`` substring retry a deterministic failure;
 3. the xtrace block must be suppressed when the file is EMPTY - ``shell_config.sh`` opens it on
    being sourced and writes only once a traced command runs, so a zero-length one carries no
    diagnostics, and reporting its name would add a bare header with an empty body;
@@ -754,68 +756,92 @@ def test_both_artifacts_reach_the_exit_code_description(tmp_path):
     assert failed.description.startswith("1"), failed.description
 
 
-def test_the_two_trim_limits_differ_in_effect(tmp_path, monkeypatch):
+def test_each_block_is_bounded_on_its_own_budget(tmp_path, monkeypatch):
     # The limits are also asserted from the call text below, but text cannot see whether the
     # trimmed value is the one that reaches the report: replacing `debug_log += trim_for_log(x)`
     # with `debug_log += x` while leaving `trim_for_log(x)` in place as a discarded expression
     # keeps every marker assertion AND both numeric-limit assertions green with both bounds gone.
-    # So the two bounds are measured here on the returned description.
-    bash_limit = 100
-    # Between the two limits: over the xtrace bound, under the expect default. One payload
-    # therefore shows the two limits differing in EFFECT and not merely in call text.
-    between = _TRIM_DEFAULT_LIMIT // 2
-    assert bash_limit < between < _TRIM_DEFAULT_LIMIT
+    # So the bounds are measured here on the returned description.
+    #
+    # Trimming the two blocks TOGETHER (one `trim_for_log` over the concatenation, as before the
+    # split) is what this measures: a looping .sh test's xtrace would then crowd the expect trace
+    # out of the shared window entirely. Each body is over the bound on its own, so under a shared
+    # bound the second block could not keep a full complement of lines.
+    limit = 100
+    over = limit + 40
 
-    expect_body = "".join(f"expect line {i}\n" for i in range(between))
-    bash_body = "".join(f"+ traced command {i}\n" for i in range(between))
-    between_dir = tmp_path / "between"
-    described = _describe(between_dir, expect_body, bash_body)
+    expect_body = "".join(f"expect line {i}\n" for i in range(over))
+    bash_body = "".join(f"+ traced command {i}\n" for i in range(over))
+    both_dir = tmp_path / "both"
+    described = _describe(both_dir, expect_body, bash_body)
 
-    blocks = _artifact_blocks(described.description, between_dir)
+    blocks = _artifact_blocks(described.description, both_dir)
     # What `trim_for_log` is handed is `<path>:\n` + body + `\n`, so reconstruct it and derive the
     # expected counts from the function's own arithmetic rather than from a magic number.
-    bash_expected, bash_trimmed = _trimmed_line_count(
-        str(between_dir / "04615_some_test.expect.bashlog") + ":\n" + bash_body + "\n",
-        bash_limit,
-    )
-    expect_expected, expect_trimmed = _trimmed_line_count(
-        str(between_dir / "04615_some_test.expect.debuglog") + ":\n" + expect_body + "\n",
-        _TRIM_DEFAULT_LIMIT,
-    )
-    assert bash_trimmed and not expect_trimmed, (bash_trimmed, expect_trimmed)
+    expected = {}
+    for suffix, body in (("debuglog", expect_body), ("bashlog", bash_body)):
+        count, trimmed = _trimmed_line_count(
+            str(both_dir / f"04615_some_test.expect.{suffix}") + ":\n" + body + "\n",
+            limit,
+        )
+        assert trimmed, f"the {suffix} payload is not over the bound, so it measures nothing"
+        expected[suffix] = count
 
-    assert _HIDDEN_RE.search(blocks["bashlog"]), (
-        "the xtrace block is not bounded at all: a looping .sh test would dump every traced line"
-    )
-    assert len(blocks["bashlog"].splitlines()) == bash_expected, (
-        len(blocks["bashlog"].splitlines()),
-        bash_expected,
-    )
-    assert not _HIDDEN_RE.search(blocks["debuglog"]), (
-        "the expect trace was cut at the xtrace's 100-line bound, which removes the middle of the "
-        "verdict sequence - the part that names the statement that blocked"
-    )
-    assert len(blocks["debuglog"].splitlines()) == expect_expected, (
-        len(blocks["debuglog"].splitlines()),
-        expect_expected,
-    )
+    for suffix, note in (
+        ("bashlog", "a looping .sh test would dump every traced line"),
+        ("debuglog", "an unbounded expect trace reaches check_if_need_retry as stdout/stderr"),
+    ):
+        assert _HIDDEN_RE.search(blocks[suffix]), f"the {suffix} block is not bounded: {note}"
+        assert len(blocks[suffix].splitlines()) == expected[suffix], (
+            suffix,
+            len(blocks[suffix].splitlines()),
+            expected[suffix],
+        )
 
-    # And the expect trace IS bounded, at its own larger limit: a payload over the default gets a
-    # separator too, so the assertion above is about WHERE the bound is, not about its absence.
-    huge = "".join(f"expect line {i}\n" for i in range(_TRIM_DEFAULT_LIMIT + 10))
-    over_dir = tmp_path / "over"
-    over = _describe(over_dir, huge, "BASH-MARKER-a07c\n")
-    over_blocks = _artifact_blocks(over.description, over_dir)
-    over_expected, over_trimmed = _trimmed_line_count(
-        str(over_dir / "04615_some_test.expect.debuglog") + ":\n" + huge + "\n",
-        _TRIM_DEFAULT_LIMIT,
+
+def test_a_bounded_expect_trace_does_not_change_the_retry_verdict(tmp_path):
+    """A trace mentioning a generic retriable substring must not retry a deterministic failure.
+
+    ``run`` hands ``result.description`` to ``check_if_need_retry`` as BOTH stdout and stderr,
+    and ``MESSAGES_TO_RETRY`` holds substrings as generic as ``No such file or directory``.  So
+    the width of the trace window is not only a report-size question: every line that survives
+    the trim is matched against that list.  Driven through the REAL ``check_if_need_retry`` and
+    the REAL ``MESSAGES_TO_RETRY`` rather than a copy of either.
+    """
+    marker = next(
+        m
+        for m in _CT_GLOBALS["MESSAGES_TO_RETRY"]
+        if m == "No such file or directory"
     )
-    assert over_trimmed
-    assert _HIDDEN_RE.search(over_blocks["debuglog"]), over_blocks["debuglog"][:200]
-    assert len(over_blocks["debuglog"].splitlines()) == over_expected, (
-        len(over_blocks["debuglog"].splitlines()),
-        over_expected,
+    retry_args = Namespace(check_zookeeper_session=False, dont_retry_failures=False)
+
+    def verdict(body):
+        described = _describe(tmp_path / str(abs(hash(body))), body, "BASH-MARKER-a07c\n")
+        assert described.status is _TestStatus.FAIL, described.status
+        described.check_if_need_retry(
+            retry_args, described.description, described.description, 1
+        )
+        return described.need_retry, described.description
+
+    # The marker sits deep enough in the trace to fall in the hidden middle of a 100-line trim,
+    # so it is dropped by the bound rather than by the payload being short.
+    deep = [f"expect line {i}\n" for i in range(400)]
+    deep[250] = f"expect: got {marker} while matching\n"
+    need_retry, description = verdict("".join(deep))
+    assert marker not in description, (
+        "the trace window is wide enough to carry a generic MESSAGES_TO_RETRY substring into the "
+        "retry input, so a deterministic failure would be retried up to MAX_RETRIES times"
     )
+    assert not need_retry
+
+    # Control: the same marker near the END of the trace IS kept (a timeout always ends the
+    # trace, which is why the tail is the half worth keeping) and DOES retry. Without this the
+    # assertion above would also pass if the blocks stopped reaching the description at all.
+    tail = [f"expect line {i}\n" for i in range(400)]
+    tail[-1] = f"expect: got {marker} while matching\n"
+    need_retry, description = verdict("".join(tail))
+    assert marker in description, description[-400:]
+    assert need_retry
 
 
 def test_the_two_report_blocks_are_trimmed_independently():
@@ -832,16 +858,11 @@ def test_the_two_report_blocks_are_trimmed_independently():
     assert len(expect_calls) == 1, expect_calls
     assert len(bash_calls) == 1, bash_calls
 
-    # The xtrace keeps the historical 100-line bound; the expect trace must NOT, or the
-    # middle of its verdict sequence - the part that names the statement that blocked - is
-    # dropped, since one progress-table redraw is one very long line.
+    # Two separate calls, so neither artifact can crowd the other out of a shared window - but
+    # both at the historical bound, since everything that survives the trim is also matched
+    # against MESSAGES_TO_RETRY (see the retry-verdict test above).
     assert _trim_limit(bash_calls[0], "bash_log") == 100, bash_calls[0]
-    assert (
-        _trim_limit(expect_calls[0], "expect_log") == _TRIM_DEFAULT_LIMIT
-    ), expect_calls[0]
-    assert _trim_limit(bash_calls[0], "bash_log") != _trim_limit(
-        expect_calls[0], "expect_log"
-    )
+    assert _trim_limit(expect_calls[0], "expect_log") == 100, expect_calls[0]
 
 
 def test_an_empty_bash_xtrace_file_produces_no_block(tmp_path):

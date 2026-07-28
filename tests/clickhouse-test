@@ -3099,18 +3099,18 @@ class TestCase:
 
         description = ""
 
-        # The two diagnostic blocks are trimmed SEPARATELY, with different limits: the expect
-        # trace uses the shared default (its verdict sequence is what makes a timeout readable,
-        # and one progress-table redraw is one very long line), while the bash xtrace keeps the
-        # historical 100-line bound because `set -x` emits ~2 lines per loop iteration and some
-        # .sh tests loop millions of times.
+        # Trimmed SEPARATELY, so a looping .sh test's xtrace cannot consume the expect trace's
+        # budget, but both keep the 100-line bound: `run` feeds this description to
+        # `check_if_need_retry` as both stdout and stderr, and `MESSAGES_TO_RETRY` holds
+        # substrings as generic as `No such file or directory`, so a wider window would let a
+        # trace that merely mentions one retry a deterministic failure.
         debug_log = ""
         if os.path.exists(self.testcase_args.debug_log_file):
             with open(self.testcase_args.debug_log_file, "rb") as stream:
                 expect_log = self.testcase_args.debug_log_file + ":\n"
                 expect_log += str(stream.read(), errors="replace", encoding="utf-8")
                 expect_log += "\n"
-            debug_log += trim_for_log(expect_log)
+            debug_log += trim_for_log(expect_log, 100)
         # Emptiness is tolerated here, unlike for the expect trace above: `shell_config.sh` opens
         # this file the moment it is sourced and only writes once a traced command runs, so a
         # zero-length one carries no diagnostics - and reporting its name would add a bare header
