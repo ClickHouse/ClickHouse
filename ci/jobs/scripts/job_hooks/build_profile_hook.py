@@ -187,6 +187,36 @@ def _verify_final_binary_coverage(build_directory, build_size_file, binary_symbo
                 )
 
 
+# The order the profile artifacts are uploaded in. binary_sizes.txt goes LAST
+# on purpose: `find_baseline` / `find_warmup_baseline` in
+# ci/jobs/build_profile_diff_job.py pick the master baseline by looking for a
+# `binary_sizes` row, so that row doubles as the marker saying "this commit's
+# profile is complete". Written last, it can only exist once the trace and the
+# symbols are already in - a master build whose `binary_symbols` INSERT is
+# rejected, or that loses the connection halfway, simply never becomes a
+# baseline candidate and the previous complete commit stays the baseline.
+# Written first, that half-uploaded build would become the canonical baseline
+# and silently strip the symbol section off every PR compared against it
+# (fail-close).
+_UPLOAD_ORDER = ("profile.json", "binary_symbols.txt", "binary_sizes.txt")
+
+
+def _in_upload_order(artifacts):
+    """Order the artifacts so that the completion marker is uploaded last.
+
+    An artifact missing from _UPLOAD_ORDER raises rather than being appended
+    somewhere: a new artifact whose place in the ordering was not considered
+    could be the one that ends up after the marker.
+    """
+    unknown = [str(file) for _, file in artifacts if Path(file).name not in _UPLOAD_ORDER]
+    if unknown:
+        raise RuntimeError(
+            f"Profile artifacts {unknown} have no place in the upload order "
+            "(see _UPLOAD_ORDER): the completion marker must stay last"
+        )
+    return sorted(artifacts, key=lambda pair: _UPLOAD_ORDER.index(Path(pair[1]).name))
+
+
 def _upload_profile_artifacts(build_type, start_time, artifacts):
     """Upload the profile artifacts this build produced.
 
@@ -195,9 +225,11 @@ def _upload_profile_artifacts(build_type, start_time, artifacts):
     turn into a false-green "no data" downstream. Optional artifacts are
     skipped. Upload failures are NOT swallowed either: an INSERT rejection
     propagates so the lost telemetry stays visible and the hook fails loudly.
+    Both of those stop the upload where they happen, which is why the order is
+    not the caller's to choose (see _UPLOAD_ORDER).
     """
     required = _REQUIRED_ARTIFACTS.get(build_type, ())
-    for insert, file in artifacts:
+    for insert, file in _in_upload_order(artifacts):
         if not _has_data(file):
             if Path(file).name in required:
                 raise RuntimeError(
@@ -261,10 +293,12 @@ def check():
         _upload_profile_artifacts(
             build_type,
             check_start_time,
+            # Listed in _UPLOAD_ORDER, which is also what the upload follows:
+            # binary_sizes.txt last, as the completion marker.
             [
                 (insert_profile_data, profile_data_file),
-                (queries.insert_build_size_data, build_size_file),
                 (queries.insert_binary_symbol_data, binary_symbol_file),
+                (queries.insert_build_size_data, build_size_file),
             ],
         )
     except Exception:

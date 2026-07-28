@@ -451,6 +451,13 @@ def find_baseline(db: Db, master_shas: List[str], pr_sha: str) -> Optional[str]:
 
     The PR-side commit is excluded so that a re-run on an already-merged
     commit does not compare it against itself.
+
+    A `binary_sizes` row for MAIN_BINARY means the whole profile of that
+    commit is there, not just its sizes: the producer uploads binary_sizes.txt
+    last precisely so that it marks a complete upload (see _UPLOAD_ORDER in
+    ci/jobs/scripts/job_hooks/build_profile_hook.py). Without that ordering a
+    master build that died after its sizes but before its symbols would become
+    the canonical baseline and quietly cost every PR its symbol section.
     """
     candidates = [sha for sha in master_shas if sha != pr_sha][:100]
     if not candidates:
@@ -477,6 +484,10 @@ def find_warmup_baseline(db: Db, master_shas: List[str], pr_sha: str) -> Optiona
     The warmup build compiles with the PR flags but does not link, so its
     canonical data is the object files, not MAIN_BINARY. May legitimately be
     absent while master catches up with profiling the warmup build.
+
+    As in `find_baseline`, the `binary_sizes` row is the completion marker: it
+    is uploaded after the time trace, so a warmup commit selected here also has
+    the per-TU compile times the drill-down reads.
     """
     candidates = [sha for sha in master_shas if sha != pr_sha][:100]
     if not candidates:

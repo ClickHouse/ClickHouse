@@ -19,6 +19,7 @@ of silently falling back to an older run.
 
 import json
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
@@ -726,3 +727,47 @@ def test_skew_is_the_true_median_on_an_even_translation_unit_count():
     assert "| `skew_tu0.cpp` | 30.0 s | 30.0 s | -15.0 s" in section.body
     # 6 x 30 s of real regression stays below the section-wide bar.
     assert not section.significant
+
+
+# --- the job's workflow gate ------------------------------------------------
+
+
+def test_the_job_runs_on_a_red_head():
+    """The comparison must run even when an upstream build failed.
+
+    This job is the only writer of the `build-profile-diff` PR comment. The
+    default praktika gate skips a job whose upstream reported a failure, and
+    `Build (arm_release)` runs after every regular build, so one unrelated red
+    build used to skip this job too - leaving the comment posted for an older
+    commit pinned to the PR as if it described the head. Running anyway, the
+    job finds no profile data for the head and overwrites that stale
+    comparison with its "no data" text.
+    """
+    from ci.defs.job_configs import JobConfigs
+
+    assert JobConfigs.build_profile_diff_job.run_unless_cancelled
+    # The gate above is only safe because the job is never a cache hit: it
+    # loses the cache-hit half of the default condition (see the job config).
+    assert JobConfigs.build_profile_diff_job.digest_config is None
+
+
+def test_the_generated_workflow_gates_the_job_on_cancellation_only():
+    """`run_unless_cancelled` must survive into the generated pipeline.
+
+    The config flag is only intent; what GitHub obeys is the `if:` expression
+    praktika renders into .github/workflows/pull_request.yml. Assert the
+    rendered gate directly, so a praktika change that stops honouring the flag
+    is caught here rather than by a stale comment on someone's PR.
+    """
+    workflow = (
+        pathlib.Path(__file__).resolve().parents[2]
+        / ".github"
+        / "workflows"
+        / "pull_request.yml"
+    )
+    lines = workflow.read_text().splitlines()
+    start = lines.index("  build_profile_diff:")
+    gate = next(
+        line for line in lines[start:] if line.startswith("    if:")
+    )
+    assert gate == "    if: ${{ !cancelled() }}", gate

@@ -17,6 +17,10 @@ Layers covered:
   (``_REQUIRED_ARTIFACTS``), no-op for builds legitimately without profile
   data, upload for builds that have it, and propagate (not swallow) an upload
   rejection so lost telemetry stays visible.
+* The upload order (``_UPLOAD_ORDER``): ``binary_sizes.txt`` is uploaded last,
+  because the "Build profile diff" check treats a ``binary_sizes`` row as the
+  marker of a complete profile when it picks its master baseline. A build that
+  stops halfway must not leave that marker behind.
 * The upload transport (``LogCluster.do_query``): the telemetry INSERT runs
   with parallel parsing disabled so its peak parse memory stays under the
   shared cluster's per-user limit.
@@ -36,6 +40,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from ci.jobs.scripts.job_hooks.build_profile_hook import (
+    _UPLOAD_ORDER,
     _has_data,
     _should_profile,
     _upload_profile_artifacts,
@@ -308,15 +313,21 @@ def test_release_build_missing_required_artifact_fails_close(tmp_path):
             "2026-06-11 00:00:00",
             [(insert, profile), (insert, sizes), (insert, symbols)],
         )
+    # ... and the completion marker must not have been written: with
+    # binary_sizes.txt uploaded the broken build would have become the
+    # "Build profile diff" master baseline (see _UPLOAD_ORDER).
+    assert str(sizes) not in recorded
 
     # Present-but-empty is the same producer failure as absent.
     symbols.write_text("")
+    recorded.clear()
     with pytest.raises(RuntimeError, match="required"):
         _upload_profile_artifacts(
             "arm_release",
             "2026-06-11 00:00:00",
             [(insert, profile), (insert, sizes), (insert, symbols)],
         )
+    assert str(sizes) not in recorded
 
 
 def test_warmup_build_uploads_sizes_and_skips_optional(tmp_path):
@@ -384,22 +395,67 @@ def test_unlisted_build_no_data_is_noop(tmp_path):
 
 
 def test_native_build_uploads_all(tmp_path):
-    """Non-LTO native build: all three artifacts present and uploaded."""
-    files = []
+    """Non-LTO native build: all three artifacts present and uploaded.
+
+    The order is the hook's, not the caller's: binary_sizes.txt goes last
+    (_UPLOAD_ORDER), even though it is passed in the middle here.
+    """
+    files = {}
     for name in ("profile.json", "binary_sizes.txt", "binary_symbols.txt"):
         f = tmp_path / name
         f.write_text("x")
-        files.append(f)
+        files[name] = f
 
     recorded = []
     insert = _record_inserts(recorded)
     _upload_profile_artifacts(
         "amd_release",
         "2026-06-11 00:00:00",
-        [(insert, f) for f in files],
+        [
+            (insert, files["profile.json"]),
+            (insert, files["binary_sizes.txt"]),
+            (insert, files["binary_symbols.txt"]),
+        ],
     )
 
-    assert recorded == [str(f) for f in files]
+    assert recorded == [str(files[name]) for name in _UPLOAD_ORDER]
+    assert recorded[-1] == str(files["binary_sizes.txt"])
+
+
+def test_upload_order_puts_the_completion_marker_last():
+    """binary_sizes.txt is the last upload, and the only completion marker.
+
+    `find_baseline` / `find_warmup_baseline` in
+    ci/jobs/build_profile_diff_job.py select the master baseline by the
+    presence of a `binary_sizes` row. That only means "the profile of this
+    commit is complete" while binary_sizes.txt is written after everything
+    else, so this ordering is a contract between the two files, not a detail.
+    """
+    assert _UPLOAD_ORDER[-1] == "binary_sizes.txt"
+    assert set(_UPLOAD_ORDER) == {
+        "profile.json",
+        "binary_sizes.txt",
+        "binary_symbols.txt",
+    }
+
+
+def test_upload_order_rejects_an_unplaced_artifact(tmp_path):
+    """An artifact with no place in _UPLOAD_ORDER raises instead of trailing it.
+
+    Appending an unknown artifact after the completion marker would recreate
+    exactly the hole the ordering closes, so a new artifact must be placed
+    explicitly.
+    """
+    f = tmp_path / "binary_hashes.txt"
+    f.write_text("x")
+
+    recorded = []
+    insert = _record_inserts(recorded)
+    with pytest.raises(RuntimeError, match="upload order"):
+        _upload_profile_artifacts(
+            "amd_release", "2026-06-11 00:00:00", [(insert, f)]
+        )
+    assert recorded == []
 
 
 def test_upload_rejection_propagates(tmp_path):

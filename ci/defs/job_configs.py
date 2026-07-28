@@ -1735,6 +1735,18 @@ class JobConfigs:
         command="python3 ./ci/jobs/build_profile_diff_job.py",
         timeout=1800,
         enable_gh_auth=True,
+        # Run on a red head too. This job is the only writer of the
+        # `build-profile-diff` PR comment, so skipping it leaves the comment
+        # posted for an older commit pinned to the PR, reading as if it
+        # described the head. `Build (arm_release)` runs after every regular
+        # build (`set_run_after(REGULAR_BUILD_NAMES)` in ci/workflows/pull_request.py)
+        # and inherits the default "no upstream failure" gate, so an unrelated
+        # build failure skips it and would skip this job with it. With no
+        # profile data for the head the job posts the "no data" text over the
+        # stale comparison (see main()) instead of leaving it. Dropping the
+        # cache-hit half of the default gate costs nothing: the job has no
+        # digest_config, so it is never a cache hit anyway.
+        run_unless_cancelled=True,
     )
     llvm_coverage_job = Job.Config(
         name=JobNames.LLVM_COVERAGE,
