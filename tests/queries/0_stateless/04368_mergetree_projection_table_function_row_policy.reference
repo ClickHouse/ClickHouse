@@ -1,0 +1,15 @@
+-- no policy: table function returns all rows
+Alice
+Bob
+Carol
+Dave
+-- base table honours the policy
+Alice
+Carol
+-- projection stores the policy column: filter is applied
+Alice
+Carol
+-- filter applied even when the policy column is selected explicitly
+Alice	engineering
+Carol	engineering
+-- projection lacks the policy column: read is refused
