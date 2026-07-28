@@ -1339,11 +1339,13 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
     }
     else if (!object_info.metadata->is_fetched && settings[Setting::s3_validate_etag_on_read]
-             && object_storage->getType() == ObjectStorageType::S3)
+             && (object_storage->getType() == ObjectStorageType::S3 || object_storage->getType() == ObjectStorageType::Azure))
     {
-        /// Refresh the s3Cluster skip_object_metadata placeholder to obtain its size + ETag for read-time
-        /// validation (it carries no tags, so the with_tags=false HEAD drops nothing). A real fetch that
-        /// merely lacks an ETag (e.g. GCS) has is_fetched=true and is left as-is - no extra HEAD.
+        /// Refresh the s3Cluster / azureBlobStorageCluster skip_object_metadata placeholder to obtain its size
+        /// + ETag for read-time validation (it carries no tags, so the with_tags=false HEAD drops nothing).
+        /// Both readers pin the download to that ETag, so leaving the placeholder empty would silently opt the
+        /// cluster path out of the validation the non-cluster path performs. A real fetch that merely lacks an
+        /// ETag (e.g. GCS) has is_fetched=true and is left as-is - no extra HEAD.
         object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
     }
 
