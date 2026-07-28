@@ -27,8 +27,8 @@ ALTER TABLE tab_fully ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), posti
 
 SYSTEM STOP MERGES tab_fully;
 
-INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
-INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
+INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
+INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
 
 SELECT count() FROM tab_fully WHERE hasAnyToken(text, 'o50') SETTINGS log_comment='tab_fully_hasAnyToken';
 SELECT count() FROM tab_fully WHERE hasAllToken(text, 'o50') SETTINGS log_comment='tab_fully_hasAllToken';
@@ -36,8 +36,8 @@ SELECT count() FROM tab_fully WHERE hasAllToken(text, 'o50') SETTINGS log_commen
 SYSTEM FLUSH LOGS query_log;
 
 SELECT '---- use text index reader for all parts';
-SELECT ProfileEvents['TextIndexReadPostings'] = ProfileEvents['SelectedPartsTotal'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_fully_hasAnyToken';
-SELECT ProfileEvents['TextIndexReadPostings'] = ProfileEvents['SelectedPartsTotal'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_fully_hasAllToken';
+SELECT ProfileEvents['TextIndexReadPostings'] = ProfileEvents['SelectedPartsTotal'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 120 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_fully_hasAnyToken';
+SELECT ProfileEvents['TextIndexReadPostings'] = ProfileEvents['SelectedPartsTotal'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 120 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_fully_hasAllToken';
 
 SELECT '---- verify all parts have a materialized index';
 SELECT count() = 0 FROM system.parts WHERE database = currentDatabase() AND table = 'tab_fully' AND active AND secondary_indices_marks_bytes = 0;
@@ -53,14 +53,14 @@ Engine = MergeTree()
 ORDER BY id
 SETTINGS add_minmax_index_for_numeric_columns = 0;
 
-INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
+INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
 
 ALTER TABLE tab_partially DROP INDEX IF EXISTS idx;
 ALTER TABLE tab_partially ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), posting_list_block_size = 10000000, posting_list_codec = 'none');
 
 SYSTEM STOP MERGES tab_partially;
 
-INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
+INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
 
 SELECT count() FROM tab_partially WHERE hasAnyToken(text, 'o50') SETTINGS log_comment='tab_partially_hasAnyToken';
 SELECT count() FROM tab_partially WHERE hasAllToken(text, 'o50') SETTINGS log_comment='tab_partially_hasAllToken';
@@ -68,8 +68,8 @@ SELECT count() FROM tab_partially WHERE hasAllToken(text, 'o50') SETTINGS log_co
 SYSTEM FLUSH LOGS query_log;
 
 SELECT '---- use text index reader for parts have a materialized index';
-SELECT ProfileEvents['TextIndexReadPostings'] < ProfileEvents['SelectedPartsTotal'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_partially_hasAnyToken';
-SELECT ProfileEvents['TextIndexReadPostings'] < ProfileEvents['SelectedPartsTotal'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_partially_hasAllToken';
+SELECT ProfileEvents['TextIndexReadPostings'] < ProfileEvents['SelectedPartsTotal'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 120 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_partially_hasAnyToken';
+SELECT ProfileEvents['TextIndexReadPostings'] < ProfileEvents['SelectedPartsTotal'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 120 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_partially_hasAllToken';
 
 SELECT '---- verify some parts do not have a materialized index';
 SELECT count() > 0 FROM system.parts WHERE database = currentDatabase() AND table = 'tab_partially' AND secondary_indices_marks_bytes = 0;
@@ -95,8 +95,8 @@ ALTER TABLE tab_fully ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), suppo
 
 SYSTEM STOP MERGES tab_fully;
 
-INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
-INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
+INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
+INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
 
 SELECT count() FROM tab_fully WHERE hasPhrase(text, 'ello50 wor') SETTINGS log_comment='tab_fully_hasPhrase_wo_pos';
 
@@ -104,7 +104,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT '---- use text index reader for all parts';
 -- "ello50 wor" contains 8 tokens when tokenized by ngrams(3)
-SELECT ProfileEvents['TextIndexReadPostings'] = (8 * (SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'tab_fully' AND active AND secondary_indices_marks_bytes > 0)) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_fully_hasPhrase_wo_pos';
+SELECT ProfileEvents['TextIndexReadPostings'] = (8 * (SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'tab_fully' AND active AND secondary_indices_marks_bytes > 0)) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 120 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_fully_hasPhrase_wo_pos';
 
 SELECT '---- verify all parts have a materialized index';
 SELECT count() = 0 FROM system.parts WHERE database = currentDatabase() AND table = 'tab_fully' AND active AND secondary_indices_marks_bytes = 0;
@@ -120,14 +120,14 @@ Engine = MergeTree()
 ORDER BY id
 SETTINGS add_minmax_index_for_numeric_columns = 0;
 
-INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
+INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
 
 ALTER TABLE tab_partially DROP INDEX IF EXISTS idx;
 ALTER TABLE tab_partially ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), support_phrase_search = 0, posting_list_block_size = 10000000, posting_list_codec = 'none');
 
 SYSTEM STOP MERGES tab_partially;
 
-INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
+INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
 
 SELECT count() FROM tab_partially WHERE hasPhrase(text, 'ello50 wor') SETTINGS log_comment='tab_partially_hasPhrase';
 
@@ -135,7 +135,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT '---- use text index reader for parts have a materialized index';
 -- "ello50 wor" contains 8 tokens when tokenized by ngrams(3)
-SELECT ProfileEvents['TextIndexReadPostings'] = (8 * (SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'tab_partially' AND active AND secondary_indices_marks_bytes > 0)) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_partially_hasPhrase';
+SELECT ProfileEvents['TextIndexReadPostings'] = (8 * (SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'tab_partially' AND active AND secondary_indices_marks_bytes > 0)) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 120 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_partially_hasPhrase';
 
 SELECT '---- verify some parts do not have a materialized index';
 SELECT count() > 0 FROM system.parts WHERE database = currentDatabase() AND table = 'tab_partially' AND secondary_indices_marks_bytes = 0;
@@ -161,8 +161,8 @@ ALTER TABLE tab_fully ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), suppo
 
 SYSTEM STOP MERGES tab_fully;
 
-INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
-INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
+INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
+INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
 
 SELECT count() FROM tab_fully WHERE hasPhrase(text, 'ello50 wor') SETTINGS log_comment='tab_fully_hasPhrase_w_pos';
 
@@ -170,7 +170,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT '---- use text index reader for all parts';
 -- "ello50 wor" contains 8 tokens when tokenized by ngrams(3)
-SELECT ProfileEvents['TextIndexReadPostings'] = (8 * (SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'tab_fully' AND active AND secondary_indices_marks_bytes > 0)) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_fully_hasPhrase_w_pos';
+SELECT ProfileEvents['TextIndexReadPostings'] = (8 * (SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'tab_fully' AND active AND secondary_indices_marks_bytes > 0)) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 120 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_fully_hasPhrase_w_pos';
 
 SELECT '---- verify all parts have a materialized index';
 SELECT count() = 0 FROM system.parts WHERE database = currentDatabase() AND table = 'tab_fully' AND active AND secondary_indices_marks_bytes = 0;
@@ -186,14 +186,14 @@ Engine = MergeTree()
 ORDER BY id
 SETTINGS add_minmax_index_for_numeric_columns = 0, allow_experimental_text_index_phrase_search = 1;
 
-INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
+INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
 
 ALTER TABLE tab_partially DROP INDEX IF EXISTS idx;
 ALTER TABLE tab_partially ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1, posting_list_block_size = 10000000, posting_list_codec = 'none');
 
 SYSTEM STOP MERGES tab_partially;
 
-INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
+INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
 
 SELECT count() FROM tab_partially WHERE hasPhrase(text, 'ello50 wor') SETTINGS log_comment='tab_partially_hasPhrase_pos';
 
@@ -201,7 +201,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT '---- use text index reader for parts have a materialized index';
 -- "ello50 wor" contains 8 tokens when tokenized by ngrams(3)
-SELECT ProfileEvents['TextIndexReadPostings'] = (8 * (SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'tab_partially' AND active AND secondary_indices_marks_bytes > 0)) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_partially_hasPhrase_pos';
+SELECT ProfileEvents['TextIndexReadPostings'] = (8 * (SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'tab_partially' AND active AND secondary_indices_marks_bytes > 0)) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 120 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_partially_hasPhrase_pos';
 
 SELECT '---- verify some parts do not have a materialized index';
 SELECT count() > 0 FROM system.parts WHERE database = currentDatabase() AND table = 'tab_partially' AND secondary_indices_marks_bytes = 0;
