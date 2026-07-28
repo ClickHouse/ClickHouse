@@ -732,6 +732,19 @@ bool DeltaLakeMetadataDeltaKernel::createTable(
     if (deltaLogExists(*object_storage_, data_path))
     {
         LOG_DEBUG(log, "Delta table already exists at `{}`; attaching to it without creating", data_path);
+
+        /// Explicit columns (a columnless CREATE never reaches here) must match the existing table's schema, else the mismatch would be silently ignored.
+        auto kernel_helper = DB::getKernelHelper(configuration_ptr, object_storage_);
+        const auto existing_schema = std::make_shared<DeltaLake::TableSnapshot>(
+            /* version */ std::nullopt, kernel_helper, object_storage_, log)->getTableSchema();
+        const auto declared_schema = columns.getAllPhysical();
+        if (declared_schema != existing_schema)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The columns specified in CREATE TABLE do not match the existing Delta table at `{}`. "
+                "Specified: [{}]; existing: [{}]. Omit the column list to use the table's own schema.",
+                data_path, declared_schema.toString(), existing_schema.toString());
+
         return false;
     }
 
