@@ -24,29 +24,27 @@ Este é um guia passo a passo sobre como configurar sua instância RDS MariaDB p
   ## Habilitar a retenção do log binário
 </div>
 
-O log binário é um conjunto de arquivos de log que contêm informações sobre alterações de dados feitas em uma instância de servidor MySQL. Os arquivos de log binário são necessários para a replicação. As duas etapas abaixo devem ser seguidas:
+O log binário é um conjunto de arquivos de log que contém informações sobre modificações de dados feitas em uma instância de servidor MySQL. Os arquivos de log binário são necessários para a replicação. Ambos os passos abaixo devem ser seguidos:
 
-<div id="enable-binlog-logging-rds">
-  ### 1. Ative o log binário por meio de backup automatizado
-</div>
+<Steps>
+  <Step title="Habilitar o logging binário por meio de backup automatizado" id="enable-binlog-logging-rds">
+    O recurso de backups automatizados determina se o logging binário está ativado ou desativado no MySQL. Ele pode ser configurado no console da AWS:
 
-O recurso de backups automatizados determina se o log binário está ativado ou desativado no MySQL. Ele pode ser configurado no Console da AWS:
+    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Habilitando backups automatizados no RDS" size="lg" border />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Ativando backups automatizados no RDS" size="lg" border />
+    É recomendável definir a retenção de backup com um valor razoavelmente alto, dependendo do caso de uso da replicação.
+  </Step>
 
-É recomendável definir a retenção de backups com um valor suficientemente longo, de acordo com o caso de uso de replicação.
+  <Step title="Horas de retenção do binlog" id="binlog-retention-hours-rds">
+    O Amazon RDS for MariaDB tem um método diferente para definir a duração da retenção do binlog, ou seja, por quanto tempo um arquivo de binlog que contém alterações é mantido. Se algumas alterações não forem lidas antes de o arquivo de binlog ser removido, a replicação não poderá continuar. O valor padrão das horas de retenção do binlog é NULL, o que significa que os logs binários não são retidos.
 
-<div id="binlog-retention-hours-rds">
-  ### 2. Horas de retenção do binlog
-</div>
+    Para especificar o número de horas durante as quais os logs binários devem ser retidos em uma instância de banco de dados, use a função mysql.rds&#95;set&#95;configuration com um período de retenção de binlog longo o suficiente para que a replicação ocorra. `24 hours` é o mínimo recomendado.
 
-O Amazon RDS for MariaDB tem um método diferente para definir a duração da retenção do binlog, ou seja, por quanto tempo um arquivo de binlog que contém alterações é mantido. Se algumas alterações não forem lidas antes de o arquivo de binlog ser removido, a replicação não poderá continuar. O valor padrão das horas de retenção do binlog é NULL, o que significa que os logs binários não são retidos.
-
-Para especificar o número de horas durante as quais os logs binários devem ser retidos em uma instância de banco de dados, use a função mysql.rds&#95;set&#95;configuration com um período de retenção de binlog longo o suficiente para que a replicação ocorra. `24 hours` é o mínimo recomendado.
-
-```text
-mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
-```
+    ```text
+    mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
+    ```
+  </Step>
+</Steps>
 
 <div id="binlog-parameter-group-rds">
   ## Configure as configurações do binlog no grupo de parâmetros
@@ -131,4 +129,4 @@ Se você quiser restringir o tráfego para sua instância do RDS, adicione os [I
   ### Acesso privado via AWS PrivateLink
 </div>
 
-Para se conectar à sua instância do RDS por uma rede privada, você pode usar o AWS PrivateLink. Siga nosso [guia de configuração do AWS PrivateLink para ClickPipes](/pt-BR/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) para estabelecer a conexão.
+Para se conectar à sua instância do RDS por uma rede privada, você pode usar o AWS PrivateLink. Siga nosso [guia de configuração do AWS PrivateLink para ClickPipes](/pt-BR/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) para configurar a conexão.

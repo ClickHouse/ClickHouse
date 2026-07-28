@@ -147,9 +147,26 @@ SELECT * FROM (
 
 最初の2行をスキップして3行を取得すると、通常は `1, 1, 2` が返されますが、2つ目の `2` も最後の行と同順位のため含まれます。
 
-<Note>
-  `WITH TIES` は負の limit ではサポートされていません。
-</Note>
+`WITH TIES` は負の limit と offset でも機能します。最初に選択された行と同じ `ORDER BY` 値を持つ追加の行も含めます。
+
+```sql
+SELECT number % 3 AS n FROM numbers(15)
+ORDER BY n LIMIT -4 OFFSET -3 WITH TIES
+```
+
+```response
+┌─n─┐
+│ 1 │
+│ 1 │
+│ 1 │
+│ 1 │
+│ 1 │
+│ 2 │
+│ 2 │
+└───┘
+```
+
+`WITH TIES` がない場合、結果は `1, 1, 2, 2` になります。`WITH TIES` を使用すると、最初に選択された行と同順位であるため、値 `1` の行がさらに 3 行含まれます。
 
 この修飾子は、[`ORDER BY ... WITH FILL`](/ja/reference/statements/select/order-by#order-by-expr-with-fill-modifier) 修飾子と組み合わせて使用できます。
 

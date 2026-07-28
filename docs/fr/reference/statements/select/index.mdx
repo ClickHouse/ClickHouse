@@ -36,21 +36,24 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 
 Toutes les clauses sont facultatives, sauf la liste obligatoire d’expressions immédiatement après `SELECT`, qui est décrite plus en détail [ci-dessous](#select-clause).
 
-Les spécificités de chaque clause facultative sont décrites dans des sections distinctes, présentées dans le même ordre que celui de leur exécution :
+Les spécificités de chaque clause facultative sont décrites dans des sections distinctes, présentées dans le même ordre que celui de leur exécution (à l’exception de `SELECT` et `DISTINCT`, listées en premier par commodité : leurs expressions ne sont évaluées qu’après la fin des clauses précédentes, comme décrit [ci-dessous](#select-clause)) :
 
 * [clause WITH](/fr/reference/statements/select/with)
 * [clause SELECT](#select-clause)
+* [clause ALL](/fr/reference/statements/select/all)
 * [clause DISTINCT](/fr/reference/statements/select/distinct)
 * [clause FROM](/fr/reference/statements/select/from)
 * [clause SAMPLE](/fr/reference/statements/select/sample)
+* [clause ARRAY JOIN](/fr/reference/statements/select/array-join)
 * [clause JOIN](/fr/reference/statements/select/join)
 * [clause PREWHERE](/fr/reference/statements/select/prewhere)
 * [clause WHERE](/fr/reference/statements/select/where)
-* [clause WINDOW](/fr/reference/functions/window-functions/index)
 * [clause GROUP BY](/fr/reference/statements/select/group-by)
-* [clause LIMIT BY](/fr/reference/statements/select/limit-by)
 * [clause HAVING](/fr/reference/statements/select/having)
+* [clause WINDOW](/fr/reference/functions/window-functions/index)
 * [clause QUALIFY](/fr/reference/statements/select/qualify)
+* [clause ORDER BY](/fr/reference/statements/select/order-by)
+* [clause LIMIT BY](/fr/reference/statements/select/limit-by)
 * [clause LIMIT](/fr/reference/statements/select/limit)
 * [clause OFFSET](/fr/reference/statements/select/offset)
 * [clause UNION](/fr/reference/statements/select/union)
