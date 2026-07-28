@@ -131,6 +131,11 @@ FilterDAGInfoPtr StorageFromMergeTreeProjection::buildRowPolicyFilter(const Cont
             "Cannot determine row policy filter column for projection `{}` of table {}",
             projection->name, parent_storage_id.getNameForLogs());
 
+    /// record the applied policies so they show up in system.query_log, like a normal table read
+    if (context->hasQueryContext())
+        for (const auto & row_policy : row_policy_filter->policies)
+            context->getQueryContext()->addUsedRowPolicy(row_policy->getFullName().toString());
+
     return std::make_shared<FilterDAGInfo>(
         FilterDAGInfo{std::move(filter_actions_dag), added.front().name, true /* do_remove_column */});
 }
