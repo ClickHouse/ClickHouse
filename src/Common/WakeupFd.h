@@ -3,14 +3,22 @@
 #include <Common/PipeFDs.h>
 
 #include <base/defines.h>
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
 #include <base/types.h>
-
-#include <optional>
-
-struct PreformattedMessage;
+#endif
 
 namespace DB
 {
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+/// dev:ino of a descriptor, i.e. which file it actually refers to.
+struct FdIdentity
+{
+    UInt64 dev = 0;
+    UInt64 ino = 0;
+};
+#endif
 
 /// Portable async wakeup primitive backed by a non-blocking self-pipe.
 /// Works on every Unix. Designed for use with IProcessor::schedule().
@@ -34,29 +42,24 @@ public:
     /// Read and discard all queued wakeup bytes.
     void drain() const;
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    /// Returns a description of the problem if the given end of the pipe (0 = read, 1 = write) no
-    /// longer matches the descriptor created by the constructor, std::nullopt if it is intact.
-    /// notify()/drain() abort on it via validate; public so tests can check without aborting.
-    std::optional<PreformattedMessage> checkEnd(int which) const;
-#endif
-
 private:
     PipeFDs pipe;
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    /// Throws LOGICAL_ERROR (which aborts in these builds) if checkEnd reports a problem.
-    void validate(int which) const;
+/// If unrelated code closes our fd number (a stale-fd double close), the number gets silently
+/// recycled and a blocking read()/write() on it wedges the caller forever (seen as an hour-long
+/// streaming-source hang in stress tests). Compare the ends against their identity at construction
+/// to catch it, in the builds where aborting on it is what we want.
 
-    /// dev:ino of each pipe end at construction. If unrelated code closes our fd number (a stale-fd
-    /// double close), the number gets silently recycled and a blocking read()/write() on it wedges
-    /// the caller forever (seen as an hour-long streaming-source hang in stress tests).
-    struct EndIdentity
+    enum class PipeEnd
     {
-        UInt64 dev = 0;
-        UInt64 ino = 0;
+        Read,
+        Write,
     };
-    EndIdentity ends[2];
+    void validate(PipeEnd end) const;
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    FdIdentity read_end_identity;
+    FdIdentity write_end_identity;
 #endif
 };
 

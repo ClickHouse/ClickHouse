@@ -1,11 +1,9 @@
-#include <Common/WakeupFd.h>
-
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
-
-#include <unistd.h>
+#include <Common/WakeupFd.h>
 
 #include <cerrno>
+#include <unistd.h>
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
 #include <fcntl.h>
@@ -25,37 +23,53 @@ namespace ErrorCodes
 #endif
 }
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
+namespace
+{
+
+FdIdentity getIdentity(int fd)
+{
+    struct stat st{};
+    if (0 != fstat(fd, &st))
+        throw ErrnoException(ErrorCodes::CANNOT_FSTAT, "Cannot fstat wakeup pipe");
+    return {static_cast<UInt64>(st.st_dev), static_cast<UInt64>(st.st_ino)};
+}
+
+}
+#endif
+
 WakeupFd::WakeupFd()
 {
     /// PipeFDs constructor already opens the pipe with CLOEXEC; flip both ends to non-blocking.
     pipe.setNonBlockingReadWrite();
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
-    for (int which : {0, 1})
-    {
-        struct stat st{};
-        if (0 != fstat(pipe.fds_rw[which], &st))
-            throw ErrnoException(ErrorCodes::CANNOT_FSTAT, "Cannot fstat wakeup pipe");
-        ends[which] = {static_cast<UInt64>(st.st_dev), static_cast<UInt64>(st.st_ino)};
-    }
+    read_end_identity = getIdentity(pipe.fds_rw[0]);
+    write_end_identity = getIdentity(pipe.fds_rw[1]);
 #endif
 }
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-std::optional<PreformattedMessage> WakeupFd::checkEnd(int which) const
+
+void WakeupFd::validate(PipeEnd end [[maybe_unused]]) const
 {
-    const char * side = which == 0 ? "read" : "write";
-    int fd = pipe.fds_rw[which];
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    const bool is_read = end == PipeEnd::Read;
+    const char * side = is_read ? "read" : "write";
+    int fd = is_read ? pipe.fds_rw[0] : pipe.fds_rw[1];
+    const FdIdentity & expected = is_read ? read_end_identity : write_end_identity;
 
     int flags = fcntl(fd, F_GETFL);
     if (flags == -1)
-        return PreformattedMessage::create(
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
             "Wakeup pipe {} end (fd {}) is invalid ({}); the fd was probably closed by unrelated code",
             side,
             fd,
             errnoToString());
+
     if (!(flags & O_NONBLOCK))
-        return PreformattedMessage::create(
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
             "Wakeup pipe {} end (fd {}) lost O_NONBLOCK (flags {:#x}); the fd was probably tampered with by unrelated code",
             side,
             fd,
@@ -63,9 +77,11 @@ std::optional<PreformattedMessage> WakeupFd::checkEnd(int which) const
 
     struct stat st{};
     if (0 != fstat(fd, &st))
-        return PreformattedMessage::create("Cannot fstat wakeup pipe {} end (fd {}): {}", side, fd, errnoToString());
-    if (!S_ISFIFO(st.st_mode) || static_cast<UInt64>(st.st_dev) != ends[which].dev || static_cast<UInt64>(st.st_ino) != ends[which].ino)
-        return PreformattedMessage::create(
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot fstat wakeup pipe {} end (fd {}): {}", side, fd, errnoToString());
+
+    if (!S_ISFIFO(st.st_mode) || static_cast<UInt64>(st.st_dev) != expected.dev || static_cast<UInt64>(st.st_ino) != expected.ino)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
             "Wakeup pipe {} end (fd {}) refers to another file (mode {:#o}, dev:ino {}:{}, expected {}:{}); "
             "the fd was probably closed and recycled by unrelated code",
             side,
@@ -73,24 +89,14 @@ std::optional<PreformattedMessage> WakeupFd::checkEnd(int which) const
             st.st_mode,
             static_cast<UInt64>(st.st_dev),
             static_cast<UInt64>(st.st_ino),
-            ends[which].dev,
-            ends[which].ino);
-
-    return std::nullopt;
-}
-
-void WakeupFd::validate(int which) const
-{
-    if (auto problem = checkEnd(which))
-        throw Exception(std::move(*problem), ErrorCodes::LOGICAL_ERROR);
-}
+            expected.dev,
+            expected.ino);
 #endif
+}
 
 void WakeupFd::notify() const
 {
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    validate(1);
-#endif
+    validate(PipeEnd::Write);
 
     const char byte = '\0';
     while (true)
@@ -108,9 +114,7 @@ void WakeupFd::notify() const
 
 void WakeupFd::drain() const
 {
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    validate(0);
-#endif
+    validate(PipeEnd::Read);
 
     char buf[PIPE_BUF];
     while (true)
