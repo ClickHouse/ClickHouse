@@ -8,6 +8,14 @@ from ci.praktika.utils import Shell
 
 class FuzzerLogParser:
     UNKNOWN_ERROR = "Unknown error"
+    # Exception messages carry the trailing ", Stack trace (when copying this message,
+    # always include the lines below):" marker, but the frames it promises are on the
+    # following log lines. The failure name is built from the first line only, so the
+    # marker would otherwise dangle with no lines after it (the frames are still kept in
+    # the separate "Stack trace:" section of the info). Drop the marker from the name.
+    STACK_TRACE_MARKER = (
+        ", Stack trace (when copying this message, always include the lines below):"
+    )
     MAX_INLINE_REPRODUCE_COMMANDS = 20
     SANITIZER_ERROR_PATTERN = (
         r"(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|"
@@ -140,6 +148,12 @@ class FuzzerLogParser:
 
         error_lines = error_output.splitlines()
         result_name = error_lines[0].removesuffix(".")
+        # The first line may end with the "...always include the lines below):" marker
+        # whose frames are on later lines; cutting it here keeps the name from promising
+        # lines it does not contain.
+        marker_pos = result_name.find(self.STACK_TRACE_MARKER)
+        if marker_pos != -1:
+            result_name = result_name[:marker_pos].rstrip().removesuffix(".")
         format_message = ""
         for i, line in enumerate(error_lines):
             if "Format string: " in line:

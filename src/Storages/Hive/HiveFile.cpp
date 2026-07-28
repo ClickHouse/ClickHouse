@@ -14,6 +14,7 @@
 #include <Common/Exception.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
 #include <Storages/Hive/HiveSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Interpreters/Context.h>
@@ -32,14 +33,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
-
-#define THROW_ARROW_NOT_OK(status)                                     \
-    do                                                                 \
-    {                                                                  \
-        if (const ::arrow::Status & _s = (status); !_s.ok())                   \
-            throw Exception::createDeprecated(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
-    } while (false)
-
 
 template <class FieldType, class StatisticsType>
 Range createRangeFromOrcStatistics(const StatisticsType * stats)
@@ -166,14 +159,13 @@ void HiveORCFile::prepareReader()
     in = std::make_unique<ReadBufferFromHDFS>(namenode_url, path, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
     auto format_settings = getFormatSettings(getContext());
     std::atomic<int> is_stopped{0};
-    auto result = arrow::adapters::orc::ORCFileReader::Open(asArrowFile(*in, format_settings, is_stopped, "ORC", ORC_MAGIC_BYTES), ArrowMemoryPool::instance());
-    THROW_ARROW_NOT_OK(result.status());
-    reader = std::move(result).ValueOrDie();
+    orc::ReaderOptions options;
+    reader = orc::createReader(asORCInputStream(*in, format_settings, /*use_prefetch=*/false, is_stopped), options);
 }
 
 void HiveORCFile::prepareColumnMapping()
 {
-    const orc::Type & type = reader->GetRawORCReader()->getType();
+    const orc::Type & type = reader->getType();
     size_t count = type.getSubtypeCount();
     for (size_t pos = 0; pos < count; pos++)
     {
@@ -230,7 +222,7 @@ void HiveORCFile::loadFileMinMaxIndexImpl()
         prepareColumnMapping();
     }
 
-    auto statistics = reader->GetRawORCReader()->getStatistics();
+    auto statistics = reader->getStatistics();
     file_minmax_idx = buildMinMaxIndex(statistics.get());
 }
 
@@ -248,7 +240,7 @@ void HiveORCFile::loadSplitMinMaxIndexesImpl()
         prepareColumnMapping();
     }
 
-    auto * raw_reader = reader->GetRawORCReader();
+    auto * raw_reader = reader.get();
     auto stripe_num = raw_reader->getNumberOfStripes();
     auto stripe_stats_num = raw_reader->getNumberOfStripeStatistics();
     if (stripe_num != stripe_stats_num)
@@ -271,7 +263,7 @@ std::optional<size_t> HiveORCFile::getRowsImpl()
         prepareColumnMapping();
     }
 
-    auto * raw_reader = reader->GetRawORCReader();
+    auto * raw_reader = reader.get();
     return raw_reader->getNumberOfRows();
 }
 
@@ -286,7 +278,8 @@ void HiveParquetFile::prepareReader()
     auto format_settings = getFormatSettings(getContext());
     std::atomic<int> is_stopped{0};
     auto open_file_res = parquet::arrow::OpenFile(asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), ArrowMemoryPool::instance());
-    THROW_ARROW_NOT_OK(open_file_res.status());
+    if (!open_file_res.ok())
+        throwFromArrowStatus(open_file_res.status(), ErrorCodes::BAD_ARGUMENTS, "Failed to open Parquet file");
     reader = *std::move(open_file_res);
 }
 

@@ -1,4 +1,5 @@
 -- Tags: no-parallel-replicas
+SET explain_query_plan_default = 'legacy';
 
 set enable_json_type=1;
 set allow_experimental_variant_type=1;

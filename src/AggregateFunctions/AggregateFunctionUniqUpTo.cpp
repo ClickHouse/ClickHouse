@@ -207,7 +207,7 @@ public:
         this->data(place).add(*columns[0], row_num, threshold);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs), threshold);
     }
@@ -266,7 +266,7 @@ public:
         this->data(place).insert(UInt64(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)), threshold);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs), threshold);
     }
@@ -353,7 +353,7 @@ AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, c
 void registerAggregateFunctionUniqUpTo(AggregateFunctionFactory & factory);
 void registerAggregateFunctionUniqUpTo(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("uniqUpTo", {createAggregateFunctionUniqUpTo, {}, {true}});
+    factory.registerFunction("uniqUpTo", {createAggregateFunctionUniqUpTo, {.description = R"DOC(Calculates the number of distinct values of the argument, but only up to the specified threshold; if the number of distinct values exceeds the threshold, it returns 0.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}, {true}});
 }
 
 }

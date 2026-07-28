@@ -18,8 +18,8 @@ In ClickHouse Cloud, if your service was created with a version earlier than 25.
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
 ) ENGINE = Join(join_strictness, join_type, k1[, k2, ...])
 ```
 
@@ -113,7 +113,7 @@ CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = TinyLog;
 ```
 
 ```sql
-INSERT INTO id_val VALUES (1,11)(2,12)(3,13);
+INSERT INTO id_val VALUES (1,11), (2,12), (3,13);
 ```
 
 Creating the right-side `Join` table:
@@ -123,7 +123,7 @@ CREATE TABLE id_val_join(`id` UInt32, `val` UInt8) ENGINE = Join(ANY, LEFT, id);
 ```
 
 ```sql
-INSERT INTO id_val_join VALUES (1,21)(1,22)(3,23);
+INSERT INTO id_val_join VALUES (1,21), (1,22), (3,23);
 ```
 
 Joining the tables:

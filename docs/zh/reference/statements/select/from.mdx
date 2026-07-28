@@ -1,0 +1,112 @@
+---
+description: 'FROM 子句文档'
+sidebarTitle: 'FROM'
+slug: /sql-reference/statements/select/from
+title: 'FROM 子句'
+doc_type: 'reference'
+---
+
+`FROM` 子句用于指定读取数据的来源：
+
+* [表](/zh/reference/engines/table-engines/index)
+* [子查询](/zh/reference/statements/select/index)
+* [表函数](/zh/reference/functions/table-functions/index)
+
+还可以使用 [JOIN](/zh/reference/statements/select/join) 和 [ARRAY JOIN](/zh/reference/statements/select/array-join) 子句来扩展 `FROM` 子句的功能。
+
+子查询是另一个 `SELECT` 查询，可在 `FROM` 子句中用括号括起来指定。
+
+SQL 标准中的 `VALUES` 子句也可用作表表达式：
+
+```sql
+SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, val);
+```
+
+更多详情，请参见 [Values 表函数](/zh/reference/functions/table-functions/values#sql-standard-values-clause)。
+
+`FROM` 可包含多个数据源，并用逗号分隔，这等同于对它们执行 [CROSS JOIN](/zh/reference/statements/select/join)。
+
+`FROM` 也可选择性地出现在 `SELECT` 子句之前。这是 ClickHouse 对标准 SQL 的特有扩展，可使 `SELECT` 语句更易读。示例：
+
+```sql
+FROM table
+SELECT *
+```
+
+<div id="final-modifier">
+  ## FINAL 修饰符
+</div>
+
+指定 `FINAL` 时，ClickHouse 会在返回结果前将数据完全合并。对于给定的表引擎，这还会执行所有在合并过程中发生的数据转换。
+
+它适用于从使用以下表引擎的表中选择数据时：
+
+* `ReplacingMergeTree`
+* `SummingMergeTree`
+* `AggregatingMergeTree`
+* `CollapsingMergeTree`
+* `VersionedCollapsingMergeTree`
+
+带有 `FINAL` 的 `SELECT` 查询会并行执行。[max&#95;final&#95;threads](/zh/reference/settings/session-settings#max_final_threads) 设置会限制使用的线程数。
+
+<div id="drawbacks">
+  ### 缺点
+</div>
+
+使用 `FINAL` 的查询比不使用 `FINAL` 的类似查询执行速度略慢，原因如下：
+
+* 数据会在查询执行期间进行合并。
+* 带有 `FINAL` 的查询除了会读取查询中指定的列外，还可能读取主键列。
+
+`FINAL` 需要额外的计算和内存资源，因为原本通常会在合并时进行的处理，现在必须在查询时于内存中完成。不过，有时为了得到准确的结果，必须使用 `FINAL` (因为数据可能尚未完全合并) 。相比运行 `OPTIMIZE` 来强制合并，这样做的代价更低。
+
+作为 `FINAL` 的替代方案，有时可以改写查询，假设 `MergeTree` 引擎的后台处理尚未完成，并通过聚合来应对这种情况 (例如去重) 。如果你确实需要在查询中使用 `FINAL` 才能获得所需结果，这么做完全可以，但要注意它会带来额外的处理开销。
+
+还可以通过会话或用户 profile，使用 [FINAL](/zh/reference/settings/session-settings#final) 设置将 `FINAL` 自动应用于查询中的所有表。
+
+<div id="example-usage">
+  ### 示例用法
+</div>
+
+`FINAL` 关键字的用法
+
+```sql
+SELECT x, y FROM mytable FINAL WHERE x > 1;
+```
+
+在查询级别使用 `FINAL`
+
+```sql
+SELECT x, y FROM mytable WHERE x > 1 SETTINGS final = 1;
+```
+
+将 `FINAL` 用作会话级别设置
+
+```sql
+SET final = 1;
+SELECT x, y FROM mytable WHERE x > 1;
+```
+
+<div id="aliases-and-final">
+  ### 别名和 FINAL
+</div>
+
+当表使用别名时，`FINAL` 应放在别名之后。在 [`JOIN`](/zh/reference/statements/select/join) 查询中，这一点尤其明显，因为表通常都会使用别名：
+
+```sql
+SELECT t1.id, t2.name
+FROM table1 AS t1 FINAL
+INNER JOIN table2 AS t2 FINAL ON t1.id = t2.id;
+```
+
+`FINAL` 是作用于表引用的修饰符，因此必须紧跟在完整的 `table [AS alias]` 表达式之后。把它放在别名之前 (`FROM table1 FINAL AS t1`) 会触发语法错误。
+
+<div id="implementation-details">
+  ## 实现细节
+</div>
+
+如果省略 `FROM` 子句，数据将从 `system.one` 表中读取。
+`system.one` 表恰好只包含一行 (该表的作用与其他 DBMS 中的 DUAL 表相同) 。
+
+执行查询时，会从相应的表中提取查询中列出的所有列。子查询中外层查询不需要的列都会被丢弃。
+如果查询未列出任何列 (例如 `SELECT count() FROM t`) ，仍然会从表中提取某一列 (优先选择最小的那一列) ，以便计算行数。
