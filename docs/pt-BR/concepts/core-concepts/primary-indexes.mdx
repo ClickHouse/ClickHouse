@@ -30,7 +30,7 @@ O índice primário esparso no ClickHouse ajuda a identificar com eficiência [g
 
 Para ilustrar como o índice primário esparso é construído, usamos a tabela [uk&#95;price&#95;paid&#95;simple](/pt-BR/concepts/core-concepts/parts) junto com algumas animações.
 
-Como [lembrete](/pt-BR/concepts/core-concepts/parts), na nossa tabela de exemplo ① com a chave primária (town, street), os dados ② inseridos são ③ armazenados em disco, ordenados pelos valores das colunas da chave primária e compactados em arquivos separados para cada coluna:
+Como [lembrete](/pt-BR/concepts/core-concepts/parts), na nossa tabela de exemplo ① com a chave primária (town, street), os dados ② inseridos são ③ armazenados em disco, ordenados pelos valores das colunas da chave primária e comprimidos, em arquivos separados para cada coluna:
 
 <Image img="/images/managing-data/core-concepts/primary-index-light_01.webp" size="lg" />
 
@@ -201,6 +201,6 @@ SELECT count() FROM uk.uk_price_paid_simple;
   ## Onde encontrar mais informações
 </div>
 
-Para entender mais a fundo como os índices primários esparsos funcionam no ClickHouse, incluindo como eles diferem dos índices de banco de dados tradicionais e as melhores práticas para usá-los, confira nosso [guia detalhado](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes) sobre indexação.
+Para entender melhor como os índices primários esparsos funcionam no ClickHouse, incluindo como eles diferem dos índices tradicionais de banco de dados e as boas práticas de uso, confira nosso [guia detalhado](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes) sobre indexação.
 
-Se você quiser entender como o ClickHouse processa de forma altamente paralela os dados selecionados pela varredura do índice primário, veja o guia sobre paralelismo de consulta [aqui](/pt-BR/concepts/core-concepts/query-parallelism).
+Se quiser entender como o ClickHouse processa, de forma altamente paralela, os dados selecionados pela varredura do índice primário, consulte o guia sobre paralelismo de consultas [aqui](/pt-BR/concepts/core-concepts/query-parallelism).

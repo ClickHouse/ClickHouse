@@ -11,6 +11,8 @@
 
 #include <Databases/IDatabase.h>
 
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
 #include <Common/PageCache.h>
@@ -163,7 +165,12 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     bool update_jemalloc_epoch_,
     bool update_rss_)
     : WithContext(global_context_)
-    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, update_jemalloc_epoch_, update_rss_, global_context_)
+    , AsynchronousMetrics(
+        update_period_seconds,
+        protocol_server_metrics_func_,
+        update_jemalloc_epoch_,
+        update_rss_,
+        global_context_)
     , update_heavy_metrics(update_heavy_metrics_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {
@@ -364,6 +371,14 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                 }
             }
 #endif
+
+            if (auto object_storage_disk = std::dynamic_pointer_cast<DiskObjectStorage>(disk))
+            {
+                new_values[fmt::format("{}DeadBlobsQueueEstimate", name)] = { object_storage_disk->getDeadBlobsQueueEstimate(),
+                    "Estimated number of blobs enqueued for removal from the disk object storage (the blob manager dead queue). Disks without blob replication report 0." };
+                new_values[fmt::format("{}MissingBlobsQueueEstimate", name)] = { object_storage_disk->getMissingBlobsQueueEstimate(),
+                    "Estimated number of blobs awaiting replication to other locations of the disk (the blob manager missing queue). Disks without blob replication report 0." };
+            }
         }
     }
 
@@ -929,7 +944,7 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
                  "Update heavy metrics. "
                  "Update period {} sec. "
                  "Update heavy metrics period {} sec. "
-                 "Heavy metrics calculation elapsed: {} sec.",
+                 "Heavy metrics calculation elapsed: {:.3f} sec.",
                  update_period.count(),
                  heavy_metric_update_period.count(),
                  watch.elapsedSeconds());
