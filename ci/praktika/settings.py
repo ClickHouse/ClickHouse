@@ -62,16 +62,10 @@ class _Settings:
     ENVIRONMENT_VAR_FILE: str = f"{TEMP_DIR}/environment.json"
     RUN_LOG: str = f"{TEMP_DIR}/job.log"
 
-    USE_CUSTOM_GH_AUTH: bool = False
     SECRET_GH_APP_ID: str = ""
     SECRET_GH_APP_PEM_KEY: str = ""
     SECRET_GH_APP_INSTALLATION_ID: str = ""
     SECRET_GH_APP_REGION: str = ""
-    # When set, GHAuth mints the GitHub token by invoking this AWS Lambda
-    # instead of reading the App PEM/id/installation secrets directly. The
-    # lambda returns a scoped installation token whose permissions are
-    # fixed by the lambda itself (see tests/ci/mint_token_*_lambda in
-    # clickhouse-private). Takes precedence over SECRET_GH_APP_* when set.
     GH_AUTH_LAMBDA_NAME: str = ""
     GH_AUTH_LAMBDA_REGION: str = ""
 
@@ -179,7 +173,6 @@ _USER_DEFINED_SETTINGS = [
     "KEEPER_STRESS_METRICS_DB_NAME",
     "KEEPER_STRESS_METRICS_TABLE_NAME",
     "CI_DB_INSERT_TIMEOUT_SEC",
-    "USE_CUSTOM_GH_AUTH",
     "SECRET_GH_APP_ID",
     "SECRET_GH_APP_PEM_KEY",
     "SECRET_GH_APP_INSTALLATION_ID",

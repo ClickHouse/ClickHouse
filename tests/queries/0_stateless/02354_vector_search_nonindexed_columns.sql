@@ -30,8 +30,36 @@ FROM numbers(100);
 
 -- Test vector search on indexed column (vec1) with different filter strategies
 --
--- Expect to use index lookups for auto and postfilter strategies, and PREWHERE
--- filter + brute force distance calculation for the prefilter strategy
+-- With the PK filter below, vector index analysis does not produce usable row
+-- hints for auto and postfilter strategies, so implicit PREWHERE is restored.
+-- The vector index must still be used during index analysis before that fallback.
+-- The prefilter strategy explicitly prefers PREWHERE and brute force distance
+-- calculation.
+
+SELECT '-- Indexed auto/postfilter still use the vector index';
+SELECT trimLeft(explain)
+FROM (
+    EXPLAIN indexes = 1
+    SELECT key
+    FROM tab
+    WHERE key IN (0, 30, 60, 90)
+    ORDER BY cosineDistance(vec1, arrayMap(i -> randCanonical(i), range(16)))
+    LIMIT 1
+    SETTINGS vector_search_filter_strategy = 'auto'
+)
+WHERE explain ILIKE '%vector_similarity%';
+
+SELECT trimLeft(explain)
+FROM (
+    EXPLAIN indexes = 1
+    SELECT key
+    FROM tab
+    WHERE key IN (0, 30, 60, 90)
+    ORDER BY cosineDistance(vec1, arrayMap(i -> randCanonical(i), range(16)))
+    LIMIT 1
+    SETTINGS vector_search_filter_strategy = 'postfilter'
+)
+WHERE explain ILIKE '%vector_similarity%';
 
 SELECT '-- Search with index, strategy = auto';
 SELECT replaceRegexpAll(trimLeft(explain), '__set_Int32_\\d+_\\d+', '__set_Int32_XXX')
