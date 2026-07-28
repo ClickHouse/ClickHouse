@@ -3570,12 +3570,18 @@ public:
             // Division is undefined at zero, so we must not report monotonicity:
             // - divide(const, x) or intDiv(const, x) at x = 0 (right_arg_is_zero)
             // - divide(x, 0) or intDiv(x, 0) where the constant divisor is 0 (right_const_is_zero)
+            // Only division reads the two checks below, and an `IPv4`/`IPv6` `Field` has no
+            // accurate-comparison arm against a number, so a non-division function must not run them.
             bool is_div_function = name_view == "divide" || name_view == "intDiv";
-            bool right_arg_is_zero = left.column && isColumnConst(*left.column) && accurateEquals(left_point, Field(0));
-            bool right_const_is_zero = right.column && isColumnConst(*right.column) && accurateEquals((*right.column)[0], Field(0));
+            if (is_div_function)
+            {
+                bool right_arg_is_zero = left.column && isColumnConst(*left.column) && accurateEquals(left_point, Field(0));
+                bool right_const_is_zero
+                    = right.column && isColumnConst(*right.column) && accurateEquals((*right.column)[0], Field(0));
 
-            if (is_div_function && (right_arg_is_zero || right_const_is_zero))
-                return {false, true, false, false};
+                if (right_arg_is_zero || right_const_is_zero)
+                    return {false, true, false, false};
+            }
 
             return {true, true, false, false};
         }
@@ -3733,11 +3739,17 @@ public:
             const auto & const_side = (right.column && isColumnConst(*right.column)) ? right : left;
             if (const_side.column && isColumnConst(*const_side.column))
             {
-                auto constant = (*const_side.column)[0];
+                /// The constant and both endpoints are compared against numbers and converted to the
+                /// result type below, so an `IPv4`/`IPv6` value must first be substituted with the
+                /// integer the multiplication actually computes on (see `substituteIPField`).
+                auto constant = substituteIPField((*const_side.column)[0]);
                 if (accurateEquals(constant, Field(0)))
                     return {true, true, false, false}; /// x * 0 is constant, trivially monotonic but not strict
 
                 auto ret_type = removeNullable(removeLowCardinality(return_type));
+
+                const Field left_normalized = substituteIPField(left_point);
+                const Field right_normalized = substituteIPField(right_point);
 
                 bool is_constant_positive = accurateLess(Field(0), constant);
 
@@ -3796,8 +3808,8 @@ public:
 
                 auto overflows = [&]<typename T>(std::type_identity<T> tag)
                 {
-                    return check_overflow(left_point, constant, tag)
-                        || check_overflow(right_point, constant, tag);
+                    return check_overflow(left_normalized, constant, tag)
+                        || check_overflow(right_normalized, constant, tag);
                 };
 
                 WhichDataType which(ret_type->getTypeId());
@@ -3869,6 +3881,23 @@ public:
         const size_t divisor_width_bytes = divisor_type->getSizeOfValueInMemory();
         const Field wrap_field(UInt256(1) << (8 * divisor_width_bytes - 1));
         return accurateLessOrEqual(wrap_field, constant);
+    }
+
+    /// `IPv4`/`IPv6` operands never reach the arithmetic as themselves: an IP-tagged `Field` has no
+    /// accurate-comparison arm against a number, so it must be converted before it is compared here.
+    /// `IPv6` is stored big-endian and the substitution casts it through `convertFromIPv6ToUInt128`,
+    /// which swaps the limbs and byte-swaps each, so a raw `toUnderType()` bit copy would yield a
+    /// different number; reuse the same cast the substitution in `executeImpl` performs.
+    static Field substituteIPField(const Field & field)
+    {
+        const bool is_ipv4 = field.getType() == Field::Types::IPv4;
+        if (!is_ipv4 && field.getType() != Field::Types::IPv6)
+            return field;
+
+        const DataTypePtr from = is_ipv4 ? DataTypePtr(std::make_shared<DataTypeIPv4>()) : std::make_shared<DataTypeIPv6>();
+        const DataTypePtr to = is_ipv4 ? DataTypePtr(std::make_shared<DataTypeUInt32>()) : std::make_shared<DataTypeUInt128>();
+        const ColumnWithTypeAndName arg{from->createColumnConst(1, field), from, ""};
+        return (*castColumn(arg, to))[0];
     }
 
 private:
