@@ -58,11 +58,22 @@ Make sure to select the connector version that matches your Glue job configurati
 </Tab>
 <Tab title="Manual Installation">
 To add the required jars manually, please follow the following:
-1. Upload the latest Spark connector JAR (`clickhouse-spark-runtime-3.X_2.X-0.10.X.jar`) to an S3 bucket.
-2. Make sure the Glue job has access to this bucket.
-3. Under the `Job details` tab, scroll down and expend the `Advanced properties` drop down, and fill the jars path in `Dependent JARs path`:
+
+<Steps titleSize="h3">
+<Step title="Upload the connector JAR">
+Upload the latest Spark connector JAR (`clickhouse-spark-runtime-3.X_2.X-0.10.X.jar`) to an S3 bucket.
+</Step>
+
+<Step title="Grant access to the S3 bucket">
+Make sure the Glue job has access to this bucket.
+</Step>
+
+<Step title="Configure the dependent JAR path">
+Under the `Job details` tab, scroll down and expend the `Advanced properties` drop down, and fill the jars path in `Dependent JARs path`:
 
 <Image img="/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp" size='md' alt='Glue Notebook JAR path options' force='true' />
+</Step>
+</Steps>
 
 </Tab>
 </Tabs>
