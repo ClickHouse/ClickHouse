@@ -29,6 +29,7 @@ $CLICKHOUSE_CLIENT --query "
 DROP QUOTA IF EXISTS $QUOTA;
 
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX execution_time = 1e19; -- { clientError BAD_ARGUMENTS }
+CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX execution_time = 18446744073.709551616; -- { clientError BAD_ARGUMENTS }
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX execution_time = 18446744073709551615; -- { clientError BAD_ARGUMENTS }
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX execution_time = -1; -- { clientError BAD_ARGUMENTS }
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX execution_time = -1e-400; -- { clientError BAD_ARGUMENTS }
@@ -81,6 +82,17 @@ SHOW CREATE QUOTA ${QUOTA}_h;
 CREATE QUOTA ${QUOTA}_x FOR INTERVAL 1 hour MAX queries = 0x1.8p1;
 SHOW CREATE QUOTA ${QUOTA}_x;
 
+-- A limit of a quota type with an output denominator is scaled by it exactly: a value at the top of
+-- the range must be accepted, while the rounded product of doubles is 2^64 and used to be rejected
+-- (18446744073.709551615 nanoseconds is exactly the maximum). The value 18446744073 has no exact
+-- double product either. The stored nanoseconds are shown back through a double, hence the rounding
+-- in the output below.
+CREATE QUOTA ${QUOTA}_s FOR INTERVAL 1 hour MAX execution_time = 18446744073.709551615;
+SHOW CREATE QUOTA ${QUOTA}_s;
+
+CREATE QUOTA ${QUOTA}_i FOR INTERVAL 1 hour MAX execution_time = 18446744073;
+SHOW CREATE QUOTA ${QUOTA}_i;
+
 DROP QUOTA $QUOTA;
 DROP QUOTA ${QUOTA}_e;
 DROP QUOTA ${QUOTA}_u;
@@ -88,4 +100,6 @@ DROP QUOTA ${QUOTA}_p;
 DROP QUOTA ${QUOTA}_m;
 DROP QUOTA ${QUOTA}_h;
 DROP QUOTA ${QUOTA}_x;
+DROP QUOTA ${QUOTA}_s;
+DROP QUOTA ${QUOTA}_i;
 " | sed "s/$QUOTA/q_04617/g"

@@ -1849,6 +1849,23 @@ def test_quota_execution_time_out_of_range_value_from_users_xml():
     copy_quota_xml("no_quotas.xml")
 
 
+def test_quota_execution_time_top_of_range_value_from_users_xml():
+    # A limit for a scaled quota type at the very top of the range must be accepted: the scaled value
+    # of 18446744073.709551615 is exactly the UInt64 maximum, while the product of doubles rounds up
+    # to 2^64 and used to be rejected as out of range. The scaled value is therefore taken from the
+    # configured text, mirroring the SQL CREATE QUOTA path.
+    copy_quota_xml("execution_time_top_of_range.xml")
+    assert (
+        instance.query(
+            "SELECT max_execution_time >= 18446744073 FROM system.quota_limits WHERE quota_name = 'myQuota'"
+        )
+        == "1\n"
+    )
+
+    # Restore a clean config so later periodic reloads do not fail.
+    copy_quota_xml("no_quotas.xml")
+
+
 def test_quota_keyed_by_normalized_query_hash_from_users_xml():
     # A quota keyed by normalized_query_hash must load from static config and
     # expose the key type via system.quotas, mirroring the SQL path which

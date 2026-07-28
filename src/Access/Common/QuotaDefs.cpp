@@ -1,4 +1,5 @@
 #include <Access/Common/QuotaDefs.h>
+#include <Access/Common/QuotaValueFromText.h>
 #include <Common/Exception.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -46,6 +47,18 @@ QuotaValue QuotaTypeInfo::stringToValue(const String & str) const
     Float64 value = parse<Float64>(str);
     if (std::signbit(value))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota value {} is out of range", str);
+    /// Take the scaled value from the text when it can be computed exactly: the Float64 above has
+    /// already been rounded to the nearest double, which loses the low bits of a value near the top of
+    /// the range and can push it out of the range altogether (the scaled value of the configured
+    /// <execution_time>18446744073.709551615</execution_time> is exactly QuotaValue max, but the
+    /// rounded product is 2^64). A text of an unknown form (e.g. inf) or a scaled value that does not
+    /// fit is left to the range check on the product below. A scaled value below a whole nanosecond
+    /// is truncated, as the cast of the product below truncates it.
+    if (auto parts = splitNumericLiteral(str))
+    {
+        if (auto exact_value = exactScaledValueOfNumericLiteral(*parts, output_denominator))
+            return *exact_value;
+    }
     /// Bound the scaled value to the QuotaValue (UInt64) range before the cast: an out-of-range or
     /// non-finite product makes static_cast<QuotaValue> undefined behavior.
     Float64 scaled_value = value * static_cast<Float64>(output_denominator);
