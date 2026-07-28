@@ -2135,8 +2135,6 @@ std::optional<String> StatementGenerator::alterSingleTable(
                      rg, 1, rg.nextSmallNumber() < 9, true, t, ati->mutable_drop_detached_partition()->mutable_partition());
              }},
             {5 * static_cast<uint32_t>(no_oracle && is_mt),
-             [&] { generateNextTablePartition(rg, 0, rg.nextBool(), false, t, ati->mutable_forget_partition()->mutable_partition()); }},
-            {5 * static_cast<uint32_t>(no_oracle && is_mt),
              [&]
              {
                  generateNextTablePartition(rg, 1, rg.nextSmallNumber() < 9, true, t, ati->mutable_attach_partition()->mutable_partition());

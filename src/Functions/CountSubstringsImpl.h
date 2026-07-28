@@ -134,6 +134,10 @@ struct CountSubstringsImpl
             {
                 /// 0 already
             }
+            else if (haystack_size == 0)
+            {
+                /// A non-empty needle is never found in an empty haystack; do not pay the searcher initialization.
+            }
             else
             {
                 /// It is assumed that the StringSearcher is not very difficult to initialize.
@@ -190,7 +194,7 @@ struct CountSubstringsImpl
                 const char * needle_beg = reinterpret_cast<const char *>(&needle_data[prev_needle_offset]);
                 size_t needle_size = needle_offsets[i] - prev_needle_offset;
 
-                if (needle_size > 0)
+                if (needle_size > 0 && !haystack.empty())
                 {
                     typename Impl::SearcherInSmallHaystack searcher = Impl::createSearcherInSmallHaystack(needle_beg, needle_size);
 

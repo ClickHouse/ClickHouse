@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/MergeTreeFinalMerge.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
@@ -311,6 +312,8 @@ public:
         std::optional<std::unordered_set<String>> part_values;
     };
 
+    void addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type);
+
     static AnalysisResultPtr selectRangesToRead(
         const RangesInDataParts & parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
@@ -385,6 +388,11 @@ public:
     /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be clear.
     void clearParallelReadingExtension();
     std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
+
+    /// Mark a (non-executed) read as a parallel-replicas read purely so that serialization records it.
+    /// No callbacks are attached: the read is only serialized on the initiator and shipped to replicas,
+    /// where deserialize rebuilds it in parallel-reading mode and resolves the callbacks from the context.
+    void enableParallelReadingFromReplicasForSerialization() { is_parallel_reading_from_replicas = true; }
 
     bool supportsDataflowStatisticsCollection() const override { return !isQueryWithFinal(); }
 
@@ -491,6 +499,13 @@ private:
 
     /// Pre-computed value, needed to trigger sets creating for PK
     mutable std::optional<Indexes> indexes;
+
+    /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
+    /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan
+    /// optimization. Not carried by clone()/serialize()/deserialize(), so the pruning is intentionally
+    /// skipped when the step is rebuilt for distributed or parallel-replicas reads (results stay correct,
+    /// only the optimization is lost); propagating it there is a follow-up.
+    std::vector<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
 
     /// Row policy / prewhere deferred to after FINAL, if needed
     FilterDAGInfoPtr deferred_row_level_filter;

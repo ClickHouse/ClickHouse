@@ -69,6 +69,30 @@ Indique les échecs des scripts de démarrage par type d’erreur. Vaut 1 lorsqu
 
 Nombre de parties de données MergeTree, étiquetées selon l’état de la partie, son type et le fait qu’il s’agisse ou non d’une partie de projection.
 
+<div id="filesystem-cache-evictions-total">
+  ### `filesystem_cache_evictions_total`
+</div>
+
+Nombre de segments de fichier évincés du cache du système de fichiers, avec le nom du cache comme étiquette. Désactivé par défaut ; activez cette métrique avec `expose_prometheus_eviction_metrics`.
+
+<div id="filesystem-cache-evicted-bytes-total">
+  ### `filesystem_cache_evicted_bytes_total`
+</div>
+
+Nombre total d’octets de segments de fichier évincés d’un cache du système de fichiers, avec le nom du cache comme étiquette. Désactivé par défaut ; activez-le avec `expose_prometheus_eviction_metrics`.
+
+<div id="filesystem-cache-evictions-by-user-total">
+  ### `filesystem_cache_evictions_by_user_total`
+</div>
+
+Nombre de segments de fichier évincés du cache du système de fichiers, étiqueté par nom de cache et identifiant utilisateur. Désactivé par défaut ; activez cette métrique avec `expose_prometheus_eviction_metrics` et `expose_prometheus_eviction_metrics_per_user`.
+
+<div id="filesystem-cache-evicted-bytes-by-user-total">
+  ### `filesystem_cache_evicted_bytes_by_user_total`
+</div>
+
+Nombre total d’octets de segments de fichier évincés d’un cache du système de fichiers, avec comme étiquettes le nom du cache et l’identifiant de l’utilisateur. Désactivé par défaut ; activez-le avec `expose_prometheus_eviction_metrics` et `expose_prometheus_eviction_metrics_per_user`.
+
 <div id="see-also">
   ## Voir aussi
 </div>
