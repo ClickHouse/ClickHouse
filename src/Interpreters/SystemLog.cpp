@@ -823,6 +823,10 @@ void SystemLog<LogElement>::prepareTable()
                 create_query);
 
             auto rename = make_intrusive<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
+            /// The table is recreated under the original name right below, so this only replaces the
+            /// storage behind that name: its row policies must stay on it and keep filtering the new
+            /// active log, rather than following the data onto the suffixed archival name.
+            rename->replaces_storage_keeping_name = true;
 
             ActionLock merges_lock;
             if (DatabaseCatalog::instance().getDatabase(table_id.database_name)->getUUID() == UUIDHelpers::Nil)

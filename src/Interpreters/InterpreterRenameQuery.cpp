@@ -383,14 +383,13 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         /// becomes readable with no filtering under its new name (a row-policy escape).
         std::vector<RowPolicyRekey> row_policy_rekeys;
 
-        /// CREATE OR REPLACE TABLE / REPLACE TABLE reach this code through a synthetic rename/exchange
-        /// that swaps a freshly built table (temporary name) into the target name. Only the target's
-        /// storage is replaced; the target keeps its name, so the row policies bound to that name must
-        /// stay there (they then filter the replacement data). Re-keying would move the target's policy
-        /// onto the transient name, which is dropped immediately after, leaving the replaced table
-        /// unfiltered -- the very row-policy escape this fix closes. So skip the re-key for this case
-        /// entirely; the target's existing policies already protect the new storage.
-        if (!rename.create_or_replace)
+        /// A storage-replacing swap (CREATE OR REPLACE / REPLACE TABLE, a non-append refreshable view
+        /// installing its fresh target, system log schema rotation) keeps the surviving name, so the
+        /// row policies bound to that name must stay there and filter the replacement data. Re-keying
+        /// would move them onto the transient side of the swap, which is dropped right after, leaving
+        /// the surviving name unfiltered -- the very escape this fix closes. See the flag's doc in
+        /// ASTRenameQuery.h for the full list of such sites.
+        if (!rename.replaces_storage_keeping_name)
         {
             /// A database-wide policy (`ON db.*`) is not bound to any single table name, so it cannot
             /// follow a table that moves to a different database: the destination lookup is `new_db.tbl`

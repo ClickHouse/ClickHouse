@@ -727,6 +727,9 @@ std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID 
 
     auto rename_query = make_intrusive<ASTRenameQuery>();
     rename_query->exchange = exchange;
+    /// The target keeps its name and only its storage is replaced, so its row policies must stay on
+    /// that name instead of following the data onto the stale table dropped right after.
+    rename_query->replaces_storage_keeping_name = true;
     rename_query->addElement(fresh_table.database_name, fresh_table.table_name, stale_table_id.database_name, stale_table_id.table_name);
 
     InterpreterRenameQuery(rename_query, refresh_context).execute();

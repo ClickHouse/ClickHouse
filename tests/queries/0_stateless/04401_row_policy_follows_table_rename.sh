@@ -230,4 +230,24 @@ ${CLICKHOUSE_CLIENT} --query "SELECT table FROM system.row_policies WHERE short_
 ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY repp ON ${CLICKHOUSE_DATABASE}.rep"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.rep"
 
+# A non-append refreshable materialized view installs each fresh result by exchanging a temporary
+# table into the target name -- the same storage-replacing swap as CREATE OR REPLACE, so the target's
+# policy must stay on the target name. Assert after the FIRST refresh: the swap is symmetric, so on
+# an even number of refreshes a policy that followed the data lands back on the target name and the
+# escape is invisible. Every odd refresh is when it is exposed.
+echo '-- refreshable materialized view: target row policy stays and keeps filtering'
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${CLICKHOUSE_DATABASE}.rmvt (id UInt64, dept String) ENGINE = MergeTree ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY rmvp ON ${CLICKHOUSE_DATABASE}.rmvt FOR SELECT USING dept = 'eng' TO ${USER}"
+# REFRESH EVERY 1 YEAR: creation triggers exactly one refresh, and no second one can race the checks.
+${CLICKHOUSE_CLIENT} --query "CREATE MATERIALIZED VIEW ${CLICKHOUSE_DATABASE}.rmv REFRESH EVERY 1 YEAR TO ${CLICKHOUSE_DATABASE}.rmvt (id UInt64, dept String) AS SELECT 1 AS id, 'eng' AS dept UNION ALL SELECT 2, 'fin'"
+${CLICKHOUSE_CLIENT} --query "SYSTEM WAIT VIEW ${CLICKHOUSE_DATABASE}.rmv"
+echo 'refreshed target really has both rows:'
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${CLICKHOUSE_DATABASE}.rmvt"
+echo 'after the first refresh (policy still filters -> eng only, not the fin row):'
+run_user "SELECT id FROM ${CLICKHOUSE_DATABASE}.rmvt ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "SELECT table FROM system.row_policies WHERE short_name = 'rmvp' AND database = '${CLICKHOUSE_DATABASE}'"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.rmv"
+${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY rmvp ON ${CLICKHOUSE_DATABASE}.rmvt"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.rmvt"
+
 ${CLICKHOUSE_CLIENT} --query "DROP USER ${USER}"

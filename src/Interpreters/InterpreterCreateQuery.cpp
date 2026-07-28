@@ -2648,7 +2648,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         /// This is the replacement swap, not a user RENAME/EXCHANGE: only the target's storage is
         /// replaced, its name and the row policies bound to that name must stay put (see the flag's
         /// doc in ASTRenameQuery.h). Applies to all branches below (plain create, rename and exchange).
-        ast_rename->create_or_replace = true;
+        ast_rename->replaces_storage_keeping_name = true;
         if (is_plain_create)
         {
             /// Plain CREATE ... AS SELECT: the target must not exist. A plain RENAME asserts this and fails

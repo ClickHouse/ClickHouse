@@ -62,3 +62,9 @@ cor
 after REPLACE TABLE (policy still filters -> eng only):
 1
 rep
+-- refreshable materialized view: target row policy stays and keeps filtering
+refreshed target really has both rows:
+2
+after the first refresh (policy still filters -> eng only, not the fin row):
+1
+rmvt
