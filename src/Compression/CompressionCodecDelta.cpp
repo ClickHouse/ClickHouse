@@ -8,6 +8,9 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 
+#include <cstring>
+#include <utility>
+
 
 namespace DB
 {
@@ -90,29 +93,96 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
     }
 }
 
+/** Delta decoding is an inclusive prefix sum of the deltas, and the scalar loop is limited by the
+  * loop-carried accumulator to at most one element per cycle. Instead, process the data in 16-byte
+  * registers: log2(lanes) shift-and-add steps compute the prefix sum within a register, then the
+  * running total of all previous registers is added to every lane, and the last lane becomes the
+  * running total for the next register.
+  *
+  * The kernel is written with generic clang vectors; the shuffles compile to single instructions
+  * on the SSE2 (x86_64) and NEON (AArch64) baselines, so no arch-specific code or runtime dispatch
+  * is needed. Lanes are loaded in native byte order, so the fast path also requires a little-endian
+  * build to match the little-endian on-disk format; others fall back to the scalar loop below.
+  */
+#if (((defined(__x86_64__) || defined(__i386__)) && defined(__SSE2__)) || (defined(__aarch64__) && defined(__ARM_NEON))) \
+    && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#define DELTA_CODEC_SIMD_DECOMPRESS
+
+template <typename T>
+using DeltaVec [[gnu::vector_size(16)]] = T;
+
+/// Shift the lanes up by `shift` positions, filling the low lanes with zeros.
+template <size_t shift, typename T, size_t... lane>
+DeltaVec<T> shiftLanesIn(DeltaVec<T> x, std::index_sequence<lane...>)
+{
+    return __builtin_shufflevector(DeltaVec<T>{}, x, (lane < shift ? 0 : sizeof...(lane) + lane - shift)...);
+}
+
+template <typename T, size_t... lane>
+DeltaVec<T> broadcastLastLane(DeltaVec<T> x, std::index_sequence<lane...>)
+{
+    return __builtin_shufflevector(x, x, (lane * 0 + sizeof...(lane) - 1)...);
+}
+
+template <typename T>
+T decompressBlocks(const char * source, char * dest, size_t blocks)
+{
+    constexpr size_t lanes = 16 / sizeof(T);
+    constexpr auto index = std::make_index_sequence<lanes>{};
+
+    DeltaVec<T> sum{};
+    for (size_t i = 0; i < blocks; ++i)
+    {
+        DeltaVec<T> x;
+        memcpy(&x, source + i * 16, 16);
+        if constexpr (lanes >= 2)
+            x += shiftLanesIn<1>(x, index);
+        if constexpr (lanes >= 4)
+            x += shiftLanesIn<2>(x, index);
+        if constexpr (lanes >= 8)
+            x += shiftLanesIn<4>(x, index);
+        if constexpr (lanes >= 16)
+            x += shiftLanesIn<8>(x, index);
+        /// Update the running total from the local prefix sum, so that the broadcast stays off
+        /// the loop-carried dependency chain (which is then a single addition).
+        const DeltaVec<T> carry = broadcastLastLane(x, index);
+        x += sum;
+        sum += carry;
+        memcpy(dest + i * 16, &x, 16);
+    }
+    return sum[0];
+}
+
+#endif
+
 template <typename T>
 UInt32 decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
 {
-    const char * const original_dest = dest;
-    const char * const output_end = dest + output_size;
-
     if (source_size % sizeof(T) != 0)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Delta-encoded data, data size {} is not aligned to {}", source_size, sizeof(T));
 
+    if (source_size > output_size)
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress delta-encoded data: {} bytes of data do not fit into the output of {} bytes", source_size, output_size);
+
     T accumulator{};
     const char * const source_end = source + source_size;
+
+#ifdef DELTA_CODEC_SIMD_DECOMPRESS
+    const size_t blocks = source_size / 16;
+    accumulator = decompressBlocks<T>(source, dest, blocks);
+    source += blocks * 16;
+    dest += blocks * 16;
+#endif
+
     while (source < source_end)
     {
         accumulator += unalignedLoadLittleEndian<T>(source);
-        if (dest + sizeof(accumulator) > output_end) [[unlikely]]
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress delta-encoded data");
         unalignedStoreLittleEndian<T>(dest, accumulator);
-
         source += sizeof(T);
         dest += sizeof(T);
     }
 
-    return static_cast<UInt32>(dest - original_dest);
+    return source_size;
 }
 
 }

@@ -157,6 +157,8 @@ SETTINGS check_query_single_value_result = 0
 └──────────┴──────────┴─────────────┴───────────┴─────────┘
 ```
 
+To check the health of a whole database rather than the integrity of individual tables, use the [`CHECK DATABASE`](/sql-reference/statements/check-database) query. It is primarily intended for databases with the [`DataLakeCatalog`](/engines/database-engines/datalakecatalog) engine, where it verifies that the external catalog is reachable.
+
 ## If the Data Is Corrupted {#if-the-data-is-corrupted}
 
 If the table is corrupted, you can copy the non-corrupted data to another table. To do this:

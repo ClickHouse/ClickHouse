@@ -263,16 +263,18 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 
 上で説明したサブクエリ形式に加えて、`SOME` / `ALL` の右辺には配列式 (配列リテラル、配列型のカラム、または配列を返す任意の式) を指定できます。これは PostgreSQL スタイルの配列量化子構文です。この構文は parse 時に認識され、配列関数に書き換えられるため、手動で書き換える必要はありません。
 
-| 構文                              | 書き換え後                              |
-| ------------------------------- | ---------------------------------- |
-| `expr = SOME(arr)`              | `has(arr, expr)`                   |
-| `expr <> ALL(arr)`              | `NOT has(arr, expr)`               |
-| `expr OP SOME(arr)` (その他の比較演算子) | `arrayExists(x -> expr OP x, arr)` |
-| `expr OP ALL(arr)` (その他の比較演算子)  | `arrayAll(x -> expr OP x, arr)`    |
+| 構文                                   | 書き換え後                              |
+| ------------------------------------ | ---------------------------------- |
+| `expr = SOME(arr)`                   | `has(arr, expr)`                   |
+| `expr <> ALL(arr)`                   | `NOT has(arr, expr)`               |
+| `expr OP SOME(arr)` (その他のサポートされる演算子) | `arrayExists(x -> expr OP x, arr)` |
+| `expr OP ALL(arr)` (その他のサポートされる演算子)  | `arrayAll(x -> expr OP x, arr)`    |
 
 `SOME` は存在量化子です (`ANY` の SQL における同義語) 。`=` と `<>` は最適化された実装があるため、特別に `has` / `NOT has` に書き換えられます。一般形では、高階関数の `arrayExists` / `arrayAll` が使われます。
 
-配列形式が認識されるのは、比較演算子 `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=` のみです。右辺に配列を取れるその他の演算子 — たとえば `LIKE`, `ILIKE`, `NOT LIKE`, `REGEXP`, `IN` — は配列量化子には **書き換えられず**、通常どおりの意味を保ちます。たとえば `'abc' LIKE SOME(['a%', 'b%'])` は配列量化子構文ではありません。そのような場合は、`arrayExists` / `arrayAll` を直接使用してください。
+配列形式が認識されるのは、比較演算子 `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`、キーワード比較 predicates の `IS DISTINCT FROM` と `IS NOT DISTINCT FROM`、および文字列検索 predicates の `LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `REGEXP` です。キーワード比較 predicates と文字列検索 predicates は、配列形式でのみ認識され、サブクエリ形式では認識されません (サブクエリ形式は `IN`/`NOT IN` に変換されます) 。配列量化子としての意味を持たない演算子 — たとえば `IN` 自体 — は **書き換えられず**、通常どおりの意味を保ちます。
+
+文字列検索 predicates が機能するのは、`MatchImpl` (`LIKE` / `ILIKE` / `REGEXP` の実装) が、定数の haystack と非定数の needle をサポートしているためです。たとえば、`'abc' LIKE SOME(['a%', 'b%'])` は `arrayExists(x -> 'abc' LIKE x, ['a%', 'b%'])` に、`'abc' NOT LIKE ALL(['x%', 'y%'])` は `arrayAll(x -> 'abc' NOT LIKE x, ['x%', 'y%'])` に書き換えられます。これにより、1 つの文字列を複数の pattern に対して照合できます。単一の結合パスで照合したい場合は、`multiMatchAny` (regular expressions) や `multiSearchAny` (substrings) などの複数 pattern 検索関数も引き続き使用できます。
 
 <Info>
   **配列形式では `ANY` はサポートされていません**
@@ -282,15 +284,16 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 
 ```sql title="Query"
 SELECT
-    3 = SOME([1, 2, 3, 4]) AS in_array,
-    5 < SOME([1, 2, 6])    AS less_than_some,
-    5 > ALL([1, 2, 3])     AS greater_than_all;
+    3 = SOME([1, 2, 3, 4])         AS in_array,
+    5 < SOME([1, 2, 6])            AS less_than_some,
+    5 > ALL([1, 2, 3])             AS greater_than_all,
+    'abc' LIKE SOME(['a%', 'z%'])  AS like_some;
 ```
 
 ```text title="Response"
-┌─in_array─┬─less_than_some─┬─greater_than_all─┐
-│        1 │              1 │                1 │
-└──────────┴────────────────┴──────────────────┘
+┌─in_array─┬─less_than_some─┬─greater_than_all─┬─like_some─┐
+│        1 │              1 │                1 │         1 │
+└──────────┴────────────────┴──────────────────┴───────────┘
 ```
 
 <Info>
@@ -525,6 +528,63 @@ SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt
 │ 2024-07-15 23:59:59.999 │ DateTime64(3)  │
 └─────────────────────────┴────────────────┘
 ```
+
+<div id="at-time-zone">
+  ### AT TIME ZONE と AT LOCAL
+</div>
+
+後置演算子 `AT TIME ZONE` と `AT LOCAL` は、`DateTime` または `DateTime64` の値を別のタイムゾーンに変換します。これらは既存の [`toTimeZone`](/ja/reference/functions/regular-functions/date-time-functions#toTimezone) 関数の糖衣構文です。
+
+| Syntax                   | Equivalent                     |
+| ------------------------ | ------------------------------ |
+| `expr AT TIME ZONE zone` | `toTimeZone(expr, zone)`       |
+| `expr AT LOCAL`          | `toTimeZone(expr, timeZone())` |
+
+`zone` には、有効なタイムゾーン名として評価される任意の定数文字列表現を指定できます (例: `'America/Denver'`、`'UTC'`、`concat('America', '/', 'Denver')`) 。`AT TIME ZONE` は `toTimeZone` に展開されるため、タイムゾーン引数に関する同じルールが適用されます。カラム参照のような非定数式には、[`allow_nonconst_timezone_arguments = 1`](/ja/reference/settings/session-settings#allow_nonconst_timezone_arguments) が必要です。
+
+`AT LOCAL` は現在の[session timezone](/ja/reference/settings/session-settings#session_timezone)を使用します (session timezone が設定されていない場合は server のデフォルトを使用します) 。`Distributed` 分散テーブルでは、`session_timezone` を明示的に設定する必要があります。これが空の場合、`timeZone()` は分片ごとのローカル値となり、定数の `toTimeZone` 引数としては使用できないため、`ILLEGAL_COLUMN` 例外が発生します。
+
+<Note>
+  PostgreSQL では、`timestamp without time zone AT TIME ZONE zone` は wall-clock 値をまず指定した zone の時刻として再解釈してから変換しますが、ClickHouse では常に同じ絶対時刻を保持し、表示に使用するタイムゾーンラベルだけを変更します。どちらの形式も `toTimeZone` と等価であり、基になる timestamp は変更されません。
+</Note>
+
+`AT TIME ZONE` の演算子優先順位は 13 です (12 の `*`/`/`/`%` より高く、11 の `+`/`-` より高い) 、これは PostgreSQL と同じです。つまり、`a * ts AT TIME ZONE 'tz'` は `a * (ts AT TIME ZONE 'tz')` として結び付けられ、`ts + interval AT TIME ZONE 'tz'` は `ts + (interval AT TIME ZONE 'tz')` として結び付けられます。演算の後にタイムゾーン変換を適用するには、明示的に括弧を使用します。
+
+```sql
+-- Explicit parens required to add first, then convert timezone
+SELECT (TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR) AT TIME ZONE 'America/Denver';
+-- Equivalent to:
+SELECT toTimeZone(TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR, 'America/Denver');
+```
+
+例:
+
+```sql
+SET session_timezone = 'UTC';
+
+SELECT TIMESTAMP '2001-02-16 20:38:40' AT TIME ZONE 'America/Denver';
+```
+
+```text
+┌─toTimeZone(toDateTime('2001-02-16 20:38:40'), 'America/Denver')─┐
+│ 2001-02-16 13:38:40                                              │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT TIMESTAMP '2001-02-16 20:38:40' AT LOCAL;
+```
+
+```text
+┌─toTimeZone(toDateTime('2001-02-16 20:38:40'), timeZone())─┐
+│ 2001-02-16 20:38:40                                        │
+└────────────────────────────────────────────────────────────┘
+```
+
+**関連項目**
+
+* [`toTimeZone`](/ja/reference/functions/regular-functions/date-time-functions#toTimezone)
+* [`timeZone`](/ja/reference/functions/regular-functions/date-time-functions#timezone)
 
 <div id="logical-and-operator">
   ## 論理 AND 演算子

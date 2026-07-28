@@ -15,7 +15,7 @@ doc_type: '참고'
 
 PromQL과 유사한 `irate` 및 `idelta` 계산을 위해 시계열 데이터를 리샘플링하는 집계 함수입니다.
 
-이 집계 함수는 시계열 데이터를 타임스탬프와 값의 쌍으로 받아 최대 2개의 최신 샘플만 저장합니다. 이 집계 함수는 그리드에 정렬된 타임스탬프용으로 리샘플링된 시계열 데이터를 저장하는 구체화된 뷰(Materialized View) 및 집계 테이블과 함께 사용하도록 설계되었습니다.
+이 집계 함수는 시계열 데이터를 타임스탬프와 값의 쌍으로 받아 최대 2개의 최신 샘플만 저장합니다. 이 집계 함수는 그리드에 정렬된 타임스탬프에 대해 리샘플링된 시계열 데이터를 저장하는 구체화된 뷰(Materialized View) 및 집계 테이블과 함께 사용하도록 설계되었습니다.
 
 집계 테이블은 각 정렬된 타임스탬프에 대해 마지막 2개의 값만 저장합니다. 따라서 원시 테이블에 저장된 데이터보다 훨씬 적은 데이터만 읽고도 PromQL과 유사한 `irate` 및 `idelta`를 계산할 수 있습니다.
 
@@ -43,7 +43,8 @@ timeSeriesLastTwoSamples(timestamp, value)
 **원시 데이터용 예시 테이블과 리샘플링된 데이터를 저장하기 위한 테이블**
 
 ```sql title=Query
--- 원시 데이터 테이블
+SET allow_experimental_time_series_aggregate_functions = 1;
+-- Table for raw data
 CREATE TABLE t_raw_timeseries
 (
     metric_id UInt64,
@@ -53,17 +54,17 @@ CREATE TABLE t_raw_timeseries
 ENGINE = MergeTree()
 ORDER BY (metric_id, timestamp);
 
--- 더 큰 시간 간격(15초)으로 리샘플링된 데이터 테이블
+-- Table with data re-sampled to bigger (15 sec) time steps
 CREATE TABLE t_resampled_timeseries_15_sec
 (
     metric_id UInt64,
-    grid_timestamp DateTime('UTC') CODEC(DoubleDelta, ZSTD), -- 15초 단위로 정렬된 타임스탬프
+    grid_timestamp DateTime('UTC') CODEC(DoubleDelta, ZSTD), -- Timestamp aligned to 15 sec
     samples AggregateFunction(timeSeriesLastTwoSamples, DateTime64(3, 'UTC'), Float64)
 )
 ENGINE = AggregatingMergeTree()
 ORDER BY (metric_id, grid_timestamp);
 
--- 리샘플링 테이블을 채우기 위한 MV
+-- MV for populating re-sampled table
 CREATE MATERIALIZED VIEW mv_resampled_timeseries TO t_resampled_timeseries_15_sec
 (
     metric_id UInt64,
@@ -72,15 +73,15 @@ CREATE MATERIALIZED VIEW mv_resampled_timeseries TO t_resampled_timeseries_15_se
 )
 AS SELECT
     metric_id,
-    ceil(toUnixTimestamp(timestamp + interval 999 millisecond) / 15, 0) * 15 AS grid_timestamp, -- 타임스탬프를 다음 그리드 포인트로 올림
+    ceil(toUnixTimestamp(timestamp + interval 999 millisecond) / 15, 0) * 15 AS grid_timestamp, -- Round timestamp up to the next grid point
     initializeAggregation('timeSeriesLastTwoSamplesState', timestamp, value) AS samples
 FROM t_raw_timeseries
 ORDER BY metric_id, grid_timestamp;
 
--- 데이터 삽입
+-- Insert some data
 INSERT INTO t_raw_timeseries(metric_id, timestamp, value) SELECT number%10 AS metric_id, '2024-12-12 12:00:00'::DateTime64(3, 'UTC') + interval ((number/10)%100)*900 millisecond as timestamp, number%3+number%29 AS value FROM numbers(1000);
 
--- 원시 데이터 확인
+-- Check raw data
 SELECT *
 FROM t_raw_timeseries
 WHERE metric_id = 3 AND timestamp BETWEEN '2024-12-12 12:00:12' AND '2024-12-12 12:00:31'
@@ -111,10 +112,48 @@ ORDER BY metric_id, timestamp;
 3    2024-12-12 12:00:30.869    25
 ```
 
-**타임스탬프 &#39;2024-12-12 12:00:15&#39; 및 &#39;2024-12-12 12:00:30&#39;에 해당하는 최근 2개 샘플을 쿼리합니다**
+**타임스탬프 &#39;2024-12-12 12:00:15&#39; 및 &#39;2024-12-12 12:00:30&#39;의 마지막 2개 샘플 쿼리**
 
 ```sql title=Query
--- 리샘플링된 데이터 확인
+SET allow_experimental_time_series_aggregate_functions = 1;
+-- Table for raw data
+CREATE TABLE t_raw_timeseries
+(
+    metric_id UInt64,
+    timestamp DateTime64(3, 'UTC') CODEC(DoubleDelta, ZSTD),
+    value Float64 CODEC(DoubleDelta)
+)
+ENGINE = MergeTree()
+ORDER BY (metric_id, timestamp);
+
+-- Table with data re-sampled to bigger (15 sec) time steps
+CREATE TABLE t_resampled_timeseries_15_sec
+(
+    metric_id UInt64,
+    grid_timestamp DateTime('UTC') CODEC(DoubleDelta, ZSTD), -- Timestamp aligned to 15 sec
+    samples AggregateFunction(timeSeriesLastTwoSamples, DateTime64(3, 'UTC'), Float64)
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY (metric_id, grid_timestamp);
+
+-- MV for populating re-sampled table
+CREATE MATERIALIZED VIEW mv_resampled_timeseries TO t_resampled_timeseries_15_sec
+(
+    metric_id UInt64,
+    grid_timestamp DateTime('UTC') CODEC(DoubleDelta, ZSTD),
+    samples AggregateFunction(timeSeriesLastTwoSamples, DateTime64(3, 'UTC'), Float64)
+)
+AS SELECT
+    metric_id,
+    ceil(toUnixTimestamp(timestamp + interval 999 millisecond) / 15, 0) * 15 AS grid_timestamp, -- Round timestamp up to the next grid point
+    initializeAggregation('timeSeriesLastTwoSamplesState', timestamp, value) AS samples
+FROM t_raw_timeseries
+ORDER BY metric_id, grid_timestamp;
+
+-- Insert some data
+INSERT INTO t_raw_timeseries(metric_id, timestamp, value) SELECT number%10 AS metric_id, '2024-12-12 12:00:00'::DateTime64(3, 'UTC') + interval ((number/10)%100)*900 millisecond as timestamp, number%3+number%29 AS value FROM numbers(1000);
+
+-- Check re-sampled data
 SELECT metric_id, grid_timestamp, (finalizeAggregation(samples).1 as timestamp, finalizeAggregation(samples).2 as value)
 FROM t_resampled_timeseries_15_sec
 WHERE metric_id = 3 AND grid_timestamp BETWEEN '2024-12-12 12:00:15' AND '2024-12-12 12:00:30'
@@ -129,14 +168,28 @@ ORDER BY metric_id, grid_timestamp;
 **원시 데이터로부터 idelta 및 irate 계산**
 
 ```sql title=Query
--- 집계된 테이블은 15초 단위로 정렬된 각 타임스탬프에 대해 마지막 2개의 값만 저장합니다.
--- 이를 통해 원시 테이블에 저장된 데이터보다 훨씬 적은 양을 읽어 PromQL 방식의 irate 및 idelta를 계산할 수 있습니다.
+SET allow_experimental_time_series_aggregate_functions = 1;
+-- Table for raw data
+CREATE TABLE t_raw_timeseries
+(
+    metric_id UInt64,
+    timestamp DateTime64(3, 'UTC') CODEC(DoubleDelta, ZSTD),
+    value Float64 CODEC(DoubleDelta)
+)
+ENGINE = MergeTree()
+ORDER BY (metric_id, timestamp);
+
+-- Insert some data
+INSERT INTO t_raw_timeseries(metric_id, timestamp, value) SELECT number%10 AS metric_id, '2024-12-12 12:00:00'::DateTime64(3, 'UTC') + interval ((number/10)%100)*900 millisecond as timestamp, number%3+number%29 AS value FROM numbers(1000);
+
+-- The aggregated table stores only last 2 values for each 15-second aligned timestamp.
+-- This allows to calculate PromQL-like irate and idelta by reading much less data then is stored in the raw table.
 
 WITH
-    '2024-12-12 12:00:15'::DateTime64(3,'UTC') AS start_ts,       -- 타임스탬프 그리드의 시작
-    start_ts + INTERVAL 60 SECOND AS end_ts,   -- 타임스탬프 그리드의 끝
-    15 AS step_seconds,   -- 타임스탬프 그리드의 간격
-    45 AS window_seconds  -- "staleness" 윈도우
+    '2024-12-12 12:00:15'::DateTime64(3,'UTC') AS start_ts,       -- start of timestamp grid
+    start_ts + INTERVAL 60 SECOND AS end_ts,   -- end of timestamp grid
+    15 AS step_seconds,   -- step of timestamp grid
+    45 AS window_seconds  -- "staleness" window
 SELECT
     metric_id,
     timeSeriesInstantDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value),
@@ -153,11 +206,49 @@ GROUP BY metric_id;
 **리샘플링된 데이터에서 idelta 및 irate 계산**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
+-- Table for raw data
+CREATE TABLE t_raw_timeseries
+(
+    metric_id UInt64,
+    timestamp DateTime64(3, 'UTC') CODEC(DoubleDelta, ZSTD),
+    value Float64 CODEC(DoubleDelta)
+)
+ENGINE = MergeTree()
+ORDER BY (metric_id, timestamp);
+
+-- Table with data re-sampled to bigger (15 sec) time steps
+CREATE TABLE t_resampled_timeseries_15_sec
+(
+    metric_id UInt64,
+    grid_timestamp DateTime('UTC') CODEC(DoubleDelta, ZSTD), -- Timestamp aligned to 15 sec
+    samples AggregateFunction(timeSeriesLastTwoSamples, DateTime64(3, 'UTC'), Float64)
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY (metric_id, grid_timestamp);
+
+-- MV for populating re-sampled table
+CREATE MATERIALIZED VIEW mv_resampled_timeseries TO t_resampled_timeseries_15_sec
+(
+    metric_id UInt64,
+    grid_timestamp DateTime('UTC') CODEC(DoubleDelta, ZSTD),
+    samples AggregateFunction(timeSeriesLastTwoSamples, DateTime64(3, 'UTC'), Float64)
+)
+AS SELECT
+    metric_id,
+    ceil(toUnixTimestamp(timestamp + interval 999 millisecond) / 15, 0) * 15 AS grid_timestamp, -- Round timestamp up to the next grid point
+    initializeAggregation('timeSeriesLastTwoSamplesState', timestamp, value) AS samples
+FROM t_raw_timeseries
+ORDER BY metric_id, grid_timestamp;
+
+-- Insert some data
+INSERT INTO t_raw_timeseries(metric_id, timestamp, value) SELECT number%10 AS metric_id, '2024-12-12 12:00:00'::DateTime64(3, 'UTC') + interval ((number/10)%100)*900 millisecond as timestamp, number%3+number%29 AS value FROM numbers(1000);
+
 WITH
-    '2024-12-12 12:00:15'::DateTime64(3,'UTC') AS start_ts,       -- 타임스탬프 그리드의 시작
-    start_ts + INTERVAL 60 SECOND AS end_ts,   -- 타임스탬프 그리드의 끝
-    15 AS step_seconds,   -- 타임스탬프 그리드의 간격
-    45 AS window_seconds  -- "staleness" 윈도우
+    '2024-12-12 12:00:15'::DateTime64(3,'UTC') AS start_ts,       -- start of timestamp grid
+    start_ts + INTERVAL 60 SECOND AS end_ts,   -- end of timestamp grid
+    15 AS step_seconds,   -- step of timestamp grid
+    45 AS window_seconds  -- "staleness" window
 SELECT
     metric_id,
     timeSeriesInstantDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values),

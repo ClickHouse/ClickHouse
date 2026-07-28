@@ -35,9 +35,7 @@ description: "연산자와 ClickHouse 클러스터(Keeper + server)를 포함한
 </div>
 
 <Steps>
-  <Step>
-    ### 1. Operator Helm 차트 업그레이드
-
+  <Step title="1. Operator Helm 차트 업그레이드" id="1-upgrade-the-operator-helm-chart">
     기존 Helm values는 모두 그대로 유지하고, 연산자 버전만 새 대상 버전으로 업데이트합니다.
 
     ```bash
@@ -47,12 +45,10 @@ description: "연산자와 ClickHouse 클러스터(Keeper + server)를 포함한
       -n clickhouse-operator-system
     ```
 
-    > **참고:** 연산자를 업그레이드하면 관리 중인 모든 ClickHouse 클러스터가 롤링 재시작될 수 있습니다. 여러 클러스터를 운영 중이고 연산자가 다른 클러스터까지 reconcile하기 전에 먼저 하나의 클러스터에서 업그레이드를 검증하려면, 아래의 [업그레이드 중 클러스터 보호](#protecting-clusters-during-upgrade)를 참조하십시오.
+    > **참고:** 연산자를 업그레이드하면 관리 중인 모든 ClickHouse 클러스터가 롤링 재시작될 수 있습니다. 여러 클러스터를 운영 중이고 연산자가 다른 클러스터까지 리컨실하기 전에 먼저 하나의 클러스터에서 업그레이드를 검증하려면, 아래의 [업그레이드 중 클러스터 보호](#protecting-clusters-during-upgrade)를 참조하십시오.
   </Step>
 
-  <Step>
-    ### 2. 업그레이드된 Operator 검증
-
+  <Step title="2. 업그레이드된 Operator 검증" id="2-validate-the-upgraded-operator">
     연산자 배포가 실행 중이며 정상 상태인지 확인합니다:
 
     ```bash
@@ -61,16 +57,14 @@ description: "연산자와 ClickHouse 클러스터(Keeper + server)를 포함한
     kubectl logs -n clickhouse-operator-system deployment/clickhouse-operator-clickhouse-operator-helm
     ```
 
-    로그에 오류가 없는지, 그리고 관리 중인 모든 클러스터가 성공적으로 reconcile되었는지 확인합니다:
+    로그에 오류가 없는지, 그리고 관리 중인 모든 클러스터가 성공적으로 리컨실되었는지 확인합니다:
 
     ```bash
     kubectl get clickhousecluster -A
     ```
   </Step>
 
-  <Step>
-    ### 3. onprem-clickhouse-cluster Helm 차트 업그레이드
-
+  <Step title="3. onprem-clickhouse-cluster Helm 차트 업그레이드" id="3-upgrade-the-onprem-clickhouse-cluster-helm-chart">
     각 클러스터에 대해 `onprem-clickhouse-cluster` helm 차트를 업그레이드합니다. 기존 Helm values는 모두 그대로 유지하고, ClickHouse 서버와 Keeper 이미지 버전만 새 대상 버전으로 업데이트합니다.
 
     ```bash
@@ -85,9 +79,7 @@ description: "연산자와 ClickHouse 클러스터(Keeper + server)를 포함한
     이 작업은 **Keeper 및 서버 파드의 롤링 재시작**을 유발합니다(한 번에 하나의 파드씩). 각 클러스터에 대해 반복하십시오.
   </Step>
 
-  <Step>
-    ### 4. 업그레이드된 클러스터 검증
-
+  <Step title="4. 업그레이드된 클러스터 검증" id="4-validate-the-upgraded-cluster">
     롤링 재시작이 완료되면 클러스터가 정상 상태인지 확인합니다:
 
     ```bash

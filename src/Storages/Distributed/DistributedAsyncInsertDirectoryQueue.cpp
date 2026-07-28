@@ -197,6 +197,32 @@ void DistributedAsyncInsertDirectoryQueue::shutdownWithoutFlush()
     task_handle->deactivate();
 }
 
+std::chrono::milliseconds DistributedAsyncInsertDirectoryQueue::calculateSleepTime(
+    std::chrono::milliseconds default_sleep_time,
+    std::chrono::milliseconds max_sleep_time,
+    size_t error_count)
+{
+    if (default_sleep_time.count() <= 0)
+        return std::min(default_sleep_time, max_sleep_time);
+
+    const UInt64 q = doubleToUInt64(std::exp2(error_count));
+    /// Clamp before multiplying: default_sleep_time * q can overflow for large error_count.
+    if (q > static_cast<UInt64>(max_sleep_time.count() / default_sleep_time.count()))
+        return max_sleep_time;
+
+    return std::min(std::chrono::milliseconds(default_sleep_time.count() * static_cast<Int64>(q)), max_sleep_time);
+}
+
+void DistributedAsyncInsertDirectoryQueue::updateSleepTime()
+{
+    size_t error_count = 0;
+    {
+        std::lock_guard status_lock(status_mutex);
+        error_count = status.error_count;
+    }
+    sleep_time = calculateSleepTime(default_sleep_time, max_sleep_time, error_count);
+}
+
 
 void DistributedAsyncInsertDirectoryQueue::run()
 {
@@ -205,6 +231,7 @@ void DistributedAsyncInsertDirectoryQueue::run()
     std::lock_guard lock{mutex};
 
     bool do_sleep = false;
+    bool had_error = false;
     while (!pending_files.isFinished())
     {
         do_sleep = true;
@@ -220,27 +247,11 @@ void DistributedAsyncInsertDirectoryQueue::run()
                 /// No errors while processing existing files.
                 /// Let's see maybe there are more files to process.
                 do_sleep = false;
-
-                const auto now = std::chrono::system_clock::now();
-                if (now - last_decrease_time > decrease_error_count_period)
-                {
-                    std::lock_guard status_lock(status_mutex);
-
-                    status.error_count /= 2;
-                    last_decrease_time = now;
-                }
             }
             catch (...)
             {
                 tryLogCurrentException(getLoggerName().data());
-
-                UInt64 q = doubleToUInt64(std::exp2(status.error_count));
-                std::chrono::milliseconds new_sleep_time(default_sleep_time.count() * q);
-                if (new_sleep_time.count() < 0)
-                    sleep_time = max_sleep_time;
-                else
-                    sleep_time = std::min(new_sleep_time, max_sleep_time);
-
+                had_error = true;
                 do_sleep = true;
             }
         }
@@ -251,8 +262,25 @@ void DistributedAsyncInsertDirectoryQueue::run()
             break;
     }
 
+    /// Decay error_count on a non-failing, unblocked run so the backoff relaxes after recovery.
+    /// Skip on error (keep growing during an outage) and while sends are stopped (preserve backoff).
+    if (!had_error && !monitor_blocker.isCancelled())
+    {
+        const auto now = std::chrono::system_clock::now();
+        std::lock_guard status_lock(status_mutex);
+        if (now - last_decrease_time > decrease_error_count_period)
+        {
+            status.error_count /= 2;
+            last_decrease_time = now;
+        }
+    }
+
+    /// Recompute the backoff here, the only place sleep_time is used, so it tracks error_count up and down.
     if (!pending_files.isFinished() && do_sleep)
+    {
+        updateSleepTime();
         task_handle->scheduleAfter(sleep_time.count());
+    }
 }
 
 
@@ -366,7 +394,10 @@ void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
         {
             const auto & file_path = it->path();
             if (!it->is_directory() && startsWith(fs::path(file_path).extension(), ".bin") && parse<UInt64>(file_path.stem()))
+            {
                 broken_bytes_count += fs::file_size(file_path);
+                broken_files++;
+            }
             else
                 LOG_WARNING(log, "Unexpected file {} in {}", file_path.string(), broken_path);
         }

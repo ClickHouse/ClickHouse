@@ -21,57 +21,57 @@ Los ClickPipes de Kinesis se pueden implementar y gestionar manualmente mediante
 Debe haberse familiarizado con la [introducción a ClickPipes](/es/integrations/clickpipes/home) y haber configurado las [credenciales de IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) o un [rol de IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html). Siga la [guía de acceso basado en roles de Kinesis](/es/integrations/clickpipes/kinesis/auth) para obtener información sobre cómo configurar un rol compatible con ClickHouse Cloud.
 
 <div id="creating-your-first-clickpipe">
-  ## Creación de tu primer ClickPipe
+  ## Crear su primer ClickPipe
 </div>
 
-1. Accede a la SQL Console de tu servicio de ClickHouse Cloud.
+1. Acceda a la SQL Console de su servicio de ClickHouse Cloud.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="Servicio de ClickPipes" size="lg" border />
 
-2. Selecciona el botón `Data Sources` en el menú lateral izquierdo y haz clic en &quot;Set up a ClickPipe&quot;
+2. Seleccione el botón `Data Sources` en el menú lateral izquierdo y haga clic en &quot;Set up a ClickPipe&quot;
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Seleccionar importaciones" size="lg" border />
 
-3. Selecciona tu fuente de datos.
+3. Seleccione su fuente de datos.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="Seleccionar tipo de fuente de datos" size="lg" border />
 
-4. Completa el formulario asignándole a tu ClickPipe un nombre, una descripción (opcional), tu rol de IAM o credenciales, y otros detalles de conexión.
+4. Complete el formulario proporcionando a su ClickPipe un nombre, una descripción (opcional), su rol de IAM o sus credenciales, y otros detalles de conexión.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="Completar los detalles de conexión" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="Completar los detalles de la conexión" size="lg" border />
 
-5. Selecciona Kinesis Stream y el desplazamiento inicial. La UI mostrará un documento de muestra de la fuente seleccionada (Kafka topic, etc.). También puedes habilitar Enhanced Fan-out para los streams de Kinesis y así mejorar el rendimiento y la estabilidad de tu ClickPipe (puedes encontrar más información sobre Enhanced Fan-out [aquí](https://aws.amazon.com/blogs/aws/kds-enhanced-fanout))
+5. Seleccione Kinesis Stream y el offset inicial. La UI mostrará un documento de ejemplo de la fuente seleccionada (topic de Kafka, etc.). También puede habilitar Enhanced Fan-out para Kinesis streams para mejorar el rendimiento y la estabilidad de su ClickPipe (puede encontrar más información sobre Enhanced Fan-out [aquí](https://aws.amazon.com/blogs/aws/kds-enhanced-fanout))
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="Definir el formato de los datos y el topic" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="Configurar formato de datos y topic" size="lg" border />
 
-6. En el siguiente paso, puedes seleccionar si quieres ingestar datos en una tabla nueva de ClickHouse o reutilizar una existente. Sigue las instrucciones en pantalla para modificar el nombre de la tabla, el esquema y la configuración. Puedes ver una vista previa en tiempo real de tus cambios en la tabla de muestra de la parte superior.
+6. En el siguiente paso, puede seleccionar si desea ingestar datos en una nueva tabla de ClickHouse o reutilizar una existente. Siga las instrucciones en pantalla para modificar el nombre de la tabla, el esquema y la configuración. Puede ver una vista previa en tiempo real de sus cambios en la tabla de ejemplo de la parte superior.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="Definir la tabla, el esquema y la configuración" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="Configurar tabla, esquema y settings" size="lg" border />
 
-También puedes personalizar la configuración avanzada con los controles proporcionados
+También puede personalizar la configuración avanzada usando los controles proporcionados
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="Definir controles avanzados" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="Configurar controles avanzados" size="lg" border />
 
-7. Como alternativa, puedes optar por ingestar tus datos en una tabla existente de ClickHouse. En ese caso, la UI te permitirá mapear los campos de la fuente a los campos de ClickHouse en la tabla de destino seleccionada.
+7. Como alternativa, puede decidir ingestar sus datos en una tabla de ClickHouse existente. En ese caso, la UI le permitirá mapear campos de la fuente a los campos de ClickHouse en la tabla de destino seleccionada.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="Usar una tabla existente" size="lg" border />
 
-8. Por último, puedes configurar los permisos del usuario interno de ClickPipes.
+8. Por último, puede configurar los permisos para el usuario interno de ClickPipes.
 
-**Permisos:** ClickPipes creará un usuario dedicado para escribir datos en una tabla de destino. Puedes seleccionar un rol para este usuario interno usando un rol personalizado o uno de los roles predefinidos:
+**Permisos:** ClickPipes creará un usuario dedicado para escribir datos en una tabla de destino. Puede seleccionar un rol para este usuario interno usando un rol personalizado o uno de los roles predefinidos:
 
-* `Full access`: con acceso completo al clúster. Puede ser útil si usas una vista materializada o un Diccionario con la tabla de destino.
+* `Full access`: con acceso completo al clúster. Puede resultar útil si usa una vista materializada o un Diccionario con la tabla de destino.
   * `Only destination table`: solo con permisos `INSERT` sobre la tabla de destino.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Permisos" border />
 
-9. Al hacer clic en &quot;Complete Setup&quot;, el sistema registrará tu ClickPipe y podrás verlo en la tabla de resumen.
+9. Al hacer clic en &quot;Complete Setup&quot;, el sistema registrará su ClickPipe y podrá verlo en la tabla de resumen.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="Aviso de éxito" size="sm" border />
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="Aviso de eliminación" size="lg" border />
 
-La tabla de resumen proporciona controles para mostrar datos de muestra de la fuente o de la tabla de destino en ClickHouse
+La tabla de resumen ofrece controles para mostrar datos de ejemplo de la fuente o de la tabla de destino en ClickHouse
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="Ver destino" size="lg" border />
 
@@ -79,7 +79,7 @@ Así como controles para eliminar el ClickPipe y mostrar un resumen del trabajo 
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="Ver resumen" size="lg" border />
 
-10. **¡Enhorabuena!** Has configurado correctamente tu primer ClickPipe. Si este es un ClickPipe de streaming, se ejecutará continuamente e ingestará datos en tiempo real desde tu fuente de datos remota. De lo contrario, ingestará el lote y finalizará.
+10. **¡Enhorabuena!** Ha configurado correctamente su primer ClickPipe. Si se trata de un ClickPipe de streaming, se ejecutará continuamente e ingestará datos en tiempo real desde su fuente de datos remota. De lo contrario, ingestará el lote y finalizará.
 
 <div id="supported-data-formats">
   ## Formatos de datos admitidos
@@ -226,4 +226,4 @@ el ClickPipe reiniciará automáticamente el consumidor y seguirá procesando me
   ## Autenticación
 </div>
 
-Para acceder a los flujos de Amazon Kinesis, puede usar [credenciales de IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) o un [rol de IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html). Para obtener más información sobre cómo configurar un rol de IAM, puede [consultar esta guía](/es/integrations/clickpipes/kinesis/auth), donde se explica cómo configurar un rol que funcione con ClickHouse Cloud.
+Para acceder a los streams de Amazon Kinesis, puedes usar [credenciales de IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) o un [rol de IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html). Para obtener más información sobre cómo configurar un rol de IAM, puedes [consultar esta guía](/es/integrations/clickpipes/kinesis/auth), donde se explica cómo configurar un rol compatible con ClickHouse Cloud

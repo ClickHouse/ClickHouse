@@ -16,9 +16,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 如果您希望使用现有 VPC 部署 ClickHouse BYOC，而不是由 ClickHouse Cloud 预配新的 VPC，请按以下步骤操作。这样做可以让您更好地控制网络配置，并将 ClickHouse BYOC 集成到现有网络基础设施中。
 
 <Steps>
-  <Step>
-    ### 配置现有 VPC
-
+  <Step title="配置现有 VPC" id="configure-existing-vpc">
     1. 在 [ClickHouse BYOC 支持的区域](/zh/products/cloud/reference/supported-regions)中，为 ClickHouse Kubernetes (GKE) 集群至少分配 1 个私有子网。请确保该子网的 CIDR 范围至少为 `/24` (例如 10.0.0.0/24) ，以便为 GKE 集群节点提供足够的 IP 地址。
     2. 在该私有子网中，至少分配 1 个供 GKE 集群 Pod (容器组) 使用的辅助 IPv4 范围。该辅助范围至少应为 `/23`，以便为 GKE 集群 Pod (容器组) 提供足够的 IP 地址。
     3. 在该子网上启用 **Private Google Access**。这样，GKE 节点无需外部 IP 地址即可访问 Google API 和服务。
@@ -26,9 +24,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     <Image img="/images/cloud/reference/byoc-gcp-subnet.webp" size="lg" alt="BYOC GCP 子网详情，显示主 IPv4 范围和辅助 IPv4 范围，且已启用 Private Google Access" />
   </Step>
 
-  <Step>
-    ### 确保网络连通性
-
+  <Step title="确保网络连通性" id="ensure-network-connectivity">
     **Cloud NAT Gateway**
     请确保已为该 VPC 部署 [Cloud NAT gateway](https://cloud.google.com/nat/docs/overview)。ClickHouse BYOC 组件需要具备出站互联网访问能力，以便与 Tailscale control plane 通信。Tailscale 用于为私有管理操作提供安全的零信任网络。Cloud NAT gateway 可为没有外部 IP 地址的实例提供这种出站连接能力。
 
@@ -36,9 +32,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     请确保您的 VPC 具备正常的 DNS 解析能力，并且不会阻止、干扰或覆盖标准 DNS 名称。ClickHouse BYOC 依赖 DNS 来解析 Tailscale 控制服务器和 ClickHouse 服务端点。如果 DNS 不可用或配置不当，BYOC 服务可能无法正常连接或运行。
   </Step>
 
-  <Step>
-    ### 设置 BYOC 基础设施
-
+  <Step title="设置 BYOC 基础设施" id="set-up-byoc-infrastructure">
     在 ClickHouse Cloud 控制台中，设置新基础设施时请配置以下内容：
 
     1. 在 **VPC configuration** 下，选择 **Use existing VPC**。

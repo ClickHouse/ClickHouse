@@ -35,10 +35,10 @@ extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_cha
 **인수**
 
 * `data` - 키-값 쌍을 추출할 대상 문자열입니다. [String](/ko/reference/data-types/string) 또는 [FixedString](/ko/reference/data-types/fixedstring)입니다.
-  * `key_value_delimiter` - 키와 값을 구분하는 데 사용하는 문자입니다. 기본값은 `:`입니다. [String](/ko/reference/data-types/string) 또는 [FixedString](/ko/reference/data-types/fixedstring)입니다.
-  * `pair_delimiters` - 각 쌍을 구분하는 데 사용하는 문자 집합입니다. 기본값은 `\space`, `,`, `;`입니다. [String](/ko/reference/data-types/string) 또는 [FixedString](/ko/reference/data-types/fixedstring)입니다.
-  * `quoting_character` - 인용 문자로 사용하는 문자입니다. 기본값은 `"`입니다. [String](/ko/reference/data-types/string) 또는 [FixedString](/ko/reference/data-types/fixedstring)입니다.
-  * `unexpected_quoting_character_strategy` - `read_key` 및 `read_value` 단계에서 예상하지 못한 위치에 있는 인용 문자를 처리하는 전략입니다. 가능한 값은 `invalid`, `accept`, `promote`입니다. `invalid`는 키/값을 버리고 `WAITING_KEY` 상태로 다시 전환합니다. `accept`는 이를 일반 문자로 처리합니다. `promote`는 `READ_QUOTED_{KEY/VALUE}` 상태로 전환한 뒤 다음 문자부터 시작합니다. 기본값은 `INVALID`입니다.
+* `key_value_delimiter` - 키와 값을 구분하는 데 사용하는 문자입니다. 기본값은 `:`입니다. [String](/ko/reference/data-types/string) 또는 [FixedString](/ko/reference/data-types/fixedstring)입니다.
+* `pair_delimiters` - 각 쌍을 구분하는 데 사용하는 문자 집합입니다. 기본값은 `\space`, `,`, `;`입니다. [String](/ko/reference/data-types/string) 또는 [FixedString](/ko/reference/data-types/fixedstring)입니다.
+* `quoting_character` - 인용 문자로 사용하는 문자입니다. 기본값은 `"`입니다. [String](/ko/reference/data-types/string) 또는 [FixedString](/ko/reference/data-types/fixedstring)입니다.
+* `unexpected_quoting_character_strategy` - `read_key` 및 `read_value` 단계에서 예상하지 못한 위치에 있는 인용 문자를 처리하는 전략입니다. 가능한 값은 `invalid`, `accept`, `promote`입니다. `invalid`는 키/값을 버리고 `WAITING_KEY` 상태로 다시 전환합니다. `accept`는 이를 일반 문자로 처리합니다. `promote`는 `READ_QUOTED_{KEY/VALUE}` 상태로 전환한 뒤 다음 문자부터 시작합니다. 기본값은 `INVALID`입니다.
 
 **반환 값**
 
@@ -53,13 +53,13 @@ extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_cha
 ```sql
 arthur :) select extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
 
-            SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
+SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
 
-            Query id: f9e0ca6f-3178-4ee2-aa2c-a5517abb9cee
+Query id: f9e0ca6f-3178-4ee2-aa2c-a5517abb9cee
 
-            ┌─kv──────────────────────────────────────────────────────────────────────┐
-            │ {'name':'neymar','age':'31','team':'psg','nationality':'brazil'}        │
-            └─────────────────────────────────────────────────────────────────────────┘
+┌─kv──────────────────────────────────────────────────────────────────────┐
+│ {'name':'neymar','age':'31','team':'psg','nationality':'brazil'}        │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 **인용 문자로서의 작은따옴표**
@@ -67,13 +67,13 @@ arthur :) select extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:
 ```sql
 arthur :) select extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
 
-            SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
+SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
 
-            Query id: 0e22bf6b-9844-414a-99dc-32bf647abd5e
+Query id: 0e22bf6b-9844-414a-99dc-32bf647abd5e
 
-            ┌─kv───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-            │ {'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}                                 │
-            └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─kv───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ {'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}                                 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 unexpected&#95;quoting&#95;character&#95;strategy 예시:
@@ -86,8 +86,8 @@ SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'INVALID') as kv;
 
 ```text
 ┌─kv────────────────┐
-            │ {'abc':'5'}  │
-            └───────────────────┘
+│ {'abc':'5'}       │
+└───────────────────┘
 ```
 
 ```sql
@@ -96,8 +96,8 @@ SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'INVALID') as kv;
 
 ```text
 ┌─kv──┐
-            │ {}  │
-            └─────┘
+│ {}  │
+└─────┘
 ```
 
 unexpected&#95;quoting&#95;character&#95;strategy=accept
@@ -108,54 +108,54 @@ SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'ACCEPT') as kv;
 
 ```text
 ┌─kv────────────────┐
-            │ {'name"abc':'5'}  │
-            └───────────────────┘
+│ {'name"abc':'5'}  │
+└───────────────────┘
 ```
 
 ```sql
-            SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') as kv;
+SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') as kv;
 ```
 
 ```text
-            ┌─kv─────────────────┐
-            │ {'name"abc"':'5'}  │
-            └────────────────────┘
+┌─kv─────────────────┐
+│ {'name"abc"':'5'}  │
+└────────────────────┘
 ```
 
 unexpected&#95;quoting&#95;character&#95;strategy=promote
 
 ```sql
-            SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') as kv;
+SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') as kv;
 ```
 
 ```text
-            ┌─kv──┐
-            │ {}  │
-            └─────┘
+┌─kv──┐
+│ {}  │
+└─────┘
 ```
 
 ```sql
-            SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
+SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
 ```
 
 ```text
-            ┌─kv───────────┐
-            │ {'abc':'5'}  │
-            └──────────────┘
+┌─kv───────────┐
+│ {'abc':'5'}  │
+└──────────────┘
 ```
 
 **이스케이프 시퀀스 지원이 없는 경우의 이스케이프 시퀀스**
 
 ```sql
-            arthur :) select extractKeyValuePairs('age:a\\x0A\\n\\0') as kv
+arthur :) select extractKeyValuePairs('age:a\\x0A\\n\\0') as kv
 
-            SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
+SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
 
-            Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
+Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
 
-            ┌─kv────────────────────┐
-            │ {'age':'a\\x0A\\n\\0'} │
-            └───────────────────────┘
+┌─kv─────────────────────┐
+│ {'age':'a\\x0A\\n\\0'} │
+└────────────────────────┘
 ```
 
 **구문**
@@ -190,22 +190,22 @@ extractKeyValuePairs(input)
 입력 문자열을 생각해 보겠습니다: `a: "aaaa\"bbb"`. 예상 출력은 `a: aaaa\"bbbb`입니다.
 
 * 사전 이스케이프: 사전 이스케이프를 적용하면 `a: "aaaa"bbb"`가 출력되고, 이후 `extractKeyValuePairs`는 `a: aaaa`를 출력합니다
-  * 사후 이스케이프: `extractKeyValuePairs`는 `a: aaaa\`를 출력하고, 사후 이스케이프는 이를 그대로 유지합니다.
+* 사후 이스케이프: `extractKeyValuePairs`는 `a: aaaa\`를 출력하고, 사후 이스케이프는 이를 그대로 유지합니다.
 
 선행 이스케이프 시퀀스는 키에서는 건너뛰며, 값에서는 유효하지 않은 것으로 간주됩니다.
 
 **이스케이프 시퀀스 지원이 활성화된 상태의 이스케이프 시퀀스**
 
 ```sql
-            arthur :) select extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') as kv
+arthur :) select extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') as kv
 
-            SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv
+SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv
 
-            Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
+Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
 
-            ┌─kv───────────────┐
-            │ {'age':'a\n\n\0'} │
-            └──────────────────┘
+┌─kv────────────────┐
+│ {'age':'a\n\n\0'} │
+└───────────────────┘
 ```
 
 **구문**

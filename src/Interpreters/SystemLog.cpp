@@ -943,6 +943,16 @@ void SystemLog<LogElement>::addSettingsForQuery(ContextMutablePtr & mutable_cont
         mutable_context->setSetting("check_table_dependencies", Field{false});
         mutable_context->setSetting("check_referential_table_dependencies", Field{false});
     }
+    else if (query_kind == IAST::QueryKind::Alter)
+    {
+        /// The metadata of the widest system log tables (e.g. `metric_log`, whose columns follow
+        /// the ever-growing set of profile events and metrics) can exceed the default
+        /// `max_query_size`, and `ALTER` validates the size of the resulting metadata against it
+        /// to keep tables loadable by user queries. Loading the metadata at startup parses it
+        /// with an unlimited query size, so the limit must not fail this internal `ALTER`
+        /// (e.g. marking a rotated table as readonly).
+        mutable_context->setSetting("max_query_size", Field{UInt64{0}});
+    }
 }
 
 template <typename LogElement>

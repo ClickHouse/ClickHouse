@@ -25,6 +25,7 @@ enum class GeoEncoding : uint8_t
 enum class GeoType : uint8_t
 {
     Point,
+    MultiPoint,
     LineString,
     Polygon,
     MultiLineString,

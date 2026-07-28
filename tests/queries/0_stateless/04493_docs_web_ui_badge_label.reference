@@ -1,0 +1,5 @@
+ClickHouse <span class="accent">Reference</span>
+function badgeLabel(name) {
+'**[' + badgeLabel(name) + ']**'
+case 'CloudNotSupportedBadge': return 'Not supported in ClickHouse Cloud';
+1

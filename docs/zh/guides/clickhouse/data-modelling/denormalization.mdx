@@ -417,4 +417,4 @@ DuplicatePosts: [('2017-04-11 12:18:37.260',3922739),('2017-04-11 12:18:37.260',
   ### 流式
 </div>
 
-或者，你也可以选择在 ClickHouse 之外、插入前，借助 [Apache Flink](/zh/integrations/connectors/data-ingestion/apache-flink) 等流式技术来完成此操作。另一种方式是使用增量 [materialized views](/zh/concepts/features/materialized-views/cascading-materialized-views)，在数据插入时完成这一过程。
+你也可以选择在插入前于 ClickHouse 之外使用 [Apache Flink](/zh/integrations/connectors/data-ingestion/apache-flink) 等流式技术来执行此操作。或者，也可以使用增量 [materialized views](/zh/concepts/features/materialized-views/cascading-materialized-views)，在数据插入时完成这一过程。

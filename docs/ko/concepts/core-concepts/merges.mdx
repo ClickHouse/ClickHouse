@@ -30,13 +30,13 @@ ClickHouse는 [스토리지 계층(storage layer)](https://www.vldb.org/pvldb/vo
 
 <br />
 
-파트의 `머지 수준`은 머지가 한 번 추가로 일어날 때마다 1씩 증가합니다. 레벨이 `0`이면 해당 파트는 새로 생성되었으며 아직 병합되지 않았다는 뜻입니다. 더 큰 파트로 병합된 파트는 [비활성 상태](/ko/reference/system-tables/parts)로 표시되며, [설정 가능한](/ko/reference/settings/merge-tree-settings#old_parts_lifetime) 시간이 지난 뒤 최종적으로 삭제됩니다(기본값은 8분). 시간이 지나면서 이렇게 병합된 파트의 **트리**가 만들어집니다. 그래서 [merge tree](/ko/reference/engines/table-engines/mergetree-family/index) 테이블이라는 이름이 붙었습니다.
+파트의 `머지 수준`은 머지가 한 번 추가로 일어날 때마다 1씩 증가합니다. 레벨이 `0`이면 해당 파트는 새로 생성되었으며 아직 병합되지 않았다는 뜻입니다. 더 큰 파트로 병합된 파트는 [비활성 상태](/ko/reference/system-tables/parts)로 표시되며, [설정 가능한](/ko/reference/settings/merge-tree-settings#old_parts_lifetime) 시간이 지난 뒤 최종적으로 삭제됩니다(기본값은 8분). 시간이 지나면서 이렇게 병합된 파트의 **트리**가 만들어집니다. 그래서 [merge tree](/ko/reference/engines/table-engines/mergetree-family/index) 테이블이라는 이름이 붙었습니다。
 
 <div id="monitoring-merges">
-  ## 머지 모니터링
+  ## 병합 모니터링
 </div>
 
-[테이블 파트란 무엇인가](/ko/concepts/core-concepts/parts) 예시에서는 ClickHouse가 모든 테이블 파트를 [parts](/ko/reference/system-tables/parts) 시스템 테이블(system table)에서 추적한다는 점을 [확인했습니다](/ko/concepts/core-concepts/parts#monitoring-table-parts). 예시 테이블의 각 활성 파트에 대한 머지 수준과 저장된 행 수를 조회하기 위해 다음 쿼리를 사용했습니다:
+[테이블 파트란 무엇인가](/ko/concepts/core-concepts/parts) 예시에서는 ClickHouse가 모든 테이블 파트를 [parts](/ko/reference/system-tables/parts) 시스템 테이블(system table)에서 추적한다는 점을 [확인했습니다](/ko/concepts/core-concepts/parts#monitoring-table-parts). 예시 테이블의 각 활성 파트에 대한 병합 수준과 저장된 행 수를 조회하기 위해 다음 쿼리를 사용했습니다:
 
 ```sql
 SELECT
@@ -48,7 +48,7 @@ WHERE (database = 'uk') AND (`table` = 'uk_price_paid_simple') AND active
 ORDER BY name ASC;
 ```
 
-[앞서 설명한](/ko/concepts/core-concepts/parts#monitoring-table-parts) 쿼리 결과를 보면, 예시 테이블에는 활성 파트가 4개 있었고, 각 파트는 처음 삽입된 파트들을 한 차례 머지하여 생성되었습니다:
+[앞서 설명한](/ko/concepts/core-concepts/parts#monitoring-table-parts) 쿼리 결과를 보면, 예시 테이블에는 활성 파트가 4개 있었고, 각 파트는 처음 삽입된 파트들을 한 차례 병합하여 생성되었습니다:
 
 ```response
    ┌─name────────┬─level─┬────rows─┐
@@ -59,7 +59,7 @@ ORDER BY name ASC;
    └─────────────┴───────┴─────────┘
 ```
 
-[실행](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICBuYW1lLAogICAgbGV2ZWwsCiAgICByb3dzCkZST00gc3lzdGVtLnBhcnRzCldIRVJFIChkYXRhYmFzZSA9ICd1aycpIEFORCAoYHRhYmxlYCA9ICd1a19wcmljZV9wYWlkX3NpbXBsZScpIEFORCBhY3RpdmUKT1JERVIgQlkgbmFtZSBBU0M7\&run_query=true\&tab=results)하면 이제 4개의 파트가 하나의 최종 파트로 머지된 것을 확인할 수 있습니다(테이블에 추가 삽입이 없는 한):
+[실행](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICBuYW1lLAogICAgbGV2ZWwsCiAgICByb3dzCkZST00gc3lzdGVtLnBhcnRzCldIRVJFIChkYXRhYmFzZSA9ICd1aycpIEFORCAoYHRhYmxlYCA9ICd1a19wcmljZV9wYWlkX3NpbXBsZScpIEFORCBhY3RpdmUKT1JERVIgQlkgbmFtZSBBU0M7\&run_query=true\&tab=results)하면 이제 4개의 파트가 하나의 최종 파트로 병합된 것을 확인할 수 있습니다(테이블에 추가 삽입이 없는 한):
 
 ```response
    ┌─name───────┬─level─┬─────rows─┐
@@ -67,13 +67,13 @@ ORDER BY name ASC;
    └────────────┴───────┴──────────┘
 ```
 
-ClickHouse 24.10에서는 새로운 [머지 대시보드](https://presentations.clickhouse.com/2024-release-24.10/index.html#17)가 기본 제공 [모니터링 대시보드](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards)에 추가되었습니다. OSS와 Cloud 모두에서 `/merges` HTTP handler를 통해 사용할 수 있으며, 이를 이용해 예시 테이블의 모든 파트 병합을 시각화할 수 있습니다:
+ClickHouse 24.10에서는 새로운 [병합 대시보드](https://presentations.clickhouse.com/2024-release-24.10/index.html#17)가 기본 제공 [모니터링 대시보드](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards)에 추가되었습니다. OSS와 Cloud 모두에서 `/merges` HTTP handler를 통해 사용할 수 있으며, 이를 이용해 예시 테이블의 모든 파트 병합을 시각화할 수 있습니다:
 
 <Image img="/images/managing-data/core-concepts/merges-dashboard.webp" size="lg" alt="파트 병합" />
 
 <br />
 
-위의 대시보드 녹화 화면은 초기 데이터 삽입부터 최종적으로 하나의 파트로 머지되기까지의 전체 과정을 보여줍니다:
+위의 대시보드 녹화 화면은 초기 데이터 삽입부터 최종적으로 하나의 파트로 병합되기까지의 전체 과정을 보여줍니다:
 
 ① 활성 파트 수.
 
@@ -150,7 +150,7 @@ ClickHouse는 [이전 예시](/ko/concepts/core-concepts/merges#concurrent-merge
 ① 압축이 해제된 사전 정렬 테이블 컬럼을 ② 테이블의 정렬 키로 정의된 전역 정렬 순서를 유지한 채 머지하고, ③ 새로운 희소 프라이머리 인덱스를 생성한 다음, ④ 머지된 컬럼 파일과 인덱스를 압축해 디스크에 새 데이터 파트로 저장합니다.
 
 <div id="replacing-merges">
-  ### Replacing 머지
+  ### Replacing 병합
 </div>
 
 [ReplacingMergeTree](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree) 테이블의 파트 병합은 [표준 병합](/ko/concepts/core-concepts/merges#standard-merges)과 유사하게 동작하지만, 각 행의 최신 버전만 유지되고 이전 버전은 삭제됩니다:
@@ -161,9 +161,9 @@ ClickHouse는 [이전 예시](/ko/concepts/core-concepts/merges#concurrent-merge
 
 위 다이어그램의 DDL 문은 정렬 키가 `(town, street, id)`인 `ReplacingMergeTree` 테이블을 생성합니다. 즉, 디스크에 저장된 데이터는 이 컬럼들을 기준으로 정렬되며, 이에 따라 희소 프라이머리 인덱스(sparse primary index)도 생성됩니다.
 
-② 머지 작업은 표준 `MergeTree` 테이블과 비슷하게 동작하며, 전역 정렬 순서를 유지하면서 압축 해제된 미리 정렬된 컬럼을 결합합니다.
+② 병합 작업은 표준 `MergeTree` 테이블과 비슷하게 동작하며, 전역 정렬 순서를 유지하면서 압축 해제된 미리 정렬된 컬럼을 결합합니다.
 
-하지만 `ReplacingMergeTree`는 동일한 정렬 키를 가진 중복 행을 제거하고, 해당 행이 포함된 파트의 생성 타임스탬프를 기준으로 가장 최근 행만 유지합니다.
+하지만 `ReplacingMergeTree`는 동일한 정렬 키를 가진 중복 행을 제거하고, 해당 행이 포함된 파트의 생성 타임스탬프를 기준으로 가장 최근의 행만 유지합니다.
 
 <br />
 

@@ -10,6 +10,7 @@ doc_type: 'landing-page'
 | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [Incremental materialized view](/ru/concepts/features/materialized-views/incremental-materialized-view) | Позволяет перенести вычислительные затраты с query time на insert time, что ускоряет запросы `SELECT`.                                                                                                |
 | [Refreshable materialized view](/ru/concepts/features/materialized-views/refreshable-materialized-view) | Концептуально похожа на incremental materialized views, но требует периодического выполнения запроса по всему набору данных, а его результаты сохраняются в целевой таблице для последующих запросов. |
+| [Cascading materialized views](/ru/concepts/features/materialized-views/cascading-materialized-views)   | Объединяет несколько materialized views в цепочку для построения incremental-преобразований данных.                                                                                                   |
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/-A3EtQgDn_0?si=TBiN_E80BKZ0DPpd" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />

@@ -389,7 +389,8 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             if (!ast_to_process)
                 fmt::print(stderr, "Error while forming new query: {}\n", getCurrentExceptionMessage(true));
             else
-                fmt::print(stderr, "Client-side exception on processing query '{}': {}\n", query_to_execute, getCurrentExceptionMessage(false));
+                fmt::print(
+                    stderr, "Client-side exception on processing query '{}': {}\n", query_to_execute, getCurrentExceptionMessage(false));
 
             // Some functions (e.g. protocol parsers) don't throw, but
             // set last_exception instead, so we'll also do it here for
@@ -801,7 +802,8 @@ bool Client::buzzHouse()
                     BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::REATTACH;
                     rg.pickWeighted(
                         {{20, [&]() { strategy = BuzzHouse::DumpOracleStrategy::REATTACH; }},
-                         {5, [&]() { strategy = BuzzHouse::DumpOracleStrategy::BACKUP_RESTORE; }}});
+                         {5 * static_cast<uint32_t>(fuzz_config->enable_backups),
+                          [&]() { strategy = BuzzHouse::DumpOracleStrategy::BACKUP_RESTORE; }}});
 
                     full_query.resize(0);
                     dumpContent();

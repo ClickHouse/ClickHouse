@@ -6,7 +6,12 @@ from helpers.config_cluster import arrowflight_user, arrowflight_pass
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", with_arrowflight=True, stay_alive=True)
+node = cluster.add_instance(
+    "node",
+    main_configs=["configs/remote_host_filter.xml"],
+    with_arrowflight=True,
+    stay_alive=True,
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -343,3 +348,39 @@ def test_arrowflight_storage_with_named_collection():
     node.query("DROP TABLE arrow_test_named")
     node.query("DROP TABLE arrow_test_named_2")
     node.query("DROP NAMED COLLECTION arrowflight_storage_collection")
+
+
+def test_remote_host_filter():
+    # Only "arrowflight1" is allow-listed in configs/remote_host_filter.xml,
+    # so a connection to any other host must be rejected before it is opened.
+    error = node.query_and_get_error(
+        "SELECT * FROM arrowFlight('127.0.0.1:5005', 'ABC')"
+    )
+    assert "not allowed in configuration file" in error
+
+    error = node.query_and_get_error(
+        """
+        CREATE TABLE arrow_blocked (column1 String, column2 String)
+        ENGINE=ArrowFlight('127.0.0.1:5005', 'ABC')
+        """
+    )
+    assert "not allowed in configuration file" in error
+
+    # The named-collection branch of getConfiguration is also guarded: creating
+    # the collection is harmless (no connection), but using it must be rejected.
+    node.query(
+        """
+        CREATE NAMED COLLECTION arrowflight_blocked_collection AS
+        host = '127.0.0.1',
+        port = 5005,
+        dataset = 'ABC',
+        use_basic_authentication = False
+        """
+    )
+    try:
+        error = node.query_and_get_error(
+            "SELECT * FROM arrowFlight(arrowflight_blocked_collection)"
+        )
+        assert "not allowed in configuration file" in error
+    finally:
+        node.query("DROP NAMED COLLECTION arrowflight_blocked_collection")

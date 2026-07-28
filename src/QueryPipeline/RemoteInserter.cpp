@@ -43,6 +43,8 @@ void RemoteInserter::initialize()
 {
     ClientInfo modified_client_info = client_info;
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    /// Drop inherited current_roles: a write needs no role scoping.
+    modified_client_info.current_roles.reset();
 
     Settings settings = insert_settings;
     /// With current protocol it is impossible to avoid deadlock in case of send_logs_level!=none.

@@ -39,6 +39,18 @@ struct JoinOnKeyColumns
     {
         return join_mask_column.isRowFiltered(i);
     }
+
+    /// A row with a NULL key and a row filtered out by the ON-section mask have the same
+    /// effect - the row matches nothing - so the probe loop needs a single skip byte per
+    /// row instead of two checks. Returns the skip bytes (indexed by source-block row,
+    /// 1 = skip), prepared once per call: without an ON-section condition the null map is
+    /// returned directly, no copy (nullptr when the keys are not nullable either = no row
+    /// is skipped); with one, `buffer` is filled with the merged null-and-mask bytes.
+    /// Only the positions the caller will probe are written (continuation chunks and
+    /// scattered shards visit a subset of the source block); the rest of `buffer` stays
+    /// uninitialized and must not be read.
+    const UInt8 * buildRowSkipData(IColumn::Filter & buffer, size_t range_begin, size_t range_size) const;
+    const UInt8 * buildRowSkipData(IColumn::Filter & buffer, const ScatteredBlock::Indexes & indexes) const;
 };
 
 struct LazyOutput

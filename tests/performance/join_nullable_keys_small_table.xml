@@ -1,0 +1,89 @@
+<test>
+    <!-- Probe-dominated hash joins against small (cache-resident) build sides with Nullable
+         keys. With a tiny hash table the probe loop iteration is only a few cycles, so any
+         extra per-row work in `HashJoinMethods::joinRightColumns` shows up here first; the
+         Nullable-key shape exercises the null-map handling of the probe loop, which is not
+         covered by the other join tests (their Nullable cases use large build sides). -->
+
+    <query>
+        SELECT * FROM (SELECT toNullable(number) AS k FROM numbers_mt(5e8)) AS lhs
+        LEFT JOIN (SELECT toNullable(number) AS k FROM numbers_mt(1e3)) AS rhs USING (k)
+        FORMAT Null
+        SETTINGS max_threads=8, join_algorithm='hash'
+    </query>
+
+    <query>
+        SELECT * FROM (SELECT if(number % 10 = 0, NULL, number) AS k FROM numbers_mt(5e8)) AS lhs
+        LEFT JOIN (SELECT toNullable(number) AS k FROM numbers_mt(1e3)) AS rhs USING (k)
+        FORMAT Null
+        SETTINGS max_threads=8, join_algorithm='hash'
+    </query>
+
+    <query>
+        SELECT count() FROM (SELECT toNullable(number) AS k FROM numbers_mt(1e8)) AS lhs
+        INNER JOIN (SELECT toNullable(number) AS k FROM numbers_mt(1e3)) AS rhs USING (k)
+        FORMAT Null
+        SETTINGS max_threads=1, join_algorithm='hash'
+    </query>
+
+    <!-- Non-nullable keys with a join mask of kind `Unknown`: a left-side-only condition in the
+         ON section stays inside the JOIN as the probe-side mask column (it cannot be pushed to
+         WHERE without changing LEFT JOIN semantics). -->
+    <query>
+        SELECT * FROM numbers_mt(5e8) AS lhs
+        LEFT JOIN (SELECT number AS k FROM numbers_mt(1e3)) AS rhs ON lhs.number = rhs.k AND (lhs.number % 2 = 0)
+        FORMAT Null
+        SETTINGS max_threads=8, join_algorithm='hash'
+    </query>
+
+    <!-- Nullable keys combined with an ON-section mask: both skip sources merged. -->
+    <query>
+        SELECT * FROM (SELECT toNullable(number) AS k FROM numbers_mt(5e8)) AS lhs
+        LEFT JOIN (SELECT toNullable(number) AS k FROM numbers_mt(1e3)) AS rhs ON lhs.k = rhs.k AND (lhs.k % 2 = 0)
+        FORMAT Null
+        SETTINGS max_threads=8, join_algorithm='hash'
+    </query>
+
+    <!-- Multiple disjuncts (OR) with nullable keys: the multi-clause probe loop. -->
+    <query>
+        SELECT count() FROM (SELECT toNullable(number) AS k FROM numbers_mt(2e8)) AS lhs
+        LEFT JOIN (SELECT number*2 AS a, number*3 AS b FROM numbers_mt(1e3)) AS rhs ON lhs.k = rhs.a OR lhs.k = rhs.b
+        FORMAT Null
+        SETTINGS max_threads=8, join_algorithm='hash'
+    </query>
+
+    <!-- The same nullable shape probed through scattered blocks (index selector). -->
+    <query>
+        SELECT * FROM (SELECT toNullable(number) AS k FROM numbers_mt(5e8)) AS lhs
+        LEFT JOIN (SELECT toNullable(number) AS k FROM numbers_mt(1e3)) AS rhs USING (k)
+        FORMAT Null
+        SETTINGS max_threads=8, join_algorithm='parallel_hash'
+    </query>
+
+    <!-- Masked shapes through scattered blocks: each shard merges the skip bytes over the
+         source block, which must stay cheaper than the per-row mask reads it replaces. -->
+    <query>
+        SELECT * FROM numbers_mt(5e8) AS lhs
+        LEFT JOIN (SELECT number AS k FROM numbers_mt(1e3)) AS rhs ON lhs.number = rhs.k AND (lhs.number % 2 = 0)
+        FORMAT Null
+        SETTINGS max_threads=8, join_algorithm='parallel_hash'
+    </query>
+
+    <query>
+        SELECT * FROM (SELECT toNullable(number) AS k FROM numbers_mt(5e8)) AS lhs
+        LEFT JOIN (SELECT toNullable(number) AS k FROM numbers_mt(1e3)) AS rhs ON lhs.k = rhs.k AND (lhs.k % 2 = 0)
+        FORMAT Null
+        SETTINGS max_threads=8, join_algorithm='parallel_hash'
+    </query>
+
+    <!-- Continuation chunks: a probe stopped early by max_joined_block_size_rows re-prepares
+         the skip bytes of its remaining tail on every resumed chunk; this stays bounded by
+         the selector and must remain within noise of the per-row checks it replaced. -->
+    <query>
+        SELECT count() FROM (SELECT if(number % 7 = 0, NULL, number % 50) AS k, toUInt8(number % 3) AS cond FROM numbers_mt(2000000)) AS lhs
+        LEFT JOIN (SELECT toNullable(number % 25) AS a, toNullable(number % 30) AS b FROM numbers(2000)) AS rhs
+            ON (lhs.k = rhs.a AND lhs.cond) OR (lhs.k = rhs.b)
+        FORMAT Null
+        SETTINGS max_threads=8, join_algorithm='hash', join_use_nulls=1, max_joined_block_size_rows=1024
+    </query>
+</test>

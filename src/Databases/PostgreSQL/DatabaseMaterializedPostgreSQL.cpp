@@ -608,7 +608,9 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
         {
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, args.context, false);
+            /// The `PostgreSQLSettings` are not passed: this engine does not use a connection pool,
+            /// so the `postgresql_*` pool settings are rejected instead of being silently ignored.
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, /*storage_settings=*/ nullptr, args.context, false);
         }
         else
         {
@@ -811,7 +813,7 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
 ### `materialized_postgresql_tables_list` {#materialized-postgresql-tables-list}
 
-Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) database engine.
+Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](/reference/engines/database-engines/materialized-postgresql) database engine.
 
 Each table can have subset of replicated columns in brackets. If subset of columns is omitted, then all columns for table will be replicated.
 
@@ -845,7 +847,7 @@ A user-created replication slot. Must be used together with `materialized_postgr
 
 ### `materialized_postgresql_snapshot` {#materialized-postgresql-snapshot}
 
-A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with `materialized_postgresql_replication_slot`.
+A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](/reference/engines/database-engines/materialized-postgresql) will be performed. Must be used together with `materialized_postgresql_replication_slot`.
 
 ```sql
 CREATE DATABASE database1
@@ -948,6 +950,32 @@ Access to tables:
 2. pg_replication_slots
 
 3. pg_publication_tables
+
+### Backup and restore {#backup-and-restore}
+
+A `MaterializedPostgreSQL` database can be backed up. The data of every replicated table lives in a nested `ReplacingMergeTree` table, so `BACKUP DATABASE` captures that data by delegating to the nested table.
+
+```sql
+BACKUP DATABASE postgres_db TO Disk('backups', 'postgres_db.zip');
+```
+
+Restoring a `MaterializedPostgreSQL` database or table **in place is not supported**. A restored `MaterializedPostgreSQL` object immediately starts replicating from the live PostgreSQL source, so restoring the backup snapshot on top of it would mix the snapshot with the current remote state. RESTORE therefore fails closed in this case. Restore the captured data into plain `ReplacingMergeTree` tables instead:
+
+- In a database backup, each table's stored definition is already the synthetic nested `ReplacingMergeTree` (not the `MaterializedPostgreSQL` engine), so each table can be restored straight into a new, not-yet-existing table:
+
+    ```sql
+    RESTORE TABLE postgres_db.table1 AS restored_db.table1
+    FROM Disk('backups', 'postgres_db.zip')
+    SETTINGS allow_different_table_def = 1;
+    ```
+
+- For a standalone `MaterializedPostgreSQL` table backup, the stored definition is the `MaterializedPostgreSQL` engine itself. Create a `ReplacingMergeTree` table beforehand with the same structure as the nested table (including the `_sign` and `_version` columns) and restore into it:
+
+    ```sql
+    RESTORE TABLE src AS existing_replacing_mergetree
+    FROM Disk('backups', 'table.zip')
+    SETTINGS allow_different_table_def = 1;
+    ```
 )DOCS_MD",
         .syntax = "ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password')",
         .related = {"PostgreSQL"}});

@@ -7,6 +7,8 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Interpreters/Context.h>
 #include <Common/FailPoint.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -220,6 +222,10 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         if (replica_metadata_version_exists)
         {
             auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+            /// This metadata snapshot lives for the table's lifetime, so route the clone into the
+            /// dedicated MergeTree arena like the ALTER paths (this runs on the restarting thread,
+            /// outside the constructor's arena scope).
+            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             storage.setInMemoryMetadata(storage_metadata_snapshot->withMetadataVersion(replica_metadata_version));
         }
         else

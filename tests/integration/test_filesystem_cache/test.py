@@ -1,6 +1,8 @@
+import concurrent.futures
 import logging
 import os
 import random
+import threading
 import time
 import uuid
 
@@ -201,6 +203,333 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
     )
     node.query("SELECT * FROM test FORMAT Null")
     assert count == int(node.query("SELECT count() FROM test"))
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_cache_file_size_in_name(cluster, node_name):
+    """
+    A fully downloaded regular cache file is named `<offset>_<size>`, which lets startup
+    metadata loading read the size from the file name instead of `stat`-ing every file.
+    This test verifies the on-disk naming, and that legacy `<offset>` files (without the
+    size suffix) are still loaded correctly by falling back to a `stat`.
+    """
+    node = cluster.instances[node_name]
+    node.query(
+        """
+        DROP TABLE IF EXISTS test_size_in_name SYNC;
+
+        CREATE TABLE test_size_in_name (key UInt32, value String)
+        Engine=MergeTree()
+        ORDER BY value
+        SETTINGS disk = disk(
+            type = cache,
+            name = 'size_in_name_test',
+            path = 'size_in_name_test',
+            disk = 'hdd_blob',
+            max_file_segment_size = '1Ki',
+            boundary_alignment = '1Ki',
+            max_size = '1Gi',
+            max_elements = 10000000);
+        """
+    )
+
+    wait_for_cache_initialized(node, "size_in_name_test")
+
+    node.query(
+        """
+        SYSTEM CLEAR FILESYSTEM CACHE;
+        INSERT INTO test_size_in_name SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000;
+        SELECT * FROM test_size_in_name FORMAT Null;
+        """
+    )
+    assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
+
+    cache_path = node.query(
+        "SELECT cache_path FROM system.disks WHERE name = 'size_in_name_test'"
+    ).strip()
+
+    def list_segment_files():
+        out = node.exec_in_container(
+            ["bash", "-c", f"find {cache_path} -type f -printf '%f %s\\n'"]
+        )
+        files = []
+        for line in out.splitlines():
+            name, _, size = line.partition(" ")
+            if name == "status" or name.endswith("_temporary"):
+                continue
+            files.append((name, int(size)))
+        return files
+
+    files = list_segment_files()
+    assert len(files) > 0
+    # Every regular segment file encodes its size in the name as `<offset>_<size>`,
+    # and that size matches the file's actual size on disk.
+    for name, size in files:
+        assert "_" in name, f"segment file {name} has no size suffix"
+        name_size = int(name.split("_", 1)[1])
+        assert name_size == size, f"{name}: size in name {name_size} != actual {size}"
+
+    def cache_segments():
+        return set(
+            node.query(
+                "SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE size > 0"
+            )
+            .strip()
+            .splitlines()
+        )
+
+    # Every segment cached before the restart must survive it (startup may add more, hence subset).
+    cache_state = cache_segments()
+    assert len(cache_state) > 0
+
+    # Restart: metadata is loaded by reading sizes from the file names (no stat).
+    node.restart_clickhouse()
+    wait_for_cache_initialized(node, "size_in_name_test")
+    assert cache_state <= cache_segments()
+
+    # Backward compatibility: rename the files to the legacy `<offset>` form (no size suffix)
+    # and make sure they are still loaded on the next startup (the size is obtained with a stat).
+    # The server must be stopped while we rewrite the file names: a running server keeps the
+    # in-memory `<offset>_<size>` name (`hasSizeInFileName`) and would not find the renamed file.
+    node.stop_clickhouse()
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"find {cache_path} -type f -name '*_*' ! -name '*_temporary' "
+            "-exec bash -c 'mv \"$1\" \"$(dirname \"$1\")/$(basename \"$1\" | cut -d_ -f1)\"' _ {} ';'",
+        ]
+    )
+    # No file should carry a size suffix anymore.
+    assert all("_" not in name for name, _ in list_segment_files())
+
+    node.start_clickhouse()
+    wait_for_cache_initialized(node, "size_in_name_test")
+    assert cache_state <= cache_segments()
+    node.query("SELECT * FROM test_size_in_name FORMAT Null")
+    node.query("DROP TABLE test_size_in_name SYNC")
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_cache_file_truncated_size_in_name(cluster, node_name):
+    """
+    A fully downloaded regular cache file is named `<offset>_<size>`, and startup metadata loading
+    trusts that size without a `stat`. If such a file is truncated outside ClickHouse, the segment is
+    restored as fully downloaded but the on-disk file is shorter than recorded. Reading it must not raise
+    a `LOGICAL_ERROR`: the broken cache entry is discarded and the data is re-fetched from the source.
+
+    This covers both a shorter-than-recorded file and a zero-length file.
+    """
+    node = cluster.instances[node_name]
+    node.query(
+        """
+        DROP TABLE IF EXISTS test_truncated_size_in_name SYNC;
+
+        CREATE TABLE test_truncated_size_in_name (key UInt32, value String)
+        Engine=MergeTree()
+        ORDER BY value
+        SETTINGS disk = disk(
+            type = cache,
+            name = 'truncated_size_in_name_test',
+            path = 'truncated_size_in_name_test',
+            disk = 'hdd_blob',
+            max_file_segment_size = '1Ki',
+            boundary_alignment = '1Ki',
+            max_size = '1Gi',
+            max_elements = 10000000);
+        """
+    )
+
+    wait_for_cache_initialized(node, "truncated_size_in_name_test")
+
+    node.query(
+        """
+        SYSTEM CLEAR FILESYSTEM CACHE;
+        INSERT INTO test_truncated_size_in_name SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000;
+        SELECT * FROM test_truncated_size_in_name FORMAT Null;
+        """
+    )
+    assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
+
+    expected_count = int(node.query("SELECT count() FROM test_truncated_size_in_name"))
+    expected_sum = node.query("SELECT sum(cityHash64(key, value)) FROM test_truncated_size_in_name").strip()
+
+    cache_path = node.query(
+        "SELECT cache_path FROM system.disks WHERE name = 'truncated_size_in_name_test'"
+    ).strip()
+
+    def list_suffixed_segment_files():
+        out = node.exec_in_container(
+            ["bash", "-c", f"find {cache_path} -type f -printf '%p %f %s\\n'"]
+        )
+        files = []
+        for line in out.splitlines():
+            full_path, name, size = line.rsplit(" ", 2)
+            if name == "status" or name.endswith("_temporary") or "_" not in name:
+                continue
+            files.append((full_path, int(size)))
+        return files
+
+    files = list_suffixed_segment_files()
+    # Need at least two segment files to exercise both the short and the zero-length cases.
+    assert len(files) >= 2, files
+
+    # The server must be stopped while we corrupt the files: a running server holds the segments open.
+    node.stop_clickhouse()
+
+    # Truncate one suffixed file to half its size (non-empty but shorter than recorded) and another
+    # to zero bytes. Their names still encode the full `<size>`, so startup trusts the larger size.
+    short_path, short_size = files[0]
+    zero_path, _ = files[1]
+    node.exec_in_container(["bash", "-c", f"truncate -s {max(short_size // 2, 1)} '{short_path}'"])
+    node.exec_in_container(["bash", "-c", f"truncate -s 0 '{zero_path}'"])
+
+    node.start_clickhouse()
+    wait_for_cache_initialized(node, "truncated_size_in_name_test")
+
+    # Reading must not raise a LOGICAL_ERROR. A truncated segment is discarded and the read is
+    # transparently re-routed to the source, so the part loads and the query succeeds. Retry
+    # defensively in case a concurrent state transition surfaces a retryable error first.
+    last_error = None
+    succeeded = False
+    for _ in range(20):
+        try:
+            node.query("SELECT * FROM test_truncated_size_in_name FORMAT Null")
+            succeeded = True
+            break
+        except Exception as e:
+            last_error = str(e)
+            assert "LOGICAL_ERROR" not in last_error, last_error
+            assert "Logical error" not in last_error, last_error
+
+    assert succeeded, f"query did not recover, last error: {last_error}"
+
+    # The data is intact after re-fetching the discarded segments from the source.
+    assert int(node.query("SELECT count() FROM test_truncated_size_in_name")) == expected_count
+    assert (
+        node.query("SELECT sum(cityHash64(key, value)) FROM test_truncated_size_in_name").strip()
+        == expected_sum
+    )
+    node.query("DROP TABLE test_truncated_size_in_name SYNC")
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_cache_file_truncated_size_in_name_concurrent_readers(cluster, node_name):
+    """
+    Concurrent-reader variant of `test_cache_file_truncated_size_in_name`.
+
+    When several readers race on the same externally truncated `<offset>_<size>` cache file, one reader
+    can discard/detach the segment between another reader opening the short file and re-checking its
+    state. The losing reader must still bypass the cache and re-fetch from the source rather than keep its
+    truncated descriptor and surface a `LOGICAL_ERROR`. Fire many parallel scans of the truncated data so
+    that at least some of them read the corrupted segment simultaneously, and assert none of them raises a
+    `LOGICAL_ERROR` and the data stays intact.
+    """
+    node = cluster.instances[node_name]
+    node.query(
+        """
+        DROP TABLE IF EXISTS test_truncated_size_concurrent SYNC;
+
+        CREATE TABLE test_truncated_size_concurrent (key UInt32, value String)
+        Engine=MergeTree()
+        ORDER BY value
+        SETTINGS disk = disk(
+            type = cache,
+            name = 'truncated_size_concurrent_test',
+            path = 'truncated_size_concurrent_test',
+            disk = 'hdd_blob',
+            max_file_segment_size = '1Ki',
+            boundary_alignment = '1Ki',
+            max_size = '1Gi',
+            max_elements = 10000000);
+        """
+    )
+
+    wait_for_cache_initialized(node, "truncated_size_concurrent_test")
+
+    node.query(
+        """
+        SYSTEM CLEAR FILESYSTEM CACHE;
+        INSERT INTO test_truncated_size_concurrent SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000;
+        SELECT * FROM test_truncated_size_concurrent FORMAT Null;
+        """
+    )
+    assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
+
+    expected_count = int(node.query("SELECT count() FROM test_truncated_size_concurrent"))
+    expected_sum = node.query(
+        "SELECT sum(cityHash64(key, value)) FROM test_truncated_size_concurrent"
+    ).strip()
+
+    cache_path = node.query(
+        "SELECT cache_path FROM system.disks WHERE name = 'truncated_size_concurrent_test'"
+    ).strip()
+
+    def list_suffixed_segment_files():
+        out = node.exec_in_container(
+            ["bash", "-c", f"find {cache_path} -type f -printf '%p %f %s\\n'"]
+        )
+        files = []
+        for line in out.splitlines():
+            full_path, name, size = line.rsplit(" ", 2)
+            if name == "status" or name.endswith("_temporary") or "_" not in name:
+                continue
+            files.append((full_path, int(size)))
+        return files
+
+    files = list_suffixed_segment_files()
+    assert len(files) >= 1, files
+
+    # The server must be stopped while we corrupt the file: a running server holds the segment open.
+    node.stop_clickhouse()
+
+    # Truncate every suffixed file to half its size. Their names still encode the full `<size>`, so
+    # startup trusts the larger size and every scan that reads them must self-heal.
+    for short_path, short_size in files:
+        node.exec_in_container(
+            ["bash", "-c", f"truncate -s {max(short_size // 2, 1)} '{short_path}'"]
+        )
+
+    node.start_clickhouse()
+    wait_for_cache_initialized(node, "truncated_size_concurrent_test")
+
+    # Launch the scans as simultaneously as possible (a barrier releases them together) so several
+    # readers touch the same truncated segments before the first discard removes them.
+    num_readers = 16
+    barrier = threading.Barrier(num_readers)
+
+    def scan():
+        barrier.wait()
+        # A truncated segment is discarded and the read re-routed to the source. Retry defensively in
+        # case a concurrent state transition surfaces a retryable error first; a `LOGICAL_ERROR` must
+        # never appear.
+        last_error = None
+        for _ in range(20):
+            try:
+                node.query("SELECT * FROM test_truncated_size_concurrent FORMAT Null")
+                return None
+            except Exception as e:
+                last_error = str(e)
+                assert "LOGICAL_ERROR" not in last_error, last_error
+                assert "Logical error" not in last_error, last_error
+        return last_error
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num_readers) as executor:
+        errors = [f.result() for f in [executor.submit(scan) for _ in range(num_readers)]]
+
+    assert all(e is None for e in errors), errors
+
+    # The data is intact after re-fetching the discarded segments from the source.
+    assert (
+        int(node.query("SELECT count() FROM test_truncated_size_concurrent")) == expected_count
+    )
+    assert (
+        node.query(
+            "SELECT sum(cityHash64(key, value)) FROM test_truncated_size_concurrent"
+        ).strip()
+        == expected_sum
+    )
+    node.query("DROP TABLE test_truncated_size_concurrent SYNC")
 
 
 @pytest.mark.parametrize("node_name", ["node"])
