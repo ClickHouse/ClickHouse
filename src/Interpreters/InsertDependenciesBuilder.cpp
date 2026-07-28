@@ -1127,6 +1127,14 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
     }
 
     chassert(storage);
+
+    /// The root target is already refreshed by InterpreterInsertQuery, which pinned the
+    /// snapshot before building this object; refreshing it again could re-pin the state
+    /// between the header it computed and the sink built from it. A view owns no sink,
+    /// its target is observed as its own node below.
+    if (current != init_table_id && !storage->isView())
+        storage->updateExternalDynamicMetadataIfExists(init_context);
+
     auto metadata = storage->getInMemoryMetadataPtr(init_context, false);
     auto * materialized_view = dynamic_cast<StorageMaterializedView *>(storage.get());
 
