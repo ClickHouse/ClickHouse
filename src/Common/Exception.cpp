@@ -38,6 +38,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int POCO_EXCEPTION;
     extern const int STD_EXCEPTION;
     extern const int AVRO_EXCEPTION;
@@ -45,6 +46,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MREMAP;
+    extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
+    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+    extern const int CANNOT_PARSE_NUMBER;
     extern const int POTENTIALLY_BROKEN_DATA_PART;
     extern const int CORRUPTED_DATA;
 }
@@ -767,9 +771,16 @@ bool ExecutionStatus::tryDeserializeText(const std::string & data)
         Exception::SuppressErrorCodesScope suppress_error_codes_scope;
         tmp.deserializeText(data);
     }
-    catch (...) // Ok: tryDeserializeText is a try-pattern, failure is expected
+    catch (Exception & e)
     {
-        return false;
+        if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
+            || e.code() == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE
+            || e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED
+            || e.code() == ErrorCodes::CANNOT_PARSE_NUMBER)
+            return false;
+
+        e.recordToSystemErrors();
+        throw;
     }
 
     *this = std::move(tmp);

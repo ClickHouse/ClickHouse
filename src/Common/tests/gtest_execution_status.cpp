@@ -1,7 +1,13 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 
+#include <base/scope_guard.h>
 #include <gtest/gtest.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 using namespace DB;
 
@@ -23,7 +29,8 @@ size_t getLocalErrorCount(int code)
 
 TEST(ExecutionStatus, TryDeserializeTextKeepsTargetOnMalformedInput)
 {
-    for (const auto & bad : {std::string("0garbage"), std::string("0"), std::string("garbage"), std::string("")})
+    for (const auto & bad :
+        {std::string("0garbage"), std::string("0"), std::string("garbage"), std::string(""), std::string("+")})
     {
         ExecutionStatus status(-1, "Cannot obtain error message");
         EXPECT_FALSE(status.tryDeserializeText(bad)) << "payload: " << bad;
@@ -71,4 +78,36 @@ TEST(ExecutionStatus, TryDeserializeTextDoesNotRecordHandledError)
     {
     }
     EXPECT_EQ(getLocalErrorCount(error_code), count + 1);
+}
+
+TEST(ExecutionStatus, TryDeserializeTextRethrowsUnexpectedError)
+{
+    const auto count = getLocalErrorCount(ErrorCodes::BAD_ARGUMENTS);
+    auto previous_callback = std::move(Exception::callback);
+    SCOPE_EXIT({ Exception::callback = std::move(previous_callback); });
+
+    bool injecting_error = false;
+    Exception::callback = [&](std::string_view, int, bool, const Exception::Trace &)
+    {
+        if (!injecting_error)
+        {
+            injecting_error = true;
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Injected unexpected deserialization error");
+        }
+    };
+
+    ExecutionStatus status(-1, "Cannot obtain error message");
+    try
+    {
+        status.tryDeserializeText("0");
+        FAIL() << "Expected unexpected status deserialization error to propagate";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+    }
+
+    EXPECT_EQ(getLocalErrorCount(ErrorCodes::BAD_ARGUMENTS), count + 1);
+    EXPECT_EQ(status.code, -1);
+    EXPECT_EQ(status.message, "Cannot obtain error message");
 }
