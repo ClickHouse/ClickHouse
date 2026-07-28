@@ -35,6 +35,7 @@ void PacketReceiver::clearAsyncEvent()
 bool PacketReceiver::checkTimeout()
 {
     bool is_socket_ready = false;
+    bool is_timeout_ready = false;
 
     epoll_event events[2];
     events[0].data.fd = events[1].data.fd = -1;
@@ -45,11 +46,15 @@ bool PacketReceiver::checkTimeout()
         if (events[i].data.fd == socket_fd)
             is_socket_ready = true;
         if (events[i].data.fd == timeout_descriptor.getDescriptor())
-            is_timeout_expired = true;
+            is_timeout_ready = true;
     }
 
-    if (is_timeout_expired && !is_socket_ready)
+    /// Timer readiness is only meaningful together with socket readiness observed in the
+    /// SAME wake: if both are ready the packet is delivered and no timeout happened, so
+    /// the observation must not be remembered as connection state.
+    if (is_timeout_ready && !is_socket_ready)
     {
+        is_timeout_expired = true;
         timeout_descriptor.reset();
         return false;
     }

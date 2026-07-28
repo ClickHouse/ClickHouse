@@ -115,13 +115,14 @@ bool RemoteQueryExecutorReadContext::checkTimeout(bool blocking)
     size_t num_events = epoll.getManyReady(3, events, blocking ? -1 : 0);
 
     bool is_socket_ready = false;
+    bool is_timer_ready = false;
 
     for (size_t i = 0; i < num_events; ++i)
     {
         if (events[i].data.fd == connection_fd)
             is_socket_ready = true;
         if (events[i].data.fd == timer.getDescriptor())
-            is_timer_alarmed = true;
+            is_timer_ready = true;
         if (events[i].data.fd == pipe_fd[0])
             is_pipe_alarmed = true;
     }
@@ -129,8 +130,14 @@ bool RemoteQueryExecutorReadContext::checkTimeout(bool blocking)
     if (is_pipe_alarmed)
         return false;
 
-    if (is_timer_alarmed && !is_socket_ready)
+    /// Timer readiness is only meaningful together with socket readiness observed in the
+    /// SAME wake: if both are ready the packet is delivered and no timeout happened, so
+    /// the observation must not be remembered as connection state.
+    if (is_timer_ready && !is_socket_ready)
     {
+        /// A timeout is declared for this connection; cancelBefore() relies on this to skip
+        /// waiting for a pending packet that can no longer arrive within the timeout.
+        is_timeout_declared = true;
         /// Socket timeout. Drain it in case of error, or it may be hide by timeout exception.
         timer.drain();
         const String exception_message = getSocketTimeoutExceededMessageByTimeoutType(timeout_type, timeout, connection_fd_description);
@@ -146,7 +153,7 @@ void RemoteQueryExecutorReadContext::cancelBefore()
     /// timeout because this will exceed the timeout.
     /// Anyway if the timeout is exceeded, then the connection will be shutdown
     /// (disconnected), so it will not left in an unsynchronised state.
-    if (!is_timer_alarmed)
+    if (!is_timeout_declared)
     {
         /// If query wasn't sent, just complete sending it.
         if (!is_query_sent)

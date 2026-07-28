@@ -16,6 +16,11 @@ namespace Poco::Net
 class Socket;
 }
 
+/// Grants the unit test access to checkTimeout()/cancelBefore() and to the receive-timeout state,
+/// which are otherwise internal. Keep in sync with the struct name in
+/// src/QueryPipeline/tests/gtest_remote_read_context_timeout_latch.cpp.
+struct RemoteReadContextTestAccess;
+
 namespace DB
 {
 
@@ -97,7 +102,9 @@ private:
     TimerDescriptor timer;
     Poco::Timespan timeout;
     AsyncEventTimeoutType timeout_type{};
-    std::atomic_bool is_timer_alarmed = false;
+    /// Whether a receive timeout was DECLARED (timer fd ready while the socket was not),
+    /// not merely whether the timer fd was ever observed ready.
+    std::atomic_bool is_timeout_declared = false;
     int connection_fd = -1;
     int pipe_fd[2] = { -1, -1 };
     std::atomic_bool is_pipe_alarmed = false;
@@ -108,6 +115,8 @@ private:
     bool suspend_when_query_sent = false;
     bool is_query_sent = false;
     const bool read_packet_type_separately = false;
+
+    friend struct ::RemoteReadContextTestAccess;
 };
 
 }
