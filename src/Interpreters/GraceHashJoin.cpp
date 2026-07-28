@@ -490,7 +490,7 @@ const Block & GraceHashJoin::getTotals() const
 size_t GraceHashJoin::getTotalRowCount() const
 {
     std::lock_guard lock(hash_join_mutex);
-    assert(hash_join);
+    chassert(hash_join);
     return hash_join->getTotalRowCount();
 }
 

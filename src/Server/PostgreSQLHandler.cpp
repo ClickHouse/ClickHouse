@@ -1,4 +1,5 @@
 #include <memory>
+#include <optional>
 #include <Server/PostgreSQLHandler.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
@@ -20,6 +21,7 @@
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
 #include <Core/PostgreSQLProtocol.h>
+#include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTCopyQuery.h>
 #include <Parsers/ParserCopyQuery.h>
 #include <Core/Settings.h>
@@ -60,8 +62,160 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
     extern const int SYNTAX_ERROR;
     extern const int OPENSSL_ERROR;
+    extern const int UNEXPECTED_PACKET_FROM_CLIENT;
+}
+
+namespace
+{
+
+/// Some PostgreSQL drivers issue session-management commands during connection
+/// setup or teardown that have no ClickHouse equivalent, for example `RESET ALL`
+/// and `UNLISTEN *` sent by the Skunk driver. Instead of failing such a command
+/// with a syntax error, ClickHouse accepts it as a no-op and replies with a
+/// `CommandComplete` carrying the matching PostgreSQL command tag. See issue
+/// https://github.com/ClickHouse/ClickHouse/issues/12476.
+///
+/// Returns the command tag to report if `query` is such a no-op command, or
+/// std::nullopt if the query must be executed normally. None of the recognized
+/// keywords (`UNLISTEN`, `RESET`, `DISCARD`) is a valid ClickHouse statement
+/// start, so there are no false positives.
+///
+/// This is applied only in the simple-query (`Q`) protocol path, consistent with the other
+/// driver-compatibility no-ops (`BEGIN` / `COMMIT` / `SET application_name`): drivers emit these
+/// session-management commands as plain, unparameterized statements, so there is no reason to run
+/// them through the extended `Parse` / `Bind` / `Execute` flow, and the extended path deliberately
+/// performs no such driver-specific rewriting.
+std::optional<String> classifyNoOpDriverCommand(const String & query)
+{
+    /// Only treat the packet as a no-op when it consists of a single statement. A simple-query
+    /// packet may contain several `;`-separated statements; if we shortcut on the leading keyword
+    /// we would acknowledge the whole packet and silently skip the rest (e.g. `RESET ALL; SELECT 1`
+    /// or, worse, `RESET ALL; DROP TABLE t`). An interior `;` — anything other than trailing
+    /// whitespace after it — means there is more than one statement, so bail out and let the normal
+    /// multi-statement splitter handle it.
+    if (const size_t semicolon = query.find(';'); semicolon != String::npos)
+    {
+        for (size_t i = semicolon + 1; i < query.size(); ++i)
+        {
+            const char c = query[i];
+            if (c != ' ' && c != '\t' && c != '\n' && c != '\r' && c != '\f' && c != '\v')
+                return std::nullopt;
+        }
+    }
+
+    /// Enough to cover the longest recognized command plus its argument: a PostgreSQL identifier
+    /// is at most 63 bytes, and a qualified `RESET extension.setting` name consists of two of them.
+    /// If the normalized prefix fills this budget completely, the statement may continue beyond it,
+    /// so we could not verify that nothing trails the argument — treat it as not recognized.
+    static constexpr size_t max_prefix_len = 160;
+    String prefix = PostgreSQLProtocol::Messaging::CommandComplete::extractNormalizedPrefix(query, max_prefix_len);
+    if (prefix.size() == max_prefix_len)
+        return std::nullopt;
+
+    /// The multi-statement guard above rejected any statement after an interior `;`, so the only
+    /// `;` that can remain is a single trailing one (with trailing whitespace already collapsed).
+    /// Drop it so it is not mistaken for a command argument below.
+    while (!prefix.empty() && (prefix.back() == ';' || prefix.back() == ' '))
+        prefix.pop_back();
+
+    /// `extractNormalizedPrefix` already uppercased the text and collapsed runs of
+    /// whitespace to single spaces, so a keyword is a run of 'A'..'Z'. Take the next
+    /// such run, skipping a leading space; this also stops at a `;` or `*`.
+    size_t pos = 0;
+    const auto take_word = [&]() -> String
+    {
+        while (pos < prefix.size() && prefix[pos] == ' ')
+            ++pos;
+        const size_t start = pos;
+        while (pos < prefix.size() && prefix[pos] >= 'A' && prefix[pos] <= 'Z')
+            ++pos;
+        return prefix.substr(start, pos - start);
+    };
+    const auto has_more = [&]() -> bool
+    {
+        while (pos < prefix.size() && prefix[pos] == ' ')
+            ++pos;
+        return pos < prefix.size();
+    };
+
+    /// An argument in the normalized prefix: an identifier — a letter or `_` followed by letters,
+    /// digits, `_` or `$` (the text is already uppercased). With `allow_dots`, a qualified name
+    /// such as `EXTENSION.SETTING` (for `RESET`) is a single token as well.
+    const auto take_identifier = [&](bool allow_dots) -> String
+    {
+        while (pos < prefix.size() && prefix[pos] == ' ')
+            ++pos;
+        const size_t start = pos;
+        if (pos < prefix.size() && ((prefix[pos] >= 'A' && prefix[pos] <= 'Z') || prefix[pos] == '_'))
+        {
+            ++pos;
+            while (pos < prefix.size()
+                && ((prefix[pos] >= 'A' && prefix[pos] <= 'Z') || (prefix[pos] >= '0' && prefix[pos] <= '9')
+                    || prefix[pos] == '_' || prefix[pos] == '$' || (allow_dots && prefix[pos] == '.')))
+                ++pos;
+        }
+        return prefix.substr(start, pos - start);
+    };
+
+    /// Not `const`: the early returns below move it out, and `performance-no-automatic-move`
+    /// (clang-tidy) rejects returning a `const` local because constness prevents the move.
+    String command = take_word();
+
+    /// The keyword must end at a word boundary: `RESET1FOO` must not be taken for `RESET`.
+    if (pos < prefix.size() && prefix[pos] != ' ')
+        return std::nullopt;
+
+    /// Accept the connection-cleanup commands the Skunk driver actually sends: `RESET { name | ALL }`
+    /// and `UNLISTEN { channel | * }`, reporting the bare keyword as the tag. `LISTEN` and `NOTIFY`
+    /// are deliberately NOT accepted here: unlike `UNLISTEN` (idempotent unsubscribe-all cleanup),
+    /// they are application-visible PostgreSQL pub/sub operations, and this handler never delivers a
+    /// `NotificationResponse`, so acknowledging them would turn an unsupported feature into a silent
+    /// false success instead of a plain error. Issue #12476 only asks for `UNLISTEN *` / `RESET ALL`.
+    ///
+    /// Accept exactly one argument — an identifier (for `RESET` possibly a qualified
+    /// `extension.setting` name; `ALL` is itself covered as an identifier), or `*` for `UNLISTEN` —
+    /// and require the statement to end right after it, so that malformed variants such as a bare
+    /// `RESET`, `RESET foo bar` or `UNLISTEN * garbage` are not acknowledged as success but fall
+    /// through to the normal error path. Valid forms that no driver is known to emit — quoted
+    /// identifiers and multi-word variants such as `RESET SESSION AUTHORIZATION` — likewise fall
+    /// through, as before this change.
+    if (command == "UNLISTEN" || command == "RESET")
+    {
+        String arg;
+        if (command == "UNLISTEN" && has_more() && prefix[pos] == '*')
+        {
+            arg = "*";
+            ++pos;
+        }
+        else
+        {
+            arg = take_identifier(/* allow_dots = */ command == "RESET");
+        }
+        if (arg.empty() || has_more())
+            return std::nullopt;
+        return command;
+    }
+
+    if (command == "DISCARD")
+    {
+        /// PostgreSQL accepts only `DISCARD { ALL | PLANS | SEQUENCES | TEMP | TEMPORARY }`
+        /// (with `TEMPORARY` normalized to `TEMP`). Reject a bare `DISCARD` or an unknown
+        /// subcommand such as `DISCARD FOO` instead of claiming success for a command we were
+        /// never asked to emulate.
+        String arg = take_word();
+        if (arg == "TEMPORARY")
+            arg = "TEMP";
+        if ((arg == "ALL" || arg == "PLANS" || arg == "SEQUENCES" || arg == "TEMP") && !has_more())
+            return command + " " + arg;
+        return std::nullopt;
+    }
+
+    return std::nullopt;
+}
+
 }
 
 PostgreSQLHandler::PostgreSQLHandler(
@@ -74,7 +228,7 @@ PostgreSQLHandler::PostgreSQLHandler(
     bool ssl_enabled_,
     bool secure_required_,
     Int32 connection_id_,
-    std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
+    VectorWithMemoryTracking<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
@@ -258,8 +412,8 @@ void PostgreSQLHandler::run()
 
 bool PostgreSQLHandler::startup()
 {
-    Int32 payload_size;
-    Int32 info;
+    Int32 payload_size = 0;
+    Int32 info = 0;
     establishSecureConnection(payload_size, info);
 
     if (static_cast<PostgreSQLProtocol::Messaging::FrontMessageType>(info) == PostgreSQLProtocol::Messaging::FrontMessageType::CANCEL_REQUEST)
@@ -372,7 +526,7 @@ void PostgreSQLHandler::makeSecureConnectionSSL() {}
 
 void PostgreSQLHandler::sendParameterStatusData(PostgreSQLProtocol::Messaging::StartupMessage & start_up_message)
 {
-    std::unordered_map<String, String> & parameters = start_up_message.parameters;
+    auto & parameters = start_up_message.parameters;
 
     if (parameters.contains("application_name"))
         message_transport->send(PostgreSQLProtocol::Messaging::ParameterStatus("application_name", parameters["application_name"]));
@@ -558,7 +712,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         auto [ast, io] = executeQuery(select_query, query_context, {}, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pulling());
         message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(static_cast<Int32>(io.pipeline.getHeader().columns())));
-        std::vector<char> result_buf;
+        VectorWithMemoryTracking<char> result_buf;
         WriteBufferFromVectorImpl<decltype(result_buf)> output_buffer(result_buf);
         auto format_ptr = FormatFactory::instance().getOutputFormat(toString(copy_query->format), output_buffer, io.pipeline.getHeader(), query_context);
         auto executor = std::make_unique<PullingPipelineExecutor>(io.pipeline);
@@ -602,6 +756,14 @@ void PostgreSQLHandler::processQuery()
             return;
         }
 
+        /// Accept driver-specific session-management commands (e.g. `RESET ALL`,
+        /// `UNLISTEN *`) as no-ops instead of failing them with a syntax error.
+        if (auto noop_command_tag = classifyNoOpDriverCommand(query->query))
+        {
+            message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(std::move(*noop_command_tag)), true);
+            return;
+        }
+
         const auto & settings = session->sessionContext()->getSettingsRef();
         std::vector<String> queries;
 
@@ -621,6 +783,12 @@ void PostgreSQLHandler::processQuery()
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
 
+        if (should_init_system_tables)
+        {
+            initializeSystemTables(query_context);
+            should_init_system_tables = false;
+        }
+
         if (processExecute(query->query, query_context))
             return;
 
@@ -635,7 +803,7 @@ void PostgreSQLHandler::processQuery()
         if (!parse_res.second)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse and execute the following part of query: {}", String(parse_res.first));
 
-        for (auto & spl_query : queries)
+        for (auto & sql_query : queries)
         {
             secret_key = dis(gen);
             query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
@@ -643,9 +811,9 @@ void PostgreSQLHandler::processQuery()
             QueryScope query_scope = QueryScope::create(query_context);
 
             PostgreSQLProtocol::Messaging::CommandComplete::Command command =
-                PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(spl_query);
+                PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(sql_query);
 
-            UInt64 affected_rows = executeQueryWithTracking(std::move(spl_query), query_context, command);
+            UInt64 affected_rows = executeQueryWithTracking(std::move(sql_query), query_context, command);
 
             message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, static_cast<Int32>(affected_rows)), true);
         }
@@ -757,7 +925,7 @@ bool PostgreSQLHandler::processDeallocate(const String & query)
         return false;
     }
 
-    prepared_statements_manager.deleteStatement(deallocate->as<ASTDeallocate>());
+    prepared_statements_manager.deleteStatement(deallocate->as<ASTDeallocate>()->function_name);
 
     PostgreSQLProtocol::Messaging::CommandComplete::Command command =
         PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(query);
@@ -832,12 +1000,25 @@ void PostgreSQLHandler::processExecuteQuery()
         std::unique_ptr<PostgreSQLProtocol::Messaging::ExecuteQuery> query =
             message_transport->receive<PostgreSQLProtocol::Messaging::ExecuteQuery>();
 
+        /// Only the unnamed portal is supported; the corresponding rejection
+        /// for `Bind` lives in `PreparedStatemetsManager::attachBindQuery`.
+        if (!query->portal_name.empty())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Execute on a named portal is not supported in the PostgreSQL wire protocol, "
+                "got portal name '{}'", query->portal_name);
+
         pcg64_fast gen{randomSeed()};
         std::uniform_int_distribution<Int32> dis(0, INT32_MAX);
 
         secret_key = dis(gen);
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
+
+        if (should_init_system_tables)
+        {
+            initializeSystemTables(query_context);
+            should_init_system_tables = false;
+        }
 
         QueryScope query_scope = QueryScope::create(query_context);
         auto sql_query = prepared_statements_manager.getStatmentFromBind();
@@ -866,7 +1047,51 @@ void PostgreSQLHandler::processCloseQuery()
         std::unique_ptr<PostgreSQLProtocol::Messaging::CloseQuery> query =
             message_transport->receive<PostgreSQLProtocol::Messaging::CloseQuery>();
 
-        prepared_statements_manager.resetBindQuery(query->function_name);
+        /// 'S' means close a prepared statement, 'P' means close a portal.
+        /// Closing a portal must not deallocate the prepared statement,
+        /// otherwise a later Bind/Execute on the same statement would fail.
+        if (query->close_target == 'S')
+        {
+            /// If the bind currently references the statement being deallocated,
+            /// the bind becomes stale and must be dropped. Closing a *different*
+            /// statement must not touch unrelated bind state — otherwise
+            /// `Parse s1; Parse s2; Bind(s1); Close('S', 's2'); Execute` would
+            /// fail with `Execute without prior Bind`.
+            if (prepared_statements_manager.bindReferencesStatement(query->function_name))
+                prepared_statements_manager.resetBindQuery();
+            /// Per the PostgreSQL wire protocol, `Close` on a non-existent
+            /// prepared statement is not an error — it is a silent no-op that
+            /// still responds with `CloseComplete`. Using the throwing
+            /// `deleteStatement` here would propagate `BAD_ARGUMENTS` out of
+            /// the surrounding `try` block, send an `ErrorResponse`, and drop
+            /// the connection on a stray `Close`.
+            prepared_statements_manager.tryDeleteStatement(query->function_name);
+        }
+        else if (query->close_target == 'P')
+        {
+            /// Only the unnamed portal is supported; rejecting named portals
+            /// keeps the behaviour consistent with `Bind` and `Execute`.
+            if (!query->function_name.empty())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Close on a named portal is not supported in the PostgreSQL wire protocol, "
+                    "got portal name '{}'", query->function_name);
+            prepared_statements_manager.resetBindQuery();
+        }
+        else
+        {
+            /// Per the PostgreSQL protocol only 'S' (prepared statement) and 'P'
+            /// (portal) are valid `Close` targets; any other byte indicates a
+            /// malformed packet and must not be silently acknowledged.
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                "Unexpected `Close` target byte {} in the PostgreSQL wire protocol, "
+                "expected 'S' (prepared statement) or 'P' (portal)",
+                static_cast<int>(static_cast<unsigned char>(query->close_target)));
+        }
+
+        /// Acknowledge the `Close` request. Clients that strictly track the
+        /// extended-protocol state machine wait for `CloseComplete` before
+        /// proceeding.
+        message_transport->send(PostgreSQLProtocol::Messaging::CloseQueryComplete(), true);
     }
     catch (const Exception & e)
     {
@@ -884,6 +1109,12 @@ void PostgreSQLHandler::processSyncQuery()
     {
         std::unique_ptr<PostgreSQLProtocol::Messaging::SyncQuery> query =
             message_transport->receive<PostgreSQLProtocol::Messaging::SyncQuery>();
+
+        /// Per PostgreSQL protocol, `Sync` ends the current extended-query cycle
+        /// and destroys the unnamed portal. We only support the unnamed portal
+        /// (see `attachBindQuery`), so resetting the single bind slot is
+        /// equivalent — the next Parse/Bind/Execute pair starts from a clean state.
+        prepared_statements_manager.resetBindQuery();
     }
     catch (const Exception & e)
     {
@@ -918,6 +1149,131 @@ Int32 PostgreSQLHandler::parseNumberColumns(const std::vector<char> & output)
             result++;
     }
     return result;
+}
+
+void PostgreSQLHandler::initializeSystemTables(ContextMutablePtr query_context)
+{
+    /// Create an internal context from the global context (which has full access, bypassing grant checks)
+    /// but sharing the same session context, so that temporary views created here
+    /// are visible in subsequent user queries.
+    auto internal_context = Context::createCopy(server.context());
+    internal_context->makeQueryContext();
+    internal_context->setCurrentQueryId(fmt::format("postgres-init:{:d}", connection_id));
+    internal_context->setSessionContext(query_context->getSessionContext());
+
+    String out_str;
+    auto out_buffer = WriteBufferFromString(out_str);
+
+    auto execute_query = [&](const String & query)
+    {
+        QueryScope query_scope = QueryScope::create(internal_context);
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, internal_context, {}, QueryFlags{ .internal = true });
+    };
+
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_type AS
+SELECT * FROM VALUES(
+    'oid UInt32, typnamespace UInt32, typname String, typrelid UInt32, typnotnull UInt8, typtype String, typreceive UInt32, typelem UInt32, typbasetype UInt32, typcategory String',
+    (16,   11, 'bool',      0, 0, 'b', 246, 0, 0, 'B'),
+    (17,   11, 'bytea',     0, 0, 'b', 248, 0, 0, 'U'),
+    (18,   11, 'char',      0, 0, 'b', 245, 0, 0, 'S'),
+    (19,   11, 'name',      0, 0, 'b', 244, 0, 0, 'S'),
+    (20,   11, 'int8',      0, 0, 'b', 241, 0, 0, 'N'),
+    (21,   11, 'int2',      0, 0, 'b', 243, 0, 0, 'N'),
+    (23,   11, 'int4',      0, 0, 'b', 242, 0, 0, 'N'),
+    (25,   11, 'text',      0, 0, 'b', 247, 0, 0, 'S'),
+    (700,  11, 'float4',    0, 0, 'b', 250, 0, 0, 'N'),
+    (701,  11, 'float8',    0, 0, 'b', 251, 0, 0, 'N'),
+    (1043, 11, 'varchar',   0, 0, 'b', 249, 0, 0, 'S'),
+    (1082, 11, 'date',      0, 0, 'b', 252, 0, 0, 'D'),
+    (1114, 11, 'timestamp', 0, 0, 'b', 253, 0, 0, 'D')
+))");
+
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_namespace AS
+SELECT * FROM VALUES(
+    'oid UInt32, nspname String',
+    (11,    'pg_catalog'),
+    (2200,  'public'),
+    (132,   'information_schema'),
+    (11519, 'pg_toast'),
+    (99,    'pg_temp_1'),
+    (100,   'pg_toast_temp_1')
+))");
+
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class AS
+SELECT * FROM VALUES(
+    'oid UInt32, relkind String',
+    (1259, 'r'),
+    (2615, 'i'),
+    (1247, 'r'),
+    (3079, 'v'),
+    (1260, 'c'),
+    (1255, 'f'),
+    (3476, 'm'),
+    (3074, 'S')
+))");
+
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_proc AS
+SELECT * FROM VALUES(
+    'oid UInt32, proname String',
+    (1247, 'boolin'),
+    (1248, 'boolout'),
+    (1249, 'byteain'),
+    (1250, 'byteaout'),
+    (1251, 'charin'),
+    (1252, 'charout'),
+    (1255, 'namein'),
+    (1256, 'nameout'),
+    (1259, 'int2in'),
+    (1260, 'int2out'),
+    (1261, 'int4in'),
+    (1262, 'int4out'),
+    (1265, 'textin'),
+    (1266, 'textout'),
+    (1286, 'float4in'),
+    (1287, 'float4out'),
+    (1288, 'float8in'),
+    (1289, 'float8out'),
+    (1344, 'date_in'),
+    (1345, 'date_out'),
+    (2022, 'varcharin'),
+    (2023, 'varcharout'),
+    (1115, 'timestamp_in'),
+    (1116, 'timestamp_out')
+))");
+
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_range AS
+SELECT * FROM VALUES(
+    'rngtypid UInt32, rngsubtype UInt32, rngmultitypid UInt32',
+    (3904, 23,   3905),
+    (3906, 1700, 3907),
+    (3910, 1114, 3911),
+    (3912, 1184, 3913),
+    (3914, 1082, 3915),
+    (3926, 21,   3927)
+))");
+
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_attribute AS
+SELECT * FROM VALUES(
+    'atttypid UInt32, attrelid UInt32, attname String, attnum Int32, attisdropped UInt8',
+    (19, 1247, 'typname',      1, 0),
+    (26, 1247, 'typnamespace', 2, 0),
+    (23, 1247, 'typrelid',     3, 0),
+    (16, 1247, 'typnotnull',   4, 0),
+    (25, 1247, 'typtype',      5, 0),
+    (26, 1247, 'typreceive',   6, 0),
+    (26, 1247, 'typelem',      7, 0),
+    (26, 1247, 'typbasetype',  8, 0),
+    (18, 1247, 'typcategory',  9, 0)
+))");
+
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_enum AS
+SELECT * FROM VALUES(
+    'oid UInt32, enumtypid UInt32, enumsortorder Float64, enumlabel String',
+    (50000, 40000, 1.0, 'sad'),
+    (50001, 40000, 2.0, 'ok'),
+    (50002, 40000, 3.0, 'happy')
+))");
 }
 
 }

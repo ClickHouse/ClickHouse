@@ -12,6 +12,7 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
@@ -24,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_PREWHERE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -107,6 +109,11 @@ public:
 
                 auto column_identifier = planner_context->getGlobalPlannerContext()->createColumnIdentifier(node);
 
+                /// The ALIAS column may be referenced from inside a subquery, which collectSets
+                /// never descends into (it skips QUERY and UNION children), so register the sets
+                /// of the ALIAS expression here before building actions over it.
+                collectSets(column_node->getExpression(), *planner_context);
+
                 ActionsDAG alias_column_actions_dag;
                 ColumnNodePtrWithHashSet empty_correlated_columns_set;
                 PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set, false);
@@ -114,9 +121,13 @@ public:
                 if (outputs.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Expected single output in actions dag for alias column {}. Actual {}", column_node->dumpTree(), outputs.size());
+                /// ColumnsDescription validation (ColumnsDescription.cpp) now recursively rejects
+                /// subqueries at any depth in ALIAS expressions. This check remains as a
+                /// safety net in case any code path bypasses DDL-time validation (e.g. loading
+                /// tables from metadata created before the recursive check was added).
                 if (correlated_subtrees.notEmpty())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Correlated subquery in alias column expression {}. Actual {}", column_node->dumpTree(), outputs.size());
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Correlated subqueries in ALIAS column expressions are not supported. Column: {}", column_node->getColumnName());
 
                 auto & alias_node = outputs[0];
                 const auto & column_name = column_node->getColumnName();
@@ -458,6 +469,12 @@ void collectSourceColumns(QueryTreeNodePtr & expression_node, PlannerContextPtr 
 {
     CollectSourceColumnsVisitor collect_source_columns_visitor(planner_context, keep_alias_columns);
     collect_source_columns_visitor.visit(expression_node);
+}
+
+void collectSetsAndSourceColumns(QueryTreeNodePtr & expression_node, PlannerContextPtr & planner_context, bool keep_alias_columns)
+{
+    collectSets(expression_node, *planner_context);
+    collectSourceColumns(expression_node, planner_context, keep_alias_columns);
 }
 
 }

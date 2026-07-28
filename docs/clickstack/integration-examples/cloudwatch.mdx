@@ -1,0 +1,502 @@
+---
+slug: /use-cases/observability/clickstack/integrations/aws-cloudwatch-logs
+title: 'Monitoring AWS CloudWatch logs with ClickStack'
+sidebarTitle: 'AWS CloudWatch logs'
+description: 'Monitoring AWS CloudWatch Logs with ClickStack'
+doc_type: 'guide'
+keywords: ['AWS', 'CloudWatch', 'OTEL', 'ClickStack', 'logs']
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+**TL;DR**
+
+Forward AWS CloudWatch logs to ClickStack using the OpenTelemetry Collector's CloudWatch receiver. Supports named log groups and autodiscovery. Includes a demo dataset and pre-built dashboard.
+</Info>
+
+## Overview {#overview}
+
+AWS CloudWatch is a monitoring service for AWS resources and applications. While CloudWatch provides log aggregation, forwarding logs to ClickStack allows you to:
+- Analyze logs alongside metrics and traces in a unified platform
+- Query logs using ClickHouse's SQL interface
+- Reduce costs by archiving or reducing CloudWatch retention
+
+This guide shows you how to forward CloudWatch logs to ClickStack using the OpenTelemetry Collector.
+
+## Integration with existing CloudWatch log groups {#existing-cloudwatch}
+
+This section covers configuring the OpenTelemetry Collector to pull logs from your existing CloudWatch log groups and forward them to ClickStack.
+
+If you would like to test the integration before configuring your production setup, you can test with our demo dataset in the [demo dataset section](#demo-dataset).
+
+### Prerequisites {#prerequisites}
+
+- ClickStack instance running
+- AWS account with CloudWatch log groups
+- AWS credentials with appropriate IAM permissions
+
+<Note>
+Unlike file-based log integrations (nginx, Redis), CloudWatch requires running a separate OpenTelemetry Collector that polls the CloudWatch API. This collector can't run inside ClickStack's all-in-one image as it needs AWS credentials and API access.
+</Note>
+
+<Steps>
+<Step title="Get ClickStack API key" id="get-api-key">
+
+The OpenTelemetry Collector sends data to ClickStack's OTLP endpoint, which requires authentication.
+
+1. Open HyperDX at your ClickStack URL (e.g., http://localhost:8080)
+2. Create an account or log in if needed
+3. Navigate to **Team Settings → API Keys**
+4. Copy your **Ingestion API Key**
+
+<Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key"/>
+
+Save this as an environment variable:
+```bash
+export CLICKSTACK_API_KEY="your-api-key-here"
+```
+</Step>
+<Step title="Configure AWS credentials" id="configure-aws">
+
+Export your AWS credentials as environment variables. The method depends on your authentication type:
+
+**For AWS SSO users (recommended for most organizations):**
+```bash
+# Login to SSO
+aws sso login --profile YOUR_PROFILE_NAME
+
+# Export credentials to environment variables
+eval $(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env)
+
+# Verify credentials work
+aws sts get-caller-identity
+```
+
+Replace `YOUR_PROFILE_NAME` with your AWS SSO profile name (e.g., `AccountAdministrators-123456789`).
+
+**For IAM users with long-term credentials:**
+```bash
+export AWS_ACCESS_KEY_ID="your-access-key-id"
+export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
+export AWS_REGION="us-east-1"
+
+# Verify credentials work
+aws sts get-caller-identity
+```
+
+**Required IAM permissions:**
+
+The AWS account associated with these credentials needs the following IAM policy to read CloudWatch logs:
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CloudWatchLogsRead",
+      "Effect": "Allow",
+      "Action": [
+        "logs:DescribeLogGroups",
+        "logs:FilterLogEvents"
+      ],
+      "Resource": "arn:aws:logs:*:YOUR_ACCOUNT_ID:log-group:*"
+    }
+  ]
+}
+```
+
+Replace `YOUR_ACCOUNT_ID` with your AWS account ID.
+</Step>
+<Step title="Configure the CloudWatch receiver" id="configure-receiver">
+
+Create an `otel-collector-config.yaml` file with the CloudWatch receiver configuration.
+
+<Accordion title="Discover the log groups available in your account">
+Before editing the config, list the log groups that exist in your region so you can pick real names (and confirm the region is correct):
+
+```bash
+aws logs describe-log-groups --region us-east-1 \
+  --query 'logGroups[].logGroupName' --output table
+```
+
+Example output:
+
+```text
+-------------------------------
+|      DescribeLogGroups      |
++-----------------------------+
+|  /aws-glue/jobs/error       |
+|  /aws-glue/jobs/logs-v2     |
+|  /aws-glue/jobs/output      |
+|  /aws-glue/sessions/error   |
+|  /aws-glue/sessions/output  |
++-----------------------------+
+```
+
+Use the names from this list directly in the `groups.named` block of Example 1 below. For the account above, the named-groups section would become:
+
+```yaml
+groups:
+  named:
+    /aws-glue/jobs/error:
+    /aws-glue/jobs/logs-v2:
+    /aws-glue/jobs/output:
+    /aws-glue/sessions/error:
+    /aws-glue/sessions/output:
+```
+
+Alternatively, if the groups you want share a common prefix (here `/aws-glue/`), use Example 2 with `prefix: /aws-glue/` instead of listing them individually.
+</Accordion>
+
+**Example 1: Named log groups (recommended)**
+
+This configuration collects logs from specific named log groups:
+```yaml
+receivers:
+  awscloudwatch:
+    region: us-east-1
+    logs:
+      poll_interval: 1m
+      max_events_per_request: 100
+      groups:
+        named:
+          /aws/lambda/my-function:
+          /aws/ecs/my-service:
+          /aws/eks/my-cluster/cluster:
+
+processors:
+  batch:
+    timeout: 10s
+
+exporters:
+  otlphttp:
+    endpoint: http://localhost:4318
+    headers:
+      authorization: ${CLICKSTACK_API_KEY}
+
+service:
+  pipelines:
+    logs:
+      receivers: [awscloudwatch]
+      processors: [batch]
+      exporters: [otlphttp]
+```
+
+**Example 2: Autodiscover log groups with prefix**
+
+This configuration autodiscovers and collects logs from up to 100 log groups starting with the prefix `/aws/lambda`:
+```yaml
+receivers:
+  awscloudwatch:
+    region: us-east-1
+    logs:
+      poll_interval: 1m
+      max_events_per_request: 100
+      groups:
+        autodiscover:
+          limit: 100
+          prefix: /aws/lambda
+
+processors:
+  batch:
+    timeout: 10s
+
+exporters:
+  otlphttp:
+    endpoint: http://localhost:4318
+    headers:
+      authorization: ${CLICKSTACK_API_KEY}
+
+service:
+  pipelines:
+    logs:
+      receivers: [awscloudwatch]
+      processors: [batch]
+      exporters: [otlphttp]
+```
+
+**Configuration parameters:**
+- `region`: AWS region where your log groups are located
+- `poll_interval`: How often to check for new logs (e.g., `1m`, `5m`)
+- `max_events_per_request`: Maximum number of log events to fetch per request
+- `groups.autodiscover.limit`: Maximum number of log groups to discover
+- `groups.autodiscover.prefix`: Filter log groups by prefix
+- `groups.named`: Explicitly list log group names to collect
+
+For more configuration options, see the [CloudWatch receiver documentation](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver).
+
+**Replace the following:**
+- `${CLICKSTACK_API_KEY}` → Uses the environment variable you set earlier
+- `http://localhost:4318` → Your ClickStack endpoint (use your ClickStack host if running remotely)
+- `us-east-1` → Your AWS region
+- Log group names/prefixes → Your actual CloudWatch log groups
+
+<Note>
+The CloudWatch receiver only fetches logs from recent time windows (based on `poll_interval`). When first started, it begins from the current time. Historical logs aren't retrieved by default.
+</Note>
+</Step>
+<Step title="Start the collector" id="start-collector">
+
+Create a `docker-compose.yaml` file:
+
+```yaml
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-config.yaml
+    environment:
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - AWS_SESSION_TOKEN
+      - AWS_REGION
+      - CLICKSTACK_API_KEY
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+```
+
+Then start the collector:
+
+```bash
+docker compose up -d
+```
+
+View collector logs:
+
+```bash
+docker compose logs -f otel-collector
+```
+</Step>
+<Step title="Verify logs in HyperDX" id="verify-logs">
+
+Once the collector is running:
+
+1. Open HyperDX at http://localhost:8080 (or your ClickStack URL)
+2. Navigate to the **Logs** view
+3. Wait 1-2 minutes for logs to appear (based on your poll interval)
+4. Search for logs from your CloudWatch log groups
+
+<Image img="/images/clickstack/cloudwatch/log-search-view.webp" alt="Log Search View"/>
+
+Look for these key attributes in the logs:
+- `ResourceAttributes['aws.region']`: Your AWS region (e.g., "us-east-1")
+- `ResourceAttributes['cloudwatch.log.group.name']`: The CloudWatch log group name
+- `ResourceAttributes['cloudwatch.log.stream']`: The log stream name
+- `Body`: The actual log message content
+
+<Image img="/images/clickstack/cloudwatch/error-log-column-values.webp" alt="Error Log Column Values"/>
+</Step>
+</Steps>
+
+## Demo dataset {#demo-dataset}
+
+For users who want to test the CloudWatch logs integration before configuring their production AWS environment, we provide a sample dataset with pre-generated logs showing realistic patterns from multiple AWS services.
+
+<Steps>
+<Step title="Download the sample dataset" id="download-sample">
+
+```bash
+curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/aws/cloudwatch/cloudwatch-logs.jsonl
+```
+
+The dataset includes 24 hours of CloudWatch logs from multiple services:
+- **Lambda functions**: Payment processing, order management, authentication
+- **ECS services**: API gateway with rate limiting and timeouts
+- **Background jobs**: Batch processing with retry patterns
+</Step>
+<Step title="Start ClickStack" id="start-clickstack">
+
+If you don't already have ClickStack running:
+
+```bash
+docker run -d --name clickstack \
+  -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+  clickhouse/clickstack-all-in-one:latest
+```
+
+Wait a few moments for ClickStack to fully start up.
+</Step>
+<Step title="Import the demo dataset" id="import-demo-data">
+
+```bash
+docker exec -i clickstack clickhouse-client --query="
+  INSERT INTO default.otel_logs FORMAT JSONEachRow
+" < cloudwatch-logs.jsonl
+```
+
+This imports the logs directly into ClickStack's logs table.
+</Step>
+<Step title="Verify the demo data" id="verify-demo-logs">
+
+Once imported:
+
+1. Open HyperDX at http://localhost:8080 and log in (create an account if needed)
+2. Navigate to the **Logs** view
+3. Set the time range to **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)**
+4. Search for `cloudwatch-demo` or filter by `LogAttributes['source'] = 'cloudwatch-demo'`
+
+You should see logs from multiple CloudWatch log groups.
+
+<Image img="/images/clickstack/cloudwatch/demo-search-view.webp" alt="Demo search view"/>
+
+<Info>
+**Timezone Display**
+
+HyperDX displays timestamps in your browser's local timezone. The demo data spans **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)**. Set your time range to **2025-12-06 00:00:00 - 2025-12-09 00:00:00** to ensure you see the demo logs regardless of your location. Once you see the logs, you can narrow the range to a 24-hour period for clearer visualizations.
+</Info>
+</Step>
+</Steps>
+
+## Dashboards and visualization {#dashboards}
+
+To help you monitor CloudWatch logs with ClickStack, we provide a pre-built dashboard with essential visualizations.
+
+<Steps>
+<Step title="Download the dashboard configuration" id="download">
+
+<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">Download the dashboard configuration file</TrackedLink>.
+</Step>
+<Step title="Import the dashboard" id="import-dashboard">
+
+1. Open HyperDX and navigate to the Dashboards section
+2. Click **Import Dashboard** in the upper right corner under the ellipses
+
+<Image img="/images/clickstack/import-dashboard.webp" alt="Import dashboard button"/>
+
+3. Upload the `cloudwatch-logs-dashboard.json` file and click **Finish Import**
+
+<Image img="/images/clickstack/cloudwatch/finish-import.webp" alt="Finish import dialog"/>
+</Step>
+<Step title="View the dashboard" id="created-dashboard">
+
+The dashboard will be created with all visualizations pre-configured:
+
+<Image img="/images/clickstack/cloudwatch/logs-dashboard.webp" alt="CloudWatch Logs dashboard"/>
+
+<Note>
+For the demo dataset, set the time range to **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)** (adjust based on your local timezone). The imported dashboard won't have a time range specified by default.
+</Note>
+</Step>
+</Steps>
+
+## Troubleshooting {#troubleshooting}
+
+### No logs appearing in HyperDX {#no-logs}
+
+**Verify AWS credentials are configured:**
+
+```bash
+aws sts get-caller-identity
+```
+
+If this fails, your credentials are invalid or expired.
+
+**Check IAM permissions:**
+Ensure your AWS credentials have the required `logs:DescribeLogGroups` and `logs:FilterLogEvents` permissions.
+
+**Check collector logs for errors:**
+```bash
+# If using Docker directly, logs appear in stdout
+# If using Docker Compose:
+docker compose logs otel-collector
+```
+
+Common errors:
+- `The security token included in the request is invalid`: Credentials are invalid or expired. For temporary credentials (SSO), ensure `AWS_SESSION_TOKEN` is set.
+- `operation error CloudWatch Logs: FilterLogEvents, AccessDeniedException`: IAM permissions are insufficient
+- `failed to refresh cached credentials, no EC2 IMDS role found`: AWS credentials environment variables aren't set
+- `connection refused`: ClickStack endpoint is unreachable
+
+**Verify CloudWatch log groups exist and have recent logs:**
+```bash
+# List your log groups
+aws logs describe-log-groups --region us-east-1
+
+# Check if a specific log group has recent logs (last hour)
+aws logs filter-log-events \
+  --log-group-name /aws/lambda/my-function \
+  --region us-east-1 \
+  --start-time $(date -u -v-1H +%s)000 \
+  --max-items 5
+```
+
+### Only seeing old logs or missing recent logs {#missing-recent}
+
+**The CloudWatch receiver starts from "now" by default:**
+
+When the collector first starts, it creates a checkpoint at the current time and only fetches logs after that point. Historical logs aren't retrieved.
+
+**To collect recent historical logs:**
+
+Stop and remove the collector's checkpoint, then restart:
+```bash
+# Stop the collector
+docker stop <container-id>
+
+# Restart fresh (checkpoints are stored in container, so removing it resets)
+docker run --rm ...
+```
+
+The receiver will create a new checkpoint and fetch logs from the current time forward.
+
+### Invalid security token / credentials expired {#expired-credentials}
+
+If using temporary credentials (AWS SSO, assumed role), they expire after a period of time.
+
+**Re-export fresh credentials:**
+```bash
+# For SSO users:
+aws sso login --profile YOUR_PROFILE_NAME
+eval $(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env)
+
+# For IAM users:
+export AWS_ACCESS_KEY_ID="your-key"
+export AWS_SECRET_ACCESS_KEY="your-secret"
+
+# Restart the collector
+docker restart <container-id>
+```
+
+### High latency or missing recent logs {#latency}
+
+**Reduce poll interval:**
+The default `poll_interval` is 1 minute. For near-real-time logs, reduce it:
+```yaml
+logs:
+  poll_interval: 30s  # Poll every 30 seconds
+```
+
+**Note:** Lower poll intervals increase AWS API calls and may incur higher CloudWatch API costs.
+
+### Collector using too much memory {#memory}
+
+**Reduce batch size or increase timeout:**
+```yaml
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 100
+```
+
+**Limit autodiscovery:**
+```yaml
+groups:
+  autodiscover:
+    limit: 50  # Reduce from 100 to 50
+```
+
+## Next steps {#next-steps}
+
+- Set up [alerts](/clickstack/features/alerts) for critical events (connection failures, error spikes)
+- Reduce CloudWatch costs by adjusting retention periods or archiving to S3, now that you have logs in ClickStack
+- Filter noisy log groups by removing them from the collector configuration to reduce ingestion volume
+
+## Going to production {#going-to-production}
+
+This guide demonstrates running the OpenTelemetry Collector locally with Docker Compose for testing. For production deployments, run the collector on infrastructure with AWS access (EC2 with IAM roles, EKS with IRSA, or ECS with task roles) to eliminate the need for managing access keys. Deploy collectors in the same AWS region as your CloudWatch log groups to reduce latency and costs.
+
+See [Ingesting with OpenTelemetry](/clickstack/ingesting-data/opentelemetry) for production deployment patterns and collector configuration examples.

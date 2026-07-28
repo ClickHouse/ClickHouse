@@ -1,0 +1,51 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/ssd-cache
+title: 'ssd_cache 字典布局类型'
+sidebarTitle: 'ssd_cache'
+description: '通过内存中的索引将字典数据存储到 SSD：ssd_cache 或 complex_key_ssd_cache 类型'
+doc_type: 'reference'
+---
+
+<div id="ssd_cache">
+  ## ssd_cache
+</div>
+
+与 `cache` 类似，但数据存储在 SSD 上，索引存储在 RAM 中。所有与更新队列相关的缓存字典设置同样适用于 SSD 缓存字典。
+
+字典键的类型为 [UInt64](/zh/reference/data-types/int-uint)。
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
+        PATH '/var/lib/clickhouse/user_files/test_dict'))
+    ```
+  </Tab>
+
+  <Tab title="配置文件">
+    ```xml
+    <layout>
+        <ssd_cache>
+            <!-- 基本读取块大小（以字节为单位）。建议与 SSD 的页大小相同。 -->
+            <block_size>4096</block_size>
+            <!-- 缓存文件的最大大小（以字节为单位）。 -->
+            <file_size>16777216</file_size>
+            <!-- 用于从 SSD 读取元素的 RAM 缓冲区大小（以字节为单位）。 -->
+            <read_buffer_size>131072</read_buffer_size>
+            <!-- 刷新到 SSD 前，用于聚合元素的 RAM 缓冲区大小（以字节为单位）。 -->
+            <write_buffer_size>1048576</write_buffer_size>
+            <!-- 缓存文件的存储路径。 -->
+            <path>/var/lib/clickhouse/user_files/test_dict</path>
+        </ssd_cache>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="complex_key_ssd_cache">
+  ## complex_key_ssd_cache
+</div>
+
+这种存储类型适用于复合[键](/zh/reference/statements/create/dictionary/attributes#composite-key)，与 `ssd_cache` 类似。

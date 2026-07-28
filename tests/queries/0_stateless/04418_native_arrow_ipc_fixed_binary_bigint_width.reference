@@ -1,0 +1,10 @@
+--- ArrowStream ---
+wrong-width Int128: rejected
+wrong-width Int256: rejected
+correct-width Int128: 12345
+correct-width Int256: 12345
+--- Arrow ---
+wrong-width Int128: rejected
+wrong-width Int256: rejected
+correct-width Int128: 12345
+correct-width Int256: 12345

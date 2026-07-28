@@ -1,0 +1,129 @@
+Basic arithmetic operators
+SELECT plus(1, 2)
+FROM system.one
+SELECT minus(5, 3)
+FROM system.one
+SELECT multiply(4, 7)
+FROM system.one
+SELECT divide(10, 2)
+FROM system.one
+SELECT modulo(10, 3)
+FROM system.one
+Unary operators
+SELECT -5
+FROM system.one
+SELECT not(true)
+FROM system.one
+Comparison operators
+SELECT equals(1, 1)
+FROM system.one
+SELECT notEquals(1, 2)
+FROM system.one
+SELECT notEquals(1, 2)
+FROM system.one
+SELECT less(1, 2)
+FROM system.one
+SELECT greater(2, 1)
+FROM system.one
+SELECT lessOrEquals(1, 2)
+FROM system.one
+SELECT greaterOrEquals(2, 1)
+FROM system.one
+Logical operators
+SELECT and(true, false)
+FROM system.one
+SELECT or(true, false)
+FROM system.one
+Nested arithmetic operators
+SELECT plus(plus(1, 2), 3)
+FROM system.one
+SELECT multiply(multiply(1, 2), 3)
+FROM system.one
+SELECT multiply(plus(1, 2), 3)
+FROM system.one
+SELECT plus(1, multiply(2, 3))
+FROM system.one
+Mixed operators with precedence
+SELECT plus(1, multiply(2, 3))
+FROM system.one
+SELECT multiply(plus(1, 2), plus(3, 4))
+FROM system.one
+SELECT minus(divide(10, 2), 3)
+FROM system.one
+Complex multi-operator expressions
+SELECT
+    plus(1, multiply(2, 3)),
+    minus(5, 1),
+    not(true),
+    -10
+FROM system.one
+SELECT and(equals(1, 1), less(2, 3))
+FROM system.one
+SELECT not(equals(1, 2))
+FROM system.one
+Nested unary operators
+SELECT not(not(true))
+FROM system.one
+SELECT negate(-5)
+FROM system.one
+SELECT not(not(not(false)))
+FROM system.one
+LIKE operator
+SELECT like(\'test\', \'te%\')
+FROM system.one
+SELECT notLike(\'test\', \'x%\')
+FROM system.one
+IN operator
+SELECT in(1, (1, 2, 3))
+FROM system.one
+SELECT notIn(1, (4, 5, 6))
+FROM system.one
+IS NULL operator
+SELECT isNull(_CAST(NULL, \'Nullable(Nothing)\'))
+FROM system.one
+SELECT isNotNull(1)
+FROM system.one
+Array subscript operator
+SELECT arrayElement(_CAST([1, 2, 3], \'Array(UInt8)\'), 1)
+FROM system.one
+Tuple element access
+SELECT tupleElement(_CAST((1, 2), \'Tuple(UInt8, UInt8)\'), 1)
+FROM system.one
+Complex deeply nested expression
+SELECT divide(multiply(plus(1, 2), minus(3, 4)), minus(plus(5, 6), multiply(7, 8)))
+FROM system.one
+Mixed logical and comparison
+SELECT or(and(less(1, 2), greater(3, 2)), equals(4, 4))
+FROM system.one
+All common operators in one query
+SELECT
+    plus(1, 2),
+    minus(3, 4),
+    multiply(5, 6),
+    divide(7, 8),
+    modulo(9, 2),
+    -10,
+    not(true),
+    equals(11, 11),
+    notEquals(12, 13),
+    less(14, 15),
+    greater(16, 15),
+    lessOrEquals(17, 18),
+    greaterOrEquals(19, 18),
+    and(true, false),
+    or(true, false)
+FROM system.one
+Edge case: operator with column reference
+SELECT plus(number, 1)
+FROM system.numbers
+LIMIT 1
+Edge case: operators in WHERE clause
+SELECT *
+FROM system.numbers
+WHERE and(greater(number, 0), less(number, 10))
+LIMIT 1
+Edge case: operators in GROUP BY
+SELECT plus(number, 1) AS n
+FROM system.numbers
+GROUP BY n
+LIMIT 1

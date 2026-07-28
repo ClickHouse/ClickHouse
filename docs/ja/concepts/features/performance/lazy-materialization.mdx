@@ -1,0 +1,178 @@
+---
+slug: /optimize/lazy-materialization
+sidebarTitle: '遅延マテリアライゼーション'
+description: 'ClickHouse における遅延マテリアライゼーションとは何かを説明する記事'
+title: '遅延マテリアライゼーション'
+doc_type: 'guide'
+keywords: ['最適化', '遅延マテリアライゼーション']
+---
+
+この記事では、遅延マテリアライゼーションの仕組みと、それが ClickHouse の I/O 最適化全体の中でどのような位置づけにあるかを説明します。
+また、遅延マテリアライゼーションによってクエリ性能が向上することを示す実例も紹介します。
+
+<Tip>
+  **バージョン 25.4 以降で利用可能**
+
+  遅延マテリアライゼーションは ClickHouse バージョン 25.4 で導入され、デフォルトで有効になっています。
+</Tip>
+
+<div id="overview">
+  ## 概要
+</div>
+
+ClickHouse では長年にわたり、I/O を徹底的に削減するための多層的な最適化が段階的に導入されてきました。
+これらの手法が、その高速性と効率性の基盤となっています。
+
+| Optimization                                                                                                                                                                                                                        | Description                                                                                                                                                   |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [**列指向ストレージ**](/ja/get-started/about/intro#row-oriented-vs-column-oriented-storage)                                                                                                                                                    | クエリに不要なカラム全体をスキップできるほか、似た値をまとめて格納することで高い圧縮率も実現し、データ読み込み時の I/O を最小限に抑えます。                                                                                      |
+| [**スパースプライマリインデックス**](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes) | [**セカンダリデータスキッピング索引**](/ja/concepts/features/performance/skip-indexes/skipping-indexes) | [**プロジェクション**](/ja/concepts/features/projections/projections) | *索引付きカラム* に対するフィルターに一致する可能性がある [グラニュール](/ja/concepts/core-concepts/glossary#granule) (行ブロック) を特定することで、無関係なデータを刈り込みます。これらの手法はグラニュール単位で動作し、単独でも組み合わせでも利用できます。      |
+| [**PREWHERE**](/ja/reference/statements/select/prewhere)                                                                                                                                                                               | *索引のない* カラムに対するフィルターについても一致判定を行い、本来であれば読み込んでから破棄されるデータを早い段階でスキップします。単独でも機能しますが、索引で選ばれたグラニュールをさらに絞り込むこともできるため、*すべての* カラムフィルターに一致しない行をスキップして、グラニュールの刈り込みを補完します。 |
+| [**Query condition cache**](/ja/concepts/features/performance/caches/query-condition-cache)                                                                                                                                            | 前回すべてのフィルターに一致したグラニュールを記憶することで、繰り返し実行されるクエリを高速化します。これにより ClickHouse は、クエリの shape が変わっても、一致しなかったグラニュールの読み取りやフィルタリングをスキップできます。                                  |
+
+上記の I/O 最適化によって読み取るデータ量は大幅に減らせますが、それでも `WHERE` 句を通過した行については、ソート、集約、`LIMIT` などの処理を実行する前に、すべてのカラムを読み込むことが前提になっています。では、一部のカラムはもっと後の段階まで不要だったり、`WHERE` 句を通過しても実際にはまったく使われなかったりする場合はどうでしょうか。
+そこで登場するのが遅延マテリアライゼーションです。これは、I/O 最適化の仕組みを完成させる独立した拡張です。
+
+* 索引と `PREWHERE` を組み合わせることで、`WHERE` 句のカラムフィルターに一致する行だけが処理されるようになります。
+* 遅延マテリアライゼーションはこれをさらに進め、クエリ実行計画で実際に必要になるまでカラムの読み取りを遅らせます。
+  フィルタリング後であっても、次の処理 - たとえばソート - に必要なカラムだけがすぐに読み込まれます。
+  それ以外は後回しにされ、`LIMIT` があるため、多くの場合は最終結果を生成するのに必要な分だけしか読み込まれません。
+  このため、遅延マテリアライゼーションは Top N クエリで特に効果的です。最終結果に必要なのが、特定の、しかもしばしば大きなカラムからのごく少数の行だけであるケースが多いためです。
+
+<div id="worked-example">
+  ## 実例
+</div>
+
+遅延マテリアライゼーションをより深く理解するには、ブログ記事 [&quot;ClickHouse gets lazier (and faster): Introducing lazy materialization&quot;](https://clickhouse.com/blog/clickhouse-gets-lazier-and-faster-introducing-lazy-materialization#speed-without-filters-lazy-materialization-in-isolation) を強くお勧めします。以下の例は前述のブログ記事から引用したもので、遅延マテリアライゼーションによって ClickHouse クエリの実行時間が 219 秒からわずか 139 ミリ秒まで短縮されること (1576 倍の高速化) を示すため、ここに再掲しています。
+
+索引と `PREWHERE` の恩恵を受けるには、クエリにフィルターが必要です。索引には主キーのカラムに対するフィルターが、`PREWHERE` には任意のカラムに対するフィルターが必要になります。
+遅延マテリアライゼーションはその上に自然に重ねて適用できますが、前述のほかの最適化とは異なり、カラムフィルターがまったくないクエリでも高速化できます。
+
+次のクエリ例では、日付、製品、評価、認証済みかどうかに関係なく、Amazon レビューのうち「参考になった」票の数が最も多いものを探し、上位 3 件についてタイトル、見出し、本文全文を返します。
+
+まず、遅延マテリアライゼーションを無効にした状態で、クエリを実行します (コールドなファイルシステムキャッシュを使用し、[`query_plan_optimize_lazy_materialization`](/ja/reference/settings/session-settings#query_plan_optimize_lazy_materialization) を使用) :
+
+```sql title="Query"
+SELECT
+    helpful_votes,
+    product_title,
+    review_headline,
+    review_body
+FROM amazon.amazon_reviews
+ORDER BY helpful_votes DESC
+LIMIT 3
+FORMAT Vertical
+SETTINGS
+    query_plan_optimize_lazy_materialization = false;
+```
+
+```response title="Response" highlight={22-23}
+Row 1:
+──────
+helpful_votes:   47524
+product_title:   Kindle: Amazon's Original Wireless Reading Device (1st generation)
+review_headline: Why and how the Kindle changes everything
+review_body:     This is less a \"pros and cons\" review than a hopefully use...
+
+Row 2:
+──────
+helpful_votes:   41393
+product_title:   BIC Cristal For Her Ball Pen, 1.0mm, Black, 16ct (MSLP16-Blk)
+review_headline: FINALLY!
+review_body:     Someone has answered my gentle prayers and FINALLY designed ...
+
+Row 3:
+──────
+helpful_votes:   41278
+product_title:   The Mountain Kids 100% Cotton Three Wolf Moon T-Shirt
+review_headline: Dual Function Design
+review_body:     This item has wolves on it which makes it intrinsically swee...
+
+0 rows in set. Elapsed: 219.071 sec. Processed 150.96 million rows, 71.38 GB (689.08 thousand rows/s., 325.81 MB/s.)
+Peak memory usage: 1.11 GiB.
+```
+
+次に、クエリを再度実行します (今回もファイルシステムキャッシュはコールドな状態です) 。ただし今度は、遅延マテリアライゼーションを有効にして実行します：
+
+```sql title="Query" highlight={11}
+SELECT
+    helpful_votes,
+    product_title,
+    review_headline,
+    review_body
+FROM amazon.amazon_reviews
+ORDER BY helpful_votes DESC
+LIMIT 3
+FORMAT Vertical
+SETTINGS
+query_plan_optimize_lazy_materialization = true;
+```
+
+<Tip>
+  通常、遅延マテリアライゼーションの恩恵を受けるために `query_plan_optimize_lazy_materialization = true` を明示的に設定する必要はありません。
+  デフォルトで有効になっています。
+</Tip>
+
+```response title="Response" highlight={22-23}
+Row 1:
+──────
+helpful_votes:   47524
+product_title:   Kindle: Amazon's Original Wireless Reading Device (1st generation)
+review_headline: Why and how the Kindle changes everything
+review_body:     This is less a \"pros and cons\" review than a hopefully use...
+
+Row 2:
+──────
+helpful_votes:   41393
+product_title:   BIC Cristal For Her Ball Pen, 1.0mm, Black, 16ct (MSLP16-Blk)
+review_headline: FINALLY!
+review_body:     Someone has answered my gentle prayers and FINALLY designed ...
+
+Row 3:
+──────
+helpful_votes:   41278
+product_title:   The Mountain Kids 100% Cotton Three Wolf Moon T-Shirt
+review_headline: Dual Function Design
+review_body:     This item has wolves on it which makes it intrinsically swee...
+
+0 rows in set. Elapsed: 0.139 sec. Processed 150.96 million rows, 1.81 GB (1.09 billion rows/s., 13.06 GB/s.)
+Peak memory usage: 3.80 MiB.
+```
+
+遅延マテリアライゼーションをオフにした場合とオンにした場合のパフォーマンスの違いを見てみましょう。
+
+| メトリック    | 遅延マテリアライゼーション無効 | 遅延マテリアライゼーション有効 | 改善       |
+| -------- | --------------- | --------------- | -------- |
+| 経過時間     | 219.071 sec     | 0.139 sec       | 約1576倍高速 |
+| 読み取りデータ量 | 71.38 GB        | 1.81 GB         | 約40分の1   |
+| ピークメモリ   | 1.11 GiB        | 3.80 MiB        | 約300分の1  |
+
+<div id="confirm-lazy-materialization">
+  ## クエリ実行計画で遅延マテリアライゼーションを確認する方法
+</div>
+
+前のクエリで遅延マテリアライゼーションが使われているかどうかは、[`EXPLAIN`](/ja/reference/statements/explain) 句を使用してクエリの論理実行計画を確認することで確認できます。
+
+```sql
+EXPLAIN actions = 1
+SELECT
+    helpful_votes,
+    product_title,
+    review_headline,
+    review_body
+FROM amazon.amazon_reviews
+ORDER BY helpful_votes DESC
+LIMIT 3
+SETTINGS
+    query_plan_optimize_lazy_materialization = true;
+```
+
+```response highlight={2}
+...
+Lazily read columns: review_headline, review_body, product_title
+  Limit
+    Sorting
+      ReadFromMergeTree
+```
+
+オペレータープランは下から上に読むことができ、ClickHouse が 3 つの大きな String カラムの読み取りを、ソートと件数制限の後まで遅延させていることを確認できます。
