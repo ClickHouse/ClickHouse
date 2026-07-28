@@ -128,7 +128,7 @@ std::string_view ColumnReplicated::getDataAt(size_t n) const
 namespace
 {
 
-/// Materializes Replicated(Array) into a full ColumnArray: Each array row is appended as one contiguous element range 
+/// Materializes Replicated(Array) into a full ColumnArray: Each array row is appended as one contiguous element range
 /// via a single insertRangeFrom, instead of gathering the nested data element by element as the generic path
 template <typename T>
 ColumnPtr convertToFullColumnArrayImpl(const ColumnArray & src, const PaddedPODArray<T> & row_indexes)
