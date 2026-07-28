@@ -50,6 +50,8 @@ SELECT a, b, c FROM (SELECT ...)
 
 `INSERT` is supported into a normal view when its definition is a simple column selection from a single table. Inserted rows are forwarded to the underlying table, missing target columns receive their defaults, and column aliases are remapped back to their target names.
 
+The target of the view must be a table, not another view: a view whose `FROM` item is a normal, materialized, or window view is not insertable and raises `NOT_IMPLEMENTED`, because the intermediate view carries no column `DEFAULT`s of its own, so an omitted column would be stored as a type default instead of the final table's default. Insertable normal views can be temporary: a temporary view over a non-view table accepts `INSERT` under exactly the same rules.
+
 ```sql
 CREATE TABLE t (a Int32, b String, c Float64 DEFAULT 0.5) ENGINE = MergeTree ORDER BY a;
 
@@ -634,7 +636,7 @@ ClickHouse supports **temporary views** with the following characteristics (matc
   If a temporary object (table or view) has the same name as a persistent object and a query references the name **without** a database, the **temporary** object is used.
 
 * **Logical object (no storage)**
-  A temporary view stores only its `SELECT` text (uses the `View` storage internally). It does not persist data and cannot accept `INSERT`.
+  A temporary view stores only its `SELECT` text (uses the `View` storage internally). It does not persist data of its own. Like a persistent normal view, it accepts `INSERT` when its definition is a simple column selection from a single non-view table, forwarding the rows to that table — see [Inserting into a normal view](#inserting-into-a-normal-view).
 
 * **Engine clause**
   You do **not** need to specify `ENGINE`; if provided as `ENGINE = View`, it’s ignored/treated as the same logical view.
