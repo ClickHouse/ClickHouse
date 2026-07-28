@@ -55,6 +55,41 @@ DROP TABLE t_dyn;
 DROP TABLE t_shared;
 DROP TABLE t_both;
 
+-- The cases above have a single path, so the object's whole value moves between the dynamic and the
+-- shared section together. That is not enough to pin `ColumnObject::computeHashInto` itself: with a
+-- single path, chaining the sub-columns in physical order happens to agree with the canonical order,
+-- because the nested `ColumnDynamic` (fixed separately below) carries the whole difference. With TWO
+-- paths the sections are populated in both rows and the physical order genuinely diverges from sorted
+-- path order: `{"a":1,"b":2}` keeps `a` dynamic and `b` shared in one block, and `b` dynamic with `a`
+-- shared in the other. Both rows are logically equal, so the self-join must match all 4 pairs; the
+-- pre-fix hash matches only the 2 self-pairs.
+DROP TABLE IF EXISTS t2_a;
+DROP TABLE IF EXISTS t2_b;
+DROP TABLE IF EXISTS t2_both;
+CREATE TABLE t2_a (k JSON(max_dynamic_paths = 1)) ENGINE = Memory;
+INSERT INTO t2_a VALUES ('{"a":1,"b":2}');
+CREATE TABLE t2_b (id UInt8, k JSON(max_dynamic_paths = 1)) ENGINE = Memory;
+INSERT INTO t2_b VALUES (1, '{"b":2}'), (2, '{"a":1,"b":2}');
+CREATE TABLE t2_both (k JSON(max_dynamic_paths = 1)) ENGINE = Memory;
+INSERT INTO t2_both SELECT k FROM t2_a;
+INSERT INTO t2_both SELECT k FROM t2_b WHERE id = 2;
+
+-- Each row has one path dynamic and the other shared, and the two rows disagree on which is which.
+SELECT 'two_path_splits',
+       countIf(has(JSONDynamicPaths(k), 'a')),
+       countIf(has(JSONSharedDataPaths(k), 'a'))
+FROM t2_both;
+
+SELECT 'two_path_hash', count() FROM t2_both AS a INNER JOIN t2_both AS b ON a.k = b.k SETTINGS join_algorithm = 'hash';
+-- 8 buckets, not 4: with 4 the two pre-fix hashes happen to land in the same bucket and the join
+-- still matches, so 4 buckets would not catch a regression in `ColumnObject::computeHashInto`.
+SELECT 'two_path_grace_hash', count() FROM t2_both AS a INNER JOIN t2_both AS b ON a.k = b.k SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 8, max_block_size = 1;
+SELECT 'two_path_group_by', count() FROM (SELECT k FROM t2_both GROUP BY k);
+
+DROP TABLE t2_a;
+DROP TABLE t2_b;
+DROP TABLE t2_both;
+
 -- Grace-hash spill on a JSON key whose per-block dynamic/shared split varies must not raise a
 -- FileBucket state-machine assertion, and must not silently drop matches (the hash must be stable
 -- across the temp-file round-trip). Spilling to disk is forced by grace_hash_join_initial_buckets = 8
@@ -136,6 +171,53 @@ SELECT 'dyn_uniqExact', uniqExact(k) FROM d_both;
 DROP TABLE d_typed;
 DROP TABLE d_shared;
 DROP TABLE d_both;
+
+-- The cases above all use an `Int64` value, which is the one width where hashing the shared variant's
+-- serialized blob happens to agree with hashing the typed column's representation: the typed hash
+-- zero-extends the value into a 64-bit word, while a raw-bytes hash of a shorter value mixes the byte
+-- COUNT into the word instead. So an `Int64` fixture cannot tell the decoded-value hash apart from a
+-- raw-blob hash. `String` (whose blob carries a varint length prefix that the typed hash never sees)
+-- and any numeric narrower than 8 bytes do distinguish them, so both are covered here.
+DROP TABLE IF EXISTS d_str_typed;
+DROP TABLE IF EXISTS d_str_shared;
+DROP TABLE IF EXISTS d_str_both;
+CREATE TABLE d_str_typed (k Dynamic(max_types = 1)) ENGINE = Memory;
+INSERT INTO d_str_typed VALUES ('abcdefghijk'::String);
+CREATE TABLE d_str_shared (k Dynamic(max_types = 1)) ENGINE = Memory;
+INSERT INTO d_str_shared VALUES (7::Int64), ('abcdefghijk'::String);
+CREATE TABLE d_str_both (k Dynamic(max_types = 1)) ENGINE = Memory;
+INSERT INTO d_str_both SELECT k FROM d_str_typed;
+INSERT INTO d_str_both SELECT k FROM d_str_shared WHERE dynamicType(k) = 'String';
+
+SELECT 'dyn_str_splits',
+       countIf(NOT isDynamicElementInSharedData(k)),
+       countIf(isDynamicElementInSharedData(k))
+FROM d_str_both;
+SELECT 'dyn_str_grace_hash', count() FROM d_str_both AS a INNER JOIN d_str_both AS b ON a.k = b.k SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 4, max_block_size = 1;
+
+DROP TABLE IF EXISTS d_u8_typed;
+DROP TABLE IF EXISTS d_u8_shared;
+DROP TABLE IF EXISTS d_u8_both;
+CREATE TABLE d_u8_typed (k Dynamic(max_types = 1)) ENGINE = Memory;
+INSERT INTO d_u8_typed VALUES (5::UInt8);
+CREATE TABLE d_u8_shared (k Dynamic(max_types = 1)) ENGINE = Memory;
+INSERT INTO d_u8_shared VALUES ('fill'::String), (5::UInt8);
+CREATE TABLE d_u8_both (k Dynamic(max_types = 1)) ENGINE = Memory;
+INSERT INTO d_u8_both SELECT k FROM d_u8_typed;
+INSERT INTO d_u8_both SELECT k FROM d_u8_shared WHERE dynamicType(k) = 'UInt8';
+
+SELECT 'dyn_u8_splits',
+       countIf(NOT isDynamicElementInSharedData(k)),
+       countIf(isDynamicElementInSharedData(k))
+FROM d_u8_both;
+SELECT 'dyn_u8_grace_hash', count() FROM d_u8_both AS a INNER JOIN d_u8_both AS b ON a.k = b.k SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 4, max_block_size = 1;
+
+DROP TABLE d_str_typed;
+DROP TABLE d_str_shared;
+DROP TABLE d_str_both;
+DROP TABLE d_u8_typed;
+DROP TABLE d_u8_shared;
+DROP TABLE d_u8_both;
 
 -- Grace-hash spill on a `Dynamic` key whose typed/shared split varies must not drop matches (the hash
 -- must be stable across the temp-file round-trip) and must not raise a FileBucket state-machine

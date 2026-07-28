@@ -18,6 +18,7 @@
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 
@@ -898,52 +899,66 @@ void ColumnDynamic::updateHashWithValueRange(size_t begin, size_t end, SipHash &
     variant_column_ptr->updateHashWithValueRange(begin, end, hash);
 }
 
-void ColumnDynamic::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+UInt32 ColumnDynamic::hashSharedValue(std::string_view value, SharedValueHashCache & cache)
 {
-    /// The hash must be representation-independent: a logically equal value must hash the same
-    /// regardless of whether it lives in a typed variant or the shared variant. Which section a
-    /// value lands in depends on insertion history (and can differ after a temp-file round-trip),
-    /// so hashing the raw `ColumnVariant` layout (discriminator + typed offset) produces different
-    /// hashes for equal values. This is not a mere partitioning nuisance: `compareAt` already treats
-    /// a typed variant and the shared variant as equal once they carry the same logical value, and
-    /// hash joins scatter and match keys by this hash, so a layout-dependent hash silently drops
-    /// matches for `Dynamic` join keys, while the grace-hash spill relies on a stable hash across the
-    /// temp-file round-trip (a value re-hashing to an earlier bucket after a spill triggers a
-    /// `FileBucket` state-machine assertion).
-    ///
-    /// Hash the same canonical per-row serialization `serializeValueIntoArena` produces (also used by
-    /// DISTINCT / uniqExact / the hash-table key): a typed variant and the shared variant emit
-    /// identical (null bit, type, binary value) bytes for the same logical value.
-    ///
-    /// Keep the `Arena` inside the loop: `serializeValueIntoArena` grows via `allocContinue`, which on
-    /// mid-row growth strands the pre-growth copy in a chunk `arena.rollback` cannot reclaim; reusing
-    /// one arena across the block would leak one such copy per growth step for wide values.
-    const size_t n = row_end - row_begin;
-    for (size_t i = 0; i < n; ++i)
+    ReadBufferFromMemory buf(value);
+    auto type = decodeDataType(buf);
+
+    /// A `Nothing` prefix carries no value bytes, so decoding it would throw while merely hashing.
+    /// Defensive only: normal `ColumnDynamic` deserialization never stores such a blob in the shared
+    /// variant, but `ColumnObject`'s raw `shared_data` is read through the same Dynamic serialization.
+    if (isNothing(type))
+        return WEAK_HASH32_INITIAL_VALUE;
+
+    auto & entry = cache[type->getName()];
+    if (!entry.column)
     {
-        Arena arena;
-        const char * begin = nullptr;
-        std::string_view serialized = serializeValueIntoArena(row_begin + i, arena, begin, /*settings=*/nullptr);
-        const UInt32 h = ::updateWeakHash32(
-            reinterpret_cast<const UInt8 *>(serialized.data()), serialized.size(), WEAK_HASH32_INITIAL_VALUE);
-        hash_out[i] = initial ? h : combineWeakHash32(h, hash_out[i]);
+        entry.serialization = type->getDefaultSerialization();
+        entry.column = type->createColumn();
     }
+    /// The scratch column is reused across rows, so drop anything a previous row (or a throwing
+    /// deserialize) left in it before appending this value.
+    if (!entry.column->empty())
+        entry.column->popBack(entry.column->size());
+
+    entry.serialization->deserializeBinary(*entry.column, buf, getFormatSettings());
+
+    UInt32 h = WEAK_HASH32_INITIAL_VALUE;
+    entry.column->computeHashInto(0, 1, &h, /*initial=*/true);
+    return h;
 }
 
-void ColumnDynamic::updateHashFast(SipHash & hash) const
+void ColumnDynamic::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    /// Must match `computeHashInto`: hash the canonical, layout-invariant per-row serialization so a
-    /// logically equal value hashes the same regardless of the typed-variant/shared-variant split.
-    /// Keep the `Arena` inside the loop (see `computeHashInto`): reusing one across the block leaks the
-    /// copies `allocContinue` strands on mid-row growth.
-    const size_t rows = size();
-    for (size_t i = 0; i < rows; ++i)
+    /// A value stored in the shared variant hashes its serialized blob while the same value in a typed
+    /// variant hashes the column's representation, so one logical value gets two hashes depending on a
+    /// layout that varies with insertion history (and across a grace-hash temp-file round-trip). Since
+    /// `compareAt` treats both representations as equal, a hash join then drops matches and a spilled
+    /// bucket can re-hash backwards. Only shared rows are wrong: decode those to the leaf hash a typed
+    /// row would get, and leave master's bulk `ColumnVariant` hash for typed rows untouched.
+    const auto & variant_col = getVariantColumn();
+    const auto & shared_variant = getSharedVariant();
+    if (shared_variant.empty())
     {
-        Arena arena;
-        const char * begin = nullptr;
-        std::string_view serialized = serializeValueIntoArena(i, arena, begin, /*settings=*/nullptr);
-        hash.update(serialized.data(), serialized.size());
+        variant_col.computeHashInto(row_begin, row_end, hash_out, initial);
+        return;
     }
+
+    const size_t n = row_end - row_begin;
+    PaddedPODArray<UInt32> value_hash(n);
+    variant_col.computeHashInto(row_begin, row_end, value_hash.data(), /*initial=*/true);
+
+    const auto shared_discr = getSharedVariantDiscriminator();
+    SharedValueHashCache cache;
+    for (size_t i = 0; i < n; ++i)
+    {
+        const size_t row = row_begin + i;
+        if (variant_col.globalDiscriminatorAt(row) == shared_discr)
+            value_hash[i] = hashSharedValue(shared_variant.getDataAt(variant_col.offsetAt(row)), cache);
+    }
+
+    for (size_t i = 0; i < n; ++i)
+        hash_out[i] = initial ? value_hash[i] : combineWeakHash32(value_hash[i], hash_out[i]);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

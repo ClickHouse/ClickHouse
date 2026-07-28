@@ -197,8 +197,26 @@ public:
     /// variant vs the shared variant).
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
+    /// Per-call scratch for the shared-representation rows of `computeHashInto`: the decoded type's
+    /// serialization and a one-row column, reused across rows carrying the same type.
+    struct SharedValueHashScratch
+    {
+        SerializationPtr serialization;
+        MutableColumnPtr column;
+    };
+    using SharedValueHashCache = UnorderedMapWithMemoryTracking<String, SharedValueHashScratch>;
+
+    /// Leaf hash of a value held in the Dynamic binary form (`encodeDataType` prefix + binary value):
+    /// the hash the same logical value has in a typed variant. `ColumnObject::computeHashInto` reuses
+    /// it because `shared_data` values are written with the same Dynamic serialization.
+    static UInt32 hashSharedValue(std::string_view value, SharedValueHashCache & cache);
+
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
-    void updateHashFast(SipHash & hash) const override;
+
+    void updateHashFast(SipHash & hash) const override
+    {
+        variant_column_ptr->updateHashFast(hash);
+    }
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {

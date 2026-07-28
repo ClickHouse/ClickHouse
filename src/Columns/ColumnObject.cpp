@@ -1246,51 +1246,92 @@ void ColumnObject::updateHashWithValueRange(size_t begin, size_t end, SipHash & 
     shared_data->updateHashWithValueRange(begin, end, hash);
 }
 
+namespace
+{
+
+/// Fold one `(path, value)` contribution into a row's accumulator. Chained in ascending path order
+/// so the result does not depend on which section holds the path: a repeated seeded fold is not
+/// associative, so the SEQUENCE is what has to be fixed, not the combiner.
+void foldPathAndValueHash(UInt32 & accumulator, UInt32 path_hash, UInt32 value_hash)
+{
+    accumulator = combineWeakHash32(value_hash, combineWeakHash32(path_hash, accumulator));
+}
+
+UInt32 hashPathName(std::string_view path)
+{
+    return ::updateWeakHash32(reinterpret_cast<const UInt8 *>(path.data()), path.size(), WEAK_HASH32_INITIAL_VALUE);
+}
+
+}
+
 void ColumnObject::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    /// The hash must be representation-independent: a logically equal object must hash the same
-    /// regardless of how its paths are split between dynamic columns and `shared_data` (the split
-    /// varies per block, and a value round-tripped through a temporary file may land in a different
-    /// section). Hashing sub-columns in physical order would break that, producing different hashes
-    /// for equal objects. This is not a mere partitioning nuisance: hash joins scatter and match keys
-    /// by this hash, so a split-dependent hash silently drops matches for JSON join keys, and the
-    /// grace-hash spill relies on a stable hash across the temp-file round-trip (a value re-hashing to
-    /// an earlier bucket after a spill triggers a `FileBucket` state-machine assertion).
-    ///
-    /// To stay consistent with equality (and with `serializeValueIntoArena`, used by DISTINCT /
-    /// uniqExact / the hash-table key), hash the same canonical per-row serialization: typed paths in
-    /// sorted order, then dynamic paths and shared data merged in sorted path order. Both a dynamic
-    /// path and a shared-data path emit identical `(path, binary value)` bytes for the same value.
-    ///
-    /// Keep the `Arena` inside the loop: `serializeValueIntoArena` grows via `allocContinue`, which on
-    /// mid-row growth strands the pre-growth copy in a chunk `arena.rollback` cannot reclaim; reusing
-    /// one arena across the block would leak one such copy per growth step for wide objects.
+    /// Which section holds a path varies per block, so fold `(path name, value)` over the sorted union
+    /// of both sections rather than over the physical section order. Typed paths are a fixed sorted set
+    /// that can never move between sections, so their bulk hashes just chain first.
     const size_t n = row_end - row_begin;
+    PaddedPODArray<UInt32> object_hash(n, WEAK_HASH32_INITIAL_VALUE);
+    for (auto path : sorted_typed_paths)
+        typed_paths.find(path)->second->computeHashInto(row_begin, row_end, object_hash.data(), /*initial=*/false);
+
+    const auto [shared_data_paths, shared_data_values] = getSharedDataPathsAndValues();
+    const auto & shared_data_offsets = getSharedDataOffsets();
+
+    /// One forward cursor per row into that row's shared-data entries, which are sorted within the row,
+    /// so the scratch stays O(rows) rather than the O(paths * rows) a per-path hash matrix would need.
+    PaddedPODArray<size_t> shared_cursor(n);
     for (size_t i = 0; i < n; ++i)
+        shared_cursor[i] = shared_data_offsets[static_cast<ssize_t>(row_begin + i) - 1];
+
+    ColumnDynamic::SharedValueHashCache shared_value_cache;
+    auto foldSharedEntriesBefore = [&](size_t i, std::string_view upper_bound, bool drain_all)
     {
-        Arena arena;
-        const char * begin = nullptr;
-        std::string_view serialized = serializeValueIntoArena(row_begin + i, arena, begin, /*settings=*/nullptr);
-        const UInt32 h = ::updateWeakHash32(
-            reinterpret_cast<const UInt8 *>(serialized.data()), serialized.size(), WEAK_HASH32_INITIAL_VALUE);
-        hash_out[i] = initial ? h : combineWeakHash32(h, hash_out[i]);
+        const size_t row_shared_end = shared_data_offsets[row_begin + i];
+        while (shared_cursor[i] < row_shared_end)
+        {
+            auto path = shared_data_paths->getDataAt(shared_cursor[i]);
+            if (!drain_all && !(path < upper_bound))
+                break;
+            foldPathAndValueHash(
+                object_hash[i],
+                hashPathName(path),
+                ColumnDynamic::hashSharedValue(shared_data_values->getDataAt(shared_cursor[i]), shared_value_cache));
+            ++shared_cursor[i];
+        }
+    };
+
+    PaddedPODArray<UInt32> path_hash(n);
+    for (auto path : sorted_dynamic_paths)
+    {
+        const auto * dynamic_column = dynamic_paths_ptrs.find(path)->second;
+        dynamic_column->computeHashInto(row_begin, row_end, path_hash.data(), /*initial=*/true);
+        const UInt32 path_name_hash = hashPathName(path);
+        for (size_t i = 0; i < n; ++i)
+        {
+            foldSharedEntriesBefore(i, path, /*drain_all=*/false);
+            /// A NULL path contributes nothing, so `{"a":1}` and `{"a":1,"b":null}` agree.
+            if (!dynamic_column->isNullAt(row_begin + i))
+                foldPathAndValueHash(object_hash[i], path_name_hash, path_hash[i]);
+        }
     }
+
+    for (size_t i = 0; i < n; ++i)
+        foldSharedEntriesBefore(i, {}, /*drain_all=*/true);
+
+    if (initial)
+        memcpy(hash_out, object_hash.data(), n * sizeof(UInt32));
+    else
+        for (size_t i = 0; i < n; ++i)
+            hash_out[i] = combineWeakHash32(object_hash[i], hash_out[i]);
 }
 
 void ColumnObject::updateHashFast(SipHash & hash) const
 {
-    /// Must match `computeHashInto`: hash the canonical, split-invariant per-row serialization so a
-    /// logically equal object hashes the same regardless of the dynamic/shared_data split.
-    /// Keep the `Arena` inside the loop (see `computeHashInto`): reusing one across the block leaks the
-    /// copies `allocContinue` strands on mid-row growth.
-    const size_t rows = size();
-    for (size_t i = 0; i < rows; ++i)
-    {
-        Arena arena;
-        const char * begin = nullptr;
-        std::string_view serialized = serializeValueIntoArena(i, arena, begin, /*settings=*/nullptr);
-        hash.update(serialized.data(), serialized.size());
-    }
+    for (const auto & [_, column] : typed_paths)
+        column->updateHashFast(hash);
+    for (const auto & [_, column] : dynamic_paths_ptrs)
+        column->updateHashFast(hash);
+    shared_data->updateHashFast(hash);
 }
 
 ColumnPtr ColumnObject::filter(const Filter & filt, ssize_t result_size_hint) const
