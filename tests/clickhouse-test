@@ -2185,6 +2185,13 @@ class TestCase:
         testcase_args.debug_log_file = (
             os.path.join(testcase_args.test_tmp_dir, testcase_basename) + ".debuglog"
         )
+        # The bash xtrace (`BASH_XTRACEFD`, see `shell_config.sh`) gets its OWN file. Sharing the
+        # expect trace's path is what lost records: `shell_config.sh` used to open that path with
+        # O_TRUNC on every `source`, i.e. once per `spawn`, discarding what expect had appended.
+        # With separate files each writer owns its artifact and appends to it.
+        testcase_args.bash_tracing_file = (
+            os.path.join(testcase_args.test_tmp_dir, testcase_basename) + ".bashlog"
+        )
 
         testcase_args.testcase_client = (
             f"{testcase_args.client} --log_comment '{testcase_args.testcase_basename}-{testcase_args.testcase_database}'"
@@ -3092,12 +3099,29 @@ class TestCase:
 
         description = ""
 
+        # The two diagnostic blocks are trimmed SEPARATELY, with different limits: the expect
+        # trace uses the shared default (its verdict sequence is what makes a timeout readable,
+        # and one progress-table redraw is one very long line), while the bash xtrace keeps the
+        # historical 100-line bound because `set -x` emits ~2 lines per loop iteration and some
+        # .sh tests loop millions of times.
         debug_log = ""
         if os.path.exists(self.testcase_args.debug_log_file):
             with open(self.testcase_args.debug_log_file, "rb") as stream:
-                debug_log += self.testcase_args.debug_log_file + ":\n"
-                debug_log += str(stream.read(), errors="replace", encoding="utf-8")
-                debug_log += "\n"
+                expect_log = self.testcase_args.debug_log_file + ":\n"
+                expect_log += str(stream.read(), errors="replace", encoding="utf-8")
+                expect_log += "\n"
+            debug_log += trim_for_log(expect_log)
+        # Emptiness is tolerated here, unlike for the expect trace above: `shell_config.sh` opens
+        # this file the moment it is sourced and only writes once a traced command runs, so a
+        # zero-length one carries no diagnostics - and reporting its name would add a bare header
+        # with an empty body to every consumer of `debug_log` below.
+        bash_tracing_file = self.testcase_args.bash_tracing_file
+        if os.path.exists(bash_tracing_file) and os.path.getsize(bash_tracing_file) > 0:
+            with open(bash_tracing_file, "rb") as stream:
+                bash_log = bash_tracing_file + ":\n"
+                bash_log += str(stream.read(), errors="replace", encoding="utf-8")
+                bash_log += "\n"
+            debug_log += trim_for_log(bash_log, 100)
 
         stdout = ""
         if os.path.exists(self.stdout_file):
@@ -3141,9 +3165,6 @@ class TestCase:
                 for line in stderr.splitlines()
                 if not line.startswith("LLVM Profile Error:")
             ).strip()
-
-        if debug_log:
-            debug_log = trim_for_log(debug_log, 100)
 
         if proc:
             if proc.returncode is None:
@@ -3380,6 +3401,8 @@ class TestCase:
             os.remove(path)
         if os.path.exists(self.testcase_args.debug_log_file):
             os.remove(self.testcase_args.debug_log_file)
+        if os.path.exists(self.testcase_args.bash_tracing_file):
+            os.remove(self.testcase_args.bash_tracing_file)
 
         return TestResult(self.name, TestStatus.OK, None, total_time, description)
 
@@ -3426,6 +3449,19 @@ class TestCase:
         # Ensure that we start with empty files
         for path in glob.glob(self.fatal_sanitizer_prefix + "*"):
             os.remove(path)
+        # Same reason, for the expect trace: `exp_internal -f` opens for append, and since the
+        # bash xtrace no longer shares this path nothing else truncates it. Removing (not
+        # emptying) it matters - the report block above keys on existence alone, so an empty file
+        # would add a bare header to every failing test.
+        if os.path.exists(args.debug_log_file):
+            os.remove(args.debug_log_file)
+        # And the xtrace. Unconditionally, NOT under the `--trace` guard below that exports its
+        # path: the report block keys on the FILE, not on this run's flags, so a run without
+        # `--trace` would otherwise report whatever a previous traced run left behind in the same
+        # tmp dir. Removing rather than emptying, for the same reason as the expect trace above,
+        # and it is safe because `shell_config.sh`'s `3>>` creates the file when it is absent.
+        if os.path.exists(args.bash_tracing_file):
+            os.remove(args.bash_tracing_file)
 
         log_opt = " --client_logs_file=" + self.fatal_sanitizer_prefix + " "
         client_options += log_opt
@@ -3489,7 +3525,7 @@ class TestCase:
 
         tests_env = os.environ.copy()
         if args.trace:
-            tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.debug_log_file
+            tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.bash_tracing_file
 
         if self.ext == ".sql":
             pattern = (
