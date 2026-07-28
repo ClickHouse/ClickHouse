@@ -9,6 +9,7 @@
 #include <Core/CompareHelper.h>
 #include <Core/TypeId.h>
 
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/IColumn.h>
@@ -221,6 +222,7 @@ struct TopKAggregationHeap
         }
 
         heap_column->filter(trim_filter);
+        compactDictionaries();
 
         for (auto & idx : heap_indices)
             idx = trim_old_to_new[idx];
@@ -243,6 +245,45 @@ private:
     UInt64 evicted_keys = 0;
 
     bool tie_overflow = false;
+
+    /// Which `heap_column` sub-columns are `LowCardinality` (the column itself is index 0 when the
+    /// key is not composite). Empty for every other key type, which is then the free common case.
+    std::vector<size_t> low_cardinality_columns;
+
+    /** `ColumnLowCardinality::filter` only drops indexes — its dictionary keeps every value ever
+      * pushed, so without this the heap's own storage would grow with the number of admitted keys
+      * even though the heap is bounded. `compactInplace` rebuilds the dictionary from the surviving
+      * indexes, which keeps heap storage proportional to the heap size.
+      */
+    void compactDictionaries()
+    {
+        if (low_cardinality_columns.empty())
+            return;
+
+        if (is_composite)
+        {
+            auto & tuple = assert_cast<ColumnTuple &>(*heap_column);
+            for (size_t i : low_cardinality_columns)
+                assert_cast<ColumnLowCardinality &>(tuple.getColumn(i)).compactDictionaryInplace();
+        }
+        else
+            assert_cast<ColumnLowCardinality &>(*heap_column).compactDictionaryInplace();
+    }
+
+    void findLowCardinalityColumns()
+    {
+        low_cardinality_columns.clear();
+
+        if (is_composite)
+        {
+            const auto & tuple = assert_cast<const ColumnTuple &>(*heap_column);
+            for (size_t i = 0; i < tuple.tupleSize(); ++i)
+                if (typeid_cast<const ColumnLowCardinality *>(&tuple.getColumn(i)))
+                    low_cardinality_columns.push_back(i);
+        }
+        else if (typeid_cast<const ColumnLowCardinality *>(heap_column.get()))
+            low_cardinality_columns.push_back(0);
+    }
 
     void setCapacity(size_t cap)
     {
@@ -284,6 +325,7 @@ private:
         heap_column->reserve(reserve_hint);
         heap_indices.clear();
         heap_indices.reserve(reserve_hint);
+        findLowCardinalityColumns();
         initNumericSkipFn();
     }
 
@@ -315,6 +357,7 @@ private:
 
         heap_indices.clear();
         heap_indices.reserve(reserve_hint);
+        findLowCardinalityColumns();
         should_skip_numeric_fn = nullptr;
         numeric_cmp_fn = nullptr;
         fill_skip_bitmap_fn = nullptr;
