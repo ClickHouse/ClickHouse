@@ -4,7 +4,7 @@
 -- CREATE and ATTACH of an object storage table with an explicit schema and format must not access
 -- the endpoint. The hive partitioning sample path is resolved lazily on the first use of the table.
 
-DROP TABLE IF EXISTS 04627_unreachable, 04627_hive;
+DROP TABLE IF EXISTS 04627_unreachable, 04627_hive, 04627_wrong_creds;
 
 CREATE TABLE 04627_unreachable (id UInt64, val String)
 ENGINE = S3('http://localhost:1/no-such-bucket/*.parquet', 'test', 'testtest', 'Parquet');
@@ -29,3 +29,13 @@ SELECT id FROM 04627_hive ORDER BY id SETTINGS use_hive_partitioning = 0;
 SELECT id, key FROM 04627_hive ORDER BY id;
 
 DROP TABLE 04627_hive;
+
+-- Wrong credentials make the resolution fail fast. By default the triggering query fails,
+-- without `throw_on_hive_partitioning_resolution_failure` it runs with only a warning.
+CREATE TABLE 04627_wrong_creds (id UInt64)
+ENGINE = S3('http://localhost:11111/test/04627_hive/**.parquet', 'invalid', 'invalid', 'Parquet');
+
+DESCRIBE TABLE 04627_wrong_creds; -- {serverError S3_ERROR}
+DESCRIBE TABLE 04627_wrong_creds SETTINGS throw_on_hive_partitioning_resolution_failure = 0 FORMAT Null;
+
+DROP TABLE 04627_wrong_creds;

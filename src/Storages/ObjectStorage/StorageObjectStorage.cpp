@@ -51,6 +51,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool optimize_count_from_files;
+    extern const SettingsBool throw_on_hive_partitioning_resolution_failure;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
@@ -450,9 +451,9 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
     if (hive_partitioning_sample_path_resolved)
         return;
 
-    /// The resolution was deferred because the construction context had `use_hive_partitioning`
-    /// enabled. Apply that decision regardless of the settings of the triggering query.
-    auto resolution_context = Context::createCopy(query_context);
+    /// The resolution result must not depend on the settings or credentials of whichever query
+    /// touches the table first. Resolve with the global context, like a server startup ATTACH.
+    auto resolution_context = Context::createCopy(Context::getGlobalContextInstance());
     resolution_context->setSetting("use_hive_partitioning", true);
 
     std::string sample_path;
@@ -465,6 +466,10 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
     {
         /// Do not let a restricted session degrade the table state, fail closed like the constructor.
         if (getCurrentExceptionCode() == ErrorCodes::ACCESS_DENIED)
+            throw;
+
+        /// A query running without hive partitioning may silently return different results.
+        if (query_context->getSettingsRef()[Setting::throw_on_hive_partitioning_resolution_failure])
             throw;
 
         /// An endpoint failure degrades only the triggering query and is retried by the next one.
@@ -1011,6 +1016,9 @@ Pipe StorageObjectStorage::executeCommand(const String & command_name, const AST
 
 void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
 {
+    /// Do not interleave with the hive partitioning resolution, which also updates the metadata.
+    std::lock_guard lock(hive_partitioning_resolution_mutex);
+
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
