@@ -165,6 +165,71 @@ TEST(StringSerialization, WithSizeStreamFaithfulRoundTripIsConsistent)
     }
 }
 
+/// A WITH_SIZE_STREAM read with rows_offset > 0 that goes through a substreams cache must cache the data
+/// column under its true row growth (num_read_rows - rows_offset), not the full num_read_rows: the skipped
+/// rows_offset rows are only ignored in the data stream, never inserted into the column. When the same range
+/// is later served from the cache (insertDataFromCachedColumn takes the last num_read_rows rows off the
+/// column's tail), an over-count underflows `cached_column->size() - num_read_rows` and drives insertRangeFrom
+/// out of bounds. This is the release-active bug fixed in this change; the faithful round-trip above passes a
+/// null cache, so it never fills or reuses a cache entry and cannot regress it.
+/// See https://github.com/ClickHouse/ClickHouse/issues/105626.
+TEST(StringSerialization, WithSizeStreamRowsOffsetSubstreamsCacheReuse)
+{
+    MainThreadStatus::getInstance();
+    constexpr size_t rows = 500;
+    constexpr size_t rows_offset = 123;
+    constexpr size_t limit = rows - rows_offset;
+    auto src = makeVariedStringColumn(rows);
+
+    auto serialization = SerializationString::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+
+    WriteBufferFromOwnString sizes_out;
+    WriteBufferFromOwnString data_out;
+    {
+        ISerialization::SerializeBinaryBulkSettings settings;
+        ISerialization::SerializeBinaryBulkStatePtr state;
+        settings.position_independent_encoding = false;
+        settings.getter = makeSizeStreamGetter<WriteBuffer *>(sizes_out, data_out);
+        serialization->serializeBinaryBulkWithMultipleStreams(*src, 0, src->size(), settings, state);
+    }
+
+    ReadBufferFromString sizes_in(sizes_out.str());
+    ReadBufferFromString data_in(data_out.str());
+
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    settings.position_independent_encoding = false;
+    settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
+    serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+
+    /// First, read a seeked subrange (rows_offset > 0) through a real substreams cache. This fills the cache
+    /// entry for the `Regular` (data) substream. With the bug it would be stored under a row count of
+    /// rows_offset + limit while the column only holds `limit` rows (the chassert in
+    /// addColumnWithNumReadRowsToSubstreamsCache catches this directly in debug builds).
+    ISerialization::SubstreamsCache cache;
+    ColumnPtr first = ColumnString::create();
+    serialization->deserializeBinaryBulkWithMultipleStreams(first, rows_offset, limit, settings, state, &cache);
+
+    const auto & first_string = assert_cast<const ColumnString &>(*first);
+    ASSERT_EQ(first_string.size(), limit);
+    ASSERT_EQ(first_string.getOffsets().back(), first_string.getChars().size());
+    ASSERT_EQ(first_string.getDataAt(0), src->getDataAt(rows_offset));
+
+    /// Now serve the same range from the cache while forcing the "insert into the result column" path
+    /// (insert_only_rows_in_current_range_from_substreams_cache), which inserts exactly num_read_rows rows
+    /// from the tail of the cached column. An over-counted cache entry reads out of bounds here (release), so
+    /// this second lookup is what makes the bug observable even where the chassert above is compiled out.
+    settings.insert_only_rows_in_current_range_from_substreams_cache = true;
+    ColumnPtr second = ColumnString::create();
+    serialization->deserializeBinaryBulkWithMultipleStreams(second, rows_offset, limit, settings, state, &cache);
+
+    const auto & second_string = assert_cast<const ColumnString &>(*second);
+    ASSERT_EQ(second_string.size(), limit);
+    ASSERT_EQ(second_string.getOffsets().back(), second_string.getChars().size());
+    for (size_t i = 0; i < limit; ++i)
+        ASSERT_EQ(second_string.getDataAt(i), src->getDataAt(rows_offset + i));
+}
+
 /// The producer of the corrupted column. When the data stream delivers fewer bytes than the sizes stream
 /// claims (the two streams are stored separately and a seek/version/desync makes them disagree),
 /// deserializeBinaryBulkWithSizeStream would previously commit offsets from the sizes stream while shrinking
