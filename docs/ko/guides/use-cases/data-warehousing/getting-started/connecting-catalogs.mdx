@@ -8,7 +8,7 @@ keywords: ['데이터 레이크', '레이크하우스', '카탈로그', 'glue', 
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 [이전 섹션](/ko/guides/use-cases/data-warehousing/getting-started/querying-directly)에서는 스토리지 경로를 직접 지정해 오픈 테이블 포맷을 쿼리했습니다. 실제 운영 환경에서는 대부분의 조직이 **데이터 카탈로그**를 통해 테이블 메타데이터를 관리합니다. 데이터 카탈로그는 테이블 위치, 스키마, 파티션을 추적하는 중앙 레지스트리입니다. ClickHouse를 [`DataLakeCatalog`](/ko/reference/engines/database-engines/datalake) 데이터베이스 엔진으로 카탈로그에 연결하면 카탈로그 전체가 ClickHouse 데이터베이스로 노출됩니다. 카탈로그의 모든 테이블이 자동으로 표시되며, 개별 테이블 경로를 알거나 테이블별 자격 증명을 관리할 필요 없이 전체 ClickHouse SQL로 쿼리할 수 있습니다.
 

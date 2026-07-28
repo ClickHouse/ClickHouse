@@ -71,6 +71,12 @@ set (JEMALLOC_CONFIG_MALLOC_CONF_OVERRIDE "" CACHE STRING "Change default config
 if (JEMALLOC_CONFIG_MALLOC_CONF_OVERRIDE)
     set (JEMALLOC_CONFIG_MALLOC_CONF "${JEMALLOC_CONFIG_MALLOC_CONF_OVERRIDE}")
 endif()
+
+option (ENABLE_JEMALLOC_UAF_SAN "Enable jemalloc sanitizer mode: junk fill, guard pages, use-after-free detection")
+if (ENABLE_JEMALLOC_UAF_SAN)
+    set (JEMALLOC_CONFIG_MALLOC_CONF "${JEMALLOC_CONFIG_MALLOC_CONF},abort_conf:true,junk:true,san_guard_small:100,san_guard_large:1,lg_san_uaf_align:12")
+endif ()
+
 message (STATUS "jemalloc malloc_conf: ${JEMALLOC_CONFIG_MALLOC_CONF}")
 
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/jemalloc")
@@ -206,6 +212,10 @@ target_compile_definitions(_jemalloc INTERFACE -DJEMALLOC_NO_RENAME)
 target_compile_options(_jemalloc PRIVATE ${WITHOUT_COVERAGE_FLAGS_LIST})
 
 target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_PROF=1)
+
+if (ENABLE_JEMALLOC_UAF_SAN)
+    target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_UAF_DETECTION)
+endif ()
 
 # jemalloc provides support two unwind flavors:
 # - JEMALLOC_PROF_LIBUNWIND - unw_backtrace() - gnu libunwind (compatible with llvm libunwind)
