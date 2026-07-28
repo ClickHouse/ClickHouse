@@ -848,6 +848,42 @@ def test_incremental_backup_append_table_def(cluster):
     node.query("DROP TABLE data")
 
 
+def test_incremental_backup_for_log_family_native_copy(cluster):
+    # A StorageLog .bin grows in place on INSERT, so an incremental backup copies a ranged suffix
+    # (offset = base .bin size > 0). The file stays well under the 32 MiB single-operation copy
+    # threshold, so before the fix the ranged copyS3File took the whole-object CopyObject path and
+    # copied the entire source instead of just the appended delta, corrupting the incremental backup.
+    node = cluster.instances["node"]
+    backup_name = f"S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', '{minio_secret_key}')"
+
+    node.query("DROP TABLE IF EXISTS log_data SYNC")
+    node.query(
+        "CREATE TABLE log_data (x UInt32, y String) Engine=Log SETTINGS storage_policy='policy_s3'"
+    )
+    node.query("INSERT INTO log_data SELECT number, toString(number) FROM numbers(100)")
+    assert node.query("SELECT count(), sum(x) FROM log_data") == "100\t4950\n"
+
+    node.query(f"BACKUP TABLE log_data TO {backup_name} SETTINGS allow_s3_native_copy=1")
+
+    node.query("INSERT INTO log_data VALUES (1000, 'a'), (1001, 'b')")
+    assert node.query("SELECT count(), sum(x) FROM log_data") == "102\t6951\n"
+
+    incremental_backup_name = f"S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', '{minio_secret_key}')"
+    node.query(
+        f"BACKUP TABLE log_data TO {incremental_backup_name} SETTINGS base_backup = {backup_name}, allow_s3_native_copy=1"
+    )
+
+    node.query("DROP TABLE log_data SYNC")
+    node.query(
+        f"RESTORE TABLE log_data FROM {incremental_backup_name} SETTINGS allow_s3_native_copy=1"
+    )
+
+    # Restored data must match exactly; a whole-object copy of the delta corrupts this.
+    assert node.query("SELECT count(), sum(x) FROM log_data") == "102\t6951\n"
+
+    node.query("DROP TABLE log_data SYNC")
+
+
 @pytest.mark.parametrize(
     "in_cache_initially, allow_backup_read_cache, allow_s3_native_copy",
     [
