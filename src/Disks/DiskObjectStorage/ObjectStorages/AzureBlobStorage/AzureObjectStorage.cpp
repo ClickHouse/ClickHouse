@@ -471,7 +471,18 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
         for (const auto & object : object_batch)
             responses.push_back(requests.DeleteBlob(client_ptr->GetBlobPath(object.remote_path)));
 
-        client_ptr->SubmitBatch(requests);
+        try
+        {
+            client_ptr->SubmitBatch(requests);
+        }
+        catch (...)
+        {
+            /// A batch-level failure skips the per-object loop below, so record the delete attempts before rethrowing.
+            const auto batch_error = getCurrentExceptionMessage(false);
+            for (const auto & object : object_batch)
+                add_log_entry(object, watch.elapsedMicroseconds() / object_batch.size(), -1, batch_error);
+            throw;
+        }
 
         ProfileEvents::increment(ProfileEvents::AzureDeleteObjects, object_batch.size());
         if (is_disk)
