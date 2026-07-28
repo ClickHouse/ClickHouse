@@ -206,7 +206,11 @@ def test_install(image: DockerImage, tests: Dict[str, str]) -> List[Result]:
                 command=install_command,
             )
         )
-        Shell.check(f"docker rm --force --volumes {container_id}", verbose=True)
+        # Strict: if the writable layer cannot be reclaimed, the job is about to run out of
+        # disk space, and the failure has to surface here rather than in the next test.
+        Shell.check(
+            f"docker rm --force --volumes {container_id}", verbose=True, strict=True
+        )
         # The job runs out of disk space from time to time, and the failure surfaces as
         # an unrelated error in whatever test happens to be running, so keep track of it.
         Shell.check("df -h /", verbose=True)
