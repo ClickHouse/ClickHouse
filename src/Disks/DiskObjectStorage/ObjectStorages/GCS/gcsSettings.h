@@ -80,8 +80,29 @@ bool isDefaultGCSHost(const String & host);
 /// `http(s)://host[:port]/bucket/prefix` (the last is treated as an emulator endpoint override).
 void parseGCSEndpoint(const String & endpoint, String & bucket, String & key_prefix, String & endpoint_override);
 
-/// If a `google_adc_*` refresh-token triple is set and no access token has been resolved yet, exchange
-/// it for an access token via IO/GCPOAuth. No-op otherwise. Shared by the disk and table-function paths.
+/// Which of the mutually exclusive authentication modes of GCSObjectStorageSettings wins.
+enum class GCSCredentialSource
+{
+    /// `no_sign_request`: anonymous access.
+    Anonymous,
+    /// Inline service-account JSON key.
+    ServiceAccountKey,
+    /// Service-account JSON key read from a file.
+    ServiceAccountKeyFile,
+    /// A bearer access token (supplied directly, or minted from the refresh-token triple).
+    AccessToken,
+    /// Nothing was configured: Application Default Credentials.
+    ApplicationDefault,
+};
+
+/// The single definition of the authentication priority order: both `getGCSClient` (which builds the
+/// credentials) and `resolveGCSCredentialsToken` (which mints an access token only when the token is
+/// the mode that wins) go through it, so the two cannot disagree.
+GCSCredentialSource chooseGCSCredentialSource(const GCSObjectStorageSettings & settings);
+
+/// If a `google_adc_*` refresh-token triple is set, and an access token is what the configuration
+/// actually authenticates with, exchange the triple for an access token via IO/GCPOAuth. No-op
+/// otherwise. Shared by the disk and table-function paths.
 void resolveGCSCredentialsToken(GCSObjectStorageSettings & settings, const ContextPtr & context);
 
 /// Build a native GCS storage client from the parsed settings. The resolved network destination

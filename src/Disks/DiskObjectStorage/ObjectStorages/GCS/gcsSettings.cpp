@@ -158,11 +158,33 @@ bool GCSObjectStorageSettings::describesSameClientAs(const GCSObjectStorageSetti
         && google_adc_refresh_token == other.google_adc_refresh_token;
 }
 
+GCSCredentialSource chooseGCSCredentialSource(const GCSObjectStorageSettings & settings)
+{
+    if (settings.no_sign_request)
+        return GCSCredentialSource::Anonymous;
+    if (!settings.service_account_key.empty())
+        return GCSCredentialSource::ServiceAccountKey;
+    if (!settings.service_account_key_file.empty())
+        return GCSCredentialSource::ServiceAccountKeyFile;
+    if (!settings.access_token.empty())
+        return GCSCredentialSource::AccessToken;
+    return GCSCredentialSource::ApplicationDefault;
+}
+
 void resolveGCSCredentialsToken(GCSObjectStorageSettings & settings, const ContextPtr & context)
 {
-    /// Exchange a refresh-token triple for an access token eagerly, reusing the existing S3-compat helper.
-    if (!settings.access_token.empty() || settings.google_adc_refresh_token.empty())
+    if (settings.google_adc_refresh_token.empty())
         return;
+
+    /// The refresh-token triple is the lowest-priority authentication mode, so a configuration that
+    /// also carries a higher-priority one (anonymous access, a service-account key, an access token
+    /// supplied directly) never authenticates with the minted token. Minting it anyway would make
+    /// such a configuration fail for a reason that does not apply to it — e.g. a bucket accessed with
+    /// `no_sign_request` would stop working because of a stale `google_adc_*` triple next to it.
+    if (chooseGCSCredentialSource(settings) != GCSCredentialSource::ApplicationDefault)
+        return;
+
+    /// Exchange the refresh-token triple for an access token eagerly, reusing the existing S3-compat helper.
 
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
     auto token = fetchGCPOAuthToken(
@@ -192,29 +214,29 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
     gc::Options options;
 
     std::shared_ptr<gc::Credentials> credentials;
-    if (settings.no_sign_request)
+    switch (chooseGCSCredentialSource(settings))
     {
-        credentials = gc::MakeInsecureCredentials();
-    }
-    else if (!settings.service_account_key.empty())
-    {
-        credentials = gc::MakeServiceAccountCredentials(settings.service_account_key);
-    }
-    else if (!settings.service_account_key_file.empty())
-    {
-        credentials = gc::MakeServiceAccountCredentials(readFileToString(settings.service_account_key_file));
-    }
-    else if (!settings.access_token.empty())
-    {
-        const auto expiry = std::chrono::system_clock::now()
-            + std::chrono::seconds(std::max<Int64>(settings.access_token_expires_in_seconds, 1));
-        credentials = gc::MakeAccessTokenCredentials(settings.access_token, expiry);
-    }
-    else
-    {
-        /// Application Default Credentials: GOOGLE_APPLICATION_CREDENTIALS, the GCE/GKE metadata
-        /// server, or the gcloud SDK configuration.
-        credentials = gc::MakeGoogleDefaultCredentials();
+        case GCSCredentialSource::Anonymous:
+            credentials = gc::MakeInsecureCredentials();
+            break;
+        case GCSCredentialSource::ServiceAccountKey:
+            credentials = gc::MakeServiceAccountCredentials(settings.service_account_key);
+            break;
+        case GCSCredentialSource::ServiceAccountKeyFile:
+            credentials = gc::MakeServiceAccountCredentials(readFileToString(settings.service_account_key_file));
+            break;
+        case GCSCredentialSource::AccessToken:
+        {
+            const auto expiry = std::chrono::system_clock::now()
+                + std::chrono::seconds(std::max<Int64>(settings.access_token_expires_in_seconds, 1));
+            credentials = gc::MakeAccessTokenCredentials(settings.access_token, expiry);
+            break;
+        }
+        case GCSCredentialSource::ApplicationDefault:
+            /// Application Default Credentials: GOOGLE_APPLICATION_CREDENTIALS, the GCE/GKE metadata
+            /// server, or the gcloud SDK configuration.
+            credentials = gc::MakeGoogleDefaultCredentials();
+            break;
     }
 
     options.set<gc::UnifiedCredentialsOption>(std::move(credentials));
