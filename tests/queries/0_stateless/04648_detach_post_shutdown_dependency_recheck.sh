@@ -124,7 +124,7 @@ $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.tables WHERE database = c
 echo "-- ReplicatedMergeTree (in an Atomic database)"
 $CLICKHOUSE_CLIENT --query "
 CREATE TABLE rmt (id UInt64, val String)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/rmt', 'r1')
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/rmt', 'r1')
 ORDER BY id;
 INSERT INTO rmt VALUES (1, 'z');
 "
