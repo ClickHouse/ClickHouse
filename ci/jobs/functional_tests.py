@@ -36,7 +36,9 @@ DIAGNOSTICS_JOB_TIMEOUT = int(3600 * 2.5)
 # The outer `Shell.run` timeout bounds the stage only while no process a rerun
 # spawns outlives it holding the runner's stdout: a per-test wrapper started
 # without its own stdio keeps that pipe open and the output reader then waits
-# for it. That is a separate `tests/clickhouse-test` defect, fixed there.
+# for it. Bounding that is a separate `tests/clickhouse-test` concern, not this
+# stage's: the reserve is what keeps the overshoot from eating the coverage
+# finalization window.
 DIAGNOSTICS_RESERVE_S = 15 * 60
 
 # `clickhouse-test`'s own `--timeout` default, which the main run does not
@@ -1214,9 +1216,9 @@ def main():
                 )
                 break
 
-        # Read the clock once: the budget truncates `elapsed_s`, so evaluating it
-        # for the guard and again for the unpacking can straddle a whole second
-        # and unpack `None`.
+        # Read the clock once for the budget: the budget truncates `elapsed_s`,
+        # so evaluating it for the guard and again for the unpacking can
+        # straddle a whole second and unpack `None`.
         diag_budget = (
             diagnostics_budget(stop_watch.duration, len(failed_tests))
             if failed_tests
