@@ -718,25 +718,33 @@ def test_diagnostic_is_skipped_rather_than_run_unbounded(tmp_path):
     # to bound would become unbounded again -- on a thrashing server, holding the
     # stage and a query slot toward the external cancel.
     #
-    # A TOO_MANY probe costing ~0.9s against a 2s deadline leaves the diagnostic
-    # exactly 1s (verified by sweeping deadlines 2-7 x probe costs 0-4s: the
-    # remaining budget seen at the diagnostic takes every value 1..7, so 1 is
-    # reachable, not hypothetical). The diagnostic mock ignores SIGTERM and sleeps
-    # well past the whole stage, so an unbounded call cannot hide.
+    # The probe must burn the stage down to exactly 1s left. Reachability of that
+    # state is not hypothetical: sweeping deadlines 2-7 x probe costs 0-4s, the
+    # budget seen at the diagnostic takes every value from 1 upward.
+    #
+    # Sizing it needs care. `SECONDS` counts WHOLE seconds from an arbitrary tick
+    # phase, so a sub-second probe (0.9s was the first attempt) can read as either 0
+    # or 1 elapsed second: with 2s still showing, production legitimately launches
+    # the bounded diagnostic and the skip assertion fails. Measured 1 failure in 20
+    # runs. Waiting for the tick to turn makes the elapsed second unambiguous
+    # regardless of phase, so the diagnostic always sees exactly 1s of a 3s budget.
     mock = textwrap.dedent(f"""\
         if [[ "$*" == *PROCESSLIST* ]]; then
             trap '' TERM
             /bin/sleep 25
             exit 0
         fi
-        /bin/sleep 0.9
+        # Burn the rest of the current whole second, then two full ones: 2s of the
+        # 3s budget are spent no matter where in the tick the probe started.
+        start=$SECONDS
+        while (( SECONDS - start < 2 )); do /bin/sleep 0.05; done
         {_TOO_MANY_ERR}
         """)
     res = _run_loop(
         tmp_path,
         mock,
         mem_available_kb=_AMPLE_MEM_KB,
-        extra_env={"PROBE_STAGE_DEADLINE_SECONDS": "2"},
+        extra_env={"PROBE_STAGE_DEADLINE_SECONDS": "3"},
     )
     # Skipped, so the 25s wedged diagnostic is never entered: the stage stays inside
     # its window instead of running for the mock's full sleep.
@@ -744,9 +752,11 @@ def test_diagnostic_is_skipped_rather_than_run_unbounded(tmp_path):
         "a diagnostic budget too small to express a bound must be skipped, not run "
         f"with an unbounded `timeout 0`:\n{res['stdout']}"
     )
+    # The probe deliberately spends 2s of the 3s budget, so allow for that; the
+    # wedged diagnostic sleeps 25s, so an unbounded call cannot fit under this.
     assert res["elapsed"] < 10, (
         f"stage took {res['elapsed']:.1f}s: the diagnostic ran unbounded against a "
-        "2s probe-stage deadline"
+        "3s probe-stage deadline"
     )
 
 
