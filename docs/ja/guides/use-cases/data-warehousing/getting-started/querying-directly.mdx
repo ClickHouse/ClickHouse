@@ -8,7 +8,7 @@ keywords: ['データレイク', 'レイクハウス', 'Iceberg', 'Delta Lake', 
 doc_type: 'guide'
 ---
 
-import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 ClickHouse では、オブジェクトストレージ内のオープンテーブルフォーマットに保存されたデータを直接クエリできるテーブル関数を提供しています。外部カタログへの接続は不要で、AWS Athena が S3 から読み取るのと同様に、保存先のデータをそのままクエリできます。
 
@@ -17,7 +17,7 @@ ClickHouse では、オブジェクトストレージ内のオープンテーブ
 <Info>
   **Server、local、または chDB**
 
-  このガイドの手順は、既存の ClickHouse server インストールを使って実行できます。アドホックなクエリでは、代わりに [clickhouse-local](/ja/concepts/features/tools-and-utilities/clickhouse-local) を使用して、server を起動せずに同じワークフローを完了することもできます。少し調整すれば、ClickHouse のインプロセス版である [chDB](/ja/products/chdb/index) を使って同じ手順を実行することも可能です。
+  このガイドの手順は、既存の ClickHouse server インストールを使って実行できます。アドホックなクエリでは、代わりに [clickhouse-local](/ja/concepts/features/tools-and-utilities/clickhouse-local) を使用して、server を起動せずに同じワークフローを完了することもできます。少し調整すれば、ClickHouse のインプロセス版である [chDB](/ja/chdb/index) を使って同じ手順を実行することも可能です。
 </Info>
 
 以下の例では、各 lakehouse フォーマットで S3 に保存された [hits](/ja/get-started/sample-datasets/star-schema) データセットを使用します。各 lake フォーマットについて、オブジェクトストア provider ごとに専用の関数が用意されています。

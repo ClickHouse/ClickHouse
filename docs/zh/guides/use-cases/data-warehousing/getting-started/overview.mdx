@@ -18,9 +18,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 本指南中的截图来自 [ClickHouse Cloud](https://console.clickhouse.cloud) 的 SQL 控制台。所有查询均适用于 Cloud 和自管理部署。
 
 <Steps>
-  <Step>
-    ## 直接查询 Iceberg 数据
-
+  <Step title="直接查询 Iceberg 数据" id="query-directly">
     最快的开始方式是使用 [`icebergS3()`](/zh/reference/functions/table-functions/iceberg) table function——将其指向 S3 中的 Iceberg 表，即可立即发起查询，无需任何设置。
 
     查看 schema：
@@ -48,9 +46,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     **了解更多：** [直接查询开放表格式](/zh/guides/use-cases/data-warehousing/getting-started/querying-directly) 涵盖这四种格式、用于分布式读取的集群变体，以及存储后端选项 (S3、Azure、HDFS、本地) 。
   </Step>
 
-  <Step>
-    ## 创建持久化表
-
+  <Step title="创建持久化表引擎" id="table-engine">
     如需重复访问，可使用 Iceberg 表引擎创建一个表，这样就无需每次都传递 path。数据仍保存在 S3 中，不会发生数据复制：
 
     ```sql
@@ -75,9 +71,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     该表引擎支持数据缓存、元数据缓存、schema 演化和时间旅行。有关表引擎功能的详细信息，请参阅[直接查询](/zh/guides/use-cases/data-warehousing/getting-started/querying-directly)指南；如需查看完整的功能比较，请参阅[支持矩阵](/zh/guides/use-cases/data-warehousing/support-matrix)。
   </Step>
 
-  <Step>
-    ## 连接到目录
-
+  <Step title="连接到目录" id="connect-catalog">
     大多数组织都会通过数据目录管理 Iceberg 表，以集中管理表元数据并进行数据发现。ClickHouse 支持使用 [`DataLakeCatalog`](/zh/reference/engines/database-engines/datalake) 数据库引擎连接到你的目录，并将目录中的所有表公开为一个 ClickHouse 数据库。这种方式扩展性更好，因此随着新的 Iceberg 表不断创建，无需额外操作，即可始终在 ClickHouse 中访问它们。
 
     下面是一个连接到 [AWS Glue](/zh/guides/use-cases/data-warehousing/glue-catalog) 的示例：
@@ -111,9 +105,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     **了解更多：** [连接到数据目录](/zh/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) 介绍了完整的 Unity Catalog 配置流程，并提供了 Delta 和 Iceberg 示例。
   </Step>
 
-  <Step>
-    ## 执行查询
-
+  <Step title="执行查询" id="issue-query">
     无论你在上文使用的是哪种方式——表函数、表引擎还是 catalog——同一套 ClickHouse SQL 都适用于这三者：
 
     ```sql
@@ -136,9 +128,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     查询语法完全一致——只有 `FROM` 子句会发生变化。无论使用哪个数据源，所有 ClickHouse SQL 函数、JOIN 和聚合的用法都相同。
   </Step>
 
-  <Step>
-    ## 将部分数据加载到 ClickHouse
-
+  <Step title="将部分数据加载到 ClickHouse" id="load-data">
     直接查询 Iceberg 很方便，但其性能受限于网络吞吐量和文件布局。对于分析型工作负载，建议将数据加载到原生 MergeTree 表中。
 
     首先，对 Iceberg 表运行带过滤条件的查询，建立一个基线：
@@ -199,9 +189,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     **了解更多：**[使用 MergeTree 加速分析](/zh/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) 涵盖了 schema 优化、全文索引，以及完整的性能优化前后对比。
   </Step>
 
-  <Step>
-    ## 回写到 Iceberg
-
+  <Step title="回写到 Iceberg" id="write-back">
     ClickHouse 还可以将数据回写到 Iceberg 表，从而支持反向 ETL 工作流——发布聚合结果或数据子集，供其他工具 (Spark、Trino、DuckDB 等) 使用。
 
     创建一个用于输出的 Iceberg 表：
@@ -239,10 +227,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   ## 后续步骤
 </div>
 
-现在你已经看完了完整的工作流程，可以进一步深入了解各个部分：
+现在你已经了解了完整工作流程，接下来可以深入了解各个方面：
 
-* [直接查询](/zh/guides/use-cases/data-warehousing/getting-started/querying-directly) — 四种格式、集群方案、表引擎、缓存
-* [连接到目录](/zh/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — 完整的 Unity Catalog 演练，涵盖 Delta 和 Iceberg
+* [直接查询](/zh/guides/use-cases/data-warehousing/getting-started/querying-directly) — 四种格式、集群方案、表引擎、缓存机制
+* [连接到目录](/zh/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — 包含 Delta 和 Iceberg 的完整 Unity Catalog 操作指南
 * [加速分析](/zh/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — schema 优化、索引、约 40 倍提速演示
 * [写入数据湖](/zh/guides/use-cases/data-warehousing/getting-started/writing-data) — 原始写入、聚合写入、类型映射
-* [支持矩阵](/zh/guides/use-cases/data-warehousing/support-matrix) — 不同格式和存储后端的功能对比
+* [支持矩阵](/zh/guides/use-cases/data-warehousing/support-matrix) — 不同格式和存储后端之间的功能对比
+* [最佳实践](/zh/guides/use-cases/data-warehousing/getting-started/best-practices) — 访问方法选择、性能设置和工作负载模式

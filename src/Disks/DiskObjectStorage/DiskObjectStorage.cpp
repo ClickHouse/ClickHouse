@@ -14,6 +14,8 @@
 #include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <IO/ReadPipeline.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
+#include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
@@ -28,7 +30,9 @@
 
 #include <Parsers/ASTCreateResourceQuery.h>
 #if ENABLE_DISTRIBUTED_CACHE
+#if CLICKHOUSE_CLOUD
 #include <DistributedCache/Utils.h>
+#endif
 #endif
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -846,8 +850,13 @@ void DiskObjectStorage::prepareRead(
         pipeline.needDistributedCache();
 
     /// Memory cache (page cache).
+    /// We explicitly disable page cache for disks with deterministic blob ids - the problem is that
+    /// during rewrite of a file blob id will be reused but previously cached segments will not be invalidated.
+    /// NOTE: It is not possible to implement invalidate method for page cache like fs cache implements, because
+    ///       page cache stores data in internal hash map keyed by offset and lengh of blob segment that are a query level settings.
     const bool use_page_cache =
         read_settings.page_cache_settings.cache
+        && (metadata_storage->areBlobPathsRandom() || metadata_storage->isReadOnly())
         && (use_distributed_cache
             ? read_settings.use_page_cache_with_distributed_cache
             : (read_settings.use_page_cache_for_disks_without_file_cache && !file_cache_enabled));
@@ -931,6 +940,16 @@ void DiskObjectStorage::writeFileUsingBlobWritingFunction(const String & path, W
 void DiskObjectStorage::waitBlobsCleanup()
 {
     blob_killer->triggerAndWait();
+}
+
+int64_t DiskObjectStorage::getDeadBlobsQueueEstimate() const
+{
+    return metadata_storage->getDeadBlobsQueueEstimate();
+}
+
+int64_t DiskObjectStorage::getMissingBlobsQueueEstimate() const
+{
+    return metadata_storage->getMissingBlobsQueueEstimate();
 }
 
 void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map)

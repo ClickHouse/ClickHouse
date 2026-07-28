@@ -41,9 +41,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 完成后，你将了解如何使用 clickhouse-client 将本地文件加载到 ClickHouse Cloud；这一工作流适用于 CSV、Parquet、JSON 以及许多其他格式。
 
 <Steps titleSize="h3">
-  <Step>
-    ### 安装 clickhouse-client
-
+  <Step title="安装 clickhouse-client" id="install-clickhouse-client">
     `clickhouse-client` 是连接 ClickHouse 的官方 CLI，包含在 ClickHouse 二进制可执行文件中。
 
     使用通用安装程序进行安装：
@@ -61,9 +59,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     你应该会看到显示 ClickHouse 版本号的输出，这表明 `clickhouse-client` 已可使用。
   </Step>
 
-  <Step>
-    ### 准备一个样例 CSV 文件
-
+  <Step title="准备一个样例 CSV 文件" id="prepare-a-sample-csv-file">
     创建一个小型样例 CSV 文件，以便本快速入门内容完整，可独立完成。请在终端中运行以下命令：
 
     ```bash
@@ -83,9 +79,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     ```
   </Step>
 
-  <Step>
-    ### 连接到你的 Cloud 服务
-
+  <Step title="连接到你的 Cloud 服务" id="connect-to-your-cloud-service">
     以下命令假定你已按照[获取你的 Cloud 连接信息](/zh/get-started/quickstarts/obtain-your-cloud-connection-details)快速入门中的说明，将 `CLICKHOUSE_HOST`、`CLICKHOUSE_USER` 和 `CLICKHOUSE_PASSWORD` 导出为环境变量。如果还没有，你也可以直接替换为你自己的值。
 
     通过对你的 Cloud 服务运行一个简单查询来测试连通性：
@@ -107,9 +101,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     </Note>
   </Step>
 
-  <Step>
-    ### 创建目标表并插入数据
-
+  <Step title="创建目标表并插入数据" id="create-a-target-table-and-insert-data">
     首先，在您的 Cloud 服务中创建一个用于接收这些数据的表：
 
     ```bash
@@ -147,9 +139,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     `clickhouse-client` 会将 CSV 文件内容直接发送到你的 Cloud 服务。`CSVWithNames` 格式会告知 ClickHouse，第一行包含列名。
   </Step>
 
-  <Step>
-    ### 验证数据是否已插入
-
+  <Step title="验证数据是否已插入" id="verify-the-data-was-inserted">
     查询您的 Cloud 服务，确认这些行已写入：
 
     ```bash
@@ -180,9 +170,11 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   </Step>
 </Steps>
 
-## 后续步骤
+<div id="next-steps">
+  ## 后续步骤
+</div>
 
-在本快速入门中，你安装了 `clickhouse-client`，将其连接到 ClickHouse Cloud 服务，并使用它将本地 CSV 文件中的数据流式传输到 Cloud。对于 Parquet、JSON 以及其他数十种格式，这种方法同样适用。
+在本快速入门中，你安装了 `clickhouse-client`，将其连接到 ClickHouse Cloud 服务，并使用它将本地 CSV file 中的数据流式传输到 Cloud。对于 Parquet、JSON 以及其他数十种格式，这种方法同样适用。
 
 接下来请查看以下快速入门：
 
