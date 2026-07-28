@@ -85,6 +85,23 @@ def main():
     mod.SESSION_SETTINGS_MAX_CHARS_PER_PAGE = 100_000
     mod.SESSION_SETTINGS_PREFIX_GROUP_MIN = 2
 
+    version_history_import = (
+        'import VersionHistory from '
+        '"/snippets/components/VersionHistory/VersionHistory.jsx";'
+    )
+    named_version_history_import = (
+        'import { VersionHistory } from '
+        '"/snippets/components/VersionHistory/VersionHistory.jsx";'
+    )
+    assert mod._component_imports_for_page(
+        version_history_import,
+        "<VersionHistory rows={[]} />",
+    ) == [named_version_history_import]
+    assert mod._component_imports_for_page(
+        named_version_history_import,
+        "<VersionHistory rows={[]} />",
+    ) == [named_version_history_import]
+
     names = [
         "filesystem_cache_alpha", "filesystem_cache_beta",
         "filesystem_prefetch_alpha", "filesystem_prefetch_beta",

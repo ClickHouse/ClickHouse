@@ -101,7 +101,7 @@ public:
 REGISTER_FUNCTION(AssumeNotNull)
 {
     FunctionDocumentation::Description description = R"(
-Returns the corresponding non-`Nullable` value for a value of type [`Nullable`](../data-types/nullable.md).
+Returns the corresponding non-`Nullable` value for a value of type [`Nullable`](/reference/data-types/nullable).
 If the original value is `NULL`, an arbitrary result can be returned.
 
 See also: functions [`ifNull`](#ifNull) and [`coalesce`](#coalesce).
