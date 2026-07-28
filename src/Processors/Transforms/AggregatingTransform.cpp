@@ -1438,7 +1438,7 @@ void AggregatingTransform::initGenerate()
         for (auto & aggregator : *params->aggregator_list_ptr)
         {
             auto new_tmp_files = aggregator.detachTemporaryData();
-            num_streams += tmp_files.size();
+            num_streams += new_tmp_files.size();
 
             for (auto & tmp_stream : new_tmp_files)
             {
