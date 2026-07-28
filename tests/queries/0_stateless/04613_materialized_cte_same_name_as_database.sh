@@ -86,3 +86,38 @@ FROM (SELECT 2 AS id) AS t, cte AS c2
 SETTINGS enable_materialized_cte = 1, enable_analyzer = 1
 FORMAT TSVWithNames;
 "
+
+# The CTE name is visible for the generic binder too: a matcher-expanded column of another table
+# expression whose name is already qualified with the table name (`tbl.id`) still binds to a
+# materialized CTE named `tbl`, so it has to be qualified with the database name as well.
+$CLICKHOUSE_CLIENT --query "
+WITH tbl AS MATERIALIZED (SELECT 2 AS id)
+SELECT *
+FROM tbl, ${DB}.tbl
+SETTINGS enable_materialized_cte = 1, enable_analyzer = 1
+FORMAT TSVWithNames;
+" | sed "s/${DB}/db/g"
+
+$CLICKHOUSE_CLIENT --query "
+WITH tbl AS MATERIALIZED (SELECT 2 AS id)
+SELECT ${DB}.tbl.*
+FROM tbl, ${DB}.tbl
+SETTINGS enable_materialized_cte = 1, enable_analyzer = 1
+FORMAT TSVWithNames;
+" | sed "s/${DB}/db/g"
+
+# A qualifier matching both a materialized CTE and a table is ambiguous, exactly as it is for a
+# regular CTE.
+$CLICKHOUSE_CLIENT --query "
+WITH tbl AS MATERIALIZED (SELECT 2 AS id)
+SELECT ${DB}.tbl.*, tbl.*
+FROM ${DB}.tbl, tbl
+SETTINGS enable_materialized_cte = 1, enable_analyzer = 1;
+" 2>&1 | grep -o -m1 'AMBIGUOUS_IDENTIFIER'
+
+$CLICKHOUSE_CLIENT --query "
+WITH tbl AS (SELECT 2 AS id)
+SELECT ${DB}.tbl.*, tbl.*
+FROM ${DB}.tbl, tbl
+SETTINGS enable_analyzer = 1;
+" 2>&1 | grep -o -m1 'AMBIGUOUS_IDENTIFIER'

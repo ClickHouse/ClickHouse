@@ -6,3 +6,9 @@ id	cte.id
 2	1
 id	c2.id
 2	1
+id	db.tbl.id	value
+2	42	7
+db.tbl.id	value
+42	7
+AMBIGUOUS_IDENTIFIER
+AMBIGUOUS_IDENTIFIER

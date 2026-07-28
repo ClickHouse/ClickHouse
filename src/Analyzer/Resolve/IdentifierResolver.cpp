@@ -592,6 +592,17 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     const auto & table_name = table_expression_data.table_name;
     const auto & database_name = table_expression_data.database_name;
 
+    /** A materialized CTE is registered under an internal temporary table name, but queries refer to it
+      * by its CTE name, which is visible in the same way as a table name. Every place that decides whether
+      * an identifier binds to a table expression has to know that name, otherwise a column of another table
+      * expression is not qualified enough to be distinguished from the CTE columns, and a qualifier that
+      * matches both the CTE and a table is not reported as ambiguous.
+      */
+    std::string_view materialized_cte_name;
+    if (const auto * table_node = table_expression_node->as<TableNode>())
+        if (table_node->isMaterializedCTE())
+            materialized_cte_name = table_node->getMaterializedCTE()->cte_name;
+
     if (identifier_lookup.isTableExpressionLookup())
     {
         size_t parts_size = identifier_lookup.identifier.getPartsSize();
@@ -602,6 +613,8 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
                 table_expression_node->formatASTForErrorMessage());
 
         if (parts_size == 1 && path_start == table_name)
+            return true;
+        if (parts_size == 1 && !materialized_cte_name.empty() && path_start == materialized_cte_name)
             return true;
         if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
             return true;
@@ -615,6 +628,9 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
         return false;
 
     if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
+        return true;
+
+    if (!materialized_cte_name.empty() && path_start == materialized_cte_name)
         return true;
 
     if (identifier.getPartsSize() == 2)
