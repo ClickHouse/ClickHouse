@@ -31,6 +31,21 @@ Arrays from a subquery (no storage subcolumn)
 General expression operand
 Unaligned mode
 2
+Chained ARRAY JOIN
+3
+3
+2
+1
+1
+1
+Nested operand beside a plain array
+2
+1
+0
+1
 optimize_functions_to_subcolumns = 0
+3
+3
+Chained ARRAY JOIN, optimize_functions_to_subcolumns = 0
 3
 3

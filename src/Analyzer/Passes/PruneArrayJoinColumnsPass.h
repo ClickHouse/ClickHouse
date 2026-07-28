@@ -28,6 +28,8 @@ namespace DB
   *   SELECT b FROM t ARRAY JOIN a, b
   *   Before: ARRAY JOIN a, b
   *   After:  ARRAY JOIN arrayResize(emptyArrayUInt8(), length(a)), b
+  *
+  * FunctionToSubcolumnsPass runs after this pass and may then fold `length(a)` to `a.size0`.
   */
 class PruneArrayJoinColumnsPass final : public IQueryTreePass
 {

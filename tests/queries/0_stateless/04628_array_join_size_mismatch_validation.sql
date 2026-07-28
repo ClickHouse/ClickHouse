@@ -142,6 +142,62 @@ SELECT count() FROM (SELECT ['x', 'y'] AS a, ['p'] AS b) ARRAY JOIN arrayMap(x -
 SELECT 'Unaligned mode';
 SELECT count() FROM (SELECT ['x', 'y'] AS a, ['p'] AS b) ARRAY JOIN a, b SETTINGS enable_unaligned_array_join = 1;
 
+-- Chained ARRAY JOIN: a later clause's operand may be defined in terms of an earlier clause's
+-- output, so that output is used and must not be substituted.
+DROP TABLE IF EXISTS t_chain;
+CREATE TABLE t_chain (id UInt32, a Array(UInt32), b Array(UInt32)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_chain VALUES (1, [3], [9]);
+
+SELECT 'Chained ARRAY JOIN';
+-- x is referenced by the second clause, so range(x) must see [3], not the carrier's zeros. The
+-- second spelling projects both operands and is the control.
+SELECT count() FROM t_chain ARRAY JOIN a AS x, b AS z ARRAY JOIN range(x) AS y;
+SELECT count() FROM (SELECT x, z FROM t_chain ARRAY JOIN a AS x, b AS z) ARRAY JOIN range(x) AS y;
+
+TRUNCATE TABLE t_chain;
+INSERT INTO t_chain VALUES (1, [3], [9, 9]);
+SELECT count() FROM t_chain ARRAY JOIN a AS x, b AS z ARRAY JOIN range(x) AS y; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+
+DROP TABLE t_chain;
+
+-- A chained shape where the first clause's outputs are referenced nowhere: both are still
+-- substituted, so only their sizes are read while the second clause's array is read in full.
+DROP TABLE IF EXISTS t_chain_unused;
+CREATE TABLE t_chain_unused (id UInt32, a Array(UInt32), b Array(UInt32), c Array(UInt32)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_chain_unused VALUES (1, [3], [9], [1, 2]);
+
+SELECT count() FROM t_chain_unused ARRAY JOIN a AS x, b AS z ARRAY JOIN c AS y;
+-- The last row is the live control: c IS read in full, so a never-matching pattern would fail it.
+SELECT count() > 0 FROM (EXPLAIN header = 1 SELECT count() FROM t_chain_unused ARRAY JOIN a AS x, b AS z ARRAY JOIN c AS y)
+    WHERE explain ILIKE '%a.size0 UInt64%' SETTINGS enable_parallel_replicas = 0;
+SELECT count() > 0 FROM (EXPLAIN header = 1 SELECT count() FROM t_chain_unused ARRAY JOIN a AS x, b AS z ARRAY JOIN c AS y)
+    WHERE explain ILIKE '%b.size0 UInt64%' SETTINGS enable_parallel_replicas = 0;
+SELECT count() > 0 FROM (EXPLAIN header = 1 SELECT count() FROM t_chain_unused ARRAY JOIN a AS x, b AS z ARRAY JOIN c AS y)
+    WHERE explain ILIKE '%c Array(UInt32)%' SETTINGS enable_parallel_replicas = 0;
+
+DROP TABLE t_chain_unused;
+
+-- A Nested operand beside a plain array, with the Nested one entirely unused. It must be pruned by
+-- subcolumn rather than substituted: wrapping nested() in length() would make that pruning
+-- unreachable, so only the plain array contributes sizes while a single n.* subcolumn is still read.
+DROP TABLE IF EXISTS t_nested_multi;
+CREATE TABLE t_nested_multi (`n.a` Array(Int64), `n.b` Array(Int64), p Array(Int64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_nested_multi VALUES ([1, 2], [3, 4], [5, 6]);
+
+SELECT 'Nested operand beside a plain array';
+SELECT count() FROM t_nested_multi ARRAY JOIN n, p;
+-- The first row is the live control for the Array(Int64) pattern.
+SELECT count() > 0 FROM (EXPLAIN header = 1 SELECT count() FROM t_nested_multi ARRAY JOIN n, p)
+    WHERE explain ILIKE '%n.a Array(Int64)%' SETTINGS enable_parallel_replicas = 0;
+SELECT count() FROM (EXPLAIN header = 1 SELECT count() FROM t_nested_multi ARRAY JOIN n, p)
+    WHERE explain ILIKE '%n.b%' SETTINGS enable_parallel_replicas = 0;
+SELECT count() > 0 FROM (EXPLAIN header = 1 SELECT count() FROM t_nested_multi ARRAY JOIN n, p)
+    WHERE explain ILIKE '%p.size0 UInt64%' SETTINGS enable_parallel_replicas = 0;
+-- The Nested operand still reaches the size check, so a mismatch must throw.
+SELECT count() FROM t_nested_multi ARRAY JOIN n, arrayResize(p, 3) AS q; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+
+DROP TABLE t_nested_multi;
+
 -- The same verdicts with the subcolumn optimization disabled.
 SET optimize_functions_to_subcolumns = 0;
 
@@ -160,3 +216,17 @@ SELECT count() FROM t_no_subcolumns ARRAY JOIN a, b;
 SELECT count() FROM t_no_subcolumns LEFT ARRAY JOIN a, b;
 
 DROP TABLE t_no_subcolumns;
+
+DROP TABLE IF EXISTS t_chain_no_subcolumns;
+CREATE TABLE t_chain_no_subcolumns (id UInt32, a Array(UInt32), b Array(UInt32)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_chain_no_subcolumns VALUES (1, [3], [9]);
+
+SELECT 'Chained ARRAY JOIN, optimize_functions_to_subcolumns = 0';
+SELECT count() FROM t_chain_no_subcolumns ARRAY JOIN a AS x, b AS z ARRAY JOIN range(x) AS y;
+SELECT count() FROM (SELECT x, z FROM t_chain_no_subcolumns ARRAY JOIN a AS x, b AS z) ARRAY JOIN range(x) AS y;
+
+TRUNCATE TABLE t_chain_no_subcolumns;
+INSERT INTO t_chain_no_subcolumns VALUES (1, [3], [9, 9]);
+SELECT count() FROM t_chain_no_subcolumns ARRAY JOIN a AS x, b AS z ARRAY JOIN range(x) AS y; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+
+DROP TABLE t_chain_no_subcolumns;

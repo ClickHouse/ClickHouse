@@ -12,7 +12,6 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <Functions/FunctionFactory.h>
 
@@ -79,7 +78,8 @@ public:
     bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
         /// Skip visiting the join expressions list of a tracked ARRAY JOIN node —
-        /// those are the expression definitions, not references.
+        /// those are the expression definitions, not references. Any reference a definition
+        /// itself holds is marked separately by visitJoinExpressionDefinitions().
         if (tracked_nodes.contains(parent.get()))
         {
             auto * array_join_node = parent->as<ArrayJoinNode>();
@@ -182,6 +182,30 @@ public:
             expr_it->second.fully_used = true;
     }
 
+    /// Mark references that live inside the join expression definitions themselves. needChildVisit
+    /// skips the whole definitions list, because a definition must not mark itself used, but in a
+    /// chained ARRAY JOIN a later clause's definition legitimately references an earlier clause's
+    /// output (`ARRAY JOIN a AS x ARRAY JOIN range(x) AS y`). Descending into each definition's
+    /// expression subtree, rather than into the wrapper, marks those without self-marking.
+    void visitJoinExpressionDefinitions(const QueryTreeNodes & table_expressions)
+    {
+        for (const auto & table_expr : table_expressions)
+        {
+            auto * array_join_node = table_expr->as<ArrayJoinNode>();
+            if (!array_join_node || !tracked_nodes.contains(table_expr.get()))
+                continue;
+
+            for (auto & join_expr : array_join_node->getJoinExpressions().getNodes())
+            {
+                auto * column_node = join_expr->as<ColumnNode>();
+                if (!column_node || !column_node->hasExpression())
+                    continue;
+
+                visit(column_node->getExpression());
+            }
+        }
+    }
+
 private:
     ArrayJoinUsageMap & usage_map;
     const ArrayJoinNodeSet & tracked_nodes;
@@ -268,8 +292,9 @@ void replaceWithOffsetsCarrier(ColumnNode & column_node, const ContextPtr & cont
     array_resize_function->getArguments().getNodes() = {std::move(empty_array_function), std::move(length_function)};
     array_resize_function->resolveAsFunction(FunctionFactory::instance().get("arrayResize", context));
 
+    auto result_type = array_resize_function->getResultType();
     column_node.setExpression(std::move(array_resize_function));
-    column_node.setColumnType(std::make_shared<DataTypeUInt8>());
+    column_node.setColumnType(assert_cast<const DataTypeArray &>(*result_type).getNestedType());
 }
 
 /// Visitor that updates reference ColumnNode types, rewrites stale numeric tupleElement
@@ -418,6 +443,7 @@ void PruneArrayJoinColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextP
     /// Step 2: Mark used expressions and subcolumns.
     MarkUsedArrayJoinColumnsVisitor visitor(context, usage_map, tracked_nodes);
     visitor.visit(query_tree_node);
+    visitor.visitJoinExpressionDefinitions(table_expressions);
 
     /// Step 3: Prune.
     UpdatedTypeMap updated_types;
