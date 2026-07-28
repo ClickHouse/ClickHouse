@@ -35,7 +35,7 @@ import pytest
 
 from ci.praktika._environment import _Environment
 from ci.praktika.job import Job
-from ci.praktika.result import Result
+from ci.praktika.result import Result, ResultInfo
 from ci.praktika.runner import Runner
 from ci.praktika.settings import Settings
 
@@ -50,10 +50,11 @@ class _Job:
 @pytest.fixture
 def in_tmp_cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    # Runner._run sets PRAKTIKA and rewrites PYTHONPATH process-globally, and pytest does
-    # not restore process env between tests; monkeypatch does, so later tests in this
-    # worker do not inherit them.
-    for var in ("PRAKTIKA", "PYTHONPATH"):
+    # Runner._run sets PRAKTIKA and rewrites PYTHONPATH process-globally, and
+    # generate_local_run_environment sets JOB_NAME and CHECK_NAME (runner.py:36-37).
+    # pytest does not restore process env between tests; monkeypatch does, so later tests
+    # in this worker do not inherit them.
+    for var in ("PRAKTIKA", "PYTHONPATH", "JOB_NAME", "CHECK_NAME"):
         monkeypatch.setenv(var, os.environ.get(var, ""))
     os.makedirs(Settings.TEMP_DIR, exist_ok=True)
     return tmp_path
@@ -444,6 +445,41 @@ def test_local_run_does_not_fail_a_merely_non_completed_result(in_tmp_cwd, monke
     assert persisted.is_completed() is False
 
 
+def test_hook_path_promotion_is_left_to_get_result_object(in_tmp_cwd, monkeypatch):
+    """⭐ The scope control for the compensation.
+
+    When the hooks run, `_get_result_object` already promotes a non-completed result to
+    ERROR (ResultInfo.KILLED) and owns the exit code. Compensating here as well would
+    change that path's behaviour - it flipped a run that previously exited 0 to exit 1 -
+    so the branch is gated on `not run_hooks` and this pins that the hook path is
+    untouched.
+    """
+    workflow, job, fake_run = _run_local_no_hooks(0)
+    monkeypatch.setattr(Runner, "_run", fake_run)
+
+    # Capture the state the hooks are handed. Stubbing _get_result_object also keeps the
+    # rest of the hook machinery (S3, GH) out of a unit test.
+    seen = {}
+
+    def _capture(self, job, *args, **kwargs):
+        handed = Runner._read_job_result_or_running(job)
+        seen["status"] = handed.status
+        seen["errors"] = [e["message"] for e in handed.ext.get("errors", [])]
+        # What the real _get_result_object does with a non-completed result.
+        return handed.add_error(ResultInfo.KILLED).set_status(Result.Status.ERROR)
+
+    monkeypatch.setattr(Runner, "_get_result_object", _capture)
+
+    Runner().run(workflow=workflow, job=job, local_run=True, run_hooks=True)
+
+    # ⭐ Load-bearing: the compensation must not have touched the result before the hooks
+    # saw it, so the promotion stays _get_result_object's single responsibility.
+    assert seen["status"] == Result.Status.RUNNING
+    assert not any("left no readable result" in m for m in seen["errors"]), (
+        "the compensation fired on the hook path, which _get_result_object owns"
+    )
+
+
 def test_a_failed_job_keeps_the_run_recovery_reason_and_log_tail(in_tmp_cwd, monkeypatch):
     """A job that FAILED and left an unreadable result is already fully reported by `_run`
     (ERROR + "Job killed" + the log tail). The compensation must not fire there and
@@ -523,6 +559,12 @@ def test_ci_path_promotion_is_not_duplicated_by_the_local_compensation():
         "expected exactly one unreadable-result compensation in Runner.run"
     )
     node = compensations[0]
+    # It must be scoped to the hook-less run: with the hooks on, _get_result_object does
+    # the promotion and owns the exit code.
+    assert "run_hooks" in ast.unparse(node.test), (
+        "the compensation must be gated on `not run_hooks` - otherwise it also changes "
+        "the hook path, where _get_result_object already promotes the result"
+    )
     # Must be the `res` *name*, not the "res" inside "result": the guard is what keeps the
     # compensation off the already-failed path, which _run has already reported on.
     assert any(

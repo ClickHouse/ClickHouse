@@ -1138,11 +1138,12 @@ class Runner:
                 result.set_status(Result.Status.ERROR).set_info(
                     f"Job got terminated with an error, exit code [{run_code}]"
                 ).dump()
-            elif res and result.ext.get(self.READ_FAILED_EXT_KEY):
+            elif not run_hooks and res and result.ext.get(self.READ_FAILED_EXT_KEY):
                 # The job exited 0 but its result is unreadable, so there is no evidence it
-                # succeeded. In CI `_get_result_object` promotes this to ERROR, but it runs
-                # under `if run_hooks:` below, which a local run skips - without this the
-                # command would exit 0 while the persisted result is not even completed.
+                # succeeded. `_get_result_object` promotes exactly this to ERROR, but it
+                # runs under `if run_hooks:` below - so only a run that skips the hooks
+                # needs the promotion here, and gating on `not run_hooks` keeps the hook
+                # path's reporting and exit code untouched.
                 info = f"Job exited [{run_code}] but left no readable result"
                 print(f"ERROR: {info}")
                 result.add_error(info).set_status(Result.Status.ERROR).dump()
