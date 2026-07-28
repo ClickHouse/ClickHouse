@@ -53,6 +53,22 @@ SELECT 'array join then full: reads from remote replicas';
 SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
     EXPLAIN SELECT t1.c, a FROM t1 ARRAY JOIN [1, 2] AS a FULL JOIN t2 ON t1.c = t2.c ORDER BY ALL);
 
+-- The RIGHT axis is decided by the strictness term alone: `ALL RIGHT` after an ARRAY JOIN stays
+-- eligible (the residual described in the PR description, which keeps
+-- 03452_array_join_global_right_join_parallel_replicas exercising that path), while `ANY RIGHT` and
+-- `SEMI RIGHT` are vetoed. Both directions are asserted so neither can flip unnoticed.
+SELECT 'array join then all/right: reads from remote replicas';
+SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
+    EXPLAIN SELECT t1.c, a, t2.c FROM t1 ARRAY JOIN [1, 2] AS a RIGHT JOIN t2 ON t1.c = t2.c ORDER BY ALL);
+
+SELECT 'array join then any/right: reads from remote replicas';
+SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
+    EXPLAIN SELECT t1.c, a, t2.c FROM t1 ARRAY JOIN [1, 2] AS a ANY RIGHT JOIN t2 ON t1.c = t2.c ORDER BY ALL);
+
+SELECT 'array join then semi/right: reads from remote replicas';
+SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
+    EXPLAIN SELECT t1.c, a FROM t1 ARRAY JOIN [1, 2] AS a SEMI RIGHT JOIN t2 ON t1.c = t2.c ORDER BY ALL);
+
 SELECT 'all/inner only: reads from remote replicas';
 SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
     EXPLAIN SELECT * FROM t1 INNER JOIN t2 ON t1.c = t2.c INNER JOIN t3 ON t1.c = t3.c ORDER BY ALL);

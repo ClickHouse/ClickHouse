@@ -8,6 +8,12 @@ array join then all/inner: reads from remote replicas
 1
 array join then full: reads from remote replicas
 0
+array join then all/right: reads from remote replicas
+1
+array join then any/right: reads from remote replicas
+0
+array join then semi/right: reads from remote replicas
+0
 all/inner only: reads from remote replicas
 1
 all/left only: reads from remote replicas
