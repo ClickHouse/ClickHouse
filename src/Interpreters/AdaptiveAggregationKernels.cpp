@@ -200,6 +200,22 @@ namespace
     /// its purpose. Fixed-size keys were staged as values either way.
     /// `table` is the bucket's own submap: the records were grouped by the same hash dispatch
     /// at staging time, so emplacing into it directly skips the per-record two-level routing.
+    /// Prefetch the table slot of the record `prefetch_look_ahead` positions ahead of `j`, if
+    /// any: hash-organized tables prefetch by the saved routing hash, string tables locate the
+    /// slot from the key bytes and the hash. The two drain loops share this so the dispatch
+    /// cannot drift between them.
+    template <typename Key, typename Impl>
+    void ALWAYS_INLINE prefetchStagedKey(Impl & impl, const DB::StagedChunk::StagedKeys & keys, size_t j, size_t slice_end)
+    {
+        const size_t la = j + DB::adaptive_drain_prefetch_look_ahead;
+        if (la >= slice_end)
+            return;
+        if constexpr (requires { impl.prefetchByHash(keys.routing_hashes[j]); })
+            impl.prefetchByHash(keys.routing_hashes[la]);
+        else if constexpr (std::is_same_v<Key, std::string_view>)
+            impl.prefetch(keys.keyBytesAt(la), keys.routing_hashes[la]);
+    }
+
     template <typename Key, DB::AdaptiveKeyStorage key_storage, typename Table>
     void ALWAYS_INLINE emplaceStagedKey(
         Table & table,
@@ -1010,7 +1026,10 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
 
         if constexpr (requires { impl.reserveAdditionalStringViewKeys(size_t{}); })
         {
-            if (!reserved)
+            /// Sampled only while a reserve can still fire: `update_reserve` requires unseen
+            /// records to remain, so the final block of a backlog - and the pressure drain's
+            /// whole single-chunk backlog - would count keys nothing ever reads.
+            if (!reserved && processed + (slice_end - slice_begin) < total_records)
             {
                 for (size_t j = slice_begin; j < slice_end; ++j)
                     if (impl.usesStringViewSubmap(keys.keyBytesAt(j)))
@@ -1021,21 +1040,9 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
         if (const auto * counts = std::get_if<StagedChunk::CountPayload>(&block.payload))
         {
             const auto & multiplicities = counts->multiplicities;
-            constexpr size_t prefetch_look_ahead = adaptive_drain_prefetch_look_ahead;
             for (size_t j = slice_begin; j < slice_end; ++j)
             {
-                if (j + prefetch_look_ahead < slice_end)
-                {
-                    if constexpr (requires { impl.prefetchByHash(keys.routing_hashes[j]); })
-                    {
-                        impl.prefetchByHash(keys.routing_hashes[j + prefetch_look_ahead]);
-                    }
-                    else if constexpr (std::is_same_v<typename Method::Key, std::string_view>)
-                    {
-                        const size_t la = j + prefetch_look_ahead;
-                        impl.prefetch(keys.keyBytesAt(la), keys.routing_hashes[la]);
-                    }
-                }
+                prefetchStagedKey<typename Method::Key>(impl, keys, j, slice_end);
 
                 typename Method::Data::LookupResult it;
                 bool inserted = false;
@@ -1078,17 +1085,6 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
 {
     auto & impl = method.data.impls[bucket_index];
     const auto & keys = block.keys;
-    constexpr size_t prefetch_look_ahead = adaptive_drain_prefetch_look_ahead;
-    auto prefetch = [&](size_t j)
-    {
-        const size_t la = j + prefetch_look_ahead;
-        if (la >= slice_end)
-            return;
-        if constexpr (requires { impl.prefetchByHash(keys.routing_hashes[j]); })
-            impl.prefetchByHash(keys.routing_hashes[la]);
-        else if constexpr (std::is_same_v<typename Method::Key, std::string_view>)
-            impl.prefetch(keys.keyBytesAt(la), keys.routing_hashes[la]);
-    };
 
     const auto & prep = *std::get<StagedChunk::AggregatePayload>(block.payload).prepared;
 
@@ -1099,7 +1095,7 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
 
     for (size_t j = slice_begin; j < slice_end; ++j)
     {
-        prefetch(j);
+        prefetchStagedKey<typename Method::Key>(impl, keys, j, slice_end);
         typename Method::Data::LookupResult it;
         bool inserted = false;
         emplaceStagedKey<typename Method::Key, key_storage>(
