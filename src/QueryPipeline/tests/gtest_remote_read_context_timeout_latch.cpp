@@ -13,7 +13,9 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/StreamSocket.h>
 
+#include <cerrno>
 #include <chrono>
+#include <poll.h>
 #include <unistd.h>
 
 using namespace DB;
@@ -70,6 +72,10 @@ struct RemoteReadContextTestAccess
     /// as a failure instead of an unobservable hang.
     void armTimerOnly(Poco::Timespan relative) { context.timer.setRelative(relative); }
 
+    /// The receive timer's descriptor, so a test can wait for it to actually fire instead of
+    /// assuming a fixed sleep was long enough.
+    int timerFd() const { return context.timer.getDescriptor(); }
+
     bool checkTimeout() { return context.checkTimeout(); }
 
     /// cancelBefore() is only reachable through AsyncTaskExecutor::cancel(), which also destroys
@@ -120,6 +126,26 @@ struct ConnectedPair
     }
 };
 
+/// Wait until the receive timer's descriptor is readable, so the following epoll wake is
+/// guaranteed to report it. A fixed sleep can return early (EINTR, or an oversubscribed host),
+/// and in a test where the socket is deliberately readable that would leave a socket-only wake,
+/// which satisfies the same assertions for the wrong reason.
+[[nodiscard]] bool waitTimerReady(int timer_fd, Poco::Timespan limit)
+{
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::microseconds(limit.totalMicroseconds());
+    while (true)
+    {
+        pollfd p{.fd = timer_fd, .events = POLLIN, .revents = 0};
+        const int rc = ::poll(&p, 1, 50);
+        if (rc == 1 && (p.revents & POLLIN))
+            return true;
+        if (rc == -1 && errno != EINTR)
+            return false;
+        if (std::chrono::steady_clock::now() >= deadline)
+            return false;
+    }
+}
+
 }
 
 /// RemoteQueryExecutorReadContext::checkTimeout() observes the timer fd and the connection fd of
@@ -139,7 +165,8 @@ TEST(RemoteReadContextTimeoutLatch, SimultaneousReadinessLeavesNoTimeoutResidue)
     /// next epoll wake reports BOTH descriptors.
     ctx.armReceiveTimeout(pair.clientFd(), Poco::Timespan(0, 10'000));
     pair.makeClientReadable();
-    ::usleep(200'000);
+    ASSERT_TRUE(waitTimerReady(ctx.timerFd(), Poco::Timespan(5, 0)))
+        << "the receive timer never became ready, so this wake would not exercise the latch";
 
     /// Both ready => a packet is available => this is not a receive timeout.
     EXPECT_NO_THROW(EXPECT_TRUE(ctx.checkTimeout()));
@@ -165,7 +192,8 @@ TEST(RemoteReadContextTimeoutLatch, GenuineTimeoutStillThrows)
     RemoteReadContextTestAccess ctx(getContext().context);
 
     ctx.armReceiveTimeout(pair.clientFd(), Poco::Timespan(0, 10'000));
-    ::usleep(200'000);
+    ASSERT_TRUE(waitTimerReady(ctx.timerFd(), Poco::Timespan(5, 0)))
+        << "the receive timer never became ready, so this wake would not exercise the latch";
 
     try
     {
@@ -191,7 +219,8 @@ TEST(RemoteReadContextTimeoutLatch, CancelAfterDeclaredTimeoutDoesNotWaitForPend
 
     /// Declare a timeout: timer ready, socket not ready.
     ctx.armReceiveTimeout(pair.clientFd(), Poco::Timespan(0, 10'000));
-    ::usleep(200'000);
+    ASSERT_TRUE(waitTimerReady(ctx.timerFd(), Poco::Timespan(5, 0)))
+        << "the receive timer never became ready, so this wake would not exercise the latch";
     EXPECT_THROW(ctx.checkTimeout(), NetException);
 
     /// The read is still in progress (no packet was delivered), so if the timeout verdict were
@@ -203,13 +232,52 @@ TEST(RemoteReadContextTimeoutLatch, CancelAfterDeclaredTimeoutDoesNotWaitForPend
     /// process forever. With the fix, cancelBefore() never looks at the timer at all.
     ctx.armTimerOnly(Poco::Timespan(1, 0));
 
-    const auto start = std::chrono::steady_clock::now();
+    /// The absence of a throw IS the structural signal that the drain loop was skipped: entering
+    /// it would call checkTimeout(blocking = true), which with the re-armed timer necessarily
+    /// throws SOCKET_TIMEOUT out of cancelBefore(). Asserting elapsed time instead would only
+    /// measure the re-armed expiry, not the branch taken.
     EXPECT_NO_THROW(ctx.cancelBefore())
         << "cancelBefore() must not re-enter the read path for a connection that already timed out";
-    const auto elapsed = std::chrono::steady_clock::now() - start;
+}
 
-    EXPECT_LT(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count(), 500)
-        << "cancelBefore() must skip waiting for a packet that can no longer arrive within the timeout";
+/// The other direction of the same contract, and the one the changelog entry promises: when NO
+/// timeout was declared, cancellation must still wait for the pending packet, because skipping
+/// the drain leaves the connection unsynchronised and its teardown surfaces as
+/// "Connection to ... terminated (NETWORK_ERROR)". This is exactly the state produced by a
+/// simultaneous-readiness wake, which the latch used to turn into "a timeout was seen".
+TEST(RemoteReadContextTimeoutLatch, CancelWithoutDeclaredTimeoutDrainsPendingPacket)
+{
+    ConnectedPair pair;
+    RemoteReadContextTestAccess ctx(getContext().context);
+
+    /// A simultaneous-readiness wake: the packet is there, so no timeout is declared.
+    ctx.armReceiveTimeout(pair.clientFd(), Poco::Timespan(0, 10'000));
+    pair.makeClientReadable();
+    ASSERT_TRUE(waitTimerReady(ctx.timerFd(), Poco::Timespan(5, 0)))
+        << "the receive timer never became ready, so this wake would not exercise the latch";
+    EXPECT_NO_THROW(EXPECT_TRUE(ctx.checkTimeout()));
+
+    /// The read is still pending, so cancellation owes it a drain.
+    ASSERT_TRUE(ctx.isInProgress());
+
+    /// Consume the byte and re-arm the timer with a short expiry. The drain loop's first statement
+    /// is checkTimeout(blocking = true), which then observes "timer ready, socket not ready" and
+    /// throws SOCKET_TIMEOUT out of cancelBefore(). That throw is the observable: it can only
+    /// originate inside the drain loop, so it proves the loop was entered, and it also keeps the
+    /// loop from reaching resumeUnlocked() on a connection that has no server behind it. A guard
+    /// that always skipped the drain would make cancelBefore() return without throwing.
+    pair.drainClient();
+    ctx.armTimerOnly(Poco::Timespan(0, 100'000));
+
+    try
+    {
+        ctx.cancelBefore();
+        FAIL() << "cancelBefore() must drain the pending packet when no timeout was declared";
+    }
+    catch (const NetException & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::SOCKET_TIMEOUT);
+    }
 }
 
 #endif

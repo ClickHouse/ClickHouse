@@ -9,6 +9,9 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/StreamSocket.h>
 
+#include <chrono>
+#include <cerrno>
+#include <poll.h>
 #include <unistd.h>
 
 using namespace DB;
@@ -49,10 +52,34 @@ struct PacketReceiverTestAccess
     bool isTimeoutExpired() const { return receiver->isTimeoutExpired(); }
     bool isPacketReady() const { return receiver->isPacketReady(); }
     void setTimeout(const Poco::Timespan & t) { receiver->setTimeout(t); }
+
+    /// The receive timer's descriptor, so a test can wait for it to actually fire instead of
+    /// assuming a fixed sleep was long enough.
+    int timerFd() const { return receiver->timeout_descriptor.getDescriptor(); }
 };
 
 namespace
 {
+
+/// Wait until the receive timer's descriptor is readable, so the following epoll wake is
+/// guaranteed to report it. A fixed sleep can return early (EINTR, or an oversubscribed host),
+/// and in a test where the socket is deliberately readable that would leave a socket-only wake,
+/// which satisfies the same assertions for the wrong reason.
+[[nodiscard]] bool waitTimerReady(int timer_fd, Poco::Timespan limit)
+{
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::microseconds(limit.totalMicroseconds());
+    while (true)
+    {
+        pollfd p{.fd = timer_fd, .events = POLLIN, .revents = 0};
+        const int rc = ::poll(&p, 1, 50);
+        if (rc == 1 && (p.revents & POLLIN))
+            return true;
+        if (rc == -1 && errno != EINTR)
+            return false;
+        if (std::chrono::steady_clock::now() >= deadline)
+            return false;
+    }
+}
 
 /// A connected TCP socket pair whose client end can be made readable on demand.
 /// The kernel listen backlog completes the handshake, so no server thread is needed.
@@ -107,7 +134,8 @@ TEST(PacketReceiverTimeoutLatch, SimultaneousReadinessLeavesNoTimeoutResidue)
     /// next epoll wake reports BOTH descriptors.
     receiver.setTimeout(Poco::Timespan(0, 10'000));
     pair.makeClientReadable();
-    ::usleep(200'000);
+    ASSERT_TRUE(waitTimerReady(receiver.timerFd(), Poco::Timespan(5, 0)))
+        << "the receive timer never became ready, so this wake would not exercise the latch";
 
     /// Both ready => a packet is available => this is not a timeout.
     ASSERT_TRUE(receiver.checkTimeout());
@@ -136,7 +164,8 @@ TEST(PacketReceiverTimeoutLatch, GenuineTimeoutIsStillDeclaredAndPersists)
 
     pair.drainClient();
     receiver.setTimeout(Poco::Timespan(0, 10'000));
-    ::usleep(200'000);
+    ASSERT_TRUE(waitTimerReady(receiver.timerFd(), Poco::Timespan(5, 0)))
+        << "the receive timer never became ready, so this wake would not exercise the latch";
 
     /// Timer ready, socket not ready => genuine receive timeout.
     ASSERT_FALSE(receiver.checkTimeout());
@@ -158,7 +187,8 @@ TEST(PacketReceiverTimeoutLatch, SetTimeoutClearsADeclaredTimeout)
 
     pair.drainClient();
     receiver.setTimeout(Poco::Timespan(0, 10'000));
-    ::usleep(200'000);
+    ASSERT_TRUE(waitTimerReady(receiver.timerFd(), Poco::Timespan(5, 0)))
+        << "the receive timer never became ready, so this wake would not exercise the latch";
     ASSERT_FALSE(receiver.checkTimeout());
     ASSERT_TRUE(receiver.isTimeoutExpired());
 
