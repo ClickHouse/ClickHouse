@@ -6,6 +6,7 @@
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesToGridSparse.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesLinearRegression.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesChanges.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesVarianceOverTime.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromString.h>
@@ -1145,6 +1146,180 @@ SELECT timeSeriesResampleToGridWithStaleness(start_ts, end_ts, step_seconds, win
         },
         documentation_timeSeriesResampleToGridWithStaleness});
     factory.registerAlias("timeSeriesLastToGrid", "timeSeriesResampleToGridWithStaleness");
+
+    /// timeSeriesStddevToGrid documentation
+    FunctionDocumentation::Description description_timeSeriesStddevToGrid = R"(
+Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like stddev_over_time](https://prometheus.io/docs/prometheus/latest/querying/functions/#stddev_over_time) (population standard deviation) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `stddev_over_time` are considered within the specified time window.
+
+:::note
+This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax_timeSeriesStddevToGrid = R"(
+timeSeriesStddevToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
+    )";
+    FunctionDocumentation::Parameters parameters_timeSeriesStddevToGrid = {
+        {"start_timestamp", "Specifies start of the grid.", {"UInt32", "DateTime"}},
+        {"end_timestamp", "Specifies end of the grid.", {"UInt32", "DateTime"}},
+        {"grid_step", "Specifies step of the grid in seconds.", {"UInt32"}},
+        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval.", {"UInt32"}}
+    };
+    FunctionDocumentation::Arguments arguments_timeSeriesStddevToGrid = {
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_timeSeriesStddevToGrid = {"Returns population standard deviation values on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window for a particular grid point.", {"Array(Nullable(Float64))"}};
+    FunctionDocumentation::Examples examples_timeSeriesStddevToGrid = {
+    {
+        "Basic usage with individual timestamp-value pairs",
+        R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
+WITH
+    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
+    [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
+    [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values, -- array of values corresponding to timestamps above
+    90 AS start_ts,       -- start of timestamp grid
+    90 + 120 AS end_ts,   -- end of timestamp grid
+    15 AS step_seconds,   -- step of timestamp grid
+    45 AS window_seconds  -- "staleness" window
+SELECT timeSeriesStddevToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)
+FROM
+(
+    -- This subquery converts arrays of timestamps and values into rows of `timestamp`, `value`
+    SELECT
+        arrayJoin(arrayZip(timestamps, values)) AS ts_and_val,
+        ts_and_val.1 AS timestamp,
+        ts_and_val.2 AS value
+);
+        )",
+        R"(
+┌─timeSeriesStddevToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
+│ [NULL,NULL,0,0.9428090,1.2990381,0.5,0,0,1.4142135]                                       │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Using array arguments",
+        R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
+WITH
+    [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
+    [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,
+    90 AS start_ts,
+    90 + 120 AS end_ts,
+    15 AS step_seconds,
+    45 AS window_seconds
+SELECT timeSeriesStddevToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values);
+        )",
+        R"(
+┌─timeSeriesStddevToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
+│ [NULL,NULL,0,0.9428090,1.2990381,0.5,0,0,1.4142135]                                         │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesStddevToGrid = {25, 6};
+    FunctionDocumentation::Category category_timeSeriesStddevToGrid = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_timeSeriesStddevToGrid = {description_timeSeriesStddevToGrid, syntax_timeSeriesStddevToGrid, arguments_timeSeriesStddevToGrid, parameters_timeSeriesStddevToGrid, returned_value_timeSeriesStddevToGrid, examples_timeSeriesStddevToGrid, introduced_in_timeSeriesStddevToGrid, category_timeSeriesStddevToGrid};
+
+    factory.registerFunction("timeSeriesStddevToGrid",
+        {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
+        {
+            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
+            {
+                return std::make_shared<AggregateFunctionTimeseriesStddevToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
+            };
+            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
+        },
+        documentation_timeSeriesStddevToGrid});
+
+    /// timeSeriesStdvarToGrid documentation
+    FunctionDocumentation::Description description_timeSeriesStdvarToGrid = R"(
+Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like stdvar_over_time](https://prometheus.io/docs/prometheus/latest/querying/functions/#stdvar_over_time) (population variance) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `stdvar_over_time` are considered within the specified time window.
+
+:::note
+This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax_timeSeriesStdvarToGrid = R"(
+timeSeriesStdvarToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
+    )";
+    FunctionDocumentation::Parameters parameters_timeSeriesStdvarToGrid = {
+        {"start_timestamp", "Specifies start of the grid.", {"UInt32", "DateTime"}},
+        {"end_timestamp", "Specifies end of the grid.", {"UInt32", "DateTime"}},
+        {"grid_step", "Specifies step of the grid in seconds.", {"UInt32"}},
+        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval.", {"UInt32"}}
+    };
+    FunctionDocumentation::Arguments arguments_timeSeriesStdvarToGrid = {
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_timeSeriesStdvarToGrid = {"Returns population variance values on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window for a particular grid point.", {"Array(Nullable(Float64))"}};
+    FunctionDocumentation::Examples examples_timeSeriesStdvarToGrid = {
+    {
+        "Basic usage with individual timestamp-value pairs",
+        R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
+WITH
+    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
+    [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
+    [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values, -- array of values corresponding to timestamps above
+    90 AS start_ts,       -- start of timestamp grid
+    90 + 120 AS end_ts,   -- end of timestamp grid
+    15 AS step_seconds,   -- step of timestamp grid
+    45 AS window_seconds  -- "staleness" window
+SELECT timeSeriesStdvarToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)
+FROM
+(
+    -- This subquery converts arrays of timestamps and values into rows of `timestamp`, `value`
+    SELECT
+        arrayJoin(arrayZip(timestamps, values)) AS ts_and_val,
+        ts_and_val.1 AS timestamp,
+        ts_and_val.2 AS value
+);
+        )",
+        R"(
+┌─timeSeriesStdvarToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
+│ [NULL,NULL,0,0.8888889,1.6875,0.25,0,0,2]                                                 │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Using array arguments",
+        R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
+WITH
+    [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
+    [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,
+    90 AS start_ts,
+    90 + 120 AS end_ts,
+    15 AS step_seconds,
+    45 AS window_seconds
+SELECT timeSeriesStdvarToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values);
+        )",
+        R"(
+┌─timeSeriesStdvarToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
+│ [NULL,NULL,0,0.8888889,1.6875,0.25,0,0,2]                                                   │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesStdvarToGrid = {25, 6};
+    FunctionDocumentation::Category category_timeSeriesStdvarToGrid = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_timeSeriesStdvarToGrid = {description_timeSeriesStdvarToGrid, syntax_timeSeriesStdvarToGrid, arguments_timeSeriesStdvarToGrid, parameters_timeSeriesStdvarToGrid, returned_value_timeSeriesStdvarToGrid, examples_timeSeriesStdvarToGrid, introduced_in_timeSeriesStdvarToGrid, category_timeSeriesStdvarToGrid};
+
+    factory.registerFunction("timeSeriesStdvarToGrid",
+        {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
+        {
+            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
+            {
+                return std::make_shared<AggregateFunctionTimeseriesStdvarToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
+            };
+            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
+        },
+        documentation_timeSeriesStdvarToGrid});
 }
 
 }
