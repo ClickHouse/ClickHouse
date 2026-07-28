@@ -42,8 +42,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.8",
         {
             {"unique_key_probe_implementation", "auto", "auto", "New setting: selects the UNIQUE KEY probe implementation (currently only the simple baseline exists)"},
+            {"use_projection_index_in_read_pools", false, false, "New setting to drop mark ranges fully filtered out by a projection index before read tasks are created in MergeTree read pools."},
             {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."},
             {"analyzer_compatibility_apply_final_to_all_joined_tables", false, false, "New setting on master (default false = the fixed behavior). The behavior flip itself is recorded under 26.6, and the introduction for backports to older release branches (with default true) under 26.4."},
+            {"enable_parallel_single_level_merge", false, true, "New setting to parallelize the final merge of the single-level aggregation hash tables by splitting the key space into disjoint hash partitions that the threads merge independently."},
             {"join_runtime_filter_min_probe_rows", 0, 1000, "New setting to control minimum probe side size for installing JOIN runtime filters. It wasn't limited before, so previous value is 0 meaning always install."},
             {"page", 0., 0., "New setting for paginated HTTP responses, equivalent to offset = limit * (page - 1). Float so it can hold negative or fractional values (passed through to SQL `LIMIT`/`OFFSET`)."},
             {"limit", 0., 0., "Type widened from UInt64 to Float to support negative and fractional values, passed through to ClickHouse's native negative/fractional `LIMIT` support."},
