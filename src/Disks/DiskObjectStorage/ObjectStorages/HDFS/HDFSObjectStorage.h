@@ -92,6 +92,13 @@ public:
 
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
 
+    /// Build the `ObjectMetadata` for an HDFS file from the only fields `hdfsFileInfo`
+    /// exposes: the modification time (in seconds) and the size. The synthesised etag is
+    /// always marked non-strong (`ObjectMetadata::etag_is_strong = false`), so it powers
+    /// the `_etag` virtual column but is never used as a content-cache key. Exposed (and
+    /// `static`) so this contract can be unit-tested without a live NameNode.
+    static ObjectMetadata makeObjectMetadata(Int64 last_modified, Int64 size);
+
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
@@ -114,6 +121,8 @@ public:
 private:
     void initializeHDFSFS() const;
     std::string extractObjectKeyFromURL(const StoredObject & object) const;
+
+    static std::string makeETag(Int64 last_modified, Int64 size);
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     void removeObject(const StoredObject & object);

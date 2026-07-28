@@ -1780,12 +1780,13 @@ MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
     return substreams;
 }
 
-MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(
-    const MergeTreeDataPartChecksums & checksums,
-    const std::string & path_prefix,
-    const IDataPartStorage * storage) const
+MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
 {
-    if (!indexFileExistsInChecksums(checksums, path_prefix, ".idx", storage))
+    for (const auto & [column, _] : getColumnsWithTypesRequiredForIndexCalc())
+        if (part.isSystemColumnInvalidated(column))
+            return {0, {}};
+
+    if (!indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx", &part.getDataPartStorage()))
         return {0, {}};
 
     MergeTreeIndexSubstreams substreams =
@@ -1796,7 +1797,7 @@ MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(
     };
 
     /// V2: positions file exists on disk.
-    if (indexFileExistsInChecksums(checksums, path_prefix + ".pos", ".idx", storage))
+    if (indexFileExistsInChecksums(part.checksums, relative_path_prefix + ".pos", ".idx", part.getDataPartStoragePtr().get()))
     {
         substreams.push_back({MergeTreeIndexSubstream::Type::TextIndexPositions, ".pos", ".idx"});
         return {2, std::move(substreams)};
