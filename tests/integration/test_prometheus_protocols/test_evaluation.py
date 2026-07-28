@@ -817,6 +817,46 @@ def test_function_over_time():
     )
 
 
+def test_function_timestamp():
+    # `test` has samples at 110, 120, 130, 140, ... At time 135 the sample selected by the instant selector
+    # (within the default 5m lookback) is the one at 130 - timestamp() must report *that* sample's own
+    # timestamp (130), not the query's evaluation time (135) and not the sample's value (3).
+
+    # Plain selector.
+    do_query_test(
+        "timestamp(test)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "130"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 130]],
+    )
+
+    # Binary operation against a scalar literal: the value transformation (* 1) doesn't change which sample was
+    # selected, so the result is the same.
+    do_query_test(
+        "timestamp(test * 1)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "130"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 130]],
+    )
+
+    # Unary minus: same reasoning, timestamp() ignores the value entirely.
+    do_query_test(
+        "timestamp(-test)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "130"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 130]],
+    )
+
+    # Nested timestamp() call: timestamp() preserves the sample's own timestamp in its output, so applying
+    # timestamp() again gives the same result once more.
+    do_query_test(
+        "timestamp(timestamp(test))",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "130"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 130]],
+    )
+
+
 def test_literals():
     timestamp = 250
     do_query_test(

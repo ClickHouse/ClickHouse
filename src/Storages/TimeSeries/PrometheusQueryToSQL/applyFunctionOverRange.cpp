@@ -93,6 +93,12 @@ namespace
                  /* drop_metric_name = */ false,
              }},
 
+            {"timestamp",
+             {
+                 "timeSeriesTimestampToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
             /// TODO:
             /// resets
             /// predict_linear
