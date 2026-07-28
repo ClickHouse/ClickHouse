@@ -79,7 +79,9 @@ public:
 
     bool canUseProjection() const;
     bool canUseShardedAggregation(const QueryPipelineBuilder & pipeline) const;
-    bool canUseAdaptiveAggregator(const QueryPipelineBuilder & pipeline) const;
+    /// Returns nullptr when the adaptive aggregator can engage, and otherwise a short reason
+    /// for the trace log.
+    const char * adaptiveAggregatorRejectionReason(const QueryPipelineBuilder & pipeline) const;
     /// When we apply aggregate projection (which is full), this step will only merge data.
     /// Argument input_stream replaces current single input.
     /// Probably we should replace this step to MergingAggregated later? (now, aggregation-in-order will not work)

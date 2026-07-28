@@ -350,31 +350,38 @@ bool AggregatingStep::canUseShardedAggregation(const QueryPipelineBuilder & pipe
     return true;
 }
 
-bool AggregatingStep::canUseAdaptiveAggregator(const QueryPipelineBuilder & pipeline) const
+const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipelineBuilder & pipeline) const
 {
     if (!params.enable_adaptive_aggregator)
-        return false;
+        return "disabled by the setting";
 
     if (pipeline.getNumStreams() <= 1 || params.max_threads <= 1)
-        return false;
+        return "the aggregation is single-stream";
 
     if (params.only_merge)
-        return false;
+        return "the step only merges";
 
     /// TODO (nihalzp): Support the group-by limits and the overflow row.
     if (params.max_rows_to_group_by != 0 || params.overflow_row)
-        return false;
+        return "group-by limits or the overflow row are set";
 
     if (params.keys_size < 1)
-        return false;
+        return "the aggregation has no keys";
 
+    if (!sort_description_for_merging.empty())
+        return "the aggregation is in order";
 
-    if (!sort_description_for_merging.empty() || !grouping_sets_params.empty() || should_produce_results_in_order_of_bucket_number
-        || skip_merging)
-        return false;
+    if (!grouping_sets_params.empty())
+        return "grouping sets are used";
+
+    if (should_produce_results_in_order_of_bucket_number)
+        return "the output must be bucket-ordered";
+
+    if (skip_merging)
+        return "the merge phase is skipped";
 
     if (params.group_by_two_level_threshold == 0 && params.group_by_two_level_threshold_bytes == 0)
-        return false;
+        return "two-level aggregation is disabled";
 
     /// A prior run measured the query's staged stream as repeat-dominated and thawed: freezing
     /// cannot pay for this query, so do not engage it again. The verdict lives in the hash-table
@@ -384,7 +391,7 @@ bool AggregatingStep::canUseAdaptiveAggregator(const QueryPipelineBuilder & pipe
     {
         const auto hint = getHashTablesStatistics<AggregationEntry>().getSizeHint(params.stats_collecting_params);
         if (hint && hint->adaptive_staging_repeat_dominated)
-            return false;
+            return "a prior run measured the staged stream as repeat-dominated";
     }
 
     /// TODO (nihalzp): Support LowCardinality and Nullable keys.
@@ -392,15 +399,15 @@ bool AggregatingStep::canUseAdaptiveAggregator(const QueryPipelineBuilder & pipe
     {
         const auto & type = pipeline.getHeader().getByName(key).type;
         if (type->lowCardinality() || type->isNullable())
-            return false;
+            return "a key is LowCardinality or Nullable";
     }
 
     Sizes key_sizes;
     const auto method = AggregatedDataVariants::chooseMethod(pipeline.getHeader(), params.keys, key_sizes);
     if (!AggregatedDataVariants::isConvertibleToTwoLevel(method))
-        return false;
+        return "the aggregation method has no two-level form";
 
-    return true;
+    return nullptr;
 }
 
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
@@ -450,7 +457,11 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
     const bool use_sharded_aggregation = canUseShardedAggregation(pipeline);
 
-    const bool use_adaptive_aggregator = !use_sharded_aggregation && canUseAdaptiveAggregator(pipeline);
+    const char * adaptive_rejection
+        = use_sharded_aggregation ? "the sharded aggregation is used instead" : adaptiveAggregatorRejectionReason(pipeline);
+    const bool use_adaptive_aggregator = adaptive_rejection == nullptr;
+    if (!use_adaptive_aggregator && params.enable_adaptive_aggregator)
+        LOG_TRACE(getLogger("AggregatingStep"), "Adaptive aggregation is not engaged: {}", adaptive_rejection);
     params.enable_adaptive_aggregator = use_adaptive_aggregator;
 
     if (use_sharded_aggregation)
@@ -890,7 +901,7 @@ std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregating
     if (!canUseProjection())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot aggregate from projection");
 
-    /// The projection pipeline never runs `canUseAdaptiveAggregator` and never creates the
+    /// The projection pipeline never runs the adaptive admission and never creates the
     /// adaptive shared state, so the flag it receives must not claim otherwise: it would only
     /// mis-drive the size-hint branch of `initDataVariantsWithSizeHint`.
     auto params_without_adaptive = params;
