@@ -1,0 +1,31 @@
+-- { echo }
+-- Tags: no-fasttest, no-ordinary-database, use-rocksdb
+-- Tag no-fasttest: in fasttest ENABLE_LIBRARIES=0, so the rocksdb engine is not built
+-- Tag no-ordinary-database: the rocksdb data directory cannot always be locked in an Ordinary database
+
+-- A key-value entity is not a StorageJoin: its lookup is not built from a frozen hash table, so the
+-- narrowing rewrite added for Join-engine tables must not apply here. This pins the plan shape, not
+-- just the result, because both shapes answer correctly.
+CREATE TABLE kv (k UInt32, jv Int64) ENGINE = EmbeddedRocksDB PRIMARY KEY k;
+INSERT INTO kv VALUES (2, 10), (4, 20);
+CREATE TABLE l_kv (k UInt64) ENGINE = Memory;
+INSERT INTO l_kv VALUES (2), (4), (4294967298);
+CREATE TABLE o_kv (k UInt64, jv Int64) ENGINE = Memory;
+INSERT INTO o_kv VALUES (2, 10), (4, 20);
+SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_kv AS l ANY LEFT JOIN o_kv AS r USING (k);
+30	[(2,10),(4,20),(4294967298,0)]
+SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_kv AS l ANY LEFT JOIN kv AS r USING (k);
+30	[(2,10),(4,20),(4294967298,0)]
+SELECT count() FROM (EXPLAIN PLAN description = 1
+    SELECT sum(r.jv) FROM l_kv AS l ANY LEFT JOIN kv AS r USING (k))
+WHERE explain ILIKE '%accurateCastOrNull%';
+0
+-- A type-matched key-value join keeps the direct DirectKeyValueJoin lookup.
+CREATE TABLE l_kv32 (k UInt32) ENGINE = Memory;
+INSERT INTO l_kv32 VALUES (2), (4), (7);
+SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_kv32 AS l ANY LEFT JOIN kv AS r USING (k);
+30	[(2,10),(4,20),(7,0)]
+SELECT count() > 0 FROM (EXPLAIN PLAN description = 1
+    SELECT sum(r.jv) FROM l_kv32 AS l ANY LEFT JOIN kv AS r USING (k))
+WHERE explain ILIKE '%DirectKeyValueJoin%';
+1

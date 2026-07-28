@@ -17,7 +17,10 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 
+#include <Functions/CastOverloadResolver.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/ComparisonNames.h>
 #include <Functions/FunctionsLogical.h>
@@ -40,6 +43,7 @@
 
 #include <IO/Operators.h>
 
+#include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerJoins.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -701,7 +705,47 @@ struct JoinPlanningContext
 {
     NameViewToNodeMapping actions_after_join_map;
     bool is_storage_join{};
+    /// Narrower than `is_storage_join`, which is also true for key-value entities: set only for `StorageJoin`,
+    /// whose hash table is built at INSERT time and therefore cannot be re-keyed at query time.
+    bool is_frozen_storage_join{};
 };
+
+/// Whether converting the left key down to the storage key type preserves the wide comparison, i.e. a left value
+/// outside the storage key domain matches nothing. True only for canonical native integers: `accurateCastOrNull`
+/// truncates for Decimal and date-like types, and a custom-named alias such as `Bool` collapses the domain
+/// (`accurateCastOrNull(2, 'Bool')` is `true`), so either would fabricate matches.
+static bool canNarrowLeftKeyToStorageKey(const DataTypePtr & left_type, const DataTypePtr & right_type, const DataTypePtr & common_type)
+{
+    /// A pure nullability mismatch needs no conversion on either side: the existing storage-join branch below
+    /// already keeps the right key un-cast for it. Only a genuine width mismatch reaches the new path.
+    if (right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
+        return false;
+
+    if (right_type->lowCardinality())
+        return false;
+
+    auto bare_right = removeNullable(right_type);
+    if (!isNativeInteger(bare_right) || bare_right->hasCustomName())
+        return false;
+
+    if (!isNativeInteger(removeLowCardinalityAndNullable(left_type)))
+        return false;
+
+    /// The common type must be the left key type, i.e. this really is a narrowing to the storage key.
+    /// `getLeastSupertype` drops `LowCardinality`, so both sides are compared through the same helper.
+    return removeLowCardinalityAndNullable(common_type)->equals(*removeLowCardinalityAndNullable(left_type));
+}
+
+static const ActionsDAG::Node & addAccurateCastOrNull(ActionsDAG & dag, const ActionsDAG::Node & node, const DataTypePtr & type)
+{
+    Field type_name(type->getName());
+    auto string_type = std::make_shared<DataTypeString>();
+    const auto * type_node = &dag.addColumn(
+        string_type->createColumnConst(0, type_name), string_type, calculateConstantActionNodeName(type_name));
+    auto function = createInternalCast(
+        ColumnWithTypeAndName{node.result_type, node.result_name}, type, CastType::accurateOrNull, {}, nullptr);
+    return dag.addFunction(function, {&node, type_node}, {});
+}
 
 static void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & right_node, const JoinSettings & join_settings, const JoinPlanningContext & planning_context)
 {
@@ -737,6 +781,20 @@ static void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionR
             left_node.getColumnName(), left_type->getName(),
             right_node.getColumnName(), right_type->getName());
         throw;
+    }
+
+    /// A `StorageJoin`'s hash table is keyed on the declared storage key type and cannot be rebuilt at query time,
+    /// so widening the right key to the common type would produce a key expression the storage cannot look up
+    /// (INCOMPATIBLE_TYPE_OF_JOIN). When the storage key is narrower, carry the conversion on the left key instead
+    /// and leave the right key as the bare storage column.
+    if (planning_context.is_frozen_storage_join && canNarrowLeftKeyToStorageKey(left_type, right_type, common_type))
+    {
+        auto target_type = removeNullable(right_type);
+        left_node = JoinActionRef::transform({left_node}, [&target_type](auto & dag, auto && nodes)
+        {
+            return &addAccurateCastOrNull(dag, *nodes.at(0), target_type);
+        });
+        return;
     }
 
     auto cast_transform = [&common_type, &planning_context](auto & dag, auto && nodes)
@@ -1135,6 +1193,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
     JoinPlanningContext planning_context;
     planning_context.is_storage_join = bool(prepared_join_storage);
+    planning_context.is_frozen_storage_join = bool(prepared_join_storage.storage_join);
     for (const auto * node : actions_after_join)
     {
         if (node->type == ActionsDAG::ActionType::ALIAS)
