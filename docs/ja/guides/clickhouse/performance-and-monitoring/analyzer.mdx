@@ -7,7 +7,7 @@ title: 'アナライザ'
 doc_type: 'reference'
 ---
 
-ClickHouse バージョン `24.3` では、新しいクエリアナライザがデフォルトで有効化されました。
+ClickHouse バージョン `24.3` では、アナライザがデフォルトで有効化されました。
 その動作の詳細については、[こちら](/ja/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer#analyzer)をご覧ください。
 
 <div id="known-incompatibilities">
@@ -66,6 +66,8 @@ FROM numbers(10)
 WHERE number > 5
 GROUP BY n
 ```
+
+移行を支援するために、アナライザは、集約されていない AND 条件について、以前の `HAVING` 句から `WHERE` 句への 書き換え を再現できます。この動作を有効にするには、`analyzer_compatibility_allow_non_aggregate_in_having = 1` を設定してください。この設定は ClickHouse `26.7` 以降で利用できます。この設定は、`WITH CUBE`、`WITH ROLLUP`、`WITH TOTALS`、および `GROUPING SETS` では無視されます。集約、`grouping`、または非決定論的関数を含む条件は `HAVING` に残ります。いずれかの条件にウィンドウ関数または状態を持つ関数 (たとえば `rowNumberInBlock`) が含まれている場合は、従来の legacy の動作に合わせて、`HAVING` 全体に対する 書き換え が無効になります。
 
 <div id="create-view-with-invalid-query">
   ### 無効なクエリを含む `CREATE VIEW`
@@ -146,7 +148,7 @@ FULL JOIN t2 USING (payload);
   #### `USING` 句におけるカラムの型修飾子の扱い
 </div>
 
-新しいバージョンのアナライザでは、`USING` 句で指定されたカラムの共通スーパータイプを決定するルールが標準化され、より予測可能な結果が得られるようになりました。特に、`LowCardinality` や `Nullable` のような型修飾子を扱う場合にその傾向が顕著です。
+アナライザでは、`USING` 句で指定されたカラムの共通スーパータイプを決定するルールが標準化され、より予測可能な結果が得られるようになりました。特に、`LowCardinality` や `Nullable` のような型修飾子を扱う場合にその傾向が顕著です。
 
 * `LowCardinality(T)` と `T`: 型 `LowCardinality(T)` のカラムを型 `T` のカラムと JOIN した場合、結果の共通スーパータイプは `T` となり、`LowCardinality` 修飾子は実質的に破棄されます。
 * `Nullable(T)` と `T`: 型 `Nullable(T)` のカラムを型 `T` のカラムと JOIN した場合、結果の共通スーパータイプは `Nullable(T)` となり、Nullable の性質が保持されます。
@@ -231,7 +233,7 @@ SELECT toTypeName(if(0, [2, 3, 4], 'String'))
   ## Cloud 移行
 </div>
 
-新たな機能とパフォーマンスの最適化をサポートするため、現在無効になっているすべてのインスタンスで新しいクエリ アナライザを有効化しています。この変更により SQL のスコープ規則がより厳格になり、準拠していないクエリはお客様側で手動で更新する必要があります。
+新たな機能とパフォーマンスの最適化をサポートするため、現在無効になっているすべてのインスタンスでアナライザを有効化しています。この変更により SQL のスコープ規則がより厳格になり、準拠していないクエリはお客様側で手動で更新する必要があります。
 
 <div id="migration-workflow">
   ### 移行ワークフロー
@@ -293,6 +295,24 @@ SELECT user_id, device_id FROM table GROUP BY user_id
 SELECT user_id, any(device_id) FROM table GROUP BY user_id
 -- または
 SELECT user_id, device_id FROM table GROUP BY user_id, device_id
+```
+
+<div id="non-aggregated-columns-in-having">
+  ### HAVING 内の非集約カラム
+</div>
+
+エラー: `Column ... is not under aggregate function and not in GROUP BY keys (NOT_AN_AGGREGATE)`。Exception code: 215
+
+原因: 以前のアナライザは、`HAVING` 内の非集約の AND 条件を暗黙的に `WHERE` へ移動し、集約前のフィルターとして扱っていました。アナライザは Standard SQL に従うため、`HAVING` で参照できるのは集約キーと集約関数のみです。
+
+解決策: 述語を手動で `HAVING` から `WHERE` に移すか、`analyzer_compatibility_allow_non_aggregate_in_having = 1` (ClickHouse `26.7` 以降で利用可能) を有効にして、移行を補助するためにレガシーな書き換えを復元してください。この互換性設定は、`WITH CUBE`、`WITH ROLLUP`、`WITH TOTALS`、`GROUPING SETS` では無視されます。集約、`grouping`、または非決定論的関数を含む条件は `HAVING` に残ります。いずれかの条件にウィンドウ関数または状態を持つ関数 (たとえば `rowNumberInBlock`) が含まれる場合、書き換えは `HAVING` 全体で無効になり、レガシーの動作と一致します。
+
+```sql
+/* ORIGINAL QUERY */
+SELECT category, sum(value) FROM t GROUP BY category HAVING service = 'svc1';
+
+/* FIXED QUERY */
+SELECT category, sum(value) FROM t WHERE service = 'svc1' GROUP BY category;
 ```
 
 <div id="duplicate-cte-names">

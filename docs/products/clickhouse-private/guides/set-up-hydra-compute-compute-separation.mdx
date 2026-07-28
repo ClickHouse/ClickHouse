@@ -25,9 +25,7 @@ For a conceptual overview of how Hydra works, see [Hydra Compute Separation](/pr
 
 <Steps>
 
-<Step>
-
-## 1. Identify the Parent Cluster
+<Step title="1. Identify the Parent Cluster" id="1-identify-the-parent-cluster">
 
 Before creating a child, note the parent cluster's **name** and **namespace**. The parent must be in a running state -- children cannot be provisioned if the parent is stopped, terminated, or idled.
 
@@ -40,9 +38,7 @@ For a cluster named `default-xx-01`, the defaults are:
 
 </Step>
 
-<Step>
-
-## 2. Create a Child Instance
+<Step title="2. Create a Child Instance" id="2-create-a-child-instance">
 
 <Warning>
 
@@ -73,9 +69,7 @@ The child instance will:
 
 </Step>
 
-<Step>
-
-## 3. Create a Read-Only Child (Optional)
+<Step title="3. Create a Read-Only Child (Optional)" id="3-create-a-read-only-child-optional">
 
 To create a child that can query data but cannot write to it, add the `isReadonly` flag:
 
@@ -96,9 +90,7 @@ Read-only children are suitable for reporting, dashboards, or analytics workload
 
 </Step>
 
-<Step>
-
-## 4. Verify the Child Instance
+<Step title="4. Verify the Child Instance" id="4-verify-the-child-instance">
 
 After the child is deployed, verify it is running:
 

@@ -26,13 +26,11 @@ These steps are similar to the secure s3 setup as described in ["Accessing S3 da
 Follow the steps below on your AWS account:
 
 <Steps>
-<Step>
-##### Create an AWS S3 bucket {#create-s3-bucket}
+<Step title="Create an AWS S3 bucket" id="create-s3-bucket">
 
 Create an AWS S3 bucket in your account where you want to export backups.
 </Step>
-<Step>
-##### Create an IAM role {#create-iam-role}
+<Step title="Create an IAM role" id="create-iam-role">
 
 AWS uses role based authentication, so create an IAM role that the ClickHouse Cloud service will be able to assume into, to write to this bucket.
 
@@ -58,8 +56,7 @@ AWS uses role based authentication, so create an IAM role that the ClickHouse Cl
 }
 ```
 </Step>
-<Step>
-##### Update permissions for role {#update-permissions-for-role}
+<Step title="Update permissions for role" id="update-permissions-for-role">
 
 You will also need to set the permissions for this role so this ClickHouse Cloud service can write to the S3 bucket.
 This is done by creating a permissions policy for the role with a JSON similar to this one, where you substitute in your bucket ARN for the resource in both places.
@@ -109,27 +106,23 @@ This is done by creating a permissions policy for the role with a JSON similar t
 Follow the steps below in the ClickHouse Cloud console to configure the external bucket:
 
 <Steps>
-<Step>
-##### Change external backup {#configure-external-bucket}
+<Step title="Change external backup" id="configure-external-bucket">
 
 On the Settings page, click on Set up external backup:
 
 <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Change external backup" size="lg" />
 </Step>
-<Step>
-##### Configure AWS IAM Role ARN and S3 bucket details {#configure-aws-iam-role-arn-and-s3-bucket-details}
+<Step title="Configure AWS IAM Role ARN and S3 bucket details" id="configure-aws-iam-role-arn-and-s3-bucket-details">
 
 On the next screen provide the AWS IAM Role ARN you just created and the S3 bucket URL in the following format:
 
 <Image img="/images/cloud/manage/backups/configure_arn_s3_details.webp" alt="Configure AWS IAM Role ARN and S3 bucket details" size="lg" />
 </Step>
-<Step>
-##### Save changes {#save-changes}
+<Step title="Save changes" id="save-changes">
 
 Click on “Save External Bucket” to save the settings
 </Step>
-<Step>
-##### Changing the backup schedule from the default schedule {#changing-the-backup-schedule}
+<Step title="Changing the backup schedule from the default schedule" id="changing-the-backup-schedule">
 
 External Backups will now happen in your bucket on the default schedule.
 Alternatively, you can configure the backup schedule from the “Settings” page.
@@ -137,8 +130,7 @@ If configured differently, the custom schedule is used to write backups to your
 bucket and the default schedule (backups every 24 hours) is used for backups in
 the ClickHouse cloud owned bucket.
 </Step>
-<Step>
-##### View backups stored in your bucket {#view-backups-stored-in-your-bucket}
+<Step title="View backups stored in your bucket" id="view-backups-stored-in-your-bucket">
 
 The Backups page will display these backups in your bucket in a separate table
 as shown below:
@@ -152,21 +144,18 @@ as shown below:
 Follow the steps below to restore backups from AWS:
 
 <Steps>
-<Step>
-##### Create a new service to restore to {#create-new-service-to-restore-to}
+<Step title="Create a new service to restore to" id="create-new-service-to-restore-to">
 
 Create a new service to restore the backup to.
 </Step>
-<Step>
-##### Add service ARN {#add-service-arn}
+<Step title="Add service ARN" id="add-service-arn">
 
 Add the newly created service’s ARN (from the service settings page in Clickhouse
 Cloud console) to the trust policy for the IAM role. This is the same as the
 [second step](#create-iam-role) in the AWS Steps section above. This is required
 so the new service can access the S3 bucket.
 </Step>
-<Step>
-##### Get SQL command used to restore backup {#obtain-sql-command-to-restore-backup}
+<Step title="Get SQL command used to restore backup" id="obtain-sql-command-to-restore-backup">
 
 Click on the “access or restore a backup” link above the list of backups in the
 UI to get the SQL command to restore the backup. The command will look like this:
@@ -189,8 +178,7 @@ This doesn't mean the restore was successful.
 You will need to monitor the `system.backups` table to see if the restore has finished and if it succeeded or failed.
 </Tip>
 </Step>
-<Step>
-##### Run the restore command {#run-the-restore-command}
+<Step title="Run the restore command" id="run-the-restore-command">
 
 Run the restore command from the SQL console in the newly created service to
 restore the backup.
@@ -206,13 +194,11 @@ Follow the steps below to take backups to GCP:
 #### Steps to follow in GCP {#gcp-steps-to-follow}
 
 <Steps>
-<Step>
-##### Create a GCP storage bucket {#create-a-gcp-storage-bucket}
+<Step title="Create a GCP storage bucket" id="create-a-gcp-storage-bucket">
 
 Create a storage bucket in your GCP account to export backups to.
 </Step>
-<Step>
-##### Generate an HMAC Key and Secret {#generate-an-hmac-key-and-secret}
+<Step title="Generate an HMAC Key and Secret" id="generate-an-hmac-key-and-secret">
 
 Generate an HMAC Key and Secret, which is required for password-based authentication. Follow the steps below to generate the keys:
 
@@ -240,27 +226,23 @@ Generate an HMAC Key and Secret, which is required for password-based authentica
 Follow the steps below in the ClickHouse Cloud console to configure the external bucket:
 
 <Steps>
-<Step>
-##### Change external backup {#gcp-configure-external-bucket}
+<Step title="Change external backup" id="gcp-configure-external-bucket">
 
 On the `Settings` page, click on `Change external backup`
 
 <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Change external backup" size="lg" />
 </Step>
-<Step>
-##### Configure GCP HMAC Key and Secret {#gcp-configure-gcp-hmac-key-and-secret}
+<Step title="Configure GCP HMAC Key and Secret" id="gcp-configure-gcp-hmac-key-and-secret">
 
 In the popup dialogue, provide the GCP bucket path, HMAC key and Secret created in the previous section.
 
 <Image img="/images/cloud/manage/backups/gcp_configure.webp" alt="Configure GCP HMAC Key and Secret" size="md" />
 </Step>
-<Step>
-##### Save external bucket {#gcp-save-external-bucket}
+<Step title="Save external bucket" id="gcp-save-external-bucket">
 
 Click on `Save External Bucket` to save the settings.
 </Step>
-<Step>
-##### Changing the backup schedule from the default schedule {#gcp-changing-the-backup-schedule}
+<Step title="Changing the backup schedule from the default schedule" id="gcp-changing-the-backup-schedule">
 
 External Backups will now happen in your bucket on the default schedule. 
 Alternatively, you can configure the backup schedule from the `Settings` page. 
@@ -268,8 +250,7 @@ If configured differently, the custom schedule is used to write backups to your
 bucket and the default schedule (backups every 24 hours) is used for backups in 
 ClickHouse cloud owned bucket.
 </Step>
-<Step>
-##### View backups stored in your bucket {#gcp-view-backups-stored-in-your-bucket}
+<Step title="View backups stored in your bucket" id="gcp-view-backups-stored-in-your-bucket">
 
 The Backups page should display these backups in your bucket in a separate table as shown below:
 
@@ -282,13 +263,11 @@ The Backups page should display these backups in your bucket in a separate table
 Follow the steps below to restore backups from GCP:
 
 <Steps>
-<Step>
-##### Create a new service to restore to {#gcp-create-new-service-to-restore-to}
+<Step title="Create a new service to restore to" id="gcp-create-new-service-to-restore-to">
 
 Create a new service to restore the backup to.
 </Step>
-<Step>
-##### Get SQL command used to restore backup {#gcp-obtain-sql-command-to-restore-backup}
+<Step title="Get SQL command used to restore backup" id="gcp-obtain-sql-command-to-restore-backup">
 
 Click on the `access or restore a backup` link above the list of backups in the 
 UI to get the SQL command to restore the backup. The command should look like this,
@@ -314,8 +293,7 @@ This doesn't mean the restore was successful.
 You will need to monitor the `system.backups` table to see if the restore has finished and if it succeeded or failed.
 </Tip>
 </Step>
-<Step>
-##### Run SQL command to restore backup {#gcp-run-sql-command-to-restore-backup}
+<Step title="Run SQL command to restore backup" id="gcp-run-sql-command-to-restore-backup">
 
 Run the restore command from the SQL console in the newly created service to 
 restore the backup.
@@ -331,14 +309,12 @@ Follow the steps below to take backups to Azure:
 #### Steps to follow in Azure {#steps-to-follow-in-azure}
 
 <Steps>
-<Step>
-##### Create a storage account {#azure-create-a-storage-account}
+<Step title="Create a storage account" id="azure-create-a-storage-account">
 
 Create a storage account or select an existing storage account in the Azure 
 portal where you want to store your backups.
 </Step>
-<Step>
-##### Get connection string {#azure-get-connection-string}
+<Step title="Get connection string" id="azure-get-connection-string">
 
 * a. In your storage account overview, look for the section called `Security + networking` and click on `Access keys`.
 * b. Here, you will see `key1` and `key2`. Under each key, you’ll find a `Connection string` field.
@@ -351,36 +327,31 @@ portal where you want to store your backups.
 Follow the steps below in the ClickHouse Cloud console to configure the external bucket:
 
 <Steps>
-<Step>
-##### Change external backup {#azure-configure-external-bucket}
+<Step title="Change external backup" id="azure-configure-external-bucket">
 
 On the `Settings` page, click on `Change external backup`
 
 <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Change external backup" size="lg" />
 </Step>
-<Step>
-##### Provide connection string and container name for your Azure storage account {#azure-provide-connection-string-and-container-name-azure}
+<Step title="Provide connection string and container name for your Azure storage account" id="azure-provide-connection-string-and-container-name-azure">
 
 On the next screen provide the Connection String and Container Name for your
 Azure storage account created in the previous section:
 
 <Image img="/images/cloud/manage/backups/azure_connection_details.webp" alt="Provide connection string and container name for your Azure storage account" size="md" />
 </Step>
-<Step>
-##### Save external bucket {#azure-save-external-bucket}
+<Step title="Save external bucket" id="azure-save-external-bucket">
 
 Click on `Save External Bucket` to save the settings
 </Step>
-<Step>
-##### Changing the backup schedule from the default schedule {#azure-changing-the-backup-schedule}
+<Step title="Changing the backup schedule from the default schedule" id="azure-changing-the-backup-schedule">
 
 External Backups will now happen in your bucket on the default schedule. Alternatively,
 you can configure the backup schedule from the “Settings” page. If configured differently,
 the custom schedule is used to write backups to your bucket and the default schedule
 (backups every 24 hours) is used for backups in ClickHouse cloud owned bucket.
 </Step>
-<Step>
-##### View backups stored in your bucket {#azure-view-backups-stored-in-your-bucket}
+<Step title="View backups stored in your bucket" id="azure-view-backups-stored-in-your-bucket">
 
 The Backups page should display these backups in your bucket in a separate table 
 as shown below:
@@ -394,14 +365,12 @@ as shown below:
 To restore backups from Azure, follow the steps below:
 
 <Steps>
-<Step>
-##### Create a new service to restore to {#azure-create-new-service-to-restore-to}
+<Step title="Create a new service to restore to" id="azure-create-new-service-to-restore-to">
 
 Create a new service to restore the backup to. Currently, we only support 
 restoring a backup into a new service.
 </Step>
-<Step>
-##### Get SQL command used to restore backup {#azure-obtain-sql-command-to-restore-backup}
+<Step title="Get SQL command used to restore backup" id="azure-obtain-sql-command-to-restore-backup">
 
 Click on the `access or restore a backup` link above the list of backups in the 
 UI to obtain the SQL command to restore the backup. The command should look like
@@ -427,8 +396,7 @@ This doesn't mean the restore was successful.
 You will need to monitor the `system.backups` table to see if the restore has finished and if it succeeded or failed.
 </Tip>
 </Step>
-<Step>
-##### Run SQL command to restore backup {#azure-run-sql-command-to-restore-backup}
+<Step title="Run SQL command to restore backup" id="azure-run-sql-command-to-restore-backup">
 
 Run the restore command from the SQL console in the newly created service to 
 restore the backup.

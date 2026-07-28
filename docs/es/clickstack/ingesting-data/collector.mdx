@@ -555,7 +555,7 @@ Por esta razón, la distribución ClickStack del OTel collector usa el [batch pr
   ### Usa inserciones asíncronas
 </div>
 
-Normalmente, los usuarios se ven obligados a enviar lotes más pequeños cuando el throughput de un collector es bajo, y aun así esperan que los datos lleguen a ClickHouse con una latencia mínima de extremo a extremo. En este caso, se envían lotes pequeños cuando expira el `timeout` del processor por lotes. Esto puede causar problemas, y es entonces cuando se requieren inserciones asíncronas. Este problema es poco frecuente si envías datos al ClickStack collector actuando como Gateway; al actuar como agregadores, mitigan este problema. Consulta [Roles del collector](#collector-roles).
+Normalmente, los usuarios se ven obligados a enviar lotes más pequeños cuando el throughput de un collector es bajo, y aun así esperan que los datos lleguen a ClickHouse con una latencia mínima de extremo a extremo. En este caso, se envían lotes pequeños cuando expira el `timeout` del batch processor. Esto puede causar problemas, y es entonces cuando se requieren inserciones asíncronas. Este problema es poco frecuente si envías datos al ClickStack collector actuando como Gateway; al actuar como agregadores, mitigan este problema. Consulta [Roles del collector](#collector-roles).
 
 Si no se pueden garantizar lotes grandes, puedes delegar la agrupación por lotes en ClickHouse mediante [inserciones asíncronas](/es/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts). Con las inserciones asíncronas, los datos se insertan primero en un búfer y después se escriben en el almacenamiento de la base de datos más tarde, es decir, de forma asíncrona.
 
@@ -626,9 +626,9 @@ Para las instancias agente encargadas de enviar eventos a un gateway y únicamen
 | 10k/segundo     | 1 CPU, 1GiB                      |
 
 <div id="schema-choice">
-  ## Elección del esquema: Map vs JSON
+  ## Elección de esquema: Map vs JSON
 </div>
 
-El collector de ClickStack crea tablas que almacenan atributos como columnas `Map(LowCardinality(String), String)` de forma predeterminada. Este es el esquema recomendado para las cargas de trabajo de observabilidad. También está disponible, en beta, un esquema de tipo `JSON` para evaluarlo en cargas de trabajo con un conjunto pequeño y estable de claves de atributos.
+El ClickStack collector crea tablas que almacenan atributos en columnas `Map(LowCardinality(String), String)` de forma predeterminada. Este es el esquema recomendado para cargas de trabajo de observabilidad. También hay disponible en beta un esquema de tipo `JSON` para su evaluación en cargas de trabajo con un conjunto pequeño y estable de claves de atributos.
 
-Para ver la comparación completa, cuándo conviene usar cada uno, las variables de entorno necesarias para habilitar el esquema de tipo `JSON` y la guía de migración, consulta [Map vs tipo JSON](/es/clickstack/ingesting-data/schema/map-vs-json).
+Para ver la comparación completa, cuándo conviene usar cada uno, las variables de entorno necesarias para habilitar el esquema de tipo `JSON` y la guía de migración, consulta [Map vs JSON type](/es/clickstack/ingesting-data/schema/map-vs-json).

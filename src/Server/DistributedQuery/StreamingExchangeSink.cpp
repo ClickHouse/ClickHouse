@@ -1,7 +1,8 @@
 #include <limits>
 #include <memory>
 #include <base/defines.h>
-#ifdef OS_LINUX
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <Server/DistributedQuery/StreamingExchangeSink.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
@@ -11,10 +12,10 @@
 #include <Core/ProtocolDefines.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <Common/Epoll.h>
 #include <Common/logger_useful.h>
 #include <Poco/Net/NetException.h>
 
-#include <sys/epoll.h>
 #include <unistd.h>
 
 
@@ -236,7 +237,7 @@ void StreamingExchangeSink::work()
     }
 }
 
-std::pair<int, uint32_t> StreamingExchangeSink::scheduleForEvent()
+std::tuple<int, uint32_t, int64_t> StreamingExchangeSink::scheduleForEvent()
 {
     /// If socket is not ready yet, wait on the eventfd
     if (!socket)
@@ -254,13 +255,14 @@ std::pair<int, uint32_t> StreamingExchangeSink::scheduleForEvent()
         /// EPOLLIN | EPOLLRDHUP wake us on peer-initiated NoMoreDataNeeded / half-close.
         return {
             socket->sockfd(),
-            EPOLLOUT | EPOLLIN | EPOLLRDHUP | EPOLLERR};
+            EPOLLOUT | EPOLLIN | EPOLLRDHUP | EPOLLERR,
+            -1};
     }
 
     int fd = future_connection->getEventFd();
 
     LOG_TEST(log, "Schedule exchange stream sink {} waiting for connection, eventfd: {}", stream_name, fd);
-    return {fd, EPOLLIN | EPOLLERR};
+    return {fd, EPOLLIN | EPOLLERR, -1};
 }
 
 void StreamingExchangeSink::consume(Chunk chunk)
