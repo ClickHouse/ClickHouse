@@ -119,7 +119,10 @@ namespace
         return memcmp(staged, key.bytes.data(), key.bytes.size()) == 0;
     }
 
-    /// Copy candidate bytes into staged (padded) storage, honoring the source's padding.
+    /// Copy candidate bytes into staged (padded) storage, honoring the source's padding. The
+    /// overflow-tolerant branch also writes up to 15 bytes past the destination, so the callers
+    /// must append in increasing byte order (the scribble lands in space the next append
+    /// overwrites); a caller that scatters must use a plain bounded copy instead.
     void ALWAYS_INLINE copyStagedKeyBytes(char * staged, const KeyBytesRef & key)
     {
         if (key.bytes.empty())
@@ -728,17 +731,24 @@ void NO_INLINE Aggregator::publishDelayedRecords(
         byte_cursor[b] += size;
         keys.key_offsets[pos] = byte_pos;
 
-        /// The same extraction the count path uses: states that expose their padded column
-        /// buffers hand the bytes out directly (in particular, the packed-string method does
-        /// not rebuild the key, which would re-hash its content per record), and the copy
-        /// respects the source's padding, including the empty-key case.
+        /// The same byte extraction the count path uses: states that expose their padded
+        /// column buffers hand the bytes out directly (in particular, the packed-string method
+        /// does not rebuild the key, which would re-hash its content per record). The copy is
+        /// a plain bounded memcpy, NOT copyStagedKeyBytes: records scatter into bucket-grouped
+        /// positions, so an overflow-tolerant write would stomp neighbors that are already in
+        /// place. The guard also keeps the empty packed key's null data pointer away from
+        /// memcpy, which declares its sources nonnull.
         const size_t key_row = key_row_override ? *key_row_override : adaptive.miss_source_rows[i];
         withStagedKeyBytes<SharedKey>(
             local_find_state,
             key_row,
             size,
             scratch_pool,
-            [&](const KeyBytesRef & key) { copyStagedKeyBytes(keys.key_bytes.data() + byte_pos, key); });
+            [&](const KeyBytesRef & key)
+            {
+                if (!key.bytes.empty())
+                    memcpy(keys.key_bytes.data() + byte_pos, key.bytes.data(), key.bytes.size());
+            });
     }
 
     payload.argument_columns.assign(columns.size(), nullptr);

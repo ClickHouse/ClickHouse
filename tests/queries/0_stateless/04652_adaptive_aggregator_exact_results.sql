@@ -75,6 +75,20 @@ SELECT count() FROM
      SELECT * FROM (SELECT if(number < 200000, number, 200000 + number % 100) AS g, count() AS c FROM numbers_mt(600000) GROUP BY g SETTINGS enable_adaptive_aggregator = 0))
 );
 
+-- The empty string is a legitimate staged key: the packed representation hands it out as a
+-- view with a null data pointer, which the staging copy must keep away from memcpy.
+SELECT 'Empty string keys';
+SELECT count() FROM
+(
+    (SELECT * FROM (SELECT if(number % 5 = 0, '', toString(number % 60000)) AS k, count() AS c, sum(number) AS s FROM numbers_mt(400000) GROUP BY k SETTINGS enable_adaptive_aggregator = 0)
+     EXCEPT ALL
+     SELECT * FROM (SELECT if(number % 5 = 0, '', toString(number % 60000)) AS k, count() AS c, sum(number) AS s FROM numbers_mt(400000) GROUP BY k SETTINGS enable_adaptive_aggregator = 1))
+    UNION ALL
+    (SELECT * FROM (SELECT if(number % 5 = 0, '', toString(number % 60000)) AS k, count() AS c, sum(number) AS s FROM numbers_mt(400000) GROUP BY k SETTINGS enable_adaptive_aggregator = 1)
+     EXCEPT ALL
+     SELECT * FROM (SELECT if(number % 5 = 0, '', toString(number % 60000)) AS k, count() AS c, sum(number) AS s FROM numbers_mt(400000) GROUP BY k SETTINGS enable_adaptive_aggregator = 0))
+);
+
 SELECT 'Under external pressure';
 SELECT count() FROM
 (
