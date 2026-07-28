@@ -36,11 +36,11 @@ quantileTDigest(level)(expr)
 
 **Argumentos**
 
-* `expr` — Expresión sobre los valores de la columna cuyo resultado sea de tipos de datos numéricos, Date o DateTime. [`(U)Int*`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Decimal*`](/es/reference/data-types/decimal) o [`Date`](/es/reference/data-types/date) o [`DateTime`](/es/reference/data-types/datetime)
+* `expr` — Expresión sobre los valores de la columna cuyo resultado sea de tipos de datos numéricos, `Date` o `DateTime`. [`(U)Int*`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Date`](/es/reference/data-types/date) o [`DateTime`](/es/reference/data-types/datetime)
 
 **Valor devuelto**
 
-Cuantil aproximado del nivel especificado. [`Float64`](/es/reference/data-types/float) o [`Date`](/es/reference/data-types/date) o [`DateTime`](/es/reference/data-types/datetime)
+Cuantil aproximado del nivel especificado. Para entradas `Date` y `DateTime`, el formato de salida coincide con el formato de entrada. [`Float32`](/es/reference/data-types/float) o [`Date`](/es/reference/data-types/date) o [`DateTime`](/es/reference/data-types/datetime)
 
 **Ejemplos**
 

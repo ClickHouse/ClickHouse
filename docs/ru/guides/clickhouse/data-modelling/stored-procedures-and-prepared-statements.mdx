@@ -573,7 +573,7 @@ WHERE month = toStartOfMonth(today());
   #### Ключевые различия
 </div>
 
-1. **Управляющий поток** - Хранимые процедуры MySQL используют `IF/ELSE` и циклы `WHILE`. В ClickHouse эту логику следует реализовывать в прикладном коде (Python, Java и т. д.)
+1. **Управление потоком выполнения** - Хранимые процедуры MySQL используют `IF/ELSE` и циклы `WHILE`. В ClickHouse эту логику следует реализовывать в прикладном коде (Python, Java и т. д.)
 2. **Транзакции** - MySQL поддерживает `BEGIN/COMMIT/ROLLBACK` для ACID-транзакций. ClickHouse — аналитическая база данных, оптимизированная для рабочих нагрузок с добавлением данных, а не для транзакционных обновлений
 3. **Обновления** - MySQL использует операторы `UPDATE`. В ClickHouse для изменяемых данных предпочтительнее `INSERT` с [ReplacingMergeTree](/ru/reference/engines/table-engines/mergetree-family/replacingmergetree) или [CollapsingMergeTree](/ru/reference/engines/table-engines/mergetree-family/collapsingmergetree)
 4. **Переменные и состояние** - Хранимые процедуры MySQL могут объявлять переменные (`DECLARE v_discount`). В ClickHouse состоянием следует управлять в прикладном коде

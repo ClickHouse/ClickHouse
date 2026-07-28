@@ -190,6 +190,7 @@ class JobConfigs:
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="python3 ./ci/jobs/copilot_review_job.py --codex",
         allow_failure=True,
+        enable_gh_auth=True,
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
         ],
@@ -377,23 +378,62 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
+    release_build_jobs_with_examples = [
+        job.set_command(f"{job.command} --build-examples").set_provides(
+            ArtifactNames.CLICKHOUSE_EXAMPLES
+        )
+        if f"({BuildTypes.ARM_RELEASE})" in job.name
+        else job
+        for job in release_build_jobs
+    ]
+    cfi_build_job = common_build_job_config.parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_CFI,
+            provides=[ArtifactNames.CH_AMD_CFI, ArtifactNames.DEB_AMD_CFI],
+            runs_on=RunnerLabels.ARM_LARGE,
+            timeout=4 * 3600,
+        ),
+    )
+    cfi_integration_jobs = common_integration_test_job_config.parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"amd_cfi, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM,
+                requires=[ArtifactNames.CH_AMD_CFI],
+            )
+            for total_batches in (4,)
+            for batch in range(1, total_batches + 1)
+        ]
+    )
+    cfi_stress_job = common_stress_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_cfi",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.DEB_AMD_CFI],
+        ),
+    )
     # sccache-warmup builds (MasterCI only): compile amd_release / arm_release
     # with the PR release builds' cmake flags (see PR_CACHE_WARMUP_BUILD_TYPES
     # in build_clickhouse.py) while keeping the shared sccache read-write. This
     # populates the cache so that read-only PR release builds get cache hits.
     # They provide no artifacts and run no profile/master-head post hooks - the
     # only purpose is to warm sccache.
-    sccache_warmup_build_jobs = common_build_job_config.parametrize(
-        Job.ParamSet(
-            parameter=BuildTypes.AMD_RELEASE_PR_CACHE_WARMUP,
-            runs_on=RunnerLabels.ARM_LARGE,
-            timeout=3 * 3600,
-        ),
-        Job.ParamSet(
-            parameter=BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP,
-            runs_on=RunnerLabels.ARM_LARGE,
-        ),
-    )
+    sccache_warmup_build_jobs = [
+        job.set_command(f"{job.command} --build-examples")
+        if f"({BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP})" in job.name
+        else job
+        for job in common_build_job_config.parametrize(
+            Job.ParamSet(
+                parameter=BuildTypes.AMD_RELEASE_PR_CACHE_WARMUP,
+                runs_on=RunnerLabels.ARM_LARGE,
+                timeout=3 * 3600,
+            ),
+            Job.ParamSet(
+                parameter=BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP,
+                runs_on=RunnerLabels.ARM_LARGE,
+            ),
+        )
+    ]
     extra_validation_build_jobs = common_build_job_config.set_post_hooks(
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
@@ -560,6 +600,21 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
     )
+    # Merge-queue drift guard: reruns the PR's new/changed stateless tests on
+    # the merge group state (the PR merged with the current `master`), so a PR
+    # whose last CI run predates test-infrastructure changes on `master` (e.g.
+    # a new randomized setting in `tests/clickhouse-test`) is bounced from the
+    # queue instead of breaking `master`. Runs on the `amd_binary` build the
+    # merge queue produces anyway; merge-queue runs use a reduced iteration
+    # count and time budget (see `ci/jobs/functional_tests.py`) to keep queue
+    # latency bounded.
+    stateless_tests_flaky_mq_jobs = common_ft_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_binary, flaky check",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_BINARY],
+        ),
+    )
     stateless_tests_targeted_pr_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="arm_asan_ubsan, targeted",
@@ -639,7 +694,15 @@ class JobConfigs:
     functional_tests_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_asan_ubsan, distributed plan, parallel",
-            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
+            # `--distributed-plan` fans each query across local parallel replicas,
+            # multiplying the server-side memory of every in-flight query, so the
+            # aggregate RSS of the parallel suite's co-scheduled queries is heavier
+            # than a normal ASan run and overruns the sanitizer memory cap on the
+            # default 64 GiB runner. Use a LARGE runner (same 32 vCPU as MEDIUM_CPU,
+            # but 128 GiB instead of 64 GiB RAM) so the suite keeps full concurrency
+            # and the default timeout instead of cutting workers - which barely
+            # moved peak RSS and only made the job slower.
+            runs_on=RunnerLabels.AMD_LARGE,
             requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
         ),
         *[
@@ -839,6 +902,50 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_SMALL_MEM,
         ),
     )
+    # Builds the "before" unit_tests_dbms (merge-base + only the PR's unit-test file
+    # changes) in-job, so it needs the binary-builder image and submodules. It does NOT
+    # require the PR's UNITTEST_AMD_ASAN_UBSAN artifact: the "touched tests pass on the
+    # PR binary" side is delegated to the regular `Unit tests (asan_ubsan)` job (see the
+    # module docstring), so this job is not gated behind `build_amd_asan_ubsan` and
+    # builds the "before" binary in parallel with the build matrix — matching the early
+    # start of the functional/integration bugfix validators.
+    bugfix_validation_ut_job = Job.Config(
+        name=JobNames.BUGFIX_VALIDATE_UT,
+        runs_on=RunnerLabels.AMD_LARGE,
+        command="python3 ./ci/jobs/unit_tests_bugfix_validation_job.py",
+        # The job both builds and RUNS the before-binary in this container. Running
+        # `unit_tests_dbms` needs `io_uring` (the `silk` fiber runtime calls
+        # `io_uring_queue_init_params` at startup), which Docker's default seccomp
+        # profile blocks — without this the before-binary aborts before any test runs.
+        # `--privileged` mirrors how the regular unit-test job runs the same binary
+        # (`clickhouse/test-base+--privileged`).
+        run_in_docker=BINARY_DOCKER_COMMAND + "+--privileged",
+        needs_submodules=True,
+        timeout=3600 * 4,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/unit_tests_bugfix_validation_job.py",
+                "./ci/jobs/build_clickhouse.py",
+                "./src",
+                "./contrib/",
+                "./.gitmodules",
+                "./CMakeLists.txt",
+                "./PreLoad.cmake",
+                "./cmake",
+                "./base",
+                "./programs",
+                "./rust",
+            ],
+            with_git_submodules=True,
+        ),
+        result_name_for_cidb="Tests",
+    ).set_allow_failure(True)
+    # allow_failure: an inconclusive ERROR (e.g. the before-binary could not be compiled,
+    # or crashed before any test ran) must NOT hard-block merge — "we couldn't determine"
+    # is not a reason to block. Only a definitive FAIL (the added test passes on the
+    # merge-base too, so it doesn't catch the bug) should block. Like the FT/IT bugfix
+    # jobs, the merge decision is centralized in new_tests_check.py, which blocks the unit
+    # case iff this job reported FAIL.
     _fuzzer_command = (
         "python3 ./ci/jobs/unit_tests_job.py --gtest_filter=FunctionsStress.*"
     )
@@ -1318,20 +1425,23 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ]
     )
-    clickbench_master_jobs = Job.Config(
+    clickbench_jobs = Job.Config(
         name=JobNames.CLICKBENCH,
         runs_on=RunnerLabels.FUNC_TESTER_AMD,
         command="python3 ./ci/jobs/clickbench.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/clickbench.py",
-                # ClickBench starts the server via `ClickHouseProc.start_light`,
-                # which now clears leftover processes through `server_cleanup.py`.
-                # Track both so changes to the shared start path reschedule the job.
+                # ClickBench starts the server via `ClickHouseService`, which
+                # clears leftover processes through `server_cleanup.py`. Track
+                # both so changes to the shared start path reschedule the job.
                 "./ci/jobs/scripts/clickhouse_proc.py",
                 "./ci/jobs/scripts/server_cleanup.py",
                 "./ci/jobs/scripts/clickbench/",
+                "./ci/jobs/scripts/clickhouse_service.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                "./ci/praktika/result.py",
+                "./tests/config/users.d/ci_logs_sender.yaml",
             ],
         ),
         run_in_docker="clickhouse/stateless-test+--shm-size=16g+--network=host",
@@ -1384,7 +1494,7 @@ class JobConfigs:
             # introduced under ./docs.
             exclude_paths=[
                 "./docs/README.md",
-                "./docs/_description_templates/",
+                "./docs/_templates/",
                 "./docs/_includes/",
                 "./docs/changelog_entry_guidelines.md",
                 "./docs/changelogs/",
@@ -1396,7 +1506,9 @@ class JobConfigs:
     docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse",
+        # --apt-mirror-region points apt at the in-region AWS Ubuntu mirror; the
+        # runners are in us-east-1, where Canonical's mirrors are often unreachable.
+        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse --apt-mirror-region us-east-1",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/docker_server.py",
@@ -1410,7 +1522,9 @@ class JobConfigs:
     docker_keeper = Job.Config(
         name=JobNames.DOCKER_KEEPER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse",
+        # --apt-mirror-region points apt at the in-region AWS Ubuntu mirror; the
+        # runners are in us-east-1, where Canonical's mirrors are often unreachable.
+        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse --apt-mirror-region us-east-1",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/docker_server.py",
@@ -1508,7 +1622,7 @@ class JobConfigs:
         requires=["Build (amd_binary)"],
     )
     jepsen_server = Job.Config(
-        name=JobNames.JEPSEN_KEEPER,
+        name=JobNames.JEPSEN_SERVER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
         command="python3 ./ci/jobs/jepsen_check.py server",
         requires=["Build (amd_binary)"],
@@ -1603,7 +1717,19 @@ class JobConfigs:
         command="python3 ./ci/jobs/llvm_coverage_job.py",
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py"],
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/llvm_coverage_job.py"],
+            # llvm_coverage_job.py shells out to all of these; a change to any of
+            # them must mark this job (and, transitively via `requires`, the
+            # coverage build and every FT/IT/UT coverage shard) as affected -
+            # otherwise praktika's changed-files filter drops the job even when
+            # filter_job.py's should_skip_job says it should run.
+            include_paths=[
+                "./ci/jobs/llvm_coverage_job.py",
+                "./ci/jobs/scripts/merge_llvm_coverage.sh",
+                "./ci/jobs/scripts/generate_diff_coverage_report.sh",
+                "./ci/jobs/scripts/print_uncovered_code.py",
+                "./ci/jobs/scripts/dedup_lcov_instantiations.py",
+                "./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
+            ],
         ),
         timeout=3600,
         enable_gh_auth=True,

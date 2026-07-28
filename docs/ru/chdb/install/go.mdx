@@ -1,0 +1,269 @@
+---
+title: 'chDB для Go'
+sidebarTitle: 'Go'
+slug: /chdb/install/go
+description: 'Как установить и использовать chDB с Go'
+keywords: ['chdb', 'go', 'golang', 'embedded', 'clickhouse', 'sql', 'olap']
+doc_type: 'guide'
+---
+
+chDB-go предоставляет привязки chDB для Go, позволяя выполнять запросы ClickHouse прямо в ваших приложениях Go без каких-либо внешних зависимостей.
+
+<div id="installation">
+  ## Установка
+</div>
+
+<Steps>
+  <Step title="Установите libchdb" id="install-libchdb">
+    Сначала установите библиотеку chDB:
+
+    ```bash
+    curl -sL https://lib.chdb.io | bash
+    ```
+  </Step>
+
+  <Step title="Установите chdb-go" id="install-chdb-go">
+    Установите пакет для Go:
+
+    ```bash
+    go install github.com/chdb-io/chdb-go@latest
+    ```
+
+    Или добавьте его в `go.mod`:
+
+    ```bash
+    go get github.com/chdb-io/chdb-go
+    ```
+  </Step>
+</Steps>
+
+<div id="usage">
+  ## Использование
+</div>
+
+<div id="cli">
+  ### Интерфейс командной строки
+</div>
+
+В chDB-go есть интерфейс командной строки для быстрых запросов:
+
+```bash
+# Simple query
+./chdb-go "SELECT 123"
+
+# Interactive mode
+./chdb-go
+
+# Interactive mode with persistent storage
+./chdb-go --path /tmp/chdb
+```
+
+<div id="quick-start">
+  ### Библиотека Go — быстрый старт
+</div>
+
+<div id="stateless-queries">
+  #### Запросы без сохранения состояния
+</div>
+
+Для простых разовых запросов:
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/chdb-io/chdb-go/chdb"
+)
+
+func main() {
+    // Execute a simple query
+    result, err := chdb.Query("SELECT version()", "CSV")
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println(result)
+}
+```
+
+<div id="stateful-queries">
+  #### Запросы с сохранением состояния в рамках сеанса
+</div>
+
+Для сложных запросов с сохранением состояния:
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/chdb-io/chdb-go/chdb"
+)
+
+func main() {
+    // Create a session with persistent storage
+    session, err := chdb.NewSession("/tmp/chdb-data")
+    if err != nil {
+        panic(err)
+    }
+    defer session.Cleanup()
+
+    // Create database and table
+    _, err = session.Query(`
+        CREATE DATABASE IF NOT EXISTS testdb;
+        CREATE TABLE IF NOT EXISTS testdb.test_table (
+            id UInt32,
+            name String
+        ) ENGINE = MergeTree() ORDER BY id
+    `, "")
+    
+    if err != nil {
+        panic(err)
+    }
+
+    // Insert data
+    _, err = session.Query(`
+        INSERT INTO testdb.test_table VALUES 
+        (1, 'Alice'), (2, 'Bob'), (3, 'Charlie')
+    `, "")
+    
+    if err != nil {
+        panic(err)
+    }
+
+    // Query data
+    result, err := session.Query("SELECT * FROM testdb.test_table ORDER BY id", "Pretty")
+    if err != nil {
+        panic(err)
+    }
+    
+    fmt.Println(result)
+}
+```
+
+<div id="sql-driver">
+  #### Интерфейс SQL-драйвера
+</div>
+
+chDB-go реализует интерфейс Go `database/sql`:
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    _ "github.com/chdb-io/chdb-go/chdb/driver"
+)
+
+func main() {
+    // Open database connection
+    db, err := sql.Open("chdb", "")
+    if err != nil {
+        panic(err)
+    }
+    defer db.Close()
+
+    // Query with standard database/sql interface
+    rows, err := db.Query("SELECT COUNT(*) FROM url('https://datasets.clickhouse.com/hits/hits.parquet')")
+    if err != nil {
+        panic(err)
+    }
+    defer rows.Close()
+
+    for rows.Next() {
+        var count int
+        err := rows.Scan(&count)
+        if err != nil {
+            panic(err)
+        }
+        fmt.Printf("Count: %d\n", count)
+    }
+}
+```
+
+<div id="query-streaming">
+  #### Потоковые запросы для больших датасетов
+</div>
+
+Для обработки больших датасетов, которые не умещаются в памяти, используйте потоковые запросы:
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+    "github.com/chdb-io/chdb-go/chdb"
+)
+
+func main() {
+    // Create a session for streaming queries
+    session, err := chdb.NewSession("/tmp/chdb-stream")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer session.Cleanup()
+
+    // Execute a streaming query for large dataset
+    streamResult, err := session.QueryStreaming(
+        "SELECT number, number * 2 as double FROM system.numbers LIMIT 1000000", 
+        "CSV",
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer streamResult.Free()
+
+    rowCount := 0
+    
+    // Process data in chunks
+    for {
+        chunk := streamResult.GetNext()
+        if chunk == nil {
+            // No more data
+            break
+        }
+        
+        // Check for streaming errors
+        if err := streamResult.Error(); err != nil {
+            log.Printf("Streaming error: %v", err)
+            break
+        }
+        
+        rowsRead := chunk.RowsRead()
+        // You can process the chunk data here
+        // For example, write to file, send over network, etc.
+        fmt.Printf("Processed chunk with %d rows\n", rowsRead)
+        rowCount += int(rowsRead)
+        if rowCount%100000 == 0 {
+            fmt.Printf("Processed %d rows so far...\n", rowCount)
+        }
+    }
+    
+    fmt.Printf("Total rows processed: %d\n", rowCount)
+}
+```
+
+**Преимущества потокового запроса:**
+
+* **Эффективное использование памяти** - Обрабатывайте большие наборы данных, не загружая всё в память
+* **Обработка в реальном времени** - Начинайте обрабатывать данные, как только поступит первый фрагмент
+* **Поддержка отмены** - Долгие запросы можно отменять с помощью `Cancel()`
+* **Обработка ошибок** - Проверяйте ошибки во время потоковой обработки с помощью `Error()`
+
+<div id="api-documentation">
+  ## Документация по API
+</div>
+
+chDB-go предоставляет как высокоуровневые, так и низкоуровневые API:
+
+* **[Документация по высокоуровневому API](https://github.com/chdb-io/chdb-go/blob/main/chdb.md)** - Рекомендуется для большинства сценариев
+* **[Документация по низкоуровневому API](https://github.com/chdb-io/chdb-go/blob/main/lowApi.md)** - Для более сложных сценариев, требующих тонкой настройки
+
+<div id="requirements">
+  ## Системные требования
+</div>
+
+* Go 1.21 или более поздней версии
+* Совместимо с Linux и macOS

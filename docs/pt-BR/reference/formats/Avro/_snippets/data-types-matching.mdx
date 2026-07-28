@@ -35,7 +35,7 @@ A tabela abaixo mostra todos os tipos de dados compatíveis com o formato Apache
 **  O [tipo Variant](/pt-BR/reference/data-types/variant) aceita implicitamente `null` como valor de um campo; assim, por exemplo, o `union(T1, T2, null)` do Avro será convertido em `Variant(T1, T2)`.
 Como resultado, ao gerar Avro a partir do ClickHouse, precisamos sempre incluir o tipo `null` no conjunto de tipos `union` do Avro, pois não sabemos se algum valor é de fato `null` durante a inferência de esquema.
 
-*** [Tipos lógicos do Avro](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+*** [Tipos lógicos do Avro](https://avro.apache.org/docs/1.12.0/specification/#logical-types)
 
 Tipos de dados lógicos do Avro não compatíveis:
 

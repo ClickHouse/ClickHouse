@@ -73,7 +73,7 @@ tb   751E76E8199196D454941C45D1B3A323F1433BD6
 تُشفِّر سلسلة بيانات ثنائية، إلى جانب الجزء المقروء بشريًا (HRP)، باستخدام خوارزميات [Bech32 or Bech32m](https://en.bitcoin.it/wiki/Bech32).
 
 <Note>
-  عند استخدام نوع البيانات [`FixedString`](/ar/reference/data-types/fixedstring)، إذا كانت القيمة لا تملأ الحقل بالكامل، فستُحشى بمحارف null.
+  عند استخدام نوع البيانات [`FixedString`](/ar/reference/data-types/fixedstring)، إذا كانت القيمة لا تملأ الصف بالكامل، فستُحشى بمحارف null.
   وبينما تتعامل الدالة `bech32Encode` مع هذا تلقائيًا بالنسبة إلى الوسيط hrp، يجب ألا تكون القيم في الوسيط data محشوة.
   لهذا السبب، لا يُنصح باستخدام نوع البيانات [`FixedString`](/ar/reference/data-types/fixedstring) لقيم بياناتك إلا إذا كنت
   متأكدًا من أن أطوالها جميعًا متساوية، وأن عمود `FixedString` لديك مضبوط على هذا الطول أيضًا.
@@ -1086,8 +1086,8 @@ SELECT reinterpretAsUInt64(reverse(unbin('1110'))) AS num
 إذا أردت تحويل النتيجة إلى عدد، يمكنك استخدام الدالتين `reverse` و `reinterpretAs<Type>`.
 
 <Note>
-  يفسّر `clickhouse-client` السلاسل على أنها UTF-8.
-  وقد يؤدي ذلك إلى ظهور القيم التي يعيدها `hex` بشكل غير متوقع.
+  `clickhouse-client` يفسّر السلاسل على أنها UTF-8.
+  وقد يؤدي ذلك إلى ظهور القيم التي يعيدها `hex` على نحو غير متوقع.
 </Note>
 
 يدعم الأحرف الكبيرة والصغيرة `A-F`.

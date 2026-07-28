@@ -139,6 +139,8 @@ public:
     std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
     bool hasImpreciseEstimate() const { return imprecise_estimate; }
     const std::unordered_map<String, ColumnStats> & getResultColumnStats() const { return result_column_stats; }
+    std::optional<UInt64> getInputRowsEstimation(JoinTableSide side) const;
+
     void setOptimized(
         std::optional<UInt64> estimated_rows_ = {},
         std::unordered_map<String, ColumnStats> column_stats_ = {},
@@ -243,6 +245,8 @@ public:
 
     void initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override;
     String getName() const override { return "JoinStepLogicalLookup"; }
+
+    QueryPlanRawPtrs getChildPlans() override;
 
     PreparedJoinStorage & getPreparedJoinStorage() { return prepared_join_storage; }
 

@@ -6,6 +6,8 @@
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
 #include <Core/MergeSelectorAlgorithm.h>
+#include <Core/MergeTreeSerializationEnums.h>
+#include <Core/SettingsEnums.h>
 #include <Core/SettingsChangesHistory.h>
 #include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -57,14 +59,14 @@ namespace ErrorCodes
     DECLARE(UInt64, min_compress_block_size, 0, R"(
 Minimum size of blocks of uncompressed data required for compression when
 writing the next mark. You can also specify this setting in the global settings
-(see [min_compress_block_size](/operations/settings/merge-tree-settings#min_compress_block_size)
+(see [min_compress_block_size](/reference/settings/merge-tree-settings/min#min_compress_block_size)
 setting). The value specified when the table is created overrides the global value
 for this setting.
 )", 0) \
     DECLARE(UInt64, max_compress_block_size, 0, R"(
 The maximum size of blocks of uncompressed data before compressing for writing
 to a table. You can also specify this setting in the global settings
-(see [max_compress_block_size](/operations/settings/merge-tree-settings#max_compress_block_size)
+(see [max_compress_block_size](/reference/settings/merge-tree-settings/max#max_compress_block_size)
 setting). The value specified when the table is created overrides the global
 value for this setting.
 )", 0) \
@@ -226,17 +228,14 @@ it is recommended to set it below the maximum filename length (usually 255
 bytes) with some gap to avoid filesystem errors.
 )", 0) \
     DECLARE(UInt64, min_bytes_for_full_part_storage, 0, R"(
-Only available in ClickHouse Cloud. Minimal uncompressed size in bytes to
-use full type of storage for data part instead of packed
-)", 0) \
+    Minimal uncompressed size in bytes to use full type of storage for data part instead of packed
+    )", 0) \
     DECLARE(UInt32, min_level_for_full_part_storage, 0, R"(
-Only available in ClickHouse Cloud. Minimal part level to
-use full type of storage for data part instead of packed
-)", 0) \
+    Minimal part level to use full type of storage for data part instead of packed
+    )", 0) \
     DECLARE(UInt64, min_rows_for_full_part_storage, 0, R"(
-Only available in ClickHouse Cloud. Minimal number of rows to use full type
-of storage for data part instead of packed
-)", 0) \
+    Minimal number of rows to use full type of storage for data part instead of packed
+    )", 0) \
     DECLARE(UInt64, compact_parts_max_bytes_to_buffer, 128 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal number of bytes to write in a
 single stripe in compact parts
@@ -541,8 +540,8 @@ Possible values:
 **Usage**
 
 The value of the `number_of_free_entries_in_pool_to_execute_mutation` setting
-should be less than the value of the [background_pool_size](/operations/server-configuration-parameters/settings.md/#background_pool_size)
-* [background_merges_mutations_concurrency_ratio](/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio).
+should be less than the value of the [background_pool_size](/reference/settings/server-settings/settings/background#background_pool_size)
+* [background_merges_mutations_concurrency_ratio](/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
 Otherwise, ClickHouse will throw an exception.
 )", 0) \
     DECLARE(UInt64, max_number_of_mutations_for_replica, 0, R"(
@@ -623,7 +622,7 @@ Do fsync for part directory after all part operations (writes, renames, etc.).
 )", 0) \
     DECLARE(UInt64, non_replicated_deduplication_window, 0, R"(
 The number of the most recently inserted blocks in the non-replicated
-[MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table
+[MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) table
 for which hash sums are stored to check for duplicates.
 
 Possible values:
@@ -641,11 +640,11 @@ OPTIMIZE FINAL query.
 )", 0) \
     DECLARE(Bool, materialize_statistics_on_merge, true, R"(When enabled, merges will build and store statistics for new parts.
     Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md)
-    or [during INSERTs](/operations/settings/settings.md#materialize_statistics_on_insert))", 0) \
+    or [during INSERTs](/reference/settings/session-settings/materialize#materialize_statistics_on_insert))", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
 When enabled, merges build and store skip indices for new parts.
 Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index)
-or [during INSERTs](/operations/settings/settings.md/#materialize_skip_indexes_on_insert).
+or [during INSERTs](/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert).
 
 See also [exclude_materialize_skip_indexes_on_merge](#exclude_materialize_skip_indexes_on_merge) for more fine-grained control.
 )", 0) \
@@ -655,7 +654,7 @@ Excludes provided comma delimited list of skip indexes from being built and stor
 
 The excluded skip indexes will still be built and stored by an explicit
 [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index) query or during INSERTs depending on
-the [materialize_skip_indexes_on_insert](/operations/settings/settings.md/#materialize_skip_indexes_on_insert)
+the [materialize_skip_indexes_on_insert](/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert)
 session setting.
 
 Example:
@@ -735,18 +734,12 @@ Possible values:
 Merge parts if every part in the range is older than the value of
 `min_age_to_force_merge_seconds`.
 
-By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool`
-(see `enable_max_bytes_limit_for_min_age_to_force_merge`).
-
 Possible values:
 - Positive integer.
 )", 0) \
     DECLARE(Bool, min_age_to_force_merge_on_partition_only, false, R"(
 Whether `min_age_to_force_merge_seconds` should be applied only on the entire
 partition and not on subset.
-
-By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool` (see
-`enable_max_bytes_limit_for_min_age_to_force_merge`).
 
 Possible values:
 - true, false
@@ -772,8 +765,8 @@ Possible values:
 
 The value of the `number_of_free_entries_in_pool_to_execute_optimize_entire_partition`
 setting should be less than the value of the
-[background_pool_size](/operations/server-configuration-parameters/settings.md/#background_pool_size)
-* [background_merges_mutations_concurrency_ratio](/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio).
+[background_pool_size](/reference/settings/server-settings/settings/background#background_pool_size)
+* [background_merges_mutations_concurrency_ratio](/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
 Otherwise, ClickHouse throws an exception.
 )", 0) \
     DECLARE(Bool, remove_rolled_back_parts_immediately, 1, R"(
@@ -844,15 +837,15 @@ table can have a superset of the source table's indices and projections.
     DECLARE(MergeSelectorAlgorithm, merge_selector_algorithm, MergeSelectorAlgorithm::SIMPLE, R"(
 The algorithm to select parts for merges assignment
 )", EXPERIMENTAL) \
-    DECLARE(Bool, merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once, false, R"(
-Enable heuristic for simple merge selector which will lower maximum limit for merge choice.
-By doing so number of concurrent merges will increase which can help with TOO_MANY_PARTS
-errors but at the same time this will increase the write amplification.
-)", EXPERIMENTAL) \
     DECLARE(UInt64, merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent, 5, R"(
 Controls the exponent value used in formulae building lowering curve. Lowering exponent will
 lower merge widths which will trigger increase in write amplification. The reverse is also true.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once, true, R"(
+Enable heuristic for simple merge selector which will lower maximum limit for merge choice.
+By doing so number of concurrent merges will increase which can help with TOO_MANY_PARTS
+errors but at the same time this will increase the write amplification.
+)", 0) \
     DECLARE(Bool, merge_selector_enable_heuristic_to_remove_small_parts_at_right, true, R"(
 Enable heuristic for selecting parts for merge which removes parts from right
 side of range, if their size is less than specified ratio (0.01) of sum_size.
@@ -924,6 +917,35 @@ error, but at the same time `SELECT` performance might degrade. Also in case
 of a merge issue (for example, due to insufficient disk space) you will
 notice it later than you would with the original 300.
 
+)", 0) \
+    DECLARE(UInt64, dead_blobs_to_throw_insert, 1000000, R"(
+If the number of blobs pending removal in the dead blobs queues of the table's disks is more than the
+`dead_blobs_to_throw_insert` value, `INSERT` is interrupted with the following error:
+
+> "Too many dead blobs in queue (N) on disks of table. Blobs cleanup is processing significantly
+  slower than inserts"
+
+The dead blobs queue belongs to the disk and is shared by all tables on it (including blobs of already
+dropped tables), so size the threshold for the whole disk rather than a single table.
+
+Possible values:
+- Any positive integer.
+- 0 — disabled.
+)", 0) \
+    DECLARE(UInt64, dead_blobs_to_delay_insert, 100000, R"(
+If the number of blobs pending removal in the dead blobs queues of the table's disks exceeds the
+`dead_blobs_to_delay_insert` value, an `INSERT` is artificially slowed down (up to `max_delay_to_insert`).
+
+The dead blobs queue belongs to the disk and is shared by all tables on it (including blobs of already
+dropped tables), so size the threshold for the whole disk rather than a single table.
+
+:::tip
+It is useful when a server fails to clean up blobs quickly enough.
+:::
+
+Possible values:
+- Any positive integer.
+- 0 — disabled.
 )", 0) \
     DECLARE(UInt64, inactive_parts_to_throw_insert, 0, R"(
 If the number of inactive parts in a single partition more than the
@@ -1148,7 +1170,7 @@ Possible values:
 - Any positive integer.
 - 0 (disable deduplication)
 
-For [insert deduplication](../../engines/table-engines/mergetree-family/replication.md),
+For [insert deduplication](/reference/engines/table-engines/mergetree-family/replication),
 when writing into replicated tables, ClickHouse writes deduplication hash sums into
 ClickHouse Keeper. Hash sums are stored only for the most recent
 `replicated_deduplication_window` blocks. The oldest hash sums are removed from
@@ -1369,9 +1391,9 @@ Possible values:
 )", 0) \
     DECLARE(UInt64, max_replicated_fetches_network_bandwidth, 0, R"(
 Limits the maximum speed of data exchange over the network in bytes per
-second for [replicated](../../engines/table-engines/mergetree-family/replication.md)
+second for [replicated](/reference/engines/table-engines/mergetree-family/replication)
 fetches. This setting is applied to a particular table, unlike the
-[`max_replicated_fetches_network_bandwidth_for_server`](/operations/settings/merge-tree-settings#max_replicated_fetches_network_bandwidth)
+[`max_replicated_fetches_network_bandwidth_for_server`](/reference/settings/server-settings/settings/max-replicated#max_replicated_fetches_network_bandwidth_for_server)
 setting, which is applied to the server.
 
 You can limit both server network and network for a particular table, but for
@@ -1397,7 +1419,7 @@ new nodes.
 Limits the maximum speed of data exchange over the network in bytes per
 second for [replicated](/engines/table-engines/mergetree-family/replacingmergetree)
 sends. This setting is applied to a particular table, unlike the
-[`max_replicated_sends_network_bandwidth_for_server`](/operations/settings/merge-tree-settings#max_replicated_sends_network_bandwidth)
+[`max_replicated_sends_network_bandwidth_for_server`](/reference/settings/server-settings/settings/max-replicated#max_replicated_sends_network_bandwidth_for_server)
 setting, which is applied to the server.
 
 You can limit both server network and network for a particular table, but
@@ -1660,7 +1682,7 @@ new format.
 )", 0) \
     DECLARE(Bool, use_minimalistic_part_header_in_zookeeper, true, R"(
 Storage method of the data parts headers in ZooKeeper. If enabled, ZooKeeper
-stores less data. For details, see [here](/operations/server-configuration-parameters/settings#use_minimalistic_part_header_in_zookeeper).
+stores less data. For details, see [here](/reference/settings/server-settings/settings/use#use_minimalistic_part_header_in_zookeeper).
 )", 0) \
     DECLARE(UInt64, finished_mutations_to_keep, 100, R"(
 How many records about mutations that are done to keep. If zero, then keep
@@ -1748,8 +1770,11 @@ Name of storage disk policy
 Name of storage disk. Can be specified instead of storage policy.
 )", 0) \
     DECLARE(Bool, table_disk, false, R"(
-This is table disk, the path/endpoint should point to the table data, not to
-the database data. Can be set only for s3_plain/s3_plain_rewritable/web.
+This is table disk: the path/endpoint points to the table data, not the database data.
+Supported for object-storage disks whose metadata lives on the object storage itself
+(s3_plain, s3_plain_rewritable, web, web_index) and their cached variants. Encrypted
+variants are supported only over the writable s3_plain / s3_plain_rewritable disks, not
+over the read-only web / web_index disks.
 )", 0) \
     DECLARE(Bool, allow_nullable_key, false, R"(
 Allow Nullable types as primary keys.
@@ -1777,7 +1802,7 @@ query-level setting.
 Possible values:
 - Any positive integer.
 
-You can also specify a query complexity setting [max_partitions_to_read](/operations/settings/settings#max_partitions_to_read)
+You can also specify a query complexity setting [max_partitions_to_read](/reference/settings/session-settings/max-partitions#max_partitions_to_read)
 at a query / session / profile level.
 )", 0) \
     DECLARE(UInt64, max_concurrent_queries, 0, R"(
@@ -1827,7 +1852,7 @@ Possible values:
 
 The value of the `min_bytes_to_rebalance_partition_over_jbod` setting should
 not be less than the value of the
-[max_bytes_to_merge_at_max_space_in_pool](/operations/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)
+[max_bytes_to_merge_at_max_space_in_pool](/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool)
 / 1024. Otherwise, ClickHouse throws an exception.
 )", 0) \
     DECLARE(Bool, check_sample_column_is_correct, true, R"(
@@ -1919,9 +1944,10 @@ When enabled, an implicit min-max (skipping) index is added for the persistent v
 Requires `enable_block_offset_column = 1` to take effect. The index is built only during merges,
 not during inserts.
 )", 0) \
-    DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
+    DECLARE(String, auto_statistics_types, "basic, uniq_v2", R"(
 Comma-separated list of statistics types to calculate automatically on all suitable columns.
-Supported statistics types: basic, tdigest, countmin, minmax, uniq.
+Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
+The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
 )", 0) \
     DECLARE(UInt64, packed_skip_index_max_bytes, 0, R"(
 Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
@@ -2002,6 +2028,9 @@ Maximum time between runs of merge coordinator thread
     DECLARE(Float, shared_merge_tree_merge_coordinator_factor, 1.1f, R"(
 Time changing factor for delay of coordinator thread
 )", 0) \
+    DECLARE(MergeCoordinatorDistributionAlgorithm, shared_merge_tree_merge_coordinator_distribution_algorithm, MergeCoordinatorDistributionAlgorithm::WATER_FILLING, R"(
+What algorithm will be used by merge coordinator thread to distribute merges between replicas
+)", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
 Timeout that merge worker thread will use if it is needed to update it's state after immediate action
 )", 0) \
@@ -2044,9 +2073,9 @@ to trigger such an action.
 
 **See Also**
 
-- [ignore_cold_parts_seconds](/operations/settings/settings#ignore_cold_parts_seconds)
-- [prefer_warmed_unmerged_parts_seconds](/operations/settings/settings#prefer_warmed_unmerged_parts_seconds)
-- [cache_warmer_threads](/operations/settings/settings#cache_warmer_threads)
+- [ignore_cold_parts_seconds](/reference/settings/session-settings/ignore#ignore_cold_parts_seconds)
+- [prefer_warmed_unmerged_parts_seconds](/reference/settings/session-settings/prefer#prefer_warmed_unmerged_parts_seconds)
+- [cache_warmer_threads](/reference/settings/session-settings/other#cache_warmer_threads)
 )", 0) \
     DECLARE(String, cache_populated_by_fetch_filename_regexp, "", R"(
 :::note
@@ -2085,7 +2114,10 @@ Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
 How many partition discoveries should be packed into batch
-)", EXPERIMENTAL) \
+)", 0) \
+    DECLARE(Bool, shared_merge_tree_virtual_parts_partition_atomic_discovery, true, R"(
+Will SMT discover virtual parts partition atomically with extra data fetch and watches setup.
+)", 0) \
     DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, true, R"(
 Enabled cleanup of Keeper entries of empty partition.
 )", 0) \
@@ -2244,7 +2276,7 @@ The setting can always be toggled back with `ALTER TABLE ... MODIFY SETTING tabl
     DECLARE(Bool, materialize_projections_on_insert, true, R"(
 When enabled, INSERTs create new parts with projections.
 Otherwise, they can be created by explicit [MATERIALIZE PROJECTION](/sql-reference/statements/alter/projection.md/#materialize-projection)
-or during merges with [materialize_projections_on_merge](/operations/settings/merge-tree-settings.md/#materialize_projections_on_merge).
+or during merges with [materialize_projections_on_merge](/reference/settings/merge-tree-settings/materialize-projections#materialize_projections_on_merge).
 )", 0) \
     DECLARE(Bool, materialize_projections_on_merge, false, R"(
 When enabled, a merge rebuilds a projection that is missing from all of its source parts (for example because they were
@@ -2252,7 +2284,7 @@ inserted with `materialize_projections_on_insert = 0`), so the merged part has t
 
 Merges still only combine parts that share the same set of projections. To backfill a projection to all existing parts,
 use an explicit [MATERIALIZE PROJECTION](/sql-reference/statements/alter/projection.md/#materialize-projection). Projections
-are also created during INSERTs with [materialize_projections_on_insert](/operations/settings/merge-tree-settings.md/#materialize_projections_on_insert).
+are also created during INSERTs with [materialize_projections_on_insert](/reference/settings/merge-tree-settings/materialize-projections#materialize_projections_on_insert).
 )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
@@ -2332,11 +2364,19 @@ static void validateTableDisk(const DiskPtr & disk)
 {
     if (!disk)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` requires `disk` setting.");
-    const auto * disk_object_storage = dynamic_cast<const DiskObjectStorage *>(disk.get());
-    if (!disk_object_storage)
+
+    const auto description = disk->getDataSourceDescription();
+    if (description.type != DataSourceType::ObjectStorage)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` is not supported for non-ObjectStorage disks");
-    if (!(disk_object_storage->isReadOnly() || disk_object_storage->isPlain()))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` is not supported for {}", disk_object_storage->getStructure());
+
+    /// table_disk loads the table straight from the disk root (no database/UUID path), so its metadata must be
+    /// reconstructable from the object storage alone; random blob keys (Local, Keeper) keep the map elsewhere.
+    const auto metadata_storage = disk->getMetadataStorage();
+    if (metadata_storage->areBlobPathsRandom())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "MergeTree settings `table_disk` is not supported for {}: it requires metadata stored on the object storage.",
+            description.toString());
 }
 
 IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, MergeTreeSettings, MergeTreeSetting)
@@ -2571,22 +2611,24 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             (*this)[MergeTreeSetting::map_buckets_coefficient].value);
     }
 
-    if ((*this)[MergeTreeSetting::object_shared_data_buckets_for_compact_part] > max_allowed_buckets)
+    /// The reader validates the on-wire bucket count against the same bound
+    /// (`MAX_OBJECT_SHARED_DATA_BUCKETS`), so keep this cap and that guard in sync via the constant.
+    if ((*this)[MergeTreeSetting::object_shared_data_buckets_for_compact_part] > MAX_OBJECT_SHARED_DATA_BUCKETS)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of object_shared_data_buckets_for_compact_part setting ({}) exceeds the maximum allowed value of {}",
             (*this)[MergeTreeSetting::object_shared_data_buckets_for_compact_part].value,
-            max_allowed_buckets);
+            MAX_OBJECT_SHARED_DATA_BUCKETS);
     }
 
-    if ((*this)[MergeTreeSetting::object_shared_data_buckets_for_wide_part] > max_allowed_buckets)
+    if ((*this)[MergeTreeSetting::object_shared_data_buckets_for_wide_part] > MAX_OBJECT_SHARED_DATA_BUCKETS)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of object_shared_data_buckets_for_wide_part setting ({}) exceeds the maximum allowed value of {}",
             (*this)[MergeTreeSetting::object_shared_data_buckets_for_wide_part].value,
-            max_allowed_buckets);
+            MAX_OBJECT_SHARED_DATA_BUCKETS);
     }
 
     if ((*this)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock] != 0

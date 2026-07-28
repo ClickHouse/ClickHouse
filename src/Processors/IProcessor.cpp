@@ -38,7 +38,7 @@ IProcessor::IProcessor(InputPorts inputs_, OutputPorts outputs_) : inputs(std::m
     processor_index = CurrentThread::isInitialized() ? CurrentThread::get().getNextPipelineProcessorIndex() : 0;
 }
 
-void IProcessor::setQueryPlanStep(IQueryPlanStep * step, size_t group)
+void IProcessor::setQueryPlanStep(const IQueryPlanStep * step, size_t group)
 {
     query_plan_step = step;
     query_plan_step_group = group;
@@ -48,6 +48,15 @@ void IProcessor::setQueryPlanStep(IQueryPlanStep * step, size_t group)
         plan_step_description = step->getStepDescription();
         step_uniq_id = step->getUniqID();
     }
+}
+
+void IProcessor::inheritQueryPlanStepFromParent(const IProcessor & parent, size_t group)
+{
+    query_plan_step = parent.query_plan_step;
+    query_plan_step_group = group;
+    plan_step_name = parent.plan_step_name;
+    plan_step_description = parent.plan_step_description;
+    step_uniq_id = parent.step_uniq_id;
 }
 
 IProcessor::Status IProcessor::prepare()
@@ -117,6 +126,14 @@ UInt64 IProcessor::getOutputPortNumber(const OutputPort * output_port) const
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find output port for {} processor", getName());
+}
+
+IProcessor::PortDataCounters IProcessor::getPortDataCounters(const Port & port) const
+{
+    if (&port.getProcessor() != this)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Port does not belong to {} processor", getName());
+
+    return {port.rows, port.bytes};
 }
 
 IProcessor::ProcessorDataStats IProcessor::getProcessorDataStats() const

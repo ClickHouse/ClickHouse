@@ -21,32 +21,30 @@ Voici un guide pas à pas expliquant comment configurer votre instance RDS Maria
 </Info>
 
 <div id="enable-binlog-retention-rds">
-  ## Activer la conservation des journaux binaires
+  ## Activer la rétention du journal binaire
 </div>
 
-Le journal binaire est un ensemble de fichiers de log contenant des informations sur les modifications de données apportées à une instance de serveur MySQL. Les fichiers de journal binaire sont nécessaires à la réplication. Les deux étapes ci-dessous doivent être suivies :
+Le journal binaire est un ensemble de fichiers de log contenant des informations sur les modifications de données effectuées sur une instance de serveur MySQL. Les fichiers du journal binaire sont requis pour la réplication. Les deux étapes ci-dessous doivent être suivies :
 
-<div id="enable-binlog-logging-rds">
-  ### 1. Activer la journalisation binaire via les sauvegardes automatiques
-</div>
+<Steps>
+  <Step title="Activer la journalisation binaire via la sauvegarde automatisée" id="enable-binlog-logging-rds">
+    La fonctionnalité de sauvegardes automatisées détermine si la journalisation binaire est activée ou désactivée pour MySQL. Elle peut être configurée dans la console AWS :
 
-La fonctionnalité de sauvegardes automatiques détermine si la journalisation binaire est activée ou désactivée pour MySQL. Elle peut être configurée dans la console AWS :
+    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Activation des sauvegardes automatisées dans RDS" size="lg" border />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Activation des sauvegardes automatiques dans RDS" size="lg" border />
+    Il est conseillé de définir une durée de conservation des sauvegardes suffisamment longue en fonction du cas d’usage de la réplication.
+  </Step>
 
-Il est recommandé de définir une durée de conservation des sauvegardes suffisamment longue, selon le cas d’usage de la réplication.
+  <Step title="Heures de conservation des binlogs" id="binlog-retention-hours-rds">
+    Amazon RDS for MariaDB utilise une méthode différente pour définir la durée de conservation des binlogs, c’est-à-dire la durée pendant laquelle un fichier binlog contenant des modifications est conservé. Si certaines modifications ne sont pas lues avant la suppression du fichier binlog, la réplication ne pourra pas se poursuivre. La valeur par défaut des heures de conservation des binlogs est NULL, ce qui signifie que les journaux binaires ne sont pas conservés.
 
-<div id="binlog-retention-hours-rds">
-  ### 2. Heures de conservation des binlogs
-</div>
+    Pour spécifier le nombre d’heures pendant lesquelles conserver les journaux binaires sur une instance de base de données, utilisez la fonction mysql.rds&#95;set&#95;configuration avec une période de conservation des binlogs suffisamment longue pour permettre la réplication. `24 hours` correspond au minimum recommandé.
 
-Amazon RDS for MariaDB utilise une méthode différente pour définir la durée de conservation des binlogs, c’est-à-dire la durée pendant laquelle un fichier binlog contenant des modifications est conservé. Si certaines modifications ne sont pas lues avant la suppression du fichier binlog, la réplication ne pourra pas se poursuivre. La valeur par défaut des heures de conservation des binlogs est NULL, ce qui signifie que les journaux binaires ne sont pas conservés.
-
-Pour spécifier le nombre d’heures pendant lesquelles conserver les journaux binaires sur une instance de base de données, utilisez la fonction mysql.rds&#95;set&#95;configuration avec une période de conservation des binlogs suffisamment longue pour permettre la réplication. `24 hours` correspond au minimum recommandé.
-
-```text
-mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
-```
+    ```text
+    mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
+    ```
+  </Step>
+</Steps>
 
 <div id="binlog-parameter-group-rds">
   ## Configurez les paramètres du binlog dans le groupe de paramètres
@@ -131,4 +129,4 @@ Si vous souhaitez restreindre le trafic vers votre instance RDS, ajoutez les [ad
   ### Accès privé via AWS PrivateLink
 </div>
 
-Pour vous connecter à votre instance RDS via un réseau privé, vous pouvez utiliser AWS PrivateLink. Suivez notre [guide de configuration AWS PrivateLink pour ClickPipes](/fr/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) pour établir la connexion.
+Pour vous connecter à votre instance RDS via un réseau privé, vous pouvez utiliser AWS PrivateLink. Suivez notre [guide de configuration d’AWS PrivateLink pour ClickPipes](/fr/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) pour établir la connexion.

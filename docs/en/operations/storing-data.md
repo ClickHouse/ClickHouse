@@ -33,6 +33,10 @@ storage configuration for the ClickHouse `MergeTree` family or `Log` family tabl
 family table engines can store data to `S3`, `AzureBlobStorage`, `HDFS` (unsupported) using a disk with types `s3`,
 `azure_blob_storage`, `hdfs` (unsupported) respectively.
 
+:::note
+The `s3` disk type can also be used with S3-compatible object storage providers, such as Alibaba Cloud Object Storage Service. Configure `endpoint` with the provider's S3-compatible endpoint and account for any provider-specific compatibility requirements.
+:::
+
 Disk configuration requires:
 
 1. A `type` section, equal to one of `s3`, `azure_blob_storage`, `hdfs` (unsupported), `local_blob_storage`, `web`.

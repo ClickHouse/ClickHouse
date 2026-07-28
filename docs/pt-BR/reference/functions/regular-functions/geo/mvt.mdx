@@ -35,7 +35,7 @@ para `MVTEncodeGeom` e `ST_AsMVT` para `MVTEncode`.
 </div>
 
 Projeta uma geometria fornecida em coordenadas geográficas (longitude/latitude) para o espaço de pixels local do tile do
-slippy-map identificado por `zoom`, `tile_x` e `tile_y`, recorta-a aos limites do tile, ajusta-a à grade de pixels inteiros
+slippy-map identificado por `zoom`, `tile_x` e `tile_y`, ajusta-a à grade de pixels inteiros, recorta-a aos limites do tile
 e retorna a geometria no espaço do tile.
 
 A projeção é Web Mercator em toda a faixa de coordenadas `UInt32`. As coordenadas retornadas têm origem no
@@ -46,6 +46,10 @@ Tile, de modo que o resultado pode ser usado diretamente em `MVTEncode`. As coor
 Quando `clip` está habilitado (o padrão), a geometria é recortada ao tile expandido em `buffer` pixels (o intervalo
 `[-buffer, extent + buffer]` em cada eixo); geometrias que caem totalmente fora se tornam `NULL`. Este é o equivalente ao
 PostGIS `ST_AsMVTGeom`.
+
+As coordenadas de polígonos são limitadas a uma window `2^30` antes da validação — exatamente a extensão em pixels do mundo inteiro em
+`zoom` 18 e `extent` 4096 — portanto, para tiles realistas, a geometria é validada, mas nunca recortada, e o limite só
+afeta geometrias posicionadas em valores extremos de `zoom` ou `extent`.
 
 O tipo da geometria de saída depende da entrada: um `Point` retorna um `Point`; um `LineString` ou `MultiLineString` retorna uma
 `MultiLineString`; um `Ring`, `Polygon` ou `MultiPolygon` retorna uma `MultiPolygon` (o recorte pode dividir uma geometria em
@@ -327,21 +331,3 @@ em tabelas grandes, estenda a consulta interna como mostrado em [Clustering](#cl
 </div>
 
 * A projeção Web Mercator limita a latitude a `±85.05112878°` e não lida com entradas que cruzam o antimeridiano.
-
-* **O recorte de polígonos não garante uma saída MVT válida.** O recorte corrige a orientação e o fechamento dos anéis, mas não as autointerseções. Portanto, um anel autointersectante (&quot;gravata-borboleta&quot;) não é reparado: dependendo de como ele intersecta o tile, ele é emitido sem alterações (ainda inválido) ou descartado como `NULL`. Por exemplo, uma gravata-borboleta inteiramente dentro do tile é descartada, enquanto os mesmos quatro cantos, organizados como um anel simples, são mantidos:
-
-```sql
--- self-intersecting ring -> dropped (NULL)
-SELECT MVTEncodeGeom([[(40.0, 40.0), (50.0, 50.0), (50.0, 40.0), (40.0, 50.0), (40.0, 40.0)]]::Polygon, 2, 2, 1) IS NULL;  -- 1
--- simple ring, same four corners -> kept
-SELECT MVTEncodeGeom([[(40.0, 40.0), (50.0, 40.0), (50.0, 50.0), (40.0, 50.0), (40.0, 40.0)]]::Polygon, 2, 2, 1) IS NULL;  -- 0
-```
-
-* **Geometry é recortada antes de ser arredondada para a grade de pixels inteiros.** O PostGIS primeiro ajusta a geometria à grade de pixels inteiros e depois a recorta; `MVTEncodeGeom` primeiro recorta (nas coordenadas projetadas de ponto flutuante) e depois arredonda. Perto da borda de um tile, isso pode descartar uma coordenada que, de outra forma, seria arredondada para o pixel da borda. Por exemplo, com `buffer = 0`, um ponto logo a leste da borda do tile é recortado, embora seja arredondado para o pixel da borda `4096`, que uma abordagem que arredonda primeiro manteria:
-
-```sql
--- floating-point x ~= 4096.23 is just past the east edge (extent = 4096) -> clipped
-SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0) IS NULL;          -- 1
--- the same point projected without clipping rounds onto the edge pixel:
-SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0, false);           -- (4096,2664)
-```

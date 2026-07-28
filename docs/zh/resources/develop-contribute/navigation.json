@@ -1,0 +1,65 @@
+{
+  "groups": [
+    {
+      "group": "简介",
+      "pages": [
+        "zh/resources/develop-contribute/introduction/developer-instruction",
+        "zh/resources/develop-contribute/introduction/architecture"
+      ]
+    },
+    {
+      "group": "构建",
+      "pages": [
+        "zh/resources/develop-contribute/build/build",
+        "zh/resources/develop-contribute/build/build-osx",
+        "zh/resources/develop-contribute/build/build-cross-osx",
+        "zh/resources/develop-contribute/build/build-cross-arm",
+        "zh/resources/develop-contribute/build/build-cross-riscv",
+        "zh/resources/develop-contribute/build/build-cross-s390x",
+        "zh/resources/develop-contribute/build/build-cross-loongarch",
+        "zh/resources/develop-contribute/build/build-e2k"
+      ]
+    },
+    {
+      "group": "原生协议",
+      "pages": [
+        "zh/resources/develop-contribute/native-protocol/basics",
+        "zh/resources/develop-contribute/native-protocol/client",
+        "zh/resources/develop-contribute/native-protocol/server",
+        "zh/resources/develop-contribute/native-protocol/columns",
+        "zh/resources/develop-contribute/native-protocol/hash"
+      ]
+    },
+    {
+      "group": "参与贡献",
+      "pages": [
+        "zh/resources/develop-contribute/contribute/tests",
+        "zh/resources/develop-contribute/contribute/continuous-integration",
+        "zh/resources/develop-contribute/contribute/contrib",
+        "zh/resources/develop-contribute/contribute/style",
+        "zh/resources/develop-contribute/contribute/building-and-benchmarking-deflate-qpl",
+        "zh/resources/develop-contribute/contribute/integrating-rust-libraries",
+        "zh/resources/develop-contribute/contribute/profile-guided-optimization",
+        "zh/resources/develop-contribute/contribute/backports"
+      ]
+    },
+    {
+      "group": "集成开发",
+      "pages": [
+        "zh/resources/develop-contribute/integrations/building-integrations",
+        "zh/resources/develop-contribute/integrations/testing-your-integration",
+        "zh/resources/develop-contribute/integrations/documenting-your-integration"
+      ],
+      "root": "zh/resources/develop-contribute/integrations/index"
+    },
+    {
+      "group": "路线图",
+      "pages": [
+        "zh/resources/develop-contribute/roadmap"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-contribute.svg",
+  "item": "开发与贡献",
+  "root": "zh/resources/develop-contribute/index"
+}

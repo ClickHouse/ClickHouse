@@ -9,7 +9,7 @@
 -- 04402_skip_index_on_variant_subcolumn_with_variant_element; see
 -- https://github.com/ClickHouse/ClickHouse/issues/110040
 
--- The rewrite is done by FunctionToSubcolumnsPass (new analyzer only) under
+-- The rewrite is done by FunctionToSubcolumnsPass (analyzer only) under
 -- optimize_functions_to_subcolumns; a single part keeps the granule count stable.
 SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;

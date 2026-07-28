@@ -117,6 +117,14 @@ Enum validatedEnum(Enum value, Enum min_value, Enum max_value, const char * what
 
 ArrowType parseType(const flatbuf::Field & field)
 {
+    /// FlatBuffers verification only proves that a union value, *if present*, is a well-formed table; the
+    /// `Field.type` union is not `(required)`, so a schema whose `type_type` discriminant is set while the
+    /// type value offset is absent passes verification, and the typed `type_as_X()` accessors below return
+    /// null. Reject it here so a single guard covers all those call sites instead of each one dereferencing
+    /// null. A `Type_NONE` discriminant (no value) falls through to the `Unsupported` placeholder as before.
+    if (field.type_type() != flatbuf::Type_NONE && field.type() == nullptr)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC schema field type is set but its value is missing");
+
     ArrowType type;
     switch (field.type_type())
     {

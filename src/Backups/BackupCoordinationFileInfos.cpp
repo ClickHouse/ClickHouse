@@ -10,7 +10,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BACKUP_ENTRY_ALREADY_EXISTS;
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -24,31 +23,25 @@ void BackupCoordinationFileInfos::addFileInfos(BackupFileInfos && file_infos_, c
     file_infos.emplace(host_id_, std::move(file_infos_));
 }
 
-BackupFileInfos BackupCoordinationFileInfos::getFileInfos(const String & host_id_) const
+const BackupFileInfos & BackupCoordinationFileInfos::getFileInfos(const String & host_id_) const
 {
     prepare();
     auto it = file_infos.find(host_id_);
     if (it == file_infos.end())
-        return {};
+    {
+        static const BackupFileInfos empty;
+        return empty;
+    }
+    /// Safe to return by reference: after prepare() the per-host vectors are never mutated (addFileInfos() throws
+    /// once prepared), and file_infos_for_all_hosts already holds raw pointers into them.
     return it->second;
 }
 
-BackupFileInfos BackupCoordinationFileInfos::getFileInfosForAllHosts() const
+void BackupCoordinationFileInfos::forEachFileInfoForAllHosts(const std::function<void(const BackupFileInfo &)> & callback) const
 {
     prepare();
-    BackupFileInfos res;
-    res.reserve(file_infos_for_all_hosts.size());
     for (const auto * file_info : file_infos_for_all_hosts)
-        res.emplace_back(*file_info);
-    return res;
-}
-
-BackupFileInfo BackupCoordinationFileInfos::getFileInfoByDataFileIndex(size_t data_file_index) const
-{
-    prepare();
-    if (data_file_index >= file_infos_for_all_hosts.size())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid data file index: {}", data_file_index);
-    return *(file_infos_for_all_hosts[data_file_index]);
+        callback(*file_info);
 }
 
 namespace

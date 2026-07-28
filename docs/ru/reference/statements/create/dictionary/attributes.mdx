@@ -140,6 +140,8 @@ PRIMARY KEY field1, field2
 
 В запросе к функции `dictGet*` в качестве ключа передаётся Tuple. Пример: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
+Когда составной ключ состоит из одного атрибута, значение ключа можно передать напрямую, без обёртки в `tuple`. Например, допустимы оба варианта: `dictGetString('dict_name', 'attr_name', 'key')` и `dictGetString('dict_name', 'attr_name', tuple('key'))`.
+
 <div id="attributes">
   ## Атрибуты
 </div>

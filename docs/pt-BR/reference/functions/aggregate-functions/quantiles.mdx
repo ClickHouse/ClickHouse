@@ -32,11 +32,11 @@ quantiles(level1, level2, ...)(expr)
 
 **Argumentos**
 
-* `expr` — Expressão sobre os valores da coluna que resulta em tipos de dados numéricos, Date ou DateTime. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`Date`](/pt-BR/reference/data-types/date) ou [`DateTime`](/pt-BR/reference/data-types/datetime)
+* `expr` — Expressão sobre os valores da coluna que resulta em tipos de dados numéricos, `Date`, `DateTime` ou `DateTime64`. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Int128`](/pt-BR/reference/data-types/int-uint) ou [`UInt128`](/pt-BR/reference/data-types/int-uint) ou [`Int256`](/pt-BR/reference/data-types/int-uint) ou [`UInt256`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`Date`](/pt-BR/reference/data-types/date) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Valor retornado**
 
-Array de quantis aproximados dos níveis especificados, na mesma ordem em que foram especificados. [`Array(Float64)`](/pt-BR/reference/data-types/array) ou [`Array(Date)`](/pt-BR/reference/data-types/array) ou [`Array(DateTime)`](/pt-BR/reference/data-types/array)
+Array de quantis aproximados dos níveis especificados, na mesma ordem em que os níveis foram especificados. Argumentos numéricos produzem `Float64`, enquanto argumentos `Decimal`, `Date`, `DateTime` e `DateTime64` mantêm seu formato de entrada. [`Array(Float64)`](/pt-BR/reference/data-types/array) ou [`Array(Decimal*)`](/pt-BR/reference/data-types/array) ou [`Array(Date)`](/pt-BR/reference/data-types/array) ou [`Array(DateTime)`](/pt-BR/reference/data-types/array) ou [`Array(DateTime64)`](/pt-BR/reference/data-types/array)
 
 **Exemplos**
 

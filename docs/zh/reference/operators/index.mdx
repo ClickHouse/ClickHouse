@@ -263,16 +263,18 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 
 除了上文描述的子查询形式外，`SOME` / `ALL` 的右侧也可以是数组表达式 (数组字面量、数组类型的列，或任何返回数组的表达式) 。这是 PostgreSQL 风格的数组量词语法。它会在解析时被识别并重写为数组函数，因此无需手动重写：
 
-| Syntax                                              | Rewritten to                       |
-| --------------------------------------------------- | ---------------------------------- |
-| `expr = SOME(arr)`                                  | `has(arr, expr)`                   |
-| `expr <> ALL(arr)`                                  | `NOT has(arr, expr)`               |
-| `expr OP SOME(arr)` (any other comparison operator) | `arrayExists(x -> expr OP x, arr)` |
-| `expr OP ALL(arr)` (any other comparison operator)  | `arrayAll(x -> expr OP x, arr)`    |
+| Syntax                                             | Rewritten to                       |
+| -------------------------------------------------- | ---------------------------------- |
+| `expr = SOME(arr)`                                 | `has(arr, expr)`                   |
+| `expr <> ALL(arr)`                                 | `NOT has(arr, expr)`               |
+| `expr OP SOME(arr)` (any other supported operator) | `arrayExists(x -> expr OP x, arr)` |
+| `expr OP ALL(arr)` (any other supported operator)  | `arrayAll(x -> expr OP x, arr)`    |
 
 `SOME` 是存在量词 (即 SQL 中 `ANY` 的同义词) 。`=` 和 `<>` 会被特殊处理为 `has` / `NOT has`，因为它们有经过优化的实现；一般形式则会退回到高阶 `arrayExists` / `arrayAll` 函数。
 
-数组形式仅对比较运算符 `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, 和 `>=` 生效。其他支持右侧为数组的运算符——例如 `LIKE`、`ILIKE`、`NOT LIKE`、`REGEXP` 和 `IN`——**不会** 被重写为数组量词，而是保留其原本含义。例如，`'abc' LIKE SOME(['a%', 'b%'])` 并不是数组量词语法；对于这些情况，请直接使用 `arrayExists` / `arrayAll`。
+数组形式可识别以下内容：比较运算符 `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`，关键字比较谓词 `IS DISTINCT FROM` 和 `IS NOT DISTINCT FROM`，以及字符串搜索谓词 `LIKE`、`ILIKE`、`NOT LIKE`、`NOT ILIKE` 和 `REGEXP`。关键字比较谓词和字符串搜索谓词仅对数组形式生效，不适用于子查询形式 (后者会被降级为 `IN`/`NOT IN`) 。没有数组量词语义的运算符——例如 `IN` 本身——**不会** 被重写，而是保留其原本含义。
+
+字符串搜索谓词之所以可用，是因为 `MatchImpl` (`LIKE` / `ILIKE` / `REGEXP` 背后的实现) 支持常量 haystack 与非常量 needle。例如，`'abc' LIKE SOME(['a%', 'b%'])` 会被重写为 `arrayExists(x -> 'abc' LIKE x, ['a%', 'b%'])`，而 `'abc' NOT LIKE ALL(['x%', 'y%'])` 会被重写为 `arrayAll(x -> 'abc' NOT LIKE x, ['x%', 'y%'])`。这会将一个字符串与多个 pattern 进行匹配；如果要通过一次组合扫描完成匹配，仍然可以使用多 pattern 搜索函数，例如 `multiMatchAny` (正则表达式) 或 `multiSearchAny` (子字符串)。
 
 <Info>
   **数组形式不支持 `ANY`**
@@ -282,15 +284,16 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 
 ```sql title="Query"
 SELECT
-    3 = SOME([1, 2, 3, 4]) AS in_array,
-    5 < SOME([1, 2, 6])    AS less_than_some,
-    5 > ALL([1, 2, 3])     AS greater_than_all;
+    3 = SOME([1, 2, 3, 4])         AS in_array,
+    5 < SOME([1, 2, 6])            AS less_than_some,
+    5 > ALL([1, 2, 3])             AS greater_than_all,
+    'abc' LIKE SOME(['a%', 'z%'])  AS like_some;
 ```
 
 ```text title="Response"
-┌─in_array─┬─less_than_some─┬─greater_than_all─┐
-│        1 │              1 │                1 │
-└──────────┴────────────────┴──────────────────┘
+┌─in_array─┬─less_than_some─┬─greater_than_all─┬─like_some─┐
+│        1 │              1 │                1 │         1 │
+└──────────┴────────────────┴──────────────────┴───────────┘
 ```
 
 <Info>
@@ -525,6 +528,63 @@ SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt
 │ 2024-07-15 23:59:59.999 │ DateTime64(3)  │
 └─────────────────────────┴────────────────┘
 ```
+
+<div id="at-time-zone">
+  ### AT TIME ZONE 和 AT LOCAL
+</div>
+
+后缀运算符 `AT TIME ZONE` 和 `AT LOCAL` 会将 `DateTime` 或 `DateTime64` 值转换到不同的时区。它们是现有 [`toTimeZone`](/zh/reference/functions/regular-functions/date-time-functions#toTimezone) 函数的语法糖：
+
+| Syntax                   | Equivalent                     |
+| ------------------------ | ------------------------------ |
+| `expr AT TIME ZONE zone` | `toTimeZone(expr, zone)`       |
+| `expr AT LOCAL`          | `toTimeZone(expr, timeZone())` |
+
+`zone` 可以是任何求值结果为有效时区名称的常量字符串表达式 (例如 `'America/Denver'`、`'UTC'` 或 `concat('America', '/', 'Denver')`) 。由于 `AT TIME ZONE` 会被展开为 `toTimeZone`，因此同样适用相同的时区参数规则：像列引用这样的非常量表达式，需要设置 [`allow_nonconst_timezone_arguments = 1`](/zh/reference/settings/session-settings#allow_nonconst_timezone_arguments)。
+
+`AT LOCAL` 使用当前的[会话时区](/zh/reference/settings/session-settings#session_timezone) (如果未设置会话时区，则使用服务器默认时区) 。在 `Distributed` 表上，必须显式设置 `session_timezone`；当其为空时，`timeZone()` 是分片本地的，不能作为常量 `toTimeZone` 参数使用，因此会导致 `ILLEGAL_COLUMN` 异常。
+
+<Note>
+  与 PostgreSQL 不同，在 PostgreSQL 中，`timestamp without time zone AT TIME ZONE zone` 会先将该时间值按给定时区重新解释，再进行转换；而 ClickHouse 始终保持同一个绝对时间点不变，只会更改用于显示的时区标签。两种形式都等价于 `toTimeZone`，不会修改底层 timestamp。
+</Note>
+
+`AT TIME ZONE` 的运算符优先级为 13 (高于 12 级的 `*`/`/`/`%`，也高于 11 级的 `+`/`-`) ，与 PostgreSQL 一致。这意味着 `a * ts AT TIME ZONE 'tz'` 会被解析为 `a * (ts AT TIME ZONE 'tz')`，而 `ts + interval AT TIME ZONE 'tz'` 会被解析为 `ts + (interval AT TIME ZONE 'tz')`。若要在算术运算之后再应用时区转换，请使用显式括号：
+
+```sql
+-- Explicit parens required to add first, then convert timezone
+SELECT (TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR) AT TIME ZONE 'America/Denver';
+-- Equivalent to:
+SELECT toTimeZone(TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR, 'America/Denver');
+```
+
+示例：
+
+```sql
+SET session_timezone = 'UTC';
+
+SELECT TIMESTAMP '2001-02-16 20:38:40' AT TIME ZONE 'America/Denver';
+```
+
+```text
+┌─toTimeZone(toDateTime('2001-02-16 20:38:40'), 'America/Denver')─┐
+│ 2001-02-16 13:38:40                                              │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT TIMESTAMP '2001-02-16 20:38:40' AT LOCAL;
+```
+
+```text
+┌─toTimeZone(toDateTime('2001-02-16 20:38:40'), timeZone())─┐
+│ 2001-02-16 20:38:40                                        │
+└────────────────────────────────────────────────────────────┘
+```
+
+**另见**
+
+* [`toTimeZone`](/zh/reference/functions/regular-functions/date-time-functions#toTimezone)
+* [`timeZone`](/zh/reference/functions/regular-functions/date-time-functions#timezone)
 
 <div id="logical-and-operator">
   ## 逻辑 AND 运算符

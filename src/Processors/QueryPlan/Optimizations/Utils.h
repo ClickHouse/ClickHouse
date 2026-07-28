@@ -82,6 +82,11 @@ enum class FilterResult
     const Block & input_stream_header,
     bool allow_unknown_function_arguments = false);
 
+[[nodiscard]] FilterResult filterResultForMatchedRows(
+    ActionsDAG pre_actions_dag,
+    const ActionsDAG & filter_dag,
+    const String & filter_column_name);
+
 struct NoOp
 {
 };

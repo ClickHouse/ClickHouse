@@ -16,6 +16,8 @@ SETTINGS index_granularity = 1;
 
 INSERT INTO t_sparse_pk_truncation VALUES (1, 1), (2, 2), (3, 3), (4, 4);
 
+SET optimize_redundant_comparisons = 0;
+
 -- { echoOn }
 
 EXPLAIN indexes = 1
