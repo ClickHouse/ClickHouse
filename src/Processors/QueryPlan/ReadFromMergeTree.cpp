@@ -516,7 +516,7 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     size_t replica_number)
 {
     const bool enable_parallel_reading = true;
-    return std::make_unique<ReadFromMergeTree>(
+    auto parallel_replicas_step = std::make_unique<ReadFromMergeTree>(
         /// Optimized version of getParts() to avoid extra copy
         analyzed_result_ptr ? std::make_shared<RangesInDataParts>(analyzed_result_ptr->parts_with_ranges) : prepared_parts,
         mutations_snapshot,
@@ -535,6 +535,15 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
         all_ranges_callback_,
         read_task_callback_,
         replica_number);
+    /// This replaces the read step in place, so it must carry over the same state as `clone`: a step
+    /// that was already stamped by `tryOptimizeTopK` would otherwise look like a plain read here and
+    /// consult or populate the query condition cache under the unsalted condition hash. As in `clone`,
+    /// copy `top_k_filter_info` by value - the part-set salt is already folded into its `condition_hash`
+    /// by `setTopKColumn` - and copy `allow_query_condition_cache`, which is what actually gates both
+    /// index analysis and the reader.
+    parallel_replicas_step->allow_query_condition_cache = allow_query_condition_cache;
+    parallel_replicas_step->top_k_filter_info = top_k_filter_info;
+    return parallel_replicas_step;
 }
 
 Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
