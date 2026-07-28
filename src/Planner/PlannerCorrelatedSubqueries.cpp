@@ -236,8 +236,23 @@ QueryPlan decorrelateQueryPlan(
         context.query_plan.addStep(std::make_unique<CommonSubplanStep>(context.query_plan.getCurrentHeader()));
 
         auto buffer_header = std::make_shared<Block>();
+        const auto & input_header = context.query_plan.getCurrentHeader();
         for (const auto & column : context.correlated_subquery.correlated_column_identifiers)
-            buffer_header->insert(context.query_plan.getCurrentHeader()->getByName(column));
+        {
+            /// A nested correlated subquery may reference a column from a scope beyond its immediate
+            /// outer query (it skips an intermediate scope). Such a column is not present in the outer
+            /// query plan yet at this point, because decorrelation runs inside-out while the correlated
+            /// inputs of the intermediate scope are injected later. Reject this shape with a clear error
+            /// instead of failing deep inside with NOT_FOUND_COLUMN_IN_BLOCK.
+            if (!input_header->has(column))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Correlated subquery is not supported yet, because it references column '{}' from a "
+                    "scope beyond the immediate outer query. Current outer query header: {}",
+                    column,
+                    input_header->dumpNames());
+            buffer_header->insert(input_header->getByName(column));
+        }
 
         rhs_plan.addStep(std::make_unique<CommonSubplanReferenceStep>(
             buffer_header,
@@ -417,13 +432,15 @@ QueryPlan decorrelateQueryPlan(
         if (aggeregating_step->isGroupingSets())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Decorrelation of GROUP BY GROUPING SETS is not supported yet");
 
-        auto new_aggregator_params = aggeregating_step->getAggregatorParameters();
+        const auto & original_aggregator_params = aggeregating_step->getAggregatorParameters();
 
+        Names new_keys = original_aggregator_params.keys;
         for (const auto & correlated_column_identifier : context.correlated_subquery.correlated_column_identifiers)
         {
-            new_aggregator_params.keys.push_back(correlated_column_identifier);
+            new_keys.push_back(correlated_column_identifier);
         }
-        new_aggregator_params.keys_size = new_aggregator_params.keys.size();
+
+        auto new_aggregator_params = original_aggregator_params.cloneWithKeys(new_keys, original_aggregator_params.only_merge);
 
         auto result_step = std::make_unique<AggregatingStep>(
             std::move(input_header),

@@ -14,9 +14,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 > ClickHouse 예시 데이터셋에 연결하는 방법을 설명합니다.
 
 <Steps>
-  <Step>
-    ## Docker 설치
-
+  <Step title="Docker 설치" id="install-docker">
     LibreChat과 MCP Server를 실행하려면 Docker가 필요합니다. Docker를 설치하려면 다음 단계를 따르세요.
 
     1. [docker.com](https://www.docker.com/products/docker-desktop)에 접속합니다
@@ -29,9 +27,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     자세한 내용은 [Docker 문서](https://docs.docker.com/get-docker/)를 참조하세요.
   </Step>
 
-  <Step>
-    ## LibreChat 리포지토리 복제
-
+  <Step title="LibreChat 리포지토리 복제" id="clone-librechat-repo">
     터미널(command prompt, terminal 또는 PowerShell)을 열고 다음 명령으로
     LibreChat 리포지토리를 복제합니다:
 
@@ -41,9 +37,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## `.env` 파일 생성 및 편집
-
+  <Step title="`.env` 파일 생성 및 편집" id="create-and-edit-env-file">
     예시 설정 파일인 `.env.example`을 `.env`로 복사하세요:
 
     ```bash
@@ -74,9 +68,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     </Info>
   </Step>
 
-  <Step>
-    ## librechat.yaml 파일 생성
-
+  <Step title="librechat.yaml 파일 생성" id="create-librechat-yaml-file">
     새 `librechat.yaml` 파일을 생성하려면 다음 명령을 실행하세요:
 
     ```bash
@@ -86,9 +78,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     LibreChat의 주 [설정 파일](https://www.librechat.ai/docs/configuration/librechat_yaml)이 생성됩니다.
   </Step>
 
-  <Step>
-    ## Docker compose에 ClickHouse MCP 서버 추가
-
+  <Step title="Docker compose에 ClickHouse MCP 서버 추가" id="add-clickhouse-mcp-server-to-docker-compose">
     다음으로 LLM이
     [ClickHouse SQL playground](https://sql.clickhouse.com/)와 상호 작용할 수 있도록
     LibreChat Docker compose 파일에 ClickHouse MCP 서버를 추가합니다.
@@ -124,9 +114,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     </Card>
   </Step>
 
-  <Step>
-    ## librechat.yaml에서 MCP server 구성하기
-
+  <Step title="librechat.yaml에서 MCP server 구성하기" id="configure-mcp-server-in-librechat-yaml">
     `librechat.yaml`을 열고 다음 구성을 파일 맨 끝에 추가하세요:
 
     ```yml
@@ -151,9 +139,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## Ollama를 사용해 로컬 LLM 추가하기 (선택 사항)
-
+  <Step title="Ollama를 사용해 로컬 LLM 추가하기 (선택 사항)" id="add-local-llm-using-ollama">
     ### Ollama 설치
 
     [Ollama 웹사이트](https://ollama.com/download)로 이동하여 사용 중인 시스템에 맞는 Ollama를 설치하세요.
@@ -192,9 +178,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## 모든 서비스 시작
-
+  <Step title="모든 서비스 시작" id="start-all-services">
     LibreChat 프로젝트 폴더의 루트 디렉터리에서 다음 명령을 실행하여 서비스를 시작하십시오:
 
     ```bash
@@ -204,9 +188,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     모든 서비스가 완전히 실행될 때까지 기다리세요.
   </Step>
 
-  <Step>
-    ## 브라우저에서 LibreChat 열기
-
+  <Step title="브라우저에서 LibreChat 열기" id="open-librechat-in-browser">
     모든 서비스가 실행되면 브라우저를 열고 `http://localhost:3080/`으로 이동하십시오.
 
     아직 무료 LibreChat 계정이 없다면 계정을 만든 후 로그인하십시오. 이제

@@ -731,7 +731,8 @@ See also the ClickHouse Cloud [Prometheus integration](/products/cloud/features/
 
 This guide provides simple and minimal settings to configure ClickHouse Keeper with an example on how to test distributed operations. This example is performed using 3 nodes on Linux.
 
-### 1. Configure nodes with Keeper settings {#1-configure-nodes-with-keeper-settings}
+<Steps>
+<Step title="Configure nodes with Keeper settings" id="1-configure-nodes-with-keeper-settings">
 
 1. Install 3 ClickHouse instances on 3 hosts (`chnode1`, `chnode2`, `chnode3`). (View the [Quick Start](/get-started/setup/install) for details on installing ClickHouse.)
 
@@ -835,7 +836,8 @@ This guide provides simple and minimal settings to configure ClickHouse Keeper w
     └────────────┴───────┴───────┴───────┴─────────────────────┴─────────────────────┴─────────┴──────────┴──────────┴────────────────┴────────────┴─────────────┴───────┴─────────────┘
     ```
 
-### 2.  Configure a cluster in ClickHouse {#2--configure-a-cluster-in-clickhouse}
+</Step>
+<Step title="Configure a cluster in ClickHouse" id="2--configure-a-cluster-in-clickhouse">
 
 1. Let's configure a simple cluster with 2 shards and only one replica on 2 of the nodes. The third node will be used to achieve a quorum for the requirement in ClickHouse Keeper. Update the configuration on `chnode1` and `chnode2`. The following cluster defines 1 shard on each node for a total of 2 shards with no replication. In this example, some of the data will be on node and some will be on the other node:
     ```xml
@@ -882,7 +884,8 @@ This guide provides simple and minimal settings to configure ClickHouse Keeper w
     └───────────────┘
     ```
 
-### 3. Create and test distributed table {#3-create-and-test-distributed-table}
+</Step>
+<Step title="Create and test distributed table" id="3-create-and-test-distributed-table">
 
 1.  Create a new database on the new cluster using ClickHouse client on `chnode1`. The `ON CLUSTER` clause automatically creates the database on both nodes.
     ```sql
@@ -980,6 +983,9 @@ This guide provides simple and minimal settings to configure ClickHouse Keeper w
 
     4 rows in set. Elapsed: 0.018 sec.
     ```
+
+</Step>
+</Steps>
 
 ### Summary {#summary}
 
