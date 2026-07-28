@@ -1,16 +1,43 @@
 ---
 slug: /operations/overview
-sidebarTitle: 'Vue d’ensemble des performances et des optimisations'
-description: 'Page de présentation des performances et des optimisations'
+sidebarTitle: 'Aperçu des performances et des optimisations'
+description: 'Page d’aperçu des performances et des optimisations'
 title: 'Performances et optimisations'
 keywords: ['optimisation des performances', 'bonnes pratiques', 'guide d’optimisation', 'performances de ClickHouse', 'optimisation de base de données']
-doc_type: 'reference'
+doc_type: 'référence'
+mode: wide
 ---
 
-import TableOfContents from '/snippets/fr/_performance_optimizations_table_of_contents.mdx';
-
 Cette section contient des conseils et des bonnes pratiques pour améliorer les performances avec ClickHouse.
-Nous recommandons aux utilisateurs de lire [Core Concepts](/fr/concepts/core-concepts/parts) au préalable,
-car cette page présente les principaux concepts nécessaires à l&#39;amélioration des performances.
+Nous recommandons aux utilisateurs de lire [Concepts fondamentaux](/fr/concepts/core-concepts/parts) avant d’aborder cette section,
+car ils présentent les principaux concepts nécessaires pour améliorer les performances.
 
-<TableOfContents />
+<CardGroup cols={2}>
+  <Card title="Optimisation PREWHERE" icon="filter" href="/fr/concepts/features/performance/prewhere">
+    Comment `PREWHERE` réduit les E/S en filtrant les données avant la lecture de colonnes inutiles, et comment surveiller son efficacité.
+  </Card>
+
+  <Card title="Profilage des allocations" icon="memory" href="/fr/concepts/features/performance/allocation-profiling">
+    Analysez les allocations mémoire avec jemalloc.
+  </Card>
+
+  <Card title="Profilage des allocations pour les versions antérieures à 25.9" icon="clock-rotate-left" href="/fr/concepts/features/performance/allocation-profiling-old">
+    Profilage des allocations pour les versions de ClickHouse antérieures à 25.9.
+  </Card>
+
+  <Card title="Caches" icon="hard-drive" href="/fr/concepts/features/performance/caches/caches">
+    Types de caches, notamment le cache de requêtes, le cache des conditions de requête et le cache de pages en espace utilisateur.
+  </Card>
+
+  <Card title="Index de saut de données" icon="forward" href="/fr/concepts/features/performance/skip-indexes/skipping-indexes">
+    Comprendre les index de saut de données, avec des exemples.
+  </Card>
+
+  <Card title="Matérialisation paresseuse" icon="hourglass-half" href="/fr/concepts/features/performance/lazy-materialization">
+    Différez la lecture des données des colonnes jusqu’à ce qu’elle soit réellement nécessaire.
+  </Card>
+
+  <Card title="Dépannage" icon="bug" href="/fr/concepts/features/performance/troubleshoot/debugging-memory-issues">
+    Débogage des problèmes de mémoire, test de votre matériel et query profiler par échantillonnage.
+  </Card>
+</CardGroup>

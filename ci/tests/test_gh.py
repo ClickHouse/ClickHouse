@@ -282,3 +282,49 @@ def test_post_commit_status_converts_transparently(monkeypatch):
         sha="abc123", repo="test/repo",
     )
     assert "state=success" in captured["cmd"], f"Expected state=success in command, got: {captured['cmd']}"
+
+
+# --- GH.get_pr_state_by_branch ------------------------------------------------
+
+
+def _install_fake_pr_list(monkeypatch, *, merged, open_):
+    """Stub GH.get_output_with_retries to answer per --state. Returns nothing;
+    each `gh pr list --json url` yields `[]` or a one-element array."""
+    gh_mod = sys.modules[GH.__module__]
+
+    def fake(cmd, *_a, **_k):
+        if "--state merged" in cmd:
+            return '[{"url": "m"}]' if merged else "[]"
+        if "--state open" in cmd:
+            return '[{"url": "o"}]' if open_ else "[]"
+        return "[]"
+
+    monkeypatch.setattr(gh_mod.GH, "get_output_with_retries", staticmethod(fake))
+
+
+def test_get_pr_state_by_branch_merged_takes_priority(monkeypatch):
+    _install_fake_pr_list(monkeypatch, merged=True, open_=True)
+    assert GH.get_pr_state_by_branch("auto/v1.1.1.1-stable", "o/r") == "MERGED"
+
+
+def test_get_pr_state_by_branch_open(monkeypatch):
+    _install_fake_pr_list(monkeypatch, merged=False, open_=True)
+    assert GH.get_pr_state_by_branch("auto/v1.1.1.1-stable", "o/r") == "OPEN"
+
+
+def test_get_pr_state_by_branch_absent(monkeypatch):
+    _install_fake_pr_list(monkeypatch, merged=False, open_=False)
+    assert GH.get_pr_state_by_branch("auto/v1.1.1.1-stable", "o/r") == ""
+
+
+def test_get_pr_state_by_branch_fails_closed(monkeypatch):
+    """An empty read (lookup failed) must raise, not be read as 'no PR'."""
+    gh_mod = sys.modules[GH.__module__]
+    monkeypatch.setattr(
+        gh_mod.GH, "get_output_with_retries", staticmethod(lambda *_a, **_k: "")
+    )
+    try:
+        GH.get_pr_state_by_branch("auto/v1.1.1.1-stable", "o/r")
+        assert False, "should have raised on a failed lookup"
+    except RuntimeError as e:
+        assert "refusing to treat a failed lookup as 'no PR'" in str(e)
