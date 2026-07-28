@@ -1,3 +1,4 @@
+#include <Core/ProtocolDefines.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
