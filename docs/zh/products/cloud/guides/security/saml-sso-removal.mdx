@@ -20,16 +20,12 @@ keywords: ['ClickHouse Cloud', 'SAML', 'SSO', '单点登录', 'IdP']
 组织中必须有一位使用其他身份验证方法的管理员用户，以便在移除 SAML 后将用户重新邀请回组织。执行这些步骤需要一位拥有 Admin 权限的 ClickHouse Cloud 用户。
 
 <Steps>
-  <Step>
-    ### 启用邀请
-
+  <Step title="启用邀请" id="enable-invitations">
     登录 [ClickHouse Cloud](https://console.clickhouse.cloud)，然后提交一张支持工单，subject 为 `Enable invitations for SAML organization`。这是为了申请启用通过 SAML 以外的方法添加用户的能力。
   </Step>
 
-  <Step>
-    ### 记录需要重新邀请的用户
-
-    点击左下角的组织名称，然后选择 `Users and Roles`。查看每位用户的 `Provider` 列；凡是显示为 `Signed in with SSO` 的用户，都需要在移除 SAML 后重新邀请回组织。
+  <Step title="记录需要重新邀请的用户" id="note-users-to-be-reinvited">
+    点击左下角的组织名称，然后选择 `用户和角色`。查看每位用户的 `Provider` 列；凡是显示为 `Signed in with SSO` 的用户，都需要在移除 SAML 后重新邀请回组织。
 
     请确保用户知晓：移除 SAML 后，他们必须先接受新的邀请，才能访问该账户。
   </Step>
@@ -40,15 +36,11 @@ keywords: ['ClickHouse Cloud', 'SAML', 'SSO', '单点登录', 'IdP']
 </div>
 
 <Steps>
-  <Step>
-    ### 邀请用户
-
-    点击左下角的组织名称，然后选择 `Users and Roles`。按照[邀请用户](/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users#invite-users)中的说明进行操作。
+  <Step title="邀请用户" id="invite-users">
+    点击左下角的组织名称，然后选择 `用户和角色`。按照[邀请用户](/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users#invite-users)中的说明进行操作。
   </Step>
 
-  <Step>
-    ### 用户接受邀请
-
+  <Step title="用户接受邀请" id="accept-invitation">
     用户在接受邀请之前，应先完全退出所有 SAML 登录会话。使用 Google 或 Microsoft 社交登录接受邀请时，用户应点击 `Continue with Google` 或 `Continue with Microsoft` 按钮。使用电子邮件和密码的用户应前往 https://console.clickhouse.cloud/?with=email 登录并接受邀请。
 
     <Note>
@@ -56,9 +48,7 @@ keywords: ['ClickHouse Cloud', 'SAML', 'SSO', '单点登录', 'IdP']
     </Note>
   </Step>
 
-  <Step>
-    ### 保存查询和仪表盘
-
+  <Step title="保存查询和仪表盘" id="save-queries-and-dashboards">
     用户使用新身份登录后，应先退出登录，然后再使用其 SAML 账户重新登录，以便将已保存的查询或仪表盘共享给新身份。他们应在新身份下另存一份副本，以完成该过程。
   </Step>
 </Steps>

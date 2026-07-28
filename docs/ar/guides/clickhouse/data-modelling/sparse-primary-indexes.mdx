@@ -296,7 +296,7 @@ bytes_on_disk:               207.07 MiB
 * [مفتاح فرز](/ar/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key) مركب `(UserID, URL, EventTime)`.
 
 <Note>
-  - لو كنا قد حدّدنا مفتاح الفرز فقط، لكان المفتاح الأساسي قد عُرِّف ضمنيًا على أنه مطابق لمفتاح الفرز.
+  - لو كنا قد حدّدنا مفتاح الفرز فقط، لكان المفتاح الأساسي سيُعرَّف ضمنيًا على أنه يساوي مفتاح الفرز.
 
   - لتحقيق كفاءة في استخدام الذاكرة، حدّدنا صراحةً مفتاحًا أساسيًا لا يتضمن إلا الأعمدة التي تُصفّي الاستعلامات بناءً عليها. ويُحمَّل الفهرس الأساسي المبني على المفتاح الأساسي بالكامل إلى الذاكرة الرئيسية.
 
@@ -311,7 +311,7 @@ bytes_on_disk:               207.07 MiB
   يسمح ClickHouse بإدراج عدة صفوف لها قيم متطابقة في أعمدة المفتاح الأساسي. في هذه الحالة (انظر الصف 1 والصف 2 في المخطط أدناه)، يتحدد الترتيب النهائي وفقًا لمفتاح الفرز المحدد، وبالتالي وفقًا لقيمة العمود `EventTime`.
 </Note>
 
-ClickHouse هو <a href="/ar/get-started/about/distinctive-features#true-column-oriented-dbms" target="_blank">نظام إدارة قواعد بيانات موجَّه بالأعمدة</a>. وكما هو موضح في المخطط أدناه:
+ClickHouse هو <a href="/ar/get-started/about/distinctive-features#true-column-oriented-database-management-system" target="_blank">نظام إدارة قواعد بيانات موجَّه بالأعمدة</a>. وكما هو موضح في المخطط أدناه:
 
 * في التمثيل على القرص، يوجد ملف بيانات واحد (*.bin) لكل عمود في الجدول، وتُخزَّن فيه جميع قيم ذلك العمود بتنسيق <a href="/ar/get-started/about/distinctive-features#data-compression" target="_blank">مضغوط</a>، و
 * تُخزَّن الصفوف البالغ عددها 8.87 مليون صف على القرص بترتيب معجمي تصاعدي بحسب أعمدة المفتاح الأساسي (وأعمدة مفتاح الفرز الإضافية)، أي في هذه الحالة:
@@ -338,7 +338,7 @@ ClickHouse هو <a href="/ar/get-started/about/distinctive-features#true-column-
 وهذا يعني أنه بدلًا من قراءة الصفوف المفردة، يقرأ ClickHouse دائمًا مجموعة كاملة من الصفوف (حبيبة) على نحو متدفق وبالتوازي.
 
 <Note>
-  لا تُخزَّن قيم الأعمدة فعليًا داخل الحبيبات، فالحبيبات ليست سوى تنظيم منطقي لقيم الأعمدة لأغراض معالجة الاستعلامات.
+  لا تُخزَّن قيم الأعمدة فعليًا داخل الحبيبات: فالحبيبات ليست سوى تنظيم منطقي لقيم الأعمدة لأغراض معالجة الاستعلامات.
 </Note>
 
 يوضح المخطط التالي كيف تُنظَّم (قيم أعمدة) 8.87 مليون صف من جدولنا
@@ -390,67 +390,82 @@ ClickHouse هو <a href="/ar/get-started/about/distinctive-features#true-column-
 </Note>
 
 <Accordion title="فحص محتوى الفهرس الأساسي">
-  <p>
-    في عنقود ClickHouse مُدار ذاتيًا، يمكننا استخدام <a href="/ar/reference/functions/table-functions/file" target="_blank">دالة الجدول file</a> لفحص محتوى الفهرس الأساسي لجدول المثال الخاص بنا.
+  على عنقود ClickHouse مُدار ذاتيًا، يمكننا استخدام [table function ‏file](/ar/reference/functions/table-functions/file) لفحص محتوى الفهرس الأساسي لجدول المثال لدينا.
 
-    وللقيام بذلك، نحتاج أولًا إلى نسخ ملف الفهرس الأساسي إلى <a href="/ar/reference/settings/server-settings/settings#user_files_path" target="_blank">user&#95;files&#95;path</a> على إحدى عقد العنقود قيد التشغيل:
+  ولتحقيق ذلك، نحتاج أولًا إلى نسخ ملف الفهرس الأساسي إلى [user&#95;files&#95;path](/ar/reference/settings/server-settings/settings#user_files_path) الخاصة بإحدى العقد في العنقود قيد التشغيل:
 
-    <ul>
-      <li>الخطوة 1: احصل على مسار الجزء الذي يحتوي على ملف الفهرس الأساسي</li>
-      `SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1`
+  **الخطوة 1: الحصول على مسار الجزء الذي يحتوي على ملف الفهرس الأساسي**
 
-      يعيد `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` على جهاز الاختبار.
+  ```sql
+  SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
+  ```
 
-      <li>الخطوة 2: احصل على user&#95;files&#95;path</li>
-      إن <a href="https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505" target="_blank">user&#95;files&#95;path الافتراضي</a> على Linux هو
-      `/var/lib/clickhouse/user_files/`
+  يعيد `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` على جهاز الاختبار.
 
-      وعلى Linux، يمكنك التحقق مما إذا كان قد تغيّر: `$ grep user_files_path /etc/clickhouse-server/config.xml`
+  **الخطوة 2: الحصول على user&#95;files&#95;path**
 
-      على جهاز الاختبار، كان المسار هو `/Users/tomschreiber/Clickhouse/user_files/`
+  القيمة [الافتراضية لـ user&#95;files&#95;path](https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505) على Linux هي `/var/lib/clickhouse/user_files/`
 
-      <li>الخطوة 3: انسخ ملف الفهرس الأساسي إلى user&#95;files&#95;path</li>
+  وعلى Linux يمكنك التحقق مما إذا كانت قد تغيّرت: `$ grep user_files_path /etc/clickhouse-server/config.xml`
 
-      `cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx`
-    </ul>
+  على جهاز الاختبار، المسار هو `/Users/tomschreiber/Clickhouse/user_files/`
 
-    <br />
+  **الخطوة 3: نسخ ملف الفهرس الأساسي إلى user&#95;files&#95;path**
 
-    يمكننا الآن فحص محتوى الفهرس الأساسي عبر SQL:
+  ```bash
+  cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx
+  ```
 
-    <ul>
-      <li>احصل على عدد الإدخالات</li>
-      `SELECT count( )<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');`
-      يعيد `1083`
+  يمكننا الآن فحص محتوى الفهرس الأساسي عبر SQL:
 
-      <li>احصل على أول علامتي فهرس</li>
-      `SELECT UserID, URL<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 0, 2;`
+  **الحصول على عدد المُدخلات**
 
-      يعيد
+  ```sql
+  SELECT count()
+  FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');
+  ```
 
-      `240923, http://showtopics.html%3...<br/>
-            4073710, http://mk.ru&pos=3_0`
+  يعيد `1083`
 
-      <li>احصل على آخر علامة فهرس</li>
-      `SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 1082, 1;`
-      يعيد
-      `4292714039 │ http://sosyal-mansetleri...`
-    </ul>
+  **الحصول على أول علامتَي فهرس**
 
-    <br />
+  ```sql
+  SELECT UserID, URL
+  FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
+  LIMIT 0, 2;
+  ```
 
-    وهذا يطابق تمامًا مخططنا لمحتوى الفهرس الأساسي لجدول المثال:
-  </p>
+  يعيد
+
+  ```response
+  240923, http://showtopics.html%3...
+  4073710, http://mk.ru&pos=3_0
+  ```
+
+  **الحصول على آخر علامة فهرس**
+
+  ```sql
+  SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
+  LIMIT 1082, 1;
+  ```
+
+  يعيد
+
+  ```response
+  4292714039 │ http://sosyal-mansetleri...
+  ```
+
+  وهذا يطابق تمامًا المخطط الذي يوضح محتوى الفهرس الأساسي لجدول المثال لدينا:
 </Accordion>
 
-تُسمى إدخالات المفتاح الأساسي علامات الفهرس، لأن كل إدخال في الفهرس يشير إلى بداية نطاق بيانات معيّن. وبالتحديد في جدول المثال:
+تُسمّى إدخالات المفتاح الأساسي علامات الفهرس لأن كل إدخال فهرس يحدد بداية نطاق بيانات معيّن. وبالتحديد بالنسبة إلى جدول المثال:
 
 * علامات فهرس UserID:
 
-  قيم `UserID` المخزنة في الفهرس الأساسي مرتبة ترتيبًا تصاعديًا.<br />
-  لذلك تشير &#39;العلامة 1&#39; في المخطط أعلاه إلى أن قيم `UserID` لجميع صفوف الجدول في granule 1، وفي جميع الـ granules التالية، مضمونة أن تكون أكبر من أو تساوي 4.073.710.
+  إن قيم `UserID` المخزّنة في الفهرس الأساسي مرتبة ترتيبًا تصاعديًا.<br />
+  وبالتالي فإن &#39;العلامة 1&#39; في المخطط أعلاه تشير إلى أن قيم `UserID` لجميع صفوف الجدول في الحبيبة 1، وفي جميع الحبيبات اللاحقة، مضمونة أن تكون أكبر من أو تساوي 4.073.710.
 
-[كما سنرى لاحقًا](#the-primary-index-is-used-for-selecting-granules)، يتيح هذا الترتيب العام لـ ClickHouse <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">استخدام خوارزمية البحث الثنائي</a> على علامات الفهرس لعمود المفتاح الأول عندما يطبّق الاستعلام عامل تصفية على العمود الأول من المفتاح الأساسي.
+[كما سنرى لاحقًا](#the-primary-index-is-used-for-selecting-granules)، يتيح هذا الترتيب العام لـ ClickHouse <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">استخدام خوارزمية البحث الثنائي</a> على علامات الفهرس الخاصة بعمود المفتاح الأول عندما يطبّق الاستعلام عامل تصفية على العمود الأول من المفتاح الأساسي.
 
 * علامات فهرس URL:
 
@@ -602,24 +617,24 @@ LIMIT 10;
 
 <Image img="/images/guides/best-practices/sparse-primary-indexes-05.webp" size="lg" alt="الفهارس الأساسية المتفرقة 05" />
 
-لقد ناقشنا أن الفهرس الأساسي عبارة عن ملف مصفوفة مسطّح غير مضغوط (`primary.idx`) يحتوي على علامات فهرس يبدأ ترقيمها من 0.
+لقد ناقشنا أن الفهرس الأساسي عبارة عن ملف مصفوفة مسطّح غير مضغوط (primary.idx) يحتوي على علامات فهرس يبدأ ترقيمها من 0.
 
-وبالمثل، فإن ملف العلامات هو أيضًا ملف مصفوفة مسطّح غير مضغوط (`*.mrk`) يحتوي على علامات يبدأ ترقيمها من 0.
+وبالمثل، فإن ملف العلامات هو أيضًا ملف مصفوفة مسطّح غير مضغوط (*.mrk) يحتوي على علامات يبدأ ترقيمها من 0.
 
 وبمجرد أن يحدّد ClickHouse علامة الفهرس الخاصة بحبيبة قد تحتوي على صفوف مطابقة للاستعلام ويختارها، يمكن إجراء وصول موضعي داخل المصفوفة في ملفات العلامات للحصول على المواقع الفعلية للحبيبة.
 
 يخزّن كل إدخال في ملف العلامات لعمود معيّن موقعين على شكل إزاحتين:
 
-* الإزاحة الأولى (`block_offset` في المخطط أعلاه) تحدد موقع <a href="/ar/resources/develop-contribute/introduction/architecture#block" target="_blank">الكتلة</a> في ملف بيانات العمود <a href="/ar/get-started/about/distinctive-features#data-compression" target="_blank">المضغوط</a> التي تحتوي على النسخة المضغوطة من الحبيبة المحددة. وقد تحتوي هذه الكتلة المضغوطة على بضع حبيبات مضغوطة. وتُفكّ الكتلة المضغوطة المحددة إلى الذاكرة الرئيسية عند القراءة.
+* الإزاحة الأولى (&#39;block&#95;offset&#39; في المخطط أعلاه) تحدد موقع <a href="/ar/resources/develop-contribute/introduction/architecture#block" target="_blank">الكتلة</a> في ملف بيانات العمود <a href="/ar/get-started/about/distinctive-features#data-compression" target="_blank">المضغوط</a> التي تحتوي على النسخة المضغوطة من الحبيبة المحددة. وقد تحتوي هذه الكتلة المضغوطة على بضع حبيبات مضغوطة. وتُفكّ الكتلة المضغوطة المحددة إلى الذاكرة الرئيسية عند القراءة.
 
-* الإزاحة الثانية (`granule_offset` في المخطط أعلاه) من ملف العلامات توفّر موقع الحبيبة داخل بيانات الكتلة غير المضغوطة.
+* الإزاحة الثانية (&#39;granule&#95;offset&#39; في المخطط أعلاه) من ملف العلامات توفّر موقع الحبيبة داخل بيانات الكتلة غير المضغوطة.
 
 بعد ذلك، تُمرَّر الصفوف كلها، وعددها 8192 صفًا، التابعة للحبيبة غير المضغوطة المحددة إلى ClickHouse لمزيد من المعالجة.
 
 <Note>
   * بالنسبة إلى الجداول ذات [التنسيق الواسع](/ar/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) ومن دون [درجة تحبّب الفهرس التكيفية](/ar/resources/changelogs/oss/2019#experimental-features-1)، يستخدم ClickHouse ملفات العلامات `.mrk` كما هو موضح أعلاه، والتي تحتوي على إدخالات تضم عنوانين، طول كل منهما 8 بايت، لكل إدخال. وتمثل هذه الإدخالات المواقع الفعلية لحبيبات لها جميعًا الحجم نفسه.
 
-  تكون درجة تحبّب الفهرس التكيفية بشكل [default](/ar/reference/settings/merge-tree-settings#index_granularity_bytes)، لكننا عطّلنا درجة تحبّب الفهرس التكيفية في جدول المثال الخاص بنا (لتبسيط المناقشات في هذا الدليل، وكذلك لجعل المخططات والنتائج قابلة لإعادة الإنتاج). ويستخدم جدولنا التنسيق الواسع لأن حجم البيانات أكبر من [min&#95;bytes&#95;for&#95;wide&#95;part](/ar/reference/settings/merge-tree-settings#min_bytes_for_wide_part) (والتي تبلغ 10 MB افتراضيًا في العناقيد مُدار ذاتيًا).
+  Index granularity is adaptive by [default](/ar/reference/settings/merge-tree-settings#index_granularity_bytes)، لكننا عطّلنا درجة تحبّب الفهرس التكيفية في جدول المثال الخاص بنا (لتبسيط المناقشات في هذا الدليل، وكذلك لجعل المخططات والنتائج قابلة لإعادة الإنتاج). ويستخدم جدولنا التنسيق الواسع لأن حجم البيانات أكبر من [min&#95;bytes&#95;for&#95;wide&#95;part](/ar/reference/settings/merge-tree-settings#min_bytes_for_wide_part) (والتي تبلغ 10 MB افتراضيًا في العناقيد المُدارة ذاتيًا).
 
   * بالنسبة إلى الجداول ذات التنسيق الواسع ومع درجة تحبّب الفهرس التكيفية، يستخدم ClickHouse ملفات العلامات `.mrk2`، التي تحتوي على إدخالات مشابهة لملفات العلامات `.mrk` ولكن مع قيمة ثالثة إضافية لكل إدخال: عدد الصفوف في الحبيبة المرتبطة بالإدخال الحالي.
 
@@ -1472,11 +1487,11 @@ ORDER BY Ratio ASC
   ### مثال ملموس
 </div>
 
-أحد الأمثلة الملموسة هو خدمة لصق النصوص العادية [https://pastila.nl](https://pastila.nl) التي طوّرها Alexey Milovidov و[كتب عنها في مدونته](https://clickhouse.com/blog/building-a-paste-service-with-clickhouse/).
+أحد الأمثلة الملموسة هو خدمة لصق النصوص غير المشفرة [https://pastila.nl](https://pastila.nl) التي طوّرها Alexey Milovidov و[كتب عنها في مدونته](https://clickhouse.com/blog/building-a-paste-service-with-clickhouse/).
 
 عند كل تغيير في منطقة النص، تُحفَظ البيانات تلقائيًا في صف ضمن جدول ClickHouse (صف واحد لكل تغيير).
 
-ومن إحدى طرق تحديد المحتوى الملصق واسترجاعه (لإصدار معيّن منه) استخدام تجزئة للمحتوى بوصفها معرّف UUID لصف الجدول الذي يحتوي على هذا المحتوى.
+ومن طرق تحديد المحتوى الملصق واسترجاعه (لإصدار معيّن منه) استخدام تجزئة للمحتوى بوصفها معرّف UUID لصف الجدول الذي يحتوي على هذا المحتوى.
 
 يوضح المخطط التالي
 
