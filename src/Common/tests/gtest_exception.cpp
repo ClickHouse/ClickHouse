@@ -180,7 +180,7 @@ TEST(Exception, MovingSuppressedExceptionTransfersRecording)
     }
 
     Exception moved(std::move(source));
-    source.recordToSystemErrors();
+    source.recordToSystemErrors(); // NOLINT: testing moved-from state
     moved.recordToSystemErrors();
     EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), count + 1);
 
@@ -192,7 +192,7 @@ TEST(Exception, MovingSuppressedExceptionTransfersRecording)
 
     Exception assigned;
     assigned = std::move(assigned_source);
-    assigned_source.recordToSystemErrors();
+    assigned_source.recordToSystemErrors(); // NOLINT: testing moved-from state
     assigned.recordToSystemErrors();
     EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), count + 2);
 }

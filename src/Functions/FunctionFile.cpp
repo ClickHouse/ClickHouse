@@ -10,6 +10,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Common/filesystemHelpers.h>
 #include <filesystem>
 #include <optional>
 #include <Functions/FunctionHelpers.h>
@@ -151,7 +152,7 @@ public:
                 if (arguments.size() == 2)
                     suppress_error_codes.emplace();
 
-                if (need_check && !file_path.string().starts_with(user_files_absolute_path_string))
+                if (need_check && !fileOrSymlinkPathStartsWith(file_path.string(), user_files_absolute_path_string))
                     throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside {}", user_files_absolute_path.string());
 
                 ReadBufferFromFile in(file_path);
