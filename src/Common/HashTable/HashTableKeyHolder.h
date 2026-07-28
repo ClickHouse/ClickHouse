@@ -3,7 +3,6 @@
 #include <functional>
 
 #include <Common/Arena.h>
-#include <Common/memcpySmall.h>
 #include <base/PackedStringRef.h>
 
 /**
@@ -166,27 +165,13 @@ inline void ALWAYS_INLINE keyHolderPersistKey(DB::ArenaPackedStringHolder & hold
     if (holder.key.heapSize() == 0)
         return;
 
-    /// The overflow-tolerant small copy beats a libc memcpy call at typical key sizes. Writing
-    /// up to 15 bytes past the allocation is safe: the arena keeps that much padding at the
-    /// chunk end, and mid-chunk the bytes belong to space a later allocation will overwrite.
-    const auto copy_to_pool = [&](const char * data, size_t size)
-    {
-        char * copy = holder.pool.alloc(size);
-        /// The 16-byte-loop small copy beats a libc call only for short keys.
-        if (size <= 64)
-            memcpySmallAllowReadWriteOverflow15(copy, data, size);
-        else
-            memcpy(copy, data, size);
-        return copy;
-    };
-
     if (holder.key.isMedium())
     {
-        holder.key.setMediumPointer(copy_to_pool(holder.key.getMediumPtr(), holder.key.getMediumSize()));
+        holder.key.setMediumPointer(holder.pool.insert(holder.key.getMediumPtr(), holder.key.getMediumSize()));
     }
     else
     {
-        holder.key.setLargePointer(copy_to_pool(holder.key.getLargePtr(), holder.key.getLargeSize()));
+        holder.key.setLargePointer(holder.pool.insert(holder.key.getLargePtr(), holder.key.getLargeSize()));
     }
 }
 
