@@ -94,7 +94,7 @@ String DataSourceDescription::toString() const
 
 bool isDiskObjectStorage(std::shared_ptr<const IDisk> disk)
 {
-    if (auto delegate_disk = disk->getDelegateDiskIfExists())
+    while (auto delegate_disk = disk->getDelegateDiskIfExists())
         disk = delegate_disk;
 
     return std::dynamic_pointer_cast<const DiskObjectStorage>(disk) != nullptr;
@@ -103,7 +103,7 @@ bool isDiskObjectStorage(std::shared_ptr<const IDisk> disk)
 
 bool isDiskBackup(std::shared_ptr<const IDisk> disk)
 {
-    if (auto delegate_disk = disk->getDelegateDiskIfExists())
+    while (auto delegate_disk = disk->getDelegateDiskIfExists())
         disk = delegate_disk;
 
     return std::dynamic_pointer_cast<const DiskBackup>(disk) != nullptr;
