@@ -1,0 +1,374 @@
+---
+title: 'أفضل ممارسات بحيرة البيانات'
+sidebarTitle: 'أفضل الممارسات'
+slug: /use-cases/data-lake/best-practices
+description: 'إرشادات لبيئة الإنتاج للاستعلام عن تنسيقات الجداول المفتوحة في ClickHouse: أنماط التكامل، وضبط أداء الاستعلامات، وإعداد الكتالوج، واستكشاف أخطاء استعلامات بحيرة البيانات وإصلاحها.'
+keywords: ['بحيرة البيانات', 'lakehouse', 'Iceberg', 'Delta Lake', 'DataLakeCatalog', 'استبعاد الأقسام', 'ذاكرة التخزين المؤقت للبيانات الوصفية', 'Delta Kernel', 'تغذية بيانات التغيير', 'Parquet']
+doc_type: 'guide'
+---
+
+يرشدك [دليل البدء](/use-cases/data-lake/getting-started) خلال الاستعلام عن [Apache Iceberg](/engines/table-engines/integrations/iceberg) و[Delta Lake](/engines/table-engines/integrations/deltalake) و[Apache Hudi](/engines/table-engines/integrations/hudi) و[Apache Paimon](/sql-reference/table-functions/paimon) لأول مرة. بعد الانتهاء من الإعداد، استخدم هذه الصفحة لاختيار نمط الوصول المناسب، وضبط أداء الاستعلامات، واستكشاف أخطاء استعلامات بحيرة البيانات وإصلاحها في بيئة الإنتاج.
+
+<div id="choose-access-method">
+  ## اختر طريقة الوصول
+</div>
+
+| طريقة الوصول                        | متى تُستخدم                                                                       | أمثلة                                                                                                                                                                                                            |
+| ----------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| دالة جدولية                         | للاستعلامات المخصصة على مسار معروف                                                | [icebergS3()](/sql-reference/table-functions/iceberg), [deltaLake()](/sql-reference/table-functions/deltalake), [hudi()](/sql-reference/table-functions/hudi), [paimon()](/sql-reference/table-functions/paimon) |
+| محرك جدول                           | للاستعلامات المتكررة على المسار نفسه من دون كتالوج                                | [IcebergS3](/engines/table-engines/integrations/iceberg), [DeltaLake](/engines/table-engines/integrations/deltalake), [Hudi](/engines/table-engines/integrations/hudi)                                           |
+| `DataLakeCatalog` محرك قاعدة بيانات | لأحمال العمل في بيئة الإنتاج مع كتالوج؛ ولاستعلامات اتحادية عبر العديد من الجداول | [AWS Glue](/use-cases/data-lake/glue-catalog), [Unity Catalog](/use-cases/data-lake/unity-catalog), [REST catalog](/use-cases/data-lake/rest-catalog)                                                            |
+
+<div id="table-functions">
+  ### دوال الجداول
+</div>
+
+مرّر مسار التخزين وبيانات الاعتماد مباشرةً بشكلٍ مضمن عندما تعرف الموقع ولا تحتاج إلى تعريف جدول دائم.
+
+```sql
+SELECT count()
+FROM icebergS3('https://my-bucket.s3.amazonaws.com/warehouse/my_table/')
+WHERE event_date >= today() - 7
+```
+
+استخدم بديل S3 مع AWS S3 وGCS. ولدى Azure ونظام الملفات المحلي بدائل مخصّصة (`icebergAzure` و`icebergLocal`، وما يقابلهما للتنسيقات الأخرى). راجع [الاستعلام مباشرةً](/use-cases/data-lake/getting-started/querying-directly) للاطلاع على القائمة الكاملة.
+
+يوفّر [Paimon](/sql-reference/table-functions/paimon) دوال جداول فقط.
+
+<div id="table-engines">
+  ### محركات الجداول
+</div>
+
+أنشئ جدولًا باستخدام محرك الجدول عندما تحتاج إلى إجراء query على المسار نفسه بشكل متكرر. يخزّن ClickHouse المسار وبيانات الاعتماد في البيانات الوصفية للجدول، بحيث يمكنك إجراء query باستخدام اسم جدول عادي بدلًا من إعادة إنشاء استدعاء الدالة في كل مرة.
+
+```sql
+CREATE TABLE events
+    ENGINE = IcebergS3('https://my-bucket.s3.amazonaws.com/warehouse/events/')
+
+SELECT count() FROM events WHERE event_date = today()
+```
+
+تدعم محركات الجداول ميزات القراءة نفسها التي تدعمها دوال الجداول، بما في ذلك [التخزين المؤقت للبيانات](/engines/table-engines/integrations/iceberg#data-cache) و[التخزين المؤقت للبيانات الوصفية](/engines/table-engines/integrations/iceberg#metadata-cache). لا تُكرَّر البيانات مطلقًا في ClickHouse. ويكون محرك الجدول مفيدًا عندما تشارك فريقًا في الوصول أو تُشغِّل مهامًا مجدولة على الجدول نفسه.
+
+<div id="datalakecatalog">
+  ### محرك قاعدة البيانات `DataLakeCatalog`
+</div>
+
+اربط ClickHouse مرة واحدة عند تسجيل الجداول في [كتالوج بيانات](/use-cases/data-lake/getting-started/connecting-catalogs) خارجي. وسيظهر كل جدول في الكتالوج تلقائيًا كجدول في ClickHouse، بما في ذلك الجداول التي تُضاف لاحقًا في المصدر بعد إنشاء الاتصال.
+
+```sql
+CREATE DATABASE my_lake
+ENGINE = DataLakeCatalog
+SETTINGS
+    catalog_type = 'glue',
+    region = 'us-east-1',
+    aws_access_key_id = '<key>',
+    aws_secret_access_key = '<secret>'
+
+SELECT count() FROM my_lake.`analytics.events`
+```
+
+يوفّر هذا قابلية توسّع أفضل من إنشاء تعريفات table منفصلة عندما تدير عددًا كبيرًا من الجداول أو عدة كتالوجات. راجع [الاتصال بالكتالوجات](/use-cases/data-lake/getting-started/connecting-catalogs) و[أدلة الكتالوجات](/use-cases/data-lake/reference).
+
+<Note>
+  **backticks لأسماء الجداول متعددة الأجزاء**
+
+  تستخدم الكتالوجات غالبًا تسمية `database.table`. أَحِط الاسم المؤهَّل بقاعدة البيانات بعلامات backticks، كما في المثال أعلاه.
+</Note>
+
+<div id="required-settings">
+  ## الإعدادات المطلوبة
+</div>
+
+تتطلب العديد من عمليات التكامل علامة تفعيل لميزة معيّنة قبل استخدامها لأول مرة. تحقّق من إصدار خدمتك إذا فشل `CREATE DATABASE` بسبب خطأ في الأذونات.
+
+بالنسبة إلى اتصالات الكتالوج، لكل نوع من أنواع الكتالوج علامة خاصة به. راجع [الاتصال بالكتالوجات](/use-cases/data-lake/getting-started/connecting-catalogs) للحصول على نظرة عامة، و[مرجع DataLakeCatalog](/engines/database-engines/datalakecatalog) للاطّلاع على تفاصيل الإعدادات. أما إعداد كل كتالوج على حدة، فتجده في [أدلة الكتالوج](/use-cases/data-lake/reference).
+
+بالنسبة إلى عمليات الكتابة، يتطلب Iceberg [allow&#95;insert&#95;into&#95;iceberg](/operations/settings/settings#allow_insert_into_iceberg) ‏(25.7+، وBeta بدءًا من 26.2). راجع [الكتابة إلى بحيرات البيانات](/use-cases/data-lake/getting-started/writing-data). ويتطلب Delta Lake [allow&#95;delta&#95;lake&#95;writes](/operations/settings/settings#allow_experimental_delta_lake_writes) ‏(25.9+). وتوضّح [مصفوفة الدعم](/use-cases/data-lake/support-matrix) العلامات التي تنطبق على كل تنسيق وكل عملية.
+
+<div id="query-performance">
+  ## حسّن أداء الاستعلامات
+</div>
+
+تتطابق أرقام الإصدارات في هذه الصفحة مع إصدارات ClickHouse (Cloud والمُدارة ذاتيًا). تحقّق من إصدار خدمتك قبل تمكين أي إعداد أو ميزة.
+
+يعتمد أداء استعلامات Lake على مقدار البيانات الوصفية وعدد ملفات [Parquet](/interfaces/formats/Parquet) التي يقرؤها ClickHouse من التخزين الكائني. وكما هو الحال مع أي جدول في ClickHouse، يتحسّن أداء الاستعلامات عند التصفية حسب أعمدة التقسيم واختيار عدد أقل من الأعمدة.
+
+<div id="query-habits">
+  ### عادات الاستعلام
+</div>
+
+قم بالتصفية حسب أعمدة التقسيم في `WHERE`. تخزّن Iceberg وDelta Lake البيانات الوصفية للتقسيم، مما يتيح لـ ClickHouse تخطي الملفات غير ذات الصلة أثناء تخطيط الاستعلام. وإذا كان عامل التصفية يستهدف عمودًا خارج مواصفات التقسيم، فسيفحص ClickHouse كل ملف مطابق.
+
+بالنسبة إلى جداول Iceberg التي تستخدم [التقسيم المخفي](https://iceberg.apache.org/docs/latest/partitioning/)، قم بالتصفية حسب **العمود المصدر** في مخطط الجدول، وليس حسب عمود تقسيم منفصل أو اسم حقل مُحوَّل. إذا كان الجدول مُقسَّمًا حسب `day(event_time)`، فأضف شرطًا على `event_time`. ويستنتج ClickHouse استبعاد الأقسام من هذا الشرط باستخدام مواصفات تقسيم Iceberg. راجع [استبعاد الأقسام](/engines/table-engines/integrations/iceberg#partition-pruning) و[مواصفة Iceberg](https://iceberg.apache.org/spec/#partitioning).
+
+```sql
+SELECT count()
+FROM my_lake.`logs.application`
+WHERE event_time >= '2026-03-01'
+  AND event_time < '2026-03-02'
+```
+
+اعرض فقط الأعمدة التي تحتاج إليها بدلًا من `SELECT *`. يقرأ ClickHouse تنسيق [Parquet](/interfaces/formats/Parquet) عمودًا بعمود من تخزين الكائنات، لذا فإن عمليات `SELECT` الأضيق تقلّل عدد البايتات المنقولة والمفكوك ضغطها.
+
+ضع عوامل التصفية الانتقائية في `WHERE`. بدءًا من ClickHouse 26.2+، أصبح [PREWHERE](/optimize/prewhere) مدعومًا أيضًا مع Iceberg وعمليات قراءة جداول البحيرات الأخرى، إذ يُجري التصفية على مستوى Parquet قبل قراءة الأعمدة المتبقية. ولا يزال استبعاد الأقسام يعتمد على تصفية الأعمدة المستخدمة في التقسيم، وليس على PREWHERE وحده.
+
+تُطبّق جداول Iceberg التي تتضمن [position or equality deletes](/engines/table-engines/integrations/iceberg#deleted-rows) بكثافة تصفية merge-on-read أثناء الفحص. لذا توقّع عملًا أكبر لكل ملف مما قد يوحي به تشذيب manifest وحده.
+
+في عمليات النشر متعددة العقد، استخدم [دوال الجداول الخاصة بـ cluster](#parallel-cluster-reads) لتوزيع قراءات الملفات عبر النسخ المتماثلة.
+
+<div id="parallel-cluster-reads">
+  ### القراءة المتوازية على العناقيد متعددة العقد
+</div>
+
+في ClickHouse Cloud والخدمات متعددة العقد مُدارة ذاتيًا، توزّع الإصدارات الخاصة بالعناقيد من دوال جداول البحيرات قراءات ملفات [Parquet](/interfaces/formats/Parquet) على النسخ المتماثلة. وتتولى العقدة البادئة توزيع الملفات على العُمّال بالتوازي. استخدم إصدارات العناقيد للقراءات على دفعات وعمليات التحميل المجدولة على الجداول الكبيرة. أما في عمليات النشر أحادية العقدة، فتكفي دالة الجدول القياسية.
+
+مرّر اسم العنقود كوسيط أول (`'default'` على ClickHouse Cloud). تتوفر إصدارات العناقيد لجميع التنسيقات المدعومة:
+
+| التنسيق    | دوال العنقود                                                                                                                                      |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Iceberg    | [icebergS3Cluster()](/sql-reference/table-functions/icebergCluster), [icebergAzureCluster()](/sql-reference/table-functions/icebergCluster)       |
+| Delta Lake | [deltaLakeCluster()](/sql-reference/table-functions/deltalakeCluster), [deltaLakeAzureCluster()](/sql-reference/table-functions/deltalakeCluster) |
+| Hudi       | [hudiCluster()](/sql-reference/table-functions/hudiCluster)                                                                                       |
+| Paimon     | [paimonS3Cluster()](/sql-reference/table-functions/paimonCluster)                                                                                 |
+
+يمكنك دمج قراءات العناقيد مع إعدادات أداء أخرى.
+
+<div id="snapshot-bounds">
+  ### قيّد قراءات الدُفعات بنطاق اللقطات
+</div>
+
+بالنسبة إلى تحميلات الدُفعات المتكررة من جداول البحيرة، حدِّد نطاق كل تشغيل على مجموعة لقطات بدلًا من إعادة قراءة الجدول كاملًا. ومن دون هذه الحدود، قد يفحص ClickHouse جميع الإصدارات والملفات في كل تشغيل، مما يزيد عمليات القراءة من التخزين الكائني ووقت الاستعلام.
+
+خزّن معرّف اللقطة من آخر تحميل ناجح، واستخدمه كحدٍّ أدنى في التشغيل التالي.
+
+* بالنسبة إلى Iceberg، اقرأ عرضًا عند نقطة زمنية محددة باستخدام [iceberg&#95;snapshot&#95;id](/operations/settings/settings#iceberg_snapshot_id) أو [iceberg&#95;timestamp&#95;ms](/operations/settings/settings#iceberg_timestamp_ms) (25.4+). وبالنسبة إلى الجداول من نوع append-only، ادمج إعدادات اللقطة مع عوامل تصفية التقسيم في `WHERE`. استخدم [system.iceberg&#95;history](/operations/system-tables/iceberg_history) (25.6+) للعثور على معرّفات اللقطات بين مرات التشغيل.
+* بالنسبة إلى Delta Lake، اقرأ التغييرات بين إصدارين باستخدام [delta&#95;lake&#95;snapshot&#95;start&#95;version](/operations/settings/settings#delta_lake_snapshot_start_version) و[delta&#95;lake&#95;snapshot&#95;end&#95;version](/operations/settings/settings#delta_lake_snapshot_end_version) (25.12+). واقرأ لقطة واحدة باستخدام [delta&#95;lake&#95;snapshot&#95;version](/operations/settings/settings#delta_lake_snapshot_version) (25.8+). راجع [Delta change data feed](#delta-incremental-sync) للاطلاع على مثال على CDF.
+
+<div id="filesystem-cache">
+  ### تخزين ملفات Parquet مؤقتًا محليًا
+</div>
+
+يدعم كل من التنسيقين [enable&#95;filesystem&#95;cache](/operations/settings/settings#enable_filesystem_cache) للاحتفاظ بملفات [Parquet](/interfaces/formats/Parquet) كثيرة الاستخدام على القرص المحلي بين الاستعلامات. في بيئات النشر المُدارة ذاتيًا، اضبط [قرص التخزين المؤقت لنظام الملفات](/operations/storing-data#using-local-cache) في إعدادات الخادم لكي تتوفر مساحة تخزين يكتب إليها هذا الإعداد. يدير ClickHouse Cloud التخزين المؤقت تلقائيًا. عيّن `enable_filesystem_cache = 0` عند إجراء اختبارات الأداء حتى لا تُخفي نتائج التخزين المؤقت التغييرات بين مرات التشغيل.
+
+<div id="iceberg-settings">
+  ### Apache Iceberg
+</div>
+
+معظم تحسينات القراءة في Apache Iceberg مفعّلة افتراضيًا. تتحكم الإعدادات أدناه في استبعاد الأقسام، والتخزين المؤقت للبيانات الوصفية، وعدد مرات الاتصال بالكتالوج.
+
+<div id="iceberg-read-settings">
+  #### إعدادات القراءة
+</div>
+
+| الإعداد                                                                                                            | منذ  | الافتراضي            | ملاحظات                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------ | ---- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| [use&#95;iceberg&#95;partition&#95;pruning](/operations/settings/settings#use_iceberg_partition_pruning)           | 25.1 | `1` اعتبارًا من 25.6 | يتجاوز ملفات البيانات بالاستناد إلى البيانات الوصفية للتقسيم في ملفات manifest                                                 |
+| [use&#95;iceberg&#95;metadata&#95;files&#95;cache](/operations/settings/settings#use_iceberg_metadata_files_cache) | 25.4 | `1`                  | يخزّن قوائم manifest وJSON البيانات الوصفية مؤقتًا في الذاكرة                                                                  |
+| [iceberg&#95;metadata&#95;staleness&#95;ms](/operations/settings/settings#iceberg_metadata_staleness_ms)           | 26.3 | `0`                  | إعداد للاستعلام. استخدم البيانات الوصفية المخزنة مؤقتًا عندما تكون أحدث من هذه النافذة بدلًا من استدعاء الكتالوج في كل استعلام |
+| [iceberg&#95;use&#95;version&#95;hint](/sql-reference/table-functions/iceberg#writes-into-iceberg-table)           | 25.6 | —                    | يقرأ `version-hint.text` لتسريع تحديد البيانات الوصفية عند الوصول المباشر إلى المسار                                           |
+
+<div id="iceberg-catalog-latency">
+  #### تقليل زمن وصول الكتالوج
+</div>
+
+تتطلب جداول Iceberg المتصلة بالكتالوج جلب البيانات الوصفية مع كل query ما لم تُخزَّن مؤقتًا. اجمع بين الإعدادين التاليين (26.4+):
+
+1. اضبط [iceberg&#95;metadata&#95;async&#95;prefetch&#95;period&#95;ms](/engines/table-engines/integrations/iceberg#async-metadata-prefetch) عند إنشاء الجدول لإجراء الجلب المسبق للبيانات الوصفية في الخلفية.
+2. اضبط [iceberg&#95;metadata&#95;staleness&#95;ms](/operations/settings/settings#iceberg_metadata_staleness_ms) (26.3+) على الاستعلامات لقبول بيانات وصفية قديمة قليلًا مقابل تجنب رحلة الذهاب والإياب إلى الكتالوج.
+
+```sql
+CREATE TABLE events
+    ENGINE = IcebergS3('https://my-bucket.s3.amazonaws.com/warehouse/events/')
+SETTINGS iceberg_metadata_async_prefetch_period_ms = 60000;
+
+SELECT count()
+FROM events
+SETTINGS iceberg_metadata_staleness_ms = 60000;
+```
+
+تجلب قيمة `0` لـ staleness دائمًا أحدث البيانات الوصفية. زِد هذه النافذة لأعباء العمل كثيفة القراءة التي تتغير فيها الجداول على فترات متباعدة.
+
+عندما يختار ClickHouse ملف البيانات الوصفية غير الصحيح (توجد عدة ملفات `.metadata.json` في path الجدول)، ثبّت اختيار الملف باستخدام [iceberg&#95;metadata&#95;file&#95;path](/engines/table-engines/integrations/iceberg#metadata-file-resolution) (25.4+) أو [iceberg&#95;metadata&#95;table&#95;uuid](/engines/table-engines/integrations/iceberg#metadata-file-resolution) عند إنشاء الجدول. راجع [تحديد ملف البيانات الوصفية](/engines/table-engines/integrations/iceberg#metadata-file-resolution).
+
+<div id="iceberg-time-travel">
+  #### السفر عبر الزمن
+</div>
+
+اقرأ لقطة تاريخية باستخدام [iceberg&#95;timestamp&#95;ms](/operations/settings/settings#iceberg_timestamp_ms) أو [iceberg&#95;snapshot&#95;id](/operations/settings/settings#iceberg_snapshot_id) (كلاهما متاح بدءًا من 25.4). لا تعيّن كليهما في الاستعلام نفسه. افحص تسلسل اللقطات في [system.iceberg&#95;history](/operations/system-tables/iceberg_history) (25.6+) قبل اختيار المعرّف. لعمليات تحميل الدُفعات المتكررة، راجع [تقييد قراءات الدُفعات باللقطات](#snapshot-bounds).
+
+```sql
+SELECT count()
+FROM my_iceberg_table
+SETTINGS iceberg_timestamp_ms = 1714636800000
+```
+
+<div id="iceberg-write-settings">
+  #### عمليات الكتابة في Iceberg
+</div>
+
+إلى جانب [allow&#95;insert&#95;into&#95;iceberg](/operations/settings/settings#allow_insert_into_iceberg) ‏(25.7+، Beta بدءًا من 26.2)، يمكنك التحكم في حجم ملف الإخراج وعدد التقسيمات أثناء الإدراج:
+
+| الإعداد                                                                                                                              | منذ   | الغرض                                                    |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ----- | -------------------------------------------------------- |
+| [iceberg&#95;insert&#95;max&#95;rows&#95;in&#95;data&#95;file](/operations/settings/settings#iceberg_insert_max_rows_in_data_file)   | 25.9  | الحد الأقصى لعدد الصفوف في كل ملف بيانات ناتج            |
+| [iceberg&#95;insert&#95;max&#95;bytes&#95;in&#95;data&#95;file](/operations/settings/settings#iceberg_insert_max_bytes_in_data_file) | 25.9  | الحد الأقصى لعدد البايتات في كل ملف بيانات ناتج          |
+| [iceberg&#95;insert&#95;max&#95;partitions](/operations/settings/settings#iceberg_insert_max_partitions)                             | 25.12 | الحد الأقصى لعدد التقسيمات المكتوبة في عملية إدراج واحدة |
+
+راجع [الكتابة إلى بحيرات البيانات](/use-cases/data-lake/getting-started/writing-data) و[مرجع محرك Iceberg](/engines/table-engines/integrations/iceberg).
+
+<div id="delta-lake-settings">
+  ### Delta Lake
+</div>
+
+ابتداءً من الإصدار 25.6، يقرأ ClickHouse جداول Delta Lake على S3 وGCS باستخدام نواة Delta Lake المكتوبة بلغة Rust ([allow&#95;experimental&#95;delta&#95;kernel&#95;rs](/operations/settings/settings#allow_experimental_delta_kernel_rs)، 25.5+). على Azure Blob Storage، استخدم [deltaLakeAzure()](/sql-reference/table-functions/deltalake) مع القارئ legacy لأن هذه النواة معطّلة هناك. وبدون هذه النواة، لن تتوفر استبعاد الأقسام أو تغذية بيانات التغيير أو قراءة snapshot version.
+
+<div id="delta-kernel">
+  #### Delta Kernel
+</div>
+
+يجب تمكين [allow&#95;experimental&#95;delta&#95;kernel&#95;rs](/operations/settings/settings#allow_experimental_delta_kernel_rs) لاستخدام استبعاد الأقسام، وتغذية بيانات التغيير، وقراءة إصدارات اللقطات. ويكون مفعّلًا افتراضيًا على S3 وGCS بدءًا من الإصدار 25.5. فعِّله صراحةً في الإصدارات الأقدم أو عند استكشاف الأخطاء وإصلاحها:
+
+```sql
+SET allow_experimental_delta_kernel_rs = 1;
+```
+
+<div id="iceberg-read-settings">
+  #### إعدادات القراءة
+</div>
+
+| الإعداد                                                                                                                                                                                                                                 | منذ   | الافتراضي | ملاحظات                                                                              |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | --------- | ------------------------------------------------------------------------------------ |
+| [delta&#95;lake&#95;enable&#95;engine&#95;predicate](/operations/settings/settings#delta_lake_enable_engine_predicate)                                                                                                                  | 25.8  | `1`       | يُمرِّر عوامل التصفية إلى النواة لاستبعاد الأقسام. يتطلب [Delta Kernel](#delta-kernel) |
+| [delta&#95;lake&#95;reload&#95;schema&#95;for&#95;consistency](/operations/settings/settings#delta_lake_reload_schema_for_consistency)                                                                                                  | 26.3  | `0`       | يعيد تحميل المخطط قبل كل query عندما يُجري الكتّاب المتزامنون تغييرات على المخطط     |
+| [delta&#95;lake&#95;snapshot&#95;start&#95;version](/operations/settings/settings#delta_lake_snapshot_start_version) / [delta&#95;lake&#95;snapshot&#95;end&#95;version](/operations/settings/settings#delta_lake_snapshot_end_version) | 25.12 | `-1`      | يقرأ تغييرات CDF بين إصدارَي لقطتين. يتطلب تمكين CDF في المصدر                       |
+| [delta&#95;lake&#95;snapshot&#95;version](/operations/settings/settings#delta_lake_snapshot_version)                                                                                                                                    | 25.8  | `-1`      | يقرأ لقطة تاريخية واحدة. اضبط `-1` للحصول على أحدث لقطة (`0` قيمة صالحة)             |
+
+تُطبِّق الجداول التي تحتوي على [متجهات الحذف](https://docs.delta.io/latest/delta-deletion-vectors.html) ‏(26.2+) تصفية على مستوى الصفوف أثناء القراءة. يتعامل ClickHouse مع ذلك تلقائيًا، لكن المسح في الجداول التي تكثر فيها DV يتطلب عملاً أكبر لكل ملف.
+
+<div id="delta-incremental-sync">
+  #### تغذية بيانات التغيير في Delta
+</div>
+
+لقراءة الصفوف التي تغيّرت فقط بين لقطتَي Delta، عيّن [delta&#95;lake&#95;snapshot&#95;start&#95;version](/operations/settings/settings#delta_lake_snapshot_start_version) و[delta&#95;lake&#95;snapshot&#95;end&#95;version](/operations/settings/settings#delta_lake_snapshot_end_version) (25.12+). يجب أن تكون تغذية بيانات التغيير مفعّلة للجدول في المصدر الأصلي (`delta.enableChangeDataFeed`). عيّن كلاً من إصدارَي البداية والنهاية في إعدادات الاستعلام. سيؤدي تعيين إصدار النهاية فقط إلى حدوث خطأ.
+
+```sql
+SELECT *
+FROM deltaLake('s3://my-bucket/warehouse/ga4_events/')
+SETTINGS
+    delta_lake_snapshot_start_version = 42,
+    delta_lake_snapshot_end_version = 47
+```
+
+خزّن إصدار النهاية بعد كل عملية تحميل ناجحة، ومرّره باعتباره إصدار البداية في التشغيل التالي. تتضمن النتيجة أعمدة CDF (`_change_type`, `_commit_version`, `_commit_timestamp`). تعامل مع هذه الأعمدة قبل تحميل البيانات إلى الجدول الهدف. للاطلاع على النمط العام للّقطات، راجع [تقييد قراءات الدفعات باللقطات](#snapshot-bounds).
+
+<div id="delta-write-settings">
+  #### عمليات الكتابة في Delta Lake
+</div>
+
+إلى جانب [allow&#95;delta&#95;lake&#95;writes](/operations/settings/settings#allow_experimental_delta_lake_writes) ‏(25.9+)، تحكَّم في حجم ملف الإخراج أثناء الإدراج:
+
+| الإعداد                                                                                                                                        | منذ  | الغرض                                       |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ------------------------------------------- |
+| [delta&#95;lake&#95;insert&#95;max&#95;rows&#95;in&#95;data&#95;file](/operations/settings/settings#delta_lake_insert_max_rows_in_data_file)   | 25.9 | الحد الأقصى للصفوف في كل ملف بيانات إخراج   |
+| [delta&#95;lake&#95;insert&#95;max&#95;bytes&#95;in&#95;data&#95;file](/operations/settings/settings#delta_lake_insert_max_bytes_in_data_file) | 25.9 | الحد الأقصى للبايتات في كل ملف بيانات إخراج |
+
+```sql
+SET allow_delta_lake_writes = 1;
+
+INSERT INTO my_delta_table
+SETTINGS
+    delta_lake_insert_max_rows_in_data_file = 1000000,
+    delta_lake_insert_max_bytes_in_data_file = 134217728
+SELECT * FROM source_table
+```
+
+تتطلب عمليات الكتابة استخدام Delta Kernel مع S3 أو GCS. راجع [مرجع محرك DeltaLake](/engines/table-engines/integrations/deltalake) للاطلاع على أمثلة.
+
+<div id="debug-system-tables">
+  ## استكشاف أخطاء استعلامات بحيرة البيانات وإصلاحها
+</div>
+
+غالبًا ما ترجع الاستعلامات البطيئة على بحيرة البيانات، أو التي تُرجع نتائج غير متوقعة، إلى عمليات قراءة البيانات الوصفية، أو استبعاد الأقسام، أو مشاكل الاتصال بـ الكتالوج. ابدأ بعمليات التحقق أدناه، ثم استخدم سجلات البيانات الوصفية الخاصة بكل format عند الحاجة.
+
+<div id="debug-catalog">
+  ### التحقق من اتصال الكتالوج
+</div>
+
+لا يتحقق `CREATE DATABASE` مع `DataLakeCatalog` من بيانات الاعتماد. يمكن أن تظل قاعدة البيانات موجودة حتى إذا كان الاتصال بالكتالوج معطّلًا. اعتبارًا من ClickHouse 26.4، شغّل فحصًا صحيًا خفيفًا:
+
+```sql
+CHECK DATABASE my_lake;
+```
+
+في الإصدارات الأقدم، تأكّد من الاتصال باستخدام `SHOW TABLES FROM my_lake` وافحص رسالة الخطأ. استخدم `SHOW CREATE TABLE` مع اسم جدول محاط بعلامتَي الاقتباس المائلتين للتحقّق من مسار التخزين الذي تم تحديده ونوع المحرّك:
+
+```sql
+SHOW CREATE TABLE my_lake.`db.table`;
+```
+
+إذا لم تظهر جداول كتالوج في `system.tables`، ففعِّل [show&#95;remote&#95;databases&#95;in&#95;system&#95;tables](/operations/settings/settings#show_remote_databases_in_system_tables) (25.8+). تُخفى جداول كتالوج افتراضيًا عن استبطان النظام. في الإصدارات السابقة لـ 26.6، استخدم اسمها السابق، `show_data_lake_catalogs_in_system_tables`.
+
+<div id="debug-files">
+  ### اعرف الملفات التي تتم قراءتها
+</div>
+
+يكشف كلٌّ من Iceberg وDelta Lake عن [الأعمدة الافتراضية](/sql-reference/table-functions/iceberg#virtual-columns) (`_path`, `_file`, `_size`, `_time`, `_etag`) في كل عملية قراءة. نفّذ التجميع حسب `_path` لمعرفة ما إذا كان استبعاد الأقسام يعمل كما ينبغي، أو ما إذا كان الاستعلام يفحص ملفات أكثر من المتوقع. بالنسبة إلى جداول Iceberg ذات التقسيم المخفي، طبّق عامل التصفية على العمود المصدر (مثل `event_time`) لا على عمود قسم منفصل:
+
+```sql
+SELECT _path, count() AS rows
+FROM my_lake.`logs.application`
+WHERE event_time >= '2026-03-01'
+  AND event_time < '2026-03-02'
+GROUP BY _path
+ORDER BY rows DESC;
+```
+
+<div id="debug-query-log">
+  ### تحقّق من حجم المسح
+</div>
+
+قارن بين `read_rows` و`read_bytes` في [system.query&#95;log](/operations/system-tables/query_log) قبل إضافة عوامل التصفية أو ضبط الإعدادات وبعدها. تُظهر ProfileEvents مثل `ReadBufferFromS3Bytes` و`CachedReadBufferReadFromCacheBytes` مقدار البيانات التي جاءت من التخزين الكائني مقابل ذاكرة التخزين المؤقت المحلية. راجع [تحسين الاستعلام](/optimize/query-optimization) للحصول على شرح كامل لـ query&#95;log وEXPLAIN.
+
+عطّل [enable&#95;filesystem&#95;cache](/operations/settings/settings#enable_filesystem_cache) عند إجراء اختبارات الأداء حتى لا تُخفي مرات الوصول الناجح إلى ذاكرة التخزين المؤقت الفروق بين التشغيلات.
+
+<div id="debug-metadata-logs">
+  ### سجلات البيانات الوصفية
+</div>
+
+يوفّر ClickHouse ثلاثة جداول نظام لأغراض تصحيح الأخطاء على مستوى البيانات الوصفية. فعِّل التسجيل على مستوى الاستعلام فقط. فهي ليست مخصّصة للمراقبة المستمرة.
+
+| جدول النظام                                                                                     | التنسيق    | منذ   | فعِّله باستخدام                                                                                                 | استخدمه لـ                                                    |
+| ----------------------------------------------------------------------------------------------- | ---------- | ----- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| [system.iceberg&#95;metadata&#95;log](/operations/system-tables/iceberg_metadata_log)           | Iceberg    | 25.9  | [iceberg&#95;metadata&#95;log&#95;level](/operations/settings/settings#iceberg_metadata_log_level) في الاستعلام | تتبّع ملفات البيانات الوصفية المقروءة وقرارات استبعاد الأقسام |
+| [system.iceberg&#95;history](/operations/system-tables/iceberg_history)                         | Iceberg    | 25.6  | يُملأ تلقائيًا لجداول Iceberg في ClickHouse                                                                     | افحص تسلسل اللقطات قبل استعلامات السفر عبر الزمن              |
+| [system.delta&#95;lake&#95;metadata&#95;log](/operations/system-tables/delta_lake_metadata_log) | Delta Lake | 25.10 | [delta&#95;lake&#95;log&#95;metadata](/operations/settings/settings#delta_lake_log_metadata) = `1` في الاستعلام | تتبّع ملفات البيانات الوصفية في Delta وتحديد اللقطة           |
+
+شغّل استعلامًا مع تمكين التسجيل، ثم نفّذ عملية flush للسجل، وبعد ذلك افحص السجلات الخاصة بذلك `query_id`:
+
+```sql
+SELECT count() FROM my_iceberg_table
+SETTINGS iceberg_metadata_log_level = 'manifest_file_entry';
+
+SYSTEM FLUSH LOGS iceberg_metadata_log;
+
+SELECT content_type, file_path, pruning_status
+FROM system.iceberg_metadata_log
+WHERE query_id = '<previous_query_id>';
+```
+
+في ClickHouse Cloud، تكون بيانات السجلات محلية لكل عقدة. استخدم `clusterAllReplicas` لرؤية الصورة الكاملة عبر النسخ المتماثلة.
+
+تؤدي مستويات السجل التفصيلية في Iceberg إلى تعطيل التخزين المؤقت للبيانات الوصفية لقوائم manifest والملفات، مما يبطئ الاستعلامات اللاحقة على الجدول نفسه. استخدم مستوى تفصيلاً عاليًا فقط أثناء التحقيق الفعلي. بالنسبة إلى مشكلات predicate في Delta Lake، فعّل [delta&#95;lake&#95;throw&#95;on&#95;engine&#95;predicate&#95;error](/operations/settings/settings#delta_lake_throw_on_engine_predicate_error) (25.8+) للإخفاق فورًا عندما يتعذر على النواة دفع عامل التصفية إلى الأسفل.
+
+راجع صفحتي المرجع [iceberg&#95;metadata&#95;log](/operations/system-tables/iceberg_metadata_log) و[delta&#95;lake&#95;metadata&#95;log](/operations/system-tables/delta_lake_metadata_log) للاطلاع على تفاصيل الأعمدة وخيارات مستوى التفصيل.
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* [البدء](/use-cases/data-lake/getting-started) — شرح متكامل من الاستعلام المباشر إلى إعادة الكتابة إلى المصدر
+* [الاستعلام المباشر](/use-cases/data-lake/getting-started/querying-directly) — دوال الجداول، والمحركات، وإصدارات العناقيد لمختلف التنسيقات الأربعة
+* [الاتصال بالكتالوجات](/use-cases/data-lake/getting-started/connecting-catalogs) — إعداد `DataLakeCatalog` باستخدام Unity Catalog
+* [الكتابة إلى بحيرات البيانات](/use-cases/data-lake/getting-started/writing-data) — كتابة البيانات مجددًا إلى Iceberg وDelta Lake
+* [مصفوفة الدعم](/use-cases/data-lake/support-matrix) — مقارنة الميزات عبر التنسيقات، والكتالوجات، وأنظمة التخزين الخلفية

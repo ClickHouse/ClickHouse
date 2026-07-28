@@ -238,7 +238,7 @@ select * from tab2 order by toTimeZone(toTimezone(x, 'UTC'), 'CET'), intDiv(intD
 2020-02-05 00:00:00	3	3
 2020-02-05 00:00:00	3	3
 select * from (explain plan actions = 1 select * from tab2 order by toTimeZone(toTimezone(x, 'UTC'), 'CET'), intDiv(intDiv(y, -2), -3)) where explain like '%sort description%';
-  Prefix sort description: toTimezone(toTimezone(__table1.x, \'UTC\'_String), \'CET\'_String) ASC, intDiv(intDiv(__table1.y, -2_Int8), -3_Int8) ASC
+  Prefix sort description: toTimezone(toTimezone(__table1.x, \'UTC\'_String), \'CET\'_String) ASC
   Result sort description: toTimezone(toTimezone(__table1.x, \'UTC\'_String), \'CET\'_String) ASC, intDiv(intDiv(__table1.y, -2_Int8), -3_Int8) ASC
 select * from tab2 order by toStartOfDay(x), intDiv(intDiv(y, -2), -3);
 2020-02-02 00:00:00	0	0
@@ -254,8 +254,6 @@ select * from (explain plan actions = 1 select * from tab2 order by toStartOfDay
   Result sort description: toStartOfDay(__table1.x) ASC, intDiv(intDiv(__table1.y, -2_Int8), -3_Int8) ASC
 -- select * from tab2 where toTimezone(x, 'CET') = '2020-02-03 01:00:00' order by intDiv(intDiv(y, -2), -3);
 select * from (explain plan actions = 1 select * from tab2 where toTimezone(x, 'CET') = '2020-02-03 01:00:00' order by intDiv(intDiv(y, -2), -3)) where explain like '%sort description%';
-  Prefix sort description: intDiv(intDiv(__table1.y, -2_Int8), -3_Int8) ASC
-  Result sort description: intDiv(intDiv(__table1.y, -2_Int8), -3_Int8) ASC
 -- { echoOn }
 
 -- Union (not fully supported)

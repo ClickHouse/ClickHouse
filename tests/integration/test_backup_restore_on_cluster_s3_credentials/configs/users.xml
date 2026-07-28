@@ -1,0 +1,27 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- Untrusted users must not reach the server's own S3 credentials, and must not be able to
+                 change that: the readonly constraint pins the setting, like a hardened deployment does. -->
+            <s3_allow_server_credentials_in_user_queries>0</s3_allow_server_credentials_in_user_queries>
+            <constraints>
+                <s3_allow_server_credentials_in_user_queries>
+                    <readonly/>
+                </s3_allow_server_credentials_in_user_queries>
+            </constraints>
+        </default>
+        <backup_admin>
+            <!-- A trusted operator profile that is allowed to run backups with the server credentials. -->
+            <s3_allow_server_credentials_in_user_queries>1</s3_allow_server_credentials_in_user_queries>
+        </backup_admin>
+    </profiles>
+    <users>
+        <backup_user>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>backup_admin</profile>
+        </backup_user>
+    </users>
+</clickhouse>
