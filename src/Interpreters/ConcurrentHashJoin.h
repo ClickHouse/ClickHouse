@@ -70,7 +70,8 @@ public:
     /// With one slot `dispatchBlock` short-circuits and `joinBlock` passes the left block
     /// through unscattered, so there is nothing to reorder regardless of the map type. With
     /// several slots a shared two-level map also passes the block through unscattered; but a
-    /// single-level map (key8 / key16, or a single non-nullable LowCardinality key) makes
+    /// single-level map (key8 / key16, i.e. keys materializing to UInt8 / UInt16 -- wider keys
+    /// have a two-level variant that `chooseMethod` picks here) makes
     /// `joinBlock` scatter the left block across slots and `ConcurrentHashJoinResult` emit
     /// slot 0, then 1, ..., so equal left-key values stop being contiguous. Both `slots` and
     /// the map type are fixed at build time, so this is stable when the read-in-order

@@ -30,6 +30,10 @@ public:
     std::string getName() const override { return "ConstantJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
+    /// Every result class walks the probe block by ascending row index and emits each left row
+    /// before moving to the next one, so the left block order is preserved.
+    bool preservesLeftBlockOrder() const override { return true; }
+
     bool isCloneSupported() const override
     {
         return getTotals().empty() && total_rows_to_join == 0;
