@@ -618,6 +618,7 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 - `schema` — PostgreSQL schema.
 - `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
 
+<a id="data_types-support"></a>
 ## Data types support {#data-types-support}
 
 | PostgreSQL       | ClickHouse                                                   |

@@ -322,7 +322,7 @@ When you explicitly specify ClickHouse column types in the table definition, the
 - All integer types ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](/reference/data-types/int-uint))
 - [Float32, Float64](/reference/data-types/float)
 
-See [SQLite database engine](/reference/engines/database-engines/sqlite#data-types-support) for the default type mapping.
+See [SQLite database engine](/reference/engines/database-engines/sqlite#data_types-support) for the default type mapping.
 
 ## Usage example {#usage-example}
 

@@ -716,6 +716,7 @@ ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
 SETTINGS enable_compression = 1;
 ```
 
+<a id="data_types-support"></a>
 ## Data types support {#data-types-support}
 
 | MySQL                            | ClickHouse                                                   |
