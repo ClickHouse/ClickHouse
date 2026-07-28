@@ -1225,7 +1225,7 @@
         -->
 
         <!--
-            ORDER BY expr: https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree#order-by
+            ORDER BY expr: https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree#order_by
             Example:
                 event_date, event_time
                 event_date, type, query_id
