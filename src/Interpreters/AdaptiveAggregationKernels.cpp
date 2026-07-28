@@ -886,7 +886,7 @@ void Aggregator::sealValueStagedChunkDeduplicated(
         UInt32 index;
     };
     std::vector<StagedRef> refs;
-    std::vector<UInt32> order;
+    std::vector<StagedRef> grouped;
 
     size_t out = 0;
     UInt64 byte_pos = 0;
@@ -894,35 +894,40 @@ void Aggregator::sealValueStagedChunkDeduplicated(
     {
         keys.bucket_offsets[b] = static_cast<UInt32>(out);
 
+        constexpr size_t num_groups = 256;
+        std::array<UInt32, num_groups + 1> group_offsets{};
+
+        /// One pass collects the bucket's records and their group histogram together; the
+        /// records are then scattered whole into group order, so the dedup pass reads them
+        /// sequentially instead of gathering through an index vector.
         refs.clear();
         for (size_t m = 0; m < minis.size(); ++m)
         {
             const auto & mini = *minis[m];
             for (size_t j = mini.keys.bucket_offsets[b]; j < mini.keys.bucket_offsets[b + 1]; ++j)
+            {
                 refs.push_back({mini.keys.routing_hashes[j], static_cast<UInt32>(m), static_cast<UInt32>(j)});
+                ++group_offsets[((mini.keys.routing_hashes[j] >> 10) & 0xFF) + 1];
+            }
         }
         if (refs.empty())
             continue;
 
-        constexpr size_t num_groups = 256;
-        std::array<UInt32, num_groups + 1> group_offsets{};
-        for (const auto & ref : refs)
-            ++group_offsets[((ref.hash >> 10) & 0xFF) + 1];
         for (size_t g = 0; g < num_groups; ++g)
             group_offsets[g + 1] += group_offsets[g];
         std::array<UInt32, num_groups> group_cursor{};
         for (size_t g = 0; g < num_groups; ++g)
             group_cursor[g] = group_offsets[g];
-        order.resize(refs.size());
-        for (size_t i = 0; i < refs.size(); ++i)
-            order[group_cursor[(refs[i].hash >> 10) & 0xFF]++] = static_cast<UInt32>(i);
+        grouped.resize(refs.size());
+        for (const auto & ref : refs)
+            grouped[group_cursor[(ref.hash >> 10) & 0xFF]++] = ref;
 
         for (size_t g = 0; g < num_groups; ++g)
         {
             const size_t group_out_begin = out;
             for (size_t i = group_offsets[g]; i < group_offsets[g + 1]; ++i)
             {
-                const auto & ref = refs[order[i]];
+                const auto & ref = grouped[i];
                 const auto & mini = *minis[ref.mini];
 
                 /// Batch key bytes live in the minis' padded staged arrays.
