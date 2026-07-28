@@ -116,18 +116,6 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     columns_hashing_impl::MappedCache<Mapped> mapped_cache;
     PaddedPODArray<VisitValue> visit_cache;
 
-    /** The `visit_cache` entries that are not `Empty`, so `resetCache` can retire them all without
-      * scanning the whole dictionary. Kept because a caller may erase keys from the hash table under
-      * a live state — the `GROUP BY` top-K heap prunes evicted keys and destroys their aggregate
-      * states mid-block, which would otherwise leave `visit_cache` and `mapped_cache` pointing at
-      * freed memory.
-      *
-      * Deliberately *not* an epoch stamp on `visit_cache` itself: that would add a per-row compare
-      * against a member-derived value on the hot lookup path, measured at 1.36-1.64x on this loop,
-      * paid by every `LowCardinality` aggregation whether or not the top-K heap is in play. Appending
-      * here happens only when an entry transitions out of `Empty`, i.e. once per distinct dictionary
-      * index rather than once per row, so the lookup path is untouched.
-      */
     PaddedPODArray<UInt64> filled_visit_cache_indexes;
 
     ALWAYS_INLINE void setVisited(size_t index, VisitValue value)
@@ -217,18 +205,10 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         positions = column->getIndexesPtr().get();
     }
 
-    /** Retires every `visit_cache` / `mapped_cache` entry, on top of the consecutive-keys cache the
-      * base class resets. Callers must invoke this after erasing keys from the hash table or
-      * destroying aggregate states behind the state's back; `Aggregator::executeImplBatch` does so
-      * after every top-K trim.
-      */
     ALWAYS_INLINE void resetCache()
     {
         Base::resetCache();
 
-        /// Past a quarter of the dictionary one pass over the whole array beats chasing scattered
-        /// indexes. Decided here rather than while filling: a flag tested on the fill path costs a
-        /// reload per row and measured worse than doing nothing at all.
         if (filled_visit_cache_indexes.size() > visit_cache.size() / 4)
             std::fill(visit_cache.begin(), visit_cache.end(), VisitValue::Empty);
         else

@@ -499,11 +499,6 @@ private:
         bool use_compiled_functions,
         AggregateDataPtr overflow_row) const;
 
-    /// A state slot reclaimed by a top-K eviction, and the row of the current batch at which it was
-    /// destroyed. The slot goes back to `TopKAggregationHeap::free_states` and can be handed out to
-    /// a new key later in the same batch, so the row is what tells the `places` fixup in
-    /// `executeImplBatch` which entries still belong to the evicted group and which already belong
-    /// to the next occupant.
     struct DestroyedState
     {
         AggregateDataPtr slot;

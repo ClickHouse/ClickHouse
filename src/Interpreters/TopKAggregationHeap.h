@@ -246,15 +246,8 @@ private:
 
     bool tie_overflow = false;
 
-    /// Which `heap_column` sub-columns are `LowCardinality` (the column itself is index 0 when the
-    /// key is not composite). Empty for every other key type, which is then the free common case.
     std::vector<size_t> low_cardinality_columns;
 
-    /** `ColumnLowCardinality::filter` only drops indexes — its dictionary keeps every value ever
-      * pushed, so without this the heap's own storage would grow with the number of admitted keys
-      * even though the heap is bounded. `compactInplace` rebuilds the dictionary from the surviving
-      * indexes, which keeps heap storage proportional to the heap size.
-      */
     void compactDictionaries()
     {
         if (low_cardinality_columns.empty())

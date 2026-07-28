@@ -295,9 +295,6 @@ public:
     /// and remapping the indexes accordingly. Unlike `nestedToNullable()`, this keeps existing values valid.
     void convertDictionaryToNullableInplace() { compactInplaceToNullable(); }
 
-    /// Rebuild the dictionary in place, dropping values no index references any more, and remap the
-    /// indexes. Needed after dropping rows: `filter`/`cut` only touch the indexes, so the dictionary
-    /// would otherwise keep growing with values the column no longer holds.
     void compactDictionaryInplace() { compactInplace(); }
 
     ColumnPtr cloneWithDefaultOnNull() const;
