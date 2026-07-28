@@ -24,12 +24,11 @@ from ci.jobs.scripts import release_packages as rp  # noqa: E402
 
 
 class TestReleasePackagesEnumeration(unittest.TestCase):
-    def test_new_ci_layout(self):
-        # >= 25.3 uses the `REFs/<branch>` prefix and `build_<arch>_release` /
+    def test_layout(self):
+        # Releases use the `REFs/<branch>` prefix and `build_<arch>_release` /
         # `build_<arch>_darwin` job dirs.
-        self.assertTrue(rp.is_new_ci("26.3"))
         self.assertEqual(rp.s3_release_prefix("26.3"), "REFs/26.3")
-        objs = rp.expected_s3_objects("26.3", "26.3.9.100")
+        objs = rp.expected_s3_objects("26.3.9.100")
         self.assertEqual(
             set(objs),
             {
@@ -54,23 +53,6 @@ class TestReleasePackagesEnumeration(unittest.TestCase):
         self.assertIn("clickhouse-server_26.3.9.100_arm64.deb", arm)
         self.assertIn("clickhouse-server-26.3.9.100.aarch64.rpm", arm)
 
-    def test_old_ci_layout(self):
-        # Branches before 25.3 use the bare `<branch>` prefix and the legacy
-        # `package_*` / `binary_darwin*` job dirs.
-        self.assertFalse(rp.is_new_ci("24.8"))
-        self.assertEqual(rp.s3_release_prefix("24.8"), "24.8")
-        objs = rp.expected_s3_objects("24.8", "24.8.1.5")
-        self.assertEqual(
-            set(objs),
-            {
-                "package_release",
-                "package_aarch64",
-                "binary_darwin",
-                "binary_darwin_aarch64",
-            },
-        )
-        self.assertEqual(sum(len(v) for v in objs.values()), 50)
-
 
 class _FakeS3:
     """Minimal `list_prefix` stand-in: returns the keys present under a prefix."""
@@ -86,7 +68,7 @@ class TestReleaseBuildArtifactsReady(unittest.TestCase):
     def _all_keys(self, release, commit_sha, version):
         prefix = rp.s3_release_prefix(release)
         keys = []
-        for job, files in rp.expected_s3_objects(release, version).items():
+        for job, files in rp.expected_s3_objects(version).items():
             for name in files:
                 keys.append(f"{prefix}/{commit_sha}/{job}/{name}")
         return keys
@@ -120,22 +102,20 @@ class TestPackageDownloaderCoupling(unittest.TestCase):
         pytest.importorskip("boto3")
         from ci.jobs.scripts.create_release import PackageDownloader
 
-        for release, version in (("26.3", "26.3.9.100"), ("24.8", "24.8.1.5")):
-            pd = PackageDownloader(
-                release=release, commit_sha="deadbeef", version=version
-            )
-            # Rebuild PackageDownloader's S3-object view: deb/rpm/tgz files by
-            # job, plus the fixed `clickhouse` object under each darwin job.
-            pd_objects = {}  # type: dict[str, set]
-            for package_file, job in pd.file_to_job_name.items():
-                pd_objects.setdefault(job, set()).add(package_file)
-            for job in pd.macos_binary_to_job_name.values():
-                pd_objects.setdefault(job, set()).add(rp.MACOS_S3_OBJECT)
-            self.assertEqual(
-                pd_objects,
-                rp.expected_s3_objects(release, version),
-                f"PackageDownloader vs expected_s3_objects drift for {release}",
-            )
+        release, version = "26.3", "26.3.9.100"
+        pd = PackageDownloader(release=release, commit_sha="deadbeef", version=version)
+        # Rebuild PackageDownloader's S3-object view: deb/rpm/tgz files by
+        # job, plus the fixed `clickhouse` object under each darwin job.
+        pd_objects = {}  # type: dict[str, set]
+        for package_file, job in pd.file_to_job_name.items():
+            pd_objects.setdefault(job, set()).add(package_file)
+        for job in pd.macos_binary_to_job_name.values():
+            pd_objects.setdefault(job, set()).add(rp.MACOS_S3_OBJECT)
+        self.assertEqual(
+            pd_objects,
+            rp.expected_s3_objects(version),
+            f"PackageDownloader vs expected_s3_objects drift for {release}",
+        )
 
 
 if __name__ == "__main__":

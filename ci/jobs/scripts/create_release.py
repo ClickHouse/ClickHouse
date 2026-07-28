@@ -779,7 +779,6 @@ class PackageDownloader:
         assert version.startswith(release), "Invalid release branch or version"
         self.package_names = list(self.PACKAGES)
         self.release = release
-        self.is_new_ci = release_packages.is_new_ci(release)
         self.s3_release_prefix = release_packages.s3_release_prefix(release)
         self.commit_sha = commit_sha
         self.version = version
@@ -799,12 +798,12 @@ class PackageDownloader:
             "tgz": self.tgz_package_files,
         }
         for repo_type, package_file, job_name in release_packages.iter_package_objects(
-            release, version
+            version
         ):
             files_by_repo_type[repo_type].append(package_file)
             self.file_to_job_name[package_file] = job_name
 
-        for package_arch, job_name_darwin in release_packages.iter_macos_objects(release):
+        for package_arch, job_name_darwin in release_packages.iter_macos_objects():
             dest_bin = f"clickhouse-{self.MACOS_PACKAGE_TO_BIN_SUFFIX[package_arch]}"
             assert dest_bin in self.macos_package_files
             self.macos_binary_to_job_name[dest_bin] = job_name_darwin
