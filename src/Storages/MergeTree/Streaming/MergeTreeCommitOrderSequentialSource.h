@@ -30,7 +30,7 @@ public:
         ContextPtr context_,
         Names user_requested_columns_,
         size_t requested_num_streams_,
-        uint64_t max_block_size_,
+        UInt64 max_block_size_,
         MergeTreeBoundsSubscriptionPtr subscription_);
 
     String getName() const override { return "MergeTreeCommitOrderSequentialSource"; }
@@ -51,7 +51,7 @@ private:
     const ContextPtr context;
     const Names user_requested_columns;
     const size_t requested_num_streams;
-    const uint64_t max_block_size;
+    const UInt64 max_block_size;
     const MergeTreeBoundsSubscriptionPtr subscription;
     const LoggerPtr log;
 
@@ -61,7 +61,7 @@ private:
     /// Current snapshot runtime information
     Processors current_sub_pipeline;
     std::unique_ptr<QueryPlanResourceHolder> current_resources;
-    std::map<String, int64_t> reading_up_to_block_numbers;
+    std::map<String, Int64> reading_up_to_block_numbers;
 
     /// Reconfiguration
     std::optional<Pipe> pending_snapshot;

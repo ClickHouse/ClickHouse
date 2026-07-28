@@ -48,7 +48,7 @@ struct ClassifiedPartitions
 };
 
 ClassifiedPartitions getPartitionsClassification(
-    const std::map<String, int64_t> & safe_block_numbers,
+    const std::map<String, Int64> & safe_block_numbers,
     const std::map<String, PartitionCursor> & last_emitted_positions)
 {
     ClassifiedPartitions classification;
@@ -89,7 +89,7 @@ struct PipeWithResources
 QueryPlanPtr buildPartitionReadingPlan(
     const String & partition_id,
     const PartitionCursor & last_emitted_position,
-    const int64_t & safe_block_number,
+    const Int64 & safe_block_number,
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
     const SelectQueryInfo & query_info,
@@ -97,7 +97,7 @@ QueryPlanPtr buildPartitionReadingPlan(
     const ContextPtr & context,
     const Names & inner_columns,
     const size_t & requested_num_streams,
-    const uint64_t & max_block_size,
+    const UInt64 & max_block_size,
     const SharedHeader & output_header)
 {
     auto plan = MergeTreeDataSelectExecutor(storage).read(
@@ -168,7 +168,7 @@ Names extendWithAuxiliaryColumns(Names columns)
 
 std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
     const ClassifiedPartitions & partitions_classification,
-    const std::map<String, int64_t> & safe_block_numbers,
+    const std::map<String, Int64> & safe_block_numbers,
     const std::map<String, PartitionCursor> & last_emitted_positions,
     const MergeTreeData & storage,
     const SelectQueryInfo & query_info,
@@ -176,11 +176,11 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
     const ContextPtr & context,
     const Names & user_requested_columns,
     const size_t & requested_num_streams,
-    const uint64_t & max_block_size,
+    const UInt64 & max_block_size,
     const SharedHeader & output_header,
     const LoggerPtr & log)
 {
-    LOG_DEBUG(log, "Building new snapshot for {} partition(s): [{}]", partitions_classification.readable_partitions.size(), partitions_classification.readable_partitions);
+    LOG_DEBUG(log, "Building new snapshot for {} partition(s): {}", partitions_classification.readable_partitions.size(), partitions_classification.readable_partitions);
 
     /// Fresh storage snapshot reused by every per-partition subplan in this iteration.
     const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
@@ -193,7 +193,7 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
     for (const auto & partition_id : partitions_classification.readable_partitions)
     {
         const PartitionCursor last_emitted_position = last_emitted_positions.contains(partition_id) ? last_emitted_positions.at(partition_id) : PartitionCursor{};
-        const uint64_t safe_block_number = safe_block_numbers.at(partition_id);
+        const Int64 safe_block_number = safe_block_numbers.at(partition_id);
 
         auto plan = buildPartitionReadingPlan(
             partition_id,
@@ -292,7 +292,7 @@ MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
     ContextPtr context_,
     Names user_requested_columns_,
     size_t requested_num_streams_,
-    uint64_t max_block_size_,
+    UInt64 max_block_size_,
     MergeTreeBoundsSubscriptionPtr subscription_)
     : IProcessor({}, {Block(*header_)})
     , header(std::move(header_))
