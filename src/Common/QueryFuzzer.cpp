@@ -4501,7 +4501,7 @@ ASTPtr QueryFuzzer::permutePredicateClause(const ASTPtr & predicate, const int n
         {
             /// Nothing to permute in a degenerate call such as `and()`
             if (!func->arguments || func->arguments->children.empty())
-                return tryNegateNextPredicate(predicate, negProb);
+                return fuzzPredicate(predicate, negProb);
 
             ASTs predicates;
 
