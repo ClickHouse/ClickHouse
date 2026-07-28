@@ -44,11 +44,11 @@ ClickHouse предлагает различные механизмы ускор
 * **Правильное использование первичных индексов**
 * **Предварительное вычисление агрегатов**
 
-В некотором смысле проекции похожи на [Materialized Views](/ru/concepts/features/materialized-views/index)
+В некотором смысле проекции похожи на [materialized view](/ru/concepts/features/materialized-views/index)
 , которые также позволяют использовать несколько порядков строк и предварительно вычислять агрегации
 во время вставки.
 Проекции обновляются автоматически и
-поддерживаются в синхронизации с исходной таблицей, в отличие от Materialized Views, которые
+поддерживаются в синхронизации с исходной таблицей, в отличие от materialized view, которые
 обновляются явно. Когда запрос обращается к исходной таблице,
 ClickHouse автоматически анализирует первичные ключи и выбирает таблицу, которая может
 дать тот же корректный результат, но при этом требует прочитать минимальный объём данных,
@@ -706,5 +706,5 @@ SELECT * FROM page_views WHERE region = 'us_west' AND user_id = 107;
 </div>
 
 * [Практическое введение в первичные индексы в ClickHouse](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
-* [Materialized Views](/ru/concepts/features/materialized-views/index)
+* [materialized view](/ru/concepts/features/materialized-views/index)
 * [ALTER PROJECTION](/ru/reference/statements/alter/projection)

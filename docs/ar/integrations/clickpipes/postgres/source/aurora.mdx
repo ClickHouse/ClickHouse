@@ -57,7 +57,7 @@ postgres=> SHOW rds.logical_replication ;
   ## إعداد مستخدم قاعدة البيانات
 </div>
 
-اتصل بمثيل writer في Aurora PostgreSQL كمستخدم مسؤول، ثم نفّذ الأوامر التالية:
+اتصل بمثيل الكتابة في Aurora PostgreSQL كمستخدم مسؤول، ثم نفّذ الأوامر التالية:
 
 1. أنشئ مستخدمًا مخصصًا لـ ClickPipes:
 
@@ -97,7 +97,20 @@ postgres=> SHOW rds.logical_replication ;
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-سيحتوي الـ publication المسمى `clickpipes` على مجموعة أحداث التغيير الناتجة من الجداول المحددة، وسيُستخدم لاحقًا لاستيعاب تدفّق النسخ المتماثل.
+يحدّد الـ publication المسمى `clickpipes` مجموعة الجداول التي ستُبث أحداث التغيير الخاصة بها إلى ClickPipes. نوصي بعدم استخدام `FOR ALL TABLES` إلا إذا كنت تنوي تكرار كل table، لأن تضمين جداول غير ضرورية يزيد من حركة WAL من Postgres إلى ClickPipes ويقلّل من الكفاءة الإجمالية للنسخ المتماثل.
+
+<div id="iam-authentication">
+  ### استخدام مصادقة IAM (اختياري)
+</div>
+
+بدلًا من `password`، يمكنك مصادقة مستخدم ClickPipes باستخدام وصول AWS IAM المستند إلى الدور. ويتطلب ذلك ضبط المعلَمة `rds.iam_auth_for_replication` على `1`. أنشئ المستخدم كما يلي، ثم امنحه امتيازات `schema` و`replication` نفسها الموضحة أعلاه:
+
+```sql
+CREATE USER clickpipes_iam_user;
+GRANT rds_iam TO clickpipes_iam_user;
+```
+
+راجع [AWS IAM DB authentication (RDS/Aurora)](/ar/integrations/clickpipes/postgres/auth) للاطلاع على الخطوات الكاملة لإعداد IAM role والسياسة المطلوبة لكي يتمكن ClickPipes من المصادقة بهذه الطريقة.
 
 <div id="configure-network-access">
   ## إعداد الوصول إلى الشبكة

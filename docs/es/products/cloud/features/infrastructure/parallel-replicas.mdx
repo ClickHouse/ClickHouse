@@ -31,11 +31,11 @@ datos.
 Las lecturas pueden enviarse a la tabla local. La ejecución de la consulta ocurrirá solo
 en el segmento especificado, o bien puede enviarse a la tabla distribuida, y en ese
 caso, cada segmento ejecutará las consultas indicadas. El servidor en el que se consultó la tabla distribuida
-agregará los datos y responderá al cliente:
+agregará los datos y responderá al Client:
 
 <Image img="/images/deployment-guides/parallel-replicas-1.webp" size="md" alt="arquitectura segmentada" />
 
-La figura anterior muestra lo que sucede cuando un cliente consulta una tabla distribuida:
+La figura anterior muestra lo que sucede cuando un Client consulta una tabla distribuida:
 
 <ol className="docs-ordered-list">
   <li>
@@ -57,7 +57,7 @@ La figura anterior muestra lo que sucede cuando un cliente consulta una tabla di
 
   <li>
     El nodo coordinador fusiona los datos y luego envía la respuesta
-    al cliente.
+    al Client.
   </li>
 </ol>
 
@@ -96,7 +96,7 @@ ejecutar una consulta sobre un subconjunto de los datos. ¿Cómo funciona cuando
 Para paralelizar la ejecución de consultas a través de varios servidores, primero necesitamos
 poder asignar uno de nuestros servidores como coordinador. El coordinador es quien
 crea la lista de tareas que deben ejecutarse, garantiza que todas se
-ejecuten, se agreguen y que el resultado se devuelva al cliente. Como
+ejecuten, se agreguen y que el resultado se devuelva al Client. Como
 en la mayoría de los sistemas distribuidos, este será el papel del nodo que recibe la
 consulta inicial. También necesitamos definir la unidad de trabajo. En una arquitectura con segmentos,
 la unidad de trabajo es el segmento, un subconjunto de los datos. Con las réplicas paralelas
@@ -111,7 +111,7 @@ Con réplicas paralelas:
 
 <ol className="docs-ordered-list">
   <li>
-    La consulta del cliente se envía a un nodo después de pasar por un balanceador
+    La consulta del Client se envía a un nodo después de pasar por un balanceador
     de carga. Este nodo se convierte en el coordinador de esta consulta.
   </li>
 
@@ -132,7 +132,7 @@ Con réplicas paralelas:
 
   <li>
     Por último, el coordinador fusiona todos los resultados de las réplicas y
-    luego devuelve la respuesta al cliente.
+    luego devuelve la respuesta al Client.
   </li>
 </ol>
 
@@ -174,30 +174,30 @@ anuncio. Veamos cómo funciona en la siguiente figura:
 
 <ol className="docs-ordered-list">
   <li>
-    La consulta del cliente se envía a un nodo tras pasar por un
-    balanceador de carga. Ese nodo se convierte en el coordinador de la consulta.
+    La consulta del Client se envía a un nodo tras pasar por un balanceador
+    de carga. El nodo se convierte en el coordinador de esta consulta.
   </li>
 
   <li>
     El nodo coordinador envía una solicitud para obtener anuncios de
-    todas las réplicas del clúster. Las réplicas pueden tener vistas ligeramente diferentes
-    del conjunto actual de partes de una tabla. Por ello, necesitamos
+    todas las réplicas del clúster. Las réplicas pueden tener vistas ligeramente
+    distintas del conjunto actual de partes de una tabla. Por ello, necesitamos
     recopilar esta información para evitar decisiones de planificación incorrectas.
   </li>
 
   <li>
-    A continuación, el nodo coordinador usa los anuncios para definir un conjunto de
+    A continuación, el nodo coordinador utiliza los anuncios para definir un conjunto de
     gránulos que pueden asignarse a las distintas réplicas. Aquí, por ejemplo,
-    podemos ver que no se asignó ningún gránulo de la parte 3 a la réplica 2
+    podemos ver que no se ha asignado ningún gránulo de la parte 3 a la réplica 2
     porque esta réplica no incluyó esa parte en su anuncio.
-    Observe también que no se asignaron tareas a la réplica 3 porque la
+    Observe también que no se asignó ninguna tarea a la réplica 3 porque la
     réplica no proporcionó ningún anuncio.
   </li>
 
   <li>
     Después de que cada réplica haya procesado la consulta sobre su subconjunto de gránulos
     y el estado fusionable se haya enviado de vuelta al coordinador, el
-    coordinador fusiona los resultados y la respuesta se envía al cliente.
+    coordinador fusiona los resultados y la respuesta se envía al Client.
   </li>
 </ol>
 
@@ -335,14 +335,14 @@ las principales.
   la etiqueta `comp-parallel-replicas`.
 </Note>
 
-| Limitación                                                   | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Consultas complejas                                          | Actualmente, las réplicas paralelas funcionan bastante bien con consultas simples. Capas de complejidad como CTE, subconsultas, JOIN, consultas no planas, etc. pueden tener un impacto negativo en el rendimiento de la consulta.                                                                                                                                                                                                                                          |
+| Limitación                                                   | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Consultas complejas                                          | Actualmente, las réplicas paralelas funcionan bastante bien con consultas simples. Capas de complejidad como CTE, subconsultas, JOIN, consultas no planas, etc. pueden tener un impacto negativo en el rendimiento de la consulta.                                                                                                                                                                                                                                             |
 | Consultas pequeñas                                           | Si está ejecutando una consulta que no procesa muchas filas, ejecutarla en varias réplicas puede no mejorar el tiempo de respuesta, ya que el tiempo de red necesario para la coordinación entre réplicas puede añadir ciclos adicionales a la ejecución de la consulta. Puede mitigar estos problemas usando la configuración [`parallel_replicas_min_number_of_rows_per_replica`](/es/reference/settings/session-settings#parallel_replicas_min_number_of_rows_per_replica). |
-| Las réplicas paralelas están deshabilitadas con FINAL        |                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| Las proyecciones no se usan junto con las réplicas paralelas |                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| Datos de alta cardinalidad y agregación compleja             | La agregación de alta cardinalidad que requiere enviar muchos datos puede ralentizar significativamente sus consultas.                                                                                                                                                                                                                                                                                                                                                      |
-| Compatibilidad con el nuevo analizador                       | El nuevo analizador puede ralentizar o acelerar significativamente la ejecución de consultas en determinados escenarios.                                                                                                                                                                                                                                                                                                                                                    |
+| Las réplicas paralelas están deshabilitadas con FINAL        |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Las proyecciones no se usan junto con las réplicas paralelas |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Datos de alta cardinalidad y agregación compleja             | La agregación de alta cardinalidad que requiere enviar muchos datos puede ralentizar significativamente sus consultas.                                                                                                                                                                                                                                                                                                                                                         |
+| Compatibilidad con el analizador                             | El analizador puede ralentizar o acelerar significativamente la ejecución de consultas en determinados escenarios.                                                                                                                                                                                                                                                                                                                                                             |
 
 <div id="settings-related-to-parallel-replicas">
   ## Configuración relacionada con las réplicas paralelas
