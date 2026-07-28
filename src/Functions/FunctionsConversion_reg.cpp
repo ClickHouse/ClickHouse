@@ -1455,7 +1455,7 @@ SELECT toUUID2('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toUUID2 = {26, 6};
+    FunctionDocumentation::IntroducedIn introduced_in_toUUID2 = {26, 8};
     FunctionDocumentation::Category category_toUUID2 = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toUUID2 = {description_toUUID2, syntax_toUUID2, arguments_toUUID2, {}, returned_value_toUUID2, examples_toUUID2, introduced_in_toUUID2, category_toUUID2};
 
@@ -2744,7 +2744,7 @@ SELECT
     };
     FunctionDocumentation::ReturnedValue returned_value_toUUID2OrZero = {"Returns a UUID2, or a zero UUID2 on parse failure.", {"UUID2"}};
     FunctionDocumentation::Examples examples_toUUID2OrZero = {};
-    FunctionDocumentation::IntroducedIn introduced_in_toUUID2OrZero = {26, 6};
+    FunctionDocumentation::IntroducedIn introduced_in_toUUID2OrZero = {26, 8};
     FunctionDocumentation::Category category_toUUID2OrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toUUID2OrZero = {description_toUUID2OrZero, syntax_toUUID2OrZero, arguments_toUUID2OrZero, {}, returned_value_toUUID2OrZero, examples_toUUID2OrZero, introduced_in_toUUID2OrZero, category_toUUID2OrZero};
 
@@ -4016,7 +4016,7 @@ SELECT
     };
     FunctionDocumentation::ReturnedValue returned_value_toUUID2OrNull = {"Returns a UUID2, or NULL on parse failure.", {"Nullable(UUID2)"}};
     FunctionDocumentation::Examples examples_toUUID2OrNull = {};
-    FunctionDocumentation::IntroducedIn introduced_in_toUUID2OrNull = {26, 6};
+    FunctionDocumentation::IntroducedIn introduced_in_toUUID2OrNull = {26, 8};
     FunctionDocumentation::Category category_toUUID2OrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toUUID2OrNull = {description_toUUID2OrNull, syntax_toUUID2OrNull, arguments_toUUID2OrNull, {}, returned_value_toUUID2OrNull, examples_toUUID2OrNull, introduced_in_toUUID2OrNull, category_toUUID2OrNull};
 

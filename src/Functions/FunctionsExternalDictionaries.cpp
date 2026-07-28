@@ -1025,7 +1025,7 @@ R"(
 └──────────────────────────────────────┘
 )"}
         };
-        FunctionDocumentation::IntroducedIn introduced_in = {26, 6};
+        FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetUUID2>(documentation);
@@ -1060,7 +1060,7 @@ R"(
 └─────────────────────────────────────────┘
 )"}
         };
-        FunctionDocumentation::IntroducedIn introduced_in = {26, 6};
+        FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetUUID2OrDefault>(documentation);
