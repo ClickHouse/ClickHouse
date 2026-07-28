@@ -11,6 +11,8 @@
 
 #include <Columns/IColumn_fwd.h>
 
+#include <Common/VectorWithMemoryTracking.h>
+
 namespace DB
 {
 
@@ -21,7 +23,7 @@ using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 struct IdentifierResolveScope;
 
 struct NameAndTypePair;
-using NamesAndTypes = std::vector<NameAndTypePair>;
+using NamesAndTypes = VectorWithMemoryTracking<NameAndTypePair>;
 
 /// Returns true if node part of root tree, false otherwise
 bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root);
@@ -64,6 +66,11 @@ bool isQueryOrUnionNode(const QueryTreeNodePtr & node);
 
 /// Returns true, if node has type QUERY or UNION and uses any columns from outer scope
 bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node);
+
+/// Returns true, if the node or any node in its subtree is a correlated subquery/union.
+/// A correlated subquery must be evaluated exactly once, so optimizations that clone or
+/// distribute an expression must not do so when the expression contains one.
+bool containsCorrelatedSubquery(const QueryTreeNodePtr & node);
 
 /* Checks, if column source is not registered in scopes that appear
  * before nearest query scope.
@@ -149,6 +156,16 @@ NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node);
 /// Wrap node into `_CAST` function
 QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context);
 
+/// Constant-fold a resolved `_CAST(<constant>, <type>)` function node, exactly as `resolveFunction` would.
+/// Passes that create a `_CAST` after normal resolution (e.g. `IfTransformStringsToEnumPass`,
+/// `DistanceTransposedPartialReadsPass`) must fold it here so that a remote shard / parallel replica, which
+/// re-analyzes the shipped AST and folds the constant on its side, names the resulting `ConstantNode`
+/// identically. Otherwise the action-node names on the initiator and the shard diverge and the initiator
+/// cannot find the column the shard produced (issues #74716, #110719). If the node cannot be folded (not a
+/// resolved `_CAST`, non-constant arguments, or a value >= 1 MiB, matching `resolveFunction`) the original
+/// node is returned unchanged.
+QueryTreeNodePtr foldConstantCast(const QueryTreeNodePtr & cast_node);
+
 /// Resolves function node as ordinary function with given name.
 /// Arguments and parameters are taken from the node.
 void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const String & function_name, const ContextPtr & context);
@@ -217,5 +234,16 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 
 
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type);
+
+/// Returns true if the subquery's projection matches the storage schema (column count and
+/// types). On mismatch: throws TYPE_MISMATCH when throw_on_mismatch is true, otherwise
+/// returns false.
+bool verifyMaterializedCTESubqueryMatchesStorage(
+    const QueryTreeNodePtr & subquery,
+    const StoragePtr & storage,
+    const ContextPtr & context,
+    const std::string & cte_name,
+    const QueryTreeNodePtr & scope_node,
+    bool throw_on_mismatch);
 
 }

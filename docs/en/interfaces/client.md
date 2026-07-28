@@ -468,7 +468,9 @@ For more control over AI settings, configure them in your ClickHouse Client conf
             <enable_schema_access>true</enable_schema_access>
 
             <!-- Generation parameters -->
-            <temperature>0.0</temperature>
+            <!-- Optional: temperature is only sent to the model when set here.
+                 It is omitted by default because some models reject this parameter. -->
+            <!-- <temperature>0.0</temperature> -->
             <max_tokens>1000</max_tokens>
             <timeout_seconds>30</timeout_seconds>
             <max_steps>10</max_steps>
@@ -498,7 +500,9 @@ For more control over AI settings, configure them in your ClickHouse Client conf
       enable_schema_access: true
 
       # Generation parameters
-      temperature: 0.0      # Controls randomness (0.0 = deterministic)
+      # temperature is only sent to the model when set here; omitted by default
+      # because some models reject this parameter.
+      # temperature: 0.0    # Controls randomness (0.0 = deterministic)
       max_tokens: 1000      # Maximum response length
       timeout_seconds: 30   # Request timeout
       max_steps: 10         # Maximum schema exploration steps
@@ -583,7 +587,7 @@ ai:
 <details>
 <summary>Generation parameters</summary>
 
-- `temperature` - Controls randomness, 0.0 = deterministic, 1.0 = creative (default: `0.0`)
+- `temperature` - Controls randomness, 0.0 = deterministic, 1.0 = creative. Omitted by default and only sent to the model when explicitly set, because some models reject this parameter.
 - `max_tokens` - Maximum response length in tokens (default: `1000`)
 - `system_prompt` - Custom instructions for the AI (optional)
 
@@ -854,7 +858,7 @@ All command-line options can be specified directly on the command line or as def
 | `-d [ --database ] <database>`   | Select the database to default to for this connection.                                                                                                                                                                                                                                                                             | The current database from the server settings (`default` by default)                                             |
 | `-h [ --host ] <host>`           | The hostname of the ClickHouse server to connect to. Can either be a hostname or an IPv4 or IPv6 address. Multiple hosts can be passed via multiple arguments.                                                                                                                                                                    | `localhost`                                                                                                      |
 | `--jwt <value>`                  | Use JSON Web Token (JWT) for authentication. <br/><br/>Server JWT authorization is only available in ClickHouse Cloud.                                                                                                                                                                                                            | -                                                                                                                |
-| `login`                  | Invokes the device grant OAuth flow in order to authenticate via an IDP. <br/><br/>For ClickHouse Cloud hosts, the OAuth variables are inferred otherwise they must be provided with `--oauth-url`, `--oauth-client-id` and `--oauth-audience`.                                                                                                                                                                                                            | -                                                                                                                |
+| `--login`                        | Invokes the device grant OAuth flow in order to authenticate via an IDP. <br/><br/>For ClickHouse Cloud hosts, the OAuth variables are inferred otherwise they must be provided with `--oauth-url`, `--oauth-client-id` and `--oauth-audience`.                                                                                                                                                                                                            | -                                                                                                                |
 | `--no-warnings`                  | Disable showing warnings from `system.warnings` when the client connects to the server.                                                                                                                                                                                                                                            | -                                                                                                                |
 | `--no-server-client-version-message`                  | Suppress server-client version mismatch message when the client connects to the server.                                                                                                                                                                                                                                            | -                                                                                                                |
 | `--password <password>`          | The password of the database user. You can also specify the password for a connection in the configuration file. If you do not specify the password, the client will ask for it.                                                                                                                                                   | -                                                                                                                |
@@ -898,7 +902,9 @@ See [Settings](../operations/settings/settings.md) for a list of settings.
 | `--echo [ <bool> ]`       | Print each query before execution. Takes an optional boolean value.                                                                                                                                                          | `true` in interactive mode, `false` in non-interactive (batch) mode |
 | `--echo-formatted [ <bool> ]` | Format the echoed queries. Takes an optional boolean value.                                                                                                                                                              | `true` in interactive mode, `false` in non-interactive (batch) mode |
 | `--echo-query-id [ <bool> ]` | Print the query id before execution. Takes an optional boolean value.                                                                                                                                                    | `true` in interactive mode, `false` in non-interactive (batch) mode |
+| `--echo-query-separator <string>` | Print this separator before the formatted echoed query (requires `--echo-formatted`), making it easier to tell the typed query apart from its reformatted echo.                                                     | Empty (disabled) |
 | `--highlight [ --hilite ] <bool>` | Toggle syntax highlighting of the command prompt and the echoed queries.                                                                                                                                            | `true`         |
+| `--hints <bool>`                  | Show as-you-type autocompletion hints (inline "ghost" text) for the best matching suggestion when the cursor is at the end of the input. Navigate the hints with Up/Down (or Ctrl-Up/Ctrl-Down); accept the inline hint with Tab or Right; `Enter` accepts a hint only after one has been explicitly selected and otherwise runs the query; `Tab` also opens the classic completion list. Requires `--highlight` (hints need color) and the suggestion machinery (so `--disable_suggestion` also turns them off). | `true`         |
 
 ### Execution details {#command-line-options-execution-details}
 
