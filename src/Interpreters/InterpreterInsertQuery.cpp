@@ -882,18 +882,21 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     const bool serial_hidden_views = !settings[Setting::parallel_view_processing]
         && InsertDependenciesBuilder::forwardedInsertHidesDependentView(table);
 
-    // An overwrite-by-key engine (`IKeyValueEntity`: `KeeperMap`, `EmbeddedRocksDB`, `Redis`) resolves
-    // rows with equal keys by the order in which they are committed - the last row wins. A single-stream
-    // insert commits the rows of the input in order, so the outcome is deterministic. With the write
-    // fan-out equal keys can land on different sink branches, each committing its own independent batch
-    // (a RocksDB write batch or SST ingest, a set of Keeper requests), so the surviving value becomes
-    // timing-dependent - and for `KeeperMap` two branches creating the same new key can even fail with
-    // `NODEEXISTS`. This is not a deduplication hazard, so it is independent of the deduplication
-    // settings: keep such inserts single-stream. Also fail closed when such an engine is only reachable
-    // through the dependent-view graph hidden behind an `Alias` hop; a visible dependent-view target is
-    // checked inside `InsertDependenciesBuilder`.
-    const bool overwrites_rows_by_key = InsertDependenciesBuilder::storageOverwritesRowsByKeyOnInsert(table)
-        || InsertDependenciesBuilder::forwardedInsertHidesDependentViewOverwritingRowsByKey(table, context);
+    // For some destinations the final content of the table depends on the order in which the sinks
+    // commit their batches. An overwrite-by-key engine (`IKeyValueEntity`: `KeeperMap`,
+    // `EmbeddedRocksDB`, `Redis`) resolves rows with equal keys by that order - the last row wins - and
+    // a `Memory` table with `max_rows_to_keep` / `max_bytes_to_keep` keeps the rows committed last. A
+    // single-stream insert commits the rows of the input in order, so the outcome is deterministic.
+    // With the write fan-out the rows are spread over sink branches, each committing its own
+    // independent batch (a RocksDB write batch or SST ingest, a set of Keeper requests, one
+    // circular-buffer eviction and append), so the surviving rows become timing-dependent - and for
+    // `KeeperMap` two branches creating the same new key can even fail with `NODEEXISTS`. This is not a
+    // deduplication hazard, so it is independent of the deduplication settings: keep such inserts
+    // single-stream. Also fail closed when such a destination is only reachable through the
+    // dependent-view graph hidden behind an `Alias` hop; a visible dependent-view target is checked
+    // inside `InsertDependenciesBuilder`.
+    const bool commit_order_dependent = InsertDependenciesBuilder::storageInsertIsCommitOrderDependent(table)
+        || InsertDependenciesBuilder::forwardedInsertHidesCommitOrderDependentView(table, context);
 
     const bool dedup_single_stream = !async_insert
         && ((per_branch_dedup_ids && source_deduplicates)
@@ -901,7 +904,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
             || forwards_to_separate_context
             || hidden_views_forward_to_separate_context);
     const size_t insert_threads
-        = (async_insert || dedup_single_stream || serial_hidden_views || overwrites_rows_by_key) ? 1 : max_insert_threads;
+        = (async_insert || dedup_single_stream || serial_hidden_views || commit_order_dependent) ? 1 : max_insert_threads;
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table,
         query_ptr,

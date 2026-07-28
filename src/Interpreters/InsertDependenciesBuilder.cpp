@@ -16,6 +16,8 @@
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageMemory.h>
+#include <Storages/MemorySettings.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
 
@@ -136,6 +138,12 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool share_nested_offsets;
     extern const MergeTreeSettingsUInt64 non_replicated_deduplication_window;
     extern const MergeTreeSettingsUInt64 replicated_deduplication_window;
+}
+
+namespace MemorySetting
+{
+    extern const MemorySettingsUInt64 max_bytes_to_keep;
+    extern const MemorySettingsUInt64 max_rows_to_keep;
 }
 
 namespace ErrorCodes
@@ -1051,7 +1059,7 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentViewForwardingToSep
 }
 
 
-bool InsertDependenciesBuilder::storageOverwritesRowsByKeyOnInsert(const StoragePtr & storage, size_t depth)
+bool InsertDependenciesBuilder::storageInsertIsCommitOrderDependent(const StoragePtr & storage, size_t depth)
 {
     if (depth > max_insert_forwarding_depth)
         return true;
@@ -1061,20 +1069,31 @@ bool InsertDependenciesBuilder::storageOverwritesRowsByKeyOnInsert(const Storage
     if (dynamic_cast<const IKeyValueEntity *>(storage.get()))
         return true;
 
+    /// A `Memory` table with retention bounds is a circular buffer: `MemorySink::onFinish` first evicts
+    /// the oldest blocks to fit `max_rows_to_keep` / `max_bytes_to_keep` and then appends that sink's
+    /// own batch, so the surviving rows are the ones committed last. With the fan-out the retained tail
+    /// would be whichever branch happens to finish last instead of the tail of the input.
+    if (const auto * memory = dynamic_cast<const StorageMemory *>(storage.get()))
+    {
+        const auto & memory_settings = memory->getMemorySettingsRef();
+        if (memory_settings[MemorySetting::max_rows_to_keep] || memory_settings[MemorySetting::max_bytes_to_keep])
+            return true;
+    }
+
     /// Follow the forwarding chain to the concrete local target where it is known, failing closed when
     /// it cannot be resolved.
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
     {
         auto target = alias->tryGetTargetTable();
-        return !target || storageOverwritesRowsByKeyOnInsert(target, depth + 1);
+        return !target || storageInsertIsCommitOrderDependent(target, depth + 1);
     }
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
     {
         auto target = materialized_view->tryGetTargetTable();
-        return !target || storageOverwritesRowsByKeyOnInsert(target, depth + 1);
+        return !target || storageInsertIsCommitOrderDependent(target, depth + 1);
     }
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
-        return storageOverwritesRowsByKeyOnInsert(proxy->getNested(), depth + 1);
+        return storageInsertIsCommitOrderDependent(proxy->getNested(), depth + 1);
 
     /// `Distributed` and `Buffer` may forward the write to such an engine, but an insert into them is
     /// already kept single-stream by `storageForwardsInsertToSeparateContext`, so there is no fan-out
@@ -1083,7 +1102,7 @@ bool InsertDependenciesBuilder::storageOverwritesRowsByKeyOnInsert(const Storage
 }
 
 
-bool InsertDependenciesBuilder::dependentViewOverwritesRowsByKeyOnInsert(
+bool InsertDependenciesBuilder::dependentViewInsertIsCommitOrderDependent(
     const StoragePtr & storage, ContextPtr context, size_t depth)
 {
     if (depth > max_insert_forwarding_depth)
@@ -1102,21 +1121,21 @@ bool InsertDependenciesBuilder::dependentViewOverwritesRowsByKeyOnInsert(
         auto target = materialized_view->tryGetTargetTable();
         if (!target)
             return true;
-        /// The view target itself (or a forwarding chain it starts) overwrites rows by key ...
-        if (storageOverwritesRowsByKeyOnInsert(target, depth + 1))
+        /// The view target itself (or a forwarding chain it starts) is commit-order dependent ...
+        if (storageInsertIsCommitOrderDependent(target, depth + 1))
             return true;
         /// ... or the target cascades into further dependent views that do ...
-        if (dependentViewOverwritesRowsByKeyOnInsert(target, context, depth + 1))
+        if (dependentViewInsertIsCommitOrderDependent(target, context, depth + 1))
             return true;
         /// ... or the target is an `Alias` hiding yet another dependent-view graph that does.
-        if (forwardedInsertHidesDependentViewOverwritingRowsByKey(target, context, depth + 1))
+        if (forwardedInsertHidesCommitOrderDependentView(target, context, depth + 1))
             return true;
     }
     return false;
 }
 
 
-bool InsertDependenciesBuilder::forwardedInsertHidesDependentViewOverwritingRowsByKey(
+bool InsertDependenciesBuilder::forwardedInsertHidesCommitOrderDependentView(
     const StoragePtr & storage, ContextPtr context, size_t depth)
 {
     if (depth > max_insert_forwarding_depth)
@@ -1124,15 +1143,15 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentViewOverwritingRows
 
     /// An `Alias` executes a full nested `INSERT` into its target per sink (`AliasSink`), so the
     /// target's dependent-view graph is expanded only inside that nested `INSERT` at execution time -
-    /// the outer builder never sees it. Check that hidden graph for an overwrite-by-key target, and
+    /// the outer builder never sees it. Check that hidden graph for a commit-order dependent target, and
     /// follow further `Alias` hops of the target chain.
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
     {
         auto target = alias->tryGetTargetTable();
         if (!target)
             return true;
-        return dependentViewOverwritesRowsByKeyOnInsert(target, context, depth + 1)
-            || forwardedInsertHidesDependentViewOverwritingRowsByKey(target, context, depth + 1);
+        return dependentViewInsertIsCommitOrderDependent(target, context, depth + 1)
+            || forwardedInsertHidesCommitOrderDependentView(target, context, depth + 1);
     }
 
     /// `Distributed` and `Buffer` switch to a separate context; the write into them is already kept
@@ -1147,10 +1166,10 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentViewOverwritingRows
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
     {
         auto target = materialized_view->tryGetTargetTable();
-        return !target || forwardedInsertHidesDependentViewOverwritingRowsByKey(target, context, depth + 1);
+        return !target || forwardedInsertHidesCommitOrderDependentView(target, context, depth + 1);
     }
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
-        return forwardedInsertHidesDependentViewOverwritingRowsByKey(proxy->getNested(), context, depth + 1);
+        return forwardedInsertHidesCommitOrderDependentView(proxy->getNested(), context, depth + 1);
 
     /// A concrete local target: its dependent views are visible to `collectAllDependencies`, so the
     /// hazard scan over `storages` checks them (and the graphs their `Alias` targets hide) directly -
@@ -1254,26 +1273,26 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
         return storageForwardsInsertToSeparateContext(entry.second)
             || forwardedInsertHidesDependentViewForwardingToSeparateContext(entry.second, init_context);
     });
-    /// A dependent-MV target that overwrites rows by key (`KeeperMap`, `EmbeddedRocksDB`, `Redis`)
-    /// resolves rows with equal keys by the order in which they are committed. With the write fan-out
-    /// each branch commits its own independent batch, so equal keys produced by one `INSERT` may be
-    /// applied in an arbitrary order (or even collide, see `storageOverwritesRowsByKeyOnInsert`). Keep
-    /// such inserts single-stream - unlike the deduplication hazards above this does not depend on any
-    /// deduplication setting. A dependent target that is an `Alias` additionally hides its own target's
-    /// dependent-view graph behind the nested `INSERT` its `AliasSink` runs, so an overwrite-by-key
-    /// target inside that hidden graph must be probed explicitly.
-    const bool any_dependent_target_overwrites_rows_by_key = std::ranges::any_of(storages, [&] (const auto & entry)
+    /// A dependent-MV target whose content depends on the order in which the sinks commit - an
+    /// overwrite-by-key engine (`KeeperMap`, `EmbeddedRocksDB`, `Redis`) or a capped `Memory` table, see
+    /// `storageInsertIsCommitOrderDependent`. With the write fan-out each branch commits its own
+    /// independent batch, so the rows produced by one `INSERT` may be applied in an arbitrary order (or
+    /// even collide). Keep such inserts single-stream - unlike the deduplication hazards above this does
+    /// not depend on any deduplication setting. A dependent target that is an `Alias` additionally hides
+    /// its own target's dependent-view graph behind the nested `INSERT` its `AliasSink` runs, so a
+    /// commit-order dependent target inside that hidden graph must be probed explicitly.
+    const bool any_dependent_target_is_commit_order_dependent = std::ranges::any_of(storages, [&] (const auto & entry)
     {
         if (isView(entry.first) || entry.first == init_table_id)
             return false;
-        return storageOverwritesRowsByKeyOnInsert(entry.second)
-            || forwardedInsertHidesDependentViewOverwritingRowsByKey(entry.second, init_context);
+        return storageInsertIsCommitOrderDependent(entry.second)
+            || forwardedInsertHidesCommitOrderDependentView(entry.second, init_context);
     });
 
     const bool mv_dedup_single_stream = isViewsInvolved()
         && ((deduplicate_blocks_in_dependent_materialized_views && any_dependent_target_dedup_hazard)
             || any_dependent_target_forwards_to_separate_context
-            || any_dependent_target_overwrites_rows_by_key);
+            || any_dependent_target_is_commit_order_dependent);
 
     if (all_sinks_support_parallel_insert
         && (settings[Setting::parallel_view_processing] || !isViewsInvolved())

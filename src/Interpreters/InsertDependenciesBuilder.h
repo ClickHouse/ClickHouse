@@ -206,34 +206,40 @@ public:
     static bool dependentViewForwardsInsertToSeparateContext(
         const StoragePtr & storage, ContextPtr context, size_t depth = 0);
 
-    /// Whether writing into `storage` reaches an overwrite-by-key engine (`IKeyValueEntity`:
-    /// `KeeperMap`, `EmbeddedRocksDB`, `Redis`), for which the result of an insert depends on the
-    /// order of rows with equal keys - the last row wins. A single-stream insert resolves duplicate
-    /// keys deterministically by row order, but with the write fan-out equal keys can land on
-    /// different sink branches, each committing its own independent batch: `EmbeddedRocksDBSink` /
-    /// `EmbeddedRocksDBBulkSink` write a batch (or ingest an SST) per branch, and
-    /// `StorageKeeperMapSink` issues its own `exists`/`create`/`set` Keeper requests per branch, which
-    /// can even fail with `NODEEXISTS` when two branches create the same new key. Keep such inserts
-    /// single-stream. The forwarding chain (`Alias`, `MaterializedView`, proxies) is followed, failing
-    /// closed when a target cannot be resolved or the chain is too deep.
-    static bool storageOverwritesRowsByKeyOnInsert(const StoragePtr & storage, size_t depth = 0);
+    /// Whether the final content of `storage` after an insert depends on the order in which the sinks
+    /// commit their batches, so that the write must not be split across several of them. Two engine
+    /// families are affected:
+    /// - an overwrite-by-key engine (`IKeyValueEntity`: `KeeperMap`, `EmbeddedRocksDB`, `Redis`), where
+    ///   the last row with a given key wins. A single-stream insert resolves duplicate keys
+    ///   deterministically by row order, but with the write fan-out equal keys can land on different
+    ///   sink branches, each committing its own independent batch: `EmbeddedRocksDBSink` /
+    ///   `EmbeddedRocksDBBulkSink` write a batch (or ingest an SST) per branch, and
+    ///   `StorageKeeperMapSink` issues its own `exists`/`create`/`set` Keeper requests per branch, which
+    ///   can even fail with `NODEEXISTS` when two branches create the same new key;
+    /// - a `Memory` table with `max_rows_to_keep` / `max_bytes_to_keep`, which is a circular buffer:
+    ///   `MemorySink::onFinish` evicts the oldest blocks to fit the bound and then appends its own
+    ///   batch, so with the fan-out the retained tail would be the branch that commits last rather than
+    ///   the tail of the input.
+    /// Keep such inserts single-stream. The forwarding chain (`Alias`, `MaterializedView`, proxies) is
+    /// followed, failing closed when a target cannot be resolved or the chain is too deep.
+    static bool storageInsertIsCommitOrderDependent(const StoragePtr & storage, size_t depth = 0);
 
     /// Whether writing into `storage` can reach - through a dependent-view graph *hidden* behind an
-    /// `Alias` hop - a materialized view whose target is an overwrite-by-key engine (see
-    /// `storageOverwritesRowsByKeyOnInsert`). The hidden graph is expanded only inside the nested
+    /// `Alias` hop - a materialized view whose target's insert result is commit-order dependent (see
+    /// `storageInsertIsCommitOrderDependent`). The hidden graph is expanded only inside the nested
     /// `INSERT` each `AliasSink` runs, so neither `collectAllDependencies` nor the per-entry hazard
-    /// scan sees it, yet a write fan-out runs one such nested `INSERT` per branch and splits equal
-    /// keys across them. It fails closed (returns true) when a hop of the chain cannot be resolved or
+    /// scan sees it, yet a write fan-out runs one such nested `INSERT` per branch and splits the rows
+    /// across them. It fails closed (returns true) when a hop of the chain cannot be resolved or
     /// the chain is too deep.
-    static bool forwardedInsertHidesDependentViewOverwritingRowsByKey(
+    static bool forwardedInsertHidesCommitOrderDependentView(
         const StoragePtr & storage, ContextPtr context, size_t depth = 0);
 
     /// Whether the dependent-view graph of `storage` itself (not hidden behind a forwarding hop)
-    /// contains a materialized view whose target is an overwrite-by-key engine, at any depth -
+    /// contains a materialized view whose target's insert result is commit-order dependent, at any depth -
     /// including further view chains and view graphs hidden behind `Alias` targets. Helper for
-    /// `forwardedInsertHidesDependentViewOverwritingRowsByKey`; fails closed (returns true) when a
+    /// `forwardedInsertHidesCommitOrderDependentView`; fails closed (returns true) when a
     /// view or its target cannot be resolved or the graph is too deep.
-    static bool dependentViewOverwritesRowsByKeyOnInsert(
+    static bool dependentViewInsertIsCommitOrderDependent(
         const StoragePtr & storage, ContextPtr context, size_t depth = 0);
 
     size_t getViewProcessingNumThreads() const;
