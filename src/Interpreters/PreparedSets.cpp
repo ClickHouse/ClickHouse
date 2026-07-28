@@ -750,12 +750,31 @@ std::variant<std::promise<SetPtr>, SharedSet> PreparedSetsCache::findOrPromiseTo
     std::lock_guard lock(cache_mutex);
 
     auto it = cache.find(key);
-    if (it != cache.end())
+    if (it != cache.end() && it->second.future.valid())
     {
-        /// If the set is being built, return its future, but if it's ready and is nullptr then we should retry building it.
-        if (it->second.future.valid() &&
-            (it->second.future.wait_for(std::chrono::seconds(0)) != std::future_status::ready || it->second.future.get() != nullptr))
+        /// If the set is still being built, return its future so the caller can wait for it.
+        if (it->second.future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
             return it->second.future;
+
+        /// The build has finished. Reuse the result only if it succeeded and produced a set. A ready
+        /// future can still be unusable in two ways, and both must be rebuilt rather than inherited by a
+        /// later caller:
+        ///  - it holds a null set (a deliberately retryable outcome), or
+        ///  - it holds an exception - e.g. the builder's pipeline was stopped by cancellation, in which
+        ///    case `CreatingSetsTransform`'s destructor stores a "Failed to build set" exception here.
+        /// Rethrowing a builder's cancellation to an unrelated caller is wrong: for mutations this cache
+        /// is shared across the part tasks of a single mutation, so cancelling one part (e.g. one whose
+        /// partition was dropped) must not poison the shared set and break sibling parts that keep
+        /// running. Drop the poisoned/empty entry below and hand out a fresh promise so the set is rebuilt.
+        try
+        {
+            if (it->second.future.get() != nullptr)
+                return it->second.future;
+        }
+        catch (...) // Ok: a failed cached build is intentionally dropped and rebuilt below // NOLINT(bugprone-empty-catch)
+        {
+            /// The cached build failed; fall through to rebuild it.
+        }
     }
 
     /// Insert the entry into the cache so that other threads can find it and start waiting for the set.
