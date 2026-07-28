@@ -500,7 +500,7 @@ void registerDataTypeTuple(DataTypeFactory & factory)
             .description = R"DOCS_MD(
 A tuple of elements, each having an individual [type](/sql-reference/data-types). Tuple must contain at least one element.
 
-Tuples are used for temporary column grouping. Columns can be grouped when an IN expression is used in a query, and for specifying certain formal parameters of lambda functions. For more information, see the sections [IN operators](../../sql-reference/operators/in.md) and [Higher order functions](/sql-reference/functions/overview#higher-order-functions).
+Tuples are used for temporary column grouping. Columns can be grouped when an IN expression is used in a query, and for specifying certain formal parameters of lambda functions. For more information, see the sections [IN operators](/reference/statements/in) and [Higher order functions](/sql-reference/functions/overview#higher-order-functions).
 
 Tuples can be the result of a query. In this case, for text formats other than JSON, values are comma-separated in `()`. In JSON formats, tuples are output as arrays (in `[]`).
 
@@ -554,7 +554,7 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple
 
 ## Data Type Detection {#data-type-detection}
 
-When creating tuples on the fly, ClickHouse interferes the type of the tuples arguments as the smallest types which can hold the provided argument value. If the value is [NULL](/operations/settings/formats#input_format_null_as_default), the interfered type is [Nullable](../../sql-reference/data-types/nullable.md).
+When creating tuples on the fly, ClickHouse interferes the type of the tuples arguments as the smallest types which can hold the provided argument value. If the value is [NULL](/reference/settings/formats/input-format#input_format_null_as_default), the interfered type is [Nullable](/reference/data-types/nullable).
 
 Example of automatic data type detection:
 
@@ -672,9 +672,9 @@ ORDER BY key ASC;
 
 ## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
 
-:::warning Experimental Feature
-Requires `SET allow_experimental_nullable_tuple_type = 1`
-This is an experimental feature and may change in future versions.
+:::note Beta Feature
+Requires `SET enable_nullable_tuple_type = 1`
+This is a Beta feature.
 :::
 
 Allows the entire tuple to be `NULL`, as opposed to `Tuple(Nullable(T1), Nullable(T2), ...)` where only individual elements can be `NULL`.
@@ -687,7 +687,7 @@ Allows the entire tuple to be `NULL`, as opposed to `Tuple(Nullable(T1), Nullabl
 Example:
 
 ```sql
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 CREATE TABLE test (
     id UInt32,

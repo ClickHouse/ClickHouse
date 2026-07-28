@@ -6,6 +6,7 @@
 #include <Analyzer/Utils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Databases/DatabasesCommon.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -178,7 +179,8 @@ StorageBuffer::StorageBuffer(
     if (columns_.empty())
     {
         auto dest_table = DatabaseCatalog::instance().getTable(destination_id, context_);
-        storage_metadata.setColumns(dest_table->getInMemoryMetadataPtr(context_, false)->getColumns());
+        auto dest_table_metadata = dest_table->getInMemoryMetadataPtr(context_, false);
+        storage_metadata.setColumns(dest_table_metadata->getColumns());
     }
     else
         storage_metadata.setColumns(columns_);
@@ -857,7 +859,8 @@ void StorageBuffer::flushAndPrepareForShutdown()
 
     try
     {
-        optimize(nullptr /*query*/, getInMemoryMetadataPtr(getContext(), false), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, getContext());
+        const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        optimize(nullptr /*query*/, metadata_snapshot, {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, getContext());
     }
     catch (...)
     {
@@ -907,6 +910,13 @@ bool StorageBuffer::supportsPrewhere() const
 {
     if (auto destination = getDestinationTable())
         return destination->supportsPrewhere();
+    return false;
+}
+
+bool StorageBuffer::supportsOptimizationToSubcolumns() const
+{
+    if (auto destination = getDestinationTable())
+        return destination->supportsOptimizationToSubcolumns();
     return false;
 }
 
@@ -1279,12 +1289,17 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
     checkAlterIsPossible(params, local_context);
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
 
-    /// Flush buffers to the storage because BufferSource skips buffers with old metadata_version.
-    optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, local_context);
-
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);
     new_metadata.metadata_version += 1;
+
+    /// Check that the resulting metadata does not exceed max_query_size before flushing buffers.
+    /// Otherwise a rejected ALTER would still flush rows into the destination table, mutating user-visible data.
+    checkMetadataDoesNotExceedMaxQuerySize(table_id, new_metadata, local_context);
+
+    /// Flush buffers to the storage because BufferSource skips buffers with old metadata_version.
+    optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, local_context);
+
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, true);
     setInMemoryMetadata(new_metadata);
 }

@@ -1484,6 +1484,9 @@ void UUIDConverter::convertColumn(std::span<const char> data, size_t num_values,
 
 void UUIDConverter::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
 {
+    if (data.size() != input_size)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of UUID in statistics: {} != {}", data.size(), input_size);
+
     out = decodeParquetUUID(data.data());
 }
 
@@ -1727,7 +1730,7 @@ void GeoConverter::convertColumn(std::span<const char> chars, const UInt64 * off
                 result_object = parseWKBFormat(in_buffer);
                 break;
             case GeoEncoding::WKT:
-                result_object = parseWKTFormat(in_buffer);
+                result_object = parseWKTFormat(in_buffer, precise_float_parsing);
                 break;
         }
         appendObjectToGeoColumn(result_object, geo_metadata.type, col);

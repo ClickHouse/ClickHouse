@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 
@@ -168,7 +169,7 @@ private:
     const bool enable_software_prefetch_in_join = false;
     const size_t max_bytes_before_external_join = 0;
     const bool enable_join_fixed_hash_table_conversion = false;
-    const bool enable_join_runtime_filter_shared_fixed_hash_table = false;
+    const bool join_runtime_filter_from_fixed_hash_table = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
@@ -219,7 +220,7 @@ private:
 
     std::shared_ptr<const IKeyValueEntity> right_kv_storage;
 
-    bool is_join_with_constant = false;
+    std::optional<bool> join_expression_value = std::nullopt;
 
     bool enable_analyzer = false;
 
@@ -333,7 +334,7 @@ public:
     bool enableSoftwarePrefetchInJoin() const { return enable_software_prefetch_in_join; }
     size_t maxBytesBeforeExternalJoin() const { return max_bytes_before_external_join; }
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
-    bool enableJoinRuntimeFilterSharedFixedHashTable() const { return enable_join_runtime_filter_shared_fixed_hash_table; }
+    bool joinRuntimeFilterFromFixedHashTable() const { return join_runtime_filter_from_fixed_hash_table; }
 
     const std::vector<std::pair<String, String>> & getSharedRuntimeFilterDescriptors() const
     {
@@ -393,12 +394,17 @@ public:
 
     bool isJoinWithConstant() const
     {
-        return is_join_with_constant;
+        return join_expression_value.has_value();
     }
 
-    void setIsJoinWithConstant(bool is_join_with_constant_value)
+    std::optional<bool> getJoinExpressionValue() const
     {
-        is_join_with_constant = is_join_with_constant_value;
+        return join_expression_value;
+    }
+
+    void setJoinExpressionValue(bool join_expression_value_)
+    {
+        join_expression_value = join_expression_value_;
     }
 
     bool leftBecomeNullable(const DataTypePtr & column_type) const;
