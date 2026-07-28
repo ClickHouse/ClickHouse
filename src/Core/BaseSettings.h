@@ -1243,6 +1243,9 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
             /** Find setting index by name. Returns -1 if not found. */ \
             size_t find(std::string_view name) const; \
             \
+            /** Find setting index by its byte offset within Data (as stored in SettingIndex). Returns -1 if not found. */ \
+            size_t findByOffset(size_t data_offset) const; \
+            \
             /* Metadata accessors (by index) */ \
             const String & getName(size_t index) const { return field_infos[index].name; } \
             std::string_view getPath(size_t index) const { return field_infos[index].path; } \
@@ -1350,6 +1353,7 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
             \
             VectorWithMemoryTracking<FieldInfo> field_infos;                        /* Metadata for all settings */ \
             UnorderedMapWithMemoryTracking<std::string_view, size_t> name_to_index_map; /* Fast name -> index lookup */ \
+            UnorderedMapWithMemoryTracking<size_t, size_t> offset_to_index_map; /* Fast data offset -> index lookup */ \
             /* Canonical default-constructed instance. Used to reset individual settings to their */ \
             /* declared defaults via a typed copy (see resetValueToDefault) and to read the default */ \
             /* string representation (see getDefaultValueString). Initialized once via the tag */ \
@@ -1500,11 +1504,12 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
             LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_, IMPLEMENT_SETTINGS_TRAITS_) \
             LIST_OF_SETTINGS_WITH_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_, IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_) \
             _Pragma("clang diagnostic pop") \
-            /* Build name -> index map for fast lookups */ \
+            /* Build name -> index and data offset -> index maps for fast lookups */ \
             for (size_t i = 0, size = res.field_infos.size(); i < size; ++i) \
             { \
                 const auto & info = res.field_infos[i]; \
                 res.name_to_index_map.emplace(info.name, i); \
+                res.offset_to_index_map.emplace(info.data_offset, i); \
             } \
             return res; \
         }(); \
@@ -1517,6 +1522,14 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
     { \
         auto it = name_to_index_map.find(name); \
         if (it != name_to_index_map.end()) \
+            return it->second; \
+        return static_cast<size_t>(-1); \
+    } \
+    \
+    size_t SETTINGS_TRAITS_NAME::Accessor::findByOffset(size_t data_offset) const \
+    { \
+        auto it = offset_to_index_map.find(data_offset); \
+        if (it != offset_to_index_map.end()) \
             return it->second; \
         return static_cast<size_t>(-1); \
     } \

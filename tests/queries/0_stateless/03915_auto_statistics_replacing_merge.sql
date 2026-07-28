@@ -29,7 +29,7 @@ FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 'test_auto_stats_replacing' AND active
 ORDER BY name, column;
 
-ALTER TABLE test_auto_stats_replacing MODIFY SETTING auto_statistics_types = 'uniq,minmax,tdigest';
+ALTER TABLE test_auto_stats_replacing MODIFY SETTING auto_statistics_types = 'uniq,basic,tdigest';
 
 -- Build statistics on merge when source parts doesn't have statistics.
 SYSTEM START MERGES test_auto_stats_replacing;
@@ -54,7 +54,7 @@ ORDER BY id
 SETTINGS
     enable_block_number_column = 0,
     enable_block_offset_column = 0,
-    auto_statistics_types = 'uniq,minmax,tdigest';
+    auto_statistics_types = 'uniq,basic,tdigest';
 
 SYSTEM STOP MERGES test_auto_stats_replacing;
 

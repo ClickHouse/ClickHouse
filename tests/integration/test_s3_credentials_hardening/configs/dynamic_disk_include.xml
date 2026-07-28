@@ -1,0 +1,5 @@
+<clickhouse>
+    <!-- Source file for `include` substitutions in dynamic disk definitions (shipped as a config.d file so it
+         exists at server startup; its `evil_locations` node injects an S3 `locations` child). -->
+    <include_from>/etc/clickhouse-server/config.d/dynamic_disk_include_source.xml</include_from>
+</clickhouse>

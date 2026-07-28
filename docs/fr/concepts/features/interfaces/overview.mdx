@@ -1,0 +1,46 @@
+---
+description: 'Vue d''ensemble des interfaces réseau, des pilotes et des outils de
+  connexion à ClickHouse'
+keywords: ['clickhouse', 'réseau', 'interfaces', 'http', 'tcp', 'grpc', 'ligne-de-commande',
+  'client', 'jdbc', 'odbc', 'pilote']
+sidebarTitle: 'Vue d''ensemble'
+slug: /interfaces/overview
+title: 'Pilotes et interfaces'
+doc_type: 'reference'
+---
+
+ClickHouse fournit deux interfaces réseau (elles peuvent éventuellement être sécurisées avec TLS pour une protection supplémentaire) :
+
+* [HTTP](/fr/concepts/features/interfaces/http), documentée et facile à utiliser directement.
+* [TCP natif](/fr/concepts/features/interfaces/tcp), qui présente moins de surcharge.
+
+Dans la plupart des cas, il est recommandé d&#39;utiliser un outil ou une bibliothèque adaptés plutôt que d&#39;interagir directement avec ces interfaces. Les outils suivants sont officiellement pris en charge par ClickHouse :
+
+* [Client en ligne de commande](/fr/concepts/features/interfaces/cli)
+* [Pilote JDBC](/fr/concepts/features/interfaces/jdbc)
+* [Pilote ODBC](/fr/concepts/features/interfaces/odbc)
+* [Bibliothèque cliente C++](/fr/concepts/features/interfaces/cpp)
+
+ClickHouse prend également en charge deux protocoles RPC :
+
+* [protocole gRPC](/fr/concepts/features/interfaces/grpc), spécialement conçu pour ClickHouse.
+* [Apache Arrow Flight](/fr/concepts/features/interfaces/arrowflight).
+
+Le serveur ClickHouse fournit des interfaces visuelles intégrées pour les utilisateurs avancés :
+
+* UI Play : ouvrez `/play` dans le navigateur ;
+* Advanced Dashboard : ouvrez `/dashboard` dans le navigateur ;
+* Visualiseur de symboles binaires pour les ingénieurs ClickHouse : ouvrez `/binary` dans le navigateur ;
+* ClickStack UI pour l&#39;observabilité : ouvrez `/clickstack` dans le navigateur ;
+
+<Info>
+  **ClickStack**
+
+  Cette version de ClickStack est idéale pour le débogage local et les investigations rapides, mais n&#39;est pas conçue pour les environnements de production. Pour une version complète de ClickStack prête pour la production, consultez [Open Source ClickStack](/fr/clickstack/getting-started/oss).
+</Info>
+
+Il existe également un large éventail de bibliothèques tierces pour utiliser ClickHouse :
+
+* [Bibliothèques clientes](/fr/integrations/language-clients/third-party/client-libraries)
+* [Intégrations](/fr/integrations/connectors/tools/third-party-libraries)
+* [Interfaces visuelles](/fr/integrations/connectors/tools/gui)
