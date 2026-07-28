@@ -167,7 +167,7 @@ private:
                 });
         }
 
-        /// there should not be identical hashes in the convex hull. If there are, then we leave only the last one
+        /// There should not be identical hashes in the convex hull. If there are, then we leave only the last one
         while (!convex_hull.empty() && convex_hull.back().hash == right_border_ngram_hash)
             convex_hull.pop_back();
 
@@ -181,8 +181,7 @@ private:
     }
 
     /// Drain the current batch of answers, refilling it via `consume` until there is a result or the
-    /// input ends. Iterative (not recursive) and returns by out-parameter rather than an
-    /// `std::optional`; both are on the hot path, called ~2N times for a string of N symbols.
+    /// input ends.
     bool getNextIndices(SubString & out)
     {
         while (result.size() <= iter_result)
