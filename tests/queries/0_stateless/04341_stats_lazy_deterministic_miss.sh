@@ -22,9 +22,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_stats_miss SYNC"
 
 ${CLICKHOUSE_CLIENT} -q "
-CREATE TABLE t_stats_miss (a UInt64, b UInt64 STATISTICS(minmax))
+CREATE TABLE t_stats_miss (a UInt64, b UInt64 STATISTICS(basic))
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0"
+-- min_bytes_for_wide_part = 0 forces a Wide (non-Compact) part so every file is a
+-- separate on-disk entity; min_bytes_for_full_part_storage = 0 keeps the part in
+-- full-part storage so that statistics.packed is an independent file rather
+-- than being embedded inside data.packed. The Python corruption step below
+-- relies on both properties.
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0"
 
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_stats_miss SELECT number, number FROM numbers(1000) SETTINGS materialize_statistics_on_insert = 1"
 
@@ -75,11 +80,16 @@ QID2="${CLICKHOUSE_DATABASE}_stats_miss_2"
 # Both queries prune on `b`, so each one asks the part for `b`'s statistics. The
 # corrupted-statistics warning is asserted below via `system.text_log`; suppress its
 # streaming to the client with `--send_logs_level=error` so it does not reach stderr.
+# `use_statistics_cache` stays at its default (1): the negative cache that records the
+# deterministic miss lives in the per-part `estimates` map, which `use_statistics_cache = 0`
+# now bypasses (mirroring the selectivity-estimator path). The test therefore exercises the
+# default cached configuration, where the second query must hit the nullopt entry and skip
+# the probe.
 for QID in "$QID1" "$QID2"; do
     ${CLICKHOUSE_CLIENT} --send_logs_level=error --query_id="$QID" -q "
     SELECT count() FROM t_stats_miss WHERE b > 500
     SETTINGS use_statistics_for_part_pruning = 1, use_statistics = 0,
-             use_statistics_cache = 0, enable_analyzer = 1, enable_parallel_replicas = 0
+             enable_analyzer = 1, enable_parallel_replicas = 0
     FORMAT Null"
 done
 

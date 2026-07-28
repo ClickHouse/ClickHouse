@@ -1,6 +1,8 @@
 #include <Storages/System/StorageSystemPartsColumns.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
@@ -21,6 +23,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool use_statistics_cache;
+}
 
 StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_)
     : StorageSystemPartsBase(table_id_,
@@ -136,11 +142,21 @@ void StorageSystemPartsColumns::processNextStorage(
         auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
         std::optional<Estimates> estimates;
 
-        /// Lazy initialize statistics estimates if they are queried.
+        /// Lazy initialize statistics estimates if they are queried. `getEstimates` loads
+        /// exactly the columns it is asked for, so request every column that declares
+        /// statistics in the part metadata. `use_statistics_cache` is forwarded so that
+        /// `use_statistics_cache = 0` bypasses the per-part estimates cache (the system table
+        /// then reflects on-disk statistics rather than a previously populated cache).
         auto find_estimate = [&](const auto & column_name)
         {
             if (!estimates.has_value())
-                estimates = part->getEstimates();
+            {
+                Names statistics_columns;
+                for (const auto & column : part->getColumnsDescription())
+                    if (!column.statistics.types_to_desc.empty())
+                        statistics_columns.push_back(column.name);
+                estimates = part->getEstimates(statistics_columns, context->getSettingsRef()[Setting::use_statistics_cache]);
+            }
 
             return estimates->find(column_name);
         };

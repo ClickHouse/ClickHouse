@@ -11,7 +11,7 @@ DROP TABLE IF EXISTS t_lazy_narrow;
 CREATE TABLE t_lazy (a UInt64, b UInt64, c UInt64, d UInt64, e UInt64, k UInt64)
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0,
-         auto_statistics_types = 'minmax',
+         auto_statistics_types = 'basic',
          refresh_statistics_interval = 0;
 
 -- Compact-part table (default min_bytes_for_wide_part), exercises the same stats
@@ -19,7 +19,7 @@ SETTINGS min_bytes_for_wide_part = 0,
 CREATE TABLE t_lazy_narrow (k UInt64, v UInt64, x UInt64)
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 1073741824,
-         auto_statistics_types = 'minmax',
+         auto_statistics_types = 'basic',
          refresh_statistics_interval = 0;
 
 INSERT INTO t_lazy SELECT number, number, number, number, number, number FROM numbers(1000);

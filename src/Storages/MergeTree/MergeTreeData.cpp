@@ -898,10 +898,21 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     if (parts.empty())
         return {};
 
+    /// Planner callers pass only the columns they need, so serving them from the storage-wide
+    /// estimator would defeat lazy loading with full-column statistics I/O. The cache is
+    /// consulted (and populated) only for whole-table requests with an empty column list.
+    const bool use_cache = required_columns.empty()
+        && local_context->getSettingsRef()[Setting::use_statistics_cache];
+
+    if (use_cache)
     {
+        DataPartsVector data_parts;
+        data_parts.reserve(parts.size());
+        for (const auto & part : parts)
+            data_parts.push_back(part.data_part);
+
         std::lock_guard<std::mutex> lock(stats_mutex);
-        if (local_context->getSettingsRef()[Setting::use_statistics_cache]
-            && cached_estimator)
+        if (cached_estimator && !cached_estimator->isStale(data_parts))
             return cached_estimator;
     }
 
@@ -924,7 +935,15 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
         }
     }
 
-    return estimator_builder.getEstimator();
+    auto estimator = estimator_builder.getEstimator();
+
+    if (use_cache)
+    {
+        std::lock_guard<std::mutex> lock(stats_mutex);
+        cached_estimator = estimator;
+    }
+
+    return estimator;
 }
 
 bool MergeTreeData::supportsFinal() const

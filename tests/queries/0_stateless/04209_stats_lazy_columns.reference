@@ -4,4 +4,4 @@ all_1_1_0	Compact
 04209_alias_join_lazy	3
 04209_join_lazy	4
 04209_part_lazy	2
-04209_prewhere_lazy	2
+04209_prewhere_lazy	0

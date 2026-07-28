@@ -198,8 +198,10 @@ public:
     ColumnsStatistics loadStatistics() const;
     ColumnsStatistics loadStatistics(const Names & required_columns) const;
     /// Returns estimates for the requested columns, loading missing ones and caching them.
-    /// Empty `required_columns` means "load and cache every column with statistics".
-    Estimates getEstimates(const Names & required_columns = {}) const;
+    /// Empty `required_columns` means "don't load statistics" and returns an empty map.
+    /// When `use_cache` is false, bypasses the per-part estimates cache and loads statistics
+    /// straight from disk (mirroring `use_statistics_cache = 0` on the selectivity-estimator path).
+    Estimates getEstimates(const Names & required_columns, bool use_cache = true) const;
     void setEstimates(const Estimates & new_estimates);
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
@@ -821,17 +823,13 @@ private:
     /// It is used while reading from wide parts.
     std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested;
 
-    /// Per-column estimates cache, populated incrementally by `getEstimates`.
-    /// `estimates_fully_loaded` becomes true once a non-filtered load has succeeded.
-    /// `estimates_attempted_columns` tracks columns probed at least once with a deterministic
-    /// miss (no statistics declared on the part, or a declared statistics file that is absent
-    /// or unreadable); we skip re-probing them. Transient errors while opening the file
-    /// propagate out of `loadStatistics` and are not recorded, so they can recover on the
-    /// next query.
+    /// Each probed column gets an entry: a value if statistics were loaded, or nullopt
+    /// after a deterministic miss (no statistics declared on the part, or a declared
+    /// statistics file that is absent or unreadable), so the column is not re-probed.
+    /// Transient errors while opening the file propagate out of `loadStatistics` and
+    /// are not recorded, so they can recover on the next query.
     mutable std::mutex estimates_mutex;
-    mutable Estimates estimates TSA_GUARDED_BY(estimates_mutex);
-    mutable NameSet estimates_attempted_columns TSA_GUARDED_BY(estimates_mutex);
-    mutable bool estimates_fully_loaded TSA_GUARDED_BY(estimates_mutex) = false;
+    mutable std::unordered_map<String, std::optional<Estimate>> estimates TSA_GUARDED_BY(estimates_mutex);
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();

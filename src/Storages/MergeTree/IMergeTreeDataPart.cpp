@@ -1325,20 +1325,33 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const Names & required_colu
     return loadStatisticsWide(required_columns_set);
 }
 
-Estimates IMergeTreeDataPart::getEstimates(const Names & required_columns) const
+Estimates IMergeTreeDataPart::getEstimates(const Names & required_columns, bool use_cache) const
 {
-    const bool load_all = required_columns.empty();
+    /// Empty `required_columns` means "don't load statistics".
+    if (required_columns.empty())
+        return {};
 
-    auto buildResult = [&](const Estimates & source) -> Estimates
+    /// Bypass the per-part cache: load statistics straight from disk and convert to estimates.
+    /// Honors `use_statistics_cache = 0` the same way the selectivity-estimator path does, so a
+    /// session that opts out of the statistics cache also avoids populating it as a side effect.
+    if (!use_cache)
     {
-        if (load_all)
-            return source;
-
+        ColumnsStatistics statistics = loadStatistics(required_columns);
         Estimates result;
         result.reserve(required_columns.size());
         for (const auto & column_name : required_columns)
-            if (auto it = source.find(column_name); it != source.end())
-                result.emplace(column_name, it->second);
+            if (auto it = statistics.find(column_name); it != statistics.end())
+                result.emplace(column_name, it->second->getEstimate());
+        return result;
+    }
+
+    auto collectResult = [&](const std::unordered_map<String, std::optional<Estimate>> & source) -> Estimates
+    {
+        Estimates result;
+        result.reserve(required_columns.size());
+        for (const auto & column_name : required_columns)
+            if (auto it = source.find(column_name); it != source.end() && it->second.has_value())
+                result.emplace(column_name, *it->second);
         return result;
     };
 
@@ -1347,60 +1360,41 @@ Estimates IMergeTreeDataPart::getEstimates(const Names & required_columns) const
     {
         std::lock_guard lock(estimates_mutex);
 
-        if (load_all && estimates_fully_loaded)
-            return estimates;
+        for (const auto & column_name : required_columns)
+            if (!estimates.contains(column_name))
+                missing.push_back(column_name);
 
-        if (!load_all && !estimates_fully_loaded)
-        {
-            for (const auto & column_name : required_columns)
-                if (!estimates.contains(column_name) && !estimates_attempted_columns.contains(column_name))
-                    missing.push_back(column_name);
-        }
-
-        if (!load_all && missing.empty())
-            return buildResult(estimates);
+        if (missing.empty())
+            return collectResult(estimates);
     }
 
-    /// Build `fresh` off the cache, then commit under the lock; a failure leaves the cache clean.
-    /// `fresh` is transient scratch (default arena); `estimates` is part-lifetime, so its node
-    /// allocations go to the dedicated arena.
-    auto statistics = load_all ? loadStatistics() : loadStatistics(missing);
-
-    Estimates fresh;
-    fresh.reserve(statistics.size());
-    for (const auto & [column_name, stats] : statistics)
-        fresh.emplace(column_name, stats->getEstimate());
+    /// Load off the lock, then commit under the lock; a failure leaves the cache clean.
+    auto statistics = loadStatistics(missing);
 
     std::lock_guard lock(estimates_mutex);
     {
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        for (auto & [column_name, estimate] : fresh)
-            estimates.insert_or_assign(std::move(column_name), std::move(estimate));
-
-        if (load_all)
+        for (const auto & column_name : missing)
         {
-            estimates_fully_loaded = true;
-        }
-        else
-        {
-            /// The miss is deterministic (no stats declared, file absent or unreadable); mark it
-            /// so we don't re-read on every query. Transient load errors propagate out of
-            /// `loadStatistics` and stay retryable.
-            for (const auto & column_name : missing)
-                if (!estimates.contains(column_name))
-                    estimates_attempted_columns.insert(column_name);
+            /// A miss is deterministic (no stats declared, file absent or unreadable); record it
+            /// as a nullopt entry so we don't re-read on every query. Transient load errors
+            /// propagate out of `loadStatistics` and stay retryable.
+            if (auto it = statistics.find(column_name); it != statistics.end())
+                estimates.insert_or_assign(column_name, it->second->getEstimate());
+            else
+                estimates.insert_or_assign(column_name, std::nullopt);
         }
     }
 
-    return buildResult(estimates);
+    return collectResult(estimates);
 }
 
 void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
 {
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     std::lock_guard lock(estimates_mutex);
-    estimates = new_estimates;
-    estimates_fully_loaded = true;
+    for (const auto & [col_name, estimate] : new_estimates)
+        estimates.insert_or_assign(col_name, estimate);
 }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)

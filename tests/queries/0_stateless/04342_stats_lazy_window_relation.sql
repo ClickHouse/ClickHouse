@@ -6,17 +6,17 @@ SET enable_parallel_replicas = 0;
 DROP TABLE IF EXISTS t_win;
 DROP TABLE IF EXISTS t_win_narrow;
 
--- Wide table: the filter column `a` and the join key `k` carry minmax statistics.
+-- Wide table: the filter column `a` and the join key `k` carry basic statistics.
 CREATE TABLE t_win (a UInt64, k UInt64)
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0,
-         auto_statistics_types = 'minmax',
+         auto_statistics_types = 'basic',
          refresh_statistics_interval = 0;
 
 CREATE TABLE t_win_narrow (k UInt64, v UInt64)
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 1073741824,
-         auto_statistics_types = 'minmax',
+         auto_statistics_types = 'basic',
          refresh_statistics_interval = 0;
 
 INSERT INTO t_win SELECT number, number FROM numbers(1000);

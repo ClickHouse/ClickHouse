@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Performance test for statistics lazy loading (PR #104691).
+
+  Creates a 100-column wide table with 50 wide parts, each carrying
+  basic statistics on every column, and measures the three query-planner paths that
+  consume column statistics:
+
+  1. Part pruning (query0): a query filtering on 3 columns prunes parts by statistics.
+     Optimized: 3 x 50 = 150 statistic columns loaded per run; unoptimized: 100 x 50 = 5000.
+  2. Prewhere selectivity estimation (query1): SELECT * with a 3-condition AND filter.
+     Unoptimized, statistics are loaded for every queried column (100 x 50 = 5000);
+     optimized, only the 3 filter columns (150).
+  3. Join reordering (query2): the row-count estimator for join order/swap decisions
+     loads statistics for the filtered wide relation. Unoptimized it loaded every column
+     of the table (5000); optimized, only the filter/join columns.
+
+  All three scenarios set `use_statistics_cache = 0` so every run loads statistics from
+  disk instead of hitting a cache, making the per-column load cost (the difference this
+  PR measures) visible on every run. The lazy contract under the default cache
+  configuration (`use_statistics_cache = 1`) is covered by the stateless tests
+  (04209_stats_lazy_columns et al.).
+
+  Scenario settings are inline on each SELECT (test-level <settings> would apply to
+  all three connections and break the isolation between scenarios).
+-->
+<test>
+
+    <create_query>
+        CREATE TABLE stats_lazy_bench (col_0 UInt64, col_1 UInt64, col_2 UInt64, col_3 UInt64, col_4 UInt64, col_5 UInt64, col_6 UInt64, col_7 UInt64, col_8 UInt64, col_9 UInt64, col_10 UInt64, col_11 UInt64, col_12 UInt64, col_13 UInt64, col_14 UInt64, col_15 UInt64, col_16 UInt64, col_17 UInt64, col_18 UInt64, col_19 UInt64, col_20 UInt64, col_21 UInt64, col_22 UInt64, col_23 UInt64, col_24 UInt64, col_25 UInt64, col_26 UInt64, col_27 UInt64, col_28 UInt64, col_29 UInt64, col_30 UInt64, col_31 UInt64, col_32 UInt64, col_33 UInt64, col_34 UInt64, col_35 UInt64, col_36 UInt64, col_37 UInt64, col_38 UInt64, col_39 UInt64, col_40 UInt64, col_41 UInt64, col_42 UInt64, col_43 UInt64, col_44 UInt64, col_45 UInt64, col_46 UInt64, col_47 UInt64, col_48 UInt64, col_49 UInt64, col_50 UInt64, col_51 UInt64, col_52 UInt64, col_53 UInt64, col_54 UInt64, col_55 UInt64, col_56 UInt64, col_57 UInt64, col_58 UInt64, col_59 UInt64, col_60 UInt64, col_61 UInt64, col_62 UInt64, col_63 UInt64, col_64 UInt64, col_65 UInt64, col_66 UInt64, col_67 UInt64, col_68 UInt64, col_69 UInt64, col_70 UInt64, col_71 UInt64, col_72 UInt64, col_73 UInt64, col_74 UInt64, col_75 UInt64, col_76 UInt64, col_77 UInt64, col_78 UInt64, col_79 UInt64, col_80 UInt64, col_81 UInt64, col_82 UInt64, col_83 UInt64, col_84 UInt64, col_85 UInt64, col_86 UInt64, col_87 UInt64, col_88 UInt64, col_89 UInt64, col_90 UInt64, col_91 UInt64, col_92 UInt64, col_93 UInt64, col_94 UInt64, col_95 UInt64, col_96 UInt64, col_97 UInt64, col_98 UInt64, col_99 UInt64)
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS min_bytes_for_wide_part = 0,
+                 auto_statistics_types = 'basic',
+                 refresh_statistics_interval = 0,
+                 max_bytes_to_merge_at_max_space_in_pool = 0,
+                 max_bytes_to_merge_at_min_space_in_pool = 0
+    </create_query>
+
+    <!-- refresh_statistics_interval = 0 keeps the baseline's background statistics refresh
+         task from doing periodic all-column loads that would pollute the wall-time measurement. -->
+
+    <!-- Small right-hand side for the join scenario (no statistics needed). -->
+    <create_query>CREATE TABLE stats_lazy_tiny (x UInt64) ENGINE = MergeTree ORDER BY x</create_query>
+
+    <!-- Insert 50 parts. Only col_0/col_1/col_2 are set (others default to 0).
+         The filter columns have shifted ranges so statistics pruning can skip
+         parts whose max < threshold. -->
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 0, number + 0, number + 0 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 100000, number + 100000, number + 100000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 200000, number + 200000, number + 200000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 300000, number + 300000, number + 300000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 400000, number + 400000, number + 400000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 500000, number + 500000, number + 500000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 600000, number + 600000, number + 600000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 700000, number + 700000, number + 700000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 800000, number + 800000, number + 800000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 900000, number + 900000, number + 900000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 1000000, number + 1000000, number + 1000000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 1100000, number + 1100000, number + 1100000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 1200000, number + 1200000, number + 1200000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 1300000, number + 1300000, number + 1300000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 1400000, number + 1400000, number + 1400000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 1500000, number + 1500000, number + 1500000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 1600000, number + 1600000, number + 1600000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 1700000, number + 1700000, number + 1700000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 1800000, number + 1800000, number + 1800000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 1900000, number + 1900000, number + 1900000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 2000000, number + 2000000, number + 2000000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 2100000, number + 2100000, number + 2100000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 2200000, number + 2200000, number + 2200000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 2300000, number + 2300000, number + 2300000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 2400000, number + 2400000, number + 2400000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 2500000, number + 2500000, number + 2500000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 2600000, number + 2600000, number + 2600000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 2700000, number + 2700000, number + 2700000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 2800000, number + 2800000, number + 2800000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 2900000, number + 2900000, number + 2900000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 3000000, number + 3000000, number + 3000000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 3100000, number + 3100000, number + 3100000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 3200000, number + 3200000, number + 3200000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 3300000, number + 3300000, number + 3300000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 3400000, number + 3400000, number + 3400000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 3500000, number + 3500000, number + 3500000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 3600000, number + 3600000, number + 3600000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 3700000, number + 3700000, number + 3700000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 3800000, number + 3800000, number + 3800000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 3900000, number + 3900000, number + 3900000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 4000000, number + 4000000, number + 4000000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 4100000, number + 4100000, number + 4100000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 4200000, number + 4200000, number + 4200000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 4300000, number + 4300000, number + 4300000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 4400000, number + 4400000, number + 4400000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 4500000, number + 4500000, number + 4500000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 4600000, number + 4600000, number + 4600000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 4700000, number + 4700000, number + 4700000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 4800000, number + 4800000, number + 4800000 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO stats_lazy_bench (col_0, col_1, col_2) SELECT number + 4900000, number + 4900000, number + 4900000 FROM numbers(1000)</fill_query>
+
+    <fill_query>INSERT INTO stats_lazy_tiny SELECT number FROM numbers(16)</fill_query>
+
+    <!-- Materialize statistics for all columns on all parts. Statistics are stored in
+         statistics.packed (PR #93414); lazy loading deserializes only the requested
+         columns from the packed file instead of all columns. -->
+    <fill_query>ALTER TABLE stats_lazy_bench MATERIALIZE STATISTICS ALL SETTINGS mutations_sync=2</fill_query>
+
+    <fill_query>SYSTEM STOP MERGES stats_lazy_bench</fill_query>
+
+    <!-- Scenario 1: part pruning. `use_statistics_cache = 0` makes `getEstimates` bypass the
+         per-part estimates cache and load statistics straight from disk on every run, so each
+         run measures the real deserialization cost. `use_statistics = 0` keeps the
+         selectivity-estimator path out of the measurement. -->
+    <query>SELECT count() FROM stats_lazy_bench WHERE col_0 > 1500000 AND col_1 > 1500000 AND col_2 > 1500000 SETTINGS use_statistics = 0, use_statistics_cache = 0, use_statistics_for_part_pruning = 1 FORMAT Null</query>
+
+    <!-- Scenario 2: prewhere selectivity estimation. SELECT * makes the unoptimized code
+         load statistics for every queried column; the optimized code loads only the 3 filter
+         columns. use_statistics_for_part_pruning=0 keeps the part-pruning path out of the
+         measurement. use_statistics_cache=0 disables the storage-wide `cached_estimator`:
+         with the cache enabled, the baseline warms its all-column estimator once and every
+         measured run is a cache hit, so the per-column loading cost would be invisible. -->
+    <query>SELECT * FROM stats_lazy_bench WHERE col_0 > 1500000 AND col_1 > 1500000 AND col_2 > 1500000 SETTINGS use_statistics = 1, use_statistics_cache = 0, use_statistics_for_part_pruning = 0 FORMAT Null</query>
+
+    <!-- Scenario 3: join reordering. The row-count estimator built for join swap/order
+         decisions loads statistics for the filtered wide relation. Unoptimized it loaded
+         statistics for every column READ from the relation, so the query uses SELECT *
+         (100 columns x 50 parts = 5000 loads); optimized loads only the
+         filter/join-key columns (3 x 50 = 150). The join produces no rows (t2.x is in
+         [0,16) while the filter requires col_0 > threshold), so execution cost is
+         minimal and plan-time statistics loading dominates. -->
+    <query>SELECT * FROM stats_lazy_bench AS t1 INNER JOIN stats_lazy_tiny AS t2 ON t1.col_0 = t2.x WHERE col_0 > 1500000 AND col_1 > 1500000 AND col_2 > 1500000 SETTINGS use_statistics = 1, use_statistics_cache = 0, use_statistics_for_part_pruning = 0 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS stats_lazy_bench</drop_query>
+    <drop_query>DROP TABLE IF EXISTS stats_lazy_tiny</drop_query>
+
+</test>
