@@ -67,4 +67,24 @@ TEST(GCSCredentialSource, RefreshTokenTripleAloneIsNotAMode)
     EXPECT_EQ(chooseGCSCredentialSource(settings), GCSCredentialSource::Anonymous);
 }
 
+/// The transport knobs are part of the client identity, so a cross-storage server-side copy does not
+/// run one storage's request through another storage's client when they differ.
+TEST(GCSCredentialSource, TransportKnobsArePartOfClientIdentity)
+{
+    GCSObjectStorageSettings lhs;
+    GCSObjectStorageSettings rhs;
+    EXPECT_TRUE(lhs.describesSameClientAs(rhs));
+
+    rhs.headers.emplace_back("x-custom", "value");
+    EXPECT_FALSE(lhs.describesSameClientAs(rhs));
+
+    rhs = lhs;
+    rhs.connect_timeout_ms = lhs.connect_timeout_ms + 1;
+    EXPECT_FALSE(lhs.describesSameClientAs(rhs));
+
+    rhs = lhs;
+    rhs.request_timeout_ms = lhs.request_timeout_ms + 1;
+    EXPECT_FALSE(lhs.describesSameClientAs(rhs));
+}
+
 #endif

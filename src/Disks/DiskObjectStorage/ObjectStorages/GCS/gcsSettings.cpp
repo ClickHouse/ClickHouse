@@ -2,9 +2,13 @@
 
 #if USE_GOOGLE_CLOUD
 
+#include <google/cloud/common_options.h>
 #include <google/cloud/credentials.h>
+#include <google/cloud/internal/rest_options.h>
 #include <google/cloud/options.h>
 #include <google/cloud/storage/options.h>
+
+#include <poco_rest_options.h>
 
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -28,6 +32,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INVALID_CONFIG_PARAMETER;
 }
 
 static constexpr auto DEFAULT_GCS_HOST = "storage.googleapis.com";
@@ -106,6 +111,28 @@ void parseGCSEndpoint(const String & endpoint, String & bucket, String & key_pre
         key_prefix.push_back('/');
 }
 
+/// `<header>Name: value</header>` entries of a config section, in the same form the `<s3>` sections
+/// accept them (`IO/S3Common.h`'s `getHTTPHeaders`, which the native backend cannot use because it
+/// must build without the S3 library).
+static HTTPHeaderEntries parseGCSHeaders(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+{
+    HTTPHeaderEntries headers;
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(config_prefix, keys);
+    for (const auto & key : keys)
+    {
+        if (!key.starts_with("header"))
+            continue;
+
+        const auto header = config.getString(config_prefix + "." + key);
+        const auto delimiter = header.find(':');
+        if (delimiter == String::npos)
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Malformed header value in {}.{}", config_prefix, key);
+        headers.emplace_back(header.substr(0, delimiter), header.substr(delimiter + 1));
+    }
+    return headers;
+}
+
 GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
@@ -127,6 +154,10 @@ GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
     result.google_adc_client_secret = config.getString(config_prefix + ".google_adc_client_secret", "");
     result.google_adc_refresh_token = config.getString(config_prefix + ".google_adc_refresh_token", "");
 
+    result.headers = parseGCSHeaders(config, config_prefix);
+    result.connect_timeout_ms = config.getUInt64(config_prefix + ".connect_timeout_ms", DEFAULT_GCS_CONNECT_TIMEOUT_MS);
+    result.request_timeout_ms = config.getUInt64(config_prefix + ".request_timeout_ms", DEFAULT_GCS_REQUEST_TIMEOUT_MS);
+
     result.read_only = config.getBool(config_prefix + ".readonly", false);
     result.list_object_keys_size = config.getUInt64(config_prefix + ".list_object_keys_size", 1000);
 
@@ -145,9 +176,10 @@ bool GCSObjectStorageSettings::describesSameClientAs(const GCSObjectStorageSetti
     if (!service_account_key_file.empty() || !other.service_account_key_file.empty())
         return false;
 
-    /// Exactly the fields consumed by `getGCSClient` to choose the endpoint and the credentials.
-    /// `bucket` / `key_prefix` are intentionally excluded: two storages sharing a client may point at
-    /// different buckets (that is precisely the cross-bucket rewrite case).
+    /// Exactly the fields consumed by `getGCSClient` to build the client: the endpoint, the
+    /// credentials, and the transport knobs. `bucket` / `key_prefix` are intentionally excluded: two
+    /// storages sharing a client may point at different buckets (that is precisely the cross-bucket
+    /// rewrite case).
     return endpoint_override == other.endpoint_override
         && no_sign_request == other.no_sign_request
         && service_account_key == other.service_account_key
@@ -155,7 +187,10 @@ bool GCSObjectStorageSettings::describesSameClientAs(const GCSObjectStorageSetti
         && access_token == other.access_token
         && google_adc_client_id == other.google_adc_client_id
         && google_adc_client_secret == other.google_adc_client_secret
-        && google_adc_refresh_token == other.google_adc_refresh_token;
+        && google_adc_refresh_token == other.google_adc_refresh_token
+        && headers == other.headers
+        && connect_timeout_ms == other.connect_timeout_ms
+        && request_timeout_ms == other.request_timeout_ms;
 }
 
 GCSCredentialSource chooseGCSCredentialSource(const GCSObjectStorageSettings & settings)
@@ -243,6 +278,24 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
 
     if (!settings.endpoint_override.empty())
         options.set<gcs::RestEndpointOption>(settings.endpoint_override);
+
+    if (!settings.headers.empty())
+    {
+        gc::CustomHeadersOption::Type custom_headers;
+        for (const auto & header : settings.headers)
+            custom_headers.emplace(header.name, header.value);
+        options.set<gc::CustomHeadersOption>(std::move(custom_headers));
+    }
+
+    /// The transport is the Poco-based one from `contrib/google-cloud-cpp-cmake/poco_rest_client.cc`:
+    /// there, the stall timeouts are the send and receive timeouts of the request, which is what the
+    /// S3-compatibility path means by `request_timeout_ms`. The upstream options are whole seconds, so
+    /// round up to keep a sub-second timeout from becoming "no timeout".
+    const auto request_timeout = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::milliseconds(settings.request_timeout_ms) + std::chrono::milliseconds(999));
+    options.set<gc::rest_internal::TransferStallTimeoutOption>(request_timeout);
+    options.set<gc::rest_internal::DownloadStallTimeoutOption>(request_timeout);
+    options.set<::ClickHouse::PocoRestConnectTimeoutOption>(std::chrono::milliseconds(settings.connect_timeout_ms));
 
     return std::make_unique<gcs::Client>(std::move(options));
 }

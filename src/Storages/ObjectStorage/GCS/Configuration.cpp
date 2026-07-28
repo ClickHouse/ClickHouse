@@ -31,6 +31,8 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString http_client;
     extern const S3AuthSettingsString metadata_service;
     extern const S3AuthSettingsString request_token_path;
+    extern const S3AuthSettingsUInt64 connect_timeout_ms;
+    extern const S3AuthSettingsUInt64 request_timeout_ms;
 }
 
 ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
@@ -92,6 +94,16 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
     gcs_settings.google_adc_client_id = auth[S3AuthSetting::google_adc_client_id];
     gcs_settings.google_adc_client_secret = auth[S3AuthSetting::google_adc_client_secret];
     gcs_settings.google_adc_refresh_token = auth[S3AuthSetting::google_adc_refresh_token];
+
+    /// The transport knobs of the shared argument grammar are honoured by the native client too:
+    /// `headers(...)` plus the `<header>` / `<access_header>` entries of the endpoint configuration
+    /// (`getHeaders` decides which of them apply), and the HTTP timeouts. Accepting them and then
+    /// talking to the endpoint with the transport's own defaults would silently change behavior of a
+    /// configuration that switching `use_native_gcs` on is not supposed to affect.
+    gcs_settings.headers = auth.getHeaders();
+    gcs_settings.headers.insert(gcs_settings.headers.end(), headers_from_ast.begin(), headers_from_ast.end());
+    gcs_settings.connect_timeout_ms = auth[S3AuthSetting::connect_timeout_ms];
+    gcs_settings.request_timeout_ms = auth[S3AuthSetting::request_timeout_ms];
 
     resolveGCSCredentialsToken(gcs_settings, context);
 

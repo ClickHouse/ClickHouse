@@ -7,6 +7,7 @@
 #include <memory>
 #include <base/types.h>
 #include <Common/ObjectStorageKeyGenerator.h>
+#include <IO/HTTPHeaderEntries.h>
 #include <Interpreters/Context_fwd.h>
 
 #include <google/cloud/storage/client.h>
@@ -15,6 +16,13 @@ namespace Poco::Util { class AbstractConfiguration; }
 
 namespace DB
 {
+
+/// Defaults of the HTTP transport knobs. The same values as the S3 client's `connect_timeout_ms` and
+/// `request_timeout_ms` (`S3::DEFAULT_CONNECT_TIMEOUT_MS` / `S3::DEFAULT_REQUEST_TIMEOUT_MS`), which
+/// are what the shared `gcs()` / `ENGINE = GCS` argument grammar accepts. They are repeated here
+/// instead of included, because the native backend must build without the S3 library.
+inline constexpr UInt64 DEFAULT_GCS_CONNECT_TIMEOUT_MS = 1000;
+inline constexpr UInt64 DEFAULT_GCS_REQUEST_TIMEOUT_MS = 30000;
 
 /// Parsed configuration of a native Google Cloud Storage object storage backend.
 ///
@@ -48,6 +56,17 @@ struct GCSObjectStorageSettings
     String google_adc_client_id;
     String google_adc_client_secret;
     String google_adc_refresh_token;
+
+    /// --- HTTP transport ---
+
+    /// Extra HTTP headers sent with every request: the `headers(...)` argument and the `<header>`
+    /// entries of the endpoint configuration on the SQL surface, `<header>` entries of the disk
+    /// section for a disk.
+    HTTPHeaderEntries headers;
+    /// TCP connection timeout of a request.
+    UInt64 connect_timeout_ms = DEFAULT_GCS_CONNECT_TIMEOUT_MS;
+    /// Send / receive timeout of a request.
+    UInt64 request_timeout_ms = DEFAULT_GCS_REQUEST_TIMEOUT_MS;
 
     /// Disk-only knobs.
     bool read_only = false;

@@ -20,6 +20,8 @@
 #include "google/cloud/options.h"
 #include "google/cloud/version.h"
 
+#include "poco_rest_options.h"
+
 #include <Poco/Net/Context.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -60,6 +62,7 @@ GOOGLE_CLOUD_CPP_INLINE_NAMESPACE_BEGIN
 namespace {
 
 auto constexpr kDefaultTimeout = std::chrono::seconds(120);
+auto constexpr kDefaultConnectTimeout = std::chrono::seconds(30);
 auto constexpr kMaxRedirects = 10;
 
 // Strict RFC 3986 percent-encoding, matching curl_easy_escape: everything
@@ -177,7 +180,15 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
     }
   }
   auto timeout = Poco::Timespan(RequestTimeout(options).count(), 0);
-  session->setTimeout(/*connectionTimeout=*/Poco::Timespan(30, 0),
+  auto connection_timeout = Poco::Timespan(kDefaultConnectTimeout.count(), 0);
+  if (options.has<::ClickHouse::PocoRestConnectTimeoutOption>()) {
+    auto const v = options.get<::ClickHouse::PocoRestConnectTimeoutOption>();
+    if (v.count() > 0) {
+      connection_timeout = Poco::Timespan(
+          static_cast<Poco::Timespan::TimeDiff>(v.count()) * 1000);
+    }
+  }
+  session->setTimeout(connection_timeout,
                       /*sendTimeout=*/timeout, /*receiveTimeout=*/timeout);
   return session;
 }
@@ -399,6 +410,14 @@ class PocoRestClient : public RestClient {
       if (!authority.empty()) http_request.set("Host", authority);
     }
     http_request.set("User-Agent", UserAgent(options));
+    // Headers configured for every request of this client. They are added before
+    // the authorization header and before the per-request headers, so neither can
+    // be shadowed by a custom header.
+    if (options.has<CustomHeadersOption>()) {
+      for (auto const& header : options.get<CustomHeadersOption>()) {
+        if (!header.second.empty()) http_request.add(header.first, header.second);
+      }
+    }
     if (!auth_header.first.empty()) {
       http_request.set(auth_header.first, auth_header.second);
     }
