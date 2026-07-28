@@ -61,3 +61,18 @@ SELECT
     =
     (SELECT count(), sum(s) FROM (SELECT k, sum(v) AS s FROM t_projection GROUP BY k SETTINGS optimize_use_projections = 1, enable_adaptive_aggregator = 1));
 DROP TABLE t_projection;
+
+-- The lazy FINAL replacement builds its own aggregation (GROUP BY the sorting key with argMax
+-- states) and passes the adaptive settings through; results must match the baseline either way.
+SELECT 'Lazy FINAL replacement';
+DROP TABLE IF EXISTS t_lazy_final;
+CREATE TABLE t_lazy_final (k UInt64, version UInt64, is_deleted UInt8, v UInt64)
+ENGINE = ReplacingMergeTree(version, is_deleted) ORDER BY k;
+INSERT INTO t_lazy_final SELECT number, 1, 0, number FROM numbers(200000);
+INSERT INTO t_lazy_final SELECT number, 2, if(number % 10 = 0, 1, 0), number * 2 FROM numbers(100000, 150000);
+
+SELECT
+    (SELECT count(), sum(v) FROM t_lazy_final FINAL WHERE k % 7 != 6 SETTINGS enable_analyzer = 1, query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000, min_filtered_ratio_for_lazy_final = 0, enable_adaptive_aggregator = 0)
+    =
+    (SELECT count(), sum(v) FROM t_lazy_final FINAL WHERE k % 7 != 6 SETTINGS enable_analyzer = 1, query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000, min_filtered_ratio_for_lazy_final = 0, enable_adaptive_aggregator = 1);
+DROP TABLE t_lazy_final;

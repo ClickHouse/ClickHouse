@@ -41,3 +41,21 @@ SELECT 'give-ups', coalesce(sum(value), 0) > 0 FROM system.events WHERE event = 
 SELECT 'pressure sweeps', coalesce(sum(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationPressureSweeps';
 SELECT 'pressure-drained records', coalesce(sum(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationPressureDrainedRecords';
 "
+
+# The lazy FINAL replacement's internal deduplication aggregation passes the adaptive settings
+# through; a separate process pins the freeze counter to that aggregation alone.
+$CLICKHOUSE_LOCAL --query "
+SET enable_analyzer = 1;
+SET query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000, min_filtered_ratio_for_lazy_final = 0;
+SET adaptive_aggregator_freeze_threshold = 128;
+SET collect_hash_table_stats_during_aggregation = 0;
+
+CREATE TABLE t_lazy_final (k UInt64, version UInt64, is_deleted UInt8, v UInt64)
+ENGINE = ReplacingMergeTree(version, is_deleted) ORDER BY k;
+INSERT INTO t_lazy_final SELECT number, 1, 0, number FROM numbers(200000);
+INSERT INTO t_lazy_final SELECT number, 2, if(number % 10 = 0, 1, 0), number * 2 FROM numbers(100000, 150000);
+
+SELECT sum(v) FROM t_lazy_final FINAL WHERE k % 7 != 6 FORMAT Null;
+
+SELECT 'lazy FINAL replacement freezes', coalesce(sum(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationLocalFreezes';
+"
