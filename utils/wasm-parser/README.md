@@ -30,7 +30,9 @@ match returns `false` rather than throwing (see check 19 in
 `ci/jobs/scripts/check_style/check_cpp.sh`), and a syntax error is reported through `ch_format`
 returning 0. The handful of parser checks that still report an invalid query by throwing - `Frame
 start cannot be UNBOUNDED FOLLOWING`, for one - reach the same place through a `setjmp` boundary
-that `wasm_runtime.cpp` jumps to instead of aborting.
+that `wasm_runtime.cpp` jumps to instead of aborting. Recovery covers `DB::Exception` and nothing
+else: anything else arriving there - a `std::bad_alloc` from `operator new`, say - is an object of
+an unrelated type that cannot be read, so its type name is reported and the module stops.
 
 ## What it costs
 
