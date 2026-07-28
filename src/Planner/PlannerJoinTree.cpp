@@ -2569,11 +2569,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     int first_join_pos = -1;
     int last_right_join_pos = -1;
     bool is_cross_join = false;
-    /// Parallel-replicas eligibility is evaluated on the parent join node of the leftmost leaf only, i.e.
-    /// on the FIRST join node of this post-order stack (`parent_join_tree_for_leftmost` below). Any other
-    /// join of an n-way tree is never examined there, so track it here. `CROSS_JOIN`/`ARRAY_JOIN` count
-    /// towards occupying that leftmost slot (mirroring the loop that picks `parent_join_tree_for_leftmost`)
-    /// but are never strictness-checked themselves: the flag below is only read in the `JOIN` branch.
+    /// `allowParallelReplicasForJoinTree` only ever sees the leftmost leaf's parent join, so any other
+    /// join of an n-way tree must be tracked here. Set for JOIN/CROSS_JOIN/ARRAY_JOIN, read only in the JOIN branch.
     bool leftmost_join_tree_node_seen = false;
     bool has_unsafe_non_leftmost_join = false;
     /// For each table, table function, query, union table expressions prepare before query plan build
@@ -2627,29 +2624,12 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                 is_right_join_with_remote_table = right_expression_data.isRemote();
             }
 
-            /// A join other than the leftmost leaf's parent is executed on every replica, because the
-            /// whole join tree is shipped to all of them while only the leftmost leaf's reads are
-            /// coordinated. That is correct only for a strictness that is distributive over a partition
-            /// of the left side: `ALL` (every matching pair is emitted, so concatenating per-replica
-            /// results reproduces the full product), and any `LEFT` kind (`ConstantJoin` keeps
-            /// `left_rows_to_join = All` there, so each left row independently selects its own right
-            /// row). The strictnesses that demonstrably collapse across the whole left side are `INNER ANY`,
-            /// `RIGHT ANY` and `RIGHT SEMI`: they use `FirstRowOnly`, implemented as a single
-            /// `has_seen_matching_rows` compare-exchange, so re-applying it per replica duplicates
-            /// rows. The test is a conservative whitelist rather than an exact characterization --
-            /// `ASOF` selects its closest right row per left row and is vetoed only because it is
-            /// not `ALL`. Outside `LEFT` the strictness test is a whitelist, so a future `JoinStrictness`
-            /// enumerator is fail-closed there; under `LEFT` every strictness is admitted, which is
-            /// the point of the kind exemption below.
-            /// Note this is a strictness rule only: a non-distributive KIND
-            /// (`FULL`/`GLOBAL`/`CROSS`, or a misplaced `RIGHT`) is the business of the disjuncts above,
-            /// which is why `ALL` is admitted for every kind here.
-            /// `PASTE` is the one KIND that must be vetoed here rather than by the disjuncts above:
-            /// it pairs rows by POSITION (`PasteJoinAlgorithm::merge`), so it is not distributive
-            /// over a partition of the left side, yet it carries strictness `All` -- the parser
-            /// forbids an explicit `ANY`/`ALL` on `PASTE`, so the node reaches the planner with
-            /// `Unspecified`, which is then normalized to `join_default_strictness` (`All` by
-            /// default). `isCrossOrComma` does not include it, so `is_cross_join` never covers it.
+            /// Only the leftmost leaf's reads are coordinated, but the whole join tree is shipped to every
+            /// replica, so a non-leftmost join must be distributive over a partition of the left side.
+            /// `ALL` strictness and any `LEFT` kind are (each left row is decided independently); `INNER ANY`,
+            /// `RIGHT ANY` and `RIGHT SEMI` are not (`ConstantJoin` collapses them through one
+            /// `has_seen_matching_rows` CAS). Whitelisting `ALL` keeps a future `JoinStrictness` fail-closed.
+            /// `PASTE` needs its own term: it pairs rows by position, yet carries `ALL` after normalization.
             if (is_non_leftmost_join_tree_node
                 && (join_kind == JoinKind::Paste
                     || (join_node.getStrictness() != JoinStrictness::All && join_kind != JoinKind::Left)))
@@ -2672,10 +2652,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         if (joins_count > 1 && (is_full_join || is_global_join || is_cross_join))
             return true;
 
-        /// A join other than the leftmost leaf's parent that is not replica-safe (e.g. INNER ... ANY INNER).
-        /// No `joins_count` gate: the flag can only be set when some join-tree node was already seen,
-        /// and that node is not necessarily a JOIN (an ARRAY JOIN also occupies the leftmost slot while
-        /// not incrementing `joins_count`).
+        /// A non-leftmost join that is not replica-safe (e.g. INNER ... ANY INNER). Deliberately not gated on
+        /// `joins_count`: an ARRAY JOIN can occupy the leftmost slot without incrementing it.
         if (has_unsafe_non_leftmost_join)
             return true;
 
