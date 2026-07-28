@@ -215,7 +215,7 @@ SELECT * FROM sometable;
 
 ### Specifying parent object key values {#specifying-parent-object-key-values}
 
-Let's say we also want to save values in parent object keys to the table. In this case, we can use the [following option](/reference/settings/formats#format_json_object_each_row_column_for_object_name) to define the name of the column we want key values to be saved to:
+Let's say we also want to save values in parent object keys to the table. In this case, we can use the [following option](/reference/settings/formats/format#format_json_object_each_row_column_for_object_name) to define the name of the column we want key values to be saved to:
 
 ```sql
 SET format_json_object_each_row_column_for_object_name = 'id'
@@ -372,7 +372,7 @@ LIMIT 1
 
 ## Accessing nested JSON objects {#accessing-nested-json-objects}
 
-We can refer to [nested JSON keys](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list-nested.json) by enabling the [following settings option](/reference/settings/formats#input_format_import_nested_json):
+We can refer to [nested JSON keys](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list-nested.json) by enabling the [following settings option](/reference/settings/formats/input-format#input_format_import_nested_json):
 
 ```sql
 SET input_format_import_nested_json = 1
@@ -421,7 +421,7 @@ SELECT * FROM shorttable
 └───────────────────────────┴──────┘
 ```
 
-ClickHouse will ignore unknown columns while importing. This can be disabled with the [input_format_skip_unknown_fields](/reference/settings/formats#input_format_skip_unknown_fields) settings option:
+ClickHouse will ignore unknown columns while importing. This can be disabled with the [input_format_skip_unknown_fields](/reference/settings/formats/input-format#input_format_skip_unknown_fields) settings option:
 
 ```sql
 SET input_format_skip_unknown_fields = 0;

@@ -2,23 +2,23 @@
 slug: /cloud/managed-postgres/settings
 sidebarTitle: 'Settings'
 title: 'Settings'
-description: 'Configure PostgreSQL and PgBouncer parameters and manage instance settings for Managed Postgres'
+description: 'Configure PostgreSQL and PgBouncer parameters and manage instance settings for ClickHouse Managed Postgres'
 keywords: ['postgres configuration', 'postgresql settings', 'pgbouncer']
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.settings-beta" />
 
-You can modify configuration parameters and manage instance settings for your Managed Postgres instance through the **Settings** tab in the sidebar.
+You can modify configuration parameters and manage instance settings for your ClickHouse Managed Postgres instance through the **Settings** tab in the sidebar.
 
 ## Service actions and scaling {#service-actions}
 
 <Image img="/images/managed-postgres/service-actions.webp" alt="Service actions and scaling" size="md" border/>
 
-The **Service actions** toolbar provides controls for managing your Managed Postgres instance:
+The **Service actions** toolbar provides controls for managing your ClickHouse Managed Postgres instance:
 
 - **Reset password**: Update the superuser password (only when the instance is `Running`)
 - **Restart**: Restart the database instance (only when the instance is `Running`)

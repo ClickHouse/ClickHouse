@@ -60,7 +60,7 @@ module "clickhouse_onboarding" {
   #### VPC под управлением клиента
 </div>
 
-По умолчанию ClickHouse Cloud создаёт выделенную VPC для лучшей изоляции в вашем BYOC-развертывании. Однако вы также можете использовать существующую VPC в своей учетной записи. Для этого требуется специальная конфигурация, и такие изменения необходимо согласовать с поддержкой ClickHouse.
+По умолчанию ClickHouse Cloud создаёт выделенную VPC для лучшей изоляции в вашем BYOC-развертывании. Однако вы также можете использовать существующую VPC в своей учетной записи. Для этого требуется специальная конфигурация, и такие изменения необходимо согласовать со службой поддержки ClickHouse.
 
 **Настройте существующую VPC**
 
@@ -89,110 +89,100 @@ module "clickhouse_onboarding" {
 
 <br />
 
-**Свяжитесь с поддержкой ClickHouse**
+**Свяжитесь со службой поддержки ClickHouse**
 Создайте тикет в поддержку, указав следующую информацию:
 
 * Идентификатор вашей учетной записи AWS
 * Регион AWS, в котором вы хотите развернуть сервис
-* Идентификатор вашей VPC
+* Идентификаторы вашей VPC
 * Идентификаторы приватных подсетей, которые вы выделили для ClickHouse
 * Зоны доступности, в которых находятся эти подсети
 
 <div id="optional-setup-vpc-peering">
-  ### Дополнительно: настройка пиринга VPC
+  ### Дополнительно: Настройка пиринга VPC
 </div>
 
 Чтобы создать или удалить пиринг VPC для ClickHouse BYOC, выполните следующие шаги:
 
-<div id="step-1-enable-private-load-balancer-for-clickhouse-byoc">
-  #### Шаг 1: Включите частный балансировщик нагрузки для ClickHouse BYOC
-</div>
+<Steps>
+  <Step title="Включите частный балансировщик нагрузки для ClickHouse BYOC" id="step-1-enable-private-load-balancer-for-clickhouse-byoc">
+    Обратитесь в службу поддержки ClickHouse, чтобы включить частный балансировщик нагрузки.
+  </Step>
 
-Свяжитесь со службой поддержки ClickHouse, чтобы включить частный балансировщик нагрузки.
+  <Step title="Создайте пиринговое соединение" id="step-2-create-a-peering-connection">
+    1. Перейдите в панель мониторинга VPC в аккаунте ClickHouse BYOC.
+    2. Выберите Peering Connections.
+    3. Нажмите Create Peering Connection.
+    4. Укажите идентификатор VPC ClickHouse в качестве VPC Requester.
+    5. Укажите идентификатор целевой VPC в качестве VPC Accepter. (При необходимости выберите другой аккаунт)
+    6. Нажмите Create Peering Connection.
 
-<div id="step-2-create-a-peering-connection">
-  #### Шаг 2. Создайте пиринговое соединение
-</div>
+    <br />
 
-1. Перейдите на панель мониторинга VPC в аккаунте ClickHouse BYOC.
-2. Выберите Peering Connections.
-3. Нажмите Create Peering Connection.
-4. В поле VPC Requester укажите ClickHouse VPC ID.
-5. В поле VPC Accepter укажите идентификатор целевой VPC. (При необходимости выберите другую учётную запись)
-6. Нажмите Create Peering Connection.
+    <img src="/images/cloud/reference/byoc-vpcpeering-1.webp" alt="BYOC Создание пирингового соединения" />
 
-<br />
+    <br />
+  </Step>
 
-<img src="/images/cloud/reference/byoc-vpcpeering-1.webp" alt="BYOC Создание пирингового соединения" />
+  <Step title="Примите запрос на пиринговое соединение" id="step-3-accept-the-peering-connection-request">
+    Перейдите в аккаунт пиринга; на странице (VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request) клиент может одобрить этот запрос на пиринг VPC.
 
-<br />
+    <br />
 
-<div id="step-3-accept-the-peering-connection-request">
-  #### Шаг 3. Примите запрос на пиринговое соединение
-</div>
+    <img src="/images/cloud/reference/byoc-vpcpeering-2.webp" alt="BYOC Принятие пирингового соединения" />
 
-Перейдите в аккаунт для peering и на странице (VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request) одобрите этот запрос на пиринг VPC.
+    <br />
+  </Step>
 
-<br />
+  <Step title="Добавьте пункт назначения в таблицы маршрутизации ClickHouse VPC" id="step-4-add-destination-to-clickhouse-vpc-route-tables">
+    В аккаунте ClickHouse BYOC,
 
-<img src="/images/cloud/reference/byoc-vpcpeering-2.webp" alt="BYOC Принятие пирингового соединения" />
+    1. Выберите Route Tables в панели мониторинга VPC.
+    2. Найдите идентификатор VPC ClickHouse. Отредактируйте каждую таблицу маршрутизации, связанную с приватными подсетями.
+    3. Нажмите кнопку Edit на вкладке Routes.
+    4. Нажмите Add another route.
+    5. Введите CIDR-диапазон целевой VPC в поле Destination.
+    6. Выберите “Peering Connection” и идентификатор пирингового соединения в поле Target.
 
-<br />
+    <br />
 
-<div id="step-4-add-destination-to-clickhouse-vpc-route-tables">
-  #### Шаг 4. Добавьте пункт назначения в таблицы маршрутизации VPC ClickHouse
-</div>
+    <img src="/images/cloud/reference/byoc-vpcpeering-3.webp" alt="BYOC Добавление таблицы маршрутизации" />
 
-В аккаунте ClickHouse BYOC:
+    <br />
+  </Step>
 
-1. Выберите Route Tables на панели мониторинга VPC.
-2. Найдите идентификатор VPC ClickHouse. Измените каждую таблицу маршрутизации, связанную с приватными подсетями.
-3. Нажмите кнопку Edit на вкладке Routes.
-4. Нажмите Add another route.
-5. Введите диапазон CIDR целевой VPC в поле Destination.
-6. Выберите “Peering Connection” и идентификатор пирингового соединения в поле Target.
+  <Step title="Добавьте пункт назначения в таблицы маршрутизации целевой VPC" id="step-5-add-destination-to-the-target-vpc-route-tables">
+    В AWS-аккаунте пиринга,
 
-<br />
+    1. Выберите Route Tables в панели мониторинга VPC.
+    2. Найдите идентификатор целевой VPC.
+    3. Нажмите кнопку Edit на вкладке Routes.
+    4. Нажмите Add another route.
+    5. Введите CIDR-диапазон ClickHouse VPC в поле Destination.
+    6. Выберите “Peering Connection” и идентификатор пирингового соединения в поле Target.
 
-<img src="/images/cloud/reference/byoc-vpcpeering-3.webp" alt="BYOC Добавление таблицы маршрутизации" />
+    <br />
 
-<br />
+    <img src="/images/cloud/reference/byoc-vpcpeering-4.webp" alt="BYOC Добавление таблицы маршрутизации" />
 
-<div id="step-5-add-destination-to-the-target-vpc-route-tables">
-  #### Шаг 5. Добавьте пункт назначения в таблицы маршрутизации целевой VPC
-</div>
+    <br />
+  </Step>
 
-В AWS-аккаунте, где настроен peering,
+  <Step title="Измените группу безопасности, чтобы разрешить доступ из VPC, подключённой через пиринг" id="step-6-edit-security-group-to-allow-peered-vpc-access">
+    В аккаунте ClickHouse BYOC необходимо обновить настройки Security Group, чтобы разрешить трафик из вашей VPC, подключённой через пиринг. Обратитесь в службу поддержки ClickHouse, чтобы запросить добавление входящих правил, включающих CIDR-диапазоны вашей VPC, подключённой через пиринг.
 
-1. Выберите Route Tables на панели панель мониторинга VPC.
-2. Найдите целевой VPC ID.
-3. Нажмите кнопку Edit на вкладке Routes.
-4. Нажмите Add another route.
-5. Введите диапазон CIDR VPC ClickHouse в поле Destination.
-6. Выберите “Peering Connection” и ID пирингового соединения в поле Target.
+    ***
 
-<br />
+    Теперь сервис ClickHouse должен быть доступен из VPC, подключённой через пиринг.
 
-<img src="/images/cloud/reference/byoc-vpcpeering-4.webp" alt="BYOC: добавление маршрута в таблицу маршрутизации" />
+    Для частного доступа к ClickHouse выделяются частный балансировщик нагрузки и конечная точка, обеспечивающие безопасное подключение из VPC пользователя, подключённой через пиринг. Частная конечная точка соответствует формату публичной конечной точки с суффиксом `-private`. Например:
 
-<br />
+    * **Публичная конечная точка**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
+    * **Частная конечная точка**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
 
-<div id="step-6-edit-security-group-to-allow-peered-vpc-access">
-  #### Шаг 6: Измените группу безопасности, чтобы разрешить доступ из VPC, подключённой через пиринг
-</div>
-
-В аккаунте ClickHouse BYOC необходимо обновить настройки Security Group, чтобы разрешить трафик из вашей VPC, подключённой через пиринг. Обратитесь в службу поддержки ClickHouse, чтобы запросить добавление входящих правил, включающих CIDR-диапазоны вашей VPC, подключённой через пиринг.
-
-***
-
-Теперь сервис ClickHouse должен быть доступен из VPC, подключённой через пиринг.
-
-Для частного доступа к ClickHouse выделяются частный балансировщик нагрузки и конечная точка, обеспечивающие безопасное подключение из VPC пользователя, подключённой через пиринг. Частная конечная точка соответствует формату публичной конечной точки с суффиксом `-private`. Например:
-
-* **Публичная конечная точка**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
-* **Частная конечная точка**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
-
-При необходимости, после того как вы убедитесь, что пиринг работает, можно запросить удаление публичного балансировщика нагрузки для ClickHouse BYOC.
+    При необходимости, после того как вы убедитесь, что пиринг работает, можно запросить удаление публичного балансировщика нагрузки для ClickHouse BYOC.
+  </Step>
+</Steps>
 
 <div id="upgrade-process">
   ## Процесс обновления
