@@ -26,11 +26,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   ### 数据集
 </div>
 
-作为展示从 BigQuery 迁移到 ClickHouse Cloud 的典型示例数据集，我们使用了 [这里](/zh/get-started/sample-datasets/stackoverflow) 介绍的 Stack Overflow 数据集。该数据集包含 Stack Overflow 自 2008 年至 2024 年 4 月期间的所有 `post`、`vote`、`user`、`comment` 和 `badge` 数据。该数据的 BigQuery schema 如下所示：
+作为展示从 BigQuery 迁移到 ClickHouse Cloud 的典型示例数据集，我们使用 [这里](/zh/get-started/sample-datasets/stackoverflow) 介绍的 Stack Overflow 数据集。该数据集包含 Stack Overflow 自 2008 年至 2024 年 4 月期间的所有 `post`、`vote`、`user`、`comment` 和 `badge` 数据。该数据的 BigQuery schema 如下所示：
 
 <Image img="/images/migrations/bigquery-3.webp" size="lg" alt="Schema" />
 
-对于希望将此数据集导入 BigQuery instance 以测试迁移步骤的用户，我们已在一个 GCS 存储桶中提供了这些表的 Parquet 格式数据，并在 [这里](https://pastila.nl/?003fd86b/2b93b1a2302cfee5ef79fd374e73f431#hVPC52YDsUfXg2eTLrBdbA==) 提供了用于在 BigQuery 中创建和加载这些表的 DDL 命令。
+对于希望将此数据集导入 BigQuery 实例以测试迁移步骤的用户，我们已在一个 GCS 存储桶中提供了这些表的 Parquet 格式数据，并在 [这里](https://pastila.nl/?003fd86b/2b93b1a2302cfee5ef79fd374e73f431#hVPC52YDsUfXg2eTLrBdbA==) 提供了用于在 BigQuery 中创建和加载这些表的 DDL 命令。
 
 <div id="migrating-data">
   ### 迁移数据
@@ -153,9 +153,9 @@ INSERT INTO stackoverflow.posts SELECT * FROM gcs( 'gs://clickhouse-public-datas
   ## ClickHouse 主键有何不同？
 </div>
 
-如[此处](/zh/get-started/migrate/bigquery/index)所述，与 BigQuery 一样，ClickHouse 不会强制表的主键列值保持唯一。
+如[此处](/zh/get-started/migrate/bigquery/index)所述，与 BigQuery 一样，ClickHouse 不会强制要求表中的主键列值保持唯一。
 
-与 BigQuery 中的聚簇类似，ClickHouse 表中的数据会按主键列排序后存储在磁盘上。查询优化器会利用这种排序顺序来避免额外排序、减少 JOIN 的内存占用，并对 limit 子句进行短路处理。
+与 BigQuery 中的聚簇类似，ClickHouse 表中的数据会按主键列排序后存储在磁盘上。查询优化器会利用这种排序顺序来避免额外排序、减少 JOIN 的内存占用，并支持对 limit 子句进行短路处理。
 不同于 BigQuery，ClickHouse 会根据主键列值自动创建[ (稀疏) 主索引](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。该索引用于加速所有包含主键列过滤条件的查询。具体来说：
 
 * 对于 ClickHouse 常见的使用规模而言，内存和磁盘效率至关重要。数据会以称为 parts 的块写入 ClickHouse 表，并按照规则在后台合并这些 parts。在 ClickHouse 中，每个 part 都有自己的主索引。当 parts 被合并时，合并后 part 的主索引也会一并合并。需要注意的是，这些索引并不是为每一行单独构建的。相反，一个 part 的主索引会为每组行保存一个索引条目——这种技术称为稀疏索引。
@@ -544,7 +544,7 @@ MostViewedQuestionTitle: Warning "Third-party cookie will be blocked. Learn more
 MaxViewCount:            66975
 
 17 rows in set. Elapsed: 0.225 sec. Processed 24.35 million rows, 1.86 GB (107.99 million rows/s., 8.26 GB/s.)
-峰值内存占用: 377.26 MiB.
+Peak memory usage: 377.26 MiB.
 ```
 
 <div id="conditionals-and-arrays">

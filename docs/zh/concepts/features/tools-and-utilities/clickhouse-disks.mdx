@@ -57,6 +57,8 @@ doc_type: 'reference'
 * `current_disk_with_path (current, current_disk, current_path)`
   按如下格式打印当前状态：
   `Disk: "current_disk" Path: "current path on current disk"`
+* `du [--human-readable] [<path>]`
+  打印当前磁盘上 `path` 处文件或目录的总大小 (以字节为单位) 。对于目录，会递归汇总其包含的所有文件的大小。如果未指定 `path`，则使用当前目录。使用 `--human-readable` (`-h`) 时，大小会以人类可读的格式输出 (例如 `1.23 GiB`) 。
 * `help [<command>]`
   打印命令 `command` 的帮助信息。如果未指定 `command`，则打印所有命令的信息。
 * `move (mv) <path-from> <path-to>`.
@@ -75,9 +77,13 @@ doc_type: 'reference'
   将 `path-from` 中的文件读取到 `path` (如果未提供，则输出到 `stdout`) 。
 * `read-bitmap <path-from> [--values]`
   检查位于 `path-from` 的 delete-bitmap (`.rbm`) sidecar。打印 magic 和 version、CRC 是否有效、cardinality (已删除的行数) 以及行范围。使用 `--values` 时，还会按升序转储所有置位 (已删除行的 offsets) 。
-* `read-checksums <path>`
-  读取当前磁盘上 `MergeTree` 数据分区片段的 `checksums.txt` 文件，并将其以制表符分隔、便于阅读的表格形式打印到 `stdout`，表格包含 `name`、`file_size`、`file_hash`、`uncompressed_size` 和 `uncompressed_hash` 列。最后两列仅在压缩文件中存在。
 * `switch-disk [--path path] <disk>`
   切换到路径 `path` 上的磁盘 `disk` (如果未指定 `path`，则默认使用磁盘 `disk` 上之前的路径) 。
 * `write (w) [--path-from path] <path-to>`.
   将来自 `path` 的文件写入 `path-to` (如果未提供 `path` 则为 `stdin`，输入必须以 Ctrl+D 结束) 。
+* `wc <path> [--bytes] [--lines] [--words]`
+  统计当前磁盘上 `path` 对应文件中的字节数、行数和单词数 (类似 Unix `wc`) 。如果不带任何 flag，则按行数、单词数、字节数的顺序输出这三项统计。使用 `--bytes` (`-c`)、`--lines` (`-l`)、`--words` (`-w`) 可选择特定统计项。
+* `sed <expression> <path>`
+  对当前磁盘上 `path` 对应的文件原地应用 `sed` `expression`。要求主机上已安装 `sed`。仅支持单个不带选项的 `sed` expression (例如 `'s/foo/bar/g'`、`'/foo/d'`) ，不支持多个 expression (`-e ... -e ...`) 或与地址组合使用的选项 (例如将 `-n` 与 `4,10p` 一起使用) 。
+* `read-checksums <path>`
+  读取当前磁盘上 `MergeTree` 数据分区片段的 `checksums.txt` 文件，并将其以制表符分隔、便于阅读的表格形式打印到 `stdout`，表格包含 `name`、`file_size`、`file_hash`、`uncompressed_size` 和 `uncompressed_hash` 列。最后两列仅在压缩文件中存在。
