@@ -2582,9 +2582,6 @@ void NO_INLINE Aggregator::publishDelayedRecords(
     }
     block->key_offsets[total] = byte_offset;
 
-    if (value_staged)
-        block->run_lengths.resize(total);
-
     /// The records' source row numbers in bucket-grouped order: the gather indexes that compact
     /// the argument columns below. A zero-aggregate block stages keys only, so it needs none.
     ColumnUInt32::MutablePtr gather_indexes;
