@@ -221,7 +221,7 @@ When used as an input format, the data has no header row: values are
 mapped positionally onto the columns of the destination table, so the column
 names and types are taken from the table (or from an explicitly provided
 structure) rather than inferred from the data. While reading, ClickHouse parses
-dates and times in best-effort mode (see [`date_time_input_format`](/reference/settings/formats#date_time_input_format)),
+dates and times in best-effort mode (see [`date_time_input_format`](/reference/settings/formats/date-time#date_time_input_format)),
 fills omitted trailing fields with column defaults, and skips fields it does not
 recognize.
 
@@ -383,15 +383,15 @@ table.
 
 `Date`, `Date32`, `DateTime` and `DateTime64` are always written in the plain
 Hive date and timestamp text (`yyyy-MM-dd` and `yyyy-MM-dd HH:mm:ss[.fffffffff]`),
-independent of the [`date_time_output_format`](/reference/settings/formats#date_time_output_format)
+independent of the [`date_time_output_format`](/reference/settings/formats/date-time#date_time_output_format)
 setting, so the output stays parseable by Hive even when that setting is
 `unix_timestamp` or `iso`.
 
 For the same reason, `Bool` values are always written as `true`/`false`,
-independent of the [`bool_true_representation`](/reference/settings/formats#bool_true_representation)
-and [`bool_false_representation`](/reference/settings/formats#bool_false_representation)
+independent of the [`bool_true_representation`](/reference/settings/formats/bool#bool_true_representation)
+and [`bool_false_representation`](/reference/settings/formats/bool#bool_false_representation)
 settings, and `NULL` values are always written as Hive's default null sequence
-`\N`, independent of the [`format_csv_null_representation`](/reference/settings/formats#format_csv_null_representation)
+`\N`, independent of the [`format_csv_null_representation`](/reference/settings/formats/format-csv#format_csv_null_representation)
 setting. This keeps the output readable by Hive's `LazySimpleSerDe` regardless of
 these generic text settings.
 
