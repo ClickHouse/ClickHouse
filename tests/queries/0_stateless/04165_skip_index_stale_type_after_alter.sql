@@ -1,6 +1,8 @@
--- Tags: no-fasttest, no-random-merge-tree-settings
+-- Tags: no-fasttest, no-random-merge-tree-settings, no-parallel-replicas
 -- no-fasttest: the JSON case needs the JSON type.
 -- no-random-merge-tree-settings: every case pins index_granularity so the granule counts are stable.
+-- no-parallel-replicas: EXPLAIN output differs for parallel replicas (an extra per-node Granules
+-- block), and use_skip_indexes_on_data_read is not supported with parallel replicas.
 
 SET mutations_sync = 0, alter_sync = 0;
 -- Statistics part pruning is an independent mechanism that can drop a whole part before any index
@@ -67,7 +69,16 @@ SYSTEM STOP MERGES t_stale_minmax;
 ALTER TABLE t_stale_minmax MODIFY COLUMN value UInt64;
 KILL MUTATION WHERE table = 't_stale_minmax' AND database = currentDatabase() FORMAT Null;
 SELECT count() FROM t_stale_minmax WHERE value = 150 SETTINGS use_skip_indexes_on_data_read = 1;
-SELECT k FROM t_stale_minmax ORDER BY value LIMIT 1;
+-- The top-k settings are randomized by the test runner, so pin them per statement: without them
+-- these lines can silently run with the top-k optimization off and assert nothing about the index.
+-- WHERE plus ORDER BY/LIMIT together is what reaches the read-time pool
+-- (MergeTreeIndexReadResultPool); analysis-time top-k requires the WHERE clause to be absent.
+SELECT k FROM t_stale_minmax WHERE value = 150 ORDER BY value LIMIT 1
+SETTINGS use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1,
+         use_skip_indexes_on_data_read = 1, query_plan_max_limit_for_top_k_optimization = 100000;
+SELECT k FROM t_stale_minmax ORDER BY value LIMIT 1
+SETTINGS use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1,
+         query_plan_max_limit_for_top_k_optimization = 100000;
 
 SELECT '-- 7. control: a representation-preserving conversion keeps pruning';
 DROP TABLE IF EXISTS t_keep_date;
@@ -97,7 +108,19 @@ INSERT INTO t_keep_plain SELECT number, number * 3 FROM numbers(64);
 SYSTEM STOP MERGES t_keep_plain;
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_keep_plain WHERE value = 150) WHERE explain ILIKE '%Granules: 1/16%';
 SELECT count() FROM t_keep_plain WHERE value = 150;
-SELECT k FROM t_keep_plain ORDER BY value DESC LIMIT 1;
+-- Prove the top-k paths still PRUNE here, not merely that the answer is right: the analysis-time
+-- top-k reports its own "Filter TopK Granules" step, and the read-time pool is exercised by the
+-- WHERE plus ORDER BY/LIMIT line below.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_keep_plain ORDER BY value DESC LIMIT 1
+    SETTINGS use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1,
+             query_plan_max_limit_for_top_k_optimization = 100000)
+WHERE explain ILIKE '%Filter TopK Granules%';
+SELECT k FROM t_keep_plain ORDER BY value DESC LIMIT 1
+SETTINGS use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1,
+         query_plan_max_limit_for_top_k_optimization = 100000;
+SELECT k FROM t_keep_plain WHERE value = 150 ORDER BY value LIMIT 1
+SETTINGS use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1,
+         use_skip_indexes_on_data_read = 1, query_plan_max_limit_for_top_k_optimization = 100000;
 
 -- Known gap, deliberately out of scope: reusing an index NAME after a killed DROP INDEX leaves the
 -- old index files in the part while the name now means a different column. Both columns share a
@@ -115,6 +138,40 @@ ALTER TABLE t_name_reuse ADD INDEX idx v2 TYPE set(100) GRANULARITY 1;
 SELECT count() FROM t_name_reuse WHERE v2 = '7';
 SELECT count() FROM t_name_reuse WHERE v2 = '7' SETTINGS use_skip_indexes = 0;
 
+SELECT '-- 11. killed mutation on a column the part carries an index for but no bytes of';
+DROP TABLE IF EXISTS t_absent_col;
+CREATE TABLE t_absent_col (k UInt64, other String) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_absent_col SELECT number, toString(number) FROM numbers(64);
+-- A DEFAULT column added to a wide part is metadata-only, so MATERIALIZE INDEX writes the index
+-- files without adding the column to the part: the part records no type to compare against.
+ALTER TABLE t_absent_col ADD COLUMN c String DEFAULT toString(k * 3) SETTINGS mutations_sync = 2, alter_sync = 2;
+ALTER TABLE t_absent_col ADD INDEX idx c TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
+ALTER TABLE t_absent_col MATERIALIZE INDEX idx SETTINGS mutations_sync = 2, alter_sync = 2;
+SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_absent_col' AND active AND column = 'c';
+SYSTEM STOP MERGES t_absent_col;
+ALTER TABLE t_absent_col MODIFY COLUMN c Nullable(UInt64);
+KILL MUTATION WHERE table = 't_absent_col' AND database = currentDatabase() FORMAT Null;
+SELECT count() FROM t_absent_col WHERE c = 150;
+
+SELECT '-- 12. control: an absent column costs no pruning when the part has no index files';
+DROP TABLE IF EXISTS t_pre_add_index;
+CREATE TABLE t_pre_add_index (k UInt64, c UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_pre_add_index SELECT number, number * 3 FROM numbers(64);
+SYSTEM STOP MERGES t_pre_add_index;
+ALTER TABLE t_pre_add_index ADD INDEX idx c TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
+SELECT count() FROM t_pre_add_index WHERE c = 150;
+DROP TABLE IF EXISTS t_materialized_index;
+CREATE TABLE t_materialized_index (k UInt64, c UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_materialized_index SELECT number, number * 3 FROM numbers(64);
+ALTER TABLE t_materialized_index ADD INDEX idx c TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
+ALTER TABLE t_materialized_index MATERIALIZE INDEX idx SETTINGS mutations_sync = 2, alter_sync = 2;
+SYSTEM STOP MERGES t_materialized_index;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_materialized_index WHERE c = 150) WHERE explain ILIKE '%Granules: 1/16%';
+SELECT count() FROM t_materialized_index WHERE c = 150;
+
 DROP TABLE t_stale_nullable;
 DROP TABLE t_stale_plain;
 DROP TABLE t_stale_json;
@@ -125,3 +182,6 @@ DROP TABLE t_keep_date;
 DROP TABLE t_keep_enum;
 DROP TABLE t_keep_plain;
 DROP TABLE t_name_reuse;
+DROP TABLE t_absent_col;
+DROP TABLE t_pre_add_index;
+DROP TABLE t_materialized_index;

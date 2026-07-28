@@ -159,10 +159,14 @@ bool IMergeTreeIndex::isPartTypeCompatible(const IMergeTreeDataPart & part) cons
     {
         auto part_column = part.tryGetColumn(column);
 
-        /// The part holds no bytes of this column at all (it was added after the part was written),
-        /// so there is nothing to mis-decode.
+        /// The column is in the metadata but not in this part's column list, so there is no
+        /// part-side type to compare against. That does NOT mean the part holds no granule: a part
+        /// can carry index files for an index whose required column was never written to it (see
+        /// MutateTask.cpp, issue #104872). Refuse rather than guess. Callers ask this only about a
+        /// part that already has the index on disk, so a part that merely predates ADD INDEX is
+        /// unaffected.
         if (!part_column)
-            continue;
+            return false;
 
         if (part_column->type->equals(*metadata_type))
             continue;
@@ -188,13 +192,20 @@ MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const IMergeTreeData
         if (part.isSystemColumnInvalidated(column))
             return {0 /*unknown*/, {}};
 
+    /// Discover what is on disk first: a part that does not have this index at all cannot
+    /// mis-decode anything, and asking the type question only about parts that DO have it lets the
+    /// check refuse outright when the part records no type for a required column.
+    auto format = getPhysicalFormat(part, relative_path_prefix);
+    if (!format)
+        return format;
+
     /// The part's granules were written with types the metadata no longer declares, so decoding them
     /// under the new types reads garbage. Report the index as not materialized in this part; the
     /// query then answers correctly without it.
     if (!isPartTypeCompatible(part))
         return {0 /*unknown*/, {}};
 
-    return getPhysicalFormat(part, relative_path_prefix);
+    return format;
 }
 
 MergeTreeIndexFormat IMergeTreeIndex::getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const

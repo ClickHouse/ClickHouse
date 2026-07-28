@@ -286,7 +286,9 @@ struct IMergeTreeIndex
 
     /// True when @part's recorded physical types for the columns this index requires are
     /// representation-compatible with the types the current metadata snapshot declares, i.e. when
-    /// the granules on disk decode identically under the new types.
+    /// the granules on disk decode identically under the new types. Ask this only about a part that
+    /// HAS the index on disk: a required column whose type the part does not record is refused,
+    /// because such a part can still carry the index's granules.
     bool isPartTypeCompatible(const IMergeTreeDataPart & part) const;
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
