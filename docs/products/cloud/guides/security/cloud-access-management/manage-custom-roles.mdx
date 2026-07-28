@@ -79,6 +79,10 @@ This feature is in beta and is available for services running ClickHouse version
 
 When you add data permissions to a custom role, ClickHouse Cloud creates a matching role in each selected service, prefixed with `cloud:`. For example, a custom role named `readonly` appears in the database as `cloud:readonly`. Members of the custom role receive these database permissions when they connect to the service through SQL console passwordless authentication.
 
+<Info>
+Roles assigned manually in the database using the [`sql-console-role:<email>` naming convention](/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) take precedence over roles assigned through the console.
+</Info>
+
 <Steps>
 <Step title="Add data permissions to a role" id="add-data-permissions">
 
