@@ -1,0 +1,105 @@
+-- 1a. LEFT ANY -- canonical case
+0
+1	v1
+2	v2
+3	v3
+4	v4
+-- 1b. RIGHT ANY -- mirror
+0
+2	V2
+4	V4
+-- 1c. LEFT ANY with join_use_nulls
+0
+1	v1
+2	v2
+3	v3
+4	v4
+-- 1d. Multi-column join key
+0
+-- 1e. Complex expression in ON clause
+0
+-- 1f. Join where right side is a heavy subquery
+0
+-- 1g. Output includes only the join key from preserved side
+0
+-- 1h. Self-join
+0
+-- 1i. Only constants in output
+0
+4
+-- 2a. Two LEFT ANY joins, both eliminated
+0
+1	v1
+2	v2
+3	v3
+4	v4
+-- 2b. Partial elimination -- one join preserved
+1
+-- 2c. Chain where INNER blocks cascading
+1
+-- 3a. Right-side column in SELECT
+1
+-- 3b. Right-side column in ORDER BY
+1
+-- 3c. Right-side column in GROUP BY
+1
+-- 3d. LEFT ALL -- row multiplication
+1
+1
+1
+1
+2
+-- 3e. INNER ANY -- filters non-matching rows
+1
+-- 3f. LEFT SEMI -- filters
+1
+-- 3g. LEFT ANTI -- filters
+1
+-- 3h. CROSS JOIN
+1
+-- 3i. FULL OUTER JOIN
+1
+-- 4a. Empty right table
+1	v1
+2	v2
+3	v3
+4	v4
+-- 4b. Nullable join key on preserved side
+1	a
+\N	b
+3	c
+-- 4c. Column pruning exposes elimination opportunity
+0
+-- 5a. View with optional enrichment
+0
+a
+b
+c
+d
+1
+-- 5b. Star schema view
+0
+4
+12
+-- 6a. Setting disabled preserves join
+1
+-- 6b. Setting enabled eliminates join
+0
+-- 7a. LEFT ANY with partial matches
+1	v1
+2	v2
+3	v3
+4	v4
+1	v1
+2	v2
+3	v3
+4	v4
+-- 7b. Cascading elimination correctness
+1	v1
+2	v2
+3	v3
+4	v4
+1	v1
+2	v2
+3	v3
+4	v4

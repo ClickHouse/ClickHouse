@@ -6419,6 +6419,9 @@ Allow to merge expressions into JOIN step during join reordering optimization.
     DECLARE(Bool, query_plan_convert_join_to_in, false, R"(
 Allow to convert `JOIN` to subquery with `IN` if output columns tied to only left table. May cause wrong results with non-ANY JOINs (e.g. ALL JOINs which is the default).
 )", 0) \
+    DECLARE(Bool, query_plan_eliminate_redundant_join, true, R"(
+Allow eliminating a JOIN when none of its output columns come from the joined side and the join semantics guarantee row-count preservation (e.g. `LEFT ANY JOIN`).
+)", 0) \
     DECLARE(Bool, query_plan_optimize_prewhere, true, R"(
 Allow to push down filter to PREWHERE expression for supported storages
 )", 0) \
