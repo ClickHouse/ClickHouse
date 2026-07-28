@@ -5,6 +5,10 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/110047
 
 SET enable_analyzer = 1;
+-- The rewrite is opt-in: it takes the query off the aggregation path, which changes observable
+-- query statistics (`rows_before_limit_at_least`, the rows read by a distributed query) and
+-- supersedes `optimize_trivial_group_by_limit_query`. Enable it explicitly for this test.
+SET optimize_group_by_limit_to_distinct = 1;
 
 DROP TABLE IF EXISTS t_group_by_limit_distinct;
 
@@ -128,20 +132,35 @@ SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregatin
     EXPLAIN PLAN SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 5 SETTINGS group_by_use_nulls = 1
 );
 
--- The rewrite lets the read stop early: 5 distinct values are found within the first
--- blocks of the 1M-row table, so the query fits in a read budget of half the table.
-SELECT count() FROM (
-    SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 5
-    SETTINGS max_threads = 1, max_rows_to_read = 500000
-);
+-- The rewrite lets the read stop early: 5 distinct values are found within the first block of
+-- the 1M-row table. `max_rows_to_read` cannot demonstrate this -- for MergeTree it is validated
+-- upfront against the rows of the selected parts, before any reading starts, so it fires however
+-- early the query would have terminated. Compare the rows actually read instead.
+--
+-- `enable_parallel_replicas = 0` is pinned for the same reason as in
+-- 04229_trivial_group_by_limit_profile_events: the pass runs in the analyzer on the initiator and
+-- mutates the query's local context, and that mutation does not propagate to remote replicas.
+SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 5 FORMAT Null
+SETTINGS optimize_group_by_limit_to_distinct = 1, max_threads = 1,
+    enable_parallel_replicas = 0, log_comment = '04511_on';
 
 -- Without the rewrite (and with the max_rows_to_group_by optimization disabled as well,
--- to pin down the pass under test) the aggregation reads the whole table and the same
--- read budget is exceeded.
-SELECT count() FROM (
-    SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 5
-    SETTINGS optimize_group_by_limit_to_distinct = 0, optimize_trivial_group_by_limit_query = 0, max_threads = 1, max_rows_to_read = 500000
-); -- { serverError TOO_MANY_ROWS }
+-- to pin down the pass under test) the aggregation reads the whole table.
+SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 5 FORMAT Null
+SETTINGS optimize_group_by_limit_to_distinct = 0, optimize_trivial_group_by_limit_query = 0,
+    max_threads = 1, enable_parallel_replicas = 0, log_comment = '04511_off';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    log_comment,
+    read_rows < 1000000 AS stopped_early
+FROM system.query_log
+WHERE current_database = currentDatabase()
+    AND log_comment IN ('04511_on', '04511_off')
+    AND type = 'QueryFinish'
+    AND event_date >= yesterday()
+ORDER BY log_comment;
 
 -- The result is the same set of groups (LIMIT larger than the number of groups).
 SELECT v FROM (SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 100) ORDER BY v;

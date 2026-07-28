@@ -41,7 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.7",
         {
-            {"optimize_group_by_limit_to_distinct", false, true, "New setting that rewrites aggregate-free `SELECT key_expr FROM t GROUP BY key_expr LIMIT n` queries into `SELECT DISTINCT key_expr FROM t LIMIT n`, which stops reading the input once `n` distinct groups are produced and streams the results (https://github.com/ClickHouse/ClickHouse/issues/110047)."},
+            {"optimize_group_by_limit_to_distinct", false, false, "New setting (opt-in) that rewrites aggregate-free `SELECT key_expr FROM t GROUP BY key_expr LIMIT n` queries into `SELECT DISTINCT key_expr FROM t LIMIT n`, which stops reading the input once `n` distinct groups are produced and streams the results (https://github.com/ClickHouse/ClickHouse/issues/110047)."},
             {"optimize_group_by_limit_to_distinct_max_limit", 1000, 1000, "New setting: the maximum LIMIT + OFFSET for which `optimize_group_by_limit_to_distinct` applies. Large limits would route high-cardinality data through the single-stream final distinct transform, which is slower than parallel aggregation and cannot spill to disk."},
             {"dictionary_lazy_load", "auto", "auto", "New setting overriding the server setting `dictionaries_lazy_load` for an individual dictionary."},
             {"discard_query_data", false, false, "New setting to skip sending query result rows to the client over the native TCP protocol."},
