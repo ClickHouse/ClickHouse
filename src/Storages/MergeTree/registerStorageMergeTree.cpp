@@ -1249,6 +1249,7 @@ For a detailed description of the parameters, see the [CREATE TABLE](/sql-refere
 
 `ENGINE` — Name and parameters of the engine. `ENGINE = MergeTree()`. The `MergeTree` engine has no parameters.
 
+<a id="order_by"></a>
 #### ORDER BY {#order-by}
 
 `ORDER BY` — The sorting key.
