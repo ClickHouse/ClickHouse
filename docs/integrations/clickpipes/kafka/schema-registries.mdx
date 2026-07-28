@@ -58,6 +58,8 @@ ClickPipes dynamically retrieves and applies the schema from the configured sche
 
 If your producers serialize Avro with the AWS Glue SerDe (for example `AWSKafkaAvroSerializer` against an Amazon MSK topic), ClickPipes can resolve those schemas directly from the AWS Glue Schema Registry. Glue uses a different wire format and a different API from Confluent-compatible registries, so it is configured separately.
 
+AWS Glue Schema Registry configuration is currently available only through the ClickHouse Cloud console. It isn't supported through the ClickPipes API or Terraform provider.
+
 <Note>
 **Avro only.** AWS Glue registries are supported for the Avro format only. The Glue SerDe can also frame JSON and Protobuf, but these are not supported by ClickPipes and are rejected when the pipe is created.
 </Note>
@@ -72,7 +74,7 @@ In the ClickPipe creation wizard, enable **Schema registry** on the Kafka connec
 |---------------|-------------|-------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------|
 | Registry type | Yes         | Select **AWS Glue**                                                                                                                   | `AWS Glue`                                                    |
 | AWS region    | Yes         | Region the Glue registry lives in. Must match the registry's region exactly.                                                           | `us-east-1`                                                   |
-| Registry name | Yes         | Name of the Glue registry. Schemas that resolve to a different registry are rejected, so a typo surfaces as an error during setup.      | `my-glue-registry`                                            |
+| Registry name | Yes         | Name of the Glue registry. Schemas that resolve to a different registry are rejected, so a typo surfaces when ClickPipes resolves a schema version. | `my-glue-registry`                              |
 | IAM role ARN  | Conditional | A dedicated role for registry access. Optional when your broker uses IAM authentication; required otherwise.                            | `arn:aws:iam::123456789012:role/ClickHouseAccessRole-glue`    |
 
 There is no registry URL to configure. Every record produced by the Glue SerDe carries the ID of its own schema version, which ClickPipes resolves with `glue:GetSchemaVersion` and caches, one API call per distinct schema version. Schema evolution is handled automatically: when records switch to a new schema version mid-stream, it is resolved on first sight.
@@ -108,10 +110,14 @@ For role-based authentication, no trust policy change is needed; the trust relat
 
 Use this when your broker does not authenticate with IAM (SASL/SCRAM, SASL/PLAIN, mTLS), or when the registry lives in a different AWS account from the broker.
 
+<Note>
+**AWS deployments only.** This option requires a ClickHouse Cloud service deployed on AWS because it relies on the service's AWS IAM role. If your service runs on GCP or Azure and the broker does not use IAM authentication, you cannot configure a dedicated registry role.
+</Note>
+
 <Steps>
 <Step title="Obtain the ClickHouse service IAM role ARN" id="obtain-clickhouse-service-iam-role-arn">
 
-Open the service, select the **Settings** tab, scroll to the **Network security information** section, and copy the **Service role ID (IAM)** value, an ARN of the form `arn:aws:iam::123456789012:role/CH-S3-example-service-Role`. This is referred to below as `{ClickHouse_IAM_ARN}`. Every ClickHouse service has its own role, so this value is different for each service.
+Open the service, select the **Settings** tab, scroll to the **Network security information** section, and copy the **Service role ID (IAM)** value, an ARN of the form `arn:aws:iam::123456789012:role/CH-S3-example-service-Role`. This is referred to below as `{ClickHouse_IAM_ARN}`. Every ClickHouse service deployed on AWS has its own role, so this value is different for each service.
 
 <Image img="/images/cloud/security/secures3_arn.webp" alt="Service role ID (IAM)" size="lg" border/>
 </Step>
@@ -161,7 +167,7 @@ Paste the new role's ARN into the **IAM role ARN** field in the wizard.
 </Steps>
 
 <Note>
-**Why `Resource: "*"`.** `glue:GetSchemaVersion` is called with a schema version ID rather than a registry or schema name, so it cannot be scoped by resource. AWS's own `AWSGlueSchemaRegistryReadonlyAccess` managed policy scopes the same action to `"*"` for this reason. ClickPipes independently checks every resolved schema against the **Registry name** you configured and rejects versions from any other registry.
+**IAM resource scope.** These examples follow [AWS's documented policy for deserializers](https://docs.aws.amazon.com/glue/latest/dg/schema-registry-gs-serde.html) and its [`AWSGlueSchemaRegistryReadonlyAccess` managed policy](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AWSGlueSchemaRegistryReadonlyAccess.html), both of which grant `glue:GetSchemaVersion` on `"*"`. ClickPipes independently checks every resolved schema against the **Registry name** you configured and rejects versions from any other registry.
 </Note>
 
 ### Troubleshooting {#glue-troubleshooting}
