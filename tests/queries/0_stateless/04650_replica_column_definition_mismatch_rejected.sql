@@ -38,6 +38,21 @@ CREATE TABLE t_coldef_b (a UInt32, x UInt32 STATISTICS(uniq))
 ENGINE = ReplicatedMergeTree('/clickhouse/{database}/t_coldef_stats', 'r2') ORDER BY a; -- { serverError INCOMPATIBLE_COLUMNS }
 DROP TABLE t_coldef_a;
 
+-- Same statistics type, different parameters.
+CREATE TABLE t_coldef_a (a UInt32, x UInt32 STATISTICS(tdigest(1)))
+ENGINE = ReplicatedMergeTree('/clickhouse/{database}/t_coldef_stats_param', 'r1') ORDER BY a;
+CREATE TABLE t_coldef_b (a UInt32, x UInt32 STATISTICS(tdigest(2)))
+ENGINE = ReplicatedMergeTree('/clickhouse/{database}/t_coldef_stats_param', 'r2') ORDER BY a; -- { serverError INCOMPATIBLE_COLUMNS }
+DROP TABLE t_coldef_a;
+
+-- `SimpleAggregateFunction(sum, UInt64)` and a plain `UInt64` are different declared types, even
+-- though `IDataType::equals` ignores the wrapper.
+CREATE TABLE t_coldef_a (a UInt32, x SimpleAggregateFunction(sum, UInt64))
+ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/{database}/t_coldef_saf', 'r1') ORDER BY a;
+CREATE TABLE t_coldef_b (a UInt32, x UInt64)
+ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/{database}/t_coldef_saf', 'r2') ORDER BY a; -- { serverError INCOMPATIBLE_COLUMNS }
+DROP TABLE t_coldef_a;
+
 -- The same definitions written with redundant parentheses are accepted.
 CREATE TABLE t_coldef_a (a UInt32, d Date, x UInt32 DEFAULT (a) + 1 CODEC(ZSTD) TTL (d) + INTERVAL 1 DAY)
 ENGINE = ReplicatedMergeTree('/clickhouse/{database}/t_coldef_equal', 'r1') ORDER BY a;

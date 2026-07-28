@@ -1,5 +1,7 @@
 #include <Storages/StatisticsDescription.h>
 
+#include <map>
+#include <ranges>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -111,15 +113,23 @@ bool ColumnStatisticsDescription::operator==(const ColumnStatisticsDescription &
 
 bool ColumnStatisticsDescription::hasSameExplicitStatistics(const ColumnStatisticsDescription & other) const
 {
-    auto explicit_types = [](const ColumnStatisticsDescription & desc)
+    /// The declaration AST is compared as well, because a statistics type can be parameterized
+    /// (`STATISTICS(tdigest(1))`) and the parameters are a part of the stored definition.
+    auto explicit_declarations = [](const ColumnStatisticsDescription & desc)
     {
-        std::vector<StatisticsType> types;
+        std::map<StatisticsType, ASTPtr> declarations;
         for (const auto & [type, single_description] : desc.types_to_desc)
             if (!single_description.is_implicit)
-                types.push_back(type);
-        return types;
+                declarations.emplace(type, single_description.ast);
+        return declarations;
     };
-    return explicit_types(*this) == explicit_types(other);
+
+    auto lhs = explicit_declarations(*this);
+    auto rhs = explicit_declarations(other);
+    return std::ranges::equal(lhs, rhs, [](const auto & l, const auto & r)
+    {
+        return l.first == r.first && sameAST(l.second, r.second);
+    });
 }
 
 bool ColumnStatisticsDescription::empty() const
