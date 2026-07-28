@@ -136,7 +136,7 @@ settings to align ClickHouse behavior more closely with standard SQL.
 
 This section describes which settings the ODBC driver modifies and why.
 
-**[cast_keep_nullable](/reference/settings/session-settings#cast_keep_nullable)**
+**[cast_keep_nullable](/reference/settings/session-settings/cast#cast_keep_nullable)**
 
 By default, ClickHouse doesn't allow converting nullable types to non-nullable types. However, many BI tools don't
 distinguish between nullable and non-nullable types when performing type conversions. As a result, it's not uncommon to
@@ -157,7 +157,7 @@ DB::Exception: Cannot convert NULL value to non-Nullable type: while executing '
 Enabling `cast_keep_nullable` changes the behavior of `CAST` so it preserves the nullability of its arguments. This
 makes ClickHouse's behavior closer to other databases and the SQL standard for this kind of conversion.
 
-**[prefer_column_name_to_alias](/reference/settings/session-settings#prefer_column_name_to_alias)**
+**[prefer_column_name_to_alias](/reference/settings/session-settings/prefer#prefer_column_name_to_alias)**
 
 ClickHouse allows referencing expressions in the same `SELECT` list by their aliases. For example, this query avoids
 repetition and is easier to write:
