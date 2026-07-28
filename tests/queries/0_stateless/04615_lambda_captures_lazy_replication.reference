@@ -44,6 +44,12 @@
 ['s01','s02']
 ['s11','s12']
 ['s11','s12']
+-- capture produced by lazy JOIN replication
+3000	15708660843997903544
+-- replication indexes of type UInt16 (more than 255 rows in a block)
+600
+-- replication indexes of type UInt32 (more than 65535 rows in a block)
+140000
 -- arrayFold with capture
 i0102
 i1112
@@ -109,6 +115,12 @@ s1s1	s1
 ['s01','s02']
 ['s11','s12']
 ['s11','s12']
+-- capture produced by lazy JOIN replication
+3000	15708660843997903544
+-- replication indexes of type UInt16 (more than 255 rows in a block)
+600
+-- replication indexes of type UInt32 (more than 65535 rows in a block)
+140000
 -- arrayFold with capture
 i0102
 i1112
