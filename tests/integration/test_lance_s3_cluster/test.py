@@ -111,6 +111,68 @@ def test_lance_s3_cluster_matches_single_node(started_cluster):
     assert single.startswith("64\t")
 
 
+def test_lance_s3_cluster_pure_count_uses_fragment_tasks(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+    skip_if_lance_s3_cluster_unavailable(node)
+
+    remote_prefix = "data/lance/multi_frag.lance"
+    upload_lance_dataset_to_minio(started_cluster, remote_prefix)
+
+    single = node.query(
+        """
+        SELECT count()
+        FROM lanceS3(nc_s3, filename = 'lance/multi_frag.lance')
+        """
+    )
+    clustered = node.query(
+        """
+        SELECT count()
+        FROM lanceS3Cluster(
+            'cluster_simple',
+            nc_s3,
+            filename = 'lance/multi_frag.lance')
+        SETTINGS
+            lance_enable_fragment_parallelism = 1,
+            lance_max_fragment_packs = 8,
+            max_threads = 4
+        """
+    )
+    assert clustered == single
+    assert clustered == "64\n"
+
+
+def test_lance_s3_cluster_worker_does_not_fetch_latest_snapshot(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+    skip_if_lance_s3_cluster_unavailable(node)
+
+    remote_prefix = "data/lance/multi_frag.lance"
+    upload_lance_dataset_to_minio(started_cluster, remote_prefix)
+
+    instances = list(started_cluster.instances.values())
+    try:
+        for instance in instances:
+            instance.query(
+                "SYSTEM ENABLE FAILPOINT datalake_distributed_worker_latest_snapshot"
+            )
+
+        result = node.query(
+            """
+            SELECT count(), sum(id)
+            FROM lanceS3Cluster(
+                'cluster_simple',
+                nc_s3,
+                filename = 'lance/multi_frag.lance')
+            SETTINGS lance_max_fragment_packs = 8
+            """
+        )
+        assert result == "64\t2080\n"
+    finally:
+        for instance in instances:
+            instance.query(
+                "SYSTEM DISABLE FAILPOINT datalake_distributed_worker_latest_snapshot"
+            )
+
+
 def test_lance_s3_cluster_filter(started_cluster):
     node = started_cluster.instances["s0_0_0"]
     skip_if_lance_s3_cluster_unavailable(node)

@@ -116,11 +116,15 @@ public:
     String identityKey() const;
 
     SnapshotInfo currentSnapshot() const;
-    NamesAndTypesList tableSchema(const TableStateSnapshot & snapshot, ContextPtr context) const;
+    NamesAndTypesList tableSchema(
+        const TableStateSnapshot & snapshot,
+        ContextPtr context,
+        const CancelHandlePtr & cancel = {}) const;
     std::optional<size_t> totalRows(const TableStateSnapshot & snapshot, const CancelHandlePtr & cancel = {}) const;
     std::optional<size_t> countRows(
         const TableStateSnapshot & snapshot,
         const std::optional<String> & predicate,
+        const std::vector<UInt64> & fragment_ids = {},
         const CancelHandlePtr & cancel = {}) const;
     std::optional<size_t> totalBytes() const;
     /// Lists fragments for the pinned snapshot version (exact checkout).

@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- ProfileEvents are selected by a unique log comment, so this test can run in parallel.
 -- Ordered vs unordered scanner settings must preserve aggregates (row set).
 -- ProfileEvents asserted via system.query_log.
 

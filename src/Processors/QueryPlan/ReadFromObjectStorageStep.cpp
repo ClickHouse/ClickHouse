@@ -173,13 +173,12 @@ void ReadFromObjectStorageStep::createIterator()
     auto context = getContext();
 
 #if USE_LANCE
-    /// Lance fragment packing must force a single pack when LIMIT / count / ordered
+    /// Lance fragment packing must force a single pack when LIMIT / ordered
     /// semantics would be wrong under multi-stream. Decision is query-scoped so
     /// LanceMetadata::iterate can read it without changing IDataLakeMetadata::iterate.
     if (boost::starts_with(configuration->getEngineName(), "Lance") && context->hasQueryContext())
     {
-        const bool force_single_pack
-            = need_only_count || (limit.has_value() && *limit > 0) || requestReadingInOrder();
+        const bool force_single_pack = (limit.has_value() && *limit > 0) || requestReadingInOrder();
         Lance::QuerySession::get(context)->setForceSingleFragmentPack(force_single_pack);
     }
 #endif

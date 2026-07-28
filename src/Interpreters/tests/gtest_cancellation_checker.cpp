@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
 #include <thread>
 
@@ -86,4 +87,20 @@ TEST(CancellationChecker, RearmsWaitOnEarlierDeadline)
 
     EXPECT_TRUE(killed);
     EXPECT_FALSE(long_query->isKilled());
+}
+
+TEST(CancellationChecker, QueryCancellationTokenStopsWithQuery)
+{
+    auto query = makeQueryStatus("gtest_query_cancellation_token");
+    std::atomic_bool callback_called = false;
+    StopCallback callback(
+        query->getCancellationToken(),
+        [&callback_called]
+        {
+            callback_called = true;
+        });
+
+    EXPECT_EQ(query->cancelQuery(CancelReason::CANCELLED_BY_USER), CancellationCode::CancelSent);
+    EXPECT_TRUE(query->isKilled());
+    EXPECT_TRUE(callback_called);
 }

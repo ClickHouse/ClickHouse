@@ -85,6 +85,11 @@ public:
     /// to keep the columns stored in the in-memory metadata in sync with the datalake.
     virtual bool shouldReloadSchemaForConsistency(ContextPtr) const { return false; }
 
+    /// Distributed table-function workers receive an explicit schema from the initiator.
+    /// Return true when individual task objects also carry the exact data snapshot needed
+    /// by the custom reader, so the worker must not replace that schema with its local latest one.
+    virtual bool supportsDistributedReadWithExplicitSchema() const { return false; }
+
     /// Read schema is the schema of actual data files,
     /// which can differ from table schema from data lake metadata.
     /// Return nothing if read schema is the same as table schema.

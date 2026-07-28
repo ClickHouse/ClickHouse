@@ -232,6 +232,7 @@ static struct InitFiu
     REGULAR(datalake_try_get_table_return_nullptr) \
     REGULAR(datalake_try_get_table_throw) \
     REGULAR(datalake_simulate_missing_table_state) \
+    REGULAR(datalake_distributed_worker_latest_snapshot) \
     PAUSEABLE_ONCE(lance_metadata_iterate_pause) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \

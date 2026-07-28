@@ -69,6 +69,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char datalake_simulate_missing_table_state[];
+    extern const char datalake_distributed_worker_latest_snapshot[];
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -533,29 +534,55 @@ void StorageObjectStorage::read(
         && !storage_snapshot->metadata->datalake_table_state.has_value())
     {
         /// Initialize underlying datalake metadata if it has not been yet.
-        /// Cluster table function workers and other paths that bypass the analyzer
-        /// reach `read` without having had `update`/`updateExternalDynamicMetadataIfExists`
-        /// called, so `getTableStateSnapshot` would otherwise hit an "uninitialized" assertion.
+        /// Paths that bypass the analyzer reach `read` without having had
+        /// `update`/`updateExternalDynamicMetadataIfExists` called.
         if (is_table_function)
             configuration->lazyInitializeIfNeeded(object_storage, local_context);
         else
             configuration->update(object_storage, local_context);
 
-        if (auto state = configuration->getTableStateSnapshot(local_context))
+        /// A distributed table-function worker gets its schema in the query sent by the
+        /// initiator and its exact data snapshot in every task object. Fetching the worker's
+        /// local latest snapshot here could combine a new schema with an older task snapshot.
+        /// Formats opting into this contract must keep the initiator schema unchanged.
+        const bool use_explicit_initiator_schema
+            = distributed_processing && is_table_function
+            && configuration->supportsDistributedReadWithExplicitSchema();
+
+        if (use_explicit_initiator_schema)
         {
-            StorageInMemoryMetadata pinned = *storage_snapshot->metadata;
-            pinned.setDataLakeTableState(*state);
-
-            /// Reload columns and sorting key from the same state so they cannot diverge.
-            if (configuration->shouldReloadSchemaForConsistency(local_context))
+            if (storage_snapshot->metadata->getColumns().getAllPhysical().empty())
             {
-                if (auto rebuilt = configuration->buildStorageMetadataFromState(*state, local_context))
-                    pinned = rebuilt->withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
-                        rebuilt->columns, local_context, format_settings, configuration->partition_strategy_type));
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Distributed {} read requires an explicit schema from the initiator",
+                    configuration->getEngineName());
             }
+        }
+        else
+        {
+            fiu_do_on(FailPoints::datalake_distributed_worker_latest_snapshot,
+            {
+                if (distributed_processing && is_table_function)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed data lake worker attempted to fetch its local latest snapshot");
+            });
 
-            storage_snapshot = std::make_shared<StorageSnapshot>(
-                *this, std::make_shared<StorageInMemoryMetadata>(std::move(pinned)));
+            if (auto state = configuration->getTableStateSnapshot(local_context))
+            {
+                StorageInMemoryMetadata pinned = *storage_snapshot->metadata;
+                pinned.setDataLakeTableState(*state);
+
+                /// Reload columns and sorting key from the same state so they cannot diverge.
+                if (configuration->shouldReloadSchemaForConsistency(local_context))
+                {
+                    if (auto rebuilt = configuration->buildStorageMetadataFromState(*state, local_context))
+                        pinned = rebuilt->withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+                            rebuilt->columns, local_context, format_settings, configuration->partition_strategy_type));
+                }
+
+                storage_snapshot = std::make_shared<StorageSnapshot>(
+                    *this, std::make_shared<StorageInMemoryMetadata>(std::move(pinned)));
+            }
         }
     }
 

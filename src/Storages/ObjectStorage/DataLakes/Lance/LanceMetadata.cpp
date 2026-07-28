@@ -735,7 +735,8 @@ NamesAndTypesList LanceMetadata::getTableSchema(ContextPtr local_context) const
         auto dataset = session->getOrOpen(options);
         const auto snapshot = dataset.currentSnapshot();
         session->pinVersion(dataset.identityKey(), snapshot.version);
-        return dataset.tableSchema(Lance::TableStateSnapshot{snapshot.version}, local_context);
+        return dataset.tableSchema(
+            Lance::TableStateSnapshot{snapshot.version}, local_context, session->getCancelHandle());
     }
 
     auto dataset = Lance::DatasetHandle::openEphemeral(options);
@@ -780,6 +781,11 @@ std::unique_ptr<StorageInMemoryMetadata> LanceMetadata::buildStorageMetadataFrom
     {
         auto session = Lance::QuerySession::get(local_context);
         dataset = session->getPinned(options, lance_state->version);
+        auto result = std::make_unique<StorageInMemoryMetadata>();
+        result->setColumns(ColumnsDescription{
+            dataset.tableSchema(*lance_state, local_context, session->getCancelHandle())});
+        result->setDataLakeTableState(state);
+        return result;
     }
     else
     {
@@ -852,7 +858,8 @@ ObjectIterator LanceMetadata::iterate(
     else
         dataset = Lance::DatasetHandle::openEphemeral(options);
 
-    const auto fragments = dataset.listFragments(snapshot);
+    const auto fragments = dataset.listFragments(
+        snapshot, session ? session->getCancelHandle() : Lance::CancelHandlePtr{});
     ProfileEvents::increment(ProfileEvents::LanceFragmentsListed, fragments.size());
 
     const auto & settings = local_context->getSettingsRef();
@@ -907,19 +914,25 @@ std::optional<Pipe> LanceMetadata::read(
     const auto & lance_object = extractLanceObjectInfo(object_info);
     const auto & snapshot = lance_object.snapshot;
 
+    Lance::CancelHandlePtr cancel_handle = std::make_shared<Lance::CancelHandle>();
     Lance::DatasetHandle dataset = lance_object.dataset;
     if (!dataset)
     {
         const auto options = getDatasetOptions(local_context);
         if (local_context && local_context->hasQueryContext())
-            dataset = Lance::QuerySession::get(local_context)->getPinned(options, snapshot.version);
+        {
+            auto session = Lance::QuerySession::get(local_context);
+            dataset = session->getPinned(options, snapshot.version);
+            cancel_handle = session->getCancelHandle();
+        }
         else
             dataset = Lance::DatasetHandle::openEphemeral(options);
     }
     else if (local_context && local_context->hasQueryContext())
     {
         /// Source of truth is the query session; ObjectInfo handle is a fast path that must match.
-        auto session_handle = Lance::QuerySession::get(local_context)->getPinned(getDatasetOptions(local_context), snapshot.version);
+        auto session = Lance::QuerySession::get(local_context);
+        auto session_handle = session->getPinned(getDatasetOptions(local_context), snapshot.version);
         if (session_handle.identityKey() != dataset.identityKey())
         {
             throw Exception(
@@ -927,6 +940,7 @@ std::optional<Pipe> LanceMetadata::read(
                 "Lance ObjectInfo dataset identity does not match the query session handle");
         }
         dataset = std::move(session_handle);
+        cancel_handle = session->getCancelHandle();
     }
 
     const auto predicate_pushdown = extractLancePredicatePushdown(format_filter_info);
@@ -937,7 +951,7 @@ std::optional<Pipe> LanceMetadata::read(
     bool discard_output_columns = false;
     if (!effective_need_only_count && scan_projection.empty())
     {
-        const auto schema = dataset.tableSchema(snapshot, local_context);
+        const auto schema = dataset.tableSchema(snapshot, local_context, cancel_handle);
         if (schema.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scan a `Lance` dataset without physical columns");
 
@@ -1006,6 +1020,7 @@ std::optional<Pipe> LanceMetadata::read(
         std::move(object_info),
         std::move(dataset),
         std::move(scan),
+        std::move(cancel_handle),
         format_settings ? *format_settings : getFormatSettings(local_context));
     return Pipe(source);
 }

@@ -17,6 +17,7 @@
 #include <Common/UniqueLock.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
+#include <Common/StopToken.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/OvercommitTracker.h>
@@ -137,6 +138,11 @@ protected:
     mutable std::mutex cancel_mutex;
     CancelReason cancel_reason { CancelReason::UNDEFINED };
     std::exception_ptr cancellation_exception TSA_GUARDED_BY(cancel_mutex);
+    StopSource cancellation_source;
+
+    /// Invokes query cancellation callbacks without allowing a callback exception
+    /// to interrupt the existing pipeline cancellation path.
+    void requestCancellationCallbacks() noexcept;
 
     /// All data to the client already had been sent.
     /// Including EndOfStream or Exception.
@@ -261,6 +267,8 @@ public:
     CancellationCode cancelQuery(CancelReason reason, std::exception_ptr exception = nullptr);
 
     bool isKilled() const { return is_killed; }
+    /// Callbacks must be non-blocking and must not re-enter the `ProcessList`.
+    StopToken getCancellationToken() const { return cancellation_source.get_token(); }
 
     /// Returns the reason `cancelQuery` was called with, or `UNDEFINED` if the query has not been cancelled.
     /// Always returns `UNDEFINED` when `isKilled` is false, so consult `isKilled` first.

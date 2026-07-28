@@ -295,11 +295,14 @@ SnapshotInfo DatasetHandle::currentSnapshot() const
     return SnapshotInfo{snapshot.version};
 }
 
-NamesAndTypesList DatasetHandle::tableSchema(const TableStateSnapshot & snapshot, ContextPtr context) const
+NamesAndTypesList DatasetHandle::tableSchema(
+    const TableStateSnapshot & snapshot,
+    ContextPtr context,
+    const CancelHandlePtr & cancel) const
 {
     ArrowSchema schema{};
     ch_lance_error error{};
-    if (!ch_lance_export_schema(raw(), snapshot.version, &schema, &error))
+    if (!ch_lance_export_schema(raw(), snapshot.version, &schema, cancel ? cancel->raw() : nullptr, &error))
         throwLanceError(error, fmt::format("Cannot export schema for `Lance` dataset version {}", snapshot.version));
 
     auto arrow_schema = arrow::ImportSchema(&schema);
@@ -336,7 +339,10 @@ std::optional<size_t> DatasetHandle::totalRows(const TableStateSnapshot & snapsh
 }
 
 std::optional<size_t> DatasetHandle::countRows(
-    const TableStateSnapshot & snapshot, const std::optional<String> & predicate, const CancelHandlePtr & cancel) const
+    const TableStateSnapshot & snapshot,
+    const std::optional<String> & predicate,
+    const std::vector<UInt64> & fragment_ids,
+    const CancelHandlePtr & cancel) const
 {
     uint64_t rows = 0;
     bool has_value = false;
@@ -346,11 +352,13 @@ std::optional<size_t> DatasetHandle::countRows(
             raw(),
             snapshot.version,
             predicate ? predicate->c_str() : nullptr,
+            fragment_ids.empty() ? nullptr : fragment_ids.data(),
+            fragment_ids.size(),
             &rows,
             &has_value,
             cancel ? cancel->raw() : nullptr,
             &error))
-        throwLanceError(error, fmt::format("Cannot count filtered rows in `Lance` dataset version {}", snapshot.version));
+        throwLanceError(error, fmt::format("Cannot count rows in `Lance` dataset version {}", snapshot.version));
     ProfileEvents::increment(ProfileEvents::LanceCountRows);
     ProfileEvents::increment(ProfileEvents::LanceCountRowsMicroseconds, watch.elapsedMicroseconds());
     if (!has_value)

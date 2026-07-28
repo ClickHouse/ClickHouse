@@ -294,6 +294,12 @@ public:
         return current_metadata->shouldReloadSchemaForConsistency(context);
     }
 
+    bool supportsDistributedReadWithExplicitSchema() const override
+    {
+        assertInitialized();
+        return current_metadata->supportsDistributedReadWithExplicitSchema();
+    }
+
     IDataLakeMetadata * getExternalMetadata() override
     {
         assertInitialized();

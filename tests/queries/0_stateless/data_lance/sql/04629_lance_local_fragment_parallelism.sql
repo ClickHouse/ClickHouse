@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- ProfileEvents are selected by a unique log comment, so this test can run in parallel.
 -- Multi-fragment Lance packs: correctness vs single-pack and ProfileEvents.
 
 DROP TABLE IF EXISTS lance_local_fragment_parallelism;
