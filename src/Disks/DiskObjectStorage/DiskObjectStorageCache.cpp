@@ -44,4 +44,9 @@ NameSet DiskObjectStorage::getCacheLayersNames() const
     return disk_names;
 }
 
+DiskObjectStorageConstPtr DiskObjectStorage::getWrappedDisk() const
+{
+    return wrapped_disk;
+}
+
 }

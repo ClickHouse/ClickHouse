@@ -17,6 +17,8 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
@@ -27,7 +29,6 @@
 
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Utils.h>
-#include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
@@ -182,11 +183,14 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
                     "Please specify `DEFAULT` expression in ALTER MODIFY COLUMN statement",
                     required_column.name, column_in_block.type->getName(), required_column.type->getName());
 
-            auto convert_func = makeASTFunction("_CAST",
-                makeASTFunction("ifNull", make_intrusive<ASTIdentifier>(required_column.name), default_value),
-                make_intrusive<ASTLiteral>(required_column.type->getName()));
-
+            /// _CAST(if(isNull(col), _CAST(default, 'T'), _CAST(assumeNotNull(col), 'T')), 'T')
+            auto is_null = makeASTFunction("isNull", make_intrusive<ASTIdentifier>(required_column.name));
+            auto cast_default = makeASTFunction("_CAST", default_value, make_intrusive<ASTLiteral>(required_column.type->getName()));
+            auto cast_value = makeASTFunction("_CAST", makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>(required_column.name)), make_intrusive<ASTLiteral>(required_column.type->getName()));
+            auto filled = makeASTFunction("if", std::move(is_null), std::move(cast_default), std::move(cast_value));
+            auto convert_func = makeASTFunction("_CAST", std::move(filled), make_intrusive<ASTLiteral>(required_column.type->getName()));
             conversion_expr_list->children.emplace_back(setAlias(convert_func, required_column.name));
+
             continue;
         }
 
@@ -240,8 +244,7 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
-    collectSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
-    collectSets(expression, *planner_context);
+    collectSetsAndSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
 
     auto actions = buildActionsDAGFromExpressionNode(expression, header.getColumnsWithTypeAndName(), planner_context, {}).first;
     chassert(expression->getChildren().size() == actions.getOutputs().size());

@@ -7,8 +7,8 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'SCIM', 'provisioning', 'Entra ID', 'Azure AD', 'Microsoft', 'SSO', 'SAML', 'identity provider', 'IdP', 'user management']
 ---
 
-import EnterprisePlanFeatureBadge from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
-import PrivatePreviewBadge from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 <PrivatePreviewBadge/>
 
@@ -44,8 +44,7 @@ You'll need:
 ## Configure SCIM on your ClickHouse Cloud organization {#configure-clickhouse-cloud}
 
 <Steps>
-<Step>
-### Enable SCIM {#enable-scim-provisioning}
+<Step title="Enable SCIM" id="enable-scim-provisioning">
 
 Sign in to **ClickHouse Cloud Console** as an organization admin and open **Organization settings → SAML and SCIM settings → SCIM Configuration**.
 
@@ -59,8 +58,7 @@ https://api.clickhouse.cloud/v1/organizations/<your-org-id>/scim
 
 Copy it — you'll paste it into Entra ID later as the **Tenant URL**.
 </Step>
-<Step>
-### Generate a SCIM access token {#generate-scim-token}
+<Step title="Generate a SCIM access token" id="generate-scim-token">
 
 Locate the `Generate new key` section and choose an expiration date.
 
@@ -80,8 +78,7 @@ You'll combine the key and secret into a single bearer token for Entra ID in the
 
 Specifically, the token **key** (starting with `scim_`), a colon, then the token **secret**, with no spaces. Entra ID sends this value as an `Authorization: Bearer` header on every request.
 </Step>
-<Step>
-### Define the role mapping {#define-role-mapping}
+<Step title="Define the role mapping" id="define-role-mapping">
 
 From the SCIM Configuration panel, click **Map roles in "Users and roles"** (or navigate directly via **Users and roles → Roles**).
 
@@ -97,15 +94,13 @@ SCIM groups bind to ClickHouse Cloud roles by name, with a few rules to keep in 
 ## Configure provisioning in Microsoft Entra ID {#configure-entra}
 
 <Steps>
-<Step>
-### Open your ClickHouse Cloud enterprise application {#open-clickhouse-cloud-app}
+<Step title="Open your ClickHouse Cloud enterprise application" id="open-clickhouse-cloud-app">
 
 Open the **Microsoft Entra ID** overview and, under **Manage** in the left-hand menu, select **Enterprise applications**. Open the application you created when you set up SAML SSO for ClickHouse Cloud.
 
 If you haven't created the enterprise application yet, follow the [SAML SSO setup guide](/products/cloud/guides/security/cloud-access-management/saml-sso-setup#configure-azure-microsoft-saml) first — with SAML-based SSO, the same enterprise application is used for both single sign-on and SCIM provisioning.
 </Step>
-<Step>
-### Set the provisioning mode and credentials {#connect-entra-scim}
+<Step title="Set the provisioning mode and credentials" id="connect-entra-scim">
 
 In the application's left sidebar, select **Provisioning**, then click `Get started` (or `Provisioning` → `Edit provisioning`).
 
@@ -118,8 +113,7 @@ Click `Test Connection`. Entra ID makes a test call to the SCIM endpoint; you sh
 
 Click `Save`.
 </Step>
-<Step>
-### Configure attribute mappings {#map-user-attributes}
+<Step title="Configure attribute mappings" id="map-user-attributes">
 
 After saving credentials, expand the **Mappings** section. Entra ID shows two mapping sets:
 
@@ -156,8 +150,7 @@ Open **Provision Microsoft Entra ID Groups** and confirm `displayName` maps to `
 Make sure the value that flows into `userName` and the value that flows into the primary email use the same casing. ClickHouse Cloud normalises emails to lowercase; mismatches between the two fields can cause provisioning failures.
 </Warning>
 </Step>
-<Step>
-### Set the provisioning scope {#configure-provisioning-behavior}
+<Step title="Set the provisioning scope" id="configure-provisioning-behavior">
 
 Expand the **Settings** section:
 
@@ -166,8 +159,7 @@ Expand the **Settings** section:
 
 Click `Save`.
 </Step>
-<Step>
-### Assign groups and users {#push-groups-and-assign-users}
+<Step title="Assign groups and users" id="push-groups-and-assign-users">
 
 This is where roles get applied automatically.
 
@@ -188,8 +180,7 @@ Provisioning groups (not just their members) requires Microsoft Entra ID P1 or h
 
 Group-based assignment is cleaner for ongoing management — when someone changes role, you only update group membership.
 </Step>
-<Step>
-### Turn on provisioning {#turn-on-provisioning}
+<Step title="Turn on provisioning" id="turn-on-provisioning">
 
 Return to **Provisioning**, set **Provisioning Status** to `On`, and click `Save`.
 

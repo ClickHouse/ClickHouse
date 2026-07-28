@@ -180,16 +180,17 @@ SELECT L2Distance((1, 2), (2, 3))
 **الصيغة**
 
 ```sql
-L2DistanceTransposed(vector1, vector2, p)
+L2DistanceTransposed(vector1, vector2, p[, used_dims])
 ```
 
 **الأسماء البديلة**: `distanceL2Transposed`
 
 **المعاملات**
 
-* `vectors` — المتجهات. [`QBit(T, UInt64)`](/ar/reference/data-types/qbit)
+* `vectors` — المتجهات. [`QBit(T, UInt64[, UInt64])`](/ar/reference/data-types/qbit)
 * `reference` — المتجه المرجعي. [`Array(T)`](/ar/reference/data-types/array)
-* `p` — عدد البِتّات من كل عنصر في المتجه التي ستُستخدم في حساب المسافة (من 1 إلى عرض البِتّ للعنصر). يتحكم مستوى التكميم في المفاضلة بين الدقة والسرعة. يؤدّي استخدام عدد أقل من البِتّات إلى تسريع عمليات IO والحسابات مع تقليل الدقة، بينما يؤدّي استخدام عدد أكبر من البِتّات إلى زيادة الدقة على حساب الأداء. [`UInt`](/ar/reference/data-types/int-uint)
+* `p` — عدد البِتّات من كل عنصر في المتجه التي ستُستخدم في حساب المسافة (من 1 إلى عرض البِتّ للعنصر). يتحكم مستوى التكميم في موازنة بين الدقة والسرعة. يؤدّي استخدام عدد أقل من البِتّات إلى تسريع عمليات IO والحسابات مع تقليل الدقة، بينما يؤدّي استخدام عدد أكبر من البِتّات إلى زيادة الدقة على حساب الأداء. [`UInt`](/ar/reference/data-types/int-uint)
+* `used_dims` — اختياري. عدد الأبعاد الأولى المطلوب قراءتها لإجراء بحث منخفض الأبعاد (Matryoshka) على `QBit` ذي `stride`. يجب أن يكون مضاعفًا لـ `stride` الخاص بـ `QBit` وألا يتجاوز بُعده، ويجب أن يحتوي المتجه المرجعي على هذا العدد من العناصر على الأقل (ويُتجاهل أي عناصر إضافية لاحقة). لا تُقرأ إلا مجموعات `stride` التي تغطي هذه الأبعاد. [`UInt`](/ar/reference/data-types/int-uint)
 
 **القيمة المعادة**
 
@@ -207,8 +208,43 @@ SELECT L2DistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 
 ```response title=Response
 ┌─L2DistanceTransposed([0, 1], [1, 2], 16)─┐
-│                       1.4142135623730951 │
+│                       1.3922918381215914 │
 └──────────────────────────────────────────┘
+```
+
+<div id="L2DistanceTransposedQuantized">
+  ## L2DistanceTransposedQuantized
+</div>
+
+أُضيف في: v26.7.0
+
+يحسب [المسافة الإقليدية](https://en.wikipedia.org/wiki/Euclidean_distance) التقريبية بين `QBit(Int8)` من رموز `quantizeBFloat16ToInt8` (تُفكّ تكميمها آنيًا) ومتجه مرجعي. يُقارَن متجه مرجعي (استعلام) من النوع `Float` مباشرةً بدقة `Float32` -- وهي دقة إعادة بناء الرموز بعد فك تكميمها، لذا يُحوَّل استعلام `Float64` إلى `Float32`، بينما يُوسَّع استعلام `BFloat16` إليها بدقة تامة (أي إن حساب المسافة غير متماثل)؛ أما المرجع `Array(Int8)` فيُعامَل هو نفسه على أنه رموز `quantizeBFloat16ToInt8` وتُفكّ تكميمه إلى مستويات إعادة البناء الخاصة به. لاحظ أن `p` يقتطع فقط رموز `QBit` المخزنة؛ أما المرجع `Array(Int8)` فهو استعلام كامل ويُعاد بناؤه دائمًا بدقة 8-بت الكاملة، لذا لا تكون هذه مسافة متماثلة بين طرفين مكمّمين إلا عند `p = 8` (أما عند `p < 8` فلا يُقرأ إلا الطرف المخزن بدقة أخشن). ويجب أن يكون في الفضاء نفسه الذي كانت فيه القيم قبل التكميم (أي بعد تطبيق التدوير العشوائي والتحجيم نفسيهما)، وهذه مسؤولية المستدعي. إن cosine distance ثابتة تجاه التحجيم؛ أما dot product ومسافة L2 فليستا كذلك.
+
+**الصيغة**
+
+```sql
+L2DistanceTransposedQuantized(vectors, reference, p[, used_dims])
+```
+
+**المعاملات**
+
+* `vectors` — متجهات رموز `quantizeBFloat16ToInt8`. [`QBit(Int8, UInt64[, UInt64])`](/ar/reference/data-types/qbit)
+* `reference` — المتجه المرجعي (الاستعلام): مصفوفة `Float` (أي الاستعلام، وتُجرى المقارنة بدقة `Float32` -- ويُضيَّق استعلام `Float64` إلى `Float32`)، أو `Array(Int8)` من رموز `quantizeBFloat16ToInt8` تُفك كميًا آنيًا. [`Array(Float32)`](/ar/reference/data-types/array) أو [`Array(Int8)`](/ar/reference/data-types/array)
+* `p` — عدد البِتّات العليا من كل رمز `QBit` مخزَّن المطلوب استخدامه (من 1 إلى 8). يؤدّي استخدام عدد أقل من البِتّات إلى إعادة بناء مكمِّم مضمَّن أكثر خشونة لتسريع عمليات IO مع تقليل الدقة؛ وتمثل 8 بِتّات إعادة بناء بالدقة الكاملة. يقتصر `p` على اقتطاع `QBit` المخزَّن فقط؛ أما المرجع `Array(Int8)` فيُعاد بناؤه دائمًا بدقة 8 بِتّات كاملة. [`UInt`](/ar/reference/data-types/int-uint)
+* `used_dims` — اختياري. عدد الأبعاد الأولى المطلوب قراءتها لإجراء بحث منخفض الأبعاد (Matryoshka) على `QBit` ذي `stride`. يجب أن يكون مضاعفًا لـ `stride` الخاص بـ `QBit` وألا يتجاوز بُعده، ويجب أن يحتوي المتجه المرجعي على هذا العدد من العناصر على الأقل (وأي عناصر إضافية لاحقة يتم تجاهلها). لا تُقرأ إلا مجموعات `stride` التي تغطي هذه الأبعاد. [`UInt`](/ar/reference/data-types/int-uint)
+
+**القيمة المعادة**
+
+يعيد المسافة التقريبية لمعيار 2. ويُرجع دائمًا `Float64`. [`Float64`](/ar/reference/data-types/float)
+
+**أمثلة**
+
+**الاستخدام الأساسي**
+
+```sql title=Query
+CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
+SELECT L2DistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
 ```
 
 <div id="L2Norm">
@@ -653,16 +689,17 @@ SELECT cosineDistance((1, 2), (2, 3));
 **الصيغة**
 
 ```sql
-cosineDistanceTransposed(vector1, vector2, p)
+cosineDistanceTransposed(vector1, vector2, p[, used_dims])
 ```
 
 **الأسماء البديلة**: `distanceCosineTransposed`
 
 **الوسائط**
 
-* `vectors` — متجهات. [`QBit(T, UInt64)`](/ar/reference/data-types/qbit)
+* `vectors` — متجهات. [`QBit(T, UInt64[, UInt64])`](/ar/reference/data-types/qbit)
 * `reference` — المتجه المرجعي. [`Array(T)`](/ar/reference/data-types/array)
-* `p` — عدد البِتّات من كل عنصر في المتجه التي ستُستخدم في حساب المسافة (من 1 حتى عرض البِتّ للعنصر). يتحكم مستوى التكميم في الموازنة بين الدقة والسرعة. يؤدي استخدام عدد أقل من البِتّات إلى تسريع عمليات I/O والحسابات مع انخفاض الدقة، بينما يؤدي استخدام عدد أكبر من البِتّات إلى زيادة الدقة على حساب الأداء. [`UInt`](/ar/reference/data-types/int-uint)
+* `p` — عدد البِتّات من كل عنصر في المتجه التي ستُستخدم في حساب المسافة (من 1 حتى عرض البِتّ للعنصر). يتحكم مستوى التكميم في موازنة بين الدقة والسرعة. يؤدي استخدام عدد أقل من البِتّات إلى تسريع عمليات I/O والحسابات مع انخفاض الدقة، بينما يؤدي استخدام عدد أكبر من البِتّات إلى زيادة الدقة على حساب الأداء. [`UInt`](/ar/reference/data-types/int-uint)
+* `used_dims` — اختياري. عدد الأبعاد الأولى التي ستُقرأ، لإجراء بحث منخفض الأبعاد (Matryoshka) على `QBit` ذي stride. يجب أن يكون مضاعفًا لـ stride الخاص بـ QBit، وألا يتجاوز بُعده، ويجب أن يحتوي المتجه المرجعي على هذا العدد من العناصر على الأقل (ويُتجاهل أي عناصر إضافية لاحقة). لا تُقرأ إلا مجموعات stride التي تغطي هذه الأبعاد. [`UInt`](/ar/reference/data-types/int-uint)
 
 **القيمة المُعادة**
 
@@ -680,8 +717,121 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 
 ```response title=Response
 ┌─cosineDistanceTransposed([0, 1], [1, 2], 16)─┐
-│                          0.10557281085638826 │
+│                          0.10557280905788935 │
 └──────────────────────────────────────────────┘
+```
+
+<div id="cosineDistanceTransposedQuantized">
+  ## cosineDistanceTransposedQuantized
+</div>
+
+أُضيف في: v26.7.0
+
+يحسب [مسافة جيب التمام](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance) التقريبية بين رموز `QBit(Int8)` التابعة لـ `quantizeBFloat16ToInt8` (التي يُفكّ تكميمها آنيًا) ومتجه مرجعي. وكلما صغرت القيمة المعادة، زاد تشابه المتجهات. يُقارَن متجه مرجعي (استعلام) من نوع `Float` مباشرةً بدقة `Float32` — وهي دقة إعادة بناء الرموز بعد فك التكميم — لذا يُحوَّل استعلام `Float64` إلى `Float32`، بينما يُوسَّع استعلام `BFloat16` إليه بدقة تامة (أي إن حساب المسافة غير متماثل)؛ أما المرجع `Array(Int8)` فيُعامَل هو نفسه على أنه رموز `quantizeBFloat16ToInt8` ويُفكّ تكميمه إلى مستويات إعادة البناء الخاصة به. لاحظ أن `p` يقتطع فقط رموز `QBit` المخزنة؛ أما المرجع `Array(Int8)` فهو استعلام كامل ويُعاد بناؤه دائمًا بدقة 8 بت كاملة، لذلك لا تكون هذه مسافة متماثلة بين قيم مكمّاة إلا عند `p = 8` (أما عند `p < 8` فلا يُقرأ إلا الجانب المخزن بدقة أقل). ويجب أن يكون في الفضاء نفسه الذي كانت فيه القيم قبل التكميم (أي بعد تطبيق التدوير العشوائي والتحجيم نفسيهما)، وهذا يقع على عاتق المستدعي. مسافة جيب التمام لا تتأثر بالتحجيم؛ أما الضرب النقطي ومسافة L2 فليسا كذلك.
+
+**البنية**
+
+```sql
+cosineDistanceTransposedQuantized(vectors, reference, p[, used_dims])
+```
+
+**المعاملات**
+
+* `vectors` — متجهات من رموز `quantizeBFloat16ToInt8`. [`QBit(Int8, UInt64[, UInt64])`](/ar/reference/data-types/qbit)
+* `reference` — المتجه المرجعي (الاستعلام): مصفوفة `Float` (أي الاستعلام، وتتم مقارنته بدقة `Float32` -- ويُحوَّل استعلام `Float64` إلى `Float32`)، أو `Array(Int8)` من رموز `quantizeBFloat16ToInt8` تُفك كميتها آنيًا. [`Array(Float32)`](/ar/reference/data-types/array) أو [`Array(Int8)`](/ar/reference/data-types/array)
+* `p` — عدد البتات العليا من كل رمز `QBit` مخزَّن المطلوب استخدامها (من 1 إلى 8). يؤدي استخدام عدد أقل من البتات إلى إعادة بناء مُكمِّم مضمَّن أكثر خشونة لتسريع `I/O` على حساب الدقة؛ وتمثل 8 بتات إعادة البناء بالدقة الكاملة. يقتصر تأثير `p` على بتر `QBit` المخزَّن فقط؛ أما المرجع من النوع `Array(Int8)` فيُعاد بناؤه دائمًا بدقة 8 بت كاملة. [`UInt`](/ar/reference/data-types/int-uint)
+* `used_dims` — اختياري. عدد الأبعاد الأولى المطلوب قراءتها لإجراء بحث منخفض الأبعاد (Matryoshka) على `QBit` ذي `stride`. يجب أن يكون مضاعفًا لـ `stride` الخاص بـ `QBit` وألا يتجاوز بُعده، ويجب أن يحتوي المتجه المرجعي على هذا العدد من العناصر على الأقل (وأي عناصر زائدة لاحقة يتم تجاهلها). لا تُقرأ إلا مجموعات `stride` التي تغطي هذه الأبعاد. [`UInt`](/ar/reference/data-types/int-uint)
+
+**القيمة المعادة**
+
+تعيد مسافة جيب التمام التقريبية (واحد ناقص تشابه جيب التمام). وتُعيد دائمًا `Float64`. [`Float64`](/ar/reference/data-types/float)
+
+**أمثلة**
+
+**الاستخدام الأساسي**
+
+```sql title=Query
+CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
+SELECT cosineDistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
+```
+
+<div id="dotProductTransposed">
+  ## dotProductTransposed
+</div>
+
+تمت إضافته في: v26.7.0
+
+يحسب [الضرب القياسي](https://en.wikipedia.org/wiki/Dot_product) التقريبي (الجداء الداخلي) لمتجهين (إذ تمثل قيم المتجهات الإحداثيات). وعلى عكس دوال المسافة، فهذا مقياس للتشابه: فكلما كبرت القيمة المُعادة، زاد التشابه بين المتجهات.
+
+**الصيغة**
+
+```sql
+dotProductTransposed(vector1, vector2, p[, used_dims])
+```
+
+**الأسماء البديلة**: `scalarProductTransposed`
+
+**الوسائط**
+
+* `vectors` — متجهات. [`QBit(T, UInt64[, UInt64])`](/ar/reference/data-types/qbit)
+* `reference` — المتجه المرجعي. [`Array(T)`](/ar/reference/data-types/array)
+* `p` — عدد البِتّات من كل عنصر في المتجه التي ستُستخدم في الحساب (من 1 حتى عرض البِتّ للعنصر). يتحكم مستوى التكميم في موازنة بين الدقة والسرعة. يؤدي استخدام عدد أقل من البِتّات إلى تسريع عمليات I/O والحسابات مع انخفاض الدقة، بينما يؤدي استخدام عدد أكبر من البِتّات إلى زيادة الدقة على حساب الأداء. [`UInt`](/ar/reference/data-types/int-uint)
+* `used_dims` — اختياري. عدد الأبعاد الأولى التي ستُقرأ لإجراء بحث منخفض الأبعاد (Matryoshka) على `QBit` ذي `stride`. يجب أن يكون مضاعفًا لـ `stride` الخاص بـ `QBit` وألا يتجاوز بُعده، ويجب أن يحتوي المتجه المرجعي على هذا العدد من العناصر على الأقل (وأي عناصر إضافية في النهاية يتم تجاهلها). لا تُقرأ إلا مجموعات `stride` التي تغطي هذه الأبعاد. [`UInt`](/ar/reference/data-types/int-uint)
+
+**القيمة المُعادة**
+
+تُرجع الضرب القياسي التقريبي للمتجهين. وتكون القيمة المُعادة دائمًا من النوع `Float64`. [`Float64`](/ar/reference/data-types/float)
+
+**أمثلة**
+
+**الاستخدام الأساسي**
+
+```sql title=Query
+CREATE TABLE qbit (id UInt32, vec QBit(Float64, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, [0, 1]);
+SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
+```
+
+```response title=Response
+┌─dotProductTransposed([0, 1], [1, 2], 16)─┐
+│                                   2.0625 │
+└──────────────────────────────────────────┘
+```
+
+<div id="dotProductTransposedQuantized">
+  ## dotProductTransposedQuantized
+</div>
+
+تمت إضافته في: v26.7.0
+
+يحسب [الضرب القياسي](https://en.wikipedia.org/wiki/Dot_product) التقريبي (الجداء الداخلي) بين `QBit(Int8)` من رموز `quantizeBFloat16ToInt8` (تُفكّ تكميمها آنيًا) ومتجه مرجعي. وهذا مقياس للتشابه: فكلما كبرت القيمة المُعادة، زاد التشابه بين المتجهات. يُقارَن متجه مرجعي (استعلام) من نوع `Float` مباشرة بدقة `Float32` -- وهي دقة إعادة بناء الرموز بعد فكّ تكميمها، لذا يُحوَّل استعلام `Float64` إلى `Float32`، بينما يُوسَّع استعلام `BFloat16` إليه تمامًا (حساب مسافة غير متماثل)؛ أما المرجع `Array(Int8)` فيُتعامل معه هو نفسه على أنه رموز `quantizeBFloat16ToInt8`، وتُفكّ تكميمه إلى مستويات إعادة البناء الخاصة به. لاحظ أن `p` يقتطع فقط رموز `QBit` المخزَّنة؛ أما المرجع `Array(Int8)` فهو في حد ذاته استعلام كامل، ويُعاد بناؤه دائمًا بدقة 8-بت كاملة، لذا لا يكون هذا حساب مسافة متناظرًا بين بيانات مكمَّمة وأخرى مكمَّمة إلا عند `p = 8` (أما عند `p < 8` فلا يُقرأ من الجانب المخزَّن إلا بدقة أخشن). ويجب أن يكون في الفضاء نفسه الذي كانت القيم فيه قبل التكميم (أي بعد الدوران العشوائي والتحجيم نفسيهما)، وهذه مسؤولية المستدعي. مسافة جيب التمام غير متأثرة بالتحجيم؛ أما الضرب القياسي ومسافة L2 فليسا كذلك.
+
+**الصيغة**
+
+```sql
+dotProductTransposedQuantized(vectors, reference, p[, used_dims])
+```
+
+**الوسائط**
+
+* `vectors` — متجهات من رموز `quantizeBFloat16ToInt8`. [`QBit(Int8, UInt64[, UInt64])`](/ar/reference/data-types/qbit)
+* `reference` — المتجه المرجعي (الاستعلام): مصفوفة `Float` (أي الاستعلام، ويُقارَن بدقة `Float32` -- ويُحوَّل الاستعلام من النوع `Float64` إلى `Float32`)، أو `Array(Int8)` من رموز `quantizeBFloat16ToInt8` يُفك تكميمها آنيًا. [`Array(Float32)`](/ar/reference/data-types/array) أو [`Array(Int8)`](/ar/reference/data-types/array)
+* `p` — عدد البِتّات العليا من كل رمز `QBit` مخزنة التي ستُستخدم (من 1 إلى 8). يؤدي استخدام عدد أقل من البِتّات إلى إعادة بناء مُكمِّم مضمن أكثر خشونة لتسريع عمليات I/O مع انخفاض الدقة؛ وتمثل 8 بِتّات إعادة البناء كاملة الدقة. يقتطع `p` فقط قيمة `QBit` المخزنة؛ أما المرجع من النوع `Array(Int8)` فيُعاد بناؤه دائمًا بدقة كاملة تبلغ 8 بِتّات. [`UInt`](/ar/reference/data-types/int-uint)
+* `used_dims` — اختياري. عدد الأبعاد الأولى التي ستُقرأ لإجراء بحث منخفض الأبعاد (Matryoshka) على `QBit` ذي `stride`. يجب أن يكون مضاعفًا لـ `stride` الخاص بـ `QBit` وألا يتجاوز بُعده، ويجب أن يحتوي المتجه المرجعي على هذا العدد من العناصر على الأقل (وأي عناصر إضافية لاحقة يتم تجاهلها). لا تُقرأ إلا مجموعات `stride` التي تغطي هذه الأبعاد. [`UInt`](/ar/reference/data-types/int-uint)
+
+**القيمة المُعادة**
+
+تُرجع الضرب القياسي التقريبي للمتجهين. وتكون القيمة المُعادة دائمًا من النوع `Float64`. [`Float64`](/ar/reference/data-types/float)
+
+**أمثلة**
+
+**الاستخدام الأساسي**
+
+```sql title=Query
+CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
+SELECT dotProductTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
 ```
 
 {/*AUTOGENERATED_END*/}

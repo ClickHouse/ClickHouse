@@ -24,10 +24,13 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [DROP SETTINGS variable [,...] ]
     [DROP PROFILES 'profile_name' [,...] ]
     [ADD|MODIFY SETTINGS variable [=value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE|CONST|CHANGEABLE_IN_READONLY] [,...] ]
+    [SET variable [=value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE|CONST|CHANGEABLE_IN_READONLY] [,...] ]
     [ADD PROFILES 'profile_name' [,...] ]
 ```
 
 Чтобы использовать `ALTER USER`, у вас должна быть привилегия [ALTER USER](/ru/reference/statements/grant#access-management).
+
+`SET variable = value` — это псевдоним для `MODIFY SETTING variable = value`: он изменяет одну настройку, сохраняя остальные. Предпочитайте его (или `MODIFY SETTING`) простой форме `SETTINGS`, которая заменяет весь список настроек, а также удаляет все наследуемые (родительские) профили.
 
 <div id="grantees-clause">
   ## Предложение GRANTEES

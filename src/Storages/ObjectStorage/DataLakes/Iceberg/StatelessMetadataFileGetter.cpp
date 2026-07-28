@@ -208,8 +208,17 @@ ManifestFileCacheKeys getManifestList(
                 content_type = Iceberg::ManifestFileContentType(
                     manifest_list_deserializer.getValueFromRowByName(i, f_content, TypeIndex::Int32).safeGet<Int32>());
             }
+            if (!manifest_list_deserializer.hasPath(f_partition_spec_id))
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Manifest list entry at index {} is missing required field '{}'",
+                    i,
+                    f_partition_spec_id);
+            Int32 partition_spec_id = static_cast<Int32>(
+                manifest_list_deserializer.getValueFromRowByName(i, f_partition_spec_id, TypeIndex::Int32).safeGet<Int32>());
             manifest_file_cache_keys.emplace_back(
-                manifest_file_name, manifest_length, added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type);
+                manifest_file_name, manifest_length, added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type,
+                partition_spec_id);
 
             insertRowToLogTable(
                 local_context,

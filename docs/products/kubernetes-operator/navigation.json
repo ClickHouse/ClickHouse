@@ -22,7 +22,8 @@
         "products/kubernetes-operator/guides/monitoring",
         "products/kubernetes-operator/guides/scaling",
         "products/kubernetes-operator/guides/tls",
-        "products/kubernetes-operator/guides/network-policies"
+        "products/kubernetes-operator/guides/network-policies",
+        "products/kubernetes-operator/guides/kubernetes-events"
       ]
     },
     {
