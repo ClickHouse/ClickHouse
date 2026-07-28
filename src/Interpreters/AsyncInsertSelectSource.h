@@ -2,6 +2,7 @@
 
 #include <Common/Logger.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/InsertDependenciesBuilder.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/ISource.h>
@@ -45,7 +46,8 @@ public:
         UInt64 wait_timeout_ms_,
         bool insert_allow_materialized_,
         StorageID table_id_,
-        bool needs_null_default_sync_);
+        bool needs_null_default_sync_,
+        InsertDependenciesBuilder::ConstPtr forced_insert_dependencies_);
 
     String getName() const override { return "AsyncInsertSelectSource"; }
 
@@ -63,6 +65,8 @@ private:
     bool insert_allow_materialized;
     StorageID table_id;
     bool needs_null_default_sync;
+    /// Frozen before the SELECT runs; see the freeze comment in buildAsyncInsertSelectPipeline.
+    InsertDependenciesBuilder::ConstPtr forced_insert_dependencies;
     bool done = false;
     LoggerPtr log;
 };
