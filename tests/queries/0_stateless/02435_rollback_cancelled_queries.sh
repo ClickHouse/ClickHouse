@@ -6,7 +6,7 @@
 # no-fasttest: The test is slow (too many small blocks)
 # no-azure-blob-storage: The test uploads many parts to Azure (5k+), and it runs in parallel with other tests.
 #     As a result, they may interfere, and some queries won't be able to finish in 30 seconds timeout leading to a test failure.
-# kills-processes-by-cmdline: thread_cancel signals every process matching $TEST_MARK in
+# kills-processes-by-cmdline: `thread_cancel` signals every process matching $TEST_MARK in
 #     /proc/*/cmdline, which also hits sanitizer-internal forks that inherited the client's argv.
 # shellcheck disable=SC2009
 

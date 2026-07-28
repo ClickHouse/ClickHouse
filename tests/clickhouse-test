@@ -157,15 +157,18 @@ def find_benign_lsan_ptrace_probe_lines(lines, kills_processes_by_cmdline):
     untouched.
 
     Second, the reported signal must not be `SIGSYS`, which is how seccomp kills the child when it
-    really denies the `ptrace` call. The signal alone is not enough to decide: `TestPTrace` ignores
-    the result of its `internal_waitpid` and reads a possibly untouched `wstatus`, so a wait
-    interrupted by `EINTR` reports a stale signal number - measured on a seccomp-blocked probe
-    raced with `SIGINT`, 812 of 2000 real blocks were reported with a stale non-`SIGSYS` signal,
-    and 2000 of 2000 reported `SIGSYS` without the race. Requiring the tag as well confines that
-    upstream misreport to the one test that already tolerates it.
+    really denies the `ptrace` call. It cannot be narrowed further than that: `WTERMSIG` reports
+    whatever signal reaped the child, not what the test sent, and in CI this pair has carried
+    signal 42 and signal 36.
 
-    Note the signal cannot be narrowed further: `WTERMSIG` reports whatever signal reaped the
-    child, not what the test sent, and in CI this pair has carried signal 42 and signal 36.
+    The signal is not a reliable discriminator on its own, which is why the tag is required too.
+    `TestPTrace` ignores the result of its `internal_waitpid` and reads a possibly untouched
+    `wstatus`, so a wait interrupted by `EINTR` reports a stale signal number: measured on a
+    seccomp-blocked probe raced with `SIGINT`, 812 of 2000 real blocks were reported with a stale
+    non-`SIGSYS` signal, versus 0 of 2000 without the race. The guarantee this gives is therefore
+    scoped, not absolute - outside the tagged test nothing is ever dropped, so a real block is
+    always reported, while inside it a real block that the upstream bug misreports can be dropped.
+    That is the trade the tag exists to bound.
     """
     if not kills_processes_by_cmdline:
         return set()

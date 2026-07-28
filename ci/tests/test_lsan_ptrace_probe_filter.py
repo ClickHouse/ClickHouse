@@ -18,8 +18,8 @@ The tag is load-bearing rather than cosmetic.  `TestPTrace` ignores the result o
 `internal_waitpid` and reads a possibly untouched `wstatus`, so an EINTR-interrupted wait reports a
 stale signal number: with a SIGINT raced against a genuinely seccomp-blocked probe, 812 of 2000
 real blocks reported a stale non-SIGSYS signal, versus 0 of 2000 without the race.  Requiring the
-tag confines that upstream misreport to the one test that already tolerates it and leaves every
-other test's diagnostics untouched.
+tag bounds that upstream misreport: outside the tagged test nothing is ever dropped, so a real
+block is always reported, while inside it a real block the upstream bug misreports can be dropped.
 
 `02435_rollback_cancelled_queries` only reaches the benign case through a timing race, so it
 cannot pin this behaviour.  These tests drive the runner's own filtering path so that the intended
@@ -34,7 +34,7 @@ _CLICKHOUSE_TEST = str(
     Path(__file__).resolve().parent.parent.parent / "tests" / "clickhouse-test"
 )
 
-# runpy.run_path handles the missing .py extension and the hyphen in the name.
+# `runpy.run_path` handles the missing .py extension and the hyphen in the name.
 _ct = runpy.run_path(_CLICKHOUSE_TEST)
 find_benign_lsan_ptrace_probe_lines = _ct["find_benign_lsan_ptrace_probe_lines"]
 LSAN_PTRACE_WARNING = _ct["LSAN_PTRACE_WARNING"]
@@ -45,7 +45,13 @@ RunnerTestSuite = _ct["TestSuite"]
 
 # compiler-rt's `Report` prefixes every line with ==PID==.
 _PID = 4242
-_WARNING = f"=={_PID}=={LSAN_PTRACE_WARNING}. LeakSanitizer may hang."
+# Spelled out rather than built from LSAN_PTRACE_WARNING: these fixtures must fail if the runner's
+# matcher drifts away from what compiler-rt actually prints, so they must not reuse that constant.
+# Verbatim from sanitizer_stoptheworld_linux_libcdep.cpp, where the two format strings concatenate.
+_WARNING = (
+    f"=={_PID}==WARNING: ptrace appears to be blocked (is seccomp enabled?). "
+    "LeakSanitizer may hang."
+)
 _UAF = f"=={_PID}==ERROR: AddressSanitizer: heap-use-after-free on address 0x602000000010"
 
 
@@ -78,7 +84,7 @@ def _kept(lines, tmp_path, extra_log_lines=None, tagged=True):
     """Lines that survive the real sanitizer-log filtering in `TestCase.process_result_impl`.
 
     The filter is not reimplemented here: sanitizer logs are written where the runner looks for
-    them and the production method is called, so disconnecting the filter from the runner fails
+    them and `process_result_impl` is called, so disconnecting the filter from the runner fails
     these tests too.
     """
     case = RunnerTestCase.__new__(RunnerTestCase)
@@ -115,7 +121,7 @@ def test_benign_probe_killed_by_sigint_is_dropped(tmp_path):
 
 def test_benign_probe_killed_by_the_signals_seen_in_ci_is_dropped(tmp_path):
     # The only signals this pair has ever carried in CI (180 days: 13 hits with 42, 5 with 36,
-    # zero with SIGSYS), both real-time signals rather than the SIGINT/SIGKILL thread_cancel
+    # zero with SIGSYS), both real-time signals rather than the SIGINT/SIGKILL `thread_cancel`
     # sends: WTERMSIG reports whatever signal reaped the probe, so the check must not be narrowed
     # to the signals a test sends directly.
     for sig in (42, 36):
@@ -131,7 +137,7 @@ def test_repeated_benign_pairs_are_dropped(tmp_path):
     assert _kept(_benign_pair(signal.SIGKILL) + _benign_pair(signal.SIGINT), tmp_path) == []
 
 
-def test_real_seccomp_block_is_kept(tmp_path):
+def test_correctly_reported_seccomp_block_is_kept_in_a_tagged_test(tmp_path):
     lines = _real_seccomp_pair()
     assert _kept(lines, tmp_path) == lines
 
@@ -200,6 +206,22 @@ def test_empty_log_has_nothing_to_drop(tmp_path):
 def test_helper_drops_nothing_without_the_tag(tmp_path):
     assert find_benign_lsan_ptrace_probe_lines(_benign_pair(), False) == set()
     assert find_benign_lsan_ptrace_probe_lines(_benign_pair(), True) == {0, 1}
+
+
+def test_matcher_matches_what_compiler_rt_prints(tmp_path):
+    # The fixtures spell the upstream line out, so this is what ties the runner's matcher to it: if
+    # LSAN_PTRACE_WARNING drifts to something compiler-rt never prints, the benign case stops being
+    # recognised here even though the helper would still be self-consistent.
+    assert LSAN_PTRACE_WARNING in _WARNING
+    assert _kept(_benign_pair(), tmp_path) == []
+
+
+def test_unrelated_warning_with_a_child_exit_is_kept(tmp_path):
+    # Near miss: a different sanitizer warning followed by a child-exit line must not be treated as
+    # the probe pair, or an overbroad matcher would silently swallow it.
+    other = f"=={_PID}==WARNING: unrelated sanitizer warning, not the ptrace probe"
+    lines = [other, _child_exit(signal.SIGKILL)]
+    assert _kept(lines, tmp_path) == lines
 
 
 def test_suite_loader_reads_the_tag_from_the_test_file():
