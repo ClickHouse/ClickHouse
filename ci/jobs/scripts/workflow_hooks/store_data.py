@@ -28,10 +28,14 @@ def parse_settings_history_changes(patch, file_lines):
     """Given the unified diff of src/Core/SettingsChangesHistory.cpp and the lines of the file
     at HEAD, return a list of {"namespace", "name"} for settings whose value changed or that
     were newly added. Reason-only edits (added entry whose value-signature was also removed)
-    are ignored. The namespace comes from the block that physically contains each added line
-    (new-file line number), not from global name presence - names can exist in both histories."""
+    are ignored, and so are in-place corrections of an already recorded entry (the same setting
+    name is both removed and added): fixing what a past release actually did is not a default
+    change made by this PR, so it must not be required under the current version block. The
+    namespace comes from the block that physically contains each added line (new-file line
+    number), not from global name presence - names can exist in both histories."""
     added = []  # (new_line_number, name, signature)
     removed_signatures = set()
+    removed_names = set()
     new_lineno = None
     for line in patch.splitlines():
         hunk = _SETTINGS_HISTORY_HUNK_RE.match(line)
@@ -51,6 +55,7 @@ def parse_settings_history_changes(patch, file_lines):
             m = _SETTINGS_HISTORY_ENTRY_RE.match(line[1:])
             if m:
                 removed_signatures.add(_settings_history_entry_signature(line[1:]))
+                removed_names.add(m.group(1))
             # A removed line does not advance the new-file line counter.
         else:
             new_lineno += 1
@@ -60,6 +65,13 @@ def parse_settings_history_changes(patch, file_lines):
     for lineno, name, signature in added:
         if signature in removed_signatures:
             continue  # reason-only edit of an existing entry
+        if name in removed_names:
+            # An entry for this setting was removed as well, so this is a correction or a
+            # relocation of a record that already existed, not a default change introduced
+            # here. When the entry is moved into the current version block it satisfies the
+            # style check anyway; when a historical record is fixed in place, demanding a
+            # current-version entry would record a change that never happened.
+            continue
         namespace = None
         for i in range(min(lineno, len(file_lines)) - 1, -1, -1):
             mb = _SETTINGS_HISTORY_BLOCK_RE.search(file_lines[i])
