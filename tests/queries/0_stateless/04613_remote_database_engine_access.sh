@@ -37,12 +37,20 @@ ${CLICKHOUSE_CLIENT} --query "GRANT SELECT, INSERT ON ${CLICKHOUSE_DATABASE}.t T
 ${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "INSERT INTO ${REMOTE_DB}.t VALUES (2)"
 ${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "SELECT * FROM ${REMOTE_DB}.t ORDER BY id"
 
-echo '-- resolution is rejected without SHOW COLUMNS on the underlying local table (prints 1 if rejected)'
+echo '-- a table the caller cannot see at all stays hidden: an existing and a missing name are'
+echo '-- indistinguishable through resolution (prints UNKNOWN_TABLE for both, three times each)'
+# Without this, the mere existence of a local table would be observable through the proxy: an
+# existing name would be rejected by the `SHOW COLUMNS` check while a missing one falls through to
+# "does not exist", letting a caller with rights only on the proxy database probe arbitrary names.
 ${CLICKHOUSE_CLIENT} --query "
     REVOKE SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.* FROM ${TEST_USER};
     REVOKE SELECT, INSERT ON ${CLICKHOUSE_DATABASE}.t FROM ${TEST_USER};
 "
-${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "DESCRIBE TABLE ${REMOTE_DB}.t" 2>&1 | grep -c -m1 "ACCESS_DENIED"
+for name in t missing; do
+    ${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "DESCRIBE TABLE ${REMOTE_DB}.${name}" 2>&1 | grep -o -m1 "UNKNOWN_TABLE"
+    ${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "SHOW CREATE TABLE ${REMOTE_DB}.${name}" 2>&1 | grep -o -m1 "UNKNOWN_TABLE"
+    ${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "SELECT * FROM ${REMOTE_DB}.${name}" 2>&1 | grep -o -m1 "UNKNOWN_TABLE"
+done
 
 echo '-- SHOW TABLES does not leak the underlying table name without SHOW TABLES on the underlying database (prints nothing)'
 ${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "SHOW TABLES FROM ${REMOTE_DB}"

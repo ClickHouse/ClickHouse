@@ -293,18 +293,34 @@ ColumnsDescription DatabaseRemote::fetchTableStructure(const String & table_name
             /// every hop of the chain, because the query is really executed against the table of the
             /// intermediate database, as it is for a `Distributed` table over another one.
             const bool local_database_is_remote = typeid_cast<const DatabaseRemote *>(local_database.get()) != nullptr;
-            if (auto storage = local_database->tryGetTable(table_name, local_context))
+
+            /// `IDatabase::tryGetTable` resolves the name regardless of the caller's grants, so the
+            /// mere fact that the local table exists must not become observable here: without this
+            /// filter a caller holding rights only on the proxy database could probe arbitrary names
+            /// of the underlying local database, because an existing table would be rejected by the
+            /// `SHOW_COLUMNS` check below while a missing one falls through to "does not exist".
+            /// A name the caller cannot see at all is therefore reported as missing, exactly like in
+            /// the listing of `fetchTablesList`. A name that is already visible to the caller keeps
+            /// the explicit `ACCESS_DENIED` of the `SHOW_COLUMNS` check, which reveals nothing new
+            /// (any grant on the table, `SHOW_COLUMNS` included, implies its `SHOW TABLES` visibility).
+            const bool name_is_visible = local_database_is_remote
+                || local_context->getAccess()->isGranted(AccessType::SHOW_TABLES, remote_database, table_name);
+
+            if (name_is_visible)
             {
-                /// Resolution reads the structure of the underlying local table, so it requires the
-                /// same right as `DESCRIBE TABLE` on it (like the local-shard special case of
-                /// `getStructureOfRemoteTable`). The check applies only when the local replica
-                /// actually serves the table: on the remote-replica fallback below no local object
-                /// is touched, so a caller without any grants on the local objects must not be
-                /// rejected there.
-                if (!local_database_is_remote)
-                    local_context->checkAccess(AccessType::SHOW_COLUMNS, remote_database, table_name);
-                auto metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, /* bypass_metadata_cache = */ false);
-                return metadata_snapshot->getColumns();
+                if (auto storage = local_database->tryGetTable(table_name, local_context))
+                {
+                    /// Resolution reads the structure of the underlying local table, so it requires the
+                    /// same right as `DESCRIBE TABLE` on it (like the local-shard special case of
+                    /// `getStructureOfRemoteTable`). The check applies only when the local replica
+                    /// actually serves the table: on the remote-replica fallback below no local object
+                    /// is touched, so a caller without any grants on the local objects must not be
+                    /// rejected there.
+                    if (!local_database_is_remote)
+                        local_context->checkAccess(AccessType::SHOW_COLUMNS, remote_database, table_name);
+                    auto metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, /* bypass_metadata_cache = */ false);
+                    return metadata_snapshot->getColumns();
+                }
             }
         }
 
