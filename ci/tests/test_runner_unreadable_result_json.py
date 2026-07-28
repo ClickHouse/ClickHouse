@@ -23,6 +23,7 @@ A genuine result is returned untouched: this must not be able to hide a real fai
 """
 
 import ast
+import dataclasses
 import os
 import sys
 import textwrap
@@ -31,6 +32,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 import pytest
 
+from ci.praktika._environment import _Environment
+from ci.praktika.job import Job
 from ci.praktika.result import Result
 from ci.praktika.runner import Runner
 from ci.praktika.settings import Settings
@@ -240,3 +243,61 @@ def test_helper_is_defined_and_documented():
     assert "Status.ERROR" not in src, (
         "an ERROR fallback is is_completed()==True and skips the log-tail branch"
     )
+
+
+# --- the behavioral pins: the whole recovery branch of _run, end to end ---------------
+#
+# The tests above pin the helper and the source shape; neither sees the *branch*. Moving
+# the recovery out of the `with TeePopen(...)` scope loses process.get_latest_log() and
+# reinstates the blank-red-box symptom while keeping all of them green.
+
+
+def _run_job_with_unreadable_result(command):
+    """Drive Runner._run over a job whose result file is the 0-byte incident state.
+
+    No docker and no GH auth: run_in_docker="" and enable_gh_auth=False (the defaults)
+    skip those branches, so a dumped _Environment plus Settings.TEMP_DIR is all _run
+    needs. `workflow` is only dereferenced by the skipped branches.
+    """
+    required = [
+        f.name
+        for f in dataclasses.fields(_Environment)
+        if f.default is dataclasses.MISSING
+        and getattr(f, "default_factory", dataclasses.MISSING) is dataclasses.MISSING
+    ]
+    _Environment(**{n: (0 if n == "PR_NUMBER" else "") for n in required}).dump()
+
+    job = Job.Config(name=JOB_NAME, runs_on=["x"], command=command, run_in_docker="")
+    _write_result_file("")
+
+    exit_code = Runner()._run(workflow=None, job=job)
+    return exit_code, Result.from_fs(JOB_NAME)
+
+
+def test_run_persists_error_with_reason_and_log_tail_when_result_unreadable(in_tmp_cwd):
+    exit_code, persisted = _run_job_with_unreadable_result(
+        "printf 'daemon-death-tail\\n'; exit 125"
+    )
+
+    assert exit_code == 125
+    assert persisted.status == Result.Status.ERROR
+    assert persisted.is_ok() is False
+    assert "Failed to read Result json" in persisted.info
+    # ⭐ The assertion this whole test exists for: the log tail is the information the
+    # incident lacked, and it is available only inside the TeePopen scope.
+    assert "daemon-death-tail" in persisted.info
+    assert any(
+        "Job killed, exit code [125]" in e["message"]
+        for e in persisted.ext.get("errors", [])
+    )
+
+
+def test_run_leaves_result_running_when_job_succeeded_but_result_unreadable(in_tmp_cwd):
+    """A process that exited 0 must not be given a fabricated completed status here;
+    promoting it is _get_result_object's job (ResultInfo.KILLED)."""
+    exit_code, persisted = _run_job_with_unreadable_result("true")
+
+    assert exit_code == 0
+    assert persisted.status == Result.Status.RUNNING
+    assert persisted.is_completed() is False
+    assert persisted.is_ok() is False
