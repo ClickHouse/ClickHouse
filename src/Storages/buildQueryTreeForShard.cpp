@@ -502,7 +502,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     /// only writes the materialized rows into `external_table` and applies
     /// `network_transfer_limits` after `materializeBlock`, raising
     /// `SET_SIZE_LIMIT_EXCEEDED` with the `"IN/JOIN external table"` reason on
-    /// `THROW` and stopping the input on `BREAK`. This keeps the new analyzer
+    /// `THROW` and stopping the input on `BREAK`. This keeps the analyzer
     /// behaviour in lockstep with the old analyzer.
     const auto & subquery_settings = mutable_context->getSettingsRef();
     SizeLimits network_transfer_limits(
