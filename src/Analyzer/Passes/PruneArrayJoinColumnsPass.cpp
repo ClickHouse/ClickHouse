@@ -12,6 +12,7 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Functions/FunctionFactory.h>
 
@@ -46,6 +47,8 @@ struct ExpressionUsage
     std::vector<std::string> nested_subcolumn_names;
 
     bool hasNested() const { return !nested_subcolumn_names.empty(); }
+
+    bool isUsed() const { return fully_used || !used_subcolumns.empty(); }
 };
 
 /// Key: (ArrayJoinNode raw ptr, column name) → ExpressionUsage.
@@ -244,6 +247,31 @@ void pruneNestedFunctionArguments(
     column_node.setColumnType(std::move(new_column_type));
 }
 
+/// Replace an unused ARRAY JOIN operand's expression by an offsets-only carrier of the same
+/// per-row lengths: `arrayResize(emptyArrayUInt8(), length(<original expression>))`.
+///
+/// The operand still reaches ArrayJoinAction, so its per-row sizes are still compared against the
+/// other operands, but its values are never needed. `length()` is emitted deliberately instead of
+/// a hand-built `<column>.size0` subcolumn reference: FunctionToSubcolumnsPass runs after this pass
+/// and owns every guard deciding when that substitution is legal (shadow columns, FINAL, sorting
+/// key, storages without subcolumn support).
+void replaceWithOffsetsCarrier(ColumnNode & column_node, const ContextPtr & context)
+{
+    auto length_function = std::make_shared<FunctionNode>("length");
+    length_function->getArguments().getNodes().push_back(column_node.getExpression());
+    length_function->resolveAsFunction(FunctionFactory::instance().get("length", context));
+
+    auto empty_array_function = std::make_shared<FunctionNode>("emptyArrayUInt8");
+    empty_array_function->resolveAsFunction(FunctionFactory::instance().get("emptyArrayUInt8", context));
+
+    auto array_resize_function = std::make_shared<FunctionNode>("arrayResize");
+    array_resize_function->getArguments().getNodes() = {std::move(empty_array_function), std::move(length_function)};
+    array_resize_function->resolveAsFunction(FunctionFactory::instance().get("arrayResize", context));
+
+    column_node.setExpression(std::move(array_resize_function));
+    column_node.setColumnType(std::make_shared<DataTypeUInt8>());
+}
+
 /// Visitor that updates reference ColumnNode types, rewrites stale numeric tupleElement
 /// indices, and re-resolves tupleElement functions after nested() arguments have been pruned.
 class UpdateArrayJoinReferenceTypesVisitor : public InDepthQueryTreeVisitorWithContext<UpdateArrayJoinReferenceTypesVisitor>
@@ -412,12 +440,36 @@ void PruneArrayJoinColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextP
 
         auto & join_expressions = array_join_node->getJoinExpressions().getNodes();
 
-        /// Whole unused ARRAY JOIN expressions must NOT be removed: a multi-expression aligned
-        /// ARRAY JOIN validates that all joined arrays have equal per-row sizes only at execution
+        /// 3a: Replace unused ARRAY JOIN operands by an offsets-only carrier.
+        ///
+        /// A whole unused operand must NOT be removed: a multi-expression aligned ARRAY JOIN
+        /// validates that all joined arrays have equal per-row sizes only at execution
         /// (ArrayJoinResultIterator), so dropping an unused sibling would skip that check and let
-        /// count()/projections over mismatched arrays silently succeed (issue #111747).
+        /// count()/projections over mismatched arrays silently succeed (issue #111747). Keeping the
+        /// operand whole would instead read its entire data stream just to be validated, so it is
+        /// replaced by an expression carrying only its per-row lengths.
+        if (join_expressions.size() > 1)
+        {
+            for (auto & join_expr : join_expressions)
+            {
+                auto * column_node = join_expr->as<ColumnNode>();
+                if (!column_node || !column_node->hasExpression())
+                    continue;
 
-        /// Prune unused nested() subcolumn arguments.
+                auto expr_it = expressions_usage.find(column_node->getColumnName());
+                if (expr_it == expressions_usage.end() || expr_it->second.isUsed())
+                    continue;
+
+                /// A nested() operand is pruned by step 3b instead: wrapping nested() in length()
+                /// would defeat that subcolumn pruning.
+                if (expr_it->second.hasNested())
+                    continue;
+
+                replaceWithOffsetsCarrier(*column_node, context);
+            }
+        }
+
+        /// 3b: Prune unused nested() subcolumn arguments.
         for (auto & join_expr : join_expressions)
         {
             auto * column_node = join_expr->as<ColumnNode>();

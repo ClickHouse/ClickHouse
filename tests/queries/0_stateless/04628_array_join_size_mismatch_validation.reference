@@ -10,3 +10,27 @@ Single-array ARRAY JOIN is unaffected
 x
 y
 z
+Map operand
+1
+Empty arrays
+2
+2
+1
+1
+1
+1
+0
+0
+Element type wrappers
+Shadow size subcolumn
+2
+ALIAS column operand
+2
+Arrays from a subquery (no storage subcolumn)
+2
+General expression operand
+Unaligned mode
+2
+optimize_functions_to_subcolumns = 0
+3
+3

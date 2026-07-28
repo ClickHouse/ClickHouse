@@ -220,17 +220,21 @@ QUERY id: 0
         TABLE id: 4, alias: __table2, table_name: default.t_two_arrays
       JOIN EXPRESSIONS
         LIST id: 5, nodes: 2
-          COLUMN id: 6, alias: __array_join_exp_1, column_name: __array_join_exp_1, result_type: Int64, source_id: 3
+          COLUMN id: 6, alias: __array_join_exp_1, column_name: __array_join_exp_1, result_type: UInt8, source_id: 3
             EXPRESSION
-              COLUMN id: 7, column_name: a, result_type: Array(Int64), source_id: 4
-          COLUMN id: 8, alias: __array_join_exp_2, column_name: __array_join_exp_2, result_type: Int64, source_id: 3
+              FUNCTION id: 7, function_name: arrayResize, function_type: ordinary, result_type: Array(UInt8)
+                ARGUMENTS
+                  LIST id: 8, nodes: 2
+                    FUNCTION id: 9, function_name: emptyArrayUInt8, function_type: ordinary, result_type: Array(UInt8)
+                    COLUMN id: 10, column_name: a.size0, result_type: UInt64, source_id: 4
+          COLUMN id: 11, alias: __array_join_exp_2, column_name: __array_join_exp_2, result_type: Int64, source_id: 3
             EXPRESSION
-              COLUMN id: 9, column_name: b, result_type: Array(Int64), source_id: 4
+              COLUMN id: 12, column_name: b, result_type: Array(Int64), source_id: 4
   ORDER BY
-    LIST id: 10, nodes: 1
-      SORT id: 11, sort_direction: ASCENDING, with_fill: 0
+    LIST id: 13, nodes: 1
+      SORT id: 14, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION b
-          COLUMN id: 12, column_name: __array_join_exp_2, result_type: Int64, source_id: 3
+          COLUMN id: 15, column_name: __array_join_exp_2, result_type: Int64, source_id: 3
 Expression (Project names)
 Header: b Int64
   Sorting (Sorting for ORDER BY)
@@ -238,11 +242,32 @@ Header: b Int64
     Expression ((Before ORDER BY + Projection))
     Header: __array_join_exp_2 Int64
       ArrayJoin (ARRAY JOIN)
-      Header: __array_join_exp_1 Int64
+      Header: __array_join_exp_1 UInt8
               __array_join_exp_2 Int64
         Expression ((DROP unused columns before ARRAY JOIN + (ARRAY JOIN actions + Change column names to column identifiers)))
-        Header: __array_join_exp_1 Array(Int64)
+        Header: __array_join_exp_1 Array(UInt8)
                 __array_join_exp_2 Array(Int64)
           ReadFromMergeTree (default.t_two_arrays)
-          Header: a Array(Int64)
+          Header: a.size0 UInt64
                   b Array(Int64)
+2
+Expression ((Project names + Projection))
+Header: count() UInt64
+  Aggregating
+  Header: count() UInt64
+    Expression (Before GROUP BY)
+    Header: 
+      ArrayJoin (ARRAY JOIN)
+      Header: __array_join_exp_1 UInt8
+              __array_join_exp_2 UInt8
+        Expression ((DROP unused columns before ARRAY JOIN + (ARRAY JOIN actions + Change column names to column identifiers)))
+        Header: __array_join_exp_1 Array(UInt8)
+                __array_join_exp_2 Array(UInt8)
+          ReadFromMergeTree (default.t_two_arrays)
+          Header: a.size0 UInt64
+                  b.size0 UInt64
+1
+1
+0
+1
+1
