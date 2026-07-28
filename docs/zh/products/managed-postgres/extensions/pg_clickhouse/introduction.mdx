@@ -1,0 +1,355 @@
+---
+sidebarTitle: '简介'
+description: '无需重写任何 SQL，即可直接从 PostgreSQL 在 ClickHouse 上运行分析查询'
+slug: '/cloud/managed-postgres/extensions/pg_clickhouse'
+title: 'pg_clickhouse 参考文档'
+doc_type: 'landing-page'
+keywords: ['PostgreSQL', 'Postgres', 'FDW', '外部数据包装器', 'pg_clickhouse', '扩展']
+---
+
+<div id="introduction">
+  ## 简介
+</div>
+
+[pg&#95;clickhouse] 是一个开源 PostgreSQL 扩展，无需重写任何 SQL，
+即可直接在 PostgreSQL 中对 ClickHouse 运行分析查询。它支持
+PostgreSQL 13 及更高版本，以及 ClickHouse v23 及更高版本。
+
+一旦 [ClickPipes](/zh/integrations/clickpipes/home) 开始将数据同步到 ClickHouse，
+即可使用 pg&#95;clickhouse 快速轻松地将 [导入外部表] 导入到
+PostgreSQL schema 中。然后，您就可以针对这些表运行现有的 PostgreSQL 查询，
+在保留现有代码库的同时，将执行下推到 ClickHouse。
+
+<div id="getting-started">
+  ## 快速开始
+</div>
+
+体验 pg&#95;clickhouse 的最简单方式是使用 [Docker image]，其中包含标准的 PostgreSQL Docker 镜像，以及 pg&#95;clickhouse 和 [re2] 扩展：
+
+```sh
+docker run --name pg_clickhouse -e POSTGRES_PASSWORD=my_pass \
+       -d ghcr.io/clickhouse/pg_clickhouse:19
+docker exec -it pg_clickhouse psql -U postgres -c 'CREATE EXTENSION pg_clickhouse'
+```
+
+请参阅[教程]，了解如何开始导入 ClickHouse 表并下推
+查询。
+
+<div id="test-case-tpc-h">
+  ## 测试用例：TPC-H
+</div>
+
+下表比较了常规 PostgreSQL 表与连接到 ClickHouse 的 pg&#95;clickhouse 在 [TPC-H] 查询上的性能表现，二者均使用扩缩容因子 1 加载；✔︎ 表示完全下推，短横线表示查询在 1 分钟后被取消。所有测试均在配备 36 GB 内存的 MacBook Pro M4 Max 上运行。
+
+|      Query | PostgreSQL | pg&#95;clickhouse | 下推 |
+| ---------: | ---------: | ----------------: | :------: |
+|  [Query 1] |    4693 ms |            268 ms |    ✔︎    |
+|  [Query 2] |     458 ms |           3446 ms |          |
+|  [Query 3] |     742 ms |            111 ms |    ✔︎    |
+|  [Query 4] |     270 ms |            130 ms |    ✔︎    |
+|  [Query 5] |     337 ms |           1460 ms |    ✔︎    |
+|  [Query 6] |     764 ms |             53 ms |    ✔︎    |
+|  [Query 7] |     619 ms |             96 ms |    ✔︎    |
+|  [Query 8] |     342 ms |            156 ms |    ✔︎    |
+|  [Query 9] |    3094 ms |            298 ms |    ✔︎    |
+| [Query 10] |     581 ms |            197 ms |    ✔︎    |
+| [Query 11] |     212 ms |             24 ms |          |
+| [Query 12] |    1116 ms |             84 ms |    ✔︎    |
+| [Query 13] |     958 ms |           1368 ms |          |
+| [Query 14] |     181 ms |             73 ms |    ✔︎    |
+| [Query 15] |    1118 ms |            557 ms |          |
+| [Query 16] |     497 ms |           1714 ms |          |
+| [Query 17] |    1846 ms |          32709 ms |          |
+| [Query 18] |    5823 ms |          10649 ms |          |
+| [Query 19] |      53 ms |            206 ms |    ✔︎    |
+| [Query 20] |     421 ms |                 - |          |
+| [Query 21] |    1349 ms |           4434 ms |          |
+| [Query 22] |     258 ms |           1415 ms |          |
+
+<div id="compile-from-source">
+  ### 从源码编译
+</div>
+
+<div id="general-unix">
+  #### 通用 Unix
+</div>
+
+PostgreSQL 和 curl 的开发包会将 `pg_config` 和
+`curl-config` 添加到路径中，因此你应该可以直接运行 `make` (或
+`gmake`) ，然后执行 `make install`，最后在数据库中运行
+`CREATE EXTENSION pg_clickhouse`。
+
+<div id="debian--ubuntu--apt">
+  #### Debian / Ubuntu / APT
+</div>
+
+有关从 PostgreSQL Apt 仓库获取的详细信息，请参阅 [PostgreSQL Apt]。
+
+```sh
+sudo apt install \
+  postgresql-server-19 \
+  libcurl4-openssl-dev \
+  uuid-dev \
+  libssl-dev \
+  make \
+  cmake \
+  g++
+```
+
+<div id="redhat--centos--yum">
+  #### RedHat / CentOS / Yum
+</div>
+
+```sh
+sudo yum install \
+  postgresql-server \
+  libcurl-devel \
+  libuuid-devel \
+  openssl-libs \
+  automake \
+  cmake \
+  gcc
+```
+
+有关如何从 PostgreSQL Yum 仓库拉取的详细信息，请参阅 [PostgreSQL Yum]。
+
+<div id="install-from-pgxn">
+  #### 从 PGXN 安装
+</div>
+
+满足上述依赖项后，使用 [PGXN client] (可通过
+[Homebrew]、[Apt] 以及名为 `pgxnclient` 的 Yum 软件包获取) 下载、编译
+并安装 `pg_clickhouse`：
+
+```sh
+pgxn install pg_clickhouse
+```
+
+<div id="compile-and-install">
+  #### 编译并安装
+</div>
+
+要编译并安装 ClickHouse 库和 `pg_clickhouse`，请运行：
+
+```sh
+make
+sudo make install
+```
+
+{/* XXX DSO 当前已禁用。
+  默认情况下，`make` 会动态链接 `clickhouse-cpp` 库（macOS 除外，因为目前尚不支持动态 `clickhouse-cpp` 库）。若要将 ClickHouse 库静态编译进 `pg_clickhouse`，请指定
+  `CH_BUILD=static`：
+
+  ```sh
+  make CH_BUILD=static
+  sudo make install CH_BUILD=static
+  ```
+  */}
+
+如果主机上安装了多个 PostgreSQL 版本，你可能需要指定
+对应版本的 `pg_config`：
+
+```sh
+export PG_CONFIG=/usr/lib/postgresql/18/bin/pg_config
+make
+sudo make install
+```
+
+如果你的主机上的 path 中没有 `curl-config`，你可以显式指定其路径：
+
+```sh
+export CURL_CONFIG=/opt/homebrew/opt/curl/bin/curl-config
+make
+sudo make install
+```
+
+如果遇到以下错误：
+
+```text
+"Makefile", line 8: Need an operator
+```
+
+你需要使用 GNU make，它很可能在你的系统上以
+`gmake` 的名称安装：
+
+```sh
+gmake
+gmake install
+gmake installcheck
+```
+
+如果你遇到以下错误：
+
+```text
+make: pg_config: Command not found
+```
+
+请确保已安装 `pg_config`，并且它已在你的 `path` 中。如果你使用了
+RPM 等软件包管理系统来安装 PostgreSQL，请确保同时安装了
+`-devel` 软件包。如有必要，请告诉 build 过程应到哪里
+查找它：
+
+```sh
+export PG_CONFIG=/path/to/pg_config
+make
+sudo make install
+```
+
+要在 PostgreSQL 18 或更高版本中将该扩展安装到自定义前缀目录中，请向
+`install` 传入 `prefix` 参数 (但不要传给其他 `make` 目标) ：
+
+```sh
+sudo make install prefix=/usr/local/extras
+```
+
+然后确保以下 [`postgresql.conf`
+参数] 中包含该前缀：
+
+```ini
+extension_control_path = '/usr/local/extras/postgresql/share:$system'
+dynamic_library_path   = '/usr/local/extras/postgresql/lib:$libdir'
+```
+
+<div id="testing">
+  #### 测试
+</div>
+
+安装好该扩展后，运行以下命令以执行测试套件
+
+```sh
+make installcheck
+```
+
+如果遇到如下错误：
+
+```text
+ERROR:  must be owner of database regression
+```
+
+你需要使用超级用户来运行测试套件，例如默认的
+&quot;postgres&quot; 超级用户：
+
+```sh
+make installcheck PGUSER=postgres
+```
+
+<div id="loading">
+  ### 加载
+</div>
+
+安装 `pg_clickhouse` 后，使用超级用户连接到数据库，并运行以下命令即可将其添加到该数据库：
+
+```sql
+CREATE EXTENSION pg_clickhouse;
+```
+
+如果你想将 `pg_clickhouse` 及其所有相关对象安装到
+某个特定的 schema 中，可使用 `SCHEMA` 子句指定该 schema，如下所示：
+
+```sql
+CREATE SCHEMA env;
+CREATE EXTENSION pg_clickhouse SCHEMA env;
+```
+
+<div id="dependencies">
+  ## 依赖项
+</div>
+
+`pg_clickhouse` 扩展要求使用 [PostgreSQL] 13 或更高版本，以及 [libcurl]、
+[libuuid]。构建该扩展还需要 C 和 C++ 编译器、[libSSL]、[GNU
+make] 和 [CMake]。
+
+<div id="road-map">
+  ## 路线图
+</div>
+
+我们当前最重要的重点，是在添加 DML 功能之前完成分析工作负载的下推覆盖。路线图如下：
+
+* 让剩余 10 个尚未下推的 TPC-H 查询实现最优规划
+* 测试并修复 ClickBench 查询的下推
+* 支持所有 PostgreSQL 聚合函数的透明下推
+* 支持所有 PostgreSQL 函数的透明下推
+* 允许通过 CREATE SERVER
+  和 GUCs 配置服务器级和会话级的 ClickHouse 设置
+* 支持所有 ClickHouse 数据类型
+* 支持轻量级 DELETE 和 UPDATE
+* 支持通过 COPY 进行批次插入
+* 添加一个函数来执行任意 ClickHouse 查询，并将其
+  结果以表的形式返回
+* 为所有都查询远程数据库的 UNION 查询添加下推支持
+
+<div id="authors">
+  ## 作者
+</div>
+
+* [David E. Wheeler](https://justatheory.com/)
+* [Ildus Kurbangaliev](https://github.com/ildus)
+* [Ibrar Ahmed](https://github.com/ibrarahmad)
+
+<div id="copyright">
+  ## 版权
+</div>
+
+* 版权所有 (c) 2025-2026，ClickHouse
+* 部分版权所有 (c) 2023-2025，Ildus Kurbangaliev
+* 部分版权所有 (c) 2019-2023，Adjust GmbH
+* 部分版权所有 (c) 2012-2019，PostgreSQL Global Development Group
+
+[pg_clickhouse]: https://github.com/clickHouse/pg_clickhouse "GitHub 上的 pg_clickhouse"
+
+[导入外部表]: /products/managed-postgres/extensions/pg_clickhouse/reference#import-foreign-schema
+
+[Docker image]: https://github.com/ClickHouse/pg_clickhouse/pkgs/container/pg_clickhouse "最新 Docker 版本"
+
+[tutorial]: /products/managed-postgres/extensions/pg_clickhouse/tutorial "pg_clickhouse 教程"
+
+[PostgreSQL Apt]: https://wiki.postgresql.org/wiki/Apt
+
+[PostgreSQL Yum]: https://yum.postgresql.org
+
+[PGXN client]: https://pgxn.github.io/pgxnclient/ "PGXN client 文档"
+
+[Homebrew]: https://formulae.brew.sh/formula/pgxnclient#default "Homebrew 上的 PGXN client"
+
+[Apt]: https://tracker.debian.org/pkg/pgxnclient "Debian Apt 上的 PGXN client"
+
+[`postgresql.conf` parameters]: https://www.postgresql.org/docs/devel/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-OTHER
+
+[PostgreSQL]: https://www.postgresql.org "PostgreSQL：全球最先进的开源关系型数据库"
+
+[libcurl]: https://curl.se/libcurl/ "libcurl —— 网络传输库"
+
+[libuuid]: https://linux.die.net/man/3/libuuid "libuuid - 与 DCE 兼容的通用唯一标识符库"
+
+[GNU make]: https://www.gnu.org/software/make "GNU Make"
+
+[CMake]: https://cmake.org/ "CMake：强大的软件构建系统"
+
+[LibSSL]: https://openssl-library.org "OpenSSL 库"
+
+[TPC-H]: https://www.tpc.org/tpch/
+
+[re2]: https://github.com/ClickHouse/pg_re2 "pg_re2：使用 RE2 的 ClickHouse 兼容正则函数"
+
+[查询 1] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/1.sql
+[查询 2] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/2.sql
+[查询 3] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/3.sql
+[查询 4] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/4.sql
+[查询 5] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/5.sql
+[查询 6] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/6.sql
+[查询 7] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/7.sql
+[查询 8] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/8.sql
+[查询 9] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/9.sql
+[查询 10] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/10.sql
+[查询 11] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/11.sql
+[查询 12] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/12.sql
+[查询 13] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/13.sql
+[查询 14] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/14.sql
+[查询 15] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/15.sql
+[查询 16] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/16.sql
+[查询 17] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/17.sql
+[查询 18] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/18.sql
+[查询 19] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/19.sql
+[查询 20] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/20.sql
+[查询 21] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/21.sql
+[查询 22] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/22.sql

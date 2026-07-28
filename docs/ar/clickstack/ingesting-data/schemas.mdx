@@ -1,0 +1,77 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/schemas
+description: 'الجداول والمخططات التي يستخدمها ClickStack - حزمة Observability من ClickHouse'
+sidebarTitle: 'الجداول والمخططات'
+title: 'الجداول والمخططات التي يستخدمها ClickStack'
+doc_type: 'reference'
+keywords: ['clickstack', 'مخطط', 'نموذج البيانات', 'تصميم الجداول', 'السجلات']
+---
+
+import OtelLogsSchema from '/snippets/ar/clickstack/_schema_otel_logs.mdx';
+import OtelTracesSchema from '/snippets/ar/clickstack/_schema_otel_traces.mdx';
+import OtelMetricsGaugeSchema from '/snippets/ar/clickstack/_schema_otel_metrics_gauge.mdx';
+import OtelMetricsSumSchema from '/snippets/ar/clickstack/_schema_otel_metrics_sum.mdx';
+import OtelMetricsHistogramSchema from '/snippets/ar/clickstack/_schema_otel_metrics_histogram.mdx';
+import OtelMetricsExponentialHistogramSchema from '/snippets/ar/clickstack/_schema_otel_metrics_exponential_histogram.mdx';
+import OtelMetricsSummarySchema from '/snippets/ar/clickstack/_schema_otel_metrics_summary.mdx';
+import HyperdxSessionsSchema from '/snippets/ar/clickstack/_schema_hyperdx_sessions.mdx';
+
+يستخدم OTel collector الخاص بـ ClickStack [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md) لإنشاء جداول في ClickHouse وإدراج البيانات.
+
+تُنشأ الجداول التالية لكل نوع بيانات في قاعدة البيانات `default`. يمكنك تغيير قاعدة البيانات المستهدفة هذه بتعديل متغير البيئة `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE` في صورة الحاوية التي تستضيف OTel collector.
+
+<div id="logs">
+  ## السجلات
+</div>
+
+<OtelLogsSchema />
+
+<div id="traces">
+  ## التتبعات
+</div>
+
+<OtelTracesSchema />
+
+<div id="metrics">
+  ## المقاييس
+</div>
+
+<div id="gauge">
+  ### مقاييس من نوع Gauge
+</div>
+
+<OtelMetricsGaugeSchema />
+
+<div id="sum">
+  ### مقاييس الجمع
+</div>
+
+<OtelMetricsSumSchema />
+
+<div id="histogram">
+  ### مقاييس المدرج التكراري
+</div>
+
+<OtelMetricsHistogramSchema />
+
+<div id="exponential-histograms">
+  ### المدرجات التكرارية الأسية
+</div>
+
+<Note>
+  لا يدعم HyperDX حتى الآن جلب مقاييس المدرجات التكرارية الأسية أو عرضها. يمكنك تهيئتها في مصدر المقاييس، لكن دعمها سيتوفر لاحقًا.
+</Note>
+
+<OtelMetricsExponentialHistogramSchema />
+
+<div id="summary-table">
+  ### جدول موجز
+</div>
+
+<OtelMetricsSummarySchema />
+
+<div id="sessions">
+  ## الجلسات
+</div>
+
+<HyperdxSessionsSchema />

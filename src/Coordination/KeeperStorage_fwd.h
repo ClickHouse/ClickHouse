@@ -3,8 +3,11 @@
 namespace DB
 {
 
-struct KeeperMemNode;
+template<typename NodesStorage>
+class KeeperStorageImpl;
 
-class KeeperStorage;
+struct KeeperMemNodesStorage;
+
+using KeeperMemoryStorage = KeeperStorageImpl<KeeperMemNodesStorage>;
 
 }
