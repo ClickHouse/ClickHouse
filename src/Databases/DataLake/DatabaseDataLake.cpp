@@ -924,14 +924,13 @@ void DatabaseDataLake::dropTable( /// NOLINT
     const String & name,
     bool /*sync*/)
 {
-    /// skip_cluster_wrapper=true: StorageObjectStorageCluster implements neither drop() nor
-    /// checkTableCanBeDropped(), so a DROP routed through it would be a no-op. Force the real storage.
+    /// StorageObjectStorageCluster implements neither drop() nor checkTableCanBeDropped(), so a DROP
+    /// routed through it would be a no-op: skip_cluster_wrapper forces the real storage.
     auto table = tryGetTableImpl(name, context_, /*lightweight=*/false, /*ignore_if_not_iceberg=*/false, /*skip_cluster_wrapper=*/true);
     if (table)
     {
-        /// tryGetTable returns a fresh storage instance, so replay checkTableCanBeDropped on it
-        /// (context_ is the query context here) to capture iceberg_delete_data_on_drop before the
-        /// background drop reads it, matching what InterpreterDropQuery does on the self-managed path.
+        /// This is a fresh storage instance, so replay checkTableCanBeDropped with the query context
+        /// to snapshot the settings, as InterpreterDropQuery does on the self-managed path.
         table->checkTableCanBeDropped(context_);
         table->drop();
     }

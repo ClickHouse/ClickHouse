@@ -32,23 +32,15 @@ namespace ErrorCodes
 extern const int UNSUPPORTED_METHOD;
 }
 
-/// How the owning database handles a thrown drop(), which determines whether a data-lake drop may
-/// swallow a per-object cleanup failure or must propagate it. The three families behave differently:
-///  - Reattaching: DatabaseOnDisk / DatabaseMemory / DatabaseOrdinary (Nil database UUID, no catalog)
-///    reattach the table into service on any thrown drop(). Since cleanup irreversibly deletes files,
-///    once deletion has started a failure must be swallowed on every phase -- rethrowing would roll a
-///    partially deleted (corrupted) table back into service.
-///  - AsyncRetry: DatabaseAtomic / DatabaseReplicated (non-Nil UUID, no catalog) do not reattach; the
-///    async DatabaseCatalog::dropTableFinally retries a thrown drop() and only removes the dropped
-///    metadata after drop() returns. Failures must propagate (including the post-commit anchor phase)
-///    so the retry re-runs and finishes the cleanup; swallowing would report success and drop the
-///    retry metadata while files can still remain.
-///  - CatalogRetry: DatabaseDataLake (catalog-backed) does not reattach; a DROP is retryable via the
-///    surviving catalog entry and metadata anchor as long as the catalog row is intact. Pre-commit
-///    failures must propagate (retry rebuilds and re-cleans), but AFTER the commit removes the catalog
-///    row the drop is no longer retryable, so the post-commit anchor phase must be swallowed -- else
-///    the DROP reports failure while the table is gone and a surviving *.metadata.json blocks re-create
-///    with TABLE_ALREADY_EXISTS and no SQL retry path.
+/// Whether a data-lake drop may swallow a per-object cleanup failure, given how the owning database
+/// reacts to a thrown drop(). Cleanup deletes files irreversibly, so swallowing is required exactly
+/// where a rethrow would lose data or block re-create:
+///  - Reattaching (DatabaseOnDisk / Memory / Ordinary, Nil UUID): reattaches on a thrown drop(), so
+///    swallow once the first delete succeeded, else a partially deleted table returns to service.
+///  - AsyncRetry (DatabaseAtomic / Replicated, non-Nil UUID): dropTableFinally retries a thrown
+///    drop(), so never swallow, else the retry metadata is dropped while files remain.
+///  - CatalogRetry (DatabaseDataLake): retryable while the catalog row lives, so swallow only the
+///    post-commit anchor phase, else a surviving *.metadata.json blocks re-create with no SQL retry.
 enum class DropCleanupPolicy : uint8_t
 {
     Reattaching,
@@ -201,11 +193,9 @@ public:
     }
 
     /// Drop the table's underlying files. `commit` is the caller's commit point (catalog entry
-    /// removal) and must be invoked exactly once. Iceberg deletes data files first, runs `commit`,
-    /// then deletes the metadata anchor last, so a failure before `commit` leaves the table fully
-    /// reconstructable and retryable. `policy` (see DropCleanupPolicy) selects, per owning-database
-    /// semantics, whether a per-object failure is propagated or logged and swallowed at each phase.
-    /// The default (non-Iceberg / no-op cleanup) just runs `commit`.
+    /// removal) and must be invoked exactly once: Iceberg deletes data, commits, then deletes the
+    /// metadata anchor last, so any failure before `commit` leaves the table reconstructable.
+    /// `policy` selects failure handling per phase (see DropCleanupPolicy). The default just commits.
     virtual void drop(ContextPtr, const std::function<void()> & commit, DropCleanupPolicy /*policy*/) { commit(); }
 
     virtual ObjectStorageType getObjectStorageType() const { return ObjectStorageType::None; }

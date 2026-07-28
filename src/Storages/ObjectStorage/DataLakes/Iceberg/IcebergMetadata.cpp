@@ -801,11 +801,10 @@ void IcebergMetadata::createInitial(
     std::vector<String> metadata_files;
     try
     {
-        /// The occupied-path marker is any `*.metadata.json` OR a surviving `metadata/version-hint.text`.
-        /// A partially failed DROP can swallow a post-commit metadata-anchor delete (best effort), which
-        /// may leave `version-hint.text` behind after the `*.metadata.json` was removed. Missing it here
-        /// would let createInitial write a fresh `v1.metadata.json`, then fail the `If-None-Match: *`
-        /// write of `version-hint.text`, and every retry then fails with TABLE_ALREADY_EXISTS.
+        /// The path counts as occupied by any `*.metadata.json` OR a surviving
+        /// `metadata/version-hint.text`, which a best-effort DROP can leave behind on its own. Missing
+        /// the hint here would write a fresh `v1.metadata.json`, then fail the `If-None-Match: *` write
+        /// of the hint, leaving every retry failing with TABLE_ALREADY_EXISTS.
         metadata_files = listFiles(
             *object_storage,
             configuration_ptr->getPathForRead().path,
@@ -1415,44 +1414,22 @@ void IcebergMetadata::drop(ContextPtr context, const std::function<void()> & com
         return;
     }
 
-    /// The drop runs in three phases: delete data/manifest files, run the caller's commit (catalog
-    /// entry removal), then delete the metadata anchor. `policy` selects, per phase, whether a
-    /// per-object failure is propagated or logged and swallowed:
-    ///  - Reattaching (DatabaseOnDisk / DatabaseMemory / DatabaseOrdinary): the caller reattaches the
-    ///    table on any thrown drop(). A rethrow is only safe while the table is still intact: once the
-    ///    first irreversible delete succeeds (the point of no return), a rethrow would roll a
-    ///    partially deleted (corrupted) table back into service, so from that point every failure must
-    ///    be swallowed. Before the first delete succeeds, nothing has been removed, so a failure must
-    ///    propagate and let the caller reattach the still-intact table (and keep the SQL retry path).
-    ///  - AsyncRetry (DatabaseAtomic / DatabaseReplicated): the async DatabaseCatalog::dropTableFinally
-    ///    retries a thrown drop() and only removes the dropped metadata after drop() returns, so every
-    ///    phase must propagate -- swallowing would report success and drop the retry metadata while
-    ///    files or anchors can still remain.
-    ///  - CatalogRetry (DatabaseDataLake): a DROP is retryable via the surviving catalog entry and
-    ///    metadata anchor, so pre-commit phases must propagate (the retry rebuilds and re-cleans). But
-    ///    once commit() removes the catalog row the drop is no longer retryable, so the post-commit
-    ///    anchor phase must swallow -- else the DROP reports failure while the table is gone and a
-    ///    surviving *.metadata.json blocks re-create with TABLE_ALREADY_EXISTS and no SQL retry path.
+    /// Three phases: delete data/manifest files, run the caller's commit (catalog entry removal),
+    /// then delete the metadata anchor. Per-phase failure handling follows `policy`, see
+    /// DropCleanupPolicy.
 
-    /// Tracks whether at least one object has actually been deleted -- the point of no return for the
-    /// Reattaching path, past which a rethrow would reattach a corrupted table (see above).
+    /// The point of no return for the Reattaching policy: past the first successful delete, a rethrow
+    /// would reattach a partially deleted table.
     bool any_object_deleted = false;
 
-    /// Whether a failure in this phase should be swallowed rather than propagated, given the policy
-    /// and how much has already been deleted.
     auto should_swallow = [&](bool post_commit_anchor) -> bool
     {
         switch (policy)
         {
-            /// Swallow only after the point of no return; before the first delete succeeds the table
-            /// is intact, so propagate to reattach it.
             case DropCleanupPolicy::Reattaching:
                 return any_object_deleted;
-            /// The async retry finishes the cleanup, so never swallow.
             case DropCleanupPolicy::AsyncRetry:
                 return false;
-            /// Pre-commit is retryable via the surviving catalog entry + anchor (propagate); the
-            /// post-commit anchor is no longer retryable (catalog row gone), so swallow it.
             case DropCleanupPolicy::CatalogRetry:
                 return post_commit_anchor;
         }
@@ -1463,16 +1440,13 @@ void IcebergMetadata::drop(ContextPtr context, const std::function<void()> & com
     {
         try
         {
-            /// Models an object-storage failure at this deletion, to check the swallow/propagate
-            /// behavior of the phase it belongs to. Fired inside the try so it exercises the same
-            /// path a real removeObjectIfExists failure would.
+            /// Inside the try, so it exercises the same path a real removeObjectIfExists failure would.
             if (inject_failpoint)
                 fiu_do_on(inject_failpoint, {
                     throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure during Iceberg drop {} deletion", kind);
                 });
             LOG_DEBUG(log, "Deleting Iceberg {} file on drop: {}", kind, file);
             object_storage->removeObjectIfExists(StoredObject(file));
-            /// A delete succeeded: the Reattaching path has now passed the point of no return.
             any_object_deleted = true;
         }
         catch (...)
@@ -1488,20 +1462,15 @@ void IcebergMetadata::drop(ContextPtr context, const std::function<void()> & com
         }
     };
 
-    /// Empty prefix: listFiles keys on `path / prefix`, so the prefix must be empty to enumerate
-    /// everything under the table path (passing table_path here too matches nothing).
-    /// This runs before any deletion, so a throw here leaves the table untouched and is always safe
-    /// to propagate (the reattaching caller reattaches an intact table; the retry callers retry it).
+    /// listFiles keys on `path / prefix`, so the prefix must be empty to enumerate everything under
+    /// the table path (passing table_path here too matches nothing).
     auto files = listFiles(*object_storage, persistent_components.table_path, "", "");
 
-    /// Delete data and manifest files first but keep the metadata anchor. A DROP retry
-    /// reconstructs IcebergMetadata from that anchor (DatabaseDataLake copies its location into
-    /// iceberg_metadata_file_path), so if a data delete or the catalog commit below throws, the
-    /// anchor still exists and the next DROP can reconstruct the table state and finish cleanup.
-    /// The anchor is `*.metadata.json` plus, when iceberg_use_version_hint is on,
-    /// `metadata/version-hint.text`: getLatestOrExplicitMetadataFileAndVersion reads the hint
-    /// first and throws if it is missing, so deleting it early would break reconstruction after a
-    /// restart even though the drop never committed.
+    /// Data and manifest files first, keeping the metadata anchor: a DROP retry reconstructs
+    /// IcebergMetadata from it, so it must outlive any pre-commit failure. The anchor is
+    /// `*.metadata.json` plus `metadata/version-hint.text` -- with iceberg_use_version_hint on,
+    /// getLatestOrExplicitMetadataFileAndVersion reads the hint first and throws if it is missing,
+    /// so deleting the hint early breaks reconstruction after a restart.
     std::vector<String> metadata_files;
     for (const auto & file : files)
     {
@@ -1510,15 +1479,10 @@ void IcebergMetadata::drop(ContextPtr context, const std::function<void()> & com
             metadata_files.push_back(file);
             continue;
         }
-        /// should_swallow is evaluated per object: on the Reattaching path the very first data delete
-        /// still propagates (nothing deleted yet -> reattach intact), later ones swallow.
         remove_object(file, "data", should_swallow(/* post_commit_anchor */ false), FailPoints::iceberg_drop_first_data_delete_fail);
     }
 
-    /// Remove the catalog entry: the commit point of the drop. Everything above is retryable
-    /// (table still registered, metadata anchor intact); once this succeeds the table is gone.
-    /// On the Reattaching path this is swallowed only past the point of no return -- if no object was
-    /// deleted yet, a commit failure propagates so the caller reattaches the intact table.
+    /// The commit point: everything above is retryable, once this succeeds the table is gone.
     if (should_swallow(/* post_commit_anchor */ false))
     {
         try
@@ -1536,11 +1500,8 @@ void IcebergMetadata::drop(ContextPtr context, const std::function<void()> & com
     else
         commit();
 
-    /// Delete the metadata anchor last. On the AsyncRetry path a failure propagates so the retry
-    /// finishes the cleanup; on the CatalogRetry path it is swallowed (catalog row gone, not
-    /// retryable). On the Reattaching path it is swallowed once the point of no return is passed;
-    /// for a metadata-only table (no data files) the first anchor delete is itself that point, so a
-    /// failure before it succeeds still propagates and the caller reattaches the intact table.
+    /// The metadata anchor last. For a metadata-only table (no data files) the first anchor delete is
+    /// itself the Reattaching point of no return, so a failure before it succeeds still propagates.
     for (const auto & file : metadata_files)
         remove_object(file, "metadata", should_swallow(/* post_commit_anchor */ true), FailPoints::iceberg_drop_metadata_anchor_fail);
 }

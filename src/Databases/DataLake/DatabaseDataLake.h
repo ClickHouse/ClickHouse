@@ -158,8 +158,8 @@ private:
 
     /// Can return nullptr in case of *expected* issues with response from catalog. Sometimes
     /// catalogs can produce completely unexpected responses. In such cases this function may throw.
-    /// skip_cluster_wrapper forces a real StorageObjectStorage even when parallel replicas are on;
-    /// DDL paths (DROP) need it because StorageObjectStorageCluster does not implement drop().
+    /// skip_cluster_wrapper forces a real StorageObjectStorage even under parallel replicas, which DDL
+    /// paths need because StorageObjectStorageCluster does not implement drop().
     StoragePtr tryGetTableImpl(const String & name, ContextPtr context, bool lightweight, bool ignore_if_not_iceberg, bool skip_cluster_wrapper = false) const;
 
     const UUID db_uuid;

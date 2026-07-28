@@ -332,8 +332,7 @@ public:
         if (current_metadata)
             current_metadata->drop(local_context, commit, policy);
         else
-            /// No metadata loaded (e.g. non-Iceberg engine or cleanup disabled): nothing to
-            /// delete, so just run the caller's commit point (catalog entry removal).
+            /// No metadata loaded (non-Iceberg engine or cleanup disabled): nothing to delete.
             commit();
     }
 

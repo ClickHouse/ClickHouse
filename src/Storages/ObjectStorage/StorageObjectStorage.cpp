@@ -789,45 +789,36 @@ void StorageObjectStorage::truncate(
 
 void StorageObjectStorage::checkTableCanBeDropped(ContextPtr query_context) const
 {
-    /// Snapshot the whole query settings, not just iceberg_delete_data_on_drop: the drop-time
-    /// Iceberg init below reads other session-scoped settings from this context (e.g.
-    /// allow_experimental_geo_types_in_iceberg), which the background drop() cannot otherwise see.
+    /// The whole settings, not just iceberg_delete_data_on_drop: the drop-time Iceberg init also reads
+    /// session-scoped settings from this context (e.g. allow_experimental_geo_types_in_iceberg).
     drop_query_settings = std::make_shared<const Settings>(query_context->getSettingsCopy());
 }
 
 void StorageObjectStorage::drop()
 {
-    /// drop() runs in a background pool without the query context, so build a context from the global
-    /// one carrying the query settings snapshot captured in checkTableCanBeDropped.
+    /// No query context here (background pool), so rebuild one from the global context plus the
+    /// snapshot taken in checkTableCanBeDropped.
     auto drop_context = Context::createCopy(Context::getGlobalContextInstance());
     if (drop_query_settings)
         drop_context->setSettings(*drop_query_settings);
     const bool delete_data_on_drop = drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop];
     /// On the DataLakeCatalog path the storage is a fresh instance whose metadata was never
-    /// initialized (no prior read/write), so configuration->drop() would be a no-op and leave
-    /// the files behind. Only initialize when we are going to delete data, so a plain DROP keeps
-    /// its no-op behavior and does not newly touch the object storage. iceberg_delete_data_on_drop
-    /// is Iceberg-only and only IcebergMetadata overrides drop(); gate on isIcebergConfiguration()
-    /// so DeltaLake/Hudi/Paimon (which share StorageObjectStorage but keep the no-op drop) do not
-    /// pay an unnecessary init that could fail on metadata/object-storage errors.
+    /// initialized, so configuration->drop() would be a no-op and leave the files behind. Initialize
+    /// only when actually deleting data, so a plain DROP keeps its no-op behavior; and only for
+    /// Iceberg (the only engine overriding drop()), so DeltaLake/Hudi/Paimon do not pay an init that
+    /// could fail on metadata or object-storage errors.
     if (delete_data_on_drop && configuration->isIcebergConfiguration())
         configuration->lazyInitializeIfNeeded(object_storage, drop_context);
 
-    /// Models an object-storage failure during data cleanup, to check it happens before the
-    /// catalog entry is removed.
     fiu_do_on(FailPoints::iceberg_drop_data_cleanup_fail, {
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure during Iceberg drop data cleanup");
     });
 
-    /// Remove the catalog entry as the commit point of the drop, ordered between data deletion and
-    /// metadata deletion by configuration->drop(). Deleting data first keeps DROP retryable if the
-    /// commit throws; deleting the metadata anchor only after the commit keeps the table
-    /// reconstructable for a retry (a fresh DROP rebuilds IcebergMetadata from that anchor).
+    /// The drop's commit point, which configuration->drop() orders between data deletion and metadata
+    /// deletion so that a failure on either side leaves the table reconstructable for a retry.
     /// Non-Iceberg engines and cleanup-disabled drops just run this commit.
     auto commit = [this]
     {
-        /// Models a catalog-service failure at the commit point, to check the metadata anchor
-        /// still exists afterwards so the drop can be retried.
         fiu_do_on(FailPoints::iceberg_drop_catalog_remove_fail, {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure during Iceberg drop catalog removal");
         });
@@ -839,21 +830,10 @@ void StorageObjectStorage::drop()
         }
     };
 
-    /// Select how the cleanup handles a thrown per-object failure, based on how the owning database
-    /// handles a thrown drop() (see DropCleanupPolicy):
-    ///  - DatabaseDataLake (catalog-backed, catalog != nullptr): CatalogRetry. The DROP is retryable
-    ///    via the surviving catalog entry and metadata anchor, so pre-commit failures propagate; the
-    ///    post-commit anchor phase is swallowed (catalog row already gone, no retry path left).
-    ///  - Ordinary / Memory (self-managed, Nil database UUID): Reattaching. These reattach the table
-    ///    on a thrown drop(), so once deletion starts failures are swallowed -- rethrowing would roll
-    ///    a partially deleted (corrupted) table back into service.
-    ///  - Atomic / Replicated (self-managed, non-Nil UUID): AsyncRetry. These do not reattach; the
-    ///    async DatabaseCatalog::dropTableFinally retries a thrown drop() and only removes the dropped
-    ///    metadata after drop() returns, so failures propagate (including the anchor phase) to let the
-    ///    retry finish -- swallowing would report success and drop the retry metadata while files or
-    ///    anchors can still remain.
-    /// The Nil-vs-non-Nil database UUID is the same discriminator InterpreterDropQuery uses to tell
-    /// atomic from non-atomic drop handling.
+    /// Map the owning database to its failure-handling policy, see DropCleanupPolicy: catalog-backed
+    /// (DatabaseDataLake) is CatalogRetry, otherwise the Nil-vs-non-Nil database UUID tells Ordinary /
+    /// Memory (Reattaching) from Atomic / Replicated (AsyncRetry). That is the same discriminator
+    /// InterpreterDropQuery uses to tell atomic from non-atomic drop handling.
     DropCleanupPolicy policy = DropCleanupPolicy::CatalogRetry;
     if (catalog == nullptr)
     {

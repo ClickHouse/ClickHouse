@@ -91,9 +91,7 @@ public:
 
     void drop() override;
 
-    /// drop() runs later in a background pool without the query context, so the value of the
-    /// iceberg_delete_data_on_drop session setting is captured here (the DROP path calls this
-    /// with the query context) and honored in drop().
+    /// The DROP path calls this with the query context, which is where drop() gets its settings from.
     void checkTableCanBeDropped(ContextPtr query_context) const override;
 
     bool supportsPartitionBy() const override { return true; }
@@ -238,10 +236,8 @@ protected:
     bool supports_tuple_elements = false;
     bool is_table_function = false;
 
-    /// Query settings snapshot captured from the query context in checkTableCanBeDropped, so the
-    /// background drop() (which has no query context) can honor session-scoped settings:
-    /// iceberg_delete_data_on_drop and the Iceberg drop-time init settings that
-    /// lazyInitializeIfNeeded reads (e.g. allow_experimental_geo_types_in_iceberg).
+    /// Captured in checkTableCanBeDropped so the background drop(), which has no query context, still
+    /// sees session-scoped settings (iceberg_delete_data_on_drop and the Iceberg init settings).
     mutable std::shared_ptr<const Settings> drop_query_settings;
 
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
