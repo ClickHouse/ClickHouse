@@ -40,6 +40,15 @@ SELECT arrayMap(x -> if(x > 1, concat(s, '!'), s), [1, 2]) FROM (SELECT material
 SELECT '-- capture produced by lazy ARRAY JOIN replication';
 SELECT arrayMap(x -> concat(s, toString(x)), [1, 2]) FROM (SELECT materialize('s' || toString(number)) AS s, range(2) AS r FROM numbers(2)) ARRAY JOIN r SETTINGS enable_lazy_columns_replication = {{ i }};
 
+SELECT '-- arrayFold with capture';
+SELECT arrayFold((acc, x) -> concat(acc, s, toString(x)), [1, 2], 'i'::String) FROM (SELECT materialize(toString(number)) AS s FROM numbers(3)) SETTINGS enable_lazy_columns_replication = {{ i }};
+
+SELECT '-- arrayFold whose lambda returns the capture directly';
+SELECT arrayFold((acc, x) -> s, [1, 2], ''::String) FROM (SELECT materialize(toString(number)) AS s FROM numbers(3)) SETTINGS enable_lazy_columns_replication = {{ i }};
+
+SELECT '-- arrayFold with capture produced by lazy ARRAY JOIN replication';
+SELECT arrayFold((acc, x) -> concat(acc, s), [1, 2], ''::String), arrayFold((acc, x) -> s, [1, 2], ''::String) FROM (SELECT materialize('s' || toString(number)) AS s, range(2) AS r FROM numbers(2)) ARRAY JOIN r SETTINGS enable_lazy_columns_replication = {{ i }};
+
 SELECT '-- constant folding still works with all-const captures';
 SELECT arrayMap(x -> x + n, [1, 2]) FROM (SELECT 1 AS n FROM numbers(2)) WHERE arrayMap(x -> x + 1, [1])[1] = 2 SETTINGS enable_lazy_columns_replication = {{ i }};
 

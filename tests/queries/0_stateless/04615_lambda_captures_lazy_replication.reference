@@ -44,6 +44,19 @@
 ['s01','s02']
 ['s11','s12']
 ['s11','s12']
+-- arrayFold with capture
+i0102
+i1112
+i2122
+-- arrayFold whose lambda returns the capture directly
+0
+1
+2
+-- arrayFold with capture produced by lazy ARRAY JOIN replication
+s0s0	s0
+s0s0	s0
+s1s1	s1
+s1s1	s1
 -- constant folding still works with all-const captures
 [2,3]
 [2,3]
@@ -96,6 +109,19 @@
 ['s01','s02']
 ['s11','s12']
 ['s11','s12']
+-- arrayFold with capture
+i0102
+i1112
+i2122
+-- arrayFold whose lambda returns the capture directly
+0
+1
+2
+-- arrayFold with capture produced by lazy ARRAY JOIN replication
+s0s0	s0
+s0s0	s0
+s1s1	s1
+s1s1	s1
 -- constant folding still works with all-const captures
 [2,3]
 [2,3]

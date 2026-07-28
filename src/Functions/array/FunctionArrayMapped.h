@@ -393,11 +393,6 @@ public:
 
             auto lambda_result = replicated_column_function.reduce(dry_run);
 
-            /// The lambda result can be a lazily replicated column, e.g. when the lambda
-            /// just returns a captured column. Materialize it, because Impl does not
-            /// support ColumnReplicated.
-            lambda_result.column = lambda_result.column->convertToFullColumnIfReplicated();
-
             /// Convert LowCardinality(T) -> T and Const(LowCardinality(T)) -> Const(T),
             /// because we removed LowCardinality from return type of lambda expression.
             if (lambda_result.column->lowCardinality())

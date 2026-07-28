@@ -178,7 +178,7 @@ ColumnPtr convertToFullColumnArray(const ColumnArray & src, const IColumn & row_
 
 /// The generic index path (nested_column->index())) builds a UInt64 index per nested element which is inefficient for nested ColumnArray.
 /// For ColumnArray, the convertToFullColumnArray is called instead, so each array is copied once per row instead of per-element
-/// Range copying pays one virtual call to insertRangeFrom per row; the generic path pays 8 bytes of scratch memory and one write per nested element.
+/// Range copying pays one virtual call to insertRangeFrom per row; the generic path pays 8 bytes of scratch memory and one write element
 ColumnPtr ColumnReplicated::convertToFullColumnIfReplicated() const
 {
     if (const auto * src_array = typeid_cast<const ColumnArray *>(nested_column.get()))
@@ -186,8 +186,7 @@ ColumnPtr ColumnReplicated::convertToFullColumnIfReplicated() const
         /// Per-array materialization
         size_t src_rows_count = src_array->size();
         size_t src_elements = src_array->getOffsets().back();
-        /// The fast path Break-even is around 8 elements per row.
-        if (src_rows_count != 0 && src_elements >= src_rows_count * 8)
+        if (src_rows_count != 0 && src_elements >= src_rows_count * ELEMENTS_PER_ROW_THRESHOLD)
             return convertToFullColumnArray(*src_array, *indexes.getIndexes());
     }
     /// Per-element materialization
