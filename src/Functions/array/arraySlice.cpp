@@ -437,7 +437,7 @@ private:
             }
         }
 
-        return ColumnQBit::create(ColumnTuple::create(std::move(dst_columns)), bounds.length, bounds.length);
+        return ColumnQBit::create(IColumn::mutate(ColumnTuple::create(std::move(dst_columns))), bounds.length, bounds.length);
     }
 };
 
