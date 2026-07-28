@@ -25,13 +25,14 @@ DROP TABLE IF EXISTS tab;
 -- One part with a single data granule:
 --   rows 0, 1   -> vector near the origin (the nearest neighbours), flag = 0 (fail the WHERE)
 --   rows 2..299 -> vector far away,                                flag = 1 (must stay findable)
--- `index_granularity` is randomized by the test runner. All 300 rows must land in ONE granule: the
--- two nearest neighbours have to share a granule with the flag = 1 rows, otherwise the index returns
--- candidates from a granule the WHERE does accept and the query below returns rows.
+-- `index_granularity` and `index_granularity_bytes` are both randomized by the test runner, and
+-- either one splits the part. All 300 rows must land in ONE granule: the two nearest neighbours have
+-- to share a granule with the flag = 1 rows, otherwise the index returns candidates from a granule
+-- the WHERE does accept and the query below returns rows.
 CREATE TABLE tab (id UInt64, flag UInt8, vec Array(Float32),
     INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 3) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 8192;
+SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760;
 
 SYSTEM STOP MERGES tab;
 -- `materialize_statistics_on_insert` is randomized by the test runner. With statistics materialized,
