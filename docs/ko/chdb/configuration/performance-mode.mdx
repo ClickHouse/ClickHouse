@@ -1,0 +1,331 @@
+---
+title: '성능 모드 (compat_mode)'
+sidebarTitle: '성능 모드'
+slug: /chdb/configuration/performance-mode
+description: '최대 처리량을 위해 pandas 호환성 오버헤드를 비활성화하는 SQL 우선 성능 모드'
+keywords: ['chdb', 'datastore', '성능', '모드', 'compat', 'sql-first', '최적화']
+doc_type: 'guide'
+---
+
+DataStore에는 출력 형식을 pandas 호환에 맞출지, 아니면 Raw SQL 성능에 맞게 최적화할지를 제어하는 2가지 호환 모드가 있습니다.
+
+<div id="overview">
+  ## 개요
+</div>
+
+| 모드               | `compat_mode` 값 | 설명                                                                                                          |
+| ---------------- | --------------- | ----------------------------------------------------------------------------------------------------------- |
+| **Pandas** (기본값) | `"pandas"`      | pandas 동작과 완전히 호환됩니다. 행 순서 보존, MultiIndex, set&#95;index, Dtype 보정, 안정 정렬 시 동률 처리, `-If`/`isNaN` 래퍼를 지원합니다. |
+| **Performance**  | `"performance"` | SQL 우선 실행입니다. pandas 호환성을 위한 모든 오버헤드를 제거합니다. 최대 처리량을 제공하지만 결과 구조는 pandas와 다를 수 있습니다.                        |
+
+<div id="what-it-disables">
+  ### 성능 모드에서 비활성화되는 항목
+</div>
+
+| 오버헤드                               | pandas 모드 동작                                                           | 성능 모드 동작                                                |
+| ---------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------- |
+| **행 순서 보존**                        | `_row_id` injection, `rowNumberInAllBlocks()`, `__orig_row_num__` 서브쿼리 | 비활성화 — 행 순서가 보장되지 않음                                    |
+| **안정 정렬 동점 해소 기준**                 | `rowNumberInAllBlocks() ASC`가 ORDER BY에 추가됨                            | 비활성화 — 동점인 항목의 순서는 임의적일 수 있음                            |
+| **Parquet preserve&#95;order**     | `input_format_parquet_preserve_order=1`                                | 비활성화 — Parquet를 병렬로 읽을 수 있음                             |
+| **GroupBy 자동 ORDER BY**            | `ORDER BY group_key`가 추가됨 (pandas 기본값 `sort=True`)                     | 비활성화 — 그룹이 임의의 순서로 반환됨                                  |
+| **GroupBy dropna WHERE**           | `WHERE key IS NOT NULL`이 추가됨 (pandas 기본값 `dropna=True`)                | 비활성화 — NULL 그룹이 포함됨                                     |
+| **GroupBy set&#95;index**          | 그룹 키를 인덱스로 설정함                                                         | 비활성화 — 그룹 키가 컬럼으로 유지됨                                   |
+| **MultiIndex 컬럼**                  | `agg({'col': ['sum','mean']})`는 MultiIndex 컬럼을 반환함                     | 비활성화 — 평면적인 컬럼 이름을 반환함 (`col_sum`, `col_mean`)          |
+| **`-If`/`isNaN` wrappers**         | skipna를 위해 `sumIf(col, NOT isNaN(col))`를 사용함                           | 비활성화 — 일반 `sum(col)`을 사용함 (ClickHouse는 네이티브로 NULL을 건너뜀) |
+| **count에 대한 `toInt64`**            | pandas int64에 맞추기 위해 `toInt64(count())`를 사용함                           | 비활성화 — 네이티브 SQL dtype을 반환함                              |
+| **모든 값이 NaN인 sum에 대한 `fillna(0)`** | 모든 값이 NaN인 합계는 0을 반환함 (pandas 동작)                                      | 비활성화 — NULL을 반환함                                        |
+| **Dtype 보정**                       | `abs()` unsigned→signed 등                                              | 비활성화 — 네이티브 SQL dtype                                   |
+| **인덱스 보존**                         | SQL 실행 후 원래 인덱스를 복원함                                                   | 비활성화                                                    |
+| **`first()`/`last()`**             | `argMin/argMax(col, rowNumberInAllBlocks())`                           | `any(col)` / `anyLast(col)` — 더 빠르지만 비결정적임              |
+| **단일 SQL 집계**                      | ColumnExpr groupby가 중간 DataFrame을 구체화함                                 | 지연 실행 작업 체인에 `LazyGroupByAgg`를 주입함 — 단일 SQL 쿼리          |
+
+***
+
+<div id="enabling">
+  ## 성능 모드 활성화
+</div>
+
+<div id="using-config">
+  ### 구성 객체 사용하기
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# Enable performance mode
+config.use_performance_mode()
+
+# Back to pandas compatibility
+config.use_pandas_compat()
+
+# Check current mode
+print(config.compat_mode)  # 'pandas' or 'performance'
+```
+
+<div id="using-functions">
+  ### 모듈 수준의 함수 사용하기
+</div>
+
+```python
+from chdb.datastore.config import set_compat_mode, CompatMode, is_performance_mode
+
+# Enable performance mode
+set_compat_mode(CompatMode.PERFORMANCE)
+
+# Check
+print(is_performance_mode())  # True
+
+# Back to default
+set_compat_mode(CompatMode.PANDAS)
+```
+
+<div id="using-imports">
+  ### 편의 import 사용하기
+</div>
+
+```python
+from chdb import use_performance_mode, use_pandas_compat
+
+use_performance_mode()
+# ... high-performance operations ...
+use_pandas_compat()
+```
+
+<Note>
+  성능 모드를 사용하면 실행 엔진이 자동으로 `chdb`로 설정되므로 `config.use_chdb()`를 별도로 호출할 필요가 없습니다.
+</Note>
+
+***
+
+<div id="when-to-use">
+  ## 성능 모드를 사용해야 하는 경우
+</div>
+
+**다음과 같은 경우 성능 모드를 사용하세요:**
+
+* 대규모 데이터셋을 처리하는 경우(수십만~수백만 개의 행)
+* 집계 비중이 큰 워크로드를 실행하는 경우(groupby, sum, mean, count)
+* 행 순서가 중요하지 않은 경우(예: 집계된 결과, 보고서, 대시보드)
+* SQL 처리량을 최대화하고 오버헤드를 최소화하려는 경우
+* 메모리 사용량이 우려되는 경우(병렬 Parquet 읽기, 중간 DataFrame 없음)
+
+**다음과 같은 경우 pandas 모드를 유지하세요:**
+
+* pandas의 동작을 정확히 따라야 하는 경우(행 순서, MultiIndex, dtypes)
+* `first()`/`last()`가 실제 첫 번째/마지막 행을 반환해야 하는 경우
+* 행 순서에 의존하는 `shift()`, `diff()`, `cumsum()`를 사용하는 경우
+* DataStore 출력과 pandas를 비교하는 테스트를 작성하는 경우
+
+***
+
+<div id="behavior-differences">
+  ## 동작 차이점
+</div>
+
+<div id="row-order">
+  ### 행 순서
+</div>
+
+성능 모드에서는 어떤 작업을 수행하더라도 행 순서가 **보장되지 않습니다**. 여기에는 다음이 포함됩니다.
+
+* 필터 결과
+* GroupBy 집계 결과
+* 명시적인 `sort_values()` 없이 사용하는 `head()` / `tail()`
+* `first()` / `last()` 집계
+
+순서가 정해진 결과가 필요하면 명시적으로 `sort_values()`를 추가하십시오:
+
+```python
+config.use_performance_mode()
+
+ds = pd.read_csv("data.csv")
+
+# Unordered (fast)
+result = ds.groupby("region")["revenue"].sum()
+
+# Ordered (still fast, just adds ORDER BY)
+result = ds.groupby("region")["revenue"].sum().sort_values()
+```
+
+<div id="groupby-results">
+  ### GroupBy 결과
+</div>
+
+| Aspect             | pandas 모드               | 성능 모드                      |
+| ------------------ | ----------------------- | -------------------------- |
+| 그룹 키 위치            | 인덱스 (`set_index` 사용)    | 일반 컬럼                      |
+| 그룹 순서              | 키 기준으로 정렬됨 (기본값)        | 임의 순서                      |
+| NULL 그룹            | 제외됨 (기본값 `dropna=True`) | 포함됨                        |
+| 컬럼 포맷              | 다중 집계 시 MultiIndex      | 평면형 이름 (`col_func`)        |
+| `first()`/`last()` | 결정적 (행 순서 기준)           | 비결정적 (`any()`/`anyLast()`) |
+
+<div id="aggregation">
+  ### 집계
+</div>
+
+```python
+config.use_performance_mode()
+
+# Sum of all-NaN group returns NULL (not 0)
+# Count returns native uint64 (not forced int64)
+# No -If wrappers: sum() instead of sumIf()
+result = ds.groupby("cat")["val"].sum()
+```
+
+<div id="single-sql">
+  ### 단일 SQL 실행
+</div>
+
+성능 모드에서는 `ColumnExpr` groupby 집계(예: `ds[condition].groupby('col')['val'].sum()`)가 pandas 모드의 2단계 처리 방식 대신 **하나의 SQL 쿼리**로 실행됩니다:
+
+```python
+config.use_performance_mode()
+
+# Pandas mode: two SQL queries (filter → materialize → groupby)
+# Performance mode: one SQL query (WHERE + GROUP BY in same query)
+result = ds[ds["rating"] > 3.5].groupby("category")["revenue"].sum()
+
+# Generated SQL (single query):
+# SELECT category, sum(revenue) FROM data WHERE rating > 3.5 GROUP BY category
+```
+
+이렇게 하면 중간 DataFrame을 머티리얼라이즈하는 과정이 없어져 메모리 사용량과 실행 시간을 크게 줄일 수 있습니다.
+
+***
+
+<div id="vs-execution-engine">
+  ## 실행 엔진과의 비교
+</div>
+
+성능 모드(`compat_mode`)와 실행 엔진(`execution_engine`)은 **서로 독립적인 구성 요소**입니다:
+
+| Config             | Controls                            | Values                   |
+| ------------------ | ----------------------------------- | ------------------------ |
+| `execution_engine` | 계산을 수행하는 **엔진**                     | `auto`, `chdb`, `pandas` |
+| `compat_mode`      | pandas 호환성을 위해 출력을 재구성할지 **여부**를 제어 | `pandas`, `performance`  |
+
+성능 모드는 SQL 실행용으로 설계되었으므로, `compat_mode='performance'`로 설정하면 `execution_engine='chdb'`도 자동으로 설정됩니다.
+
+```python
+from chdb.datastore.config import config
+
+# These are independent
+config.use_chdb()              # Force chDB engine, keep pandas compat
+config.use_performance_mode()  # Force chDB + remove pandas overhead
+```
+
+***
+
+<div id="testing">
+  ## 성능 모드로 테스트하기
+</div>
+
+성능 모드용 테스트를 작성할 때 결과는 행 순서나 구조적 포맷 면에서 pandas와 다를 수 있습니다. 다음 전략을 사용하세요:
+
+<div id="sort-then-compare">
+  ### 정렬한 뒤 비교(집계, 필터)
+</div>
+
+```python
+# Sort both sides by the same columns before comparing
+ds_result = ds.groupby("cat")["val"].sum()
+pd_result = pd_df.groupby("cat")["val"].sum()
+
+ds_sorted = ds_result.sort_index()
+pd_sorted = pd_result.sort_index()
+np.testing.assert_array_equal(ds_sorted.values, pd_sorted.values)
+```
+
+<div id="value-range-check">
+  ### 값 범위 점검(처음/마지막)
+</div>
+
+```python
+# first() with any() returns an arbitrary element from the group
+result = ds.groupby("cat")["val"].first()
+for group_key in groups:
+    assert result.loc[group_key] in group_values[group_key]
+```
+
+<div id="schema-and-count">
+  ### 스키마 및 개수(ORDER BY 없는 LIMIT)
+</div>
+
+```python
+# head() without sort_values: row set is non-deterministic
+result = ds.head(5)
+assert len(result) == 5
+assert set(result.columns) == expected_columns
+```
+
+***
+
+<div id="best-practices">
+  ## 권장 사항
+</div>
+
+<div id="enable-early">
+  ### 1. 스크립트 초반에 활성화하세요
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.use_performance_mode()
+
+# All subsequent operations benefit
+ds = pd.read_parquet("data.parquet")
+result = ds[ds["amount"] > 100].groupby("region")["amount"].sum()
+```
+
+<div id="explicit-sort">
+  ### 2. 순서가 중요한 경우 명시적으로 정렬하세요
+</div>
+
+```python
+# For display or downstream processing that expects order
+result = (ds
+    .groupby("region")["revenue"].sum()
+    .sort_values(ascending=False)
+)
+```
+
+<div id="batch-etl">
+  ### 3. 배치/ETL 워크로드에 활용
+</div>
+
+```python
+config.use_performance_mode()
+
+# ETL pipeline — order doesn't matter, throughput does
+summary = (ds
+    .filter(ds["date"] >= "2024-01-01")
+    .groupby(["region", "product"])
+    .agg({"revenue": "sum", "quantity": "sum", "rating": "mean"})
+)
+summary.to_df().to_parquet("summary.parquet")
+```
+
+<div id="switch-modes">
+  ### 4. 세션 내에서 모드 전환하기
+</div>
+
+```python
+# Performance mode for heavy computation
+config.use_performance_mode()
+aggregated = ds.groupby("cat")["val"].sum()
+
+# Back to pandas mode for exact-match comparison
+config.use_pandas_compat()
+detailed = ds[ds["val"] > 100].head(10)
+```
+
+***
+
+<div id="related">
+  ## 관련 문서
+</div>
+
+* [실행 엔진](/ko/chdb/configuration/execution-engine) — 엔진 선택(auto/chdb/pandas)
+* [성능 가이드](/ko/chdb/guides/pandas-performance) — 전반적인 최적화 팁
+* [pandas와의 주요 차이점](/ko/chdb/guides/pandas-differences) — 동작상의 차이점

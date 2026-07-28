@@ -50,9 +50,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 </Note>
 
 <Steps>
-  <Step>
-    #### الحصول على مفتاح API لـ ClickStack
-
+  <Step title="الحصول على مفتاح API لـ ClickStack" id="get-api-key">
     يرسل OpenTelemetry Collector البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack، والتي تتطلب المصادقة.
 
     1. افتح HyperDX على عنوان URL الخاص بـ ClickStack (على سبيل المثال، http://localhost:8080)
@@ -69,9 +67,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### تهيئة بيانات اعتماد AWS
-
+  <Step title="تهيئة بيانات اعتماد AWS" id="configure-aws">
     صدِّر بيانات اعتماد AWS كمتغيرات بيئة. وتعتمد الطريقة على نوع authentication المستخدم لديك:
 
     **لمستخدمي AWS SSO (موصى به لمعظم organizations):**
@@ -124,9 +120,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     استبدل `YOUR_ACCOUNT_ID` بمعرّف حساب AWS لديك.
   </Step>
 
-  <Step>
-    #### تهيئة مستقبِل CloudWatch
-
+  <Step title="تهيئة مستقبِل CloudWatch" id="configure-receiver">
     أنشئ ملف `otel-collector-config.yaml` يتضمن تهيئة مستقبِل CloudWatch.
 
     <Accordion title="اكتشاف مجموعات السجلات المتاحة في حسابك">
@@ -258,9 +252,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### ابدأ تشغيل المُجمِّع
-
+  <Step title="ابدأ تشغيل المُجمِّع" id="start-collector">
     أنشئ ملف `docker-compose.yaml`:
 
     ```yaml
@@ -294,9 +286,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### تحقّق من السجلات في HyperDX
-
+  <Step title="تحقّق من السجلات في HyperDX" id="verify-logs">
     بمجرد تشغيل الـ collector:
 
     1. افتح HyperDX على http://localhost:8080 (أو على عنوان URL الخاص بـ ClickStack)
@@ -324,9 +314,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 للمستخدمين الذين يرغبون في اختبار تكامل سجلات CloudWatch قبل تهيئة بيئة AWS الإنتاجية، نوفر مجموعة بيانات تجريبية تحتوي على سجلات مُولَّدة مسبقًا تعرض أنماطًا واقعية من عدة خدمات AWS.
 
 <Steps>
-  <Step>
-    #### تنزيل مجموعة البيانات التجريبية
-
+  <Step title="تنزيل مجموعة البيانات التجريبية" id="download-sample">
     ```bash
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/aws/cloudwatch/cloudwatch-logs.jsonl
     ```
@@ -334,13 +322,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     تتضمن مجموعة البيانات 24 ساعة من سجلات CloudWatch من عدة خدمات:
 
     * **وظائف Lambda**: معالجة المدفوعات، وإدارة الطلبات، والمصادقة
-    * **خدمات ECS**: بوابة واجهة برمجة تطبيقات مع تحديد المعدل ومهلات
+    * **خدمات ECS**: بوابة API مع تحديد المعدل ومهلات
     * **المهام الخلفية**: معالجة على دفعات مع أنماط إعادة المحاولة
   </Step>
 
-  <Step>
-    #### تشغيل ClickStack
-
+  <Step title="تشغيل ClickStack" id="start-clickstack">
     إذا لم يكن ClickStack قيد التشغيل بالفعل:
 
     ```bash
@@ -352,9 +338,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     انتظر بضع لحظات حتى يكتمل تشغيل ClickStack بالكامل.
   </Step>
 
-  <Step>
-    #### استيراد مجموعة البيانات التجريبية
-
+  <Step title="استيراد مجموعة البيانات التجريبية" id="import-demo-data">
     ```bash
     docker exec -i clickstack clickhouse-client --query="
       INSERT INTO default.otel_logs FORMAT JSONEachRow
@@ -364,9 +348,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     يؤدي هذا إلى استيراد السجلات مباشرةً إلى جدول السجلات في ClickStack.
   </Step>
 
-  <Step>
-    #### التحقق من البيانات التجريبية
-
+  <Step title="التحقق من البيانات التجريبية" id="verify-demo-logs">
     بعد الاستيراد:
 
     1. افتح HyperDX على http://localhost:8080 وسجّل الدخول (أنشئ حسابًا إذا لزم الأمر)
@@ -393,13 +375,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 لمساعدتك في مراقبة سجلات CloudWatch باستخدام ClickStack، نوفر لوحة معلومات مُعدّة مسبقًا تتضمن التصورات الأساسية.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">نزّل</TrackedLink> ملف إعدادات لوحة المعلومات
+  <Step title="نزّل ملف إعدادات لوحة المعلومات" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">نزّل ملف إعدادات لوحة المعلومات</TrackedLink>.
   </Step>
 
-  <Step>
-    #### استورد لوحة المعلومات
-
+  <Step title="استورد لوحة المعلومات" id="import-dashboard">
     1. افتح HyperDX وانتقل إلى قسم لوحات المعلومات
     2. انقر على **استيراد لوحة المعلومات** في الزاوية العلوية اليمنى من قائمة النقاط الثلاث
 
@@ -410,9 +390,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/cloudwatch/finish-import.webp" alt="مربع حوار إنهاء الاستيراد" />
   </Step>
 
-  <Step>
-    #### اعرض لوحة المعلومات
-
+  <Step title="اعرض لوحة المعلومات" id="created-dashboard">
     ستُنشأ لوحة المعلومات مع ضبط جميع التصورات مسبقًا:
 
     <Image img="/images/clickstack/cloudwatch/logs-dashboard.webp" alt="لوحة معلومات CloudWatch Logs" />
@@ -561,6 +539,6 @@ groups:
   ## الانتقال إلى بيئة الإنتاج
 </div>
 
-يوضح هذا الدليل كيفية تشغيل OpenTelemetry Collector محليًا باستخدام Docker Compose لأغراض الاختبار. أما في عمليات النشر في بيئة الإنتاج، فشغّل المجمِّع على بنية تحتية لديها وصول إلى AWS ‏(EC2 مع أدوار IAM، أو EKS مع IRSA، أو ECS مع أدوار المهام) لتجنّب الحاجة إلى إدارة مفاتيح الوصول. انشر المجمِّعات في منطقة AWS نفسها التي توجد فيها مجموعات سجلات CloudWatch لتقليل زمن الاستجابة والتكاليف.
+يوضح هذا الدليل كيفية تشغيل OpenTelemetry Collector محليًا باستخدام Docker Compose لأغراض الاختبار. أما لعمليات النشر في بيئة الإنتاج، فشغّل مجمِّع على بنية تحتية لديها وصول إلى AWS ‏(EC2 مع IAM roles، أو EKS مع IRSA، أو ECS مع task roles) للاستغناء عن إدارة مفاتيح الوصول. انشر مجمِّعات في منطقة AWS نفسها التي توجد فيها مجموعات سجلات CloudWatch لتقليل زمن الوصول والتكاليف.
 
-راجع [إدخال البيانات باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على أنماط النشر في بيئة الإنتاج وأمثلة على تهيئة المجمِّع.
+راجع [استيعاب البيانات باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على أنماط النشر في بيئة الإنتاج وأمثلة تهيئة مجمِّع.

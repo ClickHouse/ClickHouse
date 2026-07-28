@@ -478,6 +478,13 @@ ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, s
     auto tokens_offsets = ColumnArray::ColumnOffsets::create();
     tokens_offsets->reserve(rows);
 
+    /// Reserve token character storage to avoid repeated reallocations of the chars buffer as tokens are appended.
+    if (const auto * col_string = typeid_cast<const ColumnString *>(&input))
+    {
+        const auto & str_offsets = col_string->getOffsets();
+        tokens_data->getChars().reserve(str_offsets[from + rows - 1] - str_offsets[from - 1]);
+    }
+
     auto tokenize = [&](std::string_view doc)
     {
         forEachToken(tokenizer, doc.data(), doc.size(),

@@ -18,9 +18,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 في ClickHouse.
 
 <Steps>
-  <Step>
-    ## تصدير البيانات من Snowflake
-
+  <Step title="تصدير البيانات من Snowflake" id="1-exporting-data-from-snowflake">
     <Image img="/images/migrations/migrate_snowflake_clickhouse.webp" size="md" alt="الترحيل من Snowflake إلى ClickHouse" />
 
     يتطلب تصدير البيانات من Snowflake استخدام مرحلة خارجية، كما هو موضح في المخطط أعلاه.
@@ -57,9 +55,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     بالنسبة إلى مجموعة بيانات بحجم يقارب 5TB مع حجم أقصى للملف يبلغ 150MB، وعند استخدام warehouse من Snowflake بحجم 2X-Large في AWS Region نفسها `us-east-1`، سيستغرق نسخ البيانات إلى حاوية S3 حوالي 30 دقيقة.
   </Step>
 
-  <Step>
-    ## الاستيراد إلى ClickHouse
-
+  <Step title="الاستيراد إلى ClickHouse" id="2-importing-to-clickhouse">
     بمجرد تجهيز البيانات في تخزين كائنات وسيط، يمكن استخدام وظائف ClickHouse مثل [s3 table function](/ar/reference/functions/table-functions/s3) لإدراج البيانات في جدول، كما هو موضح أدناه.
 
     يستخدم هذا المثال [s3 table function](/ar/reference/functions/table-functions/s3) مع AWS S3، لكن يمكن استخدام [gcs table function](/ar/reference/functions/table-functions/gcs) مع Google Cloud Storage، ويمكن استخدام [azureBlobStorage table function](/ar/reference/functions/table-functions/azureBlobStorage) مع Azure Blob Storage.
@@ -107,9 +103,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     </Info>
   </Step>
 
-  <Step>
-    ## اختبار نجاح تصدير البيانات
-
+  <Step title="اختبار نجاح تصدير البيانات" id="3-testing-successful-data-export">
     لاختبار ما إذا كانت بياناتك قد أُدرجت بشكل صحيح، ما عليك سوى تشغيل استعلام `SELECT` على جدولك الجديد:
 
     ```sql

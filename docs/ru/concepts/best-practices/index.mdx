@@ -1,14 +1,57 @@
 ---
 slug: /best-practices
-keywords: ['Cloud', 'Первичный ключ', 'Ключ сортировки', 'Materialized Views', 'Лучшие практики', 'Пакетные вставки', 'Асинхронные вставки', 'Избегайте мутаций', 'Избегайте столбцов с типом Nullable', 'Избегайте OPTIMIZE FINAL', 'Ключ партиционирования']
-title: 'Лучшие практики в ClickHouse'
+keywords: ['Cloud', 'Первичный ключ', 'Ключ упорядочивания', 'Materialized Views', 'Лучшие практики', 'Пакетные вставки', 'Асинхронные вставки', 'Избегайте мутаций', 'Избегайте столбцов с типом Nullable', 'Избегайте OPTIMIZE FINAL', 'Ключ партиционирования']
+title: 'Лучшие практики ClickHouse'
 hide_title: true
 description: 'Главная страница раздела «Лучшие практики» в ClickHouse'
 doc_type: 'landing-page'
+mode: wide
 ---
 
-import TableOfContents from '/snippets/ru/_table_of_contents.mdx';
+В этом разделе собраны рекомендации, которые помогут вам получить максимум от ClickHouse.
 
-В этом разделе собраны лучшие практики, которые помогут вам получить максимум от ClickHouse.
+<CardGroup cols={2}>
+  <Card title="Выбор первичного ключа" icon="key" href="/ru/concepts/best-practices/choosing-a-primary-key">
+    Как выбрать первичный ключ в ClickHouse.
+  </Card>
 
-<TableOfContents />
+  <Card title="Выбор типов данных" icon="shapes" href="/ru/concepts/best-practices/select-data-type">
+    Как выбрать подходящие типы данных для ваших столбцов.
+  </Card>
+
+  <Card title="Используйте materialized views" icon="layer-group" href="/ru/concepts/best-practices/use-materialized-views">
+    Перенесите вычисления с этапа выполнения запроса на этап вставки с помощью materialized views.
+  </Card>
+
+  <Card title="Минимизируйте и оптимизируйте JOIN" icon="link" href="/ru/concepts/best-practices/minimize-optimize-joins">
+    Лучшие практики использования JOIN в ClickHouse.
+  </Card>
+
+  <Card title="Выбор ключа партиционирования" icon="folder-tree" href="/ru/concepts/best-practices/partitioning-keys">
+    Как выбрать ключ партиционирования.
+  </Card>
+
+  <Card title="Выбор стратегии вставки" icon="file-import" href="/ru/concepts/best-practices/selecting-an-insert-strategy">
+    Как выбрать стратегию вставки, включая пакетные и асинхронные вставки.
+  </Card>
+
+  <Card title="Используйте индексы пропуска данных, где это уместно" icon="filter" href="/ru/concepts/best-practices/using-data-skipping-indices">
+    Как и когда использовать индексы пропуска данных.
+  </Card>
+
+  <Card title="Избегайте мутаций" icon="ban" href="/ru/concepts/best-practices/avoid-mutations">
+    Почему в ClickHouse следует избегать мутаций.
+  </Card>
+
+  <Card title="Избегайте OPTIMIZE FINAL" icon="triangle-exclamation" href="/ru/concepts/best-practices/avoid-optimize-final">
+    Почему следует избегать `OPTIMIZE TABLE ... FINAL`.
+  </Card>
+
+  <Card title="Избегайте столбцов с типом Nullable" icon="circle-minus" href="/ru/concepts/best-practices/avoidnullablecolumns">
+    Почему в ClickHouse следует избегать столбцов с типом Nullable.
+  </Card>
+
+  <Card title="Используйте JSON, где это уместно" icon="code" href="/ru/concepts/best-practices/json-type">
+    Когда использовать тип данных `JSON`.
+  </Card>
+</CardGroup>

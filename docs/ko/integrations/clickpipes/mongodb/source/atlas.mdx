@@ -18,7 +18,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 복제를 위해서는 최소 24시간의 oplog 보존 기간이 필요합니다. 초기 스냅샷이 완료되기 전에 oplog가 잘리지 않도록 oplog 보존 기간을 72시간 이상으로 설정하는 것이 좋습니다. UI를 통해 oplog 보존 기간을 설정하려면 다음과 같이 하십시오.
 
-1. MongoDB Atlas console에서 클러스터의 `Overview` 탭으로 이동한 다음 `Configuration` 탭을 클릭합니다.
+1. MongoDB Atlas 콘솔에서 클러스터의 `Overview` 탭으로 이동한 다음 `Configuration` 탭을 클릭합니다.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-cluster-overview-configuration.webp" alt="클러스터 구성으로 이동" size="lg" border />
 
@@ -30,7 +30,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-set-retention-hours.webp" alt="oplog 보존 시간 설정" size="lg" border />
 
-4. `Review Changes`를 클릭해 변경 사항을 검토한 다음 `Apply Changes`를 클릭해 적용합니다.
+4. `Review Changes`를 클릭해 변경 사항을 검토한 다음 `Apply Changes`를 클릭해 변경 사항을 배포합니다.
 
 <div id="configure-database-user">
   ## 데이터베이스 사용자 구성

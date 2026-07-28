@@ -28,9 +28,7 @@ el [SQL playground de ClickHouse](https://sql.clickhouse.com/) mediante el [serv
 Puedes ejecutar los siguientes pasos desde tu REPL de Python o mediante un script.
 
 <Steps>
-  <Step>
-    ## Instalar bibliotecas
-
+  <Step title="Instalar bibliotecas" id="install-libraries">
     Instala la biblioteca Agno con los siguientes comandos:
 
     ```python
@@ -40,9 +38,7 @@ Puedes ejecutar los siguientes pasos desde tu REPL de Python o mediante un scrip
     ```
   </Step>
 
-  <Step>
-    ## Configurar credenciales
-
+  <Step title="Configurar credenciales" id="setup-credentials">
     A continuación, deberás proporcionar tu API key de Anthropic:
 
     ```python
@@ -58,7 +54,7 @@ Puedes ejecutar los siguientes pasos desde tu REPL de Python o mediante un scrip
       **Usar otro proveedor de LLM**
 
       Si no tienes una API key de Anthropic y quieres usar otro proveedor de LLM,
-      puedes consultar las instrucciones para configurar tus credenciales en la [documentación de Agno](https://docs.agno.com/concepts/models/introduction)
+      puedes consultar las instrucciones para configurar tus credenciales en la [documentación de Agno](https://docs.agno.com/models/overview)
     </Info>
 
     A continuación, define las credenciales necesarias para conectarte al Playground de ClickHouse SQL:
@@ -74,9 +70,7 @@ Puedes ejecutar los siguientes pasos desde tu REPL de Python o mediante un scrip
     ```
   </Step>
 
-  <Step>
-    ## Inicializa el servidor MCP y el agente de Agno
-
+  <Step title="Inicializa el servidor MCP y el agente de Agno" id="initialize-mcp-and-agent">
     Ahora configura el ClickHouse MCP server para que apunte al ClickHouse SQL playground
     y luego inicializa nuestro agente de Agno y hazle una pregunta:
 

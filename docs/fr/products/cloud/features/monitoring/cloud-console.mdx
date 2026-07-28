@@ -71,7 +71,7 @@ Ce tableau de bord est une version modifiée du [tableau de bord d’observabili
 <Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="Tableau de bord avancé dans ClickHouse Cloud" border />
 
 <Note>
-  ClickHouse Cloud collecte et stocke les métriques affichées sur ce tableau de bord à partir des tables système afin qu’elles puissent être consultées même lorsqu’un service est inactif. L’accès à ces métriques n’exécute pas de query sur le service sous-jacent et ne réactive pas les services inactifs.
+  ClickHouse Cloud collecte et stocke les métriques affichées sur ce tableau de bord à partir des tables système afin qu’elles puissent être consultées même lorsqu’un service est mis en veille. L’accès à ces métriques n’exécute pas de query sur le service sous-jacent et ne réactive pas les services mis en veille.
 </Note>
 
 Le tableau ci-dessous associe chaque graphique du tableau de bord avancé à la métrique ClickHouse correspondante, à la table système source et au type d’agrégation correspondant :
@@ -148,10 +148,10 @@ Toutes les métriques de l’onglet **Query info** sont des métriques agrégée
 Depuis ce panneau, les éléments `Settings` et `Profile Events` de chaque exécution de requête peuvent être développés pour afficher des informations supplémentaires.
 
 <div id="related">
-  ## Pages associées
+  ## Pages connexes
 </div>
 
-* [Notifications](/fr/products/cloud/features/monitoring/notifications) — Configurez des alertes pour les événements de mise à l’échelle, les erreurs et la facturation
+* [Notifications](/fr/products/cloud/features/monitoring/notifications) — Configurer des alertes pour les événements de mise à l’échelle, les erreurs et la facturation
 * [tableau de bord avancé](/fr/products/cloud/features/monitoring/advanced-dashboard) — Référence détaillée pour chaque visualisation du tableau de bord
-* [Interroger les tables système](/fr/products/cloud/features/monitoring/system-tables) — Exécutez des requêtes custom SQL sur les tables système pour une introspection approfondie
-* [endpoint Prometheus](/fr/products/cloud/features/monitoring/prometheus) — Exportez les métriques vers Grafana, Datadog ou d’autres outils compatibles Prometheus
+* [Interroger les tables système](/fr/products/cloud/features/monitoring/system-tables) — Exécuter des requêtes SQL personnalisées sur les tables système pour une introspection approfondie
+* [Point de terminaison Prometheus](/fr/products/cloud/features/monitoring/prometheus) — Exporter les métriques vers Grafana, Datadog ou d’autres outils compatibles Prometheus
