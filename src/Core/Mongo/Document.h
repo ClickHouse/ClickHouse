@@ -54,11 +54,11 @@ public:
     /// Returns the document as an owning rapidjson value. The returned Document
     /// owns its allocator, so the JSON stays valid after this function returns
     /// (the data must not reference the temporary local document's allocator).
-    rapidjson::Document getRapidJsonRepresentation() const;
+    rapidjson::Document getRapidJSONRepresentation() const;
 
     bson_t * getBson() const { return bson_doc; }
 
-    String getJson() const;
+    String getJSON() const;
 
     ~Document() override;
 

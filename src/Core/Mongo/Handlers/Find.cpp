@@ -44,7 +44,7 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
     const auto & document = documents[0].documents[0];
     auto collection = getCollectionRef(document, "find");
 
-    auto json_representation = document.getRapidJsonRepresentation();
+    auto json_representation = document.getRapidJSONRepresentation();
 
     /// `filter` is a document so it owns its allocator: it is serialized below and
     /// must stay valid (it must not reference a temporary document's allocator).

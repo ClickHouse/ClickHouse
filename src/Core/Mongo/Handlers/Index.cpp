@@ -18,7 +18,7 @@ std::vector<Document> IndexHandler::handle(const std::vector<OpMessageSection> &
 {
     auto collection = getCollectionRef(sections[0].documents[0], "createIndexes");
 
-    auto doc = sections[0].documents[0].getRapidJsonRepresentation();
+    auto doc = sections[0].documents[0].getRapidJSONRepresentation();
     auto indexes_it = doc.FindMember("indexes");
     if (indexes_it == doc.MemberEnd() || !indexes_it->value.IsArray())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'createIndexes' command does not contain the 'indexes' array");

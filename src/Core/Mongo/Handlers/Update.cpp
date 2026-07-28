@@ -50,7 +50,7 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
     String serialized_filter;
     String serialized_update;
     {
-        auto json_representation = sections[1].documents[0].getRapidJsonRepresentation();
+        auto json_representation = sections[1].documents[0].getRapidJSONRepresentation();
         serialized_filter = serializeRequiredMember(json_representation, "q");
         serialized_update = serializeRequiredMember(json_representation, "u");
     }

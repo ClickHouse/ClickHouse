@@ -90,16 +90,16 @@ std::vector<String> Document::getDocumentKeys() const
     return result;
 }
 
-rapidjson::Document Document::getRapidJsonRepresentation() const
+rapidjson::Document Document::getRapidJSONRepresentation() const
 {
-    String json = getJson();
+    String json = getJSON();
     rapidjson::Document json_doc;
     if (json_doc.Parse(json.c_str()).HasParseError())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect bson: can not convert the document to JSON");
     return json_doc;
 }
 
-String Document::getJson() const
+String Document::getJSON() const
 {
     if (!bson_doc)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Trying to serialize an empty Mongo document");

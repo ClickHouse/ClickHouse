@@ -164,7 +164,7 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
     for (const auto * doc : to_insert)
     {
         rapidjson::Value flattened(rapidjson::kObjectType);
-        flattenDocument(doc->getRapidJsonRepresentation(), "", flattened, allocator);
+        flattenDocument(doc->getRapidJSONRepresentation(), "", flattened, allocator);
 
         /// The schema comes from the first document only, as in Mongo a collection has no
         /// schema of its own.

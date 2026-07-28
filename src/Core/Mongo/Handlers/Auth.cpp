@@ -34,7 +34,7 @@ String getStringMember(const rapidjson::Value & value, const char * name)
 std::vector<Document> AuthHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
     const auto & doc = documents[0].documents[0];
-    auto json = doc.getRapidJsonRepresentation();
+    auto json = doc.getRapidJSONRepresentation();
 
     /// Only the `PLAIN` SASL mechanism is supported: it is the only one that gives us the
     /// cleartext password needed to authenticate a ClickHouse user.

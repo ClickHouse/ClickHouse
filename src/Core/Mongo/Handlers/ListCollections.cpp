@@ -24,7 +24,7 @@ std::vector<Document> ListCollectionsHandler::handle(
     /// `listCollections` names no collection, only the database it applies to.
     String database;
     {
-        auto json = documents[0].documents[0].getRapidJsonRepresentation();
+        auto json = documents[0].documents[0].getRapidJSONRepresentation();
         auto database_it = json.FindMember("$db");
         if (database_it == json.MemberEnd() || !database_it->value.IsString())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'listCollections' command does not contain the '$db' database name");

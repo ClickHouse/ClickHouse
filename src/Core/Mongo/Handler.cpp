@@ -28,11 +28,16 @@ namespace DB::MongoProtocol
 std::vector<std::string> splitByNewline(const std::string & s)
 {
     std::vector<std::string> result;
-    std::stringstream ss(s);
-    std::string line;
+    ReadBufferFromString in(s);
 
-    while (std::getline(ss, line, '\n'))
-        result.push_back(line);
+    while (!in.eof())
+    {
+        String line;
+        readStringUntilNewlineInto(line, in);
+        if (!in.eof())
+            in.ignore();
+        result.push_back(std::move(line));
+    }
 
     return result;
 }
@@ -130,7 +135,7 @@ String CollectionRef::getQualifiedName() const
 
 CollectionRef getCollectionRef(const Document & command, const String & command_name)
 {
-    auto json = command.getRapidJsonRepresentation();
+    auto json = command.getRapidJSONRepresentation();
 
     auto collection_it = json.FindMember(command_name.c_str());
     if (collection_it == json.MemberEnd() || !collection_it->value.IsString())
@@ -245,6 +250,7 @@ void handle(
             }
             catch (...)
             {
+                tryLogCurrentException("MongoProtocol", "Failed to execute an OP_MSG command");
                 response_doc = makeErrorResponse();
             }
             /// The reply carries no flags of its own. Echoing the flags of the request would
@@ -268,6 +274,7 @@ void handle(
             }
             catch (...)
             {
+                tryLogCurrentException("MongoProtocol", "Failed to execute an OP_QUERY command");
                 response_doc = makeErrorResponse();
             }
             auto response = OpQuery(std::move(response_doc[0]));

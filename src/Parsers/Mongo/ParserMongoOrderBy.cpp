@@ -10,8 +10,6 @@
 
 #include <Parsers/Mongo/Utils.h>
 
-
-
 namespace DB
 {
 
