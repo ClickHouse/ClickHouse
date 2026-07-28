@@ -277,29 +277,18 @@ Allow multiple threads to process non-joined rows from the right table in parall
 This can speed up the non-joined phase when using the `parallel_hash` join algorithm with large tables.
 When disabled, non-joined rows are processed by a single thread.
 )", 0) \
-    DECLARE(UInt64, max_insert_threads, 0, R"(
-The maximum number of threads to execute the `INSERT` query.
-
-This applies both to `INSERT SELECT` and to a plain `INSERT` whose data is sent from
-`clickhouse-client` or over the HTTP interface. The writing side of the pipeline
-(squashing the blocks and writing them to the destination table) is parallelized
-across up to this many threads.
+    DECLARE(MaxThreads, max_insert_threads, 0, R"(
+The maximum number of threads to execute the `INSERT SELECT` query.
 
 Possible values:
 
-- 0 (or 1) — no parallel execution.
-- Positive integer. Bigger than 1.
+- 0 — Auto. Uses the number of CPU cores available to the server (the same auto value as [`max_threads`](#max_threads)), reduced under memory pressure by [`max_insert_threads_min_free_memory_per_thread`](#max_insert_threads_min_free_memory_per_thread).
+- 1 — `INSERT SELECT` is executed in a single thread (no parallel execution). Use this to preserve the insertion order of `INSERT ... SELECT`.
+- Positive integer bigger than 1 — Parallel execution with the specified number of threads.
 
-Cloud default value:
-- `1` for nodes with 8 GiB memory
-- `2` for nodes with 16 GiB memory
-- `4` for larger nodes
+Before version 26.8 the default was `1` (no parallel execution). Since 26.8 the default (`0`) resolves to the number of CPU cores, so `INSERT SELECT` is parallelized by default. Set `max_insert_threads` to `1` (or use the `compatibility` setting) to restore the previous behavior.
 
 Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [`max_threads`](#max_threads) setting.
-For a plain `INSERT`, the input data is read and parsed as a single stream, and the pipeline is then resized to this many streams for writing.
-The write-side parallelization applies only to synchronous plain `INSERT`s: asynchronous inserts ([`async_insert`](#async_insert) `= 1`) are stored in a queue and flushed in the background, so they are unaffected by this setting and always stay single-stream.
-The writing side is parallelized only when it is safe to do so; otherwise it stays single-stream and this setting has no effect on it. In particular, the write is kept single-stream when [`use_strict_insert_block_limits`](#use_strict_insert_block_limits) is enabled, a destination table (or a table it forwards to) deduplicates inserted blocks, and insert deduplication is enabled for the query (see [`deduplicate_insert`](#deduplicate_insert)), when the destination has dependent materialized views — including views of a table the destination forwards to, e.g. behind an `Alias` — (unless [`parallel_view_processing`](#parallel_view_processing) is enabled and the dependent view chains are free of deduplication hazards — deduplication in the views is disabled ([`deduplicate_blocks_in_dependent_materialized_views`](#deduplicate_blocks_in_dependent_materialized_views)) or no dependent view path can deduplicate), and always for `Buffer` and `Distributed` destinations. A `Buffer` flushes in its own context and a `Distributed` forwards the write to a remote shard (which may itself buffer the data), so this query's deduplication settings do not govern the final write and it is kept single-stream regardless of them.
-The write is also kept single-stream for destinations whose content depends on the order in which the rows are committed: overwrite-by-key engines (`KeeperMap`, `EmbeddedRocksDB`, `Redis`), for which the last of several rows with equal keys wins, and `Memory` tables with the circular-buffer bounds `max_rows_to_keep` / `max_bytes_to_keep`, which retain the rows committed last. This also covers a table forwarding to such a destination, including as the target of a dependent materialized view.
 Higher values will lead to higher memory usage.
 )", 0) \
     DECLARE(UInt64, max_insert_delayed_streams_for_parallel_write, 0, R"(
@@ -5649,6 +5638,11 @@ If the number of rows to read from the projection index is less than or equal to
     DECLARE(UInt64, min_table_rows_to_use_projection_index, 1'000'000, R"(
 If the estimated number of rows to read from the table is greater than or equal to this threshold, ClickHouse will try to use the projection index during query execution.
 )", 0) \
+    DECLARE(Bool, use_projection_index_in_read_pools, false, R"(
+Apply the projection index (see `optimize_use_projection_filtering`) already inside MergeTree read pools: mark ranges fully filtered out by the projection index are dropped before a read task is created for them, instead of being skipped granule by granule during reading.
+
+In the prefetched read pool the dropped ranges are never prefetched, but the task boundaries and the prefetch admission by `filesystem_prefetch_max_memory_usage` / `filesystem_prefetches_limit` are still decided before the filtering, so under highly selective filters the surviving tasks may be smaller than the intended task size and the admission may be conservative.
+)", 0) \
     DECLARE(Bool, async_socket_for_remote, true, R"(
 Enables asynchronous read from socket while executing remote query.
 
@@ -8091,6 +8085,9 @@ It may improve performance when aggregation bucket sizes are skewed by letting a
 The downside is potentially higher memory usage.
 )", 0) \
     DECLARE(Bool, enable_parallel_blocks_marshalling, true, "Affects only distributed queries. If enabled, blocks will be (de)serialized and (de)compressed on pipeline threads (i.e. with higher parallelism that what we have by default) before/after sending to the initiator.", 0) \
+    DECLARE(Bool, enable_parallel_single_level_merge, true, R"(
+Parallelize the final merge of the per-thread single-level aggregation hash tables. The key space is split into disjoint partitions by key hash, and each partition is merged independently: the merging thread enumerates all per-thread tables and combines the keys that belong to its partition, so no two threads ever touch the same key. If the setting is turned off, the single-level tables are merged serially on one thread. Aggregation by 8- and 16-bit keys keeps its own range-partitioned parallel merge regardless of this setting.
+)", 0) \
     DECLARE(UInt64, min_outstreams_per_resize_after_split, 24, R"(
 Specifies the minimum number of output streams of a `Resize` or `StrictResize` processor after the split is performed during pipeline generation. If the resulting number of streams is less than this value, the split operation will not occur.
 
