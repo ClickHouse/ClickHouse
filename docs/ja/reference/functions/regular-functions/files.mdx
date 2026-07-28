@@ -1,0 +1,34 @@
+---
+description: 'Files のドキュメント'
+sidebarTitle: 'Files'
+slug: /sql-reference/functions/files
+title: 'Files'
+doc_type: 'リファレンス'
+---
+
+<div id="file">
+  ## file
+</div>
+
+ファイルを文字列として読み込み、そのデータを指定したカラムに読み込みます。ファイルの内容は解釈されません。
+
+テーブル関数 [file](/ja/reference/functions/table-functions/file) も参照してください。
+
+**構文**
+
+```sql
+file(path[, default])
+```
+
+**引数**
+
+* `path` — [user&#95;files&#95;path](/ja/reference/settings/server-settings/settings#user_files_path) からの相対パスで指定するファイルのパスです。ワイルドカード `*`、`**`、`?`、`{abc,def}`、`{N..M}` をサポートします。ここで、`N` と `M` は数値、`'abc'` と `'def'` は文字列です。
+* `default` — ファイルが存在しない場合、またはアクセスできない場合に返される値です。サポートされているデータ型: [String](/ja/reference/data-types/string) および [NULL](/ja/reference/settings/formats#input_format_null_as_default)。
+
+**例**
+
+ファイル a.txt と b.txt からデータを文字列としてテーブルに挿入する例です。
+
+```sql
+INSERT INTO table SELECT file('a.txt'), file('b.txt');
+```

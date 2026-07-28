@@ -170,7 +170,7 @@ static __attribute__((constructor(202))) void init_ssl()
 ///
 /// extern bool inside_main;
 /// class C { C() { assert(inside_main); } };
-static bool inside_main = false;
+bool inside_main = false;
 
 int main(int argc_, char ** argv_)
 {

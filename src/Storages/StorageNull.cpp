@@ -34,7 +34,17 @@ void registerStorageNull(StorageFactory & factory)
     },
     {
         .supports_parallel_insert = true,
-    });
+    },
+    Documentation{
+        .description = R"DOCS_MD(
+When writing data to a `Null` table, data is ignored.
+When reading from a `Null` table, the response is empty.
+
+The `Null` table engine is useful for data transformations where you no longer need the original data after it has been transformed.
+For this purpose you can create a materialized view on a `Null` table.
+The data written to the table will be consumed by the view, but the original raw data will be discarded.
+)DOCS_MD",
+        .syntax = "ENGINE = Null"});
 }
 
 void StorageNull::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
@@ -71,7 +81,8 @@ void StorageNull::alter(const AlterCommands & params, ContextPtr context, AlterL
 {
     auto table_id = getStorageID();
 
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);

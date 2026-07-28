@@ -1,0 +1,275 @@
+---
+slug: /optimize/skipping-indexes/examples
+sidebarTitle: '데이터 스킵 인덱스 - 예시'
+description: '통합된 스킵 인덱스 예시'
+title: '데이터 스킵 인덱스 예시'
+doc_type: 'guide'
+keywords: ['스킵 인덱스', '데이터 스키핑', '성능', '인덱싱', '모범 사례']
+---
+
+이 페이지는 ClickHouse 데이터 스킵 인덱스 예시를 한곳에 모아, 각 유형을 선언하는 방법, 언제 사용해야 하는지, 그리고 적용되었는지 확인하는 방법을 보여줍니다. 모든 기능은 [MergeTree 계열 테이블](/ko/reference/engines/table-engines/mergetree-family/mergetree)에서 작동합니다.
+
+**인덱스 구문:**
+
+```sql
+INDEX name expr TYPE type(...) [GRANULARITY N]
+```
+
+ClickHouse는 6가지 스킵 인덱스 타입을 지원합니다:
+
+| 인덱스 유형                                              | 설명                                 |
+| --------------------------------------------------- | ---------------------------------- |
+| **minmax**                                          | 각 그래뉼의 최소값과 최대값을 추적합니다         |
+| **set(N)**                                          | 각 그래뉼에 최대 N개의 고유 값을 저장합니다      |
+| **text**                                            | 전문 검색을 위해 토큰화된 문자열 데이터에 대한 역인덱스입니다 |
+| **bloom&#95;filter([false&#95;positive&#95;rate])** | 존재 여부를 확인하기 위한 확률적 필터입니다           |
+| **ngrambf&#95;v1**                                  | 부분 문자열 검색을 위한 n-그램 블룸 필터입니다        |
+| **tokenbf&#95;v1**                                  | 전문 검색을 위한 토큰 기반 블룸 필터입니다           |
+
+각 섹션에서는 샘플 데이터가 포함된 예시를 제공하고, 쿼리 실행 중 인덱스 사용 여부를 확인하는 방법을 보여줍니다.
+
+<div id="minmax-index">
+  ## MinMax 인덱스
+</div>
+
+`minmax` 인덱스는 느슨하게 정렬된 데이터나 `ORDER BY`와 연관성이 있는 컬럼에 대한 범위 프레디케이트에 가장 적합합니다.
+
+```sql
+-- CREATE TABLE에서 정의
+CREATE TABLE events
+(
+  ts DateTime,
+  user_id UInt64,
+  value UInt32,
+  INDEX ts_minmax ts TYPE minmax GRANULARITY 1
+)
+ENGINE=MergeTree
+ORDER BY ts;
+
+-- 또는 나중에 추가하고 구체화
+ALTER TABLE events ADD INDEX ts_minmax ts TYPE minmax GRANULARITY 1;
+ALTER TABLE events MATERIALIZE INDEX ts_minmax;
+
+-- 인덱스를 활용하는 쿼리
+SELECT count() FROM events WHERE ts >= now() - 3600;
+
+-- 사용 여부 확인
+EXPLAIN indexes = 1
+SELECT count() FROM events WHERE ts >= now() - 3600;
+```
+
+`EXPLAIN`과 프루닝을 사용하는 [예시](/ko/concepts/best-practices/using-data-skipping-indices#example)를 확인하십시오.
+
+<div id="set-index">
+  ## Set 인덱스
+</div>
+
+로컬(블록별) 카디널리티(cardinality)가 낮을 때 `set` 인덱스를 사용하십시오. 각 블록에 서로 다른 값이 많으면 효과가 없습니다.
+
+```sql
+ALTER TABLE events ADD INDEX user_set user_id TYPE set(100) GRANULARITY 1;
+ALTER TABLE events MATERIALIZE INDEX user_set;
+
+SELECT * FROM events WHERE user_id IN (101, 202);
+
+EXPLAIN indexes = 1
+SELECT * FROM events WHERE user_id IN (101, 202);
+```
+
+생성 및 머티리얼라이즈 워크플로와 적용 전후의 효과는 [기본 동작 가이드](/ko/concepts/features/performance/skip-indexes/skipping-indexes#basic-operation)에 나와 있습니다.
+
+<div id="textindex-for-full-text-search">
+  ## 전문 검색용 Text index (text)
+</div>
+
+`text`는 토큰화된 텍스트 데이터에 대한 역 인덱스입니다.
+전문 검색 워크로드를 위해 특별히 설계되었으며, 토큰과 용어를 효율적이고 결정론적으로 조회할 수 있습니다.
+자연어 또는 대규모 텍스트 검색 사용 사례에 권장됩니다.
+
+자세한 내용과 예시는 [Text index를 사용한 전문 검색](/ko/reference/engines/table-engines/mergetree-family/textindexes)를 참조하십시오.
+
+```sql
+ALTER TABLE logs ADD INDEX msg_text msg TYPE text(tokenizer = splitByNonAlpha);
+ALTER TABLE logs MATERIALIZE INDEX msg_text;
+
+SELECT count() FROM logs WHERE hasAllTokens(msg, 'exception');
+```
+
+더 자세한 관측성 예시는 [여기](/ko/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search) 문서에서 확인하십시오.
+
+텍스트 인덱스는 완전히 결정적이며, 블룸 필터 기반 인덱스보다 저장소 사용량이 다소 늘어나는 대신 토큰화와 텍스트 처리 방식을 완전히 조정할 수 있습니다,
+
+<div id="generic-bloom-filter-scalar">
+  ## 일반 블룸 필터 (스칼라)
+</div>
+
+`bloom_filter` 인덱스는 &quot;건초더미에서 바늘 찾기&quot;와 같은 동등 비교/IN 멤버십 검사에 적합합니다. 선택적 매개변수로 거짓 양성률(false-positive rate)을 지정할 수 있으며, 기본값은 0.025입니다.
+
+```sql
+ALTER TABLE events ADD INDEX value_bf value TYPE bloom_filter(0.01) GRANULARITY 3;
+ALTER TABLE events MATERIALIZE INDEX value_bf;
+
+SELECT * FROM events WHERE value IN (7, 42, 99);
+
+EXPLAIN indexes = 1
+SELECT * FROM events WHERE value IN (7, 42, 99);
+```
+
+<div id="n-gram-bloom-filter-ngrambf-v1-for-substring-search">
+  ## 부분 문자열 검색용 N-gram Bloom filter (ngrambf_v1) *(Deprecated)*
+</div>
+
+<Note>
+  ClickHouse 버전 `>= 26.2`에서는 전문 검색에 `ngrambf_v1` 인덱스를 사용하는 방식이 더 이상 권장되지 않으며, 대신 `text` 인덱스를 사용합니다(자세한 내용은 [여기](/ko/reference/engines/table-engines/mergetree-family/textindexes)를 참조하십시오).
+</Note>
+
+`ngrambf_v1` 인덱스는 문자열을 n-그램으로 분할합니다. `LIKE '%...%'` 쿼리에 효과적입니다. String/FixedString/Map (`mapKeys`/`mapValues`를 통해)를 지원하며, 크기, 해시 개수, 시드도 조정할 수 있습니다. 자세한 내용은 [N-gram bloom filter](/ko/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) 문서를 참조하십시오.
+
+```sql
+-- 부분 문자열 검색을 위한 인덱스 생성
+ALTER TABLE logs ADD INDEX msg_ngram msg TYPE ngrambf_v1(3, 10000, 3, 7) GRANULARITY 1;
+ALTER TABLE logs MATERIALIZE INDEX msg_ngram;
+
+-- 부분 문자열 검색
+SELECT count() FROM logs WHERE msg LIKE '%timeout%';
+
+EXPLAIN indexes = 1
+SELECT count() FROM logs WHERE msg LIKE '%timeout%';
+```
+
+[이 가이드](/ko/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search)에서는 token과 ngram 중 언제 사용해야 하는지 보여주는 실용적인 예시를 제공합니다.
+
+**매개변수 최적화 도우미:**
+
+4개의 ngrambf&#95;v1 매개변수(n-그램 크기, 비트맵 크기, 해시 함수, seed)는 성능과 메모리 사용량에 큰 영향을 줍니다. 예상되는 n-그램 수와 원하는 거짓 양성률을 기준으로 최적의 비트맵 크기와 해시 함수 개수를 계산하려면 다음 함수를 사용하십시오:
+
+```sql
+CREATE FUNCTION bfEstimateFunctions AS
+(total_grams, bits) -> round((bits / total_grams) * log(2));
+
+CREATE FUNCTION bfEstimateBmSize AS
+(total_grams, p_false) -> ceil((total_grams * log(p_false)) / log(1 / pow(2, log(2))));
+
+-- 4300개의 ngram, p_false = 0.0001에 대한 크기 계산 예시
+SELECT bfEstimateBmSize(4300, 0.0001) / 8 AS size_bytes;  -- ~10304 (바이트 단위 크기)
+SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) AS k; -- ~13 (해시 함수 수)
+```
+
+전체 튜닝 방법은 [매개변수 문서](/ko/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter)를 참고하십시오.
+
+<div id="token-bloom-filter-tokenbf-v1-for-word-based-search">
+  ## 단어 기반 검색용 Token 블룸 필터(tokenbf_v1) *(지원 중단)*
+</div>
+
+<Note>
+  ClickHouse 버전 `>= 26.2`에서는 전문 검색에 `tokenbf_v1` 인덱스를 사용하는 방식이 지원 중단되었으며, 대신 `text` 인덱스 사용이 권장됩니다(자세한 내용은 [여기](/ko/reference/engines/table-engines/mergetree-family/textindexes)를 참조하십시오).
+</Note>
+
+`tokenbf_v1` 인덱스는 영숫자가 아닌 문자를 구분자로 사용해 분리된 토큰을 인덱싱합니다. [`hasToken`](/ko/reference/functions/regular-functions/string-search-functions#hasToken), `LIKE` 단어 패턴, 또는 등호 비교/`IN`과 함께 사용해야 합니다. `String`/`FixedString`/`Map` 타입을 지원합니다.
+
+자세한 내용은 [Token bloom filter](/ko/reference/engines/table-engines/mergetree-family/mergetree#token-bloom-filter) 및 [Bloom filter types](/ko/concepts/features/performance/skip-indexes/skipping-indexes#skip-index-types) 페이지를 참조하십시오.
+
+```sql
+ALTER TABLE logs ADD INDEX msg_token lower(msg) TYPE tokenbf_v1(10000, 7, 7) GRANULARITY 1;
+ALTER TABLE logs MATERIALIZE INDEX msg_token;
+
+-- 단어 검색 (lower 함수를 통한 대소문자 구분 없이)
+SELECT count() FROM logs WHERE hasToken(lower(msg), 'exception');
+
+EXPLAIN indexes = 1
+SELECT count() FROM logs WHERE hasToken(lower(msg), 'exception');
+```
+
+관측성 예시와 token 및 ngram의 차이에 대한 안내는 [여기](/ko/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search)에서 확인하십시오.
+
+<div id="add-indexes-during-create-table-multiple-examples">
+  ## CREATE TABLE 시 인덱스 추가(여러 예시)
+</div>
+
+스키핑 인덱스는 복합 표현식과 `Map`/`Tuple`/`Nested` 타입도 지원합니다. 이는 아래 예시에서 보여줍니다:
+
+```sql
+CREATE TABLE t
+(
+  u64 UInt64,
+  s String,
+  m Map(String, String),
+
+  INDEX idx_bf u64 TYPE bloom_filter(0.01) GRANULARITY 3,
+  INDEX idx_minmax u64 TYPE minmax GRANULARITY 1,
+  INDEX idx_set u64 * length(s) TYPE set(1000) GRANULARITY 4,
+  INDEX idx_ngram s TYPE ngrambf_v1(3, 10000, 3, 7) GRANULARITY 1,
+  INDEX idx_token mapKeys(m) TYPE tokenbf_v1(10000, 7, 7) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY u64;
+```
+
+<div id="materializing-on-existing-data-and-verifying">
+  ## 기존 데이터에 구체화 적용 및 확인
+</div>
+
+아래와 같이 `MATERIALIZE`를 사용해 기존 데이터 파트에 인덱스를 적용하고, `EXPLAIN` 또는 트레이스 로그로 프루닝을 확인할 수 있습니다:
+
+```sql
+ALTER TABLE t MATERIALIZE INDEX idx_bf;
+
+EXPLAIN indexes = 1
+SELECT count() FROM t WHERE u64 IN (123, 456);
+
+-- 선택 사항: 상세 프루닝 정보
+SET send_logs_level = 'trace';
+```
+
+이 [실제 minmax 예시](/ko/concepts/best-practices/using-data-skipping-indices#example)는 EXPLAIN 출력의 구조와 프루닝 개수를 보여줍니다.
+
+<div id="when-use-and-when-to-avoid">
+  ## 스킵 인덱스를 사용할 때와 피해야 할 때
+</div>
+
+**스킵 인덱스를 사용해야 하는 경우:**
+
+* 필터 값이 데이터 블록 내에 희소하게 분포하는 경우
+* `ORDER BY` 컬럼과 강한 상관관계가 있거나, 데이터 수집 패턴상 비슷한 값이 함께 모이도록 구성된 경우
+* 대규모 로그 데이터셋에서 텍스트 검색을 수행하는 경우 (`ngrambf_v1`/`tokenbf_v1` 타입)
+
+**스킵 인덱스를 피해야 하는 경우:**
+
+* 대부분의 블록에 일치하는 값이 하나 이상 포함되어 있을 가능성이 높은 경우 (어차피 블록을 읽게 됨)
+* 데이터 정렬과 상관관계가 없는 고카디널리티 컬럼으로 필터링하는 경우
+
+<Info>
+  **중요한 고려 사항**
+
+  값이 데이터 블록에 한 번이라도 나타나면 ClickHouse는 해당 블록 전체를 읽어야 합니다. 실제에 가까운 데이터셋으로 인덱스를 테스트하고, 실제 성능 측정 결과를 바탕으로 세분화 수준과 타입별 매개변수를 조정하십시오.
+</Info>
+
+<div id="temporarily-ignore-or-force-indexes">
+  ## 일시적으로 인덱스를 무시하거나 강제로 적용
+</div>
+
+테스트 및 문제 해결 중에는 개별 쿼리에서 특정 인덱스를 이름으로 비활성화할 수 있습니다. 필요할 때 인덱스 사용을 강제하는 설정도 제공됩니다. [`ignore_data_skipping_indices`](/ko/reference/settings/session-settings#ignore_data_skipping_indices)를 참조하십시오.
+
+```sql
+-- 이름으로 인덱스 무시
+SELECT * FROM logs
+WHERE hasToken(lower(msg), 'exception')
+SETTINGS ignore_data_skipping_indices = 'msg_token';
+```
+
+<div id="notes-and-caveats">
+  ## 참고 사항 및 주의점
+</div>
+
+* 스킵 인덱스는 [MergeTree 계열 테이블](/ko/reference/engines/table-engines/mergetree-family/mergetree)에서만 지원되며, 프루닝은 그래뉼/블록 수준에서 이루어집니다.
+* 블룸 필터 기반 인덱스는 확률적 특성이 있으므로, 거짓 양성으로 인해 추가 읽기가 발생할 수 있지만 유효한 데이터가 스킵되지는 않습니다.
+* 블룸 필터와 기타 스킵 인덱스는 `EXPLAIN` 및 tracing으로 검증해야 하며, 프루닝과 인덱스 크기 사이의 균형을 맞출 수 있도록 세분화 수준을 조정해야 합니다.
+
+<div id="related-docs">
+  ## 관련 문서
+</div>
+
+* [데이터 스키핑 인덱스 가이드](/ko/concepts/features/performance/skip-indexes/skipping-indexes)
+* [모범 사례 가이드](/ko/concepts/best-practices/using-data-skipping-indices)
+* [데이터 스키핑 인덱스 다루기](/ko/reference/statements/alter/skipping-index)
+* [시스템 테이블 정보](/ko/reference/system-tables/data_skipping_indices)

@@ -1,0 +1,63 @@
+---
+slug: /integrations/integration-development/testing-your-integration
+sidebarTitle: 'Tester votre intégration'
+title: 'Tester votre intégration ClickHouse'
+description: 'Matrice de validation de premier niveau pour les intégrations sur ClickHouse Cloud et la version open source auto-hébergée.'
+keywords: ['partenaire', 'intégration', 'test', 'validation', 'jeux de données d’exemple', 'ClickHouse Cloud', 'open source']
+doc_type: 'guide'
+---
+
+Validez votre intégration sur les deux modes de déploiement de ClickHouse, ainsi qu’avec des jeux de données qui mettent le système de types de ClickHouse à l’épreuve à une échelle représentative, avant de la soumettre pour examen. Cette page définit ce que signifie « testé » au premier niveau. La validation formelle suit un processus distinct pour les partenaires qui accèdent à des niveaux de partenariat supérieurs.
+
+Consultez [Développer des intégrations](/fr/resources/develop-contribute/integrations/building-integrations) pour les modes d’ingestion et de consommation, et [Documenter votre intégration](/fr/resources/develop-contribute/integrations/documenting-your-integration) pour savoir comment publier vos résultats.
+
+<div id="test-matrix">
+  ## Matrice de test
+</div>
+
+Couvrez les deux modes de déploiement. La plupart des clients utilisent l’un ou l’autre, et le comportement diffère sur certains points (authentification, réseau, fonctionnalités disponibles).
+
+* **ClickHouse Cloud :** inscrivez-vous pour un [essai gratuit](https://clickhouse.com/cloud). Aucune carte de crédit n’est requise pour le tier Development
+* **Auto-hébergé (open source) :** utilisez la version stable la plus récente depuis les [releases GitHub](https://github.com/ClickHouse/ClickHouse/releases). Le [guide d’installation](/fr/get-started/setup/install) est le moyen le plus rapide d’obtenir une instance locale avec Docker
+
+Testez les deux et documentez tout écart fonctionnel sur votre page d’intégration.
+
+<div id="what-to-test">
+  ## Ce qu’il faut tester
+</div>
+
+**Correction fonctionnelle.** Testez chaque chemin de code exposé par votre intégration : ingestion des données, exécution de requêtes, découverte du schéma, gestion des erreurs et reconnexion. Si votre produit expose du SQL aux utilisateurs finaux, vérifiez que les requêtes générées par votre UI sont transmises et traitées correctement de bout en bout.
+
+**Couverture du système de types.** ClickHouse prend en charge Array, Tuple, Map, JSON, Nested, LowCardinality, les variantes de Decimal, Date et DateTime, UUID, IPv4 et IPv6, les enum, ainsi que les types de fonctions d’agrégation. Les intégrations rencontrent souvent des problèmes avec les Array imbriqués, les Tuple profondément imbriqués et les colonnes JSON. Votre bibliothèque client et votre UI doivent les gérer correctement et, au minimum, produire une erreur compréhensible au lieu de tronquer silencieusement les données ou de les afficher de manière incorrecte.
+
+**Montée en charge.** Testez avec des tailles de jeux de résultats et des nombres de lignes correspondant à ceux qu’utiliseront vos clients. Pour la BI destinée aux utilisateurs, cela signifie souvent des tables contenant des centaines de millions, voire des milliards de lignes, et des jeux de résultats allant d’agrégations simples à des dizaines de milliers de lignes. Les lectures sans limite (`SELECT *`) doivent échouer de manière prévisible ou être paginées, et non se bloquer.
+
+**Authentification.** Validez au moins une connexion avec TLS activé. Si vous exposez une configuration d’authentification, testez chaque mode que vous documentez (nom d’utilisateur et mot de passe via TLS, mTLS, certificat client SSL).
+
+**Cycle de vie des connexions.** Vérifiez un comportement cohérent en cas de connexions interrompues, de redémarrages du serveur et de requêtes lentes. De nombreuses escalades de support proviennent de la gestion des connexions plutôt que de la sémantique des requêtes.
+
+<div id="recommended-example-datasets">
+  ## Jeux de données d’exemple recommandés
+</div>
+
+L’ensemble complet est disponible dans la section [**Jeux de données d’exemple**](/fr/get-started/sample-datasets/index). Les quatre jeux de données suivants couvrent la plupart des besoins en tests d’intégration :
+
+* **[Événements GitHub](/fr/get-started/sample-datasets/github-events) :** 3,1 Md de lignes avec des payloads d’événements imbriqués. Idéal pour les arrays, tuples et types imbriqués
+* **[Données des taxis de NYC](/fr/get-started/sample-datasets/nyc-taxi) :** des milliards de lignes avec un schéma bien connu. Adapté aux tests de débit et de performances en lecture
+* **[Stack Overflow](/fr/get-started/sample-datasets/stackoverflow) :** données relationnelles sur plusieurs tables pour des scénarios BI riches en JOIN
+* **[Hacker News](/fr/get-started/sample-datasets/hacker-news) :** 28 M de lignes, rapide à charger, utile pour itérer
+
+Pour une validation à très grande échelle, utilisez **[WikiStat](/fr/get-started/sample-datasets/wikistat)** (~500 milliards d’enregistrements).
+
+<div id="what-to-capture-from-your-testing">
+  ## Ce qu’il faut retenir de vos tests
+</div>
+
+Lorsque vous soumettez votre intégration pour évaluation, partagez :
+
+* les versions de ClickHouse testées (Cloud et open source)
+* les jeux de données et leur échelle approximative (lignes, taille sur disque)
+* les types que votre intégration prend en charge et ceux qu’elle ne prend pas en charge (cela devient la section **Limites connues** de votre documentation)
+* les caractéristiques de performance à signaler, comme les seuils de jeu de résultats à partir desquels le comportement change
+
+Un court rapport de test permet de gagner du temps lors de la revue. Un paragraphe et un tableau suffisent.

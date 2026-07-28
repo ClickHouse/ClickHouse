@@ -1,0 +1,504 @@
+---
+slug: /cloud/guides/data-masking
+sidebarTitle: 'Маскирование данных'
+title: 'Маскирование данных в ClickHouse'
+description: 'Руководство по маскированию данных в ClickHouse'
+keywords: ['маскирование данных']
+doc_type: 'guide'
+---
+
+Маскирование данных — это метод защиты данных, при котором исходные данные заменяются версией, сохраняющей их формат и структуру, но исключающей любую информацию, позволяющую идентифицировать личность (PII), а также другие конфиденциальные сведения.
+
+В этом руководстве показано, как маскировать данные в ClickHouse несколькими способами:
+
+* **Masking policies** (ClickHouse Cloud, 25.12+): встроенное динамическое маскирование, применяемое во время выполнения запроса для определённых пользователей/ролей
+* **String replacement functions**: базовое маскирование с помощью встроенных функций
+* **Masked views**: создание представлений с логикой преобразования
+* **Materialized columns**: хранение замаскированных версий рядом с исходными данными
+* **Query masking rules**: маскирование конфиденциальных данных в журналах (ClickHouse OSS)
+
+<div id="masking-policies">
+  ## Использование политик маскирования (ClickHouse Cloud)
+</div>
+
+<Note>
+  Политики маскирования доступны в ClickHouse Cloud, начиная с версии 25.12.
+</Note>
+
+Оператор [`CREATE MASKING POLICY`](/ru/reference/statements/create/masking-policy) предоставляет встроенный механизм для динамического маскирования значений столбцов для определённых пользователей или ролей во время выполнения запроса. В отличие от других подходов, политики маскирования не требуют создавать отдельные представления или хранить замаскированные данные — преобразование выполняется прозрачно, когда пользователи отправляют запрос к таблице.
+
+<div id="basic-maasking-policy">
+  ### Базовая политика маскирования
+</div>
+
+Чтобы продемонстрировать политики маскирования, создадим таблицу `orders`, содержащую информацию о клиентах:
+
+```sql
+CREATE TABLE orders (
+    user_id UInt32,
+    name String,
+    email String,
+    phone String,
+    total_amount Decimal(10,2),
+    order_date Date,
+    shipping_address String
+)
+ENGINE = MergeTree()
+ORDER BY user_id;
+
+INSERT INTO orders VALUES
+    (1001, 'John Smith', 'john.smith@gmail.com', '555-123-4567', 299.99, '2024-01-15', '123 Main St, New York, NY 10001'),
+    (1002, 'Sarah Johnson', 'sarah.johnson@outlook.com', '555-987-6543', 149.50, '2024-01-16', '456 Oak Ave, Los Angeles, CA 90210'),
+    (1003, 'Michael Brown', 'mbrown@company.com', '555-456-7890', 599.00, '2024-01-17', '789 Pine Rd, Chicago, IL 60601'),
+    (1004, 'Emily Rogers', 'emily.rogers@yahoo.com', '555-321-0987', 89.99, '2024-01-18', '321 Elm St, Houston, TX 77001'),
+    (1005, 'David Wilson', 'dwilson@email.net', '555-654-3210', 449.75, '2024-01-19', '654 Cedar Blvd, Phoenix, AZ 85001');
+```
+
+Теперь создайте роль для пользователей, которые должны видеть маскированные данные:
+
+```sql
+CREATE ROLE masked_data_viewer;
+```
+
+Создайте политику маскирования для роли `masked_data_viewer`:
+
+```sql
+CREATE MASKING POLICY mask_pii_data ON orders
+    UPDATE
+        name = replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****'),
+        email = replaceRegexpOne(email, '^(.{2})[^@]*(@.*)$', '\\1****\\2'),
+        phone = replaceRegexpOne(phone, '^(\\d{3})-(\\d{3})-(\\d{4})$', '\\1-***-\\3'),
+        shipping_address = replaceRegexpOne(shipping_address, '^[^,]+,\\s*(.*)$', '*** \\1')
+    TO masked_data_viewer;
+```
+
+Когда пользователь с ролью `masked_data_viewer` выполняет запрос к таблице `orders`, он автоматически видит замаскированные данные:
+
+```sql title="Query"
+SELECT * FROM orders ORDER BY user_id;
+```
+
+```response title="Response (for masked_data_viewer role)"
+┌─user_id─┬─name─────────┬─email──────────────┬─phone────────┬─total_amount─┬─order_date─┬─shipping_address──────────┐
+│    1001 │ John ****    │ jo****@gmail.com   │ 555-***-4567 │       299.99 │ 2024-01-15 │ *** New York, NY 10001    │
+│    1002 │ Sarah ****   │ sa****@outlook.com │ 555-***-6543 │        149.5 │ 2024-01-16 │ *** Los Angeles, CA 90210 │
+│    1003 │ Michael **** │ mb****@company.com │ 555-***-7890 │          599 │ 2024-01-17 │ *** Chicago, IL 60601     │
+│    1004 │ Emily ****   │ em****@yahoo.com   │ 555-***-0987 │        89.99 │ 2024-01-18 │ *** Houston, TX 77001     │
+│    1005 │ David ****   │ dw****@email.net   │ 555-***-3210 │       449.75 │ 2024-01-19 │ *** Phoenix, AZ 85001     │
+└─────────┴──────────────┴────────────────────┴──────────────┴──────────────┴────────────┴───────────────────────────┘
+```
+
+Пользователи без роли `masked_data_viewer` видят исходные данные без маскировки.
+
+<div id="conditional-masking">
+  ### Условное маскирование
+</div>
+
+Вы можете использовать условие `WHERE`, чтобы применять маскирование только к определённым строкам. Например, чтобы маскировать только заказы с высокой стоимостью:
+
+```sql
+CREATE MASKING POLICY mask_high_value_orders ON orders
+    UPDATE
+        name = replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****'),
+        email = replaceRegexpOne(email, '^(.{2})[^@]*(@.*)$', '\\1****\\2')
+    WHERE total_amount > 200
+    TO masked_data_viewer;
+```
+
+<div id="multiple-policies-with-priority">
+  ### Несколько политик с приоритетом
+</div>
+
+Когда к одному и тому же столбцу применяются несколько политик маскирования, используйте предложение `PRIORITY`, чтобы указать, какое преобразование будет применено. Более высокие значения приоритета применяются последними:
+
+```sql
+-- Низкий приоритет: базовое маскирование для всех конфиденциальных данных
+CREATE MASKING POLICY basic_masking ON orders
+    UPDATE
+        name = '****',
+        email = '****@****.com'
+    TO masked_data_viewer
+    PRIORITY 0;
+
+-- Высокий приоритет: более детальное маскирование (переопределяет basic_masking)
+CREATE MASKING POLICY refined_masking ON orders
+    UPDATE
+        name = replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****')
+    WHERE total_amount > 100
+    TO masked_data_viewer
+    PRIORITY 10;
+```
+
+В этом примере для заказов с `total_amount > 100` политика `refined_masking` (приоритет 10) имеет приоритет над политикой `basic_masking` (приоритет 0) для столбца `name`, а для `email` по-прежнему используется базовое маскирование.
+
+<div id="hash-based-masking">
+  ### Маскирование на основе хеша
+</div>
+
+Если вам нужно единообразное маскирование (когда один и тот же вход всегда дает один и тот же замаскированный результат), используйте хеш-функции:
+
+```sql
+CREATE MASKING POLICY hash_sensitive_data ON orders
+    UPDATE
+        email = concat(toString(cityHash64(email)), '@masked.com'),
+        phone = concat('555-', toString(cityHash64(phone) % 10000000))
+    TO masked_data_viewer;
+```
+
+<div id="managing-masking-policies">
+  ### Управление политиками маскирования
+</div>
+
+Просмотрите все политики маскирования:
+
+```sql
+SHOW MASKING POLICIES;
+```
+
+Удалить политику маскирования:
+
+```sql
+DROP MASKING POLICY mask_pii_data ON orders;
+```
+
+Замените существующую политику:
+
+```sql
+CREATE OR REPLACE MASKING POLICY mask_pii_data ON orders
+    UPDATE name = '[REDACTED]'
+    TO masked_data_viewer;
+```
+
+Подробнее см. в документации [CREATE MASKING POLICY](/ru/reference/statements/create/masking-policy).
+
+<div id="using-string-functions">
+  ## Использование функций замены строк
+</div>
+
+Для базовых сценариев маскирования данных семейство функций `replace` предлагает удобный способ скрытия данных:
+
+| Function                                                                                               | Description                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`replaceOne`](/ru/reference/functions/regular-functions/string-replace-functions#replaceOne)             | Заменяет первое вхождение подстроки в исходной строке на указанную строку замены.                                                                    |
+| [`replaceAll`](/ru/reference/functions/regular-functions/string-replace-functions#replaceAll)             | Заменяет все вхождения подстроки в исходной строке на указанную строку замены.                                                                       |
+| [`replaceRegexpOne`](/ru/reference/functions/regular-functions/string-replace-functions#replaceRegexpOne) | Заменяет первое вхождение подстроки в исходной строке, соответствующей шаблону регулярного выражения (в синтаксисе re2), на указанную строку замены. |
+| [`replaceRegexpAll`](/ru/reference/functions/regular-functions/string-replace-functions#replaceRegexpAll) | Заменяет все вхождения подстроки в исходной строке, соответствующей шаблону регулярного выражения (в синтаксисе re2), на указанную строку замены.    |
+
+Например, с помощью функции `replaceOne` можно заменить имя &quot;John Smith&quot; на заполнитель `[CUSTOMER_NAME]`:
+
+```sql title="Query"
+SELECT replaceOne(
+    'Customer John Smith called about his account',
+    'John Smith',
+    '[CUSTOMER_NAME]'
+) AS anonymized_text;
+```
+
+```response title="Response"
+┌─anonymized_text───────────────────────────────────┐
+│ Customer [CUSTOMER_NAME] called about his account │
+└───────────────────────────────────────────────────┘
+```
+
+В более общем виде можно использовать `replaceRegexpOne`, чтобы заменить любое имя клиента:
+
+```sql title="Query"
+SELECT 
+    replaceRegexpAll(
+        'Customer John Smith called. Later, Mary Johnson and Bob Wilson also called.',
+        '\\b[A-Z][a-z]+ [A-Z][a-z]+\\b',
+        '[CUSTOMER_NAME]'
+    ) AS anonymized_text;
+```
+
+```response title="Response"
+┌─anonymized_text───────────────────────────────────────────────────────────────────────┐
+│ [CUSTOMER_NAME] Smith called. Later, [CUSTOMER_NAME] and [CUSTOMER_NAME] also called. │
+└───────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Или можно замаскировать номер социального страхования, оставив только последние 4 цифры, с помощью функции `replaceRegexpAll`.
+
+```sql title="Query"
+SELECT replaceRegexpAll(
+    'SSN: 123-45-6789',
+    '(\d{3})-(\d{2})-(\d{4})',
+    'XXX-XX-\3'
+) AS masked_ssn;
+```
+
+В приведённом выше запросе `\3` используется для подстановки третьей группы захвата в результирующую строку, что даёт:
+
+```response title="Response"
+┌─masked_ssn───────┐
+│ SSN: XXX-XX-6789 │
+└──────────────────┘
+```
+
+<div id="masked-views">
+  ## Создание маскированных `VIEW`
+</div>
+
+[`VIEW`](/ru/reference/statements/create/view) можно использовать вместе с упомянутыми выше строковыми функциями, чтобы преобразовывать столбцы, содержащие конфиденциальные данные, прежде чем показывать их пользователю.
+При этом исходные данные остаются неизменными, а пользователи, выполняющие запросы к представлению, видят только замаскированные данные.
+
+Для примера представим, что у нас есть таблица, в которой хранятся записи о заказах клиентов.
+Нужно сделать так, чтобы группа сотрудников могла просматривать эту информацию, но не видела полные данные клиентов.
+
+Выполните запрос ниже, чтобы создать пример таблицы `orders` и вставить в неё несколько вымышленных записей о заказах клиентов:
+
+```sql
+CREATE TABLE orders (
+    user_id UInt32,
+    name String,
+    email String,
+    phone String,
+    total_amount Decimal(10,2),
+    order_date Date,
+    shipping_address String
+)
+ENGINE = MergeTree()
+ORDER BY user_id;
+
+INSERT INTO orders VALUES
+    (1001, 'John Smith', 'john.smith@gmail.com', '555-123-4567', 299.99, '2024-01-15', '123 Main St, New York, NY 10001'),
+    (1002, 'Sarah Johnson', 'sarah.johnson@outlook.com', '555-987-6543', 149.50, '2024-01-16', '456 Oak Ave, Los Angeles, CA 90210'),
+    (1003, 'Michael Brown', 'mbrown@company.com', '555-456-7890', 599.00, '2024-01-17', '789 Pine Rd, Chicago, IL 60601'),
+    (1004, 'Emily Rogers', 'emily.rogers@yahoo.com', '555-321-0987', 89.99, '2024-01-18', '321 Elm St, Houston, TX 77001'),
+    (1005, 'David Wilson', 'dwilson@email.net', '555-654-3210', 449.75, '2024-01-19', '654 Cedar Blvd, Phoenix, AZ 85001');
+```
+
+Создайте представление `masked_orders`:
+
+```sql
+CREATE VIEW masked_orders AS
+SELECT
+    user_id,
+    replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****') AS name,
+    replaceRegexpOne(email, '^(.{0})[^@]*(@.*)$', '\\1****\\2') AS email,
+    replaceRegexpOne(phone, '^(\\d{3})-(\\d{3})-(\\d{4})$', '\\1-***-\\3') AS phone,
+    total_amount,
+    order_date,
+    replaceRegexpOne(shipping_address, '^[^,]+,\\s*(.*)$', '*** \\1') AS shipping_address
+FROM orders;
+```
+
+В предложении `SELECT` запроса на создание представления выше мы задаём преобразования с помощью `replaceRegexpOne` для полей `name`, `email`, `phone` и `shipping_address` — именно эти поля содержат конфиденциальную информацию, которую мы хотим частично замаскировать.
+
+Выберите данные из представления:
+
+```sql title="Query"
+SELECT * FROM masked_orders
+```
+
+```response title="Response"
+┌─user_id─┬─name─────────┬─email──────────────┬─phone────────┬─total_amount─┬─order_date─┬─shipping_address──────────┐
+│    1001 │ John ****    │ jo****@gmail.com   │ 555-***-4567 │       299.99 │ 2024-01-15 │ *** New York, NY 10001    │
+│    1002 │ Sarah ****   │ sa****@outlook.com │ 555-***-6543 │        149.5 │ 2024-01-16 │ *** Los Angeles, CA 90210 │
+│    1003 │ Michael **** │ mb****@company.com │ 555-***-7890 │          599 │ 2024-01-17 │ *** Chicago, IL 60601     │
+│    1004 │ Emily ****   │ em****@yahoo.com   │ 555-***-0987 │        89.99 │ 2024-01-18 │ *** Houston, TX 77001     │
+│    1005 │ David ****   │ dw****@email.net   │ 555-***-3210 │       449.75 │ 2024-01-19 │ *** Phoenix, AZ 85001     │
+└─────────┴──────────────┴────────────────────┴──────────────┴──────────────┴────────────┴───────────────────────────┘
+```
+
+Обратите внимание, что данные, возвращаемые представлением, частично замаскированы, что скрывает конфиденциальную информацию.
+Вы также можете создать несколько представлений с разными уровнями маскирования — в зависимости от того, какой уровень привилегированного доступа к информации есть у пользователя, просматривающего данные.
+
+Чтобы пользователи могли обращаться только к представлению, возвращающему замаскированные данные, а не к таблице с исходными незамаскированными данными, следует использовать [ролевое управление доступом](/ru/products/cloud/reference/security/console-roles), чтобы у определённых ролей были привилегии только на выборку из представления.
+
+Сначала создайте роль:
+
+```sql
+CREATE ROLE masked_orders_viewer;
+```
+
+Затем выдайте роли привилегию `SELECT` на представление:
+
+```sql
+GRANT SELECT ON masked_orders TO masked_orders_viewer;
+```
+
+Поскольку роли в ClickHouse аддитивны, необходимо убедиться, что пользователи, которым должен быть доступен только маскированный VIEW, не имеют привилегии `SELECT` на базовую таблицу ни через одну роль.
+
+Поэтому для надежности следует явно отозвать доступ к базовой таблице:
+
+```sql
+REVOKE SELECT ON orders FROM masked_orders_viewer;
+```
+
+Наконец, назначьте роль нужным пользователям:
+
+```sql
+GRANT masked_orders_viewer TO your_user;
+```
+
+Это гарантирует, что пользователи с ролью `masked_orders_viewer` смогут видеть только
+маскированные данные из представления, а не исходные немаскированные данные из таблицы.
+
+<div id="materialized-ephemeral-column-restrictions">
+  ## Использование столбцов `MATERIALIZED` и ограничений доступа на уровне столбцов
+</div>
+
+Если вы не хотите создавать отдельное представление, можно хранить маскированные версии данных вместе с исходными данными.
+Для этого можно использовать [материализованные столбцы](/ru/reference/statements/create/table#materialized).
+Значения таких столбцов автоматически вычисляются по указанному материализованному выражению при вставке строк,
+и их можно использовать для создания новых столбцов с маскированными версиями данных.
+
+Возвращаясь к предыдущему примеру, вместо создания отдельного `VIEW` для маскированных данных теперь создадим маскированные столбцы с помощью `MATERIALIZED`:
+
+```sql
+DROP TABLE IF EXISTS orders;
+CREATE TABLE orders (
+    user_id UInt32,
+    name String,
+    name_masked String MATERIALIZED replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****'),
+    email String,
+    email_masked String MATERIALIZED replaceRegexpOne(email, '^(.{0})[^@]*(@.*)$', '\\1****\\2'),
+    phone String,
+    phone_masked String MATERIALIZED replaceRegexpOne(phone, '^(\\d{3})-(\\d{3})-(\\d{4})$', '\\1-***-\\3'),
+    total_amount Decimal(10,2),
+    order_date Date,
+    shipping_address String,
+    shipping_address_masked String MATERIALIZED replaceRegexpOne(shipping_address, '^[^,]+,\\s*(.*)$', '*** \\1')
+)
+ENGINE = MergeTree()
+ORDER BY user_id;
+
+INSERT INTO orders VALUES
+    (1001, 'John Smith', 'john.smith@gmail.com', '555-123-4567', 299.99, '2024-01-15', '123 Main St, New York, NY 10001'),
+    (1002, 'Sarah Johnson', 'sarah.johnson@outlook.com', '555-987-6543', 149.50, '2024-01-16', '456 Oak Ave, Los Angeles, CA 90210'),
+    (1003, 'Michael Brown', 'mbrown@company.com', '555-456-7890', 599.00, '2024-01-17', '789 Pine Rd, Chicago, IL 60601'),
+    (1004, 'Emily Rogers', 'emily.rogers@yahoo.com', '555-321-0987', 89.99, '2024-01-18', '321 Elm St, Houston, TX 77001'),
+    (1005, 'David Wilson', 'dwilson@email.net', '555-654-3210', 449.75, '2024-01-19', '654 Cedar Blvd, Phoenix, AZ 85001');
+```
+
+Если теперь выполнить следующий запрос SELECT, вы увидите, что маскированные данные «материализуются» при вставке и сохраняются вместе с исходными, немаскированными данными.
+Необходимо явно выбирать маскированные столбцы, поскольку по умолчанию ClickHouse не включает материализованные столбцы в запросы `SELECT *`.
+
+```sql title="Query"
+SELECT
+    *,
+    name_masked,
+    email_masked,
+    phone_masked,
+    shipping_address_masked
+FROM orders
+ORDER BY user_id ASC
+```
+
+```response title="Response"
+   ┌─user_id─┬─name──────────┬─email─────────────────────┬─phone────────┬─total_amount─┬─order_date─┬─shipping_address───────────────────┬─name_masked──┬─email_masked───────┬─phone_masked─┬─shipping_address_masked────┐
+1. │    1001 │ John Smith    │ john.smith@gmail.com      │ 555-123-4567 │       299.99 │ 2024-01-15 │ 123 Main St, New York, NY 10001    │ John ****    │ jo****@gmail.com   │ 555-***-4567 │ **** New York, NY 10001    │
+2. │    1002 │ Sarah Johnson │ sarah.johnson@outlook.com │ 555-987-6543 │        149.5 │ 2024-01-16 │ 456 Oak Ave, Los Angeles, CA 90210 │ Sarah ****   │ sa****@outlook.com │ 555-***-6543 │ **** Los Angeles, CA 90210 │
+3. │    1003 │ Michael Brown │ mbrown@company.com        │ 555-456-7890 │          599 │ 2024-01-17 │ 789 Pine Rd, Chicago, IL 60601     │ Michael **** │ mb****@company.com │ 555-***-7890 │ **** Chicago, IL 60601     │
+4. │    1004 │ Emily Rogers  │ emily.rogers@yahoo.com    │ 555-321-0987 │        89.99 │ 2024-01-18 │ 321 Elm St, Houston, TX 77001      │ Emily ****   │ em****@yahoo.com   │ 555-***-0987 │ **** Houston, TX 77001     │
+5. │    1005 │ David Wilson  │ dwilson@email.net         │ 555-654-3210 │       449.75 │ 2024-01-19 │ 654 Cedar Blvd, Phoenix, AZ 85001  │ David ****   │ dw****@email.net   │ 555-***-3210 │ **** Phoenix, AZ 85001     │
+   └─────────┴───────────────┴───────────────────────────┴──────────────┴──────────────┴────────────┴────────────────────────────────────┴──────────────┴────────────────────┴──────────────┴────────────────────────────┘
+```
+
+Чтобы пользователи могли получать доступ только к столбцам с маскированными данными, можно снова использовать [управление доступом на основе ролей](/ru/products/cloud/reference/security/console-roles), чтобы у определённых ролей были привилегии на выборку только из маскированных столбцов таблицы `orders`.
+
+Заново создайте роль, которую мы создали ранее:
+
+```sql
+DROP ROLE IF EXISTS masked_order_viewer;
+CREATE ROLE masked_order_viewer;
+```
+
+Затем предоставьте право `SELECT` на таблицу `orders`:
+
+```sql
+GRANT SELECT ON orders TO masked_data_reader;
+```
+
+Отзовите доступ к конфиденциальным столбцам:
+
+```sql
+REVOKE SELECT(name) ON orders FROM masked_data_reader;
+REVOKE SELECT(email) ON orders FROM masked_data_reader;
+REVOKE SELECT(phone) ON orders FROM masked_data_reader;
+REVOKE SELECT(shipping_address) ON orders FROM masked_data_reader;
+```
+
+Наконец, назначьте роль нужным пользователям:
+
+```sql
+GRANT masked_orders_viewer TO your_user;
+```
+
+Если вы хотите хранить в таблице `orders` только маскированные данные,
+можно пометить чувствительные немаскированные столбцы как [`EPHEMERAL`](/ru/reference/statements/create/table#ephemeral),
+тогда столбцы этого типа не будут сохраняться в таблице.
+
+```sql
+DROP TABLE IF EXISTS orders;
+CREATE TABLE orders (
+    user_id UInt32,
+    name String EPHEMERAL,
+    name_masked String MATERIALIZED replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****'),
+    email String EPHEMERAL,
+    email_masked String MATERIALIZED replaceRegexpOne(email, '^(.{2})[^@]*(@.*)$', '\\1****\\2'),
+    phone String EPHEMERAL,
+    phone_masked String MATERIALIZED replaceRegexpOne(phone, '^(\\d{3})-(\\d{3})-(\\d{4})$', '\\1-***-\\3'),
+    total_amount Decimal(10,2),
+    order_date Date,
+    shipping_address String EPHEMERAL,
+    shipping_address_masked String MATERIALIZED replaceRegexpOne(shipping_address, '^([^,]+),\\s*(.*)$', '*** \\2')
+)
+ENGINE = MergeTree()
+ORDER BY user_id;
+
+INSERT INTO orders (user_id, name, email, phone, total_amount, order_date, shipping_address) VALUES
+    (1001, 'John Smith', 'john.smith@gmail.com', '555-123-4567', 299.99, '2024-01-15', '123 Main St, New York, NY 10001'),
+    (1002, 'Sarah Johnson', 'sarah.johnson@outlook.com', '555-987-6543', 149.50, '2024-01-16', '456 Oak Ave, Los Angeles, CA 90210'),
+    (1003, 'Michael Brown', 'mbrown@company.com', '555-456-7890', 599.00, '2024-01-17', '789 Pine Rd, Chicago, IL 60601'),
+    (1004, 'Emily Rogers', 'emily.rogers@yahoo.com', '555-321-0987', 89.99, '2024-01-18', '321 Elm St, Houston, TX 77001'),
+    (1005, 'David Wilson', 'dwilson@email.net', '555-654-3210', 449.75, '2024-01-19', '654 Cedar Blvd, Phoenix, AZ 85001');
+```
+
+Если выполнить тот же запрос, что и ранее, вы увидите, что в таблицу были вставлены только материализованные замаскированные данные:
+
+```sql title="Query"
+SELECT
+    *,
+    name_masked,
+    email_masked,
+    phone_masked,
+    shipping_address_masked
+FROM orders
+ORDER BY user_id ASC
+```
+
+```response title="Response"
+   ┌─user_id─┬─total_amount─┬─order_date─┬─name_masked──┬─email_masked───────┬─phone_masked─┬─shipping_address_masked───┐
+1. │    1001 │       299.99 │ 2024-01-15 │ John ****    │ jo****@gmail.com   │ 555-***-4567 │ *** New York, NY 10001    │
+2. │    1002 │        149.5 │ 2024-01-16 │ Sarah ****   │ sa****@outlook.com │ 555-***-6543 │ *** Los Angeles, CA 90210 │
+3. │    1003 │          599 │ 2024-01-17 │ Michael **** │ mb****@company.com │ 555-***-7890 │ *** Chicago, IL 60601     │
+4. │    1004 │        89.99 │ 2024-01-18 │ Emily ****   │ em****@yahoo.com   │ 555-***-0987 │ *** Houston, TX 77001     │
+5. │    1005 │       449.75 │ 2024-01-19 │ David ****   │ dw****@email.net   │ 555-***-3210 │ *** Phoenix, AZ 85001     │
+   └─────────┴──────────────┴────────────┴──────────────┴────────────────────┴──────────────┴───────────────────────────┘
+```
+
+<div id="use-query-masking-rules">
+  ## Используйте правила маскирования запросов для данных журналов
+</div>
+
+Пользователи ClickHouse OSS, которым нужно маскировать именно данные в журналах, могут использовать [правила маскирования запросов](/ru/reference/settings/server-settings/settings#query_masking_rules) (маскирование журналов).
+
+Для этого можно определить в конфигурации сервера правила маскирования на основе регулярных выражений.
+Эти правила применяются к запросам и всем сообщениям лога до их сохранения в серверном журнале или системных таблицах (таких как `system.query_log`, `system.text_log` и `system.processes`).
+
+Это помогает предотвратить утечку конфиденциальных данных только в **журналы**.
+Обратите внимание, что результаты запросов при этом не маскируются.
+
+Например, чтобы замаскировать номер социального страхования, можно добавить следующее правило в [конфигурацию сервера](/ru/concepts/features/configuration/server-config/configuration-files):
+
+```yaml
+<query_masking_rules>
+    <rule>
+        <name>hide SSN</name>
+        <regexp>(^|\D)\d{3}-\d{2}-\d{4}($|\D)</regexp>
+        <replace>000-00-0000</replace>
+    </rule>
+</query_masking_rules>
+```

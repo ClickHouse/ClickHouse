@@ -34,6 +34,8 @@
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -205,16 +207,30 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             break;
     }
 
-    /// The formatter always outputs FORMAT before SETTINGS. Ensure children
-    /// are in the same canonical order so that tree hash is stable after
-    /// a formatting roundtrip (regardless of the original clause order).
-    if (query_with_output.format_ast && query_with_output.settings_ast)
+    /// The formatter always outputs the output options in a fixed order:
+    /// INTO OUTFILE (with COMPRESSION/LEVEL), then FORMAT, then SETTINGS.
+    /// The parser, however, may append these children in a different order:
+    /// FORMAT and SETTINGS are allowed in either order above, and for
+    /// `EXPLAIN INSERT ... SELECT ... FORMAT ...` the FORMAT child is attached
+    /// to the query (by `ParserExplainQuery`) before INTO OUTFILE is parsed here.
+    /// Reorder the output-option children into the canonical (formatting) order
+    /// so that the tree hash is stable across a formatting roundtrip, regardless
+    /// of the original clause order. The order is shared with `cloneOutputOptions`
+    /// and `formatImpl` via `ASTQueryWithOutput::output_option_members`.
     {
         auto & ch = query_with_output.children;
-        auto fmt_it = std::find(ch.begin(), ch.end(), query_with_output.format_ast);
-        auto set_it = std::find(ch.begin(), ch.end(), query_with_output.settings_ast);
-        if (fmt_it != ch.end() && set_it != ch.end() && set_it < fmt_it)
-            std::iter_swap(fmt_it, set_it);
+        auto is_output_option = [&](const ASTPtr & child)
+        {
+            return std::any_of(
+                ASTQueryWithOutput::output_option_members.begin(),
+                ASTQueryWithOutput::output_option_members.end(),
+                [&](auto member) { return (query_with_output.*member) && (query_with_output.*member).get() == child.get(); });
+        };
+
+        ch.erase(std::remove_if(ch.begin(), ch.end(), is_output_option), ch.end());
+        for (auto member : ASTQueryWithOutput::output_option_members)
+            if (query_with_output.*member)
+                ch.push_back(query_with_output.*member);
     }
 
     node = std::move(query);

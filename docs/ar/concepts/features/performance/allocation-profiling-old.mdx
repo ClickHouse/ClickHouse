@@ -1,0 +1,234 @@
+---
+description: 'صفحة توضّح تنميط تخصيص الذاكرة في ClickHouse'
+sidebarTitle: 'تنميط تخصيص الذاكرة للإصدارات الأقدم من 25.9'
+slug: /operations/allocation-profiling-old
+title: 'تنميط تخصيص الذاكرة للإصدارات الأقدم من 25.9'
+doc_type: 'reference'
+---
+
+يستخدم ClickHouse ‏[jemalloc](https://github.com/jemalloc/jemalloc) بوصفه مُخصِّص العام للذاكرة. ويأتي jemalloc مزوّدًا ببعض الأدوات لأخذ عينات من التخصيص وتنميطه.
+ولتسهيل تنميط تخصيص الذاكرة، تتوفر أوامر `SYSTEM` إلى جانب أوامر الكلمات المكوّنة من أربعة أحرف (4LW) في Keeper.
+
+<div id="sampling-allocations-and-flushing-heap-profiles">
+  ## أخذ عينات من تخصيصات الذاكرة وتفريغ ملفات تعريف heap
+</div>
+
+إذا كنت تريد أخذ عينات من تخصيصات الذاكرة وإجراء تنميط لها في `jemalloc`، فعليك تشغيل ClickHouse/Keeper مع تمكين التنميط باستخدام متغير البيئة `MALLOC_CONF`:
+
+```sh
+MALLOC_CONF=background_thread:true,prof:true,prof_active:true
+```
+
+سيأخذ `jemalloc` عينات من عمليات تخصيص الذاكرة ويخزّن المعلومات داخليًا.
+
+يمكنك مطالبة `jemalloc` بتفريغ ملف التعريف الحالي عبر تشغيل:
+
+<Tabs>
+  <Tab title="ClickHouse">
+    ```sql
+    SYSTEM JEMALLOC FLUSH PROFILE
+    ```
+  </Tab>
+
+  <Tab title="Keeper">
+    ```sh
+    echo jmfp | nc localhost 9181
+    ```
+  </Tab>
+</Tabs>
+
+افتراضيًا، سيُنشأ ملف تعريف heap في `/tmp/jemalloc_clickhouse._pid_._seqnum_.heap`، حيث إن `_pid_` هو PID الخاص بـ ClickHouse و`_seqnum_` هو رقم التسلسل العام لملف تعريف heap الحالي.
+وبالنسبة إلى Keeper، فالملف الافتراضي هو `/tmp/jemalloc_keeper._pid_._seqnum_.heap`، ويخضع للقواعد نفسها.
+
+يمكن تحديد موقع مختلف بإضافة الخيار `prof_prefix` إلى متغير البيئة `MALLOC_CONF`.
+على سبيل المثال، إذا كنت تريد إنشاء ملفات التعريف في المجلد `/data` بحيث تكون بادئة اسم الملف `my_current_profile`، فيمكنك تشغيل ClickHouse/Keeper باستخدام متغير البيئة التالي:
+
+```sh
+MALLOC_CONF=background_thread:true,prof:true,prof_prefix:/data/my_current_profile
+```
+
+سيُلحَق اسم الملف المُنشأ ببادئة PID ورقمٍ تسلسلي.
+
+<div id="analyzing-heap-profiles">
+  ## تحليل ملفات تعريف heap
+</div>
+
+بعد إنشاء ملفات تعريف heap، يلزم تحليلها.
+ولهذا الغرض، يمكن استخدام أداة `jemalloc` المسماة [jeprof](https://github.com/jemalloc/jemalloc/blob/dev/bin/jeprof.in). ويمكن تثبيتها بعدة طرق:
+
+* باستخدام مدير الحزم في النظام
+* استنساخ [مستودع jemalloc](https://github.com/jemalloc/jemalloc) وتشغيل `autogen.sh` من المجلد الجذر. سيؤدي ذلك إلى توفير البرنامج النصي `jeprof` داخل المجلد `bin`
+
+<Note>
+  يستخدم `jeprof` الأداة `addr2line` لإنشاء stacktraces، وقد يكون ذلك بطيئًا جدًا.
+  إذا كان الأمر كذلك، فيُنصح بتثبيت [تنفيذ بديل](https://github.com/gimli-rs/addr2line) لهذه الأداة.
+
+  ```bash
+  git clone https://github.com/gimli-rs/addr2line.git --depth=1 --branch=0.23.0
+  cd addr2line
+  cargo build --features bin --release
+  cp ./target/release/addr2line path/to/current/addr2line
+  ```
+</Note>
+
+هناك العديد من التنسيقات المختلفة التي يمكن إنشاؤها من ملف تعريف heap باستخدام `jeprof`.
+ويُنصح بتشغيل `jeprof --help` للحصول على معلومات حول طريقة الاستخدام والخيارات المختلفة التي توفرها الأداة.
+
+وبوجه عام، يُستخدم الأمر `jeprof` كما يلي:
+
+```sh
+jeprof path/to/binary path/to/heap/profile --output_format [ > output_file]
+```
+
+إذا أردت مقارنة تخصيصات الذاكرة التي حدثت بين ملفّي تعريف heap، فيمكنك تعيين المعامل `base`:
+
+```sh
+jeprof path/to/binary --base path/to/first/heap/profile path/to/second/heap/profile --output_format [ > output_file]
+```
+
+<div id="examples">
+  ### أمثلة
+</div>
+
+* إذا كنت تريد إنشاء ملف نصي يُكتب فيه كل إجراء في سطر مستقل:
+
+```sh
+jeprof path/to/binary path/to/heap/profile --text > result.txt
+```
+
+* إذا كنت تريد إنشاء ملف PDF يحتوي على مخطّط للاستدعاءات:
+
+```sh
+jeprof path/to/binary path/to/heap/profile --pdf > result.pdf
+```
+
+<div id="generating-flame-graph">
+  ### إنشاء Flame Graph
+</div>
+
+يتيح لك `jeprof` إنشاء collapsed stacks اللازمة لبناء flame graph.
+
+تحتاج إلى استخدام الوسيط `--collapsed`:
+
+```sh
+jeprof path/to/binary path/to/heap/profile --collapsed > result.collapsed
+```
+
+بعد ذلك، يمكنك استخدام العديد من الأدوات المختلفة لعرض collapsed stacks بصريًا.
+
+الأكثر شيوعًا هو [FlameGraph](https://github.com/brendangregg/FlameGraph) الذي يتضمن برنامجًا نصيًا باسم `flamegraph.pl`:
+
+```sh
+cat result.collapsed | /path/to/FlameGraph/flamegraph.pl --color=mem --title="Allocation Flame Graph" --width 2400 > result.svg
+```
+
+أداة أخرى جديرة بالاهتمام هي [speedscope](https://www.speedscope.app/)، وتتيح لك تحليل المكدسات التي جُمِعت بطريقة أكثر تفاعلية.
+
+<div id="controlling-allocation-profiler-during-runtime">
+  ## التحكّم في مُحلِّل التخصيص أثناء التشغيل
+</div>
+
+إذا تم تشغيل ClickHouse/Keeper مع تفعيل المُحلِّل، فستتوفر أوامر إضافية لتعطيل/تفعيل تنميط تخصيص الذاكرة أثناء التشغيل.
+وباستخدام هذه الأوامر، يصبح من الأسهل إجراء تنميط تخصيص الذاكرة على فترات محددة فقط.
+
+لتعطيل المُحلِّل:
+
+<Tabs>
+  <Tab title="ClickHouse">
+    ```sql
+    SYSTEM JEMALLOC DISABLE PROFILE
+    ```
+  </Tab>
+
+  <Tab title="Keeper">
+    ```sh
+    echo jmdp | nc localhost 9181
+    ```
+  </Tab>
+</Tabs>
+
+لتفعيل المُحلِّل:
+
+<Tabs>
+  <Tab title="ClickHouse">
+    ```sql
+    SYSTEM JEMALLOC ENABLE PROFILE
+    ```
+  </Tab>
+
+  <Tab title="Keeper">
+    ```sh
+    echo jmep | nc localhost 9181
+    ```
+  </Tab>
+</Tabs>
+
+يمكنك أيضًا التحكّم في الحالة الابتدائية للمُحلِّل من خلال ضبط الخيار `prof_active`، وهو مفعّل افتراضيًا.
+على سبيل المثال، إذا كنت لا تريد أخذ عينات من التخصيصات أثناء بدء التشغيل، بل بعده فقط، فيمكنك تفعيل المُحلِّل. يمكنك تشغيل ClickHouse/Keeper باستخدام متغير البيئة التالي:
+
+```sh
+MALLOC_CONF=background_thread:true,prof:true,prof_active:false
+```
+
+يمكن تفعيل الـ Profiler لاحقًا.
+
+<div id="additional-options-for-profiler">
+  ## خيارات إضافية للمُحلِّل
+</div>
+
+يتيح `jemalloc` العديد من الخيارات المرتبطة بالمُحلِّل، ويمكن التحكم فيها عبر تعديل متغير البيئة `MALLOC_CONF`.
+على سبيل المثال، يمكن التحكم في الفاصل الزمني بين عينات التخصيص باستخدام `lg_prof_sample`.
+إذا كنت تريد إخراج `ملف تعريف heap` كل N بايت، فيمكنك تفعيل ذلك باستخدام `lg_prof_interval`.
+
+يُنصح بالرجوع إلى [الصفحة المرجعية](https://jemalloc.net/jemalloc.3.html) الخاصة بـ `jemalloc` للحصول على قائمة كاملة بالخيارات.
+
+<div id="other-resources">
+  ## موارد أخرى
+</div>
+
+يكشف ClickHouse/Keeper عن مقاييس مرتبطة بـ `jemalloc` بطرق مختلفة عديدة.
+
+<Warning>
+  **تحذير**
+
+  من المهم الانتباه إلى أن أياً من هذه المقاييس لا يكون متزامناً مع غيره، وقد تختلف القيم فيما بينها.
+</Warning>
+
+<div id="system-table-asynchronous_metrics">
+  ### جدول النظام `asynchronous_metrics`
+</div>
+
+```sql
+SELECT *
+FROM system.asynchronous_metrics
+WHERE metric LIKE '%jemalloc%'
+FORMAT Vertical
+```
+
+[مرجع](/ar/reference/system-tables/asynchronous_metrics)
+
+<div id="system-table-jemalloc_bins">
+  ### جدول النظام `jemalloc_bins`
+</div>
+
+يحتوي على معلومات حول تخصيصات الذاكرة التي أُجريت عبر مُخصِّص jemalloc ضمن فئات أحجام مختلفة (bins)، والمُجمَّعة من جميع الساحات.
+
+[مرجع](/ar/reference/system-tables/jemalloc_bins)
+
+<div id="prometheus">
+  ### Prometheus
+</div>
+
+تُعرَض أيضًا جميع المقاييس المتعلقة بـ `jemalloc` من `asynchronous_metrics` عبر نقطة نهاية Prometheus في كلٍّ من ClickHouse وKeeper.
+
+[مرجع](/ar/reference/settings/server-settings/settings#prometheus)
+
+<div id="jmst-4lw-command-in-keeper">
+  ### الأمر 4LW `jmst` في Keeper
+</div>
+
+يدعم Keeper الأمر 4LW ‏`jmst`، الذي يعرض [إحصاءات المخصِّص الأساسية](https://github.com/jemalloc/jemalloc/wiki/Use-Case%3A-Basic-Allocator-Statistics):
+
+```sh
+echo jmst | nc localhost 9181
+```

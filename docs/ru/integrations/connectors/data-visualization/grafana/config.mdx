@@ -1,0 +1,349 @@
+---
+sidebarTitle: 'Конфигурация плагина'
+slug: /integrations/grafana/config
+description: 'Параметры конфигурации плагина источника данных ClickHouse для Grafana'
+title: 'Настройка источника данных ClickHouse в Grafana'
+doc_type: 'guide'
+keywords: ['конфигурация плагина Grafana', 'настройки источника данных', 'параметры подключения', 'настройка аутентификации', 'параметры плагина']
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Проще всего изменить конфигурацию в интерфейсе Grafana на странице конфигурации плагина, но источники данных также можно [настроить с помощью YAML-файла](https://grafana.com/docs/grafana/latest/administration/provisioning/#data-sources).
+
+На этой странице приведён список параметров, доступных для настройки в плагине ClickHouse, а также фрагменты конфигурации для тех, кто настраивает источник данных с помощью YAML.
+
+Краткий обзор всех параметров и полный список опций конфигурации можно найти [здесь](#all-yaml-options).
+
+<div id="common-settings">
+  ## Общие настройки
+</div>
+
+Экран с примером конфигурации:
+
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_common.webp" alt="Пример безопасной конфигурации для native-протокола" border />
+
+Пример YAML-конфигурации для общих настроек:
+
+```yaml
+jsonData:
+  host: 127.0.0.1 # (required) server address.
+  port: 9000      # (required) server port. For native, defaults to 9440 secure and 9000 insecure. For HTTP, defaults to 8443 secure and 8123 insecure.
+
+  protocol: native # (required) the protocol used for the connection. Can be set to "native" or "http".
+  secure: false    # set to true if the connection is secure.
+
+  username: default # the username used for authentication.
+
+  tlsSkipVerify:     <boolean> # skips TLS verification when set to true.
+  tlsAuth:           <boolean> # set to true to enable TLS client authentication.
+  tlsAuthWithCACert: <boolean> # set to true if CA certificate is provided. Required for verifying self-signed TLS certificates.
+
+secureJsonData:
+  password: secureExamplePassword # the password used for authentication.
+
+  tlsCACert:     <string> # TLS CA certificate
+  tlsClientCert: <string> # TLS client certificate
+  tlsClientKey:  <string> # TLS client key
+```
+
+Обратите внимание, что при сохранении конфигурации из интерфейса добавляется свойство `version`. Оно показывает версию плагина, с которой была сохранена конфигурация.
+
+<div id="http-protocol">
+  ### HTTP-протокол
+</div>
+
+Если выбрать подключение по HTTP-протоколу, отобразятся дополнительные настройки.
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="Дополнительные параметры конфигурации HTTP" border />
+
+<div id="http-path">
+  #### HTTP-путь
+</div>
+
+Если ваш HTTP-сервер доступен по другому URL-пути, укажите его здесь.
+
+```yaml
+jsonData:
+  # без первого слэша
+  path: additional/path/example
+```
+
+<div id="custom-http-headers">
+  #### Пользовательские HTTP-заголовки
+</div>
+
+Вы можете добавлять пользовательские заголовки в запросы, отправляемые на сервер.
+
+Заголовки могут быть либо обычным текстом, либо защищёнными.
+Все имена заголовков хранятся в открытом виде, а защищённые значения заголовков сохраняются в защищённой конфигурации (аналогично полю `password`).
+
+<Warning>
+  **Защищённые значения по HTTP**
+
+  Хотя защищённые значения заголовков безопасно хранятся в конфигурации, само значение всё равно будет передаваться по HTTP, если защищённое соединение отключено.
+</Warning>
+
+Пример YAML для обычных и защищённых заголовков:
+
+```yaml
+jsonData:
+  httpHeaders:
+  - name: X-Example-Plain-Header
+    value: plain text value
+    secure: false
+  - name: X-Example-Secure-Header
+    # "value" исключено
+    secure: true
+secureJsonData:
+  secureHttpHeaders.X-Example-Secure-Header: secure header value
+```
+
+<div id="additional-settings">
+  ## Дополнительные настройки
+</div>
+
+Эти настройки необязательны.
+
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_additional.webp" alt="Пример дополнительных настроек" border />
+
+Пример YAML:
+
+```yaml
+jsonData:
+  defaultDatabase: default # default database loaded by the query builder. Defaults to "default".
+  defaultTable: <string>   # default table loaded by the query builder.
+
+  dialTimeout: 10    # dial timeout when connecting to the server, in seconds. Defaults to "10".
+  queryTimeout: 60   # query timeout when running a query, in seconds. Defaults to 60. This requires permissions on the user, if you get a permission error try setting it to "0" to disable it.
+  validateSql: false # when set to true, will validate the SQL in the SQL editor.
+```
+
+<div id="opentelemetry">
+  ### OpenTelemetry
+</div>
+
+OpenTelemetry (OTel) тесно интегрирован в плагин.
+Данные OpenTelemetry можно экспортировать в ClickHouse с помощью нашего [плагина-экспортёра](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
+Для оптимальной работы рекомендуется настроить OTel и для [журналов](#logs), и для [трассировок](#traces).
+
+Также необходимо настроить эти значения по умолчанию, чтобы включить [ссылки на данные](/ru/integrations/connectors/data-visualization/grafana/query-builder#data-links) — функцию, которая обеспечивает мощные сценарии обсервабилити.
+
+<div id="logs">
+  ### Журналы
+</div>
+
+Чтобы ускорить [построение запросов к журналам](/ru/integrations/connectors/data-visualization/grafana/query-builder#logs), можно задать базу данных и таблицу по умолчанию, а также столбцы для запроса к журналам. Это позволит заранее загрузить в конструктор запросов готовый к выполнению запрос к журналам, что ускорит просмотр на странице Explore в сценариях обсервабилити.
+
+Если вы используете OpenTelemetry, включите переключатель &quot;**Use OTel**&quot; и задайте **таблицу журналов по умолчанию** — `otel_logs`.
+Это автоматически заменит столбцы по умолчанию в соответствии с выбранной версией схемы OTel.
+
+Хотя OpenTelemetry не обязателен для журналов, использование единого набора данных для журналов и трассировки помогает выстроить более удобный процесс обсервабилити с [связыванием данных](/ru/integrations/connectors/data-visualization/grafana/query-builder#data-links).
+
+Пример экрана конфигурации журналов:
+
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_logs.webp" alt="Конфигурация журналов" border />
+
+Пример YAML-конфигурации журналов:
+
+```yaml
+jsonData:
+  logs:
+    defaultDatabase: default # default log database.
+    defaultTable: otel_logs  # default log table. If you're using OTel, this should be set to "otel_logs".
+
+    otelEnabled: false  # set to true if OTel is enabled.
+    otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
+
+    # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
+    timeColumn:       <string> # the primary time column for the log.
+    levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
+    messageColumn: <string> # the log's message/content.
+```
+
+<div id="traces">
+  ### Трассировка
+</div>
+
+Чтобы ускорить [построение запросов для трассировки](/ru/integrations/connectors/data-visualization/grafana/query-builder#traces), можно задать базу данных и таблицу по умолчанию, а также столбцы для запроса трассировки. Это позволит заранее загрузить в конструктор запросов готовый к выполнению поисковый запрос по трассировке, что ускорит просмотр данных на странице Explore для задач обсервабилити.
+
+Если вы используете OpenTelemetry, следует включить переключатель &quot;**Use OTel**&quot; и задать **таблицу трассировки по умолчанию** `otel_traces`.
+Это автоматически заменит столбцы по умолчанию в соответствии с выбранной версией схемы OTel.
+Хотя OpenTelemetry не обязателен, эта возможность лучше всего работает при использовании его схемы для трассировки.
+
+Пример экрана конфигурации трассировки:
+
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_traces.webp" alt="Конфигурация трассировки" border />
+
+Пример YAML-конфигурации трассировки:
+
+```yaml
+jsonData:
+  traces:
+    defaultDatabase: default  # default trace database.
+    defaultTable: otel_traces # default trace table. If you're using OTel, this should be set to "otel_traces".
+
+    otelEnabled: false  # set to true if OTel is enabled.
+    otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
+
+    # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
+    traceIdColumn:       <string>    # trace ID column.
+    spanIdColumn:        <string>    # span ID column.
+    operationNameColumn: <string>    # operation name column.
+    parentSpanIdColumn:  <string>    # parent span ID column.
+    serviceNameColumn:   <string>    # service name column.
+    durationTimeColumn:  <string>    # duration time column.
+    durationUnitColumn:  <time unit> # duration time unit. Can be set to "seconds", "milliseconds", "microseconds", or "nanoseconds". For OTel the default is "nanoseconds".
+    startTimeColumn:     <string>    # start time column. This is the primary time column for the trace span.
+    tagsColumn:          <string>    # tags column. This is expected to be a map type.
+    serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
+```
+
+<div id="column-aliases">
+  ### Псевдонимы столбцов
+</div>
+
+Псевдонимы столбцов — это удобный способ выполнять запросы к данным, используя другие имена и типы.
+С их помощью можно преобразовать вложенную схему в плоскую, чтобы в Grafana было проще выбирать нужные поля.
+
+Псевдонимы могут быть полезны, если:
+
+* Вы знаете свою схему и большинство её вложенных свойств/типов
+* Вы храните данные в типе Map
+* Вы храните JSON в виде строк
+* Вы часто применяете функции для преобразования выбираемых столбцов
+
+<div id="table-defined-alias-columns">
+  #### ALIAS-столбцы, заданные в таблице
+</div>
+
+ClickHouse изначально поддерживает псевдонимы столбцов и сразу работает с Grafana.
+ALIAS-столбцы можно задавать прямо в таблице.
+
+```sql
+CREATE TABLE alias_example (
+  TimestampNanos DateTime(9),
+  TimestampDate ALIAS toDate(TimestampNanos)
+)
+```
+
+В приведённом выше примере мы создаём псевдоним `TimestampDate`, который преобразует временную метку с точностью до наносекунд в тип `Date`.
+Эти данные, в отличие от первого столбца, не хранятся на диске, а вычисляются во время выполнения запроса.
+Псевдонимы, определённые на уровне таблицы, не возвращаются при `SELECT *`, но это можно настроить в настройках сервера.
+
+Подробнее см. в документации по типу столбца [ALIAS](/ru/reference/statements/create/table#alias).
+
+<div id="column-alias-tables">
+  #### Таблицы псевдонимов столбцов
+</div>
+
+По умолчанию Grafana предлагает столбцы на основе ответа на `DESC table`.
+В некоторых случаях может потребоваться полностью переопределить столбцы, которые видит Grafana.
+Это помогает скрыть схему в Grafana при выборе столбцов, что, в зависимости от сложности таблицы, может улучшить пользовательский опыт.
+
+Преимущество этого подхода перед псевдонимами, заданными в самой таблице, в том, что их можно легко обновлять без изменения таблицы. В некоторых схемах это может насчитывать тысячи записей, что может загромождать определение исходной таблицы. Кроме того, это позволяет скрыть столбцы, которые пользователь должен игнорировать.
+
+Grafana требует, чтобы таблица псевдонимов имела следующую структуру столбцов:
+
+```sql
+CREATE TABLE aliases (
+  `alias` String,  -- The name of the alias, as seen in the Grafana column selector
+  `select` String, -- The SELECT syntax to use in the SQL generator
+  `type` String    -- The type of the resulting column, so the plugin can modify the UI options to match the data type.
+)
+```
+
+Вот как можно воспроизвести поведение столбца `ALIAS` с помощью таблицы псевдонимов:
+
+```sql
+CREATE TABLE example_table (
+  TimestampNanos DateTime(9)
+);
+
+CREATE TABLE example_table_aliases (`alias` String, `select` String, `type` String);
+
+INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
+('TimestampNanos', 'TimestampNanos', 'DateTime(9)'), -- Preserve original column from table (optional)
+('TimestampDate', 'toDate(TimestampNanos)', 'Date'); -- Add new column that converts TimestampNanos to a Date
+```
+
+Затем эту таблицу можно настроить для использования в Grafana. Обратите внимание, что имя может быть любым и даже может быть задано в отдельной базе данных:
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_config_example.webp" alt="Пример конфигурации таблицы псевдонимов" border />
+
+Теперь Grafana будет видеть результаты таблицы псевдонимов вместо результатов `DESC example_table`:
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_select_example.webp" alt="Пример выборки из таблицы псевдонимов" border />
+
+Оба типа использования псевдонимов можно применять для сложных преобразований типов или извлечения полей JSON.
+
+<div id="all-yaml-options">
+  ## Все параметры YAML
+</div>
+
+Ниже приведены все параметры конфигурации YAML, доступные в этом плагине.
+Для некоторых полей указаны примеры значений, а для других — только тип поля.
+
+Дополнительные сведения о настройке источников данных с помощью YAML см. в [документации Grafana](https://grafana.com/docs/grafana/latest/administration/provisioning/#data-sources).
+
+```yaml
+datasources:
+  - name: Example ClickHouse
+    uid: clickhouse-example
+    type: grafana-clickhouse-datasource
+    jsonData:
+      host: 127.0.0.1
+      port: 9000
+      protocol: native
+      secure: false
+      username: default
+      tlsSkipVerify: <boolean>
+      tlsAuth: <boolean>
+      tlsAuthWithCACert: <boolean>
+      defaultDatabase: default
+      defaultTable: <string>
+      dialTimeout: 10
+      queryTimeout: 60
+      validateSql: false
+      httpHeaders:
+      - name: X-Example-Plain-Header
+        value: plain text value
+        secure: false
+      - name: X-Example-Secure-Header
+        secure: true
+      logs:
+        defaultDatabase: default
+        defaultTable: otel_logs
+        otelEnabled: false
+        otelVersion: latest
+        timeColumn: <string>
+        levelColumn: <string>
+        messageColumn: <string>
+      traces:
+        defaultDatabase: default
+        defaultTable: otel_traces
+        otelEnabled: false
+        otelVersion: latest
+        traceIdColumn: <string>
+        spanIdColumn: <string>
+        operationNameColumn: <string>
+        parentSpanIdColumn: <string>
+        serviceNameColumn: <string>
+        durationTimeColumn: <string>
+        durationUnitColumn: <time unit>
+        startTimeColumn: <string>
+        tagsColumn: <string>
+        serviceTagsColumn: <string>
+    secureJsonData:
+      tlsCACert:     <string>
+      tlsClientCert: <string>
+      tlsClientKey:  <string>
+      secureHttpHeaders.X-Example-Secure-Header: secure header value
+```

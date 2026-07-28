@@ -1,0 +1,128 @@
+---
+slug: /about-us/distinctive-features
+sidebarTitle: 'ClickHouseがユニークな理由'
+description: 'ClickHouseが他のデータベース管理システムと一線を画す理由を理解する'
+title: 'ClickHouseの特徴'
+keywords: ['圧縮', '二次索引','カラム指向']
+doc_type: 'guide'
+---
+
+<div id="true-column-oriented-database-management-system">
+  ## 真のカラム指向データベース管理システム
+</div>
+
+真のカラム指向DBMSでは、値と一緒に余分なデータは格納されません。つまり、値の横に長さを表す「数値」を格納しなくて済むよう、固定長の値をサポートする必要があります。たとえば、10億個の UInt8 型の値は、非圧縮で約 1 GB を消費するはずであり、そうでなければ CPU 使用率に大きく影響します。伸長の速度 (CPU 使用率) は主に非圧縮データの量に依存するため、非圧縮時であっても、データはできるだけコンパクトに (いかなる「ごみ」もなく) 格納することが重要です。
+
+これは、異なるカラムの値を個別に格納できても、HBase、Bigtable、Cassandra、Hypertable のように別の用途向けに最適化されているため、分析クエリを効率的に処理できないシステムとは対照的です。これらのシステムで得られるスループットは毎秒 10 万行程度であり、毎秒数億行には達しません。
+
+最後に、ClickHouse は単一のデータベースではなく、データベース管理システムです。これにより、サーバーを再設定して再起動しなくても、実行時にテーブルやデータベースを作成し、データを読み込み、クエリを実行できます。
+
+<div id="data-compression">
+  ## データ圧縮
+</div>
+
+カラム指向DBMSの中には、データ圧縮を使用しないものもあります。しかし、優れた性能を実現するうえで、データ圧縮は重要な役割を果たします。
+
+ClickHouseは、ディスク容量とCPU使用量のトレードオフが異なる効率的な汎用圧縮コーデックに加え、特定の種類のデータ向けに[専用コーデック](/ja/reference/statements/create/table#specialized-codecs)も提供しています。これにより、時系列データベースのような、より特化したデータベースとも競合し、それらを上回る性能を発揮できます。
+
+<div id="disk-storage-of-data">
+  ## データのディスクストレージ
+</div>
+
+データを主キーで物理的にソートされた状態に保つことで、特定の値や値の範囲に基づくデータ抽出を、数十ミリ秒未満という低レイテンシで行えます。SAP HANA や Google PowerDrill などの一部のカラム指向 DBMSs は、RAM 上でしか動作できません。このアプローチでは、リアルタイム分析に必要以上のハードウェアコストがかかります。
+
+ClickHouse は一般的なハードドライブ上で動作するように設計されているため、データストレージの GB あたりのコストを低く抑えられます。一方で、SSD や追加の RAM が利用可能な場合は、それらも十分に活用できます。
+
+<div id="parallel-processing-on-multiple-cores">
+  ## 複数コアでの並列処理
+</div>
+
+大規模なクエリは自然に並列化され、現在のサーバーで利用可能な必要なリソースをすべて活用します。
+
+<div id="distributed-processing-on-multiple-servers">
+  ## 複数サーバーでの分散処理
+</div>
+
+前述した列指向DBMSのほとんどは、分散クエリ処理をサポートしていません。
+
+ClickHouse では、データを異なる分片に配置できます。各分片は、耐障害性のために使用されるレプリカのグループにすることもできます。ユーザーが意識することなく、すべての分片がクエリの並列実行に使用されます。
+
+<div id="sql-support">
+  ## SQL のサポート
+</div>
+
+ClickHouse は、ANSI SQL 標準とおおむね互換性のある、SQL ベースの[宣言型クエリ言語](/ja/reference/home)をサポートしています。
+
+サポートされるクエリには、[GROUP BY](/ja/reference/statements/select/group-by)、[ORDER BY](/ja/reference/statements/select/order-by)、[FROM](/ja/reference/statements/select/from)句内のサブクエリ、[JOIN](/ja/reference/statements/select/join)句、[IN](/ja/reference/statements/in)演算子、[ウィンドウ関数](/ja/reference/functions/window-functions/index)、およびスカラーサブクエリが含まれます。
+
+執筆時点では、相関 (従属) サブクエリはサポートされていませんが、今後サポートされる可能性があります。
+
+<div id="vector-engine">
+  ## ベクトル演算エンジン
+</div>
+
+データはカラム単位で格納されるだけでなく、ベクトル (カラムの一部) 単位で処理されるため、高いCPU効率を実現できます。
+
+<div id="real-time-data-updates">
+  ## リアルタイムのデータ挿入
+</div>
+
+ClickHouse は、主キーを持つテーブルをサポートしています。主キーの範囲を対象とするクエリを高速に実行できるように、データはマージツリーによって段階的にソートされます。そのため、テーブルには継続的にデータを追加できます。新しいデータの取り込み時にロックは取得されません。
+
+<div id="primary-index">
+  ## プライマリインデックス
+</div>
+
+データを主キーで物理的にソートしておくことで、特定の値や値の範囲に基づいて、数十ミリ秒未満の低レイテンシでデータを抽出できます。
+
+<div id="secondary-indexes">
+  ## セカンダリ索引
+</div>
+
+他のデータベース管理システムとは異なり、ClickHouse のセカンダリ索引は特定の行や行の範囲を指すものではありません。代わりに、一部のデータパーツに含まれるすべての行がクエリの絞り込み条件に一致しないことをデータベースが事前に判断し、それらをまったく読み込まないようにします。そのため、これらは [データスキッピングインデックス](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) と呼ばれます。
+
+<div id="suitable-for-online-queries">
+  ## オンラインクエリに適している
+</div>
+
+多くのOLAPデータベース管理システムは、サブ秒レベルのレイテンシでオンラインクエリを処理することを前提としていません。ほかのシステムでは、レポートの生成に数十秒、場合によっては数分かかっても許容されることがよくあります。さらに長くかかることもあり、その結果、システムはレポートをオフラインで準備せざるを得なくなります (事前に作成しておくか、「後でもう一度お試しください」と返す形です) 。
+
+ClickHouseでいう「低レイテンシ」とは、クエリを遅延なく、事前に結果を用意することなく、UIページの読み込み時点でその場で処理できること、つまり *オンライン* であることを意味します。
+
+<div id="support-for-approximated-calculations">
+  ## 近似計算のサポート
+</div>
+
+ClickHouse には、精度とパフォーマンスを引き換えにできるさまざまな方法があります。
+
+1. 異なる値の数、中央値、分位点を近似的に計算するための集約関数。
+2. データの一部 ([SAMPLE](/ja/reference/statements/select/sample)) に基づいてクエリを実行し、近似結果を取得する方法。この場合、ディスクから読み取られるデータ量も比例して少なくなります。
+3. すべてのキーではなく、限られた数のランダムなキーに対して集約を実行する方法。データ内のキー分布が一定の条件を満たしていれば、使用するリソースを抑えながら、十分に正確な結果を得られます。
+
+<div id="adaptive-join-algorithm">
+  ## 適応型JOINアルゴリズム
+</div>
+
+ClickHouse は、複数のテーブルを [JOIN](/ja/reference/statements/select/join) する際の方法を適応的に選択し、ハッシュ結合を優先しつつ、大きなテーブルが複数ある場合はマージ結合に切り替えます。
+
+<div id="data-replication-and-data-integrity-support">
+  ## データレプリケーションとデータ整合性のサポート
+</div>
+
+ClickHouse は非同期のマルチマスター レプリケーションを使用します。利用可能な任意のレプリカに書き込まれると、残りのすべてのレプリカはバックグラウンドでそのコピーを取得します。システムは、異なるレプリカ間で同一のデータを維持します。ほとんどの障害からの復旧は自動的に行われ、複雑な場合は半自動的に行われます。
+
+詳しくは、[データレプリケーション](/ja/reference/engines/table-engines/mergetree-family/replication) のセクションを参照してください。
+
+<div id="role-based-access-control">
+  ## ロールベースアクセス制御
+</div>
+
+ClickHouse は、SQLクエリによるユーザーアカウント管理を実装しており、ANSI SQL標準や一般的なリレーショナルデータベース管理システムと同様の[ロールベースアクセス制御の設定](/ja/concepts/features/security/access-rights)をサポートしています。
+
+<div id="clickhouse-features-that-can-be-considered-disadvantages">
+  ## 欠点と見なされることがある特徴
+</div>
+
+1. 本格的なトランザクションはありません。
+2. すでに挿入されたデータを高頻度・低レイテンシで変更または削除するのは苦手です。データのクリーンアップや変更のために、たとえば [GDPR](https://gdpr-info.eu) への準拠を目的としたバッチ削除や更新は利用できます。
+3. スパースインデックスのため、ClickHouse はキーによって単一の行を取得するポイントクエリにはあまり効率的ではありません。

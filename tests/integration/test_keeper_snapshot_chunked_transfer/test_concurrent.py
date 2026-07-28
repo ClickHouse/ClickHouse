@@ -28,6 +28,12 @@ generate_keeper_configs(configs_dir, [
 
 _small_buf_cfg = os.path.join(configs_dir, "small_remote_buf_user.xml")
 
+# Recovery here means replaying raft logs and installing a snapshot (over S3, with a
+# 1 KiB read buffer) before the node accepts connections. Under msan/tsan that legitimately
+# took ~95 s in CI, so the wait must be generous: start_clickhouse returns as soon as the
+# server is ready, so a large upper bound costs nothing on fast runs.
+RESTART_TIMEOUT_SECONDS = 180
+
 cluster = ClickHouseCluster(__file__)
 
 node_conc1 = cluster.add_instance("node_conc1", main_configs=["configs/enable_keeper_conc1.xml"], stay_alive=True, with_remote_database_disk=False)
@@ -78,7 +84,7 @@ def test_concurrent_followers_fetch_snapshot(started_cluster, nodes):
     fill_test_tree(leader_zk, prefix)
 
     def start_and_wait(node):
-        node.start_clickhouse(20)
+        node.start_clickhouse(RESTART_TIMEOUT_SECONDS)
         keeper_utils.wait_until_connected(cluster, node)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(lagging)) as pool:

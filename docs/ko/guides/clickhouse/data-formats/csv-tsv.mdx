@@ -1,0 +1,421 @@
+---
+sidebarTitle: 'CSV 및 TSV'
+slug: /integrations/data-formats/csv-tsv
+title: 'ClickHouse에서 CSV 및 TSV 데이터 다루기'
+description: 'ClickHouse에서 CSV 및 TSV 데이터를 다루는 방법을 설명하는 페이지'
+keywords: ['CSV 형식', 'TSV 형식', '쉼표로 구분된 값', '탭으로 구분된 값', '데이터 가져오기']
+doc_type: 'guide'
+---
+
+ClickHouse는 CSV 데이터의 가져오기와 내보내기를 지원합니다. CSV file은 header row, 사용자 지정 구분 기호, 이스케이프 기호 등 포맷 세부 사항이 서로 다를 수 있으므로, ClickHouse는 각 상황을 효율적으로 처리할 수 있도록 다양한 포맷과 설정을 제공합니다.
+
+<div id="importing-data-from-a-csv-file">
+  ## CSV 파일에서 데이터 가져오기
+</div>
+
+데이터를 가져오기 전에 적절한 구조의 테이블을 생성하겠습니다:
+
+```sql
+CREATE TABLE sometable
+(
+    `path` String,
+    `month` Date,
+    `hits` UInt32
+)
+ENGINE = MergeTree
+ORDER BY tuple(month, path)
+```
+
+[CSV 파일](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_small.csv)의 데이터를 `sometable` 테이블로 가져오려면, 파일 내용을 `clickhouse-client`에 직접 파이프로 전달할 수 있습니다:
+
+```bash
+clickhouse-client -q "INSERT INTO sometable FORMAT CSV" < data_small.csv
+```
+
+ClickHouse에 CSV 형식의 데이터를 수집하고 있음을 알리기 위해 [FORMAT CSV](/ko/reference/formats/CSV/CSV)를 사용합니다. 또는 [FROM INFILE](/ko/reference/statements/insert-into#inserting-data-from-a-file) 절을 사용해 로컬 파일에서 데이터를 로드할 수도 있습니다:
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data_small.csv'
+FORMAT CSV
+```
+
+여기서는 ClickHouse가 파일 포맷을 인식할 수 있도록 `FORMAT CSV` 절을 사용합니다. 또한 [url()](/ko/reference/functions/table-functions/url) 함수를 사용해 URL에서 직접 데이터를 로드하거나, [s3()](/ko/reference/functions/table-functions/s3) 함수를 사용해 S3 파일에서 데이터를 로드할 수도 있습니다.
+
+<Tip>
+  `file()` 및 `INFILE`/`OUTFILE`에서는 포맷을 명시적으로 지정하지 않아도 됩니다.
+  이 경우 ClickHouse가 파일 확장자를 기준으로 포맷을 자동으로 감지합니다.
+</Tip>
+
+<div id="csv-files-with-headers">
+  ### 헤더가 포함된 CSV 파일
+</div>
+
+[CSV 파일 has headers](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_small_headers.csv)와 같이 CSV 파일에 헤더가 포함되어 있다고 가정합니다:
+
+```bash
+head data-small-headers.csv
+```
+
+```response
+"path","month","hits"
+"Akiba_Hebrew_Academy","2017-08-01",241
+"Aegithina_tiphia","2018-02-01",34
+```
+
+이 파일의 데이터를 가져오려면 [CSVWithNames](/ko/reference/formats/CSV/CSVWithNames) 포맷을 사용할 수 있습니다:
+
+```bash
+clickhouse-client -q "INSERT INTO sometable FORMAT CSVWithNames" < data_small_headers.csv
+```
+
+이 경우 ClickHouse는 파일에서 데이터를 가져올 때 첫 번째 행을 건너뜁니다.
+
+<Tip>
+  [version](https://github.com/ClickHouse/ClickHouse/releases) 23.1부터 `CSV` 포맷을 사용하면 ClickHouse가 CSV 파일의 헤더를 자동으로 감지하므로 `CSVWithNames` 또는 `CSVWithNamesAndTypes`를 사용할 필요가 없습니다.
+</Tip>
+
+<div id="csv-files-with-custom-delimiters">
+  ### 사용자 지정 구분 기호가 있는 CSV 파일
+</div>
+
+CSV 파일에서 쉼표가 아닌 구분 기호를 사용하는 경우, 해당 기호를 설정하려면 [format&#95;csv&#95;delimiter](/ko/reference/settings/formats#format_csv_delimiter) 옵션을 사용할 수 있습니다:
+
+```sql
+SET format_csv_delimiter = ';'
+```
+
+이제 CSV 파일에서 가져오면 쉼표 대신 `;` 기호가 구분자로 사용됩니다.
+
+<div id="skipping-lines-in-a-csv-file">
+  ### CSV 파일에서 줄 건너뛰기
+</div>
+
+경우에 따라 CSV 파일에서 데이터를 가져올 때 처음 몇 줄을 건너뛸 수 있습니다. 이는 [input&#95;format&#95;csv&#95;skip&#95;first&#95;lines](/ko/reference/settings/formats#input_format_csv_skip_first_lines) 옵션을 사용해 설정할 수 있습니다:
+
+```sql
+SET input_format_csv_skip_first_lines = 10
+```
+
+이 경우 CSV 파일의 처음 10개 행을 건너뜁니다:
+
+```sql
+SELECT count(*) FROM file('data-small.csv', CSV)
+```
+
+```response
+┌─count()─┐
+│     990 │
+└─────────┘
+```
+
+[파일](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_small.csv)에는 1k개의 행이 있지만, 처음 10개를 건너뛰도록 했으므로 ClickHouse는 990개만 로드했습니다.
+
+<Tip>
+  `file()` 함수를 사용할 때 ClickHouse Cloud에서는 파일이 있는 머신의 `clickhouse client`에서 명령을 실행해야 합니다. 또 다른 방법으로는 [`clickhouse-local`](/ko/concepts/features/tools-and-utilities/clickhouse-local)을 사용하여 로컬에서 파일을 살펴볼 수 있습니다.
+</Tip>
+
+<div id="treating-null-values-in-csv-files">
+  ### CSV 파일에서 NULL 값 다루기
+</div>
+
+NULL 값은 파일을 생성한 애플리케이션에 따라 서로 다르게 인코딩될 수 있습니다. 기본적으로 ClickHouse는 CSV에서 NULL 값으로 `\N`을 사용합니다. 하지만 [format&#95;csv&#95;null&#95;representation](/ko/reference/settings/formats#format_tsv_null_representation) 옵션을 사용하면 이를 변경할 수 있습니다.
+
+다음과 같은 CSV 파일이 있다고 가정하겠습니다:
+
+```bash
+> cat nulls.csv
+Donald,90
+Joe,Nothing
+Nothing,70
+```
+
+이 파일에서 데이터를 로드하면 ClickHouse는 `Nothing`을 String으로 처리하는데, 이는 올바른 동작입니다:
+
+```sql
+SELECT * FROM file('nulls.csv')
+```
+
+```response
+┌─c1──────┬─c2──────┐
+│ Donald  │ 90      │
+│ Joe     │ Nothing │
+│ Nothing │ 70      │
+└─────────┴─────────┘
+```
+
+ClickHouse가 `Nothing`을 `NULL`로 처리하도록 하려면, 다음 옵션으로 설정할 수 있습니다:
+
+```sql
+SET format_csv_null_representation = 'Nothing'
+```
+
+이제 예상한 위치에 `NULL`이 표시됩니다:
+
+```sql
+SELECT * FROM file('nulls.csv')
+```
+
+```response
+┌─c1─────┬─c2───┐
+│ Donald │ 90   │
+│ Joe    │ ᴺᵁᴸᴸ │
+│ ᴺᵁᴸᴸ   │ 70   │
+└────────┴──────┘
+```
+
+<div id="tsv-tab-separated-files">
+  ## TSV (탭 구분) 파일
+</div>
+
+탭으로 구분된 데이터 포맷은 데이터 교환용 포맷으로 널리 사용됩니다. [TSV file](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_small.tsv)에서 ClickHouse로 데이터를 로드하려면 [TabSeparated](/ko/reference/formats/TabSeparated/TabSeparated) 포맷을 사용합니다:
+
+```bash
+clickhouse-client -q "INSERT INTO sometable FORMAT TabSeparated" < data_small.tsv
+```
+
+헤더가 포함된 TSV 파일을 처리할 수 있도록 [TabSeparatedWithNames](/ko/reference/formats/TabSeparated/TabSeparatedWithNames) 포맷도 지원합니다. 또한 CSV와 마찬가지로 [input&#95;format&#95;tsv&#95;skip&#95;first&#95;lines](/ko/reference/settings/formats#input_format_tsv_skip_first_lines) 옵션을 사용해 처음 X줄을 건너뛸 수 있습니다.
+
+<div id="raw-tsv">
+  ### Raw TSV
+</div>
+
+경우에 따라 TSV 파일은 탭과 줄바꿈 문자를 이스케이프하지 않고 저장되기도 합니다. 이러한 파일을 처리하려면 [TabSeparatedRaw](/ko/reference/formats/TabSeparated/TabSeparatedRaw)를 사용하십시오.
+
+<div id="exporting-to-csv">
+  ## CSV로 내보내기
+</div>
+
+앞선 예시에서 사용한 모든 포맷은 데이터 내보내기에도 사용할 수 있습니다. 테이블(또는 쿼리)의 데이터를 CSV 형식으로 내보내려면 동일한 `FORMAT` 절을 사용합니다:
+
+```sql
+SELECT *
+FROM sometable
+LIMIT 5
+FORMAT CSV
+```
+
+```response
+"Akiba_Hebrew_Academy","2017-08-01",241
+"Aegithina_tiphia","2018-02-01",34
+"1971-72_Utah_Stars_season","2016-10-01",1
+"2015_UEFA_European_Under-21_Championship_qualification_Group_8","2015-12-01",73
+"2016_Greater_Western_Sydney_Giants_season","2017-05-01",86
+```
+
+CSV 파일에 헤더 행을 추가하려면 [CSVWithNames](/ko/reference/formats/CSV/CSVWithNames) 포맷을 사용합니다:
+
+```sql
+SELECT *
+FROM sometable
+LIMIT 5
+FORMAT CSVWithNames
+```
+
+```response
+"path","month","hits"
+"Akiba_Hebrew_Academy","2017-08-01",241
+"Aegithina_tiphia","2018-02-01",34
+"1971-72_Utah_Stars_season","2016-10-01",1
+"2015_UEFA_European_Under-21_Championship_qualification_Group_8","2015-12-01",73
+"2016_Greater_Western_Sydney_Giants_season","2017-05-01",86
+```
+
+<div id="saving-exported-data-to-a-csv-file">
+  ### 내보낸 데이터를 CSV 파일로 저장하기
+</div>
+
+내보낸 데이터를 파일로 저장하려면 [INTO...OUTFILE](/ko/reference/statements/select/into-outfile) 절을 사용할 수 있습니다:
+
+```sql
+SELECT *
+FROM sometable
+INTO OUTFILE 'out.csv'
+FORMAT CSVWithNames
+```
+
+```response
+36838935 rows in set. Elapsed: 1.304 sec. Processed 36.84 million rows, 1.42 GB (28.24 million rows/s., 1.09 GB/s.)
+```
+
+ClickHouse가 3,600만 행을 CSV 파일로 저장하는 데 **~1**초밖에 걸리지 않았다는 점에 주목하십시오.
+
+<div id="exporting-csv-with-custom-delimiters">
+  ### 사용자 지정 구분 기호로 CSV 내보내기
+</div>
+
+쉼표가 아닌 다른 구분 기호를 사용하려면 [format&#95;csv&#95;delimiter](/ko/reference/settings/formats#format_csv_delimiter) 설정 옵션을 사용할 수 있습니다:
+
+```sql
+SET format_csv_delimiter = '|'
+```
+
+이제 ClickHouse는 CSV 형식에서 구분자로 `|`를 사용합니다:
+
+```sql
+SELECT *
+FROM sometable
+LIMIT 5
+FORMAT CSV
+```
+
+```response
+"Akiba_Hebrew_Academy"|"2017-08-01"|241
+"Aegithina_tiphia"|"2018-02-01"|34
+"1971-72_Utah_Stars_season"|"2016-10-01"|1
+"2015_UEFA_European_Under-21_Championship_qualification_Group_8"|"2015-12-01"|73
+"2016_Greater_Western_Sydney_Giants_season"|"2017-05-01"|86
+```
+
+<div id="exporting-csv-for-windows">
+  ### Windows용 CSV 내보내기
+</div>
+
+Windows 환경에서 CSV 파일이 문제없이 작동하도록 하려면 [output&#95;format&#95;csv&#95;crlf&#95;end&#95;of&#95;line](/ko/reference/settings/formats#output_format_csv_crlf_end_of_line) 옵션을 활성화하는 것이 좋습니다. 이렇게 하면 줄바꿈에 `\n` 대신 `\r\n`을 사용합니다:
+
+```sql
+SET output_format_csv_crlf_end_of_line = 1;
+```
+
+<div id="schema-inference-for-csv-files">
+  ## CSV 파일의 스키마 추론
+</div>
+
+알 수 없는 CSV 파일을 다뤄야 하는 경우가 많으므로, 컬럼에 어떤 타입을 사용해야 하는지 확인해야 합니다. ClickHouse는 기본적으로 주어진 CSV 파일을 분석하여 데이터 타입을 추론하려고 시도합니다. 이를 &quot;스키마 추론&quot;이라고 합니다. 감지된 데이터 타입은 [file()](/ko/reference/functions/table-functions/file) 함수와 함께 `DESCRIBE` statement를 사용해 확인할 수 있습니다:
+
+```sql
+DESCRIBE file('data-small.csv', CSV)
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(String) │              │                    │         │                  │                │
+│ c2   │ Nullable(Date)   │              │                    │         │                  │                │
+│ c3   │ Nullable(Int64)  │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+여기서는 ClickHouse가 CSV 파일의 컬럼 타입을 효율적으로 추론할 수 있습니다. ClickHouse가 추론하지 않도록 하려면 다음 옵션으로 이 기능을 비활성화할 수 있습니다:
+
+```sql
+SET input_format_csv_use_best_effort_in_schema_inference = 0
+```
+
+이 경우 모든 컬럼 타입은 `String`으로 처리됩니다.
+
+<div id="exporting-and-importing-csv-with-explicit-column-types">
+  ### 명시적으로 컬럼 타입을 지정해 CSV 내보내기 및 가져오기
+</div>
+
+ClickHouse에서는 [CSVWithNamesAndTypes](/ko/reference/formats/CSV/CSVWithNamesAndTypes)(및 기타 *WithNames 포맷 계열)를 사용해 데이터를 내보낼 때 컬럼 타입을 명시적으로 지정할 수도 있습니다:
+
+```sql
+SELECT *
+FROM sometable
+LIMIT 5
+FORMAT CSVWithNamesAndTypes
+```
+
+```response
+"path","month","hits"
+"String","Date","UInt32"
+"Akiba_Hebrew_Academy","2017-08-01",241
+"Aegithina_tiphia","2018-02-01",34
+"1971-72_Utah_Stars_season","2016-10-01",1
+"2015_UEFA_European_Under-21_Championship_qualification_Group_8","2015-12-01",73
+"2016_Greater_Western_Sydney_Giants_season","2017-05-01",86
+```
+
+이 포맷에는 헤더 행 2개가 포함됩니다. 하나는 컬럼 이름을, 다른 하나는 컬럼 타입을 담고 있습니다. 이를 통해 ClickHouse(및 기타 앱)는 [이러한 파일](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_csv_types.csv)에서 데이터를 로드할 때 컬럼 타입을 식별할 수 있습니다:
+
+```sql
+DESCRIBE file('data_csv_types.csv', CSVWithNamesAndTypes)
+```
+
+```response
+┌─name──┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ path  │ String │              │                    │         │                  │                │
+│ month │ Date   │              │                    │         │                  │                │
+│ hits  │ UInt32 │              │                    │         │                  │                │
+└───────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+이제 ClickHouse는 추측하지 않고 (두 번째) 헤더 행을 기준으로 컬럼 타입을 식별합니다.
+
+<div id="custom-delimiters-separators-and-escaping-rules">
+  ## 사용자 지정 구분 기호, 분리 기호 및 이스케이프 규칙
+</div>
+
+복잡한 경우에도 텍스트 데이터는 매우 세부적으로 사용자 지정된 방식으로 포맷되면서도 여전히 일정한 구조를 가질 수 있습니다. ClickHouse는 이러한 경우를 위해 특수한 [CustomSeparated](/ko/reference/formats/CustomSeparated/CustomSeparated) 포맷을 제공하며, 이 포맷에서는 사용자 지정 이스케이프 규칙, 구분 기호, 줄 구분자, 시작/종료 기호를 설정할 수 있습니다.
+
+파일에 다음과 같은 데이터가 있다고 가정하겠습니다:
+
+```text
+row('Akiba_Hebrew_Academy';'2017-08-01';241),row('Aegithina_tiphia';'2018-02-01';34),...
+```
+
+개별 행은 `row()`로 감싸져 있고, 줄은 `,`로 구분되며, 개별 값은 `;`로 구분된다는 것을 알 수 있습니다. 이 경우 다음 설정을 사용해 이 파일에서 데이터를 읽을 수 있습니다:
+
+```sql
+SET format_custom_row_before_delimiter = 'row(';
+SET format_custom_row_after_delimiter = ')';
+SET format_custom_field_delimiter = ';';
+SET format_custom_row_between_delimiter = ',';
+SET format_custom_escaping_rule = 'Quoted';
+```
+
+이제 사용자 지정 포맷으로 된 [파일](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_small_custom.txt)에서 데이터를 로드할 수 있습니다:
+
+```sql
+SELECT *
+FROM file('data_small_custom.txt', CustomSeparated)
+LIMIT 3
+```
+
+```response
+┌─c1────────────────────────┬─────────c2─┬──c3─┐
+│ Akiba_Hebrew_Academy      │ 2017-08-01 │ 241 │
+│ Aegithina_tiphia          │ 2018-02-01 │  34 │
+│ 1971-72_Utah_Stars_season │ 2016-10-01 │   1 │
+└───────────────────────────┴────────────┴─────┘
+```
+
+헤더를 올바르게 내보내고 가져오려면 [CustomSeparatedWithNames](/ko/reference/formats/CustomSeparated/CustomSeparatedWithNames)도 사용할 수 있습니다. 더 복잡한 경우를 처리하려면 [정규식 및 Template](/ko/guides/clickhouse/data-formats/templates-regex) 포맷도 살펴보십시오.
+
+<div id="working-with-large-csv-files">
+  ## 대용량 CSV 파일 다루기
+</div>
+
+CSV 파일은 매우 클 수 있으며, ClickHouse는 파일 크기와 관계없이 효율적으로 처리합니다. 대용량 파일은 일반적으로 압축된 형태로 제공되며, ClickHouse는 처리 전에 압축을 해제하지 않아도 이를 지원합니다. 삽입 시 `COMPRESSION` 절을 사용할 수 있습니다.
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data_csv.csv.gz'
+COMPRESSION 'gzip' FORMAT CSV
+```
+
+`COMPRESSION` 절을 생략해도 ClickHouse는 파일 확장자를 바탕으로 파일 압축 방식을 추정합니다. 같은 방식으로 파일을 압축 포맷으로 직접 내보낼 수도 있습니다:
+
+```sql
+SELECT *
+FROM for_csv
+INTO OUTFILE 'data_csv.csv.gz'
+COMPRESSION 'gzip' FORMAT CSV
+```
+
+압축된 `data_csv.csv.gz` 파일이 생성됩니다.
+
+<div id="other-formats">
+  ## 기타 포맷
+</div>
+
+ClickHouse는 다양한 시나리오와 플랫폼을 지원하기 위해 텍스트와 바이너리를 포함한 여러 포맷을 지원합니다. 다음 문서에서 더 많은 포맷과 사용 방법을 살펴보십시오.
+
+* **CSV 및 TSV 포맷**
+* [Parquet](/ko/guides/clickhouse/data-formats/parquet)
+* [JSON 포맷](/ko/guides/clickhouse/data-formats/json/intro)
+* [Regex 및 Template](/ko/guides/clickhouse/data-formats/templates-regex)
+* [네이티브 및 바이너리 포맷](/ko/guides/clickhouse/data-formats/binary)
+* [SQL 포맷](/ko/guides/clickhouse/data-formats/sql)
+
+또한 [clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)도 확인해 보십시오. 이는 ClickHouse 서버 없이 로컬/원격 파일을 다룰 수 있는 이식성 높은 다기능 도구입니다.

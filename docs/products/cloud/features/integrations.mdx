@@ -1,0 +1,55 @@
+---
+sidebarTitle: 'ClickPipes & language clients'
+slug: /manage/integrations
+title: 'ClickPipes & language clients'
+description: 'ClickPipes and Language Client integrations for ClickHouse Cloud'
+doc_type: 'landing-page'
+keywords: ['integrations', 'cloud features', 'clickpipes', 'language clients', 'connectors']
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+ClickHouse Cloud allows you to connect the tools and services that you love.
+
+## Managed integration pipelines for ClickHouse Cloud {#clickpipes}
+
+ClickPipes is a managed integration platform that makes ingesting data from a diverse set of sources as simple as clicking a few buttons.
+Designed for the most demanding workloads, ClickPipes's robust and scalable architecture ensures consistent performance and reliability.
+ClickPipes can be used for long-term streaming needs or one-time data loading job.
+
+| Name | Type | Status | Description |
+|------|------|--------|-------------|
+| <img src="/images/integrations/logos/kafka.svg" alt="Apache Kafka logo" className="integration-table-logo" width="24" height="24" /> [Apache Kafka](/integrations/clickpipes/kafka/index) | <Badge color="blue">Streaming</Badge> | <Badge color="green">Stable</Badge> | Configure ClickPipes and start ingesting streaming data from Apache Kafka into ClickHouse Cloud. |
+| <img src="/images/integrations/logos/confluent.svg" alt="Confluent Cloud logo" className="integration-table-logo" width="24" height="24" /> Confluent Cloud | <Badge color="blue">Streaming</Badge> | <Badge color="green">Stable</Badge> | Unlock the combined power of Confluent and ClickHouse Cloud through our direct integration. |
+| <img src="/images/integrations/logos/logo_redpanda.webp" alt="Redpanda logo" className="integration-table-logo" width="24" height="24" /> Redpanda | <Badge color="blue">Streaming</Badge> | <Badge color="green">Stable</Badge> | Configure ClickPipes and start ingesting streaming data from Redpanda into ClickHouse Cloud. |
+| <img src="/images/integrations/logos/msk.svg" alt="AWS MSK logo" className="integration-table-logo" width="24" height="24" /> AWS MSK | <Badge color="blue">Streaming</Badge> | <Badge color="green">Stable</Badge> | Configure ClickPipes and start ingesting streaming data from AWS MSK into ClickHouse Cloud. |
+| <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Azure Event Hubs logo" className="integration-table-logo" width="24" height="24" /> Azure Event Hubs | <Badge color="blue">Streaming</Badge> | <Badge color="green">Stable</Badge> | Configure ClickPipes and start ingesting streaming data from Azure Event Hubs into ClickHouse Cloud. |
+| <img src="/images/integrations/logos/warpstream.svg" alt="WarpStream logo" className="integration-table-logo" width="24" height="24" /> WarpStream | <Badge color="blue">Streaming</Badge> | <Badge color="green">Stable</Badge> | Configure ClickPipes and start ingesting streaming data from WarpStream into ClickHouse Cloud. |
+| <img src="/images/integrations/logos/amazon_kinesis_logo.svg" alt="Amazon Kinesis logo" className="integration-table-logo" width="24" height="24" /> [Amazon Kinesis](/integrations/clickpipes/kinesis/overview) | <Badge color="blue">Streaming</Badge> | <Badge color="green">Stable</Badge> | Configure ClickPipes and start ingesting streaming data from Amazon Kinesis into ClickHouse Cloud. |
+| <img src="/images/integrations/logos/google_pubsub.svg" alt="Google Cloud Pub/Sub logo" className="integration-table-logo" width="24" height="24" /> [GCP Pub/Sub](/integrations/clickpipes/pubsub/overview) | <Badge color="blue">Streaming</Badge> | <Badge color="purple">Private Preview</Badge> | Configure ClickPipes and start ingesting streaming data from Google Cloud Pub/Sub into ClickHouse Cloud. |
+| <img src="/images/integrations/logos/amazon_s3_logo.svg" alt="Amazon S3 logo" className="integration-table-logo" width="24" height="24" /> Amazon S3 | <Badge color="orange">Object Storage</Badge> | <Badge color="green">Stable</Badge> | Configure ClickPipes to ingest large volumes of data from object storage. |
+| <img src="/images/integrations/logos/gcs.svg" alt="Google Cloud Storage logo" className="integration-table-logo" width="24" height="24" /> Google Cloud Storage | <Badge color="orange">Object Storage</Badge> | <Badge color="green">Stable</Badge> | Configure ClickPipes to ingest large volumes of data from object storage. |
+| <img src="/images/integrations/logos/digitalocean.svg" alt="Digital Ocean logo" className="integration-table-logo" width="24" height="24" /> DigitalOcean Spaces | <Badge color="orange">Object Storage</Badge> | <Badge color="green">Stable</Badge> | Configure ClickPipes to ingest large volumes of data from object storage. |
+| <img src="/images/integrations/logos/azureblobstorage.svg" alt="Azure Blob Storage logo" className="integration-table-logo" width="24" height="24" /> Azure Blob Storage | <Badge color="orange">Object Storage</Badge> | <Badge color="green">Stable</Badge> | Configure ClickPipes to ingest large volumes of data from object storage. |
+| <img src="/images/integrations/logos/postgresql.svg" alt="Postgres logo" className="integration-table-logo" width="24" height="24" /> [Postgres](/integrations/clickpipes/postgres/index) | <Badge color="purple">DBMS</Badge> | <Badge color="green">Stable</Badge> | Configure ClickPipes and start ingesting data from Postgres into ClickHouse Cloud. |
+| <img src="/images/integrations/logos/mysql.svg" alt="MySQL logo" className="integration-table-logo" width="24" height="24" /> [MySQL](/integrations/clickpipes/mysql/index) | <Badge color="purple">DBMS</Badge> | <Badge color="yellow">Public Beta</Badge> | Configure ClickPipes and start ingesting data from MySQL into ClickHouse Cloud. |
+| <img src="/images/integrations/logos/mongodb.svg" alt="MongoDB logo" className="integration-table-logo" width="24" height="24" /> [MongoDB](/integrations/clickpipes/mongodb/index) | <Badge color="purple">DBMS</Badge> | <Badge color="purple">Private Preview</Badge> | Configure ClickPipes and start ingesting data from MongoDB into ClickHouse Cloud. |
+
+## Language client integrations {#language-client-integrations}
+
+ClickHouse offers a number of language client integrations, for which the documentation for each is linked below.
+
+| Page                                                                    | Description                                                                      |
+|-------------------------------------------------------------------------|----------------------------------------------------------------------------------|
+| [C++](/concepts/features/interfaces/cpp)                                          | C++ Client Library and userver Asynchronous Framework                            |
+| [C#](/integrations/language-clients/csharp/overview)                                  | Learn how to connect your C# projects to ClickHouse.                         |
+| [Go](/integrations/language-clients/go/index)                                          | Learn how to connect your Go projects to ClickHouse.                             |
+| [JavaScript](/integrations/language-clients/js)                          | Learn how to connect your JS projects to ClickHouse with the official JS client. |
+| [Java](/integrations/language-clients/java/index)                                      | Learn more about several integrations for Java and ClickHouse.                   |
+| [Python](/integrations/language-clients/python/index)                                  | Learn how to connect your Python projects to ClickHouse.                         |
+| [Rust](/integrations/language-clients/rust)                                      | Learn how to connect your Rust projects to ClickHouse.                           |
+| [Third-party clients](/integrations/language-clients/third-party/client-libraries) | Learn more about client libraries from third party developers.                   |
+
+In addition to ClickPipes, language clients, ClickHouse supports a host of other integrations, spanning core integrations,
+partner integrations and community integrations.
+For a complete list see the ["Integrations"](/integrations/home) section of the docs.

@@ -1,0 +1,56 @@
+---
+description: 'تثبيت ClickHouse'
+keywords: ['clickhouse', 'تثبيت', 'البدء', 'البدء السريع']
+sidebarTitle: 'تثبيت'
+slug: /install
+title: 'إرشادات التثبيت'
+doc_type: 'guide'
+---
+
+import {galaxyOnClick} from "/snippets/ar/lib/galaxy.jsx";
+
+<Card title="ClickHouse Cloud" icon="cloud" href="/ar/get-started/setup/cloud" cta="عرض الدليل">
+  ابدأ فورًا من دون الحاجة إلى تحديد حجم عنقودك أو توسيعه. تتولى ClickHouse Cloud مهام تحديد الحجم، والتوسّع
+  ، والأمان، والموثوقية، والترقيات.
+</Card>
+
+<br />
+
+إذا كنت تفضّل الإدارة الذاتية، فاختر أحد خيارات ClickHouse مفتوح المصدر أدناه.
+استخدم برنامج التثبيت السريع النصي أو واجهة سطر الأوامر `clickhousectl` لإعداد محلي، أو ثبّت
+ClickHouse Server من الحزم أو الملفات التنفيذية لنشره في بيئة الإنتاج.
+
+<h3 className="install-group-heading">التطوير المحلي</h3>
+
+<p className="install-group-description">
+  شغّل ClickHouse على جهازك لبناء التطبيقات واختبارها والتجربة.
+  يوفّر لك التثبيت السريع ملفًا تنفيذيًا واحدًا بسرعة، أو استخدم clickhousectl
+  لتثبيت الإصدارات والخوادم المحلية وإدارتها.
+</p>
+
+<Columns cols={4}>
+  <Card title="التثبيت السريع" icon="/images/install/linux.svg" href="/ar/get-started/setup/self-managed/quick-install" />
+
+  <Card title="clickhousectl (CLI)" icon="terminal" href="/ar/get-started/setup/self-managed/clickhousectl" />
+
+  <Card title="Docker" icon="/images/install/docker.svg" href="/ar/get-started/setup/self-managed/docker" />
+
+  <Card title="البناء من المصدر" icon="code" href="/ar/get-started/setup/self-managed/advanced" />
+</Columns>
+
+<h3 className="install-group-heading">خادم الإنتاج</h3>
+
+<p className="install-group-description">
+  ثبّت ClickHouse Server من الحزم أو الملفات التنفيذية من أجل
+  نشر طويل الأمد على بنيتك التحتية الخاصة.
+</p>
+
+<Columns cols={4}>
+  <Card title="Debian/Ubuntu" icon="/images/install/DebianUbuntu.svg" href="/ar/get-started/setup/self-managed/debian-ubuntu" />
+
+  <Card title="Redhat" icon="/images/install/redhat.svg" href="/ar/get-started/setup/self-managed/redhat" />
+
+  <Card title="NixOS" icon="/images/install/nixos.svg" href="/ar/get-started/setup/self-managed/nixos" />
+
+  <Card title="لينكس آخر" icon="/images/install/linux.svg" href="/ar/get-started/setup/self-managed/other-linux" />
+</Columns>

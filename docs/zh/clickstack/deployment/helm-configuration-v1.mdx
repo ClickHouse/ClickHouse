@@ -1,0 +1,358 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-configuration-v1
+title: 'Helm 配置（v1.x）'
+description: '为 v1.x ClickStack Helm 部署配置 API 密钥、Secret 和入口'
+doc_type: 'guide'
+keywords: ['ClickStack 配置', 'Helm Secret', 'API 密钥设置', '入口配置', 'TLS 设置']
+---
+
+<Warning>
+  **已弃用 — v1.x 图表**
+
+  本页介绍 **v1.x** 内联模板 Helm 图表的配置，该图表目前处于维护模式。有关 v2.x 图表的信息，请参见 [Helm 配置](/zh/clickstack/deployment/helm-configuration)。如需迁移，请参见[升级指南](/zh/clickstack/deployment/helm-upgrade)。
+</Warning>
+
+本指南介绍 ClickStack Helm 部署的配置选项。有关基本安装，请参见 [Helm 部署主指南](/zh/clickstack/deployment/helm-v1)。
+
+<div id="api-key-setup">
+  ## API 密钥设置
+</div>
+
+成功部署 ClickStack 后，请配置 API 密钥以启用遥测数据采集：
+
+1. **通过已配置的入口或服务端点访问你的 HyperDX 实例**
+2. **登录 HyperDX 仪表板**，然后前往团队设置，生成或获取你的 API 密钥
+3. **使用以下任一方法更新你的部署**，添加 API 密钥：
+
+<div id="api-key-values-file">
+  ### 方法 1：通过 Helm upgrade 使用 values 文件更新
+</div>
+
+将 API 密钥 添加到您的 `values.yaml` 中：
+
+```yaml
+hyperdx:
+  apiKey: "your-api-key-here"
+```
+
+然后升级部署：
+
+```shell
+helm upgrade my-clickstack clickstack/clickstack -f values.yaml
+```
+
+<div id="api-key-set-flag">
+  ### 方法 2：通过 Helm upgrade 命令结合 --set 参数更新
+</div>
+
+```shell
+helm upgrade my-clickstack clickstack/clickstack --set hyperdx.apiKey="your-api-key-here"
+```
+
+<div id="restart-pods">
+  ### 重启 Pod (容器组) 以使更改生效
+</div>
+
+更新 API 密钥后，重启 Pod (容器组) 以加载新的配置：
+
+```shell
+kubectl rollout restart deployment my-clickstack-clickstack-app my-clickstack-clickstack-otel-collector
+```
+
+<Note>
+  该 Chart 会自动使用您的 API key 创建一个 Kubernetes secret (`<release-name>-app-secrets`) 。除非您想使用外部 secret，否则无需额外配置 secret。
+</Note>
+
+<div id="secret-management">
+  ## Secret 管理
+</div>
+
+对于 API 密钥或数据库凭据等敏感数据，请使用 Kubernetes Secret 进行管理。
+
+<div id="using-pre-configured-secrets">
+  ### 使用预先配置的 Secret
+</div>
+
+Helm 图表包含一个默认的 Secret 模板，位于 [`charts/clickstack/templates/secrets.yaml`](https://github.com/hyperdxio/helm-charts/blob/main/charts/clickstack/templates/secrets.yaml)。该文件提供了管理 Secret 的基础结构。
+
+如果你需要手动应用 Secret，请修改并应用提供的 `secrets.yaml` 模板：
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hyperdx-secret
+  annotations:
+    "helm.sh/resource-policy": keep
+type: Opaque
+data:
+  API_KEY: <base64-encoded-api-key>
+```
+
+将该 Secret 应用到集群中：
+
+```shell
+kubectl apply -f secrets.yaml
+```
+
+<div id="creating-a-custom-secret">
+  ### 创建自定义 Secret
+</div>
+
+手动创建自定义 Kubernetes Secret：
+
+```shell
+kubectl create secret generic hyperdx-secret \
+  --from-literal=API_KEY=my-secret-api-key
+```
+
+<div id="referencing-a-secret">
+  ### 在 values.yaml 中引用 Secret
+</div>
+
+```yaml
+hyperdx:
+  apiKey:
+    valueFrom:
+      secretKeyRef:
+        name: hyperdx-secret
+        key: API_KEY
+```
+
+<div id="ingress-setup">
+  ## 入口设置
+</div>
+
+若要通过域名公开 HyperDX UI 和 API，请在 `values.yaml` 中启用入口。
+
+<div id="general-ingress-configuration">
+  ### 通用入口配置
+</div>
+
+```yaml
+hyperdx:
+  frontendUrl: "https://hyperdx.yourdomain.com"  # 必须与入口主机一致
+  ingress:
+    enabled: true
+    host: "hyperdx.yourdomain.com"
+```
+
+<Info>
+  **重要配置说明**
+
+  `hyperdx.frontendUrl` 应与入口的主机名保持一致，并包含协议 (例如 `https://hyperdx.yourdomain.com`) 。这样可确保所有生成的链接、Cookie 和重定向都能正常工作。
+</Info>
+
+<div id="enabling-tls">
+  ### 启用 TLS (HTTPS)
+</div>
+
+要通过 HTTPS 保护您的部署：
+
+**1. 使用您的证书和私钥创建一个 TLS Secret：**
+
+```shell
+kubectl create secret tls hyperdx-tls \
+  --cert=path/to/tls.crt \
+  --key=path/to/tls.key
+```
+
+**2. 在入口配置中启用 TLS：**
+
+```yaml
+hyperdx:
+  ingress:
+    enabled: true
+    host: "hyperdx.yourdomain.com"
+    tls:
+      enabled: true
+      tlsSecretName: "hyperdx-tls"
+```
+
+<div id="example-ingress-configuration">
+  ### 示例入口配置
+</div>
+
+供参考，生成的入口资源如下：
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hyperdx-app-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: hyperdx.yourdomain.com
+      http:
+        paths:
+          - path: /(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: my-clickstack-clickstack-app
+                port:
+                  number: 3000
+  tls:
+    - hosts:
+        - hyperdx.yourdomain.com
+      secretName: hyperdx-tls
+```
+
+<div id="common-ingress-pitfalls">
+  ### 常见入口问题
+</div>
+
+**路径与重写配置：**
+
+* 对于 Next.js 和其他 SPA，务必像上文所示那样使用正则路径和重写注解
+* 不要仅使用 `path: /` 而不配置重写，否则会导致静态资源无法正常提供
+
+**`frontendUrl` 与 `ingress.host` 不匹配：**
+
+* 如果两者不一致，可能会导致 cookie、重定向和资源加载出现问题
+
+**TLS 配置不当：**
+
+* 确保你的 TLS secret 有效，并且在入口中被正确引用
+* 如果已启用 TLS，却仍通过 HTTP 访问应用，浏览器可能会拦截不安全内容
+
+**入口控制器版本：**
+
+* 某些功能 (如正则路径和重写) 需要较新的 nginx 入口控制器版本
+* 使用以下命令检查你的版本：
+
+```shell
+kubectl -n ingress-nginx get pods -l app.kubernetes.io/name=ingress-nginx -o jsonpath="{.items[0].spec.containers[0].image}"
+```
+
+<div id="otel-collector-ingress">
+  ## OTel collector 入口
+</div>
+
+如果需要通过入口公开 OTel collector 的端点 (用于链路追踪、指标和日志) ，请使用 `additionalIngresses` 配置。这在需要从集群外发送遥测数据，或为 collector 使用自定义域名时非常有用。
+
+```yaml
+hyperdx:
+  ingress:
+    enabled: true
+    additionalIngresses:
+      - name: otel-collector
+        annotations:
+          nginx.ingress.kubernetes.io/ssl-redirect: "false"
+          nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+          nginx.ingress.kubernetes.io/use-regex: "true"
+        ingressClassName: nginx
+        hosts:
+          - host: collector.yourdomain.com
+            paths:
+              - path: /v1/(traces|metrics|logs)
+                pathType: Prefix
+                port: 4318
+                name: otel-collector
+        tls:
+          - hosts:
+              - collector.yourdomain.com
+            secretName: collector-tls
+```
+
+* 这会为 OTel collector 端点创建一个单独的入口资源
+* 你可以使用不同的域名、配置特定的 TLS 设置，并添加自定义 annotations
+* 正则表达式路径规则允许你通过单条规则转发所有 OTLP 信号 (链路追踪、指标、日志)
+
+<Note>
+  如果你不需要将 OTel collector 对外暴露，可以跳过此配置。对于大多数用户，通用的入口配置已经足够。
+</Note>
+
+<div id="troubleshooting-ingress">
+  ## 入口故障排查
+</div>
+
+**检查入口资源：**
+
+```shell
+kubectl get ingress -A
+kubectl describe ingress <ingress-name>
+```
+
+**检查入口控制器日志：**
+
+```shell
+kubectl logs -l app.kubernetes.io/name=ingress-nginx -n ingress-nginx
+```
+
+**测试资源 URL：**
+
+使用 `curl` 验证静态资源返回的是 JS 而不是 HTML：
+
+```shell
+curl -I https://hyperdx.yourdomain.com/_next/static/chunks/main-xxxx.js
+# 应返回 Content-Type: application/javascript
+```
+
+**浏览器开发者工具：**
+
+* 检查 Network 选项卡中是否有 404，或资源返回的是 HTML 而不是 JS
+* 在控制台中查找类似 `Unexpected token <` 的错误 (说明本应返回 JS 的请求却返回了 HTML)
+
+**检查路径重写：**
+
+* 确保入口不会剥离资源路径，或错误地重写资源路径
+
+**清除浏览器和 CDN 缓存：**
+
+* 更改后，清除浏览器缓存以及所有 CDN/代理缓存，以免继续使用过期资源
+
+<div id="customizing-values">
+  ## 自定义配置值
+</div>
+
+您可以使用 `--set` 参数来自定义设置：
+
+```shell
+helm install my-clickstack clickstack/clickstack --set key=value
+```
+
+或者，创建一个自定义的 `values.yaml`。如需获取默认配置值：
+
+```shell
+helm show values clickstack/clickstack > values.yaml
+```
+
+示例配置：
+
+```yaml
+replicaCount: 2
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+hyperdx:
+  ingress:
+    enabled: true
+    host: hyperdx.example.com
+```
+
+应用自定义配置值：
+
+```shell
+helm install my-clickstack clickstack/clickstack -f values.yaml
+```
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+* [部署选项 (v1.x) ](/zh/clickstack/deployment/helm-deployment-options-v1) - 外部系统和最小化部署
+* [Cloud 部署 (v1.x) ](/zh/clickstack/deployment/helm-cloud-v1) - GKE、EKS 和 AKS 配置
+* [Helm 主指南 (v1.x) ](/zh/clickstack/deployment/helm-v1) - 基本安装
+* [Helm 配置 (v2.x) ](/zh/clickstack/deployment/helm-configuration) - v2.x 配置指南
+* [升级指南](/zh/clickstack/deployment/helm-upgrade) - 从 v1.x 迁移到 v2.x

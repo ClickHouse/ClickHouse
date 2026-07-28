@@ -24,6 +24,7 @@ namespace Setting
     extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsSnappyMode snappy_mode;
 }
 
 namespace ErrorCodes
@@ -57,7 +58,7 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     }
 
     std::unique_ptr<ReadBuffer> input_buffer = with_buffers
-        ? getReadBufferFromASTInsertQuery(ast)
+        ? getReadBufferFromASTInsertQuery(ast, context->getSettingsRef()[Setting::snappy_mode])
         : std::make_unique<EmptyReadBuffer>();
 
     const Settings & settings = context->getSettingsRef();
@@ -81,16 +82,29 @@ Pipe getSourceFromInputFormat(
     Pipe pipe(format);
 
     const auto * ast_insert_query = ast->as<ASTInsertQuery>();
-    if (context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && ast_insert_query->table_id && !input_function)
+    if (context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && !input_function)
     {
-        StoragePtr storage = DatabaseCatalog::instance().getTable(ast_insert_query->table_id, context);
-        auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
-        const auto & columns = metadata_snapshot->getColumns();
-        if (columns.hasDefaults())
+        /// Resolve the destination columns. For a plain table the id is in the query;
+        /// for a table function (remote(), file(), ...) the id is empty, but the resolved
+        /// storage columns (including DEFAULTs) are saved in the context by InterpreterInsertQuery.
+        StorageMetadataHandle metadata_snapshot;
+        const ColumnsDescription * columns = nullptr;
+        if (ast_insert_query->table_id)
+        {
+            StoragePtr storage = DatabaseCatalog::instance().getTable(ast_insert_query->table_id, context);
+            metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+            columns = &metadata_snapshot->getColumns();
+        }
+        else if (const auto & insertion_columns = context->getInsertionTableColumnsDescription())
+        {
+            columns = insertion_columns.get();
+        }
+
+        if (columns && columns->hasDefaults())
         {
             pipe.addSimpleTransform([&](const SharedHeader & cur_header)
             {
-                return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *format, context);
+                return std::make_shared<AddingDefaultsTransform>(cur_header, *columns, *format, context);
             });
         }
     }
@@ -109,7 +123,7 @@ Pipe getSourceFromASTInsertQuery(
     return getSourceFromInputFormat(ast, std::move(format), std::move(context), input_function);
 }
 
-std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
+std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast, SnappyMode snappy_mode)
 {
     const auto * insert_query = ast->as<ASTInsertQuery>();
     if (!insert_query)
@@ -131,7 +145,9 @@ std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
 
         /// Otherwise, it will be detected from file name automatically (by chooseCompressionMethod)
         /// Buffer for reading from file is created and wrapped with appropriate compression method
-        return wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method));
+        return wrapReadBufferWithCompressionMethod(
+            std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method),
+            /*zstd_window_log_max=*/ 0, snappy_mode);
     }
 
     ConcatReadBuffer::Buffers buffers;

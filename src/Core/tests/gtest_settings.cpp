@@ -1,9 +1,13 @@
 #include <gtest/gtest.h>
 
 #include <Common/Exception.h>
+#include <Core/BaseSettings.h>
+#include <Core/Settings.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsEnums.h>
 #include <Core/Field.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 
 namespace
 {
@@ -140,4 +144,35 @@ GTEST_TEST(SettingMySQLDataTypesSupport, SetInvalidString)
     EXPECT_NO_THROW(setting = String(", "));
     ASSERT_TRUE(setting.changed);
     ASSERT_EQ(std::vector<MySQLDataTypesSupport>{}, setting.value);
+}
+
+GTEST_TEST(QueryParameters, RoundTrip)
+{
+    NameToNameMap parameters{{"max_threads", "0"}, {"name", "John's \\ Doe"}, {"empty", ""}};
+
+    WriteBufferFromOwnString out;
+    writeQueryParameters(parameters, out);
+
+    ReadBufferFromString in(out.str());
+    ASSERT_EQ(readQueryParameters(in), parameters);
+}
+
+GTEST_TEST(QueryParameters, DuplicateNameOnTheWireLastOccurrenceWins)
+{
+    /// A driver that appends an override without deduplicating first relies on the last
+    /// occurrence of a repeated Parameter[] key winning, matching the pre-existing behavior
+    /// of routing parameters through a Settings object (BaseSettings::read overwrites the
+    /// same custom setting entry on each occurrence of its name).
+    WriteBufferFromOwnString out;
+    BaseSettingsHelpers::writeString("x", out);
+    BaseSettingsHelpers::writeFlags(BaseSettingsHelpers::Flags::CUSTOM, out);
+    BaseSettingsHelpers::writeString(SettingFieldCustom(Field(String("1"))).toString(), out);
+    BaseSettingsHelpers::writeString("x", out);
+    BaseSettingsHelpers::writeFlags(BaseSettingsHelpers::Flags::CUSTOM, out);
+    BaseSettingsHelpers::writeString(SettingFieldCustom(Field(String("2"))).toString(), out);
+    BaseSettingsHelpers::writeString(std::string_view{}, out);
+
+    ReadBufferFromString in(out.str());
+    NameToNameMap parameters = readQueryParameters(in);
+    ASSERT_EQ(parameters.at("x"), "2");
 }

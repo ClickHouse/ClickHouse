@@ -1,0 +1,31 @@
+-- help with no argument prints usage
+OK
+-- renders an entity (banner with name and type)
+OK
+-- plain rendering has no ANSI escapes and no raw Markdown code fences
+OK
+OK
+-- identifiers with underscores are kept literal (not parsed as italics)
+OK
+-- a SQL code block is rendered indented (with syntax highlighting on a terminal)
+OK
+-- lookup is case-insensitive
+OK
+-- the forms help / man / /help / /man are equivalent
+OK
+OK
+OK
+-- a word matching several entities renders all of them
+OK
+OK
+-- a typo offers similar names (by edit distance)
+OK
+OK
+OK
+-- a word only present in documentation text is suggested by content
+OK
+OK
+-- a completely unknown word finds nothing
+OK
+-- 'help' is still parsed as SQL in clickhouse-client batch mode (not a meta-command)
+OK

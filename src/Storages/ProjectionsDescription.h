@@ -90,6 +90,11 @@ struct ProjectionDescription
     /// during data writing.
     bool has_index_granularity_overrides = false;
 
+    /// WHERE clause AST for filtered projections (Issue #74234).
+    /// When set, only rows matching this predicate are materialized into the projection.
+    /// The optimizer will use a projection only if the query's WHERE implies this condition.
+    ASTPtr where_clause_ast;
+
     /// Parse projection from definition AST
     static ProjectionDescription getProjectionFromAST(
         const ASTPtr & definition_ast,
@@ -195,7 +200,7 @@ struct ProjectionsDescription : public IHints<>
     add(ProjectionDescription && projection, const String & after_projection = String(), bool first = false, bool if_not_exists = false);
     void remove(const String & projection_name, bool if_exists);
 
-    std::vector<String> getAllRegisteredNames() const override;
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
 private:
     /// Keep the sequence of columns and allow to lookup by name.

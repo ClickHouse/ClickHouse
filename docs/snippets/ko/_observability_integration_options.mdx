@@ -1,0 +1,34 @@
+---
+title: 관측성 통합 옵션
+---
+
+<div id="examples">
+  ## 통합 예시
+</div>
+
+외부 통합을 사용하면 조직은 기존 모니터링 워크플로를 유지하고, 익숙한 도구에 대한 팀의 기존 전문성을 활용하며, 현재 프로세스를 중단하거나 대규모 재교육 없이도 ClickHouse 모니터링을 더 광범위한 인프라 관측성에 통합할 수 있습니다.
+팀은 기존 알림 규칙과 에스컬레이션 절차를 ClickHouse 메트릭에 적용하는 동시에, 통합된 관측성 플랫폼에서 데이터베이스 성능을 애플리케이션 및 인프라 상태와 연계해 분석할 수 있습니다. 이러한 접근 방식은 현재 모니터링 환경에 대한 투자 수익을 극대화하고, 통합된 대시보드와 익숙한 도구 인터페이스를 통해 더 빠르게 문제를 해결할 수 있게 합니다.
+
+<div id="grafana">
+  ### Grafana Cloud 모니터링
+</div>
+
+Grafana는 직접 플러그인 통합 방식과 Prometheus 기반 방식으로 ClickHouse 모니터링을 제공합니다. Prometheus 엔드포인트 통합을 사용하면 기존 Grafana Cloud 인프라 내에서 시각화할 수 있으며, 동시에 모니터링 워크로드와 프로덕션 워크로드를 운영 측면에서 분리할 수 있습니다. 구성 방법은 [Grafana의 ClickHouse 문서](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-clickhouse/)를 참조하십시오.
+
+<div id="datadog">
+  ### Datadog 모니터링
+</div>
+
+Datadog는 서비스의 유휴 상태 전환 동작을 고려하면서 클라우드 서비스 모니터링을 제대로 제공하는 전용 API 통합을 개발하고 있습니다. 그때까지는 운영상 분리와 비용 효율적인 모니터링을 위해 ClickHouse Prometheus 엔드포인트를 통한 OpenMetrics 통합 방식을 사용할 수 있습니다. 구성 지침은 [Datadog의 Prometheus 및 OpenMetrics 통합 문서](https://docs.datadoghq.com/integrations/openmetrics/)를 참조하십시오.
+
+<div id="clickstack">
+  ### ClickStack
+</div>
+
+ClickStack는 ClickHouse를 스토리지 engine으로 사용해 로그, 메트릭, 트레이스를 위한 통합 플랫폼을 제공하는, 심층적인 시스템 분석과 디버깅을 위한 ClickHouse의 권장 관측성 솔루션입니다. 이 방식은 ClickStack UI인 HyperDX가 ClickHouse 인스턴스 내부의 시스템 테이블에 직접 연결하는 구조를 사용합니다.
+HyperDX에는 Selects, Inserts, Infrastructure 탭이 포함된 ClickHouse 중심의 dashboard가 기본 제공됩니다. 또한 팀은 Lucene 또는 SQL 구문을 사용해 시스템 테이블과 로그를 검색하고, Chart Explorer를 통해 사용자 지정 visualizations를 만들어 상세한 시스템 분석을 수행할 수 있습니다.
+이 방식은 실시간 프로덕션 알림보다는 복잡한 문제의 디버깅, 성능 분석, 심층적인 시스템 내부 검사에 더 적합합니다.
+
+<Note>
+  이 방식에서는 HyperDX가 시스템 테이블을 직접 쿼리하므로 유휴 상태의 서비스가 활성화될 수 있다는 점에 유의하십시오.
+</Note>

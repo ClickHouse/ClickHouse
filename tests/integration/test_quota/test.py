@@ -1817,3 +1817,17 @@ def test_quota_with_ip_prefix_bits_from_users_xml():
 
     # Restore a clean config so later periodic reloads do not fail.
     copy_quota_xml("no_quotas.xml")
+
+
+def test_quota_keyed_by_normalized_query_hash_from_users_xml():
+    # A quota keyed by normalized_query_hash must load from static config and
+    # expose the key type via system.quotas, mirroring the SQL path which
+    # supports KEYED BY normalized_query_hash.
+    copy_quota_xml("keyed_by_normalized_query_hash.xml")
+    assert (
+        instance.query("SELECT keys FROM system.quotas WHERE name = 'myQuota'")
+        == "['normalized_query_hash']\n"
+    )
+
+    # Restore a clean config so later periodic reloads do not fail.
+    copy_quota_xml("no_quotas.xml")

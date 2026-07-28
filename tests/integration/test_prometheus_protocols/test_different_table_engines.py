@@ -3,7 +3,11 @@ import re
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, tsv_close_to
-from .prometheus_test_utils import *
+from .prometheus_test_utils import (
+    execute_query_via_http_api,
+    load_preset,
+    send_protobuf_to_remote_write,
+)
 
 
 cluster = ClickHouseCluster(__file__)
@@ -325,7 +329,8 @@ def test_external_tables():
         "tags Map(LowCardinality(String), String), "
         "min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
         "max_time SimpleAggregateFunction(max, Nullable(DateTime64(3)))) "
-        "ENGINE=AggregatingMergeTree ORDER BY (metric_name, id)"
+        "ENGINE=AggregatingMergeTree ORDER BY (metric_name, id) "
+        "SETTINGS allow_dimensions_outside_sorting_key = 1"
     )
 
     node.query(
@@ -363,7 +368,8 @@ def test_data_keyword():
         "tags Map(LowCardinality(String), String), "
         "min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
         "max_time SimpleAggregateFunction(max, Nullable(DateTime64(3)))) "
-        "ENGINE=AggregatingMergeTree ORDER BY (metric_name, id)"
+        "ENGINE=AggregatingMergeTree ORDER BY (metric_name, id) "
+        "SETTINGS allow_dimensions_outside_sorting_key = 1"
     )
     node.query(
         "CREATE TABLE mymetrics (metric_family_name String, type String, unit String, help String) "

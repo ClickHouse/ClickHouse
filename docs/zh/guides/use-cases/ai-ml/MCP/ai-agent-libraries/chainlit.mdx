@@ -1,0 +1,77 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/chainlit
+sidebarTitle: '集成 Chainlit'
+title: '如何使用 Chainlit 和 ClickHouse MCP 服务器构建 AI 智能体'
+description: '了解如何使用 Chainlit 与 ClickHouse MCP 服务器构建基于 LLM 的聊天应用'
+keywords: ['ClickHouse', 'MCP', 'Chainlit']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+本指南将介绍如何将 Chainlit 强大的聊天界面框架
+与 ClickHouse Model Context Protocol (MCP) Server 结合，构建交互式数据
+应用。Chainlit 让你只需极少代码即可为 AI
+应用构建对话式界面，而 ClickHouse MCP 服务器则可与 ClickHouse 的高性能列式数据库实现无缝
+集成。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 你需要有一个 Anthropic API key
+* 你需要先安装 [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+
+<div id="basic-chainlit-app">
+  ## 基础 Chainlit 应用
+</div>
+
+你可以运行以下内容，查看一个基础聊天应用示例：
+
+```sh
+uv run --with anthropic --with chainlit chainlit run chat_basic.py -w -h
+```
+
+然后导航到 `http://localhost:8000`
+
+<div id="adding-clickhouse-mcp-server">
+  ## 添加 ClickHouse MCP 服务器
+</div>
+
+添加 ClickHouse MCP 服务器后，情况会变得更有意思。
+你需要更新 `.chainlit/config.toml` 文件，以允许使用 `uv` 命令：
+
+```toml
+[features.mcp.stdio]
+    enabled = true
+    # 只有允许列表中的可执行文件才能用于 MCP stdio 服务器。
+    # 只需提供可执行文件的基本名称，例如 "npx"，而非 "/usr/bin/npx"。
+    # 请暂时不要注释此行，我们需要用它来解析可执行文件名称。
+    allowed_executables = [ "npx", "uvx", "uv" ]
+```
+
+<Info>
+  **config.toml**
+
+  完整的 `config.toml` 文件可在[示例 repository](https://github.com/ClickHouse/examples/blob/main/ai/mcp/chainlit/.chainlit/config.toml)中找到
+</Info>
+
+由于需要一些粘合代码来让 MCP 服务器 与 Chainlit 配合工作，因此我们需要
+改为运行以下命令来启动 Chainlit：
+
+```sh
+uv run --with anthropic --with chainlit chainlit run chat_mcp.py -w -h
+```
+
+要添加 MCP 服务器，请点击聊天界面中的插头图标，然后
+添加以下命令以连接并使用 ClickHouse SQL Playground：
+
+```sh
+CLICKHOUSE_HOST=sql-clickhouse.clickhouse.com CLICKHOUSE_USER=demo CLICKHOUSE_PASSWORD= CLICKHOUSE_SECURE=true uv run --with mcp-clickhouse --python 3.13 mcp-clickhouse
+```
+
+如果你想使用自己的 ClickHouse 实例，可以调整这些环境变量的值。
+
+然后你就可以像这样向它提问：
+
+* 告诉我有哪些可供查询的表
+* 纽约出租车有什么有趣之处？

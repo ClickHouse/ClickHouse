@@ -1,0 +1,6 @@
+Aggregating local	80000	6400000000	3200040000
+Aggregating distributed	80000	6400000000	3200040000
+Aggregating read distributes	1
+Versioned local	80000	3203960000
+Versioned distributed	80000	3203960000
+Versioned read distributes	1

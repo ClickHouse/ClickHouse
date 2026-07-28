@@ -1,7 +1,9 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSubquery.h>
+#include <Interpreters/misc.h>
 #include <Common/checkStackSize.h>
 #include <Common/Exception.h>
 
@@ -18,6 +20,21 @@ namespace DB
 
         if (ast.as<ASTSubquery>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key expressions cannot contain subqueries");
+
+        /// An `IN` operator whose right-hand side is a table reference (e.g. `x IN table`) builds a
+        /// FutureSet that nobody fills outside of a SELECT pipeline, so evaluating the key during INSERT
+        /// aborts with a "Not-ready Set" LOGICAL_ERROR. The subquery form above is already rejected;
+        /// the table-identifier form has the same defect and no practical use case, so forbid it too.
+        if (const auto * func = ast.as<ASTFunction>(); func && functionIsInOrGlobalInOperator(func->name))
+        {
+            const auto * args = func->arguments ? func->arguments->as<ASTExpressionList>() : nullptr;
+            if (args && args->children.size() == 2)
+            {
+                const auto & rhs = args->children[1];
+                if (rhs->as<ASTIdentifier>() || rhs->as<ASTTableIdentifier>())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key expressions cannot contain a table in the 'IN' operator");
+            }
+        }
 
         for (const auto & child : ast.children)
             checkExpressionDoesntContainSubqueries(*child);

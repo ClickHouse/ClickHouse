@@ -1,0 +1,53 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/migrating-sdks
+title: '从 Elastic 迁移 SDKs'
+sidebarTitle: '迁移 SDKs'
+description: '从 Elastic 迁移 SDKs'
+show_related_blogs: true
+keywords: ['ClickStack']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+Elastic Stack 提供两类用于为应用插桩的语言 SDK：
+
+1. **[Elastic Official APM agents](https://www.elastic.co/docs/reference/apm-agents/)** – 这些 SDK 是专门为 Elastic Stack 构建的。目前，这些 SDK 没有直接的迁移路径。使用它们的应用需要改用对应的 [ClickStack SDKs](/zh/clickstack/ingesting-data/sdks/index) 重新插桩。
+
+2. **[Elastic Distributions of OpenTelemetry (EDOT SDKs)](https://www.elastic.co/docs/reference/opentelemetry/edot-sdks/)** – 这些是 Elastic 提供的标准 OpenTelemetry SDK 发行版，适用于 .NET、Java、Node.js、PHP 和 Python。如果你的应用已经在使用 EDOT SDK，则无需重新插桩代码。你只需重新配置该 SDK，将遥测数据导出到 ClickStack 附带的 OTLP Collector。更多详情请参见[“迁移 EDOT SDK”](#migrating-edot-sdks)。
+
+<Info>
+  **尽可能使用 ClickStack SDKs**
+
+  虽然支持标准 OpenTelemetry SDK，但我们强烈建议各语言优先使用 [**ClickStack 提供的 SDKs**](/zh/clickstack/ingesting-data/sdks/index)。这些发行版包含额外的插桩能力、增强的默认配置，以及专为与 ClickStack 管道和 UI 无缝协作而设计的自定义扩展。使用 ClickStack SDKs 后，你可以解锁高级功能，例如标准 OpenTelemetry 或 EDOT SDK 不具备的异常堆栈跟踪。
+</Info>
+
+<div id="migrating-edot-sdks">
+  ## 迁移 EDOT SDKs
+</div>
+
+与基于 OpenTelemetry 的 ClickStack SDKs 类似，Elastic Distributions of the OpenTelemetry SDKs (EDOT SDKs) 也是官方 OpenTelemetry SDKs 的定制版本。例如，[EDOT Python SDK](https://www.elastic.co/docs/reference/opentelemetry/edot-sdks/python/) 是 [OpenTelemetry Python SDK](https://opentelemetry.io/docs/languages/python/) 的厂商定制发行版，旨在与 Elastic Observability 无缝配合。
+
+由于这些 SDKs 基于标准 OpenTelemetry 库，因此迁移到 ClickStack 非常直接——无需重新插桩。你只需调整配置，将遥测数据发送到 ClickStack OpenTelemetry Collector。
+
+配置遵循标准的 OpenTelemetry 机制。对于 Python，通常通过环境变量来完成，如 [OpenTelemetry Zero-Code Instrumentation docs](https://opentelemetry.io/docs/zero-code/python/configuration/) 中所述。
+
+典型的 EDOT SDK 配置可能如下所示：
+
+```shell
+export OTEL_RESOURCE_ATTRIBUTES=service.name=<app-name>
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://my-deployment.ingest.us-west1.gcp.cloud.es.io
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=ApiKey P....l"
+```
+
+要迁移到 ClickStack，请将端点更新为指向本地 OTLP Collector，并修改授权请求头：
+
+```shell
+export OTEL_RESOURCE_ATTRIBUTES=service.name=<app-name>
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+export OTEL_EXPORTER_OTLP_HEADERS="authorization=<YOUR_INGESTION_API_KEY>"
+```
+
+你的摄取 API key 由 HyperDX 应用生成，可在 Team Settings → API Keys 中找到。
+
+<Image img="/images/use-cases/observability/ingestion-keys.webp" alt="摄取 API key" size="lg" />

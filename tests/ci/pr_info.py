@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import re
-from typing import Dict, List, Set, Union
+from typing import Dict, Union
 from urllib.parse import quote
 
 from unidiff import PatchSet  # type: ignore
@@ -44,7 +44,6 @@ class Labels:
     PR_SYNC_UPSTREAM = "pr-sync-upstream"
     RELEASE = "release"
     RELEASE_LTS = "release-lts"
-    ROLLING_OUT = "rolling-out"
     SUBMODULE_CHANGED = "submodule changed"
 
     # automatic backport for critical bug fixes

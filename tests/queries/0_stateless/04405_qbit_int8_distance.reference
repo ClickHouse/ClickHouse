@@ -1,0 +1,30 @@
+========== optimize_qbit_distance_function_reads = 0 ==========
+L2DistanceTransposed, full precision (8 bits)
+1	0
+2	2.828
+3	22.627
+cosineDistanceTransposed, full precision (8 bits)
+1	0
+2	0.01
+3	1.5
+L2DistanceTransposed, reduced precision (4 bits)
+1	14.283
+2	14.283
+3	33.166
+========== optimize_qbit_distance_function_reads = 1 ==========
+L2DistanceTransposed, full precision (8 bits)
+1	0
+2	2.828
+3	22.627
+cosineDistanceTransposed, full precision (8 bits)
+1	0
+2	0.01
+3	1.5
+L2DistanceTransposed, reduced precision (4 bits)
+1	14.283
+2	14.283
+3	33.166
+========== large dimension (no int32 overflow) ==========
+46341.295
+2
+========== precision validation ==========

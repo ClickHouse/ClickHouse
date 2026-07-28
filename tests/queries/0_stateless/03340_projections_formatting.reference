@@ -4,7 +4,8 @@ CREATE TEMPORARY TABLE test
     `item_id` UInt64,
     PROJECTION order_by_item_id
     (
-        WITH toString(user_id) AS user
+        WITH
+            toString(user_id) AS user
         SELECT user
         ORDER BY user_id
     )

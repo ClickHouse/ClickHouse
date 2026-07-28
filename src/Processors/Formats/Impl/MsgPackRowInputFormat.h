@@ -94,7 +94,7 @@ public:
 
 private:
     msgpack::object_handle readObject();
-    DataTypePtr getDataType(const msgpack::object & object);
+    DataTypePtr getDataType(const msgpack::object & object, size_t depth);
     std::optional<DataTypes> readRowAndGetDataTypes() override;
 
     PeekableReadBuffer buf;

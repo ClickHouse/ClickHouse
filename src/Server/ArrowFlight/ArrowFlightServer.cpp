@@ -233,6 +233,11 @@ namespace
         if (params->num_rows() > 1)
             return arrow::Status::NotImplemented("Multiple parameter sets are not supported (got ", params->num_rows(), " rows)");
 
+        /// The parameter batch comes straight from the client (DoPut).  Fully validate its buffers
+        /// before GetScalar reads them: a malformed array (for example a string whose offsets point
+        /// past the data buffer) would otherwise be read out of bounds inside arrow::Array::GetScalar.
+        ARROW_RETURN_NOT_OK(params->ValidateFull());
+
         if (static_cast<size_t>(params->num_columns()) != num_params)
             return arrow::Status::Invalid(
                 "Prepared statement has ", num_params, " parameter(s) but ", params->num_columns(), " value(s) were bound");

@@ -87,6 +87,14 @@ public:
         String query_str;
         std::optional<UUID> user_id;
         std::vector<UUID> current_roles;
+        /// Client identity of the originating INSERT query (ClientInfo user names).
+        /// Restored on the flush context so currentUser()/user()/authenticatedUser() and
+        /// the materialized views triggered by the flush observe the inserting user instead
+        /// of an empty string. Part of the batching key so inserts from different identities
+        /// (e.g. impersonation, forwarded distributed queries) are never coalesced.
+        String current_user;
+        String initial_user;
+        String authenticated_user;
         std::unique_ptr<Settings> settings;
 
         AsynchronousInsertQueueDataKind data_kind;
@@ -96,6 +104,9 @@ public:
             const ASTPtr & query_,
             const std::optional<UUID> & user_id_,
             const std::vector<UUID> & current_roles_,
+            const String & current_user_,
+            const String & initial_user_,
+            const String & authenticated_user_,
             const Settings & settings_,
             AsynchronousInsertQueueDataKind data_kind_);
 
@@ -105,7 +116,7 @@ public:
         StorageID getStorageID() const;
 
     private:
-        auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, setting_changes); }
+        auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, current_user, initial_user, authenticated_user, setting_changes); }
 
         std::vector<SettingChange> setting_changes;
     };

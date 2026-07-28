@@ -1,0 +1,103 @@
+---
+description: 'Documentação de ROW POLICY'
+sidebarTitle: 'ROW POLICY'
+slug: /sql-reference/statements/create/row-policy
+title: 'CREATE ROW POLICY'
+doc_type: 'reference'
+---
+
+Cria uma [política de linha](/pt-BR/concepts/features/security/access-rights#row-policy-management), ou seja, um filtro usado para determinar quais linhas um usuário pode ler em uma tabela.
+
+<Tip>
+  Políticas de linha só fazem sentido para usuários com acesso de somente leitura. Se um usuário puder modificar uma tabela ou copiar partições entre tabelas, isso contorna as restrições das políticas de linha.
+</Tip>
+
+Sintaxe:
+
+```sql
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluster_name1] ON [db1.]table1|db1.*
+        [, policy_name2 [ON CLUSTER cluster_name2] ON [db2.]table2|db2.* ...]
+    [IN access_storage_type]
+    [FOR SELECT] USING condition
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+```
+
+<div id="using-clause">
+  ## Cláusula USING
+</div>
+
+Permite especificar uma condição para filtrar linhas. Um usuário verá uma linha se a condição resultar em um valor diferente de zero para essa linha.
+
+<div id="to-clause">
+  ## Cláusula TO
+</div>
+
+Na seção `TO`, você pode informar uma lista de usuários e roles para os quais esta política deve se aplicar. Por exemplo, `CREATE ROW POLICY ... TO accountant, john@localhost`.
+
+A palavra-chave `ALL` significa todos os usuários do ClickHouse, incluindo o usuário atual. A palavra-chave `ALL EXCEPT` permite excluir alguns usuários da lista de todos os usuários, por exemplo, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
+
+<div id="as-clause">
+  ## Cláusula AS
+</div>
+
+É possível ter mais de uma política habilitada na mesma tabela para o mesmo usuário ao mesmo tempo. Portanto, precisamos de uma forma de combinar as condições de várias políticas.
+
+Por padrão, as políticas são combinadas usando o operador booleano `OR`. Por exemplo, as seguintes políticas:
+
+```sql
+CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter
+CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 TO peter, antonio
+```
+
+permitem ao usuário `peter` ver linhas com `b=1` ou `c=2`.
+
+A cláusula `AS` especifica como as políticas devem ser combinadas com outras políticas. As políticas podem ser permissivas ou restritivas. Por padrão, as políticas são permissivas, o que significa que são combinadas usando o operador booleano `OR`.
+
+Como alternativa, uma política pode ser definida como restritiva. As políticas restritivas são combinadas usando o operador booleano `AND`.
+
+Aqui está a fórmula geral:
+
+```text
+row_is_visible = (one or more of the permissive policies' conditions are non-zero) AND
+                 (all of the restrictive policies's conditions are non-zero)
+```
+
+Por exemplo, as políticas a seguir:
+
+```sql
+CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter
+CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
+```
+
+permite que o usuário `peter` veja linhas apenas se `b=1` E `c=2`.
+
+As políticas de banco de dados são combinadas com as políticas da tabela.
+
+Por exemplo, as seguintes políticas:
+
+```sql
+CREATE ROW POLICY pol1 ON mydb.* USING b=1 TO mira, peter
+CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
+```
+
+permitir ao usuário `peter` ver as linhas da table1 somente se `b=1` AND `c=2`, embora
+qualquer outra tabela em mydb tenha apenas a política `b=1` aplicada ao usuário.
+
+<div id="on-cluster-clause">
+  ## Cláusula ON CLUSTER
+</div>
+
+Permite criar políticas de linha em um cluster. Consulte [DDL distribuído](/pt-BR/reference/statements/distributed-ddl).
+
+<div id="examples">
+  ## Exemplos
+</div>
+
+`CREATE ROW POLICY filter1 ON mydb.mytable USING a<1000 TO accountant, john@localhost`
+
+`CREATE ROW POLICY filter2 ON mydb.mytable USING a<1000 AND b=5 TO ALL EXCEPT mira`
+
+`CREATE ROW POLICY filter3 ON mydb.mytable USING 1 TO admin`
+
+`CREATE ROW POLICY filter4 ON mydb.* USING 1 TO admin`

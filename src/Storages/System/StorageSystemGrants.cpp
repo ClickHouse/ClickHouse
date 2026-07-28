@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemGrants.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemPrivileges.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -39,6 +40,11 @@ ColumnsDescription StorageSystemGrants::getColumnsDescription()
             "1 — The row describes a partial revoke."
         },
         {"grant_option", std::make_shared<DataTypeUInt8>(), "Permission is granted WITH GRANT OPTION."},
+        {"is_wildcard", std::make_shared<DataTypeUInt8>(),
+            "Logical value. It shows whether the grant is a wildcard prefix grant. Possible values: "
+            "0 — The row does not describe a wildcard prefix grant, "
+            "1 — The row describes a wildcard prefix grant (e.g. db*.* or foo.bar*)."
+        },
     };
 }
 
@@ -70,6 +76,7 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
     auto & column_column_null_map = assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
     auto & column_is_partial_revoke = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
     auto & column_grant_option = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
+    auto & column_is_wildcard = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
 
     auto add_row = [&](const String & grantee_name,
                        AccessEntityType grantee_type,
@@ -79,7 +86,8 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
                        const String * table,
                        const String * column,
                        bool is_partial_revoke,
-                       bool grant_option)
+                       bool grant_option,
+                       bool is_wildcard)
     {
         if (grantee_type == AccessEntityType::USER)
         {
@@ -100,6 +108,7 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
 
         column_access_type.push_back(static_cast<Int16>(access_type));
         column_access_object.insertData(access_object.data(), access_object.length());
+
         if (database)
         {
             column_database.insertData(database->data(), database->length());
@@ -135,6 +144,7 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
 
         column_is_partial_revoke.push_back(is_partial_revoke);
         column_grant_option.push_back(grant_option);
+        column_is_wildcard.push_back(is_wildcard);
     };
 
     auto add_rows = [&](const String & grantee_name,
@@ -158,16 +168,18 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
                 access_object += buf.str();
             }
 
+            const bool is_wildcard = element.wildcard;
+
             if (element.anyColumn())
             {
                 for (const auto & access_type : access_types)
-                    add_row(grantee_name, grantee_type, access_type, access_object, database, table, nullptr, element.is_partial_revoke, element.grant_option);
+                    add_row(grantee_name, grantee_type, access_type, access_object, database, table, nullptr, element.is_partial_revoke, element.grant_option, is_wildcard);
             }
             else
             {
                 for (const auto & access_type : access_types)
                     for (const auto & column : element.columns)
-                        add_row(grantee_name, grantee_type, access_type, access_object, database, table, &column, element.is_partial_revoke, element.grant_option);
+                        add_row(grantee_name, grantee_type, access_type, access_object, database, table, &column, element.is_partial_revoke, element.grant_option, is_wildcard);
             }
         }
     };
@@ -194,3 +206,6 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemGrants) }

@@ -215,6 +215,12 @@ bool MetadataStorageFromCacheObjectStorage::hasPendingRemovalBlobs(const StoredO
     return objects_to_remove.containsAny(blobs);
 }
 
+int64_t MetadataStorageFromCacheObjectStorage::getDeadBlobsQueueEstimate()
+{
+    std::lock_guard guard(removed_objects_mutex);
+    return std::ssize(objects_to_remove);
+}
+
 IMetadataStorage::BlobsToReplicate MetadataStorageFromCacheObjectStorage::getBlobsToReplicate(const ClusterConfigurationPtr & cluster, int64_t max_count)
 {
     return underlying->getBlobsToReplicate(cluster, max_count);

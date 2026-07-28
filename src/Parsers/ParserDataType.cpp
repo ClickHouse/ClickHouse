@@ -1,5 +1,7 @@
 #include <Parsers/ParserDataType.h>
 
+#include <string_view>
+#include <unordered_set>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTEnumDataType.h>
@@ -25,6 +27,21 @@ namespace
 bool isEnumType(const String & type_name_upper)
 {
     return type_name_upper == "ENUM" || type_name_upper == "ENUM8" || type_name_upper == "ENUM16";
+}
+
+/// Integer type names (and MySQL aliases) that accept the MySQL display-width modifier `(N)` and the
+/// SIGNED/UNSIGNED suffix. Matched by exact (uppercased) name: a loose substring test on "INT" also
+/// matched unrelated names like `quantileInterpolatedWeighted`, silently eating their first `(...)`
+/// group as a display width and breaking the parse round-trip.
+bool isIntegerTypeName(const String & type_name_upper)
+{
+    static const std::unordered_set<std::string_view> integer_type_names
+    {
+        "INT8", "INT16", "INT32", "INT64", "INT128", "INT256",
+        "UINT8", "UINT16", "UINT32", "UINT64", "UINT128", "UINT256",
+        "TINYINT", "SMALLINT", "MEDIUMINT", "INT", "INTEGER", "BIGINT", "INT1",
+    };
+    return integer_type_names.contains(type_name_upper);
 }
 
 /// Parse enum values directly into the vector without creating ASTLiteral nodes.
@@ -96,6 +113,13 @@ bool parseEnumValues(
         if (!tryReadIntText(abs_value, num_in) || num_in.count() != pos->size())
             return false;
         ++pos;
+
+        /// Values are stored as Int64. A magnitude above Int64 cannot be stored faithfully:
+        /// a plain cast would silently wrap (e.g. UInt64 18446744073709551615 to -1) and pass
+        /// the downstream range check. Such a value is out of range for any Enum anyway, so
+        /// fall back to the generic parser, which rejects it.
+        if (abs_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+            return false;
 
         Int64 elem_value = negative ? -static_cast<Int64>(abs_value) : static_cast<Int64>(abs_value);
         values.emplace_back(elem_name, elem_value);
@@ -224,8 +248,11 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// unquoted (e.g. UInt64). This introduces problems when the string in the quotes is garbage:
     ///  * Array(`x.y`) -> Array(x.y) -> fails to parse
     ///  * `Null` -> Null -> parses as keyword instead of type name
+    ///  * `8` -> 8 -> parses as a numeric literal instead of a type name
     /// Here we check for these cases and reject.
-    if (!std::all_of(type_name.begin(), type_name.end(), [](char c) { return isWordCharASCII(c) || c == '$'; }))
+    if (type_name.empty()
+        || isNumericASCII(type_name[0])
+        || !std::all_of(type_name.begin(), type_name.end(), [](char c) { return isWordCharASCII(c) || c == '$'; }))
     {
         expected.add(pos, "type name");
         return false;
@@ -276,7 +303,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (ParserKeyword(Keyword::PRECISION).ignore(pos))
             type_name_suffix = toStringView(Keyword::PRECISION);
     }
-    else if (type_name_upper.contains("INT"))
+    else if (isIntegerTypeName(type_name_upper))
     {
         /// Support SIGNED and UNSIGNED integer type modifiers for compatibility with MySQL
         if (ParserKeyword(Keyword::SIGNED).ignore(pos, expected))

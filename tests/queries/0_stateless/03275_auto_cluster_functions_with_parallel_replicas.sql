@@ -1,6 +1,8 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: Depends on Minio
+SET explain_query_plan_default = 'legacy';
 
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET automatic_parallel_replicas_mode = 0;
 SET enable_analyzer=1;
 SET enable_parallel_replicas=1;

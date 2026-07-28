@@ -84,6 +84,7 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_before_external_join;
     extern const SettingsDouble max_bytes_ratio_before_external_join;
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
+    extern const SettingsBool join_runtime_filter_from_fixed_hash_table;
 }
 
 namespace ErrorCodes
@@ -229,6 +230,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
           settings[Setting::max_bytes_before_external_join],
           settings[Setting::max_bytes_ratio_before_external_join]))
     , enable_join_fixed_hash_table_conversion(settings[Setting::enable_join_fixed_hash_table_conversion])
+    , join_runtime_filter_from_fixed_hash_table(settings[Setting::join_runtime_filter_from_fixed_hash_table])
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -261,6 +263,7 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , enable_software_prefetch_in_join(settings.enable_software_prefetch_in_join)
     , max_bytes_before_external_join(settings.getEffectiveMaxBytesBeforeExternalJoin())
     , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
+    , join_runtime_filter_from_fixed_hash_table(settings.join_runtime_filter_from_fixed_hash_table)
     , max_memory_usage(settings.max_bytes_in_join)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -572,7 +575,7 @@ void TableJoin::setUsedColumns(const Names & column_names)
         }
         else
             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-                "Column {} not found in JOIN, left columns: [{}], right columns: [{}]", column_name,
+                "Column '{}' not found in JOIN, left columns: [{}], right columns: [{}]", column_name,
                 fmt::join(columns_from_left_table | std::views::transform([](const auto & col) { return col.name; }), ", "),
                 fmt::join(columns_from_joined_table | std::views::transform([](const auto & col) { return col.name; }), ", "));
     }
@@ -778,13 +781,14 @@ std::pair<NameSet, NameSet> TableJoin::getKeysForNullSafeComparion(const Columns
             const auto & left_key = clause.key_names_left[i];
             const auto & right_key = clause.key_names_right[i];
             auto lit = left_idx.find(left_key);
-            if (lit == left_idx.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find key {} in left columns [{}]",
-                                left_key, Block(left_sample_columns).dumpNames());
             auto rit = right_idx.find(right_key);
-            if (rit == right_idx.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find key {} in right columns [{}]",
-                                right_key, Block(right_sample_columns).dumpNames());
+            /// A key may be absent from the input columns when it is not a plain column but an
+            /// expression that is not materialized into the join input block (e.g. a scalar
+            /// subquery `(SELECT ...)` used as a join key with the old analyzer). There is nothing
+            /// to wrap here; leave the key as is and let the regular key validation produce a
+            /// proper NOT_FOUND_COLUMN_IN_BLOCK error, exactly as the non null-safe path does.
+            if (lit == left_idx.end() || rit == right_idx.end())
+                continue;
 
             if (!left_sample_columns[lit->second].type->isNullable() || !right_sample_columns[rit->second].type->isNullable())
                 continue;
@@ -1222,7 +1226,7 @@ void TableJoin::resetToCross()
 
 bool TableJoin::allowParallelHashJoin() const
 {
-    return ::DB::allowParallelHashJoin(join_algorithms, kind(), strictness(), isSpecialStorage(), oneDisjunct());
+    return ::DB::allowParallelHashJoin(join_algorithms, kind(), isSpecialStorage(), oneDisjunct());
 }
 
 ActionsDAG TableJoin::createJoinedBlockActions(ContextPtr context, PreparedSetsPtr prepared_sets) const
@@ -1289,7 +1293,6 @@ TemporaryDataOnDiskScopePtr TableJoin::getTempDataOnDisk()
 bool allowParallelHashJoin(
     const std::vector<JoinAlgorithm> & join_algorithms,
     JoinKind kind,
-    JoinStrictness strictness,
     bool is_special_storage,
     bool one_disjunct)
 {
@@ -1297,8 +1300,6 @@ bool allowParallelHashJoin(
         return false;
     if (kind != JoinKind::Left && kind != JoinKind::Inner
         && kind != JoinKind::Right && kind != JoinKind::Full)
-        return false;
-    if (strictness == JoinStrictness::Asof)
         return false;
     if (is_special_storage || !one_disjunct)
         return false;

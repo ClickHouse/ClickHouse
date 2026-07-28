@@ -209,8 +209,13 @@ public:
     virtual ParallelReadResponse handleRequest(ParallelReadRequest request) = 0;
     virtual void doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
     virtual void markReplicaAsUnavailable(size_t replica_number) = 0;
-    virtual bool isReadingCompleted() const { return false; }
+    virtual bool isReadingCompleted() const = 0;
     virtual bool initializedWithEmptyRanges() const { return false; }
+    /// The working set of parts for this stream — what the coordinator will actually serve in
+    /// handleRequest. Captured from the first announcement (in the snapshot-pinned topology that
+    /// is the initiator's own pre-split parts list, so this is exactly the per-split assignment)
+    /// and echoed back to followers as the authoritative set they should construct sources for.
+    virtual RangesInDataPartsDescription getRegisteredParts() const = 0;
 
     void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
     {
@@ -271,6 +276,14 @@ public:
     bool isReadingCompleted() const override;
 
     bool initializedWithEmptyRanges() const override { return state_initialized && all_parts_to_read.empty(); }
+
+    RangesInDataPartsDescription getRegisteredParts() const override
+    {
+        RangesInDataPartsDescription result;
+        for (const auto & part : all_parts_to_read)
+            result.push_back(part.description);
+        return result;
+    }
 
 private:
     /// This many granules will represent a single segment of marks that will be assigned to a replica
@@ -939,6 +952,15 @@ public:
     ParallelReadResponse handleRequest([[ maybe_unused ]]  ParallelReadRequest request) override;
     void doHandleInitialAllRangesAnnouncement([[maybe_unused]] InitialAllRangesAnnouncement announcement) override;
     void markReplicaAsUnavailable(size_t replica_number) override;
+    bool isReadingCompleted() const override;
+
+    RangesInDataPartsDescription getRegisteredParts() const override
+    {
+        RangesInDataPartsDescription result;
+        for (const auto & part : all_parts_to_read)
+            result.push_back(part.description);
+        return result;
+    }
 
     Parts all_parts_to_read;
     size_t total_rows_to_read = 0;
@@ -946,6 +968,14 @@ public:
 
     LoggerPtr log;
 };
+
+bool InOrderCoordinator::isReadingCompleted() const
+{
+    for (const auto & part : all_parts_to_read)
+        if (!part.description.ranges.empty())
+            return false;
+    return true;
+}
 
 void InOrderCoordinator::markReplicaAsUnavailable(size_t replica_number)
 {
@@ -1140,13 +1170,17 @@ ParallelReadResponse InOrderCoordinator::handleRequest(ParallelReadRequest reque
 }
 
 
-void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
+InitialAllRangesAnnouncementResponse
+ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
     ProfileEvents::increment(ProfileEvents::ParallelReplicasNumRequests);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleAnnouncementMicroseconds);
 
+    InitialAllRangesAnnouncementResponse response;
+    response.stream_id = announcement.stream_id;
+
     if (is_reading_completed)
-        return;
+        return response;
 
     std::lock_guard lock(mutex);
 
@@ -1164,18 +1198,47 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
             announcement.replica_num,
             replicas_count);
 
-    if (!snapshot_replica_num)
+    /// If the snapshot replica was pinned explicitly via setSnapshotReplicaNum,
+    /// only that replica can create a new stream coordinator. Announcements from
+    /// non-snapshot replicas for streams that don't exist yet are dropped (we return
+    /// an empty parts list so the announcing replica's pool can finish immediately).
+    /// If the snapshot replica wasn't pinned, any replica can be the first announcer for
+    /// a stream — the per-stream coordinator is created on first arrival.
+    if (snapshot_replica_num)
     {
-        snapshot_replica_num = announcement.replica_num;
-        LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Using snapshot from replica num {}", snapshot_replica_num.value());
+        const bool stream_exists = stream_to_coordinator.contains(announcement.stream_id);
+        if (!stream_exists && announcement.replica_num != *snapshot_replica_num)
+        {
+            LOG_DEBUG(
+                getLogger("ParallelReplicasReadingCoordinator"),
+                "Ignoring announcement from non-snapshot replica {} for unknown stream {}",
+                announcement.replica_num,
+                announcement.stream_id);
+            return response;
+        }
     }
+
+    const bool first_announcement_for_stream = !stream_to_coordinator.contains(announcement.stream_id);
 
     auto coordinator = getOrCreateCoordinator(announcement.stream_id, announcement.mode);
 
     if (is_reading_completed)
-        return;
+        return response;
 
     coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
+
+    /// Capture the authoritative parts list AFTER the coordinator has processed the first
+    /// announcement. Within a single MergeTree replica's announcement, parts are non-overlapping
+    /// by construction, so the working set matches the raw payload one-to-one; capturing the
+    /// coordinator's own view (rather than the announcement) just keeps this lookup independent
+    /// of any future per-stream coordinator that may post-process its input.
+    if (first_announcement_for_stream)
+        stream_to_registered_parts[response.stream_id] = coordinator->getRegisteredParts();
+
+    if (auto it = stream_to_registered_parts.find(response.stream_id); it != stream_to_registered_parts.end())
+        response.parts = it->second;
+
+    return response;
 }
 
 ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelReadRequest request)
@@ -1205,11 +1268,36 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
 
         auto coordinator = getCoordinator(request.stream_id);
         if (!coordinator)
+        {
+            /// Rolling-upgrade case: an older follower (parallel-replicas protocol <
+            /// `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE`) doesn't know
+            /// about `#split_i` streams and announced with the bare table name. The new
+            /// coordinator pinned the snapshot replica to the initiator and only registered
+            /// `#split_i` streams, so this follower's stream is "unknown" — but it's also unable
+            /// to read the announcement-response that would tell it to stop. Surface a
+            /// `finish=true` empty response instead of throwing so the follower's pool exits
+            /// cleanly; the query completes via the initiator's local splits. Newer requesters
+            /// have no excuse for an unknown stream — throw, that's a real bug.
+            if (request.replica_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
+            {
+                LOG_DEBUG(
+                    getLogger("ParallelReplicasReadingCoordinator"),
+                    "Replica {} (protocol {}) asked for unknown stream {}; rolling-upgrade fallback: "
+                    "telling it that reading is finished. The follower will not contribute work to "
+                    "this query — the initiator and protocol-{}+ followers cover the read set",
+                    request.replica_num,
+                    request.replica_protocol_version,
+                    request.stream_id,
+                    DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE);
+                return response;
+            }
+
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Got read request from replica {} for stream {} without ranges announcement",
+                "Got read request from replica {} for unknown stream {}.",
                 request.replica_num,
                 request.stream_id);
+        }
 
         if (request.mode != coordinator->getCoordinationMode())
             throw Exception(
@@ -1356,6 +1444,16 @@ ParallelReplicasReadingCoordinator::getOrCreateCoordinator(const String & stream
         stream_to_coordinator.size());
 
     return coordinator;
+}
+
+void ParallelReplicasReadingCoordinator::setSnapshotReplicaNum(size_t replica_num)
+{
+    std::lock_guard lock(mutex);
+    if (snapshot_replica_num)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Snapshot replica is already set to {}, cannot pin to {}", *snapshot_replica_num, replica_num);
+    snapshot_replica_num = replica_num;
+    LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Replica {} is set as the snapshot replica", replica_num);
 }
 
 ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t replicas_count_) : replicas_count(replicas_count_)

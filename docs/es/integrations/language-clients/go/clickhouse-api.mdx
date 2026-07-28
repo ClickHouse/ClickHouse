@@ -1,0 +1,755 @@
+---
+sidebarTitle: 'API de ClickHouse'
+keywords: ['clickhouse', 'go', 'golang', 'api', 'consulta', 'insert', 'batch']
+description: 'Uso de la API nativa de ClickHouse con clickhouse-go: ejecución de consultas, inserciones por lotes, inserciones asíncronas y más.'
+slug: /integrations/language-clients/go/clickhouse-api
+title: 'API de ClickHouse'
+doc_type: 'reference'
+---
+
+Todos los ejemplos de código de la API de ClickHouse se pueden encontrar [aquí](https://github.com/ClickHouse/clickhouse-go/tree/main/examples/clickhouse_api).
+
+Para la configuración de la conexión, consulta [Configuración](/es/integrations/language-clients/go/configuration).
+Para ver los tipos de datos compatibles y las correspondencias de tipos de Go, consulta [Tipos de datos](/es/integrations/language-clients/go/data-types).
+
+<div id="connecting">
+  ## Conexión
+</div>
+
+El siguiente ejemplo, que devuelve la versión del servidor, muestra cómo conectarse a ClickHouse, suponiendo que ClickHouse no está protegido y que se puede acceder con el usuario `default`.
+
+Tenga en cuenta que usamos el puerto nativo predeterminado para conectarnos.
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+})
+if err != nil {
+    return err
+}
+v, err := conn.ServerVersion()
+fmt.Println(v)
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/connect.go)
+
+**En todos los ejemplos siguientes, salvo que se indique explícitamente lo contrario, asumimos que la variable `conn` de ClickHouse ya se ha creado y está disponible.**
+
+<div id="execution">
+  ## Ejecución
+</div>
+
+Se pueden ejecutar sentencias arbitrarias mediante el método `Exec`. Esto resulta útil para DDL y sentencias simples. No debe usarse para inserciones de gran volumen ni para iteraciones sobre consultas.
+
+```go
+conn.Exec(context.Background(), `DROP TABLE IF EXISTS example`)
+err = conn.Exec(context.Background(), `
+    CREATE TABLE IF NOT EXISTS example (
+        Col1 UInt8,
+        Col2 String
+    ) engine=Memory
+`)
+if err != nil {
+    return err
+}
+conn.Exec(context.Background(), "INSERT INTO example VALUES (1, 'test-1')")
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/exec.go)
+
+Tenga en cuenta que puede pasar un Context a la consulta. Esto puede usarse para pasar configuraciones específicas a nivel de consulta; consulte [Using Context](#using-context).
+
+<div id="batch-insert">
+  ## Inserción por lotes
+</div>
+
+Para insertar un gran número de filas, el cliente ofrece semántica de lotes. Para ello, es necesario preparar un lote al que se puedan añadir filas. Finalmente, se envía mediante el método `Send()`. Los lotes se mantienen en memoria hasta que se ejecuta `Send`.
+
+Se recomienda llamar a `Close` en el lote para evitar fugas de conexiones. Esto puede hacerse mediante la palabra clave `defer` después de preparar el lote. Así se limpiará la conexión si nunca se llega a llamar a `Send`. Ten en cuenta que esto hará que aparezcan 0 inserciones de filas en el registro de consultas si no se añadió ninguna fila.
+
+```go
+conn, err := GetNativeConnection(nil, nil, nil)
+if err != nil {
+    return err
+}
+ctx := context.Background()
+defer func() {
+    conn.Exec(ctx, "DROP TABLE example")
+}()
+conn.Exec(context.Background(), "DROP TABLE IF EXISTS example")
+err = conn.Exec(ctx, `
+    CREATE TABLE IF NOT EXISTS example (
+            Col1 UInt8
+        , Col2 String
+        , Col3 FixedString(3)
+        , Col4 UUID
+        , Col5 Map(String, UInt8)
+        , Col6 Array(String)
+        , Col7 Tuple(String, UInt8, Array(Map(String, String)))
+        , Col8 DateTime
+    ) Engine = Memory
+`)
+if err != nil {
+    return err
+}
+
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+for i := 0; i < 1000; i++ {
+    err := batch.Append(
+        uint8(42),
+        "ClickHouse",
+        "Inc",
+        uuid.New(),
+        map[string]uint8{"key": 1},             // Map(String, UInt8)
+        []string{"Q", "W", "E", "R", "T", "Y"}, // Array(String)
+        []interface{}{ // Tuple(String, UInt8, Array(Map(String, String)))
+            "String Value", uint8(5), []map[string]string{
+                {"key": "value"},
+                {"key": "value"},
+                {"key": "value"},
+            },
+        },
+        time.Now(),
+    )
+    if err != nil {
+        return err
+    }
+}
+
+return batch.Send()
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/batch.go)
+
+Las recomendaciones para ClickHouse pueden consultarse [aquí](/es/concepts/features/operations/insert/inserting-data#best-practices-for-inserts). Los lotes no deben compartirse entre go-routines; cree un lote independiente por rutina.
+
+En el ejemplo anterior, observe que los tipos de las variables deben coincidir con el tipo de la columna al agregar filas. Aunque la correspondencia suele ser evidente, esta interfaz intenta ser flexible y convertirá los tipos siempre que no se produzca pérdida de precisión. Por ejemplo, a continuación se muestra cómo insertar una cadena en un datetime64.
+
+```go
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+for i := 0; i < 1000; i++ {
+    err := batch.Append(
+        "2006-01-02 15:04:05.999",
+    )
+    if err != nil {
+        return err
+    }
+}
+
+return batch.Send()
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/type_convert.go)
+
+Para ver un resumen completo de los tipos de Go compatibles con cada tipo de columna, consulte [Conversiones de tipos](/es/integrations/language-clients/go/data-types#type-conversions).
+
+<div id="ephemeral-columns">
+  ## Columnas efímeras
+</div>
+
+Las [columnas efímeras](/es/reference/statements/create/table#ephemeral) son columnas de solo escritura que existen únicamente durante la inserción: no se almacenan ni se pueden seleccionar. Son útiles para calcular valores de columnas derivadas en el momento de la inserción.
+
+```go
+ctx := context.Background()
+ddl := `
+CREATE OR REPLACE TABLE test
+(
+    id UInt64,
+    unhexed String EPHEMERAL,
+    hexed FixedString(4) DEFAULT unhex(unhexed)
+)
+ENGINE = MergeTree
+ORDER BY id`
+
+if err := conn.Exec(ctx, ddl); err != nil {
+    return err
+}
+
+// Insertar proporcionando el valor de la columna efímera
+if err := conn.Exec(ctx, "INSERT INTO test (id, unhexed) VALUES (1, '5a90b714')"); err != nil {
+    return err
+}
+
+// Solo se pueden consultar las columnas no efímeras
+rows, err := conn.Query(ctx, "SELECT id, hexed, hex(hexed) FROM test")
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/ephemeral_native.go)
+
+<div id="querying-rows">
+  ## Consultar filas
+</div>
+
+Puede consultar una sola fila con el método `QueryRow` u obtener un cursor para iterar sobre un conjunto de resultados con `Query`. Mientras que el primero acepta un destino en el que serializar los datos, el segundo requiere llamar a `Scan` en cada fila.
+
+```go
+row := conn.QueryRow(context.Background(), "SELECT * FROM example")
+var (
+    col1             uint8
+    col2, col3, col4 string
+    col5             map[string]uint8
+    col6             []string
+    col7             []interface{}
+    col8             time.Time
+)
+if err := row.Scan(&col1, &col2, &col3, &col4, &col5, &col6, &col7, &col8); err != nil {
+    return err
+}
+fmt.Printf("row: col1=%d, col2=%s, col3=%s, col4=%s, col5=%v, col6=%v, col7=%v, col8=%v\n", col1, col2, col3, col4, col5, col6, col7, col8)
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/query_row.go)
+
+```go
+rows, err := conn.Query(ctx, "SELECT Col1, Col2, Col3 FROM example WHERE Col1 >= 2")
+if err != nil {
+    return err
+}
+for rows.Next() {
+    var (
+        col1 uint8
+        col2 string
+        col3 time.Time
+    )
+    if err := rows.Scan(&col1, &col2, &col3); err != nil {
+        return err
+    }
+    fmt.Printf("row: col1=%d, col2=%s, col3=%s\n", col1, col2, col3)
+}
+rows.Close()
+return rows.Err()
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/query_rows.go)
+
+Tenga en cuenta que, en ambos casos, es necesario pasar un puntero a las variables en las que queremos serializar los valores de las columnas correspondientes. Estas deben pasarse en el orden especificado en la instrucción `SELECT`; de forma predeterminada, en el caso de un `SELECT *` se utilizará el orden de declaración de las columnas, como se muestra arriba.
+
+Al igual que en la inserción, el método Scan requiere que las variables de destino sean de un tipo adecuado. De nuevo, se busca ofrecer flexibilidad, convirtiendo tipos cuando sea posible, siempre que no haya pérdida de precisión; por ejemplo, el ejemplo anterior muestra una columna UUID leída en una variable de tipo string. Para obtener una lista completa de los tipos de Go compatibles con cada tipo de columna, consulte [Type Conversions](/es/integrations/language-clients/go/data-types#type-conversions).
+
+Por último, tenga en cuenta la posibilidad de pasar un `Context` a los métodos `Query` y `QueryRow`. Esto puede usarse para configuraciones a nivel de consulta; consulte [Using Context](#using-context) para obtener más detalles.
+
+<div id="async-insert">
+  ## Insert asíncrono
+</div>
+
+Las inserciones asíncronas son compatibles mediante el método Async. Esto permite al usuario especificar si el cliente debe esperar a que el servidor complete la inserción o si debe responder una vez recibidos los datos. Esto controla de forma efectiva el parámetro [wait&#95;for&#95;async&#95;insert](/es/reference/settings/session-settings#wait_for_async_insert).
+
+```go
+conn, err := GetNativeConnection(nil, nil, nil)
+if err != nil {
+    return err
+}
+ctx := context.Background()
+if err := clickhouse_tests.CheckMinServerServerVersion(conn, 21, 12, 0); err != nil {
+    return nil
+}
+defer func() {
+    conn.Exec(ctx, "DROP TABLE example")
+}()
+conn.Exec(ctx, `DROP TABLE IF EXISTS example`)
+const ddl = `
+    CREATE TABLE example (
+            Col1 UInt64
+        , Col2 String
+        , Col3 Array(UInt8)
+        , Col4 DateTime
+    ) ENGINE = Memory
+`
+if err := conn.Exec(ctx, ddl); err != nil {
+    return err
+}
+for i := 0; i < 100; i++ {
+    if err := conn.AsyncInsert(ctx, fmt.Sprintf(`INSERT INTO example VALUES (
+        %d, '%s', [1, 2, 3, 4, 5, 6, 7, 8, 9], now()
+    )`, i, "Golang SQL database driver"), false); err != nil {
+        return err
+    }
+}
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/async.go)
+
+<div id="columnar-insert">
+  ## Inserción columnar
+</div>
+
+Las inserciones pueden hacerse en formato columnar. Esto puede aportar ventajas de rendimiento si los datos ya están organizados de esta forma, ya que evita tener que convertirlos en filas.
+
+```go
+batch, err := conn.PrepareBatch(context.Background(), "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+var (
+    col1 []uint64
+    col2 []string
+    col3 [][]uint8
+    col4 []time.Time
+)
+for i := 0; i < 1_000; i++ {
+    col1 = append(col1, uint64(i))
+    col2 = append(col2, "Golang SQL database driver")
+    col3 = append(col3, []uint8{1, 2, 3, 4, 5, 6, 7, 8, 9})
+    col4 = append(col4, time.Now())
+}
+if err := batch.Column(0).Append(col1); err != nil {
+    return err
+}
+if err := batch.Column(1).Append(col2); err != nil {
+    return err
+}
+if err := batch.Column(2).Append(col3); err != nil {
+    return err
+}
+if err := batch.Column(3).Append(col4); err != nil {
+    return err
+}
+
+return batch.Send()
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/columnar_insert.go)
+
+<div id="using-structs">
+  ## Uso de structs
+</div>
+
+Para los usuarios, los structs de Golang proporcionan una representación lógica de una fila de datos en ClickHouse. Para ayudar con esto, la interfaz nativa proporciona varias funciones prácticas.
+
+<div id="select-with-serialize">
+  ### Select con serialización
+</div>
+
+El método Select permite convertir un conjunto de filas de respuesta en un slice de structs con una sola llamada.
+
+```go
+var result []struct {
+    Col1           uint8
+    Col2           string
+    ColumnWithName time.Time `ch:"Col3"`
+}
+
+if err = conn.Select(ctx, &result, "SELECT Col1, Col2, Col3 FROM example"); err != nil {
+    return err
+}
+
+for _, v := range result {
+    fmt.Printf("row: col1=%d, col2=%s, col3=%s\n", v.Col1, v.Col2, v.ColumnWithName)
+}
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/select_struct.go)
+
+<div id="scan-struct">
+  ### Scan struct
+</div>
+
+`ScanStruct` permite mapear una sola fila de una consulta a una struct.
+
+```go
+var result struct {
+    Col1  int64
+    Count uint64 `ch:"count"`
+}
+if err := conn.QueryRow(context.Background(), "SELECT Col1, COUNT() AS count FROM example WHERE Col1 = 5 GROUP BY Col1").ScanStruct(&result); err != nil {
+    return err
+}
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/scan_struct.go)
+
+<div id="append-struct">
+  ### Añadir struct
+</div>
+
+`AppendStruct` permite añadir una struct a un [lote](#batch-insert) existente e interpretarla como una fila completa. Para ello, las columnas de la struct deben coincidir con la tabla tanto en nombre como en tipo. Aunque todas las columnas deben tener un campo equivalente en la struct, puede que algunos campos de la struct no tengan una columna equivalente. Estos simplemente se ignorarán.
+
+```go
+batch, err := conn.PrepareBatch(context.Background(), "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+for i := 0; i < 1_000; i++ {
+    err := batch.AppendStruct(&row{
+        Col1:       uint64(i),
+        Col2:       "Golang SQL database driver",
+        Col3:       []uint8{1, 2, 3, 4, 5, 6, 7, 8, 9},
+        Col4:       time.Now(),
+        ColIgnored: "this will be ignored",
+    })
+    if err != nil {
+        return err
+    }
+}
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/append_struct.go)
+
+<div id="parameter-binding">
+  ## Vinculación de parámetros
+</div>
+
+El cliente admite la vinculación de parámetros en los métodos `Exec`, `Query` y `QueryRow`. Como se muestra en el siguiente ejemplo, se admite el uso de parámetros con nombre, numerados y posicionales. A continuación se muestran ejemplos de cada uno.
+
+```go
+var count uint64
+// enlace posicional
+if err = conn.QueryRow(ctx, "SELECT count() FROM example WHERE Col1 >= ? AND Col3 < ?", 500, now.Add(time.Duration(750)*time.Second)).Scan(&count); err != nil {
+    return err
+}
+// 250
+fmt.Printf("Positional bind count: %d\n", count)
+// enlace numérico
+if err = conn.QueryRow(ctx, "SELECT count() FROM example WHERE Col1 <= $2 AND Col3 > $1", now.Add(time.Duration(150)*time.Second), 250).Scan(&count); err != nil {
+    return err
+}
+// 100
+fmt.Printf("Numeric bind count: %d\n", count)
+// enlace por nombre
+if err = conn.QueryRow(ctx, "SELECT count() FROM example WHERE Col1 <= @col1 AND Col3 > @col3", clickhouse.Named("col1", 100), clickhouse.Named("col3", now.Add(time.Duration(50)*time.Second))).Scan(&count); err != nil {
+    return err
+}
+// 50
+fmt.Printf("Named bind count: %d\n", count)
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/bind.go)
+
+<div id="special-cases">
+  ### Casos especiales
+</div>
+
+De forma predeterminada, los slices se expanden en una lista de valores separados por comas si se pasan como parámetro a una consulta. Si necesita que un conjunto de valores se inserte entre corchetes `[ ]`, debe usar `ArraySet`.
+
+Si se requieren grupos/tuplas, entre paréntesis `( )`, por ejemplo, para usarlos con operadores IN, puede usar `GroupSet`. Esto resulta especialmente útil cuando se requieren varios grupos, como se muestra en el ejemplo siguiente.
+
+Por último, los campos DateTime64 requieren precisión para garantizar que los parámetros se representen correctamente. Sin embargo, el cliente desconoce el nivel de precisión del campo, por lo que el usuario debe proporcionarlo. Para facilitarlo, proporcionamos el parámetro `DateNamed`.
+
+```go
+var count uint64
+// los arrays se desplegarán
+if err = conn.QueryRow(ctx, "SELECT count() FROM example WHERE Col1 IN (?)", []int{100, 200, 300, 400, 500}).Scan(&count); err != nil {
+    return err
+}
+fmt.Printf("Array unfolded count: %d\n", count)
+// los arrays se conservarán con []
+if err = conn.QueryRow(ctx, "SELECT count() FROM example WHERE Col4 = ?", clickhouse.ArraySet{300, 301}).Scan(&count); err != nil {
+    return err
+}
+fmt.Printf("Array count: %d\n", count)
+// los Group sets permiten formar listas ( )
+if err = conn.QueryRow(ctx, "SELECT count() FROM example WHERE Col1 IN ?", clickhouse.GroupSet{[]interface{}{100, 200, 300, 400, 500}}).Scan(&count); err != nil {
+    return err
+}
+fmt.Printf("Group count: %d\n", count)
+// Más útil cuando se necesita anidamiento
+if err = conn.QueryRow(ctx, "SELECT count() FROM example WHERE (Col1, Col5) IN (?)", []clickhouse.GroupSet{{[]interface{}{100, 101}}, {[]interface{}{200, 201}}}).Scan(&count); err != nil {
+    return err
+}
+fmt.Printf("Group count: %d\n", count)
+// Usa DateNamed cuando necesites precisión en tu campo de tiempo#
+if err = conn.QueryRow(ctx, "SELECT count() FROM example WHERE Col3 >= @col3", clickhouse.DateNamed("col3", now.Add(time.Duration(500)*time.Millisecond), clickhouse.NanoSeconds)).Scan(&count); err != nil {
+    return err
+}
+fmt.Printf("NamedDate count: %d\n", count)
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/bind_special.go)
+
+<div id="using-context">
+  ## Uso del contexto
+</div>
+
+Los contextos de Go proporcionan una forma de pasar fechas límite, señales de cancelación y otros valores asociados a una solicitud a través de los límites de la API. Todos los métodos de una conexión aceptan un contexto como primer parámetro. Aunque en los ejemplos anteriores se usó `context.Background()`, puede usar esta capacidad para pasar configuraciones y fechas límite, así como para cancelar consultas.
+
+Pasar un contexto creado con `withDeadline` permite establecer límites de tiempo de ejecución en las consultas. Tenga en cuenta que se trata de un instante absoluto y que su vencimiento solo liberará la conexión y enviará una señal de cancelación a ClickHouse. Como alternativa, puede usarse `WithCancel` para cancelar una consulta explícitamente.
+
+Los auxiliares `clickhouse.WithQueryID` y `clickhouse.WithQuotaKey` permiten especificar un identificador de consulta y una clave de cuota. Los identificadores de consulta pueden ser útiles para rastrear consultas en los registros y con fines de cancelación. Se puede usar una clave de cuota para imponer límites al uso de ClickHouse en función de un valor de clave único; consulte [Quotas Management](/es/concepts/features/security/access-rights#quotas-management) para obtener más información.
+
+También puede usar el contexto para asegurarse de que una configuración solo se aplique a una consulta específica, en lugar de a toda la conexión, como se muestra en [Connection Settings](/es/integrations/language-clients/go/configuration#connection-settings).
+
+Por último, puede controlar el tamaño del búfer de bloques mediante `clickhouse.WithBlockSize`. Esto anula la configuración de nivel de conexión `BlockBufferSize` y controla el número máximo de bloques que se decodifican y se mantienen en memoria en un momento dado. Los valores más altos pueden permitir una mayor paralelización, a costa de un mayor uso de memoria.
+
+A continuación se muestran ejemplos de lo anterior.
+
+```go
+dialCount := 0
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    DialContext: func(ctx context.Context, addr string) (net.Conn, error) {
+        dialCount++
+        var d net.Dialer
+        return d.DialContext(ctx, "tcp", addr)
+    },
+})
+if err != nil {
+    return err
+}
+if err := clickhouse_tests.CheckMinServerServerVersion(conn, 22, 6, 1); err != nil {
+    return nil
+}
+// podemos usar el contexto para pasar configuraciones a una llamada de API específica
+ctx := clickhouse.Context(context.Background(), clickhouse.WithSettings(clickhouse.Settings{
+    "async_insert": "1",
+}))
+
+// las consultas pueden cancelarse usando el contexto
+ctx, cancel := context.WithCancel(context.Background())
+go func() {
+    cancel()
+}()
+if err = conn.QueryRow(ctx, "SELECT sleep(3)").Scan(); err == nil {
+    return fmt.Errorf("expected cancel")
+}
+
+// establecer un límite de tiempo para una consulta - esto cancelará la consulta cuando se alcance el tiempo absoluto.
+// las consultas continuarán hasta completarse en ClickHouse
+ctx, cancel = context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+defer cancel()
+if err := conn.Ping(ctx); err == nil {
+    return fmt.Errorf("expected deadline exceeeded")
+}
+
+// establecer un id de consulta para facilitar el rastreo de consultas en los logs, p. ej. ver system.query_log
+var one uint8
+queryId, _ := uuid.NewUUID()
+ctx = clickhouse.Context(context.Background(), clickhouse.WithQueryID(queryId.String()))
+if err = conn.QueryRow(ctx, "SELECT 1").Scan(&one); err != nil {
+    return err
+}
+
+conn.Exec(context.Background(), "DROP QUOTA IF EXISTS foobar")
+defer func() {
+    conn.Exec(context.Background(), "DROP QUOTA IF EXISTS foobar")
+}()
+ctx = clickhouse.Context(context.Background(), clickhouse.WithQuotaKey("abcde"))
+// establecer una clave de cuota - primero crear la cuota
+if err = conn.Exec(ctx, "CREATE QUOTA IF NOT EXISTS foobar KEYED BY client_key FOR INTERVAL 1 minute MAX queries = 5 TO default"); err != nil {
+    return err
+}
+
+type Number struct {
+    Number uint64 `ch:"number"`
+}
+for i := 1; i <= 6; i++ {
+    var result []Number
+    if err = conn.Select(ctx, &result, "SELECT number FROM numbers(10)"); err != nil {
+        return err
+    }
+}
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/context.go)
+
+<div id="progress-profile-log">
+  ## Información de Progress, Profile y Log
+</div>
+
+Se puede solicitar información de Progress, Profile y Log en las consultas. La información de Progress muestra estadísticas sobre la cantidad de filas y bytes leídos y procesados en ClickHouse. En cambio, la información de Profile ofrece un resumen de los datos devueltos al cliente, incluidos los totales de bytes (sin comprimir), filas y bloques. Por último, la información de Log proporciona estadísticas sobre los hilos, por ejemplo, el uso de memoria y la velocidad de procesamiento de los datos.
+
+Para obtener esta información, es necesario que el usuario use [Context](#using-context), al que puede pasar funciones de callback.
+
+```go
+totalRows := uint64(0)
+// usar el contexto para pasar una función de retorno para información de progreso y perfil
+ctx := clickhouse.Context(context.Background(), clickhouse.WithProgress(func(p *clickhouse.Progress) {
+    fmt.Println("progress: ", p)
+    totalRows += p.Rows
+}), clickhouse.WithProfileInfo(func(p *clickhouse.ProfileInfo) {
+    fmt.Println("profile info: ", p)
+}), clickhouse.WithLogs(func(log *clickhouse.Log) {
+    fmt.Println("log info: ", log)
+}))
+
+rows, err := conn.Query(ctx, "SELECT number from numbers(1000000) LIMIT 1000000")
+if err != nil {
+    return err
+}
+for rows.Next() {
+}
+
+// NOTA: No omitir la comprobación de rows.Err()
+if err := rows.Err(); err != nil {
+    return err
+}
+
+fmt.Printf("Total Rows: %d\n", totalRows)
+rows.Close()
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/progress.go)
+
+<div id="dynamic-scanning">
+  ## Escaneo dinámico
+</div>
+
+Puede que necesite leer tablas cuyo esquema o tipo de los campos devueltos se desconozca. Esto es habitual cuando se realiza análisis de datos ad hoc o se desarrollan herramientas genéricas. Para ello, la información sobre los tipos de las columnas está disponible en las respuestas a las consultas. Esto puede usarse con la reflexión de Go para crear instancias en tiempo de ejecución de variables con los tipos correctos que pueden pasarse a Scan.
+
+```go
+const query = `
+SELECT
+        1     AS Col1
+    , 'Text' AS Col2
+`
+rows, err := conn.Query(context.Background(), query)
+if err != nil {
+    return err
+}
+defer rows.Close()
+var (
+    columnTypes = rows.ColumnTypes()
+    vars        = make([]interface{}, len(columnTypes))
+)
+for i := range columnTypes {
+    vars[i] = reflect.New(columnTypes[i].ScanType()).Interface()
+}
+for rows.Next() {
+    if err := rows.Scan(vars...); err != nil {
+        return err
+    }
+    for _, v := range vars {
+        switch v := v.(type) {
+        case *string:
+            fmt.Println(*v)
+        case *uint8:
+            fmt.Println(*v)
+        }
+    }
+}
+// NOTA: No omitir la comprobación de rows.Err()
+if err := rows.Err(); err != nil {
+    return err
+}
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/dynamic_scan_types.go)
+
+<div id="external-tables">
+  ## Tablas externas
+</div>
+
+Las [tablas externas](/es/reference/engines/table-engines/special/external-data) permiten al cliente enviar datos a ClickHouse junto con una consulta SELECT. Estos datos se colocan en una tabla temporal y pueden usarse en la propia consulta para evaluarlos.
+
+Para enviar datos externos al cliente con una consulta, el usuario debe crear una tabla externa mediante `ext.NewTable` antes de pasarla a través del contexto.
+
+```go
+table1, err := ext.NewTable("external_table_1",
+    ext.Column("col1", "UInt8"),
+    ext.Column("col2", "String"),
+    ext.Column("col3", "DateTime"),
+)
+if err != nil {
+    return err
+}
+
+for i := 0; i < 10; i++ {
+    if err = table1.Append(uint8(i), fmt.Sprintf("value_%d", i), time.Now()); err != nil {
+        return err
+    }
+}
+
+table2, err := ext.NewTable("external_table_2",
+    ext.Column("col1", "UInt8"),
+    ext.Column("col2", "String"),
+    ext.Column("col3", "DateTime"),
+)
+
+for i := 0; i < 10; i++ {
+    table2.Append(uint8(i), fmt.Sprintf("value_%d", i), time.Now())
+}
+ctx := clickhouse.Context(context.Background(),
+    clickhouse.WithExternalTable(table1, table2),
+)
+rows, err := conn.Query(ctx, "SELECT * FROM external_table_1")
+if err != nil {
+    return err
+}
+for rows.Next() {
+    var (
+        col1 uint8
+        col2 string
+        col3 time.Time
+    )
+    rows.Scan(&col1, &col2, &col3)
+    fmt.Printf("col1=%d, col2=%s, col3=%v\n", col1, col2, col3)
+}
+// NOTA: No omitir la comprobación de rows.Err()
+if err := rows.Err(); err != nil {
+    return err
+}
+rows.Close()
+
+var count uint64
+if err := conn.QueryRow(ctx, "SELECT COUNT(*) FROM external_table_1").Scan(&count); err != nil {
+    return err
+}
+fmt.Printf("external_table_1: %d\n", count)
+if err := conn.QueryRow(ctx, "SELECT COUNT(*) FROM external_table_2").Scan(&count); err != nil {
+    return err
+}
+fmt.Printf("external_table_2: %d\n", count)
+if err := conn.QueryRow(ctx, "SELECT COUNT(*) FROM (SELECT * FROM external_table_1 UNION ALL SELECT * FROM external_table_2)").Scan(&count); err != nil {
+    return err
+}
+fmt.Printf("external_table_1 UNION external_table_2: %d\n", count)
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/external_data.go)
+
+<div id="open-telemetry">
+  ## OpenTelemetry
+</div>
+
+ClickHouse admite la [propagación del contexto de trazas](/es/guides/oss/deployment-and-scaling/monitoring/opentelemetry) tanto en los transportes TCP como HTTP. Cuando se usa TCP, el cliente serializa el span en el protocolo binario nativo. Usa `clickhouse.WithSpan` para adjuntar un span a una consulta mediante el contexto.
+
+<Info>
+  **Limitación del transporte HTTP**
+
+  Aunque el servidor de ClickHouse acepta las cabeceras HTTP estándar `traceparent` / `tracestate`, el transporte HTTP de clickhouse-go actualmente no las envía, por lo que `WithSpan` no tiene efecto en HTTP. Como alternativa, puedes configurar manualmente la cabecera mediante `HttpHeaders` en las opciones de conexión.
+</Info>
+
+```go
+var count uint64
+rows := conn.QueryRow(clickhouse.Context(context.Background(), clickhouse.WithSpan(
+    trace.NewSpanContext(trace.SpanContextConfig{
+        SpanID:  trace.SpanID{1, 2, 3, 4, 5},
+        TraceID: trace.TraceID{5, 4, 3, 2, 1},
+    }),
+)), "SELECT COUNT() FROM (SELECT number FROM system.numbers LIMIT 5)")
+if err := rows.Scan(&count); err != nil {
+    return err
+}
+// NOTA: No omitir la comprobación de rows.Err()
+if err := rows.Err(); err != nil {
+    return err
+}
+fmt.Printf("count: %d\n", count)
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/open_telemetry.go)
+
+Puedes encontrar todos los detalles sobre cómo aprovechar el tracing en [la compatibilidad con OpenTelemetry](/es/guides/oss/deployment-and-scaling/monitoring/opentelemetry).

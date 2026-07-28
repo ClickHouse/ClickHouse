@@ -7,6 +7,7 @@ import snappy
 import sys
 import urllib
 import zipfile
+import zstandard
 
 
 PRESETS_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "presets")
@@ -81,20 +82,45 @@ def load_preset_from_file(preset_file):
 
 
 # Sends a protobuf message of type remote_pb2.WriteRequest to specified host and port via the RemoteWrite protocol.
-def send_protobuf_to_remote_write(host, port, path, write_request_proto):
-    response = get_response_to_remote_write(host, port, path, write_request_proto)
+def send_protobuf_to_remote_write(
+    host, port, path, write_request_proto, content_encoding="snappy"
+):
+    response = get_response_to_remote_write(
+        host, port, path, write_request_proto, content_encoding
+    )
     check_remote_write_response(response)
 
 
-def get_response_to_remote_write(host, port, path, write_request_proto):
+def compress_remote_write_request(serialized_proto, content_encoding):
+    if content_encoding == "snappy":
+        return snappy.compress(data=serialized_proto)
+    if content_encoding == "zstd":
+        return zstandard.compress(serialized_proto)
+    # Deliberately send uncompressed data with an unsupported Content-Encoding
+    # so that tests can check how the server rejects it.
+    return serialized_proto
+
+
+def get_response_to_remote_write(
+    host,
+    port,
+    path,
+    write_request_proto,
+    content_encoding="snappy",
+    content_type="application/x-protobuf",
+):
     url = f"http://{host}:{port}/{path.strip('/')}"
-    print(f"Posting {url}")
+    print(
+        f"Posting {url} with Content-Encoding: {content_encoding}, Content-Type: {content_type}"
+    )
     response = requests.post(
         url,
-        data=snappy.compress(data=write_request_proto.SerializeToString()),
+        data=compress_remote_write_request(
+            write_request_proto.SerializeToString(), content_encoding
+        ),
         headers={
-            "Content-Encoding": "snappy",
-            "Content-Type": "application/x-protobuf",
+            "Content-Encoding": content_encoding,
+            "Content-Type": content_type,
             "User-Agent": requests.utils.default_user_agent(),
             "X-Prometheus-Remote-Write-Version": "0.1.0",
         },
@@ -165,46 +191,52 @@ def extract_protobuf_from_remote_read_response(response):
 
 
 # Executes an instant query using Prometheus HTTP API.
+# `params` is a dict {"param_name": "param_value", ...} of additional URL query parameters.
 def execute_query_via_http_api(
-    host, port, path, query, timestamp=None, expect_error=False
+    host, port, path, query, timestamp=None, params=None, expect_error=False
 ):
-    response = get_response_to_http_api_query(host, port, path, query, timestamp)
+    response = get_response_to_http_api_query(host, port, path, query, timestamp, params)
     if expect_error:
         return extract_error_from_http_api_response(response)
     return extract_data_from_http_api_response(response)
 
 
 # Executes a range query using Prometheus HTTP API.
+# `params` is a dict {"param_name": "param_value", ...} of additional URL query parameters.
 def execute_range_query_via_http_api(
-    host, port, path, query, start_timestamp, end_timestamp, step, expect_error=False
+    host, port, path, query, start_timestamp, end_timestamp, step, params=None, expect_error=False
 ):
     response = get_response_to_http_api_range_query(
-        host, port, path, query, start_timestamp, end_timestamp, step
+        host, port, path, query, start_timestamp, end_timestamp, step, params
     )
     if expect_error:
         return extract_error_from_http_api_response(response)
     return extract_data_from_http_api_response(response)
 
 
-def get_response_to_http_api_query(host, port, path, query, timestamp=None):
+def get_response_to_http_api_query(host, port, path, query, timestamp=None, params=None):
     escaped_query = urllib.parse.quote_plus(query, safe="")
     url = f"http://{host}:{port}/{path.strip('/')}?query={escaped_query}"
     if timestamp is not None:
         url += f"&time={timestamp}"
+    for name, value in (params or {}).items():
+        url += f"&{urllib.parse.quote_plus(str(name), safe='')}={urllib.parse.quote_plus(str(value), safe='')}"
     return get_response_to_http_api(url)
 
 
 def get_response_to_http_api_range_query(
-    host, port, path, query, start_timestamp, end_timestamp, step
+    host, port, path, query, start_timestamp, end_timestamp, step, params=None
 ):
     escaped_query = urllib.parse.quote_plus(query, safe="")
     url = f"http://{host}:{port}/{path.strip('/')}?query={escaped_query}&start={start_timestamp}&end={end_timestamp}&step={step}"
+    for name, value in (params or {}).items():
+        url += f"&{urllib.parse.quote_plus(str(name), safe='')}={urllib.parse.quote_plus(str(value), safe='')}"
     return get_response_to_http_api(url)
 
 
-def get_response_to_http_api(url):
+def get_response_to_http_api(url, headers=None):
     print(f"Requesting {url}")
-    response = requests.get(url)
+    response = requests.get(url, headers=headers or {})
     print(
         f"Status code: {response.status_code} {http.HTTPStatus(response.status_code).phrase}"
     )

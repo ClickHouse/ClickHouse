@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import os
 
 import pytest
 
@@ -37,7 +36,7 @@ def test_old_dirs_cleanup(start_cluster):
     assert node1.query("SELECT count() FROM test_table") == "1\n"
 
     data_path = node1.query(
-        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='test_table'"
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='test_table'"
     ).strip()
 
     node1.stop_clickhouse()

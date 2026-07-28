@@ -1,0 +1,36 @@
+-- equality fast path: returns the user and reads only the matched row
+alice
+1
+-- equality fast path: a non-existent user returns nothing and reads no rows
+0
+-- IN fast path: returns both users and reads only the matched rows
+alice
+bob
+2
+-- equality fast path: a NULL constant matches no rows and raises no exception
+0
+-- IN fast path: a NULL element is skipped, non-NULL names still match
+alice
+-- AND fast path: contradictory equalities intersect to the empty set
+0
+-- AND fast path: equality intersected with IN narrows the candidates
+alice
+1
+-- AND fast path: equality combined with an unrelated condition still narrows by name
+alice
+1
+-- fallback: a constant alias named 'name' must not be mistaken for the column
+1
+-- fallback: LIKE predicate still returns the right users
+alice
+bob
+carol
+-- fallback: a large IN set (above the fast-path limit) falls back to the full scan but stays correct
+alice
+-- fallback: a duplicate-heavy IN (few distinct values, long list above the limit) falls back to the full scan and stays correct
+alice
+fell back to full scan
+-- fallback: a mostly-NULL IN (long NULL list above the limit) falls back to the full scan and stays correct
+alice
+-- fallback: counting all users still works
+1

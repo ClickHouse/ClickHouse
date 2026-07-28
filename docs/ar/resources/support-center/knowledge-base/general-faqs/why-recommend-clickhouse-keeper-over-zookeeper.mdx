@@ -1,0 +1,34 @@
+---
+date: 2023-06-07
+title: لماذا يُوصى باستخدام ClickHouse Keeper بدلًا من ZooKeeper؟
+description: يتفوّق ClickHouse Keeper على ZooKeeper بميزات مثل تقليل مساحة القرص المستخدمة، وتسريع التعافي، وخفض استهلاك الذاكرة، مما يوفّر أداءً أفضل لعناقيد ClickHouse.
+tags: ['المفاهيم الأساسية للبيانات']
+keywords: ['ClickHouse Keeper', 'ZooKeeper']
+---
+
+***
+
+<div id="question">
+  ## السؤال
+</div>
+
+يوفّر ClickHouse Keeper نظام التنسيق لتكرار البيانات وتنفيذ استعلامات DDL الموزعة. ويتوافق ClickHouse Keeper مع ZooKeeper، لكن قد لا يكون من الواضح لماذا ينبغي استخدام ClickHouse Keeper بدلًا من ZooKeeper. تستعرض هذه المقالة بعض مزايا ClickHouse Keeper.
+
+<div id="answer">
+  ## الإجابة
+</div>
+
+تستخدم [ClickHouse Cloud](https://console.clickhouse.cloud/) `clickhouse-keeper` على نطاق واسع عبر آلاف الخدمات في بيئة متعددة المستأجرين. لقد صممنا Keeper وطوّرناه لكي نستغني عن اعتمادنا على تنفيذ ZooKeeper المستند إلى Java. يعالج ClickHouse Keeper العديد من العيوب المعروفة في ZooKeeper، ويقدّم أيضًا تحسينات إضافية، منها:
+
+* تستهلك اللقطات والسجلات مساحة أقل بكثير على القرص بفضل الضغط الأفضل
+* لا يوجد حد افتراضي لحجم الحزمة وبيانات العقدة (بينما يبلغ 1 MB في ZooKeeper)
+* لا توجد مشكلة تجاوز سعة `zxid` (إذ يفرض ذلك إعادة التشغيل كل 2B معاملة في ZooKeeper)
+* تعافٍ أسرع بعد انقسامات الشبكة بفضل استخدام بروتوكول توافق موزّع أفضل
+* يستهلك ذاكرة أقل لنفس حجم البيانات
+* إعداده أسهل، ولا يتطلب تحديد حجم heap الخاص بـ JVM أو استخدام آلية garbage collection مخصصة
+* تتيح بعض الأوامر المخصصة في البروتوكول تنفيذ عمليات أسرع في جداول `ReplicatedMergeTree`
+* تغطية أوسع باختبارات Jepsen
+
+بالإضافة إلى ذلك، لاحظ ClickHouse Support انخفاضًا كبيرًا في مشكلات العنقود لدى الجهات التي تستخدم `clickhouse-keeper` بدلًا من ZooKeeper.
+
+اطّلع على [صفحة توثيق Keeper](/ar/guides/oss/deployment-and-scaling/keeper/index) لمزيد من التفاصيل حول كيفية تهيئة ClickHouse Keeper وتشغيله.

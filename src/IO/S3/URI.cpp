@@ -87,6 +87,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
         {
             mapper["s3"] = "https://{bucket}.s3.amazonaws.com";
             mapper["gs"] = "https://storage.googleapis.com/{bucket}";
+            mapper["gcs"] = "https://storage.googleapis.com/{bucket}";
             mapper["oss"] = "https://{bucket}.oss.aliyuncs.com";
         }
 

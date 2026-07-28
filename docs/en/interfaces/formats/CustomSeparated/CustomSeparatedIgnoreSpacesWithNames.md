@@ -8,7 +8,7 @@ doc_type: 'reference'
 
 | Input | Output | Alias |
 |-------|--------|-------|
-| ✔     |        |       |
+| ✔     | ✗      |       |
 
 ## Description {#description}
 

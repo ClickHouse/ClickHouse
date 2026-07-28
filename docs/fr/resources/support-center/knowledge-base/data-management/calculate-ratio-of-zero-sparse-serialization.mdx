@@ -1,0 +1,69 @@
+---
+title: Comment calculer la proportion de valeurs vides/égales à zéro dans chaque colonne d'une table
+description: Découvrez comment calculer la proportion de valeurs vides ou égales à zéro dans chaque colonne d'une table ClickHouse afin d'optimiser la sérialisation des colonnes clairsemées.
+date: 2023-05-18
+tags: ['Performances et optimisations']
+keywords: ['Proportion de valeurs vides/égales à zéro', 'Calculer']
+---
+
+<div id="how-to-calculate-the-ratio-of-emptyzero-values-in-every-column-in-a-table">
+  ## Comment calculer la proportion de valeurs vides/égales à zéro dans chaque colonne d’une table
+</div>
+
+Si une colonne est sparse (vide ou contient principalement des zéros), ClickHouse peut l’encoder dans un format sparse et optimiser automatiquement les calculs : les données n’ont pas besoin d’être entièrement décompressées pendant les requêtes. En effet, si vous savez à quel point une colonne est sparse, vous pouvez définir sa proportion à l’aide du [paramètre `ratio_of_defaults_for_sparse_serialization`](/fr/reference/settings/merge-tree-settings#ratio_of_defaults_for_sparse_serialization) afin d’optimiser la sérialisation.
+
+Cette requête pratique peut prendre un certain temps, mais elle analyse chaque ligne de votre table et détermine la proportion de valeurs égales à zéro (ou à la valeur par défaut) dans chaque colonne de la table spécifiée :
+
+```sql
+SELECT *
+    APPLY x -> (x = defaultValueOfArgumentType(x)) APPLY avg APPLY x -> round(x, 3)
+FROM table_name
+FORMAT Vertical
+```
+
+Par exemple, nous avons exécuté la requête ci-dessus sur la table [environmental sensors dataset](/fr/get-started/sample-datasets/environmental-sensors), nommée `sensors`, qui contient plus de 20 milliards de lignes et 19 colonnes :
+
+```sql
+SELECT *
+    APPLY x -> (x = defaultValueOfArgumentType(x)) APPLY avg APPLY x -> round(x, 3)
+FROM sensors
+FORMAT Vertical
+```
+
+Voici la réponse :
+
+```response
+
+Row 1:
+──────
+round(avg(equals(sensor_id, defaultValueOfArgumentType(sensor_id))), 3):                 0
+round(avg(equals(sensor_type, defaultValueOfArgumentType(sensor_type))), 3):             0.159
+round(avg(equals(location, defaultValueOfArgumentType(location))), 3):                   0
+round(avg(equals(lat, defaultValueOfArgumentType(lat))), 3):                             0.001
+round(avg(equals(lon, defaultValueOfArgumentType(lon))), 3):                             0.001
+round(avg(equals(timestamp, defaultValueOfArgumentType(timestamp))), 3):                 0
+round(avg(equals(P1, defaultValueOfArgumentType(P1))), 3):                               0.474
+round(avg(equals(P2, defaultValueOfArgumentType(P2))), 3):                               0.475
+round(avg(equals(P0, defaultValueOfArgumentType(P0))), 3):                               0.995
+round(avg(equals(durP1, defaultValueOfArgumentType(durP1))), 3):                         0.999
+round(avg(equals(ratioP1, defaultValueOfArgumentType(ratioP1))), 3):                     0.999
+round(avg(equals(durP2, defaultValueOfArgumentType(durP2))), 3):                         1
+round(avg(equals(ratioP2, defaultValueOfArgumentType(ratioP2))), 3):                     1
+round(avg(equals(pressure, defaultValueOfArgumentType(pressure))), 3):                   0.83
+round(avg(equals(altitude, defaultValueOfArgumentType(altitude))), 3):                   1
+round(avg(equals(pressure_sealevel, defaultValueOfArgumentType(pressure_sealevel))), 3): 1
+round(avg(equals(temperature, defaultValueOfArgumentType(temperature))), 3):             0.532
+round(avg(equals(humidity, defaultValueOfArgumentType(humidity))), 3):                   0.544
+
+1 row in set. Elapsed: 992.041 sec. Processed 20.69 billion rows, 1.39 TB (20.86 million rows/s., 1.40 GB/s.)
+```
+
+D&#39;après les résultats ci-dessus :
+
+* la colonne `sensor_id` n&#39;est pas du tout clairsemée. En fait, chaque ligne a une valeur différente de zéro
+* la colonne `sensor_type` n&#39;est clairsemée qu&#39;à environ 15,9 %
+* la colonne `P0` est très clairsemée : 99,9 % des valeurs sont égales à zéro
+* la colonne `pressure` est assez clairsemée, à 83 %
+* et la colonne `temperature` a 53,2 % de ses valeurs manquantes ou égales à zéro
+
+Comme nous l&#39;avons dit, c&#39;est une requête pratique pour calculer le degré de parcimonie de vos colonnes dans une table ClickHouse !

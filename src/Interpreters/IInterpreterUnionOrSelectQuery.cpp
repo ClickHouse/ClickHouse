@@ -146,6 +146,7 @@ void IInterpreterUnionOrSelectQuery::setQuota(QueryPipeline & pipeline) const
         quota = context->getQuota();
 
     pipeline.setQuota(quota);
+    pipeline.setNormalizedQueryHash(context->getNormalizedQueryHash());
 }
 
 static ASTPtr parseAdditionalPostFilter(const Context & context)

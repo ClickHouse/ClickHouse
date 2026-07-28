@@ -1,0 +1,326 @@
+---
+description: 'توثيق لعبارة INSERT INTO'
+sidebarTitle: 'INSERT INTO'
+slug: /sql-reference/statements/insert-into
+title: 'عبارة INSERT INTO'
+doc_type: 'reference'
+---
+
+يُدرِج بيانات في جدول.
+
+**البنية**
+
+```sql
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] VALUES (v11, v12, v13), (v21, v22, v23), ...
+```
+
+يمكنك تحديد قائمة بالأعمدة المطلوب إدراجها باستخدام `(c1, c2, c3)`. يمكنك أيضًا استخدام تعبير مع [مُطابِق](/ar/reference/statements/select/index#asterisk) الأعمدة مثل `*` و/أو [مُعدِّلات](/ar/reference/statements/select/index#select-modifiers) مثل [APPLY](/ar/reference/statements/select/apply_modifier) و[EXCEPT](/ar/reference/statements/select/except_modifier) و[REPLACE](/ar/reference/statements/select/replace_modifier).
+
+على سبيل المثال، لننظر إلى الجدول التالي:
+
+```sql
+SHOW CREATE insert_select_testtable;
+```
+
+```text
+CREATE TABLE insert_select_testtable
+(
+    `a` Int8,
+    `b` String,
+    `c` Int8
+)
+ENGINE = MergeTree()
+ORDER BY a
+```
+
+```sql
+INSERT INTO insert_select_testtable (*) VALUES (1, 'a', 1) ;
+```
+
+إذا كنت تريد إدراج البيانات في جميع الأعمدة باستثناء العمود `b`، يمكنك القيام بذلك باستخدام الكلمة المفتاحية `EXCEPT`. وبالاستناد إلى الصياغة أعلاه، ستحتاج إلى التأكد من إدراج عدد من القيم (`VALUES (v11, v13)`) يساوي عدد الأعمدة التي تحددها (`(c1, c3)`) :
+
+```sql
+INSERT INTO insert_select_testtable (* EXCEPT(b)) Values (2, 2);
+```
+
+```sql
+SELECT * FROM insert_select_testtable;
+```
+
+```text
+┌─a─┬─b─┬─c─┐
+│ 2 │   │ 2 │
+└───┴───┴───┘
+┌─a─┬─b─┬─c─┐
+│ 1 │ a │ 1 │
+└───┴───┴───┘
+```
+
+في هذا المثال، نرى أن الصف الثاني المُدرَج أُسنِدت إليه قيمتا العمودين `a` و`c` من القيم المُمرَّرة، بينما مُلِئ العمود `b` بالقيمة الافتراضية. كما يمكن أيضًا استخدام الكلمة المفتاحية `DEFAULT` لإدراج قيم افتراضية:
+
+```sql
+INSERT INTO insert_select_testtable VALUES (1, DEFAULT, 1) ;
+```
+
+إذا كانت قائمة الأعمدة لا تتضمن جميع الأعمدة الموجودة، فستُملأ الأعمدة المتبقية بما يلي:
+
+* القيم المحسوبة من تعبيرات `DEFAULT` المحددة في تعريف الجدول.
+* الأصفار والسلاسل النصية الفارغة إذا لم تكن تعبيرات `DEFAULT` معرّفة.
+
+يمكن تمرير البيانات إلى INSERT بأي [تنسيق](/ar/reference/formats/index) يدعمه ClickHouse. ويجب تحديد التنسيق صراحةً في الاستعلام:
+
+```sql
+INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
+```
+
+على سبيل المثال، فإن صيغة الاستعلام التالية مماثلة تمامًا للصيغة الأساسية لـ `INSERT ... VALUES`:
+
+```sql
+INSERT INTO [db.]table [(c1, c2, c3)] FORMAT Values (v11, v12, v13), (v21, v22, v23), ...
+```
+
+يزيل ClickHouse جميع المسافات ومحرف سطر جديد واحدًا (إن وُجد) قبل البيانات. عند صياغة استعلام، نوصي بوضع البيانات في سطر جديد بعد معاملات الاستعلام، وهذا مهم إذا كانت البيانات تبدأ بمسافات.
+
+مثال:
+
+```sql
+INSERT INTO t FORMAT TabSeparated
+11  Hello, world!
+22  Qwerty
+```
+
+يمكنك إدراج البيانات بشكل منفصل عن الاستعلام باستخدام [عميل سطر الأوامر](/ar/concepts/features/tools-and-utilities/clickhouse-local) أو [واجهة HTTP](/ar/concepts/features/interfaces/http).
+
+<Note>
+  إذا أردت تحديد `SETTINGS` لاستعلام `INSERT`، فعليك فعل ذلك *قبل* عبارة `FORMAT` لأن كل ما يأتي بعد `FORMAT format_name` يُعامل على أنه بيانات. على سبيل المثال:
+
+  ```sql
+  INSERT INTO table SETTINGS ... FORMAT format_name data_set
+  ```
+</Note>
+
+<div id="constraints">
+  ## القيود
+</div>
+
+إذا كان للجدول [قيود](/ar/reference/statements/create/table#constraints)، فسيتم التحقق من تعبيراتها لكل صف من البيانات المُدخلة. وإذا لم يُستوفَ أيٌّ من هذه القيود، فسيُصدر الخادم استثناءً يتضمن اسم القيد وتعبيره، وسيتوقف الاستعلام.
+
+<div id="data-type-validation">
+  ## التحقق من صحة أنواع البيانات
+</div>
+
+يتحقق ClickHouse من أنواع البيانات المسموح بها (التي تتحكم فيها إعدادات مثل `enable_time_time64_type` و`allow_suspicious_low_cardinality_types` و`allow_suspicious_fixed_string_types` وغيرها) فقط عند إنشاء الجدول (`CREATE TABLE`) وتعديل المخطط (`ALTER TABLE`)، وليس أثناء `INSERT`.
+
+وهذا يعني أنه إذا كان هناك جدول أُنشئ مسبقًا ويحتوي على نوع بيانات غير مسموح به، فلا يزال بالإمكان إدراج البيانات فيه حتى إذا كان الإعداد المقابل معطّلًا على الخادم. وهذا سلوك مقصود — فبعد إنشاء الجدول، يجب ألا تُمنع عمليات الإدراج بسبب إعدادات تتحكم في إنشاء الأنواع.
+
+على سبيل المثال:
+
+```sql
+SET enable_time_time64_type = 1;
+
+CREATE TABLE events
+(
+    `id` UInt64,
+    `event_time` Time
+)
+ENGINE = MergeTree()
+ORDER BY id;
+
+SET enable_time_time64_type = 0;
+
+-- This works even though the setting is now disabled.
+-- The table already exists, so inserts are not blocked.
+INSERT INTO events VALUES (1, '14:30:25');
+
+-- But creating a new table with the Time type will fail.
+CREATE TABLE events_new
+(
+    `id` UInt64,
+    `event_time` Time
+)
+ENGINE = MergeTree()
+ORDER BY id; -- ERR: TYPE_TIME_TIME64_IS_NOT_ENABLED
+```
+
+<Note>
+  ونتيجة لذلك، يمكن لعميل يعمل بإصدار أحدث (حيث يكون أحد الإعدادات مفعّلًا افتراضيًا) أن يُدرج بيانات ذات أنواع بيانات غير مسموح بها في خادم يعمل بإصدار أقدم (حيث يكون هذا الإعداد معطّلًا)، ما دام الجدول الهدف يحتوي بالفعل على أنواع الأعمدة المقابلة. ويُطبَّق هذا التحقق على مستوى DDL، وليس على مستوى DML.
+</Note>
+
+<div id="inserting-the-results-of-select">
+  ## إدراج نتائج SELECT
+</div>
+
+**الصياغة**
+
+```sql
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] SELECT ...
+```
+
+تُطابَق الأعمدة وفقًا لمواضعها في عبارة `SELECT`. ومع ذلك، قد تختلف أسماؤها بين تعبير `SELECT` والجدول المُستخدَم في `INSERT`. وإذا لزم الأمر، يُجرى تحويل النوع.
+
+لا يسمح أيٌّ من تنسيقات البيانات، باستثناء تنسيق Values، باستخدام تعبيرات كقيم مثل `now()` و`1 + 2` وما إلى ذلك. ويتيح تنسيق Values استخدامًا محدودًا للتعبيرات، لكن لا يُنصح بذلك، لأن تنفيذها في هذه الحالة يعتمد على كود غير فعّال.
+
+الاستعلامات الأخرى التي تعدّل أجزاء البيانات غير مدعومة: `UPDATE` و`DELETE` و`REPLACE` و`MERGE` و`UPSERT` و`INSERT UPDATE`.
+ومع ذلك، يمكنك حذف البيانات القديمة باستخدام `ALTER TABLE ... DROP PARTITION`.
+
+يجب تحديد عبارة `FORMAT` في نهاية الاستعلام إذا كانت عبارة `SELECT` تتضمن دالة الجدول [input()](/ar/reference/functions/table-functions/input).
+
+لإدراج قيمة افتراضية بدلًا من `NULL` في عمود ذي نوع بيانات غير قابل لـ `NULL`، فعِّل الإعداد [insert&#95;null&#95;as&#95;default](/ar/reference/settings/session-settings#insert_null_as_default).
+
+يدعم `INSERT` أيضًا CTE (تعبير الجدول الشائع). على سبيل المثال، العبارتان التاليتان متكافئتان:
+
+```sql
+INSERT INTO x WITH y AS (SELECT * FROM numbers(10)) SELECT * FROM y;
+WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
+```
+
+<div id="inserting-data-from-a-file">
+  ## إدراج البيانات من ملف
+</div>
+
+**الصيغة**
+
+```sql
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION type] [SETTINGS ...] [FORMAT format_name]
+```
+
+استخدم الصياغة أعلاه لإدراج البيانات من ملف أو ملفات مخزّنة على جانب **العميل**. `file_name` و`type` هما قيمتان حرفيتان نصّيتان. يجب تحديد [format](/ar/reference/formats/index) لملف الإدخال في عبارة `FORMAT`.
+
+الملفات المضغوطة مدعومة. يُكتشف نوع الضغط من امتداد اسم الملف، أو يمكن تحديده صراحةً في عبارة `COMPRESSION`. الأنواع المدعومة هي: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+
+تتوفر هذه الإمكانية في [عميل سطر الأوامر](/ar/concepts/features/interfaces/client) و[clickhouse-local](/ar/concepts/features/tools-and-utilities/clickhouse-local).
+
+**أمثلة**
+
+<div id="single-file-with-from-infile">
+  ### ملف واحد باستخدام FROM INFILE
+</div>
+
+نفّذ الاستعلامات التالية باستخدام [عميل سطر الأوامر](/ar/concepts/features/interfaces/client):
+
+```bash title="Query"
+echo 1,A > input.csv ; echo 2,B >> input.csv
+clickhouse-client --query="CREATE TABLE table_from_file (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;"
+clickhouse-client --query="INSERT INTO table_from_file FROM INFILE 'input.csv' FORMAT CSV;"
+clickhouse-client --query="SELECT * FROM table_from_file FORMAT PrettyCompact;"
+```
+
+```text title="Response"
+┌─id─┬─text─┐
+│  1 │ A    │
+│  2 │ B    │
+└────┴──────┘
+```
+
+<div id="multiple-files-with-from-infile-using-globs">
+  ### ملفات متعددة مع FROM INFILE باستخدام أنماط glob
+</div>
+
+هذا المثال مشابه جدًا للمثال السابق، لكن عمليات الإدراج تُجرى من عدة ملفات باستخدام `FROM INFILE 'input_*.csv`.
+
+```bash
+echo 1,A > input_1.csv ; echo 2,B > input_2.csv
+clickhouse-client --query="CREATE TABLE infile_globs (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;"
+clickhouse-client --query="INSERT INTO infile_globs FROM INFILE 'input_*.csv' FORMAT CSV;"
+clickhouse-client --query="SELECT * FROM infile_globs FORMAT PrettyCompact;"
+```
+
+<Tip>
+  بالإضافة إلى تحديد عدة ملفات باستخدام `*`، يمكنك استخدام النطاقات (`{1,2}` أو `{1..9}`) و[أنماط glob البديلة](/ar/reference/functions/table-functions/file#globs-in-path) الأخرى. وستعمل هذه الأنماط الثلاثة جميعها مع المثال أعلاه:
+
+  ```sql
+  INSERT INTO infile_globs FROM INFILE 'input_*.csv' FORMAT CSV;
+  INSERT INTO infile_globs FROM INFILE 'input_{1,2}.csv' FORMAT CSV;
+  INSERT INTO infile_globs FROM INFILE 'input_?.csv' FORMAT CSV;
+  ```
+</Tip>
+
+<div id="inserting-using-a-table-function">
+  ## الإدراج باستخدام دالة جدول
+</div>
+
+يمكن إدراج البيانات في الجداول التي تشير إليها [دوال الجداول](/ar/reference/functions/table-functions/index).
+
+**الصيغة**
+
+```sql
+INSERT INTO [TABLE] FUNCTION table_func ...
+```
+
+**مثال**
+
+تُستخدم دالة الجدول [remote](/ar/reference/functions/table-functions/remote) في الاستعلامات التالية:
+
+```sql title="Query"
+CREATE TABLE simple_table (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;
+INSERT INTO TABLE FUNCTION remote('localhost', default.simple_table)
+    VALUES (100, 'inserted via remote()');
+SELECT * FROM simple_table;
+```
+
+```text title="Response"
+┌──id─┬─text──────────────────┐
+│ 100 │ inserted via remote() │
+└─────┴───────────────────────┘
+```
+
+<div id="inserting-into-clickhouse-cloud">
+  ## الإدراج في ClickHouse Cloud
+</div>
+
+بشكل افتراضي، توفّر الخدمات على ClickHouse Cloud عدة نُسخ متماثلة لضمان الإتاحة العالية. وعند الاتصال بخدمة، يُنشأ الاتصال بإحدى هذه النُسخ المتماثلة.
+
+بعد نجاح عملية `INSERT`، تُكتَب البيانات إلى التخزين الأساسي. ومع ذلك، قد يستغرق وصول هذه التحديثات إلى النُسخ المتماثلة بعض الوقت. لذلك، إذا استخدمت اتصالًا مختلفًا ينفّذ استعلام `SELECT` على إحدى هذه النُسخ المتماثلة الأخرى، فقد لا تظهر البيانات المحدَّثة بعد.
+
+يمكن استخدام `select_sequential_consistency` لإجبار النسخة المتماثلة على تلقّي أحدث التحديثات. في ما يلي مثال على استعلام `SELECT` يستخدم هذا الإعداد:
+
+```sql
+SELECT .... SETTINGS select_sequential_consistency = 1;
+```
+
+لاحظ أن استخدام `select_sequential_consistency` يزيد العبء على ClickHouse Keeper (الذي يستخدمه ClickHouse Cloud داخليًا)، وقد يؤدي إلى تباطؤ الأداء تبعًا لمقدار الحمل على الخدمة. لا نوصي بتمكين هذا الإعداد إلا عند الضرورة. والنهج الموصى به هو تنفيذ عمليات القراءة والكتابة ضمن الجلسة نفسها، أو استخدام برنامج تشغيل عميل يعتمد البروتوكول الأصلي (وبذلك يدعم الاتصالات المثبّتة).
+
+<div id="inserting-into-a-replicated-setup">
+  ## الإدراج في إعداد يعتمد النسخ المتماثل
+</div>
+
+في إعداد يعتمد النسخ المتماثل، تصبح البيانات مرئية على النسخ المتماثلة الأخرى بعد اكتمال نسخها متماثلًا. تبدأ عملية نسخ البيانات (وتنزيلها إلى النسخ المتماثلة الأخرى) مباشرةً بعد تنفيذ `INSERT`. ويختلف هذا عن ClickHouse Cloud، حيث تُكتب البيانات فورًا إلى التخزين المشترك، وتتابع النسخ المتماثلة تغييرات البيانات الوصفية.
+
+لاحظ أنه في الإعدادات التي تعتمد النسخ المتماثل، قد تستغرق عمليات `INSERTs` أحيانًا وقتًا ملحوظًا (في حدود ثانية واحدة)، لأنها تتطلب تنفيذ commit في ClickHouse Keeper لتحقيق التوافق الموزّع. كما أن استخدام S3 للتخزين يضيف زمن استجابة إضافيًا.
+
+<div id="performance-considerations">
+  ## اعتبارات الأداء
+</div>
+
+يقوم `INSERT` بفرز بيانات الإدخال حسب المفتاح الأساسي وتقسيمها إلى تقسيمات وفقًا لمفتاح التقسيم. إذا أدخلت البيانات في عدة تقسيمات دفعةً واحدة، فقد يؤدي ذلك إلى انخفاض ملحوظ في أداء استعلام `INSERT`. لتجنب ذلك:
+
+* أضِف البيانات على دفعات كبيرة نسبيًا، مثل 100,000 صف في كل مرة.
+* اجمع البيانات حسب مفتاح التقسيم قبل تحميلها إلى ClickHouse.
+
+لن يتراجع الأداء إذا:
+
+* أُضيفت البيانات في الوقت الفعلي.
+* حمّلت بيانات تكون عادةً مرتبة حسب الوقت.
+
+<div id="asynchronous-inserts">
+  ### الإدراجات غير المتزامنة
+</div>
+
+يمكن إدراج البيانات بشكل غير متزامن عبر عمليات إدراج صغيرة الحجم ولكن متكررة. تُدمَج بيانات عمليات الإدراج هذه في دفعات، ثم تُدرَج بأمان في جدول. لاستخدام الإدراجات غير المتزامنة، فعِّل إعداد [`async_insert`](/ar/reference/settings/session-settings#async_insert).
+
+يؤدي استخدام `async_insert` أو [محرك الجداول `Buffer`](/ar/reference/engines/table-engines/special/buffer) إلى إضافة تخزين مؤقت.
+
+<div id="large-or-long-running-inserts">
+  ### عمليات الإدراج الكبيرة أو طويلة التشغيل
+</div>
+
+عند إدراج كميات كبيرة من البيانات، يعمل ClickHouse على تحسين أداء الكتابة من خلال عملية تُسمّى &quot;squashing&quot;. تُدمَج كتل البيانات الصغيرة المُدرجة في الذاكرة وتُجمع في كتل أكبر قبل كتابتها إلى القرص. تقلّل عملية squashing الأعباء الإضافية المرتبطة بكل عملية كتابة. أثناء هذه العملية، تصبح البيانات المُدرجة متاحة للاستعلام بعد أن يُكمل ClickHouse كتابة كل [`max_insert_block_size`](/ar/reference/settings/session-settings#max_insert_block_size) صف.
+
+**انظر أيضًا**
+
+* [async&#95;insert](/ar/reference/settings/session-settings#async_insert)
+* [wait&#95;for&#95;async&#95;insert](/ar/reference/settings/session-settings#wait_for_async_insert)
+* [wait&#95;for&#95;async&#95;insert&#95;timeout](/ar/reference/settings/session-settings#wait_for_async_insert_timeout)
+* [async&#95;insert&#95;max&#95;data&#95;size](/ar/reference/settings/session-settings#async_insert_max_data_size)
+* [async&#95;insert&#95;busy&#95;timeout&#95;ms](/ar/reference/settings/session-settings#async_insert_busy_timeout_max_ms)
+* [async&#95;insert&#95;stale&#95;timeout&#95;ms](/ar/reference/settings/session-settings#async_insert_max_data_size)

@@ -1,0 +1,163 @@
+---
+description: 'Documentation de la fonction arrayJoin'
+sidebarTitle: 'arrayJoin'
+slug: /sql-reference/functions/array-join
+title: 'fonction arrayJoin'
+doc_type: 'reference'
+---
+
+Il s’agit d’une fonction très particulière.
+
+Les fonctions ordinaires ne modifient pas un ensemble de lignes, elles ne font que modifier les valeurs de chaque ligne (`map`).
+Les fonctions d’agrégation compressent un ensemble de lignes (`fold` ou `reduce`).
+La fonction `arrayJoin` prend chaque ligne et génère un ensemble de lignes (`unfold`).
+
+Cette fonction prend un tableau comme argument et duplique la ligne source en plusieurs lignes, selon le nombre d’éléments du tableau.
+Toutes les valeurs des colonnes sont simplement copiées, à l’exception de celles de la colonne à laquelle cette fonction est appliquée, qui sont remplacées par la valeur correspondante du tableau.
+
+<Note>
+  Si le tableau est vide, `arrayJoin` ne produit aucune ligne.
+  Pour renvoyer une seule ligne contenant la valeur par défaut du type de tableau, vous pouvez l’imbriquer dans [emptyArrayToSingle](/fr/reference/functions/regular-functions/array-functions#emptyArrayToSingle), par exemple : `arrayJoin(emptyArrayToSingle(...))`.
+</Note>
+
+Par exemple :
+
+```sql title="Query"
+SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
+```
+
+```text title="Response"
+┌─dst─┬─\'Hello\'─┬─src─────┐
+│   1 │ Hello     │ [1,2,3] │
+│   2 │ Hello     │ [1,2,3] │
+│   3 │ Hello     │ [1,2,3] │
+└─────┴───────────┴─────────┘
+```
+
+La fonction `arrayJoin` affecte toutes les parties de la requête, y compris la section `WHERE`. Notez que le résultat de la requête ci-dessous est `2`, même si la sous-requête a renvoyé 1 ligne.
+
+```sql title="Query"
+SELECT sum(1) AS impressions
+FROM
+(
+    SELECT ['Istanbul', 'Berlin', 'Babruysk'] AS cities
+)
+WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
+```
+
+```text title="Response"
+┌─impressions─┐
+│           2 │
+└─────────────┘
+```
+
+Une requête peut utiliser plusieurs fonctions `arrayJoin`. Dans ce cas, la transformation est effectuée plusieurs fois et le nombre de lignes est multiplié.
+Par exemple :
+
+```sql title="Query"
+SELECT
+    sum(1) AS impressions,
+    arrayJoin(cities) AS city,
+    arrayJoin(browsers) AS browser
+FROM
+(
+    SELECT
+        ['Istanbul', 'Berlin', 'Babruysk'] AS cities,
+        ['Firefox', 'Chrome', 'Chrome'] AS browsers
+)
+GROUP BY
+    2,
+    3
+```
+
+```text title="Response"
+┌─impressions─┬─city─────┬─browser─┐
+│           2 │ Istanbul │ Chrome  │
+│           1 │ Istanbul │ Firefox │
+│           2 │ Berlin   │ Chrome  │
+│           1 │ Berlin   │ Firefox │
+│           2 │ Babruysk │ Chrome  │
+│           1 │ Babruysk │ Firefox │
+└─────────────┴──────────┴─────────┘
+```
+
+<div id="important-note">
+  ### Bonne pratique
+</div>
+
+L&#39;utilisation de plusieurs `arrayJoin` avec la même expression peut ne pas produire les résultats attendus en raison de l&#39;élimination des sous-expressions communes.
+Dans ce cas, envisagez de modifier les expressions de tableau répétées en leur appliquant des opérations supplémentaires qui n&#39;affectent pas le résultat du JOIN. Par exemple, `arrayJoin(arraySort(arr))`, `arrayJoin(arrayConcat(arr, []))`
+
+Exemple :
+
+```sql title="Query"
+SELECT
+    arrayJoin(dice) AS first_throw,
+    /* arrayJoin(dice) as second_throw */ -- is technically correct, but will annihilate result set
+    arrayJoin(arrayConcat(dice, [])) AS second_throw -- intentionally changed expression to force re-evaluation
+FROM (
+    SELECT [1, 2, 3, 4, 5, 6] AS dice
+);
+```
+
+Notez la syntaxe de [`ARRAY JOIN`](/fr/reference/statements/select/array-join) dans la requête SELECT, qui offre des possibilités plus étendues.
+`ARRAY JOIN` permet de convertir simultanément plusieurs tableaux comportant le même nombre d’éléments.
+
+Exemple :
+
+```sql title="Query"
+SELECT
+    sum(1) AS impressions,
+    city,
+    browser
+FROM
+(
+    SELECT
+        ['Istanbul', 'Berlin', 'Babruysk'] AS cities,
+        ['Firefox', 'Chrome', 'Chrome'] AS browsers
+)
+ARRAY JOIN
+    cities AS city,
+    browsers AS browser
+GROUP BY
+    2,
+    3
+```
+
+```text title="Response"
+┌─impressions─┬─city─────┬─browser─┐
+│           1 │ Istanbul │ Firefox │
+│           1 │ Berlin   │ Chrome  │
+│           1 │ Babruysk │ Chrome  │
+└─────────────┴──────────┴─────────┘
+```
+
+Ou vous pouvez utiliser [`Tuple`](/fr/reference/data-types/tuple)
+
+Exemple :
+
+```sql title="Query"
+SELECT
+    sum(1) AS impressions,
+    (arrayJoin(arrayZip(cities, browsers)) AS t).1 AS city,
+    t.2 AS browser
+FROM
+(
+    SELECT
+        ['Istanbul', 'Berlin', 'Babruysk'] AS cities,
+        ['Firefox', 'Chrome', 'Chrome'] AS browsers
+)
+GROUP BY
+    2,
+    3
+```
+
+```text title="Row"
+┌─impressions─┬─city─────┬─browser─┐
+│           1 │ Istanbul │ Firefox │
+│           1 │ Berlin   │ Chrome  │
+│           1 │ Babruysk │ Chrome  │
+└─────────────┴──────────┴─────────┘
+```
+
+Le nom `arrayJoin` dans ClickHouse tire son origine de sa parenté conceptuelle avec l’opération JOIN, mais appliquée à des tableaux au sein d’une même ligne. Alors que les JOIN traditionnels combinent des lignes provenant de différentes tables, `arrayJoin` &quot;associe&quot; chaque élément d’un tableau à une ligne, produisant ainsi plusieurs lignes — une pour chaque élément du tableau — tout en dupliquant les valeurs des autres colonnes. ClickHouse fournit également la syntaxe de clause [`ARRAY JOIN`](/fr/reference/statements/select/array-join), ce qui rend ce lien avec les opérations JOIN traditionnelles encore plus explicite en utilisant une terminologie SQL JOIN familière. Ce processus est aussi appelé le &quot;dépliage&quot; du tableau, mais le terme &quot;join&quot; est utilisé à la fois dans le nom de la fonction et dans la clause, car il s’apparente à une jointure entre la table et les éléments du tableau, ce qui étend effectivement le jeu de données d’une manière comparable à une opération JOIN.

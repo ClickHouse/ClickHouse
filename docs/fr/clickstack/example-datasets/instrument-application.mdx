@@ -1,0 +1,32 @@
+---
+slug: /use-cases/observability/clickstack/example-datasets/instrument-app
+title: "Instrumenter une application avec Managed ClickStack"
+sidebarTitle: "Démo de l'analyseur HackerNews"
+description: "Guide pour instrumenter une application Node.js avec OpenTelemetry et envoyer des logs, des métriques et des traces vers Managed ClickStack"
+doc_type: 'guide'
+keywords: ['clickstack', 'instrumentation', 'opentelemetry', 'managed clickstack', 'observability']
+---
+
+import InstrumentApplication from '/snippets/fr/clickstack/_instrument_application.mdx';
+
+Ce guide explique comment instrumenter une application Node.js simple avec OpenTelemetry et envoyer ses logs, métriques et traces vers [Managed ClickStack](/fr/clickstack/getting-started/managed). Le backend est instrumenté sans aucune modification du code source de l’application.
+
+Le [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) est une petite application Node.js qui interroge le dataset HackerNews hébergé sur l’instance de démonstration publique de ClickHouse. Chaque graphique, tableau et champ de recherche repose sur une véritable requête ClickHouse, de sorte que chaque interaction produit une trace dont le span principal correspond à l’appel HTTPS émis par le backend vers ClickHouse.
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+* Un OTel collector disponible et accessible, configuré pour ingérer les données dans votre service Managed ClickStack. Vous avez besoin de son endpoint OTLP et d’un jeton d’ingestion.
+* Node 18+ et npm.
+
+<InstrumentApplication />
+
+<div id="learn-more">
+  ## En savoir plus
+</div>
+
+* [Session Replay](/fr/clickstack/features/session-replay) : vue d’ensemble de la fonctionnalité, options du SDK et paramètres de confidentialité.
+* [Session Replay Demo](/fr/clickstack/example-datasets/session-replay) : une démo autonome avec une instance locale de ClickStack.
+* [ClickStack Prise en main](/fr/clickstack/getting-started/index) : déployez ClickStack et ingérez vos premières données.
+* [Tous les jeux de données d’exemple](/fr/clickstack/example-datasets/index) : d’autres jeux de données d’exemple et guides.

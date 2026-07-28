@@ -1,0 +1,87 @@
+---
+sidebarTitle: 'FAQ'
+description: '有关 ClickPipes for Kafka 的常见问题。'
+slug: /integrations/clickpipes/kafka/faq
+title: 'Kafka ClickPipes FAQ'
+doc_type: 'guide'
+keywords: ['kafka faq', 'clickpipes', 'upstash', 'azure event hubs', 'private link']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<div id="faq">
+  ## Kafka ClickPipes 常见问题
+</div>
+
+<div id="general">
+  ### 常见问题
+</div>
+
+<Accordion title="ClickPipes for Kafka 的工作原理是什么？">
+  ClickPipes 采用专用架构，通过运行 Kafka Consumer API 从指定的 topic 读取数据，然后将数据插入特定 ClickHouse Cloud 服务上的 ClickHouse 表中。
+</Accordion>
+
+<Accordion title="ClickPipes 与 ClickHouse Kafka 表引擎有什么区别？">
+  Kafka 表引擎是 ClickHouse 的一项核心能力，采用“拉取模型”，即由 ClickHouse server 自身连接到 Kafka，拉取事件并将其写入本地。
+
+  ClickPipes 是一项独立于 ClickHouse 服务运行的云服务。它连接到 Kafka (或其他数据源) ，并将事件推送到关联的 ClickHouse Cloud 服务。这种解耦架构具有更高的运维灵活性、更清晰的职责分离、可扩展的摄取能力、更稳健的故障处理能力以及更好的可扩展性等优势。
+</Accordion>
+
+<Accordion title="使用 ClickPipes for Kafka 需要满足哪些条件？">
+  要使用 ClickPipes for Kafka，您需要一个正在运行的 Kafka broker，以及一个已启用 ClickPipes 的 ClickHouse Cloud 服务。您还需要确保 ClickHouse Cloud 能够访问您的 Kafka broker。这可以通过在 Kafka 端允许远程连接，并在 Kafka 配置中将 [ClickHouse Cloud 出站 IP 地址](/zh/products/cloud/guides/data-sources/cloud-endpoints-api) 加入白名单来实现。或者，您也可以使用 [AWS PrivateLink](/zh/integrations/clickpipes/aws-privatelink) 将 ClickPipes for Kafka 连接到您的 Kafka brokers。
+</Accordion>
+
+<Accordion title="ClickPipes for Kafka 支持 AWS PrivateLink 吗？">
+  支持 AWS PrivateLink。有关设置方法的更多信息，请参阅[相关文档](/zh/integrations/clickpipes/aws-privatelink)。
+</Accordion>
+
+<Accordion title="我可以使用 ClickPipes for Kafka 将数据写入 Kafka topic 吗？">
+  不可以，ClickPipes for Kafka 设计用于从 Kafka topics 读取数据，而不是向其中写入数据。要将数据写入 Kafka topic，您需要使用专用的 Kafka producer。
+</Accordion>
+
+<Accordion title="ClickPipes 支持多个 broker 吗？">
+  支持，如果这些 broker 属于同一个 quorum，则可以使用 `,` 分隔后一起配置。
+</Accordion>
+
+<Accordion title="ClickPipes 副本可以扩缩容吗？">
+  可以，流式 ClickPipes 支持水平扩缩容和垂直扩缩容。
+  水平扩缩容会增加更多副本以提升吞吐量，而垂直扩缩容则会增加分配给每个副本的资源 (CPU 和 RAM) ，以处理更高强度的 workloads。
+  这可以在创建 ClickPipe 时进行配置，也可以之后随时在 **Settings** -&gt; **Advanced Settings** -&gt; **Scaling** 下进行配置。
+</Accordion>
+
+<Accordion title="为什么我在 ClickPipes 设置 UI 中找不到某些 Kafka topics？">
+  ClickPipes 的 topic 发现 UI 默认最多列出 1,500 个 topics。如果您的 Kafka cluster 中有超过 1,500 个 topics，则部分 topics 可能不会出现在下拉列表中。要验证您的 topic 是否存在，请使用具有相同 credentials 的 Kafka 客户端直接检查。如果确认存在，并且您需要将列出上限提高到 1,500 以上，请联系 ClickHouse 支持团队。
+</Accordion>
+
+<div id="azure-eventhubs">
+  ### Azure Event Hubs
+</div>
+
+<Accordion title="Azure Event Hubs ClickPipe 在不启用 Kafka 接口的情况下可以工作吗？">
+  不能。ClickPipes 要求 Event Hubs 命名空间启用 Kafka 接口。该功能仅在高于 **基础版** 的层级中可用。更多信息请参阅 [Azure Event Hubs 文档](https://learn.microsoft.com/en-us/azure/event-hubs/event-hubs-quickstart-kafka-enabled-event-hubs?tabs=passwordless#create-an-azure-event-hubs-namespace)。
+</Accordion>
+
+<Accordion title="Azure Schema Registry 可与 ClickPipes 配合使用吗？">
+  不能。ClickPipes 仅支持与 Confluent Schema Registry API 兼容的 Schema Registry，而 Azure Schema Registry 并不属于此类。如果你需要支持此 Schema Registry，请[联系我们的团队](https://clickhouse.com/company/contact?loc=clickpipes)。
+</Accordion>
+
+<Accordion title="我的策略需要哪些权限才能从 Azure Event Hubs 消费数据？">
+  要列出 topic 并消费事件，提供给 ClickPipes 的共享访问策略至少需要具有 “Listen” 声明。
+</Accordion>
+
+<Accordion title="为什么我的 Event Hubs 没有返回任何数据？">
+  如果你的 ClickHouse 实例与 Event Hubs 部署位于不同的区域或大洲，在配置 ClickPipes 时，可能会遇到超时；从 Event Hub 消费数据时，延迟也可能更高。我们建议将 ClickHouse Cloud 和 Azure Event Hubs 部署在同一云区域，或彼此相近的区域中，以避免额外的性能开销。
+</Accordion>
+
+<Accordion title="我是否应该包含 Azure Event Hubs 的端口号？">
+  是的。ClickPipes 要求你包含 Kafka 接口的端口号，应该为 `:9093`。
+</Accordion>
+
+<Accordion title="对于 Azure Event Hubs，ClickPipes IP 仍然相关吗？">
+  是的。要限制发往你的 Event Hubs 实例的流量，请将[文档中列出的静态 NAT IP 地址](/zh/integrations/clickpipes/home#list-of-static-ips) 添加到。
+</Accordion>
+
+<Accordion title="连接字符串是用于 Event Hub，还是用于 Event Hub 命名空间？">
+  两者都可以。我们强烈建议使用 **命名空间级别** 的共享访问策略，以便从多个 Event Hubs 检索样本。
+</Accordion>

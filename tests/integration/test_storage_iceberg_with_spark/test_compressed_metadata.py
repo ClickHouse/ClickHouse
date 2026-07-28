@@ -13,9 +13,6 @@ def test_compressed_metadata(started_cluster_iceberg_with_spark, storage_type):
     spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_compressed_metadata_" + storage_type + "_" + get_uuid_str()
 
-    table_properties = {
-        "write.metadata.compression": "gzip"
-    }
 
     df = spark.createDataFrame([
         (1, "Alice"),

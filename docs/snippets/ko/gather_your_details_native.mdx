@@ -1,0 +1,22 @@
+---
+title: 네이티브 연결 정보 확인
+---
+
+네이티브 TCP로 ClickHouse에 연결하려면 다음 정보가 필요합니다:
+
+| 매개변수                      | 설명                                                      |
+| ------------------------- | ------------------------------------------------------- |
+| `HOST` and `PORT`         | 일반적으로 TLS를 사용하는 경우 포트는 9440이고, TLS를 사용하지 않는 경우 9000입니다. |
+| `DATABASE NAME`           | 기본적으로 `default`라는 데이터베이스가 있으며, 연결하려는 데이터베이스 이름을 사용합니다.  |
+| `USERNAME` and `PASSWORD` | 기본적으로 사용자 이름은 `default`입니다. 사용 사례에 맞는 사용자 이름을 사용합니다.    |
+
+ClickHouse Cloud 서비스의 연결 정보는 ClickHouse Cloud 콘솔에서 확인할 수 있습니다.
+연결할 서비스를 선택하고 **Connect**를 클릭합니다:
+
+<img src="/images/_snippets/cloud-connect-button.webp" alt="ClickHouse Cloud 서비스 연결 버튼" width="500px" />
+
+**Native**를 선택하면 예시 `clickhouse-client` 명령에서 세부 정보를 확인할 수 있습니다.
+
+<img src="/images/_snippets/connection-details-native.webp" alt="ClickHouse Cloud 네이티브 TCP 연결 세부 정보" width="500px" />
+
+자가 관리형 ClickHouse를 사용하는 경우 연결 정보는 ClickHouse 관리자가 설정합니다.

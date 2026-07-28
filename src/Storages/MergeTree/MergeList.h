@@ -183,6 +183,13 @@ public:
         }
     }
 
+    void cancelAll()
+    {
+        std::lock_guard lock{mutex};
+        for (auto & merge_element : entries)
+            merge_element.is_cancelled = true;
+    }
+
     void cancelInPartition(const StorageID & table_id, const String & partition_id, Int64 delimiting_block_number)
     {
         std::lock_guard lock{mutex};

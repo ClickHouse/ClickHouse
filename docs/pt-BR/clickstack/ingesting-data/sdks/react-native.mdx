@@ -1,0 +1,143 @@
+---
+slug: /use-cases/observability/clickstack/sdks/react-native
+description: 'SDK React Native do ClickStack - o stack de observabilidade do ClickHouse'
+title: 'React Native'
+doc_type: 'guide'
+keywords: ['clickstack', 'sdk', 'logging', 'integração', 'monitoramento de aplicações']
+---
+
+O SDK React Native do ClickStack permite instrumentar seu aplicativo em React Native
+para enviar eventos ao ClickStack. Assim, você pode ver requisições de rede e
+exceções do aplicativo móvel junto com eventos de backend em uma única linha do tempo.
+
+Este guia integra:
+
+* **Requisições XHR/Fetch**
+
+<div id="getting-started">
+  ## Primeiros passos
+</div>
+
+<div id="install-via-npm">
+  ### Instalação via NPM
+</div>
+
+Use o comando a seguir para instalar o [pacote React Native do ClickStack](https://www.npmjs.com/package/@hyperdx/otel-react-native).
+
+```shell
+npm install @hyperdx/otel-react-native
+```
+
+<div id="initialize-clickstack">
+  ### Inicialize o ClickStack
+</div>
+
+Inicialize a biblioteca o mais cedo possível no ciclo de vida da sua aplicação:
+
+```javascript
+import { HyperDXRum } from '@hyperdx/otel-react-native';
+
+HyperDXRum.init({
+  url: 'http://your-otel-collector:4318',
+  service: 'my-rn-app',
+  apiKey: '<YOUR_INGESTION_API_KEY>', // Omita para Managed ClickStack
+  tracePropagationTargets: [/api.myapp.domain/i], // Defina para vincular traces do frontend às requisições de backend
+});
+```
+
+<div id="attach-user-information-metadata">
+  ### Associar informações do usuário ou metadados (Opcional)
+</div>
+
+Associar informações do usuário permitirá pesquisar/filtrar sessões e eventos
+no HyperDX. Isso pode ser feito a qualquer momento durante a sessão do cliente. A
+sessão atual do cliente e todos os eventos enviados após essa chamada serão associados
+às informações do usuário.
+
+`userEmail`, `userName` e `teamName` preencherão a UI de sessões com os
+valores correspondentes, mas podem ser omitidos. Quaisquer outros valores adicionais podem ser
+especificados e usados para pesquisar eventos.
+
+```javascript
+HyperDXRum.setGlobalAttributes({
+  userId: user.id,
+  userEmail: user.email,
+  userName: user.name,
+  teamName: user.team.name,
+  // Outras propriedades personalizadas...
+});
+```
+
+<div id="instrument-lower-versions">
+  ### Instrumentar versões anteriores
+</div>
+
+Para instrumentar aplicações executadas em versões do React Native anteriores à 0.68,
+edite o arquivo `metro.config.js` para forçar o Metro a usar pacotes
+específicos para navegador. Por exemplo:
+
+```javascript
+const defaultResolver = require('metro-resolver');
+
+module.exports = {
+  resolver: {
+    resolveRequest: (context, realModuleName, platform, moduleName) => {
+      const resolved = defaultResolver.resolve(
+        {
+          ...context,
+          resolveRequest: null,
+        },
+        moduleName,
+        platform,
+      );
+
+      if (
+        resolved.type === 'sourceFile' &&
+        resolved.filePath.includes('@opentelemetry')
+      ) {
+        resolved.filePath = resolved.filePath.replace(
+          'platform\\node',
+          'platform\\browser',
+        );
+        return resolved;
+      }
+
+      return resolved;
+    },
+  },
+  transformer: {
+    getTransformOptions: async () => ({
+      transform: {
+        experimentalImportSupport: false,
+        inlineRequires: true,
+      },
+    }),
+  },
+};
+```
+
+<div id="view-navigation">
+  ## Navegação entre telas
+</div>
+
+As versões 5 e 6 do [react-navigation](https://github.com/react-navigation/react-navigation) são compatíveis.
+
+O exemplo a seguir mostra como instrumentar a navegação:
+
+```javascript
+import { startNavigationTracking } from '@hyperdx/otel-react-native';
+
+export default function App() {
+  const navigationRef = useNavigationContainerRef();
+  return (
+    <NavigationContainer
+      ref={navigationRef}
+      onReady={() => {
+        startNavigationTracking(navigationRef);
+      }}
+    >
+      <Stack.Navigator>...</Stack.Navigator>
+    </NavigationContainer>
+  );
+}
+```

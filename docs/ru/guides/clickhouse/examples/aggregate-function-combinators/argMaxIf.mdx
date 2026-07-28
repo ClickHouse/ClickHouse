@@ -1,0 +1,67 @@
+---
+slug: '/examples/aggregate-function-combinators/argMaxIf'
+title: 'argMaxIf'
+description: 'Пример применения комбинатора argMaxIf'
+keywords: ['argMax', 'if', 'комбинатор', 'примеры', 'argMaxIf']
+sidebarTitle: 'argMaxIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Описание
+</div>
+
+Комбинатор [`If`](/ru/reference/functions/aggregate-functions/combinators#-if) можно применять к функции [`argMax`](/ru/reference/functions/aggregate-functions/argMax),
+чтобы находить значение `arg`, соответствующее максимальному значению `val`, для строк, в которых условие истинно,
+с помощью агрегатной функции-комбинатора `argMaxIf`.
+
+Функция `argMaxIf` полезна, когда нужно найти значение, связанное с
+максимальным значением в наборе данных, но только для строк, удовлетворяющих определённому
+условию.
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+В этом примере мы используем набор данных о продажах товаров, чтобы показать, как
+работает `argMaxIf`. Мы найдём название товара с самой высокой ценой, но
+только среди товаров, которые были проданы не менее 10 раз.
+
+```sql title="Query"
+CREATE TABLE product_sales
+(
+    product_name String,
+    price Decimal32(2),
+    sales_count UInt32
+) ENGINE = Memory;
+
+INSERT INTO product_sales VALUES
+    ('Laptop', 999.99, 10),
+    ('Phone', 499.99, 15),
+    ('Tablet', 299.99, 0),
+    ('Watch', 1199.99, 5),
+    ('Headphones', 79.99, 20);
+
+SELECT argMaxIf(product_name, price, sales_count >= 10) AS most_expensive_popular_product
+FROM product_sales;
+```
+
+Функция `argMaxIf` вернёт название товара с самой высокой ценой
+среди всех товаров, проданных не менее 10 раз (`sales_count >= 10`).
+В этом случае она вернёт &#39;Laptop&#39;, так как среди популярных товаров
+у него самая высокая цена (999.99).
+
+```response title="Response"
+   ┌─most_expensi⋯lar_product─┐
+1. │ Laptop                   │
+   └──────────────────────────┘
+```
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* [`argMax`](/ru/reference/functions/aggregate-functions/argMax)
+* [`argMin`](/ru/reference/functions/aggregate-functions/argMin)
+* [`argMinIf`](/ru/guides/clickhouse/examples/aggregate-function-combinators/argMinIf)
+* [`Комбинатор If`](/ru/reference/functions/aggregate-functions/combinators#-if)

@@ -1,0 +1,104 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/04/2026-04-17
+title: '데모 데이 - 2026-04-17'
+sidebarTitle: '2026-04-17'
+description: '2026-04-17 ClickStack 데모 데이'
+doc_type: 'guide'
+keywords: ['ClickStack', '데모 데이']
+---
+
+<div id="summarize-logs-and-traces">
+  ## 로그 및 트레이스 요약
+</div>
+
+*[@alex-fedotyev](https://github.com/alex-fedotyev)의 데모*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/TWsFyWt-tD8" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이제 HyperDX에는 로그, 트레이스, 패턴 전반에서 작동하는 AI 요약 기능이 있습니다. 새로운 요약 버튼은 텔레메트리 데이터를 읽기 쉬운 요약으로 정리해 주므로, 이벤트를 하나씩 수동으로 읽지 않고도 일련의 이벤트 전반에서 무엇이 발생했는지 빠르게 파악할 수 있습니다.
+
+이 아키텍처는 Anthropic(또는 유사한) API와 연동하도록 설계되었으며, 후속 대화도 지원하도록 구축되어 초기 요약 이후에도 계속 질문할 수 있습니다.
+
+**관련 PR:** [#2108](https://github.com/hyperdxio/hyperdx/pull/2108) feat: 확장 가능한 subject, trace 컨텍스트, 보안 강화를 포함한 AI 요약, [#2100](https://github.com/hyperdxio/hyperdx/pull/2100) 스마트 톤 모드로 실제 AI 요약 콜백 구현
+
+<div id="event-deltas-heatmap-into-chart-builder">
+  ## Event Deltas 히트맵을 차트 빌더에 통합
+</div>
+
+*[@alex-fedotyev](https://github.com/alex-fedotyev)의 데모*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BLVhIQjocwE" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Event Deltas 히트맵 시각화는 현재 메인 차트 빌더로 옮겨지고 있으며, 이에 따라 HyperDX의 다른 시각화와 나란히 표준 차트 유형으로 사용할 수 있게 됩니다. 이전에는 전용 뷰에서만 제공되었지만, 이제는 다른 차트 유형과 함께 차트 탐색기 내에서 작동합니다.
+
+이 작업이 완료되면 Event Deltas 히트맵을 대시보드 타일에 직접 추가할 수 있게 되며, 다른 차트와 마찬가지로 필드 필터링과 시간 범위 제어를 지원합니다. 이 작업은 현재 진행 중입니다.
+
+**관련 PR:** [#2107](https://github.com/hyperdxio/hyperdx/pull/2107) feat: 히트맵 차트를 대시보드 편집기와 타일 렌더링에 연결, [#2102](https://github.com/hyperdxio/hyperdx/pull/2102) Event Deltas 지원이 포함된 재사용 가능한 히트맵 차트 구현
+
+<div id="benchmarking-for-schema-improvements">
+  ## 스키마 개선을 위한 벤치마크
+</div>
+
+*[@knudtty](https://github.com/knudtty)의 데모*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/_B7TmIiXZyM" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Aaron이 HyperDX의 업데이트된 기본 OpenTelemetry logs 스키마에 대한 벤치마크 결과를 설명합니다. 핵심 변경 사항은 기존 `timestamp_time` 컬럼(초 단위 세분화 수준의 32비트 Unix timestamp)을 삭제하고, 나노초 정밀도를 제공하는 `timestamp`만 사용하도록 한 것입니다. 이로써 스키마에서 컬럼 하나가 줄어듭니다. 다양한 쿼리 벤치마크 전반에서 업데이트된 스키마는 거의 모든 경우 기존 스키마와 동일하거나 더 나은 성능을 보입니다.
+
+최종 스키마에는 선택도가 높은 쿼리에서 의미 있는 성능 향상을 보여주는 읽기 순서 최적화도 포함되어 있습니다. 비교적 드문 맵 값 검색은 기준선 대비 대략 2배 빠르게 실행되었고, 빈도가 높은 값 lookup에서는 그보다 더 큰 개선이 확인되었습니다. 삽입 성능은 유지해야 할 컬럼이 더 많아 소폭 낮아지지만, 전반적인 쿼리 성능은 동등하거나 더 좋아져 무리 없이 업그레이드할 수 있습니다.
+
+**관련 PR:** [#2125](https://github.com/hyperdxio/hyperdx/pull/2125) feat: 최적화된 기본 otel-logs 스키마
+
+<div id="improvements-to-autocomplete">
+  ## 자동 완성 개선 사항
+</div>
+
+*[@knudtty](https://github.com/knudtty)의 데모*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/8zDZx49uYQo" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+HyperDX의 자동 완성은 훨씬 더 높은 카디널리티를 지원하고 값을 더 빠르게 로드할 수 있도록 대대적으로 개선되고 있습니다. 새 구현은 롤업 테이블(15분 단위 시간 버킷으로 key-value 쌍을 사전 집계하는 `AggregatingMergeTrees`)을 기반으로 하므로, 키를 입력할 때마다 원시 데이터를 매번 쿼리하는 대신 훨씬 더 작은 사전 계산 데이터셋을 읽습니다. 2억 3천만 행 규모의 스테이징 인스턴스를 대상으로 한 라이브 데모에서는 `hostname`과 같은 고카디널리티 필드의 값도 눈에 띄는 지연 없이 빠르게 로드되었습니다.
+
+이 시스템은 키 전용 롤업(모든 키를 반환하지만 연결된 값은 반환하지 않아 카디널리티 오버헤드를 낮춤)과 전체 key-value 롤업을 모두 지원합니다. 키 롤업만 있는 경우에는 값 조회 단계에서 기존 fetch-values 전략으로 폴백합니다. 롤업 테이블이 전혀 감지되지 않으면 현재 동작 방식으로 자연스럽게 폴백합니다. Aaron은 특히 카디널리티가 높은 데이터를 보유한 고객에게는 어떤 키에 값 롤업을 적용할지 제어할 수 있는 향후 allow-list UI도 유용한 추가 기능이 될 것이라고 언급했습니다.
+
+**관련 PR:** [#2128](https://github.com/hyperdxio/hyperdx/pull/2128) feat: fast and full autocomplete, [#2127](https://github.com/hyperdxio/hyperdx/pull/2127) feat: better autocomplete
+
+<div id="improvements-to-alerting-with-sql">
+  ## SQL을 사용한 알림 기능 개선
+</div>
+
+*[@pulpdrew](https://github.com/pulpdrew)의 데모*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BOk-LC0y2no" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이전 주에 Raw SQL 선 차트와 막대 차트에 대한 알림이 추가된 데 이어, 이제 HyperDX는 Raw SQL 숫자 차트에 대한 알림도 지원합니다. 또한 이제 알림을 설정할 때 시간 필터 매개변수가 더 이상 필수가 아닙니다. 이를 생략하면 경고가 표시되지만, 시간 차원이 전혀 없는 쿼리도 이제 완전히 유효합니다. 따라서 ClickHouse 클러스터 수가 예상 값과 일치하는지 확인하는 것처럼, 시간에 따라 변하지 않는 구성 값이나 시스템 메트릭에 대해서도 손쉽게 알림을 설정할 수 있습니다.
+
+또한 여러 새로운 임계값 유형이 추가되었습니다: 같지 않음, 초과, 이하, 범위 사이, 범위 밖. 이를 통해 팀은 단순한 초과 비교를 넘어 훨씬 더 유연하게 알림 조건을 표현할 수 있습니다. 마지막으로, 이제 알림 이력이 타일 편집기에 직접 표시되므로, 실행 중인 알림이 특정 대시보드 타일로 연결될 때 사용자는 전체 이력을 확인하고 무엇이 이를 촉발했는지 파악하며, 대시보드를 벗어나지 않고도 알림을 확인하거나 음소거할 수 있습니다.
+
+**관련 PR:** [#2073](https://github.com/hyperdxio/hyperdx/pull/2073) feat: Raw SQL 기반 대시보드 타일에 대한 알림 구현, [#2114](https://github.com/hyperdxio/hyperdx/pull/2114) feat: Raw SQL Number Charts에 대한 알림 지원, [#2122](https://github.com/hyperdxio/hyperdx/pull/2122) feat: 추가 알림 임계값 유형 추가, [#2130](https://github.com/hyperdxio/hyperdx/pull/2130) feat: between 및 not-between 알림 임계값 추가, [#2123](https://github.com/hyperdxio/hyperdx/pull/2123) feat: 알림 편집기에 알림 이력 + ack 추가
+
+<div id="errors-during-alert-execution">
+  ## 알림 실행 중 오류
+</div>
+
+*[@pulpdrew](https://github.com/pulpdrew)의 데모*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/b3G8kFiQiUg" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+알림 실행에 실패하면 이제 HyperDX는 이를 조용히 무시하는 대신 해당 오류를 UI에 직접 표시합니다. 이전에는 알림 이력에 빈 구간이 생겨도 이유를 알 수 없었습니다. 오류 메시지도 없고 무엇이 잘못되었는지 디버깅할 방법도 없었습니다. 이제는 잘못된 쿼리, 웹훅 전송 실패, 누락되었거나 잘못 구성된 웹훅 설정 등 다양한 실패 유형에 대해 서로 다른 오류 아이콘이 해당 위치에 표시됩니다.
+
+오류 아이콘을 클릭하면 문제를 진단하고 해결하는 데 필요한 구체적인 세부 정보가 표시되므로, 사용자는 서버 로그를 뒤지거나 지원 요청을 제출하지 않고도 잘못 구성된 알림을 수정할 수 있습니다. 목표는 알림 실패를 사용자가 스스로 해결할 수 있게 만드는 것입니다. 즉, 오류를 보고, 이해하고, 수정할 수 있도록 하는 것입니다.
+
+**관련 PR:** [#2132](https://github.com/hyperdxio/hyperdx/pull/2132) feat: UI에 알림 실행 오류 표시, [#2136](https://github.com/hyperdxio/hyperdx/pull/2136) fix: 민감할 수 있는 알림 오류 숨기기

@@ -21,6 +21,8 @@ public:
 
     const Aggregator::Params & getParams() const { return params; }
 
+    QueryPlanStepPtr clone() const override;
+
 private:
     void updateOutputHeader() override;
 

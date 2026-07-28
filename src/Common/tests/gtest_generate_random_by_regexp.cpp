@@ -43,6 +43,16 @@ TEST(GenerateRandomString, Negative)
     EXPECT_THROW(routine("^abc"), DB::Exception);
 }
 
+TEST(GenerateRandomString, TooComplexToSimplify)
+{
+    /// A pattern large enough that re2 cannot simplify it (its node-visit budget is
+    /// exceeded and Simplify returns null) must raise an exception, not crash.
+    String huge;
+    for (size_t i = 0; i < 800000; ++i)
+        huge += "a?";
+    EXPECT_THROW(DB::RandomStringGeneratorByRegexp{huge}, DB::Exception);
+}
+
 TEST(GenerateRandomString, DifferentResult)
 {
     std::cerr << "100 different keys" << std::endl;

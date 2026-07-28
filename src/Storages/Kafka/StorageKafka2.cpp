@@ -41,6 +41,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -123,6 +124,12 @@ namespace KafkaSetting
 
 namespace fs = std::filesystem;
 
+namespace FailPoints
+{
+extern const char kafka2_remove_zk_before_get_children[];
+extern const char kafka2_remove_zk_before_final_multi[];
+}
+
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
@@ -148,7 +155,7 @@ StorageKafka2::StorageKafka2(
     const String & comment,
     std::unique_ptr<KafkaSettings> kafka_settings_,
     const String & collection_name_)
-    : IStorage(table_id_)
+    : IStreamingStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , keeper(getContext()->getZooKeeper())
     , keeper_path((*kafka_settings_)[KafkaSetting::kafka_keeper_path].value)
@@ -584,6 +591,12 @@ void StorageKafka2::startup()
     activating_task->activateAndSchedule();
 }
 
+void StorageKafka2::scheduleStreamingTasksImpl()
+{
+    for (auto & task : tasks)
+        task->holder->schedule();
+}
+
 
 void StorageKafka2::shutdown(bool)
 {
@@ -762,13 +775,22 @@ bool StorageKafka2::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr keeper_to
 {
     bool completely_removed = false;
 
+    FailPointInjection::pauseFailPoint(FailPoints::kafka2_remove_zk_before_get_children);
+
     Strings children;
     if (const auto code = keeper_to_use->tryGetChildren(keeper_path, children); code == Coordination::Error::ZNONODE)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal. It's a bug");
+    {
+        /// It is possible if the Keeper session expired and the ephemeral drop lock was deleted,
+        /// allowing another process to complete the removal. The table is completely gone.
+        LOG_WARNING(log, "Table {} was already removed from Keeper, looks like a concurrent operation removed it", keeper_path);
+        return true;
+    }
 
     for (const auto & child : children)
         if (child != "dropped")
             keeper_to_use->tryRemoveRecursive(fs_keeper_path / child);
+
+    FailPointInjection::pauseFailPoint(FailPoints::kafka2_remove_zk_before_final_multi);
 
     Coordination::Requests ops;
     Coordination::Responses responses;
@@ -779,10 +801,14 @@ bool StorageKafka2::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr keeper_to
 
     if (code == Coordination::Error::ZNONODE)
     {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal of replicated table. It's a bug");
+        /// It is possible if the Keeper session expired and the ephemeral drop lock was deleted,
+        /// allowing another process to complete the removal or create a new table.
+        LOG_WARNING(
+            log,
+            "Table {} was not completely removed from Keeper, some nodes were already removed by a concurrent operation",
+            keeper_path);
     }
-    if (code == Coordination::Error::ZNOTEMPTY)
+    else if (code == Coordination::Error::ZNOTEMPTY)
     {
         LOG_ERROR(
             log,
@@ -905,7 +931,8 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
         poll_max_block_size = getMaxBlockSize();
 
     LOG_TEST(log, "Polling consumer");
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(getContext(), false), getContext());
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
     Block non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized());
     auto virtual_header = storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
 
@@ -1081,7 +1108,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
                 if (!dead_letter_queue)
                     LOG_WARNING(log, "Table system.dead_letter_queue is not configured, skipping message");
                 else
-                    dead_letter_queue->add(
+                    dead_letter_queue->add([&](DeadLetterQueueElement & element) { element =
                         DeadLetterQueueElement{
                             .table_engine = DeadLetterQueueElement::StreamType::Kafka,
                             .event_time = timeInSeconds(time_now),
@@ -1094,7 +1121,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
                                 .topic_name = msg_info.currentTopic(),
                                 .partition = msg_info.currentPartition(),
                                 .offset = msg_info.currentOffset(),
-                                .key = msg_info.currentKey()}});
+                                .key = msg_info.currentKey()}}; });
             }
 
             total_rows = total_rows + new_rows;
@@ -1169,9 +1196,13 @@ void StorageKafka2::threadFunc(size_t idx)
     try
     {
         auto table_id = getStorageID();
-        // Check if at least one direct dependency is attached
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-        if (num_views)
+        const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
+        const UInt64 refresh_epoch = task->last_seen_refresh_epoch;
+        const bool deps_ready = num_views == 0 || StorageKafkaUtils::checkDependencies(table_id, getContext());
+        const bool run_cycle = deps_ready && stream_control.claimCycle(task->last_seen_refresh_epoch);
+
+        if (num_views && run_cycle)
         {
             /// Atomically check that no direct readers are active and register this MV streamer.
             /// This is done under consumers_mutex to prevent a TOCTOU race with makePipe,
@@ -1182,6 +1213,9 @@ void StorageKafka2::threadFunc(size_t idx)
                 if (active_direct_readers.load() > 0)
                 {
                     LOG_DEBUG(log, "Direct readers are active, skipping MV streaming this round");
+                    /// Give back a REFRESH permit consumed by `claimCycle`, so the refresh still
+                    /// runs once the readers drain, even if the table is stopped by then.
+                    task->last_seen_refresh_epoch = refresh_epoch;
                 }
                 else
                 {
@@ -1207,7 +1241,7 @@ void StorageKafka2::threadFunc(size_t idx)
                     LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
                     // Exit the loop & reschedule if some stream stalled
-                    if (maybe_stall_reason = streamToViews(idx); maybe_stall_reason.has_value())
+                    if (maybe_stall_reason = streamToViews(idx, cycle_epoch); maybe_stall_reason.has_value())
                     {
                         LOG_TRACE(
                             log,
@@ -1215,6 +1249,9 @@ void StorageKafka2::threadFunc(size_t idx)
                             (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
                         break;
                     }
+
+                    if (stream_control.isBlocked() || stream_control.isCancelRequested(cycle_epoch))
+                        break;
 
                     auto ts = std::chrono::steady_clock::now();
                     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts - start_time);
@@ -1229,6 +1266,12 @@ void StorageKafka2::threadFunc(size_t idx)
                 }
             }
         }
+        else if (num_views && stream_control.isBlocked())
+            LOG_DEBUG(log, "Consumption is stopped");
+        else if (num_views)
+            ProfileEvents::increment(ProfileEvents::KafkaMVNotReady);
+        else
+            LOG_DEBUG(log, "No attached views");
     }
     catch (...)
     {
@@ -1248,9 +1291,10 @@ void StorageKafka2::threadFunc(size_t idx)
     }
 }
 
-std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx)
+std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx, UInt64 cycle_epoch)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageKafka2::streamToViews");
+
     // This function is written assuming that each consumer has their own thread. This means once this is changed, this
     // function should be revisited. The return values should be revisited, as stalling all consumers because of a
     // single one stalled is not a good idea.
@@ -1277,7 +1321,7 @@ std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx)
             return getStallKind(*cannot_poll_reason);
 
         LOG_TRACE(log, "Trying to consume from consumer {}", idx);
-        const auto maybe_rows = streamFromConsumer(*consumer, watch);
+        const auto maybe_rows = streamFromConsumer(*consumer, watch, cycle_epoch);
         if (maybe_rows.has_value())
         {
             const auto milliseconds = watch.elapsedMilliseconds();
@@ -1412,7 +1456,7 @@ void StorageKafka2::cleanConsumers()
     consumers.clear();
 }
 
-std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch)
+std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch, UInt64 cycle_epoch)
 {
     // Create an INSERT query for streaming data
     auto insert = make_intrusive<ASTInsertQuery>();
@@ -1434,6 +1478,12 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer &
     auto block_io = interpreter.execute();
 
     auto maybe_blocks_and_guard = pollConsumer(consumer, watch, modified_context);
+
+    if (isConsumeCancelRequested(cycle_epoch))
+    {
+        block_io.onCancelOrConnectionLoss();
+        return std::nullopt;
+    }
 
     if (!maybe_blocks_and_guard.has_value() || maybe_blocks_and_guard->blocks.empty())
     {

@@ -5,6 +5,8 @@
            <executable>
                <command>sleep 7</command>
                <format>TabSeparated</format>
+               <!-- Raise the 10s default: sanitizer-induced pipe-read delay must not look like a hang. -->
+               <command_read_timeout>60000</command_read_timeout>
            </executable>
         </source>
         <layout>
@@ -29,6 +31,8 @@
            <executable>
                <command>sleep 3</command>
                <format>TabSeparated</format>
+               <!-- Raise the 10s default: sanitizer-induced pipe-read delay must not look like a hang. -->
+               <command_read_timeout>60000</command_read_timeout>
            </executable>
         </source>
         <layout>

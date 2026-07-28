@@ -1,0 +1,16 @@
+ArrowStream lz4_frame writer=1 reader=1: OK
+ArrowStream lz4_frame writer=1 reader=0: OK
+ArrowStream lz4_frame writer=0 reader=1: OK
+ArrowStream lz4_frame pyarrow: OK
+ArrowStream zstd writer=1 reader=1: OK
+ArrowStream zstd writer=1 reader=0: OK
+ArrowStream zstd writer=0 reader=1: OK
+ArrowStream zstd pyarrow: OK
+Arrow lz4_frame writer=1 reader=1: OK
+Arrow lz4_frame writer=1 reader=0: OK
+Arrow lz4_frame writer=0 reader=1: OK
+Arrow lz4_frame pyarrow: OK
+Arrow zstd writer=1 reader=1: OK
+Arrow zstd writer=1 reader=0: OK
+Arrow zstd writer=0 reader=1: OK
+Arrow zstd pyarrow: OK

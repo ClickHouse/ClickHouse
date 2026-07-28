@@ -91,7 +91,7 @@ bool Throttler::throttle(size_t amount, size_t max_block_ns)
             : static_cast<UInt64>(block_ns_double);
 
         // Note that throwing exception from the following blocking call is safe. It is important for query cancellation.
-        sleepForNanoseconds(std::min<UInt64>(max_block_ns, block_ns));
+        sleep(std::min<UInt64>(max_block_ns, block_ns));
     }
 
     bool parent_block = false;

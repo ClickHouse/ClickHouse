@@ -79,15 +79,37 @@ def test_startup_with_small_bg_pool_partitioned(started_cluster):
         node.start_clickhouse(start_wait_sec=150)
         assert_values()
 
-    # check that we activate it in the end
+    # Check that the table re-activates in the end.
     #
-    # Bound each attempt with `timeout=` so the retry loop can actually fire.
-    # Without it, the first attempt blocks in `subprocess.wait` for
-    # `DEFAULT_QUERY_TIMEOUT` (600s) when the table is still recovering after
-    # fault injection (single background-schedule thread + 0.001 ZK fault
-    # probability + sanitizer overhead), and pytest's 900s test-level timeout
-    # fires before the retry loop can execute even once. With `timeout=15`,
-    # the loop can do up to ~20 attempts within the budget.
+    # Fault injection stays enabled for the rest of this test, and every
+    # injected fault throws `ZSESSIONEXPIRED`, tearing down the whole ClickHouse
+    # Keeper session (not just one request). Combined with
+    # `background_schedule_pool_size=1` - so the attach/restarting task shares a
+    # single thread - and sanitizer/coverage slowdown, re-activation is a
+    # heavy-tailed random process: usually a few seconds, occasionally much
+    # longer. The table becomes writable only once it threads a complete clean
+    # activation sequence between two session-expiry faults.
+    #
+    # Previously we retried the blocking INSERT itself, but an INSERT to a
+    # not-yet-active replica blocks server-side, so each attempt burned its
+    # whole `timeout` even when the table was nowhere near ready, and the retry
+    # budget was occasionally exhausted before activation (issue #101103). Poll
+    # the cheap, local `is_readonly` flag instead - it needs no Keeper
+    # round-trip and returns instantly - so the time budget is spent waiting for
+    # activation rather than blocking inside doomed writes.
+    is_readonly = node.query_with_retry(
+        "SELECT is_readonly FROM system.replicas WHERE table = 'replicated_table_partitioned'",
+        check_callback=lambda x: x.strip() == "0",
+        retry_count=120,
+        sleep_time=3,
+    )
+    assert (
+        is_readonly.strip() == "0"
+    ), f"table did not re-activate after fault injection: is_readonly={is_readonly!r}"
+
+    # Once active, the INSERT should go through. Keep a short retry because a
+    # fault may still transiently expire the session between the check and the
+    # write.
     node.query_with_retry(
         "INSERT INTO replicated_table_partitioned VALUES(20, 30)",
         retry_count=20,

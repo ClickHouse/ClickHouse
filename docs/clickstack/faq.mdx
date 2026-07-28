@@ -1,0 +1,83 @@
+---
+slug: /use-cases/observability/clickstack/faq
+title: 'ClickStack FAQ'
+sidebarTitle: 'FAQ'
+description: 'Frequently asked questions about ClickStack alerting, dashboards, drill-downs, and metrics discovery.'
+doc_type: 'guide'
+keywords: ['ClickStack', 'FAQ', 'alerting', 'dashboards', 'drill-downs', 'metrics discovery']
+---
+
+This page answers frequently asked questions about ClickStack capabilities, including alerting, dashboards and drill-downs, and metrics discovery.
+
+## Alerting {#alerting}
+
+<Accordion title="What types of alerts does ClickStack support?">
+ClickStack supports two types of alerts:
+
+- [Search alerts](/clickstack/features/alerts#search-alerts): trigger notifications when the count of matching log or trace results within a time window exceeds or falls below a threshold.
+- [Dashboard chart alerts](/clickstack/features/alerts#dashboard-alerts): trigger notifications when a metric plotted on a dashboard tile crosses a defined threshold.
+
+Both alert types use static threshold conditions. For full details, see [Alerts](/clickstack/features/alerts).
+</Accordion>
+
+<Accordion title="Can I alert on complex metric conditions such as ratios, p95/p99, or multi-metric formulas?">
+Ratios of two metrics, p95, and p99 values can be plotted on a dashboard tile using the [chart builder](/clickstack/features/dashboards/overview#navigate-chart-explorer) UI. You can then create threshold-based alerts on those tiles.
+
+However, ClickStack does not currently support:
+
+- Alerting on custom SQL queries for metrics.
+- Multi-condition or multi-metric alert rules combined into a single alert.
+- Dynamic or anomaly-detection-based alert conditions (anomaly detection is planned).
+
+If you need to alert on a complex metric, the recommended approach is to build the visualization as a dashboard chart first, then attach a threshold alert to that chart.
+</Accordion>
+
+<Accordion title="Can I use materialized views for alerting use cases?">
+Materialized views are automatically used by ClickStack for alerts where applicable. However, materialized views are not currently supported on OpenTelemetry metrics data sources. For metrics, ClickStack works best with the default [ClickHouse OpenTelemetry metrics schema](/clickstack/ingesting-data/schemas). For more on materialized views, see [Materialized views](/clickstack/managing/materialized-views).
+</Accordion>
+
+## Dashboards and drill-downs {#dashboards-and-drill-downs}
+
+<Accordion title="Does ClickStack support parameterized dashboards or dashboard variables?">
+ClickStack supports custom dropdown filters on dashboards, populated by data queried from ClickHouse. These filters allow you to dynamically scope all tiles on a dashboard to a specific value (e.g., a service name, environment, or host).
+
+ClickStack does not currently support reusable dashboard variables in the style of Grafana template variables. Because ClickStack works exclusively with ClickHouse as its data source, drill-down and filtering capabilities can be provided natively without requiring a variable abstraction layer.
+
+For details on creating dashboards and applying filters, see [Dashboards](/clickstack/features/dashboards/overview).
+</Accordion>
+
+<Accordion title="What drill-down capabilities are available?">
+ClickStack supports the following drill-down workflows:
+
+- [Dashboard-level filtering](/clickstack/features/dashboards/overview#filter-dashboards): Lucene or SQL filters and time range adjustments applied at the dashboard level propagate to all tiles.
+- Custom dashboard filters: custom dashboards support explicit filter controls that are populated with values from your data, allowing users to scope all tiles without writing queries manually.
+- Click-to-view events: clicking on data in a dashboard tile and selecting **View Events** navigates to the [Search](/clickstack/features/search) page with relevant filters for log and trace data.
+- [Table row-click drilldowns](/clickstack/features/dashboards/row-click-drilldowns): a table tile can be configured so that clicking a row opens the Search page or another dashboard, carrying the row's values through as filters. This supports multi-level workflows, such as a service inventory that drills into a per-service detail dashboard.
+- [Prebuilt dashboard drill-downs](/clickstack/features/dashboards/overview#presets): the [Services](/clickstack/features/dashboards/overview#services-dashboard), [ClickHouse](/clickstack/features/dashboards/overview#clickhouse-dashboard), and [Kubernetes](/clickstack/features/dashboards/overview#kubernetes-dashboard) dashboards include richer, built-in drill-down navigation across tabs.
+
+<Note>
+The **View Events** drill-down works best with log and trace data. Because metrics data cannot be viewed on the [Search](/clickstack/features/search) page, drilling down from a metrics tile will link to logs from around the selected time frame instead.
+</Note>
+</Accordion>
+
+## Metrics discovery {#metrics-discovery}
+
+<Accordion title="Is there a UI for browsing and searching metrics?">
+![Metric Attribute Explorer](/images/clickstack/faq/metrics-explorer.webp)
+
+Metric names are discoverable via the metric name dropdown in the [chart builder](/clickstack/features/dashboards/overview#navigate-chart-explorer). When a metric is selected, the Metric Attribute Explorer panel displays the metric's description, units, and available attributes along with their values. This allows you to browse attributes and add them as filters or group-by fields directly from the panel.
+
+There is not currently a dedicated metrics search page similar to the log search experience. Improving metric discovery is an active area of development.
+</Accordion>
+
+<Accordion title="Is SQL-based discovery the intended long-term approach for metrics?">
+No. While SQL queries can be used to discover metrics today, this is not the intended long-term approach. Improved metrics discovery tooling is actively being developed.
+</Accordion>
+
+## Further reading {#further-reading}
+
+- [Alerts](/clickstack/features/alerts): search alerts, dashboard chart alerts, and webhook integrations.
+- [Dashboards](/clickstack/features/dashboards/overview): creating visualizations, building dashboards, and applying filters.
+- [Search](/clickstack/features/search): querying logs and traces with Lucene and SQL syntax.
+- [Schemas](/clickstack/ingesting-data/schemas): OpenTelemetry data schemas for logs, traces, and metrics.
+- [Architecture](/clickstack/architecture): ClickStack components and how they fit together.

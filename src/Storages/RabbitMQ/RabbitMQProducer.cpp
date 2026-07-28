@@ -275,20 +275,35 @@ void RabbitMQProducer::startProducingTaskLoop()
         LOG_TEST(log, "Waiting for pending callbacks to finish (count: {}, try: {})", res, try_num);
     }
 
+    /// Shared flag so that a late-dispatched close() callback becomes a no-op if we stop waiting
+    /// on timeout, mirroring the setup/cleanup paths in StorageRabbitMQ.
+    auto abandoned = std::make_shared<bool>(false);
     producer_channel->close()
-    .onSuccess([&]()
+    .onSuccess([this, abandoned]()
     {
+        if (*abandoned)
+            return;
         LOG_TRACE(log, "Successfully closed producer channel");
         connection.getHandler().stopBlockingLoop();
     })
-    .onError([&](const char * message)
+    .onError([this, abandoned](const char * message)
     {
+        if (*abandoned)
+            return;
         LOG_ERROR(log, "Failed to close producer channel: {}", message);
         connection.getHandler().stopBlockingLoop();
     });
 
-    int active = connection.getHandler().startBlockingLoop();
-    LOG_DEBUG(log, "Producer on channel completed (not finished events: {})", active);
+    /// If the connection is dead the close() callbacks never fire. Bound the wait so that INSERT
+    /// producer shutdown (and therefore server shutdown) cannot block indefinitely.
+    if (!connection.getHandler().startBlockingLoopWithTimeout(BLOCKING_LOOP_TIMEOUT_MS))
+    {
+        /// Make any late-dispatched callback above a no-op before we return.
+        *abandoned = true;
+        LOG_WARNING(log, "Timed out waiting for producer channel to close - connection may be dead");
+    }
+    else
+        LOG_DEBUG(log, "Producer on channel completed");
 }
 
 

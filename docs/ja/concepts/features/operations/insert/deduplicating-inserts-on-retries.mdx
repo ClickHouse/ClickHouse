@@ -1,0 +1,557 @@
+---
+slug: /guides/developer/deduplicating-inserts-on-retries
+title: '再試行時の挿入の重複排除'
+description: '挿入操作の再試行時に重複データを防ぐ'
+keywords: ['重複排除', '重複を排除する', '挿入の再試行', '挿入']
+doc_type: 'guide'
+---
+
+挿入操作は、タイムアウトなどのエラーによって失敗することがあります。挿入に失敗した場合、データがすでに正常に挿入されていることもあれば、まだ挿入されていないこともあります。このガイドでは、同じデータが複数回挿入されないように、挿入の再試行時に重複排除を有効にする方法を説明します。
+
+挿入が再試行されると、ClickHouse はそのデータがすでに正常に挿入済みかどうかを判定しようとします。挿入済みのデータが重複としてマークされた場合、ClickHouse はそれを宛先テーブルに挿入しません。ただし、ユーザーには、そのデータが通常どおり挿入された場合と同様に、操作成功のステータスが返されます。
+
+<div id="limitations">
+  ## 制限事項
+</div>
+
+<div id="uncertain-insert-status">
+  ### 不確実な挿入ステータス
+</div>
+
+ユーザーは、挿入操作が成功するまで再試行する必要があります。すべての再試行が失敗した場合、データが挿入されたかどうかは判断できません。materialized view が関係する場合、データがどのテーブルに現れている可能性があるのかも不明です。materialized view がソーステーブルと同期していない可能性もあります。
+
+<div id="deduplication-window-limit">
+  ### 重複排除ウィンドウの上限
+</div>
+
+再試行の過程で、`*_deduplication_window` を超える数の他の挿入操作が行われると、重複排除が意図どおりに機能しない場合があります。この場合、同じデータが複数回挿入される可能性があります。
+
+<div id="enabling-insert-deduplication-on-retries">
+  ## 再試行時の挿入の重複排除を有効にする
+</div>
+
+<div id="insert-deduplication-for-tables">
+  ### テーブルの挿入の重複排除
+</div>
+
+**挿入時の重複排除をサポートするのは `*MergeTree` エンジンのみです。**
+
+`*ReplicatedMergeTree` エンジンでは、挿入の重複排除はデフォルトで有効になっており、[`replicated_deduplication_window`](/ja/reference/settings/merge-tree-settings#replicated_deduplication_window) および [`replicated_deduplication_window_seconds`](/ja/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds) 設定で制御されます。非レプリケートの `*MergeTree` エンジンでは、挿入の重複排除は [`non_replicated_deduplication_window`](/ja/reference/settings/merge-tree-settings#non_replicated_deduplication_window) 設定で制御されます。
+
+上記の設定は、テーブルの重複排除ログのパラメーターを決定します。重複排除ログには有限個の `block_id` が保存され、これによって重複排除の動作が決まります (以下を参照) 。
+
+<div id="query-level-insert-deduplication">
+  ### クエリレベルの挿入の重複排除
+</div>
+
+設定 `insert_deduplicate=1` を使用すると、クエリレベルの重複排除が有効になります。`insert_deduplicate=0` でデータを挿入した場合、その後 `insert_deduplicate=1` で挿入を再試行しても、そのデータは重複排除されない点に注意してください。これは、`insert_deduplicate=0` での挿入時には、各ブロックに対する `block_id` が書き込まれないためです。
+
+<div id="how-insert-deduplication-works">
+  ## 挿入の重複排除の仕組み
+</div>
+
+ClickHouse にデータが挿入されると、行数とバイト数に基づいてデータはブロックに分割されます。
+
+`*MergeTree` エンジンを使用するテーブルでは、各ブロックに一意の `block_id` が割り当てられます。これは、そのブロック内のデータのハッシュです。この `block_id` は、insert 操作の一意なキーとして使用されます。同じ `block_id` が重複排除ログ内で見つかった場合、そのブロックは重複と見なされ、テーブルには挿入されません。
+
+このアプローチは、挿入操作に異なるデータが含まれる場合には有効です。ただし、同じデータを意図的に複数回挿入する場合は、重複排除の処理を制御するために `insert_deduplication_token` 設定を使用する必要があります。この設定では、各 insert に対して一意のトークンを指定でき、ClickHouse はそれを使用してデータが重複かどうかを判定します。
+
+`INSERT ... VALUES` クエリでは、挿入されるデータのブロックへの分割は決定論的であり、設定によって決まります。したがって、挿入を再試行する際は、初回の操作と同じ設定値を使用する必要があります。
+
+`INSERT ... SELECT` クエリでは、クエリの `SELECT` 部分が、各操作で同じ順序の同じデータを返すことが重要です。なお、これは実際には実現が困難です。再試行時にデータの順序を安定させるには、クエリの `SELECT` 部分で `ORDER BY ALL` 句を定義してください。現時点では、クエリで正確に `ORDER BY ALL` を使用する必要があります。`ORDER BY` のサポートはまだ実装されておらず、クエリの `SELECT` 部分は安定しているとは見なされません。また、再試行の間に選択元のテーブルが更新される可能性がある点にも注意してください。その場合、結果データが変わってしまい、重複排除は行われません。さらに、大量のデータを挿入する場合、挿入後のブロック数が重複排除ログのウィンドウを超過する可能性があり、その場合 ClickHouse はブロックを重複排除すべきか判断できません。
+現時点では、`INSERT ... SELECT` の動作は `insert_select_deduplicate` 設定によって制御されます。この設定は、`INSERT ... SELECT` クエリで挿入されたデータに重複排除を適用するかどうかを決定します。詳細と使用例については、リンク先のドキュメントを参照してください。
+
+<div id="insert-deduplication-with-materialized-views">
+  ## materialized view における挿入の重複排除
+</div>
+
+テーブルに 1 つ以上の materialized view がある場合、挿入されたデータは、定義された変換を適用したうえで、それらの view の宛先にも挿入されます。変換後のデータも、再試行時には重複排除されます。ClickHouse は、materialized view に対する重複排除を、ターゲットテーブルに挿入されたデータを重複排除するのと同じ方法で実行します。
+
+このプロセスは、ソーステーブルに対する次の設定で制御できます。
+
+* [`replicated_deduplication_window`](/ja/reference/settings/merge-tree-settings#replicated_deduplication_window)
+* [`replicated_deduplication_window_seconds`](/ja/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)
+* [`non_replicated_deduplication_window`](/ja/reference/settings/merge-tree-settings#non_replicated_deduplication_window)
+
+さらに、ユーザープロファイル設定 [`deduplicate_blocks_in_dependent_materialized_views`](/ja/reference/settings/session-settings#deduplicate_blocks_in_dependent_materialized_views) も有効にする必要があります。
+設定 `insert_deduplicate=1` を有効にすると、挿入されたデータはソーステーブルで重複排除されます。設定 `deduplicate_blocks_in_dependent_materialized_views=1` を有効にすると、依存先テーブルでの重複排除も追加で有効になります。完全な重複排除を行うには、両方を有効にする必要があります。
+
+materialized view 配下のテーブルにブロックを挿入する際、ClickHouse はソーステーブルの `block_id` と追加の識別子を組み合わせた文字列をハッシュ化して `block_id` を計算します。これにより、materialized view 内で正確な重複排除が保証され、materialized view 配下の宛先テーブルに到達する前にどのような変換が適用されたかにかかわらず、元の挿入に基づいてデータを区別できるようになります。
+
+<div id="examples">
+  ## 例
+</div>
+
+<div id="identical-blocks-after-materialized-view-transformations">
+  ### materialized view の変換後に生成される同一ブロック
+</div>
+
+materialized view 内の変換処理で生成された同一ブロックは、基になっている挿入データが異なるため、重複排除されません。
+
+以下に例を示します。
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE MATERIALIZED VIEW mv_dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+```
+
+```sql
+SET max_block_size=1;
+SET min_insert_block_size_rows=0;
+SET min_insert_block_size_bytes=0;
+```
+
+上記の設定により、1行しか含まないブロックが連続するテーブルから選択できるようになります。これらの小さなブロックはまとめられず、テーブルに挿入されるまでそのままの状態が保たれます。
+
+```sql
+SET deduplicate_blocks_in_dependent_materialized_views=1;
+```
+
+materialized view で重複排除を有効化する必要があります:
+
+```sql
+INSERT INTO dst SELECT
+    number + 1 AS key,
+    IF(key = 0, 'A', 'B') AS value
+FROM numbers(2);
+
+SELECT
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   1 │ B     │ all_0_0_0 │
+│   2 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+ここでは、2 つのパーツが `dst` テーブルに挿入されていることがわかります。select からの 2 つのブロック -- INSERT 時の 2 つのパーツです。各パーツには異なるデータが含まれています。
+
+```sql
+SELECT
+    *,
+    _part
+FROM mv_dst
+ORDER BY all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   0 │ B     │ all_0_0_0 │
+│   0 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+ここでは、`mv_dst` テーブルに 2 つのパーツが挿入されていることがわかります。これらのパーツには同じデータが含まれていますが、重複排除されていません。
+
+```sql
+INSERT INTO dst SELECT
+    number + 1 AS key,
+    IF(key = 0, 'A', 'B') AS value
+FROM numbers(2);
+
+SELECT
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   1 │ B     │ all_0_0_0 │
+│   2 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   0 │ B     │ all_0_0_0 │
+│   0 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+ここでは、insert を再試行すると、すべてのデータが重複排除されることがわかります。重複排除は `dst` テーブルと `mv_dst` テーブルの両方で有効です。
+
+<div id="identical-blocks-on-insertion">
+  ### INSERT時の同一ブロック
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+SET max_block_size=1;
+SET min_insert_block_size_rows=0;
+SET min_insert_block_size_bytes=0;
+```
+
+挿入:
+
+```sql
+INSERT INTO dst SELECT
+    0 AS key,
+    'A' AS value
+FROM numbers(2);
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+上記の設定では、select– の結果として 2 つのブロックが生成されるため、table `dst` への挿入用にも 2 つのブロックがあるはずです。しかし実際には、table `dst` に挿入されたのは 1 つのブロックだけであることがわかります。これは、2 つ目のブロックが重複排除されたためです。このブロックは同じデータを持ち、さらに挿入されたデータからハッシュとして計算される重複排除用の秘密鍵 `block_id` も同一です。この動作は想定どおりではありません。このようなケースが発生することはまれですが、理論上は起こりえます。このようなケースを正しく処理するには、ユーザーが `insert_deduplication_token` を指定する必要があります。以下の例でこれを修正してみましょう。
+
+<div id="identical-blocks-in-insertion-with-insert_deduplication_token">
+  ### `insert_deduplication_token` を使用した挿入時の同一ブロック
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+SET max_block_size=1;
+SET min_insert_block_size_rows=0;
+SET min_insert_block_size_bytes=0;
+```
+
+データの挿入:
+
+```sql
+INSERT INTO dst SELECT
+    0 AS key,
+    'A' AS value
+FROM numbers(2)
+SETTINGS insert_deduplication_token='some_user_token';
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_2_2_0 │
+│ from dst   │   0 │ A     │ all_3_3_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+想定どおり、同一の2つのブロックが挿入されました。
+
+```sql
+SELECT 'second attempt';
+
+INSERT INTO dst SELECT
+    0 AS key,
+    'A' AS value
+FROM numbers(2)
+SETTINGS insert_deduplication_token='some_user_token';
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_2_2_0 │
+│ from dst   │   0 │ A     │ all_3_3_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+再試行した挿入は、想定どおり重複排除されます。
+
+```sql
+SELECT 'third attempt';
+
+INSERT INTO dst SELECT
+    1 AS key,
+    'b' AS value
+FROM numbers(2)
+SETTINGS insert_deduplication_token='some_user_token';
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_2_2_0 │
+│ from dst   │   0 │ A     │ all_3_3_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+その挿入も、挿入されたデータが異なっていても重複排除の対象になります。`insert_deduplication_token` のほうが優先される点に注意してください。`insert_deduplication_token` が指定されている場合、ClickHouse はデータのハッシュ値を使用しません。
+
+<div id="different-insert-operations-generate-the-same-data-after-transformation-in-the-underlying-table-of-the-materialized-view">
+  ### 異なる挿入操作でも、materialized viewの基になるテーブルでは変換後に同じデータが生成される
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE MATERIALIZED VIEW mv_dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+
+SET deduplicate_blocks_in_dependent_materialized_views=1;
+
+select 'first attempt';
+
+INSERT INTO dst VALUES (1, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER by all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+select 'second attempt';
+
+INSERT INTO dst VALUES (2, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER by all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+│ from dst   │   2 │ A     │ all_1_1_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+│ from mv_dst   │   0 │ A     │ all_1_1_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+毎回異なるデータを挿入します。しかし、`mv_dst` テーブルには毎回同じデータが挿入されます。ソースデータが異なるため、データは重複排除されません。
+
+<div id="different-materialized-view-inserts-into-one-underlying-table-with-equivalent-data">
+  ### 同等のデータを 1 つの基になるテーブルに挿入する異なる materialized view
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE TABLE mv_dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE MATERIALIZED VIEW mv_first
+TO mv_dst
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+
+CREATE MATERIALIZED VIEW mv_second
+TO mv_dst
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+
+SET deduplicate_blocks_in_dependent_materialized_views=1;
+
+select 'first attempt';
+
+INSERT INTO dst VALUES (1, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER by all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+│ from mv_dst   │   0 │ A     │ all_1_1_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+同じ内容の2つのブロックがテーブル `mv_dst` に挿入されました (予想どおり) 。
+
+```sql
+SELECT 'second attempt';
+
+INSERT INTO dst VALUES (1, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+│ from mv_dst   │   0 │ A     │ all_1_1_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+その再試行操作は、テーブル `dst` と `mv_dst` の両方で重複排除されます。

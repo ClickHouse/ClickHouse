@@ -163,6 +163,7 @@ private:
     const ElfSectionHeader * section_headers{};
     const ElfProgramHeader * program_headers{};
     const char * section_names = nullptr;
+    size_t section_names_size = 0; // bytes available starting at `section_names`, for bounds checking
 
     void init(const char * data, size_t size, const std::string & path_);
 };

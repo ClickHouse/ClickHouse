@@ -1,0 +1,14 @@
+---
+description: 'ClickHouse의 네이티브 TCP 인터페이스에 대한 문서'
+sidebarTitle: '네이티브 인터페이스 (TCP)'
+slug: /interfaces/tcp
+title: '네이티브 인터페이스 (TCP)'
+doc_type: 'reference'
+---
+
+네이티브 프로토콜은 [command-line client](/ko/concepts/features/interfaces/cli), 분산 쿼리 처리 시 서버 간 통신, 그리고 일부 언어 클라이언트(예: [clickhouse-go](/ko/integrations/language-clients/go/index#connection-details))에서도 사용됩니다.
+
+ClickHouse는 네이티브 프로토콜과 이 프로토콜이 전달하는 컬럼형 포맷에 대한 공식 사양을 제공합니다:
+
+* [Native Protocol](/ko/reference/interfaces/specs/NativeProtocol) — 패킷 프레이밍, connection state machine, 버전 협상, 그리고 `Block`이 아닌 모든 메시지의 body
+* [Native Format](/ko/reference/interfaces/specs/NativeFormat) — `Block` 및 컬럼 구조, 유형별 인코딩, 그리고 Compression frame. 이 포맷은 TCP 프로토콜 외부에서도 사용되며, 예를 들어 HTTP에서 `FORMAT Native`와 함께 사용됩니다.

@@ -1,0 +1,607 @@
+import sys
+import json
+import re
+import io
+import zipfile
+from urllib.parse import urlparse
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+
+def make_zip_file(entries):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as archive:
+        for name, data in entries:
+            archive.writestr(name, data)
+    return buffer.getvalue()
+
+
+DATA_PARTS = {
+    "/data/2025/part1.tsv": "1\n2\n",
+    "/data/2025/part2.tsv": "4\n5\n",
+    "/data/head_fallback/part1.tsv": "3\n",
+    "/data/head_fallback/part2.tsv": "4\n",
+    "/data/invalid_href_fallback/part1.tsv": "1\n2\n",
+    "/data/invalid_href_fallback/part2.tsv": "4\n5\n",
+    "/data/query/part3.tsv": "1\n",
+    "/data/query/part4.tsv": "2\n",
+    "/data/query/part5.tsv": "3\n",
+    "/data/glob/parta.tsv": "1\n",
+    "/data/glob/partb.tsv": "2\n",
+    "/data/glob/partc.tsv": "3\n",
+    "/data/glob/part1.tsv": "4\n",
+    "/data/glob/part2.tsv": "5\n",
+    "/data/order/a/part1.tsv": "10\n",
+    "/data/order/b/part1.tsv": "20\n",
+    "/data/duplicates/part1.tsv": "9\n",
+    "/data/query_override/part1.tsv": "6\n",
+    "/data/query_directory/subdir/part1.tsv": "11\n",
+    "/data/source_query/subdir/part1.tsv": "13\n",
+    "/data/source_query_duplicate/subdir/part1.tsv": "17\n",
+    "/data/range/subdir/part1.tsv": "10\n",
+    "/data/range/subdir/part2.tsv": "20\n",
+    "/data/recursive_glob/a/parta.tsv": "1\n",
+    "/data/recursive_glob/a/part1.tsv": "10\n",
+    "/data/recursive_glob/b/partb.tsv": "2\n",
+    "/data/recursive_glob/b/part2.tsv": "20\n",
+    "/data/headers/2025/part1.tsv": "7\n",
+    "/data/headers/2025/part2.tsv": "8\n",
+    "/data/mixed_headers/part1.tsv": "1\n",
+    "/data/mixed_headers/part2.tsv": "2\n",
+    "/data/no_content_length_get/subdir/part1.tsv": "29\n",
+    "/data/unknown_size/subdir/part1.tsv": "31\n",
+    "/data/redirect_target/part1.tsv": "19\n",
+    "/data/index_redirect/part1.tsv": "41\n",
+    "/data/recursive_redirect_target/subdir/part1.tsv": "43\n",
+    "/data/cross_origin_target/part1.tsv": "37\n",
+    "/data/auth_failover/part1.tsv": "23\n",
+    "/data/apache_sort/subdir/part1.tsv": "7\n",
+    "/data/apache_sort/subdir/part2.tsv": "11\n",
+}
+
+SHARD_0_ARCHIVE = make_zip_file([("value.tsv", "101\n")])
+SHARD_1_ARCHIVE = make_zip_file([("value.tsv", "202\n"), ("padding.txt", "x" * 1024)])
+UNKNOWN_SIZE_ARCHIVE = make_zip_file([("value.tsv", "47\n")])
+
+
+class RequestHandler(BaseHTTPRequestHandler):
+    request_counts = {}
+
+    def log_message(self, format, *args):
+        pass
+
+    @classmethod
+    def _record_request(cls, method, path):
+        key = f"{method} {path}"
+        cls.request_counts[key] = cls.request_counts.get(key, 0) + 1
+
+    def _handle_control(self):
+        if self.path == "/__stats__":
+            body = json.dumps(self.request_counts, sort_keys=True)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body.encode("utf-8"))))
+            self.end_headers()
+            self.wfile.write(body.encode("utf-8"))
+            return True
+
+        if self.path == "/__reset__":
+            self.request_counts.clear()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"OK")
+            return True
+
+        return False
+
+    @staticmethod
+    def _deep_directory_response(path):
+        if path == "/data/deep/":
+            return "<a href=\"0/\">0/</a>\n"
+
+        if not re.fullmatch(r"/data/deep/(?:\d+/)+", path):
+            return None
+
+        levels = [level for level in path.removeprefix("/data/deep/").split("/") if level]
+        if len(levels) >= 10:
+            return ""
+        next_level = len(levels)
+        return f"<a href=\"{next_level}/\">{next_level}/</a>\n"
+
+    def _archive_data_for_request(self, parsed_url):
+        if parsed_url.path != "/data/archive_identity/archive.zip":
+            return None
+
+        if parsed_url.query == "shard=0":
+            return SHARD_0_ARCHIVE
+        if parsed_url.query == "shard=1":
+            return SHARD_1_ARCHIVE
+        return None
+
+    def _page_cache_identity_tsv_for_request(self, parsed_url):
+        # Two web sources (`?shard=0` / `?shard=1`) expose the same object path with the same ETag
+        # but different contents, so the page cache must key on the web source identity (the shard
+        # base URL and its query) rather than on the path and ETag alone.
+        if parsed_url.path != "/data/page_cache_identity/part.tsv":
+            return None
+        if parsed_url.query == "shard=0":
+            return b"101\n"
+        if parsed_url.query == "shard=1":
+            return b"202\n"
+        return None
+
+    def do_HEAD(self):
+        if self._handle_control():
+            return
+
+        parsed = urlparse(self.path)
+        path = parsed.path
+        self._record_request("HEAD", path)
+        page_cache_identity_tsv = self._page_cache_identity_tsv_for_request(parsed)
+        if page_cache_identity_tsv is not None:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(page_cache_identity_tsv)))
+            self.send_header("ETag", "page-cache-identity")
+            self.end_headers()
+            return
+        if path == "/data/unknown_size_archive/archive.zip":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.end_headers()
+            return
+
+        archive_data = self._archive_data_for_request(parsed)
+        if archive_data is not None:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Length", str(len(archive_data)))
+            self.end_headers()
+            return
+
+        if path.startswith("/data/head_fallback/part"):
+            self.send_response(405)
+            self.end_headers()
+            return
+        if path in (
+            "/data/auth_failover/",
+            "/data/auth_failover/part1.tsv",
+        ):
+            if self.headers.get("Authorization"):
+                self.send_response(403)
+            else:
+                self.send_response(200)
+                if path == "/data/auth_failover/part1.tsv":
+                    data = DATA_PARTS[path].encode("utf-8")
+                    self.send_header("Content-Type", "text/plain")
+                    self.send_header("Content-Length", str(len(data)))
+                else:
+                    self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            return
+        if path in DATA_PARTS:
+            if path.startswith("/data/unknown_size/"):
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                return
+
+            data = DATA_PARTS[path].encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(data)))
+            if path.startswith("/data/mixed_headers/"):
+                self.send_header("ETag", f"mixed-{path.rsplit('/', 1)[-1]}")
+                self.send_header("X-Probe-Method", "HEAD")
+            self.end_headers()
+            return
+        if path in (
+            "/data/",
+            "/data/2025/",
+            "/data/deep/",
+            "/data/empty/",
+            "/data/head_fallback/",
+            "/data/query/",
+            "/data/invalid_href_fallback/",
+            "/data/oversize/",
+            "/data/glob/",
+            "/data/order/",
+            "/data/order/a/",
+            "/data/order/b/",
+            "/data/duplicates/",
+            "/data/query_override/",
+            "/data/query_directory/",
+            "/data/query_directory/subdir/",
+            "/data/source_query/",
+            "/data/source_query/subdir/",
+            "/data/source_query_duplicate/",
+            "/data/source_query_duplicate/subdir/",
+            "/data/range/",
+            "/data/range/subdir/",
+            "/data/recursive_glob/",
+            "/data/recursive_glob/a/",
+            "/data/recursive_glob/b/",
+            "/data/headers/",
+            "/data/headers/2025/",
+            "/data/mixed_headers/",
+            "/data/page_cache_identity/",
+            "/data/no_content_length_get/",
+            "/data/no_content_length_get/subdir/",
+            "/data/unknown_size/",
+            "/data/unknown_size/subdir/",
+            "/data/redirect/",
+            "/data/redirect_target/",
+            "/data/index_redirect/",
+            "/data/index_redirect/index.html",
+            "/data/recursive_redirect/",
+            "/data/recursive_redirect_target/",
+            "/data/recursive_redirect_target/subdir/",
+            "/data/cross_origin_redirect/",
+            "/data/cross_origin_target/",
+            "/data/archive_identity/",
+            "/data/unknown_size_archive/",
+            "/data/apache_sort/",
+            "/data/apache_sort/subdir/",
+        ):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            return
+        if re.fullmatch(r"/data/deep/(?:\d+/)+", path):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_GET(self):
+        if self._handle_control():
+            return
+
+        parsed = urlparse(self.path)
+        path = parsed.path
+        self._record_request("GET", path)
+        page_cache_identity_tsv = self._page_cache_identity_tsv_for_request(parsed)
+        if page_cache_identity_tsv is not None:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(page_cache_identity_tsv)))
+            self.send_header("ETag", "page-cache-identity")
+            self.end_headers()
+            self.wfile.write(page_cache_identity_tsv)
+            return
+        if self.path == "/":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"OK")
+            return
+
+        if path == "/data/":
+            body = "<a href=\"2025/\">2025/</a>\n"
+            self._send_html(body)
+            return
+
+        if path == "/data/2025/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n<a href=\"part2.tsv\">part2.tsv</a>\n"
+            self._send_html(body)
+            return
+
+        if path == "/data/apache_sort/":
+            # Mimic an Apache `mod_autoindex` page: ordering anchors that resolve to the current
+            # directory with only a different query string, alongside a real child directory. The
+            # ordering anchors must not be expanded as child directories (which would re-fetch this
+            # same page recursively), while the real `subdir/` must still be traversed.
+            body = (
+                "<a href=\"?C=N;O=D\">Name</a>\n"
+                "<a href=\"?C=M;O=A\">Last modified</a>\n"
+                "<a href=\"?C=S;O=A\">Size</a>\n"
+                "<a href=\"subdir/\">subdir/</a>\n"
+            )
+            self._send_html(body)
+            return
+
+        if path == "/data/apache_sort/subdir/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n<a href=\"part2.tsv\">part2.tsv</a>\n"
+            self._send_html(body)
+            return
+        deep_body = self._deep_directory_response(path)
+        if deep_body is not None:
+            self._send_html(deep_body)
+            return
+        if path == "/data/headers/":
+            body = "<a href=\"2025/\">2025/</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/headers/2025/":
+            if self.headers.get("X-Test-Header") != "1":
+                self.send_response(403)
+                self.end_headers()
+                return
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n<a href=\"part2.tsv\">part2.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/mixed_headers/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n<a href=\"part2.tsv\">part2.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/page_cache_identity/":
+            body = "<a href=\"part.tsv\">part.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/no_content_length_get/":
+            body = "<a href=\"subdir/\">subdir/</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/no_content_length_get/subdir/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/unknown_size/":
+            body = "<a href=\"subdir/\">subdir/</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/unknown_size/subdir/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/redirect/":
+            self.send_response(302)
+            self.send_header("Location", "/data/redirect_target/")
+            self.end_headers()
+            return
+        if path == "/data/index_redirect/":
+            self.send_response(302)
+            self.send_header("Location", "/data/index_redirect/index.html")
+            self.end_headers()
+            return
+        if path == "/data/recursive_redirect/":
+            self.send_response(302)
+            self.send_header("Location", "/data/recursive_redirect_target/")
+            self.end_headers()
+            return
+        if path == "/data/cross_origin_redirect/":
+            host = self.headers.get("Host", "resolver:8087").split(":", 1)[0]
+            self.send_response(302)
+            self.send_header("Location", f"http://{host}:8088/data/cross_origin_target/")
+            self.end_headers()
+            return
+        if path == "/data/redirect_target/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/index_redirect/index.html":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/recursive_redirect_target/":
+            body = "<a href=\"subdir/\">subdir/</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/recursive_redirect_target/subdir/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/cross_origin_target/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/auth_failover/":
+            if self.headers.get("Authorization"):
+                self.send_response(403)
+                self.end_headers()
+                return
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/archive_identity/":
+            body = "<a href=\"archive.zip\">archive.zip</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/unknown_size_archive/":
+            body = "<a href=\"archive.zip\">archive.zip</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/order/":
+            body = "<a href=\"a/\">a/</a>\n<a href=\"b/\">b/</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/order/a/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/order/b/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/duplicates/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n<a href=\"./part1.tsv\">./part1.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/query_override/":
+            body = "<a href=\"part1.tsv?download=1\">part1.tsv?download=1</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/query_directory/":
+            body = "<a href=\"subdir/?token=abc\">subdir/?token=abc</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/query_directory/subdir/":
+            if parsed.query != "token=abc":
+                self.send_response(404)
+                self.end_headers()
+                return
+            body = "<a href=\"part1.tsv?token=abc\">part1.tsv?token=abc</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/source_query/":
+            if parsed.query == "token=fail":
+                self.send_response(403)
+                self.end_headers()
+                return
+            if parsed.query != "token=abc":
+                self.send_response(404)
+                self.end_headers()
+                return
+            body = "<a href=\"subdir/\">subdir/</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/source_query/subdir/":
+            if parsed.query == "token=fail":
+                self.send_response(403)
+                self.end_headers()
+                return
+            if parsed.query != "token=abc":
+                self.send_response(404)
+                self.end_headers()
+                return
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/source_query_duplicate/":
+            if parsed.query != "token=abc":
+                self.send_response(404)
+                self.end_headers()
+                return
+            body = "<a href=\"subdir/\">subdir/</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/source_query_duplicate/subdir/":
+            if parsed.query != "token=abc":
+                self.send_response(404)
+                self.end_headers()
+                return
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n<a href=\"part1.tsv?token=abc\">part1.tsv?token=abc</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/range/":
+            body = "<a href=\"subdir/\">subdir/</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/range/subdir/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n<a href=\"part2.tsv\">part2.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/recursive_glob/":
+            body = "<a href=\"a/\">a/</a>\n<a href=\"b/\">b/</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/recursive_glob/a/":
+            body = "<a href=\"parta.tsv\">parta.tsv</a>\n<a href=\"part1.tsv\">part1.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/recursive_glob/b/":
+            body = "<a href=\"partb.tsv\">partb.tsv</a>\n<a href=\"part2.tsv\">part2.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/glob/":
+            body = (
+                "<a href=\"parta.tsv\">parta.tsv</a>\n"
+                "<a href=\"partb.tsv\">partb.tsv</a>\n"
+                "<a href=\"partc.tsv\">partc.tsv</a>\n"
+                "<a href=\"part1.tsv\">part1.tsv</a>\n"
+                "<a href=\"part2.tsv\">part2.tsv</a>\n"
+            )
+            self._send_html(body)
+            return
+        if path == "/data/empty/":
+            self._send_html("")
+            return
+        if path == "/data/head_fallback/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n<a href=\"part2.tsv\">part2.tsv</a>\n"
+            self._send_html(body)
+            return
+
+        if path == "/data/query/":
+            body = (
+                "<a href=\"part3.tsv?download=1\">part3.tsv?download=1</a>\n"
+                "<a href=\"part4.tsv#frag\">part4.tsv#frag</a>\n"
+                "<a href=\"part5.tsv\">part5.tsv</a>\n"
+            )
+            self._send_html(body)
+            return
+        if path == "/data/invalid_href_fallback/":
+            host = self.headers.get("Host", "resolver:8087")
+            body = (
+                "<a href=\"#\">top</a>\n"
+                "<a href=\"javascript:void(0)\">noop</a>\n"
+                f"http://{host}/data/invalid_href_fallback/part1.tsv\n"
+                f"http://{host}/data/invalid_href_fallback/part2.tsv\n"
+            )
+            self._send_html(body)
+            return
+        if path == "/data/oversize/":
+            body = "a" * (10 * 1024 * 1024 + 1)
+            self._send_html(body)
+            return
+
+        if path in DATA_PARTS:
+            if path.startswith("/data/auth_failover/") and self.headers.get("Authorization"):
+                self.send_response(403)
+                self.end_headers()
+                return
+            if path.startswith("/data/headers/") and self.headers.get("X-Test-Header") != "1":
+                self.send_response(403)
+                self.end_headers()
+                return
+            if path == "/data/query_override/part1.tsv" and parsed.query != "download=1":
+                self.send_response(404)
+                self.end_headers()
+                return
+            if path == "/data/query_directory/subdir/part1.tsv" and parsed.query != "token=abc":
+                self.send_response(404)
+                self.end_headers()
+                return
+            if path == "/data/source_query/subdir/part1.tsv" and parsed.query != "token=abc":
+                self.send_response(404)
+                self.end_headers()
+                return
+            if path == "/data/source_query_duplicate/subdir/part1.tsv" and parsed.query != "token=abc":
+                self.send_response(404)
+                self.end_headers()
+                return
+            data = DATA_PARTS[path].encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            if not path.startswith("/data/no_content_length_get/"):
+                self.send_header("Content-Length", str(len(data)))
+            if path.startswith("/data/mixed_headers/"):
+                self.send_header("ETag", f"mixed-{path.rsplit('/', 1)[-1]}")
+                self.send_header("X-Source-File", path.rsplit("/", 1)[-1])
+                self.send_header("X-Probe-Method", "GET")
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
+        archive_data = self._archive_data_for_request(parsed)
+        if archive_data is not None:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Length", str(len(archive_data)))
+            self.end_headers()
+            self.wfile.write(archive_data)
+            return
+        if path == "/data/unknown_size_archive/archive.zip":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.end_headers()
+            self.wfile.write(UNKNOWN_SIZE_ARCHIVE)
+            return
+
+        self.send_response(404)
+        self.end_headers()
+
+    def _send_html(self, body):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.end_headers()
+        self.wfile.write(body.encode("utf-8"))
+
+
+if __name__ == "__main__":
+    port = int(sys.argv[1])
+    httpd = HTTPServer(("0.0.0.0", port), RequestHandler)
+    httpd.serve_forever()

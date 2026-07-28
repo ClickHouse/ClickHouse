@@ -1,0 +1,79 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/chainlit
+sidebarTitle: 'تكامل Chainlit'
+title: 'كيفية بناء وكيل ذكاء اصطناعي باستخدام Chainlit وخادم ClickHouse MCP'
+description: 'تعرّف على كيفية استخدام Chainlit لبناء تطبيقات دردشة قائمة على نماذج اللغة الكبيرة بالاستفادة من خادم ClickHouse MCP'
+keywords: ['ClickHouse', 'MCP', 'Chainlit']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+يستعرض هذا الدليل كيفية الجمع بين إطار العمل القوي لواجهات الدردشة في Chainlit
+وخادم ClickHouse لبروتوكول Model Context Protocol ‏(MCP) لإنشاء تطبيقات بيانات
+تفاعلية. يتيح لك Chainlit بناء واجهات محادثة لتطبيقات الذكاء الاصطناعي
+بأقل قدر من الشيفرة، بينما يوفّر خادم ClickHouse MCP تكاملًا سلسًا
+مع قاعدة البيانات العمودية عالية الأداء من ClickHouse.
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* ستحتاج إلى مفتاح API من Anthropic
+* ستحتاج إلى تثبيت [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+
+<div id="basic-chainlit-app">
+  ## تطبيق Chainlit بسيط
+</div>
+
+يمكنك الاطلاع على مثال لتطبيق دردشة بسيط بتشغيل ما يلي:
+
+```sh
+uv run --with anthropic --with chainlit chainlit run chat_basic.py -w -h
+```
+
+ثم انتقل إلى `http://localhost:8000`
+
+<div id="adding-clickhouse-mcp-server">
+  ## إضافة خادم ClickHouse MCP
+</div>
+
+تصبح الأمور أكثر تشويقًا إذا أضفنا خادم ClickHouse MCP.
+ستحتاج إلى تحديث ملف `.chainlit/config.toml` للسماح
+باستخدام الأمر `uv`:
+
+```toml
+[features.mcp.stdio]
+    enabled = true
+    # Only the executables in the allow list can be used for MCP stdio server.
+    # Only need the base name of the executable, e.g. "npx", not "/usr/bin/npx".
+    # Please don't comment this line for now, we need it to parse the executable name.
+    allowed_executables = [ "npx", "uvx", "uv" ]
+```
+
+<Info>
+  **config.toml**
+
+  يمكنك العثور على ملف `config.toml` الكامل في [مستودع الأمثلة](https://github.com/ClickHouse/examples/blob/main/ai/mcp/chainlit/.chainlit/config.toml)
+</Info>
+
+هناك بعض الشيفرات الوسيطة اللازمة لجعل خوادم MCP تعمل مع Chainlit، لذا سنحتاج إلى
+تشغيل هذا الأمر لتشغيل Chainlit بدلًا من ذلك:
+
+```sh
+uv run --with anthropic --with chainlit chainlit run chat_mcp.py -w -h
+```
+
+لإضافة خادم MCP، انقر على أيقونة التوصيل في واجهة الدردشة، ثم
+أضِف الأمر التالي للاتصال بـ ClickHouse SQL Playground واستخدامه:
+
+```sh
+CLICKHOUSE_HOST=sql-clickhouse.clickhouse.com CLICKHOUSE_USER=demo CLICKHOUSE_PASSWORD= CLICKHOUSE_SECURE=true uv run --with mcp-clickhouse --python 3.13 mcp-clickhouse
+```
+
+إذا كنت تريد استخدام مثيل ClickHouse الخاص بك، يمكنك تعديل قيم
+متغيرات البيئة.
+
+بعد ذلك، يمكنك أن تطرح عليه أسئلة مثل:
+
+* أخبرني عن الجداول المتاحة للاستعلام
+* ما الأمر المثير للاهتمام بشأن سيارات الأجرة في نيويورك؟

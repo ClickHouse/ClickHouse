@@ -691,15 +691,17 @@ void AzureSettingsByEndpoint::loadFromConfig(
 
     for (const String & key : config_keys)
     {
+        /// Accept both the modern `<object_storage_type>azure</object_storage_type>` and the legacy
+        /// `<type>azure_blob_storage</type>` declaration forms. Without the latter, an endpoint
+        /// declared the legacy way is never loaded into the map, so its settings are silently lost.
+        String disk_type;
         if (config.has(config_prefix + "." + key + ".object_storage_type"))
-        {
-            const auto &object_storage_type = config.getString(config_prefix + "." + key + ".object_storage_type");
-            if (object_storage_type != "azure" && object_storage_type != "azure_blob_storage")
-            {
-                /// Then its not an azure config
-                continue;
-            }
+            disk_type = config.getString(config_prefix + "." + key + ".object_storage_type");
+        else if (config.has(config_prefix + "." + key + ".type"))
+            disk_type = config.getString(config_prefix + "." + key + ".type");
 
+        if (disk_type == "azure" || disk_type == "azure_blob_storage")
+        {
             const auto key_path = config_prefix + "." + key;
             String endpoint_path = key_path + ".connection_string";
 
@@ -714,7 +716,7 @@ void AzureSettingsByEndpoint::loadFromConfig(
                     if (!config.has(endpoint_path))
                     {
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "URL not provided for azure blob storage disk {}",
-                                        object_storage_type);
+                                        disk_type);
                     }
                 }
             }

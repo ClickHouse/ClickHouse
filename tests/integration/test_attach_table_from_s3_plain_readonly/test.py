@@ -78,7 +78,7 @@ def test_attach_table_from_s3_plain_readonly(started_cluster):
     assert int(node1.query("select num from local_db.test_table limit 1")) == 5
 
     # Copy local MergeTree data into minio bucket
-    table_data_path = os.path.join(node1.path, f"database/store")
+    table_data_path = os.path.join(node1.path, "database/store")
     minio = cluster.minio_client
     upload_to_minio(
         minio, cluster.minio_bucket, table_data_path, "data/disks/disk_s3_plain/store/"

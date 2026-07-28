@@ -44,11 +44,21 @@ SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dic
 
 UInt128 SerializationLowCardinality::getHash(const DataTypePtr & dictionary_type_)
 {
+    /// Include the nested serializations' hashes so types whose default
+    /// serialization depends on session settings get distinct cache entries.
+    auto nested_serialization = dictionary_type_->getDefaultSerialization();
+    auto dict_inner_serialization = removeNullable(dictionary_type_)->getDefaultSerialization();
+
     SipHash hash;
     hash.update("LowCardinality");
     auto dict_type_name = dictionary_type_->getName();
     hash.update(dict_type_name.size());
     hash.update(dict_type_name);
+    if (nested_serialization->supportsPooling())
+        hash.update(nested_serialization->getHash());
+    if (dict_inner_serialization->supportsPooling()
+        && dict_inner_serialization.get() != nested_serialization.get())
+        hash.update(dict_inner_serialization->getHash());
     return hash.get128();
 }
 
@@ -255,6 +265,16 @@ struct DeserializeStateLowCardinality : public ISerialization::DeserializeBinary
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         return std::make_shared<DeserializeStateLowCardinality>(*this);
+    }
+
+    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
+    {
+        if (global_dictionary)
+            callback(global_dictionary);
+        if (additional_keys)
+            callback(additional_keys);
+        if (null_map)
+            callback(null_map);
     }
 };
 

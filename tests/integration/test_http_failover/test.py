@@ -4,7 +4,6 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 
 ACCESSIBLE_IPV4 = "10.5.172.10"
 OTHER_ACCESSIBLE_IPV4 = "10.5.172.20"
@@ -86,8 +85,12 @@ def test_url_destination_host_with_multiple_addrs(dst_node_addrs, expectation):
 
 def test_url_invalid_hostname(started_cluster):
     with pytest.raises(QueryRuntimeException):
+        # http_max_tries=2 still exercises the retry path (one retry) but avoids
+        # the default 10 attempts, each of which pays a DNS-resolution timeout for
+        # the bogus host plus exponential backoff (~33s total).
         src_node.query(
-            "SELECT count(*) FROM url('http://notvalidhost:8123/?query=SELECT+1', TSV, 'column1 UInt32');"
+            "SELECT count(*) FROM url('http://notvalidhost:8123/?query=SELECT+1', TSV, 'column1 UInt32');",
+            settings={"http_max_tries": "2"},
         )
 
 

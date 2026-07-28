@@ -1,0 +1,48 @@
+---
+title: 'AI 合规'
+slug: /cloud/security/ai-compliance
+description: 'ClickHouse 的 AI 合规概述'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', '人工智能', 'AI 治理', 'AI 合规']
+---
+
+ClickHouse 利用 AI 为客户提供辅助，并增强平台功能。本文档介绍了 AI 的应用场景、启用或禁用 AI 的选项，以及如何使用 AI 的相关文档链接。
+
+<Info>
+  **AI 数据保留与训练**
+
+  默认情况下，我们的 AI 功能不会保留客户数据，也不会使用客户数据训练模型。
+</Info>
+
+<div id="ai-support">
+  ## AI 支持
+</div>
+
+具有 `organization:manage` 权限的用户可以查看和修改用于启用 AI 支持的设置。该设置可在组织设置页面中找到。
+
+ClickHouse 提供 AI 功能，客户可与聊天 agent 交互，以获取配置或故障排查方面的帮助。该 agent 会利用我们的文档和工单管理系统中的信息，快速响应客户咨询。
+
+<div id="sharing-data-for-product-improvement">
+  ## 为改进产品而共享数据
+</div>
+
+具有 `organization:manage` 权限的用户可以查看和修改是否启用为改进产品而共享数据的设置。该设置位于组织设置页面。
+
+当您的组织启用管理员级别的“为改进产品与 ClickHouse 共享数据”设置后，ClickHouse 可能会将您的用户在使用 AI 功能过程中生成或收集的数据 (包括输入、输出、日志和元数据，但不包括对 ClickHouse Cloud 查询的直接结果) 用于模型评估 (如准确性、性能以及安全性/合规性测试) 、提升服务的可靠性与安全性、改善用户体验，以及开展分析。我们不会使用这些数据来训练、重新训练或微调模型。
+
+<div id="clickhouse-assistant">
+  ## ClickHouse Assistant
+</div>
+
+具有 `service:manage-generative-ai` 权限的用户可以查看和修改用于启用 [ClickHouse Assistant](/zh/products/cloud/features/ai-ml/ask-ai) 的设置。该选项位于服务设置页面。此功能包含两项不同的能力：
+
+| Feature              | Description       | Data used                     | User validation        |
+| :------------------- | :---------------- | :---------------------------- | :--------------------- |
+| SQL AI               | 编写、分析查询，并提供优化建议   | 服务元数据、查询文本和提示词输入              | 输出会在查询执行前提供给用户审核       |
+| ClickHouse Assistant | 允许用户使用自然语言提问并获取答案 | 服务元数据和内容、ClickHouse 文档以及提示词输入 | 输出会提供给用户审核，用户应在使用前进行验证 |
+
+<div id="model-comtext-protocol">
+  ## 模型上下文协议
+</div>
+
+[ClickHouse MCP](/zh/products/cloud/features/ai-ml/remote-mcp) 让客户能够更轻松地创建利用其 ClickHouse 服务中数据的自有agent。这需要单独配置，并使用客户自行选择的 AI 模型来处理数据。ClickHouse 不会管理客户的 AI 模型，也无权访问这些模型。

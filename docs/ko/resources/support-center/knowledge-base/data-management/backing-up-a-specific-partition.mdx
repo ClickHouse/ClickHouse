@@ -1,0 +1,178 @@
+---
+title: 특정 파티션 백업하기
+description: ClickHouse에서 특정 파티션을 백업하려면 어떻게 해야 합니까?
+date: 2024-02-14
+tags: ['데이터 관리']
+keywords: ['Backup', '파티션']
+---
+
+<div id="question">
+  ## 질문
+</div>
+
+ClickHouse에서 특정 파티션을 어떻게 백업하나요?
+
+<div id="answer">
+  ## 답변
+</div>
+
+아래 예시를 참조하십시오. 이 예시에서는 [docker compose examples](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/README.md) 페이지에 있는 S3(Minio) 디스크 [구성](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/ch-and-minio-S3/README.md)을 사용합니다.
+
+<Note>
+  이는 ClickHouse Cloud에는 적용되지 않습니다.
+</Note>
+
+테이블을 생성합니다:
+
+```sql
+ch_minio_s3 :) CREATE TABLE my_table
+               (
+                   `event_time` DateTime,
+                   `field_foo` String,
+                   `field_bar` String,
+                   `number` UInt256
+               )
+               ENGINE = MergeTree
+               PARTITION BY number % 2
+               ORDER BY tuple()
+
+CREATE TABLE my_table
+(
+    `event_time` DateTime,
+    `field_foo` String,
+    `field_bar` String,
+    `number` UInt256
+)
+ENGINE = MergeTree
+PARTITION BY number % 2
+ORDER BY tuple()
+
+Query id: a1a54a5a-eac0-477c-b847-b40acaa62780
+
+Ok.
+
+0 rows in set. Elapsed: 0.016 sec.
+```
+
+두 파티션에 고르게 채워지도록 데이터를 추가합니다:
+
+```sql
+ch_minio_s3 :) INSERT INTO my_table SELECT
+                   toDateTime(now() + number) AS event_time,
+                   randomPrintableASCII(10) AS field_foo,
+                   randomPrintableASCII(20) AS field_bar,
+                   number
+               FROM numbers(1000000)
+
+INSERT INTO my_table SELECT
+    toDateTime(now() + number) AS event_time,
+    randomPrintableASCII(10) AS field_foo,
+    randomPrintableASCII(20) AS field_bar,
+    number
+FROM numbers(1000000)
+
+Query id: bf6ef803-5747-4ea1-ad00-a17967e349b6
+
+Ok.
+
+0 rows in set. Elapsed: 0.282 sec. Processed 1.00 million rows, 8.00 MB (3.55 million rows/s., 28.39 MB/s.)
+```
+
+데이터 확인:
+
+```sql
+ch_minio_s3 :) SELECT
+                   _partition_id AS partition_id,
+                   cityHash64(sum(number)) AS hash,
+                   count() AS count
+               FROM my_table
+               GROUP BY partition_id
+
+SELECT
+    _partition_id AS partition_id,
+    cityHash64(sum(number)) AS hash,
+    count() AS count
+FROM my_table
+GROUP BY partition_id
+
+Query id: d8febfb0-5339-4f97-aefa-ef0003128526
+
+┌─partition_id─┬─cityHash64(sum(number))─┬──count─┐
+│ 0            │    15460940821314360342 │ 500000 │
+│ 1            │    11827822647069388611 │ 500000 │
+└──────────────┴─────────────────────────┴────────┘
+
+2 rows in set. Elapsed: 0.025 sec. Processed 1.00 million rows, 32.00 MB (39.97 million rows/s., 1.28 GB/s.)
+```
+
+설정된 `s3` 디스크에 id가 `1`인 파티션을 백업합니다:
+
+```sql
+ch_minio_s3 :) BACKUP TABLE my_table PARTITION 1 TO Disk('s3','backups/');
+
+BACKUP TABLE my_table PARTITION  1 TO Disk('s3', 'backups/')
+
+Query id: 810f6144-e282-42e2-99d0-9a80c75a927d
+
+┌─id───────────────────────────────────┬─status─────────┐
+│ 4d1da197-c4c9-4b6e-966c-76202eadbd53 │ BACKUP_CREATED │
+└──────────────────────────────────────┴────────────────┘
+
+1 row in set. Elapsed: 0.095 sec.
+```
+
+테이블을 삭제하세요:
+
+```sql
+ch_minio_s3 :) DROP TABLE my_table
+
+DROP TABLE my_table
+
+Query id: c3456044-4689-406e-82ac-8d08b8b618fe
+
+Ok.
+
+0 rows in set. Elapsed: 0.007 sec.
+```
+
+백업에서 ID가 `1`인 파티션만 복원:
+
+```
+ch_minio_s3 :) RESTORE TABLE my_table PARTITION 1 FROM Disk('s3','backups/');
+
+RESTORE TABLE my_table PARTITION  1 FROM Disk('s3', 'backups/')
+
+Query id: ea306c73-83c5-479f-9c0c-391594facc69
+
+┌─id───────────────────────────────────┬─status───┐
+│ ec6841a8-0607-465e-bc4d-d446f960d40a │ RESTORED │
+└──────────────────────────────────────┴──────────┘
+
+1 row in set. Elapsed: 0.065 sec.
+```
+
+복원된 데이터를 검증하세요:
+
+```sql
+ch_minio_s3 :) SELECT
+                   _partition_id AS partition_id,
+                   cityHash64(sum(number)) AS hash,
+                   count() AS count
+               FROM my_table
+               GROUP BY partition_id
+
+SELECT
+    _partition_id AS partition_id,
+    cityHash64(sum(number)) AS hash,
+    count() AS count
+FROM my_table
+GROUP BY partition_id
+
+Query id: a916176d-6a6e-47fc-ba7d-79bb33b152d8
+
+┌─partition_id─┬─────────────────hash─┬──count─┐
+│ 1            │ 11827822647069388611 │ 500000 │
+└──────────────┴──────────────────────┴────────┘
+
+1 row in set. Elapsed: 0.012 sec. Processed 500.00 thousand rows, 16.00 MB (41.00 million rows/s., 1.31 GB/s.)
+```

@@ -1,0 +1,78 @@
+---
+title: Identificando consultas mais custosas pelo uso de memória no ClickHouse
+description: Aprenda a usar a tabela `system.query_log` para encontrar as consultas que mais consomem memória no ClickHouse, com exemplos para configurações em cluster e independentes.
+date: 2023-06-07
+tags: ['Desempenho e otimizações']
+keywords: ['Consultas custosas', 'Uso de memória']
+---
+
+<div id="using-the-systemquery_log-table">
+  ## Usando a tabela `system.query_log`
+</div>
+
+A consulta útil a seguir mostra quais das consultas executadas por você usaram mais memória.
+
+Alguns comentários sobre esta consulta:
+
+* os resultados são calculados com base no último dia (`now() - toIntervalDay(1))`), mas você pode modificar facilmente o intervalo de tempo
+* ela pressupõe que você tenha um cluster chamado `default`, que é o nome do seu cluster no [ClickHouse Cloud](https://console.clickhouse.cloud). Altere `default` para o nome do seu cluster
+* se você não tiver um cluster, consulte a consulta listada no final deste artigo
+
+```sql
+SELECT
+    count() as nb_query,
+    user,
+    query,
+    sum(memory_usage) AS memory,
+    normalized_query_hash
+FROM
+    clusterAllReplicas(default, system.query_log)
+WHERE
+    (event_time >= (now() - toIntervalDay(1)))
+    AND query_kind = 'Select'
+    AND type = 'QueryFinish'
+    and user != 'monitoring-internal'
+GROUP BY
+    normalized_query_hash,
+    query,
+    user
+ORDER BY
+    memory DESC;
+```
+
+A resposta será semelhante a:
+
+```response
+┌─nb_query─┬─user────┬─query─────────────────────────────────────────────────────────┬───memory─┬─normalized_query_hash─┐
+│       11 │ default │ select version()                                              │ 46178924 │   7202516440347714159 │
+│        2 │ default │ SELECT * FROM "system"."table_functions" LIMIT 31 OFFSET 0    │  8391544 │  12830067173062987695 │
+└──────────┴─────────┴───────────────────────────────────────────────────────────────┴──────────┴───────────────────────┘
+```
+
+<Note>
+  Se você não tiver uma tabela `system.query_log`, provavelmente o logging de consultas não está habilitado. Consulte os detalhes da [configuração `query_log`](/pt-BR/reference/settings/server-settings/settings#server_configuration_parameters-query-log) para saber como habilitá-lo.
+</Note>
+
+Se você não tiver um cluster, poderá simplesmente consultar diretamente a sua tabela `system.query_log`:
+
+```sql
+SELECT
+    count() as nb_query,
+    user,
+    query,
+    sum(memory_usage) AS memory,
+    normalized_query_hash
+FROM
+    system.query_log
+WHERE
+    (event_time >= (now() - toIntervalDay(1)))
+    AND query_kind = 'Select'
+    AND type = 'QueryFinish'
+    and user != 'monitoring-internal'
+GROUP BY
+    normalized_query_hash,
+    query,
+    user
+ORDER BY
+    memory DESC;
+```

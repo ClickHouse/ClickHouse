@@ -1,4 +1,5 @@
 #include <string_view>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/NamesAndTypes.h>
@@ -2595,3 +2596,6 @@ GROUP BY t ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDashboards) }

@@ -1,0 +1,720 @@
+---
+slug: /data-modeling/backfilling
+title: 'Дозагрузка данных'
+description: 'Как использовать дозагрузку больших наборов данных в ClickHouse'
+keywords: ['materialized views', 'дозагрузка', 'вставка данных', 'отказоустойчивая загрузка данных']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Независимо от того, только ли вы начинаете работать с ClickHouse или отвечаете за существующее развертывание, вам неизбежно потребуется выполнять дозагрузку таблиц историческими данными. В некоторых случаях это довольно просто, но задача может усложниться, если необходимо заполнить materialized views. В этом руководстве описаны несколько подходов к решению этой задачи, которые вы сможете применить в своем сценарии.
+
+<Note>
+  В этом руководстве предполагается, что пользователи уже знакомы с концепцией [Incremental Materialized Views](/ru/concepts/features/materialized-views/incremental-materialized-view) и [загрузкой данных с помощью табличных функций, таких как S3 и GCS](/ru/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse). Мы также рекомендуем ознакомиться с нашим руководством по [оптимизации производительности вставки из Объектного хранилища](/ru/integrations/connectors/data-ingestion/AWS/performance): приведенные в нем рекомендации можно применять к вставкам на протяжении всего этого руководства.
+</Note>
+
+<div id="example-dataset">
+  ## Демонстрационный набор данных
+</div>
+
+В этом руководстве используется набор данных PyPI. Каждая строка в этом наборе данных соответствует загрузке пакета Python с помощью такого инструмента, как `pip`.
+
+Например, это подмножество охватывает один день — `2024-12-17` — и находится в открытом доступе по адресу `https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/`. Вы можете выполнить запрос с помощью:
+
+```sql
+SELECT count()
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+```
+
+```response
+┌────count()─┐
+│ 2039988137 │ -- 2.04 миллиарда
+└────────────┘
+
+1 row in set. Elapsed: 32.726 sec. Processed 2.04 billion rows, 170.05 KB (62.34 million rows/s., 5.20 KB/s.)
+Peak memory usage: 239.50 MiB.
+```
+
+Полный набор данных в этом бакете содержит более 320 ГБ файлов Parquet. В примерах ниже мы намеренно используем только подмножества, заданные с помощью glob-шаблонов.
+
+Мы предполагаем, что пользователь получает поток этих данных, например из Kafka или объектного хранилища, начиная с этой даты. Схема этих данных показана ниже:
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+FORMAT PrettyCompactNoEscapesMonoBlock
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name───────────────┬─type────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ timestamp │ Nullable(DateTime64(6))                                                                                                                 │
+│ country_code       │ Nullable(String)                                                                                                                        │
+│ url │ Nullable(String)                                                                                                                        │
+│ project            │ Nullable(String)                                                                                                                        │
+│ file │ Tuple(filename Nullable(String), project Nullable(String), version Nullable(String), type Nullable(String))                             │
+│ installer          │ Tuple(name Nullable(String), version Nullable(String))                                                                                  │
+│ python             │ Nullable(String)                                                                                                                        │
+│ implementation     │ Tuple(name Nullable(String), version Nullable(String))                                                                                  │
+│ distro             │ Tuple(name Nullable(String), version Nullable(String), id Nullable(String), libc Tuple(lib Nullable(String), version Nullable(String))) │
+│ system │ Tuple(name Nullable(String), release Nullable(String))                                                                                  │
+│ cpu                │ Nullable(String)                                                                                                                        │
+│ openssl_version    │ Nullable(String)                                                                                                                        │
+│ setuptools_version │ Nullable(String)                                                                                                                        │
+│ rustc_version      │ Nullable(String)                                                                                                                        │
+│ tls_protocol       │ Nullable(String)                                                                                                                        │
+│ tls_cipher         │ Nullable(String)                                                                                                                        │
+└────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<Note>
+  Полный набор данных PyPI, включающий более 1 триллиона строк, доступен в нашей публичной демо-среде [clickpy.clickhouse.com](https://clickpy.clickhouse.com). Подробнее об этом наборе данных, в том числе о том, как в демо используются materialized views для повышения производительности и как данные ежедневно загружаются, см. [здесь](https://github.com/ClickHouse/clickpy).
+</Note>
+
+<div id="backfilling-scenarios">
+  ## Сценарии дозагрузки
+</div>
+
+Дозагрузка обычно требуется, когда поток данных считывается, начиная с определённого момента времени. Эти данные вставляются в таблицы ClickHouse с помощью [incremental materialized views](/ru/concepts/features/materialized-views/incremental-materialized-view), которые срабатывают по мере вставки блоков. Эти представления могут преобразовывать данные перед вставкой либо вычислять агрегаты и отправлять результаты в целевые таблицы для последующего использования в downstream-приложениях.
+
+Мы постараемся охватить следующие сценарии:
+
+1. **Дозагрузка данных при существующей ингестии данных** - Загружаются новые данные, и необходимо дозагрузить исторические. Эти исторические данные уже определены.
+2. **Добавление materialized view к существующим таблицам** - Нужно добавить новые materialized view в конфигурацию, где исторические данные уже загружены, а новые данные продолжают поступать.
+
+Мы предполагаем, что дозагрузка данных будет выполняться из объектного хранилища. Во всех случаях мы стремимся избежать пауз во вставке данных.
+
+Мы рекомендуем дозагружать исторические данные из объектного хранилища. По возможности данные следует экспортировать в Parquet для оптимальной производительности чтения и сжатия (снижения объёма передачи по сети). Обычно предпочтителен размер файла около 150 МБ, однако ClickHouse поддерживает более [70 форматов файлов](/ru/reference/formats/index) и способен обрабатывать файлы любого размера.
+
+<div id="using-duplicate-tables-and-views">
+  ## Использование дублирующих таблиц и представлений
+</div>
+
+Во всех сценариях мы опираемся на концепцию «дублирующих таблиц и представлений». Эти таблицы и представления являются копиями тех, что используются для потоковых данных в реальном времени, и позволяют выполнять дозагрузку изолированно с возможностью простого восстановления при возникновении сбоя. Например, рассмотрим следующую основную таблицу `pypi` и materialized view, вычисляющий количество загрузок для каждого Python-проекта:
+
+```sql
+CREATE TABLE pypi
+(
+    `timestamp` DateTime,
+    `country_code` LowCardinality(String),
+    `project` String,
+    `type` LowCardinality(String),
+    `installer` LowCardinality(String),
+    `python_minor` LowCardinality(String),
+    `system` LowCardinality(String),
+    `on` String
+)
+ENGINE = MergeTree
+ORDER BY (project, timestamp)
+
+CREATE TABLE pypi_downloads
+(
+    `project` String,
+    `count` Int64
+)
+ENGINE = SummingMergeTree
+ORDER BY project
+
+CREATE MATERIALIZED VIEW pypi_downloads_mv TO pypi_downloads
+AS SELECT
+ project,
+    count() AS count
+FROM pypi
+GROUP BY project
+```
+
+Заполним основную таблицу и связанное представление подмножеством данных:
+
+```sql
+INSERT INTO pypi SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 15.702 sec. Processed 41.23 million rows, 3.94 GB (2.63 million rows/s., 251.01 MB/s.)
+Peak memory usage: 977.49 MiB.
+```
+
+```sql
+SELECT count() FROM pypi
+```
+
+```response
+┌──count()─┐
+│ 20612750 │ -- 20.61 миллиона
+└──────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+```sql
+SELECT sum(count)
+FROM pypi_downloads
+```
+
+```response
+┌─sum(count)─┐
+│   20612750 │ -- 20,61 миллиона
+└────────────┘
+
+1 row in set. Elapsed: 0.006 sec. Processed 96.15 thousand rows, 769.23 KB (16.53 million rows/s., 132.26 MB/s.)
+Peak memory usage: 682.38 KiB.
+```
+
+Предположим, мы хотим загрузить ещё одно подмножество `{101..200}`. Хотя можно выполнить вставку непосредственно в `pypi`, эту дозагрузку можно провести изолированно, создав дублирующие таблицы.
+
+Если дозагрузка завершится неудачей, основные таблицы останутся нетронутыми — достаточно выполнить [TRUNCATE](/ru/concepts/features/operations/delete/truncate) для дублирующих таблиц и повторить попытку.
+
+Чтобы создать новые копии этих представлений, можно использовать конструкцию `CREATE TABLE AS` с суффиксом `_v2`:
+
+```sql
+CREATE TABLE pypi_v2 AS pypi
+
+CREATE TABLE pypi_downloads_v2 AS pypi_downloads
+
+CREATE MATERIALIZED VIEW pypi_downloads_mv_v2 TO pypi_downloads_v2
+AS SELECT
+ project,
+    count() AS count
+FROM pypi_v2
+GROUP BY project
+```
+
+Заполняем его вторым подмножеством приблизительно того же размера и подтверждаем успешную загрузку.
+
+```sql
+INSERT INTO pypi_v2 SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 17.545 sec. Processed 40.80 million rows, 3.90 GB (2.33 million rows/s., 222.29 MB/s.)
+Peak memory usage: 991.50 MiB.
+```
+
+```sql
+SELECT count()
+FROM pypi_v2
+```
+
+```response
+┌──count()─┐
+│ 20400020 │ -- 20.40 миллиона
+└──────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+```sql
+SELECT sum(count)
+FROM pypi_downloads_v2
+```
+
+```response
+┌─sum(count)─┐
+│   20400020 │ -- 20,40 миллиона
+└────────────┘
+
+1 row in set. Elapsed: 0.006 sec. Processed 95.49 thousand rows, 763.90 KB (14.81 million rows/s., 118.45 MB/s.)
+Peak memory usage: 688.77 KiB.
+```
+
+Если бы на любом этапе этой второй загрузки произошёл сбой, мы могли бы просто [TRUNCATE](/ru/concepts/features/operations/delete/truncate) наши `pypi_v2` и `pypi_downloads_v2` и повторить загрузку данных.
+
+Теперь, когда загрузка данных завершена, мы можем переместить данные из наших таблиц-дубликатов в основные таблицы с помощью оператора [`ALTER TABLE MOVE PARTITION`](/ru/reference/statements/alter/partition#move-partition-to-table).
+
+```sql
+ALTER TABLE pypi_v2 MOVE PARTITION () TO pypi
+```
+
+```response
+0 rows in set. Elapsed: 1.401 sec.
+```
+
+```sql
+ALTER TABLE pypi_downloads_v2 MOVE PARTITION () TO pypi_downloads
+```
+
+```response
+0 rows in set. Elapsed: 0.389 sec.
+```
+
+<Info>
+  **Имена партиций**
+
+  В приведённом выше вызове `MOVE PARTITION` используется имя партиции `()`. Оно обозначает единственную партицию этой таблицы (которая не разбита на партиции). Для таблиц, разбитых на партиции, потребуется выполнить несколько вызовов `MOVE PARTITION` — по одному для каждой партиции. Имена текущих партиций можно получить из таблицы [`system.parts`](/ru/reference/system-tables/parts), например: `SELECT DISTINCT partition FROM system.parts WHERE (table = 'pypi_v2')`.
+</Info>
+
+Теперь мы можем убедиться, что `pypi` и `pypi_downloads` содержат все данные. `pypi_downloads_v2` и `pypi_v2` можно безопасно удалить.
+
+```sql
+SELECT count()
+FROM pypi
+```
+
+```response
+┌──count()─┐
+│ 41012770 │ -- 41,01 миллиона
+└──────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+```sql
+SELECT sum(count)
+FROM pypi_downloads
+```
+
+```response
+┌─sum(count)─┐
+│   41012770 │ -- 41,01 миллиона
+└────────────┘
+
+1 row in set. Elapsed: 0.007 sec. Processed 191.64 thousand rows, 1.53 MB (27.34 million rows/s., 218.74 MB/s.)
+```
+
+```sql
+SELECT count()
+FROM pypi_v2
+```
+
+Важно, что операция `MOVE PARTITION` одновременно является и малозатратной (за счёт использования жёстких ссылок), и атомарной, то есть либо завершается ошибкой, либо выполняется успешно без какого-либо промежуточного состояния.
+
+Мы активно используем этот процесс в описанных ниже сценариях дозагрузки.
+
+Обратите внимание, что в рамках этого процесса нужно выбрать размер каждой операции вставки.
+
+Чем крупнее вставки, то есть чем больше строк, тем меньше потребуется операций `MOVE PARTITION`. Однако это нужно уравновешивать затратами на восстановление в случае сбоя вставки, например из-за прерывания сети. Чтобы снизить риск, этот процесс можно дополнить разбиением файлов на батчи. Это можно сделать либо с помощью диапазонных запросов, например `WHERE timestamp BETWEEN 2024-12-17 09:00:00 AND 2024-12-17 10:00:00`, либо с помощью glob-шаблонов. Например,
+
+```sql
+INSERT INTO pypi_v2 SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+INSERT INTO pypi_v2 SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet')
+INSERT INTO pypi_v2 SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet')
+--продолжается до загрузки всех файлов ИЛИ до выполнения вызова MOVE PARTITION
+```
+
+<Note>
+  ClickPipes использует этот подход при загрузке данных из объектного хранилища: автоматически создает дубликаты целевой таблицы и связанных с ней materialized views, избавляя пользователя от необходимости выполнять описанные выше шаги. Кроме того, благодаря использованию нескольких воркер-потоков, каждый из которых обрабатывает разные подмножества данных (через glob-шаблоны) и имеет собственные таблицы-дубликаты, данные можно загружать быстро и с семантикой «ровно один раз». Дополнительные подробности см. [в этом блоге](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3).
+</Note>
+
+<div id="scenario-1-backfilling-data-with-existing-data-ingestion">
+  ## Сценарий 1: Дозагрузка данных при существующей ингестии данных
+</div>
+
+В этом сценарии мы предполагаем, что данные для дозагрузки не находятся в изолированном бакете, поэтому требуется фильтрация. Данные уже поступают, и можно определить временную метку или монотонно возрастающий столбец, начиная с которого нужно дозагрузить исторические данные.
+
+Этот процесс состоит из следующих шагов:
+
+1. Определите контрольную точку — либо временную метку, либо значение столбца, начиная с которого необходимо дозагрузить исторические данные.
+2. Создайте дубликаты основной таблицы и целевых таблиц для materialized views.
+3. Создайте копии всех materialized views, указывающих на целевые таблицы, созданные на шаге (2).
+4. Выполните вставку в дубликат основной таблицы, созданный на шаге (2).
+5. Переместите все партиции из таблиц-дубликатов в их исходные версии. Удалите таблицы-дубликаты.
+
+Например, предположим, что в данных PyPI у нас уже есть загруженные данные. Мы можем определить минимальную временную метку и, таким образом, нашу &quot;контрольную точку&quot;.
+
+```sql
+SELECT min(timestamp)
+FROM pypi
+```
+
+```response
+┌──────min(timestamp)─┐
+│ 2024-12-17 09:00:00 │
+└─────────────────────┘
+
+1 row in set. Elapsed: 0.163 sec. Processed 1.34 billion rows, 5.37 GB (8.24 billion rows/s., 32.96 GB/s.)
+Peak memory usage: 227.84 MiB.
+```
+
+Из сказанного выше следует, что нам нужно загрузить данные до `2024-12-17 09:00:00`. Используя описанный ранее процесс, мы создаем таблицы-дубликаты и представления и загружаем подмножество данных, применяя фильтр по временной метке.
+
+```sql
+CREATE TABLE pypi_v2 AS pypi
+
+CREATE TABLE pypi_downloads_v2 AS pypi_downloads
+
+CREATE MATERIALIZED VIEW pypi_downloads_mv_v2 TO pypi_downloads_v2
+AS SELECT project, count() AS count
+FROM pypi_v2
+GROUP BY project
+
+INSERT INTO pypi_v2 SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet')
+WHERE timestamp < '2024-12-17 09:00:00'
+```
+
+```response
+0 rows in set. Elapsed: 500.152 sec. Processed 2.74 billion rows, 364.40 GB (5.47 million rows/s., 728.59 MB/s.)
+```
+
+<Note>
+  Фильтрация по столбцам с временными метками в Parquet может быть очень эффективной. ClickHouse будет читать только столбец с временной меткой, чтобы определить полные диапазоны данных для загрузки, сводя к минимуму сетевой трафик. Индексы Parquet, такие как min-max, также могут использоваться движком запросов ClickHouse.
+</Note>
+
+После завершения этой вставки можно переместить соответствующие партиции.
+
+```sql
+ALTER TABLE pypi_v2 MOVE PARTITION () TO pypi
+
+ALTER TABLE pypi_downloads_v2 MOVE PARTITION () TO pypi_downloads
+```
+
+Если исторические данные находятся в отдельном бакете, указанный выше фильтр по времени не требуется. Если столбец времени или монотонно возрастающий столбец недоступен, изолируйте исторические данные.
+
+<Info>
+  **Просто используйте ClickPipes в ClickHouse Cloud**
+
+  Если вы используете ClickHouse Cloud, для восстановления исторических резервных копий следует использовать ClickPipes, если данные можно изолировать в отдельном бакете (и фильтр не требуется). Помимо сокращения времени загрузки за счет распараллеливания между несколькими воркерами, ClickPipes автоматизирует описанный выше процесс и создает таблицы-дубликаты как для основной таблицы, так и для materialized views.
+</Info>
+
+<div id="scenario-2-adding-materialized-views-to-existing-tables">
+  ## Сценарий 2: Добавление materialized view к существующим таблицам
+</div>
+
+Нередко возникает необходимость добавить новые materialized view в систему, где уже загружен значительный объём данных и продолжается вставка новых данных. Здесь полезны временная метка или монотонно возрастающий столбец, которые позволяют определить точку в потоке и избежать пауз в ингестии данных. В примерах ниже мы рассматриваем оба случая, отдавая предпочтение подходам, позволяющим избежать пауз в ингестии.
+
+<Info>
+  **Избегайте POPULATE**
+
+  Мы не рекомендуем использовать команду [`POPULATE`](/ru/reference/statements/create/view#materialized-view) для дозагрузки materialized view нигде, кроме как на небольших наборах данных, когда приём приостановлен. Этот оператор может пропустить строки, вставленные в исходную таблицу, поскольку materialized view создаётся только после завершения хеширования POPULATE. Кроме того, POPULATE выполняется по всем данным и на больших наборах данных уязвим к прерываниям и ограничениям по памяти.
+</Info>
+
+<div id="timestamp-or-monotonically-increasing-column-available">
+  ### Доступна временная метка или монотонно возрастающий столбец
+</div>
+
+В этом случае мы рекомендуем, чтобы новый materialized view включал фильтр, ограничивающий строки значениями, превышающими некоторую произвольно выбранную дату в будущем. Затем materialized view можно дозагрузить, начиная с этой даты, используя исторические данные из основной таблицы. Подход к дозагрузке зависит от объема данных и сложности соответствующего запроса.
+
+Наш самый простой подход включает следующие шаги:
+
+1. Создать materialized view с фильтром, который учитывает только строки со значениями больше некоторого произвольного момента времени в ближайшем будущем.
+2. Выполнить запрос `INSERT INTO SELECT`, который вставляет данные в целевую таблицу materialized view, читая их из исходной таблицы с использованием агрегирующего запроса представления.
+
+Этот подход можно дополнительно улучшить, если на шаге (2) работать с подмножествами данных и/или использовать для materialized view дублирующую целевую таблицу (с последующим присоединением партиций к исходной после завершения вставки), чтобы упростить восстановление после сбоев.
+
+Рассмотрим следующий materialized view, который вычисляет самые популярные проекты по часам.
+
+```sql
+CREATE TABLE pypi_downloads_per_day
+(
+    `hour` DateTime,
+    `project` String,
+    `count` Int64
+)
+ENGINE = SummingMergeTree
+ORDER BY (project, hour)
+
+CREATE MATERIALIZED VIEW pypi_downloads_per_day_mv TO pypi_downloads_per_day
+AS SELECT
+ toStartOfHour(timestamp) as hour,
+ project,
+    count() AS count
+FROM pypi
+GROUP BY
+    hour,
+ project
+```
+
+Хотя мы можем добавить целевую таблицу, перед добавлением materialized view мы изменяем ее `SELECT` clause, добавляя фильтр, который учитывает только строки со временем больше некоторого произвольного момента в ближайшем будущем — в данном случае мы предполагаем, что `2024-12-17 09:00:00` наступит через несколько минут.
+
+```sql
+CREATE MATERIALIZED VIEW pypi_downloads_per_day_mv TO pypi_downloads_per_day
+AS SELECT
+ toStartOfHour(timestamp) AS hour,
+ project, count() AS count
+FROM pypi WHERE timestamp >= '2024-12-17 09:00:00'
+GROUP BY hour, project
+```
+
+После добавления этого представления мы можем выполнить дозагрузку всех данных для materialized view, поступивших до этого момента.
+
+Самый простой способ сделать это — выполнить запрос из materialized view к основной таблице с фильтром, исключающим недавно добавленные данные, и вставить результаты в целевую таблицу нашего представления с помощью `INSERT INTO SELECT`. Например, для приведённого выше представления:
+
+```sql
+INSERT INTO pypi_downloads_per_day SELECT
+ toStartOfHour(timestamp) AS hour,
+ project,
+    count() AS count
+FROM pypi
+WHERE timestamp < '2024-12-17 09:00:00'
+GROUP BY
+    hour,
+ project
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 2.830 sec. Processed 798.89 million rows, 17.40 GB (282.28 million rows/s., 6.15 GB/s.)
+Peak memory usage: 543.71 MiB.
+```
+
+<Note>
+  В приведённом выше примере наша целевая таблица — [SummingMergeTree](/ru/reference/engines/table-engines/mergetree-family/summingmergetree). В этом случае мы можем просто использовать исходный запрос агрегации. Для более сложных сценариев, в которых используется [AggregatingMergeTree](/ru/reference/engines/table-engines/mergetree-family/aggregatingmergetree), для агрегаций следует использовать функции `-State`. Пример можно найти в этом [руководстве по интеграции](/ru/integrations/connectors/data-ingestion/AWS/performance#be-aware-of-merges).
+</Note>
+
+В нашем случае это относительно лёгкая агрегация, которая завершается менее чем за 3 с и использует менее 600 МиБ памяти. Для более сложных или длительных агрегаций вы можете сделать этот процесс более устойчивым, используя описанный ранее подход с дублирующей таблицей, то есть создать теневую целевую таблицу, например `pypi_downloads_per_day_v2`, выполнить вставку в неё, а затем Attach её итоговые партиции к `pypi_downloads_per_day`.
+
+Часто запрос materialized view может быть более сложным (что неудивительно, иначе пользователи не использовали бы view!) и потреблять ресурсы. В более редких случаях ресурсы, необходимые для запроса, превышают возможности сервера. Это подчёркивает одно из преимуществ materialized views в ClickHouse — они инкрементальны и не обрабатывают весь набор данных за один проход!
+
+В этом случае у пользователей есть несколько вариантов:
+
+1. Измените запрос, чтобы выполнить дозагрузку по диапазонам, например: `WHERE timestamp BETWEEN 2024-12-17 08:00:00 AND 2024-12-17 09:00:00`, `WHERE timestamp BETWEEN 2024-12-17 07:00:00 AND 2024-12-17 08:00:00` и т. д.
+2. Используйте [движок таблицы Null](/ru/reference/engines/table-engines/special/null), чтобы заполнить materialized view. Это воспроизводит типичное инкрементальное заполнение materialized view, выполняя её запрос по блокам данных (настраиваемого размера).
+
+(1) — самый простой подход, и его часто бывает достаточно. Примеры мы не приводим для краткости.
+
+Ниже мы подробнее рассмотрим вариант (2).
+
+<div id="using-a-null-table-engine-for-filling-materialized-views">
+  #### Использование движка таблицы Null для заполнения materialized views
+</div>
+
+[Движок таблицы Null](/ru/reference/engines/table-engines/special/null) — это движок хранения, который не сохраняет данные (по сути, это `/dev/null` в мире движков таблиц). Хотя это может показаться противоречивым, materialized views всё равно будут выполняться для данных, вставляемых в этот движок таблицы. Это позволяет создавать materialized views без сохранения исходных данных, избегая IO и связанного с ним хранилища.
+
+Важно, что любые materialized views, подключённые к этому движку таблицы, всё равно выполняются над блоками данных по мере их вставки, отправляя результаты в целевую таблицу. Размер этих блоков можно настраивать. Хотя более крупные блоки потенциально эффективнее (и обрабатываются быстрее), они потребляют больше ресурсов, главным образом памяти. Использование этого движка таблицы позволяет строить materialized view инкрементально, то есть по одному блоку за раз, не удерживая в памяти всю агрегацию.
+
+<Image img="/images/data-modeling/null_table_mv.webp" size="md" alt="Денормализация в ClickHouse" />
+
+<br />
+
+Рассмотрим следующий пример:
+
+```sql
+CREATE TABLE pypi_v2
+(
+    `timestamp` DateTime,
+    `project` String
+)
+ENGINE = Null
+
+CREATE MATERIALIZED VIEW pypi_downloads_per_day_mv_v2 TO pypi_downloads_per_day
+AS SELECT
+ toStartOfHour(timestamp) as hour,
+ project,
+    count() AS count
+FROM pypi_v2
+GROUP BY
+    hour,
+ project
+```
+
+Здесь мы создаем таблицу Null, `pypi_v2,` для приема строк, которые будут использоваться для построения нашего materialized view. Обратите внимание, что мы ограничиваем схему только нужными нам столбцами. Наш materialized view выполняет агрегацию по строкам, вставляемым в эту таблицу (по одному блоку за раз), и отправляет результаты в нашу целевую таблицу `pypi_downloads_per_day`.
+
+<Note>
+  Здесь мы использовали `pypi_downloads_per_day` в качестве целевой таблицы. Для дополнительной отказоустойчивости пользователи могут создать таблицу-копию `pypi_downloads_per_day_v2` и использовать ее как целевую таблицу представления, как показано в предыдущих примерах. После завершения вставки партиции из `pypi_downloads_per_day_v2`, в свою очередь, можно переместить в `pypi_downloads_per_day.` Это позволит восстановиться в случае, если вставка завершится неудачей из-за проблем с памятью или сбоев сервера, то есть мы просто выполняем `TRUNCATE` для `pypi_downloads_per_day_v2`, корректируем настройки и повторяем попытку.
+</Note>
+
+Чтобы заполнить этот materialized view, мы просто вставляем в `pypi_v2` соответствующие данные из `pypi` для дозагрузки.
+
+```sql
+INSERT INTO pypi_v2 SELECT timestamp, project FROM pypi WHERE timestamp < '2024-12-17 09:00:00'
+```
+
+```response
+0 rows in set. Elapsed: 27.325 sec. Processed 1.50 billion rows, 33.48 GB (54.73 million rows/s., 1.23 GB/s.)
+Peak memory usage: 639.47 MiB.
+```
+
+Обратите внимание, что здесь используется `639.47 MiB` памяти.
+
+<div id="tuning-performance--resources">
+  ##### Настройка производительности и ресурсов
+</div>
+
+Производительность и ресурсы, задействованные в описанном сценарии, определяются рядом факторов. Прежде чем приступать к настройке, рекомендуем ознакомиться с механикой вставки, подробно описанной в разделе [Using Threads for Reads](/ru/integrations/connectors/data-ingestion/AWS/performance#using-threads-for-reads) руководства [Optimizing for S3 Insert and Read Performance guide](/ru/integrations/connectors/data-ingestion/AWS/performance). Вкратце:
+
+* **Параллелизм чтения** — количество потоков, используемых для чтения. Управляется через [`max_threads`](/ru/reference/settings/session-settings#max_threads). В ClickHouse Cloud это значение определяется размером инстанса и по умолчанию равно числу vCPU. Увеличение этого значения может повысить производительность чтения, но приведёт к большему использованию памяти.
+* **Параллелизм вставки** - Количество потоков вставки, используемых для выполнения вставки. Управляется через [`max_insert_threads`](/ru/reference/settings/session-settings#max_insert_threads). **Примечание**: Это значение ограничивается `max_threads`, поэтому фактический параллелизм вставки равен `min(max_insert_threads, max_threads)`. В ClickHouse Cloud он определяется размером инстанса (от 2 до 4), а в OSS установлен в 1. Увеличение этого значения может повысить производительность ценой более высокого использования памяти.
+* **Размер блока вставки** - данные обрабатываются в цикле: их считывают, разбирают и формируют в находящиеся в памяти блоки вставки на основе [ключа партиционирования](/ru/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Затем эти блоки сортируются, оптимизируются, сжимаются и записываются в хранилище как новые [части данных](/ru/concepts/core-concepts/parts). Размер блока вставки, задаваемый настройками [`min_insert_block_size_rows`](/ru/reference/settings/session-settings#min_insert_block_size_rows) и [`min_insert_block_size_bytes`](/ru/reference/settings/session-settings#min_insert_block_size_bytes) (в несжатом виде), влияет на использование памяти и дисковый ввод-вывод. Более крупные блоки требуют больше памяти, но создают меньше частей, снижая I/O и количество фоновых слияний. Эти настройки задают минимальные пороги (сброс происходит при достижении первого из них).
+* **Размер блока materialized view** — Помимо описанного выше механизма основной вставки, перед вставкой в materialized view блоки также укрупняются для более эффективной обработки. Размер этих блоков определяется настройками [`min_insert_block_size_bytes_for_materialized_views`](/ru/reference/settings/session-settings#min_insert_block_size_bytes_for_materialized_views) и [`min_insert_block_size_rows_for_materialized_views`](/ru/reference/settings/session-settings#min_insert_block_size_rows_for_materialized_views). Более крупные блоки обеспечивают более эффективную обработку, но ценой большего использования памяти. По умолчанию эти настройки принимают значения настроек исходной таблицы [`min_insert_block_size_rows`](/ru/reference/settings/session-settings#min_insert_block_size_rows) и [`min_insert_block_size_bytes`](/ru/reference/settings/session-settings#min_insert_block_size_bytes) соответственно.
+
+<Note>
+  **Совет для простых запросов INSERT SELECT**: Для простых запросов `INSERT INTO t1 SELECT * FROM t2` без сложных преобразований можно включить `optimize_trivial_insert_select=1`. Этот параметр (по умолчанию отключён начиная с версии 24.7) автоматически подстраивает параллелизм SELECT под `max_insert_threads`, снижая потребление ресурсов и количество создаваемых частей. Это особенно полезно при массовой migration данных между таблицами.
+</Note>
+
+Для повышения производительности можно следовать рекомендациям из раздела [Настройка потоков и размера блока для вставок](/ru/integrations/connectors/data-ingestion/AWS/performance#tuning-threads-and-block-size-for-inserts) руководства [Оптимизация производительности вставки и чтения для S3](/ru/integrations/connectors/data-ingestion/AWS/performance). В большинстве случаев изменять `min_insert_block_size_bytes_for_materialized_views` и `min_insert_block_size_rows_for_materialized_views` для повышения производительности не требуется. Если эти параметры всё же изменяются, следует руководствоваться теми же рекомендациями, что и для `min_insert_block_size_rows` и `min_insert_block_size_bytes`.
+
+Для снижения потребления памяти можно поэкспериментировать с этими настройками. Это неизбежно приведёт к снижению производительности. Используя приведённый ранее запрос, рассмотрим примеры ниже.
+
+Снижение `max_insert_threads` до 1 уменьшает накладные расходы памяти.
+
+```sql
+INSERT INTO pypi_v2
+SELECT
+    timestamp,
+ project
+FROM pypi
+WHERE timestamp < '2024-12-17 09:00:00'
+SETTINGS max_insert_threads = 1
+```
+
+```response
+0 строк в наборе. Затрачено: 27.752 сек. Обработано 1,50 млрд строк, 33,48 ГБ (53,89 млн строк/с., 1,21 ГБ/с.)
+Пиковое потребление памяти: 506,78 МиБ.
+```
+
+Можно ещё больше снизить потребление памяти, уменьшив параметр `max_threads` до 1.
+
+```sql
+INSERT INTO pypi_v2
+SELECT timestamp, project
+FROM pypi
+WHERE timestamp < '2024-12-17 09:00:00'
+SETTINGS max_insert_threads = 1, max_threads = 1
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 43.907 sec. Processed 1.50 billion rows, 33.48 GB (34.06 million rows/s., 762.54 MB/s.)
+Peak memory usage: 272.53 MiB.
+```
+
+Наконец, можно ещё больше сократить потребление памяти, установив `min_insert_block_size_rows` в 0 (это отключает его как фактор, определяющий размер блока) и `min_insert_block_size_bytes` в 10485760 (10 MiB).
+
+```sql
+INSERT INTO pypi_v2
+SELECT
+    timestamp,
+ project
+FROM pypi
+WHERE timestamp < '2024-12-17 09:00:00'
+SETTINGS max_insert_threads = 1, max_threads = 1, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 10485760
+```
+
+```response
+0 rows in set. Elapsed: 43.293 sec. Processed 1.50 billion rows, 33.48 GB (34.54 million rows/s., 773.36 MB/s.)
+Peak memory usage: 218.64 MiB.
+```
+
+Наконец, имейте в виду, что уменьшение размеров блоков увеличивает число частей и повышает нагрузку на слияния. Как указано [здесь](/ru/integrations/connectors/data-ingestion/AWS/performance#be-aware-of-merges), эти настройки следует изменять с осторожностью.
+
+<div id="no-timestamp-or-monotonically-increasing-column">
+  ### Нет временной метки или монотонно возрастающего столбца
+</div>
+
+Описанные выше процессы предполагают, что у пользователя есть столбец с временной меткой или монотонно возрастающий столбец. В некоторых случаях это просто невозможно. В таком случае мы рекомендуем следующий процесс: он использует многие из описанных ранее шагов, но требует приостановить приём данных.
+
+1. Приостановите вставки в основную таблицу.
+2. Создайте дубликат основной целевой таблицы с помощью синтаксиса `CREATE AS`.
+3. Присоедините партиции из исходной целевой таблицы к дубликату с помощью [`ALTER TABLE ATTACH`](/ru/reference/statements/alter/partition#attach-partitionpart). **Примечание:** Эта операция attach отличается от использованного ранее перемещения. Хотя она также опирается на жёсткие ссылки, данные в исходной таблице сохраняются.
+4. Создайте новые materialized view.
+5. Возобновите вставки. **Примечание:** Вставки будут обновлять только целевую таблицу, а не дубликат, который будет ссылаться только на исходные данные.
+6. Выполните дозагрузку materialized view, применив тот же процесс, который описан выше для данных с временными метками, используя дубликат таблицы как источник.
+
+Рассмотрим следующий пример с использованием PyPI и нашей ранее созданной новой materialized view `pypi_downloads_per_day` (предположим, что мы не можем использовать временную метку):
+
+```sql
+SELECT count() FROM pypi
+```
+
+```response
+┌────count()─┐
+│ 2039988137 │ -- 2,04 миллиарда
+└────────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+```sql
+-- (1) Приостановить вставки
+-- (2) Создать дубликат целевой таблицы
+
+CREATE TABLE pypi_v2 AS pypi
+
+SELECT count() FROM pypi_v2
+```
+
+```response
+┌────count()─┐
+│ 2039988137 │ -- 2.04 billion
+└────────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+```sql
+-- (3) Присоединяем партиции из исходной целевой таблицы к дубликату.
+
+ALTER TABLE pypi_v2
+ (ATTACH PARTITION tuple() FROM pypi)
+
+-- (4) Создаём новые materialized views
+
+CREATE TABLE pypi_downloads_per_day
+(
+    `hour` DateTime,
+    `project` String,
+    `count` Int64
+)
+ENGINE = SummingMergeTree
+ORDER BY (project, hour)
+
+CREATE MATERIALIZED VIEW pypi_downloads_per_day_mv TO pypi_downloads_per_day
+AS SELECT
+ toStartOfHour(timestamp) as hour,
+ project,
+    count() AS count
+FROM pypi
+GROUP BY
+    hour,
+ project
+
+-- (4) Возобновляем вставку. Здесь мы имитируем это, вставляя одну строку.
+
+INSERT INTO pypi SELECT *
+FROM pypi
+LIMIT 1
+
+SELECT count() FROM pypi
+```
+
+```response
+┌────count()─┐
+│ 2039988138 │ -- 2.04 миллиарда
+└────────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+```sql
+-- обратите внимание: pypi_v2 содержит то же количество строк, что и раньше
+
+SELECT count() FROM pypi_v2
+```
+
+```response
+┌────count()─┐
+│ 2039988137 │ -- 2,04 миллиарда
+└────────────┘
+```
+
+```sql
+-- (5) Выполните дозагрузку представления, используя резервную копию pypi_v2
+
+INSERT INTO pypi_downloads_per_day SELECT
+ toStartOfHour(timestamp) as hour,
+ project,
+    count() AS count
+FROM pypi_v2
+GROUP BY
+    hour,
+ project
+```
+
+```response
+0 rows in set. Elapsed: 3.719 sec. Processed 2.04 billion rows, 47.15 GB (548.57 million rows/s., 12.68 GB/s.)
+```
+
+```sql
+DROP TABLE pypi_v2;
+```
+
+На предпоследнем шаге мы выполняем дозагрузку `pypi_downloads_per_day`, используя простой подход `INSERT INTO SELECT`, описанный [ранее](#timestamp-or-monotonically-increasing-column-available). Его также можно улучшить, используя подход с таблицей Null, описанный [выше](#using-a-null-table-engine-for-filling-materialized-views), а при необходимости — и дублирующую таблицу для повышения отказоустойчивости.
+
+Хотя для этой операции действительно требуется приостановить вставки, промежуточные действия обычно выполняются быстро, что сводит любые перерывы в поступлении данных к минимуму.

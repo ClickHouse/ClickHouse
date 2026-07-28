@@ -1,7 +1,7 @@
 ---
 alias: []
 description: 'Documentation for the LineAsStringWithNames format'
-input_format: true
+input_format: false
 keywords: ['LineAsStringWithNames']
 output_format: true
 slug: /interfaces/formats/LineAsStringWithNames

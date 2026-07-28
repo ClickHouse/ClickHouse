@@ -51,7 +51,7 @@ Using named collections:
     <named_collections>
         <deltalake_conf>
             <url>http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/</url>
-            <access_key_id>ABC123<access_key_id>
+            <access_key_id>ABC123</access_key_id>
             <secret_access_key>Abc+123</secret_access_key>
         </deltalake_conf>
     </named_collections>
@@ -127,7 +127,7 @@ ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpa
 Once you have created a table using the DeltaLake table engine, you can insert data into it with:
 
 ```sql
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 
 INSERT INTO deltalake(id, firstname, lastname, gender, age)
 VALUES (1, 'John', 'Smith', 'M', 32);
@@ -136,6 +136,8 @@ VALUES (1, 'John', 'Smith', 'M', 32);
 :::note
 Writing using the table engine is supported only through delta kernel.
 Writes to Azure are not yet supported but work for S3 and GCS.
+
+Delta Lake writes are a Beta feature and must be enabled with `SET allow_delta_lake_writes = 1` (available from version 26.7; on earlier versions use `SET allow_experimental_delta_lake_writes = 1`).
 :::
 
 ### Data cache {#data-cache}

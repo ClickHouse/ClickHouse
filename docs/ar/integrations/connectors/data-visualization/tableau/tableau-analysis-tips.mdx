@@ -1,0 +1,70 @@
+---
+sidebarTitle: 'نصائح للتحليل'
+slug: /integrations/tableau/analysis-tips
+keywords: ['ClickHouse', 'tableau', 'عبر الإنترنت', 'mysql', 'ربط', 'تكامل', 'UI']
+description: 'نصائح للتحليل في Tableau عند استخدام موصل ClickHouse الرسمي.'
+title: 'نصائح للتحليل'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+<div id="median-and-percentile-functions">
+  ## الدالتان MEDIAN() وPERCENTILE()
+</div>
+
+* في وضع Live، تستخدم الدالتان MEDIAN() وPERCENTILE() (اعتبارًا من إصدار connector v0.1.3) [الدالة quantile()() في ClickHouse](/ar/reference/functions/aggregate-functions/quantile)، مما يسرّع عملية الحساب بشكل كبير، لكنه يعتمد على sampling. إذا كنت تريد الحصول على نتائج دقيقة، فاستخدم الدالتين `MEDIAN_EXACT()` و`PERCENTILE_EXACT()` (استنادًا إلى [quantileExact()()](/ar/reference/functions/aggregate-functions/quantileExact)).
+* في وضع Extract، لا يمكنك استخدام MEDIAN&#95;EXACT() وPERCENTILE&#95;EXACT() لأن MEDIAN() وPERCENTILE() تكونان دائمًا دقيقتين (ولكنهما بطيئتان).
+
+<div id="additional-functions-for-calculated-fields-in-live-mode">
+  ## دوال إضافية للحقول المحسوبة في وضع Live
+</div>
+
+يضم ClickHouse عددًا هائلًا من الدوال التي يمكن استخدامها في تحليل البيانات — أكثر بكثير مما يدعمه Tableau. ولراحة المستخدمين، أضفنا دوال جديدة يمكن استخدامها في وضع Live عند إنشاء الحقول المحسوبة. وللأسف، لا يمكن إضافة أوصاف لهذه الدوال داخل واجهة Tableau، لذا سنورد وصفًا لها هنا مباشرةً.
+
+* **[`-If` مُركِّب التجميع](/ar/reference/functions/aggregate-functions/combinators#-if)** *(أُضيف في v0.2.3)* - يتيح استخدام مرشحات على مستوى الصف مباشرةً ضمن عملية التجميع. تمت إضافة الدوال `SUM_IF(), AVG_IF(), COUNT_IF(), MIN_IF() & MAX_IF()`.
+* **`BAR([my_int], [min_val_int], [max_val_int], [bar_string_length_int])`** *(أُضيف في v0.2.1)* — انسَ المخططات الشريطية المملة! استخدم الدالة `BAR()` بدلًا منها (وهي المكافئ لـ [`bar()`](/ar/reference/functions/regular-functions/other-functions#bar) في ClickHouse). على سبيل المثال، يُرجع هذا الحقل المحسوب أشرطة بيانية جميلة بصيغة String:
+  ```text
+  BAR([my_int], [min_val_int], [max_val_int], [bar_string_length_int]) + "  " + FORMAT_READABLE_QUANTITY([my_int])
+  ```
+  ```text
+  == BAR() ==
+  ██████████████████▊  327.06 million
+  █████  88.02 million
+  ███████████████  259.37 million
+  ```
+* **`COUNTD_UNIQ([my_field])`** *(أُضيف في v0.2.0)* — يحسب العدد التقريبي للقيم المختلفة في الوسيطة. وهو مكافئ لـ [uniq()](/ar/reference/functions/aggregate-functions/uniq). وهو أسرع بكثير من `COUNTD()`.
+* **`DATE_BIN('day', 10, [my_datetime_or_date])`** *(أُضيف في v0.2.1)* — يقابل [`toStartOfInterval()`](/ar/reference/functions/regular-functions/date-time-functions#toStartOfInterval) في ClickHouse. يُنزِّل قيمة من النوع Date أو Date &amp; Time إلى الفاصل الزمني المحدد، على سبيل المثال:
+  ```text
+   == my_datetime_or_date == | == DATE_BIN('day', 10, [my_datetime_or_date]) ==
+      28.07.2004 06:54:50    |              21.07.2004 00:00:00
+      17.07.2004 14:01:56    |              11.07.2004 00:00:00
+      14.07.2004 07:43:00    |              11.07.2004 00:00:00
+  ```
+* **`FORMAT_READABLE_QUANTITY([my_integer])`** *(أضيف في v0.2.1)* — يعيد عددًا مقربًا مع لاحقة (ألف، مليون، مليار، إلخ) كسلسلة نصية. وهو مفيد لتسهيل قراءة الأعداد الكبيرة. وهو المكافئ لـ [`formatReadableQuantity()`](/ar/reference/functions/regular-functions/other-functions#formatReadableQuantity).
+* **`FORMAT_READABLE_TIMEDELTA([my_integer_timedelta_sec], [optional_max_unit])`** *(أضيف في v0.2.1)* — يقبل فارقًا زمنيًا بالثواني. ويعيد فارقًا زمنيًا بصيغة (سنة، شهر، يوم، ساعة، دقيقة، ثانية) كسلسلة نصية. وتمثل `optional_max_unit` أكبر وحدة يمكن عرضها. القيم المقبولة: `seconds`، `minutes`، `hours`، `days`، `months`، `years`. وهو المكافئ لـ [`formatReadableTimeDelta()`](/ar/reference/functions/regular-functions/other-functions#formatReadableTimeDelta).
+* **`GET_SETTING([my_setting_name])`** *(أضيف في v0.2.1)* — يعيد القيمة الحالية لإعداد مخصص. وهو المكافئ لـ [`getSetting()`](/ar/reference/functions/regular-functions/other-functions#getSetting).
+* **`HEX([my_string])`** *(أضيف في v0.2.1)* — يعيد سلسلة نصية تحتوي على التمثيل الست عشري للوسيطة. وهو المكافئ لـ [`hex()`](/ar/reference/functions/regular-functions/encoding-functions#hex).
+* **`KURTOSIS([my_number])`** — يحسب التفرطح العيني لتسلسل. وهو المكافئ لـ [`kurtSamp()`](/ar/reference/functions/aggregate-functions/kurtSamp).
+* **`KURTOSISP([my_number])`** — يحسب التفرطح لتسلسل. وهو المكافئ لـ [`kurtPop()`](/ar/reference/functions/aggregate-functions/kurtPop).
+* **`MEDIAN_EXACT([my_number])`** *(أضيف في v0.1.3)* — يحسب الوسيط بدقة لتسلسل بيانات رقمية. وهو المكافئ لـ [`quantileExact(0.5)(...)`](/ar/reference/functions/aggregate-functions/quantileExact).
+* **`MOD([my_number_1], [my_number_2])`** — يحسب الباقي بعد القسمة. إذا كانت الوسيطات أعدادًا ذات فاصلة عائمة، فستُحوَّل مسبقًا إلى أعداد صحيحة بإسقاط الجزء العشري. وهو المكافئ لـ [`modulo()`](/ar/reference/functions/regular-functions/arithmetic-functions#modulo).
+* **`PERCENTILE_EXACT([my_number], [level_float])`** *(أضيف في v0.1.3)* — يحسب المئين بدقة لتسلسل بيانات رقمية. النطاق الموصى به للمستوى هو [0.01, 0.99]. وهو المكافئ لـ [`quantileExact()()`](/ar/reference/functions/aggregate-functions/quantileExact).
+* **`PROPER([my_string])`** *(أُضيف في v0.2.5)* - يحوّل سلسلة نصية بحيث يصبح الحرف الأول من كل كلمة كبيرًا، وتصبح الأحرف المتبقية صغيرة. كما تُعدّ المسافات والمحارف غير الأبجدية الرقمية، مثل علامات الترقيم، فواصل أيضًا. على سبيل المثال:
+  ```text
+  PROPER("PRODUCT name") => "Product Name"
+  ```
+  ```text
+  PROPER("darcy-mae") => "Darcy-Mae"
+  ```
+* **`RAND()`** *(أُضيفت في v0.2.1)* — تُرجع عددًا صحيحًا (UInt32)، على سبيل المثال `3446222955`. وهي مكافئة لـ [`rand()`](/ar/reference/functions/regular-functions/random-functions#rand).
+* **`RANDOM()`** *(أُضيفت في v0.2.1)* — دالة [`RANDOM()`](https://kb.tableau.com/articles/issue/random-function-produces-inconsistent-results) غير رسمية في Tableau، وتُرجع عددًا بفاصلة عائمة بين 0 و1.
+* **`RAND_CONSTANT([optional_field])`** *(أُضيفت في v0.2.1)* — تُنتج عمودًا ثابتًا بقيمة عشوائية. تشبه `{RAND()}` Fixed LOD، لكنها أسرع. وهي مكافئة لـ [`randConstant()`](/ar/reference/functions/regular-functions/random-functions#randConstant).
+* **`REAL([my_number])`** — تُحوّل الحقل إلى عدد بفاصلة عائمة (Float64). التفاصيل [`هنا`](/ar/reference/data-types/decimal#operations-and-result-type).
+* **`SHA256([my_string])`** *(أُضيفت في v0.2.1)* — تحسب تجزئة SHA-256 من سلسلة نصية وتُرجع مجموعة البايتات الناتجة كسلسلة نصية (FixedString). ومن الملائم استخدامها مع الدالة `HEX()`، على سبيل المثال `HEX(SHA256([my_string]))`. وهي مكافئة لـ [`SHA256()`](/ar/reference/functions/regular-functions/hash-functions#SHA256).
+* **`SKEWNESS([my_number])`** — تحسب الالتواء العيني لتسلسل من القيم. وهي مكافئة لـ [`skewSamp()`](/ar/reference/functions/aggregate-functions/skewSamp).
+* **`SKEWNESSP([my_number])`** — تحسب الالتواء لتسلسل من القيم. وهي مكافئة لـ [`skewPop()`](/ar/reference/functions/aggregate-functions/skewPop).
+* **`TO_TYPE_NAME([field])`** *(أُضيفت في v0.2.1)* — تُرجع سلسلة نصية تحتوي على اسم نوع ClickHouse للوسيطة المُمرَّرة. وهي مكافئة لـ [`toTypeName()`](/ar/reference/functions/regular-functions/other-functions#toTypeName).
+* **`TRUNC([my_float])`** — هي نفسها الدالة `FLOOR([my_float])`. وهي مكافئة لـ [`trunc()`](/ar/reference/functions/regular-functions/rounding-functions#trunc).
+* **`UNHEX([my_string])`** *(أُضيفت في v0.2.1)* — تُنفّذ العملية العكسية لـ `HEX()`. وهي مكافئة لـ [`unhex()`](/ar/reference/functions/regular-functions/encoding-functions#unhex).

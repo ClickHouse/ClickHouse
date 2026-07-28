@@ -1,0 +1,57 @@
+---
+description: 'Документация по оператору REVOKE'
+sidebarTitle: 'REVOKE'
+slug: /sql-reference/statements/revoke
+title: 'Оператор REVOKE'
+doc_type: 'reference'
+---
+
+Отзывает привилегии у пользователей или ролей.
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+**Отзыв привилегий у пользователей**
+
+```sql
+REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]
+```
+
+**Отзыв ролей у пользователей**
+
+```sql
+REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR] role [,...] FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
+```
+
+<div id="description">
+  ## Описание
+</div>
+
+Чтобы отозвать привилегию, можно использовать привилегию более широкого уровня, чем та, которую нужно отозвать. Например, если у пользователя есть привилегия `SELECT (x,y)`, администратор может выполнить запрос `REVOKE SELECT(x,y) ...`, `REVOKE SELECT * ...` или даже `REVOKE ALL PRIVILEGES ...`, чтобы отозвать эту привилегию.
+
+<div id="partial-revokes">
+  ### Частичный отзыв привилегий
+</div>
+
+Можно отозвать часть привилегии. Например, если у пользователя есть привилегия `SELECT *.*`, у него можно отозвать привилегию читать данные из определённой таблицы или базы данных.
+
+<div id="examples">
+  ## Примеры
+</div>
+
+Предоставьте учетной записи пользователя `john` привилегию выполнять `select` во всех базах данных, кроме `accounts`:
+
+```sql
+GRANT SELECT ON *.* TO john;
+REVOKE SELECT ON accounts.* FROM john;
+```
+
+Предоставьте учетной записи `mira` привилегию на выборку из всех столбцов таблицы `accounts.staff`, кроме столбца `wage`.
+
+```sql
+GRANT SELECT ON accounts.staff TO mira;
+REVOKE SELECT(wage) ON accounts.staff FROM mira;
+```
+
+[Оригинал статьи](/ru/reference/settings/session-settings)

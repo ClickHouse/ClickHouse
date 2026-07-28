@@ -45,6 +45,8 @@ In these documentation file all mandatory positional arguments are referred as `
 * `current_disk_with_path (current, current_disk, current_path)`
   Print current state in format:
     `Disk: "current_disk" Path: "current path on current disk"`
+* `du [--human-readable] [<path>]`
+  Print the total size in bytes for the file or directory at `path` on a current disk. For a directory the size of all files it contains is summed up recursively. If `path` is not specified, the current directory is used. With `--human-readable` (`-h`) the size is printed in a human-readable format (e.g. `1.23 GiB`).
 * `help [<command>]`
   Print help message about command `command`. If `command` is not specified print information about all commands.
 * `move (mv) <path-from> <path-to>`.
@@ -61,7 +63,15 @@ In these documentation file all mandatory positional arguments are referred as `
   Create a directory. Non-recursive by default.
 * `read (r) <path-from> [--path-to path]`
   Read a file from `path-from` to `path` (`stdout` if not supplied).
+* `read-bitmap <path-from> [--values]`
+  Inspect a delete-bitmap (`.rbm`) sidecar at `path-from`. Prints the magic and version, the CRC validity, the cardinality (number of deleted rows) and the row range. With `--values` it also dumps all set bits (the deleted row offsets) in ascending order.
 * `switch-disk [--path path] <disk>`
   Switch to disk `disk` on path `path` (if `path` is not specified default value is a previous path on disk `disk`).
 * `write (w) [--path-from path] <path-to>`.
   Write a file from `path` (`stdin` if `path` is not supplied, input must finish by Ctrl+D) to `path-to`.
+* `wc <path> [--bytes] [--lines] [--words]`
+  Count bytes, lines and words in the file at `path` on the current disk (like Unix `wc`). With no flag all three counts are printed in the order of lines, words, then bytes. Use `--bytes` (`-c`), `--lines` (`-l`), `--words` (`-w`) to select specific counts.
+* `sed <expression> <path>`
+  Apply the `sed` `expression` to the file at `path` on the current disk, in place. Requires `sed` to be installed on the host. Only a single `sed` expression with no options is supported (e.g. `'s/foo/bar/g'`, `'/foo/d'`), not multiple expressions (`-e ... -e ...`) or options combined with an address (e.g. `-n` with `4,10p`).
+* `read-checksums <path>`
+  Read a `checksums.txt` file of a `MergeTree` data part on a current disk and print it to `stdout` as a tab-separated, human-readable table with the columns `name`, `file_size`, `file_hash`, `uncompressed_size`, and `uncompressed_hash`. The last two columns are present only for compressed files.

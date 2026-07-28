@@ -2,6 +2,7 @@
 
 #include <Backups/BackupInfo.h>
 #include <Common/SettingsChanges.h>
+#include <map>
 #include <optional>
 
 
@@ -171,6 +172,9 @@ struct RestoreSettings
 
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;
+
+    /// Returns the restore-specific settings as a string map for observability (see `system.backups`).
+    std::map<String, String> getSerializedSettings() const;
 
     /// Returns only the non-restore-specific settings from a `RESTORE` query.
     /// In contrast to `fromRestoreQuery`, this helper does not touch the

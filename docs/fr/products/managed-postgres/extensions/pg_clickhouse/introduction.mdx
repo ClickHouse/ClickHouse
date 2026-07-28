@@ -1,0 +1,364 @@
+---
+sidebarTitle: 'Introduction'
+description: 'Exécutez des requêtes analytiques sur ClickHouse directement depuis PostgreSQL sans avoir à réécrire le moindre SQL'
+slug: '/cloud/managed-postgres/extensions/pg_clickhouse'
+title: 'Documentation de référence de pg_clickhouse'
+doc_type: 'landing-page'
+keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhouse', 'extension']
+---
+
+<div id="introduction">
+  ## Introduction
+</div>
+
+[pg&#95;clickhouse], une extension PostgreSQL open source, exécute des requêtes analytiques
+sur ClickHouse directement depuis PostgreSQL, sans réécrire le moindre SQL. Elle prend en charge
+PostgreSQL 13 et versions ultérieures, ainsi que ClickHouse v23 et versions ultérieures.
+
+Une fois que [ClickPipes](/fr/integrations/clickpipes/home) commence à synchroniser les données vers ClickHouse,
+utilisez pg&#95;clickhouse pour [import foreign tables] rapidement et facilement dans un
+schéma PostgreSQL. Exécutez ensuite vos requêtes PostgreSQL existantes sur ces
+tables, sans modifier votre base de code existante, tout en déléguant l&#39;exécution à
+ClickHouse.
+
+<div id="getting-started">
+  ## Premiers pas
+</div>
+
+Le moyen le plus simple d’essayer pg&#95;clickhouse est d’utiliser l’[image Docker], qui contient
+l’image Docker PostgreSQL standard avec les extensions pg&#95;clickhouse et [re2] :
+
+```sh
+docker run --name pg_clickhouse -e POSTGRES_PASSWORD=my_pass \
+       -d ghcr.io/clickhouse/pg_clickhouse:19
+docker exec -it pg_clickhouse psql -U postgres -c 'CREATE EXTENSION pg_clickhouse'
+```
+
+Consultez le [tutoriel] pour commencer à importer des tables ClickHouse et à déléguer
+l’exécution des requêtes.
+
+<div id="test-case-tpc-h">
+  ## Cas de test : TPC-H
+</div>
+
+Ce tableau compare les performances des requêtes [TPC-H] entre des
+tables PostgreSQL classiques et pg&#95;clickhouse connecté à ClickHouse, tous deux chargés avec un
+facteur d&#39;échelle de 1 ; ✔︎ indique un pushdown complet, tandis qu&#39;un tiret indique l&#39;annulation
+d&#39;une requête après 1 min. Tous les tests ont été exécutés sur un MacBook Pro M4 Max avec 36 Go de
+mémoire.
+
+|      Requête | PostgreSQL | pg&#95;clickhouse | Pushdown |
+| -----------: | ---------: | ----------------: | :------: |
+|  [Requête 1] |    4693 ms |            268 ms |    ✔︎    |
+|  [Requête 2] |     458 ms |           3446 ms |          |
+|  [Requête 3] |     742 ms |            111 ms |    ✔︎    |
+|  [Requête 4] |     270 ms |            130 ms |    ✔︎    |
+|  [Requête 5] |     337 ms |           1460 ms |    ✔︎    |
+|  [Requête 6] |     764 ms |             53 ms |    ✔︎    |
+|  [Requête 7] |     619 ms |             96 ms |    ✔︎    |
+|  [Requête 8] |     342 ms |            156 ms |    ✔︎    |
+|  [Requête 9] |    3094 ms |            298 ms |    ✔︎    |
+| [Requête 10] |     581 ms |            197 ms |    ✔︎    |
+| [Requête 11] |     212 ms |             24 ms |          |
+| [Requête 12] |    1116 ms |             84 ms |    ✔︎    |
+| [Requête 13] |     958 ms |           1368 ms |          |
+| [Requête 14] |     181 ms |             73 ms |    ✔︎    |
+| [Requête 15] |    1118 ms |            557 ms |          |
+| [Requête 16] |     497 ms |           1714 ms |          |
+| [Requête 17] |    1846 ms |          32709 ms |          |
+| [Requête 18] |    5823 ms |          10649 ms |          |
+| [Requête 19] |      53 ms |            206 ms |    ✔︎    |
+| [Requête 20] |     421 ms |                 - |          |
+| [Requête 21] |    1349 ms |           4434 ms |          |
+| [Requête 22] |     258 ms |           1415 ms |          |
+
+<div id="compile-from-source">
+  ### Compiler à partir des sources
+</div>
+
+<div id="general-unix">
+  #### Unix général
+</div>
+
+Les paquets de développement de PostgreSQL et de curl incluent `pg_config` et
+`curl-config` dans le PATH, vous devriez donc pouvoir simplement exécuter `make` (ou
+`gmake`), puis `make install`, puis dans votre base de données
+`CREATE EXTENSION pg_clickhouse`.
+
+<div id="debian--ubuntu--apt">
+  #### Debian / Ubuntu / APT
+</div>
+
+Voir [PostgreSQL Apt] pour plus de détails sur la récupération depuis le dépôt APT de PostgreSQL.
+
+```sh
+sudo apt install \
+  postgresql-server-19 \
+  libcurl4-openssl-dev \
+  uuid-dev \
+  libssl-dev \
+  make \
+  cmake \
+  g++
+```
+
+<div id="redhat--centos--yum">
+  #### RedHat / CentOS / Yum
+</div>
+
+```sh
+sudo yum install \
+  postgresql-server \
+  libcurl-devel \
+  libuuid-devel \
+  openssl-libs \
+  automake \
+  cmake \
+  gcc
+```
+
+Voir [PostgreSQL Yum] pour plus de détails sur la récupération des paquets depuis le dépôt Yum de PostgreSQL.
+
+<div id="install-from-pgxn">
+  #### Installer depuis PGXN
+</div>
+
+Une fois les dépendances ci-dessus remplies, utilisez le [PGXN client] (disponible sous forme de paquets [Homebrew], [Apt] et Yum nommés `pgxnclient`) pour télécharger, compiler et installer `pg_clickhouse` :
+
+```sh
+pgxn install pg_clickhouse
+```
+
+<div id="compile-and-install">
+  #### Compiler et installer
+</div>
+
+Pour compiler et installer la bibliothèque ClickHouse et `pg_clickhouse`, exécutez :
+
+```sh
+make
+sudo make install
+```
+
+{/* XXX DSO actuellement désactivé.
+  Par défaut, `make` effectue une liaison dynamique avec la bibliothèque `clickhouse-cpp` (sauf sur
+  macOS, où une bibliothèque `clickhouse-cpp` dynamique n'est pas encore prise en charge). Pour
+  compiler statiquement la bibliothèque ClickHouse dans `pg_clickhouse`, passez
+  `CH_BUILD=static` :
+
+  ```sh
+  make CH_BUILD=static
+  sudo make install CH_BUILD=static
+  ```
+  */}
+
+Si votre machine comporte plusieurs installations de PostgreSQL, vous devrez peut-être préciser
+la version appropriée de `pg_config` :
+
+```sh
+export PG_CONFIG=/usr/lib/postgresql/18/bin/pg_config
+make
+sudo make install
+```
+
+Si `curl-config` n&#39;est pas dans le PATH de votre hôte, vous pouvez spécifier le chemin
+explicitement :
+
+```sh
+export CURL_CONFIG=/opt/homebrew/opt/curl/bin/curl-config
+make
+sudo make install
+```
+
+Si vous rencontrez une erreur telle que :
+
+```text
+"Makefile", line 8: Need an operator
+```
+
+Vous devez utiliser GNU make, qui peut être installé sur votre système sous le nom de
+`gmake` :
+
+```sh
+gmake
+gmake install
+gmake installcheck
+```
+
+Si vous obtenez une erreur du type :
+
+```text
+make: pg_config: Command not found
+```
+
+Assurez-vous que `pg_config` est installé et présent dans votre path. Si vous avez utilisé un
+gestionnaire de paquets tel que RPM pour installer PostgreSQL, assurez-vous que le
+paquet `-devel` est également installé. Si nécessaire, indiquez au processus de compilation où
+le trouver :
+
+```sh
+export PG_CONFIG=/path/to/pg_config
+make
+sudo make install
+```
+
+Pour installer l’extension avec un préfixe personnalisé sur PostgreSQL 18 ou version ultérieure, spécifiez
+l’argument `prefix` pour `install` (mais pour aucune autre cible `make`) :
+
+```sh
+sudo make install prefix=/usr/local/extras
+```
+
+Assurez-vous ensuite que le préfixe figure dans les [`postgresql.conf`
+paramètres] suivants :
+
+```ini
+extension_control_path = '/usr/local/extras/postgresql/share:$system'
+dynamic_library_path   = '/usr/local/extras/postgresql/lib:$libdir'
+```
+
+<div id="testing">
+  #### Tests
+</div>
+
+Pour exécuter la suite de tests, une fois l’extension installée, lancez
+
+```sh
+make installcheck
+```
+
+Si vous rencontrez une erreur du type :
+
+```text
+ERROR:  must be owner of database regression
+```
+
+Vous devez exécuter la suite de tests avec un superutilisateur, par exemple le
+superutilisateur &quot;postgres&quot; par défaut :
+
+```sh
+make installcheck PGUSER=postgres
+```
+
+<div id="loading">
+  ### Activation
+</div>
+
+Une fois `pg_clickhouse` installé, vous pouvez l’ajouter à une base de données en vous connectant
+en tant que superutilisateur et en exécutant :
+
+```sql
+CREATE EXTENSION pg_clickhouse;
+```
+
+Si vous souhaitez installer `pg_clickhouse` et tous les objets associés dans
+un schéma spécifique, utilisez la clause `SCHEMA` pour le préciser, comme suit :
+
+```sql
+CREATE SCHEMA env;
+CREATE EXTENSION pg_clickhouse SCHEMA env;
+```
+
+<div id="dependencies">
+  ## Dépendances
+</div>
+
+L’extension `pg_clickhouse` nécessite [PostgreSQL] 13 ou une version supérieure, ainsi que [libcurl]
+et [libuuid]. La compilation de l’extension requiert un compilateur C et C++, [libSSL], [GNU
+make] et [CMake].
+
+<div id="road-map">
+  ## Feuille de route
+</div>
+
+Notre priorité absolue est de finaliser la couverture du pushdown pour les charges de travail analytiques avant
+d’ajouter des fonctionnalités DML. Notre feuille de route :
+
+* Obtenir une planification optimale pour les 10 requêtes TPC-H restantes sans pushdown
+* Tester et corriger le pushdown pour les requêtes ClickBench
+* Prendre en charge le pushdown transparent de toutes les fonctions d’agrégation PostgreSQL
+* Prendre en charge le pushdown transparent de toutes les fonctions PostgreSQL
+* Autoriser les paramètres ClickHouse au niveau du serveur et de la session via CREATE SERVER
+  et les GUC
+* Prendre en charge tous les types de données ClickHouse
+* Prendre en charge les opérations lightweight DELETE et UPDATE
+* Prendre en charge l’insertion par lot via COPY
+* Ajouter une fonction pour exécuter une requête ClickHouse arbitraire et renvoyer ses
+  résultats sous forme de tables
+* Ajouter la prise en charge du pushdown des requêtes UNION lorsqu’elles interrogent toutes la base de données distante
+
+<div id="authors">
+  ## Auteurs
+</div>
+
+* [David E. Wheeler](https://justatheory.com/)
+* [Ildus Kurbangaliev](https://github.com/ildus)
+* [Ibrar Ahmed](https://github.com/ibrarahmad)
+
+<div id="copyright">
+  ## Copyright
+</div>
+
+* Copyright (c) 2025-2026, ClickHouse
+* Portions Copyright (c) 2023-2025, Ildus Kurbangaliev
+* Portions Copyright (c) 2019-2023, Adjust GmbH
+* Portions Copyright (c) 2012-2019, PostgreSQL Global Development Group
+
+[pg_clickhouse]: https://github.com/clickHouse/pg_clickhouse "pg_clickhouse sur GitHub"
+
+[import foreign tables]: /products/managed-postgres/extensions/pg_clickhouse/reference#import-foreign-schema
+
+[Docker image]: https://github.com/ClickHouse/pg_clickhouse/pkgs/container/pg_clickhouse "Dernière version de l'image Docker"
+
+[tutorial]: /products/managed-postgres/extensions/pg_clickhouse/tutorial "Tutoriel pg_clickhouse"
+
+[PostgreSQL Apt]: https://wiki.postgresql.org/wiki/Apt
+
+[PostgreSQL Yum]: https://yum.postgresql.org
+
+[PGXN client]: https://pgxn.github.io/pgxnclient/ "Documentation du client PGXN"
+
+[Homebrew]: https://formulae.brew.sh/formula/pgxnclient#default "Client PGXN sur Homebrew"
+
+[Apt]: https://tracker.debian.org/pkg/pgxnclient "Client PGXN dans Debian Apt"
+
+[`postgresql.conf` parameters]: https://www.postgresql.org/docs/devel/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-OTHER
+
+[PostgreSQL]: https://www.postgresql.org "PostgreSQL : la base de données relationnelle open source la plus avancée au monde"
+
+[libcurl]: https://curl.se/libcurl/ "libcurl — votre bibliothèque de transfert réseau"
+
+[libuuid]: https://linux.die.net/man/3/libuuid "libuuid - bibliothèque d'identifiants universellement uniques compatible DCE"
+
+[GNU make]: https://www.gnu.org/software/make "GNU Make"
+
+[CMake]: https://cmake.org/ "CMake : un puissant système de build logiciel"
+
+[LibSSL]: https://openssl-library.org "Bibliothèque OpenSSL"
+
+[TPC-H]: https://www.tpc.org/tpch/
+
+[re2]: https://github.com/ClickHouse/pg_re2 "pg_re2 : fonctions d'expressions régulières compatibles ClickHouse utilisant RE2"
+
+[Requête 1] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/1.sql
+[Requête 2] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/2.sql
+[Requête 3] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/3.sql
+[Requête 4] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/4.sql
+[Requête 5] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/5.sql
+[Requête 6] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/6.sql
+[Requête 7] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/7.sql
+[Requête 8] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/8.sql
+[Requête 9] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/9.sql
+[Requête 10] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/10.sql
+[Requête 11] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/11.sql
+[Requête 12] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/12.sql
+[Requête 13] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/13.sql
+[Requête 14] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/14.sql
+[Requête 15] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/15.sql
+[Requête 16] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/16.sql
+[Requête 17] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/17.sql
+[Requête 18] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/18.sql
+[Requête 19] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/19.sql
+[Requête 20] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/20.sql
+[Requête 21] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/21.sql
+[Requête 22] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/22.sql

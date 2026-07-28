@@ -407,6 +407,8 @@ extern const std::vector<Event> keeper_profile_events
     M(S3Requests) \
     M(KeeperAliveConnections) \
     M(KeeperOutstandingRequests) \
+    M(KeeperTTLNodes) \
+    M(KeeperContainerNodes) \
     M(ThreadsInOvercommitTracker) \
     M(IOUringPendingEvents) \
     M(IOUringInFlightEvents) \

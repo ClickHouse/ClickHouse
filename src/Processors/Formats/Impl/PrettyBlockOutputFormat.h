@@ -66,6 +66,10 @@ protected:
         bool split_by_lines, std::optional<String> & serialized_value, size_t & start_from_offset,
         size_t value_width, size_t pad_to_width, size_t cut_to_width, bool align_right, bool is_number);
 
+    /// Writes one cell-padding character: `U+00A0` when `use_nbsp_for_padding` is on, ASCII space otherwise.
+    void writePaddingSpace();
+    void writePaddingSpaces(size_t count);
+
     void resetFormatterImpl() override
     {
         total_rows = 0;
@@ -86,6 +90,9 @@ private:
     /// Fallback to Vertical format for wide but short tables.
     std::unique_ptr<IRowOutputFormat> vertical_format_fallback;
     bool use_vertical_format = false;
+
+    /// True iff `format_settings.pretty.use_nbsp_for_padding` AND charset is `UTF-8`.
+    bool use_nbsp_for_padding = false;
 
     /// For mono_block == true only
     Chunk mono_chunk;

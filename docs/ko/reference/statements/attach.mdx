@@ -1,0 +1,147 @@
+---
+description: 'ATTACH에 대한 문서'
+sidebarTitle: 'ATTACH'
+slug: /sql-reference/statements/attach
+title: 'ATTACH SQL 문'
+doc_type: 'reference'
+---
+
+예를 들어 데이터베이스를 다른 server로 옮길 때 테이블이나 딕셔너리를 ATTACH합니다.
+
+**구문**
+
+```sql
+ATTACH TABLE|DICTIONARY|DATABASE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] ...
+```
+
+이 쿼리는 디스크에 데이터를 생성하지 않습니다. 대신 데이터가 이미 적절한 위치에 있다고 가정하고, 지정한 테이블(table), 딕셔너리(dictionary) 또는 데이터베이스(database)에 대한 정보만 서버에 추가합니다. `ATTACH` 쿼리를 실행하면 서버는 해당 테이블, 딕셔너리 또는 데이터베이스의 존재를 인식하게 됩니다.
+
+테이블이 이전에 분리되었다면([DETACH](/ko/reference/statements/detach) 쿼리), 즉 해당 구조를 이미 알고 있다면 구조를 정의하지 않고 축약형을 사용할 수 있습니다.
+
+<div id="attach-existing-table">
+  ## 기존 테이블 ATTACH
+</div>
+
+**구문**
+
+```sql
+ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+```
+
+이 쿼리는 서버를 시작할 때 사용됩니다. 서버는 테이블 메타데이터를 `ATTACH` 쿼리가 들어 있는 파일로 저장하고, 시작 시 이 파일들을 그대로 실행합니다(일부 시스템 테이블은 예외이며, 서버에서 명시적으로 생성됩니다).
+
+테이블이 영구적으로 분리된 상태였다면 서버 시작 시 다시 ATTACH되지 않으므로, `ATTACH` 쿼리를 명시적으로 사용해야 합니다.
+
+<div id="create-new-table-and-attach-data">
+  ## 새 테이블 CREATE 후 데이터 ATTACH
+</div>
+
+<div id="with-specified-path-to-table-data">
+  ### 테이블 데이터 경로를 지정하는 경우
+</div>
+
+이 쿼리는 지정된 구조로 새 테이블을 생성하고 `user_files` 내 지정된 디렉터리의 테이블 데이터를 연결합니다.
+
+**구문**
+
+```sql
+ATTACH TABLE name FROM 'path/to/data/' (col1 Type1, ...)
+```
+
+**예시**
+
+```sql title="Query"
+DROP TABLE IF EXISTS test;
+INSERT INTO TABLE FUNCTION file('01188_attach/test/data.TSV', 'TSV', 's String, n UInt8') VALUES ('test', 42);
+ATTACH TABLE test FROM '01188_attach/test' (s String, n UInt8) ENGINE = File(TSV);
+SELECT * FROM test;
+```
+
+```sql title="Response"
+┌─s────┬──n─┐
+│ test │ 42 │
+└──────┴────┘
+```
+
+<div id="with-specified-table-uuid">
+  ### 지정된 테이블 UUID로
+</div>
+
+이 쿼리는 지정된 구조로 새 테이블을 생성하고, 지정된 UUID를 가진 테이블의 데이터를 ATTACH합니다.
+[Atomic](/ko/reference/engines/database-engines/atomic) 데이터베이스 엔진에서 지원됩니다.
+
+**구문**
+
+```sql
+ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
+```
+
+<div id="attach-mergetree-table-as-replicatedmergetree">
+  ## MergeTree 테이블을 ReplicatedMergeTree로 ATTACH
+</div>
+
+복제되지 않은 MergeTree 테이블을 ReplicatedMergeTree로 ATTACH할 수 있습니다. ReplicatedMergeTree 테이블은 `default_replica_path` 및 `default_replica_name` 설정 값을 사용해 생성됩니다. 복제된 테이블을 일반 MergeTree로 ATTACH할 수도 있습니다.
+
+이 쿼리는 ZooKeeper의 테이블 데이터에 영향을 주지 않습니다. 즉, attach한 후 `SYSTEM RESTORE REPLICA`를 사용해 ZooKeeper에 메타데이터를 추가하거나, `SYSTEM DROP REPLICA ... FROM ZKPATH ...`로 이를 정리해야 합니다.
+
+기존 ReplicatedMergeTree 테이블에 레플리카를 추가하려는 경우, 변환된 MergeTree 테이블의 모든 로컬 데이터가 분리된 상태가 된다는 점에 유의하십시오.
+
+**구문**
+
+```sql
+ATTACH TABLE [db.]name AS [NOT] REPLICATED
+```
+
+**테이블을 복제된 테이블로 변환**
+
+```sql
+DETACH TABLE test;
+ATTACH TABLE test AS REPLICATED;
+SYSTEM RESTORE REPLICA test;
+```
+
+**테이블을 비복제 테이블로 전환**
+
+테이블의 ZooKeeper 경로와 레플리카 이름을 확인합니다:
+
+```sql title="Query"
+SELECT replica_name, zookeeper_path FROM system.replicas WHERE table='test';
+```
+
+```sql title="Response"
+┌─replica_name─┬─zookeeper_path─────────────────────────────────────────────┐
+│ r1           │ /clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1 │
+└──────────────┴────────────────────────────────────────────────────────────┘
+```
+
+테이블을 비복제 테이블로 ATTACH하고 ZooKeeper에서 레플리카 데이터를 삭제합니다:
+
+```sql title="Query"
+DETACH TABLE test;
+ATTACH TABLE test AS NOT REPLICATED;
+SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1';
+```
+
+<div id="attach-existing-dictionary">
+  ## 기존 딕셔너리 ATTACH
+</div>
+
+이전에 분리된 딕셔너리를 ATTACH합니다.
+
+**구문**
+
+```sql
+ATTACH DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+```
+
+<div id="attach-existing-database">
+  ## 기존 데이터베이스 ATTACH
+</div>
+
+이전에 분리된 데이터베이스를 ATTACH합니다.
+
+**구문**
+
+```sql
+ATTACH DATABASE [IF NOT EXISTS] name [ENGINE=<database engine>] [ON CLUSTER cluster]
+```

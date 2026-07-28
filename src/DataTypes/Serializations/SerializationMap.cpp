@@ -17,6 +17,7 @@
 #include <Core/Field.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/JSONUtils.h>
+#include <Formats/ParseError.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -284,6 +285,8 @@ ReturnType SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & 
 
         if constexpr (throw_exception)
             throw;
+        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
+        rethrowIfNotParseError();
         return ReturnType(false);
     }
 
@@ -550,6 +553,21 @@ struct DeserializeBinaryBulkStateMap : public ISerialization::DeserializeBinaryB
         for (size_t bucket = 0; bucket != bucket_nested_states.size(); ++bucket)
             new_state->bucket_nested_states[bucket] = bucket_nested_states[bucket] ? bucket_nested_states[bucket]->clone() : nullptr;
         return new_state;
+    }
+
+    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
+    {
+        if (reading_info_state)
+            callback(reading_info_state);
+        if (nested_state)
+            callback(nested_state);
+        if (buckets_info_state)
+            callback(buckets_info_state);
+        for (const auto & bucket_nested_state : bucket_nested_states)
+        {
+            if (bucket_nested_state)
+                callback(bucket_nested_state);
+        }
     }
 };
 
@@ -1143,7 +1161,7 @@ void SerializationMap::serializeBinaryBulkWithMultipleStreams(
     /// Accumulate statistics from each serialized range.
     /// They will be written to the stream in `serializeBinaryBulkStateSuffix`.
     if (map_state->recalculate_statistics)
-        map_state->statistics.merge(*assert_cast<const ColumnMap &>(column).calculateStatisticsForRange(offset, end));
+        map_state->statistics.merge(assert_cast<const ColumnMap &>(column).calculateStatisticsForRange(offset, end));
 }
 
 void SerializationMap::deserializeBinaryBulkWithMultipleStreams(

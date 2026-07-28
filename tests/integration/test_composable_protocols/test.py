@@ -1,8 +1,6 @@
 import os
-import os.path as p
 import socket
 import ssl
-import subprocess
 import urllib.parse
 import urllib.request
 import warnings

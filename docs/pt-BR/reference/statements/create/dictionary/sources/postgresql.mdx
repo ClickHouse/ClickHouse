@@ -1,0 +1,72 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/postgresql
+title: 'Fonte de dicionário PostgreSQL'
+sidebarTitle: 'PostgreSQL'
+description: 'Configure o PostgreSQL como fonte de dicionário no ClickHouse.'
+doc_type: 'reference'
+---
+
+Exemplo de configurações:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(POSTGRESQL(
+        port 5432
+        host 'postgresql-hostname'
+        user 'postgres_user'
+        password 'postgres_password'
+        db 'db_name'
+        table 'table_name'
+        replica(host 'example01-1' port 5432 priority 1)
+        replica(host 'example01-2' port 5432 priority 2)
+        where 'id=10'
+        invalidate_query 'SQL_QUERY'
+        query 'SELECT id, value_1, value_2 FROM db_name.table_name'
+    ))
+    ```
+  </Tab>
+
+  <Tab title="Arquivo de configuração">
+    ```xml
+    <source>
+      <postgresql>
+          <host>postgresql-hostname</hoat>
+          <port>5432</port>
+          <user>clickhouse</user>
+          <password>qwerty</password>
+          <db>db_name</db>
+          <table>table_name</table>
+          <where>id=10</where>
+          <invalidate_query>SQL_QUERY</invalidate_query>
+          <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
+      </postgresql>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Campos de configuração:
+
+| Configuração           | Descrição                                                                                                                                                                            |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `host`                 | O host do servidor PostgreSQL. Você pode especificá-lo para todas as réplicas ou para cada uma individualmente (dentro de `<replica>`).                                              |
+| `port`                 | A porta do servidor PostgreSQL. Você pode especificá-la para todas as réplicas ou para cada uma individualmente (dentro de `<replica>`).                                             |
+| `user`                 | Nome do usuário do PostgreSQL. Você pode especificá-lo para todas as réplicas ou para cada uma individualmente (dentro de `<replica>`).                                              |
+| `password`             | Senha do usuário do PostgreSQL. Você pode especificá-la para todas as réplicas ou para cada uma individualmente (dentro de `<replica>`).                                             |
+| `replica`              | Seção de configurações de réplica. Pode haver várias seções.                                                                                                                         |
+| `replica/host`         | O host do PostgreSQL.                                                                                                                                                                |
+| `replica/port`         | A porta do PostgreSQL.                                                                                                                                                               |
+| `replica/priority`     | A prioridade da réplica. Ao tentar se conectar, o ClickHouse percorre as réplicas em ordem de prioridade. Quanto menor o número, maior a prioridade.                                 |
+| `db`                   | Nome do banco de dados.                                                                                                                                                              |
+| `table`                | Nome da tabela.                                                                                                                                                                      |
+| `where`                | Critério de seleção. A sintaxe das condições é a mesma da cláusula `WHERE` no PostgreSQL. Por exemplo, `id > 10 AND id < 20`. Opcional.                                              |
+| `invalidate_query`     | Consulta para verificar o status do dicionário. Opcional. Leia mais na seção [Atualização de dados do dicionário usando LIFETIME](/pt-BR/reference/statements/create/dictionary/lifetime). |
+| `background_reconnect` | Reconecta à réplica em segundo plano se a conexão falhar. Opcional.                                                                                                                  |
+| `query`                | A consulta personalizada. Opcional.                                                                                                                                                  |
+
+<Note>
+  Os campos `table` ou `where` não podem ser usados junto com o campo `query`. Além disso, um dos campos `table` ou `query` deve ser declarado.
+</Note>

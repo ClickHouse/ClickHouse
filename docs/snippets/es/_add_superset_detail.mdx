@@ -1,0 +1,47 @@
+---
+title: Agregar detalles de Superset
+---
+
+<Accordion title="Iniciar Apache Superset en Docker">
+  Superset proporciona instrucciones para [instalar Superset localmente con Docker Compose](https://superset.apache.org/docs/installation/installing-superset-using-docker-compose/). Después de clonar el repositorio de Apache Superset desde GitHub, puedes ejecutar el código de desarrollo más reciente o una etiqueta específica. Recomendamos la versión 2.0.0, ya que es la versión más reciente que no está marcada como `pre-release`.
+
+  Hay algunas tareas que deben realizarse antes de ejecutar `docker compose`:
+
+  1. Agregar el driver oficial de ClickHouse Connect
+  2. Obtener una clave de API de Mapbox y agregarla como variable de entorno (opcional)
+  3. Especificar la versión de Superset que se ejecutará
+
+  <Tip>
+    Los comandos siguientes deben ejecutarse desde el nivel superior del repositorio de GitHub, `superset`.
+  </Tip>
+
+  ## Driver oficial de ClickHouse Connect
+
+  Para que el driver ClickHouse Connect esté disponible en el despliegue de Superset, agrégalo al archivo local de requisitos:
+
+  ```bash
+  echo "clickhouse-connect" >> ./docker/requirements-local.txt
+  ```
+
+  ## Mapbox
+
+  Esto es opcional; puedes representar datos de ubicación en Superset sin una clave de API de Mapbox, pero verás un mensaje indicando que debes agregar una clave y faltará la imagen de fondo del mapa (solo verás los puntos de datos y no el fondo del mapa). Mapbox ofrece un nivel gratuito si deseas usarlo.
+
+  Algunas de las visualizaciones de ejemplo que las guías te indican crear usan datos de ubicación, por ejemplo, longitud y latitud. Superset incluye compatibilidad con mapas de Mapbox. Para usar las visualizaciones de Mapbox, necesitas una clave de API de Mapbox. Regístrate en el [nivel gratuito de Mapbox](https://account.mapbox.com/auth/signup/) y genera una clave de API.
+
+  Haz que la clave de API esté disponible para Superset:
+
+  ```bash
+  echo "MAPBOX_API_KEY=pk.SAMPLE-Use-your-key-instead" >> docker/.env-non-dev
+  ```
+
+  ## Desplegar la versión 2.0.0 de Superset
+
+  Para desplegar la versión 2.0.0, ejecuta:
+
+  ```bash
+  git checkout 2.0.0
+  TAG=2.0.0 docker-compose -f docker-compose-non-dev.yml pull
+  TAG=2.0.0 docker-compose -f docker-compose-non-dev.yml up
+  ```
+</Accordion>

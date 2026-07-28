@@ -1,0 +1,121 @@
+---
+description: 'SAMPLE 句のドキュメント'
+sidebarTitle: 'SAMPLE'
+slug: /sql-reference/statements/select/sample
+title: 'SAMPLE 句'
+doc_type: 'reference'
+---
+
+`SAMPLE` 句を使用すると、`SELECT` クエリを近似的に処理できます。
+
+データサンプリングが有効な場合、クエリは全データではなく、その一部のデータ (サンプル) に対してのみ実行されます。たとえば、すべての visits の統計を計算する必要がある場合、全 visits の 1/10 に対してクエリを実行し、その結果を 10 倍すれば十分です。
+
+近似的なクエリ処理は、次のような場合に役立ちます。
+
+* 厳しいレイテンシ要件 (たとえば 100ms 未満) がある一方で、それを満たすための追加ハードウェアコストを正当化できない場合。
+* 生データ自体の精度が高くなく、近似しても品質が目立って低下しない場合。
+* ビジネス要件として近似結果で十分な場合 (コスト効率のため、あるいは正確な結果をプレミアムユーザー向けに提供する場合) 。
+
+<Note>
+  サンプリングを使用できるのは、[MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) ファミリーのテーブルのみであり、かつテーブル作成時にサンプリング式が指定されている場合に限られます ([MergeTree engine](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) を参照) 。
+</Note>
+
+データサンプリングの特性は次のとおりです。
+
+* データサンプリングは決定論的な仕組みです。同じ `SELECT .. SAMPLE` クエリは、常に同じ結果になります。
+* サンプリングは、異なるテーブル間でも一貫して機能します。単一のサンプリングキーを持つテーブルでは、同じ係数のサンプルは常に同じデータの部分集合を選択します。たとえば、ユーザー ID のサンプルでは、異なるテーブルであっても、取り得るすべてのユーザー ID のうち同じ部分集合に属する行が取得されます。つまり、[IN](/ja/reference/statements/in) 句のサブクエリでサンプルを使用できます。また、[JOIN](/ja/reference/statements/select/join) 句を使ってサンプル同士を結合することもできます。
+* サンプリングを使用すると、ディスクから読み取るデータ量を減らせます。ただし、サンプリングキーは正しく指定する必要があります。詳しくは、[Creating a MergeTree Table](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) を参照してください。
+
+`SAMPLE` 句では、次の構文をサポートしています。
+
+| SAMPLE Clause Syntax | Description                                                                                                                                           |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SAMPLE k`           | ここで `k` は 0 から 1 までの数です。クエリはデータの `k` の割合に対して実行されます。たとえば、`SAMPLE 0.1` はデータの 10% に対してクエリを実行します。[詳しくはこちら](#sample-k)                                     |
+| `SAMPLE n`           | ここで `n` は十分に大きい整数です。クエリは少なくとも `n` 行のサンプルに対して実行されます (ただし、それを大幅に超えることはありません) 。たとえば、`SAMPLE 10000000` は最低 10,000,000 行に対してクエリを実行します。[詳しくはこちら](#sample-n) |
+| `SAMPLE k OFFSET m`  | ここで `k` と `m` は 0 から 1 までの数です。クエリはデータの `k` の割合のサンプルに対して実行されます。サンプルに使用されるデータは `m` の割合だけオフセットされます。[詳しくはこちら](#sample-k-offset-m)                         |
+
+<div id="sample-k">
+  ## SAMPLE K
+</div>
+
+ここで `k` は 0 から 1 までの数です (分数表記と小数表記の両方を使用できます) 。たとえば、`SAMPLE 1/2` や `SAMPLE 0.5` です。
+
+`SAMPLE k` 句では、データの `k` の割合に対してサンプリングが行われます。例を以下に示します。
+
+```sql
+SELECT
+    Title,
+    count() * 10 AS PageViews
+FROM hits_distributed
+SAMPLE 0.1
+WHERE
+    CounterID = 34
+GROUP BY Title
+ORDER BY PageViews DESC LIMIT 1000
+```
+
+この例では、データの 0.1 (10%) をサンプリングしたものに対してクエリが実行されます。集約関数の値は自動では補正されないため、概算結果を得るには、`count()` の値を手動で 10 倍します。
+
+<div id="sample-n">
+  ## SAMPLE N
+</div>
+
+ここで `n` は十分に大きな整数です。たとえば、`SAMPLE 10000000` です。
+
+この場合、クエリは少なくとも `n` 行のサンプルに対して実行されます (ただし、それを大幅に上回ることはありません) 。たとえば、`SAMPLE 10000000` では、最低 10,000,000 行を対象にクエリが実行されます。
+
+データ読み取りの最小単位は 1 つの granule (そのサイズは `index_granularity` 設定で指定されます) であるため、サンプルは granule のサイズより十分大きく設定するのが合理的です。
+
+`SAMPLE n` 句を使用する場合、データ全体のうち何パーセントが処理されたのかはわかりません。そのため、集約関数にどの係数を掛ければよいかもわかりません。概算結果を得るには、`_sample_factor` 仮想カラムを使用してください。
+
+`_sample_factor` カラムには、動的に計算される相対係数が格納されます。このカラムは、指定したサンプリングキーを持つテーブルを [作成](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) すると自動的に作成されます。`_sample_factor` カラムの使用例を以下に示します。
+
+サイト訪問の統計を含む `visits` テーブルを考えてみましょう。最初の例では、ページビュー数の計算方法を示します。
+
+```sql
+SELECT sum(PageViews * _sample_factor)
+FROM visits
+SAMPLE 10000000
+```
+
+次の例では、訪問数の合計を計算する方法を示します。
+
+```sql
+SELECT sum(_sample_factor)
+FROM visits
+SAMPLE 10000000
+```
+
+以下の例では、平均セッション時間の計算方法を示します。平均値の計算に相対係数を使用する必要はないことに注意してください。
+
+```sql
+SELECT avg(Duration)
+FROM visits
+SAMPLE 10000000
+```
+
+<div id="sample-k-offset-m">
+  ## SAMPLE K OFFSET M
+</div>
+
+ここで、`k` と `m` は 0 から 1 までの数値です。以下に例を示します。
+
+**例 1**
+
+```sql
+SAMPLE 1/10
+```
+
+この例では、サンプルは全データの1/10です。
+
+`[++------------]`
+
+**例 2**
+
+```sql
+SAMPLE 1/10 OFFSET 1/2
+```
+
+ここでは、データの後半から 10% をサンプリングします。
+
+`[------++------]`

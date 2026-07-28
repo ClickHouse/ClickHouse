@@ -1,0 +1,138 @@
+---
+sidebarTitle: 'PostgreSQL CDC'
+slug: /cloud/reference/billing/clickpipes/postgres-cdc
+title: 'ClickPipes for PostgreSQL CDC'
+description: 'PostgreSQL CDC ClickPipes의 청구 개요'
+doc_type: 'reference'
+keywords: ['청구', 'clickpipes', 'cdc 요금', '비용', '가격']
+---
+
+이 섹션에서는 ClickPipes의 Postgres 변경 데이터 캡처(Change Data Capture, CDC)
+커넥터에 대한 요금 모델을 설명합니다. 이 모델의 설계 목표는 요금을
+매우 경쟁력 있게 유지하는 동시에, 다음과 같은 핵심 비전을 충실히 반영하는 것이었습니다:
+
+> 고객이 Postgres에서 ClickHouse로 데이터를 원활하게,
+> 합리적인 비용으로 이동해
+> 실시간 분석을 수행할 수 있도록 하는 것입니다.
+
+이 커넥터는 외부
+ETL 도구 및 다른 데이터베이스 플랫폼의 유사한 기능보다 **5배 이상 비용 효율적**입니다.
+
+<Note>
+  Postgres CDC ClickPipes를 사용하는 모든 고객(기존 고객 및 신규 고객 모두)은
+  **2025년 9월 1일**부터 월별 청구서 기준으로 요금이 산정되기 시작했습니다.
+</Note>
+
+
+
+## 가격 책정 차원 {#pricing-dimensions}
+
+가격 책정에는 두 가지 주요 차원이 있습니다:
+
+1. **수집된 데이터**: Postgres에서 ClickHouse로 수집되는 원시 비압축 바이트입니다.
+2. **컴퓨트**: 서비스별로 프로비저닝되는 컴퓨트 유닛은 여러 Postgres CDC ClickPipes를 관리하며, ClickHouse Cloud 서비스에서 사용하는 컴퓨트 유닛과는 별도로 청구됩니다. 이 추가 컴퓨트는 Postgres CDC ClickPipes 전용으로 할당됩니다. 컴퓨트는 개별 파이프 단위가 아닌 서비스 수준에서 청구됩니다. 각 컴퓨트 유닛에는 2 vCPU와 8 GB RAM이 포함됩니다.
+
+### 수집된 데이터 {#ingested-data}
+
+Postgres CDC 커넥터는 두 가지 주요 단계로 동작합니다:
+
+- **초기 적재 / resync**: Postgres 테이블의 전체 스냅샷을 캡처하며, 파이프가 처음 생성되거나 재동기화될 때 실행됩니다.
+- **지속적 복제 (CDC)**: Postgres에서 ClickHouse로 삽입, 업데이트, 삭제, 스키마 변경 등의 변경 사항을 지속적으로 복제합니다.
+
+대부분의 사용 사례에서 지속적 복제는 ClickPipe 전체 수명 주기의 90% 이상을 차지합니다. 초기 적재는 대량의 데이터를 한 번에 전송하는 작업이므로, 해당 단계에는 더 낮은 요금이 적용됩니다.
+
+| 단계                             | 비용         |
+|----------------------------------|--------------|
+| **초기 적재 / resync**           | GB당 $0.10   |
+| **지속적 복제 (CDC)**            | GB당 $0.20   |
+
+### 컴퓨트 {#compute}
+
+이 차원은 Postgres ClickPipes 전용으로 서비스별로 프로비저닝되는 컴퓨트 유닛을 다룹니다. 컴퓨트는 서비스 내 모든 Postgres 파이프에서 공유됩니다. **첫 번째 Postgres 파이프가 생성될 때 프로비저닝되며, Postgres CDC 파이프가 더 이상 존재하지 않으면 해제됩니다**. 프로비저닝되는 컴퓨트 양은 조직의 티어에 따라 결정됩니다:
+
+| 티어                              | 비용                                              |
+|-----------------------------------|---------------------------------------------------|
+| **Basic 티어**                    | 서비스당 0.5 컴퓨트 유닛 — 시간당 $0.10          |
+| **Scale 또는 Enterprise 티어**    | 서비스당 1 컴퓨트 유닛 — 시간당 $0.20            |
+
+### 예시 {#example}
+
+서비스가 Scale 티어에 있고 다음과 같은 구성을 가정합니다:
+
+- 지속적 복제를 실행 중인 Postgres ClickPipes 2개
+- 각 파이프는 월 500 GB의 데이터 변경 사항(CDC)을 수집
+- 첫 번째 파이프가 시작되면 서비스는 Postgres CDC를 위해 **Scale 티어 기준 1 컴퓨트 유닛**을 프로비저닝
+
+#### 월별 비용 내역 {#cost-breakdown}
+
+**수집된 데이터 (CDC)**:
+
+$$ 2 \text{ 파이프} \times 500 \text{ GB} = 1,000 \text{ GB/월} $$
+
+$$ 1,000 \text{ GB} \times \$0.20/\text{GB} = \$200 $$
+
+**컴퓨트**:
+
+$$1 \text{ 컴퓨트 유닛} \times \$0.20/\text{시간} \times 730 \text{ 시간 (월 근사값)} = \$146$$
+
+<Note>
+컴퓨트는 두 파이프 간에 공유됩니다
+</Note>
+
+**월 총 비용**:
+
+$$\$200 \text{ (수집)} + \$146 \text{ (컴퓨트)} = \$346$$
+
+<div id="faq-postgres-cdc-clickpipe">
+  ## Postgres CDC ClickPipes FAQ
+</div>
+
+<Accordion title="요금 산정 시 수집된 데이터는 압축된 크기와 압축되지 않은 크기 중 어느 기준으로 측정되나요?">
+  수집된 데이터는 Postgres에서 들어오는 *압축되지 않은 데이터* 를 기준으로 측정됩니다. 이는
+  초기 적재와 CDC(replication slot을 통해) 모두에 해당합니다. Postgres는 기본적으로
+  전송 중 데이터를 압축하지 않으며, ClickPipe는 원시의 압축되지 않은 바이트를
+  처리합니다.
+</Accordion>
+
+<Accordion title="Postgres CDC 요금은 언제부터 청구서에 표시되기 시작하나요?">
+  Postgres CDC ClickPipes 요금은 모든 고객(기존 고객 및 신규 고객 모두)에게
+  **2025년 9월 1일**부터 월별 청구서에 표시되기 시작했습니다.
+</Accordion>
+
+<Accordion title="파이프를 일시 중지하면 요금이 청구되나요?">
+  파이프가 일시 중지된 동안에는 데이터가 이동하지 않으므로 데이터 수집 요금은
+  부과되지 않습니다. 하지만 컴퓨트 요금은 계속 적용되며, 조직의 tier에 따라
+  0.5 또는 1 컴퓨트 unit가 부과됩니다. 이는 서비스 수준의 고정 비용이며, 해당
+  서비스 내의 모든 파이프에 공통으로 적용됩니다.
+</Accordion>
+
+<Accordion title="요금은 어떻게 추정할 수 있나요?">
+  ClickPipes의 Overview 페이지에서는 초기 적재/resync 및
+  CDC 데이터 볼륨에 대한 메트릭을 제공합니다. 이 메트릭을 ClickPipes 요금과 함께 사용하면
+  Postgres CDC 비용을 추정할 수 있습니다.
+</Accordion>
+
+<Accordion title="서비스에서 Postgres CDC에 할당된 컴퓨트를 스케일링할 수 있나요?">
+  기본적으로 컴퓨트 스케일링은 사용자가 구성할 수 없습니다. 프로비저닝된 리소스는
+  대부분의 고객 workload를 효율적으로 처리할 수 있도록 최적화되어 있습니다. 사용 사례상
+  더 많거나 더 적은 컴퓨트가 필요하다면, 요청 사항을 검토할 수 있도록 지원 티켓을
+  열어 주십시오.
+</Accordion>
+
+<Accordion title="요금 산정 세분화 수준은 어떻게 되나요?">
+  * **컴퓨트**: 시간 단위로 청구됩니다. 1시간 미만은 다음 1시간으로 올림됩니다.
+  * **수집된 데이터**: 압축되지 않은 데이터의 기가바이트(GB) 단위로 측정 및 청구됩니다.
+</Accordion>
+
+<Accordion title="ClickPipes를 통한 Postgres CDC에 ClickHouse Cloud 크레딧을 사용할 수 있나요?">
+  예. ClickPipes 요금은 통합 ClickHouse Cloud 요금 체계의 일부입니다. 보유한
+  플랫폼 크레딧은 ClickPipes 사용량에도 자동으로 적용됩니다.
+</Accordion>
+
+<Accordion title="기존 월간 ClickHouse Cloud 지출에 비해 Postgres CDC ClickPipes로 어느 정도의 추가 비용이 발생하나요?">
+  비용은 사용 사례, 데이터 볼륨, 조직 tier에 따라 달라집니다.
+  다만 대부분의 기존 고객은 체험 기간 이후 기존 월간 ClickHouse Cloud 지출 대비
+  **0–15%** 증가를 경험합니다. 실제 비용은 workload에 따라 달라질 수 있습니다.
+  일부 workload는 데이터 볼륨은 크지만 처리량은 적고, 다른 workload는 데이터는 적지만
+  더 많은 처리가 필요할 수 있습니다.
+</Accordion>
