@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from .settings import Settings
+from .workflow import Workflow
 
 class Info:
 
@@ -130,7 +131,10 @@ class Info:
 
     @property
     def is_merge_queue_event(self):
-        return self.env.EVENT_TYPE == "merge_group"
+        # EVENT_TYPE always holds a Workflow.Event value, never GitHub's event
+        # name: the GitHub event is called "merge_group", praktika's value is
+        # "merge_queue". Compare against the enum so the two cannot drift.
+        return self.env.EVENT_TYPE == Workflow.Event.MERGE_QUEUE
 
     @property
     def is_push_event(self):
