@@ -312,6 +312,11 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// while a table that was flushed to disk keeps its type with zero rows.
     bool hasData() const { return !empty() && size() != 0; }
     void invalidate() { type = Type::EMPTY; }
+    /// Tears the variants down after the aggregate states changed owner (`aggregator` must
+    /// already be null): destroys the active method and with it the hash-table buffer, drops
+    /// the arenas and the overflow row, and leaves the variants empty, with no arena. Calling
+    /// this while the variants still own live nontrivial states would leak them undestroyed.
+    void resetAfterStateOwnershipTransfer();
     void init(Type type_, std::optional<size_t> size_hint = std::nullopt);
     /// Number of rows (different keys).
     size_t size() const;

@@ -388,6 +388,11 @@ public:
     /// For external aggregation.
     void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0) const;
 
+    /// Flushes the variants like `writeToTemporaryFile` and consumes them: the table comes back
+    /// invalidated and stripped of its arenas instead of re-armed for further aggregation, for
+    /// callers that destroy it next.
+    void consumeToTemporaryFile(AggregatedDataVariants & data_variants) const;
+
     bool hasTemporaryData() const;
 
     std::list<TemporaryBlockStreamHolder> detachTemporaryData();
@@ -682,6 +687,8 @@ private:
         AggregateFunctionInstruction * aggregate_instructions,
         Arena * arena,
         bool use_compiled_functions) const;
+
+    void flushToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size, bool reinitialize) const;
 
     template <typename Method>
     void writeToTemporaryFileImpl(

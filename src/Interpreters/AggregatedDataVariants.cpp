@@ -93,6 +93,29 @@ size_t AggregatedDataVariants::size() const
     }
 }
 
+void AggregatedDataVariants::resetAfterStateOwnershipTransfer()
+{
+    chassert(!aggregator);
+    switch (type)
+    {
+        case Type::EMPTY:
+        case Type::without_key:
+            break;
+
+    #define M(NAME, IS_TWO_LEVEL) \
+        case Type::NAME: \
+            (NAME).reset(); \
+            break;
+        APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
+    }
+    without_key = nullptr;
+    aggregates_pools.clear();
+    aggregates_pool = nullptr;
+    aggregator = nullptr;
+    type = Type::EMPTY;
+}
+
 size_t AggregatedDataVariants::allocatedBytes() const
 {
     size_t res = 0;

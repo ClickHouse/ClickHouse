@@ -1846,6 +1846,20 @@ bool Aggregator::executeOnBlock(Columns columns,
 
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size) const
 {
+    flushToTemporaryFile(data_variants, max_temp_file_size, /*reinitialize=*/true);
+}
+
+void Aggregator::consumeToTemporaryFile(AggregatedDataVariants & data_variants) const
+{
+    flushToTemporaryFile(data_variants, 0, /*reinitialize=*/false);
+    /// The conversion does not clear the tables (the inline-count method returns before its
+    /// shrink), so tear the variants down here: the consumer holds them only to destroy them,
+    /// and the buffers should return to the allocator now, not when the last owner drops.
+    data_variants.resetAfterStateOwnershipTransfer();
+}
+
+void Aggregator::flushToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size, bool reinitialize) const
+{
     if (!tmp_data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write to temporary file because temporary file is not initialized");
 
@@ -1878,14 +1892,17 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant");
 
     /// NOTE Instead of freeing up memory and creating new hash tables and arenas, you can re-use the old ones.
-    data_variants.init(data_variants.type);
-    data_variants.aggregates_pools = Arenas(1, std::make_shared<Arena>());
-    data_variants.aggregates_pool = data_variants.aggregates_pools.back().get();
-    if (params.overflow_row || data_variants.type == AggregatedDataVariants::Type::without_key)
+    if (reinitialize)
     {
-        AggregateDataPtr place = data_variants.aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-        createAggregateStates(place);
-        data_variants.without_key = place;
+        data_variants.init(data_variants.type);
+        data_variants.aggregates_pools = Arenas(1, std::make_shared<Arena>());
+        data_variants.aggregates_pool = data_variants.aggregates_pools.back().get();
+        if (params.overflow_row || data_variants.type == AggregatedDataVariants::Type::without_key)
+        {
+            AggregateDataPtr place = data_variants.aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+            createAggregateStates(place);
+            data_variants.without_key = place;
+        }
     }
 
     auto stat = out_stream.finishWriting();
