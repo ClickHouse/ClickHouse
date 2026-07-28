@@ -52,8 +52,9 @@ SET join_use_nulls = 0;
 
 -- FlatDictionary::hasKeys is the site that read the freed buffer. Its result is the presence mask,
 -- which getByKeys applies to the returned right KEY column only, so r.j is what observes the mask
--- directly: a mask that misclassifies any row changes one of the two counts below. The attribute
--- counts alone would not, because attributes are fetched independently of the mask.
+-- directly: the attribute counts would not, because attributes are fetched independently of it. The
+-- two counts below catch a misclassified key whose value is not 0; key 0 needs the nullable-key
+-- query further down, because a blanked right key is 0 as well.
 SELECT 'Sparse key, key presence only';
 SELECT count(), countIf(r.v != 0), countIf(r.v = 0), countIf(l.j = 0 AND r.v = 10),
        countIf(l.j < 20 AND r.j = l.j), countIf(l.j >= 20 AND r.j = 0)

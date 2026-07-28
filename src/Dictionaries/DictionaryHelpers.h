@@ -717,9 +717,10 @@ static const PaddedPODArray<T> & getColumnVectorData(
             TypeName<T>);
     }
 
-    /// A different pointer means a conversion happened (Const, Sparse, ColumnReplicated, or a
-    /// Tuple nesting one of them), so the data may live only in a column owned by `full_column`
-    /// and die at return: copy it. An unconverted column is kept alive by `column` itself.
+    /// A different pointer means a conversion happened (Const, Sparse or ColumnReplicated; a Tuple
+    /// never reaches here because the check above requires a ColumnVector), so the data may live
+    /// only in a column owned by `full_column` and die at return: copy it. An unconverted column is
+    /// kept alive by `column` itself.
     if (full_column.get() != column.get())
     {
         backup_storage.assign(vector_col->getData());
