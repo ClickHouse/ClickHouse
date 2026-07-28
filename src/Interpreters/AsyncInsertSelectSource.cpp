@@ -16,6 +16,8 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
@@ -307,6 +309,14 @@ void buildAsyncInsertSelectPipeline(
                 ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
                 "Number of columns in INSERT ... SELECT doesn't match: SELECT returns {}, but the target expects {}",
                 src_cols.size(), dst_cols.size());
+
+        /// Freeze column list so a concurrent ADD COLUMN does not widen the schema seen by getSampleBlock.
+        if (!insert_query.columns)
+        {
+            insert_query.columns = make_intrusive<ASTExpressionList>();
+            for (const auto & col : dst_cols)
+                insert_query.columns->children.push_back(make_intrusive<ASTIdentifier>(col.name));
+        }
 
         /// The queue flush has no defaults step, so a Nullable-to-non-Nullable column under
         /// insert_null_as_default cannot be substituted there.

@@ -293,11 +293,7 @@ ${CLICKHOUSE_CLIENT} -q "
 "
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_trivial_opt"
 
-# Case 13: concurrent ALTER TABLE ... FIRST/AFTER during sync fallback must not corrupt data.
-# The sync fallback converts blocks with MatchColumnsMode::Name so a concurrent column reorder
-# does not map values into wrong columns (regression test for Position vs Name mode).
-# max_block_size=500000 makes the first block take ~1s (500k rows × 2µs), giving the ALTER
-# a wide, reliable window to land before init_sync_fallback reads fresh table metadata.
+# Case 13: concurrent MODIFY COLUMN FIRST must not corrupt data (MatchColumnsMode::Name regression).
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_async_sel_alter_race"
 ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE test_async_sel_alter_race (a UInt32, b UInt32)
@@ -311,14 +307,55 @@ ${CLICKHOUSE_CLIENT} \
     WHERE sleepEachRow(0.000002) = 0
 " &
 INSERT_PID=$!
-# Sleep long enough for the SELECT to start pulling the first block, then reorder columns.
-# With Name mode the fallback correctly routes a→a and b→b regardless of order.
-# With Position mode (regression) slot 0 (a values) would land in b → b = a ≠ a*2.
 sleep 0.5
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE test_async_sel_alter_race MODIFY COLUMN b UInt32 FIRST"
 wait "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_alter_race WHERE b != a * 2"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_alter_race"
+
+# Case 14: concurrent ADD COLUMN must not cause THERE_IS_NO_COLUMN (schema freeze, async path).
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_async_sel_add_col_single"
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE test_async_sel_add_col_single (a UInt32, b UInt32)
+    ENGINE = MergeTree ORDER BY a
+"
+${CLICKHOUSE_CLIENT} \
+    --optimize_trivial_insert_select=1 --async_insert=1 --wait_for_async_insert=1 -q "
+    INSERT INTO test_async_sel_add_col_single
+    SELECT number AS a, number * 2 AS b
+    FROM numbers(200000)
+    WHERE sleepEachRow(0.000002) = 0
+" &
+INSERT_PID=$!
+sleep 0.2
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE test_async_sel_add_col_single ADD COLUMN c UInt32 DEFAULT 42"
+wait "$INSERT_PID"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_add_col_single"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_add_col_single WHERE b = a * 2"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_add_col_single WHERE c = 42"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_add_col_single"
+
+# Case 15: same ADD COLUMN race on the sync-fallback path (schema freeze, multi-block).
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_async_sel_add_col_multi"
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE test_async_sel_add_col_multi (a UInt32, b UInt32)
+    ENGINE = MergeTree ORDER BY a
+"
+${CLICKHOUSE_CLIENT} \
+    --max_block_size=500000 --async_insert=1 --wait_for_async_insert=1 -q "
+    INSERT INTO test_async_sel_add_col_multi
+    SELECT number AS a, number * 2 AS b
+    FROM numbers(1000000)
+    WHERE sleepEachRow(0.000002) = 0
+" &
+INSERT_PID=$!
+sleep 0.5
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE test_async_sel_add_col_multi ADD COLUMN c UInt32 DEFAULT 42"
+wait "$INSERT_PID"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_add_col_multi"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_add_col_multi WHERE b = a * 2"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_add_col_multi WHERE c = 42"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_add_col_multi"
 
 # Cleanup.
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel"
