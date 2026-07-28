@@ -40,21 +40,30 @@ Nullable(UInt32)	5
 Nullable(UInt32)	\N
 Nullable(UInt32)	\N
 Nullable(UInt32)	\N
+Nullable(UInt32)	\N
 UInt32	0
 UInt32	1
+UInt32	0
 UInt32	0
 UInt32	0
 []
 []
 [1]
 []
+[]
 {}
 {}
 {}
 {'k':1}
+{}
 5	\N
 \N	\N
 \N	\N
 \N	\N
+\N	1
 Nullable(UInt32)	1
 1
+Nullable(UInt32)
+1	1
+2	\N
+3	\N
