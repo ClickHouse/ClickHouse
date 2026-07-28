@@ -27,9 +27,7 @@ doc_type: 'guide'
 다음 단계는 Python REPL 또는 스크립트에서 실행할 수 있습니다.
 
 <Steps>
-  <Step>
-    ## 라이브러리 설치
-
+  <Step title="라이브러리 설치" id="install-libraries">
     다음 명령을 실행해 mcp-agent 라이브러리를 설치하십시오.
 
     ```python
@@ -39,9 +37,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 자격 증명 설정
-
+  <Step title="자격 증명 설정" id="setup-credentials">
     다음으로 OpenAI API Key를 입력해야 합니다:
 
     ```python
@@ -66,9 +62,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## MCP Server 및 Upsonic 에이전트 초기화
-
+  <Step title="MCP Server 및 Upsonic 에이전트 초기화" id="initialize-mcp-and-agent">
     이제 ClickHouse MCP 서버가 ClickHouse SQL 플레이그라운드를 가리키도록 구성하고, 에이전트를 초기화한 다음 질문을 입력합니다:
 
     ```python
@@ -105,7 +99,7 @@ doc_type: 'guide'
         tools=[DatabaseMCP]
     )
 
-    # 워크플로우 실행
+    # Execute the workflow
     workflow_result = database_agent.do(task)
     print("\nMulti-MCP Workflow Result:")
     print(workflow_result)
@@ -118,7 +112,7 @@ doc_type: 'guide'
       - list_tables: List available ClickHouse tables in a database, including schema, comment,
     row count, and column count.
       - run_select_query: Run a SELECT query in a ClickHouse database
-    ✅ MCP 도구가 스레드를 통해 검색되었습니다
+    ✅ MCP tools discovered via thread
 
     ...
 

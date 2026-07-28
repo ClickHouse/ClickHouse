@@ -103,11 +103,13 @@ For each original PR number `N` and release branch `release/X.Y`:
 
 ### Step-by-Step Process {#step-by-step-process}
 
-#### 1. Discover active releases {#discover-active-releases}
+<Steps>
+<Step title="Discover active releases" id="discover-active-releases">
 
 `BackportPRs.receive_release_prs` queries GitHub for all open PRs with the `release` label. The head refs of these PRs are the release branch names (e.g. `release/25.3`). From these it derives the set of version-specific labels to search for: every `v{VER}-must-backport` label that exists in the repository whose version is not newer than the newest active release. Older labels are included even when their release is no longer active (a label newer than every active release is skipped, since it could not expand to any active branch), so a PR labelled for an end-of-life release is still found as long as a newer release is active.
 
-#### 2. Find PRs to backport {#find-prs-to-backport}
+</Step>
+<Step title="Find PRs to backport" id="find-prs-to-backport">
 
 `BackportPRs.receive_prs_for_backport` uses the GitHub search API to find merged PRs that:
 - carry at least one backport label (`pr-must-backport`, `pr-must-backport-force`, `pr-critical-bugfix`, or a version-specific label), and
@@ -115,11 +117,13 @@ For each original PR number `N` and release branch `release/X.Y`:
 - were merged after the oldest commit date found on any release branch, and
 - were updated within the last 90 days (to keep the search query efficient).
 
-#### 3. Rolling-out branch handling {#rolling-out-branch-handling}
+</Step>
+<Step title="Rolling-out branch handling" id="rolling-out-branch-handling">
 
 When a release PR carries the `rolling-out` label, general backport labels (`pr-must-backport`, `pr-critical-bugfix`) skip that branch. The bot closes any previously created cherry-pick or backport PRs for that branch with an explanatory comment. A version-specific label (e.g. `v25.3-must-backport`) always overrides this — for the named release and for every newer active release branch it expands to. `pr-must-backport-force` bypasses the `rolling-out` check for all branches.
 
-#### 4. Cherry-pick stage (`ReleaseBranch.create_cherrypick`) {#cherry-pick-stage}
+</Step>
+<Step title={<>Cherry-pick stage (<code>ReleaseBranch.create_cherrypick</code>)</>} id="cherry-pick-stage">
 
 For each (original PR, release branch) pair where no cherry-pick PR exists yet:
 
@@ -133,11 +137,13 @@ For each (original PR, release branch) pair where no cherry-pick PR exists yet:
 6. Propagate `pr-bugfix` or `pr-critical-bugfix` from the original PR if applicable.
 7. Assignees are **not** set at this point; they are only added when conflicts are detected.
 
-#### 5. Auto-merge of conflict-free cherry-pick PRs {#auto-merge-conflict-free-cherry-pick-prs}
+</Step>
+<Step title="Auto-merge of conflict-free cherry-pick PRs" id="auto-merge-conflict-free-cherry-pick-prs">
 
 If the cherry-pick PR is mergeable (no conflicts), the bot merges it automatically via the GitHub API and proceeds immediately to the backport stage.
 
-#### 6. Backport stage (`ReleaseBranch.create_backport`) {#backport-stage}
+</Step>
+<Step title={<>Backport stage (<code>ReleaseBranch.create_backport</code>)</>} id="backport-stage">
 
 After the cherry-pick PR is merged:
 
@@ -149,13 +155,18 @@ After the cherry-pick PR is merged:
 6. Label the PR `pr-backport` (and `pr-bugfix` / `pr-critical-bugfix` if applicable).
 7. Assign the PR to the original PR's author, merger, and existing assignees (excluding robot accounts).
 
-#### 7. Completion {#completion}
+</Step>
+<Step title="Completion" id="completion">
 
 When all release branches for a given original PR are backported, the bot adds `pr-backports-created` to the original PR.
 
-#### 8. Pre-check {#pre-check}
+</Step>
+<Step title="Pre-check" id="pre-check">
 
 Before starting any work on a PR, `ReleaseBranch.pre_check` runs `git merge-base --is-ancestor` to verify the merge commit is not already reachable from the release branch. If it is, the PR is considered already backported and skipped.
+
+</Step>
+</Steps>
 
 ### Stale Cherry-pick PR Handling {#stale-cherry-pick-pr-handling}
 

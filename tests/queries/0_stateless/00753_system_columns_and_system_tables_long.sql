@@ -1,4 +1,11 @@
 -- Tags: long, no-object-storage, no-random-merge-tree-settings
+-- Random settings limits: send_table_structure_on_insert_with_inline_data=(1, 1)
+-- This test asserts exact `total_bytes` values returned by `system.tables` for several
+-- engines (notably `Memory`). The inline-server-parsed path
+-- (`send_table_structure_on_insert_with_inline_data=0`) builds the in-memory block with a
+-- different layout than the legacy client-parsed path, so the reported byte counts differ
+-- (e.g. 130 -> 256 for the `Memory` engine case). Pin the legacy path here; this test is
+-- about the system-table reporting, not about which side parses inline data.
 SET output_format_pretty_row_numbers = 0;
 
 DROP TABLE IF EXISTS check_system_tables;
