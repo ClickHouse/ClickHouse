@@ -16,6 +16,8 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
 
+#include <Storages/IStorage.h>
+
 #include <Poco/String.h>
 
 namespace DB
@@ -120,6 +122,11 @@ public:
             return;
 
         if (!getArrayJoinDataType(physical_column->getColumnType()))
+            return;
+
+        /// A storage that opts out of subcolumn optimization may execute the read against a different
+        /// schema than the one analyzed here, so dropping the ARRAY JOIN would also drop its type check.
+        if (!table_node->getStorage()->supportsOptimizationToSubcolumns())
             return;
 
         /// Build length(<physical array/map column>). The subsequent FunctionToSubcolumnsPass folds this

@@ -46,3 +46,8 @@ A non-LEFT ARRAY JOIN over only-empty arrays leaves the aggregation with no inpu
 1
 1
 1
+A storage that opts out of subcolumn optimization may read a different schema than the one analyzed here, so the rewrite must decline and leave the ARRAY JOIN to validate the type where the read happens.
+1
+1
+1
+1

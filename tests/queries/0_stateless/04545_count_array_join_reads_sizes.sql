@@ -119,4 +119,21 @@ SELECT (SELECT count() FROM t_count_aj LEFT ARRAY JOIN arr SETTINGS empty_result
 DROP TABLE t_count_aj_norows;
 DROP TABLE t_count_aj_empty;
 
+SELECT 'A storage that opts out of subcolumn optimization may read a different schema than the one analyzed here, so the rewrite must decline and leave the ARRAY JOIN to validate the type where the read happens.';
+DROP TABLE IF EXISTS t_count_aj_shard;
+DROP TABLE IF EXISTS t_count_aj_dist;
+CREATE TABLE t_count_aj_shard (arr Array(UInt64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_count_aj_shard SELECT range(number % 4) FROM numbers(10);
+CREATE TABLE t_count_aj_dist (arr Array(UInt64)) ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_count_aj_shard);
+SELECT count() = (SELECT sum(length(arr)) FROM t_count_aj_shard) FROM t_count_aj_dist ARRAY JOIN arr;
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj_dist ARRAY JOIN arr) WHERE explain ILIKE '%sum(length%';
+-- Pin prefer_localhost_replica: with the remote path the initiator plan is a bare ReadFromRemote, so
+-- the ARRAY JOIN step is only observable in the local-replica plan.
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj_dist ARRAY JOIN arr SETTINGS prefer_localhost_replica = 1) WHERE explain ILIKE '%ARRAY JOIN%';
+-- Declining at the initiator costs nothing: the shard re-analyzes the untouched query and rewrites it
+-- there, where the declared type is the one actually read.
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj_shard ARRAY JOIN arr) WHERE explain ILIKE '%arr.size0%';
+DROP TABLE t_count_aj_dist;
+DROP TABLE t_count_aj_shard;
+
 DROP TABLE t_count_aj;
