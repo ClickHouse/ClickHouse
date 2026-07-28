@@ -66,8 +66,11 @@ FROM (EXPLAIN header = 1, indexes = 1
 -- The query itself returns no rows: the index returns rows 0 and 1 as the two nearest neighbours and
 -- both have flag = 0, so the WHERE removes them. An ordinary read would return the two nearest
 -- flag = 1 rows instead, which is why the rows are printed rather than discarded.
+-- Both lazy-materialization settings are randomized by the test runner. Without lazy materialization
+-- the vector rewrite drops the cache-tagged filter and nothing re-tags it, so this section stops
+-- failing on unfixed code. They are pinned so that it keeps proving the non-rescoring write path.
 SELECT 'A vector-search query must NOT write to the query condition cache. It returns no rows.';
-SELECT id FROM tab WHERE flag = 1 ORDER BY L2Distance(vec, [0., 0., 0.]) LIMIT 2 SETTINGS vector_search_with_rescoring = 0, use_query_condition_cache = 1;
+SELECT id FROM tab WHERE flag = 1 ORDER BY L2Distance(vec, [0., 0., 0.]) LIMIT 2 SETTINGS vector_search_with_rescoring = 0, use_query_condition_cache = 1, query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10;
 SELECT count() FROM system.query_condition_cache;
 
 SELECT 'A later ordinary query must still find all 298 rows.';
