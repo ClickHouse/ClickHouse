@@ -38,6 +38,12 @@ public:
         void reset();
         void onFailed(const std::string & exception);
         void updateState(State state_);
+        /// The `processing` node in keeper is held by a processor other than this one
+        /// (another server, or another table on this server).
+        void onProcessingByAnotherProcessor();
+        /// Whether the `Processing` state is only a cached observation of a foreign
+        /// `processing` node, in which case it must not be treated as terminal.
+        bool isProcessingByAnotherProcessor() const { return processing_by_another_processor.load(); }
 
         std::string getException() const;
 
@@ -52,6 +58,8 @@ public:
         std::atomic<UInt64> get_object_time_ms = 0;
 
     private:
+        std::atomic<bool> processing_by_another_processor = false;
+
         mutable std::mutex last_exception_mutex;
         std::string last_exception;
     };

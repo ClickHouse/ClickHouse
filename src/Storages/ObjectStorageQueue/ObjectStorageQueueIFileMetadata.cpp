@@ -51,6 +51,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::setGetObjectTime(size_t elapse
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
 {
+    processing_by_another_processor = false;
     state = FileStatus::State::Processing;
     processing_start_time = now();
     processing_end_time = {};
@@ -76,6 +77,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onFailed(const std::string & e
 
 void ObjectStorageQueueIFileMetadata::FileStatus::reset()
 {
+    processing_by_another_processor = false;
     state = FileStatus::State::None;
     processing_start_time = {};
     processing_end_time = {};
@@ -85,7 +87,17 @@ void ObjectStorageQueueIFileMetadata::FileStatus::reset()
 
 void ObjectStorageQueueIFileMetadata::FileStatus::updateState(State state_)
 {
+    if (state_ != FileStatus::State::Processing)
+        processing_by_another_processor = false;
     state = state_;
+}
+
+void ObjectStorageQueueIFileMetadata::FileStatus::onProcessingByAnotherProcessor()
+{
+    /// Set the flag before the state, so that a concurrent reader which sees `Processing`
+    /// never misses the fact that this state is not ours and therefore not terminal.
+    processing_by_another_processor = true;
+    state = FileStatus::State::Processing;
 }
 
 std::string ObjectStorageQueueIFileMetadata::FileStatus::getException() const
@@ -292,7 +304,7 @@ bool ObjectStorageQueueIFileMetadata::checkProcessingOwnership(std::shared_ptr<Z
 bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 {
     auto state = file_status->state.load();
-    if (state == FileStatus::State::Processing
+    if ((state == FileStatus::State::Processing && !file_status->isProcessingByAnotherProcessor())
         || state == FileStatus::State::Processed
         || (state == FileStatus::State::Failed
             && file_status->retries
@@ -331,7 +343,7 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
     }
 
     auto state = file_status->state.load();
-    if (state == FileStatus::State::Processing
+    if ((state == FileStatus::State::Processing && !file_status->isProcessingByAnotherProcessor())
         || state == FileStatus::State::Processed
         || (state == FileStatus::State::Failed
             && file_status->retries
@@ -369,7 +381,20 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::opti
         if (file_state.has_value() && file_state.value() != FileStatus::State::None)
         {
             LOG_TEST(log, "Updating state of {} from {} to {}", path, file_status->state.load(), file_state.value());
-            file_status->updateState(file_state.value());
+
+            if (file_state.value() == FileStatus::State::Processing)
+            {
+                /// The `processing` node exists, but it was created by someone else,
+                /// because our own attempt to create it has just failed.
+                /// Remember the state only as a hint: unlike `Processed` or `Failed`,
+                /// it is not backed by a persistent keeper node, so the file becomes
+                /// processable again as soon as the foreign processor releases it.
+                /// Caching it as terminal would make this table skip the file until
+                /// the file status is evicted from the cache or the server is restarted.
+                file_status->onProcessingByAnotherProcessor();
+            }
+            else
+                file_status->updateState(file_state.value());
         }
     }
 }
