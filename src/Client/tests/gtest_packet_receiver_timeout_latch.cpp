@@ -16,7 +16,7 @@
 
 using namespace DB;
 
-/// Drives PacketReceiver::checkTimeout() directly against a real connected socket, without a
+/// Drives PacketReceiver::checkTimeout directly against a real connected socket, without a
 /// ClickHouse server: PacketReceiver only needs the socket's file descriptor, so the test
 /// attaches an already-connected socket to an unconnected Connection.
 struct PacketReceiverTestAccess
@@ -118,14 +118,8 @@ struct ConnectedPair
 
 }
 
-/// PacketReceiver::checkTimeout() observes the timer fd and the socket fd of one epoll wake.
-/// Timer readiness alone means nothing: it is a receive timeout only if the socket was NOT
-/// ready in the SAME wake. Historically the observation was stored in the `is_timeout_expired`
-/// MEMBER before the conjunction was evaluated and nothing ever cleared it, so a single wake
-/// carrying both a data packet and the timer expiry delivered its packet correctly and then
-/// left the receiver permanently "timed out": isPacketReady() was stuck false and
-/// HedgedConnections::resumePacketReceiver() threw a spurious SOCKET_TIMEOUT on every
-/// subsequent packet.
+/// Timer readiness in one epoll wake is a receive timeout only if the socket was NOT ready in
+/// that same wake, so it must leave no residue on the receiver.
 TEST(PacketReceiverTimeoutLatch, SimultaneousReadinessLeavesNoTimeoutResidue)
 {
     ConnectedPair pair;
@@ -153,11 +147,8 @@ TEST(PacketReceiverTimeoutLatch, SimultaneousReadinessLeavesNoTimeoutResidue)
     EXPECT_TRUE(receiver.isPacketReady());
 }
 
-/// The regression guard for the opposite direction: a genuine receive timeout (timer ready,
-/// socket NOT ready) must still be declared, and must still be visible to
-/// HedgedConnections::resumePacketReceiver() through isTimeoutExpired() after checkTimeout()
-/// returned, i.e. the verdict has to persist across calls even though the raw observation
-/// must not.
+/// The opposite direction: the verdict must persist across calls, because
+/// HedgedConnections::resumePacketReceiver reads it only after checkTimeout returned.
 TEST(PacketReceiverTimeoutLatch, GenuineTimeoutIsStillDeclaredAndPersists)
 {
     ConnectedPair pair;
@@ -173,14 +164,12 @@ TEST(PacketReceiverTimeoutLatch, GenuineTimeoutIsStillDeclaredAndPersists)
     EXPECT_TRUE(receiver.isTimeoutExpired());
     EXPECT_FALSE(receiver.isPacketReady());
 
-    /// The verdict persists for the caller, which reads it only after checkTimeout() returned.
+    /// The verdict persists for the caller, which reads it only after checkTimeout returned.
     EXPECT_TRUE(receiver.isTimeoutExpired());
 }
 
-/// HedgedConnections::resumePacketReceiver() re-arms the receive timeout after every received
-/// packet (setTimeout()); that per-packet re-arm is the invariant of "receive_timeout is a
-/// per-packet idle timeout, not a total-query timeout". A declared timeout must therefore be
-/// cleared by the re-arm, or the re-arm would be unreachable for the rest of the connection.
+/// HedgedConnections::resumePacketReceiver re-arms the timeout after every packet, which is what
+/// makes receive_timeout a per-packet idle timeout; the re-arm must therefore clear the verdict.
 TEST(PacketReceiverTimeoutLatch, SetTimeoutClearsADeclaredTimeout)
 {
     ConnectedPair pair;

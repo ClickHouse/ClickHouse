@@ -25,7 +25,7 @@ namespace DB::ErrorCodes
 extern const int SOCKET_TIMEOUT;
 }
 
-/// Drives RemoteQueryExecutorReadContext::checkTimeout() and cancelBefore() directly. The read
+/// Drives RemoteQueryExecutorReadContext::checkTimeout and cancelBefore directly. The read
 /// context only needs a socket file descriptor and a timer, so a plain connected TCP socket pair
 /// is enough - no ClickHouse server and no query are involved.
 struct RemoteReadContextTestAccess
@@ -68,7 +68,7 @@ struct RemoteReadContextTestAccess
     void disarm() { context.clearAsyncEvent(); }
 
     /// Re-arm only the timer, leaving the epoll registration and `is_in_progress` untouched.
-    /// Used to put a bound on a blocking checkTimeout() so that a lost timeout verdict shows up
+    /// Used to put a bound on a blocking checkTimeout so that a lost timeout verdict shows up
     /// as a failure instead of an unobservable hang.
     void armTimerOnly(Poco::Timespan relative) { context.timer.setRelative(relative); }
 
@@ -78,7 +78,7 @@ struct RemoteReadContextTestAccess
 
     bool checkTimeout() { return context.checkTimeout(); }
 
-    /// cancelBefore() is only reachable through AsyncTaskExecutor::cancel(), which also destroys
+    /// cancelBefore is only reachable through AsyncTaskExecutor::cancel, which also destroys
     /// the fiber; calling it directly keeps the test to the state machine under test.
     void cancelBefore() { context.cancelBefore(); }
 
@@ -148,14 +148,8 @@ struct ConnectedPair
 
 }
 
-/// RemoteQueryExecutorReadContext::checkTimeout() observes the timer fd and the connection fd of
-/// one epoll wake. Timer readiness alone means nothing: it is a receive timeout only if the socket
-/// was NOT ready in the SAME wake. Historically the observation was stored in the
-/// `is_timer_alarmed` MEMBER before the conjunction was evaluated, and nothing ever cleared it, so
-/// a single wake carrying both a data packet and the timer expiry returned true (delivering the
-/// packet) and then left the context permanently "timed out": every later wake without socket
-/// readiness threw a spurious SOCKET_TIMEOUT even though the remote was sending progress packets
-/// on time.
+/// Timer readiness in one epoll wake is a receive timeout only if the socket was NOT ready in
+/// that same wake, so it must leave no residue on the context.
 TEST(RemoteReadContextTimeoutLatch, SimultaneousReadinessLeavesNoTimeoutResidue)
 {
     ConnectedPair pair;
@@ -172,7 +166,7 @@ TEST(RemoteReadContextTimeoutLatch, SimultaneousReadinessLeavesNoTimeoutResidue)
     EXPECT_NO_THROW(EXPECT_TRUE(ctx.checkTimeout()));
 
     /// The packet is consumed and the timer re-armed for the next one, as the async read path does
-    /// via clearAsyncEvent()/processAsyncEvent(). Consuming the bytes matters: epoll is
+    /// via clearAsyncEvent/processAsyncEvent. Consuming the bytes matters: epoll is
     /// level-triggered, so an unread byte would keep the socket ready and mask a latched timer.
     pair.drainClient();
     ctx.disarm();
@@ -207,11 +201,8 @@ TEST(RemoteReadContextTimeoutLatch, GenuineTimeoutStillThrows)
     }
 }
 
-/// cancelBefore() uses the "a timeout was declared" fact to decide whether it is safe to wait for
-/// the pending packet ("One should not try to wait for the current packet here in case of timeout
-/// because this will exceed the timeout"). That fact must survive across calls even though the raw
-/// per-wake observation must not: if it were lost, cancelling a genuinely timed-out connection
-/// would block for a full receive_timeout inside the drain loop.
+/// cancelBefore skips the drain when a timeout was declared, so that verdict must survive across
+/// calls: losing it would block cancellation for a full receive_timeout inside the drain loop.
 TEST(RemoteReadContextTimeoutLatch, CancelAfterDeclaredTimeoutDoesNotWaitForPendingPacket)
 {
     ConnectedPair pair;
@@ -223,28 +214,23 @@ TEST(RemoteReadContextTimeoutLatch, CancelAfterDeclaredTimeoutDoesNotWaitForPend
         << "the receive timer never became ready, so this wake would not exercise the latch";
     EXPECT_THROW(ctx.checkTimeout(), NetException);
 
-    /// The read is still in progress (no packet was delivered), so if the timeout verdict were
-    /// lost, cancelBefore() would enter its drain loop and call checkTimeout(blocking = true).
     ASSERT_TRUE(ctx.isInProgress());
 
-    /// Re-arm the timer with a short expiry so that such a blocking call is guaranteed to return
-    /// (by throwing SOCKET_TIMEOUT from inside cancelBefore()) instead of hanging the test
-    /// process forever. With the fix, cancelBefore() never looks at the timer at all.
+    /// Bounds the blocking checkTimeout the drain loop would make, so a lost verdict fails instead
+    /// of hanging. With the fix cancelBefore never looks at the timer at all.
     ctx.armTimerOnly(Poco::Timespan(1, 0));
 
-    /// The absence of a throw IS the structural signal that the drain loop was skipped: entering
-    /// it would call checkTimeout(blocking = true), which with the re-armed timer necessarily
-    /// throws SOCKET_TIMEOUT out of cancelBefore(). Asserting elapsed time instead would only
-    /// measure the re-armed expiry, not the branch taken.
+    /// The absence of a throw is the signal that the drain loop was skipped: entering it calls
+    /// checkTimeout(blocking = true), which with the re-armed timer necessarily throws out of
+    /// cancelBefore. Asserting elapsed time would only measure the re-armed expiry.
     EXPECT_NO_THROW(ctx.cancelBefore())
         << "cancelBefore() must not re-enter the read path for a connection that already timed out";
 }
 
-/// The other direction of the same contract, and the one the changelog entry promises: when NO
-/// timeout was declared, cancellation must still wait for the pending packet, because skipping
-/// the drain leaves the connection unsynchronised and its teardown surfaces as
-/// "Connection to ... terminated (NETWORK_ERROR)". This is exactly the state produced by a
-/// simultaneous-readiness wake, which the latch used to turn into "a timeout was seen".
+/// The other direction: without a declared timeout the drain must still happen, because skipping
+/// it leaves the connection unsynchronised and teardown surfaces as
+/// "Connection to ... terminated (NETWORK_ERROR)" - the state a simultaneous-readiness wake used
+/// to produce.
 TEST(RemoteReadContextTimeoutLatch, CancelWithoutDeclaredTimeoutDrainsPendingPacket)
 {
     ConnectedPair pair;
@@ -257,15 +243,11 @@ TEST(RemoteReadContextTimeoutLatch, CancelWithoutDeclaredTimeoutDrainsPendingPac
         << "the receive timer never became ready, so this wake would not exercise the latch";
     EXPECT_NO_THROW(EXPECT_TRUE(ctx.checkTimeout()));
 
-    /// The read is still pending, so cancellation owes it a drain.
     ASSERT_TRUE(ctx.isInProgress());
 
-    /// Consume the byte and re-arm the timer with a short expiry. The drain loop's first statement
-    /// is checkTimeout(blocking = true), which then observes "timer ready, socket not ready" and
-    /// throws SOCKET_TIMEOUT out of cancelBefore(). That throw is the observable: it can only
-    /// originate inside the drain loop, so it proves the loop was entered, and it also keeps the
-    /// loop from reaching resumeUnlocked() on a connection that has no server behind it. A guard
-    /// that always skipped the drain would make cancelBefore() return without throwing.
+    /// The throw is the observable: it can only originate in the drain loop's blocking
+    /// checkTimeout, so it proves the loop was entered, and it stops the loop short of
+    /// resumeUnlocked on a connection with no server behind it.
     pair.drainClient();
     ctx.armTimerOnly(Poco::Timespan(0, 100'000));
 
