@@ -9,6 +9,8 @@ title: 'ArrowStream'
 doc_type: 'reference'
 ---
 
+{/*自動生成開始*/}
+
 | 入力 | 出力 | 別名 |
 | -- | -- | -- |
 | ✔  | ✔  |    |
@@ -128,17 +130,21 @@ ClickHouse から `ArrowStream` データをストリーミングし、
 
 `ArrowStream` は [`Arrow`](/ja/reference/formats/Arrow/Arrow) フォーマットと同じフォーマット設定を使用します。
 
-| 設定                                                                           | 説明                                                                                                   | デフォルト       |
-| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ----------- |
-| `input_format_arrow_allow_missing_columns`                                   | Arrow 入力フォーマットの読み取り時に、欠落しているカラムを許可します                                                                | `1`         |
-| `input_format_arrow_case_insensitive_column_matching`                        | Arrow のカラムと CH columns の照合時に、大文字と小文字を区別しません。                                                         | `0`         |
-| `input_format_arrow_import_nested`                                           | 廃止された設定です。何も行いません。                                                                                   | `0`         |
-| `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference` | Arrow フォーマットのスキーマ推論時に、サポートされていない型のカラムをスキップします                                                        | `0`         |
-| `output_format_arrow_compression_method`                                     | Arrow 出力フォーマットの圧縮方式です。サポートされる codecs: lz4&#95;frame, zstd, none (非圧縮)                                | `lz4_frame` |
-| `output_format_arrow_date_as_uint16`                                         | Date の値を 32 ビットの Arrow DATE32 型に変換して書き込む (読み戻すと Date32) のではなく、通常の 16 ビット数値として書き込みます (読み戻すと UInt16) 。 | `0`         |
-| `output_format_arrow_fixed_string_as_fixed_byte_array`                       | FixedString カラムでは、Binary の代わりに Arrow FIXED&#95;SIZE&#95;BINARY 型を使用します。                              | `1`         |
-| `output_format_arrow_low_cardinality_as_dictionary`                          | LowCardinality 型を Dictionary Arrow 型として出力します                                                         | `0`         |
-| `output_format_arrow_string_as_string`                                       | String カラムでは、Binary の代わりに Arrow String type を使用します                                                   | `1`         |
-| `output_format_arrow_unsupported_types_as_binary`                            | 変換できない型を生のバイナリデータとして出力します。false の場合、そのような型では UNKNOWN&#95;TYPE exception が発生します。                      | `1`         |
-| `output_format_arrow_use_64_bit_indexes_for_dictionary`                      | Arrow フォーマットの dictionary indexes には常に 64 ビット整数を使用します                                                 | `0`         |
-| `output_format_arrow_use_signed_indexes_for_dictionary`                      | Arrow フォーマットの dictionary indexes に符号付き整数を使用します                                                       | `1`         |
+| 設定                                                                           | 説明                                                                                                                                                                  | デフォルト       |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| `input_format_arrow_allow_missing_columns`                                   | Arrow 入力フォーマットの読み取り時に、欠落しているカラムを許可します                                                                                                                               | `1`         |
+| `input_format_arrow_case_insensitive_column_matching`                        | Arrow のカラムと CH columns の照合時に、大文字と小文字を区別しません。                                                                                                                        | `0`         |
+| `input_format_arrow_import_nested`                                           | 廃止された設定です。何も行いません。                                                                                                                                                  | `0`         |
+| `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference` | Arrow フォーマットのスキーマ推論時に、サポートされていない型のカラムをスキップします                                                                                                                       | `0`         |
+| `input_format_arrow_use_native_reader`                                       | `Arrow` および `ArrowStream` フォーマットでは、Apache Arrow ライブラリの代わりに ClickHouse ネイティブ reader を使用します。Apache Arrow ライブラリ reader を使用するには `0` に設定します。                             | `1`         |
+| `output_format_arrow_compression_method`                                     | Arrow 出力フォーマットの圧縮方式です。サポートされる codecs: lz4&#95;frame, zstd, none (非圧縮)                                                                                               | `lz4_frame` |
+| `output_format_arrow_date_as_uint16`                                         | Date の値を 32 ビットの Arrow DATE32 型に変換して書き込む (読み戻すと Date32) のではなく、通常の 16 ビット数値として書き込みます (読み戻すと UInt16) 。                                                                | `0`         |
+| `output_format_arrow_fixed_string_as_fixed_byte_array`                       | FixedString カラムでは、Binary の代わりに Arrow FIXED&#95;SIZE&#95;BINARY 型を使用します。                                                                                             | `1`         |
+| `output_format_arrow_low_cardinality_as_dictionary`                          | LowCardinality 型を Dictionary Arrow 型として出力します                                                                                                                        | `0`         |
+| `output_format_arrow_string_as_string`                                       | String 型のカラムでは、Binary の代わりに Arrow String type を使用します                                                                                                                | `1`         |
+| `output_format_arrow_unsupported_types_as_binary`                            | Arrow に対応する型がない型 (例: `BFloat16`、`AggregateFunction`) を生のバイナリデータとして出力します。false の場合、そのような型では exception が発生します。これはネイティブ writer と Apache Arrow ライブラリ writer の両方に適用されます。 | `1`         |
+| `output_format_arrow_use_64_bit_indexes_for_dictionary`                      | Arrow フォーマットの dictionary indexes には常に 64 ビット整数を使用します                                                                                                                | `0`         |
+| `output_format_arrow_use_native_writer`                                      | `Arrow` および `ArrowStream` フォーマットでは、Apache Arrow ライブラリの代わりに ClickHouse ネイティブ writer を使用します。Apache Arrow ライブラリ writer を使用するには `0` に設定します。                             | `1`         |
+| `output_format_arrow_use_signed_indexes_for_dictionary`                      | Arrow フォーマットの dictionary indexes に符号付き整数を使用します                                                                                                                      | `1`         |
+
+{/*AUTOGENERATED_END*/}

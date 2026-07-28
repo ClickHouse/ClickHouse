@@ -613,7 +613,10 @@ class ReleaseInfo:
                     else:
                         Shell.check(
                             f"gh pr create --repo {GITHUB_REPOSITORY} --title 'Update version after release' "
-                            f"--head {branch_upd} --base master --body \"{body}\" --assignee {actor}",
+                            f"--head {branch_upd} --base master --body \"{body}\" --assignee {actor}"
+                            # 'do not test': this bot PR is auto-enqueued to the
+                            # merge queue, so it must not run the full PR CI.
+                            f" --label 'do not test'",
                             strict=True,
                             dry_run=dry_run,
                             verbose=True,
@@ -733,32 +736,67 @@ class ReleaseInfo:
             self.release_url = "dry-run"
         self.dump()
 
+    def _enqueue_release_pr(self, pr_url: str, label: str, dry_run: bool) -> bool:
+        """Add a release bot PR to `master`'s merge queue so it actually merges.
+
+        `master` is behind a merge queue, and `gh pr merge --auto`
+        (`enablePullRequestAutoMerge`) is disabled there, so the PR is added via
+        `enqueuePullRequest` - GitHub merges it from the queue once its required
+        checks pass. The PR is opened before the long package export / docker
+        publish, so its `CH Inc sync` check has time to run before this enqueue at
+        the end of the release; the retries ride out any short remaining wait.
+        Best-effort: it never raises, so a PR that is not yet mergeable does not
+        fail the already-published release (merge_prs then only warns; a later
+        rerun re-enqueues it).
+        """
+        pr_num = 23456 if dry_run else int(pr_url.rsplit("/", 1)[-1])
+        if not dry_run:
+            # Idempotent for recovery / reruns: only an open PR needs enqueuing.
+            # Non-strict read: a transient gh failure must not fail the release.
+            state = Shell.get_output(
+                f"gh pr view {pr_num} --repo {GITHUB_REPOSITORY}"
+                f" --json state --jq .state"
+            ).strip()
+            if not state:
+                print(f"ERROR: could not fetch state for {label} PR #{pr_num}")
+                return False
+            if state != "OPEN":
+                print(f"{label} PR #{pr_num} is {state}, nothing to merge")
+                return True
+        print(f"Enqueuing {label} PR to the merge queue")
+        return Git.enqueue_pull_request(
+            pr_num, GITHUB_REPOSITORY, dry_run=dry_run, retries=10, delay=30
+        )
+
     def merge_prs(self, dry_run: bool) -> None:
         res = True
+        # A recovery / rerun may find no PR (it was already merged and the branch
+        # lookup returned nothing) - that is a no-op, not a failure.
         if self.release_type == "patch":
-            assert self.changelog_pr
-            print("Merging ChangeLog PR")
-            changelog_pr_num = 23456 if dry_run else int(self.changelog_pr.rsplit("/", 1)[-1])
-            res = Shell.check(
-                f"gh pr merge {changelog_pr_num} --repo {GITHUB_REPOSITORY} --merge --auto",
-                verbose=True,
-                dry_run=dry_run,
-                strict=True,
-            )
+            if self.changelog_pr:
+                res = self._enqueue_release_pr(self.changelog_pr, "ChangeLog", dry_run)
+            else:
+                print("No ChangeLog PR to merge")
         if self.release_type == "new":
-            assert self.version_bump_pr
-            print("Merging Version Bump PR")
-            version_bump_pr_num = 23456 if dry_run else int(self.version_bump_pr.rsplit("/", 1)[-1])
-            res = res and Shell.check(
-                f"gh pr merge {version_bump_pr_num} --repo {GITHUB_REPOSITORY} --merge --auto",
-                verbose=True,
-                dry_run=dry_run,
-                strict=True,
-            )
+            if self.version_bump_pr:
+                res = res and self._enqueue_release_pr(
+                    self.version_bump_pr, "Version Bump", dry_run
+                )
+            else:
+                print("No Version Bump PR to merge")
         else:
             if not dry_run:
                 assert not self.version_bump_pr
         self.prs_merged = res
+        if not res:
+            # Best-effort: by the time this runs the release itself (tag, GitHub
+            # release, packages) is already published, so a failed PR enqueue must
+            # not fail the release. Leave the PR open to be landed separately and
+            # only warn - do not raise.
+            print(
+                "WARNING: could not enqueue the release PR(s) to the merge queue; "
+                "they must be landed separately. The release itself is unaffected."
+            )
 
 
 class RepoTypes:
@@ -1010,11 +1048,6 @@ def parse_args() -> argparse.Namespace:
         help="Create GH Release object and attach all packages",
     )
     parser.add_argument(
-        "--merge-prs",
-        action="store_true",
-        help="Merge PRs with version, changelog updates",
-    )
-    parser.add_argument(
         "--post-status",
         action="store_true",
         help="Post release status (prints summary; Slack integration removed)",
@@ -1111,13 +1144,6 @@ if __name__ == "__main__":
         # fail is conveyed by the workflow job result, not re-derived here.
         print(f"{title}: {release_info.release_tag}")
         print(json.dumps(dataclasses.asdict(release_info), indent=2))
-
-    if args.merge_prs:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.MERGE_CREATED_PRS
-        ) as release_info:
-            release_info.update_release_info(dry_run=args.dry_run)
-            release_info.merge_prs(dry_run=args.dry_run)
 
     if _ssh_agent and _key_pub:
         _ssh_agent.remove(_key_pub)
