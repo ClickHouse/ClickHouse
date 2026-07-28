@@ -1,0 +1,65 @@
+{
+  "groups": [
+    {
+      "group": "مقدمة",
+      "pages": [
+        "ar/resources/develop-contribute/introduction/developer-instruction",
+        "ar/resources/develop-contribute/introduction/architecture"
+      ]
+    },
+    {
+      "group": "الإنشاء",
+      "pages": [
+        "ar/resources/develop-contribute/build/build",
+        "ar/resources/develop-contribute/build/build-osx",
+        "ar/resources/develop-contribute/build/build-cross-osx",
+        "ar/resources/develop-contribute/build/build-cross-arm",
+        "ar/resources/develop-contribute/build/build-cross-riscv",
+        "ar/resources/develop-contribute/build/build-cross-s390x",
+        "ar/resources/develop-contribute/build/build-cross-loongarch",
+        "ar/resources/develop-contribute/build/build-e2k"
+      ]
+    },
+    {
+      "group": "البروتوكول الأصلي",
+      "pages": [
+        "ar/resources/develop-contribute/native-protocol/basics",
+        "ar/resources/develop-contribute/native-protocol/client",
+        "ar/resources/develop-contribute/native-protocol/server",
+        "ar/resources/develop-contribute/native-protocol/columns",
+        "ar/resources/develop-contribute/native-protocol/hash"
+      ]
+    },
+    {
+      "group": "المساهمة",
+      "pages": [
+        "ar/resources/develop-contribute/contribute/tests",
+        "ar/resources/develop-contribute/contribute/continuous-integration",
+        "ar/resources/develop-contribute/contribute/contrib",
+        "ar/resources/develop-contribute/contribute/style",
+        "ar/resources/develop-contribute/contribute/building-and-benchmarking-deflate-qpl",
+        "ar/resources/develop-contribute/contribute/integrating-rust-libraries",
+        "ar/resources/develop-contribute/contribute/profile-guided-optimization",
+        "ar/resources/develop-contribute/contribute/backports"
+      ]
+    },
+    {
+      "group": "تطوير التكاملات",
+      "pages": [
+        "ar/resources/develop-contribute/integrations/building-integrations",
+        "ar/resources/develop-contribute/integrations/testing-your-integration",
+        "ar/resources/develop-contribute/integrations/documenting-your-integration"
+      ],
+      "root": "ar/resources/develop-contribute/integrations/index"
+    },
+    {
+      "group": "خريطة الطريق",
+      "pages": [
+        "ar/resources/develop-contribute/roadmap"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-contribute.svg",
+  "item": "التطوير والمساهمة",
+  "root": "ar/resources/develop-contribute/index"
+}

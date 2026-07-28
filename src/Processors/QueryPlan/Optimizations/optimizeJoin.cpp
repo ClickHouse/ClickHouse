@@ -36,6 +36,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/System/StorageSystemOne.h>
 
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/QueryPlan/ShuffleExchangeStep.h>
@@ -412,6 +413,15 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_display_name = reading->getStorage()->getName();
         return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name};
+    }
+
+    /// We cannot do typeid_cast<const ReadFromSystemOneStep *>(step)
+    /// since this is defined in clickhouse_storages_system module,
+    /// which is not linked to current module
+    if (step->getName() == "ReadFromSystemOne")
+    {
+        /// system.one always produces exactly one row — used to implement constant SELECTs like `SELECT 1`.
+        return RelationStats{.estimated_rows = 1, .table_name = "system.one"};
     }
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))

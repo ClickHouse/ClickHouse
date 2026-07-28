@@ -238,6 +238,7 @@ private:
     Time offset_at_start_of_lut;
     bool offset_is_whole_number_of_hours_during_epoch;
     bool offset_is_whole_number_of_minutes_during_epoch;
+    bool offset_is_fixed;
 
     /// Time zone name.
     std::string time_zone;
@@ -482,6 +483,47 @@ public:
     // Methods only for unit-testing, it makes very little sense to use it from user code.
     auto getOffsetAtStartOfEpoch() const { return offset_at_start_of_epoch; }
     auto getTimeOffsetAtStartOfLUT() const { return offset_at_start_of_lut; }
+
+    /// Whether the UTC offset never changes within the range of the LUT (UTC and other fixed-offset
+    /// time zones). When true, every calendar day is exactly 86400 seconds, so adding days or weeks
+    /// reduces to arithmetic on the unix timestamp.
+    bool hasFixedOffset() const { return offset_is_fixed; }
+
+    /// Whether both t and t shifted by `days` days stay inside the LUT, so that in a fixed-offset
+    /// time zone addDays(t, days) equals t + days * 86400 (outside the LUT addDays takes the cctz
+    /// escape path, which saturates to the representable calendar [0000, 9999] and truncates the
+    /// sub-second division towards zero). t is given in units of 1/scale_multiplier of a second,
+    /// like a raw DateTime64 value. May return a false negative within one second of the LUT
+    /// boundaries, which merely sends such values to the exact calendar path.
+    bool dayShiftStaysWithinLUT(Int64 t, Int64 days, Int64 scale_multiplier = 1) const
+    {
+        const Int64 seconds_per_day_scaled = DATE_SECONDS_PER_DAY * scale_multiplier;
+        const Int64 lut_min_scaled = lut[0].date * scale_multiplier;
+
+        /// For the largest scales the end of the LUT does not fit in Int64. Every representable
+        /// value is then below the end, and only the lower bound needs checking.
+        Int64 lut_size_scaled = 0;
+        Int64 lut_end_scaled = 0;
+        const bool lut_end_representable =
+            !__builtin_mul_overflow(static_cast<Int64>(DATE_LUT_SIZE), seconds_per_day_scaled, &lut_size_scaled)
+            && !__builtin_add_overflow(lut_min_scaled, lut_size_scaled, &lut_end_scaled);
+
+        /// One-second margin below the upper bound: the calendar path shifts std::div(t, scale_multiplier).quot,
+        /// which truncates towards zero, so a negative t with a sub-second remainder lands one second higher
+        /// than the raw value and can hit a clamped day index while the raw result still fits.
+        const Int64 lut_end_guard = lut_end_scaled - (scale_multiplier - 1);
+
+        if (t < lut_min_scaled || (lut_end_representable && t >= lut_end_scaled))
+            return false;
+
+        Int64 shift_scaled = 0;
+        Int64 result = 0;
+        if (__builtin_mul_overflow(days, seconds_per_day_scaled, &shift_scaled)
+            || __builtin_add_overflow(t, shift_scaled, &result))
+            return false;
+
+        return result >= lut_min_scaled && (!lut_end_representable || result < lut_end_guard);
+    }
 
     static constexpr auto getDayNumOffsetEpoch()  { return daynum_offset_epoch; }
 
@@ -1413,7 +1455,13 @@ public:
     {
         if (quarters == 1)
             return toFirstDayNumOfQuarter(d);
-        return toStartOfMonthInterval(d, quarters * 3);
+        /// `quarters` is only validated to be positive, so `quarters * 3` can wrap in UInt64 and turn a huge
+        /// interval count into a small month count that rounds to the wrong boundary. Saturate the product so
+        /// toStartOfMonthInterval still sees an extreme (out-of-Int64-range) month count and rounds it down.
+        UInt64 months = 0;
+        if (unlikely(__builtin_mul_overflow(quarters, static_cast<UInt64>(3), &months)))
+            months = std::numeric_limits<UInt64>::max();
+        return toStartOfMonthInterval(d, months);
     }
 
     template <typename Date>
@@ -1429,8 +1477,12 @@ public:
                 /// Number of months since DATE_LUT_MIN_YEAR-01, rounded down to a multiple of `months`.
                 const Values values = outOfRangeValues(d);
                 const Int64 rel = (static_cast<Int64>(values.year) - DATE_LUT_MIN_YEAR) * 12 + (values.month - 1);
-                const Int64 div = static_cast<Int64>(months);
-                const Int64 rounded = (rel >= 0 ? rel / div : -((-rel + div - 1) / div)) * div;
+                /// `months` is only validated to be positive, so it may exceed the Int64 range; saturate to
+                /// keep the divisor positive. roundDownToMultiple then rounds down without the `-rel + div`
+                /// overflow that a hand-rolled ceiling division has for an extreme interval count.
+                const Int64 div = months > static_cast<UInt64>(std::numeric_limits<Int64>::max())
+                    ? std::numeric_limits<Int64>::max() : static_cast<Int64>(months);
+                const Int64 rounded = roundDownToMultiple(rel, div);
                 const Int64 absolute_month = static_cast<Int64>(DATE_LUT_MIN_YEAR) * 12 + rounded;
                 /// Floor-divide so the month stays in [1, 12] for a negative absolute month (the year is saturated
                 /// in makeDayNumOutOfRange); a plain `% 12` would be negative and wrap when cast to UInt8.
@@ -1453,17 +1505,36 @@ public:
     {
         if (weeks == 1)
             return toFirstDayNumOfWeek(d);
-        UInt64 days = weeks * 7;
+        /// `weeks` is only validated to be positive, so `weeks * 7` can wrap; saturate to a positive Int64
+        /// divisor. The rounding result for such a meaningless interval count is discarded anyway.
+        UInt64 product = 0;
+        if (unlikely(__builtin_mul_overflow(weeks, static_cast<UInt64>(7), &product)
+                     || product > static_cast<UInt64>(std::numeric_limits<Int64>::max())))
+            product = static_cast<UInt64>(std::numeric_limits<Int64>::max());
         // January 1st 1970 was Thursday so we need this 4-days offset to make weeks start on Monday.
+        // Floor towards -inf so a pre-epoch day rounds to the start of its interval, not forward in time.
+        // roundDownToMultiple avoids the `shifted + 1 - idays` overflow for an extreme `weeks` interval count.
+        const Int64 idays = static_cast<Int64>(product);
+        const Int64 shifted = static_cast<Int64>(d.toUnderType()) - 4;
+        const Int64 day = 4 + roundDownToMultiple(shifted, idays);
+        // Clamp the reconstructed day number back into the representable range. For an extreme `weeks` count
+        // the floored boundary is far below any representable day, so it must saturate to the earliest one
+        // (not wrap through the narrow cast, which would round forward past the start of the interval).
+        // Week boundaries lie on the `4 + 7 * n` (Monday) lattice, so both clamp bounds must themselves be
+        // representable start-of-week days, not the raw minimum/maximum day number (0000-01-01 is a Saturday
+        // and 9999-12-31 is a Friday). Snap the minimum up to the first Monday >= the minimum representable
+        // day and the maximum down to the last Monday <= the maximum representable day. Otherwise an
+        // out-of-range input (e.g. a Date32 pushed past the range by arithmetic) would return a boundary off
+        // the lattice, breaking the function's own invariant and disagreeing with toFirstDayNumOfWeek.
         if constexpr (std::is_same_v<Date, DayNum>)
-            return DayNum(static_cast<UInt16>(4 + (d - 4) / days * days));
+            return DayNum(static_cast<UInt16>(std::clamp<Int64>(day, 0, DATE_LUT_MAX_DAY_NUM)));
         else
         {
-            /// Floor towards -inf so a pre-1970 day number rounds to the start of its interval, not forward in time.
-            const Int64 idays = static_cast<Int64>(days);
-            const Int64 shifted = static_cast<Int64>(d.toUnderType()) - 4;
-            const Int64 rounded = (shifted >= 0 ? shifted / idays : (shifted + 1 - idays) / idays) * idays;
-            return ExtendedDayNum(static_cast<Int32>(4 + rounded));
+            const Int64 min_daynum = min_representable_day_index - static_cast<Int64>(daynum_offset_epoch);
+            const Int64 max_daynum = max_representable_day_index - static_cast<Int64>(daynum_offset_epoch);
+            const Int64 lattice_min = min_daynum + ((4 - min_daynum) % 7 + 7) % 7;
+            const Int64 lattice_max = max_daynum - ((max_daynum - 4) % 7 + 7) % 7;
+            return ExtendedDayNum(static_cast<Int32>(std::clamp(day, lattice_min, lattice_max)));
         }
     }
 
@@ -1474,21 +1545,34 @@ public:
         if (days == 1)
             return toDate(d);
 
+        /// `days` is only validated to be positive, so it may exceed the Int64 range; saturate to keep the
+        /// divisor positive. The rounding result for such a meaningless interval count is discarded anyway.
+        const Int64 idays = days > static_cast<UInt64>(std::numeric_limits<Int64>::max())
+            ? std::numeric_limits<Int64>::max() : static_cast<Int64>(days);
+
         if constexpr (std::is_same_v<Date, ExtendedDayNum>)
             if (unlikely(isOutOfLUTRange(d)))
             {
                 /// Floor division towards -inf: truncating division would round a pre-epoch day number
                 /// towards zero, i.e. forward in time, past the start of the interval.
+                /// roundDownToMultiple avoids the `day_num + 1 - idays` overflow for an extreme `days` interval count.
                 const Int64 day_num = static_cast<Int64>(d.toUnderType());
-                const Int64 idays = static_cast<Int64>(days);
-                const Int64 rounded_day_num = day_num >= 0 ? day_num / idays * idays : (day_num + 1 - idays) / idays * idays;
+                const Int64 rounded_day_num = roundDownToMultiple(day_num, idays);
                 return dateOfDayIndex(rounded_day_num + daynum_offset_epoch);
             }
 
+        // Floor towards -inf so a pre-epoch in-range day rounds to the start of its interval, not forward in
+        // time. Truncating division (`d / idays * idays`) would round a negative day number towards zero.
+        // Clamp the reconstructed index into the representable range so an extreme `days` count saturates to
+        // the earliest boundary instead of wrapping through the narrow cast.
+        const Int64 rounded_day_num = roundDownToMultiple(static_cast<Int64>(d.toUnderType()), idays);
+        const Int64 min_daynum = min_representable_day_index - static_cast<Int64>(daynum_offset_epoch);
+        const Int64 max_daynum = max_representable_day_index - static_cast<Int64>(daynum_offset_epoch);
+        const auto index = ExtendedDayNum(static_cast<Int32>(std::clamp(rounded_day_num, min_daynum, max_daynum)));
         if constexpr (std::is_same_v<Date, DayNum>)
-            return lut_saturated[toLUTIndex(ExtendedDayNum(static_cast<Int32>(d / days * days)))].date;
+            return lut_saturated[toLUTIndex(index)].date;
         else
-            return lut[toLUTIndex(ExtendedDayNum(static_cast<Int32>(d / days * days)))].date;
+            return lut[toLUTIndex(index)].date;
     }
 
     template <typename DateOrTime>
@@ -1921,7 +2005,10 @@ public:
 
     NO_SANITIZE_UNDEFINED Time addWeeks(Time t, Int64 delta) const
     {
-        return addDays(t, delta * 7);
+        /// Compute delta * 7 in the UInt64 domain so it wraps by construction. FillingRow::doLongJump
+        /// (WITH FILL) passes deltas from the whole Int64 range and relies on the wraparound; a signed
+        /// multiply is UB on overflow even under NO_SANITIZE_UNDEFINED. Bit-identical two's complement.
+        return addDays(t, static_cast<Int64>(static_cast<UInt64>(delta) * 7ULL));
     }
 
     UInt8 saturateDayOfMonth(Int16 year, UInt8 month, UInt8 day_of_month) const
@@ -1939,7 +2026,12 @@ public:
     {
         const Values & values = lut[toLUTIndex(v)];
 
-        Int64 month = values.month + delta;
+        /// Clamp delta to a window wide enough to reach any representable calendar month but narrow enough
+        /// that values.month + delta cannot overflow Int64. WITH FILL passes deltas from the whole Int64
+        /// range and a plain values.month + delta would be UB on overflow; the calendar saturates far
+        /// inside this window anyway, so clamping does not change any representable result.
+        static constexpr Int64 max_month_delta = 12 * (DATE_LUT_MAX_REPRESENTABLE_YEAR + 1);
+        Int64 month = values.month + std::clamp<Int64>(delta, -max_month_delta, max_month_delta);
 
         if (month > 0)
         {
@@ -2025,7 +2117,8 @@ public:
     template <typename DateOrTime>
     auto NO_SANITIZE_UNDEFINED addQuarters(DateOrTime d, Int64 delta) const
     {
-        return addMonths(d, delta * 3);
+        /// UInt64 domain for defined wraparound (see addWeeks); addMonths itself has no further multiply.
+        return addMonths(d, static_cast<Int64>(static_cast<UInt64>(delta) * 3ULL));
     }
 
     template <typename DateOrTime>
@@ -2033,7 +2126,14 @@ public:
     {
         const Values & values = lut[toLUTIndex(v)];
 
-        auto year = values.year + static_cast<Int16>(delta);
+        /// Clamp delta to a window wide enough to reach any representable year but narrow enough that
+        /// values.year + delta stays within Int16 (makeLUTIndex saturates out-of-range years). WITH FILL
+        /// passes deltas from the whole Int64 range and the UInt32 (DateTime) / DayNum (Date) carriers
+        /// reach here without a window check; the previous static_cast<Int16>(delta) narrowed e.g. 32768
+        /// to -32768 and ran the calendar backward. The calendar saturates far inside this window anyway,
+        /// so clamping does not change any representable result.
+        static constexpr Int64 max_year_delta = DATE_LUT_MAX_REPRESENTABLE_YEAR + 1;
+        Int64 year = values.year + std::clamp<Int64>(delta, -max_year_delta, max_year_delta);
         auto month = values.month;
         auto day_of_month = values.day_of_month;
 
