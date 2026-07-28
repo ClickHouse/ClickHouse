@@ -35,19 +35,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ### 지출 알림 대화 상자 열기
-
+  <Step title="지출 알림 대화 상자 열기" id="open-spend-alerts-dialog">
     1. ClickHouse Cloud 콘솔에서 **Organization &gt; Billing**으로 이동합니다.
     2. **Actions &gt; Add spend alerts**를 클릭합니다.
 
     <Image img="/images/cloud/reference/billing/spend-alerts-actions.webp" alt="Actions 메뉴가 열려 있고 Add spend alerts가 강조 표시된 청구 페이지" size="lg" />
   </Step>
 
-  <Step>
-    ### 알림 구성 및 저장
-
-    1. 청구 기간마다 달러 또는 크레딧 기준의 지출 알림 금액을 입력합니다.
+  <Step title="알림 구성 및 저장" id="configure-and-save">
+    1. 청구 기간당 달러 또는 크레딧 기준의 지출 알림 금액을 입력합니다.
     2. 알림 채널(**Email**, **UI**, **Slack**) 중 하나 이상을 선택합니다.
     3. **Save**를 클릭합니다.
 

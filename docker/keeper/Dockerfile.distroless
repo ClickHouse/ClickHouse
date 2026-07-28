@@ -33,7 +33,7 @@ RUN sed -i -e "s|http://archive.ubuntu.com|${apt_archive}|g" -e "s|http://ports.
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="26.6.2.81"
+ARG VERSION="26.7.1.1315"
 ARG PACKAGES="clickhouse-common-static clickhouse-keeper"
 
 ARG deb_location_url=""

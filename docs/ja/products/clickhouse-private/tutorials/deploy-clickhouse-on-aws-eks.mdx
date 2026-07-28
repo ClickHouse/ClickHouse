@@ -35,9 +35,7 @@ description: "このチュートリアルでは、Amazon EKS を使用して AWS
 ***
 
 <Steps>
-  <Step>
-    ## Phase 1: ECR アクセス用の IAM ロールを作成する
-
+  <Step title="Phase 1: ECR アクセス用の IAM ロールを作成する" id="phase-1-create-iam-role-for-ecr-access">
     ClickHouse のプライベート ECR からイメージをプルできる IAM ロールを作成します。この CloudFormation テンプレートをお使いの AWS アカウントにデプロイしてください。
 
     ```yaml expandable
@@ -94,9 +92,7 @@ description: "このチュートリアルでは、Amazon EKS を使用して AWS
     ***
   </Step>
 
-  <Step>
-    ## フェーズ 2: コンテナーイメージをコピーする
-
+  <Step title="フェーズ 2: コンテナーイメージをコピーする" id="phase-2-copy-container-images">
     各アーティファクト用に自分のアカウント内へ ECR リポジトリを作成し、その後 skopeo を使って ClickHouse ECR から自分の ECR にイメージをコピーします。`--all` フラグを指定すると、すべてのアーキテクチャ (amd64、arm64) が保持されます。
 
     ```ini
@@ -125,9 +121,7 @@ description: "このチュートリアルでは、Amazon EKS を使用して AWS
     ***
   </Step>
 
-  <Step>
-    ## フェーズ 3: VPC を作成
-
+  <Step title="フェーズ 3: VPC を作成" id="phase-3-create-vpc">
     高可用性を確保するため、少なくとも 3 つのアベイラビリティゾーンにまたがる VPC を作成します。以下は設定例です。
 
     | 設定             | 値              |
@@ -157,9 +151,7 @@ description: "このチュートリアルでは、Amazon EKS を使用して AWS
     ***
   </Step>
 
-  <Step>
-    ## フェーズ 4: EKS クラスターを作成
-
+  <Step title="フェーズ 4: EKS クラスターを作成" id="phase-4-create-eks-cluster">
     フェーズ 3 の VPC に関連付けられた EKS クラスターを作成します。クラスターには以下が必要です。
 
     * IPv4 を使用する CNI プラグイン (例: IRSA を使用した [Amazon VPC CNI](https://github.com/aws/amazon-vpc-cni-k8s))
@@ -181,9 +173,7 @@ description: "このチュートリアルでは、Amazon EKS を使用して AWS
     ***
   </Step>
 
-  <Step>
-    ## フェーズ5: ノードグループの作成
-
+  <Step title="フェーズ5: ノードグループの作成" id="phase-5-create-node-groups">
     3つのノードグループを作成します。**すべてのノードで、認証に[IMDS](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html)が必要です。**
 
     Keeperおよびサーバーノードグループについては、AZをまたいでcluster autoscalerをサポートする場合、AZごとに1つのノードグループを作成してください。
@@ -206,14 +196,14 @@ description: "このチュートリアルでは、Amazon EKS を使用して AWS
 
     <Tabs>
       <Tab title="AL2023">
-        | 設定                 | 値                                                                       |
-        | ------------------ | ----------------------------------------------------------------------- |
-        | AMI                | x86: `AL2023_x86_64` / arm64: `AL2023_ARM_64`                           |
-        | ディスクサイズ            | 20 GB                                                                   |
-        | 最小/希望ノード数          | オートスケーリングを使用しない場合は、必要な ClickHouse レプリカ数と同じ                              |
-        | 推奨インスタンスタイプ        | `m7gd.16xlarge` (NVMe SSD cache用には&quot;d&quot;シリーズを使用)                 |
-        | Kubernetes ラベル     | x86: `clickhouseGroup: server` / arm64: `clickhouseGroup: server-arm64` |
-        | Kubernetes の taint | `clickhouse.com/do-not-schedule: true, NoSchedule`                      |
+        | 設定               | 値                                                                       |
+        | ---------------- | ----------------------------------------------------------------------- |
+        | AMI              | x86: `AL2023_x86_64` / arm64: `AL2023_ARM_64`                           |
+        | ディスクサイズ          | 20 GB                                                                   |
+        | 最小/希望ノード数        | オートスケーリングを使用しない場合は、必要な ClickHouse レプリカ数と同じ                              |
+        | 推奨インスタンスタイプ      | `m7gd.16xlarge` (NVMe SSD cache用には&quot;d&quot;シリーズを使用)                 |
+        | Kubernetes ラベル   | x86: `clickhouseGroup: server` / arm64: `clickhouseGroup: server-arm64` |
+        | Kubernetes taint | `clickhouse.com/do-not-schedule: true, NoSchedule`                      |
 
         **重要:** NVMe SSDを搭載したインスタンスの場合は、以下の起動テンプレートを使用して、NVMe SSDをRAIDアレイとして自動マウントし、ClickHouseのキャッシングに使用してください。
 
@@ -349,9 +339,7 @@ description: "このチュートリアルでは、Amazon EKS を使用して AWS
     ***
   </Step>
 
-  <Step>
-    ## フェーズ 6: S3 バケットと IAM ロールを作成する
-
+  <Step title="フェーズ 6: S3 バケットと IAM ロールを作成する" id="phase-6-create-s3-bucket-and-iam-roles">
     ### S3 バケット
 
     EKS クラスターと同じリージョンに、暗号化を有効にした S3 バケット (Standard クラス) を作成します。ClickHouse クラスターごとに 1 つのバケットを使用することも、クラスターごとに一意のプレフィックスを付けた 1 つのバケットを使用することもできます。
@@ -395,9 +383,7 @@ description: "このチュートリアルでは、Amazon EKS を使用して AWS
     ***
   </Step>
 
-  <Step>
-    ## フェーズ 7: Kubernetes の前提要件をインストール
-
+  <Step title="フェーズ 7: Kubernetes の前提要件をインストール" id="phase-7-install-kubernetes-prerequisites">
     ### VolumeSnapshot CRDs をインストール
 
     これらの CRD は、ClickHouse Operator で必要となります。
@@ -443,9 +429,7 @@ description: "このチュートリアルでは、Amazon EKS を使用して AWS
     ***
   </Step>
 
-  <Step>
-    ## フェーズ 8: Operator をインストールする
-
+  <Step title="フェーズ 8: Operator をインストールする" id="phase-8-install-the-operator">
     必要に応じて、Helm から ECR にログインします：
 
     ```ini
@@ -489,9 +473,7 @@ description: "このチュートリアルでは、Amazon EKS を使用して AWS
     ***
   </Step>
 
-  <Step>
-    ## フェーズ9: ClickHouseクラスターのデプロイ
-
+  <Step title="フェーズ9: ClickHouseクラスターのデプロイ" id="phase-9-deploy-a-clickhouse-cluster">
     ### クラスター名の設定
 
     各ClickHouseクラスターには、EKSクラスター内で**一意の名前**が必要です。`$DESCRIPTOR-$LETTERS-$ORDINAL` の命名規則に従ってください：
@@ -579,9 +561,7 @@ description: "このチュートリアルでは、Amazon EKS を使用して AWS
     ***
   </Step>
 
-  <Step>
-    ## フェーズ10: プレフライトチェックを実行する
-
+  <Step title="フェーズ10: プレフライトチェックを実行する" id="phase-10-run-preflight-checks">
     クラスターの準備状況を確認するため、プレフライトチェックを実行することを推奨します。プレフライトチェックでは、クラスター診断用の Kubernetes プラグインである [Troubleshoot](https://troubleshoot.sh/) を使用します。
 
     ### プラグインをインストールする
@@ -621,9 +601,7 @@ description: "このチュートリアルでは、Amazon EKS を使用して AWS
     ***
   </Step>
 
-  <Step>
-    ## フェーズ 11: インストールを確認する
-
+  <Step title="フェーズ 11: インストールを確認する" id="phase-11-verify-installation">
     ### ClickHouse サービスをポートフォワードする
 
     ```bash

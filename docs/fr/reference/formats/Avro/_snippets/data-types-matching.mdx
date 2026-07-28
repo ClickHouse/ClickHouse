@@ -35,7 +35,7 @@ Le tableau ci-dessous indique tous les types de données pris en charge par le f
 **  Le [type Variant](/fr/reference/data-types/variant) accepte implicitement `null` comme valeur de field. Ainsi, par exemple, l’Avro `union(T1, T2, null)` sera converti en `Variant(T1, T2)`.
 Par conséquent, lors de la génération d’Avro à partir de ClickHouse, nous devons toujours inclure le type `null` dans l’ensemble des types de l’Avro `union`, car nous ne savons pas, lors de l’inférence du schéma, si une valeur est effectivement `null`.
 
-*** [Types logiques Avro](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+*** [Types logiques Avro](https://avro.apache.org/docs/1.12.0/specification/#logical-types)
 
 Types de données logiques Avro non pris en charge :
 

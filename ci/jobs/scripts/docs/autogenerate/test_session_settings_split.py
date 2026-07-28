@@ -121,7 +121,7 @@ def main():
         complex_pages, source_sections=complex_sections
     )
     complex_explorer = mod._settings_explorer_component(
-        complex_pages, complex_anchor_routes, server_family
+        complex_pages, server_family
     )
     assert (
         '"name":"openSSL.client.caConfig",'
@@ -151,6 +151,7 @@ def main():
         expected_paths = {
             dest,
             docs / "snippets/components/SessionSettingsExplorer/SessionSettingsExplorer.jsx",
+            docs / "_site/customizations/settings-legacy-routes/session-settings.js",
             docs / "reference/settings/session-settings/filesystem-cache.mdx",
             docs / "reference/settings/session-settings/filesystem-prefetch.mdx",
             docs / "reference/settings/session-settings/force.mdx",
@@ -194,6 +195,12 @@ def main():
             assert f'<a id="{name}" href="' not in by_path[dest]
         assert "SessionSettingsRedirect" not in by_path[dest]
         assert "SessionSettingsExplorer" in by_path[dest]
+        routes_script = by_path[
+            docs / "_site/customizations/settings-legacy-routes/session-settings.js"]
+        assert (
+            '"filesystem_cache_alpha":'
+            '"/reference/settings/session-settings/filesystem-cache"'
+        ) in routes_script
         explorer = by_path[
             docs / "snippets/components/SessionSettingsExplorer/SessionSettingsExplorer.jsx"]
         assert '"label":"filesystem_*"' not in explorer
@@ -203,6 +210,26 @@ def main():
         assert '"label":"page_cache_*"' in explorer
         assert '"label":"page_*"' not in explorer
         assert 'aria-expanded={isOpen}' in explorer
+        assert "const [allGroupKeys] = useState" in explorer
+        assert "return shouldCollapse ? new Set() : new Set(allGroupKeys);" in explorer
+        assert 'aria-pressed={allGroupsExpanded}' in explorer
+        assert 'aria-label={allGroupsExpanded ? "Collapse all" : "Expand all"}' in explorer
+        assert '<span>{allGroupsExpanded ? "Collapse all" : "Expand all"}</span>' in explorer
+        assert '<path d="m6 9 6 6 6-6" />' in explorer
+        assert '<path d="m9 18 6-6-6-6" />' in explorer
+        assert 'className="flex min-w-full items-center justify-between gap-4"' in explorer
+        assert 'className="relative w-full"' in explorer
+        assert "border-gray-500 bg-gray-50" in explorer
+        assert "placeholder:text-gray-600" in explorer
+        assert "focus:border-gray-600" in explorer
+        assert "dark:border-white/30 dark:bg-white/5" in explorer
+        assert "dark:placeholder:text-gray-400" in explorer
+        assert "dark:focus:border-[#fdff75]" in explorer
+        assert "focus:ring-" not in explorer
+        assert '<circle cx="11" cy="11" r="8" />' in explorer
+        assert '<path d="m21 21-4.3-4.3" />' in explorer
+        assert 'style={{ top: "50%", transform: "translateY(-50%)" }}' in explorer
+        assert "py-2 pl-9 pr-3" in explorer
         assert '<details' not in explorer
         assert '<summary' not in explorer
         assert explorer.startswith("const SessionSettingsExplorer = () => {")
@@ -211,17 +238,16 @@ def main():
         assert explorer.index(
             "  const [entries] = useState(() => ("
         ) > component_start
-        assert explorer.index(
-            "  const [anchorRoutes] = useState(() => ("
-        ) > component_start
         assert "const entries = " not in explorer
         assert "const anchorRoutes = " not in explorer
         assert "<ExplorerGroup" not in explorer
         assert "<Branch" not in explorer
-        assert "const [anchorRoutes] = useState(() => (" in explorer
-        assert 'canonicalAnchor(decodedHash.split("-", 1)[0])' in explorer
-        assert "window.location.replace(" in explorer
-        assert '"openssl":"/reference/settings/session-settings/filesystem-cache"' in explorer
+        assert "window.location" not in explorer
+        assert "resolveLegacyRedirect" not in explorer
+        assert (
+            '"openssl":'
+            '"/reference/settings/session-settings/filesystem-cache"'
+        ) in routes_script
         assert (
             '"href":"/reference/settings/session-settings/filesystem-cache#filesystem_cache_alpha"'
             in explorer)
@@ -420,6 +446,17 @@ def main():
             assert f"<{family['component_name']} />" in root
             assert f"## {family['browse_title']}" in root
             assert "## filesystem_cache_alpha" not in root
+            routes_script_path = (
+                docs / "_site/customizations/settings-legacy-routes"
+                / f"{family_name}.js"
+            )
+            routes_script = by_path[routes_script_path]
+            assert "window.clickhouseSettingsLegacyRoutes" in routes_script
+            assert family["base_route"] in routes_script
+            assert (
+                '"filesystem_cache_alpha":'
+                f'"{family["base_route"]}/filesystem-cache"'
+            ) in routes_script
             if family_name == "server-settings":
                 assert '<a id="server-settings"></a>' in root
                 assert "# Server Settings" not in root
@@ -436,9 +473,7 @@ def main():
             assert explorer.index(
                 "  const [entries] = useState(() => ("
             ) > component_start
-            assert explorer.index(
-                "  const [anchorRoutes] = useState(() => ("
-            ) > component_start
+            assert "window.location" not in explorer
             assert "w-full overflow-x-auto" in explorer
             assert "dark:border-white/10 dark:bg-transparent" in explorer
             assert "overflow-auto" not in explorer
@@ -459,7 +494,6 @@ def main():
             assert "const filteredEntries = isSearching" in explorer
             assert "const isOpen = isSearching || expandedGroups.has(key)" in explorer
             assert "No matching settings" in explorer
-            assert f'const marker = "{family["base_route"]}";' in explorer
             assert (
                 f'"href":"{family["base_route"]}/filesystem-cache'
                 '#filesystem_cache_alpha"'

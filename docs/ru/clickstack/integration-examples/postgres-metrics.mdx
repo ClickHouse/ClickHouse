@@ -35,9 +35,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 * Пользователь PostgreSQL для мониторинга с соответствующими разрешениями
 
 <Steps>
-  <Step>
-    #### Убедитесь, что у пользователя мониторинга есть необходимые разрешения
-
+  <Step title="Убедитесь, что у пользователя мониторинга есть необходимые разрешения" id="monitoring-permissions">
     Для приёмника PostgreSQL требуется пользователь с доступом на чтение к представлениям статистики. Назначьте роль `pg_monitor` пользователю мониторинга:
 
     ```sql
@@ -45,9 +43,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### Создайте пользовательскую конфигурацию OTel collector
-
+  <Step title="Создайте пользовательскую конфигурацию OTel collector" id="create-custom-config">
     ClickStack позволяет расширить базовую конфигурацию OpenTelemetry Collector, смонтировав пользовательский конфигурационный файл и задав переменную окружения.
 
     Создайте `postgres-metrics.yaml`:
@@ -93,9 +89,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### Разверните ClickStack с пользовательской конфигурацией
-
+  <Step title="Разверните ClickStack с пользовательской конфигурацией" id="deploy-clickstack">
     Смонтируйте пользовательскую конфигурацию:
 
     ```bash
@@ -111,13 +105,11 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### Проверьте сбор метрик
-
+  <Step title="Проверьте сбор метрик" id="verify-metrics">
     После настройки войдите в HyperDX и убедитесь, что метрики поступают:
 
     1. Перейдите в Metrics explorer
-    2. Найдите метрики, начинающиеся с `postgresql` (например, `postgresql.backends`, `postgresql.commits`)
+    2. Найдите метрики, начинающиеся с postgresql. (например, postgresql.backends, postgresql.commits)
     3. Вы должны увидеть точки данных метрик, появляющиеся с настроенным интервалом сбора
 
     Когда метрики начнут поступать, перейдите к разделу [Панели мониторинга и визуализация](#dashboards), чтобы импортировать преднастроенный дашборд.
@@ -137,9 +129,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <Steps>
-  <Step>
-    #### Скачайте пример датасета метрик
-
+  <Step title="Скачайте пример датасета метрик" id="download-sample">
     Скачайте заранее сгенерированные файлы метрик (24 часа метрик PostgreSQL с реалистичными паттернами):
 
     ```bash
@@ -158,9 +148,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     * **Случаи взаимной блокировки (14:15, 16:30)** - Редкие взаимные блокировки
   </Step>
 
-  <Step>
-    #### Запустите ClickStack
-
+  <Step title="Запустите ClickStack" id="start-clickstack">
     Запустите экземпляр ClickStack:
 
     ```bash
@@ -172,9 +160,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     Подождите примерно 30 секунд, пока ClickStack полностью запустится.
   </Step>
 
-  <Step>
-    #### Загрузите метрики в ClickStack
-
+  <Step title="Загрузите метрики в ClickStack" id="load-metrics">
     Загрузите метрики напрямую в ClickHouse:
 
     ```bash
@@ -188,9 +174,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### Проверьте метрики в HyperDX
-
+  <Step title="Проверьте метрики в HyperDX" id="verify-metrics-demo">
     После загрузки самый быстрый способ увидеть метрики — открыть преднастроенный дашборд.
 
     Перейдите к разделу [Панели мониторинга и визуализации](#dashboards), чтобы импортировать панель мониторинга и сразу просматривать множество метрик PostgreSQL.
@@ -210,13 +194,11 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Чтобы упростить начало мониторинга PostgreSQL в ClickStack, мы предоставляем основные визуализации для метрик PostgreSQL.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-metrics-dashboard.json'} download="postgres-metrics-dashboard.json" eventName="docs.postgres_metrics_monitoring.dashboard_download">Скачать</TrackedLink> конфигурацию панели мониторинга
+  <Step title="Скачать конфигурацию панели мониторинга" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-metrics-dashboard.json'} download="postgres-metrics-dashboard.json" eventName="docs.postgres_metrics_monitoring.dashboard_download">Скачать файл конфигурации панели мониторинга</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Импортируйте преднастроенную панель мониторинга
-
+  <Step title="Импортируйте преднастроенный дашборд" id="import-dashboard">
     1. Откройте HyperDX и перейдите в раздел Dashboards
     2. Нажмите **Import Dashboard** в правом верхнем углу в меню с многоточием
 
@@ -227,9 +209,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/postgres/import-dashboard.webp" alt="Диалог завершения импорта" />
   </Step>
 
-  <Step>
-    #### Просмотрите панель мониторинга
-
+  <Step title="Просмотрите панель мониторинга" id="created-dashboard">
     Панель мониторинга будет создана со всеми преднастроенными визуализациями:
 
     <Image img="/images/clickstack/postgres/postgres-metrics-dashboard.webp" alt="Панель мониторинга метрик PostgreSQL" />
@@ -301,7 +281,7 @@ psql -h postgres-host -U otel_monitor -d postgres -c "SELECT version();"
 * Отслеживайте несколько экземпляров PostgreSQL, дублируя конфигурацию приёмника с разными конечными точками и именами сервисов
 
 <div id="going-to-production">
-  ## Переход к промышленной эксплуатации
+  ## Переход в продакшн
 </div>
 
-В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для промышленного развертывания мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. См. [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry) для конфигурации промышленного развертывания.
+В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для развертываний в продакшне мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. См. [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry) для настройки продакшн-конфигурации.

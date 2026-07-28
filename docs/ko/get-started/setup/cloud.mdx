@@ -13,60 +13,56 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 > 서비스를 만드는 것입니다. 이 빠른 시작 가이드에서는 3단계만으로 설정을 완료합니다.
 
 <Steps>
-  <Step>
-    ## ClickHouse 서비스 생성
+  <Step title="ClickHouse 서비스 만들기" id="1-create-a-clickhouse-service">
+    [ClickHouse Cloud](https://console.clickhouse.cloud)에서 무료 ClickHouse 서비스를 만들려면 다음 단계를 완료해 가입하면 됩니다:
 
-    [ClickHouse Cloud](https://console.clickhouse.cloud)에서 무료 ClickHouse 서비스를 생성하려면 다음 단계에 따라 가입하면 됩니다:
-
-    * [가입 페이지](https://console.clickhouse.cloud/signUp)에서 계정을 생성합니다
+    * [가입 페이지](https://console.clickhouse.cloud/signUp)에서 계정을 만드십시오
     * 이메일 또는 Google SSO, Microsoft SSO, AWS Marketplace, Google Cloud, Microsoft Azure를 통해 가입할 수 있습니다
     * 이메일과 비밀번호로 가입하는 경우, 이메일로 받은 링크를 통해 24시간 이내에 이메일 주소를 인증해야 합니다
-    * 방금 생성한 사용자 이름과 비밀번호로 로그인합니다
+    * 방금 만든 사용자 이름과 비밀번호로 로그인하십시오
 
     <Image img="/images/_snippets/signup_page.webp" size="md" alt="요금제 선택" border />
 
     <br />
 
-    로그인하면 ClickHouse Cloud에서 새 ClickHouse 서비스 생성을 안내하는 온보딩 마법사가 시작됩니다. 서비스를 배포할 리전(Region)을 선택하고 새 서비스의 이름을 지정합니다:
+    로그인하면 ClickHouse Cloud가 새 ClickHouse 서비스 생성을 안내하는 온보딩 마법사를 시작합니다. 서비스를 배포할 리전을 선택하고 새 서비스의 이름을 지정하십시오:
 
     <Image img="/images/_snippets/createservice1.webp" size="md" alt="새 ClickHouse 서비스" border />
 
     <br />
 
-    기본적으로 새 조직은 Scale tier에 배치되며, 각각 4 VCPU와 16 GiB RAM을 갖는 3개의 레플리카가 생성됩니다. [수직 자동 스케일링(Vertical autoscaling)](/ko/products/cloud/features/autoscaling/vertical)은 Scale tier에서 기본적으로 활성화됩니다. 조직 티어는 나중에 &#39;Plans&#39; 페이지에서 변경할 수 있습니다.
+    기본적으로 새 조직은 Scale tier로 설정되며, 각각 4 VCPU와 16 GiB RAM을 갖춘 3개의 레플리카가 생성됩니다. [수직 자동 스케일링](/ko/products/cloud/features/autoscaling/vertical)은 Scale tier에서 기본적으로 활성화됩니다. 나중에 &#39;Plans&#39; 페이지에서 조직 티어를 변경할 수 있습니다.
 
-    필요한 경우 레플리카가 스케일링할 최소 크기와 최대 크기를 지정하여 서비스 리소스를 사용자 지정합니다. 준비가 되면 `Create service`를 선택합니다.
+    필요한 경우 레플리카가 스케일링할 최소 크기와 최대 크기를 지정해 서비스 리소스를 사용자 지정하십시오. 준비가 되면 `Create service`를 선택하십시오.
 
     <Image img="/images/_snippets/scaling_limits.webp" size="md" alt="스케일링 한도" border />
 
     <br />
 
-    축하합니다! ClickHouse Cloud 서비스가 실행 중이며 온보딩이 완료되었습니다. 데이터를 수집하고 쿼리하는 방법에 대한 자세한 내용은 계속 읽어보십시오.
+    축하합니다! ClickHouse Cloud 서비스가 정상적으로 실행 중이며 온보딩이 완료되었습니다. 이제 데이터를 수집하고 쿼리하는 방법을 계속해서 살펴보십시오.
   </Step>
 
-  <Step>
-    ## ClickHouse에 연결하기
-
+  <Step title="ClickHouse에 연결하기" id="2-connect-to-clickhouse">
     ClickHouse에 연결하는 방법은 2가지입니다:
 
-    * 웹 기반 SQL 콘솔을 사용해 연결
+    * 웹 기반 SQL 콘솔을 사용하여 연결
     * 애플리케이션에서 연결
 
     <br />
 
-    ### SQL 콘솔을 사용해 연결
+    ### SQL 콘솔을 사용하여 연결하기
 
-    빠르게 시작할 수 있도록, ClickHouse는 온보딩을 완료하면 자동으로 이동되는 웹 기반 SQL 콘솔을 제공합니다.
+    빠르게 시작하려면 ClickHouse에서 제공하는 웹 기반 SQL 콘솔을 사용할 수 있습니다. 온보딩을 완료하면 이 콘솔로 리디렉션됩니다.
 
     <Image img="/images/_snippets/createservice8.webp" size="md" alt="SQL 콘솔" border />
 
-    쿼리 탭을 생성한 다음 간단한 쿼리를 입력하여 연결이 정상적으로 작동하는지 확인하십시오:
+    쿼리 탭을 생성한 다음, 간단한 쿼리를 입력하여 연결이 정상적으로 작동하는지 확인하십시오:
 
     ```sql
     SHOW databases
     ```
 
-    목록에 4개의 데이터베이스와, 추가한 데이터베이스가 있다면 함께 표시되어야 합니다.
+    목록에 4개의 데이터베이스와 추가한 데이터베이스가 표시됩니다.
 
     <Image img="/images/_snippets/show_databases.webp" size="md" alt="SQL 콘솔" border />
 
@@ -76,19 +72,17 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     ### 앱과 연결
 
-    탐색 메뉴에서 Connect 버튼을 누르세요. 모달이 열리며 서비스의 자격 증명과 인터페이스 또는 언어 클라이언트로 연결하는 방법이 안내됩니다.
+    탐색 메뉴에서 Connect 버튼을 누르십시오. 서비스 자격 증명과 인터페이스 또는 언어 클라이언트를 연결하는 방법이 포함된 안내를 제공하는 모달이 열립니다.
 
-    <Image img="/images/_snippets/service_connect.webp" size="md" alt="서비스 연결" border />
+    <Image img="/images/_snippets/service_connect.webp" size="md" alt="Service Connect" border />
 
     <br />
 
-    언어 클라이언트가 보이지 않으면 [Integrations](/ko/integrations/home) 목록을 확인하세요.
+    사용하는 언어 클라이언트가 보이지 않으면 [Integrations](/ko/integrations/home) 목록을 확인해 보십시오.
   </Step>
 
-  <Step>
-    ## 데이터 추가
-
-    ClickHouse는 데이터가 있어야 제 역할을 합니다! 데이터를 추가하는 방법은 여러 가지가 있으며, 대부분은 탐색 메뉴에서 접근할 수 있는 데이터 소스(Data Sources) 페이지에서 확인하실 수 있습니다.
+  <Step title="데이터 추가" id="3-add-data">
+    ClickHouse는 데이터가 있어야 진가를 발휘합니다! 데이터를 추가하는 방법은 여러 가지가 있으며, 대부분은 탐색 메뉴에서 접근할 수 있는 데이터 소스(Data Sources) 페이지에서 확인하실 수 있습니다.
 
     <Image img="/images/_snippets/data_sources.webp" size="md" alt="데이터 소스" border />
 
@@ -96,15 +90,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     다음 방법으로 데이터를 업로드할 수 있습니다.
 
-    * ClickPipe를 설정하여 S3, Postgres, Kafka, GCS와 같은 데이터 소스의 데이터 수집을 시작하세요
-    * SQL 콘솔 사용하기
+    * ClickPipe를 설정하여 S3, Postgres, Kafka, GCS와 같은 데이터 소스에서 데이터 수집 시작
+    * SQL 콘솔 사용
     * ClickHouse client 사용
-    * 파일 업로드  - 지원 포맷은 JSON, CSV 및 TSV입니다
-    * 파일 URL을 통해 데이터 업로드
+    * 파일 업로드  - 지원 포맷에는 JSON, CSV, TSV가 포함됩니다
+    * 파일 URL에서 데이터 업로드
 
     ### ClickPipes
 
-    [ClickPipes](http://clickhouse.com/docs/integrations/clickpipes)는 다양한 소스에서 데이터를 수집하는 작업을 몇 번의 클릭만으로 간편하게 처리할 수 있는 관리형 통합 플랫폼입니다. 가장 까다로운 워크로드를 위해 설계된 ClickPipes의 견고하고 확장 가능한 아키텍처는 일관된 성능과 안정성을 보장합니다. ClickPipes는 장기적인 스트리밍 용도는 물론 일회성 데이터 로딩 작업에도 활용할 수 있습니다.
+    [ClickPipes](http://clickhouse.com/docs/integrations/clickpipes)는 다양한 소스에서 데이터를 수집하는 작업을 몇 번의 클릭만으로 간편하게 처리할 수 있는 관리형 통합 플랫폼입니다. 가장 까다로운 워크로드를 위해 설계된 ClickPipes의 견고하고 확장 가능한 아키텍처는 일관된 성능과 안정성을 보장합니다. ClickPipes는 장기적인 스트리밍 용도뿐만 아니라 일회성 데이터 로딩 작업에도 활용할 수 있습니다.
 
     <Image img="/images/_snippets/select_data_source.webp" size="md" alt="데이터 소스 선택" border />
 
@@ -112,13 +106,13 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     ### SQL 콘솔을 사용하여 데이터 추가
 
-    대부분의 데이터베이스 관리 시스템과 마찬가지로, ClickHouse는 테이블을 **데이터베이스**로 논리적으로 그룹화합니다. ClickHouse에서 새 데이터베이스를 생성하려면 [`CREATE DATABASE`](/ko/reference/statements/create/database) 명령을 사용하세요:
+    대부분의 데이터베이스 관리 시스템과 마찬가지로, ClickHouse는 테이블을 **데이터베이스** 단위로 논리적으로 구성합니다. ClickHouse에서 새 데이터베이스를 생성하려면 [`CREATE DATABASE`](/ko/reference/statements/create/database) 명령을 사용하세요:
 
     ```sql
     CREATE DATABASE IF NOT EXISTS helloworld
     ```
 
-    `helloworld` 데이터베이스에 `my_first_table`이라는 이름의 테이블을 생성하려면 다음 명령을 실행하십시오:
+    다음 명령을 실행하여 `helloworld` 데이터베이스에 `my_first_table`이라는 테이블을 생성하십시오:
 
     ```sql
     CREATE TABLE helloworld.my_first_table
@@ -134,55 +128,54 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     위의 예시에서 `my_first_table`은 네 개의 컬럼을 가진 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블입니다:
 
-    * `user_id`:  32비트 부호 없는 정수 ([UInt32](/ko/reference/data-types/int-uint))
+    * `user_id`:  32비트 부호 없는 정수([UInt32](/ko/reference/data-types/int-uint))
     * `message`: [String](/ko/reference/data-types/string) 데이터 타입으로, 다른 데이터베이스 시스템에서 사용하는 `VARCHAR`, `BLOB`, `CLOB` 등의 타입을 대체합니다
-    * `timestamp`: 시간상 특정 시점을 나타내는 [DateTime](/ko/reference/data-types/datetime) 값입니다
-    * `metric`: 32비트 부동 소수점 수([Float32](/ko/reference/data-types/float))
+    * `timestamp`: 특정 시점을 나타내는 [DateTime](/ko/reference/data-types/datetime) 값
+    * `metric`: 32비트 부동소수점 수([Float32](/ko/reference/data-types/float))
 
     <Info>
       **테이블 엔진**
 
       테이블 엔진은 다음 사항을 결정합니다:
 
-      * 데이터의 저장 방식과 위치
+      * 데이터가 저장되는 방식과 위치
       * 지원되는 쿼리
       * 데이터 복제 여부
 
       <br />
 
-      선택할 수 있는 테이블 엔진은 많지만, 단일 노드 ClickHouse 서버의 단순한 테이블에는 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree)를 사용하는 경우가 일반적입니다.
+      선택할 수 있는 테이블 엔진은 많지만, 단일 노드 ClickHouse 서버에서 사용하는 단순한 테이블에는 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree)가 가장 적합한 선택일 가능성이 높습니다.
     </Info>
 
-    #### 프라이머리 키(Primary Key) 간략 소개
+    #### Primary Key 간략 소개
 
     계속 진행하기 전에, ClickHouse에서 기본 키(primary key)가 어떻게 동작하는지 이해하는 것이 중요합니다(기본 키의 구현 방식이 예상과 다를 수 있습니다!):
 
-    * ClickHouse에서 기본 키(primary key)는 테이블의 각 행에 대해 ***고유하지 않습니다***
+    * ClickHouse의 기본 키(primary keys)는 테이블의 각 행별로 ***고유하지 않습니다***
 
-    ClickHouse 테이블의 프라이머리 키는 데이터가 디스크에 기록될 때의 정렬 방식을 결정합니다. 8,192개의 행 또는 10MB의 데이터마다(**인덱스 세분화 수준**이라고 함) 프라이머리 키 인덱스 파일에 항목이 하나 생성됩니다. 이 세분화 수준 개념을 통해 메모리에 쉽게 적재할 수 있는 **희소 인덱스**가 만들어지며, 그래뉼은 `SELECT` 쿼리 처리 시 읽히는 최소 단위의 컬럼 데이터 묶음을 나타냅니다.
+    ClickHouse 테이블의 프라이머리 키는 데이터가 디스크에 기록될 때 정렬되는 방식을 결정합니다. 8,192개의 행 또는 10MB의 데이터마다(**인덱스 세분화 수준**이라고 함) 프라이머리 키 인덱스 파일에 항목이 생성됩니다. 이 세분화 수준 개념은 메모리에 쉽게 올릴 수 있는 **희소 인덱스**를 생성하며, 그래뉼은 `SELECT` 쿼리 실행 시 처리되는 최소 단위 컬럼 데이터의 스트라이프를 나타냅니다.
 
-    기본 키(primary key)는 `PRIMARY KEY` 매개변수를 사용하여 정의할 수 있습니다. `PRIMARY KEY`를 지정하지 않고 테이블을 정의하면, `ORDER BY` 절에 지정된 Tuple이 키로 사용됩니다. `PRIMARY KEY`와 `ORDER BY`를 모두 지정하는 경우, 기본 키는 정렬 순서의 부분 집합이어야 합니다.
+    프라이머리 키는 `PRIMARY KEY` 매개변수를 사용하여 정의할 수 있습니다. `PRIMARY KEY`를 지정하지 않고 테이블을 정의하면, 키는 `ORDER BY` 절에 지정된 Tuple이 됩니다. `PRIMARY KEY`와 `ORDER BY`를 모두 지정하는 경우, 프라이머리 키는 정렬 순서의 부분 집합이어야 합니다.
 
-    프라이머리 키(primary key)는 정렬 키(sorting key)이기도 하며 `(user_id, timestamp)` 튜플입니다. 따라서 각
-    컬럼 파일에 저장된 데이터는 `user_id` 먼저, 그 다음 `timestamp` 순으로 정렬됩니다.
+    프라이머리 키는 정렬 키이기도 하며, `(user_id, timestamp)`의 튜플로 구성됩니다. 따라서 각 컬럼 파일에 저장된 데이터는 `user_id` 기준으로 먼저 정렬되고, 이후 `timestamp` 기준으로 정렬됩니다.
 
-    ClickHouse의 핵심 개념을 더 자세히 알아보려면 [&quot;핵심 개념&quot;](/ko/concepts/core-concepts/index)을 참조하십시오.
+    ClickHouse의 핵심 개념에 대한 심층 분석은 [&quot;핵심 개념&quot;](/ko/concepts/core-concepts/index)을 참조하십시오.
 
-    #### 테이블에 데이터 삽입하기
+    #### 테이블에 데이터 삽입
 
     ClickHouse에서 익숙한 [`INSERT INTO TABLE`](/ko/reference/statements/insert-into) 명령을 사용할 수 있지만, [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블에 데이터를 삽입할 때마다 스토리지에 **파트(part)**가 생성된다는 점을 반드시 이해해야 합니다.
 
     <Tip>
       **ClickHouse 모범 사례**
 
-      배치당 가능한 한 많은 행을 삽입하십시오. 한 번에 수만 개, 심지어 수백만 개의
-      행도 괜찮습니다. 걱정하지 마십시오. ClickHouse는 그 정도 규모는 쉽게 처리할 수 있으며, 서비스로 전송되는 쓰기 요청 수를 줄여
-      [비용을 절감할 수 있습니다](/ko/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous).
+      배치당 많은 수의 행을 삽입하십시오. 한 번에 수만 개에서 수백만 개의
+      행을 삽입해도 됩니다. 걱정하지 마십시오. ClickHouse는 그 정도 규모도 쉽게 처리할 수 있으며,
+      서비스로 전송되는 쓰기 요청 수를 줄여 [비용을 절감](/ko/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous)할 수 있습니다.
     </Tip>
 
     <br />
 
-    간단한 예시이지만, 한 번에 두 개 이상의 행을 삽입해 보겠습니다:
+    간단한 예시에서도 한 번에 여러 행을 삽입해 보겠습니다:
 
     ```sql
     INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) VALUES
@@ -193,7 +186,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     ```
 
     <Note>
-      `timestamp` 컬럼은 다양한 [**Date**](/ko/reference/data-types/date) 및 [**DateTime**](/ko/reference/data-types/datetime) 함수를 사용해 채워집니다. ClickHouse에는 유용한 함수가 수백 개 있으며, [**Functions** 섹션](/ko/reference/functions/index)에서 확인할 수 있습니다.
+      `timestamp` 컬럼은 다양한 [**Date**](/ko/reference/data-types/date) 및 [**DateTime**](/ko/reference/data-types/datetime) 함수를 사용해 채워집니다. ClickHouse에는 유용한 함수가 수백 개 있으며, [**Functions** 섹션에서 확인할 수 있습니다](/ko/reference/functions/index).
     </Note>
 
     제대로 작동했는지 확인해 보겠습니다:
@@ -204,15 +197,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     ### ClickHouse Client를 사용하여 데이터 추가
 
-    [**clickhouse client**](/ko/concepts/features/interfaces/cli)라는 커맨드라인 도구를 사용하여 ClickHouse Cloud 서비스에 연결할 수도 있습니다. 왼쪽 메뉴에서 `Connect`를 클릭하면 연결 정보를 확인할 수 있습니다. 대화 상자의 드롭다운에서 `Native`를 선택하십시오:
+    [**clickhouse client**](/ko/concepts/features/interfaces/cli)라는 명령줄 도구를 사용하여 ClickHouse Cloud 서비스에 연결할 수도 있습니다. 왼쪽 메뉴에서 `Connect`를 클릭하면 세부 정보를 확인할 수 있습니다. 대화 상자의 드롭다운에서 `Native`를 선택하십시오.
 
-    <Image img="/images/_snippets/client_details.webp" size="md" alt="clickhouse client 접속 정보" border />
+    <Image img="/images/_snippets/client_details.webp" size="md" alt="clickhouse client 연결 정보" border />
 
     <br />
 
-    1. [ClickHouse](/ko/concepts/features/interfaces/cli)를 설치하세요.
+    1. [ClickHouse](/ko/concepts/features/interfaces/cli)를 설치합니다.
 
-    2. 다음 명령을 실행하되, 호스트명, 사용자 이름, 비밀번호는 해당 값으로 바꾸십시오:
+    2. 호스트명, 사용자 이름, 비밀번호를 각각 바꿔 넣어 명령을 실행하십시오:
 
     ```bash
     ./clickhouse client --host HOSTNAME.REGION.CSP.clickhouse.cloud \
@@ -250,7 +243,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     4 rows in set. Elapsed: 0.008 sec.
     ```
 
-    4. [`FORMAT`](/ko/reference/statements/select/format) 절을 추가하여 [ClickHouse에서 지원되는 다양한 출력 형식](/ko/reference/formats/index) 중 하나를 지정합니다:
+    4. [ClickHouse에서 지원하는 다양한 출력 형식](/ko/reference/formats/index) 중 하나를 지정하려면 [`FORMAT`](/ko/reference/statements/select/format) 절을 추가하세요:
 
     <br />
 
@@ -274,7 +267,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     4 rows in set. Elapsed: 0.005 sec.
     ```
 
-    5. `clickhouse client`를 종료하려면 **exit** 명령어를 입력하세요:
+    5. `clickhouse client`를 종료하려면 **exit** 명령을 입력하세요:
 
     <br />
 
@@ -284,7 +277,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     ### 파일 업로드
 
-    데이터베이스를 처음 시작할 때 흔히 수행하는 작업 중 하나는 파일에 있는 데이터를 삽입하는 것입니다. 온라인에서 삽입해 볼 수 있는 샘플 데이터를 제공하고 있으며, 이 데이터는 클릭스트림 데이터로 사용자 ID, 방문한 URL, 이벤트의 타임스탬프를 포함합니다.
+    데이터베이스를 처음 시작할 때 흔히 수행하는 작업 중 하나는 파일에 있는 기존 데이터를 삽입하는 것입니다. 온라인에서 제공되는 샘플 데이터를 삽입해 볼 수 있으며, 이 데이터는 클릭스트림 데이터로 사용자 ID, 방문한 URL, 이벤트 타임스탬프를 포함합니다.
 
     `data.csv`라는 이름의 CSV 파일에 다음과 같은 텍스트가 있다고 가정합니다:
 
@@ -294,7 +287,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     103,Use FORMAT to specify the format,2022-02-21 10:43:30,678.90
     ```
 
-    1. 다음 명령은 데이터를 `my_first_table` 테이블에 삽입합니다:
+    1. 다음 명령은 `my_first_table`에 데이터를 삽입합니다:
 
     <br />
 
@@ -306,11 +299,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     --query='INSERT INTO helloworld.my_first_table FORMAT CSV' < data.csv
     ```
 
-    2. 이제 SQL 콘솔에서 쿼리해 보면 테이블에 새 행이 나타나는 것을 확인할 수 있습니다:
+    2. SQL 콘솔에서 쿨리하면 이제 테이블에 새 행이 표시되는 것을 확인할 수 있습니다:
 
     <br />
 
-    <Image img="/images/_snippets/new_rows_from_csv.webp" size="md" alt="CSV 파일에서 가져온 새 행" />
+    <Image img="/images/_snippets/new_rows_from_csv.webp" size="md" alt="CSV 파일의 새로운 행" />
 
     <br />
   </Step>
@@ -324,12 +317,12 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 </Tip>
 
 <div id="whats-next">
-  ## 다음 단계는?
+  ## 다음 단계
 </div>
 
-* [Tutorial](/ko/get-started/quickstarts/tutorial)에서는 테이블에 200만 개의 행을 삽입하고 몇 가지 분석 쿼리를 작성해 봅니다
-* 삽입 방법 안내와 함께 [예시 데이터셋](/ko/get-started/sample-datasets/index) 목록도 제공합니다
+* [튜토리얼](/get-started/quickstarts/tutorial)에서는 테이블에 200만 개의 행을 삽입하고 몇 가지 분석 쿼리를 작성해 봅니다
+* [예시 데이터셋](/ko/get-started/sample-datasets/index) 목록과 이를 삽입하는 방법을 안내합니다
 * [ClickHouse 시작하기](https://clickhouse.com/company/events/getting-started-with-clickhouse/)에 대한 12분 분량의 동영상을 확인해 보십시오
-* 데이터가 외부 소스에서 들어오는 경우, 메시지 큐, 데이터베이스, 파이프라인 등에 연결하는 방법을 설명한 [통합 가이드 모음](/ko/integrations/home)을 확인해 보십시오
-* UI/BI 시각화 도구를 사용하는 경우, [UI를 ClickHouse에 연결하는 사용자 가이드](/ko/integrations/connectors/data-visualization/index)를 확인해 보십시오
-* [프라이머리 키](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes) 사용자 가이드에서 프라이머리 키와 이를 정의하는 방법을 자세히 알아볼 수 있습니다
+* 데이터가 외부 소스에서 들어오는 경우, 메시지 큐, 데이터베이스, 파이프라인 등에 연결하는 방법을 안내하는 [통합 가이드 모음](/ko/integrations/home)을 참조하십시오
+* UI/BI 시각화 도구를 사용하는 경우, [UI를 ClickHouse에 연결하는 사용자 가이드](/ko/integrations/connectors/data-visualization/index)를 참조하십시오
+* [프라이머리 키(primary key)](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes) 사용자 가이드에서는 프라이머리 키에 대해 알아야 할 내용과 이를 정의하는 방법을 모두 다룹니다

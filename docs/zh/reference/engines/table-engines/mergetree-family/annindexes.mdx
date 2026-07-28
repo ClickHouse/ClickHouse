@@ -368,13 +368,15 @@ ClickHouse 将从每个分片中的向量索引拉取 3.0 x 10 = 30 个最近邻
 
 ClickHouse 中的跳过索引通常在粒度级别进行过滤。也就是说， (在内部) 查询一次跳过索引会返回一个可能匹配的粒度列表，从而减少后续扫描中需要读取的数据量。
 这对一般的跳过索引来说效果很好，但对于向量相似度索引，则会造成“粒度不匹配”。
-更具体地说，向量相似度索引会针对给定的参考向量找出最相似的 N 个向量的行号，但随后还需要将这些行号推算为粒度编号。
-然后 ClickHouse 会从磁盘加载这些粒度，并对这些粒度中的所有向量再次执行距离计算。
-这一步称为重评分。虽然它理论上可以提高准确性——别忘了，向量相似度索引返回的只是*近似*结果——但显然不是性能最优的做法。
+更具体地说，向量相似度索引会针对给定的参考向量找出最相似的 N 个向量的行号。
+在设置 `vector_search_with_rescoring = 1` 时，ClickHouse 会读取候选行中原始的全精度向量，并在常规 SQL 管道中计算最终距离。
+当查询计划允许时，ClickHouse 会在最终距离计算之前，将扫描结果过滤为向量索引返回的候选行。
+这一步称为重评分，它可以提高准确性，尤其是在量化向量索引中，因为最终排名使用的是存储的向量，而不是索引距离。
+如果附加过滤器移除了过多候选项，或者需要更高的召回率，请增大设置 `vector_search_index_fetch_multiplier`，以便向量索引返回更多候选行用于重评分。
 
 因此，ClickHouse 提供了一种优化，可禁用重评分，并直接从索引返回最相似的向量及其距离。
 该优化默认启用，参见设置 [vector&#95;search&#95;with&#95;rescoring](/zh/reference/settings/session-settings#vector_search_with_rescoring)。
-其大致工作方式是，ClickHouse 将最相似的向量及其距离通过虚拟列 `_distances` 提供出来。
+其大致工作方式是，ClickHouse 将最相似的向量及其距离通过虚拟列 `_distance` 提供出来。
 要查看这一点，请使用 `EXPLAIN header = 1` 运行向量搜索查询：
 
 ```sql
@@ -593,15 +595,16 @@ WHERE type = 'vector_similarity';
 这里所说的“局部”是指，子索引只了解其所属索引块中的行。
 沿用前面的示例，假设某一列有 65536 行，那么会得到四个索引块 (跨越八个粒度) ，并为每个索引块创建一个向量相似度子索引。
 从理论上讲，一个子索引可以直接返回其索引块内距离最近的 N 个点对应的行。
-但由于 ClickHouse 是按粒度将数据从磁盘加载到内存中的，因此子索引会将匹配行映射到粒度级别。
-这不同于常规跳过索引，后者是在索引块级别跳过数据的。
+对于设置了 `vector_search_with_rescoring = 1` 的查询，如果查询计划允许这种优化，ClickHouse 就可以在基于存储向量计算最终距离之前，先利用这些行位置过滤行。
+如果不使用重评分，ClickHouse 会通过虚拟列 `_distance` 直接使用向量索引中的距离。
+这两种模式仍都会使用周围的粒度范围来调度读取，这不同于常规跳过索引，后者是在索引块级别跳过数据的。
 
 `GRANULARITY` 参数决定会创建多少个向量相似度子索引。
 `GRANULARITY` 值越大，创建的向量相似度子索引就越少，但每个子索引也越大；极端情况下，一列 (或该列的数据分区片段) 只会有一个子索引。
 在这种情况下，这个子索引对该列的所有行都具有“全局”视角，并且可以直接返回该列 (或数据分区片段) 中包含相关行的所有粒度 (这样的粒度最多不超过 `LIMIT [N]` 个) 。
-接下来，ClickHouse 会加载这些粒度，并通过对其中所有行执行暴力距离计算来找出真正最优的行。
-当 `GRANULARITY` 值较小时，每个子索引最多会返回 `LIMIT N` 个粒度。
-因此，需要加载并进行后过滤的粒度会更多。
+在 `vector_search_with_rescoring = 1` 时，ClickHouse 随后可以读取匹配的行位置，并为这些行计算精确距离。
+当 `GRANULARITY` 值较小时，每个子索引最多可以返回 `LIMIT N` 个候选行。
+因此，可能需要读取并进行后过滤的候选行会更多。
 请注意，这两种情况下的搜索精度同样高，区别只在于处理性能。
 通常建议为向量相似度索引使用较大的 `GRANULARITY`，只有在出现向量相似度结构内存占用过高等问题时，才退回到较小的 `GRANULARITY` 值。
 如果未为向量相似度索引指定 `GRANULARITY`，默认值为 1 亿。
@@ -639,6 +642,109 @@ LIMIT 3;
 * [dbpedia](/zh/get-started/sample-datasets/dbpedia)
 * [hackernews](/zh/get-started/sample-datasets/hacker-news-vector-search)
 
+<div id="vector-search-with-quantized-codecs">
+  ### 使用量化编解码器进行向量搜索
+</div>
+
+<Note>
+  `Quantized` 编解码器属于 Experimental 功能。请使用 `SET allow_experimental_codecs = 1` 启用它。
+  如果你遇到问题，请在 [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues) 中提交 issue。
+</Note>
+
+<div id="quantized-codecs-introduction">
+  #### 引言
+</div>
+
+[向量相似度索引](#vector-similarity-index)通过图遍历来响应最近邻查询，并且在图能够驻留内存时性能非常出色。
+但有两个因素限制了它的适用性：
+
+* **规模。** 构建图所需的时间以及存储图所需的内存——还不包括向量本身——会成为主要成本。
+* **筛选。** 在选择性较强的 `WHERE` 过滤器下，图遍历会变得低效，因为它要么无法到达满足谓词条件的那一小部分行，要么必须检查数量明显偏多的候选项才能找到它们。
+
+穷举扫描不受这两种限制：它不需要任何辅助结构，parts 通过拼接进行合并，而过滤器只会减少需要扫描的行数。
+它唯一的缺点是必须读取的数据量：对于以全精度 `Float32` 存储的向量，扫描的开销主要受存储 I/O 限制，因为必须从磁盘 (或对象存储) 读取整个向量列——而对于稠密嵌入列，这通常是表中最大的列，并且压缩效果较差。
+
+`Quantized` 列编解码器正是为了解决这个问题。
+每个向量会存储两份：一份是保持不变的原始全精度值，另一份是存放在配套 stream 中的紧凑*量化编码*。
+向量搜索查询会先使用一种低成本、对 SIMD 友好的距离函数扫描这些编码，筛出一份最有希望的候选短名单，然后再基于全精度向量对这份短名单重新排序。
+由于编码的大小只是原始向量的一小部分，短名单扫描从存储中读取的字节数会少得多——并且只会为少数入围候选访问全精度列——同时最终排序仍能保持准确性。
+
+<div id="quantized-codecs-declaring">
+  #### 声明编解码器
+</div>
+
+将 `Quantized(...)` 编解码器应用于 `Array(Float32)` (或 `Array(Float64)` / `Array(BFloat16)`) 列。
+该编解码器属于实验性功能，因此请先启用 `allow_experimental_codecs`：
+
+```sql
+SET allow_experimental_codecs = 1;
+
+CREATE TABLE vectors
+(
+    id UInt32,
+    vec Array(Float32) CODEC(Quantized('rabitq', 1536))
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+全精度数据仍按常规方式存储；该编解码器只会额外添加配套的码流。
+编解码器在创建表时即已固定，无法通过 `ALTER TABLE` 添加或修改。
+
+<div id="quantized-codecs-methods">
+  #### 量化方法
+</div>
+
+每种方法都对应着大小 / 准确性 / 指标之间权衡的不同取舍点。`dimensions` 参数表示向量长度。
+
+* `Quantized('rabitq', dimensions)` — 每个坐标使用一个符号位，再加上一个无偏余弦校正因子 (`dimensions/8 + 4` 字节) 。体积小、`popcount` 成本低，是一个很强的默认选择。仅支持 `cosineDistance`。
+* `Quantized('turboquant', dimensions)` — 每个坐标使用两位 (1 位 MSE 编码和 1 位残差编码) ，可获得保真度更高的候选结果 (`dimensions/4 + 4` 字节) 。仅支持 `cosineDistance`。
+* `Quantized('int8', dimensions)` — 每个坐标使用一个 `Int8` 编码，再加上向量范数 (`dimensions + 4` 字节) ；体积最大，但也是最忠实的平坦编码。支持 `L2Distance` 和 `cosineDistance`。
+* `Quantized('prefix', dimensions, leading_dimensions, 'int8'|'bf16')` — Matryoshka：只保留前 `leading_dimensions` 个坐标，并存为 `Int8` (带每向量标度) 或 `BFloat16`。适用于使用 Matryoshka Representation Learning 训练的嵌入向量，可生成极小的编码。支持 `L2Distance` 和 `cosineDistance`。
+* `Quantized('product', dimensions, nbits, m)` — Product Quantization：按分片使用通过 k-means 训练得到的码本；每个向量会变成 `m` 个、每个 `nbits` 位的编码 (因此 `dimensions` 必须是 `m` 的倍数) 。这是最紧凑的方案，且单位字节召回率最高，但代价是在 insert 时需要执行训练步骤。支持 `L2Distance` 和 `cosineDistance`。
+
+`rabitq` 和 `turboquant` 要求 `dimensions` 必须是 8 的倍数。
+
+<div id="quantized-codecs-searching">
+  #### 无感搜索
+</div>
+
+无需特殊的查询语法——直接编写与[精确搜索](#exact-nearest-neighbor-search)相同的 top-`k` 查询即可：
+
+```sql
+WITH [/* reference vector of `dimensions` floats */] AS reference_vec
+SELECT id
+FROM vectors
+ORDER BY cosineDistance(vec, reference_vec) ASC
+LIMIT 10
+SETTINGS vector_search_use_quantized_codes = 1;
+```
+
+使用 `vector_search_use_quantized_codes = 1` 时，优化器会自动将查询改写为两阶段执行计划：先扫描量化后的编码以生成候选短名单，然后再用全精度 `vec` 对候选短名单重新评分。
+该 setting 默认关闭，因此如果不启用它，同一查询就会作为普通的精确扫描运行——codec 绝不会改变结果；它只是在你选择启用时提供一条更快的执行路径。
+请使用所选 method 支持的距离函数：所有 method 都支持 `cosineDistance`，此外，`int8`、`prefix` 和 `product` 也支持 `L2Distance`。
+
+<div id="quantized-codecs-settings">
+  #### 设置
+</div>
+
+* `allow_experimental_codecs` — 必须启用后才能声明 `Quantized` 编解码器 (默认值：`0`) 。
+* `vector_search_use_quantized_codes` — 启用“两阶段候选短名单筛选与重评分重写” (默认值：`0`) 。关闭时，匹配查询会对全精度向量进行精确扫描。
+* `vector_search_index_fetch_multiplier` — 相对于查询 `LIMIT` 需要纳入候选短名单的候选数量：扫描会在重评分之前保留前 `LIMIT × multiplier` 个编码。该值越大，召回率越高，但重评分开销也越大。默认值为 `1` (不过采样) ，因此通常需要将其调高——例如调到 `10` 或更高——才能获得较好的召回率。
+
+<div id="quantized-codecs-built-for-scale">
+  #### 为大规模场景而构建
+</div>
+
+这种编解码器非常适合 ClickHouse，因为开销最高的部分——扫描——恰恰是 ClickHouse 引擎最擅长处理的工作：
+
+* **向量化。** 扫描内核专为 SIMD 编写，并会在运行时分派到 CPU 支持的最宽指令：对符号码方法 (`rabitq`、`turboquant`) 使用硬件 `popcount`，对其他方法则使用宽幅融合乘加。
+* **跨 CPU 核心和 parts 并行。** 平面扫描天然适合并行执行，而 ClickHouse 也正是这样处理的：会同时在所有可用线程以及表的所有 parts 上计算距离，只有最终的 top-`k` merge 是串行的。
+* **分布式。** 在分片集群上，这项工作会分散到多台机器上——每个分片并行扫描自己的那部分数据，再由协调器合并候选短名单。
+* **列式且便于过滤。** 量化编码存放在独立的列中，像其他列一样经过相同的 I/O 路径压缩和读取，因此有选择性的 `WHERE` 只会留下更少需要扫描的编码。
+* **无需单独构建。** 这些编码会在写入向量时生成，并通过拼接完成 merge——无需构建、调优或重建索引，因此数据一落表，就能立即执行搜索。
+
+这些编码始终只用于生成候选；原地保留的全精度列则提供最终的精确排序。
+
 <div id="approximate-nearest-neighbor-search-qbit">
   ### 量化位 (QBit)
 </div>
@@ -659,13 +765,14 @@ ClickHouse 提供了 Quantized Bit (`QBit`) 数据类型，通过以下方式解
 要声明一个 `QBit` 类型的列，请使用以下语法：
 
 ```sql
-column_name QBit(element_type, dimension)
+column_name QBit(element_type, dimension[, stride])
 ```
 
 其中：
 
-* `element_type` – 每个向量元素的数据类型。支持的类型有 `BFloat16`、`Float32` 和 `Float64`
+* `element_type` – 每个向量元素的数据类型。支持的类型有 `Int8`、`BFloat16`、`Float32` 和 `Float64`
 * `dimension` – 每个向量中的元素个数
+* `stride` – 可选。`dimension` 的一个除数，它会将各维度划分为 `dimension / stride` 个连续分组，并分别存储在独立的流中，因此如果只对前几个维度进行搜索，需要读取的流就更少 (对 Matryoshka 嵌入向量很有用) 。默认值为 `dimension`，此时该类型在字节级别上与非 stride 的 `QBit` 完全相同。详见 [`QBit` 数据类型页面](/zh/reference/data-types/qbit)。
 
 <div id="qbit-create">
   #### 创建 `QBit` 表并插入数据

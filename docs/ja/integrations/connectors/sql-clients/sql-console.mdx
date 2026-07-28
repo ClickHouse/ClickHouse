@@ -10,7 +10,7 @@ integration:
    - category: 'sql_client'
 ---
 
-import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { Image } from "/snippets/ja/components/Image.jsx";
 
 SQLコンソール は、ClickHouse Cloud でデータベースを調べたりクエリを実行したりするための、最も迅速で簡単な方法です。SQLコンソール では、次のことができます。
@@ -92,12 +92,12 @@ SQLコンソールでは、テーブルに対してフィルタリングとソ�
   ### フィルターとソートからクエリを作成する
 </div>
 
-SQLコンソールでは、ソートやフィルターの内容をワンクリックでそのままクエリに変換できます。任意のソートおよびフィルターのパラメーターを設定し、ツールバーの「Create Query」ボタンを選択してください。「Create Query」をクリックすると、新しいクエリタブが開き、テーブルビューのデータに対応するSQLコマンドがあらかじめ入力された状態で表示されます。
+SQLコンソールでは、設定したソートやフィルターをワンクリックでそのままクエリに変換できます。必要なソートやフィルターのパラメーターを指定し、ツールバーの「Create Query」ボタンを選択してください。「Create Query」をクリックすると、新しいクエリタブが開き、Table View内のデータに対応するSQLコマンドがあらかじめ入力された状態で表示されます。
 
 <Image img="/images/cloud/sqlconsole/create-a-query-from-sorts-and-filters.webp" size="lg" border alt="フィルターとソートからSQLを生成する Create Query ボタンを示すインターフェイス" />
 
 <Note>
-  「Create Query」機能の使用時に、フィルターやソートは必須ではありません。
+  フィルターやソートは、「Create Query」機能の使用時に必須ではありません。
 </Note>
 
 SQLコンソールでのクエリについて詳しくは、(link) クエリのドキュメントを参照してください。
@@ -129,7 +129,7 @@ SQLコンソールで新しいクエリを作成する方法は、2つありま�
 * 選択したコマンドを実行
 * カーソル位置のコマンドを実行
 
-選択したコマンドを実行するには、対象のコマンドまたは一連のコマンドを選択して &#39;Run&#39; ボタンをクリックします (または `cmd / ctrl + enter` ショートカットを使用します) 。選択範囲がある場合は、SQL エディタのコンテキストメニュー (エディタ内の任意の場所を右クリックして開きます) から &#39;Run selected&#39; を選択することもできます。
+選択したコマンドを実行するには、対象のコマンドまたは一連のコマンドを選択して &#39;Run&#39; ボタンをクリックします (または `cmd / ctrl + enter` ショートカットを使用します)。選択範囲がある場合は、SQL エディタのコンテキストメニュー (エディタ内の任意の場所を右クリックして開きます) から &#39;Run selected&#39; を選択することもできます。
 
 <Image img="/images/cloud/sqlconsole/run-selected-query.webp" size="lg" border alt="SQL クエリの選択した部分を実行する方法を示すインターフェイス" />
 
@@ -314,7 +314,7 @@ GenAI は実験的な機能である点に注意してください。GenAI が�
   ### クエリ結果の検索
 </div>
 
-クエリを実行すると、結果ペインの検索入力を使って、返された結果セットをすばやく検索できます。この機能は、追加の `WHERE` 句の結果をプレビューしたり、特定のデータが結果セットに含まれていることを確認したりするのに役立ちます。検索入力に値を入力すると、結果ペインが更新され、入力した値に一致するエントリを含むレコードが表示されます。この例では、`ClickHouse` を含むコメントのうち、`hackernews` テーブル内で `breakfast` が含まれる箇所をすべて探します (大文字と小文字は区別されません) :
+クエリを実行すると、結果ペインの検索入力を使って、返された結果セットをすばやく検索できます。この機能は、追加の `WHERE` 句の結果をプレビューしたり、特定のデータが結果セットに含まれていることを確認したりするのに役立ちます。検索入力に値を入力すると、結果ペインが更新され、入力した値に一致するエントリを含むレコードが表示されます。この例では、`ClickHouse` を含むコメントのうち、`hackernews` テーブル内で `breakfast` が含まれる箇所をすべて探します (大文字と小文字は区別されません):
 
 <Image img="/images/cloud/sqlconsole/search-hn.webp" size="lg" border alt="Hacker News のデータを検索" />
 
@@ -374,7 +374,7 @@ ORDER BY
 
 <Image img="/images/cloud/sqlconsole/switch-from-query-to-chart.webp" size="lg" border alt="クエリからグラフへの切り替え" />
 
-まずは、`week` ごとの `trip_total` を追跡するシンプルな棒グラフを作成します。そのため、`week` フィールドを x 軸に、`trip_total` フィールドを y 軸にドラッグします。
+まずは、`week` ごとの `trip_total` を示すシンプルな棒グラフを作成します。そのため、`week` フィールドを x 軸に、`trip_total` フィールドを y 軸にドラッグします。
 
 <Image img="/images/cloud/sqlconsole/trip-total-by-week.webp" size="lg" border alt="週ごとの trip total" />
 

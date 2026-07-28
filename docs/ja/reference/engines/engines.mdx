@@ -3,9 +3,15 @@ description: 'エンジンの目次ページ'
 slug: /engines
 title: 'エンジン'
 doc_type: 'landing-page'
+mode: wide
 ---
 
-| ページ                                                      | 説明                                                                                                  |
-| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| [データベース エンジン](/ja/reference/engines/database-engines/index) | ClickHouse のデータベースエンジンを使用すると、テーブルを操作し、データの保存方法や管理方法を決定できます。ClickHouse で利用可能な各種データベースエンジンの詳細をご覧ください。 |
-| [テーブルエンジン](/ja/reference/engines/table-engines/index)       | ClickHouse のテーブルエンジンは、データの保存、書き込み、読み取りの方法を決定する基本的な概念です。ClickHouse で利用可能な各種テーブルエンジンの詳細をご覧ください。       |
+<CardGroup cols={2}>
+  <Card title="データベース エンジン" icon="database" href="/ja/reference/engines/database-engines/index">
+    ClickHouse のデータベースエンジンを使うと、テーブルを扱い、データの保存方法や管理方法を定義できます。
+  </Card>
+
+  <Card title="テーブル エンジン" icon="table" href="/ja/reference/engines/table-engines/index">
+    ClickHouse のテーブルエンジンは、データの保存、書き込み、読み取りの方法を決定する基本的な概念です。
+  </Card>
+</CardGroup>

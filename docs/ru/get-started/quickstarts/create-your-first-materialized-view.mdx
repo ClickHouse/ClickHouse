@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'Введение в materialized view'
 title: 'Создайте свое первое materialized view'
-useCases: ['Real-time analytics', 'Data warehousing']
+useCases: ['Real-time аналитика', 'Хранилище данных']
 products: ['Cloud']
 description: 'Узнайте, как использовать materialized views в ClickHouse для предварительного вычисления и хранения результатов запросов с другим порядком сортировки, чтобы ускорить поиск по столбцам, не входящим в первичный ключ.'
 ---
@@ -39,9 +39,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 В итоге вы поймёте, как materialized view работают как триггеры вставки, как выполнять дозагрузку существующих данных и каков компромисс по дисковому пространству при хранении данных в двух экземплярах.
 
 <Steps titleSize="h3">
-  <Step>
-    ### Зачем нужна materialized view
-
+  <Step title="Зачем нужна materialized view" id="understand-why-you-need-a-materialized-view">
     Ваша таблица `uk_price_paid` отсортирована по `(postcode, addr1, addr2)`. Это означает, что ClickHouse может пропускать большие блоки данных, когда вы фильтруете по `postcode`, `addr1` или `addr2`, но запросы с фильтрацией по `town` должны сканировать каждую строку — все 30 миллионов.
 
     Можно было бы создать вторую таблицу с другим `ORDER BY`, но тогда вам пришлось бы не забывать выполнять вставку в обе таблицы каждый раз, когда поступают новые данные. **Materialized view** автоматизирует этот процесс: она отслеживает вставки в исходную таблицу, преобразует строки и автоматически записывает их в целевую таблицу.
@@ -49,9 +47,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     Думайте о materialized view как об **insert trigger**: каждый раз, когда в исходную таблицу вставляются строки, запрос `SELECT` этой MV выполняется для нового блока строк, а результат вставляется в целевую таблицу.
   </Step>
 
-  <Step>
-    ### Создайте целевую таблицу
-
+  <Step title="Создайте целевую таблицу" id="create-the-destination-table">
     Для materialized view нужно место для сохранения результата. Это обычная таблица MergeTree — вы полностью управляете её схемой, `ORDER BY` и `PARTITION BY`.
 
     Создайте таблицу с сортировкой по `(town, date)` и только с теми столбцами, которые нужны для запросов по городам:
@@ -78,9 +74,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     ```
   </Step>
 
-  <Step>
-    ### Создайте materialized view
-
+  <Step title="Создайте materialized view" id="create-the-materialized-view">
     Теперь создайте materialized view, которая связывает исходную таблицу (`uk_price_paid`) с целевой таблицей (`uk_price_paid_by_town`):
 
     ```sql
@@ -99,9 +93,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     Но есть важный нюанс: materialized views срабатывают только при **вставках**. Если вы удаляете или обновляете строки в исходной таблице, целевая таблица об этом не узнает — MVs не синхронизируются с удалениями и обновлениями. Если вам нужна такая синхронизация, рассмотрите возможность использовать [проекции](/ru/reference/statements/alter/projection).
   </Step>
 
-  <Step>
-    ### Дозагрузка существующих данных
-
+  <Step title="Дозагрузка существующих данных" id="backfill-existing-data">
     materialized view обрабатывает только *будущие* вставки. 30 миллионов строк в `uk_price_paid` были вставлены до создания MV, поэтому целевая таблица сейчас пуста.
 
     Выполните дозагрузку вручную:
@@ -133,9 +125,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     В обеих таблицах должно быть одинаковое количество строк.
   </Step>
 
-  <Step>
-    ### Выполните запрос к целевой таблице materialized view
-
+  <Step title="Выполните запрос к целевой таблице materialized view" id="query-the-materialized-view-destination-table">
     Теперь выполните запрос с фильтрацией по `town` для целевой таблицы и сравните его с запросом непосредственно к исходной таблице.
 
     Сначала выполните запрос к исходной таблице:
@@ -178,9 +168,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     Поэтому materialized view рекомендуется создавать с предложением `TO`.
   </Step>
 
-  <Step>
-    ### Обратите внимание: данные хранятся в двух местах
-
+  <Step title="Обратите внимание: данные хранятся в двух местах" id="observe-the-data-is-stored-twice">
     Materialized views обеспечивают более быстрое чтение за счёт дополнительного места на диске. Выполните запрос к `system.parts`, чтобы увидеть, сколько места занимает каждая таблица:
 
     ```sql
@@ -201,7 +189,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   </Step>
 </Steps>
 
-## Следующие шаги
+<div id="next-steps">
+  ## Следующие шаги
+</div>
 
 В этом руководстве по быстрому старту вы создали materialized view для хранения данных о продажах недвижимости в Великобритании с другим порядком сортировки, что позволяет быстро выполнять поиск по городу без изменения исходной таблицы. Вы узнали, что materialized view работают как триггеры вставки, что существующие данные нужно дозагружать вручную, а компромиссом здесь является дополнительное место на диске.
 

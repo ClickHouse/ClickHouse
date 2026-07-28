@@ -236,9 +236,6 @@ Enabled by default.
     DECLARE(Bool, input_format_orc_allow_missing_columns, true, R"(
 Allow missing columns while reading ORC input formats
 )", 0) \
-    DECLARE(Bool, input_format_orc_use_fast_decoder, true, R"(
-Use a faster ORC decoder implementation.
-)", 0) \
     DECLARE(Bool, input_format_orc_filter_push_down, true, R"(
 When reading ORC files, skip whole stripes or row groups based on the WHERE/PREWHERE expressions, min/max statistics or bloom filter in the ORC metadata.
 )", 0) \
@@ -1301,7 +1298,7 @@ If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` ar
 Path of the file used to record errors while reading text formats (CSV, TSV).
 )", 0) \
     DECLARE(GeoJSONUnsupportedGeometryHandling, input_format_geojson_unsupported_geometry_handling, FormatSettings::UnsupportedGeometryHandling::Throw, R"(
-Controls what happens when a valid `GeoJSON` geometry type that cannot be represented in ClickHouse's `Geometry` type (such as `GeometryCollection` or `MultiPoint`) must be stored in the `geometry` column while reading `GeoJSON` input.
+Controls what happens when a valid `GeoJSON` geometry type that cannot be represented in ClickHouse's `Geometry` type (such as `GeometryCollection`) must be stored in the `geometry` column while reading `GeoJSON` input.
 
 Possible values:
 - `'throw'` (default) — throw an exception.
@@ -1645,7 +1642,7 @@ Enabling this option disables parallel parsing and makes deduplication impossibl
 Indicate which field of protobuf oneof was found by means of setting enum value in a special column
 )", 0) \
     DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
-Use geo column parser to convert Array(UInt8) into Point/Linestring/Polygon/MultiLineString/MultiPolygon types
+Use geo column parser to convert Array(UInt8) into Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon types
 )", 0) \
     DECLARE(Bool, output_format_parquet_geometadata, true, R"(
 Allow to write information about geo columns in parquet metadata and encode columns in WKB format.
@@ -1672,6 +1669,7 @@ Supported modes:
     MAKE_OBSOLETE(M, Bool, output_format_enable_streaming, false) \
     MAKE_OBSOLETE(M, Bool, input_format_parquet_use_native_reader, false) \
     MAKE_OBSOLETE(M, Bool, input_format_parquet_use_native_reader_v3, true) \
+    MAKE_OBSOLETE(M, Bool, input_format_orc_use_fast_decoder, true) \
     MAKE_OBSOLETE(M, Bool, output_format_parquet_use_custom_encoder, true) \
     MAKE_OBSOLETE(M, ParquetVersion, output_format_parquet_version, "2.latest") \
     MAKE_OBSOLETE(M, Bool, output_format_parquet_compliant_nested_types, true) \

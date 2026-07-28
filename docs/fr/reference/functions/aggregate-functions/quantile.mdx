@@ -38,11 +38,11 @@ quantile(level)(expr)
 
 **Arguments**
 
-* `expr` — Expression sur les valeurs de la colonne, dont le résultat est de type numérique, Date ou DateTime. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal*`](/fr/reference/data-types/decimal) ou [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime)
+* `expr` — Expression sur les valeurs de la colonne, dont le résultat est de type numérique, `Date`, `DateTime` ou `DateTime64`. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Int128`](/fr/reference/data-types/int-uint) ou [`UInt128`](/fr/reference/data-types/int-uint) ou [`Int256`](/fr/reference/data-types/int-uint) ou [`UInt256`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal*`](/fr/reference/data-types/decimal) ou [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 
 **Valeur renvoyée**
 
-Quantile approximatif pour le niveau spécifié. [`Float64`](/fr/reference/data-types/float) ou [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime)
+Quantile approximatif du niveau spécifié. Les arguments numériques produisent `Float64`, tandis que les arguments `Decimal`, `Date`, `DateTime` et `DateTime64` conservent leur format d’entrée. [`Float64`](/fr/reference/data-types/float) ou [`Decimal*`](/fr/reference/data-types/decimal) ou [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 
 **Exemples**
 
