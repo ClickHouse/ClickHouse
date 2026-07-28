@@ -51,6 +51,7 @@ static struct InitFiu
     ONCE(smt_restore_attach_retry) \
     PAUSEABLE_ONCE(smt_commit_tweaks_gate_open) \
     PAUSEABLE_ONCE(smt_commit_tweaks_gate_close) \
+    PAUSEABLE_ONCE(rmt_restarting_thread_pause_after_alter_lock) \
     ONCE(smt_commit_merge_change_version_before_op) \
     ONCE(smt_merge_mutate_intention_freeze_in_destructor) \
     ONCE(smt_add_part_sleep_after_add_before_commit) \

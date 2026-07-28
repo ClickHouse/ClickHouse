@@ -29,6 +29,7 @@ namespace DB
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsSeconds zookeeper_session_expiration_check_period;
+    extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
 }
 
 namespace ErrorCodes
@@ -41,6 +42,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char finish_clean_quorum_failed_parts[];
+    extern const char rmt_restarting_thread_pause_after_alter_lock[];
 };
 
 /// Used to check whether it's us who set node `is_active`, or not.
@@ -221,6 +223,19 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         const bool replica_metadata_version_exists = replica_metadata_version != -1;
         if (replica_metadata_version_exists)
         {
+            /// Stamp the metadata version under lockForAlter. This is an in-memory read-modify-write of
+            /// the committed metadata, and a concurrent settings/comment ALTER commits under the same
+            /// lock without touching ZooKeeper (see StorageReplicatedMergeTree::alter, non-replicated
+            /// branches). Without the lock, such an ALTER could interleave between the read and the set
+            /// below and be reverted in memory while it stays in the durable .sql. Mirrors the lock taken
+            /// in executeMetadataAlter before setTableStructure.
+            auto table_lock_holder = storage.lockForAlter(
+                (*storage.getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
+
+            /// Test barrier: pause here while holding the alter lock, so a test can verify a concurrent
+            /// settings/comment ALTER cannot interleave with this metadata_version stamp.
+            FailPointInjection::pauseFailPoint(FailPoints::rmt_restarting_thread_pause_after_alter_lock);
+
             auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
             /// This metadata snapshot lives for the table's lifetime, so route the clone into the
             /// dedicated MergeTree arena like the ALTER paths (this runs on the restarting thread,
