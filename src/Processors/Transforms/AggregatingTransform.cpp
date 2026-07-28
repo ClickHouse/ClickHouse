@@ -1273,7 +1273,9 @@ void AggregatingTransform::initGenerate()
             variants.convertToTwoLevel();
 
         /// Flush data in the RAM to disk also. It's easier than merging on-disk and RAM data.
-        if (!variants.empty())
+        /// A table that already spilled keeps its type with zero rows; writing it again would
+        /// produce an empty part per producer.
+        if (variants.hasData())
             params->aggregator.writeToTemporaryFile(variants);
     }
 
@@ -1422,7 +1424,7 @@ void AggregatingTransform::initGenerate()
                 if (cur_variants->isConvertibleToTwoLevel())
                     cur_variants->convertToTwoLevel();
 
-                if (!cur_variants->empty())
+                if (cur_variants->hasData())
                     params->aggregator.writeToTemporaryFile(*cur_variants);
             }
         }

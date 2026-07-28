@@ -308,6 +308,9 @@ struct AggregatedDataVariants : private boost::noncopyable
     AggregatedDataVariants();
     ~AggregatedDataVariants();
     bool empty() const { return type == Type::EMPTY; }
+    /// Whether any rows were aggregated: `empty` only says no method was ever initialized,
+    /// while a table that was flushed to disk keeps its type with zero rows.
+    bool hasData() const { return !empty() && size() != 0; }
     void invalidate() { type = Type::EMPTY; }
     void init(Type type_, std::optional<size_t> size_hint = std::nullopt);
     /// Number of rows (different keys).
