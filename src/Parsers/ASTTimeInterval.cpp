@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 ASTPtr ASTTimeInterval::clone() const
 {
     return make_intrusive<ASTTimeInterval>(*this);
@@ -35,6 +40,15 @@ void ASTTimeInterval::writeJSON(WriteBuffer & out) const
 void ASTTimeInterval::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
+
+    /// `writeJSON` always emits both components, and a missing one would silently become zero:
+    /// `{"type":"TimeInterval"}` would deserialize as `0 SECOND` and change a `REFRESH` schedule
+    /// instead of failing closed. Require the full payload shape.
+    if (!r.has("seconds"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'seconds' in `TimeInterval` during AST JSON deserialization");
+    if (!r.has("months"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'months' in `TimeInterval` during AST JSON deserialization");
+
     interval.seconds = r.getUInt("seconds");
     interval.months = r.getUInt("months");
 }

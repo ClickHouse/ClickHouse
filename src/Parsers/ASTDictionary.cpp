@@ -39,8 +39,20 @@ void ASTDictionaryRange::writeJSON(WriteBuffer & out) const
 void ASTDictionaryRange::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
+
+    /// `ParserDictionaryRange` requires both `MIN` and `MAX` to be non-empty identifiers, and
+    /// `formatImpl` prints both unconditionally, so a missing or empty name would format a
+    /// parser-impossible `RANGE(...)` clause instead of failing at the JSON boundary.
+    if (!r.has("min_attr_name"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'min_attr_name' in `DictionaryRange` during AST JSON deserialization");
+    if (!r.has("max_attr_name"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'max_attr_name' in `DictionaryRange` during AST JSON deserialization");
+
     min_attr_name = r.getString("min_attr_name");
     max_attr_name = r.getString("max_attr_name");
+
+    if (min_attr_name.empty() || max_attr_name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty attribute name in `DictionaryRange` during AST JSON deserialization");
 }
 
 void ASTDictionaryRange::formatImpl(WriteBuffer & ostr,
@@ -71,6 +83,15 @@ void ASTDictionaryLifetime::writeJSON(WriteBuffer & out) const
 void ASTDictionaryLifetime::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
+
+    /// Both bounds are printed unconditionally by `formatImpl`, so a missing key would silently
+    /// become `LIFETIME(MIN 0 MAX 0)` — a different, valid dictionary definition. `writeJSON`
+    /// always emits both; require them.
+    if (!r.has("min_sec"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'min_sec' in `DictionaryLifetime` during AST JSON deserialization");
+    if (!r.has("max_sec"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'max_sec' in `DictionaryLifetime` during AST JSON deserialization");
+
     min_sec = r.getUInt("min_sec");
     max_sec = r.getUInt("max_sec");
 }
@@ -105,12 +126,29 @@ void ASTDictionaryLayout::writeJSON(WriteBuffer & out) const
 void ASTDictionaryLayout::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
+
+    /// `ParserDictionaryLayout` takes the layout name from an identifier, so it is never empty, and
+    /// `formatImpl` prints it unconditionally: a missing name would format a parser-impossible
+    /// `LAYOUT()`.
+    if (!r.has("layout_type"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'layout_type' in `DictionaryLayout` during AST JSON deserialization");
     layout_type = r.getString("layout_type");
+    if (layout_type.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'layout_type' in `DictionaryLayout` during AST JSON deserialization");
+
     has_brackets = r.getBool("has_brackets");
 
     auto child = r.readChildOfType<ASTExpressionList>("parameters");
     if (child)
+    {
+        /// The parser rejects layout parameters without brackets, and `formatImpl` prints the
+        /// parameters outside the brackets in that case (`LAYOUT(CACHE SIZE_IN_CELLS 10)`).
+        if (!child->children.empty() && !has_brackets)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`DictionaryLayout` parameters require brackets during AST JSON deserialization");
         set(parameters, child);
+    }
 }
 
 void ASTDictionaryLayout::formatImpl(WriteBuffer & ostr,
