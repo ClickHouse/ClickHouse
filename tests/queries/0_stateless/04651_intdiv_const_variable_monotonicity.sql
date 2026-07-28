@@ -33,6 +33,7 @@ DROP TABLE IF EXISTS t_cv_f64n SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS m_cv_f64n SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS t_cv_f64p SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS m_cv_f64p SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_cv_dhole SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS t_cv_zr SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS m_cv_zr SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS t_cv_zl SETTINGS ignore_drop_queries_probability = 0;
@@ -183,6 +184,20 @@ SELECT 'c5iii dec/f divide', (SELECT count() FROM t_cv_f64n WHERE divide(toDecim
 SELECT 'c5iii dec/f intDiv', (SELECT count() FROM t_cv_f64n WHERE intDiv(toDecimal32(-1000, 0), a) = 25) = (SELECT count() FROM m_cv_f64n WHERE intDiv(toDecimal32(-1000, 0), a) = 25);
 SELECT 'c5iii dec/f pos ctl', (SELECT count() FROM t_cv_f64p WHERE divide(toDecimal32(-1000, 0), a) = -25) = (SELECT count() FROM m_cv_f64p WHERE divide(toDecimal32(-1000, 0), a) = -25);
 SELECT 'c5iii f/dec mirror', (SELECT count() FROM t_cv_d32n WHERE divide(toFloat64(-1000), a) = 25) = (SELECT count() FROM m_cv_d32n WHERE divide(toFloat64(-1000), a) = 25);
+
+-- (iv) A zero dividend does not make the rejection unnecessary: the truncation moves WHERE the
+-- function is defined. With a `Decimal32` operand the divisor is truncated to `Int32`, so every
+-- multiple of `2^32` divides as zero, and a range that strictly excludes 0 can still contain a
+-- point where the quotient is undefined -- which is what the zero-constant guard assumes away.
+-- Keying the rejection on the dividend being zero would claim monotonicity here and prune the
+-- undefined row away, turning `ILLEGAL_DIVISION` into a silent answer. Asserted on the plan
+-- (case 8 form) rather than on the error, because the runner randomizes settings that can make a
+-- different error surface first.
+CREATE TABLE t_cv_dhole (a Int64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 4;
+INSERT INTO t_cv_dhole VALUES (4294967290), (4294967293), (4294967296), (4294967300), (4294967305), (4294967310), (4294967320), (4294967330);
+
+SELECT 'c5iv d0 hole intDiv', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_cv_dhole WHERE intDiv(toDecimal32(0, 0), a) = 5) WHERE explain ILIKE '%Granules: 2/2%';
+SELECT 'c5iv d0 hole divide', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_cv_dhole WHERE divide(toDecimal32(0, 0), a) = 5) WHERE explain ILIKE '%Granules: 2/2%';
 
 -- ---------------------------------------------------------------------------------------------
 -- Case 6: must-not-flip / must-stay-monotone controls.
@@ -364,6 +379,7 @@ DROP TABLE t_cv_f64n SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE m_cv_f64n SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_cv_f64p SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE m_cv_f64p SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE t_cv_dhole SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_cv_zr SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE m_cv_zr SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_cv_zl SETTINGS ignore_drop_queries_probability = 0;

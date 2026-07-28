@@ -38,6 +38,8 @@ c5iii dec/f divide	1
 c5iii dec/f intDiv	1
 c5iii dec/f pos ctl	1
 c5iii f/dec mirror	1
+c5iv d0 hole intDiv	1
+c5iv d0 hole divide	1
 c6 span eq	1
 c6 span ge	1
 c6 zero right eq	1
