@@ -2150,13 +2150,12 @@ class TestCase:
         else:
             # If --database is not specified, we will create temporary database with
             # unique name and we will recreate and drop it for each test
-            def random_str(length=8):
-                # Alternate letters and digits so the name never contains two consecutive
-                # characters of the same class - hence no English word (or digit run) can
-                # ever appear in it. The name is embedded into DDL, paths and table names,
-                # and tests assert substring absence over those (e.g. LIKE '%auto%');
-                # a fully random name produces such words once in ~340k runs (seen in CI:
-                # test_q2autogn). 26^4 * 10^4 ~ 4.6e9 names keep collisions negligible.
+            def random_str(length=12):
+                # Alternate letters and digits so no two consecutive characters share a class,
+                # hence no word can appear in the name. It is embedded into DDL, paths and table
+                # names, and tests assert substring absence over those (e.g. NOT ILIKE '%auto%');
+                # an 8-char [a-z0-9] name spelled "auto" once in ~340k runs (CI: test_q2autogn).
+                # 26^6 * 10^6 is ~110x the namespace of the previous 36^8, so collisions get rarer.
                 # NOTE: it is important not to use default random generator, since it shares state.
                 rng = random.SystemRandom()
                 return "".join(
