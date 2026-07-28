@@ -1,3 +1,4 @@
+#include <Core/ProtocolDefines.h>
 #include "config.h"
 
 #include <Core/Field.h>

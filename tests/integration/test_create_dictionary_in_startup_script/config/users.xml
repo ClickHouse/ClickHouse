@@ -1,0 +1,14 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <cloud_mode>1</cloud_mode>
+        </default>
+    </profiles>
+    <users>
+        <default>
+            <password></password>
+            <profile>default</profile>
+            <quota>default</quota>
+        </default>
+    </users>
+</clickhouse>

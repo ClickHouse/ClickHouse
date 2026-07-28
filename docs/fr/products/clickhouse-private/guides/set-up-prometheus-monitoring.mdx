@@ -21,9 +21,7 @@ Configurez Prometheus pour collecter les métriques de ClickHouse et les visuali
 </div>
 
 <Steps>
-  <Step>
-    ### 1. Installer kube-prometheus-stack
-
+  <Step title="1. Installer kube-prometheus-stack" id="1-install-kube-prometheus-stack">
     Ajoutez le dépôt Helm de la communauté Prometheus à votre client Helm local, puis téléchargez le chart :
 
     ```bash
@@ -46,9 +44,7 @@ Configurez Prometheus pour collecter les métriques de ClickHouse et les visuali
     > **Remarque :** kube-prometheus-stack inclut Prometheus, Alertmanager, Grafana et le Prometheus Operator. Consultez la [documentation du chart](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack) pour obtenir la liste complète des images à mettre en miroir dans votre registre privé.
   </Step>
 
-  <Step>
-    ### 2. Activer les PodMonitors dans le ClickHouse Operator
-
+  <Step title="2. Activer les PodMonitors dans le ClickHouse Operator" id="2-enable-podmonitors-in-the-clickhouse-operator">
     Le package Helm du ClickHouse Operator comprend des définitions PodMonitor pour ClickHouse Server et Keeper. Activez-les dans les valeurs Helm de votre opérateur :
 
     ```yaml
@@ -83,9 +79,7 @@ Configurez Prometheus pour collecter les métriques de ClickHouse et les visuali
     > **Note :** Si votre instance Prometheus utilise un autre nom de release, mettez à jour le sélecteur de labels du PodMonitor en conséquence, soit en surchargeant les templates du chart operator, soit en configurant `prometheus.prometheusSpec.podMonitorSelector` dans les values de kube-prometheus-stack.
   </Step>
 
-  <Step>
-    ### 3. Activer le handler de métriques personnalisées (facultatif)
-
+  <Step title="3. Activer le handler de métriques personnalisées (facultatif)" id="3-enable-the-custom-metrics-handler-optional">
     Le serveur ClickHouse expose des métriques `ClickHouse_CustomMetric_*` supplémentaires via un handler HTTP dédié sur le port 3123. Cet endpoint nécessite une authentification. Pour activer le scraping :
 
     ```yaml
@@ -107,9 +101,7 @@ Configurez Prometheus pour collecter les métriques de ClickHouse et les visuali
     Pour la liste complète des métriques personnalisées et de leurs seuils d’alerte recommandés, consultez la [référence des métriques et des alertes](/fr/products/clickhouse-private/reference/metrics-and-alerts-reference).
   </Step>
 
-  <Step>
-    ### 4. Vérifiez les cibles Prometheus
-
+  <Step title="4. Vérifiez les cibles Prometheus" id="4-verify-prometheus-targets">
     Après le déploiement, assurez-vous que Prometheus détecte et interroge les cibles ClickHouse :
 
     ```bash
@@ -125,9 +117,7 @@ Configurez Prometheus pour collecter les métriques de ClickHouse et les visuali
     ```
   </Step>
 
-  <Step>
-    ### 5. Importer les tableaux de bord du mixin Grafana ClickHouse
-
+  <Step title="5. Importer les tableaux de bord du mixin Grafana ClickHouse" id="5-import-the-clickhouse-grafana-mixin-dashboards">
     Le [mixin Grafana ClickHouse](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-clickhouse/) fournit des tableaux de bord prêts à l’emploi pour les métriques du serveur ClickHouse et de Keeper. Dans un environnement Airgap, importez manuellement les fichiers JSON des tableaux de bord.
 
     #### Télécharger les tableaux de bord
@@ -170,9 +160,7 @@ Configurez Prometheus pour collecter les métriques de ClickHouse et les visuali
     Le sidecar Grafana détecte automatiquement les ConfigMaps portant le label `grafana_dashboard: "1"` et charge les tableaux de bord.
   </Step>
 
-  <Step>
-    ### 6. Configurer les règles d’alerte (facultatif)
-
+  <Step title="6. Configurer les règles d’alerte (facultatif)" id="6-configure-alert-rules-optional">
     Importez dans Prometheus les règles d’alerte ClickHouse recommandées en créant une ressource `PrometheusRule`. Consultez [Configurer les alertes](/fr/products/clickhouse-private/guides/configure-alerting-for-clickhouse) et la [Référence des métriques et des alertes](/fr/products/clickhouse-private/reference/metrics-and-alerts-reference) pour obtenir l’ensemble complet des définitions d’alerte.
 
     Exemple :

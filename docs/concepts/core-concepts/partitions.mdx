@@ -35,7 +35,7 @@ PARTITION BY toStartOfMonth(date);
 You can [query this table](https://sql.clickhouse.com/?query=U0VMRUNUICogRlJPTSB1ay51a19wcmljZV9wYWlkX3NpbXBsZV9wYXJ0aXRpb25lZA&run_query=true&tab=results) in our ClickHouse SQL Playground.
 
 ### Structure on disk {#structure-on-disk}
-Whenever a set of rows is inserted into the table, instead of creating (at [least](/reference/settings/session-settings#max_insert_block_size)) one single data part containing all the inserted rows (as described [here](/concepts/core-concepts/parts)), ClickHouse creates one new data part for each unique partition key value among the inserted rows:
+Whenever a set of rows is inserted into the table, instead of creating (at [least](/reference/settings/session-settings/max-insert#max_insert_block_size)) one single data part containing all the inserted rows (as described [here](/concepts/core-concepts/parts)), ClickHouse creates one new data part for each unique partition key value among the inserted rows:
 
 <Image img="/images/managing-data/core-concepts/partitions.webp" size="lg"  alt='INSERT PROCESSING' />
 
@@ -189,7 +189,7 @@ The output above shows:
 Peak memory usage: 2.73 MiB.
 ```
 
-Meaning that ClickHouse scanned and processed 1 granule (block of [8192](/reference/settings/merge-tree-settings#index_granularity) rows) in 6 milliseconds for calculating the query result.
+Meaning that ClickHouse scanned and processed 1 granule (block of [8192](/reference/settings/merge-tree-settings/index-granularity#index_granularity) rows) in 6 milliseconds for calculating the query result.
 
 ### Partitioning is primarily a data management feature {#partitioning-is-primarily-a-data-management-feature}
 Be aware that querying across all partitions is typically slower than running the same query on a non-partitioned table.
