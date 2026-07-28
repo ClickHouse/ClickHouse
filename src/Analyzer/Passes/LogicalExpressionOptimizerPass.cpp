@@ -494,9 +494,13 @@ static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant
 static bool hasVariantTypeRecursively(const DataTypePtr & type)
 {
     bool result = false;
-    /// `forEachChild` recurses into the children itself, and its implementations are unguarded, so a
-    /// deeply nested type is bounded by whatever limited its construction rather than by a check here.
-    auto check = [&](const IDataType & t) { result |= isVariant(t); };
+    /// `forEachChild` recurses itself and calls back from inside its own frames, so the callback runs
+    /// at the type's nesting depth and the check belongs here.
+    auto check = [&](const IDataType & t)
+    {
+        checkStackSize();
+        result |= isVariant(t);
+    };
     check(*type);
     type->forEachChild(check);
     return result;
