@@ -64,6 +64,7 @@ struct QueryPlan::SerializationFlags
 {
     /// Query-plan serialization version of the stream, set on deserialize from the leading version field.
     UInt64 version = 0;
+    bool skip_data = false;
 };
 
 void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
@@ -161,7 +162,7 @@ bool QueryPlan::isSerialized() const
     return serialized_plan != nullptr;
 }
 
-QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity)
+QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data)
 {
     UInt64 version = 0;
     readVarUInt(version, in);
@@ -171,8 +172,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
             "Query plan serialization version {} is not supported. The last supported version is {}",
             version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
 
-    SerializationFlags flags;
-    flags.version = version;
+    SerializationFlags flags{.version = version, .skip_data = skip_data};
     return deserialize(in, context, flags, max_type_complexity);
 }
 
@@ -227,7 +227,8 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         for (const auto & child : frame.children)
             input_headers.push_back(child->step->getOutputHeader());
 
-        IQueryPlanStep::Deserialization ctx{in, sets_registry, {}, context, input_headers, output_header, settings, max_type_complexity, flags.version};
+        IQueryPlanStep::Deserialization ctx{
+            in, sets_registry, {}, context, input_headers, output_header, settings, max_type_complexity, flags.version, flags.skip_data};
         auto step = step_registry.createStep(step_name, ctx);
 
         if (step->hasOutputHeader())
