@@ -531,8 +531,33 @@ void DatabaseMaterializedPostgreSQL::drop(ContextPtr local_context)
 DatabaseTablesIteratorPtr DatabaseMaterializedPostgreSQL::getTablesIterator(
     ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
 {
-    /// Modify context into nested_context and pass query to Atomic database.
-    return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name, skip_not_loaded);
+    /// Internal queries (replication machinery, DDL, backups) work on the nested ReplacingMergeTree
+    /// tables directly. If materialized_tables is empty, all access goes to the nested tables as
+    /// well - it is the case after replication_handler was shutdown (see tryGetTable).
+    if (local_context->isInternalQuery() || materialized_tables.empty())
+        return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name, skip_not_loaded);
+
+    /// For user-facing enumeration return the StorageMaterializedPostgreSQL wrappers, consistently
+    /// with tryGetTable. Otherwise consumers reading data through the iterator (e.g. StorageMerge)
+    /// would read the nested tables directly - without the `_sign = 1` filter and the forced
+    /// `FINAL` - exposing stale and deleted row versions.
+    Tables tables;
+    {
+        std::lock_guard lock(tables_mutex);
+        for (const auto & [table_name, storage] : materialized_tables)
+        {
+            if (filter_by_table_name && !filter_by_table_name(table_name))
+                continue;
+
+            /// A table is considered to exist once its nested table was created (see tryGetTable).
+            if (!storage->as<StorageMaterializedPostgreSQL>()->hasNested())
+                continue;
+
+            tables.emplace(table_name, storage);
+        }
+    }
+
+    return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
 }
 
 
@@ -584,7 +609,11 @@ DatabaseMaterializedPostgreSQL::getTablesForBackup(const FilterByNameFunction & 
         }
     }
 
-    return DatabaseAtomic::getTablesForBackup(filter, local_context);
+    /// Enumerate through the nested context: the base implementation lists tables via
+    /// `getTablesIterator`, which for user-facing (non-internal) contexts returns the
+    /// `StorageMaterializedPostgreSQL` wrappers, while backups must keep backing up the nested
+    /// ReplacingMergeTree tables directly.
+    return DatabaseAtomic::getTablesForBackup(filter, StorageMaterializedPostgreSQL::makeNestedTableContext(local_context));
 }
 
 void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory);
@@ -813,7 +842,7 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
 ### `materialized_postgresql_tables_list` {#materialized-postgresql-tables-list}
 
-Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) database engine.
+Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](/reference/engines/database-engines/materialized-postgresql) database engine.
 
 Each table can have subset of replicated columns in brackets. If subset of columns is omitted, then all columns for table will be replicated.
 
@@ -847,7 +876,7 @@ A user-created replication slot. Must be used together with `materialized_postgr
 
 ### `materialized_postgresql_snapshot` {#materialized-postgresql-snapshot}
 
-A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with `materialized_postgresql_replication_slot`.
+A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](/reference/engines/database-engines/materialized-postgresql) will be performed. Must be used together with `materialized_postgresql_replication_slot`.
 
 ```sql
 CREATE DATABASE database1
@@ -950,6 +979,32 @@ Access to tables:
 2. pg_replication_slots
 
 3. pg_publication_tables
+
+### Backup and restore {#backup-and-restore}
+
+A `MaterializedPostgreSQL` database can be backed up. The data of every replicated table lives in a nested `ReplacingMergeTree` table, so `BACKUP DATABASE` captures that data by delegating to the nested table.
+
+```sql
+BACKUP DATABASE postgres_db TO Disk('backups', 'postgres_db.zip');
+```
+
+Restoring a `MaterializedPostgreSQL` database or table **in place is not supported**. A restored `MaterializedPostgreSQL` object immediately starts replicating from the live PostgreSQL source, so restoring the backup snapshot on top of it would mix the snapshot with the current remote state. RESTORE therefore fails closed in this case. Restore the captured data into plain `ReplacingMergeTree` tables instead:
+
+- In a database backup, each table's stored definition is already the synthetic nested `ReplacingMergeTree` (not the `MaterializedPostgreSQL` engine), so each table can be restored straight into a new, not-yet-existing table:
+
+    ```sql
+    RESTORE TABLE postgres_db.table1 AS restored_db.table1
+    FROM Disk('backups', 'postgres_db.zip')
+    SETTINGS allow_different_table_def = 1;
+    ```
+
+- For a standalone `MaterializedPostgreSQL` table backup, the stored definition is the `MaterializedPostgreSQL` engine itself. Create a `ReplacingMergeTree` table beforehand with the same structure as the nested table (including the `_sign` and `_version` columns) and restore into it:
+
+    ```sql
+    RESTORE TABLE src AS existing_replacing_mergetree
+    FROM Disk('backups', 'table.zip')
+    SETTINGS allow_different_table_def = 1;
+    ```
 )DOCS_MD",
         .syntax = "ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password')",
         .related = {"PostgreSQL"}});

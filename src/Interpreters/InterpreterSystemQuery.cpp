@@ -203,6 +203,7 @@ namespace ActionLocks
     extern const StorageActionBlockType Cleanup;
     extern const StorageActionBlockType ViewRefresh;
     extern const StorageActionBlockType ViewRefreshPause;
+    extern const StorageActionBlockType StreamConsume;
 }
 
 namespace
@@ -263,6 +264,8 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
         return AccessType::SYSTEM_VIEWS;
     if (action_type == ActionLocks::ViewRefreshPause)
         return AccessType::SYSTEM_VIEWS;
+    if (action_type == ActionLocks::StreamConsume)
+        return AccessType::SYSTEM_STREAMING_ENGINES;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", std::to_string(action_type));
 }
 
@@ -973,6 +976,40 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::TEST_VIEW:
             for (const auto & task : getRefreshTasks())
                 task->setFakeTime(query.fake_time_for_view);
+            break;
+        case Type::STOP:
+        case Type::START:
+        case Type::PAUSE:
+        case Type::CANCEL:
+        case Type::REFRESH:
+            controlBackgroundActivity(query);
+            break;
+        case Type::STOP_ALL_BACKGROUND:
+            startStopAction(ActionLocks::ViewRefresh, false);
+            startStopAction(ActionLocks::StreamConsume, false);
+            for (const auto & streaming_storage : getAccessibleStreamingStorages())
+                streaming_storage->cancelBackgroundActivity();
+            break;
+        case Type::START_ALL_BACKGROUND:
+            startStopAction(ActionLocks::ViewRefresh, true);
+            startStopAction(ActionLocks::ViewRefreshPause, true);
+            startStopAction(ActionLocks::StreamConsume, true);
+            break;
+        case Type::PAUSE_ALL_BACKGROUND:
+            startStopAction(ActionLocks::ViewRefreshPause, false);
+            startStopAction(ActionLocks::StreamConsume, false);
+            break;
+        case Type::CANCEL_ALL_BACKGROUND:
+            for (const auto & task : getAccessibleRefreshTasks())
+                task->cancel();
+            for (const auto & streaming_storage : getAccessibleStreamingStorages())
+                streaming_storage->cancelBackgroundActivity();
+            break;
+        case Type::REFRESH_ALL_BACKGROUND:
+            for (const auto & task : getAccessibleRefreshTasks())
+                task->run();
+            for (const auto & streaming_storage : getAccessibleStreamingStorages())
+                streaming_storage->refreshBackgroundActivity();
             break;
         case Type::DROP_REPLICA:
             dropReplica(query);
@@ -2508,6 +2545,123 @@ RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
     return tasks;
 }
 
+RefreshTaskList InterpreterSystemQuery::getAccessibleRefreshTasks()
+{
+    auto ctx = getContext();
+    auto access = ctx->getAccess();
+    RefreshTaskList result;
+    for (const auto & task : ctx->getRefreshSet().getTasks())
+    {
+        auto view_id = task->getInfo().view_id;
+        if (access->isGranted(AccessType::SYSTEM_VIEWS, view_id.database_name, view_id.table_name))
+            result.push_back(task);
+    }
+    return result;
+}
+
+std::vector<StoragePtr> InterpreterSystemQuery::getAccessibleStreamingStorages()
+{
+    auto ctx = getContext();
+    auto access = ctx->getAccess();
+    std::vector<StoragePtr> result;
+    for (const auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+    {
+        const auto & database_name = elem.first;
+        for (auto iterator = elem.second->getTablesIterator(ctx); iterator->isValid(); iterator->next())
+        {
+            StoragePtr table = iterator->table();
+            if (table && table->isStreamingStorage()
+                && access->isGranted(AccessType::SYSTEM_STREAMING_ENGINES, database_name, iterator->name()))
+                result.push_back(table);
+        }
+    }
+    return result;
+}
+
+void InterpreterSystemQuery::controlBackgroundActivity(const ASTSystemQuery & query)
+{
+    using Type = ASTSystemQuery::Type;
+    const auto type = query.type;
+
+    auto access = getContext()->getAccess();
+    const bool can_views = access->isGranted(AccessType::SYSTEM_VIEWS, table_id.database_name, table_id.table_name);
+    const bool can_streaming = access->isGranted(AccessType::SYSTEM_STREAMING_ENGINES, table_id.database_name, table_id.table_name);
+
+    auto storage = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+    const bool is_streaming = storage && storage->isStreamingStorage();
+    const auto * mv = storage ? dynamic_cast<const StorageMaterializedView *>(storage.get()) : nullptr;
+    const bool is_refreshable_view = mv && mv->isRefreshable();
+
+    const bool authorized = is_streaming ? can_streaming
+        : is_refreshable_view ? can_views
+        : storage ? (can_views || can_streaming)
+        : (can_views && can_streaming);
+    if (!authorized)
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Not enough privileges. To execute this query, it's necessary to have the grant "
+            "SYSTEM VIEWS (for refreshable materialized views) or SYSTEM STREAMING ENGINES (for "
+            "streaming engines) on {}", table_id.getNameForLogs());
+
+    if (!storage)
+        storage = DatabaseCatalog::instance().getTable(table_id, getContext()); /// throws UNKNOWN_TABLE
+
+    if (is_streaming)
+    {
+        switch (type)
+        {
+            case Type::STOP:
+                startStopAction(ActionLocks::StreamConsume, false);
+                storage->cancelBackgroundActivity();
+                break;
+            case Type::PAUSE:
+                startStopAction(ActionLocks::StreamConsume, false);
+                break;
+            case Type::START:
+                startStopAction(ActionLocks::StreamConsume, true);
+                break;
+            case Type::CANCEL:
+                storage->cancelBackgroundActivity();
+                break;
+            case Type::REFRESH:
+                storage->refreshBackgroundActivity();
+                break;
+            default:
+                break;
+        }
+    }
+    else if (is_refreshable_view)
+    {
+        switch (type)
+        {
+            case Type::STOP:
+                startStopAction(ActionLocks::ViewRefresh, false);
+                break;
+            case Type::START:
+                startStopAction(ActionLocks::ViewRefresh, true);
+                startStopAction(ActionLocks::ViewRefreshPause, true);
+                break;
+            case Type::PAUSE:
+                startStopAction(ActionLocks::ViewRefreshPause, false);
+                break;
+            case Type::CANCEL:
+                for (const auto & task : getRefreshTasks())
+                    task->cancel();
+                break;
+            case Type::REFRESH:
+                for (const auto & task : getRefreshTasks())
+                    task->run();
+                break;
+            default:
+                break;
+        }
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Table {} has no controllable background activity", table_id.getNameForLogs());
+    }
+}
+
 void InterpreterSystemQuery::prewarmMarkCache()
 {
     if (table_id.empty())
@@ -2774,6 +2928,18 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::PAUSE_VIEWS:
         case Type::CANCEL_VIEW:
         case Type::TEST_VIEW:
+        /// STOP/START/PAUSE/CANCEL/REFRESH [db.]table | ALL BACKGROUND parser rejects with SYNTAX_ERROR
+        /// this is currently unreachable. It is also engine-unaware.
+        case Type::STOP:
+        case Type::START:
+        case Type::PAUSE:
+        case Type::CANCEL:
+        case Type::REFRESH:
+        case Type::STOP_ALL_BACKGROUND:
+        case Type::START_ALL_BACKGROUND:
+        case Type::PAUSE_ALL_BACKGROUND:
+        case Type::CANCEL_ALL_BACKGROUND:
+        case Type::REFRESH_ALL_BACKGROUND:
         {
             if (!query.table)
                 required_access.emplace_back(AccessType::SYSTEM_VIEWS);
