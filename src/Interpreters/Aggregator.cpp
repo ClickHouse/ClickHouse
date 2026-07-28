@@ -1987,8 +1987,8 @@ bool Aggregator::executeOnBlock(Columns columns,
                 if (params.max_bytes_before_external_group_by
                     && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
                 {
-                    flushAdaptiveStagedBlocks(*adaptive);
-                    drainStagedBlocksEarly(*adaptive->shared_state, /*drain_everything=*/false);
+                    flushPendingChunks(*adaptive);
+                    drainStagedChunksEarly(*adaptive->shared_state, /*drain_everything=*/false);
                 }
 
                 /// Checking the constraints.
@@ -2062,7 +2062,7 @@ bool ALWAYS_INLINE adaptiveKeyViewsAreBlockStable(const State & state)
         return true;
 }
 
-struct AdaptiveDelayedBlockPreparation
+struct StagedChunkPreparation
 {
     Columns materialized_columns;
     Aggregator::AggregateColumns aggregate_columns;
@@ -2070,11 +2070,11 @@ struct AdaptiveDelayedBlockPreparation
     Aggregator::AggregateFunctionInstructions instructions;
 };
 
-AdaptiveAggregationSharedState::DelayedBlock::~DelayedBlock() = default;
+AdaptiveAggregationSharedState::StagedChunk::~StagedChunk() = default;
 
-void Aggregator::prepareDelayedBlock(AdaptiveAggregationSharedState::DelayedBlock & block) const
+void Aggregator::prepareStagedChunk(AdaptiveAggregationSharedState::StagedChunk & block) const
 {
-    auto prep = std::make_unique<AdaptiveDelayedBlockPreparation>();
+    auto prep = std::make_unique<StagedChunkPreparation>();
 
 
     prep->aggregate_columns.resize(params.aggregates_size);
@@ -2362,7 +2362,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
 
 template <typename SharedKey, typename State>
 void NO_INLINE Aggregator::publishValueStagedRecordsSorted(
-    const AdaptiveAggregationSharedState::DelayedBlockPtr & block,
+    const AdaptiveAggregationSharedState::StagedChunkPtr & block,
     AdaptiveAggregationThreadContext & adaptive,
     State & local_find_state,
     Arena & scratch_pool,
@@ -2535,7 +2535,7 @@ void NO_INLINE Aggregator::publishDelayedRecords(
         }
     }
 
-    auto block = std::make_shared<AdaptiveAggregationSharedState::DelayedBlock>();
+    auto block = std::make_shared<AdaptiveAggregationSharedState::StagedChunk>();
     block->value_staged = value_staged;
 
     if (value_staged)
@@ -2660,11 +2660,11 @@ void NO_INLINE Aggregator::publishDelayedRecords(
         if (column)
             staged_bytes += column->byteSize();
 
-    stageDelayedBlock(adaptive, std::move(block), staged_bytes);
+    stageChunk(adaptive, std::move(block), staged_bytes);
 }
 
-void Aggregator::enqueueDelayedBlock(
-    AdaptiveAggregationSharedState & shared, const AdaptiveAggregationSharedState::DelayedBlockPtr & block)
+void Aggregator::enqueueStagedChunk(
+    AdaptiveAggregationSharedState & shared, const AdaptiveAggregationSharedState::StagedChunkPtr & block)
 {
     constexpr size_t num_buckets = AdaptiveAggregationSharedState::NUM_BUCKETS;
     std::shared_lock registry_lock(shared.backlog_registry_mutex);
@@ -2679,34 +2679,34 @@ void Aggregator::enqueueDelayedBlock(
     }
 }
 
-void Aggregator::stageDelayedBlock(
-    AdaptiveAggregationThreadContext & adaptive, AdaptiveAggregationSharedState::DelayedBlockPtr block, size_t staged_bytes) const
+void Aggregator::stageChunk(
+    AdaptiveAggregationThreadContext & adaptive, AdaptiveAggregationSharedState::StagedChunkPtr block, size_t staged_bytes) const
 {
     /// Coalescing pays in proportion to how many batches merge into one chunk. A batch of at
     /// least half the seal target could only ever merge with one neighbor, gaining almost
     /// nothing for a full extra copy of its data, so it is enqueued as-is.
     if (staged_bytes * 2 >= adaptive_seal_target_bytes)
     {
-        enqueueDelayedBlock(*adaptive.shared_state, block);
+        enqueueStagedChunk(*adaptive.shared_state, block);
         return;
     }
 
-    adaptive.pending_staged_blocks.push_back(std::move(block));
+    adaptive.pending_chunks.push_back(std::move(block));
     adaptive.pending_staged_bytes += staged_bytes;
 
     if (adaptive.pending_staged_bytes >= adaptive_seal_target_bytes)
-        sealPendingStagedBlocks(adaptive);
+        sealPendingChunks(adaptive);
 }
 
-void Aggregator::flushAdaptiveStagedBlocks(AdaptiveAggregationThreadContext & adaptive) const
+void Aggregator::flushPendingChunks(AdaptiveAggregationThreadContext & adaptive) const
 {
-    if (!adaptive.pending_staged_blocks.empty())
-        sealPendingStagedBlocks(adaptive);
+    if (!adaptive.pending_chunks.empty())
+        sealPendingChunks(adaptive);
 }
 
 void Aggregator::sealValueStagedChunkDeduplicated(
-    const std::vector<AdaptiveAggregationSharedState::DelayedBlockPtr> & minis,
-    AdaptiveAggregationSharedState::DelayedBlock & chunk) const
+    const std::vector<AdaptiveAggregationSharedState::StagedChunkPtr> & minis,
+    AdaptiveAggregationSharedState::StagedChunk & chunk) const
 {
     constexpr size_t num_buckets = AdaptiveAggregationSharedState::NUM_BUCKETS;
 
@@ -2822,22 +2822,22 @@ void Aggregator::sealValueStagedChunkDeduplicated(
     chunk.key_bytes.resize(byte_pos);
 }
 
-void Aggregator::sealPendingStagedBlocks(AdaptiveAggregationThreadContext & adaptive) const
+void Aggregator::sealPendingChunks(AdaptiveAggregationThreadContext & adaptive) const
 {
     constexpr size_t num_buckets = AdaptiveAggregationSharedState::NUM_BUCKETS;
 
-    auto & minis = adaptive.pending_staged_blocks;
+    auto & minis = adaptive.pending_chunks;
     const size_t num_minis = minis.size();
 
     if (num_minis == 1)
     {
-        enqueueDelayedBlock(*adaptive.shared_state, minis.front());
+        enqueueStagedChunk(*adaptive.shared_state, minis.front());
         minis.clear();
         adaptive.pending_staged_bytes = 0;
         return;
     }
 
-    auto chunk = std::make_shared<AdaptiveAggregationSharedState::DelayedBlock>();
+    auto chunk = std::make_shared<AdaptiveAggregationSharedState::StagedChunk>();
     chunk->value_staged = minis.front()->value_staged;
 
     if (chunk->value_staged)
@@ -2965,7 +2965,7 @@ void Aggregator::sealPendingStagedBlocks(AdaptiveAggregationThreadContext & adap
         num_minis,
         chunk->bucket_offsets[num_buckets]);
 
-    enqueueDelayedBlock(*adaptive.shared_state, chunk);
+    enqueueStagedChunk(*adaptive.shared_state, chunk);
     minis.clear();
     adaptive.pending_staged_bytes = 0;
 }
@@ -2983,7 +2983,7 @@ void Aggregator::drainAdaptiveBucketForMerge(
     auto & bucket = shared.buckets[bucket_index];
 
     /// Production is over: the finish barrier ordered every producer's publish before the merge
-    /// sources were created, so the backlog is read without the mutex. The blocks deliberately
+    /// sources were created, so the backlog is read without the mutex. The chunks deliberately
     /// stay on the bucket: the drain emplaces keys that point into their staged bytes, so they
     /// must live until the merged buckets are converted, and the shared state (owned by every
     /// merge source) is exactly that lifetime.
@@ -2999,7 +2999,7 @@ void Aggregator::drainAdaptiveBucketForMerge(
         records_drained += block->bucket_offsets[bucket_index + 1] - block->bucket_offsets[bucket_index];
 
         if (!block->value_staged)
-            std::call_once(block->prepared_flag, [&] { prepareDelayedBlock(*block); });
+            std::call_once(block->prepared_flag, [&] { prepareStagedChunk(*block); });
     }
     size_t drained = 0;
 
@@ -3022,7 +3022,7 @@ template <bool adopt_keys, typename Method>
 size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
     Method & method,
     Arena * arena,
-    const std::vector<AdaptiveAggregationSharedState::DelayedBlockPtr> & backlog,
+    const std::vector<AdaptiveAggregationSharedState::StagedChunkPtr> & backlog,
     size_t bucket_index,
     size_t total_records,
     PaddedPODArray<AggregateDataPtr> & places,
@@ -3133,7 +3133,7 @@ template <bool adopt_keys, typename Method>
 void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
     Method & method,
     Arena * bucket_arena,
-    const AdaptiveAggregationSharedState::DelayedBlock & block,
+    const AdaptiveAggregationSharedState::StagedChunk & block,
     size_t slice_begin,
     size_t slice_end,
     PaddedPODArray<AggregateDataPtr> & places,
@@ -3213,7 +3213,7 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
     }
 }
 
-void Aggregator::drainStagedBlocksEarly(AdaptiveAggregationSharedState & shared, bool drain_everything) const
+void Aggregator::drainStagedChunksEarly(AdaptiveAggregationSharedState & shared, bool drain_everything) const
 {
     /// Blocking on purpose: a producer over the memory trigger must not keep staging while the
     /// sweep sheds - pausing production here is the backpressure that makes the bound hold.
@@ -3228,13 +3228,13 @@ void Aggregator::drainStagedBlocksEarly(AdaptiveAggregationSharedState & shared,
     /// owned by this list alone, so it frees the moment its drain completes and memory comes
     /// back chunk by chunk. Whatever producers enqueue after the swap waits for the next sweep
     /// or for the merge.
-    std::vector<AdaptiveAggregationSharedState::DelayedBlockPtr> chunks;
+    std::vector<AdaptiveAggregationSharedState::StagedChunkPtr> chunks;
     {
         std::unique_lock registry_lock(shared.backlog_registry_mutex);
         std::unordered_set<const void *> seen;
         for (auto & bucket : shared.buckets)
         {
-            std::vector<AdaptiveAggregationSharedState::DelayedBlockPtr> claimed;
+            std::vector<AdaptiveAggregationSharedState::StagedChunkPtr> claimed;
             {
                 std::lock_guard bucket_lock(bucket.backlog_mutex);
                 claimed.swap(bucket.backlog);
@@ -3261,7 +3261,7 @@ void Aggregator::drainStagedBlocksEarly(AdaptiveAggregationSharedState & shared,
     const Int64 low_watermark = static_cast<Int64>(params.max_bytes_before_external_group_by / 4 * 3);
 
     PaddedPODArray<AggregateDataPtr> places_scratch;
-    std::vector<AdaptiveAggregationSharedState::DelayedBlockPtr> single(1);
+    std::vector<AdaptiveAggregationSharedState::StagedChunkPtr> single(1);
     /// The sweep does not observe query cancellation (the consume path has no flag to hand it):
     /// a cancelled query waits out at most one sweep, which is bounded by the staged data.
     std::atomic<bool> is_cancelled{false};
@@ -3270,7 +3270,7 @@ void Aggregator::drainStagedBlocksEarly(AdaptiveAggregationSharedState & shared,
     for (auto & chunk : chunks)
     {
         if (!chunk->value_staged)
-            std::call_once(chunk->prepared_flag, [&] { prepareDelayedBlock(*chunk); });
+            std::call_once(chunk->prepared_flag, [&] { prepareStagedChunk(*chunk); });
 
         single[0] = chunk;
         for (size_t b = 0; b < num_buckets; ++b)
@@ -3315,7 +3315,7 @@ void Aggregator::drainStagedBlocksEarly(AdaptiveAggregationSharedState & shared,
     /// Chunks the watermark spared go back to the backlogs for the merge-time drain.
     for (auto & chunk : chunks)
         if (chunk)
-            enqueueDelayedBlock(shared, chunk);
+            enqueueStagedChunk(shared, chunk);
 
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureDrainedRecords, drained_records);
     shared.undrained_records.fetch_sub(drained_records, std::memory_order_relaxed);

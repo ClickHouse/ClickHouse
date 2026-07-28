@@ -1070,7 +1070,7 @@ void AggregatingTransform::initGenerate()
     {
         /// Complete this thread's backlog contribution before the finish barrier below: the last
         /// finisher assembles the merge assuming every producer's staged records are enqueued.
-        params->aggregator.flushAdaptiveStagedBlocks(*adaptive_context);
+        params->aggregator.flushPendingChunks(*adaptive_context);
 
         if (variants.isConvertibleToTwoLevel())
             variants.convertToTwoLevel();
@@ -1113,7 +1113,7 @@ void AggregatingTransform::initGenerate()
             /// disk-mergeable form by draining everything into the routing table now (the
             /// finish barrier guarantees a quiescent, uncontended sweep). The external branch
             /// below flushes it together with the other still-in-memory variants.
-            params->aggregator.drainStagedBlocksEarly(shared, /*drain_everything=*/true);
+            params->aggregator.drainStagedChunksEarly(shared, /*drain_everything=*/true);
         }
         if (shared.pressure_drained.load(std::memory_order_relaxed))
         {
