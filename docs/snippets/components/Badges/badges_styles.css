@@ -220,6 +220,7 @@ a.betaBadge {
     background-color: #F6F7FA;
     border-radius: 4px;
     border: 1px solid #E6E7E9;
+    color: #1F1F1C;
     padding: 12px 16px;
     margin-bottom: 8px;
     font-size: 0.875rem;
@@ -245,12 +246,15 @@ a.betaBadge {
     font-size: 0.875rem;
 }
 
-.dark .enterprisePlanFeatureContainer {
+.dark .enterprisePlanFeatureContainer,
+[data-theme='dark'] .enterprisePlanFeatureContainer {
     background-color: #1F1F1C;
     border: 1px solid #414141;
+    color: #E6E7E9;
 }
 
-.dark .enterprisePlanFeatureBadge {
+.dark .enterprisePlanFeatureBadge,
+[data-theme='dark'] .enterprisePlanFeatureBadge {
     background-color: #99FFA1;
     color: #1F1F1C;
 }
