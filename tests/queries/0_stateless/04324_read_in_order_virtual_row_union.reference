@@ -1,0 +1,34 @@
+-- union of in-order branches, DESC
+100	d
+60	c
+50	b
+-50	a
+-- union of in-order branches, DESC, virtual row per block
+100	d
+60	c
+50	b
+-50	a
+-- union of in-order branches with negative boundary, ASC
+-100	a
+-60	c
+-50	b
+50	d
+-- union of in-order branches with negative boundary, ASC, virtual row per block
+-100	a
+-60	c
+-50	b
+50	d
+-- union with a branch sorted additionally, DESC
+100	d
+70	f
+60	c
+50	b
+-50	a
+-60	e
+-- union with a branch sorted additionally, ASC
+-60	e
+-50	a
+50	b
+60	c
+70	f
+100	d

@@ -1,0 +1,22 @@
+---
+description: 'Documentation for Apply mask of deleted rows'
+sidebarTitle: 'APPLY DELETED MASK'
+slug: /sql-reference/statements/alter/apply-deleted-mask
+title: 'Apply mask of deleted rows'
+doc_type: 'reference'
+---
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] APPLY DELETED MASK [IN PARTITION partition_id]
+```
+
+The command applies mask created by [lightweight delete](/reference/statements/delete) and forcefully removes rows marked as deleted from disk. This command is a heavyweight mutation, and it semantically equals to query ```ALTER TABLE [db].name DELETE WHERE _row_exists = 0```.
+
+<Note>
+It only works for tables in the [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) family (including [replicated](/reference/engines/table-engines/mergetree-family/replication) tables).
+</Note>
+
+**See also**
+
+- [Lightweight deletes](/reference/statements/delete)
+- [Heavyweight deletes](/reference/statements/alter/delete)

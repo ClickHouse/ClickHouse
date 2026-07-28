@@ -9,6 +9,7 @@ clear_uk_a
 clear_uk_b
 materialize_non_uk_d
 clear_non_uk_d
+clear_missing_if_exists_noop
 2
 2
 uk_on_default_ok

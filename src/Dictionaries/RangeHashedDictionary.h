@@ -323,6 +323,28 @@ namespace impl
                             range_type->getName());
         }
     }
+
+    /// `std::numeric_limits` is not specialized for `Decimal` (which is the storage type of
+    /// `DateTime64`, `Time64` and `Decimal*` range columns), so it would value-initialize to zero.
+    /// That turns an open-ended (NULL bound) interval into an empty one, so a lookup falling into it
+    /// returns the default value. Use the limits of the underlying native type for such ranges.
+    template <typename RangeStorageType>
+    constexpr RangeStorageType rangeStorageTypeMin()
+    {
+        if constexpr (is_decimal<RangeStorageType>)
+            return RangeStorageType{std::numeric_limits<typename RangeStorageType::NativeType>::min()};
+        else
+            return std::numeric_limits<RangeStorageType>::min();
+    }
+
+    template <typename RangeStorageType>
+    constexpr RangeStorageType rangeStorageTypeMax()
+    {
+        if constexpr (is_decimal<RangeStorageType>)
+            return RangeStorageType{std::numeric_limits<typename RangeStorageType::NativeType>::max()};
+        else
+            return std::numeric_limits<RangeStorageType>::max();
+    }
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -872,13 +894,13 @@ void RangeHashedDictionary<dictionary_key_type>::blockToAttributes(const Block &
 
             if (unlikely(min_range_null_map && (*min_range_null_map)[key_index]))
             {
-                lower_bound = std::numeric_limits<RangeStorageType>::min();
+                lower_bound = impl::rangeStorageTypeMin<RangeStorageType>();
                 invalid_range = true;
             }
 
             if (unlikely(max_range_null_map && (*max_range_null_map)[key_index]))
             {
-                upper_bound = std::numeric_limits<RangeStorageType>::max();
+                upper_bound = impl::rangeStorageTypeMax<RangeStorageType>();
                 invalid_range = true;
             }
 
