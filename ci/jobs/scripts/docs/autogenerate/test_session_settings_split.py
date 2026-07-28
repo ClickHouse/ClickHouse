@@ -80,6 +80,23 @@ def main():
     mod.SESSION_SETTINGS_MAX_CHARS_PER_PAGE = 100_000
     mod.SESSION_SETTINGS_PREFIX_GROUP_MIN = 2
 
+    version_history_import = (
+        'import VersionHistory from '
+        '"/snippets/components/VersionHistory/VersionHistory.jsx";'
+    )
+    named_version_history_import = (
+        'import { VersionHistory } from '
+        '"/snippets/components/VersionHistory/VersionHistory.jsx";'
+    )
+    assert mod._component_imports_for_page(
+        version_history_import,
+        "<VersionHistory rows={[]} />",
+    ) == [named_version_history_import]
+    assert mod._component_imports_for_page(
+        named_version_history_import,
+        "<VersionHistory rows={[]} />",
+    ) == [named_version_history_import]
+
     names = [
         "filesystem_cache_alpha", "filesystem_cache_beta",
         "filesystem_prefetch_alpha", "filesystem_prefetch_beta",
@@ -210,6 +227,26 @@ def main():
         assert '"label":"page_cache_*"' in explorer
         assert '"label":"page_*"' not in explorer
         assert 'aria-expanded={isOpen}' in explorer
+        assert "const [allGroupKeys] = useState" in explorer
+        assert "return shouldCollapse ? new Set() : new Set(allGroupKeys);" in explorer
+        assert 'aria-pressed={allGroupsExpanded}' in explorer
+        assert 'aria-label={allGroupsExpanded ? "Collapse all" : "Expand all"}' in explorer
+        assert '<span>{allGroupsExpanded ? "Collapse all" : "Expand all"}</span>' in explorer
+        assert '<path d="m6 9 6 6 6-6" />' in explorer
+        assert '<path d="m9 18 6-6-6-6" />' in explorer
+        assert 'className="flex min-w-full items-center justify-between gap-4"' in explorer
+        assert 'className="relative w-full"' in explorer
+        assert "border-gray-500 bg-gray-50" in explorer
+        assert "placeholder:text-gray-600" in explorer
+        assert "focus:border-gray-600" in explorer
+        assert "dark:border-white/30 dark:bg-white/5" in explorer
+        assert "dark:placeholder:text-gray-400" in explorer
+        assert "dark:focus:border-[#fdff75]" in explorer
+        assert "focus:ring-" not in explorer
+        assert '<circle cx="11" cy="11" r="8" />' in explorer
+        assert '<path d="m21 21-4.3-4.3" />' in explorer
+        assert 'style={{ top: "50%", transform: "translateY(-50%)" }}' in explorer
+        assert "py-2 pl-9 pr-3" in explorer
         assert '<details' not in explorer
         assert '<summary' not in explorer
         assert explorer.startswith("const SessionSettingsExplorer = () => {")
