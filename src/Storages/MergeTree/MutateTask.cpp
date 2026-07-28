@@ -2181,6 +2181,58 @@ void PartMergerWriter::finalize()
         temporary_text_index_storage->removeRecursive();
 }
 
+/// Is `index` resolvable from `checksums.txt` (or from the packed archive) using only files it
+/// actually owns? `getAllSubstreamsInPart` probes speculative extensions - minmax tries its legacy
+/// `.idx` for a `.idx2` substream - so with `escape_index_filenames` = 0, where the stream name is
+/// the index name verbatim, that probe can land on a sibling's file: a corrupted minmax index named
+/// `a.pos` reaches the checksummed `skp_idx_a.pos.idx` of text index `a`, which declares its `.pos`
+/// substream with extension `.idx`. Counting a sibling's file as evidence of health would classify
+/// a corrupted index as intact, so neither the full rewrite would rebuild it nor the some-columns
+/// path would strip its orphan files.
+static bool isIndexResolvableFromOwnFiles(
+    const IMergeTreeIndex & index,
+    const MergeTreeDataPartPtr & source_part,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeSettings & data_settings,
+    const String & index_name)
+{
+    if (source_part->isSkipIndexInPackedArchive(index))
+        return true;
+
+    const auto & index_factory = MergeTreeIndexFactory::instance();
+    const auto & checksums = source_part->checksums;
+    const auto & storage = source_part->getDataPartStorage();
+
+    /// Files DECLARED by another index. A declaration is a strong ownership claim, while a
+    /// speculative legacy-extension probe is not, so only declared files disqualify evidence.
+    NameSet declared_by_another_index;
+    for (const auto & other : metadata_snapshot->getSecondaryIndices())
+    {
+        if (other.name == index_name)
+            continue;
+
+        auto other_index = index_factory.get(metadata_snapshot, other, data_settings);
+        const String other_file_name = other_index->getFileName();
+        for (const auto & substream : other_index->getSubstreams())
+        {
+            const String stream_name = other_file_name + substream.suffix;
+            if (auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, checksums))
+                declared_by_another_index.insert(*actual + substream.extension);
+        }
+    }
+
+    const String file_name = index.getFileName();
+    for (const auto & substream : index.getAllSubstreamsInPart(checksums, file_name, &storage))
+    {
+        const String stream_name = file_name + substream.suffix;
+        auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, checksums);
+        if (actual && !declared_by_another_index.contains(*actual + substream.extension))
+            return true;
+    }
+
+    return false;
+}
+
 class MutateAllPartColumnsTask : public IExecutableTask
 {
 public:
@@ -2295,9 +2347,8 @@ private:
             /// the writer rebuild the index from column data (otherwise this full rewrite would
             /// drop the orphan files, leaving the index absent on disk).
             bool index_present_on_disk = ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot);
-            bool index_resolvable_from_checksums = !index_ptr->getAllSubstreamsInPart(
-                ctx->source_part->checksums, index_ptr->getFileName(), &ctx->source_part->getDataPartStorage()).empty()
-                || ctx->source_part->isSkipIndexInPackedArchive(*index_ptr);
+            bool index_resolvable_from_checksums = isIndexResolvableFromOwnFiles(
+                *index_ptr, ctx->source_part, ctx->metadata_snapshot, *ctx->data->getSettings(), idx.name);
             bool index_checksums_missing = index_present_on_disk && !index_resolvable_from_checksums;
 
             /// For packed part we need to recalculate all indices because they are stored inside packed parts format
@@ -3341,9 +3392,8 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             const bool present_on_disk = source_part->hasSecondaryIndex(index.name, ctx->metadata_snapshot);
             if (!present_on_disk)
                 continue;
-            const bool resolvable_from_checksums = !index_ptr->getAllSubstreamsInPart(
-                source_part->checksums, index_ptr->getFileName(), &source_part->getDataPartStorage()).empty()
-                || source_part->isSkipIndexInPackedArchive(*index_ptr);
+            const bool resolvable_from_checksums = isIndexResolvableFromOwnFiles(
+                *index_ptr, source_part, ctx->metadata_snapshot, *ctx->data->getSettings(), index.name);
             if (resolvable_from_checksums)
                 continue;
 
@@ -3407,6 +3457,11 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         /// extension that substream declares: minmax owns no `.pos`, and a text index's `.pos` is
         /// stored as `.idx`, not `.idx2`. Over-claiming either would protect, and so leak, the files
         /// of the index being dropped.
+        ///
+        /// Only a member the survivor actually holds INSIDE THIS ARCHIVE counts: a text index is
+        /// never packed (`MergeTreeDataPartWriterOnDisk` excludes it), so a standalone text index `a`
+        /// must not protect `skp_idx_a.pos.cmrk2` on behalf of a packed minmax index `a.pos` that is
+        /// being dropped - that would retain the dropped index's packed mark.
         NameSet surviving_index_owned_files;
         for (const auto & index : ctx->metadata_snapshot->getSecondaryIndices())
         {
@@ -3417,11 +3472,18 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             const String surviving_file_name = surviving_index->getFileName();
             for (const auto & substream : surviving_index->getSubstreams())
             {
-                surviving_index_owned_files.insert(surviving_file_name + substream.suffix + substream.extension);
+                auto protect_in_archive = [&](const String & extension)
+                {
+                    const String candidate = surviving_file_name + substream.suffix + extension;
+                    if (source_disk_storage->isFileInPackedSkipIndicesArchive(candidate))
+                        surviving_index_owned_files.insert(candidate);
+                };
+
+                protect_in_archive(substream.extension);
                 /// An upgraded part may still carry minmax's legacy `.idx` for a `.idx2` substream.
                 if (substream.extension == ".idx2")
-                    surviving_index_owned_files.insert(surviving_file_name + substream.suffix + ".idx");
-                surviving_index_owned_files.insert(surviving_file_name + substream.suffix + ctx->mrk_extension);
+                    protect_in_archive(".idx");
+                protect_in_archive(ctx->mrk_extension);
             }
         }
 

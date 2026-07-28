@@ -14,7 +14,7 @@
 # files in the data dir are DiskObjectStorageMetadata pointer files, and the
 # replicated/shared engines gate ATTACH on ZooKeeper checksum digests, so the
 # local-disk file surgery below does not apply there. The bug is in
-# MutateAllPartColumnsTask's index-preservation loop and is independent of the
+# `MutateAllPartColumnsTask`'s index-preservation loop and is independent of the
 # disk layer, so a plain local MergeTree is sufficient.
 #
 # `no-random-merge-tree-settings`: the test renames a specific standalone
@@ -25,14 +25,14 @@
 # are pinned explicitly in the CREATE below for the same reason.
 #
 # Regression test for the backward-compatibility gap flagged on PR #109616
-# (issue #109595). A full-part-rewrite mutation (MutateAllPartColumnsTask)
+# (issue #109595). A full-part-rewrite mutation (`MutateAllPartColumnsTask`)
 # hardlinks non-recalculated skip indices from the source part. The loop used
 # to enumerate the index's current writer substreams via `getSubstreams`. For
 # minmax the on-disk format changed from ".idx" (v1) to ".idx2" (v2), so
 # `getSubstreams` reports only ".idx2". On an upgraded part that still carries
 # a legacy "skp_idx_<name>.idx" file the loop hardlinked the mark file but
 # never found the ".idx" data file, silently dropping the index after the
-# mutation (CHECK TABLE still passed because the orphan mark got checksummed).
+# mutation (`CHECK TABLE` still passed because the orphan mark got checksummed).
 # The fix enumerates the substreams actually present in the source part via
 # getAllSubstreamsInPart(source_part->checksums, ...), which probes both ".idx"
 # and ".idx2".
@@ -89,7 +89,7 @@ echo "before:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_legacy_minmax WHERE v = 42) WHERE explain ILIKE '%Granules: 1/20%'"
 
 # Full part rewrite: DROP COLUMN of a MATERIALIZED column takes
-# MutateAllPartColumnsTask. The minmax index is not recalculated, so it is
+# `MutateAllPartColumnsTask`. The minmax index is not recalculated, so it is
 # hardlinked from the source part. Before the fix the legacy ".idx" data file
 # was dropped here and the index no longer pruned (Granules: 20/20).
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_legacy_minmax DROP COLUMN m SETTINGS mutations_sync = 2"

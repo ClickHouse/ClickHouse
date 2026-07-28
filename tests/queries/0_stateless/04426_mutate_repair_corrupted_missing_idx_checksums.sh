@@ -6,7 +6,7 @@
 # WITHOUT the hardlinked skip-index files, producing a corrupted part shape:
 # skp_idx_<name>.* files present on disk, but no per-file entries in
 # checksums.txt. Such an index is already dead (reads probe checksums and see
-# nothing, so it never prunes; CHECK TABLE fails with
+# nothing, so it never prunes; `CHECK TABLE` fails with
 # UNEXPECTED_FILE_IN_DATA_PART). A later full-part-rewrite mutation used to take
 # the preserve path (`getAllSubstreamsInPart` over checksums returns no substreams)
 # and drop the orphan files without repairing the part, losing the index
@@ -28,7 +28,7 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_corrupt_minmax SYNC"
 # v = k is monotone, so a minmax index over v prunes a point query to a single
 # granule. `index_granularity` = 100 over 2000 rows gives 20 granules. m is a
 # MATERIALIZED column so that DROP COLUMN m forces a full-part rewrite
-# (MutateAllPartColumnsTask).
+# (`MutateAllPartColumnsTask`).
 ${CLICKHOUSE_CLIENT} -q "
 CREATE TABLE t_corrupt_minmax
 (
@@ -62,11 +62,11 @@ cp "${DATA_PATH}/saved_mm_v.idx2" "${CORRUPT_PART}skp_idx_mm_v.idx2"
 cp "${DATA_PATH}/saved_mm_v.cmrk2" "${CORRUPT_PART}skp_idx_mm_v.cmrk2"
 
 # The corrupted index is already dead: files are on disk but not in checksums,
-# so it does not prune and CHECK TABLE fails.
+# so it does not prune and `CHECK TABLE` fails.
 echo "corrupted_prunes:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_corrupt_minmax WHERE v = 1042) WHERE explain ILIKE '%Granules: 1/20%'"
 
-# Full-part rewrite (MutateAllPartColumnsTask via DROP COLUMN of a MATERIALIZED
+# Full-part rewrite (`MutateAllPartColumnsTask` via DROP COLUMN of a MATERIALIZED
 # column). Before the fix the preserve path found no substreams in checksums and
 # dropped the orphan files, permanently losing the index. The fix forces a
 # recalculate so the writer rebuilds the index from column data.
@@ -76,7 +76,7 @@ NEW_PART=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database
 echo "current_idx2_present:"
 if ls "${NEW_PART}skp_idx_mm_v.idx2" >/dev/null 2>&1; then echo 1; else echo 0; fi
 
-# The repaired index must prune to one granule, CHECK TABLE must pass, and the
+# The repaired index must prune to one granule, `CHECK TABLE` must pass, and the
 # on-disk size accounting must include the rebuilt index.
 echo "repaired_prunes:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_corrupt_minmax WHERE v = 1042) WHERE explain ILIKE '%Granules: 1/20%'"
