@@ -67,6 +67,7 @@ namespace CurrentMetrics
 
 namespace ProfileEvents
 {
+    extern const Event FilesystemCacheDowngradedFileSegments;
     extern const Event FilesystemCacheEvictedFileSegments;
 }
 
