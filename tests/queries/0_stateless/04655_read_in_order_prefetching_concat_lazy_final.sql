@@ -1,4 +1,7 @@
--- Tags: no-random-settings, no-random-merge-tree-settings
+-- Tags: no-random-settings, no-random-merge-tree-settings, no-old-analyzer
+-- The old analyzer does not apply the lazy-`FINAL` optimization, so the `FINAL` read keeps its
+-- `ReplacingSorted` transforms and never becomes a plain read where `PrefetchingConcatProcessor`
+-- is applicable - the baseline check below would see no `PrefetchingConcat` at all.
 -- `optimizeReadInOrder` runs before `optimizeLazyFinal`, so a `prefer_multiple_streams` opt-out
 -- recorded on the original `ReadFromMergeTree` must be carried over to the non-`FINAL` read that
 -- `optimizeLazyFinal` synthesizes for non-intersecting parts. Otherwise the replacement read
