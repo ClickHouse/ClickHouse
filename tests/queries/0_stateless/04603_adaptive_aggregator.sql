@@ -334,7 +334,7 @@ CREATE TABLE test_sparse
 (
     a String,
     b UInt64,
-    u8 UInt8,
+    sparse_key UInt64,
     nullable_key Nullable(String)
 )
 ENGINE = MergeTree
@@ -344,14 +344,23 @@ SETTINGS
     nullable_serialization_version='allow_sparse',
     ratio_of_defaults_for_sparse_serialization=0.05;
 
+-- `sparse_key` is 97.5% zeros, so it is stored and read as ColumnSparse, and its distinct
+-- count stays above the freeze threshold so the adaptive path engages on it.
 INSERT INTO test_sparse
 SELECT
     toString(rand() % 100000) AS a,
     number AS b,
-    toUInt8(number % 250) AS u8,
+    if(number % 40 = 0, number, 0) AS sparse_key,
     if(number % 10 = 0, NULL, toString(number % 50000)) AS nullable_key
 FROM numbers(50000);
 
+SELECT 'Sparse key column (admitted)';
+SELECT
+    (SELECT sum(s), count() FROM (SELECT sparse_key, sum(b) AS s FROM test_sparse GROUP BY sparse_key SETTINGS enable_adaptive_aggregator = 0))
+    =
+    (SELECT sum(s), count() FROM (SELECT sparse_key, sum(b) AS s FROM test_sparse GROUP BY sparse_key SETTINGS enable_adaptive_aggregator = 1));
+
+SELECT 'Sparse Nullable key (not admitted, results must still be correct)';
 SELECT
     (SELECT sum(s), count() FROM (SELECT nullable_key, sum(b) AS s FROM test_sparse GROUP BY nullable_key SETTINGS enable_adaptive_aggregator = 0))
     =

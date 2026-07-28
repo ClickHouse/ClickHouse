@@ -83,6 +83,9 @@ Empty table
 Large hash table (exercises prefetch and the drain reserve)
 1
 Table Sparse
+Sparse key column (admitted)
+1
+Sparse Nullable key (not admitted, results must still be correct)
 1
 Sparse aggregate argument
 1
