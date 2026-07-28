@@ -110,7 +110,7 @@ struct AdaptiveAggregationSession
     ///  - value-staged (`value_staged`, simple-count aggregation only): the record is the key
     ///    itself plus a run-length count, with no argument columns;
     ///  - row-reference (general aggregates): record j reads its aggregate arguments from row j
-    ///    of `source_columns`, which hold the records' values gathered at publish in the same
+    ///    of `argument_columns`, which hold the records' values gathered at publish in the same
     ///    bucket-grouped order, so a bucket's slice is a contiguous row range (sparse arguments
     ///    are materialized by the gather, so the staged columns are always dense); the key bytes
     ///    are staged as well, so the drain emplaces without constructing a hashing state per
@@ -124,17 +124,17 @@ struct AdaptiveAggregationSession
         /// The row-reference mode's argument columns, compacted at publish (see above): only
         /// the aggregate-argument positions are filled, kept at their original indexes so that
         /// the instruction preparation can index the vector.
-        Columns source_columns;
+        Columns argument_columns;
         PaddedPODArray<UInt64> routing_hashes;
         std::array<UInt32, NUM_BUCKETS + 1> bucket_offsets{};
 
         bool value_staged = false;
         /// The key of the i-th record occupies `key_bytes[key_offsets[i], key_offsets[i + 1])`,
-        /// in the same bucket-grouped order as `routing_hashes`; `run_lengths[i]` is the run length
+        /// in the same bucket-grouped order as `routing_hashes`; `multiplicities[i]` is the run length
         /// (consecutive occurrences of one key collapse into one record at staging time).
         PaddedPODArray<char> key_bytes;
         PaddedPODArray<UInt64> key_offsets;
-        PaddedPODArray<UInt32> run_lengths;
+        PaddedPODArray<UInt32> multiplicities;
 
         /// Built under `prepared_flag` by the first bucket drained from this block.
         /// Unused (and never built) for value-staged blocks.
@@ -163,7 +163,7 @@ struct AdaptiveAggregationSession
     /// thread that freezes. Under memory pressure the production-time sweeps drain staged
     /// records into it early (see `pressureDrainStagedBlocks`); it joins the merge set when it
     /// holds data.
-    AggregatedDataVariantsPtr routing_variants;
+    AggregatedDataVariantsPtr early_drain_variants;
 
     /// Serializes pressure sweeps: one sweeper at a time sheds memory, and a single sweeper
     /// needs no per-bucket coordination; merge-time drains run after the finish barrier and
@@ -176,9 +176,9 @@ struct AdaptiveAggregationSession
     /// counting drain at merge time. Producers share the lock (per-bucket mutexes still order
     /// their pushes); only a collecting sweep takes it exclusively.
     std::shared_mutex backlog_registry_mutex;
-    /// Whether any early drain moved records into `routing_variants`: the finish path then
+    /// Whether any early drain moved records into `early_drain_variants`: the finish path then
     /// includes it in the merge set.
-    std::atomic<bool> pressure_drained{false};
+    std::atomic<bool> early_drain_started{false};
     std::once_flag init_flag;
     std::atomic<bool> initialized{false};
 
@@ -193,7 +193,7 @@ struct AdaptiveAggregationSession
     /// the repeat factor of the staged stream as a whole, independently of how a key's
     /// occurrences spread over the threads.
     std::mutex thaw_sample_mutex;
-    HashSet<UInt64> thaw_sampled_keys;
+    HashSet<UInt64> distinct_sampled_hashes;
     size_t thaw_sampled_records = 0;
     size_t staged_records = 0;
     /// Set once the staged stream proves repeat-dominated; every thread then thaws its local
@@ -371,7 +371,7 @@ public:
         PaddedPODArray<UInt64> miss_hashes;
         PaddedPODArray<UInt8> miss_buckets;
         PaddedPODArray<UInt64> miss_key_sizes;
-        PaddedPODArray<UInt32> miss_run_lengths;
+        PaddedPODArray<UInt32> miss_multiplicities;
 
         /// Post-freeze hit-rate sampling. When the frozen table turns out to hold almost none of
         /// the stream's keys (a uniform high-cardinality distribution), probing it is pure
@@ -387,7 +387,7 @@ public:
         size_t rows_seen_unfrozen = 0;
         bool gave_up_freezing = false;
 
-        /// Scratch for the value-staged publish grouping (see `publishValueStagedRecordsSorted`).
+        /// Scratch for the value-staged publish grouping (see `buildDeduplicatedCountChunk`).
         std::vector<std::pair<UInt64, UInt32>> sort_pairs_scratch;
         std::vector<UInt32> group_offsets_scratch;
         std::vector<UInt32> group_cursor_scratch;
@@ -426,7 +426,7 @@ public:
     void flushPendingChunks(AdaptiveAggregationProducer & adaptive) const;
 
     /// Swaps the enqueued chunks out of the backlogs and drains them chunk-major into
-    /// `routing_variants` (all of one chunk's bucket slices, then the next), so each chunk
+    /// `early_drain_variants` (all of one chunk's bucket slices, then the next), so each chunk
     /// frees the moment it is consumed. Runs on at most one thread at a time. The memory-
     /// pressure valve calls it with a watermark: it stops once memory falls below it and
     /// re-enqueues what it did not drain; whenever the routing table reaches the spill floor
@@ -725,7 +725,7 @@ private:
     /// duplicate keys within the block collapse into one record with a summed run length, so a
     /// repeat-heavy staged stream copies each key's bytes once and the drain emplaces it once.
     template <typename SharedKey, typename State>
-    void publishValueStagedRecordsSorted(
+    void buildDeduplicatedCountChunk(
         const AdaptiveAggregationSession::StagedChunkPtr & block,
         AdaptiveAggregationProducer & adaptive,
         State & local_find_state,
@@ -738,7 +738,7 @@ private:
     void stageChunk(
         AdaptiveAggregationProducer & adaptive,
         AdaptiveAggregationSession::StagedChunkPtr block,
-        size_t staged_bytes) const;
+        size_t estimated_payload_bytes) const;
 
     /// Merges the buffered batches into one bucket-grouped chunk of the same shape (bucket b's
     /// records are the concatenation of the batches' b-slices) and enqueues it.

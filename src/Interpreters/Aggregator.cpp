@@ -2079,20 +2079,20 @@ void Aggregator::prepareStagedChunk(AdaptiveAggregationSession::StagedChunk & bl
 
     prep->aggregate_columns.resize(params.aggregates_size);
     prepareAggregateInstructions(
-        block.source_columns, prep->aggregate_columns, prep->materialized_columns, prep->instructions, prep->nested_columns_holder);
+        block.argument_columns, prep->aggregate_columns, prep->materialized_columns, prep->instructions, prep->nested_columns_holder);
 
     block.prepared = std::move(prep);
 }
 
 void Aggregator::initAdaptiveSession(AggregatedDataVariants & local_result, AdaptiveAggregationSession & shared) const
 {
-    auto routing_variants = std::make_shared<AggregatedDataVariants>();
-    routing_variants->aggregator = this;
-    routing_variants->keys_size = params.keys_size;
-    routing_variants->key_sizes = key_sizes;
-    routing_variants->init(convertToTwoLevelTypeIfPossible(local_result.type));
+    auto early_drain_variants = std::make_shared<AggregatedDataVariants>();
+    early_drain_variants->aggregator = this;
+    early_drain_variants->keys_size = params.keys_size;
+    early_drain_variants->key_sizes = key_sizes;
+    early_drain_variants->init(convertToTwoLevelTypeIfPossible(local_result.type));
 
-    shared.routing_variants = std::move(routing_variants);
+    shared.early_drain_variants = std::move(early_drain_variants);
     shared.initialized.store(true, std::memory_order_release);
 }
 
@@ -2218,7 +2218,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
             if (is_simple_count)
             {
                 adaptive.miss_hashes.push_back(hash);
-                adaptive.miss_run_lengths.push_back(static_cast<UInt32>(row_end - row_begin));
+                adaptive.miss_multiplicities.push_back(static_cast<UInt32>(row_end - row_begin));
                 adaptive.miss_key_sizes.push_back(key_size);
                 adaptive.miss_buckets.push_back(bucket);
             }
@@ -2271,12 +2271,12 @@ void NO_INLINE Aggregator::executeFrozenImpl(
 
             if (run_continues)
             {
-                ++adaptive.miss_run_lengths.back();
+                ++adaptive.miss_multiplicities.back();
             }
             else
             {
                 adaptive.miss_hashes.push_back(hash);
-                adaptive.miss_run_lengths.push_back(1);
+                adaptive.miss_multiplicities.push_back(1);
                 if constexpr (adaptive_key_stages_bytes<typename SharedMethod::Key>)
                     adaptive.miss_key_sizes.push_back(adaptiveStagedKeyBytes(staged_key).size());
                 else
@@ -2361,7 +2361,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
 }
 
 template <typename SharedKey, typename State>
-void NO_INLINE Aggregator::publishValueStagedRecordsSorted(
+void NO_INLINE Aggregator::buildDeduplicatedCountChunk(
     const AdaptiveAggregationSession::StagedChunkPtr & block,
     AdaptiveAggregationProducer & adaptive,
     State & local_find_state,
@@ -2407,7 +2407,7 @@ void NO_INLINE Aggregator::publishValueStagedRecordsSorted(
         total_bytes += size;
 
     block->routing_hashes.resize(total);
-    block->run_lengths.resize(total);
+    block->multiplicities.resize(total);
     block->key_offsets.resize(total + 1);
     block->key_bytes.resize(total_bytes);
 
@@ -2455,15 +2455,15 @@ void NO_INLINE Aggregator::publishValueStagedRecordsSorted(
                         /// survivor of the same key (from a previous overflow split) may still
                         /// have capacity, and otherwise the record is appended as a fresh
                         /// survivor of the same key.
-                        if (static_cast<UInt64>(block->run_lengths[j]) + adaptive.miss_run_lengths[idx]
+                        if (static_cast<UInt64>(block->multiplicities[j]) + adaptive.miss_multiplicities[idx]
                             > std::numeric_limits<UInt32>::max())
                             continue;
-                        block->run_lengths[j] += adaptive.miss_run_lengths[idx];
+                        block->multiplicities[j] += adaptive.miss_multiplicities[idx];
                         return;
                     }
 
                     block->routing_hashes[out] = hash;
-                    block->run_lengths[out] = adaptive.miss_run_lengths[idx];
+                    block->multiplicities[out] = adaptive.miss_multiplicities[idx];
                     block->key_offsets[out] = byte_pos;
                     copyStagedKeyBytes(block->key_bytes.data() + byte_pos, key);
                     byte_pos += size;
@@ -2476,7 +2476,7 @@ void NO_INLINE Aggregator::publishValueStagedRecordsSorted(
     block->key_offsets[out] = byte_pos;
 
     block->routing_hashes.resize(out);
-    block->run_lengths.resize(out);
+    block->multiplicities.resize(out);
     block->key_offsets.resize(out + 1);
     block->key_bytes.resize(byte_pos);
 }
@@ -2518,12 +2518,12 @@ void NO_INLINE Aggregator::publishDelayedRecords(
         shared.staged_records += total;
         shared.thaw_sampled_records += sampled_hashes.size();
         for (const auto hash : sampled_hashes)
-            shared.thaw_sampled_keys.insert(hash);
+            shared.distinct_sampled_hashes.insert(hash);
         /// Re-checked under the lock: a thread that sampled while another was firing would
         /// otherwise fire a second time.
         if (!shared.thaw_all.load(std::memory_order_relaxed)
             && shared.staged_records >= adaptive_thaw_min_staged_records
-            && shared.thaw_sampled_records > adaptive_thaw_repeat_factor * shared.thaw_sampled_keys.size())
+            && shared.thaw_sampled_records > adaptive_thaw_repeat_factor * shared.distinct_sampled_hashes.size())
         {
             shared.thaw_all.store(true, std::memory_order_relaxed);
             ProfileEvents::increment(ProfileEvents::AdaptiveAggregationThaws);
@@ -2531,7 +2531,7 @@ void NO_INLINE Aggregator::publishDelayedRecords(
                 log,
                 "Adaptive aggregation: thawing the local tables after {} staged records (sampled repeat factor {})",
                 shared.staged_records,
-                shared.thaw_sampled_records / shared.thaw_sampled_keys.size());
+                shared.thaw_sampled_records / shared.distinct_sampled_hashes.size());
         }
     }
 
@@ -2540,7 +2540,7 @@ void NO_INLINE Aggregator::publishDelayedRecords(
 
     if (value_staged)
     {
-        publishValueStagedRecordsSorted<SharedKey>(block, adaptive, local_find_state, scratch_pool, key_row_override);
+        buildDeduplicatedCountChunk<SharedKey>(block, adaptive, local_find_state, scratch_pool, key_row_override);
     }
     else
     {
@@ -2600,7 +2600,7 @@ void NO_INLINE Aggregator::publishDelayedRecords(
         block->routing_hashes[pos] = adaptive.miss_hashes[i];
 
         if (value_staged)
-            block->run_lengths[pos] = adaptive.miss_run_lengths[i];
+            block->multiplicities[pos] = adaptive.miss_multiplicities[i];
         else if (gather_data)
             gather_data[pos] = adaptive.miss_source_rows[i];
 
@@ -2624,11 +2624,11 @@ void NO_INLINE Aggregator::publishDelayedRecords(
         keyHolderDiscardKey(key_holder);
     }
 
-    block->source_columns.assign(columns.size(), nullptr);
+    block->argument_columns.assign(columns.size(), nullptr);
     for (const auto & argument_positions : aggregates_positions)
         for (const auto position : argument_positions)
         {
-            if (block->source_columns[position])
+            if (block->argument_columns[position])
                 continue;
             /// A constant argument stays constant: resizing it to the record count is
             /// exact and avoids materializing the whole block just to gather from it.
@@ -2636,9 +2636,9 @@ void NO_INLINE Aggregator::publishDelayedRecords(
             /// an arbitrary subset of the block, and the drain applies plain dense
             /// batches to them, so nothing downstream wants the sparse representation.
             if (isColumnConst(*columns[position]))
-                block->source_columns[position] = columns[position]->cloneResized(total);
+                block->argument_columns[position] = columns[position]->cloneResized(total);
             else
-                block->source_columns[position] = recursiveRemoveSparse(columns[position]->getPtr())->index(*gather_indexes, 0);
+                block->argument_columns[position] = recursiveRemoveSparse(columns[position]->getPtr())->index(*gather_indexes, 0);
         }
     }
 
@@ -2646,7 +2646,7 @@ void NO_INLINE Aggregator::publishDelayedRecords(
     adaptive.miss_hashes.clear();
     adaptive.miss_buckets.clear();
     adaptive.miss_key_sizes.clear();
-    adaptive.miss_run_lengths.clear();
+    adaptive.miss_multiplicities.clear();
 
     shared.undrained_records.fetch_add(block->routing_hashes.size(), std::memory_order_relaxed);
 
@@ -2654,13 +2654,13 @@ void NO_INLINE Aggregator::publishDelayedRecords(
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedRecordsMerged, total - block->routing_hashes.size());
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedBytes, block->key_bytes.size());
 
-    size_t staged_bytes = block->key_bytes.size() + block->key_offsets.size() * sizeof(UInt64)
-        + block->routing_hashes.size() * sizeof(UInt64) + block->run_lengths.size() * sizeof(UInt32);
-    for (const auto & column : block->source_columns)
+    size_t estimated_payload_bytes = block->key_bytes.size() + block->key_offsets.size() * sizeof(UInt64)
+        + block->routing_hashes.size() * sizeof(UInt64) + block->multiplicities.size() * sizeof(UInt32);
+    for (const auto & column : block->argument_columns)
         if (column)
-            staged_bytes += column->byteSize();
+            estimated_payload_bytes += column->byteSize();
 
-    stageChunk(adaptive, std::move(block), staged_bytes);
+    stageChunk(adaptive, std::move(block), estimated_payload_bytes);
 }
 
 void Aggregator::enqueueStagedChunk(
@@ -2680,19 +2680,19 @@ void Aggregator::enqueueStagedChunk(
 }
 
 void Aggregator::stageChunk(
-    AdaptiveAggregationProducer & adaptive, AdaptiveAggregationSession::StagedChunkPtr block, size_t staged_bytes) const
+    AdaptiveAggregationProducer & adaptive, AdaptiveAggregationSession::StagedChunkPtr block, size_t estimated_payload_bytes) const
 {
     /// Coalescing pays in proportion to how many batches merge into one chunk. A batch of at
     /// least half the seal target could only ever merge with one neighbor, gaining almost
     /// nothing for a full extra copy of its data, so it is enqueued as-is.
-    if (staged_bytes * 2 >= adaptive_seal_target_bytes)
+    if (estimated_payload_bytes * 2 >= adaptive_seal_target_bytes)
     {
         enqueueStagedChunk(*adaptive.session, block);
         return;
     }
 
     adaptive.pending_chunks.push_back(std::move(block));
-    adaptive.pending_staged_bytes += staged_bytes;
+    adaptive.pending_staged_bytes += estimated_payload_bytes;
 
     if (adaptive.pending_staged_bytes >= adaptive_seal_target_bytes)
         sealPendingChunks(adaptive);
@@ -2720,7 +2720,7 @@ void Aggregator::sealValueStagedChunkDeduplicated(
     }
 
     chunk.routing_hashes.resize(total);
-    chunk.run_lengths.resize(total);
+    chunk.multiplicities.resize(total);
     chunk.key_offsets.resize(total + 1);
     chunk.key_bytes.resize(total_key_bytes);
 
@@ -2793,10 +2793,10 @@ void Aggregator::sealValueStagedChunkDeduplicated(
                     /// record represents: a survivor whose multiplicity would overflow is
                     /// skipped in favor of one with remaining capacity, or a fresh survivor of
                     /// the same key.
-                    if (static_cast<UInt64>(chunk.run_lengths[j]) + mini.run_lengths[ref.index]
+                    if (static_cast<UInt64>(chunk.multiplicities[j]) + mini.multiplicities[ref.index]
                         > std::numeric_limits<UInt32>::max())
                         continue;
-                    chunk.run_lengths[j] += mini.run_lengths[ref.index];
+                    chunk.multiplicities[j] += mini.multiplicities[ref.index];
                     merged = true;
                     break;
                 }
@@ -2804,7 +2804,7 @@ void Aggregator::sealValueStagedChunkDeduplicated(
                     continue;
 
                 chunk.routing_hashes[out] = ref.hash;
-                chunk.run_lengths[out] = mini.run_lengths[ref.index];
+                chunk.multiplicities[out] = mini.multiplicities[ref.index];
                 chunk.key_offsets[out] = byte_pos;
                 copyStagedKeyBytes(chunk.key_bytes.data() + byte_pos, key);
                 byte_pos += size;
@@ -2817,7 +2817,7 @@ void Aggregator::sealValueStagedChunkDeduplicated(
     chunk.key_offsets[out] = byte_pos;
 
     chunk.routing_hashes.resize(out);
-    chunk.run_lengths.resize(out);
+    chunk.multiplicities.resize(out);
     chunk.key_offsets.resize(out + 1);
     chunk.key_bytes.resize(byte_pos);
 }
@@ -2903,37 +2903,37 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
         chunk->key_offsets[total] = byte_pos;
     }
 
-        chunk->source_columns.assign(minis.front()->source_columns.size(), nullptr);
+        chunk->argument_columns.assign(minis.front()->argument_columns.size(), nullptr);
         for (const auto & argument_positions : aggregates_positions)
             for (const auto position : argument_positions)
             {
-                if (chunk->source_columns[position])
+                if (chunk->argument_columns[position])
                     continue;
 
                 /// A constant argument stays constant only when every batch agrees on the value.
                 /// The values can genuinely differ across the blocks of one stream, and
                 /// ColumnConst::insertRangeFrom ignores the source, so a mismatch materializes
                 /// every batch's column instead (the same treatment as Squashing).
-                bool all_const_equal = isColumnConst(*minis.front()->source_columns[position]);
+                bool all_const_equal = isColumnConst(*minis.front()->argument_columns[position]);
                 for (size_t m = 1; all_const_equal && m < num_minis; ++m)
                 {
-                    const auto & column = *minis[m]->source_columns[position];
+                    const auto & column = *minis[m]->argument_columns[position];
                     all_const_equal = isColumnConst(column)
-                        && assert_cast<const ColumnConst &>(*minis.front()->source_columns[position])
+                        && assert_cast<const ColumnConst &>(*minis.front()->argument_columns[position])
                                    .getDataColumn()
                                    .compareAt(0, 0, assert_cast<const ColumnConst &>(column).getDataColumn(), -1)
                             == 0;
                 }
                 if (all_const_equal)
                 {
-                    chunk->source_columns[position] = minis.front()->source_columns[position]->cloneResized(total);
+                    chunk->argument_columns[position] = minis.front()->argument_columns[position]->cloneResized(total);
                     continue;
                 }
 
                 VectorWithMemoryTracking<ColumnPtr> sources;
                 sources.reserve(num_minis);
                 for (const auto & mini : minis)
-                    sources.push_back(mini->source_columns[position]->convertToFullColumnIfConst());
+                    sources.push_back(mini->argument_columns[position]->convertToFullColumnIfConst());
 
                 auto destination = sources.front()->cloneEmpty();
                 destination->prepareForSquashing(sources, /* factor */ 1);
@@ -2945,7 +2945,7 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
                         if (length)
                             destination->insertRangeFrom(*sources[m], begin, length);
                     }
-                chunk->source_columns[position] = std::move(destination);
+                chunk->argument_columns[position] = std::move(destination);
             }
     }
 
@@ -2993,10 +2993,10 @@ void Aggregator::drainAdaptiveBucketForMerge(
 
     PaddedPODArray<AggregateDataPtr> places_scratch;
 
-    size_t records_drained = 0;
+    size_t records_available = 0;
     for (const auto & block : backlog)
     {
-        records_drained += block->bucket_offsets[bucket_index + 1] - block->bucket_offsets[bucket_index];
+        records_available += block->bucket_offsets[bucket_index + 1] - block->bucket_offsets[bucket_index];
 
         if (!block->value_staged)
             std::call_once(block->prepared_flag, [&] { prepareStagedChunk(*block); });
@@ -3006,7 +3006,7 @@ void Aggregator::drainAdaptiveBucketForMerge(
 #define M(NAME) \
     else if (dest.type == AggregatedDataVariants::Type::NAME) \
         drained = drainAdaptiveBucketBacklog</*adopt_keys=*/true>( \
-            *dest.NAME, arena, backlog, bucket_index, records_drained, places_scratch, is_cancelled);
+            *dest.NAME, arena, backlog, bucket_index, records_available, places_scratch, is_cancelled);
 
     if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -3112,9 +3112,9 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
                     inserted);
 
                 if (inserted)
-                    getInlineCountState(it->getMapped()) = block.run_lengths[j];
+                    getInlineCountState(it->getMapped()) = block.multiplicities[j];
                 else
-                    getInlineCountState(it->getMapped()) += block.run_lengths[j];
+                    getInlineCountState(it->getMapped()) += block.multiplicities[j];
             }
         }
         else
@@ -3249,7 +3249,7 @@ void Aggregator::drainStagedChunksEarly(AdaptiveAggregationSession & shared, boo
 
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureSweeps);
 
-    auto & routing = *shared.routing_variants;
+    auto & routing = *shared.early_drain_variants;
     constexpr size_t num_buckets = AdaptiveAggregationSession::NUM_BUCKETS;
 
     /// Bucket b's drained states live in pool b, mirroring the merge-time layout.
@@ -3319,7 +3319,7 @@ void Aggregator::drainStagedChunksEarly(AdaptiveAggregationSession & shared, boo
 
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureDrainedRecords, drained_records);
     shared.undrained_records.fetch_sub(drained_records, std::memory_order_relaxed);
-    shared.pressure_drained.store(true, std::memory_order_relaxed);
+    shared.early_drain_started.store(true, std::memory_order_relaxed);
     LOG_TRACE(log, "Adaptive aggregation: pressure sweep drained {} staged records early", drained_records);
 
     /// A routing residue below the spill floor stays in memory on purpose: a table that small

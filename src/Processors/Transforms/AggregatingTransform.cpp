@@ -1115,11 +1115,11 @@ void AggregatingTransform::initGenerate()
             /// below flushes it together with the other still-in-memory variants.
             params->aggregator.drainStagedChunksEarly(shared, /*drain_everything=*/true);
         }
-        if (shared.pressure_drained.load(std::memory_order_relaxed))
+        if (shared.early_drain_started.load(std::memory_order_relaxed))
         {
             /// Early-drained records live in the routing table: it holds part of the result
             /// and joins the merge set like any other variant.
-            many_data->variants.push_back(shared.routing_variants);
+            many_data->variants.push_back(shared.early_drain_variants);
         }
     }
 
