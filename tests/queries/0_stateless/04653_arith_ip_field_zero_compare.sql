@@ -86,6 +86,31 @@ SELECT 'oracle_minus_ip6_left_g1', (SELECT count() FROM u32g1 WHERE minus(toIPv6
 SELECT 'oracle_multiply_ip6_right_g1', (SELECT count() FROM u32g1 WHERE multiply(a, toIPv6('::2')) > 40) = (SELECT count() FROM ou32 WHERE multiply(a, toIPv6('::2')) > 40);
 SELECT 'oracle_multiply_ip6_left_g1', (SELECT count() FROM u32g1 WHERE multiply(toIPv6('::2'), a) > 40) = (SELECT count() FROM ou32 WHERE multiply(toIPv6('::2'), a) > 40);
 
+-- The equal-endpoints fast path compared two different values, so it has two carriers: the key
+-- endpoint, pinned by `prune_plus_ip4key_2of4` below, and the constant, pinned here. Deferring the
+-- comparison keeps the interval monotonic, so the granule holding it is still discarded; a fix that
+-- reported non-monotonic instead would leave every `oracle_` row green and lose only the pruning.
+-- `< 25` is required: the fast path is reached for the granule whose min equals its max at the end
+-- of the scanned range, which an open upper bound never excludes, so a `>` predicate cannot see the
+-- difference. Each row is paired with a numeric control at the same threshold, so a count that only
+-- reflects predicate selectivity cannot be mistaken for the pruning being preserved.
+SELECT '-- IP constant over a numeric key must keep pruning, single-value granules';
+SELECT 'oracle_plus_ip4const_right_g1', (SELECT count() FROM u32g1 WHERE plus(a, toIPv4('0.0.0.2')) < 25) = (SELECT count() FROM ou32 WHERE plus(a, toIPv4('0.0.0.2')) < 25);
+SELECT 'prune_plus_ip4const_right_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE plus(a, toIPv4('0.0.0.2')) < 25) WHERE explain ILIKE '%Granules: 2/4%';
+SELECT 'prune_plus_numconst_right_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE plus(a, toUInt32(2)) < 25) WHERE explain ILIKE '%Granules: 2/4%';
+SELECT 'oracle_plus_ip4const_left_g1', (SELECT count() FROM u32g1 WHERE plus(toIPv4('0.0.0.2'), a) < 25) = (SELECT count() FROM ou32 WHERE plus(toIPv4('0.0.0.2'), a) < 25);
+SELECT 'prune_plus_ip4const_left_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE plus(toIPv4('0.0.0.2'), a) < 25) WHERE explain ILIKE '%Granules: 2/4%';
+SELECT 'oracle_minus_ip4const_right_g1', (SELECT count() FROM u32g1 WHERE minus(a, toIPv4('0.0.0.2')) < 25) = (SELECT count() FROM ou32 WHERE minus(a, toIPv4('0.0.0.2')) < 25);
+SELECT 'prune_minus_ip4const_right_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE minus(a, toIPv4('0.0.0.2')) < 25) WHERE explain ILIKE '%Granules: 2/4%';
+SELECT 'prune_minus_numconst_right_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE minus(a, toUInt32(2)) < 25) WHERE explain ILIKE '%Granules: 2/4%';
+SELECT 'prune_minus_ip6const_left_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE minus(toIPv6('::2'), a) > -20) WHERE explain ILIKE '%Granules: 2/4%';
+-- The constant carrier only reaches the comparison when the IP operand is the right one, so these
+-- are the `IPv6` shapes that actually raise `Code: 169` without the fix.
+SELECT 'oracle_plus_ip6const_right_g1', (SELECT count() FROM u32g1 WHERE plus(a, toIPv6('::2')) < 25) = (SELECT count() FROM ou32 WHERE plus(a, toIPv6('::2')) < 25);
+SELECT 'prune_plus_ip6const_right_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE plus(a, toIPv6('::2')) < 25) WHERE explain ILIKE '%Granules: 2/4%';
+SELECT 'oracle_minus_ip6const_right_g1', (SELECT count() FROM u32g1 WHERE minus(a, toIPv6('::2')) < 25) = (SELECT count() FROM ou32 WHERE minus(a, toIPv6('::2')) < 25);
+SELECT 'prune_minus_ip6const_right_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE minus(a, toIPv6('::2')) < 25) WHERE explain ILIKE '%Granules: 2/4%';
+
 SELECT '-- IP constant over a numeric key, multi-value granules';
 SELECT 'oracle_multiply_ip4_right_g4', (SELECT count() FROM u32g4 WHERE multiply(a, toIPv4('0.0.0.2')) = 20) = (SELECT count() FROM ou32 WHERE multiply(a, toIPv4('0.0.0.2')) = 20);
 SELECT 'oracle_multiply_ip4_left_g4', (SELECT count() FROM u32g4 WHERE multiply(toIPv4('0.0.0.2'), a) = 20) = (SELECT count() FROM ou32 WHERE multiply(toIPv4('0.0.0.2'), a) = 20);

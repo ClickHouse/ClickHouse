@@ -9,6 +9,20 @@ oracle_plus_ip6_right_g1	1
 oracle_minus_ip6_left_g1	1
 oracle_multiply_ip6_right_g1	1
 oracle_multiply_ip6_left_g1	1
+-- IP constant over a numeric key must keep pruning, single-value granules
+oracle_plus_ip4const_right_g1	1
+prune_plus_ip4const_right_g1_2of4	1
+prune_plus_numconst_right_g1_2of4	1
+oracle_plus_ip4const_left_g1	1
+prune_plus_ip4const_left_g1_2of4	1
+oracle_minus_ip4const_right_g1	1
+prune_minus_ip4const_right_g1_2of4	1
+prune_minus_numconst_right_g1_2of4	1
+prune_minus_ip6const_left_g1_2of4	1
+oracle_plus_ip6const_right_g1	1
+prune_plus_ip6const_right_g1_2of4	1
+oracle_minus_ip6const_right_g1	1
+prune_minus_ip6const_right_g1_2of4	1
 -- IP constant over a numeric key, multi-value granules
 oracle_multiply_ip4_right_g4	1
 oracle_multiply_ip4_left_g4	1
