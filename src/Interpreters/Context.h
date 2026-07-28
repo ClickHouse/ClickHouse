@@ -762,6 +762,11 @@ public:
 
     DatabaseAndTable getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> storage_getter) const;
 
+    /// Remove a qualified name from the per-query storage cache. Called after this query renames or
+    /// exchanges a table so its own later lookups of the affected names re-resolve to the current
+    /// tables instead of the version pinned before the swap.
+    void dropStorageCacheEntry(const StorageID & id) const;
+
     // Get the disk used by databases to store metadata files.
     std::shared_ptr<IDisk> getDatabaseDisk() const;
 

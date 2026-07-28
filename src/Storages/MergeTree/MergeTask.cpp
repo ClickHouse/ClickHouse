@@ -1268,7 +1268,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             global_ctx->projections_to_merge.push_back(&projection);
             global_ctx->projections_to_merge_parts[projection.name].assign(projection_parts.begin(), projection_parts.end());
         }
-        else if (projection.with_block_number)
+        else if (projection.with_block_number || projection.with_block_offset)
         {
             /// Commit-order projections are not written during insert (block number is not yet finalized).
             /// When some source parts don't have the projection, rebuild it during the horizontal phase
@@ -2356,7 +2356,7 @@ bool MergeTask::MergeTextIndexStage::prepare() const
             {
                 const auto & part = global_ctx->future_part->parts[part_idx];
 
-                if (!has_coarse_postings && index_ptr->getDeserializedFormat(part->checksums, index_ptr->getFileName(), &part->getDataPartStorage()))
+                if (!has_coarse_postings && index_ptr->getDeserializedFormat(*part, index_ptr->getFileName()))
                 {
                     /// If text index exists in the source part, take it as is.
                     segments.emplace_back(part->getDataPartStoragePtr(), index_ptr->getFileName(), part_idx);
@@ -2936,7 +2936,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
         /// Build index if it is not materialized in the data part.
         bool has_coarse_postings = typeid_cast<const MergeTreeIndexText &>(*index_ptr).getParams().coarse_granularity > 0;
 
-        if (global_ctx->merge_may_reduce_rows || has_coarse_postings || !index_ptr->getDeserializedFormat(data_part.checksums, index_ptr->getFileName(), &data_part.getDataPartStorage()))
+        if (global_ctx->merge_may_reduce_rows || has_coarse_postings || !index_ptr->getDeserializedFormat(data_part, index_ptr->getFileName()))
         {
             description_to_build.push_back(index);
             indexes_to_build.push_back(std::move(index_ptr));
