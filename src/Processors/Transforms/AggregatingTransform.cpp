@@ -1114,6 +1114,15 @@ void AggregatingTransform::initGenerate()
     if (adaptive_engaged)
     {
         auto & shared = *adaptive_context->session;
+
+        /// The producers' final flushes run after their own spill checks, and a flush's seal
+        /// copies can push memory over the external threshold with nothing re-checking. Re-check
+        /// here, after every producer flushed and before the merge path is chosen: the sweep
+        /// no-ops under the trigger, sheds staged records when over it, and spills the routing
+        /// table if shedding is not enough - which makes the choice below go external.
+        if (params->params.max_bytes_before_external_group_by)
+            params->aggregator.drainStagedChunksEarly(shared, AdaptiveDrainGoal::UntilLowWatermark);
+
         if (aggregator_has_temporary_data())
         {
             /// A thawed or given-up producer spilled on the baseline path, so the merge goes
