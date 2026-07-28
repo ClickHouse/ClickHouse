@@ -34,12 +34,15 @@ SELECT numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30])) AS res,
     /// numericIndexedVectorPointwiseAdd
     {
         FunctionDocumentation::Description description = R"(
-Performs pointwise addition between a numericIndexedVector and either another numericIndexedVector or a numeric constant.
+Performs pointwise addition between a `numericIndexedVector` and either another `numericIndexedVector`, a numeric constant, or a `Bitmap`.
+When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseAdd(v1, v2)";
         FunctionDocumentation::Arguments arguments
             = {{"v1", "", {"numericIndexedVector"}},
-               {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*", "numericIndexedVector"}}};
+               {"v2",
+                "A numeric constant, `numericIndexedVector` object, or `Bitmap`. The `Bitmap` element type must match the index type of `v1`.",
+                {"(U)Int*", "Float*", "numericIndexedVector", "AggregateFunction(groupBitmap, UInt*)"}}};
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
         FunctionDocumentation::Examples examples
             = {{"Usage example",
@@ -64,12 +67,15 @@ SELECT
     /// numericIndexedVectorPointwiseSubtract
     {
         FunctionDocumentation::Description description = R"(
-Performs pointwise subtraction between a numericIndexedVector and either another numericIndexedVector or a numeric constant.
+Performs pointwise subtraction between a `numericIndexedVector` and either another `numericIndexedVector`, a numeric constant, or a `Bitmap`.
+When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseSubtract(v1, v2)";
         FunctionDocumentation::Arguments arguments
             = {{"v1", "", {"numericIndexedVector"}},
-               {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*", "numericIndexedVector"}}};
+               {"v2",
+                "A numeric constant, `numericIndexedVector` object, or `Bitmap`. The `Bitmap` element type must match the index type of `v1`.",
+                {"(U)Int*", "Float*", "numericIndexedVector", "AggregateFunction(groupBitmap, UInt*)"}}};
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
         FunctionDocumentation::Examples examples
             = {{"Usage example",
@@ -94,14 +100,14 @@ SELECT
     /// numericIndexedVectorPointwiseMultiply
     {
         FunctionDocumentation::Description description = R"(
-Performs pointwise multiplication between a `numericIndexedVector` and either another `numericIndexedVector`, a numeric constant, or a bitmap aggregate state.
-When the second argument is a bitmap aggregate state, it acts as an index filter: each index present in the bitmap is treated as having value 1, so the result retains only the entries whose indices appear in the bitmap (with their original values).
+Performs pointwise multiplication between a `numericIndexedVector` and either another `numericIndexedVector`, a numeric constant, or a `Bitmap`.
+When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseMultiply(v1, v2)";
         FunctionDocumentation::Arguments arguments
             = {{"v1", "", {"numericIndexedVector"}},
                {"v2",
-                "A numeric constant, numericIndexedVector, or bitmap aggregate state. The bitmap element type must match the index type of v1.",
+                "A numeric constant, `numericIndexedVector` object, or `Bitmap`. The `Bitmap` element type must match the index type of `v1`.",
                 {"(U)Int*", "Float*", "numericIndexedVector", "AggregateFunction(groupBitmap, UInt*)"}}};
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
         FunctionDocumentation::Examples examples
@@ -127,12 +133,15 @@ SELECT
     /// numericIndexedVectorPointwiseDivide
     {
         FunctionDocumentation::Description description = R"(
-Performs pointwise division between a numericIndexedVector and either another numericIndexedVector or a numeric constant.
+Performs pointwise division between a `numericIndexedVector` and either another `numericIndexedVector`, a numeric constant, or a `Bitmap`.
+When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseDivide(v1, v2)";
         FunctionDocumentation::Arguments arguments
             = {{"v1", "", {"numericIndexedVector"}},
-               {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*", "numericIndexedVector"}}};
+               {"v2",
+                "A numeric constant, `numericIndexedVector` object, or `Bitmap`. The `Bitmap` element type must match the index type of `v1`.",
+                {"(U)Int*", "Float*", "numericIndexedVector", "AggregateFunction(groupBitmap, UInt*)"}}};
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
         FunctionDocumentation::Examples examples
             = {{"Usage example",
@@ -157,13 +166,16 @@ SELECT
     /// numericIndexedVectorPointwiseEqual
     {
         FunctionDocumentation::Description description = R"(
-Performs pointwise comparison between a numericIndexedVector and either another numericIndexedVector or a numeric constant.
-The result is a numericIndexedVector containing the indices where the values are equal, with all corresponding values set to 1.
+Performs pointwise comparison between a `numericIndexedVector` and either another `numericIndexedVector`, a numeric constant, or a `Bitmap`.
+When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
+The result is a `numericIndexedVector` containing the indices where the values are equal, with all corresponding values set to 1.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseEqual(v1, v2)";
         FunctionDocumentation::Arguments arguments
             = {{"v1", "", {"numericIndexedVector"}},
-               {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*", "numericIndexedVector"}}};
+               {"v2",
+                "A numeric constant, `numericIndexedVector` object, or `Bitmap`. The `Bitmap` element type must match the index type of `v1`.",
+                {"(U)Int*", "Float*", "numericIndexedVector", "AggregateFunction(groupBitmap, UInt*)"}}};
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
         FunctionDocumentation::Examples examples
             = {{"",
@@ -188,13 +200,16 @@ SELECT
     /// numericIndexedVectorPointwiseNotEqual
     {
         FunctionDocumentation::Description description = R"(
-Performs pointwise comparison between a numericIndexedVector and either another numericIndexedVector or a numeric constant.
-The result is a numericIndexedVector containing the indices where the values are not equal, with all corresponding values set to 1.
+Performs pointwise comparison between a `numericIndexedVector` and either another `numericIndexedVector`, a numeric constant, or a `Bitmap`.
+When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
+The result is a `numericIndexedVector` containing the indices where the values are not equal, with all corresponding values set to 1.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseNotEqual(v1, v2)";
         FunctionDocumentation::Arguments arguments
             = {{"v1", "", {"numericIndexedVector"}},
-               {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*", "numericIndexedVector"}}};
+               {"v2",
+                "A numeric constant, `numericIndexedVector` object, or `Bitmap`. The `Bitmap` element type must match the index type of `v1`.",
+                {"(U)Int*", "Float*", "numericIndexedVector", "AggregateFunction(groupBitmap, UInt*)"}}};
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
         FunctionDocumentation::Examples examples
             = {{"Usage example",
@@ -219,13 +234,16 @@ SELECT
     /// numericIndexedVectorPointwiseLess
     {
         FunctionDocumentation::Description description = R"(
-Performs pointwise comparison between a numericIndexedVector and either another numericIndexedVector or a numeric constant.
-The result is a numericIndexedVector containing the indices where the first vector's value is less than the second vector's value, with all corresponding values set to 1.
+Performs pointwise comparison between a `numericIndexedVector` and either another `numericIndexedVector`, a numeric constant, or a `Bitmap`.
+When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
+The result is a `numericIndexedVector` containing the indices where the first vector's value is less than the second vector's value, with all corresponding values set to 1.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseLess(v1, v2)";
         FunctionDocumentation::Arguments arguments
             = {{"v1", "", {"numericIndexedVector"}},
-               {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*", "numericIndexedVector"}}};
+               {"v2",
+                "A numeric constant, `numericIndexedVector` object, or `Bitmap`. The `Bitmap` element type must match the index type of `v1`.",
+                {"(U)Int*", "Float*", "numericIndexedVector", "AggregateFunction(groupBitmap, UInt*)"}}};
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
         FunctionDocumentation::Examples examples
             = {{"Usage example",
@@ -250,13 +268,16 @@ SELECT
     /// numericIndexedVectorPointwiseLessEqual
     {
         FunctionDocumentation::Description description = R"(
-Performs pointwise comparison between a numericIndexedVector and either another numericIndexedVector or a numeric constant.
-The result is a numericIndexedVector containing the indices where the first vector's value is less than or equal to the second vector's value, with all corresponding values set to 1.
+Performs pointwise comparison between a `numericIndexedVector` and either another `numericIndexedVector`, a numeric constant, or a `Bitmap`.
+When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
+The result is a `numericIndexedVector` containing the indices where the first vector's value is less than or equal to the second vector's value, with all corresponding values set to 1.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseLessEqual(v1, v2)";
         FunctionDocumentation::Arguments arguments
             = {{"v1", "", {"numericIndexedVector"}},
-               {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*", "numericIndexedVector"}}};
+               {"v2",
+                "A numeric constant, `numericIndexedVector` object, or `Bitmap`. The `Bitmap` element type must match the index type of `v1`.",
+                {"(U)Int*", "Float*", "numericIndexedVector", "AggregateFunction(groupBitmap, UInt*)"}}};
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
         FunctionDocumentation::Examples examples
             = {{"Usage example",
@@ -281,13 +302,16 @@ SELECT
     /// numericIndexedVectorPointwiseGreater
     {
         FunctionDocumentation::Description description = R"(
-Performs pointwise comparison between a numericIndexedVector and either another numericIndexedVector or a numeric constant.
-The result is a numericIndexedVector containing the indices where the first vector's value is greater than the second vector's value, with all corresponding values set to 1.
+Performs pointwise comparison between a `numericIndexedVector` and either another `numericIndexedVector`, a numeric constant, or a `Bitmap`.
+When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
+The result is a `numericIndexedVector` containing the indices where the first vector's value is greater than the second vector's value, with all corresponding values set to 1.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseGreater(v1, v2)";
         FunctionDocumentation::Arguments arguments
             = {{"v1", "", {"numericIndexedVector"}},
-               {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*", "numericIndexedVector"}}};
+               {"v2",
+                "A numeric constant, `numericIndexedVector` object, or `Bitmap`. The `Bitmap` element type must match the index type of `v1`.",
+                {"(U)Int*", "Float*", "numericIndexedVector", "AggregateFunction(groupBitmap, UInt*)"}}};
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
         FunctionDocumentation::Examples examples
             = {{"Usage example",
@@ -312,13 +336,16 @@ SELECT
     /// numericIndexedVectorPointwiseGreaterEqual
     {
         FunctionDocumentation::Description description = R"(
-Performs pointwise comparison between a numericIndexedVector and either another numericIndexedVector or a numeric constant.
-The result is a numericIndexedVector containing the indices where the first vector's value is greater than or equal to the second vector's value, with all corresponding values set to 1.
+Performs pointwise comparison between a `numericIndexedVector` and either another `numericIndexedVector`, a numeric constant, or a `Bitmap`.
+When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
+The result is a `numericIndexedVector` containing the indices where the first vector's value is greater than or equal to the second vector's value, with all corresponding values set to 1.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseGreaterEqual(v1, v2)";
         FunctionDocumentation::Arguments arguments
             = {{"v1", "", {"numericIndexedVector"}},
-               {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*", "numericIndexedVector"}}};
+               {"v2",
+                "A numeric constant, `numericIndexedVector` object, or `Bitmap`. The `Bitmap` element type must match the index type of `v1`.",
+                {"(U)Int*", "Float*", "numericIndexedVector", "AggregateFunction(groupBitmap, UInt*)"}}};
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
         FunctionDocumentation::Examples examples
             = {{"Usage example",
@@ -343,12 +370,16 @@ SELECT
     /// numericIndexedVectorPointwiseMax
     {
         FunctionDocumentation::Description description = R"(
-Performs pointwise maximum between two numericIndexedVector objects.
-The result is a numericIndexedVector containing the union of indices from both vectors, where each value is the larger of the two values at that index; for indices present in only one vector, that vector's value is used.
+Performs pointwise maximum between a `numericIndexedVector` and either another `numericIndexedVector` or a `Bitmap`.
+When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
+The result is a `numericIndexedVector` containing the union of indices from both vectors, where each value is the larger of the two values at that index; for indices present in only one vector, that vector's value is used.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseMax(v1, v2)";
         FunctionDocumentation::Arguments arguments
-            = {{"v1", "", {"numericIndexedVector"}}, {"v2", "Another numericIndexedVector object.", {"numericIndexedVector"}}};
+            = {{"v1", "", {"numericIndexedVector"}},
+               {"v2",
+                "Another `numericIndexedVector` object or `Bitmap`. The `Bitmap` element type must match the index type of `v1`.",
+                {"numericIndexedVector", "AggregateFunction(groupBitmap, UInt*)"}}};
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
         FunctionDocumentation::Examples examples
             = {{"Usage example",
@@ -376,12 +407,16 @@ SELECT
     /// numericIndexedVectorPointwiseMin
     {
         FunctionDocumentation::Description description = R"(
-Performs pointwise minimum between two numericIndexedVector objects.
-The result is a numericIndexedVector containing the union of indices from both vectors, where each value is the smaller of the two values at that index; for indices present in only one vector, that vector's value is used.
+Performs pointwise minimum between a `numericIndexedVector` and either another `numericIndexedVector` or a `Bitmap`.
+When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
+The result is a `numericIndexedVector` containing the union of indices from both vectors, where each value is the smaller of the two values at that index; for indices present in only one vector, that vector's value is used.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseMin(v1, v2)";
         FunctionDocumentation::Arguments arguments
-            = {{"v1", "", {"numericIndexedVector"}}, {"v2", "Another numericIndexedVector object.", {"numericIndexedVector"}}};
+            = {{"v1", "", {"numericIndexedVector"}},
+               {"v2",
+                "Another `numericIndexedVector` object or `Bitmap`. The `Bitmap` element type must match the index type of `v1`.",
+                {"numericIndexedVector", "AggregateFunction(groupBitmap, UInt*)"}}};
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
         FunctionDocumentation::Examples examples
             = {{"Usage example",
