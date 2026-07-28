@@ -1319,6 +1319,6 @@ WITH recent_users AS (
 SELECT * FROM stackoverflow.posts WHERE OwnerUserId IN (SELECT Id FROM recent_users)
 ```
 
-В этом случае CTE `users` пересчитывается при каждой вставке в `posts`, а materialized view не будет обновляться при добавлении новых пользователей — только при вставке в `posts`.
+В этом случае CTE `users` заново вычисляется при каждой вставке в `posts`, а materialized view не будет обновляться при добавлении новых пользователей — только при вставке в `posts`.
 
-Как правило, CTE стоит использовать для логики, которая работает с той же исходной таблицей, к которой привязана materialized view, либо нужно убедиться, что используемые таблицы небольшие и вряд ли создадут узкие места по производительности. В качестве альтернативы рассмотрите [те же оптимизации, что и для JOIN в Materialized Views](/ru/concepts/features/materialized-views/incremental-materialized-view#join-best-practices).
+Как правило, используйте CTE для логики, работающей с той же исходной таблицей, к которой привязано materialized view, либо убедитесь, что таблицы, на которые есть ссылки, небольшие и вряд ли станут узким местом по производительности. В качестве альтернативы рассмотрите [те же оптимизации, что и для JOIN в materialized views](/ru/concepts/features/materialized-views/incremental-materialized-view#join-best-practices).

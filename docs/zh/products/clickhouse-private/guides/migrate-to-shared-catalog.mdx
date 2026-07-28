@@ -24,15 +24,11 @@ Shared Catalog 提供了以下优势：
 在开始迁移之前，请先确认满足以下前置条件：
 
 <Steps>
-  <Step>
-    ### 1. 至少 2 个 server 副本
-
+  <Step title="1. 至少 2 个 server 副本" id="1-at-least-2-server-replicas">
     Operator 会通过滚动升级将数据库迁移到新的 Shared 数据库引擎。请将 `server.replicas` helm 值设置为 2 或更高。
   </Step>
 
-  <Step>
-    ### 2. 所有数据库都使用 Replicated 引擎
-
+  <Step title="2. 所有数据库都使用 Replicated 引擎" id="2-all-databases-use-the-replicated-engine">
     除 `system` 外，所有数据库都必须使用 Replicated 数据库引擎。可通过以下方式验证：
 
     ```sql
@@ -47,9 +43,7 @@ Shared Catalog 提供了以下优势：
     该查询不应返回任何行。
   </Step>
 
-  <Step>
-    ### 3. 所有表都使用非复制表引擎
-
+  <Step title="3. 所有表都使用非复制表引擎" id="3-all-tables-use-non-replicated-table-engines">
     除 `system` 中的表外，任何表都不应使用复制型或旧版表引擎。可通过以下方式验证：
 
     ```sql
@@ -65,9 +59,7 @@ Shared Catalog 提供了以下优势：
     该查询不应返回任何行。
   </Step>
 
-  <Step>
-    ### 4. 不存在 detached 表
-
+  <Step title="4. 不存在 detached 表" id="4-no-detached-tables-exist">
     ```sql
     SELECT * FROM system.detached_tables
     ```
@@ -87,15 +79,11 @@ Shared Catalog 提供了以下优势：
 </Warning>
 
 <Steps>
-  <Step>
-    ### 1. 启用 Shared Catalog 配置
-
+  <Step title="1. 启用 Shared Catalog 配置" id="1-enable-shared-catalog-configuration">
     在 Helm 配置值中将 `featureFlags.enableSharedCatalog` 设为 `true`。这会启用该配置，但不会触发数据库迁移。如果在此标志设为 `true` 的情况下部署 ClickHouse Cluster，却不迁移现有的 Replicated 数据库，ClickHouse Cluster 将无法启动。
   </Step>
 
-  <Step>
-    ### 2. 添加迁移标记
-
+  <Step title="2. 添加迁移标记" id="2-add-the-migration-markers">
     在 Helm 配置值中将 `featureFlags.migrateToSharedCatalog` 设为 `true`。这样会：
 
     * 向 ClickHouse 添加 `shared_database_catalog.migration_from_database_replicated` 设置，告知其在 Shared Catalog 模式下运行时预期会存在现有的 `Replicated` 数据库
@@ -104,23 +92,17 @@ Shared Catalog 提供了以下优势：
     部署后，Operator 会触发 Server 节点的滚动升级。这也会将所有数据库的类型更改为 `Shared`。
   </Step>
 
-  <Step>
-    ### 3. 等待状态变为 Ready
-
+  <Step title="3. 等待状态变为 Ready" id="3-wait-for-the-status-to-be-ready">
     ```bash
     kubectl get ClickHouseCluster <instance-name>
     ```
   </Step>
 
-  <Step>
-    ### 4. 移除迁移标记
-
+  <Step title="4. 移除迁移标记" id="4-remove-the-migration-markers">
     当状态变为 Ready 后，在 Helm 配置值中将 `featureFlags.migrateToSharedCatalog` 设为 `false`。由于所有数据库都已从 `Replicated` 迁移为 `Shared` 类型，这些迁移设置已不再适用。
   </Step>
 
-  <Step>
-    ### 5. 验证所有数据库都已迁移
-
+  <Step title="5. 验证所有数据库都已迁移" id="5-verify-all-databases-are-migrated">
     确认所有非系统数据库都使用 Shared engine：
 
     ```sql
@@ -143,21 +125,15 @@ Shared Catalog 提供了以下优势：
 如果 Shared Catalog 出现任何问题，您可以回滚到之前的状态：
 
 <Steps>
-  <Step>
-    ### 1. 移除迁移标记
-
+  <Step title="1. 移除迁移标记" id="1-remove-the-migration-markers">
     在 Helm 配置值中将 `featureFlags.migrateToSharedCatalog` 设置为 `false`。
   </Step>
 
-  <Step>
-    ### 2. 移除 Shared Catalog 设置
-
+  <Step title="2. 移除 Shared Catalog 设置" id="2-remove-the-shared-catalog-settings">
     在 Helm 配置值中将 `featureFlags.enableSharedCatalog` 设置为 `false`。这将触发 Operator 恢复这些更改。
   </Step>
 
-  <Step>
-    ### 3. 移除 Keeper 中的 Catalog
-
+  <Step title="3. 移除 Keeper 中的 Catalog" id="3-remove-the-catalog-in-keeper">
     为 Keeper 建立端口转发连接，并启动一个 keeper-client 会话 (使用 `clickhouse keeper-client`) 。
 
     会话启动后，执行以下命令：
@@ -174,10 +150,8 @@ Shared Catalog 提供了以下优势：
     这将清理 Keeper 中所有 Shared Catalog 状态。
   </Step>
 
-  <Step>
-    ### 4. 验证回滚
-
-    确认所有非 system database 都再次使用 Replicated 引擎：
+  <Step title="4. 验证回滚" id="4-verify-rollback">
+    确认所有非系统数据库都再次使用 Replicated 引擎：
 
     ```sql
     SELECT DISTINCT

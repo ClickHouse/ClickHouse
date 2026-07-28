@@ -1,0 +1,130 @@
+---
+description: '`eval` 表函数会将常量表达式求值为查询字符串，并执行生成的 `SELECT` 查询。'
+sidebarTitle: 'eval'
+slug: /sql-reference/table-functions/eval
+title: 'eval'
+doc_type: 'reference'
+---
+
+`eval` 表函数会先将其参数求值为查询字符串，然后将该字符串作为单条 `SELECT` 查询执行。
+
+此表函数处于 Experimental 阶段，默认已禁用。使用 `allow_experimental_eval_table_function` 设置启用它：
+
+```sql
+SET allow_experimental_eval_table_function = 1;
+```
+
+它还需要 analyzer ([`enable_analyzer`](/zh/reference/settings/session-settings#allow_experimental_analyzer)，默认启用) 。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+eval(expression)
+eval(SELECT ...)
+```
+
+<div id="arguments">
+  ## 参数
+</div>
+
+* `expression` — 返回查询字符串的常量表达式。允许使用查询参数和标量子查询。
+* `SELECT ...` — 返回查询字符串的 `SELECT` 查询。这种形式是标量子查询的语法糖：`eval(SELECT ...)` 等同于 `eval((SELECT ...))`，因此该查询必须恰好返回一行一列。
+
+该表达式的值必须是以下类型之一：
+
+* `String`
+* `Nullable(String)`
+* `LowCardinality(String)`
+* `LowCardinality(Nullable(String))`
+
+如果该值为 `NULL`，`eval` 会抛出异常。
+
+<div id="returned-value">
+  ## 返回值
+</div>
+
+将生成的 `SELECT` 查询结果以表的形式返回。
+
+输出 schema 会在分析 `eval` 表函数时确定，因此外层查询可以引用生成查询的实际列名和类型。
+
+<div id="examples">
+  ## 示例
+</div>
+
+计算一个常量表达式：
+
+```sql
+SELECT * FROM eval('SEL' || 'ECT 1 AS x');
+```
+
+结果：
+
+```text
+┌─x─┐
+│ 1 │
+└───┘
+```
+
+使用查询参数：
+
+```sql
+SET param_q = 'SELECT 2 AS y';
+SELECT * FROM eval({q:String});
+```
+
+结果：
+
+```text
+┌─y─┐
+│ 2 │
+└───┘
+```
+
+对一个返回查询文本的输入 `SELECT` 查询求值：
+
+```sql
+SELECT * FROM eval(SELECT 'SELECT 3 AS z');
+```
+
+结果：
+
+```text
+┌─z─┐
+│ 3 │
+└───┘
+```
+
+在外层查询中使用生成的 schema：
+
+```sql
+SELECT x + 1 FROM eval('SELECT 4 AS x');
+```
+
+结果：
+
+```text
+┌─plus(x, 1)─┐
+│          5 │
+└────────────┘
+```
+
+<div id="restrictions">
+  ## 限制
+</div>
+
+* `eval` 仅在启用查询分析器 (`enable_analyzer = 1`) 时可用。
+* 生成的查询必须是单个 `SELECT` 查询，且不能包含 `INTO OUTFILE` 或 `FORMAT` 等输出选项。`eval` 不执行多条语句。
+* 生成的查询必须是自包含的：它会在自身的作用域内解析，不能引用外层查询的 `WITH` 别名或列。
+* 生成的查询不能再次使用 `eval` 表函数。
+* `eval` 不能用作其他表函数的参数，例如 `remote('host', eval(...))`。若要在远程服务器上执行生成的查询，请将其包装在 `view` 中：`remote('host', view(SELECT * FROM eval(...)))`。
+* 该参数会在查询分析阶段求值一次，而不是对每一行或每个块求值一次。
+* 外层查询日志会记录包含 `eval` 的原始查询；生成的 `SELECT` 查询不会作为单独的用户查询被记录。
+
+<div id="related">
+  ## 相关内容
+</div>
+
+* [`view` 表函数](/zh/reference/functions/table-functions/view)
+* `allow_experimental_eval_table_function` 设置

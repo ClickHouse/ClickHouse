@@ -24,7 +24,7 @@ doc_type: 'guide'
 轻量级删除会立即将行标记为已删除，使其在后续所有 `SELECT` 查询中都会被自动过滤掉。之后，这些已删除的行会在自然的 merge 周期中被移除，因此产生的 I/O 更少。因此，在一段未明确的时间内，数据实际上可能并未从存储中真正删除，而只是被标记为已删除。如果你需要确保数据已被删除，请考虑使用上述变更命令。
 
 ```sql
--- delete all data from 2018 with a lightweight delete. Not recommended.
+-- 使用轻量级删除删除 2018 年的所有数据。不建议使用。
 DELETE FROM posts WHERE toYear(CreationDate) = 2018
 ```
 

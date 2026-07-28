@@ -9,7 +9,9 @@
 #include <Common/ProfileEvents.h>
 #include <Common/TransactionID.h>
 
+#include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <unordered_set>
 
@@ -22,7 +24,6 @@ class Counters;
 namespace DB
 {
 struct AsyncReadCounters;
-struct Settings;
 
 /** Allows to log information about queries execution:
   * - info about start of query execution;
@@ -99,9 +100,12 @@ struct QueryLogElement
 
     std::vector<UInt64> thread_ids;
     UInt64 peak_threads_usage = 0;
-    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
-    std::shared_ptr<AsyncReadCounters> async_read_counters;
-    std::shared_ptr<Settings> query_settings;
+    /// Self-contained snapshots (owning): the profile events, changed settings, and async-read counters as
+    /// the name->value forms they are dumped to. Kept as values (not a shared Settings/counter) so the
+    /// element owns all its memory - see SystemLogBase::add.
+    std::optional<ProfileEvents::Counters::Snapshot> profile_counters;
+    std::map<String, UInt64> async_read_counters;
+    std::map<String, String> query_settings;
 
     bool is_internal{};
 

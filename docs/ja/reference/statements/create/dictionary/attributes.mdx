@@ -140,6 +140,8 @@ PRIMARY KEY field1, field2
 
 `dictGet*` 関数へのクエリでは、キーとしてタプルを渡します。例: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
+複合キーが単一の属性で構成されている場合、キーの値は`tuple`で囲まずに直接渡すことができます。たとえば、`dictGetString('dict_name', 'attr_name', 'key')`と`dictGetString('dict_name', 'attr_name', tuple('key'))`はいずれも有効です。
+
 <div id="attributes">
   ## 属性
 </div>

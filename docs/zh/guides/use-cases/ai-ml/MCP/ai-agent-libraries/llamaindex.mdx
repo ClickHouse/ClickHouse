@@ -27,9 +27,7 @@ doc_type: 'guide'
 你可以在 Python REPL 中或通过脚本执行以下步骤。
 
 <Steps>
-  <Step>
-    ## 安装库
-
+  <Step title="安装库" id="install-libraries">
     运行以下命令，安装所需的库：
 
     ```python
@@ -38,9 +36,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 设置凭证
-
+  <Step title="设置凭证" id="setup-credentials">
     接下来，你需要提供 Anthropic 的 API 密钥：
 
     ```python
@@ -60,9 +56,7 @@ doc_type: 'guide'
     </Info>
   </Step>
 
-  <Step>
-    ## 初始化 MCP 服务器
-
+  <Step title="初始化 MCP 服务器" id="initialize-mcp-and-agent">
     现在将 ClickHouse MCP 服务器配置为指向 ClickHouse SQL playground。
     你需要将这些 Python 函数转换为 Llama Index 工具：
 
@@ -94,9 +88,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 创建一个 agent
-
+  <Step title="创建一个 agent" id="create-agent">
     现在，你已经可以创建一个能够访问这些工具的 agent。将单次运行中的工具调用次数上限设为 10。如有需要，你可以修改这个参数：
 
     ```python
@@ -110,9 +102,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 初始化 LLM
-
+  <Step title="初始化 LLM" id="initialize-llm">
     使用以下代码初始化 Claude Sonnet 4.0：
 
     ```python
@@ -121,16 +111,15 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 运行 agent
-
+  <Step title="运行 agent" id="run-agent">
     最后，你可以向 agent 提出一个问题：
 
     ```python
     response = agent.query("What's the most popular repository?")
     ```
 
-    返回的响应较长，因此在下面的示例中进行了截断：
+    返回的响应较长，因此在下面的示例中
+    进行了截断：
 
     ```response title="Response"
     Added user message to memory: What's the most popular repository?

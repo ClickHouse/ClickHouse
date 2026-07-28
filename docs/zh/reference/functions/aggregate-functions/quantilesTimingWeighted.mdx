@@ -44,7 +44,7 @@ quantilesTimingWeighted(level1, level2, ...)(expr, weight)
 
 **参数说明**
 
-* `expr` — 基于列值的表达式，返回一个 `Float*` 类型的数值。如果向函数传入负值，其行为未定义。如果该值大于 30,000 (即页面加载时间超过 30 秒) ，则视为 30,000。[`Float*`](/zh/reference/data-types/float)
+* `expr` — 基于列值的表达式，结果为数值类型、`Date` 或 `DateTime`。如果向函数传入负值，其行为未定义。如果该值大于 30,000 (即页面加载时间超过 30 秒) ，则视为 30,000。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime)
 * `weight` — 包含序列元素权重的列。权重表示该值出现的次数。[`UInt*`](/zh/reference/data-types/int-uint)
 
 **返回值**

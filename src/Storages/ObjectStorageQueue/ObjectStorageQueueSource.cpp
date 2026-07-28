@@ -165,6 +165,9 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
 
 bool ObjectStorageQueueSource::FileIterator::isFinished()
 {
+    if (iterator_invalidated)
+        return true;
+
     std::lock_guard lock(mutex);
     LOG_TEST(log, "Iterator finished: {}, objects to retry: {}", iterator_finished.load(), objects_to_retry.size());
     return iterator_finished
@@ -498,7 +501,15 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
         if (use_buckets_for_processing)
         {
+            refreshExpiringBucketLocks();
+
             std::lock_guard lock(mutex);
+
+            if (iterator_invalidated)
+            {
+                LOG_WARNING(log, "Bucket lock refresh failed, stopping the file iterator");
+                return {};
+            }
             auto result = getNextKeyFromAcquiredBucket(processor);
             object_info = result.object_info;
             file_metadata = result.file_metadata;
@@ -598,6 +609,38 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
     }
 }
 
+void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks()
+{
+    const size_t ttl_seconds = metadata->getPersistentProcessingNodeTTLSeconds();
+    if (!ttl_seconds)
+        return;
+
+    std::lock_guard lock(mutex);
+
+    /// Already invalidated (possibly by another thread), nothing to refresh.
+    /// Checked under the mutex to never hit the released holder of the lost lock.
+    if (iterator_invalidated)
+        return;
+    for (auto & [processor, holders] : bucket_holders)
+    {
+        for (auto & holder : *holders)
+        {
+            if (holder->getAgeSeconds() >= static_cast<double>(ttl_seconds) / 4)
+            {
+                try
+                {
+                    holder->refresh();
+                }
+                catch (...)
+                {
+                    iterator_invalidated = true;
+                    throw;
+                }
+            }
+        }
+    }
+}
+
 void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
 {
     std::lock_guard lock(mutex);
@@ -623,7 +666,15 @@ void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
                 chassert(holder->isFinished());
 
             /// Release bucket lock.
-            holder->release();
+            try
+            {
+                holder->release();
+            }
+            catch (...)
+            {
+                iterator_invalidated = true;
+                throw;
+            }
             ++released_holders;
 
             /// Reset bucket processor in cached state.
@@ -1708,9 +1759,9 @@ void ObjectStorageQueueSource::appendLogElement(
     const auto & file_path = file_metadata_->getPath();
     const auto & file_status = *file_metadata_->getFileStatus();
 
-    ObjectStorageQueueLogElement elem{};
+    system_queue_log->add([&](ObjectStorageQueueLogElement & element)
     {
-        elem = ObjectStorageQueueLogElement
+        element = ObjectStorageQueueLogElement
         {
             .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
             .database = storage_id.database_name,
@@ -1727,8 +1778,7 @@ void ObjectStorageQueueSource::appendLogElement(
             .transaction_start_time = transaction_start_time_,
             .get_object_time_ms = file_status.get_object_time_ms,
         };
-    }
-    system_queue_log->add(std::move(elem));
+    });
 }
 
 }

@@ -507,7 +507,7 @@ SYSTEM STOP MERGES;
 
 4. 任意ですが、推奨します: ZooKeeper のリーダーノードを特定し、起動してから再度停止します。これにより、変換前に ZooKeeper が整合性のあるスナップショットをディスクに書き込むよう強制できます。
 
-5. リーダーノードで `clickhouse-keeper-converter` を実行します。ClickHouse の完全なバイナリがインストールされている場合は、代わりに `keeper-converter` サブコマンド (`clickhouse keeper-converter`) を使用します。どちらも利用できない場合は、[バイナリをダウンロード](/getting-started/quick-start/oss#install-clickhouse)してください。
+5. リーダーノードで `clickhouse-keeper-converter` を実行します。ClickHouse の完全なバイナリがインストールされている場合は、代わりに `keeper-converter` サブコマンド (`clickhouse keeper-converter`) を使用します。どちらも利用できない場合は、[バイナリをダウンロード](/ja/get-started/setup/self-managed/quick-install#install-clickhouse-using-curl)してください。
 
 ```bash
 clickhouse-keeper-converter \
@@ -779,270 +779,266 @@ ClickHouse Cloud の[Prometheus インテグレーション](/ja/products/cloud/
 
 このガイドでは、ClickHouse Keeper を設定するためのシンプルで最小限の構成と、分散処理をテストする方法の例を紹介します。この例では、Linux 上の 3 つのノードを使用します。
 
-<div id="1-configure-nodes-with-keeper-settings">
-  ### 1. Keeperの設定でノードを構成する
-</div>
+<Steps>
+  <Step title="Keeper 設定を使用してノードを構成する" id="1-configure-nodes-with-keeper-settings">
+    1. 3 台のホスト (`chnode1`、`chnode2`、`chnode3`) に、3 つの ClickHouse インスタンスをインストールします。 (ClickHouse のインストール方法の詳細については、[クイックスタート](/ja/get-started/setup/install)を参照してください。)
 
-1. 3 台のホスト (`chnode1`、`chnode2`、`chnode3`) に、3 つの ClickHouse インスタンスをインストールします。 (ClickHouse のインストール方法の詳細については、[クイックスタート](/ja/get-started/setup/install)を参照してください。)
+    2. 各ノードで、ネットワークインターフェイス経由の外部通信を許可するために、以下のエントリを追加します。
+       ```xml
+       <listen_host>0.0.0.0</listen_host>
+       ```
 
-2. 各ノードで、ネットワークインターフェイス経由の外部通信を許可するために、以下のエントリを追加します。
-   ```xml
-   <listen_host>0.0.0.0</listen_host>
-   ```
+    3. 以下のClickHouse Keeperの設定を3台すべてのサーバーに追加し、各サーバーの`<server_id>`設定を更新します。たとえば、`chnode1`は`1`、`chnode2`は`2`となります。
 
-3. 以下のClickHouse Keeperの設定を3台すべてのサーバーに追加し、各サーバーの`<server_id>`設定を更新します。たとえば、`chnode1`は`1`、`chnode2`は`2`となります。
+       ```xml
+       <keeper_server>
+           <tcp_port>9181</tcp_port>
+           <server_id>1</server_id>
+           <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+           <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
 
-   ```xml
-   <keeper_server>
-       <tcp_port>9181</tcp_port>
-       <server_id>1</server_id>
-       <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
-       <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+           <coordination_settings>
+               <operation_timeout_ms>10000</operation_timeout_ms>
+               <session_timeout_ms>30000</session_timeout_ms>
+               <raft_logs_level>warning</raft_logs_level>
+           </coordination_settings>
 
-       <coordination_settings>
-           <operation_timeout_ms>10000</operation_timeout_ms>
-           <session_timeout_ms>30000</session_timeout_ms>
-           <raft_logs_level>warning</raft_logs_level>
-       </coordination_settings>
+           <raft_configuration>
+               <server>
+                   <id>1</id>
+                   <hostname>chnode1.domain.com</hostname>
+                   <port>9234</port>
+               </server>
+               <server>
+                   <id>2</id>
+                   <hostname>chnode2.domain.com</hostname>
+                   <port>9234</port>
+               </server>
+               <server>
+                   <id>3</id>
+                   <hostname>chnode3.domain.com</hostname>
+                   <port>9234</port>
+               </server>
+           </raft_configuration>
+       </keeper_server>
+       ```
 
-       <raft_configuration>
-           <server>
-               <id>1</id>
-               <hostname>chnode1.domain.com</hostname>
-               <port>9234</port>
-           </server>
-           <server>
-               <id>2</id>
-               <hostname>chnode2.domain.com</hostname>
-               <port>9234</port>
-           </server>
-           <server>
-               <id>3</id>
-               <hostname>chnode3.domain.com</hostname>
-               <port>9234</port>
-           </server>
-       </raft_configuration>
-   </keeper_server>
-   ```
+       上記で使用した基本設定は以下のとおりです。
 
-   上記で使用した基本設定は以下のとおりです。
+       | パラメータ                     | 説明                                        | 例                                 |
+       | ------------------------- | ----------------------------------------- | --------------------------------- |
+       | tcp&#95;port              | Keeper クライアントが使用するポート                     | ZooKeeper の 2181 に相当するデフォルトの 9181 |
+       | server&#95;id             | Raft 構成で使用する各 ClickHouse Keeper サーバーの識別子  | 1                                 |
+       | coordination&#95;settings | timeout などのパラメータを指定するセクション                | timeouts: 10000, log level: trace |
+       | server                    | 参加するサーバーの定義                               | 各サーバー定義の一覧                        |
+       | raft&#95;configuration    | Keeper クラスター内の各サーバーに対する設定                 | 各サーバーの server と settings          |
+       | id                        | Keeper サービス用サーバーの数値 ID                    | 1                                 |
+       | hostname                  | Keeper クラスター内の各サーバーのホスト名、IP アドレス、または FQDN | `chnode1.domain.com`              |
+       | port                      | サーバー間の Keeper 接続を待ち受けるポート                 | 9234                              |
 
-   | パラメータ                     | 説明                                        | 例                                 |
-   | ------------------------- | ----------------------------------------- | --------------------------------- |
-   | tcp&#95;port              | Keeper クライアントが使用するポート                     | ZooKeeper の 2181 に相当するデフォルトの 9181 |
-   | server&#95;id             | Raft 構成で使用する各 ClickHouse Keeper サーバーの識別子  | 1                                 |
-   | coordination&#95;settings | timeout などのパラメータを指定するセクション                | timeouts: 10000, log level: trace |
-   | server                    | 参加するサーバーの定義                               | 各サーバー定義の一覧                        |
-   | raft&#95;configuration    | Keeper クラスター内の各サーバーに対する設定                 | 各サーバーの server と settings          |
-   | id                        | Keeper サービス用サーバーの数値 ID                    | 1                                 |
-   | hostname                  | Keeper クラスター内の各サーバーのホスト名、IP アドレス、または FQDN | `chnode1.domain.com`              |
-   | port                      | サーバー間の Keeper 接続を待ち受けるポート                 | 9234                              |
+    4. ZooKeeper コンポーネントを有効にします。このコンポーネントでは ClickHouse Keeper エンジンを使用します:
 
-4. ZooKeeper コンポーネントを有効にします。このコンポーネントでは ClickHouse Keeper エンジンを使用します:
+       ```xml
+           <zookeeper>
+               <node>
+                   <host>chnode1.domain.com</host>
+                   <port>9181</port>
+               </node>
+               <node>
+                   <host>chnode2.domain.com</host>
+                   <port>9181</port>
+               </node>
+               <node>
+                   <host>chnode3.domain.com</host>
+                   <port>9181</port>
+               </node>
+           </zookeeper>
+       ```
 
-   ```xml
-       <zookeeper>
-           <node>
-               <host>chnode1.domain.com</host>
-               <port>9181</port>
-           </node>
-           <node>
-               <host>chnode2.domain.com</host>
-               <port>9181</port>
-           </node>
-           <node>
-               <host>chnode3.domain.com</host>
-               <port>9181</port>
-           </node>
-       </zookeeper>
-   ```
+       上記で使用した基本設定は以下のとおりです。
 
-   上記で使用した基本設定は以下のとおりです。
+       | パラメータ | 説明                                       | 例                    |
+       | ----- | ---------------------------------------- | -------------------- |
+       | node  | ClickHouse Keeper 接続先ノードの一覧              | 各サーバーごとの設定エントリ       |
+       | host  | 各 ClickHouse Keeper ノードのホスト名、IP、または FQDN | `chnode1.domain.com` |
+       | port  | ClickHouse Keeper のクライアントポート             | 9181                 |
 
-   | パラメータ | 説明                                       | 例                    |
-   | ----- | ---------------------------------------- | -------------------- |
-   | node  | ClickHouse Keeper 接続先ノードの一覧              | 各サーバーごとの設定エントリ       |
-   | host  | 各 ClickHouse Keeper ノードのホスト名、IP、または FQDN | `chnode1.domain.com` |
-   | port  | ClickHouse Keeper のクライアントポート             | 9181                 |
+    5. ClickHouse を再起動し、各 Keeper インスタンスが稼働していることを確認します。各サーバーで次のコマンドを実行してください。Keeper が稼働しており正常な状態であれば、`ruok` コマンドは `imok` を返します。
+       ```bash
+       # echo ruok | nc localhost 9181; echo
+       imok
+       ```
 
-5. ClickHouse を再起動し、各 Keeper インスタンスが稼働していることを確認します。各サーバーで次のコマンドを実行してください。Keeper が稼働しており正常な状態であれば、`ruok` コマンドは `imok` を返します。
-   ```bash
-   # echo ruok | nc localhost 9181; echo
-   imok
-   ```
+    6. `system` データベースには、ClickHouse Keeper の各インスタンスの詳細が格納された `zookeeper` という名前のテーブルがあります。では、このテーブルを見てみましょう。
 
-6. `system` データベースには、ClickHouse Keeper の各インスタンスの詳細が格納された `zookeeper` という名前のテーブルがあります。では、このテーブルを見てみましょう。
+       ```sql
+       SELECT *
+       FROM system.zookeeper
+       WHERE path IN ('/', '/clickhouse')
+       ```
 
-   ```sql
-   SELECT *
-   FROM system.zookeeper
-   WHERE path IN ('/', '/clickhouse')
-   ```
+       表は次のとおりです。
 
-   表は次のとおりです。
+       ```response
+       ┌─name───────┬─value─┬─czxid─┬─mzxid─┬───────────────ctime─┬───────────────mtime─┬─version─┬─cversion─┬─aversion─┬─ephemeralOwner─┬─dataLength─┬─numChildren─┬─pzxid─┬─path────────┐
+       │ clickhouse │       │   124 │   124 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        2 │        0 │              0 │          0 │           2 │  5693 │ /           │
+       │ task_queue │       │   125 │   125 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        1 │        0 │              0 │          0 │           1 │   126 │ /clickhouse │
+       │ tables     │       │  5693 │  5693 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        3 │        0 │              0 │          0 │           3 │  6461 │ /clickhouse │
+       └────────────┴───────┴───────┴───────┴─────────────────────┴─────────────────────┴─────────┴──────────┴──────────┴────────────────┴────────────┴─────────────┴───────┴─────────────┘
+       ```
+  </Step>
 
-   ```response
-   ┌─name───────┬─value─┬─czxid─┬─mzxid─┬───────────────ctime─┬───────────────mtime─┬─version─┬─cversion─┬─aversion─┬─ephemeralOwner─┬─dataLength─┬─numChildren─┬─pzxid─┬─path────────┐
-   │ clickhouse │       │   124 │   124 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        2 │        0 │              0 │          0 │           2 │  5693 │ /           │
-   │ task_queue │       │   125 │   125 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        1 │        0 │              0 │          0 │           1 │   126 │ /clickhouse │
-   │ tables     │       │  5693 │  5693 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        3 │        0 │              0 │          0 │           3 │  6461 │ /clickhouse │
-   └────────────┴───────┴───────┴───────┴─────────────────────┴─────────────────────┴─────────┴──────────┴──────────┴────────────────┴────────────┴─────────────┴───────┴─────────────┘
-   ```
+  <Step title="ClickHouse でクラスターを構成する" id="2--configure-a-cluster-in-clickhouse">
+    1. 2 台のノード上で、2 つの分片と各分片あたり 1 つのレプリカ בלבדのシンプルなクラスターを構成してみましょう。3 台目のノードは、ClickHouse Keeper の要件であるクォーラムを満たすために使用します。`chnode1` と `chnode2` の設定を更新します。以下のクラスターでは、各ノードに 1 つの分片を定義しているため、レプリケーションなしで合計 2 つの分片になります。この例では、データの一部は一方のノードに、残りはもう一方のノードに配置されます。
 
-<div id="2--configure-a-cluster-in-clickhouse">
-  ### 2.  ClickHouse でクラスターを構成する
-</div>
+       ```xml
+           <remote_servers>
+               <cluster_2S_1R>
+                   <shard>
+                       <replica>
+                           <host>chnode1.domain.com</host>
+                           <port>9000</port>
+                           <user>default</user>
+                           <password>ClickHouse123!</password>
+                       </replica>
+                   </shard>
+                   <shard>
+                       <replica>
+                           <host>chnode2.domain.com</host>
+                           <port>9000</port>
+                           <user>default</user>
+                           <password>ClickHouse123!</password>
+                       </replica>
+                   </shard>
+               </cluster_2S_1R>
+           </remote_servers>
+       ```
 
-1. 3 台のノードのうち 2 台に、2 分片・各 1 レプリカのシンプルなクラスターを構成します。3 台目のノードは、ClickHouse Keeper の要件であるクォーラムを満たすために使用します。`chnode1` と `chnode2` の設定を更新してください。次のクラスター定義では、各ノードに 1 つの分片を割り当てることで、合計 2 分片、レプリケーションなしの構成になります。この例では、データの一部は一方のノードに、残りはもう一方のノードに配置されます。
+       | パラメータ    | 説明                                           | 例                    |
+       | -------- | -------------------------------------------- | -------------------- |
+       | shard    | クラスター定義内のレプリカの一覧                             | 各分片のレプリカ一覧           |
+       | replica  | 各レプリカの設定一覧                                   | 各レプリカの設定エントリ         |
+       | host     | レプリカ分片をホストするサーバーのホスト名、IP、または FQDN            | `chnode1.domain.com` |
+       | port     | native TCP プロトコルで通信するためのポート                  | 9000                 |
+       | user     | クラスターの各インスタンスへの認証に使用する username              | default              |
+       | password | クラスターの各インスタンスへの接続を許可するために定義されたユーザーの password | `ClickHouse123!`     |
 
-   ```xml
-       <remote_servers>
-           <cluster_2S_1R>
-               <shard>
-                   <replica>
-                       <host>chnode1.domain.com</host>
-                       <port>9000</port>
-                       <user>default</user>
-                       <password>ClickHouse123!</password>
-                   </replica>
-               </shard>
-               <shard>
-                   <replica>
-                       <host>chnode2.domain.com</host>
-                       <port>9000</port>
-                       <user>default</user>
-                       <password>ClickHouse123!</password>
-                   </replica>
-               </shard>
-           </cluster_2S_1R>
-       </remote_servers>
-   ```
+    2. ClickHouse を再起動し、クラスターが作成されたことを確認します。
 
-   | Parameter | Description                            | Example              |
-   | --------- | -------------------------------------- | -------------------- |
-   | shard     | クラスター定義内のレプリカの一覧                       | 各分片のレプリカの一覧          |
-   | replica   | 各レプリカの設定一覧                             | 各レプリカの設定項目           |
-   | host      | レプリカを配置するサーバーのホスト名、IP、または FQDN         | `chnode1.domain.com` |
-   | port      | ネイティブ TCP プロトコルで通信するために使用するポート         | 9000                 |
-   | user      | クラスターのインスタンスへの認証に使用するユーザー名             | default              |
-   | password  | クラスターのインスタンスへの接続を許可するために定義したユーザーのパスワード | `ClickHouse123!`     |
+       ```sql
+       SHOW clusters;
+       ```
 
-2. ClickHouse を再起動し、クラスターが作成されたことを確認します。
+       クラスターが表示されるはずです。
 
-   ```sql
-   SHOW clusters;
-   ```
+       ```response
+       ┌─cluster───────┐
+       │ cluster_2S_1R │
+       └───────────────┘
+       ```
+  </Step>
 
-   クラスターが表示されるはずです。
+  <Step title="分散テーブルの作成とテスト" id="3-create-and-test-distributed-table">
+    1. `chnode1` 上の ClickHouse client を使用して、新しいクラスターに新しいデータベースを作成します。`ON CLUSTER` 句により、両方のノードにデータベースが自動的に作成されます。
+       ```sql
+       CREATE DATABASE db1 ON CLUSTER 'cluster_2S_1R';
+       ```
 
-   ```response
-   ┌─cluster───────┐
-   │ cluster_2S_1R │
-   └───────────────┘
-   ```
+    2. `db1` データベースに新しいテーブルを作成します。今回も、`ON CLUSTER` によって両方のノードにテーブルが作成されます。
+       ```sql
+       CREATE TABLE db1.table1 on cluster 'cluster_2S_1R'
+       (
+           `id` UInt64,
+           `column1` String
+       )
+       ENGINE = MergeTree
+       ORDER BY column1
+       ```
 
-<div id="3-create-and-test-distributed-table">
-  ### 3. 分散テーブルを作成してテストする
-</div>
+    3. `chnode1` ノードで、2 行のデータを追加します。
+       ```sql
+       INSERT INTO db1.table1
+           (id, column1)
+       VALUES
+           (1, 'abc'),
+           (2, 'def')
+       ```
 
-1. `chnode1` 上で ClickHouse client を使用し、新しいクラスターに新しいデータベースを作成します。`ON CLUSTER` 句により、両方のノードにデータベースが自動的に作成されます。
-   ```sql
-   CREATE DATABASE db1 ON CLUSTER 'cluster_2S_1R';
-   ```
+    4. `chnode2` ノードでも、2 行のデータを追加します。
+       ```sql
+       INSERT INTO db1.table1
+           (id, column1)
+       VALUES
+           (3, 'ghi'),
+           (4, 'jkl')
+       ```
 
-2. `db1` データベースに新しいテーブルを作成します。今回も、`ON CLUSTER` によって両方のノードにテーブルが作成されます。
-   ```sql
-   CREATE TABLE db1.table1 on cluster 'cluster_2S_1R'
-   (
-       `id` UInt64,
-       `column1` String
-   )
-   ENGINE = MergeTree
-   ORDER BY column1
-   ```
+    5. 各ノードで `SELECT` ステートメントを実行すると、そのノード上のデータしか表示されないことに注目してください。たとえば、`chnode1` では次のようになります。
 
-3. `chnode1` ノードで 2 行のデータを追加します。
-   ```sql
-   INSERT INTO db1.table1
-       (id, column1)
-   VALUES
-       (1, 'abc'),
-       (2, 'def')
-   ```
+       ```sql
+       SELECT *
+       FROM db1.table1
+       ```
 
-4. `chnode2` ノードでも 2 行のデータを追加します。
-   ```sql
-   INSERT INTO db1.table1
-       (id, column1)
-   VALUES
-       (3, 'ghi'),
-       (4, 'jkl')
-   ```
+       ```response
+       Query id: 7ef1edbc-df25-462b-a9d4-3fe6f9cb0b6d
 
-5. 各ノードで `SELECT` ステートメントを実行しても、そのノード上のデータしか表示されないことに注意してください。たとえば、`chnode1` では次のようになります。
+       ┌─id─┬─column1─┐
+       │  1 │ abc     │
+       │  2 │ def     │
+       └────┴─────────┘
 
-   ```sql
-   SELECT *
-   FROM db1.table1
-   ```
+       2 rows in set. Elapsed: 0.006 sec.
+       ```
 
-   ```response
-   Query id: 7ef1edbc-df25-462b-a9d4-3fe6f9cb0b6d
+       `chnode2` では次のようになります。
 
-   ┌─id─┬─column1─┐
-   │  1 │ abc     │
-   │  2 │ def     │
-   └────┴─────────┘
+    6. ```sql
+       SELECT *
+       FROM db1.table1
+       ```
 
-   2 rows in set. Elapsed: 0.006 sec.
-   ```
+       ```response
+       Query id: c43763cc-c69c-4bcc-afbe-50e764adfcbf
 
-   `chnode2` では:
+       ┌─id─┬─column1─┐
+       │  3 │ ghi     │
+       │  4 │ jkl     │
+       └────┴─────────┘
+       ```
 
-6. ```sql
-   SELECT *
-   FROM db1.table1
-   ```
+    7. 2 つの分片上のデータを表す `Distributed` テーブルを作成できます。`Distributed` テーブルエンジンを使用するテーブル自体はデータを保持しませんが、複数のサーバーにまたがる分散クエリ処理を可能にします。read はすべての分片に対して実行され、write は分片間に分散できます。`chnode1` で次のクエリを実行してください。
+       ```sql
+       CREATE TABLE db1.dist_table (
+           id UInt64,
+           column1 String
+       )
+       ENGINE = Distributed(cluster_2S_1R,db1,table1)
+       ```
 
-   ```response
-   Query id: c43763cc-c69c-4bcc-afbe-50e764adfcbf
+    8. `dist_table` をクエリすると、2 つの分片にある 4 行すべてのデータが返されることに注目してください。
 
-   ┌─id─┬─column1─┐
-   │  3 │ ghi     │
-   │  4 │ jkl     │
-   └────┴─────────┘
-   ```
+       ```sql
+       SELECT *
+       FROM db1.dist_table
+       ```
 
-7. 2 つの分片上のデータを表す `Distributed` テーブルを作成できます。`Distributed` テーブルエンジンを使用するテーブルは、それ自体ではデータを保存しませんが、複数のサーバーに対する分散クエリ処理を可能にします。読み取りはすべての分片に対して実行され、書き込みは各分片に分散できます。`chnode1` で次のクエリを実行します。
-   ```sql
-   CREATE TABLE db1.dist_table (
-       id UInt64,
-       column1 String
-   )
-   ENGINE = Distributed(cluster_2S_1R,db1,table1)
-   ```
+       ```response
+       Query id: 495bffa0-f849-4a0c-aeea-d7115a54747a
 
-8. `dist_table` にクエリを実行すると、2 つの分片から 4 行すべてのデータが返されることを確認してください。
+       ┌─id─┬─column1─┐
+       │  1 │ abc     │
+       │  2 │ def     │
+       └────┴─────────┘
+       ┌─id─┬─column1─┐
+       │  3 │ ghi     │
+       │  4 │ jkl     │
+       └────┴─────────┘
 
-   ```sql
-   SELECT *
-   FROM db1.dist_table
-   ```
-
-   ```response
-   Query id: 495bffa0-f849-4a0c-aeea-d7115a54747a
-
-   ┌─id─┬─column1─┐
-   │  1 │ abc     │
-   │  2 │ def     │
-   └────┴─────────┘
-   ┌─id─┬─column1─┐
-   │  3 │ ghi     │
-   │  4 │ jkl     │
-   └────┴─────────┘
-
-   4 rows in set. Elapsed: 0.018 sec.
-   ```
+       4 rows in set. Elapsed: 0.018 sec.
+       ```
+  </Step>
+</Steps>
 
 <div id="summary">
   ### まとめ

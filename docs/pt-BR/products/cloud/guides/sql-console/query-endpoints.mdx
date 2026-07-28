@@ -29,9 +29,7 @@ Você pode seguir este guia para [criar uma chave de API](/pt-BR/products/cloud/
 </Info>
 
 <Steps>
-  <Step>
-    ### Criar uma consulta salva
-
+  <Step title="Criar uma consulta salva" id="creating-a-saved-query">
     Se você já tiver uma consulta salva, pode pular esta etapa.
 
     Abra uma nova aba de consulta. Para fins de demonstração, usaremos o [conjunto de dados do YouTube](/pt-BR/get-started/sample-datasets/youtube-dislikes), que contém aproximadamente 4,5 bilhões de registros.
@@ -79,9 +77,7 @@ Você pode seguir este guia para [criar uma chave de API](/pt-BR/products/cloud/
     Mais informações sobre consultas salvas podem ser encontradas na seção [&quot;Saving a query&quot;](/pt-BR/products/cloud/features/sql-console-features/sql-console#saving-a-query).
   </Step>
 
-  <Step>
-    ### Configurar o endpoint da Query API
-
+  <Step title="Configurar o endpoint da Query API" id="configuring-the-query-api-endpoint">
     Os endpoints da Query API podem ser configurados diretamente na tela da consulta clicando no botão **Share** e selecionando `API Endpoint`.
     Será solicitado que você especifique quais chaves de API poderão acessar o endpoint:
 
@@ -105,15 +101,11 @@ Você pode seguir este guia para [criar uma chave de API](/pt-BR/products/cloud/
     ```
   </Step>
 
-  <Step>
-    ### Parâmetros da API de consulta
-
+  <Step title="Parâmetros da Query API" id="query-api-parameters">
     Os parâmetros de consulta podem ser especificados com a sintaxe `{parameter_name: type}`. Esses parâmetros serão detectados automaticamente, e o payload da solicitação de exemplo conterá um objeto `queryVariables` por meio do qual você poderá passá-los.
   </Step>
 
-  <Step>
-    ### Testes e monitoramento
-
+  <Step title="Testes e monitoramento" id="testing-and-monitoring">
     Depois que um endpoint da Query API for criado, você poderá testá-lo usando `curl` ou qualquer outro cliente HTTP:
 
     <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="teste curl do endpoint" />

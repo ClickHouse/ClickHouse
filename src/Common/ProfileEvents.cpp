@@ -450,6 +450,8 @@
     M(UniqueKeyIndexCacheHits, "Number of times an entry has been found in the UNIQUE KEY index cache, so we didn't have to load an SST block.", ValueType::Number) \
     M(UniqueKeyIndexCacheMisses, "Number of times an entry has not been found in the UNIQUE KEY index cache, so we had to load an SST block from disk.", ValueType::Number) \
     M(UniqueKeySSTWriteMicroseconds, "Total wall-clock time spent inside an `SSTIndexWriter` lifetime — covers SST `Open`, every `addEncoded` Put, and `Finish` + copy-via-`writeFile` in `finalizeToStorage`. Excludes work the static helpers do before constructing the writer (encode + non-prefix-path sort). Emitted once per writer.", ValueType::Microseconds) \
+    M(UniqueKeyLoadTimeSSTRebuildCount, "Number of UNIQUE KEY parts whose `unique_key_index.sst` was rebuilt at load time after the crash-before-flush window.", ValueType::Number) \
+    M(UniqueKeyLoadTimeSSTRebuildMicroseconds, "Total time spent rebuilding `unique_key_index.sst` at load time (sequential read of UK columns + SST write).", ValueType::Microseconds) \
     M(SelectedParts, "Number of data parts selected to read from a MergeTree table.", ValueType::Number) \
     M(SelectedPartsTotal, "Number of total data parts before selecting which ones to read from a MergeTree table.", ValueType::Number) \
     M(SelectedRanges, "Number of (non-adjacent) ranges in all data parts selected to read from a MergeTree table.", ValueType::Number) \
@@ -684,6 +686,9 @@ The server successfully detected this situation and will download merged part fr
     M(ParallelReplicasReadUnassignedMarks, "Sum across all replicas of how many unassigned marks were scheduled", ValueType::Number) \
     M(ParallelReplicasReadAssignedForStealingMarks, "Sum across all replicas of how many of scheduled marks were assigned for stealing by consistent hash", ValueType::Number) \
     M(ParallelReplicasReadMarks, "How many marks were read by the given replica", ValueType::Number) \
+    \
+    M(ReadPoolRangeRefinerDroppedMarks, "How many marks were dropped from read tasks by a ranges refiner in MergeTree read pools (e.g. marks fully filtered out by a projection index)", ValueType::Number) \
+    M(ReadPoolRangeRefinerDroppedCuts, "How many times ranges cut from a part by a MergeTree read pool were fully dropped by a ranges refiner, so no read task was created for them", ValueType::Number) \
     \
     M(ParallelReplicasStealingByHashMicroseconds, "Time spent collecting segments meant for stealing by hash", ValueType::Microseconds) \
     M(ParallelReplicasProcessingPartsMicroseconds, "Time spent processing data parts", ValueType::Microseconds) \
@@ -1122,6 +1127,8 @@ The server successfully detected this situation and will download merged part fr
     M(ObjectStorageQueueTaggedObjects, "Number of objects tagged as part of after_processing = tag", ValueType::Number) \
     M(ObjectStorageQueueInsertIterations, "Number of insert iterations", ValueType::Number) \
     M(ObjectStorageQueueCommitRequests, "Number of keeper requests to commit files as either failed or processed", ValueType::Number) \
+    M(ObjectStorageQueueBucketLockLostOwnership, "Number of times ownership of a bucket lock was detected as lost in S3(Azure)Queue. Non-zero value indicates too small persistent_processing_node_ttl_seconds or a bug", ValueType::Number) \
+    M(ObjectStorageQueueBucketLockRefreshes, "Number of successful bucket lock refreshes in S3(Azure)Queue", ValueType::Number) \
     M(ObjectStorageQueueSuccessfulCommits, "Number of successful keeper commits", ValueType::Number) \
     M(ObjectStorageQueueUnsuccessfulCommits, "Number of unsuccessful keeper commits", ValueType::Number) \
     M(ObjectStorageQueueCancelledFiles, "Number cancelled files in StorageS3(Azure)Queue", ValueType::Number) \
@@ -1214,6 +1221,7 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheReceivedErrorPackets, "Distributed Cache client event. Total number of received Error packets received from distributed cache", ValueType::Number) \
     M(DistrCacheReceivedCredentialsRefreshPackets, "Distributed Cache client event. Total number of received RefreshCredentials packets received from distributed cache", ValueType::Number) \
     M(DistrCacheReceivedStopPackets, "Distributed Cache client event. Total number of received Stop packets received from distributed cache", ValueType::Number) \
+    M(DistrCacheReceivedSlowDownPackets, "Distributed Cache client event. Total number of received SlowDown packets received from distributed cache (the server rejected a new connection because this client has too many open connections relative to its weight)", ValueType::Number) \
     M(DistrCacheSentDataPackets, "Distributed Cache client event. Total number of data packets sent to distributed cache", ValueType::Number) \
     M(DistrCacheSentDataPacketsBytes, "Distributed Cache client event. The number of bytes in Data packets sent to distributed cache", ValueType::Bytes) \
     M(DistrCacheUnusedPackets, "Distributed Cache client event. Number of skipped unused packets from distributed cache", ValueType::Number) \
@@ -1262,6 +1270,10 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheServerCachedReadBufferCachePredownloadBytes, "Distributed Cache server event. The number of bytes read from object storage for predownload in distributed cache while reading from filesystem cache", ValueType::Number) \
     M(DistrCacheServerSkipped, "Distributed Cache server event. The number of times distributed cache server was skipped because of previous failed connection attempts", ValueType::Number) \
     M(DistrCacheServerShutdownConnectionsMicroseconds, "Distributed Cache server event. Time spent in shutdownAllConnections waiting for active connections to finish (or be forcefully closed) during server shutdown", ValueType::Microseconds) \
+    M(DistrCacheServerConnectionsDroppedOverLimit, "Distributed Cache server event. The number of connections closed because the number of connections exceeded the limit (closed from the client with the maximum number of connections relative to its weight)", ValueType::Number) \
+    M(DistrCacheServerConnectionsRejectedOverLimit, "Distributed Cache server event. The number of new connections rejected with a SlowDown packet because the connecting client exceeded its share of connections", ValueType::Number) \
+    M(DistrCacheServerConnectionRegistryLockWaitMicroseconds, "Distributed Cache server event. Time spent waiting for the global connection registry mutex on contention (identify, setClientWeight, eviction, and unregister when a reindex or bucket removal is due)", ValueType::Microseconds) \
+    M(DistrCacheServerConnectionRegistryClientLockWaitMicroseconds, "Distributed Cache server event. Time spent waiting for a per-client connection bucket mutex on contention (register/unregister/identify/eviction)", ValueType::Microseconds) \
     \
     M(LogTest, "Number of log messages with level Test", ValueType::Number) \
     M(LogTrace, "Number of log messages with level Trace", ValueType::Number) \
@@ -1549,6 +1561,14 @@ The server successfully detected this situation and will download merged part fr
     M(StatelessWorkerUpdateLeaseRequests, "Number of update_lease requests sent to the stateless worker discovery service to renew worker leases.", ValueType::Number) \
     M(StatelessWorkerUpdateLeaseMicroseconds, "Total time spent in update_lease requests to the stateless worker discovery service.", ValueType::Microseconds) \
     M(StatelessWorkerUpdateLeaseErrors, "Number of failed update_lease requests to the stateless worker discovery service (any error or timeout).", ValueType::Number) \
+    M(StatelessWorkerServerRegisterRequests, "Number of registration requests a stateless worker sent to the stateless worker discovery service.", ValueType::Number) \
+    M(StatelessWorkerServerRegisterMicroseconds, "Total time stateless workers spent registering with the stateless worker discovery service.", ValueType::Microseconds) \
+    M(StatelessWorkerServerRegisterErrors, "Number of failed registration requests from stateless workers to the stateless worker discovery service (any error or timeout).", ValueType::Number) \
+    M(StatelessWorkerServerHeartbeatRequests, "Number of heartbeats a stateless worker sent to the stateless worker discovery service.", ValueType::Number) \
+    M(StatelessWorkerServerHeartbeatMicroseconds, "Total time stateless workers spent sending heartbeats to the stateless worker discovery service.", ValueType::Microseconds) \
+    M(StatelessWorkerServerHeartbeatErrors, "Number of failed heartbeats from stateless workers to the stateless worker discovery service (any error or timeout).", ValueType::Number) \
+    M(StatelessWorkerServerTenantBindings, "Number of times a stateless worker was assigned to a tenant to serve its queries.", ValueType::Number) \
+    M(StatelessWorkerServerLeasesLost, "Number of times a stateless worker's lease ended and it began awaiting shutdown.", ValueType::Number) \
     \
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
@@ -1756,6 +1776,19 @@ Counters::Snapshot::Snapshot()
     : counters_holder(new Count[num_counters] {})
 {}
 
+Counters::Snapshot::Snapshot(const Snapshot & other)
+    : counters_holder(new Count[num_counters] {})
+{
+    std::copy(other.counters_holder.get(), other.counters_holder.get() + num_counters, counters_holder.get());
+}
+
+Counters::Snapshot & Counters::Snapshot::operator=(const Snapshot & other)
+{
+    Snapshot tmp(other);
+    counters_holder = std::move(tmp.counters_holder);
+    return *this;
+}
+
 Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
 {
     Snapshot res;
@@ -1955,6 +1988,8 @@ void Counters::incrementNoTrace(Event event, Count amount)
 
 void Counters::incrementSignalSafe(Event event, Count amount)
 {
+    static_assert(std::atomic_ref<Count>::is_always_lock_free);
+
     Counters * current = this;
     /// Must stay async-signal-safe (called from signal/crash handlers), so unlike `incrementNoTrace`
     /// it does not call `sched_getcpu`; `cpu = -1` routes every level to its row 0.

@@ -1,0 +1,37 @@
+{
+  "icon": "/images/icons/icon-kubernetes-operator.svg",
+  "item": "Operator do Kubernetes",
+  "pages": [
+    "pt-BR/products/kubernetes-operator/overview",
+    {
+      "expanded": true,
+      "group": "Instalação",
+      "pages": [
+        "pt-BR/products/kubernetes-operator/install/kubectl",
+        "pt-BR/products/kubernetes-operator/install/helm",
+        "pt-BR/products/kubernetes-operator/install/olm"
+      ]
+    },
+    {
+      "expanded": true,
+      "group": "Guias",
+      "pages": [
+        "pt-BR/products/kubernetes-operator/guides/introduction",
+        "pt-BR/products/kubernetes-operator/guides/configuration",
+        "pt-BR/products/kubernetes-operator/guides/storage",
+        "pt-BR/products/kubernetes-operator/guides/monitoring",
+        "pt-BR/products/kubernetes-operator/guides/scaling",
+        "pt-BR/products/kubernetes-operator/guides/tls",
+        "pt-BR/products/kubernetes-operator/guides/network-policies",
+        "pt-BR/products/kubernetes-operator/guides/kubernetes-events"
+      ]
+    },
+    {
+      "expanded": true,
+      "group": "Referência",
+      "pages": [
+        "pt-BR/products/kubernetes-operator/reference/api-reference"
+      ]
+    }
+  ]
+}

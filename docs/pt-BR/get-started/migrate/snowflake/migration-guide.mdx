@@ -18,9 +18,7 @@ depende do uso dos comandos `COPY INTO` do Snowflake e `INSERT INTO SELECT`
 do ClickHouse.
 
 <Steps>
-  <Step>
-    ## Exportar dados do Snowflake
-
+  <Step title="Exportar dados do Snowflake" id="1-exporting-data-from-snowflake">
     <Image img="/images/migrations/migrate_snowflake_clickhouse.webp" size="md" alt="Migrando do Snowflake para o ClickHouse" />
 
     A exportação de dados do Snowflake exige o uso de um stage externo, como mostrado no diagrama acima.
@@ -57,9 +55,7 @@ do ClickHouse.
     Para um dataset de cerca de 5 TB, com tamanho máximo de arquivo de 150 MB, usando um warehouse 2X-Large do Snowflake localizado na mesma Region da AWS `us-east-1`, a cópia dos dados para o bucket do S3 levará cerca de 30 minutos.
   </Step>
 
-  <Step>
-    ## Importar para o ClickHouse
-
+  <Step title="Importar para o ClickHouse" id="2-importing-to-clickhouse">
     Depois que os dados estiverem em um armazenamento de objetos intermediário, funções do ClickHouse, como a [s3 table function](/pt-BR/reference/functions/table-functions/s3), podem ser usadas para inserir os dados em uma tabela, como mostrado abaixo.
 
     Este exemplo usa a [s3 table function](/pt-BR/reference/functions/table-functions/s3) para AWS S3, mas a [gcs table function](/pt-BR/reference/functions/table-functions/gcs) pode ser usada para Google Cloud Storage, e a [azureBlobStorage table function](/pt-BR/reference/functions/table-functions/azureBlobStorage) pode ser usada para Azure Blob Storage.
@@ -107,9 +103,7 @@ do ClickHouse.
     </Info>
   </Step>
 
-  <Step>
-    ## Testar a exportação de dados bem-sucedida
-
+  <Step title="Testar a exportação de dados bem-sucedida" id="3-testing-successful-data-export">
     Para verificar se os dados foram inseridos corretamente, basta executar uma consulta `SELECT` na nova tabela:
 
     ```sql

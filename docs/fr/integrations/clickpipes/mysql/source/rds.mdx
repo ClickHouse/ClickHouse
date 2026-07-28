@@ -18,35 +18,33 @@ Ce guide étape par étape vous montre comment configurer Amazon RDS MySQL afin 
   ## Activer la rétention du journal binaire
 </div>
 
-Le journal binaire est un ensemble de fichiers de log qui contiennent des informations sur les modifications de données apportées à une instance de serveur MySQL, et ces fichiers sont nécessaires à la réplication. Pour configurer la rétention du journal binaire dans RDS MySQL, vous devez [activer la journalisation binaire](#enable-binlog-logging) et [augmenter l’intervalle de rétention du binlog](#binlog-retention-interval).
+Le journal binaire est un ensemble de fichiers de log contenant des informations sur les modifications de données apportées à une instance de serveur MySQL, et ces fichiers sont nécessaires à la réplication. Pour configurer la rétention du journal binaire dans RDS MySQL, vous devez [activer la journalisation binaire](#enable-binlog-logging) et [augmenter l’intervalle de rétention du binlog](#binlog-retention-interval).
 
-<div id="enable-binlog-logging">
-  ### 1. Activer la journalisation binaire via les sauvegardes automatisées
-</div>
+<Steps>
+  <Step title="Activer la journalisation binaire via la sauvegarde automatisée" id="enable-binlog-logging">
+    La fonctionnalité de sauvegardes automatisées détermine si la journalisation binaire est activée ou non pour MySQL. Vous pouvez configurer les sauvegardes automatisées pour votre instance dans la RDS Console en accédant à **Modify** &gt; **Additional configuration** &gt; **Backup**, puis en cochant la case **Enable automated backups** (si ce n’est pas déjà fait).
 
-La fonctionnalité de sauvegardes automatisées détermine si la journalisation binaire est activée pour MySQL. Vous pouvez configurer les sauvegardes automatisées pour votre instance dans la RDS Console en accédant à **Modify** &gt; **Additional configuration** &gt; **Backup**, puis en cochant la case **Enable automated backups** (si ce n’est pas déjà fait).
+    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Activation des sauvegardes automatisées dans RDS" size="lg" border />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Activation des sauvegardes automatisées dans RDS" size="lg" border />
+    Nous recommandons de définir la **Backup retention period** sur une valeur suffisamment longue, selon votre cas d’usage de la réplication.
+  </Step>
 
-Nous vous recommandons de définir **Backup retention period** sur une valeur suffisamment élevée, selon votre cas d’usage de réplication.
+  <Step title="Augmenter l’intervalle de rétention du binlog" id="binlog-retention-interval">
+    <Warning>
+      Si ClickPipes tente de reprendre la réplication et que les fichiers binlog requis ont été purgés en raison de la valeur de rétention du binlog configurée, le ClickPipe passera à un état d’erreur et une resynchronisation sera nécessaire.
+    </Warning>
 
-<div id="binlog-retention-interval">
-  ### 2. Augmentez l’intervalle de rétention du binlog
-</div>
+    Par défaut, Amazon RDS purge le journal binaire dès que possible (c’est-à-dire avec une *purge différée*). Nous recommandons d’augmenter l’intervalle de rétention du binlog à au moins **72 heures** afin de garantir la disponibilité des fichiers de journal binaire pour la réplication en cas de défaillance. Pour définir un intervalle de rétention du journal binaire ([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours)), utilisez la procédure [`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration) :
 
-<Warning>
-  Si ClickPipes tente de reprendre la réplication et que les fichiers binlog requis ont été purgés en raison de la valeur de rétention du binlog configurée, le ClickPipe passera à un état d’erreur et une resynchronisation sera nécessaire.
-</Warning>
+    [//]: # "NOTE Most CDC providers recommend the maximum retention period for RDS (7 days/168 hours). Since this has an impact on disk usage, we conservatively recommend a minimum of 3 days/72 hours."
 
-Par défaut, Amazon RDS purge le journal binaire dès que possible (c’est-à-dire avec une *purge différée*). Nous recommandons d’augmenter l’intervalle de rétention du binlog à au moins **72 heures** afin de garantir la disponibilité des fichiers de journal binaire pour la réplication en cas de défaillance. Pour définir un intervalle de rétention du journal binaire ([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours)), utilisez la procédure [`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration) :
+    ```text
+    mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
+    ```
 
-[//]: # "NOTE Most CDC providers recommend the maximum retention period for RDS (7 days/168 hours). Since this has an impact on disk usage, we conservatively recommend a minimum of 3 days/72 hours."
-
-```text
-mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
-```
-
-Si cette configuration n&#39;est pas définie, ou si l&#39;intervalle configuré est trop court, cela peut entraîner des trous dans les logs binaires et compromettre la capacité de ClickPipes à reprendre la réplication.
+    Si cette configuration n&#39;est pas définie, ou si l&#39;intervalle configuré est trop court, cela peut entraîner des trous dans les logs binaires et compromettre la capacité de ClickPipes à reprendre la réplication.
+  </Step>
+</Steps>
 
 <div id="binlog-settings">
   ## Configurer les paramètres du binlog
@@ -138,6 +136,18 @@ Connectez-vous à votre instance RDS MySQL avec un utilisateur administrateur, p
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
+<div id="iam-authentication">
+  ### Utiliser l’authentification IAM (facultatif)
+</div>
+
+Au lieu d’utiliser un mot de passe, vous pouvez authentifier l’utilisateur ClickPipes via le contrôle d’accès basé sur les rôles d’AWS IAM. Créez l’utilisateur comme suit, puis accordez-lui les mêmes privilèges de schéma et de réplication que ceux indiqués ci-dessus :
+
+```sql
+CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
+```
+
+Consultez [AWS IAM DB authentication (RDS/Aurora)](/fr/integrations/clickpipes/postgres/auth) pour obtenir la procédure complète de configuration du rôle IAM et de la policy requis afin que ClickPipes puisse s’authentifier de cette manière.
+
 <div id="configure-network-access">
   ## Configurer l’accès au réseau
 </div>
@@ -148,7 +158,7 @@ Connectez-vous à votre instance RDS MySQL avec un utilisateur administrateur, p
 
 Pour restreindre le trafic vers votre instance Aurora MySQL, ajoutez les [adresses IP NAT statiques documentées](/fr/integrations/clickpipes/home#list-of-static-ips) aux **Inbound rules** de votre groupe de sécurité RDS.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Où trouver le groupe de sécurité dans RDS MySQL ?" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Où trouver le groupe de sécurité dans RDS MySQL ?" size="lg" border />
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Modifier les règles entrantes du groupe de sécurité ci-dessus" size="lg" border />
 
@@ -162,4 +172,4 @@ Pour vous connecter à votre instance RDS via un réseau privé, vous pouvez uti
   ## Étapes suivantes
 </div>
 
-Maintenant que votre instance Amazon RDS MySQL est configurée pour la réplication via le binlog et qu’elle se connecte en toute sécurité à ClickHouse Cloud, vous pouvez [créer votre premier MySQL ClickPipe](/fr/integrations/clickpipes/mysql/index#create-your-clickpipe). Pour les questions fréquentes sur MySQL CDC, consultez la [page des FAQ MySQL](/fr/integrations/clickpipes/mysql/faq).
+Maintenant que votre instance Amazon RDS MySQL est configurée pour la réplication via le binlog et qu’une connexion sécurisée à ClickHouse Cloud est établie, vous pouvez [créer votre premier MySQL ClickPipe](/fr/integrations/clickpipes/mysql/index#create-your-clickpipe). Pour les questions fréquentes sur MySQL CDC, consultez la [page des FAQ MySQL](/fr/integrations/clickpipes/mysql/faq).
