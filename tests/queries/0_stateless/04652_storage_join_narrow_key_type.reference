@@ -1,4 +1,7 @@
 -- { echo }
+-- Tags: memory-engine
+-- Tag memory-engine: with echo the statement text is the output, so rewriting ENGINE = Memory to
+-- MergeTree would diverge from the reference
 SET allow_suspicious_low_cardinality_types = 1;
 -- 1. The reported query (issue #104918) returns the correct answer instead of INCOMPATIBLE_TYPE_OF_JOIN.
 CREATE TABLE jt (k UInt32, jv Int64) ENGINE = Join(ANY, LEFT, k);
@@ -124,6 +127,14 @@ SELECT sum(r.jv) FROM l_u64_oor AS l ANY LEFT JOIN s_lc AS r USING (k); -- { ser
 CREATE TABLE l_u32_lc (k UInt32) ENGINE = Memory;
 INSERT INTO l_u32_lc VALUES (2);
 SELECT sum(r.jv) FROM l_u32_lc AS l ANY LEFT JOIN s_lc AS r USING (k); -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
+-- Mixed signedness: getLeastSupertype promotes a signed/unsigned pair to a type wider than both
+-- operands, so the common type is not the left key type and the narrowing rewrite declines. Today's
+-- refusal stands for these pairs; that is a recorded residual, not a silent gap.
+CREATE TABLE s_i16 (k Int16, jv Int64) ENGINE = Join(ANY, LEFT, k);
+INSERT INTO s_i16 VALUES (2, 10);
+CREATE TABLE l_u32_ms (k UInt32) ENGINE = Memory;
+INSERT INTO l_u32_ms VALUES (2), (100000);
+SELECT sum(r.jv) FROM l_u32_ms AS l ANY LEFT JOIN s_i16 AS r USING (k); -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
 -- 10. Wrapper matrix: every narrowing carrier is fixed AND keeps the direct lookup.
 CREATE TABLE l_nu64 (k Nullable(UInt64)) ENGINE = Memory;
 INSERT INTO l_nu64 VALUES (2), (4), (4294967298), (NULL);
@@ -131,16 +142,39 @@ CREATE TABLE s_u32b (k UInt32, jv Int64) ENGINE = Join(ANY, LEFT, k);
 INSERT INTO s_u32b VALUES (2, 10), (4, 20);
 SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_nu64 AS l ANY LEFT JOIN s_u32b AS r USING (k);
 30	[(2,10),(4,20),(4294967298,0),(NULL,0)]
+SELECT count() > 0 FROM (EXPLAIN PLAN description = 1
+    SELECT sum(r.jv) FROM l_nu64 AS l ANY LEFT JOIN s_u32b AS r USING (k))
+WHERE explain ILIKE '%FilledJoin%';
+1
 SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_u64_oor AS l ANY LEFT JOIN s_nu32 AS r USING (k);
 30	[(2,10),(4,20),(4294967298,0)]
+SELECT count() > 0 FROM (EXPLAIN PLAN description = 1
+    SELECT sum(r.jv) FROM l_u64_oor AS l ANY LEFT JOIN s_nu32 AS r USING (k))
+WHERE explain ILIKE '%FilledJoin%';
+1
 SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_nu64 AS l ANY LEFT JOIN s_nu32 AS r USING (k);
 30	[(2,10),(4,20),(4294967298,0),(NULL,0)]
+SELECT count() > 0 FROM (EXPLAIN PLAN description = 1
+    SELECT sum(r.jv) FROM l_nu64 AS l ANY LEFT JOIN s_nu32 AS r USING (k))
+WHERE explain ILIKE '%FilledJoin%';
+1
 CREATE TABLE l_lcnu64 (k LowCardinality(Nullable(UInt64))) ENGINE = Memory;
 INSERT INTO l_lcnu64 VALUES (2), (4), (4294967298), (NULL);
 SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_lcnu64 AS l ANY LEFT JOIN s_u32b AS r USING (k);
 30	[(2,10),(4,20),(4294967298,0),(NULL,0)]
 SELECT count() > 0 FROM (EXPLAIN PLAN description = 1
     SELECT sum(r.jv) FROM l_lcnu64 AS l ANY LEFT JOIN s_u32b AS r USING (k))
+WHERE explain ILIKE '%FilledJoin%';
+1
+-- The LowCardinality-left x Nullable-storage-key quadrant, against an ENGINE = Memory oracle.
+CREATE TABLE o_nu32 (k Nullable(UInt32), jv Int64) ENGINE = Memory;
+INSERT INTO o_nu32 VALUES (2, 10), (4, 20), (NULL, 99);
+SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_lcnu64 AS l ANY LEFT JOIN o_nu32 AS r USING (k);
+30	[(2,10),(4,20),(4294967298,0),(NULL,0)]
+SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_lcnu64 AS l ANY LEFT JOIN s_nu32 AS r USING (k);
+30	[(2,10),(4,20),(4294967298,0),(NULL,0)]
+SELECT count() > 0 FROM (EXPLAIN PLAN description = 1
+    SELECT sum(r.jv) FROM l_lcnu64 AS l ANY LEFT JOIN s_nu32 AS r USING (k))
 WHERE explain ILIKE '%FilledJoin%';
 1
 -- 11. LowCardinality left key: the common type drops LowCardinality, so both sides of the
@@ -151,6 +185,52 @@ SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_lcu64 AS l ANY LEFT 
 30	[(0,0),(2,10),(4,20),(4294967298,0)]
 SELECT count() > 0 FROM (EXPLAIN PLAN description = 1
     SELECT sum(r.jv) FROM l_lcu64 AS l ANY LEFT JOIN s_u32b AS r USING (k))
+WHERE explain ILIKE '%FilledJoin%';
+1
+SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_lcu64 AS l ANY LEFT JOIN o_nu32 AS r USING (k);
+30	[(0,0),(2,10),(4,20),(4294967298,0)]
+SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_lcu64 AS l ANY LEFT JOIN s_nu32 AS r USING (k);
+30	[(0,0),(2,10),(4,20),(4294967298,0)]
+SELECT count() > 0 FROM (EXPLAIN PLAN description = 1
+    SELECT sum(r.jv) FROM l_lcu64 AS l ANY LEFT JOIN s_nu32 AS r USING (k))
+WHERE explain ILIKE '%FilledJoin%';
+1
+-- 13. Null-safe equals reaches the same conversion, so the narrowing applies there too.
+SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_u64_oor AS l ANY LEFT JOIN o_u64 AS r ON l.k IS NOT DISTINCT FROM r.k;
+30	[(2,10),(4,20),(4294967298,0)]
+SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_u64_oor AS l ANY LEFT JOIN s_u32 AS r ON l.k IS NOT DISTINCT FROM r.k;
+30	[(2,10),(4,20),(4294967298,0)]
+SELECT count() > 0 FROM (EXPLAIN PLAN description = 1
+    SELECT sum(r.jv) FROM l_u64_oor AS l ANY LEFT JOIN s_u32 AS r ON l.k IS NOT DISTINCT FROM r.k)
+WHERE explain ILIKE '%FilledJoin%';
+1
+-- 14. RIGHT and FULL USING with the bare USING column projected. There the output key comes from the
+-- right side and a required right key is materialised from the left key column, whose type the
+-- rewrite changes, so these shapes exercise a different path than the ANY LEFT cases above.
+CREATE TABLE s_r32 (k UInt32, jv Int64) ENGINE = Join(ALL, RIGHT, k);
+INSERT INTO s_r32 VALUES (2, 10), (4, 20);
+CREATE TABLE o_r32 (k UInt32, jv Int64) ENGINE = Memory;
+INSERT INTO o_r32 VALUES (2, 10), (4, 20);
+CREATE TABLE l_r64 (k UInt64, lv String) ENGINE = Memory;
+INSERT INTO l_r64 VALUES (2, 'a'), (4294967298, 'b');
+SELECT arraySort(groupArray((k, jv, lv))) FROM l_r64 ALL RIGHT JOIN o_r32 USING (k);
+[(2,10,'a'),(4,20,'')]
+SELECT arraySort(groupArray((k, jv, lv))) FROM l_r64 ALL RIGHT JOIN s_r32 USING (k);
+[(2,10,'a'),(4,20,'')]
+SELECT count() > 0 FROM (EXPLAIN PLAN description = 1
+    SELECT k FROM l_r64 ALL RIGHT JOIN s_r32 USING (k))
+WHERE explain ILIKE '%FilledJoin%';
+1
+CREATE TABLE s_f32 (k UInt32, jv Int64) ENGINE = Join(ALL, FULL, k);
+INSERT INTO s_f32 VALUES (2, 10), (4, 20);
+CREATE TABLE o_f32 (k UInt32, jv Int64) ENGINE = Memory;
+INSERT INTO o_f32 VALUES (2, 10), (4, 20);
+SELECT arraySort(groupArray((k, jv, lv))) FROM l_r64 ALL FULL JOIN o_f32 USING (k);
+[(2,10,'a'),(4,20,''),(4294967298,0,'b')]
+SELECT arraySort(groupArray((k, jv, lv))) FROM l_r64 ALL FULL JOIN s_f32 USING (k);
+[(2,10,'a'),(4,20,''),(4294967298,0,'b')]
+SELECT count() > 0 FROM (EXPLAIN PLAN description = 1
+    SELECT k FROM l_r64 ALL FULL JOIN s_f32 USING (k))
 WHERE explain ILIKE '%FilledJoin%';
 1
 -- 12. Custom-named integer storage keys decline: Bool is a UInt8 whose comparison semantics differ,

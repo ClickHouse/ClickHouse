@@ -1,7 +1,9 @@
 -- { echo }
--- Tags: no-fasttest, no-ordinary-database, use-rocksdb
+-- Tags: no-fasttest, no-ordinary-database, use-rocksdb, memory-engine
 -- Tag no-fasttest: in fasttest ENABLE_LIBRARIES=0, so the rocksdb engine is not built
 -- Tag no-ordinary-database: the rocksdb data directory cannot always be locked in an Ordinary database
+-- Tag memory-engine: with echo the statement text is the output, so rewriting ENGINE = Memory to
+-- MergeTree would diverge from the reference
 
 -- A key-value entity is not a StorageJoin: its lookup is not built from a frozen hash table, so the
 -- narrowing rewrite added for Join-engine tables must not apply here. This pins the plan shape, not
