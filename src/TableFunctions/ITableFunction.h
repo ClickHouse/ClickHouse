@@ -88,6 +88,13 @@ public:
     StoragePtr
     execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert_query = false) const;
 
+    /// Returns actual table structure after enforcing source access checks.
+    /// Use this instead of getActualTableStructure() from outside execute().
+    ColumnsDescription getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const;
+
+    /// Check that the user has the required source access (e.g. READ ON MYSQL, WRITE ON S3).
+    void checkSourceAccess(ContextPtr context, bool is_insert_query) const;
+
     virtual ~ITableFunction() = default;
 
 protected:
