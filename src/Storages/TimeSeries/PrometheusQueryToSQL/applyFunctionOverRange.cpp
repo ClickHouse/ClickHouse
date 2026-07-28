@@ -93,13 +93,23 @@ namespace
                  /* drop_metric_name = */ false,
              }},
 
+            {"max_over_time",
+             {
+                 "timeSeriesMaxToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"min_over_time",
+             {
+                 "timeSeriesMinToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
             /// TODO:
             /// resets
             /// predict_linear
             /// deriv
             /// avg_over_time
-            /// min_over_time
-            /// max_over_time
             /// sum_over_time
             /// count_over_time
             /// quantile_over_time
