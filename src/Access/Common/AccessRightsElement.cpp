@@ -503,4 +503,3 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
 }
 
 }
-
