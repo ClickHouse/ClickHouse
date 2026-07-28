@@ -7773,9 +7773,9 @@ Parts virtually divided into segments to be distributed between replicas for par
     DECLARE(Bool, parallel_replicas_local_plan, true, R"(
 Build local plan for local replica
 )", 0) \
-    DECLARE(Bool, parallel_replicas_plan_based, false, R"(
+    DECLARE(Bool, parallel_replicas_plan_based, true, R"(
 Decide whether and where to use parallel replicas by analyzing the query plan, as opposed to the query-tree-based analysis. As a result, a plan fragment is sent to the remote replicas instead of a SQL query. Experimental.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(Bool, parallel_replicas_prefer_local_replica, true, R"(
 When enabled (default), the local replica is always included in the set of replicas used for parallel reading.
 When disabled, the local replica is not given any preference and replicas are selected purely by the load balancing algorithm.
