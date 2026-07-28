@@ -92,8 +92,7 @@ public:
     bool useDefaultImplementationForNothing() const override { return false; }
     /// Example: SELECT arrayMap(x -> (x + (arrayMap(y -> ((x + y) + toLowCardinality(1)), [])[1])), [])
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    /// Lazily replicated captures must reach the inner
-    /// expression as is: each function inside handles ColumnReplicated arguments itself.
+    /// The mix of full and replicated columns falls back to full materialization.
     bool useDefaultImplementationForReplicatedColumns() const override { return false; }
 
 private:

@@ -128,9 +128,10 @@ std::string_view ColumnReplicated::getDataAt(size_t n) const
 namespace
 {
 
-/// Materialize Replicated(Array) by copying the entire row ranges for the specific type T
+/// Materializes Replicated(Array) into a full ColumnArray: Each array row is appended as one contiguous element range
+/// via a single insertRangeFrom, instead of gathering the nested data element by element as the generic path
 template <typename T>
-ColumnPtr materializeReplicatedArrayImpl(const ColumnArray & src, const PaddedPODArray<T> & row_indexes)
+ColumnPtr convertToFullColumnArrayImpl(const ColumnArray & src, const PaddedPODArray<T> & row_indexes)
 {
     const auto & src_offsets = src.getOffsets();
     const IColumn & src_data = src.getData();
@@ -140,15 +141,13 @@ ColumnPtr materializeReplicatedArrayImpl(const ColumnArray & src, const PaddedPO
     auto & res_offsets = res_offsets_column->getData();
 
     size_t total_elements = 0;
-    /// First extract the offsets from the indexes
     for (size_t i = 0; i < num_rows; ++i)
     {
         ssize_t row = row_indexes[i];
-        /// src_offsets[row] == src.sizeAt(row) and src_offsets[row -1] == src.OffsetAt(row)
+        /// src_offsets[row] == ColumnArray::sizeAt(row) and src_offsets[row -1] == ColumnArray::OffsetAt(row)
         total_elements += src_offsets[row] - src_offsets[row - 1];
         res_offsets[i] = total_elements;
     }
-    /// Now, insert the entire row (multiple columns) on each iteration
     auto res_data = src_data.cloneEmpty();
     res_data->reserve(total_elements);
     for (size_t i = 0; i < num_rows; ++i)
@@ -160,35 +159,37 @@ ColumnPtr materializeReplicatedArrayImpl(const ColumnArray & src, const PaddedPO
     return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
 }
 
-/// The generic index path (ColumnArray::indexImpl) builds a UInt64 index per nested
-/// element which is inefficient, now the index type is based on the range
-ColumnPtr materializeReplicatedArray(const ColumnArray & src, const IColumn & row_indexes)
+
+ColumnPtr convertToFullColumnArray(const ColumnArray & src, const IColumn & row_indexes)
 {
     if (const auto * indexes_uint8 = typeid_cast<const ColumnUInt8 *>(&row_indexes))
-        return materializeReplicatedArrayImpl(src, indexes_uint8->getData());
+        return convertToFullColumnArrayImpl(src, indexes_uint8->getData());
     if (const auto * indexes_uint16 = typeid_cast<const ColumnUInt16 *>(&row_indexes))
-        return materializeReplicatedArrayImpl(src, indexes_uint16->getData());
+        return convertToFullColumnArrayImpl(src, indexes_uint16->getData());
     if (const auto * indexes_uint32 = typeid_cast<const ColumnUInt32 *>(&row_indexes))
-        return materializeReplicatedArrayImpl(src, indexes_uint32->getData());
+        return convertToFullColumnArrayImpl(src, indexes_uint32->getData());
     if (const auto * indexes_uint64 = typeid_cast<const ColumnUInt64 *>(&row_indexes))
-        return materializeReplicatedArrayImpl(src, indexes_uint64->getData());
+        return convertToFullColumnArrayImpl(src, indexes_uint64->getData());
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected indexes column type {} in ColumnReplicated", row_indexes.getName());
 }
 
 }
 
+/// The generic index path (nested_column->index())) builds a UInt64 index per nested element which is inefficient for nested ColumnArray.
+/// For ColumnArray, the convertToFullColumnArray is called instead, so each array is copied once per row instead of per-element
+/// Range copying pays one virtual call to insertRangeFrom per row; the generic path pays 8 bytes of scratch memory and one write element
 ColumnPtr ColumnReplicated::convertToFullColumnIfReplicated() const
 {
-    /// For long array rows copy whole row ranges instead of the generic per-element
     if (const auto * src_array = typeid_cast<const ColumnArray *>(nested_column.get()))
     {
+        /// Per-array materialization
         size_t src_rows_count = src_array->size();
         size_t src_elements = src_array->getOffsets().back();
-        if (src_rows_count != 0 && src_elements >= src_rows_count * 8)
-            return materializeReplicatedArray(*src_array, *indexes.getIndexes());
+        if (src_rows_count != 0 && src_elements >= src_rows_count * ELEMENTS_PER_ROW_THRESHOLD)
+            return convertToFullColumnArray(*src_array, *indexes.getIndexes());
     }
-    /// For short rows the generic path is faster and its per-element indexes are small.
+    /// Per-element materialization
     return nested_column->index(*indexes.getIndexes(), 0);
 }
 

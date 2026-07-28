@@ -18,4 +18,9 @@
 
     <!-- Large non-constant LIKE pattern captured by the synthetic lambda of map*Like functions. -->
     <query>WITH repeat('a', 100000) || toString(number) AS pattern, mapFromArrays(arrayMap(i -> 'key' || toString(i), range(20)), range(20)) AS m SELECT sum(mapContainsKeyLike(m, pattern)) FROM numbers(500) SETTINGS enable_lazy_columns_replication = {lazy_replication} FORMAT Null</query>
+    <!-- Large String capture produced by lazy ARRAY JOIN replication, then used inside the lambda. -->
+    <query>SELECT sum(length(arrayMap(x -> substring(s, x, 1), range(10)))) FROM (SELECT materialize(randomString(100000)) AS s, range(100) AS r FROM numbers(100)) ARRAY JOIN r SETTINGS enable_lazy_columns_replication = {lazy_replication} FORMAT Null</query>
+
+    <!-- Large String capture produced by lazy JOIN replication, then used inside the lambda. -->
+    <query>SELECT sum(length(arrayMap(x -> substring(s, x, 1), range(10)))) FROM (SELECT 42 AS k FROM numbers(2000)) AS l INNER JOIN (SELECT 42 AS k, randomString(100000) AS s) AS r ON l.k = r.k SETTINGS enable_lazy_columns_replication = {lazy_replication} FORMAT Null</query>
 </test>

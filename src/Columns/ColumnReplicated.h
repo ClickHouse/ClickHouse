@@ -8,7 +8,9 @@ class Collator;
 
 namespace DB
 {
-
+/// Used on ColumnReplicated::convertToFullColumnIfReplicated to check whether the fast path is worth
+/// Break-even is around 8 elements per row
+constexpr const uint8_t ELEMENTS_PER_ROW_THRESHOLD = 8;
 
 /** Column for replicated representation.
  *  It stores original column and indexes in this column.

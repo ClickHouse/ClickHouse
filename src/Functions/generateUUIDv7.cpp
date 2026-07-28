@@ -77,7 +77,7 @@ REGISTER_FUNCTION(GenerateUUIDv7)
 {
     /// generateUUIDv7 documentation
     FunctionDocumentation::Description description = R"(
-Generates a [version 7](https://www.rfc-editor.org/rfc/rfc9562) [UUID](../data-types/uuid.md) as defined by [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562).
+Generates a [version 7](https://www.rfc-editor.org/rfc/rfc9562) [UUID](/reference/data-types/uuid) as defined by [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562).
 
 See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency guarantees.
     )";

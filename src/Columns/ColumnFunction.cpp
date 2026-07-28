@@ -427,7 +427,7 @@ void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column)
                         "got {}, but {} is expected.", argument_types.size(), column.type->getName(), argument_types[index]->getName());
 
     auto captured_column = column;
-    /// Keep replicated captures lazy if allowed: functions inside the lambda handle
+    /// Keep replicated captures lazy if allowed: some functions inside the lambda handle
     /// ColumnReplicated arguments themselves
     if (!allow_lazy_replicated_captures)
         captured_column.column = captured_column.column->convertToFullColumnIfReplicated();
@@ -486,6 +486,9 @@ ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run) const
         ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
     res.column = function->execute(columns, res.type, elements_size, dry_run);
+    /// The result can be lazily replicated (ColumnReplicated), e.g. when the lambda just returns a captured column. Materialize it here so
+    /// consumers of reduce don't have to handle ColumnReplicated.
+    res.column = res.column->convertToFullColumnIfReplicated();
     if (!columnMatchesType(*res.column, *res.type))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
