@@ -2384,3 +2384,57 @@ def test_drop_after_coordination_identity_change_tears_down_original_identity(
             pg_manager.drop_materialized_db()
         except Exception:
             pass
+
+
+def test_single_table_drop_after_coordination_identity_change_tears_down_original_identity(
+    started_cluster,
+):
+    # Same for the coordinated single-table engine: after a configuration-only change of the {replica} macro
+    # its DROP TABLE must unregister and make its last-replica decision under the identity persisted in its
+    # nested table, not under the one the changed configuration expands to.
+    keeper_path_resolved = "/clickhouse/mat_pg/1/single_table_identity"
+    macros_config = "/etc/clickhouse-server/conf.d/macros.xml"
+
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+    instance.query(
+        f"CREATE TABLE test_single_table (key Int64, value Int64) "
+        f"ENGINE = MaterializedPostgreSQL("
+        f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'test_table', 'postgres', '{pg_pass}') "
+        f"PRIMARY KEY key "
+        f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
+        f"materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{{shard}}/single_table_identity', "
+        f"materialized_postgresql_replica_name = '{{replica}}'",
+        settings={"allow_experimental_materialized_postgresql_table": 1},
+    )
+    try:
+        for _ in range(90):
+            try:
+                if int(instance.query("SELECT count() FROM test_single_table")) == 100:
+                    break
+            except Exception:
+                pass
+            time.sleep(1)
+        else:
+            raise AssertionError("test_single_table did not reach 100 rows")
+
+        instance.replace_in_config(
+            macros_config, "coord_instance1", "coord_instance1_renamed"
+        )
+        instance.restart_clickhouse()
+
+        instance.query("DROP TABLE test_single_table SYNC")
+        assert not coordination_path_exists(instance, keeper_path_resolved)
+        assert len(pg_query("SELECT slot_name FROM pg_replication_slots")) == 0
+        assert not publication_exists()
+    finally:
+        instance.replace_in_config(
+            macros_config, "coord_instance1_renamed", "coord_instance1"
+        )
+        if not instance.get_process_pid("clickhouse"):
+            instance.start_clickhouse()
+        else:
+            instance.restart_clickhouse()
+        instance.query("DROP TABLE IF EXISTS test_single_table SYNC")
