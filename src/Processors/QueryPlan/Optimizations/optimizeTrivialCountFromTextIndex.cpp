@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -46,7 +47,6 @@ namespace DB::QueryPlanOptimizations
 namespace
 {
 
-/// The count() output column if `aggregating` is a bare `count()`/`count(*)` (no GROUP BY, one aggregate, no arguments), else nullopt.
 std::optional<String> matchBareCount(const AggregatingStep & aggregating)
 {
     if (aggregating.isGroupingSets())
@@ -204,15 +204,15 @@ bool guardsHold(const ReadFromMergeTree & reading)
         if (!useful.index->isTextIndex())
             return false;
 
-    /// A row policy filters rows the posting cardinalities do not reflect. `matchSubtree` also rejects it
-    /// as a non-text conjunct, but guard it explicitly like the planner trivial-count paths do.
-    if (auto storage_id = reading.getStorageID(); storage_id.hasDatabase())
-    {
-        auto row_policy_filter = context->getRowPolicyFilter(
+    /// Row policy filters rows the cardinality ignores; without a database name it can't be resolved, so fail closed.
+    auto storage_id = reading.getStorageID();
+    if (!storage_id.hasDatabase())
+        return false;
+
+    if (auto row_policy_filter = context->getRowPolicyFilter(
             storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-        if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
-            return false;
-    }
+        row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        return false;
 
     if (const auto & mutations = reading.getMutationsSnapshot();
         mutations && (mutations->hasDataMutations() || mutations->hasPatchParts() || mutations->hasLightweightDeletedMask()))
@@ -262,9 +262,8 @@ std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & readin
         if (query->getTokens().empty())
             return {};
 
-        /// Multi-token intersection would read every token's full postings, including common ones the
-        /// reader skips via its lazy/selectivity path. Only single-token and union avoid that regression.
-        /// TODO(ahmadov): a follow-up to handle the multi token (ALL/AND) case.
+        /// Multi-token intersection would eagerly read common tokens' postings the reader skips lazily (regression).
+        /// TODO(ahmadov): handle the multi-token ALL/AND case.
         if (query->getTokens().size() > 1 && query->getSearchMode() == TextSearchMode::All)
             return {};
 
@@ -326,7 +325,7 @@ std::optional<UInt64> computeCountForPart(
     const auto & analyzer = granule->getAnalyzer();
     const auto & tokens = resolved.query->getTokens();
 
-    /// Single token: the exact count is the dictionary-resident cardinality; no posting-list I/O.
+    /// One granule per part (GRANULARITY ignored), so the dictionary cardinality is the exact part-wide count; no posting I/O.
     if (tokens.size() == 1)
     {
         const auto & token_infos = analyzer.getAllTokenInfos();
@@ -422,9 +421,15 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
 
     const auto & reader_settings = matched->reading->getReaderSettings();
 
+    /// Reading the per-part index is real plan-time work; keep it interruptible for tables with many parts.
+    auto query_status = matched->reading->getContext()->getProcessListElementSafe();
+
     UInt64 total_count = 0;
     for (const auto & part_with_ranges : matched->reading->getParts())
     {
+        if (query_status)
+            query_status->checkTimeLimit();
+
         auto part_count = computeCountForPart(part_with_ranges, *resolved, reader_settings);
         if (!part_count)
             return false;
