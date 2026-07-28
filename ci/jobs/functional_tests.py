@@ -181,6 +181,27 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
 }
 
 
+def allow_oversubscription(options, test_options, is_flaky_check, is_targeted_check):
+    """Whether this job may run more test workers than the runner has cores.
+
+    A plain (non-sanitizer) binary job runs the whole suite, where every worker
+    picks a different test and most tests are light, so oversubscribing the
+    runner shortens the job without making any single test noticeably slower.
+
+    A flaky/targeted check is the opposite case: every worker runs the *same*
+    changed test, so `--jobs N` multiplies that one test's resource use by `N`.
+    For a heavy test (its own `max_threads`, large inserts, merges) that turns
+    into self-contention, and the flaky check fails a test whose wall-clock time
+    exceeds `TEST_MAX_RUN_TIME_IN_SECONDS` - so oversubscription decides the
+    verdict. Keep those checks at the default concurrency, where per-iteration
+    times are comparable to the other flaky-check jobs and the "too long"
+    verdict reflects the test rather than how many copies of it were co-scheduled.
+    """
+    if is_flaky_check or is_targeted_check:
+        return False
+    return "binary" in options and len(test_options) < 3
+
+
 def invert_bugfix_validation_status(test_result: Result) -> bool:
     """Invert FAIL/OK in `test_result.results` for bugfix validation.
 
@@ -481,7 +502,7 @@ def main():
     if is_shared_catalog or is_parallel_replicas:
         pass
     else:
-        if "binary" in args.options and len(test_options) < 3:
+        if allow_oversubscription(args.options, test_options, is_flaky_check, is_targeted_check):
             # Plain binary job runs fast; allow higher concurrency
             nproc = int(Utils.cpu_count() * 1.2)
         elif is_database_replicated:

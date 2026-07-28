@@ -599,6 +599,19 @@ class JobConfigs:
             runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
+        # Same build and runner as the merge-queue drift guard below, so the
+        # configuration that can bounce a PR from the merge queue also runs in
+        # the PR itself. Without it the only non-sanitizer flaky check lives in
+        # the queue, and a test that is only too slow (or only flaky) without a
+        # sanitizer is first reported when the merge is already in progress. The
+        # PR-side run is the stricter of the two: full iteration count and time
+        # budget, while the merge-queue run is reduced (see
+        # `ci/jobs/functional_tests.py`).
+        Job.ParamSet(
+            parameter="amd_binary, flaky check",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_BINARY],
+        ),
     )
     # Merge-queue drift guard: reruns the PR's new/changed stateless tests on
     # the merge group state (the PR merged with the current `master`), so a PR
