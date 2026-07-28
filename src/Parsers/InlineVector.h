@@ -20,7 +20,9 @@ class InlineVector
     static_assert(std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>);
 
 public:
-    InlineVector() = default;
+    /// `inplace` is storage rather than state: only the first `size()` elements of it are ever
+    /// read, and they are written before they are counted. Zeroing it would be work for nothing.
+    InlineVector() = default; /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
 
     InlineVector(const InlineVector & other) { assign(other); }
 

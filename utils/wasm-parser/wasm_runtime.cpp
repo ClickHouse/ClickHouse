@@ -21,8 +21,10 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <string>
+#include <typeinfo>
 
 namespace DB
 {
@@ -98,15 +100,6 @@ bool Exception::isErrorCodeImportant() const
 }
 
 template Exception::Exception(int, FormatStringHelperImpl<>);
-
-/// `Core/Settings.cpp` is not built: one call (`ParserSetQuery` asking whether a bare `SET x`
-/// names a Bool setting) would otherwise pull in the whole settings schema - every
-/// `SettingField*Traits` specialization - which dwarfs the parser itself. Answering
-/// "yes, it could be a Bool" keeps `SET x` parsing; the server still validates the name.
-Field Settings::castValueUtil(std::string_view, const Field & value)
-{
-    return value;
-}
 
 /// Logging is not wired up: nothing consumes it in a browser.
 bool currentThreadHasGroup()
@@ -296,6 +289,14 @@ const SettingFieldTimezone & Settings::operator[](SettingsTimezone) const
 /// whatever the parser allocated below the boundary. The alternative is `-fwasm-exceptions`, which
 /// costs 262 KB and an engine implementing the exception-handling proposal - too much to pay for
 /// tidiness on a path that a browser hits only on an invalid query.
+///
+/// Recovery is for `DB::Exception` and nothing else. The object arriving at `__cxa_throw` is
+/// untyped, so its dynamic type has to be established from the `type_info` argument before it can
+/// be read as anything; a `std::bad_alloc` from `operator new` or a `Poco` exception is an
+/// unrelated object, and reading it through a `Poco::Exception` pointer would be undefined. For
+/// those only the type name can be reported, and the module stops. The comparison is exact rather
+/// than a `dynamic_cast` - there is no RTTI hierarchy walk available here - so a hypothetical class
+/// derived from `DB::Exception` also lands in the second case, which is the safe direction.
 /// ---------------------------------------------------------------------------------------------
 
 namespace
@@ -303,7 +304,10 @@ namespace
 
 jmp_buf recovery_point;
 bool recovery_armed = false;
-std::string recovery_message;
+
+/// Not a `std::string`: filling this in must not allocate, or a throw from the allocation would
+/// re-enter `__cxa_throw`.
+char recovery_message[1024];
 
 }
 
@@ -322,12 +326,14 @@ void chParserArmRecovery(bool armed)
 
 const char * chParserRecoveryMessage()
 {
-    return recovery_message.c_str();
+    return recovery_message;
 }
 
 void * __cxa_allocate_exception(size_t size) noexcept
 {
-    static char buffer[512];
+    /// The exception object is constructed in place in this storage, so it has to be aligned for
+    /// any type that can be thrown, not for `char`.
+    alignas(std::max_align_t) static char buffer[512];
     return size <= sizeof(buffer) ? static_cast<void *>(buffer) : nullptr;
 }
 
@@ -335,20 +341,35 @@ void __cxa_free_exception(void *) noexcept
 {
 }
 
-[[noreturn]] void __cxa_throw(void * thrown, void *, void (*)(void *))
+[[noreturn]] void __cxa_throw(void * thrown, void * type_info, void (*)(void *))
 {
-    /// `DB::Exception` derives from `Poco::Exception`, whose `what()` is the message.
-    const auto * as_std_exception = static_cast<const std::exception *>(static_cast<const Poco::Exception *>(thrown));
+    const auto * thrown_type = static_cast<const std::type_info *>(type_info);
 
-    if (recovery_armed)
+    if (thrown_type && *thrown_type == typeid(DB::Exception))
     {
-        /// Disarm first: assigning the message allocates, and a throw from there would loop.
-        recovery_armed = false;
-        recovery_message = as_std_exception->what();
-        longjmp(recovery_point, 1);
+        /// `DB::Exception` derives from `Poco::Exception`, whose `what()` is the message.
+        const char * message = static_cast<const DB::Exception *>(thrown)->what();
+
+        if (recovery_armed)
+        {
+            /// Disarm first: this is the only path that can be re-entered.
+            recovery_armed = false;
+
+            size_t length = std::strlen(message);
+            if (length > sizeof(recovery_message) - 1)
+                length = sizeof(recovery_message) - 1;
+            std::memcpy(recovery_message, message, length);
+            recovery_message[length] = 0;
+
+            longjmp(recovery_point, 1);
+        }
+
+        std::fprintf(stderr, "ClickHouse parser: unrecoverable error: %s\n", message);
+        std::abort();
     }
 
-    std::fprintf(stderr, "ClickHouse parser: unrecoverable error: %s\n", as_std_exception->what());
+    /// The object cannot be read, so the type name is all there is to report.
+    std::fprintf(stderr, "ClickHouse parser: unrecoverable error of type %s\n", thrown_type ? thrown_type->name() : "unknown");
     std::abort();
 }
 
