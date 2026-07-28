@@ -4,6 +4,12 @@
 ['str_21','str_22','str_23']
 -- captured Array column (canonical shape)
 50
+-- captured Array column, value-sensitive (fast path of Replicated(Array) materialization)
+[[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9]]
+[[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9,10],[10]]
+[[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9,10],[10,11],[11]]
+-- captured Array column, value-sensitive hash over many rows (UInt16 indexes)
+260112714912640316
 -- capture used without the lambda argument
 ['0','0']
 ['1','1']
@@ -75,6 +81,12 @@ s1s1	s1
 ['str_21','str_22','str_23']
 -- captured Array column (canonical shape)
 50
+-- captured Array column, value-sensitive (fast path of Replicated(Array) materialization)
+[[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9]]
+[[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9,10],[10]]
+[[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9,10],[10,11],[11]]
+-- captured Array column, value-sensitive hash over many rows (UInt16 indexes)
+260112714912640316
 -- capture used without the lambda argument
 ['0','0']
 ['1','1']
