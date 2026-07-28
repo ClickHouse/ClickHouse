@@ -182,9 +182,10 @@ struct AdaptiveAggregationSharedState
     std::once_flag init_flag;
     std::atomic<bool> initialized{false};
 
-    /// Records currently enqueued for the merge-time drain; pressure sweeps subtract what they
-    /// drain early. Read for logging at the finish, after every producer flushed.
-    std::atomic<size_t> pending_records{0};
+    /// Records currently enqueued and not yet drained: publishes add, drains subtract their
+    /// actual progress, and the seal subtracts what its deduplication merges away. Read for
+    /// logging at the finish, after every producer flushed.
+    std::atomic<size_t> undrained_records{0};
 
     /// The thaw sampler (see the tuning constants in `Aggregator.cpp`). At publish the threads
     /// fold a sparse sample of their staged record hashes in here; repeats of a key collapse
@@ -760,7 +761,7 @@ private:
     /// while pressure-time drains persist them into the bucket's arena so the blocks can be
     /// freed (the whole point of draining early).
     template <bool adopt_keys, typename Method>
-    void drainAdaptiveBucketBacklog(
+    size_t drainAdaptiveBucketBacklog(
         Method & method,
         Arena * arena,
         const std::vector<AdaptiveAggregationSharedState::DelayedBlockPtr> & backlog,

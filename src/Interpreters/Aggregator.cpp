@@ -2651,7 +2651,7 @@ void NO_INLINE Aggregator::publishDelayedRecords(
     adaptive.miss_key_sizes.clear();
     adaptive.miss_run_lengths.clear();
 
-    shared.pending_records.fetch_add(block->routing_hashes.size(), std::memory_order_relaxed);
+    shared.undrained_records.fetch_add(block->routing_hashes.size(), std::memory_order_relaxed);
 
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedRecords, total);
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedRecordsMerged, total - block->routing_hashes.size());
@@ -2958,6 +2958,9 @@ void Aggregator::sealPendingStagedBlocks(AdaptiveAggregationThreadContext & adap
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSealedChunks);
     ProfileEvents::increment(
         ProfileEvents::AdaptiveAggregationStagedRecordsMerged, batch_records - chunk->bucket_offsets[num_buckets]);
+    /// The merged-away records will never be drained: the counter must not keep phantoms.
+    adaptive.shared_state->undrained_records.fetch_sub(
+        batch_records - chunk->bucket_offsets[num_buckets], std::memory_order_relaxed);
 
     LOG_TRACE(
         log,
@@ -3001,11 +3004,11 @@ void Aggregator::drainAdaptiveBucketForMerge(
         if (!block->value_staged)
             std::call_once(block->prepared_flag, [&] { prepareDelayedBlock(*block); });
     }
-    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationDrainedRecords, records_drained);
+    size_t drained = 0;
 
 #define M(NAME) \
     else if (dest.type == AggregatedDataVariants::Type::NAME) \
-        drainAdaptiveBucketBacklog</*adopt_keys=*/true>( \
+        drained = drainAdaptiveBucketBacklog</*adopt_keys=*/true>( \
             *dest.NAME, arena, backlog, bucket_index, records_drained, places_scratch, is_cancelled);
 
     if (false) {} // NOLINT
@@ -3014,11 +3017,12 @@ void Aggregator::drainAdaptiveBucketForMerge(
     else
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant in the adaptive drain path.");
 
-    shared.pending_records.fetch_sub(records_drained, std::memory_order_relaxed);
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationDrainedRecords, drained);
+    shared.undrained_records.fetch_sub(drained, std::memory_order_relaxed);
 }
 
 template <bool adopt_keys, typename Method>
-void NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
+size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
     Method & method,
     Arena * arena,
     const std::vector<AdaptiveAggregationSharedState::DelayedBlockPtr> & backlog,
@@ -3055,10 +3059,11 @@ void NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
         }
     };
 
+    size_t drained = 0;
     for (const auto & block_ptr : backlog)
     {
         if (is_cancelled.load(std::memory_order_relaxed))
-            return;
+            return drained;
 
         const auto & block = *block_ptr;
         const size_t slice_begin = block.bucket_offsets[bucket_index];
@@ -3121,7 +3126,10 @@ void NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
         }
 
         update_reserve(slice_end - slice_begin);
+        drained += slice_end - slice_begin;
     }
+
+    return drained;
 }
 
 template <bool adopt_keys, typename Method>
@@ -3277,13 +3285,12 @@ void Aggregator::drainStagedBlocksEarly(AdaptiveAggregationSharedState & shared,
 
 #define M(NAME) \
     else if (routing.type == AggregatedDataVariants::Type::NAME) \
-        drainAdaptiveBucketBacklog</*adopt_keys=*/false>(*routing.NAME, arena, single, b, records, places_scratch, is_cancelled);
+        drained_records += drainAdaptiveBucketBacklog</*adopt_keys=*/false>( \
+            *routing.NAME, arena, single, b, records, places_scratch, is_cancelled);
 
             if (false) {} // NOLINT
             APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
-
-            drained_records += records;
         }
         single[0].reset();
         chunk.reset();
@@ -3314,7 +3321,7 @@ void Aggregator::drainStagedBlocksEarly(AdaptiveAggregationSharedState & shared,
             enqueueDelayedBlock(shared, chunk);
 
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureDrainedRecords, drained_records);
-    shared.pending_records.fetch_sub(drained_records, std::memory_order_relaxed);
+    shared.undrained_records.fetch_sub(drained_records, std::memory_order_relaxed);
     shared.pressure_drained.store(true, std::memory_order_relaxed);
     LOG_TRACE(log, "Adaptive aggregation: pressure sweep drained {} staged records early", drained_records);
 
