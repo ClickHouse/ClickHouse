@@ -11,37 +11,44 @@ DROP TABLE IF EXISTS probe_dense;
 DROP TABLE IF EXISTS probe_sparse_arr;
 DROP TABLE IF EXISTS dict_source;
 
+-- The attribute is never 0, so `r.v = 0` in the results below unambiguously means "key not found":
+-- that is what a lookup blind to the sparse default key 0 would produce.
 CREATE TABLE dict_source (j UInt64, v UInt64) ENGINE = MergeTree ORDER BY j;
-INSERT INTO dict_source SELECT number, number * 10 FROM numbers(20);
+INSERT INTO dict_source SELECT number, (number + 1) * 10 FROM numbers(20);
 
 CREATE DICTIONARY dict_sparse_key (j UInt64, v UInt64) PRIMARY KEY j
 SOURCE(CLICKHOUSE(TABLE 'dict_source' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0);
 
 -- `j` is default-heavy, so it is serialized Sparse and reaches the dictionary lookup unmaterialized.
+-- 25 keys x 160 rows: keys 0..19 are present in the dictionary, keys 20..24 are absent.
 CREATE TABLE probe_sparse (k UInt32, j UInt64) ENGINE = MergeTree ORDER BY k
 SETTINGS ratio_of_defaults_for_sparse_serialization = 0.0;
-INSERT INTO probe_sparse SELECT number % 50, number % 20 FROM numbers(4000);
+INSERT INTO probe_sparse SELECT number % 50, number % 25 FROM numbers(4000);
 
 -- Same data written densely: the reference results must agree with the sparse table.
 CREATE TABLE probe_dense (k UInt32, j UInt64) ENGINE = MergeTree ORDER BY k
 SETTINGS ratio_of_defaults_for_sparse_serialization = 1.0;
-INSERT INTO probe_dense SELECT number % 50, number % 20 FROM numbers(4000);
+INSERT INTO probe_dense SELECT number % 50, number % 25 FROM numbers(4000);
 
--- `j` is carried (not array-joined) through ARRAY JOIN, so with lazy replication it reaches the
--- lookup as a ColumnReplicated wrapping the Sparse column.
+-- `j` is carried (not array-joined) through ARRAY JOIN over a Sparse base column, so it reaches the
+-- lookup as a column that has to be materialized. The serialization guard below is what pins the
+-- sparse base; the query does not distinguish lazy from eager replication.
 CREATE TABLE probe_sparse_arr (j UInt64, arr Array(UInt8)) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS ratio_of_defaults_for_sparse_serialization = 0.0;
-INSERT INTO probe_sparse_arr SELECT number % 20, [1, 2, 3] FROM numbers(1500);
+INSERT INTO probe_sparse_arr SELECT number % 25, [1, 2, 3] FROM numbers(1500);
 
-SELECT 'The join key is really serialized Sparse';
-SELECT DISTINCT serialization_kind FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 'probe_sparse' AND column = 'j' AND active;
+SELECT 'The join keys are really serialized Sparse';
+SELECT table, countIf(serialization_kind = 'Sparse') > 0 FROM system.parts_columns
+WHERE database = currentDatabase() AND table IN ('probe_sparse', 'probe_sparse_arr')
+  AND column = 'j' AND active
+GROUP BY table ORDER BY table;
 
 SET join_algorithm = 'direct';
 
 -- FlatDictionary::hasKeys is the site that read the freed buffer.
 SELECT 'Sparse key, key presence only';
-SELECT count(), countIf(r.j = 0) FROM probe_sparse AS l LEFT JOIN dict_sparse_key AS r ON l.j = r.j;
+SELECT count(), countIf(r.v != 0), countIf(r.v = 0), countIf(l.j = 0 AND r.v = 10)
+FROM probe_sparse AS l LEFT JOIN dict_sparse_key AS r ON l.j = r.j;
 
 -- FlatDictionary::getColumn is a second site reached through the same getByKeys call.
 SELECT 'Sparse key, dictionary attribute read';
@@ -56,7 +63,7 @@ SELECT max(u), min(u), count() FROM
 SETTINGS optimize_aggregation_in_order = 1, max_threads = 1;
 
 SELECT 'Sparse key replicated by ARRAY JOIN, attribute read';
-SELECT sum(r.v), count() FROM (SELECT j FROM probe_sparse_arr ARRAY JOIN arr) AS l
+SELECT sum(r.v), count(), countIf(r.v = 0) FROM (SELECT j FROM probe_sparse_arr ARRAY JOIN arr) AS l
 LEFT JOIN dict_sparse_key AS r ON l.j = r.j
 SETTINGS enable_lazy_columns_replication = 1;
 
