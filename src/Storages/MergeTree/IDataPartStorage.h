@@ -167,6 +167,14 @@ public:
     /// Can add it if needed                             ///                          'database/table/moving'
     /// virtual std::string getRelativeRootPath() const = 0;
 
+    /// Projection directory lifecycle -- strict contract:
+    ///   createProjection(dir, ...)             : the ONLY creator. mkdir + register ownership + set layout. New projections only.
+    ///   getProjectionStorageForWrite(placement): writable handle; THROWS unless already owned (create it first).
+    ///   getProjectionStorage(dir)              : READ handle for an existing OR broken/missing projection; never creates.
+    ///   getProjection(dir) / tryGetProjection  : owned-descriptor lookup (getProjection THROWS if absent; tryGet returns nullopt).
+    ///   getProjections() / setProjections()    : the owned-set CACHE -- the runtime source of truth.
+    ///   detectProjections(scan)                : DISK scan across both layouts -- cleanup / consistency ONLY (the cache-bypass exception).
+
     /// The owned projection set, seeded by the logical layer and kept true by the dir-mutating verbs. Throws LOGICAL_ERROR if never seeded:
     /// a disk scan could adopt residue of a same-named part.
     virtual Projections getProjections() const = 0;

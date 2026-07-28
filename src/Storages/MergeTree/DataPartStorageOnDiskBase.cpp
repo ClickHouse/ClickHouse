@@ -1077,7 +1077,11 @@ void DataPartStorageOnDiskBase::setProjections(Projections projections_)
 
 bool DataPartStorageOnDiskBase::hasProjection(const std::string & dir_name) const
 {
-    return getProjections().contains(dir_name);
+    /// Point query against the cache -- must not copy the whole owned set.
+    std::lock_guard lock(projections_mutex);
+    if (!owned_projections_ready)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projections were never set for part storage {}", fs::path(root_path) / part_dir);
+    return owned_projections.contains(dir_name);
 }
 
 Projection DataPartStorageOnDiskBase::getProjection(const std::string & dir_name) const
@@ -1090,9 +1094,12 @@ Projection DataPartStorageOnDiskBase::getProjection(const std::string & dir_name
 
 std::optional<Projection> DataPartStorageOnDiskBase::tryGetProjection(const std::string & dir_name) const
 {
-    const auto owned = getProjections();
-    auto it = owned.find(dir_name);
-    if (it == owned.end())
+    /// Point query against the cache -- must not copy the whole owned set.
+    std::lock_guard lock(projections_mutex);
+    if (!owned_projections_ready)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projections were never set for part storage {}", fs::path(root_path) / part_dir);
+    auto it = owned_projections.find(dir_name);
+    if (it == owned_projections.end())
         return std::nullopt;
     return it->second;
 }
