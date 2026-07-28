@@ -231,6 +231,11 @@ UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
     /// `enable_join_in_memory_compression`, and PASTE join stores no build side - raising such a
     /// fragment to version 4 would only make older receivers reject a stream whose extra setting
     /// they would ignore anyway.
+    /// A `DirectKeyValueJoin` (a dictionary or key-value storage on the right side) needs no such
+    /// exception, even though it ignores `enable_join_in_memory_compression` too: it is chosen only
+    /// when the right side is a `JoinStepLogicalLookup` (see `buildQueryPlanForJoinNode`), a step
+    /// that is not serializable, so a fragment that would rebuild as a direct join can never be sent
+    /// to a receiver of any version in the first place.
     const bool can_choose_hash_family_join = canChooseHashFamilyJoin((*this)[QueryPlanSerializationSetting::join_algorithm]);
 
     const bool compression_matters = (*this)[QueryPlanSerializationSetting::enable_join_in_memory_compression]
