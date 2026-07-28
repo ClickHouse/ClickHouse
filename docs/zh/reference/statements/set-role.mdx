@@ -1,0 +1,53 @@
+---
+description: 'SET ROLE 文档'
+sidebarTitle: 'SET ROLE'
+slug: /sql-reference/statements/set-role
+title: 'SET ROLE 语句'
+doc_type: 'reference'
+---
+
+激活当前用户的角色。
+
+```sql
+SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
+```
+
+<div id="set-default-role">
+  ## SET DEFAULT ROLE
+</div>
+
+为用户设置默认 角色。
+
+默认 角色 会在用户登录时自动激活。只有先前已授予用户的 角色 才能设为默认 角色。如果某个 角色 未授予给用户，ClickHouse 会抛出异常。
+
+```sql
+SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]
+```
+
+<div id="examples">
+  ## 示例
+</div>
+
+为用户设置多个默认角色：
+
+```sql
+SET DEFAULT ROLE role1, role2, ... TO user
+```
+
+将授予某个用户的所有角色设为默认角色：
+
+```sql
+SET DEFAULT ROLE ALL TO user
+```
+
+移除用户的默认角色：
+
+```sql
+SET DEFAULT ROLE NONE TO user
+```
+
+将除特定角色 `role1` 和 `role2` 外的所有已授予角色设为默认：
+
+```sql
+SET DEFAULT ROLE ALL EXCEPT role1, role2 TO user
+```

@@ -59,6 +59,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsString additional_result_filter;
+    extern const SettingsBool analyzer_compatibility_apply_final_to_all_joined_tables;
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsUInt64 max_bytes_to_read_leaf;
     extern const SettingsSeconds max_estimated_execution_time;
@@ -559,6 +560,8 @@ SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const 
     select_query_info.query = queryNodeToSelectQuery(query_tree);
     select_query_info.query_tree = query_tree;
     select_query_info.planner_context = planner_context;
+    select_query_info.apply_query_level_final_if_no_modifiers
+        = planner_context->getQueryContext()->getSettingsRef()[Setting::analyzer_compatibility_apply_final_to_all_joined_tables];
     return select_query_info;
 }
 
@@ -782,14 +785,30 @@ QueryPlanStepPtr projectOnlyUsedColumns(
 {
     ActionsDAG project_only_used_columns_actions;
 
-    NameSet used_column_identifiers_set(used_column_identifiers.begin(), used_column_identifiers.end());
-
-    auto & outputs = project_only_used_columns_actions.getOutputs();
+    /// The projection must reproduce the header this subplan was referenced with: one output per used
+    /// identifier, in identifier order, resolved to the first same-named column (exactly how
+    /// `CommonSubplanReferenceStep`'s header is built, with `getByName` per identifier). In particular,
+    /// when the stream carries the same name more than once (e.g. `SELECT number, *` projects the same
+    /// identifier twice), the surplus duplicates must not leak into the output: the plan above the
+    /// reference was built against the deduplicated header. All stream columns become inputs, so the
+    /// unused ones are consumed and dropped.
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> first_input_by_name;
     for (const auto & column : stream_header->getColumnsWithTypeAndName())
     {
         const auto * input_node = &project_only_used_columns_actions.addInput(column);
-        if (used_column_identifiers_set.contains(column.name))
-            outputs.push_back(input_node);
+        first_input_by_name.emplace(column.name, input_node);
+    }
+
+    auto & outputs = project_only_used_columns_actions.getOutputs();
+    for (const auto & identifier : used_column_identifiers)
+    {
+        auto it = first_input_by_name.find(identifier);
+        if (it == first_input_by_name.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Used column {} is missing from the common subplan header: [{}]",
+                identifier,
+                stream_header->dumpNames());
+        outputs.push_back(it->second);
     }
 
     auto step = std::make_unique<ExpressionStep>(stream_header, std::move(project_only_used_columns_actions));

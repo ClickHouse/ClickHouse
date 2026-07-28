@@ -1,0 +1,208 @@
+{
+  "icon": "/images/icons/icon-get-started.svg",
+  "item": "시작하기",
+  "pages": [
+    {
+      "group": "Get started",
+      "icon": "/images/menu-icon-lightning.svg",
+      "pages": [
+        "ko/get-started/quickstarts/home",
+        {
+          "expandable": true,
+          "expanded": true,
+          "group": "소개",
+          "pages": [
+            "ko/get-started/about/intro",
+            "ko/get-started/about/why-clickhouse-is-so-fast",
+            "ko/get-started/about/distinctive-features"
+          ]
+        },
+        {
+          "expanded": true,
+          "group": "사용 사례",
+          "pages": [
+            "ko/get-started/use-cases/real-time-analytics",
+            "ko/get-started/use-cases/observability",
+            "ko/get-started/use-cases/data-warehousing",
+            "ko/get-started/use-cases/agentic-analytics"
+          ],
+          "root": "ko/get-started/use-cases/overview"
+        },
+        "ko/get-started/about/deployment-modes"
+      ],
+      "root": "ko/get-started/index"
+    },
+    {
+      "expanded": true,
+      "group": "Setup",
+      "icon": "/images/menu-icon-gear.svg",
+      "pages": [
+        "ko/get-started/setup/cloud",
+        {
+          "expanded": true,
+          "group": "자가 관리형",
+          "pages": [
+            {
+              "group": "로컬 개발",
+              "pages": [
+                "ko/get-started/setup/self-managed/quick-install",
+                "ko/get-started/setup/self-managed/clickhousectl",
+                "ko/get-started/setup/self-managed/docker",
+                "ko/get-started/setup/self-managed/advanced"
+              ]
+            },
+            {
+              "group": "프로덕션 서버",
+              "pages": [
+                "ko/get-started/setup/self-managed/debian-ubuntu",
+                "ko/get-started/setup/self-managed/redhat",
+                "ko/get-started/setup/self-managed/nixos",
+                "ko/get-started/setup/self-managed/other-linux"
+              ]
+            }
+          ],
+          "root": "ko/get-started/setup/self-managed/overview"
+        }
+      ],
+      "root": "ko/get-started/setup/install"
+    },
+    {
+      "expanded": true,
+      "group": "샘플 데이터셋",
+      "icon": "/images/menu-icon-database.svg",
+      "pages": [
+        "ko/get-started/sample-datasets/playground",
+        {
+          "group": "벤치마크",
+          "pages": [
+            "ko/get-started/sample-datasets/amplab-benchmark",
+            "ko/get-started/sample-datasets/brown-benchmark",
+            "ko/get-started/sample-datasets/criteo",
+            "ko/get-started/sample-datasets/job",
+            "ko/get-started/sample-datasets/star-schema",
+            "ko/get-started/sample-datasets/tpcds",
+            "ko/get-started/sample-datasets/tpch"
+          ]
+        },
+        {
+          "group": "벡터 검색 및 임베딩",
+          "pages": [
+            "ko/get-started/sample-datasets/dbpedia",
+            "ko/get-started/sample-datasets/hacker-news-vector-search",
+            "ko/get-started/sample-datasets/laion",
+            "ko/get-started/sample-datasets/laion5b"
+          ]
+        },
+        {
+          "group": "웹 및 소셜 분석",
+          "pages": [
+            "ko/get-started/sample-datasets/amazon-reviews",
+            "ko/get-started/sample-datasets/anon-web-analytics-metrica",
+            "ko/get-started/sample-datasets/github",
+            "ko/get-started/sample-datasets/github-events",
+            "ko/get-started/sample-datasets/hacker-news",
+            "ko/get-started/sample-datasets/stackoverflow",
+            "ko/get-started/sample-datasets/youtube-dislikes"
+          ]
+        },
+        {
+          "group": "Geo 및 위치",
+          "pages": [
+            "ko/get-started/sample-datasets/cell-towers",
+            "ko/get-started/sample-datasets/foursquare-os-places",
+            "ko/get-started/sample-datasets/nyc-taxi"
+          ]
+        },
+        {
+          "group": "시계열 및 센서",
+          "pages": [
+            "ko/get-started/sample-datasets/environmental-sensors",
+            "ko/get-started/sample-datasets/noaa",
+            "ko/get-started/sample-datasets/tw-weather",
+            "ko/get-started/sample-datasets/wikistat"
+          ]
+        },
+        {
+          "group": "공공 기록 및 공개 데이터",
+          "pages": [
+            "ko/get-started/sample-datasets/covid19",
+            "ko/get-started/sample-datasets/menus",
+            "ko/get-started/sample-datasets/nypd-complaint-data",
+            "ko/get-started/sample-datasets/ontime",
+            "ko/get-started/sample-datasets/uk-price-paid"
+          ]
+        }
+      ],
+      "root": "ko/get-started/sample-datasets/index"
+    },
+    {
+      "expanded": true,
+      "group": "마이그레이션",
+      "icon": "/images/caret-double-right.svg",
+      "pages": [
+        {
+          "group": "PostgreSQL",
+          "pages": [
+            "ko/get-started/migrate/postgres/overview",
+            {
+              "group": "마이그레이션 가이드",
+              "pages": [
+                "ko/get-started/migrate/postgres/migration-guide/migration-guide-part1",
+                "ko/get-started/migrate/postgres/migration-guide/migration-guide-part2",
+                "ko/get-started/migrate/postgres/migration-guide/migration-guide-part3"
+              ]
+            },
+            "ko/get-started/migrate/postgres/appendix"
+          ],
+          "root": "ko/get-started/migrate/postgres/index"
+        },
+        {
+          "group": "BigQuery",
+          "pages": [
+            "ko/get-started/migrate/bigquery/overview",
+            "ko/get-started/migrate/bigquery/migrating-to-clickhouse-cloud",
+            "ko/get-started/migrate/bigquery/loading-data"
+          ],
+          "root": "ko/get-started/migrate/bigquery/index"
+        },
+        {
+          "group": "Snowflake",
+          "pages": [
+            "ko/get-started/migrate/snowflake/overview",
+            "ko/get-started/migrate/snowflake/migration-guide",
+            "ko/get-started/migrate/snowflake/sql-translation-reference"
+          ]
+        },
+        {
+          "group": "Elasticsearch",
+          "pages": [
+            "ko/get-started/migrate/elastic/overview"
+          ]
+        },
+        {
+          "group": "Redshift",
+          "pages": [
+            "ko/get-started/migrate/redshift/overview",
+            "ko/get-started/migrate/redshift/migration-guide",
+            "ko/get-started/migrate/redshift/sql-translation-reference"
+          ]
+        },
+        {
+          "group": "OSS에서 Cloud로",
+          "pages": [
+            "ko/get-started/migrate/oss-to-cloud/clickhouse-to-cloud"
+          ]
+        },
+        {
+          "group": "기타 메서드",
+          "pages": [
+            "ko/get-started/migrate/other-methods/clickhouse-local-etl",
+            "ko/get-started/migrate/other-methods/etl-tool-to-clickhouse",
+            "ko/get-started/migrate/other-methods/object-storage-to-clickhouse"
+          ]
+        }
+      ],
+      "root": "ko/get-started/migrate/overview"
+    }
+  ]
+}

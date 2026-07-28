@@ -36,7 +36,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/DataLake/DatabaseDataLake.h>
-#include <Core/Settings.h>
 
 #include <fmt/ranges.h>
 
@@ -355,13 +354,17 @@ public:
     std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context, [[maybe_unused]] const StorageID & table_id) const override
     {
 #if USE_AVRO && USE_PARQUET
-        if ((*settings)[DataLakeStorageSetting::storage_catalog_type].changed || (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Don't use deprecated settings storage_catalog_type and storage_catalog_url");
+        if ((*settings)[DataLakeStorageSetting::storage_catalog_type].changed
+            || (*settings)[DataLakeStorageSetting::storage_catalog_url].changed
+            || (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Don't use deprecated settings storage_catalog_type, storage_catalog_url, storage_aws_access_key_id");
         const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase();
-        DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(db_name);
-        if (!database)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Database {} not found", db_name);
-        auto datalake_database = std::dynamic_pointer_cast<DatabaseDataLake>(database);
+        /// Having no associated `DataLakeDatabase` is a valid state (e.g. an `Iceberg` table in a
+        /// regular `Atomic`/`Ordinary` database, or a database not currently registered during
+        /// async load), so return nullptr rather than throwing. Callers treat a null catalog as
+        /// "no catalog integration", the same as the base-class default.
+        auto datalake_database = std::dynamic_pointer_cast<DatabaseDataLake>(DatabaseCatalog::instance().tryGetDatabase(db_name));
         if (!datalake_database)
             return nullptr;
         return datalake_database->getCatalog();
@@ -411,9 +414,10 @@ private:
         if (object_storage->getType() == ObjectStorageType::Local)
         {
             auto user_files_path = local_context->getUserFilesPath();
-            if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
+            const auto & table_path = this->getPathForRead().path;
+            if (!fileOrSymlinkPathStartsWith(table_path, user_files_path) || !pathStartsWith(table_path, user_files_path))
                 throw Exception(
-                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
+                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", table_path, user_files_path);
         }
     }
 
