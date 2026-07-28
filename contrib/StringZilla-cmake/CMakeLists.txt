@@ -1,7 +1,5 @@
 set(STRINGZILLA_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/StringZilla")
 
-# The compiled core is split into one translation unit per domain. `runtime.c` owns the shared
-# dispatch table and its one-time initialization; every sibling fills its own slice of the table.
 SET(STRINGZILLA_SOURCES
     "${STRINGZILLA_SOURCE_DIR}/c/stringzilla/runtime.c"
     "${STRINGZILLA_SOURCE_DIR}/c/stringzilla/compare.c"
