@@ -1,0 +1,87 @@
+---
+sidebarTitle: 'FAQ'
+description: 'Часто задаваемые вопросы о ClickPipes for Kafka.'
+slug: /integrations/clickpipes/kafka/faq
+title: 'Часто задаваемые вопросы о Kafka ClickPipes'
+doc_type: 'guide'
+keywords: ['часто задаваемые вопросы о kafka', 'clickpipes', 'upstash', 'azure event hubs', 'private link']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<div id="faq">
+  ## Часто задаваемые вопросы о Kafka ClickPipes
+</div>
+
+<div id="general">
+  ### Общие сведения
+</div>
+
+<Accordion title="Как работает ClickPipes for Kafka?">
+  ClickPipes использует выделенную архитектуру и Kafka Consumer API для чтения данных из указанного топика, а затем вставляет эти данные в таблицу ClickHouse в выбранном сервисе ClickHouse Cloud.
+</Accordion>
+
+<Accordion title="В чем разница между ClickPipes и ClickHouse Kafka Table Engine?">
+  Движок таблицы Kafka — это встроенная возможность ClickHouse, реализующая «pull-модель», при которой сервер ClickHouse сам подключается к Kafka, получает события и затем записывает их локально.
+
+  ClickPipes — это отдельный облачный сервис, работающий независимо от сервиса ClickHouse. Он подключается к Kafka (или другим источникам данных) и отправляет события в связанный сервис ClickHouse Cloud. Такая разделённая архитектура обеспечивает более высокую операционную гибкость, чёткое разграничение ответственности, масштабируемую ингестию, устойчивую обработку сбоев, расширяемость и многое другое.
+</Accordion>
+
+<Accordion title="Каковы требования для использования ClickPipes for Kafka?">
+  Чтобы использовать ClickPipes for Kafka, вам потребуется работающий брокер Kafka и сервис ClickHouse Cloud с включённым ClickPipes. Также необходимо убедиться, что ClickHouse Cloud может получить доступ к вашему брокеру Kafka. Для этого можно разрешить удалённые подключения на стороне Kafka и добавить [исходящие IP-адреса ClickHouse Cloud](/ru/products/cloud/guides/data-sources/cloud-endpoints-api) в белый список в конфигурации Kafka. Либо можно использовать [AWS PrivateLink](/ru/integrations/clickpipes/aws-privatelink), чтобы подключить ClickPipes for Kafka к вашим брокерам Kafka.
+</Accordion>
+
+<Accordion title="Поддерживает ли ClickPipes for Kafka AWS PrivateLink?">
+  AWS PrivateLink поддерживается. Подробнее о настройке см. в [документации](/ru/integrations/clickpipes/aws-privatelink).
+</Accordion>
+
+<Accordion title="Можно ли использовать ClickPipes for Kafka для записи данных в топик Kafka?">
+  Нет, ClickPipes for Kafka предназначен для чтения данных из топиков Kafka, а не для записи в них. Для записи данных в топик Kafka потребуется отдельный Kafka producer.
+</Accordion>
+
+<Accordion title="Поддерживает ли ClickPipes несколько брокеров?">
+  Да, если брокеры входят в один и тот же кворум, их можно настроить вместе, разделив с помощью `,`.
+</Accordion>
+
+<Accordion title="Можно ли масштабировать реплики ClickPipes?">
+  Да, ClickPipes для стриминга можно масштабировать как горизонтально, так и вертикально.
+  Горизонтальное масштабирование добавляет больше реплик для увеличения пропускной способности, а вертикальное увеличивает ресурсы (CPU и оперативную память), выделенные каждой реплике, чтобы обрабатывать более интенсивные рабочие нагрузки.
+  Это можно настроить при создании ClickPipe или позже в разделе **Settings** -&gt; **Advanced Settings** -&gt; **Scaling**.
+</Accordion>
+
+<Accordion title="Я не вижу некоторые свои топики Kafka в интерфейсе настройки ClickPipes. Почему?">
+  Интерфейс обнаружения топиков в ClickPipes по умолчанию отображает до 1 500 топиков. Если в вашем кластере Kafka больше 1 500 топиков, часть из них может не отображаться в выпадающем списке. Чтобы убедиться, что нужный топик существует, проверьте это напрямую с помощью Kafka-клиента с теми же учётными данными. Если топик существует и вам нужно увеличить лимит отображаемых топиков сверх 1 500, обратитесь в ClickHouse Support.
+</Accordion>
+
+<div id="azure-eventhubs">
+  ### Azure Event Hubs
+</div>
+
+<Accordion title="Работает ли ClickPipe для Azure Event Hubs без Kafka-интерфейса?">
+  Нет. ClickPipes требует, чтобы для пространства имен Event Hubs был включен Kafka-интерфейс. Это доступно только на уровнях выше **basic**. Подробнее см. в [документации Azure Event Hubs](https://learn.microsoft.com/en-us/azure/event-hubs/event-hubs-quickstart-kafka-enabled-event-hubs?tabs=passwordless#create-an-azure-event-hubs-namespace).
+</Accordion>
+
+<Accordion title="Работает ли Azure Schema Registry с ClickPipes?">
+  Нет. ClickPipes поддерживает только реестры схем, API-совместимые с Confluent Schema Registry, а Azure Schema Registry к ним не относится. Если вам нужна поддержка этого реестра схем, [свяжитесь с нашей командой](https://clickhouse.com/company/contact?loc=clickpipes).
+</Accordion>
+
+<Accordion title="Какие разрешения нужны моей политике для чтения из Azure Event Hubs?">
+  Чтобы получать список топиков и читать события, политика общего доступа, передаваемая в ClickPipes, должна иметь как минимум право &#39;Listen&#39;.
+</Accordion>
+
+<Accordion title="Почему Event Hubs не возвращает данные?">
+  Если ваш экземпляр ClickHouse находится в другом регионе или на другом континенте по сравнению с развертыванием Event Hubs, при онбординге ClickPipes могут возникать тайм-ауты, а при чтении данных из Event Hub — более высокая задержка. Мы рекомендуем развертывать ClickHouse Cloud и Azure Event Hubs в одном облачном регионе или в регионах, расположенных близко друг к другу, чтобы избежать снижения производительности.
+</Accordion>
+
+<Accordion title="Нужно ли указывать номер порта для Azure Event Hubs?">
+  Да. ClickPipes ожидает, что вы укажете номер порта для Kafka-интерфейса, и это должен быть `:9093`.
+</Accordion>
+
+<Accordion title="Актуальны ли ClickPipes IPs для Azure Event Hubs?">
+  Да. Чтобы ограничить трафик к вашему экземпляру Event Hubs, добавьте [задокументированные статические NAT IPs](/ru/integrations/clickpipes/home#list-of-static-ips) в .
+</Accordion>
+
+<Accordion title="Строка подключения должна быть для Event Hub или для пространства имен Event Hub?">
+  Подходят оба варианта. Мы настоятельно рекомендуем использовать политику общего доступа на уровне **пространства имен**, чтобы получать выборки из нескольких Event Hubs.
+</Accordion>

@@ -14,18 +14,30 @@ extern const int BUZZHOUSE;
 namespace BuzzHouse
 {
 
-const std::vector<std::vector<OutFormat>> QueryOracle::oracleFormats
-    = {{OutFormat::OUT_CSV}, {OutFormat::OUT_TabSeparated}, {OutFormat::OUT_Values}};
+const DB::Strings QueryOracle::oracleFormats = {"CSV", "TabSeparated", "Values"};
 
 static void finishSettings(SettingValues * svs)
 {
-    /// Wait for mutations to finish
+    /// Wait for mutations to finish. Also reset lake time travel: a session-level
+    /// `SET iceberg_snapshot_id/iceberg_timestamp_ms` (or the DeltaLake/Paimon version pins)
+    /// makes every read see an old snapshot, so an oracle comparing counts before/after an
+    /// INSERT gets a false mismatch (and the pinned id is unreplayable - snapshot ids are
+    /// random per run). The Iceberg pins trigger on the setting's `changed` flag, so the
+    /// reset must be the `DEFAULT` keyword - assigning the default value would keep the
+    /// setting `changed` and pin a nonexistent snapshot. Delta/Paimon pins are value-based
+    /// (-1 = latest), where `DEFAULT` works as well.
     static const std::unordered_map<String, String> toSet
         = {{"alter_sync", "2"},
            {"apply_deleted_mask", "1"},
            {"apply_patch_parts", "1"},
+           {"delta_lake_snapshot_end_version", "DEFAULT"},
+           {"delta_lake_snapshot_start_version", "DEFAULT"},
+           {"delta_lake_snapshot_version", "DEFAULT"},
+           {"iceberg_snapshot_id", "DEFAULT"},
+           {"iceberg_timestamp_ms", "DEFAULT"},
            {"lightweight_deletes_sync", "2"},
-           {"mutations_sync", "2"}};
+           {"mutations_sync", "2"},
+           {"paimon_target_snapshot_id", "DEFAULT"}};
     for (const auto & [key, val] : toSet)
     {
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
@@ -216,6 +228,15 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
             oracle_combination = OracleCombination::WHERE_ONLY;
     }
 
+    /// In the GROUP BY/HAVING combinations the first query references the GROUP BY
+    /// key columns while the second (flat) rewrite references only the predicate
+    /// columns. So a column that fails analysis only in the first query (e.g. a
+    /// group key that cannot be resolved) makes the two queries differ in success
+    /// without any result divergence - a false positive. Only the result is
+    /// comparable here, not the success status. WHERE_ONLY keeps the same column
+    /// footprint in both queries, so its success comparison stays meaningful.
+    can_test_success &= oracle_combination == OracleCombination::WHERE_ONLY;
+
     if (oracle_combination == OracleCombination::WHERE_ONLY)
     {
         /// WHERE-only path: SELECT count() AS s0 FROM T WHERE pred = TRUE
@@ -250,24 +271,17 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
             gen.generateWherePredicate(rg, bexpr->mutable_lhs());
         }
 
-        /// GROUP BY without auto-generated HAVING (allow_settings=false disables it)
-        gen.generateGroupBy(rg, 1, true, false, inner_ssc);
-
-        /// HAVING predicate restricted to GROUP BY key columns. Wrapped as
-        /// `pred = TRUE` like the WHERE path: the second query SUMs this whole
-        /// expression, and a bare predicate would be summed as its raw value
-        /// (e.g. `HAVING number` keeps every non-zero group, while
-        /// `sum(number)` adds the numbers themselves instead of counting).
-        const auto & gcols = gen.levels[gen.current_level].gcols;
-        if (!gcols.empty())
-        {
-            BinaryExpr * hexpr
-                = inner_ssc->mutable_groupby()->mutable_having_expr()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
-            hexpr->set_op(BinaryOperator::BINOP_EQ);
-            hexpr->mutable_rhs()->mutable_lit_val()->mutable_special_val()->set_val(
-                SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);
-            gen.addWhereFilter(rg, gcols, hexpr->mutable_lhs());
-        }
+        gen.generateGroupBy(rg, 1, false, false, inner_ssc);
+        BinaryExpr * bexpr = inner_ssc->mutable_groupby()
+                                 ->mutable_having_expr()
+                                 ->mutable_expr()
+                                 ->mutable_expr()
+                                 ->mutable_comp_expr()
+                                 ->mutable_binary_expr();
+        bexpr->set_op(BinaryOperator::BINOP_EQ);
+        bexpr->mutable_rhs()->mutable_lit_val()->mutable_special_val()->set_val(
+            SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);
+        gen.generateWherePredicate(rg, bexpr->mutable_lhs());
 
         /// Inner result: count() AS cnt
         ExprColAlias * inner_eca = inner_ssc->add_result_columns()->mutable_eca();
@@ -301,7 +315,7 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     gen.setAllowEngineUDF(true);
 
     finishSettings(sel->mutable_setting_values());
-    ts->set_format(OutFormat::OUT_CSV);
+    ts->set_format("CSV");
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
@@ -506,7 +520,7 @@ void QueryOracle::generateRoundtripOracleQueries(RandomGenerator & rg, Statement
     eca->mutable_col_alias()->set_column("s0");
     ssc1->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->set_no_quote_str(fmt::format("{} IS NOT NULL", col_ref));
     finishSettings(sel1->mutable_setting_values());
-    ts1->set_format(OutFormat::OUT_CSV);
+    ts1->set_format("CSV");
     const auto err1 = std::filesystem::remove(qcfile);
     UNUSED(err1);
     sif1->set_path(qcfile.generic_string());
@@ -579,7 +593,7 @@ void QueryOracle::generateArrayJoinOracleQueries(RandomGenerator & rg, Statement
     if (rg.nextSmallNumber() < 4)
         gen.generateWherePredicate(rg, ssc1->mutable_where()->mutable_expr()->mutable_expr());
     if (rg.nextSmallNumber() < 3)
-        gen.generateGroupBy(rg, 1, rg.nextBool(), false, ssc1);
+        gen.generateGroupBy(rg, 1, rg.nextSmallNumber() < 4, true, ssc1);
 
     gen.levels.clear();
     gen.ctes.clear();
@@ -598,7 +612,7 @@ void QueryOracle::generateArrayJoinOracleQueries(RandomGenerator & rg, Statement
         ->set_column("s0");
 
     finishSettings(sel1->mutable_setting_values());
-    ts1->set_format(OutFormat::OUT_CSV);
+    ts1->set_format("CSV");
     const auto err1 = std::filesystem::remove(qcfile);
     UNUSED(err1);
     sif1->set_path(qcfile.generic_string());
@@ -661,7 +675,7 @@ void QueryOracle::generateRowPolicyOracleQueries(RandomGenerator & rg, Statement
         const SQLTable & t = gen.lookupTable(policy.table_key);
 
         t.setName(jtf2->mutable_tof()->mutable_est(), false);
-        jtf2->set_final(t.supportsFinal());
+        jtf2->set_final(t.supportsFinal(true));
     }
     else
     {
@@ -684,7 +698,7 @@ void QueryOracle::generateRowPolicyOracleQueries(RandomGenerator & rg, Statement
             SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ONE);
 
     finishSettings(sel2->mutable_setting_values());
-    ts2->set_format(OutFormat::OUT_CSV);
+    ts2->set_format("CSV");
     const auto err2 = std::filesystem::remove(qcfile);
     UNUSED(err2);
     ts2->mutable_intofile()->set_path(qcfile.generic_string());
@@ -754,7 +768,7 @@ void QueryOracle::generateCountDistinctFirstQuery(RandomGenerator & rg, Statemen
     sv->set_property("count_distinct_implementation");
     sv->set_value("'uniqExact'");
     finishSettings(svs);
-    ts->set_format(OutFormat::OUT_CSV);
+    ts->set_format("CSV");
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
@@ -859,7 +873,7 @@ void QueryOracle::dumpTableContent(
     JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 
     insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
-    jtf->set_final(t.supportsFinal());
+    jtf->set_final(t.supportsFinal(true));
     switch (strategy)
     {
         case DumpOracleStrategy::REINSERT_TABLE:
@@ -933,12 +947,13 @@ void QueryOracle::dumpTableContent(
             eca->mutable_col_alias()->set_column("s0");
         }
         break;
+        case DumpOracleStrategy::DO_NOTHING: break;
     }
     if (test_content)
     {
         finishSettings(sel->mutable_setting_values());
     }
-    ts->set_format(rg.pickRandomly(rg.pickRandomly(QueryOracle::oracleFormats)));
+    ts->set_format(rg.pickRandomly(QueryOracle::oracleFormats));
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
@@ -976,6 +991,7 @@ void QueryOracle::dumpTableContent(
             eca2->mutable_col_alias()->set_column("s0");
         }
         break;
+        case DumpOracleStrategy::DO_NOTHING: break;
     }
 }
 
@@ -1028,7 +1044,7 @@ void QueryOracle::generateExportQuery(
         gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
     }
     gen.entries.clear();
-    ff->set_outformat(rg.pickRandomly(rg.pickRandomly(can_test_oracle_result ? QueryOracle::oracleFormats : outFormats)));
+    ff->set_format(rg.pickRandomly(can_test_oracle_result ? QueryOracle::oracleFormats : fc.out_formats));
     if (rg.nextSmallNumber() < 4)
     {
         ff->set_fcomp(rg.pickRandomly(compressionMethods));
@@ -1057,7 +1073,7 @@ void QueryOracle::generateExportQuery(
     JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 
     insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
-    jtf->set_final(t.supportsFinal());
+    jtf->set_final(t.supportsFinal(true));
 }
 
 void QueryOracle::dumpOracleIntermediateSteps(
@@ -1136,6 +1152,9 @@ void QueryOracle::dumpOracleIntermediateSteps(
             {
                 /// ALTER TABLE t UPDATE ... WHERE ...
                 Alter * at = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+                at->set_is_temp(t.is_temp);
+                at->set_sobject(SQLObject::TABLE);
+                t.setName(at->mutable_object()->mutable_est(), false);
                 gen.generateNextUpdate(rg, t, at->mutable_alter()->mutable_update());
                 maybeSetClusterAndSettings(at);
             }
@@ -1198,7 +1217,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
             const String dname = t.getDatabaseName();
             const String tname = t.getBaseName();
 
-            if (t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname))
+            if (t.isMergeTreeFamily(true) && fc.tableHasPartitions(false, dname, tname))
             {
                 SQLQuery next2;
                 const String part_name = fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, false, dname, tname);
@@ -1230,7 +1249,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
             const String dname = t.getDatabaseName();
             const String tname = t.getBaseName();
 
-            if (t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname))
+            if (t.isMergeTreeFamily(true) && fc.tableHasPartitions(false, dname, tname))
             {
                 const String partition_id = fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname);
 
@@ -1300,6 +1319,9 @@ void QueryOracle::dumpOracleIntermediateSteps(
             {
                 /// ALTER TABLE t DELETE WHERE true
                 Alter * at = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+                at->set_is_temp(t.is_temp);
+                at->set_sobject(SQLObject::TABLE);
+                t.setName(at->mutable_object()->mutable_est(), false);
                 Delete * del = at->mutable_alter()->mutable_del();
                 gen.generateNextDelete(rg, t, del);
                 del->clear_single_partition();
@@ -1310,6 +1332,8 @@ void QueryOracle::dumpOracleIntermediateSteps(
             }
             intermediate_queries.emplace_back(next);
         }
+        break;
+        case DumpOracleStrategy::DO_NOTHING: break;
     }
     gen.setAllowNotDetermistic(true);
 }
@@ -1362,7 +1386,7 @@ void QueryOracle::dumpDictionaryContent(
     gen.entries.clear();
 
     finishSettings(sel->mutable_setting_values());
-    ts->set_format(rg.pickRandomly(rg.pickRandomly(QueryOracle::oracleFormats)));
+    ts->set_format(rg.pickRandomly(QueryOracle::oracleFormats));
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
@@ -1428,7 +1452,7 @@ void QueryOracle::dumpViewContent(RandomGenerator & rg, const SQLView & v, SQLQu
     }
 
     finishSettings(sel->mutable_setting_values());
-    ts->set_format(rg.pickRandomly(rg.pickRandomly(QueryOracle::oracleFormats)));
+    ts->set_format(rg.pickRandomly(QueryOracle::oracleFormats));
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
@@ -1443,9 +1467,9 @@ void QueryOracle::generateImportQuery(
     InsertFromFile * iff = nins->mutable_insert_file();
     const Insert & oins = sq2.single_query().explain().inner_query().insert();
     const FileFunc & ff = oins.tof().tfunc().file();
-    const InFormat & inf = !outIn.contains(ff.outformat()) || (!can_test_oracle_result && rg.nextSmallNumber() < 4)
-        ? rg.pickValueRandomlyFromMap(outIn)
-        : outIn.at(ff.outformat());
+    const std::optional<String> read_back = fc.formatToRead(ff.format());
+    const String inf = !read_back.has_value() || (!can_test_oracle_result && rg.nextSmallNumber() < 4) ? rg.pickRandomly(fc.in_formats)
+                                                                                                       : read_back.value();
 
     insertOnTableOrCluster(rg, gen, t, false, nins->mutable_tof());
     gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
@@ -1474,7 +1498,7 @@ void QueryOracle::generateImportQuery(
 
         svs->CopyFrom(oins.setting_values());
     }
-    if (can_test_oracle_result && inf == InFormat::IN_CSV)
+    if (can_test_oracle_result && inf == "CSV")
     {
         SettingValues * svs = nins->mutable_setting_values();
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
@@ -1602,12 +1626,12 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         Insert * ins = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
         sparen = ins->mutable_select();
         FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
-        OutFormat outf = rg.pickRandomly(rg.pickRandomly(QueryOracle::oracleFormats));
+        const String & outf = rg.pickRandomly(QueryOracle::oracleFormats);
 
         const auto err = std::filesystem::remove(qcfile);
         UNUSED(err);
         ff->set_path(qsfile.generic_string());
-        ff->set_outformat(outf);
+        ff->set_format(outf);
         ff->set_fname(FileFunc_FName::FileFunc_FName_file);
         sel = query = sparen->mutable_select();
     }
@@ -1943,7 +1967,7 @@ void QueryOracle::replaceQueryWithTablePeers(
         Insert * ins = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
         SelectStatementCore * sel = ins->mutable_select()->mutable_select()->mutable_select_core();
 
-        if (t.isMergeTreeFamily() && t.can_run_merges)
+        if (t.isMergeTreeFamily(true) && t.can_run_merges)
         {
             /// Apply delete mask
             SQLQuery next;
@@ -1963,7 +1987,7 @@ void QueryOracle::replaceQueryWithTablePeers(
         insertOnTableOrCluster(rg, gen, t, true, ins->mutable_tof());
         JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
         insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
-        jtf->set_final(t.supportsFinal());
+        jtf->set_final(t.supportsFinal(true));
         gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
         for (const auto & colRef : gen.entries)
         {
