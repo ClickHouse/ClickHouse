@@ -1141,7 +1141,7 @@ private:
 
     static void addBatch(
         size_t row_begin, size_t row_end,
-        AggregateFunctionInstruction * inst,
+        const AggregateFunctionInstruction * inst,
         AggregateDataPtr * places,
         Arena * arena);
 

@@ -1720,7 +1720,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
 
 void Aggregator::addBatch(
     size_t row_begin, size_t row_end,
-    AggregateFunctionInstruction * inst,
+    const AggregateFunctionInstruction * inst,
     AggregateDataPtr * places,
     Arena * arena)
 {
@@ -3165,9 +3165,13 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
     constexpr size_t prefetch_look_ahead = adaptive_drain_prefetch_look_ahead;
     auto prefetch = [&](size_t j)
     {
+        const size_t la = j + prefetch_look_ahead;
+        if (la >= slice_end)
+            return;
         if constexpr (requires { impl.prefetchByHash(keys.routing_hashes[j]); })
-            if (j + prefetch_look_ahead < slice_end)
-                impl.prefetchByHash(keys.routing_hashes[j + prefetch_look_ahead]);
+            impl.prefetchByHash(keys.routing_hashes[la]);
+        else if constexpr (std::is_same_v<typename Method::Key, std::string_view>)
+            impl.prefetch(keys.keyBytesAt(la), keys.routing_hashes[la]);
     };
 
     const auto & prep = *std::get<AdaptiveAggregationSession::AggregatePayload>(block.payload).prepared;
@@ -3208,31 +3212,12 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
     if (!params.aggregates_size)
         return;
 
-    /// Apply the aggregate functions to the delayed rows only.
+    /// Apply the aggregate functions to the delayed rows only: the slice is a contiguous row
+    /// range of the compacted argument columns and of `places`, so the standard batch dispatch
+    /// applies to it directly, with no gather (the staged columns are always dense, so its
+    /// sparse path never fires).
     for (size_t i = 0; i < aggregate_functions.size(); ++i)
-    {
-        const AggregateFunctionInstruction * inst = prep.instructions.data() + i;
-
-        if (inst->offsets)
-        {
-            /// Mirrors `addBatchArray`: the aggregated values of record `j` are the flattened
-            /// rows [offsets[j - 1], offsets[j]) of the compacted nested column.
-            for (size_t j = slice_begin; j < slice_end; ++j)
-            {
-                const size_t end = inst->offsets[j];
-                for (size_t k = inst->offsets[static_cast<ssize_t>(j) - 1]; k < end; ++k)
-                    inst->batch_that->add(places[j] + inst->state_offset, inst->batch_arguments, k, bucket_arena);
-            }
-        }
-        else
-        {
-            /// The slice is a contiguous row range of the compacted argument columns: the
-            /// aggregate applies to it directly, with no gather. Zero-argument functions take
-            /// the same call.
-            inst->batch_that->addBatch(
-                slice_begin, slice_end, places.data(), inst->state_offset, inst->batch_arguments, bucket_arena);
-        }
-    }
+        addBatch(slice_begin, slice_end, prep.instructions.data() + i, places.data(), bucket_arena);
 }
 
 void Aggregator::drainStagedChunksEarly(AdaptiveAggregationSession & shared, AdaptiveDrainGoal goal) const
