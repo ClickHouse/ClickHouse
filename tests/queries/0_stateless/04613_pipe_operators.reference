@@ -21,6 +21,12 @@ alice
 alice	250	0
 charlie	300	0
 1
+1
+2
+2	2
+1
+1
+2
 -- WHERE
 alice	100	0
 alice	250	0

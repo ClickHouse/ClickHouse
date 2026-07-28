@@ -1,7 +1,8 @@
+#include <algorithm>
 #include <memory>
 #include <string_view>
-#include <strings.h>
 #include <base/defines.h>
+#include <Common/StringUtils.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -150,17 +151,48 @@ bool parseOrderByClauseBody(
 namespace
 {
 
-/// Whether the token range contains a bareword `select` (in any letter case) outside of any brackets.
+constexpr std::string_view select_keyword = "select";
+
+bool isSelectKeyword(std::string_view str)
+{
+    return std::equal(str.begin(), str.end(), select_keyword.begin(), select_keyword.end(), equalsCaseInsensitive);
+}
+
+/// Whether one of the top-level table expressions has the alias `select` (in any letter case).
 /// In the FROM-first form of a query, the tables are first parsed allowing aliases without the AS
 /// keyword; the only ambiguity is the SELECT keyword that starts the explicit SELECT clause being
 /// consumed as such an alias (SELECT is the only clause keyword that is not in
-/// ParserAlias::restricted_keywords). That can only happen for a bareword token at the top nesting
-/// level of the FROM clause, so a quoted alias (FROM orders `select`) and anything inside a
-/// subquery or a table function (FROM (SELECT 1 AS select) s) must not trigger the reparse.
+/// ParserAlias::restricted_keywords). Only the aliases of the table expressions themselves can be
+/// that SELECT keyword, so an alias inside a subquery or a table function
+/// (FROM (SELECT 1 AS select) s) must not trigger the reparse, and neither must a relation named
+/// `select` (FROM select s), whose own alias is something else.
+bool hasTopLevelSelectAlias(const ASTPtr & tables)
+{
+    if (!tables)
+        return false;
+
+    auto is_aliased_as_select = [](const ASTPtr & ast) { return ast && isSelectKeyword(ast->tryGetAlias()); };
+
+    for (const auto & child : tables->children)
+    {
+        const auto * tables_element = child->as<ASTTablesInSelectQueryElement>();
+        if (!tables_element || !tables_element->table_expression)
+            continue;
+
+        const auto & table_expression = tables_element->table_expression->as<ASTTableExpression &>();
+        if (is_aliased_as_select(table_expression.subquery) || is_aliased_as_select(table_expression.table_function)
+            || is_aliased_as_select(table_expression.database_and_table_name))
+            return true;
+    }
+
+    return false;
+}
+
+/// Whether the token range contains a bareword `select` (in any letter case) outside of any brackets.
+/// A quoted alias (FROM orders `select`) is a valid alias of its own and must not trigger the
+/// reparse, and so must not a `select` inside a subquery or a table function.
 bool hasTopLevelBarewordSelect(TokenIterator it, const TokenIterator & end)
 {
-    static constexpr std::string_view select_keyword = "select";
-
     size_t depth = 0;
 
     for (; it != end; ++it)
@@ -179,7 +211,7 @@ bool hasTopLevelBarewordSelect(TokenIterator it, const TokenIterator & end)
                     --depth;
                 break;
             case TokenType::BareWord:
-                if (depth == 0 && it->size() == select_keyword.size() && 0 == strncasecmp(it->begin, select_keyword.data(), select_keyword.size()))
+                if (depth == 0 && isSelectKeyword({it->begin, it->size()}))
                     return true;
                 break;
             default:
@@ -312,12 +344,15 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// the SELECT keyword consumed as an alias: in FROM t SELECT expr the permissive parse makes
         /// "SELECT" the alias of t. When that could have happened and no explicit SELECT clause
         /// follows, roll back and reparse with aliases requiring the AS keyword, so that SELECT
-        /// starts the clause. The reparse is triggered only by a bareword `select` token consumed at
-        /// the top nesting level of the FROM clause; when it turns out to be something else (a table
-        /// named `select`, or an explicit AS alias), the strict reparse yields the same result anyway.
+        /// starts the clause. The reparse is triggered only when a top-level table expression got the
+        /// alias `select` and that alias was written as a bareword at the top nesting level of the
+        /// FROM clause; a relation named `select` (FROM select s) and a quoted alias
+        /// (FROM orders `select`) keep their permissive parse. When the bareword `select` turns out to
+        /// be an explicit AS alias, the strict reparse yields the same result anyway.
         auto begin = pos;
         if (!parse_tables_and_alias_list(/*allow_alias_without_as_keyword*/ true)
-            || (!s_select.checkWithoutMoving(pos, expected) && hasTopLevelBarewordSelect(begin, pos)))
+            || (!s_select.checkWithoutMoving(pos, expected) && hasTopLevelSelectAlias(tables)
+                && hasTopLevelBarewordSelect(begin, pos)))
         {
             pos = begin;
             tables = nullptr;

@@ -23,6 +23,16 @@ FROM orders select |> LIMIT 1; -- { clientError SYNTAX_ERROR }
 -- A quoted alias `select` is never the SELECT keyword, and neither is an alias named select inside a subquery
 FROM orders `select` WHERE `select`.amount >= 250 ORDER BY `select`.amount;
 FROM (SELECT 1 AS select) s WHERE s.`select` = 1 ORDER BY s.`select`;
+-- A table named select is not the SELECT keyword either: its own alias without AS keeps working
+DROP TABLE IF EXISTS `select`;
+CREATE TABLE `select` (id UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO `select` VALUES (1), (2);
+FROM select s WHERE s.id = 1 ORDER BY s.id;
+FROM select s |> WHERE id = 2 |> ORDER BY id;
+FROM select s INNER JOIN select t ON s.id = t.id WHERE s.id = 2 ORDER BY s.id;
+FROM {CLICKHOUSE_DATABASE:Identifier}.select s WHERE s.id = 1 ORDER BY s.id;
+FROM select s SELECT s.id ORDER BY s.id;
+DROP TABLE `select`;
 
 SELECT '-- WHERE';
 FROM orders |> WHERE amount >= 100 |> WHERE cancelled = 0 |> ORDER BY amount;
