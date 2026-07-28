@@ -79,7 +79,7 @@ SSH challenge-response authentication is available from protocol version 54466 o
 
 ### Inter-server secret {#inter-server-secret}
 
-For distributed query execution, servers authenticate to one another by proving knowledge of a shared secret — without putting the secret on the wire. Each Query carries a 32-byte SHA-256 `auth_hash` in [`Query`](#query) field 4, computed over a salt, nonce, the configured secret, and the query, which the receiving server recomputes and compares. This is gated by the `INTERSERVER_SECRET` feature (v54441). External clients always send an empty string here. See [Inter-server authentication](#inter-server-authentication).
+For distributed query execution, servers authenticate to one another by proving knowledge of a shared secret — without putting the secret on the wire. Each Query carries a 32-byte SHA-256 `auth_hash` in [`Query`](#query) field 4, computed over a salt, nonce, the configured secret, and the query, which the receiving server recomputes and compares. This is gated by the `INTERSERVER_SECRET` feature (v54441). External clients always send an empty string here. From v54487 (`INTERSERVER_SECRET_TABLES_STATUS`), the `TablesStatusRequest` packet — sent before any query authenticates the connection — carries a similar hash of its own. See [Inter-server authentication](#inter-server-authentication).
 
 ## Versioning and feature gates {#versioning-and-feature-gates}
 
@@ -151,6 +151,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | PROGRESS_IN_ASYNC_INSERT        | 54484   | Progress (INSERT)      | On an **asynchronous** INSERT (`async_insert = 1`), once the insert is flushed the server sends an extra [`Progress`](#progress) packet, then the insert's `ProfileEvents`, before `EndOfStream`. Gated on the *negotiated* version ≥ 54484; below it the server omits this trailing Progress. The Progress wire format is unchanged — only the emission is new. In practice the increment carries the elapsed time; the written-row counters are reported via the accompanying ProfileEvents. A client that already drains interleaved Progress needs no format change, only to tolerate one more packet. |
 | CLIENT_AGENT_IN_CLIENT_INFO     | 54485   | ClientInfo             | Adds a trailing `client_agent` `String` to ClientInfo. The canonical client auto-detects an agent identifier from its environment (for example `claude-code`, `cursor`, `gemini-cli`, or the value of the `AGENT` variable); an external client with nothing detected sends an empty string. Required once negotiated version ≥ 54485 — omitting it desynchronizes the rest of the Query packet. |
 | INTERNAL_QUERY_FLAG             | 54486   | ClientInfo             | Adds a trailing `is_internal` `UInt8` to ClientInfo. `1` for a server-internal query (not user-issued), propagated to remote queries so their `system.query_log` rows are labeled internal; external clients send `0`. Required once negotiated version ≥ 54486 — omitting it desynchronizes the rest of the Query packet. |
+| INTERSERVER_SECRET_TABLES_STATUS | 54487  | TablesStatusRequest    | Inter-server only: the client writes an auth-hash `String` (a 32-byte SHA-256 digest) between the packet-type byte and the `TablesStatusRequest` body. The hash covers the salt, nonce, cluster secret, and the requested tables; the server validates it before resolving any table. A peer below 54487 sends no hash and is rejected unless the `interserver_tables_status_require_auth` server setting (default `true`) is disabled. External clients never enter inter-server mode and see no wire change. See [Inter-server authentication](#inter-server-authentication). |
 | INTERSERVER_CURRENT_ROLES       | 54488   | ClientInfo             | Adds a trailing `current_roles` optional String list to ClientInfo (`[UInt8 present]` then, if `1`, `[VarUInt count][String]*count`), and, for inter-server queries, extends the `auth_hash` to cover the serialized list. Carries the initiator's active (enabled) role names so a secondary node scopes row policies the same way instead of falling back to the user's default roles. Only populated for inter-server queries and only when `push_external_roles_in_interserver_queries = 1`; external clients send `0` (absent). Required once negotiated version ≥ 54488 — omitting the presence byte desynchronizes the rest of the Query packet. |
 
 ## Packet envelope {#packet-envelope}
@@ -586,6 +587,16 @@ The Query field 4 (`auth_hash`) is **not** the shared cluster secret on the wire
 
 External (non-inter-server) clients never enter this mode and always send an empty `auth_hash`.
 
+**TablesStatusRequest authentication (v54487+).** `TablesStatusRequest` is sent during connection establishment, before any Query carries an `auth_hash`. Without its own proof, an unauthenticated peer could read table existence, readonly and replication-delay status from the inter-server port. At negotiated version ≥ 54487 (`INTERSERVER_SECRET_TABLES_STATUS`), an inter-server client authenticates the request itself: between the packet-type byte and the request body it writes a `String` holding the 32-byte digest
+
+```text
+encodeSHA256(salt + nonce + cluster_secret + "TablesStatusRequest" + tables_digest)
+```
+
+`salt` and `nonce` are the same as in the per-query hash (`nonce` in its decimal string form, present only when `INTERSERVER_SECRET_V2` (v54462) is negotiated). `tables_digest` binds the hash to the requested table set, so a captured hash cannot be replayed for a different one. It is built from the request's `(database, table)` pairs with every field length-prefixed as `<decimal length>:<bytes>`: each pair becomes the length-prefixed database name followed by the length-prefixed table name; the entries are sorted, and the digest is the length-prefixed decimal entry count followed by each entry, itself length-prefixed.
+
+The server reads the hash (32-byte cap) and then the request body, recomputes the digest, and rejects the request on mismatch — or when it has no salt or no cluster secret for the named cluster. Tables are resolved only after the hash validates. A peer below 54487 sends no hash; the server rejects its request before reading the body, unless the connection was already authenticated by an earlier Query or the `interserver_tables_status_require_auth` server setting is disabled. The setting defaults to `true`; during a mixed-version rolling upgrade, disable it on the upgraded nodes until every node is upgraded. External clients never enter inter-server mode and are unaffected.
+
 ### Setting {#setting}
 
 Encoded inline in the Query body's settings list (the [Query](#query) packet, field 3). The list is **always present**, regardless of negotiated version, and is terminated by a Setting with an empty key — a single `VarUInt 0`, with no flags or value following. Only the per-setting encoding depends on the negotiated version, gated by `SETTINGS_SERIALIZED_AS_STRINGS` (v54429).
@@ -889,7 +900,7 @@ Below version `8` the announcement is fire-and-forget regardless of mode, and th
 | 2    | Data                      | [Data](#data)       | Data block (INSERT data, external tables, end-of-data marker) |
 | 3    | Cancel                    | (no body)           | Cancel running query |
 | 4    | Ping                      | [Ping](#ping)       | Liveness check |
-| 5    | TablesStatusRequest       | not specified       | Table status check |
+| 5    | TablesStatusRequest       | not specified       | Table status check. In inter-server mode at v54487+, an auth-hash `String` precedes the body — see [Inter-server authentication](#inter-server-authentication). |
 | 6    | KeepAlive                 | not specified       | Connection keepalive |
 | 7    | Scalar                    | not specified       | Scalar data block |
 | 8    | IgnoredPartUUIDs          | not specified       | Parts to exclude from query |
