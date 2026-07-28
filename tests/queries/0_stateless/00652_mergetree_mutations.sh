@@ -25,7 +25,7 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO mutations(d, x, s) VALUES \
 # Try some malformed queries that should fail validation.
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations DELETE WHERE nonexistent = 0" 2>/dev/null || echo "Query should fail 1"
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations DELETE WHERE d = '11'" 2>/dev/null || echo "Query should fail 2"
-# Queries involving alias columns are now supported with the new analyzer.
+# Queries involving alias columns are now supported with the analyzer.
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations UPDATE s = s || '' WHERE a = 0"
 
 # Delete some values

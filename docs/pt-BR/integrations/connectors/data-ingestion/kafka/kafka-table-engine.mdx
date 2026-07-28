@@ -37,192 +37,180 @@ Para persistir esses dados a partir de uma leitura do motor de tabela, precisamo
   #### Etapas
 </div>
 
-<div id="1-prepare">
-  ##### 1. Preparar
-</div>
+<Steps>
+  <Step title="Prepare" id="1-prepare">
+    Se você tiver dados carregados em um tópico de destino, poderá adaptar o conteúdo a seguir para uso no seu conjunto de dados. Como alternativa, um conjunto de dados do GitHub de exemplo é fornecido [aqui](https://datasets-documentation.s3.eu-west-3.amazonaws.com/kafka/github_all_columns.ndjson). Esse conjunto de dados é usado nos exemplos abaixo e utiliza um esquema reduzido e um subconjunto das linhas (especificamente, limitamos aos eventos do GitHub relacionados ao [repositório do ClickHouse](https://github.com/ClickHouse/ClickHouse)), em comparação com o conjunto de dados completo disponível [aqui](https://ghe.clickhouse.tech/), por questão de brevidade. Ainda assim, isso é suficiente para que a maioria das consultas [publicadas com o conjunto de dados](https://ghe.clickhouse.tech/) funcione.
+  </Step>
 
-Se você tiver dados em um tópico de destino, poderá adaptar o conteúdo a seguir para usá-lo no seu conjunto de dados. Como alternativa, um conjunto de dados de exemplo do GitHub é fornecido [aqui](https://datasets-documentation.s3.eu-west-3.amazonaws.com/kafka/github_all_columns.ndjson). Esse conjunto de dados é usado nos exemplos abaixo e utiliza um esquema reduzido e um subconjunto das linhas (mais especificamente, limitamos aos eventos do GitHub relacionados ao [repositório do ClickHouse](https://github.com/ClickHouse/ClickHouse)), em comparação com o conjunto de dados completo disponível [aqui](https://ghe.clickhouse.tech/), por questões de brevidade. Ainda assim, isso é suficiente para que a maioria das consultas [publicadas com o conjunto de dados](https://ghe.clickhouse.tech/) funcione.
+  <Step title="Configure o ClickHouse" id="2-configure-clickhouse">
+    Esta etapa é necessária se você estiver se conectando a um Kafka com segurança habilitada. Essas configurações não podem ser passadas por comandos SQL DDL e devem ser configuradas no config.xml do ClickHouse. Presumimos que você esteja se conectando a uma instância protegida por SASL. Este é o método mais simples ao interagir com a Confluent Cloud.
 
-<div id="2-configure-clickhouse">
-  ##### 2. Configure o ClickHouse
-</div>
+    ```xml
+    <clickhouse>
+       <kafka>
+           <sasl_username>username</sasl_username>
+           <sasl_password>password</sasl_password>
+           <security_protocol>sasl_ssl</security_protocol>
+           <sasl_mechanisms>PLAIN</sasl_mechanisms>
+       </kafka>
+    </clickhouse>
+    ```
 
-Esta etapa é necessária se você estiver se conectando a um Kafka com segurança habilitada. Essas configurações não podem ser passadas pelos comandos SQL DDL e devem ser definidas no `config.xml` do ClickHouse. Presumimos que você esteja se conectando a uma instância protegida por SASL. Esse é o método mais simples ao interagir com o Confluent Cloud.
+    Coloque o trecho acima em um novo arquivo no diretório `conf.d/` ou mescle-o aos arquivos de configuração existentes. Para as configurações que podem ser definidas, consulte [aqui](/pt-BR/reference/engines/table-engines/integrations/kafka#configuration).
 
-```xml
-<clickhouse>
-   <kafka>
-       <sasl_username>username</sasl_username>
-       <sasl_password>password</sasl_password>
-       <security_protocol>sasl_ssl</security_protocol>
-       <sasl_mechanisms>PLAIN</sasl_mechanisms>
-   </kafka>
-</clickhouse>
-```
+    Também vamos criar um banco de dados chamado `KafkaEngine` para usar neste tutorial:
 
-Coloque o trecho acima em um novo arquivo no diretório `conf.d/` ou mescle-o aos arquivos de configuração existentes. Para ver quais configurações podem ser definidas, consulte [aqui](/pt-BR/reference/engines/table-engines/integrations/kafka#configuration).
+    ```sql
+    CREATE DATABASE KafkaEngine;
+    ```
 
-Também vamos criar um banco de dados chamado `KafkaEngine` para usar neste tutorial:
+    Depois de criar o banco de dados, você precisará mudar para ele:
 
-```sql
-CREATE DATABASE KafkaEngine;
-```
+    ```sql
+    USE KafkaEngine;
+    ```
+  </Step>
 
-Depois de criar o banco de dados, você precisará selecioná-lo:
+  <Step title="Crie a tabela de destino" id="3-create-the-destination-table">
+    Prepare a sua tabela de destino. No exemplo abaixo, usamos o esquema reduzido do GitHub por questão de brevidade. Observe que, embora usemos um motor de tabela MergeTree, este exemplo pode ser facilmente adaptado para qualquer membro da [família MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/index).
 
-```sql
-USE KafkaEngine;
-```
+    ```sql
+    CREATE TABLE github
+    (
+        file_time DateTime,
+        event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+        actor_login LowCardinality(String),
+        repo_name LowCardinality(String),
+        created_at DateTime,
+        updated_at DateTime,
+        action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+        comment_id UInt64,
+        path String,
+        ref LowCardinality(String),
+        ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+        creator_user_login LowCardinality(String),
+        number UInt32,
+        title String,
+        labels Array(LowCardinality(String)),
+        state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+        assignee LowCardinality(String),
+        assignees Array(LowCardinality(String)),
+        closed_at DateTime,
+        merged_at DateTime,
+        merge_commit_sha String,
+        requested_reviewers Array(LowCardinality(String)),
+        merged_by LowCardinality(String),
+        review_comments UInt32,
+        member_login LowCardinality(String)
+    ) ENGINE = MergeTree ORDER BY (event_type, repo_name, created_at)
+    ```
+  </Step>
 
-<div id="3-create-the-destination-table">
-  ##### 3. Crie a tabela de destino
-</div>
+  <Step title="Crie e popule o tópico" id="4-create-and-populate-the-topic">
+    Em seguida, vamos criar um tópico. Há várias ferramentas que podemos usar para fazer isso. Se estivermos executando o Kafka localmente em nossa máquina ou em um contêiner Docker, o [RPK](https://docs.redpanda.com/current/get-started/rpk-install/) funciona bem. Podemos criar um tópico chamado `github` com 5 partições executando o seguinte comando:
 
-Prepare a sua tabela de destino. No exemplo abaixo, usamos o esquema reduzido do GitHub por questão de brevidade. Observe que, embora usemos um motor de tabela MergeTree, este exemplo pode ser facilmente adaptado para qualquer membro da [família MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/index).
+    ```bash
+    rpk topic create -p 5 github --brokers <host>:<port>
+    ```
 
-```sql
-CREATE TABLE github
-(
-    file_time DateTime,
-    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
-    actor_login LowCardinality(String),
-    repo_name LowCardinality(String),
-    created_at DateTime,
-    updated_at DateTime,
-    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
-    comment_id UInt64,
-    path String,
-    ref LowCardinality(String),
-    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
-    creator_user_login LowCardinality(String),
-    number UInt32,
-    title String,
-    labels Array(LowCardinality(String)),
-    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
-    assignee LowCardinality(String),
-    assignees Array(LowCardinality(String)),
-    closed_at DateTime,
-    merged_at DateTime,
-    merge_commit_sha String,
-    requested_reviewers Array(LowCardinality(String)),
-    merged_by LowCardinality(String),
-    review_comments UInt32,
-    member_login LowCardinality(String)
-) ENGINE = MergeTree ORDER BY (event_type, repo_name, created_at)
-```
+    Se estivermos executando o Kafka no Confluent Cloud, talvez prefiramos usar a [Confluent CLI](https://docs.confluent.io/platform/current/tutorials/examples/clients/docs/kcat.html#produce-records):
 
-<div id="4-create-and-populate-the-topic">
-  ##### 4. Criar e preencher o tópico
-</div>
+    ```bash
+    confluent kafka topic create --if-not-exists github
+    ```
 
-Em seguida, vamos criar um tópico. Há várias ferramentas que podemos usar para isso. Se estivermos executando o Kafka localmente na nossa máquina ou dentro de um contêiner Docker, o [RPK](https://docs.redpanda.com/current/get-started/rpk-install/) funciona bem. Podemos criar um tópico chamado `github` com 5 partições executando o seguinte comando:
+    Agora precisamos popular este tópico com alguns dados, o que faremos usando [kcat](https://github.com/edenhill/kcat). Podemos executar um comando semelhante ao seguinte se estivermos executando o Kafka localmente com a autenticação desabilitada:
 
-```bash
-rpk topic create -p 5 github --brokers <host>:<port>
-```
+    ```bash
+    cat github_all_columns.ndjson |
+    kcat -P \
+      -b <host>:<port> \
+      -t github
+    ```
 
-Se estivermos executando o Kafka no Confluent Cloud, talvez seja melhor usar a [Confluent CLI](https://docs.confluent.io/platform/current/tutorials/examples/clients/docs/kcat.html#produce-records):
+    Ou o seguinte, se nosso cluster Kafka usar SASL para autenticação:
 
-```bash
-confluent kafka topic create --if-not-exists github
-```
+    ```bash
+    cat github_all_columns.ndjson |
+    kcat -P \
+      -b <host>:<port> \
+      -t github
+      -X security.protocol=sasl_ssl \
+      -X sasl.mechanisms=PLAIN \
+      -X sasl.username=<username>  \
+      -X sasl.password=<password> \
+    ```
 
-Agora precisamos preencher este tópico com alguns dados, o que faremos usando [kcat](https://github.com/edenhill/kcat). Podemos executar um comando semelhante ao abaixo se estivermos executando o Kafka localmente com a autenticação desativada:
+    O conjunto de dados contém 200.000 linhas, portanto a ingestão deve levar apenas alguns segundos. Se você quiser trabalhar com um conjunto de dados maior, dê uma olhada [na seção sobre grandes conjuntos de dados](https://github.com/ClickHouse/kafka-samples/tree/main/producer#large-datasets) do repositório do GitHub [ClickHouse/kafka-samples](https://github.com/ClickHouse/kafka-samples).
+  </Step>
 
-```bash
-cat github_all_columns.ndjson |
-kcat -P \
-  -b <host>:<port> \
-  -t github
-```
+  <Step title="Crie o motor de tabela Kafka" id="5-create-the-kafka-table-engine">
+    O exemplo abaixo cria um motor de tabela com o mesmo esquema da tabela MergeTree. Isso não é estritamente necessário, pois você pode ter colunas alias ou efêmeras na tabela de destino. As configurações são importantes; no entanto, observe o uso de `JSONEachRow` como tipo de dado para consumir JSON de um tópico Kafka. Os valores `github` e `clickhouse` representam, respectivamente, o nome do tópico e o nome do grupo de consumidores. Na verdade, os tópicos podem ser especificados como uma lista de valores.
 
-Ou o seguinte, se o nosso cluster do Kafka usar SASL para autenticação:
+    ```sql
+    CREATE TABLE github_queue
+    (
+        file_time DateTime,
+        event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+        actor_login LowCardinality(String),
+        repo_name LowCardinality(String),
+        created_at DateTime,
+        updated_at DateTime,
+        action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+        comment_id UInt64,
+        path String,
+        ref LowCardinality(String),
+        ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+        creator_user_login LowCardinality(String),
+        number UInt32,
+        title String,
+        labels Array(LowCardinality(String)),
+        state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+        assignee LowCardinality(String),
+        assignees Array(LowCardinality(String)),
+        closed_at DateTime,
+        merged_at DateTime,
+        merge_commit_sha String,
+        requested_reviewers Array(LowCardinality(String)),
+        merged_by LowCardinality(String),
+        review_comments UInt32,
+        member_login LowCardinality(String)
+    )
+       ENGINE = Kafka('kafka_host:9092', 'github', 'clickhouse',
+                'JSONEachRow') SETTINGS kafka_thread_per_consumer = 0, kafka_num_consumers = 1;
+    ```
 
-```bash
-cat github_all_columns.ndjson |
-kcat -P \
-  -b <host>:<port> \
-  -t github
-  -X security.protocol=sasl_ssl \
-  -X sasl.mechanisms=PLAIN \
-  -X sasl.username=<username>  \
-  -X sasl.password=<password> \
-```
+    Discutimos abaixo as configurações do motor e o ajuste de desempenho. Neste ponto, um `select` simples na tabela `github_queue` deve ler algumas linhas. Observe que isso avançará os offsets do consumidor, impedindo que essas linhas sejam lidas novamente sem um [reset](#common-operations). Observe o limite e o parâmetro obrigatório `stream_like_engine_allow_direct_select.`
+  </Step>
 
-O conjunto de dados contém 200.000 linhas, então a ingestão deve levar apenas alguns segundos. Se você quiser trabalhar com um conjunto de dados maior, consulte [a seção sobre grandes conjuntos de dados](https://github.com/ClickHouse/kafka-samples/tree/main/producer#large-datasets) do repositório do GitHub [ClickHouse/kafka-samples](https://github.com/ClickHouse/kafka-samples).
+  <Step title="Crie a visão materializada" id="6-create-the-materialized-view">
+    A visão materializada conectará as duas tabelas criadas anteriormente, lendo dados do motor de tabela Kafka e inserindo-os na tabela MergeTree de destino. Podemos fazer várias transformações nos dados. Faremos uma leitura e inserção simples. O uso de * pressupõe que os nomes das colunas sejam idênticos (diferenciam maiúsculas de minúsculas).
 
-<div id="5-create-the-kafka-table-engine">
-  ##### 5. Crie o motor de tabela Kafka
-</div>
+    ```sql
+    CREATE MATERIALIZED VIEW github_mv TO github AS
+    SELECT *
+    FROM github_queue;
+    ```
 
-O exemplo abaixo cria um motor de tabela Kafka com o mesmo esquema da tabela MergeTree. Isso não é estritamente necessário, pois você pode ter um alias ou colunas efêmeras na tabela de destino. As configurações são importantes; no entanto, observe o uso de `JSONEachRow` como tipo de dado para consumir JSON de um tópico Kafka. Os valores `github` e `clickhouse` representam, respectivamente, o nome do tópico e os nomes dos grupos de consumidores. Na prática, os tópicos podem ser uma lista de valores.
+    No momento da criação, a visão materializada se conecta ao motor Kafka e começa a ler, inserindo linhas na tabela de destino. Esse processo continuará indefinidamente, consumindo as mensagens inseridas posteriormente no Kafka. Sinta-se à vontade para executar novamente o script de inserção para inserir mais mensagens no Kafka.
+  </Step>
 
-```sql
-CREATE TABLE github_queue
-(
-    file_time DateTime,
-    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
-    actor_login LowCardinality(String),
-    repo_name LowCardinality(String),
-    created_at DateTime,
-    updated_at DateTime,
-    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
-    comment_id UInt64,
-    path String,
-    ref LowCardinality(String),
-    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
-    creator_user_login LowCardinality(String),
-    number UInt32,
-    title String,
-    labels Array(LowCardinality(String)),
-    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
-    assignee LowCardinality(String),
-    assignees Array(LowCardinality(String)),
-    closed_at DateTime,
-    merged_at DateTime,
-    merge_commit_sha String,
-    requested_reviewers Array(LowCardinality(String)),
-    merged_by LowCardinality(String),
-    review_comments UInt32,
-    member_login LowCardinality(String)
-)
-   ENGINE = Kafka('kafka_host:9092', 'github', 'clickhouse',
-            'JSONEachRow') SETTINGS kafka_thread_per_consumer = 0, kafka_num_consumers = 1;
-```
+  <Step title="Confirme se as linhas foram inseridas" id="7-confirm-rows-have-been-inserted">
+    Confirme que existem dados na tabela de destino:
 
-Abordamos abaixo as configurações do engine e a otimização de desempenho. Neste ponto, um select simples na tabela `github_queue` deve ler algumas linhas.  Observe que isso avançará os offsets do consumidor, impedindo que essas linhas sejam lidas novamente sem um [reset](#common-operations). Observe o limite e o parâmetro obrigatório `stream_like_engine_allow_direct_select.`
+    ```sql
+    SELECT count() FROM github;
+    ```
 
-<div id="6-create-the-materialized-view">
-  ##### 6. Criar a visão materializada
-</div>
+    Você deve ver 200.000 linhas:
 
-A visão materializada conectará as duas tabelas criadas anteriormente, lendo dados do motor de tabela Kafka e inserindo-os na tabela MergeTree de destino. Podemos realizar várias transformações de dados. Faremos uma leitura e uma inserção simples. O uso de * pressupõe que os nomes das colunas sejam idênticos (diferenciando maiúsculas de minúsculas).
-
-```sql
-CREATE MATERIALIZED VIEW github_mv TO github AS
-SELECT *
-FROM github_queue;
-```
-
-No momento da criação, a visão materializada se conecta ao motor Kafka e começa a ler, inserindo linhas na tabela de destino. Esse processo continuará indefinidamente, consumindo as mensagens inseridas posteriormente no Kafka. Sinta-se à vontade para executar novamente o script de inserção para inserir mais mensagens no Kafka.
-
-<div id="7-confirm-rows-have-been-inserted">
-  ##### 7. Confirme que as linhas foram inseridas
-</div>
-
-Confirme que há dados na tabela de destino:
-
-```sql
-SELECT count() FROM github;
-```
-
-Você deverá ver 200.000 linhas:
-
-```response
-┌─count()─┐
-│  200000 │
-└─────────┘
-```
+    ```response
+    ┌─count()─┐
+    │  200000 │
+    └─────────┘
+    ```
+  </Step>
+</Steps>
 
 <div id="common-operations">
   #### Operações comuns
@@ -361,7 +349,7 @@ Você pode precisar de [inserções com quórum](/pt-BR/reference/settings/sessi
 
 Embora seja um caso de uso menos comum, os dados do ClickHouse também podem ser persistidos no Kafka. Por exemplo, vamos inserir linhas manualmente em uma tabela com motor Kafka. Esses dados serão lidos pelo mesmo motor Kafka, cuja visão materializada gravará os dados em uma tabela Merge Tree. Por fim, demonstramos a aplicação de visões materializadas em inserções no Kafka para ler dados de tabelas de origem existentes.
 
-<div id="steps">
+<div id="steps-1">
   #### Etapas
 </div>
 
@@ -371,129 +359,127 @@ Nosso objetivo inicial é ilustrado da melhor forma a seguir:
 
 Pressupomos que você tenha as tabelas e views criadas nas etapas de [Kafka para ClickHouse](#kafka-to-clickhouse) e que o tópico tenha sido totalmente consumido.
 
-<div id="1-inserting-rows-directly">
-  ##### 1. Inserindo linhas diretamente
-</div>
+<Steps>
+  <Step title="Inserção direta de linhas" id="1-inserting-rows-directly">
+    Primeiro, confirme o número de linhas da tabela de destino.
 
-Primeiro, confirme a quantidade de linhas da tabela de destino.
+    ```sql
+    SELECT count() FROM github;
+    ```
 
-```sql
-SELECT count() FROM github;
-```
+    Você deve ter 200.000 linhas:
 
-Você deve ter 200.000 linhas:
+    ```response
+    ┌─count()─┐
+    │  200000 │
+    └─────────┘
+    ```
 
-```response
-┌─count()─┐
-│  200000 │
-└─────────┘
-```
+    Agora insira linhas da tabela de destino GitHub de volta para o motor de tabela Kafka github&#95;queue. Observe como utilizamos o formato JSONEachRow e limitamos o select a 100.
 
-Agora insira linhas da tabela de destino do GitHub de volta no motor de tabela Kafka github&#95;queue. Observe como usamos o formato JSONEachRow e LIMITamos o select em 100.
+    ```sql
+    INSERT INTO github_queue SELECT * FROM github LIMIT 100 FORMAT JSONEachRow
+    ```
 
-```sql
-INSERT INTO github_queue SELECT * FROM github LIMIT 100 FORMAT JSONEachRow
-```
+    Conte novamente as linhas na tabela GitHub para confirmar que o total aumentou em 100. Como mostrado no diagrama acima, as linhas foram inseridas no Kafka por meio do motor de tabela Kafka antes de serem relidas pelo mesmo motor e inseridas na tabela de destino GitHub pela nossa visão materializada!
 
-Conte novamente as linhas no GitHub para confirmar que o total aumentou em 100. Como mostrado no diagrama acima, as linhas foram inseridas no Kafka por meio do motor de tabela Kafka antes de serem lidas novamente pelo mesmo engine e inseridas na tabela de destino GitHub pela nossa visão materializada!
+    ```sql
+    SELECT count() FROM github;
+    ```
 
-```sql
-SELECT count() FROM github;
-```
+    Você deve ver mais 100 linhas:
 
-Você deverá ver mais 100 linhas:
+    ```response
+    ┌─count()─┐
+    │  200100 │
+    └─────────┘
+    ```
+  </Step>
 
-```response
-┌─count()─┐
-│  200100 │
-└─────────┘
-```
+  <Step title="Usando visões materializadas" id="2-using-materialized-views">
+    Podemos usar visões materializadas para enviar mensagens a um motor Kafka (e a um tópico) quando documentos são inseridos em uma tabela. Quando linhas são inseridas na tabela GitHub, uma visão materializada é acionada, fazendo com que as linhas sejam reinseridas em um motor Kafka e em um novo tópico. Mais uma vez, isso fica mais claro na ilustração:
 
-<div id="2-using-materialized-views">
-  ##### 2. Usando visões materializadas
-</div>
+    <Image img="/images/integrations/data-ingestion/kafka/kafka_03.webp" size="lg" alt="Diagrama do motor de tabela Kafka com visões materializadas" />
 
-Podemos usar visões materializadas para enviar mensagens a um motor Kafka (e a um tópico) quando documentos são inseridos em uma tabela. Quando linhas são inseridas na tabela GitHub, uma visão materializada é acionada, fazendo com que as linhas sejam reinseridas em um motor Kafka e em um novo tópico. Mais uma vez, isso fica mais claro na ilustração:
+    Crie um novo tópico Kafka `github_out` ou equivalente. Certifique-se de que um motor de tabela Kafka `github_out_queue` aponte para esse tópico.
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_03.webp" size="lg" alt="Diagrama do motor de tabela Kafka com visões materializadas" />
+    ```sql
+    CREATE TABLE github_out_queue
+    (
+        file_time DateTime,
+        event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+        actor_login LowCardinality(String),
+        repo_name LowCardinality(String),
+        created_at DateTime,
+        updated_at DateTime,
+        action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+        comment_id UInt64,
+        path String,
+        ref LowCardinality(String),
+        ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+        creator_user_login LowCardinality(String),
+        number UInt32,
+        title String,
+        labels Array(LowCardinality(String)),
+        state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+        assignee LowCardinality(String),
+        assignees Array(LowCardinality(String)),
+        closed_at DateTime,
+        merged_at DateTime,
+        merge_commit_sha String,
+        requested_reviewers Array(LowCardinality(String)),
+        merged_by LowCardinality(String),
+        review_comments UInt32,
+        member_login LowCardinality(String)
+    )
+       ENGINE = Kafka('host:port', 'github_out', 'clickhouse_out',
+                'JSONEachRow') SETTINGS kafka_thread_per_consumer = 0, kafka_num_consumers = 1;
+    ```
 
-Crie um novo tópico Kafka `github_out` ou equivalente. Certifique-se de que um motor de tabela Kafka `github_out_queue` aponte para esse tópico.
+    Agora crie uma nova visão materializada `github_out_mv` que aponte para a tabela GitHub, inserindo linhas no mecanismo acima quando ela for acionada. Como resultado, as adições à tabela GitHub serão enviadas ao nosso novo tópico Kafka.
 
-```sql
-CREATE TABLE github_out_queue
-(
-    file_time DateTime,
-    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
-    actor_login LowCardinality(String),
-    repo_name LowCardinality(String),
-    created_at DateTime,
-    updated_at DateTime,
-    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
-    comment_id UInt64,
-    path String,
-    ref LowCardinality(String),
-    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
-    creator_user_login LowCardinality(String),
-    number UInt32,
-    title String,
-    labels Array(LowCardinality(String)),
-    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
-    assignee LowCardinality(String),
-    assignees Array(LowCardinality(String)),
-    closed_at DateTime,
-    merged_at DateTime,
-    merge_commit_sha String,
-    requested_reviewers Array(LowCardinality(String)),
-    merged_by LowCardinality(String),
-    review_comments UInt32,
-    member_login LowCardinality(String)
-)
-   ENGINE = Kafka('host:port', 'github_out', 'clickhouse_out',
-            'JSONEachRow') SETTINGS kafka_thread_per_consumer = 0, kafka_num_consumers = 1;
-```
+    ```sql
+    CREATE MATERIALIZED VIEW github_out_mv TO github_out_queue AS
+    SELECT file_time, event_type, actor_login, repo_name,
+           created_at, updated_at, action, comment_id, path,
+           ref, ref_type, creator_user_login, number, title,
+           labels, state, assignee, assignees, closed_at, merged_at,
+           merge_commit_sha, requested_reviewers, merged_by,
+           review_comments, member_login
+    FROM github
+    FORMAT JsonEachRow;
+    ```
 
-Agora crie uma nova visão materializada `github_out_mv` que aponte para a tabela GitHub, inserindo linhas no mecanismo acima quando ela for acionada. Como resultado, as adições à tabela GitHub serão enviadas ao nosso novo tópico Kafka.
+    Se você inserir no tópico github original, criado como parte de [Kafka to ClickHouse](#kafka-to-clickhouse), os documentos aparecerão como mágica no tópico &quot;github&#95;clickhouse&quot;. Confirme isso com ferramentas nativas do Kafka. Por exemplo, abaixo, inserimos 100 linhas no tópico github usando [kcat](https://github.com/edenhill/kcat) em um tópico hospedado no Confluent Cloud:
 
-```sql
-CREATE MATERIALIZED VIEW github_out_mv TO github_out_queue AS
-SELECT file_time, event_type, actor_login, repo_name,
-       created_at, updated_at, action, comment_id, path,
-       ref, ref_type, creator_user_login, number, title,
-       labels, state, assignee, assignees, closed_at, merged_at,
-       merge_commit_sha, requested_reviewers, merged_by,
-       review_comments, member_login
-FROM github
-FORMAT JsonEachRow;
-```
+    ```sql
+    head -n 10 github_all_columns.ndjson |
+    kcat -P \
+      -b <host>:<port> \
+      -t github
+      -X security.protocol=sasl_ssl \
+      -X sasl.mechanisms=PLAIN \
+      -X sasl.username=<username> \
+      -X sasl.password=<password>
+    ```
 
-Se você inserir no tópico github original, criado como parte de [Kafka to ClickHouse](#kafka-to-clickhouse), os documentos aparecerão como mágica no tópico &quot;github&#95;clickhouse&quot;. Confirme isso com ferramentas nativas do Kafka. Por exemplo, abaixo, inserimos 100 linhas no tópico github usando [kcat](https://github.com/edenhill/kcat) em um tópico hospedado no Confluent Cloud:
+    Uma leitura no tópico `github_out` deve confirmar a entrega das mensagens.
 
-```sql
-head -n 10 github_all_columns.ndjson |
-kcat -P \
-  -b <host>:<port> \
-  -t github
-  -X security.protocol=sasl_ssl \
-  -X sasl.mechanisms=PLAIN \
-  -X sasl.username=<username> \
-  -X sasl.password=<password>
-```
+    ```sql
+    kcat -C \
+      -b <host>:<port> \
+      -t github_out \
+      -X security.protocol=sasl_ssl \
+      -X sasl.mechanisms=PLAIN \
+      -X sasl.username=<username> \
+      -X sasl.password=<password> \
+      -e -q |
+    wc -l
+    ```
 
-Uma leitura do tópico `github_out` deve confirmar a entrega das mensagens.
-
-```sql
-kcat -C \
-  -b <host>:<port> \
-  -t github_out \
-  -X security.protocol=sasl_ssl \
-  -X sasl.mechanisms=PLAIN \
-  -X sasl.username=<username> \
-  -X sasl.password=<password> \
-  -e -q |
-wc -l
-```
-
-Embora seja um exemplo mais elaborado, isso ilustra o poder das visões materializadas quando usadas em conjunto com o motor Kafka.
+    Embora seja um exemplo mais elaborado, isso ilustra o poder das visões materializadas quando usadas em conjunto com o motor Kafka.
+  </Step>
+</Steps>
 
 <div id="clusters-and-performance">
   ### Clusters e desempenho

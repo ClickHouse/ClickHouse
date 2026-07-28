@@ -1,16 +1,44 @@
 ---
 slug: /deployment-guides/index
-title: 'Visión general de las guías de implementación'
-description: 'Página de inicio de la sección de implementación y escalado'
-keywords: ['guías de implementación', 'escalado', 'despliegue del clúster', 'replicación', 'tolerancia a fallos']
+title: 'Resumen de las guías de despliegue'
+description: 'Página principal de la sección de despliegue y escalado'
+keywords: ['guías de despliegue', 'escalado', 'despliegue de clústeres', 'replicación', 'tolerancia a fallos']
 doc_type: 'landing-page'
+mode: wide
 ---
 
-Esta sección cubre los siguientes temas:
+Esta sección abarca los siguientes temas:
 
-| Tema                                                                                                   |
-| ------------------------------------------------------------------------------------------------------ |
-| [Introducción](/es/guides/oss/deployment-and-scaling/terminology)                                         |
-| [Escalado horizontal](/es/guides/oss/deployment-and-scaling/examples/2-shards-1-replica)                  |
-| [Replicación para tolerancia a fallos](/es/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas) |
-| [Despliegue del clúster](/es/guides/oss/deployment-and-scaling/examples/2-shards-2-replicas)              |
+<CardGroup cols={2}>
+  <Card title="Introducción" icon="book-open" href="/es/guides/oss/deployment-and-scaling/terminology">
+    Terminología utilizada para describir los despliegues de ClickHouse.
+  </Card>
+
+  <Card title="Segmentos y réplicas de tablas" icon="table-cells-large" href="/es/guides/oss/deployment-and-scaling/shards">
+    Aprenda qué son los segmentos y las réplicas de tablas, y para qué se utilizan.
+  </Card>
+
+  <Card title="Reequilibrio de datos" icon="scale-balanced" href="/es/guides/oss/deployment-and-scaling/scaling-clusters">
+    Métodos para reequilibrar datos al escalar un clúster.
+  </Card>
+
+  <Card title="Separación de almacenamiento y cómputo" icon="hard-drive" href="/es/guides/oss/deployment-and-scaling/separation-storage-compute">
+    Use ClickHouse con almacenamiento de objetos para separar el almacenamiento del cómputo.
+  </Card>
+
+  <Card title="Descubrimiento de clúster" icon="magnifying-glass" href="/es/guides/oss/deployment-and-scaling/cluster-discovery">
+    Permita que los nodos se detecten y registren automáticamente mediante ClickHouse Keeper.
+  </Card>
+
+  <Card title="Keeper" icon="key" href="/es/guides/oss/deployment-and-scaling/keeper/index">
+    Configuración de ClickHouse Keeper, el sistema de coordinación para la replicación y el DDL distribuido.
+  </Card>
+
+  <Card title="Monitorización" icon="chart-line" href="/es/guides/oss/deployment-and-scaling/monitoring/monitoring">
+    Monitorización de ClickHouse y trazas con OpenTelemetry.
+  </Card>
+
+  <Card title="Ejemplos" icon="server" href="/es/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas">
+    Despliegues de ejemplo: replicación para tolerancia a fallos, escalado horizontal y un despliegue combinado de clúster.
+  </Card>
+</CardGroup>

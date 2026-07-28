@@ -36,6 +36,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/System/StorageSystemOne.h>
 
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/QueryPlan/ShuffleExchangeStep.h>
@@ -412,6 +413,15 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_display_name = reading->getStorage()->getName();
         return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name};
+    }
+
+    /// We cannot do typeid_cast<const ReadFromSystemOneStep *>(step)
+    /// since this is defined in clickhouse_storages_system module,
+    /// which is not linked to current module
+    if (step->getName() == "ReadFromSystemOne")
+    {
+        /// system.one always produces exactly one row — used to implement constant SELECTs like `SELECT 1`.
+        return RelationStats{.estimated_rows = 1, .table_name = "system.one"};
     }
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
@@ -1152,6 +1162,14 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
             auto join_operator = std::move(entry->join_operator);
             join_operator.strictness = join_strictness;
+
+            /// The optimizer reconstructs an unconnected Inner pair (e.g. `INNER JOIN ... ON 1`,
+            /// which produces no join edges) as Cross. That is equivalent only for ALL strictness:
+            /// a Cross join ignores strictness, so `ANY INNER JOIN ... ON 1` would degrade to a full
+            /// cartesian product. Restore Inner so that the physical join falls back to the
+            /// constant-key join (`__lhs_const = __rhs_const`) that preserves strictness semantics.
+            if (join_strictness != JoinStrictness::All && join_operator.kind == JoinKind::Cross)
+                join_operator.kind = JoinKind::Inner;
             auto left_rels = entry->left->relations;
             auto right_rels = entry->right->relations;
 
