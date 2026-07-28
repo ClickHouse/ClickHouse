@@ -53,17 +53,19 @@ ALWAYS_INLINE size_t selectorIndexAt(const Selector & selector, size_t k)
         return selector.first + k;
 }
 
-/// The hashed key getter takes the rows the join loop is going to visit at construction and
-/// precomputes their keys in one batch. Other key getters compute keys per row.
+/// The hashed key getter precomputes the keys of all the rows the join loop is going to visit in one batch.
 template <typename KeyGetter, typename Selector>
 KeyGetter constructKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, const Selector & selector)
 {
-    if constexpr (!ColumnsHashing::uses_precomputed_keys<KeyGetter>)
-        return KeyGetter(key_columns, key_sizes, nullptr);
-    else if constexpr (std::is_same_v<Selector, ScatteredBlock::Indexes>)
-        return KeyGetter(key_columns, key_sizes, nullptr, selector.getData().data(), selector.size());
-    else
-        return KeyGetter(key_columns, key_sizes, nullptr, selector.first, selector.second - selector.first);
+    KeyGetter key_getter(key_columns, key_sizes, nullptr);
+    if constexpr (ColumnsHashing::uses_precomputed_keys<KeyGetter>)
+    {
+        if constexpr (std::is_same_v<Selector, ScatteredBlock::Indexes>)
+            key_getter.precomputeRows(selector.getData().data(), selector.size());
+        else
+            key_getter.precomputeRange(selector.first, selector.second - selector.first);
+    }
+    return key_getter;
 }
 
 template <typename KeyGetter>

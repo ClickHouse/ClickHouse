@@ -591,24 +591,9 @@ struct HashMethodHashed
 
     PaddedPODArray<UInt128> precomputed_keys;
 
-    /// No precomputation, keys are hashed on demand.
     HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &)
         : key_columns(std::move(key_columns_))
     {
-    }
-
-    /// Hash the rows [begin, begin + count).
-    HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &, size_t begin, size_t count)
-        : key_columns(std::move(key_columns_))
-    {
-        precomputeRange(begin, count);
-    }
-
-    /// Hash an explicit row list.
-    HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &, const UInt64 * rows, size_t count)
-        : key_columns(std::move(key_columns_))
-    {
-        precomputeRows(rows, count);
     }
 
     ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
@@ -634,7 +619,7 @@ struct HashMethodHashed
     {
         if (count == 0)
             return;
-        precomputed_keys.resize(rows[count - 1] + 1);
+        precomputed_keys.resize(key_columns.front()->size());
         std::vector<SipHash> states(count);
         for (const auto * column : key_columns)
             column->updateHashBatch(rows, count, states.data());
