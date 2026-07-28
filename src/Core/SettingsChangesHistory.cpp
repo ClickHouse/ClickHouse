@@ -1324,9 +1324,14 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "26.7",
+        addSettingsChanges(merge_tree_settings_changes_history, "26.8",
         {
             {"allow_experimental_text_index_coarse_granularity", false, false, "New setting"},
+
+        });
+
+        addSettingsChanges(merge_tree_settings_changes_history, "26.7",
+        {
             {"allow_experimental_text_index_phrase_search", false, false, "New setting"},
             {"merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once", false, true, "Enable by default"},
             {"compute_exact_num_defaults_for_sparse_columns", false, false, "New setting gating exact per-column num_defaults computation for sparsity-based pruning and trivial-count rewrite"},
