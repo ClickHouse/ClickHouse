@@ -155,23 +155,29 @@ namespace
     }
 
     /// Emplace one staged key into the table. String-like keys were staged as raw characters
-    /// and are rebuilt here. The delayed blocks are retained on the shared state until after
-    /// the merged buckets are converted, so string-like keys are emplaced pointing into the
-    /// staged bytes directly, with no copy into an arena. Fixed-size keys were staged as values.
+    /// and are rebuilt here. `adopt_keys` selects the key ownership: at merge time the delayed
+    /// blocks are retained on the shared state until after the merged buckets are converted, so
+    /// string-like keys are emplaced pointing into the staged bytes directly, with no copy; a
+    /// pressure-time drain instead persists them into the arena, because freeing the blocks is
+    /// its purpose. Fixed-size keys were staged as values either way.
     /// `table` is the bucket's own submap: the records were grouped by the same hash dispatch
     /// at staging time, so emplacing into it directly skips the per-record two-level routing.
-    template <typename Method, typename Table>
+    template <typename Method, bool adopt_keys, typename Table>
     void ALWAYS_INLINE emplaceStagedKey(
         Table & table,
         const char * key_pos,
         size_t key_size,
         size_t routing_hash,
+        DB::Arena & arena,
         typename Method::Data::LookupResult & it,
         bool & inserted)
     {
         if constexpr (std::is_same_v<typename Method::Key, std::string_view>)
         {
-            table.emplace(std::string_view(key_pos, key_size), it, inserted, routing_hash);
+            if constexpr (adopt_keys)
+                table.emplace(std::string_view(key_pos, key_size), it, inserted, routing_hash);
+            else
+                table.emplace(DB::ArenaKeyHolder{std::string_view(key_pos, key_size), arena}, it, inserted, routing_hash);
         }
         else if constexpr (std::is_same_v<typename Method::Key, PackedStringRef>)
         {
@@ -181,7 +187,10 @@ namespace
             /// store a hash, which is exactly the range the staged hash was derived from.
             const auto key = PackedStringRef::build(
                 key_pos, key_size, [routing_hash](const char *, size_t) { return static_cast<UInt32>(routing_hash); });
-            table.emplace(key, it, inserted, routing_hash);
+            if constexpr (adopt_keys)
+                table.emplace(key, it, inserted, routing_hash);
+            else
+                table.emplace(DB::ArenaPackedStringHolder{key, arena}, it, inserted, routing_hash);
         }
         else
         {
@@ -2932,7 +2941,8 @@ void Aggregator::drainAdaptiveBucketForMerge(
 
 #define M(NAME) \
     else if (dest.type == AggregatedDataVariants::Type::NAME) \
-        drainAdaptiveBucketBacklog(*dest.NAME, arena, backlog, bucket_index, records_drained, places_scratch, is_cancelled);
+        drainAdaptiveBucketBacklog</*adopt_keys=*/true>( \
+            *dest.NAME, arena, backlog, bucket_index, records_drained, places_scratch, is_cancelled);
 
     if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -2943,7 +2953,7 @@ void Aggregator::drainAdaptiveBucketForMerge(
     shared.pending_records.fetch_sub(records_drained, std::memory_order_relaxed);
 }
 
-template <typename Method>
+template <bool adopt_keys, typename Method>
 void NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
     Method & method,
     Arena * arena,
@@ -3026,11 +3036,12 @@ void NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
 
                 typename Method::Data::LookupResult it;
                 bool inserted = false;
-                emplaceStagedKey<Method>(
+                emplaceStagedKey<Method, adopt_keys>(
                     impl,
                     block.key_bytes.data() + block.key_offsets[j],
                     block.key_offsets[j + 1] - block.key_offsets[j],
                     block.routing_hashes[j],
+                    *arena,
                     it,
                     inserted);
 
@@ -3042,14 +3053,14 @@ void NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
         }
         else
         {
-            drainAdaptiveBucketImpl(method, arena, block, slice_begin, slice_end, places, bucket_index);
+            drainAdaptiveBucketImpl<adopt_keys>(method, arena, block, slice_begin, slice_end, places, bucket_index);
         }
 
         update_reserve(slice_end - slice_begin);
     }
 }
 
-template <typename Method>
+template <bool adopt_keys, typename Method>
 void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
     Method & method,
     Arena * bucket_arena,
@@ -3080,11 +3091,12 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
         prefetch(j);
         typename Method::Data::LookupResult it;
         bool inserted = false;
-        emplaceStagedKey<Method>(
+        emplaceStagedKey<Method, adopt_keys>(
             impl,
             block.key_bytes.data() + block.key_offsets[j],
             block.key_offsets[j + 1] - block.key_offsets[j],
             block.routing_hashes[j],
+            *bucket_arena,
             it,
             inserted);
 

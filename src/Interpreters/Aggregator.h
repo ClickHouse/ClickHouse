@@ -724,8 +724,11 @@ private:
     /// Builds the delayed block's shared preparation on its first drained bucket.
     void prepareDelayedBlock(AdaptiveAggregationSharedState::DelayedBlock & block) const;
 
-    /// Drains one bucket's backlog into `method.data.impls[bucket_index]`.
-    template <typename Method>
+    /// Drains one bucket's backlog into `method.data.impls[bucket_index]`. `adopt_keys` selects
+    /// the key ownership: merge-time drains emplace keys pointing into the retained blocks,
+    /// while pressure-time drains persist them into the bucket's arena so the blocks can be
+    /// freed (the whole point of draining early).
+    template <bool adopt_keys, typename Method>
     void drainAdaptiveBucketBacklog(
         Method & method,
         Arena * arena,
@@ -736,7 +739,7 @@ private:
         std::atomic<bool> & is_cancelled) const;
 
     /// Applies one delayed block's slice [slice_begin, slice_end) to the bucket's table.
-    template <typename Method>
+    template <bool adopt_keys, typename Method>
     void drainAdaptiveBucketImpl(
         Method & method,
         Arena * bucket_arena,
