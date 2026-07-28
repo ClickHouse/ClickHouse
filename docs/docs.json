@@ -35,6 +35,9 @@
   "integrations": {
     "clarity": {
       "projectId": "xgummrwgj9"
+    },
+    "gtm": {
+      "tagId": "GTM-WTNTDT7W"
     }
   },
   "interaction": {
@@ -195,6 +198,9 @@
     "$ref": "./_site/redirects.json"
   },
   "scripts": [
+    {
+      "src": "/_site/customizations/settings-legacy-redirect.js"
+    },
     {
       "src": "/_site/customizations/galaxy.js"
     },
