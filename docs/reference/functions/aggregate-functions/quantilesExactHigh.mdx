@@ -10,11 +10,10 @@ doc_type: 'reference'
 
 Introduced in: v20.8.0
 
-
 Exactly computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously. For an even number of elements at level `0.5` it returns the higher of the two middle values.
 
 This function is equivalent to [`quantileExactHigh`](/reference/functions/aggregate-functions/quantileExactHigh) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
-
+    
 
 **Syntax**
 
@@ -26,11 +25,9 @@ quantilesExactHigh(level1, level2, ...)(expr)
 
 - `level` — Levels of quantiles. One or more constant floating-point numbers from 0 to 1. We recommend using `level` values in the range of `[0.01, 0.99]`. [`Float*`](/reference/data-types/float)
 
-
 **Arguments**
 
 - `expr` — Expression over the column values resulting in numeric data types, `Date`, `DateTime` or `DateTime64`. [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal*`](/reference/data-types/decimal) or [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64)
-
 
 **Returned value**
 

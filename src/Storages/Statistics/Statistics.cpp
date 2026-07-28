@@ -707,10 +707,15 @@ MergeTreeStatisticsFactory & MergeTreeStatisticsFactory::instance()
     return instance;
 }
 
-void MergeTreeStatisticsFactory::validate(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const
+void MergeTreeStatisticsFactory::validate(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type, bool allow_deprecated_minmax) const
 {
     for (const auto & [type, desc] : stats.types_to_desc)
     {
+        if (type == StatisticsType::MinMax && !desc.is_implicit && !allow_deprecated_minmax)
+            LOG_WARNING(
+                getLogger("MergeTreeStatisticsFactory"),
+                "Statistics type 'minmax' is deprecated. Use 'basic' instead, which is a superset of 'minmax'.");
+
         auto it = validators.find(type);
         if (it == validators.end())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'", type);
@@ -840,6 +845,7 @@ void removeImplicitStatistics(ColumnsDescription & columns)
         });
     }
 }
+
 
 void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str)
 {

@@ -44,8 +44,6 @@ public:
     Phase getServerState() const;
     void setServerState(Phase server_state_);
 
-    bool ignoreSystemPathOnStartup() const;
-
     bool digestEnabled() const;
     void setDigestEnabled(bool digest_enabled_);
     bool digestEnabledOnCommit() const;
@@ -140,7 +138,6 @@ private:
 
     std::atomic<Phase> server_state{Phase::INIT};
 
-    bool ignore_system_path_on_startup{false};
     bool digest_enabled{true};
     bool digest_enabled_on_commit{false};
 
