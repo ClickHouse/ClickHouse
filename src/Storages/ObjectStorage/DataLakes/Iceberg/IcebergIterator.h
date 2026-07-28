@@ -52,7 +52,8 @@ public:
     std::optional<DB::Iceberg::ProcessedManifestFileEntryPtr> next();
 
 private:
-    void schedulePrefetchIfPossible();
+    /// Tops the queue of in-flight fetches up to `prefetch_queue_capacity`.
+    void schedulePrefetches();
 
     ObjectStoragePtr object_storage;
     std::shared_ptr<const ActionsDAG> filter_dag;
@@ -72,7 +73,10 @@ private:
         size_t manifest_list_index;
         std::future<Iceberg::ManifestFileCacheableInfo> future;
     };
-    std::optional<PrefetchedManifest> prefetched_manifest;
+    /// Manifest files being fetched. The front entry is the one `next` waits for.
+    std::deque<PrefetchedManifest> prefetched_manifests;
+    /// `iceberg_prefetch_manifest_files` + 1: the entry `next` waits for does not count as a prefetch.
+    const size_t prefetch_queue_capacity;
     ThreadPoolCallbackRunnerUnsafe<Iceberg::ManifestFileCacheableInfo> prefetch_runner;
 };
 

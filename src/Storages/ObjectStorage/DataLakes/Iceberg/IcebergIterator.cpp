@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
-//#include <base/scope_guard.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
@@ -77,6 +76,7 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 extern const SettingsBool use_iceberg_partition_pruning;
+extern const SettingsNonZeroUInt64 iceberg_prefetch_manifest_files;
 };
 
 
@@ -152,6 +152,15 @@ std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
     return {beg_it, end_it};
 }
 
+size_t getPrefetchQueueCapacity(const ContextPtr & local_context)
+{
+    const size_t manifests_to_prefetch = local_context->getSettingsRef()[Setting::iceberg_prefetch_manifest_files];
+    /// One extra slot for the entry `next` blocks on, otherwise nothing is in flight while we wait.
+    if (manifests_to_prefetch == std::numeric_limits<size_t>::max())
+        return manifests_to_prefetch;
+    return manifests_to_prefetch + 1;
+}
+
 }
 
 std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
@@ -174,29 +183,20 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
             current_manifest_file_iterator = nullptr;
         }
 
-        /// Make sure a prefetch of the next matching manifest is in flight.
-        schedulePrefetchIfPossible();
-        if (!prefetched_manifest.has_value())
+        schedulePrefetches();
+        if (prefetched_manifests.empty())
             return std::nullopt;
 
-        /// Take ownership of the in-flight prefetch: move it out of the member and reset the
-        /// optional (a moved-from optional is still engaged, so schedulePrefetchIfPossible would
-        /// otherwise see an occupied slot and never start the next fetch).
-        auto curr_prefetched = std::move(prefetched_manifest);
-        prefetched_manifest.reset();
-        /// While the future lives only in this local, the destructor's wait no longer covers it,
-        /// so the task capturing `this` could outlive the iterator if anything below throws
-        /// (for example scheduling the next prefetch while the pool is shutting down).
-        SCOPE_EXIT({
-            if (curr_prefetched.has_value() && curr_prefetched->future.valid())
-                curr_prefetched->future.wait();
-        });
+        /// Wait on the front entry in place: the destructor waits for every future still in the
+        /// queue, so a task capturing `this` cannot outlive the iterator if anything below throws.
+        auto & prefetched = prefetched_manifests.front();
+        auto manifest_file_cacheable_part = prefetched.future.get();
+        /// Points into the data snapshot, so it survives the pop.
+        const auto & manifest_list_entry = data_snapshot->manifest_list_entries[prefetched.manifest_list_index];
+        prefetched_manifests.pop_front();
 
-        /// Start scheduling the next prefetch before we block and parse.
-        schedulePrefetchIfPossible();
-
-        auto manifest_file_cacheable_part = curr_prefetched->future.get();
-        const auto & manifest_list_entry = data_snapshot->manifest_list_entries[curr_prefetched->manifest_list_index];
+        /// Refill before parsing, not after.
+        schedulePrefetches();
 
         current_manifest_file_iterator = Iceberg::ManifestFileIterator::create(
             manifest_file_cacheable_part.deserializer,
@@ -211,12 +211,13 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
     }
 }
 
-void SingleThreadIcebergKeysIterator::schedulePrefetchIfPossible()
+void SingleThreadIcebergKeysIterator::schedulePrefetches()
 {
-    if (!data_snapshot || prefetched_manifest.has_value())
+    if (!data_snapshot)
         return;
 
-    while (manifest_file_index < data_snapshot->manifest_list_entries.size())
+    while (prefetched_manifests.size() < prefetch_queue_capacity
+           && manifest_file_index < data_snapshot->manifest_list_entries.size())
     {
         const size_t index = manifest_file_index++;
         const auto & manifest_list_entry = data_snapshot->manifest_list_entries[index];
@@ -229,16 +230,19 @@ void SingleThreadIcebergKeysIterator::schedulePrefetchIfPossible()
         {
             return Iceberg::getManifestFile(object_storage, persistent_components, local_context, log, path, bytes);
         };
-        prefetched_manifest = PrefetchedManifest{index, prefetch_runner(std::move(fetch), Priority{})};
-        return;
+        /// Queue each future as it is created, so a later throw still leaves them awaited.
+        prefetched_manifests.emplace_back(PrefetchedManifest{index, prefetch_runner(std::move(fetch), Priority{})});
     }
 }
 
 SingleThreadIcebergKeysIterator::~SingleThreadIcebergKeysIterator()
 {
-    /// The scheduled task captures `this`, so it must not outlive the iterator.
-    if (prefetched_manifest.has_value() && prefetched_manifest->future.valid())
-        prefetched_manifest->future.wait();
+    /// The scheduled tasks capture `this`, so they must not outlive the iterator.
+    for (auto & prefetched : prefetched_manifests)
+    {
+        if (prefetched.future.valid())
+            prefetched.future.wait();
+    }
 }
 
 SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
@@ -272,11 +276,12 @@ SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
     , persistent_components(persistent_components_)
     , log(getLogger("IcebergIterator"))
     , manifest_file_content_type(manifest_file_content_type_)
+    , prefetch_queue_capacity(getPrefetchQueueCapacity(local_context_))
     , prefetch_runner(threadPoolCallbackRunnerUnsafe<Iceberg::ManifestFileCacheableInfo>(
           getIOThreadPool().get(), DB::ThreadName::ICEBERG_ITERATOR))
 {
-    /// Warm the first manifest fetch.
-    schedulePrefetchIfPossible();
+    /// Warm the first batch of manifest fetches.
+    schedulePrefetches();
 }
 
 IcebergIterator::IcebergIterator(

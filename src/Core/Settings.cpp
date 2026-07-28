@@ -7664,6 +7664,13 @@ Default partition strategy for file like engines. Applied only when the path doe
     DECLARE(Bool, use_iceberg_partition_pruning, true, R"(
 Use Iceberg partition pruning for Iceberg tables
 )", 0) \
+    DECLARE(NonZeroUInt64, iceberg_prefetch_manifest_files, 1, R"(
+How many Iceberg manifest files to fetch concurrently ahead of the one currently being parsed. Manifest files are downloaded and deserialized on the IO thread pool, so a value greater than 1 overlaps several latency-bound object storage round trips instead of paying them one after another.
+
+The limit is per manifest content type: data manifests and delete manifests are iterated independently.
+
+Higher values cost memory, because every prefetched manifest file is held fully deserialized until it is parsed, and they occupy threads of the shared IO thread pool (see the server setting `max_io_thread_pool_size`).
+)", 0) \
     DECLARE(Bool, optimize_distinct_in_order, true, R"(
 Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement
 )", 0) \
