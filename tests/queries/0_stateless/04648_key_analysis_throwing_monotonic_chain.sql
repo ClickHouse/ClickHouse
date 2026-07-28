@@ -37,6 +37,8 @@ DROP TABLE IF EXISTS t_gran_mem_04648 SETTINGS ignore_drop_queries_probability =
 DROP TABLE IF EXISTS t_nonmono_mt_04648 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS t_nonmono_mem_04648 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS t_prune_04648 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_disj_mt_04648 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_disj_mem_04648 SETTINGS ignore_drop_queries_probability = 0;
 
 CREATE TABLE t_mt_04648 (a Int8) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
 CREATE TABLE t_mem_04648 (a Int8) ENGINE = Memory;
@@ -300,6 +302,46 @@ SELECT count() > 0 AS exact_count, getSetting('use_lightweight_primary_key_index
 ) WHERE explain ILIKE '%Exact count optimization is applied%'
 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 
+-- When two skip indexes cover an OR, each atom's per-granule verdict is reported to a bitset keyed by the atom's
+-- position in the key condition's RPN, and `mergePartialResultsForDisjunctions` re-evaluates the expression from
+-- those bits. A caught chain-application failure takes an early exit out of the per-element loop, so the reported
+-- position must not depend on how many elements took that exit: one skipped report shifts every later atom's
+-- verdict into the preceding atom's bit, unwritten bits read as "may be true", and the merged expression is not the
+-- query's. `iax` carries the throwing chain, and `x = 2` is false for the granule pair whose bit the shift would
+-- move, so a shift keeps a granule this predicate cannot match: measured 6/8 here, 7/8 with the position shifted.
+CREATE TABLE t_disj_mt_04648 (a Int8, x UInt32, y UInt32,
+    INDEX iax (a, x) TYPE minmax GRANULARITY 2,
+    INDEX iy y TYPE minmax GRANULARITY 2)
+ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+CREATE TABLE t_disj_mem_04648 (a Int8, x UInt32, y UInt32) ENGINE = Memory;
+INSERT INTO t_disj_mt_04648  VALUES (-128, 9, 9), (-90, 7, 1), (-80, 2, 8), (-70, 3, 3), (-60, 4, 4), (-50, 5, 5), (-40, 6, 6), (50, 1, 7);
+INSERT INTO t_disj_mem_04648 VALUES (-128, 9, 9), (-90, 7, 1), (-80, 2, 8), (-70, 3, 3), (-60, 4, 4), (-50, 5, 5), (-40, 6, 6), (50, 1, 7);
+
+SELECT 'two skip indexes over an OR, with the chain-bearing atom before them';
+SELECT
+    (SELECT count() FROM t_disj_mt_04648  WHERE a > -100 AND intDiv(a, toInt8(-1)) < 100 AND (x = 2 OR y = 999)) AS mergetree,
+    (SELECT count() FROM t_disj_mem_04648 WHERE a > -100 AND intDiv(a, toInt8(-1)) < 100 AND (x = 2 OR y = 999)) AS oracle
+SETTINGS use_skip_indexes = 1, use_skip_indexes_for_disjunctions = 1;
+
+-- The count above stays right even with the position shifted, because the shift only loses pruning here. The
+-- granule count is what observes it, once per primary key representation: both take this code path, and the runner
+-- randomizes the choice.
+SELECT 'the same disjunction still prunes granules (full primary key representation)';
+SELECT count() > 0 AS pruned, getSetting('use_lightweight_primary_key_index_analysis') AS sparse_pk FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM t_disj_mt_04648 WHERE a > -100 AND intDiv(a, toInt8(-1)) < 100 AND (x = 2 OR y = 999)
+    SETTINGS use_skip_indexes = 1, use_skip_indexes_for_disjunctions = 1, parallel_replicas_local_plan = 1,
+             use_lightweight_primary_key_index_analysis = 0
+) WHERE explain ILIKE '%Granules: 6/8%'
+SETTINGS use_lightweight_primary_key_index_analysis = 0;
+
+SELECT 'the same disjunction still prunes granules (sparse primary key representation)';
+SELECT count() > 0 AS pruned, getSetting('use_lightweight_primary_key_index_analysis') AS sparse_pk FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM t_disj_mt_04648 WHERE a > -100 AND intDiv(a, toInt8(-1)) < 100 AND (x = 2 OR y = 999)
+    SETTINGS use_skip_indexes = 1, use_skip_indexes_for_disjunctions = 1, parallel_replicas_local_plan = 1,
+             use_lightweight_primary_key_index_analysis = 1
+) WHERE explain ILIKE '%Granules: 6/8%'
+SETTINGS use_lightweight_primary_key_index_analysis = 1;
+
 DROP TABLE t_mt_04648 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_mem_04648 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_part_mt_04648 SETTINGS ignore_drop_queries_probability = 0;
@@ -321,3 +363,5 @@ DROP TABLE t_gran_mem_04648 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_nonmono_mt_04648 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_nonmono_mem_04648 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_prune_04648 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE t_disj_mt_04648 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE t_disj_mem_04648 SETTINGS ignore_drop_queries_probability = 0;

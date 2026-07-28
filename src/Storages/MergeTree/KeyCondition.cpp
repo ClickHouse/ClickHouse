@@ -5700,9 +5700,19 @@ BoolMask KeyCondition::checkInHyperrectangle(
         return SpaceFillingCurveType::Unknown;
     };
 
-    size_t element_idx = 0;
-    for (const auto & element : rpn)
+    for (size_t element_idx = 0; element_idx < rpn.size(); ++element_idx)
     {
+        const auto & element = rpn[element_idx];
+
+        /// The consumer indexes a bitset by the reported position, so it must be the element's own index in
+        /// `rpn` - a separate counter would drift past every early exit and write one atom's result into
+        /// another atom's bit. Report exactly once per element, on every path out of the body below.
+        auto report_element = [&]
+        {
+            if (update_partial_disjunction_result_fn)
+                update_partial_disjunction_result_fn(element_idx, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
+        };
+
         if (element.argument_num_of_space_filling_curve.has_value())
         {
             /// If a condition on argument of a space filling curve wasn't collapsed into FUNCTION_ARGS_IN_HYPERRECTANGLE,
@@ -5720,6 +5730,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (key_column >= hyperrectangle.size())
             {
                 rpn_stack.emplace_back(true, true);
+                report_element();
                 continue;
             }
 
@@ -5744,6 +5755,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 if (!new_range)
                 {
                     rpn_stack.emplace_back(true, true);
+                    report_element();
                     continue;
                 }
                 key_range_storage = *new_range;
@@ -5827,6 +5839,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (key_column >= hyperrectangle.size())
             {
                 rpn_stack.emplace_back(true, true);
+                report_element();
                 continue;
             }
 
@@ -5935,6 +5948,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (element.key_columns[0] >= hyperrectangle.size() || element.key_columns[1] >= hyperrectangle.size())
             {
                 rpn_stack.emplace_back(true, true);
+                report_element();
                 continue;
             }
 
@@ -5949,6 +5963,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (unlikely(std::isnan(x_min) || std::isnan(x_max) || std::isnan(y_min) || std::isnan(y_max)))
             {
                 rpn_stack.emplace_back(true, true);
+                report_element();
                 continue;
             }
 
@@ -5971,6 +5986,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             {
                 // Indices box does not overlap with polygon bbox. So we can skip expensive `boost::geometry::intersects` call
                 rpn_stack.emplace_back(false, true);
+                report_element();
                 continue;
             }
 
@@ -5986,6 +6002,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (key_column >= hyperrectangle.size())
             {
                 rpn_stack.emplace_back(true, true);
+                report_element();
                 continue;
             }
 
@@ -6102,11 +6119,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
 
-        if (update_partial_disjunction_result_fn)
-        {
-            update_partial_disjunction_result_fn(element_idx, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
-            ++element_idx;
-        }
+        report_element();
     }
 
     if (rpn_stack.size() != 1)

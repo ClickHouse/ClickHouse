@@ -45,3 +45,9 @@ the same exact row count via the set index (full primary key representation)
 1	false
 the same exact row count via the set index (sparse primary key representation)
 1	true
+two skip indexes over an OR, with the chain-bearing atom before them
+1	1
+the same disjunction still prunes granules (full primary key representation)
+1	false
+the same disjunction still prunes granules (sparse primary key representation)
+1	true
