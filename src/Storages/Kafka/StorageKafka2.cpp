@@ -892,7 +892,7 @@ void StorageKafka2::createReplica()
             if (stored_data != replica_data)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot attach replica: the stored shard num '{}' does not match the current value '{}'. "
+                    "Cannot create replica: the stored shard num '{}' does not match the current value '{}'. "
                     "Changing kafka_partition_shard_num for an existing table is not supported; "
                     "use a different kafka_keeper_path for a new shard assignment",
                     stored_data, replica_data);
