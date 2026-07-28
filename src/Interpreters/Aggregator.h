@@ -202,19 +202,49 @@ struct AdaptiveAggregationSession
     using StagedChunkPtr = std::shared_ptr<const StagedChunk>;
     using MutableStagedChunkPtr = std::shared_ptr<StagedChunk>;
 
+    /// The 256 per-bucket chunk backlogs and the locking that keeps publication atomic.
     /// TODO (nihalzp): Consider using a lock-free queue for the backlog, to avoid contention on the mutex.
-    struct Bucket
+    class StagedBacklog
     {
-        /// Guards the backlog list against concurrent appends, and against the swap-out of a
-        /// pressure sweep. The merge task that owns the bucket consumes what is left without
-        /// the mutex: by then production is over and the blocks stay put, because the emplaced
-        /// keys point into their staged bytes.
-        std::mutex backlog_mutex;
-        /// Chunks holding a non-empty slice for this bucket.
-        std::vector<StagedChunkPtr> backlog;
+    public:
+        /// Registers an immutable chunk with every bucket holding a non-empty slice.
+        void publish(const StagedChunkPtr & chunk);
+
+        /// Claims every enqueued chunk and drops the per-bucket registrations at once: each
+        /// chunk is then owned by the returned list alone, so it frees the moment its drain
+        /// completes and memory comes back chunk by chunk. Whatever producers publish after
+        /// the swap waits for the next sweep or for the merge.
+        std::vector<StagedChunkPtr> takeAllForPressureDrain();
+
+        /// The bucket's remaining chunks, read without the mutex: production is over by the
+        /// time the merge tasks run (the finish barrier ordered every producer's publish
+        /// before the merge sources were created), and the chunks deliberately stay put - the
+        /// merge emplaces keys that point into their staged bytes, so they must live until the
+        /// merged buckets are converted, and the session (owned by every merge source) is
+        /// exactly that lifetime.
+        const std::vector<StagedChunkPtr> & forMergeBucket(size_t bucket) const { return buckets[bucket].backlog; }
+
+    private:
+        struct Bucket
+        {
+            /// Guards the backlog list against concurrent appends, and against the swap-out
+            /// of a pressure sweep.
+            std::mutex mutex;
+            /// Chunks holding a non-empty slice for this bucket.
+            std::vector<StagedChunkPtr> backlog;
+        };
+
+        std::array<Bucket, NUM_BUCKETS> buckets;
+
+        /// Makes a chunk's registration in the per-bucket backlogs atomic against a sweep's
+        /// collection: a sweep that caught a half-registered chunk would drain all of its
+        /// buckets chunk-major, and the publisher would then register the rest for a second,
+        /// double-counting drain at merge time. Publishers share the lock (per-bucket mutexes
+        /// still order their pushes); only a collecting sweep takes it exclusively.
+        std::shared_mutex registry_mutex;
     };
 
-    std::array<Bucket, NUM_BUCKETS> buckets;
+    StagedBacklog backlog;
 
     /// An empty two-level variant of the query's aggregation method, initialized by the first
     /// thread that freezes. Under memory pressure the production-time sweeps drain staged
@@ -227,12 +257,6 @@ struct AdaptiveAggregationSession
     /// need none either. Producers over the trigger block on it deliberately - pausing
     /// production is the backpressure that lets the sweep win.
     std::mutex pressure_sweep_mutex;
-    /// Makes a batch's registration in the per-bucket backlogs atomic against a sweep's
-    /// collection: a sweep that caught a half-registered chunk would drain all of its buckets
-    /// chunk-major, and the producer would then re-register the rest for a second, double-
-    /// counting drain at merge time. Producers share the lock (per-bucket mutexes still order
-    /// their pushes); only a collecting sweep takes it exclusively.
-    std::shared_mutex backlog_registry_mutex;
     /// Whether any early drain moved records into `early_drain_variants`: the finish path then
     /// includes it in the merge set.
     std::atomic<bool> early_drain_started{false};
@@ -839,12 +863,9 @@ private:
         AdaptiveAggregationSession::StagedChunk & chunk) const;
 
     /// The single publication point: finishes the chunk (builds its preparation in place,
-    /// checks the structural invariants in debug builds) and hands it over as immutable.
+    /// checks the structural invariants in debug builds) and hands it over as immutable to
+    /// the session's backlog.
     void publishStagedChunk(AdaptiveAggregationSession & shared, AdaptiveAggregationSession::MutableStagedChunkPtr block) const;
-
-    /// Registers an immutable chunk with every bucket holding a non-empty slice.
-    static void registerStagedChunk(
-        AdaptiveAggregationSession & shared, const AdaptiveAggregationSession::StagedChunkPtr & block);
 
     /// Builds the staged chunk's shared preparation: the aggregate-function instructions over
     /// its argument columns, in the chunk's own stable storage.

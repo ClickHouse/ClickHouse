@@ -2715,24 +2715,42 @@ void Aggregator::publishStagedChunk(
     if (std::holds_alternative<AdaptiveAggregationSession::AggregatePayload>(block->payload))
         prepareStagedChunk(*block);
 
-    registerStagedChunk(shared, std::move(block));
+    shared.backlog.publish(std::move(block));
 }
 
-void Aggregator::registerStagedChunk(
-    AdaptiveAggregationSession & shared, const AdaptiveAggregationSession::StagedChunkPtr & block)
+void AdaptiveAggregationSession::StagedBacklog::publish(const StagedChunkPtr & chunk)
 {
-    constexpr size_t num_buckets = AdaptiveAggregationSession::NUM_BUCKETS;
-
-    std::shared_lock registry_lock(shared.backlog_registry_mutex);
-    for (size_t b = 0; b < num_buckets; ++b)
+    std::shared_lock registry_lock(registry_mutex);
+    for (size_t b = 0; b < NUM_BUCKETS; ++b)
     {
-        if (!block->keys.recordsForBucket(b))
+        if (!chunk->keys.recordsForBucket(b))
             continue;
 
-        auto & bucket = shared.buckets[b];
-        std::lock_guard lock(bucket.backlog_mutex);
-        bucket.backlog.push_back(block);
+        auto & bucket = buckets[b];
+        std::lock_guard lock(bucket.mutex);
+        bucket.backlog.push_back(chunk);
     }
+}
+
+std::vector<AdaptiveAggregationSession::StagedChunkPtr> AdaptiveAggregationSession::StagedBacklog::takeAllForPressureDrain()
+{
+    std::vector<StagedChunkPtr> chunks;
+    std::unique_lock registry_lock(registry_mutex);
+    /// A chunk is registered with every bucket it has records for, so the swap-out sees it
+    /// once per such bucket and keeps the first appearance.
+    std::unordered_set<const void *> seen;
+    for (auto & bucket : buckets)
+    {
+        std::vector<StagedChunkPtr> claimed;
+        {
+            std::lock_guard bucket_lock(bucket.mutex);
+            claimed.swap(bucket.backlog);
+        }
+        for (auto & chunk : claimed)
+            if (seen.insert(chunk.get()).second)
+                chunks.push_back(std::move(chunk));
+    }
+    return chunks;
 }
 
 void Aggregator::stageChunk(
@@ -3013,14 +3031,7 @@ void Aggregator::drainAdaptiveBucketForMerge(
     if (is_cancelled.load(std::memory_order_relaxed))
         return;
 
-    auto & bucket = shared.buckets[bucket_index];
-
-    /// Production is over: the finish barrier ordered every producer's publish before the merge
-    /// sources were created, so the backlog is read without the mutex. The chunks deliberately
-    /// stay on the bucket: the drain emplaces keys that point into their staged bytes, so they
-    /// must live until the merged buckets are converted, and the shared state (owned by every
-    /// merge source) is exactly that lifetime.
-    const auto & backlog = bucket.backlog;
+    const auto & backlog = shared.backlog.forMergeBucket(bucket_index);
     if (backlog.empty())
         return;
 
@@ -3231,26 +3242,7 @@ void Aggregator::drainStagedChunksEarly(AdaptiveAggregationSession & shared, Ada
         && getCurrentQueryMemoryUsage() < static_cast<Int64>(params.max_bytes_before_external_group_by))
         return;
 
-    /// Collect the enqueued chunks and drop the per-bucket claims at once: each chunk is then
-    /// owned by this list alone, so it frees the moment its drain completes and memory comes
-    /// back chunk by chunk. Whatever producers enqueue after the swap waits for the next sweep
-    /// or for the merge.
-    std::vector<AdaptiveAggregationSession::StagedChunkPtr> chunks;
-    {
-        std::unique_lock registry_lock(shared.backlog_registry_mutex);
-        std::unordered_set<const void *> seen;
-        for (auto & bucket : shared.buckets)
-        {
-            std::vector<AdaptiveAggregationSession::StagedChunkPtr> claimed;
-            {
-                std::lock_guard bucket_lock(bucket.backlog_mutex);
-                claimed.swap(bucket.backlog);
-            }
-            for (auto & block : claimed)
-                if (seen.insert(block.get()).second)
-                    chunks.push_back(std::move(block));
-        }
-    }
+    auto chunks = shared.backlog.takeAllForPressureDrain();
     if (chunks.empty())
         return;
 
@@ -3318,7 +3310,7 @@ void Aggregator::drainStagedChunksEarly(AdaptiveAggregationSession & shared, Ada
     /// Chunks the watermark spared go back to the backlogs for the merge-time drain.
     for (auto & chunk : chunks)
         if (chunk)
-            registerStagedChunk(shared, chunk);
+            shared.backlog.publish(chunk);
 
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureDrainedRecords, drained_records);
     shared.undrained_records.fetch_sub(drained_records, std::memory_order_relaxed);
