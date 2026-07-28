@@ -1,0 +1,13 @@
+-- single level: the mismatched column is already rejected for PREWHERE --
+-- nested: must be rejected too, not abort in ActionsDAG --
+-- a column whose type matches all the way down still supports PREWHERE --
+10
+0	1
+1	2
+2	3
+-- the same predicate as WHERE keeps working --
+9
+10
+1	2
+2	3
+3	4

@@ -373,6 +373,16 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
                 supported_columns.erase(column.name);
             }
         }
+
+        /// The loop above compares the root type against the child's *declared* columns. When the
+        /// child aggregates other tables itself (a nested `Merge`, a `MaterializedView`, ...), its
+        /// declared type can match while a leaf's differs. PREWHERE would then be built against the
+        /// root type and re-derived against the leaf's, so `ActionsDAG` sees a return type that
+        /// disagrees with the node it stored and throws `Unexpected return type from ...`.
+        /// Intersect with what the child itself allows, so the constraint holds transitively.
+        /// `supportsPrewhere` above is already transitive - it recurses through virtual dispatch.
+        if (const auto nested_supported_columns = table->supportedPrewhereColumns())
+            std::erase_if(supported_columns, [&](const auto & name) { return !nested_supported_columns->contains(name); });
     });
 
     return supported_columns;
