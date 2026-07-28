@@ -46,9 +46,42 @@ SELECT max(u), min(u), count() FROM (
 ) SETTINGS optimize_aggregation_in_order = 1, max_threads = 1,
            query_plan_join_swap_table = 'false', enable_parallel_replicas = 0;
 
--- Same for an explicit CROSS JOIN, and for the other two consumers of the contract.
+-- The `optimize_distinct_in_order` consumer: the left read under a constant-predicate join must
+-- still be InOrder. The join KIND decides this, not the algorithm: the pre-existing
+-- `isInnerOrLeft` gate in `findReadingStep` rejects `CROSS` before `preservesLeftBlockOrder` is
+-- consulted, so an explicit `CROSS JOIN` can never reach the opt-in. Hence `LEFT JOIN ... ON 1 = 1`
+-- with `enable_analyzer` pinned, as in the probe above. Exact positive count, so dropping the
+-- opt-in fails this line.
+SELECT countIf(explain LIKE '%InOrder%') FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT DISTINCT l.k FROM cj_l_04500 AS l LEFT JOIN cj_r_04500 AS r ON 1 = 1
+    SETTINGS optimize_distinct_in_order = 1, max_threads = 1, enable_parallel_replicas = 0,
+             query_plan_join_swap_table = 'false', optimize_read_in_order = 1,
+             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1
+) WHERE explain LIKE '%ReadType%'
+SETTINGS enable_analyzer = 1;
+
+-- Same for the LIMIT BY consumer.
+SELECT countIf(explain LIKE '%InOrder%') FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT l.k FROM cj_l_04500 AS l LEFT JOIN cj_r_04500 AS r ON 1 = 1
+    ORDER BY l.k LIMIT 1 BY l.k
+    SETTINGS max_threads = 1, enable_parallel_replicas = 0,
+             query_plan_join_swap_table = 'false', optimize_read_in_order = 1,
+             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1
+) WHERE explain LIKE '%ReadType%'
+SETTINGS enable_analyzer = 1;
+
+-- Result oracles for both consumers, plus an explicit `CROSS JOIN`. Left unpinned so they run
+-- under both analyzers; the CROSS shape cannot reach the opt-in, so it covers only that
+-- `ConstantJoin` emits every left row exactly once.
 SELECT count() FROM (
     SELECT DISTINCT l.k FROM cj_l_04500 AS l CROSS JOIN cj_r_04500 AS r
+    SETTINGS optimize_distinct_in_order = 1, max_threads = 1, enable_parallel_replicas = 0
+);
+
+SELECT count() FROM (
+    SELECT DISTINCT l.k FROM cj_l_04500 AS l LEFT JOIN cj_r_04500 AS r ON 1 = 1
     SETTINGS optimize_distinct_in_order = 1, max_threads = 1, enable_parallel_replicas = 0
 );
 
