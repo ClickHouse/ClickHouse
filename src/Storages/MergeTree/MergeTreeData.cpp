@@ -5026,20 +5026,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
     }
 
-    /// Reject deprecated statistics types (currently `minmax`) when they are introduced through
-    /// `ALTER TABLE ... MODIFY SETTING auto_statistics_types = ...`. This is a shared check reached by
-    /// both ordinary and replicated tables. Only an explicit change to the setting in this statement is
-    /// inspected, so loading or otherwise altering an existing table that already carries `minmax` in the
-    /// setting is unaffected.
-    for (const auto & command : commands)
-    {
-        if (command.type == AlterCommand::MODIFY_SETTING)
-        {
-            Field value;
-            if (command.settings_changes.tryGet("auto_statistics_types", value))
-                validateAutoStatisticsTypes(value.safeGet<String>());
-        }
-    }
 
     /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
     /// going through the experimental-codec gate that column codecs and `TTL ... RECOMPRESS` use. Enforce
