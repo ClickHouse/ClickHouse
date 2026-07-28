@@ -2628,8 +2628,11 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             /// replica, so a non-leftmost join must be distributive over a partition of the left side.
             /// `ALL` strictness and any `LEFT` kind are (each left row is decided independently); `INNER ANY`,
             /// `RIGHT ANY` and `RIGHT SEMI` are not (`ConstantJoin` collapses them through one
-            /// `has_seen_matching_rows` CAS). Whitelisting `ALL` keeps a future `JoinStrictness` fail-closed.
-            /// `PASTE` needs its own term: it pairs rows by position, yet carries `ALL` after normalization.
+            /// `has_seen_matching_rows` CAS). Outside `LEFT` this is a whitelist, so a future
+            /// `JoinStrictness` is fail-closed there; under `LEFT` every strictness is admitted, which is
+            /// the point of the kind exemption. It stays a strictness rule only: a non-distributive KIND
+            /// (`FULL`/`GLOBAL`/`CROSS`, or a misplaced `RIGHT`) is the business of the disjuncts below.
+            /// `PASTE` needs its own term: it pairs rows by position, yet carries `ALL` by default.
             if (is_non_leftmost_join_tree_node
                 && (join_kind == JoinKind::Paste
                     || (join_node.getStrictness() != JoinStrictness::All && join_kind != JoinKind::Left)))
