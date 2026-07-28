@@ -151,11 +151,16 @@ private:
     };
 
 public:
+    /// `initial_max_slots_` is the soft ceiling on the number of slots to request from the
+    /// scheduler at startup. It must be <= `max_threads_`. Pass 0 (default) for the eager
+    /// behaviour where all `max_threads_` slots are requested up front. Lazy callers pass
+    /// the master thread count (typically 1) and grow the ceiling later via `setMax`.
     CPULeaseAllocation(
         SlotCount max_threads_,
         ResourceLink master_link_,
         ResourceLink worker_link_,
-        CPULeaseSettings settings = {});
+        CPULeaseSettings settings = {},
+        SlotCount initial_max_slots_ = 0);
     ~CPULeaseAllocation() override;
 
     /// Free all resources held by this allocation.
@@ -168,6 +173,12 @@ public:
     /// It either (a) takes already granted slot or (b) burrows slot (which we expect later to be granted).
     /// It never blocks or waits for slots. Should be used to acquire the master thread for a query.
     [[nodiscard]] AcquiredSlotPtr acquire() override;
+
+    /// Raise (or lower) the soft ceiling on the number of slots to request from the scheduler.
+    /// Growing the ceiling kicks off scheduling for the additional capacity (one request at a
+    /// time, the natural grant chain fills the rest). Shrinking does not reclaim already-
+    /// granted slots — it only caps the next round of scheduling. Hard-capped by `max_threads`.
+    void setMax(SlotCount new_max) override;
 
     // For tests only. Returns true iff resource request is enqueued in the scheduler
     bool isRequesting() const override;
@@ -264,6 +275,12 @@ private:
     Int64 granted = 0; /// Allocated but not acquired slots (might be negative if acquired more than allocated)
     ResourceCost consumed_ns = 0; /// Real consumption accumulated from renew() calls
     ResourceCost requested_ns = 0; /// Consumption requested from the scheduler (requested <= consumed + quantum)
+
+    /// Soft ceiling on the number of slots to request from the scheduler. Initialised
+    /// from the constructor's `initial_max_slots_` argument (or `max_threads` for the
+    /// eager default). Raised/lowered at runtime by `setMax`. `schedule()` stops issuing
+    /// new requests once `allocated >= current_max_slots`.
+    SlotCount current_max_slots = 0;
 
     /// Scheduling control (for interaction with resource scheduler)
     /// A size-limited cyclic buffer of requests that are sent to the scheduler.

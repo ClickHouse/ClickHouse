@@ -82,8 +82,8 @@ def test_different_versions():
         " ORDER BY tuple()"
     )
 
-    new_node.query(f"INSERT INTO tbl VALUES (1)")
-    old_node.query(f"INSERT INTO tbl VALUES (2)")
+    new_node.query("INSERT INTO tbl VALUES (1)")
+    old_node.query("INSERT INTO tbl VALUES (2)")
 
     backup_name = new_backup_name()
 

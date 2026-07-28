@@ -1,0 +1,148 @@
+---
+sidebarTitle: 'PostgreSQL CDC'
+slug: /cloud/reference/billing/clickpipes/postgres-cdc
+title: 'ClickPipes for PostgreSQL CDC'
+description: 'PostgreSQL CDC ClickPipes の料金体系の概要'
+doc_type: 'reference'
+keywords: ['請求', 'clickpipes', 'cdc 料金', 'コスト', '料金']
+---
+
+このセクションでは、ClickPipes の Postgres CDC（変更データキャプチャ） 変更データキャプチャ (CDC) 
+コネクタの料金モデルについて説明します。このモデルの設計にあたっては、価格競争力を
+高い水準で維持しつつ、当社の中核的なビジョンに忠実であることを目指しました。
+
+> お客様が Postgres から ClickHouse へデータを移行し、
+> リアルタイム分析をシームレスかつ手頃な価格で実現できるようにすること。
+
+このコネクタは、外部
+ETL ツールや他のデータベースプラットフォームの同様の機能と比べて、**5 倍以上のコスト効率**を実現します。
+
+<Note>
+  Postgres CDC（変更データキャプチャ） ClickPipes を利用するすべてのお客様 (既存・新規を含む) を対象に、
+  **2025 年 9 月 1 日**から料金の計測が開始され、月次請求に反映されています。
+</Note>
+
+
+
+## Pricing dimensions {#pricing-dimensions}
+
+There are two main dimensions to pricing:
+
+1. **取り込みデータ**: Postgres から ClickHouse へ取り込まれる、非圧縮の生バイトデータです。
+2. **コンピュート**: サービスごとにプロビジョニングされるコンピュートユニットは、複数の Postgres CDC（変更データキャプチャ） ClickPipes を管理するためのもので、ClickHouse Cloud サービスが使用するコンピュートユニットとは独立しています。この追加コンピュートは Postgres CDC（変更データキャプチャ） ClickPipes 専用です。コンピュートは個々のパイプ単位ではなく、サービスレベルで課金されます。各コンピュートユニットには 2 vCPU と 8 GB の RAM が含まれます。
+
+### 取り込みデータ {#ingested-data}
+
+The Postgres CDC（変更データキャプチャ） connector operates in two main phases:
+
+- **Initial load / resync**: This captures a full snapshot of Postgres tables
+  and occurs when a pipe is first created or re-synced.
+- **Continuous Replication (CDC)**: Ongoing replication of changes—such as inserts,
+  updates, deletes, and schema changes—from Postgres to ClickHouse.
+
+In most use cases, continuous replication accounts for over 90% of a ClickPipe
+life cycle. Because initial loads involve transferring a large volume of data all
+at once, we offer a lower rate for that phase.
+
+| Phase                            | Cost         |
+|----------------------------------|--------------|
+| **Initial load / resync**        | $0.10 per GB |
+| **Continuous Replication (CDC)** | $0.20 per GB |
+
+### コンピュート {#compute}
+
+This dimension covers the compute units provisioned per service just for Postgres
+ClickPipes. コンピュート is shared across all Postgres pipes within a service. **It
+is provisioned when the first Postgres pipe is created and deallocated when no
+Postgres CDC（変更データキャプチャ） pipes remain**. The amount of compute provisioned depends on your
+organization's tier:
+
+| Tier                         | Cost                                          |
+|------------------------------|-----------------------------------------------|
+| **Basic Tier**               | 0.5 compute unit per service — $0.10 per hour |
+| **Scale or Enterprise Tier** | 1 compute unit per service — $0.20 per hour   |
+
+### Example {#example}
+
+Let's say your service is in Scale tier and has the following setup:
+
+- 2 Postgres ClickPipes running continuous replication
+- Each pipe ingests 500 GB of data changes (CDC) per month
+- When the first pipe is kicked off, the service provisions **1 compute unit under the Scale Tier** for Postgres CDC（変更データキャプチャ）
+
+#### Monthly cost breakdown {#cost-breakdown}
+
+**取り込みデータ (CDC)**:
+
+$$ 2 \text{ pipes} \times 500 \text{ GB} = 1,000 \text{ GB per month} $$
+
+$$ 1,000 \text{ GB} \times \$0.20/\text{GB} = \$200 $$
+
+**コンピュート**:
+
+$$1 \text{ compute unit} \times \$0.20/\text{hr} \times 730 \text{ hours (approximate month)} = \$146$$
+
+<Note>
+コンピュート is shared across both pipes
+</Note>
+
+**Total Monthly Cost**:
+
+$$\$200 \text{ (ingest)} + \$146 \text{ (compute)} = \$346$$
+
+<div id="faq-postgres-cdc-clickpipe">
+  ## Postgres CDC（変更データキャプチャ） ClickPipes のよくある質問
+</div>
+
+<Accordion title="料金上の取り込みデータは、圧縮サイズと非圧縮サイズのどちらで計測されますか？">
+  取り込みデータは、Postgres から送られる *非圧縮データ* として計測されます。これは、
+  初期ロード時と CDC (レプリケーションスロット経由) の両方に当てはまります。Postgres は
+  デフォルトでは転送中にデータを圧縮せず、ClickPipe は生の
+  非圧縮バイトを処理します。
+</Accordion>
+
+<Accordion title="Postgres CDC（変更データキャプチャ） の料金は、いつから請求書に反映されますか？">
+  Postgres CDC（変更データキャプチャ） ClickPipes の料金は、すべてのお客様 (既存・新規を問わず) について、
+  **2025年9月1日** 以降、月次請求書に
+  反映されています。
+</Accordion>
+
+<Accordion title="パイプを一時停止すると課金されますか？">
+  パイプが一時停止されている間はデータが移動しないため、
+  データのインジェスト料金は発生しません。
+  ただし、コンピュート料金は引き続き適用され、組織の
+  ティアに応じて 0.5 または 1 コンピュートユニットが課金されます。これは固定のサービスレベルのコストであり、そのサービス内のすべての
+  パイプに適用されます。
+</Accordion>
+
+<Accordion title="料金はどのように見積もれますか？">
+  ClickPipes の概要ページでは、初期ロード/再同期 と
+  CDC のデータ量の両方についてメトリクスが提供されます。これらのメトリクスを
+  ClickPipes の料金と組み合わせることで、Postgres CDC（変更データキャプチャ） のコストを
+  見積もることができます。
+</Accordion>
+
+<Accordion title="サービス内の Postgres CDC（変更データキャプチャ） に割り当てるコンピュートはスケールできますか？">
+  デフォルトでは、コンピュートのスケーリングをユーザーが設定することはできません。プロビジョニングされるリソース
+  は、ほとんどのお客様のワークロードに最適に対応できるよう最適化されています。ユースケースに応じて
+  より多く、または少ないコンピュートが必要な場合は、ご要望を評価できるよう
+  サポートチケットを作成してください。
+</Accordion>
+
+<Accordion title="料金の粒度はどの程度ですか？">
+  * **コンピュート**: 1時間単位で課金されます。1時間未満は次の1時間に切り上げられます。
+  * **取り込みデータ**: 非圧縮データのギガバイト (GB) 単位で計測・課金されます。
+</Accordion>
+
+<Accordion title="ClickPipes 経由の Postgres CDC（変更データキャプチャ） に ClickHouse Cloud のクレジットを使えますか？">
+  はい。ClickPipes の料金は ClickHouse Cloud の統合料金体系の一部です。
+  お持ちのプラットフォームクレジットは、ClickPipes の利用にも自動的に適用されます。
+</Accordion>
+
+<Accordion title="既存の月次 ClickHouse Cloud 利用額に対して、Postgres CDC（変更データキャプチャ） ClickPipes による追加コストはどの程度見込まれますか？">
+  コストは、ユースケース、データ量、組織のティアによって異なります。
+  とはいえ、既存のお客様の多くでは、トライアル終了後の
+  既存の月次 ClickHouse Cloud 利用額に対して **0〜15%** の増加に収まっています。
+  実際のコストはワークロードによって異なる場合があります。ワークロードによっては大量のデータを扱う一方で
+  処理量は少なく、別のワークロードではデータ量は少ないものの、より多くの処理が必要になることがあります。
+</Accordion>

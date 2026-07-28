@@ -51,6 +51,10 @@ void StorageFromMergeTreeProjection::read(
             "Cannot read from `mergeTreeProjection`: a row policy is applied on table {}, "
             "and reading projection data directly would bypass it", parent_id.getNameForLogs());
 
+    /// A UNIQUE KEY parent rejects projection reads in the MergeTreeDataSelectExecutor
+    /// constructor below (the universal projection-read chokepoint), since reading a
+    /// projection part bypasses the parent's delete-bitmap filter.
+
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
     const auto & parts = snapshot_data.parts;
 

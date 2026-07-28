@@ -131,13 +131,13 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
                 return true;
             }
 
-            if (DataLake::DATABASE_ENGINE_NAME == state.create_engine_name)
+            /// Intrinsically secret regardless of engine: DataLakeStorageSettings is shared by the
+            /// DataLakeCatalog database engine and the Iceberg*/Paimon*/DeltaLake* table engines.
+            /// Matches the ungated check in hasSecretParts().
+            if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
             {
-                if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << DataLake::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
+                ostr << " = " << DataLake::SETTINGS_TO_HIDE.at(change.name)(change.value);
+                return true;
             }
             if (RabbitMQ::TABLE_ENGINE_NAME == state.create_engine_name)
             {

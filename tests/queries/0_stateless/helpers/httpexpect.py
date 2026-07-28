@@ -18,7 +18,7 @@ import sys
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, CURDIR)
 
-from queue import Empty, Queue
+from queue import Queue
 from threading import Event, Thread
 
 import uexpect
@@ -48,7 +48,7 @@ def reader(response, queue, kill_event):
                 break
             data = response.read(1).decode()
             queue.put(data)
-        except Exception as e:
+        except Exception:
             if kill_event.is_set():
                 break
             raise
