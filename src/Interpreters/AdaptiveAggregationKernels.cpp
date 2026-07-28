@@ -604,69 +604,19 @@ void NO_INLINE Aggregator::buildDeduplicatedCountChunk(
 }
 
 template <typename SharedKey, typename State>
-void NO_INLINE Aggregator::publishDelayedRecords(
+void NO_INLINE Aggregator::buildBucketGroupedAggregateChunk(
+    StagedChunk & block,
     const Columns & columns,
-    size_t num_rows,
     AdaptiveAggregationProducer & adaptive,
     State & local_find_state,
     Arena & scratch_pool,
-    bool counts_only,
     std::optional<UInt32> key_row_override) const
 {
     constexpr size_t num_buckets = ADAPTIVE_AGGREGATION_NUM_BUCKETS;
-
     const size_t total = adaptive.miss_hashes.size();
-    if (!total)
-        return;
+    auto & keys = block.keys;
 
-    if (num_rows > std::numeric_limits<UInt32>::max())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Adaptive aggregation got a block of {} rows; row numbers are 32-bit.", num_rows);
-
-    auto & shared = *adaptive.session;
-
-    /// The thaw check (see the tuning constants). The sample is collected outside the lock (a
-    /// publish contributes on the order of `total` / 256 entries) and folded into the shared
-    /// sampler; the verdict takes effect at every thread's next block, through the ordinary
-    /// dispatch on the per-thread flags. The current records are still published: their rows
-    /// were deferred by the frozen kernel and only the drain will aggregate them.
-    if (!shared.thaw_all.load(std::memory_order_relaxed))
-    {
-        PaddedPODArray<UInt64> sampled_hashes;
-        for (const auto hash : adaptive.miss_hashes)
-            if ((hash & adaptive_thaw_sample_mask) == 0)
-                sampled_hashes.push_back(hash);
-
-        std::lock_guard lock(shared.thaw_sample_mutex);
-        shared.staged_records += total;
-        shared.thaw_sampled_records += sampled_hashes.size();
-        for (const auto hash : sampled_hashes)
-            shared.distinct_sampled_hashes.insert(hash);
-        /// Re-checked under the lock: a thread that sampled while another was firing would
-        /// otherwise fire a second time.
-        if (!shared.thaw_all.load(std::memory_order_relaxed)
-            && shared.staged_records >= adaptive_thaw_min_staged_records
-            && shared.thaw_sampled_records > adaptive_thaw_repeat_factor * shared.distinct_sampled_hashes.size())
-        {
-            shared.thaw_all.store(true, std::memory_order_relaxed);
-            ProfileEvents::increment(ProfileEvents::AdaptiveAggregationThaws);
-            LOG_TRACE(
-                log,
-                "Adaptive aggregation: thawing the local tables after {} staged records (sampled repeat factor {})",
-                shared.staged_records,
-                shared.thaw_sampled_records / shared.distinct_sampled_hashes.size());
-        }
-    }
-
-    auto block = std::make_shared<StagedChunk>();
-    auto & keys = block->keys;
-
-    if (counts_only)
-    {
-        buildDeduplicatedCountChunk<SharedKey>(block, adaptive, local_find_state, scratch_pool, key_row_override);
-    }
-    else
-    {
-    auto & payload = block->payload.emplace<StagedChunk::AggregatePayload>();
+    auto & payload = block.payload.emplace<StagedChunk::AggregatePayload>();
 
     /// The sizes are exact and final, and the chunk can sit on a backlog for the rest of the
     /// query, so the arrays are sized without the power-of-two growth headroom.
@@ -763,6 +713,70 @@ void NO_INLINE Aggregator::publishDelayedRecords(
             else
                 payload.argument_columns[position] = recursiveRemoveSparse(columns[position]->getPtr())->index(*gather_indexes, 0);
         }
+}
+
+template <typename SharedKey, typename State>
+void NO_INLINE Aggregator::publishDelayedRecords(
+    const Columns & columns,
+    size_t num_rows,
+    AdaptiveAggregationProducer & adaptive,
+    State & local_find_state,
+    Arena & scratch_pool,
+    bool counts_only,
+    std::optional<UInt32> key_row_override) const
+{
+    const size_t total = adaptive.miss_hashes.size();
+    if (!total)
+        return;
+
+    if (num_rows > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Adaptive aggregation got a block of {} rows; row numbers are 32-bit.", num_rows);
+
+    auto & shared = *adaptive.session;
+
+    /// The thaw check (see the tuning constants). The sample is collected outside the lock (a
+    /// publish contributes on the order of `total` / 256 entries) and folded into the shared
+    /// sampler; the verdict takes effect at every thread's next block, through the ordinary
+    /// dispatch on the per-thread flags. The current records are still published: their rows
+    /// were deferred by the frozen kernel and only the drain will aggregate them.
+    if (!shared.thaw_all.load(std::memory_order_relaxed))
+    {
+        PaddedPODArray<UInt64> sampled_hashes;
+        for (const auto hash : adaptive.miss_hashes)
+            if ((hash & adaptive_thaw_sample_mask) == 0)
+                sampled_hashes.push_back(hash);
+
+        std::lock_guard lock(shared.thaw_sample_mutex);
+        shared.staged_records += total;
+        shared.thaw_sampled_records += sampled_hashes.size();
+        for (const auto hash : sampled_hashes)
+            shared.distinct_sampled_hashes.insert(hash);
+        /// Re-checked under the lock: a thread that sampled while another was firing would
+        /// otherwise fire a second time.
+        if (!shared.thaw_all.load(std::memory_order_relaxed)
+            && shared.staged_records >= adaptive_thaw_min_staged_records
+            && shared.thaw_sampled_records > adaptive_thaw_repeat_factor * shared.distinct_sampled_hashes.size())
+        {
+            shared.thaw_all.store(true, std::memory_order_relaxed);
+            ProfileEvents::increment(ProfileEvents::AdaptiveAggregationThaws);
+            LOG_TRACE(
+                log,
+                "Adaptive aggregation: thawing the local tables after {} staged records (sampled repeat factor {})",
+                shared.staged_records,
+                shared.thaw_sampled_records / shared.distinct_sampled_hashes.size());
+        }
+    }
+
+    auto block = std::make_shared<StagedChunk>();
+    auto & keys = block->keys;
+
+    if (counts_only)
+    {
+        buildDeduplicatedCountChunk<SharedKey>(block, adaptive, local_find_state, scratch_pool, key_row_override);
+    }
+    else
+    {
+        buildBucketGroupedAggregateChunk<SharedKey>(*block, columns, adaptive, local_find_state, scratch_pool, key_row_override);
     }
 
     adaptive.miss_source_rows.clear();

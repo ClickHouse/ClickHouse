@@ -595,6 +595,18 @@ private:
         Arena & scratch_pool,
         std::optional<UInt32> key_row_override) const;
 
+    /// The aggregate-payload counterpart of `buildDeduplicatedCountChunk`: counting-sorts the
+    /// staged misses into bucket-grouped order, stages their key bytes, and gathers the
+    /// aggregate-argument columns into the same order (see `StagedChunk::AggregatePayload`).
+    template <typename SharedKey, typename State>
+    void buildBucketGroupedAggregateChunk(
+        StagedChunk & block,
+        const Columns & columns,
+        AdaptiveAggregationProducer & adaptive,
+        State & local_find_state,
+        Arena & scratch_pool,
+        std::optional<UInt32> key_row_override) const;
+
     /// Enqueues one batch for the merge-time drain: a batch of at least half the seal target
     /// goes straight to the backlogs, a small one is buffered, and the buffer is sealed into
     /// one chunk once enough bytes accumulate.
