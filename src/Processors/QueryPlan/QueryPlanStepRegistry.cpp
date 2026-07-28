@@ -8,6 +8,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_IDENTIFIER;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 QueryPlanStepRegistry & QueryPlanStepRegistry::instance()
@@ -33,7 +34,7 @@ void QueryPlanStepRegistry::registerStep(const std::string & name, StepCreateFun
     for (const auto & [format_version, format] : info.payload_formats)
     {
         if (format_version != expected_version)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Query plan step '{}' declares payload format version {} but says nothing about {}",
                 name, format_version, expected_version);
         ++expected_version;
