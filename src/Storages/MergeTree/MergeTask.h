@@ -308,6 +308,8 @@ private:
     {
         bool need_remove_expired_values{false};
         bool force_ttl{false};
+        bool force_rows_where_ttl{false};
+        bool refresh_ttl_infos_only{false};
         std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes{};
 
@@ -606,6 +608,8 @@ private:
     static bool hasLightweightDelete(const FutureMergedMutatedPartPtr & future_part);
     static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
     static bool canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx);
+    /// True for merge modes that can emit a column value that no source row had.
+    static bool mergeCanChangeColumnValues(MergeTreeData::MergingParams::Mode mode);
     static bool isVerticalTTLDelete(const GlobalRuntimeContext & global_ctx, const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx);
     static void addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx);
     static void addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);

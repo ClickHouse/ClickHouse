@@ -29,12 +29,24 @@ TTLCalcTransform::TTLCalcTransform(
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeData::MutableDataPartPtr & data_part_,
     time_t current_time_,
-    bool force_)
+    bool force_,
+    bool only_rows_where_ttl_)
     : IAccumulatingTransform(header_, header_)
     , data_part(data_part_)
+    , only_rows_where_ttl(only_rows_where_ttl_)
     , log(getLogger(storage_.getLogName() + " (TTLCalcTransform)"))
 {
     auto old_ttl_infos = data_part->ttl_infos;
+
+    if (only_rows_where_ttl_)
+    {
+        for (const auto & where_ttl : metadata_snapshot_->getRowsWhereTTLs())
+            algorithms.emplace_back(std::make_unique<TTLUpdateInfoAlgorithm>(
+                getExpressions(where_ttl, subqueries_for_sets, context), where_ttl,
+                TTLUpdateField::ROWS_WHERE_TTL, where_ttl.result_column, old_ttl_infos.rows_where_ttl[where_ttl.result_column], current_time_, force_));
+
+        return;
+    }
 
     if (metadata_snapshot_->hasRowsTTL())
     {
@@ -109,7 +121,23 @@ Chunk TTLCalcTransform::generate()
 
 void TTLCalcTransform::finalize()
 {
+    /// Every kind is recalculated below, so start from scratch - except in rows-WHERE-only mode,
+    /// where that would drop the infos of the kinds that have no algorithm here.
+    if (only_rows_where_ttl)
+    {
+        /// Replace the whole map rather than the entries we happen to recalculate, so an expression
+        /// dropped from the table's TTL does not linger.
+        data_part->ttl_infos.rows_where_ttl.clear();
+
+        for (const auto & algorithm : algorithms)
+            algorithm->finalize(data_part);
+
+        data_part->ttl_infos.recalculatePartMinMaxTTL();
+        return;
+    }
+
     data_part->ttl_infos = {};
+
     for (const auto & algorithm : algorithms)
         algorithm->finalize(data_part);
 }

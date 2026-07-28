@@ -76,6 +76,25 @@ struct MergeTreeDataPartTTLInfos
             part_max_ttl = ttl_info.max;
     }
 
+    /// Recomputes the aggregates from the maps that feed them. `updatePartMinMaxTTL` can only widen
+    /// the range, so replacing entries in place needs this to drop the contributions they had made.
+    void recalculatePartMinMaxTTL()
+    {
+        part_min_ttl = 0;
+        part_max_ttl = 0;
+
+        updatePartMinMaxTTL(table_ttl);
+
+        for (const auto & [name, ttl_info] : columns_ttl)
+            updatePartMinMaxTTL(ttl_info);
+
+        for (const auto & [name, ttl_info] : group_by_ttl)
+            updatePartMinMaxTTL(ttl_info);
+
+        for (const auto & [name, ttl_info] : rows_where_ttl)
+            updatePartMinMaxTTL(ttl_info);
+    }
+
     bool empty() const
     {
         /// part_min_ttl in minimum of rows, rows_where and group_by TTLs

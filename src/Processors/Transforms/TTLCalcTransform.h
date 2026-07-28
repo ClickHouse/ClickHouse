@@ -22,7 +22,11 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreeData::MutableDataPartPtr & data_part_,
         time_t current_time,
-        bool force_
+        bool force_,
+        /// Refresh only the rows-WHERE TTL infos and leave every other kind alone. Used by merges
+        /// that combine rows while TTL merges are stopped, where the rows-WHERE info inherited from
+        /// the source parts does not describe the merge output.
+        bool only_rows_where_ttl_ = false
     );
 
     PreparedSets::Subqueries getSubqueries() { return std::move(subqueries_for_sets); }
@@ -43,6 +47,7 @@ private:
 
     /// ttl_infos and empty_columns are updating while reading
     const MergeTreeData::MutableDataPartPtr & data_part;
+    const bool only_rows_where_ttl;
     LoggerPtr log;
 };
 
