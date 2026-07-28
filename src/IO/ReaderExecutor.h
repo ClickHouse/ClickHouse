@@ -124,7 +124,6 @@ private:
             IncompleteConnections,
             CacheGetRequests,
             CachePopulateRequests,
-            SiblingWaits,           /// waits for a sibling downloading the window start
             WorkMicroseconds,
             DecryptMicroseconds,        /// time spent decrypting served payload
             LongConnectionOpened,       /// held connections opened for reuse
@@ -199,14 +198,10 @@ private:
         DrainResult drainTail(size_t max_tail, size_t block_bytes, LoggerPtr log) noexcept;
     };
 
-    /// At known size, EOF is `position >= totalSize`. At unknown size, a short
-    /// source read latches `reached_eof`; a backward `seek` clears it. A
-    /// `read_until` bound caps EOF earlier.
+    /// EOF is `position >= totalSize`; a `read_until` bound caps it earlier.
     bool atEnd() const
     {
-        if (reached_eof || (read_until && position >= *read_until))
-            return true;
-        return !offset_map.hasUnknownSize() && position >= totalSize();
+        return position >= totalSize() || (read_until && position >= *read_until);
     }
 
     /// Clamp the estimator's run-anchored predicted end (physical) to `[phys_pos, physical file end]`.
@@ -230,7 +225,7 @@ private:
     /// cache), and populate. A sibling downloading the window start itself is waited for ONCE -
     /// holding no claims - then the window is re-probed; if it still leads the start, it is fetched
     /// through. Precondition: `!cache_chain.empty()`.
-    ChainedBuffers serveThroughCaches(size_t window_offset, size_t max_serve, bool allow_sibling_wait = true);
+    ChainedBuffers serveThroughCaches(size_t window_offset, size_t max_serve);
     /// Drop the held connection: drain a small tail to complete it, else account it incomplete.
     void dropLongConnection();
 
@@ -257,7 +252,6 @@ private:
     size_t window_size;
     size_t block_size;
     size_t position = 0;
-    bool reached_eof = false;
     /// Hard upper bound on the logical read position; `nullopt` = read to end.
     std::optional<size_t> read_until;
 

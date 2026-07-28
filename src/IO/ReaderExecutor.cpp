@@ -16,7 +16,6 @@ namespace ProfileEvents
     extern const Event ReaderExecutorRequestedBytes;
     extern const Event ReaderExecutorCacheGetRequests;
     extern const Event ReaderExecutorCachePopulateRequests;
-    extern const Event ReaderExecutorSiblingWaits;
     extern const Event ReaderExecutorIncompleteConnections;
     extern const Event ReaderExecutorWorkMicroseconds;
     extern const Event ReaderExecutorDecryptMicroseconds;
@@ -38,6 +37,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int BAD_ARGUMENTS;
 }
 
 /// Read `chunk` bytes from `buf` straight into `dest` with no intermediate copy when the buffer
@@ -95,9 +95,6 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
             ProfileEvents::increment(ProfileEvents::ReaderExecutorCachePopulateRequests, value);
             ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, 100 * value);
             break;
-        case SiblingWaits:
-            ProfileEvents::increment(ProfileEvents::ReaderExecutorSiblingWaits, value);
-            break;
         case WorkMicroseconds:
             ProfileEvents::increment(ProfileEvents::ReaderExecutorWorkMicroseconds, value);
             break;
@@ -137,6 +134,11 @@ ReaderExecutor::ReaderExecutor(
     , active_metric(CurrentMetrics::ReaderExecutorActive)
 {
     offset_map.build(objects);
+    /// This executor serves known-size sources only; the builder falls back to the legacy path for
+    /// unknown-size sources, so reaching here with one is a bug (unknown-size support lands with the
+    /// page-cache PR).
+    if (offset_map.hasUnknownSize())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReaderExecutor does not support unknown-size sources");
     log_file_path = objects.empty() ? "" : objects.front().remote_path;
     LOG_DEBUG(log, "Created: source={}, objects={}, total_size={}, block_size={}, long_connections={}",
         source ? source->name() : "none", objects.size(), offset_map.totalSize(), block_size,
@@ -228,9 +230,7 @@ size_t ReaderExecutor::clampReach(size_t predicted_end, size_t phys_pos) const
 {
     /// Bound the run-anchored predicted end (physical) to `[phys_pos, physical file end]`.
     size_t end = std::max(predicted_end, phys_pos);
-    if (!offset_map.hasUnknownSize())
-        end = std::min(end, offset_map.totalSize());
-    return end;
+    return std::min(end, offset_map.totalSize());
 }
 
 bool ReaderExecutor::shouldOpenLongConnection() const
@@ -255,9 +255,7 @@ bool ReaderExecutor::tryOpenLongConnection(const StoredObject & object, size_t o
     /// further ahead, sparse access stays small, so it never over-reads a whole object for a slice.
     const size_t phys = toPhysical(position);
     const size_t forward = clampReach(fetch_tracker.predictedEnd(), phys) - phys;
-    size_t read_until_obj = object_offset + forward;
-    if (!offset_map.hasUnknownSize())
-        read_until_obj = std::min<size_t>(read_until_obj, object.bytes_size);
+    const size_t read_until_obj = std::min<size_t>(object_offset + forward, object.bytes_size);
 
     auto buffer = source->open(object);
     if (buffer->supportsRightBoundedReads())
@@ -294,11 +292,6 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
 {
     ChainedBuffers chain;
     size_t got_total = 0;
-    /// The most this slice could yield before an artificial bound (the long-connection reach, or
-    /// the requested `want`). A `got_total` below it means the source object actually ENDED - a real
-    /// EOF - not that we merely hit a reach bound.
-    size_t effective_limit = want;
-
     auto fill = [&](size_t limit, auto && read_chunk)
     {
         while (got_total < limit)
@@ -334,7 +327,6 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
         }
         /// Serve only up to the bound (short window); avoids draining and re-reading the tail.
         const size_t serve = std::min(want, long_conn->read_until - object_offset);
-        effective_limit = serve;
         fill(serve, from_long_conn);
         if (long_conn->atBound())
             long_conn.reset();
@@ -345,7 +337,6 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
             dropLongConnection();
         if (shouldOpenLongConnection() && tryOpenLongConnection(object, object_offset))
         {
-            effective_limit = std::min(want, long_conn->read_until - object_offset);
             fill(want, from_long_conn);
             if (long_conn && long_conn->atBound())
                 long_conn.reset();
@@ -364,13 +355,6 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
 
     stats.add(Stats::BytesFromSource, got_total);
     fetch_tracker.recordReadRange(file_base, got_total);
-
-    /// An unknown-size file is a single object, so its true end is this object's end: reading fewer
-    /// than `effective_limit` (a real EOF, not just a reach bound) latches EOF, so the next window
-    /// stops instead of re-fetching the tail block to rediscover where the file ends.
-    if (offset_map.hasUnknownSize() && got_total < effective_limit)
-        reached_eof = true;
-
     return chain;
 }
 
@@ -391,7 +375,7 @@ ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want)
     return chain;
 }
 
-ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t max_serve, bool allow_sibling_wait)
+ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t max_serve)
 {
     chassert(!cache_chain.empty());
     const ByteRange window{window_offset, max_serve};
@@ -435,21 +419,8 @@ ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t m
         claimed.push_back(Claimed{std::move(writer), m.cell, std::move(claim)});
     }
 
-    /// A sibling already downloads the window start: wait once for its first byte at our position -
-    /// holding NO claims, so a bare waiter is never part of a hold-and-wait cycle - then re-probe
-    /// (the committed prefix is a hit, or the freed role becomes ours). One attempt; a still-leading
-    /// sibling is fetched through below (its write lands 0).
-    if (allow_sibling_wait)
-        for (const auto & c : claimed)
-            for (const auto & s : c.claim.sibling_led)
-                if (s.offset <= window_offset && window_offset < s.end())
-                {
-                    CacheWriter * lead = c.writer.get();
-                    stats.add(Stats::SiblingWaits);
-                    lead->waitAndReadSiblingLed(ByteRange{window_offset, 1});
-                    claimed.clear();
-                    return serveThroughCaches(window_offset, max_serve, /*allow_sibling_wait=*/false);
-                }
+    /// A cell a sibling is already downloading is fetched through below: its `write` lands 0 (we do
+    /// not hold its downloader role), but the source fetch still serves the bytes correctly.
 
     /// No writing tier (all bypass): stream the window straight from source, no populate.
     if (claimed.empty())
@@ -463,8 +434,7 @@ ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t m
         fetch_lo = std::min(fetch_lo, c.cell.offset);
         fetch_hi = std::max(fetch_hi, c.cell.end());
     }
-    if (!offset_map.hasUnknownSize())
-        fetch_hi = std::min<size_t>(fetch_hi, offset_map.totalSize());
+    fetch_hi = std::min<size_t>(fetch_hi, offset_map.totalSize());
 
     ChainedBuffers fetched = readSource(fetch_lo, fetch_hi - fetch_lo);
     const size_t fetched_end = fetched.empty() ? fetch_lo : fetched.range().end();
@@ -587,13 +557,6 @@ void ReaderExecutor::initDecryption()
     auto block = std::make_shared<OwnedChainedBuffer>(data_start_offset);
     const size_t got = readOneShot(object, /*object_offset=*/0, data_start_offset, block->data());
 
-    /// Under size-unknown sources a short read means EOF rather than an error, so 0 bytes is an
-    /// empty object (same as the size-known empty branch above) and a partial read is corruption.
-    if (offset_map.hasUnknownSize() && got == 0)
-    {
-        LOG_DEBUG(log, "initDecryption: unknown-size source returned 0 bytes (empty object), skipping");
-        return;
-    }
     if (got != data_start_offset)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
             "Encrypted source returned {} header bytes, expected {} (corrupted/truncated)",
@@ -630,17 +593,12 @@ ChainedBuffers ReaderExecutor::readNextWindow()
 
     /// The most this window may serve: `window_size`, clamped to the file end and the `read_until`
     /// bound. The cache path serves at most `block_size` of it; the no-cache path serves it whole.
-    size_t max_serve = window_size;
-    if (!offset_map.hasUnknownSize())
-        max_serve = std::min(max_serve, offset_map.totalSize() - position_physical);
+    size_t max_serve = std::min(window_size, offset_map.totalSize() - position_physical);
     chassert(!read_until || *read_until >= position);
     if (read_until && *read_until - position < max_serve)
         max_serve = *read_until - position;
     if (max_serve == 0)
-    {
-        reached_eof = true;
         return {};
-    }
 
     ChainedBuffers chain = cache_chain.empty()
         ? readSource(position_physical, max_serve)
@@ -649,10 +607,9 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     const size_t got = chain.empty() ? 0 : chain.range().size;
     if (got == 0)
     {
-        reached_eof = true;
         long_conn.reset();
-        /// Nothing read below a known-size source's end = truncation.
-        if (!offset_map.hasUnknownSize() && position < totalSize())
+        /// Nothing read below the source's end = truncation.
+        if (position < totalSize())
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
                 "ReaderExecutor: source ended at {} of {} bytes for {}",
                 position, totalSize(), getFileName());
@@ -692,7 +649,6 @@ void ReaderExecutor::seek(size_t new_position)
     /// lazily by the next `readNextWindow` (its `canServeAt` check).
     fetch_tracker.recordSeek(toPhysical(new_position));
     position = new_position;
-    reached_eof = false;
 }
 
 }

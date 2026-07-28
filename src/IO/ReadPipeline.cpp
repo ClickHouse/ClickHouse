@@ -14,7 +14,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReaderExecutor.h>
 #include <IO/DiskCacheProvider.h>
-#include <IO/PageCacheProvider.h>
 #include <IO/PipelineReadBuffer.h>
 #include <IO/LocalSourceReader.h>
 #include <IO/ObjectStorageSourceReader.h>
@@ -222,6 +221,15 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
     std::shared_ptr<IFileBasedSourceReader> source_reader;
     /// Read-through cache chain (front = fastest); populated below, once the source is chosen.
     CacheChain cache_chain;
+    /// This executor serves known-size sources only; fall back for unknown-size (support lands with
+    /// the page-cache PR).
+    for (const auto & object : source->objects)
+        if (object.bytes_size == StoredObject::UnknownSize)
+        {
+            LOG_DEBUG(log, "use_reader_executor: falling back to the legacy read path (unknown object size)");
+            return nullptr;
+        }
+
     if (const auto * local_src = std::get_if<LocalFileSource>(&source->source))
     {
         LOG_DEBUG(log, "build: using ReaderExecutor for local file, {} objects, path={}",
@@ -230,13 +238,11 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
     }
     else if (const auto * obj_src = std::get_if<ObjectStorageSource>(&source->source))
     {
-        /// An object of unknown size (HEAD without Content-Length) arrives with
-        /// `bytes_size` 0 — indistinguishable from a genuinely empty object — and
-        /// the executor cannot stream to EOF yet, so fall back rather than read it
-        /// as empty.
+        /// `bytes_size` 0 from object storage (HEAD without Content-Length) is indistinguishable
+        /// from a genuinely empty object, so fall back rather than read it as empty.
         for (const auto & object : source->objects)
         {
-            if (object.bytes_size == 0 || object.bytes_size == StoredObject::UnknownSize)
+            if (object.bytes_size == 0)
             {
                 LOG_DEBUG(log,
                     "use_reader_executor: falling back to the legacy read path (object size unknown)");
@@ -256,22 +262,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
         return nullptr;
     }
 
-    /// Cache chain, front = fastest: the page cache (file-level) then the filesystem cache(s).
-    /// `filesystem_caches` is inner-to-outer; the executor queries the front first, so reverse it.
-    if (memory_cache && memory_cache->page_cache_settings.cache)
-    {
-        const auto & pcs = memory_cache->page_cache_settings;
-        size_t total_file_size = 0;
-        for (const auto & obj : source->objects)
-            total_file_size += obj.bytes_size;
-        PageCacheFile cache_file;
-        cache_file.path = memory_cache->custom_cache_path.value_or(
-            memory_cache->cache_path_prefix + source->objects.front().remote_path);
-        cache_file.file_version = memory_cache->custom_file_version.value_or("");
-        cache_chain.push_back(std::make_shared<PageCacheProvider>(
-            pcs.cache, std::move(cache_file), pcs.block_size,
-            pcs.random_eviction_for_tests, pcs.read_if_exists_otherwise_bypass, total_file_size));
-    }
+    /// Cache chain of the filesystem cache(s). `filesystem_caches` is inner-to-outer; the executor
+    /// queries the front first, so reverse it.
     for (auto it = filesystem_caches.rbegin(); it != filesystem_caches.rend(); ++it)
     {
         if (it->cache)

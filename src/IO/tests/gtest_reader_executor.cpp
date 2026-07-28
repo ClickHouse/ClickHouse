@@ -42,7 +42,6 @@ namespace ProfileEvents
     extern const Event ReaderExecutorModeledCostMicroseconds;
     extern const Event ReaderExecutorCacheGetRequests;
     extern const Event ReaderExecutorCachePopulateRequests;
-    extern const Event ReaderExecutorSiblingWaits;
     extern const Event ReaderExecutorIncompleteConnections;
     extern const Event ReaderExecutorLongConnectionOpened;
     extern const Event ReaderExecutorLongConnectionHits;
@@ -85,10 +84,9 @@ unsigned char patternByte(size_t i)
 }
 
 /// Shared state of `MockFileCacheProvider`: stored bytes, resident ranges, and a log of writes.
-/// `sibling_led` simulates a concurrent reader holding the downloader role over those ranges
-/// (`sibling_ranges` mirrors it for enumeration): `claim` reports them as sibling-led and `write`
-/// refuses to land bytes there. With `sibling_completes_on_wait`, a `waitAndReadSiblingLed` call
-/// "finishes" the sibling's download: its pattern bytes land in the cache and the roles are freed.
+/// `sibling_led` simulates a concurrent reader holding the downloader role over those ranges:
+/// `claim` reports them as sibling-led and `write` refuses to land bytes there, so the driver
+/// fetches them through from source instead.
 struct MockCacheState
 {
     std::vector<char> store;
@@ -98,17 +96,10 @@ struct MockCacheState
     size_t declared_size;
     IntervalSet resident;
     IntervalSet sibling_led;
-    VectorWithMemoryTracking<ByteRange> sibling_ranges;
-    bool sibling_completes_on_wait = false;
-    VectorWithMemoryTracking<ByteRange> waits;
     VectorWithMemoryTracking<ByteRange> writes;
     explicit MockCacheState(size_t file_size) : store(file_size, 0), declared_size(file_size) {}
 
-    void addSibling(ByteRange r)
-    {
-        sibling_led.add(r);
-        sibling_ranges.push_back(r);
-    }
+    void addSibling(ByteRange r) { sibling_led.add(r); }
 };
 
 /// A minimal in-memory FILE-LEVEL cache (like the page cache): block-aligned, whole-block writes,
@@ -181,23 +172,6 @@ private:
                 ours.add(t);
             c.sibling_led = ours.subtract(overlap);
             return c;
-        }
-        ChainedBuffers waitAndReadSiblingLed(ByteRange sub) override
-        {
-            state->waits.push_back(sub);
-            if (state->sibling_completes_on_wait)
-            {
-                /// The sibling finishes during the wait: its bytes land in the cache, roles freed.
-                for (const auto & sr : state->sibling_ranges)
-                {
-                    for (size_t i = sr.offset; i < sr.end(); ++i)
-                        state->store[i] = static_cast<char>(patternByte(i));
-                    state->resident.add(sr);
-                }
-                state->sibling_led = IntervalSet{};
-                state->sibling_ranges.clear();
-            }
-            return read(sub);
         }
         size_t write(ChainedBuffers data) override
         {
@@ -586,72 +560,11 @@ TEST_F(ReaderExecutorTest, PageCacheFillsBlockStraddlingObjectBoundary)
         << "warm read fetched from source -> a boundary block missed the cache";
 }
 
-TEST_F(ReaderExecutorTest, SiblingLedCellIsServedFromCacheAfterWait)
+TEST_F(ReaderExecutorTest, SiblingLedCellIsFetchedThrough)
 {
-    /// A sibling downloads the cell [512, 768), NOT at the file start. Serving block by block, the
-    /// scan reaches that cell, waits once (holding no claims), the sibling completes, and the
-    /// re-probe serves those bytes from cache — they are never fetched from source a second time.
-    StoredObjects objects{makeFile("a.bin", 2048)};
-    const size_t block = 256;
-
-    auto state = std::make_shared<MockCacheState>(/*file_size=*/2048);
-    state->addSibling(ByteRange{512, 256});
-    state->sibling_completes_on_wait = true;
-    CacheChain chain;
-    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
-
-    TestThreadGroup tg;
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = 4096, .cache_chain = std::move(chain)});
-
-    auto data = drain(ex);
-    ASSERT_EQ(data.size(), 2048u);
-    for (size_t i = 0; i < data.size(); ++i)
-        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
-
-    /// Exactly one wait (at the sibling cell); the sibling's 256 bytes never came from source.
-    ASSERT_EQ(state->waits.size(), 1u);
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSiblingWaits), 1u);
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 2048u - 256u);
-    /// We never wrote the sibling's cell — it filled it.
-    for (const auto & wr : state->writes)
-        EXPECT_TRUE(wr.end() <= 512 || wr.offset >= 768)
-            << "a write touched the sibling-led cell: [" << wr.offset << ", " << wr.end() << ")";
-}
-
-TEST_F(ReaderExecutorTest, SiblingAtWindowStartIsServedAfterWait)
-{
-    /// The sibling leads the very range the window starts in and finishes during the wait: the
-    /// re-probe serves its bytes from cache - the range is never fetched twice.
-    StoredObjects objects{makeFile("a.bin", 1024)};
-    const size_t block = 256;
-
-    auto state = std::make_shared<MockCacheState>(/*file_size=*/1024);
-    state->addSibling(ByteRange{0, 256});
-    state->sibling_completes_on_wait = true;
-    CacheChain chain;
-    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
-
-    TestThreadGroup tg;
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = 1024, .cache_chain = std::move(chain)});
-
-    auto data = drain(ex);
-    ASSERT_EQ(data.size(), 1024u);
-    for (size_t i = 0; i < data.size(); ++i)
-        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
-
-    /// One wait, and only the tail came from source.
-    ASSERT_EQ(state->waits.size(), 1u);
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSiblingWaits), 1u);
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 768u);
-}
-
-TEST_F(ReaderExecutorTest, SiblingAtWindowStartIsFetchedThrough)
-{
-    /// The sibling leads the very range the window starts in and does NOT finish during the
-    /// single wait attempt: the executor fetches through it rather than waiting again. Our write
-    /// there lands 0 (no downloader role); the data still serves correctly.
+    /// A cell a sibling is already downloading is fetched through - this simple FS-only driver does
+    /// not wait. Our write into that cell lands 0 (we do not hold the downloader role), but the
+    /// source fetch still serves the bytes correctly and leaves the cell for the sibling to cache.
     StoredObjects objects{makeFile("a.bin", 1024)};
     const size_t block = 256;
 
@@ -669,11 +582,8 @@ TEST_F(ReaderExecutorTest, SiblingAtWindowStartIsFetchedThrough)
     for (size_t i = 0; i < data.size(); ++i)
         ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
 
-    /// One wait attempt, then a fetch-through (the sibling range contains the start).
-    ASSERT_EQ(state->waits.size(), 1u);
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSiblingWaits), 1u);
+    /// Cold: everything came from source; the sibling's block was fetched through, not written.
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 1024u);
-    /// The sibling's block stayed theirs: not written, not resident.
     for (const auto & wr : state->writes)
         EXPECT_GE(wr.offset, 256u) << "wrote into the sibling-led block";
     EXPECT_FALSE(state->resident.subtract(ByteRange{0, block}).empty());
@@ -702,86 +612,15 @@ TEST_F(ReaderExecutorTest, EmptyFileIsImmediateEOF)
     EXPECT_TRUE(ex.readNextWindow().atEnd());
 }
 
-TEST_F(ReaderExecutorTest, ReadsPresentUnknownSizeLocalFile)
+TEST_F(ReaderExecutorTest, UnknownSizeSourceThrows)
 {
-    /// A local file whose size could not be determined up front (bytes_size == UnknownSize) must
-    /// still read correctly: the executor streams it to the real EOF via short reads.
-    StoredObject obj = makeFile("u.bin", 1000);
+    /// This executor serves known-size sources only; the builder falls back to the legacy path for
+    /// unknown-size ones, so constructing it with an `UnknownSize` object is a bug and throws.
+    /// (Streaming unknown-size files to a learned EOF lands with the page-cache PR.)
+    StoredObject obj;
+    obj.remote_path = (tmp_dir / "u.bin").string();
     obj.bytes_size = StoredObject::UnknownSize;
-    StoredObjects objects{obj};
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = 256});
-    EXPECT_TRUE(ex.hasUnknownSize());
-
-    auto data = drain(ex);
-    ASSERT_EQ(data.size(), 1000u);
-    for (size_t i = 0; i < data.size(); ++i)
-        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
-}
-
-TEST_F(ReaderExecutorTest, UnknownSizePageCacheCachesInteriorSkipsTail)
-{
-    /// Unknown-size local file with a page-cache tier: the provider is framed with an unknown
-    /// (huge) size, so interior full-width blocks populate and hit on a warm read, but the final
-    /// short block can never satisfy the whole-block `covers` check and is left uncached (re-read
-    /// from source each time) - no error, correct data. Not a regression: legacy caches nothing for
-    /// unknown-size files, whereas the executor still caches the interior.
-    StoredObject obj = makeFile("u.bin", 900);   // three 256-blocks [0,768) + a 132-byte tail
-    obj.bytes_size = StoredObject::UnknownSize;
-    StoredObjects objects{obj};
-    const size_t block = 256;
-
-    auto state = std::make_shared<MockCacheState>(/*file_size=*/900);
-    state->declared_size = StoredObject::UnknownSize;   // the provider does not know the real size
-    auto make_chain = [&]() -> CacheChain
-    {
-        CacheChain chain;
-        chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
-        return chain;
-    };
-
-    std::vector<char> cold;
-    {
-        TestThreadGroup tg;
-        ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-            ReaderExecutor::Options{.window_size = 4096, .cache_chain = make_chain()});
-        cold = drain(ex);
-        ASSERT_EQ(cold.size(), 900u);
-        EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 900u);  // cold: all from source
-    }
-    for (size_t i = 0; i < cold.size(); ++i)
-        ASSERT_EQ(static_cast<unsigned char>(cold[i]), patternByte(i)) << "at " << i;
-
-    /// Interior [0,768) cached; tail [768,900) not (its full-width block fails whole-block covers).
-    EXPECT_TRUE(state->resident.subtract(ByteRange{0, 768}).empty()) << "interior blocks not fully cached";
-    size_t tail_uncached = 0;
-    for (const auto & r : state->resident.subtract(ByteRange{768, 132}))
-        tail_uncached += r.size;
-    EXPECT_EQ(tail_uncached, 132u) << "expected the whole tail [768, 900) to be uncached";
-    for (const auto & wr : state->writes)
-        EXPECT_LE(wr.end(), 768u) << "a write reached into the tail block [768, 900)";
-
-    /// Warm: the interior is served from cache, only the uncached tail is re-fetched from source.
-    TestThreadGroup warm_tg;
-    ReaderExecutor warm(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = 4096, .cache_chain = make_chain()});
-    auto warm_data = drain(warm);
-    ASSERT_EQ(warm_data, cold);
-    EXPECT_EQ(warm_tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 132u)
-        << "warm read should only re-fetch the uncached tail";
-}
-
-TEST_F(ReaderExecutorTest, MissingFileWithUnknownSizeThrows)
-{
-    /// `DiskLocal::prepareRead` marks an unstatable file `UnknownSize`; the
-    /// executor must then open it and surface the real error (e.g. file does not
-    /// exist) instead of treating it as an empty read.
-    StoredObject missing;
-    missing.remote_path = (tmp_dir / "does_not_exist.bin").string();
-    missing.bytes_size = StoredObject::UnknownSize;
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), {missing}, ReaderExecutor::Options{.window_size = 256});
-
-    EXPECT_ANY_THROW(ex.readNextWindow());
+    EXPECT_ANY_THROW(ReaderExecutor(std::make_shared<LocalSourceReader>(), {obj}, ReaderExecutor::Options{}));
 }
 
 TEST_F(ReaderExecutorTest, TruncatedKnownSizeFileThrows)
