@@ -30,6 +30,11 @@ while removing detection, so this file pins every place such a loss can happen:
   line for the macros, which must reach no other translation unit. Both halves' cases are
   driven below, together with the layer's wiring: that this build type requests the option
   and that the build job really invokes the check;
+* every *other* build, via `assert_jemalloc_safety_macros_absent` (same file, same point
+  in the job). The option defaults to OFF, so those builds must carry neither macro -
+  flipping that default would arm both gates in every x86-64 jemalloc build, release
+  included. Emptiness is deliberately not a failure there: jemalloc is disabled outright
+  under every sanitizer but UBSan, so those builds have no jemalloc entries at all;
 * the platform headers the option can reach (x86-64 only, since the option refuses
   every other arch), where a bare `#undef` would silently cancel the `-D`;
 * the compiled `jemalloc_preamble.h`, the sole place each `-D` is converted into the
@@ -47,7 +52,8 @@ The option's own cmake text - that it defaults to OFF and passes both macros to
 `contrib/jemalloc-cmake/CMakeLists.txt`: two attempts at one were removed for
 false-failing on behaviour-identical spellings while passing on inactive text. What is
 guarded instead is what the compiler computes for the build that requests the option,
-plus a Python-level assertion below that no other build type passes it.
+what the flags say for the builds that do not, and - as a Python-level fact about the
+`ci/` dicts rather than about cmake - that no other build type passes it.
 """
 
 import argparse
@@ -55,7 +61,9 @@ import collections
 import json
 import os
 import re
+import shlex
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -74,8 +82,10 @@ from ci.defs.job_configs import JobConfigs
 from ci.jobs.build_clickhouse import (
     BUILD_TYPE_TO_CMAKE,
     assert_jemalloc_macros_stay_private,
+    assert_jemalloc_safety_macros_absent,
     assert_jemalloc_safety_macros_armed,
     effective_macro_state,
+    jemalloc_probe_flags,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -225,54 +235,201 @@ def compiler_probe():
         pytest.skip(f"{ToolSet.COMPILER_C} is not on PATH")
 
 
+SAFETY_MACRO, SIZE_MACRO = REQUIRED_MACROS
+
+# The probe carries two layers of assertion per gate, and which one fires is itself the
+# answer to a distinct question, so the cases below say which they expect. MACRO_MISSING
+# is the `#ifdef` layer: *our* macro is not on the compile line. BOOLEAN_MISSING is the
+# `_Static_assert` layer: the preamble did not turn it into the boolean the detector sites
+# read. `JEMALLOC_DEBUG` is exactly the shape that separates them - it satisfies both
+# initializers on its own (`jemalloc_preamble.h:191`, `:208`), so the boolean is true
+# while our macro is absent.
+MACRO_MISSING = "{macro} is not defined on this compile line"
+BOOLEAN_MISSING = "{macro} is not in effect"
+BOTH_LAYERS = (MACRO_MISSING, BOOLEAN_MISSING)
+MACRO_LAYER_ONLY = (MACRO_MISSING,)
+
+
 @pytest.mark.parametrize(
-    "label, flags, expected_gate",
+    "label, flags, unarmed",
     [
         # Both `-D`s present: the probe compiles, so both gates are armed.
-        ("both macros", BOTH, None),
+        ("both macros", BOTH, ()),
         # The forwarded `-U` spellings, which an argument scan of the compile line reads
         # as still defined while the `"mismatch in slab bit"` detector is gone - and
         # `config_opt_size_checks` has no mallctl, so nothing downstream can notice.
-        ("-Wp,-U of the size macro", f"{BOTH} -Wp,-UJEMALLOC_OPT_SIZE_CHECKS", "SIZE"),
+        (
+            "-Wp,-U of the size macro",
+            f"{BOTH} -Wp,-UJEMALLOC_OPT_SIZE_CHECKS",
+            ((SIZE_MACRO, BOTH_LAYERS),),
+        ),
         (
             "-Xpreprocessor -U of the size macro",
             f"{BOTH} -Xpreprocessor -U -Xpreprocessor JEMALLOC_OPT_SIZE_CHECKS",
-            "SIZE",
+            ((SIZE_MACRO, BOTH_LAYERS),),
         ),
         # A plain later `-U`: the last mention wins, as the preprocessor does.
-        ("-D then a later -U", f"{BOTH} -UJEMALLOC_OPT_SIZE_CHECKS", "SIZE"),
+        (
+            "-D then a later -U",
+            f"{BOTH} -UJEMALLOC_OPT_SIZE_CHECKS",
+            ((SIZE_MACRO, BOTH_LAYERS),),
+        ),
         # ... and the reverse order really is defined, so ordering is answered rather
         # than any `-U` being rejected on sight.
-        ("-U then a later -D", f"{SAFETY} -UJEMALLOC_OPT_SIZE_CHECKS {SIZE}", None),
+        ("-U then a later -D", f"{SAFETY} -UJEMALLOC_OPT_SIZE_CHECKS {SIZE}", ()),
         # The split spelling, this repo's own idiom (`cmake/target.cmake:3` is
         # `add_definitions(-D OS_LINUX)`), in both directions.
-        ("split -D of both macros", f"{SPLIT_SAFETY} {SPLIT_SIZE}", None),
-        ("joined -D then a split -U", f"{BOTH} -U JEMALLOC_OPT_SIZE_CHECKS", "SIZE"),
+        ("split -D of both macros", f"{SPLIT_SAFETY} {SPLIT_SIZE}", ()),
+        (
+            "joined -D then a split -U",
+            f"{BOTH} -U JEMALLOC_OPT_SIZE_CHECKS",
+            ((SIZE_MACRO, BOTH_LAYERS),),
+        ),
         # `-DMACRO=1` is a definition too, which is what `#ifdef` tests.
-        ("value form of the size macro", f"{SAFETY} {SIZE}=1", None),
+        ("value form of the size macro", f"{SAFETY} {SIZE}=1", ()),
         # Token-exact, as `#ifdef` is: a suffixed spelling defines nothing.
-        ("suffixed lookalike", f"{SAFETY} {SIZE}_DISABLED", "SIZE"),
-        ("the option never passed at all", "", "SAFETY"),
-        ("only the safety macro", SAFETY, "SIZE"),
+        (
+            "suffixed lookalike",
+            f"{SAFETY} {SIZE}_DISABLED",
+            ((SIZE_MACRO, BOTH_LAYERS),),
+        ),
+        ("the option never passed at all", "", ((SAFETY_MACRO, BOTH_LAYERS),)),
+        ("only the safety macro", SAFETY, ((SIZE_MACRO, BOTH_LAYERS),)),
+        # `JEMALLOC_DEBUG` alone satisfies both `config_opt_*` initializers, so the
+        # `_Static_assert` pair holds and only the `#ifdef` pair can see that neither
+        # macro this build type promises is present. Without that pair the checker would
+        # report our two macros as arming both gates while naming macros the compile line
+        # does not carry - and `JEMALLOC_DEBUG` additionally arms jemalloc's internal
+        # `assert`s, so the lane would not be the `amd_debug` build plus one option.
+        (
+            "only JEMALLOC_DEBUG",
+            "-DJEMALLOC_DEBUG",
+            ((SAFETY_MACRO, MACRO_LAYER_ONLY), (SIZE_MACRO, MACRO_LAYER_ONLY)),
+        ),
+        # The other side of that: `JEMALLOC_DEBUG` is not rejected on sight. Adding it on
+        # top of both option macros is legitimate, and the invariant is that our macros
+        # are present, not that a third is absent.
+        ("JEMALLOC_DEBUG on top of both macros", f"{BOTH} -DJEMALLOC_DEBUG", ()),
+        # And it does not cover for a missing macro: the size gate's boolean is armed
+        # twice over here, while the safety macro is still absent.
+        (
+            "the size macro plus JEMALLOC_DEBUG",
+            f"{SIZE} -DJEMALLOC_DEBUG",
+            ((SAFETY_MACRO, MACRO_LAYER_ONLY),),
+        ),
     ],
 )
 def test_the_probe_answers_whether_each_gate_is_armed(
-    compiler_probe, tmp_path, label, flags, expected_gate
+    compiler_probe, tmp_path, label, flags, unarmed
 ):
-    """The compiler's answer decides, and names which gate it is.
+    """The compiler's answer decides, and names both which gate and which layer.
 
     Every rejected shape leaves the lane fuzzing green with a detector gone.
     """
     verdict = _probe_verdict(tmp_path, flags)
-    if expected_gate is None:
+    if not unarmed:
+        assert verdict is None, f"{label}: expected both gates armed, got:\n{verdict}"
+        return
+    assert verdict is not None, (
+        f"{label}: expected {[macro for macro, _ in unarmed]} to be reported unarmed, "
+        "but the probe compiled"
+    )
+    for macro, layers in unarmed:
+        for layer in layers:
+            assert layer.format(macro=macro) in verdict, (
+                f"{label}: the failure must report {layer.format(macro=macro)!r}; "
+                f"got:\n{verdict}"
+            )
+        # The layer that must NOT fire is as much of the answer as the one that must:
+        # a `JEMALLOC_DEBUG` build reaching here with the boolean reported unarmed would
+        # mean the preamble no longer accepts it, and these cases would stop exercising
+        # the `#ifdef` pair at all.
+        for silent in set(BOTH_LAYERS) - set(layers):
+            assert silent.format(macro=macro) not in verdict, (
+                f"{label}: {silent.format(macro=macro)!r} must not be reported - only "
+                f"{[layer.format(macro=macro) for layer in layers]}; got:\n{verdict}"
+            )
+
+
+@pytest.mark.parametrize(
+    "label, command, must_go, must_stay",
+    [
+        # What cmake's Makefile generator emits, and the shape that matters: both `-MT`
+        # and `-MF` take their operand as the next argv element, so dropping the flag
+        # alone leaves the operand behind as a positional input file.
+        (
+            "cmake's Makefile generator shape",
+            f"clang-21 {BOTH} -MD -MT arena.o -MF dep/arena.c.o.d -o arena.o -c {JE}",
+            ("arena.o", "dep/arena.c.o.d", JE),
+            (SAFETY, SIZE),
+        ),
+        (
+            "-MQ and -MJ, the other operand-taking spellings",
+            f"clang-21 {BOTH} -MQ arena.o -MJ compile.json -o arena.o -c {JE}",
+            ("arena.o", "compile.json", JE),
+            (SAFETY, SIZE),
+        ),
+        # `-MD`, `-MMD` and `-MP` take no operand, so the token after each must survive.
+        # Consuming it on a `-M` prefix instead of on the flag's own grammar silently
+        # eats a real flag - here the two `-D`s the whole check is about, which would
+        # report an armed build as unarmed.
+        (
+            "the operandless spellings do not swallow the next flag",
+            f"clang-21 -MD {SAFETY} -MP {SIZE} -MMD -o arena.o -c {JE}",
+            ("arena.o", JE),
+            (SAFETY, SIZE),
+        ),
+    ],
+)
+def test_the_flag_reduction_leaves_no_stray_operand(label, command, must_go, must_stay):
+    """A depfile operand kept as a positional input turns a PASS into a misleading FAIL.
+
+    `-o` is already consumed as a pair and `effective_macro_states` takes the same care
+    for `-D`/`-U`, so this was an asymmetry: clang reads the leftover path as an input
+    file and reports `no such file or directory`, which the checker then presents as
+    "the gates are not armed" - pointing at entirely the wrong cause. The reverse mistake
+    costs the same in the other direction, so both are pinned here.
+    """
+    flags = jemalloc_probe_flags(command)
+    for stray in must_go:
+        assert stray not in flags, f"{label}: {stray!r} must not survive the reduction"
+    for kept in must_stay:
+        assert kept in flags, f"{label}: {kept!r} must survive the reduction"
+
+
+@pytest.mark.parametrize(
+    "label, macro_flags, unarmed",
+    [
+        # Armed plus depfile flags: a stray operand would make this fail with a `no such
+        # file` message while both gates really are armed.
+        ("both macros", BOTH, ()),
+        # ... and the pairing must not be implemented by swallowing probe errors: a
+        # genuinely unarmed line with the same depfile flags must still be reported.
+        ("neither macro", "", ((SAFETY_MACRO, BOTH_LAYERS),)),
+    ],
+)
+def test_depfile_flags_do_not_change_the_probe_verdict(
+    compiler_probe, tmp_path, label, macro_flags, unarmed
+):
+    """cmake's Makefile generator emits `-MD -MT <target> -MF <path>` on every line."""
+    flags = f"{macro_flags} -MD -MT arena.o -MF dep/arena.c.o.d".strip()
+    verdict = _probe_verdict(tmp_path, flags)
+    if not unarmed:
         assert verdict is None, f"{label}: expected both gates armed, got:\n{verdict}"
         return
     assert (
         verdict is not None
-    ), f"{label}: expected the {expected_gate} gate to be reported unarmed"
-    assert (
-        f"JEMALLOC_OPT_{expected_gate}_CHECKS is not in effect" in verdict
-    ), f"{label}: the failure must name the {expected_gate} gate; got:\n{verdict}"
+    ), f"{label}: expected the probe to report the gates unarmed"
+    assert "no such file or directory" not in verdict, (
+        f"{label}: the failure must be about the macros, not a stray depfile operand "
+        f"reaching clang as an input file; got:\n{verdict}"
+    )
+    for macro, layers in unarmed:
+        for layer in layers:
+            assert layer.format(macro=macro) in verdict, (
+                f"{label}: the failure must report {layer.format(macro=macro)!r}; "
+                f"got:\n{verdict}"
+            )
 
 
 def test_every_distinct_flag_set_is_probed(compiler_probe, tmp_path):
@@ -415,6 +572,73 @@ def _macros_stay_private(entries) -> bool:
             [(JE, BOTH), (OTHER, f"{SIZE}_DISABLED")],
             True,
         ),
+        # The forwarded spellings, which really do define (`clang-21 -fsyntax-only` on an
+        # `#ifdef` probe exits 0 for each). The armed half is answered by a compile, but a
+        # compile per entry over a configured tree's ~17k is not affordable, so this half
+        # stays a scan and has to know them: a leak in one of these spellings otherwise
+        # reads as absent while the macro genuinely reaches a non-jemalloc TU.
+        (
+            "a leak via -Wp,-D",
+            [(JE, BOTH), (OTHER, "-Wp,-DJEMALLOC_OPT_SAFETY_CHECKS")],
+            False,
+        ),
+        (
+            "a leak via -Xpreprocessor -D",
+            [
+                (JE, BOTH),
+                (OTHER, "-Xpreprocessor -D -Xpreprocessor JEMALLOC_OPT_SAFETY_CHECKS"),
+            ],
+            False,
+        ),
+        # The forwarded operand can arrive in its own comma-separated piece.
+        (
+            "a leak via -Wp,-D,MACRO",
+            [(JE, BOTH), (OTHER, "-Wp,-D,JEMALLOC_OPT_SIZE_CHECKS")],
+            False,
+        ),
+        # ... and split across the two mechanisms, which feed one argv.
+        (
+            "a leak split across -Wp,-D and -Xpreprocessor",
+            [(JE, BOTH), (OTHER, "-Wp,-D -Xpreprocessor JEMALLOC_OPT_SIZE_CHECKS")],
+            False,
+        ),
+        # A forwarded flag beats a plain one whichever came first, because the driver
+        # emits every plain `-D`/`-U` before any forwarded one. Both of these pairs are
+        # decided by the forwarded member, so a command-line-order reading gets both
+        # backwards - and in the second case that means missing a real leak.
+        (
+            "a plain -D cancelled by a forwarded -U",
+            [(JE, BOTH), (OTHER, f"{SAFETY} -Wp,-UJEMALLOC_OPT_SAFETY_CHECKS")],
+            True,
+        ),
+        (
+            "a forwarded -D that a later plain -U does not cancel",
+            [
+                (JE, BOTH),
+                (OTHER, f"-Wp,-DJEMALLOC_OPT_SAFETY_CHECKS -U{REQUIRED_MACROS[0]}"),
+            ],
+            False,
+        ),
+        # Two forwarded flags keep their own relative order, as one argv.
+        (
+            "a forwarded -D cancelled by a later forwarded -U",
+            [
+                (JE, BOTH),
+                (
+                    OTHER,
+                    "-Wp,-DJEMALLOC_OPT_SAFETY_CHECKS "
+                    "-Wp,-UJEMALLOC_OPT_SAFETY_CHECKS",
+                ),
+            ],
+            True,
+        ),
+        # Unrelated forwarded flags define nothing, so the new unwrapping must not
+        # over-fire on them.
+        (
+            "unrelated forwarded flags on a non-jemalloc TU",
+            [(JE, BOTH), (OTHER, "-Wp,-MD -Xpreprocessor -v")],
+            True,
+        ),
     ],
 )
 def test_the_leak_sweep_sees_every_spelling(label, entries, private_expected):
@@ -468,6 +692,58 @@ def test_a_substring_test_cannot_replace_the_ordered_state(label, cancelled, res
     assert effective_macro_state(restored, "JEMALLOC_OPT_SIZE_CHECKS") is True
 
 
+# The pairs below decide the same macro with one plain and one forwarded flag, written in
+# both orders. The scan's answer for each is checked against the compiler's, because the
+# rule is the opposite of what the command line reads like: clang's driver emits every
+# plain `-D`/`-U` before any forwarded one, so the forwarded member wins whichever was
+# written first. Asserting the scan alone would just restate whatever it happens to do.
+_FORWARDING_ORDER_COMMANDS = [
+    f"{SAFETY} -Wp,-U{REQUIRED_MACROS[0]}",
+    f"-Wp,-D{REQUIRED_MACROS[0]} {SAFETY.replace('-D', '-U')}",
+    f"{SAFETY} -Xpreprocessor -U -Xpreprocessor {REQUIRED_MACROS[0]}",
+    f"-Xpreprocessor -D -Xpreprocessor {REQUIRED_MACROS[0]} "
+    f"{SAFETY.replace('-D', '-U')}",
+    f"-Wp,-D{REQUIRED_MACROS[0]} -Wp,-U{REQUIRED_MACROS[0]}",
+    f"-Wp,-U{REQUIRED_MACROS[0]} -Wp,-D{REQUIRED_MACROS[0]}",
+    f"-Wp,-D{REQUIRED_MACROS[0]},-U{REQUIRED_MACROS[0]}",
+    f"-Wp,-D -Xpreprocessor {REQUIRED_MACROS[0]}",
+]
+
+
+@pytest.mark.parametrize("command", _FORWARDING_ORDER_COMMANDS)
+def test_the_scan_agrees_with_the_compiler_on_forwarded_flags(
+    compiler_probe, tmp_path, command
+):
+    """The scan's state for each pair must be the state the compiler really computes."""
+    macro = REQUIRED_MACROS[0]
+    source = tmp_path / "probe.c"
+    source.write_text(
+        f"#ifdef {macro}\nint defined_ok;\n#else\n#error not defined\n#endif\n",
+        encoding="utf-8",
+    )
+    compiled = subprocess.run(
+        [
+            ToolSet.COMPILER_C,
+            "-fsyntax-only",
+            *shlex.split(command),
+            "-x",
+            "c",
+            str(source),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    defined = compiled.returncode == 0
+    assert (
+        effective_macro_state(f"{ToolSet.COMPILER_C} {command} -c x.c", macro)
+        is defined
+    ), (
+        f"{command!r}: the compiler leaves {macro} "
+        f"{'defined' if defined else 'undefined'}, so the scan must say the same"
+    )
+
+
 # --- the layer's own wiring -----------------------------------------------------------
 #
 # The cases above drive `assert_jemalloc_safety_macros_armed` directly, so they stay
@@ -516,19 +792,117 @@ def test_the_lane_is_amd_debug_plus_only_the_safety_option():
     )
 
 
+# --- and every other build must be WITHOUT them ---------------------------------------
+#
+# The option defaults to OFF. Flipping that default, or widening the `-D`s to a target
+# other builds link, would arm both gates in every x86-64 jemalloc build, release included
+# - and neither shipped layer above can see it: the probe runs only for the build type
+# that requests the option, and `test_only_this_build_type_requests_the_option` reads the
+# `ci/` cmake commands rather than a configured tree. So the ordinary build job, which has
+# a configured tree by construction, asserts the negative.
+
+
+def _macros_absent(tmp_path, entries) -> str | None:
+    """The absent checker's verdict for these `(file, flags)` pairs, `None` if accepted."""
+    path = tmp_path / "compile_commands.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "directory": str(tmp_path),
+                    "file": file,
+                    "command": f"clang-21 {flags} -o out.o -c {file}",
+                }
+                for file, flags in entries
+            ]
+        ),
+        encoding="utf-8",
+    )
+    try:
+        assert_jemalloc_safety_macros_absent(str(path))
+    except AssertionError as error:
+        return str(error)
+    return None
+
+
+@pytest.mark.parametrize(
+    "label, entries, carried_macro",
+    [
+        ("a jemalloc TU with neither macro", [(JE, ""), (OTHER, "")], None),
+        # The two the option passes, each on its own: one is enough to arm one gate.
+        ("the safety macro on a jemalloc TU", [(JE, SAFETY)], REQUIRED_MACROS[0]),
+        ("the size macro on a jemalloc TU", [(JE, SIZE)], REQUIRED_MACROS[1]),
+        ("both macros on a jemalloc TU", [(JE, BOTH)], REQUIRED_MACROS[0]),
+        # One spelling each from the matrix the scan is responsible for; the full matrix
+        # is `test_the_leak_sweep_sees_every_spelling`'s.
+        ("the split spelling", [(JE, SPLIT_SIZE)], REQUIRED_MACROS[1]),
+        (
+            "the forwarded spelling",
+            [(JE, "-Wp,-DJEMALLOC_OPT_SIZE_CHECKS")],
+            REQUIRED_MACROS[1],
+        ),
+        # A cancelled definition is not a definition, exactly as in the leak direction.
+        (
+            "a definition cancelled by a later -U",
+            [(JE, f"{SAFETY} -U{REQUIRED_MACROS[0]}")],
+            None,
+        ),
+        # The macros on a *non*-jemalloc TU are the positive check's leak sweep to report;
+        # this check reads jemalloc's own lines, so it must not fire on them - otherwise a
+        # leak would be reported twice, from the build that has nothing to do with it.
+        ("the macros only on a non-jemalloc TU", [(JE, ""), (OTHER, BOTH)], None),
+        # The opposite of the positive check's emptiness rule, and the plausible
+        # accident: `contrib/jemalloc-cmake/CMakeLists.txt:1-11` disables jemalloc outright
+        # whenever `SANITIZE` is set to anything but `undefined`, so `amd_asan_ubsan`,
+        # `amd_tsan` and `amd_msan` have no jemalloc translation units at all. Copying the
+        # fail-closed guard here would red every one of those builds.
+        ("no jemalloc translation units at all", [(OTHER, "")], None),
+        ("no entries at all", [], None),
+    ],
+)
+def test_a_build_that_did_not_request_the_option_carries_neither_macro(
+    tmp_path, label, entries, carried_macro
+):
+    verdict = _macros_absent(tmp_path, entries)
+    if carried_macro is None:
+        assert verdict is None, f"{label}: expected to be accepted, got:\n{verdict}"
+        return
+    assert verdict is not None, f"{label}: expected {carried_macro} to be reported"
+    assert (
+        carried_macro in verdict
+    ), f"{label}: the failure must name {carried_macro}; got:\n{verdict}"
+    assert (
+        JE in verdict
+    ), f"{label}: the failure must name the translation unit carrying it; got:\n{verdict}"
+
+
+def test_a_build_without_exported_compile_commands_is_tolerated(tmp_path):
+    """No compile commands, no question - and no reason to fail an ordinary build.
+
+    The build that *promises* the macros insists on having them
+    (`test_missing_compile_commands_fails_closed`); this direction is a guard against a
+    changed default, so it must not turn a missing file into a red build.
+    """
+    assert assert_jemalloc_safety_macros_absent(str(tmp_path / "nothing.json")) is None
+
+
 class _StopBuild(Exception):
     """Sentinel raised right after the build job's jemalloc assertion decision point."""
 
 
 @pytest.fixture
 def build_job_run(monkeypatch):
-    """Run the build job's `main()` through the cmake stage; report the checker's calls.
+    """Run the build job's `main()` through the cmake stage; report both checkers' calls.
+
+    Returns `{"armed": [...], "absent": [...]}` of the paths each checker was handed, so
+    the two directions can be asserted against each other: exactly one of them must run
+    per build, and which one is the whole point of the wiring.
 
     Everything with an external effect is stubbed: no cmake is configured, no compiler
     cache is set up, and the run stops at the first shell command after the decision
     point. Mirrors the `guard` fixture of `test_ast_fuzzer_jemalloc_preflight.py`.
     """
-    calls = []
+    calls = {"armed": [], "absent": []}
 
     class _Ok:
         def is_ok(self):
@@ -575,11 +949,17 @@ def build_job_run(monkeypatch):
     monkeypatch.setattr(
         build_job,
         "assert_jemalloc_safety_macros_armed",
-        lambda path: calls.append(path),
+        lambda path: calls["armed"].append(path),
+    )
+    monkeypatch.setattr(
+        build_job,
+        "assert_jemalloc_safety_macros_absent",
+        lambda path: calls["absent"].append(path),
     )
 
     def _run(build_type):
-        calls.clear()
+        for recorded in calls.values():
+            recorded.clear()
         monkeypatch.setattr(
             build_job,
             "parse_args",
@@ -591,7 +971,7 @@ def build_job_run(monkeypatch):
             build_job.main()
         except _StopBuild:
             pass
-        return list(calls)
+        return {kind: list(recorded) for kind, recorded in calls.items()}
 
     return _run
 
@@ -603,21 +983,46 @@ def test_the_build_job_asserts_the_macros_for_this_build_type(build_job_run):
     passes, while the lane rebuilds and fuzzes green with a detector gone.
     """
     calls = build_job_run(BuildTypes.AMD_JEMALLOC_SAFETY)
-    assert len(calls) == 1, (
+    assert len(calls["armed"]) == 1, (
         f"the build job must assert the jemalloc safety macros exactly once for "
-        f"{BuildTypes.AMD_JEMALLOC_SAFETY}; it called the checker {len(calls)} times"
+        f"{BuildTypes.AMD_JEMALLOC_SAFETY}; it called the checker "
+        f"{len(calls['armed'])} times"
     )
-    assert calls[0].endswith(
-        "compile_commands.json"
-    ), f"the checker must be pointed at the generated compile commands; got {calls[0]}"
+    assert calls["armed"][0].endswith("compile_commands.json"), (
+        "the checker must be pointed at the generated compile commands; got "
+        f"{calls['armed'][0]}"
+    )
+    # The build that promises the macros must not also be asserted to be without them.
+    assert calls["absent"] == [], (
+        f"{BuildTypes.AMD_JEMALLOC_SAFETY} requests the option, so the absent check must "
+        f"not run for it; it was called with {calls['absent']}"
+    )
 
 
 @pytest.mark.parametrize(
     "build_type", [BuildTypes.AMD_DEBUG, BuildTypes.AMD_TSAN, BuildTypes.AMD_RELEASE]
 )
 def test_the_build_job_does_not_assert_the_macros_elsewhere(build_job_run, build_type):
-    """Only this build type promises the macros, so no other build may be failed by it."""
-    assert build_job_run(build_type) == []
+    """Only this build type promises the macros, so no other build may be failed by it.
+
+    And every other build must be checked for their *absence* instead: the option defaults
+    to OFF, and nothing else can see a flipped default - the probe runs for one build type
+    only, and `test_only_this_build_type_requests_the_option` reads the `ci/` cmake
+    commands rather than a configured tree.
+    """
+    calls = build_job_run(build_type)
+    assert calls["armed"] == [], (
+        f"{build_type} does not request the option, so the armed check must not run for "
+        f"it; it was called with {calls['armed']}"
+    )
+    assert len(calls["absent"]) == 1, (
+        f"{build_type} must be checked for the macros' absence exactly once; the checker "
+        f"ran {len(calls['absent'])} times"
+    )
+    assert calls["absent"][0].endswith("compile_commands.json"), (
+        "the absent check must be pointed at the generated compile commands; got "
+        f"{calls['absent'][0]}"
+    )
 
 
 # `JEMALLOC_DEBUG` is not one of the macros the option passes, but the preamble's two

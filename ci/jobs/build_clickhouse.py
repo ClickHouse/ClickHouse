@@ -165,11 +165,70 @@ JEMALLOC_SOURCE_MARKER = "/contrib/jemalloc/src/"
 # the two gates are armed. `config_opt_safety_checks` / `config_opt_size_checks` are the
 # booleans jemalloc's detector sites read, and `jemalloc_preamble.h` is where each `-D`
 # becomes one - after several includes, so a `#undef` arriving through a header counts too.
+#
+# Both kinds of assertion are needed, because each answers a different question. The
+# `#ifdef` pair asks whether *our* macro is the one present: `jemalloc_preamble.h:191` is
+# `#elif defined(JEMALLOC_DEBUG)` and `:208` is `|| defined(JEMALLOC_DEBUG)`, so
+# `JEMALLOC_DEBUG` alone satisfies both booleans - and it additionally arms jemalloc's
+# internal `assert`s and changes inlining, so a lane running on it is not the `amd_debug`
+# build plus exactly one option that this build type promises. The `_Static_assert` pair
+# asks whether the preamble still converts our macro into the boolean the detector sites
+# read, which a rewritten condition would break with the `#ifdef`s still satisfied.
+# `JEMALLOC_DEBUG` is deliberately not rejected: adding it on top of both option macros is
+# legitimate. The `#ifdef`s must follow the include, or a `#undef` arriving through one of
+# the headers `jemalloc_preamble.h:4-54` includes - exactly what this probe exists to
+# catch - would be tested before it happens.
 JEMALLOC_PROBE_SOURCE = """\
 #include "jemalloc/internal/jemalloc_preamble.h"
+#ifndef JEMALLOC_OPT_SAFETY_CHECKS
+#error "JEMALLOC_OPT_SAFETY_CHECKS is not defined on this compile line"
+#endif
+#ifndef JEMALLOC_OPT_SIZE_CHECKS
+#error "JEMALLOC_OPT_SIZE_CHECKS is not defined on this compile line"
+#endif
 _Static_assert(config_opt_safety_checks, "JEMALLOC_OPT_SAFETY_CHECKS is not in effect");
 _Static_assert(config_opt_size_checks, "JEMALLOC_OPT_SIZE_CHECKS is not in effect");
 """
+
+
+def preprocessor_tokens(command):
+    """`command` split into the argv the preprocessor sees, in the order it sees it.
+
+    A driver flag can forward its operands to the preprocessor unchanged, and clang really
+    does define the macro that way: `-Wp,-DX`, `-Wp,-D,X` and
+    `-Xpreprocessor -D -Xpreprocessor X` each leave X defined (verified with
+    `clang-21 -fsyntax-only` on an `#ifdef` probe).
+
+    The order the preprocessor sees is *not* the command line's: `clang-21 -###` shows the
+    driver emitting every plain `-D`/`-U` first, in command-line order, and the forwarded
+    ones after them, however they were written. So a forwarded flag wins either way round -
+    `-Wp,-DX -UX` leaves X **defined** and `-Wp,-UX -DX` leaves it **undefined**, both the
+    opposite of a left-to-right reading of the command line. Getting that backwards is
+    unsafe in the leak direction: it would report the first case as a cancelled definition
+    while the macro really does reach a non-jemalloc translation unit.
+
+    Both mechanisms feed one argv, so a pair split across them (`-Wp,-D -Xpreprocessor X`)
+    still defines; the pieces are emitted as argv elements and left to the caller's
+    split-form handling.
+    """
+    plain = []
+    forwarded = []
+    raw = shlex.split(command)
+    index = 0
+    while index < len(raw):
+        token = raw[index]
+        if token.startswith("-Wp,"):
+            forwarded.extend(
+                piece for piece in token[len("-Wp,") :].split(",") if piece
+            )
+        elif token == "-Xpreprocessor" and index + 1 < len(raw):
+            forwarded.append(raw[index + 1])
+            index += 2
+            continue
+        else:
+            plain.append(token)
+        index += 1
+    return plain + forwarded
 
 
 def effective_macro_states(command, macros):
@@ -178,19 +237,22 @@ def effective_macro_states(command, macros):
     The preprocessor applies `-D`/`-U` in command-line order, so the last mention
     wins: `-DX -UX` leaves X undefined, `-UX -DX` leaves it defined.
 
-    Both spellings of each flag count. `-D`/`-U` take their operand either joined
+    Every spelling of each flag counts. `-D`/`-U` take their operand either joined
     (`-DX`, `-DX=v`, `-UX`) or as the next argv element (`-D X`), and the preprocessor
     treats the two identically - so reading only the joined form is wrong in both
     directions: a split `-U` would be missed (the definition read as surviving, with the
     detector actually gone) and a split `-D` would not be seen at all. The split form is
     this repo's own idiom: `cmake/target.cmake:3` is `add_definitions(-D OS_LINUX)`, so
-    every compile line in a configured tree carries one.
+    every compile line in a configured tree carries one. The forwarded spellings
+    (`-Wp,-DX`, `-Xpreprocessor -D -Xpreprocessor X`) define just as plainly, and
+    `preprocessor_tokens` above unwraps them - after the plain ones, which is the order
+    the preprocessor is handed them in - so a leak in one of them cannot pass as absent.
 
     All macros are answered in one pass, because splitting each of a configured tree's
     ~17k compile lines once per macro costs about a minute.
     """
     states = {macro: None for macro in macros}
-    tokens = shlex.split(command)
+    tokens = preprocessor_tokens(command)
     index = 0
     while index < len(tokens):
         token = tokens[index]
@@ -216,11 +278,22 @@ def effective_macro_state(command, macro):
     return effective_macro_states(command, (macro,))[macro]
 
 
+# The depfile flags that take an operand as the next argv element. `-MD`, `-MMD` and `-MP`
+# take none, so they must not swallow the token after them.
+DEPFILE_FLAGS_WITH_OPERAND = ("-MT", "-MF", "-MQ", "-MJ")
+
+
 def jemalloc_probe_flags(command):
     """A compile command reduced to its compiler and flags, ready for the probe.
 
     The output path, the `-c`, the depfile flags and the source/object operands go; every
     other flag is kept verbatim, so the probe is compiled exactly as jemalloc itself is.
+
+    The reduction must leave no stray positional operand behind: a leftover path reaches
+    clang as an input file, and the resulting `no such file or directory` turns the probe
+    into a false "the gates are not armed" verdict pointing at the wrong cause. That is
+    why the operand-taking depfile flags are consumed as pairs, the way `-o` is - cmake's
+    Makefile generator emits exactly `-MD -MT <target> -MF <path>`.
     """
     tokens = shlex.split(command)
     flags = []
@@ -228,6 +301,13 @@ def jemalloc_probe_flags(command):
     while index < len(tokens):
         token = tokens[index]
         if token == "-o":
+            index += 2
+            continue
+        if (
+            token in DEPFILE_FLAGS_WITH_OPERAND
+            and index + 1 < len(tokens)
+            and not tokens[index + 1].startswith("-")
+        ):
             index += 2
             continue
         if token == "-c" or token.startswith("-M"):
@@ -353,6 +433,57 @@ def assert_jemalloc_safety_macros_armed(compile_commands_path):
         f"jemalloc safety macros: {', '.join(JEMALLOC_SAFETY_MACROS)} arm both gates for "
         f"all {len(jemalloc)} jemalloc translation units ({len(probed)} distinct flag "
         f"set(s) probed), and reach no other translation unit"
+    )
+
+
+def assert_jemalloc_safety_macros_absent(compile_commands_path):
+    """Fail if a build that did not request the option carries either macro.
+
+    The option defaults to OFF, so every other build compiles jemalloc without the two
+    macros. Flipping that default - or widening the `-D`s to a target other builds link -
+    would arm both gates in every x86-64 jemalloc build, release included, which is a
+    user-visible change no other layer can see: the probe above only runs for the one build
+    type that requests the option, and the Python-level assertion reads the `ci/` cmake
+    commands rather than a configured tree.
+
+    Only jemalloc's own entries are scanned, and by flag rather than by compile: the
+    question here is whether a `-D` is on the line at all, and one probe per build is not
+    worth a definition that cannot arrive any other way. The leak direction is the positive
+    check's business.
+
+    Emptiness is *not* a failure here, unlike in the positive check: `contrib/jemalloc-cmake
+    /CMakeLists.txt:1-11` disables jemalloc outright whenever `SANITIZE` is set to anything
+    but `undefined`, so `amd_asan_ubsan`, `amd_tsan` and `amd_msan` have no jemalloc
+    translation units at all. A missing `compile_commands.json` is tolerated for the same
+    reason - the build that promises the macros is the one that must insist on having it.
+    """
+    if not os.path.isfile(compile_commands_path):
+        return
+    with open(compile_commands_path, "r", encoding="utf-8") as file:
+        entries = json.load(file)
+
+    carried = {macro: [] for macro in JEMALLOC_SAFETY_MACROS}
+    jemalloc = [e for e in entries if JEMALLOC_SOURCE_MARKER in e["file"]]
+    for entry in jemalloc:
+        states = effective_macro_states(entry["command"], JEMALLOC_SAFETY_MACROS)
+        for macro, state in states.items():
+            if state is True:
+                carried[macro].append(entry["file"])
+    for macro, files in carried.items():
+        if files:
+            files = sorted(files)
+            raise AssertionError(
+                f"-D{macro} is on {len(files)} jemalloc compile lines "
+                f"(first: {files[:5]}) of a build that did not request "
+                f"ENABLE_JEMALLOC_SAFETY_CHECKS. The option defaults to OFF, and arming "
+                "the gates outside the diagnostic lane changes every x86-64 jemalloc "
+                "build, release included."
+            )
+
+    print(
+        f"jemalloc safety macros: neither of {', '.join(JEMALLOC_SAFETY_MACROS)} is "
+        f"defined for any of the {len(jemalloc)} jemalloc translation units, as this "
+        "build did not request them"
     )
 
 
@@ -560,15 +691,26 @@ def main():
 
         # The lane's whole value depends on the two jemalloc safety macros really
         # reaching the compiler, so assert it here rather than after ~40 minutes of
-        # compiling. Only this build type promises them.
-        if res and build_type == BuildTypes.AMD_JEMALLOC_SAFETY:
-            results.append(
-                Result.from_commands_run(
-                    name="jemalloc safety macros",
-                    command=assert_jemalloc_safety_macros_armed,
-                    command_args=[f"{build_dir}/compile_commands.json"],
+        # compiling. Only this build type promises them - and every other one must be
+        # without them, since the option defaults to OFF and arming the gates in an
+        # ordinary build is a user-visible change.
+        if res:
+            if build_type == BuildTypes.AMD_JEMALLOC_SAFETY:
+                results.append(
+                    Result.from_commands_run(
+                        name="jemalloc safety macros",
+                        command=assert_jemalloc_safety_macros_armed,
+                        command_args=[f"{build_dir}/compile_commands.json"],
+                    )
                 )
-            )
+            else:
+                results.append(
+                    Result.from_commands_run(
+                        name="jemalloc safety macros absent",
+                        command=assert_jemalloc_safety_macros_absent,
+                        command_args=[f"{build_dir}/compile_commands.json"],
+                    )
+                )
             res = results[-1].is_ok()
 
         # Pre-seed .ninja_log from toolchain for timing-based scheduling
