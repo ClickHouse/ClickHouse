@@ -1671,7 +1671,7 @@ public:
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
     std::shared_ptr<ObjectStorageQueueLog> getS3QueueLog() const;
     std::shared_ptr<ObjectStorageQueueLog> getAzureQueueLog() const;
-#if CLICKHOUSE_CLOUD
+#if ENABLE_DISTRIBUTED_CACHE
     std::shared_ptr<DistributedCacheLog> getDistributedCacheLog() const;
     std::shared_ptr<DistributedCacheServerLog> getDistributedCacheServerLog() const;
 #endif

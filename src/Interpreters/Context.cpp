@@ -6740,7 +6740,7 @@ std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
     return shared->system_logs->filesystem_cache_log;
 }
 
-#if CLICKHOUSE_CLOUD
+#if ENABLE_DISTRIBUTED_CACHE
 std::shared_ptr<DistributedCacheLog> Context::getDistributedCacheLog() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -8426,7 +8426,7 @@ ReadSettings Context::getReadSettings() const
     res.remote_fs_settings.enable_blob_storage_log = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
 
     res.read_through_distributed_cache = settings_ref[Setting::read_through_distributed_cache];
-#if CLICKHOUSE_CLOUD && ENABLE_DISTRIBUTED_CACHE
+#if ENABLE_DISTRIBUTED_CACHE
     res.distributed_cache_settings.load(settings_ref);
     res.distributed_cache_settings.validate();
 #endif
@@ -8452,7 +8452,7 @@ WriteSettings Context::getWriteSettings() const
     res.local_throttler = getLocalWriteThrottler();
 
     res.write_through_distributed_cache = settings_ref[Setting::write_through_distributed_cache];
-#if CLICKHOUSE_CLOUD && ENABLE_DISTRIBUTED_CACHE
+#if ENABLE_DISTRIBUTED_CACHE
     res.distributed_cache_settings.load(settings_ref);
 #endif
 
