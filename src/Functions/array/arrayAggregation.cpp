@@ -15,6 +15,9 @@
 
 #include <Functions/array/FunctionArrayMapped.h>
 
+#include <Common/NaNUtils.h>
+#include <Common/findExtreme.h>
+
 namespace DB
 {
 
@@ -148,6 +151,69 @@ struct ArrayAggregateImpl
         return result;
     }
 
+    /// Vectorized fast path for plain numeric arrays: reduce each array slice with findExtremeMin/Max
+    /// (branchless SIMD horizontal min/max) instead of a per-element compareAt.
+    /// The result is bitwise-identical to the generic path: the extreme value is unique up to representation,
+    /// and the only value classes with multiple representations (NaN payloads and 0.0/-0.0) are fixed up below
+    /// to return the first occurrence, which is what compareAt-based selection returns.
+    template <typename Element>
+    requires(has_find_extreme_implementation<Element>)
+    static bool executeMinOrMaxNumeric(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
+    {
+        const ColumnVector<Element> * column = checkAndGetColumn<ColumnVector<Element>>(&*mapped);
+        if (!column)
+            return false;
+
+        const Element * data = column->getData().data();
+        auto res_column = ColumnVector<Element>::create(offsets.size());
+        typename ColumnVector<Element>::Container & res = res_column->getData();
+
+        size_t pos = 0;
+        for (size_t i = 0; i < offsets.size(); ++i)
+        {
+            const size_t end_of_array = offsets[i];
+
+            /// Array is empty
+            if (pos == end_of_array)
+            {
+                res[i] = Element{};
+                continue;
+            }
+
+            std::optional<Element> result;
+            if constexpr (aggregate_operation == AggregateOperation::min)
+                result = findExtremeMin(data, pos, end_of_array);
+            else
+                result = findExtremeMax(data, pos, end_of_array);
+            chassert(result.has_value());
+
+            if constexpr (is_floating_point<Element>)
+            {
+                /// findExtreme* returns NaN only if all elements are NaN; the generic path returns the first of them.
+                if (isNaN(*result))
+                    result = data[pos];
+                /// A zero result may be either 0.0 or -0.0 depending on reduction order; take the first zero in the array.
+                else if (*result == Element{})
+                {
+                    for (size_t j = pos; j < end_of_array; ++j)
+                    {
+                        if (data[j] == Element{})
+                        {
+                            result = data[j];
+                            break;
+                        }
+                    }
+                }
+            }
+
+            res[i] = *result;
+            pos = end_of_array;
+        }
+
+        res_ptr = std::move(res_column);
+        return true;
+    }
+
     template <AggregateOperation op = aggregate_operation>
     requires(op == AggregateOperation::min || op == AggregateOperation::max)
     static void executeMinOrMax(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
@@ -160,6 +226,18 @@ struct ArrayAggregateImpl
             res_ptr = std::move(res_column);
             return;
         }
+
+        if (executeMinOrMaxNumeric<UInt8>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<UInt16>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<UInt32>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<UInt64>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<Int8>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<Int16>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<Int32>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<Int64>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<Float32>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<Float64>(mapped, offsets, res_ptr))
+            return;
 
         MutableColumnPtr res_column = mapped->cloneEmpty();
         static constexpr int nan_null_direction_hint = aggregate_operation == AggregateOperation::min ? 1 : -1;
@@ -412,6 +490,7 @@ struct ArrayAggregateImpl
                 executeType<Int64>(mapped, offsets, res) ||
                 executeType<Int128>(mapped, offsets, res) ||
                 executeType<Int256>(mapped, offsets, res) ||
+                executeType<BFloat16>(mapped, offsets, res) ||
                 executeType<Float32>(mapped, offsets, res) ||
                 executeType<Float64>(mapped, offsets, res) ||
                 executeType<Decimal32>(mapped, offsets, res) ||
