@@ -1322,7 +1322,7 @@ void BackupImpl::finalizeWriting()
 
     /// The backup is published at this point: `.backup` is readable at the destination, or the archive
     /// has been finalized. A published backup must never be removed as a failed one, so arm the guard
-    /// read by setIsCorrupted() before the steps that can still fail below.
+    /// read by `setIsCorrupted` before the steps that can still fail below.
     writing_finalized = true;
 
     fiu_do_on(FailPoints::backup_fail_before_removing_lock_file,

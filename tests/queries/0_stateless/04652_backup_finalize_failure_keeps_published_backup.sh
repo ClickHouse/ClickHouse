@@ -27,6 +27,9 @@ clean_dir="${CLICKHOUSE_TEST_UNIQUE_NAME}_clean"
 ${CLICKHOUSE_CLIENT} -m --query "
 DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t;
 CREATE TABLE ${CLICKHOUSE_DATABASE}.t (x Int32) ENGINE = MergeTree ORDER BY x;
+-- Without this a background merge may replace the part that the base backup holds, which would make
+-- the incremental below self-contained and its restore would no longer depend on the base at all.
+SYSTEM STOP MERGES ${CLICKHOUSE_DATABASE}.t;
 INSERT INTO ${CLICKHOUSE_DATABASE}.t SELECT number FROM numbers(10);
 "
 
@@ -50,6 +53,10 @@ echo "chain_victim_created"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO ${CLICKHOUSE_DATABASE}.t SELECT number FROM numbers(10, 5)"
 ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE ${CLICKHOUSE_DATABASE}.t TO Disk('backups', '$inc_dir') SETTINGS base_backup=Disk('backups', '$pub_dir')" | cut -f2
 
+# The restore below only exercises the chain if the incremental really reuses data from the base.
+echo "chain_victim_uses_base"
+grep -q "<use_base>true</use_base>" "${backups_root}/${inc_dir}/.backup" && echo 1 || echo 0
+
 echo "chain_victim_restored"
 ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE ${CLICKHOUSE_DATABASE}.t AS ${CLICKHOUSE_DATABASE}.t_inc FROM Disk('backups', '$inc_dir')" | cut -f2
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(x) FROM ${CLICKHOUSE_DATABASE}.t_inc"
@@ -67,6 +74,16 @@ test -f "${backups_root}/${pub_zip}" && echo 1 || echo 0
 echo "bug_archive_restored"
 ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE ${CLICKHOUSE_DATABASE}.t AS ${CLICKHOUSE_DATABASE}.t_zip FROM Disk('backups', '$pub_zip')" | cut -f2
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(x) FROM ${CLICKHOUSE_DATABASE}.t_zip"
+
+# Keeping the published backup means the lock file is left behind, because removing it is what
+# failed. That is deliberate: the destination is still refused for a new backup, and it is refused
+# by the published-backup check rather than by the stray lock.
+
+echo "bug_archive_lock_kept"
+test -f "${backups_root}/${pub_zip}.lock" && echo 1 || echo 0
+
+echo "bug_archive_destination_refused"
+${CLICKHOUSE_CLIENT} --query "BACKUP TABLE ${CLICKHOUSE_DATABASE}.t TO Disk('backups', '$pub_zip')" 2>&1 | grep -m1 -oE "is being written already|already exists"
 
 # --------- control_early, archive: a failure BEFORE publication must still clean up (over-arming)
 
@@ -112,4 +129,7 @@ DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t_clean;
 "
 
 rm -rf "${backups_root:?}/${pub_dir}" "${backups_root:?}/${inc_dir}" "${backups_root:?}/${clean_dir}" 2>/dev/null || true
-rm -f "${backups_root:?}/${pub_zip}" "${backups_root:?}/${early_zip}" "${backups_root:?}/${mid_zip}" 2>/dev/null || true
+# The archive lock is a sibling object next to the archive, so it needs removing explicitly. Only the
+# published archive keeps its lock: the arms that fail before publication are still cleaned up.
+rm -f "${backups_root:?}/${pub_zip}" "${backups_root:?}/${early_zip}" "${backups_root:?}/${mid_zip}" \
+      "${backups_root:?}/${pub_zip}.lock" 2>/dev/null || true

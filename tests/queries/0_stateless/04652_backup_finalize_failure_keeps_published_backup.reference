@@ -7,6 +7,8 @@ RESTORED
 10	45
 chain_victim_created
 BACKUP_CREATED
+chain_victim_uses_base
+1
 chain_victim_restored
 RESTORED
 15	105
@@ -17,6 +19,10 @@ bug_archive_kept
 bug_archive_restored
 RESTORED
 15	105
+bug_archive_lock_kept
+1
+bug_archive_destination_refused
+already exists
 control_early_error
 FAULT_INJECTED
 control_early_archive_removed
