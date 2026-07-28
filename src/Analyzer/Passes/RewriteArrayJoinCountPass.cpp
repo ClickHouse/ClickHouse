@@ -90,13 +90,9 @@ public:
         if (!array_join_node)
             return;
 
-        /// A non-LEFT ARRAY JOIN drops rows whose array is empty, so a non-empty table whose arrays
-        /// are all empty leaves the aggregation with no input at all, and
-        /// `empty_result_for_aggregation_by_empty_set` then asks for an empty result. sum() over the
-        /// base table rows would instead aggregate a non-empty input and return a single 0 row.
-        /// Whether every array is empty is not known here, so decline for the whole setting.
-        /// LEFT keeps one row per input row, so its input is empty only when the table is, which the
-        /// rewritten sum() reproduces.
+        /// Only a non-LEFT ARRAY JOIN can leave the aggregation with no input while the table still has
+        /// rows (every array empty), and `sum` over the base rows cannot reproduce that. Whether every
+        /// array is empty is unknown here, so decline for the whole setting.
         if (!array_join_node->isLeft() && settings[Setting::empty_result_for_aggregation_by_empty_set])
             return;
 
