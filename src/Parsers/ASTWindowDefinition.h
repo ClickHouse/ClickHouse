@@ -29,6 +29,8 @@ struct ASTWindowDefinition : public IAST
 
     String getID(char delimiter) const override;
 
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
     std::string getDefaultWindowName() const;
 
     void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override

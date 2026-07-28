@@ -324,3 +324,33 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, ApplyTransformerParametersAreSigni
     quantile_median_parens.projections = "pr (SELECT COLUMNS('b|c') APPLY quantile((0.5)) GROUP BY (a))";
     EXPECT_FALSE(diffOf(quantile_median, quantile_median_parens).projections_changed);
 }
+
+TEST(ReplicatedMergeTreeTableMetadataCompare, WindowFrameIsSignificant)
+{
+    /// The frame of a window definition is not stored in `children` either: only the frame offsets
+    /// are. Two projections whose windows aggregate over different frames are different.
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    MetadataFields cumulative;
+    cumulative.projections = "pr (SELECT a, sum(b) OVER (PARTITION BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) GROUP BY a, b)";
+    MetadataFields current_row;
+    current_row.projections = "pr (SELECT a, sum(b) OVER (PARTITION BY a ROWS BETWEEN CURRENT ROW AND CURRENT ROW) GROUP BY a, b)";
+    EXPECT_TRUE(diffOf(cumulative, current_row).projections_changed);
+    EXPECT_FALSE(diffOf(cumulative, cumulative).projections_changed);
+
+    MetadataFields range_frame;
+    range_frame.projections = "pr (SELECT a, sum(b) OVER (PARTITION BY a RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) GROUP BY a, b)";
+    EXPECT_TRUE(diffOf(cumulative, range_frame).projections_changed);
+
+    MetadataFields following;
+    following.projections = "pr (SELECT a, sum(b) OVER (PARTITION BY a ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) GROUP BY a, b)";
+    MetadataFields preceding;
+    preceding.projections = "pr (SELECT a, sum(b) OVER (PARTITION BY a ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING) GROUP BY a, b)";
+    EXPECT_TRUE(diffOf(following, preceding).projections_changed);
+
+    /// Redundant parentheses inside the window definition still compare equal.
+    MetadataFields cumulative_parens;
+    cumulative_parens.projections = "pr (SELECT (a), sum((b)) OVER (PARTITION BY (a) ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) GROUP BY a, b)";
+    EXPECT_FALSE(diffOf(cumulative, cumulative_parens).projections_changed);
+}
