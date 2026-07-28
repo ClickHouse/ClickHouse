@@ -2977,7 +2977,7 @@ DataTypePtr QueryFuzzer::getRandomType()
 
     /// Geo types are custom-named Array aliases with no TypeIndex of their own,
     /// so they are appended after the TypeIndex vector in a unified selection.
-    static constexpr const char * geo_type_names[] = {"Point", "Ring", "LineString", "MultiLineString", "Polygon", "MultiPolygon"};
+    static constexpr const char * geo_type_names[] = {"Point", "MultiPoint", "Ring", "LineString", "MultiLineString", "Polygon", "MultiPolygon"};
     static constexpr size_t n_geo = std::size(geo_type_names);
     const size_t pick = fuzz_rand() % (random_types.size() + n_geo);
     if (pick >= random_types.size())
@@ -3887,6 +3887,13 @@ void QueryFuzzer::extractPredicates(const ASTPtr & node, ASTs & predicates, cons
     {
         if (func->name == op && func->arguments)
         {
+            /// A degenerate call such as `and()` has nothing to flatten, so it contributes one
+            /// opaque leaf instead of nothing, keeping the extraction non-empty
+            if (func->arguments->children.empty())
+            {
+                predicates.emplace_back(node);
+                return;
+            }
             /// Recursively extract predicates from children
             for (const auto & entry : func->arguments->children)
             {
@@ -3912,11 +3919,14 @@ ASTPtr QueryFuzzer::permutePredicateClause(const ASTPtr & predicate, const int n
     {
         if (func->name == "and" || func->name == "or" || func->name == "xor")
         {
+            /// Nothing to permute in a degenerate call such as `and()`
+            if (!func->arguments || func->arguments->children.empty())
+                return tryNegateNextPredicate(predicate, negProb);
+
             ASTs predicates;
 
             /// Extract all predicates under the current logical operator
             extractPredicates(predicate, predicates, func->name, negProb);
-            chassert(!predicates.empty());
             /// Shuffle them
             std::shuffle(predicates.begin(), predicates.end(), fuzz_rand);
             for (auto & entry : predicates)

@@ -36,8 +36,8 @@ quantileDeterministic(level)(expr, determinator)
 
 **Argumentos**
 
-* `expr` — Expressão sobre os valores da coluna que resulta em tipos de dados numéricos, Date ou DateTime. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`Date`](/pt-BR/reference/data-types/date) ou [`DateTime`](/pt-BR/reference/data-types/datetime)
-* `determinator` — Número cujo hash é usado no lugar de um gerador de números aleatórios no algoritmo de amostragem por reservatório para tornar o resultado da amostragem determinístico. Como determinador, você pode usar qualquer número positivo determinístico, por exemplo, um ID de usuário ou um ID de evento. Se o mesmo valor de determinador ocorrer com muita frequência, a função funcionará incorretamente. [`(U)Int*`](/pt-BR/reference/data-types/int-uint)
+* `expr` — Expressão sobre os valores da coluna que resulta em tipos de dados numéricos, `Date` ou `DateTime`. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Int128`](/pt-BR/reference/data-types/int-uint) ou [`UInt128`](/pt-BR/reference/data-types/int-uint) ou [`Int256`](/pt-BR/reference/data-types/int-uint) ou [`UInt256`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Date`](/pt-BR/reference/data-types/date) ou [`DateTime`](/pt-BR/reference/data-types/datetime)
+* `determinator` — Número cujo hash é usado no lugar de um gerador de números aleatórios no algoritmo de amostragem por reservatório para tornar o resultado da amostragem determinístico. Como determinador, você pode usar qualquer número positivo determinístico, por exemplo, um ID de usuário ou um ID de evento. Se o mesmo valor de determinador ocorrer com muita frequência, a função funcionará incorretamente. [`UInt*`](/pt-BR/reference/data-types/int-uint)
 
 **Valor retornado**
 

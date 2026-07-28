@@ -328,7 +328,7 @@ Chunk RabbitMQSource::generateImpl()
                 if (!dead_letter_queue)
                     LOG_WARNING(log, "Table system.dead_letter_queue is not configured, skipping message");
                 else
-                    dead_letter_queue->add(
+                    dead_letter_queue->add([&](DeadLetterQueueElement & element) { element =
                         DeadLetterQueueElement{
                             .table_engine = DeadLetterQueueElement::StreamType::RabbitMQ,
                             .event_time = timeInSeconds(time_now),
@@ -345,7 +345,7 @@ Chunk RabbitMQSource::generateImpl()
                                 .delivery_tag = message.delivery_tag,
                                 .channel_id = message.channel_id
                             }
-                        });
+                        }; });
             }
 
             total_rows += new_rows;

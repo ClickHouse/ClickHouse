@@ -1,16 +1,44 @@
 ---
 slug: /deployment-guides/index
-title: 'デプロイガイド概要'
-description: 'デプロイとスケーリングのセクションのランディングページ'
-keywords: ['デプロイガイド', 'スケーリング', 'クラスターへのデプロイ', 'レプリケーション', '耐障害性']
+title: 'デプロイメントガイドの概要'
+description: 'デプロイメントとスケーリングのセクションのランディングページ'
+keywords: ['デプロイメントガイド', 'スケーリング', 'クラスターのデプロイメント', 'レプリケーション', 'フォールトトレランス']
 doc_type: 'landing-page'
+mode: wide
 ---
 
-このセクションでは、次のトピックを扱います。
+このセクションでは、次のトピックを取り上げます:
 
-| トピック                                                                               |
-| ---------------------------------------------------------------------------------- |
-| [はじめに](/ja/guides/oss/deployment-and-scaling/terminology)                             |
-| [スケールアウト](/ja/guides/oss/deployment-and-scaling/examples/2-shards-1-replica)          |
-| [耐障害性のためのレプリケーション](/ja/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas) |
-| [クラスターへのデプロイ](/ja/guides/oss/deployment-and-scaling/examples/2-shards-2-replicas)     |
+<CardGroup cols={2}>
+  <Card title="はじめに" icon="book-open" href="/ja/guides/oss/deployment-and-scaling/terminology">
+    ClickHouse のデプロイメントを説明する際に使われる用語。
+  </Card>
+
+  <Card title="テーブルの分片とレプリカ" icon="table-cells-large" href="/ja/guides/oss/deployment-and-scaling/shards">
+    テーブルの分片とレプリカとは何か、またそれらの用途を学びます。
+  </Card>
+
+  <Card title="データの再配置" icon="scale-balanced" href="/ja/guides/oss/deployment-and-scaling/scaling-clusters">
+    クラスターのスケーリング時にデータを再配置する方法。
+  </Card>
+
+  <Card title="ストレージとコンピュートの分離" icon="hard-drive" href="/ja/guides/oss/deployment-and-scaling/separation-storage-compute">
+    ClickHouse をオブジェクトストレージと組み合わせて使用し、ストレージとコンピュートを分離します。
+  </Card>
+
+  <Card title="Cluster Discovery" icon="magnifying-glass" href="/ja/guides/oss/deployment-and-scaling/cluster-discovery">
+    ノードが ClickHouse Keeper を介して自動的に検出・登録されるようにします。
+  </Card>
+
+  <Card title="Keeper" icon="key" href="/ja/guides/oss/deployment-and-scaling/keeper/index">
+    レプリケーションと distributed DDL のための協調システムである ClickHouse Keeper の設定。
+  </Card>
+
+  <Card title="監視" icon="chart-line" href="/ja/guides/oss/deployment-and-scaling/monitoring/monitoring">
+    ClickHouse の監視と、OpenTelemetry を使用したトレーシング。
+  </Card>
+
+  <Card title="例" icon="server" href="/ja/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas">
+    デプロイメント例: フォールトトレランスのためのレプリケーション、スケールアウト、それらを組み合わせたクラスターのデプロイメント。
+  </Card>
+</CardGroup>

@@ -11,9 +11,7 @@ doc_type: 'guide'
 > Este guia explica como usar o servidor MCP do ClickHouse com o Ollama.
 
 <Steps>
-  <Step>
-    ## Instale o Ollama
-
+  <Step title="Instale o Ollama" id="install-ollama">
     Ollama é uma biblioteca para executar Large Language Models (LLMs) na sua própria máquina.
     Ele tem uma [grande variedade de modelos disponíveis](https://ollama.com/library) e é fácil de usar.
 
@@ -84,9 +82,7 @@ doc_type: 'guide'
     Podemos ver por essa saída que o modelo qwen3 padrão tem pouco mais de 8 bilhões de parâmetros.
   </Step>
 
-  <Step>
-    ## Instale o MCPHost
-
+  <Step title="Instale o MCPHost" id="install-mcphost">
     No momento da redação deste texto (julho de 2025), não há funcionalidade nativa para usar o Ollama com MCP servers.
     No entanto, podemos usar o [MCPHost](https://github.com/mark3labs/mcphost) para executar modelos do Ollama com MCP servers.
 
@@ -100,9 +96,7 @@ doc_type: 'guide'
     O binário será instalado em `~/go/bin`, então precisamos garantir que esse diretório esteja no PATH.
   </Step>
 
-  <Step>
-    ## Configurando o servidor MCP do ClickHouse
-
+  <Step title="Configurando o servidor MCP do ClickHouse" id="configure-clickhouse-mcp-server">
     Podemos configurar servidores MCP com o MCPHost em arquivos YAML ou JSON.
     O MCPHost procurará os arquivos de configuração no seu diretório pessoal na seguinte ordem:
 
@@ -150,9 +144,7 @@ doc_type: 'guide'
     </Note>
   </Step>
 
-  <Step>
-    ## Executando o MCPHost
-
+  <Step title="Executando o MCPHost" id="running-mcphost">
     Depois de configurar o ClickHouse MCP server, você pode executar o MCPHost com o comando a seguir:
 
     ```bash
@@ -187,7 +179,7 @@ doc_type: 'guide'
       ┃   MCPHost System (09:52)                                                            ┃
       ┃                                                                                     ┃
 
-      Digite seu prompt (Digite /help para comandos, Ctrl+C para sair, ESC para cancelar a geração)
+      Enter your prompt (Type /help for commands, Ctrl+C to quit, ESC to cancel generation)
     ```
 
     Podemos usar o comando `/servers` para listar os servidores MCP:

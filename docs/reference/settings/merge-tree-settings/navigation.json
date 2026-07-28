@@ -1,8 +1,8 @@
 {
   "group": "MergeTree tables settings",
-  "root": "reference/settings/merge-tree-settings",
   "directory": "none",
   "pages": [
+    "reference/settings/merge-tree-settings",
     "reference/settings/merge-tree-settings/add-minmax",
     "reference/settings/merge-tree-settings/allow",
     "reference/settings/merge-tree-settings/allow-experimental",
