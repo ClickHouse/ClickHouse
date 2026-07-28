@@ -3,6 +3,7 @@ import json
 import os
 import shlex
 import shutil
+import subprocess
 
 from ci.defs.defs import BuildTypes, ToolSet, chcache_secret
 from ci.jobs.scripts.clickhouse_version import CHVersion
@@ -160,6 +161,16 @@ def setup_build_caches_env(info):
 JEMALLOC_SAFETY_MACROS = ("JEMALLOC_OPT_SAFETY_CHECKS", "JEMALLOC_OPT_SIZE_CHECKS")
 JEMALLOC_SOURCE_MARKER = "/contrib/jemalloc/src/"
 
+# Compiled with a jemalloc translation unit's own flags, so the compiler answers whether
+# the two gates are armed. `config_opt_safety_checks` / `config_opt_size_checks` are the
+# booleans jemalloc's detector sites read, and `jemalloc_preamble.h` is where each `-D`
+# becomes one - after several includes, so a `#undef` arriving through a header counts too.
+JEMALLOC_PROBE_SOURCE = """\
+#include "jemalloc/internal/jemalloc_preamble.h"
+_Static_assert(config_opt_safety_checks, "JEMALLOC_OPT_SAFETY_CHECKS is not in effect");
+_Static_assert(config_opt_size_checks, "JEMALLOC_OPT_SIZE_CHECKS is not in effect");
+"""
+
 
 def effective_macro_states(command, macros):
     """Each macro's state on this compile line: True defined, False `-U`ed, None absent.
@@ -205,63 +216,61 @@ def effective_macro_state(command, macro):
     return effective_macro_states(command, (macro,))[macro]
 
 
-def assert_jemalloc_safety_macros_armed(compile_commands_path):
-    """Fail unless every jemalloc TU, and only those, really define both macros.
+def jemalloc_probe_flags(command):
+    """A compile command reduced to its compiler and flags, ready for the probe.
 
-    `ENABLE_JEMALLOC_SAFETY_CHECKS` promises two `-D`s that gate jemalloc's
-    sized-deallocation and slab-bit detectors, and `JEMALLOC_OPT_SIZE_CHECKS` has no
-    mallctl, so a lost definition leaves the lane fuzzing green as an ordinary
-    `amd_debug` session. What decides is the effective compiler invocation, not the
-    cmake text, so it is read here from the generated `compile_commands.json`.
+    The output path, the `-c`, the depfile flags and the source/object operands go; every
+    other flag is kept verbatim, so the probe is compiled exactly as jemalloc itself is.
     """
-    if not os.path.isfile(compile_commands_path):
-        raise AssertionError(
-            f"{compile_commands_path} is missing, so the jemalloc safety macros "
-            "cannot be verified; CMakeLists.txt:50 sets CMAKE_EXPORT_COMPILE_COMMANDS "
-            "unconditionally, so a configured tree always has it"
+    tokens = shlex.split(command)
+    flags = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "-o":
+            index += 2
+            continue
+        if token == "-c" or token.startswith("-M"):
+            index += 1
+            continue
+        if token.endswith((".c", ".o")):
+            index += 1
+            continue
+        flags.append(token)
+        index += 1
+    return flags
+
+
+def run_jemalloc_probe(flags, directory):
+    """Compile `JEMALLOC_PROBE_SOURCE` with `flags`; return the compiler's stderr, or None.
+
+    `-fsyntax-only` keeps it at ~0.05s and `-x c -` feeds the probe on stdin, so nothing
+    is written into the build tree. Returns None when both `_Static_assert`s hold.
+
+    A probe that cannot run at all (the recorded compiler gone, the recorded `directory`
+    gone) is reported as a failure too: an inconclusive probe must not pass.
+    """
+    try:
+        process = subprocess.run(
+            flags + ["-fsyntax-only", "-x", "c", "-"],
+            cwd=directory,
+            input=JEMALLOC_PROBE_SOURCE,
+            capture_output=True,
+            text=True,
+            check=False,
         )
-    with open(compile_commands_path, "r", encoding="utf-8") as file:
-        entries = json.load(file)
+    except OSError as error:
+        return f"the probe could not be run at all: {error}"
+    return None if process.returncode == 0 else (process.stderr or "").strip()
 
-    # Both macros' states are read in a single pass per compile line: a configured tree
-    # has ~17k entries, and splitting each of them once per macro (twice per entry, as
-    # the states were previously also recomputed inside the comprehension's filter)
-    # costs about a minute. The states are kept per entry rather than keyed by file,
-    # because a file can legitimately appear twice with different flags (730 such
-    # entries in a configured tree today, e.g. contrib/google-protobuf sources built
-    # into two targets), and one of them being unarmed is what must not be dropped.
-    jemalloc = [
-        (e, effective_macro_states(e["command"], JEMALLOC_SAFETY_MACROS))
-        for e in entries
-        if JEMALLOC_SOURCE_MARKER in e["file"]
-    ]
-    # A rename of jemalloc's source layout must not make this check vacuous.
-    if not jemalloc:
-        raise AssertionError(
-            f"no {JEMALLOC_SOURCE_MARKER!r} translation unit in "
-            f"{compile_commands_path} (of {len(entries)} entries); jemalloc's source "
-            "layout changed, so re-derive this check rather than letting it pass "
-            "vacuously"
-        )
 
-    # The armed check first, over the ~67 jemalloc entries only, so the common failure
-    # (the option not passed at all) still reports without scanning the whole tree.
-    for macro in JEMALLOC_SAFETY_MACROS:
-        unarmed = {e["file"]: s[macro] for e, s in jemalloc if s[macro] is not True}
-        if unarmed:
-            sample = sorted(unarmed)[:5]
-            raise AssertionError(
-                f"-D{macro} is not in effect for {len(unarmed)} of {len(jemalloc)} "
-                f"jemalloc translation units (states: "
-                f"{sorted(set(unarmed.values()), key=str)}, first: {sample}). This "
-                "build type promises it, and losing it disarms a detector while the "
-                "lane still fuzzes green. It happens when the cmake option is not "
-                "passed at all, when a later -U from another target_compile_options / "
-                "add_definitions cancels the -D on the same compile line (the last "
-                "mention wins), or when the ARCH_AMD64 guard in "
-                "contrib/jemalloc-cmake/CMakeLists.txt turns the option off."
-            )
+def assert_jemalloc_macros_stay_private(entries):
+    """Fail if either macro reaches a translation unit outside jemalloc's own sources.
 
+    The macros are jemalloc-internal, so this direction stays a flag scan over the whole
+    tree: a compile probe per entry is not affordable at ~17k entries, and `PRIVATE`
+    widened to `PUBLIC` is visible on the compile line.
+    """
     leaked = {macro: [] for macro in JEMALLOC_SAFETY_MACROS}
     for entry in entries:
         if JEMALLOC_SOURCE_MARKER in entry["file"]:
@@ -281,9 +290,69 @@ def assert_jemalloc_safety_macros_armed(compile_commands_path):
                 "itself."
             )
 
+
+def assert_jemalloc_safety_macros_armed(compile_commands_path):
+    """Fail unless every jemalloc TU, and only those, really arm both gates.
+
+    `ENABLE_JEMALLOC_SAFETY_CHECKS` promises two `-D`s that gate jemalloc's
+    sized-deallocation and slab-bit detectors, and `JEMALLOC_OPT_SIZE_CHECKS` has no
+    mallctl, so a lost definition leaves the lane fuzzing green as an ordinary
+    `amd_debug` session.
+
+    The arming half asks the compiler rather than parsing the compile line: the probe is
+    compiled with a jemalloc entry's own flags, so every cmake spelling, every `-D`/`-U`
+    spelling (including the forwarded `-Wp,-U` / `-Xpreprocessor -U` forms) and every
+    `#undef` arriving through an include are all answered at once. The leak half stays a
+    flag scan: it asserts the macros reach *no other* translation unit, and a compile per
+    entry over ~17k entries is not affordable.
+    """
+    if not os.path.isfile(compile_commands_path):
+        raise AssertionError(
+            f"{compile_commands_path} is missing, so the jemalloc safety macros "
+            "cannot be verified; CMakeLists.txt:50 sets CMAKE_EXPORT_COMPILE_COMMANDS "
+            "unconditionally, so a configured tree always has it"
+        )
+    with open(compile_commands_path, "r", encoding="utf-8") as file:
+        entries = json.load(file)
+
+    jemalloc = [e for e in entries if JEMALLOC_SOURCE_MARKER in e["file"]]
+    # A rename of jemalloc's source layout must not make this check vacuous.
+    if not jemalloc:
+        raise AssertionError(
+            f"no {JEMALLOC_SOURCE_MARKER!r} translation unit in "
+            f"{compile_commands_path} (of {len(entries)} entries); jemalloc's source "
+            "layout changed, so re-derive this check rather than letting it pass "
+            "vacuously"
+        )
+
+    # The flags of interest are per-target, so one probe per *distinct* flag set covers
+    # every jemalloc entry (in practice there is one). The count is reported below, so a
+    # future per-file divergence is visible rather than silently unprobed.
+    probed = {}
+    for entry in jemalloc:
+        probed.setdefault(tuple(jemalloc_probe_flags(entry["command"])), entry)
+    for flags, entry in probed.items():
+        stderr = run_jemalloc_probe(list(flags), entry["directory"])
+        if stderr:
+            raise AssertionError(
+                "the jemalloc safety gates are not armed for "
+                f"{entry['file']}: compiling a probe against that translation unit's own "
+                f"flags fails.\ncompiler: {flags[0]}\ndirectory: {entry['directory']}\n"
+                f"{stderr}\n"
+                "This build type promises both macros, and losing one disarms a detector "
+                "while the lane still fuzzes green. It happens when the cmake option is "
+                "not passed at all, when a later -U from another "
+                "target_compile_options / add_definitions cancels the -D on the same "
+                "compile line, when an include undefines it, or when the ARCH_AMD64 "
+                "guard in contrib/jemalloc-cmake/CMakeLists.txt turns the option off."
+            )
+
+    assert_jemalloc_macros_stay_private(entries)
+
     print(
-        f"jemalloc safety macros: {', '.join(JEMALLOC_SAFETY_MACROS)} in effect for "
-        f"all {len(jemalloc)} jemalloc translation units, and for no other"
+        f"jemalloc safety macros: {', '.join(JEMALLOC_SAFETY_MACROS)} arm both gates for "
+        f"all {len(jemalloc)} jemalloc translation units ({len(probed)} distinct flag "
+        f"set(s) probed), and reach no other translation unit"
     )
 
 
