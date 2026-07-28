@@ -53,12 +53,20 @@ SELECT count() FROM (
 );
 
 -- A plain top-level ORDER BY over the join must be truly sorted: the sort may only be elided
--- because the join really does hand the left rows over in order.
-SELECT groupArray(k) = arraySort(groupArray(k)) FROM (
-    SELECT l.k AS k FROM cj_l_04500 AS l LEFT JOIN cj_r_04500 AS r ON 1 = 1 ORDER BY l.k
-) SETTINGS max_threads = 1, optimize_read_in_order = 1, query_plan_read_in_order = 1,
-           query_plan_read_in_order_through_join = 1, query_plan_join_swap_table = 'false',
-           enable_parallel_replicas = 0;
+-- because the join really does hand the left rows over in order. Counting inversions over an
+-- explicit row number rather than comparing groupArray() against arraySort(): groupArray's input
+-- order is documented as indeterminate, and for a Sparse-serialized column
+-- addBatchSparseSinglePlace adds the non-default values before appending the defaults, so the
+-- array comes back permuted even when the rows really did arrive sorted.
+SELECT countIf(k < prev_k) FROM (
+    SELECT k, lagInFrame(k) OVER (ORDER BY rn) AS prev_k FROM (
+        SELECT k, rowNumberInAllBlocks() AS rn FROM (
+            SELECT l.k AS k FROM cj_l_04500 AS l LEFT JOIN cj_r_04500 AS r ON 1 = 1 ORDER BY l.k
+        ) SETTINGS max_threads = 1, optimize_read_in_order = 1, query_plan_read_in_order = 1,
+                   query_plan_read_in_order_through_join = 1, query_plan_join_swap_table = 'false',
+                   enable_parallel_replicas = 0
+    )
+) SETTINGS max_threads = 1;
 
 DROP TABLE cj_l_04500;
 DROP TABLE cj_r_04500;
@@ -70,7 +78,14 @@ DROP TABLE IF EXISTS dj_l_04500;
 DROP DICTIONARY IF EXISTS dj_d_04500;
 DROP TABLE IF EXISTS dj_src_04500;
 
-CREATE TABLE dj_l_04500 (k UInt32, j UInt64) ENGINE = MergeTree ORDER BY k;
+-- The join key must not be stored sparsely: getColumnVectorData in src/Dictionaries/DictionaryHelpers.h
+-- returns a reference into a function-local column whenever removeSpecialRepresentations materializes
+-- one, so a Sparse key column makes FlatDictionary::hasKeys read freed memory. That master bug is
+-- unrelated to read-in-order, and the runner randomizes ratio_of_defaults_for_sparse_serialization,
+-- so pin it here instead of letting this test carry the crash. Only the left table matters: the
+-- dictionary source's own serialization has no effect (measured both ways).
+CREATE TABLE dj_l_04500 (k UInt32, j UInt64) ENGINE = MergeTree ORDER BY k
+    SETTINGS ratio_of_defaults_for_sparse_serialization = 1.0;
 INSERT INTO dj_l_04500 SELECT number % 50, number % 20 FROM numbers(4000);
 CREATE TABLE dj_src_04500 (j UInt64, v UInt64) ENGINE = MergeTree ORDER BY j;
 INSERT INTO dj_src_04500 SELECT number, number * 10 FROM numbers(20);
