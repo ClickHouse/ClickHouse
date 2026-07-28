@@ -130,6 +130,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(query_metric_log_pause_before_finish) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
+    PAUSEABLE_ONCE(kafka2_remove_zk_before_get_children) \
+    PAUSEABLE_ONCE(kafka2_remove_zk_before_final_multi) \
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(terminate_with_exception) \
@@ -188,6 +190,7 @@ static struct InitFiu
     ONCE(write_file_operation_fail_on_read) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
+    REGULAR(iceberg_slow_manifest_read) \
     REGULAR(storage_cluster_read_sleep) \
     ONCE(backup_add_empty_memory_table) \
     ONCE(backup_fail_before_writing_metadata) \

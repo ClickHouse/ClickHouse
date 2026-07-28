@@ -168,6 +168,7 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
+    extern const SettingsBool enable_parallel_single_level_merge;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool enable_parallel_blocks_marshalling;
     extern const SettingsBool use_variant_as_common_type;
@@ -675,7 +676,8 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params,
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
-        settings[Setting::serialize_string_in_memory_with_zero_byte]);
+        settings[Setting::serialize_string_in_memory_with_zero_byte],
+        settings[Setting::enable_parallel_single_level_merge]);
 
     return aggregator_params;
 }
@@ -2311,8 +2313,13 @@ void Planner::buildPlanForQueryNode()
     }
 
     JoinTreeQueryPlan join_tree_query_plan;
+    /// With plan-based parallel replicas the planner builds a plain, normal local plan; distribution is
+    /// applied later as a plan transformation (QueryPlanOptimizations::applyParallelReplicas). So skip the
+    /// old parallel-replicas planning path here (it would emit ReadFromLocalReplica /
+    /// ReadFromRemoteParallelReplicas, e.g. inside a view/union inner query) and use the normal plan.
     if (planner_context->getMutableQueryContext()->canUseTaskBasedParallelReplicas()
-        && planner_context->getGlobalPlannerContext()->parallel_replicas_node == &query_node)
+        && planner_context->getGlobalPlannerContext()->parallel_replicas_node == &query_node
+        && !settings[Setting::parallel_replicas_plan_based])
     {
         join_tree_query_plan = buildQueryPlanForParallelReplicas(query_node, planner_context, select_query_info.storage_limits);
     }
