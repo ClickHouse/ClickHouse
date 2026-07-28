@@ -134,6 +134,7 @@ struct AggregationMethodPackedString
     using Mapped = typename Data::mapped_type;
 
     Data data;
+    TopKAggregationHeap top_k_heap;
 
     AggregationMethodPackedString() = default;
 
