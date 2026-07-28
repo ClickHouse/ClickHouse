@@ -391,11 +391,13 @@ public:
         if (sample_cap == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "hierarchicalKMeans: sample_cap must be greater than 0");
 
+        /// `add` reads the nested column as `ColumnFloat32`, so `Float32` is required exactly - accepting any float
+        /// here would reinterpret e.g. `Float64` payload as `Float32` and silently train on garbage.
         const auto * array_type = typeid_cast<const DataTypeArray *>(args[0].get());
-        if (!array_type || !isFloat(array_type->getNestedType()))
+        if (!array_type || !WhichDataType(array_type->getNestedType()).isFloat32())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Aggregate function hierarchicalKMeans requires an Array(Float32) argument "
-                "(CAST an Array(BFloat16) column to Array(Float32) first)");
+                "(CAST an Array(Float64) or Array(BFloat16) column to Array(Float32) first)");
     }
 
     String getName() const override { return "hierarchicalKMeans"; }

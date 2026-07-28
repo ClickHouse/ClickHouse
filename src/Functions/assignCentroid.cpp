@@ -162,15 +162,18 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} requires 2 arguments: assignCentroid(vec, centroids | dict_name)", name);
 
+        /// The kernel reads the nested column as `ColumnFloat32`, so `Float32` is required exactly - accepting any
+        /// float here would reinterpret e.g. `Float64` payload as `Float32` and silently produce wrong ids.
+        /// Note that array literals such as `[1.0, 2.0]` are `Array(Float64)` and must be CAST explicitly.
         const auto * vec_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
-        if (!vec_type || !isFloat(vec_type->getNestedType()))
+        if (!vec_type || !WhichDataType(vec_type->getNestedType()).isFloat32())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument of {} must be Array(Float32) (CAST an Array(BFloat16) column first)", name);
+                "First argument of {} must be Array(Float32) (CAST an Array(Float64) or Array(BFloat16) column first)", name);
 
         if (!isCentroidsArray(arguments[1]) && !isString(arguments[1]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Second argument of {} must be a constant Array(Array(Float32)) (centroids) "
-                "or a constant String (dictionary name)", name);
+                "Second argument of {} must be a constant Array(Array(Float32)) (centroids, CAST an "
+                "Array(Array(Float64)) literal first) or a constant String (dictionary name)", name);
 
         return std::make_shared<DataTypeUInt32>();
     }
@@ -216,7 +219,7 @@ private:
         if (!outer)
             return false;
         const auto * inner = typeid_cast<const DataTypeArray *>(outer->getNestedType().get());
-        return inner && isFloat(inner->getNestedType());
+        return inner && WhichDataType(inner->getNestedType()).isFloat32();
     }
 
     /// Build the matrix from a constant Array(Array(Float32)) argument. Ids are the array positions (0..k-1).
@@ -274,7 +277,17 @@ private:
         while (executor.pull(block))
         {
             const auto & cid_col = block.getByName("cid").column;
-            const auto & vec_arr = assert_cast<const ColumnArray &>(*block.getByName("vec").column);
+            const auto & vec_col = block.getByName("vec");
+
+            /// The dictionary type is only known here (the name is a runtime string), and the kernel below reads
+            /// the nested column as `ColumnFloat32`, so reject anything else instead of reinterpreting the payload.
+            const auto * vec_type = typeid_cast<const DataTypeArray *>(vec_col.type.get());
+            if (!vec_type || !WhichDataType(vec_type->getNestedType()).isFloat32())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "assignCentroid: attribute `vec` of dictionary {} must be Array(Float32), got {}",
+                    dict_name, vec_col.type->getName());
+
+            const auto & vec_arr = assert_cast<const ColumnArray &>(*vec_col.column);
             const auto & vec_vals = assert_cast<const ColumnFloat32 &>(vec_arr.getData()).getData();
             const auto & vec_off = vec_arr.getOffsets();
             for (size_t i = 0; i < cid_col->size(); ++i)
@@ -335,7 +348,8 @@ REGISTER_FUNCTION(AssignCentroid)
     };
     FunctionDocumentation::ReturnedValue returned_value = {"The nearest centroid id.", {"UInt32"}};
     FunctionDocumentation::Examples examples = {
-        {"Inline centroids", "SELECT assignCentroid([1.0, 2.0], [[0.0, 0.0], [1.0, 2.0]])", ""}
+        {"Inline centroids",
+         "SELECT assignCentroid([1.0, 2.0]::Array(Float32), [[0.0, 0.0], [1.0, 2.0]]::Array(Array(Float32)))", "1"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::MachineLearning;
