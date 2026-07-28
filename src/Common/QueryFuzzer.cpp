@@ -4853,6 +4853,32 @@ static const std::unordered_set<String> higher_order_map_funcs = {
     "mapReverseSort",
 };
 
+/// Every function that accepts a leading lambda or function name, for the HOF fuzzing logic below.
+/// Deliberately separate from the two sets above: those are also swapFuncs groups, which answer
+/// "which functions are interchangeable", while this answers "which functions take a lambda".
+/// Conflating them would force a function into a single swap group just to be lambda-eligible.
+/// The extra entries here are the `FunctionArrayMapped` reductions and transforms, which keep
+/// their own swapFuncs groups (array scalar reductions, array transforms, map partial sorting).
+static const std::unordered_set<String> lambda_accepting_funcs = []
+{
+    std::unordered_set<String> res = higher_order_array_funcs;
+    res.insert(higher_order_map_funcs.begin(), higher_order_map_funcs.end());
+    res.insert({
+        "arraySum",
+        "arrayAvg",
+        "arrayMin",
+        "arrayMax",
+        "arrayProduct",
+        "arrayCompact",
+        "arrayCumSum",
+        "arrayCumSumNonNegative",
+        "arrayDifference",
+        "mapPartialSort",
+        "mapPartialReverseSort",
+    });
+    return res;
+}();
+
 static const std::vector<std::unordered_set<String>> & swapFuncs
     = { /// String pattern matching operators
         {"ilike", "like", "match", "notILike", "notLike"},
@@ -6274,7 +6300,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 fn->arguments->children[0] = make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, group));
             }
             else if (
-                (higher_order_array_funcs.contains(fn->name) || higher_order_map_funcs.contains(fn->name))
+                lambda_accepting_funcs.contains(fn->name)
                 && !(first_arg && first_arg->name == "lambda") && !fn->arguments->children[0]->as<ASTIdentifier>())
             {
                 const auto & group = swapFuncs[fuzz_rand() % swapFuncs.size()];
