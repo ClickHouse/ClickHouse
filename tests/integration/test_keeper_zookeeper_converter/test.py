@@ -19,16 +19,58 @@ node = cluster.add_instance(
 
 
 def start_zookeeper():
-    for attempt in range(5):
-        try:
-            node.exec_in_container(
-                ["bash", "-c", "/opt/zookeeper/bin/zkServer.sh start"]
-            )
+    # `zkServer.sh start` only keeps the freshly launched JVM for one second
+    # before it checks that the process is still alive, and it reports an
+    # opaque "FAILED TO START" (exit code 1) as soon as that racy check loses.
+    # On a busy CI host the JVM can be slow to come up or transiently killed,
+    # while a healthy server becomes reachable well after that. So instead of
+    # trusting the script's exit code, wait until ZooKeeper actually serves a
+    # real client request (a bare TCP accept can happen before the server is
+    # able to do that), clean up any half-started JVM between attempts (a
+    # lingering one keeps the client port busy and makes every retry fail),
+    # and on terminal failure dump the daemon logs together with the start
+    # script's own output.
+    last_start_output = ""
+    for attempt in range(3):
+        last_start_output = node.exec_in_container(
+            ["bash", "-c", "/opt/zookeeper/bin/zkServer.sh start 2>&1"],
+            nothrow=True,
+        )
+
+        if _wait_zk_client_ready(timeout=60):
             return
-        except Exception:
-            if attempt == 4:
-                raise
+
+        if attempt < 2:
+            stop_zookeeper()
             time.sleep(3)
+
+    dump_zookeeper_logs()
+    raise Exception(
+        "ZooKeeper did not become ready after multiple attempts. "
+        "Last `zkServer.sh start` output:\n" + last_start_output
+    )
+
+
+def _wait_zk_client_ready(timeout):
+    # Elsewhere in the harness ZooKeeper is only considered ready once a real
+    # Kazoo request succeeds (see `get_genuine_zk` and
+    # `ClickHouseCluster.wait_zookeeper_to_start`), so probe readiness the
+    # same way here instead of relying on a bare TCP connect.
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            conn = cluster.get_kazoo_client(
+                "node", timeout=5.0, retries=1, external_port=2181
+            )
+            try:
+                conn.get_children("/")
+                return True
+            finally:
+                conn.stop()
+        except Exception:
+            time.sleep(0.5)
+
+    return False
 
 
 # pgrep / pkill -f match against the full command line, which includes the
@@ -48,6 +90,23 @@ def _zk_jvm_running():
             nothrow=True,
         ).strip()
     )
+
+
+def dump_zookeeper_logs():
+    # `zkServer.sh start` does not report why the JVM failed to start; the
+    # reason is written to the daemon output and the log4j log inside the
+    # container, so surface them to make such failures diagnosable from the CI
+    # artifacts instead of leaving only an opaque "FAILED TO START".
+    logs = node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "tail -n 100 /opt/zookeeper/logs/*.out /opt/zookeeper/logs/*.log "
+            "2>/dev/null || true",
+        ],
+        nothrow=True,
+    )
+    print("ZooKeeper daemon logs after failed start:\n" + logs)
 
 
 def stop_zookeeper():

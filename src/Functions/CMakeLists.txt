@@ -116,8 +116,8 @@ if (TARGET ch_contrib::bech32)
     list (APPEND PRIVATE_LIBS ch_contrib::bech32)
 endif()
 
-if (TARGET ch_contrib::base64)
-    list (APPEND PRIVATE_LIBS ch_contrib::base64)
+if (TARGET ch_contrib::simdutf)
+    list (APPEND PRIVATE_LIBS ch_contrib::simdutf)
 endif()
 
 if (ENABLE_NLP)
