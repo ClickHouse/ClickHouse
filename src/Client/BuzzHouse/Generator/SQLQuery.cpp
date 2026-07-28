@@ -275,7 +275,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
     else if (
         (usage == TableFunctionUsage::EngineReplace && t.isSQLiteEngine()) || (usage == TableFunctionUsage::PeerTable && t.hasSQLitePeer()))
     {
-        SQLiteFunc * sfunc = tfunc->mutable_sqite();
+        SQLiteFunc * sfunc = tfunc->mutable_sqlite();
 
         sfunc->set_rdatabase(connections.getSQLitePath().generic_string());
         sfunc->set_rtable(t.getBaseName());
@@ -775,6 +775,7 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
     queryMask[static_cast<size_t>(QueryOp::MergeProjectionUDF)] = has_mergetree_table && this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::MergeTextIndexUDF)] = has_mergetree_table && this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::MergeIndexAnalyzeUDF)] = has_mergetree_table && this->allow_engine_udf;
+    queryMask[static_cast<size_t>(QueryOp::MergeCodecBlockCountsUDF)] = has_mergetree_table && this->allow_engine_udf;
     /// `filesystem([path])` reads local files (metadata + optional content) — non-deterministic
     /// and needs FILE access. Don't emit it through `remote()` either.
     queryMask[static_cast<size_t>(QueryOp::FilesystemUDF)] = !under_remote && this->allow_not_deterministic && this->allow_engine_udf;
@@ -1253,6 +1254,22 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"has_embedded_postings"}, uint8_tp.get()));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"has_raw_postings"}, uint8_tp.get()));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"has_compressed_postings"}, uint8_tp.get()));
+            this->levels[this->current_level].rels.emplace_back(rel);
+        }
+        break;
+        case QueryOp::MergeCodecBlockCountsUDF: {
+            SQLRelation rel(rel_name);
+            const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_mergetree_table_lambda));
+
+            tt.setName(tof->mutable_tfunc()->mutable_mtcodecblocks(), true);
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"part_name"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"column"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"substream"}, string_tp.get()));
+            /// The trailing columns are Nullable (NULL for `Compact` parts) and `codec_block_counts`
+            /// is a Map, none of which the plain helpers model - leave the type unknown
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"data_compressed_bytes"}, nullptr));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"data_uncompressed_bytes"}, nullptr));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"codec_block_counts"}, nullptr));
             this->levels[this->current_level].rels.emplace_back(rel);
         }
         break;

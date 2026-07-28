@@ -2457,7 +2457,7 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kRemote: RemoteFuncToString(ret, tf.remote()); break;
         case TableFunctionType::kMysql: MySQLFuncToString(ret, tf.mysql()); break;
         case TableFunctionType::kPostgresql: PostgreSQLFuncToString(ret, tf.postgresql()); break;
-        case TableFunctionType::kSqite: SQLiteFuncToString(ret, tf.sqite()); break;
+        case TableFunctionType::kSqlite: SQLiteFuncToString(ret, tf.sqlite()); break;
         case TableFunctionType::kObjectFunc: ObjectStoreFuncToString(ret, tf.object_func()); break;
         case TableFunctionType::kMerge: MergeFuncToString(ret, tf.merge()); break;
         case TableFunctionType::kCluster: ClusterFuncToString(ret, tf.cluster()); break;
@@ -2482,6 +2482,10 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kMtindex: MergeTreeIndexFuncToString(ret, tf.mtindex()); break;
         case TableFunctionType::kMtproj: MergeTreeProjectionFuncToString(ret, tf.mtproj()); break;
         case TableFunctionType::kMttxtidx: MergeTreeTextIndexFuncToString(ret, tf.mttxtidx()); break;
+        case TableFunctionType::kMtcodecblocks:
+            ret += "mergeTreeCodecBlockCounts(";
+            FlatExprSchemaTableToString(ret, tf.mtcodecblocks(), "', '");
+            break;
         case TableFunctionType::kMtanindex: MergeTreeAnalyzeIndexesFuncToString(ret, tf.mtanindex()); break;
         case TableFunctionType::kFunc: SQLTableFuncCallToString(ret, tf.func()); break;
         default: ret += "numbers(10";

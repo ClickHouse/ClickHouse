@@ -165,10 +165,11 @@ StatementGenerator::StatementGenerator(
               {0.02, 0.10}, /// URLEncodedTable
               {0.10, 0.50}, /// TableEngineUDF
               {0.01, 0.05}, /// RandomTableUDF
-              {0.02, 0.05}, /// MergeIndexUDF
-              {0.01, 0.10}, /// MergeProjectionUDF
-              {0.01, 0.10}, /// MergeTextIndexUDF
-              {0.01, 0.05}, /// MergeIndexAnalyzeUDF
+              {0.01, 0.03}, /// MergeIndexUDF
+              {0.01, 0.03}, /// MergeProjectionUDF
+              {0.01, 0.03}, /// MergeTextIndexUDF
+              {0.01, 0.03}, /// MergeIndexAnalyzeUDF
+              {0.01, 0.03}, /// MergeCodecBlockCountsUDF
               {0.005, 0.02} /// FilesystemUDF (filesystem reads files, gate behind allow_not_deterministic)
           }},
           "SQL queries"))

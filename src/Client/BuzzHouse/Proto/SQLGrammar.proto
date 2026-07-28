@@ -52,6 +52,7 @@ enum SQLTableFunc {
     TFmergeTreeAnalyzeIndexesUUID = 47;
     TFmergeTreeIndex = 48;
     TFmergeTreeProjection = 49;
+    TFmergeTreeCodecBlockCounts = 88;
     TFmergeTreeTextIndex = 50;
     TFmongodb = 51;
     TFmysql = 52;
@@ -1003,7 +1004,7 @@ message TableFunction {
         RemoteFunc remote = 4;
         MySQLFunc mysql = 5;
         PostgreSQLFunc postgresql = 6;
-        SQLiteFunc sqite = 7;
+        SQLiteFunc sqlite = 7;
         ObjectStoreFunc object_func = 8;
         MergeFunc merge = 9;
         ClusterFunc cluster = 10;
@@ -1021,9 +1022,10 @@ message TableFunction {
         MergeTreeTextIndexFunc mttxtidx = 22;
         MergeTreeAnalyzeIndexesFunc mtanindex = 23;
         SQLTableFuncCall func = 24;
+        ExprSchemaTable mtcodecblocks = 25;
     }
-    optional SettingValues setting_values = 25;
-    repeated HTTPHeader http_headers = 26;
+    optional SettingValues setting_values = 26;
+    repeated HTTPHeader http_headers = 27;
 }
 
 message SampleClause {
