@@ -31,6 +31,8 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Planner/findQueryForParallelReplicas.h>
+
 #include <Core/Joins.h>
 #include <Core/Settings.h>
 
@@ -104,10 +106,19 @@ std::vector<TableNode *> collectTableNodesWithTemporaryTableName(const std::stri
 /// `MergeTree` to split either. Such a query must keep running as before, even under
 /// the forcing mode, so the rejection below must not fire for it.
 ///
-/// The check is deliberately conservative (fail closed): a table counts as
-/// parallel-replica-eligible unless it is clearly not one, so the force-or-throw
-/// contract is only relaxed when no table in the subtree could be read with parallel
-/// replicas at all.
+/// Eligibility is decided with the planner's own storage-level rule,
+/// `canUseTableForParallelReplicas` (which unwraps views and materialized views subject
+/// to `parallel_replicas_allow_view_over_mergetree` / `parallel_replicas_allow_materialized_views`
+/// and then applies `isTableNodeEligibleForParallelReplicas`: `MergeTree` family, replicated
+/// unless `parallel_replicas_for_non_replicated_merge_tree` is set, no `FINAL`), so that the
+/// rejection below cannot be broader than the planner's decision. A plain local `MergeTree`
+/// table with the default `parallel_replicas_for_non_replicated_merge_tree = 0`, for instance,
+/// is not eligible and must keep running under the forcing mode.
+///
+/// Remote storages (`Distributed`, `remote`, `cluster`) are eligible in addition: they are not
+/// covered by that rule (which only accepts the `MergeTree` family), yet the custom-key and
+/// sampling modes do split a read across a cluster's replicas. This is the fail-closed side of
+/// the check — a storage counts as eligible when parallel replicas could be engaged for it.
 ///
 /// The walk is scoped to `scope_context`: subqueries with a `SETTINGS` clause of their
 /// own get their own context, and the settings that decide whether parallel replicas
@@ -117,7 +128,7 @@ std::vector<TableNode *> collectTableNodesWithTemporaryTableName(const std::stri
 /// self-referential branch would be rejected because of a sibling branch that reads a
 /// `MergeTree` table. Nodes that share `scope_context` are the ones whose settings
 /// really are the ones being examined, so only those are walked.
-bool mayEngageParallelReplicas(IQueryTreeNode * root, const Context * scope_context)
+bool mayEngageParallelReplicas(IQueryTreeNode * root, const ContextPtr & scope_context)
 {
     std::vector<IQueryTreeNode *> nodes_to_process;
     nodes_to_process.push_back(root);
@@ -135,21 +146,28 @@ bool mayEngageParallelReplicas(IQueryTreeNode * root, const Context * scope_cont
             else if (const auto * union_node = subtree_node->as<UnionNode>())
                 node_context = union_node->getContext().get();
 
-            if (node_context && node_context != scope_context)
+            if (node_context && node_context != scope_context.get())
                 continue;
         }
 
-        StoragePtr storage;
         if (const auto * table_node = subtree_node->as<TableNode>())
-            storage = table_node->getStorage();
-        else if (const auto * table_function_node = subtree_node->as<TableFunctionNode>())
-            storage = table_function_node->getStorage();
+        {
+            const auto & storage = table_node->getStorage();
+            if (storage && storage->isRemote())
+                return true;
 
-        /// Remote storages (`Distributed`, `remote`, `cluster`) and views (which can wrap
-        /// a `MergeTree` table) can be read with parallel replicas, and so can every table
-        /// of the `MergeTree` family.
-        if (storage && (storage->isRemote() || storage->isView() || storage->isMergeTree()))
-            return true;
+            if (canUseTableForParallelReplicas(*table_node, scope_context))
+                return true;
+        }
+        else if (const auto * table_function_node = subtree_node->as<TableFunctionNode>())
+        {
+            /// A table function resolving to a remote storage (`remote`, `cluster`) can be read
+            /// with parallel replicas; local ones (`numbers`, `file`, ...) never are — the
+            /// planner rejects a `TABLE_FUNCTION` join-tree node outright.
+            const auto & storage = table_function_node->getStorage();
+            if (storage && storage->isRemote())
+                return true;
+        }
 
         for (auto & child : subtree_node->getChildren())
         {
@@ -681,15 +699,15 @@ public:
                 auto * node = nodes_to_scan.back();
                 nodes_to_scan.pop_back();
 
-                const Context * node_context = nullptr;
+                ContextPtr node_context;
                 if (const auto * qn = node->as<QueryNode>())
-                    node_context = qn->getContext().get();
+                    node_context = qn->getContext();
                 else if (const auto * un = node->as<UnionNode>())
-                    node_context = un->getContext().get();
+                    node_context = un->getContext();
 
                 if (node_context)
                 {
-                    bool & may_engage = context_may_engage_parallel_replicas[node_context];
+                    bool & may_engage = context_may_engage_parallel_replicas[node_context.get()];
                     may_engage = may_engage || mayEngageParallelReplicas(node, node_context);
                 }
 

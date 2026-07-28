@@ -782,6 +782,52 @@ WITH RECURSIVE mixed_branch_pr_throw AS
 )
 SELECT sum(n) FROM mixed_branch_pr_throw; -- { serverError SUPPORT_IS_DISABLED }
 
+-- The rejection must be no broader than the planner's own storage-level eligibility rule
+-- (`canUseTableForParallelReplicas`). A plain, non-replicated local `MergeTree` table with
+-- the default `parallel_replicas_for_non_replicated_merge_tree = 0` is not eligible: the
+-- planner would never engage parallel replicas for it, so the forcing mode has nothing to
+-- fail on and the query must keep running. Every throwing case above therefore has to set
+-- `parallel_replicas_for_non_replicated_merge_tree = 1` explicitly; this is the converse.
+WITH RECURSIVE joined_pr_non_replicated AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM joined_pr_non_replicated AS t INNER JOIN edges AS e ON e.from_id = t.n WHERE n < 10
+)
+SELECT sum(n) FROM joined_pr_non_replicated
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    automatic_parallel_replicas_mode = 0;
+
+-- The same for a view over a `MergeTree` table: it is eligible only while
+-- `parallel_replicas_allow_view_over_mergetree` is on, so with the view support turned off
+-- the forced mode must not reject the query ...
+CREATE VIEW edges_view AS SELECT * FROM edges;
+
+WITH RECURSIVE view_pr AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM view_pr AS t INNER JOIN edges_view AS e ON e.from_id = t.n WHERE n < 10
+)
+SELECT sum(n) FROM view_pr
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_allow_view_over_mergetree = 0,
+    automatic_parallel_replicas_mode = 0;
+
+-- ... and must reject it once the view really can be read with parallel replicas.
+WITH RECURSIVE view_pr_throw AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM view_pr_throw AS t INNER JOIN edges_view AS e ON e.from_id = t.n WHERE n < 10
+)
+SELECT sum(n) FROM view_pr_throw
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_allow_view_over_mergetree = 1,
+    automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
+
+DROP VIEW edges_view;
+
 DROP TABLE edges;
 DROP TABLE two_hop;
 DROP TABLE t_a;

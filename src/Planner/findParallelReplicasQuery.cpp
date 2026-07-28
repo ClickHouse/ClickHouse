@@ -58,7 +58,7 @@ bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const 
     return true;
 }
 
-static bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context)
+bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
     auto storage = table_node.getStorage();

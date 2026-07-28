@@ -29,6 +29,11 @@ using ContextPtr = std::shared_ptr<const Context>;
 /// Check whether a resolved storage is eligible for parallel replicas (MergeTree, replication, no FINAL).
 bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const StoragePtr & storage, const ContextPtr & context);
 
+/// Check whether a table node can be read with parallel replicas: unwraps views and materialized
+/// views (subject to the settings that allow them) and applies `isTableNodeEligibleForParallelReplicas`
+/// to the resulting storage. This is the storage-level eligibility rule the planner itself uses.
+bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context);
+
 /// Find a UNION node whose every child query reads from a table eligible for parallel replicas.
 /// Used for views with UNION ALL where each branch reads from a separate MergeTree table.
 const UnionNode * findTableUnionForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options);
