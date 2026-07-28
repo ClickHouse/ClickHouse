@@ -373,12 +373,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     }
     else if (left->getNumStreams() != 1 || right->getNumStreams() != 1)
     {
-        /// JOIN sharding (query_plan_join_shard_by_pk_ranges) keeps several per-shard streams on each side
-        /// via PartitionedFinishSorting. JoinStep falls back here whenever the two sides end up with a
-        /// different number of streams (so YShapedByShards cannot be used). The MergeJoinTransform below
-        /// takes exactly one sorted stream per side, so merge each side back into a single stream. The
-        /// input streams are already sorted by the join keys (Sort ... before JOIN), so a sorted merge on
-        /// those keys preserves the order the merge join requires.
+        /// `MergeJoinTransform` below takes exactly one input per side. The streams are already sorted by the
+        /// join keys, so a sorted merge on those keys preserves the order it requires.
         auto merge_to_single_sorted_stream = [&](std::unique_ptr<QueryPipelineBuilder> & pipeline, const Names & key_names)
         {
             if (pipeline->getNumStreams() <= 1)
@@ -398,7 +394,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
                 /*max_dynamic_subcolumns=*/ std::nullopt,
                 SortingQueueStrategy::Default);
 
+            /// Report the merge to the caller's collector so that `EXPLAIN PIPELINE` lists it.
+            pipeline->pipe.collected_processors = collected_processors;
             pipeline->addTransform(std::move(transform));
+            pipeline->pipe.collected_processors = nullptr;
         };
 
         const auto & on_clause = join->getTableJoin().getOnlyClause();
