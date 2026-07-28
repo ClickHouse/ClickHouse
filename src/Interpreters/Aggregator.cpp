@@ -161,6 +161,73 @@ namespace
     }
 
     /// Emplace one staged key into the table. String-like keys were staged as raw characters
+    /// How far past a key's bytes a reader may touch. The overflow-tolerant small copy and
+    /// compare primitives access up to 15 bytes past the end, which is only legal for bytes
+    /// living in padded containers (column chars, arenas, the staged arrays); an exact-size
+    /// allocation forbids them.
+    enum class ReadablePadding
+    {
+        Exact,
+        AtLeast15Bytes,
+    };
+
+    struct KeyBytesRef
+    {
+        std::string_view bytes;
+        ReadablePadding padding;
+    };
+
+    /// Runs `callback` on the row's key bytes while their owner is alive. This is the only
+    /// safe shape: a generic hashing state's key holder may own the bytes itself (an
+    /// exact-size allocation) or roll its scratch-arena allocation back on discard, so a
+    /// pointer must not outlive the holder. States that expose their padded column buffers
+    /// skip the holder entirely; fixed-size keys are copied into a local first. The padding
+    /// in the ref tells the callback which comparison and copy primitives are legal.
+    template <typename SharedKey, typename State, typename Callback>
+    void ALWAYS_INLINE withStagedKeyBytes(State & state, size_t row, size_t size, DB::Arena & scratch, Callback && callback)
+    {
+        if constexpr (requires { state.chars; state.offsets; })
+        {
+            const char * data
+                = reinterpret_cast<const char *>(state.chars) + state.offsets[static_cast<ssize_t>(row) - 1];
+            callback(KeyBytesRef{std::string_view(data, size), ReadablePadding::AtLeast15Bytes});
+        }
+        else if constexpr (adaptive_key_stages_bytes<SharedKey>)
+        {
+            auto && key_holder = state.getKeyHolder(row, scratch);
+            callback(KeyBytesRef{adaptiveStagedKeyBytes(keyHolderGetKey(key_holder)), ReadablePadding::Exact});
+            keyHolderDiscardKey(key_holder);
+        }
+        else
+        {
+            auto && key_holder = state.getKeyHolder(row, scratch);
+            const SharedKey widened = keyHolderGetKey(key_holder);
+            keyHolderDiscardKey(key_holder);
+            callback(KeyBytesRef{std::string_view(reinterpret_cast<const char *>(&widened), sizeof(widened)), ReadablePadding::Exact});
+        }
+    }
+
+    /// Compare a staged key (always in a padded container) with candidate bytes of the same
+    /// size. The overflow-tolerant primitive reads past both ends, so it is gated on the
+    /// candidate's padding; small keys are where it beats a libc call.
+    bool ALWAYS_INLINE stagedKeyEquals(const char * staged, const KeyBytesRef & key)
+    {
+        if (key.padding == ReadablePadding::AtLeast15Bytes && key.bytes.size() <= 64)
+            return memequalSmallAllowOverflow15(staged, key.bytes.size(), key.bytes.data(), key.bytes.size());
+        return memcmp(staged, key.bytes.data(), key.bytes.size()) == 0;
+    }
+
+    /// Copy candidate bytes into staged (padded) storage, honoring the source's padding.
+    void ALWAYS_INLINE copyStagedKeyBytes(char * staged, const KeyBytesRef & key)
+    {
+        if (key.bytes.empty())
+            return;
+        if (key.padding == ReadablePadding::AtLeast15Bytes && key.bytes.size() <= 64)
+            memcpySmallAllowReadWriteOverflow15(staged, key.bytes.data(), key.bytes.size());
+        else
+            memcpy(staged, key.bytes.data(), key.bytes.size());
+    }
+
     /// and are rebuilt here. `adopt_keys` selects the key ownership: at merge time the delayed
     /// blocks are retained on the shared state until after the merged buckets are converted, so
     /// string-like keys are emplaced pointing into the staged bytes directly, with no copy; a
@@ -2362,72 +2429,36 @@ void NO_INLINE Aggregator::publishValueStagedRecordsSorted(
             /// The key bytes are read straight from the hashing state's column when it exposes
             /// them: the generic key holder of the packed method would re-pack the key and
             /// re-compute its content hash per record, and the staged arrays already hold both.
-            const char * key_data = nullptr;
-            [[maybe_unused]] SharedKey widened{};
-            if constexpr (requires { local_find_state.chars; local_find_state.offsets; })
-            {
-                key_data = reinterpret_cast<const char *>(local_find_state.chars)
-                    + local_find_state.offsets[static_cast<ssize_t>(key_row) - 1];
-            }
-            else if constexpr (adaptive_key_stages_bytes<SharedKey>)
-            {
-                auto && key_holder = local_find_state.getKeyHolder(key_row, scratch_pool);
-                key_data = adaptiveStagedKeyBytes(keyHolderGetKey(key_holder)).data();
-                keyHolderDiscardKey(key_holder);
-            }
-            else
-            {
-                auto && key_holder = local_find_state.getKeyHolder(key_row, scratch_pool);
-                widened = keyHolderGetKey(key_holder);
-                key_data = reinterpret_cast<const char *>(&widened);
-                keyHolderDiscardKey(key_holder);
-            }
+            /// All byte uses happen inside the holder's lifetime (see `withStagedKeyBytes`).
+            withStagedKeyBytes<SharedKey>(
+                local_find_state,
+                key_row,
+                size,
+                scratch_pool,
+                [&](const KeyBytesRef & key)
+                {
+                    /// A duplicate key can only be one of this group's survivors (usually zero
+                    /// or one): merge the run lengths instead of staging another copy of the
+                    /// key. Equal hashes of distinct keys are split by the byte comparison.
+                    for (size_t j = group_out_begin; j < out; ++j)
+                    {
+                        if (block->routing_hashes[j] != hash)
+                            continue;
+                        const UInt64 j_end = (j + 1 == out) ? byte_pos : block->key_offsets[j + 1];
+                        if (j_end - block->key_offsets[j] != size
+                            || !stagedKeyEquals(block->key_bytes.data() + block->key_offsets[j], key))
+                            continue;
+                        block->run_lengths[j] += adaptive.miss_run_lengths[idx];
+                        return;
+                    }
 
-            /// A duplicate key can only be one of this group's survivors (usually zero or one):
-            /// merge the run lengths instead of staging another copy of the key. Equal hashes
-            /// of distinct keys are split by the byte comparison. String-like keys use the
-            /// overflow-tolerant small copy and compare: both sides live in padded containers
-            /// (the column's chars, the scratch arena, and the staged bytes), and the staging
-            /// copies are small enough that the libc call itself dominates a plain memcpy.
-            const auto keys_equal = [&](const char * a, const char * b) -> bool
-            {
-                /// The 16-byte-loop small primitives beat a libc call only for short keys.
-                if constexpr (adaptive_key_stages_bytes<SharedKey>)
-                    return size <= 64 ? memequalSmallAllowOverflow15(a, size, b, size) : memcmp(a, b, size) == 0;
-                else
-                    return memcmp(a, b, size) == 0;
-            };
-
-            bool merged = false;
-            for (size_t j = group_out_begin; j < out; ++j)
-            {
-                if (block->routing_hashes[j] != hash)
-                    continue;
-                const UInt64 j_end = (j + 1 == out) ? byte_pos : block->key_offsets[j + 1];
-                if (j_end - block->key_offsets[j] != size
-                    || !keys_equal(block->key_bytes.data() + block->key_offsets[j], key_data))
-                    continue;
-                block->run_lengths[j] += adaptive.miss_run_lengths[idx];
-                merged = true;
-                break;
-            }
-            if (merged)
-                continue;
-
-            block->routing_hashes[out] = hash;
-            block->run_lengths[out] = adaptive.miss_run_lengths[idx];
-            block->key_offsets[out] = byte_pos;
-            if constexpr (adaptive_key_stages_bytes<SharedKey>)
-            {
-                if (size <= 64)
-                    memcpySmallAllowReadWriteOverflow15(block->key_bytes.data() + byte_pos, key_data, size);
-                else
-                    memcpy(block->key_bytes.data() + byte_pos, key_data, size);
-            }
-            else
-                memcpy(block->key_bytes.data() + byte_pos, key_data, size);
-            byte_pos += size;
-            ++out;
+                    block->routing_hashes[out] = hash;
+                    block->run_lengths[out] = adaptive.miss_run_lengths[idx];
+                    block->key_offsets[out] = byte_pos;
+                    copyStagedKeyBytes(block->key_bytes.data() + byte_pos, key);
+                    byte_pos += size;
+                    ++out;
+                });
         }
     }
 
@@ -2739,18 +2770,17 @@ void Aggregator::sealValueStagedChunkDeduplicated(
                 const size_t size = mini.key_offsets[ref.index + 1] - src_begin;
                 const char * key_data = mini.key_bytes.data() + src_begin;
 
+                /// Batch key bytes live in the minis' padded staged arrays.
+                const KeyBytesRef key{std::string_view(key_data, size), ReadablePadding::AtLeast15Bytes};
+
                 bool merged = false;
                 for (size_t j = group_out_begin; j < out; ++j)
                 {
                     if (chunk.routing_hashes[j] != ref.hash)
                         continue;
                     const UInt64 j_end = (j + 1 == out) ? byte_pos : chunk.key_offsets[j + 1];
-                    if (j_end - chunk.key_offsets[j] != size)
-                        continue;
-                    const char * survivor = chunk.key_bytes.data() + chunk.key_offsets[j];
-                    const bool equal = size <= 64 ? memequalSmallAllowOverflow15(survivor, size, key_data, size)
-                                                  : memcmp(survivor, key_data, size) == 0;
-                    if (!equal)
+                    if (j_end - chunk.key_offsets[j] != size
+                        || !stagedKeyEquals(chunk.key_bytes.data() + chunk.key_offsets[j], key))
                         continue;
                     chunk.run_lengths[j] += mini.run_lengths[ref.index];
                     merged = true;
@@ -2762,10 +2792,7 @@ void Aggregator::sealValueStagedChunkDeduplicated(
                 chunk.routing_hashes[out] = ref.hash;
                 chunk.run_lengths[out] = mini.run_lengths[ref.index];
                 chunk.key_offsets[out] = byte_pos;
-                if (size <= 64)
-                    memcpySmallAllowReadWriteOverflow15(chunk.key_bytes.data() + byte_pos, key_data, size);
-                else
-                    memcpy(chunk.key_bytes.data() + byte_pos, key_data, size);
+                copyStagedKeyBytes(chunk.key_bytes.data() + byte_pos, key);
                 byte_pos += size;
                 ++out;
             }
