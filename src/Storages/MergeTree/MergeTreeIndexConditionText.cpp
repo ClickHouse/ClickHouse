@@ -898,8 +898,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     auto index_column_name = index_column_node.getColumnName();
     bool has_index_column = hasHeaderColumn(index_column_name);
-    bool has_map_keys_column = header.has(fmt::format("mapKeys({})", index_column_name));
-    bool has_map_values_column = header.has(fmt::format("mapValues({})", index_column_name));
+    bool has_map_keys_column = hasHeaderColumn(fmt::format("mapKeys({})", index_column_name));
+    bool has_map_values_column = hasHeaderColumn(fmt::format("mapValues({})", index_column_name));
 
     if (traverseMapElementValueNode(index_column_node, value_field))
     {
@@ -1548,7 +1548,7 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
         if (function.getArgumentsSize() == 2 && function.getFunctionName() == "arrayElement")
         {
             const auto column_name = function.getArgumentAt(0).getColumnName();
-            return header.has(fmt::format("mapValues({})", column_name));
+            return hasHeaderColumn(fmt::format("mapValues({})", column_name));
         }
         return false;
     }

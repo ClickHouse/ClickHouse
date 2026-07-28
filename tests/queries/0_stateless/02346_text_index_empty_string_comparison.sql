@@ -107,3 +107,87 @@ SELECT trimLeft(explain) FROM (
 ) WHERE explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Granules:%';
 
 DROP TABLE tab;
+
+SELECT 'Index on mapKeys of an alias column filtering out empty keys';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    m Map(String, String),
+    filtered_m Map(String, String) ALIAS mapFilter((k, v) -> k != '', m),
+    INDEX idx mapKeys(filtered_m) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
+
+INSERT INTO tab VALUES (1, {'xoo':'a', '':'b'}), (2, {'foo':'a'}), (3, {'bar':'a'}), (4, {'baz':'a'}), (5, {'qux':'a'}), (6, {'waldo':'a'});
+
+SELECT '-- Results with and without the optimization';
+SELECT count() FROM tab WHERE mapContainsKey(filtered_m, 'xoo') SETTINGS optimize_empty_string_comparisons = 1;
+SELECT count() FROM tab WHERE mapContainsKey(filtered_m, 'xoo') SETTINGS optimize_empty_string_comparisons = 0;
+
+SELECT '-- The index must be used with the optimization';
+SELECT trimLeft(explain) FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE mapContainsKey(filtered_m, 'xoo')
+    SETTINGS optimize_empty_string_comparisons = 1
+) WHERE explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Granules:%';
+
+SELECT '-- The index must be used without the optimization';
+SELECT trimLeft(explain) FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE mapContainsKey(filtered_m, 'xoo')
+    SETTINGS optimize_empty_string_comparisons = 0
+) WHERE explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Granules:%';
+
+DROP TABLE tab;
+
+SELECT 'Index on mapValues of an alias column filtering out empty values';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    m Map(String, String),
+    filtered_m Map(String, String) ALIAS mapFilter((k, v) -> v != '', m),
+    INDEX idx mapValues(filtered_m) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
+
+INSERT INTO tab VALUES (1, {'k':'xoo', 'e':''}), (2, {'k':'foo'}), (3, {'k':'bar'}), (4, {'k':'baz'}), (5, {'k':'qux'}), (6, {'k':'waldo'});
+
+SELECT '-- Results with and without the optimization';
+SELECT count() FROM tab WHERE mapContainsValue(filtered_m, 'xoo') SETTINGS optimize_empty_string_comparisons = 1;
+SELECT count() FROM tab WHERE mapContainsValue(filtered_m, 'xoo') SETTINGS optimize_empty_string_comparisons = 0;
+
+SELECT '-- The index must be used with the optimization';
+SELECT trimLeft(explain) FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE mapContainsValue(filtered_m, 'xoo')
+    SETTINGS optimize_empty_string_comparisons = 1
+) WHERE explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Granules:%';
+
+SELECT '-- The index must be used without the optimization';
+SELECT trimLeft(explain) FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE mapContainsValue(filtered_m, 'xoo')
+    SETTINGS optimize_empty_string_comparisons = 0
+) WHERE explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Granules:%';
+
+SELECT '-- The index must be used for map element access with the optimization';
+SELECT trimLeft(explain) FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE filtered_m['k'] = 'xoo'
+    SETTINGS optimize_empty_string_comparisons = 1
+) WHERE explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Granules:%';
+
+SELECT '-- The index must be used for map element access without the optimization';
+SELECT trimLeft(explain) FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE filtered_m['k'] = 'xoo'
+    SETTINGS optimize_empty_string_comparisons = 0
+) WHERE explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Granules:%';
+
+DROP TABLE tab;
