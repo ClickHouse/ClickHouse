@@ -10,10 +10,11 @@ CREATE TABLE t_skip_idx_checksums
     k UInt64,
     s String,
     v UInt64,
+    g String,
     m Map(String, UInt64) MATERIALIZED map('a', k),
     INDEX mm_v v TYPE minmax GRANULARITY 1,
     INDEX bf_s s TYPE bloom_filter GRANULARITY 1,
-    INDEX set_v v TYPE set(100) GRANULARITY 1
+    INDEX set_g g TYPE set(2) GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY k
 -- Force eager index-size calculation so secondary_indices_compressed_bytes is deterministic
@@ -23,7 +24,7 @@ ENGINE = MergeTree ORDER BY k
 -- would leave nothing to prune.
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, columns_and_secondary_indices_sizes_lazy_calculation = 0, index_granularity = 100;
 
-INSERT INTO t_skip_idx_checksums (k, s, v) SELECT number, toString(number % 50), number FROM numbers(2000);
+INSERT INTO t_skip_idx_checksums (k, s, v, g) SELECT number, toString(number % 50), number, if(intDiv(number, 100) = 7, 'rare', 'common') FROM numbers(2000);
 OPTIMIZE TABLE t_skip_idx_checksums FINAL;
 
 SELECT part_type FROM system.parts WHERE table = 't_skip_idx_checksums' AND active AND database = currentDatabase();
@@ -46,13 +47,18 @@ CHECK TABLE t_skip_idx_checksums SETTINGS check_query_single_value_result = 0;
 -- `mm_v` (minmax over the non-primary-key monotone `v`) narrows 20 granules to 1.
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_skip_idx_checksums WHERE v = 1042) WHERE explain ILIKE '%Name: mm_v%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_skip_idx_checksums WHERE v = 1042) WHERE explain ILIKE '%Granules: 1/20%';
--- `set_v` runs after `mm_v` on the same predicate, so it is asserted by name on its own line.
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_skip_idx_checksums WHERE v = 1042) WHERE explain ILIKE '%Name: set_v%';
+-- `set_g` gets its own column: `g` is 'rare' in exactly one granule, so it is the only index that
+-- can eliminate granules for that predicate. Asserting the granule count rather than just the name
+-- matters, because the plan still prints an index's name when its file is missing and no granule is
+-- eliminated at all.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_skip_idx_checksums WHERE g = 'rare') WHERE explain ILIKE '%Name: set_g%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_skip_idx_checksums WHERE g = 'rare') WHERE explain ILIKE '%Granules: 1/20%';
 -- `bf_s` needs a predicate on `s`, and an absent value lets it drop every granule.
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_skip_idx_checksums WHERE s = 'absent') WHERE explain ILIKE '%Name: bf_s%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_skip_idx_checksums WHERE s = 'absent') WHERE explain ILIKE '%Granules: 0/20%';
 SELECT count() FROM t_skip_idx_checksums WHERE v = 1042;
 SELECT count() FROM t_skip_idx_checksums WHERE s = 'absent';
+SELECT count() FROM t_skip_idx_checksums WHERE g = 'rare';
 
 DROP TABLE t_skip_idx_checksums;
 
