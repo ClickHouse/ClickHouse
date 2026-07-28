@@ -34,7 +34,7 @@
 # mark but dropped its data, silently losing the index after the mutation (CHECK
 # TABLE still passed because the old archive checksum is removed and rewritten).
 # The fix enumerates the substreams actually present in the source part via
-# getDeserializedFormat(source_part->checksums, ...), which probes both ".idx"
+# getAllSubstreamsInPart(source_part->checksums, ...), which probes both ".idx"
 # and ".idx2".
 #
 # The modern writer only produces ".idx2", so the legacy shape is fabricated:

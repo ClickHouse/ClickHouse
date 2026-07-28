@@ -39,7 +39,7 @@
 # hardlinked into the new part and leaked dead next to the fresh ".idx2", with a
 # stale checksum entry pointing at it. The fix enumerates the substreams
 # actually present in the source part via
-# getDeserializedFormat(source_part->checksums, ...), which probes both ".idx"
+# getAllSubstreamsInPart(source_part->checksums, ...), which probes both ".idx"
 # and ".idx2".
 #
 # The modern writer only produces ".idx2", so the legacy shape is fabricated:

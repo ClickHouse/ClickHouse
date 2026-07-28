@@ -1188,6 +1188,12 @@ static NameToNameVector collectFilesForRenames(
             rename_vector.emplace_back(file_rename_from, file_rename_to);
     };
 
+    /// Stream-name prefixes owned by the indices that survive this mutation. `metadata_snapshot` is
+    /// already the post-drop metadata, so a dropped index is absent here.
+    NameSet surviving_index_files;
+    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+        surviving_index_files.insert(getIndexFileName(index.name, metadata_snapshot->escape_index_filenames));
+
     /// Remove old data
     for (const auto & command : commands_for_renames)
     {
@@ -1204,6 +1210,12 @@ static NameToNameVector collectFilesForRenames(
                 {
                     const String index_filename = getIndexFileName(command.column_name, metadata_snapshot->escape_index_filenames);
                     const String stream_name = index_filename + substream;
+
+                    /// With escape_index_filenames = 0 a speculative suffix can collide with a
+                    /// surviving index whose own name ends in that suffix (dropping `a` would
+                    /// otherwise delete index `a.pos`). Never touch a file another index owns.
+                    if (!substream.empty() && surviving_index_files.contains(stream_name))
+                        continue;
 
                     /// Resolve against checksums first (no I/O), then fall back to storage so `DROP
                     /// INDEX` also removes corrupted-part orphan files absent from `checksums.txt`.
@@ -3308,11 +3320,21 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         static const std::array<String, 2> known_index_extensions = {".idx2", ".idx"};
         const bool escape_filenames = ctx->metadata_snapshot->escape_index_filenames;
 
+        /// Stream-name prefixes owned by the indices that survive this mutation, so a speculative
+        /// suffix never claims a sibling's file (dropping `a` must not touch index `a.pos`).
+        NameSet surviving_index_files;
+        for (const auto & index : ctx->metadata_snapshot->getSecondaryIndices())
+            if (!ctx->indices_to_drop_names.contains(index.name))
+                surviving_index_files.insert(getIndexFileName(index.name, escape_filenames));
+
         for (const auto & idx_name : ctx->indices_to_drop_names)
         {
             const String idx_file_name = getIndexFileName(idx_name, escape_filenames);
             for (const auto & sub : known_substream_suffixes)
             {
+                if (!sub.empty() && surviving_index_files.contains(idx_file_name + sub))
+                    continue;
+
                 for (const auto & ext : known_index_extensions)
                 {
                     const String candidate = idx_file_name + sub + ext;

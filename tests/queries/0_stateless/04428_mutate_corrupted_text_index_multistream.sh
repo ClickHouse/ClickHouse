@@ -64,10 +64,32 @@ orphan_on_disk () {
     if ls "${part}"skp_idx_txt.* >/dev/null 2>&1; then echo 1; else echo 0; fi
 }
 
+# Count the fabricated files one by one instead of globbing. A glob over
+# skp_idx_txt.* stays green even if an entire substream silently stops being
+# written -- in particular the positional .pos pair, which only exists while
+# support_phrase_search is on -- and that would make the orphan-cleanup
+# assertions vacuous for exactly the substreams this test is about. Expect 8:
+# base, .dct, .pst and .pos, each with a data file and a mark file.
+side_streams_on_disk () {
+    local tbl="$1"
+    local part n=0 f
+    part=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active LIMIT 1")
+    for f in skp_idx_txt.idx skp_idx_txt.cmrk2 \
+             skp_idx_txt.dct.idx skp_idx_txt.dct.cmrk2 \
+             skp_idx_txt.pst.idx skp_idx_txt.pst.cmrk2 \
+             skp_idx_txt.pos.idx skp_idx_txt.pos.cmrk2
+    do
+        if [ -e "${part}${f}" ]; then n=$((n + 1)); fi
+    done
+    echo "${n}"
+}
+
 # --- Path A: some-columns mutation (ALTER UPDATE of the non-indexed column w) ---
 make_corrupted_part t_some
 echo "A_corrupted_orphan_on_disk:"
 orphan_on_disk t_some
+echo "A_corrupted_side_streams_on_disk:"
+side_streams_on_disk t_some
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_some UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2"
 echo "A_orphan_after_update:"
 orphan_on_disk t_some
@@ -80,6 +102,8 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_some SYNC"
 make_corrupted_part t_drop
 echo "B_corrupted_orphan_on_disk:"
 orphan_on_disk t_drop
+echo "B_corrupted_side_streams_on_disk:"
+side_streams_on_disk t_drop
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_drop DROP INDEX txt SETTINGS mutations_sync = 2"
 echo "B_orphan_after_drop_index:"
 orphan_on_disk t_drop
@@ -99,7 +123,14 @@ ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_ok (k, s, w) SELECT number, concat('hello
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_ok UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2"
 echo "C_healthy_index_survives:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM system.parts WHERE database = currentDatabase() AND table = 't_ok' AND active AND secondary_indices_marks_bytes > 0"
+# Every substream, including the positional pair, must survive the mutation
+# individually -- an aggregate mark size stays positive even if .pos is lost.
+echo "C_healthy_side_streams_on_disk:"
+side_streams_on_disk t_ok
 echo "C_check_table:"
 ${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_ok SETTINGS check_query_single_value_result = 1"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ok WHERE hasToken(s, 'hello10')"
+# hasPhrase reads the positional substream, so this fails if .pos was dropped.
+echo "C_has_phrase:"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ok WHERE hasPhrase(s, 'hello10 world10')"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ok SYNC"

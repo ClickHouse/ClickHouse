@@ -8,7 +8,7 @@
 # checksums.txt. Such an index is already dead (reads probe checksums and see
 # nothing, so it never prunes; CHECK TABLE fails with
 # UNEXPECTED_FILE_IN_DATA_PART). A later full-part-rewrite mutation used to take
-# the preserve path (getDeserializedFormat over checksums returns no substreams)
+# the preserve path (getAllSubstreamsInPart over checksums returns no substreams)
 # and drop the orphan files without repairing the part, losing the index
 # forever. The fix detects the shape (index present on disk but unresolvable
 # from checksums) and forces a recalculate so the writer rebuilds the index.
