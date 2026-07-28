@@ -177,7 +177,7 @@ static inline auto createHandlersFactoryFromConfig(
             {
                 main_handler_factory->addHandler(createPredefinedHandlerFactory(server, config, prefix + "." + key, common_headers_override));
             }
-            else if (handler_type == "prometheus")
+            else if (handler_type.starts_with("prometheus"))
             {
                 main_handler_factory->addHandler(
                     createPrometheusHandlerFactoryForHTTPRule(server, config, prefix + "." + key, async_metrics, common_headers_override));
@@ -233,6 +233,12 @@ static inline auto createHandlersFactoryFromConfig(
             else if (handler_type == "schema")
             {
                 auto handler = createWebUIHandlerFactory<SchemaWebUIRequestHandler>(server, config, prefix + "." + key, common_headers_override);
+                handler->addFiltersFromConfig(config, prefix + "." + key);
+                main_handler_factory->addHandler(std::move(handler));
+            }
+            else if (handler_type == "docs")
+            {
+                auto handler = createWebUIHandlerFactory<DocsWebUIRequestHandler>(server, config, prefix + "." + key, common_headers_override);
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
@@ -410,6 +416,12 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     processors_profile_handler->allowGetAndHeadRequest();
     factory.addPathToHints("/processors-profile");
     factory.addHandler(processors_profile_handler);
+
+    auto docs_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DocsWebUIRequestHandler>>(server);
+    docs_handler->attachNonStrictPath("/docs");
+    docs_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/docs");
+    factory.addHandler(docs_handler);
 
     auto js_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<JavaScriptWebUIRequestHandler>>(server);
     js_handler->attachNonStrictPath("/js/");

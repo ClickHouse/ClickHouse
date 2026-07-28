@@ -1,0 +1,653 @@
+---
+description: 'ORDER BY 句のドキュメント'
+sidebarTitle: 'ORDER BY'
+slug: /sql-reference/statements/select/order-by
+title: 'ORDER BY 句'
+doc_type: 'reference'
+---
+
+`ORDER BY` 句には、次のいずれかを指定できます。
+
+* 式のリスト (例: `ORDER BY visits, search_phrase`)
+* `SELECT` 句内のカラムを参照する番号のリスト (例: `ORDER BY 2, 1`)
+* `SELECT` 句のすべてのカラムを意味する `ALL` (例: `ORDER BY ALL`)
+
+カラム番号によるソートを無効にするには、設定 [enable&#95;positional&#95;arguments](/ja/reference/settings/session-settings#enable_positional_arguments) = 0 を指定します。
+`ALL` によるソートを無効にするには、設定 [enable&#95;order&#95;by&#95;all](/ja/reference/settings/session-settings#enable_order_by_all) = 0 を指定します。
+
+`ORDER BY` 句には、ソート方向を決定する `DESC` (降順) または `ASC` (昇順) の修飾子を付けることができます。
+明示的にソート順を指定しない場合は、デフォルトで `ASC` が使用されます。
+ソート方向はリスト全体ではなく、個々の式に適用されます。たとえば `ORDER BY Visits DESC, SearchPhrase` です。
+また、ソートでは大文字と小文字が区別されます。
+
+ソート式の値が同じ行は、任意かつ非決定論的な順序で返されます。
+`SELECT` ステートメントで `ORDER BY` 句を省略した場合も、行の順序は任意かつ非決定論的です。
+
+<div id="sorting-of-special-values">
+  ## 特殊な値のソート
+</div>
+
+`NaN` と `NULL` のソート順には、2 つの方法があります。
+
+* デフォルト、または `NULLS LAST` 修飾子を使用する場合: まず値、次に `NaN`、最後に `NULL`。
+* `NULLS FIRST` 修飾子を使用する場合: まず `NULL`、次に `NaN`、その後にその他の値。
+
+<div id="example">
+  ### 例
+</div>
+
+テーブルについて
+
+```text
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+│ 2 │    2 │
+│ 1 │  nan │
+│ 2 │    2 │
+│ 3 │    4 │
+│ 5 │    6 │
+│ 6 │  nan │
+│ 7 │ ᴺᵁᴸᴸ │
+│ 6 │    7 │
+│ 8 │    9 │
+└───┴──────┘
+```
+
+次の結果を得るには、クエリ `SELECT * FROM t_null_nan ORDER BY y NULLS FIRST` を実行します。
+
+```text
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+│ 7 │ ᴺᵁᴸᴸ │
+│ 1 │  nan │
+│ 6 │  nan │
+│ 2 │    2 │
+│ 2 │    2 │
+│ 3 │    4 │
+│ 5 │    6 │
+│ 6 │    7 │
+│ 8 │    9 │
+└───┴──────┘
+```
+
+浮動小数点数をソートすると、NaN は他の値とは別に扱われます。ソート順にかかわらず、NaN は末尾に配置されます。つまり、昇順では他のすべての数値より大きいものとして、降順ではそれ以外の値より小さいものとして配置されます。
+
+<div id="collation-support">
+  ## 照合順序のサポート
+</div>
+
+[String](/ja/reference/data-types/string) 型の値でソートする場合は、照合順序 (collation) を指定できます。例: `ORDER BY SearchPhrase COLLATE 'tr'` - これは、文字列が UTF-8 でエンコードされていることを前提に、トルコ語アルファベットを使用し、大文字と小文字を区別せずに、キーワードを昇順でソートすることを意味します。`COLLATE` は、ORDER BY 内の各 式 に対して個別に指定することも、指定しないこともできます。`ASC` または `DESC` を指定する場合は、その後に `COLLATE` を指定します。`COLLATE` を使用すると、ソートは常に大文字と小文字を区別しません。
+
+`COLLATE` は [LowCardinality](/ja/reference/data-types/lowcardinality)、[Nullable](/ja/reference/data-types/nullable)、[Array](/ja/reference/data-types/array)、[Tuple](/ja/reference/data-types/tuple) でサポートされています。
+
+`COLLATE` を使ったソートは通常のバイト単位のソートよりも効率が低いため、`COLLATE` は少数の行に対する最終的なソートにのみ使用することを推奨します。
+
+<div id="collation-examples">
+  ## 照合順序の例
+</div>
+
+[String](/ja/reference/data-types/string) 型の値のみを使った例:
+
+入力テーブル:
+
+```text
+┌─x─┬─s────┐
+│ 1 │ bca  │
+│ 2 │ ABC  │
+│ 3 │ 123a │
+│ 4 │ abc  │
+│ 5 │ BCA  │
+└───┴──────┘
+```
+
+```sql title="Query"
+SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
+```
+
+```text title="Response"
+┌─x─┬─s────┐
+│ 3 │ 123a │
+│ 4 │ abc  │
+│ 2 │ ABC  │
+│ 1 │ bca  │
+│ 5 │ BCA  │
+└───┴──────┘
+```
+
+[Nullable](/ja/reference/data-types/nullable) の例:
+
+入力テーブル:
+
+```text
+┌─x─┬─s────┐
+│ 1 │ bca  │
+│ 2 │ ᴺᵁᴸᴸ │
+│ 3 │ ABC  │
+│ 4 │ 123a │
+│ 5 │ abc  │
+│ 6 │ ᴺᵁᴸᴸ │
+│ 7 │ BCA  │
+└───┴──────┘
+```
+
+```sql title="Query"
+SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
+```
+
+```text title="Response"
+┌─x─┬─s────┐
+│ 4 │ 123a │
+│ 5 │ abc  │
+│ 3 │ ABC  │
+│ 1 │ bca  │
+│ 7 │ BCA  │
+│ 6 │ ᴺᵁᴸᴸ │
+│ 2 │ ᴺᵁᴸᴸ │
+└───┴──────┘
+```
+
+[Array](/ja/reference/data-types/array) の例：
+
+入力テーブル：
+
+```text
+┌─x─┬─s─────────────┐
+│ 1 │ ['Z']         │
+│ 2 │ ['z']         │
+│ 3 │ ['a']         │
+│ 4 │ ['A']         │
+│ 5 │ ['z','a']     │
+│ 6 │ ['z','a','a'] │
+│ 7 │ ['']          │
+└───┴───────────────┘
+```
+
+```sql title="Query"
+SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
+```
+
+```text title="Response"
+┌─x─┬─s─────────────┐
+│ 7 │ ['']          │
+│ 3 │ ['a']         │
+│ 4 │ ['A']         │
+│ 2 │ ['z']         │
+│ 5 │ ['z','a']     │
+│ 6 │ ['z','a','a'] │
+│ 1 │ ['Z']         │
+└───┴───────────────┘
+```
+
+[LowCardinality](/ja/reference/data-types/lowcardinality)文字列の例:
+
+入力テーブル:
+
+```response
+┌─x─┬─s───┐
+│ 1 │ Z   │
+│ 2 │ z   │
+│ 3 │ a   │
+│ 4 │ A   │
+│ 5 │ za  │
+│ 6 │ zaa │
+│ 7 │     │
+└───┴─────┘
+```
+
+```sql title="Query"
+SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
+```
+
+```response title="Response"
+┌─x─┬─s───┐
+│ 7 │     │
+│ 3 │ a   │
+│ 4 │ A   │
+│ 2 │ z   │
+│ 1 │ Z   │
+│ 5 │ za  │
+│ 6 │ zaa │
+└───┴─────┘
+```
+
+[Tuple](/ja/reference/data-types/tuple) の例:
+
+```response title="Response"
+┌─x─┬─s───────┐
+│ 1 │ (1,'Z') │
+│ 2 │ (1,'z') │
+│ 3 │ (1,'a') │
+│ 4 │ (2,'z') │
+│ 5 │ (1,'A') │
+│ 6 │ (2,'Z') │
+│ 7 │ (2,'A') │
+└───┴─────────┘
+```
+
+```sql title="Query"
+SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
+```
+
+```response title="Response"
+┌─x─┬─s───────┐
+│ 3 │ (1,'a') │
+│ 5 │ (1,'A') │
+│ 2 │ (1,'z') │
+│ 1 │ (1,'Z') │
+│ 7 │ (2,'A') │
+│ 4 │ (2,'z') │
+│ 6 │ (2,'Z') │
+└───┴─────────┘
+```
+
+<div id="implementation-details">
+  ## 実装の詳細
+</div>
+
+`ORDER BY` に加えて十分に小さい [LIMIT](/ja/reference/statements/select/limit) を指定すると、使用する RAM を抑えられます。そうでない場合、ソートに必要なメモリ量は、ソート対象のデータ量に比例します。分散クエリ処理では、[GROUP BY](/ja/reference/statements/select/group-by) を省略すると、ソートはリモートサーバー上で部分的に実行され、その結果はリクエスト元のサーバーでマージされます。つまり、分散ソートでは、ソート対象のデータ量が単一サーバーのメモリ量を上回ることがあります。
+
+RAM が不足している場合は、外部メモリを使ってソートを実行できます (ディスク上に一時ファイルを作成します) 。この目的には `max_bytes_before_external_sort` 設定を使用します。これが 0 (デフォルト) に設定されている場合、外部ソートは無効です。有効にすると、ソート対象のデータ量が指定したバイト数に達した時点で、収集済みのデータがソートされ、一時ファイルにダンプされます。すべてのデータを読み取った後、ソート済みのすべてのファイルがマージされ、結果が出力されます。ファイルは設定内の `/var/lib/clickhouse/tmp/` ディレクトリに書き込まれます (デフォルトではこの場所ですが、`tmp_path` パラメータを使って変更できます) 。また、クエリがメモリ制限を超えた場合にのみディスクへのスピルを使用することもできます。たとえば、`max_bytes_ratio_before_external_sort=0.6` とすると、クエリがメモリ制限 (ユーザー/サーバー) の `60%` に達した時点でのみディスクへのスピルが有効になります。
+
+クエリの実行では、`max_bytes_before_external_sort` より多くのメモリを使用することがあります。そのため、この設定値は `max_memory_usage` より十分に小さくする必要があります。たとえば、サーバーに 128 GB の RAM があり、単一のクエリを実行する必要がある場合は、`max_memory_usage` を 100 GB、`max_bytes_before_external_sort` を 80 GB に設定します。
+
+外部ソートは、RAM 内でのソートに比べて大幅に効率が低下します。
+
+<div id="optimization-of-data-reading">
+  ## Data の読み取りの最適化
+</div>
+
+`ORDER BY` 式にテーブルの sorting key と一致するプレフィックスがある場合は、[optimize&#95;read&#95;in&#95;order](/ja/reference/settings/session-settings#optimize_read_in_order) 設定を使用してクエリを最適化できます。
+
+`optimize_read_in_order` 設定が有効な場合、ClickHouse server はテーブルの索引を使用し、`ORDER BY` キーの順序でデータを読み取ります。これにより、[LIMIT](/ja/reference/statements/select/limit) が指定されている場合に、すべてのデータを読み取らずに済みます。そのため、少ない limit で大規模なデータを対象とするクエリは、より高速に処理されます。
+
+この最適化は `ASC` と `DESC` の両方で機能しますが、[GROUP BY](/ja/reference/statements/select/group-by) 句および [FINAL](/ja/reference/statements/select/from#final-modifier) 修飾子 とは併用できません。
+
+`optimize_read_in_order` 設定が無効な場合、ClickHouse server は `SELECT` クエリの処理中にテーブルの索引を使用しません。
+
+`ORDER BY` 句があり、`LIMIT` が大きく、さらに目的のデータが見つかるまでに大量のレコードを読み取る必要がある [WHERE](/ja/reference/statements/select/where) 条件を含むクエリを実行する場合は、`optimize_read_in_order` を手動で無効にすることを検討してください。
+
+この最適化は、次の table engines でサポートされています。
+
+* [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) ([materialized views](/ja/reference/statements/create/view#materialized-view) を含む) 、
+* [Merge](/ja/reference/engines/table-engines/special/merge)、
+* [Buffer](/ja/reference/engines/table-engines/special/buffer)
+
+`MaterializedView`-engine テーブルでは、この最適化は `SELECT ... FROM merge_tree_table ORDER BY pk` のような view で機能します。ただし、view のクエリに `ORDER BY` 句がない場合、`SELECT ... FROM view ORDER BY pk` のようなクエリではサポートされません。
+
+<div id="order-by-expr-with-fill-modifier">
+  ## ORDER BY Expr WITH FILL 修飾子
+</div>
+
+この修飾子は、[LIMIT ... WITH TIES 修飾子](/ja/reference/statements/select/limit#limit--with-ties-modifier) と組み合わせることもできます。
+
+`WITH FILL` 修飾子は、必要に応じて `FROM expr`、`TO expr`、`STEP expr` パラメータを指定して、`ORDER BY expr` の後に記述できます。
+`expr` カラムの欠落している値はすべて順次補完され、他のカラムにはデフォルト値が設定されます。
+
+複数のカラムを補完するには、`ORDER BY` 句の各フィールド名の後に、必要に応じてオプションのパラメータ付きで `WITH FILL` 修飾子を追加します。
+
+```sql title="Query"
+ORDER BY expr [WITH FILL] [FROM const_expr] [TO const_expr] [STEP const_numeric_expr] [STALENESS const_numeric_expr], ... exprN [WITH FILL] [FROM expr] [TO expr] [STEP numeric_expr] [STALENESS numeric_expr]
+[INTERPOLATE [(col [AS expr], ... colN [AS exprN])]]
+```
+
+`WITH FILL` は、Numeric 型 (あらゆる種類の float、decimal、int) または Date/DateTime 型のフィールドに適用できます。`String` フィールドに適用した場合、欠損値は空文字列で補完されます。
+`FROM const_expr` が定義されていない場合、補完シーケンスには `ORDER BY` の `expr` フィールドの最小値が使用されます。
+`TO const_expr` が定義されていない場合、補完シーケンスには `ORDER BY` の `expr` フィールドの最大値が使用されます。
+`STEP const_numeric_expr` が定義されている場合、`const_numeric_expr` は数値型では `as is`、Date 型では `days`、DateTime 型では `seconds` として解釈されます。また、時間および日付のインターバルを表す [INTERVAL](/ja/reference/data-types/special-data-types/interval) データ型もサポートしています。
+`STEP const_numeric_expr` が省略されている場合、補完シーケンスには数値型では `1.0`、Date 型では `1 day`、DateTime 型では `1 second` が使用されます。
+`STALENESS const_numeric_expr` が定義されている場合、クエリは、元のデータにおいて前の行との差が `const_numeric_expr` を超えるまで行を生成します。
+`INTERPOLATE` は、`ORDER BY WITH FILL` に含まれないカラムに適用できます。これらのカラムは、`expr` を適用して直前のフィールド値に基づいて補完されます。`expr` が指定されていない場合は、直前の値が繰り返されます。リストを省略すると、使用可能なすべてのカラムが対象になります。
+
+`WITH FILL` を使用しないクエリの例:
+
+```sql title="Query"
+SELECT n, source FROM (
+   SELECT toFloat32(number % 10) AS n, 'original' AS source
+   FROM numbers(10) WHERE number % 3 = 1
+) ORDER BY n;
+```
+
+```text title="Response"
+┌─n─┬─source───┐
+│ 1 │ original │
+│ 4 │ original │
+│ 7 │ original │
+└───┴──────────┘
+```
+
+`WITH FILL` 修飾子を適用した同じクエリ:
+
+```sql title="Query"
+SELECT n, source FROM (
+   SELECT toFloat32(number % 10) AS n, 'original' AS source
+   FROM numbers(10) WHERE number % 3 = 1
+) ORDER BY n WITH FILL FROM 0 TO 5.51 STEP 0.5;
+```
+
+```text title="Response"
+┌───n─┬─source───┐
+│   0 │          │
+│ 0.5 │          │
+│   1 │ original │
+│ 1.5 │          │
+│   2 │          │
+│ 2.5 │          │
+│   3 │          │
+│ 3.5 │          │
+│   4 │ original │
+│ 4.5 │          │
+│   5 │          │
+│ 5.5 │          │
+│   7 │ original │
+└─────┴──────────┘
+```
+
+複数のフィールドを指定する `ORDER BY field2 WITH FILL, field1 WITH FILL` の場合、補完の順序は `ORDER BY` 句内のフィールドの並び順に従います。
+
+例:
+
+```sql title="Query"
+SELECT
+    toDate((number * 10) * 86400) AS d1,
+    toDate(number * 86400) AS d2,
+    'original' AS source
+FROM numbers(10)
+WHERE (number % 3) = 1
+ORDER BY
+    d2 WITH FILL,
+    d1 WITH FILL STEP 5;
+```
+
+```text title="Response"
+┌───d1───────┬───d2───────┬─source───┐
+│ 1970-01-11 │ 1970-01-02 │ original │
+│ 1970-01-01 │ 1970-01-03 │          │
+│ 1970-01-01 │ 1970-01-04 │          │
+│ 1970-02-10 │ 1970-01-05 │ original │
+│ 1970-01-01 │ 1970-01-06 │          │
+│ 1970-01-01 │ 1970-01-07 │          │
+│ 1970-03-12 │ 1970-01-08 │ original │
+└────────────┴────────────┴──────────┘
+```
+
+フィールド `d1` は補完されず、デフォルト値が使用されます。これは、`d2` の値が繰り返されていないため、`d1` のシーケンスを適切に計算できないからです。
+
+以下は、`ORDER BY` のフィールドを変更したクエリです。
+
+```sql title="Query"
+SELECT
+    toDate((number * 10) * 86400) AS d1,
+    toDate(number * 86400) AS d2,
+    'original' AS source
+FROM numbers(10)
+WHERE (number % 3) = 1
+ORDER BY
+    d1 WITH FILL STEP 5,
+    d2 WITH FILL;
+```
+
+```text title="Response"
+┌───d1───────┬───d2───────┬─source───┐
+│ 1970-01-11 │ 1970-01-02 │ original │
+│ 1970-01-16 │ 1970-01-01 │          │
+│ 1970-01-21 │ 1970-01-01 │          │
+│ 1970-01-26 │ 1970-01-01 │          │
+│ 1970-01-31 │ 1970-01-01 │          │
+│ 1970-02-05 │ 1970-01-01 │          │
+│ 1970-02-10 │ 1970-01-05 │ original │
+│ 1970-02-15 │ 1970-01-01 │          │
+│ 1970-02-20 │ 1970-01-01 │          │
+│ 1970-02-25 │ 1970-01-01 │          │
+│ 1970-03-02 │ 1970-01-01 │          │
+│ 1970-03-07 │ 1970-01-01 │          │
+│ 1970-03-12 │ 1970-01-08 │ original │
+└────────────┴────────────┴──────────┘
+```
+
+次のクエリでは、カラム `d1` の各補完データに対して、1 日の `INTERVAL` データ型を使用します:
+
+```sql title="Query"
+SELECT
+    toDate((number * 10) * 86400) AS d1,
+    toDate(number * 86400) AS d2,
+    'original' AS source
+FROM numbers(10)
+WHERE (number % 3) = 1
+ORDER BY
+    d1 WITH FILL STEP INTERVAL 1 DAY,
+    d2 WITH FILL;
+```
+
+```response title="Response"
+┌─────────d1─┬─────────d2─┬─source───┐
+│ 1970-01-11 │ 1970-01-02 │ original │
+│ 1970-01-12 │ 1970-01-01 │          │
+│ 1970-01-13 │ 1970-01-01 │          │
+│ 1970-01-14 │ 1970-01-01 │          │
+│ 1970-01-15 │ 1970-01-01 │          │
+│ 1970-01-16 │ 1970-01-01 │          │
+│ 1970-01-17 │ 1970-01-01 │          │
+│ 1970-01-18 │ 1970-01-01 │          │
+│ 1970-01-19 │ 1970-01-01 │          │
+│ 1970-01-20 │ 1970-01-01 │          │
+│ 1970-01-21 │ 1970-01-01 │          │
+│ 1970-01-22 │ 1970-01-01 │          │
+│ 1970-01-23 │ 1970-01-01 │          │
+│ 1970-01-24 │ 1970-01-01 │          │
+│ 1970-01-25 │ 1970-01-01 │          │
+│ 1970-01-26 │ 1970-01-01 │          │
+│ 1970-01-27 │ 1970-01-01 │          │
+│ 1970-01-28 │ 1970-01-01 │          │
+│ 1970-01-29 │ 1970-01-01 │          │
+│ 1970-01-30 │ 1970-01-01 │          │
+│ 1970-01-31 │ 1970-01-01 │          │
+│ 1970-02-01 │ 1970-01-01 │          │
+│ 1970-02-02 │ 1970-01-01 │          │
+│ 1970-02-03 │ 1970-01-01 │          │
+│ 1970-02-04 │ 1970-01-01 │          │
+│ 1970-02-05 │ 1970-01-01 │          │
+│ 1970-02-06 │ 1970-01-01 │          │
+│ 1970-02-07 │ 1970-01-01 │          │
+│ 1970-02-08 │ 1970-01-01 │          │
+│ 1970-02-09 │ 1970-01-01 │          │
+│ 1970-02-10 │ 1970-01-05 │ original │
+│ 1970-02-11 │ 1970-01-01 │          │
+│ 1970-02-12 │ 1970-01-01 │          │
+│ 1970-02-13 │ 1970-01-01 │          │
+│ 1970-02-14 │ 1970-01-01 │          │
+│ 1970-02-15 │ 1970-01-01 │          │
+│ 1970-02-16 │ 1970-01-01 │          │
+│ 1970-02-17 │ 1970-01-01 │          │
+│ 1970-02-18 │ 1970-01-01 │          │
+│ 1970-02-19 │ 1970-01-01 │          │
+│ 1970-02-20 │ 1970-01-01 │          │
+│ 1970-02-21 │ 1970-01-01 │          │
+│ 1970-02-22 │ 1970-01-01 │          │
+│ 1970-02-23 │ 1970-01-01 │          │
+│ 1970-02-24 │ 1970-01-01 │          │
+│ 1970-02-25 │ 1970-01-01 │          │
+│ 1970-02-26 │ 1970-01-01 │          │
+│ 1970-02-27 │ 1970-01-01 │          │
+│ 1970-02-28 │ 1970-01-01 │          │
+│ 1970-03-01 │ 1970-01-01 │          │
+│ 1970-03-02 │ 1970-01-01 │          │
+│ 1970-03-03 │ 1970-01-01 │          │
+│ 1970-03-04 │ 1970-01-01 │          │
+│ 1970-03-05 │ 1970-01-01 │          │
+│ 1970-03-06 │ 1970-01-01 │          │
+│ 1970-03-07 │ 1970-01-01 │          │
+│ 1970-03-08 │ 1970-01-01 │          │
+│ 1970-03-09 │ 1970-01-01 │          │
+│ 1970-03-10 │ 1970-01-01 │          │
+│ 1970-03-11 │ 1970-01-01 │          │
+│ 1970-03-12 │ 1970-01-08 │ original │
+└────────────┴────────────┴──────────┘
+```
+
+`STALENESS` を指定しないクエリの例:
+
+```sql title="Query"
+SELECT number AS key, 5 * number value, 'original' AS source
+FROM numbers(16) WHERE key % 5 == 0
+ORDER BY key WITH FILL;
+```
+
+```text title="Response"
+    ┌─key─┬─value─┬─source───┐
+ 1. │   0 │     0 │ original │
+ 2. │   1 │     0 │          │
+ 3. │   2 │     0 │          │
+ 4. │   3 │     0 │          │
+ 5. │   4 │     0 │          │
+ 6. │   5 │    25 │ original │
+ 7. │   6 │     0 │          │
+ 8. │   7 │     0 │          │
+ 9. │   8 │     0 │          │
+10. │   9 │     0 │          │
+11. │  10 │    50 │ original │
+12. │  11 │     0 │          │
+13. │  12 │     0 │          │
+14. │  13 │     0 │          │
+15. │  14 │     0 │          │
+16. │  15 │    75 │ original │
+    └─────┴───────┴──────────┘
+```
+
+`STALENESS 3` を適用した後の同じクエリ：
+
+```sql title="Query"
+SELECT number AS key, 5 * number value, 'original' AS source
+FROM numbers(16) WHERE key % 5 == 0
+ORDER BY key WITH FILL STALENESS 3;
+```
+
+```text title="Response"
+    ┌─key─┬─value─┬─source───┐
+ 1. │   0 │     0 │ original │
+ 2. │   1 │     0 │          │
+ 3. │   2 │     0 │          │
+ 4. │   5 │    25 │ original │
+ 5. │   6 │     0 │          │
+ 6. │   7 │     0 │          │
+ 7. │  10 │    50 │ original │
+ 8. │  11 │     0 │          │
+ 9. │  12 │     0 │          │
+10. │  15 │    75 │ original │
+11. │  16 │     0 │          │
+12. │  17 │     0 │          │
+    └─────┴───────┴──────────┘
+```
+
+`INTERPOLATE` を使用しないクエリの例:
+
+```sql title="Query"
+SELECT n, source, inter FROM (
+   SELECT toFloat32(number % 10) AS n, 'original' AS source, number AS inter
+   FROM numbers(10) WHERE number % 3 = 1
+) ORDER BY n WITH FILL FROM 0 TO 5.51 STEP 0.5;
+```
+
+```text title="Response"
+┌───n─┬─source───┬─inter─┐
+│   0 │          │     0 │
+│ 0.5 │          │     0 │
+│   1 │ original │     1 │
+│ 1.5 │          │     0 │
+│   2 │          │     0 │
+│ 2.5 │          │     0 │
+│   3 │          │     0 │
+│ 3.5 │          │     0 │
+│   4 │ original │     4 │
+│ 4.5 │          │     0 │
+│   5 │          │     0 │
+│ 5.5 │          │     0 │
+│   7 │ original │     7 │
+└─────┴──────────┴───────┘
+```
+
+`INTERPOLATE` 適用後の同じクエリ:
+
+```sql title="Query"
+SELECT n, source, inter FROM (
+   SELECT toFloat32(number % 10) AS n, 'original' AS source, number AS inter
+   FROM numbers(10) WHERE number % 3 = 1
+) ORDER BY n WITH FILL FROM 0 TO 5.51 STEP 0.5 INTERPOLATE (inter AS inter + 1);
+```
+
+```text title="Response"
+┌───n─┬─source───┬─inter─┐
+│   0 │          │     0 │
+│ 0.5 │          │     0 │
+│   1 │ original │     1 │
+│ 1.5 │          │     2 │
+│   2 │          │     3 │
+│ 2.5 │          │     4 │
+│   3 │          │     5 │
+│ 3.5 │          │     6 │
+│   4 │ original │     4 │
+│ 4.5 │          │     5 │
+│   5 │          │     6 │
+│ 5.5 │          │     7 │
+│   7 │ original │     7 │
+└─────┴──────────┴───────┘
+```
+
+<div id="filling-grouped-by-sorting-prefix">
+  ## ソートプレフィックスごとにグループ化して補完する
+</div>
+
+特定のカラムで同じ値を持つ行を、それぞれ独立して補完すると便利な場合があります。代表的な例として、時系列における欠損値の補完が挙げられます。
+次のような時系列テーブルがあるとします。
+
+```sql
+CREATE TABLE timeseries
+(
+    `sensor_id` UInt64,
+    `timestamp` DateTime64(3, 'UTC'),
+    `value` Float64
+)
+ENGINE = Memory;
+
+SELECT * FROM timeseries;
+
+┌─sensor_id─┬───────────────timestamp─┬─value─┐
+│       234 │ 2021-12-01 00:00:03.000 │     3 │
+│       432 │ 2021-12-01 00:00:01.000 │     1 │
+│       234 │ 2021-12-01 00:00:07.000 │     7 │
+│       432 │ 2021-12-01 00:00:05.000 │     5 │
+└───────────┴─────────────────────────┴───────┘
+```
+
+また、各センサーごとに、欠損値を1秒間隔で独立して補完したいとします。
+これを実現するには、補完対象のカラム `timestamp` のソートプレフィックスとして `sensor_id` カラムを使用します。
+
+```sql
+SELECT *
+FROM timeseries
+ORDER BY
+    sensor_id,
+    timestamp WITH FILL
+INTERPOLATE ( value AS 9999 )
+
+┌─sensor_id─┬───────────────timestamp─┬─value─┐
+│       234 │ 2021-12-01 00:00:03.000 │     3 │
+│       234 │ 2021-12-01 00:00:04.000 │  9999 │
+│       234 │ 2021-12-01 00:00:05.000 │  9999 │
+│       234 │ 2021-12-01 00:00:06.000 │  9999 │
+│       234 │ 2021-12-01 00:00:07.000 │     7 │
+│       432 │ 2021-12-01 00:00:01.000 │     1 │
+│       432 │ 2021-12-01 00:00:02.000 │  9999 │
+│       432 │ 2021-12-01 00:00:03.000 │  9999 │
+│       432 │ 2021-12-01 00:00:04.000 │  9999 │
+│       432 │ 2021-12-01 00:00:05.000 │     5 │
+└───────────┴─────────────────────────┴───────┘
+```
+
+ここでは、補完された行をより目立たせるためだけに、`value` カラムを `9999` で補間しています。
+この動作は `use_with_fill_by_sorting_prefix` の設定で制御されます (デフォルトで有効です)
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* ブログ: [ClickHouseで時系列データを扱う](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

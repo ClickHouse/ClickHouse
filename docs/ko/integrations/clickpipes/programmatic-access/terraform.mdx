@@ -1,0 +1,780 @@
+---
+sidebarTitle: 'Terraform'
+description: 'ClickHouse Terraform 프로바이더를 사용해 ClickPipes를 프로그래밍 방식으로 관리하기 위한 참고 문서입니다.'
+slug: /integrations/clickpipes/programmatic-access/terraform
+title: 'ClickPipes Terraform 참고'
+doc_type: 'reference'
+keywords: ['clickpipes', 'terraform', '코드형 인프라', 'iac', '프로그래밍 방식']
+---
+
+모든 ClickPipes 타입은 [ClickHouse Terraform 프로바이더](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipe)의 `clickhouse_clickpipe` 리소스를 사용해 생성하고 관리할 수 있습니다. 이 페이지에서는 프로바이더 설정 방법과 지원되는 각 ClickPipe 타입의 구성 예시를 설명합니다.
+
+<div id="provider-setup">
+  ## Provider 설정
+</div>
+
+<Note>
+  ClickPipes 지원은 provider 버전 **v3.14.0**부터 일반 제공됩니다.
+  이전 버전을 사용하는 경우 alpha 릴리스가 필요합니다. 자세한 내용은
+  [provider changelog](https://github.com/ClickHouse/terraform-provider-clickhouse/releases)를
+  확인하세요.
+</Note>
+
+Terraform 구성에 ClickHouse provider를 추가하세요:
+
+```hcl
+terraform {
+  required_providers {
+    clickhouse = {
+      source  = "ClickHouse/clickhouse"
+      version = ">= 3.14.0"
+    }
+  }
+}
+
+provider "clickhouse" {
+  organization_id = var.organization_id
+  token_key       = var.token_key
+  token_secret    = var.token_secret
+}
+```
+
+provider에서 사용할 API Key를 생성하는 방법은 [API Key 관리](/ko/products/cloud/features/admin-features/api/openapi)를 참조하십시오.
+
+<div id="resource-overview">
+  ## 리소스 개요
+</div>
+
+`clickhouse_clickpipe` 리소스에는 다음과 같은 최상위 인수가 있습니다.
+
+| 인수               | 필수  | 설명                                                       |
+| ---------------- | --- | -------------------------------------------------------- |
+| `name`           | 예   | ClickPipe의 이름입니다.                                        |
+| `service_id`     | 예   | ClickHouse Cloud 서비스의 ID입니다.                             |
+| `source`         | 예   | 소스 구성입니다(ClickPipe마다 소스 블록 1개).                          |
+| `destination`    | 예   | 대상 구성입니다.                                                |
+| `scaling`        | 아니요 | 레플리카 수와 크기입니다. 기본값은 레플리카 1개입니다.                          |
+| `field_mappings` | 아니요 | 소스와 대상 컬럼 간의 사용자 지정 필드 매핑입니다.                            |
+| `settings`       | 아니요 | 고급 ClickPipe 설정입니다.                                      |
+| `stopped`        | 아니요 | ClickPipe를 중지된 상태로 생성하려면 `true`로 설정합니다. 기본값은 `false`입니다. |
+
+`id` 및 `state` 속성은 읽기 전용이며, 생성 후 ClickHouse Cloud에서 자동으로 채워집니다.
+
+<div id="destination">
+  ## 대상
+</div>
+
+`destination` 블록은 모든 소스 타입에 공통으로 적용됩니다:
+
+```hcl
+destination {
+  database      = "default"           # 대상 데이터베이스. 기본값은 "default"입니다.
+  table         = "my_table"          # 대상 테이블 이름. CDC를 제외한 모든 소스에 필수입니다.
+  managed_table = true                # ClickPipes가 테이블을 생성하고 관리합니다. 기본값은 true입니다.
+
+  table_definition {
+    engine {
+      type      = "MergeTree"         # MergeTree, ReplacingMergeTree, SummingMergeTree, 또는 Null.
+    }
+    sorting_key   = ["id", "ts"]      # 선택 사항.
+    partition_by  = "toYYYYMM(ts)"    # 선택 사항.
+  }
+
+  columns {
+    name = "id"
+    type = "UInt64"
+  }
+
+  columns {
+    name = "message"
+    type = "String"
+  }
+}
+```
+
+CDC 소스(Postgres, MySQL, MongoDB, BigQuery)의 대상 테이블은 소스 스키마를 기반으로 자동 생성되므로, 일반적으로 `database`만 지정하면 됩니다.
+
+<div id="examples">
+  ## ClickPipe 타입별 예시
+</div>
+
+<div id="kafka">
+  ### Kafka
+</div>
+
+지원되는 `type` 값은 `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream`입니다.
+
+```hcl
+resource "clickhouse_clickpipe" "kafka_clickpipe" {
+  name       = "My Kafka ClickPipe"
+  service_id = var.service_id
+
+  scaling {
+    replicas               = 2
+    replica_cpu_millicores = 250
+    replica_memory_gb      = 1.0
+  }
+
+  source {
+    kafka {
+      type           = "confluent"
+      format         = "JSONEachRow"
+      brokers        = "broker.example.com:9092"
+      topics         = "my_topic"
+      consumer_group = "clickpipes-consumer-group"
+      authentication = "PLAIN"
+
+      credentials {
+        username = "my_user"
+        password = var.kafka_password
+      }
+
+      offset {
+        strategy = "from_latest"
+      }
+    }
+  }
+
+  destination {
+    table         = "my_table"
+    managed_table = true
+
+    table_definition {
+      engine {
+        type = "MergeTree"
+      }
+    }
+
+    columns {
+      name = "id"
+      type = "UInt64"
+    }
+
+    columns {
+      name = "message"
+      type = "String"
+    }
+
+    columns {
+      name = "timestamp"
+      type = "DateTime"
+    }
+  }
+}
+```
+
+<div id="kafka-schema-registry">
+  #### 스키마 레지스트리를 사용하는 Kafka
+</div>
+
+```hcl
+resource "clickhouse_clickpipe" "kafka_avro_clickpipe" {
+  name       = "My Kafka Avro ClickPipe"
+  service_id = var.service_id
+
+  source {
+    kafka {
+      type   = "confluent"
+      format = "AvroConfluent"
+      brokers = "broker.example.com:9092"
+      topics  = "my_avro_topic"
+
+      credentials {
+        username = "my_user"
+        password = var.kafka_password
+      }
+
+      schema_registry {
+        url            = "https://schema-registry.example.com"
+        authentication = "PLAIN"
+
+        credentials {
+          username = "sr_user"
+          password = var.schema_registry_password
+        }
+      }
+    }
+  }
+
+  destination {
+    table         = "my_avro_table"
+    managed_table = true
+
+    table_definition {
+      engine {
+        type = "MergeTree"
+      }
+    }
+
+    columns {
+      name = "id"
+      type = "UInt64"
+    }
+
+    columns {
+      name = "event"
+      type = "String"
+    }
+  }
+}
+```
+
+<div id="kinesis">
+  ### Amazon Kinesis
+</div>
+
+```hcl
+resource "clickhouse_clickpipe" "kinesis_clickpipe" {
+  name       = "My Kinesis ClickPipe"
+  service_id = var.service_id
+
+  source {
+    kinesis {
+      format         = "JSONEachRow"
+      stream_name    = "my-stream"
+      region         = "us-east-1"
+      iterator_type  = "TRIM_HORIZON"
+      authentication = "IAM_USER"
+
+      access_key {
+        access_key_id = var.aws_access_key_id
+        secret_key    = var.aws_secret_key
+      }
+    }
+  }
+
+  destination {
+    table         = "my_table"
+    managed_table = true
+
+    table_definition {
+      engine {
+        type = "MergeTree"
+      }
+    }
+
+    columns {
+      name = "id"
+      type = "UInt64"
+    }
+
+    columns {
+      name = "message"
+      type = "String"
+    }
+  }
+}
+```
+
+<div id="kinesis-iam-role">
+  #### IAM role 기반 Kinesis
+</div>
+
+IAM role 인증을 사용하려면 AWS에서 실행 중인 ClickHouse 서비스가 필요합니다.
+
+```hcl
+resource "clickhouse_clickpipe" "kinesis_iam_role_clickpipe" {
+  name       = "My Kinesis ClickPipe (IAM Role)"
+  service_id = var.service_id
+
+  source {
+    kinesis {
+      format         = "JSONEachRow"
+      stream_name    = "my-stream"
+      region         = "us-east-1"
+      iterator_type  = "LATEST"
+      authentication = "IAM_ROLE"
+      iam_role       = "arn:aws:iam::123456789012:role/my-kinesis-role"
+    }
+  }
+
+  destination {
+    table         = "my_table"
+    managed_table = true
+
+    table_definition {
+      engine {
+        type = "MergeTree"
+      }
+    }
+
+    columns {
+      name = "id"
+      type = "UInt64"
+    }
+
+    columns {
+      name = "message"
+      type = "String"
+    }
+  }
+}
+```
+
+<div id="s3">
+  ### Amazon S3
+</div>
+
+```hcl
+resource "clickhouse_clickpipe" "s3_clickpipe" {
+  name       = "My S3 ClickPipe"
+  service_id = var.service_id
+
+  source {
+    object_storage {
+      type           = "s3"
+      url            = "https://my-bucket.s3.amazonaws.com/data/*.json"
+      format         = "JSONEachRow"
+      authentication = "IAM_USER"
+
+      access_key {
+        access_key_id = var.aws_access_key_id
+        secret_key    = var.aws_secret_key
+      }
+    }
+  }
+
+  destination {
+    table         = "my_table"
+    managed_table = true
+
+    table_definition {
+      engine {
+        type = "MergeTree"
+      }
+    }
+
+    columns {
+      name = "id"
+      type = "UInt64"
+    }
+
+    columns {
+      name = "message"
+      type = "String"
+    }
+  }
+}
+```
+
+<div id="s3-continuous">
+  #### SQS를 사용한 S3 지속적인 수집
+</div>
+
+SQS 큐를 사용해 지속적으로 수집하는 경우(비순차 모드)입니다. 설정 방법은 [비순차 모드 구성](/ko/integrations/clickpipes/object-storage/amazon-s3/unordered-mode)을 참조하십시오.
+
+```hcl
+resource "clickhouse_clickpipe" "s3_continuous_clickpipe" {
+  name       = "My S3 Continuous ClickPipe"
+  service_id = var.service_id
+
+  source {
+    object_storage {
+      type           = "s3"
+      url            = "https://my-bucket.s3.amazonaws.com/data/*.json"
+      format         = "JSONEachRow"
+      is_continuous  = true
+      queue_url      = "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue"
+      authentication = "IAM_USER"
+
+      access_key {
+        access_key_id = var.aws_access_key_id
+        secret_key    = var.aws_secret_key
+      }
+    }
+  }
+
+  destination {
+    table         = "my_table"
+    managed_table = true
+
+    table_definition {
+      engine {
+        type = "MergeTree"
+      }
+    }
+
+    columns {
+      name = "id"
+      type = "UInt64"
+    }
+
+    columns {
+      name = "message"
+      type = "String"
+    }
+  }
+}
+```
+
+<div id="gcs">
+  ### Google Cloud Storage
+</div>
+
+`service_account_key`는 GCP 서비스 계정 JSON 키 파일의 내용을 base64로 인코딩한 값이어야 합니다.
+
+```hcl
+resource "clickhouse_clickpipe" "gcs_clickpipe" {
+  name       = "My GCS ClickPipe"
+  service_id = var.service_id
+
+  source {
+    object_storage {
+      type                = "gcs"
+      url                 = "gs://my-bucket/data/*.json"
+      format              = "JSONEachRow"
+      authentication      = "SERVICE_ACCOUNT"
+      service_account_key = var.gcs_service_account_key
+    }
+  }
+
+  destination {
+    table         = "my_table"
+    managed_table = true
+
+    table_definition {
+      engine {
+        type = "MergeTree"
+      }
+    }
+
+    columns {
+      name = "id"
+      type = "UInt64"
+    }
+
+    columns {
+      name = "message"
+      type = "String"
+    }
+  }
+}
+```
+
+<div id="abs">
+  ### Azure Blob Storage
+</div>
+
+```hcl
+resource "clickhouse_clickpipe" "abs_clickpipe" {
+  name       = "My Azure Blob ClickPipe"
+  service_id = var.service_id
+
+  source {
+    object_storage {
+      type                 = "azureblobstorage"
+      azure_container_name = "my-container"
+      path                 = "data/*.json"
+      format               = "JSONEachRow"
+      authentication       = "CONNECTION_STRING"
+      connection_string    = var.azure_connection_string
+    }
+  }
+
+  destination {
+    table         = "my_table"
+    managed_table = true
+
+    table_definition {
+      engine {
+        type = "MergeTree"
+      }
+    }
+
+    columns {
+      name = "id"
+      type = "UInt64"
+    }
+
+    columns {
+      name = "message"
+      type = "String"
+    }
+  }
+}
+```
+
+<div id="postgres">
+  ### Postgres CDC
+</div>
+
+```hcl
+resource "clickhouse_clickpipe" "postgres_cdc_clickpipe" {
+  name       = "My Postgres CDC ClickPipe"
+  service_id = var.service_id
+
+  source {
+    postgres {
+      host     = "postgres.example.com"
+      port     = 5432
+      database = "mydb"
+
+      credentials {
+        username = "postgres_user"
+        password = var.postgres_password
+      }
+
+      settings {
+        replication_mode = "cdc"
+
+        # 선택적 설정
+        sync_interval_seconds              = 60
+        pull_batch_size                    = 100000
+        allow_nullable_columns             = true
+        initial_load_parallelism           = 4
+        snapshot_num_rows_per_partition    = 100000
+        snapshot_number_of_parallel_tables = 1
+      }
+
+      table_mappings {
+        source_schema_name = "public"
+        source_table       = "users"
+        target_table       = "public_users"
+      }
+
+      table_mappings {
+        source_schema_name = "public"
+        source_table       = "orders"
+        target_table       = "public_orders"
+
+        # 선택 사항
+        excluded_columns       = ["internal_notes"]
+        use_custom_sorting_key = true
+        sorting_keys           = ["id", "created_at"]
+        table_engine           = "ReplacingMergeTree"
+      }
+    }
+  }
+
+  destination {
+    database = "default"
+  }
+}
+```
+
+<div id="postgres-iam-role">
+  #### IAM role을 사용하는 Postgres
+</div>
+
+IAM role 기반 인증을 사용하려면 AWS에서 실행되는 ClickHouse 서비스가 필요합니다.
+
+```hcl
+resource "clickhouse_clickpipe" "postgres_iam_role_clickpipe" {
+  name       = "My Postgres CDC ClickPipe (IAM Role)"
+  service_id = var.service_id
+
+  source {
+    postgres {
+      host           = "mydb.cluster.us-east-1.rds.amazonaws.com"
+      port           = 5432
+      database       = "mydb"
+      type           = "rdspostgres"
+      authentication = "iam_role"
+      iam_role       = "arn:aws:iam::123456789012:role/my-rds-role"
+
+      credentials {
+        username = "postgres_user"
+      }
+
+      settings {
+        replication_mode = "cdc"
+      }
+
+      table_mappings {
+        source_schema_name = "public"
+        source_table       = "orders"
+        target_table       = "public_orders"
+      }
+    }
+  }
+
+  destination {
+    database = "default"
+  }
+}
+```
+
+<div id="mysql">
+  ### MySQL CDC
+</div>
+
+```hcl
+resource "clickhouse_clickpipe" "mysql_cdc_clickpipe" {
+  name       = "My MySQL CDC ClickPipe"
+  service_id = var.service_id
+
+  source {
+    mysql {
+      host = "mysql.example.com"
+      port = 3306
+      type = "mysql"
+
+      credentials {
+        username = "mysql_user"
+        password = var.mysql_password
+      }
+
+      settings {
+        replication_mode = "cdc"
+
+        # 선택적 설정
+        sync_interval_seconds              = 30
+        pull_batch_size                    = 10000
+        allow_nullable_columns             = true
+        initial_load_parallelism           = 4
+        snapshot_num_rows_per_partition    = 100000
+        snapshot_number_of_parallel_tables = 2
+      }
+
+      table_mappings {
+        source_schema_name = "mydb"
+        source_table       = "orders"
+        target_table       = "mydb_orders"
+      }
+
+      table_mappings {
+        source_schema_name = "mydb"
+        source_table       = "customers"
+        target_table       = "mydb_customers"
+
+        # 선택 사항
+        excluded_columns       = ["password_hash"]
+        use_custom_sorting_key = true
+        sorting_keys           = ["id"]
+        table_engine           = "ReplacingMergeTree"
+      }
+    }
+  }
+
+  destination {
+    database = "default"
+  }
+}
+```
+
+<div id="mongodb">
+  ### MongoDB CDC
+</div>
+
+```hcl
+resource "clickhouse_clickpipe" "mongodb_cdc_clickpipe" {
+  name       = "My MongoDB CDC ClickPipe"
+  service_id = var.service_id
+
+  source {
+    mongodb {
+      uri             = "mongodb+srv://cluster0.example.mongodb.net"
+      read_preference = "secondaryPreferred"
+
+      credentials {
+        username = "mongo_user"
+        password = var.mongodb_password
+      }
+
+      settings {
+        replication_mode = "cdc"
+
+        # 선택적 설정
+        sync_interval_seconds              = 30
+        pull_batch_size                    = 500
+        snapshot_num_rows_per_partition    = 100000
+        snapshot_number_of_parallel_tables = 2
+      }
+
+      table_mappings {
+        source_database_name = "mydb"
+        source_collection    = "users"
+        target_table         = "mydb_users"
+      }
+
+      table_mappings {
+        source_database_name = "mydb"
+        source_collection    = "orders"
+        target_table         = "mydb_orders"
+        table_engine         = "ReplacingMergeTree"
+      }
+    }
+  }
+
+  destination {
+    database = "default"
+  }
+}
+```
+
+<div id="bigquery">
+  ### BigQuery
+</div>
+
+`service_account_file`은 GCP 서비스 계정 JSON 키 파일의 base64 인코딩된 내용이어야 합니다.
+
+```hcl
+resource "clickhouse_clickpipe" "bigquery_snapshot_clickpipe" {
+  name       = "My BigQuery ClickPipe"
+  service_id = var.service_id
+
+  source {
+    bigquery {
+      snapshot_staging_path = "gs://my-staging-bucket/staging/"
+
+      credentials {
+        service_account_file = var.gcp_service_account_key
+      }
+
+      settings {
+        replication_mode = "snapshot"
+
+        # 선택적 설정
+        initial_load_parallelism           = 4
+        snapshot_num_rows_per_partition    = 100000
+        snapshot_number_of_parallel_tables = 2
+        allow_nullable_columns             = true
+      }
+
+      table_mappings {
+        source_dataset_name = "my_dataset"
+        source_table        = "my_table"
+        target_table        = "my_bigquery_table"
+      }
+
+      table_mappings {
+        source_dataset_name    = "my_dataset"
+        source_table           = "another_table"
+        target_table           = "another_bigquery_table"
+        table_engine           = "ReplacingMergeTree"
+        use_custom_sorting_key = true
+        sorting_keys           = ["id"]
+        excluded_columns       = ["internal_col"]
+      }
+    }
+  }
+
+  destination {
+    database = "default"
+  }
+}
+```
+
+<div id="scaling">
+  ## 스케일링
+</div>
+
+모든 ClickPipe 타입은 레플리카 수와 각 레플리카의 리소스 할당을 구성할 수 있도록 `scaling` 블록을 지원합니다.
+
+```hcl
+scaling {
+  replicas               = 2     # 기본값: 1. 최대값: 10.
+  replica_cpu_millicores = 500   # 125에서 2000 사이.
+  replica_memory_gb      = 2.0   # 0.5에서 8.0 사이.
+}
+```
+
+<div id="import">
+  ## 기존 ClickPipes 가져오기
+</div>
+
+기존 ClickPipes는 서비스 ID와 ClickPipe ID를 모두 사용해 Terraform state로 가져올 수 있습니다:
+
+```bash
+terraform import clickhouse_clickpipe.example <service_id>:<clickpipe_id>
+```

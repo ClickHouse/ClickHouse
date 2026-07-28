@@ -1,5 +1,4 @@
 import os
-import socket
 import time
 
 import pytest
@@ -82,7 +81,7 @@ def wait_nodes_with_retries(cluster, nodes, timeout=120):
         try:
             keeper_utils.wait_nodes(cluster, nodes)
             return
-        except (ConnectionRefusedError, OSError) as e:
+        except (ConnectionRefusedError, OSError):
             # Server not listening yet, retry
             time.sleep(1)
     raise Exception(f"Timeout waiting for Keeper nodes to be ready after {timeout}s")

@@ -3,7 +3,7 @@
 
 SYSTEM DROP QUERY CACHE;
 
--- Subquery caching is only supported with the new analyzer.
+-- Subquery caching is only supported with the analyzer.
 -- With the old analyzer, no subquery cache entries should be created.
 
 SET enable_analyzer = 0;
