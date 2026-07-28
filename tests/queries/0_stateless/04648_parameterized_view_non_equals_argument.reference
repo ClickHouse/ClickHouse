@@ -1,0 +1,38 @@
+positive controls
+a	1
+a	1
+a	1
+a	1
+a	1
+a	1
+a	1
+a	1
+a	1
+a	1
+a	1
+a	1
+b	2
+b	2
+non-equals arguments
+positional arguments
+nested assignments
+already rejected before
+with alias right-hand side
+a	1
+explain syntax
+SELECT *
+FROM
+(
+    SELECT *
+    FROM default.`04648_t`
+    WHERE equals(name, \'a\')
+) AS `04648_pv`
+SETTINGS enable_analyzer = 1
+SELECT *
+FROM
+(
+    SELECT *
+    FROM default.`04648_t`
+    WHERE equals(name, \'a\')
+) AS `04648_pv`
+SETTINGS enable_analyzer = 1
