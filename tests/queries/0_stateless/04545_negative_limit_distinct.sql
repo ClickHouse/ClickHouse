@@ -58,8 +58,11 @@ DROP TABLE nl;
 -- A single part large enough to span several blocks also truncates on the buggy build: the hint
 -- stops the in-order DISTINCT at a block boundary, so the result is the tail of a truncated prefix
 -- of the sorted distinct stream and the selected rows track block boundaries instead of the sorted
--- order. This shape needs neither several parts nor the pinned settings above, and it is wrong on
--- the buggy build for every max_block_size the test runner draws.
+-- order. Several parts are not needed here, and this is wrong on the buggy build for every
+-- max_block_size the test runner draws. The settings pinned above still apply here: both
+-- optimize_distinct_in_order and optimize_read_in_order are pinned to their own default of 1, so the
+-- default configuration is covered, but a run drawing 0 for both plans no hint at all and would pass
+-- on the buggy build. The result does not depend on max_threads.
 DROP TABLE IF EXISTS big;
 CREATE TABLE big (x Int64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO big SELECT number FROM numbers(200000);
