@@ -365,6 +365,47 @@ SELECT 'safe json comparison is vetoed too', count() FROM (EXPLAIN QUERY TREE ru
 SELECT 'plain contradiction still folds', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t_jveto WHERE (i = 1) AND (i = 2)) WHERE explain ILIKE '%constant_value: UInt64_0%';
 
 -- =====================================================================================
+-- (e) No common type between the two comparison operands. `equals` on a string-family operand is
+--     accepted at analysis time but is only EXECUTABLE when the const-string path can cast the
+--     constant, which needs the CONSTANT to be the string side. A string-family expression against
+--     e.g. an `Int64` constant therefore raises NO_COMMON_TYPE, while the constant still converts
+--     losslessly into a semantic point, so all three rewrites used to answer instead. The reverse
+--     direction stays rewritable and is asserted in section (b) (`date string const`,
+--     `uuid string const`, `fs5 expr string const`, `enum expr string const`).
+-- =====================================================================================
+
+SELECT '--- no common type ---';
+
+SELECT countIf(c = 1::Int64 OR c = 2::Int64 OR c = 3::Int64) FROM t_str; -- { serverError NO_COMMON_TYPE }
+SELECT countIf(c != 1::Int64 AND c != 2::Int64 AND c != 3::Int64) FROM t_str; -- { serverError NO_COMMON_TYPE }
+SELECT countIf(c = 1::Int64 AND c != 1::Int64) FROM t_str; -- { serverError NO_COMMON_TYPE }
+-- A FixedString expression takes the same path.
+SELECT countIf(c = 1::Int64 OR c = 2::Int64 OR c = 3::Int64) FROM t_foldfs; -- { serverError NO_COMMON_TYPE }
+-- ... and so does a string leaf nested below a Tuple boundary.
+SELECT countIf(c = tuple(1::Int64) OR c = tuple(2::Int64) OR c = tuple(3::Int64)) FROM t_tstr; -- { serverError NO_COMMON_TYPE }
+
+-- Two expressions, so a contradiction on the ORDINARY column reaches the global fold. Parking the
+-- no-common-type term BEFORE conversion leaves it with an EMPTY converted value, which is what vetoes
+-- the collapse and keeps the query's own failure visible; otherwise the answer depends on
+-- `optimize_redundant_comparisons`.
+DROP TABLE IF EXISTS t_strveto;
+CREATE TABLE t_strveto (i Int32, c String) ENGINE = Memory;
+INSERT INTO t_strveto VALUES (1, 'a'), (2, 'b');
+SELECT countIf((i = 1) AND (i = 2) AND (c != 1::Int64)) FROM t_strveto; -- { serverError NO_COMMON_TYPE }
+SELECT 'no-common-type term vetoes the collapse', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t_strveto WHERE (i = 1) AND (i = 2) AND (c != 1::Int64)) WHERE explain ILIKE '%constant_value: UInt64_0%';
+-- ... while a SAFE comparison over the same String column still folds, so the veto is scoped to the
+-- no-common-type case and the fold is not disabled wholesale.
+SELECT countIf((i = 1) AND (i = 2) AND (c != 'zz')) AS safe_string_result_unaffected FROM t_strveto;
+SELECT 'safe string comparison still folds', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t_strveto WHERE (i = 1) AND (i = 2) AND (c != 'zz')) WHERE explain ILIKE '%constant_value: UInt64_0%';
+SELECT 'plain contradiction still folds (string table)', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t_strveto WHERE (i = 1) AND (i = 2)) WHERE explain ILIKE '%constant_value: UInt64_0%';
+
+-- A COMPOSITE source against a string-family target is deliberately NOT gated by the rule: it takes a
+-- dedicated engine path. Measured to be inert either way, since such a comparison is already rejected
+-- at analysis time even as a SINGLE term with no chain to rewrite, so there is nothing left to gate.
+SELECT countIf(c = tuple(1::Int64) OR c = tuple(2::Int64) OR c = tuple(3::Int64)) FROM t_str; -- { serverError NO_COMMON_TYPE }
+SELECT countIf(c = tuple('ab')) FROM t_str; -- { serverError NO_COMMON_TYPE }
+
+-- =====================================================================================
 -- (c) Queries that the rewrite used to FAIL outright. Kept last: on an unfixed build these
 --     throw, and a raw exception would abort the rest of the file.
 -- =====================================================================================
@@ -433,6 +474,7 @@ DROP TABLE IF EXISTS t_afnan;
 DROP TABLE IF EXISTS t_mfnan;
 DROP TABLE IF EXISTS t_json;
 DROP TABLE IF EXISTS t_jveto;
+DROP TABLE IF EXISTS t_strveto;
 DROP TABLE IF EXISTS t_var1s;
 DROP TABLE IF EXISTS t_tvar1s;
 DROP TABLE IF EXISTS t_vf32;

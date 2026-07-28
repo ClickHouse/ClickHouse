@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/convertFieldToType.h>
 
@@ -610,6 +611,69 @@ static bool convertedConstantIsSemanticPoint(const Field & converted_value, cons
     return convertedConstantIsSemanticPointImpl(converted_value, from_type, expr_type);
 }
 
+/// `equals`/`notEquals` on a string-family operand is accepted at analysis time
+/// (`FunctionsComparison.h`, "Everything can be compared with string by conversion") but is only
+/// EXECUTABLE when the const-string path can cast the constant, which needs the CONSTANT to be the
+/// string side. With a string-family EXPRESSION and a constant outside `{String, FixedString, Enum}`
+/// nothing rescues it and the comparison raises `NO_COMMON_TYPE`, so no converted value may stand in
+/// for it: the rewrite would answer a query that legitimately fails, and a contradiction on an
+/// unrelated expression could drop the throwing operand entirely.
+///
+/// The reverse direction stays rewritable: a string-family CONSTANT against another type is cast by
+/// the const-string path, which is why `Date`/`UUID` expressions with string constants must keep
+/// firing. That asymmetry is why this is gated on the TARGET and is NOT a symmetric supertype test.
+static bool comparisonTypesHaveCommonType(const DataTypePtr & from_type, const DataTypePtr & expr_type)
+{
+    const auto source = removeLowCardinalityAndNullable(from_type);
+    const auto target = removeLowCardinalityAndNullable(expr_type);
+
+    if (isStringOrFixedString(target))
+    {
+        /// A composite source against a string-family target takes a dedicated engine path, so leave
+        /// that decision to the other rules.
+        if (isTuple(source) || isArray(source) || isMap(source))
+            return true;
+        return tryGetLeastSupertype(DataTypes{source, target}) != nullptr;
+    }
+
+    if (const auto * tuple_target = typeid_cast<const DataTypeTuple *>(target.get()))
+    {
+        checkStackSize();
+        const auto * tuple_source = typeid_cast<const DataTypeTuple *>(source.get());
+        if (!tuple_source)
+            return true;
+        const auto & target_elements = tuple_target->getElements();
+        const auto & source_elements = tuple_source->getElements();
+        if (target_elements.size() != source_elements.size())
+            return true;
+        for (size_t i = 0; i < target_elements.size(); ++i)
+            if (!comparisonTypesHaveCommonType(source_elements[i], target_elements[i]))
+                return false;
+        return true;
+    }
+
+    if (const auto * array_target = typeid_cast<const DataTypeArray *>(target.get()))
+    {
+        checkStackSize();
+        const auto * array_source = typeid_cast<const DataTypeArray *>(source.get());
+        if (!array_source)
+            return true;
+        return comparisonTypesHaveCommonType(array_source->getNestedType(), array_target->getNestedType());
+    }
+
+    if (const auto * map_target = typeid_cast<const DataTypeMap *>(target.get()))
+    {
+        checkStackSize();
+        const auto * map_source = typeid_cast<const DataTypeMap *>(source.get());
+        if (!map_source)
+            return true;
+        return comparisonTypesHaveCommonType(map_source->getKeyType(), map_target->getKeyType())
+            && comparisonTypesHaveCommonType(map_source->getValueType(), map_target->getValueType());
+    }
+
+    return true;
+}
+
 /// SET-SPECIFIC (the `in`/`notIn` builders only). `equals` compares floats with `accurateEquals`
 /// where `+0.0 == -0.0`, while a `Set` is keyed on the exact IEEE value, so a zero constant matches a
 /// class of two values under comparison but only one key in the set. `addComparisonFilter` compares
@@ -1161,6 +1225,15 @@ static AddComparisonFilterResult addComparisonFilter(
         return AddComparisonFilterResult::ADDED;
     }
 
+    /// A comparison whose two types have no common type is not executable, so a converted constant may
+    /// not stand in for it. Parked BEFORE conversion so the filter carries no converted value and the
+    /// global fold veto below can see it.
+    if (!comparisonTypesHaveCommonType(new_filter.constant_node->getResultType(), expr_type))
+    {
+        filter_map[expression].opaque_filters.push_back(std::move(new_filter));
+        return AddComparisonFilterResult::ADDED;
+    }
+
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
 
     /// The converted value is treated as an exact semantic point by `compareComparisonFilters` and
@@ -1362,6 +1435,7 @@ static void convertNotEqualsChainToNotIn(
             /// must also be a faithful semantic point, must carry no NaN (which no comparison matches)
             /// and no float zero (`+0.0`/`-0.0` are one class for `equals` but two set keys).
             if (!converted
+                || !comparisonTypesHaveCommonType(literal->getResultType(), expr_type)
                 || !convertedConstantIsSemanticPoint(*converted, literal->getResultType(), expr_type)
                 || !convertedConstantHasNoNaN(*converted, /*stop_at_array_or_map=*/false)
                 || !convertedConstantIsSetSafeZeroFree(*converted))
@@ -2789,6 +2863,7 @@ private:
                 /// it must also be a faithful semantic point, must carry no NaN (which no comparison
                 /// matches) and no float zero (`+0.0`/`-0.0` are one class for `equals` but two keys).
                 if (!converted
+                    || !comparisonTypesHaveCommonType(literal->getResultType(), expr_type)
                     || !convertedConstantIsSemanticPoint(*converted, literal->getResultType(), expr_type)
                     || !convertedConstantHasNoNaN(*converted, /*stop_at_array_or_map=*/false)
                     || !convertedConstantIsSetSafeZeroFree(*converted))
