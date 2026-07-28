@@ -3,6 +3,7 @@
 
 #include <Parsers/ASTCreateHandlerQuery.h>
 #include <Parsers/ASTDropHandlerQuery.h>
+#include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -82,6 +83,31 @@ void SQLDefinedHandlersFactory::loadIfNot()
 void SQLDefinedHandlersFactory::rebuildSnapshot(std::lock_guard<std::mutex> &)
 {
     snapshot = std::make_shared<const SQLDefinedHandlers>(loaded_handlers);
+}
+
+void SQLDefinedHandlersFactory::resyncAfterUncertainWrite(const std::string & handler_name, std::lock_guard<std::mutex> & lock)
+{
+    /// The write may well have committed before the error surfaced (a lost connection after the `multi` was
+    /// applied reports an error for a change that is already durable), so the outcome is unknown and the local
+    /// snapshot cannot be assumed to still match the source of truth. Re-read the authoritative set so this
+    /// replica does not keep routing requests with a definition that Keeper has already replaced or deleted.
+    try
+    {
+        loaded_handlers = metadata_storage->getAll();
+        rebuildSnapshot(lock);
+        metadata_storage->commitReload();
+    }
+    catch (...)
+    {
+        /// Even the re-read failed, so the current state of the affected handler is still unknown. Fail closed:
+        /// stop serving it locally rather than serving a possibly stale definition until the background watch
+        /// fires. The background update task restores it if it does still exist in Keeper.
+        tryLogCurrentException(log, fmt::format(
+            "Could not re-read the handlers after an uncertain write of handler `{}`, dropping it from the local snapshot",
+            handler_name));
+        loaded_handlers.erase(handler_name);
+        rebuildSnapshot(lock);
+    }
 }
 
 SQLDefinedHandlersPtr SQLDefinedHandlersFactory::getAll()
@@ -235,7 +261,20 @@ void SQLDefinedHandlersFactory::createReplicated(const ASTCreateHandlerQuery & q
             throw;
         }
 
-        if (metadata_storage->store(query.handler_name, handler->create_statement, /* replace */ false, version))
+        bool stored = false;
+        try
+        {
+            stored = metadata_storage->store(query.handler_name, handler->create_statement, /* replace */ false, version);
+        }
+        catch (...)
+        {
+            /// The new handler may already be durable - see `resyncAfterUncertainWrite` - in which case this
+            /// replica would otherwise not serve an endpoint that already exists in the source of truth.
+            resyncAfterUncertainWrite(query.handler_name, lock);
+            throw;
+        }
+
+        if (stored)
         {
             current.emplace(query.handler_name, handler);
             loaded_handlers = std::move(current);
@@ -280,7 +319,19 @@ void SQLDefinedHandlersFactory::removeReplicated(const ASTDropHandlerQuery & que
     /// on a replica that has not yet reloaded a handler created on another replica. `removeIfExists`
     /// returns whether a znode was actually removed: for a plain `DROP` a missing handler is an error,
     /// for `DROP IF EXISTS` it is a no-op. Either way the version-bumping removal is the source of truth.
-    bool removed = metadata_storage->removeIfExists(query.handler_name);
+    bool removed = false;
+    try
+    {
+        removed = metadata_storage->removeIfExists(query.handler_name);
+    }
+    catch (...)
+    {
+        /// The removal may already have committed - see `resyncAfterUncertainWrite`. Without this, a committed
+        /// `DROP HANDLER` whose reply was lost would leave this replica serving the deleted endpoint until the
+        /// background watch notices the root-version bump.
+        resyncAfterUncertainWrite(query.handler_name, lock);
+        throw;
+    }
 
     /// Record the deletion as soon as the version-bumping removal in the source of truth has committed, before
     /// the snapshot reload below - which may throw (a transient Keeper read error, or another stored handler
@@ -382,7 +433,21 @@ void SQLDefinedHandlersFactory::updateReplicated(const ASTCreateHandlerQuery & a
             throw;
         }
 
-        if (metadata_storage->store(alter_query.handler_name, updated->create_statement, /* replace */ true, version))
+        bool stored = false;
+        try
+        {
+            stored = metadata_storage->store(alter_query.handler_name, updated->create_statement, /* replace */ true, version);
+        }
+        catch (...)
+        {
+            /// The new definition may already be durable - see `resyncAfterUncertainWrite`. Without this, a
+            /// committed `ALTER HANDLER` whose reply was lost would leave this replica routing requests with
+            /// the old URL, methods and query until the background watch fires.
+            resyncAfterUncertainWrite(alter_query.handler_name, lock);
+            throw;
+        }
+
+        if (stored)
         {
             current[alter_query.handler_name] = updated;
             loaded_handlers = std::move(current);

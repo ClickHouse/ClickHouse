@@ -68,6 +68,11 @@ private:
     /// Create/update a handler in replicated (Keeper) storage. The full set is re-read from Keeper and the
     /// ambiguity check is serialized with the persistent write via optimistic concurrency on the root
     /// version, so two replicas cannot concurrently commit overlapping handlers under different names.
+    /// A Keeper write can commit and only then fail to report success (for example, the connection is lost
+    /// after the `multi` has been applied), so a thrown error does not prove that nothing changed. Called on
+    /// that uncertain path to reconcile the local view with the source of truth before the error is rethrown.
+    void resyncAfterUncertainWrite(const std::string & handler_name, std::lock_guard<std::mutex> & lock);
+
     void createReplicated(const ASTCreateHandlerQuery & query, std::lock_guard<std::mutex> & lock);
     void updateReplicated(const ASTCreateHandlerQuery & alter_query, std::lock_guard<std::mutex> & lock);
     void removeReplicated(const ASTDropHandlerQuery & query, std::lock_guard<std::mutex> & lock);
