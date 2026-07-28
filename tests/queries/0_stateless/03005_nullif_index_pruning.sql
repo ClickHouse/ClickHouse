@@ -1,6 +1,10 @@
 -- Tags: no-distributed-interpreters, no-parallel-replicas, no-replicated-database, no-random-settings, no-random-merge-tree-settings, no-shared-merge-tree
 -- no-shared-merge-tree: in private CI jobs (meta storage in keeper) the merged part of t_nullif_skip_index
 -- deterministically gets 244 granules instead of 245, changing the EXPLAIN indexes output.
+
+-- The reference is recorded in the legacy EXPLAIN format; keep it independent of the pretty default.
+SET explain_query_plan_default = 'legacy';
+
 DROP TABLE IF EXISTS t_nullif_pruning;
 
 CREATE TABLE t_nullif_pruning (team UInt64, k UInt8) 
