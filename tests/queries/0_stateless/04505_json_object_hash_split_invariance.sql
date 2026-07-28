@@ -95,10 +95,19 @@ DROP TABLE t2_both;
 -- across the temp-file round-trip). Spilling to disk is forced by grace_hash_join_initial_buckets = 8
 -- (independent of data volume): the right side is scattered by key hash across 8 buckets and buckets
 -- 1..7 are written to temp files and read back, so a small fixture still exercises the full spill
--- round-trip. The self-join cardinality is deterministic: the key is fully determined by number % 50
--- (the b index (number * 7 + 1) % 50 also depends only on number % 50), so there are 50 distinct keys
--- with 5 rows each => 50 * 5 * 5 = 1250 matched pairs. Asserting the exact count catches a spill that
--- keeps one bucket alive but drops most matches, which a count() > 0 check would not. The
+-- round-trip.
+--
+-- Both paths are named `a` and `b` in every row, and each of the two parts is seeded with a row that
+-- claims the single dynamic slot for the OTHER path, so the same logical key is stored with `a`
+-- dynamic in one part and `b` dynamic in the other -- the `t2_both` shape above, at spill scale. The
+-- seeder rows are excluded from the join, and `spill_splits` asserts the divergence is actually
+-- present: without it a background merge that unified the layout would silently turn the whole cell
+-- into a same-representation smoke test that still returned the right count.
+--
+-- The self-join cardinality is deterministic: the key is fully determined by number % 20 (the `b`
+-- value (number * 7 + 1) % 20 also depends only on number % 20), so there are 20 distinct keys with
+-- 5 rows per part => 20 * 10 * 10 = 2000 matched pairs. Asserting the exact count catches a spill
+-- that keeps one bucket alive but drops most matches, which a count() > 0 check would not. The
 -- non-spilling hash join on the same data must agree. joined_block_split_single_row is pinned off:
 -- it forces one output row per block and does not affect the build-side scatter this test exercises,
 -- so leaving it randomized only makes the run slow.
@@ -108,16 +117,30 @@ CREATE TABLE t_spill (id UInt64, k JSON(max_dynamic_paths = 1)) ENGINE = MergeTr
              object_serialization_version = 'v3',
              object_shared_data_serialization_version = 'advanced',
              object_shared_data_serialization_version_for_zero_level_parts = 'advanced';
+-- Part 1: `b` takes the dynamic slot, so every row keeps `a` in shared data.
 INSERT INTO t_spill SELECT number,
-    concat('{"a', toString(number % 50), '":1, "b', toString((number * 7 + 1) % 50), '":2}')::JSON(max_dynamic_paths = 1)
-FROM numbers(250);
+    if(number = 0, '{"b":999}',
+       concat('{"a":', toString(number % 20), ', "b":', toString((number * 7 + 1) % 20), '}'))::JSON(max_dynamic_paths = 1)
+FROM numbers(101);
+-- Part 2: the same keys with the split reversed.
+INSERT INTO t_spill SELECT number + 1000,
+    if(number = 0, '{"a":999}',
+       concat('{"a":', toString(number % 20), ', "b":', toString((number * 7 + 1) % 20), '}'))::JSON(max_dynamic_paths = 1)
+FROM numbers(101);
+
+-- The two halves must disagree on which path is dynamic (100 rows each way, seeders excluded).
+SELECT 'spill_splits',
+       countIf(id < 1000 AND has(JSONDynamicPaths(k), 'b')),
+       countIf(id > 1000 AND has(JSONDynamicPaths(k), 'a'))
+FROM t_spill WHERE id % 1000 != 0;
 
 SELECT 'spill_join_grace', count()
-FROM t_spill AS a INNER JOIN t_spill AS b ON a.k = b.k
-SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 8, max_block_size = 11, joined_block_split_single_row = 0;
+FROM (SELECT k FROM t_spill WHERE id % 1000 != 0) AS a INNER JOIN (SELECT k FROM t_spill WHERE id % 1000 != 0) AS b ON a.k = b.k
+SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 8, max_block_size = 11, joined_block_split_single_row = 0,
+         log_comment = '04505_spill_json';
 
 SELECT 'spill_join_hash', count()
-FROM t_spill AS a INNER JOIN t_spill AS b ON a.k = b.k
+FROM (SELECT k FROM t_spill WHERE id % 1000 != 0) AS a INNER JOIN (SELECT k FROM t_spill WHERE id % 1000 != 0) AS b ON a.k = b.k
 SETTINGS join_algorithm = 'hash';
 
 DROP TABLE t_spill;
@@ -242,11 +265,24 @@ INSERT INTO d_spill SELECT n + 1000, k FROM s_shared WHERE dynamicType(k) = 'Int
 
 SELECT 'dyn_spill_grace', count()
 FROM d_spill AS a INNER JOIN d_spill AS b ON a.k = b.k
-SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 8, max_block_size = 11, joined_block_split_single_row = 0;
+SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 8, max_block_size = 11, joined_block_split_single_row = 0,
+         log_comment = '04505_spill_dyn';
 
 SELECT 'dyn_spill_hash', count()
 FROM d_spill AS a INNER JOIN d_spill AS b ON a.k = b.k
 SETTINGS join_algorithm = 'hash';
+
+-- Both spill cases above assert only a cardinality, which a run that never touched disk satisfies
+-- just as well: GraceHashJoin::flushBlocksToBuckets skips bucket 0 by construction and skips empty
+-- buckets, so "grace_hash was requested" does not imply a temp file was written. The FileBucket
+-- state-machine half of what these cells cover is only exercised if one was, so assert the write
+-- directly -- ExternalJoinWritePart counts temp files written for the join.
+SYSTEM FLUSH LOGS query_log;
+SELECT 'spilled', log_comment, max(ProfileEvents['ExternalJoinWritePart']) > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment LIKE '04505_spill%' AND type = 'QueryFinish'
+GROUP BY log_comment
+ORDER BY log_comment;
 
 DROP TABLE s_typed;
 DROP TABLE s_shared;

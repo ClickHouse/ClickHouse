@@ -10,8 +10,9 @@ two_path_splits	1	1
 two_path_hash	4
 two_path_grace_hash	4
 two_path_group_by	1
-spill_join_grace	1250
-spill_join_hash	1250
+spill_splits	100	100
+spill_join_grace	2000
+spill_join_hash	2000
 dyn_splits	1	1
 dyn_equal	1
 dyn_hash	4
@@ -26,3 +27,5 @@ dyn_u8_splits	1	1
 dyn_u8_grace_hash	4
 dyn_spill_grace	1600
 dyn_spill_hash	1600
+spilled	04505_spill_dyn	1
+spilled	04505_spill_json	1
