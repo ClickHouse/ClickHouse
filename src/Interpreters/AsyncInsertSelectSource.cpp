@@ -143,6 +143,12 @@ Chunk AsyncInsertSelectSource::generate()
 
         if (!have_single)
         {
+            /// Materialize before sizing: IColumn::bytes() on a ColumnConst or ColumnSparse
+            /// reflects only its compact representation, not the size it would take once
+            /// queued. The rename step in buildAsyncInsertSelectPipeline already materializes
+            /// any ColumnConst reaching it, and MergeTree reads already densify ColumnSparse,
+            /// so this call is a defensive guard against a future source that skips both.
+            materializeBlockInplace(pulled);
             if (pulled.bytes() > max_data_size)
             {
                 init_sync_fallback(fmt::format("block size {} bytes exceeds async_insert_max_data_size {} bytes",
@@ -191,9 +197,6 @@ Chunk AsyncInsertSelectSource::generate()
         /// The pushed block is Preprocessed (Native-encoded). `preprocessInsertQuery` rejects an
         /// empty format, and a plain `INSERT ... SELECT` carries none, so set `Native` explicitly.
         async_query->as<ASTInsertQuery &>().format = "Native";
-        /// De-sparse all columns so processPreprocessedEntries can insertRangeFrom
-        /// into non-sparse result columns without offset corruption.
-        materializeBlockInplace(single_block);
         auto result = queue->pushQueryWithBlock(async_query, std::move(single_block), insert_context);
         /// `report_read_progress=false`: reads were already counted by the SELECT pipeline.
         waitForAsyncInsertAndReportProgress(
