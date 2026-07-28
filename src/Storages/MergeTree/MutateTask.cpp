@@ -1908,7 +1908,8 @@ void PartMergerWriter::createBuildTextIndexesTask()
         temporary_text_index_storage,
         ctx->out->getWriterSettings(),
         ctx->compression_codec,
-        ctx->mrk_extension);
+        ctx->mrk_extension,
+        *ctx->data->getSettings());
 }
 
 void PartMergerWriter::calculateProjection(size_t projection_idx, const Block & block, UInt64 starting_offset)
@@ -2058,7 +2059,8 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
                 index,
                 /*merged_part_offsets=*/ nullptr,
                 reader_settings,
-                ctx->out->getWriterSettings());
+                ctx->out->getWriterSettings(),
+                ctx->need_sync);
 
             merge_subtasks.push_back(std::move(merge_task));
         }
