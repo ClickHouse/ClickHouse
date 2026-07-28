@@ -44,7 +44,7 @@ CREATE TABLE oip4 (a IPv4) ENGINE = Log;
 CREATE TABLE ctl32 (a UInt32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
 INSERT INTO ip4 VALUES (toIPv4('1.2.3.4')), (toIPv4('2.0.0.0')), (toIPv4('3.0.0.0')), (toIPv4('200.1.1.1'));
 INSERT INTO oip4 VALUES (toIPv4('1.2.3.4')), (toIPv4('2.0.0.0')), (toIPv4('3.0.0.0')), (toIPv4('200.1.1.1'));
-INSERT INTO ctl32 VALUES (16909060), (33554432), (50331648), (3355508583);
+INSERT INTO ctl32 VALUES (16909060), (33554432), (50331648), (3355508993);
 
 -- `::ff` is chosen deliberately: its `UInt128` cast is 255 while a raw copy of the big-endian
 -- underlying value is ~3.4e38, which overflows when multiplied, so this fixture distinguishes the
@@ -106,6 +106,7 @@ SELECT 'oracle_plus_const_left_ipkey', (SELECT count() FROM ip4g1 WHERE plus(1, 
 SELECT 'oracle_minus_const_left_ipkey', (SELECT count() FROM ip4g1 WHERE minus(1, a) > 0) = (SELECT count() FROM oip4g1 WHERE minus(1, a) > 0);
 SELECT 'oracle_multiply_const_left_ipkey', (SELECT count() FROM ip4g1 WHERE multiply(1, a) > 0) = (SELECT count() FROM oip4g1 WHERE multiply(1, a) > 0);
 SELECT 'oracle_plus_const_right_ipkey', (SELECT count() FROM ip4g1 WHERE plus(a, 1) > 0) = (SELECT count() FROM oip4g1 WHERE plus(a, 1) > 0);
+SELECT 'oracle_minus_const_right_ipkey', (SELECT count() FROM ip4g1 WHERE minus(a, 1) > 0) = (SELECT count() FROM oip4g1 WHERE minus(a, 1) > 0);
 SELECT 'oracle_multiply_const_right_ipkey', (SELECT count() FROM ip4g1 WHERE multiply(a, 2) > 0) = (SELECT count() FROM oip4g1 WHERE multiply(a, 2) > 0);
 
 SELECT '-- multiplying an IP key by a numeric constant must prune like the identical numeric key';
@@ -118,6 +119,10 @@ SELECT 'oracle_multiply_nullable_ip4key', (SELECT count() FROM ip4n WHERE multip
 SELECT 'prune_multiply_nullable_ip4key_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ip4n WHERE multiply(a, 2) > 6000000000) WHERE explain ILIKE '%Granules: 2/4%';
 SELECT 'oracle_multiply_ip6key_byteorder', (SELECT count() FROM ip6be WHERE multiply(a, 2) < 10) = (SELECT count() FROM oip6be WHERE multiply(a, 2) < 10);
 SELECT 'prune_multiply_ip6key_byteorder_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ip6be WHERE multiply(a, 2) < 10) WHERE explain ILIKE '%Granules: 2/4%';
+-- Two IP operands at once: `getReturnTypeImplStatic` accepts them, so the constant and both endpoints
+-- are IP-tagged in the same call, exercising both normalization sites together.
+SELECT 'oracle_multiply_ip4key_ip4const', (SELECT count() FROM ip4 WHERE multiply(a, toIPv4('0.0.0.2')) > 6000000000) = (SELECT count() FROM oip4 WHERE multiply(a, toIPv4('0.0.0.2')) > 6000000000);
+SELECT 'oracle_plus_ip4key_ip4const', (SELECT count() FROM ip4 WHERE plus(a, toIPv4('0.0.0.2')) > 3000000000) = (SELECT count() FROM oip4 WHERE plus(a, toIPv4('0.0.0.2')) > 3000000000);
 
 SELECT '-- a genuine overflow must still reject monotonicity';
 SELECT 'oracle_multiply_ip6key_overflow', (SELECT count() FROM ip6ovf WHERE multiply(a, 3) > 100) = (SELECT count() FROM oip6ovf WHERE multiply(a, 3) > 100);

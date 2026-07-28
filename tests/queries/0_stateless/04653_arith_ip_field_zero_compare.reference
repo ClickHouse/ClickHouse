@@ -27,6 +27,7 @@ oracle_plus_const_left_ipkey	1
 oracle_minus_const_left_ipkey	1
 oracle_multiply_const_left_ipkey	1
 oracle_plus_const_right_ipkey	1
+oracle_minus_const_right_ipkey	1
 oracle_multiply_const_right_ipkey	1
 -- multiplying an IP key by a numeric constant must prune like the identical numeric key
 oracle_multiply_ip4key	1
@@ -38,6 +39,8 @@ oracle_multiply_nullable_ip4key	1
 prune_multiply_nullable_ip4key_2of4	1
 oracle_multiply_ip6key_byteorder	1
 prune_multiply_ip6key_byteorder_2of4	1
+oracle_multiply_ip4key_ip4const	1
+oracle_plus_ip4key_ip4const	1
 -- a genuine overflow must still reject monotonicity
 oracle_multiply_ip6key_overflow	1
 noprune_multiply_ip6key_overflow_4of4	1
