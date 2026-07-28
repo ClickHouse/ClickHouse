@@ -668,12 +668,17 @@ void DeltaLakeMetadata::createInitial(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Creating a new Delta Lake table requires allow_experimental_delta_kernel_rs = 1 "
                 "(there is no non-kernel Delta Lake writer)");
+        /// Registering an existing table in a catalog reads its schema via the kernel, so without the kernel we
+        /// cannot register it -- fail explicitly rather than reporting success while the catalog gets no entry.
+        if (catalog)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Registering an existing Delta Lake table in a catalog requires allow_experimental_delta_kernel_rs = 1");
 #if !USE_DELTA_KERNEL_RS
         (void)local_context;
         (void)columns;
         (void)partition_by;
         (void)if_not_exists;
-        (void)catalog;
         (void)table_id_;
 #endif
         return;

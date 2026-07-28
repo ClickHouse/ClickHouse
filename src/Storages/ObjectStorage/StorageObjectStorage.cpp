@@ -156,11 +156,22 @@ StorageObjectStorage::StorageObjectStorage(
     , background_operations_assignee(*this, table_id_, BackgroundJobsAssignee::Type::DataProcessing, Context::getGlobalContextInstance())
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
+
+    /// A columnless CREATE in a catalog database must still reach `create(...)` for engines that can attach
+    /// and register an existing table (its schema read from storage); others keep requiring explicit columns.
+    const bool columnless_catalog_create = columns_in_table_or_function_definition.empty() && catalog
+        && configuration->supportsCreateFromExistingTableInCatalog();
+    const bool creating_new_storage = !is_table_function && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE
+        && (!columns_in_table_or_function_definition.empty() || columnless_catalog_create);
+    /// A CREATE that may remap column types (DeltaLake) adopts the persisted schema (see below), which needs the configuration updated first, so it cannot be lazily initialized.
+    const bool adopt_persisted_schema_after_create = creating_new_storage && configuration->mayRemapColumnTypesOnCreate()
+        && !columns_in_table_or_function_definition.empty();
+
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
     const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
         && !configuration->partition_strategy
         && !configuration->isDataLakeConfiguration();
-    const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
+    const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path && !adopt_persisted_schema_after_create;
 
     LOG_DEBUG(
         log, "StorageObjectStorage: lazy_init={}, need_resolve_columns_or_format={}, "
@@ -179,13 +190,7 @@ StorageObjectStorage::StorageObjectStorage(
     /// Validate the configuration (RemoteHostFilter / HTTPHeaderFilter / format) before any remote access.
     configuration->check(context);
 
-    /// A columnless CREATE in a catalog database must still reach `create(...)` for engines that can attach
-    /// and register an existing table (its schema read from storage); others keep requiring explicit columns.
-    const bool columnless_catalog_create = columns_in_table_or_function_definition.empty() && catalog
-        && configuration->supportsCreateFromExistingTableInCatalog();
-
-    if (!is_table_function && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE
-        && (!columns_in_table_or_function_definition.empty() || columnless_catalog_create))
+    if (creating_new_storage)
     {
         LOG_DEBUG(log, "Creating new storage");
         configuration->create(
@@ -244,6 +249,16 @@ StorageObjectStorage::StorageObjectStorage(
         resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
     else
         validateSupportedColumns(columns, *configuration);
+
+    /// Adopt the persisted schema so the table's columns and the data files a later INSERT writes stay consistent with the metadata (a compatible `UInt8` is stored as Delta `short` and read back as `Int16`).
+    if (adopt_persisted_schema_after_create)
+    {
+        if (auto table_structure = configuration->tryGetTableStructureFromMetadata(context))
+        {
+            columns = table_structure.value();
+            validateSupportedColumns(columns, *configuration);
+        }
+    }
 
     /// FIXME: We need to call getPathSample() lazily on select
     /// in case it failed to be initialized in constructor.

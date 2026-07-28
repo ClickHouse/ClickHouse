@@ -103,6 +103,17 @@ public:
 #endif
     }
 
+    /// DeltaLake maps some ClickHouse types to a compatible Delta type (e.g. `UInt8` -> `short`), so a
+    /// created table adopts the persisted schema; Iceberg persists the declared types, so it keeps the default.
+    bool mayRemapColumnTypesOnCreate() const override
+    {
+#if USE_PARQUET
+        return std::is_same_v<DataLakeMetadata, DeltaLakeMetadata>;
+#else
+        return false;
+#endif
+    }
+
     const DataLakeStorageSettings & getDataLakeSettings() const override { return *settings; }
 
     std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }

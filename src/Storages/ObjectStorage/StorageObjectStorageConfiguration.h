@@ -200,6 +200,10 @@ public:
 
     virtual bool supportsCreateFromExistingTableInCatalog() const { return false; }
 
+    /// Whether CREATE may persist a column as a different (but compatible) type than declared, so the created
+    /// table must adopt the schema read back from the engine's metadata instead of the declared columns.
+    virtual bool mayRemapColumnTypesOnCreate() const { return false; }
+
     virtual bool supportsPartialPathPrefix() const { return true; }
 
     virtual ObjectIterator iterate(

@@ -1430,3 +1430,51 @@ def test_register_existing_delta_table_preserves_raw_schema(started_cluster):
             f"DROP DATABASE IF EXISTS {db_name}",
             settings={"allow_experimental_database_unity_catalog": 1},
         )
+
+
+def test_register_existing_delta_table_requires_kernel(started_cluster):
+    """
+    Attaching an existing Delta table into a Unity `DataLakeCatalog` database reads its schema via the kernel
+    to register it, so with `allow_experimental_delta_kernel_rs = 0` the CREATE must fail explicitly rather
+    than report success while registering nothing in Unity (regression for the silent no-op in
+    `DeltaLakeMetadata::createInitial`).
+    """
+    node1 = started_cluster.instances["node1"]
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
+    db_name = f"unity_nokernel_{test_uuid}"
+    schema_name = f"nokernel_schema_{test_uuid}"
+    table_name = f"nokernel_table_{test_uuid}"
+    creator = f"creator_nokernel_{test_uuid}"
+    location = f"/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}"
+
+    execute_multiple_spark_queries(
+        node1, [f"CREATE SCHEMA IF NOT EXISTS {schema_name}"], retry_on_timeout=True
+    )
+    node1.query(
+        f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
+        "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
+        "allow_experimental_delta_kernel_rs=1",
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+    try:
+        # An existing Delta table on storage, not registered in Unity.
+        node1.query(
+            f"CREATE TABLE default.{creator} (id Int32) ENGINE = DeltaLakeLocal('{location}')",
+            settings={
+                "allow_experimental_delta_kernel_rs": 1,
+                "allow_experimental_delta_lake_writes": 1,
+            },
+        )
+
+        # Onboarding it into the catalog with the kernel disabled must fail explicitly.
+        error = node1.query_and_get_error(
+            f"CREATE TABLE {db_name}.`{schema_name}.{table_name}` ENGINE = DeltaLakeLocal('{location}')",
+            settings={"allow_experimental_delta_kernel_rs": 0},
+        )
+        assert "allow_experimental_delta_kernel_rs" in error, error
+    finally:
+        node1.query(
+            f"DROP DATABASE IF EXISTS {db_name}",
+            settings={"allow_experimental_database_unity_catalog": 1},
+        )
+        node1.query(f"DROP TABLE IF EXISTS default.{creator}")
