@@ -18,8 +18,10 @@ single filesystem, so a temp file in /tmp (or `tempfile.mkstemp()`'s default loc
 turns every dump in CI into `OSError(EXDEV) Invalid cross-device link`.
 """
 
+import errno
 import json
 import os
+import stat
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -63,16 +65,26 @@ def test_dump_writes_the_target_file(in_tmp_cwd):
 
 
 def test_dump_content_is_identical_to_the_base_implementation(in_tmp_cwd):
-    """Only the write is staged - the file *content* must not change."""
+    """Only the write is staged - the file *content* and *mode* must not change.
+
+    The mode matters because the staged write creates the file: `open(path, "w")` creates
+    with 0o666 & ~umask, so the explicit `os.open` mode must be 0o666 as well. A stricter
+    one (`tempfile.mkstemp()` uses 0o600) would silently narrow the result file for every
+    downstream reader.
+    """
+    target = Result.file_name_static(JOB_NAME)
     r = _result(status=Result.Status.OK, info="all good")
     r.dump()
-    atomic_bytes = open(Result.file_name_static(JOB_NAME), "rb").read()
+    atomic_bytes = open(target, "rb").read()
+    atomic_mode = stat.S_IMODE(os.stat(target).st_mode)
 
-    os.remove(Result.file_name_static(JOB_NAME))
+    os.remove(target)
     MetaClasses.Serializable.dump(r)
-    base_bytes = open(Result.file_name_static(JOB_NAME), "rb").read()
+    base_bytes = open(target, "rb").read()
+    base_mode = stat.S_IMODE(os.stat(target).st_mode)
 
     assert atomic_bytes == base_bytes
+    assert oct(atomic_mode) == oct(base_mode)
 
 
 def test_failed_dump_keeps_the_previous_content(in_tmp_cwd):
@@ -149,6 +161,25 @@ def test_temp_name_is_unique_per_process(in_tmp_cwd):
         seen = _spy_replace(mp)
         _result().dump()
     assert str(os.getpid()) in os.path.basename(seen[0][0])
+
+
+def test_dump_refuses_a_symlinked_temp_path(in_tmp_cwd, tmp_path):
+    """The temp name is derived from the result path and this pid, so it is guessable. A
+    pre-existing symlink there must be refused, not written through."""
+    victim = tmp_path / "victim_outside_workspace"
+    victim.write_text("do-not-clobber")
+    _result(status=Result.Status.RUNNING, info="pre-run").dump()
+
+    target = Result.file_name_static(JOB_NAME)
+    os.symlink(victim, f"{target}.tmp.{os.getpid()}")
+
+    with pytest.raises(OSError) as ex:
+        _result(status=Result.Status.OK, info="never landed").dump()
+    assert ex.value.errno == errno.ELOOP
+
+    assert victim.read_text() == "do-not-clobber"
+    # and the previously persisted result is still readable
+    assert Result.from_fs(JOB_NAME).info == "pre-run"
 
 
 def test_dump_of_a_result_with_subresults_round_trips(in_tmp_cwd):

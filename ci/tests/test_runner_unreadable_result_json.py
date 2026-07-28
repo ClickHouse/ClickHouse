@@ -49,6 +49,11 @@ class _Job:
 @pytest.fixture
 def in_tmp_cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    # Runner._run sets PRAKTIKA and rewrites PYTHONPATH process-globally, and pytest does
+    # not restore process env between tests; monkeypatch does, so later tests in this
+    # worker do not inherit them.
+    for var in ("PRAKTIKA", "PYTHONPATH"):
+        monkeypatch.setenv(var, os.environ.get(var, ""))
     os.makedirs(Settings.TEMP_DIR, exist_ok=True)
     return tmp_path
 

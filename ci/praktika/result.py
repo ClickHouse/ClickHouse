@@ -413,7 +413,15 @@ class Result(MetaClasses.Serializable):
         path = Path(self.file_name())
         tmp_path = path.with_name(f"{path.name}.tmp.{os.getpid()}")
         try:
-            with open(tmp_path, "w", encoding="utf8") as f:
+            # O_NOFOLLOW: the temp path is derived from the result path and this pid, so a
+            # job sharing the worktree could pre-create it as a symlink; refuse to write
+            # through one. Not O_EXCL: a leftover temp from a previously killed dump must
+            # stay reusable, or the very crash this method exists to survive would become
+            # a hard failure.
+            fd = os.open(
+                tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o666
+            )
+            with os.fdopen(fd, "w", encoding="utf8") as f:
                 json.dump(self.to_dict(self), f, indent=4)
                 f.flush()
                 os.fsync(f.fileno())
