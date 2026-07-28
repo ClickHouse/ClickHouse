@@ -1417,7 +1417,7 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
 
     assertNoAggregateFunctionNodes(expression_list, "in column DEFAULT expression");
 
-    const auto dummy_metadata = storage->getInMemoryMetadataPtr(execution_context, false);
+    const auto dummy_metadata = storage->getInMemoryMetadataQueryCached(execution_context);
     assertInsertTimeDefaultsDoNotReferenceVirtuals(
         expression_list,
         query_node->getProjectionColumns(),
