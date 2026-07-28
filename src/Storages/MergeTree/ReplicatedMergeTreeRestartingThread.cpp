@@ -223,17 +223,11 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         const bool replica_metadata_version_exists = replica_metadata_version != -1;
         if (replica_metadata_version_exists)
         {
-            /// Stamp the metadata version under lockForAlter. This is an in-memory read-modify-write of
-            /// the committed metadata, and a concurrent settings/comment ALTER commits under the same
-            /// lock without touching ZooKeeper (see StorageReplicatedMergeTree::alter, non-replicated
-            /// branches). Without the lock, such an ALTER could interleave between the read and the set
-            /// below and be reverted in memory while it stays in the durable .sql. Mirrors the lock taken
-            /// in executeMetadataAlter before setTableStructure.
+            /// Serialize this in-memory metadata_version read-modify-write with concurrent ALTERs
+            /// (which commit under the same lock); otherwise a settings/comment ALTER could be reverted.
             auto table_lock_holder = storage.lockForAlter(
                 (*storage.getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
 
-            /// Test barrier: pause here while holding the alter lock, so a test can verify a concurrent
-            /// settings/comment ALTER cannot interleave with this metadata_version stamp.
             FailPointInjection::pauseFailPoint(FailPoints::rmt_restarting_thread_pause_after_alter_lock);
 
             auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
