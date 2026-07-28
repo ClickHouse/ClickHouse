@@ -4412,38 +4412,51 @@ def test_write_external_cancel_does_not_crash_server(started_cluster, partitione
 
     query_id = str(uuid.uuid4())
 
+    # An assertion raised inside a thread does not fail the test (pytest only turns
+    # it into a PytestUnhandledThreadExceptionWarning), so hand the worker's
+    # exception back to the main thread and re-raise it there.
+    insert_error = []
+
     def run_insert():
         # sleepEachRow keeps the INSERT running long enough to KILL it mid-write,
         # after >= 1 inner sink (both partitions when partitioned) has opened its
         # write buffer. max_block_size = 1 delivers single-row chunks so a sink is
         # created and its buffer opened well before the KILL arrives.
-        _, error = instance.query_and_get_answer_with_error(
-            f"INSERT INTO {table_name} "
-            f"SELECT number::Int32, ((number % 2) + sleepEachRow(0.02))::Int32 "
-            f"FROM numbers(1000) "
-            f"SETTINGS max_block_size = 1, function_sleep_max_microseconds_per_block = 100000000",
-            query_id=query_id,
-        )
-        assert "QUERY_WAS_CANCELLED" in error, f"unexpected insert error: {error}"
+        try:
+            _, error = instance.query_and_get_answer_with_error(
+                f"INSERT INTO {table_name} "
+                f"SELECT number::Int32, ((number % 2) + sleepEachRow(0.02))::Int32 "
+                f"FROM numbers(1000) "
+                f"SETTINGS max_block_size = 1, function_sleep_max_microseconds_per_block = 100000000",
+                query_id=query_id,
+            )
+            assert "QUERY_WAS_CANCELLED" in error, f"unexpected insert error: {error}"
+        except BaseException as e:  # noqa: BLE001
+            insert_error.append(e)
 
     insert_thread = threading.Thread(target=run_insert)
     insert_thread.start()
     try:
-        # Wait until the INSERT is running and has read at least a couple of rows,
-        # i.e. the sink has opened its write buffer, before cancelling.
+        # Wait until an inner sink has actually created its data file, i.e. its write
+        # buffer is open, before cancelling. Source-side progress (read_rows) does not
+        # prove the sink consumed anything, so key on the sink's own observable output.
         for _ in range(100):
-            read_rows = instance.query(
-                f"SELECT sum(read_rows) FROM system.processes WHERE query_id='{query_id}'"
+            written_parquet_count = instance.exec_in_container(
+                ["bash", "-c", f"find /{result_file} -name '*.parquet' | wc -l"]
             ).strip()
-            if read_rows not in ("", "0") and int(read_rows) >= 2:
+            if int(written_parquet_count) >= 1:
                 break
             time.sleep(0.1)
         else:
-            raise AssertionError("INSERT did not start reading rows in time")
+            raise AssertionError("no inner sink opened its data file in time")
 
         instance.query(f"KILL QUERY WHERE query_id='{query_id}' SYNC")
     finally:
         insert_thread.join()
+
+    # Surface a worker-thread failure (e.g. the INSERT was not cancelled at all).
+    if insert_error:
+        raise insert_error[0]
 
     # Server stays alive after the cancelled write (would have aborted before the fix).
     assert "1" == instance.query("SELECT 1").strip()
@@ -4502,24 +4515,35 @@ def test_write_cancel_during_commit_keeps_data(started_cluster, partitioned):
     # after the data files are finalized and before delta commit.
     instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
 
+    # An assertion raised inside a thread does not fail the test (pytest only turns
+    # it into a PytestUnhandledThreadExceptionWarning), so hand the worker's
+    # exception back to the main thread and re-raise it there. Without this the test
+    # could pass its row/file checks while the cancellation silently never happened.
+    insert_error = []
+
     def run_insert():
         # A valid INSERT (no throwIf): reaches onFinish and pauses in the commit
         # window. max_block_size = 1 opens an inner sink per partition.
-        _, error = instance.query_and_get_answer_with_error(
-            f"INSERT INTO {table_name} "
-            f"SELECT number::Int32, (number % 2)::Int32 "
-            f"FROM numbers(6) SETTINGS max_block_size = 1",
-            query_id=query_id,
-        )
-        # The KILL lands while paused, so the client sees QUERY_WAS_CANCELLED even
-        # though the commit itself completes.
-        assert "QUERY_WAS_CANCELLED" in error, f"unexpected insert error: {error}"
+        try:
+            _, error = instance.query_and_get_answer_with_error(
+                f"INSERT INTO {table_name} "
+                f"SELECT number::Int32, (number % 2)::Int32 "
+                f"FROM numbers(6) SETTINGS max_block_size = 1",
+                query_id=query_id,
+            )
+            # The KILL lands while paused, so the client sees QUERY_WAS_CANCELLED even
+            # though the commit itself completes.
+            assert "QUERY_WAS_CANCELLED" in error, f"unexpected insert error: {error}"
+        except BaseException as e:  # noqa: BLE001
+            insert_error.append(e)
 
     insert_thread = threading.Thread(target=run_insert)
     insert_thread.start()
     try:
-        # Wait until the committing thread has paused in the commit window.
-        instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+        # Wait until the committing thread has paused in the commit window. Bounded,
+        # so a failpoint that is never reached fails the test instead of hanging
+        # until the pytest session timeout.
+        instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
 
         # KILL while paused: flips isCancelled() on the sink asynchronously. ASYNC
         # (not SYNC) because the query is blocked at the failpoint, so a SYNC kill
@@ -4532,6 +4556,11 @@ def test_write_cancel_during_commit_keeps_data(started_cluster, partitioned):
     finally:
         instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
         insert_thread.join()
+
+    # Surface a worker-thread failure (e.g. the INSERT was never cancelled, which
+    # would make the checks below vacuous).
+    if insert_error:
+        raise insert_error[0]
 
     # Server stays alive after the cancelled-during-commit write.
     assert "1" == instance.query("SELECT 1").strip()
