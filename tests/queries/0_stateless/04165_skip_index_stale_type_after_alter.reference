@@ -25,6 +25,7 @@
 1
 63
 50
+1
 -- 10. known gap: index name reuse after a killed DROP INDEX
 0
 1

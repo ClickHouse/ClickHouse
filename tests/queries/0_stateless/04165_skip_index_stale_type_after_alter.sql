@@ -68,14 +68,20 @@ INSERT INTO t_stale_minmax SELECT number, toString(number * 3) FROM numbers(64);
 SYSTEM STOP MERGES t_stale_minmax;
 ALTER TABLE t_stale_minmax MODIFY COLUMN value UInt64;
 KILL MUTATION WHERE table = 't_stale_minmax' AND database = currentDatabase() FORMAT Null;
-SELECT count() FROM t_stale_minmax WHERE value = 150 SETTINGS use_skip_indexes_on_data_read = 1;
+-- max_rows_to_read must be neutralized per statement wherever use_skip_indexes_on_data_read = 1
+-- matters: supportsSkipIndexesOnDataRead() refuses the read-time path when read_overflow_mode is
+-- 'throw' and max_rows_to_read is set, which the stateless test profile always does, so without
+-- this the read-time case is vacuous.
+SELECT count() FROM t_stale_minmax WHERE value = 150
+SETTINGS use_skip_indexes_on_data_read = 1, max_rows_to_read = 0;
 -- The top-k settings are randomized by the test runner, so pin them per statement: without them
 -- these lines can silently run with the top-k optimization off and assert nothing about the index.
 -- WHERE plus ORDER BY/LIMIT together is what reaches the read-time pool
 -- (MergeTreeIndexReadResultPool); analysis-time top-k requires the WHERE clause to be absent.
 SELECT k FROM t_stale_minmax WHERE value = 150 ORDER BY value LIMIT 1
 SETTINGS use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1,
-         use_skip_indexes_on_data_read = 1, query_plan_max_limit_for_top_k_optimization = 100000;
+         use_skip_indexes_on_data_read = 1, query_plan_max_limit_for_top_k_optimization = 100000,
+         max_rows_to_read = 0;
 SELECT k FROM t_stale_minmax ORDER BY value LIMIT 1
 SETTINGS use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1,
          query_plan_max_limit_for_top_k_optimization = 100000;
@@ -120,7 +126,18 @@ SETTINGS use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1,
          query_plan_max_limit_for_top_k_optimization = 100000;
 SELECT k FROM t_keep_plain WHERE value = 150 ORDER BY value LIMIT 1
 SETTINGS use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1,
-         use_skip_indexes_on_data_read = 1, query_plan_max_limit_for_top_k_optimization = 100000;
+         use_skip_indexes_on_data_read = 1, query_plan_max_limit_for_top_k_optimization = 100000,
+         max_rows_to_read = 0;
+-- Assert the read-time pool actually RAN, not merely that the answer is right: when it takes over,
+-- index analysis stops filtering and reports every granule, so the summary line reads "Granules: 16".
+-- Losing the pool (an unpinned max_rows_to_read, or a future guard) flips this to 1 and reddens here
+-- instead of silently degrading the three read-time statements above to result-only checks.
+SELECT count() > 0 FROM (EXPLAIN ANALYZE indexes = 1
+    SELECT k FROM t_keep_plain WHERE value = 150 ORDER BY value LIMIT 1
+    SETTINGS use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1,
+             use_skip_indexes_on_data_read = 1, query_plan_max_limit_for_top_k_optimization = 100000,
+             max_rows_to_read = 0, use_query_condition_cache = 0)
+WHERE explain ILIKE '%Parts: 1 | Granules: 16%';
 
 -- Known gap, deliberately out of scope: reusing an index NAME after a killed DROP INDEX leaves the
 -- old index files in the part while the name now means a different column. Both columns share a
