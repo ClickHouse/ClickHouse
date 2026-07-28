@@ -77,7 +77,8 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     {
         for (size_t i = 0; i < columns_to_read.size(); ++i)
         {
-            if (!isColumnDroppedByPendingMutation(i))
+            /// Column was dropped by a pending mutation or invalidated. Don't read stale data;
+            if (!isColumnDroppedByPendingMutation(i) && !isSystemColumnInvalidated(i))
                 addStreams(columns_to_read[i], serializations[i]);
         }
     }
@@ -115,7 +116,7 @@ bool MergeTreeReaderWide::canServeWholeRangeFromCache() const
 
         for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
         {
-            if (isColumnDroppedByPendingMutation(pos))
+            if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
                 continue;
 
             auto intersecting = columns_cache->getIntersecting(
@@ -200,7 +201,7 @@ void MergeTreeReaderWide::prefetchForAllColumns(
     /// so if reading can be asynchronous, it will also be performed in parallel for all columns.
     for (size_t pos = 0; pos < num_columns; ++pos)
     {
-        if (isColumnDroppedByPendingMutation(pos))
+        if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
             continue;
 
         try
@@ -301,9 +302,10 @@ size_t MergeTreeReaderWide::readRows(
 
             for (size_t pos = 0; pos < num_columns; ++pos)
             {
-                /// Columns dropped by pending mutations don't need cache entries.
+                /// Columns dropped by pending mutations, and invalidated system columns,
+                /// don't need cache entries: they are not read from the part at all.
                 /// Push a placeholder to keep the vector aligned with column positions.
-                if (isColumnDroppedByPendingMutation(pos))
+                if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
                 {
                     cached_columns.emplace_back(ColumnsCacheKey{}, nullptr);
                     continue;
@@ -347,7 +349,8 @@ size_t MergeTreeReaderWide::readRows(
                 /// calculation is correct for all columns.
                 /// Find the first non-dropped column to use as the reference row range.
                 size_t ref_pos = 0;
-                while (ref_pos < num_columns && isColumnDroppedByPendingMutation(ref_pos))
+                while (ref_pos < num_columns
+                    && (isColumnDroppedByPendingMutation(ref_pos) || isSystemColumnInvalidated(ref_pos)))
                     ++ref_pos;
 
                 /// If all columns are dropped, there's nothing to serve from cache.
@@ -357,7 +360,7 @@ size_t MergeTreeReaderWide::readRows(
 
                 for (size_t i = ref_pos + 1; i < num_columns && consistent; ++i)
                 {
-                    if (isColumnDroppedByPendingMutation(i))
+                    if (isColumnDroppedByPendingMutation(i) || isSystemColumnInvalidated(i))
                         continue;
 
                     const auto & key = cached_columns[i].first;
@@ -408,7 +411,7 @@ size_t MergeTreeReaderWide::readRows(
             /// if columns had different row counts when cached.
             for (size_t pos = 0; pos < num_columns; ++pos)
             {
-                if (isColumnDroppedByPendingMutation(pos))
+                if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
                     continue;
 
                 const auto & cached_col = cached_columns[pos].second;
@@ -441,8 +444,9 @@ size_t MergeTreeReaderWide::readRows(
             /// All cached columns validated - serve from cache
             for (size_t pos = 0; pos < num_columns; ++pos)
             {
-                /// Column was dropped by a pending mutation. Don't serve stale data from cache.
-                if (isColumnDroppedByPendingMutation(pos))
+                /// Column was dropped by a pending mutation or invalidated.
+                /// Don't serve stale data from cache.
+                if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
                 {
                     res_columns[pos] = nullptr;
                     continue;
@@ -520,8 +524,9 @@ size_t MergeTreeReaderWide::readRows(
 
             for (size_t pos = 0; pos < num_columns; ++pos)
             {
-                /// Column was dropped by a pending mutation. Don't read stale data; let defaults be used.
-                if (isColumnDroppedByPendingMutation(pos))
+                /// Column was dropped by a pending mutation or invalidated.
+                /// Don't read stale data; let defaults be used.
+                if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
                 {
                     res_columns[pos] = nullptr;
                     continue;
@@ -680,6 +685,28 @@ size_t MergeTreeReaderWide::readRows(
                     cache_write_pending = false;
                 }
             }
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+            /// Before dropping the substreams caches, verify that the reference counts of the columns
+            /// shared between the caches, the deserialize states and the result columns account for all
+            /// those holders. Broken copy-on-write reference counting would free such a column here while
+            /// it is still referenced from the result, leading to use-after-free (issue #105626).
+            /// Entries written to the columns cache above only add references, so they cannot make this
+            /// check fail: it fires when the real reference count is lower than the enumerated holders.
+            ColumnsOwnershipValidator ownership_validator;
+            for (const auto & [_, cache] : caches)
+                ownership_validator.add(cache);
+            for (const auto & [_, states] : deserialize_states_caches)
+                ownership_validator.add(states);
+            ownership_validator.add(deserialize_binary_bulk_state_map);
+            ownership_validator.add(deserialize_binary_bulk_state_map_for_subcolumns);
+            /// The reader-local `deserialize_binary_bulk_state_map` holds clones of the prefix states; the
+            /// originals stay in the shared cache and share the same column references (e.g. a single-part
+            /// `LowCardinality` `global_dictionary`), so count those cache-held holders too.
+            if (deserialization_prefixes_cache)
+                deserialization_prefixes_cache->addToOwnershipValidator(ownership_validator);
+            ownership_validator.validate(res_columns);
+#endif
 
             prefetched_streams.clear();
             caches.clear();
@@ -953,7 +980,7 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsImpl(size_t num_columns,
         DeserializeBinaryBulkStateMap deserialize_state_map;
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
-            if (isColumnDroppedByPendingMutation(pos))
+            if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
                 continue;
 
             try

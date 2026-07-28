@@ -2347,7 +2347,7 @@ void ReadFromMergeTree::buildIndexes(
             for (const auto & idx : skip_indexes.useful_indices)
             {
                 size_t index_size = 0;
-                auto format = idx.index->getDeserializedFormat(part.data_part->checksums, idx.index->getFileName(), &part.data_part->getDataPartStorage());
+                auto format = idx.index->getDeserializedFormat(*part.data_part, idx.index->getFileName());
 
                 for (const auto & substream : format.substreams)
                 {

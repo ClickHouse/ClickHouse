@@ -1553,25 +1553,25 @@ DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<
     if (auto it = shard.set.find(id); it != shard.set.end())
     {
         DatabaseAndTable storage = DatabaseCatalog::instance().tryGetByUUID(it->uuid);
-        /// The cache is keyed by qualified name only (see `StorageCache::Shard::set`), so a hit can
-        /// carry a UUID that no longer matches the name we are resolving. Return the cached storage
-        /// only if it is still fresh. Otherwise the entry is stale and must not be reused:
-        ///  - the table no longer exists by its UUID (e.g. a refreshable materialized view's inner
-        ///    table was dropped and recreated), or
-        ///  - the UUID still exists but the name was reassigned to a different table by a rename or
-        ///    exchange within the same query. This happens during `CREATE OR REPLACE`, which creates a
-        ///    temporary table, populates it (caching the temporary name -> temporary UUID here), then
-        ///    atomically swaps it with the target via `EXCHANGE`. After the swap the temporary name
-        ///    refers to the old table that is about to be dropped, but the cache would still hand out
-        ///    the new (now live) table - so dropping by the temporary name would shut down the live
-        ///    table instead and break it (e.g. detaching a materialized view from its source), or
-        ///  - the caller asked for a specific UUID but the cached entry resolves to a different one
-        ///    (a same-name replacement); returning it would silently substitute the wrong table
-        ///    instead of letting the fresh lookup report `UNKNOWN_TABLE`/`TABLE_UUID_MISMATCH`.
-        /// In all cases remove the stale entry and fall through to a fresh lookup by name.
-        if (storage.second
-            && storage.second->getStorageID().getQualifiedName() == id.getQualifiedName()
-            && (!id.hasUUID() || it->uuid == id.uuid))
+        /// The cache is keyed by qualified name only (see `StorageCache::Shard::set`) and pins a name
+        /// to the storage it first resolved to in this query. That is the whole point of the cache: a
+        /// running query must keep seeing the table version it was planned against even if a
+        /// concurrent query renames or exchanges that table underneath it (see
+        /// `03915_exchange_tables_race` - otherwise the query is analyzed for one column type and
+        /// executed against another, raising a `LOGICAL_ERROR`). So a cache hit whose name was since
+        /// reassigned (by a rename/exchange, so the cached UUID now maps to a different qualified
+        /// name, or a different UUID now maps to the requested name) is NOT stale - the pinned UUID is
+        /// exactly what we want to return. Return it as long as it still resolves to a live table;
+        /// only drop the entry when the cached UUID no longer exists at all (e.g. a refreshable
+        /// materialized view's inner table was dropped and recreated with a new UUID), and fall
+        /// through to a fresh lookup by name.
+        ///
+        /// A rename or exchange performed BY THIS query drops the affected names from this cache (see
+        /// `dropStorageCacheEntry`, called from `InterpreterRenameQuery`), so the query's own later
+        /// lookups of those names re-resolve to the current tables. This is what lets
+        /// `CREATE OR REPLACE ... POPULATE` drop the old table by the temporary name after its
+        /// internal `EXCHANGE` instead of shutting down the live one (see #108726).
+        if (storage.second)
             return storage;
 
         shard.set.erase(it);
@@ -1589,6 +1589,15 @@ DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<
     }
 
     return storage;
+}
+
+void Context::dropStorageCacheEntry(const StorageID & id) const
+{
+    auto & shard = storage_cache.shards[StorageCache::shardIndex(id)];
+    std::lock_guard lock(shard.mutex);
+    /// The set uses name-only equality (`StorageID::DatabaseAndTableNameEqual`), so this erases the
+    /// pinned entry for the qualified name regardless of the UUID it was cached with.
+    shard.set.erase(id);
 }
 
 std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnings() const

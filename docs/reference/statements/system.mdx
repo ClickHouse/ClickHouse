@@ -17,7 +17,7 @@ Always returns `Ok.` regardless of the result of the internal dictionary update.
 ## SYSTEM RELOAD DICTIONARIES {#reload-dictionaries}
 
 The `SYSTEM RELOAD DICTIONARIES` query reloads dictionaries with a status of `LOADED` (see the `status` column of [`system.dictionaries`](/reference/system-tables/dictionaries)), i.e dictionaries that have been successfully loaded before.
-By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](/reference/settings/server-settings/settings#dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through use of the [`dictGet`](/reference/functions/regular-functions/ext-dict-functions#dictGet) function or use of `SELECT` from tables with `ENGINE = Dictionary`.
+By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](/reference/settings/server-settings/settings/dictionaries#dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through use of the [`dictGet`](/reference/functions/regular-functions/ext-dict-functions#dictGet) function or use of `SELECT` from tables with `ENGINE = Dictionary`.
 
 **Syntax**
 
@@ -101,7 +101,7 @@ SYSTEM RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
 
 ## SYSTEM RELOAD ASYNCHRONOUS METRICS {#reload-asynchronous-metrics}
 
-Re-calculates all [asynchronous metrics](/reference/system-tables/asynchronous_metrics). Since asynchronous metrics are periodically updated based on setting [asynchronous_metrics_update_period_s](/reference/settings/server-settings/settings), updating them manually using this statement is typically not necessary.
+Re-calculates all [asynchronous metrics](/reference/system-tables/asynchronous_metrics). Since asynchronous metrics are periodically updated based on setting [asynchronous_metrics_update_period_s](/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_update_period_s), updating them manually using this statement is typically not necessary.
 
 ```sql
 SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
@@ -120,7 +120,7 @@ Clears the mark cache.
 ## SYSTEM CLEAR|DROP PRIMARY INDEX CACHE {#drop-primary-index-cache}
 
 Clears the primary index cache, which holds the primary keys of [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) tables in memory.
-Its size is configured with the server-level setting [`primary_index_cache_size`](/reference/settings/server-settings/settings#primary_index_cache_size).
+Its size is configured with the server-level setting [`primary_index_cache_size`](/reference/settings/server-settings/settings/primary-index#primary_index_cache_size).
 
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
@@ -257,13 +257,13 @@ Similar to `SYSTEM DROP REPLICA`, but removes the `Replicated` database replica 
 ## SYSTEM CLEAR|DROP UNCOMPRESSED CACHE {#drop-uncompressed-cache}
 
 Clears the uncompressed data cache.
-The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [`use_uncompressed_cache`](/reference/settings/session-settings#use_uncompressed_cache).
-Its size can be configured using the server-level setting [`uncompressed_cache_size`](/reference/settings/server-settings/settings#uncompressed_cache_size).
+The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [`use_uncompressed_cache`](/reference/settings/session-settings/use#use_uncompressed_cache).
+Its size can be configured using the server-level setting [`uncompressed_cache_size`](/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size).
 
 ## SYSTEM CLEAR|DROP COMPILED EXPRESSION CACHE {#drop-compiled-expression-cache}
 
 Clears the compiled expression cache.
-The compiled expression cache is enabled/disabled with the query/user/profile-level setting [`compile_expressions`](/reference/settings/session-settings#compile_expressions).
+The compiled expression cache is enabled/disabled with the query/user/profile-level setting [`compile_expressions`](/reference/settings/session-settings/compile#compile_expressions).
 
 ## SYSTEM CLEAR|DROP QUERY CONDITION CACHE {#drop-query-condition-cache}
 
@@ -285,11 +285,11 @@ If a tag is specified, only query cache entries with the specified tag are delet
 
 ## SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE {#system-drop-schema-format}
 
-Clears cache for schemas loaded from [`format_schema_path`](/reference/settings/server-settings/settings#format_schema_path).
+Clears cache for schemas loaded from [`format_schema_path`](/reference/settings/server-settings/settings/format#format_schema_path).
 
 Supported targets:
 - Protobuf: Removes imported Protobuf message definitions from memory.
-- Files: Deletes cached schema files stored locally in the [`format_schema_path`](/reference/settings/server-settings/settings#format_schema_path), generated when `format_schema_source` is set to `query`.
+- Files: Deletes cached schema files stored locally in the [`format_schema_path`](/reference/settings/server-settings/settings/format#format_schema_path), generated when `format_schema_source` is set to `query`.
 Note: If no target is specified, both caches are cleared.
 
 ```sql
@@ -421,7 +421,7 @@ The instrumentation point information can be collected from [`system.instrumenta
 
 ## Managing Distributed Tables {#managing-distributed-tables}
 
-ClickHouse can manage [distributed](/reference/engines/table-engines/special/distributed) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed), and [`START DISTRIBUTED SENDS`](#start-distributed-sends) queries. You can also synchronously insert distributed data with the [`distributed_foreground_insert`](/reference/settings/session-settings#distributed_foreground_insert) setting.
+ClickHouse can manage [distributed](/reference/engines/table-engines/special/distributed) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed), and [`START DISTRIBUTED SENDS`](#start-distributed-sends) queries. You can also synchronously insert distributed data with the [`distributed_foreground_insert`](/reference/settings/session-settings/distributed#distributed_foreground_insert) setting.
 
 ### SYSTEM STOP DISTRIBUTED SENDS {#stop-distributed-sends}
 
@@ -432,7 +432,7 @@ SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_
 ```
 
 <Note>
-In case of [`prefer_localhost_replica`](/reference/settings/session-settings#prefer_localhost_replica) is enabled (the default), the data to local shard will be inserted anyway.
+In case of [`prefer_localhost_replica`](/reference/settings/session-settings/prefer#prefer_localhost_replica) is enabled (the default), the data to local shard will be inserted anyway.
 </Note>
 
 ### SYSTEM FLUSH DISTRIBUTED {#flush-distributed}
