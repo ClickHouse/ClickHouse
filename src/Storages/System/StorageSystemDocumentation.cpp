@@ -8,6 +8,7 @@
 #include <Common/Documentation.h>
 #include <Common/FunctionDocumentation.h>
 #include <Common/ProfileEvents.h>
+#include <Common/re2.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Field.h>
 #include <Core/ServerSettings.h>
@@ -35,6 +36,7 @@
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
+#include <algorithm>
 #include <source_location>
 #include <string_view>
 #include <unordered_map>
@@ -390,28 +392,74 @@ struct SettingHistoryEntry
 /// version to the newest. The keys reference the names owned by the static change history.
 using SettingsHistoryIndex = std::unordered_map<std::string_view, std::vector<SettingHistoryEntry>>;
 
-/// Inverts the change history — a map of version to the changes made in that version — into a per-setting index.
-SettingsHistoryIndex buildSettingsHistoryIndex(const VersionToSettingsChangesMap & history)
+/// The change history of a settings collection, indexed for lookup in the two ways it is looked up.
+struct SettingsHistory
 {
-    SettingsHistoryIndex index;
+    /// Keyed by the canonical name of the setting. `compatibility` resolves the recorded name of every change
+    /// through `resolveName` before applying it, so a change recorded under an alias of a setting belongs to the
+    /// history of that setting as much as one recorded under its canonical name. Without this, the history of a
+    /// setting that was renamed would be cut at the rename.
+    SettingsHistoryIndex by_setting;
+    /// Keyed by the recorded name as it is written in the history, which is what the history of an alias on its
+    /// own consists of — the version in which the alias was added.
+    SettingsHistoryIndex by_recorded_name;
+};
+
+/// Inverts the change history — a map of version to the changes made in that version — into per-setting indices.
+template <typename SettingsCollection>
+SettingsHistory buildSettingsHistory(const VersionToSettingsChangesMap & history)
+{
+    SettingsHistory result;
     /// The history is ordered by version, so every per-setting vector comes out ordered by version as well.
     for (const auto & [version, changes] : history)
     {
         const String version_string = version.toString();
         for (const auto & change : changes)
-            index[change.name].push_back({version_string, &change});
+        {
+            const SettingHistoryEntry entry{version_string, &change};
+            result.by_recorded_name[change.name].push_back(entry);
+
+            /// A change that concerns both an alias and its canonical setting is recorded twice, once under each
+            /// name; the history of the setting mentions it once.
+            auto & entries = result.by_setting[SettingsCollection::resolveName(change.name)];
+            const bool already_recorded = std::any_of(entries.begin(), entries.end(), [&](const SettingHistoryEntry & other)
+            {
+                return other.version == version_string && other.change->previous_value == change.previous_value
+                    && other.change->new_value == change.new_value && other.change->reason == change.reason;
+            });
+            if (!already_recorded)
+                entries.push_back(entry);
+        }
     }
-    return index;
+    return result;
 }
 
-/// Whether the oldest recorded change of a setting is the introduction of that setting. It is, when the change is
-/// from a value to itself: such a record has no effect on `compatibility` and exists only to make a setting that did
-/// not exist before known to it. A setting introduced with a compatibility value that differs from its default is
+/// Whether the reason authored for a change in `SettingsChangesHistory.cpp` says that the record is there to
+/// register something that did not exist before, rather than to note something about a setting that already
+/// existed. The history has no structured marker for it, so this recognizes the wording that the file uses by
+/// convention ("New setting", "A new compatibility setting", "Added an alias for ..."), and reports nothing when
+/// the wording says something else — claiming a wrong introducing version is worse than claiming none.
+bool reasonRecordsIntroduction(std::string_view reason, bool documenting_an_alias)
+{
+    static const re2::RE2 new_setting(R"((?i)\bnew\b[^.]{0,40}\bsettings?\b)");
+    static const re2::RE2 new_alias(R"((?i)\balias\b)");
+    return re2::RE2::PartialMatch(reason, new_setting) || (documenting_an_alias && re2::RE2::PartialMatch(reason, new_alias));
+}
+
+/// Whether a recorded change is the introduction of the entity — a setting or an alias of one — that it is being
+/// rendered for. It is, when the change is from a value to itself and its reason says so: such a record has no
+/// effect on `compatibility` and is written either to make a setting that did not exist before known to it, or to
+/// note something else about a setting that already exists (that it became obsolete, or that it graduated from
+/// experimental to beta, say). A setting introduced with a compatibility value that differs from its default is
 /// instead recorded as an ordinary change of the default and is indistinguishable from one, so it is reported as
 /// such rather than claimed to be an introduction that the history does not actually record.
-bool isIntroduction(const std::vector<SettingHistoryEntry> & entries)
+///
+/// The record that adds an alias to a setting introduces the alias, while for the setting itself it is one more
+/// record that changes nothing — hence `documenting_an_alias`.
+bool isIntroduction(const SettingHistoryEntry & entry, bool documenting_an_alias)
 {
-    return entries.front().change->previous_value == entries.front().change->new_value;
+    return entry.change->previous_value == entry.change->new_value
+        && reasonRecordsIntroduction(entry.change->reason, documenting_an_alias);
 }
 
 /// The history of the default value of a setting, appended to its documentation as a Markdown list, newest change
@@ -421,7 +469,7 @@ bool isIntroduction(const std::vector<SettingHistoryEntry> & entries)
 /// Not every setting has a recorded history: the history exists to implement the `compatibility` setting, so it
 /// covers the changes made since that mechanism was introduced, and a setting that is older than it and never
 /// changed its default has no records at all.
-void appendSettingHistory(String & result, const std::vector<SettingHistoryEntry> & entries)
+void appendSettingHistory(String & result, const std::vector<SettingHistoryEntry> & entries, bool documenting_an_alias)
 {
     if (entries.empty())
         return;
@@ -431,7 +479,8 @@ void appendSettingHistory(String & result, const std::vector<SettingHistoryEntry
 
     /// The introducing version is called out separately, ahead of the list, because it is the single most
     /// looked-up fact of the history while being the last item of a list that can be long.
-    if (isIntroduction(entries))
+    const bool introduced = isIntroduction(entries.front(), documenting_an_alias);
+    if (introduced)
         result += "**Introduced in:** v" + entries.front().version + "\n\n";
 
     result += "**History**\n\n";
@@ -451,7 +500,7 @@ void appendSettingHistory(String & result, const std::vector<SettingHistoryEntry
             /// A change to the same value leaves the default as it was; it is recorded either to introduce a new
             /// setting or, for a setting that already exists, to note something else about it (that it became
             /// obsolete, or that it graduated from experimental to beta, say) — hence the reason below.
-            if (i == 1)
+            if (i == 1 && introduced)
                 result += "introduced with the default value " + renderSettingValue(fieldToString(change.new_value)) + ".";
             else
                 result += "the default value remained " + renderSettingValue(fieldToString(change.new_value)) + ".";
@@ -496,7 +545,7 @@ String renderSettingDoc(
         add_note("**Tier:** Beta");
 
     if (history)
-        appendSettingHistory(result, *history);
+        appendSettingHistory(result, *history, /* documenting_an_alias = */ false);
 
     return result;
 }
@@ -518,7 +567,7 @@ void addSettingsLike(
     EntityType type,
     const SettingsCollection & settings,
     std::string_view source,
-    const SettingsHistoryIndex & history)
+    const SettingsHistory & history)
 {
     for (const auto & name : settings.getAllRegisteredNames())
     {
@@ -529,7 +578,7 @@ void addSettingsLike(
             continue;
         addRow(res_columns, type, String(name),
             renderSettingDoc(settings.getDescription(name), settings.getTypeName(name), settings.getDefaultValueString(name), tier,
-                findSettingHistory(history, name)),
+                findSettingHistory(history.by_setting, name)),
             source);
     }
 }
@@ -544,7 +593,7 @@ void addSettingAliases(
     EntityType type,
     const SettingsCollection & settings,
     std::string_view source,
-    const SettingsHistoryIndex & history)
+    const SettingsHistory & history)
 {
     for (const auto & alias : settings.getAllAliasNames())
     {
@@ -553,8 +602,8 @@ void addSettingAliases(
         if (settings.getTier(alias) == SettingsTierType::OBSOLETE)
             continue;
         String description = "Alias of `" + String(SettingsCollection::resolveName(alias)) + "`.";
-        if (const auto * alias_history = findSettingHistory(history, alias))
-            appendSettingHistory(description, *alias_history);
+        if (const auto * alias_history = findSettingHistory(history.by_recorded_name, alias))
+            appendSettingHistory(description, *alias_history, /* documenting_an_alias = */ true);
         addRow(res_columns, type, String(alias), description, source);
     }
 }
@@ -650,10 +699,10 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
     addDocumented(res_columns, EntityType::DataSkippingIndex, MergeTreeIndexFactory::instance());
     addDocumented(res_columns, EntityType::DiskType, DiskFactory::instance());
 
-    const SettingsHistoryIndex settings_history = buildSettingsHistoryIndex(getSettingsChangesHistory());
-    const SettingsHistoryIndex merge_tree_settings_history = buildSettingsHistoryIndex(getMergeTreeSettingsChangesHistory());
+    const SettingsHistory settings_history = buildSettingsHistory<Settings>(getSettingsChangesHistory());
+    const SettingsHistory merge_tree_settings_history = buildSettingsHistory<MergeTreeSettings>(getMergeTreeSettingsChangesHistory());
     /// Server settings are not covered by the `compatibility` setting, so no history of their changes is recorded.
-    const SettingsHistoryIndex server_settings_history;
+    const SettingsHistory server_settings_history;
 
     addSettingsLike(res_columns, EntityType::Setting, Settings{}, SETTINGS_SOURCE, settings_history);
     addSettingAliases(res_columns, EntityType::Setting, Settings{}, SETTINGS_SOURCE, settings_history);

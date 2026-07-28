@@ -3,10 +3,39 @@
 -- introduced and every later change of the default, with the reason for the change. The history is the same data
 -- that backs the `compatibility` setting and `system.settings_changes`.
 
--- A setting has a history section exactly when its default value has recorded changes, and never otherwise.
-WITH changed AS (SELECT DISTINCT arrayJoin(tupleElement(changes, 'name')) AS name FROM system.settings_changes WHERE type = 'Session')
+-- Every recorded change, with the name it is recorded under resolved to the setting it belongs to, the way
+-- `compatibility` resolves it: a change recorded under an alias of a setting belongs to that setting.
+CREATE VIEW session_changes AS
+SELECT
+    if(s.alias_for != '', s.alias_for, ch.recorded_name) AS name,
+    ch.version AS version,
+    ch.previous_value AS previous_value,
+    ch.new_value AS new_value,
+    ch.reason AS reason
+FROM
+(
+    SELECT
+        version,
+        tupleElement(arrayJoin(changes) AS c, 'name') AS recorded_name,
+        tupleElement(c, 'previous_value') AS previous_value,
+        tupleElement(c, 'new_value') AS new_value,
+        tupleElement(c, 'reason') AS reason
+    FROM system.settings_changes WHERE type = 'Session'
+) AS ch
+INNER JOIN system.settings AS s ON s.name = ch.recorded_name;
+
+-- A setting has a history section exactly when it has recorded changes, and never otherwise. The history of an
+-- alias is the one recorded under the alias itself, which is the version in which the alias was added.
+WITH
+    changed AS (SELECT DISTINCT arrayJoin(tupleElement(changes, 'name')) AS name FROM system.settings_changes WHERE type = 'Session'),
+    documented AS
+    (
+        SELECT DISTINCT name FROM session_changes
+        UNION DISTINCT
+        SELECT name FROM changed WHERE name IN (SELECT name FROM system.settings WHERE alias_for != '')
+    )
 SELECT count() FROM system.documentation
-WHERE type = 'Setting' AND (name IN (SELECT name FROM changed)) != (position(description, '**History**') > 0);
+WHERE type = 'Setting' AND (name IN (SELECT name FROM documented)) != (position(description, '**History**') > 0);
 
 WITH changed AS (SELECT DISTINCT arrayJoin(tupleElement(changes, 'name')) AS name FROM system.settings_changes WHERE type = 'MergeTree')
 SELECT count() FROM system.documentation
@@ -15,12 +44,13 @@ WHERE type = 'MergeTree Setting' AND (name IN (SELECT name FROM changed)) != (po
 -- Server settings are not covered by the `compatibility` setting, so no history of their changes is recorded.
 SELECT count() FROM system.documentation WHERE type = 'Server Setting' AND position(description, '**History**') > 0;
 
--- The history lists exactly one item per recorded change of the setting.
+-- The history lists exactly one item per recorded change of the setting. A change that concerns both a setting and
+-- an alias of it is recorded twice, once under each name, and is listed once.
 SELECT count() FROM system.documentation AS d
 INNER JOIN
 (
-    SELECT arrayJoin(tupleElement(changes, 'name')) AS name, count() AS recorded
-    FROM system.settings_changes WHERE type = 'Session' GROUP BY name
+    SELECT name, uniqExact((version, previous_value, new_value, reason)) AS recorded
+    FROM session_changes GROUP BY name
 ) AS c USING (name)
 WHERE d.type = 'Setting'
   AND length(splitByString('\n- **', substring(d.description, position(d.description, '**History**')))) - 1 != c.recorded;
@@ -29,15 +59,38 @@ WHERE d.type = 'Setting'
 SELECT count() FROM system.documentation AS d
 INNER JOIN
 (
-    SELECT arrayJoin(tupleElement(changes, 'name')) AS name,
-           argMax(version, arrayMap(x -> toUInt32(x), splitByChar('.', version))) AS newest
-    FROM system.settings_changes WHERE type = 'Session' GROUP BY name
+    SELECT name, argMax(version, arrayMap(x -> toUInt32(x), splitByChar('.', version))) AS newest
+    FROM session_changes GROUP BY name
 ) AS c USING (name)
 WHERE d.type = 'Setting' AND position(d.description, '**History**\n\n- **' || c.newest || '** ') = 0;
 
 -- The version in which the setting was introduced is called out separately, above the history.
 SELECT count() > 100 FROM system.documentation WHERE type = 'Setting' AND position(description, '**Introduced in:** v') > 0;
 SELECT count() > 0 FROM system.documentation WHERE type = 'MergeTree Setting' AND position(description, '**Introduced in:** v') > 0;
+
+-- When an introducing version is claimed, it is the oldest recorded version of the setting, and that record does
+-- not change the default value: a record of a change of the default is a change, not an introduction.
+SELECT count() FROM system.documentation AS d
+INNER JOIN
+(
+    SELECT
+        name,
+        argMin(version, arrayMap(x -> toUInt32(x), splitByChar('.', version))) AS oldest,
+        argMin(has_unchanged_default, arrayMap(x -> toUInt32(x), splitByChar('.', version))) AS oldest_has_unchanged_default
+    FROM
+    (
+        SELECT name, version, max(previous_value = new_value) AS has_unchanged_default
+        FROM session_changes GROUP BY name, version
+    )
+    GROUP BY name
+) AS c USING (name)
+WHERE d.type = 'Setting' AND position(d.description, '**Introduced in:** v') > 0
+  AND (extract(d.description, '\\*\\*Introduced in:\\*\\* v([0-9.]+)') != c.oldest OR NOT c.oldest_has_unchanged_default);
+
+-- A record that does not change the default value is not necessarily an introduction: it is also how the history
+-- notes something else about a setting that already exists. The oldest record of `page_cache_block_size` says that
+-- the setting became adjustable per query, so no introducing version is claimed for it.
+SELECT position(description, '**Introduced in:**') = 0 FROM system.documentation WHERE type = 'Setting' AND name = 'page_cache_block_size';
 
 -- The full documentation of a setting: the description, the type, the default value, and the history.
 -- `async_insert_max_data_size` is a long-standing setting whose default value was raised in 24.2.
@@ -46,3 +99,10 @@ SELECT description FROM system.documentation WHERE type = 'Setting' AND name = '
 -- An alias is introduced in a particular version and has a history of its own, distinct from the history of the
 -- setting it resolves to.
 SELECT description FROM system.documentation WHERE type = 'Setting' AND name = 'enable_analyzer';
+
+-- The history of a setting that was renamed is not cut at the rename: `enable_full_text_index` was called
+-- `allow_experimental_full_text_index` when it appeared in 24.6, and that change is recorded under the old name.
+SELECT position(description, '\n- **24.6** — the default value changed from `1` to `0`. Enable experimental text index') > 0
+FROM system.documentation WHERE type = 'Setting' AND name = 'enable_full_text_index';
+
+DROP VIEW session_changes;
