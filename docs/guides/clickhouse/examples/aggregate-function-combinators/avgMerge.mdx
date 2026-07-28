@@ -1,0 +1,25 @@
+---
+slug: '/examples/aggregate-function-combinators/avgMerge'
+title: 'avgMerge'
+description: 'Example of using the avgMerge combinator'
+keywords: ['avg', 'merge', 'combinator', 'examples', 'avgMerge']
+sidebarTitle: 'avgMerge'
+doc_type: 'reference'
+---
+
+## Description {#description}
+
+The [`Merge`](/reference/functions/aggregate-functions/combinators#-state) combinator
+can be applied to the [`avg`](/reference/functions/aggregate-functions/avg)
+function to produce a final result by combining partial aggregate states.
+
+## Example usage {#example-usage}
+
+The `Merge` combinator is closely related to the `State` combinator. Refer to 
+["avgState example usage"](/guides/clickhouse/examples/aggregate-function-combinators/avgState#example-usage)
+for an example of both `avgMerge` and `avgState`.
+
+## See also {#see-also}
+- [`avg`](/reference/functions/aggregate-functions/avg)
+- [`Merge`](/reference/functions/aggregate-functions/combinators#-merge)
+- [`MergeState`](/reference/functions/aggregate-functions/combinators#-mergestate)

@@ -5,6 +5,7 @@
 
 -- The real example with metric_log with 1200+ columns!
 SET optimize_trivial_insert_select = 0;
+SET max_query_size = 0;
 
 system flush logs system.metric_log;
 

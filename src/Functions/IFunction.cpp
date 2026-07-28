@@ -68,67 +68,72 @@ bool allArgumentsAreConstants(const ColumnsWithTypeAndName & args)
     return true;
 }
 
-ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
-    ColumnsWithTypeAndName & args, bool can_be_executed_on_default_arguments, size_t input_rows_count)
+/// If the single-dictionary fast path applies (exactly one full LowCardinality argument and every
+/// other argument constant), replace that column with its nested dictionary, resize the constants
+/// to the dictionary size and return the dictionary indexes for the result. Otherwise return
+/// nullptr and leave args unchanged: the declared LowCardinality result type may rest on a
+/// constness that was lost at a pipeline boundary (e.g. a merged aggregation key), and the caller
+/// falls back to full materialization.
+ColumnPtr replaceLowCardinalityColumnByNestedAndGetDictionaryIndexes(
+    ColumnsWithTypeAndName & args, bool can_be_executed_on_default_arguments)
 {
-    size_t num_rows = input_rows_count;
-    ColumnPtr indexes;
-
-    /// Find first LowCardinality column and replace it with nested dictionary.
-    for (auto & column : args)
+    /// Scan first, mutate after: a second LowCardinality column may be discovered after the first
+    /// one, and args must stay intact for the caller's fallback.
+    const ColumnLowCardinality * low_cardinality_column = nullptr;
+    size_t low_cardinality_arg = 0;
+    for (size_t i = 0; i < args.size(); ++i)
     {
-        if (const auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
+        if (const auto * lc = checkAndGetColumn<ColumnLowCardinality>(args[i].column.get()))
         {
-            /// Only a single LowCardinality column is supported now.
-            if (indexes)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Default functions implementation for LowCardinality is supported only with a single LowCardinality argument.");
-
-            const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
-
-            if (!low_cardinality_type)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Incompatible type for LowCardinality column: {}", column.type->getName());
-
-            if (can_be_executed_on_default_arguments)
-            {
-                /// Normal case, when function can be executed on values' default.
-                column.column = low_cardinality_column->getDictionary().getNestedColumn();
-                indexes = low_cardinality_column->getIndexesPtr();
-            }
-            else
-            {
-                /// Special case when default value can't be used. Example: 1 % LowCardinality(Int).
-                /// LowCardinality always contains default, so 1 % 0 will throw exception in normal case.
-                auto dict_encoded = low_cardinality_column->getMinimalDictionaryEncodedColumn(0, low_cardinality_column->size());
-                column.column = dict_encoded.dictionary;
-                indexes = dict_encoded.indexes;
-            }
-
-            num_rows = column.column->size();
-            column.type = low_cardinality_type->getDictionaryType();
+            if (low_cardinality_column)
+                return nullptr;
+            low_cardinality_column = lc;
+            low_cardinality_arg = i;
         }
+        else if (!isColumnConst(*args[i].column))
+            return nullptr;
     }
 
-    /// Change size of constants.
-    for (auto & column : args)
+    if (!low_cardinality_column)
+        return nullptr;
+
+    auto & column = args[low_cardinality_arg];
+    const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
+    if (!low_cardinality_type)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Incompatible type for LowCardinality column: {}", column.type->getName());
+
+    ColumnPtr indexes;
+    if (can_be_executed_on_default_arguments)
     {
-        if (const auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
+        /// Normal case, when function can be executed on values' default.
+        indexes = low_cardinality_column->getIndexesPtr();
+        column.column = low_cardinality_column->getDictionary().getNestedColumn();
+    }
+    else
+    {
+        /// Special case when default value can't be used. Example: 1 % LowCardinality(Int).
+        /// LowCardinality always contains default, so 1 % 0 will throw exception in normal case.
+        auto dict_encoded = low_cardinality_column->getMinimalDictionaryEncodedColumn(0, low_cardinality_column->size());
+        indexes = dict_encoded.indexes;
+        column.column = dict_encoded.dictionary;
+    }
+    column.type = low_cardinality_type->getDictionaryType();
+
+    /// Change size of constants.
+    size_t num_rows = column.column->size();
+    for (auto & arg : args)
+    {
+        if (const auto * column_const = checkAndGetColumn<ColumnConst>(arg.column.get()))
         {
-            column.column = ColumnConst::create(recursiveRemoveLowCardinality(column_const->getDataColumnPtr()), num_rows);
-            column.type = recursiveRemoveLowCardinality(column.type);
+            arg.column = ColumnConst::create(recursiveRemoveLowCardinality(column_const->getDataColumnPtr()), num_rows);
+            arg.type = recursiveRemoveLowCardinality(arg.type);
         }
     }
 
     return indexes;
 }
 
-void convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
-{
-    for (auto & column : args)
-    {
-        column.column = recursiveRemoveLowCardinality(column.column);
-        column.type = recursiveRemoveLowCardinality(column.type);
-    }
-}
+
 }
 
 ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
@@ -308,7 +313,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             return wrapInNullable(res, args, result_type, input_rows_count);
         }
 
-        ColumnPtr result_null_map = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
+        ColumnPtr result_null_map;
         for (const auto & arg : args)
         {
             if (arg.type->isNullable() && !isColumnConst(*arg.column))
@@ -344,8 +349,8 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         }
 
         double null_ratio = static_cast<double>(rows_with_nulls) / static_cast<double>(input_rows_count);
-        bool should_short_circuit
-            = short_circuit_function_evaluation_for_nulls && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold;
+        bool should_short_circuit = short_circuit_function_evaluation_for_nulls && result_null_map
+            && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold;
 
         ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
         auto temporary_result_type = removeNullable(result_type);
@@ -464,18 +469,36 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
     ColumnPtr result;
     if (useDefaultImplementationForLowCardinalityColumns())
     {
-        ColumnsWithTypeAndName columns_without_low_cardinality = arguments;
-
         if (const auto * res_low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(result_type.get()))
         {
+            ColumnsWithTypeAndName columns_without_low_cardinality = arguments;
+
             bool can_be_executed_on_default_arguments = canBeExecutedOnDefaultArguments();
 
             const auto & dictionary_type = res_low_cardinality_type->getDictionaryType();
-            ColumnPtr indexes = replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
-                columns_without_low_cardinality, can_be_executed_on_default_arguments, input_rows_count);
 
-            size_t new_input_rows_count
-                = columns_without_low_cardinality.empty() ? input_rows_count : columns_without_low_cardinality.front().column->size();
+            /// getReturnType() chose a LowCardinality result type assuming the single-dictionary
+            /// fast path applies, but a constant argument can arrive as a non-constant column at
+            /// runtime and break that assumption. The helper returns the dictionary indexes on the
+            /// fast path (and resizes the constants to the dictionary size); it returns nullptr and
+            /// leaves the arguments intact when the assumption no longer holds, and we fall back to
+            /// full materialization.
+            ColumnPtr indexes = replaceLowCardinalityColumnByNestedAndGetDictionaryIndexes(
+                columns_without_low_cardinality, can_be_executed_on_default_arguments);
+
+            /// Fast path: the row count comes from the (resized) nested dictionary column. Fallback:
+            /// the constants keep their original row counts, so it is the original input_rows_count,
+            /// just like the non-LowCardinality result branch below.
+            size_t new_input_rows_count = input_rows_count;
+            if (indexes)
+            {
+                new_input_rows_count
+                    = columns_without_low_cardinality.empty() ? input_rows_count : columns_without_low_cardinality.front().column->size();
+            }
+            else
+            {
+                convertLowCardinalityColumnsToFull(columns_without_low_cardinality);
+            }
             checkFunctionArgumentSizes(columns_without_low_cardinality, new_input_rows_count);
 
             auto res = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, dictionary_type, new_input_rows_count, dry_run);
@@ -497,6 +520,23 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
         }
         else
         {
+            /// Fast path: detect low-cardinality via types only (a column is low-cardinality iff its type
+            /// is), which is cheap for scalar types and lets us avoid copying/converting the (potentially
+            /// very wide) argument list when nothing is low-cardinality.
+            bool has_low_cardinality = false;
+            for (const auto & argument : arguments)
+            {
+                if (recursiveRemoveLowCardinality(argument.type).get() != argument.type.get())
+                {
+                    has_low_cardinality = true;
+                    break;
+                }
+            }
+
+            if (!has_low_cardinality)
+                return executeWithoutLowCardinalityColumns(arguments, result_type, input_rows_count, dry_run);
+
+            ColumnsWithTypeAndName columns_without_low_cardinality = arguments;
             convertLowCardinalityColumnsToFull(columns_without_low_cardinality);
             result = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, result_type, input_rows_count, dry_run);
         }
@@ -514,6 +554,21 @@ ColumnPtr IExecutableFunction::execute(
 
     if (useDefaultImplementationForReplicatedColumns())
     {
+        /// Fast path: with no replicated columns there is nothing to convert, so skip copying the
+        /// (potentially very wide) argument list and pass it straight through.
+        bool has_replicated_column = false;
+        for (const auto & argument : arguments)
+        {
+            if (typeid_cast<const ColumnReplicated *>(argument.column.get()))
+            {
+                has_replicated_column = true;
+                break;
+            }
+        }
+
+        if (!has_replicated_column)
+            return executeWithoutReplicatedColumns(arguments, result_type, input_rows_count, dry_run);
+
         /// If we have only constants and replicated columns with the same indexes
         /// we can execute function on nested columns and create replicated column
         /// from the result using common indexes.
@@ -593,10 +648,14 @@ ColumnPtr IExecutableFunction::executeWithoutReplicatedColumns(
         size_t num_sparse_columns = 0;
         size_t num_full_columns = 0;
         size_t sparse_column_position = 0;
+        bool has_any_sparse_column = false;
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             const auto * column_sparse = checkAndGetColumn<ColumnSparse>(arguments[i].column.get());
+            /// A sparse column may also be nested inside a Tuple or Replicated column, in which case
+            /// `recursiveRemoveSparse` (used below) still has to convert it, so detect it recursively.
+            has_any_sparse_column |= recursiveHasSparse(arguments[i].column);
             /// In rare case, when sparse column doesn't have default values,
             /// it's more convenient to convert it to full before execution of function.
             if (column_sparse && column_sparse->getNumberOfDefaultRows())
@@ -609,6 +668,11 @@ ColumnPtr IExecutableFunction::executeWithoutReplicatedColumns(
                 ++num_full_columns;
             }
         }
+
+        /// Fast path: with no sparse columns there is nothing to convert, so skip copying the
+        /// (potentially very wide) argument list and pass it straight through.
+        if (!has_any_sparse_column)
+            return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
 
         auto columns_without_sparse = arguments;
         if (num_sparse_columns == 1 && num_full_columns == 0)
