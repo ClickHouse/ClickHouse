@@ -61,11 +61,9 @@ struct ReplicatedMergeTreeTableMetadata
     void write(WriteBuffer & out) const;
     String toString() const;
 
-    /// Serialize a definition expression for Keeper in the canonical form an older replica stores
-    /// and compares this text against. Use these whenever a field of this structure is filled in,
-    /// instead of formatting the AST directly.
-    /// `formatDefinition` also normalizes function names; `formatDefinitionList` (skip indices,
-    /// projections, constraints) intentionally does not, as those were never normalized before.
+    /// Use these whenever a field of this structure is filled in, instead of formatting the AST
+    /// directly. `formatDefinition` also normalizes function names; `formatDefinitionList` (skip
+    /// indices, projections, constraints) intentionally does not.
     static String formatDefinition(const ASTPtr & ast);
     static String formatDefinitionList(const ASTs & definitions);
 

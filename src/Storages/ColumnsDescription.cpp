@@ -138,11 +138,8 @@ ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) ///
 
 bool ColumnDescription::operator==(const ColumnDescription & other) const
 {
-    /// Implicit statistics (and the auxiliary `data_type` of the statistics description) exist only
-    /// in memory and are not a part of the stored definition, so only explicit ones are compared.
-    /// `getName`, not `IDataType::equals`: `equals` ignores the `SimpleAggregateFunction` wrapper,
-    /// so it would accept a replica declaring a plain `UInt64` for a `SimpleAggregateFunction(sum,
-    /// UInt64)` column.
+    /// `getName`, not `IDataType::equals`: `equals` ignores the `SimpleAggregateFunction` wrapper.
+    /// Only explicit statistics: implicit ones are never serialized.
     return name == other.name
         && type->getName() == other.type->getName()
         && default_desc == other.default_desc

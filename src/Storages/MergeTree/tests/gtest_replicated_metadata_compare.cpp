@@ -15,9 +15,8 @@
 
 using namespace DB;
 
-/// Equal definitions must compare equal in any stored form, and genuinely different definitions
-/// must still differ, including differences that live outside the AST children (index granularity,
-/// constraint type, TTL destination, projection clause roles).
+/// Equal definitions must compare equal in any stored form, and different ones must still differ,
+/// including differences that live outside the AST children.
 
 namespace
 {
