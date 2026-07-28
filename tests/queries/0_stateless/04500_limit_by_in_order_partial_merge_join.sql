@@ -12,6 +12,12 @@
 -- refuse to propagate the a-order through these joins. It reads the physical join's
 -- preservesLeftBlockOrder() (MergeJoin / FullSortingMergeJoin return false), so this holds under both
 -- the old and the current analyzer; enable_analyzer is intentionally not pinned.
+--
+-- Note this file is a coverage guard for the LIMIT BY consumer, not a fail-without-the-fix test:
+-- MergeJoin already reported false before this change and full_sorting_merge is blocked by its own
+-- pre-JOIN SortingStep, so every assertion below also holds without it. The assertions that do move
+-- with this change are the parallel_hash ones in 04498 and the constant-join one in
+-- 04500_read_in_order_through_constant_join.
 
 DROP TABLE IF EXISTS tl_04500;
 DROP TABLE IF EXISTS tr_04500;

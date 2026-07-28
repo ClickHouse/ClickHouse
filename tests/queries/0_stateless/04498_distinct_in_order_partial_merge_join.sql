@@ -59,9 +59,10 @@ DROP TABLE t1_04498;
 DROP TABLE t2_04498;
 
 -- parallel_hash (ConcurrentHashJoin) also breaks the left order for some key shapes. It builds
--- its inner HashJoins with two-level maps, but chooseMethod leaves a single 1-byte (key8) /
--- 2-byte (key16) numeric key, or a single non-nullable LowCardinality key, single-level. For
--- those, joinBlock scatters the left block across slots and emits slot 0, then 1, ..., so equal
+-- its inner HashJoins with two-level maps, but chooseMethod leaves a single key materializing to
+-- 1 byte (key8) or 2 bytes (key16) single-level; wider keys, including string and fixed-string
+-- ones, get a two-level variant. For the single-level shapes joinBlock scatters the left block
+-- across slots and emits slot 0, then 1, ..., so equal
 -- left-key values stop being contiguous. It must not carry the left sort property in that case.
 DROP TABLE IF EXISTS t3_04498;
 DROP TABLE IF EXISTS t4_04498;

@@ -92,8 +92,8 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 ///     (`preservesLeftBlockOrder() == false`). `findReadingStep` rejects such joins
 ///     directly. `PartialMergeJoin` (`partial_merge` / `prefer_partial_merge`) is the
 ///     case here: it re-sorts left blocks by the join key.
-///  2. The join preserves left order but its physicalization inserts a `Sort ... before
-///     JOIN` on the preserved input (`FullSortingMergeJoin`, `full_sorting_merge`; see
+///  2. The join's physicalization inserts a `Sort ... before JOIN` on the preserved input
+///     (`FullSortingMergeJoin`, `full_sorting_merge`; see
 ///     `addSortingForMergeJoin` in `JoinStepLogical.cpp`). `findReadingStep` only
 ///     descends through `Expression`/`Filter`/`ArrayJoin`/preliminary `Distinct`/
 ///     `CreatingSets` steps, so it stops at that `SortingStep` and never installs
@@ -103,8 +103,9 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 /// pass, so we must NOT defer and instead let `topKThroughJoin` inject its own
 /// `Sort + Limit`.
 ///
-/// For a physical `JoinStep` we read `preservesLeftBlockOrder()` directly and also flag
-/// `FullSortingMergeJoin` explicitly (it preserves order but adds the pre-JOIN sort). For
+/// For a physical `JoinStep` we read `preservesLeftBlockOrder()` directly, which already
+/// covers `FullSortingMergeJoin`; the explicit type check below keeps mode 2 covered even
+/// if that join were ever to opt in. For
 /// `JoinStepLogical` the algorithm is chosen later from `JoinSettings::join_algorithms`,
 /// so we conservatively flag any configured `PARTIAL_MERGE` / `PREFER_PARTIAL_MERGE` /
 /// `FULL_SORTING_MERGE`. `GRACE_HASH` / `AUTO` are already covered by
