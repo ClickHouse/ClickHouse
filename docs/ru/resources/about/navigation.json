@@ -1,0 +1,14 @@
+{
+  "groups": [
+    {
+      "group": "О ClickHouse",
+      "pages": [
+        "ru/resources/about/adopters",
+        "ru/resources/about/support"
+      ],
+      "root": "ru/resources/about/index"
+    }
+  ],
+  "icon": "/images/icons/icon-about.svg",
+  "item": "О проекте"
+}

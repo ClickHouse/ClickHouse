@@ -18,9 +18,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 이 가이드의 스크린샷은 [ClickHouse Cloud](https://console.clickhouse.cloud) SQL 콘솔에서 가져왔습니다. 모든 쿼리는 Cloud와 자가 관리형 배포 환경 모두에서 작동합니다.
 
 <Steps>
-  <Step>
-    ## Iceberg 데이터 직접 쿨리하기
-
+  <Step title="Iceberg 데이터 직접 쿼리하기" id="query-directly">
     가장 빠르게 시작하는 방법은 [`icebergS3()`](/ko/reference/functions/table-functions/iceberg) 테이블 함수를 사용하는 것입니다. S3의 Iceberg 테이블을 가리키기만 하면 별도 설정 없이 바로 쿼리할 수 있습니다.
 
     스키마를 확인합니다:
@@ -48,9 +46,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     **자세히 알아보기:** [오픈 테이블 포맷 직접 쿼리하기](/ko/guides/use-cases/data-warehousing/getting-started/querying-directly)에서는 네 가지 포맷 모두와 분산 읽기를 위한 클러스터 변형, 그리고 스토리지 백엔드 옵션(S3, Azure, HDFS, 로컬)을 다룹니다.
   </Step>
 
-  <Step>
-    ## 영구 테이블 엔진 생성하기
-
+  <Step title="영구 테이블 엔진 생성하기" id="table-engine">
     반복적으로 액세스해야 한다면 Iceberg 테이블 엔진을 사용해 테이블을 생성하십시오. 그러면 매번 경로를 지정할 필요가 없습니다. 데이터는 S3에 그대로 유지되며 중복 저장되지 않습니다:
 
     ```sql
@@ -75,9 +71,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     이 테이블 엔진은 데이터 캐싱, 메타데이터 캐싱, 스키마 진화, 타임 트래블을 지원합니다. 테이블 엔진의 기능에 대한 자세한 내용은 [직접 쿼리하기](/ko/guides/use-cases/data-warehousing/getting-started/querying-directly) 가이드를 참조하고, 전체 기능 비교는 [지원 매트릭스](/ko/guides/use-cases/data-warehousing/support-matrix)를 확인하십시오.
   </Step>
 
-  <Step>
-    ## 카탈로그에 연결
-
+  <Step title="카탈로그에 연결" id="connect-catalog">
     대부분의 조직은 테이블 메타데이터를 중앙에서 관리하고 데이터를 쉽게 찾기 위해 데이터 카탈로그를 통해 Iceberg 테이블을 관리합니다. ClickHouse는 [`DataLakeCatalog`](/ko/reference/engines/database-engines/datalake) 데이터베이스 엔진을 사용해 카탈로그에 연결할 수 있으며, 카탈로그의 모든 테이블을 ClickHouse 데이터베이스로 노출합니다. 이 방식이 더 확장성이 높으므로 새 Iceberg 테이블이 생성되더라도 추가 작업 없이 항상 ClickHouse에서 액세스할 수 있습니다.
 
     다음은 [AWS Glue](/ko/guides/use-cases/data-warehousing/glue-catalog)에 연결하는 예시입니다:
@@ -111,9 +105,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     **자세히 알아보기:** [데이터 카탈로그에 연결하기](/ko/guides/use-cases/data-warehousing/getting-started/connecting-catalogs)에서 Delta 및 Iceberg 예시를 포함한 전체 Unity Catalog 설정 과정을 확인할 수 있습니다.
   </Step>
 
-  <Step>
-    ## 쿼리 실행
-
+  <Step title="쿼리 실행" id="issue-query">
     위에서 어떤 방법을 사용했든 — 테이블 함수(table function), 테이블 엔진(table engine), 카탈로그(catalog) — 모두에 동일한 ClickHouse SQL을 사용할 수 있습니다:
 
     ```sql
@@ -136,10 +128,8 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     쿼리 구문은 완전히 동일하며 `FROM` 절만 변경됩니다. 데이터 소스와 관계없이 모든 ClickHouse SQL 함수, 조인, 집계는 동일하게 작동합니다.
   </Step>
 
-  <Step>
-    ## ClickHouse에 일부 데이터 로드하기
-
-    Iceberg를 직접 쿼리하는 것은 편리하지만, 성능은 네트워크 처리량과 파일 레이아웃에 따라 제한됩니다. 분석 워크로드의 경우 데이터를 네이티브 MergeTree 테이블로 로드하십시오.
+  <Step title="ClickHouse에 일부 데이터 로드하기" id="load-data">
+    Iceberg를 직접 쿨리하는 것은 편리하지만, 성능은 네트워크 처리량과 파일 레이아웃에 따라 제한됩니다. 분석 워크로드의 경우 데이터를 네이티브 MergeTree 테이블로 로드하십시오.
 
     먼저, 기준 성능을 파악하기 위해 Iceberg 테이블에 필터링된 쿼리를 실행합니다:
 
@@ -199,9 +189,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     **자세히 알아보기:** [MergeTree를 사용한 분석 가속화](/ko/guides/use-cases/data-warehousing/getting-started/accelerating-analytics)에서는 스키마 최적화, 전문 검색 인덱싱, 그리고 성능의 전후 비교를 전체적으로 다룹니다.
   </Step>
 
-  <Step>
-    ## Iceberg로 다시 쓰기
-
+  <Step title="Iceberg로 다시 쓰기" id="write-back">
     ClickHouse는 Iceberg 테이블에 데이터를 다시 쓸 수도 있으므로, 역방향 ETL 워크플로를 구현할 수 있습니다. 즉, 집계 결과나 데이터 하위 집합을 게시해 다른 도구(Spark, Trino, DuckDB 등)에서 활용할 수 있습니다.
 
     출력용 Iceberg 테이블을 생성합니다:
@@ -239,10 +227,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   ## 다음 단계
 </div>
 
-이제 전체 워크플로를 확인했으니, 각 영역을 더 자세히 살펴보십시오:
+이제 전체 워크플로를 살펴보았으므로, 각 영역을 더 자세히 확인해 보십시오:
 
-* [직접 쿼리하기](/ko/guides/use-cases/data-warehousing/getting-started/querying-directly) — 4가지 포맷 모두, 클러스터 변형, 테이블 엔진, 캐싱
-* [카탈로그 연결](/ko/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — Delta 및 Iceberg를 포함한 Unity Catalog 전체 안내
-* [분석 가속화](/ko/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — 스키마 최적화, 인덱싱, 약 40배 속도 향상 데모
-* [데이터 레이크에 쓰기](/ko/guides/use-cases/data-warehousing/getting-started/writing-data) — 원시 데이터 쓰기, 집계 데이터 쓰기, 타입 매핑
-* [지원 매트릭스](/ko/guides/use-cases/data-warehousing/support-matrix) — 포맷과 스토리지 백엔드 전반의 기능 비교
+* [직접 쿼리하기](/ko/guides/use-cases/data-warehousing/getting-started/querying-directly) — 4가지 포맷, 클러스터 변형, 테이블 엔진, 캐싱
+* [카탈로그에 연결하기](/ko/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — Delta 및 Iceberg를 포함한 Unity Catalog 전체 안내
+* [분석 가속화하기](/ko/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — 스키마 최적화, 인덱싱, 약 40배 속도 향상 데모
+* [데이터 레이크에 쓰기](/ko/guides/use-cases/data-warehousing/getting-started/writing-data) — 원시 쓰기, 집계된 쓰기, 타입 매핑
+* [지원 매트릭스](/ko/guides/use-cases/data-warehousing/support-matrix) — 포맷 및 스토리지 백엔드 전반의 기능 비교
+* [모범 사례](/ko/guides/use-cases/data-warehousing/getting-started/best-practices) — 액세스 메서드 선택, 성능 설정, 워크로드 패턴

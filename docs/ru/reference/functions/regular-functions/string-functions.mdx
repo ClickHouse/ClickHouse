@@ -324,7 +324,7 @@ SELECT base58Decode('JxF12TrwUP45BMd');
 
 Добавленный в: v22.7.0
 
-Кодирует строку в [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html).
+Кодирует строку в [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58-01).
 
 **Синтаксис**
 
@@ -361,6 +361,7 @@ SELECT base58Encode('ClickHouse');
 Добавленный в: v18.16.0
 
 Декодирует строку из представления [Base64](https://en.wikipedia.org/wiki/Base64) в соответствии с RFC 4648.
+Начиная с версии 26.7 символы-пробелы space, tab (`\t`), line feed (`\n`), carriage return (`\r`) и form feed (`\f`) во входных данных игнорируются (в более ранних версиях ввод, содержащий их, отклонялся). Vertical tab (`\v`) и любые другие символы, не входящие в алфавит Base64, отклоняются.
 В случае ошибки генерирует исключение.
 
 **Синтаксис**
@@ -437,7 +438,9 @@ SELECT base64Encode('clickhouse')
 
 Добавленный в: v24.6.0
 
-Декодирует строку из формата [Base64](https://en.wikipedia.org/wiki/Base64) с использованием URL-безопасного алфавита в соответствии с RFC 4648.
+Декодирует строку из представления [Base64](https://en.wikipedia.org/wiki/Base64) с использованием URL-безопасного алфавита в соответствии с RFC 4648.
+Стандартный алфавит (`+` и `/`) также принимается при декодировании.
+Начиная с версии 26.7, символы-пробелы во входных данных — пробел, табуляция (`\t`), перевод строки (`\n`), возврат каретки (`\r`) и перевод страницы (`\f`) — игнорируются (в более ранних версиях ввод, содержащий их, отклонялся). Вертикальная табуляция (`\v`) и любые другие символы, не входящие в алфавит Base64, отклоняются.
 При ошибке генерирует исключение.
 
 **Синтаксис**
@@ -627,11 +630,11 @@ caseFoldUTF8(str)
 
 **Возвращаемое значение**
 
-UTF-8-строка после case folding. [`String`](/ru/reference/data-types/string)
+UTF-8-строка после свёртки регистра. [`String`](/ru/reference/data-types/string)
 
 **Примеры**
 
-**Базовый пример case folding**
+**Базовый пример свёртки регистра**
 
 ```sql title=Query
 SELECT caseFoldUTF8('Straße')
@@ -639,8 +642,8 @@ SELECT caseFoldUTF8('Straße')
 
 ```response title=Response
 ┌─caseFoldUTF8('Straße')─┐
-│ strasse                 │
-└─────────────────────────┘
+│ strasse                │
+└────────────────────────┘
 ```
 
 <div id="compareSubstrings">
@@ -1165,13 +1168,13 @@ editDistanceUTF8(s1, s2)
 **Пример использования**
 
 ```sql title=Query
-SELECT editDistanceUTF8('我是谁', '我是我')
+SELECT editDistanceUTF8('我是谁', '我是我') AS distance
 ```
 
 ```response title=Response
-┌─editDistanceUTF8('我是谁', '我是我')──┐
-│                                   1 │
-└─────────────────────────────────────┘
+┌─distance─┐
+│        1 │
+└──────────┘
 ```
 
 <div id="encodeXMLComponent">
@@ -1661,9 +1664,6 @@ isValidASCII(str)
 SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii
 ```
 
-```response title=Response
-```
-
 <div id="isValidUTF8">
   ## isValidUTF8
 </div>
@@ -2100,7 +2100,7 @@ SELECT s FROM t ORDER BY naturalSortKey(s)
 ```response title=Response
 ┌─s───┐
 │ a1  │
-| a02 │
+│ a02 │
 └─────┘
 ```
 
@@ -2212,13 +2212,13 @@ normalizeUTF8NFKC(str)
 
 ```sql title=Query
 SELECT
-    '① ② ③' AS original,                            -- Символы цифр в кружке
-    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized;  -- Преобразует в 1 2 3
+    '① ② ③' AS original,                           -- Circled number characters
+    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized  -- Converts to 1 2 3
 ```
 
 ```response title=Response
 ┌─original─┬─nfkc_normalized─┐
-│ ① ② ③  │ 1 2 3           │
+│ ① ② ③    │ 1 2 3           │
 └──────────┴─────────────────┘
 ```
 
@@ -2289,8 +2289,8 @@ normalizeUTF8NFKD(str)
 
 ```sql title=Query
 SELECT
-    'H₂O²' AS original,                            -- H + нижний индекс 2 + O + верхний индекс 2
-    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized;  -- Преобразует в H 2 O 2
+    'H₂O²' AS original,                           -- H + subscript 2 + O + superscript 2
+    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized  -- Converts to H 2 O 2
 ```
 
 ```response title=Response
@@ -2481,7 +2481,7 @@ SELECT
 
 Добавленный в: v26.3.0
 
-Удаляет диакритические знаки (акценты) из строки UTF-8, разлагая символы с помощью NFD,
+Удаляет диакритические знаки (акценты) из строки в кодировке UTF-8, разлагая символы с помощью NFD,
 удаляя комбинируемые знаки (категория Unicode Mn), а затем повторно компонуя их с помощью NFC.
 
 **Синтаксис**
@@ -2510,8 +2510,8 @@ SELECT removeDiacriticsUTF8('café résumé naïve')
 
 ```response title=Response
 ┌─removeDiacriticsUTF8('café résumé naïve')─┐
-│ cafe resume naive                          │
-└────────────────────────────────────────────┘
+│ cafe resume naive                         │
+└───────────────────────────────────────────┘
 ```
 
 <div id="repeat">
@@ -3293,13 +3293,13 @@ stringJaccardIndexUTF8(s1, s2)
 **Пример использования**
 
 ```sql title=Query
-SELECT stringJaccardIndexUTF8('我爱你', '我也爱你')
+SELECT stringJaccardIndexUTF8('我爱你', '我也爱你') AS jaccard_index
 ```
 
 ```response title=Response
-┌─stringJaccardIndexUTF8('我爱你', '我也爱你')─┐
-│                                       0.75 │
-└─────────────────────────────────────────────┘
+┌─jaccard_index─┐
+│          0.75 │
+└───────────────┘
 ```
 
 <div id="substring">
@@ -3315,6 +3315,8 @@ SELECT stringJaccardIndexUTF8('我爱你', '我也爱你')
 * Если `offset` отрицательный, подстрока начинается на `offset` символов от конца строки, а не от её начала.
 
 Необязательный аргумент `length` задаёт максимальное количество байтов в возвращаемой подстроке.
+
+См. также функцию [`digits`](/ru/reference/functions/regular-functions/other-functions#digits), которая выполняет аналогичную операцию с цифрами числа.
 
 **Синтаксис**
 
@@ -3894,7 +3896,7 @@ SELECT upper('clickhouse')
 Добавленный в: v1.1.0
 
 Преобразует строку в верхний регистр, предполагая, что строка содержит корректный текст в кодировке UTF-8.
-Если это предположение нарушено, исключение не генерируется, а результат не определён.
+Если это предположение нарушено, исключение не сгенерируется, а результат не определён.
 
 <Note>
   Эта функция не определяет язык, поэтому, например, для турецкого языка результат может быть не совсем корректным (i/İ vs. i/I).

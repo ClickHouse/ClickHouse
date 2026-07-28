@@ -2,17 +2,19 @@
 title: 비동기 삽입
 ---
 
-ClickHouse의 비동기 삽입은 클라이언트 측 배칭이 어렵거나 적합하지 않을 때 강력한 대안이 됩니다. 이는 특히 수백 개 또는 수천 개의 에이전트가 로그, 메트릭, 트레이스 데이터를 지속적으로, 대개는 작은 실시간 payload로 전송하는 관측성 워크로드에서 매우 유용합니다. 이러한 환경에서 클라이언트 측 버퍼링을 사용하면 충분히 큰 batch를 보낼 수 있도록 중앙 집중식 큐가 필요해져 복잡성이 커집니다.
+ClickHouse의 비동기 삽입은 클라이언트 측 배칭이 어렵거나 적합하지 않을 때 강력한 대안이 됩니다. 이는 특히 수백 개 또는 수천 개의 에이전트가 로그, 메트릭, 트레이스 데이터를 지속적으로, 대개는 작은 실시간 payload로 전송하는 관측성 워크로드에서 매우 유용합니다. 이러한 환경에서 클라이언트 측 버퍼링을 사용하면 충분히 큰 배치를 보낼 수 있도록 중앙 집중식 큐가 필요해져 복잡성이 커집니다.
 
 <Note>
-  동기 모드에서 작은 batch를 많이 전송하는 것은 권장되지 않습니다. 이 경우 많은 파트가 생성되어 쿼리 성능이 저하되고 [&quot;too many part&quot;](/ko/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) 오류가 발생할 수 있습니다.
+  동기 모드에서 작은 배치를 많이 전송하는 것은 권장되지 않습니다. 이 경우 많은 파트가 생성되어 쿼리 성능이 저하되고 [&quot;too many part&quot;](/ko/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) 오류가 발생할 수 있습니다.
 </Note>
 
-비동기 삽입은 들어오는 데이터를 메모리 내 버퍼에 기록한 뒤, 구성 가능한 임계값에 따라 스토리지에 플러시함으로써 배칭 책임을 클라이언트에서 서버로 옮깁니다. 이 방식은 파트 생성 오버헤드를 크게 줄이고, CPU 사용량을 낮추며, 높은 동시성에서도 수집이 효율적으로 유지되도록 합니다.
+비동기 삽입은 들어오는 데이터를 인메모리 버퍼에 기록한 뒤, 구성 가능한 임계값에 따라 스토리지에 플러시함으로써 배칭 책임을 클라이언트에서 서버로 옮깁니다. 이 방식은 파트 생성 오버헤드를 크게 줄이고, CPU 사용량을 낮추며, 높은 동시성에서도 수집이 효율적으로 유지되도록 합니다.
 
 핵심 동작은 [`async_insert`](/ko/reference/settings/session-settings#async_insert) 설정으로 제어됩니다.
 
-<Image img="/images/bestpractices/async_inserts.webp" size="lg" alt="비동기 삽입" />
+<Frame>
+  <img src="/images/bestpractices/async_inserts.webp" alt="비동기 삽입" />
+</Frame>
 
 비동기 삽입은 HTTP와 네이티브 TCP 인터페이스 모두에서 지원됩니다.
 
