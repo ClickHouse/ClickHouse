@@ -118,6 +118,19 @@ SELECT id FROM t1 INNER JOIN t2 ON t1.id = t2.id INNER JOIN t3 ON t2.id = t3.id;
 -- But when the later ON equates the exposed representative (t1.id) directly, it resolves as expected.
 SELECT id FROM t1 INNER JOIN t2 ON t1.id = t2.id INNER JOIN t3 ON t1.id = t3.id ORDER BY id;
 
+-- The equality that justifies the relaxation must be a property of the join, independent of the
+-- reference itself. An unqualified reference written inside the very ON that equates it - as in
+-- `... INNER JOIN t3 ON id = t3.id` - is not covered: choosing a side there would change the join
+-- condition itself (resolved to the right side the condition becomes trivially true), so the
+-- "both sides carry the same value" argument does not apply, and the equated columns are not even
+-- resolved yet at that point. Such a reference stays ambiguous exactly as before - in the multi-way
+-- form regardless of single_join_prefer_left_table, and in the single-join form it keeps working only
+-- through single_join_prefer_left_table = 1, which is untouched by this change.
+SELECT id FROM t1 INNER JOIN t2 ON t1.id = t2.id INNER JOIN t3 ON id = t3.id; -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT id FROM t1 INNER JOIN t2 ON t1.id = t2.id INNER JOIN t3 ON id = t3.id SETTINGS single_join_prefer_left_table = 1; -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT id FROM t1 INNER JOIN t2 ON id = t2.id; -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT id FROM t1 INNER JOIN t2 ON id = t2.id ORDER BY id SETTINGS single_join_prefer_left_table = 1;
+
 DROP TABLE t3;
 
 DROP TABLE t1;
