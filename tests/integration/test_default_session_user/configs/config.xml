@@ -104,6 +104,27 @@
             <default_session_user>proto_tcp_password_user</default_session_user>
             <description>native protocol whose default session user has a password</description>
         </tcp_password_defuser>
+        <!-- A type-less module that only carries shared settings. A *typed* module referencing it
+             through `impl` must inherit `default_session_user` from it, even though the typed
+             module's handler factory is created before the chain walk reaches this module. -->
+        <shared_defuser_base>
+            <default_session_user>proto_shared_impl_user</default_session_user>
+            <description>type-less module carrying a shared default session user</description>
+        </shared_defuser_base>
+        <tcp_impl_inherit>
+            <type>tcp</type>
+            <impl>shared_defuser_base</impl>
+            <host>0.0.0.0</host>
+            <port>9115</port>
+            <description>native protocol inheriting the default session user through a type-less impl alias</description>
+        </tcp_impl_inherit>
+        <http_impl_inherit>
+            <type>http</type>
+            <impl>shared_defuser_base</impl>
+            <host>0.0.0.0</host>
+            <port>8131</port>
+            <description>http protocol inheriting the default session user through a type-less impl alias</description>
+        </http_impl_inherit>
         <http_defuser>
             <type>http</type>
             <host>0.0.0.0</host>

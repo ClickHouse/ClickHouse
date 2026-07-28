@@ -305,6 +305,24 @@ def test_native_default_session_user():
     assert native_hello(9104, "") == exception
 
 
+def test_default_session_user_inherited_through_impl_alias():
+    hello = 0
+
+    # A *typed* protocol module inherits `default_session_user` from a type-less module
+    # it references through `impl`. The handler factory of the typed module is created
+    # while walking the `impl` chain, before the referenced module is reached, so the
+    # effective value has to be resolved for the whole chain up front.
+    with assert_login_success("proto_shared_impl_user", "TCP"):
+        assert native_hello(9115, "") == hello
+
+    assert execute_query_http(8131, "SELECT currentUser()") == "proto_shared_impl_user\n"
+
+    # An explicitly specified user is not affected.
+    with assert_login_success("explicit_user", "TCP"):
+        assert native_hello(9115, "explicit_user") == hello
+    assert execute_query_http(8131, "SELECT currentUser()", user="explicit_user") == "explicit_user\n"
+
+
 def test_native_default_session_user_with_password():
     hello = 0
     exception = 2

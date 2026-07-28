@@ -3744,7 +3744,8 @@ namespace
 {
 
 /// Walk a composable protocol's `impl` chain and return the effective `default_session_user`:
-/// the value closest to the endpoint wins, mirroring the lookup in `buildProtocolStackFromConfig`.
+/// the value closest to the endpoint wins. Used both when the protocol stack is built and when it is
+/// decided whether a configuration reload has to restart the endpoint.
 /// Returns an empty optional if no module in the chain sets it (the handlers then fall back to the
 /// `default_session_user` server setting).
 std::optional<String> getEffectiveDefaultSessionUser(const Poco::Util::AbstractConfiguration & config, const std::string & protocol)
@@ -3783,7 +3784,10 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     /// from the endpoint's protocol module towards the referenced (`impl`) modules; the value
     /// closest to the endpoint wins. If not set anywhere in the chain, the handlers fall back
     /// to the `default_session_user` server setting.
-    std::optional<String> default_session_user;
+    /// It is resolved for the whole `impl` chain up front, because a module can be both typed
+    /// (so its handler factory is created while walking the chain) and inherit the setting from
+    /// a module it references, which the walk reaches only later.
+    const std::optional<String> default_session_user = getEffectiveDefaultSessionUser(config, "protocols." + protocol);
 
     auto create_factory = [&](const std::string & type, const std::string & conf_name) -> TCPServerConnectionFactory::Ptr
     {
@@ -3843,9 +3847,6 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
 
     while (true)
     {
-        if (!default_session_user && config.has(prefix + "default_session_user"))
-            default_session_user = config.getString(prefix + "default_session_user");
-
         // if there is no "type" - it's a reference to another protocol and this is just an endpoint
         if (config.has(prefix + "type"))
         {

@@ -24,6 +24,14 @@
             <profile>default</profile>
             <quota>default</quota>
         </proto_endpoint_user>
+        <proto_shared_impl_user>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </proto_shared_impl_user>
         <proto_http_user>
             <password></password>
             <networks>
