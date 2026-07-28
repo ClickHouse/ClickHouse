@@ -2143,7 +2143,16 @@ private:
         QueryTreeNodePtrWithHashSet greater_constants;
         QueryTreeNodePtrWithHashSet less_constants;
         /// Record a > b, a >= b, a == b pairs or a < b, a <= b, a == b pairs
-        using QueryTreeNodeWithEquals = std::vector<std::pair<QueryTreeNodePtr, CompareType>>;
+        struct ComparePairEntry
+        {
+            QueryTreeNodePtr node;
+            CompareType type;
+            /// The comparison connects expressions from different table-expression sources.
+            /// A conjunct derived through such an edge is pushable below the join, where the
+            /// original chain cannot filter, so it is kept executable (see the append site).
+            bool crosses_source;
+        };
+        using QueryTreeNodeWithEquals = std::vector<ComparePairEntry>;
         using ComparePairs = QueryTreeNodePtrWithHashMap<QueryTreeNodeWithEquals>;
         ComparePairs greater_pairs;
         ComparePairs less_pairs;
@@ -2204,65 +2213,75 @@ private:
                 addComparisonFilter(derived_conjunct_filters, expression_node, std::move(seed_filter), true, getContext());
             }
 
+            /// Edges to constants never cross; between expressions, differing sources (or an
+            /// expression without a single source) mark the edge as crossing.
+            bool crosses_source = false;
+            if (!lhs_constant && !rhs_constant)
+            {
+                const auto [lhs_source, lhs_ok] = getExpressionSource(lhs);
+                const auto [rhs_source, rhs_ok] = getExpressionSource(rhs);
+                crosses_source = !lhs_ok || !rhs_ok || !lhs_source || !rhs_source || !lhs_source->isEqual(*rhs_source);
+            }
+
             if (function_name == "less")
             {
                 if (rhs->as<ConstantNode>())
                     greater_constants.insert(rhs);
-                greater_pairs[rhs].push_back({lhs, CompareType::less});
+                greater_pairs[rhs].push_back({lhs, CompareType::less, crosses_source});
                 if (lhs->as<ConstantNode>())
                     less_constants.insert(lhs);
-                less_pairs[lhs].push_back({rhs, CompareType::greater});
+                less_pairs[lhs].push_back({rhs, CompareType::greater, crosses_source});
             }
             else if (function_name == "greater")
             {
                 if (lhs->as<ConstantNode>())
                     greater_constants.insert(lhs);
-                greater_pairs[lhs].push_back({rhs, CompareType::less});
+                greater_pairs[lhs].push_back({rhs, CompareType::less, crosses_source});
                 if (rhs->as<ConstantNode>())
                     less_constants.insert(rhs);
-                less_pairs[rhs].push_back({lhs, CompareType::greater});
+                less_pairs[rhs].push_back({lhs, CompareType::greater, crosses_source});
             }
             else if (function_name == "lessOrEquals")
             {
                 if (rhs->as<ConstantNode>())
                     greater_constants.insert(rhs);
-                greater_pairs[rhs].push_back({lhs, CompareType::lessOrEquals});
+                greater_pairs[rhs].push_back({lhs, CompareType::lessOrEquals, crosses_source});
                 if (lhs->as<ConstantNode>())
                     less_constants.insert(lhs);
-                less_pairs[lhs].push_back({rhs, CompareType::greaterOrEquals});
+                less_pairs[lhs].push_back({rhs, CompareType::greaterOrEquals, crosses_source});
             }
             else if (function_name == "greaterOrEquals")
             {
                 if (lhs->as<ConstantNode>())
                     greater_constants.insert(lhs);
-                greater_pairs[lhs].push_back({rhs, CompareType::lessOrEquals});
+                greater_pairs[lhs].push_back({rhs, CompareType::lessOrEquals, crosses_source});
                 if (rhs->as<ConstantNode>())
                     less_constants.insert(rhs);
-                less_pairs[rhs].push_back({lhs, CompareType::greaterOrEquals});
+                less_pairs[rhs].push_back({lhs, CompareType::greaterOrEquals, crosses_source});
             }
             else if (function_name == "equals")
             {
                 if (rhs->as<ConstantNode>())
                 {
                     greater_constants.insert(rhs);
-                    greater_pairs[rhs].push_back({lhs, CompareType::equals});
+                    greater_pairs[rhs].push_back({lhs, CompareType::equals, crosses_source});
                     less_constants.insert(rhs);
-                    less_pairs[rhs].push_back({lhs, CompareType::equals});
+                    less_pairs[rhs].push_back({lhs, CompareType::equals, crosses_source});
                 }
                 else if (lhs->as<ConstantNode>())
                 {
                     greater_constants.insert(lhs);
-                    greater_pairs[lhs].push_back({rhs, CompareType::equals});
+                    greater_pairs[lhs].push_back({rhs, CompareType::equals, crosses_source});
                     less_constants.insert(lhs);
-                    less_pairs[lhs].push_back({rhs, CompareType::equals});
+                    less_pairs[lhs].push_back({rhs, CompareType::equals, crosses_source});
                 }
                 else
                 {
                     /// Bidirection, needs to record visited
-                    greater_pairs[lhs].push_back({rhs, CompareType::equals});
-                    greater_pairs[rhs].push_back({lhs, CompareType::equals});
-                    less_pairs[lhs].push_back({rhs, CompareType::equals});
-                    less_pairs[rhs].push_back({lhs, CompareType::equals});
+                    greater_pairs[lhs].push_back({rhs, CompareType::equals, crosses_source});
+                    greater_pairs[rhs].push_back({lhs, CompareType::equals, crosses_source});
+                    less_pairs[lhs].push_back({rhs, CompareType::equals, crosses_source});
+                    less_pairs[rhs].push_back({lhs, CompareType::equals, crosses_source});
                 }
             }
         }
@@ -2303,15 +2322,15 @@ private:
                 {
                     if (andCompareChainHashBudgetExceeded())
                         return;
-                    if (visited.contains(left.first))
+                    if (visited.contains(left.node))
                         continue;
-                    visited.insert(left.first);
+                    visited.insert(left.node);
 
-                    CompareType compare_type = std::min(type, left.second);
+                    CompareType compare_type = std::min(type, left.type);
 
                     /// Non-sense to have both sides as constant, and no repeat of equal function
-                    if (constant && !left.first->as<ConstantNode>()
-                        && (compare_type != CompareType::equals || equal_funcs[left.first].insert(constant).second))
+                    if (constant && !left.node->as<ConstantNode>()
+                        && (compare_type != CompareType::equals || equal_funcs[left.node].insert(constant).second))
                     {
                         String compare_function_name;
                         if (compare_type == CompareType::less)
@@ -2327,7 +2346,7 @@ private:
 
                         const auto and_node = std::make_shared<FunctionNode>(compare_function_name);
                         and_node->markAsOperator();
-                        and_node->getArguments().getNodes().push_back(left.first->clone());
+                        and_node->getArguments().getNodes().push_back(left.node->clone());
                         and_node->getArguments().getNodes().push_back(constant->clone());
                         and_node->resolveAsFunction(
                             FunctionFactory::instance().get(compare_function_name, getContext()));
@@ -2339,20 +2358,33 @@ private:
                             chassert(derived_func);
                             ComparisonFilterInfo derived_filter{constant, *derived_func, and_node, {}, 0};
                             auto add_result = addComparisonFilter(
-                                derived_conjunct_filters, left.first, std::move(derived_filter), true, getContext());
+                                derived_conjunct_filters, left.node, std::move(derived_filter), true, getContext());
                             if (add_result == AddComparisonFilterResult::ALWAYS_FALSE)
                             {
                                 function_node.getArguments().getNodes().push_back(and_node);
                             }
                             else if (add_result != AddComparisonFilterResult::ALWAYS_TRUE)
                             {
-                                /// A derived conjunct filters nothing beyond the original chain, so add it
-                                /// as `indexHint`: index analysis still prunes by it, execution skips it.
-                                auto index_hint_node = std::make_shared<FunctionNode>("indexHint");
-                                index_hint_node->getArguments().getNodes().push_back(and_node);
-                                index_hint_node->resolveAsFunction(
-                                    FunctionFactory::instance().get("indexHint", getContext()));
-                                function_node.getArguments().getNodes().push_back(index_hint_node);
+                                if (left.crosses_source)
+                                {
+                                    /// Derived through a comparison of different sources, this is the
+                                    /// only conjunct pushable below the join — it can filter a join
+                                    /// input the original chain cannot reach (e.g. it shrinks a hash
+                                    /// join build side) — so keep it executable.
+                                    function_node.getArguments().getNodes().push_back(and_node);
+                                }
+                                else
+                                {
+                                    /// Derived through a same-source comparison, the conjunct filters
+                                    /// nothing beyond conditions already executable at the same scan, so
+                                    /// add it as `indexHint`: index analysis still prunes by it,
+                                    /// execution skips it.
+                                    auto index_hint_node = std::make_shared<FunctionNode>("indexHint");
+                                    index_hint_node->getArguments().getNodes().push_back(and_node);
+                                    index_hint_node->resolveAsFunction(
+                                        FunctionFactory::instance().get("indexHint", getContext()));
+                                    function_node.getArguments().getNodes().push_back(index_hint_node);
+                                }
                             }
                         }
                     }
@@ -2361,8 +2393,8 @@ private:
                     /// redundant. E.g. `x < 3 AND y > 3 AND y < 10` builds the chain
                     /// 10 > y > 3 > x, and chaining through constant 3 would add `x < 10`
                     /// which is strictly weaker than the existing `x < 3`.
-                    if (!left.first->as<ConstantNode>())
-                        find_pairs(pairs, left.first, constant ? constant : current->as<ConstantNode>(), compare_type);
+                    if (!left.node->as<ConstantNode>())
+                        find_pairs(pairs, left.node, constant ? constant : current->as<ConstantNode>(), compare_type);
                 }
             }
         };

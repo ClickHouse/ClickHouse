@@ -43,4 +43,28 @@ SELECT count() FROM t_chain_hint WHERE a = b AND b = 5 AND a != 5;
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_hint WHERE a = b AND b = 5 AND a != 5)
     WHERE explain LIKE '%function_name: indexHint%';
 
+-- A condition derived across a join stays executable: it is the only filter pushable to the
+-- other join input (it can e.g. shrink a hash join build side). No hint, one extra `less`.
+SELECT 'join_derived_stays_plain';
+DROP TABLE IF EXISTS t_chain_hint_r;
+CREATE TABLE t_chain_hint_r (c UInt64, d UInt64) ENGINE = MergeTree ORDER BY c
+    SETTINGS index_granularity = 1024;
+INSERT INTO t_chain_hint_r SELECT number, number + 2 FROM numbers(65536);
+SELECT count() FROM (EXPLAIN QUERY TREE
+    SELECT count() FROM t_chain_hint AS l JOIN t_chain_hint_r AS r ON l.a = r.c WHERE l.b < r.d AND r.d < 100)
+    WHERE explain LIKE '%function_name: indexHint%';
+SELECT
+    (SELECT count() FROM (EXPLAIN QUERY TREE
+        SELECT count() FROM t_chain_hint AS l JOIN t_chain_hint_r AS r ON l.a = r.c WHERE l.b < r.d AND r.d < 100
+        SETTINGS optimize_and_compare_chain = 1) WHERE explain LIKE '%function_name: less,%')
+    -
+    (SELECT count() FROM (EXPLAIN QUERY TREE
+        SELECT count() FROM t_chain_hint AS l JOIN t_chain_hint_r AS r ON l.a = r.c WHERE l.b < r.d AND r.d < 100
+        SETTINGS optimize_and_compare_chain = 0) WHERE explain LIKE '%function_name: less,%');
+SELECT count() FROM t_chain_hint AS l JOIN t_chain_hint_r AS r ON l.a = r.c WHERE l.b < r.d AND r.d < 100
+    SETTINGS optimize_and_compare_chain = 1;
+SELECT count() FROM t_chain_hint AS l JOIN t_chain_hint_r AS r ON l.a = r.c WHERE l.b < r.d AND r.d < 100
+    SETTINGS optimize_and_compare_chain = 0;
+DROP TABLE t_chain_hint_r;
+
 DROP TABLE t_chain_hint;

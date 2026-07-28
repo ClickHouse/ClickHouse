@@ -15,7 +15,12 @@
 using namespace DB;
 
 /// Resolve columns of a type within a query tree
-static QueryTreeNodePtr resolveColumn(DataTypePtr type, QueryTreeNodePtr node, std::map<String, QueryTreeNodePtr> & resolved_map, ContextPtr context)
+static QueryTreeNodePtr resolveColumn(
+    DataTypePtr type,
+    QueryTreeNodePtr node,
+    std::map<String, QueryTreeNodePtr> & resolved_map,
+    std::map<String, QueryTreeNodePtr> & source_map,
+    ContextPtr context)
 {
     auto * function_node = node->as<FunctionNode>();
     if (!function_node)
@@ -28,7 +33,15 @@ static QueryTreeNodePtr resolveColumn(DataTypePtr type, QueryTreeNodePtr node, s
             auto it = resolved_map.find(col_name);
             if (it != resolved_map.end())
                 return it->second;
-            auto column = std::make_shared<ColumnNode>(NameAndTypePair(col_name, type), node);
+            /// Columns share one source per identifier qualifier (`t1.a` and `t1.b` -> `t1`,
+            /// unqualified columns -> a common default), so passes can compare expression sources.
+            /// The column keeps only the last identifier part as its name, so it formats bare.
+            const auto & identifier = identifier_node->getIdentifier();
+            String source_name = identifier.isShort() ? "__default_table" : identifier.front();
+            auto & source = source_map[source_name];
+            if (!source)
+                source = std::make_shared<IdentifierNode>(Identifier(source_name));
+            auto column = std::make_shared<ColumnNode>(NameAndTypePair(identifier.back(), type), source);
             resolved_map[col_name] = column;
             return column;
         }
@@ -38,7 +51,7 @@ static QueryTreeNodePtr resolveColumn(DataTypePtr type, QueryTreeNodePtr node, s
     QueryTreeNodes new_args;
     for (const auto & argument : function_node->getArguments())
     {
-        auto arg = resolveColumn(type, argument, resolved_map, context);
+        auto arg = resolveColumn(type, argument, resolved_map, source_map, context);
         new_args.push_back(arg);
     }
     function_node->getArguments().getNodes() = std::move(new_args);
@@ -54,7 +67,8 @@ void testPassOnCondition(QueryTreePassPtr pass, DataTypePtr columnType, const St
     QueryTreeNodePtr node = buildQueryTree(query, context);
 
     std::map<String, QueryTreeNodePtr> resolved_map;
-    node = resolveColumn(columnType, node, resolved_map, context);
+    std::map<String, QueryTreeNodePtr> source_map;
+    node = resolveColumn(columnType, node, resolved_map, source_map, context);
     pass->run(node, context);
     EXPECT_EQ(node->formatConvertedASTForErrorMessage(), expected);
 }
