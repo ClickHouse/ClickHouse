@@ -34,17 +34,13 @@ Por ejemplo, podrías crear un gráfico con el número de errores (`count()`) ag
 Para los ejemplos siguientes, usamos el conjunto de datos remoto disponible en [sql.clickhouse.com](https://sql.clickhouse.com), descrito en la guía [&quot;Conjunto de datos de demostración remoto&quot;](/es/clickstack/example-datasets/remote-demo-data). **También puedes reproducir estos ejemplos visitando [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com).**
 
 <Steps>
-  <Step>
-    ### Ir a Chart Explorer
-
+  <Step title="Ir a Chart Explorer" id="navigate-chart-explorer">
     Selecciona `Chart Explorer` en el menú de la izquierda.
 
     <Image img="/images/use-cases/observability/clickstack-visualization-1.webp" alt="Chart Explorer" size="lg" />
   </Step>
 
-  <Step>
-    ### Crear visualización
-
+  <Step title="Crear visualización" id="create-visualization">
     En el ejemplo siguiente, creamos un gráfico de la duración media de las solicitudes a lo largo del tiempo por nombre de servicio. Para ello, el usuario debe especificar una métrica, una columna (que puede ser una expresión SQL) y un campo de agregación.
 
     Selecciona el tipo de visualización `Line/Bar` en el menú superior y, a continuación, el conjunto de datos `Traces` (o `Demo Traces` si usas [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)). Completa los siguientes valores:
@@ -59,7 +55,7 @@ Para los ejemplos siguientes, usamos el conjunto de datos remoto disponible en [
 
     Ten en cuenta que puedes filtrar eventos usando una cláusula SQL `WHERE` o sintaxis Lucene, y establecer el intervalo de tiempo en el que deben visualizarse. También se admiten varias series.
 
-    Por ejemplo, filtra por el servicio `frontend` añadiendo el filtro `ServiceName:\"frontend\"`. Agrega una segunda serie para el recuento de eventos a lo largo del tiempo con el alias `Count` haciendo clic en `Add Series`.
+    Por ejemplo, filtra por el servicio `frontend` añadiendo el filtro `ServiceName:"frontend"`. Agrega una segunda serie para el recuento de eventos a lo largo del tiempo con el alias `Count` haciendo clic en `Add Series`.
 
     <Image img="/images/use-cases/observability/clickstack-visualization-3.webp" alt="Visualización simple 2" size="lg" />
 
@@ -90,17 +86,13 @@ Los filtros globales pueden aplicarse a nivel de dashboard y se propagan automá
 A continuación, creamos un dashboard con dos visualizaciones usando las fuentes de datos de logs y trazas. Estos pasos pueden reproducirse en [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) o localmente, conectándose al conjunto de datos alojado en [sql.clickhouse.com](https://sql.clickhouse.com), como se describe en la guía [&quot;Conjunto de datos de demostración remoto&quot;](/es/clickstack/example-datasets/remote-demo-data).
 
 <Steps>
-  <Step>
-    ### Vaya a Dashboards
-
+  <Step title="Vaya a Dashboards" id="navigate-dashboards">
     Seleccione `Dashboards` en el menú de la izquierda. Luego, haga clic en `New Dashboard` para crear un dashboard temporal o guardado.
 
     <Image img="/images/use-cases/observability/hyperdx-dashboard-1.webp" alt="Crear dashboard" size="lg" />
   </Step>
 
-  <Step>
-    ### Crear una visualización: tiempo promedio de solicitud por servicio
-
+  <Step title="Crear una visualización: tiempo promedio de solicitud por servicio" id="create-a-tile">
     Selecciona `Add New Tile` para abrir el panel de creación de visualizaciones.
 
     Selecciona el tipo de visualización `Line/Bar` en el menú superior y, a continuación, el dataset `Traces` (o `Demo Traces` si usas [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)). Completa los siguientes valores para crear un gráfico que muestre la duración promedio de las solicitudes a lo largo del tiempo para cada nombre de servicio:
@@ -121,9 +113,7 @@ A continuación, creamos un dashboard con dos visualizaciones usando las fuentes
     <Image img="/images/use-cases/observability/hyperdx-dashboard-3.webp" alt="Dashboard con visualizaciones" size="lg" />
   </Step>
 
-  <Step>
-    ### Crear una visualización: eventos a lo largo del tiempo por servicio
-
+  <Step title="Crear una visualización: eventos a lo largo del tiempo por servicio" id="create-a-tile-2">
     Seleccione `Add New Tile` para abrir el panel de creación de visualizaciones.
 
     Seleccione el tipo de visualización `Line/Bar` en el menú superior y, a continuación, el conjunto de datos `Logs` (o `Demo Logs` si usa [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)). Complete los siguientes valores para crear un gráfico que muestre el recuento de eventos a lo largo del tiempo por nombre de servicio:
@@ -143,9 +133,7 @@ A continuación, creamos un dashboard con dos visualizaciones usando las fuentes
     <Image img="/images/use-cases/observability/hyperdx-dashboard-5.webp" alt="Dashboard con visualizaciones 2" size="lg" />
   </Step>
 
-  <Step>
-    ### Agrega un tile de heatmap para la duración de spans
-
+  <Step title="Agrega un tile de heatmap para la duración de spans" id="create-a-tile-heatmap">
     Los tiles de heatmap muestran el recuento de eventos que caen en cada bucket de (tiempo, valor) como una cuadrícula coloreada. Usa un heatmap cuando quieras ver la **forma** de una distribución a lo largo del tiempo, no solo el promedio o un único percentil. Un heatmap de latencia revela patrones de duración bimodales, agrupaciones en la cola lenta o dispersiones repentinas que un gráfico de líneas promediaría y ocultaría.
 
     Para agregar un tile de heatmap:
@@ -189,9 +177,7 @@ A continuación, creamos un dashboard con dos visualizaciones usando las fuentes
     Al seleccionarla, se abre la vista de [Event Deltas](/es/clickstack/features/event-deltas) con la fuente de datos del tile, la cláusula `Where` y el intervalo de tiempo transferidos. Desde allí puedes examinar la misma distribución de forma interactiva, segmentar por attribute para ver qué hace que los spans lentos sean distintos de los rápidos e inspeccionar los spans individuales detrás de cualquier celda, sin tener que reconstruir manualmente la consulta.
   </Step>
 
-  <Step>
-    ### Filtrar el dashboard
-
+  <Step title="Filtrar el dashboard" id="filter-dashboards">
     Se pueden aplicar filtros de Lucene o SQL, junto con el intervalo de tiempo, a nivel del dashboard, y se propagarán automáticamente a todas las visualizaciones.
 
     <Image img="/images/use-cases/observability/hyperdx-dashboard-filter.webp" alt="Dashboard con filtrado" size="lg" />
@@ -211,6 +197,20 @@ A continuación, creamos un dashboard con dos visualizaciones usando las fuentes
 Para eliminar, editar o duplicar una visualización, pase el cursor sobre ella y utilice los botones de acción correspondientes.
 
 <Image img="/images/use-cases/observability/hyperdx-dashboard-edit.webp" alt="Edición de dashboards" size="lg" />
+
+<div id="tile-display-settings">
+  ### Configuración de visualización del mosaico
+</div>
+
+Cada mosaico tiene un panel **Configuración de visualización** con opciones que controlan cómo se muestra su valor. Ábrelo desde el editor del mosaico haciendo clic en **Configuración de visualización**. Las opciones disponibles dependen del tipo de visualización.
+
+Los mosaicos de **Number** pueden mostrar un **gráfico de fondo**: una minigráfica de tendencia dibujada detrás del valor, para que su evolución en el intervalo de tiempo seleccionado pueda verse de un vistazo. Esto resulta útil en los mosaicos de SLO y de presupuesto de errores, donde la tendencia de un valor importa tanto como su lectura actual.
+
+Con un mosaico de **Number** seleccionado, abre **Configuración de visualización** y establece **Gráfico de fondo** en **Línea** o **Área** (o **Ninguno** para desactivarlo). La minigráfica se deriva de una versión de la consulta del mosaico agrupada en intervalos de tiempo, por lo que no se necesita ninguna configuración adicional. Hereda el color del mosaico de forma predeterminada; establece un **Color de fondo** para sustituirlo por un color concreto de la paleta.
+
+<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Panel Configuración de visualización de un mosaico Number, con Gráfico de fondo establecido en Área" size="lg" />
+
+Los gráficos de fondo se aplican a los mosaicos de **Number** del constructor de consultas. Los mosaicos de **Number** de Raw SQL devuelven un único valor sin dimensión temporal que pueda agruparse en intervalos, por lo que la opción aparece, pero está deshabilitada para ellos.
 
 <div id="dashboard-listing-search">
   ## Dashboards: listado y búsqueda
@@ -232,24 +232,20 @@ Los dashboards se pueden marcar como favoritos para acceder fácilmente a ellos 
   ## Filtros personalizados
 </div>
 
-Además de los [filtros de texto libre](#filter-dashboards) disponibles en todos los dashboards, los dashboards guardados admiten filtros personalizados en listas desplegables que se rellenan con datos consultados desde ClickHouse. Estos proporcionan controles de filtro reutilizables de apuntar y hacer clic, para que quienes consultan el dashboard puedan filtrar sin tener que escribir expresiones manualmente.
+Además de los [filtros de texto libre](#filter-dashboards) disponibles en todos los dashboard, los dashboard guardados admiten filtros personalizados en listas desplegables que se rellenan con datos consultados desde ClickHouse. Estos proporcionan controles de filtro reutilizables de apuntar y hacer clic, para que quienes consultan el dashboard puedan filtrar sin tener que escribir expresiones manualmente.
 
 <Image img="/images/clickstack/dashboards/filter-dropdown.webp" alt="Filtro desplegable de servicios que muestra los nombres de servicio disponibles" size="lg" />
 
-Los siguientes pasos muestran cómo añadir un filtro personalizado al dashboard creado en la sección [&quot;Creación de paneles&quot;](#creating-dashboards).
+Los siguientes pasos muestran cómo añadir un filtro personalizado al dashboard creado en la sección [&quot;Creación de dashboard&quot;](#creating-dashboards).
 
 <Steps>
-  <Step>
-    ### Abrir el cuadro de diálogo Edit Filters
-
+  <Step title="Abrir el cuadro de diálogo Edit Filters" id="open-edit-filters">
     Abra un dashboard guardado y seleccione **Edit Filters** en la barra de herramientas.
 
     <Image img="/images/clickstack/dashboards/edit-filters.webp" alt="Botón Edit Filters en la barra de herramientas del dashboard" size="lg" />
   </Step>
 
-  <Step>
-    ### Añadir un filtro nuevo
-
+  <Step title="Añadir un filtro nuevo" id="add-new-filter">
     Haga clic en **Add new filter**. Configure el filtro indicando un **Name**, seleccionando una **Data source** e introduciendo una **Filter expression**: una columna o expresión SQL cuyos valores distintos rellenarán la lista desplegable. Haga clic en **Save filter**.
 
     Por ejemplo, para añadir un filtro de servicio a datos de traza, use `ServiceName` como expresión de filtro con la fuente de datos `Traces`. El &quot;Dropdown values filter&quot; es opcional y permite restringir qué valores aparecen en la lista desplegable.
@@ -261,17 +257,13 @@ Los siguientes pasos muestran cómo añadir un filtro personalizado al dashboard
     <Image img="/images/clickstack/dashboards/saved-filters.webp" alt="Modal Filters que muestra un filtro Services configurado" size="md" />
   </Step>
 
-  <Step>
-    ### Usar el filtro
-
+  <Step title="Usar el filtro" id="use-filter">
     Cierre el modal Filters. El nuevo filtro desplegable aparece debajo de la barra de búsqueda. Haga clic en él para ver los valores disponibles y, a continuación, seleccione uno para filtrar todas las visualizaciones del dashboard.
 
     <Image img="/images/clickstack/dashboards/filtered-dashboard.webp" alt="Dashboard filtrado al servicio frontend" size="lg" />
   </Step>
 
-  <Step>
-    ### (Opcional) Guardar los valores del filtro como predeterminados
-
+  <Step title="(Opcional) Guardar los valores del filtro como predeterminados" id="save-default-filters">
     Para conservar una selección de filtro como valor predeterminado del dashboard, elija **Save Query &amp; Filters as Default** en el menú del dashboard. El dashboard siempre se abrirá con los filtros seleccionados aplicados. Para restablecerlo, seleccione **Remove Default Query &amp; Filters** en el mismo menú.
 
     <Image img="/images/clickstack/dashboards/save-filter-values.webp" alt="Menú del dashboard que muestra la opción Save Query and Filters as Default" size="lg" />
@@ -279,7 +271,7 @@ Los siguientes pasos muestran cómo añadir un filtro personalizado al dashboard
 </Steps>
 
 <Note>
-  Los filtros personalizados en listas desplegables están disponibles en los dashboards guardados. Para ver un ejemplo de este patrón en uso, consulte el [panel de Kubernetes](#kubernetes-dashboard), que proporciona filtros desplegables integrados para pod de Kubernetes, Implementación, nombre del nodo, Espacio de nombres y clúster.
+  Los filtros personalizados en listas desplegables están disponibles en los dashboard guardados. Para ver un ejemplo de este patrón en uso, consulte el [dashboard de Kubernetes](#kubernetes-dashboard), que proporciona filtros desplegables integrados para pod de Kubernetes, Implementación, nombre del nodo, Espacio de nombres y clúster.
 </Note>
 
 <div id="drilldown-to-search">
