@@ -80,6 +80,18 @@ SET final = 1;
 SELECT x, y FROM mytable WHERE x > 1;
 ```
 
+### Aliases and FINAL {#aliases-and-final}
+
+When a table has an alias, `FINAL` comes after the alias. This is most visible in [`JOIN`](/sql-reference/statements/select/join) queries, where tables are usually aliased:
+
+```sql
+SELECT t1.id, t2.name
+FROM table1 AS t1 FINAL
+INNER JOIN table2 AS t2 FINAL ON t1.id = t2.id;
+```
+
+`FINAL` is a modifier on the table reference, so it must follow the full `table [AS alias]` expression. Placing it before the alias (`FROM table1 FINAL AS t1`) is a syntax error.
+
 ## Implementation Details {#implementation-details}
 
 If the `FROM` clause is omitted, data will be read from the `system.one` table.

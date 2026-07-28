@@ -1,0 +1,12 @@
+--- ENGINE = URL('file://<extensionless>') with format = auto persists the inferred format ---
+1
+2
+--- reload after the source file is removed succeeds (no format re-inference) ---
+1
+--- an explicitly given format is preserved (not overwritten) ---
+1
+1	Hello
+2	World
+--- ENGINE = URL(named_collection) with format = auto persists the inferred format ---
+1
+1

@@ -1,8 +1,11 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Common/CurrentThread.h>
 #include <Common/HTTPConnectionPool.h>
+#include <Common/HostResolvePool.h>
+#include <base/scope_guard.h>
 
 #include <Poco/URI.h>
+#include <Poco/Net/IPAddress.h>
 #include <Poco/Net/MessageHeader.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
@@ -10,6 +13,10 @@
 #include <Poco/Net/HTTPServerParams.h>
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
+#include <Poco/Net/ServerSocket.h>
+#include <Poco/Net/SocketAddress.h>
+
+#include <atomic>
 
 #include <gtest/gtest.h>
 
@@ -149,7 +156,7 @@ protected:
         options->set(RequestOptions());
 
         DB::HTTPConnectionPools::instance().dropCache();
-        DB::CurrentThread::getProfileEvents().reset();
+        DB::CurrentThread::getProfileEvents().resetCounters();
         // Code here will be called immediately after the constructor (right
         // before each test).
     }
@@ -660,6 +667,179 @@ TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTP)
 
     ASSERT_EQ(1, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(1, CurrentMetrics::get(metrics.stored_count));
+}
+
+TEST_F(ConnectionPoolTest, ProxyConnectFailureDoesNotPessimizeTarget)
+{
+    /// In proxy mode `Poco::Net::HTTPClientSession::reconnect` connects to the proxy
+    /// host and ignores `_resolved_host`, so retrying alternative resolved target
+    /// addresses does not change the network path. A connect failure on the proxy
+    /// path must not pessimize the target-host resolver state and must not run the
+    /// resolved-address retry loop (it would only inflate the error count without
+    /// any chance of success).
+    auto uri = Poco::URI(getServerUrl());
+
+    DB::ProxyConfiguration proxy_config;
+    proxy_config.host = "127.0.0.1";
+    /// TCPMUX (port 1) is a reserved port that almost never has a listener,
+    /// so connect attempts return ECONNREFUSED synchronously.
+    proxy_config.port = 1;
+    proxy_config.protocol = DB::ProxyConfiguration::Protocol::HTTP;
+
+    auto pool = DB::HTTPConnectionPools::instance().getPool(
+        DB::HTTPConnectionGroupType::HTTP, uri, proxy_config);
+    auto metrics = pool->getMetrics();
+    auto resolver_metrics = DB::HostResolver::getMetrics();
+
+    UInt64 failed_before = DB::CurrentThread::getProfileEvents()[resolver_metrics.failed];
+
+    ASSERT_ANY_THROW({
+        auto connection = pool->getConnection(timeouts, nullptr);
+    });
+
+    /// Exactly one connect attempt: the retry loop is gated to direct connections only.
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.errors]);
+    /// `setFail` was not called on any target address: the failure is on the proxy path,
+    /// and pessimizing the target resolver would mis-attribute the failure (and trigger
+    /// extra DNS refreshes for a host that was never actually contacted).
+    ASSERT_EQ(failed_before, DB::CurrentThread::getProfileEvents()[resolver_metrics.failed]);
+}
+
+TEST_F(ConnectionPoolTest, ProxyConnectSkipsTargetResolution)
+{
+    /// In non-bypassed proxy mode the proxy resolves and reaches the target, so the target
+    /// host must not be resolved locally: the name may be resolvable only by the proxy (an
+    /// internal/proxy-only hostname), and a local DNS lookup would fail the request before the
+    /// proxy is even contacted. Use a target host that is guaranteed not to resolve (the
+    /// `.invalid` TLD, RFC 6761) together with a proxy whose port has no listener. With local
+    /// resolution skipped, the request must reach the proxy connect and fail there with a
+    /// connection error, not with a DNS lookup of the unresolvable target.
+    auto uri = Poco::URI("http://proxy-only-target.invalid:9999");
+
+    DB::ProxyConfiguration proxy_config;
+    proxy_config.host = "127.0.0.1";
+    /// TCPMUX (port 1) is a reserved port that almost never has a listener,
+    /// so connect attempts fail with ECONNREFUSED ("Connection refused").
+    proxy_config.port = 1;
+    proxy_config.protocol = DB::ProxyConfiguration::Protocol::HTTP;
+
+    auto pool = DB::HTTPConnectionPools::instance().getPool(
+        DB::HTTPConnectionGroupType::HTTP, uri, proxy_config);
+
+    bool reached_proxy_connect = false;
+    try
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+        FAIL() << "Expected the proxy connect to fail";
+    }
+    catch (const Poco::Exception & e)
+    {
+        /// The error must come from connecting to the proxy endpoint, proving the unresolvable
+        /// target host was never resolved locally. Had local resolution run, the request would
+        /// have failed first with a DNS error naming the target host. The positive signal is a
+        /// connection-level failure ("Connection refused" from the listener-less proxy port):
+        /// `Poco::Net::SocketImpl::connect` with a timeout reports a refused peer via `SO_ERROR`
+        /// after `poll`, and that path throws a `ConnectionRefusedException` whose message has no
+        /// address, so the proxy address text is not a reliable marker - match on the error kind,
+        /// and accept the address too for the synchronous-failure path.
+        const std::string text = e.displayText();
+        reached_proxy_connect = text.find("Connection refused") != std::string::npos
+            || text.find("127.0.0.1:1") != std::string::npos;
+        ASSERT_EQ(std::string::npos, text.find("proxy-only-target.invalid"))
+            << "Target host was resolved locally: " << text;
+    }
+    ASSERT_TRUE(reached_proxy_connect);
+}
+
+TEST_F(ConnectionPoolTest, RetriesNextAddressOnConnectFailure)
+{
+    /// Regression test for the PR's core fallback path: when the first resolved
+    /// address fails to connect with `Poco::Net::NetException` (e.g. ECONNREFUSED
+    /// on a dual-stack host whose first address is unroutable), the *current*
+    /// request must recover by trying the next resolved address instead of
+    /// propagating the network error.
+
+    /// Bind a server only to `127.0.0.1` (not wildcard), so connect attempts to
+    /// other loopback IPs (`127.0.0.99` below) are not silently accepted by the
+    /// existing test fixture server.
+    constexpr UInt16 secondary_port = 9872;
+    const String test_host = "dual-stack-test.invalid";
+    const Poco::Net::IPAddress bad_ip("127.0.0.99");
+    const Poco::Net::IPAddress good_ip("127.0.0.1");
+
+    auto secondary_options = std::make_shared<SafeHandler<RequestOptions>>();
+    secondary_options->set(RequestOptions());
+    Poco::Net::HTTPRequestHandlerFactory::Ptr factory = new HTTPRequestHandlerFactory(secondary_options);
+    Poco::Net::SocketAddress bind_addr(good_ip, secondary_port);
+    Poco::Net::ServerSocket server_socket(bind_addr);
+    auto secondary_server = std::make_unique<Poco::Net::HTTPServer>(
+        factory, server_socket, new Poco::Net::HTTPServerParams);
+    secondary_server->start();
+    SCOPE_EXIT({ secondary_server->stop(); });
+
+    /// Mock resolver. First call (from the resolver's constructor `update`) returns
+    /// only the bad address, so it is the only candidate `selectBest` can pick on
+    /// the first iteration. The connect attempt fails, the `NetException` catch
+    /// path calls `address.setFail()`, which re-runs `update` and the second call
+    /// returns both addresses - with the bad one pessimized, `selectBest` then
+    /// deterministically picks the working address.
+    ///
+    /// The injected mock resolver is registered in the global `HostResolversPool`
+    /// and outlives this test scope, so capture the call counter by value through
+    /// a `shared_ptr` to avoid leaving a dangling reference behind. The address
+    /// values are likewise captured by value (and pre-constructed above), which
+    /// also lets the static analyzer see that they are read.
+    auto resolve_calls = std::make_shared<std::atomic<size_t>>(0);
+    auto resolve_func = [resolve_calls, bad_ip, good_ip](const String &) -> std::vector<Poco::Net::IPAddress>
+    {
+        if (resolve_calls->fetch_add(1) == 0)
+            return {bad_ip};
+        return {bad_ip, good_ip};
+    };
+
+    struct ResolveMock : public DB::HostResolver
+    {
+        using ResolveFunction = DB::HostResolver::ResolveFunction;
+        ResolveMock(String h, Poco::Timespan history_, ResolveFunction f)
+            : DB::HostResolver(std::move(f), std::move(h), history_)
+        {}
+    };
+
+    auto mock_resolver = std::make_shared<ResolveMock>(
+        test_host,
+        Poco::Timespan(60 * 1000 * 1000),
+        std::move(resolve_func));
+    DB::HostResolversPool::instance().injectResolverForTest(test_host, mock_resolver);
+
+    auto uri = Poco::URI("http://" + test_host + ":" + std::to_string(secondary_port));
+    auto pool = DB::HTTPConnectionPools::instance().getPool(
+        DB::HTTPConnectionGroupType::HTTP, uri, DB::ProxyConfiguration{});
+    auto metrics = pool->getMetrics();
+    auto resolver_metrics = DB::HostResolver::getMetrics();
+
+    UInt64 created_before = DB::CurrentThread::getProfileEvents()[metrics.created];
+    UInt64 errors_before = DB::CurrentThread::getProfileEvents()[metrics.errors];
+    UInt64 failed_before = DB::CurrentThread::getProfileEvents()[resolver_metrics.failed];
+
+    UInt64 connect_time = 0;
+    auto connection = pool->getConnection(timeouts, &connect_time);
+    ASSERT_TRUE(connection->connected());
+
+    /// First attempt: connect to `bad_ip` → fails (counted in `errors` and resolver `failed`).
+    /// Retry: connect to `good_ip` → succeeds (counted in `created`).
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created] - created_before);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.errors] - errors_before);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[resolver_metrics.failed] - failed_before);
+
+    /// The retry path must still report the connection-establishment time to the caller: the
+    /// connect duration is accumulated across the failed and the successful attempt and written
+    /// back even though the first address failed. A unit test cannot deterministically time a
+    /// slow failed attempt, but a populated (non-zero) value here guards the accumulation
+    /// plumbing against a regression that would leave `connect_time` unwritten on the retry path.
+    ASSERT_GT(connect_time, 0u);
+
+    /// The recovered connection is fully usable.
+    echoRequest("Hello", *connection);
 }
 
 TEST_F(ConnectionPoolTest, StoreLimit)

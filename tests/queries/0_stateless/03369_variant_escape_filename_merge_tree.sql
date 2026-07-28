@@ -1,3 +1,6 @@
+-- Tags: no-darwin
+-- macOS filesystem (APFS) is case-insensitive, so MergeTree hashes stream filenames unconditionally
+-- (replace_long_file_name_to_hash=0 cannot be honored); on-disk column filenames differ from the reference.
 set enable_variant_type=1;
 
 drop table if exists test;

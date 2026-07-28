@@ -1,0 +1,73 @@
+---
+description: 'Documentación de DETACH'
+sidebarTitle: 'DETACH'
+slug: /sql-reference/statements/detach
+title: 'Sentencia DETACH'
+doc_type: 'reference'
+---
+
+Hace que el servidor &quot;olvide&quot; que existe una tabla, una vista materializada, un diccionario o una base de datos.
+
+**Sintaxis**
+
+```sql
+DETACH TABLE|VIEW|DICTIONARY|DATABASE [IF EXISTS] [db.]name [ON CLUSTER cluster] [PERMANENTLY] [SYNC]
+```
+
+Al desvincular, no se eliminan los datos ni los metadatos de una tabla, una vista materializada, un diccionario o una base de datos. Si una entidad no se desvinculó `PERMANENTLY`, en el siguiente inicio del servidor este leerá los metadatos y volverá a adjuntar la tabla/vista/diccionario/base de datos. Si una entidad se desvinculó `PERMANENTLY`, no habrá restauración automática.
+
+Tanto si una tabla, un diccionario o una base de datos se desvinculó permanentemente como si no, en ambos casos puede volver a adjuntarlos mediante la consulta [ATTACH](/es/reference/statements/attach).
+Las tablas de log del sistema también se pueden volver a adjuntar (p. ej., `query_log`, `text_log`, etc.). Otras tablas del sistema no se pueden volver a adjuntar. En el siguiente inicio del servidor, este volverá a adjuntar esas tablas.
+
+`ATTACH MATERIALIZED VIEW` no funciona con la sintaxis corta (sin `SELECT`), pero puede adjuntarla mediante la consulta `ATTACH TABLE`.
+
+Tenga en cuenta que no puede desvincular permanentemente una tabla que ya está desvinculada (temporalmente). Pero puede volver a adjuntarla y luego desvincularla permanentemente otra vez.
+
+Además, no puede [DROP](/es/reference/statements/drop#drop-table) la tabla desvinculada, ni [CREATE TABLE](/es/reference/statements/create/table) con el mismo nombre que una tabla desvinculada permanentemente, ni reemplazarla por otra tabla con la consulta [RENAME TABLE](/es/reference/statements/rename).
+
+El modificador `SYNC` ejecuta la acción sin demora.
+
+**Ejemplo**
+
+Creación de una tabla:
+
+```sql title="Query"
+CREATE TABLE test ENGINE = MergeTree ORDER BY () AS SELECT * FROM numbers(10);
+SELECT * FROM test;
+```
+
+```text title="Response"
+┌─number─┐
+│      0 │
+│      1 │
+│      2 │
+│      3 │
+│      4 │
+│      5 │
+│      6 │
+│      7 │
+│      8 │
+│      9 │
+└────────┘
+```
+
+Desvincular la tabla:
+
+```sql title="Query"
+DETACH TABLE test;
+SELECT * FROM test;
+```
+
+```text title="Response"
+Received exception from server (version 21.4.1):
+Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.test does not exist.
+```
+
+<Note>
+  En ClickHouse Cloud se debe usar la cláusula `PERMANENTLY`, por ejemplo, `DETACH TABLE <table> PERMANENTLY`. Si no se usa esta cláusula, las tablas se volverán a adjuntar al reiniciar el clúster, por ejemplo, durante las actualizaciones.
+</Note>
+
+**Véase también**
+
+* [Vista materializada](/es/reference/statements/create/view#materialized-view)
+* [Diccionarios](/es/reference/statements/create/dictionary)

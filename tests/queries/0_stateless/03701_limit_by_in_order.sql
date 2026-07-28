@@ -1,5 +1,6 @@
 -- In order version of LIMIT BY works only if analyzer enabled
 SET enable_analyzer = 1;
+SET explain_query_plan_default = 'legacy';
 SET query_plan_push_limit_by_into_sort = 1;
 
 DROP TABLE IF EXISTS 03701_unsorted, 03701_sorted;
@@ -90,8 +91,11 @@ SELECT DISTINCT 'Sorted ORDER BY key, dt LIMIT BY key, val: ' || replaceRegexpOn
 FROM (EXPLAIN PIPELINE SELECT key FROM 03701_sorted ORDER BY key, dt LIMIT 1 BY key, val LIMIT 10)
 WHERE explain LIKE '%LimitBy%Transform';
 
+OPTIMIZE TABLE 03701_sorted FINAL;
+
+-- For now, we intentionally do not use in order LIMIT BY for parallel replicas.
 SELECT DISTINCT 'Sorted w/o ORDER BY: ' || replaceRegexpOne(trim(BOTH ' ' FROM explain), ' × \\d+$', '')
-FROM (EXPLAIN PIPELINE SELECT key FROM 03701_sorted LIMIT 1 BY key LIMIT 10)
+FROM (EXPLAIN PIPELINE SELECT key FROM 03701_sorted LIMIT 1 BY key LIMIT 10 SETTINGS enable_parallel_replicas = 0)
 WHERE explain LIKE '%LimitBy%Transform';
 
 SELECT '';
