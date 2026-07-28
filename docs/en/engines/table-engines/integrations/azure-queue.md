@@ -195,3 +195,7 @@ exception:
 1 row in set. Elapsed: 0.002 sec.
 
 ```
+
+## Limitations {#limitations}
+
+`AzureQueue` shares the same implementation as `S3Queue` and has the same [limitations](/engines/table-engines/integrations/s3queue#limitations). In particular, a device-level power loss of the ClickHouse node can silently lose consumed rows: a file is recorded as processed in Keeper (and, with `after_processing = 'delete'`, its source blob removed) as soon as the insert finishes, but the inserted rows are only durable once the target part is fsynced, which does not happen synchronously by default (`fsync_after_insert = 0`). For the recommended materialized-view consumption path, setting `fsync_after_insert = 1` (and `fsync_part_directory = 1`) on the target `MergeTree` table narrows this window substantially.

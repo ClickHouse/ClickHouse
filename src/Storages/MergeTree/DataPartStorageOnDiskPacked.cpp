@@ -966,6 +966,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
             disk->createHardLink(getRelativeDataPath(), dest_storage->getRelativeDataPath());
     }
 
+    IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*dest_storage, "", params.invalidated_columns_to_write, write_settings);
+
     std::vector<std::string> all_files;
     src_disk->listFiles(getRelativePath(), all_files);
     for (const auto & file : all_files)
@@ -1104,6 +1106,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
             src_disk->copyFile(getRelativeDataPath(), *dst_disk, dest_storage->getRelativeDataPath(), read_settings, write_settings);
         }
     }
+
+    IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*dest_storage, "", params.invalidated_columns_to_write, write_settings);
 
     std::vector<std::string> all_files;
     src_disk->listFiles(getRelativePath(), all_files);
