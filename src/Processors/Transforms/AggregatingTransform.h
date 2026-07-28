@@ -157,8 +157,9 @@ private:
     AggregatedDataVariants & variants;
 
     /// Per-transform context of the adaptive aggregation; engaged when the shared state exists
-    /// on `many_data`.
-    std::optional<AdaptiveAggregationProducer> adaptive_context;
+    /// on `many_data`. Held by pointer: the producer's definition stays out of this widely
+    /// included header (see `AdaptiveAggregationImpl.h`).
+    std::unique_ptr<AdaptiveAggregationProducer> adaptive_context;
 
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;

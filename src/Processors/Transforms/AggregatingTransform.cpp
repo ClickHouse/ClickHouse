@@ -1,6 +1,8 @@
 #include <Columns/ColumnDecimal.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
+#include <Interpreters/AdaptiveAggregationImpl.h>
+
 #include <Common/CurrentThread.h>
 #include <Core/ProtocolDefines.h>
 #include <Formats/NativeReader.h>
@@ -869,7 +871,7 @@ AggregatingTransform::AggregatingTransform(
     , updater(std::move(updater_))
 {
     if (many_data->adaptive_session)
-        adaptive_context.emplace(many_data->adaptive_session);
+        adaptive_context = std::make_unique<AdaptiveAggregationProducer>(many_data->adaptive_session);
 }
 
 AggregatingTransform::~AggregatingTransform() = default;
@@ -1033,7 +1035,7 @@ void AggregatingTransform::consume(Chunk chunk)
                 key_columns,
                 aggregate_columns,
                 no_more_keys,
-                adaptive_context ? &*adaptive_context : nullptr))
+                adaptive_context.get()))
             is_consume_finished = true;
     }
 }

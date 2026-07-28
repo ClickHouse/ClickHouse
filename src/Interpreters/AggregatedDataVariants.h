@@ -328,4 +328,22 @@ struct AggregatedDataVariants : private boost::noncopyable
 using AggregatedDataVariantsPtr = std::shared_ptr<AggregatedDataVariants>;
 using ManyAggregatedDataVariants = std::vector<AggregatedDataVariantsPtr>;
 using ManyAggregatedDataVariantsPtr = std::shared_ptr<ManyAggregatedDataVariants>;
+
+/// The two-level twin of a convertible variant type; other types map to themselves.
+inline AggregatedDataVariants::Type convertToTwoLevelTypeIfPossible(AggregatedDataVariants::Type type)
+{
+    using Type = AggregatedDataVariants::Type;
+    switch (type)
+    {
+#define M(NAME) \
+    case Type::NAME: \
+        return Type::NAME##_two_level;
+        APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+#undef M
+        default:
+            return type;
+    }
+    UNREACHABLE();
+}
+
 }

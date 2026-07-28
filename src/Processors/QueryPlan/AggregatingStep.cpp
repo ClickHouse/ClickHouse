@@ -1,3 +1,4 @@
+#include <Interpreters/AdaptiveAggregationImpl.h>
 #include <cstddef>
 #include <memory>
 #include <numeric>

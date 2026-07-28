@@ -1,0 +1,274 @@
+#include <unordered_set>
+
+#include <Columns/ColumnConst.h>
+#include <Columns/IColumn.h>
+#include <Common/Arena.h>
+#include <Common/ProfileEvents.h>
+#include <Common/assert_cast.h>
+#include <Common/logger_useful.h>
+#include <Interpreters/AdaptiveAggregationImpl.h>
+
+namespace ProfileEvents
+{
+    extern const Event AdaptiveAggregationStagedRecordsMerged;
+    extern const Event AdaptiveAggregationSealedChunks;
+}
+
+namespace DB
+{
+
+StagedChunk::AggregatePayload::AggregatePayload() = default;
+StagedChunk::AggregatePayload::AggregatePayload(AggregatePayload &&) noexcept = default;
+StagedChunk::AggregatePayload & StagedChunk::AggregatePayload::operator=(AggregatePayload &&) noexcept
+    = default;
+StagedChunk::AggregatePayload::~AggregatePayload() = default;
+
+void Aggregator::prepareStagedChunk(StagedChunk & block) const
+{
+    auto & payload = std::get<StagedChunk::AggregatePayload>(block.payload);
+
+    auto prep = std::make_unique<StagedChunkPreparation>();
+    prep->aggregate_columns.resize(params.aggregates_size);
+    prepareAggregateInstructions(
+        payload.argument_columns, prep->aggregate_columns, prep->materialized_columns, prep->instructions, prep->nested_columns_holder);
+
+    payload.prepared = std::move(prep);
+}
+
+void Aggregator::initAdaptiveSession(AggregatedDataVariants & local_result, AdaptiveAggregationSession & shared) const
+{
+    auto early_drain_variants = std::make_shared<AggregatedDataVariants>();
+    early_drain_variants->aggregator = this;
+    early_drain_variants->keys_size = params.keys_size;
+    early_drain_variants->key_sizes = key_sizes;
+    early_drain_variants->init(convertToTwoLevelTypeIfPossible(local_result.type));
+
+    shared.early_drain_variants = std::move(early_drain_variants);
+    shared.initialized.store(true, std::memory_order_release);
+}
+
+void Aggregator::publishStagedChunk(
+    AdaptiveAggregationSession & shared, MutableStagedChunkPtr block) const
+{
+    chassert(block->wellFormed());
+
+    /// Prepared here, on the publishing thread, so the chunk is immutable once any bucket can
+    /// see it.
+    if (std::holds_alternative<StagedChunk::AggregatePayload>(block->payload))
+        prepareStagedChunk(*block);
+
+    shared.backlog.publish(std::move(block));
+}
+
+void AdaptiveAggregationSession::StagedBacklog::publish(const StagedChunkPtr & chunk)
+{
+    std::shared_lock registry_lock(registry_mutex);
+    for (size_t b = 0; b < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++b)
+    {
+        if (!chunk->keys.recordsForBucket(b))
+            continue;
+
+        auto & bucket = buckets[b];
+        std::lock_guard lock(bucket.mutex);
+        bucket.backlog.push_back(chunk);
+    }
+}
+
+std::vector<StagedChunkPtr> AdaptiveAggregationSession::StagedBacklog::takeAllForPressureDrain()
+{
+    std::vector<StagedChunkPtr> chunks;
+    std::unique_lock registry_lock(registry_mutex);
+    /// A chunk is registered with every bucket it has records for, so the swap-out sees it
+    /// once per such bucket and keeps the first appearance.
+    std::unordered_set<const void *> seen;
+    for (auto & bucket : buckets)
+    {
+        std::vector<StagedChunkPtr> claimed;
+        {
+            std::lock_guard bucket_lock(bucket.mutex);
+            claimed.swap(bucket.backlog);
+        }
+        for (auto & chunk : claimed)
+            if (seen.insert(chunk.get()).second)
+                chunks.push_back(std::move(chunk));
+    }
+    return chunks;
+}
+
+void Aggregator::stageChunk(
+    AdaptiveAggregationProducer & adaptive, MutableStagedChunkPtr block, size_t estimated_payload_bytes) const
+{
+    /// Coalescing pays in proportion to how many batches merge into one chunk. A batch of at
+    /// least half the seal target could only ever merge with one neighbor, gaining almost
+    /// nothing for a full extra copy of its data, so it is enqueued as-is.
+    if (estimated_payload_bytes * 2 >= adaptive_seal_target_bytes)
+    {
+        publishStagedChunk(*adaptive.session, std::move(block));
+        return;
+    }
+
+    adaptive.pending_chunks.push_back(std::move(block));
+    adaptive.pending_staged_bytes += estimated_payload_bytes;
+
+    if (adaptive.pending_staged_bytes >= adaptive_seal_target_bytes)
+        sealPendingChunks(adaptive);
+}
+
+void Aggregator::flushPendingChunks(AdaptiveAggregationProducer & adaptive) const
+{
+    if (!adaptive.pending_chunks.empty())
+        sealPendingChunks(adaptive);
+}
+
+void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
+{
+    constexpr size_t num_buckets = ADAPTIVE_AGGREGATION_NUM_BUCKETS;
+
+    auto & minis = adaptive.pending_chunks;
+    const size_t num_minis = minis.size();
+
+    if (num_minis == 1)
+    {
+        publishStagedChunk(*adaptive.session, minis.front());
+        minis.clear();
+        adaptive.pending_staged_bytes = 0;
+        return;
+    }
+
+    auto chunk = std::make_shared<StagedChunk>();
+    auto & keys = chunk->keys;
+    const bool counts_only = minis.front()->countsOnly();
+
+    if (counts_only)
+    {
+        sealValueStagedChunkDeduplicated(minis, *chunk);
+    }
+    else
+    {
+    auto columns_of = [](const StagedChunk & mini) -> const Columns &
+    { return std::get<StagedChunk::AggregatePayload>(mini.payload).argument_columns; };
+
+    /// Bucket b's records are the concatenation of the batches' b-slices in buffer order. Every
+    /// per-array pass below walks the same (bucket, batch) order, so a record keeps one position
+    /// across the key, hash, and argument arrays.
+    size_t total = 0;
+    for (size_t b = 0; b < num_buckets; ++b)
+    {
+        keys.bucket_offsets[b] = static_cast<UInt32>(total);
+        for (const auto & mini : minis)
+        {
+            chassert(mini->countsOnly() == counts_only);
+            total += mini->keys.recordsForBucket(b);
+        }
+    }
+    keys.bucket_offsets[num_buckets] = static_cast<UInt32>(total);
+
+    UInt64 total_key_bytes = 0;
+    for (const auto & mini : minis)
+        total_key_bytes += mini->keys.key_offsets[mini->keys.size()];
+
+    keys.routing_hashes.resize(total);
+    {
+        size_t pos = 0;
+        for (size_t b = 0; b < num_buckets; ++b)
+            for (const auto & mini : minis)
+            {
+                const size_t begin = mini->keys.bucket_offsets[b];
+                const size_t length = mini->keys.recordsForBucket(b);
+                if (!length)
+                    continue;
+                memcpy(&keys.routing_hashes[pos], &mini->keys.routing_hashes[begin], length * sizeof(UInt64));
+                pos += length;
+            }
+    }
+
+    keys.key_offsets.resize(total + 1);
+    keys.key_bytes.resize(total_key_bytes);
+    {
+        size_t pos = 0;
+        UInt64 byte_pos = 0;
+        for (size_t b = 0; b < num_buckets; ++b)
+            for (const auto & mini : minis)
+            {
+                const size_t begin = mini->keys.bucket_offsets[b];
+                const size_t length = mini->keys.recordsForBucket(b);
+                if (!length)
+                    continue;
+                const UInt64 src_begin = mini->keys.key_offsets[begin];
+                const UInt64 slice_bytes = mini->keys.key_offsets[begin + length] - src_begin;
+                memcpy(keys.key_bytes.data() + byte_pos, mini->keys.key_bytes.data() + src_begin, slice_bytes);
+                for (size_t j = 0; j < length; ++j)
+                    keys.key_offsets[pos + j] = byte_pos + (mini->keys.key_offsets[begin + j] - src_begin);
+                pos += length;
+                byte_pos += slice_bytes;
+            }
+        keys.key_offsets[total] = byte_pos;
+    }
+
+        auto & argument_columns = chunk->payload.emplace<StagedChunk::AggregatePayload>().argument_columns;
+        argument_columns.assign(columns_of(*minis.front()).size(), nullptr);
+        for (const auto & argument_positions : aggregates_positions)
+            for (const auto position : argument_positions)
+            {
+                if (argument_columns[position])
+                    continue;
+
+                /// A constant argument stays constant only when every batch agrees on the value.
+                /// The values can genuinely differ across the blocks of one stream, and
+                /// ColumnConst::insertRangeFrom ignores the source, so a mismatch materializes
+                /// every batch's column instead (the same treatment as Squashing).
+                bool all_const_equal = isColumnConst(*columns_of(*minis.front())[position]);
+                for (size_t m = 1; all_const_equal && m < num_minis; ++m)
+                {
+                    const auto & column = *columns_of(*minis[m])[position];
+                    all_const_equal = isColumnConst(column)
+                        && assert_cast<const ColumnConst &>(*columns_of(*minis.front())[position])
+                                   .getDataColumn()
+                                   .compareAt(0, 0, assert_cast<const ColumnConst &>(column).getDataColumn(), -1)
+                            == 0;
+                }
+                if (all_const_equal)
+                {
+                    argument_columns[position] = columns_of(*minis.front())[position]->cloneResized(total);
+                    continue;
+                }
+
+                VectorWithMemoryTracking<ColumnPtr> sources;
+                sources.reserve(num_minis);
+                for (const auto & mini : minis)
+                    sources.push_back(columns_of(*mini)[position]->convertToFullColumnIfConst());
+
+                auto destination = sources.front()->cloneEmpty();
+                destination->prepareForSquashing(sources, /* factor */ 1);
+                for (size_t b = 0; b < num_buckets; ++b)
+                    for (size_t m = 0; m < num_minis; ++m)
+                    {
+                        const size_t begin = minis[m]->keys.bucket_offsets[b];
+                        const size_t length = minis[m]->keys.recordsForBucket(b);
+                        if (length)
+                            destination->insertRangeFrom(*sources[m], begin, length);
+                    }
+                argument_columns[position] = std::move(destination);
+            }
+    }
+
+    size_t batch_records = 0;
+    for (const auto & mini : minis)
+        batch_records += mini->keys.size();
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSealedChunks);
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedRecordsMerged, batch_records - keys.size());
+    /// The merged-away records will never be drained: the counter must not keep phantoms.
+    adaptive.session->undrained_records.fetch_sub(batch_records - keys.size(), std::memory_order_relaxed);
+
+    LOG_TRACE(
+        log,
+        "Adaptive aggregation: sealed {} staged batches into one chunk of {} records",
+        num_minis,
+        keys.size());
+
+    publishStagedChunk(*adaptive.session, std::move(chunk));
+    minis.clear();
+    adaptive.pending_staged_bytes = 0;
+}
+
+}

@@ -4,9 +4,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
-#include <shared_mutex>
 #include <type_traits>
-#include <variant>
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 
@@ -14,7 +12,6 @@
 #include <Processors/Chunk.h>
 #include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
-#include <Common/HashTable/HashSet.h>
 #include <Common/Logger.h>
 #include <Common/MemoryTracker.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -28,6 +25,7 @@
 
 #include <Parsers/IAST_fwd.h>
 
+#include <Interpreters/AdaptiveAggregation.h>
 #include <Interpreters/AggregatedData.h>
 #include <Interpreters/AggregatedDataVariants.h>
 #include <Interpreters/AggregationMethod.h>
@@ -63,307 +61,7 @@ using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 class RuntimeDataflowStatisticsCacheUpdater;
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
-/// Shared state of the adaptive aggregation.
-/// One instance per aggregation, created by `AggregatingStep` when the query qualifies,
-/// owned by `ManyAggregatedData` and shared by all its transforms.
-///
-/// Production phase: every thread aggregates into its own local hash table as usual, until the
-/// table holds `adaptive_aggregator_freeze_threshold` keys and freezes. From that point a row
-/// whose key the table already holds (a frequent key, learned for free from the first rows)
-/// keeps aggregating in place with zero coordination, while a miss (a rare key) is not inserted
-/// anywhere: it becomes a delayed record in one of the 256 backlogs, chosen by the two-level
-/// bucket of the key's hash. A record is the key value itself with a run-length count when the
-/// only aggregate is count, and otherwise the key plus its row's aggregate-argument values,
-/// gathered into dense per-block columns at publish so the source block is released; both
-/// carry the precomputed routing hash. Nothing is drained while production runs unless memory
-/// demands it: past the external-aggregation threshold a pressure sweep drains the backlogs
-/// early into the shared routing table and, if that is not enough, spills the routing table
-/// through the ordinary external-aggregation machinery, so the memory bound holds.
-///
-/// Two guards hand the work back to the baseline path, with its ordinary byte-triggered
-/// two-level conversion, when freezing cannot pay. A table that consumes many times the
-/// threshold in rows while staying below it in keys gives up on freezing, per thread: the
-/// stream has few groups (typically with fat states, which want the conversion and its
-/// bucket-parallel merge). And when the staged stream as a whole proves to repeat the same keys
-/// over and over, every thread thaws its table: those repeats are neither frequent enough for
-/// the local tables nor rare keys to store once, and staging them re-processes the bulk of the
-/// stream that ordinary insertion would absorb as cheap in-place updates. The thaw verdict is
-/// remembered in the hash-table statistics, so later runs of the query skip the engagement
-/// altogether instead of re-measuring the stream.
-///
-/// Merge phase: at the end of input every local table converts to two-level and the standard
-/// bucket-parallel merge runs, except that the merge task owning bucket b first drains backlog b
-/// into the destination's bucket b (it is the exclusive owner, so no locks are needed) and only
-/// then folds the locals' bucket b in as usual.
-///
-/// The net effect: frequent keys stay in small cache-resident tables, and a rare key is stored
-/// and emplaced exactly once, by one thread, instead of once per thread that saw it.
 struct StagedChunkPreparation;
-
-/// Who owns a staged key once it is emplaced into a table: the merge-time drain borrows the
-/// chunk's bytes (the chunks are retained until after the conversion), while a pressure-time
-/// drain copies them into the bucket's arena, because freeing the chunks is its purpose.
-enum class AdaptiveKeyStorage
-{
-    BorrowFromChunk,
-    CopyToArena,
-};
-
-/// Why an early drain runs: the memory valve stops at its watermark and re-enqueues the rest,
-/// the finish path takes everything to put the backlogs into disk-mergeable form.
-enum class AdaptiveDrainGoal
-{
-    UntilLowWatermark,
-    All,
-};
-
-/// The staged records route by the two-level bucket of their key's hash, so the backlogs and
-/// the routing structures come in the same 256 buckets as the two-level hash tables.
-inline constexpr size_t ADAPTIVE_AGGREGATION_NUM_BUCKETS = 256;
-
-/// All delayed records of one consumed block, grouped by bucket. One record batch per
-/// consumed block, rather than one per (block, bucket); a thread's small batches are
-/// further coalesced into one larger chunk of the same shape before they reach the
-/// backlogs.
-struct StagedChunk
-{
-    /// The bucket-grouped key side of a staged chunk, shared by both payload modes: record i's
-    /// routing hash (reused by the drain's emplace) is `routing_hashes[i]` and its key bytes
-    /// occupy `key_bytes[key_offsets[i], key_offsets[i + 1])`; bucket b owns the record range
-    /// [bucket_offsets[b], bucket_offsets[b + 1]). The key bytes are staged so that the drain
-    /// emplaces without constructing a hashing state per (chunk, bucket) slice.
-    struct StagedKeys
-    {
-        PaddedPODArray<UInt64> routing_hashes;
-        PaddedPODArray<char> key_bytes;
-        PaddedPODArray<UInt64> key_offsets;
-        std::array<UInt32, ADAPTIVE_AGGREGATION_NUM_BUCKETS + 1> bucket_offsets{};
-
-        size_t size() const { return routing_hashes.size(); }
-        size_t recordsForBucket(size_t bucket) const { return bucket_offsets[bucket + 1] - bucket_offsets[bucket]; }
-        std::string_view keyBytesAt(size_t i) const
-        {
-            return {key_bytes.data() + key_offsets[i], key_offsets[i + 1] - key_offsets[i]};
-        }
-    };
-
-    /// Value staging (simple-count aggregation only): the record is the key itself plus a run
-    /// length - `multiplicities[i]` is how many source rows record i represents (repeats of a
-    /// key collapse into one record at staging time).
-    struct CountPayload
-    {
-        PaddedPODArray<UInt32> multiplicities;
-    };
-
-    /// Row-reference staging (general aggregates): record i reads its aggregate arguments from
-    /// row i of `argument_columns`, which hold the records' values gathered at publish in the
-    /// same bucket-grouped order, so a bucket's slice is a contiguous row range. Only the
-    /// aggregate-argument positions are filled, kept at their original indexes so that the
-    /// instruction preparation can index the vector; sparse arguments are materialized by the
-    /// gather, so the staged columns are always dense.
-    struct AggregatePayload
-    {
-        Columns argument_columns;
-
-        /// The aggregate-function instructions over `argument_columns`, built in the chunk's
-        /// own stable storage when the chunk is published (see `publishStagedChunk`), so a
-        /// published chunk is immutable and the drains read it without coordination.
-        std::unique_ptr<const StagedChunkPreparation> prepared;
-
-        AggregatePayload();
-        AggregatePayload(AggregatePayload &&) noexcept;
-        AggregatePayload & operator=(AggregatePayload &&) noexcept;
-        ~AggregatePayload();
-    };
-
-    StagedKeys keys;
-    std::variant<CountPayload, AggregatePayload> payload;
-
-    bool countsOnly() const { return std::holds_alternative<CountPayload>(payload); }
-
-    /// Debug-only structural invariants, checked at publication.
-    bool wellFormed() const
-    {
-        const size_t records = keys.size();
-        if (keys.key_offsets.size() != records + 1 || keys.bucket_offsets.back() != records)
-            return false;
-        for (size_t b = 0; b < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++b)
-            if (keys.bucket_offsets[b] > keys.bucket_offsets[b + 1])
-                return false;
-        for (size_t i = 0; i < records; ++i)
-            if (keys.key_offsets[i] > keys.key_offsets[i + 1])
-                return false;
-        if (const auto * counts = std::get_if<CountPayload>(&payload))
-            return counts->multiplicities.size() == records;
-        return true;
-    }
-};
-
-/// A published chunk is immutable; only the producer building a chunk holds it mutably.
-using StagedChunkPtr = std::shared_ptr<const StagedChunk>;
-using MutableStagedChunkPtr = std::shared_ptr<StagedChunk>;
-
-struct AdaptiveAggregationSession
-{
-    /// The 256 per-bucket chunk backlogs and the locking that keeps publication atomic.
-    /// TODO (nihalzp): Consider using a lock-free queue for the backlog, to avoid contention on the mutex.
-    class StagedBacklog
-    {
-    public:
-        /// Registers an immutable chunk with every bucket holding a non-empty slice.
-        void publish(const StagedChunkPtr & chunk);
-
-        /// Claims every enqueued chunk and drops the per-bucket registrations at once: each
-        /// chunk is then owned by the returned list alone, so it frees the moment its drain
-        /// completes and memory comes back chunk by chunk. Whatever producers publish after
-        /// the swap waits for the next sweep or for the merge.
-        std::vector<StagedChunkPtr> takeAllForPressureDrain();
-
-        /// The bucket's remaining chunks, read without the mutex: production is over by the
-        /// time the merge tasks run (the finish barrier ordered every producer's publish
-        /// before the merge sources were created), and the chunks deliberately stay put - the
-        /// merge emplaces keys that point into their staged bytes, so they must live until the
-        /// merged buckets are converted, and the session (owned by every merge source) is
-        /// exactly that lifetime.
-        const std::vector<StagedChunkPtr> & forMergeBucket(size_t bucket) const { return buckets[bucket].backlog; }
-
-    private:
-        struct Bucket
-        {
-            /// Guards the backlog list against concurrent appends, and against the swap-out
-            /// of a pressure sweep.
-            std::mutex mutex;
-            /// Chunks holding a non-empty slice for this bucket.
-            std::vector<StagedChunkPtr> backlog;
-        };
-
-        std::array<Bucket, ADAPTIVE_AGGREGATION_NUM_BUCKETS> buckets;
-
-        /// Makes a chunk's registration in the per-bucket backlogs atomic against a sweep's
-        /// collection: a sweep that caught a half-registered chunk would drain all of its
-        /// buckets chunk-major, and the publisher would then register the rest for a second,
-        /// double-counting drain at merge time. Publishers share the lock (per-bucket mutexes
-        /// still order their pushes); only a collecting sweep takes it exclusively.
-        std::shared_mutex registry_mutex;
-    };
-
-    StagedBacklog backlog;
-
-    /// An empty two-level variant of the query's aggregation method, initialized by the first
-    /// thread that freezes. Under memory pressure the production-time sweeps drain staged
-    /// records into it early (see `pressureDrainStagedBlocks`); it joins the merge set when it
-    /// holds data.
-    AggregatedDataVariantsPtr early_drain_variants;
-
-    /// Serializes pressure sweeps: one sweeper at a time sheds memory, and a single sweeper
-    /// needs no per-bucket coordination; merge-time drains run after the finish barrier and
-    /// need none either. Producers over the trigger block on it deliberately - pausing
-    /// production is the backpressure that lets the sweep win.
-    std::mutex pressure_sweep_mutex;
-    /// Whether any early drain moved records into `early_drain_variants`: the finish path then
-    /// includes it in the merge set.
-    std::atomic<bool> early_drain_started{false};
-    /// Set when the query is cancelled. The pressure sweeps check it between chunks and
-    /// buckets, so a dying query does not wait out a full sweep - which can include spilling
-    /// gigabytes to disk - before it stops.
-    std::atomic<bool> cancelled{false};
-    std::once_flag init_flag;
-    std::atomic<bool> initialized{false};
-
-    /// Records currently enqueued and not yet drained: publishes add, drains subtract their
-    /// actual progress, and the seal subtracts what its deduplication merges away. Read for
-    /// logging at the finish, after every producer flushed.
-    std::atomic<size_t> undrained_records{0};
-
-    /// The thaw sampler (see the tuning constants in `Aggregator.cpp`). At publish the threads
-    /// fold a sparse sample of their staged record hashes in here; repeats of a key collapse
-    /// onto one entry across all threads, so sampled records per distinct sampled hash estimates
-    /// the repeat factor of the staged stream as a whole, independently of how a key's
-    /// occurrences spread over the threads.
-    std::mutex thaw_sample_mutex;
-    HashSet<UInt64> distinct_sampled_hashes;
-    size_t thaw_sampled_records = 0;
-    size_t staged_records = 0;
-    /// Set once the staged stream proves repeat-dominated; every thread then thaws its local
-    /// table at the next block and returns to the baseline path for good.
-    std::atomic<bool> thaw_all{false};
-};
-
-using AdaptiveAggregationSessionPtr = std::shared_ptr<AdaptiveAggregationSession>;
-
-/// Per-transform context of the adaptive aggregation: the thread's lifecycle phase and its
-/// phase-owned counters, per-block staging for the missed rows (the arrays are cleared but
-/// keep their capacity across blocks), and the buffered chunks awaiting coalescing.
-struct AdaptiveAggregationProducer
-{
-    explicit AdaptiveAggregationProducer(AdaptiveAggregationSessionPtr shared_) : session(std::move(shared_)) { }
-
-    /// The thread starts learning: the local table inserts as usual while the freeze rule
-    /// watches its growth. Rows consumed here feed the give-up rule (see `executeOnBlock`).
-    struct LearningState
-    {
-        size_t rows_seen = 0;
-    };
-
-    /// The adaptive phase proper: the local table only updates the keys it already holds
-    /// and misses are staged for the shared drain. Carries the post-freeze hit-rate
-    /// sampling: when the frozen table turns out to hold almost none of the stream's keys
-    /// (a uniform high-cardinality distribution), probing it is pure overhead on every row;
-    /// after the sample window the kernel switches to staging every row without the lookup.
-    struct FrozenState
-    {
-        size_t sampled_rows = 0;
-        size_t sampled_hits = 0;
-        bool bypass_local_probe = false;
-    };
-
-    /// Terminal: the thread aggregates exactly as with the feature off, keeping only the
-    /// reason it stood down.
-    struct BaselineState
-    {
-        enum class Reason
-        {
-            /// The give-up rule: the table stayed far below the freeze threshold across
-            /// many times that many rows, so the stream is repeat-dominated locally.
-            TooFewDistinctKeys,
-            /// The global thaw: the session-wide staged-key sample proved the whole stream
-            /// repeat-dominated (see `publishDelayedRecords`).
-            RepeatedStagedKeys,
-        };
-        Reason reason;
-    };
-
-    using Phase = std::variant<LearningState, FrozenState, BaselineState>;
-    Phase phase = LearningState{};
-
-    bool isLearning() const { return std::holds_alternative<LearningState>(phase); }
-    bool isFrozen() const { return std::holds_alternative<FrozenState>(phase); }
-    bool isBaseline() const { return std::holds_alternative<BaselineState>(phase); }
-
-    void freeze() { phase = FrozenState{}; }
-    void standDown(BaselineState::Reason reason) { phase = BaselineState{.reason = reason}; }
-
-    AdaptiveAggregationSessionPtr session;
-
-    /// The current block's misses, one entry per delayed record, in staging order.
-    PaddedPODArray<UInt32> miss_source_rows;
-    PaddedPODArray<UInt64> miss_hashes;
-    PaddedPODArray<UInt8> miss_buckets;
-    PaddedPODArray<UInt64> miss_key_sizes;
-    PaddedPODArray<UInt32> miss_multiplicities;
-
-    /// Scratch for the value-staged publish grouping (see `buildDeduplicatedCountChunk`).
-    std::vector<std::pair<UInt64, UInt32>> sort_pairs_scratch;
-    std::vector<UInt32> group_offsets_scratch;
-    std::vector<UInt32> group_cursor_scratch;
-
-    /// Small per-block staging batches buffered for coalescing: they are merged into one
-    /// bucket-grouped chunk before they reach the backlogs (see `stageChunk`), so the
-    /// merge-time drain gets a few large contiguous slices per bucket instead of one tiny
-    /// slice per consumed block. Flushed by `flushPendingChunks` when the input ends.
-    std::vector<MutableStagedChunkPtr> pending_chunks;
-    size_t pending_staged_bytes = 0;
-};
 
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
@@ -377,6 +75,18 @@ struct AdaptiveAggregationProducer
   *  also overflow_row is added or not added (depending on the totals_mode setting) also - this will be TOTALS.
   */
 
+
+/// The state representation of simple-count aggregation (a lone `count()`): the mapped value
+/// itself is the UInt64 counter, so there is no allocated place to point to.
+inline UInt64 & getCountState(AggregateDataPtr __restrict place) /// NOLINT(readability-non-const-parameter)
+{
+    return *reinterpret_cast<UInt64 *>(place);
+}
+
+inline UInt64 & getInlineCountState(AggregateDataPtr & ptr)
+{
+    return getCountState(reinterpret_cast<AggregateDataPtr>(&ptr));
+}
 
 /** Aggregates the source of the blocks.
   */
