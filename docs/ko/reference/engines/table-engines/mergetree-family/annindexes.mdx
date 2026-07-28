@@ -370,13 +370,15 @@ ClickHouse는 각 part에서 벡터 인덱스를 통해 가장 가까운 이웃 
 
 ClickHouse의 스킵 인덱스는 일반적으로 그래뉼 수준에서 필터링합니다. 즉, 스킵 인덱스에서 내부적으로 조회를 수행하면 잠재적으로 일치하는 그래뉼 목록이 반환되며, 그 결과 후속 스캔에서 읽어야 할 데이터의 양이 줄어듭니다.
 이는 일반적인 스킵 인덱스에서는 잘 작동하지만, 벡터 유사성 인덱스에서는 &quot;세분화 수준 불일치&quot;가 발생합니다.
-좀 더 자세히 설명하면, 벡터 유사성 인덱스는 주어진 참조 벡터에 대해 가장 유사한 N개의 벡터에 해당하는 행 번호를 결정한 다음, 이 행 번호를 그래뉼 번호로 환산해야 합니다.
-그런 다음 ClickHouse는 디스크에서 해당 그래뉼을 로드하고, 그 그래뉼에 포함된 모든 벡터에 대해 거리 계산을 다시 수행합니다.
-이 단계를 rescoring이라고 하며, 이론적으로는 정확도를 높일 수 있지만 — 벡터 유사성 인덱스는 *근사* 결과만 반환한다는 점을 감안하더라도 — 성능 측면에서는 최적이라고 보기 어렵습니다.
+좀 더 자세히 설명하면, 벡터 유사성 인덱스는 주어진 기준 벡터에 대해 가장 유사한 N개의 벡터에 해당하는 행 번호를 결정합니다.
+`vector_search_with_rescoring = 1` 설정을 사용하면, ClickHouse는 후보 행에 대한 원본 전체 정밀도 벡터를 읽고 일반적인 SQL 파이프라인에서 최종 거리를 계산합니다.
+쿼리 계획에서 허용되는 경우, ClickHouse는 최종 거리 계산 전에 벡터 인덱스가 반환한 후보 행으로 스캔을 필터링합니다.
+이 단계를 rescoring이라고 하며, 최종 순위가 인덱스 거리 대신 저장된 벡터를 사용하므로 특히 양자화된 벡터 인덱스에서 정확도를 높일 수 있습니다.
+추가 필터로 인해 너무 많은 후보가 제거되거나 더 높은 재현율이 필요하면, 벡터 인덱스가 rescoring을 위해 더 많은 후보 행을 반환하도록 `vector_search_index_fetch_multiplier` 설정을 늘리십시오.
 
 따라서 ClickHouse는 rescoring을 비활성화하고 인덱스에서 가장 유사한 벡터와 그 거리를 직접 반환하는 최적화를 제공합니다.
 이 최적화는 기본적으로 활성화되어 있습니다. [vector&#95;search&#95;with&#95;rescoring](/ko/reference/settings/session-settings#vector_search_with_rescoring) 설정을 참조하십시오.
-개략적으로 보면, ClickHouse는 가장 유사한 벡터와 그 거리를 가상 컬럼 `_distances`를 통해 제공합니다.
+개략적으로 보면, ClickHouse는 가장 유사한 벡터와 그 거리를 가상 컬럼 `_distance`를 통해 제공합니다.
 이를 확인하려면 `EXPLAIN header = 1`과 함께 벡터 검색 쿼리를 실행하십시오:
 
 ```sql
@@ -411,7 +413,7 @@ Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
 ```
 
 <Note>
-  재점수화 없이 실행되는 쿼리(`vector_search_with_rescoring = 0`)라도 병렬 레플리카가 활성화되어 있으면 재점수화로 폴백될 수 있습니다.
+  rescoring 없이 실행되는 쿼리(`vector_search_with_rescoring = 0`)라도 병렬 레플리카가 활성화되어 있으면 rescoring으로 폴백될 수 있습니다.
 </Note>
 
 <div id="performance-tuning">
@@ -595,15 +597,16 @@ WHERE type = 'vector_similarity';
 이 서브 인덱스는 자신이 속한 인덱스 블록의 행만 알고 있다는 점에서 &quot;로컬&quot;입니다.
 앞선 예시에서 컬럼에 65536개의 행이 있다고 가정하면, 4개의 인덱스 블록(8개의 그래뉼에 걸쳐 있음)과 각 인덱스 블록에 대한 벡터 유사성 서브 인덱스를 얻게 됩니다.
 이론적으로 서브 인덱스는 자신이 담당하는 인덱스 블록 내에서 가장 가까운 N개의 점에 해당하는 행을 직접 반환할 수 있습니다.
-하지만 ClickHouse는 그래뉼 단위로 디스크에서 메모리로 데이터를 로드하므로, 서브 인덱스는 일치하는 행을 그래뉼 단위로 확장해 처리합니다.
-이는 일반 스키핑 인덱스가 인덱스 블록 단위로 데이터를 스키핑하는 것과 다릅니다.
+`vector_search_with_rescoring = 1`인 쿼리의 경우, 쿼리 계획이 이 최적화를 허용하면 ClickHouse는 저장된 벡터로부터 최종 거리를 계산하기 전에 이러한 행 위치를 사용해 행을 필터링할 수 있습니다.
+rescoring을 사용하지 않으면 ClickHouse는 가상 컬럼 `_distance`를 통해 벡터 인덱스의 거리를 직접 사용합니다.
+두 모드 모두 여전히 주변 그래뉼 범위를 사용해 읽기를 스케줄링하며, 이는 일반 스키핑 인덱스가 인덱스 블록 단위로 데이터를 스키핑하는 것과 다릅니다.
 
 `GRANULARITY` 매개변수는 생성되는 벡터 유사성 서브 인덱스의 개수를 결정합니다.
 `GRANULARITY` 값이 클수록 벡터 유사성 서브 인덱스 수는 줄어들지만 각 서브 인덱스는 더 커지며, 결국 컬럼(또는 컬럼의 데이터 파트)에 서브 인덱스가 하나만 남는 수준까지 갈 수 있습니다.
 이 경우 서브 인덱스는 컬럼의 모든 행을 &quot;전역적&quot;으로 볼 수 있으며, 관련 행이 있는 컬럼(파트)의 그래뉼을 직접 모두 반환할 수 있습니다(그러한 그래뉼 수는 최대 `LIMIT [N]`개입니다).
-두 번째 단계에서 ClickHouse는 이 그래뉼을 로드한 뒤, 해당 그래뉼의 모든 행에 대해 무차별 대입 방식으로 거리를 계산하여 실제로 가장 적합한 행을 식별합니다.
-`GRANULARITY` 값이 작으면 각 서브 인덱스가 최대 `LIMIT N`개의 그래뉼을 반환합니다.
-그 결과 더 많은 그래뉼을 로드한 후 후처리 필터링해야 합니다.
+`vector_search_with_rescoring = 1`이면, ClickHouse는 그런 다음 일치하는 행 위치를 읽고 해당 행에 대해 정확한 거리를 계산할 수 있습니다.
+`GRANULARITY` 값이 작으면 각 서브 인덱스는 최대 `LIMIT N`개의 후보 행을 반환할 수 있습니다.
+그 결과 더 많은 후보 행을 읽은 후 후처리 필터링해야 할 수 있습니다.
 검색 정확도는 두 경우 모두 동일하게 우수하며, 차이가 나는 것은 처리 성능뿐이라는 점에 유의하십시오.
 일반적으로 벡터 유사성 인덱스에는 큰 `GRANULARITY`를 사용하는 것이 권장되며, 벡터 유사성 구조의 메모리 사용량이 지나치게 커지는 등의 문제가 있을 때만 더 작은 `GRANULARITY` 값으로 낮추는 것이 좋습니다.
 벡터 유사성 인덱스에 `GRANULARITY`를 지정하지 않으면 기본값은 1억입니다.
@@ -641,6 +644,109 @@ LIMIT 3;
 * [dbpedia](/ko/get-started/sample-datasets/dbpedia)
 * [hackernews](/ko/get-started/sample-datasets/hacker-news-vector-search)
 
+<div id="vector-search-with-quantized-codecs">
+  ### 양자화된 코덱을 사용한 벡터 검색
+</div>
+
+<Note>
+  `Quantized` 코덱은 실험적 기능입니다. `SET allow_experimental_codecs = 1`을 설정하여 활성화하십시오.
+  문제가 발생하면 [ClickHouse 리포지토리](https://github.com/clickhouse/clickhouse/issues)에 이슈를 등록해 주십시오.
+</Note>
+
+<div id="quantized-codecs-introduction">
+  #### 소개
+</div>
+
+[벡터 유사성 인덱스](#vector-similarity-index)는 그래프를 순회해 최근접 이웃 쿼리에 응답하며, 그래프를 메모리에 유지할 수 있을 때 매우 뛰어난 성능을 발휘합니다.
+다음 두 가지 조건이 이 방식의 적용 범위를 제한합니다:
+
+* **규모.** 벡터 자체와 별도로 그래프를 빌드하는 데 걸리는 시간과 이를 저장하는 데 필요한 메모리가 지배적인 비용이 됩니다.
+* **필터링.** 선택적인 `WHERE` 필터가 있는 경우 그래프 순회는 비효율적입니다. 프레디케이트를 만족하는 소수의 행에 도달하지 못하거나, 그 행들을 찾기 위해 지나치게 많은 후보를 검사해야 하기 때문입니다.
+
+전수 스캔은 이 두 가지 제약을 모두 받지 않습니다. 보조 구조가 필요 없고, 파트는 이어 붙이는 방식으로 머지되며, 필터는 단순히 스캔할 행 수만 줄입니다.
+유일한 단점은 읽어야 할 데이터의 양입니다. 전체 `Float32` 정밀도로 저장된 벡터를 스캔하면 스토리지 I/O가 지배적인 비용이 됩니다. 전체 벡터 컬럼을 디스크(또는 객체 스토리지)에서 읽어야 하기 때문입니다. 조밀한 임베딩 컬럼에서는 이 컬럼이 테이블에서 가장 크고, 압축도 잘되지 않습니다.
+
+`Quantized` 컬럼 코덱은 이 단점을 해결합니다.
+각 벡터는 두 번 저장됩니다. 하나는 변경되지 않은 원래의 전체 정밀도 값이고, 다른 하나는 별도 스트림에 저장되는 컴팩트한 *양자화 코드*입니다.
+벡터 검색 쿼리는 먼저 비용이 낮고 SIMD에 적합한 거리 함수를 사용해 코드를 스캔하여 가장 유망한 후보의 후보군을 만든 다음, 이 후보군을 전체 정밀도 벡터를 기준으로 다시 순위화합니다.
+코드는 원시 벡터보다 훨씬 작으므로, 후보군 스캔은 스토리지에서 읽는 바이트 수를 크게 줄일 수 있고, 전체 정밀도 컬럼은 후보군에 포함된 소수의 후보에 대해서만 읽으면 됩니다. 그 결과 최종 순위화의 정확성은 그대로 유지됩니다.
+
+<div id="quantized-codecs-declaring">
+  #### 코덱 선언
+</div>
+
+`Array(Float32)`(또는 `Array(Float64)` / `Array(BFloat16)`) 컬럼에 `Quantized(...)` 코덱을 적용합니다.
+이 코덱은 실험적 기능이므로 먼저 `allow_experimental_codecs`를 활성화하십시오:
+
+```sql
+SET allow_experimental_codecs = 1;
+
+CREATE TABLE vectors
+(
+    id UInt32,
+    vec Array(Float32) CODEC(Quantized('rabitq', 1536))
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+전체 정밀도 데이터는 기존과 동일하게 저장되며, 코덱은 보조 code stream만 추가합니다.
+코덱은 테이블(table) 생성 시 고정되며, `ALTER TABLE`로 추가하거나 변경할 수 없습니다.
+
+<div id="quantized-codecs-methods">
+  #### 양자화 방식
+</div>
+
+각 방식은 크기 / 정확도 / 메트릭 사이의 트레이드오프에서 서로 다른 지점에 해당합니다. `dimensions` 인수는 벡터 길이입니다.
+
+* `Quantized('rabitq', dimensions)` — 좌표당 1개의 부호 비트와 편향 없는 코사인 보정 계수(`dimensions/8 + 4`바이트)를 사용합니다. 작고, `popcount` 계산 비용이 낮으며, 기본값으로 쓰기 좋은 강력한 선택지입니다. `cosineDistance`만 지원합니다.
+* `Quantized('turboquant', dimensions)` — 더 높은 충실도의 후보를 위해 좌표당 2비트(1비트 MSE 코드와 1비트 잔차 코드)를 사용합니다(`dimensions/4 + 4`바이트). `cosineDistance`만 지원합니다.
+* `Quantized('int8', dimensions)` — 좌표당 `Int8` 코드 1개와 벡터 노름을 사용합니다(`dimensions + 4`바이트). 크기는 가장 크지만 원본 보존도가 가장 높은 플랫 코드입니다. `L2Distance`와 `cosineDistance`를 지원합니다.
+* `Quantized('prefix', dimensions, leading_dimensions, 'int8'|'bf16')` — Matryoshka: 앞의 `leading_dimensions`개 좌표만 유지하고, `Int8`(벡터별 스케일 포함) 또는 `BFloat16`으로 저장합니다. Matryoshka Representation Learning으로 학습된 임베딩에 매우 작은 코드를 제공합니다. `L2Distance`와 `cosineDistance`를 지원합니다.
+* `Quantized('product', dimensions, nbits, m)` — Product Quantization: 파트별 코드북을 k-means로 학습하며, 각 벡터는 `nbits`비트 코드 `m`개로 표현됩니다(따라서 `dimensions`는 `m`의 배수여야 합니다). 가장 컴팩트한 옵션이며 바이트당 리콜도 가장 높지만, 삽입 시 학습 단계가 필요합니다. `L2Distance`와 `cosineDistance`를 지원합니다.
+
+`rabitq`와 `turboquant`는 `dimensions`가 8의 배수여야 합니다.
+
+<div id="quantized-codecs-searching">
+  #### 투명한 검색
+</div>
+
+별도의 쿼리 구문은 필요하지 않습니다. [정확한 검색](#exact-nearest-neighbor-search)에 사용하는 것과 동일한 top-`k` 쿼리를 작성하십시오:
+
+```sql
+WITH [/* reference vector of `dimensions` floats */] AS reference_vec
+SELECT id
+FROM vectors
+ORDER BY cosineDistance(vec, reference_vec) ASC
+LIMIT 10
+SETTINGS vector_search_use_quantized_codes = 1;
+```
+
+`vector_search_use_quantized_codes = 1`을 사용하면 최적화기가 쿼리를 자동으로 2단계 계획으로 재작성합니다. 먼저 양자화된 코드를 스캔해 후보군(후보군)을 추린 다음, 이 후보군을 전체 정밀도의 `vec`에 대해 다시 점수화합니다.
+이 설정은 기본적으로 비활성화되어 있으므로, 사용하지 않으면 동일한 쿼리는 일반적인 정확 스캔으로 실행됩니다. 코덱은 결과를 바꾸지 않으며, 명시적으로 활성화한 경우에만 더 빠른 경로를 제공합니다.
+선택한 메서드가 지원하는 거리 함수를 사용하십시오. 모든 메서드에서는 `cosineDistance`를 사용하고, `int8`, `prefix`, `product`에서는 추가로 `L2Distance`도 사용할 수 있습니다.
+
+<div id="quantized-codecs-settings">
+  #### 설정
+</div>
+
+* `allow_experimental_codecs` — `Quantized` 코덱을 선언하려면 이 설정을 활성화해야 합니다(기본값: `0`).
+* `vector_search_use_quantized_codes` — 2단계 후보군 선정 및 재채점 재작성을 활성화합니다(기본값: `0`). 비활성화되면 일치하는 쿼리는 전체 정밀도의 벡터를 정확하게 스캔합니다.
+* `vector_search_index_fetch_multiplier` — 쿼리의 `LIMIT` 대비 후보군에 포함할 후보 수를 지정합니다. 스캔은 재채점 전에 상위 `LIMIT × multiplier`개의 코드만 유지합니다. 값이 클수록 재채점 비용은 늘어나지만 재현율은 향상됩니다. 기본값은 `1`(오버샘플링 없음)이므로, 좋은 재현율을 얻으려면 일반적으로 이 값을 높여야 하며, 예를 들어 `10` 이상으로 설정합니다.
+
+<div id="quantized-codecs-built-for-scale">
+  #### 대규모 확장에 맞게 설계됨
+</div>
+
+이 코덱이 ClickHouse에 잘 맞는 이유는 비용이 큰 부분인 스캔이야말로 ClickHouse 엔진이 특히 잘 처리하도록 설계된 작업이기 때문입니다.
+
+* **벡터화.** 스캔 커널은 SIMD에 맞게 작성되었으며, CPU가 지원하는 가장 넓은 명령어를 사용할 수 있도록 런타임 디스패치를 수행합니다. 부호 코드 메서드(`rabitq`, `turboquant`)에는 하드웨어 `popcount`를 사용하고, 그 외에는 폭이 넓은 fused-multiply-add를 사용합니다.
+* **코어와 파트 전반에서 병렬 처리.** 플랫 스캔은 본질적으로 병렬화가 쉬우며, ClickHouse도 이를 그대로 활용합니다. 거리는 사용 가능한 모든 스레드와 테이블의 모든 파트에 걸쳐 동시에 계산되고, 최종 top-`k` 머지만 직렬로 수행됩니다.
+* **분산.** 세그먼트로 나뉜 cluster에서는 작업이 여러 머신으로 분산됩니다. 각 세그먼트가 자체 slice를 병렬로 스캔하고 coordinator가 후보군을 머지합니다.
+* **열 지향이며 필터에 친화적.** 양자화된 코드는 자체 컬럼에 저장되며, 압축된 상태로 다른 모든 컬럼과 동일한 I/O 경로를 통해 읽힙니다. 따라서 선택적인 `WHERE`를 사용하면 스캔할 코드 수만 줄어듭니다.
+* **별도의 build 단계가 없음.** 코드는 벡터가 기록될 때 생성되고 concatenation으로 머지됩니다. 즉, 생성, 튜닝, 재빌드해야 하는 인덱스가 없으므로 데이터가 적재되는 즉시 table을 검색할 수 있습니다.
+
+이 코드들은 후보를 생성하는 역할만 하며, 그대로 유지되는 전체 정밀도 컬럼이 최종적으로 정확한 순위를 제공합니다.
+
 <div id="approximate-nearest-neighbor-search-qbit">
   ### Quantized Bit (QBit)
 </div>
@@ -661,13 +767,14 @@ ClickHouse는 이러한 한계를 해결하기 위해 Quantized Bit (`QBit`) 데
 `QBit` 타입의 컬럼을 선언하려면 다음 구문을 사용하십시오:
 
 ```sql
-column_name QBit(element_type, dimension)
+column_name QBit(element_type, dimension[, stride])
 ```
 
 여기서:
 
-* `element_type` – 각 벡터 요소의 타입입니다. 지원되는 타입은 `BFloat16`, `Float32`, `Float64`입니다.
+* `element_type` – 각 벡터 요소의 타입입니다. 지원되는 타입은 `Int8`, `BFloat16`, `Float32`, `Float64`입니다.
 * `dimension` – 각 벡터의 차원입니다.
+* `stride` – 선택 사항입니다. `dimension`의 제수로, 차원을 각각 별도의 스트림에 저장되는 `dimension / stride`개의 연속된 그룹으로 나눕니다. 따라서 앞쪽 차원만 대상으로 검색할 경우 더 적은 수의 스트림만 읽으면 됩니다(Matryoshka embeddings에 유용함). 기본값은 `dimension`이며, 이 경우 해당 타입은 stride가 없는 `QBit`와 바이트 단위로 동일합니다. 자세한 내용은 [`QBit` 데이터 타입 페이지](/ko/reference/data-types/qbit)를 참조하십시오.
 
 <div id="qbit-create">
   #### `QBit` 테이블 만들기 및 데이터 추가

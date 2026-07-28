@@ -162,7 +162,7 @@ GROUP BY UserID;
 ```
 
 <Note>
-  El rendimiento de una consulta de este tipo depende en gran medida de la estructura de la tabla. Por ello, esta optimización no está habilitada de forma predeterminada.
+  El rendimiento de una consulta de este tipo depende de la estructura de la tabla. La optimización está habilitada de forma predeterminada desde la versión 26.7; las heurísticas de tiempo de ejecución la omiten automáticamente cuando la estructura de las particiones no es favorable, en concreto, cuando hay muy pocas particiones (menos de `max_threads / 2`), demasiadas particiones (más de `max_number_of_partitions_for_independent_aggregation`) o los tamaños de las particiones están muy sesgados (la partición más grande contiene más filas que el doble del número total de filas dividido por `max_threads`). La lista siguiente describe, en general, los factores de la estructura que favorecen un buen rendimiento; de ellos, solo el número de particiones y el sesgo de tamaño son aplicados por las heurísticas de tiempo de ejecución.
 </Note>
 
 Los factores clave para obtener un buen rendimiento son:

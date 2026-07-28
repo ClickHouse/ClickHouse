@@ -35,9 +35,7 @@ description: "이 튜토리얼에서는 Amazon EKS를 사용해 AWS에 ClickHous
 ***
 
 <Steps>
-  <Step>
-    ## 단계 1: ECR 액세스용 IAM 역할 생성
-
+  <Step title="단계 1: ECR 액세스용 IAM 역할 생성" id="phase-1-create-iam-role-for-ecr-access">
     ClickHouse 프라이빗 ECR에서 이미지를 가져올 수 있도록 IAM 역할을 생성합니다. 다음 CloudFormation template을 AWS 계정에 배포하세요:
 
     ```yaml expandable
@@ -94,9 +92,7 @@ description: "이 튜토리얼에서는 Amazon EKS를 사용해 AWS에 ClickHous
     ***
   </Step>
 
-  <Step>
-    ## 단계 2: Container 이미지 복사
-
+  <Step title="단계 2: Container 이미지 복사" id="phase-2-copy-container-images">
     각 산출물별로 계정에 ECR 리포지토리를 생성한 다음, skopeo를 사용해 ClickHouse ECR의 이미지를 자체 ECR로 복사하세요. `--all` 플래그는 모든 아키텍처(amd64, arm64)를 유지합니다.
 
     ```ini
@@ -125,9 +121,7 @@ description: "이 튜토리얼에서는 Amazon EKS를 사용해 AWS에 ClickHous
     ***
   </Step>
 
-  <Step>
-    ## 3단계: VPC 생성
-
+  <Step title="3단계: VPC 생성" id="phase-3-create-vpc">
     고가용성을 위해 최소 3개의 가용 영역으로 VPC를 생성합니다. 다음은 예시 구성입니다:
 
     | 설정           | 값              |
@@ -157,9 +151,7 @@ description: "이 튜토리얼에서는 Amazon EKS를 사용해 AWS에 ClickHous
     ***
   </Step>
 
-  <Step>
-    ## 단계 4: EKS 클러스터 생성
-
+  <Step title="단계 4: EKS 클러스터 생성" id="phase-4-create-eks-cluster">
     3단계의 VPC에 연결된 EKS 클러스터를 생성합니다. 이 클러스터에는 다음이 필요합니다.
 
     * IPv4를 사용하는 CNI plugin(예: IRSA와 함께 사용하는 [Amazon VPC CNI](https://github.com/aws/amazon-vpc-cni-k8s))
@@ -181,9 +173,7 @@ description: "이 튜토리얼에서는 Amazon EKS를 사용해 AWS에 ClickHous
     ***
   </Step>
 
-  <Step>
-    ## 5단계: 노드 그룹 생성
-
+  <Step title="5단계: 노드 그룹 생성" id="phase-5-create-node-groups">
     세 개의 노드 그룹을 생성하십시오. **모든 노드는 인증을 위해 [IMDS](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html)를 필요로 합니다.**
 
     Keeper 및 서버 노드 그룹의 경우, AZ 전반에 걸쳐 클러스터 오토스케일러를 지원하려면 AZ당 노드 그룹을 하나씩 생성하십시오.
@@ -349,9 +339,7 @@ description: "이 튜토리얼에서는 Amazon EKS를 사용해 AWS에 ClickHous
     ***
   </Step>
 
-  <Step>
-    ## 단계 6: S3 버킷 및 IAM 역할 생성
-
+  <Step title="단계 6: S3 버킷 및 IAM 역할 생성" id="phase-6-create-s3-bucket-and-iam-roles">
     ### S3 버킷
 
     EKS 클러스터와 동일한 리전에 암호화가 활성화된 S3 버킷(Standard 클래스)을 생성합니다. ClickHouse 클러스터마다 버킷을 하나씩 사용할 수도 있고, 클러스터별로 고유한 prefix를 사용하는 단일 버킷을 사용할 수도 있습니다.
@@ -395,9 +383,7 @@ description: "이 튜토리얼에서는 Amazon EKS를 사용해 AWS에 ClickHous
     ***
   </Step>
 
-  <Step>
-    ## 단계 7: Kubernetes 사전 요구 사항 설치
-
+  <Step title="단계 7: Kubernetes 사전 요구 사항 설치" id="phase-7-install-kubernetes-prerequisites">
     ### VolumeSnapshot CRDs 설치
 
     이러한 CRD는 ClickHouse Operator에 필요합니다.
@@ -443,9 +429,7 @@ description: "이 튜토리얼에서는 Amazon EKS를 사용해 AWS에 ClickHous
     ***
   </Step>
 
-  <Step>
-    ## 단계 8: Operator 설치
-
+  <Step title="단계 8: Operator 설치" id="phase-8-install-the-operator">
     필요한 경우 Helm을 사용해 ECR에 로그인합니다:
 
     ```ini
@@ -489,9 +473,7 @@ description: "이 튜토리얼에서는 Amazon EKS를 사용해 AWS에 ClickHous
     ***
   </Step>
 
-  <Step>
-    ## 9단계: ClickHouse 클러스터 배포
-
+  <Step title="9단계: ClickHouse 클러스터 배포" id="phase-9-deploy-a-clickhouse-cluster">
     ### 클러스터 이름 설정
 
     각 ClickHouse 클러스터는 EKS 클러스터 내에서 **고유한 이름**을 가져야 합니다. `$DESCRIPTOR-$LETTERS-$ORDINAL` 규칙을 사용하십시오:
@@ -579,9 +561,7 @@ description: "이 튜토리얼에서는 Amazon EKS를 사용해 AWS에 ClickHous
     ***
   </Step>
 
-  <Step>
-    ## 단계 10: Preflight 검사 실행
-
+  <Step title="단계 10: Preflight 검사 실행" id="phase-10-run-preflight-checks">
     클러스터가 준비되었는지 검증하려면 Preflight 검사를 실행하는 것이 좋습니다. Preflight 검사는 클러스터 진단을 위한 Kubernetes용 플러그인인 [Troubleshoot](https://troubleshoot.sh/)를 사용합니다.
 
     ### 플러그인 설치
@@ -621,9 +601,7 @@ description: "이 튜토리얼에서는 Amazon EKS를 사용해 AWS에 ClickHous
     ***
   </Step>
 
-  <Step>
-    ## 단계 11: 설치 확인
-
+  <Step title="단계 11: 설치 확인" id="phase-11-verify-installation">
     ### ClickHouse 서비스 포트 포워딩하기
 
     ```bash

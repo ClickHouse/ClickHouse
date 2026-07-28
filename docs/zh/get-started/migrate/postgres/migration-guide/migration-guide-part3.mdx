@@ -58,7 +58,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 <Image img="/images/migrations/postgres-partitions.webp" size="md" alt="PostgreSQL 分区到 ClickHouse 分区" />
 
-数据分区片段在磁盘上会按分区进行逻辑归属，并且可以单独查询。在下面的示例中，我们使用表达式 `toYear(CreationDate)` 按年份对 `posts` 表进行分区。当行被插入 ClickHouse 时，系统会对每一行计算该表达式，并将其写入对应的结果分区 (如果某一年份的第一行数据到来时该分区尚不存在，则会创建该分区) 。
+数据分区片段在磁盘上会按分区进行逻辑归属，并且可以单独查询。在下面的示例中，我们使用表达式 `toYear(CreationDate)` 按年份对 `posts` 表进行分区。当行被插入 ClickHouse 时，系统会对每一行计算该表达式，并将其路由到对应的分区 (如果某一年份的第一行数据到来时该分区尚不存在，则会创建该分区) 。
 
 ```sql
  CREATE TABLE posts
@@ -296,15 +296,15 @@ WHERE UserId = 8592047
   从 25.5 版本开始，ClickHouse 在
   PROJECTION中支持虚拟列 `_part_offset`。这带来了一种存储PROJECTION时更节省空间的方式。
 
-  更多详情，请参见[&quot;PROJECTION&quot;](/zh/concepts/features/projections/projections)
+  更多详情，请参见[“PROJECTION”](/zh/concepts/features/projections/projections)
 </Note>
 
 <div id="denormalization">
   ## 反规范化
 </div>
 
-由于 Postgres 是关系型数据库，其数据模型通常经过高度[规范化](https://en.wikipedia.org/wiki/Database_normalization)，往往包含数百张表。在 ClickHouse 中，为了优化 JOIN 性能，有时进行反规范化会更有优势。
+由于 Postgres 是关系型数据库，其数据模型通常高度[归一化](https://en.wikipedia.org/wiki/Database_normalization)，往往涉及数百张表。在 ClickHouse 中，为了优化 JOIN 性能，有时采用反规范化会更有优势。
 
-你可以参考这篇[指南](/zh/guides/clickhouse/data-modelling/denormalization)，其中展示了在 ClickHouse 中对 Stack Overflow 数据集进行反规范化所带来的好处。
+你可以参考这篇[指南](/zh/guides/clickhouse/data-modelling/denormalization)，其中展示了在 ClickHouse 中对 Stack Overflow 数据集进行反规范化的好处。
 
-如果你正从 Postgres 迁移到 ClickHouse，我们的基础指南到这里就结束了。我们建议你阅读[ClickHouse 数据建模指南](/zh/guides/clickhouse/data-modelling/schema-design)，进一步了解 ClickHouse 的高级功能。
+如果你正从 Postgres 迁移到 ClickHouse，我们的基础指南到这里就结束了。我们建议阅读[ClickHouse 数据建模指南](/zh/guides/clickhouse/data-modelling/schema-design)，进一步了解 ClickHouse 的高级功能。
