@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 set optimize_injective_functions_inside_uniq = 1;
 
 EXPLAIN SYNTAX select uniq(x), uniqExact(x), uniqHLL12(x), uniqCombined(x), uniqCombined64(x)
