@@ -1,12 +1,11 @@
-"""Regression tests: no CI job may fetch the obsolete chcache credential.
+"""Regression tests: nothing under `ci/` fetches the obsolete chcache credential.
 
-CI selects `sccache` for every build type (`ci/defs/defs.py`:
-`COMPILER_CACHE = COMPILER_CACHE_LEGACY = "sccache"`), so nothing reads the four
-`CH_*` variables that chcache consumes (`rust/chcache/src/config.rs`).
-
-Invariants pinned below: no reference under `ci/`, no `CH_*` export from the
-shared cache-setup helper, no second copy of the block in the jobs that build a
-binary, and an unaffected sccache/ctcache setup.
+`ci/defs/defs.py` names sccache in both `COMPILER_CACHE` and
+`COMPILER_CACHE_LEGACY`, leaving `CH_HOSTNAME`/`CH_USER`/`CH_PASSWORD`/
+`CH_USE_LOCAL_CACHE` (`rust/chcache/src/config.rs`) unread. Pinned: no
+`chcache_secret` grep hit; `setup_build_caches_env` exports none of them;
+`unit_tests_bugfix_validation_job`/`fast_test` keep no duplicate;
+`SCCACHE_S3_READ_ONLY`/`CTCACHE_DIR` still set.
 """
 
 import importlib
