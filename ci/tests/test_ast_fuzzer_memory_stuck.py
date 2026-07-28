@@ -57,12 +57,14 @@ def workspace(tmp_path, monkeypatch):
     monkeypatch.setattr(job, "WORKSPACE_PATH", ws)
     monkeypatch.setattr(job, "MEMORY_STUCK_MARKER", ws / "server_memory_stuck.txt")
     monkeypatch.setattr(job, "HARNESS_WATCHDOG", ws / "harness_watchdog.txt")
+    monkeypatch.setattr(job, "SERVER_STOPPING", ws / "server_stopping.txt")
     monkeypatch.setattr(
         job,
         "_STALE_RUN_STATE",
         (
             ws / "server_memory_stuck.txt",
             ws / "harness_watchdog.txt",
+            ws / "server_stopping.txt",
             ws / "status.tsv",
             ws / "server.log",
             ws / "stderr.log",
@@ -78,6 +80,29 @@ def workspace(tmp_path, monkeypatch):
 # --------------------------------------------------------------------------- #
 # structural-pin helpers (shared by the ordering / early-abort pins below)
 # --------------------------------------------------------------------------- #
+
+
+def _read_run_fuzzer_block(name: str) -> str:
+    """A marked block of run-fuzzer.sh, verbatim, by its BEGIN/END markers.
+
+    Same extraction as ci/tests/test_fuzzer_liveness_loop.py; used here only to pin
+    the ORDER of the shell-side witness write against the graceful stop, which the
+    Python-side tests cannot see.
+    """
+    import re
+
+    path = os.path.join(
+        os.path.dirname(__file__), "..", "jobs", "scripts", "fuzzer", "run-fuzzer.sh"
+    )
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    m = re.search(
+        rf"# BEGIN: {re.escape(name)}.*?\n(.*?)\n\s*# END: {re.escape(name)}",
+        text,
+        re.DOTALL,
+    )
+    assert m, f"BEGIN/END markers for {name!r} not found in run-fuzzer.sh"
+    return m.group(1)
 
 
 def assert_statically_reachable(func, stmt, what):
@@ -1722,6 +1747,54 @@ def test_early_abort_reports_a_startup_crash_with_no_marker(workspace):
     assert (
         job._early_abort_status(ValueError("malformed"), [selected])
         == Result.Status.ERROR
+    )
+
+
+def test_early_abort_after_the_graceful_stop_keeps_our_sigterm_out(workspace):
+    # Mirror image of the startup case, and the regression parsing every early abort
+    # would otherwise introduce: run-fuzzer.sh stops the server BEFORE writing
+    # status.tsv, so an abort in that window leaves no marker and no watchdog while
+    # the log already holds OUR "Received signal 15". Without a witness that the
+    # stop was ours, that routine SIGTERM becomes the failure row and a harness
+    # error is reported as a misleading FAIL (reproduced: selected name went from
+    # 'Unknown error' to 'Received signal 15 (STID: None)').
+    server_log = workspace / "server.log"
+    server_log.write_text(
+        "2026.07.25 00:00:00.000000 [ 1 ] {} <Information> Application: "
+        "Received signal 15\n",
+        encoding="utf-8",
+    )
+    (workspace / "server_stopping.txt").write_text("phase=shutdown\n", encoding="utf-8")
+    selected = job._parse_and_select_failure(
+        server_log,
+        workspace / "stderr.log",
+        workspace / "fuzzer.log",
+        False,
+        None,
+        None,
+        server_stopped_by_harness=True,
+    )
+    assert selected is None or "Received signal 15" not in selected.name, (
+        f"our own graceful-stop signal became the failure row: {selected.name!r}"
+    )
+
+
+def test_shutdown_witness_is_consulted_and_cleaned():
+    # The witness only works if it is (a) read when deciding whether the stop was
+    # ours and (b) cleaned pre-run like the markers -- a leftover from a previous
+    # run on a reused worktree would suppress a genuine server signal.
+    assert job.SERVER_STOPPING in job._STALE_RUN_STATE, (
+        "the shutdown witness must be cleaned pre-run, or a stale one silences a "
+        "real signal in the next run"
+    )
+    assert "SERVER_STOPPING" in set(job.run_fuzz_job.__code__.co_names)
+    # run-fuzzer.sh must write it BEFORE stopping the server, otherwise the very
+    # window it exists to cover is still uncovered.
+    block = _read_run_fuzzer_block("server teardown poll")
+    write = block.index("server_stopping.txt")
+    stop = block.index("stop_server &")
+    assert write < stop, (
+        "the shutdown witness must be written before the graceful stop begins"
     )
 
 

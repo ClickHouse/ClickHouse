@@ -42,6 +42,12 @@ JOB_ARTIFACTS = (
 MEMORY_STUCK_MARKER = WORKSPACE_PATH / "server_memory_stuck.txt"
 HARNESS_WATCHDOG = WORKSPACE_PATH / "harness_watchdog.txt"
 
+# Written by run-fuzzer.sh immediately BEFORE it stops the server, so an abort
+# between the graceful stop and the status.tsv write can still be distinguished
+# from a startup failure. NOT a failure marker: it never sets a status, it only
+# witnesses that a "Received signal 15" in the log is ours.
+SERVER_STOPPING = WORKSPACE_PATH / "server_stopping.txt"
+
 # Wall-clock bound on host-side core collection (compress + encrypt, up to 3
 # cores). Both callers PERSIST the classified result before collecting, so this
 # bound decides core-vs-no-core, never report-vs-no-report.
@@ -78,6 +84,9 @@ MEMORY_STUCK_NAME = "Server unresponsive: memory limit exceeded"
 _STALE_RUN_STATE = (
     MEMORY_STUCK_MARKER,
     HARNESS_WATCHDOG,
+    # Must be cleaned like the markers: a leftover witness would tell the next run
+    # that its server's signal line is self-inflicted and suppress a real finding.
+    SERVER_STOPPING,
     WORKSPACE_PATH / "status.tsv",
     WORKSPACE_PATH / "server.log",
     WORKSPACE_PATH / "stderr.log",
@@ -1156,7 +1165,17 @@ def run_fuzz_job(check_name: str):
         # sites). Gating the parser on a marker discarded the stable finding name
         # and its reproduction files for exactly that class, reporting a real crash
         # as a generic harness error.
-        classified = marker_result is not None or watchdog_result is not None
+        # "The harness had already stopped the server" is true for a classified run
+        # (status.tsv is written after the graceful stop) AND for any run that got as
+        # far as the shutdown phase, which run-fuzzer.sh records before stopping.
+        # Both must count: an abort in the window between the graceful stop and the
+        # status.tsv write leaves no marker, and without that witness our own
+        # "Received signal 15" would be reported as the failure.
+        stopped_by_harness = (
+            marker_result is not None
+            or watchdog_result is not None
+            or SERVER_STOPPING.exists()
+        )
         sub_results = [r for r in (marker_result, watchdog_result) if r is not None]
         selected = _parse_and_select_failure(
             server_log,
@@ -1165,16 +1184,13 @@ def run_fuzz_job(check_name: str):
             buzzhouse,
             marker_result,
             watchdog_result,
-            # Only a CLASSIFIED abort is known to be post-graceful-stop: status.tsv
-            # is written after it, so a marker/watchdog run reaching here had its
-            # server stopped by us, and without this a reap-only run (which leaves
-            # the server healthy, so the stage checks correctly do not fire) would
-            # have its watchdog ERROR replaced by our own "Received signal 15".
-            #
-            # An unclassified abort has no such witness and is typically a startup
-            # failure where no stop ever ran, so claiming otherwise would suppress a
-            # genuine server signal -- the one line such a crash may consist of.
-            server_stopped_by_harness=classified,
+            # A startup failure that dies before the shutdown phase has no witness
+            # and no stop ever ran, so claiming one would suppress a genuine server
+            # signal -- the one line such a crash may consist of. Everything from the
+            # shutdown phase onwards does have a witness (see above), including a
+            # reap-only run whose server stays healthy and whose stage checks
+            # therefore correctly do not fire.
+            server_stopped_by_harness=stopped_by_harness,
         )
         if selected is not None:
             # With a marker present the parser outranks it (a late abort after the

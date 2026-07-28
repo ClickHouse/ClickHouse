@@ -683,6 +683,13 @@ function fuzz
     # stop_server returns in ~10-15s). On deadline, SIGKILL the server (gdb
     # first) and record the abnormal state so classification cannot report OK.
     # BEGIN: server teardown poll (exercised verbatim by ci/tests/test_fuzzer_liveness_loop.py)
+    # Record that WE are about to stop the server, BEFORE doing it. status.tsv is
+    # written only after this poll, so a `set -e` abort in between leaves a run with
+    # no marker and no watchdog whose log nonetheless contains our own
+    # "Received signal 15" -- and the classifier, having nothing that says the stop
+    # was ours, would report that SIGTERM as the failure. This file is that witness.
+    # It is not a failure marker: it never sets a status by itself.
+    echo "phase=shutdown" > server_stopping.txt
     stop_server &
     stop_server_pid=$!
     server_exit_code=0
