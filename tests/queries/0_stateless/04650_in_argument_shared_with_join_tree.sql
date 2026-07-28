@@ -7,11 +7,15 @@
 -- instance in place (createUniqueAliasesIfNecessary, GLOBAL IN external tables, rewrite_in_to_join),
 -- and with a shared node those edits land in the join tree.
 -- The measured pre-fix failures for the shapes below are noted per group.
+-- (The exists consumer of the same resolution site cannot carry this: its argument is always a
+-- parsed subquery, never an identifier.)
 
-DROP TABLE IF EXISTS t_04650_l;
-DROP TABLE IF EXISTS t_04650_r;
-DROP TABLE IF EXISTS t_04650_set;
-DROP TABLE IF EXISTS t_04650_mt;
+-- The cleanup statements pin ignore_drop_queries_probability: the stress runner injects 0.2 for
+-- every statement, which would silently skip these drops and leak tables into a shared database.
+DROP TABLE IF EXISTS t_04650_l SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_04650_r SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_04650_set SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_04650_mt SETTINGS ignore_drop_queries_probability = 0;
 
 CREATE TABLE t_04650_l (x Int32) ENGINE = Memory;
 CREATE TABLE t_04650_r (x Int32) ENGINE = Memory;
@@ -169,7 +173,7 @@ SELECT count() > 0 FROM (EXPLAIN QUERY TREE run_passes = 1
   WITH c AS (SELECT x AS a FROM t_04650_l ORDER BY a WITH FILL FROM 1 TO 9 STEP 1) SELECT * FROM c
 ) WHERE explain ILIKE '%EXPRESSION a%';
 
-DROP TABLE t_04650_mt;
-DROP TABLE t_04650_set;
-DROP TABLE t_04650_r;
-DROP TABLE t_04650_l;
+DROP TABLE t_04650_mt SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE t_04650_set SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE t_04650_r SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE t_04650_l SETTINGS ignore_drop_queries_probability = 0;
