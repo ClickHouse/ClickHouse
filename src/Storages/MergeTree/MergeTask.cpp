@@ -2374,7 +2374,8 @@ bool MergeTask::MergeTextIndexStage::prepare() const
             index_ptr,
             global_ctx->merged_part_offsets,
             reader_settings,
-            global_ctx->to->getWriterSettings());
+            global_ctx->to->getWriterSettings(),
+            ctx->need_sync);
 
         ctx->merge_tasks.emplace_back(std::move(task));
     }
