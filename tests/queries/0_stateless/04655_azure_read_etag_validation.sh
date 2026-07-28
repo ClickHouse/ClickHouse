@@ -13,7 +13,7 @@ on_exit() {
 trap on_exit EXIT
 
 connection="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;"
-container="cont04655${CLICKHOUSE_DATABASE}"
+container="cont-$(echo "${CLICKHOUSE_TEST_UNIQUE_NAME}" | tr _ -)"
 blob="04655_etag.csv"
 
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO FUNCTION azureBlobStorage('$connection', '$container', '$blob', 'CSV', 'auto', 'n UInt64') SELECT number FROM numbers(100) SETTINGS azure_truncate_on_insert = 1"
