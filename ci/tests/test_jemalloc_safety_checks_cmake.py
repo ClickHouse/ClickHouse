@@ -118,19 +118,55 @@ def _strip_cmake_comments(text: str) -> str:
     return "\n".join(line.split("#", 1)[0] for line in text.splitlines())
 
 
-_OPTION_BLOCK_OPEN_RE = re.compile(rf"^if \(\s*{OPTION_NAME}\s*\)\s*$")
+# CMake command names are case-insensitive, so every construct recognised below is
+# matched with an inline `(?i:...)` group covering the command name and nothing else.
+# `contrib/` already uses the uppercase style in hundreds of places, and under it a
+# case-sensitive scanner stops seeing the very constructs it exists to reject.
+# The `(?i:...)` scope is deliberately narrow: CMake's `PRIVATE` keyword and the
+# `_jemalloc` target name are case-*sensitive* (`private` is a hard CMake error, and
+# `_JEMALLOC` is not a target of this project), so a blanket `re.I` would make this
+# guard read an invocation CMake itself rejects.
+_OPTION_BLOCK_OPEN_RE = re.compile(rf"^(?i:if)\s*\(\s*{OPTION_NAME}\s*\)\s*$")
 # Every CMake construct that opens a scope CMake may never enter, or may enter zero
 # times, is counted - not just `if`/`endif`. A `foreach` over an empty list runs its
 # body no times, so a definition inside it is as conditional as one in a branch.
-_CMAKE_BLOCK_OPEN_RE = re.compile(r"^(?:if|foreach|while|function|macro|block)\s*\(")
+_CMAKE_BLOCK_OPEN_RE = re.compile(r"^(?i:if|foreach|while|function|macro|block)\s*\(")
 _CMAKE_BLOCK_CLOSE_RE = re.compile(
-    r"^end(?:if|foreach|while|function|macro|block)\s*\("
+    r"^(?i:end(?:if|foreach|while|function|macro|block))\s*\("
 )
 # `else`/`elseif` open no scope: they end the arm CMake runs when the option is on.
-_CMAKE_ARM_RE = re.compile(r"^(?:else|elseif)\s*\(")
+_CMAKE_ARM_RE = re.compile(r"^(?i:else|elseif)\s*\(")
 _PRIVATE_DEFINITIONS_RE = re.compile(
-    r"target_compile_definitions\s*\(\s*_jemalloc\s+PRIVATE\s+(.*?)\)", re.S
+    r"(?i:target_compile_definitions)\s*\(\s*_jemalloc\s+PRIVATE\s+(.*?)\)", re.S
 )
+
+# The commands this scanner knows how to reason about. Anything else inside the option
+# block means the block's effective definitions are no longer decidable by reading it,
+# so the guard fails closed instead of treating the unknown command as inert.
+_MODELLED_BLOCK_COMMANDS = frozenset(
+    {
+        "target_compile_definitions",
+        "if",
+        "else",
+        "elseif",
+        "endif",
+        "foreach",
+        "endforeach",
+        "while",
+        "endwhile",
+        "function",
+        "endfunction",
+        "macro",
+        "endmacro",
+        "block",
+        "endblock",
+        "message",
+        "set",
+    }
+)
+# A command invocation is a name immediately followed by `(`, so a continuation line of
+# a reflowed invocation (a bare `-DMACRO`) is not mistaken for one.
+_BLOCK_COMMAND_RE = re.compile(r"^\s*([A-Za-z_]\w*)\s*\(")
 
 
 def _definitions_block_lines(text: str) -> list[tuple[int, str, bool]]:
@@ -141,7 +177,8 @@ def _definitions_block_lines(text: str) -> list[tuple[int, str, bool]]:
     stripped first, so every consumer below sees only active code.
 
     Control flow is tracked by *depth* rather than matched with a regex: every block
-    opener/closer pair is counted regardless of indentation, so a nested construct
+    opener/closer pair is counted regardless of indentation, and command names are
+    matched case-insensitively because CMake treats them so, so a nested construct
     cannot be mistaken for part of the block's own top level. A regex ending at the
     first column-0 `endif ()` swallows an indented inner `endif ()` and reports a block
     spanning the nested branch, which lets a `target_compile_definitions` CMake may
@@ -189,7 +226,7 @@ def _definitions_block_lines(text: str) -> list[tuple[int, str, bool]]:
     with_definitions = [
         b
         for b in blocks
-        if any("target_compile_definitions" in line for _, line, _ in b)
+        if any("target_compile_definitions" in line.lower() for _, line, _ in b)
     ]
     assert with_definitions, (
         f"no `if ({OPTION_NAME}) ... endif ()` block containing "
@@ -199,7 +236,29 @@ def _definitions_block_lines(text: str) -> list[tuple[int, str, bool]]:
         f"expected exactly one `{OPTION_NAME}` block defining compile definitions, "
         f"found {len(with_definitions)}"
     )
-    return with_definitions[0]
+    block = with_definitions[0]
+    # Fail closed on any command this scanner does not model. Enumerating the known
+    # constructs and treating the rest as unconditional is how each new spelling turns
+    # into a wrong green: `cmake_language(EVAL CODE "...")` hides the invocation from
+    # every reader, and a `return ()` above it means CMake never reaches it, yet both
+    # read as an unconditional definition.
+    unmodelled = sorted(
+        {
+            match.group(1)
+            for match in (_BLOCK_COMMAND_RE.match(line) for _, line, _ in block)
+            if match and match.group(1).lower() not in _MODELLED_BLOCK_COMMANDS
+        }
+    )
+    assert not unmodelled, (
+        f"{JEMALLOC_CMAKE_REL}: the `{OPTION_NAME}` block invokes commands this guard "
+        f"does not model ({unmodelled}). It models a fixed command vocabulary, so an "
+        "unmodelled command means the block's effective definitions are no longer "
+        "decidable by reading it - `cmake_language (EVAL CODE ...)` hides the "
+        "invocation, `return ()` or `include ()` change which lines CMake reaches at "
+        "all. Re-derive this guard against the new shape rather than letting it "
+        "approximate the block."
+    )
+    return block
 
 
 def _private_definitions_arguments(text: str) -> str:
@@ -569,6 +628,247 @@ def test_unbalanced_control_flow_fails_closed():
         _private_definitions_arguments(unbalanced)
 
 
+# --- the assertion's own negative cases, part three: command-name case ----------------
+#
+# CMake command names are case-insensitive, and `contrib/` already uses the uppercase
+# style widely, so every construct the cases above pin must be recognised under it too.
+# Otherwise each of those shapes reappears as a wrong green with only the keyword's case
+# changed - including the full vacuous-lane shape, where the option defines neither macro.
+
+_INLINE_UPPER_ELSE_ARM = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_OPT_SAFETY_CHECKS)\n"
+    "ELSE ()\n"
+    "    target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "endif ()\n"
+)
+
+_INLINE_UPPER_ELSEIF_ARM = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_OPT_SAFETY_CHECKS)\n"
+    "ELSEIF (SOME_CONDITION)\n"
+    "    target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "endif ()\n"
+)
+
+_INLINE_UPPER_NESTED_IF = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    IF (SOME_CONDITION)\n"
+    "        target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "    ENDIF ()\n"
+    "    target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_OPT_SAFETY_CHECKS)\n"
+    "endif ()\n"
+)
+
+_INLINE_MIXED_CASE_FOREACH_BODY = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_OPT_SAFETY_CHECKS)\n"
+    "    Foreach (item IN LISTS MAYBE_EMPTY_LIST)\n"
+    "        target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "    EndForeach ()\n"
+    "endif ()\n"
+)
+
+_INLINE_UPPER_WHILE_BODY = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_OPT_SAFETY_CHECKS)\n"
+    "    WHILE (SOME_CONDITION)\n"
+    "        target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "    ENDWHILE ()\n"
+    "endif ()\n"
+)
+
+# An entirely uppercase but perfectly valid file: CMake runs this exactly like the real
+# lowercase one, so the guard must read the definitions as present. This is the case that
+# pins the block-selection substring test, which is easy to miss.
+_INLINE_ALL_UPPERCASE_VALID = (
+    "IF (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    TARGET_COMPILE_DEFINITIONS(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "ENDIF ()\n"
+)
+
+# The vacuous-lane shape spelled with an uppercase `ELSE`: the armed path defines nothing.
+_INLINE_UPPER_ELSE_ARM_ONLY = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    '    message (STATUS "safety checks requested")\n'
+    "ELSE ()\n"
+    "    target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "endif ()\n"
+)
+
+_INLINE_UPPER_INNER_IF_UNCLOSED = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    IF (SOME_CONDITION)\n"
+    "        target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "endif ()\n"
+)
+
+# The two spellings CMake really is case-*sensitive* about. Both are invocations CMake
+# rejects outright, so the guard must not read either as defining anything - which is
+# what a blanket case-insensitive match on the whole invocation would do.
+_INLINE_LOWERCASE_PRIVATE_KEYWORD = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    target_compile_definitions(_jemalloc private"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "endif ()\n"
+)
+
+_INLINE_UPPERCASE_TARGET_NAME = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    target_compile_definitions(_JEMALLOC PRIVATE"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "endif ()\n"
+)
+
+
+@pytest.mark.parametrize(
+    "label, text, size_macro_expected",
+    [
+        ("uppercase ELSE arm of the option's own if", _INLINE_UPPER_ELSE_ARM, False),
+        ("uppercase ELSEIF arm", _INLINE_UPPER_ELSEIF_ARM, False),
+        ("uppercase IF/ENDIF nested branch", _INLINE_UPPER_NESTED_IF, False),
+        ("MixedCase Foreach body", _INLINE_MIXED_CASE_FOREACH_BODY, False),
+        ("uppercase WHILE body", _INLINE_UPPER_WHILE_BODY, False),
+        ("all-uppercase but valid file", _INLINE_ALL_UPPERCASE_VALID, True),
+    ],
+)
+def test_command_names_are_recognised_regardless_of_case(
+    label, text, size_macro_expected
+):
+    """CMake command names are case-insensitive, so this guard's recognition must be.
+
+    Every shape here executes in CMake exactly like its lowercase twin above. Were the
+    scanner case-sensitive, each would be read as an unconditional definition, which is
+    the same wrong green as before with only the keyword's case changed.
+    """
+    arguments = _private_definitions_arguments(text)
+    assert ("JEMALLOC_OPT_SIZE_CHECKS" in _missing_macros(arguments)) is (
+        not size_macro_expected
+    ), (
+        f"{label}: expected -DJEMALLOC_OPT_SIZE_CHECKS "
+        f"{'present' if size_macro_expected else 'absent'}; parsed arguments were "
+        f"{arguments!r}"
+    )
+
+
+def test_uppercase_else_only_definitions_leave_no_invocation_to_read():
+    """The vacuous-lane shape, spelled with an uppercase `ELSE ()`."""
+    with pytest.raises(AssertionError, match="own top level"):
+        _private_definitions_arguments(_INLINE_UPPER_ELSE_ARM_ONLY)
+
+
+def test_uppercase_unbalanced_control_flow_fails_closed():
+    """An uppercase inner `IF` that is never closed must fail closed too."""
+    with pytest.raises(AssertionError, match="never closed"):
+        _private_definitions_arguments(_INLINE_UPPER_INNER_IF_UNCLOSED)
+
+
+@pytest.mark.parametrize(
+    "label, text",
+    [
+        ("lowercase `private` keyword", _INLINE_LOWERCASE_PRIVATE_KEYWORD),
+        ("uppercased target name", _INLINE_UPPERCASE_TARGET_NAME),
+    ],
+)
+def test_case_sensitive_parts_of_the_invocation_stay_case_sensitive(label, text):
+    """`PRIVATE` and the target name are case-sensitive in CMake; keep them so.
+
+    CMake errors on both spellings (`private` is not a valid keyword there, `_JEMALLOC`
+    is not a target of this project), so reading either as a definition would mean this
+    guard blessing an invocation the build itself rejects.
+    """
+    with pytest.raises(AssertionError, match="own top level"):
+        _private_definitions_arguments(text)
+
+
+# --- the assertion's own negative cases, part four: unmodelled commands ---------------
+#
+# The scanner reasons about a fixed command vocabulary. Every previous round taught it one
+# more spelling of "this definition is conditional", so the class is closed from the other
+# end instead: a command it does not model makes the block undecidable and must fail
+# closed, rather than being silently treated as inert.
+
+_INLINE_CMAKE_LANGUAGE_EVAL = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    '    cmake_language(EVAL CODE "target_compile_definitions(_jemalloc PRIVATE'
+    ' -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)")\n'
+    "endif ()\n"
+)
+
+_INLINE_RETURN_BEFORE_DEFINITIONS = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    return ()\n"
+    "    target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "endif ()\n"
+)
+
+_INLINE_INCLUDE_BEFORE_DEFINITIONS = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    include (defs.cmake)\n"
+    "    target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "endif ()\n"
+)
+
+# Control: `message ()` is modelled, so a block using it must not fail closed.
+_INLINE_MESSAGE_THEN_DEFINITIONS = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    '    message (STATUS "safety checks armed")\n'
+    "    target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "endif ()\n"
+)
+
+
+@pytest.mark.parametrize(
+    "label, text",
+    [
+        ("cmake_language (EVAL CODE ...)", _INLINE_CMAKE_LANGUAGE_EVAL),
+        ("return () before the invocation", _INLINE_RETURN_BEFORE_DEFINITIONS),
+        ("include () before the invocation", _INLINE_INCLUDE_BEFORE_DEFINITIONS),
+    ],
+)
+def test_unmodelled_commands_fail_closed(label, text):
+    """A command outside the modelled vocabulary makes the block undecidable.
+
+    In each of these the option does *not* actually define both macros unconditionally -
+    the invocation is hidden inside a string, or CMake never reaches it - yet each reads
+    as an unconditional definition to a scanner that only knows the constructs it was
+    taught. Failing closed here is what stops the next spelling from being a new wrong
+    green.
+    """
+    with pytest.raises(AssertionError, match="does not model"):
+        _private_definitions_arguments(text)
+
+
+@pytest.mark.parametrize(
+    "label, text",
+    [
+        ("message () then the invocation", _INLINE_MESSAGE_THEN_DEFINITIONS),
+        # A continuation line of a reflowed invocation is not a command: the regex
+        # requires a name immediately followed by `(`.
+        ("reflowed invocation", _INLINE_GOOD_REFLOWED),
+        ("two unconditional invocations", _INLINE_TWO_TOP_LEVEL_CALLS),
+    ],
+)
+def test_modelled_commands_do_not_fail_closed(label, text):
+    """Blocks built only from modelled commands must keep reading normally."""
+    arguments = _private_definitions_arguments(text)
+    assert not _missing_macros(arguments), (
+        f"{label}: expected both macros to read present; parsed arguments were "
+        f"{arguments!r}"
+    )
+
+
 def test_definitions_are_scoped_to_the_jemalloc_target():
     """The macros are jemalloc-internal and must not leak into other targets.
 
@@ -580,28 +880,94 @@ def test_definitions_are_scoped_to_the_jemalloc_target():
     _private_definitions_arguments(JEMALLOC_CMAKE.read_text(encoding="utf-8"))
 
 
-def test_reachable_platform_headers_keep_the_macro_undefs_inert():
-    """A bare `#undef` in the configured platform header cancels the `-D`.
+# `JEMALLOC_DEBUG` is not one of the macros the option passes, but the preamble's two
+# initializers each accept it as an alternative (`:188` `#elif defined(JEMALLOC_DEBUG)`,
+# `:207` `|| defined(JEMALLOC_DEBUG)`), so a platform header defining it would arm both
+# gates on its own. It belongs in this search for the same reason the two `-D` macros do.
+_PLATFORM_HEADER_MACROS = REQUIRED_MACROS + ("JEMALLOC_DEBUG",)
+_PLATFORM_DIRECTIVE_RE_TEMPLATE = r"^\s*#\s*(?:undef|define)\s+{macro}\b.*$"
+
+
+def _active_platform_directives(text: str, macro: str) -> list[str]:
+    """Active `#undef`/`#define` lines for `macro` in a platform header's text.
+
+    Both directions matter: a bare `#undef` cancels the `-D` the option passes, and a
+    `#define` arms the gate in a build that never asked for it. Indented spellings
+    (`#  define`) count, the commented-out placeholder form does not, and `\\b` keeps a
+    merely prefixed identifier (`JEMALLOC_OPT_SIZE_CHECKS_DISABLED`) out.
+    """
+    return re.findall(_PLATFORM_DIRECTIVE_RE_TEMPLATE.format(macro=macro), text, re.M)
+
+
+def test_reachable_platform_headers_do_not_change_the_macro_state():
+    """A directive in the configured platform header decides the macro state.
 
     `jemalloc_internal_defs.h` is included before the `config_opt_*` definitions are
     read (`jemalloc_preamble.h:188` / `:207`, whose initializers are evaluated by
     `test_compiled_preamble_maps_each_macro_to_its_config_flag`, test `defined(...)`),
     so an active `#undef JEMALLOC_OPT_SIZE_CHECKS` there would disarm the gate while
-    the cmake option, the build and the runtime preflight all stay green. Every header
-    the option can reach must therefore keep both `#undef`s commented out.
+    the cmake option, the build and the runtime preflight all stay green - and an active
+    `#define` is the same hazard mirrored: it arms the gate in a default build, which
+    breaks the option's default-off contract with every layer still green. Every header
+    the option can reach must therefore leave all three macros' state untouched.
     """
     for header in _reachable_defs_headers():
         text = header.read_text(encoding="utf-8")
-        for macro in REQUIRED_MACROS:
-            active = re.findall(rf"^\s*#\s*undef\s+{macro}\b.*$", text, re.M)
+        for macro in _PLATFORM_HEADER_MACROS:
+            active = _active_platform_directives(text, macro)
             assert not active, (
-                f"{header.relative_to(REPO_ROOT)}: `#undef {macro}` is active "
-                f"({active}); it must stay commented out (`/* #undef {macro} */`). A "
-                f"bare `#undef` silently cancels the `-D{macro}` that "
-                f"{OPTION_NAME} passes, because jemalloc tests `defined({macro})` "
-                f"after including this header ({JEMALLOC_PREAMBLE_REL[2:]}:188 and "
-                ":207)."
+                f"{header.relative_to(REPO_ROOT)}: a `#undef`/`#define` of {macro} is "
+                f"active ({active}); it must stay commented out "
+                f"(`/* #undef {macro} */`). A bare `#undef` silently cancels the "
+                f"`-D{macro}` that {OPTION_NAME} passes, and a `#define` arms the gate "
+                "in a build that never asked for it, because jemalloc tests "
+                f"`defined({macro})` after including this header "
+                f"({JEMALLOC_PREAMBLE_REL[2:]}:188 and :207)."
             )
+
+
+@pytest.mark.parametrize(
+    "label, prologue, detected_expected",
+    [
+        ("#define of the size macro", "#define JEMALLOC_OPT_SIZE_CHECKS\n", True),
+        ("#define of the safety macro", "#define JEMALLOC_OPT_SAFETY_CHECKS\n", True),
+        # Arms both gates on its own, so it is a third enabling macro.
+        ("#define JEMALLOC_DEBUG", "#define JEMALLOC_DEBUG\n", True),
+        ("indented #define", "#  define JEMALLOC_OPT_SIZE_CHECKS\n", True),
+        ("bare #undef", "#undef JEMALLOC_OPT_SIZE_CHECKS\n", True),
+        # The spelling every reachable header already uses for its placeholder.
+        (
+            "commented-out placeholder",
+            "/* #undef JEMALLOC_OPT_SIZE_CHECKS */\n",
+            False,
+        ),
+        # A different identifier that merely has a macro's name as a prefix.
+        (
+            "suffixed identifier",
+            "#define JEMALLOC_OPT_SIZE_CHECKS_DISABLED\n",
+            False,
+        ),
+    ],
+)
+def test_platform_header_search_detects_both_directions(
+    label, prologue, detected_expected
+):
+    """The predicate above, driven over each real header with a prologue injected.
+
+    Pins that the search the assertion relies on fires on every way a header can change
+    a macro's state, and stays quiet on the inert forms the headers really contain.
+    """
+    for header in _reachable_defs_headers():
+        text = prologue + header.read_text(encoding="utf-8")
+        detected = any(
+            _active_platform_directives(text, macro)
+            for macro in _PLATFORM_HEADER_MACROS
+        )
+        assert detected is detected_expected, (
+            f"{label}: expected the platform-header search to "
+            f"{'detect' if detected_expected else 'ignore'} this directive in "
+            f"{header.relative_to(REPO_ROOT)}"
+        )
 
 
 _BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.S)
@@ -649,8 +1015,8 @@ def _config_flag_value(text: str, flag: str, defined_macros: set, macro: str) ->
     of the lane - both are changes this guard must not silently bless, and for the size
     gate nothing else can notice (`config_opt_size_checks` has no mallctl).
 
-    Fails closed - an unknown directive, a non-literal arm, or no arm selected raises
-    rather than guessing.
+    Fails closed - an unknown directive, a nested conditional, a non-literal arm, or no
+    arm selected raises rather than guessing.
     """
     text = re.sub(r"\\\n", " ", text)
     text = _BLOCK_COMMENT_RE.sub("", text)
@@ -689,6 +1055,7 @@ def _config_flag_value(text: str, flag: str, defined_macros: set, macro: str) ->
     arms: list[tuple[str, str]] = []
     condition = None
     body: list[str] = []
+    conditional_open = False
     for line in initializer.splitlines():
         stripped = line.strip()
         if stripped.startswith("#"):
@@ -696,22 +1063,36 @@ def _config_flag_value(text: str, flag: str, defined_macros: set, macro: str) ->
             if condition is not None:
                 arms.append((condition, "\n".join(body)))
             body = []
+            if directive.startswith(("ifdef", "ifndef", "if")) and conditional_open:
+                raise AssertionError(
+                    f"{JEMALLOC_PREAMBLE_REL}: the `{flag}` initializer nests a "
+                    f"conditional ({stripped!r}). This evaluator tracks one arm at a "
+                    "time, so a nested arm's value would be reported without its "
+                    "enclosing condition - a nested `true` under an outer arm the "
+                    "preprocessor never selects would be read as arming the gate. "
+                    "Re-derive this guard against the nested shape rather than letting "
+                    "it approximate it."
+                )
             if directive.startswith("ifdef"):
                 condition = _preprocessor_expr_to_python(
                     f"defined({directive.split(None, 1)[1].strip()})"
                 )
+                conditional_open = True
             elif directive.startswith("ifndef"):
                 condition = _preprocessor_expr_to_python(
                     f"!defined({directive.split(None, 1)[1].strip()})"
                 )
+                conditional_open = True
             elif directive.startswith("elif"):
                 condition = _preprocessor_expr_to_python(directive[len("elif") :])
             elif directive.startswith("if"):
                 condition = _preprocessor_expr_to_python(directive[len("if") :])
+                conditional_open = True
             elif directive.startswith("else"):
                 condition = "True"
             elif directive.startswith("endif"):
                 condition = None
+                conditional_open = False
             else:
                 raise AssertionError(
                     f"{JEMALLOC_PREAMBLE_REL}: unhandled preprocessor directive "
@@ -930,6 +1311,56 @@ def test_prior_state_guard_does_not_fire_on_inert_directives(label, prologue):
         f"{label}: this directive does not change `JEMALLOC_OPT_SIZE_CHECKS`' state, so "
         "the prior-state guard must not fire on it"
     )
+
+
+# --- the mapping assertion's own negative cases, part three: nested conditionals ------
+#
+# The evaluator tracks one arm at a time, so a `#if` nested inside another one would have
+# its value reported without the enclosing condition. Measured against `cc -E`: with the
+# real size condition nested under an outer arm the preprocessor never selects, the helper
+# reports armed while the compiler computes false in every case - satisfying both
+# assertions of the mapping test while the gate is unconditionally disarmed. The shape
+# must therefore fail closed rather than be modelled.
+
+_SIZE_NESTED_UNDER_FALSE_OUTER = (
+    "static const bool config_opt_size_checks =\n"
+    "#if defined(UNRELATED_MACRO)\n"
+    "#  if defined(JEMALLOC_OPT_SIZE_CHECKS) || defined(JEMALLOC_DEBUG)\n"
+    "    true\n"
+    "#  else\n"
+    "    false\n"
+    "#  endif\n"
+    "#else\n"
+    "    false\n"
+    "#endif\n"
+    "    ;"
+)
+
+_SIZE_NESTED_UNDER_IFDEF_OUTER = (
+    "static const bool config_opt_size_checks =\n"
+    "#ifdef JEMALLOC_OPT_SIZE_CHECKS\n"
+    "#  if defined(JEMALLOC_DEBUG)\n"
+    "    true\n"
+    "#  else\n"
+    "    false\n"
+    "#  endif\n"
+    "#else\n"
+    "    false\n"
+    "#endif\n"
+    "    ;"
+)
+
+
+@pytest.mark.parametrize(
+    "label, block",
+    [
+        ("nested under a false outer arm", _SIZE_NESTED_UNDER_FALSE_OUTER),
+        ("nested under an armed #ifdef", _SIZE_NESTED_UNDER_IFDEF_OUTER),
+    ],
+)
+def test_nested_initializer_conditionals_fail_closed(label, block):
+    with pytest.raises(AssertionError, match="nests a"):
+        _size_flag_armed_with(block)
 
 
 def test_ci_tests_digest_covers_the_jemalloc_cmake_file():
