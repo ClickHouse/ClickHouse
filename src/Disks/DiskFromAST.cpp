@@ -29,26 +29,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
-
-bool isDiskObjectStorage(DiskPtr disk)
-{
-    if (auto delegate_disk = disk->getDelegateDiskIfExists())
-        disk = delegate_disk;
-
-    return std::dynamic_pointer_cast<DiskObjectStorage>(disk) != nullptr;
-}
-
-bool isDiskBackup(DiskPtr disk)
-{
-    if (auto delegate_disk = disk->getDelegateDiskIfExists())
-        disk = delegate_disk;
-
-    return std::dynamic_pointer_cast<DiskBackup>(disk) != nullptr;
-}
-
-std::string getOrCreateCustomDisk(
+static std::string getOrCreateCustomDisk(
     const ASTs & disk_args,
     const std::string & serialization,
     ContextPtr context,
@@ -166,8 +147,6 @@ std::string getOrCreateCustomDisk(
     }
 
     return disk_name;
-}
-
 }
 
 class DiskConfigurationFlattener

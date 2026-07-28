@@ -4,6 +4,7 @@
 #include <Core/SortDescription.h>
 #include <DataTypes/IDataType.h>
 #include <Disks/IDisk.h>
+#include <Disks/DiskType.h>
 #include <Disks/IVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Interpreters/Context.h>
@@ -168,7 +169,7 @@ SSTIndexWriter::SSTIndexWriter(IDataPartStorage & part_storage_, ContextPtr cont
     /// metadata path and silently mis-route writes/removes. Require a
     /// local disk and fail fast if the operator pointed `tmp_policy`
     /// elsewhere.
-    if (tmp_disk->isRemote())
+    if (isDiskObjectStorage(tmp_disk))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "SSTIndexWriter: temporary disk '{}' is remote; UNIQUE KEY SST staging requires a local tmp_policy disk",
             tmp_disk->getName());
