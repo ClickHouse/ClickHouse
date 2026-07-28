@@ -921,14 +921,16 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     const size_t insert_threads
         = (async_insert || dedup_single_stream || serial_hidden_views || sequential_quorum_insert) ? 1 : max_insert_threads;
-    auto insert_dependencies = InsertDependenciesBuilder::create(
-        table,
-        query_ptr,
-        query_sample_block,
-        async_insert,
-        /*skip_destination_table*/ no_destination,
-        insert_threads,
-        context);
+    auto insert_dependencies = forced_insert_dependencies
+        ? forced_insert_dependencies
+        : InsertDependenciesBuilder::create(
+            table,
+            query_ptr,
+            query_sample_block,
+            async_insert,
+            /*skip_destination_table*/ no_destination,
+            insert_threads,
+            context);
 
     auto sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
     const size_t sink_stream_size = insert_dependencies->getSinkStreamSize();
