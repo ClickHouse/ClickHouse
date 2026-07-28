@@ -197,7 +197,7 @@
 1
 -- Escaping an ordinary character is an error: it would have no effect, and it must not silently
 -- mean something different from the same sequence under the default backslash escape, where
--- `\c` is a literal backslash followed by `c`.
+-- an unknown escape denotes a literal backslash followed by that character.
 -- The default backslash escape keeps its own rule: an unknown escape is a literal backslash
 1
 0

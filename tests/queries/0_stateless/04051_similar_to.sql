@@ -242,7 +242,7 @@ SELECT 'a#b'  SIMILAR TO 'a##b' ESCAPE '#';        -- Returns: 1 (## is a litera
 
 SELECT '-- Escaping an ordinary character is an error: it would have no effect, and it must not silently';
 SELECT '-- mean something different from the same sequence under the default backslash escape, where';
-SELECT '-- `\\c` is a literal backslash followed by `c`.';
+SELECT '-- an unknown escape denotes a literal backslash followed by that character.';
 SELECT 'ab'    SIMILAR TO 'a#b' ESCAPE '#';        -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
 SELECT 'a1b'   SIMILAR TO 'a#1b' ESCAPE '#';       -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
 SELECT 'a-b'   SIMILAR TO 'a#-b' ESCAPE '#';       -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
