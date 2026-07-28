@@ -768,8 +768,14 @@ def main():
             navigation_path = dest.with_suffix("") / "navigation.json"
             navigation = json.loads(by_path[navigation_path])
             assert navigation["group"] == family["navigation_group"]
-            assert navigation["root"] == family["base_route"].lstrip("/")
             assert navigation["directory"] == "none"
+            base_route = family["base_route"].lstrip("/")
+            if family.get("overview_as_page", False):
+                assert "root" not in navigation
+                assert navigation["pages"][0] == base_route
+            else:
+                assert navigation["root"] == base_route
+                assert base_route not in navigation["pages"]
 
             manifest_path = dest.with_suffix("") / "manifest.json"
             manifest = json.loads(by_path[manifest_path])

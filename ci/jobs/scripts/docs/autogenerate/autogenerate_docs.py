@@ -105,6 +105,7 @@ SETTINGS_SPLIT_FAMILIES = {
     "server-settings": {
         "base_route": "/reference/settings/server-settings/settings",
         "navigation_group": "Server Settings",
+        "overview_as_page": True,
         "detail_title_suffix": "server settings",
         "description_noun": "server settings",
         "browse_title": "Browse server settings",
@@ -1564,12 +1565,18 @@ def split_settings_page(dest, content, docs_dir, family_name):
             "characters": page.char_count,
         })
 
-    navigation = {
-        "group": family["navigation_group"],
-        "root": family["base_route"].lstrip("/"),
-        "directory": "none",
-        "pages": [_navigation_entry(page) for page in pages],
-    }
+    base_route = family["base_route"].lstrip("/")
+    navigation = {"group": family["navigation_group"]}
+    if family.get("overview_as_page", False):
+        navigation["directory"] = "none"
+        navigation["pages"] = [
+            base_route,
+            *[_navigation_entry(page) for page in pages],
+        ]
+    else:
+        navigation["root"] = base_route
+        navigation["directory"] = "none"
+        navigation["pages"] = [_navigation_entry(page) for page in pages]
     artifacts.append(GeneratedArtifact(
         shard_dir / "navigation.json", json.dumps(navigation, indent=2, sort_keys=False) + "\n"))
 
