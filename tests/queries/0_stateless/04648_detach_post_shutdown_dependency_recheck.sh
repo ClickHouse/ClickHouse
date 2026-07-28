@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-random-settings, no-replicated-database
+# Tags: no-fasttest, no-parallel, no-replicated-database
 # no-fasttest: relies on a failpoint (libfiu), which the fast-test build does not include.
 # no-parallel: the failpoint sits on the generic DROP/DETACH path, so while it is enabled any
 #              concurrent DROP from another test in the shared server would consume the pause.
@@ -35,13 +35,14 @@ trap cleanup EXIT
 
 # Runs $2 (a removal) while $3 (a query registering a dependent on it) executes in the paused window.
 race_removal() {
-    local label=$1 removal=$2 registrant=$3
+    local label=$1 removal=$2 registrant=$3 removal_opts=${4:-}
     # A unique query id per removal: system.text_log is shared by every test on this server, so the
     # warning assertions must not be satisfiable by a row from an earlier run or an earlier scenario.
     QUERY_ID="${CLICKHOUSE_DATABASE}_${label}_$$"
     $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $FP"
 
-    $CLICKHOUSE_CLIENT --query_id "$QUERY_ID" --query "$removal" > /dev/null 2>"${CLICKHOUSE_TMP}/${label}.err" &
+    # shellcheck disable=SC2086
+    $CLICKHOUSE_CLIENT $removal_opts --query_id "$QUERY_ID" --query "$removal" > /dev/null 2>"${CLICKHOUSE_TMP}/${label}.err" &
     local removal_pid=$!
 
     $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP PAUSE"
@@ -133,6 +134,18 @@ race_removal rmt \
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'rmt'"
 echo "warned=$(warned_for ${DB}.rmt)"
 
+# check_referential_table_dependencies defaults to 0, so every scenario above consults the *loading*
+# dependency graph. getBlockingDependentsUnlocked has a second branch for the referential graph; turning
+# the setting on for the removal exercises it.
+echo "-- referential dependency check (check_referential_table_dependencies = 1)"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE mt_ref (id UInt64, val String) ENGINE = MergeTree ORDER BY id"
+race_removal mt_ref \
+    "DROP TABLE mt_ref" \
+    "CREATE DICTIONARY dep_mt_ref (id UInt64, val String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'mt_ref' DB '${DB}')) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0)" \
+    "--check_referential_table_dependencies 1"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'mt_ref'"
+echo "warned=$(warned_for ${DB}.mt_ref)"
+
 # DROP DATABASE keeps rejecting only *cross-database* dependents: same-database ones are filtered out of
 # the blocking set (DatabaseCatalog::getBlockingDependentsUnlocked with is_drop_database), so they must not
 # produce the warning either. A non-failpoint version of this cannot test the filter: DROP DATABASE drops
@@ -167,6 +180,7 @@ $CLICKHOUSE_CLIENT --query "
 DROP TABLE IF EXISTS dep_dict;
 DROP DICTIONARY IF EXISTS dep_mv;
 DROP DICTIONARY IF EXISTS dep_rmt;
+DROP DICTIONARY IF EXISTS dep_mt_ref;
 DROP TABLE IF EXISTS mv_src;
 DROP TABLE IF EXISTS src;
 DROP DICTIONARY IF EXISTS dep_cross;

@@ -21,6 +21,10 @@ HAVE_DEPENDENT_OBJECTS
 rmt removal=ok
 0
 warned=1
+-- referential dependency check (check_referential_table_dependencies = 1)
+mt_ref removal=ok
+0
+warned=1
 -- DROP DATABASE, dependent registered in the window in the SAME database: filtered, no warning
 same_db removal=FAILED Code: 219
 warned=0
