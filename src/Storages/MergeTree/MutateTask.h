@@ -20,6 +20,26 @@ class MergeTreeDataMergerMutator;
 
 struct MutationContext;
 
+namespace MutationHelpers
+{
+
+/// True iff mutating `part` with `commands` must rewrite the whole part instead of hardlinking the
+/// files it does not touch. Shared by splitAndModifyMutationCommands, by MutateTask's task fork
+/// (which adds its own interpreter-dependent condition) and by isHardlinkOnlyMutation below, so the
+/// shape conditions cannot drift apart between them.
+bool mutationRequiresFullPartRewrite(const MergeTreeData::DataPartPtr & part, const MutationCommands & commands);
+
+/// True iff mutating `part` with `commands` is guaranteed to take the partial route (hardlink every
+/// untouched file, unlink the dropped ones) AND to write none of the data-copying outputs that route
+/// can otherwise produce. Such a mutation needs almost no free space, so the selection guards may
+/// admit it for a part larger than the free-space budget. Conservative: any doubt means false.
+/// Reads only `part`, `commands` and the storage settings, never the metadata snapshot, so it can be
+/// called while ReplicatedMergeTreeQueue's state_mutex is held.
+bool isHardlinkOnlyMutation(
+    const MergeTreeData & data, const MergeTreeData::DataPartPtr & part, const MutationCommands & commands);
+
+}
+
 class MutateTask
 {
 public:

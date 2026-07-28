@@ -114,7 +114,19 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     /// TODO - some better heuristic?
     size_t estimated_space_for_result = CompactionStatistics::estimateNeededDiskSpace({source_part}, false);
 
-    if (entry.create_time + (*storage_settings_ptr)[MergeTreeSetting::prefer_fetch_merged_part_time_threshold].totalSeconds() <= time(nullptr)
+    /// This mutation was admitted at selection time as one that only hardlinks the files it does not
+    /// touch, and the little space it needs was reserved there rather than here (see
+    /// ReplicatedMergeTreeQueue::selectEntryToProcess): a reservation that fails here makes the entry
+    /// fetch the result part, and fetching a whole part to avoid a hardlink is worse than waiting.
+    const bool hardlink_only = selected_entry->hardlink_only_reservation != nullptr;
+    future_mutated_part->hardlink_only = hardlink_only;
+
+    /// Never divert such a mutation into a fetch either: it is cheap locally, while the fetch reserves
+    /// the sender's whole part, which on a full disk can never succeed - the reported bug with extra
+    /// steps. This must be its own condition rather than a smaller estimate, because the comparison
+    /// below is `>=` and prefer_fetch_merged_part_size_threshold = 0 is a supported way to force fetches.
+    if (!hardlink_only
+        && entry.create_time + (*storage_settings_ptr)[MergeTreeSetting::prefer_fetch_merged_part_time_threshold].totalSeconds() <= time(nullptr)
         && estimated_space_for_result >= (*storage_settings_ptr)[MergeTreeSetting::prefer_fetch_merged_part_size_threshold])
     {
         /// If entry is old enough, and have enough size, and some replica has the desired part,
@@ -164,7 +176,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     /// Can throw an exception.
-    reserved_space = StorageReplicatedMergeTree::reserveSpace(estimated_space_for_result, source_part->getDataPartStorage());
+    if (hardlink_only)
+        reserved_space = selected_entry->hardlink_only_reservation;
+    else
+        reserved_space = StorageReplicatedMergeTree::reserveSpace(estimated_space_for_result, source_part->getDataPartStorage());
     future_mutated_part->updatePath(storage, reserved_space.get());
 
     table_lock_holder = storage.lockForShare(

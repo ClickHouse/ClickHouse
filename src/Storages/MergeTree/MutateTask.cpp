@@ -111,6 +111,7 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_ENOUGH_SPACE;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -186,6 +187,65 @@ static bool hasDynamicColumnsWithoutRecordedSubstreams(const MergeTreeData::Data
     return false;
 }
 
+bool mutationRequiresFullPartRewrite(const MergeTreeData::DataPartPtr & part, const MutationCommands & commands)
+{
+    /// All columns from part are changed and may be some more that were missing before in part.
+    /// Also currently mutations of types with dynamic subcolumns in Wide part are possible only by
+    /// rewriting the whole part.
+    return haveMutationsOfDynamicColumns(part, commands) || hasDynamicColumnsWithoutRecordedSubstreams(part)
+        || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage());
+}
+
+bool isHardlinkOnlyMutation(
+    const MergeTreeData & data, const MergeTreeData::DataPartPtr & part, const MutationCommands & commands)
+{
+    if (commands.empty())
+        return false;
+
+    /// The partial route is only taken for a Wide part in full (non-packed) storage without dynamic
+    /// columns we cannot enumerate. Shared with the two other consumers of the same conditions.
+    if (mutationRequiresFullPartRewrite(part, commands))
+        return false;
+
+    /// Only commands that splitAndModifyMutationCommands routes to `for_file_renames` alone, so that
+    /// no mutations interpreter and hence no mutation pipeline is built. The CLEAR forms are excluded
+    /// as scope control: they rebuild what they clear elsewhere, so they are not obviously free.
+    for (const auto & command : commands)
+    {
+        const bool is_drop_of_secondary_object = command.type == MutationCommand::Type::DROP_INDEX
+            || command.type == MutationCommand::Type::DROP_PROJECTION
+            || command.type == MutationCommand::Type::DROP_STATISTICS;
+
+        if (!is_drop_of_secondary_object || command.clear)
+            return false;
+    }
+
+    /// Copying instead of hardlinking rewrites every retained file. If the setting is already on, the
+    /// mutation is knowably not free, so refuse admission instead of admitting it and failing later
+    /// on every retry. It can still be switched on afterwards, which the write-side checks catch.
+    if ((*data.getSettings())[MergeTreeSetting::always_use_copy_instead_of_hardlinks])
+        return false;
+
+    /// A patch part in the part's partition makes MutateTask append a READ_COLUMN per patched column,
+    /// which does build a mutation pipeline. Selection-time check only, re-validated on the write side.
+    if (!data.getPatchPartsVectorForPartition(part->info.getPartitionId()).empty())
+        return false;
+
+    /// Two outputs of the partial route copy an unbounded amount of data: the packed skip-index
+    /// archive is rebuilt entry by entry, and surviving statistics are re-serialized. Require both to
+    /// be absent. Detected from the in-memory checksums (a plain map lookup) rather than by opening
+    /// the archive, so the predicate does no IO and is cheap enough for the selection loop.
+    const auto & files = part->checksums.files;
+    if (files.contains(String(SKIP_INDICES_PACKED_FILENAME)) || files.contains(String(ColumnsStatistics::FILENAME)))
+        return false;
+
+    for (const auto & [file_name, _] : files)
+        if (file_name.starts_with(STATS_FILE_PREFIX))
+            return false;
+
+    return true;
+}
+
 static UInt64 getExistingRowsCount(const Block & block)
 {
     auto column = block.getByName(RowExistsColumn::name).column;
@@ -244,8 +304,7 @@ static void splitAndModifyMutationCommands(
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
 
-    if (haveMutationsOfDynamicColumns(part, commands) || hasDynamicColumnsWithoutRecordedSubstreams(part)
-        || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
+    if (mutationRequiresFullPartRewrite(part, commands))
     {
         NameSet mutated_columns;
         NameSet dropped_columns;
@@ -1575,6 +1634,11 @@ struct MutationContext
     MutationCommands for_interpreter;
     MutationCommands for_file_renames;
 
+    /// Whether this mutation rewrites the whole part instead of hardlinking the files it does not
+    /// touch. Computed once, right after the mutations interpreter is built (the last input it
+    /// depends on), and consumed by the task fork so the two cannot disagree.
+    std::optional<bool> requires_full_part_rewrite;
+
     NamesAndTypesList storage_columns;
     NameSet materialized_indices;
     NameSet materialized_projections;
@@ -2530,6 +2594,21 @@ private:
         if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
             ctx->files_to_skip.insert("ttl.txt");
 
+        /// Read once here, before the first write below, because a mutation admitted as hardlink-only
+        /// must be refused before anything is created if the copy mode changed since it was admitted.
+        auto settings = ctx->source_part->storage.getSettings();
+
+        if (ctx->future_part->hardlink_only
+            && ((*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks]
+                || !MutationHelpers::isHardlinkOnlyMutation(*ctx->data, ctx->source_part, ctx->commands_for_part)))
+            throw Exception(
+                ErrorCodes::NOT_ENOUGH_SPACE,
+                "Mutation of part {} was admitted as hardlink-only and reserved only {}, but it would now copy the "
+                "retained files instead of hardlinking them (copy instead of hardlink: {})",
+                ctx->source_part->name,
+                ReadableSize(ctx->space_reservation ? ctx->space_reservation->getSize() : 0),
+                (*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks].value);
+
         ctx->new_data_part->getDataPartStorage().createDirectories();
 
         /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
@@ -2538,7 +2617,6 @@ private:
         /// because part may have temporary name (with temporary block numbers). Will write it later.
         ctx->new_data_part->version->setAndStoreCreationTID(tid, nullptr);
 
-        auto settings = ctx->source_part->storage.getSettings();
         NameSet hardlinked_files;
 
         /// NOTE: Renames must be done in order
@@ -3425,6 +3503,21 @@ bool MutateTask::prepare()
             .keep_metadata_version = true,
         };
 
+        /// This path returns before the route validation below, so a mutation admitted as
+        /// hardlink-only is validated here instead: cloning with copy_instead_of_hardlink copies the
+        /// whole part, which the small reservation does not cover. Note that copying just
+        /// checksums.txt for zero-copy replication (above) is a single small file and is fine.
+        if (ctx->future_part->hardlink_only
+            && (clone_params.copy_instead_of_hardlink
+                || !MutationHelpers::isHardlinkOnlyMutation(*ctx->data, ctx->source_part, ctx->commands_for_part)))
+            throw Exception(
+                ErrorCodes::NOT_ENOUGH_SPACE,
+                "Mutation of part {} was admitted as hardlink-only and reserved only {}, but cloning it would copy the "
+                "whole part (copy instead of hardlink: {})",
+                ctx->source_part->name,
+                ReadableSize(ctx->space_reservation ? ctx->space_reservation->getSize() : 0),
+                clone_params.copy_instead_of_hardlink);
+
         MergeTreeData::MutableDataPartPtr part;
         scope_guard lock;
 
@@ -3538,6 +3631,27 @@ bool MutateTask::prepare()
         }
     }
 
+    /// The route is decided from the part's shape plus the interpreter, which exists (or not) as of
+    /// here, so this is the earliest point the decision is final and the last point before any
+    /// filesystem work: the temporary directory is claimed and possibly removed, the part storage is
+    /// built and its transaction begun, all below.
+    ctx->requires_full_part_rewrite = MutationHelpers::mutationRequiresFullPartRewrite(ctx->source_part, ctx->commands_for_part)
+        || (ctx->interpreter && ctx->interpreter->isAffectingAllColumns());
+
+    /// A mutation admitted as hardlink-only holds a reservation that does not cover rewriting the part.
+    /// Validate what was actually planned before writing anything, and refuse otherwise: refusing puts
+    /// the part back to the behaviour it had before this mutation was admitted, with the reason
+    /// recorded in system.mutations, whereas proceeding could fill the disk.
+    if (ctx->future_part->hardlink_only && (*ctx->requires_full_part_rewrite || !ctx->for_interpreter.empty()))
+        throw Exception(
+            ErrorCodes::NOT_ENOUGH_SPACE,
+            "Mutation of part {} was admitted as hardlink-only and reserved only {}, but it plans to rewrite the part "
+            "(full rewrite: {}, commands for the mutations interpreter: {})",
+            ctx->source_part->name,
+            ReadableSize(ctx->space_reservation ? ctx->space_reservation->getSize() : 0),
+            *ctx->requires_full_part_rewrite,
+            ctx->for_interpreter.size());
+
     /// Same rationale as `MergeTreeData::loadDataPart`: the per-part `SingleDiskVolume` lives for the
     /// mutated part's lifetime, so create it in the dedicated arena. `build()` re-enters the arena for
     /// the part object; the mutation planning below (column transforms, projection/statistics
@@ -3624,13 +3738,9 @@ bool MutateTask::prepare()
 
     /// All columns from part are changed and may be some more that were missing before in part
     /// TODO We can materialize compact part without copying data
-    /// Also currently mutations of types with dynamic subcolumns in Wide part are possible only by
-    /// rewriting the whole part.
-    if (MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part)
-        || MutationHelpers::hasDynamicColumnsWithoutRecordedSubstreams(ctx->source_part)
-        || !isWidePart(ctx->source_part)
-        || !isFullPartStorage(ctx->source_part->getDataPartStorage())
-        || (ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))
+    /// Decided above, as soon as the interpreter was built, and reused here so the route taken is
+    /// exactly the one that was validated.
+    if (*ctx->requires_full_part_rewrite)
     {
         /// In case of replicated merge tree with zero copy replication
         /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs

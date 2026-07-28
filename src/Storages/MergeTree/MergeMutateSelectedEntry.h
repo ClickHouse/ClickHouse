@@ -30,6 +30,12 @@ struct CurrentlyMergingPartsTagger
         const StorageMetadataPtr & metadata_snapshot,
         bool is_mutation);
 
+    /// Takes over a reservation the caller has already acquired instead of reserving itself. Used for
+    /// a mutation that only hardlinks: its caller must learn whether the small reservation succeeds
+    /// before it can decide to mutate the part at all, and reserving here throws instead of letting
+    /// the caller postpone.
+    CurrentlyMergingPartsTagger(FutureMergedMutatedPartPtr future_part_, ReservationSharedPtr reservation, StorageMergeTree & storage_);
+
     /// The finalize() method acquires the `currently_processing_in_background_mutex` lock
     /// to remove the parts from the `currently_merging_mutating_parts` set.
     /// This might take a lot of time and it's important not to do it in the destructor.
