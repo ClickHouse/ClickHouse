@@ -1,0 +1,48 @@
+---
+noindex: true
+title: "コンポーネントのバージョン"
+sidebarTitle: "コンポーネントのバージョン"
+description: "すべての ClickHouse Private コンポーネントの現在の安定版バージョン。"
+---
+
+すべての ClickHouse Private コンポーネントの現在の安定版バージョンです。アーティファクトをレジストリにコピーして Helm でインストールする際は、これらのタグを使用してください。
+
+<div id="container-images">
+  ## コンテナーイメージ
+</div>
+
+| コンポーネント                  | イメージタグ              | 説明                                   |
+| ------------------------ | ------------------- | ------------------------------------ |
+| clickhouse-server        | `25.12.1.1497`      | ClickHouseサーバー (標準)                  |
+| clickhouse-server (FIPS) | `25.12.1.1497-fips` | FIPS 140-2 準拠の ClickHouseサーバー        |
+| clickhouse-keeper        | `26.2.1.258`        | 分散協調サービス (ZooKeeperの代替)              |
+| clickhouse-keeper (FIPS) | `26.2.1.258-fips`   | FIPS 140-2 準拠の ClickHouse Keeper     |
+| clickhouse-operator      | `main-1.18587.1`    | クラスターのライフサイクルを管理する Kubernetes オペレーター |
+
+<div id="helm-charts">
+  ## Helm チャート
+</div>
+
+| チャート                           | バージョン       | 説明                                |
+| ------------------------------ | ----------- | --------------------------------- |
+| helm/clickhouse-operator-helm  | `1.18587.1` | ClickHouse Operator をインストールします    |
+| helm/onprem-clickhouse-cluster | `1.1.311`   | ClickHouseCluster のカスタムリソースを作成します |
+| helm/airgap-management         | `1.165.1`   | オプションの管理 API                      |
+| helm/preflight-check           | `1.31.0`    | インストール前の検証を実行します                  |
+| helm/support-bundle            | `1.11.0`    | トラブルシューティング用の診断データを収集します          |
+
+<div id="api">
+  ## API
+</div>
+
+| コンポーネント           | バージョン     |
+| ----------------- | --------- |
+| airgap-management | `1.165.1` |
+
+<div id="notes">
+  ## 注記
+</div>
+
+* **operator の Helm チャートのバージョン** (`1.18587.1`) は、operator の **イメージタグ** (`main-1.18587.1`) と異なります。`helm install` でインストールする場合は Helm チャートのバージョンを使用し、コンテナーイメージをコピーする場合はイメージタグを使用してください。
+* **FIPS ビルド** では、server と Keeper の両方で、標準のイメージタグの末尾に `-fips` が追加されます。
+* これらのドキュメントのビルド時に、バージョンタグは自動的に置換されます。未展開のテンプレート変数 (例: `25.12.1.1497`) が表示されている場合は、ビルド手順がまだ実行されていません。

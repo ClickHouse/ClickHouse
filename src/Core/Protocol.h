@@ -134,7 +134,11 @@ namespace Protocol
 
             QueryPlan = 13,                 /// Query plan
 
-            MAX = QueryPlan,
+            MergeTreeAllRangesAnnouncementResponse = 14,
+                                            /// Initiator's reply to a follower's announcement,
+                                            /// carrying the authoritative parts list for the stream.
+
+            MAX = MergeTreeAllRangesAnnouncementResponse,
         };
 
         /// See the note on Server::toString: returns the numeric value for out-of-range packets.
