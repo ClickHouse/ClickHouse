@@ -8,6 +8,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Common/PODArray.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <pcg_random.hpp>
 
@@ -15,7 +16,6 @@
 #include <cmath>
 #include <limits>
 #include <numeric>
-#include <vector>
 
 /// `hierarchicalKMeans(k [, branching] [, max_iter] [, sample_cap] [, seed])(vec)`
 ///
@@ -56,15 +56,15 @@ using Float = Float32;
 /// Flat Lloyd k-means: `n` points of dimension `d` -> `k` row-major centroids (`k * d` floats).
 /// k-means++ seeding, argmin via the reformulation ||x - c||^2 = ||x||^2 + ||c||^2 - 2 x.c (||x||^2 dropped),
 /// and empty-cluster reseeding.
-std::vector<Float> kMeansLloyd(const Float * pts, size_t n, size_t d, size_t k, size_t iters, pcg64 & rng)
+VectorWithMemoryTracking<Float> kMeansLloyd(const Float * pts, size_t n, size_t d, size_t k, size_t iters, pcg64 & rng)
 {
     k = std::min(k, n);
-    std::vector<Float> centroids(k * d);
+    VectorWithMemoryTracking<Float> centroids(k * d);
     if (k == 0)
         return centroids;
 
     /// --- k-means++ initialization ---
-    std::vector<double> best_d2(n, std::numeric_limits<double>::max());
+    VectorWithMemoryTracking<double> best_d2(n, std::numeric_limits<double>::max());
     {
         size_t first = rng() % n;
         std::copy(pts + first * d, pts + (first + 1) * d, centroids.begin());
@@ -101,10 +101,10 @@ std::vector<Float> kMeansLloyd(const Float * pts, size_t n, size_t d, size_t k, 
     }
 
     /// --- Lloyd iterations ---
-    std::vector<size_t> assignment(n, static_cast<size_t>(-1));
-    std::vector<size_t> counts(k);
-    std::vector<double> sums(k * d);
-    std::vector<double> cnorm(k);
+    VectorWithMemoryTracking<size_t> assignment(n, static_cast<size_t>(-1));
+    VectorWithMemoryTracking<size_t> counts(k);
+    VectorWithMemoryTracking<double> sums(k * d);
+    VectorWithMemoryTracking<double> cnorm(k);
     for (size_t iteration = 0; iteration < iters; ++iteration)
     {
         for (size_t c = 0; c < k; ++c)
@@ -172,10 +172,10 @@ std::vector<Float> kMeansLloyd(const Float * pts, size_t n, size_t d, size_t k, 
 
 /// Give each of `B` children at least one leaf, total exactly `k`, extra leaves allocated proportional to
 /// population (largest-remainder). Requires k >= B (guaranteed: caller uses branching = min(b, k)).
-std::vector<size_t> apportion(const std::vector<size_t> & pop, size_t k)
+VectorWithMemoryTracking<size_t> apportion(const VectorWithMemoryTracking<size_t> & pop, size_t k)
 {
     size_t B = pop.size();
-    std::vector<size_t> leaves(B, 1);
+    VectorWithMemoryTracking<size_t> leaves(B, 1);
     if (k <= B)
     {
         for (size_t c = 0; c < B; ++c)
@@ -185,7 +185,7 @@ std::vector<size_t> apportion(const std::vector<size_t> & pop, size_t k)
 
     size_t remaining = k - B;
     size_t total = std::accumulate(pop.begin(), pop.end(), static_cast<size_t>(0));
-    std::vector<double> frac(B, 0.0);
+    VectorWithMemoryTracking<double> frac(B, 0.0);
     size_t handed = 0;
     for (size_t c = 0; c < B; ++c)
     {
@@ -196,7 +196,7 @@ std::vector<size_t> apportion(const std::vector<size_t> & pop, size_t k)
         frac[c] = exact - static_cast<double>(add);
         handed += add;
     }
-    std::vector<size_t> order(B);
+    VectorWithMemoryTracking<size_t> order(B);
     std::iota(order.begin(), order.end(), 0);
     std::sort(order.begin(), order.end(), [&](size_t a, size_t b) { return frac[a] > frac[b]; });
     for (size_t i = 0; i < remaining - handed; ++i)
@@ -228,7 +228,7 @@ void trainHierarchical(
     size_t br = branching;
     auto node = kMeansLloyd(pts, n, d, br, iters, rng);
 
-    std::vector<double> cnorm(br);
+    VectorWithMemoryTracking<double> cnorm(br);
     for (size_t c = 0; c < br; ++c)
     {
         const Float * cen = &node[c * d];
@@ -238,7 +238,7 @@ void trainHierarchical(
         cnorm[c] = s;
     }
 
-    std::vector<std::vector<UInt32>> buckets(br);
+    VectorWithMemoryTracking<VectorWithMemoryTracking<UInt32>> buckets(br);
     for (size_t i = 0; i < n; ++i)
     {
         const Float * x = pts + i * d;
@@ -260,7 +260,7 @@ void trainHierarchical(
         buckets[best].push_back(static_cast<UInt32>(i));
     }
 
-    std::vector<size_t> pop(br);
+    VectorWithMemoryTracking<size_t> pop(br);
     for (size_t c = 0; c < br; ++c)
         pop[c] = buckets[c].size();
     auto leaves = apportion(pop, k);
@@ -349,7 +349,7 @@ struct HierarchicalKMeansData
         }
         samples.resize(take_a * d);
 
-        std::vector<UInt64> idx(have_b);
+        VectorWithMemoryTracking<UInt64> idx(have_b);
         std::iota(idx.begin(), idx.end(), 0);
         for (UInt64 i = 0; i < take_b; ++i) /// append take_b random rows of `other`
         {
@@ -386,10 +386,8 @@ public:
 
         if (k == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "hierarchicalKMeans: k must be greater than 0");
-        if (branching < 2)
-            branching = 2;
-        if (max_iter == 0)
-            max_iter = 1;
+        branching = std::max<size_t>(branching, 2);
+        max_iter = std::max<size_t>(max_iter, 1);
         if (sample_cap == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "hierarchicalKMeans: sample_cap must be greater than 0");
 

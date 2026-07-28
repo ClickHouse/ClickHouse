@@ -1,5 +1,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsExternalDictionaries.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
@@ -13,11 +14,12 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/assert_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 #include <limits>
 #include <mutex>
-#include <vector>
+#include <utility>
 
 /// `assignCentroid(vec, centroids)` -> UInt32 cluster id: the index of the nearest (L2) centroid to `vec`.
 ///
@@ -52,9 +54,9 @@ struct CentroidMatrix
 {
     size_t k = 0;
     size_t dim = 0;
-    std::vector<Float32> ct;      /// column-major: ct[j * k + c] = coordinate j of centroid c
-    std::vector<Float32> cnorm;   /// ||c||^2
-    std::vector<UInt32> ids;      /// cluster id returned when centroid c is nearest
+    VectorWithMemoryTracking<Float32> ct;      /// column-major: ct[j * k + c] = coordinate j of centroid c
+    VectorWithMemoryTracking<Float32> cnorm;   /// ||c||^2
+    VectorWithMemoryTracking<UInt32> ids;      /// cluster id returned when centroid c is nearest
 
     /// `rows` is row-major (k * dim). `id_values` (optional) gives the id per centroid; default is 0..k-1.
     void build(const Float32 * rows, size_t k_, size_t dim_, const UInt32 * id_values)
@@ -96,13 +98,13 @@ struct CentroidMatrix
                     "assignCentroid: input vector has {} dimensions but centroids have {}", len, dim);
         }
 
-        std::vector<Float32> best_score(n, std::numeric_limits<Float32>::max());
+        VectorWithMemoryTracking<Float32> best_score(n, std::numeric_limits<Float32>::max());
         for (size_t row = 0; row < n; ++row)
             res[row] = ids.empty() ? 0 : ids[0];
 
         constexpr size_t tile = 1024; /// tile * dim * 4B stays in L2, reused across all n rows
-        std::vector<Float32> pack(tile * dim);
-        std::vector<Float32> acc(tile);
+        VectorWithMemoryTracking<Float32> pack(tile * dim);
+        VectorWithMemoryTracking<Float32> acc(tile);
         for (size_t c0 = 0; c0 < k; c0 += tile)
         {
             size_t width = std::min(tile, k - c0);
@@ -143,7 +145,7 @@ class FunctionAssignCentroid : public IFunction
 public:
     static constexpr auto name = "assignCentroid";
 
-    explicit FunctionAssignCentroid(ContextPtr context_) : context(std::move(context_)) {}
+    explicit FunctionAssignCentroid(ContextPtr context_) : dict_helper(std::move(context_)) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionAssignCentroid>(context_); }
 
     String getName() const override { return name; }
@@ -201,7 +203,9 @@ public:
     }
 
 private:
-    ContextPtr context;
+    /// Holds the context and performs the `dictGet` access check on first use. Reusing it (instead of keeping a
+    /// bare `ContextPtr`) is what the style check asks for, and it also gives us the access check for free.
+    mutable FunctionDictHelper dict_helper;
     mutable std::mutex cache_mutex;
     mutable const IDictionary * cached_dict_ptr = nullptr; /// identity changes on dictionary reload
     mutable std::shared_ptr<const CentroidMatrix> cached_matrix;
@@ -234,7 +238,7 @@ private:
         if (dim == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "assignCentroid: centroids have zero dimension");
 
-        std::vector<Float32> row_major(k * dim);
+        VectorWithMemoryTracking<Float32> row_major(k * dim);
         for (size_t c = 0; c < k; ++c)
         {
             size_t start = c ? inner.getOffsets()[c - 1] : 0;
@@ -253,7 +257,7 @@ private:
     /// Read the named dictionary once (columns `cid`, `vec`), cache the matrix until the dictionary reloads.
     std::shared_ptr<const CentroidMatrix> getDictionaryMatrix(const String & dict_name) const
     {
-        auto dictionary = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
+        auto dictionary = dict_helper.getDictionary(dict_name);
 
         {
             std::lock_guard lock(cache_mutex);
@@ -265,7 +269,7 @@ private:
         QueryPipeline pipeline(dictionary->read(Names{"cid", "vec"}, /*max_block_size=*/65536, /*num_streams=*/1));
         PullingPipelineExecutor executor(pipeline);
 
-        std::vector<std::pair<UInt64, std::vector<Float32>>> centroids;
+        VectorWithMemoryTracking<std::pair<UInt64, VectorWithMemoryTracking<Float32>>> centroids;
         Block block;
         while (executor.pull(block))
         {
@@ -277,7 +281,7 @@ private:
             {
                 size_t start = i ? vec_off[i - 1] : 0;
                 size_t len = vec_off[i] - start;
-                centroids.emplace_back(cid_col->getUInt(i), std::vector<Float32>(&vec_vals[start], &vec_vals[start + len]));
+                centroids.emplace_back(cid_col->getUInt(i), VectorWithMemoryTracking<Float32>(&vec_vals[start], &vec_vals[start + len]));
             }
         }
 
@@ -293,8 +297,8 @@ private:
         if (dim == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "assignCentroid: dictionary {} has zero-dimension centroids", dict_name);
 
-        std::vector<Float32> row_major(k * dim);
-        std::vector<UInt32> ids(k);
+        VectorWithMemoryTracking<Float32> row_major(k * dim);
+        VectorWithMemoryTracking<UInt32> ids(k);
         for (size_t c = 0; c < k; ++c)
         {
             if (centroids[c].second.size() != dim)
