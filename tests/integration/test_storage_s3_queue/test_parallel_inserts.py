@@ -305,6 +305,9 @@ def test_batch_set_processing_failure_does_not_crash(started_cluster):
             "enable_hash_ring_filtering": 1,
             "s3queue_processing_threads_num": 1,
             "s3queue_loading_retries": 100,
+            # Both conditions must land in the SAME batch, so pin the listing batch size instead
+            # of relying on the engine default (1000) happening to exceed files_to_generate.
+            "list_objects_batch_size": files_to_generate,
         },
     )
 
