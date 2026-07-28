@@ -21,6 +21,8 @@ C_healthy_side_streams_on_disk:
 8
 C_check_table:
 1
-40
+38
 C_has_phrase:
-40
+100
+C_has_phrase_prunes:
+1

@@ -3085,7 +3085,7 @@ bool IMergeTreeDataPart::isSkipIndexInPackedArchive(const IMergeTreeIndex & skip
     if (!disk_storage)
         return false;
     const String file_name = skip_index.getFileName();
-    /// Probe what the part actually holds, not the writer's current `getSubstreams()`, so a legacy
+    /// Probe what the part actually holds, not the writer's current `getSubstreams`, so a legacy
     /// member inside `skp_idx.packed` on an upgraded part is found.
     for (const auto & substream : skip_index.getAllSubstreamsInPart(checksums, file_name, &getDataPartStorage()))
         if (disk_storage->isFileInPackedSkipIndicesArchive(file_name + substream.suffix + substream.extension))

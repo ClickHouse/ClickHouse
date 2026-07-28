@@ -86,7 +86,7 @@ MergeTreeIndexSubstreams IMergeTreeIndex::getAllSubstreamsInPart(
     const std::string & relative_path_prefix,
     const IDataPartStorage * storage) const
 {
-    /// Not routed through `getDeserializedFormat()`: that answers the read-time question and
+    /// Not routed through `getDeserializedFormat`: that answers the read-time question and
     /// reports nothing once a required system column is invalidated, while a file left on disk
     /// still has to be skipped/stripped here. (minmax overrides to add its legacy `.idx`.)
     MergeTreeIndexSubstreams substreams;

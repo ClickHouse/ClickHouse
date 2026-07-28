@@ -131,6 +131,11 @@ run_inverse_case() {
     ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = '${tbl}' AND name = 'a'"
     echo "${label}_text_pos_files_after:"
     if [ -e "${new_part}${pos_data}" ] && [ -e "${new_part}${pos_mark}" ]; then echo 1; else echo 0; fi
+    # The survivor must not over-claim by EXTENSION either: the text index stores its
+    # `.pos` substream as `.idx`, so the dropped minmax index's own `.idx2` file has to
+    # be removed rather than protected.
+    echo "${label}_dropped_minmax_file_not_leaked:"
+    if [ -e "${new_part}skp_idx_a.pos.idx2" ] || [ -e "${new_part}skp_idx_a%2Epos.idx2" ]; then echo 1; else echo 0; fi
     echo "${label}_check_table:"
     ${CLICKHOUSE_CLIENT} -q "CHECK TABLE ${tbl}" | cut -f2
 
@@ -161,7 +166,8 @@ run_suffix_named_drop_case() {
     SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
              index_granularity = 100, replace_long_file_name_to_hash = 0,
              escape_index_filenames = ${escape},
-             packed_skip_index_max_bytes = ${packed}"
+             packed_skip_index_max_bytes = ${packed},
+             columns_and_secondary_indices_sizes_lazy_calculation = 0"
 
     ${CLICKHOUSE_CLIENT} -q "INSERT INTO ${tbl} (k, v, w) SELECT number, number, number FROM numbers(500)"
     ${CLICKHOUSE_CLIENT} -q "OPTIMIZE TABLE ${tbl} FINAL"
@@ -173,8 +179,36 @@ run_suffix_named_drop_case() {
 
     echo "${label}_dropped_index_gone:"
     ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = '${tbl}' AND name = 'a.pos'"
+    # With packing enabled the dropped index's data is a virtual member of
+    # skp_idx.packed, so a filesystem check cannot see it. Compare against a table
+    # that only ever had the surviving index: an identical archive size and an
+    # identical accounted index size mean the member really went away, whereas a
+    # retained member would make both larger.
     echo "${label}_dropped_files_not_leaked:"
-    if [ -e "${part}skp_idx_a.pos.idx2" ] || [ -e "${part}skp_idx_a%2Epos.idx2" ]; then echo 1; else echo 0; fi
+    if [ "${packed}" = "0" ]; then
+        if [ -e "${part}skp_idx_a.pos.idx2" ] || [ -e "${part}skp_idx_a%2Epos.idx2" ]; then echo 1; else echo 0; fi
+    else
+        ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${tbl}_ref SYNC"
+        ${CLICKHOUSE_CLIENT} -q "
+        CREATE TABLE ${tbl}_ref (k UInt64, v UInt64, w UInt64, INDEX a v TYPE minmax GRANULARITY 1)
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+                 index_granularity = 100, replace_long_file_name_to_hash = 0,
+                 escape_index_filenames = ${escape},
+                 packed_skip_index_max_bytes = ${packed},
+                 columns_and_secondary_indices_sizes_lazy_calculation = 0"
+        ${CLICKHOUSE_CLIENT} -q "INSERT INTO ${tbl}_ref (k, v, w) SELECT number, number, number FROM numbers(500)"
+        ${CLICKHOUSE_CLIENT} -q "OPTIMIZE TABLE ${tbl}_ref FINAL"
+        local ref_part ref_archive part_archive
+        ref_part=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}_ref' AND active ORDER BY name LIMIT 1")
+        ref_archive=$(stat -c%s "${ref_part}skp_idx.packed")
+        part_archive=$(stat -c%s "${part}skp_idx.packed")
+        if [ "${ref_archive}" = "${part_archive}" ] \
+           && [ "$(${CLICKHOUSE_CLIENT} -q "SELECT secondary_indices_compressed_bytes FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active")" \
+              = "$(${CLICKHOUSE_CLIENT} -q "SELECT secondary_indices_compressed_bytes FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}_ref' AND active")" ]
+        then echo 0; else echo 1; fi
+        ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${tbl}_ref SYNC"
+    fi
     echo "${label}_survivor_still_prunes:"
     ${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ${tbl} WHERE v = 42) WHERE explain ILIKE '%Granules: 1/5%'"
     echo "${label}_check_table:"

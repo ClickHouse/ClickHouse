@@ -39,6 +39,8 @@ inverse_unescaped_text_index_survives:
 1
 inverse_unescaped_text_pos_files_after:
 1
+inverse_unescaped_dropped_minmax_file_not_leaked:
+0
 inverse_unescaped_check_table:
 1
 inverse_escaped_text_pos_files_before:
@@ -49,6 +51,8 @@ inverse_escaped_text_index_survives:
 1
 inverse_escaped_text_pos_files_after:
 1
+inverse_escaped_dropped_minmax_file_not_leaked:
+0
 inverse_escaped_check_table:
 1
 suffixdrop_unescaped_dropped_index_gone:

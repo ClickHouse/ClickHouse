@@ -119,7 +119,11 @@ ENGINE = MergeTree ORDER BY k
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          index_granularity = 100, replace_long_file_name_to_hash = 0,
          allow_experimental_text_index_phrase_search = 1"
-${CLICKHOUSE_CLIENT} -q "INSERT INTO t_ok (k, s, w) SELECT number, concat('hello', number % 50, ' world', number % 50), number FROM numbers(2000)"
+# Granule-selective on purpose: the phrase occurs only in the first 100 rows, i.e.
+# in one granule out of 20, so the EXPLAIN assertion below can actually tell a
+# working positional index from a silently declining one. A modulo fixture would
+# put the phrase in every granule and make any pruning assertion vacuous.
+${CLICKHOUSE_CLIENT} -q "INSERT INTO t_ok (k, s, w) SELECT number, if(number < 100, 'needle alpha beta', concat('hello', number % 50, ' world', number % 50)), number FROM numbers(2000)"
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_ok UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2"
 echo "C_healthy_index_survives:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM system.parts WHERE database = currentDatabase() AND table = 't_ok' AND active AND secondary_indices_marks_bytes > 0"
@@ -132,5 +136,9 @@ ${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_ok SETTINGS check_query_single_value_resu
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ok WHERE hasToken(s, 'hello10')"
 # hasPhrase reads the positional substream, so this fails if .pos was dropped.
 echo "C_has_phrase:"
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ok WHERE hasPhrase(s, 'hello10 world10')"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ok WHERE hasPhrase(s, 'needle alpha')"
+# ...and the index must still PRUNE for it, which a count alone cannot show: a
+# declining index would return the same 100 rows via a full scan.
+echo "C_has_phrase_prunes:"
+${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ok WHERE hasPhrase(s, 'needle alpha')) WHERE explain ILIKE '%Granules: 1/20%'"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ok SYNC"

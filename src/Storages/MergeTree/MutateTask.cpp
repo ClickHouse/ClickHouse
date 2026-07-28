@@ -1200,8 +1200,10 @@ static NameToNameVector collectFilesForRenames(
     /// scheduled for deletion.
     ///
     /// Ownership comes from each surviving index's OWN getSubstreams(), never from the speculative
-    /// list: minmax owns no `.pos` substream, so letting a minmax index named `a` claim
-    /// skp_idx_a.pos.* would instead leak the files of a dropped index named `a.pos`.
+    /// list, and only for the extension that substream declares: minmax owns no `.pos` substream at
+    /// all, and a text index's `.pos` substream is stored as `.idx`, not `.idx2`. Claiming a
+    /// substream or an extension the type does not write would instead protect - and therefore leak
+    /// - the files of the index actually being dropped.
     static const std::array<String, 4> owned_substream_suffixes = {"", ".dct", ".pst", ".pos"};
     static const std::array<String, 2> owned_index_extensions = {".idx2", ".idx"};
 
@@ -1227,9 +1229,11 @@ static NameToNameVector collectFilesForRenames(
                         surviving_index_owned_files.insert(*actual + extension);
                 };
 
-                /// Both minmax extensions, so an upgraded part's legacy `.idx` is protected too.
-                for (const auto & extension : owned_index_extensions)
-                    protect(extension);
+                protect(substream.extension);
+                /// minmax changed `.idx` (v1) -> `.idx2` (v2), so an upgraded part may still carry
+                /// the legacy file for a substream that now declares `.idx2`.
+                if (substream.extension == ".idx2")
+                    protect(".idx");
                 protect(mrk_extension);
             }
         }
@@ -2734,7 +2738,7 @@ private:
         auto remove_per_substream_checksums = [&](const MergeTreeIndexPtr & index)
         {
             /// Strip the checksum of every substream present in the source (`getAllSubstreamsInPart`
-            /// covers a stale legacy file too); a `getSubstreams()`-only walk would leave a stale
+            /// covers a stale legacy file too); a `getSubstreams`-only walk would leave a stale
             /// `.idx` checksum pointing at a file absent from the new part.
             for (const auto & index_substream : index->getAllSubstreamsInPart(
                      ctx->source_part->checksums, index->getFileName(), &ctx->source_part->getDataPartStorage()))
@@ -3357,8 +3361,10 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         /// escape_index_filenames = 0: dropping `a` reaches index `a.pos`, and dropping `a.pos`
         /// reaches the `.pos` substream of text index `a`.
         ///
-        /// Ownership comes from each surviving index's OWN getSubstreams(): minmax owns no `.pos`,
-        /// so letting it claim skp_idx_<name>.pos.* would leak a dropped `<name>.pos` index instead.
+        /// Ownership comes from each surviving index's OWN getSubstreams(), and only for the
+        /// extension that substream declares: minmax owns no `.pos`, and a text index's `.pos` is
+        /// stored as `.idx`, not `.idx2`. Over-claiming either would protect, and so leak, the files
+        /// of the index being dropped.
         NameSet surviving_index_owned_files;
         for (const auto & index : ctx->metadata_snapshot->getSecondaryIndices())
         {
@@ -3369,8 +3375,10 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             const String surviving_file_name = surviving_index->getFileName();
             for (const auto & substream : surviving_index->getSubstreams())
             {
-                for (const auto & ext : known_index_extensions)
-                    surviving_index_owned_files.insert(surviving_file_name + substream.suffix + ext);
+                surviving_index_owned_files.insert(surviving_file_name + substream.suffix + substream.extension);
+                /// An upgraded part may still carry minmax's legacy `.idx` for a `.idx2` substream.
+                if (substream.extension == ".idx2")
+                    surviving_index_owned_files.insert(surviving_file_name + substream.suffix + ".idx");
                 surviving_index_owned_files.insert(surviving_file_name + substream.suffix + ctx->mrk_extension);
             }
         }
@@ -3439,7 +3447,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
 
                 auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
                 const String file_name = index_ptr->getFileName();
-                /// Probe what the source actually holds, not the writer's `getSubstreams()`, so a
+                /// Probe what the source actually holds, not the writer's `getSubstreams`, so a
                 /// legacy `.idx` member is pre-loaded into the rebuilt archive.
                 for (const auto & sub : index_ptr->getAllSubstreamsInPart(
                          source_part->checksums, file_name, &source_part->getDataPartStorage()))
