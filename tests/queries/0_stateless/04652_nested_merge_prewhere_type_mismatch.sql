@@ -35,3 +35,69 @@ SELECT x, y FROM t_outer WHERE x != 0 ORDER BY x LIMIT 3;
 DROP TABLE t_outer;
 DROP TABLE t_inner;
 DROP TABLE t_leaf;
+
+-- `StorageMaterializedView::supportedPrewhereColumns` had the same gap: it compared the view schema
+-- against the target's *declared* columns only. A target that aggregates other tables itself hides
+-- the mismatch one level further down, so the same abort was reachable without any `Merge` on top.
+
+DROP TABLE IF EXISTS mv_src;
+DROP TABLE IF EXISTS mv_dst;
+DROP VIEW IF EXISTS mv_one;
+DROP VIEW IF EXISTS mv_two;
+
+CREATE TABLE mv_src (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE mv_dst (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE MATERIALIZED VIEW mv_one TO mv_dst AS SELECT CAST(x, 'Nullable(UInt64)') AS x, y FROM mv_src;
+CREATE MATERIALIZED VIEW mv_two TO mv_one AS SELECT CAST(x, 'Nullable(UInt64)') AS x, y FROM mv_src;
+INSERT INTO mv_dst SELECT number, number + 1 FROM numbers(10);
+
+SELECT '-- view over a mismatched target is already rejected --';
+SELECT x, y FROM mv_one PREWHERE x != 0 ORDER BY x LIMIT 3; -- { serverError ILLEGAL_PREWHERE }
+
+SELECT '-- view over a view must be rejected too --';
+SELECT x, y FROM mv_two PREWHERE x != 0 ORDER BY x LIMIT 3; -- { serverError ILLEGAL_PREWHERE }
+
+SELECT '-- a matching column still supports PREWHERE through the chain --';
+SELECT count() FROM mv_two PREWHERE y != 0;
+SELECT x, y FROM mv_two PREWHERE y != 0 ORDER BY y LIMIT 3;
+
+SELECT '-- the same predicates as WHERE keep working --';
+SELECT count() FROM mv_two WHERE x != 0;
+SELECT count() FROM mv_two WHERE y != 0;
+SELECT x, y FROM mv_two WHERE x != 0 ORDER BY x LIMIT 3;
+
+DROP VIEW mv_two;
+DROP VIEW mv_one;
+DROP TABLE mv_dst;
+DROP TABLE mv_src;
+
+-- A `Merge` whose child is a view chain: the outer `Merge` sees a matching declared type on the
+-- view, so it can only reject `x` if the view itself reports transitively.
+
+DROP TABLE IF EXISTS mvm_src;
+DROP TABLE IF EXISTS mvm_dst;
+DROP VIEW IF EXISTS mvm_view;
+DROP TABLE IF EXISTS mvm_merge;
+
+CREATE TABLE mvm_src (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE mvm_dst (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE MATERIALIZED VIEW mvm_view TO mvm_dst AS SELECT CAST(x, 'Nullable(UInt64)') AS x, y FROM mvm_src;
+CREATE TABLE mvm_merge (x Nullable(UInt64), y UInt64) ENGINE = Merge(currentDatabase(), '^mvm_view$');
+INSERT INTO mvm_dst SELECT number, number + 1 FROM numbers(10);
+
+SELECT '-- Merge over a materialized view must be rejected too --';
+SELECT x, y FROM mvm_merge PREWHERE x != 0 ORDER BY x LIMIT 3; -- { serverError ILLEGAL_PREWHERE }
+
+SELECT '-- and a matching column still works --';
+SELECT count() FROM mvm_merge PREWHERE y != 0;
+SELECT x, y FROM mvm_merge PREWHERE y != 0 ORDER BY y LIMIT 3;
+
+SELECT '-- the same predicates as WHERE keep working --';
+SELECT count() FROM mvm_merge WHERE x != 0;
+SELECT count() FROM mvm_merge WHERE y != 0;
+SELECT x, y FROM mvm_merge WHERE x != 0 ORDER BY x LIMIT 3;
+
+DROP TABLE mvm_merge;
+DROP VIEW mvm_view;
+DROP TABLE mvm_dst;
+DROP TABLE mvm_src;

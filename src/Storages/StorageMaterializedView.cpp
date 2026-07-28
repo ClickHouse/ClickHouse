@@ -1093,6 +1093,15 @@ std::optional<NameSet> StorageMaterializedView::supportedPrewhereColumns() const
             supported_columns.insert(name);
     }
 
+    /// The loop above only compares against the target's *declared* columns. When the target
+    /// aggregates other tables itself (a `Merge`, another `MaterializedView`, ...), its declared
+    /// type can match while a leaf's differs, and the read delegated down to that leaf would then
+    /// re-derive PREWHERE against a type the plan did not expect. Intersect with what the target
+    /// itself allows so the constraint holds transitively. Target chains cannot cycle: a
+    /// self-target is rejected with BAD_ARGUMENTS and a loop with INFINITE_LOOP, both at DDL time.
+    if (const auto target_supported_columns = table->supportedPrewhereColumns())
+        std::erase_if(supported_columns, [&](const auto & name) { return !target_supported_columns->contains(name); });
+
     return supported_columns;
 }
 

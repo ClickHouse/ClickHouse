@@ -11,3 +11,28 @@
 1	2
 2	3
 3	4
+-- view over a mismatched target is already rejected --
+-- view over a view must be rejected too --
+-- a matching column still supports PREWHERE through the chain --
+10
+0	1
+1	2
+2	3
+-- the same predicates as WHERE keep working --
+9
+10
+1	2
+2	3
+3	4
+-- Merge over a materialized view must be rejected too --
+-- and a matching column still works --
+10
+0	1
+1	2
+2	3
+-- the same predicates as WHERE keep working --
+9
+10
+1	2
+2	3
+3	4
