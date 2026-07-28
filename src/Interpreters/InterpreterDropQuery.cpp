@@ -40,6 +40,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char drop_database_before_exclusive_ddl_lock[];
+    extern const char detach_permanently_pause_before_remove_dependencies[];
 }
 
 namespace Setting
@@ -304,7 +305,14 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             if (query.permanently)
             {
-                DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+                FailPointInjection::pauseFailPoint(FailPoints::detach_permanently_pause_before_remove_dependencies);
+
+                /// The check above (before `flushAndShutdown`) already rejected pre-existing dependents.
+                /// A dependent found now was registered concurrently, and the table is already shut down:
+                /// throwing here would leave it attached but unusable, so warn and finish the detach.
+                DatabaseCatalog::instance().removeDependencies(
+                    table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database, /*is_mv=*/ false,
+                    DatabaseCatalog::DependentsPolicy::Warn);
                 NamedCollectionFactory::instance().removeDependencies(table_id);
                 /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
                 database->detachTablePermanently(context_, table_id.table_name);
@@ -360,7 +368,13 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             if (database->getUUID() == UUIDHelpers::Nil)
                 table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-            DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+            FailPointInjection::pauseFailPoint(FailPoints::detach_permanently_pause_before_remove_dependencies);
+
+            /// Same reasoning as in the DETACH PERMANENTLY branch above: the table is already shut down,
+            /// so a concurrently registered dependent must not turn into a throw here.
+            DatabaseCatalog::instance().removeDependencies(
+                table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database, /*is_mv=*/ false,
+                DatabaseCatalog::DependentsPolicy::Warn);
             NamedCollectionFactory::instance().removeDependencies(table_id);
             database->dropTable(context_, table_id.table_name, query.sync);
 

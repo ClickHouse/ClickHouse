@@ -244,7 +244,18 @@ public:
     void addDependencies(const StorageID & table_id, const std::vector<StorageID> & new_referential_dependencies, const std::vector<StorageID> & new_loading_dependencies, const std::vector<StorageID> & new_view_dependencies);
     void addDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies, const TableNamesSet & new_view_dependencies);
     void addDependencies(const TablesDependencyGraph & new_referential_dependencies, const TablesDependencyGraph & new_loading_dependencies, const TablesDependencyGraph & new_view_dependencies);
-    std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>> removeDependencies(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false, bool is_mv = false);
+    /// What to do when a table still has dependents at the moment its dependencies are removed.
+    enum class DependentsPolicy : uint8_t
+    {
+        /// Throw HAVE_DEPENDENT_OBJECTS. The caller can still abort the operation without any damage.
+        Throw,
+        /// Log a warning and continue. For callers that have already passed their point of no return
+        /// (the table is shut down), where throwing would leave it shut down but still attached.
+        /// Such a caller must have performed the same check earlier, before shutting the table down.
+        Warn,
+    };
+
+    std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>> removeDependencies(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false, bool is_mv = false, DependentsPolicy dependents_policy = DependentsPolicy::Throw);
     std::vector<StorageID> getReferentialDependencies(const StorageID & table_id) const;
     std::vector<StorageID> getReferentialDependents(const StorageID & table_id) const;
     std::vector<StorageID> getLoadingDependencies(const StorageID & table_id) const;
@@ -297,6 +308,10 @@ private:
     void shutdownImpl(std::function<void()> shutdown_system_logs);
 
     void checkTableCanBeRemovedOrRenamedUnlocked(const StorageID & removing_table, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database) const TSA_REQUIRES(databases_mutex);
+
+    /// The dependents that would make `checkTableCanBeRemovedOrRenamedUnlocked` throw, i.e. already filtered
+    /// by `is_drop_database` (which ignores dependents from the same database). Empty means "can be removed".
+    std::vector<StorageID> getBlockingDependentsUnlocked(const StorageID & removing_table, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database) const TSA_REQUIRES(databases_mutex);
 
     struct UUIDToStorageMapPart
     {

@@ -128,6 +128,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_wait_next_mutation) \
     PAUSEABLE_ONCE(delta_lake_metadata_iterate_pause) \
     PAUSEABLE_ONCE(query_metric_log_pause_before_finish) \
+    PAUSEABLE_ONCE(detach_permanently_pause_before_remove_dependencies) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
     PAUSEABLE(dummy_pausable_failpoint) \

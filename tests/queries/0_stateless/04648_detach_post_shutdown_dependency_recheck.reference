@@ -1,0 +1,29 @@
+-- dictionary
+a
+dict removal=ok
+0
+warned=1
+-- materialized view
+1
+mv removal=ok
+0
+warned=1
+2
+-- plain MergeTree, DROP instead of DETACH
+mt removal=ok
+0
+warned=1
+-- the surviving edge is real: a new object under the same name is protected again
+HAVE_DEPENDENT_OBJECTS
+-- and dropping the dependent clears it
+0
+-- ReplicatedMergeTree (in an Atomic database)
+rmt removal=ok
+0
+warned=1
+-- DROP DATABASE, dependent registered in the window in the SAME database: filtered, no warning
+same_db removal=FAILED Code: 219
+warned=0
+-- DROP DATABASE, dependent registered in the window in ANOTHER database: warned
+cross_db removal=ok
+warned=1
