@@ -299,3 +299,38 @@ TEST(BlockedPositionsMatch, Empty)
 {
     EXPECT_TRUE(DB::TextIndexPhraseSearch::matchCandidatePositions({}, {}, {}, {}).empty());
 }
+
+TEST(BlockedPositionsCodec, RejectsFrequencyAboveUInt32)
+{
+    /// The declared ~40 MB payload lifts the payload-derived bound above UInt32 max, so the
+    /// frequency slips past it and must be rejected explicitly, not truncated.
+    std::string blob;
+    auto put_varint = [&](UInt64 v)
+    {
+        while (v >= 0x80)
+        {
+            blob.push_back(static_cast<char>(v | 0x80));
+            v >>= 7;
+        }
+        blob.push_back(static_cast<char>(v));
+    };
+
+    constexpr UInt64 payload_bytes = 40'000'000;
+    put_varint(1); /// num_docs
+    put_varint(1); /// num_blocks
+    put_varint(payload_bytes);
+
+    const size_t payload_start = blob.size();
+    put_varint(1); /// num_exceptions
+    put_varint(0); /// local_rank
+    put_varint(5'000'000'000ULL); /// freq: > UInt32 max, < docs + payload_bytes * 128
+    blob.resize(payload_start + payload_bytes, '\0');
+
+    DB::ReadBufferFromMemory in(blob.data(), blob.size());
+    DB::PaddedPODArray<UInt32> doc_offsets;
+    DB::PaddedPODArray<UInt32> positions;
+    TextIndexBlockedPositionsCodec::DecodeScratch scratch;
+    EXPECT_THROW(
+        TextIndexBlockedPositionsCodec::decodeAll(in, 1, blob.size(), doc_offsets, positions, scratch),
+        DB::Exception);
+}

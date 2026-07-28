@@ -5,6 +5,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <bit>
+#include <limits>
 
 namespace DB
 {
@@ -12,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -80,13 +82,18 @@ void parseBlock(
         if (local_rank >= docs_in_block || (e > 0 && local_rank <= prev_rank))
             throw Exception(ErrorCodes::CORRUPTED_DATA,
                 "Corrupt text index positions (blocked): exception rank {} out of order or out of range {}", local_rank, docs_in_block);
-        if (freq < 2 || total + (freq - 1) > max_total)
+        if ((freq < 2) || (freq > std::numeric_limits<UInt32>::max()) || (total + (freq - 1) > max_total))
             throw Exception(ErrorCodes::CORRUPTED_DATA,
                 "Corrupt text index positions (blocked): invalid frequency {} (total would exceed {})", freq, max_total);
         freqs[local_rank] = static_cast<UInt32>(freq);
         total += freq - 1;
         prev_rank = local_rank;
     }
+
+    /// The lane is indexed with UInt32 offsets; max_total alone does not bound it for large payloads.
+    if (total > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions: {} positions in a single block", total);
 
     values.resize(total);
     const size_t consumed = PFor::decodeBlocks<UInt32>(pos, total, PFor::Delta::none, values.data(), end);
@@ -117,6 +124,11 @@ void emitRanks(
             position = (k == 0) ? values[start + k] : position + values[start + k];
             positions.push_back(position);
         }
+
+        /// Offsets are UInt32; fail closed instead of silently wrapping the cumulative count.
+        if (positions.size() > std::numeric_limits<UInt32>::max())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Text index positions: more than {} positions for a single token", std::numeric_limits<UInt32>::max());
         offsets.push_back(static_cast<UInt32>(positions.size()));
 
         start += freqs[rank];
@@ -173,6 +185,11 @@ void TextIndexBlockedPositionsCodec::encode(std::span<const RoaringishEntry> ent
             bitmap &= bitmap - 1;
         }
     }
+
+    /// Decoders address the whole-token stream with UInt32 offsets; refuse to write an unreadable part.
+    if (values.size() > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Text index positions: more than {} positions for a single token", std::numeric_limits<UInt32>::max());
 
     const UInt64 num_docs = freqs.size();
     const UInt64 num_blocks = (num_docs + BLOCK_DOCS - 1) / BLOCK_DOCS;

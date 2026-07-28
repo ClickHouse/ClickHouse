@@ -1140,7 +1140,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
         readVarUInt(positions_codec, istr);
         if (positions_codec != static_cast<UInt64>(TextIndexPositionCodec::Encoding::BlockedPfor))
             throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Unknown positions codec {} in text index header; a newer server version may be required to read this part", positions_codec);
+                "Unknown positions codec {} in text index header", positions_codec);
         header.positions_codec = static_cast<UInt8>(positions_codec);
     }
 
