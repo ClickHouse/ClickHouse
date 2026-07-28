@@ -36,7 +36,6 @@ using ParsedManifestFileEntryPtr = std::shared_ptr<const ParsedManifestFileEntry
 class AvroForIcebergDeserializer
 {
 private:
-    std::unique_ptr<DB::ReadBufferFromFileBase> buffer;
     Iceberg::IcebergPathFromMetadata manifest_file_path;
     DB::ColumnPtr parsed_column;
     std::shared_ptr<const DB::DataTypeTuple> parsed_column_data_type;

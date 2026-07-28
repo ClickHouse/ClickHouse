@@ -1,0 +1,78 @@
+---
+noindex: true
+title: "Glossaire"
+description: "Définitions des composants, des concepts et de la terminologie de ClickHouse Private."
+---
+
+<div id="clickhouse-components">
+  ## Composants ClickHouse
+</div>
+
+**ClickHouse Server**
+Le principal processus de base de données de ClickHouse. Dans ClickHouse Private, chaque réplique de serveur s’exécute dans un pod géré par son propre StatefulSet. Voir la [documentation upstream](https://clickhouse.com/docs/operations/server-configuration-parameters/settings).
+
+**ClickHouse Keeper**
+Service distribué de coordination pour les métadonnées de réplication. Nécessite au moins 3 instances pour assurer la haute disponibilité. Voir la [documentation upstream](https://clickhouse.com/docs/operations/clickhouse-keeper).
+
+**ClickHouse Operator**
+Un opérateur Kubernetes qui gère le cycle de vie des ressources personnalisées ClickHouseCluster, y compris le provisionnement, la mise à l’échelle, les sauvegardes et la réconciliation.
+
+**ClickHouseCluster (CR)**
+La ressource personnalisée Kubernetes qui définit l’état souhaité d’un cluster ClickHouse — répliques, stockage, réseau et configuration. Créée via le chart Helm `onprem-clickhouse-cluster`.
+
+**Airgap Management API**
+Composant d’API REST facultatif pour gérer les clusters ClickHouse Private. Fournit des points de terminaison pour les sauvegardes, la mise à l’échelle verticale, les réinitialisations de mot de passe et la surveillance de l’état.
+
+<div id="architecture-concepts">
+  ## Concepts d’architecture
+</div>
+
+**MultiStatefulSet (MultiSTS)**
+Le modèle StatefulSet de l’opérateur dans lequel chaque réplique du serveur ClickHouse est gérée par son propre StatefulSet (1 STS = 1 pod). Cela permet des mises à jour progressives plus sûres et une gestion indépendante des répliques. MultiSTS a remplacé l’ancien modèle SingleSTS, désormais déprécié.
+
+**ReplicaStateMap**
+Une structure de données interne, dans le statut de la CR ClickHouseCluster, qui suit l’état de chaque réplique en mode MultiSTS. Les états incluent **Pending**, **Ready**, **Stopped**, **Condemned**, **Dropped**, **VolumeRestoring** et **VolumeRestored**. Elle est réservée à l’usage interne de l’opérateur et ne doit pas être utilisée par des systèmes externes.
+
+**Réplique condamnée**
+Une réplique marquée pour suppression lors d’opérations de scale-in. L’opérateur la fait passer de **Ready** à **Condemned** dans la ReplicaStateMap, puis la supprime en toute sécurité après synchronisation des données.
+
+**Hydra (Compute Separation)**
+Une fonctionnalité qui permet d’utiliser plusieurs profils de calcul (groupes de nœuds) au sein d’un même cluster ClickHouse. Chaque profil peut avoir des allocations de ressources différentes et des points de terminaison distincts, tout en partageant une instance Keeper et les données S3. Les instances enfants peuvent être en lecture seule ou en lecture-écriture.
+
+**Pod de sauvegarde**
+En mode MultiSTS, une réplique est désignée comme pod de sauvegarde (`isBackupPod: true` dans la ReplicaStateMap). Les sauvegardes s’exécutent toujours sur ce pod, et il n’est jamais placé dans l’état **Condemned** lors d’un scale-in.
+
+<div id="infrastructure-terms">
+  ## Termes d’infrastructure
+</div>
+
+**IRSA (IAM Roles for Service Accounts)**
+Mécanisme AWS qui permet aux comptes de service Kubernetes d’endosser des rôles IAM. Utilisé pour accorder aux pods ClickHouse l’accès à S3 sans identifiants statiques.
+
+**Workload Identity**
+L’équivalent GCP d’IRSA. Lie un compte de service Kubernetes à un compte de service GCP pour accéder à GCS et à d’autres services GCP.
+
+**FIPS 140-2**
+Norme du gouvernement américain pour les modules cryptographiques. ClickHouse Private prend en charge les déploiements conformes à FIPS à l’aide d’images serveur spécialement conçues et de la génération de certificats TLS validés selon FIPS.
+
+**NVMe Cache**
+Stockage SSD NVMe local rattaché aux nœuds serveur, utilisé comme cache de disque pour les données stockées dans S3/GCS. Améliore les performances des requêtes en mettant en cache localement les données fréquemment consultées. Configuré via `bytesPerGiRAM` ou `cacheDiskSize` dans le chart Helm.
+
+**S3 Key Prefix**
+Préfixe de clé S3 unique (généralement un UUID) qui isole les données d’un cluster au sein d’un bucket S3. Plusieurs clusters peuvent partager un même bucket en utilisant des préfixes de clé différents.
+
+<div id="operational-terms">
+  ## Termes opérationnels
+</div>
+
+**Réconciliation**
+Le processus par lequel l&#39;opérateur compare l&#39;état souhaité (CR spec) à l&#39;état réel (pods en cours d&#39;exécution, StatefulSets) et apporte les corrections nécessaires. Ce processus est surveillé via la métrique `last_cluster_reconcile`.
+
+**Annotation Skip-Reconcile**
+L&#39;annotation `clickhouse.com/skip-reconcile` sur une ressource personnalisée ClickHouseCluster. Lorsqu&#39;elle est présente, l&#39;opérateur ne réconcilie pas ce cluster. Elle est utilisée lors d&#39;opérations manuelles, comme la suppression d&#39;une réplique.
+
+**Vérifications Preflight**
+Un outil de validation (basé sur Troubleshoot.sh) qui vérifie les prérequis du cluster avant de déployer ClickHouse — labels de nœud, classes de stockage, CRD, etc.
+
+**PDB (PodDisruptionBudget)**
+Une ressource Kubernetes qui limite le nombre de pods pouvant être indisponibles simultanément. L&#39;opérateur respecte les PDB lors des mises à jour progressives afin de préserver la disponibilité.

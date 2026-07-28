@@ -1,0 +1,71 @@
+---
+slug: /best-practices/choosing-a-partitioning-key
+sidebarTitle: 'Cómo elegir una clave de partición'
+title: 'Cómo elegir una clave de partición'
+description: 'Página que explica cómo elegir una clave de partición'
+keywords: ['clave de partición']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<Info>
+  **Una técnica de gestión de datos**
+
+  El particionamiento es, ante todo, una técnica de gestión de datos y no una herramienta de optimización de consultas. Aunque puede mejorar el rendimiento en cargas de trabajo específicas, no debería ser el primer mecanismo al que se recurra para acelerar las consultas; la clave de partición debe elegirse cuidadosamente, con una comprensión clara de sus implicaciones, y aplicarse solo cuando responda a necesidades del ciclo de vida de los datos o a patrones de acceso bien entendidos.
+</Info>
+
+En ClickHouse, el particionamiento organiza los datos en segmentos lógicos según una clave especificada. Esto se define mediante la cláusula `PARTITION BY` al crear la tabla y se usa habitualmente para agrupar filas por intervalos de tiempo, categorías u otras dimensiones relevantes para el negocio. Cada valor único de la expresión de particionamiento forma su propia partición física en disco, y ClickHouse almacena los datos en partes separadas para cada uno de esos valores. El particionamiento mejora la gestión de datos, simplifica las políticas de retención y puede ayudar con ciertos patrones de consulta.
+
+Por ejemplo, considere la siguiente tabla del conjunto de datos UK price paid con una clave de partición `toStartOfMonth(date)`.
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple_partitioned
+(
+  date Date,
+  town LowCardinality(String),
+  street LowCardinality(String),
+  price UInt32
+)
+ENGINE = MergeTree
+ORDER BY (town, street)
+PARTITION BY toStartOfMonth(date)
+```
+
+Cada vez que se inserta un conjunto de filas en la tabla, en lugar de crear (al[ menos](/es/reference/settings/session-settings#max_insert_block_size)) una única parte de datos que contenga todas las filas insertadas (como se describe [aquí](/es/concepts/core-concepts/parts)), ClickHouse crea una nueva parte de datos por cada valor único de la clave de partición entre las filas insertadas:
+
+<Image img="/images/bestpractices/partitions.webp" size="lg" alt="Particiones" />
+
+El servidor de ClickHouse primero divide las filas de la inserción de ejemplo de 4 filas representada en el diagrama anterior según el valor de su clave de partición `toStartOfMonth(date)`. Luego, para cada partición identificada, las filas se procesan como[ de costumbre](/es/concepts/core-concepts/parts) mediante varios pasos secuenciales (① Ordenación, ② División en columnas, ③ Compresión, ④ Escritura en disco).
+
+Para obtener una explicación más detallada del particionamiento, recomendamos [esta guía](/es/concepts/core-concepts/partitions).
+
+Con el particionamiento habilitado, ClickHouse solo [fusiona](/es/concepts/core-concepts/merges) partes de datos dentro de las particiones, pero no entre ellas. Lo ilustramos con nuestra tabla de ejemplo anterior:
+
+<Image img="/images/bestpractices/merges_with_partitions.webp" size="md" alt="Particiones" />
+
+<div id="applications-of-partitioning">
+  ## Aplicaciones del particionamiento
+</div>
+
+El particionamiento es una herramienta muy útil para gestionar grandes conjuntos de datos en ClickHouse, especialmente en casos de uso de observabilidad y analítica. Permite realizar operaciones eficientes del ciclo de vida de los datos, ya que hace posible eliminar, mover o archivar particiones completas —a menudo alineadas con el tiempo o con la lógica de negocio— en una sola operación de metadatos. Esto es considerablemente más rápido y requiere menos recursos que las operaciones de eliminación o copia a nivel de fila. El particionamiento también se integra de forma natural con funciones de ClickHouse como TTL y tiered storage, lo que permite implementar políticas de retención o estrategias de almacenamiento en caliente/frío sin necesidad de una orquestación personalizada. Por ejemplo, los datos recientes pueden mantenerse en un almacenamiento rápido respaldado por SSD, mientras que las particiones más antiguas se trasladan automáticamente a object storage más económico.
+
+Aunque el particionamiento puede mejorar el rendimiento de las consultas para algunas cargas de trabajo, también puede afectar negativamente al tiempo de respuesta.
+
+Si la clave de particionamiento no forma parte de la clave primaria y se filtra por ella, los usuarios pueden notar una mejora en el rendimiento de las consultas al usar particionamiento. Consulte [aquí](/es/concepts/core-concepts/partitions#query-optimization) un ejemplo.
+
+Por el contrario, si las consultas necesitan abarcar varias particiones, el rendimiento puede verse afectado negativamente debido a un mayor número total de partes. Por este motivo, los usuarios deben comprender sus patrones de acceso antes de considerar el particionamiento como una técnica de optimización de consultas.
+
+En resumen, los usuarios deberían considerar principalmente el particionamiento como una técnica de gestión de datos. Para ver un ejemplo de gestión de datos, consulte [&quot;Gestión de datos&quot;](/es/guides/use-cases/observability/build-your-own/managing-data) en la guía de casos de uso de observabilidad y [&quot;¿Para qué se usan las particiones de tablas?&quot;](/es/concepts/core-concepts/partitions#data-management) en Conceptos principales - Particiones de tablas.
+
+<div id="choose-a-low-cardinality-partitioning-key">
+  ## Elija una clave de partición de baja cardinalidad
+</div>
+
+Es importante tener en cuenta que un mayor número de partes afectará negativamente al rendimiento de las consultas. Por lo tanto, ClickHouse responderá a las inserciones con un error [“Too many parts”](/es/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) si el número de partes supera los límites especificados, ya sea [en total](/es/reference/settings/merge-tree-settings#max_parts_in_total) o [por partición](/es/reference/settings/merge-tree-settings#parts_to_throw_insert).
+
+Elegir la **cardinalidad** adecuada para la clave de partición es fundamental. Una clave de partición de alta cardinalidad —donde el número de valores de partición distintos es elevado— puede provocar una proliferación de partes. Dado que ClickHouse no fusiona partes entre particiones, demasiadas particiones darán lugar a demasiadas partes sin fusionar, lo que acabará desencadenando el error “Too many parts”. Las [fusiones son esenciales](/es/concepts/core-concepts/merges) para reducir la fragmentación del almacenamiento y optimizar la velocidad de las consultas, pero con particiones de alta cardinalidad, ese potencial de fusión se pierde.
+
+Por el contrario, una **clave de partición de baja cardinalidad** —con menos de 100-1.000 valores distintos— suele ser óptima. Permite fusionar partes de forma eficiente, mantiene baja la sobrecarga de metadatos y evita la creación excesiva de objetos en el almacenamiento. Además, ClickHouse crea automáticamente índices MinMax en las columnas de partición, lo que puede acelerar significativamente las consultas que filtran por esas columnas. Por ejemplo, filtrar por mes cuando la tabla está particionada por `toStartOfMonth(date)` permite al motor omitir por completo las particiones irrelevantes y sus partes.
+
+Aunque el particionamiento puede mejorar el rendimiento en algunos patrones de consulta, es ante todo una funcionalidad de gestión de datos. En muchos casos, consultar todas las particiones puede ser más lento que usar una tabla sin particionar debido al aumento de la fragmentación de los datos y a que se examinan más partes. Use el particionamiento con criterio y asegúrese siempre de que la clave elegida tenga baja cardinalidad y se ajuste a las políticas del ciclo de vida de sus datos (p. ej., retención mediante TTL). Si no está seguro de si el particionamiento es necesario, quizá le convenga empezar sin él y optimizar más adelante en función de los patrones de acceso observados.

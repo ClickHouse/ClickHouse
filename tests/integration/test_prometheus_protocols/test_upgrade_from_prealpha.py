@@ -55,6 +55,7 @@ PREALPHA_TAGS_DEF = (
     " min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))),"
     " max_time SimpleAggregateFunction(max, Nullable(DateTime64(3))))"
     " ENGINE=AggregatingMergeTree ORDER BY (metric_name, id)"
+    " SETTINGS allow_dimensions_outside_sorting_key = 1"
 )
 
 PREALPHA_METRICS_DEF = (

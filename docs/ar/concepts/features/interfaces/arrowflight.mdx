@@ -1,0 +1,486 @@
+---
+description: 'توثيق لواجهة Apache Arrow Flight في ClickHouse، تتيح لعملاء Flight SQL الاتصال بـ ClickHouse'
+sidebarTitle: 'واجهة Arrow Flight'
+slug: /interfaces/arrowflight
+title: 'واجهة Arrow Flight'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+يدعم ClickHouse بروتوكول [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html) — وهو إطار RPC عالي الأداء لنقل البيانات العمودية بكفاءة باستخدام تنسيق [Arrow IPC](https://arrow.apache.org/docs/format/Columnar.html#serialization-and-interprocess-communication-ipc) عبر [gRPC](https://grpc.io/).
+
+يتضمن هذا التنفيذ دعم [Arrow Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html)، مما يتيح لأدوات BI والتطبيقات التي تدعم بروتوكول Flight SQL الاستعلام من ClickHouse مباشرةً.
+
+القدرات الأساسية:
+
+* تنفيذ استعلامات SQL واسترجاع النتائج بتنسيق Apache Arrow.
+* إدراج البيانات في الجداول باستخدام تنسيق Arrow.
+* الاستعلام عن البيانات الوصفية (catalogs وschemas وtables وprimary keys) عبر أوامر Flight SQL.
+* إنشاء العبارات المُحضّرة على جهة الخادم وربطها وتنفيذها وإغلاقها عبر Flight SQL.
+* إدارة الجلسات والإعدادات عبر إجراءات Flight SQL.
+* تشفير TLS والمصادقة باستخدام اسم المستخدم/كلمة المرور.
+* الاسترجاع التدريجي للنتائج عبر `PollFlightInfo`.
+* إلغاء الاستعلام عبر `CancelFlightInfo`.
+
+<div id="enabling-server">
+  ## تمكين خادم Arrow Flight
+</div>
+
+لتمكين خادم Arrow Flight، أضِف الإعداد `arrowflight_port` إلى إعدادات خادم ClickHouse:
+
+```xml
+<clickhouse>
+    <arrowflight_port>9090</arrowflight_port>
+</clickhouse>
+```
+
+عند بدء التشغيل، تؤكد رسالة في السجل أن الواجهة نشطة:
+
+```text
+{} <Information> Application: Arrow Flight compatibility protocol: 0.0.0.0:9090
+```
+
+<div id="tls-configuration">
+  ## تهيئة TLS
+</div>
+
+لتمكين TLS لواجهة Arrow Flight، اضبط الإعدادات التالية:
+
+```xml
+<clickhouse>
+    <arrowflight_port>9090</arrowflight_port>
+    <arrowflight>
+        <enable_ssl>true</enable_ssl>
+        <ssl_cert_file>/path/to/server-cert.pem</ssl_cert_file>
+        <ssl_key_file>/path/to/server-key.pem</ssl_key_file>
+    </arrowflight>
+</clickhouse>
+```
+
+عند تفعيل TLS، يجب على العملاء الاتصال باستخدام الصيغة `grpc+tls://` بدلًا من `grpc://`.
+
+<div id="authentication">
+  ## المصادقة
+</div>
+
+تدعم واجهة Arrow Flight طريقتين للمصادقة:
+
+<div id="basic-auth">
+  ### المصادقة الأساسية
+</div>
+
+تُجري البرامج العميلة المصادقة باستخدام اسم مستخدم وكلمة مرور عبر ترويسة HTTP القياسية `Authorization: Basic`. وعند نجاح المصادقة، يُرجِع الخادم Bearer token في ترويسة الاستجابة.
+
+<div id="bearer-auth">
+  ### مصادقة رمز Bearer
+</div>
+
+يمكن للطلبات اللاحقة استخدام رمز Bearer المُعاد من المصادقة الأساسية عبر ترويسة `Authorization: Bearer <token>`. ويُجدَّد الرمز تلقائيًا عند كل استخدام، وتنتهي صلاحيته وفقًا لإعداد الخادم `default_session_timeout` (الافتراضي: 60 ثانية).
+
+<div id="auth-python-example">
+  ### مثال بلغة بايثون
+</div>
+
+```python
+import pyarrow.flight as flight
+
+client = flight.FlightClient("grpc://localhost:9090")
+
+# Basic auth returns a bearer token for subsequent calls
+token_pair = client.authenticate_basic_token("default", "")
+options = flight.FlightCallOptions(headers=[token_pair])
+```
+
+باستخدام TLS:
+
+```python
+import pyarrow.flight as flight
+
+with open("ca-cert.pem", "rb") as f:
+    tls_root_certs = f.read()
+
+client = flight.FlightClient(
+    "grpc+tls://localhost:9090",
+    tls_root_certs=tls_root_certs,
+)
+
+token_pair = client.authenticate_basic_token("default", "password")
+options = flight.FlightCallOptions(headers=[token_pair])
+```
+
+<div id="session-management">
+  ## إدارة الجلسات
+</div>
+
+تدعم واجهة Arrow Flight جلسات ClickHouse من خلال رؤوس البيانات الوصفية المخصصة في gRPC:
+
+| الترويسة                       | الوصف                                                                                                                   |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `x-clickhouse-session-id`      | معرّف الجلسة. إذا تم تمريره، تشترك عدة طلبات في حالة الجلسة نفسها (الجداول المؤقتة، والإعدادات).                        |
+| `x-clickhouse-session-timeout` | مهلة الجلسة بالثواني. يجب ألا تتجاوز `max_session_timeout`.                                                             |
+| `x-clickhouse-session-check`   | عيّن القيمة `1` للتحقق من وجود الجلسة من دون إنشائها.                                                                   |
+| `x-clickhouse-session-close`   | عيّن القيمة `1` لإغلاق الجلسة بعد اكتمال الطلب. ويتطلب ذلك ضبط `enable_arrow_close_session` على `true` في تهيئة الخادم. |
+
+<Note>
+  نظرًا إلى أن Arrow Flight يستخدم gRPC عبر HTTP/2، فإن أسماء رؤوس البيانات الوصفية حسّاسة لحالة الأحرف، ويجب كتابتها بأحرف صغيرة تمامًا كما هو موضح (على سبيل المثال، `x-clickhouse-session-id` وليس `X-ClickHouse-Session-Id`). وهذا مطلوب بموجب [RFC 9113, Section 8.2](https://www.rfc-editor.org/rfc/rfc9113#section-8.2)، التي تنص على أن أسماء حقول HTTP/2 يجب أن تتكون من أحرف صغيرة فقط. ويختلف هذا عن HTTP/1.1، حيث تكون أسماء الرؤوس غير حسّاسة لحالة الأحرف.
+</Note>
+
+تتيح الجلسات تعيين إعدادات ClickHouse دائمة عبر الإجراء `SetSessionOptions` (راجع [DoAction](#doaction)).
+
+<div id="configuration-reference">
+  ## مرجع تهيئة الخادم
+</div>
+
+| الإعداد                                                       | الافتراضي | الوصف                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `arrowflight_port`                                            | —         | المنفذ الخاص بخادم Arrow Flight. لا يبدأ الخادم إلا إذا جرى تحديد هذا الإعداد.                                                                                                                                                                                                                                                                                |
+| `arrowflight.enable_ssl`                                      | `false`   | تمكين تشفير TLS.                                                                                                                                                                                                                                                                                                                                              |
+| `arrowflight.ssl_cert_file`                                   | —         | المسار إلى ملف شهادة TLS. وهو مطلوب عند تمكين TLS.                                                                                                                                                                                                                                                                                                            |
+| `arrowflight.ssl_key_file`                                    | —         | المسار إلى ملف المفتاح الخاص لـ TLS. وهو مطلوب عند تمكين TLS.                                                                                                                                                                                                                                                                                                 |
+| `arrowflight.tickets_lifetime_seconds`                        | `600`     | المدة بالثواني قبل انتهاء صلاحية تذاكر Flight وتنظيفها. اضبطها على `0` لتعطيل انتهاء صلاحية التذاكر تلقائيًا.                                                                                                                                                                                                                                                 |
+| `arrowflight.cancel_ticket_after_do_get`                      | `false`   | إذا كانت القيمة `true`، فستُلغى التذاكر مباشرةً بعد أن يستهلكها `DoGet`، مما يحرر الذاكرة.                                                                                                                                                                                                                                                                    |
+| `arrowflight.poll_descriptors_lifetime_seconds`               | `600`     | المدة بالثواني قبل انتهاء صلاحية واصفات الاستطلاع. اضبطها على `0` لتعطيل انتهاء الصلاحية التلقائي.                                                                                                                                                                                                                                                            |
+| `arrowflight.cancel_flight_descriptor_after_poll_flight_info` | `false`   | إذا كانت القيمة `true`، فستُلغى واصفات الاستطلاع بعد أن يستهلكها `PollFlightInfo`.                                                                                                                                                                                                                                                                            |
+| `arrowflight.max_prepared_statements_per_user`                | `100`     | الحد الأقصى لعدد العبارات المُحضّرة المفتوحة لكل مستخدم. اضبطه على `0` لتعطيل هذا الحد.                                                                                                                                                                                                                                                                       |
+| `arrowflight.prepared_statements_lifetime_seconds`            | `-1`      | وضع مدة بقاء العبارة المُحضّرة. `> 0`: استخدم هذه القيمة كمدة بقاء، وحدّث وقت انتهاء الصلاحية مع كل طلب لكلٍّ من العبارات المرتبطة بالجلسة وغير المرتبطة بها. `0`: عطّل انتهاء الصلاحية التلقائي. `-1`: بالنسبة إلى العبارات المرتبطة بالجلسة، استخدم مهلة الجلسة كمدة بقاء وحدّثها مع كل طلب؛ أما العبارات غير المرتبطة بالجلسة فلا تنتهي صلاحيتها تلقائيًا. |
+| `enable_arrow_close_session`                                  | `true`    | السماح للعملاء بإغلاق الجلسات عبر الترويسة `x-clickhouse-session-close`.                                                                                                                                                                                                                                                                                      |
+| `default_session_timeout`                                     | `60`      | مهلة الجلسة الافتراضية بالثواني. وتتحكم أيضًا في انتهاء صلاحية رمز Bearer.                                                                                                                                                                                                                                                                                    |
+| `max_session_timeout`                                         | `3600`    | الحد الأقصى المسموح به لمهلة الجلسة بالثواني.                                                                                                                                                                                                                                                                                                                 |
+
+<div id="rpc-methods">
+  ## طرق RPC المدعومة
+</div>
+
+<div id="getflightinfo">
+  ### GetFlightInfo
+</div>
+
+ينفّذ استعلامًا ويُرجع `FlightInfo` يتضمّن مخطط النتيجة، ونقاط النهاية مع التذاكر اللازمة لاسترجاع البيانات، وعدد الصفوف، وعدد البايتات.
+
+يقبل `FlightDescriptor`، ويمكن أن يكون أحد ما يلي:
+
+* **واصف PATH**: مسارًا أحادي المكوّن يُفسَّر على أنه اسم جدول. ويُنشئ `SELECT * FROM <table>`.
+* **واصف CMD**: إمّا سلسلة استعلام SQL خام، أو أمر Flight SQL protobuf مُسلسل (راجع [Flight SQL Commands](#flight-sql-commands)).
+
+يُنفَّذ الاستعلام بالكامل، وتُخزَّن النتائج في تذاكر على جانب الخادم. وتنتج كل كتلة بيانات نقطة نهاية/تذكرة منفصلة، مما يتيح للعملاء استرجاع البيانات بالتوازي.
+
+```python
+# Query by table name
+descriptor = flight.FlightDescriptor.for_path("my_table")
+info = client.get_flight_info(descriptor, options)
+
+# Query by SQL
+descriptor = flight.FlightDescriptor.for_command(
+    "SELECT * FROM my_table WHERE id > 100"
+)
+info = client.get_flight_info(descriptor, options)
+
+# Retrieve results
+for endpoint in info.endpoints:
+    reader = client.do_get(endpoint.ticket, options)
+    table = reader.read_all()
+    print(table.to_pandas())
+```
+
+<div id="pollflightinfo">
+  ### PollFlightInfo
+</div>
+
+يتيح استرداد النتائج بشكل تدريجي للاستعلامات طويلة التشغيل. فبدلًا من انتظار اكتمال الاستعلام بالكامل (كما يفعل `GetFlightInfo`)، يعيد `PollFlightInfo` النتائج على شكل كتل، كتلةً تلو الأخرى.
+
+عند الاستدعاء الأول، يبدأ تنفيذ الاستعلام. وتتضمن الاستجابة ما يلي:
+
+* كائن `FlightInfo` يحتوي على نقطة نهاية لأي كتل بيانات متاحة حتى تلك اللحظة.
+* كائن `FlightDescriptor` لعملية الاستطلاع التالية (إذا كان من المتوقع توفر المزيد من النتائج).
+
+تسترجع الاستدعاءات اللاحقة باستخدام الواصف المُعاد كتلًا إضافية. وعندما لا تعود هناك بيانات أخرى متاحة، لا تتضمن الاستجابة واصفًا تاليًا.
+
+<Note>
+  ينتظر التنفيذ الحالي حتى تتوفر كتلة بيانات، بدلًا من أن يعيد الاستجابة فورًا من دون بيانات.
+</Note>
+
+<div id="getschema">
+  ### GetSchema
+</div>
+
+يُرجع مخطط Arrow لنتيجة الاستعلام دون تنفيذ الاستعلام كاملًا. ويقبل أنواع الواصف نفسها كما في `GetFlightInfo`.
+
+```python
+descriptor = flight.FlightDescriptor.for_command(
+    "SELECT 1 AS x, 'hello' AS y"
+)
+schema_result = client.get_schema(descriptor, options)
+schema = schema_result.schema
+print(schema)  # x: int32, y: string
+```
+
+<div id="doget">
+  ### DoGet
+</div>
+
+يسترجع البيانات لتذكرة معيّنة. ويقبل أحد الخيارين التاليين:
+
+* تذكرة مُعادة من `GetFlightInfo` أو `PollFlightInfo`.
+* سلسلة استعلام Raw SQL كقيمة للتذكرة.
+
+```python
+# Using a ticket from GetFlightInfo
+reader = client.do_get(endpoint.ticket, options)
+table = reader.read_all()
+
+# Using a raw SQL query as ticket
+ticket = flight.Ticket("SELECT number FROM system.numbers LIMIT 10")
+reader = client.do_get(ticket, options)
+table = reader.read_all()
+```
+
+<div id="doput">
+  ### DoPut
+</div>
+
+يرسل البيانات إلى ClickHouse. يقبل `FlightDescriptor` وتدفّقًا من دفعات سجلات Arrow.
+
+**إدراج حسب اسم الجدول** (واصف PATH):
+
+```python
+schema = pa.schema([("id", pa.int64()), ("name", pa.string())])
+batch = pa.record_batch(
+    [pa.array([1, 2, 3]), pa.array(["Alice", "Bob", "Charlie"])],
+    schema=schema,
+)
+
+descriptor = flight.FlightDescriptor.for_path("my_table")
+writer, _ = client.do_put(descriptor, schema, options)
+writer.write_batch(batch)
+writer.close()
+```
+
+**الإدراج باستخدام SQL** (واصف CMD):
+
+```python
+descriptor = flight.FlightDescriptor.for_command(
+    "INSERT INTO my_table FORMAT Arrow"
+)
+writer, _ = client.do_put(descriptor, schema, options)
+writer.write_batch(batch)
+writer.close()
+```
+
+**تنفيذ عبارات DDL/DML عبر Flight SQL `CommandStatementUpdate`:**
+
+يستخدم عملاء Flight SQL الأمر `CommandStatementUpdate` لتنفيذ عبارات DDL/DML ‏(CREATE، INSERT، ALTER، إلخ). وتتضمن الاستجابة عدد الصفوف المتأثرة.
+
+**الإدخال المجمّع عبر Flight SQL `CommandStatementIngest`:**
+
+لا يُدعَم إلا الإلحاق بالجداول الموجودة (`TABLE_NOT_EXIST_OPTION_FAIL` + `TABLE_EXISTS_OPTION_APPEND`). ولا تُدعَم الكتالوجات والجداول المؤقتة لهذا الأمر.
+
+لا تتوفر إمكانية استخدام `transaction_id` مع `CommandStatementUpdate` أو `CommandStatementIngest`. وإذا تم توفيره، يعرض ClickHouse الخطأ `NotImplemented`.
+
+<Note>
+  لا يُقبل لنقل البيانات سوى التنسيق `Arrow`. ويؤدي تحديد تنسيقات أخرى في SQL (مثل `FORMAT JSON`) إلى حدوث خطأ.
+</Note>
+
+<div id="doaction">
+  ### DoAction
+</div>
+
+ينفّذ إجراءات مُسمّاة. الإجراءات التالية متاحة:
+
+<div id="cancelflightinfo">
+  #### CancelFlightInfo
+</div>
+
+يلغي استعلامًا قيد التشغيل مرتبطًا بـ `FlightInfo`. ويُستخرَج معرّف الاستعلام من حقل `app_metadata` الخاص بـ `FlightInfo`. كما يُلغي أيضًا أي واصفات استطلاع مرتبطة بالاستعلام.
+
+```python
+# Start a long-running query via PollFlightInfo, then cancel it
+cancel_request = flight.CancelFlightInfoRequest(info)
+result = client.cancel_flight_info(cancel_request, options)
+# result.status is CancelStatus.CANCELLED if successful
+```
+
+<div id="setsessionoptions">
+  #### SetSessionOptions
+</div>
+
+يضبط إعدادات خادم ClickHouse للجلسة الحالية. ويتطلب ذلك تعيين معرّف جلسة عبر الترويسة `x-clickhouse-session-id`.
+
+أنواع القيم المدعومة: string وboolean وinteger وdouble وقوائم من string.
+
+إذا كان اسم الإعداد غير معروف، فسيُعاد الخطأ `INVALID_NAME`. وإذا تعذّر تحليل القيمة، فسيُعاد الخطأ `INVALID_VALUE`.
+
+<div id="getsessionoptions">
+  #### GetSessionOptions
+</div>
+
+يعيد جميع إعدادات ClickHouse الحالية وقيمها الخاصة بالجلسة. ويعيد خريطة تربط أسماء الإعدادات بقيم نصية (ويستعلم داخليًا من `system.settings`).
+
+<div id="createpreparedstatement">
+  #### CreatePreparedStatement
+</div>
+
+ينشئ عبارة مُحضَّرة على جانب الخادم ويُرجع معرّفًا لها. يحتوي الطلب على نص استعلام SQL مع عناصر نائبة `?`.
+
+`transaction_id` غير مدعوم لهذا الإجراء. وإذا تم توفيره، يعيد ClickHouse الخطأ `NotImplemented`.
+
+بالنسبة إلى تعليمات الاستعلام، قد تتضمن الاستجابة ما يلي:
+
+* `dataset_schema`: مخطط مجموعة النتائج.
+* `parameter_schema`: مخطط معلمات التعليمة.
+
+إذا فشل استنتاج المخطط لاستعلام صالح (على سبيل المثال، عندما لا يكون استبدال العناصر النائبة بـ `NULL` صالحًا لهذا الاستعلام)، فسيواصل ClickHouse إنشاء العبارة المُحضَّرة ويُرجع المعرّف من دون `dataset_schema`.
+
+تكون العبارات المُحضَّرة مملوكة للمستخدم الذي جرت مصادقته، وليس لجلسة واحدة بعينها. وإذا فتحت عدة جلسات بالمستخدم نفسه، يمكنك تنفيذ معرّف التعليمة نفسه، وإعادة الربط به، وإغلاقه من أيٍّ من تلك الجلسات.
+
+لا يمكن للمستخدمين الآخرين تنفيذ معرّف تعليمة لم ينشئوه، أو إجراء bind له، أو إغلاقه.
+
+يتحكم `arrowflight.prepared_statements_lifetime_seconds` في سلوك انتهاء الصلاحية:
+
+* `> 0`: استخدم القيمة المُعدّة على أنها مدة بقاء العبارة. ويُجدَّد انتهاء الصلاحية مع كل طلب لكلٍّ من التعليمات المرتبطة بجلسة وغير المرتبطة بجلسة.
+* `0`: لا تنتهي صلاحية العبارات المُحضَّرة تلقائيًا.
+* `-1` (default): إذا أُنشئت العبارة داخل جلسة، فإن مدة بقائها تتبع مهلة تلك الجلسة ويُجدَّد مع كل طلب داخلها. وإذا أُنشئت العبارة من دون جلسة، فلا تنتهي صلاحيتها تلقائيًا.
+
+تُزال العبارات منتهية الصلاحية، ولا تعود تُحتسب ضمن `arrowflight.max_prepared_statements_per_user`.
+
+<div id="closepreparedstatement">
+  #### ClosePreparedStatement
+</div>
+
+يغلق عبارة مُحضَّرة ويحرّر موارد جهة الخادم المرتبطة بها عندما يحتوي الطلب على معرّف عبارة غير فارغ.
+
+يدعم ClickHouse أيضًا الإغلاق المجمّع باستخدام `ClosePreparedStatement` عندما يكون المعرّف فارغًا:
+
+* إذا كان `x-clickhouse-session-id` موجودًا، فسيُغلق جميع العبارات المُحضَّرة للمستخدم المُصادَق عليه ضمن تلك الجلسة.
+* إذا لم يكن هناك معرّف جلسة، فسيُغلق فقط العبارات المُحضَّرة غير المرتبطة بجلسة للمستخدم المُصادَق عليه.
+
+إذا أُنشئت عبارة مُحضَّرة داخل جلسة (عبر `x-clickhouse-session-id`)، فستُغلق أيضًا تلقائيًا عند إغلاق تلك الجلسة.
+
+<div id="flight-sql-commands">
+  ## Flight SQL Commands
+</div>
+
+عندما يحتوي الواصف `CMD` على رسالة [Protobuf لـ Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html) مُسلسلة، يدعم ClickHouse الأوامر التالية:
+
+<div id="flightsql-getflightinfo">
+  ### مدعوم من خلال GetFlightInfo / GetSchema
+</div>
+
+| Command                         | Description                                                                                 |
+| ------------------------------- | ------------------------------------------------------------------------------------------- |
+| `CommandStatementQuery`         | نفّذ أي استعلام SQL. `transaction_id` غير مدعوم.                                            |
+| `CommandGetSqlInfo`             | استرجع البيانات الوصفية للخادم (الاسم، الإصدار، إصدار Arrow، والإمكانات).                   |
+| `CommandGetCatalogs`            | اعرض الكتالوجات. يُرجع نتيجة فارغة (لا يستخدم ClickHouse الكتالوجات).                       |
+| `CommandGetDbSchemas`           | اعرض قواعد البيانات. يدعم `db_schema_filter_pattern` اختياريًا (نمط SQL `LIKE`).            |
+| `CommandGetTables`              | اعرض الجداول. يدعم عوامل تصفية للمخطط واسم الجدول وأنواع الجداول والتضمين الاختياري للمخطط. |
+| `CommandGetTableTypes`          | اعرض أنواع محركات الجداول (من `system.table_engines`).                                      |
+| `CommandGetPrimaryKeys`         | استرجع أعمدة المفتاح الأساسي لجدول محدد.                                                    |
+| `CommandPreparedStatementQuery` | نفّذ عبارة مُعدّة بنمط `SELECT` باستخدام المعرّف.                                           |
+
+<div id="flightsql-doput">
+  ### المدعوم عبر DoPut
+</div>
+
+| الأمر                            | الوصف                                                                                                                                                                                                                            |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CommandStatementUpdate`         | نفِّذ عبارة DDL/DML (`CREATE`، `INSERT`، `ALTER`، إلخ). يُرجع عدد الصفوف المتأثرة. `transaction_id` غير مدعوم.                                                                                                                   |
+| `CommandStatementIngest`         | إدراج بيانات Arrow بكميات كبيرة في جدول موجود. لا يُدعم سوى وضع الإلحاق. `transaction_id` غير مدعوم.                                                                                                                             |
+| `CommandPreparedStatementQuery`  | اربط قيم المعلمات لعبارة مُحضَّرة عند إرسالها عبر `DoPut`، ثم أعِد `DoPutPreparedStatementResult` مع معرّف العبارة. لا تُقبل سوى مجموعة معلمات واحدة (صف واحد)، ويجب أن يطابق عدد القيم المرتبطة تمامًا عدد العناصر النائبة `?`. |
+| `CommandPreparedStatementUpdate` | نفِّذ عبارة DDL/DML مُحضَّرة باستخدام معرّفها، ثم أعِد عدد الصفوف المتأثرة.                                                                                                                                                      |
+
+<div id="flightsql-not-implemented">
+  ### غير مدعوم في ClickHouse
+</div>
+
+تشير هذه الأوامر إلى ميزات لا يوفّرها ClickHouse، لذلك فهي غير مدعومة في واجهة Arrow Flight SQL.
+
+| الأمر                           | السبب                                                                                                                      |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `CommandGetCrossReference`      | لا يُعد ClickHouse قاعدة بيانات علائقية، ولا يطبّق قيود المفاتيح الخارجية، لذلك لا تتوفر بيانات تعريف المراجع المتبادلة.   |
+| `CommandGetExportedKeys`        | لا يُعد ClickHouse قاعدة بيانات علائقية، ولا يطبّق قيود المفاتيح الخارجية، لذلك لا تتوفر بيانات تعريف المفاتيح المُصدَّرة. |
+| `CommandGetImportedKeys`        | لا يُعد ClickHouse قاعدة بيانات علائقية، ولا يطبّق قيود المفاتيح الخارجية، لذلك لا تتوفر بيانات تعريف المفاتيح المستوردة.  |
+| `CommandStatementSubstraitPlan` | لا يدعم ClickHouse خطط Substrait.                                                                                          |
+
+<div id="complete-example">
+  ## مثال متكامل
+</div>
+
+```python title="Query"
+import pyarrow as pa
+import pyarrow.flight as flight
+
+# Connect and authenticate
+client = flight.FlightClient("grpc://localhost:9090")
+token = client.authenticate_basic_token("default", "")
+options = flight.FlightCallOptions(headers=[token])
+
+# Insert data using DoPut with a PATH descriptor
+schema = pa.schema([("id", pa.uint32()), ("value", pa.string())])
+batch = pa.record_batch(
+    [pa.array([1, 2, 3], type=pa.uint32()), pa.array(["a", "b", "c"])],
+    schema=schema,
+)
+descriptor = flight.FlightDescriptor.for_path("test")
+writer, _ = client.do_put(descriptor, schema, options)
+writer.write_batch(batch)
+writer.close()
+
+# Query data using GetFlightInfo + DoGet
+descriptor = flight.FlightDescriptor.for_command(
+    "SELECT * FROM test ORDER BY id"
+)
+info = client.get_flight_info(descriptor, options)
+for endpoint in info.endpoints:
+    reader = client.do_get(endpoint.ticket, options)
+    table = reader.read_all()
+    print(table.to_pandas())
+```
+
+```text title="Response"
+   id value
+0   1     a
+1   2     b
+2   3     c
+```
+
+<div id="data-format">
+  ## تنسيق البيانات
+</div>
+
+تُنقَل جميع البيانات بتنسيق Apache Arrow IPC. ولا يُدعَم سوى تنسيق `Arrow` — إذ إن تحديد تنسيقات ClickHouse أخرى (مثل `FORMAT JSON` و`FORMAT CSV`) يؤدي إلى ظهور خطأ.
+
+تُطابَق أنواع بيانات ClickHouse مع أنواع Arrow أثناء التسلسل. ويحدّد الإعداد `output_format_arrow_unsupported_types_as_binary` ما إذا كانت أنواع ClickHouse غير المدعومة ستُسلسَل على شكل بيانات ثنائية.
+
+<div id="compatibility">
+  ## التوافق
+</div>
+
+واجهة Arrow Flight متوافقة مع أي عميل أو أداة تدعم بروتوكول Arrow Flight أو Arrow Flight SQL، بما في ذلك:
+
+* بايثون (`pyarrow`)
+* Java (`org.apache.arrow.flight`)
+* C++ (`arrow::flight`)
+* Go (`apache/arrow/go`)
+* برامج تشغيل ADBC ‏(Arrow Database Connectivity)
+* DBeaver، وأدوات أخرى تدعم Flight SQL
+
+إذا كان هناك موصل ClickHouse أصلي متاح لأداتك (مثل JDBC أو ODBC أو البروتوكول الأصلي)، ففضّل استخدامه ما لم تكن هناك حاجة محددة إلى Arrow Flight لأسباب تتعلق بالأداء أو بتوافق التنسيقات.
+
+<div id="client-side">
+  ## ميزات ArrowFlight على جهة العميل
+</div>
+
+يمكن لـ ClickHouse أيضًا العمل كعميل لـ Flight لقراءة البيانات من خوادم Arrow Flight الخارجية. راجع:
+
+* [محرك جدول ArrowFlight](/ar/reference/engines/table-engines/integrations/arrowflight)
+* [دالة جدول arrowFlight](/ar/reference/functions/table-functions/arrowflight)
+
+<div id="see-also">
+  ## راجع أيضًا
+</div>
+
+* [مواصفة Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html)
+* [مواصفة Apache Arrow Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html)
+* [تنسيق Arrow في ClickHouse](/ar/reference/formats/Arrow/Arrow)

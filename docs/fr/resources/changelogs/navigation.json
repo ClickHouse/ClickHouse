@@ -1,0 +1,58 @@
+{
+  "groups": [
+    {
+      "group": "Cloud",
+      "pages": [
+        "fr/resources/changelogs/cloud/2026",
+        {
+          "group": "Archives",
+          "pages": [
+            "fr/resources/changelogs/cloud/archive/2025",
+            "fr/resources/changelogs/cloud/archive/2024",
+            "fr/resources/changelogs/cloud/archive/2023",
+            "fr/resources/changelogs/cloud/archive/2022"
+          ]
+        },
+        "fr/resources/changelogs/cloud/release-status",
+        {
+          "group": "Changelog des versions de la base de données Cloud",
+          "pages": [
+            "fr/resources/changelogs/cloud/release-notes/26_02",
+            "fr/resources/changelogs/cloud/release-notes/25_12",
+            "fr/resources/changelogs/cloud/release-notes/25_10",
+            "fr/resources/changelogs/cloud/release-notes/25_08",
+            "fr/resources/changelogs/cloud/release-notes/25_06",
+            "fr/resources/changelogs/cloud/release-notes/25_04",
+            "fr/resources/changelogs/cloud/release-notes/24_12",
+            "fr/resources/changelogs/cloud/release-notes/24_10",
+            "fr/resources/changelogs/cloud/release-notes/24_08",
+            "fr/resources/changelogs/cloud/release-notes/24_06",
+            "fr/resources/changelogs/cloud/release-notes/24_05",
+            "fr/resources/changelogs/cloud/release-notes/24_02"
+          ],
+          "root": "fr/resources/changelogs/cloud/release-notes-index"
+        }
+      ],
+      "root": "fr/resources/changelogs/cloud/index"
+    },
+    {
+      "group": "Auto-hébergé",
+      "pages": [
+        "fr/resources/changelogs/oss/2026",
+        "fr/resources/changelogs/oss/2025",
+        "fr/resources/changelogs/oss/2024",
+        "fr/resources/changelogs/oss/2023",
+        "fr/resources/changelogs/oss/2022",
+        "fr/resources/changelogs/oss/2021",
+        "fr/resources/changelogs/oss/2020",
+        "fr/resources/changelogs/oss/2019",
+        "fr/resources/changelogs/oss/2018",
+        "fr/resources/changelogs/oss/2017",
+        "fr/resources/changelogs/security-changelog"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-changelogs.svg",
+  "item": "Historique des modifications",
+  "root": "fr/resources/changelogs/cloud/2026"
+}

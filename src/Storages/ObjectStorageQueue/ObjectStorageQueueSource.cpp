@@ -21,6 +21,7 @@
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
+#include <Storages/IStreamingStorage.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
@@ -48,11 +49,6 @@ namespace Setting
 {
     extern const SettingsMaxThreads max_parsing_threads;
     extern const SettingsUInt64 keeper_max_retries;
-}
-
-namespace ServerSetting
-{
-    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
 }
 
 namespace ObjectStorageQueueSetting
@@ -170,6 +166,9 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
 
 bool ObjectStorageQueueSource::FileIterator::isFinished()
 {
+    if (iterator_invalidated)
+        return true;
+
     std::lock_guard lock(mutex);
     LOG_TEST(log, "Iterator finished: {}, objects to retry: {}", iterator_finished.load(), objects_to_retry.size());
     return iterator_finished
@@ -503,7 +502,15 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
         if (use_buckets_for_processing)
         {
+            refreshExpiringBucketLocks();
+
             std::lock_guard lock(mutex);
+
+            if (iterator_invalidated)
+            {
+                LOG_WARNING(log, "Bucket lock refresh failed, stopping the file iterator");
+                return {};
+            }
             auto result = getNextKeyFromAcquiredBucket(processor);
             object_info = result.object_info;
             file_metadata = result.file_metadata;
@@ -603,6 +610,38 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
     }
 }
 
+void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks()
+{
+    const size_t ttl_seconds = metadata->getPersistentProcessingNodeTTLSeconds();
+    if (!ttl_seconds)
+        return;
+
+    std::lock_guard lock(mutex);
+
+    /// Already invalidated (possibly by another thread), nothing to refresh.
+    /// Checked under the mutex to never hit the released holder of the lost lock.
+    if (iterator_invalidated)
+        return;
+    for (auto & [processor, holders] : bucket_holders)
+    {
+        for (auto & holder : *holders)
+        {
+            if (holder->getAgeSeconds() >= static_cast<double>(ttl_seconds) / 4)
+            {
+                try
+                {
+                    holder->refresh();
+                }
+                catch (...)
+                {
+                    iterator_invalidated = true;
+                    throw;
+                }
+            }
+        }
+    }
+}
+
 void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
 {
     std::lock_guard lock(mutex);
@@ -628,7 +667,15 @@ void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
                 chassert(holder->isFinished());
 
             /// Release bucket lock.
-            holder->release();
+            try
+            {
+                holder->release();
+            }
+            catch (...)
+            {
+                iterator_invalidated = true;
+                throw;
+            }
             ++released_holders;
 
             /// Reset bucket processor in cached state.
@@ -956,8 +1003,10 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     const StorageID & storage_id_,
     LoggerPtr log_,
     bool commit_once_processed_,
+    bool is_direct_select_,
     bool add_deduplication_info_,
-    bool is_deduplication_v2_)
+    bool is_deduplication_v2_,
+    IStreamingStorage & streaming_storage_)
     : ISource(std::make_shared<const Block>(read_from_format_info_.source_header))
     , WithContext(context_)
     , name(std::move(name_))
@@ -979,9 +1028,11 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , system_queue_log(system_queue_log_)
     , storage_id(storage_id_)
     , commit_once_processed(commit_once_processed_)
+    , is_direct_select(is_direct_select_)
+    , streaming_storage(streaming_storage_)
+    , cancel_epoch(streaming_storage_.currentCancelEpoch())
     , add_deduplication_info(add_deduplication_info_)
     , is_deduplication_v2(is_deduplication_v2_)
-    , insert_deduplication_version(context_->getServerSettings()[ServerSetting::insert_deduplication_version].value)
     , log(log_)
 {
     if (commit_once_processed)
@@ -1031,6 +1082,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
 {
     while (true)
     {
+        if (is_direct_select && streaming_storage.isConsumeCancelRequested(cancel_epoch))
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Consumption aborted by SYSTEM STOP or SYSTEM CANCEL");
+
         if (isCancelled())
         {
             if (reader)
@@ -1151,7 +1205,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 if (old_processed_files >= commit_settings.max_processed_files_before_commit)
                 {
                     LOG_DEBUG(log, "Number of max processed files before commit reached "
-                            "(rows: {}, bytes: {}, files: {}, time: {})",
+                            "(rows: {}, bytes: {}, files: {}, time: {:.3f})",
                             progress->processed_rows.load(), progress->processed_bytes.load(),
                             progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
 
@@ -1285,7 +1339,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 /// Create unique token per chunk: etag + row offset
                 dedup_token = fmt::format("{}:{}", etag, row_offset);
 
-                auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true, insert_deduplication_version);
+                auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true);
                 deduplication_info->setUserToken(dedup_token, chunk.getNumRows());
                 chunk.getChunkInfos().add(std::move(deduplication_info));
             }
@@ -1342,7 +1396,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             && progress->processed_files >= commit_settings.max_processed_files_before_commit)
         {
             LOG_DEBUG(log, "Number of max processed files before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {})",
+                      "(rows: {}, bytes: {}, files: {}, time: {:.3f})",
                       progress->processed_rows.load(), progress->processed_bytes.load(), progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
             break;
         }
@@ -1351,7 +1405,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             && progress->processed_rows >= commit_settings.max_processed_rows_before_commit)
         {
             LOG_DEBUG(log, "Number of max processed rows before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {})",
+                      "(rows: {}, bytes: {}, files: {}, time: {:.3f})",
                       progress->processed_rows.load(), progress->processed_bytes.load(), progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
             break;
         }
@@ -1360,7 +1414,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             && progress->processed_bytes >= commit_settings.max_processed_bytes_before_commit)
         {
             LOG_DEBUG(log, "Number of max processed bytes before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {})",
+                      "(rows: {}, bytes: {}, files: {}, time: {:.3f})",
                       progress->processed_rows.load(), progress->processed_bytes.load(), progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
             break;
         }
@@ -1369,7 +1423,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             && progress->elapsed_time.elapsedSeconds() >= static_cast<double>(commit_settings.max_processing_time_sec_before_commit))
         {
             LOG_DEBUG(log, "Max processing time before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {})",
+                      "(rows: {}, bytes: {}, files: {}, time: {:.3f})",
                       progress->processed_rows.load(), progress->processed_bytes.load(), progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
             break;
         }
@@ -1731,9 +1785,9 @@ void ObjectStorageQueueSource::appendLogElement(
     const auto & file_path = file_metadata_->getPath();
     const auto & file_status = *file_metadata_->getFileStatus();
 
-    ObjectStorageQueueLogElement elem{};
+    system_queue_log->add([&](ObjectStorageQueueLogElement & element)
     {
-        elem = ObjectStorageQueueLogElement
+        element = ObjectStorageQueueLogElement
         {
             .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
             .database = storage_id.database_name,
@@ -1750,8 +1804,7 @@ void ObjectStorageQueueSource::appendLogElement(
             .transaction_start_time = transaction_start_time_,
             .get_object_time_ms = file_status.get_object_time_ms,
         };
-    }
-    system_queue_log->add(std::move(elem));
+    });
 }
 
 }
