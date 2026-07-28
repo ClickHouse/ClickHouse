@@ -1,0 +1,16 @@
+The join key is really serialized Sparse
+Sparse
+Sparse key, key presence only
+4000	200
+Sparse key, dictionary attribute read
+380000	4000
+Sparse key, aggregation in order
+1	1	50
+Sparse key replicated by ARRAY JOIN, attribute read
+427500	4500
+Sparse result equals dense result
+1
+Sparse result equals hash join result
+1
+Direct join is still chosen for the sparse key
+1
