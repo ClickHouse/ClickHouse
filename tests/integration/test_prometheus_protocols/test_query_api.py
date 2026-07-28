@@ -26,6 +26,17 @@ node = cluster.add_instance(
 )
 
 
+# The query pipeline runs on its own threads and hands blocks to the HTTP thread through
+# a small bounded buffer. To make an error land *after* some results have been written,
+# the row limit must sit well above that buffer: `max_block_size=1` puts one series in
+# each block, so the pipeline fills the buffer and then blocks, and cannot reach the limit
+# until the HTTP thread has taken and written out a block. Without that margin the
+# pipeline reaches the limit while the buffer is still unread, the error wins the race,
+# and the response becomes a plain error envelope instead.
+STREAM_ERROR_SERIES_COUNT = 32
+STREAM_ERROR_ROW_LIMIT = 16
+
+
 def send_to_clickhouse(time_series):
     protobuf = convert_time_series_to_protobuf(time_series)
     send_protobuf_to_remote_write(node.ip_address, 9093, "/write", protobuf)
@@ -36,13 +47,20 @@ def send_test_data():
     send_to_clickhouse(
         [({"__name__": "post_body_metric", "job": "test"}, {1000.0: 1.0, 1001.0: 2.0})]
     )
-    # `foo` (3 series) is used by the error-envelope tests — multiple series
-    # let `max_result_rows=1` trigger after the first row.
+    # `foo` (3 series) is used by the tests that expect the error before any output.
     send_to_clickhouse(
         [
             ({"__name__": "foo", "shape": "square", "size": "s"}, {110: 4, 130: 40}),
             ({"__name__": "foo", "shape": "triangle", "size": "m"}, {110: 8, 120: 80}),
             ({"__name__": "foo", "shape": "circle", "size": "l"}, {110: 16, 130: 16, 150: 16}),
+        ]
+    )
+    # `stream_error` is used by the tests that expect the error only after results have
+    # already been written.
+    send_to_clickhouse(
+        [
+            ({"__name__": "stream_error", "instance": f"i{i:02}"}, {110: i, 130: i * 2})
+            for i in range(STREAM_ERROR_SERIES_COUNT)
         ]
     )
 
@@ -126,14 +144,15 @@ def test_error_before_first_block():
 # to the response buffer, but before the response buffer has been sent to the client.
 # The response must be a well-formed Prometheus error response `{"status":"error",...}`
 def test_error_after_first_block():
-    # Here `max_block_size=1` + `max_result_rows=1` + `result_overflow_mode=throw`
-    # makes the second pull throw.
+    # `result_overflow_mode=throw` makes the query throw once `STREAM_ERROR_ROW_LIMIT` rows
+    # have been written. The response buffer is left at its default size, so those rows are
+    # still buffered and the handler can drop them and write the error response instead.
     url = (
         f"http://{node.ip_address}:9093/api/v1/query_range"
-        f"?query={urllib.parse.quote_plus('foo')}"
+        f"?query={urllib.parse.quote_plus('stream_error')}"
         f"&start=100&end=200&step=10"
         f"&max_block_size=1"
-        f"&max_result_rows=1"
+        f"&max_result_rows={STREAM_ERROR_ROW_LIMIT}"
         f"&result_overflow_mode=throw"
     )
     response = requests.get(url)
@@ -147,16 +166,16 @@ def test_error_after_first_block():
 # error response `{"status":"error",...}`, so it aborts the chunked stream
 # by writing an `__exception__` marker block and skipping the terminating empty chunk.
 def test_query_after_response_sent():
-    # Here `max_block_size=1` + `max_result_rows=1` + `result_overflow_mode=throw`
-    # makes the second pull() throw; and `http_response_buffer_size=1`
-    # makes the response buffer flush after the very first byte written.
+    # Same as `test_error_after_first_block`, except `http_response_buffer_size=1` flushes
+    # the response buffer as soon as the first block is written. The head is therefore
+    # already on the wire when the query throws, and the handler has no way back.
     url = (
         f"http://{node.ip_address}:9093/api/v1/query_range"
-        f"?query={urllib.parse.quote_plus('foo')}"
+        f"?query={urllib.parse.quote_plus('stream_error')}"
         f"&start=100&end=200&step=10"
         f"&http_response_buffer_size=1"
         f"&max_block_size=1"
-        f"&max_result_rows=1"
+        f"&max_result_rows={STREAM_ERROR_ROW_LIMIT}"
         f"&result_overflow_mode=throw"
     )
     with requests.get(url, stream=True) as response:
@@ -167,9 +186,24 @@ def test_query_after_response_sent():
         assert response.headers.get("Transfer-Encoding") == "chunked", (
             f"expected chunked transfer, got headers={dict(response.headers)!r}"
         )
-        
+
+        received = b""
         with pytest.raises(requests.exceptions.ChunkedEncodingError):
-            response.content  # Reading property response.content hits the chunked-stream abort
+            for piece in response.iter_content(chunk_size=None):
+                received += piece
+
+        # What the client got must be a truncated success response, not an error response:
+        # the success envelope and some `stream_error` results were already written when the
+        # query threw. Without this the test would also pass if the stream were aborted
+        # before anything was written.
+        assert received.startswith(b'{"status":"success"'), received
+        assert b"stream_error" in received, received
+
+        # The stream ends with the `__exception__` marker block that replaces the
+        # terminating empty chunk, and it carries the error that caused the abort. This
+        # distinguishes a deliberate abort from the connection merely dropping.
+        assert b"__exception__" in received, received
+        assert b"Limit for result exceeded" in received, received
 
 
 def test_table_query_param():
