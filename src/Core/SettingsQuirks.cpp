@@ -48,6 +48,10 @@ namespace Setting
     extern const SettingsNonZeroUInt64 input_format_parquet_max_block_size;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsNonZeroUInt64 max_read_buffer_size;
+    extern const SettingsUInt64 max_read_buffer_size_local_fs;
+    extern const SettingsUInt64 max_read_buffer_size_remote_fs;
+    extern const SettingsUInt64 prefetch_buffer_size;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
     extern const SettingsUInt64 min_external_table_block_size_rows;
@@ -114,6 +118,22 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
     CHECK_MAX_VALUE(input_format_parquet_max_block_size)
 
 #undef CHECK_MAX_VALUE
+
+#define CHECK_READ_BUFFER_SIZE(SETTING_VALUE) \
+    if (UInt64 buffer_size = current_settings[Setting::SETTING_VALUE]; buffer_size > MAX_SANE_READ_BUFFER_SIZE) \
+    { \
+        if (log) \
+            LOG_WARNING( \
+                log, "Sanity check: '{}' value is too high ({}). Reduced to {}", #SETTING_VALUE, buffer_size, MAX_SANE_READ_BUFFER_SIZE); \
+        current_settings[Setting::SETTING_VALUE] = MAX_SANE_READ_BUFFER_SIZE; \
+    }
+
+    CHECK_READ_BUFFER_SIZE(max_read_buffer_size)
+    CHECK_READ_BUFFER_SIZE(max_read_buffer_size_local_fs)
+    CHECK_READ_BUFFER_SIZE(max_read_buffer_size_remote_fs)
+    CHECK_READ_BUFFER_SIZE(prefetch_buffer_size)
+
+#undef CHECK_READ_BUFFER_SIZE
 
 
     if (auto max_block_size = current_settings[Setting::max_block_size]; max_block_size == 0)

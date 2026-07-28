@@ -16,7 +16,7 @@ export const quickStartsData = [
   {
     "id": "create-your-first-materialized-view",
     "title": "Crea tu primera vista materializada",
-    "description": "Aprende a usar las vistas materializadas en ClickHouse para precalcular y almacenar resultados de consultas con un orden diferente, lo que permite búsquedas rápidas en columnas que no forman parte de tu clave primaria.",
+    "description": "Aprende a usar las vistas materializadas en ClickHouse para precalcular y almacenar resultados de consultas con un orden distinto, lo que permite búsquedas rápidas en columnas que no forman parte de tu clave primaria.",
     "href": "/es/get-started/quickstarts/create-your-first-materialized-view",
     "useCases": [
       "real-time-analytics",
@@ -109,20 +109,6 @@ export const quickStartsData = [
     ],
     "products": [
       "cloud"
-    ]
-  },
-  {
-    "id": "tutorial",
-    "title": "Tutorial avanzado",
-    "description": "Aprende a ingestar y consultar datos en ClickHouse con un conjunto de datos de ejemplo de taxis de la ciudad de Nueva York.",
-    "href": "/es/get-started/quickstarts/tutorial",
-    "useCases": [
-      "real-time-analytics",
-      "data-warehousing"
-    ],
-    "products": [
-      "cloud",
-      "self-managed"
     ]
   },
   {
