@@ -65,7 +65,7 @@ public:
 REGISTER_FUNCTION(FinalizeAggregation)
 {
     FunctionDocumentation::Description description = R"(
-Given an aggregation state, this function returns the result of aggregation (or the finalized state when using a [-State](../../sql-reference/aggregate-functions/combinators.md#-state) combinator).
+Given an aggregation state, this function returns the result of aggregation (or the finalized state when using a [-State](/reference/functions/aggregate-functions/combinators#-state) combinator).
 )";
     FunctionDocumentation::Syntax syntax = "finalizeAggregation(state)";
     FunctionDocumentation::Arguments arguments = {
