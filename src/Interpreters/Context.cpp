@@ -54,6 +54,7 @@
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadataFilesCache.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Storages/StreamingStorageRegistry.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
@@ -502,7 +503,6 @@ struct ContextSharedPart : boost::noncopyable
     String path TSA_GUARDED_BY(mutex);                       /// Path to the data directory, with a slash at the end.
     String flags_path TSA_GUARDED_BY(mutex);                 /// Path to the directory with some control flags for server maintenance.
     String user_files_path TSA_GUARDED_BY(mutex);            /// Path to the directory with user provided files, usable by 'file' table function.
-    String dictionaries_lib_path TSA_GUARDED_BY(mutex);      /// Path to the directory with user provided binaries and libraries for external dictionaries.
     String user_scripts_path TSA_GUARDED_BY(mutex);          /// Path to the directory with user provided scripts.
     String dynamic_user_defined_executable_functions_path TSA_GUARDED_BY(mutex); /// Path to the directory for executable UDF configs created by drivers.
     String filesystem_caches_path TSA_GUARDED_BY(mutex);     /// Path to the directory with filesystem caches.
@@ -606,6 +606,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
 #if USE_AVRO
     mutable IcebergMetadataFilesCachePtr iceberg_metadata_files_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized iceberg metadata files.
+    mutable PaimonMetadataFilesCachePtr paimon_metadata_files_cache TSA_GUARDED_BY(mutex);     /// Cache of deserialized paimon metadata files.
 #endif
 #if USE_PARQUET
     mutable ParquetMetadataCachePtr parquet_metadata_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized parquet metadata files.
@@ -699,7 +700,7 @@ struct ContextSharedPart : boost::noncopyable
     /// Only for system.server_settings, actually value stored in reloader itself
     std::atomic_size_t config_reload_interval_ms = ConfigReloader::DEFAULT_RELOAD_INTERVAL.count();
 
-    /// Optional server-wide override for the new analyzer in mutations.
+    /// Optional server-wide override for the analyzer in mutations.
     /// Encoded as a tri-state: -1 = unset (use session setting), 0 = force off, 1 = force on.
     /// Refreshed on config reload.
     std::atomic<int8_t> mutations_use_analyzer_override = -1;
@@ -743,8 +744,10 @@ struct ContextSharedPart : boost::noncopyable
     RemoteHostFilter remote_host_filter;                    /// Allowed URL from config.xml
     HTTPHeaderFilter http_header_filter;                    /// Forbidden HTTP headers from config.xml
 
-    /// No lock required for trace_collector modified only during initialization
     std::optional<TraceCollector> trace_collector;          /// Thread collecting traces from threads executing queries
+    /// Presence flag read concurrently by worker threads (ThreadStatus::initGlobalProfiler)
+    /// while shutdown() destroys trace_collector, so it must be atomic rather than optional::has_value().
+    std::atomic<bool> has_trace_collector = false;
 
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
@@ -1130,6 +1133,7 @@ struct ContextSharedPart : boost::noncopyable
             delete_access_control = std::move(access_control);
 
             /// Stop trace collector if any
+            has_trace_collector = false;
             trace_collector.reset();
         }
 
@@ -1194,7 +1198,7 @@ struct ContextSharedPart : boost::noncopyable
 
     bool hasTraceCollector() const
     {
-        return trace_collector.has_value();
+        return has_trace_collector.load();
     }
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
@@ -1207,10 +1211,11 @@ struct ContextSharedPart : boost::noncopyable
 
     void createTraceCollector()
     {
-        if (hasTraceCollector())
+        if (trace_collector.has_value())
             return;
 
         trace_collector.emplace();
+        has_trace_collector = true;
     }
 
     void addOrUpdateWarningMessage(Context::WarningType warning, const PreformattedMessage & message) TSA_REQUIRES(mutex)
@@ -1467,12 +1472,6 @@ String Context::getUserFilesPath() const
     return shared->user_files_path;
 }
 
-String Context::getDictionariesLibPath() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->dictionaries_lib_path;
-}
-
 String Context::getUserScriptsPath() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -1541,25 +1540,25 @@ DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<
     if (auto it = shard.set.find(id); it != shard.set.end())
     {
         DatabaseAndTable storage = DatabaseCatalog::instance().tryGetByUUID(it->uuid);
-        /// The cache is keyed by qualified name only (see `StorageCache::Shard::set`), so a hit can
-        /// carry a UUID that no longer matches the name we are resolving. Return the cached storage
-        /// only if it is still fresh. Otherwise the entry is stale and must not be reused:
-        ///  - the table no longer exists by its UUID (e.g. a refreshable materialized view's inner
-        ///    table was dropped and recreated), or
-        ///  - the UUID still exists but the name was reassigned to a different table by a rename or
-        ///    exchange within the same query. This happens during `CREATE OR REPLACE`, which creates a
-        ///    temporary table, populates it (caching the temporary name -> temporary UUID here), then
-        ///    atomically swaps it with the target via `EXCHANGE`. After the swap the temporary name
-        ///    refers to the old table that is about to be dropped, but the cache would still hand out
-        ///    the new (now live) table - so dropping by the temporary name would shut down the live
-        ///    table instead and break it (e.g. detaching a materialized view from its source), or
-        ///  - the caller asked for a specific UUID but the cached entry resolves to a different one
-        ///    (a same-name replacement); returning it would silently substitute the wrong table
-        ///    instead of letting the fresh lookup report `UNKNOWN_TABLE`/`TABLE_UUID_MISMATCH`.
-        /// In all cases remove the stale entry and fall through to a fresh lookup by name.
-        if (storage.second
-            && storage.second->getStorageID().getQualifiedName() == id.getQualifiedName()
-            && (!id.hasUUID() || it->uuid == id.uuid))
+        /// The cache is keyed by qualified name only (see `StorageCache::Shard::set`) and pins a name
+        /// to the storage it first resolved to in this query. That is the whole point of the cache: a
+        /// running query must keep seeing the table version it was planned against even if a
+        /// concurrent query renames or exchanges that table underneath it (see
+        /// `03915_exchange_tables_race` - otherwise the query is analyzed for one column type and
+        /// executed against another, raising a `LOGICAL_ERROR`). So a cache hit whose name was since
+        /// reassigned (by a rename/exchange, so the cached UUID now maps to a different qualified
+        /// name, or a different UUID now maps to the requested name) is NOT stale - the pinned UUID is
+        /// exactly what we want to return. Return it as long as it still resolves to a live table;
+        /// only drop the entry when the cached UUID no longer exists at all (e.g. a refreshable
+        /// materialized view's inner table was dropped and recreated with a new UUID), and fall
+        /// through to a fresh lookup by name.
+        ///
+        /// A rename or exchange performed BY THIS query drops the affected names from this cache (see
+        /// `dropStorageCacheEntry`, called from `InterpreterRenameQuery`), so the query's own later
+        /// lookups of those names re-resolve to the current tables. This is what lets
+        /// `CREATE OR REPLACE ... POPULATE` drop the old table by the temporary name after its
+        /// internal `EXCHANGE` instead of shutting down the live one (see #108726).
+        if (storage.second)
             return storage;
 
         shard.set.erase(it);
@@ -1577,6 +1576,15 @@ DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<
     }
 
     return storage;
+}
+
+void Context::dropStorageCacheEntry(const StorageID & id) const
+{
+    auto & shard = storage_cache.shards[StorageCache::shardIndex(id)];
+    std::lock_guard lock(shard.mutex);
+    /// The set uses name-only equality (`StorageID::DatabaseAndTableNameEqual`), so this erases the
+    /// pinned entry for the qualified name regardless of the UUID it was cached with.
+    shard.set.erase(id);
 }
 
 std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnings() const
@@ -1784,9 +1792,6 @@ void Context::setPath(const String & path)
     if (shared->user_files_path.empty())
         shared->user_files_path = shared->path + "user_files/";
 
-    if (shared->dictionaries_lib_path.empty())
-        shared->dictionaries_lib_path = shared->path + "dictionaries_lib/";
-
     if (shared->user_scripts_path.empty())
         shared->user_scripts_path = shared->path + "user_scripts/";
 }
@@ -1801,7 +1806,7 @@ void Context::setFilesystemCachesPath(const String & path)
     shared->filesystem_caches_path = path;
 }
 
-void Context::setFilesystemCacheUser(const String & user)
+void Context::setFilesystemCacheUser(const String & user) const
 {
     std::lock_guard lock(shared->mutex);
     shared->filesystem_cache_user = user;
@@ -1958,12 +1963,6 @@ void Context::setUserFilesPath(const String & path)
 {
     std::lock_guard lock(shared->mutex);
     shared->user_files_path = path;
-}
-
-void Context::setDictionariesLibPath(const String & path)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->dictionaries_lib_path = path;
 }
 
 void Context::setUserScriptsPath(const String & path)
@@ -2811,6 +2810,20 @@ void Context::addQueryAccessInfo(
         query_access_info->columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
 }
 
+void Context::removeQueryAccessInfoTable(const String & full_quoted_table_name)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+
+    std::lock_guard lock(query_access_info->mutex);
+    query_access_info->tables.erase(full_quoted_table_name);
+
+    /// Also drop any columns recorded under this table. The internal temporary table is normally recorded
+    /// without columns, so this is defensive.
+    const String prefix = full_quoted_table_name + ".";
+    std::erase_if(query_access_info->columns, [&](const String & column) { return column.starts_with(prefix); });
+}
+
 void Context::addQueryAccessInfo(const Names & partition_names)
 {
     if (isGlobalContext())
@@ -2979,7 +2992,17 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
             ASTCreateQuery create;
             create.set(create.select, query);
-            auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, getQueryContext());
+
+            /// The sample block must be analyzed under the view's SQL security context, not the
+            /// invoker's (mirrors buildParameterizedViewStorage).
+            auto sql_security = make_intrusive<ASTSQLSecurity>();
+            sql_security->type = view_metadata->sql_security_type;
+            if (view_metadata->definer)
+                sql_security->definer = make_intrusive<ASTUserNameWithHost>(*view_metadata->definer);
+            create.set(create.sql_security, sql_security);
+
+            auto view_context = view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+            auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, view_context);
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
                                                      ColumnsDescription(sample_block->getNamesAndTypesList()),
@@ -4915,6 +4938,49 @@ std::shared_ptr<IcebergMetadataFilesCache> Context::getIcebergMetadataFilesCache
 void Context::clearIcebergMetadataFilesCache() const
 {
     auto cache = getIcebergMetadataFilesCache();
+
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
+}
+
+void Context::setPaimonMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->paimon_metadata_files_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Paimon metadata cache has been already created.");
+
+    shared->paimon_metadata_files_cache = std::make_shared<PaimonMetadataFilesCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
+}
+
+void Context::updatePaimonMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->paimon_metadata_files_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Paimon metadata cache was not created yet.");
+
+    size_t size = config.getUInt64("paimon_metadata_files_cache_size", DEFAULT_PAIMON_METADATA_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("paimon_metadata_files_cache_max_entries", DEFAULT_PAIMON_METADATA_CACHE_MAX_ENTRIES);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered Paimon metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->paimon_metadata_files_cache->setMaxSizeInBytes(size);
+    shared->paimon_metadata_files_cache->setMaxCount(max_entries);
+}
+
+std::shared_ptr<PaimonMetadataFilesCache> Context::getPaimonMetadataFilesCache() const
+{
+    std::lock_guard lock(shared->mutex);
+    return shared->paimon_metadata_files_cache;
+}
+
+void Context::clearPaimonMetadataFilesCache() const
+{
+    auto cache = getPaimonMetadataFilesCache();
 
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
@@ -7628,7 +7694,7 @@ void Context::setCurrentUserName(const String & current_user_name)
 
 void Context::setCurrentAddress(const Poco::Net::SocketAddress & current_address)
 {
-    client_info.current_address = std::make_shared<Poco::Net::SocketAddress>(current_address);
+    client_info.current_address = Poco::Net::SocketAddress(current_address);
     need_recalculate_access = true;
 }
 
@@ -7646,7 +7712,7 @@ void Context::setAuthenticatedUserName(const String & authenticated_user_name)
 
 void Context::setInitialAddress(const Poco::Net::SocketAddress & initial_address)
 {
-    client_info.initial_address = std::make_shared<Poco::Net::SocketAddress>(initial_address);
+    client_info.initial_address = Poco::Net::SocketAddress(initial_address);
 }
 
 void Context::setInitialQueryId(const String & initial_query_id)

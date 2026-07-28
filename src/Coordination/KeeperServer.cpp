@@ -74,7 +74,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 fresh_log_gap;
     extern const CoordinationSettingsMilliseconds heart_beat_interval_ms;
     extern const CoordinationSettingsMilliseconds leadership_expiry_ms;
-    extern const CoordinationSettingsUInt64 max_requests_append_size;
+    extern const CoordinationSettingsNonZeroUInt64 max_requests_append_size;
     extern const CoordinationSettingsUInt64 max_requests_append_bytes_size;
     extern const CoordinationSettingsMilliseconds operation_timeout_ms;
     extern const CoordinationSettingsBool quorum_reads;
@@ -1451,7 +1451,7 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 uint64_t KeeperServer::createSnapshot()
 {
     /// serialize_commit_ makes nuraft lock commit_lock_. This guarantees that we call
-    /// enableSnapshotMode() on storage in the state that corresponds to `log_idx`, rather than a
+    /// beginWritingSnapshot() on storage in the state that corresponds to `log_idx`, rather than a
     /// more recent state.
     nuraft::raft_server::create_snapshot_options options;
     options.serialize_commit_ = true;
@@ -1542,6 +1542,11 @@ void KeeperServer::recalculateStorageStats()
 std::vector<std::pair<std::string, Int32>> KeeperServer::getExpiredTTLPathsForGarbageCollector(size_t batch_size) const
 {
     return state_machine->getExpiredTTLPathsForGarbageCollector(batch_size);
+}
+
+std::vector<std::pair<std::string, Int32>> KeeperServer::getContainerCandidatesForGarbageCollector(size_t batch_size, UInt64 max_never_used_interval_ms) const
+{
+    return state_machine->getContainerCandidatesForGarbageCollector(batch_size, max_never_used_interval_ms);
 }
 
 }

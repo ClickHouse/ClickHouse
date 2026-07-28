@@ -116,6 +116,135 @@ SELECT greatCircleAngle(0, 0, 45, 0) AS arc
 └─────┘
 ```
 
+<div id="geotoutm">
+  ## geoToUTM
+</div>
+
+Convertit des coordonnées géographiques WGS84 `(longitude, latitude)` en coordonnées [Universal Transverse Mercator (UTM)](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system).
+
+L’UTM est un ensemble de 60 projections transverses de Mercator, chacune couvrant une zone longitudinale de 6°, qui convertissent des coordonnées géographiques en une grille plane exprimée en mètres. La zone est sélectionnée automatiquement à partir de la longitude, en appliquant les exceptions standard pour la Norvège et le Svalbard, sauf si une `zone` explicite est fournie. L’UTM n’est défini que pour les latitudes dans la plage `[-80°, 84°]` ; les calottes polaires utilisent le système UPS séparé.
+
+```sql
+geoToUTM(longitude, latitude[, zone])
+```
+
+**Arguments**
+
+* `longitude` — Longitude en degrés. Plage : `[-180°, 180°]`. [`Float32`](/fr/reference/data-types/float)/[`Float64`](/fr/reference/data-types/float).
+* `latitude` — Latitude en degrés. Plage : `[-80°, 84°]`. [`Float32`](/fr/reference/data-types/float)/[`Float64`](/fr/reference/data-types/float).
+* `zone` — Facultatif. Force la projection dans cette zone UTM au lieu de la déterminer automatiquement. Plage : `[1, 60]`. [`(U)Int*`](/fr/reference/data-types/int-uint).
+
+**Valeur renvoyée**
+
+Un tuple nommé `(easting, northing, zone, band)` : `easting` et `northing` en mètres ([`Float64`](/fr/reference/data-types/float)), le numéro de zone UTM `zone` ([`UInt8`](/fr/reference/data-types/int-uint)) et la lettre de bande de latitude MGRS `band` ([`FixedString(1)`](/fr/reference/data-types/fixedstring)). Une valeur de `band` égale à `'N'` ou postérieure indique l&#39;hémisphère nord.
+
+Génère une exception lorsque la latitude est hors de `[-80°, 84°]` ou la longitude hors de `[-180°, 180°]`.
+
+**Exemple**
+
+```sql
+SELECT geoToUTM(2.294497, 48.858222) AS utm; -- Eiffel Tower
+```
+
+```text
+(448251.5978370684,5411935.125629659,31,'U')
+```
+
+<div id="utmtogeo">
+  ## UTMToGeo
+</div>
+
+Convertit les coordonnées [UTM](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system) en coordonnées géographiques WGS84 `(longitude, latitude)`. Il s’agit de l’opération inverse de [`geoToUTM`](#geotoutm).
+
+```sql
+UTMToGeo(easting, northing, zone, is_north)
+```
+
+**Arguments**
+
+* `easting` — Coordonnée est en mètres (inclut la fausse abscisse de 500000 m). [`(U)Int*`](/fr/reference/data-types/int-uint)/[`Float*`](/fr/reference/data-types/float).
+* `northing` — Coordonnée nord en mètres (inclut la fausse ordonnée de 10000000 m dans l&#39;hémisphère sud). [`(U)Int*`](/fr/reference/data-types/int-uint)/[`Float*`](/fr/reference/data-types/float).
+* `zone` — Numéro de zone UTM. Plage : `[1, 60]`. [`(U)Int*`](/fr/reference/data-types/int-uint).
+* `is_north` — Hémisphère : `1` pour l&#39;hémisphère nord, `0` pour l&#39;hémisphère sud. [`(U)Int*`](/fr/reference/data-types/int-uint).
+
+**Valeur renvoyée**
+
+Un tuple nommé `(longitude, latitude)` en degrés. [`Tuple(Float64, Float64)`](/fr/reference/data-types/tuple).
+
+**Exemple**
+
+```sql
+SELECT UTMToGeo(448251.6, 5411935.13, 31, 1) AS coord;
+```
+
+```text
+(2.2944970289079203,48.85822204127082)
+```
+
+<div id="geotomgrs">
+  ## geoToMGRS
+</div>
+
+Convertit des coordonnées géographiques WGS84 `(longitude, latitude)` en chaîne [Military Grid Reference System (MGRS)](https://en.wikipedia.org/wiki/Military_Grid_Reference_System).
+
+La chaîne a la forme `<zone><band><100km square><easting><northing>`, par exemple `31UDQ4825111935`. L’argument `precision` contrôle le nombre de chiffres utilisés pour chacune des composantes est et nord : `5` (par défaut) pour 1 m, `4` pour 10 m, `3` pour 100 m, `2` pour 1 km, `1` pour 10 km et `0` pour le carré de grille de 100 km uniquement. MGRS n’est défini que pour des latitudes dans la plage `[-80°, 84°]`.
+
+```sql
+geoToMGRS(longitude, latitude[, precision])
+```
+
+**Arguments**
+
+* `longitude` — Longitude en degrés. Intervalle : `[-180°, 180°]`. [`Float32`](/fr/reference/data-types/float)/[`Float64`](/fr/reference/data-types/float).
+* `latitude` — Latitude en degrés. Intervalle : `[-80°, 84°]`. [`Float32`](/fr/reference/data-types/float)/[`Float64`](/fr/reference/data-types/float).
+* `precision` — Facultatif. Nombre de chiffres pour chacune des coordonnées est et nord. Valeur par défaut : `5`. Intervalle : `[0, 5]`. [`(U)Int*`](/fr/reference/data-types/int-uint).
+
+**Valeur renvoyée**
+
+La chaîne de référence MGRS. [`String`](/fr/reference/data-types/string).
+
+**Exemple**
+
+```sql
+SELECT geoToMGRS(2.294497, 48.858222) AS mgrs, geoToMGRS(2.294497, 48.858222, 3) AS mgrs_100m;
+```
+
+```text
+┌─mgrs────────────┬─mgrs_100m───┐
+│ 31UDQ4825111935 │ 31UDQ482119 │
+└─────────────────┴─────────────┘
+```
+
+<div id="mgrstogeo">
+  ## MGRSToGeo
+</div>
+
+Décode une chaîne [MGRS](https://en.wikipedia.org/wiki/Military_Grid_Reference_System) en coordonnées géographiques WGS84 `(longitude, latitude)`. Il s’agit de l’inverse de [`geoToMGRS`](#geotomgrs).
+
+Le point renvoyé correspond au centre de la maille de grille indiquée ; la précision du résultat correspond donc à celle encodée dans la chaîne. Les espaces dans l’entrée sont ignorés et la casse des lettres n’est pas prise en compte.
+
+```sql
+MGRSToGeo(mgrs)
+```
+
+**Arguments**
+
+* `mgrs` — chaîne de référence MGRS à décoder. [`String`](/fr/reference/data-types/string)/[`FixedString`](/fr/reference/data-types/fixedstring).
+
+**Valeur renvoyée**
+
+Un tuple nommé `(longitude, latitude)`, en degrés. [`Tuple(Float64, Float64)`](/fr/reference/data-types/tuple).
+
+**Exemple**
+
+```sql
+SELECT MGRSToGeo('31UDQ4825111935') AS coord;
+```
+
+```text
+(2.294495618908297,48.85822536113692)
+```
+
 <div id="pointinellipses">
   ## pointInEllipses
 </div>
@@ -163,10 +292,13 @@ pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 
 **Valeurs d’entrée**
 
-* `(x, y)` — Coordonnées d’un point dans le plan. Type de données — [Tuple](/fr/reference/data-types/tuple) — un tuple de deux nombres.
-* `[(a, b), (c, d) ...]` — Sommets du polygone. Type de données — [Array](/fr/reference/data-types/array). Chaque sommet est représenté par une paire de coordonnées `(a, b)`. Les sommets doivent être indiqués dans le sens horaire ou antihoraire. Le nombre minimum de sommets est de 3. Le polygone doit être constant.
+* `(x, y)` — Coordonnées d’un point dans le plan. Type de données — [Tuple](/fr/reference/data-types/tuple) — un tuple de deux nombres, ou un [Point](/fr/reference/data-types/geo#point).
+* `[(a, b), (c, d) ...]` — Sommets du polygone. Type de données — [Array](/fr/reference/data-types/array) ou [Ring](/fr/reference/data-types/geo#ring). Chaque sommet est représenté par une paire de coordonnées `(a, b)`. Les sommets doivent être indiqués dans le sens horaire ou antihoraire. Le nombre minimum de sommets est de 3.
 * La fonction prend également en charge les polygones avec des trous (zones évidées). Type de données — [Polygon](/fr/reference/data-types/geo#polygon). Passez soit le `Polygon` entier comme deuxième argument, soit l’anneau extérieur d’abord, puis chaque trou comme argument supplémentaire distinct.
 * La fonction prend également en charge les multipolygones. Type de données — [MultiPolygon](/fr/reference/data-types/geo#multipolygon). Passez soit le `MultiPolygon` entier comme deuxième argument, soit chaque polygone qui le compose comme argument distinct.
+* L’argument polygone peut également être une colonne [Geometry](/fr/reference/data-types/geo#geometry) contenant des valeurs de type polygonal (`Ring`, `Polygon` ou `MultiPolygon`).
+
+Les types polygonaux ([Ring](/fr/reference/data-types/geo#ring), [Polygon](/fr/reference/data-types/geo#polygon), [MultiPolygon](/fr/reference/data-types/geo#multipolygon) et [Geometry](/fr/reference/data-types/geo#geometry)) peuvent être passés soit comme constantes, soit comme colonnes de table ordinaires (non constantes). Lorsque le polygone est fourni dans plusieurs arguments distincts (un anneau extérieur suivi de trous, ou plusieurs polygones d’un multipolygone), tous ces arguments doivent être constants.
 
 **Valeurs renvoyées**
 
@@ -183,6 +315,20 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 ┌─res─┐
 │   1 │
 └─────┘
+```
+
+Le polygone peut également être fourni à l’aide des types de données géométriques nommés, y compris en tant que colonne de table :
+
+```sql
+CREATE TABLE poly (id UInt32, shape Polygon) ENGINE = Memory;
+INSERT INTO poly VALUES (1, [[(0, 0), (10, 0), (10, 10), (0, 10)], [(4, 4), (6, 4), (6, 6), (4, 6)]]);
+SELECT id, pointInPolygon((2., 2.), shape) AS res FROM poly;
+```
+
+```text
+┌─id─┬─res─┐
+│  1 │   1 │
+└────┴─────┘
 ```
 
 > **Remarque**
