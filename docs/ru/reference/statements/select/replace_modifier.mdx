@@ -1,0 +1,34 @@
+---
+description: 'Документация по модификатору APPLY, который позволяет вызывать некоторую функцию для каждой строки, возвращаемой внешним табличным выражением запроса.'
+sidebarTitle: 'REPLACE'
+slug: /sql-reference/statements/select/replace-modifier
+title: 'Модификатор Replace'
+keywords: ['REPLACE', 'modifier']
+doc_type: 'reference'
+---
+
+> Позволяет указать один или несколько [псевдонимов выражений](/ru/reference/syntax#expression-aliases).
+
+Каждый псевдоним должен совпадать с именем столбца из оператора `SELECT *`. В итоговом списке столбцов столбец, соответствующий
+псевдониму, заменяется выражением из этого `REPLACE`.
+
+Этот модификатор не изменяет имена и порядок столбцов. Однако он может изменить значение и тип значения.
+
+**Синтаксис:**
+
+```sql
+SELECT <expr> REPLACE( <expr> AS col_name) from [db.]table_name
+```
+
+**Пример:**
+
+```sql
+SELECT * REPLACE(i + 1 AS i) from columns_transformers;
+```
+
+```response
+┌───i─┬──j─┬───k─┐
+│ 101 │ 10 │ 324 │
+│ 121 │  8 │  23 │
+└─────┴────┴─────┘
+```

@@ -81,6 +81,35 @@ An `Array` -> `QBit` -> `Array` round trip is lossless for `Int8`, `Float32` and
 
 When the `dimension` is not a multiple of 8, the trailing padding elements present in the internal representation are dropped, so the result always has exactly `dimension` elements.
 
+## Converting between QBit types {#converting-between-qbit-types}
+
+A `QBit` can be cast to another `QBit` as long as the `dimension` (the number of vector elements) stays the same. The `element_type` and the `stride` may both change; casting to a `QBit` with a different `dimension` raises an exception, because that would change the vector itself.
+
+Changing the `element_type` reconstructs the vector and converts each element to the new type, exactly like the corresponding `Array` conversion: widening (for example `QBit(Float32, N)` to `QBit(Float64, N)`) is exact, while narrowing loses precision in the same way a narrowing `Array` cast would.
+
+```sql
+SELECT [1, 2, 3, 4]::QBit(Float32, 4)::QBit(Float64, 4) AS vec;
+```
+
+```text
+┌─vec───────┐
+│ [1,2,3,4] │
+└───────────┘
+```
+
+Changing only the [`stride`](#strides) (keeping the same `element_type`) re-groups the stored bit planes without touching the values, so it is always lossless:
+
+```sql
+SELECT range(16)::Array(Float32)::QBit(Float32, 16)::QBit(Float32, 16, 8)::Array(Float32)
+     = range(16)::Array(Float32) AS is_lossless;
+```
+
+```text
+┌─is_lossless─┐
+│           1 │
+└─────────────┘
+```
+
 ## QBit subcolumns {#qbit-subcolumns}
 
 `QBit` implements a subcolumn access pattern that allows you to access individual bit planes of the stored vectors. Each bit position can be accessed using the `.N` syntax, where `N` is the bit position:
@@ -116,7 +145,7 @@ CREATE TABLE test (id UInt32, vec QBit(BFloat16, 4096, 1024)) ENGINE = MergeTree
 
 Here the 4096 dimensions are split into 4 groups of 1024. The subcolumns follow a group-major order: with `BFloat16` (16 bit planes), `vec.1` … `vec.16` are the 16 bit planes of the first stride group (dimensions 1–1024), `vec.17` … `vec.32` belong to the second group (dimensions 1025–2048), and so on. In general `vec.N` reads bit plane `(N-1) % element_size` of stride group `(N-1) / element_size`.
 
-To run a reduced-dimension search, pass the number of dimensions to read as the fourth argument of the transposed distance functions (see below). The reference vector must have exactly that many elements, and the value must be a multiple of `stride`.
+To run a reduced-dimension search, pass the number of dimensions to read as the fourth argument of the transposed distance functions (see below). The value must be a multiple of `stride`, and the reference vector must have at least that many elements. Any extra trailing elements of the reference vector are ignored, so a full-size query vector can be reused for a reduced-dimension search without slicing it first.
 
 ## Vector search functions {#vector-search-functions}
 

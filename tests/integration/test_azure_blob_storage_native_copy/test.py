@@ -9,9 +9,12 @@ from helpers.cluster import ClickHouseCluster
 
 
 def generate_config(port):
+    # Per-worker suffix so parallel xdist workers don't race on the generated file.
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "")
+    suffix = f"_{worker_id}" if worker_id else ""
     path = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
-        "./_gen/storage_conf.xml",
+        f"./_gen/storage_conf{suffix}.xml",
     )
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
@@ -124,6 +127,13 @@ def cluster():
             # Breaks assertion for "using native copy" (because it will happen for database metadata not the Azure tests)
             with_remote_database_disk=False,
         )
+        cluster.add_instance(
+            "node5",
+            main_configs=[path],
+            with_azurite=True,
+            # Breaks assertion for "using native copy" (because it will happen for database metadata not the Azure tests)
+            with_remote_database_disk=False,
+        )
         cluster.start()
 
         yield cluster
@@ -132,14 +142,22 @@ def cluster():
 
 
 def azure_query(
-    node, query, expect_error=False, try_num=10, settings={}, query_on_retry=None
+    node,
+    query,
+    expect_error=False,
+    try_num=10,
+    settings={},
+    query_on_retry=None,
+    query_id=None,
 ):
     for i in range(try_num):
         try:
             if expect_error:
-                return node.query_and_get_error(query, settings=settings)
+                return node.query_and_get_error(
+                    query, settings=settings, query_id=query_id
+                )
             else:
-                return node.query(query, settings=settings)
+                return node.query(query, settings=settings, query_id=query_id)
         except Exception as ex:
             retriable_errors = [
                 "DB::Exception: Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response",
@@ -163,6 +181,26 @@ def azure_query(
             if query_on_retry is not None:
                 node.query(query_on_retry)
             continue
+
+
+def get_events_for_query(node, query_id):
+    """`ProfileEvents` of a single finished query, as a name -> count mapping.
+
+    Only non-zero events are stored, so a missing key means the event never fired.
+    """
+    node.query("SYSTEM FLUSH LOGS")
+    rows = node.query(
+        f"""
+        WITH arrayJoin(ProfileEvents) AS pe
+        SELECT pe.1, pe.2
+        FROM system.query_log
+        WHERE query_id = '{query_id}' AND type = 'QueryFinish'
+        """
+    )
+    return {
+        event: int(value)
+        for event, value in (line.split("\t") for line in rows.splitlines() if line)
+    }
 
 
 def test_backup_restore_on_merge_tree_same_container(cluster):
@@ -309,6 +347,138 @@ def test_backup_restore_native_copy_disabled_in_query(cluster):
     )
 
     assert not node4.contains_in_log("using native copy")
+
+
+@pytest.mark.parametrize("allow_azure_native_copy", [0, 1])
+def test_native_copy_controlled_by_backup_setting(cluster, allow_azure_native_copy):
+    node = cluster.instances["node5"]
+
+    connection_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
+    params = [p for p in connection_string.split(";") if p]
+    unmatched_connection_string = (
+        ";".join(sorted(params, key=lambda p: not p.startswith("BlobEndpoint"))) + ";"
+    )
+    assert sorted(params) == sorted(
+        p for p in unmatched_connection_string.split(";") if p
+    )
+    assert not unmatched_connection_string.startswith(connection_string)
+
+    table = f"test_native_copy_setting_{allow_azure_native_copy}"
+    restored = f"{table}_restored"
+    azure_query(node, f"DROP TABLE IF EXISTS {table} SYNC")
+    azure_query(node, f"DROP TABLE IF EXISTS {restored} SYNC")
+    azure_query(
+        node,
+        f"""
+        CREATE TABLE {table} (key UInt64, data String)
+        ENGINE = MergeTree() ORDER BY tuple()
+        SETTINGS storage_policy='policy_azure'
+        """,
+    )
+    azure_query(node, f"INSERT INTO {table} VALUES (1, 'a')")
+
+    cont = "cont" + str(time.time_ns())
+    backup_destination = (
+        f"AzureBlobStorage('{unmatched_connection_string}', '{cont}', '{table}_backup')"
+    )
+
+    backup_query_id = f"{table}_backup_{cont}"
+    azure_query(
+        node,
+        f"BACKUP TABLE {table} TO {backup_destination} "
+        f"SETTINGS allow_azure_native_copy = {allow_azure_native_copy}",
+        query_id=backup_query_id,
+    )
+
+    restore_query_id = f"{table}_restore_{cont}"
+    azure_query(
+        node,
+        f"RESTORE TABLE {table} AS {restored} FROM {backup_destination} "
+        f"SETTINGS allow_azure_native_copy = {allow_azure_native_copy}",
+        query_id=restore_query_id,
+    )
+
+    for query_id in [backup_query_id, restore_query_id]:
+        events = get_events_for_query(node, query_id)
+        used_native_copy = "AzureCopyObject" in events
+        assert used_native_copy == (allow_azure_native_copy == 1), events
+
+    # Either way the data must survive the round trip.
+    assert azure_query(node, f"SELECT * FROM {restored}") == "1\ta\n"
+
+    azure_query(node, f"DROP TABLE {table} SYNC")
+    azure_query(node, f"DROP TABLE {restored} SYNC")
+
+
+@pytest.mark.parametrize("inflight", [1, 2])
+def test_backup_restore_read_write_multipart_inflight_limit(cluster, inflight):
+    # Force the read-then-write (non-native) copy path through a multipart upload
+    # bounded by a small `azure_max_inflight_parts_for_one_file`, and verify the
+    # restored contents are byte-for-byte identical. This guards the `TaskTracker`
+    # path that limits the number of concurrently staged parts: a block-order
+    # regression or a broken throttled path would corrupt the restored file.
+    node1 = cluster.instances["node1"]
+    table = f"test_read_write_multipart_{inflight}"
+    restored = f"{table}_restored"
+    azure_query(node1, f"DROP TABLE IF EXISTS {table} SYNC")
+    azure_query(node1, f"DROP TABLE IF EXISTS {restored} SYNC")
+    azure_query(
+        node1,
+        f"""
+        CREATE TABLE {table} (key UInt64, data String CODEC(NONE))
+        ENGINE = MergeTree() ORDER BY key
+        SETTINGS storage_policy='policy_azure', min_bytes_for_wide_part=0
+        """,
+    )
+    # ~300 KiB of incompressible, position-sensitive data stored in a single wide
+    # part, so `data.bin` is large enough to be split into many parts and any
+    # out-of-order block commit produces detectably different contents.
+    azure_query(
+        node1,
+        f"INSERT INTO {table} SELECT number, randomPrintableASCII(1024) FROM numbers(300)",
+    )
+
+    expected = azure_query(
+        node1, f"SELECT count(), sum(cityHash64(key, data)) FROM {table}"
+    )
+
+    copy_settings = {
+        # Force multipart upload for every non-empty file.
+        "azure_max_single_part_upload_size": 1,
+        # Small parts so the ~300 KiB `data.bin` is split into many blocks.
+        "azure_min_upload_part_size": 16 * 1024,
+        # The throttle under test: at most `inflight` parts staged concurrently.
+        "azure_max_inflight_parts_for_one_file": inflight,
+    }
+
+    cont = "cont" + str(time.time_ns())
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{cont}', '{table}_backup')"
+
+    # `allow_azure_native_copy = 0` disables server-side copy, so the data is read
+    # back and re-uploaded via the multipart path on both backup and restore.
+    azure_query(
+        node1,
+        f"BACKUP TABLE {table} TO {backup_destination} SETTINGS allow_azure_native_copy = 0",
+        settings=copy_settings,
+    )
+
+    azure_query(
+        node1,
+        f"RESTORE TABLE {table} AS {restored} FROM {backup_destination} SETTINGS allow_azure_native_copy = 0",
+        settings=copy_settings,
+    )
+
+    assert node1.contains_in_log(f"Reading and writing Blob.*from Container: {cont}")
+
+    assert (
+        azure_query(
+            node1, f"SELECT count(), sum(cityHash64(key, data)) FROM {restored}"
+        )
+        == expected
+    )
+
+    azure_query(node1, f"DROP TABLE {table} SYNC")
+    azure_query(node1, f"DROP TABLE {restored} SYNC")
 
 
 def test_clickhouse_disks_azure(cluster):

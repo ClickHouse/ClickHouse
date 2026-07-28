@@ -2,6 +2,7 @@
 
 #include <exception>
 #include <mutex>
+#include <unordered_set>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Block.h>
 
@@ -29,12 +30,25 @@ public:
     const std::unordered_map<String, Int64> & getStorageColumnEncoding() const { return storage_encoding; }
     const std::unordered_map<Int64, String> & getFieldIdToClickHouseName() const { return field_id_to_clickhouse_name; }
 
+    /// Paths whose Iceberg logical type is `string` (not `binary`); both read as DataTypeString,
+    /// so a writer preserving that distinction (ORC/Avro string vs binary) consults this.
+    /// hasIcebergStringInfo() lets a field-id-only mapper fall back to the default, not force binary.
+    void setIcebergStringPaths(std::unordered_set<String> && iceberg_string_paths_)
+    {
+        iceberg_string_paths = std::move(iceberg_string_paths_);
+        has_iceberg_string_info = true;
+    }
+    bool hasIcebergStringInfo() const { return has_iceberg_string_info; }
+    bool isIcebergStringPath(const String & path) const { return iceberg_string_paths.contains(path); }
+
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
     std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> makeMapping(const std::unordered_map<Int64, String> & format_encoding);
 
 private:
     std::unordered_map<String, Int64> storage_encoding;
     std::unordered_map<Int64, String> field_id_to_clickhouse_name;
+    std::unordered_set<String> iceberg_string_paths;
+    bool has_iceberg_string_info = false;
 };
 
 using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;
