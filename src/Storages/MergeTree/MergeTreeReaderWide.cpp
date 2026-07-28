@@ -224,6 +224,26 @@ size_t MergeTreeReaderWide::readRows(
                 res_columns[pos] = nullptr;
         }
 
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        /// Before dropping the substreams caches, verify that the reference counts of the columns
+        /// shared between the caches, the deserialize states and the result columns account for all
+        /// those holders. Broken copy-on-write reference counting would free such a column here while
+        /// it is still referenced from the result, leading to use-after-free (issue #105626).
+        ColumnsOwnershipValidator ownership_validator;
+        for (const auto & [_, cache] : caches)
+            ownership_validator.add(cache);
+        for (const auto & [_, states] : deserialize_states_caches)
+            ownership_validator.add(states);
+        ownership_validator.add(deserialize_binary_bulk_state_map);
+        ownership_validator.add(deserialize_binary_bulk_state_map_for_subcolumns);
+        /// The reader-local `deserialize_binary_bulk_state_map` holds clones of the prefix states; the
+        /// originals stay in the shared cache and share the same column references (e.g. a single-part
+        /// `LowCardinality` `global_dictionary`), so count those cache-held holders too.
+        if (deserialization_prefixes_cache)
+            deserialization_prefixes_cache->addToOwnershipValidator(ownership_validator);
+        ownership_validator.validate(res_columns);
+#endif
+
         prefetched_streams.clear();
         caches.clear();
 
