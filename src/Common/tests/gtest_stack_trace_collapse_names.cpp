@@ -18,6 +18,7 @@ const String execute_query = "DB::executeQuery(std::__1::basic_string_view<char,
 
 constexpr std::string_view function_h = "./contrib/llvm-project/libcxx/include/__functional/function.h";
 constexpr std::string_view invoke_h = "./contrib/llvm-project/libcxx/include/__functional/invoke.h";
+constexpr std::string_view hash_h = "./contrib/llvm-project/libcxx/include/__functional/hash.h";
 constexpr std::string_view execute_query_cpp = "./src/Interpreters/executeQuery.cpp";
 
 }
@@ -40,6 +41,20 @@ TEST(StackTraceCollapseNames, KeepsOrdinaryFunctionAttributedToFunctionalHeader)
     EXPECT_EQ(StackTrace::collapseDemangledNames(function_h, execute_query),
               "DB::executeQuery(std::basic_string_view<char, std::char_traits<char>>, std::shared_ptr<DB::Context>, "
               "DB::QueryFlags, DB::QueryProcessingStage::Enum)");
+}
+
+/// Not every symbol that lives in a `__functional` header is `std::function` plumbing: libc++ puts
+/// `std::hash`, `std::less`, `std::identity` and friends there too. A frame of one of those is where
+/// the code really is, so it must keep its name - only the type-erasing wrappers and the invoke
+/// helpers they forward through are noise.
+TEST(StackTraceCollapseNames, KeepsMeaningfulStdSymbolFromFunctionalHeader)
+{
+    EXPECT_EQ(
+        StackTrace::collapseDemangledNames(
+            hash_h, "std::__1::hash<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>>>::operator()"),
+        "std::hash<String>::operator()");
+    EXPECT_EQ(StackTrace::collapseDemangledNames(hash_h, "std::__1::__murmur2_or_cityhash<unsigned long, 64ul>::operator()"),
+              "std::__murmur2_or_cityhash<unsigned long, 64ul>::operator()");
 }
 
 TEST(StackTraceCollapseNames, ShortensKnownSpellings)

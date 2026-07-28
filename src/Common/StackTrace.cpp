@@ -15,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
+#include <algorithm>
 #include <atomic>
 #include <filesystem>
 #include <map>
@@ -605,6 +606,25 @@ void StackTrace::tryCapture()
 constexpr std::pair<std::string_view, std::string_view> replacements[]
     = {{"::__1", ""}, {"std::basic_string<char, std::char_traits<char>, std::allocator<char>>", "String"}};
 
+/// The type-erasing wrappers of `std::function` and the invoke helpers they forward through, spelled
+/// as they appear after @c replacements dropped the `::__1` ABI namespace. These are the frames whose
+/// demangled names are pure noise: they spell out the whole captured type and say nothing that the
+/// surrounding frames do not already say. Everything else keeps its name, including a `std::` symbol
+/// that merely happens to live in a `__functional` header (`std::hash`, `std::less`, ...) - such a
+/// frame is where the code really is, so its name is the only useful part of it.
+constexpr std::string_view std_function_plumbing[] = {
+    "std::__function::",  /// `__func`, `__value_func`, `__alloc_func`, `__policy_func`, `__policy_invoker`
+    "std::function<",     /// `std::function::operator()` and its constructors
+    "std::__invoke",      /// `__invoke`, `__invoke_r`, `__invoke_void_return_wrapper`
+    "std::invoke",
+    "std::__mem_fn<",
+};
+
+static bool isStdFunctionPlumbing(const String & symbol_name)
+{
+    return std::ranges::any_of(std_function_plumbing, [&](std::string_view prefix) { return symbol_name.starts_with(prefix); });
+}
+
 // Hide the name of `std::function` plumbing frames (the `__func`/`__value_func`/`__policy_func`
 // trampolines from libc++'s `__functional` headers): their demangled names are huge - they spell out
 // the whole captured lambda type - and they say nothing that the surrounding frames don't already say.
@@ -613,22 +633,6 @@ String StackTrace::collapseDemangledNames(std::optional<std::string_view> file, 
 {
     if (symbol_name.empty())
         return "?";
-
-    /// The file of a frame is the source line the *instruction* maps to, which is not necessarily
-    /// where the enclosing function is defined: a compiler-generated or inlined `std::function`
-    /// operation puts a line-table entry pointing into `__functional` in the middle of an ordinary
-    /// function. Requiring the symbol to be a libc++ one as well keeps the frame of such a function
-    /// named - it is the only useful part of the frame, and dropping it left `trace_full` in
-    /// `system.crash_log` with a bare `?` for the frame that actually crashed. This is much more
-    /// likely in a ThinLTO build, where `std::function` calls are inlined across translation units.
-    if (file.has_value() && symbol_name.starts_with("std::"))
-    {
-        std::string_view file_copy = file.value();
-        if (auto trim_pos = file_copy.find_last_of('/'); trim_pos != std::string_view::npos)
-            file_copy.remove_suffix(file_copy.size() - trim_pos);
-        if (file_copy.ends_with("functional"))
-            return "?";
-    }
 
     // TODO myrrc surely there is a written version already for better in place search&replace
     for (auto [needle, to] : replacements)
@@ -639,6 +643,22 @@ String StackTrace::collapseDemangledNames(std::optional<std::string_view> file, 
             symbol_name.replace(pos, needle.length(), to);
             pos += to.length();
         }
+    }
+
+    /// The file of a frame is the source line the *instruction* maps to, which is not necessarily
+    /// where the enclosing function is defined: a compiler-generated or inlined `std::function`
+    /// operation puts a line-table entry pointing into `__functional` in the middle of an ordinary
+    /// function. Requiring the symbol to name the plumbing as well keeps the frame of such a function
+    /// named - it is the only useful part of the frame, and dropping it left `trace_full` in
+    /// `system.crash_log` with a bare `?` for the frame that actually crashed. This is much more
+    /// likely in a ThinLTO build, where `std::function` calls are inlined across translation units.
+    if (file.has_value() && isStdFunctionPlumbing(symbol_name))
+    {
+        std::string_view file_copy = file.value();
+        if (auto trim_pos = file_copy.find_last_of('/'); trim_pos != std::string_view::npos)
+            file_copy.remove_suffix(file_copy.size() - trim_pos);
+        if (file_copy.ends_with("functional"))
+            return "?";
     }
 
     return symbol_name;
