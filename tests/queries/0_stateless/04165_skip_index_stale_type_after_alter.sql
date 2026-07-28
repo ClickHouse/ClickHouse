@@ -137,6 +137,7 @@ SELECT count() > 0 FROM (EXPLAIN ANALYZE indexes = 1
     SETTINGS use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1,
              use_skip_indexes_on_data_read = 1, query_plan_max_limit_for_top_k_optimization = 100000,
              max_rows_to_read = 0, use_query_condition_cache = 0)
+-- The ' | ' delimiter is the pretty form, which EXPLAIN ANALYZE enables by default.
 WHERE explain ILIKE '%Parts: 1 | Granules: 16%';
 
 -- Known gap, deliberately out of scope: reusing an index NAME after a killed DROP INDEX leaves the
@@ -189,6 +190,67 @@ SYSTEM STOP MERGES t_materialized_index;
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_materialized_index WHERE c = 150) WHERE explain ILIKE '%Granules: 1/16%';
 SELECT count() FROM t_materialized_index WHERE c = 150;
 
+SELECT '-- 13. expression index over a timezone-dependent expression, timezone-only MODIFY COLUMN';
+-- Both timezones are pinned in the DDL: session_timezone is randomized by the test runner, so a
+-- fixture relying on the server default is not reproducible.
+DROP TABLE IF EXISTS t_stale_tz;
+CREATE TABLE t_stale_tz (k UInt64, dt DateTime('UTC'), INDEX idx toHour(dt) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_stale_tz SELECT number, toDateTime('2020-01-01 00:00:00', 'UTC') + number * 3600 FROM numbers(64);
+SYSTEM STOP MERGES t_stale_tz;
+ALTER TABLE t_stale_tz MODIFY COLUMN dt DateTime('Asia/Tokyo');
+SELECT count() FROM system.mutations WHERE table = 't_stale_tz' AND database = currentDatabase();
+-- Hour 9 exists only in the NEW timezone, so a granule computed in the old one prunes it away. The
+-- query condition cache is pinned off because it is keyed on the condition rather than on the index,
+-- so a verdict cached by one of these two statements would answer the other one too.
+SELECT count() FROM t_stale_tz WHERE toHour(dt) = 9 SETTINGS use_query_condition_cache = 0;
+SELECT count() FROM t_stale_tz WHERE toHour(dt) = 9 SETTINGS use_skip_indexes = 0, use_query_condition_cache = 0;
+-- Nullable and DateTime64 reach the same DateTime attribution through a wrapper and a sibling type.
+DROP TABLE IF EXISTS t_stale_tz_nullable;
+CREATE TABLE t_stale_tz_nullable (k UInt64, dt Nullable(DateTime('UTC')), INDEX idx toHour(dt) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_stale_tz_nullable SELECT number, toDateTime('2020-01-01 00:00:00', 'UTC') + number * 3600 FROM numbers(64);
+SYSTEM STOP MERGES t_stale_tz_nullable;
+ALTER TABLE t_stale_tz_nullable MODIFY COLUMN dt Nullable(DateTime('Asia/Tokyo'));
+SELECT count() FROM t_stale_tz_nullable WHERE toHour(dt) = 9 SETTINGS use_query_condition_cache = 0;
+SELECT count() FROM t_stale_tz_nullable WHERE toHour(dt) = 9 SETTINGS use_skip_indexes = 0, use_query_condition_cache = 0;
+DROP TABLE IF EXISTS t_stale_tz64;
+CREATE TABLE t_stale_tz64 (k UInt64, dt DateTime64(3, 'UTC'), INDEX idx toHour(dt) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_stale_tz64 SELECT number, toDateTime64('2020-01-01 00:00:00', 3, 'UTC') + number * 3600 FROM numbers(64);
+SYSTEM STOP MERGES t_stale_tz64;
+ALTER TABLE t_stale_tz64 MODIFY COLUMN dt DateTime64(3, 'Asia/Tokyo');
+SELECT count() FROM t_stale_tz64 WHERE toHour(dt) = 9 SETTINGS use_query_condition_cache = 0;
+SELECT count() FROM t_stale_tz64 WHERE toHour(dt) = 9 SETTINGS use_skip_indexes = 0, use_query_condition_cache = 0;
+
+SELECT '-- 14. control: a simple single-column index keeps pruning across the same timezone ALTER';
+-- A set/minmax granule over the bare column holds the raw epoch value, which no timezone changes, so
+-- refusing this very common ALTER would be a pruning regression.
+DROP TABLE IF EXISTS t_keep_tz;
+CREATE TABLE t_keep_tz (k UInt64, dt DateTime('UTC'), INDEX idx dt TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_keep_tz SELECT number, toDateTime('2020-01-01 00:00:00', 'UTC') + number * 3600 FROM numbers(64);
+SYSTEM STOP MERGES t_keep_tz;
+ALTER TABLE t_keep_tz MODIFY COLUMN dt DateTime('Asia/Tokyo');
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_keep_tz WHERE dt = toDateTime('2020-01-01 04:00:00', 'UTC')) WHERE explain ILIKE '%Granules: 1/16%';
+SELECT count() FROM t_keep_tz WHERE dt = toDateTime('2020-01-01 04:00:00', 'UTC');
+DROP TABLE IF EXISTS t_keep_tz_nullable;
+CREATE TABLE t_keep_tz_nullable (k UInt64, dt Nullable(DateTime('UTC')), INDEX idx dt TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_keep_tz_nullable SELECT number, toDateTime('2020-01-01 00:00:00', 'UTC') + number * 3600 FROM numbers(64);
+SYSTEM STOP MERGES t_keep_tz_nullable;
+ALTER TABLE t_keep_tz_nullable MODIFY COLUMN dt Nullable(DateTime('Asia/Tokyo'));
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_keep_tz_nullable WHERE dt = toDateTime('2020-01-01 04:00:00', 'UTC')) WHERE explain ILIKE '%Granules: 1/16%';
+-- An expression index whose column keeps its timezone must also keep pruning: the refusal is about a
+-- timezone that CHANGED, not about a DateTime column being present.
+DROP TABLE IF EXISTS t_keep_tz_expr;
+CREATE TABLE t_keep_tz_expr (k UInt64, dt DateTime('UTC'), INDEX idx toHour(dt) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_keep_tz_expr SELECT number, toDateTime('2020-01-01 00:00:00', 'UTC') + number * 3600 FROM numbers(64);
+SYSTEM STOP MERGES t_keep_tz_expr;
+ALTER TABLE t_keep_tz_expr MODIFY COLUMN dt DateTime('UTC');
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_keep_tz_expr WHERE toHour(dt) = 5) WHERE explain ILIKE '%Granules: 3/16%';
+
 DROP TABLE t_stale_nullable;
 DROP TABLE t_stale_plain;
 DROP TABLE t_stale_json;
@@ -202,3 +264,9 @@ DROP TABLE t_name_reuse;
 DROP TABLE t_absent_col;
 DROP TABLE t_pre_add_index;
 DROP TABLE t_materialized_index;
+DROP TABLE t_stale_tz;
+DROP TABLE t_stale_tz_nullable;
+DROP TABLE t_stale_tz64;
+DROP TABLE t_keep_tz;
+DROP TABLE t_keep_tz_nullable;
+DROP TABLE t_keep_tz_expr;

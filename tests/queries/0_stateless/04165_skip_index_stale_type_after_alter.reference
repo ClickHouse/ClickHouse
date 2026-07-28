@@ -36,3 +36,16 @@
 1
 1
 1
+-- 13. expression index over a timezone-dependent expression, timezone-only MODIFY COLUMN
+0
+3
+3
+3
+3
+3
+3
+-- 14. control: a simple single-column index keeps pruning across the same timezone ALTER
+1
+1
+1
+1

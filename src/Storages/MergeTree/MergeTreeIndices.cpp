@@ -6,8 +6,13 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
@@ -151,6 +156,108 @@ bool isRepresentationPreservingConversion(const IDataType * from, const IDataTyp
     }
 }
 
+/// Timezone attribution of a DateTime/DateTime64: nullopt for any other type, an empty string when
+/// the type carries no timezone of its own, the zone name when it does.
+std::optional<String> tryGetTimezoneAttribution(const IDataType * type)
+{
+    if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(type))
+        return date_time->hasExplicitTimeZone() ? date_time->getTimeZone().getTimeZone() : String{};
+
+    if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(type))
+        return date_time64->hasExplicitTimeZone() ? date_time64->getTimeZone().getTimeZone() : String{};
+
+    return {};
+}
+
+/// Is a DateTime or DateTime64 reachable from @type at all?
+bool containsTimezoneAttribution(const IDataType & type)
+{
+    if (tryGetTimezoneAttribution(&type))
+        return true;
+
+    bool found = false;
+    type.forEachChild([&](const IDataType & child)
+    {
+        if (tryGetTimezoneAttribution(&child))
+            found = true;
+    });
+    return found;
+}
+
+/// Do two types that IDataType::equals() reports as equal still attribute their values to different
+/// timezones? DataTypeDateTime and DataTypeDateTime64 ignore the timezone in equals() on purpose, and
+/// they are the only types under src/DataTypes that drop a semantically load-bearing parameter: every
+/// other implementation either compares its parameters or recurses into its children.
+///
+/// Fail-closed: a shape this cannot compare is reported as a difference, but only where a timezone is
+/// reachable at all, so a type that carries none is never refused.
+bool hasTimezoneDependentDifference(const IDataType * from, const IDataType * to)
+{
+    auto from_time_zone = tryGetTimezoneAttribution(from);
+    auto to_time_zone = tryGetTimezoneAttribution(to);
+    if (from_time_zone || to_time_zone)
+        return from_time_zone != to_time_zone;
+
+    /// equals() recurses through these, so their children line up pairwise.
+    if (const auto * from_nullable = typeid_cast<const DataTypeNullable *>(from))
+    {
+        const auto * to_nullable = typeid_cast<const DataTypeNullable *>(to);
+        return !to_nullable
+            || hasTimezoneDependentDifference(from_nullable->getNestedType().get(), to_nullable->getNestedType().get());
+    }
+
+    if (const auto * from_array = typeid_cast<const DataTypeArray *>(from))
+    {
+        const auto * to_array = typeid_cast<const DataTypeArray *>(to);
+        return !to_array
+            || hasTimezoneDependentDifference(from_array->getNestedType().get(), to_array->getNestedType().get());
+    }
+
+    if (const auto * from_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(from))
+    {
+        const auto * to_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(to);
+        return !to_low_cardinality
+            || hasTimezoneDependentDifference(
+                from_low_cardinality->getDictionaryType().get(), to_low_cardinality->getDictionaryType().get());
+    }
+
+    if (const auto * from_map = typeid_cast<const DataTypeMap *>(from))
+    {
+        const auto * to_map = typeid_cast<const DataTypeMap *>(to);
+        return !to_map
+            || hasTimezoneDependentDifference(from_map->getKeyType().get(), to_map->getKeyType().get())
+            || hasTimezoneDependentDifference(from_map->getValueType().get(), to_map->getValueType().get());
+    }
+
+    if (const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from))
+    {
+        const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to);
+        if (!to_tuple || from_tuple->getElements().size() != to_tuple->getElements().size())
+            return true;
+
+        for (size_t i = 0; i < from_tuple->getElements().size(); ++i)
+            if (hasTimezoneDependentDifference(from_tuple->getElements()[i].get(), to_tuple->getElements()[i].get()))
+                return true;
+
+        return false;
+    }
+
+    if (const auto * from_variant = typeid_cast<const DataTypeVariant *>(from))
+    {
+        const auto * to_variant = typeid_cast<const DataTypeVariant *>(to);
+        if (!to_variant || from_variant->getVariants().size() != to_variant->getVariants().size())
+            return true;
+
+        for (size_t i = 0; i < from_variant->getVariants().size(); ++i)
+            if (hasTimezoneDependentDifference(from_variant->getVariants()[i].get(), to_variant->getVariants()[i].get()))
+                return true;
+
+        return false;
+    }
+
+    return containsTimezoneAttribution(*from) || containsTimezoneAttribution(*to);
+}
+
 }
 
 bool IMergeTreeIndex::isPartTypeCompatible(const IMergeTreeDataPart & part) const
@@ -168,7 +275,11 @@ bool IMergeTreeIndex::isPartTypeCompatible(const IMergeTreeDataPart & part) cons
         if (!part_column)
             return false;
 
-        if (part_column->type->equals(*metadata_type))
+        /// equals() calls two DateTime types with different timezones equal, so a timezone-only
+        /// MODIFY COLUMN reaches here as "no difference" even though an index expression that reads
+        /// the timezone (toHour, toStartOfDay, ...) now yields different values than the granule holds.
+        if (part_column->type->equals(*metadata_type)
+            && !hasTimezoneDependentDifference(part_column->type.get(), metadata_type.get()))
             continue;
 
         /// A granule of an expression index stores the EXPRESSION's result type, which can change
