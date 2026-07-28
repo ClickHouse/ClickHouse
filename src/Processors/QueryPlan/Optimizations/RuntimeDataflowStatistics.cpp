@@ -117,13 +117,14 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
 /// counts the state pointers plus the arena the column owns, and a column of states assembled by
 /// `AggregatingInOrderTransform` (see `addArenasToAggregateColumns`) does not own the arena its states live in,
 /// so `byteSize` degenerates to one pointer per row there. Size such a column from its serialized states
-/// instead, sampling as many of them as `Aggregator::estimateSizeOfCompressedState` does per bucket, so that
-/// both producers of the `AggregationState` statistic measure the same thing.
+/// instead - only the states, which is what `SerializationAggregateFunction` puts on the wire and what
+/// `Aggregator::estimateSizeOfCompressedState` measures - sampling as many of them as that function does per
+/// bucket, so that both producers of the `AggregationState` statistic measure the same thing.
 static size_t estimateUncompressedColumnSize(const IColumn & column)
 {
     static constexpr size_t max_states_to_serialize = 100;
     if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(&column))
-        return aggregate_column->sampledSerializedSizeEstimate(max_states_to_serialize);
+        return aggregate_column->sampledSerializedStateBytes(max_states_to_serialize);
     return column.byteSize();
 }
 
