@@ -44,8 +44,8 @@ private:
     bool on_totals;
     /// When set, compose the applied filter into the chunk's `ChunkInfoRowNumbers` (if present) so
     /// downstream `_row_number` / positional-delete consumers keep correct physical row numbers.
-    /// Opt-in because only pipelines that guarantee the info still describes the chunk (e.g. the
-    /// data lake read fallback filters, right after the format reader) may enable it.
+    /// Opt-in because only callers whose upstream transforms all maintain the info may enable it
+    /// (the data lake read filters: every transform above them preserves or updates it).
     bool update_row_numbers_info;
     bool always_false = false;
     size_t filter_column_position = 0;

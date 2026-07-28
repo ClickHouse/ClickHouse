@@ -184,9 +184,9 @@ void updateRowNumbersInfo(const Chunk & chunk, const IColumn::Filter & filter)
     auto & applied_filter = row_numbers_info->applied_filter;
     if (applied_filter.has_value())
     {
-        /// The mask must have one element per set bit of the existing one; if not, an upstream
-        /// row-changing transform left the info stale, so it is already unrecoverable here. Leave it
-        /// alone: a consumer of a stale mask fails loudly on the resulting column length mismatch.
+        /// The mask must have one element per set bit of the existing one. A mismatch means an
+        /// upstream row-changing transform already left the info stale, so it cannot be repaired
+        /// here; the callers that opt in are exactly those whose upstream transforms maintain it.
         if (countBytesInFilter(*applied_filter) != filter.size())
             return;
 
