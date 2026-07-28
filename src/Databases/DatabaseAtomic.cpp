@@ -54,6 +54,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char atomic_db_fail_before_commit_alter_table[];
+    extern const char atomic_db_fail_after_txn_commit_before_rename[];
 }
 
 
@@ -471,6 +472,11 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
 
     /// NOTE: replica will be lost if server crashes before the following rename
     /// TODO better detection and recovery
+
+    fiu_do_on(FailPoints::atomic_db_fail_after_txn_commit_before_rename,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after the transaction commit, before the metadata rename");
+    });
 
     check_file_exists = db_disk->renameExchangeIfSupported(table_metadata_tmp_path, table_metadata_path);
     if (!check_file_exists)

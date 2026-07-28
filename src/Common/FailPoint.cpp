@@ -233,6 +233,7 @@ static struct InitFiu
     REGULAR(rmt_delay_commit_part) \
     REGULAR(rmt_alter_fail_before_zk_multi) \
     REGULAR(atomic_db_fail_before_commit_alter_table) \
+    REGULAR(atomic_db_fail_after_txn_commit_before_rename) \
     ONCE(local_object_storage_network_error_during_remove) \
     REGULAR(lightweight_show_tables) \
     REGULAR(smt_part_update_duplicated_part) \
