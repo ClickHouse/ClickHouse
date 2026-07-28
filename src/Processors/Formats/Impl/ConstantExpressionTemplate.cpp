@@ -3,7 +3,9 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/SipHash.h>
+#include <Core/BlockMissingValues.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/ParseError.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -12,7 +14,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/FieldToDataType.h>
-#include <Processors/Formats/IRowInputFormat.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>

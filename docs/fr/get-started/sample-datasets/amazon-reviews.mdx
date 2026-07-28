@@ -1,0 +1,259 @@
+---
+description: 'Plus de 150 M d’avis clients sur les produits Amazon'
+sidebarTitle: 'Avis clients Amazon'
+slug: /getting-started/example-datasets/amazon-reviews
+title: 'Avis clients Amazon'
+doc_type: 'guide'
+keywords: ['avis Amazon', 'jeu de données d’avis clients', 'données d’e-commerce', 'jeu de données d’exemple', 'prise en main']
+---
+
+import { RunnableCode } from "/snippets/fr/components/RunnableCode/RunnableCode.jsx";
+
+Ce jeu de données contient plus de 150 M d’avis clients sur des produits Amazon. Les données se trouvent dans des fichiers Parquet compressés avec Snappy dans AWS S3, pour une taille totale de 49 GB (compressés). Voyons les étapes pour l’insérer dans ClickHouse.
+
+<Note>
+  Les requêtes ci-dessous ont été exécutées sur une instance **de production** de ClickHouse Cloud. Pour plus d’informations, consultez
+  [&quot;Spécifications du Playground&quot;](/fr/get-started/sample-datasets/playground#specifications).
+</Note>
+
+<div id="loading-the-dataset">
+  ## Chargement du jeu de données
+</div>
+
+1. Sans insérer les données dans ClickHouse, nous pouvons les interroger directement. Récupérons quelques lignes pour voir à quoi elles ressemblent :
+
+```sql
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet')
+LIMIT 3
+```
+
+Les lignes se présentent ainsi :
+
+```response
+Row 1:
+──────
+review_date:       16462
+marketplace:       US
+customer_id:       25444946 -- 25.44 million
+review_id:         R146L9MMZYG0WA
+product_id:        B00NV85102
+product_parent:    908181913 -- 908.18 million
+product_title:     XIKEZAN iPhone 6 Plus 5.5 inch Waterproof Case, Shockproof Dirtproof Snowproof Full Body Skin Case Protective Cover with Hand Strap & Headphone Adapter & Kickstand
+product_category:  Wireless
+star_rating:       4
+helpful_votes:     0
+total_votes:       0
+vine:              false
+verified_purchase: true
+review_headline:   case is sturdy and protects as I want
+review_body:       I won't count on the waterproof part (I took off the rubber seals at the bottom because the got on my nerves). But the case is sturdy and protects as I want.
+
+Row 2:
+──────
+review_date:       16462
+marketplace:       US
+customer_id:       1974568 -- 1.97 million
+review_id:         R2LXDXT293LG1T
+product_id:        B00OTFZ23M
+product_parent:    951208259 -- 951.21 million
+product_title:     Season.C Chicago Bulls Marilyn Monroe No.1 Hard Back Case Cover for Samsung Galaxy S5 i9600
+product_category:  Wireless
+star_rating:       1
+helpful_votes:     0
+total_votes:       0
+vine:              false
+verified_purchase: true
+review_headline:   One Star
+review_body:       Cant use the case because its big for the phone. Waist of money!
+
+Row 3:
+──────
+review_date:       16462
+marketplace:       US
+customer_id:       24803564 -- 24.80 million
+review_id:         R7K9U5OEIRJWR
+product_id:        B00LB8C4U4
+product_parent:    524588109 -- 524.59 million
+product_title:     iPhone 5s Case, BUDDIBOX [Shield] Slim Dual Layer Protective Case with Kickstand for Apple iPhone 5 and 5s
+product_category:  Wireless
+star_rating:       4
+helpful_votes:     0
+total_votes:       0
+vine:              false
+verified_purchase: true
+review_headline:   but overall this case is pretty sturdy and provides good protection for the phone
+review_body:       The front piece was a little difficult to secure to the phone at first, but overall this case is pretty sturdy and provides good protection for the phone, which is what I need. I would buy this case again.
+```
+
+2. Définissons une nouvelle table MergeTree nommée `amazon_reviews` pour stocker ces données dans ClickHouse :
+
+```sql
+CREATE DATABASE amazon
+
+CREATE TABLE amazon.amazon_reviews
+(
+    `review_date` Date,
+    `marketplace` LowCardinality(String),
+    `customer_id` UInt64,
+    `review_id` String,
+    `product_id` String,
+    `product_parent` UInt64,
+    `product_title` String,
+    `product_category` LowCardinality(String),
+    `star_rating` UInt8,
+    `helpful_votes` UInt32,
+    `total_votes` UInt32,
+    `vine` Bool,
+    `verified_purchase` Bool,
+    `review_headline` String,
+    `review_body` String,
+    PROJECTION helpful_votes
+    (
+        SELECT *
+        ORDER BY helpful_votes
+    )
+)
+ENGINE = MergeTree
+ORDER BY (review_date, product_category)
+```
+
+3. La commande `INSERT` suivante utilise la fonction de table `s3Cluster`, qui permet de traiter plusieurs fichiers S3 en parallèle à l’aide de tous les nœuds de votre cluster. Nous utilisons également un caractère générique pour insérer tous les fichiers dont le nom commence par `https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet` :
+
+```sql
+INSERT INTO amazon.amazon_reviews SELECT *
+FROM s3Cluster('default', 
+'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet')
+```
+
+<Tip>
+  Dans ClickHouse Cloud, le nom du cluster est `default`. Remplacez `default` par le nom de votre cluster... ou utilisez la fonction de table `s3` (au lieu de `s3Cluster`) si vous n&#39;avez pas de cluster.
+</Tip>
+
+5. Cette requête est assez rapide : en moyenne, environ 300 000 lignes par seconde. En 5 minutes environ, vous devriez voir toutes les lignes insérées :
+
+<RunnableCode>
+  ```sql
+  SELECT formatReadableQuantity(count())
+  FROM amazon.amazon_reviews
+  ```
+</RunnableCode>
+
+6. Voyons combien d&#39;espace occupent nos données :
+
+<RunnableCode>
+  ```sql
+  SELECT
+      disk_name,
+      formatReadableSize(sum(data_compressed_bytes) AS size) AS compressed,
+      formatReadableSize(sum(data_uncompressed_bytes) AS usize) AS uncompressed,
+      round(usize / size, 2) AS compr_rate,
+      sum(rows) AS rows,
+      count() AS part_count
+  FROM system.parts
+  WHERE (active = 1) AND (table = 'amazon_reviews')
+  GROUP BY disk_name
+  ORDER BY size DESC
+  ```
+</RunnableCode>
+
+Les données d&#39;origine représentaient environ 70G, mais une fois compressées dans ClickHouse, elles n&#39;occupent plus qu&#39;environ 30G.
+
+<div id="example-queries">
+  ## Exemples de requêtes
+</div>
+
+7. Exécutons quelques requêtes. Voici les 10 avis les plus utiles du jeu de données :
+
+<RunnableCode>
+  ```sql
+  SELECT
+      product_title,
+      review_headline
+  FROM amazon.amazon_reviews
+  ORDER BY helpful_votes DESC
+  LIMIT 10
+  ```
+</RunnableCode>
+
+<Note>
+  Cette requête utilise une [projection](/fr/concepts/features/projections/projections) pour améliorer les performances.
+</Note>
+
+8. Voici les 10 produits Amazon qui ont le plus d&#39;avis :
+
+<RunnableCode>
+  ```sql
+  SELECT
+      any(product_title),
+      count()
+  FROM amazon.amazon_reviews
+  GROUP BY product_id
+  ORDER BY 2 DESC
+  LIMIT 10;
+  ```
+</RunnableCode>
+
+9. Voici la note moyenne des avis par mois pour chaque produit (une vraie [question d&#39;entretien chez Amazon](https://datalemur.com/questions/sql-avg-review-ratings) !) :
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toStartOfMonth(review_date) AS month,
+      any(product_title),
+      avg(star_rating) AS avg_stars
+  FROM amazon.amazon_reviews
+  GROUP BY
+      month,
+      product_id
+  ORDER BY
+      month DESC,
+      product_id ASC
+  LIMIT 20;
+  ```
+</RunnableCode>
+
+10. Voici le nombre total de votes par catégorie de produit. Cette requête est rapide, car `product_category` fait partie de la clé primaire :
+
+<RunnableCode>
+  ```sql
+  SELECT
+      sum(total_votes),
+      product_category
+  FROM amazon.amazon_reviews
+  GROUP BY product_category
+  ORDER BY 1 DESC
+  ```
+</RunnableCode>
+
+11. Cherchons les produits pour lesquels le mot **&quot;awful&quot;** apparaît le plus souvent dans l&#39;avis. C&#39;est un travail considérable : il faut analyser plus de 151 M de chaînes à la recherche d&#39;un seul mot :
+
+```sql runnable settings={'enable_parallel_replicas':1}
+SELECT
+    product_id,
+    any(product_title),
+    avg(star_rating),
+    count() AS count
+FROM amazon.amazon_reviews
+WHERE position(review_body, 'awful') > 0
+GROUP BY product_id
+ORDER BY count DESC
+LIMIT 50;
+```
+
+Notez le temps d’exécution de la requête pour un volume de données aussi important. Les résultats sont aussi assez amusants à lire !
+
+12. Nous pouvons relancer la même requête, mais cette fois en recherchant **awesome** dans les avis :
+
+```sql runnable settings={'enable_parallel_replicas':1}
+SELECT 
+    product_id,
+    any(product_title),
+    avg(star_rating),
+    count() AS count
+FROM amazon.amazon_reviews
+WHERE position(review_body, 'awesome') > 0
+GROUP BY product_id
+ORDER BY count DESC
+LIMIT 50;
+```

@@ -1,0 +1,128 @@
+---
+slug: /about-us/distinctive-features
+sidebarTitle: 'ClickHouse 为何如此独特？'
+description: '了解 ClickHouse 凭借哪些特性从其他数据库管理系统中脱颖而出'
+title: 'ClickHouse 的独特特性'
+keywords: ['压缩', '二级索引','列式']
+doc_type: 'guide'
+---
+
+<div id="true-column-oriented-database-management-system">
+  ## 真正的列式数据库管理系统
+</div>
+
+在真正的列式 DBMS 中，不会随值额外存储任何数据。这意味着必须支持定长值，以避免在值旁边存储表示长度的“数字”。例如，十亿个 UInt8 类型的值在未压缩状态下应占用约 1 GB，否则会显著增加 CPU 开销。即使在未压缩时，也必须以紧凑方式存储数据 (不包含任何“垃圾”) ，因为解压速度 (CPU 使用率) 主要取决于未压缩数据的体积。
+
+这与另一类系统形成对比：它们可以将不同列的值分开存储，但由于针对其他场景做了优化，无法高效处理分析查询，例如 HBase、Bigtable、Cassandra 和 Hypertable。在这些系统中，吞吐量大约只有每秒十万行，而不是每秒数亿行。
+
+最后，ClickHouse 是一个数据库管理系统，而不是单个数据库。它支持在运行时创建表和数据库、加载数据以及运行查询，而无需重新配置或重启服务器。
+
+<div id="data-compression">
+  ## 数据压缩
+</div>
+
+有些列式 DBMS 不使用数据压缩。然而，数据压缩对于实现卓越性能至关重要。
+
+除了提供在磁盘空间占用和 CPU 消耗之间具有不同权衡的高效通用压缩编解码器外，ClickHouse 还针对特定类型的数据提供了[专用编解码器](/zh/reference/statements/create/table#specialized-codecs)，这使其能够与更垂直、更细分的数据库 (如时间序列数据库) 竞争，甚至表现更优。
+
+<div id="disk-storage-of-data">
+  ## 数据的磁盘存储
+</div>
+
+按主键对数据进行物理排序后，就能以较低延迟根据特定值或值范围提取数据，通常只需不到几十毫秒。某些列式 DBMS (如 SAP HANA 和 Google PowerDrill) 只能在 RAM 中运行。这种方式所需的硬件预算往往高于实时分析的实际需求。
+
+ClickHouse 专为在常规硬盘上运行而设计，这意味着每 GB 数据存储成本较低；但如果有 SSD 和额外的 RAM，也同样能被充分利用。
+
+<div id="parallel-processing-on-multiple-cores">
+  ## 在多个内核上并行处理
+</div>
+
+大型查询会自然地并行执行，充分利用当前服务器上的所有必要可用资源。
+
+<div id="distributed-processing-on-multiple-servers">
+  ## 多服务器上的分布式处理
+</div>
+
+上面提到的列式 DBMS 几乎都不支持分布式查询处理。
+
+在 ClickHouse 中，数据可以分布在不同的分片上。每个分片都可以由一组用于容错的副本组成。执行查询时，所有分片都会并行参与，且这一过程对用户是透明的。
+
+<div id="sql-support">
+  ## SQL 支持
+</div>
+
+ClickHouse 支持一种基于 SQL 的[声明式查询语言](/zh/reference/home)，基本兼容 ANSI SQL 标准。
+
+支持的查询包括 [GROUP BY](/zh/reference/statements/select/group-by)、[ORDER BY](/zh/reference/statements/select/order-by)、[FROM](/zh/reference/statements/select/from) 中的子查询、[JOIN](/zh/reference/statements/select/join) 子句、[IN](/zh/reference/statements/in) 运算符、[窗口函数](/zh/reference/functions/window-functions/index)以及标量子查询。
+
+截至本文撰写时，尚不支持关联 (依赖) 子查询，但未来可能会支持。
+
+<div id="vector-engine">
+  ## 向量计算引擎
+</div>
+
+数据不仅按列存储，还会以向量 (即列的一部分) 的形式进行处理，从而实现较高的 CPU 效率。
+
+<div id="real-time-data-updates">
+  ## 实时数据插入
+</div>
+
+ClickHouse 支持具有主键的表。为了能够快速查询主键范围内的数据，系统会使用 merge tree 对数据进行增量排序。因此，可以持续向表中添加数据。摄取新数据时无需加锁。
+
+<div id="primary-index">
+  ## 主索引
+</div>
+
+按主键对数据进行物理排序后，就可以基于特定值或值范围以较低延迟提取数据，通常只需几十毫秒以内。
+
+<div id="secondary-indexes">
+  ## 二级索引
+</div>
+
+与其他数据库管理系统不同，ClickHouse 中的二级索引并不指向特定的行或行范围。相反，它们使数据库能够预先判断某些数据分区片段中的所有行都不满足查询过滤条件，从而完全跳过对这些数据的读取，因此被称为[数据跳过索引](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes)。
+
+<div id="suitable-for-online-queries">
+  ## 适用于在线查询
+</div>
+
+大多数 OLAP 数据库管理系统并不是以支持亚秒级延迟的在线查询为目标。在其他系统中，生成报表耗时几十秒甚至几分钟，通常都被认为是可以接受的。有时甚至还要更久，这就迫使系统以离线方式准备报表 (预先生成，或直接返回“稍后再来”) 。
+
+在 ClickHouse 中，“低延迟”意味着查询可以即时处理，无需等待，也不必预先准备结果；就在 UI 页面加载的同时完成——换句话说，就是 *在线*。
+
+<div id="support-for-approximated-calculations">
+  ## 对近似计算的支持
+</div>
+
+ClickHouse 提供了多种以精度换取性能的方法：
+
+1. 用于近似计算不同值数量、中位数和分位数的聚合函数。
+2. 基于部分数据 ([SAMPLE](/zh/reference/statements/select/sample)) 运行查询并获得近似结果。在这种情况下，从磁盘读取的数据量会按比例减少。
+3. 仅对数量有限的随机键执行聚合，而不是对所有键执行聚合。在数据中键的分布满足特定条件时，这种方式能够以更少的资源消耗提供相当准确的结果。
+
+<div id="adaptive-join-algorithm">
+  ## 自适应 JOIN 算法
+</div>
+
+ClickHouse 会自适应地选择多个表的 [JOIN](/zh/reference/statements/select/join) 方式：优先使用哈希连接；如果存在多个大表，则退回到归并连接。
+
+<div id="data-replication-and-data-integrity-support">
+  ## 数据复制和数据完整性支持
+</div>
+
+ClickHouse 使用异步多主复制。数据写入任意一个可用副本后，其余所有副本都会在后台获取各自的副本。系统会在不同副本之间保持数据一致。在大多数故障场景下，恢复会自动完成；在复杂情况下，则会半自动完成。
+
+更多信息，请参见 [数据复制](/zh/reference/engines/table-engines/mergetree-family/replication) 部分。
+
+<div id="role-based-access-control">
+  ## 基于角色的访问控制
+</div>
+
+ClickHouse 使用 SQL 查询管理用户账户，并支持类似 ANSI SQL 标准和主流关系型数据库管理系统中的[基于角色的访问控制配置](/zh/concepts/features/security/access-rights)。
+
+<div id="clickhouse-features-that-can-be-considered-disadvantages">
+  ## 可视为缺点的特性
+</div>
+
+1. 不支持完整的事务。
+2. 难以在高吞吐、低延迟的情况下修改或删除已插入的数据。不过，ClickHouse 提供了批次删除和更新功能，可用于清理或修改数据，例如满足 [GDPR](https://gdpr-info.eu) 的合规要求。
+3. 稀疏索引使 ClickHouse 在按键检索单行的点查询场景中效率不高。
