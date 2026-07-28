@@ -42,6 +42,7 @@ namespace ErrorCodes
     extern const int INVALID_SHARD_ID;
     extern const int NO_SUCH_REPLICA;
     extern const int BAD_ARGUMENTS;
+    extern const int INVALID_CONFIG_PARAMETER;
 }
 
 namespace
@@ -132,6 +133,19 @@ Cluster::Address::Address(
     port = static_cast<UInt16>(config.getInt(config_prefix + ".port", default_port));
     if (!port)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Port is not specified in cluster configuration: {}.port", config_prefix);
+
+    /// Optional per-node ports for the distributed-plan engine; zero means "not configured".
+    /// Range-checked before narrowing so an out-of-range value errors instead of wrapping.
+    auto read_optional_port = [&](const String & key)
+    {
+        Int64 value = config.getInt64(config_prefix + key, 0);
+        if (value < 0 || value > 65535)
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                "{}{} must be 0 or in range 1..65535, got {}", config_prefix, key, value);
+        return static_cast<UInt16>(value);
+    };
+    stateless_worker_port = read_optional_port(".stateless_worker_port");
+    streaming_exchange_port = read_optional_port(".streaming_exchange_port");
 
     is_local = isLocal(static_cast<UInt16>(config.getInt(port_type, 0)));
 

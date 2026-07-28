@@ -1,0 +1,19 @@
+---
+slug: /faq/use-cases/key-value
+title: 'ClickHouse をキー・バリューストレージとして使えますか？'
+toc_hidden: true
+toc_priority: 101
+description: 'ClickHouse をキー・バリューストレージとして使えるかどうか、というよくある質問に答えます。'
+doc_type: 'reference'
+keywords: ['キー・バリュー', 'データモデル', 'ユースケース', 'スキーマ設計', 'ストレージパターン']
+---
+
+短く答えると **「いいえ」** です。キー・バリューのワークロードは、ClickHouse を <span class="text-danger">**使うべきではない**</span> ケースの上位に入ります。結局のところ、これは [OLAP](/ja/resources/support-center/knowledge-base/general-faqs/olap) システムであり、世の中には優れたキー・バリューストレージシステムが数多く存在します。
+
+ただし、キー・バリュー的なクエリに ClickHouse を使うことに意味がある場合もあります。通常は、主なワークロードが分析中心で ClickHouse によく適している低予算のプロダクトで、加えて、リクエストのスループットがそれほど高くなく、厳しいレイテンシ要件もないキー・バリューパターンを必要とする副次的な処理がある、というケースです。予算が無制限なら、この副次的なワークロードのために別のキー・バリューデータベースを導入していたでしょう。しかし現実には、ストレージシステムをもう 1 つ維持するには追加コスト (監視、バックアップなど) がかかるため、それを避けたいこともあります。
+
+推奨に反して ClickHouse に対してキー・バリュー的なクエリを実行するのであれば、次のヒントを参考にしてください。
+
+* ClickHouse でポイントクエリのコストが高い主な理由は、主要な [MergeTree テーブルエンジンファミリー](/ja/reference/engines/table-engines/mergetree-family/mergetree) のスパースプライマリインデックスにあります。この索引はデータの各行を個別に指し示すことはできず、代わりに N 行ごとを指します。そのためシステムは、目的の行に到達するまで近くの N 番目の行からスキャンする必要があり、その過程で余分なデータも読み込むことになります。キー・バリューのシナリオでは、`index_granularity` 設定で N の値を小さくすると有効な場合があります。
+* ClickHouse は各カラムを別々のファイル群に保持するため、完全な 1 行を組み立てるにはそれぞれのファイルをたどる必要があります。ファイル数はカラム数に比例して増えるため、キー・バリューのシナリオでは、多数のカラムを使うのを避け、ペイロード全体を JSON や Protobuf など適切なシリアライゼーションフォーマットでエンコードした 1 つの `String` カラムに格納するのが有効な場合があります。
+* 通常の `MergeTree` テーブルの代わりに [Join](/ja/reference/engines/table-engines/special/join) テーブルエンジンと、データ取得に [joinGet](/ja/reference/functions/regular-functions/other-functions#joinGet) 関数を使う別のアプローチもあります。こちらはより高いクエリ性能を得られる可能性がありますが、使い勝手や信頼性の面で問題が生じるかもしれません。こちらに [使用例](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00800_versatile_storage_join.sql#L49-L51) があります。

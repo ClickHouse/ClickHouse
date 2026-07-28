@@ -1,0 +1,294 @@
+---
+slug: /whats-new/security-changelog
+sidebarTitle: 'セキュリティ変更履歴'
+title: 'セキュリティ変更履歴'
+description: 'セキュリティ関連の更新と変更をまとめた変更履歴'
+doc_type: 'changelog'
+keywords: ['セキュリティ', 'CVE', '脆弱性', 'セキュリティ修正', 'パッチ']
+---
+
+<div id="fixed-in-clickhouse-release-2025-01-05">
+  ## ClickHouse v25.1.5.5 で修正済み、2025-01-05
+</div>
+
+<div id="CVE-2025-1385">
+  ### [CVE-2025-1385](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-5phv-x8x4-83x5)
+</div>
+
+ライブラリブリッジ機能が有効な場合、clickhouse-library-bridge は localhost で HTTP API を公開します。これにより、clickhouse-server は指定されたパスからライブラリを動的に読み込み、隔離されたプロセスで実行できます。さらに、特定のディレクトリへのファイルのアップロードを許可する ClickHouse のテーブルエンジン機能と組み合わさることで、設定に不備のあるサーバーでは、両方のテーブルエンジンにアクセスできる権限を持つ攻撃者によって悪用され、ClickHouseサーバー上で任意のコードを実行されるおそれがあります。
+
+修正は、以下のオープンソース版に取り込まれています: v24.3.18.6, v24.8.14.27, v24.11.5.34, v24.12.5.65, v25.1.5.5
+
+ClickHouse Cloud はこの脆弱性の影響を受けません。
+
+謝辞: [Arseniy Dugin](https://github.com/ZerLes)
+
+<div id="fixed-in-clickhouse-release-2024-08-01">
+  ## ClickHouse v24.5で修正済み、2024-08-01
+</div>
+
+<div id="CVE-2024-6873">
+  ### [CVE-2024-6873](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-432f-r822-j66f)
+</div>
+
+細工された特別なリクエストを ClickHouse server の ネイティブインターフェイスに送信することで、未認証の経路から ClickHouseサーバープロセス の実行フローを変更できる可能性があります。この変更は、実行時点でメモリ上の 256 バイトの範囲内に存在するものに限られます。この脆弱性は当社の Bugbounty プログラムを通じて発見されたもので、既知の Proof of Concept Remote Code Execution (RCE) コードは作成も悪用もされていません。
+
+修正は、次のオープンソース版に反映されています: v23.8.15.35-lts, v24.3.4.147-lts, v24.4.2.141-stable, v24.5.1.1763, v24.6.1.4423-stable
+
+ClickHouse Cloud では異なるバージョニングを採用しており、この脆弱性の修正は v24.2 以降を実行しているすべてのインスタンスに適用されています。
+
+Credits:  malacupa (独立研究者)
+
+<div id="fixed-in-clickhouse-release-24-01-30">
+  ## ClickHouse v24.1 (2024-01-30) で修正済み
+</div>
+
+<div id="CVE-2024-22412">
+  ### [CVE-2024-22412](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-45h5-f7g3-gr8r)
+</div>
+
+クエリキャッシュを有効にした ClickHouse でユーザーロールを切り替えると、不正確なデータを取得するおそれがあります。ClickHouse では、脆弱性のあるバージョンの ClickHouse を使用していて、アプリケーションが複数のロールを動的に切り替える場合は、クエリキャッシュを使用しないよう推奨しています。
+
+修正は、次のオープンソース版に反映されています: v24.1.1.2048, v24.1.8.22-stable, v23.12.6.19-stable, v23.8.12.13-lts, v23.3.22.3-lts
+
+ClickHouse Cloud では異なるバージョニングが採用されており、この脆弱性の修正は v24.0.2.54535 で適用されています。
+
+謝辞: Runreveal チームの Evan Johnson 氏と Alan Braithwaite 氏 - 詳しくは [同チームのブログ記事](https://blog.runreveal.com/cve-2024-22412-behind-the-bug-a-classic-caching-problem-in-the-clickhouse-query-cache/) をご覧ください。
+
+<div id="fixed-in-clickhouse-release-23-10-5-20-2023-11-26">
+  ## ClickHouse v23.10.5.20 (2023-11-26) で修正
+</div>
+
+<div id="CVE-2023-47118">
+  ### [CVE-2023-47118](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-g22g-p6q2-x39v)
+</div>
+
+デフォルトでポート9000/tcpで動作するネイティブインターフェイスに影響するヒープバッファオーバーフローの脆弱性です。攻撃者は、T64圧縮コーデックのバグをトリガーすることで、ClickHouseサーバープロセスをクラッシュさせる可能性があります。この脆弱性は、認証なしで悪用できます。
+
+修正は、以下のオープンソース版に適用されています: v23.10.2.13、v23.9.4.11、v23.8.6.16、v23.3.16.7
+
+ClickHouse Cloudでは異なるバージョニングが採用されており、この脆弱性の修正はv23.9.2.47475に適用されました。
+
+謝辞: malacupa (独立研究者)
+
+<div id="CVE-2023-48298">
+  ### [CVE-2023-48298](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-qw9f-qv29-8938)
+</div>
+
+FPC圧縮コーデックに整数アンダーフローの脆弱性が存在します。攻撃者はこれを悪用して、ClickHouseサーバープロセスをクラッシュさせる可能性があります。この脆弱性は認証なしで悪用可能です。
+
+修正は以下のオープンソース版に反映されています: v23.10.4.25, v23.9.5.29, v23.8.7.24, v23.3.17.13。
+
+ClickHouse Cloud では異なるバージョニングが使用されており、この脆弱性の修正は v23.9.2.47475 に適用されています。
+
+謝辞: malacupa (独立系研究者)
+
+<div id="CVE-2023-48704">
+  ### [CVE-2023-48704](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-5rmf-5g48-xv63)
+</div>
+
+デフォルトでポート9000/tcpで動作するネイティブインターフェイスに影響するヒープバッファオーバーフローの脆弱性です。攻撃者は、Gorillaコーデックのバグをトリガーすることで、ClickHouseサーバープロセスをクラッシュさせる可能性があります。この脆弱性は、認証なしで悪用できます。
+
+修正は、次のオープンソース版に反映されています: v23.10.5.20、v23.9.6.20、v23.8.8.20、v23.3.18.15。
+
+ClickHouse Cloudでは異なるバージョニングを使用しており、この脆弱性の修正はv23.9.2.47551で適用されました。
+
+謝辞:  malacupa (独立系研究者)
+
+<div id="fixed-in-clickhouse-release-22-9-1-2603-2022-9-22">
+  ## ClickHouse 22.9.1.2603 (2022-09-22) で修正
+</div>
+
+<div id="CVE-2022-44011">
+  ### CVE-2022-44011
+</div>
+
+ClickHouseサーバー で、ヒープバッファオーバーフローの問題が発見されました。ClickHouseサーバー にデータを読み込む権限を持つ悪意のあるユーザーは、不正な形式の CapnProto オブジェクトを挿入することで、ClickHouseサーバー をクラッシュさせる可能性がありました。
+
+この修正は、バージョン 22.9.1.2603、22.8.2.11、22.7.4.16、22.6.6.16、22.3.12.19 に反映されています
+
+謝辞: Kiojj (独立研究者)
+
+<div id="CVE-2022-44010">
+  ### CVE-2022-44010
+</div>
+
+ClickHouseサーバーでヒープバッファオーバーフローの問題が発見されました。攻撃者は、細工されたHTTPリクエストをHTTPエンドポイント (デフォルトではポート8123で待ち受け) に送信することで、ヒープベースのバッファオーバーフローを引き起こし、ClickHouseサーバープロセスをクラッシュさせる可能性があります。この攻撃には認証は不要です。
+
+修正はバージョン22.9.1.2603、22.8.2.11、22.7.4.16、22.6.6.16、22.3.12.19に反映されています
+
+Credits: Kiojj (独立研究者)
+
+<div id="fixed-in-clickhouse-release-21-10-2-215-2021-10-18">
+  ## ClickHouse 21.10.2.15 で修正 (2021-10-18)
+</div>
+
+<div id="cve-2021-43304">
+  ### CVE-2021-43304
+</div>
+
+悪意のあるクエリのパース時に、ClickHouse の LZ4 圧縮コーデックでヒープバッファオーバーフローが発生します。LZ4::decompressImpl ループ内のコピー操作、特に任意のコピー操作 `wildCopy<copy_amount>(op, ip, copy_end)` について、それらが宛先バッファの境界を超えないことが検証されていません。
+
+謝辞: JFrog Security Research Team
+
+<div id="cve-2021-43305">
+  ### CVE-2021-43305
+</div>
+
+悪意のあるクエリのパース時に、ClickHouse の LZ4 圧縮コーデックでヒープバッファオーバーフローが発生します。LZ4::decompressImpl ループ内のコピー操作、特に任意のコピー操作 `wildCopy<copy_amount>(op, ip, copy_end)` について、宛先バッファの境界を超えないことを確認する検証がありません。この問題は CVE-2021-43304 と非常によく似ていますが、脆弱なコピー操作が存在するのは別の wildCopy 呼び出しです。
+
+謝辞: JFrog Security Research Team
+
+<div id="cve-2021-42387">
+  ### CVE-2021-42387
+</div>
+
+悪意のあるクエリのパース時に、ClickHouse の LZ4 圧縮コーデックでヒープの境界外読み取りが発生する脆弱性があります。LZ4::decompressImpl() のループ内で、ユーザーが指定した 16 ビット符号なし値 (`offset`) が圧縮データから読み取られます。この offset はその後、コピー操作の長さの計算に使用されますが、コピー元の上限境界のチェックが行われていません。
+
+謝辞: JFrog Security Research Team
+
+<div id="cve-2021-42388">
+  ### CVE-2021-42388
+</div>
+
+悪意のあるクエリのパース時に、ClickHouse の LZ4 圧縮コーデックでヒープの境界外読み取りが発生する脆弱性があります。LZ4::decompressImpl() ループ内で、16 ビットの符号なしユーザー指定値 (`offset`) が圧縮データから読み取られます。この offset はその後、コピー操作の長さの算出に使用されますが、コピー元の下限境界がチェックされていません。
+
+Credits: JFrog Security Research Team
+
+<div id="cve-2021-42389">
+  ### CVE-2021-42389
+</div>
+
+細工された悪意のあるクエリのパース時に、ClickHouse の Delta 圧縮コーデックでゼロ除算が発生します。圧縮バッファの先頭バイトが、0 かどうかを確認しないまま剰余演算に使用されています。
+
+謝辞: JFrog Security Research Team
+
+<div id="cve-2021-42390">
+  ### CVE-2021-42390
+</div>
+
+悪意のあるクエリのパース時に、ClickHouse の DeltaDouble 圧縮コーデックでゼロ除算が発生します。圧縮バッファの最初のバイトが、0 でないことを確認しないまま剰余演算に使用されます。
+
+謝辞: JFrog Security Research Team
+
+<div id="cve-2021-42391">
+  ### CVE-2021-42391
+</div>
+
+悪意のあるクエリのパース時に、ClickHouse の Gorilla 圧縮コーデックでゼロ除算が発生する脆弱性があります。圧縮バッファの先頭バイトが、0 かどうかの確認なしに剰余演算で使用されます。
+
+Credits: JFrog Security Research Team
+
+<div id="fixed-in-clickhouse-release-21-4-3-21-2021-04-12">
+  ## ClickHouse 21.4.3.21 (2021-04-12) で修正
+</div>
+
+<div id="cve-2021-25263">
+  ### CVE-2021-25263
+</div>
+
+CREATE DICTIONARY 権限を持つ攻撃者は、許可されたディレクトリ外にある任意のファイルを読み取ることができます。
+
+この修正は、20.8.18.32-lts、21.1.9.41-stable、21.2.9.41-stable、21.3.6.55-lts、21.4.3.21-stable 以降のバージョンに適用されています。
+
+謝辞: [Vyacheslav Egoshin](https://twitter.com/vegoshin)
+
+<div id="fixed-in-clickhouse-release-19-14-3-3-2019-09-10">
+  ## ClickHouse リリース 19.14.3.3, 2019-09-10 で修正済み
+</div>
+
+<div id="cve-2019-15024">
+  ### CVE-2019-15024
+</div>
+
+ZooKeeper への書き込み権限を持ち、かつ ClickHouse が稼働するネットワーク上で到達可能なカスタムサーバーを実行できる攻撃者は、ClickHouse のレプリカとして動作するよう細工した悪意のあるカスタムサーバーを作成し、それを ZooKeeper に登録できます。別のレプリカがその悪意のあるレプリカから data part を fetch すると、clickhouse-server に filesystem 上の任意の path へ書き込ませることが可能になります。
+
+Credits: Yandex Information Security Team の Eldar Zaitov
+
+<div id="cve-2019-16535">
+  ### CVE-2019-16535
+</div>
+
+圧縮解除アルゴリズムにおける OOB read、OOB write、および整数アンダーフローにより、ネイティブプロトコル経由で RCE または DoS を引き起こされる可能性があります。
+
+謝辞: Yandex Information Security Team の Eldar Zaitov
+
+<div id="cve-2019-16536">
+  ### CVE-2019-16536
+</div>
+
+悪意のある認証済みクライアントにより、DoS につながるスタックオーバーフローがトリガーされる可能性があります。
+
+謝辞: Yandex Information Security Team の Eldar Zaitov
+
+<div id="fixed-in-clickhouse-release-19-13-6-1-2019-09-20">
+  ## ClickHouse リリース 19.13.6.1 (2019-09-20) で修正
+</div>
+
+<div id="cve-2019-18657">
+  ### CVE-2019-18657
+</div>
+
+テーブル関数 `url` には、攻撃者がリクエストに任意のHTTPヘッダーを挿入できる脆弱性がありました。
+
+謝辞: [Nikita Tikhomirov](https://github.com/NSTikhomirov)
+
+<div id="fixed-in-clickhouse-release-18-12-13-2018-09-10">
+  ## ClickHouse リリース 18.12.13 (2018-09-10) で修正
+</div>
+
+<div id="cve-2018-14672">
+  ### CVE-2018-14672
+</div>
+
+CatBoostモデルを読み込む関数にパストラバーサルの脆弱性があり、エラーメッセージを介して任意のファイルを読み取ることが可能でした。
+
+謝辞: Yandex Information Security Team の Andrey Krasichkov
+
+<div id="fixed-in-clickhouse-release-18-10-3-2018-08-13">
+  ## ClickHouse リリース 18.10.3 (2018-08-13) で修正
+</div>
+
+<div id="cve-2018-14671">
+  ### CVE-2018-14671
+</div>
+
+unixODBC では、ファイルシステムから任意の共有オブジェクトを読み込めることにより、リモートコード実行の脆弱性が生じていました。
+
+謝辞: Yandex Information Security Team の Andrey Krasichkov 氏、Evgeny Sidorov 氏
+
+<div id="fixed-in-clickhouse-release-1-1-54388-2018-06-28">
+  ## ClickHouse リリース 1.1.54388 (2018-06-28) で修正
+</div>
+
+<div id="cve-2018-14668">
+  ### CVE-2018-14668
+</div>
+
+&quot;remote&quot; テーブル関数では、&quot;user&quot;、&quot;password&quot;、&quot;default&#95;database&quot; フィールドに任意の文字を使用できたため、クロスプロトコルリクエストフォージェリ攻撃につながる可能性がありました。
+
+謝辞: Yandex Information Security Team の Andrey Krasichkov
+
+<div id="fixed-in-clickhouse-release-1-1-54390-2018-07-06">
+  ## ClickHouse リリース 1.1.54390、2018-07-06 で修正
+</div>
+
+<div id="cve-2018-14669">
+  ### CVE-2018-14669
+</div>
+
+ClickHouse の MySQL クライアントでは &quot;LOAD DATA LOCAL INFILE&quot; 機能が有効になっており、悪意のある MySQL データベースが接続先の ClickHouse サーバーから任意のファイルを読み取れる状態でした。
+
+謝辞: Yandex Information Security Team の Andrey Krasichkov および Evgeny Sidorov
+
+<div id="fixed-in-clickhouse-release-1-1-54131-2017-01-10">
+  ## ClickHouse リリース 1.1.54131 (2017-01-10) で修正
+</div>
+
+<div id="cve-2018-14670">
+  ### CVE-2018-14670
+</div>
+
+deb パッケージの設定が不適切であったため、データベースが不正に利用されるおそれがありました。
+
+謝辞: 英国の National Cyber Security Centre (NCSC)

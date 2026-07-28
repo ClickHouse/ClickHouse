@@ -10,6 +10,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/FailPoint.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include <Common/DateLUTImpl.h>
 
@@ -61,6 +62,17 @@ MergeFromLogEntryTask::MergeFromLogEntryTask(
 {
 }
 
+MergeFromLogEntryTask::~MergeFromLogEntryTask()
+{
+    /// zero_copy_lock's destructor can perform a real ZooKeeper request (releasing the exclusive
+    /// lock's ephemeral node) if the task is destroyed while still holding the lock, e.g. on
+    /// cancellation before the explicit unlock in prepare()/finalize() is reached. That request
+    /// has no component scope by default when this destructor runs from generic background-task
+    /// cleanup (MergeTreeBackgroundExecutor::routine), so set one explicitly here.
+    auto component_guard = Coordination::setCurrentComponent("MergeFromLogEntryTask::~MergeFromLogEntryTask");
+    zero_copy_lock.reset();
+}
+
 
 ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 {
@@ -72,7 +84,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         std::this_thread::sleep_for(std::chrono::milliseconds(3000));
     });
 
-    StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     int32_t metadata_version = metadata_snapshot->getMetadataVersion();
     const auto storage_settings_ptr = storage.getSettings();
 

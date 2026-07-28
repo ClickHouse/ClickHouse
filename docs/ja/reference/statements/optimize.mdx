@@ -1,0 +1,290 @@
+---
+description: 'OPTIMIZE のドキュメント'
+sidebarTitle: 'OPTIMIZE'
+slug: /sql-reference/statements/optimize
+title: 'OPTIMIZE ステートメント'
+doc_type: 'reference'
+---
+
+このクエリは、テーブルのデータパーツに対してスケジュールされていないマージの開始を試みます。なお、`OPTIMIZE TABLE ... FINAL` の使用は通常推奨していません ([こちらのドキュメント](/ja/concepts/best-practices/avoid-optimize-final) を参照してください) 。これは日常的な運用ではなく、管理目的のユースケースを想定しているためです。
+
+<Note>
+  `OPTIMIZE` では `パーツが多すぎる` エラーを解消できません。
+</Note>
+
+**構文**
+
+```sql
+OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL | FORCE] [DEDUPLICATE [BY expression]]
+```
+
+```sql
+OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUPLICATE [BY expression]] [CLEANUP]
+```
+
+`OPTIMIZE` クエリは、[MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) ファミリー ([materialized view](/ja/reference/statements/create/view#materialized-view) を含む) および [Buffer](/ja/reference/engines/table-engines/special/buffer) エンジンでサポートされています。その他のテーブルエンジンではサポートされていません。
+
+`OPTIMIZE` を [ReplicatedMergeTree](/ja/reference/engines/table-engines/mergetree-family/replication) ファミリーのテーブルエンジンに対して使用すると、ClickHouse はマージ用のタスクを作成し、すべてのレプリカで実行されるのを待機します ([alter&#95;sync](/ja/reference/settings/session-settings#alter_sync) 設定が `2` の場合) 。または、現在のレプリカでの実行を待機します ([alter&#95;sync](/ja/reference/settings/session-settings#alter_sync) 設定が `1` の場合) 。
+
+* 何らかの理由で `OPTIMIZE` がマージを実行しなかった場合、クライアントには通知されません。通知を有効にするには、[optimize&#95;throw&#95;if&#95;noop](/ja/reference/settings/session-settings#optimize_throw_if_noop) 設定を使用します。
+* `PARTITION` を指定すると、指定したパーティションだけが最適化されます。[パーティション式の設定方法](/ja/reference/statements/alter/partition#how-to-set-partition-expression)。
+* `FINAL` または `FORCE` を指定すると、すべてのデータがすでに 1 つのパーツにまとまっている場合でも最適化が実行されます。この動作は [optimize&#95;skip&#95;merged&#95;partitions](/ja/reference/settings/session-settings#optimize_skip_merged_partitions) で制御できます。また、同時実行のマージが行われている場合でも、マージは強制されます。
+* `DEDUPLICATE` を指定すると、完全に同一の行は重複排除されます (`BY` 句が指定されていない場合は、すべてのカラムが比較されます) 。これは MergeTree エンジンでのみ意味があります。
+
+非アクティブなレプリカが `OPTIMIZE` クエリを実行するのを待機する時間 (秒単位) は、[replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ja/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout) 設定で指定できます。
+
+<Note>
+  `alter_sync` が `2` に設定されていて、一部のレプリカが `replication_wait_for_inactive_replica_timeout` 設定で指定された時間を超えて非アクティブなままの場合は、例外 `UNFINISHED` がスローされます。
+</Note>
+
+<div id="dry-run">
+  ## DRY RUN
+</div>
+
+`DRY RUN` 句は、指定されたパーツのマージを、結果をコミットせずにシミュレートします。マージされたパーツは一時的な場所に書き込まれ、検証された後に破棄されます。元のパーツとテーブルデータは変更されません。
+
+これは次のような場合に役立ちます。
+
+* ClickHouse のバージョン間でマージの正しさをテストする。
+* マージ関連のバグを決定論的に再現する。
+* マージ性能をベンチマークする。
+
+`DRY RUN` は [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) ファミリーのテーブルでのみサポートされています。パーツ名のリストを指定した `PARTS` キーワードが必要です。指定するすべてのパーツは存在し、アクティブであり、同じパーティションに属している必要があります。
+
+`DRY RUN` は `FINAL` および `PARTITION` とは併用できません。`DEDUPLICATE` (任意でカラムを指定可能) および `CLEANUP` (`ReplacingMergeTree` テーブル用) とは組み合わせて使用できます。
+
+**構文**
+
+```sql
+OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUPLICATE [BY expression]] [CLEANUP]
+```
+
+既定では、生成された merged パーツ は [`CHECK TABLE`](/ja/reference/statements/check-table) クエリと同様の方法で検証されます。この動作は [optimize&#95;dry&#95;run&#95;check&#95;part](/ja/reference/settings/session-settings#optimize_dry_run_check_part) 設定で制御されており、既定で有効です。これを無効にすると検証がスキップされるため、マージ自体のベンチマークを行う場合に役立ちます。
+
+**例**
+
+```sql
+CREATE TABLE dry_run_example (key UInt64, value String) ENGINE = MergeTree ORDER BY key;
+
+INSERT INTO dry_run_example VALUES (1, 'a'), (2, 'b');
+INSERT INTO dry_run_example VALUES (1, 'c'), (4, 'd');
+
+-- 2つのパーツを使用したマージをシミュレート
+OPTIMIZE TABLE dry_run_example DRY RUN PARTS 'all_1_1_0', 'all_2_2_0';
+
+-- 重複排除を使用したマージをシミュレート
+OPTIMIZE TABLE dry_run_example DRY RUN PARTS 'all_1_1_0', 'all_2_2_0' DEDUPLICATE;
+
+-- DRY RUN後もパーツとデータは変更されない
+SELECT name, rows FROM system.parts
+WHERE database = currentDatabase() AND table = 'dry_run_example' AND active
+ORDER BY name;
+```
+
+```response
+┌─name────────┬─rows─┐
+│ all_1_1_0   │    2 │
+│ all_2_2_0   │    2 │
+└─────────────┴──────┘
+```
+
+<div id="by-expression">
+  ## BY 式
+</div>
+
+すべてのカラムではなく、任意のカラムの組み合わせに対して重複排除を行いたい場合は、カラムのリストを明示的に指定するか、[`*`](/ja/reference/statements/select/index#asterisk)、[`COLUMNS`](/ja/reference/statements/select/index#select-clause)、[`EXCEPT`](/ja/reference/statements/select/except_modifier) 式を任意に組み合わせて使用できます。明示的に記述した、または暗黙的に展開されたカラムのリストには、行の順序付け式 (プライマリキーとソートキーの両方) およびパーティション化式 (パーティション化キー) で指定されるすべてのカラムを含める必要があります。
+
+<Note>
+  `*` は `SELECT` と同様に動作することに注意してください。[MATERIALIZED](/ja/reference/statements/create/view#materialized-view) カラムおよび [ALIAS](/ja/reference/statements/create/table#alias) カラムは展開に使用されません。
+
+  また、空のカラムリストを指定したり、結果として空のカラムリストになる式を記述したり、`ALIAS` カラムを使って重複排除を行ったりすると、エラーになります。
+</Note>
+
+**構文**
+
+```sql
+OPTIMIZE TABLE table DEDUPLICATE; -- all columns
+OPTIMIZE TABLE table DEDUPLICATE BY *; -- excludes MATERIALIZED and ALIAS columns
+OPTIMIZE TABLE table DEDUPLICATE BY colX,colY,colZ;
+OPTIMIZE TABLE table DEDUPLICATE BY * EXCEPT colX;
+OPTIMIZE TABLE table DEDUPLICATE BY * EXCEPT (colX, colY);
+OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex');
+OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex') EXCEPT colX;
+OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex') EXCEPT (colX, colY);
+```
+
+**例**
+
+次のテーブルについて考えます。
+
+```sql title="Query"
+CREATE TABLE example (
+    primary_key Int32,
+    secondary_key Int32,
+    value UInt32,
+    partition_key UInt32,
+    materialized_value UInt32 MATERIALIZED 12345,
+    aliased_value UInt32 ALIAS 2,
+    PRIMARY KEY primary_key
+) ENGINE=MergeTree
+PARTITION BY partition_key
+ORDER BY (primary_key, secondary_key);
+```
+
+```sql title="Query"
+INSERT INTO example (primary_key, secondary_key, value, partition_key)
+VALUES (0, 0, 0, 0), (0, 0, 0, 0), (1, 1, 2, 2), (1, 1, 2, 3), (1, 1, 3, 3);
+```
+
+```sql title="Query"
+SELECT * FROM example;
+```
+
+```sql title="Response"
+
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+│           1 │             1 │     3 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
+
+以下のすべての例は、5行を含むこの状態に対して実行されます。
+
+<div id="deduplicate">
+  #### `DEDUPLICATE`
+</div>
+
+重複排除の対象カラムが指定されていない場合は、すべてのカラムが対象になります。行が削除されるのは、すべてのカラムの値が直前の行の対応する値とすべて等しい場合に限られます。
+
+```sql title="Query"
+OPTIMIZE TABLE example FINAL DEDUPLICATE;
+```
+
+```sql title="Query"
+SELECT * FROM example;
+```
+
+```response title="Response"
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+│           1 │             1 │     3 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
+
+<div id="deduplicate-by-">
+  #### `DEDUPLICATE BY *`
+</div>
+
+カラムが暗黙的に指定されている場合、テーブルは `ALIAS` または `MATERIALIZED` ではないすべてのカラムを基準に重複排除されます。上記のテーブルでは、該当するのは `primary_key`、`secondary_key`、`value`、`partition_key` の各カラムです。
+
+```sql title="Query"
+OPTIMIZE TABLE example FINAL DEDUPLICATE BY *;
+```
+
+```sql title="Query"
+SELECT * FROM example;
+```
+
+```response title="Response"
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+│           1 │             1 │     3 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
+
+<div id="deduplicate-by--except">
+  #### `DEDUPLICATE BY * EXCEPT`
+</div>
+
+`ALIAS` または `MATERIALIZED` ではなく、かつ `value` を明示的に除いたすべてのカラム、つまり `primary_key`、`secondary_key`、`partition_key` の各カラムを対象に重複排除します。
+
+```sql title="Query"
+OPTIMIZE TABLE example FINAL DEDUPLICATE BY * EXCEPT value;
+```
+
+```sql title="Query"
+SELECT * FROM example;
+```
+
+```response title="Response"
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
+
+<div id="deduplicate-by-list-of-columns">
+  #### `DEDUPLICATE BY <list of columns>`
+</div>
+
+重複排除の対象として、`primary_key`、`secondary_key`、`partition_key` の各カラムを明示的に指定します:
+
+```sql title="Query"
+OPTIMIZE TABLE example FINAL DEDUPLICATE BY primary_key, secondary_key, partition_key;
+```
+
+```sql title="Query"
+SELECT * FROM example;
+```
+
+```response title="Response"
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
+
+<div id="deduplicate-by-columnsregex">
+  #### `DEDUPLICATE BY COLUMNS(<regex>)`
+</div>
+
+regex に一致するすべてのカラムを対象に重複排除します: `primary_key`、`secondary_key`、`partition_key` の各カラム:
+
+```sql title="Query"
+OPTIMIZE TABLE example FINAL DEDUPLICATE BY COLUMNS('.*_key');
+```
+
+```sql title="Query"
+SELECT * FROM example;
+```
+
+```response title="Response"
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```

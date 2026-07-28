@@ -178,6 +178,7 @@ The hierarchy of privileges in ClickHouse is shown below:
       - `ALTER CONSTRAINT`
         - `ALTER ADD CONSTRAINT`
         - `ALTER DROP CONSTRAINT`
+        - `ALTER MODIFY CONSTRAINT`
       - `ALTER DELETE`
       - `ALTER FETCH PARTITION`
       - `ALTER FREEZE PARTITION`
@@ -271,6 +272,9 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SQLITE`
     - `URL`
   - [`SYSTEM`](#system)
+    - `SYSTEM BACKGROUND`
+      - `SYSTEM STREAMING ENGINES`
+      - `SYSTEM VIEWS`
     - `SYSTEM CLEANUP`
     - `SYSTEM DROP CACHE`
       - `SYSTEM DROP COMPILED EXPRESSION CACHE`
@@ -305,6 +309,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SYSTEM REDUCE BLOCKING PARTS`
     - `SYSTEM REPLICATION QUEUES`
     - `SYSTEM REPLICA READINESS`
+    - `SYSTEM RESET DDL WORKER`
     - `SYSTEM RESTART DISK`
     - `SYSTEM RESTART REPLICA`
     - `SYSTEM RESTORE REPLICA`
@@ -329,7 +334,6 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SYSTEM TTL MERGES`
     - `SYSTEM UNFREEZE`
     - `SYSTEM UNLOAD PRIMARY KEY`
-    - `SYSTEM VIEWS`
     - `SYSTEM VIRTUAL PARTS UPDATE`
     - `SYSTEM WAIT LOADING PARTS`
   - [`TABLE ENGINE`](#table-engine)
@@ -340,7 +344,7 @@ The hierarchy of privileges in ClickHouse is shown below:
 Examples of how this hierarchy is treated:
 
 - The `ALTER` privilege includes all other `ALTER*` privileges.
-- `ALTER CONSTRAINT` includes `ALTER ADD CONSTRAINT` and `ALTER DROP CONSTRAINT` privileges.
+- `ALTER CONSTRAINT` includes `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT` and `ALTER MODIFY CONSTRAINT` privileges.
 
 Privileges are applied at different levels. Knowing of a level suggests syntax available for privilege.
 
@@ -433,6 +437,7 @@ Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries 
   - `ALTER CONSTRAINT`. Level: `GROUP`. Aliases: `CONSTRAINT`
   - `ALTER ADD CONSTRAINT`. Level: `TABLE`. Aliases: `ADD CONSTRAINT`
   - `ALTER DROP CONSTRAINT`. Level: `TABLE`. Aliases: `DROP CONSTRAINT`
+  - `ALTER MODIFY CONSTRAINT`. Level: `TABLE`. Aliases: `MODIFY CONSTRAINT`
   - `ALTER TTL`. Level: `TABLE`. Aliases: `ALTER MODIFY TTL`, `MODIFY TTL`
   - `ALTER MATERIALIZE TTL`. Level: `TABLE`. Aliases: `MATERIALIZE TTL`
   - `ALTER SETTINGS`. Level: `TABLE`. Aliases: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
@@ -448,7 +453,7 @@ Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries 
 Examples of how this hierarchy is treated:
 
 - The `ALTER` privilege includes all other `ALTER*` privileges.
-- `ALTER CONSTRAINT` includes `ALTER ADD CONSTRAINT` and `ALTER DROP CONSTRAINT` privileges.
+- `ALTER CONSTRAINT` includes `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT` and `ALTER MODIFY CONSTRAINT` privileges.
 
 **Notes**
 
@@ -590,7 +595,7 @@ Allows a user to execute [SYSTEM](../../sql-reference/statements/system.md) quer
     - `SYSTEM DROP UNCOMPRESSED CACHE`. Level: `GLOBAL`. Aliases: `SYSTEM CLEAR UNCOMPRESSED CACHE`, `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
   - `SYSTEM RELOAD`. Level: `GROUP`
     - `SYSTEM RELOAD CONFIG`. Level: `GLOBAL`. Aliases: `RELOAD CONFIG`
-    - `SYSTEM RELOAD DICTIONARY`. Level: `GLOBAL`. Aliases: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
+    - `SYSTEM RELOAD DICTIONARY`. Level: `GLOBAL`. Aliases: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`, `SYSTEM UNLOAD DICTIONARY`, `SYSTEM UNLOAD DICTIONARIES`, `UNLOAD DICTIONARY`, `UNLOAD DICTIONARIES`
       - `SYSTEM RELOAD EMBEDDED DICTIONARIES`. Level: `GLOBAL`. Aliases: `RELOAD EMBEDDED DICTIONARIES`
   - `SYSTEM MERGES`. Level: `TABLE`. Aliases: `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
   - `SYSTEM TTL MERGES`. Level: `TABLE`. Aliases: `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
@@ -602,9 +607,14 @@ Allows a user to execute [SYSTEM](../../sql-reference/statements/system.md) quer
   - `SYSTEM REPLICATION QUEUES`. Level: `TABLE`. Aliases: `SYSTEM STOP REPLICATION QUEUES`, `SYSTEM START REPLICATION QUEUES`, `STOP REPLICATION QUEUES`, `START REPLICATION QUEUES`
   - `SYSTEM SYNC REPLICA`. Level: `TABLE`. Aliases: `SYNC REPLICA`
   - `SYSTEM RESTART REPLICA`. Level: `TABLE`. Aliases: `RESTART REPLICA`
+  - `SYSTEM BACKGROUND`. Level: `GROUP`
+    - `SYSTEM STREAMING ENGINES`. Level: `TABLE`
+    - `SYSTEM VIEWS`. Level: `VIEW`. Aliases: `SYSTEM REFRESH VIEW`, `SYSTEM START VIEWS`, `SYSTEM STOP VIEWS`, `SYSTEM START VIEW`, `SYSTEM STOP VIEW`, `SYSTEM PAUSE VIEWS`, `SYSTEM PAUSE VIEW`, `SYSTEM CANCEL VIEW`, `REFRESH VIEW`, `START VIEWS`, `STOP VIEWS`, `START VIEW`, `STOP VIEW`, `PAUSE VIEWS`, `PAUSE VIEW`, `CANCEL VIEW`
   - `SYSTEM FLUSH`. Level: `GROUP`
     - `SYSTEM FLUSH DISTRIBUTED`. Level: `TABLE`. Aliases: `FLUSH DISTRIBUTED`
     - `SYSTEM FLUSH LOGS`. Level: `GLOBAL`. Aliases: `FLUSH LOGS`
+
+The `SYSTEM UNLOAD DICTIONARY` and `SYSTEM UNLOAD DICTIONARIES` commands reuse the `SYSTEM RELOAD DICTIONARY` privilege, so a user with `SYSTEM RELOAD DICTIONARY` can also unload dictionaries.
 
 The `SYSTEM RELOAD EMBEDDED DICTIONARIES` privilege implicitly granted by the `SYSTEM RELOAD DICTIONARY ON *.*` privilege.
 
@@ -723,9 +733,9 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 
 ### dictGet {#dictget}
 
-- `dictGet`. Aliases: `dictHas`, `dictGetHierarchy`, `dictIsIn`
+- `dictGet`. Aliases: `dictHas`, `dictGetHierarchy`, `dictGetRoot`, `dictGetChildren`, `dictGetDescendants`, `dictIsIn`
 
-Allows a user to execute [dictGet](/sql-reference/functions/ext-dict-functions#dictGet), [dictHas](../../sql-reference/functions/ext-dict-functions.md#dictHas), [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictGetHierarchy), [dictIsIn](../../sql-reference/functions/ext-dict-functions.md#dictIsIn) functions.
+Allows a user to execute [dictGet](/sql-reference/functions/ext-dict-functions#dictGet), [dictHas](../../sql-reference/functions/ext-dict-functions.md#dictHas), [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictGetHierarchy), [dictGetRoot](../../sql-reference/functions/ext-dict-functions.md#dictGetRoot), [dictGetChildren](../../sql-reference/functions/ext-dict-functions.md#dictGetChildren), [dictGetDescendants](../../sql-reference/functions/ext-dict-functions.md#dictGetDescendants), [dictIsIn](../../sql-reference/functions/ext-dict-functions.md#dictIsIn) functions.
 
 Privilege level: `DICTIONARY`.
 

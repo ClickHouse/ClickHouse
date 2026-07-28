@@ -1,15 +1,11 @@
 import datetime
-import logging
 import random
 import string
-import time
-from random import randint
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster, QueryRuntimeException
-from helpers.network import PartitionManager
-from helpers.test_tools import TSV, assert_eq_with_retry, assert_logs_contain
+from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 

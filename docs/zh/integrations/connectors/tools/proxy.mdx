@@ -1,0 +1,49 @@
+---
+description: '介绍适用于 ClickHouse 的第三方代理解决方案'
+sidebarTitle: '代理'
+slug: /interfaces/third-party/proxy
+title: '第三方开发的代理服务器'
+doc_type: 'reference'
+---
+
+<div id="chproxy">
+  ## chproxy
+</div>
+
+[chproxy](https://github.com/Vertamedia/chproxy) 是一款适用于 ClickHouse 数据库的 HTTP 代理和负载均衡器。
+
+功能：
+
+* 按用户进行路由和响应缓存。
+* 灵活的限额控制。
+* 自动 SSL 证书续订。
+
+由 Go 语言实现。
+
+<div id="kittenhouse">
+  ## KittenHouse
+</div>
+
+[KittenHouse](https://github.com/VKCOM/kittenhouse) 被设计为部署在 ClickHouse 与应用服务器之间的本地代理，适用于应用端无法或不便对 INSERT 数据进行缓冲的场景。
+
+特性：
+
+* 基于内存和磁盘的数据缓冲。
+* 按表路由。
+* 负载均衡和健康检查。
+
+由 Go 语言实现。
+
+<div id="clickhouse-bulk">
+  ## ClickHouse-Bulk
+</div>
+
+[ClickHouse-Bulk](https://github.com/nikepan/clickhouse-bulk) 是一个简单的 ClickHouse 数据写入采集器。
+
+功能：
+
+* 按阈值或时间间隔将请求分组后发送。
+* 支持多个远程服务器。
+* 基本身份验证。
+
+由 Go 语言实现。

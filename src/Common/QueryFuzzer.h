@@ -29,6 +29,7 @@ class ASTDropQuery;
 class ASTIndexDeclaration;
 class ASTProjectionDeclaration;
 class ASTSetQuery;
+class ASTStorage;
 struct ASTTableExpression;
 struct ASTTableJoin;
 struct ASTWindowDefinition;
@@ -224,6 +225,12 @@ private:
     Field getRandomField(int type);
     Field fuzzField(Field field);
     ASTPtr getRandomColumnLike();
+    /// Builds a fuzzed asterisk/matcher (`*`, `* LIKE/ILIKE '<pattern>'`, `table.*`, `COLUMNS(...)`),
+    /// optionally with column transformers, exercising the parser path added in
+    /// https://github.com/ClickHouse/ClickHouse/pull/104569.
+    ASTPtr makeFuzzedAsteriskLikeMatcher();
+    /// Builds an `ASTColumnsTransformerList` with fuzzed `APPLY` / `EXCEPT` / `REPLACE` transformers.
+    ASTPtr makeFuzzedColumnTransformers();
     ASTPtr getRandomExpressionList(size_t nproj);
     DataTypePtr fuzzDataType(DataTypePtr type);
     DataTypePtr getRandomType();
@@ -235,6 +242,7 @@ private:
     void fuzzWindowFrame(ASTWindowDefinition & def);
     void fuzzWindowDefinition(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
+    void fuzzTableStorage(ASTStorage & storage);
     void fuzzExplainQuery(ASTExplainQuery & explain);
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
     void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);

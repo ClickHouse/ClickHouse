@@ -1,0 +1,42 @@
+--- per-table forms (db.table and bare table) ---
+SYSTEM STOP `db`.`t`
+SYSTEM START `db`.`t`
+SYSTEM PAUSE `db`.`t`
+SYSTEM CANCEL `db`.`t`
+SYSTEM REFRESH `db`.`t`
+SYSTEM STOP `t`
+SYSTEM START `t`
+SYSTEM PAUSE `t`
+SYSTEM CANCEL `t`
+SYSTEM REFRESH `t`
+--- ALL BACKGROUND forms ---
+SYSTEM STOP ALL BACKGROUND
+SYSTEM START ALL BACKGROUND
+SYSTEM PAUSE ALL BACKGROUND
+SYSTEM CANCEL ALL BACKGROUND
+SYSTEM REFRESH ALL BACKGROUND
+--- the bare verbs must not shadow the existing keyword forms ---
+SYSTEM STOP MERGES db.t
+SYSTEM START MERGES db.t
+SYSTEM STOP VIEW db.v
+SYSTEM START VIEW db.v
+SYSTEM PAUSE VIEW db.v
+SYSTEM CANCEL VIEW db.v
+SYSTEM REFRESH VIEW db.v
+SYSTEM STOP VIEWS
+SYSTEM START VIEWS
+SYSTEM PAUSE VIEWS
+--- table names that collide with command keywords need backticks ---
+SYSTEM STOP `db`.`background`
+SYSTEM STOP `all`
+SYSTEM STOP `VIEWS`
+SYSTEM START `MERGES`
+SYSTEM PAUSE `VIEW`
+SYSTEM CANCEL `db`.`MERGES`
+SYSTEM REFRESH `FETCHES`
+--- ON CLUSTER is not supported (matches the SYSTEM ... VIEW aliases) ---
+--- sentinel enum values (UNKNOWN/END) are not commands and must be rejected ---
+--- only tables with controllable background activity are accepted ---
+--- a bare verb needs a parseable table, else it is a syntax error ---
+--- per-table verbs on a missing table report UNKNOWN_TABLE ---
+--- SYSTEM REFRESH/CANCEL VIEW on a missing refreshable view reports BAD_ARGUMENTS ---

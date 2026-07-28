@@ -1,0 +1,97 @@
+---
+slug: /cloud/billing/marketplace/migrate
+title: '将云市场中的计费从按使用量付费 (PAYG) 迁移到承诺消费合同'
+description: '将计费从按使用量付费迁移到承诺消费合同。'
+keywords: ['市场', '计费', 'PAYG', '按使用量付费', '承诺消费合同']
+doc_type: 'guide'
+---
+
+如果您的 ClickHouse 组织当前通过某个云市场中有效的按使用量付费 (PAYG) 订阅 (或订单) 计费，并且您希望通过同一云市场迁移到承诺消费合同计费，请先接受新的报价，然后根据您的云服务提供商按以下步骤操作。
+
+<div id="important-notes">
+  ## 重要说明
+</div>
+
+请注意，取消您的 市场 按使用量付费订阅并不会删除您的 ClickHouse Cloud 账户，只会终止通过市场建立的计费关系。取消后，我们的系统将停止通过市场为 ClickHouse Cloud 服务计费。 (注意：此过程不会立即完成，可能需要几分钟。)
+
+在您的 市场 订阅取消后，如果您的 ClickHouse 组织中已留存信用卡，除非在此之前已关联新的 市场 订阅，否则我们将在您的计费周期结束时向该卡收费。
+
+如果取消后未配置任何信用卡，您将有 14 天时间为您的组织添加有效的信用卡或新的云市场订阅。如果在此期间内未配置任何付款方式，您的服务将被暂停，并且您的组织将被视为不符合 [计费合规](/zh/products/cloud/reference/billing/billing-compliance) 要求。
+
+订阅取消后产生的任何用量，将按顺序计费到下一个已配置的有效付款方式，依次为预付费额度、市场订阅或信用卡。
+
+如果您在将组织配置为新的 市场 订阅时有任何疑问，或在此过程中需要支持，请联系 ClickHouse [support](https://clickhouse.com/support/program) 获取帮助。
+
+<div id="aws-marketplace">
+  ## AWS 市场
+</div>
+
+如果你想使用同一个 AWS Account ID，将 PAYG 订阅迁移到承诺消费合同，我们建议你[联系销售团队](https://clickhouse.com/company/contact)进行此项变更。这样无需额外步骤，也不会对你的 ClickHouse 组织或服务造成任何中断。
+
+如果你想使用不同的 AWS Account ID，将你的 ClickHouse 组织从 PAYG 订阅迁移到承诺消费合同，请按以下步骤操作：
+
+<div id="cancel-aws-payg">
+  ### 取消 AWS PAYG 订阅的步骤
+</div>
+
+1. **前往 [AWS 市场](https://us-east-1.console.aws.amazon.com/marketplace)**
+2. **点击 “Manage Subscriptions” 按钮**
+3. **转到 “Your Subscriptions”：**
+   * 点击 “Manage Subscriptions”
+4. **在列表中找到 ClickHouse Cloud：**
+   * 在 “Your Subscriptions” 下找到并点击 ClickHouse Cloud
+5. **取消订阅：**
+   * 在 “Agreement” 下，点击 ClickHouse Cloud 条目旁的 “Actions” 下拉菜单或按钮
+   * 选择 “Cancel subscription”
+
+> **注意：** 如果您在取消订阅时需要帮助 (例如，“Cancel subscription” 按钮不可用) ，请联系 [AWS support](https://support.console.aws.amazon.com/support/home#/)。
+
+接下来，按照这些[步骤](/zh/products/cloud/reference/billing/marketplace/aws-marketplace-committed)，将您的 ClickHouse 组织配置为您已接受的新 AWS 承诺消费合同。
+
+<div id="gcp-marketplace">
+  ## GCP 市场
+</div>
+
+<div id="cancel-gcp-payg">
+  ### 取消 GCP PAYG 订单的步骤
+</div>
+
+1. **前往您的 [Google Cloud 市场 控制台](https://console.cloud.google.com/marketplace)：**
+   * 确保您已登录正确的 GCP 账户，并选择了相应的项目
+2. **找到您的 ClickHouse 订单：**
+   * 在左侧菜单中，点击“Your Orders”
+   * 在有效订单列表中找到对应的 ClickHouse 订单
+3. **取消订单：**
+   * 找到订单右侧的三点菜单，并按说明取消该 ClickHouse 订单
+
+> **注意：** 如需帮助取消此订单，请联系 [GCP 支持](https://cloud.google.com/support/docs/get-billing-support)。
+
+接下来，请按照这些[步骤](/zh/products/cloud/reference/billing/marketplace/gcp-marketplace-committed)，将您的 ClickHouse 组织关联到新的 GCP 承诺消费合同。
+
+<div id="azure-marketplace">
+  ## Azure 市场
+</div>
+
+<div id="cancel-azure-payg">
+  ### 取消 Azure PAYG 订阅的步骤
+</div>
+
+1. **前往 [Microsoft Azure 门户](http://portal.azure.com)**
+2. **进入“订阅”**
+3. **找到您要取消的当前有效的 ClickHouse 订阅**
+4. **取消订阅：**
+   * 点击 ClickHouse Cloud 订阅，打开订阅详情
+   * 选择“取消订阅”按钮
+
+> **注意：** 如果您需要帮助取消此订单，请在 Azure 门户中提交支持工单。
+
+接下来，按照这些[步骤](/zh/products/cloud/reference/billing/marketplace/azure-marketplace-committed)将您的 ClickHouse 组织配置为使用新的 Azure 承诺消费合同。
+
+<div id="linking-requirements">
+  ## 关联承诺消费合同的要求
+</div>
+
+> **注意：** 要将您的组织关联到市场承诺消费合同：
+>
+> * 按照这些步骤操作的用户，必须是您要将订阅附加到的 ClickHouse 组织的管理员用户
+> * 该组织的所有未支付账单都必须结清 (如有任何疑问，请联系 ClickHouse [support](https://clickhouse.com/support/program))

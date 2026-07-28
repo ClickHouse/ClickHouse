@@ -1,11 +1,9 @@
 #include <Analyzer/Passes/OptimizeGroupByInjectiveFunctionsPass.h>
-#include <Analyzer/ConstantNode.h>
-#include <Analyzer/FunctionNode.h>
+
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
+#include <Analyzer/QueryNode.h>
 #include <Core/Settings.h>
-#include <DataTypes/IDataType.h>
-#include <Interpreters/ExternalDictionariesLoader.h>
 
 namespace DB
 {
@@ -49,87 +47,19 @@ public:
         if (query->isGroupByWithCube() || query->isGroupByWithRollup())
             return;
 
+        bool allow_suspicious_types = getSettings()[Setting::allow_suspicious_types_in_group_by];
+
         auto & group_by = query->getGroupBy().getNodes();
         if (query->isGroupByWithGroupingSets())
         {
             for (auto & set : group_by)
             {
                 auto & grouping_set = set->as<ListNode>()->getNodes();
-                optimizeGroupingSet(grouping_set);
+                grouping_set = unwrapInjectiveFunctionsInKeys(grouping_set, allow_suspicious_types);
             }
         }
         else
-            optimizeGroupingSet(group_by);
-    }
-
-private:
-    void optimizeGroupingSet(QueryTreeNodes & grouping_set)
-    {
-        auto context = getContext();
-
-        QueryTreeNodes new_group_by_keys;
-        new_group_by_keys.reserve(grouping_set.size());
-        for (auto & group_by_elem : grouping_set)
-        {
-            std::queue<QueryTreeNodePtr> nodes_to_process;
-            nodes_to_process.push(group_by_elem);
-
-            while (!nodes_to_process.empty())
-            {
-                auto node_to_process = nodes_to_process.front();
-                nodes_to_process.pop();
-
-                auto const * function_node = node_to_process->as<FunctionNode>();
-                if (!function_node)
-                {
-                    // Constant aggregation keys are removed in PlannerExpressionAnalysis.cpp
-                    new_group_by_keys.push_back(node_to_process);
-                    continue;
-                }
-
-                // Aggregate functions are not allowed in GROUP BY clause
-                auto function = function_node->getFunctionOrThrow();
-                auto arguments = function_node->getArgumentColumns();
-                bool can_be_eliminated = function->isInjective(arguments) && isValidGroupByKeyTypes(arguments);
-
-                if (can_be_eliminated)
-                {
-                    for (auto const & argument : function_node->getArguments())
-                    {
-                        // We can skip constants here because aggregation key is already not a constant.
-                        if (argument->getNodeType() != QueryTreeNodeType::CONSTANT)
-                            nodes_to_process.push(argument);
-                    }
-                }
-                else
-                    new_group_by_keys.push_back(node_to_process);
-            }
-        }
-
-        grouping_set = std::move(new_group_by_keys);
-    }
-
-    bool isValidGroupByKeyTypes(const ColumnsWithTypeAndName & columns) const
-    {
-        if (getContext()->getSettingsRef()[Setting::allow_suspicious_types_in_group_by])
-            return true;
-
-        bool is_valid = true;
-        auto check = [&](const IDataType & type)
-        {
-            /// Dynamic and Variant types are not allowed in GROUP BY by default.
-            is_valid &= !isDynamic(type) && !isVariant(type);
-        };
-
-        for (const auto & column : columns)
-        {
-            check(*column.type);
-            column.type->forEachChild(check);
-            if (!is_valid)
-                break;
-        }
-
-        return is_valid;
+            group_by = unwrapInjectiveFunctionsInKeys(group_by, allow_suspicious_types);
     }
 };
 

@@ -1,0 +1,51 @@
+---
+title: 'Pausar e retomar um ClickPipe do MongoDB'
+description: 'Pausar e retomar um ClickPipe do MongoDB'
+sidebarTitle: 'Pausar tabela'
+slug: /integrations/clickpipes/mongodb/pause_and_resume
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'ingestão de dados', 'sincronização em tempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Há cenários em que pode ser útil pausar um ClickPipe do MongoDB. Por exemplo, você pode querer executar análises sobre os dados existentes em um estado estático. Ou pode estar realizando upgrades no MongoDB. Veja como pausar e retomar um ClickPipe do MongoDB.
+
+<div id="pause-clickpipe-steps">
+  ## Etapas para pausar um ClickPipe do MongoDB
+</div>
+
+1. Na guia Data Sources, clique no ClickPipe do MongoDB que você deseja pausar.
+2. Vá até a guia **Configurações**.
+3. Clique no botão **Pausar**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp" border size="md" />
+
+4. Uma caixa de diálogo de confirmação será exibida. Clique em **Pausar** novamente.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp" border size="md" />
+
+4. Vá até a guia **Métricas**.
+5. Aguarde até que o status do pipe fique **Pausado**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp" border size="md" />
+
+<div id="resume-clickpipe-steps">
+  ## Etapas para retomar um ClickPipe do MongoDB
+</div>
+
+1. Na aba **Data Sources**, clique no ClickPipe do MongoDB que você deseja retomar. O status do mirror deve estar **Pausado** inicialmente.
+2. Vá até a aba **Configurações**.
+3. Clique no botão **Retomar**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp" border size="md" />
+
+4. Uma caixa de diálogo de confirmação deverá aparecer. Clique em **Retomar** novamente.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp" border size="md" />
+
+5. Vá até a aba **Métricas**.
+6. Aguarde até que o status do pipe fique **Em execução**.

@@ -461,13 +461,6 @@ struct DeltaLakeMetadataImpl
      * We need to check only `add` column, `remove` column does not have intersections with `add` column.
      *  ...
      */
-    #define THROW_ARROW_NOT_OK(status)                                    \
-        do                                                                \
-        {                                                                 \
-            if (const ::arrow::Status & _s = (status); !_s.ok())          \
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Arrow error: {}", _s.ToString()); \
-        } while (false)
-
     size_t getCheckpointIfExists(
         std::set<String> & result,
         NamesAndTypesList & file_schema,
@@ -504,7 +497,8 @@ struct DeltaLakeMetadataImpl
 
         auto open_file_res = parquet::arrow::OpenFile(
             asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), ArrowMemoryPool::instance());
-        THROW_ARROW_NOT_OK(open_file_res.status());
+        if (!open_file_res.ok())
+            throwFromArrowStatus(open_file_res.status(), ErrorCodes::BAD_ARGUMENTS, "Failed to open Parquet checkpoint file");
         auto reader = *std::move(open_file_res);
 
         ArrowColumnToCHColumn column_reader(
@@ -519,7 +513,8 @@ struct DeltaLakeMetadataImpl
             /* case_insensitive_column_matching */false);
 
         std::shared_ptr<arrow::Table> table;
-        THROW_ARROW_NOT_OK(reader->ReadTable(&table));
+        if (auto read_status = reader->ReadTable(&table); !read_status.ok())
+            throwFromArrowStatus(read_status, ErrorCodes::BAD_ARGUMENTS, "Failed to read Parquet checkpoint file");
 
         Chunk chunk = column_reader.arrowTableToCHChunk(table, reader->parquet_reader()->metadata()->num_rows(), reader->parquet_reader()->metadata()->key_value_metadata());
         auto res_block = header.cloneWithColumns(chunk.detachColumns());

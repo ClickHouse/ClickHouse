@@ -1,0 +1,68 @@
+---
+title: 'BYOC 운영 및 유지보수'
+slug: /cloud/reference/byoc/operations
+sidebarTitle: '운영 및 유지보수'
+keywords: ['BYOC', '클라우드', 'bring your own cloud', '운영', '유지보수']
+description: '자체 클라우드 인프라에서 ClickHouse 배포'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 개요
+</div>
+
+ClickHouse Cloud는 서비스의 보안과 성능을 유지하고 최신 상태를 보장하기 위해 BYOC 배포의 업그레이드와 유지 관리를 관리합니다. 이 페이지에서는 BYOC 인프라의 다양한 구성 요소에 대한 업그레이드 프로세스와 유지 관리 기간의 작동 방식을 설명합니다.
+
+<div id="clickhouse-upgrade-process">
+  ## ClickHouse 서비스 업그레이드 프로세스
+</div>
+
+ClickHouse Cloud는 버전 업그레이드, 버그 수정, 성능 개선을 포함하여 ClickHouse 데이터베이스를 정기적으로 업그레이드합니다. ClickHouse Cloud는 업그레이드 시 [&quot;make before break&quot; (MBB)](/ko/products/cloud/features/autoscaling/make-before-break) 방식을 사용합니다. 이 방식은 기존 레플리카를 제거하기 전에 업데이트된 레플리카를 먼저 추가하므로, 실행 중인 워크로드에 미치는 영향을 줄이면서 더 원활하게 업그레이드할 수 있습니다.
+
+BYOC의 ClickHouse 서비스 업그레이드는 표준 ClickHouse Cloud 서비스와 동일한 프로세스와 패턴을 따르며, 릴리스 채널(Fast, Regular, Slow)과 예약된 유지 관리 기간도 지원합니다. BYOC 배포에서는 Scale 및 Enterprise tier의 모든 기능을 사용할 수 있습니다. 업그레이드 일정, 릴리스 채널, 유지 관리 기간에 대한 자세한 내용은 [Upgrades 문서](/ko/products/cloud/features/admin-features/upgrades)를 참조하십시오.
+
+<div id="cloud-upgrade-process">
+  ## Cloud 서비스 및 리소스 업그레이드 프로세스
+</div>
+
+ClickHouse Cloud는 보안, 안정성, 그리고 새 기능을 사용할 수 있도록 Kubernetes에서 실행되는 지원 서비스와 BYOC 배포 내 인프라 구성 요소를 정기적으로 업그레이드합니다. 이러한 Cloud 서비스 업그레이드는 백그라운드에서 수행되며, 표준 Cloud 릴리스 일정에 맞춰 진행됩니다. 모든 지원 서비스는 ArgoCD를 통해 관리되며, 업그레이드는 중단 없이 이루어지도록 설계되어 있습니다. 따라서 이러한 업데이트 중 서비스 중단은 예상되지 않습니다.
+
+업그레이드되는 Cloud 서비스의 예시는 다음과 같습니다.
+
+* **ClickHouse Operator**: ClickHouse 클러스터를 관리하는 Kubernetes 오퍼레이터
+* **Istio Services**: 인그레스 및 agent 구성 요소
+* **모니터링 스택**: Prometheus, Grafana, AlertManager, Thanos 구성 요소
+
+<div id="k8s-upgrade-process">
+  ## Kubernetes 클러스터 업그레이드 프로세스
+</div>
+
+ClickHouse 서비스를 호스팅하는 Kubernetes 클러스터(AWS의 EKS, GCP의 GKE)는 보안과 호환성을 유지하고 새 기능을 사용하기 위해 정기적으로 업그레이드해야 합니다. ClickHouse Cloud는 BYOC 배포의 모든 Kubernetes 클러스터 업그레이드를 관리하여 클러스터가 지원되는 버전에서 항상 최신 상태를 유지하도록 합니다.
+
+<div id="cluster-upgrade-types">
+  ### 클러스터 업그레이드 유형
+</div>
+
+**컨트롤 플레인 업그레이드**: Kubernetes 컨트롤 플레인 구성 요소(API server, etcd, controller manager)는 ClickHouse Cloud에서 업그레이드합니다. 이러한 업그레이드는 일반적으로 워크로드에 거의 영향을 주지 않으며, 파드를 재시작할 필요도 없습니다.
+
+**노드 그룹 업그레이드**: 워커 노드 업그레이드에는 노드 교체가 필요하므로 실행 중인 파드에 영향이 있을 수 있습니다. ClickHouse Cloud는 중단을 최소화하기 위해 make-before-break 방식으로 이러한 업그레이드를 진행합니다:
+
+* 기존 노드를 제거하기 전에 업데이트된 Kubernetes 버전으로 새 노드를 프로비저닝합니다
+* 파드를 정상적으로 드레이닝한 뒤 새 노드로 마이그레이션합니다
+* 파드가 성공적으로 마이그레이션된 후에만 기존 노드를 종료합니다
+
+<Note>
+  Kubernetes 노드 업그레이드 중에는 마이그레이션 과정에서 파드가 잠시 재시작될 수 있습니다. ClickHouse Cloud는 파드 중단 예산과 정상 종료를 사용해 워크로드에 미치는 영향을 최소화합니다.
+</Note>
+
+<div id="upgrade-schedule">
+  ### 업그레이드 일정
+</div>
+
+Kubernetes 클러스터 업그레이드 일정은 ClickHouse 지원팀과 조율하여 정해집니다. 업그레이드 계획은 사전에 안내되며, 운영 영향이 최소화되도록 적절한 유지 관리 기간을 함께 결정합니다.
+
+<div id="version-support">
+  ### 버전 지원
+</div>
+
+ClickHouse Cloud는 클라우드 서비스 제공업체(AWS EKS 또는 Google GKE)가 정의한 지원 버전 범위 내에서 Kubernetes 클러스터를 운영합니다. 보안 패치와 기능 업데이트를 최신 상태로 유지하는 동시에, 클러스터가 제공업체 요구 사항을 계속 충족하도록 보장합니다.

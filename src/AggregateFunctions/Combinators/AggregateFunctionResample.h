@@ -194,7 +194,7 @@ public:
         nested_function->add(place + pos * size_of_data, columns, row_num, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         for (size_t i = 0; i < total; ++i)
             nested_function->merge(place + i * size_of_data, rhs + i * size_of_data, arena);

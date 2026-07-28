@@ -479,8 +479,8 @@ void StorageWindowView::alter(
 {
     throwIfWindowViewIsDisabled(local_context);
     auto table_id = getStorageID();
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);
-    StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(local_context, false);
+    auto current_metadata = getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata new_metadata = *current_metadata;
     params.apply(new_metadata, local_context);
 
     const auto & new_select = new_metadata.select;
@@ -551,11 +551,12 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     UInt32 w_start = addTime(watermark, window_kind, -window_num_units, *time_zone);
 
     auto inner_table = getInnerTable();
+    const auto inner_table_metadata = inner_table->getInMemoryMetadataPtr(getContext(), false);
     InterpreterSelectQuery fetch(
         inner_fetch_query,
         getContext(),
         inner_table,
-        inner_table->getInMemoryMetadataPtr(getContext(), false),
+        inner_table_metadata,
         SelectQueryOptions(QueryProcessingStage::FetchColumns));
 
     auto builder = fetch.buildQueryPipeline();
@@ -643,11 +644,12 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
 
     TemporaryTableHolder blocks_storage(getContext(), creator);
 
+    const auto blocks_storage_metadata = blocks_storage.getTable()->getInMemoryMetadataPtr(getContext(), false);
     InterpreterSelectQuery select(
         getFinalQuery(),
         getContext(),
         blocks_storage.getTable(),
-        blocks_storage.getTable()->getInMemoryMetadataPtr(getContext(), false),
+        blocks_storage_metadata,
         SelectQueryOptions(QueryProcessingStage::Complete));
 
     builder = select.buildQueryPipeline();
@@ -724,10 +726,11 @@ inline void StorageWindowView::fire(UInt32 watermark)
 
         auto pipe = Pipe(std::make_shared<BlocksSource>(blocks, std::make_shared<const Block>(std::move(header))));
 
+        auto target_metadata_snapshot = getTargetTable()->getInMemoryMetadataPtr(context, false);
         auto adding_missing_defaults_dag = addMissingDefaults(
             pipe.getHeader(),
             block_io.pipeline.getHeader().getNamesAndTypesList(),
-            getTargetTable()->getInMemoryMetadataPtr(context, false)->getColumns(),
+            target_metadata_snapshot->getColumns(),
             context,
             context->getSettingsRef()[Setting::insert_null_as_default]);
         auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(std::move(adding_missing_defaults_dag));
@@ -1603,11 +1606,12 @@ void StorageWindowView::writeIntoWindowView(
     };
     TemporaryTableHolder blocks_storage(local_context, creator);
 
+    const auto blocks_storage_metadata = blocks_storage.getTable()->getInMemoryMetadataPtr(local_context, false);
     InterpreterSelectQuery select_block(
         window_view.getMergeableQuery(),
         local_context,
         blocks_storage.getTable(),
-        blocks_storage.getTable()->getInMemoryMetadataPtr(local_context, false),
+        blocks_storage_metadata,
         QueryProcessingStage::WithMergeableState);
 
     builder = select_block.buildQueryPipeline();
@@ -1733,6 +1737,26 @@ void StorageWindowView::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr que
     }
 }
 
+void StorageWindowView::checkTableSizeBelowDropLimit(ContextPtr query_context) const
+{
+    if (!has_inner_table)
+        return;
+
+    /// Mirror `dropInnerTableIfAny`: it drops `inner_table_id` and, when
+    /// `has_inner_target_table`, also `target_table_id`. We must size-check both;
+    /// otherwise a `CREATE OR REPLACE` codepath that lands on this storage could
+    /// silently delete an over-limit inner table under a zeroed drop guard.
+    auto check_one = [&](const StorageID & inner_id)
+    {
+        if (auto inner = DatabaseCatalog::instance().tryGetTable(inner_id, getContext()))
+            inner->checkTableSizeBelowDropLimit(query_context);
+    };
+
+    check_one(inner_table_id);
+    if (has_inner_target_table)
+        check_one(target_table_id);
+}
+
 void StorageWindowView::drop()
 {
     /// Must be guaranteed at this point for database engine Atomic that has_inner_table == false,
@@ -1814,7 +1838,14 @@ void registerStorageWindowView(StorageFactory & factory)
 
             return std::make_shared<StorageWindowView>(
                 args.table_id, args.getLocalContext(), args.query, args.columns, args.comment, args.mode);
-        });
+        },
+        {},
+        Documentation{
+            .description = "Aggregates data over time windows and emits the results of a `SELECT` query once each window closes. "
+                "It is an experimental feature that maintains incremental aggregation grouped by time windows and can push the "
+                "results to a target table. Enable it with the `allow_experimental_window_view` setting.",
+            .syntax = "CREATE WINDOW VIEW name [TO target] AS SELECT ... GROUP BY tumble(...)/hop(...)",
+            .related = {"MaterializedView"}});
 }
 
 }

@@ -1,0 +1,205 @@
+---
+description: 'تعرّف على كيفية استخدام الإسقاطات لتحسين أداء الاستعلامات التي تشغّلها
+  بشكل متكرر باستخدام مجموعة بيانات العقارات في المملكة المتحدة، التي تتضمن بيانات
+  عن الأسعار المدفوعة للعقارات في إنجلترا وويلز'
+sidebarTitle: 'أسعار العقارات في المملكة المتحدة'
+slug: /getting-started/example-datasets/uk-price-paid
+title: 'مجموعة بيانات أسعار العقارات في المملكة المتحدة'
+doc_type: 'guide'
+keywords: ['مجموعة بيانات نموذجية', 'عقارات المملكة المتحدة', 'بيانات نموذجية', 'العقارات', 'البدء']
+---
+
+import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.jsx";
+
+تتضمن هذه البيانات الأسعار المدفوعة لشراء العقارات في إنجلترا وويلز. والبيانات متاحة منذ عام 1995، ويبلغ حجم مجموعة البيانات في صورتها غير المضوطة نحو 4 GiB (بينما لن تشغل في ClickHouse سوى نحو 278 MiB).
+
+* المصدر: https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads
+* وصف الحقول: https://www.gov.uk/guidance/about-the-price-paid-data
+* تتضمن بيانات HM Land Registry © حقوق النشر التابعة للتاج وحق قاعدة البيانات لعام 2021. وهذه البيانات مرخّصة بموجب Open Government Licence v3.0.
+
+<div id="create-table">
+  ## إنشاء الجدول
+</div>
+
+```sql
+CREATE DATABASE uk;
+
+CREATE TABLE uk.uk_price_paid
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
+    is_new UInt8,
+    duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2);
+```
+
+<div id="preprocess-import-data">
+  ## معالجة البيانات مسبقًا وإدراجها
+</div>
+
+سنستخدم الدالة `url` لدفق البيانات إلى ClickHouse. نحتاج أولًا إلى إجراء بعض المعالجة المسبقة على البيانات الواردة، ويشمل ذلك:
+
+* تقسيم `postcode` إلى عمودين مختلفين: `postcode1` و`postcode2`، لأن ذلك أفضل للتخزين والاستعلامات
+* تحويل الحقل `time` إلى تاريخ لأنه لا يحتوي إلا على الوقت 00:00
+* تجاهل الحقل [UUid](/ar/reference/data-types/uuid) لأننا لا نحتاج إليه في التحليل
+* تحويل `type` و`duration` إلى حقول `Enum` أسهل قراءةً باستخدام الدالة [transform](/ar/reference/functions/regular-functions/other-functions#transform)
+* تحويل الحقل `is_new` من سلسلة نصية مكوّنة من محرف واحد (`Y`/`N`) إلى حقل [UInt8](/ar/reference/data-types/int-uint) بقيمة 0 أو 1
+* حذف العمودين الأخيرين لأن قيمتهما متطابقة دائمًا (وهي 0)
+
+تقوم الدالة `url` بدفق البيانات من خادم الويب إلى جدول ClickHouse الخاص بك. يُدرِج الأمر التالي 5 ملايين صف في جدول `uk_price_paid`:
+
+```sql
+INSERT INTO uk.uk_price_paid
+SELECT
+    toUInt32(price_string) AS price,
+    parseDateTimeBestEffortUS(time) AS date,
+    splitByChar(' ', postcode)[1] AS postcode1,
+    splitByChar(' ', postcode)[2] AS postcode2,
+    transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+    b = 'Y' AS is_new,
+    transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+    addr1,
+    addr2,
+    street,
+    locality,
+    town,
+    district,
+    county
+FROM url(
+    'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+    'CSV',
+    'uuid_string String,
+    price_string String,
+    time String,
+    postcode String,
+    a String,
+    b String,
+    c String,
+    addr1 String,
+    addr2 String,
+    street String,
+    locality String,
+    town String,
+    district String,
+    county String,
+    d String,
+    e String'
+) SETTINGS max_http_get_redirects=10;
+```
+
+انتظر حتى يتم إدراج البيانات — فقد يستغرق ذلك دقيقة أو دقيقتين حسب سرعة الشبكة.
+
+<div id="validate-data">
+  ## تحقّق من البيانات
+</div>
+
+لنتأكد من أن العملية نجحت عبر معرفة عدد الصفوف التي أُدرجت:
+
+<RunnableCode>
+  ```sql
+  SELECT count()
+  FROM uk.uk_price_paid
+  ```
+</RunnableCode>
+
+وقت تشغيل هذا الاستعلام، كانت مجموعة البيانات تحتوي على 27,450,499 صفًا. لنرَ حجم تخزين هذا الجدول في ClickHouse:
+
+<RunnableCode>
+  ```sql
+  SELECT formatReadableSize(total_bytes)
+  FROM system.tables
+  WHERE name = 'uk_price_paid'
+  ```
+</RunnableCode>
+
+لاحظ أن حجم الجدول لا يتجاوز 221.43 MiB!
+
+<div id="run-queries">
+  ## نفّذ بعض الاستعلامات
+</div>
+
+لننفّذ بعض الاستعلامات لتحليل البيانات:
+
+<div id="average-price">
+  ### الاستعلام 1: متوسط السعر لكل سنة
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+     toYear(date) AS year,
+     round(avg(price)) AS price,
+     bar(price, 0, 1000000, 80
+  )
+  FROM uk.uk_price_paid
+  GROUP BY year
+  ORDER BY year
+  ```
+</RunnableCode>
+
+<div id="average-price-london">
+  ### الاستعلام 2. متوسط السعر سنويًا في لندن
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+     toYear(date) AS year,
+     round(avg(price)) AS price,
+     bar(price, 0, 2000000, 100
+  )
+  FROM uk.uk_price_paid
+  WHERE town = 'LONDON'
+  GROUP BY year
+  ORDER BY year
+  ```
+</RunnableCode>
+
+يبدو أن شيئًا ما حدث لأسعار المنازل في عام 2020! لكن ذلك على الأرجح ليس مفاجئًا...
+
+<div id="most-expensive-neighborhoods">
+  ### الاستعلام 3. الأحياء الأكثر تكلفة
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      town,
+      district,
+      count() AS c,
+      round(avg(price)) AS price,
+      bar(price, 0, 5000000, 100)
+  FROM uk.uk_price_paid
+  WHERE date >= '2020-01-01'
+  GROUP BY
+      town,
+      district
+  HAVING c >= 100
+  ORDER BY price DESC
+  LIMIT 100
+  ```
+</RunnableCode>
+
+<div id="speeding-up-queries-with-projections">
+  ## تسريع الاستعلامات باستخدام الإسقاطات
+</div>
+
+يمكننا تسريع هذه الاستعلامات باستخدام الإسقاطات. راجع [&quot;الإسقاطات&quot;](/ar/concepts/features/projections/projections) للاطلاع على أمثلة تتعلق بمجموعة البيانات هذه.
+
+<div id="playground">
+  ### جرّبه في Playground
+</div>
+
+تتوفر مجموعة البيانات أيضًا في [Online Playground](https://sql.clickhouse.com?query_id=TRCWH5ZETY4SEEK8ISCCAX).

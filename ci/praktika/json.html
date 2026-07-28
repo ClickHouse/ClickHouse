@@ -339,6 +339,11 @@
             text-decoration: underline;
         }
 
+        .status-column a {
+            text-decoration: underline;
+            cursor: pointer;
+        }
+
         th, td {
             padding: 8px;
             border: 1px solid var(--table-border-color);
@@ -512,10 +517,10 @@
         const status_ = status.toLowerCase();
 
         const isFailure =
-            (status_.includes('fail') || status_.includes('error') || status_.includes('dropped') || status_ === 'xpass')
+            (status_.includes('fail') || status_.includes('error') || status_.includes('dropped') || status_ === 'xpass' || status_ === 'slower')
             && status_ !== 'xfail';
         const isWarning =
-            status_.includes('pending') || status_.includes('running');
+            status_.includes('pending') || status_.includes('running') || status_ === 'unstable';
 
         if (filter === 'failures') {
             return isFailure;
@@ -663,14 +668,21 @@
         const statusLower = (status || '').toLowerCase();
         if (statusLower.includes('error')) return 0;
         if (statusLower.includes('fail') && statusLower !== 'xfail') return 1;
-        if (statusLower === 'xpass') return 2;
-        if (statusLower.includes('running')) return 3;
-        if (statusLower.includes('dropped')) return 4;
-        if (statusLower.includes('pending')) return 5;
-        if (statusLower === 'ok' || statusLower.includes('success')) return 6;
-        if (statusLower === 'xfail') return 7;
-        if (statusLower.includes('skipped')) return 8;
-        return 9;
+        // Perf-comparison per-query statuses (compare.sh emits slower/unstable/success).
+        if (statusLower === 'slower') return 1;
+        if (statusLower === 'unstable') return 2;
+        // Keep UNKNOWN right under the errors/failures: these are tests whose real
+        // result was lost (e.g. demoted when the run aborted), so they are the rows
+        // worth looking at first, not buried below all the OK rows.
+        if (statusLower.includes('unknown')) return 2;
+        if (statusLower === 'xpass') return 3;
+        if (statusLower.includes('running')) return 4;
+        if (statusLower.includes('dropped')) return 5;
+        if (statusLower.includes('pending')) return 6;
+        if (statusLower === 'ok' || statusLower.includes('success')) return 7;
+        if (statusLower === 'xfail') return 8;
+        if (statusLower.includes('skipped')) return 9;
+        return 10;
     }
 
     function formatTimestamp(timestamp, showDate = true) {
@@ -1605,16 +1617,20 @@
 
                 if (column === 'status') {
                     const value_ = value ? value.toLowerCase() : "";
-                    const span = document.createElement('span');
-                    span.className = getStatusClass(value_);
-                    span.textContent = value_;
+                    const clickable = (result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0) || (Array.isArray(result.results) && result.results.length > 0);
+                    const statusEl = clickable ? document.createElement('a') : document.createElement('span');
+                    statusEl.className = getStatusClass(value_);
+                    statusEl.textContent = value_;
                     td.classList.add('status-column');
                     row.dataset.status = value_;
-                    if ((result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0) || (Array.isArray(result.results) && result.results.length > 0)) {
-                        span.style.cursor = "pointer";
-                        span.addEventListener('click', () => toggleInfoRow(row, result.info, result.results, result.links));
+                    if (clickable) {
+                        statusEl.href = '#';
+                        statusEl.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            toggleInfoRow(row, result.info, result.results, result.links);
+                        });
                     }
-                    td.appendChild(span);
+                    td.appendChild(statusEl);
                     row.style.display = shouldShowRow(filter, row.dataset.status) ? '' : 'none';
                 } else if (column === 'name') {
                     const statusValue = result["status"] ? result["status"].toLowerCase() : "";

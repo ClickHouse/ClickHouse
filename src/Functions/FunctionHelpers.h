@@ -212,6 +212,12 @@ NullPresence getNullPresense(const ColumnsWithTypeAndName & args);
 
 bool isDecimalOrNullableDecimal(const DataTypePtr & type);
 bool isLowCardinalityType(const IDataType & type);
+/// Returns true if any of the argument types is or contains LowCardinality
+/// (e.g. LowCardinality(UInt8), Array(LowCardinality(String)) or Map(LowCardinality(String), String)).
+bool hasLowCardinalityTypes(const ColumnsWithTypeAndName & args);
+/// Returns true if all of the arguments have constant columns.
+bool allArgumentColumnsAreConstant(const ColumnsWithTypeAndName & args);
+bool convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args);
 
 void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t input_rows_count);
 }

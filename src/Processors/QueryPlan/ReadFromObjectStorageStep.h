@@ -33,9 +33,9 @@ public:
 
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
-
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
+    bool canUpdatePrewhereInfoMultipleTimes() const override { return false; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     QueryPlanStepPtr clone() const override;
@@ -44,6 +44,7 @@ public:
     void setDistributedRead(size_t bucket_count);
     Strings getShardsForDistributedRead() const;
 
+    bool isSerializable() const override { return true; }
     void serialize(Serialization & ctx) const override;
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 #endif

@@ -104,18 +104,36 @@ void registerTableFunctionZeros(TableFunctionFactory & factory)
     });
 
     factory.registerFunction<TableFunctionZeros<false>>(
-        {
-            .description=R"(
-                Generates a stream of zeros (a table with one column 'zero' of type 'UInt8') of specified size.
-                This table function is used in performance tests, where you want to spend as little time as possible to data generation while testing some other parts of queries.
-                In contrast to the `zeros_mt`, this table function is using single thread for data generation.
-                Example:
-                [example:1]
-                This query will test the speed of `randomPrintableASCII` function using single thread.
-                See also the `system.zeros_mt` table.)",
-            .examples={{"1", "SELECT count() FROM zeros_mt(1000000000) WHERE NOT ignore(randomPrintableASCII(10))", ""}},
-            .category = FunctionDocumentation::Category::TableFunction
-    });
+        {.description = R"DOCS_MD(
+* `zeros(N)` – Returns a table with the single 'zero' column (UInt8) that contains the integer 0 `N` times
+* `zeros_mt(N)` – The same as `zeros`, but uses multiple threads.
+
+This function is used for test purposes as the fastest method to generate many rows. Similar to the `system.zeros` and `system.zeros_mt` system tables.
+
+The following queries are equivalent:
+
+```sql
+SELECT * FROM zeros(10);
+SELECT * FROM system.zeros LIMIT 10;
+SELECT * FROM zeros_mt(10);
+SELECT * FROM system.zeros_mt LIMIT 10;
+```
+
+```response
+┌─zero─┐
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+└──────┘
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
 }
 
 }

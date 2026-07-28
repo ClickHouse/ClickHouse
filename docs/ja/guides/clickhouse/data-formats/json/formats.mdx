@@ -1,0 +1,501 @@
+---
+title: 'その他のJSONフォーマットの扱い'
+slug: /integrations/data-formats/json/other-formats
+description: 'その他のJSONフォーマットの扱い'
+sidebarTitle: 'その他のフォーマットの扱い'
+keywords: ['json', 'フォーマット', 'json フォーマット']
+doc_type: 'guide'
+---
+
+これまでのJSONデータ読み込みの例では、[`JSONEachRow`](/ja/reference/formats/JSON/JSONEachRow) (`NDJSON`) を使用することを前提にしています。このフォーマットでは、各JSON行のキーをカラムとして読み込みます。たとえば、次のとおりです。
+
+```sql
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+LIMIT 5
+```
+
+```response
+┌───────date─┬─country_code─┬─project────────────┬─type────────┬─installer────┬─python_minor─┬─system─┬─version─┐
+│ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8   │
+│ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8   │
+│ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8   │
+│ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8   │
+│ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8   │
+└────────────┴──────────────┴────────────────────┴─────────────┴──────────────┴──────────────┴────────┴─────────┘
+
+5 rows in set. Elapsed: 0.449 sec.
+```
+
+これは一般的に JSON で最もよく使われるフォーマットですが、ほかのフォーマットを扱うことや、JSON を単一のオブジェクトとして読み取る必要がある場合もあります。
+
+以下では、JSON をほかの一般的なフォーマットで読み取ったり、読み込んだりする例を示します。
+
+<div id="reading-json-as-an-object">
+  ## JSON をオブジェクトとして読み込む
+</div>
+
+これまでの例では、`JSONEachRow` が改行区切りの JSON をどのように読み込むかを示しました。各行は個別のオブジェクトとして読み込まれ、テーブルの 1 行に対応付けられ、各キーは 1 つのカラムに対応します。これは、各カラムの型が 1 つに定まっていて、JSON の構造が予測しやすい場合に最適です。
+
+一方、`JSONAsObject` は各行を 1 つの `JSON` オブジェクトとして扱い、[`JSON`](/ja/reference/data-types/newjson) 型の単一カラムに格納します。そのため、ネストされた JSON ペイロードや、キーが動的で複数の型を取りうるケースにより適しています。
+
+行単位で insert する場合は `JSONEachRow` を使用し、柔軟または動的な JSON データを保存する場合は [`JSONAsObject`](/ja/reference/formats/JSON/JSONAsObject) を使用してください。
+
+上記の例と対比すると、次のクエリでは同じデータを各行ごとに 1 つの JSON オブジェクトとして読み込みます。
+
+```sql
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONAsObject)
+LIMIT 5
+```
+
+```response
+┌─json─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ {"country_code":"CN","date":"2022-11-15","installer":"bandersnatch","project":"clickhouse-connect","python_minor":"","system":"","type":"bdist_wheel","version":"0.2.8"} │
+│ {"country_code":"CN","date":"2022-11-15","installer":"bandersnatch","project":"clickhouse-connect","python_minor":"","system":"","type":"bdist_wheel","version":"0.2.8"} │
+│ {"country_code":"CN","date":"2022-11-15","installer":"bandersnatch","project":"clickhouse-connect","python_minor":"","system":"","type":"bdist_wheel","version":"0.2.8"} │
+│ {"country_code":"CN","date":"2022-11-15","installer":"bandersnatch","project":"clickhouse-connect","python_minor":"","system":"","type":"bdist_wheel","version":"0.2.8"} │
+│ {"country_code":"CN","date":"2022-11-15","installer":"bandersnatch","project":"clickhouse-connect","python_minor":"","system":"","type":"bdist_wheel","version":"0.2.8"} │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+5 rows in set. Elapsed: 0.338 sec.
+```
+
+`JSONAsObject` は、たとえば単一の JSONオブジェクト・カラムを使ってテーブルに行を挿入する場合に便利です。
+
+```sql
+CREATE TABLE pypi
+(
+    `json` JSON
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO pypi SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONAsObject)
+LIMIT 5;
+
+SELECT *
+FROM pypi
+LIMIT 2;
+```
+
+```response
+┌─json─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ {"country_code":"CN","date":"2022-11-15","installer":"bandersnatch","project":"clickhouse-connect","python_minor":"","system":"","type":"bdist_wheel","version":"0.2.8"} │
+│ {"country_code":"CN","date":"2022-11-15","installer":"bandersnatch","project":"clickhouse-connect","python_minor":"","system":"","type":"bdist_wheel","version":"0.2.8"} │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+2 rows in set. Elapsed: 0.003 sec.
+```
+
+`JSONAsObject` フォーマットは、オブジェクトの構造が一貫していない場合に、改行区切りの JSON を読み込む際にも役立ちます。たとえば、あるキーの型が行によって異なる場合です (文字列のこともあれば、オブジェクトのこともあります) 。このような場合、ClickHouse は `JSONEachRow` では安定したスキーマを推論できず、`JSONAsObject` を使うと、厳密な型チェックを行わずにデータを取り込み、各 JSON 行全体を 1 つのカラムに格納できます。たとえば、次の例では `JSONEachRow` が失敗することがわかります。
+
+```sql
+SELECT count()
+FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz', 'JSONEachRow')
+```
+
+```response
+Elapsed: 1.198 sec.
+
+Received exception from server (version 24.12.1):
+Code: 636. DB::Exception: Received from sql-clickhouse.clickhouse.com:9440. DB::Exception: The table structure cannot be extracted from a JSONEachRow format file. Error:
+Code: 117. DB::Exception: JSON objects have ambiguous data: in some objects path 'record.subject' has type 'String' and in some - 'Tuple(`$type` String, cid String, uri String)'. You can enable setting input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects to use String type for path 'record.subject'. (INCORRECT_DATA) (version 24.12.1.18239 (official build))
+To increase the maximum number of rows/bytes to read for structure determination, use setting input_format_max_rows_to_read_for_schema_inference/input_format_max_bytes_to_read_for_schema_inference.
+You can specify the structure manually: (in file/uri bluesky/file_0001.json.gz). (CANNOT_EXTRACT_TABLE_STRUCTURE)
+```
+
+一方、このケースでは、`JSON` 型が同じサブカラムに複数の型を許容するため、`JSONAsObject` を使用できます。
+
+```sql
+SELECT count()
+FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz', 'JSONAsObject')
+```
+
+```response
+┌─count()─┐
+│ 1000000 │
+└─────────┘
+
+1 row in set. Elapsed: 0.480 sec. Processed 1.00 million rows, 256.00 B (2.08 million rows/s., 533.76 B/s.)
+```
+
+<div id="array-of-json-objects">
+  ## JSONオブジェクトの配列
+</div>
+
+JSONデータで最も一般的な形式の1つは、[この例](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list.json)のように、JSON 配列の中にJSON オブジェクトのリストを含むものです:
+
+```bash
+> cat list.json
+[
+  {
+    "path": "Akiba_Hebrew_Academy",
+    "month": "2017-08-01",
+    "hits": 241
+  },
+  {
+    "path": "Aegithina_tiphia",
+    "month": "2018-02-01",
+    "hits": 34
+  },
+  ...
+]
+```
+
+この種のデータ用にテーブルを作成しましょう：
+
+```sql
+CREATE TABLE sometable
+(
+    `path` String,
+    `month` Date,
+    `hits` UInt32
+)
+ENGINE = MergeTree
+ORDER BY tuple(month, path)
+```
+
+JSONオブジェクトのリストをインポートするには、[`JSONEachRow`](/ja/reference/formats/JSON/JSONEachRow) フォーマットを使用できます ([list.json](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list.json) ファイルからデータを挿入します) :
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'list.json'
+FORMAT JSONEachRow
+```
+
+ローカルファイルからデータを読み込むために [FROM INFILE](/ja/reference/statements/insert-into#inserting-data-from-a-file) 句を使用しました。インポートが成功していることが確認できます。
+
+```sql
+SELECT *
+FROM sometable
+```
+
+```response
+┌─path──────────────────────┬──────month─┬─hits─┐
+│ 1971-72_Utah_Stars_season │ 2016-10-01 │    1 │
+│ Akiba_Hebrew_Academy      │ 2017-08-01 │  241 │
+│ Aegithina_tiphia          │ 2018-02-01 │   34 │
+└───────────────────────────┴────────────┴──────┘
+```
+
+<div id="json-object-keys">
+  ## JSON オブジェクトのキー
+</div>
+
+場合によっては、JSON オブジェクト のリストは、配列の要素ではなくオブジェクトのプロパティとしてエンコードされることがあります (例については [objects.json](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/objects.json) を参照してください) :
+
+```bash
+cat objects.json
+```
+
+```response
+{
+  "a": {
+    "path":"April_25,_2017",
+    "month":"2018-01-01",
+    "hits":2
+  },
+  "b": {
+    "path":"Akahori_Station",
+    "month":"2016-06-01",
+    "hits":11
+  },
+  ...
+}
+```
+
+ClickHouseでは、[`JSONObjectEachRow`](/ja/reference/formats/JSON/JSONObjectEachRow)フォーマットを使用して、この種のデータを読み込めます：
+
+```sql
+INSERT INTO sometable FROM INFILE 'objects.json' FORMAT JSONObjectEachRow;
+SELECT * FROM sometable;
+```
+
+```response
+┌─path────────────┬──────month─┬─hits─┐
+│ Abducens_palsy  │ 2016-05-01 │   28 │
+│ Akahori_Station │ 2016-06-01 │   11 │
+│ April_25,_2017  │ 2018-01-01 │    2 │
+└─────────────────┴────────────┴──────┘
+```
+
+<div id="specifying-parent-object-key-values">
+  ### 親オブジェクトのキー値を指定する
+</div>
+
+親オブジェクトのキーの値もテーブルに保存したいとします。この場合、キー値の保存先となるカラム名を指定するには、[次のオプション](/ja/reference/settings/formats#format_json_object_each_row_column_for_object_name)を使用できます。
+
+```sql
+SET format_json_object_each_row_column_for_object_name = 'id'
+```
+
+ここで、[`file()`](/ja/reference/functions/regular-functions/files#file)関数を使って、元のJSONファイルからどのデータが読み込まれるのかを確認できます。
+
+```sql
+SELECT * FROM file('objects.json', JSONObjectEachRow)
+```
+
+```response
+┌─id─┬─path────────────┬──────month─┬─hits─┐
+│ a  │ April_25,_2017  │ 2018-01-01 │    2 │
+│ b  │ Akahori_Station │ 2016-06-01 │   11 │
+│ c  │ Abducens_palsy  │ 2016-05-01 │   28 │
+└────┴─────────────────┴────────────┴──────┘
+```
+
+`id` カラムにキーの値が正しく格納されていることに注目してください。
+
+<div id="json-arrays">
+  ## JSON配列
+</div>
+
+容量を節約するために、JSONファイルがオブジェクトではなく配列としてエンコードされている場合があります。この場合は、[JSON配列のリスト](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/arrays.jsonl)を扱います。
+
+```bash
+cat arrays.json
+```
+
+```response
+["Akiba_Hebrew_Academy", "2017-08-01", 241],
+["Aegithina_tiphia", "2018-02-01", 34],
+["1971-72_Utah_Stars_season", "2016-10-01", 1]
+```
+
+この場合、ClickHouse はこのデータを読み込み、配列内の順序に基づいて各値を対応するカラムに対応付けます。これには、[`JSONCompactEachRow`](/ja/reference/formats/JSON/JSONCompactEachRow) フォーマットを使用します。
+
+```sql
+SELECT * FROM sometable
+```
+
+```response
+┌─c1────────────────────────┬─────────c2─┬──c3─┐
+│ Akiba_Hebrew_Academy      │ 2017-08-01 │ 241 │
+│ Aegithina_tiphia          │ 2018-02-01 │  34 │
+│ 1971-72_Utah_Stars_season │ 2016-10-01 │   1 │
+└───────────────────────────┴────────────┴─────┘
+```
+
+<div id="importing-individual-columns-from-json-arrays">
+  ### JSON配列から個々のカラムをインポートする
+</div>
+
+場合によっては、データが行単位ではなくカラム単位でエンコードされることがあります。この場合、親のJSONオブジェクトには値を格納したカラムが含まれます。[次のファイル](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/columns.json)を見てみましょう。
+
+```bash
+cat columns.json
+```
+
+```response
+{
+  "path": ["2007_Copa_America", "Car_dealerships_in_the_USA", "Dihydromyricetin_reductase"],
+  "month": ["2016-07-01", "2015-07-01", "2015-07-01"],
+  "hits": [178, 11, 1]
+}
+```
+
+ClickHouse は、そのようにフォーマットされたデータを解析するために [`JSONColumns`](/ja/reference/formats/JSON/JSONColumns) フォーマットを使用します。
+
+```sql
+SELECT * FROM file('columns.json', JSONColumns)
+```
+
+```response
+┌─path───────────────────────┬──────month─┬─hits─┐
+│ 2007_Copa_America          │ 2016-07-01 │  178 │
+│ Car_dealerships_in_the_USA │ 2015-07-01 │   11 │
+│ Dihydromyricetin_reductase │ 2015-07-01 │    1 │
+└────────────────────────────┴────────────┴──────┘
+```
+
+オブジェクトではなく[カラムの配列](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/columns-array.json)を扱う場合は、[`JSONCompactColumns`](/ja/reference/formats/JSON/JSONCompactColumns)フォーマットによる、よりコンパクトな形式もサポートされています。
+
+```sql
+SELECT * FROM file('columns-array.json', JSONCompactColumns)
+```
+
+```response
+┌─c1──────────────┬─────────c2─┬─c3─┐
+│ Heidenrod       │ 2017-01-01 │ 10 │
+│ Arthur_Henrique │ 2016-11-01 │ 12 │
+│ Alan_Ebnother   │ 2015-11-01 │ 66 │
+└─────────────────┴────────────┴────┘
+```
+
+<div id="saving-json-objects-instead-of-parsing">
+  ## JSON オブジェクトをパースせずに保存する
+</div>
+
+JSON オブジェクトをパースせず、単一の `String` (または `JSON`) カラムに保存したいケースもあります。これは、構造が異なる JSON オブジェクトのリストを扱う場合に便利です。たとえば、[このファイル](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/custom.json) には、1 つの親配列の中に複数の異なる JSON オブジェクトが含まれています。
+
+```bash
+cat custom.json
+```
+
+```response
+[
+  {"name": "Joe", "age": 99, "type": "person"},
+  {"url": "/my.post.MD", "hits": 1263, "type": "post"},
+  {"message": "Warning on disk usage", "type": "log"}
+]
+```
+
+元のJSONオブジェクトは次のテーブルに保存します。
+
+```sql
+CREATE TABLE events
+(
+    `data` String
+)
+ENGINE = MergeTree
+ORDER BY ()
+```
+
+これで、JSONオブジェクトをパースせずそのまま保持するために、[`JSONAsString`](/ja/reference/formats/JSON/JSONAsString) フォーマットを使って、ファイルからこのテーブルにデータを読み込めます。
+
+```sql
+INSERT INTO events (data)
+FROM INFILE 'custom.json'
+FORMAT JSONAsString
+```
+
+そして、保存されたオブジェクトをクエリするには、[JSON 関数](/ja/reference/functions/regular-functions/json-functions) を使用できます。
+
+```sql
+SELECT
+    JSONExtractString(data, 'type') AS type,
+    data
+FROM events
+```
+
+```response
+┌─type───┬─data─────────────────────────────────────────────────┐
+│ person │ {"name": "Joe", "age": 99, "type": "person"}         │
+│ post   │ {"url": "/my.post.MD", "hits": 1263, "type": "post"} │
+│ log    │ {"message": "Warning on disk usage", "type": "log"}  │
+└────────┴──────────────────────────────────────────────────────┘
+```
+
+`JSONAsString` は、1行ごとに1つのJSONオブジェクトを含む形式のファイル (通常は `JSONEachRow` フォーマットで使用) であれば、問題なく動作します。
+
+<div id="schema-for-nested-objects">
+  ## ネストされたオブジェクトのスキーマ
+</div>
+
+[ネストされた JSON オブジェクト](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list-nested.json) を扱う場合は、明示的にスキーマを定義し、複合型 ([`Array`](/ja/reference/data-types/array)、[`JSON`](/ja/guides/clickhouse/data-formats/json/intro)、[`Tuple`](/ja/reference/data-types/tuple)) を使用してデータを読み込むことができます。
+
+```sql
+SELECT *
+FROM file('list-nested.json', JSONEachRow, 'page Tuple(path String, title String, owner_id UInt16), month Date, hits UInt32')
+LIMIT 1
+```
+
+```response
+┌─page───────────────────────────────────────────────┬──────month─┬─hits─┐
+│ ('Akiba_Hebrew_Academy','Akiba Hebrew Academy',12) │ 2017-08-01 │  241 │
+└────────────────────────────────────────────────────┴────────────┴──────┘
+```
+
+<div id="accessing-nested-json-objects">
+  ## ネストされたJSONオブジェクトへのアクセス
+</div>
+
+[以下の設定オプション](/ja/reference/settings/formats#input_format_import_nested_json)を有効にすると、[ネストされたJSONキー](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list-nested.json)を参照できます。
+
+```sql
+SET input_format_import_nested_json = 1
+```
+
+これにより、ネストされたJSONオブジェクトのキーをドット記法で参照できます (使用するにはバッククォートで囲む必要がある点に注意してください) :
+
+```sql
+SELECT *
+FROM file('list-nested.json', JSONEachRow, '`page.owner_id` UInt32, `page.title` String, month Date, hits UInt32')
+LIMIT 1
+```
+
+```results
+┌─page.owner_id─┬─page.title───────────┬──────month─┬─hits─┐
+│            12 │ Akiba Hebrew Academy │ 2017-08-01 │  241 │
+└───────────────┴──────────────────────┴────────────┴──────┘
+```
+
+この方法なら、ネストされたJSONオブジェクトをフラット化したり、その中の一部の値を個別のカラムとして保存したりできます。
+
+<div id="skipping-unknown-columns">
+  ## 不明なカラムをスキップする
+</div>
+
+デフォルトでは、ClickHouse は JSON データのインポート時に不明なカラムを無視します。では、`month` カラムのないテーブルに元のファイルをインポートしてみましょう。
+
+```sql
+CREATE TABLE shorttable
+(
+    `path` String,
+    `hits` UInt32
+)
+ENGINE = MergeTree
+ORDER BY path
+```
+
+3 つのカラムを持つ [元の JSON データ](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list.json) は、このテーブルにそのまま挿入できます:
+
+```sql
+INSERT INTO shorttable FROM INFILE 'list.json' FORMAT JSONEachRow;
+SELECT * FROM shorttable
+```
+
+```response
+┌─path──────────────────────┬─hits─┐
+│ 1971-72_Utah_Stars_season │    1 │
+│ Aegithina_tiphia          │   34 │
+│ Akiba_Hebrew_Academy      │  241 │
+└───────────────────────────┴──────┘
+```
+
+ClickHouse はインポート時に不明なカラムを無視します。この動作は、設定オプション [input&#95;format&#95;skip&#95;unknown&#95;fields](/ja/reference/settings/formats#input_format_skip_unknown_fields) で無効にできます。
+
+```sql
+SET input_format_skip_unknown_fields = 0;
+INSERT INTO shorttable FROM INFILE 'list.json' FORMAT JSONEachRow;
+```
+
+```response
+Ok.
+Exception on client:
+Code: 117. DB::Exception: Unknown field found while parsing JSONEachRow format: month: (in file/uri /data/clickhouse/user_files/list.json): (at row 1)
+```
+
+ClickHouse は、JSON とテーブルのカラム構造が一致しない場合に例外を発生させます。
+
+<div id="bson">
+  ## BSON
+</div>
+
+ClickHouse では、[BSON](https://bsonspec.org/) でエンコードされたファイルへのデータのエクスポートと、そこからのデータのインポートが可能です。このフォーマットは、一部の DBMS、たとえば [MongoDB](https://github.com/mongodb/mongo) データベースで使用されています。
+
+BSON データをインポートするには、[BSONEachRow](/ja/reference/formats/BSONEachRow) フォーマットを使用します。[この BSON ファイル](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.bson) からデータをインポートしてみましょう。
+
+```sql
+SELECT * FROM file('data.bson', BSONEachRow)
+```
+
+```response
+┌─path──────────────────────┬─month─┬─hits─┐
+│ Bob_Dolman                │ 17106 │  245 │
+│ 1-krona                   │ 17167 │    4 │
+│ Ahmadabad-e_Kalij-e_Sofla │ 17167 │    3 │
+└───────────────────────────┴───────┴──────┘
+```
+
+同じフォーマットを使って、BSONファイルにエクスポートすることもできます。
+
+```sql
+SELECT *
+FROM sometable
+INTO OUTFILE 'out.bson'
+FORMAT BSONEachRow
+```
+
+その後、データが `out.bson` ファイルに書き出されます。

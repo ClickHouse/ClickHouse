@@ -1,4 +1,3 @@
-import pytest
 
 from helpers.iceberg_utils import (
     write_iceberg_from_df,

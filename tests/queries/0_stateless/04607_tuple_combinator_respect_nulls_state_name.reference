@@ -1,0 +1,10 @@
+AggregateFunction(any_respect_nullsTuple, Tuple(UInt32))
+AggregateFunction(any_respect_nullsTuple, Tuple(UInt32))
+AggregateFunction(anyTuple, Tuple(UInt32))
+1
+(5)
+(0)
+AggregateFunction(countTuple, Tuple(Nullable(Nothing), UInt64))
+AggregateFunction(countTuple, Tuple(UInt64, Nullable(Nothing)))
+(0,3)
+AggregateFunction(any_respect_nullsTuple, Tuple(Nullable(UInt32), UInt64))

@@ -1,0 +1,68 @@
+---
+title: 'BYOC 运行与维护'
+slug: /cloud/reference/byoc/operations
+sidebarTitle: '运行与维护'
+keywords: ['BYOC', '云', '自备 Cloud', '运行', '维护']
+description: '在您自己的云基础设施中部署 ClickHouse'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 概述
+</div>
+
+ClickHouse Cloud 会为您的 BYOC 部署统一管理升级和维护，确保您的服务始终安全、性能稳定，并保持最新。本页介绍 BYOC 基础设施中不同组件的升级流程，以及维护窗口的运作方式。
+
+<div id="clickhouse-upgrade-process">
+  ## ClickHouse 服务升级流程
+</div>
+
+我们会定期升级 ClickHouse 数据库，包括版本升级、缺陷修复和性能提升。ClickHouse Cloud 在升级时采用[&quot;先建后拆&quot; (MBB) ](/zh/products/cloud/features/autoscaling/make-before-break)方法，即在移除旧副本之前先添加更新后的副本，从而使升级过程更加平滑，并尽量减少对正在运行的工作负载的影响。
+
+BYOC 中的 ClickHouse 服务升级遵循与标准 ClickHouse Cloud 服务相同的流程和模式，包括支持发布渠道 (Fast、Regular 和 Slow) 以及预定的维护窗口。BYOC 部署提供 Scale 和 Enterprise 层级的全部功能。有关升级计划、发布渠道和维护窗口的详细信息，请参阅[升级文档](/zh/products/cloud/features/admin-features/upgrades)。
+
+<div id="cloud-upgrade-process">
+  ## Cloud 服务和资源升级流程
+</div>
+
+ClickHouse Cloud 会定期升级运行在 Kubernetes 上的支持服务，以及您的 BYOC 部署中的基础设施组件，以确保安全性、可靠性，并可获取新功能。这些服务升级会在后台执行，并与我们标准的 Cloud 发布计划保持一致。所有支持服务均通过 ArgoCD 管理，且升级设计为无中断。预计这些更新期间不会发生服务中断。
+
+升级的云服务示例包括：
+
+* **ClickHouse Operator**：用于管理 ClickHouse 集群的 Kubernetes Operator
+* **Istio Services**：入口 Ingress 和 agent 组件
+* **Monitoring Stack**：Prometheus、Grafana、AlertManager 和 Thanos 组件
+
+<div id="k8s-upgrade-process">
+  ## Kubernetes 集群升级流程
+</div>
+
+承载您的 ClickHouse 服务的 Kubernetes 集群 (AWS 使用 EKS，GCP 使用 GKE) 需要定期升级，以确保安全性、兼容性并获得新功能。对于您的 BYOC 部署，ClickHouse Cloud 会负责所有 Kubernetes 集群升级，确保您的集群始终保持在受支持的版本范围内。
+
+<div id="cluster-upgrade-types">
+  ### 集群升级类型
+</div>
+
+**控制平面升级**：Kubernetes 控制平面组件 (API server、etcd、controller manager) 的升级由 ClickHouse Cloud 负责。这类升级通常对您的工作负载无感知，也无需重启 pod (容器组) 。
+
+**节点组升级**：工作节点升级需要替换节点，这可能会影响正在运行的 Pod (容器组) 。ClickHouse Cloud 采用“先建后拆”的方式协调此类升级，以尽可能减少中断：
+
+* 在移除旧节点之前，先使用更新后的 Kubernetes 版本预配新节点
+* 将 Pod (容器组) 平稳腾空并迁移到新节点
+* 只有在 Pod (容器组) 成功迁移后，才会终止旧节点
+
+<Note>
+  在迁移过程中，Kubernetes 节点升级可能会导致 pod (容器组) 短暂重启。ClickHouse Cloud 使用 Pod 中断预算和优雅停机来尽可能减少对您的工作负载的影响。
+</Note>
+
+<div id="upgrade-schedule">
+  ### 升级安排
+</div>
+
+Kubernetes 集群升级将由 ClickHouse 支持团队与您协调安排。我们会提前与您沟通升级计划，并共同确定合适的维护窗口，以尽量降低对业务运行的影响。
+
+<div id="version-support">
+  ### 版本支持
+</div>
+
+ClickHouse Cloud 会将 Kubernetes 集群维持在您的云服务提供商 (AWS EKS 或 Google GKE) 规定的受支持版本范围内。我们会确保您的集群在满足提供商要求的同时，及时获得安全补丁和功能更新。

@@ -6,7 +6,7 @@ temp_dir = f"{Utils.cwd()}/ci/tmp"
 
 
 class CoverageExporter:
-    LOGS_SAVER_CLIENT_OPTIONS = "--max_memory_usage 10G --max_threads 1 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0 --max_execution_time 0 --max_execution_time_leaf 0 --max_estimated_execution_time 0"
+    LOGS_SAVER_CLIENT_OPTIONS = "--max_memory_usage 10G --max_threads 1 --max_result_rows 0 --max_result_bytes 0 --max_rows_to_read 0 --max_rows_to_read_leaf 0 --max_bytes_to_read 0 --max_execution_time 0 --max_execution_time_leaf 0 --max_estimated_execution_time 0"
 
     def __init__(
         self,
@@ -47,7 +47,7 @@ class CoverageExporter:
         #
         #   [2]: https://github.com/ClickHouse/ClickHouse/issues/77320
         #
-        command_args_post = f"-- --zookeeper.implementation=testkeeper"
+        command_args_post = "-- --zookeeper.implementation=testkeeper"
 
         Shell.check(
             f"rm -rf {temp_dir}/system_tables && mkdir -p {temp_dir}/system_tables"

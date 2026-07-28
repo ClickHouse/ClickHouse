@@ -2,6 +2,8 @@
 #include <Core/Streaming/CursorTree.h>
 
 #include <Common/Exception.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/join.hpp>
@@ -21,7 +23,7 @@ namespace ErrorCodes
 namespace
 {
 
-void collapseTreeImpl(std::map<String, Int64> & collapsed_tree, std::vector<String> & path, CursorTreeNode * node)
+void collapseTreeImpl(MapWithMemoryTracking<String, Int64> & collapsed_tree, VectorWithMemoryTracking<String> & path, CursorTreeNode * node)
 {
     for (const auto & [k, v] : *node)
     {
@@ -36,10 +38,10 @@ void collapseTreeImpl(std::map<String, Int64> & collapsed_tree, std::vector<Stri
     }
 }
 
-std::map<String, Int64> collapseTree(CursorTreeNode * node)
+MapWithMemoryTracking<String, Int64> collapseTree(CursorTreeNode * node)
 {
-    std::map<String, Int64> collapsed_tree;
-    std::vector<String> path;
+    MapWithMemoryTracking<String, Int64> collapsed_tree;
+    VectorWithMemoryTracking<String> path;
 
     collapseTreeImpl(collapsed_tree, path, node);
 
@@ -156,7 +158,7 @@ CursorTreeNode::Data::const_iterator CursorTreeNode::end() const
 Map cursorTreeToMap(const CursorTreeNodePtr & ptr)
 {
     chassert(ptr != nullptr);
-    std::map<String, Int64> collapsed_tree = collapseTree(ptr.get());
+    MapWithMemoryTracking<String, Int64> collapsed_tree = collapseTree(ptr.get());
     Map result;
 
     for (const auto & [k, v] : collapsed_tree)
@@ -175,7 +177,7 @@ CursorTreeNodePtr buildCursorTree(const Map & collapsed_tree)
         const auto & dotted_path = tuple.at(0).safeGet<String>();
         const auto & value = tuple.at(1).safeGet<Int64>();
 
-        std::vector<String> path;
+        VectorWithMemoryTracking<String> path;
         boost::split(path, dotted_path, boost::is_any_of("."));
 
         CursorTreeNode * node = root.get();

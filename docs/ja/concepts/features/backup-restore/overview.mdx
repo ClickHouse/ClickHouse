@@ -1,0 +1,320 @@
+---
+description: 'ClickHouse のバックアップと復元の概要'
+sidebarTitle: '概要'
+slug: /operations/backup/overview
+title: 'ClickHouse のバックアップと復元'
+doc_type: 'reference'
+---
+
+import GenericSettings from '/snippets/ja/_generic_settings.mdx';
+import Syntax from '/snippets/ja/_syntax.mdx';
+import AzureSettings from '/snippets/ja/_azure_settings.mdx';
+import S3Settings from '/snippets/ja/_s3_settings.mdx';
+
+> このセクションでは、ClickHouse におけるバックアップと復元の概要を説明します。各バックアップ方法のより
+> 詳細な説明については、サイドバーにある各方法のページを参照してください。
+
+<div id="introduction">
+  ## はじめに
+</div>
+
+[レプリケーション](/ja/reference/engines/table-engines/mergetree-family/replication) はハードウェア障害に対する保護を提供しますが、人的ミスまでは防げません。たとえば、データの誤削除、誤った
+テーブルの削除、誤ったクラスター上のテーブルの削除、さらに不正な
+データ処理やデータ破損を引き起こすソフトウェアバグなどです。
+
+多くの場合、このようなミスはすべてのレプリカに影響します。ClickHouse には一部の種類のミスを防ぐための
+組み込みの安全策があります。たとえば、[デフォルト](/ja/reference/settings/session-settings#max_table_size_to_drop)
+では、50 Gb を超えるデータを含む `MergeTree` ファミリーのエンジンを使用するテーブルを
+そのまま削除することはできません。とはいえ、こうした安全策ですべてのケースを
+カバーできるわけではなく、問題が発生する可能性は残ります。
+
+想定される人的ミスを効果的に軽減するには、
+データのバックアップと復元のための戦略を**あらかじめ**慎重に準備しておく必要があります。
+
+利用できるリソースや業務要件は会社ごとに異なるため、
+あらゆる状況に適した ClickHouse のバックアップと復元の万能な解決策は
+存在しません。1 ギガバイトのデータに有効な方法が、数十
+PB のデータには通用しない可能性があります。考えられるアプローチにはそれぞれ長所と短所が
+あり、このドキュメントのこのセクションで紹介しています。さまざまな
+欠点を補うために、1 つだけでなく複数のアプローチを併用することをお勧めします。
+
+<Note>
+  何かをバックアップしても、一度も復元を試したことがない場合、
+  実際に必要になったときに復元が正しく動作しない可能性があります (少なくとも、
+  業務で許容できるよりも長い時間がかかるでしょう) 。したがって、どのバックアップ
+  アプローチを選ぶ場合でも、復元プロセスも自動化し、定期的に予備の
+  ClickHouse クラスターで復元手順を検証してください。
+</Note>
+
+以下のページでは、ClickHouse で利用可能なさまざまなバックアップおよび
+復元方法について詳しく説明しています。
+
+| Page                                                                                    | Description                                            |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| [ローカルディスクまたは S3 disk を使用したバックアップ/復元](/ja/concepts/features/backup-restore/local-disk)      | ローカルディスクまたは S3 disk への、またはそれらからのバックアップ/復元について詳しく説明します  |
+| [S3 エンドポイントを使用したバックアップ/復元](/ja/concepts/features/backup-restore/s3-endpoint)               | S3 エンドポイントへの、またはそこからのバックアップ/復元について詳しく説明します             |
+| [AzureBlobStorage を使用したバックアップ/復元](/ja/concepts/features/backup-restore/azure-blob-storage) | Azure blob storage への、またはそこからのバックアップ/復元について詳しく説明します    |
+| [代替手法](/ja/concepts/features/backup-restore/alternative-methods)                           | 代替のバックアップ方法について説明します                                   |
+| [スナップショットバックアップ](/ja/concepts/features/backup-restore/snapshot)                            | クラウドオブジェクトストレージを使用する SharedMergeTree テーブル向けの軽量スナップショット |
+
+バックアップは次のように分類できます。
+
+* [フルまたは増分](#backup-types)
+* [同期または非同期](#synchronous-vs-asynchronous)
+* [同時実行または非同時実行](#concurrent-vs-non-concurrent)
+* [圧縮または非圧縮](#compressed-vs-uncompressed)
+* [named collections](#using-named-collections) を使用
+* パスワードで保護
+* [システムテーブル、ログテーブル、または アクセス管理テーブル](#system-backups) のバックアップを取得
+
+<div id="backup-types">
+  ## バックアップの種類
+</div>
+
+バックアップには、フルバックアップと増分バックアップがあります。フルバックアップはデータの完全なコピーであり、増分バックアップは直近のフルバックアップ以降に変更されたデータの差分です。
+
+フルバックアップには、単純で独立性が高く (ほかのバックアップに依存せず) 、信頼性の高い復旧方法であるという利点があります。ただし、完了までに時間がかかる場合があり、多くの容量を消費することもあります。一方、増分バックアップは時間と容量の両面でより効率的ですが、データを復元するには、関連するバックアップがすべて利用可能である必要があります。
+
+要件に応じて、次の方法を検討できます。
+
+* **フルバックアップ**: 小規模なデータベースや重要なデータ向け。
+* **増分バックアップ**: 大規模なデータベース向け、またはバックアップを高頻度かつコスト効率よく実行する必要がある場合。
+* **両方**: たとえば、毎週フルバックアップを実行し、毎日増分バックアップを実行します。
+
+<div id="synchronous-vs-asynchronous">
+  ## 同期バックアップと非同期バックアップ
+</div>
+
+`BACKUP` コマンドと `RESTORE` コマンドには、`ASYNC` を指定することもできます。この場合、
+バックアップコマンドはすぐに制御を返し、バックアップ処理はバックグラウンドで実行されます。
+コマンドに `ASYNC` を指定しない場合、バックアップ処理は同期的に実行され、
+バックアップが完了するまでコマンドは待機します。
+
+<div id="concurrent-vs-non-concurrent">
+  ## 同時実行バックアップと非同時実行バックアップ
+</div>
+
+デフォルトでは、ClickHouse はバックアップと復元の同時実行を許可しています。つまり、
+複数のバックアップまたは復元操作を同時に開始できます。ただし、この動作を
+無効にできるサーバーレベルの設定もあります。これらの設定を false にすると、
+クラスター上で同時に実行できるバックアップまたは復元操作は 1 つだけになります。
+これにより、リソースの競合や、操作間で発生しうる競合を回避しやすくなります。
+
+バックアップ/復元の同時実行を無効にするには、それぞれ次の設定を使用できます:
+
+```xml
+<clickhouse>
+    <backups>
+        <allow_concurrent_backups>false</allow_concurrent_backups>
+        <allow_concurrent_restores>false</allow_concurrent_restores>
+    </backups>
+</clickhouse>
+```
+
+両方のデフォルト値は true であるため、デフォルトではバックアップ/復元の同時実行が
+許可されています。クラスターでこれらの設定が false の場合、そのクラスターでは一度に
+実行できるバックアップ/復元は 1 つだけです。
+
+<div id="compressed-vs-uncompressed">
+  ## 圧縮バックアップと非圧縮バックアップ
+</div>
+
+ClickHouse のバックアップでは、`compression_method` および `compression_level` 設定により圧縮を利用できます。
+
+バックアップの作成時には、以下を指定できます。
+
+```sql
+BACKUP TABLE test.table
+  TO Disk('backups', 'filename.zip')
+  SETTINGS compression_method='lzma', compression_level=3
+```
+
+<div id="using-named-collections">
+  ## named collections の使用
+</div>
+
+named collections を使用すると、バックアップ/復元操作で再利用できるキー・バリューの組 (S3 の認証情報、エンドポイント、設定など) を保存できます。
+これにより、次のことが可能になります。
+
+* 管理者アクセス権のないユーザーに認証情報を見せない
+* 複雑な構成を一元管理して、コマンドを簡素化する
+* 操作間の一貫性を保つ
+* クエリログに認証情報が露出するのを防ぐ
+
+詳細については、[&quot;named collections&quot;](/ja/concepts/features/configuration/server-config/named-collections) を参照してください。
+
+<div id="system-backups">
+  ## システム、ログ、またはアクセス管理テーブルのバックアップ
+</div>
+
+システムテーブルもバックアップおよび復元のワークフローに含めることができますが、
+含めるかどうかは、具体的なユースケースによって異なります。
+
+`_log` 接尾辞を持つもの (たとえば
+`query_log`、`part_log`) など、履歴データを格納するシステムテーブルは、
+他のテーブルと同様にバックアップおよび復元できます。
+ユースケース上、履歴データの分析が必要な場合、たとえば `query_log` を使って
+クエリのパフォーマンスを追跡したり問題をデバッグしたりする場合は、これらの
+テーブルをバックアップ戦略に含めることを推奨します。ただし、これらのテーブルの履歴データが
+不要であれば、バックアップの保存容量を節約するために除外できます。
+
+users、ロール、row&#95;policies、
+settings&#95;profiles、quotas などのアクセス管理に関連するシステムテーブルは、バックアップおよび復元操作時に
+特別な扱いを受けます。
+これらのテーブルがバックアップに含まれると、その内容は特別な
+`accessXX.txt` ファイルにエクスポートされ、このファイルにはアクセスエンティティの作成と
+設定に対応する SQL ステートメントがまとめられます。復元時には、復元処理が
+これらのファイルを解釈し、SQL コマンドを再適用して users、
+ロール、その他の設定を再作成します。この機能により、
+ClickHouse クラスターのアクセス制御設定を、
+クラスター全体の構成の一部としてバックアップおよび復元できます。
+
+この機能は、SQL コマンドで管理される構成に対してのみ動作します
+([&quot;SQL-driven Access Control and Account Management&quot;](/ja/concepts/features/security/access-rights#enabling-access-control) と呼ばれます) 。
+ClickHouse server の設定ファイル (例: `users.xml`) で定義されたアクセス設定は
+バックアップに含まれず、この方法では復元できません。
+
+<div id="syntax">
+  ## 基本構文
+</div>
+
+<Syntax />
+
+<div id="command-summary">
+  ### コマンド概要
+</div>
+
+上記の各コマンドの詳細は以下のとおりです。
+
+| **Command**                                                            | **Description**                                                                                       |   |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | - |
+| `BACKUP`                                                               | 指定したオブジェクトのバックアップを作成します                                                                               |   |
+| `RESTORE`                                                              | バックアップからオブジェクトを復元します                                                                                  |   |
+| `TABLE [db.]table_name [AS [db.]table_name_in_backup]`                 | 特定のテーブルをバックアップまたは復元します (名前の変更可)                                                                       |   |
+| `[PARTITION[S] partition_expr [,...]]`                                 | テーブルの特定のパーティションのみをバックアップまたは復元します                                                                      |   |
+| `DICTIONARY [db.]dictionary_name [AS [db.]name_in_backup]`             | Dictionaryオブジェクトをバックアップまたは復元します                                                                       |   |
+| `DATABASE database_name [AS database_name_in_backup]`                  | データベース全体をバックアップまたは復元します (名前の変更可)                                                                      |   |
+| `TEMPORARY TABLE table_name [AS table_name_in_backup]`                 | 一時テーブルをバックアップまたは復元します (名前の変更可)                                                                        |   |
+| `VIEW view_name [AS view_name_in_backup]`                              | ビューをバックアップまたは復元します (名前の変更可)                                                                           |   |
+| `[EXCEPT TABLES ...]`                                                  | データベースのバックアップ時に特定のテーブルを除外します                                                                          |   |
+| `ALL`                                                                  | すべて (すべてのデータベース、テーブルなど) をバックアップまたは復元します。ClickHouse バージョン 23.4 より前では、`ALL` は `RESTORE` コマンドでのみ使用可能でした。 |   |
+| `[EXCEPT {TABLES\|DATABASES}...]`                                      | `ALL` 使用時に特定のテーブルまたはデータベースを除外します                                                                      |   |
+| `[ON CLUSTER 'cluster_name']`                                          | ClickHouse クラスター全体でバックアップまたは復元を実行します                                                                  |   |
+| `TO\|FROM`                                                             | 方向：バックアップの宛先には `TO`、復元元には `FROM` を使用します                                                               |   |
+| `File('<path>/<filename>')`                                            | ローカルファイルシステムに保存、またはローカルファイルシステムから復元します                                                                |   |
+| `Disk('<disk_name>', '<path>/')`                                       | 設定済みディスクに保存、または設定済みディスクから復元します                                                                        |   |
+| `S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')` | Amazon S3 または S3-compatible ストレージに保存、またはそこから復元します                                                     |   |
+| `[SETTINGS ...]`                                                       | Settings の完全な一覧は以下を参照してください                                                                           |   |
+| `[ASYNC]`                                                              | 操作を非同期で実行します (すぐに制御が返り、監視可能な ID が返されます)                                                               |   |
+
+<div id="settings">
+  ### 設定
+</div>
+
+**共通のバックアップ／復元設定**
+
+<GenericSettings />
+
+**S3固有の設定**
+
+<S3Settings />
+
+**Azure固有の設定**
+
+<AzureSettings />
+
+<div id="check-the-status-of-backups">
+  ## 管理とトラブルシューティング
+</div>
+
+backup コマンドは `id` と `status` を返し、その `id` を使って
+バックアップのステータスを取得できます。これは、長時間かかる
+`ASYNC` バックアップの進行状況を確認する際に非常に便利です。以下の例は、
+既存のバックアップファイルを上書きしようとしたときに発生したエラーを示しています。
+
+```sql
+BACKUP TABLE helloworld.my_first_table TO Disk('backups', '1.zip') ASYNC
+```
+
+```response
+┌─id───────────────────────────────────┬─status──────────┐
+│ 7678b0b3-f519-4e6e-811f-5a0781a4eb52 │ CREATING_BACKUP │
+└──────────────────────────────────────┴─────────────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+```sql
+SELECT
+*
+FROM system.backups
+WHERE id='7678b0b3-f519-4e6e-811f-5a0781a4eb52'
+FORMAT Vertical
+```
+
+```response highlight={5,9}
+Row 1:
+──────
+id:                7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:              Disk('backups', '1.zip')
+status:            BACKUP_FAILED
+num_files:         0
+uncompressed_size: 0
+compressed_size:   0
+error:             Code: 598. DB::Exception: Backup Disk('backups', '1.zip') already exists. (BACKUP_ALREADY_EXISTS) (version 22.8.2.11 (official build))
+start_time:        2022-08-30 09:21:46
+end_time:          2022-08-30 09:21:46
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+[`system.backups`](/ja/reference/system-tables/backups) テーブルに加え、すべてのバックアップおよび復元操作は、システムログテーブル
+[`system.backup_log`](/ja/reference/system-tables/backup_log) にも記録されます:
+
+```sql
+SELECT *
+FROM system.backup_log
+WHERE id = '7678b0b3-f519-4e6e-811f-5a0781a4eb52'
+ORDER BY event_time_microseconds ASC
+FORMAT Vertical
+```
+
+```response highlight={26}
+Row 1:
+──────
+event_date:              2023-08-18
+event_time_microseconds: 2023-08-18 11:13:43.097414
+id:                      7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:                    Disk('backups', '1.zip')
+status:                  CREATING_BACKUP
+error:
+start_time:              2023-08-18 11:13:43
+end_time:                1970-01-01 03:00:00
+num_files:               0
+total_size:              0
+num_entries:             0
+uncompressed_size:       0
+compressed_size:         0
+files_read:              0
+bytes_read:              0
+
+Row 2:
+──────
+event_date:              2023-08-18
+event_time_microseconds: 2023-08-18 11:13:43.174782
+id:                      7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:                    Disk('backups', '1.zip')
+status:                  BACKUP_FAILED
+error:                   Code: 598. DB::Exception: Backup Disk('backups', '1.zip') already exists. (BACKUP_ALREADY_EXISTS) (version 23.8.1.1)
+start_time:              2023-08-18 11:13:43
+end_time:                2023-08-18 11:13:43
+num_files:               0
+total_size:              0
+num_entries:             0
+uncompressed_size:       0
+compressed_size:         0
+files_read:              0
+bytes_read:              0
+
+2 rows in set. Elapsed: 0.075 sec.
+```

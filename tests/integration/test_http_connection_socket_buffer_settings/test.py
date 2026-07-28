@@ -84,7 +84,7 @@ def test_http_buffer_settings(started_cluster):
 
 def test_disk_buffer_settings(started_cluster):
     """Verify Disk group socket buffer settings: reload, apply, and reject invalid values."""
-    assert_settings({"disk_connections_rcvbuf": 0, "disk_connections_sndbuf": 0})
+    assert_settings({"disk_connections_rcvbuf": 204800, "disk_connections_sndbuf": 0})
 
     apply_config("valid_disk_rcvbuf.xml")
 

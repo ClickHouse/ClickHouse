@@ -31,45 +31,37 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"collection", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
             {"prompt", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
         };
         FunctionArgumentDescriptors optional_args{
-            {"system_prompt", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
-            {"temperature", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), &isColumnConst, "const Number"},
+            {"params", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringToStringMap), &isColumnConst, "const Map(String, String)"},
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
-        return wrapReturnTypeForNullablePrompt(arguments, prompt_arg_index, std::make_shared<DataTypeString>());
+        return wrapReturnTypeForNullablePrompt(arguments, 0, std::make_shared<DataTypeString>());
     }
 
 private:
     static constexpr float default_temp = 0.7f;
-    static constexpr size_t prompt_arg_index = 1;
-    static constexpr size_t system_prompt_arg_idx = 2;
-    static constexpr size_t temp_arg_idx = 3;
 
     String functionName() const override { return name; }
 
-    float defaultTemperature() const override { return default_temp; }
-    size_t promptArgumentIndex() const override { return prompt_arg_index; }
-    size_t temperatureArgumentIndex() const override { return temp_arg_idx; }
-
-    String buildSystemPrompt(const ColumnsWithTypeAndName & arguments) const override
+    AIParamSpecs functionParams() const override
     {
-        if (arguments.size() > system_prompt_arg_idx)
-        {
-            String system_prompt(arguments[system_prompt_arg_idx].column->getDataAt(0));
-            if (!system_prompt.empty())
-                return system_prompt;
-        }
+        return {
+            {"temperature", AIParamKind::Float, Field(static_cast<Float64>(default_temp))},
+            {"system_prompt", AIParamKind::String, Field(String(default_system_prompt))},
+        };
+    }
 
-        return default_system_prompt;
+    String buildSystemPrompt(const ColumnsWithTypeAndName &, const AIParams & params) const override
+    {
+        return params.getString("system_prompt");
     }
 
     String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
     {
-        return String(arguments[prompt_arg_index].column->getDataAt(row));
+        return String(arguments[0].column->getDataAt(row));
     }
 };
 
@@ -82,22 +74,24 @@ REGISTER_FUNCTION(AiGenerate)
 Generates free-form text content from a prompt using an LLM provider.
 
 The function sends the prompt to the configured AI provider and returns the generated text.
-An optional system prompt can be provided to guide the model's behavior (e.g. tone, format, role).
-If no system prompt is given, the default system prompt is: `)" + String(default_system_prompt) + R"(`
 
-The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
+Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
+are taken from the `credentials` key of the optional parameter map, or from the
+`ai_function_text_default_credentials` setting when the map omits it.
+
+The optional parameter map may also set `system_prompt` (an instruction that guides the model's
+behavior, e.g. tone, format, role), `temperature`, `max_tokens`, and `model`. If `system_prompt` is
+not set, the default is: `)" + String(default_system_prompt) + R"(`
 )",
-        .syntax = "aiGenerate(collection, prompt[, system_prompt[, temperature]])",
+        .syntax = "aiGenerate(prompt[, params])",
         .arguments
-        = {{"collection", "Name of a named collection containing provider credentials and configuration.", {"String"}},
-           {"prompt", "The user prompt or question to send to the model.", {"String"}},
-           {"system_prompt", "Optional constant system-level instruction that guides the model's behavior (e.g. persona, output format), sent along with each prompt.", {"String"}},
-           {"temperature", "Sampling temperature controlling randomness. Default: `0.7`.", {"Float64"}}},
+        = {{"prompt", "The user prompt or question to send to the model.", {"String"}},
+           {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.7`), `max_tokens` (maximum output tokens per call; default `1024`), `system_prompt` (constant system-level instruction guiding the model's behavior; default a generic assistant prompt). The common parameters `credentials` and `model` also apply (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}}},
         .returned_value = {"The generated text response, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples
-        = {{"Simple question", "SELECT aiGenerate('ai_credentials', 'What is 2 + 2? Reply with just the number.')", "4"},
-           {"With system prompt", "SELECT aiGenerate('ai_credentials', 'Explain ClickHouse', 'You are a database expert. Be concise.')", ""},
-           {"Summarize column values", "SELECT article_title, aiGenerate('ai_credentials', concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5", ""}},
+        = {{"Simple question", "SELECT aiGenerate('What is 2 + 2? Reply with just the number.')", "4"},
+           {"With explicit credentials and system prompt", "SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials', 'system_prompt', 'You are a database expert. Be concise.'))", ""},
+           {"Summarize column values", "SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5", ""}},
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::AI});
 

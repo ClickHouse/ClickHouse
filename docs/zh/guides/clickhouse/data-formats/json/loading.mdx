@@ -1,0 +1,234 @@
+---
+sidebarTitle: '加载 JSON'
+title: '使用 JSON'
+slug: /integrations/data-formats/json/loading
+description: '加载 JSON'
+keywords: ['json', 'ClickHouse', '插入', '加载', '插入']
+score: 15
+doc_type: 'guide'
+---
+
+以下示例演示了如何简单加载结构化和半结构化 JSON 数据。对于更复杂的 JSON (包括嵌套结构) ，请参阅指南 [**设计 JSON schema**](/zh/guides/clickhouse/data-formats/json/schema)。
+
+<div id="loading-structured-json">
+  ## 加载结构化 JSON
+</div>
+
+在本节中，我们假设 JSON 数据采用 [`NDJSON`](https://github.com/ndjson/ndjson-spec) (换行符分隔的 JSON) 格式，即 ClickHouse 中的 [`JSONEachRow`](/zh/reference/formats/JSON/JSONEachRow) 格式，且结构规整，即列名和类型固定不变。`NDJSON` 因其简洁性和高效的空间利用率，是加载 JSON 的首选格式，但系统同样支持其他格式用于[输入和输出](/zh/reference/formats/JSON/JSON)。
+
+请参考以下 JSON 样本，该样本代表 [Python PyPI dataset](https://clickpy.clickhouse.com/) 中的一行数据：
+
+```json
+{
+  "date": "2022-11-15",
+  "country_code": "ES",
+  "project": "clickhouse-connect",
+  "type": "bdist_wheel",
+  "installer": "pip",
+  "python_minor": "3.9",
+  "system": "Linux",
+  "version": "0.3.0"
+}
+```
+
+要将此 JSON 对象加载到 ClickHouse 中，必须先定义表的 schema。
+
+在这个简单的示例中，我们的结构是静态的，列名是已知的，类型也是明确定义的。
+
+虽然 ClickHouse 通过 JSON 类型支持半结构化数据 (键名及其类型均可动态变化) ，但在此处并无必要。
+
+<Info>
+  **尽可能优先使用静态 schema**
+
+  如果你的列名和类型都是固定的，且预计不会新增列，那么在生产环境中应始终优先使用静态定义的 schema。
+
+  对于动态性很高的数据，JSON type 是首选，因为列名和类型可能会发生变化。这种类型在原型设计和数据探索中也很有用。
+</Info>
+
+下面展示了一个简单的 schema，其中 **JSON 键映射到列名**：
+
+```sql
+CREATE TABLE pypi (
+  `date` Date,
+  `country_code` String,
+  `project` String,
+  `type` String,
+  `installer` String,
+  `python_minor` String,
+  `system` String,
+  `version` String
+)
+ENGINE = MergeTree
+ORDER BY (project, date)
+```
+
+<Info>
+  **排序键**
+
+  这里我们通过 `ORDER BY` 子句指定了一个排序键。有关排序键及其选择方法的更多信息，请参见[此处](/zh/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key)。
+</Info>
+
+ClickHouse 支持以多种格式加载 JSON 数据，并根据文件扩展名和内容自动推断类型。我们可以使用 [S3 函数](/zh/reference/functions/table-functions/s3) 读取上述表对应的 JSON 文件：
+
+```sql
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+LIMIT 1
+```
+
+```response
+┌───────date─┬─country_code─┬─project────────────┬─type────────┬─installer────┬─python_minor─┬─system─┬─version─┐
+│ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8 │
+└────────────┴──────────────┴────────────────────┴─────────────┴──────────────┴──────────────┴────────┴─────────┘
+
+1 row in set. Elapsed: 1.232 sec.
+```
+
+请注意，此处无需指定文件格式。我们使用 glob pattern 读取存储桶中所有 `*.json.gz` 文件，ClickHouse 会根据文件扩展名和内容自动推断格式为 `JSONEachRow` (ndjson) 。若 ClickHouse 无法自动检测格式，可通过参数函数手动指定。
+
+```sql
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+```
+
+<Info>
+  **压缩文件**
+
+  上述文件也可以是压缩文件。ClickHouse 会自动检测并处理。
+</Info>
+
+要加载这些文件中的数据行，可以使用 [`INSERT INTO SELECT`](/zh/reference/statements/insert-into#inserting-the-results-of-select)：
+
+```sql
+INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 10.445 sec. Processed 19.49 million rows, 35.71 MB (1.87 million rows/s., 3.42 MB/s.)
+```
+
+```sql
+SELECT * FROM pypi LIMIT 2
+```
+
+```response
+┌───────date─┬─country_code─┬─project────────────┬─type──┬─installer────┬─python_minor─┬─system─┬─version─┐
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │
+└────────────┴──────────────┴────────────────────┴───────┴──────────────┴──────────────┴────────┴─────────┘
+
+2 rows in set. Elapsed: 0.005 sec. Processed 8.19 thousand rows, 908.03 KB (1.63 million rows/s., 180.38 MB/s.)
+```
+
+也可以使用 [`FORMAT` 子句](/zh/reference/statements/select/format) 以内联方式加载行，例如：
+
+```sql
+INSERT INTO pypi
+FORMAT JSONEachRow
+{"date":"2022-11-15","country_code":"CN","project":"clickhouse-connect","type":"bdist_wheel","installer":"bandersnatch","python_minor":"","system":"","version":"0.2.8"}
+```
+
+这些示例假设使用 `JSONEachRow` 格式。也支持其他常见的 JSON 格式，相关加载示例见[此处](/zh/guides/clickhouse/data-formats/json/formats)。
+
+<div id="loading-semi-structured-json">
+  ## 加载半结构化 JSON
+</div>
+
+在前面的示例中，我们加载的是静态 JSON，其中键名和类型都是已知且固定的。但实际情况往往并非如此——键可能会新增，类型也可能发生变化。这在可观测性数据等场景中很常见。
+
+ClickHouse 通过专门的 [`JSON`](/zh/reference/data-types/newjson) 类型来处理这种情况。
+
+请看下面这个示例，它基于上述 [Python PyPI dataset](https://clickpy.clickhouse.com/) 的扩展版本。这里我们添加了一个任意的 `tags` 列，其中包含随机的键值对。
+
+```json
+{
+  "date": "2022-09-22",
+  "country_code": "IN",
+  "project": "clickhouse-connect",
+  "type": "bdist_wheel",
+  "installer": "bandersnatch",
+  "python_minor": "",
+  "system": "",
+  "version": "0.2.8",
+  "tags": {
+    "5gTux": "f3to*PMvaTYZsz!*rtzX1",
+    "nD8CV": "value"
+  }
+}
+
+```
+
+这里的 `tags` 列内容不固定，因此无法对其建模。要加载这些数据，我们可以沿用之前的 schema，但额外提供一个类型为 [`JSON`](/zh/reference/data-types/newjson) 的 `tags` 列：
+
+```sql
+SET enable_json_type = 1;
+
+CREATE TABLE pypi_with_tags
+(
+    `date` Date,
+    `country_code` String,
+    `project` String,
+    `type` String,
+    `installer` String,
+    `python_minor` String,
+    `system` String,
+    `version` String,
+    `tags` JSON
+)
+ENGINE = MergeTree
+ORDER BY (project, date);
+```
+
+我们采用与原始数据集相同的方法来填充该表：
+
+```sql
+INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+```
+
+```sql
+INSERT INTO pypi_with_tags SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 255.679 sec. Processed 1.00 million rows, 29.00 MB (3.91 thousand rows/s., 113.43 KB/s.)
+Peak memory usage: 2.00 GiB.
+```
+
+```sql
+SELECT *
+FROM pypi_with_tags
+LIMIT 2
+```
+
+```response
+┌───────date─┬─country_code─┬─project────────────┬─type──┬─installer────┬─python_minor─┬─system─┬─version─┬─tags─────────────────────────────────────────────────────┐
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │ {"nsBM":"5194603446944555691"}                           │
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │ {"4zD5MYQz4JkP1QqsJIS":"0","name":"8881321089124243208"} │
+└────────────┴──────────────┴────────────────────┴───────┴──────────────┴──────────────┴────────┴─────────┴──────────────────────────────────────────────────────────┘
+
+2 行。耗时：0.149 秒。
+```
+
+请注意此处加载数据时的性能差异。JSON 列在写入时需要进行类型推断；如果某些列存在多种类型，还需要额外的存储空间。虽然 JSON 类型 可以通过配置 (参见[设计 JSON schema](/zh/guides/clickhouse/data-formats/json/schema)) 达到与显式声明列相当的性能，但它默认就是为灵活性而设计的。不过，这种灵活性也并非没有代价。
+
+<div id="when-to-use-the-json-type">
+  ### 何时使用 JSON 类型
+</div>
+
+当你的数据具有以下特征时，请使用 JSON 类型：
+
+* 键**不可预知**，并且会随时间发生变化。
+* 包含**类型不固定的值** (例如，一个 path 有时可能是字符串，有时可能是数值) 。
+* 需要灵活的 schema，而严格类型并不适用。
+
+如果你的数据结构已知且一致，那么即使数据采用 JSON format，通常也不需要使用 JSON 类型。具体来说，如果你的数据具有以下特征：
+
+* **键已知的扁平结构**：使用标准列类型，例如 String。
+* **可预测的嵌套结构**：对此类结构使用 Tuple、Array 或 Nested 类型。
+* **结构可预测但类型会变化**：请考虑改用 Dynamic 或 Variant 类型。
+
+你也可以像上面的示例那样混合使用这些方法：对可预测的顶层键使用静态列，对载荷中动态的部分使用单个 JSON 列。

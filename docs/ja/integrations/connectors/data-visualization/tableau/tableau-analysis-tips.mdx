@@ -1,0 +1,70 @@
+---
+sidebarTitle: '分析のヒント'
+slug: /integrations/tableau/analysis-tips
+keywords: ['clickhouse', 'tableau', 'online', 'mysql', 'connect', 'integrate', 'ui']
+description: 'Tableau で ClickHouse 公式コネクタを使用する際の分析のヒント。'
+title: '分析のヒント'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+<div id="median-and-percentile-functions">
+  ## MEDIAN() と PERCENTILE() 関数
+</div>
+
+* Live モードでは、MEDIAN() 関数と PERCENTILE() 関数は (コネクタ v0.1.3 リリース以降) 、[ClickHouse の quantile()() 関数](/ja/reference/functions/aggregate-functions/quantile) を使用するため、計算は大幅に高速化されますが、サンプリングが行われます。正確な計算結果が必要な場合は、`MEDIAN_EXACT()` と `PERCENTILE_EXACT()` ([quantileExact()()](/ja/reference/functions/aggregate-functions/quantileExact) に基づく) を使用してください。
+* Extract モードでは、MEDIAN() と PERCENTILE() は常に正確で (その分低速な) ため、MEDIAN&#95;EXACT() と PERCENTILE&#95;EXACT() は使用できません。
+
+<div id="additional-functions-for-calculated-fields-in-live-mode">
+  ## Live モードの計算フィールドで利用できる追加関数
+</div>
+
+ClickHouse にはデータ分析に利用できる関数が非常に多くあり、その数は Tableau がサポートしているものを大きく上回ります。ユーザーの利便性向上のため、計算フィールドの作成時に Live モードで使用できる新しい関数を追加しました。残念ながら、Tableau のインターフェイスではこれらの関数に説明を付けることができないため、ここで説明を記載します。
+
+* **[`-If` Aggregation Combinator](/ja/reference/functions/aggregate-functions/combinators#-if)** *(v0.2.3 で追加)* - 集計計算内で行レベルのフィルターを直接適用できるようになります。`SUM_IF(), AVG_IF(), COUNT_IF(), MIN_IF() & MAX_IF()` 関数が追加されました。
+* **`BAR([my_int], [min_val_int], [max_val_int], [bar_string_length_int])`** *(v0.2.1 で追加)* — ありきたりな棒グラフは忘れて、代わりに `BAR()` 関数を使いましょう (ClickHouse の [`bar()`](/ja/reference/functions/regular-functions/other-functions#bar) に相当します) 。たとえば、この計算フィールドは見やすいバーを String として返します:
+  ```text
+  BAR([my_int], [min_val_int], [max_val_int], [bar_string_length_int]) + "  " + FORMAT_READABLE_QUANTITY([my_int])
+  ```
+  ```text
+  == BAR() ==
+  ██████████████████▊  327.06 million
+  █████  88.02 million
+  ███████████████  259.37 million
+  ```
+* **`COUNTD_UNIQ([my_field])`** *(v0.2.0 で追加)* — 引数に含まれる異なる値のおおよその数を計算します。[uniq()](/ja/reference/functions/aggregate-functions/uniq) と同等です。`COUNTD()` よりはるかに高速です。
+* **`DATE_BIN('day', 10, [my_datetime_or_date])`** *(v0.2.1 で追加)* — ClickHouse の [`toStartOfInterval()`](/ja/reference/functions/regular-functions/date-time-functions#toStartOfInterval) に相当します。Date または Date &amp; Time を、指定した interval の先頭に切り下げます。たとえば、次のようになります。
+  ```text
+   == my_datetime_or_date == | == DATE_BIN('day', 10, [my_datetime_or_date]) ==
+      28.07.2004 06:54:50    |              21.07.2004 00:00:00
+      17.07.2004 14:01:56    |              11.07.2004 00:00:00
+      14.07.2004 07:43:00    |              11.07.2004 00:00:00
+  ```
+* **`FORMAT_READABLE_QUANTITY([my_integer])`** *(v0.2.1 で追加)* — 丸めた数値に接尾辞 (thousand、million、billion など) を付けた文字列を返します。大きな数値を人間が読みやすい形で表示するのに便利です。[`formatReadableQuantity()`](/ja/reference/functions/regular-functions/other-functions#formatReadableQuantity) と同等です。
+* **`FORMAT_READABLE_TIMEDELTA([my_integer_timedelta_sec], [optional_max_unit])`** *(v0.2.1 で追加)* — 秒単位の時間差を受け取ります。 (年、月、日、時、分、秒) を含む時間差を文字列として返します。`optional_max_unit` は表示する最大単位です。有効な値: `seconds`, `minutes`, `hours`, `days`, `months`, `years`。[`formatReadableTimeDelta()`](/ja/reference/functions/regular-functions/other-functions#formatReadableTimeDelta) と同等です。
+* **`GET_SETTING([my_setting_name])`** *(v0.2.1 で追加)* — カスタム設定の現在の値を返します。[`getSetting()`](/ja/reference/functions/regular-functions/other-functions#getSetting) に相当します。
+* **`HEX([my_string])`** *(v0.2.1 で追加)* — 引数の16進数表現を含む文字列を返します。[`hex()`](/ja/reference/functions/regular-functions/encoding-functions#hex) と同等です。
+* **`KURTOSIS([my_number])`** — 系列のサンプル尖度を計算します。[`kurtSamp()`](/ja/reference/functions/aggregate-functions/kurtSamp) と同等です。
+* **`KURTOSISP([my_number])`** — 一連の値の尖度を計算します。[`kurtPop()`](/ja/reference/functions/aggregate-functions/kurtPop) と同等です。
+* **`MEDIAN_EXACT([my_number])`** *(v0.1.3 で追加)* — 数値データ系列の中央値を正確に計算します。[`quantileExact(0.5)(...)`](/ja/reference/functions/aggregate-functions/quantileExact) に相当します。
+* **`MOD([my_number_1], [my_number_2])`** — 除算の余りを計算します。引数が浮動小数点数の場合は、小数部を切り捨てて事前に整数へ変換されます。[`modulo()`](/ja/reference/functions/regular-functions/arithmetic-functions#modulo) と同等です。
+* **`PERCENTILE_EXACT([my_number], [level_float])`** *(v0.1.3 で追加)* — 数値データのシーケンスのパーセンタイルを正確に計算します。推奨される level の範囲は [0.01, 0.99] です。[`quantileExact()()`](/ja/reference/functions/aggregate-functions/quantileExact) に相当します。
+* **`PROPER([my_string])`** *(v0.2.5 で追加)* - テキスト文字列の各単語の先頭を大文字にし、残りを小文字に変換します。スペースや句読点などの英数字以外の文字も区切り文字として扱われます。例:
+  ```text
+  PROPER("PRODUCT name") => "Product Name"
+  ```
+  ```text
+  PROPER("darcy-mae") => "Darcy-Mae"
+  ```
+* **`RAND()`** *(v0.2.1 で追加)* — `3446222955` のような整数 (UInt32) を返します。[`rand()`](/ja/reference/functions/regular-functions/random-functions#rand) と同等です。
+* **`RANDOM()`** *(v0.2.1 で追加)* — 非公式の [`RANDOM()`](https://kb.tableau.com/articles/issue/random-function-produces-inconsistent-results) Tableau 関数で、0 から 1 までの浮動小数点数を返します。
+* **`RAND_CONSTANT([optional_field])`** *(v0.2.1 で追加)* — ランダムな値を持つ定数カラムを生成します。`{RAND()}` の Fixed LOD に似ていますが、より高速です。[`randConstant()`](/ja/reference/functions/regular-functions/random-functions#randConstant) と同等です。
+* **`REAL([my_number])`** — フィールドを浮動小数点数 (Float64) にキャストします。詳細は[`こちら`](/ja/reference/data-types/decimal#operations-and-result-type)を参照してください。
+* **`SHA256([my_string])`** *(v0.2.1 で追加)* — 文字列から SHA-256 ハッシュを計算し、結果のバイト列を文字列 (FixedString) として返します。たとえば `HEX()` 関数と組み合わせると便利で、`HEX(SHA256([my_string]))` のように使用できます。[`SHA256()`](/ja/reference/functions/regular-functions/hash-functions#SHA256) と同等です。
+* **`SKEWNESS([my_number])`** — 一連の値のサンプル歪度を計算します。[`skewSamp()`](/ja/reference/functions/aggregate-functions/skewSamp) と同等です。
+* **`SKEWNESSP([my_number])`** — 数値列の歪度を計算します。[`skewPop()`](/ja/reference/functions/aggregate-functions/skewPop)と同等です。
+* **`TO_TYPE_NAME([field])`** *(v0.2.1 で追加)* — 渡された引数の ClickHouse 型名を含む文字列を返します。[`toTypeName()`](/ja/reference/functions/regular-functions/other-functions#toTypeName) と同等です。
+* **`TRUNC([my_float])`** — `FLOOR([my_float])` 関数と同じです。[`trunc()`](/ja/reference/functions/regular-functions/rounding-functions#trunc) と等価です。
+* **`UNHEX([my_string])`** *(v0.2.1 で追加)* — `HEX()`とは逆の処理を行います。[`unhex()`](/ja/reference/functions/regular-functions/encoding-functions#unhex) と同等です。

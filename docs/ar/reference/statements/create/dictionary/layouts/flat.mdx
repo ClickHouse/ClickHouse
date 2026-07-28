@@ -1,0 +1,44 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/flat
+title: 'تخطيط القاموس flat'
+sidebarTitle: 'flat'
+description: 'تخزين القاموس في الذاكرة على هيئة مصفوفات مسطحة.'
+doc_type: 'reference'
+---
+
+باستخدام التخطيط `flat`، يُخزَّن القاموس بالكامل في الذاكرة على هيئة مصفوفات مسطحة.
+وتتناسب كمية الذاكرة المستخدمة طرديًا مع حجم أكبر مفتاح (من حيث المساحة المستخدمة).
+
+<Tip>
+  يوفّر هذا النوع من التخطيط أفضل أداء بين جميع الأساليب المتاحة لتخزين القاموس.
+</Tip>
+
+يكون مفتاح القاموس من النوع [UInt64](/ar/reference/data-types/int-uint)، وتكون قيمته محدودةً بـ `max_array_size` (القيمة الافتراضية — 500,000).
+إذا اكتُشف مفتاح أكبر عند إنشاء القاموس، فإن ClickHouse يُطلق استثناءً ولا يُنشئ القاموس.
+ويُتحكَّم في الحجم الابتدائي للمصفوفات المسطحة في القاموس بواسطة الإعداد `initial_array_size` (القيمة الافتراضية — 1024).
+
+جميع أنواع المصادر مدعومة.
+وعند تحديث القاموس، تُقرأ البيانات (من ملف أو من جدول) بالكامل.
+
+مثال على التهيئة:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
+    ```
+  </Tab>
+
+  <Tab title="ملف التهيئة">
+    ```xml
+    <layout>
+      <flat>
+        <initial_array_size>50000</initial_array_size>
+        <max_array_size>5000000</max_array_size>
+      </flat>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />

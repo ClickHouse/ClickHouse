@@ -21,6 +21,10 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
+/// Thread-local accumulator of nodes visited by getTreeHash (see definition below). Declared
+/// here so the definition has a prototype; also forward-declared by LogicalExpressionOptimizerPass.
+size_t & getTreeHashWorkCounter();
+
 const char * toString(QueryTreeNodeType type)
 {
     switch (type)
@@ -166,6 +170,16 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
     return true;
 }
 
+size_t & getTreeHashWorkCounter()
+{
+    /// Thread-local accumulator of the number of nodes visited by getTreeHash. It lets a pass
+    /// that hashes many subtrees (e.g. optimize_and_compare_chain) bound its own work directly,
+    /// without separately measuring tree sizes -- it watches this counter and backs off once it
+    /// grows too much. The hashing itself is unchanged; this is a pure observability counter.
+    static thread_local size_t counter = 0;
+    return counter;
+}
+
 IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options) const
 {
     /** Compute tree hash with this node as root.
@@ -179,6 +193,7 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
       * identifier for this node, for subsequent visits of this weak node we hash weak node identifier instead of content.
       */
     HashState hash_state;
+    size_t visited_nodes = 0;
 
     std::unordered_map<const IQueryTreeNode *, size_t> weak_node_to_identifier;
 
@@ -189,6 +204,7 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
     {
         const auto [node_to_process, is_weak_node] = nodes_to_process.back();
         nodes_to_process.pop_back();
+        ++visited_nodes;
 
         if (is_weak_node)
         {
@@ -233,6 +249,7 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
         }
     }
 
+    getTreeHashWorkCounter() += visited_nodes;
     return getSipHash128AsPair(hash_state);
 }
 

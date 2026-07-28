@@ -80,7 +80,7 @@ namespace DB
     DECLARE(UInt64, cross_join_min_bytes_to_compress, 1_GiB, "Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.", 0) \
     \
     DECLARE(UInt64, partial_merge_join_left_table_buffer_bytes, 0, "If not 0 group left table blocks in bigger ones for left-side table in partial merge join. It uses up to 2x of specified memory per joining thread.", 0) \
-    DECLARE(UInt64, partial_merge_join_rows_in_right_blocks, 65536, "Limits sizes of right-hand join data blocks in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.", 0) \
+    DECLARE(UInt64, partial_merge_join_rows_in_right_blocks, 65536, "Limits sizes of right-hand join data blocks in partial merge join algorithm for [JOIN](/reference/statements/select/join) queries.", 0) \
     DECLARE(UInt64, join_on_disk_max_files_to_merge, 64, "Limits the number of files allowed for parallel sorting in MergeJoin operations when they are executed on disk.", 0) \
     \
     DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, "Initial number of grace hash join buckets", 0) \
@@ -113,7 +113,7 @@ namespace DB
     DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, "Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.", 0) \
     DECLARE(Bool, use_hash_table_stats_for_join_reordering, false, "Enable using collected hash table statistics for cardinality estimation during join reordering", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range)", 0) \
-    DECLARE(Bool, enable_join_runtime_filter_shared_fixed_hash_table, true, R"(Use the hash join's FixedHashMap as the runtime filter for the probe side, replacing the Set/BloomFilter built upstream by the runtime filter framework)", 0) \
+    DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.)", 0) \
 
 
 // clang-format on

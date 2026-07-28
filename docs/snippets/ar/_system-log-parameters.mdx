@@ -1,0 +1,33 @@
+---
+title: مَعلمات سجل النظام
+---
+
+يمكن تهيئة الإعدادات التالية باستخدام الوسوم الفرعية:
+
+| Setting                            | Description                                                                                                                                     | Default             | Note                                                                                                               |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `database`                         | اسم قاعدة البيانات.                                                                                                                             |                     |                                                                                                                    |
+| `table`                            | اسم جدول النظام.                                                                                                                                |                     |                                                                                                                    |
+| `engine`                           | [تعريف محرك MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) لجدول نظام.         |                     | لا يمكن استخدامه إذا كان `partition_by` أو `order_by` معرّفًا. وإذا لم يُحدَّد، فسيتم اختيار `MergeTree` افتراضيًا |
+| `partition_by`                     | [مفتاح تقسيم مخصص](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key) لجدول نظام.                                       |                     | إذا تم تحديد `engine` لجدول النظام، فيجب تحديد المَعلمة `partition_by` مباشرةً داخل &#39;engine&#39;               |
+| `ttl`                              | يحدد [TTL](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) للجدول.                                      |                     | إذا تم تحديد `engine` لجدول النظام، فيجب تحديد المَعلمة `ttl` مباشرةً داخل &#39;engine&#39;                        |
+| `order_by`                         | [مفتاح ترتيب مخصص](/ar/reference/engines/table-engines/mergetree-family/mergetree#order_by) لجدول نظام. لا يمكن استخدامه إذا كان `engine` معرّفًا. |                     | إذا تم تحديد `engine` لجدول النظام، فيجب تحديد المَعلمة `order_by` مباشرةً داخل &#39;engine&#39;                   |
+| `storage_policy`                   | اسم سياسة التخزين المراد استخدامها للجدول (اختياري).                                                                                            |                     | إذا تم تحديد `engine` لجدول النظام، فيجب تحديد المَعلمة `storage_policy` مباشرةً داخل &#39;engine&#39;             |
+| `settings`                         | [مَعلمات إضافية](/ar/reference/engines/table-engines/mergetree-family/mergetree#settings) تتحكم في سلوك MergeTree (اختياري).                       |                     | إذا تم تحديد `engine` لجدول النظام، فيجب تحديد المَعلمة `settings` مباشرةً داخل &#39;engine&#39;                   |
+| `flush_interval_milliseconds`      | الفاصل الزمني لتفريغ البيانات من المخزن المؤقت في الذاكرة إلى الجدول.                                                                           | `7500`              |                                                                                                                    |
+| `max_size_rows`                    | الحد الأقصى لحجم السجلات بالأسطر. وعندما يصل عدد السجلات غير المُفرَّغة إلى `max_size_rows`، تُكتب السجلات إلى القرص.                           | `1048576`           |                                                                                                                    |
+| `reserved_size_rows`               | حجم الذاكرة المحجوز مسبقًا للسجلات، محسوبًا بالأسطر.                                                                                            | `8192`              |                                                                                                                    |
+| `buffer_size_rows_flush_threshold` | قيمة الحد لعدد الأسطر. وإذا تم بلوغ هذا الحد، يبدأ تفريغ السجلات إلى القرص في الخلفية.                                                          | `max_size_rows / 2` |                                                                                                                    |
+| `flush_on_crash`                   | يحدد ما إذا كان ينبغي كتابة السجلات إلى القرص عند حدوث تعطل.                                                                                    | `false`             |                                                                                                                    |
+
+بالإضافة إلى ذلك، يتحكم الإعداد التالي على مستوى الخادم في سياسة التفريغ الافتراضية لجميع جداول سجل النظام:
+
+```xml
+<default_system_log_flush_policy>
+    <skip_alias_columns>true</skip_alias_columns>
+</default_system_log_flush_policy>
+```
+
+| الإعداد              | الوصف                                                                                                             | الافتراضي |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- | --------- |
+| `skip_alias_columns` | عند ضبطه على `true`، تُستبعَد أعمدة ALIAS من مخططات جداول سجلات النظام. وهذا مطلوب لسجلات النظام المستندة إلى S3. | `false`   |

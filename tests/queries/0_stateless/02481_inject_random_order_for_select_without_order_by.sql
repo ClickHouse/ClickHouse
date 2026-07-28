@@ -5,6 +5,7 @@ SET inject_random_order_for_select_without_order_by = 1;
 
 -- Works only with enabled analyzer
 SET enable_analyzer = 1;
+SET explain_query_plan_default = 'legacy';
 
 -- If enabled, `ORDER BY rand()` is injected into the query plan.
 -- We can not test the query result directly (because of randomization), we test the presence

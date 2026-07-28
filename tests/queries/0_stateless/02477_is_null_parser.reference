@@ -1,6 +1,6 @@
-SELECT ((1 IS NULL) + 1) IS NOT NULL
+SELECT isNotNull(plus(isNull(1), 1))
 FROM system.one
-SELECT (1 IS NULL) = 0
+SELECT equals(isNull(1), 0)
 FROM system.one
-SELECT CAST(1 IS NULL, \'Int32\')
+SELECT CAST(isNull(1), \'Int32\')
 FROM system.one

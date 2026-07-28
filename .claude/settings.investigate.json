@@ -1,0 +1,79 @@
+{
+  "//": "Reduced-prompt profile for CI-failure investigation. Launch with: claude --settings .claude/settings.investigate.json. Settings MERGE (union) with your project/user settings.json -- this file can ADD allows or ADD denies but cannot remove an allow another source grants; deny wins everywhere. The deny list blocks irreversible actions (Edit/Write/NotebookEdit, mutating git/gh, rm/mv) outright. The allow list covers only read-only commands the skill runs, so they do not prompt. All GitHub reads go through .claude/tools/gh-ro.sh (allow-listed), which drops a poisoned GH_CONFIG_DIR and refuses non-read-only subcommands; raw `gh pr/issue view/list/diff/checks` are therefore DENIED here (deny wins over any base-settings allow) so the skill cannot nondeterministically fall back to the raw path that fails on GH_CONFIG_DIR-poisoned runners -- the wrapper's own child `gh` runs unchecked, so this does not block it. The two non-trivial commands the skill runs every time are auto-approved ONLY in their exact safe shapes by the PreToolUse hook allow_investigate_cmds.py (default-deny -- anything outside the shape prompts): (1) the play.clickhouse.com read-only SELECT query, and (2) node .claude/tools/fetch_ci_report.js against known CI-report hosts with only read/report flags and no file-writing forms (--download-logs and stdout redirection are NOT hook-approved -- a string-pinned write target cannot be made symlink-safe -- so they prompt). Commands this file neither allow-lists nor hooks -- arbitrary curl, tar -x (an appended -C / or crafted archive could overwrite files), broader node/python -- prompt, UNLESS your base settings.json already allows them: because settings MERGE, this profile cannot remove allows your project/user config grants. It adds denies for the riskiest inherited ones outside the investigation surface (WebSearch, gh search/run view, and raw gh reads -- forcing the gh-ro.sh wrapper -- alongside the irreversible-action denies), but it cannot enumerate an arbitrary base config -- inherited read allows (e.g. which, strings) still run. NOTE: this is a prompt-reducer, not a sandbox -- a prefix allow cannot model composed shell syntax (e.g. 'grep x f > f' writes via redirection), fetch_ci_report.js once approved runs as a repo-local script whose child processes are unconstrained, and the merged base config is outside this file's control. The real boundary for an untrusted PR (external, unreviewed, or one that may have modified .claude/* or anything the skill runs) is the environment: run in a throwaway git worktree, on a trusted base-branch checkout of .claude, with a minimal base settings.json and no credentials.",
+  "permissions": {
+    "deny": [
+      "Edit",
+      "Write",
+      "NotebookEdit",
+      "Bash(git push:*)",
+      "Bash(git commit:*)",
+      "Bash(git add:*)",
+      "Bash(git reset:*)",
+      "Bash(git rebase:*)",
+      "Bash(git merge:*)",
+      "Bash(git checkout:*)",
+      "Bash(git switch:*)",
+      "Bash(git restore:*)",
+      "Bash(git clean:*)",
+      "Bash(git stash:*)",
+      "Bash(git branch:*)",
+      "Bash(git tag:*)",
+      "Bash(git rm:*)",
+      "Bash(git mv:*)",
+      "Bash(rm:*)",
+      "Bash(mv:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh pr close:*)",
+      "Bash(gh pr edit:*)",
+      "Bash(gh pr comment:*)",
+      "Bash(gh pr review:*)",
+      "Bash(gh issue create:*)",
+      "Bash(gh issue close:*)",
+      "Bash(gh issue edit:*)",
+      "Bash(gh issue comment:*)",
+      "Bash(gh api:*)",
+      "Bash(gh search:*)",
+      "Bash(gh run view:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh issue list:*)",
+      "WebSearch"
+    ],
+    "allow": [
+      "Bash(mkdir -p tmp/investigate)",
+      "Bash(command -v:*)",
+      "Bash(grep:*)",
+      "Bash(jq:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(.claude/tools/gh-ro.sh:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git cat-file:*)",
+      "Bash(git merge-base:*)",
+      "WebFetch(domain:play.clickhouse.com)",
+      "WebFetch(domain:s3.amazonaws.com)",
+      "WebFetch(domain:github.com)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "python3 .claude/hooks/allow_investigate_cmds.py" }
+        ]
+      }
+    ]
+  }
+}

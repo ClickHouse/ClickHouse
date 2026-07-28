@@ -26,7 +26,7 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     [mode = '',]
     [after_processing = 'keep',]
     [keeper_path = '',]
-    [loading_retries = 0,]
+    [loading_retries = 10,]
     [processing_threads_num = 16,]
     [parallel_inserts = false,]
     [enable_logging_to_queue_log = true,]
@@ -34,10 +34,10 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     [tracked_files_limit = 1000,]
     [tracked_file_ttl_sec = 0,]
     [polling_min_timeout_ms = 1000,]
-    [polling_max_timeout_ms = 10000,]
-    [polling_backoff_ms = 0,]
-    [cleanup_interval_min_ms = 10000,]
-    [cleanup_interval_max_ms = 30000,]
+    [polling_max_timeout_ms = 600000,]
+    [polling_backoff_ms = 30000,]
+    [cleanup_interval_min_ms = 60000,]
+    [cleanup_interval_max_ms = 60000,]
     [buckets = 0,]
     [list_objects_batch_size = 1000,]
     [enable_hash_ring_filtering = 0,]
@@ -70,8 +70,8 @@ Using named collections:
 <clickhouse>
     <named_collections>
         <s3queue_conf>
-            <url>'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/*</url>
-            <access_key_id>test<access_key_id>
+            <url>https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/*</url>
+            <access_key_id>test</access_key_id>
             <secret_access_key>test</secret_access_key>
         </s3queue_conf>
     </named_collections>
@@ -236,12 +236,12 @@ Default value: `/`.
 
 ### `loading_retries` {#loading_retries}
 
-Retry file loading up to specified number of times. By default, there are no retries.
+Retry file loading up to specified number of times.
 Possible values:
 
-- Positive integer.
+- Non-negative integer.
 
-Default value: `0`.
+Default value: `10`.
 
 ### `processing_threads_num` {#processing_threads_num}
 
@@ -260,11 +260,11 @@ But this limits the parallelism, so for better throughput use `parallel_inserts=
 
 Default value: `false`.
 
-### `enable_logging_to_s3queue_log` {#enable_logging_to_s3queue_log}
+### `enable_logging_to_queue_log` {#enable_logging_to_queue_log}
 
 Enable logging to `system.s3queue_log`.
 
-Default value: `0`.
+Default value: `1`.
 
 ### `polling_min_timeout_ms` {#polling_min_timeout_ms}
 
@@ -284,7 +284,7 @@ Possible values:
 
 - Positive integer.
 
-Default value: `10000`.
+Default value: `600000`.
 
 ### `polling_backoff_ms` {#polling_backoff_ms}
 
@@ -294,7 +294,7 @@ Possible values:
 
 - Positive integer.
 
-Default value: `0`.
+Default value: `30000`.
 
 ### `tracked_files_limit` {#tracked_files_limit}
 
@@ -322,13 +322,13 @@ Default value: `0`.
 
 For 'Ordered' mode. Defines a minimum boundary for reschedule interval for a background task, which is responsible for maintaining tracked file TTL and maximum tracked files set.
 
-Default value: `10000`.
+Default value: `60000`.
 
 ### `cleanup_interval_max_ms` {#cleanup_interval_max_ms}
 
 For 'Ordered' mode. Defines a maximum boundary for reschedule interval for a background task, which is responsible for maintaining tracked file TTL and maximum tracked files set.
 
-Default value: `30000`.
+Default value: `60000`.
 
 ### `buckets` {#buckets}
 
@@ -447,6 +447,8 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 - abnormal server termination.
 
 2. `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and `Ordered` mode is used, then `s3queue_loading_retries` will not work. This will be fixed soon.
+
+3. Lost rows on a device-level power loss of the ClickHouse node. A consumed file is recorded as processed in Keeper (and its source object removed when `after_processing = 'delete'`) as soon as the insert finishes, but the inserted rows are only durable once the target part is fsynced, which does not happen synchronously by default (`fsync_after_insert = 0`). Keeper is force-synced and usually runs on a separate node, so it survives this node's power loss. If the node loses power after the file is committed as processed but before the target part is fsynced, the file is not re-read on restart and its rows are lost (unrecoverable with `after_processing = 'delete'`). A plain process kill does not expose this, because the page cache survives it. For the recommended materialized-view consumption path (the file is committed only after the whole insert pipeline finishes), setting `fsync_after_insert = 1` (and `fsync_part_directory = 1`) on the target `MergeTree` table makes the inserted part durable before the file is committed as processed, which narrows this window substantially. This does not apply to direct `INSERT ... SELECT` with `commit_on_select = 1`, where the file is committed at the end of the read before the destination sink finalizes its last part.
 
 ## Introspection {#introspection}
 

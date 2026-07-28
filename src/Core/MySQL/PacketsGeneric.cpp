@@ -46,16 +46,14 @@ size_t OKPacket::getPayloadSize() const
         result += 2;
     }
 
-    if (capabilities & CLIENT_SESSION_TRACK)
-    {
-        result += getLengthEncodedStringSize(info);
-        if (status_flags & SERVER_SESSION_STATE_CHANGED)
-            result += getLengthEncodedStringSize(session_state_changes);
-    }
-    else
-    {
-        result += info.size();
-    }
+    /// `info` is always a length-encoded string, matching real MySQL. The protocol documentation
+    /// describes it as a rest-of-packet string when `CLIENT_SESSION_TRACK` is not negotiated, but the
+    /// MySQL server length-encodes it unconditionally, and `MySQL Connector/J` >= 8.2 reads it as a
+    /// length-encoded string regardless of the negotiated capabilities. Writing a plain string here
+    /// made `Connector/J` interpret the first byte of `info` as a length and fail to connect.
+    result += getLengthEncodedStringSize(info);
+    if ((capabilities & CLIENT_SESSION_TRACK) && (status_flags & SERVER_SESSION_STATE_CHANGED))
+        result += getLengthEncodedStringSize(session_state_changes);
 
     return result;
 }
@@ -77,18 +75,9 @@ void OKPacket::readPayloadImpl(ReadBuffer & payload)
         payload.readStrict(reinterpret_cast<char *>(&status_flags), 2);
     }
 
-    if (capabilities & CLIENT_SESSION_TRACK)
-    {
-        readLengthEncodedString(info, payload);
-        if (status_flags & SERVER_SESSION_STATE_CHANGED)
-        {
-            readLengthEncodedString(session_state_changes, payload);
-        }
-    }
-    else
-    {
-        readString(info, payload);
-    }
+    readLengthEncodedString(info, payload);
+    if ((capabilities & CLIENT_SESSION_TRACK) && (status_flags & SERVER_SESSION_STATE_CHANGED))
+        readLengthEncodedString(session_state_changes, payload);
 }
 
 void OKPacket::writePayloadImpl(WriteBuffer & buffer) const
@@ -108,16 +97,9 @@ void OKPacket::writePayloadImpl(WriteBuffer & buffer) const
         buffer.write(reinterpret_cast<const char *>(&status_flags), 2);
     }
 
-    if (capabilities & CLIENT_SESSION_TRACK)
-    {
-        writeLengthEncodedString(info, buffer);
-        if (status_flags & SERVER_SESSION_STATE_CHANGED)
-            writeLengthEncodedString(session_state_changes, buffer);
-    }
-    else
-    {
-        writeString(info, buffer);
-    }
+    writeLengthEncodedString(info, buffer);
+    if ((capabilities & CLIENT_SESSION_TRACK) && (status_flags & SERVER_SESSION_STATE_CHANGED))
+        writeLengthEncodedString(session_state_changes, buffer);
 }
 
 EOFPacket::EOFPacket() : warnings(0x00), status_flags(0x00)

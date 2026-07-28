@@ -1,0 +1,50 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/executable-file
+title: '実行可能ファイルの Dictionary ソース'
+sidebarTitle: '実行可能ファイル'
+description: 'ClickHouse で実行可能ファイルを Dictionary ソースとして設定します。'
+doc_type: 'reference'
+---
+
+実行可能ファイルの動作は、[Dictionary がメモリ内にどのように格納されるか](/ja/reference/statements/create/dictionary/layouts/overview)によって異なります。Dictionary が `cache` および `complex_key_cache` を使用して格納されている場合、ClickHouse は実行可能ファイルの STDIN にリクエストを送信して必要なキーを要求します。それ以外の場合、ClickHouse は実行可能ファイルを起動し、その出力を Dictionary データとして扱います。
+
+設定例:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(EXECUTABLE(
+        command 'cat /opt/dictionaries/os.tsv'
+        format 'TabSeparated'
+        implicit_key false
+    ))
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <source>
+        <executable>
+            <command>cat /opt/dictionaries/os.tsv</command>
+            <format>TabSeparated</format>
+            <implicit_key>false</implicit_key>
+        </executable>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+設定フィールド:
+
+| 設定                            | 説明                                                                                                                                                                                                                                                                                                                |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `command`                     | 実行可能ファイルへの絶対パス、またはファイル名 (コマンドのディレクトリが `PATH` に含まれている場合) 。                                                                                                                                                                                                                                                         |
+| `format`                      | ファイルのフォーマットです。[フォーマット](/ja/reference/formats/index) で説明されているすべてのフォーマットをサポートしています。                                                                                                                                                                                                                                    |
+| `command_termination_timeout` | 実行可能スクリプトには、メインの read-write ループが含まれている必要があります。Dictionary が破棄されるとパイプが閉じられ、ClickHouse が子プロセスに SIGTERM シグナルを送信するまでの `command_termination_timeout` 秒以内に、実行可能ファイルは終了する必要があります。秒単位で指定します。デフォルト値は `10` です。省略可能です。                                                                                                        |
+| `command_read_timeout`        | コマンドの stdout からデータを読み取る際のタイムアウト (ミリ秒) です。デフォルト値は `10000` です。省略可能です。                                                                                                                                                                                                                                               |
+| `command_write_timeout`       | コマンドの stdin にデータを書き込む際のタイムアウト (ミリ秒) です。デフォルト値は `10000` です。省略可能です。                                                                                                                                                                                                                                                 |
+| `implicit_key`                | 実行可能ファイルのログソースは値のみを返すことができ、要求されたキーとの対応は、結果内の行の順序によって暗黙的に決まります。デフォルト値は `false` です。                                                                                                                                                                                                                                 |
+| `execute_direct`              | `execute_direct` = `1` の場合、`command` は [user&#95;scripts&#95;path](/ja/reference/settings/server-settings/settings#user_scripts_path) で指定された user&#95;scripts フォルダー内で検索されます。追加のスクリプト引数は空白区切りで指定できます。例: `script_name arg1 arg2`。`execute_direct` = `0` の場合、`command` は `bin/sh -c` の引数として渡されます。デフォルト値は `0` です。省略可能です。 |
+| `send_chunk_header`           | データの chunk をプロセスに送信する前に、行数を送信するかどうかを制御します。デフォルト値は `false` です。省略可能です。                                                                                                                                                                                                                                              |
+
+この Dictionary ソースは、XML 設定でのみ構成できます。実行可能ログソースを使った Dictionary の DDL による作成は無効化されています。そうしないと、DB ユーザーが ClickHouse ノード上で任意のバイナリを実行できてしまうためです。

@@ -1,0 +1,76 @@
+---
+slug: '/examples/aggregate-function-combinators/avgResample'
+title: 'avgResample'
+description: 'avg에 Resample combinator를 사용하는 예시'
+keywords: ['avg', 'Resample', 'combinator', '예시', 'avgResample']
+sidebarTitle: 'avgResample'
+doc_type: '참고'
+---
+
+<div id="description">
+  ## 설명
+</div>
+
+[`Resample`](/ko/reference/functions/aggregate-functions/combinators#-resample)
+combinator는 [`count`](/ko/reference/functions/aggregate-functions/count)
+집계 함수에 적용할 수 있으며, 지정된 키 컬럼의 값을 고정된 개수의
+인터벌(`N`)로 나누어 개수를 셀 수 있습니다.
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+<div id="basic-example">
+  ### 기본 예시
+</div>
+
+예시를 살펴보겠습니다. 직원의 `name`, `age`, `wage`를 포함하는 테이블을 만들고,
+여기에 몇 개의 데이터를 삽입해 보겠습니다:
+
+```sql
+CREATE TABLE employee_data 
+(
+    name String,
+    age UInt8,
+    wage Float32
+) 
+ENGINE = MergeTree()
+ORDER BY tuple()
+
+INSERT INTO employee_data (name, age, wage) VALUES
+    ('John', 16, 10.0),
+    ('Alice', 30, 15.0),
+    ('Mary', 35, 8.0),
+    ('Evelyn', 48, 11.5),
+    ('David', 62, 9.9),
+    ('Brian', 60, 16.0);
+```
+
+연령이 `[30,60)`
+및 `[60,75)` 인터벌에 속하는 사람들의 평균 임금을 구해 보겠습니다 (`[`는 배타적이고 `)`는 포괄적입니다). 연령은 정수로
+표현하므로, 연령 구간은 `[30, 59]` 및 `[60,74]`가 됩니다.
+이를 위해 `avg` 집계 함수에 `Resample` combinator를 적용합니다.
+
+```sql
+WITH avg_wage AS
+(
+    SELECT avgResample(30, 75, 30)(wage, age) AS original_avg_wage
+    FROM employee_data
+)
+SELECT
+    arrayMap(x -> round(x, 3), original_avg_wage) AS avg_wage_rounded
+FROM avg_wage;
+```
+
+```response
+┌─avg_wage_rounded─┐
+│ [11.5,12.95]     │
+└──────────────────┘
+```
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [`count`](/ko/reference/functions/aggregate-functions/count)
+* [`Resample combinator`](/ko/reference/functions/aggregate-functions/combinators#-resample)

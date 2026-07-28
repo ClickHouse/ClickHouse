@@ -2,6 +2,8 @@
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <base/cgroupsv2.h>
 #include <base/getMemoryAmount.h>
@@ -17,6 +19,8 @@
 
 #include <filesystem>
 #include <optional>
+
+#include <unistd.h>
 
 namespace fs = std::filesystem;
 
@@ -239,6 +243,80 @@ std::shared_ptr<ICgroupsReader> ICgroupsReader::createCgroupsReader(ICgroupsRead
     chassert(version == CgroupsVersion::V1);
     return std::make_shared<CgroupsV1Reader>(cgroup_path);
 }
+
+namespace MemoryWorkerHelpers
+{
+
+CgroupLevelAvailability decideCgroupLevelAvailability(std::string_view max_token, uint64_t used, uint64_t host_memory_bytes)
+{
+    /// `memory.max` value `"max"` means "no limit at this level". Handle it explicitly
+    /// so the common path doesn't depend on parse-failure semantics.
+    if (max_token == "max")
+        return {CgroupLevelKind::Unbounded, 0};
+
+    uint64_t limit_bytes = 0;
+    ReadBufferFromMemory token_buf(max_token.data(), max_token.size());
+    /// Treat an unparseable value or a literal `0` as "no usable finite limit here":
+    /// a `0` limit would otherwise mean "no allocation allowed", which is never what a
+    /// real cgroup imposes on a running ClickHouse.
+    if (!tryReadIntText(limit_bytes, token_buf) || limit_bytes == 0)
+        return {CgroupLevelKind::Unbounded, 0};
+
+    /// On cgroup v1, `memory.limit_in_bytes` uses a huge sentinel value (`PAGE_COUNTER_MAX`,
+    /// around `2^63`) to mean "no limit". On a host without cgroup memory limits this looks
+    /// like a finite limit far above any real RAM amount and would otherwise pin the dynamic
+    /// limit to the startup ceiling. Anything `>= host_memory_bytes` is effectively unbounded,
+    /// so treat it the same as the v2 `"max"` token.
+    if (host_memory_bytes != 0 && limit_bytes >= host_memory_bytes)
+        return {CgroupLevelKind::Unbounded, 0};
+
+    uint64_t available = (limit_bytes > used) ? (limit_bytes - used) : 0;
+    return {CgroupLevelKind::Finite, available};
+}
+
+uint64_t reclaimableFromCgroupV2Stat(ReadBuffer & buf)
+{
+    /// `memory.stat` is a sequence of "key value\n" lines. We only need the reclaimable
+    /// categories; everything else is skipped. Missing keys keep their `0` initializer.
+    uint64_t active_file = 0;
+    uint64_t inactive_file = 0;
+    uint64_t slab_reclaimable = 0;
+    bool have_active_file = false;
+    bool have_inactive_file = false;
+    bool have_slab_reclaimable = false;
+
+    while (!buf.eof() && !(have_active_file && have_inactive_file && have_slab_reclaimable))
+    {
+        std::string name;
+        readStringUntilWhitespace(name, buf);
+        skipWhitespaceIfAny(buf, true);
+
+        uint64_t value = 0;
+        readIntText(value, buf);
+
+        if (name == "active_file")
+        {
+            active_file = value;
+            have_active_file = true;
+        }
+        else if (name == "inactive_file")
+        {
+            inactive_file = value;
+            have_inactive_file = true;
+        }
+        else if (name == "slab_reclaimable")
+        {
+            slab_reclaimable = value;
+            have_slab_reclaimable = true;
+        }
+
+        skipToNextLineOrEOF(buf);
+    }
+
+    return active_file + inactive_file + slab_reclaimable;
+}
+
+}
 #endif
 
 namespace
@@ -270,11 +348,25 @@ MemoryWorker::MemoryWorker(
     , purge_total_memory_threshold_ratio(config.purge_total_memory_threshold_ratio)
     , purge_dirty_pages_threshold_ratio(config.purge_dirty_pages_threshold_ratio)
     , decay_adjustment_period_ms(config.decay_adjustment_period_ms)
+    , rss_speculative_reserve_ratio(config.rss_speculative_reserve_ratio)
+    , dynamic_hard_limit_ratio(config.dynamic_hard_limit_ratio)
     , page_cache(page_cache_)
 {
 #if USE_JEMALLOC
     page_size = pagesize_mib.getValue();
 #endif
+
+    /// Captured once for use in `readAvailableForDynamicLimit` to detect the
+    /// cgroup v1 "no limit" sentinel. We deliberately use `getMemoryAmountOrZero`
+    /// rather than the cgroup-aware `getMemoryAmount` so that nested cgroups
+    /// with their own finite limits do not also poison this threshold; here we
+    /// want only the host's physical RAM.
+    {
+        int64_t num_pages = sysconf(_SC_PHYS_PAGES);
+        int64_t page_size_bytes = sysconf(_SC_PAGESIZE);
+        if (num_pages > 0 && page_size_bytes > 0)
+            host_memory_bytes = static_cast<uint64_t>(num_pages) * static_cast<uint64_t>(page_size_bytes);
+    }
 
     if (config.use_cgroup)
     {
@@ -295,11 +387,95 @@ MemoryWorker::MemoryWorker(
             if (rss_update_period_ms == 0)
                 rss_update_period_ms = cgroups_memory_usage_tick_ms;
 
+            /// Open files for the cgroup memory limit so the dynamic hard-limit
+            /// adjustment can read them cheaply on each tick. v1 and v2 use different
+            /// file names and v2 uses a hierarchy.
+            if (version == ICgroupsReader::CgroupsVersion::V2)
+            {
+                /// In cgroup v2, every ancestor cgroup has its own `memory.max` and
+                /// `memory.current`. We pair them at the same level so the computed
+                /// per-level `available_i = max_i - current_i` reflects sibling
+                /// consumption inside an ancestor: using the leaf's `memory.current`
+                /// against an ancestor's `memory.max` would ignore other children of
+                /// that ancestor and let us exceed its budget.
+                fs::path current = fs::path(cgroup_path);
+                while (current != default_cgroups_mount.parent_path())
+                {
+                    fs::path max_path = current / "memory.max";
+                    fs::path current_path = current / "memory.current";
+                    fs::path stat_path = current / "memory.stat";
+                    if (fs::exists(max_path) && fs::exists(current_path))
+                    {
+                        CgroupMemoryLevel level;
+                        level.max_path = max_path.string();
+                        level.current_path = current_path.string();
+                        /// `memory.stat` lets us discount reclaimable page cache/slab from
+                        /// `memory.current`. If it is missing, the level falls back to treating
+                        /// the raw `memory.current` as usage (stricter, never over-budget).
+                        if (fs::exists(stat_path))
+                            level.stat_path = stat_path.string();
+                        try
+                        {
+                            level.max_buf = std::make_unique<ReadBufferFromFile>(level.max_path);
+                            level.current_buf = std::make_unique<ReadBufferFromFile>(level.current_path);
+                            if (!level.stat_path.empty())
+                                level.stat_buf = std::make_unique<ReadBufferFromFile>(level.stat_path);
+                        }
+                        catch (...)
+                        {
+                            /// Keep the level (with its paths) but leave the buffers null:
+                            /// `readAvailableForDynamicLimit` retries the open on each tick and
+                            /// fails the tick closed until it succeeds, instead of silently
+                            /// dropping this (possibly tighter) ancestor and overestimating headroom.
+                            level.max_buf.reset();
+                            level.current_buf.reset();
+                            level.stat_buf.reset();
+                            tryLogCurrentException(log, fmt::format("Cannot open cgroup memory files at '{}'", current.string()));
+                        }
+                        cgroup_memory_levels.push_back(std::move(level));
+                    }
+                    current = current.parent_path();
+                }
+            }
+            else
+            {
+                fs::path memory_max_path = fs::path(cgroup_path) / "memory.limit_in_bytes";
+                if (fs::exists(memory_max_path))
+                {
+                    CgroupMemoryLevel level;
+                    level.max_path = memory_max_path.string();
+                    /// v1 has no per-level `memory.current` analogue we use here;
+                    /// leaf usage comes from `cgroups_reader` in `readAvailableForDynamicLimit`,
+                    /// so `current_path` is left empty.
+                    try
+                    {
+                        level.max_buf = std::make_unique<ReadBufferFromFile>(level.max_path);
+                    }
+                    catch (...)
+                    {
+                        /// Keep the level for a later reopen attempt; see the v2 branch above.
+                        level.max_buf.reset();
+                        tryLogCurrentException(log, "Cannot open cgroup memory limit file");
+                    }
+                    cgroup_memory_levels.push_back(std::move(level));
+                }
+            }
+
             return;
         }
         catch (...)
         {
             tryLogCurrentException(log, "Cannot use cgroups reader");
+            /// Fail closed: the hierarchy walk above may have already assigned `cgroups_reader`
+            /// and pushed some (but not all) ancestor levels before throwing. Leaving that
+            /// partial state would make `readAvailableForDynamicLimit` take the cgroup branch
+            /// (it only checks `cgroups_reader && !cgroup_memory_levels.empty()`) and compute
+            /// the headroom minimum from an incomplete ancestor set, overestimating the real
+            /// budget when the dropped ancestor was the tighter one. Drop everything so we
+            /// fall back to the jemalloc source and host-wide `/proc/meminfo` instead.
+            cgroups_reader.reset();
+            cgroup_memory_levels.clear();
+            source = MemoryUsageSource::None;
         }
 #endif
     }
@@ -400,6 +576,242 @@ namespace
 
 }
 
+void MemoryWorker::setDynamicHardLimitSettings(Int64 ceiling, double ratio)
+{
+    /// Hold the mutex around the whole sequence of "store new settings" and
+    /// "install new hard limit". The worker re-checks `settings_generation`
+    /// under the same mutex before calling `setHardLimit`, so an in-flight
+    /// tick that computed against the old ratio cannot win the race against
+    /// this reload — it observes either the old generation while we still
+    /// hold the mutex (and waits), or the bumped generation (and skips).
+    std::lock_guard lock(dynamic_hard_limit_apply_mutex);
+
+    /// Whether this is the first time the settings are configured. Until then,
+    /// `external_hard_limit` is `-1` and the worker suppresses the dynamic adjustment,
+    /// so there is no previously-shrunk dynamic value to preserve.
+    const bool first_configuration = external_hard_limit.load(std::memory_order_relaxed) < 0;
+
+    /// Order matters: write the ratio first. The worker thread reads `external_hard_limit`
+    /// first, and only proceeds with the adjustment when it is >= 0. By the time the
+    /// adjustment is enabled (ceiling becomes >= 0), the new ratio is already visible.
+    dynamic_hard_limit_ratio.store(ratio, std::memory_order_relaxed);
+    external_hard_limit.store(ceiling, std::memory_order_relaxed);
+    /// Bump generation *after* writing values so the worker, which reads the
+    /// generation before and after its tick, can detect a reload that happened
+    /// in flight and skip applying a stale `setHardLimit`. Release pairs with the
+    /// worker's acquire load when re-checking.
+    settings_generation.fetch_add(1, std::memory_order_release);
+
+    /// Decide which hard limit to install now, while we still hold the mutex. Doing this
+    /// here (instead of in the caller) closes the race window where the worker could
+    /// overwrite an out-of-band `setHardLimit` with a stale value before observing the
+    /// new generation.
+    /// The "keep the shrunk value" logic below is only safe when the worker can actually
+    /// recompute and raise the limit back toward `ceiling` on a later tick. That requires
+    /// both a live source (`start` runs no tick when `source == None`) and a platform where
+    /// `readAvailableForDynamicLimit` can return a value (Linux only; elsewhere it always
+    /// returns `std::nullopt`). When neither holds — non-Linux, or a build/config with no
+    /// memory source — the dynamic adjustment is a no-op, so preserving a previously-shrunk
+    /// value would strand `total_memory_tracker` below the new `ceiling` forever (e.g. a
+    /// reload raising `max_server_memory_usage` from 8 GiB to 16 GiB would never take
+    /// effect). In that case apply the new `ceiling` directly, matching the pre-PR behavior.
+#if defined(OS_LINUX)
+    const bool worker_can_recompute = source != MemoryUsageSource::None;
+#else
+    const bool worker_can_recompute = false;
+#endif
+
+    Int64 limit_to_apply = ceiling;
+    if (ratio > 0.0 && !first_configuration && worker_can_recompute)
+    {
+        /// Dynamic adjustment is enabled and the worker may have already shrunk the hard
+        /// limit below `ceiling` under memory pressure. An unrelated config reload (e.g.
+        /// `SYSTEM RELOAD CONFIG` with unchanged memory settings) must not raise the limit
+        /// back to the static `ceiling`: that would briefly re-admit the very allocations
+        /// the dynamic limiter had already blocked, until the next worker tick. Only lower
+        /// the limit here (when the new `ceiling` is below the current value); never raise
+        /// it. The next worker tick recomputes from live headroom and may raise it back
+        /// toward `ceiling` when memory is actually available.
+        ///
+        /// `0` means "unlimited" for both the current hard limit and the ceiling, so treat
+        /// it as `+inf` when taking the minimum; the result `0` again means "unlimited".
+        const Int64 current = total_memory_tracker.getHardLimit();
+        auto as_cap = [](Int64 v) { return v <= 0 ? std::numeric_limits<Int64>::max() : v; };
+        const Int64 capped = std::min(as_cap(current), as_cap(ceiling));
+        limit_to_apply = (capped == std::numeric_limits<Int64>::max()) ? 0 : capped;
+    }
+
+    total_memory_tracker.setHardLimit(limit_to_apply);
+}
+
+std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit()
+{
+#if defined(OS_LINUX)
+    /// When running in a cgroup with a finite limit, the host-wide `/proc/meminfo` is
+    /// the wrong source: the cgroup may be much smaller than the host, and other
+    /// processes in the cgroup count toward our budget. Use the cgroup view instead,
+    /// the same way `AsynchronousMetrics` reports `CGroupMemoryTotal` / `CGroupMemoryUsed`.
+    ///
+    /// In cgroup v2, walk all ancestors and compute per-level headroom
+    /// `available_i = memory.max_i - (memory.current_i - reclaimable_i)`, then take the
+    /// minimum. `reclaimable_i` is the level's reclaimable page cache and slab (from its
+    /// `memory.stat`), which the kernel frees under pressure before OOM-killing; not
+    /// discounting it would treat a warm page cache as usage and could throw
+    /// `MEMORY_LIMIT_EXCEEDED` on read-heavy servers. This mirrors the host-wide
+    /// `MemAvailable` path. Pairing max and current at the *same* level matters: an
+    /// ancestor's `memory.current` includes sibling cgroups under that ancestor, while the
+    /// leaf's `memory.current` does not. Using the leaf's usage against an ancestor's limit
+    /// would ignore siblings and let the dynamic hard limit exceed the ancestor's remaining
+    /// budget, which can still trigger a cgroup OOM kill.
+    /// If *no* level has a finite limit, the cgroup has no memory limit at all, and
+    /// `/proc/meminfo` (host-wide) is the right source.
+    if (cgroups_reader && !cgroup_memory_levels.empty())
+    {
+        uint64_t min_available = std::numeric_limits<uint64_t>::max();
+        bool any_finite = false;
+        bool any_read_failure = false;
+        for (auto & level : cgroup_memory_levels)
+        {
+            try
+            {
+                /// Lazily (re)open files that were never opened or failed to open at
+                /// construction, and reopen any descriptor that became unusable after a
+                /// previous read failure. A persistent open failure keeps throwing here and
+                /// fails the whole tick closed below, instead of permanently dropping a
+                /// (possibly tighter) ancestor and overestimating headroom.
+                if (!level.max_buf)
+                    level.max_buf = std::make_unique<ReadBufferFromFile>(level.max_path);
+                else
+                    level.max_buf->rewind();
+
+                String first_token;
+                readStringUntilWhitespace(first_token, *level.max_buf);
+
+                uint64_t used = 0;
+                if (!level.current_path.empty())
+                {
+                    /// v2: read `memory.current` for the same level, so sibling
+                    /// consumption inside an ancestor counts against that ancestor's budget.
+                    if (!level.current_buf)
+                        level.current_buf = std::make_unique<ReadBufferFromFile>(level.current_path);
+                    else
+                        level.current_buf->rewind();
+                    readIntText(used, *level.current_buf);
+
+                    /// `memory.current` includes reclaimable page cache and reclaimable slab,
+                    /// which the kernel frees under pressure before OOM-killing. Counting them
+                    /// as usage would shrink the headroom on a read-heavy server with a warm
+                    /// page cache (`memory.current` close to `memory.max`) and could make
+                    /// ClickHouse throw `MEMORY_LIMIT_EXCEEDED` even though most of that memory
+                    /// is reclaimable. Subtract the level's own reclaimable bytes so the
+                    /// headroom mirrors the host-wide `MemAvailable` path. `resident` (the
+                    /// formula's baseline) likewise excludes reclaimable memory, so on a
+                    /// dedicated cgroup `resident + available` converges to `memory.max`.
+                    if (!level.stat_path.empty())
+                    {
+                        if (!level.stat_buf)
+                            level.stat_buf = std::make_unique<ReadBufferFromFile>(level.stat_path);
+                        else
+                            level.stat_buf->rewind();
+                        uint64_t reclaimable = MemoryWorkerHelpers::reclaimableFromCgroupV2Stat(*level.stat_buf);
+                        used = (used > reclaimable) ? (used - reclaimable) : 0;
+                    }
+                }
+                else
+                {
+                    /// v1: the only level is the leaf cgroup; use the same usage source as
+                    /// `cgroups_reader`. v1 does not traverse the hierarchy.
+                    /// `cgroups_reader->readMemoryUsage` already excludes reclaimable memory
+                    /// (it sums anon + sock + non-reclaimable kernel), so no further adjustment
+                    /// is needed here.
+                    used = cgroups_reader->readMemoryUsage();
+                }
+
+                auto decision = MemoryWorkerHelpers::decideCgroupLevelAvailability(first_token, used, host_memory_bytes);
+                if (decision.kind == MemoryWorkerHelpers::CgroupLevelKind::Finite)
+                {
+                    min_available = std::min(min_available, decision.available);
+                    any_finite = true;
+                }
+            }
+            catch (...)
+            {
+                any_read_failure = true;
+                /// Drop the (possibly corrupt) descriptors so the next tick reopens cleanly.
+                level.max_buf.reset();
+                level.current_buf.reset();
+                level.stat_buf.reset();
+                if (!std::exchange(cgroup_memory_max_warnings_printed, true))
+                    tryLogCurrentException(log, "Cannot read cgroup memory limit/current");
+            }
+        }
+        /// Fail-close on any per-level read failure. If even one ancestor's
+        /// `memory.max`/`memory.current` could not be read, the omitted level may
+        /// have been more restrictive than the levels we observed, so `min_available`
+        /// over only the successful subset can overestimate the real headroom.
+        /// Falling through to host-wide `/proc/meminfo` would compound the problem
+        /// on containerized deployments, where the host's free memory can be far
+        /// above the cgroup budget, and using it as the headroom estimate can let
+        /// `total_memory_tracker` grow past the cgroup limit and trigger a cgroup
+        /// OOM kill. Skip the adjustment this tick; the worker will retry next tick.
+        if (any_read_failure)
+            return std::nullopt;
+        if (any_finite)
+        {
+            /// `min_available == 0` is a real "at or over the binding limit" signal,
+            /// not a read failure. The caller's `used + safety_margin` clamp will keep
+            /// the dynamic limit from strangling in-flight queries, while still
+            /// shrinking the budget at the highest-pressure point.
+            return min_available;
+        }
+    }
+#endif
+    return readSystemAvailableMemory();
+}
+
+std::optional<uint64_t> MemoryWorker::readSystemAvailableMemory()
+{
+#if defined(OS_LINUX)
+    static constexpr std::string_view path = "/proc/meminfo";
+
+    try
+    {
+        if (!meminfo_buf)
+            meminfo_buf = std::make_unique<ReadBufferFromFile>(std::string{path});
+        meminfo_buf->rewind();
+
+        while (!meminfo_buf->eof())
+        {
+            std::string name;
+            readStringUntilWhitespace(name, *meminfo_buf);
+            skipWhitespaceIfAny(*meminfo_buf, true);
+
+            uint64_t kb = 0;
+            readIntText(kb, *meminfo_buf);
+
+            if (name == "MemAvailable:")
+                return kb * 1024ULL;
+
+            skipToNextLineOrEOF(*meminfo_buf);
+        }
+
+        if (!std::exchange(meminfo_warnings_printed, true))
+            LOG_ERROR(log, "Cannot find 'MemAvailable' in '{}'", path);
+        return std::nullopt;
+    }
+    catch (...)
+    {
+        if (!std::exchange(meminfo_warnings_printed, true))
+            tryLogCurrentException(log, fmt::format("Cannot read '{}'", path));
+        /// Reopen on next attempt in case the descriptor became unusable.
+        meminfo_buf.reset();
+        return std::nullopt;
+    }
+#else
+    return std::nullopt;
+#endif
+}
+
 void MemoryWorker::updateResidentMemoryThread()
 {
     DB::setThreadName(ThreadName::MEMORY_WORKER);
@@ -409,7 +821,11 @@ void MemoryWorker::updateResidentMemoryThread()
     OSThreadNiceValue::set(-20);
 
     std::chrono::milliseconds chrono_period_ms{rss_update_period_ms};
-    [[maybe_unused]] bool first_run = true;
+    bool first_run = true;
+    /// Resident memory observed on the previous iteration, to compute the last-interval
+    /// growth for the speculative reservation below. Initialized on the first iteration
+    /// (speculation is skipped there).
+    Int64 prev_resident = 0;
     std::unique_lock rss_update_lock(rss_update_mutex);
 
 #if USE_JEMALLOC
@@ -429,7 +845,73 @@ void MemoryWorker::updateResidentMemoryThread()
             Stopwatch total_watch;
 
             Int64 resident = getMemoryUsage(first_run);
-            MemoryTracker::updateRSS(resident);
+
+            /// Speculatively reserve growth headroom on top of the observed RSS.
+            /// `resident - prev_resident` is how much RSS actually grew during the last tick;
+            /// on the assumption that the next interval may grow by the same amount, with the
+            /// default `ratio = 1.0` we reserve one full growth delta of headroom, so
+            /// `MemoryTracker::allocImpl` will throw `MEMORY_LIMIT_EXCEEDED` (via the global
+            /// `will_be_rss > current_hard_limit` branch) before the kernel OOM-killer closes
+            /// the gap.
+            /// The reservation is additionally capped by `resident - tracked`, the part of RSS
+            /// the global tracker does not see: growth that has already flowed into the tracker
+            /// is handled by the ordinary `will_be > current_hard_limit` check, so reserving for
+            /// it would only make the limit fire needlessly early on fully-tracked workloads.
+            /// Note that the *cumulative* gap `resident - tracked` must not be used as the
+            /// reservation itself: on a long-running server, jemalloc page retention and
+            /// fragmentation make that gap structurally large (gigabytes) even when nothing is
+            /// growing. In particular, right after a large query frees its memory, `tracked`
+            /// collapses while `resident` stays high, so reserving the whole gap pins the
+            /// published `rss` at the hard limit and unrelated small allocations get false
+            /// `MEMORY_LIMIT_EXCEEDED` until a later tick republishes a sane value (this was
+            /// breaking queries in the performance-comparison CI).
+            /// `ratio = 0` disables the speculation (`rss = resident`); sanitizer builds
+            /// default to `0` (computed at compile time in
+            /// `getDefaultMemoryWorkerRssSpeculativeReserveRatio`) because shadow-memory
+            /// overhead dominates the `resident - tracked` gap there.
+            /// Skip speculation on the very first run: there is no previous interval to
+            /// extrapolate from.
+            Int64 speculative_rss = resident;
+            /// Speculation only influences the global hard-limit check in
+            /// `MemoryTracker::allocImpl` (the `will_be_rss > current_hard_limit` branch),
+            /// so it is only meaningful when a global hard limit is configured. When the
+            /// hard limit is `0` (unlimited) we skip speculation entirely: biasing `rss`
+            /// upward would change no limit decision and could only publish a misleadingly
+            /// large value.
+            const Int64 current_hard_limit = total_memory_tracker.getHardLimit();
+            if (!first_run && rss_speculative_reserve_ratio > 0.0 && current_hard_limit > 0)
+            {
+                /// `total_memory_tracker.get()` can legitimately go negative (the lazy
+                /// correction below handles this via `MemoryTracker::updateAllocated`).
+                /// That correction runs *after* this branch, so if we used the raw
+                /// value here a transiently-negative tracker would make `delta` larger
+                /// than `resident` and push the speculative `rss` arbitrarily far above
+                /// real resident, triggering false `MEMORY_LIMIT_EXCEEDED` decisions in
+                /// `MemoryTracker::allocImpl`. Clamp `tracked` to `0` first.
+                Int64 tracked = std::max<Int64>(0, total_memory_tracker.get());
+                Int64 delta = std::min(resident - prev_resident, resident - tracked);
+                /// Speculate only while real `resident` is still below the hard limit.
+                /// Once `resident >= current_hard_limit`, any positive allocation already
+                /// trips the `will_be_rss > current_hard_limit` branch in
+                /// `MemoryTracker::allocImpl`, so there is nothing left to reserve.
+                if (delta > 0 && resident < current_hard_limit)
+                {
+                    /// The reservation can be at most `current_hard_limit - resident`:
+                    /// reserving beyond the hard limit gains no early-throw power (any
+                    /// positive allocation already trips the limit once the published RSS
+                    /// reaches it). Capping the reservation *before* adding it to `resident`
+                    /// also guarantees the signed `Int64` addition cannot overflow, even
+                    /// with a very large configured ratio.
+                    const Int64 headroom = current_hard_limit - resident;
+                    double reserve_double = static_cast<double>(delta) * rss_speculative_reserve_ratio;
+                    Int64 reserve = (reserve_double >= static_cast<double>(headroom))
+                        ? headroom
+                        : static_cast<Int64>(reserve_double);
+                    speculative_rss += reserve;
+                }
+            }
+            prev_resident = resident;
+            MemoryTracker::updateRSS(speculative_rss);
 
             if (page_cache)
                 page_cache->autoResize(std::max(resident, total_memory_tracker.get()), total_memory_tracker.getHardLimit());
@@ -513,6 +995,111 @@ void MemoryWorker::updateResidentMemoryThread()
             if (total_memory_tracker.get() < 0 || correct_tracker) [[unlikely]]
                 MemoryTracker::updateAllocated(resident, /*log_change=*/false);
 #endif
+
+            /// Capture the settings generation before reading ratio/ceiling. We re-read
+            /// it just before `setHardLimit` and skip the write if a reload happened
+            /// concurrently — otherwise the worker could overwrite the value the reload
+            /// just installed with one computed from the old ratio.
+            const uint64_t gen_before = settings_generation.load(std::memory_order_acquire);
+            const double ratio = dynamic_hard_limit_ratio.load(std::memory_order_relaxed);
+            if (ratio > 0.0)
+            {
+                /// Suppress the adjustment until the server has had a chance to call
+                /// `setDynamicHardLimitSettings`. Otherwise we'd inflate the hard limit during
+                /// the brief window between `MemoryWorker::start` and the first config
+                /// reload that computes `max_server_memory_usage`.
+                Int64 ceiling = external_hard_limit.load(std::memory_order_relaxed);
+                if (ceiling >= 0)
+                {
+                    /// Distinguish "couldn't read the metric" (`nullopt`, skip this tick) from
+                    /// "metric is genuinely zero" (`0`, real high-pressure signal). Skipping
+                    /// on `0` would keep the previous (larger) hard limit in place exactly
+                    /// when ClickHouse should be shrinking its budget the most.
+                    std::optional<uint64_t> available_opt = readAvailableForDynamicLimit();
+                    if (available_opt)
+                    {
+                        uint64_t available = *available_opt;
+                        /// Use `resident` (jemalloc RSS or cgroup `memory.current`) as the baseline
+                        /// of "memory we already own", not the MemoryTracker counter. The tracker
+                        /// only counts allocations it sees through `Allocator`; jemalloc-internal
+                        /// fragmentation, mmap'd pages, page cache, and any untracked allocation
+                        /// are excluded. Under load `tracked` can be orders of magnitude smaller
+                        /// than the actual RSS, which makes `(tracked + available) * ratio` compute
+                        /// a hard limit close to current RSS and reject every subsequent allocation.
+                        Int64 used = std::max<Int64>(0, resident);
+                        /// `used + available` is the upper bound of memory we could potentially own:
+                        /// what we already use plus what is still free in our cgroup (or on the host).
+                        /// Scaling by `ratio < 1` leaves headroom for other processes on the host.
+                        auto new_hard_limit = static_cast<Int64>(
+                            static_cast<double>(static_cast<uint64_t>(used) + available) * ratio);
+
+                        /// Under high memory pressure the formula can produce `new_hard_limit <= used`.
+                        /// Setting the hard limit at or below current RSS would reject every new
+                        /// allocation and break in-flight queries — the server cannot release memory
+                        /// instantly. But skipping the tick entirely would leave the previous (often
+                        /// much larger) hard limit in place, defeating the whole point of dynamic
+                        /// adjustment: that ClickHouse should *shrink* its budget when free memory
+                        /// is gone, so co-located processes are not killed.
+                        ///
+                        /// Clamp instead of skipping: keep a small safety margin above `used` so
+                        /// queries can still allocate between ticks, but still apply the shrink so
+                        /// subsequent allocations are throttled.
+                        static constexpr Int64 safety_margin = 64ll * 1024 * 1024;
+                        new_hard_limit = std::max(new_hard_limit, used + safety_margin);
+
+                        /// Never exceed the configured `max_server_memory_usage`. The dynamic
+                        /// adjustment may only shrink the budget further, not raise it above the
+                        /// explicit user setting. This must come *after* the `used + margin` floor:
+                        /// if we are already over `ceiling`, we cannot shrink to below `used`
+                        /// without strangling our own queries, but we still must not exceed `ceiling`.
+                        if (ceiling > 0)
+                            new_hard_limit = std::min(new_hard_limit, ceiling);
+
+                        /// Renamed from `current_hard_limit` to avoid shadowing the
+                        /// `current_hard_limit` the speculative-reserve block reads earlier in
+                        /// `updateResidentMemoryThread` (`-Wshadow`/`-Werror`); no behavior change.
+                        Int64 installed_hard_limit = total_memory_tracker.getHardLimit();
+
+                        /// Only adjust when the change is large enough to matter. `resident` and
+                        /// `available` jitter by a few MiB on every tick (every ~50ms), so testing
+                        /// for exact inequality would recompute and re-apply a hard limit that differs
+                        /// by a negligible amount on almost every tick — flooding the log with
+                        /// "Adjusting ... from 89.98 GiB to 89.98 GiB" lines and calling `setHardLimit`
+                        /// dozens of times per second to no practical effect. Require the change to
+                        /// exceed a small fraction of the current limit before acting; a genuine
+                        /// memory-pressure shift moves the limit by far more than this, so the dynamic
+                        /// adjustment still reacts promptly when it actually needs to.
+                        static constexpr double min_change_ratio = 0.01; /// 1%
+                        const Int64 change_threshold = static_cast<Int64>(
+                            static_cast<double>(std::max<Int64>(0, installed_hard_limit)) * min_change_ratio);
+                        const Int64 limit_change = new_hard_limit > installed_hard_limit
+                            ? new_hard_limit - installed_hard_limit
+                            : installed_hard_limit - new_hard_limit;
+                        if (limit_change > change_threshold)
+                        {
+                            /// Defeat the reload race: take the apply mutex and re-check the
+                            /// generation under it. If a concurrent `setDynamicHardLimitSettings`
+                            /// already installed its own value, the generation will have changed
+                            /// and we skip the write so the reload's value persists. The mutex
+                            /// also rules out a TOCTOU window between the check and the apply.
+                            std::lock_guard apply_lock(dynamic_hard_limit_apply_mutex);
+                            if (settings_generation.load(std::memory_order_acquire) == gen_before)
+                            {
+                                LOG_TRACE(
+                                    log,
+                                    "Adjusting total memory hard limit from {} to {} (resident: {}, available: {}, ceiling: {}, ratio: {})",
+                                    formatReadableSizeWithBinarySuffix(installed_hard_limit),
+                                    formatReadableSizeWithBinarySuffix(new_hard_limit),
+                                    formatReadableSizeWithBinarySuffix(used),
+                                    formatReadableSizeWithBinarySuffix(available),
+                                    formatReadableSizeWithBinarySuffix(ceiling),
+                                    ratio);
+                                total_memory_tracker.setHardLimit(new_hard_limit);
+                            }
+                        }
+                    }
+                }
+            }
 
             ProfileEvents::increment(ProfileEvents::MemoryWorkerRun);
             ProfileEvents::increment(ProfileEvents::MemoryWorkerRunElapsedMicroseconds, total_watch.elapsedMicroseconds());

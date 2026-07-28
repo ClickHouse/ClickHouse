@@ -1,0 +1,80 @@
+---
+title: 'Privilège BYOC'
+slug: /cloud/reference/byoc/reference/privilege
+sidebarTitle: 'Privilège'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'privilège']
+description: 'Déployer ClickHouse sur votre propre infrastructure cloud'
+doc_type: 'reference'
+---
+
+<div id="aws-iam-roles">
+  ## Rôles IAM AWS
+</div>
+
+<div id="bootstrap-iam-role">
+  ### Rôle IAM Bootstrap
+</div>
+
+Le rôle IAM Bootstrap dispose des autorisations suivantes :
+
+* **Opérations EC2 et VPC** : requises pour configurer le VPC et les clusters EKS.
+* **Opérations S3 (par ex., `s3:CreateBucket`)** : nécessaires pour créer des buckets pour le stockage BYOC de ClickHouse.
+* **Opérations IAM (par ex., `iam:CreatePolicy`)** : nécessaires pour que les controllers créent des rôles supplémentaires (voir la section suivante pour plus de détails).
+* **Opérations EKS** : limitées aux ressources dont le nom commence par le préfixe `clickhouse-cloud`.
+
+<div id="additional-iam-roles-created-by-the-controller">
+  ### Rôles IAM supplémentaires créés par le contrôleur
+</div>
+
+En plus du `ClickHouseManagementRole` créé via CloudFormation, le contrôleur créera plusieurs rôles supplémentaires.
+
+Ces rôles sont endossés par des applications exécutées dans le cluster EKS du client :
+
+* **State Exporter Role**
+  * Composant ClickHouse qui transmet des informations sur l’état de santé du service à ClickHouse Cloud.
+  * Nécessite l’autorisation d’écrire dans une file d’attente SQS appartenant à ClickHouse Cloud.
+* **Load-Balancer Controller**
+  * Contrôleur AWS de load balancer standard.
+  * Contrôleur EBS CSI pour gérer les volumes des services ClickHouse.
+* **External-DNS**
+  * Propage les configurations DNS vers Route 53.
+* **Cert-Manager**
+  * Provisionne des certificats TLS pour les domaines de service BYOC.
+* **Cluster Autoscaler**
+  * Ajuste la taille du groupe de nœuds selon les besoins.
+
+Les rôles **K8s-control-plane** et **k8s-worker** sont destinés à être endossés par les services AWS EKS.
+
+Enfin, **`data-plane-mgmt`** permet à un composant du plan de contrôle ClickHouse Cloud de réconcilier les Custom resources nécessaires, comme `ClickHouseCluster` et le service virtuel/la Gateway Istio.
+
+<div id="gcp-service-accounts">
+  ## Comptes de service de GCP
+</div>
+
+<div id="bootstrap-service-account">
+  ### Compte de service Bootstrap
+</div>
+
+Le compte de service Bootstrap se voit attribuer des rôles personnalisés à l’échelle du projet avec les autorisations suivantes :
+
+* **Common** : autorisations de base en lecture et en identité.
+* **VPC** : gère le VPC, les sous-réseaux, le routage et les rattachements Private Service Connect qui hébergent votre infrastructure BYOC.
+* **Cluster** : gère les clusters GKE et les ressources du cluster.
+* **Storage** : utilisé pour gérer les buckets Cloud Storage servant aux sauvegardes de ClickHouse, à l’état partagé et aux données de monitoring.
+* **IAM Role** : gère les comptes de service et les rôles personnalisés dans le projet. Ce rôle ne permet pas de créer des clés de compte de service, de lier des politiques d’organisation ou de modifier des ressources dans d’autres projets.
+
+<div id="additional-service-accounts-created-by-the-controller">
+  ### Comptes de service supplémentaires créés par le contrôleur
+</div>
+
+En plus du compte de service `clickhouse-management` créé via Terraform dans le cadre de l’onboarding, lorsque vous provisionnez votre premier service BYOC, le plan de contrôle de ClickHouse (s’authentifiant en tant que `clickhouse-management`) crée des comptes de service supplémentaires dans votre projet pour des charges de travail intra-cluster spécifiques. Chacun est créé avec un jeu d’autorisations restreint, à usage unique.
+
+* **Identité d’exécution des nœuds GKE**
+  * Attachée à chaque machine virtuelle de nœud GKE de votre cluster BYOC.
+  * Utilisée par le kubelet, les agents locaux au nœud et les collecteurs Cloud Operations pour émettre des logs et des métriques, ainsi que par le sous-système de récupération d’images pour télécharger des images de conteneur.
+* **Identité du scraper de facturation**
+  * Utilisée par la charge de travail du scraper autonome pour collecter la télémétrie de facturation.
+* **Identité de monitoring**
+  * Identité cible de la stack de monitoring exécutée dans votre cluster. Utilisée pour lire et écrire dans le stockage à long terme des métriques d’un bucket GCS dédié à ce déploiement.
+* **Identité de gestion de l’exécution ClickHouse**
+  * Utilisée par le contrôleur de gestion du plan de données à l’exécution de ClickHouse, qui gère les opérations courantes post-déploiement telles que la gestion des points de terminaison Private Service Connect, les ajustements du cycle de vie des buckets et les rotations de comptes de service.

@@ -1,0 +1,10 @@
+array_nullable	1
+array_lc_nullable	2
+has_hello	2
+after_optimize	2
+nested_lc_nullable	1
+materialize_lc_nullable	1
+pp_array_lc_nullable	2
+pp_has_hello	2
+pp_after_optimize	2
+pp_materialize_lc_nullable	1

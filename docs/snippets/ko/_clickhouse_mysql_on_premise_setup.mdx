@@ -1,0 +1,96 @@
+---
+title: ClickHouse MySQL 온프레미스 설정
+---
+
+MySQL 인터페이스가 활성화된 ClickHouse 서버를 설정하는 방법은
+[공식 문서](/ko/concepts/features/interfaces/mysql)를 참조하십시오.
+
+서버의 `config.xml`에 항목을 추가하는 것 외에
+
+```xml
+<clickhouse>
+    <mysql_port>9004</mysql_port>
+</clickhouse>
+```
+
+또한 MySQL interface를 사용할 사용자에게는
+[Double SHA1 비밀번호 암호화](/ko/concepts/features/configuration/settings/settings-users#user-namepassword)를
+사용하는 것이 *필수*입니다.
+
+셸에서 Double SHA1로 암호화된 임의의 비밀번호를 생성하는 방법:
+
+```shell
+PASSWORD=$(base64 < /dev/urandom | head -c16); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
+```
+
+출력은 다음과 같이 표시됩니다:
+
+```
+LZOQYnqQN4L/T6L0
+fbc958cc745a82188a51f30de69eebfc67c40ee4
+```
+
+첫 번째 줄은 생성된 비밀번호이고, 두 번째 줄은 ClickHouse 구성에 사용할 수 있는 hash입니다.
+
+다음은 생성된 hash를 사용하는 `mysql_user`의 예시 구성입니다:
+
+`/etc/clickhouse-server/users.d/mysql_user.xml`
+
+```xml
+<users>
+    <mysql_user>
+        <password_double_sha1_hex>fbc958cc745a82188a51f30de69eebfc67c40ee4</password_double_sha1_hex>
+        <networks>
+            <ip>::/0</ip>
+        </networks>
+        <profile>default</profile>
+        <quota>default</quota>
+    </mysql_user>
+</users>
+```
+
+`password_double_sha1_hex` 항목을 직접 생성한 Double SHA1 해시로 대체하십시오.
+
+또한 `SHOW [FULL] COLUMNS` 쿼리 결과에서 ClickHouse 타입 대신 네이티브 MySQL 타입을 표시하도록 `use_mysql_types_in_show_columns`를 사용하는 것이 좋습니다.
+이렇게 하면 MySQL connector를 사용할 때 BI 도구가 데이터베이스 스키마를 올바르게 파악할 수 있습니다.
+
+예시:
+
+`/etc/clickhouse-server/users.d/mysql_user.xml`
+
+```xml
+<profiles>
+    <default>
+        <use_mysql_types_in_show_columns>1</use_mysql_types_in_show_columns>
+    </default>
+</profiles>
+```
+
+또는 기본 프로필 대신 다른 프로필에 할당할 수 있습니다.
+
+`mysql` 실행 파일을 사용할 수 있으면 명령줄에서 연결을 테스트할 수 있습니다.
+위의 예시 사용자 이름(`mysql_user`)과 비밀번호(`LZOQYnqQN4L/T6L0`)를 사용하면 명령줄은 다음과 같습니다.
+
+```bash
+mysql --protocol tcp -h localhost -u mysql_user -P 9004 --password=LZOQYnqQN4L/T6L0
+```
+
+```
+mysql> show databases;
++--------------------+
+| name               |
++--------------------+
+| INFORMATION_SCHEMA |
+| default            |
+| information_schema |
+| system             |
++--------------------+
+4 rows in set (0.00 sec)
+Read 4 rows, 603.00 B in 0.00156 sec., 2564 rows/sec., 377.48 KiB/sec.
+```
+
+마지막으로, ClickHouse 서버가 원하는 IP 주소에서 연결을 수신하도록 구성합니다. 예를 들어, 모든 주소에서 수신하려면 `config.xml`에서 다음 항목의 주석을 해제하세요:
+
+```bash
+<listen_host>::</listen_host> 
+```

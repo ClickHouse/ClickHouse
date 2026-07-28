@@ -76,11 +76,13 @@ Example:
     day Date,
     level String,
     total UInt64
-  ) ENGINE = SummingMergeTree(day, (day, level), 8192);
+  ) ENGINE = SummingMergeTree
+  PARTITION BY toYYYYMM(day)
+  ORDER BY (day, level);
 
   CREATE MATERIALIZED VIEW consumer TO daily
     AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() AS total
-    FROM queue GROUP BY day, level;
+    FROM logs GROUP BY day, level;
 
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```

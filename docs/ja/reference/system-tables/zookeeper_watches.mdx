@@ -1,0 +1,53 @@
+---
+description: 'このClickHouseサーバーに登録されている、現在アクティブなZooKeeperウォッチを表示するシステムテーブル。'
+keywords: ['システムテーブル', 'zookeeper_watches']
+slug: /operations/system-tables/zookeeper_watches
+title: 'system.zookeeper_watches'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+この ClickHouseサーバー が ZooKeeper ノード (補助的な ZooKeeper を含む) に登録している、現在有効な [ウォッチ](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html#ch_zkWatches) を表示します。各行は 1 つのウォッチを表します。
+
+<div id="columns">
+  ## カラム
+</div>
+
+* `zookeeper_name` ([String](/ja/reference/data-types/string)) — ZooKeeper 接続の名前 (メイン接続では `default`、または補助名) 。
+* `create_time` ([DateTime](/ja/reference/data-types/datetime)) — ウォッチが作成された時刻。
+* `create_time_microseconds` ([DateTime64](/ja/reference/data-types/datetime64)) — ウォッチがマイクロ秒精度で作成された時刻。
+* `path` ([String](/ja/reference/data-types/string)) — 監視対象の ZooKeeper パス。
+* `session_id` ([Int64](/ja/reference/data-types/int-uint)) — ウォッチを登録した接続のセッション ID。
+* `request_xid` ([Int64](/ja/reference/data-types/int-uint)) — ウォッチを作成したリクエストの XID。
+* `op_num` ([Enum](/ja/reference/data-types/enum)) — ウォッチを作成したリクエストの種類。
+* `watch_type` ([Enum8](/ja/reference/data-types/enum)) — ウォッチの種類。設定可能な値:
+  * `Children` — 子ノードの一覧の変更を監視します (`List` 操作で設定) 。
+  * `Exists` — ノードの作成または削除を監視します。
+  * `Data` — ノードデータの変更を監視します (`Get` 操作で設定) 。
+
+例:
+
+```sql
+SELECT * FROM system.zookeeper_watches FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+zookeeper_name:           default
+create_time:              2026-03-16 12:00:00
+create_time_microseconds: 2026-03-16 12:00:00.123456
+path:                     /clickhouse/task_queue/ddl
+session_id:               106662742089334927
+request_xid:              10858
+op_num:                   List
+watch_type:               Children
+```
+
+**関連項目**
+
+* [ZooKeeper](/ja/guides/oss/best-practices/tips#zookeeper)
+* [ZooKeeperガイド](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html)

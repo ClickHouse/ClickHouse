@@ -11,10 +11,10 @@ SELECT count() FROM t_readonly;
 ALTER TABLE t_readonly MODIFY SETTING table_readonly = 1;
 
 -- Inserts should fail.
-INSERT INTO t_readonly VALUES (2); -- { serverError TABLE_IS_READ_ONLY }
+INSERT INTO t_readonly VALUES (2); -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
 
 -- Mutations should fail.
-ALTER TABLE t_readonly DELETE WHERE x = 1; -- { serverError TABLE_IS_READ_ONLY }
+ALTER TABLE t_readonly DELETE WHERE x = 1; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
 
 -- But changing settings should still work (so we can toggle readonly back).
 ALTER TABLE t_readonly MODIFY SETTING table_readonly = 0;

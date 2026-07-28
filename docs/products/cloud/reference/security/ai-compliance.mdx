@@ -1,0 +1,40 @@
+---
+title: 'AI compliance'
+slug: /cloud/security/ai-compliance
+description: 'Overview of AI compliance at ClickHouse'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', 'Artificial Intelligence', 'AI Governance', 'AI Compliance']
+---
+
+ClickHouse leverages AI to assist customers and provide increased functionality in the platform. This document describes where AI is used, options to enable or disable it, and links to other documentation showing how to use it.
+
+<Info>
+**AI retention and training**
+
+By default, none of our AI features retain customer data or use customer data to train models.
+</Info>
+
+## AI Support {#ai-support}
+
+The setting to enable AI support may be reviewed and modified by a user with `organization:manage` permissions. It is available in the organization settings page.
+
+ClickHouse provides AI functionality for customers to interact with a chat agent for configuration or troubleshooting assistance. The agent uses information from our documentation and case management systems to provide quick responses to customer inquiries. 
+
+## Sharing data for product improvement {#sharing-data-for-product-improvement}
+
+The setting to enable data sharing for product improvement may be reviewed and modified by a user with `organization:manage` permissions. It is available in the organization settings page.
+
+When the administrator-level setting for sharing data with ClickHouse for product improvement purposes is toggled on for your organization, ClickHouse may use data generated or collected through your users' use of an AI Feature, including inputs, outputs, logs, and metadata (but excluding the direct results of queries to ClickHouse Cloud), for purposes like model evaluations (accuracy, performance, and safety/compliance testing), improving service reliability, safety, user experience, and conducting analytics. We will not use this data to train, re-train, or fine-tune models.
+
+## ClickHouse Assistant {#clickhouse-assistant}
+
+The setting to enable [ClickHouse Assistant](/products/cloud/features/ai-ml/ask-ai) may be reviewed and modified by a user with `service:manage-generative-ai` permissions. It is available in the service settings page. This feature enables two distinct pieces of functionality:
+
+| Feature              | Description                                                      | Data used                                       | User validation |
+|:---------------------|:-----------------------------------------------------------------|:------------------------------------------------|:----------------|
+| SQL AI               | Writes, analyzes and recommends improvements for queries         | Service metadata, query text, and prompt inputs | Output is provided to the user for review before query execution | 
+| ClickHouse Assistant | Allows users to ask natural language questions and get answers   | Service metadata and content, ClickHouse documentation, and prompt inputs | Output is presented for review, users should validate before use |
+
+## Model context protocol {#model-comtext-protocol}
+
+[ClickHouse MCP](/products/cloud/features/ai-ml/remote-mcp) enables customers to more easily create their own agents leveraging data in their ClickHouse services. This requires a separate setup and leverages the customer's AI model of choice to process data. ClickHouse does not manage or have access to the customer's AI models.

@@ -1,0 +1,57 @@
+---
+description: 'Документация по CHECK GRANT'
+sidebarTitle: 'CHECK GRANT'
+slug: /sql-reference/statements/check-grant
+title: 'Оператор CHECK GRANT'
+doc_type: 'reference'
+---
+
+Запрос `CHECK GRANT` используется для проверки, выдана ли текущему пользователю/роли определённая привилегия.
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+Общий синтаксис запроса выглядит следующим образом:
+
+```sql
+CHECK GRANT privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*}
+```
+
+* `privilege` — Тип привилегии.
+
+<div id="examples">
+  ## Примеры
+</div>
+
+Если пользователю ранее была выдана эта привилегия, значение `check_grant` будет `1`. В противном случае значение `check_grant` будет `0`.
+
+Если `table_1.col1` существует и текущему пользователю выдана привилегия `SELECT`/`SELECT(con)` или роль (с этой привилегией), значение будет `1`.
+
+```sql
+CHECK GRANT SELECT(col1) ON table_1;
+```
+
+```text
+┌─result─┐
+│      1 │
+└────────┘
+```
+
+Если `table_2.col2` не существует или текущему пользователю не выдана привилегия `SELECT`/`SELECT(con)` либо роль (с такой привилегией), ответ — `0`.
+
+```sql
+CHECK GRANT SELECT(col2) ON table_2;
+```
+
+```text
+┌─result─┐
+│      0 │
+└────────┘
+```
+
+<div id="wildcard">
+  ## Подстановочный знак
+</div>
+
+При указании привилегий можно использовать звёздочку (`*`) вместо имени таблицы или базы данных. Правила использования подстановочных знаков см. в разделе [ПРИВИЛЕГИИ С ПОДСТАНОВОЧНЫМИ ЗНАКАМИ](/ru/reference/statements/grant#wildcard-grants).

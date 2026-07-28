@@ -1,0 +1,111 @@
+---
+noindex: true
+title: "FAQ / 문제 해결"
+sidebarTitle: "FAQ"
+description: "이 오류가 ClickHouse Operator 로그에 표시되면 ClickHouse Operator가 ClickHouse 클러스터의 리컨실리에이션을 완료하지 못하고 있음을 의미합니다. 이는 Operator가"
+---
+
+<div id="zone-details-couldnt-be-found-for-any-pv">
+  ## 어떤 PV에서도 zone 세부 정보를 찾을 수 없나요?
+</div>
+
+이 오류가 ClickHouse Operator 로그에 표시되면, 연산자가 PersistentVolumes에 토폴로지 인식 노드 어피니티가 자동으로 설정될 것으로 기대하기 때문에 ClickHouse 클러스터의 리컨실리에이션을 완료할 수 없다는 의미입니다. 구체적으로 연산자는 `topology.kubernetes.io/zone` 레이블을 기준으로 노드 어피니티를 찾습니다. 일반적으로는 토폴로지 인식 볼륨 프로비저너가 이를 처리합니다(예: AWS EBS volume provisioner를 사용하는 경우).
+
+하지만 일부 클라우드 제공업체(예: IBM) 또는 온프레미스 환경에서는 이 값이 자동으로 설정되지 않거나 비표준 레이블이 사용될 수 있습니다. 이런 경우에도 연산자가 계속 동작할 수 있도록 하려면, 예를 들어 스토리지 클래스에 노드 어피니티를 추가하는 것을 권장합니다:
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-nvme-sc
+allowVolumeExpansion: true
+parameters:
+  path: /nvme/disk
+provisioner: rancher.io/local-path
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/zone
+        values:
+          - <your_cluster_name>-keeper
+          - <your_host_1>
+          - <your_host_2>
+          - <your_host_3>
+          - <your_host_4>
+          - <your_host_5>
+          - <your_host_6>
+      - key: directpv.min.io/zone
+        values:
+          - default
+```
+
+이렇게 하면 스토리지 볼륨이 올바른 노드 어피니티를 사용해 생성되도록 합니다. 예시:
+
+```yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  ...
+spec:
+  accessModes:
+    - ReadWriteOnce
+  ...
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: directpv.min.io/zone
+              operator: In
+              values:
+                - default
+  ...
+```
+
+토폴로지를 처리하기 위해 비표준 레이블을 사용하는 경우 연산자는 `additionalZoneLabelRegexes` 속성을 노출합니다. 예를 들어 연산자를 설치할 때 helm 차트를 사용한다면, 위의 PersistentVolume과 일치하도록 `operator.additionalZoneLabelRegexes` helm 값을 `directpv.*zone`으로 설정할 수 있습니다.
+
+<div id="what-does-the-loadbalancertype-field-on-the-clickhousecluster-crd-do">
+  ## ClickHouseCluster CRD의 `loadBalancerType` 필드는 무슨 역할을 하나요?
+</div>
+
+`loadBalancerType`는 실제로 ClickHouse 클러스터의 Service에 로드 밸런서 어노테이션을 추가하지 않습니다. 현재 ClickHouse Operator는 ClickHouse 클러스터용 로드 밸런서를 생성하는 기능을 지원하지 않습니다. 이 필드는 ClickHouse Cloud에서만 사용되며, Cloud SQL 콘솔에서 사용할 사용자를 생성하는 데 활용됩니다.
+
+<div id="do-i-have-to-use-a-nvme-attached-instance-what-purpose-does-the-nvme-disk-serve">
+  ## NVMe attached 인스턴스를 반드시 사용해야 하나요? NVMe 디스크는 어떤 용도로 쓰이나요?
+</div>
+
+NVMe 디스크는 ClickHouse Operator가 ClickHouse 서버 파드에 캐시 볼륨을 마운트하는 데 사용됩니다. 이 캐시 볼륨은 S3(또는 이와 동등한 객체 스토리지)에서 들어오는 데이터를 캐시하는 데 사용됩니다. ClickHouse Operator는 ClickHouse 서버 구성에서 디스크를 자동으로 설정합니다:
+
+```yaml
+s3diskWithCache:
+    type: cache
+    disk: s3disk
+    path: /mnt/clickhouse-cache/sharedS3DiskCache
+    max_size:
+    '@from_env': CONFIG_DISK_CACHE_SIZE
+    cache_on_write_operations: 1
+```
+
+SharedMergeTree를 사용하는 경우 ClickHouse는 데이터를 실제로 로컬에 저장하지 않습니다. 이는 SharedMergeTree에서 실행되는 쿼리의 성능을 최적화하는 용도 외에는 의미가 없습니다.
+
+EC2 인스턴스를 사용하는 경우 AWS EBS와 같은 다른 저장 장치도 사용할 수 있습니다. 이 경우 온보딩 가이드의 일부 단계가 달라집니다:
+
+* ClickHouse 서버 Kubernetes 파드를 스케줄링하는 데 사용하는 인스턴스에 디스크가 연결되어 있는지 확인해야 합니다.
+* 디스크 아키텍처 변경 사항이 반영되도록 Launch Template를 수정해야 합니다. RAID 디스크를 생성하고 디스크를 ext4 또는 xfs로 포맷하는 것은 여전히 가능하지만, 장치 목록은 당연히 다른 도구(예: lsblk)로 확인해야 합니다.
+* 디스크가 예시 Launch Template처럼 `/nvme/disk`에 마운트되지 않았다면, ClickHouseCluster Helm 차트의 `hostPathBaseDirectory`를 실제 마운트 지점으로 설정해야 합니다.
+
+선택에 따라 쿼리 성능에 영향을 줄 수 있습니다.
+
+<div id="can-i-deploy-multiple-clickhouseclusters-in-the-same-namespace">
+  ## 동일한 네임스페이스에 여러 개의 ClickHouseCluster를 배포할 수 있습니까?
+</div>
+
+아니요. 연산자는 네임스페이스당 정확히 하나의 `ClickHouseCluster`만 있다고 가정합니다. 동일한 네임스페이스에 여러 인스턴스를 배포하면 리컨실리에이션 충돌이 발생합니다. `onprem-clickhouse-cluster` Helm 차트는 기본적으로 네임스페이스를 단일 `ClickHouseCluster` 리소스로 제한하는 `ResourceQuota`를 통해 이를 강제합니다. 여러 클러스터가 필요한 경우 각 클러스터를 별도의 네임스페이스에 배포하십시오.
+
+<div id="i-use-s3-compatible-storage-but-region-information-isnt-required-or-causes-issues">
+  ## S3-compatible 스토리지를 사용하지만 리전 정보가 필요하지 않거나 문제를 일으키는 경우
+</div>
+
+기본적으로 연산자는 S3 연결에서 리전 정보를 필수로 적용합니다. 이는 클라우드 객체 스토리지에 권장되는 동작이지만, 온프레미스 객체 스토리지(예: MinIO)를 사용하는 경우 리전 정보가 문제를 일으킬 수 있습니다.
+
+연산자는 `ClickHouseCluster` 사용자 지정 리소스에서 `spec.isOnPremiseInstance`를 `true`로 설정하여 클러스터별로 리전 강제를 비활성화할 수 있습니다. 이렇게 설정하면 연산자는 S3 연결에서 리전 정보를 선택 사항으로 처리하며, 리전이 전달되지 않으면 리전 필드가 구성에서 완전히 제거됩니다.

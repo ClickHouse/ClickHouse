@@ -1,0 +1,50 @@
+---
+description: 'HAVING 子句文档'
+sidebarTitle: 'HAVING'
+slug: /sql-reference/statements/select/having
+title: 'HAVING 子句'
+doc_type: 'reference'
+---
+
+允许对 [GROUP BY](/zh/reference/statements/select/group-by) 生成的聚合结果进行过滤。它与 [WHERE](/zh/reference/statements/select/where) 子句类似，但区别在于，`WHERE` 在聚合前执行，而 `HAVING` 在聚合后执行。
+
+在 `HAVING` 子句中，可以通过别名引用 `SELECT` 子句中的聚合结果。或者，`HAVING` 子句也可以根据未在查询结果中返回的其他聚合结果进行过滤。
+
+<div id="example">
+  ## 示例
+</div>
+
+如果你有一个如下所示的 `sales` 表：
+
+```sql
+CREATE TABLE sales
+(
+    region String,
+    salesperson String,
+    amount Float64
+)
+ORDER BY (region, salesperson);
+```
+
+你可以这样查询它：
+
+```sql
+SELECT
+    region,
+    salesperson,
+    sum(amount) AS total_sales
+FROM sales
+GROUP BY
+    region,
+    salesperson
+HAVING total_sales > 10000
+ORDER BY total_sales DESC;
+```
+
+这会列出所在地区总销售额超过 10,000 的销售人员。
+
+<div id="limitations">
+  ## 限制
+</div>
+
+如果未进行聚合，就不能使用 `HAVING`。请改用 `WHERE`。

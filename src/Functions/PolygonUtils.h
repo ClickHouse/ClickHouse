@@ -168,10 +168,9 @@ public:
     /// ─ Default value is 16, which is a good compromise for most cases.
     static constexpr std::size_t max_elements_per_rtree_node = 16;
 
-    explicit PointInMultiPolygonRTree(const MultiPolygon & multi_polygon_, UInt16 grid_size_ = 8)
-        : multi_polygon(multi_polygon_)
+    explicit PointInMultiPolygonRTree(const MultiPolygon & multi_polygon, UInt16 grid_size_ = 8)
     {
-        build(grid_size_);
+        build(multi_polygon, grid_size_);
     }
 
     /// O(log N + K) where K = polygons that contain the point.
@@ -202,7 +201,6 @@ public:
     }
 
 private:
-    MultiPolygon multi_polygon;
     VectorWithMemoryTracking<PointInPolygonImpl> polygon_impls;
 
     /// Boost.Geometry split policy choices
@@ -216,7 +214,10 @@ private:
     /// Only becomes true if all polygons have empty bounding box.
     bool has_empty_bound = false;
 
-    void build(UInt16 grid_size)
+    /// The input multipolygon is consumed only to build the per-polygon impls and the R-tree; it is
+    /// intentionally not retained (contains() needs only the impls and the tree), which avoids keeping
+    /// a second full copy of every vertex alongside the per-polygon copies in polygon_impls.
+    void build(const MultiPolygon & multi_polygon, UInt16 grid_size)
     {
         polygon_impls.reserve(multi_polygon.size());
 

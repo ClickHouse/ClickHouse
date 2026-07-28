@@ -1,0 +1,116 @@
+---
+description: 'A sacrificial child process that attracts the Linux OOM killer before
+  the ClickHouse server, giving the server a chance to shed load and survive.'
+sidebar_label: 'OOM canary'
+sidebar_position: 60
+slug: /operations/settings/oom-canary
+title: 'OOM canary'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+
+<ExperimentalBadge/>
+
+:::note
+The OOM canary is experimental and disabled by default. Its behavior may change
+between ClickHouse versions until production validation is complete.
+:::
+
+## Overview {#overview}
+
+When a host or memory cgroup runs out of memory, the Linux OOM (out-of-memory)
+killer terminates a process with `SIGKILL` — usually the largest consumer, which
+on a dedicated host is `clickhouse-server` itself. The whole server is lost
+instead of being given a chance to recover.
+
+The OOM canary changes who dies first. It runs a small *sacrificial* child
+process that makes itself the most attractive OOM target, so the kernel kills it
+instead of the server. The server then detects the death, confirms it was an OOM
+event, and sheds memory pressure so it can survive.
+
+The canary does not raise any memory limit and is not a replacement for correct
+limits (see [Memory overcommit](/operations/settings/memory-overcommit) and
+`max_server_memory_usage`). It is a last line of defense that trades a small,
+fixed amount of memory for a chance to survive a memory spike.
+
+## How it works {#how-it-works}
+
+The canary is a separate `clickhouse oom-canary` process. It sets its own
+`oom_score_adj` to the maximum (`1000`) so the kernel targets it first, then
+allocates, touches, and `mlock`-s `oom_canary_size` bytes (100 MB by default) so
+its resident set is real. It is killed automatically if the server exits.
+
+In the server, a monitor thread watches the canary (via `pidfd`) and reacts when
+it dies:
+
+- Killed by `SIGKILL` **with** cgroup OOM evidence → run the OOM response, then
+  relaunch a fresh canary.
+- Killed **without** OOM evidence (for example, a manual `kill -9`), or exited
+  with a transient failure → relaunch only, no response.
+- Permanent setup failure, or server shutdown → the canary disables itself.
+
+OOM evidence comes only from the cgroup v2 `memory.events.local` `oom_kill`
+counter. It is deliberately cgroup-local: hierarchical or host-wide counters can
+be advanced by unrelated processes and would trigger false responses.
+
+On a confirmed OOM the response runs these independent steps: log a `FATAL`
+message, purge allocator (jemalloc) arenas, best-effort cancel all running
+queries, cancel all merges and mutations, and queue an event in
+[`system.crash_log`](/operations/system-tables/crash_log). System logs are not
+flushed synchronously, because forcing I/O under memory pressure can make things
+worse.
+
+## Requirements {#requirements}
+
+- **Linux ≥ 5.3.** The monitor owns the canary via `pidfd_open`; on older kernels
+  the canary disables itself at startup. It is a no-op on non-Linux platforms.
+- **cgroup v2 with `memory.events.local`** for the OOM response. Without it the
+  canary still relaunches after a `SIGKILL` but cannot confirm an OOM, so the
+  response never runs (a warning is logged at startup).
+- **`mlock` capability (optional).** Locking the canary's memory needs
+  `CAP_IPC_LOCK` or a sufficient `RLIMIT_MEMLOCK`; if it fails the canary logs a
+  warning and its memory may be swapped out, weakening it as an OOM target.
+
+:::warning memory.oom.group
+If cgroup v2 `memory.oom.group` is enabled for the server's cgroup, the kernel
+kills the entire cgroup as one unit on an OOM — the server dies together with the
+canary and the response never runs. The canary cannot protect the server in this
+mode; a warning is logged at startup.
+:::
+
+## Configuration {#configuration}
+
+The canary is controlled by [server settings](/operations/server-configuration-parameters/settings),
+set as top-level elements of the server configuration and applied on restart.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `oom_canary_enable` | `false` | Enable the OOM canary. |
+| `oom_canary_size` | `104857600` (100 MB) | Bytes the canary allocates and touches. Larger values make it a more attractive OOM target. |
+| `oom_canary_relaunch` | `true` | Relaunch the canary after it dies (unless it was a permanent setup failure or shutdown), subject to the limits below. |
+| `oom_canary_max_rapid_relaunches` | `10` | Maximum consecutive *rapid* relaunches before auto-relaunch is disabled, to avoid thrashing. Resets once a canary outlives `oom_canary_max_backoff_seconds`. |
+| `oom_canary_initial_backoff_seconds` | `1` | Initial delay between relaunches; doubles each time up to the maximum. |
+| `oom_canary_max_backoff_seconds` | `60` | Maximum delay between relaunches. |
+
+```xml
+<clickhouse>
+    <oom_canary_enable>1</oom_canary_enable>
+    <oom_canary_size>104857600</oom_canary_size>
+</clickhouse>
+```
+
+## Observability {#observability}
+
+A confirmed OOM produces a row in
+[`system.crash_log`](/operations/system-tables/crash_log) with `signal = 9` and a
+`signal_description` mentioning `OOM Canary`:
+
+```sql
+SELECT event_time, signal, signal_description
+FROM system.crash_log
+WHERE signal = 9 AND signal_description LIKE '%OOM Canary%'
+ORDER BY event_time DESC;
+```
+
+The canary's lifecycle and each OOM-response step are also logged to the server log.

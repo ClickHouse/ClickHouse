@@ -1,0 +1,170 @@
+---
+description: 'توثيق أداة clickhouse-benchmark '
+sidebarTitle: 'clickhouse-benchmark'
+slug: /operations/utilities/clickhouse-benchmark
+title: 'clickhouse-benchmark'
+doc_type: 'reference'
+---
+
+يتصل بخادم ClickHouse ويرسل الاستعلامات المحددة بشكل متكرر.
+
+**الصياغة**
+
+```bash
+$ clickhouse-benchmark --query ["single query"] [keys]
+```
+
+أو
+
+```bash
+$ echo "single query" | clickhouse-benchmark [keys]
+```
+
+أو
+
+```bash
+$ clickhouse-benchmark [keys] <<< "single query"
+```
+
+إذا أردت إرسال مجموعة من الاستعلامات، فأنشئ ملفًا نصيًا وضع كل استعلام في سطر منفصل داخل هذا الملف. على سبيل المثال:
+
+```sql
+SELECT * FROM system.numbers LIMIT 10000000;
+SELECT 1;
+```
+
+ثم مرِّر هذا الملف إلى الإدخال القياسي لـ `clickhouse-benchmark`:
+
+```bash
+clickhouse-benchmark [keys] < queries_file;
+```
+
+<div id="clickhouse-benchmark-command-line-options">
+  ## خيارات سطر الأوامر
+</div>
+
+* `--query=QUERY` — الاستعلام المراد تنفيذه. إذا لم يُمرَّر هذا المَعلَم، فسيقرأ `clickhouse-benchmark` الاستعلامات من الإدخال القياسي.
+* `--query_id=ID` — معرّف الاستعلام.
+* `--query_id_prefix=ID_PREFIX` — بادئة معرّف الاستعلام.
+* `--queries-format=FORMAT` — تنسيق الاستعلامات المقروءة من الإدخال القياسي. القيم الممكنة: `tsv` (الافتراضي، استعلام واحد في كل سطر مع تهريب علامات الجدولة) و`script` (تحليل الإدخال على أنه برنامج نصي يضم عدة استعلامات مفصولة بفواصل منقوطة). قيد `script`: يجب أن تكون استعلامات `INSERT ... FORMAT` في سطر واحد.
+* `-c N`, `--concurrency=N` — عدد الاستعلامات التي يرسلها `clickhouse-benchmark` بالتزامن. القيمة الافتراضية: 1.
+* `-C N`, `--max_concurrency=N` — يزيد عدد الاستعلامات المتوازية تدريجيًا حتى القيمة المحددة، مع إنشاء تقرير واحد لكل مستوى من مستويات التزامن.
+* `--precise` — يفعّل إعداد تقارير دقيقة لكل فاصل زمني باستخدام مقاييس موزونة.
+* `-d N`, `--delay=N` — الفاصل الزمني بالثواني بين التقارير المرحلية (لتعطيل التقارير، عيّن القيمة 0). القيمة الافتراضية: 1.
+* `-h HOST`, `--host=HOST` — مضيف الخادم. القيمة الافتراضية: `localhost`. في [وضع المقارنة](#clickhouse-benchmark-comparison-mode) يمكنك استخدام عدة مفاتيح `-h`.
+* `-i N`, `--iterations=N` — العدد الإجمالي للاستعلامات. القيمة الافتراضية: 0 (تكرار بلا نهاية).
+* `-r`, `--randomize` — تنفيذ الاستعلامات بترتيب عشوائي إذا كان هناك أكثر من استعلام إدخال واحد.
+* `-s`, `--secure` — استخدام اتصال `TLS`.
+* `-t N`, `--timelimit=N` — المهلة الزمنية بالثواني. يتوقف `clickhouse-benchmark` عن إرسال الاستعلامات عند بلوغ المهلة المحددة. القيمة الافتراضية: 0 (المهلة الزمنية معطّلة).
+* `--port=N` — منفذ الخادم. القيمة الافتراضية: 9000. في [وضع المقارنة](#clickhouse-benchmark-comparison-mode) يمكنك استخدام عدة مفاتيح `--port`.
+* `--confidence=N` — مستوى الثقة لاختبار t. القيم الممكنة: 0 (80%)، 1 (90%)، 2 (95%)، 3 (98%)، 4 (99%)، 5 (99.5%). القيمة الافتراضية: 5. في [وضع المقارنة](#clickhouse-benchmark-comparison-mode)، يُجري `clickhouse-benchmark` [اختبار Student&#39;s t-test المستقل لعينتين](https://en.wikipedia.org/wiki/Student%27s_t-test#Independent_two-sample_t-test) لتحديد ما إذا كان التوزيعان غير مختلفين عند مستوى الثقة المحدد.
+* `--cumulative` — طباعة البيانات التراكمية بدلًا من البيانات لكل فاصل زمني.
+* `--database=DATABASE_NAME` — اسم قاعدة بيانات ClickHouse. القيمة الافتراضية: `default`.
+* `--user=USERNAME` — اسم مستخدم ClickHouse. القيمة الافتراضية: `default`.
+* `--password=PSWD` — كلمة مرور مستخدم ClickHouse. القيمة الافتراضية: سلسلة فارغة.
+* `--stacktrace` — إخراج stack traces. عند ضبط هذا المفتاح، يعرض `clickhouse-benchmark` stack traces الخاصة بالاستثناءات.
+* `--stage=WORD` — مرحلة معالجة الاستعلام على الخادم. يوقف ClickHouse معالجة الاستعلام ويعيد استجابة إلى `clickhouse-benchmark` عند المرحلة المحددة. القيم الممكنة: `complete`, `fetch_columns`, `with_mergeable_state`. القيمة الافتراضية: `complete`.
+* `--roundrobin` — بدلًا من مقارنة الاستعلامات عبر مجموعات `--host`/`--port` المختلفة، اختر `--host`/`--port` عشوائيًا لكل استعلام وأرسل الاستعلام إليه.
+* `--reconnect=N` — يتحكم في سلوك إعادة الاتصال. القيم الممكنة: 0 (عدم إعادة الاتصال مطلقًا)، 1 (إعادة الاتصال لكل استعلام)، أو N (إعادة الاتصال بعد كل N استعلامات). القيمة الافتراضية: 0.
+* `--max-consecutive-errors=N` — عدد الأخطاء المتتالية المسموح بها. القيمة الافتراضية: 0.
+* `--ignore-error`,`--continue_on_errors` — متابعة الاختبار حتى إذا فشلت الاستعلامات.
+* `--client-side-time` — عرض الوقت شاملاً الاتصال عبر الشبكة بدلًا من وقت جهة الخادم؛ لاحظ أنه في إصدارات الخادم الأقدم من 22.8 نعرض دائمًا وقت جهة العميل.
+* `--proto-caps` — تمكين/تعطيل chunking في نقل البيانات. الخيارات (يمكن فصلها بفواصل): `chunked_optional`, `notchunked`, `notchunked_optional`, `send_chunked`, `send_chunked_optional`, `send_notchunked`, `send_notchunked_optional`, `recv_chunked`, `recv_chunked_optional`, `recv_notchunked`, `recv_notchunked_optional`. القيمة الافتراضية: `notchunked`.
+* `--help` — يعرض رسالة المساعدة.
+* `--verbose` — يزيد مستوى تفصيل رسالة المساعدة.
+
+إذا كنت تريد تطبيق بعض [الإعدادات](/ar/concepts/features/configuration/settings/overview) على الاستعلامات، فمرّرها بالصيغة `--<session setting name>= SETTING_VALUE`. على سبيل المثال، `--max_memory_usage=1048576`.
+
+<div id="clickhouse-benchmark-environment-variable-options">
+  ## خيارات متغيرات البيئة
+</div>
+
+يمكن تعيين اسم المستخدم وكلمة المرور والمضيف عبر متغيرات البيئة `CLICKHOUSE_USER` و`CLICKHOUSE_PASSWORD` و`CLICKHOUSE_HOST`.
+تأخذ وسيطات سطر الأوامر `--user` أو `--password` أو `--host` الأسبقية على متغيرات البيئة.
+
+<div id="clickhouse-benchmark-output">
+  ## المخرجات
+</div>
+
+يعرض `clickhouse-benchmark`، بشكل افتراضي، تقريرًا لكل فترة `--delay`.
+
+مثال على التقرير:
+
+```text
+Queries executed: 10.
+
+localhost:9000, queries 10, QPS: 6.772, RPS: 67904487.440, MiB/s: 518.070, result RPS: 67721584.984, result MiB/s: 516.675.
+
+0.000%      0.145 sec.
+10.000%     0.146 sec.
+20.000%     0.146 sec.
+30.000%     0.146 sec.
+40.000%     0.147 sec.
+50.000%     0.148 sec.
+60.000%     0.148 sec.
+70.000%     0.148 sec.
+80.000%     0.149 sec.
+90.000%     0.150 sec.
+95.000%     0.150 sec.
+99.000%     0.150 sec.
+99.900%     0.150 sec.
+99.990%     0.150 sec.
+```
+
+في التقرير يمكنك العثور على:
+
+* عدد الاستعلامات في الحقل `Queries executed:`.
+
+* سلسلة الحالة التي تتضمن (بالترتيب):
+
+  * نقطة نهاية خادم ClickHouse.
+  * عدد الاستعلامات التي تمت معالجتها.
+  * QPS: عدد الاستعلامات التي ينفذها الخادم في الثانية خلال فترة محددة في الوسيط `--delay`.
+  * RPS: عدد الصفوف التي يقرأها الخادم في الثانية خلال فترة محددة في الوسيط `--delay`.
+  * MiB/s: عدد الميبيبايت التي يقرأها الخادم في الثانية خلال فترة محددة في الوسيط `--delay`.
+  * result RPS: عدد الصفوف التي يضيفها الخادم إلى ناتج الاستعلام في الثانية خلال فترة محددة في الوسيط `--delay`.
+  * result MiB/s. عدد الميبيبايت التي يضيفها الخادم إلى ناتج الاستعلام في الثانية خلال فترة محددة في الوسيط `--delay`.
+
+* النسب المئينية لزمن تنفيذ الاستعلامات.
+
+<div id="clickhouse-benchmark-comparison-mode">
+  ## وضع المقارنة
+</div>
+
+يمكن لـ `clickhouse-benchmark` مقارنة الأداء بين خادمي ClickHouse عاملَين.
+
+لاستخدام وضع المقارنة، حدِّد نقاط النهاية لكلا الخادمين باستخدام زوجين من المفتاحين `--host` و`--port`. تُقرَن المفاتيح معًا بحسب موضعها في قائمة الوسائط؛ إذ يُقرَن أول `--host` مع أول `--port` وهكذا. ينشئ `clickhouse-benchmark` اتصالين بكلا الخادمين، ثم يرسل الاستعلامات. ويُوجَّه كل استعلام إلى خادم يُختار عشوائيًا. وتُعرَض النتائج في جدول.
+
+<div id="clickhouse-benchmark-example">
+  ## مثال
+</div>
+
+```bash
+$ echo "SELECT * FROM system.numbers LIMIT 10000000 OFFSET 10000000" | clickhouse-benchmark --host=localhost --port=9001 --host=localhost --port=9000 -i 10
+```
+
+```text
+Loaded 1 queries.
+
+Queries executed: 5.
+
+localhost:9001, queries 2, QPS: 3.764, RPS: 75446929.370, MiB/s: 575.614, result RPS: 37639659.982, result MiB/s: 287.168.
+localhost:9000, queries 3, QPS: 3.815, RPS: 76466659.385, MiB/s: 583.394, result RPS: 38148392.297, result MiB/s: 291.049.
+
+0.000%          0.258 sec.      0.250 sec.
+10.000%         0.258 sec.      0.250 sec.
+20.000%         0.258 sec.      0.250 sec.
+30.000%         0.258 sec.      0.267 sec.
+40.000%         0.258 sec.      0.267 sec.
+50.000%         0.273 sec.      0.267 sec.
+60.000%         0.273 sec.      0.267 sec.
+70.000%         0.273 sec.      0.267 sec.
+80.000%         0.273 sec.      0.269 sec.
+90.000%         0.273 sec.      0.269 sec.
+95.000%         0.273 sec.      0.269 sec.
+99.000%         0.273 sec.      0.269 sec.
+99.900%         0.273 sec.      0.269 sec.
+99.990%         0.273 sec.      0.269 sec.
+
+No difference proven at 99.5% confidence
+```

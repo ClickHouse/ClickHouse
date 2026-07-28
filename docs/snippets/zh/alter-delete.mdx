@@ -1,0 +1,31 @@
+---
+title: ALTER DELETE
+---
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
+```
+
+删除与指定过滤 expression 匹配的数据。它通过 [变更](/zh/reference/statements/alter/index#mutations) 实现。
+
+<Note>
+  `ALTER TABLE` 前缀使这种语法不同于大多数其他支持 SQL 的系统。这样设计是为了表明，与 OLTP 数据库中的类似查询不同，这是一项不适合频繁使用的重型操作。`ALTER TABLE` 被视为重量级操作，要求在删除前先合并底层数据。对于 MergeTree 表，建议考虑使用 [`DELETE FROM` 查询](/zh/reference/statements/delete)，它执行轻量级删除，速度可能快得多。
+</Note>
+
+`filter_expr` 必须是 `UInt8` 类型。该查询会删除表中此 expression 结果为非零值的行。
+
+一个查询可以包含多个用逗号分隔的命令。
+
+查询处理的同步性由 [mutations&#95;sync](/zh/reference/settings/session-settings#mutations_sync) 设置决定。默认情况下，它是异步的。
+
+**另请参阅**
+
+* [变更](/zh/reference/statements/alter/index#mutations)
+* [ALTER 查询的同步性](/zh/reference/statements/alter/index#synchronicity-of-alter-queries)
+* [mutations&#95;sync](/zh/reference/settings/session-settings#mutations_sync) 设置
+
+<div id="related-content">
+  ## 相关内容
+</div>
+
+* 博客：[在 ClickHouse 中处理更新与删除](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

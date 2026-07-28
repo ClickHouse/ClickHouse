@@ -143,12 +143,13 @@ genhtml "llvm_coverage.info" \
     --hierarchical \
     --css-file $WORKSPACE_PATH/ci/jobs/scripts/css.css \
     --prefix $WORKSPACE_PATH \
-    --ignore-errors inconsistent \
+    --ignore-errors inconsistent,inconsistent \
     --ignore-errors category \
     --ignore-errors corrupt \
     --ignore-errors unsupported \
     --ignore-errors source \
     --ignore-errors branch \
-    --ignore-errors range \
+    --ignore-errors range,range \
+    --ignore-errors count,count \
     --filter missing \
     --quiet 

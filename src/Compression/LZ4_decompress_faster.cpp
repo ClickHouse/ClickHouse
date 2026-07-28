@@ -25,8 +25,7 @@ namespace
 
 ALWAYS_INLINE UInt16 LZ4_readLE16(const void * mem_ptr)
 {
-    const UInt8* p = reinterpret_cast<const UInt8*>(mem_ptr);
-    return static_cast<UInt16>(p[0] + (p[1] << 8));
+    return unalignedLoadLittleEndian<UInt16>(mem_ptr);
 }
 
 template <size_t block_size>
@@ -235,67 +234,6 @@ template <>
 }
 
 template <>
-[[maybe_unused]] void ALWAYS_INLINE copyOverlap<16>(UInt8 * op, UInt8 *& match, size_t offset)
-{
-#if defined(__SSSE3__)
-
-    static constexpr UInt8 __attribute__((__aligned__(16))) masks[] =
-    {
-        0,  1,  2,  1,  4,  1,  4,  2,  8,  7,  6,  5,  4,  3,  2,  1, /* offset = 0, not used as mask, but for shift amount instead */
-        0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, /* offset = 1 */
-        0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,
-        0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,
-        0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,
-        0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,
-        0,  1,  2,  3,  4,  5,  0,  1,  2,  3,  4,  5,  0,  1,  2,  3,
-        0,  1,  2,  3,  4,  5,  6,  0,  1,  2,  3,  4,  5,  6,  0,  1,
-        0,  1,  2,  3,  4,  5,  6,  7,  0,  1,  2,  3,  4,  5,  6,  7,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  0,  1,  2,  3,  4,  5,  6,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  0,  1,  2,  3,  4,  5,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10,  0,  1,  2,  3,  4,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11,  0,  1,  2,  3,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12,  0,  1,  2,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13,  0,  1,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,  0,
-    };
-
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(op),
-        _mm_shuffle_epi8(
-            _mm_loadu_si128(reinterpret_cast<const __m128i *>(match)),
-            _mm_load_si128(reinterpret_cast<const __m128i *>(masks) + offset)));
-
-    match += masks[offset];
-
-    /// MSAN does not recognize the store as initializing the memory
-    __msan_unpoison(op, 16);
-
-    /// Note: an ARM NEON path using `vqtbl1q_u8` (Q-register 16-byte table lookup) was tested
-    /// on Graviton 4 but showed no improvement over the scalar fallback (geo mean 1.0000x across
-    /// test.hits columns). The previous `vtbl2_u8` (D-register) path was actively slower.
-
-#else
-    /// 4 % n.
-    static constexpr UInt8 shift1[] = {0, 1, 2, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4};
-
-    /// 8 % n
-    static constexpr UInt8 shift2[] = {0, 1, 2, 2, 4, 3, 2, 1, 0, 8, 8, 8, 8, 8, 8, 8};
-
-    /// 16 % n
-    static constexpr UInt8 shift3[] = {0, 1, 2, 1, 4, 1, 4, 2, 8, 7, 6, 5, 4, 3, 2, 1};
-
-    op[0] = match[0];
-    op[1] = match[1];
-    op[2] = match[2];
-    op[3] = match[3];
-
-    memcpy(op + 4, match + shift1[offset], 4);
-    memcpy(op + 8, match + shift2[offset], 8);
-    match += shift3[offset];
-#endif
-}
-
-
-template <>
 [[maybe_unused]] void ALWAYS_INLINE copyOverlap<32>(UInt8 * op, UInt8 *& match, size_t offset)
 {
 #if defined(__SSSE3__)
@@ -452,7 +390,76 @@ template <>
 }
 
 
+/// Branchless small-offset bootstrap masks (SSSE3), indexed by min(offset, copy_amount).
+/// One unconditional `pshufb` writes the first `copy_amount` bytes correctly for ANY
+/// offset (identity for offset >= copy_amount), and advancing `match` by `shift[idx]`
+/// makes the effective offset >= copy_amount, so the remaining copies are non-overlapping.
 template <size_t copy_amount>
+struct BootMasks
+{
+    /// The inner dimension and the `pshufb` / `vqtbl1q_u8` shuffle it feeds are 16 bytes wide, so the
+    /// generated masks are only correct for a 16-byte copy. Only `boot_masks<16>` is ever used; guard
+    /// against a future `boot_masks<8>` / `<32>` silently getting wrong masks.
+    static_assert(copy_amount == 16, "BootMasks is only valid for a 16-byte copy amount");
+
+    alignas(16) UInt8 boot[copy_amount + 1][16];
+    UInt8 shift[copy_amount + 1];
+    constexpr BootMasks() : boot{}, shift{}
+    {
+        for (size_t idx = 1; idx <= copy_amount; ++idx)
+        {
+            for (size_t i = 0; i < 16; ++i)
+                boot[idx][i] = (idx == copy_amount) ? static_cast<UInt8>(i) : static_cast<UInt8>(i % idx);
+            shift[idx] = (idx == copy_amount)
+                ? static_cast<UInt8>(copy_amount)
+                : static_cast<UInt8>((copy_amount % idx) ? (copy_amount % idx) : idx);
+        }
+    }
+};
+
+template <size_t copy_amount>
+inline constexpr BootMasks<copy_amount> boot_masks{};
+
+/// The 16-byte small-offset overlap fill, via one unconditional table-lookup shuffle using the
+/// constexpr `boot_masks` table. Here `offset` is the table index: callers on the branchless path
+/// pass `min(real_offset, 16)`, so an index of 16 selects the identity shuffle (a plain copy).
+template <>
+[[maybe_unused]] void ALWAYS_INLINE copyOverlap<16>(UInt8 * op, UInt8 *& match, size_t offset)
+{
+#if defined(__SSSE3__)
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(op),
+        _mm_shuffle_epi8(
+            _mm_loadu_si128(reinterpret_cast<const __m128i *>(match)),
+            _mm_load_si128(reinterpret_cast<const __m128i *>(boot_masks<16>.boot[offset]))));
+    __msan_unpoison(op, 16);
+    match += boot_masks<16>.shift[offset];
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+    /// A non-branchless `vqtbl1q_u8` copyOverlap<16> was previously measured on Graviton 4 to be no
+    /// better than the scalar fallback (geo mean 1.0000x on test.hits): the `offset < 16` branch it
+    /// still carried was the bottleneck, not the copy. This branchless variant removes that branch, so
+    /// the table lookup finally pays off — forced-variant-1 on Graviton 4 (armv8.2-a) vs the scalar
+    /// 16-byte path: RegionID +27%, ResolutionWidth +28%, UserID +9%.
+    unalignedStore<uint8x16_t>(op,
+        vqtbl1q_u8(unalignedLoad<uint8x16_t>(match), unalignedLoad<uint8x16_t>(boot_masks<16>.boot[offset])));
+    __msan_unpoison(op, 16);
+    match += boot_masks<16>.shift[offset];
+#else
+    /// Scalar fallback (no SSSE3/NEON): reached only via the branched call path, where `offset` is
+    /// the real offset < 16.
+    static constexpr UInt8 shift1[] = {0, 1, 2, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4};
+    static constexpr UInt8 shift2[] = {0, 1, 2, 2, 4, 3, 2, 1, 0, 8, 8, 8, 8, 8, 8, 8};
+    static constexpr UInt8 shift3[] = {0, 1, 2, 1, 4, 1, 4, 2, 8, 7, 6, 5, 4, 3, 2, 1};
+    op[0] = match[0];
+    op[1] = match[1];
+    op[2] = match[2];
+    op[3] = match[3];
+    memcpy(op + 4, match + shift1[offset], 4);
+    memcpy(op + 8, match + shift2[offset], 8);
+    match += shift3[offset];
+#endif
+}
+
+template <size_t copy_amount, bool branchless = false>
 bool NO_INLINE decompressImpl(const char * const source, char * const dest, size_t source_size, size_t dest_size)
 {
     const UInt8 * ip = reinterpret_cast<const UInt8 *>(source);
@@ -548,12 +555,22 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
 
         /// Get match offset.
 
-        size_t offset = LZ4_readLE16(ip);
+        const size_t offset = LZ4_readLE16(ip);
         ip += 2;
-        UInt8 * match = op - offset;
 
-        if (unlikely(match < output_begin))
+        /// Reject a zero offset (invalid in LZ4 — the minimum match distance is 1) together with an
+        /// offset that reaches before the start of the output, in a single unsigned comparison that
+        /// adds no branch to the hot loop. For any `offset >= 1` this is exactly `match < output_begin`
+        /// (`match = op - offset`); for `offset == 0`, `offset - 1` wraps to `SIZE_MAX` and also fails,
+        /// so the overlap copy can no longer synthesize output from the destination and wrongly report
+        /// success. We fail closed here (the reference decoder is more lenient and returns garbage).
+        /// The check is done before forming `match`, so `op - offset` is never computed for a malformed
+        /// offset that would point before `output_begin` (which would be out-of-range pointer arithmetic).
+        const size_t produced = static_cast<size_t>(op - output_begin);
+        if (unlikely(offset - 1 >= produced))
             return false;
+
+        UInt8 * match = op - offset;
 
         /// Get match length.
 
@@ -577,7 +594,16 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
           * The worst case when offset = 1 and length = 4
           */
 
+#if defined(__SSSE3__) || (defined(__aarch64__) && defined(__ARM_NEON))
+        if constexpr (branchless && copy_amount == 16)
+            /// Unconditional branchless overlap copy: clamp the index here (one `cmov`) so that
+            /// `copyOverlap<16>` selects the identity shuffle for offset >= 16, dropping the
+            /// highly mispredicted `offset < 16` branch.
+            copyOverlap<copy_amount>(op, match, offset < copy_amount ? offset : copy_amount);
+        else if (offset < copy_amount)
+#else
         if (offset < copy_amount)
+#endif
         {
             /// output: Hello
             ///              ^-op
@@ -647,7 +673,7 @@ bool decompress(
     /// where timing very small blocks would add too much noise.
     if (statistics.choose_method >= 0 || dest_size >= 32768)
     {
-        size_t variant_size = 3;
+        size_t variant_size = PerformanceStatistics::NUM_ELEMENTS;
         size_t best_variant = statistics.select(variant_size);
 
         Stopwatch watch;
@@ -655,7 +681,7 @@ bool decompress(
         if (best_variant == 0)
             success = decompressImpl<8>(source, dest, source_size, dest_size);
         else if (best_variant == 1)
-            success = decompressImpl<16>(source, dest, source_size, dest_size);
+            success = decompressImpl<16, true>(source, dest, source_size, dest_size);
         else
             success = decompressImpl<32>(source, dest, source_size, dest_size);
 

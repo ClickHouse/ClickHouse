@@ -57,7 +57,7 @@ private:
 
     postgres::ConnectionHolderPtr connection_holder;
 
-    std::unordered_map<size_t, PostgreSQLArrayInfo> array_info;
+    UnorderedMapWithMemoryTracking<size_t, PostgreSQLArrayInfo> array_info;
 
 protected:
     String query_str;

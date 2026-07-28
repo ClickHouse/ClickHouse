@@ -1,0 +1,254 @@
+---
+slug: /whats-new/cloud/2022
+sidebarTitle: '2022'
+title: 'Registro de cambios de Cloud - 2022'
+description: 'Registro de cambios de ClickHouse Cloud para 2022'
+doc_type: 'changelog'
+keywords: ['registro de cambios', 'notas de la versión', 'actualizaciones', 'nuevas características', 'cambios en Cloud', '2022']
+---
+
+<div id="december-20-2022">
+  ## 20 de diciembre de 2022
+</div>
+
+Esta versión incorpora inicio de sesión sin fricciones para los administradores en la consola SQL, un mejor rendimiento en las lecturas en frío y un conector mejorado de Metabase para ClickHouse Cloud.
+
+<div id="console-changes-27">
+  ### Cambios en la consola
+</div>
+
+* Se habilitó el acceso sin interrupciones a la Consola SQL para los usuarios administradores
+* Se cambió el rol predeterminado de los nuevos invitados a &quot;Administrator&quot;
+* Se añadió una encuesta de incorporación
+
+<div id="reliability-and-performance-3">
+  ### Fiabilidad y rendimiento
+</div>
+
+* Se añadió lógica de reintento para consultas de inserción de larga duración a fin de recuperarse en caso de fallos de red
+* Se mejoró el rendimiento de lectura de datos en frío
+
+<div id="integrations-changes-26">
+  ### Cambios en Integrations
+</div>
+
+* El [plugin de Metabase](/es/integrations/connectors/data-visualization/metabase-and-clickhouse) recibió la esperada e importante actualización a la versión v0.9.1. Ahora es compatible con la versión más reciente de Metabase y se ha probado exhaustivamente con ClickHouse Cloud.
+
+<div id="december-6-2022---general-availability">
+  ## 6 de diciembre de 2022 - disponibilidad general
+</div>
+
+ClickHouse Cloud ya está listo para producción con cumplimiento de SOC 2 Tipo II, SLA de tiempo de actividad para cargas de trabajo en producción y una página pública de estado. Esta release incluye importantes novedades, como la integración con AWS Marketplace, la consola SQL, un espacio de trabajo para explorar datos para los usuarios de ClickHouse, y ClickHouse Academy, aprendizaje a tu propio ritmo en ClickHouse Cloud. Obtén más información en este [blog](https://clickhouse.com/blog/clickhouse-cloud-generally-available).
+
+<div id="production-ready">
+  ### Preparado para producción
+</div>
+
+* Cumplimiento de SOC 2 Type II (detalles en el [blog](https://clickhouse.com/blog/clickhouse-cloud-is-now-soc-2-type-ii-compliant) y en el [Trust Center](https://trust.clickhouse.com/))
+* [Página de estado](https://status.clickhouse.com/) pública de ClickHouse Cloud
+* SLA de tiempo de actividad disponible para casos de uso en producción
+* Disponible en [AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-jettukeanwrfc)
+
+<div id="major-new-capabilities">
+  ### Principales novedades
+</div>
+
+* Se presentó la consola SQL, el entorno de exploración de datos para los usuarios de ClickHouse
+* Se lanzó [ClickHouse Academy](https://learn.clickhouse.com/visitor_class_catalog), aprendizaje a tu propio ritmo en ClickHouse Cloud
+
+<div id="pricing-and-metering-changes">
+  ### Cambios en los precios y la medición
+</div>
+
+* Se amplió el período de prueba a 30 días
+* Se introdujeron Servicios Development de capacidad fija y bajo costo mensual, ideales para proyectos iniciales y entornos de desarrollo/staging
+* Se introdujeron nuevos precios reducidos para los Servicios Production, a medida que seguimos mejorando el funcionamiento y la escalabilidad de ClickHouse Cloud
+* Se mejoraron la granularidad y la precisión al medir la capacidad de cómputo
+
+<div id="integrations-changes-26">
+  ### Cambios en Integrations
+</div>
+
+* Se habilitó la compatibilidad con los motores de integración de ClickHouse para Postgres / MySQL
+* Se añadió compatibilidad con funciones definidas por el usuario (UDFs) en SQL
+* Kafka Connect Sink pasó a estado Beta
+* Se mejoró la UI de Integrations incorporando metadatos detallados sobre versiones, estado de las actualizaciones y más
+
+<div id="console-changes-27">
+  ### Cambios en la consola
+</div>
+
+* Compatibilidad con autenticación multifactor en la consola de Cloud
+* Mejoras en la navegación de la consola de Cloud en dispositivos móviles
+
+<div id="documentation-changes">
+  ### Cambios en la documentación
+</div>
+
+* Se incorporó una sección específica de [documentación](/es/products/cloud/getting-started/intro) para ClickHouse Cloud
+
+<div id="bug-fixes-5">
+  ### Correcciones de errores
+</div>
+
+* Se corrigió un problema conocido por el que la restauración desde una copia de seguridad no siempre funcionaba debido a la resolución de dependencias
+
+<div id="november-29-2022">
+  ## 29 de noviembre de 2022
+</div>
+
+Esta versión incorpora el cumplimiento de SOC 2 Type II, actualiza la versión de ClickHouse a 22.11 y mejora varios clientes e integraciones de ClickHouse.
+
+<div id="general-changes-4">
+  ### Cambios generales
+</div>
+
+* Se logró el cumplimiento de SOC2 Type II (más detalles en el [blog](https://clickhouse.com/blog/clickhouse-cloud-is-now-soc-2-type-ii-compliant) y en el [Trust Center](https://trust.clickhouse.com))
+
+<div id="console-changes-27">
+  ### Cambios en la consola
+</div>
+
+* Se añadió un indicador de estado «Inactivo» para mostrar que un servicio se ha puesto en pausa automáticamente
+
+<div id="clickhouse-2211-version-upgrade">
+  ### Actualización a la versión 22.11 de ClickHouse
+</div>
+
+* Se añadió compatibilidad con los motores de tabla y las funciones de tabla de Hudi y DeltaLake
+* Se mejoró la exploración recursiva de directorios para S3
+* Se añadió compatibilidad con la sintaxis de intervalos de tiempo compuestos
+* Se mejoró la fiabilidad de insert con reintentos durante insert
+* Consulta el [registro detallado de cambios de la versión 22.11](#clickhouse-2211-version-upgrade) para ver la lista completa de cambios
+
+<div id="integrations-1">
+  ### Integrations
+</div>
+
+* Python client: compatibilidad con v3.11, mejora del rendimiento de inserción
+* Go client: corrección de la compatibilidad con DateTime e Int64
+* JS client: compatibilidad con autenticación SSL mutua
+* dbt-clickhouse: compatibilidad con DBT v1.3
+
+<div id="bug-fixes-5">
+  ### Correcciones de errores
+</div>
+
+* Se corrigió un error que mostraba una versión desactualizada de ClickHouse después de una actualización
+* Cambiar los privilegios de la cuenta &quot;default&quot; ya no interrumpe las sesiones
+* Las cuentas no administradoras recién creadas ya no tienen acceso a las tablas del sistema de forma predeterminada
+
+<div id="known-issues-in-this-release">
+  ### Problemas conocidos en esta versión
+</div>
+
+* Es posible que la restauración a partir de una copia de seguridad no funcione debido a un problema con la resolución de dependencias
+
+<div id="november-17-2022">
+  ## 17 de noviembre de 2022
+</div>
+
+Esta versión permite usar diccionarios de tablas locales de ClickHouse y de fuentes HTTP, incorpora compatibilidad con la región de Mumbai y mejora la experiencia de usuario en la consola de Cloud.
+
+<div id="general-changes-4">
+  ### Cambios generales
+</div>
+
+* Se añadió compatibilidad con [diccionarios](/es/reference/statements/create/dictionary) de tablas locales de ClickHouse y fuentes HTTP
+* Se añadió compatibilidad con la [región](/es/products/cloud/reference/supported-regions) de Mumbai
+
+<div id="console-changes-27">
+  ### Cambios en la consola
+</div>
+
+* Mejorado el formato de las facturas
+* Optimizada la interfaz de usuario para introducir el método de pago
+* Añadido un registro de actividad más detallado para las copias de seguridad
+* Mejorado el manejo de errores al cargar archivos
+
+<div id="bug-fixes-7">
+  ### Corrección de errores
+</div>
+
+* Se corrigió un error que podía hacer fallar las copias de seguridad si había archivos individuales de gran tamaño en algunas partes
+* Se corrigió un error por el que la restauración desde una copia de seguridad no se completaba correctamente si se aplicaban cambios en la lista de acceso al mismo tiempo
+
+<div id="known-issues">
+  ### Problemas conocidos
+</div>
+
+* Es posible que la restauración desde una copia de seguridad no funcione debido a la resolución de dependencias
+
+<div id="november-3-2022">
+  ## 3 de noviembre de 2022
+</div>
+
+Esta versión elimina las unidades de lectura y escritura de la estructura de precios (consulta la [página de precios](https://clickhouse.com/pricing) para obtener más información), actualiza la versión de ClickHouse a la 22.10, admite un mayor escalado vertical para los clientes de autoservicio y mejora la fiabilidad con valores predeterminados más adecuados.
+
+<div id="general-changes-4">
+  ### Cambios generales
+</div>
+
+* Se eliminaron las unidades de lectura y escritura del modelo de precios
+
+<div id="configuration-changes-2">
+  ### Cambios en la configuración
+</div>
+
+* Los ajustes `allow_suspicious_low_cardinality_types`, `allow_suspicious_fixed_string_types` y `allow_suspicious_codecs` (el valor predeterminado es false) ya no pueden ser modificados por los usuarios por motivos de estabilidad.
+
+<div id="console-changes-27">
+  ### Cambios en la consola
+</div>
+
+* Se aumentó a 720 GB de memoria el máximo de autoservicio para el escalado vertical para clientes de pago
+* Se mejoró el flujo de restauración desde copia de seguridad para configurar las reglas de la Lista de acceso IP y la contraseña
+* Se introdujeron listas de espera para GCP y Azure en el cuadro de diálogo de creación del servicio
+* Se mejoró la gestión de errores durante la carga de archivos
+* Se mejoraron los flujos de trabajo de administración de la facturación
+
+<div id="clickhouse-2210-version-upgrade">
+  ### Actualización a la versión 22.10 de ClickHouse
+</div>
+
+* Se mejoraron los merges sobre almacenes de objetos al flexibilizar el umbral de &quot;Too many parts&quot; cuando hay muchas partes grandes (de al menos 10 GiB). Esto permite hasta petabytes de datos en una sola partición de una sola tabla.
+* Se mejoró el control de los merges con la configuración `min_age_to_force_merge_seconds`, que permite forzarlos tras un determinado umbral de tiempo.
+* Se añadió sintaxis compatible con MySQL para restablecer valores de configuración: `SET setting_name = DEFAULT`.
+* Se añadieron funciones para la codificación de curvas de Morton, el hashing de enteros de Java y la generación de números aleatorios.
+* Consulta el [changelog detallado de la versión 22.10](#clickhouse-2210-version-upgrade) para ver la lista completa de cambios.
+
+<div id="october-25-2022">
+  ## 25 de octubre de 2022
+</div>
+
+Esta versión reduce significativamente el consumo de recursos de cómputo en cargas de trabajo pequeñas, reduce el precio del cómputo (consulta la página de [precios](https://clickhouse.com/pricing) para obtener más detalles), mejora la estabilidad gracias a una mejor configuración predeterminada y mejora las vistas de Facturación y Uso en la consola de ClickHouse Cloud.
+
+<div id="general-changes-4">
+  ### Cambios generales
+</div>
+
+* Se redujo a 24G la asignación mínima de memoria del servicio
+* Se redujo el tiempo de inactividad del servicio de 30 minutos a 5 minutos
+
+<div id="configuration-changes-3">
+  ### Cambios de configuración
+</div>
+
+* Se redujo `max_parts_in_total` de 100k a 10k. El valor predeterminado de la configuración `max_parts_in_total` para las tablas MergeTree se ha reducido de 100.000 a 10.000. El motivo de este cambio es que observamos que una gran cantidad de partes de datos puede provocar tiempos de arranque lentos en los servicios en la nube. Una gran cantidad de partes suele indicar el uso de una clave de partición demasiado granular, algo que normalmente ocurre por error y debe evitarse. Este cambio en el valor predeterminado permitirá detectar estos casos antes.
+
+<div id="console-changes-27">
+  ### Cambios en la consola
+</div>
+
+* Se mejoraron los detalles del uso de créditos en la vista de facturación para los usuarios en período de prueba
+* Se mejoraron la información sobre herramientas y el texto de ayuda, y se añadió un enlace a la página de precios en la vista de uso
+* Se mejoró el flujo de trabajo al cambiar entre opciones de filtrado de IP
+* Se añadió un botón para reenviar el correo electrónico de confirmación en la consola de Cloud
+
+<div id="october-4-2022---beta">
+  ## 4 de octubre de 2022 - Beta
+</div>
+
+ClickHouse Cloud inició su beta pública el 4 de octubre de 2022. Consulta más información en este [blog](https://clickhouse.com/blog/clickhouse-cloud-public-beta).
+
+La versión de ClickHouse Cloud se basa en ClickHouse core v22.10. Para ver la lista de funcionalidades compatibles, consulta la guía de [Compatibilidad con Cloud](/es/products/cloud/guides/cloud-compatibility).

@@ -1,0 +1,97 @@
+---
+slug: /cloud/billing/marketplace/migrate
+title: 'クラウドマーケットプレイスでの従量課金（PAYG）からコミットメント支出契約への課金移行'
+description: '従量課金からコミットメント支出契約へ移行します。'
+keywords: ['マーケットプレイス', '課金', 'PAYG', '従量課金', 'コミットメント支出契約']
+doc_type: 'guide'
+---
+
+現在、ClickHouse 組織が有効なクラウドマーケットプレイスの従量課金 (PAYG) サブスクリプション (または注文) を通じて課金されており、同じクラウドマーケットプレイス経由のコミットメント支出契約による課金に移行したい場合は、まず新しいオファーを承諾し、その後、クラウドサービスプロバイダーに応じて以下の手順に従ってください。
+
+<div id="important-notes">
+  ## 重要な注意事項
+</div>
+
+Marketplace PAYG サブスクリプションを解約しても、ClickHouse Cloud アカウント自体が削除されるわけではなく、終了するのはマーケットプレイス経由の請求関係のみです。解約後、当社のシステムはマーケットプレイス経由での ClickHouse Cloud サービスの請求を停止します。 (注: この処理は即時には完了せず、反映までに数分かかる場合があります) 。
+
+マーケットプレイスサブスクリプションが解約された後、ClickHouse 組織に登録済みのクレジットカードがある場合は、それより前に新しいマーケットプレイスサブスクリプションが関連付けられない限り、請求サイクルの終了時にそのカードへ請求されます。
+
+解約後にクレジットカードが設定されていない場合は、14 日以内に、有効なクレジットカードまたは新しいクラウドマーケットプレイスサブスクリプションのいずれかを組織に追加する必要があります。その期間内に支払い方法が設定されない場合、サービスは停止され、組織は [請求コンプライアンス](/ja/products/cloud/reference/billing/billing-compliance) に準拠していないものと見なされます。
+
+サブスクリプション解約後に発生した利用分は、次に設定されている有効な支払い方法に請求されます。適用順は、前払いクレジット、マーケットプレイスサブスクリプション、クレジットカードの順です。
+
+組織を新しいマーケットプレイスサブスクリプションに設定する際にご不明点がある場合や問題が発生した場合は、ClickHouse の [support](https://clickhouse.com/support/program) までお問い合わせください。
+
+<div id="aws-marketplace">
+  ## AWS Marketplace
+</div>
+
+PAYG サブスクリプションを コミットメント支出契約 に移行する際に、同じ AWS Account ID を使用したい場合は、この変更について [営業チームにお問い合わせ](https://clickhouse.com/company/contact) いただくことを推奨します。これにより追加の手順は不要になり、ClickHouse 組織やサービスに影響が生じることもありません。
+
+別の AWS Account ID を使用して ClickHouse 組織を PAYG サブスクリプションから コミットメント支出契約 に移行する場合は、次の手順に従ってください:
+
+<div id="cancel-aws-payg">
+  ### AWS PAYG サブスクリプションを解約する手順
+</div>
+
+1. **[AWS Marketplace](https://us-east-1.console.aws.amazon.com/marketplace) にアクセスします**
+2. **&quot;Manage Subscriptions&quot; ボタンをクリックします**
+3. **&quot;Your Subscriptions&quot; に移動します。**
+   * &quot;Manage Subscriptions&quot; をクリックします
+4. **一覧から ClickHouse Cloud を探します。**
+   * &quot;Your Subscriptions&quot; の一覧で ClickHouse Cloud を見つけてクリックします
+5. **サブスクリプションを解約します。**
+   * &quot;Agreement&quot; で、ClickHouse Cloud の項目の横にある &quot;Actions&quot; ドロップダウンまたはボタンをクリックします
+   * &quot;Cancel subscription&quot; を選択します
+
+> **注:** サブスクリプションの解約についてサポートが必要な場合 (たとえば &quot;Cancel subscription&quot; ボタンが表示されない場合) は、[AWS support](https://support.console.aws.amazon.com/support/home#/) にお問い合わせください。
+
+続いて、新たに承諾した AWS のコミットメント支出契約に合わせて ClickHouse 組織を設定するには、こちらの[手順](/ja/products/cloud/reference/billing/marketplace/aws-marketplace-committed)に従ってください。
+
+<div id="gcp-marketplace">
+  ## GCP Marketplace
+</div>
+
+<div id="cancel-gcp-payg">
+  ### GCP PAYG 注文をキャンセルする手順
+</div>
+
+1. **[Google Cloud Marketplace Console](https://console.cloud.google.com/marketplace) を開きます。**
+   * 正しい GCP アカウントにログインしており、適切なプロジェクトが選択されていることを確認してください
+2. **ClickHouse の注文を探します。**
+   * 左側のメニューで「Your Orders」をクリックします
+   * 有効な注文の一覧から、該当する ClickHouse の注文を見つけます
+3. **注文をキャンセルします。**
+   * 注文の右側にある三点メニューを開き、画面の案内に従って ClickHouse の注文をキャンセルします
+
+> **注:** この注文のキャンセルでサポートが必要な場合は、[GCP サポート](https://cloud.google.com/support/docs/get-billing-support) にお問い合わせください。
+
+次に、こちらの[手順](/ja/products/cloud/reference/billing/marketplace/gcp-marketplace-committed)に従って、ClickHouse 組織を新しい GCP のコミットメント支出契約向けに設定してください。
+
+<div id="azure-marketplace">
+  ## Azure Marketplace
+</div>
+
+<div id="cancel-azure-payg">
+  ### Azure PAYG サブスクリプションを解約する手順
+</div>
+
+1. **[Microsoft Azure Portal](http://portal.azure.com) を開きます**
+2. **「Subscriptions」に移動します**
+3. **解約する有効な ClickHouse サブスクリプションを見つけます**
+4. **サブスクリプションを解約します。**
+   * ClickHouse Cloud のサブスクリプションをクリックして、サブスクリプションの詳細を開きます
+   * 「Cancel subscription」ボタンを選択します
+
+> **注:** この注文のキャンセルについてサポートが必要な場合は、Azure Portal でサポートチケットを作成してください。
+
+次に、新しい Azure のコミットメント支出契約に合わせて ClickHouse 組織を設定するには、こちらの[手順](/ja/products/cloud/reference/billing/marketplace/azure-marketplace-committed)に従ってください。
+
+<div id="linking-requirements">
+  ## コミットメント支出契約にリンクするための要件
+</div>
+
+> **注:** 組織をマーケットプレイスのコミットメント支出契約にリンクするには、次の要件を満たす必要があります。
+>
+> * 手順を実行するユーザーは、サブスクリプションを関連付ける先の ClickHouse 組織の管理者ユーザーである必要があります
+> * 組織の未払いの請求書はすべて支払い済みである必要があります (ご不明な点があれば、ClickHouse の [support](https://clickhouse.com/support/program) までお問い合わせください)

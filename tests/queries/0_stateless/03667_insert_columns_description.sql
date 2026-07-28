@@ -1,3 +1,10 @@
+-- Random settings limits: send_table_structure_on_insert_with_inline_data=(1, 1)
+-- This test pins `send_table_structure_on_insert_with_inline_data` to 1 (legacy path).
+-- With setting = 0 (server-parsed inline path), the `DEFAULT`/`input_format_null_as_default`
+-- value is not applied for `INSERT INTO TABLE FUNCTION ...`: an explicit `NULL` becomes 0
+-- instead of the column default (a direct table `INSERT` is unaffected). See the tracking
+-- issue https://github.com/ClickHouse/ClickHouse/issues/109253. Once it is fixed, the pin
+-- can be removed so this test exercises both paths.
 SELECT '-- remote table function columns description';
 CREATE TABLE t0 (c Int DEFAULT 7) ENGINE = MergeTree() ORDER BY tuple();
 

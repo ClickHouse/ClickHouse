@@ -1,0 +1,846 @@
+---
+sidebarTitle: 'واجهة برمجة تطبيقات برنامج التشغيل'
+keywords: ['ClickHouse', 'بايثون', 'برنامج التشغيل', 'واجهة برمجة تطبيقات', 'العميل']
+description: 'واجهة برمجة تطبيقات برنامج تشغيل ClickHouse Connect'
+slug: /integrations/language-clients/python/driver-api
+title: 'واجهة برمجة تطبيقات برنامج تشغيل ClickHouse Connect'
+doc_type: 'مرجع'
+---
+
+<Note>
+  يُوصى بتمرير الوسيطات المُسمّاة لمعظم طرق واجهة برمجة التطبيقات نظرًا لكثرة الوسيطات الممكنة، ومعظمها اختياري.
+
+  *الطرق غير الموثقة هنا لا تُعد جزءًا من واجهة برمجة التطبيقات، وقد تُزال أو تتغير.*
+</Note>
+
+<div id="client-initialization">
+  ## تهيئة العميل
+</div>
+
+توفّر الفئة `clickhouse_connect.driver.client` الواجهة الرئيسية بين تطبيق بايثون وخادم قاعدة بيانات ClickHouse. استخدم الدالة `clickhouse_connect.get_client` للحصول على مثيل من Client، والذي يقبل الوسيطات التالية:
+
+<div id="connection-arguments">
+  ### وسائط الاتصال
+</div>
+
+| Parameter                            | Type        | Default                       | Description                                                                                                                                                                                                                                                       |
+| ------------------------------------ | ----------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| interface                            | str         | http                          | يجب أن تكون القيمة http أو https.                                                                                                                                                                                                                                 |
+| host                                 | str         | localhost                     | اسم المضيف أو عنوان IP لخادم ClickHouse. إذا لم يتم تعيينه، فسيُستخدم `localhost`.                                                                                                                                                                                |
+| port                                 | int         | 8123 or 8443                  | منفذ HTTP أو HTTPS الخاص بـ ClickHouse. إذا لم يتم تعيينه، فستكون القيمة الافتراضية 8123، أو 8443 إذا كانت *secure*=*True* أو *interface*=*https*.                                                                                                                |
+| username                             | str         | default                       | اسم مستخدم ClickHouse. إذا لم يتم تعيينه، فسيُستخدم مستخدم ClickHouse `default`.                                                                                                                                                                                  |
+| password                             | str         | *&lt;empty string&gt;*        | كلمة المرور الخاصة بـ *username*.                                                                                                                                                                                                                                 |
+| database                             | str         | *None*                        | قاعدة البيانات الافتراضية للاتصال. إذا لم يتم تعيينها، فسيستخدم ClickHouse Connect قاعدة البيانات الافتراضية الخاصة بـ *username*.                                                                                                                                |
+| secure                               | bool        | False                         | استخدم HTTPS/TLS. يتجاوز هذا القيم المستنتجة من وسيطات الواجهة أو المنفذ.                                                                                                                                                                                         |
+| dsn                                  | str         | *None*                        | سلسلة بالتنسيق القياسي DSN ‏(Data Source Name). ستُستخرج قيم الاتصال الأخرى (مثل المضيف أو المستخدم) من هذه السلسلة إذا لم تكن معيّنة بطريقة أخرى.                                                                                                                |
+| compress                             | bool or str | True                          | فعّل الضغط لعمليات `insert` عبر ClickHouse HTTP ونتائج الاستعلام. راجع [الخيارات الإضافية (الضغط)](/ar/integrations/language-clients/python/additional-options#compression)                                                                                          |
+| query&#95;limit                      | int         | 0 (unlimited)                 | الحد الأقصى لعدد الصفوف التي يمكن إرجاعها لأي استجابة `query`. اضبط هذه القيمة على صفر لإرجاع عدد غير محدود من الصفوف. لاحظ أن حدود الاستعلام الكبيرة قد تؤدي إلى استثناءات نفاد الذاكرة إذا لم يتم بث النتائج، لأن جميع النتائج تُحمَّل إلى الذاكرة دفعةً واحدة. |
+| query&#95;retries                    | int         | 2                             | الحد الأقصى لعدد مرات إعادة المحاولة لطلب `query`. لن تُعاد المحاولة إلا مع استجابات HTTP &quot;القابلة لإعادة المحاولة&quot;. ولا تُعاد طلبات `command` أو `insert` تلقائيًا بواسطة برنامج التشغيل لتجنّب الطلبات المكررة غير المقصودة.                          |
+| connect&#95;timeout                  | int         | 10                            | مهلة اتصال HTTP بالثواني.                                                                                                                                                                                                                                         |
+| send&#95;receive&#95;timeout         | int         | 300                           | مهلة الإرسال/الاستقبال لاتصال HTTP بالثواني.                                                                                                                                                                                                                      |
+| client&#95;name                      | str         | *None*                        | تُضاف قيمة client&#95;name في بداية ترويسة HTTP User Agent. عيّن هذا لتتبّع استعلامات العميل في ClickHouse system.query&#95;log.                                                                                                                                  |
+| pool&#95;mgr                         | obj         | *&lt;default PoolManager&gt;* | كائن PoolManager من مكتبة `urllib3` المراد استخدامه. يفيد في حالات الاستخدام المتقدمة التي تتطلب connection pools متعددة لمضيفين مختلفين.                                                                                                                         |
+| http&#95;proxy                       | str         | *None*                        | عنوان وكيل HTTP (يعادل تعيين متغير البيئة HTTP&#95;PROXY).                                                                                                                                                                                                        |
+| https&#95;proxy                      | str         | *None*                        | عنوان وكيل HTTPS (يعادل تعيين متغير البيئة HTTPS&#95;PROXY).                                                                                                                                                                                                      |
+| apply&#95;server&#95;timezone        | bool        | True                          | استخدم timezone الخادم لنتائج الاستعلام المراعية للمنطقة الزمنية. راجع [أولوية المنطقة الزمنية](/ar/integrations/language-clients/python/advanced-querying#time-zones)                                                                                               |
+| show&#95;clickhouse&#95;errors       | bool        | True                          | تضمين رسائل الخطأ التفصيلية من خادم ClickHouse ورموز الاستثناءات في استثناءات العميل.                                                                                                                                                                             |
+| autogenerate&#95;session&#95;id      | bool        | *None*                        | تجاوز الإعداد العام `autogenerate_session_id`. إذا كانت القيمة True، فسيتم تلقائيًا إنشاء معرّف جلسة UUID4 عند عدم توفير أي معرّف.                                                                                                                                |
+| proxy&#95;path                       | str         | &lt;empty string&gt;          | بادئة path اختيارية تُضاف إلى URL خادم ClickHouse في تكوينات الوكيل.                                                                                                                                                                                              |
+| form&#95;encode&#95;query&#95;params | bool        | False                         | أرسل query parameters كبيانات مرمّزة بالنموذج داخل request body بدلًا من URL parameters. يفيد ذلك في الاستعلامات التي تحتوي على مجموعات كبيرة من المعلمات وقد تتجاوز حدود طول URL.                                                                                |
+| rename&#95;response&#95;column       | str         | *None*                        | دالة callback اختيارية أو mapping لأسماء الأعمدة لإعادة تسمية columns الاستجابة في نتائج الاستعلام.                                                                                                                                                               |
+
+<div id="httpstls-arguments">
+  ### وسائط HTTPS/TLS
+</div>
+
+| المعلمة                  | النوع | الافتراضي | الوصف                                                                                                                                                                                                                                                                                |
+| ------------------------ | ----- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| verify                   | bool  | True      | تحقّق من شهادة TLS/SSL لخادوم ClickHouse (اسم المضيف، وتاريخ الانتهاء، وما إلى ذلك) عند استخدام HTTPS/TLS.                                                                                                                                                                           |
+| ca&#95;cert              | str   | *None*    | إذا كانت *verify*=*True*، فهذا هو مسار الملف إلى الجذر الخاص بـ Certificate Authority للتحقق من شهادة خادوم ClickHouse، بصيغة .pem. يتم تجاهله إذا كانت verify تساوي False. ولا يكون هذا ضروريًا إذا كانت شهادة خادوم ClickHouse صادرة عن جذر موثوق عالميًا ويتحقق منه نظام التشغيل. |
+| client&#95;cert          | str   | *None*    | مسار الملف إلى شهادة عميل TLS بصيغة .pem (للمصادقة باستخدام mutual TLS). يجب أن يحتوي الملف على سلسلة الشهادات الكاملة، بما في ذلك أي شهادات وسيطة.                                                                                                                                  |
+| client&#95;cert&#95;key  | str   | *None*    | مسار الملف إلى المفتاح الخاص لشهادة العميل. يكون مطلوبًا إذا لم يكن المفتاح الخاص مضمنًا في ملف مفتاح شهادة العميل.                                                                                                                                                                  |
+| server&#95;host&#95;name | str   | *None*    | اسم مضيف خادوم ClickHouse كما هو محدد بواسطة CN أو SNI في شهادة TLS الخاصة به. اضبط هذا لتجنب أخطاء SSL عند الاتصال عبر وكيل أو نفق باستخدام اسم مضيف مختلف.                                                                                                                         |
+| tls&#95;mode             | str   | *None*    | يتحكم في سلوك TLS المتقدم. لا يستخدم `proxy` و`strict` اتصال mutual TLS الخاص بـ ClickHouse، لكنهما يرسلان شهادة العميل والمفتاح. ويفترض `mutual` مصادقة mutual TLS في ClickHouse باستخدام شهادة عميل. السلوك *None*/الافتراضي هو `mutual`                                           |
+
+<div id="settings-argument">
+  ### وسيطة Settings
+</div>
+
+أخيرًا، تُستخدم وسيطة `settings` في `get_client` لتمرير إعدادات ClickHouse إضافية إلى الخادم مع كل طلب من العميل. لاحظ أنه في معظم الحالات، لا يمكن للمستخدمين الذين لديهم صلاحية وصول *readonly*=*1* تعديل الإعدادات المرسلة مع الاستعلام، لذلك سيُسقط ClickHouse Connect هذه الإعدادات من الطلب النهائي ويسجل تحذيرًا. تنطبق الإعدادات التالية فقط على استعلامات/جلسات HTTP التي يستخدمها ClickHouse Connect، وليست موثقة باعتبارها إعدادات ClickHouse عامة.
+
+| Setting                       | Description                                                                                                                               |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| buffer&#95;size               | حجم المخزن المؤقت (بالبايت) الذي يستخدمه خادم ClickHouse قبل الكتابة إلى قناة HTTP.                                                       |
+| session&#95;id                | معرّف جلسة فريد لربط الاستعلامات ذات الصلة على الخادم. وهو مطلوب للجداول المؤقتة.                                                         |
+| compress                      | ما إذا كان ينبغي لخادم ClickHouse ضغط بيانات استجابة POST. يجب استخدام هذا الإعداد فقط مع الاستعلامات &quot;الخام&quot;.                  |
+| decompress                    | ما إذا كان يجب فك ضغط البيانات المرسلة إلى خادم ClickHouse. يجب استخدام هذا الإعداد فقط مع عمليات insert &quot;الخام&quot;.               |
+| quota&#95;key                 | مفتاح الحصة المرتبط بهذا الطلب. راجع وثائق خادم ClickHouse حول الحصص.                                                                     |
+| session&#95;check             | يُستخدم للتحقق من حالة الجلسة.                                                                                                            |
+| session&#95;timeout           | عدد ثواني عدم النشاط قبل انتهاء مهلة الجلسة المحددة بواسطة معرّف الجلسة وعدم اعتبارها صالحة بعد ذلك. القيمة الافتراضية هي 60 ثانية.       |
+| wait&#95;end&#95;of&#95;query | يخزّن الاستجابة بالكامل مؤقتًا على خادم ClickHouse. هذا الإعداد مطلوب لإرجاع معلومات الملخص، ويُضبط تلقائيًا في الاستعلامات غير المتدفقة. |
+| role                          | دور ClickHouse المطلوب استخدامه للجلسة. وهو إعداد نقل صالح يمكن تضمينه في سياق الاستعلام.                                                 |
+
+للاطلاع على إعدادات ClickHouse الأخرى التي يمكن إرسالها مع كل استعلام، راجع [وثائق ClickHouse](/ar/reference/settings/session-settings).
+
+<div id="client-creation-examples">
+  ### أمثلة على إنشاء العميل
+</div>
+
+* من دون أي معلمات، سيتصل عميل ClickHouse Connect بمنفذ HTTP الافتراضي على `localhost` باستخدام المستخدم `default` ومن دون كلمة مرور:
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+print(client.server_version)
+# Output: '22.10.1.98'
+```
+
+* الاتصال بخادم ClickHouse خارجي آمن عبر HTTPS
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(host='play.clickhouse.com', secure=True, port=443, user='play', password='clickhouse')
+print(client.command('SELECT timezone()'))
+# Output: 'Etc/UTC'
+```
+
+* الاتصال باستخدام معرّف جلسة ومعلمات اتصال مخصّصة أخرى وإعدادات ClickHouse.
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(
+    host='play.clickhouse.com',
+    user='play',
+    password='clickhouse',
+    port=443,
+    session_id='example_session_1',
+    connect_timeout=15,
+    database='github',
+    settings={'distributed_ddl_task_timeout':300},
+)
+print(client.database)
+# Output: 'github'
+```
+
+<div id="client-lifecycle-and-best-practices">
+  ## دورة حياة العميل وأفضل الممارسات
+</div>
+
+يُعَدّ إنشاء عميل ClickHouse Connect عملية مكلفة، إذ يتضمن إنشاء اتصال، واسترجاع البيانات الوصفية الخاصة بالخادم، وتهيئة الإعدادات. اتبع أفضل الممارسات التالية لتحقيق أفضل أداء:
+
+<div id="core-principles">
+  ### المبادئ الأساسية
+</div>
+
+* **أعِد استخدام العملاء**: أنشئ العملاء مرة واحدة عند بدء تشغيل التطبيق، وأعِد استخدامهم طوال دورة حياة التطبيق
+* **تجنّب الإنشاء المتكرر**: لا تُنشئ عميلاً جديدًا لكل query أو طلب (فهذا يهدر مئات المللي ثانية لكل عملية)
+* **نظّف الموارد بشكل صحيح**: احرص دائمًا على إغلاق العملاء عند إيقاف التشغيل لتحرير موارد مجمع الاتصالات
+* **استخدم عميلاً واحدًا عند الإمكان**: يمكن لعميل واحد معالجة العديد من الاستعلامات المتزامنة عبر مجمع الاتصالات الخاص به (راجع ملاحظات مؤشرات الترابط أدناه)
+
+<div id="basic-patterns">
+  ### أنماط أساسية
+</div>
+
+**✅ جيد: أعِد استخدام عميل واحد**
+
+```python
+import clickhouse_connect
+
+# Create once at startup
+client = clickhouse_connect.get_client(host='my-host', username='default', password='password')
+
+# Reuse for all queries
+for i in range(1000):
+    result = client.query('SELECT count() FROM users')
+
+# Close on shutdown
+client.close()
+```
+
+**❌ غير مستحسن: إنشاء clients بصورة متكررة**
+
+```python
+# BAD: Creates 1000 clients with expensive initialization overhead
+for i in range(1000):
+    client = clickhouse_connect.get_client(host='my-host', username='default', password='password')
+    result = client.query('SELECT count() FROM users')
+    client.close()
+```
+
+<div id="multi-threaded-applications">
+  ### التطبيقات متعددة الخيوط
+</div>
+
+<Warning>
+  مثيلات العميل **غير آمنة للاستخدام عبر خيوط متعددة** عند استخدام معرّفات الجلسات. افتراضيًا، يكون لكل عميل معرّف جلسة مُنشأ تلقائيًا، وستؤدي الاستعلامات المتزامنة ضمن الجلسة نفسها إلى ظهور `ProgrammingError`.
+</Warning>
+
+لمشاركة عميل بين خيوط متعددة بأمان:
+
+```python
+import clickhouse_connect
+import threading
+
+# Option 1: Disable sessions (recommended for shared clients)
+client = clickhouse_connect.get_client(
+    host='my-host',
+    username='default',
+    password='password',
+    autogenerate_session_id=False  # Required for thread safety
+)
+
+def worker(thread_id):
+    # All threads can now safely use the same client
+    result = client.query(f"SELECT {thread_id}")
+    print(f"Thread {thread_id}: {result.result_rows[0][0]}")
+
+threads = [threading.Thread(target=worker, args=(i,)) for i in range(10)]
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
+
+client.close()
+# Output:
+# Thread 0: 0
+# Thread 7: 7
+# Thread 1: 1
+# Thread 9: 9
+# Thread 4: 4
+# Thread 2: 2
+# Thread 8: 8
+# Thread 5: 5
+# Thread 6: 6
+# Thread 3: 3
+```
+
+**بديل عند الحاجة إلى الجلسات:** إذا كنت بحاجة إلى جلسات (مثلًا، لاستخدام الجداول المؤقتة)، فأنشئ عميلًا منفصلًا لكل خيط تنفيذ:
+
+```python
+def worker(thread_id):
+    # Each thread gets its own client with isolated session
+    client = clickhouse_connect.get_client(host='my-host', username='default', password='password')
+    client.command('CREATE TEMPORARY TABLE temp (id UInt32) ENGINE = Memory')
+    # ... use temp table ...
+    client.close()
+```
+
+<div id="proper-cleanup">
+  ### التنظيف الصحيح
+</div>
+
+أغلق كائنات العميل دائمًا عند إيقاف التشغيل. لاحظ أن `client.close()` يحرّر العميل ويغلق اتصالات HTTP المجمّعة فقط عندما يكون العميل هو مالك مدير الـ pool الخاص به (على سبيل المثال، عند إنشائه باستخدام خيارات TLS/proxy مخصّصة). أمّا بالنسبة إلى الـ pool المشتركة الافتراضية، فاستخدم `client.close_connections()` لإغلاق الـ sockets بشكل استباقي؛ وإلا فستُسترد الاتصالات تلقائيًا عند انتهاء مهلة الخمول وعند خروج العملية.
+
+```python
+client = clickhouse_connect.get_client(host='my-host', username='default', password='password')
+try:
+    result = client.query('SELECT 1')
+finally:
+    client.close()
+```
+
+أو استخدم مدير السياق:
+
+```python
+with clickhouse_connect.get_client(host='my-host', username='default', password='password') as client:
+    result = client.query('SELECT 1')
+```
+
+<div id="when-to-use-multiple-clients">
+  ### متى تستخدم عدة عملاء
+</div>
+
+يكون استخدام عدة عملاء مناسبًا في الحالات التالية:
+
+* **خوادم مختلفة**: عميل واحد لكل ClickHouse server أو عنقود
+* **بيانات اعتماد مختلفة**: عملاء منفصلون لمستخدمين مختلفين أو لمستويات وصول مختلفة
+* **قواعد بيانات مختلفة**: عندما تحتاج إلى العمل مع عدة قواعد بيانات
+* **جلسات معزولة**: عندما تحتاج إلى جلسات منفصلة للجداول المؤقتة أو للإعدادات الخاصة بالجلسة
+* **عزل لكل خيط تنفيذ**: عندما تحتاج خيوط التنفيذ إلى جلسات مستقلة (كما هو موضح أعلاه)
+
+<div id="common-method-arguments">
+  ## وسائط الطرق الشائعة
+</div>
+
+تستخدم عدة طرق في العميل إحدى وسيطتي `parameters` و`settings` الشائعتين أو كلتيهما. وتُشرح وسائط الكلمات المفتاحية هذه أدناه.
+
+<div id="parameters-argument">
+  ### وسيطة Parameters
+</div>
+
+تقبل طرائق `query*` و`command` في ClickHouse Connect Client وسيطة keyword اختيارية باسم `parameters`، تُستخدم لربط تعبيرات بايثون بتعبير قيمة في ClickHouse. ويتوفر نوعان من هذا الربط.
+
+<div id="server-side-binding">
+  #### الربط من جهة الخادم
+</div>
+
+يدعم ClickHouse [الربط من جهة الخادم](/ar/concepts/features/interfaces/client#cli-queries-with-parameters) لمعظم قيم الاستعلام، حيث تُرسل القيمة المربوطة بشكل منفصل عن الاستعلام على هيئة معلمة استعلام في HTTP. وسيضيف ClickHouse Connect معلمات الاستعلام المناسبة إذا اكتشف تعبير ربط بالصيغة `{<name>:<datatype>}`. عند استخدام الربط من جهة الخادم، يجب أن تكون الوسيطة `parameters` قاموسًا في بايثون.
+
+* الربط من جهة الخادم باستخدام قاموس بايثون، وقيمة DateTime، وقيمة نصية
+
+```python
+import datetime
+
+my_date = datetime.datetime(2022, 10, 1, 15, 20, 5)
+
+parameters = {'table': 'my_table', 'v1': my_date, 'v2': "a string with a single quote'"}
+client.query('SELECT * FROM {table:Identifier} WHERE date >= {v1:DateTime} AND string ILIKE {v2:String}', parameters=parameters)
+```
+
+يولِّد هذا الاستعلام التالي على الخادم:
+
+```sql
+SELECT *
+FROM my_table
+WHERE date >= '2022-10-01 15:20:05'
+  AND string ILIKE 'a string with a single quote\''
+```
+
+<Warning>
+  لا يُدعَم الربط من جهة الخادم (من خلال خادم ClickHouse) إلا في استعلامات `SELECT`. ولا يعمل مع `ALTER` أو `DELETE` أو `INSERT` أو غيرها من أنواع الاستعلامات. وقد يتغير هذا في المستقبل؛ راجع https://github.com/ClickHouse/ClickHouse/issues/42092.
+</Warning>
+
+<div id="client-side-binding">
+  #### الربط من جهة العميل
+</div>
+
+يدعم ClickHouse Connect أيضًا ربط المعلمات من جهة العميل، ما يتيح مرونة أكبر عند إنشاء استعلامات SQL المعتمدة على القوالب. بالنسبة إلى الربط من جهة العميل، يجب أن تكون وسيطة `parameters` قاموسًا أو تسلسلًا. ويستخدم الربط من جهة العميل تنسيق السلاسل بأسلوب [&quot;printf&quot;](https://docs.python.org/3/library/stdtypes.html#old-string-formatting) في بايثون لإجراء استبدال المعلمات.
+
+لاحظ أنه، بخلاف الربط من جهة الخادم، لا يعمل الربط من جهة العميل مع معرّفات قاعدة البيانات مثل أسماء قواعد البيانات أو الجداول أو الأعمدة، لأن التنسيق بأسلوب بايثون لا يستطيع التمييز بين الأنواع المختلفة من السلاسل، كما أنها تحتاج إلى تنسيق مختلف (backticks أو علامتا الاقتباس المزدوجتان لمعرّفات قاعدة البيانات، وعلامتا الاقتباس المفردتان لقيم البيانات).
+
+* مثال باستخدام قاموس في بايثون، وقيمة DateTime، وإفلات السلاسل
+
+```python
+import datetime
+
+my_date = datetime.datetime(2022, 10, 1, 15, 20, 5)
+
+parameters = {'v1': my_date, 'v2': "a string with a single quote'"}
+client.query('SELECT * FROM my_table WHERE date >= %(v1)s AND string ILIKE %(v2)s', parameters=parameters)
+```
+
+يؤدي ذلك إلى إنشاء الاستعلام التالي على الخادم:
+
+```sql
+SELECT *
+FROM my_table
+WHERE date >= '2022-10-01 15:20:05'
+  AND string ILIKE 'a string with a single quote\''
+```
+
+* مثال على تسلسل في بايثون (Tuple) وFloat64 وIPv4Address
+
+```python
+import ipaddress
+
+parameters = (35200.44, ipaddress.IPv4Address(0x443d04fe))
+client.query('SELECT * FROM some_table WHERE metric >= %s AND ip_address = %s', parameters=parameters)
+```
+
+ينتج عن ذلك الاستعلام التالي على الخادم:
+
+```sql
+SELECT *
+FROM some_table
+WHERE metric >= 35200.44
+  AND ip_address = '68.61.4.254''
+```
+
+<Note>
+  يتطلب ربط وسيطات DateTime64 (أنواع ClickHouse ذات دقة أجزاء الثانية) إحدى طريقتين مخصصتين:
+
+  * غلّف قيمة بايثون `datetime.datetime` داخل الفئة الجديدة DT64Param، على سبيل المثال:
+    ```python
+      query = 'SELECT {p1:DateTime64(3)}'  # ربط من جهة الخادم باستخدام قاموس
+      parameters={'p1': DT64Param(dt_value)}
+
+      query = 'SELECT %s as string, toDateTime64(%s,6) as dateTime' # ربط من جهة العميل باستخدام قائمة 
+      parameters=['a string', DT64Param(datetime.now())]
+    ```
+    * إذا كنت تستخدم قاموسًا لقيم المعلمات، فألحِق السلسلة `_64` باسم المعلمة
+    ```python
+      query = 'SELECT {p1:DateTime64(3)}, {a1:Array(DateTime(3))}'  # ربط من جهة الخادم باستخدام قاموس
+
+      parameters={'p1_64': dt_value, 'a1_64': [dt_value1, dt_value2]}
+    ```
+</Note>
+
+<div id="settings-argument">
+  ### وسيطة Settings
+</div>
+
+تقبل جميع طُرق `insert` و`select` الأساسية في ClickHouse Connect Client وسيطةً اختيارية باسم `settings` لتمرير [إعدادات المستخدم](/ar/reference/settings/session-settings) الخاصة بخادم ClickHouse لعبارة SQL المضمَّنة. يجب أن تكون وسيطة `settings` قاموسًا. ويجب أن يتكوّن كل عنصر من اسم إعداد في ClickHouse والقيمة المرتبطة به. لاحظ أن القيم ستُحوَّل إلى سلاسل نصية عند إرسالها إلى الخادم كمعلمات استعلام.
+
+وكما هو الحال مع الإعدادات على مستوى العميل، سيتجاهل ClickHouse Connect أي إعدادات يضع الخادم عليها العلامة *readonly*=*1*، مع تسجيل رسالة في السجل بذلك. أما الإعدادات التي تنطبق فقط على الاستعلامات عبر ClickHouse HTTP interface فتكون صالحة دائمًا. وتجد وصف هذه الإعدادات ضمن واجهة برمجة تطبيقات `get_client` [واجهة برمجة تطبيقات](#settings-argument).
+
+مثال على استخدام إعدادات ClickHouse:
+
+```python
+settings = {'merge_tree_min_rows_for_concurrent_read': 65535,
+            'session_id': 'session_1234',
+            'use_skip_indexes': False}
+client.query("SELECT event_type, sum(timeout) FROM event_errors WHERE event_time > '2022-08-01'", settings=settings)
+```
+
+<div id="client-command-method">
+  ## طريقة `command` في `Client`
+</div>
+
+استخدم الطريقة `Client.command` لإرسال استعلامات SQL إلى خادم ClickHouse التي لا تُرجِع عادةً بيانات، أو التي تُرجِع قيمة بدائية واحدة أو قيمة مصفوفة واحدة بدلًا من مجموعة بيانات كاملة. تأخذ هذه الطريقة المعلمات التالية:
+
+| المعلمة                | النوع            | الافتراضي  | الوصف                                                                                                                                                                                                                              |
+| ---------------------- | ---------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| cmd                    | str              | *Required* | تعليمة ClickHouse SQL تُرجِع قيمة واحدة أو صفًا واحدًا من القيم.                                                                                                                                                                   |
+| parameters             | dict or iterable | *None*     | راجع [وصف المعلمات](#parameters-argument).                                                                                                                                                                                         |
+| data                   | str or bytes     | *None*     | بيانات اختيارية لتضمينها مع الأمر كجسم طلب POST.                                                                                                                                                                                   |
+| settings               | dict             | *None*     | راجع [وصف الإعدادات](#settings-argument).                                                                                                                                                                                          |
+| use&#95;database       | bool             | True       | استخدم قاعدة بيانات العميل (المحددة عند إنشاء العميل). وتعني False أن الأمر سيستخدم قاعدة البيانات الافتراضية في خادم ClickHouse للمستخدم المتصل.                                                                                  |
+| external&#95;data      | ExternalData     | *None*     | كائن `ExternalData` يحتوي على بيانات ملف أو بيانات ثنائية لاستخدامها مع الاستعلام. راجع [الاستعلامات المتقدمة (البيانات الخارجية)](/ar/integrations/language-clients/python/advanced-querying#external-data)                          |
+| transport&#95;settings | dict             | *None*     | قاموس اختياري من ترويسات HTTP لتضمينها مع هذا الطلب. يُضاف كل زوج مفتاح-قيمة كترويسة HTTP (مثل `{'X-Custom-Header': 'value'}`). وهو مفيد لمصادقة الوكيل، أو تتبّع الطلبات، أو تمرير الترويسات التي تتطلبها البنية التحتية الوسيطة. |
+
+<div id="command-examples">
+  ### أمثلة الأوامر
+</div>
+
+<div id="ddl-statements">
+  #### عبارات DDL
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Create a table
+result = client.command("CREATE TABLE test_command (col_1 String, col_2 DateTime) ENGINE MergeTree ORDER BY tuple()")
+print(result)  # Returns QuerySummary with query_id
+
+# Show table definition
+result = client.command("SHOW CREATE TABLE test_command")
+print(result)
+# Output:
+# CREATE TABLE default.test_command
+# (
+#     `col_1` String,
+#     `col_2` DateTime
+# )
+# ENGINE = MergeTree
+# ORDER BY tuple()
+
+# Drop table
+client.command("DROP TABLE test_command")
+```
+
+<div id="simple-queries-returning-single-values">
+  #### استعلامات بسيطة تُعيد قيماً مفردة
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Single value result
+count = client.command("SELECT count() FROM system.tables")
+print(count)
+# Output: 151
+
+# Server version
+version = client.command("SELECT version()")
+print(version)
+# Output: "25.8.2.29"
+```
+
+<div id="commands-with-parameters">
+  #### الأوامر ذات المعلمات
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Using client-side parameters
+table_name = "system"
+result = client.command(
+    "SELECT count() FROM system.tables WHERE database = %(db)s",
+    parameters={"db": table_name}
+)
+
+# Using server-side parameters
+result = client.command(
+    "SELECT count() FROM system.tables WHERE database = {db:String}",
+    parameters={"db": "system"}
+)
+```
+
+<div id="commands-with-settings">
+  #### الأوامر ذات الإعدادات
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Execute command with specific settings
+result = client.command(
+    "OPTIMIZE TABLE large_table FINAL",
+    settings={"optimize_throw_if_noop": 1}
+)
+```
+
+<div id="client-query-method">
+  ## طريقة `query` في `Client`
+</div>
+
+تُعد طريقة `Client.query` الوسيلة الأساسية لاسترجاع dataset واحدة على شكل &quot;دفعة&quot; من خادم ClickHouse. وهي تستخدم تنسيق ClickHouse الأصلي عبر HTTP لنقل مجموعات البيانات الكبيرة (حتى نحو مليون صف) بكفاءة. تقبل هذه الطريقة المعلمات التالية:
+
+| المعلمة                     | النوع            | الافتراضي | الوصف                                                                                                                                                                                                                           |
+| --------------------------- | ---------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| query                       | str              | *مطلوب*   | استعلام ClickHouse SQL من نوع SELECT أو DESCRIBE.                                                                                                                                                                               |
+| parameters                  | dict or iterable | *None*    | راجع [وصف parameters](#parameters-argument).                                                                                                                                                                                    |
+| settings                    | dict             | *None*    | راجع [وصف settings](#settings-argument).                                                                                                                                                                                        |
+| query&#95;formats           | dict             | *None*    | مواصفة تنسيق نوع البيانات لقيم النتائج. راجع الاستخدام المتقدم (تنسيقات القراءة)                                                                                                                                                |
+| column&#95;formats          | dict             | *None*    | تنسيق نوع البيانات لكل عمود. راجع الاستخدام المتقدم (تنسيقات القراءة)                                                                                                                                                           |
+| encoding                    | str              | *None*    | الترميز المستخدَم لتحويل أعمدة ClickHouse String إلى سلاسل نصية في بايثون. تستخدم بايثون `UTF-8` افتراضيًا إذا لم يتم تعيينه.                                                                                                   |
+| use&#95;none                | bool             | True      | استخدم النوع *None* في بايثون لقيم ClickHouse null. إذا كانت القيمة False، فستُستخدم القيمة الافتراضية لنوع البيانات (مثل 0) لقيم ClickHouse null. ملاحظة: تكون القيمة الافتراضية False في NumPy/Pandas لأسباب تتعلق بالأداء.   |
+| column&#95;oriented         | bool             | False     | أعد النتائج كتسلسل من الأعمدة بدلًا من تسلسل من الصفوف. يفيد ذلك عند تحويل بيانات بايثون إلى تنسيقات بيانات أخرى موجّهة للأعمدة.                                                                                                |
+| query&#95;tz                | str              | *None*    | اسم منطقة زمنية من قاعدة بيانات `zoneinfo`. ستُطبَّق هذه المنطقة الزمنية على جميع كائنات datetime أو Pandas Timestamp التي يعيدها الاستعلام.                                                                                    |
+| column&#95;tzs              | dict             | *None*    | قاموس يربط اسم العمود باسم المنطقة الزمنية. يشبه `query_tz`، لكنه يتيح تحديد مناطق زمنية مختلفة لأعمدة مختلفة.                                                                                                                  |
+| use&#95;extended&#95;dtypes | bool             | True      | استخدم أنواع البيانات الممتدة في Pandas (مثل StringArray)، و pandas.NA و pandas.NaT لقيم ClickHouse NULL. ينطبق ذلك فقط على طريقتي `query_df` و `query_df_stream`.                                                              |
+| external&#95;data           | ExternalData     | *None*    | كائن ExternalData يحتوي على بيانات ملف أو binary لاستخدامها مع الاستعلام. راجع [الاستعلامات المتقدمة (البيانات الخارجية)](/ar/integrations/language-clients/python/advanced-querying#external-data)                                |
+| context                     | QueryContext     | *None*    | يمكن استخدام كائن QueryContext قابل لإعادة الاستخدام لتجميع معلمات الطريقة المذكورة أعلاه. راجع [الاستعلامات المتقدمة (QueryContexts)](/ar/integrations/language-clients/python/advanced-querying#querycontexts)                   |
+| transport&#95;settings      | dict             | *None*    | قاموس اختياري من ترويسات HTTP لتضمينه مع هذا الطلب. يُضاف كل زوج key-value كـ HTTP header (مثل `{'X-Custom-Header': 'value'}`). ويفيد ذلك في مصادقة proxy، وتتبع الطلبات، أو تمرير headers التي تتطلبها البنية التحتية الوسيطة. |
+
+<div id="query-examples">
+  ### أمثلة على الاستعلامات
+</div>
+
+<div id="basic-query">
+  #### استعلام بسيط
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Simple SELECT query
+result = client.query("SELECT name, database FROM system.tables LIMIT 3")
+
+# Access results as rows
+for row in result.result_rows:
+    print(row)
+# Output:
+# ('CHARACTER_SETS', 'INFORMATION_SCHEMA')
+# ('COLLATIONS', 'INFORMATION_SCHEMA')
+# ('COLUMNS', 'INFORMATION_SCHEMA')
+
+# Access column names and types
+print(result.column_names)
+# Output: ("name", "database")
+print([col_type.name for col_type in result.column_types])
+# Output: ['String', 'String']
+```
+
+<div id="accessing-query-results">
+  #### الوصول إلى نتائج الاستعلام
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+result = client.query("SELECT number, toString(number) AS str FROM system.numbers LIMIT 3")
+
+# Row-oriented access (default)
+print(result.result_rows)
+# Output: [[0, "0"], [1, "1"], [2, "2"]]
+
+# Column-oriented access
+print(result.result_columns)
+# Output: [[0, 1, 2], ["0", "1", "2"]]
+
+# Named results (list of dictionaries)
+for row_dict in result.named_results():
+    print(row_dict)
+# Output: 
+# {"number": 0, "str": "0"}
+# {"number": 1, "str": "1"}
+# {"number": 2, "str": "2"}
+
+# First row as dictionary
+print(result.first_item)
+# Output: {"number": 0, "str": "0"}
+
+# First row as tuple
+print(result.first_row)
+# Output: (0, "0")
+```
+
+<div id="query-with-client-side-parameters">
+  #### استعلام باستخدام معلمات جهة العميل
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Using dictionary parameters (printf-style)
+query = "SELECT * FROM system.tables WHERE database = %(db)s AND name LIKE %(pattern)s"
+parameters = {"db": "system", "pattern": "%query%"}
+result = client.query(query, parameters=parameters)
+
+# Using tuple parameters
+query = "SELECT * FROM system.tables WHERE database = %s LIMIT %s"
+parameters = ("system", 5)
+result = client.query(query, parameters=parameters)
+```
+
+<div id="query-with-server-side-parameters">
+  #### استعلام باستخدام معلمات على جانب الخادم
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Server-side binding (more secure, better performance for SELECT queries)
+query = "SELECT * FROM system.tables WHERE database = {db:String} AND name = {tbl:String}"
+parameters = {"db": "system", "tbl": "query_log"}
+
+result = client.query(query, parameters=parameters)
+```
+
+<div id="query-with-settings">
+  #### الاستعلام مع الإعدادات
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Pass ClickHouse settings with the query
+result = client.query(
+    "SELECT sum(number) FROM numbers(1000000)",
+    settings={
+        "max_block_size": 100000,
+        "max_execution_time": 30
+    }
+)
+```
+
+<div id="the-queryresult-object">
+  ### كائن `QueryResult`
+</div>
+
+تعيد طريقة `query` الأساسية كائن `QueryResult` بالخصائص العامة التالية:
+
+* `result_rows` -- مصفوفة من البيانات المُعادة على هيئة Sequence من الصفوف، حيث يكون كل عنصر صف تسلسلاً من قيم الأعمدة.
+* `result_columns` -- مصفوفة من البيانات المُعادة على هيئة Sequence من الأعمدة، حيث يكون كل عنصر عمود تسلسلاً من قيم الصفوف لذلك العمود
+* `column_names` -- `tuple` من السلاسل النصية يمثّل أسماء الأعمدة في `result_set`
+* `column_types` -- `tuple` من مثيلات ClickHouseType يمثّل نوع بيانات ClickHouse لكل عمود في `result_columns`
+* `query_id` -- قيمة query&#95;id الخاصة بـ ClickHouse (وهي مفيدة لفحص الاستعلام في جدول `system.query_log`)
+* `summary` -- أي بيانات تُعيدها ترويسة استجابة HTTP ‏`X-ClickHouse-Summary`
+* `first_item` -- خاصية تيسيرية لاسترجاع الصف الأول من الاستجابة على شكل قاموس (تكون المفاتيح فيه أسماء الأعمدة)
+* `first_row` -- خاصية تيسيرية لإرجاع الصف الأول من النتيجة
+* `column_block_stream` -- مولّد لنتائج الاستعلام بتنسيق موجّه بالأعمدة. لا ينبغي استخدام هذه الخاصية مباشرةً (انظر أدناه).
+* `row_block_stream` -- مولّد لنتائج الاستعلام بتنسيق موجّه بالصفوف. لا ينبغي استخدام هذه الخاصية مباشرةً (انظر أدناه).
+* `rows_stream` -- مولّد لنتائج الاستعلام يُرجع صفًا واحدًا في كل استدعاء. لا ينبغي استخدام هذه الخاصية مباشرةً (انظر أدناه).
+* `summary` -- كما هو موضّح ضمن طريقة `command`، قاموس يحتوي على معلومات موجزة تُعيدها ClickHouse
+
+تعيد الخصائص `*_stream` كائن Context في بايثون يمكن استخدامه كمكرّر للبيانات المُعادة. ويجب الوصول إليها فقط بشكل غير مباشر باستخدام طرق `*_stream` الخاصة بـ Client.
+
+ترد التفاصيل الكاملة لبثّ نتائج الاستعلام (باستخدام كائنات StreamContext) في [الاستعلامات المتقدمة (الاستعلامات المتدفقة)](/ar/integrations/language-clients/python/advanced-querying#streaming-queries).
+
+<div id="consuming-query-results-with-numpy-pandas-or-arrow">
+  ## استهلاك نتائج الاستعلام باستخدام NumPy أو Pandas أو Arrow
+</div>
+
+يوفّر ClickHouse Connect طرق استعلام متخصصة لتنسيقات بيانات NumPy وPandas وArrow. للحصول على معلومات مفصلة حول استخدام هذه الطرق، بما في ذلك الأمثلة وإمكانات البث والتعامل المتقدم مع الأنواع، راجع [الاستعلام المتقدم (استعلامات NumPy وPandas وArrow)](/ar/integrations/language-clients/python/advanced-querying#numpy-pandas-and-arrow-queries).
+
+<div id="client-streaming-query-methods">
+  ## أساليب Client للاستعلامات المتدفقة
+</div>
+
+لبث مجموعات نتائج كبيرة، يوفّر ClickHouse Connect عدة أساليب للبث المتدفق. راجع [الاستعلامات المتقدمة (الاستعلامات المتدفقة)](/ar/integrations/language-clients/python/advanced-querying#streaming-queries) للاطلاع على التفاصيل والأمثلة.
+
+<div id="client-insert-method">
+  ## طريقة `insert` في `Client`
+</div>
+
+في حالة الاستخدام الشائعة المتمثلة في إدراج عدة سجلات في ClickHouse، تتوفر الطريقة `Client.insert`. وتقبل المعلمات التالية:
+
+| Parameter                 | Type                              | Default     | Description                                                                                                                                                                                                                      |
+| ------------------------- | --------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| table                     | str                               | *Required*  | جدول ClickHouse المراد الإدراج فيه. ويُسمح باستخدام الاسم الكامل للجدول (بما في ذلك قاعدة البيانات).                                                                                                                             |
+| data                      | Sequence of Sequences             | *Required*  | مصفوفة البيانات المراد إدراجها: إما Sequence من الصفوف، يكون كل صف فيها تسلسلاً من قيم الأعمدة، أو Sequence من الأعمدة، يكون كل عمود فيها تسلسلاً من قيم الصفوف.                                                                 |
+| column&#95;names          | Sequence of str, or str           | &#39;*&#39; | قائمة `column_names` الخاصة بمصفوفة البيانات. وإذا استُخدم &#39;*&#39; بدلاً من ذلك، فسينفّذ ClickHouse Connect «استعلامًا تمهيديًا» لاسترجاع جميع أسماء الأعمدة في الجدول.                                                      |
+| database                  | str                               | &#39;&#39;  | قاعدة البيانات المستهدفة لعملية الإدراج. وإذا لم تُحدَّد، فستُستخدم قاعدة البيانات الخاصة بالعميل.                                                                                                                               |
+| column&#95;types          | Sequence of ClickHouseType        | *None*      | قائمة بمثيلات ClickHouseType. وإذا لم يتم تحديد `column_types` أو `column_type_names`، فسينفّذ ClickHouse Connect «استعلامًا تمهيديًا» لاسترجاع جميع أنواع الأعمدة في الجدول.                                                    |
+| column&#95;type&#95;names | Sequence of ClickHouse type names | *None*      | قائمة بأسماء أنواع بيانات ClickHouse. وإذا لم يتم تحديد `column_types` أو `column_type_names`، فسينفّذ ClickHouse Connect «استعلامًا تمهيديًا» لاسترجاع جميع أنواع الأعمدة في الجدول.                                            |
+| column&#95;oriented       | bool                              | False       | إذا كانت القيمة True، فسيُفترض أن الوسيط `data` هو Sequence من الأعمدة (ولن تكون هناك حاجة إلى &quot;pivot&quot; لإدراج البيانات). بخلاف ذلك، سيُفسَّر `data` على أنه Sequence من الصفوف.                                        |
+| settings                  | dict                              | *None*      | راجع [وصف settings](#settings-argument).                                                                                                                                                                                         |
+| context                   | InsertContext                     | *None*      | يمكن استخدام كائن InsertContext قابل لإعادة الاستخدام لتجميع معلمات الطريقة المذكورة أعلاه. راجع [الإدراج المتقدم (InsertContexts)](/ar/integrations/language-clients/python/advanced-inserting#insertcontexts)                     |
+| transport&#95;settings    | dict                              | *None*      | قاموس اختياري من HTTP headers لتضمينها مع هذا الطلب. ويُضاف كل زوج مفتاح-قيمة كـ HTTP header (مثل `{'X-Custom-Header': 'value'}`). وهذا مفيد لمصادقة proxy، وتتبع الطلبات، أو تمرير headers التي تتطلبها البنية التحتية الوسيطة. |
+
+تعيد هذه الطريقة قاموسًا يتضمن &quot;ملخص query&quot; كما هو موضح ضمن طريقة &quot;command&quot;. وسيُرفَع استثناء إذا فشل الإدراج لأي سبب.
+
+للاطلاع على طرق الإدراج المتخصصة التي تعمل مع Pandas DataFrames وPyArrow Tables وDataFrames المعتمدة على Arrow، راجع [الإدراج المتقدم (طرق الإدراج المتخصصة)](/ar/integrations/language-clients/python/advanced-inserting#specialized-insert-methods).
+
+<Note>
+  تُعد مصفوفة NumPy أيضًا Sequence of Sequences صالحة، ويمكن استخدامها كوسيط `data` مع طريقة `insert` الأساسية، لذلك لا حاجة إلى طريقة متخصصة.
+</Note>
+
+<div id="examples">
+  ### أمثلة
+</div>
+
+تفترض الأمثلة الواردة أدناه وجود جدول `users` مسبقًا، بمخطط `(id UInt32, name String, age UInt8)`.
+
+<div id="basic-row-oriented-insert">
+  #### إدراج أساسي موجّه بالصفوف
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Row-oriented data: each inner list is a row
+data = [
+    [1, "Alice", 25],
+    [2, "Bob", 30],
+    [3, "Joe", 28],
+]
+
+client.insert("users", data, column_names=["id", "name", "age"])
+```
+
+<div id="column-oriented-insert">
+  #### إدراج موجّه بالأعمدة
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Column-oriented data: each inner list is a column
+data = [
+    [1, 2, 3],  # id column
+    ["Alice", "Bob", "Joe"],  # name column
+    [25, 30, 28],  # age column
+]
+
+client.insert("users", data, column_names=["id", "name", "age"], column_oriented=True)
+```
+
+<div id="insert-with-explicit-column-types">
+  #### إدراج باستخدام أنواع أعمدة صريحة
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Useful when you want to avoid a DESCRIBE query to the server
+data = [
+    [1, "Alice", 25],
+    [2, "Bob", 30],
+    [3, "Joe", 28],
+]
+
+client.insert(
+    "users",
+    data,
+    column_names=["id", "name", "age"],
+    column_type_names=["UInt32", "String", "UInt8"],
+)
+```
+
+<div id="insert-into-specific-database">
+  #### الإدراج في قاعدة بيانات محددة
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+data = [
+    [1, "Alice", 25],
+    [2, "Bob", 30],
+]
+
+# Insert into a table in a specific database
+client.insert(
+    "users",
+    data,
+    column_names=["id", "name", "age"],
+    database="production",
+)
+```
+
+<div id="file-inserts">
+  ## الإدراج من الملفات
+</div>
+
+لإدراج البيانات مباشرةً من الملفات إلى جداول ClickHouse، راجع [الإدراج المتقدم (الإدراج من الملفات)](/ar/integrations/language-clients/python/advanced-inserting#file-inserts).
+
+<div id="raw-api">
+  ## واجهة برمجة التطبيقات الخام
+</div>
+
+للاطلاع على حالات الاستخدام المتقدمة التي تتطلب وصولًا مباشرًا إلى واجهات HTTP الخاصة بـ ClickHouse من دون تحويلات للأنواع، راجع [الاستخدام المتقدم (واجهة برمجة التطبيقات الخام)](/ar/integrations/language-clients/python/advanced-usage#raw-api).
+
+<div id="utility-classes-and-functions">
+  ## فئات ودوال الأدوات المساعدة
+</div>
+
+تُعد الفئات والدوال التالية أيضًا جزءًا من واجهة برمجة تطبيقات `clickhouse-connect` &quot;العامة&quot;، وهي، شأنها شأن الفئات والأساليب الموثقة أعلاه، مستقرة عبر الإصدارات الثانوية. ولن تطرأ تغييرات غير متوافقة مع الإصدارات السابقة على هذه الفئات والدوال إلا في إصدار ثانوي (وليس في إصدار تصحيح)، وستظل متاحة بحالة Deprecated لمدة إصدار ثانوي واحد على الأقل.
+
+<div id="exceptions">
+  ### الاستثناءات
+</div>
+
+جميع الاستثناءات المخصّصة (بما في ذلك تلك المعرّفة في مواصفة DB API 2.0) معرّفة في الوحدة `clickhouse_connect.driver.exceptions`. وستكون الاستثناءات التي يكتشفها برنامج التشغيل فعليًا من أحد هذه الأنواع.
+
+<div id="clickhouse-sql-utilities">
+  ### أدوات ClickHouse SQL
+</div>
+
+يمكن استخدام الدوال والفئة DT64Param في الوحدة `clickhouse_connect.driver.binding` لبناء استعلامات ClickHouse SQL وإفلاتها بشكل صحيح. وبالمثل، يمكن استخدام الدوال في الوحدة `clickhouse_connect.driver.parser` لتحليل أسماء أنواع بيانات ClickHouse.
+
+<div id="multithreaded-multiprocess-and-asyncevent-driven-use-cases">
+  ## حالات الاستخدام متعددة الخيوط، ومتعددة العمليات، وغير المتزامنة أو القائمة على الأحداث
+</div>
+
+للحصول على معلومات حول استخدام ClickHouse Connect في التطبيقات متعددة الخيوط، ومتعددة العمليات، وغير المتزامنة أو القائمة على الأحداث، راجع [الاستخدام المتقدم (حالات الاستخدام متعددة الخيوط، ومتعددة العمليات، وغير المتزامنة أو القائمة على الأحداث)](/ar/integrations/language-clients/python/advanced-usage#multithreaded-multiprocess-and-asyncevent-driven-use-cases).
+
+<div id="asyncclient-wrapper">
+  ## مغلّف AsyncClient
+</div>
+
+للاطلاع على معلومات حول استخدام مغلّف AsyncClient في بيئات asyncio، راجع [الاستخدام المتقدم (مغلّف AsyncClient)](/ar/integrations/language-clients/python/advanced-usage#asyncclient-wrapper).
+
+<div id="managing-clickhouse-session-ids">
+  ## إدارة معرّفات الجلسات في ClickHouse
+</div>
+
+للاطلاع على معلومات حول إدارة معرّفات جلسات ClickHouse في التطبيقات متعددة الخيوط أو المتزامنة، راجع [الاستخدام المتقدم (إدارة معرّفات الجلسات في ClickHouse)](/ar/integrations/language-clients/python/advanced-usage#managing-clickhouse-session-ids).
+
+<div id="customizing-the-http-connection-pool">
+  ## تخصيص مجمّع اتصالات HTTP
+</div>
+
+لمزيد من المعلومات حول تخصيص مجمّع اتصالات HTTP للتطبيقات الكبيرة متعددة الخيوط، راجع [الاستخدام المتقدم (تخصيص مجمّع اتصالات HTTP)](/ar/integrations/language-clients/python/advanced-usage#customizing-the-http-connection-pool).

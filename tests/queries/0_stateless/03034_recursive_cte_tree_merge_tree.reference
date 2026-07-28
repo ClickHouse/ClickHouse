@@ -18,7 +18,7 @@ WITH RECURSIVE search_tree AS (
     FROM tree t, search_tree st
     WHERE t.link = st.id
 )
-SELECT * FROM search_tree;
+SELECT * FROM search_tree ORDER BY ALL;
 0	\N	ROOT
 1	0	Child_1
 2	0	Child_2
@@ -34,7 +34,7 @@ WITH RECURSIVE search_tree AS (
     FROM tree t, search_tree st
     WHERE t.link = st.id
 )
-SELECT * FROM search_tree;
+SELECT * FROM search_tree ORDER BY ALL;
 0	\N	ROOT	[0]
 1	0	Child_1	[0,1]
 2	0	Child_2	[0,2]
@@ -169,7 +169,7 @@ SELECT * FROM
         SELECT * FROM x)
       )
   SELECT * FROM q LIMIT 24
-) ORDER BY id, parent_department, name;
+) ORDER BY id, parent_department, name SETTINGS max_threads = 1;
 0	0	ROOT
 0	0	ROOT
 0	0	ROOT
@@ -207,7 +207,7 @@ SELECT * FROM
         SELECT * FROM x)
       )
   SELECT * FROM q LIMIT 32
-) ORDER BY id, parent_department, name;
+) ORDER BY id, parent_department, name SETTINGS max_threads = 1;
 0	0	ROOT
 0	0	ROOT
 0	0	ROOT

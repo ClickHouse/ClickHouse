@@ -1,0 +1,19 @@
+---
+description: 'キー式の変更に関するドキュメント'
+sidebarTitle: 'ORDER BY'
+slug: /sql-reference/statements/alter/order-by
+title: 'キー式の変更'
+doc_type: 'reference'
+---
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
+```
+
+このコマンドは、テーブルの[ソートキー](/ja/reference/engines/table-engines/mergetree-family/mergetree)を `new_expression` (式、または複数の式からなるタプル) に変更します。主キーは変わりません。
+
+このコマンドは、変更されるのがメタデータだけであるという意味で軽量です。データパート内の行がソートキー式に従って並ぶという性質を保つため、既存のカラムを含む式をソートキーに追加することはできません (追加できるのは、同じ `ALTER` クエリ内の `ADD COLUMN` コマンドで追加され、かつデフォルト値を持たないカラムだけです) 。
+
+<Note>
+  これは、[`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) ファミリーのテーブル ([レプリケーションされた](/ja/reference/engines/table-engines/mergetree-family/replication) テーブルを含む) でのみ使用できます。
+</Note>

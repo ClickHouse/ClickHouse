@@ -1,0 +1,173 @@
+---
+slug: '/examples/aggregate-function-combinators/minSimpleState'
+title: 'minSimpleState'
+description: 'minSimpleStateコンビネータの使用例'
+keywords: ['min', 'state', 'simple', 'combinator', 'examples', 'minSimpleState']
+sidebarTitle: 'minSimpleState'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+[`SimpleState`](/ja/reference/functions/aggregate-functions/combinators#-simplestate) コンビネータは、[`min`](/ja/reference/functions/aggregate-functions/min)
+関数に適用でき、すべての入力値の最小値を返します。結果は
+[`SimpleAggregateFunction`](/ja/reference/data-types/simpleaggregatefunction) 型で返されます。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+日々の気温
+測定値を記録するテーブルを使った実践的な例を見てみましょう。各地点について、記録された最低気温を
+保持したいとします。`min` を指定した `SimpleAggregateFunction` 型を使用すると、より低い気温が記録されたときに
+保存されている値が自動的に更新されます。
+
+生の気温測定値用の元テーブルを作成します:
+
+```sql
+CREATE TABLE raw_temperature_readings
+(
+    location_id UInt32,
+    location_name String,
+    temperature Int32,
+    recorded_at DateTime DEFAULT now()
+)
+    ENGINE = MergeTree()
+ORDER BY (location_id, recorded_at);
+```
+
+最小気温を格納する集約テーブルを作成します。
+
+```sql
+CREATE TABLE temperature_extremes
+(
+    location_id UInt32,
+    location_name String,
+    min_temp SimpleAggregateFunction(min, Int32),  -- 最低気温を格納
+    max_temp SimpleAggregateFunction(max, Int32)   -- 最高気温を格納
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY location_id;
+```
+
+挿入されたデータに対するinsert triggerとして機能し、場所ごとの最低気温と最高気温を保持する
+インクリメンタルmaterialized viewを作成します。
+
+```sql
+CREATE MATERIALIZED VIEW temperature_extremes_mv
+TO temperature_extremes
+AS SELECT
+    location_id,
+    location_name,
+    minSimpleState(temperature) AS min_temp,     -- SimpleState コンビネータを使用
+    maxSimpleState(temperature) AS max_temp      -- SimpleState コンビネータを使用
+FROM raw_temperature_readings
+GROUP BY location_id, location_name;
+```
+
+初期の温度測定値をいくつか挿入します:
+
+```sql
+INSERT INTO raw_temperature_readings (location_id, location_name, temperature) VALUES
+(1, 'North', 5),
+(2, 'South', 15),
+(3, 'West', 10),
+(4, 'East', 8);
+```
+
+これらの値は materialized view によって自動的に処理されます。現在の状態を確認してみましょう。
+
+```sql
+SELECT
+    location_id,
+    location_name,
+    min_temp,     -- SimpleAggregateFunction の値に直接アクセス
+    max_temp      -- SimpleAggregateFunction では集約完了関数は不要
+FROM temperature_extremes
+ORDER BY location_id;
+```
+
+```response
+┌─location_id─┬─location_name─┬─min_temp─┬─max_temp─┐
+│           1 │ North         │        5 │        5 │
+│           2 │ South         │       15 │       15 │
+│           3 │ West          │       10 │       10 │
+│           4 │ East          │        8 │        8 │
+└─────────────┴───────────────┴──────────┴──────────┘
+```
+
+さらにいくつかのデータを挿入します:
+
+```sql
+INSERT INTO raw_temperature_readings (location_id, location_name, temperature) VALUES
+    (1, 'North', 3),
+    (2, 'South', 18),
+    (3, 'West', 10),
+    (1, 'North', 8),
+    (4, 'East', 2);
+```
+
+新しいデータ追加後の更新された極値を表示します:
+
+```sql
+SELECT
+    location_id,
+    location_name,
+    min_temp,  
+    max_temp
+FROM temperature_extremes
+ORDER BY location_id;
+```
+
+```response
+┌─location_id─┬─location_name─┬─min_temp─┬─max_temp─┐
+│           1 │ North         │        3 │        8 │
+│           1 │ North         │        5 │        5 │
+│           2 │ South         │       18 │       18 │
+│           2 │ South         │       15 │       15 │
+│           3 │ West          │       10 │       10 │
+│           3 │ West          │       10 │       10 │
+│           4 │ East          │        2 │        2 │
+│           4 │ East          │        8 │        8 │
+└─────────────┴───────────────┴──────────┴──────────┘
+```
+
+上のとおり、各ロケーションには挿入された値が 2 つあります。これは、
+パーツがまだマージされておらず (`AggregatingMergeTree` による集約もまだ行われていない) ためです。部分的な状態から
+最終結果を得るには、`GROUP BY` を追加する必要があります。
+
+```sql
+SELECT
+    location_id,
+    location_name,
+    min(min_temp) AS min_temp,  -- すべてのパーツにわたって集計
+    max(max_temp) AS max_temp   -- すべてのパーツにわたって集計
+FROM temperature_extremes
+GROUP BY location_id, location_name
+ORDER BY location_id;
+```
+
+これで、期待どおりの結果になります。
+
+```response
+┌─location_id─┬─location_name─┬─min_temp─┬─max_temp─┐
+│           1 │ North         │        3 │        8 │
+│           2 │ South         │       15 │       18 │
+│           3 │ West          │       10 │       10 │
+│           4 │ East          │        2 │        8 │
+└─────────────┴───────────────┴──────────┴──────────┘
+```
+
+<Note>
+  `SimpleState` では、部分集約状態を結合するために `Merge` コンビネータを使う必要はありません。
+</Note>
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [`min`](/ja/reference/functions/aggregate-functions/min)
+* [`SimpleState combinator`](/ja/reference/functions/aggregate-functions/combinators#-simplestate)
+* [`SimpleAggregateFunction type`](/ja/reference/data-types/simpleaggregatefunction)

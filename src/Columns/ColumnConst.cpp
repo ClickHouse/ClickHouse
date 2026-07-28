@@ -4,7 +4,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/WeakHash.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
 
@@ -163,10 +162,16 @@ void ColumnConst::updatePermutation(PermutationSortDirection /*direction*/, Perm
 {
 }
 
-WeakHash32 ColumnConst::getWeakHash32() const
+void ColumnConst::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    WeakHash32 element_hash = data->getWeakHash32();
-    return WeakHash32(s, element_hash.getData()[0]);
+    UInt32 value = 0;
+    data->computeHashInto(0, 1, &value, true);
+
+    for (size_t i = row_begin; i < row_end; ++i)
+    {
+        UInt32 & out = hash_out[i - row_begin];
+        out = initial ? value : combineWeakHash32(value, out);
+    }
 }
 
 void ColumnConst::compareColumn(

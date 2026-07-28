@@ -1,0 +1,49 @@
+---
+noindex: true
+title: "Hydra: Compute Separation"
+sidebarTitle: "Hydra compute separation"
+description: "This document explains Hydra, the compute separation feature for ClickHouse Private clusters."
+---
+
+This document explains Hydra, the compute separation feature for ClickHouse Private clusters.
+
+## What is Hydra?
+
+Hydra enables the creation of **multiple node groups within a single logical ClickHouse cluster**, where each node group can have:
+
+- A different number of nodes
+- Different resource allocations (CPU, memory)
+- A separate network endpoint
+
+This allows you to run different workloads (e.g., heavy analytics vs. lightweight dashboards) against the same dataset without those workloads competing for the same compute resources.
+
+## How It Works
+
+Hydra achieves compute separation while maintaining a unified data layer:
+
+- **Shared ClickHouse Keeper** -- All node groups in a Hydra cluster use the same Keeper ensemble for distributed coordination. There is no need for separate Keeper instances per node group.
+- **Shared S3 data** -- All node groups read from (and potentially write to) the same S3 data prefix. Because ClickHouse uses shared object storage for table data, multiple compute groups can access the same underlying data without duplication.
+- **Separate compute** -- Each node group runs its own set of ClickHouse server pods with independent resource configurations and its own Kubernetes service endpoint.
+
+## Parent-Child Relationship
+
+Hydra uses a **parent-child model**:
+
+- The **parent** is an existing ClickHouse cluster that owns the data and Keeper ensemble.
+- **Children** are additional node groups that are provisioned with a reference to the parent's name and namespace. When creating a child, you specify the parent using `parentCluster.name` and `parentCluster.namespace`.
+
+A parent can have multiple children, each with different sizing and access characteristics.
+
+## Read-Only vs Read-Write Children
+
+By default, child instances are **read-write**, meaning they can both read and write data to the shared storage.
+
+A child can optionally be configured as **read-only** (by setting `isReadonly=true` at creation time). Read-only children can query data but cannot modify it, making them suitable for workloads such as reporting, dashboards, or analytics where write access is unnecessary and isolation from write operations is desired.
+
+## Limitations
+
+There are two important constraints to be aware of when using Hydra:
+
+1.  **You cannot provision child instances if the parent instance is stopped, terminated, or idled.** The parent must be in a running state for children to be created, because children depend on the parent's Keeper ensemble and shared data configuration.
+
+2.  **You must delete all child instances before deleting the parent cluster.** The parent cannot be removed while children still reference it. Attempting to delete a parent with active children will fail.

@@ -70,7 +70,7 @@ impl ClickHouseDisk {
             .fetch::<CacheLine>()
             .unwrap();
 
-        while let Some(row) = cursor.next().await? {
+        if let Some(row) = cursor.next().await? {
             return Ok(row.blob);
         }
 

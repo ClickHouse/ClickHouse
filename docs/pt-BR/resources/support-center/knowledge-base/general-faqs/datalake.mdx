@@ -1,0 +1,17 @@
+---
+title: 'O ClickHouse oferece suporte a lagos de dados?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/datalake
+description: 'O ClickHouse oferece suporte a lagos de dados, incluindo Iceberg, Delta Lake, Apache Hudi, Apache Paimon, Hive'
+doc_type: 'reference'
+keywords: ['lago de dados', 'lakehouse']
+---
+
+O ClickHouse oferece suporte a lagos de dados, incluindo Iceberg, Delta Lake, Apache Hudi, Apache Paimon e Hive.
+
+Ele oferece suporte a **leitura** e **gravação**, com compatibilidade total com partition pruning, pruning baseado em estatísticas, evolução de esquema, exclusões posicionais, exclusões por igualdade, time travel e introspecção.
+
+No ClickHouse, o suporte a lagos de dados abrange os catálogos **Unity**, **AWS Glue**, **Rest**, **Polaris** e **Hive Metastore**, bem como tabelas individuais.
+
+O desempenho das consultas em lagos de dados é excelente graças ao processamento distribuído, ao eficiente leitor nativo de Parquet e ao cache de arquivos de dados.

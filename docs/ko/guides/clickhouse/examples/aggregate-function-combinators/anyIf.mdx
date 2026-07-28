@@ -1,0 +1,64 @@
+---
+slug: '/examples/aggregate-function-combinators/anyIf'
+title: 'anyIf'
+description: 'anyIf combinator를 사용하는 예시'
+keywords: ['any', 'if', 'combinator', '예시', 'anyIf']
+sidebarTitle: 'anyIf'
+doc_type: '참고'
+---
+
+<div id="description">
+  ## 설명
+</div>
+
+[`If`](/ko/reference/functions/aggregate-functions/combinators#-if) combinator는 [`any`](/ko/reference/functions/aggregate-functions/any)
+집계 함수에 적용할 수 있으며, 주어진 조건과 일치하는 지정된 컬럼에서
+처음으로 나타나는 요소를 선택합니다.
+
+<div id="example-usage">
+  ## 예시 사용법
+</div>
+
+이 예시에서는 성공 플래그가 있는 판매 데이터를 저장하는 테이블을 생성하고,
+`anyIf`를 사용해 금액이 200보다 큰 경우와 작은 경우에서 각각 첫 번째
+`transaction_id`를 선택합니다.
+
+먼저 테이블을 생성하고 데이터를 삽입합니다:
+
+```sql title="Query"
+CREATE TABLE sales(
+    transaction_id UInt32,
+    amount Decimal(10,2),
+    is_successful UInt8
+) 
+ENGINE = MergeTree()
+ORDER BY tuple();
+
+INSERT INTO sales VALUES
+    (1, 100.00, 1),
+    (2, 150.00, 1),
+    (3, 155.00, 0),
+    (4, 300.00, 1),
+    (5, 250.50, 0),
+    (6, 175.25, 1);
+```
+
+```sql
+SELECT
+    anyIf(transaction_id, amount < 200) AS tid_lt_200,
+    anyIf(transaction_id, amount > 200) AS tid_gt_200
+FROM sales;
+```
+
+```response title="Response"
+┌─tid_lt_200─┬─tid_gt_200─┐
+│          1 │          4 │
+└────────────┴────────────┘
+```
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [`any`](/ko/reference/functions/aggregate-functions/any)
+* [`If combinator`](/ko/reference/functions/aggregate-functions/combinators#-if)

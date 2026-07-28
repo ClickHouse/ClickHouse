@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemWasmModules.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -207,3 +208,6 @@ void StorageSystemWasmModules::mutate(const MutationCommands & commands, Context
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemWasmModules) }

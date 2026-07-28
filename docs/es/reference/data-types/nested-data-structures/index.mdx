@@ -1,0 +1,275 @@
+---
+description: 'Resumen de las estructuras de datos anidadas en ClickHouse'
+sidebarTitle: 'Nested(Name1 Type1, Name2 Type2, ...)'
+slug: /sql-reference/data-types/nested-data-structures/nested
+title: 'Nested(name1 Type1, Name2 Type2, ...)'
+doc_type: 'guide'
+---
+
+Una estructura de datos anidada es como una tabla dentro de una celda. Los parámetros de una estructura de datos anidada —los nombres y tipos de las columnas— se especifican igual que en una consulta [CREATE TABLE](/es/reference/statements/create/table). Cada fila de la tabla puede corresponder a cualquier cantidad de filas en una estructura de datos anidada.
+
+<Tip>
+  **Evite usar puntos en los nombres de las columnas**
+
+  Los nombres de columna que contienen puntos, las columnas que comparten un prefijo común separado por punto y las columnas con el tipo `Array` pueden interpretarse como parte de una estructura Nested aplanada cuando `flatten_nested = 1` (valor predeterminado). Esto puede provocar una validación inesperada de la longitud de los arrays en las operaciones de inserción y restricciones al cambiar el nombre.
+
+  Evite usar puntos en los nombres de las columnas siempre que sea posible.
+  Use guiones bajos (`_`) u otro separador en lugar de puntos en los nombres de las columnas, a menos que necesite intencionadamente la semántica de `Nested`.
+</Tip>
+
+Ejemplo:
+
+```sql highlight={8-15}
+CREATE TABLE test.visits(
+  CounterID UInt32,
+  StartDate Date,
+  Sign Int8,
+  IsNew UInt8,
+  VisitID UInt64,
+  UserID UInt64,
+  Goals Nested(
+    ID UInt32,
+    Serial UInt32,
+    EventTime DateTime,
+    Price Int64,
+    OrderID String,
+    CurrencyID UInt32
+  )
+)
+ENGINE = CollapsingMergeTree(Sign)
+ORDER BY (StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID));
+
+INSERT INTO test.visits
+(CounterID, StartDate, Sign, IsNew, VisitID, UserID, Goals.ID, Goals.Serial, Goals.EventTime, Goals.Price, Goals.OrderID, Goals.CurrencyID)
+VALUES
+    (101500, '2014-03-17', 1, 1, 1001, 100001, [1073752, 591325, 591325], [1, 2, 3], ['2014-03-17 16:38:10', '2014-03-17 16:38:48', '2014-03-17 16:42:27'], [0, 0, 0], ['', '', ''], [0, 0, 0]),
+    (101500, '2014-03-17', 1, 0, 1002, 100002, [1073752], [1], ['2014-03-17 00:28:25'], [0], [''], [0]),
+    (101500, '2014-03-17', 1, 0, 1003, 100003, [1073752], [1], ['2014-03-17 10:46:20'], [0], [''], [0]),
+    (101500, '2014-03-17', 1, 1, 1004, 100004, [1073752, 591325, 591325, 591325], [1, 2, 3, 4], ['2014-03-17 13:59:20', '2014-03-17 22:17:55', '2014-03-17 22:18:07', '2014-03-17 22:18:51'], [0, 0, 0, 0], ['', '', '', ''], [0, 0, 0, 0]),
+    (101500, '2014-03-17', 1, 0, 1005, 100005, [], [], [], [], [], []),
+    (101500, '2014-03-17', 1, 0, 1006, 100006, [1073752, 591325, 591325], [1, 2, 3], ['2014-03-17 11:37:06', '2014-03-17 14:07:47', '2014-03-17 14:36:21'], [0, 0, 0], ['', '', ''], [0, 0, 0]),
+    (101500, '2014-03-17', 1, 0, 1007, 100007, [], [], [], [], [], []),
+    (101500, '2014-03-17', 1, 0, 1008, 100008, [], [], [], [], [], []),
+    (101500, '2014-03-17', 1, 1, 1009, 100009, [591325, 1073752], [1, 2], ['2014-03-17 00:46:05', '2014-03-17 00:46:05'], [0, 0], ['', ''], [0, 0]),
+    (101500, '2014-03-17', 1, 1, 1010, 100010, [1073752, 591325, 591325, 591325], [1, 2, 3, 4], ['2014-03-17 13:28:33', '2014-03-17 13:30:26', '2014-03-17 18:51:21', '2014-03-17 18:51:45'], [0, 0, 0, 0], ['', '', '', ''], [0, 0, 0, 0]);
+```
+
+La sentencia DDL `CREATE TABLE` anterior declara la estructura de datos anidada `Goals`, que contiene datos sobre conversiones, u objetivos alcanzados.
+Cada fila de la tabla &#39;visits&#39; corresponde a cero o más conversiones.
+
+Cuando la configuración [`flatten_nested`](/es/reference/settings/session-settings#flatten_nested) se establece en `0` (`flatten_nested=1` de forma predeterminada), se admiten niveles arbitrarios de anidamiento.
+
+En la mayoría de los casos, al trabajar con una estructura de datos anidada, sus columnas se especifican mediante nombres de columna separados por un punto.
+Estas columnas forman un array de tipos correspondientes.
+Todos los arrays de columnas de una misma estructura de datos anidada tienen la misma longitud.
+
+Por ejemplo:
+
+```sql
+SELECT
+    Goals.ID,
+    Goals.EventTime
+FROM test.visits
+WHERE CounterID = 101500 AND length(Goals.ID) < 5
+ORDER BY VisitID
+LIMIT 10
+```
+
+```text
+    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+    ┃ Goals.ID                       ┃ Goals.EventTime                                                                           ┃
+    ┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+ 1. │ [1073752,591325,591325]        │ ['2014-03-17 16:38:10','2014-03-17 16:38:48','2014-03-17 16:42:27']                       │
+    ├────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+ 2. │ [1073752]                      │ ['2014-03-17 00:28:25']                                                                   │
+    ├────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+ 3. │ [1073752]                      │ ['2014-03-17 10:46:20']                                                                   │
+    ├────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+ 4. │ [1073752,591325,591325,591325] │ ['2014-03-17 13:59:20','2014-03-17 22:17:55','2014-03-17 22:18:07','2014-03-17 22:18:51'] │
+    ├────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+ 5. │ []                             │ []                                                                                        │
+    ├────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+ 6. │ [1073752,591325,591325]        │ ['2014-03-17 11:37:06','2014-03-17 14:07:47','2014-03-17 14:36:21']                       │
+    ├────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+ 7. │ []                             │ []                                                                                        │
+    ├────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+ 8. │ []                             │ []                                                                                        │
+    ├────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+ 9. │ [591325,1073752]               │ ['2014-03-17 00:46:05','2014-03-17 00:46:05']                                             │
+    ├────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+10. │ [1073752,591325,591325,591325] │ ['2014-03-17 13:28:33','2014-03-17 13:30:26','2014-03-17 18:51:21','2014-03-17 18:51:45'] │
+    └────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<Tip>
+  La forma más sencilla de entender una estructura de datos anidada es como un conjunto de varios arrays de columnas de igual longitud.
+</Tip>
+
+<div id="filtering-nested-columns-in-where">
+  ### Filtrado de columnas Nested en WHERE
+</div>
+
+Como cada columna de una estructura `Nested` se almacena como un `Array`, al referenciarla en una cláusula `WHERE` obtienes el array completo de cada fila, no un elemento individual. No puedes comparar directamente una columna anidada con un valor escalar, así que debes usar [funciones de arrays](/es/reference/functions/regular-functions/array-functions).
+
+Por ejemplo, esta consulta **no** devuelve silenciosamente cero filas, sino que genera una excepción, porque `Goals.ID` es de tipo `Array(UInt32)` y `equals(Array(UInt32), UInt32)` no es una comparación válida:
+
+```sql
+-- WRONG: compares the entire Array to a scalar
+SELECT * FROM test.visits
+WHERE Goals.ID = 591325;
+```
+
+```text
+Code: 43. DB::Exception: Illegal types of arguments (`Array(UInt32)`, `UInt32`)
+of function `equals`. (ILLEGAL_TYPE_OF_ARGUMENT)
+```
+
+Usa [`has`](/es/reference/functions/regular-functions/array-functions#has) para comprobar si un array contiene un valor específico:
+
+```sql
+-- Find visits that have at least one goal with ID 591325
+SELECT CounterID, VisitID, Goals.ID
+FROM test.visits
+WHERE has(Goals.ID, 591325);
+```
+
+Usa [`arrayExists`](/es/reference/functions/regular-functions/array-functions#arrayExists) cuando la condición sea más compleja:
+
+```sql
+-- Find visits that have at least one goal with ID greater than 1000000
+SELECT CounterID, VisitID, Goals.ID
+FROM test.visits
+WHERE arrayExists(id -> id > 1000000, Goals.ID);
+```
+
+Puede filtrar por la longitud de un array con `length` o excluir los arrays vacíos con `notEmpty`:
+
+```sql
+-- Visits with at least 3 goals
+SELECT CounterID, VisitID, Goals.ID
+FROM test.visits
+WHERE length(Goals.ID) >= 3;
+
+-- Visits with at least one goal (non-empty array)
+SELECT CounterID, VisitID, Goals.ID
+FROM test.visits
+WHERE notEmpty(Goals.ID);
+```
+
+Para filtrar elementos individuales de una estructura anidada en lugar de filas completas, use `ARRAY JOIN` para expandir primero los arrays.
+Después de `ARRAY JOIN`, cada elemento se convierte en una fila independiente, por lo que la cláusula `WHERE` se aplica a valores escalares.
+Para obtener más información, consulte la [cláusula `ARRAY JOIN`](/es/reference/statements/select/array-join). Ejemplo:
+
+```sql
+SELECT
+    Goal.ID,
+    Goal.EventTime
+FROM test.visits
+ARRAY JOIN Goals AS Goal
+WHERE CounterID = 101500 AND length(Goals.ID) < 5
+ORDER BY VisitID, Goal.Serial
+LIMIT 10
+```
+
+```text
+    ┏━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┓
+    ┃ Goal.ID ┃      Goal.EventTime ┃
+    ┡━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━┩
+ 1. │ 1073752 │ 2014-03-17 16:38:10 │
+    ├─────────┼─────────────────────┤
+ 2. │  591325 │ 2014-03-17 16:38:48 │
+    ├─────────┼─────────────────────┤
+ 3. │  591325 │ 2014-03-17 16:42:27 │
+    ├─────────┼─────────────────────┤
+ 4. │ 1073752 │ 2014-03-17 00:28:25 │
+    ├─────────┼─────────────────────┤
+ 5. │ 1073752 │ 2014-03-17 10:46:20 │
+    ├─────────┼─────────────────────┤
+ 6. │ 1073752 │ 2014-03-17 13:59:20 │
+    ├─────────┼─────────────────────┤
+ 7. │  591325 │ 2014-03-17 22:17:55 │
+    ├─────────┼─────────────────────┤
+ 8. │  591325 │ 2014-03-17 22:18:07 │
+    ├─────────┼─────────────────────┤
+ 9. │  591325 │ 2014-03-17 22:18:51 │
+    ├─────────┼─────────────────────┤
+10. │ 1073752 │ 2014-03-17 11:37:06 │
+    └─────────┴─────────────────────┘
+```
+
+No se puede realizar `SELECT` sobre una estructura de datos anidada completa. Solo se pueden enumerar explícitamente las columnas individuales que forman parte de ella.
+
+<div id="inserting-data">
+  ### Inserción de datos
+</div>
+
+Para una consulta `INSERT`, debe pasar por separado todos los arrays de las columnas que componen una estructura de datos anidada (como si fueran arrays de columnas individuales). Durante la inserción, el sistema comprueba que todos tengan la misma longitud.
+
+Cada subcolumna anidada aparece en la lista de columnas con notación de punto (`Goals.ID`, `Goals.Serial`, ...), y los valores correspondientes son arrays:
+
+```sql
+INSERT INTO test.visits
+    (CounterID, StartDate, Sign, IsNew, VisitID, UserID,
+     Goals.ID, Goals.Serial, Goals.EventTime, Goals.Price, Goals.OrderID, Goals.CurrencyID)
+VALUES
+    -- A visit with two goals: each nested sub-column gets an array of length 2
+    (101500, '2014-03-18', 1, 1, 2001, 200001,
+     [1073752, 591325], [1, 2],
+     ['2014-03-18 10:00:00', '2014-03-18 10:05:00'],
+     [100, 200], ['order_a', 'order_b'], [1, 2]),
+    -- A visit with no goals: all nested sub-columns get empty arrays
+    (101500, '2014-03-18', 1, 0, 2002, 200002,
+     [], [], [], [], [], []);
+```
+
+Todos los arrays de subcolumnas anidadas dentro de una misma fila deben tener la misma longitud. Si las longitudes no coinciden, se produce un error:
+
+```sql
+-- ERROR: Goals.ID has 2 elements, but Goals.Serial has 1
+INSERT INTO test.visits
+    (CounterID, StartDate, Sign, IsNew, VisitID, UserID,
+     Goals.ID, Goals.Serial, Goals.EventTime, Goals.Price, Goals.OrderID, Goals.CurrencyID)
+VALUES
+    (101500, '2014-03-18', 1, 1, 2003, 200003,
+     [1073752, 591325], [1],
+     ['2014-03-18 12:00:00'], [0], [''], [0]);
+```
+
+En una consulta `DESCRIBE`, las columnas de una estructura de datos anidada también se muestran por separado, de la misma manera.
+
+<div id="alter-limitations">
+  ### Limitaciones de ALTER
+</div>
+
+Las consultas `ALTER` sobre estructuras de datos anidadas tienen las siguientes limitaciones:
+
+**Añadir subcolumnas** funciona con normalidad. Puede añadir una nueva subcolumna a una estructura `Nested` existente:
+
+```sql
+ALTER TABLE test.visits ADD COLUMN Goals.Revenue Float64;
+```
+
+**La eliminación de subcolumnas** se aplica a subcolumnas individuales:
+
+```sql
+ALTER TABLE test.visits DROP COLUMN Goals.Revenue;
+```
+
+**Modificar el tipo** de una subcolumna es posible y desencadena una mutación (reescritura de datos):
+
+```sql
+ALTER TABLE test.visits MODIFY COLUMN Goals.Price Int32;
+```
+
+**Cambiar el nombre** tiene restricciones. Puede cambiar el nombre de una subcolumna dentro de la misma estructura anidada:
+
+```sql
+-- OK: stays within the Goals structure
+ALTER TABLE test.visits RENAME COLUMN Goals.Price TO Goals.Amount;
+```
+
+Sin embargo, **no** puedes:
+
+* Cambiar el nombre de la estructura anidada completa (p. ej., `Goals` por `Conversions`).
+* Mover una subcolumna a otra estructura anidada (p. ej., `Goals.ID` a `OtherNested.ID`).
+* Sacar una subcolumna de una estructura anidada o moverla a una (p. ej., `Goals.ID` a `GoalID` o viceversa).

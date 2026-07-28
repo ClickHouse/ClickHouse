@@ -33,19 +33,19 @@ public:
 REGISTER_FUNCTION(ColorSRGBToOKLAB)
 {
     FunctionDocumentation::Description description = R"(
-        Converts a colour encoded in the **sRGB** colour space to the perceptually uniform **OKLAB** colour space.
+Converts a colour encoded in the **sRGB** colour space to the perceptually uniform **OKLAB** colour space.
 
-        If any input channel is outside `[0...255]` or the gamma value is non-positive, the behaviour is implementation-defined.
+If any input channel is outside `[0...255]` or the gamma value is non-positive, the behaviour is implementation-defined.
 
-        :::note
-        **OKLAB** is a perceptually uniform color space.
-        Its three coordinates are `L` (the lightness in the range `[0...1]`), `a (Green-Red axis)` and `b (Blue-Yellow axis)`.
-        OKLab is designed to be perceptually uniform while remaining cheap to compute.
-        :::
+:::note
+**OKLAB** is a perceptually uniform color space.
+Its three coordinates are `L` (the lightness in the range `[0...1]`), `a (Green-Red axis)` and `b (Blue-Yellow axis)`.
+OKLab is designed to be perceptually uniform while remaining cheap to compute.
+:::
 
-        The conversion consists of two stages:
-        1) sRGB to Linear sRGB
-        2) Linear sRGB to OKLab
+The conversion consists of two stages:
+1) sRGB to Linear sRGB
+2) Linear sRGB to OKLab
     )";
     FunctionDocumentation::Syntax syntax = "colorSRGBToOKLAB(tuple[, gamma])";
     FunctionDocumentation::Arguments arguments = {

@@ -141,22 +141,13 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
     const size_t min_marks_per_task = getMinMarksPerTask(pool_settings.min_marks_for_concurrent_read, per_part_infos);
     min_marks_per_request = min_marks_per_task * pool_settings.threads;
 
-    const size_t mark_segment_size = chooseSegmentSize(
+    mark_segment_size = chooseSegmentSize(
         log,
         context_->getSettingsRef()[Setting::parallel_replicas_mark_segment_size],
         min_marks_per_task,
         pool_settings.threads,
         pool_settings.sum_marks,
         extension.getTotalNodesCount());
-
-    /// Build descriptions with per-part `min_marks_per_task` so the coordinator can propagate
-    /// them to other replicas that may not have done primary key analysis.
-    auto descriptions = parts_ranges.getDescriptions();
-    chassert(descriptions.size() == per_part_infos.size());
-    for (size_t i = 0; i < descriptions.size(); ++i)
-        descriptions[i].min_marks_per_task = per_part_infos[i]->min_marks_per_task;
-
-    extension.sendInitialRequest(coordination_mode, std::move(descriptions), mark_segment_size, min_marks_per_request);
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_idx*/, MergeTreeReadTask * previous_task)
@@ -184,11 +175,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
         std::optional<ParallelReadResponse> response;
         try
         {
-            response = extension.sendReadRequest(
-                coordination_mode,
-                min_marks_per_request,
-                /// For Default coordination mode we don't need to pass part names.
-                RangesInDataPartsDescription{});
+            response = extension.sendReadRequest(coordination_mode, min_marks_per_request);
         }
         catch (...)
         {

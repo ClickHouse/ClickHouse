@@ -33,6 +33,7 @@ class SettingsChanges;
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, EscapingRule) \
     M(CLASS_NAME, Float) \
+    M(CLASS_NAME, GeoJSONUnsupportedGeometryHandling) \
     M(CLASS_NAME, IdentifierQuotingRule) \
     M(CLASS_NAME, IdentifierQuotingStyle) \
     M(CLASS_NAME, InputFormatColumnMatchingCaseSensitivity) \
@@ -69,6 +70,10 @@ struct DatabaseDataLakeSettings
     void applyChanges(const SettingsChanges & changes);
 
     SettingsChanges allChanged() const;
+
+    /// Name of the setting referenced by its `DatabaseDataLakeSetting::*` index,
+    /// so catalog code can match `SettingsChanges` entries without magic strings.
+    static const String & getSettingName(DatabaseDataLakeSettingsString setting);
 
 private:
     std::unique_ptr<DatabaseDataLakeSettingsImpl> impl;

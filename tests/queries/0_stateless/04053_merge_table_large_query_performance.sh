@@ -139,30 +139,53 @@ WHERE
     ) <= 16
 GROUP BY
     addDays(CAST(date, 'Date'), -1 * (((7 + if(toDayOfWeek(date) = 7, 1, toDayOfWeek(date) + 1)) - 2) % 7))
+-- JIT off so every timed run is the identical cold workload: the query is timed TIMING_RUNS
+-- times, which crosses min_count_to_compile_*=3, and a compiled run would measure a warmed
+-- execution mode instead of the cold planning path this test guards.
+SETTINGS compile_expressions = 0, compile_aggregate_expressions = 0
 FORMAT Null"
 
 # Compare planning time on the Merge table against a single underlying table.
 # Pre-fix, planning was O(N * query_tree_size), so merge-table latency scaled with N.
 # With N=200 underlying tables this would be ~100x-200x slower than a single-table query.
 # Post-fix, the Merge planner shares the cloned query tree across tables of identical
-# structure, so merge-table latency stays close to single-table latency.
-# A loose 20x ratio is enough to catch the regression while tolerating CI noise.
-# The single-table timed run is fast (~250-400ms) and small absolute fluctuations cause
-# large ratio swings under parallel CI load, so the threshold needs comfortable margin.
+# structure, so merge-table latency stays close to single-table latency (~1.8x).
+# A loose 20x ratio catches the regression with wide margin either side.
 QUERY_SINGLE_TIMING="${QUERY/t_merge_perf_all/t_merge_perf_0}"
 
 # Warm up the data-side cache with a small query so the timed runs measure planning.
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_DATABASE}.t_merge_perf_0 FORMAT Null"
 
-T_START=$(date +%s%N)
-$CLICKHOUSE_CLIENT --max_query_size 1048576 --max_execution_time 30 -q "$QUERY" >/dev/null || { echo "FAIL: query on merge table timed out" >&2; exit 1; }
-T_END=$(date +%s%N)
-TIME_MERGE_NS=$((T_END - T_START))
+# Take the minimum wall-clock over several runs. Timing noise is one-sided: under parallel
+# CI load a run can only be slower than the true CPU-bound planning latency (scheduler /
+# allocator stall), never faster, so the minimum is a stable estimate that discards transient
+# stalls. A single sample can be inflated by one unlucky stall and blow the 20x threshold.
+TIMING_RUNS=5
 
-T_START=$(date +%s%N)
-$CLICKHOUSE_CLIENT --max_query_size 1048576 --max_execution_time 30 -q "$QUERY_SINGLE_TIMING" >/dev/null || { echo "FAIL: query on single table timed out" >&2; exit 1; }
-T_END=$(date +%s%N)
-TIME_SINGLE_NS=$((T_END - T_START))
+# Sets global TIMED_MIN_NS to the min elapsed ns over TIMING_RUNS; returns 1 if a run times out.
+# (Uses a global rather than command substitution so a timeout can exit the whole script:
+# 'exit' inside $(...) would only leave the subshell.)
+time_query_min() {
+    local query="$1"
+    local best_ns=""
+    local i t_start t_end elapsed
+    for i in $(seq 1 "$TIMING_RUNS"); do
+        t_start=$(date +%s%N)
+        $CLICKHOUSE_CLIENT --max_query_size 1048576 --max_execution_time 30 -q "$query" >/dev/null || return 1
+        t_end=$(date +%s%N)
+        elapsed=$((t_end - t_start))
+        if [ -z "$best_ns" ] || [ "$elapsed" -lt "$best_ns" ]; then
+            best_ns=$elapsed
+        fi
+    done
+    TIMED_MIN_NS=$best_ns
+}
+
+time_query_min "$QUERY" || { echo "FAIL: query on merge table timed out" >&2; exit 1; }
+TIME_MERGE_NS=$TIMED_MIN_NS
+
+time_query_min "$QUERY_SINGLE_TIMING" || { echo "FAIL: query on single table timed out" >&2; exit 1; }
+TIME_SINGLE_NS=$TIMED_MIN_NS
 
 if [ "$TIME_MERGE_NS" -gt $((TIME_SINGLE_NS * 20)) ]; then
     echo "FAIL: merge-table query (${TIME_MERGE_NS}ns) is more than 20x slower than single-table query (${TIME_SINGLE_NS}ns)" >&2

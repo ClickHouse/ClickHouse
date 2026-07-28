@@ -1,0 +1,80 @@
+---
+title: 'BYOC の権限'
+slug: /cloud/reference/byoc/reference/privilege
+sidebarTitle: '権限'
+keywords: ['BYOC', 'クラウド', 'Bring Your Own Cloud', '権限']
+description: '自社のクラウドインフラストラクチャにClickHouseをデプロイ'
+doc_type: 'reference'
+---
+
+<div id="aws-iam-roles">
+  ## AWS IAMロール
+</div>
+
+<div id="bootstrap-iam-role">
+  ### Bootstrap IAM ロール
+</div>
+
+Bootstrap IAM ロールには、次の権限があります。
+
+* **EC2 および VPC の操作**: VPC と EKS クラスターのセットアップに必要です。
+* **S3 の操作 (例: `s3:CreateBucket`)&#x20;**: ClickHouse BYOC ストレージ用のバケットを作成するために必要です。
+* **IAM の操作 (例: `iam:CreatePolicy`)&#x20;**: コントローラーが追加のロールを作成するために必要です (詳細は次のセクションを参照してください) 。
+* **EKS の操作**: 名前が `clickhouse-cloud` プレフィックスで始まるリソースに限定されます。
+
+<div id="additional-iam-roles-created-by-the-controller">
+  ### コントローラーによって追加で作成される IAM ロール
+</div>
+
+CloudFormation で作成される `ClickHouseManagementRole` に加えて、コントローラーはいくつかの追加のロールも作成します。
+
+これらのロールは、お客様の EKS クラスター内で実行されるアプリケーションが引き受けることを想定しています。
+
+* **State Exporter Role**
+  * サービスの正常性情報を ClickHouse Cloud に報告する ClickHouse コンポーネントです。
+  * ClickHouse Cloud が所有する SQS キューへの書き込み権限が必要です。
+* **Load-Balancer Controller**
+  * 標準的な AWS ロードバランサーコントローラーです。
+  * ClickHouse サービスのボリュームを管理する EBS CSI コントローラーです。
+* **External-DNS**
+  * DNS 設定を Route 53 に反映します。
+* **Cert-Manager**
+  * BYOC サービスのドメイン向けに TLS 証明書を発行します。
+* **Cluster Autoscaler**
+  * 必要に応じてノードグループのサイズを調整します。
+
+**K8s-control-plane** と **k8s-worker** のロールは、AWS EKS サービスが引き受けることを想定しています。
+
+最後に、**`data-plane-mgmt`** は、`ClickHouseCluster` や Istio の Virtual Service/Gateway など、必要なカスタムリソースを ClickHouse Cloud のコントロールプレーンコンポーネントがリコンサイルできるようにします。
+
+<div id="gcp-service-accounts">
+  ## GCP のサービスアカウント
+</div>
+
+<div id="bootstrap-service-account">
+  ### Bootstrap サービス アカウント
+</div>
+
+Bootstrap サービス アカウントには、プロジェクト スコープのカスタム ロールとして、次の権限が付与されます。
+
+* **Common**: 基本的な閲覧権限と ID 関連の権限。
+* **VPC**: BYOC インフラストラクチャを支える VPC、サブネット、ルーティング、および Private Service Connect アタッチメントを管理します。
+* **Cluster**: GKE クラスターとクラスター内のリソースを管理します。
+* **Storage**: ClickHouse のバックアップ、共有状態、監視データに使用される Cloud ストレージ バケットの管理に使用されます。
+* **IAM Role**: プロジェクト内のサービス アカウントとカスタム ロールを管理します。このロールでは、サービス アカウント キーの作成、組織ポリシーのバインド、または他のプロジェクト内のリソースの操作は許可されません。
+
+<div id="additional-service-accounts-created-by-the-controller">
+  ### コントローラーによって追加で作成されるサービスアカウント
+</div>
+
+オンボーディングの一環として Terraform 経由で作成される `clickhouse-management` サービスアカウントに加え、最初の BYOC サービスをプロビジョニングすると、ClickHouse のコントロールプレーン (`clickhouse-management` として認証) が、クラスター内の特定のワークロード向けにプロジェクト内へ追加のサービスアカウントを作成します。これらはそれぞれ、単一の用途に限定された最小限の権限セットで作成されます。
+
+* **GKE ノード runtime identity**
+  * BYOC クラスター内のすべての GKE ノード仮想マシンにアタッチされます。
+  * キューブレット、ノードローカル agent、Cloud Operations collector が logs とメトリクスを送信するために使用されるほか、イメージ取得サブシステムがコンテナー イメージをダウンロードする際にも使用されます。
+* **Billing scraper identity**
+  * standalone scraper ワークロードが billing テレメトリーを収集するために使用されます。
+* **Monitoring identity**
+  * クラスター内で稼働する monitoring stack の対象 identity です。このデプロイメント専用の GCS bucket にある長期メトリクス ストレージの読み書きに使用されます。
+* **ClickHouse runtime management identity**
+  * ClickHouse の runtime データプレーン管理コントローラーが使用します。これは、Private Service Connect endpoint の管理、bucket ライフサイクルの調整、サービスアカウントのローテーションなどの day-2 operations を処理します。

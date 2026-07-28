@@ -30,6 +30,13 @@ namespace Setting
 namespace
 {
 
+/// Constraint-based optimization is scoped to a single query node: each (sub)query is optimized
+/// independently. Subqueries (`isSubqueryNodeType`) must therefore be treated as opaque boundaries,
+/// both when one is a clause root (e.g. constraint reduction collapses `cond OR (subquery)` to just
+/// the subquery) and when one is nested inside an expression (e.g. `exists((subquery))`). Crossing
+/// the boundary would rewrite a subquery's correlated columns, which must stay plain ColumnNodes for
+/// decorrelation.
+
 std::optional<Analyzer::CNF> tryConvertQueryToCNF(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     auto cnf_form = Analyzer::CNF::tryBuildCNF(node, context);
@@ -158,6 +165,12 @@ bool checkIfAtomAlwaysFalseGraph(const Analyzer::CNFAtomicFormula & atom, const 
 
 void replaceToConstants(QueryTreeNodePtr & term, const ComparisonGraph<QueryTreeNodePtr> & graph)
 {
+    /// Do not cross into subqueries: replacing a correlated column with its constant equivalent
+    /// would corrupt the subquery's correlated_columns_list, which the planner expects to hold
+    /// ColumnNodes (see isSubqueryNodeType).
+    if (isSubqueryNodeType(term->getNodeType()))
+        return;
+
     const auto equal_constant = graph.getEqualConst(term);
     if (equal_constant)
     {
@@ -418,15 +431,9 @@ public:
         : components(components_), query_node_to_component(query_node_to_component_), graph(graph_)
     {}
 
-    /// Do not descend into subqueries — constraint graph is scoped to the outer query's table expressions.
-    /// Walking into QUERY/UNION nodes would collect correlated column references from subqueries,
-    /// which could then be incorrectly substituted by SubstituteColumnVisitor, corrupting the
-    /// correlated_columns_list (replacing ColumnNodes with FunctionNodes and causing bad cast crashes).
     static bool needChildVisit(const VisitQueryTreeNodeType &, const VisitQueryTreeNodeType & child)
     {
-        auto child_type = child->getNodeType();
-        return child_type != QueryTreeNodeType::QUERY
-            && child_type != QueryTreeNodeType::UNION;
+        return !isSubqueryNodeType(child->getNodeType());
     }
 
     void visitImpl(const QueryTreeNodePtr & node)
@@ -483,15 +490,9 @@ public:
         : query_node_to_component(query_node_to_component_), id_to_query_node_map(id_to_query_node_map_), context(std::move(context_))
     {}
 
-    /// Do not descend into subqueries — constraint-based substitution is scoped to the outer query.
-    /// Without this guard, the visitor walks into QueryNode children (including correlated_columns_list)
-    /// and can replace ColumnNodes with FunctionNodes from the constraint graph, causing bad cast crashes
-    /// in CollectTopLevelColumnIdentifiersVisitor which expects correlated columns to be ColumnNodes.
     static bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child)
     {
-        auto child_type = child->getNodeType();
-        return child_type != QueryTreeNodeType::QUERY
-            && child_type != QueryTreeNodeType::UNION;
+        return !isSubqueryNodeType(child->getNodeType());
     }
 
     void visitImpl(QueryTreeNodePtr & node)
@@ -603,16 +604,24 @@ void substituteColumns(QueryNode & query_node, const QueryTreeNodes & table_expr
 
         auto run_for_all = [&](const auto function)
         {
-            function(query_node.getProjectionNode());
+            /// The needChildVisit guards in the visitors only stop subqueries nested inside a larger
+            /// expression; a clause that is itself a subquery is the visit root, so guard it here.
+            const auto run_unless_subquery = [&](QueryTreeNodePtr & node)
+            {
+                if (!isSubqueryNodeType(node->getNodeType()))
+                    function(node);
+            };
+
+            run_unless_subquery(query_node.getProjectionNode());
 
             if (query_node.hasWhere())
-                function(query_node.getWhere());
+                run_unless_subquery(query_node.getWhere());
 
             if (query_node.hasPrewhere())
-                function(query_node.getPrewhere());
+                run_unless_subquery(query_node.getPrewhere());
 
             if (query_node.hasHaving())
-                function(query_node.getHaving());
+                run_unless_subquery(query_node.getHaving());
         };
 
         std::set<UInt64> components;
@@ -718,6 +727,16 @@ void optimizeNode(QueryTreeNodePtr & node, const QueryTreeNodes & table_expressi
 {
     const auto & settings = context->getSettingsRef();
 
+    /// Converting to CNF distributes OR terms over AND, and `CNF::toQueryTree` clones each atom for
+    /// every group it ends up in. When an atom holds a correlated subquery (e.g. `exists((SELECT ...))`
+    /// referencing an outer column), this produces several independent copies of the subquery that
+    /// share one action name. Decorrelation then adds the same synthetic column (e.g. `exists(__table2)`)
+    /// on both sides of the generated join, and `HashJoin::getNonJoinedBlocks` fails the column-count
+    /// check. A correlated subquery must be evaluated exactly once, so skip the conversion for such a
+    /// filter and keep the original expression - it executes correctly without CNF conversion.
+    if (containsCorrelatedSubquery(node))
+        return;
+
     auto cnf = tryConvertQueryToCNF(node, context);
     if (!cnf)
         return;
@@ -726,6 +745,22 @@ void optimizeNode(QueryTreeNodePtr & node, const QueryTreeNodes & table_expressi
         optimizeWithConstraints(*cnf, table_expressions, context);
 
     auto new_node = cnf->toQueryTree();
+
+    /// Constraint reduction can collapse a filter into a standalone correlated subquery. For example,
+    /// with `CONSTRAINT c ASSUME (a <= b) AND (b <= c) AND (c <= d) AND (d <= a)` (so all columns are
+    /// equal), the filter
+    ///     WHERE (b < d) OR (SELECT a < c)
+    /// reduces to
+    ///     WHERE (SELECT a < c)
+    /// because `b < d` is always false. A standalone correlated subquery predicate is not always
+    /// decorrelated correctly today: the outer plan may not keep the captured columns (e.g.
+    /// `SELECT count() ... WHERE (SELECT a < c)` raises NOT_FOUND_COLUMN_IN_BLOCK, while `SELECT *`
+    /// works). Keep the original filter so the optimization never turns a working query into a
+    /// failing one. `new_node` is null when the filter reduces to a constant and is dropped, which is
+    /// fine to apply.
+    if (new_node && isCorrelatedQueryOrUnionNode(new_node))
+        return;
+
     node = std::move(new_node);
 }
 

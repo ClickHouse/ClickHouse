@@ -186,4 +186,40 @@ InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffe
     return InitialAllRangesAnnouncement{mode, description, replica_num, mark_segment_size, min_marks_per_request, std::move(stream_id)};
 }
 
+
+void InitialAllRangesAnnouncementResponse::serialize(
+    WriteBuffer & out, UInt64 replica_pr_protocol_version, UInt64 replica_tcp_protocol_version) const
+{
+    UInt64 version = replica_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL
+        ? DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION
+        : DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION;
+    writeIntBinary(version, out);
+
+    parts.serialize(out, replica_pr_protocol_version);
+    writeStringBinary(stream_id, out);
+}
+
+String InitialAllRangesAnnouncementResponse::describe() const
+{
+    return fmt::format("stream {}, {}", stream_id, parts.describe());
+}
+
+InitialAllRangesAnnouncementResponse
+InitialAllRangesAnnouncementResponse::deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version)
+{
+    UInt64 version = 0;
+    readIntBinary(version, in);
+    if (version < DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION)
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Parallel replicas protocol version is too old. Got: {}, min supported version: {}",
+            version,
+            DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+
+    InitialAllRangesAnnouncementResponse response;
+    response.parts.deserialize(in, replica_pr_protocol_version);
+    readStringBinary(response.stream_id, in);
+    return response;
+}
+
 }

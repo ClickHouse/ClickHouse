@@ -141,7 +141,7 @@ This function calculates the minimum number of grid cells between the start and 
             "SELECT h3Distance(590080540275638271, 590103561300344831) AS distance",
             R"(
 ┌─distance─┐
-│        7 │
+│        6 │
 └──────────┘
             )"
         }

@@ -22,17 +22,34 @@ mysql({host:port, database, table, user, password[, replace_query, on_duplicate_
 |---------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `host:port`         | MySQL server address.                                                                                                                                                                                                                                                 |
 | `database`          | Remote database name.                                                                                                                                                                                                                                                 |
-| `table`             | Remote table name.                                                                                                                                                                                                                                                    |
+| `table`             | Remote table name, or a query passed to MySQL as is (see [Passing a query instead of a table name](#passing-a-query)).                                                                                                                                                  |
 | `user`              | MySQL user.                                                                                                                                                                                                                                                           |
 | `password`          | User password.                                                                                                                                                                                                                                                        |
 | `replace_query`     | Flag that converts `INSERT INTO` queries to `REPLACE INTO`. Possible values:<br/>    - `0` - The query is executed as `INSERT INTO`.<br/>    - `1` - The query is executed as `REPLACE INTO`.                                                                          |
 | `on_duplicate_clause` | The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query. Can be specified only with `replace_query = 0` (if you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception).<br/>    Example: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1;`<br/>    `on_duplicate_clause` here is `UPDATE c2 = c2 + 1`. See the MySQL documentation to find which `on_duplicate_clause` you can use with the `ON DUPLICATE KEY` clause. |
 
-Arguments also can be passed using [named collections](operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
+Arguments also can be passed using [named collections](/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
 
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are currently executed on the MySQL server.
 
 The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
+
+## Passing a query instead of a table name {#passing-a-query}
+
+Instead of a table name, the third argument can be a `SELECT` query that is passed to MySQL as is. The structure of the resulting table is inferred from the query result. The query can be written either as a subquery, or wrapped into the `query` function:
+
+```sql
+SELECT * FROM mysql('localhost:3306', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
+SELECT * FROM mysql('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+This is useful to push down joins, aggregations or any other processing to MySQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`MySQL`](/engines/table-engines/integrations/mysql) table engine.
+
+:::note
+The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized in the MySQL dialect (backtick identifier quoting) before being sent to the server. It must therefore be valid ClickHouse SQL. To pass MySQL-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to MySQL verbatim.
+
+Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from MySQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/operations/settings/settings#external_table_strict_query) an outer filter that cannot be pushed down is rejected with an exception instead of being applied locally.
+:::
 
 Supports multiple replicas that must be listed by `|`. For example:
 
@@ -51,7 +68,7 @@ SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 
 A table object with the same columns as the original MySQL table.
 
 :::note
-Some data types of MySQL can be mapped to different ClickHouse types - this is addressed by query-level setting [mysql_datatypes_support_level](operations/settings/settings.md#mysql_datatypes_support_level)
+Some data types of MySQL can be mapped to different ClickHouse types - this is addressed by query-level setting [mysql_datatypes_support_level](/operations/settings/settings.md#mysql_datatypes_support_level)
 :::
 
 :::note
@@ -84,7 +101,7 @@ Selecting data from ClickHouse:
 SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 ```
 
-Or using [named collections](operations/named-collections.md):
+Or using [named collections](/operations/named-collections.md):
 
 ```sql
 CREATE NAMED COLLECTION creds AS
@@ -174,7 +191,7 @@ WHERE id > (SELECT max(id) FROM mysql_copy);
 
 - [The 'MySQL' table engine](../../engines/table-engines/integrations/mysql.md)
 - [Using MySQL as a dictionary source](/sql-reference/statements/create/dictionary/sources/mysql)
-- [mysql_datatypes_support_level](operations/settings/settings.md#mysql_datatypes_support_level)
-- [mysql_map_fixed_string_to_text_in_show_columns](operations/settings/settings.md#mysql_map_fixed_string_to_text_in_show_columns)
-- [mysql_map_string_to_text_in_show_columns](operations/settings/settings.md#mysql_map_string_to_text_in_show_columns)
-- [mysql_max_rows_to_insert](operations/settings/settings.md#mysql_max_rows_to_insert)
+- [mysql_datatypes_support_level](/operations/settings/settings.md#mysql_datatypes_support_level)
+- [mysql_map_fixed_string_to_text_in_show_columns](/operations/settings/settings.md#mysql_map_fixed_string_to_text_in_show_columns)
+- [mysql_map_string_to_text_in_show_columns](/operations/settings/settings.md#mysql_map_string_to_text_in_show_columns)
+- [mysql_max_rows_to_insert](/operations/settings/settings.md#mysql_max_rows_to_insert)

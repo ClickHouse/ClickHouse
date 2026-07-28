@@ -1,0 +1,9 @@
+id	Nullable(String)					
+geometry	Geometry					
+properties	Nullable(JSON)					
+1
+1
+0	1
+abc
+7
+0	1

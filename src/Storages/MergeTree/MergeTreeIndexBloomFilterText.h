@@ -155,10 +155,11 @@ class MergeTreeIndexBloomFilterText final : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexBloomFilterText(
+        StorageMetadataPtr metadata_snapshot_,
         const IndexDescription & index_,
         const BloomFilterParameters & params_,
         std::unique_ptr<ITokenizer> && tokenizer_)
-        : IMergeTreeIndex(index_)
+        : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
         , params(params_)
         , tokenizer(std::move(tokenizer_)) {}
 

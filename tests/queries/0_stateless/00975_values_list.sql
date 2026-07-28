@@ -12,7 +12,9 @@ SELECT * FROM VALUES('n UInt64, s String, ss String', (1 + 22, '23', toString(23
 
 SELECT * FROM VALUES('a Decimal(4, 4), b String, c String', (divide(toDecimal32(5, 3), 3), 'a', 'b'));
 
-SELECT * FROM VALUES('x Float64', toUInt64(-1)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+-- 18446744073709551615 (UInt64 max) is within the Float64 range but not exactly representable;
+-- it is accepted and converted to the nearest representable value, like CAST (issue #43144).
+SELECT * FROM VALUES('x Float64', toUInt64(-1));
 SELECT * FROM VALUES('x Float64', NULL); -- { serverError TYPE_MISMATCH }
 SELECT * FROM VALUES('x Nullable(Float64)', NULL);
 

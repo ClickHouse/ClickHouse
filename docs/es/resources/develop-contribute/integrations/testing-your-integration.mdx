@@ -1,0 +1,63 @@
+---
+slug: /integrations/integration-development/testing-your-integration
+sidebarTitle: 'Prueba tu integración'
+title: 'Prueba tu integración de ClickHouse'
+description: 'Matriz de validación básica para integraciones en ClickHouse Cloud y open source autogestionado.'
+keywords: ['partner', 'integración', 'pruebas', 'validación', 'conjuntos de datos de ejemplo', 'ClickHouse Cloud', 'open source']
+doc_type: 'guide'
+---
+
+Valida tu integración en ambas modalidades de implementación de ClickHouse y con conjuntos de datos que pongan a prueba el sistema de tipos de ClickHouse a una escala representativa antes de enviarla para su revisión. Esta página define qué significa que algo esté «probado» en el nivel inicial. La validación formal es un proceso independiente para los partners que avanzan a niveles superiores del programa de partners.
+
+Consulta [Creación de integraciones](/es/resources/develop-contribute/integrations/building-integrations) para las rutas de ingestión y consumo, y [Documentar tu integración](/es/resources/develop-contribute/integrations/documenting-your-integration) para saber cómo publicar tus resultados.
+
+<div id="test-matrix">
+  ## Matriz de pruebas
+</div>
+
+Cubre ambas modalidades de implementación. La mayoría de los clientes usa una u otra, y el comportamiento difiere en algunos aspectos (autenticación, redes, funcionalidades disponibles).
+
+* **ClickHouse Cloud:** regístrate para una [prueba gratuita](https://clickhouse.com/cloud). No se requiere tarjeta de crédito para el nivel Development
+* **Autogestionado (de código abierto):** usa la versión estable más reciente de [GitHub releases](https://github.com/ClickHouse/ClickHouse/releases). La [guía de instalación](/es/get-started/setup/install) es la forma más rápida de tener una instancia local con Docker
+
+Pruébalo en ambos y documenta cualquier funcionalidad faltante en la página de tu integración.
+
+<div id="what-to-test">
+  ## Qué probar
+</div>
+
+**Corrección funcional.** Pruebe todas las rutas de código que expone su integración: ingestión, consultas, detección del esquema, manejo de errores y reconexión. Si su producto muestra SQL a los usuarios finales, confirme que las consultas que genera su UI se procesen correctamente de extremo a extremo.
+
+**Cobertura del sistema de tipos.** ClickHouse admite arrays, tuplas, maps, JSON, nested, LowCardinality, variantes de Decimal, Date y DateTime, UUID, IPv4 e IPv6, enums y tipos de funciones de agregado. Las integraciones suelen tener problemas con arrays anidados, tuplas muy anidadas y columnas JSON. Su biblioteca cliente y su UI deben manejar estos casos correctamente y, como mínimo, devolver un error legible en lugar de truncar datos en silencio o mostrarlos incorrectamente.
+
+**Escala.** Haga pruebas con tamaños de conjuntos de resultados y recuentos de filas como los que ejecutarán sus clientes. En el caso del BI orientado al usuario, eso suele significar tablas con cientos de millones o miles de millones de filas, y conjuntos de resultados que van desde una sola agregación hasta decenas de miles de filas. Las lecturas sin límites (`SELECT *`) deben fallar de forma predecible o paginarse, no quedarse colgadas.
+
+**Autenticación.** Valide al menos una conexión con TLS habilitado. Si expone configuración de autenticación, pruebe todos los modos que documente (nombre de usuario y contraseña sobre TLS, mTLS, certificado de cliente SSL).
+
+**Ciclo de vida de la conexión.** Confirme un comportamiento razonable ante conexiones caídas, reinicios del servidor y consultas lentas. Muchas escalaciones se deben al manejo de la conexión más que a la semántica de las consultas.
+
+<div id="recommended-example-datasets">
+  ## Conjuntos de datos de ejemplo recomendados
+</div>
+
+El conjunto completo se encuentra en la sección [**Conjuntos de datos de ejemplo**](/es/get-started/sample-datasets/index). Los siguientes cuatro conjuntos de datos cubren la mayoría de las necesidades de pruebas de integración:
+
+* **[Eventos de GitHub](/es/get-started/sample-datasets/github-events):** 3.1B filas con payloads de eventos anidados. Ideal para arrays, tuplas y tipos anidados
+* **[Datos de taxis de NYC](/es/get-started/sample-datasets/nyc-taxi):** miles de millones de filas con un esquema bien conocido. Ideal para pruebas de throughput y de la ruta de lectura
+* **[Stack Overflow](/es/get-started/sample-datasets/stackoverflow):** datos relacionales multitabla para escenarios de BI con uso intensivo de JOIN
+* **[Hacker News](/es/get-started/sample-datasets/hacker-news):** 28M filas, rápido de cargar y útil para iteraciones
+
+Para la validación a escala extrema, use **[WikiStat](/es/get-started/sample-datasets/wikistat)** (~0,5 billones de registros).
+
+<div id="what-to-capture-from-your-testing">
+  ## Qué recoger de tus pruebas
+</div>
+
+Cuando envíes tu integración para revisión, comparte:
+
+* Las versiones de ClickHouse que has probado (Cloud y open source)
+* Los conjuntos de datos y su escala aproximada (filas, tamaño en disco)
+* Los tipos que admite tu integración y los que no (esto se convierte en la sección **Límites conocidos** de tu documentación)
+* Las características de rendimiento que convenga señalar, como los umbrales del conjunto de resultados a partir de los cuales cambia el comportamiento
+
+Un breve informe de pruebas ahorra rondas de revisión. Basta con un párrafo y una tabla.

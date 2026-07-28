@@ -1,0 +1,150 @@
+---
+slug: /native-protocol/basics
+title: 'Основы'
+description: 'Основы собственного протокола'
+keywords: ['собственный протокол', 'протокол TCP', 'основы протокола', 'бинарный протокол', 'взаимодействие клиент-сервер']
+doc_type: 'guide'
+---
+
+<Note>
+  Справочник по клиентскому протоколу пока в разработке.
+
+  Большинство примеров доступны только на Go.
+</Note>
+
+В этом документе описан бинарный протокол TCP-клиентов ClickHouse.
+
+<div id="varint">
+  ## Varint
+</div>
+
+Для длин, кодов пакетов и в других случаях используется кодирование *unsigned varint*.
+Используйте [binary.PutUvarint](https://pkg.go.dev/encoding/binary#PutUvarint) и [binary.ReadUvarint](https://pkg.go.dev/encoding/binary#ReadUvarint).
+
+<Note>
+  *Signed* varint не используется.
+</Note>
+
+<div id="string">
+  ## String
+</div>
+
+Строки переменной длины кодируются как *(length, value)*, где *length* — [varint](#varint), а *value* — строка UTF-8.
+
+<Warning>
+  Проверяйте длину, чтобы избежать OOM:
+
+  `0 ≤ len < MAX`
+</Warning>
+
+<Tabs>
+  <Tab title="Кодирование">
+    ```go
+    s := "Hello, world!"
+
+    // Запись длины строки как uvarint.
+    buf := make([]byte, binary.MaxVarintLen64)
+    n := binary.PutUvarint(buf, uint64(len(s)))
+    buf = buf[:n]
+
+    // Запись значения строки.
+    buf = append(buf, s...)
+    ```
+  </Tab>
+
+  <Tab title="Декодирование">
+    ```go
+    r := bytes.NewReader([]byte{
+        0xd, 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x2c,
+        0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64, 0x21,
+    })
+
+    // Чтение длины.
+    n, err := binary.ReadUvarint(r)
+    if err != nil {
+            panic(err)
+    }
+
+    // Проверка n, чтобы избежать OOM или ошибки времени выполнения в make().
+    const maxSize = 1024 * 1024 * 10 // 10 MB
+    if n > maxSize || n < 0 {
+        panic("invalid n")
+    }
+
+    buf := make([]byte, n)
+    if _, err := io.ReadFull(r, buf); err != nil {
+            panic(err)
+    }
+
+    fmt.Println(string(buf))
+    // Hello, world!
+    ```
+  </Tab>
+</Tabs>
+
+<Tabs>
+  <Tab title="Шестнадцатеричный дамп">
+    ```hexdump
+    00000000  0d 48 65 6c 6c 6f 2c 20  77 6f 72 6c 64 21        |.Hello, world!|
+    ```
+  </Tab>
+
+  <Tab title="Base64">
+    ```text
+    DUhlbGxvLCB3b3JsZCE
+    ```
+  </Tab>
+
+  <Tab title="Go">
+    ```go
+    data := []byte{
+        0xd, 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x2c,
+        0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64, 0x21,
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<div id="integers">
+  ## Целые числа
+</div>
+
+<Tip>
+  ClickHouse использует **Little Endian** для целых чисел с фиксированным размером.
+</Tip>
+
+<div id="int32">
+  ### Int32
+</div>
+
+```go
+v := int32(1000)
+
+// Кодирование.
+buf := make([]byte, 8)
+binary.LittleEndian.PutUint32(buf, uint32(v))
+
+// Декодирование.
+d := int32(binary.LittleEndian.Uint32(buf))
+fmt.Println(d) // 1000
+```
+
+<Tabs>
+  <Tab title="Шестнадцатеричный дамп">
+    ```hexdump
+    00000000  e8 03 00 00 00 00 00 00                           |........|
+    ```
+  </Tab>
+
+  <Tab title="Base64">
+    ```text
+    6AMAAAAAAAA
+    ```
+  </Tab>
+</Tabs>
+
+<div id="boolean">
+  ## Логический тип
+</div>
+
+Логические значения представлены одним байтом: `1` означает `true`, а `0` — `false`.

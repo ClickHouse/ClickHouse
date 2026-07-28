@@ -1,0 +1,182 @@
+---
+title: 'تثبيت chDB لـ Rust'
+sidebarTitle: 'Rust'
+slug: /chdb/install/rust
+description: 'كيفية تثبيت واستخدام واجهات ربط chDB Rust'
+keywords: ['chdb', 'مضمّن', 'clickhouse-lite', 'rust', 'تثبيت', 'ffi', 'واجهات ربط']
+doc_type: 'guide'
+---
+
+يوفّر chDB-rust واجهات ربط FFI (واجهة الوظائف الأجنبية) تجريبية لـ chDB، مما يتيح لك تشغيل استعلامات ClickHouse مباشرةً في تطبيقات Rust من دون أي تبعيات خارجية.
+
+<div id="installation">
+  ## التثبيت
+</div>
+
+<div id="install-libchdb">
+  ### تثبيت libchdb
+</div>
+
+ثبّت مكتبة chDB:
+
+```bash
+curl -sL https://lib.chdb.io | bash
+```
+
+<div id="usage">
+  ## الاستخدام
+</div>
+
+يوفر chDB Rust نمطَي تنفيذ للاستعلامات: عديم الحالة وذو حالة.
+
+<div id="stateless-usage">
+  ### الاستخدام عديم الحالة
+</div>
+
+للاستعلامات البسيطة التي لا تتطلب حالة دائمة:
+
+```rust
+use chdb_rust::{execute, arg::Arg, format::OutputFormat};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Execute a simple query
+    let result = execute(
+        "SELECT version()",
+        Some(&[Arg::OutputFormat(OutputFormat::JSONEachRow)])
+    )?;
+    println!("ClickHouse version: {}", result.data_utf8()?);
+    
+    // Query with CSV file
+    let result = execute(
+        "SELECT * FROM file('data.csv', 'CSV')",
+        Some(&[Arg::OutputFormat(OutputFormat::JSONEachRow)])
+    )?;
+    println!("CSV data: {}", result.data_utf8()?);
+    
+    Ok(())
+}
+```
+
+<div id="stateful-usage-sessions">
+  ### الاستخدام ذو الحالة (الجلسات)
+</div>
+
+بالنسبة إلى الاستعلامات التي تتطلب حالةً مستمرة، مثل قواعد البيانات والجداول:
+
+```rust
+use chdb_rust::{
+    session::SessionBuilder,
+    arg::Arg,
+    format::OutputFormat,
+    log_level::LogLevel
+};
+use tempdir::TempDir;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Create a temporary directory for database storage
+    let tmp = TempDir::new("chdb-rust")?;
+    
+    // Build session with configuration
+    let session = SessionBuilder::new()
+        .with_data_path(tmp.path())
+        .with_arg(Arg::LogLevel(LogLevel::Debug))
+        .with_auto_cleanup(true)  // Cleanup on drop
+        .build()?;
+
+    // Create database and table
+    session.execute(
+        "CREATE DATABASE demo; USE demo", 
+        Some(&[Arg::MultiQuery])
+    )?;
+
+    session.execute(
+        "CREATE TABLE logs (id UInt64, msg String) ENGINE = MergeTree() ORDER BY id",
+        None,
+    )?;
+
+    // Insert data
+    session.execute(
+        "INSERT INTO logs (id, msg) VALUES (1, 'Hello'), (2, 'World')",
+        None,
+    )?;
+
+    // Query data
+    let result = session.execute(
+        "SELECT * FROM logs ORDER BY id",
+        Some(&[Arg::OutputFormat(OutputFormat::JSONEachRow)]),
+    )?;
+
+    println!("Query results:\n{}", result.data_utf8()?);
+    
+    // Get query statistics
+    println!("Rows read: {}", result.rows_read());
+    println!("Bytes read: {}", result.bytes_read());
+    println!("Query time: {:?}", result.elapsed());
+
+    Ok(())
+}
+```
+
+<div id="building-testing">
+  ## البناء والاختبار
+</div>
+
+<div id="build-the-project">
+  ### بناء المشروع
+</div>
+
+```bash
+cargo build
+```
+
+<div id="run-tests">
+  ### إجراء الاختبارات
+</div>
+
+```bash
+cargo test
+```
+
+<div id="development-dependencies">
+  ### تبعيات التطوير
+</div>
+
+يتضمن المشروع تبعيات التطوير التالية:
+
+* `bindgen` (v0.70.1) - توليد واجهات ربط FFI من ترويسات C
+* `tempdir` (v0.3.7) - التعامل مع الدليل المؤقت في الاختبارات
+* `thiserror` (v1) - أدوات لمعالجة الأخطاء
+
+<div id="error-handling">
+  ## معالجة الأخطاء
+</div>
+
+يوفّر chDB Rust معالجة شاملة للأخطاء عبر التعداد `Error`:
+
+```rust
+use chdb_rust::{execute, error::Error};
+
+match execute("SELECT 1", None) {
+    Ok(result) => {
+        println!("Success: {}", result.data_utf8()?);
+    },
+    Err(Error::QueryError(msg)) => {
+        eprintln!("Query failed: {}", msg);
+    },
+    Err(Error::NoResult) => {
+        eprintln!("No result returned");
+    },
+    Err(Error::NonUtf8Sequence(e)) => {
+        eprintln!("Invalid UTF-8: {}", e);
+    },
+    Err(e) => {
+        eprintln!("Other error: {}", e);
+    }
+}
+```
+
+<div id="github-repository">
+  ## مستودع GitHub
+</div>
+
+يمكنك العثور على مستودع GitHub الخاص بالمشروع على [chdb-io/chdb-rust](https://github.com/chdb-io/chdb-rust).

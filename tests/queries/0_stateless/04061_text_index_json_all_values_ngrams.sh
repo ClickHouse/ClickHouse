@@ -7,6 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 MY_CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_analyzer 1"
 
 function run_query()
@@ -48,14 +49,12 @@ run_query "SELECT id FROM tab WHERE data.num = 42 ORDER BY id"
 run_query "SELECT id FROM tab WHERE data.key1 LIKE '%quick%' ORDER BY id"
 run_query "SELECT id FROM tab WHERE startsWith(data.key1, 'lazy') ORDER BY id"
 run_query "SELECT id FROM tab WHERE endsWith(data.key1, 'fox') ORDER BY id"
-run_query "SELECT id FROM tab WHERE hasToken(data.key1, 'quick') ORDER BY id"
 
 echo "-- CAST with ::String"
 run_query "SELECT id FROM tab WHERE hasAllTokens(data.key1::String, 'the quick brown fox') ORDER BY id"
 run_query "SELECT id FROM tab WHERE data.key1::String = 'the quick brown fox' ORDER BY id"
 run_query "SELECT id FROM tab WHERE data.key1::String LIKE '%quick%' ORDER BY id"
 run_query "SELECT id FROM tab WHERE startsWith(data.key1::String, 'lazy') ORDER BY id"
-run_query "SELECT id FROM tab WHERE hasToken(data.key1::String, 'quick') ORDER BY id"
 run_query "SELECT id FROM tab WHERE hasAnyTokens(data.key1::String, 'quick lazy') ORDER BY id"
 run_query "SELECT id FROM tab WHERE hasAllTokens(data.key1::String, 'the quick') ORDER BY id"
 

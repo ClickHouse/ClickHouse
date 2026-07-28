@@ -15,6 +15,7 @@
 
 #include <Formats/FormatSettings.h>
 #include <Formats/JSONUtils.h>
+#include <Formats/ParseError.h>
 
 #include <algorithm>
 
@@ -655,6 +656,8 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
             nested_column.popBack(size);
         if constexpr (throw_exception)
             throw;
+        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
+        rethrowIfNotParseError();
         return ReturnType(false);
     }
 

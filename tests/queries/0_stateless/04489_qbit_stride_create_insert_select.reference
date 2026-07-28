@@ -1,0 +1,13 @@
+Round-trip QBit(Float32, 16, 8)
+[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
+[16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1]
+QBit(Float32, 16, 8)
+Round-trip QBit(BFloat16, 16, 8)
+[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
+QBit(BFloat16, 16, 8)
+Non-strided default (stride == dimension) hides the third argument
+QBit(Float32, 4)
+QBit(Float32, 4)
+CAST Array to strided QBit (displays as the original vector)
+[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
+Validation errors

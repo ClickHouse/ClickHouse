@@ -27,20 +27,6 @@ void ReadFromTableFunctionStep::initializePipeline(QueryPipelineBuilder &, const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "initializePipeline is not implementad for ReadFromTableFunctionStep");
 }
 
-static void serializeRational(TableExpressionModifiers::Rational val, WriteBuffer & out)
-{
-    writeIntBinary(val.numerator, out);
-    writeIntBinary(val.denominator, out);
-}
-
-static TableExpressionModifiers::Rational deserializeRational(ReadBuffer & in)
-{
-    TableExpressionModifiers::Rational val;
-    readIntBinary(val.numerator, in);
-    readIntBinary(val.denominator, in);
-    return val;
-}
-
 enum class TableFunctionSerializationKind : UInt8
 {
     AST = 0,

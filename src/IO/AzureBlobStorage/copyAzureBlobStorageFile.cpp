@@ -2,8 +2,8 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <Common/ListWithMemoryTracking.h>
 #include <Common/PODArray.h>
+#include <Common/ThreadPoolTaskTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/typeid_cast.h>
@@ -90,23 +90,10 @@ namespace
         const LoggerPtr log;
         size_t max_single_part_upload_size;
 
-        struct UploadPartTask
-        {
-            size_t part_offset{};
-            size_t part_size{};
-            Strings block_ids;
-            bool is_finished = false;
-        };
-
         size_t normal_part_size;
+        /// One block id per part, indexed by part number so that `completeMultipartUpload`
+        /// commits the blocks in the right order regardless of the order parts finish in.
         Strings block_ids;
-
-        ListWithMemoryTracking<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) bg_tasks;
-        int num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
-        int num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
-        std::exception_ptr bg_exception TSA_GUARDED_BY(bg_tasks_mutex);
-        std::mutex bg_tasks_mutex;
-        std::condition_variable bg_tasks_condvar;
 
         void calculatePartSize()
         {
@@ -262,116 +249,58 @@ namespace
         {
             calculatePartSize();
 
+            size_t num_parts = (total_size + normal_part_size - 1) / normal_part_size;
+            block_ids.resize(num_parts);
+
             size_t position = offset;
             size_t end_position = offset + total_size;
 
+            LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
+            /// Bound the number of parts staged concurrently. Every in-flight part holds a full
+            /// `part_size` buffer in memory, so without this limit a large file (or many files
+            /// copied in parallel on the backups IO thread pool) could schedule all parts at once
+            /// and blow up memory usage.
+            TaskTracker task_tracker(schedule, settings->max_inflight_parts_for_one_file, limited_log);
+
             try
             {
-                while (position < end_position)
+                for (size_t part_index = 0; position < end_position; ++part_index)
                 {
                     size_t next_position = std::min(position + normal_part_size, end_position);
                     size_t part_size = next_position - position; /// `part_size` is either `normal_part_size` or smaller if it's the final part.
 
-                    uploadPart(position, part_size);
+                    task_tracker.add([this, part_index, position, part_size]()
+                    {
+                        processUploadPartRequest(part_index, position, part_size);
+                    });
 
                     position = next_position;
                 }
+
+                task_tracker.waitAll();
+                completeMultipartUpload();
             }
             catch (...)
             {
                 tryLogCurrentException(log, fmt::format("While performing multipart upload of blob {} in container {}", dest_blob, dest_container_for_logging));
-                waitForAllBackgroundTasks();
+                task_tracker.safeWaitAll();
                 throw;
             }
-
-            waitForAllBackgroundTasks();
-            completeMultipartUpload();
         }
 
-
-        void uploadPart(size_t part_offset, size_t part_size)
+        void processUploadPartRequest(size_t part_index, size_t part_offset, size_t part_size)
         {
             LOG_TRACE(log, "Writing part. Container: {}, Blob: {}, Size: {}", dest_container_for_logging, dest_blob, part_size);
 
-            if (!part_size)
-            {
-                LOG_TRACE(log, "Skipping writing an empty part.");
-                return;
-            }
-
-            if (schedule)
-            {
-                UploadPartTask *  task = nullptr;
-
-                {
-                    std::lock_guard lock(bg_tasks_mutex);
-                    task = &bg_tasks.emplace_back();
-                    ++num_added_bg_tasks;
-                }
-
-                /// Notify waiting thread when task finished
-                auto task_finish_notify = [this, task]()
-                {
-                    std::lock_guard lock(bg_tasks_mutex);
-                    task->is_finished = true;
-                    ++num_finished_bg_tasks;
-
-                    /// Notification under mutex is important here.
-                    /// Otherwise, WriteBuffer could be destroyed in between
-                    /// Releasing lock and condvar notification.
-                    bg_tasks_condvar.notify_one();
-                };
-
-                try
-                {
-                    task->part_offset = part_offset;
-                    task->part_size = part_size;
-
-                    schedule([this, task, task_finish_notify]()
-                    {
-                        try
-                        {
-                            processUploadPartRequest(*task);
-                        }
-                        catch (...)
-                        {
-                            std::lock_guard lock(bg_tasks_mutex);
-                            if (!bg_exception)
-                            {
-                                tryLogCurrentException(log, "While writing part");
-                                bg_exception = std::current_exception(); /// The exception will be rethrown after all background tasks stop working.
-                            }
-                        }
-                        task_finish_notify();
-                    }, Priority{});
-                }
-                catch (...)
-                {
-                    task_finish_notify();
-                    throw;
-                }
-            }
-            else
-            {
-                UploadPartTask task;
-                task.part_offset = part_offset;
-                task.part_size = part_size;
-                processUploadPartRequest(task);
-                block_ids.insert(block_ids.end(),task.block_ids.begin(), task.block_ids.end());
-            }
-        }
-
-        void processUploadPartRequest(UploadPartTask & task)
-        {
             ProfileEvents::increment(ProfileEvents::AzureStageBlock);
             if (client->IsClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskAzureStageBlock);
 
             auto block_blob_client = client->GetBlockBlobClient(dest_blob);
-            auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), task.part_offset, task.part_size);
+            auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), part_offset, part_size);
 
-            /// task.part_size is already normalized according to min_upload_part_size and max_upload_part_size.
-            size_t size_to_stage = task.part_size;
+            /// part_size is already normalized according to min_upload_part_size and max_upload_part_size.
+            size_t size_to_stage = part_size;
 
             PODArray<char> memory;
             {
@@ -382,7 +311,8 @@ namespace
 
             Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), size_to_stage);
 
-            const auto & block_id = task.block_ids.emplace_back(getRandomASCIIString(64));
+            auto block_id = getRandomASCIIString(64);
+            block_ids[part_index] = block_id;
 
             Stopwatch watch;
             Int32 error_code = 0;
@@ -422,25 +352,6 @@ namespace
 
             LOG_TRACE(log, "Writing part. Container: {}, Blob: {}, block_id: {}, size: {}",
                       dest_container_for_logging, dest_blob, block_id, size_to_stage);
-        }
-
-
-        void waitForAllBackgroundTasks()
-        {
-            if (!schedule)
-                return;
-
-            std::unique_lock lock(bg_tasks_mutex);
-            /// Suppress warnings because bg_tasks_mutex is actually hold, but tsa annotations do not understand std::unique_lock
-            bg_tasks_condvar.wait(lock, [this]() {return TSA_SUPPRESS_WARNING_FOR_READ(num_added_bg_tasks) == TSA_SUPPRESS_WARNING_FOR_READ(num_finished_bg_tasks); });
-
-            auto exception = TSA_SUPPRESS_WARNING_FOR_READ(bg_exception);
-            if (exception)
-                std::rethrow_exception(exception);
-
-            const auto & tasks = TSA_SUPPRESS_WARNING_FOR_READ(bg_tasks);
-            for (const auto & task : tasks)
-                block_ids.insert(block_ids.end(),task.block_ids.begin(), task.block_ids.end());
         }
     };
 }

@@ -17,7 +17,8 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     CompressionCodecPtr default_codec,
     MergeTreeIndexGranularityPtr index_granularity_ptr,
     size_t part_uncompressed_bytes,
-    WrittenOffsetSubstreams * written_offset_substreams)
+    WrittenOffsetSubstreams * written_offset_substreams,
+    PackedFilesWriter * external_packed_skip_indices_writer)
     : IMergedBlockOutputStream(
           std::move(data_settings),
           data_part->getDataPartStoragePtr(),
@@ -42,6 +43,8 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         save_marks_in_cache,
         save_primary_index_in_memory,
         /*blocks_are_granules_size=*/ false);
+
+    writer_settings.external_packed_skip_indices_writer = external_packed_skip_indices_writer;
 
     writer = createMergeTreeDataPartWriter(
         data_part->getType(),

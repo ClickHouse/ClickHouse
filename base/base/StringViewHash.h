@@ -104,8 +104,8 @@ inline bool compare64(const char * p1, const char * p2)
 inline bool memequalWide(const char * p1, const char * p2, size_t size)
 {
     /** The order of branches and the trick with overlapping comparisons
-      * are the same as in memcpy implementation.
-      * See the comments in base/glibc-compatibility/memcpy/memcpy.h
+      * are the same as in a typical `memcpy` implementation: copy possibly
+      * uneven chunks with two overlapping loads/stores.
       */
 
     if (size <= 16)

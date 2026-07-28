@@ -1,0 +1,118 @@
+---
+description: 'ClickHouse Keeper の HTTP API と埋め込み Web ダッシュボードに関するドキュメント'
+sidebarTitle: 'Keeper HTTP API'
+slug: /operations/utilities/clickhouse-keeper-http-api
+title: 'Keeper HTTP API とダッシュボード'
+doc_type: 'reference'
+---
+
+ClickHouse Keeper は、監視、ヘルスチェック、ストレージ管理のための HTTP API と埋め込み Web ダッシュボードを提供します。
+このインターフェイスを使用すると、Web ブラウザーや HTTP クライアントを通じて、運用担当者はクラスターの状態を確認し、コマンドを実行し、Keeper ストレージを管理できます。
+
+<div id="configuration">
+  ## 設定
+</div>
+
+HTTP API を有効にするには、`keeper_server` 設定に `http_control` セクションを追加します。
+
+```xml
+<keeper_server>
+    <!-- その他の keeper_server の設定 -->
+
+    <http_control>
+        <port>9182</port>
+        <!-- <secure_port>9443</secure_port> -->
+    </http_control>
+</keeper_server>
+```
+
+<div id="configuration-options">
+  ### 設定オプション
+</div>
+
+| 設定                                        | デフォルト    | 説明                       |
+| ----------------------------------------- | -------- | ------------------------ |
+| `http_control.port`                       | -        | ダッシュボードと API の HTTP ポート  |
+| `http_control.secure_port`                | -        | HTTPS ポート (SSL の設定が必要)   |
+| `http_control.readiness.endpoint`         | `/ready` | レディネスプローブ用のカスタムパス        |
+| `http_control.storage.session_timeout_ms` | `30000`  | ストレージ API 操作のセッションタイムアウト |
+
+<div id="endpoints">
+  ## エンドポイント
+</div>
+
+<div id="dashboard">
+  ### ダッシュボード
+</div>
+
+* **パス**: `/dashboard`
+* **メソッド**: GET
+* **説明**: Keeper を監視・管理するための埋め込み Web ダッシュボードを提供します
+
+ダッシュボードでは、次の機能を利用できます。
+
+* クラスターの状態をリアルタイムで可視化
+* ノードの監視 (ロール、レイテンシ、接続) 
+* ストレージブラウザー
+* コマンド実行用インターフェイス
+
+<div id="readiness-probe">
+  ### レディネスプローブ
+</div>
+
+* **パス**: `/ready` (設定可能) 
+* **メソッド**: GET
+* **説明**: ヘルスチェック用のエンドポイント
+
+正常時のレスポンス (HTTP 200) :
+
+```json
+{
+  "status": "ok",
+  "details": {
+    "role": "leader",
+    "hasLeader": true
+  }
+}
+```
+
+<div id="commands-api">
+  ### Commands API
+</div>
+
+* **パス**: `/api/v1/commands/{command}`
+* **メソッド**: GET, POST
+* **説明**: Four-Letter Word コマンドまたは ClickHouse Keeper Client CLI コマンドを実行します
+
+クエリパラメータ:
+
+* `command` - 実行するコマンド
+* `cwd` - パスベースのコマンドのカレントワーキングディレクトリ (デフォルト: `/`) 
+
+例:
+
+```bash
+# Four-Letter Wordコマンド
+curl http://localhost:9182/api/v1/commands/stat
+
+# ZooKeeper CLIコマンド
+curl "http://localhost:9182/api/v1/commands/ls?command=ls%20'/'&cwd=/"
+```
+
+<div id="storage-api">
+  ### Storage API
+</div>
+
+* **ベースパス**: `/api/v1/storage`
+* **説明**: Keeper ストレージ操作用の REST API
+
+Storage API は REST の規約に従っており、HTTP メソッドで操作の種類を示します。
+
+| 操作   | パス                                     | HTTPメソッド | ステータスコード | 説明          |
+| ---- | -------------------------------------- | -------- | -------- | ----------- |
+| 取得   | `/api/v1/storage/{path}`               | GET      | 200      | ノードデータを取得   |
+| 一覧   | `/api/v1/storage/{path}?children=true` | GET      | 200      | 子ノードの一覧を取得  |
+| 存在確認 | `/api/v1/storage/{path}`               | HEAD     | 200      | ノードが存在するか確認 |
+| 作成   | `/api/v1/storage/{path}`               | POST     | 201      | 新しいノードを作成   |
+| 更新   | `/api/v1/storage/{path}?version={v}`   | PUT      | 200      | ノードデータを更新   |
+| 削除   | `/api/v1/storage/{path}?version={v}`   | DELETE   | 204      | ノードを削除      |

@@ -1,0 +1,51 @@
+---
+title: 'Qual sintaxe SQL o ClickHouse suporta?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/sql
+description: 'O ClickHouse oferece suporte a 100% da sintaxe SQL'
+doc_type: 'reference'
+keywords: ['sintaxe SQL', 'SQL ANSI']
+---
+
+O ClickHouse tem suporte completo à sintaxe SQL, incluindo recursos como:
+
+* SQL/JSON e tipo de dado JSON (SQL-2023)
+* Funções de janela (SQL-2003)
+* expressões de tabela comuns e consultas recursivas (SQL-1999)
+* ROLLUP, CUBE e GROUPING SETS (SQL-1999)
+* suporte completo a RBAC (SQL-1999)
+* subconsultas correlacionadas (SQL-1992);
+
+Esse suporte é validado pelos benchmarks TPC-H e TPC-DS, bem como pelo SQLTest.
+
+O ClickHouse introduziu muitos recursos antes de eles serem posteriormente padronizados pela ISO/IEC, como:
+
+* funções de agregação condicionais
+* funções de agregação `any`
+* `least` e `greatest`
+* `GROUP BY ALL`
+* uso ampliado de aliases
+* sublinhados em literais numéricos
+
+O ClickHouse estende o SQL com grandes melhorias de usabilidade:
+
+* uso irrestrito de aliases
+* aliases dentro da cláusula WITH
+* combinadores de funções de agregação
+* funções de agregação parametrizadas
+* funções de agregação aproximadas
+* tipos de dados numéricos nativos e inteiros grandes, além de decimal com precisão estendida
+* funções de ordem superior para manipulação de arrays
+* cláusula ARRAY JOIN e função arrayJoin
+* agregação de arrays
+* cláusula LIMIT BY
+* GROUP BY WITH TOTALS
+* AS OF JOIN
+* ANY/ALL JOIN
+* sintaxe natural para JSON
+* vírgula à direita na lista de colunas
+* ordem das cláusulas FROM ... SELECT
+* parâmetros de consulta com tipagem segura e views parametrizadas
+
+Alguns deles podem vir a ser incluídos nos próximos padrões SQL, embora já estejam disponíveis para os usuários do ClickHouse.

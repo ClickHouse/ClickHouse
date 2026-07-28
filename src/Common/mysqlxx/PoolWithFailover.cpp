@@ -13,6 +13,7 @@
 namespace DB::ErrorCodes
 {
     extern const int ALL_CONNECTION_TRIES_FAILED;
+    extern const int BAD_ARGUMENTS;
 }
 
 using namespace mysqlxx;
@@ -60,9 +61,24 @@ PoolWithFailover::PoolWithFailover(
         const size_t max_tries_)
     : max_tries(max_tries_)
     , shareable(config_.getBool(config_name_ + ".share_connection", false))
-    , wait_timeout(UINT64_MAX)
+    , wait_timeout(config_.getUInt64(config_name_ + ".connection_wait_timeout", MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_CONNECTION_WAIT_TIMEOUT))
     , bg_reconnect(config_.getBool(config_name_ + ".background_reconnect", false))
 {
+    /// Honor `connection_pool_size` and `connection_wait_timeout` for XML-defined dictionaries too,
+    /// matching the named-collection / DDL path (see createMySQLPoolWithFailover). Previously XML pools
+    /// always waited indefinitely for a free connection (wait_timeout = UINT64_MAX) and the pool size was
+    /// not configurable, so a shared pool (share_connection=true) serving many dictionaries could freeze
+    /// SYSTEM RELOAD DICTIONARIES once all connections were in use, instead of failing with a clear error.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/22048
+    const unsigned max_connections = config_.getUInt(config_name_ + ".connection_pool_size", max_connections_);
+
+    /// Match the named-collection / DDL path (createMySQLPoolWithFailover), which rejects a zero-sized
+    /// pool: with max_connections = 0 the pool could still hand out the default start connection (it is
+    /// allocated before max_connections is enforced), so a "zero-sized" pool is neither rejected nor truly
+    /// empty. Fail with a clear error instead.
+    if (max_connections == 0)
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Connection pool cannot have zero size");
+
     if (config_.has(config_name_ + ".replica"))
     {
         Poco::Util::AbstractConfiguration::Keys replica_keys;
@@ -77,7 +93,7 @@ PoolWithFailover::PoolWithFailover(
                 int priority = config_.getInt(replica_name + ".priority", 0);
 
                 replicas_by_priority[priority].emplace_back(
-                    std::make_shared<Pool>(config_, replica_name, default_connections_, max_connections_, config_name_.c_str()));
+                    std::make_shared<Pool>(config_, replica_name, default_connections_, max_connections, config_name_.c_str()));
 
                 if (bg_reconnect)
                     DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas_by_priority[priority].back()), shareable));
@@ -97,7 +113,7 @@ PoolWithFailover::PoolWithFailover(
     else
     {
         replicas_by_priority[0].emplace_back(
-            std::make_shared<Pool>(config_, config_name_, default_connections_, max_connections_));
+            std::make_shared<Pool>(config_, config_name_, default_connections_, max_connections));
         if (bg_reconnect)
             DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas_by_priority[0].back()), shareable));
     }

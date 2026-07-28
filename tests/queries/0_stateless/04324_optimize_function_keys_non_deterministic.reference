@@ -1,0 +1,30 @@
+-- { echo }
+
+-- A non-deterministic function that takes a key as an argument (here rand64(g)) is not determined by
+-- the key, so it must not be removed: dropping it would change the partitioning (LIMIT BY) or the
+-- grouping (GROUP BY). This guards the shared function-keys elimination for both clauses.
+
+SET enable_analyzer = 1;
+SET optimize_limit_by_function_keys = 1;
+SET optimize_group_by_function_keys = 1;
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (g UInt32, x UInt32) ENGINE = MergeTree ORDER BY (g, x);
+INSERT INTO test SELECT number % 3 AS g, number AS x FROM numbers(12);
+-- LIMIT BY: rand64(g) is kept, not removed as a function of g.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY g LIMIT 1 BY g, rand64(g);
+SELECT __table1.g AS g
+FROM default.test AS __table1
+ORDER BY __table1.g ASC
+LIMIT _CAST(1, \'UInt64\') BY
+    __table1.g,
+    rand64(__table1.g)
+-- GROUP BY: rand64(g) is kept, not removed as a function of g.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g, count() FROM test GROUP BY g, rand64(g);
+SELECT
+    __table1.g AS g,
+    count() AS `count()`
+FROM default.test AS __table1
+GROUP BY
+    __table1.g,
+    rand64(__table1.g)
+DROP TABLE test;

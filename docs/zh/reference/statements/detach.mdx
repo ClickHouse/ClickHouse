@@ -1,0 +1,73 @@
+---
+description: 'DETACH 文档'
+sidebarTitle: 'DETACH'
+slug: /sql-reference/statements/detach
+title: 'DETACH 语句'
+doc_type: 'reference'
+---
+
+使服务器“忘记”某个表、materialized view、字典或数据库的存在。
+
+**语法**
+
+```sql
+DETACH TABLE|VIEW|DICTIONARY|DATABASE [IF EXISTS] [db.]name [ON CLUSTER cluster] [PERMANENTLY] [SYNC]
+```
+
+分离不会删除表、materialized view、字典或数据库的数据或元数据。如果某个实体不是以 `PERMANENTLY` 方式分离的，那么服务器下次启动时会读取元数据，并重新加载该表/视图/字典/数据库。如果某个实体是以 `PERMANENTLY` 方式分离的，则不会自动重新加载。
+
+无论表、字典或数据库是否被永久分离，这两种情况下都可以使用 [ATTACH](/zh/reference/statements/attach) 查询将其重新附加。
+系统日志表也可以重新附加 (例如 `query_log`、`text_log` 等) 。其他系统表无法重新附加。不过在服务器下次启动时，服务器仍会再次加载这些表。
+
+`ATTACH MATERIALIZED VIEW` 不支持简写语法 (不带 `SELECT`) ，但可以使用 `ATTACH TABLE` 查询来附加它。
+
+请注意，已经处于分离 (临时) 状态的表不能再被永久分离。不过，可以先将其重新附加，然后再以永久方式分离。
+
+此外，不能对已分离的表执行 [DROP](/zh/reference/statements/drop#drop-table)，也不能 [CREATE TABLE](/zh/reference/statements/create/table) 一个与已永久分离的表同名的表，或者使用 [RENAME TABLE](/zh/reference/statements/rename) 查询将其替换为另一张表。
+
+`SYNC` modifier 会立即执行该操作，不会延迟。
+
+**示例**
+
+创建一个表：
+
+```sql title="Query"
+CREATE TABLE test ENGINE = MergeTree ORDER BY () AS SELECT * FROM numbers(10);
+SELECT * FROM test;
+```
+
+```text title="Response"
+┌─number─┐
+│      0 │
+│      1 │
+│      2 │
+│      3 │
+│      4 │
+│      5 │
+│      6 │
+│      7 │
+│      8 │
+│      9 │
+└────────┘
+```
+
+分离表：
+
+```sql title="Query"
+DETACH TABLE test;
+SELECT * FROM test;
+```
+
+```text title="Response"
+Received exception from server (version 21.4.1):
+Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.test does not exist.
+```
+
+<Note>
+  在 ClickHouse Cloud 中，用户应使用 `PERMANENTLY` 子句，例如：`DETACH TABLE <table> PERMANENTLY`。如果不使用该子句，表会在集群重启时 (例如升级期间) 被重新附加。
+</Note>
+
+**另请参阅**
+
+* [Materialized View](/zh/reference/statements/create/view#materialized-view)
+* [字典](/zh/reference/statements/create/dictionary)

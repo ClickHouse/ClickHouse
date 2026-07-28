@@ -1,6 +1,7 @@
 -- Tags: no-replicated-database, no-parallel-replicas
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
+SET explain_query_plan_default = 'legacy';
 
 
 DROP TABLE IF EXISTS 03772_table_match;

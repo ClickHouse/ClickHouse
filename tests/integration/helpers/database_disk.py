@@ -1,6 +1,5 @@
 import os
 
-import tempfile
 import xml.etree.ElementTree as ET
 
 def get_database_disk_name(node):
