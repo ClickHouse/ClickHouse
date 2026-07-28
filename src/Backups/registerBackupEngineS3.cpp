@@ -54,6 +54,13 @@ extern const SettingsUInt64 archive_adaptive_buffer_max_size_bytes;
 #if USE_AWS_S3
 namespace
 {
+    struct ResolvedS3BackupLocation
+    {
+        String uri;
+        String archive_name;
+        NamedCollectionPtr collection;
+    };
+
     String removeFileNameFromURL(String & url)
     {
         Poco::URI url2{url};
@@ -64,6 +71,109 @@ namespace
         url2.setPath(path);
         url = url2.toString();
         return file_name;
+    }
+
+    String stripTrailingSlashes(String str)
+    {
+        /// `S3::URI` rejects repeated slashes, and path joining consumes the only valid trailing slash.
+        while (str.size() > 1 && str.back() == '/')
+            str.pop_back();
+        return str;
+    }
+
+    String removeURLUserInfo(const String & uri)
+    {
+        try
+        {
+            Poco::URI sanitized_uri(uri);
+            sanitized_uri.setUserInfo("");
+            return sanitized_uri.toString();
+        }
+        catch (const Poco::Exception &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse S3 backup destination");
+        }
+    }
+
+    ResolvedS3BackupLocation resolveS3BackupLocation(const BackupInfo & backup_info, ContextPtr context)
+    {
+        ResolvedS3BackupLocation location;
+        location.collection = backup_info.getNamedCollection(context);
+        const auto & args = backup_info.args;
+
+        if (location.collection)
+        {
+            location.uri = location.collection->get<String>("url");
+            if (location.collection->has("filename"))
+                location.uri = std::filesystem::path(location.uri) / location.collection->get<String>("filename");
+
+            if (args.size() > 1)
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Backup S3 requires 1 or 2 arguments: named_collection, [filename]");
+            if (args.size() == 1)
+                location.uri = std::filesystem::path(location.uri) / args[0].safeGet<String>();
+        }
+        else
+        {
+            if (args.size() != 1 && args.size() != 3)
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Backup S3 requires 1 or 3 arguments: url, [access_key_id, secret_access_key]");
+            location.uri = args[0].safeGet<String>();
+        }
+
+        location.uri = removeURLUserInfo(location.uri);
+        if (hasRegisteredArchiveFileExtension(location.uri))
+            location.archive_name = removeFileNameFromURL(location.uri);
+        return location;
+    }
+
+    void validateS3CredentialsForIdentity(const BackupInfo & backup_info, const ResolvedS3BackupLocation & location, ContextPtr context)
+    {
+        if (location.collection)
+            return;
+
+        if (backup_info.args.size() == 3)
+        {
+            backup_info.args[1].safeGet<String>();
+            backup_info.args[2].safeGet<String>();
+        }
+
+        if (backup_info.function_arg)
+        {
+            S3::S3AuthSettings auth_settings;
+            try
+            {
+                if (!StorageS3Configuration::collectCredentials(backup_info.function_arg->clone(), auth_settings, context))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 extra credentials");
+            }
+            catch (const Exception &)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 extra credentials for backup destination identity");
+            }
+        }
+    }
+
+    Strings getS3DestinationIdentity(const BackupInfo & backup_info, ContextPtr context)
+    {
+        auto location = resolveS3BackupLocation(backup_info, context);
+        validateS3CredentialsForIdentity(backup_info, location, context);
+        try
+        {
+            S3::URI uri(location.uri);
+            return {
+                "endpoint=" + uri.endpoint,
+                "bucket=" + uri.bucket,
+                "key=" + stripTrailingSlashes(uri.key),
+                "version_id=" + uri.version_id,
+                "archive=" + location.archive_name,
+            };
+        }
+        catch (const Poco::Exception &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse S3 backup destination for identity");
+        }
     }
 }
 #endif
@@ -77,8 +187,8 @@ void registerBackupEngineS3(BackupFactory & factory)
     {
 #if USE_AWS_S3
         const auto & args = params.backup_info.args;
-
-        String s3_uri;
+        auto location = resolveS3BackupLocation(params.backup_info, params.context);
+        String & s3_uri = location.uri;
         String access_key_id;
         String secret_access_key;
         String role_arn;
@@ -89,9 +199,8 @@ void registerBackupEngineS3(BackupFactory & factory)
         /// which keep the server `<s3>` config values.
         std::optional<S3::S3AuthSettings> named_collection_auth;
 
-        if (auto collection = params.backup_info.getNamedCollection(params.context))
+        if (const auto & collection = location.collection)
         {
-            s3_uri = collection->get<String>("url");
             access_key_id = collection->getOrDefault<String>("access_key_id", "");
             secret_access_key = collection->getOrDefault<String>("secret_access_key", "");
             role_arn = collection->getOrDefault<String>("role_arn", "");
@@ -134,22 +243,9 @@ void registerBackupEngineS3(BackupFactory & factory)
             auth[S3AuthSetting::google_adc_client_secret] = collection->getOrDefault<String>("google_adc_client_secret", "");
             auth[S3AuthSetting::google_adc_refresh_token] = collection->getOrDefault<String>("google_adc_refresh_token", "");
 
-            if (collection->has("filename"))
-                s3_uri = std::filesystem::path(s3_uri) / collection->get<String>("filename");
-
-            if (args.size() > 1)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup S3 requires 1 or 2 arguments: named_collection, [filename]");
-
-            if (args.size() == 1)
-                s3_uri = std::filesystem::path(s3_uri) / args[0].safeGet<String>();
         }
         else
         {
-            if ((args.size() != 1) && (args.size() != 3))
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                                "Backup S3 requires 1 or 3 arguments: url, [access_key_id, secret_access_key]");
-
-            s3_uri = args[0].safeGet<String>();
             if (args.size() >= 3)
             {
                 access_key_id = args[1].safeGet<String>();
@@ -170,9 +266,9 @@ void registerBackupEngineS3(BackupFactory & factory)
         }
 
         BackupImpl::ArchiveParams archive_params;
-        if (hasRegisteredArchiveFileExtension(s3_uri))
+        if (!location.archive_name.empty())
         {
-            if (hasSupportedZipExtension(s3_uri))
+            if (hasSupportedZipExtension(location.archive_name))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Zip archive format is not supported for S3 backups because zip requires seeking which S3 does not support efficiently. "
                     "Use tar.gz or other tar-based formats instead");
@@ -180,7 +276,7 @@ void registerBackupEngineS3(BackupFactory & factory)
             if (params.is_internal_backup)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Using archives with backups on clusters is disabled");
 
-            archive_params.archive_name = removeFileNameFromURL(s3_uri);
+            archive_params.archive_name = location.archive_name;
             archive_params.compression_method = params.compression_method;
             archive_params.compression_level = params.compression_level;
             archive_params.password = params.password;
@@ -277,7 +373,16 @@ void registerBackupEngineS3(BackupFactory & factory)
 #endif
     };
 
-    factory.registerBackupEngine("S3", creator_fn);
+    auto destination_identity_fn = []([[maybe_unused]] const BackupInfo & backup_info, [[maybe_unused]] ContextPtr context) -> Strings
+    {
+#if USE_AWS_S3
+        return getS3DestinationIdentity(backup_info, context);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "S3 support is disabled");
+#endif
+    };
+
+    factory.registerBackupEngine("S3", creator_fn, destination_identity_fn);
 }
 
 }

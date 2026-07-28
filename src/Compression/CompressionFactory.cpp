@@ -36,6 +36,19 @@ CompressionCodecPtr CompressionCodecFactory::getDefaultCodec() const
     return default_codec;
 }
 
+bool CompressionCodecFactory::isDefaultCodec(const ASTPtr & codec)
+{
+    /// No CODEC(...) clause: the default codec.
+    if (codec == nullptr)
+        return true;
+    /// CODEC(Default)
+    const auto * func = codec->as<ASTFunction>();
+    if (!func || func->name != "CODEC" || !func->arguments || func->arguments->children.size() != 1)
+        return false;
+    const auto * ident = func->arguments->children[0]->as<ASTIdentifier>();
+    return ident && ident->name() == DEFAULT_CODEC_NAME;
+}
+
 
 CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std::optional<int> level) const
 {

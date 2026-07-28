@@ -82,7 +82,7 @@ Postgres 12 и новее
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-Публикация `clickpipes` будет содержать набор событий изменений из указанных таблиц и позже будет использоваться для приёма потока репликации.
+Публикация `clickpipes` определяет набор таблиц, события изменений которых будут передаваться в ClickPipes. Мы не рекомендуем использовать `FOR ALL TABLES`, если только вы не собираетесь реплицировать каждую таблицу, поскольку включение ненужных таблиц увеличивает WAL-трафик из Postgres в ClickPipes и снижает общую эффективность репликации.
 
 [//]: # "TODO Add SSH Tunneling"
 
@@ -100,7 +100,7 @@ Postgres 12 и новее
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp" alt="Раздел Connections в Cloud SQL" size="lg" border />
 
-2. Перейдите в подраздел **Networking**
+2. Перейдите в подраздел Networking
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp" alt="Подраздел Networking в Cloud SQL" size="lg" border />
 

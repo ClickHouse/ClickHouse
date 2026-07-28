@@ -1,0 +1,29 @@
+---
+title: Criar S3 ClickPipe
+---
+
+import S3DataSource from '/snippets/pt-BR/clickpipes/object-storage/amazon-s3/_1-data-source.mdx';
+import S3Connection from '/snippets/pt-BR/clickpipes/object-storage/amazon-s3/_2-connection.mdx';
+import CommonSteps from '/snippets/pt-BR/_create_clickpipe.mdx';
+
+<Steps>
+  <Step title="Selecione a fonte de dados" id="1-select-the-data-source">
+    **1.** No ClickHouse Cloud, selecione **Fontes de dados** no menu principal e clique em **Criar ClickPipe**.
+
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Selecionar importações" />
+    </Frame>
+
+    <S3DataSource />
+  </Step>
+
+  <Step title="Configure a conexão do seu ClickPipe" id="2-setup-your-clickpipe-connection">
+    **1.** Para configurar um novo ClickPipe, você deve fornecer os detalhes de conexão e autenticação do seu serviço de armazenamento de objetos.
+
+    <S3Connection />
+
+    **2.** Clique em **Dados recebidos**. O ClickPipes buscará os metadados do seu bucket para a próxima etapa.
+  </Step>
+
+  <CommonSteps />
+</Steps>

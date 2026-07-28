@@ -36,8 +36,8 @@ quantileDeterministic(level)(expr, determinator)
 
 **الوسائط**
 
-* `expr` — تعبير على قيم العمود يُنتج أنواع بيانات رقمية أو Date أو DateTime. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime)
-* `determinator` — رقم يُستخدَم الـ hash الخاص به بدلًا من مولّد الأرقام العشوائية في خوارزمية reservoir sampling لجعل نتيجة الـ sampling حتمية. يمكنك استخدام أي رقم موجب حتمي كمحدِّد، مثل معرّف مستخدم أو معرّف حدث. إذا تكررت قيمة المحدِّد نفسها كثيرًا جدًا، فلن تعمل الدالة بشكل صحيح. [`(U)Int*`](/ar/reference/data-types/int-uint)
+* `expr` — تعبير على قيم العمود يُنتج أنواع بيانات رقمية أو `Date` أو `DateTime`. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Int128`](/ar/reference/data-types/int-uint) أو [`UInt128`](/ar/reference/data-types/int-uint) أو [`Int256`](/ar/reference/data-types/int-uint) أو [`UInt256`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime)
+* `determinator` — رقم يُستخدَم الـ hash الخاص به بدلًا من مولّد الأرقام العشوائية في خوارزمية reservoir sampling لجعل نتيجة الـ sampling حتمية. يمكنك استخدام أي رقم موجب حتمي كمحدِّد، مثل معرّف مستخدم أو معرّف حدث. إذا تكررت قيمة المحدِّد نفسها كثيرًا جدًا، فلن تعمل الدالة بشكل صحيح. [`UInt*`](/ar/reference/data-types/int-uint)
 
 **القيمة المعادة**
 

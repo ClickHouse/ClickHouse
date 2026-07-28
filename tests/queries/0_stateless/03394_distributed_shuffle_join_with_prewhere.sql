@@ -10,6 +10,7 @@ ORDER BY tuple()
 SETTINGS auto_statistics_types = 'tdigest,uniq,basic';
 
 SET materialize_statistics_on_insert = 1;
+SET join_runtime_filter_min_probe_rows = 0;
 
 INSERT INTO test SELECT 'path' || number::String, 'en', number FROM numbers(5);
 INSERT INTO test SELECT 'path' || number::String, 'de', number FROM numbers(10);

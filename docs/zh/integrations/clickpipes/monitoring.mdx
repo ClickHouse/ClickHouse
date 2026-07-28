@@ -26,7 +26,7 @@ ClickPipes 指标使用[标准服务级标记](/zh/products/cloud/features/monit
   ### 示例响应
 </div>
 
-以下展示了 ClickPipes 指标在 Prometheus 抓取响应中的样子：
+以下展示了 Kafka ClickPipe 的 ClickPipes 指标在 Prometheus 抓取响应中的样子。暴露的指标因管道类型而异——请参阅[可用指标](#available-metrics)，了解哪些指标适用于哪些管道类型：
 
 ```response
 # HELP ClickPipes_Info 始终等于 1。标记 "clickpipe_state" 包含管道的当前状态：Stopped/Provisioning/Running/Paused/Failed
@@ -62,66 +62,83 @@ ClickPipes_Latency{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickho
   ## 可用指标
 </div>
 
+并非每种管道类型都会产生所有指标。具体而言，CDC ClickPipes 提供的指标子集与流式和对象存储 ClickPipes 不同。
+
+* **流式、对象存储** — Kafka、Kinesis、Pub/Sub、S3 和 GCS
+* **CDC** — Postgres、MySQL、MongoDB 和 BigQuery
+* **全部** — 所有管道类型
+
 <div id="metrics-data-transfer">
   ### 数据传输
 </div>
 
-| 指标                                         | 类型  | 描述                                                           |
-| ------------------------------------------ | --- | ------------------------------------------------------------ |
-| `ClickPipes_FetchedBytes_Total`            | 计数器 | 从源端拉取的未压缩字节总量。                                               |
-| `ClickPipes_FetchedBytesCompressed_Total`  | 计数器 | 从源端拉取的压缩字节总量。如果源数据未压缩，则与 `ClickPipes_FetchedBytes_Total` 等同。 |
-| `ClickPipes_FetchedBytesInitialLoad_Total` | 计数器 | **CDC ClickPipes** 在初始加载阶段拉取的未压缩字节总量。                        |
-| `ClickPipes_FetchedBytesResync_Total`      | 计数器 | **CDC ClickPipes** 在重新同步期间拉取的未压缩字节总量。                        |
-| `ClickPipes_SentBytes_Total`               | 计数器 | 发送到 ClickHouse 的未压缩字节总量。                                     |
-| `ClickPipes_SentBytesCompressed_Total`     | 计数器 | 发送到 ClickHouse 的压缩字节总量。                                      |
+| 指标                                         | 类型  | 适用于     | 描述                                                                                                                                                           |
+| ------------------------------------------ | --- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ClickPipes_FetchedBytes_Total`            | 计数器 | 流式，对象存储 | 从源端拉取的未压缩字节总数。                                                                                                                                               |
+| `ClickPipes_FetchedBytesCompressed_Total`  | 计数器 | 全部      | 从源端拉取的字节总数，即通过传输读取的字节数。如果源数据未压缩，则等同于 `ClickPipes_FetchedBytes_Total`。对于 CDC ClickPipes，这不包括初始加载期间拉取的字节，这部分会单独记录到 `ClickPipes_FetchedBytesInitialLoad_Total`。 |
+| `ClickPipes_FetchedBytesInitialLoad_Total` | 计数器 | CDC     | 初始加载阶段拉取的字节总数，包括重新同步。                                                                                                                                        |
+| `ClickPipes_SentBytes_Total`               | 计数器 | 流式，对象存储 | 发送到 ClickHouse 的未压缩字节总数。                                                                                                                                     |
+| `ClickPipes_SentBytesCompressed_Total`     | 计数器 | 流式，对象存储 | 发送到 ClickHouse 的压缩字节总数。                                                                                                                                      |
 
 <div id="metrics-events">
   ### 事件和记录
 </div>
 
-| 指标                                  | 类型      | 说明                                                                                  |
-| ----------------------------------- | ------- | ----------------------------------------------------------------------------------- |
-| `ClickPipes_FetchedEvents_Total`    | Counter | 从源端拉取的记录总数。                                                                         |
-| `ClickPipes_SentEvents_Total`       | Counter | 发送到 ClickHouse 的记录总数。                                                               |
-| `ClickPipes_FetchedEvents_PerTable` | Gauge   | **CDC ClickPipes** 按目标端表和事件类型统计的已拉取记录数。使用额外的 `destination_table` 和 `event_type` 标记。 |
+| 指标                                  | 类型      | 适用范围    | 说明                                                              |
+| ----------------------------------- | ------- | ------- | --------------------------------------------------------------- |
+| `ClickPipes_FetchedEvents_Total`    | Counter | 流式，对象存储 | 从源端拉取的记录总数。                                                     |
+| `ClickPipes_SentEvents_Total`       | Counter | 流式，对象存储 | 发送到 ClickHouse 的记录总数。                                           |
+| `ClickPipes_FetchedEvents_PerTable` | Gauge   | CDC     | 按目标表和事件类型统计的已拉取记录数。使用额外的 `destination_table` 和 `event_type` 标记。 |
 
 <div id="metrics-errors">
   ### 错误
 </div>
 
-| 指标                        | 类型  | 描述                                                             |
-| ------------------------- | --- | -------------------------------------------------------------- |
-| `ClickPipes_Errors_Total` | 计数器 | 摄取过程中发生的[错误](/zh/integrations/clickpipes/home#error-reporting)总数。 |
+| 指标                        | 类型  | 适用于 | 描述                                                             |
+| ------------------------- | --- | --- | -------------------------------------------------------------- |
+| `ClickPipes_Errors_Total` | 计数器 | 全部  | 摄取过程中发生的[错误](/zh/integrations/clickpipes/home#error-reporting)总数。 |
 
 <div id="metrics-latency">
   ### 延迟
 </div>
 
-| 指标                                        | 类型            | 描述                                                                                       |
-| ----------------------------------------- | ------------- | ---------------------------------------------------------------------------------------- |
-| `ClickPipes_Latency`                      | Gauge (*avg*) | 从记录在源端生成到写入 ClickHouse 之间的时间，单位为毫秒。                                                      |
-| `ClickPipes_SourceReplicationLatency_MiB` | Gauge (*avg*) | **CDC ClickPipes** 在源端的复制滞后量，单位为 MiB。对于 Postgres ClickPipes，这反映的是 replication slot 的滞后量。 |
+| 指标                                        | 类型            | 适用于               | 描述                                                          |
+| ----------------------------------------- | ------------- | ----------------- | ----------------------------------------------------------- |
+| `ClickPipes_Latency`                      | Gauge (*avg*) | 流式、对象存储           | 从记录在源端生成到写入 ClickHouse 之间的时间，单位为毫秒。                         |
+| `ClickPipes_SourceReplicationLatency_MiB` | Gauge (*avg*) | CDC (仅 Postgres)  | 源端的 replication slot 滞后量，单位为 MiB。仅由 Postgres ClickPipes 发出。 |
 
 <div id="metrics-resources">
-  ### 资源使用
+  ### 资源利用率
 </div>
 
-| 指标                               | 类型             | 描述                        |
-| -------------------------------- | -------------- | ------------------------- |
-| `ClickPipes_Replica_CPUUsage`    | Gauge (*avg*)  | 用于摄取的副本的平均 CPU 使用量，单位为毫核。 |
-| `ClickPipes_Replica_CPULimit`    | Gauge (*last*) | 用于摄取的副本配置的 CPU 限制，单位为毫核。  |
-| `ClickPipes_Replica_MemoryUsage` | Gauge (*avg*)  | 用于摄取的副本的平均内存使用量，单位为字节。    |
-| `ClickPipes_Replica_MemoryLimit` | Gauge (*last*) | 用于摄取的副本配置的内存限制，单位为字节。     |
+`ClickPipes_Replica_*` 指标报告流式和对象存储 ClickPipes 的资源利用率。每个 ClickPipe 都有**专用计算资源**，因此这些值反映的是各个 ClickPipe 自身的资源利用率。
+
+| Metric                           | Type           | Available for | Description                       |
+| -------------------------------- | -------------- | ------------- | --------------------------------- |
+| `ClickPipes_Replica_CPUUsage`    | Gauge (*avg*)  | 流式、对象存储       | 摄取副本的平均 CPU 使用量，以 millicores 为单位。 |
+| `ClickPipes_Replica_CPULimit`    | Gauge (*last*) | 流式、对象存储       | 摄取副本配置的 CPU 限制，以 millicores 为单位。  |
+| `ClickPipes_Replica_MemoryUsage` | Gauge (*avg*)  | 流式、对象存储       | 摄取副本的平均内存使用量，以字节为单位。              |
+| `ClickPipes_Replica_MemoryLimit` | Gauge (*last*) | 流式、对象存储       | 摄取副本配置的内存限制，以字节为单位。               |
+
+`ClickPipes_CDC_*` 指标报告 CDC ClickPipes 的资源利用率。同一服务中的所有 CDC ClickPipes **共享计算资源**，因此这些值反映的是该服务中所有 CDC ClickPipes 的合计使用情况。
+
+| Metric                               | Type           | Available for | Description                                              |
+| ------------------------------------ | -------------- | ------------- | -------------------------------------------------------- |
+| `ClickPipes_CDC_CPUUsage`            | Gauge (*avg*)  | CDC           | 平均 CPU 使用量，以 millicores 为单位。该服务中的所有 CDC ClickPipes 共享此值。 |
+| `ClickPipes_CDC_CPULimit`            | Gauge (*last*) | CDC           | 配置的 CPU 限制，以 millicores 为单位。该服务中的所有 CDC ClickPipes 共享此值。 |
+| `ClickPipes_CDC_MemoryUsage`         | Gauge (*avg*)  | CDC           | 平均内存使用量，以字节为单位。该服务中的所有 CDC ClickPipes 共享此值。              |
+| `ClickPipes_CDC_MemoryLimit`         | Gauge (*last*) | CDC           | 配置的内存限制，以字节为单位。该服务中的所有 CDC ClickPipes 共享此值。              |
+| `ClickPipes_CDC_NetworkReceiveBytes` | Gauge          | CDC           | 入站网络带宽，以字节为单位 (每个抓取窗口的增量) 。该服务中的所有 CDC ClickPipes 共享此值。  |
 
 <div id="metrics-state">
   ### 状态和进度
 </div>
 
-| 指标                              | 类型    | 描述                                               |
-| ------------------------------- | ----- | ------------------------------------------------ |
-| `ClickPipes_Info`               | Gauge | 始终等于 `1`。使用 `clickpipe_state` 标记根据管道状态进行过滤或触发告警。 |
-| `ClickPipes_LastFetchedBatchId` | Gauge | 从源拉取的最后一个批次的 ID。                                 |
-| `ClickPipes_LastSentBatchId`    | Gauge | 发送到 ClickHouse 的最后一个批次的 ID。                      |
+| 指标                              | 类型    | 适用范围 | 描述                                               |
+| ------------------------------- | ----- | ---- | ------------------------------------------------ |
+| `ClickPipes_Info`               | Gauge | 全部   | 始终等于 `1`。使用 `clickpipe_state` 标记根据管道状态进行过滤或触发告警。 |
+| `ClickPipes_LastFetchedBatchId` | Gauge | CDC  | 从源拉取的最后一个批次的 ID。                                 |
+| `ClickPipes_LastSentBatchId`    | Gauge | CDC  | 发送到 ClickHouse 的最后一个批次的 ID。                      |
 
 <div id="related">
   ## 相关页面

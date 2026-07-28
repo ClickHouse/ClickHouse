@@ -48,17 +48,13 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
 <br />
 
 <Steps>
-  <Step>
-    ### المتطلبات الأساسية
-
+  <Step title="المتطلبات الأساسية" id="prerequisites">
     * [Helm](https://helm.sh/) v3+
     * عنقود Kubernetes (يُوصى بالإصدار v1.20+)
     * `kubectl` مُعَدّ للتعامل مع عنقودك
   </Step>
 
-  <Step>
-    ### أضف مستودع Helm لـ ClickStack
-
+  <Step title="أضف مستودع Helm لـ ClickStack" id="add-the-clickstack-helm-repository">
     أضف مستودع Helm لـ ClickStack:
 
     ```shell
@@ -67,9 +63,7 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
     ```
   </Step>
 
-  <Step>
-    ### تثبيت ClickStack
-
+  <Step title="تثبيت ClickStack" id="installing-clickstack">
     لتثبيت chart الخاص بـ ClickStack باستخدام القيم الافتراضية:
 
     ```shell
@@ -77,9 +71,7 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
     ```
   </Step>
 
-  <Step>
-    ### تحقّق من التثبيت
-
+  <Step title="تحقّق من التثبيت" id="verify-the-installation">
     تحقّق من التثبيت:
 
     ```shell
@@ -89,9 +81,7 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
     عندما تصبح جميع وحدات الـPod جاهزة، تابع.
   </Step>
 
-  <Step>
-    ### إعادة توجيه المنافذ
-
+  <Step title="إعادة توجيه المنافذ" id="forward-ports">
     تتيح إعادة توجيه المنافذ الوصول إلى HyperDX وإعداده. أمّا المستخدمون الذين ينشرون في بيئات الإنتاج، فينبغي لهم بدلًا من ذلك إتاحة الخدمة عبر مورد Ingress أو موازن تحميل لضمان وصول شبكي مناسب، وإنهاء TLS، وقابلية التوسع. وتُعد إعادة توجيه المنافذ أنسب للتطوير المحلي أو للمهام الإدارية لمرة واحدة، وليست مناسبة للبيئات طويلة الأمد أو عالية التوافر.
 
     ```shell
@@ -107,9 +97,7 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
     </Tip>
   </Step>
 
-  <Step>
-    ### الانتقال إلى واجهة المستخدم
-
+  <Step title="الانتقال إلى واجهة المستخدم" id="navigate-to-the-ui">
     زُر [http://localhost:8080](http://localhost:8080) للوصول إلى واجهة HyperDX.
 
     أنشئ مستخدمًا بإدخال اسم مستخدم وكلمة مرور يستوفيان المتطلبات.
@@ -125,9 +113,7 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
     </Info>
   </Step>
 
-  <Step>
-    ### تخصيص القيم (اختياري)
-
+  <Step title="تخصيص القيم (اختياري)" id="customizing-values">
     يمكنك تخصيص الإعدادات باستخدام خيارات `--set`. على سبيل المثال:
 
     ```shell
@@ -167,9 +153,7 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
     ```
   </Step>
 
-  <Step>
-    ### استخدام Kubernetes Secrets (اختياري)
-
+  <Step title="استخدام Kubernetes Secrets (اختياري)" id="using-secrets">
     للتعامل مع البيانات الحساسة مثل مفاتيح API أو بيانات اعتماد قاعدة البيانات، استخدم Kubernetes Secrets. توفّر مخططات Helm الخاصة بـ HyperDX ملفات secrets افتراضية يمكنك تعديلها وتطبيقها على الـ cluster لديك.
 
     #### استخدام secrets مُعدّة مسبقًا

@@ -1,0 +1,14 @@
+{
+  "expanded": true,
+  "group": "Python",
+  "icon": "/images/integrations/logos/notext-python.svg",
+  "pages": [
+    "ru/integrations/language-clients/python/index",
+    "ru/integrations/language-clients/python/driver-api",
+    "ru/integrations/language-clients/python/additional-options",
+    "ru/integrations/language-clients/python/advanced-querying",
+    "ru/integrations/language-clients/python/advanced-inserting",
+    "ru/integrations/language-clients/python/advanced-usage",
+    "ru/integrations/language-clients/python/sqlalchemy"
+  ]
+}

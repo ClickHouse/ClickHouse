@@ -35,7 +35,7 @@ title: 数据类型匹配
 **  [Variant 类型](/zh/reference/data-types/variant)会隐式接受 `null` 作为字段值，因此例如 Avro `union(T1, T2, null)` 会被转换为 `Variant(T1, T2)`。
 因此，当从 ClickHouse 生成 Avro 时，我们必须始终将 `null` 类型包含在 Avro `union` 类型集合中，因为在 schema 推断期间，我们无法确定是否有任何值实际上为 `null`。
 
-*** [Avro 逻辑类型](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+*** [Avro 逻辑类型](https://avro.apache.org/docs/1.12.0/specification/#logical-types)
 
 不支持的 Avro 逻辑数据类型：
 

@@ -28,9 +28,7 @@ doc_type: 'guide'
 다음 단계에 따라 Streamlit 애플리케이션을 만들 수 있습니다.
 
 <Steps>
-  <Step>
-    ## 라이브러리 설치
-
+  <Step title="라이브러리 설치" id="install-libraries">
     다음 명령을 실행해 필요한 라이브러리를 설치합니다.
 
     ```bash
@@ -38,9 +36,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 유틸리티 파일 생성
-
+  <Step title="유틸리티 파일 생성" id="create-utilities">
     두 개의 유틸리티 함수를 담은 `utils.py` 파일을 만드십시오. 첫 번째는
     Agno agent의 스트림 응답을 처리하는 비동기 함수 생성기이고, 두 번째는
     Streamlit 애플리케이션에 스타일을 적용하는 함수입니다:
@@ -67,9 +63,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 자격 증명 설정
-
+  <Step title="자격 증명 설정" id="setup-credentials">
     Anthropic API Key를 환경 변수로 설정하세요:
 
     ```bash
@@ -84,9 +78,7 @@ doc_type: 'guide'
     </Info>
   </Step>
 
-  <Step>
-    ## 필요한 라이브러리 가져오기
-
+  <Step title="필요한 라이브러리 가져오기" id="import-libraries">
     먼저 기본 Streamlit 애플리케이션 파일(예: `app.py`)을 만들고 import 문을 추가합니다:
 
     ```python
@@ -110,9 +102,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## agent 스트리밍 함수 정의하기
-
+  <Step title="agent 스트리밍 함수 정의하기" id="define-agent-function">
     [ClickHouse&#39;s SQL Playground](https://sql.clickhouse.com/)에 연결하고 응답을 스트리밍하는 기본 agent 함수를 추가합니다:
 
     ```python
@@ -162,9 +152,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 동기 래퍼 함수 추가
-
+  <Step title="동기 래퍼 함수 추가" id="add-wrapper-functions">
     Streamlit에서 비동기 스트리밍을 처리하는 도우미 함수를 추가합니다:
 
     ```python
@@ -172,7 +160,7 @@ doc_type: 'guide'
         queue = Queue()
         def run():
             asyncio.run(_agent_stream_to_queue(message, queue))
-            queue.put(None)  # 스트림 종료용 센티널
+            queue.put(None)  # Sentinel to end stream
         threading.Thread(target=run, daemon=True).start()
         while True:
             chunk = queue.get()
@@ -186,9 +174,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## Streamlit 인터페이스 만들기
-
+  <Step title="Streamlit 인터페이스 만들기" id="create-interface">
     Streamlit UI 구성 요소와 채팅 기능을 추가하세요:
 
     ```python
@@ -217,9 +203,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 애플리케이션 실행
-
+  <Step title="애플리케이션 실행" id="run-application">
     ClickHouse AI agent 웹 애플리케이션을 시작하려면 터미널에서 다음 명령을 실행하십시오:
 
     ```bash

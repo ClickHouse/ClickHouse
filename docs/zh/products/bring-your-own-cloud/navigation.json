@@ -1,0 +1,58 @@
+{
+  "group": "自备 Cloud",
+  "pages": [
+    {
+      "group": "概览",
+      "pages": [
+        "zh/products/bring-your-own-cloud/overview/overview",
+        "zh/products/bring-your-own-cloud/overview/architecture"
+      ]
+    },
+    {
+      "group": "配置",
+      "pages": [
+        "zh/products/bring-your-own-cloud/configuration/configurations",
+        "zh/products/bring-your-own-cloud/configuration/connect",
+        "zh/products/bring-your-own-cloud/configuration/operations"
+      ]
+    },
+    {
+      "group": "上手引导",
+      "pages": [
+        "zh/products/bring-your-own-cloud/onboarding/aws",
+        "zh/products/bring-your-own-cloud/onboarding/standard",
+        {
+          "group": "自定义",
+          "pages": [
+            "zh/products/bring-your-own-cloud/onboarding/customization-aws",
+            "zh/products/bring-your-own-cloud/onboarding/customization-gcp"
+          ]
+        },
+        {
+          "group": "Network",
+          "pages": [
+            "zh/products/bring-your-own-cloud/onboarding/network-aws",
+            "zh/products/bring-your-own-cloud/onboarding/network-gcp"
+          ],
+          "root": "zh/products/bring-your-own-cloud/onboarding/network"
+        },
+        "zh/products/bring-your-own-cloud/onboarding/new-region",
+        "zh/products/bring-your-own-cloud/onboarding/azure-private-preview"
+      ]
+    },
+    {
+      "group": "参考文档",
+      "pages": [
+        "zh/products/bring-your-own-cloud/reference/network-security",
+        "zh/products/bring-your-own-cloud/reference/privilege",
+        "zh/products/bring-your-own-cloud/reference/clickhouse-data-access",
+        "zh/products/bring-your-own-cloud/reference/observability-aws",
+        "zh/products/bring-your-own-cloud/reference/billable-aws-services",
+        "zh/products/bring-your-own-cloud/reference/cost-model-aws",
+        "zh/products/bring-your-own-cloud/reference/aws-service-limits",
+        "zh/products/bring-your-own-cloud/reference/faq",
+        "zh/products/bring-your-own-cloud/reference/faq-aws"
+      ]
+    }
+  ]
+}
