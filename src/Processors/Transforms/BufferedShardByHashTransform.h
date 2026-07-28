@@ -163,10 +163,11 @@ private:
         std::vector<const void *> touched_objects;
     };
 
-    /// Queue bookkeeping that maintains the shared buffered-bytes counter. All of it - like everything else that
-    /// touches the charges recorded in `output_queues` or `port_resident_touched` - runs with `budget->mutex`
-    /// held: a sibling scatter reclaims this scatter's stale port-resident charges through
-    /// `BufferedShardByHashBudget::scatters`.
+    /// Queue bookkeeping that maintains the shared buffered-bytes counter. When `budget_enabled`, all of it -
+    /// like everything else that touches the charges recorded in `output_queues` or `port_resident_touched` -
+    /// runs with `budget->mutex` held: a sibling scatter reclaims this scatter's stale port-resident charges
+    /// through `BufferedShardByHashBudget::scatters`. Without a budget the chunks carry no charge, so there is
+    /// nothing shared to guard and the mutex is not taken (see `lockBudget`).
     void enqueue(size_t shard, Chunk chunk, std::vector<const void *> touched_objects);
     QueuedChunk dequeue(size_t shard);
     void clearQueue(size_t shard);
@@ -228,6 +229,12 @@ private:
     /// Same, but takes `budget->mutex` itself and subtracts the released bytes from the shared counter.
     void releaseTouchedObjects(const std::vector<const void *> & touched);
 
+    /// A lock on `budget->mutex` when there is a budget to maintain, and an empty (unlocked, mutex-less) lock
+    /// otherwise - with `budget_enabled` false nothing shared is touched, so the stage-wide mutex is not taken
+    /// at all. Held around the queue/port bookkeeping, which a sibling scatter may reclaim through
+    /// `BufferedShardByHashBudget::scatters`.
+    std::unique_lock<std::mutex> lockBudget();
+
     /// Charge the just-pulled input chunk's measured size against the shared budget, before it is split. So the
     /// budget accounts for the in-flight read-ahead of every scatter and the admission decision in prepare()
     /// runs on the chunk's measured size. `chargeColumnAndDescendants` charges every distinct physical buffer
@@ -253,6 +260,15 @@ private:
     size_t max_queue_length;
     /// Total-bytes cap for max_queue_length == 0 mode; 0 means no cap.
     size_t max_buffered_bytes;
+    /// True only when there is a byte cap to enforce: the demand-driven mode (`max_queue_length == 0`, where a
+    /// selective downstream merge rules out back-pressure) with a non-zero `max_buffered_bytes`. When false -
+    /// the bounded-queue mode used by the sharded aggregator, and a demand-driven stage with the cap disabled -
+    /// nothing ever consults `total_buffered_bytes`, so the transform does no ownership accounting whatsoever:
+    /// it neither walks the pulled block nor the scattered columns, keeps no charges in `QueuedChunk` /
+    /// `port_resident_touched`, does not register in `BufferedShardByHashBudget::scatters`, and never takes
+    /// `budget->mutex`. That accounting is two full recursive walks per input block plus hash-table churn, and
+    /// the bounded-queue path is itself a hot-path optimization, so it must not pay for a budget it does not have.
+    bool budget_enabled;
     /// Budget shared by all scatters of the stage: the buffered-bytes counter, the shared-object de-duplication
     /// table, and the mutex guarding them (never null - the constructor makes a private one if none is passed).
     std::shared_ptr<BufferedShardByHashBudget> budget;

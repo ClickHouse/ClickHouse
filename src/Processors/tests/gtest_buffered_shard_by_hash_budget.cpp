@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <memory>
 #include <string>
@@ -932,8 +933,11 @@ TEST(BufferedShardByHashTransform, PartiallyConsumedBlockReleasesTheConsumedChun
     const size_t first_rows = 4000;
     const size_t second_rows = 250; /// Small enough that what it adds cannot mask the release of half a block.
 
+    /// An unbounded (but non-zero, or the transform would do no accounting at all) budget: the reclaim under
+    /// test must happen when the second scatter REGISTERS its block, not because enforcement kicked in - a
+    /// counter this far below the cap never reaches the reclaim inside `isOverBudget`.
     const auto partially_drained = runSecondScatterAfterFirstIsDrained(
-        first_rows, second_rows, num_shards, /*max_buffered_bytes=*/ 0, /*first_sinks_to_pull=*/ num_shards / 2);
+        first_rows, second_rows, num_shards, /*max_buffered_bytes=*/ (1ULL << 40), /*first_sinks_to_pull=*/ num_shards / 2);
     ASSERT_GT(partially_drained.bytes_while_first_parked, 0);
     /// Half the block's shard chunks are gone, so their exclusive buffers must no longer be charged...
     EXPECT_LT(partially_drained.bytes_after_second_buffered, partially_drained.bytes_while_first_parked);
@@ -981,4 +985,115 @@ TEST(BufferedShardByHashTransform, SharedPayloadAcrossSiblingScattersChargedOnce
     /// regression this guards: a per-scatter table would charge it once per scatter that holds it).
     EXPECT_GE(buffered, payload_bytes);
     EXPECT_LT(buffered, 2 * payload_bytes);
+}
+
+namespace
+{
+
+struct NoBudgetOutcome
+{
+    /// Peaks, sampled after every cycle: the final state alone would not tell accounting from no accounting,
+    /// since a charge is released as soon as its chunk leaves and the counter returns to zero either way.
+    Int64 peak_buffered_bytes = 0;   /// Highest value the shared counter ever took.
+    size_t peak_registered_objects = 0; /// Most entries the shared de-duplication table ever held.
+    size_t registered_scatters = 0;  /// Scatters registered in the stage list.
+    size_t rows_pushed = 0;          /// Rows the transform actually handed downstream.
+    bool finished = false;           /// The transform reached Status::Finished after the input was closed.
+};
+
+/// Drive one block through a transform that has NO byte budget to enforce - either the bounded-queue mode
+/// (`max_queue_length != 0`, what the sharded aggregator uses) or the demand-driven mode with the cap
+/// disabled (`max_buffered_bytes == 0`) - and report what it did to the shared budget state, how many rows it
+/// shuffled, and whether it terminated.
+NoBudgetOutcome runWithoutByteBudget(
+    const SharedHeader & header, Columns columns, size_t num_shards, const ColumnNumbers & key_columns, size_t max_queue_length)
+{
+    const size_t num_rows = columns.at(0)->size();
+    auto budget = std::make_shared<BufferedShardByHashBudget>();
+
+    BufferedShardByHashTransform transform(
+        header, num_shards, key_columns, max_queue_length, /*max_buffered_bytes_=*/ 0, budget);
+
+    OutputPort source_output(header);
+    connect(source_output, transform.getInputs().front());
+
+    std::vector<std::unique_ptr<InputPort>> sinks;
+    for (auto & output : transform.getOutputs())
+    {
+        auto sink = std::make_unique<InputPort>(header);
+        connect(output, *sink);
+        sinks.push_back(std::move(sink));
+    }
+
+    source_output.push(Chunk(std::move(columns), num_rows));
+    /// This is the whole input: the transform still pulls the pushed chunk (an input port with data is not
+    /// finished yet), and afterwards runs its EOF drain path - which the port-residency bookkeeping gates, so
+    /// skipping that bookkeeping must not leave an output open forever.
+    source_output.finish();
+
+    NoBudgetOutcome outcome;
+
+    for (int step = 0; step < 64; ++step)
+    {
+        for (auto & sink : sinks)
+        {
+            sink->setNeeded();
+            if (sink->hasData())
+                outcome.rows_pushed += sink->pull().getNumRows();
+        }
+
+        const auto status = transform.prepare();
+        if (status == IProcessor::Status::Finished)
+        {
+            outcome.finished = true;
+            break;
+        }
+
+        if (status == IProcessor::Status::Ready)
+            transform.work();
+
+        outcome.peak_buffered_bytes = std::max(outcome.peak_buffered_bytes, budget->total_buffered_bytes.load());
+        outcome.peak_registered_objects = std::max(outcome.peak_registered_objects, budget->shared_object_refcounts.size());
+    }
+
+    outcome.registered_scatters = budget->scatters.size();
+    return outcome;
+}
+
+}
+
+/// The ownership accounting the buffer budget needs - a recursive walk of every pulled block and of every
+/// scattered column, plus per-chunk charge vectors and a shared hash table - must not run when there is no byte
+/// cap to enforce. The bounded-queue mode (`max_queue_length != 0`) is what `enable_sharding_aggregator` uses
+/// (`AggregatingStep::transformPipeline`), and it is itself a hot-path optimization: nothing there ever reads
+/// `total_buffered_bytes`, so paying two ownership walks and hash-table churn per input block would be a pure
+/// regression for queries that do not use `aggregation_in_order_shuffle` at all. The same holds for the
+/// demand-driven mode with `aggregation_in_order_shuffle_max_buffered_bytes = 0` (cap explicitly disabled).
+/// Skipping the accounting must not change what the transform shuffles, nor keep it from finishing (the drain
+/// at EOF is gated on the port-residency bookkeeping the accounting maintains).
+TEST(BufferedShardByHashTransform, NoOwnershipAccountingWithoutAByteBudget)
+{
+    const size_t num_shards = 8;
+    const size_t num_rows = 4000;
+
+    Block header_block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "lc"),
+    };
+    auto header = std::make_shared<const Block>(std::move(header_block));
+
+    /// A `LowCardinality` payload: the one column whose accounting is most elaborate (a shared dictionary
+    /// registered at any nesting depth), so any leftover charging would show up here.
+    for (size_t max_queue_length : {10UL, 0UL})
+    {
+        Columns columns{makeDistinctKeyColumn(num_rows), makeBigDictLowCardinalityColumn(num_rows, 500, 64)};
+        const auto outcome = runWithoutByteBudget(header, std::move(columns), num_shards, ColumnNumbers{0}, max_queue_length);
+
+        EXPECT_EQ(outcome.peak_buffered_bytes, 0) << "max_queue_length = " << max_queue_length;
+        EXPECT_EQ(outcome.peak_registered_objects, 0u) << "max_queue_length = " << max_queue_length;
+        EXPECT_EQ(outcome.registered_scatters, 0u) << "max_queue_length = " << max_queue_length;
+        /// The shuffle itself is unaffected: every row is handed downstream, and the transform terminates.
+        EXPECT_EQ(outcome.rows_pushed, num_rows) << "max_queue_length = " << max_queue_length;
+        EXPECT_TRUE(outcome.finished) << "max_queue_length = " << max_queue_length;
+    }
 }
