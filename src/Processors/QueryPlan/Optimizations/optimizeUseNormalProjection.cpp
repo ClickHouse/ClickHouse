@@ -566,6 +566,7 @@ std::optional<String> optimizeUseNormalProjections(
             reader,
             empty_mutations_snapshot,
             required_columns,
+            metadata,
             *parent_reading_select_result,
             projection_query_info,
             context);

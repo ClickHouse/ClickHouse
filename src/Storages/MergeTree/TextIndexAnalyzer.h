@@ -33,9 +33,9 @@ public:
         TextSearchQueryPtr query;
         /// Tokens this query has observed so far (declared + pattern-discovered).
         TokenToPostingsInfosMap tokens;
-        /// Row range folded across observed tokens by `query->search_mode` (intersect for `All`, union for `Any`).
+        /// Row range folded across observed tokens by the query search mode (intersect for `All`, union for `Any`).
         std::optional<RowsRange> rows_range;
-        /// Posting list folded across materialized tokens by `query->search_mode`.
+        /// Posting list folded across materialized tokens by the query search mode.
         std::optional<PostingList> postings;
 
         /// Query can never match (e.g. missing token in `All` mode, empty intersection).
@@ -44,7 +44,7 @@ public:
         bool is_bypassed = false;
         /// Number of tokens whose posting list has already been folded into `postings`.
         size_t num_read_postings = 0;
-        /// Declared tokens (`query->tokens`) that may still contribute to an `Any` query.
+        /// Declared tokens (`query->getTokens`) that may still contribute to an `Any` query.
         size_t num_live_tokens = 0;
 
         void markFailed();
