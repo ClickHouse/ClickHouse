@@ -104,7 +104,7 @@ echo "warned=$(warned_for ${DB}.mv)"
 $CLICKHOUSE_CLIENT --query "INSERT INTO mv_src VALUES (2, 'y')"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM mv_src"
 
-echo "-- plain MergeTree, DROP instead of DETACH"
+echo "-- plain table, DROP instead of DETACH"
 $CLICKHOUSE_CLIENT --query "CREATE TABLE mt (id UInt64, val String) ENGINE = MergeTree ORDER BY id"
 race_removal mt \
     "DROP TABLE mt" \
@@ -121,7 +121,11 @@ $CLICKHOUSE_CLIENT --query "DROP DICTIONARY dep_mt"
 $CLICKHOUSE_CLIENT --query "DROP TABLE mt"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'mt'"
 
-echo "-- ReplicatedMergeTree (in an Atomic database)"
+# The label deliberately avoids naming the engine: in Cloud runs SharedEngineReplacer rewrites
+# ReplicatedMergeTree to SharedMergeTree everywhere in this file, echoed strings included, and the
+# reference would no longer match. (That replacement is also what gives this case its SharedMergeTree
+# coverage for free.)
+echo "-- replicated table in an Atomic database"
 $CLICKHOUSE_CLIENT --query "
 CREATE TABLE rmt (id UInt64, val String)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/rmt', 'r1')
