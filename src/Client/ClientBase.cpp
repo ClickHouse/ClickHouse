@@ -476,9 +476,11 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
     else if (dialect == Dialect::prql)
         parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-#if USE_RAPIDJSON
     else if (dialect == Dialect::mongo)
+#if USE_RAPIDJSON
         parser = std::make_unique<Mongo::ParserMongoQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the MongoDB dialect is disabled: ClickHouse is built without rapidjson");
 #endif
     else if (dialect == Dialect::promql)
         parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});

@@ -68,6 +68,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
@@ -250,9 +251,11 @@ void LocalConnection::sendQuery(
             parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
         else if (dialect == Dialect::prql)
             parser = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-#if USE_RAPIDJSON
         else if (dialect == Dialect::mongo)
+#if USE_RAPIDJSON
             parser = std::make_unique<Mongo::ParserMongoQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the MongoDB dialect is disabled: ClickHouse is built without rapidjson");
 #endif
         else if (dialect == Dialect::promql)
             parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
