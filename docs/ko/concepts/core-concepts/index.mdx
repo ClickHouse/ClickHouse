@@ -4,16 +4,38 @@ title: '핵심 개념'
 description: 'ClickHouse의 작동 방식에 대한 핵심 개념을 알아보십시오'
 keywords: ['개념', '파트', '파티션', '프라이머리 인덱스']
 doc_type: 'guide'
+mode: wide
 ---
 
-이 섹션에서는
-ClickHouse의 작동 방식에 대한 몇 가지 핵심 개념을 알아봅니다.
+이 문서의 이 섹션에서는
+ClickHouse가 작동하는 방식의 몇 가지 핵심 개념을 알아봅니다.
 
-| Page                                                         | Description                                                                                                                                                                   |
-| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [테이블 파트](/ko/concepts/core-concepts/parts)                      | ClickHouse에서 테이블 파트가 무엇인지 알아봅니다.                                                                                                                                              |
-| [테이블 파티션](./partitions.mdx)                                  | 테이블 파티션이 무엇이며 어디에 사용되는지 알아봅니다.                                                                                                                                                |
-| [테이블 파트 병합](./merges.mdx)                                    | 테이블 파트 병합이 무엇이며 어디에 사용되는지 알아봅니다.                                                                                                                                              |
-| [테이블 세그먼트 및 레플리카](/ko/guides/oss/deployment-and-scaling/shards) | 테이블 세그먼트와 레플리카가 무엇이며 어디에 사용되는지 알아봅니다.                                                                                                                                         |
-| [프라이머리 인덱스](./primary-indexes.mdx)                           | ClickHouse의 희소 프라이머리 인덱스를 소개하고, 쿼리 실행 중 불필요한 데이터를 효율적으로 건너뛰는 데 어떻게 도움이 되는지 설명합니다. 인덱스가 어떻게 생성되고 사용되는지, 그리고 그 효과를 확인하는 예시와 도구를 함께 설명합니다. 고급 사용 사례와 모범 사례를 다루는 심화 문서 링크도 제공합니다. |
-| [아키텍처 개요](/ko/concepts/core-concepts/academic-overview)         | VLDB 2024 학술 논문을 바탕으로 ClickHouse 아키텍처의 전체 구성 요소를 간결하게 설명하는 학술 개요입니다.                                                                                                          |
+<CardGroup cols={2}>
+  <Card title="용어집" icon="book-open" href="/ko/concepts/core-concepts/glossary">
+    ClickHouse에서 자주 사용하는 용어와 구문, 그리고 그 정의입니다.
+  </Card>
+
+  <Card title="테이블 파트" icon="cubes" href="/ko/concepts/core-concepts/parts">
+    ClickHouse에서 테이블 파트가 무엇인지 알아봅니다.
+  </Card>
+
+  <Card title="테이블 파티션" icon="table-cells-large" href="/ko/concepts/core-concepts/partitions">
+    테이블 파티션이 무엇이며 어디에 사용되는지 알아봅니다.
+  </Card>
+
+  <Card title="테이블 파트 병합" icon="code-merge" href="/ko/concepts/core-concepts/merges">
+    테이블 파트 병합이 무엇이며 어디에 사용되는지 알아봅니다.
+  </Card>
+
+  <Card title="프라이머리 인덱스" icon="key" href="/ko/concepts/core-concepts/primary-indexes">
+    ClickHouse의 희소 프라이머리 인덱스가 쿼리 실행 중 불필요한 데이터를 효율적으로 건너뛰는 데 어떻게 도움이 되는지 설명합니다.
+  </Card>
+
+  <Card title="쿼리 병렬성" icon="bolt" href="/ko/concepts/core-concepts/query-parallelism">
+    ClickHouse가 처리 레인과 `max_threads` 설정을 사용해 쿼리 실행을 어떻게 병렬화하는지 설명합니다.
+  </Card>
+
+  <Card title="아키텍처 개요" icon="graduation-cap" href="/ko/concepts/core-concepts/academic-overview">
+    VLDB 2024 학술 논문을 바탕으로 ClickHouse 아키텍처의 전체 구성 요소를 간결하게 설명하는 학술적 개요입니다.
+  </Card>
+</CardGroup>

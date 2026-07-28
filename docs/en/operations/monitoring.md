@@ -25,7 +25,7 @@ You can monitor:
 
 ## Built-in advanced observability dashboard {#built-in-advanced-observability-dashboard}
 
-<Image img="https://github.com/ClickHouse/ClickHouse/assets/3936029/2bd10011-4a47-4b94-b836-d44557c7fdc1" alt="Screenshot 2023-11-12 at 6 08 58 PM" size="md" />
+<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" alt="Native advanced observability dashboard" size="md" />
 
 ClickHouse comes with a built-in advanced observability dashboard feature which can be accessed by `$HOST:$PORT/dashboard` (requires user and password) that shows the following metrics:
 - Queries/second

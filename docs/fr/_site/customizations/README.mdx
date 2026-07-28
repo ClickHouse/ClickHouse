@@ -16,14 +16,17 @@ Consultez la documentation de Mintlify sur les [scripts personnalisés](https://
 </div>
 
 * `ask-ai-button.js` — ajuste le style et le comportement du bouton Ask-AI.
-* `cookie-banner.js` — injecte et gère la bannière de consentement aux cookies.
 * `custom-footer.js` — affiche le pied de page personnalisé du site (`#ch-custom-footer`).
+* `galaxy.js` — initialise les analytics ClickHouse Galaxy, suit les événements du cycle de vie des pages de documentation et de la base de connaissances tout au long de la navigation SPA de Mintlify, envoie le trafic canonique `https://clickhouse.com/docs` vers l’API Galaxy de production et le trafic de prévisualisation `.mintlify.app` vers l’API Galaxy de Development (désactivé sur localhost et les origines inconnues), et ajoute l’attribution ainsi que l’ID visiteur Galaxy aux liens ClickHouse Cloud uniquement sur la documentation de production canonique.
 * `inkeep-init.js` — remplace la recherche native de Mintlify (⌘K / barre de recherche de la barre de navigation) par la fenêtre modale de recherche Inkeep. Recherche uniquement ; le chat IA reste sur Kapa.
 * `kapa-init.js` — initialise le widget RAG de Kapa.ai.
 * `navbar-cta.js` — ajoute le CTA « Get started » à la barre de navigation.
+* `nav-icon-preload.js` — précharge à faible priorité les petits SVG des menus déroulants de la barre de navigation de bureau dès que le document est prêt, afin que les icônes soient disponibles avant la première ouverture de leurs menus.
+* `raise-issue-link.js` — redirige le lien de retour « Raise issue » par défaut de Mintlify vers le formulaire de Documentation issue du repository (`.github/ISSUE_TEMPLATE/60_documentation-issue.yaml`), en préremplissant le chemin de la page actuelle.
+* `scroll-reset.js` — rétablit le retour en haut de page lors de la navigation avant côté client, que Next.js ignore lorsqu’une bannière announcement est configurée. Laisse intacte la navigation arrière/avant (`popstate`) afin que le navigateur/le routeur puisse restaurer la position précédente, et fait défiler jusqu’à l’ancre pour les liens de hachage entre pages.
+* `tab-nav.js` — relie les tabs de navigation supérieurs sur ordinateur (Home / Database / Solutions / Integrations) à leurs URL cibles, en conservant la navigation dans la langue active et le chemin de base.
 * `clickhouse-sql-lexer-wasm.js` — expose l’analyseur lexical SQL de ClickHouse (`src/Parsers/Lexer.cpp` compilé en WebAssembly) sous forme de variable globale base64. Instantané de ClickHouse `programs/server/play.html` ; réextrayez-le si l’analyseur lexical ou la liste de mots-clés du projet source change.
-* `clickhouse-sql-highlight.js` — réapplique la coloration syntaxique aux blocs de code `language="sql"` à l’aide de l’analyseur lexical WASM (couleurs natives de ClickHouse, identiques à celles de play.html / `clickhouse-client`) à la place de Shiki. Doit être chargé après `clickhouse-sql-lexer-wasm.js`. Les autres langages restent tels que Shiki les a rendus.
-* `quickstart-back-link.js` — sur les pages de quickstart, déplace le badge autogénéré « All quickstarts » du haut du body vers l’en-tête au-dessus du titre (position du fil d’Ariane).
+* `clickhouse-sql-highlight.js` — réapplique la coloration syntaxique aux blocs de code `language="sql"` à l’aide de l’analyseur lexical WASM (couleurs natives de ClickHouse, identiques à celles de play.html / clickhouse-client) à la place de Shiki. Doit être chargé après `clickhouse-sql-lexer-wasm.js`. Les autres langages restent tels que Shiki les a rendus.
 
 Pour ajouter un nouveau script, ajoutez une entrée
 `{ "src": "/_site/customizations/<name>.js" }`

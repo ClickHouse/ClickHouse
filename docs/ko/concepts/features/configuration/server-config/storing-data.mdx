@@ -34,6 +34,10 @@ ClickHouse에서 처리되는 데이터는 일반적으로 ClickHouse 서버가 
 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 및 [`Log`](/ko/reference/engines/table-engines/log-family/log)
 계열 테이블 엔진은 각각 `s3`, `azure_blob_storage`, `hdfs`(지원되지 않음) 타입의 디스크를 사용해 데이터를 `S3`, `AzureBlobStorage`, `HDFS`(지원되지 않음)에 저장할 수 있습니다.
 
+<Note>
+  `s3` 디스크 유형은 Alibaba Cloud Object Storage Service와 같은 S3-compatible 객체 스토리지 제공업체와도 사용할 수 있습니다. `endpoint`는 해당 제공업체의 S3-compatible endpoint로 구성하고, 제공업체별 compatibility 요구 사항도 고려하십시오.
+</Note>
+
 디스크를 구성하려면 다음이 필요합니다.
 
 1. `type` 섹션: 값은 `s3`, `azure_blob_storage`, `hdfs`(지원되지 않음), `local_blob_storage`, `web` 중 하나여야 합니다.

@@ -35,11 +35,11 @@ quantilesGK(accuracy, level1, level2, ...)(expr)
 
 **Arguments**
 
-* `expr` — カラムの値に対する式で、結果は数値 data types、Date、または DateTime になります。[`(U)Int*`](/ja/reference/data-types/int-uint) or [`Float*`](/ja/reference/data-types/float) or [`Decimal*`](/ja/reference/data-types/decimal) or [`Date`](/ja/reference/data-types/date) or [`DateTime`](/ja/reference/data-types/datetime)
+* `expr` — カラムの値に対する式で、結果は数値データ型、`Date`、`DateTime`、または `DateTime64` になります。[`(U)Int*`](/ja/reference/data-types/int-uint) or [`Int128`](/ja/reference/data-types/int-uint) or [`UInt128`](/ja/reference/data-types/int-uint) or [`Int256`](/ja/reference/data-types/int-uint) or [`UInt256`](/ja/reference/data-types/int-uint) or [`Float*`](/ja/reference/data-types/float) or [`Decimal*`](/ja/reference/data-types/decimal) or [`Date`](/ja/reference/data-types/date) or [`DateTime`](/ja/reference/data-types/datetime) or [`DateTime64`](/ja/reference/data-types/datetime64)
 
 **戻り値**
 
-指定したレベルの分位点を、指定されたレベルと同じ順序で格納した Array。[`Array(Float64)`](/ja/reference/data-types/array) or [`Array(Date)`](/ja/reference/data-types/array) or [`Array(DateTime)`](/ja/reference/data-types/array)
+指定したレベルの分位点を、指定されたレベルと同じ順序で格納した Array。数値データ型の場合、出力フォーマットは入力フォーマットと一致します。[`Array((U)Int*)`](/ja/reference/data-types/array) or [`Array(Int128)`](/ja/reference/data-types/array) or [`Array(UInt128)`](/ja/reference/data-types/array) or [`Array(Int256)`](/ja/reference/data-types/array) or [`Array(UInt256)`](/ja/reference/data-types/array) or [`Array(Float*)`](/ja/reference/data-types/array) or [`Array(Decimal*)`](/ja/reference/data-types/array) or [`Array(Date)`](/ja/reference/data-types/array) or [`Array(DateTime)`](/ja/reference/data-types/array) or [`Array(DateTime64)`](/ja/reference/data-types/array)
 
 **Examples**
 
