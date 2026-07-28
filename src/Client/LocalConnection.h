@@ -166,6 +166,8 @@ public:
 
     bool checkConnected(const ConnectionTimeouts & /*timeouts*/) override { return true; }
 
+    bool checkConnectedWithoutRoundTrip() override { return true; }
+
     void disconnect() override {}
 
     void setThrottler(const ThrottlerPtr &) override {}

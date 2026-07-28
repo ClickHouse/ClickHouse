@@ -148,11 +148,14 @@ public:
 
     bool isConnected() const override { return connected && in && out && !in->isCanceled() && !out->isCanceled(); }
 
-    /// Note that a server that went away without closing the connection is not detected here;
-    /// that only shows up when the connection is used. Pinging the server to find out would add a
-    /// round trip to every query, and a pong that does not arrive in time is indistinguishable from
-    /// a closed connection, so it would make the client drop live sessions under load.
-    bool checkConnected(const ConnectionTimeouts & /*timeouts*/) override { return isConnected() && !isStale(); }
+    bool checkConnected(const ConnectionTimeouts & timeouts) override { return isConnected() && ping(timeouts); }
+
+    /// Note that a server that went away without closing the connection is not detected here, and
+    /// neither is a close that has not arrived yet; that only shows up when the connection is used.
+    /// Pinging the server to find out would add a round trip to every query, and a pong that does
+    /// not arrive in time is indistinguishable from a closed connection, so it would make the client
+    /// drop live sessions under load.
+    bool checkConnectedWithoutRoundTrip() override { return isConnected() && !isStale(); }
 
     void disconnect() override;
 

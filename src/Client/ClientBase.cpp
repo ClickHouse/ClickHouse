@@ -2559,7 +2559,10 @@ void ClientBase::processParsedSingleQuery(
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
         connection->setFormatSettings(getFormatSettings(client_context));
 
-        if (!connection->checkConnected(connection_parameters.timeouts))
+        /// Deliberately without a round trip: this runs before every query, and the recovery paths
+        /// that need the connection to be synchronized with the server (after an exception) use
+        /// `checkConnected` instead.
+        if (!connection->checkConnectedWithoutRoundTrip())
             connect();
 
         applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()

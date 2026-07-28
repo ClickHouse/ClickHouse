@@ -775,7 +775,9 @@ bool Connection::isStale()
     /// It only sees a close that has already arrived: a connection closed by the server microseconds
     /// ago still looks usable, and that failure is reported by the request that runs into it. There is
     /// no way around it without a round trip - the answer to a ping is equally out of date the moment
-    /// it arrives.
+    /// it arrives. Recovering from a protocol desynchronization is different: there the client knows
+    /// that the server is about to close the connection and has to wait for it, so `checkConnected`
+    /// (which does ping) is used instead.
     try
     {
         return hasReadPendingData() || in->poll(0);
