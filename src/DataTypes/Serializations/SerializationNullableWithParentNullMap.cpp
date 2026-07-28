@@ -33,7 +33,11 @@ UInt128 SerializationNullableWithParentNullMap::getHash(const SerializationPtr &
     /// a pooled instance.
     hash.update(on_disk_type_ != nullptr);
     if (on_disk_type_)
-        hash.update(on_disk_type_->getName());
+    {
+        auto on_disk_type_name = on_disk_type_->getName();
+        hash.update(on_disk_type_name.size());
+        hash.update(on_disk_type_name);
+    }
     return hash.get128();
 }
 

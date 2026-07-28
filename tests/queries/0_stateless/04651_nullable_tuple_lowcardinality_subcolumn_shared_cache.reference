@@ -6,8 +6,8 @@
 
 SET enable_nullable_tuple_type = 1;
 SET allow_suspicious_low_cardinality_types = 1;
--- Reading the child `x.a.b` must not change what the parent `x.a` reads: the parent's dictionary stayed
--- non-nullable, so it gained the NULL placeholder even though the data holds no NULL at all.
+-- Reading the child `x.a.b` must not change what the parent `x.a` reads: the parent's dictionary must stay
+-- non-nullable and must not gain a NULL placeholder. Before the fix it gained one, with no NULL in the data.
 DROP TABLE IF EXISTS t_04651_no_nulls;
 CREATE TABLE t_04651_no_nulls (x Tuple(a Nullable(Tuple(b LowCardinality(UInt32))))) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS index_granularity = 1, min_bytes_for_wide_part = 1000000000;
