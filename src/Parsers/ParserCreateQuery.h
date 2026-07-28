@@ -171,7 +171,11 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserCollation collation_parser;
     ParserStatisticsType stat_type_parser;
     ParserExpression expression_parser;
-    ParserSetQuery settings_parser(true);
+    /// Column-level settings are consumed as a raw `SettingsChanges` (see
+    /// `MergeTreeColumnSettings::validate`), so nothing there knows the settings schema and could
+    /// reject a valueless setting. There is nothing to allow anyway: every setting permitted at
+    /// column level is a number, and `name` with no value only ever means `name = true`.
+    ParserSetQuery settings_parser(/* parse_only_internals_ = */ true, /* shorthand_syntax_ = */ false);
 
     /// mandatory column name
     ASTPtr name;
