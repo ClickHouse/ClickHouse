@@ -183,19 +183,26 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
         for (const auto & variant : variants)
         {
             const auto original_name = variant->getName();
-            String reparsed_name;
+
+            /// A name that cannot be parsed back cannot be shown to collide with another one, and the parser
+            /// used here is more restrictive about nesting depth than the one that parsed the query, so a
+            /// failure here does not mean the type is invalid. Skip such an element rather than refusing a
+            /// type whose elements may well stay distinct. The depth limits are reported by throwing even
+            /// through `tryGet`, so both outcomes have to be handled.
+            DataTypePtr reparsed_type;
             try
             {
-                reparsed_name = DataTypeFactory::instance().get(original_name)->getName();
+                reparsed_type = DataTypeFactory::instance().tryGet(original_name);
             }
-            catch (Exception & e)
+            catch (...) // Ok: a name that cannot be parsed proves no collision
             {
-                e.addMessage("while checking that the name of variant '{}' of type '{}' can be parsed back",
-                             original_name, data_type.getName());
-                throw;
+                continue;
             }
 
-            auto [it, inserted] = reparsed_to_original.emplace(reparsed_name, original_name);
+            if (!reparsed_type)
+                continue;
+
+            auto [it, inserted] = reparsed_to_original.emplace(reparsed_type->getName(), original_name);
             if (!inserted)
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
@@ -206,7 +213,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                     data_type.getName(),
                     it->second,
                     original_name,
-                    reparsed_name);
+                    it->first);
         }
     };
 

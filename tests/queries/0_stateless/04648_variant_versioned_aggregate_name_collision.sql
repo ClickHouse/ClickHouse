@@ -43,6 +43,12 @@ SELECT 'alter_modify', type FROM system.columns WHERE database = currentDatabase
 SELECT CAST(NULL, 'Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))'); -- { serverError ILLEGAL_COLUMN }
 DESC (SELECT * FROM format(TSV, 'v Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))', '')); -- { serverError ILLEGAL_COLUMN }
 
+-- The values table function treats a structure string it cannot validate as row data instead of
+-- refusing it, because tryParseColumnsListFromString reports any post-parse failure as "this is not
+-- a column list". That fallback is pre-existing and shared with every other check in
+-- validateDataType, so it is pinned here rather than changed.
+SELECT * FROM values('Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))', 'x');
+
 -- The check is an integrity requirement, not a suspicious type policy, so it is not gated by any
 -- setting. A nested Variant is created with no opt-in at all when the traversal of nested types is
 -- disabled, so the rejection must hold there as well.
@@ -78,7 +84,12 @@ CREATE TABLE t_control (
     c15 Geometry,
     c16 Dynamic,
     c17 Array(Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), UInt8)),
-    c18 AggregateFunction(any, Variant(String, UInt8))
+    c18 AggregateFunction(any, Variant(String, UInt8)),
+    -- A deeply nested element whose name cannot be parsed back by the more restrictive parser of
+    -- DataTypeFactory, which uses a lower depth limit than the one that parsed this statement. Such a
+    -- name cannot be shown to collide with another one, so the element is skipped instead of the whole
+    -- type being refused for a reason unrelated to a name collision.
+    c19 Variant(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(UInt8))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))), String)
 ) ENGINE = MergeTree ORDER BY tuple();
 SELECT 'controls', count() FROM system.columns WHERE database = currentDatabase() AND table = 't_control';
 SELECT 'c11', type FROM system.columns WHERE database = currentDatabase() AND table = 't_control' AND name = 'c11';

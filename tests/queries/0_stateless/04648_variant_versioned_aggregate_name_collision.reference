@@ -1,6 +1,8 @@
 alter_add	0
 alter_modify	Variant(AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))
-controls	18
+Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))
+x
+controls	19
 c11	Variant(AggregateFunction(7, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(sumMap, Array(UInt64), Array(UInt64)))
 c12	Variant(AggregateFunction(1, groupBitmap, UInt32), AggregateFunction(groupBitmap, UInt32))
 attached	Variant(AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(sumMap, Array(UInt64), Array(UInt64)))
