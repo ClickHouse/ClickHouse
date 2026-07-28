@@ -42,7 +42,7 @@ Sources are searched in the order they were listed in `CREATE DATABASE … ENGIN
 | `OPTIMIZE TABLE dboverlay.*` | **Rejected** — `TABLE_IS_PERMANENTLY_READ_ONLY`. Optimize the table in the underlying database that owns it. |
 | `DELETE FROM dboverlay.*`  | **Rejected** — `TABLE_IS_PERMANENTLY_READ_ONLY`. Delete in the underlying database that owns the table.     |
 | `UPDATE dboverlay.*`       | **Rejected** — `TABLE_IS_PERMANENTLY_READ_ONLY`. Update in the underlying database that owns the table.     |
-| `SYSTEM ... dboverlay.*` / `SYSTEM ... FROM DATABASE dboverlay` | **Rejected** — `TABLE_IS_PERMANENTLY_READ_ONLY`. Run the `SYSTEM` command (e.g. `STOP MERGES`, `RESTART REPLICA`, `DROP REPLICA`) against the underlying database that owns the table. Whole-server `SYSTEM` commands (with no database named) skip the facade and reach its source tables through their owner databases instead. |
+| `SYSTEM ... dboverlay.*` / `SYSTEM ... FROM DATABASE dboverlay` | **Rejected** — `TABLE_IS_PERMANENTLY_READ_ONLY`. Run the `SYSTEM` command (e.g. `STOP MERGES`, `RESTART REPLICA`, `DROP REPLICA`) against the underlying database that owns the table. This includes the commands that take a list of tables, such as `SYSTEM FLUSH ASYNC INSERT QUEUE dboverlay.t` and its unqualified form when `dboverlay` is the current database. Whole-server `SYSTEM` commands (with no table or database named) skip the facade and reach its source tables through their owner databases instead. |
 | `TRUNCATE DATABASE dboverlay` / `TRUNCATE TABLES FROM dboverlay` | **Rejected** — `TABLE_IS_PERMANENTLY_READ_ONLY`. Truncate in the underlying databases that own the tables. |
 | `INSERT INTO dboverlay.*`  | **Pass-through** — executes against the table in the corresponding underlying database.         |
 
@@ -183,6 +183,15 @@ other per-database enumerations) follow the same rule when they walk the facade:
 database that fails while being listed contributes no rows unless the caller is granted
 `SHOW TABLES` on that source database, in which case the source's own error propagates,
 the same as when listing the source directly.
+
+Listing through the facade otherwise preserves each source database's own listing behaviour. The
+table-name filter of a `system.tables` query is forwarded to every source database, so a source
+that can push it down to an external catalog (a `DataLake` database) still does, and a source
+whose listing tolerates a table whose metadata cannot be fetched still lists the rest of its
+tables rather than failing the whole facade. A names-only listing (`SHOW TABLES`,
+`SELECT name FROM system.tables`) likewise stays a names-only listing and does not resolve the
+storage of every source table. A table name exposed by several sources is listed once, resolved to
+the first source that has it, as with any other lookup through the facade.
 
 Creating an `Overlay` database requires a `SELECT` privilege on each underlying database
 it unions. A user who cannot read a source database therefore cannot expose it through a

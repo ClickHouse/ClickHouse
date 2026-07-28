@@ -76,6 +76,27 @@ public:
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
+    /// The `Overlay` forwards the listing hint to every source database, so a source that can push
+    /// it down to an external catalog (`DataLake`) keeps doing so behind the facade, and a source
+    /// whose hint-aware iterator tolerates unresolvable tables keeps that behaviour too. Without
+    /// these overrides the facade fell back to the plain, heavyweight `getTablesIterator` of each
+    /// source: the hint was dropped and one unreadable source table aborted the whole listing,
+    /// even though listing that source database directly succeeded.
+    DatabaseTablesIteratorPtr getTablesIteratorWithHint(
+        ContextPtr context,
+        const FilterByNameFunction & filter_by_table_name,
+        bool skip_not_loaded,
+        const TablesFilter & tables_filter) const override;
+
+    std::vector<LightWeightTableDetails> getLightweightTablesIterator(
+        ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+
+    std::vector<LightWeightTableDetails> getLightweightTablesIteratorWithHint(
+        ContextPtr context,
+        const FilterByNameFunction & filter_by_table_name,
+        bool skip_not_loaded,
+        const TablesFilter & tables_filter) const override;
+
     bool empty() const override;
 
     void shutdown() override;
@@ -192,6 +213,14 @@ protected:
     /// In non-readonly mode (clickhouse-local), returns the directly-registered
     /// databases stored in `databases`.
     std::vector<DatabasePtr> resolveDatabases() const;
+
+    /// Runs `collect` for every source database with the read-only facade's fail-closed fencing:
+    /// opening a source's iterator can reach a remote catalog and throw that source's own error
+    /// before any source-side grant is proven, so the error propagates only to a caller granted
+    /// `SHOW TABLES` on the whole source database, and is otherwise swallowed (a failing source
+    /// contributes nothing, indistinguishable from an empty or a denied one). Shared by all the
+    /// listing entry points so they cannot drift apart.
+    void collectFromSourceDatabases(ContextPtr context, const std::function<void(const DatabasePtr &)> & collect) const;
 
     /// Directly registered underlying databases (clickhouse-local non-readonly mode).
     /// Empty in readonly mode.

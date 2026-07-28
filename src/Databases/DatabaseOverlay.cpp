@@ -572,22 +572,10 @@ void DatabaseOverlay::shutdown()
         db->shutdown();
 }
 
-DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
+void DatabaseOverlay::collectFromSourceDatabases(ContextPtr context_, const std::function<void(const DatabasePtr &)> & collect) const
 {
-    /// Note: the `Overlay` exposes the *union* of tables from its underlying
-    /// databases. The same physical table may also be reachable directly via
-    /// its owner database registered in `DatabaseCatalog`. Callers that
-    /// aggregate across all databases (e.g. `ServerAsynchronousMetrics`) must
-    /// deduplicate by `IStorage *` to avoid double-counting.
-    Tables tables;
     for (const auto & db : resolveDatabases())
     {
-        auto collect = [&]
-        {
-            for (auto table_it = db->getTablesIterator(context_, filter_by_table_name, skip_not_loaded); table_it->isValid(); table_it->next())
-                tables.insert({table_it->name(), table_it->table()});
-        };
-
         /// Fail-closed listing through the read-only facade: opening a source's iterator can reach
         /// a remote catalog (`MySQL`, `PostgreSQL`, data-lake catalogs) and throw that source's own
         /// error before any source-side grant is proven, which would let a caller granted only on
@@ -602,7 +590,7 @@ DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_
         {
             try
             {
-                collect();
+                collect(db);
             }
             catch (...)
             {
@@ -613,10 +601,69 @@ DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_
         }
         else
         {
-            collect();
+            collect(db);
         }
     }
+}
+
+DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
+{
+    /// Note: the `Overlay` exposes the *union* of tables from its underlying
+    /// databases. The same physical table may also be reachable directly via
+    /// its owner database registered in `DatabaseCatalog`. Callers that
+    /// aggregate across all databases (e.g. `ServerAsynchronousMetrics`) must
+    /// deduplicate by `IStorage *` to avoid double-counting.
+    Tables tables;
+    collectFromSourceDatabases(context_, [&](const DatabasePtr & db)
+    {
+        for (auto table_it = db->getTablesIterator(context_, filter_by_table_name, skip_not_loaded); table_it->isValid(); table_it->next())
+            tables.insert({table_it->name(), table_it->table()});
+    });
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
+}
+
+DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIteratorWithHint(
+    ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded, const TablesFilter & tables_filter) const
+{
+    /// Same as `getTablesIterator`, but each source database gets the hint, so a source that pushes
+    /// it down to an external catalog still does, and a source whose hint-aware iterator keeps
+    /// unresolvable tables (a null storage) instead of aborting the listing still does. The facade
+    /// must not degrade a source's own listing semantics.
+    Tables tables;
+    collectFromSourceDatabases(context_, [&](const DatabasePtr & db)
+    {
+        for (auto table_it = db->getTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, tables_filter);
+             table_it->isValid();
+             table_it->next())
+            tables.insert({table_it->name(), table_it->table()});
+    });
+    return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
+}
+
+std::vector<LightWeightTableDetails> DatabaseOverlay::getLightweightTablesIterator(
+    ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
+{
+    return getLightweightTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, {});
+}
+
+std::vector<LightWeightTableDetails> DatabaseOverlay::getLightweightTablesIteratorWithHint(
+    ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded, const TablesFilter & tables_filter) const
+{
+    /// The default implementation of `IDatabase::getLightweightTablesIterator` walks the heavyweight
+    /// `getTablesIterator`, which behind a facade resolves the storage of every table of every
+    /// source. Forward to the sources' own lightweight listing instead, so a names-only query
+    /// (`SHOW TABLES`, `SELECT name FROM system.tables`) stays as cheap through the facade as it is
+    /// against the source databases. Names are deduplicated because the same physical table can be
+    /// exposed by several sources; the first listed source wins, as in `getTablesIterator`.
+    std::vector<LightWeightTableDetails> result;
+    std::unordered_set<String> seen_names;
+    collectFromSourceDatabases(context_, [&](const DatabasePtr & db)
+    {
+        for (const auto & details : db->getLightweightTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, tables_filter))
+            if (seen_names.insert(details.name).second)
+                result.push_back(details);
+    });
+    return result;
 }
 
 bool DatabaseOverlay::isExternal() const

@@ -1,0 +1,30 @@
+no filter
+only_in_b
+other
+pref_one
+pref_two
+shadowed
+equality filter, names only
+pref_one
+only_in_b
+equality filter, engine and uuid resolved through the facade
+pref_one	MergeTree
+pref_one	00000000-0000-0000-0000-000000000000
+only_in_b	00000000-0000-0000-0000-000000000000
+other	00000000-0000-0000-0000-000000000000
+pref_one	00000000-0000-0000-0000-000000000000
+pref_two	00000000-0000-0000-0000-000000000000
+shadowed	00000000-0000-0000-0000-000000000000
+LIKE filter
+pref_one
+pref_two
+startsWith filter
+only_in_b
+a shadowed name is reported once, resolved to the first source
+shadowed	MergeTree
+SHOW TABLES with a pattern
+pref_one
+pref_two
+the sources themselves are unaffected
+db_src_b_04650	only_in_b
+db_src_b_04650	shadowed
