@@ -3,6 +3,7 @@
 -- Tag memory-engine: with echo the statement text is the output, so rewriting ENGINE = Memory to
 -- MergeTree would diverge from the reference
 SET allow_suspicious_low_cardinality_types = 1;
+SET join_use_nulls = 0; -- CI may inject True; the Join engine rejects a mismatched join_use_nulls (StorageJoin.cpp getJoinLocked), and a LEFT-join miss would read NULL instead of 0
 
 -- 1. The reported query (issue #104918) returns the correct answer instead of INCOMPATIBLE_TYPE_OF_JOIN.
 CREATE TABLE jt (k UInt32, jv Int64) ENGINE = Join(ANY, LEFT, k);
@@ -217,6 +218,8 @@ CREATE TABLE l_r64 (k UInt64, lv String) ENGINE = Memory;
 INSERT INTO l_r64 VALUES (2, 'a'), (4294967298, 'b');
 SELECT arraySort(groupArray((k, jv, lv))) FROM l_r64 ALL RIGHT JOIN o_r32 USING (k);
 SELECT arraySort(groupArray((k, jv, lv))) FROM l_r64 ALL RIGHT JOIN s_r32 USING (k);
+-- The projected USING column keeps the left key's declared type, not the narrowed storage key type.
+SELECT arraySort(groupArray(toTypeName(k))) FROM l_r64 ALL RIGHT JOIN s_r32 USING (k);
 SELECT count() > 0 FROM (EXPLAIN PLAN description = 1
     SELECT k FROM l_r64 ALL RIGHT JOIN s_r32 USING (k))
 WHERE explain ILIKE '%FilledJoin%';
@@ -230,7 +233,19 @@ SELECT count() > 0 FROM (EXPLAIN PLAN description = 1
     SELECT k FROM l_r64 ALL FULL JOIN s_f32 USING (k))
 WHERE explain ILIKE '%FilledJoin%';
 
--- 14. Custom-named integer storage keys decline: Bool is a UInt8 whose comparison semantics differ,
+-- 14. Strictness axis: the Join engine also accepts SEMI/ANTI, and a SEMI storage table reaches the
+-- same conversion, so the narrowing must apply there too. Master refuses this shape.
+CREATE TABLE s_semi (k UInt32, jv Int64) ENGINE = Join(SEMI, LEFT, k);
+INSERT INTO s_semi VALUES (2, 10), (4, 20);
+CREATE TABLE o_semi (k UInt32, jv Int64) ENGINE = Memory;
+INSERT INTO o_semi VALUES (2, 10), (4, 20);
+SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_u64_oor AS l SEMI LEFT JOIN o_semi AS r USING (k);
+SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_u64_oor AS l SEMI LEFT JOIN s_semi AS r USING (k);
+SELECT count() > 0 FROM (EXPLAIN PLAN description = 1
+    SELECT sum(r.jv) FROM l_u64_oor AS l SEMI LEFT JOIN s_semi AS r USING (k))
+WHERE explain ILIKE '%FilledJoin%';
+
+-- 15. Custom-named integer storage keys decline: Bool is a UInt8 whose comparison semantics differ,
 -- accurateCastOrNull(2, 'Bool') is true, so admitting it would report 14 / [7,7] instead of 7 / [7,0].
 CREATE TABLE s_bool (k Bool, jv Int64) ENGINE = Join(ANY, LEFT, k);
 INSERT INTO s_bool VALUES (true, 7);

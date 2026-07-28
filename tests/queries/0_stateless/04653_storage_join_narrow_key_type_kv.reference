@@ -4,7 +4,8 @@
 -- Tag no-ordinary-database: the rocksdb data directory cannot always be locked in an Ordinary database
 -- Tag memory-engine: with echo the statement text is the output, so rewriting ENGINE = Memory to
 -- MergeTree would diverge from the reference
-
+SET join_use_nulls = 0; -- CI may inject True; a LEFT-join miss would then read NULL instead of 0
+SET join_algorithm = 'direct,hash'; -- CI may inject another algorithm; direct is what the DirectKeyValueJoin assertion below is about, hash is the fallback for the narrowing case
 -- A key-value entity is not a StorageJoin: its lookup is not built from a frozen hash table, so the
 -- narrowing rewrite added for Join-engine tables must not apply here. This pins the plan shape, not
 -- just the result, because both shapes answer correctly.
