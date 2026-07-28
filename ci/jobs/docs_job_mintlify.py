@@ -126,10 +126,9 @@ def _protected_docs_guard():
     # both revisions explicitly so the comparison does not depend on checkout
     # depth or on whether merge-commit checkout is enabled. The guard compares
     # the two endpoint trees directly, so their ancestry is not needed.
-    pull_ref = f"refs/pull/{info.pr_number}/head"
     if not Shell.check(
         "git fetch --no-tags --depth=1 --filter=blob:none origin "
-        f"{shlex.quote(merge_base)} {shlex.quote(pull_ref)}",
+        f"{shlex.quote(merge_base)} {shlex.quote(info.sha)}",
         verbose=True,
     ):
         print("Error: could not fetch the PR revisions, cannot run the check.")

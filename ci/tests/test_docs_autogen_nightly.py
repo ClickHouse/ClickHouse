@@ -111,7 +111,7 @@ def test_protected_docs_guard_fetches_only_endpoint_revisions(monkeypatch):
     assert checks == [
         (
             "git fetch --no-tags --depth=1 --filter=blob:none origin "
-            "base123 refs/pull/12345/head",
+            "base123 head123",
             {"verbose": True},
         )
     ]
