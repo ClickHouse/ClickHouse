@@ -311,8 +311,7 @@ struct BitpackingBlockCodecImpl<false>
         /// written: callers may decode into a reused buffer, and SIMDComp's SIMD_nullunpacker32 writes them too.
         if constexpr (Bits == 0)
         {
-            for (size_t i = 0; i < groups * 4; ++i)
-                out[i] = 0;
+            std::memset(out, 0, groups * 4 * sizeof(uint32_t));
             return in;
         }
 
@@ -533,8 +532,7 @@ struct BitpackingBlockCodecImpl<false>
         /// callers may decode into a reused buffer, and SIMDComp's simdunpack_shortlength writes them too.
         if constexpr (Bits == 0)
         {
-            for (size_t i = 0; i < tail; ++i)
-                out[i] = 0;
+            std::memset(out, 0, tail * sizeof(uint32_t));
             return in;
         }
 
