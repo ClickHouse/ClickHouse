@@ -147,12 +147,13 @@ private:
 
     /// Joins right table columns which indexes are present in right_indexes using specified map.
     /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
+    /// `fast_path` compiles out the per-row null-map and join-mask checks for the common case of
+    /// non-nullable keys and no ON-section condition (the checks are done at runtime otherwise).
     template <
         typename KeyGetter,
         typename Map,
         bool need_filter,
-        bool check_null_map,
-        JoinCommon::JoinMask::Kind join_mask_kind,
+        bool fast_path,
         typename AddedColumns,
         typename Selector>
     static size_t joinRightColumns(
@@ -166,33 +167,10 @@ private:
         typename KeyGetter,
         typename Map,
         bool need_filter,
-        bool check_null_map,
-        typename AddedColumns,
-        typename Selector>
-    static size_t joinRightColumnsSwitchJoinMaskKind(
-        std::vector<KeyGetter> && key_getter_vector,
-        const std::vector<const Map *> & mapv,
-        AddedColumns & added_columns,
-        JoinStuff::JoinUsedFlags & used_flags,
-        const Selector & selector);
-
-    template <
-        typename KeyGetter,
-        typename Map,
-        bool need_filter,
-        bool check_null_map,
-        JoinCommon::JoinMask::Kind join_mask_kind,
+        bool fast_path,
         typename AddedColumns,
         typename Selector>
     static size_t joinRightColumns(
-        KeyGetter & key_getter,
-        const Map * map,
-        AddedColumns & added_columns,
-        JoinStuff::JoinUsedFlags & used_flags,
-        const Selector & selector);
-
-    template <typename KeyGetter, typename Map, bool need_filter, bool check_null_map, typename AddedColumns, typename Selector>
-    static size_t joinRightColumnsSwitchJoinMaskKind(
         KeyGetter & key_getter,
         const Map * map,
         AddedColumns & added_columns,

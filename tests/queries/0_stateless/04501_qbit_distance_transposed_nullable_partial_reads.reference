@@ -1,0 +1,90 @@
+-- optimization enabled on Nullable(QBit): reads Nullable(FixedString) planes vec.1 .. vec.4, result Nullable(Float64)
+Expression ((Project names + (Projection + Change column names to column identifiers)))
+Actions: INPUT : 0 -> id UInt32 : 0
+         INPUT : 1 -> vec.1 Nullable(FixedString(2)) : 1
+         INPUT : 2 -> vec.2 Nullable(FixedString(2)) : 2
+         INPUT : 3 -> vec.3 Nullable(FixedString(2)) : 3
+         INPUT : 4 -> vec.4 Nullable(FixedString(2)) : 4
+         COLUMN Const(UInt8) -> 16_UInt8 UInt8 : 5
+         COLUMN Const(Array(BFloat16)) -> _CAST(arrayMap(i UInt8 -> multiply(i, 2_UInt8), _CAST([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,... Array(BFloat16) : 6
+         ALIAS id :: 0 -> __table1.id UInt32 : 7
+         ALIAS vec.1 :: 1 -> __table1.`vec.1` Nullable(FixedString(2)) : 0
+         ALIAS vec.2 :: 2 -> __table1.`vec.2` Nullable(FixedString(2)) : 1
+         ALIAS vec.3 :: 3 -> __table1.`vec.3` Nullable(FixedString(2)) : 2
+         ALIAS vec.4 :: 4 -> __table1.`vec.4` Nullable(FixedString(2)) : 3
+         ALIAS __table1.id :: 7 -> id UInt32 : 4
+         FUNCTION L2DistanceTransposed(__table1.`vec.1` :: 0, __table1.`vec.2` :: 1, __table1.`vec.3` :: 2, __table1.`vec.4` :: 3, 16_UInt8 :: 5, _CAST(arrayMap(i UInt8 -> multiply(i, 2_UInt8), _CAST([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,... :: 6) -> L2DistanceTransposed(__table1.`vec.1`, __table1.`vec.2`, __table1.`vec.3`, __table1.`vec.4`, 16_UInt... Nullable(Float64) : 7
+         ALIAS L2DistanceTransposed(__table1.`vec.1`, __table1.`vec.2`, __table1.`vec.3`, __table1.`vec.4`, 16_UInt8, _CAST(arrayMap(i UInt8 -> multiply(i, 2_UInt8), _CAST([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]_Array(UInt8), \'Array(UInt8)\'_String)), \'Array(BFloat16)\'_String)) :: 7 -> dist Nullable(Float64) : 6
+Positions: 4 6
+  ReadFromMemoryStorage
+-- optimization disabled: reads the whole Nullable(QBit) column
+Expression ((Project names + (Projection + Change column names to column identifiers)))
+Actions: INPUT : 0 -> id UInt32 : 0
+         INPUT : 1 -> vec Nullable(QBit(BFloat16, 16)) : 1
+         COLUMN Const(Array(UInt16)) -> arrayMap(i UInt8 -> multiply(i, 2_UInt8), _CAST([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 1... Array(UInt16) : 2
+         COLUMN Const(UInt8) -> 4_UInt8 UInt8 : 3
+         ALIAS id :: 0 -> __table1.id UInt32 : 4
+         ALIAS vec :: 1 -> __table1.vec Nullable(QBit(BFloat16, 16)) : 0
+         ALIAS __table1.id :: 4 -> id UInt32 : 1
+         FUNCTION L2DistanceTransposed(__table1.vec :: 0, arrayMap(i UInt8 -> multiply(i, 2_UInt8), _CAST([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 1... :: 2, 4_UInt8 :: 3) -> L2DistanceTransposed(__table1.vec, arrayMap(i UInt8 -> multiply(i, 2_UInt8), _CAST([0, 1, 2, 3, 4, 5... Nullable(Float64) : 4
+         ALIAS L2DistanceTransposed(__table1.vec, arrayMap(i UInt8 -> multiply(i, 2_UInt8), _CAST([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]_Array(UInt8), \'Array(UInt8)\'_String)), 4_UInt8) :: 4 -> dist Nullable(Float64) : 3
+Positions: 1 3
+  ReadFromMemoryStorage
+-- MergeTree: optimization on reads only the 4 requested vec.N streams (expect 4)
+4
+-- MergeTree: optimization off reads the whole vec column, no per-stream subcolumns in the plan (expect 0)
+0
+-- MergeTree: the outer NULL map propagates through the partial read, NULL rows (2, 4) stay NULL
+1	0
+2	1
+3	0
+4	1
+-- MergeTree: the optimized on-disk read equals the unoptimized whole-column read exactly, values and NULL mask (expect 1)
+1
+-- non-strided L2DistanceTransposed, precision 8, optimization on == off
+1
+-- non-strided cosineDistanceTransposed, precision 16, optimization on == off
+1
+-- non-strided dotProductTransposed, full precision 32, optimization on == off
+1
+-- result type is Nullable(Float64) with the optimization on and off
+Nullable(Float64)
+Nullable(Float64)
+-- strided dotProductTransposed, used_dims 8, precision 16, optimization on == off
+1
+-- strided L2DistanceTransposed, all dimensions, precision 8, optimization on == off
+1
+-- Dynamic reference vector: the optimization must bail (result stays Dynamic) and must not raise a logical error
+Dynamic
+-- Dynamic reference vector: the unoptimized query still runs and the optimization did not change the result (expect 1)
+1
+-- Variant reference vector: the optimization must bail, reading the whole vec column, not the vec.N planes (expect 0)
+0
+-- Variant reference vector: result type stays Nullable(Float64) with the optimization on and off
+Nullable(Float64)
+Nullable(Float64)
+-- Variant reference vector (valid arrays + NULL rows): optimization on == off, values and NULL mask (expect 1)
+1
+-- Constant NULL Variant reference vector: unoptimized path is NULL for every row; on == off (expect 1)
+1
+-- NULL reference vector: the optimization must bail, reading the whole vec column, not the vec.N planes (expect 0)
+0
+-- NULL reference vector: result type with the optimization on and off
+Nullable(Nothing)
+Nullable(Nothing)
+-- NULL reference vector: optimization on == off, every row NULL (expect 1)
+1
+-- quantized L2/cosine/dotProductTransposedQuantized on Nullable(QBit(Int8)): each bails, reading the whole vec column, not the vec.N planes (expect 0, 0, 0)
+0
+0
+0
+-- quantized Nullable(QBit(Int8)): result type stays Nullable(Float64) with the optimization on and off
+Nullable(Float64)
+Nullable(Float64)
+-- quantized Nullable(QBit(Int8)): NULL rows (2, 4) stay NULL
+1	0
+2	1
+3	0
+4	1
+-- quantized Nullable(QBit(Int8)): optimization on == off, values and NULL mask (expect 1)
+1

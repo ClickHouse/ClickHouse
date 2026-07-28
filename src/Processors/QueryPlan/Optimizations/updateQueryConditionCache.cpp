@@ -93,6 +93,11 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     {
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
+            /// Only tag the storage WHERE filter, not one carrying e.g. `__applyFilter`.
+            const auto * filter_node = filter_step->getExpression().tryFindInOutputs(filter_step->getFilterColumnName());
+            if (!filter_node || !isDeterministicAllowingTopKFilter(filter_node))
+                return;
+
             /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
             /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
             size_t condition_hash = filter_actions_dag->getOutputs()[0]->getHash();
