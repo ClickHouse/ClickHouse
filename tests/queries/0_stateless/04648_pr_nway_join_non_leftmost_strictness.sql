@@ -86,6 +86,20 @@ SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
     EXPLAIN SELECT t1.c FROM t1 INNER JOIN t2 ON t1.c = t2.c
         ASOF INNER JOIN t3 ON t1.c = t3.c AND t1.d < t3.d ORDER BY ALL);
 
+-- `PASTE JOIN` pairs rows by position, so it is not distributive over a partition of the left side
+-- either. It carries `ALL` strictness (the parser forbids an explicit `ANY`/`ALL` on `PASTE`, and
+-- `Unspecified` is normalized to `join_default_strictness`), so it needs a kind-level veto.
+SELECT 'paste non-leftmost: reads from remote replicas';
+SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
+    EXPLAIN SELECT t1.c, t2.c, t3.c FROM t1 INNER JOIN t2 ON t1.c = t2.c PASTE JOIN t3 ORDER BY ALL);
+
+-- A `PASTE JOIN` in the leftmost slot is already ineligible on `master`
+-- (`allowParallelReplicasForJoinTree` admits only `(Inner, All)`, `Left` and a simple `RIGHT`),
+-- so this is a guard rather than a discriminator.
+SELECT 'two-way paste: reads from remote replicas';
+SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
+    EXPLAIN SELECT t1.c, t3.c FROM t1 PASTE JOIN t3 ORDER BY ALL);
+
 -- Results: `ANY INNER JOIN ... ON 1` emits exactly one pair for the constant key --
 -- `ConstantJoin` gives `INNER ANY` `left_rows_to_join = FirstRowOnly`, so the join
 -- contributes a single row however many left rows there are.

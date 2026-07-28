@@ -2633,18 +2633,26 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             /// of the left side: `ALL` (every matching pair is emitted, so concatenating per-replica
             /// results reproduces the full product), and any `LEFT` kind (`ConstantJoin` keeps
             /// `left_rows_to_join = All` there, so each left row independently selects its own right
-            /// row). Every other strictness collapses across the whole left side -- `INNER ANY`,
-            /// `RIGHT ANY` and `RIGHT SEMI` use `FirstRowOnly`, implemented as a single
-            /// `has_seen_matching_rows` compare-exchange -- and re-applying it per replica duplicates
-            /// rows. Outside `LEFT` the strictness test is a whitelist, so a future `JoinStrictness`
+            /// row). The strictnesses that demonstrably collapse across the whole left side are `INNER ANY`,
+            /// `RIGHT ANY` and `RIGHT SEMI`: they use `FirstRowOnly`, implemented as a single
+            /// `has_seen_matching_rows` compare-exchange, so re-applying it per replica duplicates
+            /// rows. The test is a conservative whitelist rather than an exact characterization --
+            /// `ASOF` selects its closest right row per left row and is vetoed only because it is
+            /// not `ALL`. Outside `LEFT` the strictness test is a whitelist, so a future `JoinStrictness`
             /// enumerator is fail-closed there; under `LEFT` every strictness is admitted, which is
             /// the point of the kind exemption below.
             /// Note this is a strictness rule only: a non-distributive KIND
             /// (`FULL`/`GLOBAL`/`CROSS`, or a misplaced `RIGHT`) is the business of the disjuncts above,
             /// which is why `ALL` is admitted for every kind here.
+            /// `PASTE` is the one KIND that must be vetoed here rather than by the disjuncts above:
+            /// it pairs rows by POSITION (`PasteJoinAlgorithm::merge`), so it is not distributive
+            /// over a partition of the left side, yet it carries strictness `All` -- the parser
+            /// forbids an explicit `ANY`/`ALL` on `PASTE`, so the node reaches the planner with
+            /// `Unspecified`, which is then normalized to `join_default_strictness` (`All` by
+            /// default). `isCrossOrComma` does not include it, so `is_cross_join` never covers it.
             if (is_non_leftmost_join_tree_node
-                && join_node.getStrictness() != JoinStrictness::All
-                && join_kind != JoinKind::Left)
+                && (join_kind == JoinKind::Paste
+                    || (join_node.getStrictness() != JoinStrictness::All && join_kind != JoinKind::Left)))
                 has_unsafe_non_leftmost_join = true;
 
             continue;

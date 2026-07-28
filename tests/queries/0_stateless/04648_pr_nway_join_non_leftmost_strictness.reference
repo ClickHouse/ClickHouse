@@ -24,6 +24,10 @@ left/semi non-leftmost: reads from remote replicas
 1
 asof/inner non-leftmost: reads from remote replicas
 0
+paste non-leftmost: reads from remote replicas
+0
+two-way paste: reads from remote replicas
+0
 inner/any non-leftmost: rows
 2	2	7
 inner/any non-leftmost under a left leftmost join: row count
