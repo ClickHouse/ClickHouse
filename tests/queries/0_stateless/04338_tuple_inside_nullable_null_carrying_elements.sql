@@ -46,8 +46,8 @@ SELECT tup.a, tup.v, tup.s, isNull(tup.a), isNull(tup.v), isNull(tup.s) FROM t_n
 SELECT count(tup.a), count(tup.v), count(tup.s) FROM t_null_carrying_mem;
 DROP TABLE t_null_carrying_mem;
 
--- A plain LowCardinality element without Nullable inside cannot represent NULL: the extracted subcolumn
--- keeps its type and rows where the outer tuple is NULL read as default values.
+-- A plain LowCardinality(T) element cannot be wrapped in Nullable, so the extracted subcolumn is promoted
+-- to LowCardinality(Nullable(T)) and rows where the outer tuple is NULL read as NULL through it.
 DROP TABLE IF EXISTS t_lc_plain;
 CREATE TABLE t_lc_plain (tup Nullable(Tuple(p LowCardinality(String)))) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;

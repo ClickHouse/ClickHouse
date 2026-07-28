@@ -1,0 +1,97 @@
+---
+sidebarTitle: 'أدوار وأذونات وحدة التحكم'
+slug: /cloud/security/console-roles
+title: 'أدوار وأذونات وحدة التحكم'
+description: 'توضح هذه الصفحة الأدوار القياسية والأذونات المرتبطة بها في وحدة تحكم ClickHouse Cloud'
+doc_type: 'مرجع'
+keywords: ['أدوار وحدة التحكم', 'الأذونات', 'التحكم في الوصول', 'الأمان', 'RBAC']
+---
+
+<div id="organization-roles">
+  ## أدوار المؤسسة
+</div>
+
+راجِع [إدارة مستخدمي السحابة](/ar/products/cloud/guides/security/cloud-access-management/manage-cloud-users) للحصول على إرشادات حول تعيين أدوار المؤسسة.
+
+يوفّر ClickHouse أربعة أدوار على مستوى المؤسسة لإدارة المستخدمين. ولا يملك وصولًا افتراضيًا إلى الخدمات إلا دور المسؤول. ويجب إقران جميع الأدوار الأخرى بأدوار على مستوى الخدمة للتعامل مع الخدمات.
+
+| الدور            | الوصف                                                                                                                                                                        |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| المسؤول          | تنفيذ جميع الأنشطة الإدارية للمؤسسة والتحكم في جميع الإعدادات. يُعيَّن هذا الدور افتراضيًا لأول مستخدم في المؤسسة، ويحصل تلقائيًا على أذونات مسؤول الخدمة على جميع الخدمات. |
+| الفوترة          | عرض الاستخدام والفواتير وإدارة طرق الدفع.                                                                                                                                    |
+| قارئ API للمؤسسة | أذونات API لإدارة الإعدادات والمستخدمين على مستوى المؤسسة، من دون وصول إلى الخدمات.                                                                                          |
+| عضو              | يتيح تسجيل الدخول فقط مع إمكانية إدارة إعدادات الملف الشخصي. ويُعيَّن افتراضيًا لمستخدمي SAML SSO.                                                                           |
+
+<div id="service-roles">
+  ## أدوار الخدمة
+</div>
+
+راجع [إدارة مستخدمي Cloud](/ar/products/cloud/guides/security/cloud-access-management/manage-cloud-users) للحصول على إرشادات حول تعيين أدوار الخدمة.
+
+يجب أن يمنح المسؤول أذونات الخدمة صراحةً للمستخدمين الذين لديهم أدوار بخلاف دور المسؤول. يكون دور مسؤول الخدمة مُعَدًّا مسبقًا مع وصول إداري إلى وحدة تحكم SQL، ولكن يمكن تعديله لتقليل الأذونات أو إزالتها.
+
+| الدور                | الوصف                                           |
+| -------------------- | ----------------------------------------------- |
+| قارئ الخدمة          | عرض الخدمات والإعدادات.                         |
+| مسؤول الخدمة         | إدارة إعدادات الخدمة.                           |
+| قارئ API للخدمة      | أذونات API لقراءة إعدادات الخدمة لجميع الخدمات. |
+| مسؤول API للخدمة     | أذونات API لإدارة إعدادات الخدمة لجميع الخدمات. |
+| قارئ API لخدمة Basic | أذونات API لاستخدام نقاط نهاية Query API.       |
+
+<div id="sql-console-roles">
+  ## أدوار وحدة تحكم SQL
+</div>
+
+راجِع [إدارة تعيينات أدوار وحدة تحكم SQL](/ar/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments) للحصول على إرشادات حول تعيين أدوار وحدة تحكم SQL.
+
+| الدور                      | الوصف                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------- |
+| قراءة فقط في وحدة تحكم SQL | وصول للقراءة فقط إلى قواعد البيانات ضمن الخدمة.                                 |
+| مسؤول وحدة تحكم SQL        | وصول إداري إلى قواعد البيانات ضمن الخدمة، بما يعادل دور قاعدة البيانات Default. |
+
+<div id="console-permissions">
+  ## أذونات وحدة التحكم
+</div>
+
+يوضح الجدول أدناه أذونات ClickHouse console ووحدة تحكم SQL. وتتوفر معلومات إضافية عبر الرابط الموجود في عنوان كل فئة.
+
+| الأذونة                                                                                                                                         | الوصف                                                                                                                                                                          |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **المؤسسة** ([مزيد من المعلومات](/ar/products/cloud/guides/security/cloud-access-management/manage-cloud-users))                              | أذونات على مستوى المؤسسة                                                                                                                                                       |
+| control-plane:organization:view                                                                                                                 | عرض تفاصيل المؤسسة والبيانات الوصفية للقراءة فقط.                                                                                                                              |
+| control-plane:organization:manage                                                                                                               | إدارة إعدادات المؤسسة والمستخدمين.                                                                                                                                             |
+| **Billing** ([مزيد من المعلومات](/ar/products/cloud/reference/billing/index))                                                                      | إدارة الفوترة والفواتير                                                                                                                                                        |
+| control-plane:organization:manage-billing                                                                                                       | إدارة إعدادات الفوترة وطرق الدفع والفواتير.                                                                                                                                    |
+| control-plane:organization:view-billing                                                                                                         | عرض استخدام الفوترة والفواتير.                                                                                                                                                 |
+| **API keys** ([مزيد من المعلومات](/ar/products/cloud/features/admin-features/api/index))                                                           | إدارة مفاتيح API الخاصة بالمؤسسة                                                                                                                                               |
+| control-plane:organization:view-api-keys                                                                                                        | عرض مفاتيح API الخاصة بالمؤسسة.                                                                                                                                                |
+| control-plane:organization:create-api-keys                                                                                                      | إنشاء مفاتيح API جديدة للمؤسسة.                                                                                                                                                |
+| control-plane:organization:update-api-keys                                                                                                      | تحديث مفاتيح API الحالية وأذوناتها.                                                                                                                                            |
+| control-plane:organization:delete-api-keys                                                                                                      | إلغاء مفاتيح API أو حذفها.                                                                                                                                                     |
+| **Support** ([مزيد من المعلومات](/ar/products/cloud/features/support))                                                                             | إدارة حالات الدعم                                                                                                                                                              |
+| control-plane:support:manage                                                                                                                    | إنشاء حالات الدعم وإدارتها والتفاعل مع ClickHouse Support.                                                                                                                     |
+| **الخدمة (general)**                                                                                                                           | أذونات عامة على مستوى الخدمة                                                                                                                                                   |
+| control-plane:service:view                                                                                                                      | عرض البيانات الوصفية والإعدادات والحالة على مستوى الخدمة.                                                                                                                      |
+| control-plane:service:manage                                                                                                                    | إدارة إعدادات الخدمة وعمليات دورة حياتها.                                                                                                                                      |
+| **Backups** ([مزيد من المعلومات](/ar/products/cloud/features/backups/overview))                                                                    | النسخ الاحتياطية للخدمة ونقاط الاستعادة                                                                                                                                        |
+| control-plane:service:view-backups                                                                                                              | عرض النسخ الاحتياطية ونقاط الاستعادة الخاصة بالخدمة.                                                                                                                           |
+| control-plane:service:manage-backups                                                                                                            | إنشاء النسخ الاحتياطية للخدمة وإدارتها واستعادتها.                                                                                                                             |
+| **IP access list** ([مزيد من المعلومات](/ar/products/cloud/guides/security/connectivity/setting-ip-filters))                                       | إدارة قوائم الوصول حسب IP وتصفية الشبكة                                                                                                                                        |
+| control-plane:service:manage-ip-access-list                                                                                                     | إدارة قوائم الوصول حسب IP وتصفية الشبكة الخاصة بالخدمة.                                                                                                                        |
+| **Generative AI** ([مزيد من المعلومات](/ar/products/cloud/features/ai-ml/ask-ai))                                                                  | تهيئة ميزات Generative AI                                                                                                                                                      |
+| control-plane:service:manage-generative-ai                                                                                                      | تهيئة ميزات Generative AI وإعداداتها الخاصة بالخدمة وإدارتها.                                                                                                                  |
+| **Query API endpoints** ([مزيد من المعلومات](/ar/products/cloud/guides/sql-console/query-endpoints))                                               | نقاط نهاية Query API                                                                                                                                                           |
+| control-plane:service:view-query-api-endpoints                                                                                                  | عرض نقاط نهاية Query API وإعداداتها.                                                                                                                                           |
+| control-plane:service:manage-query-api-endpoints                                                                                                | إنشاء نقاط نهاية Query API وإدارتها.                                                                                                                                           |
+| **Private endpoints** ([مزيد من المعلومات](/ar/products/cloud/guides/security/connectivity/private-networking/index))                              | Private networking ونقاط النهاية الخاصة                                                                                                                                        |
+| control-plane:service:view-private-endpoints                                                                                                    | عرض إعدادات Private Endpoint الخاصة بالخدمة.                                                                                                                                   |
+| control-plane:service:manage-private-endpoints                                                                                                  | إنشاء نقاط النهاية الخاصة وPrivate networking وإدارتها.                                                                                                                        |
+| **ClickPipes** ([مزيد من المعلومات](/ar/integrations/clickpipes/home))                                                                             | تكامل ClickPipes                                                                                                                                                               |
+| control-plane:service:manage-clickpipes                                                                                                         | إدارة تكامل ClickPipes والإعدادات ذات الصلة. يتطلب الوصول إلى علامة التبويب **Data Sources** حاليًا `control-plane:service:manage` (&quot;إدارة الخدمات المحددة وحذفها&quot;). |
+| **Scaling** ([مزيد من المعلومات](/ar/products/cloud/features/autoscaling/overview))                                                                | إعدادات scaling وautoscaling                                                                                                                                                   |
+| control-plane:service:view-scaling-config                                                                                                       | عرض إعدادات scaling وإعدادات autoscaling الخاصة بالخدمة.                                                                                                                       |
+| control-plane:service:manage-scaling-config                                                                                                     | تعديل إعدادات scaling وتشغيل عمليات scaling.                                                                                                                                   |
+| **ClickStack** ([مزيد من المعلومات](/ar/clickstack/overview))                                                                                      | تكاملات observability في ClickStack                                                                                                                                            |
+| control-plane:service:manage-clickstack-api                                                                                                     | إدارة الوصول إلى API في ClickStack والتكاملات ذات الصلة.                                                                                                                       |
+| **وحدة تحكم SQL role mapping** ([مزيد من المعلومات](/ar/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)) | إدارة تعيينات الأدوار في وحدة تحكم SQL                                                                                                                                           |
+| sql-console:database:access                                                                                                                     | الوصول إلى قاعدة البيانات بدون كلمة مرور عبر وحدة تحكم SQL (لا يمكن استخدامه إلا مع sql-console-admin أو sql-console-readonly)                                                   |
