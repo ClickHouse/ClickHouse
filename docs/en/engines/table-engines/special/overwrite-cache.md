@@ -114,6 +114,24 @@ FROM latest_state
 WHERE website_type = 1 AND tag = 'risk';
 ```
 
+## Deleting rows {#deleting-rows}
+
+`DELETE FROM` and `ALTER TABLE ... DELETE WHERE` remove rows by key. The rows to remove are resolved through the read path, so a delete accepts exactly the predicates a `SELECT` accepts — a complete `KEYS` tuple, or one or more declared `INDEX (...)` tuples — and a predicate that would need a scan is rejected with the same error. Further predicates can narrow an indexed delete, exactly as they narrow an indexed `SELECT`.
+
+```sql
+DELETE FROM latest_state WHERE website_type = 1 AND user_id = 42 AND tag = 'risk';
+DELETE FROM latest_state WHERE tag = 'risk';
+DELETE FROM latest_state WHERE tag = 'risk' AND value = 'stale';
+```
+
+A delete is applied synchronously and is not a mutation left in the background: when the statement returns, the rows are no longer visible to new queries. It is published as one generation change, so a query never observes a partially applied delete, and, like an insert, it does not wait for in-flight readers. A query that captured an earlier generation keeps resolving the rows it already found.
+
+A deleted key can be inserted again. Winner selection has nothing to compare against after a delete, so the next inserted row wins whatever its version is — a delete is not a version floor.
+
+A delete publishes a tombstone rather than removing the key from the primary index and the lookup postings, because reclaiming those would require waiting for readers. The row payload is reclaimed: when every row of an immutable segment is gone the segment is released, and a segment that a delete leaves at least half dead is compacted just as a replacement compacts it. What a delete does not return is the key bytes in the primary index and the entry identifier in each lookup posting, so deleting and reinserting the same keys repeatedly leaves those growing. Only `TRUNCATE` and `DROP` release them.
+
+Deleting a key that is absent, or already deleted, is a no-op. `UPDATE` is not supported: a stored row is replaced by inserting a row with a greater version.
+
 ## Scalar lookup functions {#scalar-lookup-functions}
 
 `overwriteCacheGet` and `overwriteCacheGetOrNull` perform full composite-key lookups. The table name and returned column name must be constant strings. Key arguments follow the order in `KEYS (...)`.

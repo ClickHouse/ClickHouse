@@ -8,10 +8,12 @@
 #include <IO/WriteBufferFromVector.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/MutationsInterpreter.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -21,6 +23,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/KVStorageUtils.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/MutationCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Common/Exception.h>
@@ -284,8 +287,15 @@ public:
     {
         SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
 
+        /// A mutation hands its predicate over through `SelectQueryInfo` rather than through a `FilterStep`
+        /// the optimizer could push down, and when the predicate contains a subquery the resulting
+        /// `DelayedCreatingSetsStep` stops the push-down walk before it reaches that step at all.
+        /// `ReadFromMergeTree` reconciles the same two sources of the predicate for the same reason.
+        const ActionsDAG * filter_dag
+            = filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get();
+
         std::tie(filter_keys, all_scan)
-            = getFilterKeys(storage.getKeyColumns(), storage.getKeyColumnTypes(), filter_actions_dag.get(), context);
+            = getFilterKeys(storage.getKeyColumns(), storage.getKeyColumnTypes(), filter_dag, context);
         if (!all_scan)
         {
             read_kind = ReadKind::Primary;
@@ -296,7 +306,7 @@ public:
         for (auto & index : indexes)
         {
             auto [keys, requires_scan]
-                = getFilterKeys(index.columns, index.types, filter_actions_dag.get(), context);
+                = getFilterKeys(index.columns, index.types, filter_dag, context);
             if (!requires_scan)
             {
                 lookup_filters.push_back({std::move(index), std::move(keys)});
@@ -693,8 +703,13 @@ StorageOverwriteCache::RowDataPtr StorageOverwriteCache::resolveEntry(EntryId en
     std::lock_guard row_lock(row_mutexes[rowLockIndex(entry_id)]);
     for (const auto * version = entries.at(entry_id).head.get(); version; version = version->older.get())
     {
-        if (version->generation <= snapshot_generation)
-            return version->row;
+        if (version->generation > snapshot_generation)
+            continue;
+        /// A version without a segment is the tombstone left by `DELETE`. The key is gone as of this
+        /// snapshot, so older versions must not be consulted.
+        if (!version->row.segment)
+            return {};
+        return version->row;
     }
     return {};
 }
@@ -765,6 +780,9 @@ void StorageOverwriteCache::insertBlock(const Block & input_block)
         std::unique_ptr<RowData> row;
         std::optional<RowData> previous;
         bool is_new = false;
+        /// A key whose entry is still published but currently tombstoned by `DELETE`. It needs a new
+        /// version like any replacement, but no primary-index slot and no posting: it already has both.
+        bool is_resurrected = false;
         bool primary_inserted = false;
         bool version_installed = false;
     };
@@ -799,7 +817,14 @@ void StorageOverwriteCache::insertBlock(const Block & input_block)
 
         const auto current = resolveEntry(*entry, snapshot_generation);
         if (!current)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Corrupted `OverwriteCache` primary index");
+        {
+            /// The key was deleted. Nothing is left to compare against, so the row wins outright and is
+            /// resurrected in place of the tombstone.
+            mutation.entry_id = *entry;
+            mutation.is_resurrected = true;
+            mutations.push_back(std::move(mutation));
+            continue;
+        }
 
         const int comparison = compareWinner(block, mutation.source_row, *current);
         if (comparison <= 0)
@@ -1254,10 +1279,13 @@ void StorageOverwriteCache::insertBlock(const Block & input_block)
         throw;
     }
 
+    const auto resurrected_entries
+        = static_cast<UInt64>(std::ranges::count_if(mutations, [](const auto & mutation) { return mutation.is_resurrected; }));
+
     published_generation.store(new_generation, std::memory_order_release);
     next_entry_id = staged_next_entry_id;
     total_size_bytes.store(prospective_bytes, std::memory_order_relaxed);
-    total_size_rows.fetch_add(new_entries, std::memory_order_relaxed);
+    total_size_rows.fetch_add(new_entries + resurrected_entries, std::memory_order_relaxed);
     for (size_t index = 0; index < lookup_indexes.size(); ++index)
         lookup_indexes[index]->accounted_bytes.fetch_add(lookup_bytes_delta[index], std::memory_order_relaxed);
 
@@ -1294,6 +1322,322 @@ void StorageOverwriteCache::insertBlock(const Block & input_block)
         }
         recycleVersions(std::move(obsolete));
     }
+}
+
+void StorageOverwriteCache::deleteBlock(const Block & block)
+{
+    const size_t rows = block.rows();
+    if (rows == 0)
+        return;
+
+    /// The bytes must match what an insert produced for the same key, so serialize through the
+    /// storage's own serializations rather than through whatever the mutation pipeline hands over.
+    Columns key_column_data;
+    key_column_data.reserve(key_columns.size());
+    for (const auto & name : key_columns)
+        key_column_data.push_back(recursiveRemoveSparse(block.getByName(name).column->convertToFullColumnIfConst()));
+
+    std::vector<String> serialized_keys;
+    serialized_keys.reserve(rows);
+    for (size_t row = 0; row < rows; ++row)
+    {
+        WriteBufferFromOwnString out;
+        for (size_t index = 0; index < key_column_data.size(); ++index)
+            serializations[key_positions[index]]->serializeBinary(*key_column_data[index], row, out, format_settings);
+        serialized_keys.push_back(out.str());
+    }
+
+    deleteKeys(serialized_keys);
+}
+
+size_t StorageOverwriteCache::deleteKeys(const std::vector<String> & serialized_keys)
+{
+    if (serialized_keys.empty())
+        return 0;
+
+    struct Deletion
+    {
+        EntryId entry_id = 0;
+        /// Absent for a tombstone, set for a row relocated into a compacted segment.
+        std::unique_ptr<RowData> row;
+        std::optional<RowData> previous;
+        bool version_installed = false;
+    };
+
+    std::lock_guard writer_lock(writer_mutex);
+
+    const UInt64 snapshot_generation = published_generation.load(std::memory_order_acquire);
+
+    std::vector<Deletion> deletions;
+    deletions.reserve(serialized_keys.size());
+    std::unordered_set<EntryId> seen;
+    seen.reserve(serialized_keys.size());
+    for (const auto & key : serialized_keys)
+    {
+        const auto entry = findEntry(key, StringViewHash{}(key));
+        if (!entry || !seen.emplace(*entry).second)
+            continue;
+        auto current = resolveEntry(*entry, snapshot_generation);
+        /// No row means the key is already deleted, so there is nothing left to publish for it.
+        if (!current)
+            continue;
+        Deletion deletion;
+        deletion.entry_id = *entry;
+        deletion.previous = std::move(current);
+        deletions.push_back(std::move(deletion));
+    }
+
+    if (deletions.empty())
+        return 0;
+
+    const size_t deleted_rows = deletions.size();
+
+    std::vector<EntryId> deleted_entry_ids;
+    deleted_entry_ids.reserve(deleted_rows);
+    for (const auto & deletion : deletions)
+        deleted_entry_ids.push_back(deletion.entry_id);
+    std::ranges::sort(deleted_entry_ids);
+
+    /// A deletion leaves the same partially dead segment a replacement leaves, so the same rule applies:
+    /// rewrite a segment once at least half of it is dead.
+    struct SegmentCompaction
+    {
+        std::shared_ptr<RowSegment> source;
+        UInt64 deleted_rows = 0;
+        UInt64 projected_live_rows = 0;
+        bool selected = false;
+        std::vector<std::pair<EntryId, RowData>> live_entries;
+    };
+
+    std::vector<SegmentCompaction> segment_compactions;
+    std::unordered_map<RowSegment *, size_t> segment_compaction_positions;
+    for (const auto & deletion : deletions)
+    {
+        auto [it, inserted]
+            = segment_compaction_positions.emplace(deletion.previous->segment.get(), segment_compactions.size());
+        if (inserted)
+        {
+            segment_compactions.emplace_back();
+            segment_compactions.back().source = deletion.previous->segment;
+        }
+        ++segment_compactions[it->second].deleted_rows;
+    }
+
+    const UInt64 bytes_before = total_size_bytes.load(std::memory_order_relaxed);
+    UInt64 compaction_budget = 0;
+    for (auto & compaction : segment_compactions)
+    {
+        const UInt64 live_rows = compaction.source->live_rows.load(std::memory_order_acquire);
+        if (compaction.deleted_rows > live_rows)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Corrupted `OverwriteCache` row-segment live-row count");
+        compaction.projected_live_rows = live_rows - compaction.deleted_rows;
+        const UInt64 total_rows = compaction.source->entry_ids.size();
+        if (compaction.projected_live_rows > total_rows)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Corrupted `OverwriteCache` row-segment size");
+        const UInt64 projected_dead_rows = total_rows - compaction.projected_live_rows;
+        if (compaction.projected_live_rows == 0 || projected_dead_rows < (total_rows + 1) / 2)
+            continue;
+
+        /// A rewritten segment coexists with its source until the readers of the previous epoch drain, so
+        /// it needs room beside it. Freeing memory must never fail for want of memory, so a segment whose
+        /// source-sized upper bound does not fit is simply left alone instead of failing the `DELETE`.
+        const UInt64 headroom
+            = settings.max_memory_bytes - std::min(bytes_before + compaction_budget, settings.max_memory_bytes);
+        if (compaction.source->allocated_bytes > headroom)
+            continue;
+        compaction_budget += compaction.source->allocated_bytes;
+
+        compaction.selected = true;
+        compaction.live_entries.reserve(compaction.projected_live_rows);
+        for (size_t row = 0; row < compaction.source->entry_ids.size(); ++row)
+        {
+            if ((row & 4095) == 0 && CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while compacting `OverwriteCache` row segments");
+            const EntryId entry_id = compaction.source->entry_ids[row];
+            if (std::ranges::binary_search(deleted_entry_ids, entry_id))
+                continue;
+            const auto & entry = entries.at(entry_id);
+            std::lock_guard row_lock(row_mutexes[rowLockIndex(entry_id)]);
+            if (!entry.head || entry.head->row.segment.get() != compaction.source.get() || entry.head->row.segment_row != row)
+                continue;
+            compaction.live_entries.emplace_back(entry_id, entry.head->row);
+        }
+    }
+
+    UInt64 prospective_bytes = bytes_before;
+    for (auto & compaction : segment_compactions)
+    {
+        if (!compaction.selected)
+            continue;
+        if (compaction.live_entries.size() != compaction.projected_live_rows)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Corrupted `OverwriteCache` row-segment references");
+
+        auto compaction_selector = ColumnUInt64::create();
+        compaction_selector->reserve(compaction.live_entries.size());
+        for (const auto & [entry_id, row] : compaction.live_entries)
+        {
+            static_cast<void>(entry_id);
+            compaction_selector->insertValue(row.segment_row);
+        }
+
+        auto compacted_segment = std::make_shared<RowSegment>();
+        compacted_segment->columns.reserve(compaction.source->columns.size());
+        for (size_t position = 0; position < compaction.source->columns.size(); ++position)
+        {
+            auto selected = compaction.source->columns[position]->decompress()->index(*compaction_selector, 0);
+            if (!keep_uncompressed[position])
+                selected = selected->compress(/*force_compression=*/true);
+            compacted_segment->allocated_bytes += selected->allocatedBytes();
+            compacted_segment->columns.push_back(std::move(selected));
+        }
+        compacted_segment->live_rows.store(compaction.live_entries.size(), std::memory_order_relaxed);
+        compacted_segment->entry_ids.reserve(compaction.live_entries.size());
+        if (prospective_bytes > std::numeric_limits<UInt64>::max() - compacted_segment->allocated_bytes)
+            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "`OverwriteCache` memory accounting overflow");
+        prospective_bytes += compacted_segment->allocated_bytes;
+
+        for (size_t row = 0; row < compaction.live_entries.size(); ++row)
+        {
+            const auto & [entry_id, previous] = compaction.live_entries[row];
+            auto compacted_row = std::make_unique<RowData>();
+            compacted_row->segment = compacted_segment;
+            compacted_row->segment_row = static_cast<UInt32>(row);
+            compacted_segment->entry_ids.push_back(entry_id);
+            Deletion relocation;
+            relocation.entry_id = entry_id;
+            relocation.row = std::move(compacted_row);
+            relocation.previous = previous;
+            deletions.push_back(std::move(relocation));
+        }
+    }
+
+    const UInt64 current_generation = published_generation.load(std::memory_order_acquire);
+    if (current_generation == std::numeric_limits<UInt64>::max())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "`OverwriteCache` publication generation space is exhausted");
+    const UInt64 new_generation = current_generation + 1;
+
+    try
+    {
+        /// A tombstone is a version without a segment. It is published exactly like a replacement, so a
+        /// reader that captured an earlier generation keeps resolving the row it already found.
+        for (auto & deletion : deletions)
+        {
+            auto & entry = entries.at(deletion.entry_id);
+            auto version = takeVersion();
+            version->row = deletion.row ? std::move(*deletion.row) : RowData{};
+            version->generation = new_generation;
+            std::lock_guard lock(row_mutexes[rowLockIndex(deletion.entry_id)]);
+            version->older = std::move(entry.head);
+            entry.head = std::move(version);
+            deletion.version_installed = true;
+        }
+
+        fiu_do_on(FailPoints::overwrite_cache_throw_during_publish, {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure during `OverwriteCache` publication");
+        });
+
+        FailPointInjection::pauseFailPoint(FailPoints::overwrite_cache_pause_before_commit);
+    }
+    catch (...)
+    {
+        FailPointInjection::pauseFailPoint(FailPoints::overwrite_cache_pause_before_rollback);
+        for (auto & deletion : deletions)
+        {
+            if (!deletion.version_installed)
+                continue;
+            auto & entry = entries.at(deletion.entry_id);
+            std::unique_ptr<EntryVersion> discarded;
+            {
+                std::lock_guard lock(row_mutexes[rowLockIndex(deletion.entry_id)]);
+                discarded = std::move(entry.head);
+                entry.head = std::move(discarded->older);
+            }
+            discarded->older.reset();
+            recycleVersions(std::move(discarded));
+        }
+        /// Nothing was published, so the compacted segments are dropped here and were never accounted.
+        throw;
+    }
+
+    published_generation.store(new_generation, std::memory_order_release);
+    total_size_bytes.store(prospective_bytes, std::memory_order_relaxed);
+    total_size_rows.fetch_sub(deleted_rows, std::memory_order_relaxed);
+
+    UInt64 reclaim_bytes = 0;
+    std::vector<std::shared_ptr<RowSegment>> retired_segments;
+    retired_segments.reserve(segment_compactions.size());
+    for (const auto & deletion : deletions)
+    {
+        if (deletion.previous->segment->live_rows.fetch_sub(1, std::memory_order_acq_rel) == 1)
+            retired_segments.push_back(deletion.previous->segment);
+    }
+    for (const auto & retired_segment : retired_segments)
+        reclaim_bytes += retired_segment->allocated_bytes;
+    total_size_bytes.fetch_sub(reclaim_bytes, std::memory_order_relaxed);
+
+    const UInt64 watermark = oldestLiveGeneration();
+    for (const auto & deletion : deletions)
+    {
+        auto & entry = entries.at(deletion.entry_id);
+        std::unique_ptr<EntryVersion> obsolete;
+        {
+            std::lock_guard lock(row_mutexes[rowLockIndex(deletion.entry_id)]);
+            for (auto * version = entry.head.get(); version; version = version->older.get())
+            {
+                if (version->generation <= watermark)
+                {
+                    obsolete = std::move(version->older);
+                    break;
+                }
+            }
+        }
+        recycleVersions(std::move(obsolete));
+    }
+
+    return deleted_rows;
+}
+
+void StorageOverwriteCache::checkMutationIsPossible(const MutationCommands & commands, const Settings &) const
+{
+    if (commands.empty())
+        return;
+    if (commands.size() > 1)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Storage `OverwriteCache` supports only one mutation command per query");
+    if (commands.front().type != MutationCommand::Type::DELETE)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Storage `OverwriteCache` supports only `DELETE` mutations; a stored row is replaced by inserting a greater version");
+}
+
+void StorageOverwriteCache::mutate(const MutationCommands & commands, ContextPtr context)
+{
+    if (commands.empty())
+        return;
+    checkMutationIsPossible(commands, context->getSettingsRef());
+
+    const auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    const auto storage_ptr = DatabaseCatalog::instance().getTable(getStorageID(), context);
+
+    MutationsInterpreter::Settings mutation_settings(true);
+    mutation_settings.return_all_columns = true;
+    mutation_settings.return_mutated_rows = true;
+
+    /// The rows to delete are produced by the read path, so a `DELETE` accepts exactly the predicates a
+    /// `SELECT` accepts: a complete `KEYS` tuple, or one or more declared lookup indexes.
+    MutationsInterpreter interpreter(
+        storage_ptr,
+        metadata_snapshot,
+        commands,
+        metadata_snapshot->getColumns().getNamesOfPhysical(),
+        context,
+        mutation_settings);
+
+    auto pipeline = QueryPipelineBuilder::getPipeline(interpreter.execute());
+    PullingPipelineExecutor executor(pipeline);
+
+    Block block;
+    while (executor.pull(block))
+        deleteBlock(block);
 }
 
 StorageOverwriteCache::ReadResult StorageOverwriteCache::getRowsForPrimaryKeys(const std::vector<String> & serialized_keys) const

@@ -155,6 +155,12 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
     void alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder & lock_holder) override;
 
+    /// `DELETE FROM` is executed by the storage itself rather than translated into a lightweight
+    /// update, because there is no part to rewrite and no `_row_exists` column to mask.
+    bool supportsDelete() const override { return true; }
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
+    void mutate(const MutationCommands & commands, ContextPtr context) override;
+
     std::optional<UInt64> totalRows(ContextPtr) const override;
     std::optional<UInt64> totalBytes(ContextPtr) const override;
 
@@ -178,6 +184,11 @@ public:
     void insertBlock(const Block & block);
 
 private:
+    /// Removes the keys of `block` from the cache. The rows to remove are produced by the read path,
+    /// so a `DELETE` accepts exactly the predicates a `SELECT` accepts.
+    void deleteBlock(const Block & block);
+    size_t deleteKeys(const std::vector<String> & serialized_keys);
+
     struct EntryVersion
     {
         RowData row;
