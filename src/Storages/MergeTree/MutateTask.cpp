@@ -1188,11 +1188,41 @@ static NameToNameVector collectFilesForRenames(
             rename_vector.emplace_back(file_rename_from, file_rename_to);
     };
 
-    /// Stream-name prefixes owned by the indices that survive this mutation. `metadata_snapshot` is
-    /// already the post-drop metadata, so a dropped index is absent here.
-    NameSet surviving_index_files;
+    /// Files owned by the indices that survive this mutation. `metadata_snapshot` is already the
+    /// post-drop metadata, so a dropped index is absent here.
+    ///
+    /// The suffix enumeration below is speculative (the dropped index's type, and therefore its real
+    /// substream list, is already gone), so a candidate can name a file that belongs to a different,
+    /// surviving index whenever the two stream names coincide. That happens in both directions with
+    /// escape_index_filenames = 0, where the stream name is the index name verbatim: dropping `a`
+    /// reaches index `a.pos`, and dropping `a.pos` reaches the `.pos` substream of text index `a`.
+    /// Collect the concrete data and mark filenames of every surviving substream so neither can be
+    /// scheduled for deletion. Substream suffixes are matched against the same speculative list used
+    /// below, because a surviving index's type is available but its stream names are what matter.
+    static const std::array<String, 4> owned_substream_suffixes = {"", ".dct", ".pst", ".pos"};
+    static const std::array<String, 2> owned_index_extensions = {".idx2", ".idx"};
+
+    NameSet surviving_index_owned_files;
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
-        surviving_index_files.insert(getIndexFileName(index.name, metadata_snapshot->escape_index_filenames));
+    {
+        const String index_file_name = getIndexFileName(index.name, metadata_snapshot->escape_index_filenames);
+        for (const auto & suffix : owned_substream_suffixes)
+        {
+            const String stream_name = index_file_name + suffix;
+            auto protect = [&](const String & extension)
+            {
+                auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, source_part->checksums);
+                if (!actual)
+                    actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, source_part->getDataPartStorage());
+                if (actual)
+                    surviving_index_owned_files.insert(*actual + extension);
+            };
+
+            for (const auto & extension : owned_index_extensions)
+                protect(extension);
+            protect(mrk_extension);
+        }
+    }
 
     /// Remove old data
     for (const auto & command : commands_for_renames)
@@ -1201,21 +1231,12 @@ static NameToNameVector collectFilesForRenames(
         {
             /// The index type is gone from metadata by now, so enumerate every suffix any skip
             /// index can own (positional text adds `.pos` to `.dct`/`.pst`) and both minmax extensions.
-            static const std::array<String, 2> extensions = {".idx2", ".idx"};
-            static const std::array<String, 4> substreams = {"", ".dct", ".pst", ".pos"};
-
-            for (const auto & substream : substreams)
+            for (const auto & substream : owned_substream_suffixes)
             {
-                for (const auto & extension : extensions)
+                for (const auto & extension : owned_index_extensions)
                 {
                     const String index_filename = getIndexFileName(command.column_name, metadata_snapshot->escape_index_filenames);
                     const String stream_name = index_filename + substream;
-
-                    /// With escape_index_filenames = 0 a speculative suffix can collide with a
-                    /// surviving index whose own name ends in that suffix (dropping `a` would
-                    /// otherwise delete index `a.pos`). Never touch a file another index owns.
-                    if (!substream.empty() && surviving_index_files.contains(stream_name))
-                        continue;
 
                     /// Resolve against checksums first (no I/O), then fall back to storage so `DROP
                     /// INDEX` also removes corrupted-part orphan files absent from `checksums.txt`.
@@ -1223,7 +1244,7 @@ static NameToNameVector collectFilesForRenames(
                     auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, source_part->checksums);
                     if (!actual_stream_name)
                         actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, source_part->getDataPartStorage());
-                    if (actual_stream_name)
+                    if (actual_stream_name && !surviving_index_owned_files.contains(*actual_stream_name + extension))
                     {
                         add_rename(*actual_stream_name + extension, "");
 
@@ -1231,7 +1252,7 @@ static NameToNameVector collectFilesForRenames(
                         auto actual_mark_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, mrk_extension, source_part->checksums);
                         if (!actual_mark_name)
                             actual_mark_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, mrk_extension, source_part->getDataPartStorage());
-                        if (actual_mark_name)
+                        if (actual_mark_name && !surviving_index_owned_files.contains(*actual_mark_name + mrk_extension))
                             add_rename(*actual_mark_name + mrk_extension, "");
                     }
                 }
@@ -3320,28 +3341,41 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         static const std::array<String, 2> known_index_extensions = {".idx2", ".idx"};
         const bool escape_filenames = ctx->metadata_snapshot->escape_index_filenames;
 
-        /// Stream-name prefixes owned by the indices that survive this mutation, so a speculative
-        /// suffix never claims a sibling's file (dropping `a` must not touch index `a.pos`).
-        NameSet surviving_index_files;
+        /// Exact in-archive filenames owned by the indices that survive this mutation, so a
+        /// speculative suffix never claims one of them. The collision goes both ways when
+        /// escape_index_filenames = 0: dropping `a` reaches index `a.pos`, and dropping `a.pos`
+        /// reaches the `.pos` substream of text index `a`.
+        NameSet surviving_index_owned_files;
         for (const auto & index : ctx->metadata_snapshot->getSecondaryIndices())
-            if (!ctx->indices_to_drop_names.contains(index.name))
-                surviving_index_files.insert(getIndexFileName(index.name, escape_filenames));
+        {
+            if (ctx->indices_to_drop_names.contains(index.name))
+                continue;
+
+            const String surviving_file_name = getIndexFileName(index.name, escape_filenames);
+            for (const auto & sub : known_substream_suffixes)
+            {
+                for (const auto & ext : known_index_extensions)
+                    surviving_index_owned_files.insert(surviving_file_name + sub + ext);
+                surviving_index_owned_files.insert(surviving_file_name + sub + ctx->mrk_extension);
+            }
+        }
 
         for (const auto & idx_name : ctx->indices_to_drop_names)
         {
             const String idx_file_name = getIndexFileName(idx_name, escape_filenames);
             for (const auto & sub : known_substream_suffixes)
             {
-                if (!sub.empty() && surviving_index_files.contains(idx_file_name + sub))
-                    continue;
-
                 for (const auto & ext : known_index_extensions)
                 {
                     const String candidate = idx_file_name + sub + ext;
+                    if (surviving_index_owned_files.contains(candidate))
+                        continue;
                     if (source_disk_storage->isFileInPackedSkipIndicesArchive(candidate))
                         ctx->dropped_skip_index_archive_file_names.insert(candidate);
                 }
                 const String mrk_candidate = idx_file_name + sub + ctx->mrk_extension;
+                if (surviving_index_owned_files.contains(mrk_candidate))
+                    continue;
                 if (source_disk_storage->isFileInPackedSkipIndicesArchive(mrk_candidate))
                     ctx->dropped_skip_index_archive_file_names.insert(mrk_candidate);
             }

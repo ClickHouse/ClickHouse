@@ -5,6 +5,10 @@
 # packed_skip_index_max_bytes, which are exactly the settings the collision
 # depends on.
 #
+# `no-fasttest`: the inverse cases build a text index, and the Fast test binary is
+# configured with ENABLE_LIBRARIES = 0, so the text index type is not registered
+# there. The test needs no on-disk part surgery otherwise.
+#
 # DROP INDEX must not delete files owned by a surviving index.
 #
 # The DROP INDEX bookkeeping has to enumerate substream suffixes speculatively
@@ -69,6 +73,70 @@ run_case() {
     ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${tbl} SYNC"
 }
 
+# The collision also runs the other way: dropping an index literally named
+# `a.pos` addresses skp_idx_a.pos.*, which is the positional substream of a text
+# index named `a`. Guarding only the dropped-name side would leave that open, so
+# the surviving text index would lose its positional files.
+run_inverse_case() {
+    local label="$1" escape="$2"
+    local tbl="t_inv_${label}"
+
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${tbl} SYNC"
+
+    ${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE ${tbl}
+    (
+        k UInt64,
+        s String,
+        w UInt64,
+        INDEX a(s) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1) GRANULARITY 1,
+        INDEX \`a.pos\` w TYPE minmax GRANULARITY 1
+    )
+    ENGINE = MergeTree ORDER BY k
+    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+             index_granularity = 100, replace_long_file_name_to_hash = 0,
+             packed_skip_index_max_bytes = 0,
+             escape_index_filenames = ${escape},
+             allow_experimental_text_index_phrase_search = 1"
+
+    ${CLICKHOUSE_CLIENT} -q "INSERT INTO ${tbl} (k, s, w) SELECT number, concat('hello', number % 50, ' world', number % 50), number FROM numbers(500)"
+    ${CLICKHOUSE_CLIENT} -q "OPTIMIZE TABLE ${tbl} FINAL"
+
+    local part
+    part=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active ORDER BY name LIMIT 1")
+
+    # The text index's positional substream files, by their real on-disk names. The
+    # assertion is file survival rather than a hasPhrase result on purpose: with
+    # escape_index_filenames = 0 the minmax index `a.pos` and the text index's own
+    # `.pos` substream want the same mark filename, so this table is already
+    # unreadable for phrase search before any DROP INDEX runs (that write-time
+    # collision is a separate, pre-existing issue). What must hold here is that
+    # DROP INDEX does not delete files the surviving text index owns.
+    # The text index's stream base is `skp_idx_a` under either escaping mode (there is
+    # no dot in its own name to escape), so its positional substream files are:
+    local pos_data="skp_idx_a.pos.idx"
+    local pos_mark="skp_idx_a.pos.cmrk2"
+
+    echo "${label}_text_pos_files_before:"
+    if [ -e "${part}${pos_data}" ] && [ -e "${part}${pos_mark}" ]; then echo 1; else echo 0; fi
+
+    ${CLICKHOUSE_CLIENT} -q "ALTER TABLE ${tbl} DROP INDEX \`a.pos\` SETTINGS mutations_sync = 2"
+
+    local new_part
+    new_part=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active ORDER BY name LIMIT 1")
+
+    echo "${label}_dropped_index_gone:"
+    ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = '${tbl}' AND name = 'a.pos'"
+    echo "${label}_text_index_survives:"
+    ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = '${tbl}' AND name = 'a'"
+    echo "${label}_text_pos_files_after:"
+    if [ -e "${new_part}${pos_data}" ] && [ -e "${new_part}${pos_mark}" ]; then echo 1; else echo 0; fi
+    echo "${label}_check_table:"
+    ${CLICKHOUSE_CLIENT} -q "CHECK TABLE ${tbl}" | cut -f2
+
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${tbl} SYNC"
+}
+
 # Unescaped names are the shape that collides: the stream name is the index name
 # verbatim, so `a` + ".pos" == the stream name of index `a.pos`.
 run_case "standalone_unescaped" 0 0
@@ -78,3 +146,6 @@ run_case "standalone_escaped" 1 0
 # Same collision, but the files live inside skp_idx.packed and are removed by the
 # archive filter rather than by a rename-to-empty.
 run_case "packed_unescaped" 0 1048576
+# Inverse direction: drop the index whose name IS the sibling substream suffix.
+run_inverse_case "inverse_unescaped" 0
+run_inverse_case "inverse_escaped" 1
