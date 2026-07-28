@@ -52,7 +52,7 @@ Positions: 0
                   Join (JOIN FillRightFirst)
                   Type: CROSS
                   Strictness: ALL
-                  Algorithm: HashJoin
+                  Algorithm: ConstantJoin
                     Expression (Left Pre Join Actions)
                     Actions: INPUT :: 0 -> __table1.uid Int16 : 0
                     Positions: 0
@@ -123,7 +123,7 @@ Positions: 0
                   Join (JOIN FillRightFirst)
                   Type: CROSS
                   Strictness: ALL
-                  Algorithm: HashJoin
+                  Algorithm: ConstantJoin
                     Expression (Left Pre Join Actions)
                     Actions: INPUT :: 0 -> __table1.uid Int16 : 0
                     Positions: 0

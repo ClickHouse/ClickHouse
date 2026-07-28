@@ -1,7 +1,7 @@
 ---
 sidebarTitle: '使用 Map 类型'
 title: '在 ClickHouse 中使用 Map 类型'
-useCases: ['Observability']
+useCases: ['可观测性']
 products: ['OSS']
 description: '了解如何在 ClickHouse 中使用 Map 类型来存储、查询和聚合动态键值数据，并以 OTel 资源属性为例。'
 ---
@@ -35,9 +35,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 在本快速入门中，你将使用 `clickhouse-local` 将来自 CSV file 的真实 OTel trace 数据加载到包含 `Map(LowCardinality(String), String)` 列的表中，并学习如何对 map 数据进行查询、过滤、聚合和优化。
 
 <Steps titleSize="h3">
-  <Step>
-    ### 下载示例数据
-
+  <Step title="下载示例数据" id="download-the-sample-data">
     该数据集包含从一个演示微服务应用导出的 6,120 个 OTel trace span。每一行都包含 `ResourceAttributes` 和 `SpanAttributes` 两列，这两列中是以 JSON 映射形式存储的动态键值对。
     将文件保存到一个便于引用的目录中，例如 `~/data/data-otel-traces.csv`。
 
@@ -66,9 +64,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     ```
   </Step>
 
-  <Step>
-    ### 创建表并加载数据
-
+  <Step title="创建表并加载数据" id="create-the-table-and-load-the-data">
     启动 `clickhouse-local`，并创建下列表，其 schema 与 CSV 相匹配。
     关键列是 `ResourceAttributes Map(LowCardinality(String), String)`——在键类型上使用 `LowCardinality`，因为 OTel attribute 键通常来自一个相对较小且会重复出现的集合。
 
@@ -107,9 +103,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     你应该会看到 6,120 行。
   </Step>
 
-  <Step>
-    ### 查询数据
-
+  <Step title="查询数据" id="query-the-data">
     **访问特定键** — 使用方括号语法从 map 中取出值。如果某一行中不存在该键，则会返回该值类型的默认值 (`String` 的默认值为空字符串) ：
 
     ```sql
@@ -197,9 +191,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     ```
   </Step>
 
-  <Step>
-    ### 使用 -Map 组合器对 Map 进行聚合
-
+  <Step title="使用 -Map 组合器对 Map 进行聚合" id="aggregate-across-maps-with-the--map-combinator">
     ClickHouse 的 `-Map` 聚合组合器可让你将任意聚合函数应用到 `Map` 列上，并对每个键分别进行聚合。结果本身也是一个 `Map`——每个键对应一个条目，其中包含聚合后的值。这对 OTel 指标尤其有用，因为 counter 或 gauge 通常存储为 map 值。
 
     为便于演示，先创建一个小型指标表，其中每一行都将 HTTP 状态码计数记录为 `Map(String, UInt64)`：
@@ -257,9 +249,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     **为什么这对 OTel 很重要：**当你的 OTel collector 将按分钟统计的状态码明细写入 ClickHouse 时，`sumMap` 可让你通过一次查询将其汇总为按小时或按天统计的总计——无需 `ARRAY JOIN`，无需进行反透视，也无需预先知道完整的键集合。任何在任意行中出现的键都会自动包含在结果中。
   </Step>
 
-  <Step>
-    ### 针对频繁查询的键进行优化
-
+  <Step title="针对频繁查询的键进行优化" id="optimise-for-frequently-queried-keys">
     如果你发现自己总是按同一个 Map 键进行过滤——`host.name` 就是一个常见例子——可以将它提取为物化列。这样可以避免每次查询时都在线性扫描整个 Map：
 
     ```sql
@@ -278,7 +268,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   </Step>
 </Steps>
 
-## 关键要点
+<div id="key-takeaways">
+  ## 关键要点
+</div>
 
 * **`Map(LowCardinality(String), String)`** 是 OTel 属性的惯用类型——既足够灵活，能处理不断变化的键集合，又能借助 `LowCardinality` 保持键存储的高效性。
 * **方括号语法** (`map['key']`) 是访问值最常见的方式，但要记住它是线性扫描——对于只有几十个键的 Map 完全没问题，但对于几百个键就不太理想了。
@@ -286,7 +278,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 * **`mapContains`、`mapKeys`、`mapValues`、`mapFilter`** 和 `ARRAY JOIN` 为你提供了一套强大的工具，让你无需离开 SQL 就能探索和转换 Map 数据。
 * **`-Map` 聚合组合器** (`sumMap`、`avgMap`、`maxMap` 等) 会跨行按键分别聚合——非常适合对 OTel 指标计数器进行汇总，而无需预先知道键集合。它还可以与其他组合器配合使用 (例如 `sumMapIf`) 。
 
-## 后续步骤
+<div id="next-steps">
+  ## 后续步骤
+</div>
 
 接下来可查看以下快速入门：
 

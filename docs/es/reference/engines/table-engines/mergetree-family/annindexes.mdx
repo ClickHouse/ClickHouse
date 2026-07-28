@@ -370,13 +370,15 @@ Cabe señalar que configurar `vector_search_index_fetch_multiplier` puede mitiga
 
 Los índices de omisión de dato en ClickHouse suelen filtrar a nivel de gránulo; es decir, una búsqueda en un índice de omisión de dato (internamente) devuelve una lista de gránulos que podrían coincidir, lo que reduce la cantidad de datos leídos en el escaneo posterior.
 Esto funciona bien para los índices de omisión de dato en general, pero en el caso de los índices de similitud vectorial, crea un &quot;desajuste de granularidad&quot;.
-En más detalle, el índice de similitud vectorial determina los números de fila de los N vectores más similares para un vector de referencia dado, pero luego necesita extrapolar esos números de fila a números de gránulo.
-ClickHouse cargará entonces estos gránulos desde disco y repetirá el cálculo de distancias para todos los vectores de esos gránulos.
-Este paso se llama reclasificación y, aunque en teoría puede mejorar la precisión —recuerde que el índice de similitud vectorial solo devuelve un resultado *aproximado*—, claramente no es óptimo en términos de rendimiento.
+En más detalle, el índice de similitud vectorial determina los números de fila de los N vectores más similares para un vector de referencia dado.
+Con la configuración `vector_search_with_rescoring = 1`, ClickHouse lee los vectores originales de precisión completa para las filas candidatas y calcula la distancia final en la canalización SQL habitual.
+Cuando el plan de consulta lo permite, ClickHouse filtra el escaneo a las filas candidatas devueltas por el índice vectorial antes del cálculo final de la distancia.
+Este paso se llama rescoring y puede mejorar la exactitud, especialmente con índices vectoriales cuantizados, porque la clasificación final usa los vectores almacenados en lugar de las distancias del índice.
+Si filtros adicionales eliminan demasiados candidatos o se necesita una mayor exhaustividad, aumente la configuración `vector_search_index_fetch_multiplier` para que el índice vectorial devuelva más filas candidatas para el rescoring.
 
-Por lo tanto, ClickHouse proporciona una optimización que desactiva la reclasificación y devuelve los vectores más similares y sus distancias directamente desde el índice.
+Por lo tanto, ClickHouse proporciona una optimización que desactiva el rescoring y devuelve los vectores más similares y sus distancias directamente desde el índice.
 La optimización está habilitada de forma predeterminada; consulte la configuración [vector&#95;search&#95;with&#95;rescoring](/es/reference/settings/session-settings#vector_search_with_rescoring).
-A grandes rasgos, funciona así: ClickHouse pone los vectores más similares y sus distancias a disposición como una columna virtual `_distances`.
+A grandes rasgos, funciona así: ClickHouse pone los vectores más similares y sus distancias a disposición como una columna virtual `_distance`.
 Para verlo, ejecute una consulta de búsqueda vectorial con `EXPLAIN header = 1`:
 
 ```sql
@@ -411,7 +413,7 @@ Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
 ```
 
 <Note>
-  Una consulta ejecutada sin reclasificación (`vector_search_with_rescoring = 0`) y con las réplicas paralelas habilitadas puede recurrir a la reclasificación.
+  Una consulta ejecutada sin rescoring (`vector_search_with_rescoring = 0`) y con las réplicas paralelas habilitadas puede recurrir al rescoring.
 </Note>
 
 <div id="performance-tuning">
@@ -582,29 +584,30 @@ Salida de ejemplo:
 ```
 
 <div id="differences-to-regular-skipping-indexes">
-  #### Diferencias con los índices de omisión normales
+  #### Diferencias con los índices de omisión de datos normales
 </div>
 
-Como todos los [índices de omisión](/es/concepts/features/performance/skip-indexes/skipping-indexes) normales, los índices de similitud vectorial se construyen sobre gránulos, y cada bloque indexado consta de `GRANULARITY = [N]` gránulos (`[N]` = 1 de forma predeterminada para los índices de omisión normales).
+Como todos los [índices de omisión de datos](/es/concepts/features/performance/skip-indexes/skipping-indexes) normales, los índices de similitud vectorial se construyen sobre gránulos, y cada bloque indexado consta de `GRANULARITY = [N]` gránulos (`[N]` = 1 de forma predeterminada para los índices de omisión de datos normales).
 Por ejemplo, si la granularidad del índice primario de la tabla es 8192 (configuración `index_granularity = 8192`) y `GRANULARITY = 2`, entonces cada bloque indexado contendrá 16384 filas.
 Sin embargo, las estructuras de datos y los algoritmos para la búsqueda aproximada de vecinos son intrínsecamente orientados a filas.
 Almacenan una representación compacta de un conjunto de filas y también devuelven filas para las consultas de búsqueda vectorial.
-Esto da lugar a algunas diferencias poco intuitivas en la forma en que se comportan los índices de similitud vectorial en comparación con los índices de omisión normales.
+Esto da lugar a algunas diferencias poco intuitivas en la forma en que se comportan los índices de similitud vectorial en comparación con los índices de omisión de datos normales.
 
 Cuando un usuario define un índice de similitud vectorial sobre una columna, ClickHouse crea internamente un &quot;subíndice&quot; de similitud vectorial para cada bloque de índice.
 El subíndice es &quot;local&quot; en el sentido de que solo conoce las filas del bloque de índice al que pertenece.
 En el ejemplo anterior, y suponiendo que una columna tiene 65536 filas, obtenemos cuatro bloques de índice (que abarcan ocho gránulos) y un subíndice de similitud vectorial para cada bloque de índice.
 En teoría, un subíndice puede devolver directamente las filas con los N puntos más cercanos dentro de su bloque de índice.
-Sin embargo, como ClickHouse carga datos del disco a la memoria con la granularidad de los gránulos, los subíndices extrapolan las filas coincidentes a la granularidad de los gránulos.
-Esto difiere de los índices de omisión normales, que omiten datos con la granularidad de los bloques de índice.
+Para las consultas con `vector_search_with_rescoring = 1`, ClickHouse puede usar estas posiciones de fila para filtrar filas antes de calcular la distancia final a partir de los vectores almacenados cuando el plan de consulta permite esta optimización.
+Sin rescoring, ClickHouse usa directamente las distancias del índice vectorial mediante la columna virtual `_distance`.
+Ambos modos siguen usando los rangos de gránulos circundantes para programar las lecturas, lo que difiere de los índices de omisión de datos normales, que omiten datos con la granularidad de los bloques de índice.
 
 El parámetro `GRANULARITY` determina cuántos subíndices de similitud vectorial se crean.
 Los valores más grandes de `GRANULARITY` implican menos subíndices de similitud vectorial, pero más grandes, hasta el punto en que una columna (o una parte de datos de una columna) tiene un único subíndice.
 En ese caso, el subíndice tiene una vista &quot;global&quot; de todas las filas de la columna y puede devolver directamente todos los gránulos de la columna (parte) con filas relevantes (hay como máximo `LIMIT [N]` gránulos de este tipo).
-En un segundo paso, ClickHouse cargará estos gránulos e identificará las mejores filas reales realizando un cálculo de distancia por fuerza bruta sobre todas las filas de esos gránulos.
-Con un valor pequeño de `GRANULARITY`, cada subíndice devuelve hasta `LIMIT N` gránulos.
-Como resultado, es necesario cargar más gránulos y posfiltrarlos.
-Tenga en cuenta que la precisión de la búsqueda es igual de buena en ambos casos; solo difiere el rendimiento del procesamiento.
+Con `vector_search_with_rescoring = 1`, ClickHouse puede entonces leer las posiciones de fila coincidentes y calcular la distancia exacta para esas filas.
+Con un valor pequeño de `GRANULARITY`, cada subíndice puede devolver hasta `LIMIT N` filas candidatas.
+Como resultado, puede ser necesario leer más filas candidatas y posfiltrarlas.
+Tenga en cuenta que la exactitud de la búsqueda es igual de buena en ambos casos; solo difiere el rendimiento del procesamiento.
 En general, se recomienda usar un valor grande de `GRANULARITY` para los índices de similitud vectorial y recurrir a valores más pequeños de `GRANULARITY` solo en caso de problemas, como un consumo excesivo de memoria de las estructuras de similitud vectorial.
 Si no se especifica `GRANULARITY` para los índices de similitud vectorial, el valor predeterminado es 100 millones.
 
@@ -641,6 +644,109 @@ Más conjuntos de datos de ejemplo que usan búsqueda vectorial aproximada:
 * [dbpedia](/es/get-started/sample-datasets/dbpedia)
 * [hackernews](/es/get-started/sample-datasets/hacker-news-vector-search)
 
+<div id="vector-search-with-quantized-codecs">
+  ### Búsqueda vectorial con códecs cuantizados
+</div>
+
+<Note>
+  El códec `Quantized` es experimental. Habilítalo con `SET allow_experimental_codecs = 1`.
+  Si tienes algún problema, abre un issue en el [repositorio de ClickHouse](https://github.com/clickhouse/clickhouse/issues).
+</Note>
+
+<div id="quantized-codecs-introduction">
+  #### Introducción
+</div>
+
+Un [índice de similitud vectorial](#vector-similarity-index) responde a una consulta de vecino más cercano recorriendo un grafo y ofrece un rendimiento muy bueno cuando el grafo puede mantenerse en memoria.
+Dos condiciones limitan su aplicabilidad:
+
+* **Escala.** El tiempo necesario para construir el grafo y la memoria requerida para almacenarlo — además de los propios vectores — pasan a ser el costo dominante.
+* **Filtrado.** Con un filtro `WHERE` selectivo, el recorrido del grafo deja de ser eficaz, porque o bien no puede alcanzar el pequeño conjunto de filas que satisfacen el predicado, o bien debe inspeccionar un número desproporcionado de candidatos para encontrarlas.
+
+Un escaneo exhaustivo no está sujeto a ninguna de estas limitaciones: no requiere ninguna estructura auxiliar, las partes se fusionan por concatenación y un filtro simplemente reduce el número de filas que hay que escanear.
+Su única desventaja es el volumen de datos que debe leer: un escaneo sobre vectores almacenados con precisión `Float32` completa está dominado por la E/S de almacenamiento, porque toda la columna de vectores debe leerse desde disco (o almacenamiento de objetos) — en una columna de embedding denso, esa es la columna más grande de la tabla y se comprime mal.
+
+El códec de columna `Quantized` soluciona esta desventaja.
+Cada vector se almacena dos veces: los valores originales con precisión completa, sin cambios, junto con un *código cuantizado* compacto en un stream complementario.
+Una consulta de búsqueda vectorial primero escanea los códigos mediante una función de distancia de bajo costo y compatible con SIMD para formar una lista reducida de los candidatos más prometedores, y luego vuelve a ordenar esa lista reducida comparándola con los vectores de precisión completa.
+Como un código ocupa solo una fracción del tamaño del vector sin procesar, el escaneo de la lista reducida lee muchos menos bytes del almacenamiento — y solo accede a la columna de precisión completa para el pequeño conjunto de candidatos preseleccionados — mientras que la clasificación final sigue siendo precisa.
+
+<div id="quantized-codecs-declaring">
+  #### Declarar el códec
+</div>
+
+Adjunte un códec `Quantized(...)` a una columna `Array(Float32)` (o `Array(Float64)` / `Array(BFloat16)`).
+El códec es experimental, así que primero habilite `allow_experimental_codecs`:
+
+```sql
+SET allow_experimental_codecs = 1;
+
+CREATE TABLE vectors
+(
+    id UInt32,
+    vec Array(Float32) CODEC(Quantized('rabitq', 1536))
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+Los datos de precisión completa se almacenan como siempre; el códec solo añade el flujo complementario de códigos.
+El códec se fija al crear la tabla y no se puede añadir ni cambiar con `ALTER TABLE`.
+
+<div id="quantized-codecs-methods">
+  #### Métodos de cuantización
+</div>
+
+Cada método representa un equilibrio distinto entre tamaño, exactitud y métrica. El argumento `dimensions` es la longitud del vector.
+
+* `Quantized('rabitq', dimensions)` — un bit de signo por coordenada más un factor de corrección de coseno no sesgado (`dimensions/8 + 4` bytes). Una opción predeterminada sólida, pequeña y barata de evaluar con `popcount`. Solo `cosineDistance`.
+* `Quantized('turboquant', dimensions)` — dos bits por coordenada (un código MSE de 1 bit y un código residual de 1 bit) para candidatos de mayor fidelidad (`dimensions/4 + 4` bytes). Solo `cosineDistance`.
+* `Quantized('int8', dimensions)` — un código `Int8` por coordenada más la norma del vector (`dimensions + 4` bytes); el código plano más grande, pero también el más fiel. Admite `L2Distance` y `cosineDistance`.
+* `Quantized('prefix', dimensions, leading_dimensions, 'int8'|'bf16')` — Matryoshka: conserva solo las primeras `leading_dimensions` coordenadas, como `Int8` (con una escala por vector) o `BFloat16`. Códigos diminutos para embeddings entrenados con Matryoshka Representation Learning. Admite `L2Distance` y `cosineDistance`.
+* `Quantized('product', dimensions, nbits, m)` — cuantización de producto: un diccionario de códigos por partición entrenado con k-means; cada vector se convierte en `m` códigos de `nbits` bits (por lo que `dimensions` debe ser múltiplo de `m`). La opción más compacta y con mayor recall por byte, a costa de un paso de entrenamiento durante la inserción. Admite `L2Distance` y `cosineDistance`.
+
+`rabitq` y `turboquant` requieren que `dimensions` sea múltiplo de 8.
+
+<div id="quantized-codecs-searching">
+  #### Buscar de forma transparente
+</div>
+
+No hay una sintaxis de consulta especial; usa la misma consulta top-`k` que usarías para la [búsqueda exacta](#exact-nearest-neighbor-search):
+
+```sql
+WITH [/* reference vector of `dimensions` floats */] AS reference_vec
+SELECT id
+FROM vectors
+ORDER BY cosineDistance(vec, reference_vec) ASC
+LIMIT 10
+SETTINGS vector_search_use_quantized_codes = 1;
+```
+
+Con `vector_search_use_quantized_codes = 1`, el optimizador reescribe automáticamente la consulta en un plan de dos etapas: escanea los códigos cuantizados para recopilar una lista reducida y luego vuelve a puntuar la lista reducida con `vec` de precisión completa.
+La configuración está desactivada de forma predeterminada, por lo que, sin ella, la misma consulta se ejecuta como un scan exacto simple: el codec nunca cambia los resultados, solo ofrece una vía más rápida cuando decides activarlo.
+Usa una función de distancia compatible con el method elegido: `cosineDistance` para todos los methods, y `L2Distance` además para `int8`, `prefix` y `product`.
+
+<div id="quantized-codecs-settings">
+  #### Configuración
+</div>
+
+* `allow_experimental_codecs` — debe estar activado para declarar un códec `Quantized` (predeterminado: `0`).
+* `vector_search_use_quantized_codes` — habilita la reescritura en dos etapas de lista reducida y reevaluación (predeterminado: `0`). Cuando está desactivado, las consultas de búsqueda examinan exactamente los vectores de precisión completa.
+* `vector_search_index_fetch_multiplier` — cuántos candidatos poner en lista reducida en relación con el `LIMIT` de la consulta: el escaneo conserva los `LIMIT × multiplicador` códigos principales antes de la reevaluación. Los valores más altos mejoran el recall a costa de una mayor reevaluación. El valor predeterminado es `1` (sin sobremuestreo), por lo que normalmente es necesario aumentarlo —por ejemplo, a `10` o más— para obtener un buen recall.
+
+<div id="quantized-codecs-built-for-scale">
+  #### Diseñado para escalar
+</div>
+
+Este códec encaja bien con ClickHouse porque la parte costosa —el escaneo— es exactamente aquello que el motor de ClickHouse está diseñado para hacer bien:
+
+* **Vectorizado.** Los kernels de escaneo están escritos para SIMD, con despacho en tiempo de ejecución a las instrucciones más amplias que admite la CPU: un `popcount` por hardware para los métodos de código de signo (`rabitq`, `turboquant`) y operaciones amplias de multiplicación-suma fusionada para los demás.
+* **En paralelo entre núcleos y partes.** Un escaneo plano es trivialmente paralelizable, y ClickHouse lo trata como tal: las distancias se calculan en todos los threads disponibles y sobre todas las partes de una tabla a la vez, y solo se serializa la fusión final del top-`k`.
+* **Distribuido.** En un clúster segmentado, el trabajo se reparte entre máquinas: cada segmento escanea su propia porción en paralelo y el coordinador fusiona las listas reducidas.
+* **Columnar y compatible con filtros.** Los códigos cuantizados ocupan su propia columna, se comprimen y se leen por la misma ruta de E/S que cualquier otra columna, de modo que un `WHERE` selectivo simplemente deja menos códigos por escanear.
+* **Sin una fase de construcción independiente.** Los códigos se generan a medida que se escriben los vectores y se fusionan por concatenación; no hay ningún índice que construir, ajustar ni reconstruir, por lo que una tabla queda lista para la búsqueda en cuanto llegan sus datos.
+
+Los códigos solo actúan como generadores de candidatos; la columna de precisión completa, conservada en su lugar, proporciona la clasificación final precisa.
+
 <div id="approximate-nearest-neighbor-search-qbit">
   ### Bit cuantizado (QBit)
 </div>
@@ -661,13 +767,14 @@ Esto se consigue almacenando los datos en un formato agrupado por bits (es decir
 Para declarar una columna de tipo `QBit`, usa la siguiente sintaxis:
 
 ```sql
-column_name QBit(element_type, dimension)
+column_name QBit(element_type, dimension[, stride])
 ```
 
 Donde:
 
-* `element_type` – el tipo de cada elemento del vector. Los tipos admitidos son `BFloat16`, `Float32` y `Float64`
+* `element_type` – el tipo de cada elemento del vector. Los tipos admitidos son `Int8`, `BFloat16`, `Float32` y `Float64`
 * `dimension` – la cantidad de elementos de cada vector
+* `stride` – opcional. Un divisor de `dimension` que particiona las dimensiones en `dimension / stride` grupos contiguos almacenados en flujos separados, de modo que una búsqueda solo sobre las dimensiones iniciales lea menos flujos (útil para los embeddings Matryoshka). El valor predeterminado es `dimension`, en cuyo caso el tipo es idéntico, byte por byte, a un `QBit` sin `stride`. Consulta la [página del tipo de dato `QBit`](/es/reference/data-types/qbit) para obtener más información.
 
 <div id="qbit-create">
   #### Creación de una tabla `QBit` y adición de datos

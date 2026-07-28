@@ -3,9 +3,7 @@ title: アプリケーションをインストルメントする
 ---
 
 <Steps>
-  <Step>
-    ## アプリケーションをクローンして実行する
-
+  <Step title="アプリケーションをクローンして実行する" id="clone-and-run-the-application">
     リポジトリをクローンし、依存関係をインストールして、`.env` ファイルを作成します。
 
     ```bash
@@ -23,14 +21,14 @@ title: アプリケーションをインストルメントする
 
     [http://localhost:5001](http://localhost:5001) を開きます。年セレクター、サマリー統計、アクティビティチャート、上位ユーザーとドメインのテーブル、検索ボックスが表示されます。実際に操作して、年を切り替えたり、ストーリーの詳細を確認したりしてみてください。
 
-    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="ローカルで実行中の HackerNews アナライザ アプリケーション" />
+    <Frame>
+      <img src="/images/clickstack/getting-started/hackernews_main.webp" alt="ローカルで実行中の HackerNews アナライザ アプリケーション" />
+    </Frame>
 
     この時点ではアプリケーションは実行されていますが、まだインストルメントされていません。ClickStack にはデータが表示されません。テレメトリーの受信待ちであるためです。これが「before」の状態です。
   </Step>
 
-  <Step>
-    ## 接続情報を取得する
-
+  <Step title="接続情報を取得する" id="get-connection-details">
     アプリケーションがcollectorに到達するには、2 つの値が必要です。
 
     * `OTEL_EXPORTER_OTLP_ENDPOINT`: collector が公開する OTLP endpoint (通常、HTTP 経由の OTLP ではポート `4318`) 。
@@ -47,14 +45,12 @@ title: アプリケーションをインストルメントする
     SDK は、3 つすべてのシグナル (トレース、メトリクス、ログ) の認証ヘッダーを設定するために `OTEL_EXPORTER_OTLP_HEADERS` を使用します。collector がローカルで実行されており、認証を必須としていない場合は、値を空のままにできます (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`) 。ただし、この変数自体は必ず指定されている必要があります。未設定、または完全に空の場合、SDK は初期化自体を完全にスキップします。
   </Step>
 
-  <Step>
-    ## アプリケーションをインストルメントする
-
+  <Step title="アプリケーションをインストルメントする" id="instrument-the-application">
     インストルメンテーションは3つの要素で構成されます。SDKsのインストール、起動コマンドの切り替え、ブラウザ SDK の有効化です。いずれもアプリケーションのビジネスロジックを変更するものではありません。
 
     ### SDKsをインストールする
 
-    バックエンド用とブラウザ用の両方のOpenTelemetry SDKsをインストールします。
+    バックエンド用とブラウザ用の両方のOpenTelemetry SDKsをインストールします:
 
     ```bash
     npm install @hyperdx/node-opentelemetry @hyperdx/browser
@@ -102,9 +98,7 @@ title: アプリケーションをインストルメントする
     </Warning>
   </Step>
 
-  <Step>
-    ## トラフィックを発生させてテレメトリーを確認する
-
+  <Step title="トラフィックを発生させてテレメトリーを確認する" id="generate-traffic-and-view-telemetry">
     新しい起動コマンドと新たにビルドしたブラウザバンドルを反映するため、アプリケーションを再起動します。
 
     ```bash
@@ -118,15 +112,21 @@ title: アプリケーションをインストルメントする
 
     1. **Search** に移動し、過去 5 分で絞り込みます。`hn-analyzer-api` のログが次々に表示されます。
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="ClickStack ログ" />
+    <Frame>
+      <img src="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="ClickStack ログ" />
+    </Frame>
 
     2. リクエストをクリックし、トレースを親方向にたどります。Express のハンドラースパン、ClickHouse クラスターを指す子 HTTP スパン (実際のネットワーク所要時間付き) 、および同じトレース上で相関付けられた `console.log` レコードが表示されます。
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="ClickStack トレース" />
+    <Frame>
+      <img src="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="ClickStack トレース" />
+    </Frame>
 
     3. **Session Replay** を開くと、トレースのタイムラインに同期した、シーク可能なブラウザセッションのビデオを再生できます。
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="ClickStack セッション" />
+    <Frame>
+      <img src="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="ClickStack セッション" />
+    </Frame>
 
     ログ、メトリクス、トレース、セッションリプレイはすべて同じ UI に集約され、同じクエリ言語を共有し、自動的に相関付けられます。
   </Step>

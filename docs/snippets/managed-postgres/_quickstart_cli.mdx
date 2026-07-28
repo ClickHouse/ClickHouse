@@ -195,7 +195,7 @@ To use an existing service instead, set `CH_ID` from `clickhousectl cloud servic
 
 ### Replicate the tables to ClickHouse {#replicate-to-clickhouse}
 
-Create a Postgres CDC ClickPipe on the ClickHouse service, pointing at the Managed Postgres hostname. The pipe copies the existing rows, then keeps ClickHouse in sync with ongoing changes:
+Create a Postgres CDC ClickPipe on the ClickHouse service, pointing at the ClickHouse Managed Postgres hostname. The pipe copies the existing rows, then keeps ClickHouse in sync with ongoing changes:
 
 ```bash
 PG_HOST=$(jq -r .hostname pg.json)

@@ -26,6 +26,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -86,6 +87,7 @@ namespace Setting
     extern const SettingsBool throw_on_max_partitions_per_insert_block;
     extern const SettingsUInt64 min_free_disk_bytes_to_perform_insert;
     extern const SettingsFloat min_free_disk_ratio_to_perform_insert;
+    extern const SettingsUInt64 unique_key_max_encoded_size;
 }
 
 namespace MergeTreeSetting
@@ -915,8 +917,17 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         }
     }
 
+    auto part_format = data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr);
+    /// UNIQUE KEY parts must use Full part storage: the dense-index sidecar
+    /// (`unique_key_index.sst`) is opened directly by filesystem path via RocksDB
+    /// `SstFileReader`, which cannot read a file packed inside an archive. Packed
+    /// storage would leave the sidecar existsFile-visible but unopenable, failing
+    /// every subsequent load of the part.
+    if (metadata_snapshot->hasUniqueKey())
+        part_format.storage_type = MergeTreeDataPartStorageType::Full;
+
     auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings(), /*part_may_exist_on_disk=*/ may_exist)
-        .withPartFormat(data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr))
+        .withPartFormat(part_format)
         .withPartInfo(new_part_info)
         .build();
 
@@ -1022,6 +1033,15 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
+
+    if (metadata_snapshot->hasUniqueKey())
+        UniqueKeyDenseIndexOps::writeDenseIndexOnInsert(
+            *data_part_storage,
+            metadata_snapshot,
+            block,
+            perm_ptr,
+            context->getSettingsRef()[Setting::unique_key_max_encoded_size],
+            context);
 
     if ((*data.getSettings())[MergeTreeSetting::materialize_projections_on_insert])
     {

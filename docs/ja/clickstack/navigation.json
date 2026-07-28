@@ -1,0 +1,247 @@
+{
+  "icon": "/images/icons/icon-clickstack.svg",
+  "item": "ClickStack",
+  "pages": [
+    "ja/clickstack/index",
+    {
+      "expanded": true,
+      "group": "はじめに",
+      "pages": [
+        {
+          "expanded": true,
+          "group": "クイックスタート",
+          "pages": [
+            "ja/clickstack/getting-started/managed",
+            "ja/clickstack/getting-started/oss"
+          ],
+          "root": "ja/clickstack/getting-started/index"
+        },
+        {
+          "group": "サンプルデータセット",
+          "pages": [
+            "ja/clickstack/example-datasets/sample-data",
+            "ja/clickstack/example-datasets/kubernetes",
+            "ja/clickstack/example-datasets/local-data",
+            "ja/clickstack/example-datasets/remote-demo-data",
+            "ja/clickstack/example-datasets/session-replay",
+            "ja/clickstack/example-datasets/chrome-extension",
+            "ja/clickstack/example-datasets/otelgen"
+          ],
+          "root": "ja/clickstack/example-datasets/index"
+        },
+        "ja/clickstack/architecture",
+        "ja/clickstack/faq"
+      ],
+      "root": "ja/clickstack/overview"
+    },
+    {
+      "group": "機能",
+      "pages": [
+        {
+          "group": "デプロイメント",
+          "pages": [
+            {
+              "group": "オープンソース",
+              "pages": [
+                "ja/clickstack/deployment/all-in-one",
+                {
+                  "group": "Helm",
+                  "pages": [
+                    {
+                      "group": "v2.x",
+                      "pages": [
+                        "ja/clickstack/deployment/helm-configuration",
+                        "ja/clickstack/deployment/helm-deployment-options",
+                        "ja/clickstack/deployment/helm-cloud",
+                        "ja/clickstack/deployment/helm-additional-manifests",
+                        "ja/clickstack/deployment/helm-upgrade"
+                      ],
+                      "root": "ja/clickstack/deployment/helm"
+                    },
+                    {
+                      "group": "v1.x（非推奨）",
+                      "pages": [
+                        "ja/clickstack/deployment/helm-configuration-v1",
+                        "ja/clickstack/deployment/helm-deployment-options-v1",
+                        "ja/clickstack/deployment/helm-cloud-v1"
+                      ],
+                      "root": "ja/clickstack/deployment/helm-v1"
+                    }
+                  ]
+                },
+                "ja/clickstack/deployment/docker-compose",
+                "ja/clickstack/deployment/hyperdx-only",
+                "ja/clickstack/deployment/local-mode-only",
+                "ja/clickstack/deployment/clickhouse-embedded"
+              ],
+              "root": "ja/clickstack/deployment/oss"
+            },
+            "ja/clickstack/deployment/managed"
+          ],
+          "root": "ja/clickstack/deployment/overview"
+        },
+        "ja/clickstack/features/search",
+        {
+          "group": "ダッシュボード",
+          "pages": [
+            "ja/clickstack/features/dashboards/dashboard-templates",
+            "ja/clickstack/features/dashboards/sql-visualizations",
+            "ja/clickstack/features/dashboards/row-click-drilldowns"
+          ],
+          "root": "ja/clickstack/features/dashboards/overview"
+        },
+        "ja/clickstack/notebooks",
+        "ja/clickstack/text-to-chart",
+        "ja/clickstack/features/event-patterns",
+        "ja/clickstack/features/event-deltas",
+        "ja/clickstack/features/alerts",
+        "ja/clickstack/service-maps",
+        "ja/clickstack/features/session-replay",
+        "ja/clickstack/mcp",
+        {
+          "group": "デモデイズ",
+          "pages": [
+            {
+              "group": "2026",
+              "pages": [
+                "ja/clickstack/demo-days/2026/2026-07-10",
+                "ja/clickstack/demo-days/2026/2026-07-02",
+                "ja/clickstack/demo-days/2026/2026-06-12",
+                "ja/clickstack/demo-days/2026/2026-06-05",
+                "ja/clickstack/demo-days/2026/2026-05-29",
+                "ja/clickstack/demo-days/2026/2026-05-22",
+                "ja/clickstack/demo-days/2026/2026-05-15",
+                "ja/clickstack/demo-days/2026/2026-05-08",
+                "ja/clickstack/demo-days/2026/2026-04-17",
+                "ja/clickstack/demo-days/2026/2026-04-10",
+                "ja/clickstack/demo-days/2026/2026-04-03"
+              ]
+            }
+          ],
+          "root": "ja/clickstack/demo-days/index"
+        }
+      ]
+    },
+    {
+      "expanded": true,
+      "group": "ClickStack の管理",
+      "pages": [
+        "ja/clickstack/managing/admin",
+        "ja/clickstack/managing/config",
+        "ja/clickstack/managing/estimating-resources",
+        "ja/clickstack/managing/materialized-views",
+        "ja/clickstack/managing/performance-tuning",
+        "ja/clickstack/managing/production",
+        "ja/clickstack/managing/rbac",
+        "ja/clickstack/managing/ttl"
+      ],
+      "root": "ja/clickstack/managing/overview"
+    },
+    {
+      "group": "ガイド",
+      "pages": [
+        {
+          "group": "データの取り込み",
+          "pages": [
+            "ja/clickstack/ingesting-data/overview",
+            "ja/clickstack/ingesting-data/opentelemetry",
+            "ja/clickstack/ingesting-data/vector",
+            "ja/clickstack/ingesting-data/collector",
+            "ja/clickstack/ingesting-data/schemas",
+            "ja/clickstack/ingesting-data/schema/map-vs-json",
+            "ja/clickstack/ingesting-data/trace-sampling",
+            {
+              "group": "インテグレーション",
+              "pages": [
+                "ja/clickstack/integration-examples/nginx-logs",
+                "ja/clickstack/integration-examples/nginx-traces",
+                "ja/clickstack/integration-examples/redis-logs",
+                "ja/clickstack/integration-examples/redis-metrics",
+                "ja/clickstack/integration-examples/cloudwatch",
+                "ja/clickstack/integration-examples/aws-lambda",
+                {
+                  "group": "ホストログ",
+                  "pages": [
+                    "ja/clickstack/integration-examples/host-logs",
+                    "ja/clickstack/integration-examples/host-logs/ec2"
+                  ]
+                },
+                "ja/clickstack/integration-examples/jvm-metrics",
+                "ja/clickstack/integration-examples/kafka-metrics",
+                "ja/clickstack/integration-examples/kubernetes",
+                "ja/clickstack/integration-examples/mysql",
+                "ja/clickstack/integration-examples/nodejs-traces",
+                "ja/clickstack/integration-examples/postgres-logs",
+                "ja/clickstack/integration-examples/postgres-metrics",
+                "ja/clickstack/integration-examples/systemd",
+                "ja/clickstack/integration-examples/temporal",
+                "ja/clickstack/integration-examples/cloudflare",
+                "ja/clickstack/integration-examples/kafka-logs",
+                "ja/clickstack/integration-examples/mongodb-logs"
+              ],
+              "root": "ja/clickstack/integration-examples/index"
+            },
+            {
+              "group": "各言語向け SDK",
+              "pages": [
+                "ja/clickstack/ingesting-data/sdks/browser",
+                "ja/clickstack/ingesting-data/sdks/nodejs",
+                "ja/clickstack/ingesting-data/sdks/python",
+                "ja/clickstack/ingesting-data/sdks/golang",
+                "ja/clickstack/ingesting-data/sdks/java",
+                "ja/clickstack/ingesting-data/sdks/ruby",
+                "ja/clickstack/ingesting-data/sdks/elixir",
+                "ja/clickstack/ingesting-data/sdks/deno",
+                "ja/clickstack/ingesting-data/sdks/nestjs",
+                "ja/clickstack/ingesting-data/sdks/nextjs",
+                "ja/clickstack/ingesting-data/sdks/react-native",
+                "ja/clickstack/ingesting-data/sdks/aws-lambda"
+              ],
+              "root": "ja/clickstack/ingesting-data/sdks/index"
+            }
+          ],
+          "root": "ja/clickstack/ingesting-data/index"
+        },
+        {
+          "expanded": true,
+          "group": "移行ガイド",
+          "pages": [
+            {
+              "group": "Elastic からの移行",
+              "pages": [
+                "ja/clickstack/migration/elastic/intro",
+                "ja/clickstack/migration/elastic/concepts",
+                "ja/clickstack/migration/elastic/types",
+                "ja/clickstack/migration/elastic/search",
+                "ja/clickstack/migration/elastic/migrating-data",
+                "ja/clickstack/migration/elastic/migrating-agents",
+                "ja/clickstack/migration/elastic/migrating-sdks"
+              ],
+              "root": "ja/clickstack/migration/elastic/index"
+            },
+            "ja/clickstack/migration/datadog/index"
+          ],
+          "root": "ja/clickstack/migration/index"
+        }
+      ]
+    },
+    {
+      "expanded": true,
+      "group": "インテグレーションパートナー",
+      "pages": [
+        "ja/clickstack/integration-partners/bindplane",
+        "ja/clickstack/integration-partners/odigos"
+      ],
+      "root": "ja/clickstack/integration-partners/index"
+    },
+    {
+      "expanded": true,
+      "group": "API リファレンス",
+      "openapi": {
+        "directory": "ja/clickstack/api-reference",
+        "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json"
+      },
+      "root": "ja/clickstack/api-reference"
+    }
+  ]
+}

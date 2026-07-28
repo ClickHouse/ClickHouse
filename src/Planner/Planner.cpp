@@ -1,4 +1,5 @@
 #include <Planner/Planner.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Core/Names.h>
@@ -48,7 +49,7 @@
 
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/convertColumnToType.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/Cache/QueryResultCache.h>
@@ -433,18 +434,18 @@ void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const Planner
 }
 
 /// The LIMIT/OFFSET expression value can be either UInt64 or Float64, negative or positive.
-std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const Field & field)
+std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ConstantNode & node)
 {
+    const IColumn & value = *node.getColumn();
+    const DataTypePtr & type = node.getResultType();
+
     // First check if it is nonnegative limit since they are more common
-    const Field converted_value_uint = convertFieldToType(field, DataTypeUInt64());
-    if (!converted_value_uint.isNull())
-        return {converted_value_uint.safeGet<UInt64>(), 0, false};
+    if (ColumnPtr converted = convertColumnToTypeOrNull(value, type, std::make_shared<DataTypeUInt64>()))
+        return {converted->getUInt(0), 0, false};
 
-    const Field converted_value_int = convertFieldToType(field, DataTypeInt64());
-
-    if (!converted_value_int.isNull())
+    if (ColumnPtr converted = convertColumnToTypeOrNull(value, type, std::make_shared<DataTypeInt64>()))
     {
-        Int64 int_value = converted_value_int.safeGet<Int64>();
+        Int64 int_value = converted->getInt(0);
 
         chassert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
 
@@ -452,14 +453,13 @@ std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const Field & field)
         return {magnitude, 0, true};
     }
 
-    Field converted_value_float = convertFieldToType(field, DataTypeFloat64());
-    if (!converted_value_float.isNull())
-        return {0, converted_value_float.safeGet<Float64>(), false};
+    if (ColumnPtr converted = convertColumnToTypeOrNull(value, type, std::make_shared<DataTypeFloat64>()))
+        return {0, converted->getFloat64(0), false};
 
     throw Exception(
         ErrorCodes::INVALID_LIMIT_EXPRESSION,
         "The value {} of LIMIT/OFFSET expression is not representable as UInt64 or Int64 or Float64 in the range (0, 1)",
-        applyVisitor(FieldVisitorToString(), field));
+        applyVisitor(FieldVisitorToString(), node.getValue()));
 }
 
 class QueryAnalysisResult
@@ -492,20 +492,20 @@ public:
         {
             /// Constness of limit is validated during query analysis stage
             std::tie(limit_length, fractional_limit, is_limit_length_negative)
-                = getLimitOffsetValue(query_node.getLimit()->as<ConstantNode &>().getValue());
+                = getLimitOffsetValue(query_node.getLimit()->as<ConstantNode &>());
 
             if (query_node.hasOffset() && (limit_length || fractional_limit > 0))
             {
                 /// Constness of offset is validated during query analysis stage
                 std::tie(limit_offset, fractional_offset, is_limit_offset_negative)
-                    = getLimitOffsetValue(query_node.getOffset()->as<ConstantNode &>().getValue());
+                    = getLimitOffsetValue(query_node.getOffset()->as<ConstantNode &>());
             }
         }
         else if (query_node.hasOffset())
         {
             /// Constness of offset is validated during query analysis stage
             std::tie(limit_offset, fractional_offset, is_limit_offset_negative)
-                = getLimitOffsetValue(query_node.getOffset()->as<ConstantNode &>().getValue());
+                = getLimitOffsetValue(query_node.getOffset()->as<ConstantNode &>());
         }
 
         /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN, NEGATIVE LIMIT, FRACTIONAL LIMIT/OFFSET
@@ -526,12 +526,12 @@ public:
         {
             Float64 fractional_limitby_limit = 0;
             std::tie(limit_by_length, fractional_limitby_limit, is_limit_by_length_negative)
-                = getLimitOffsetValue(query_node.getLimitByLimit()->as<ConstantNode &>().getValue());
+                = getLimitOffsetValue(query_node.getLimitByLimit()->as<ConstantNode &>());
 
             Float64 fractional_limitby_offset = 0;
             if (query_node.hasLimitByOffset())
                 std::tie(limit_by_offset, fractional_limitby_offset, is_limit_by_offset_negative)
-                    = getLimitOffsetValue(query_node.getLimitByOffset()->as<ConstantNode &>().getValue());
+                    = getLimitOffsetValue(query_node.getLimitByOffset()->as<ConstantNode &>());
 
             if (fractional_limitby_limit > 0 || fractional_limitby_offset > 0)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT/OFFSET with LIMIT BY is not supported yet");
@@ -1907,12 +1907,9 @@ static PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree
         throw Exception(ErrorCodes::TOO_DEEP_SUBQUERIES, "Too deep subqueries. Maximum: {}", max_subquery_depth);
 
     const auto & client_info = mutable_context->getClientInfo();
-    auto min_major = static_cast<UInt64>(DBMS_MIN_MAJOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD);
-    auto min_minor = static_cast<UInt64>(DBMS_MIN_MINOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD);
 
     bool need_to_disable_two_level_aggregation = client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
-        client_info.connection_client_version_major < min_major &&
-        client_info.connection_client_version_minor < min_minor;
+        client_info.connection_tcp_protocol_version < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
 
     if (need_to_disable_two_level_aggregation)
     {
@@ -2324,8 +2321,13 @@ void Planner::buildPlanForQueryNode()
     }
 
     JoinTreeQueryPlan join_tree_query_plan;
+    /// With plan-based parallel replicas the planner builds a plain, normal local plan; distribution is
+    /// applied later as a plan transformation (QueryPlanOptimizations::applyParallelReplicas). So skip the
+    /// old parallel-replicas planning path here (it would emit ReadFromLocalReplica /
+    /// ReadFromRemoteParallelReplicas, e.g. inside a view/union inner query) and use the normal plan.
     if (planner_context->getMutableQueryContext()->canUseTaskBasedParallelReplicas()
-        && planner_context->getGlobalPlannerContext()->parallel_replicas_node == &query_node)
+        && planner_context->getGlobalPlannerContext()->parallel_replicas_node == &query_node
+        && !settings[Setting::parallel_replicas_plan_based])
     {
         join_tree_query_plan = buildQueryPlanForParallelReplicas(query_node, planner_context, select_query_info.storage_limits);
     }
