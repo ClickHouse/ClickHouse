@@ -10,7 +10,7 @@
 #
 # `no-object-storage` / `no-shared-merge-tree` / `no-replicated-database`: the
 # test writes real on-disk index files in the local part directory and relies on
-# ATTACH recomputing checksums.txt from those files. On object storage the files
+# ATTACH recomputing `checksums.txt` from those files. On object storage the files
 # in the data dir are DiskObjectStorageMetadata pointer files, and the
 # replicated/shared engines gate ATTACH on ZooKeeper checksum digests, so the
 # local-disk file surgery does not apply there.
@@ -31,7 +31,7 @@
 # `getDeserializedFormat` returns only the preferred read layout (".idx2" wins
 # for minmax), so the mutation cleanup bookkeeping (collectFilesToSkip skip-list
 # for recalc'd/dropped indices, and remove_per_substream_checksums) never saw the
-# stale ".idx" on a mixed part -- so the next ALTER UPDATE or DROP INDEX
+# stale ".idx" on a mixed part -- so the next ALTER UPDATE or `DROP INDEX`
 # hardlinked the dead ".idx" forward with a stale checksum instead of cleaning it
 # up, keeping the part mixed forever. The fix enumerates the UNION of all
 # physical substreams present via `getAllSubstreamsInPart`, which reports both
@@ -115,8 +115,8 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT cou
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_mixed_minmax SYNC"
 
-# --- Case 2: DROP INDEX on a mixed part (fresh table) ---
-# DROP INDEX has no mutation pipeline; the stale ".idx" must be removed, not
+# --- Case 2: `DROP INDEX` on a mixed part (fresh table) ---
+# `DROP INDEX` has no mutation pipeline; the stale ".idx" must be removed, not
 # hardlinked into the new part. Use a fresh table so the fabrication starts
 # from a clean (writable) source part, not a mutated one.
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_mixed_minmax_drop SYNC"

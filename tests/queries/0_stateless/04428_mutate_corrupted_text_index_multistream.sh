@@ -3,10 +3,10 @@
 #
 # Regression for the multi-stream text-index case flagged on PR #109616 (issue #109595).
 # 04427 covers the corrupted-orphan repair (skp_idx_<name>.* on disk, no per-file entries
-# in checksums.txt) for a single-stream minmax index on the some-columns mutation and
-# DROP INDEX paths. A text index owns several substreams -- the base .idx plus .dct, .pst
+# in `checksums.txt`) for a single-stream minmax index on the some-columns mutation and
+# `DROP INDEX` paths. A text index owns several substreams -- the base .idx plus .dct, .pst
 # and, with positions enabled, .pos -- each with its own data file and mark. The orphan
-# scan and the DROP INDEX rename fallback previously enumerated only the base .idx/.idx2
+# scan and the `DROP INDEX` rename fallback previously enumerated only the base .idx/.idx2
 # plus one mark, so the .dct/.pst/.pos side streams of a corrupted text part were hardlinked
 # into the new part unchanged and `CHECK TABLE` kept failing with UNEXPECTED_FILE_IN_DATA_PART.
 #
@@ -20,7 +20,7 @@ CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 . "$CUR_DIR"/../shell_config.sh
 
 # Fabricate a part in the released-bug shape: skp_idx_txt.* on disk but absent from
-# checksums.txt. Save the freshly written index files, DROP+re-ADD the index so the active
+# `checksums.txt`. Save the freshly written index files, DROP+re-ADD the index so the active
 # part has no skp_idx entries in checksums, then re-inject the files on disk.
 make_corrupted_part () {
     local tbl="$1"
@@ -98,7 +98,7 @@ ${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_some SETTINGS check_query_single_value_re
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_some WHERE hasToken(s, 'hello10')"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_some SYNC"
 
-# --- Path B: DROP INDEX on a corrupted part ---
+# --- Path B: `DROP INDEX` on a corrupted part ---
 make_corrupted_part t_drop
 echo "B_corrupted_orphan_on_disk:"
 orphan_on_disk t_drop

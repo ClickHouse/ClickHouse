@@ -10,7 +10,7 @@
 #
 # `no-object-storage` / `no-shared-merge-tree` / `no-replicated-database`: the
 # test rewrites a real on-disk archive file in the local part directory and
-# relies on ATTACH recomputing checksums.txt from it. On object storage the
+# relies on ATTACH recomputing `checksums.txt` from it. On object storage the
 # files are DiskObjectStorageMetadata pointer files, and the replicated/shared
 # engines gate ATTACH on ZooKeeper checksum digests, so the local-disk surgery
 # does not apply there. The bug is in MutateTask's packed-archive preservation
@@ -40,7 +40,7 @@
 # The modern writer only produces ".idx2", so the legacy shape is fabricated:
 # build a packed part with two minmax indices, DETACH it, rewrite the packed
 # footer to rename "skp_idx_mm_v.idx2" to "skp_idx_mm_v.idx" (for a non-nullable
-# column the v1 and v2 minmax payloads are byte-identical), drop checksums.txt so
+# column the v1 and v2 minmax payloads are byte-identical), drop `checksums.txt` so
 # ATTACH recomputes it, then ATTACH and run an ALTER UPDATE that touches only w
 # (recomputes mm_w, rebuilds the archive) while mm_v is preserved.
 

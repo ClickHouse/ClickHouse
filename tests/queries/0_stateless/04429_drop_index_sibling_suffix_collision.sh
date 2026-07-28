@@ -9,9 +9,9 @@
 # configured with ENABLE_LIBRARIES = 0, so the text index type is not registered
 # there. The test needs no on-disk part surgery otherwise.
 #
-# DROP INDEX must not delete files owned by a surviving index.
+# `DROP INDEX` must not delete files owned by a surviving index.
 #
-# The DROP INDEX bookkeeping has to enumerate substream suffixes speculatively
+# The `DROP INDEX` bookkeeping has to enumerate substream suffixes speculatively
 # (the dropped index's type is already gone from metadata by then, so its real
 # substream list is unavailable). With `escape_index_filenames` = 0 the stream name
 # is the index name verbatim, so "drop index a" + speculative suffix ".pos"
@@ -109,9 +109,9 @@ run_inverse_case() {
     # assertion is file survival rather than a hasPhrase result on purpose: with
     # `escape_index_filenames` = 0 the minmax index `a.pos` and the text index's own
     # `.pos` substream want the same mark filename, so this table is already
-    # unreadable for phrase search before any DROP INDEX runs (that write-time
+    # unreadable for phrase search before any `DROP INDEX` runs (that write-time
     # collision is a separate, pre-existing issue). What must hold here is that
-    # DROP INDEX does not delete files the surviving text index owns.
+    # `DROP INDEX` does not delete files the surviving text index owns.
     # The text index's stream base is `skp_idx_a` under either escaping mode (there is
     # no dot in its own name to escape), so its positional substream files are:
     local pos_data="skp_idx_a.pos.idx"
@@ -145,7 +145,7 @@ run_inverse_case() {
 # Dropping the index whose NAME carries the suffix, where the sibling is an
 # ordinary minmax index that owns no `.pos` substream at all. The survivor must
 # not over-claim skp_idx_a.pos.*, or the dropped index's own files leak into the
-# new part (and a later re-ADD without MATERIALIZE INDEX could then read stale
+# new part (and a later re-ADD without `MATERIALIZE INDEX` could then read stale
 # index data).
 run_suffix_named_drop_case() {
     local label="$1" escape="$2" packed="$3"

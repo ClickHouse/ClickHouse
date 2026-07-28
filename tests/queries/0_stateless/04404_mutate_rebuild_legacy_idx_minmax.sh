@@ -10,7 +10,7 @@
 #
 # `no-object-storage` / `no-shared-merge-tree` / `no-replicated-database`: the
 # test renames real on-disk index files in the local part directory and relies
-# on ATTACH recomputing checksums.txt from those files. On object storage the
+# on ATTACH recomputing `checksums.txt` from those files. On object storage the
 # files in the data dir are DiskObjectStorageMetadata pointer files, and the
 # replicated/shared engines gate ATTACH on ZooKeeper checksum digests, so the
 # local-disk file surgery does not apply there. The bug is in MutateTask's
@@ -44,7 +44,7 @@
 #
 # The modern writer only produces ".idx2", so the legacy shape is fabricated:
 # build a normal part, DETACH it, rename ".idx2" to ".idx" (for a non-nullable
-# column the v1 and v2 minmax payloads are byte-identical), drop checksums.txt
+# column the v1 and v2 minmax payloads are byte-identical), drop `checksums.txt`
 # so ATTACH recomputes it, then ATTACH and run the rebuild mutation.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

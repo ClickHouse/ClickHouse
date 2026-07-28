@@ -4,15 +4,15 @@
 # Regression for the migration case flagged on PR #109616 (issue #109595).
 # 04426 covers the FULL-part-rewrite path (`MutateAllPartColumnsTask`), which
 # repairs a part corrupted by the released #109595 bug (skp_idx_<name>.* on
-# disk, no per-file entries in checksums.txt) by recomputing the index. This
+# disk, no per-file entries in `checksums.txt`) by recomputing the index. This
 # test covers the two remaining paths that a corrupted part can go through:
 #   A) a some-columns mutation (ALTER UPDATE of a non-indexed column), and
-#   B) DROP INDEX.
-# Their bookkeeping resolved index files only through checksums.txt, so the
+#   B) `DROP INDEX`.
+# Their bookkeeping resolved index files only through `checksums.txt`, so the
 # orphan standalone files were hardlinked into the new part unchanged and
 # `CHECK TABLE` kept failing. The fix drops the dead orphan files on both paths,
 # leaving the part consistent (the index is simply absent from this part -- a
-# later MATERIALIZE INDEX / full rewrite repopulates it).
+# later `MATERIALIZE INDEX` / full rewrite repopulates it).
 #
 # no-fasttest: local-disk part-file surgery (see 04402/04404/04426).
 # no-object-storage/-shared/-replicated: relies on local on-disk file layout.
@@ -25,7 +25,7 @@ CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 . "$CUR_DIR"/../shell_config.sh
 
 # Fabricate a part in the released-bug shape: skp_idx_mm_v.* on disk but absent
-# from checksums.txt. Save the freshly written index files, DROP+re-ADD the
+# from `checksums.txt`. Save the freshly written index files, DROP+re-ADD the
 # index so the active part has no skp_idx entries in checksums, then re-inject.
 make_corrupted_part () {
     local tbl="$1"
@@ -80,7 +80,7 @@ ${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_some SETTINGS check_query_single_value_re
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_some WHERE v = 1042"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_some SYNC"
 
-# --- Path B: DROP INDEX on a corrupted part ---
+# --- Path B: `DROP INDEX` on a corrupted part ---
 make_corrupted_part t_drop
 echo "B_corrupted_orphan_on_disk:"
 orphan_on_disk t_drop

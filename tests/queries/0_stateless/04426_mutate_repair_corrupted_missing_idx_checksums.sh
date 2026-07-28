@@ -2,10 +2,10 @@
 # Tags: no-fasttest, no-replicated-database, no-shared-merge-tree, no-object-storage, no-random-merge-tree-settings
 #
 # Regression for the migration case flagged on PR #109616 (issue #109595).
-# The pre-#109595 releases (26.3+) rewrote a mutated Wide part's checksums.txt
+# The pre-#109595 releases (26.3+) rewrote a mutated Wide part's `checksums.txt`
 # WITHOUT the hardlinked skip-index files, producing a corrupted part shape:
 # skp_idx_<name>.* files present on disk, but no per-file entries in
-# checksums.txt. Such an index is already dead (reads probe checksums and see
+# `checksums.txt`. Such an index is already dead (reads probe checksums and see
 # nothing, so it never prunes; `CHECK TABLE` fails with
 # UNEXPECTED_FILE_IN_DATA_PART). A later full-part-rewrite mutation used to take
 # the preserve path (`getAllSubstreamsInPart` over checksums returns no substreams)
@@ -48,9 +48,9 @@ DATA_PATH=$(${CLICKHOUSE_CLIENT} -q "SELECT data_paths[1] FROM system.tables WHE
 ACTIVE_PART=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 't_corrupt_minmax' AND active LIMIT 1")
 
 # Save the freshly written index files, then drop and re-declare the index so
-# the active part has NO skp_idx entries in checksums.txt, and re-inject the
+# the active part has NO skp_idx entries in `checksums.txt`, and re-inject the
 # saved files. This reproduces the released-bug shape without depending on an
-# old binary: index files on disk, missing from checksums.txt.
+# old binary: index files on disk, missing from `checksums.txt`.
 cp "${ACTIVE_PART}skp_idx_mm_v.idx2" "${DATA_PATH}/saved_mm_v.idx2"
 cp "${ACTIVE_PART}skp_idx_mm_v.cmrk2" "${DATA_PATH}/saved_mm_v.cmrk2"
 
