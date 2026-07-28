@@ -1738,7 +1738,19 @@ class JobConfigs:
         command="python3 ./ci/jobs/llvm_coverage_job.py",
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py"],
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/llvm_coverage_job.py"],
+            # llvm_coverage_job.py shells out to all of these; a change to any of
+            # them must mark this job (and, transitively via `requires`, the
+            # coverage build and every FT/IT/UT coverage shard) as affected -
+            # otherwise praktika's changed-files filter drops the job even when
+            # filter_job.py's should_skip_job says it should run.
+            include_paths=[
+                "./ci/jobs/llvm_coverage_job.py",
+                "./ci/jobs/scripts/merge_llvm_coverage.sh",
+                "./ci/jobs/scripts/generate_diff_coverage_report.sh",
+                "./ci/jobs/scripts/print_uncovered_code.py",
+                "./ci/jobs/scripts/dedup_lcov_instantiations.py",
+                "./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
+            ],
         ),
         timeout=3600,
         enable_gh_auth=True,
