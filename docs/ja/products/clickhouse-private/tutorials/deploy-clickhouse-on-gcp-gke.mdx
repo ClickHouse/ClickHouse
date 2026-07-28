@@ -30,9 +30,7 @@ description: "このチュートリアルでは、Google Kubernetes Engine（GKE
 ***
 
 <Steps>
-  <Step stepNumber={0}>
-    ## ステップ 0: サービスアカウントのセットアップ
-
+  <Step stepNumber={0} title="ステップ 0: サービスアカウントのセットアップ" id="step-0-service-account-setup">
     ユーザーの直接認証が制限される FedRAMP 環境では、権限借用用のサービスアカウントを作成します。
 
     ### オプション 1: GCP コンソールから
@@ -109,9 +107,7 @@ description: "このチュートリアルでは、Google Kubernetes Engine（GKE
     ***
   </Step>
 
-  <Step stepNumber={1}>
-    ## ステップ1: 環境変数の設定 (`00-env.sh`)
-
+  <Step stepNumber={1} title={<>ステップ1: 環境変数の設定 (<code>00-env.sh</code>)</>} id="step-1-set-environment-variables-00-envsh">
     このファイルを作成し、他のスクリプトを実行する前に読み込んでください。各値はご使用の環境に合わせて更新してください。
 
     ```bash expandable
@@ -225,9 +221,7 @@ description: "このチュートリアルでは、Google Kubernetes Engine（GKE
     ***
   </Step>
 
-  <Step stepNumber={2}>
-    ## ステップ 2: Artifact Registry を作成する (`01-artifact-registry.sh`)
-
+  <Step stepNumber={2} title={<>ステップ 2: Artifact Registry を作成する (<code>01-artifact-registry.sh</code>)</>} id="step-2-create-artifact-registry-01-artifact-registrysh">
     ```bash expandable
     #!/bin/bash
     set -e
@@ -269,9 +263,7 @@ description: "このチュートリアルでは、Google Kubernetes Engine（GKE
     ***
   </Step>
 
-  <Step stepNumber={3}>
-    ## ステップ 3: コンテナーイメージをコピー (`02-copy-images.sh`)
-
+  <Step stepNumber={3} title={<>ステップ 3: コンテナーイメージをコピー (<code>02-copy-images.sh</code>)</>} id="step-3-copy-container-images-02-copy-imagessh">
     すべてのアーキテクチャを保持するには、[skopeo](https://github.com/containers/skopeo) が必要です。
 
     ```bash expandable
@@ -348,9 +340,7 @@ description: "このチュートリアルでは、Google Kubernetes Engine（GKE
     ***
   </Step>
 
-  <Step stepNumber={4}>
-    ## ステップ 4: VPC とサブネットを設定する (`03-vpc-subnet.sh`)
-
+  <Step stepNumber={4} title={<>ステップ 4: VPC とサブネットを設定する (<code>03-vpc-subnet.sh</code>)</>} id="step-4-configure-vpc-and-subnet-03-vpc-subnetsh">
     このスクリプトは、既存の VPC と踏み台サーバーがあることを前提としています。必要なセカンダリ範囲を持つ GKE サブネットを作成または更新します。
 
     **重要: CIDR 境界の要件** - `/14` ブロック: 第 3 オクテットは 4 の倍数である必要があります (例: `10.244.0.0`、`10.245.0.0` は不可)  - `/20` ブロック: 第 4 オクテットは 0 である必要があり、第 3 オクテットは 16 の境界である必要があります (例: `10.252.0.0`)
@@ -433,9 +423,7 @@ description: "このチュートリアルでは、Google Kubernetes Engine（GKE
     ***
   </Step>
 
-  <Step stepNumber={5}>
-    ## ステップ 5: Cloud NAT を作成する (`04-cloud-nat.sh`)
-
+  <Step stepNumber={5} title={<>ステップ 5: Cloud NAT を作成する (<code>04-cloud-nat.sh</code>)</>} id="step-5-create-cloud-nat-04-cloud-natsh">
     プライベート GKE ノードが外部のインターネットにアクセスするには、Cloud NAT が必要です。
 
     ```bash expandable
@@ -489,9 +477,7 @@ description: "このチュートリアルでは、Google Kubernetes Engine（GKE
     ***
   </Step>
 
-  <Step stepNumber={6}>
-    ## ステップ6: GCPサービスアカウントを作成する (`05-service-account.sh`)
-
+  <Step stepNumber={6} title={<>ステップ6: GCPサービスアカウントを作成する (<code>05-service-account.sh</code>)</>} id="step-6-create-gcp-service-account-05-service-accountsh">
     ```bash
     #!/bin/bash
     set -e
@@ -522,9 +508,7 @@ description: "このチュートリアルでは、Google Kubernetes Engine（GKE
     ***
   </Step>
 
-  <Step stepNumber={7}>
-    ## ステップ 7: GCS バケットの作成 (`06-gcs-bucket.sh`)
-
+  <Step stepNumber={7} title={<>ステップ 7: GCS バケットの作成 (<code>06-gcs-bucket.sh</code>)</>} id="step-7-create-gcs-bucket-06-gcs-bucketsh">
     ```bash expandable
     #!/bin/bash
     set -e
@@ -573,9 +557,7 @@ description: "このチュートリアルでは、Google Kubernetes Engine（GKE
     ***
   </Step>
 
-  <Step stepNumber={8}>
-    ## ステップ 8: GKE クラスターを作成 (`07-gke-cluster.sh`)
-
+  <Step stepNumber={8} title={<>ステップ 8: GKE クラスターを作成 (<code>07-gke-cluster.sh</code>)</>} id="step-8-create-gke-cluster-07-gke-clustersh">
     **完全にプライベートな GKE クラスター**を作成します。worker ノードは内部 IP のみを持ち、コントロールプレーンにはパブリック エンドポイントがなく、すべてのアクセスは踏み台サーバー経由で VPC 内から行う必要があります。
 
     ```bash expandable
@@ -655,9 +637,7 @@ description: "このチュートリアルでは、Google Kubernetes Engine（GKE
     ***
   </Step>
 
-  <Step stepNumber={9}>
-    ## ステップ 9: Node Pool を作成 (`08-node-pools.sh`)
-
+  <Step stepNumber={9} title={<>ステップ 9: Node Pool を作成 (<code>08-node-pools.sh</code>)</>} id="step-9-create-node-pools-08-node-poolssh">
     | Node Pool | マシンタイプ                                      | ディスク                       | ラベル                      | テイント                                        |
     | --------- | ------------------------------------------- | -------------------------- | ------------------------ | ------------------------------------------- |
     | Keeper    | n2-standard-4 (dev) / n2-standard-8 (prod)  | 20GB pd-ssd                | `clickhouseGroup=keeper` | `clickhouse.com/do-not-schedule:NoSchedule` |
@@ -732,9 +712,7 @@ description: "このチュートリアルでは、Google Kubernetes Engine（GKE
     ***
   </Step>
 
-  <Step stepNumber={10}>
-    ## ステップ10: ローカルSSDデーモンセットをデプロイ (`09-local-ssd-daemonset.sh`)
-
+  <Step stepNumber={10} title={<>ステップ10: ローカルSSDデーモンセットをデプロイ (<code>09-local-ssd-daemonset.sh</code>)</>} id="step-10-deploy-local-ssd-daemonset-09-local-ssd-daemonsetsh">
     GKE Container-Optimized OS のルートファイルシステムが読み取り専用のため、`/nvme` は作成できません。このデーモンセットは、ローカルSSDをフォーマットし、`/mnt/disks/ssd0` にマウントします。
 
     **重要:** レースコンディションを避けるため、ClickHouse クラスターより**前に**これをデプロイしてください。
@@ -834,9 +812,7 @@ description: "このチュートリアルでは、Google Kubernetes Engine（GKE
     ***
   </Step>
 
-  <Step stepNumber={11}>
-    ## ステップ11: トポロジーラベルを追加する (`10-topology-labels.sh`)
-
+  <Step stepNumber={11} title={<>ステップ11: トポロジーラベルを追加する (<code>10-topology-labels.sh</code>)</>} id="step-11-add-topology-labels-10-topology-labelssh">
     ```bash
     #!/bin/bash
     set -e
@@ -871,9 +847,7 @@ description: "このチュートリアルでは、Google Kubernetes Engine（GKE
     ***
   </Step>
 
-  <Step stepNumber={12}>
-    ## ステップ12: Kubernetesの前提条件をインストールする
-
+  <Step stepNumber={12} title="ステップ12: Kubernetesの前提条件をインストールする" id="step-12-install-kubernetes-prerequisites">
     ### VolumeSnapshot CRDs のインストール (`11-volumesnapshot-crds.sh`)
 
     ```bash
@@ -1027,9 +1001,7 @@ description: "このチュートリアルでは、Google Kubernetes Engine（GKE
     ***
   </Step>
 
-  <Step stepNumber={13}>
-    ## ステップ13: FIPS 向けの手順 (条件付き)
-
+  <Step stepNumber={13} title="ステップ13: FIPS 向けの手順 (条件付き)" id="step-13-fips-steps-conditional">
     `ENABLE_FIPS=false` の場合は、このセクションをスキップしてください。
 
     ### FIPS 準拠証明書を作成する (`14-create-fips-certs.sh`)
@@ -1099,9 +1071,7 @@ description: "このチュートリアルでは、Google Kubernetes Engine（GKE
     ***
   </Step>
 
-  <Step stepNumber={14}>
-    ## ステップ14: Operator をインストールする (`16-install-operator.sh`)
-
+  <Step stepNumber={14} title={<>ステップ14: Operator をインストールする (<code>16-install-operator.sh</code>)</>} id="step-14-install-operator-16-install-operatorsh">
     ```bash expandable
     #!/bin/bash
     set -e
@@ -1154,9 +1124,7 @@ description: "このチュートリアルでは、Google Kubernetes Engine（GKE
     ***
   </Step>
 
-  <Step stepNumber={15}>
-    ## ステップ15: ClickHouseクラスターのデプロイ (`17-install-cluster.sh`)
-
+  <Step stepNumber={15} title={<>ステップ15: ClickHouseクラスターのデプロイ (<code>17-install-cluster.sh</code>)</>} id="step-15-deploy-clickhouse-cluster-17-install-clustersh">
     ```bash expandable
     #!/bin/bash
     set -e
@@ -1270,9 +1238,7 @@ description: "このチュートリアルでは、Google Kubernetes Engine（GKE
     ***
   </Step>
 
-  <Step stepNumber={16}>
-    ## ステップ 16: Workload Identity をバインドする (`18-bind-helm-workload-identity.sh`)
-
+  <Step stepNumber={16} title={<>ステップ 16: Workload Identity をバインドする (<code>18-bind-helm-workload-identity.sh</code>)</>} id="step-16-bind-workload-identity-18-bind-helm-workload-identitysh">
     Helm チャートは独自のサービスアカウント (`ch-${CLUSTER_NAME}-sa`) を作成します。GCS にアクセスするには、この SA に Workload Identity をバインドする必要があります。
 
     **重要:** ステップ 15 で作成される Keeper と server のポッドは、このバインドが行われる前に起動するため、GCS 403 エラーで失敗します。このスクリプトは、バインド後にポッドを再起動します。
@@ -1373,9 +1339,7 @@ description: "このチュートリアルでは、Google Kubernetes Engine（GKE
     ***
   </Step>
 
-  <Step stepNumber={17}>
-    ## ステップ 17: インストールを確認
-
+  <Step stepNumber={17} title="ステップ 17: インストールを確認" id="step-17-verify-installation">
     ### 標準モード (TLS なし)
 
     ```text

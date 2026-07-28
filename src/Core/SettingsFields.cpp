@@ -1,3 +1,4 @@
+#include <Core/ProtocolDefines.h>
 #include <Columns/IColumn.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Field.h>
