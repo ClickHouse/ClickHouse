@@ -82,7 +82,7 @@ public:
     String getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const override;
 
     void addFileInfos(BackupFileInfos && file_infos) override;
-    BackupFileInfos getFileInfos() const override;
+    const BackupFileInfos & getFileInfos() const override;
     void forEachFileInfoForAllHosts(const std::function<void(const BackupFileInfo &)> & callback) const override;
     bool startWritingFile(size_t data_file_index) override;
 
@@ -93,7 +93,6 @@ public:
 
 private:
     void createRootNodes();
-    bool tryFinishImpl() noexcept;
 
     void serializeToMultipleZooKeeperNodes(const String & path, const String & value, const String & logging_name);
     String deserializeFromMultipleZooKeeperNodes(const String & path, const String & logging_name) const;

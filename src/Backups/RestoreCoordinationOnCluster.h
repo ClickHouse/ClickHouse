@@ -76,7 +76,6 @@ public:
 
 private:
     void createRootNodes();
-    bool tryFinishImpl() noexcept;
 
     const String root_zookeeper_path;
     const BackupKeeperSettings keeper_settings;
