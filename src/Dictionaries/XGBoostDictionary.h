@@ -1,5 +1,9 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_XGBOOST
+
 #include <atomic>
 #include <memory>
 
@@ -117,3 +121,5 @@ private:
 };
 
 }
+
+#endif

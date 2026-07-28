@@ -26,9 +26,11 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int SUPPORT_IS_DISABLED;
 extern const int UNSUPPORTED_METHOD;
 }
 
+#if USE_XGBOOST
 
 XGBoostDictionary::XGBoostDictionary(
     const StorageID & dict_id_, const DictionaryStructure & dict_struct_, DictionarySourcePtr source_ptr_, Configuration configuration_)
@@ -181,18 +183,25 @@ void XGBoostDictionary::removePersistentFilesOnDrop() const
         LOG_WARNING(log, "Could not remove persisted XGBoost model file {}: {}", configuration.model_path, ec.message());
 }
 
+#endif
+
 
 void registerDictionaryXGBoost(DictionaryFactory & factory);
 void registerDictionaryXGBoost(DictionaryFactory & factory)
 {
     auto create_layout = [](const std::string & /* full_name */,
-                            const DictionaryStructure & dict_struct,
-                            const Poco::Util::AbstractConfiguration & config,
-                            const std::string & config_prefix,
-                            DictionarySourcePtr source_ptr,
-                            ContextPtr global_context,
+                            [[maybe_unused]] const DictionaryStructure & dict_struct,
+                            [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
+                            [[maybe_unused]] const std::string & config_prefix,
+                            [[maybe_unused]] DictionarySourcePtr source_ptr,
+                            [[maybe_unused]] ContextPtr global_context,
                             bool /* created_from_ddl */) -> DictionaryPtr
     {
+#if !USE_XGBOOST
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Dictionary layout `xgboost` is disabled because ClickHouse was built without XGBoost support");
+#else
         /// The structure must be a complex key of one or more numeric feature columns, followed by exactly one
         /// numeric attribute: the training target.
         if (!dict_struct.key || dict_struct.key->empty())
@@ -253,6 +262,7 @@ void registerDictionaryXGBoost(DictionaryFactory & factory)
         };
 
         return std::make_unique<XGBoostDictionary>(dict_id, dict_struct, std::move(source_ptr), std::move(cfg));
+#endif
     };
 
     factory.registerLayout(
@@ -263,7 +273,11 @@ void registerDictionaryXGBoost(DictionaryFactory & factory)
         Documentation{
             .description = "A computational dictionary that trains an immutable XGBoost model at load time from a source table of "
                            "`(features..., target)` rows, then predicts the target for a feature vector through `dictGet` or the "
-                           "`predictXGBoost` function. The feature columns are the key and the single attribute is the target.",
+                           "`predictXGBoost` function. The feature columns are the key and the single attribute is the target."
+#if !USE_XGBOOST
+                           " Currently unavailable, because this ClickHouse build does not include XGBoost support."
+#endif
+            ,
             .syntax = "LAYOUT(XGBOOST([objective '...'] [num_iterations N] [max_depth N] [eta 0.3] [...]))",
             .introduced_in = {26, 7}});
 }

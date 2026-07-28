@@ -1,3 +1,10 @@
+option(ENABLE_XGBOOST "Enable xgboost" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_XGBOOST)
+    message(STATUS "Not using xgboost")
+    return()
+endif()
+
 set(XGBOOST_DIR "${ClickHouse_SOURCE_DIR}/contrib/xgboost")
 set(XGBOOST_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/xgboost")
 set(XGBOOST_SOURCE_DIR "${XGBOOST_DIR}/src")

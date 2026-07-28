@@ -1,5 +1,7 @@
 #include <Dictionaries/XGBoostModel.h>
 
+#if USE_XGBOOST
+
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadHelpers.h>
@@ -365,3 +367,5 @@ String XGBoostModel::sanitizePredictParams(const PredictParameters & params)
     return oss.str();
 }
 }
+
+#endif

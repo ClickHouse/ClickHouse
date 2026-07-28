@@ -1,3 +1,7 @@
+#include "config.h"
+
+#if USE_XGBOOST
+
 #include <atomic>
 
 #include <Access/Common/AccessFlags.h>
@@ -272,3 +276,5 @@ REGISTER_FUNCTION(PredictXGBoost)
 }
 
 }
+
+#endif

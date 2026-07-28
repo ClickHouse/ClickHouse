@@ -1,5 +1,9 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_XGBOOST
+
 #include <Columns/IColumn_fwd.h>
 #include <Core/Block_fwd.h>
 #include <base/types.h>
@@ -99,3 +103,5 @@ private:
 };
 
 }
+
+#endif
