@@ -51,10 +51,10 @@ ClickHouse のスパースプライマリインデックスは、テーブルの
 このスパース性のおかげで、プライマリインデックスはメモリ内に完全に収まるほど小さく、主キーカラムに対する述語条件を持つクエリを高速にフィルタリングできます。次のセクションでは、これがそのようなクエリの高速化にどのように役立つかを説明します。
 
 <div id="primary-index-usage">
-  ### プライマリインデックスの使用
+  ### プライマリ索引の使用
 </div>
 
-次のアニメーションでは、スパースプライマリインデックスがクエリの高速化にどのように使われるかを示します。
+次のアニメーションでは、スパースプライマリ索引がクエリの高速化にどのように使われるかを示します。
 
 <Image img="/images/managing-data/core-concepts/primary-index-light_03.webp" size="lg" />
 
@@ -64,9 +64,9 @@ ClickHouse のスパースプライマリインデックスは、テーブルの
 
 ① この例のクエリには、2 つの主キーカラムの両方に対する条件が含まれています: `town = 'LONDON' AND street = 'OXFORD STREET'`.
 
-② クエリを高速化するために、ClickHouse はテーブルのプライマリインデックスをメモリに読み込みます。
+② クエリを高速化するために、ClickHouse はテーブルのプライマリ索引をメモリに読み込みます。
 
-③ 次に、インデックスエントリを走査して、条件に一致する行を含む可能性があるグラニュール、つまりスキップできないグラニュールを特定します。
+③ 次に、索引エントリを走査して、条件に一致する行を含む可能性があるグラニュール、つまりスキップできないグラニュールを特定します。
 
 ④ その後、それらのグラニュールと、クエリに必要な他のカラムに対応するグラニュールがメモリに読み込まれ、[処理](/ja/concepts/core-concepts/query-parallelism) されます。
 
@@ -198,9 +198,9 @@ SELECT count() FROM uk.uk_price_paid_simple;
 * `mergeTreeIndex` テーブル関数を使って **索引の内容を確認** でき、`EXPLAIN` 句で索引の利用状況を確認できます。
 
 <div id="where-to-find-more-information">
-  ## さらに詳しい情報
+  ## 詳細情報
 </div>
 
-ClickHouse におけるスパースプライマリインデックスの仕組みや、従来のデータベース索引との違い、利用時のベストプラクティスについてさらに詳しく知りたい場合は、索引に関する詳細な[解説](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)をご覧ください。
+ClickHouse のスパースプライマリ索引の仕組みや、従来のデータベース索引との違い、利用時のベストプラクティスについて詳しくは、索引に関する詳細な[解説](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)をご覧ください。
 
-プライマリインデックスのスキャンで選択されたデータを ClickHouse がどのように高い並列性で処理するのかに興味がある場合は、クエリ並列性ガイドを[こちら](/ja/concepts/core-concepts/query-parallelism)でご覧ください。
+プライマリ索引のスキャンで選択されたデータを ClickHouse が高い並列度でどのように処理するのかに興味がある場合は、[クエリ並列度ガイド](/ja/concepts/core-concepts/query-parallelism)をご覧ください。

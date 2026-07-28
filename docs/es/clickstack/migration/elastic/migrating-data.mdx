@@ -31,32 +31,24 @@ Al migrar de Elastic a ClickStack para casos de uso de observabilidad, recomenda
 </div>
 
 <Steps>
-  <Step>
-    #### Configurar la ingestión dual
-
+  <Step title="Configurar la ingestión dual" id="configure-dual-ingestion">
     Configure su pipeline de recopilación de datos para enviar datos tanto a Elastic como a ClickStack de forma simultánea.
 
     La forma de hacerlo depende de los agentes que utilice actualmente para la recopilación; consulte [&quot;Migración de agentes&quot;](/es/clickstack/migration/elastic/migrating-agents).
   </Step>
 
-  <Step>
-    #### Ajustar los períodos de retención
-
+  <Step title="Ajustar los períodos de retención" id="adjust-retention-period">
     Configure la TTL de Elastic para que coincida con el período de retención deseado. Configure la [TTL](/es/clickstack/managing/production#configure-ttl) de ClickStack para conservar los datos durante el mismo período.
   </Step>
 
-  <Step>
-    #### Validar y comparar
-
+  <Step title="Validar y comparar" id="validate-and-compare">
     * Ejecute consultas en ambos sistemas para garantizar la coherencia de los datos
     * Compare el rendimiento y los resultados de las consultas
     * Migre los dashboards y las alertas a ClickStack. Actualmente, este proceso es manual.
     * Verifique que todos los dashboards y alertas críticos funcionen como se espera en ClickStack
   </Step>
 
-  <Step>
-    #### Transición gradual
-
+  <Step title="Transición gradual" id="graudal-transition">
     * A medida que los datos caduquen de forma natural en Elastic, dependerá cada vez más de ClickStack
     * Una vez que haya adquirido confianza en ClickStack, podrá empezar a redirigir consultas y dashboards
   </Step>
@@ -141,9 +133,7 @@ Este enfoque solo es viable para conjuntos de datos de menos de 10 millones de f
 Los siguientes pasos permiten migrar un único índice de Elasticsearch a ClickHouse.
 
 <Steps>
-  <Step>
-    ### Migrar el esquema
-
+  <Step title="Migrar el esquema" id="migrate-scheme">
     Cree una tabla en ClickHouse para el índice que se está migrando desde Elasticsearch. Puede mapear [los tipos de Elasticsearch a su equivalente en ClickHouse](/es/clickstack/migration/elastic/types). Como alternativa, puede utilizar el tipo de dato JSON en ClickHouse, que creará columnas del tipo adecuado de forma dinámica a medida que se inserten los datos.
 
     Considere el siguiente mapeo de Elasticsearch para un índice que contiene datos de `syslog`:
@@ -578,9 +568,7 @@ Los siguientes pasos permiten migrar un único índice de Elasticsearch a ClickH
     Para obtener más detalles sobre el uso del tipo JSON en esquemas y cómo aplicarlo de forma eficiente, recomendamos la guía [&quot;Designing your schema&quot;](/es/guides/clickhouse/data-formats/json/schema).
   </Step>
 
-  <Step>
-    ### Instala `elasticdump`
-
+  <Step title={<>Instala <code>elasticdump</code></>} id="install-elasticdump">
     Recomendamos [`elasticdump`](https://github.com/elasticsearch-dump/elasticsearch-dump) para exportar datos desde Elasticsearch. Esta herramienta requiere `node` y debe instalarse en una máquina con conectividad de red tanto con Elasticsearch como con ClickHouse. Recomendamos un servidor dedicado con al menos 4 núcleos y 16 GB de RAM para la mayoría de las exportaciones.
 
     ```shell
@@ -596,19 +584,15 @@ Los siguientes pasos permiten migrar un único índice de Elasticsearch a ClickH
     Siempre que sea posible, recomendamos ejecutar ClickHouse, Elasticsearch y `elastic dump` en la misma zona de disponibilidad o centro de datos para minimizar el tráfico de salida de red y maximizar el rendimiento.
   </Step>
 
-  <Step>
-    ### Instala el cliente de ClickHouse
-
+  <Step title="Instala el cliente de ClickHouse" id="install-clickhouse-client">
     Asegúrate de que ClickHouse esté [instalado en el servidor](/es/get-started/setup/install) donde se encuentra `elasticdump`. **No inicies un servidor de ClickHouse**; estos pasos solo requieren el cliente.
   </Step>
 
-  <Step>
-    ### Transferir datos
-
+  <Step title="Transferir datos" id="stream-data">
     Para transferir datos entre Elasticsearch y ClickHouse, use el comando `elasticdump` y canalice la salida directamente al cliente de ClickHouse. El siguiente comando inserta los datos en la tabla bien estructurada `logs_system_syslog`.
 
     ```shell
-    # exportar url y credenciales
+    # export url and credentials
     export ELASTICSEARCH_INDEX=.ds-logs-system.syslog-default-2025.06.03-000001
     export ELASTICSEARCH_URL=
     export ELASTICDUMP_INPUT_USERNAME=
@@ -617,7 +601,7 @@ Los siguientes pasos permiten migrar un único índice de Elasticsearch a ClickH
     export CLICKHOUSE_PASSWORD=
     export CLICKHOUSE_USER=default
 
-    # comando a ejecutar - modificar según sea necesario
+    # command to run - modify as required
     elasticdump --input=${ELASTICSEARCH_URL} --type=data --input-index ${ELASTICSEARCH_INDEX} --output=$ --sourceOnly --searchAfter --pit=true | 
     clickhouse-client --host ${CLICKHOUSE_HOST} --secure --password ${CLICKHOUSE_PASSWORD} --user ${CLICKHOUSE_USER} --max_insert_block_size=1000 \
     --min_insert_block_size_bytes=0 --min_insert_block_size_rows=1000 --query="INSERT INTO test.logs_system_syslog FORMAT JSONEachRow"
@@ -660,9 +644,7 @@ Los siguientes pasos permiten migrar un único índice de Elasticsearch a ClickH
     </Info>
   </Step>
 
-  <Step>
-    ### Transformar datos (opcional)
-
+  <Step title="Transformar datos (opcional)" id="transform-data">
     Los comandos anteriores asumen una correspondencia 1:1 entre los campos de Elasticsearch y las columnas de ClickHouse. Los usuarios suelen necesitar filtrar y transformar los datos de Elasticsearch antes de insertarlos en ClickHouse.
 
     Esto puede lograrse con la table function [`input`](/es/reference/functions/table-functions/input), que nos permite ejecutar cualquier consulta `SELECT` sobre la salida estándar.

@@ -14,12 +14,12 @@ import AddARemoteSystem from '/snippets/fr/_add_remote_ip_access_list_detail.mdx
 <Image img="/images/integrations/migration/ch-local-01.webp" size="lg" alt="Migration de ClickHouse autogéré" />
 
 Vous pouvez utiliser ClickHouse, ou plus précisément [`clickhouse-local`](/fr/concepts/features/tools-and-utilities/clickhouse-local),
-comme outil ETL pour migrer des données de votre système de base de données actuel vers ClickHouse Cloud, à condition que ce système dispose soit d’un [integration engine](/fr/reference/engines/table-engines/index#integration-engines) ou d’une [fonction de table](/fr/reference/functions/table-functions/index) fournis par ClickHouse,
+comme outil ETL pour migrer des données de votre système de base de données actuel vers ClickHouse Cloud, à condition que ce système dispose soit d’un [moteur de table d’intégration](/fr/reference/engines/table-engines/index#integration-engines) ou d’une [fonction de table](/fr/reference/functions/table-functions/index) fournis par ClickHouse,
 soit d’un JDBC driver ou d’un ODBC driver fourni par l’éditeur.
 
 Nous appelons parfois cette méthode de migration une méthode &quot;pivot&quot;, car elle utilise un point de passage intermédiaire pour déplacer les données de la base de données source vers la base de données de destination. Par exemple, cette méthode peut être nécessaire si, pour des raisons de sécurité, seules les connexions sortantes sont autorisées depuis un réseau privé ou interne. Dans ce cas, vous devez extraire les données de la base de données source avec clickhouse-local, puis les envoyer vers une base de données ClickHouse de destination, clickhouse-local servant alors de point de pivot.
 
-ClickHouse fournit des integration engines et des fonctions de table (qui créent des integration engines à la volée) pour [MySQL](/fr/reference/engines/table-engines/integrations/mysql), [PostgreSQL](/fr/reference/engines/table-engines/integrations/postgresql), [MongoDB](/fr/reference/engines/table-engines/integrations/mongodb) et [SQLite](/fr/reference/engines/table-engines/integrations/sqlite).
+ClickHouse fournit des moteurs de table d’intégration et des fonctions de table (qui créent des moteurs de table d’intégration à la volée) pour [MySQL](/fr/reference/engines/table-engines/integrations/mysql), [PostgreSQL](/fr/reference/engines/table-engines/integrations/postgresql), [MongoDB](/fr/reference/engines/table-engines/integrations/mongodb) et [SQLite](/fr/reference/engines/table-engines/integrations/sqlite).
 Pour tous les autres systèmes de base de données courants, un JDBC driver ou un ODBC driver est disponible auprès de l’éditeur du système.
 
 <div id="what-is-clickhouse-local">

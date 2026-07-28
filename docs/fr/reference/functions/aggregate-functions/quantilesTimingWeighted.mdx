@@ -15,7 +15,7 @@ Introduit dans : v1.1.0
 
 Calcule simultanément plusieurs [quantiles](https://en.wikipedia.org/wiki/Quantile) d’une séquence de données numériques à différents niveaux, avec une précision déterminée, en tenant compte du poids de chaque élément de la séquence.
 
-Cette fonction est équivalente à [`quantileTimingWeighted`](/fr/reference/functions/aggregate-functions/quantileTimingWeighted), mais elle permet de calculer plusieurs niveaux de quantile en un seul passage, ce qui est plus efficace que d’appeler des fonctions de quantile séparées.
+Cette fonction est équivalente à [`quantileTimingWeighted`](/fr/reference/functions/aggregate-functions/quantileTimingWeighted), mais elle permet de calculer plusieurs niveaux de quantile en un seul passage, ce qui est plus efficace que d’appeler des fonctions de quantile distinctes.
 
 Le résultat est déterministe (il ne dépend pas de l’ordre de traitement des requêtes). La fonction est optimisée pour traiter des séquences décrivant des distributions telles que les temps de chargement des pages web ou les temps de réponse du backend.
 
@@ -44,7 +44,7 @@ quantilesTimingWeighted(level1, level2, ...)(expr, weight)
 
 **Arguments**
 
-* `expr` — Expression appliquée aux valeurs d’une colonne et renvoyant un nombre de type Float*. Si des valeurs négatives sont passées à la fonction, le comportement est indéfini. Si la valeur est supérieure à 30 000 (un temps de chargement de page de plus de 30 secondes), elle est considérée comme égale à 30 000. [`Float*`](/fr/reference/data-types/float)
+* `expr` — Expression appliquée aux valeurs de la colonne, produisant des types de données numériques, `Date` ou `DateTime`. Si des valeurs négatives sont passées à la fonction, le comportement est indéfini. Si la valeur est supérieure à 30 000 (un temps de chargement de page de plus de 30 secondes), elle est considérée comme égale à 30 000. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime)
 * `weight` — Colonne contenant les poids des éléments de la séquence. Le poids correspond au nombre d’occurrences de la valeur. [`UInt*`](/fr/reference/data-types/int-uint)
 
 **Valeur renvoyée**

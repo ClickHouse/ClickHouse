@@ -205,11 +205,11 @@ scrape_configs:
 下面我们将提供这些选项的使用说明，重点说明 ClickHouse Cloud Prometheus 端点相关的特定细节。
 
 <div id="grafana-cloud-with-metrics-endpoint">
-  ### 使用 metrics endpoint 接入 Grafana Cloud
+  ### 使用 指标端点 接入 Grafana Cloud
 </div>
 
 * 登录你的 Grafana Cloud 账户
-* 选择 **Metrics Endpoint**，添加新连接
+* 选择 **指标端点**，添加新连接
 * 将 Scrape URL 配置为指向 Prometheus 端点，并使用基本身份验证通过 API key/secret 配置连接
 * 测试连接，确保可以成功连通
 
@@ -285,8 +285,8 @@ prometheus.scrape "clickhouse_cloud" {
 使用 Grafana 自管理版本的用户可在[这里](https://grafana.com/docs/alloy/latest/get-started/install/)找到安装 Alloy agent 的说明。我们假定用户已将 Alloy 配置为把 Prometheus 指标发送到所需的目标端。下面的 `prometheus.scrape` 组件会让 Alloy 抓取 ClickHouse Cloud 端点。我们假定 `prometheus.remote_write` 会接收抓取到的指标。如果未配置该项，请将 `forward_to key` 调整为目标端。
 
 ```yaml
-// prometheus.scrape 组件使 Alloy 抓取 ClickHouse Cloud Prometheus 端点。
-  // 如有差异，请调整 forward_to 键以匹配您的 remote_write receiver。
+// prometheus.scrape component causes Alloy to scrape the ClickHouse Cloud Prometheus endpoint.
+  // Adjust the forward_to key to match your remote_write receiver if it differs.
   prometheus.scrape "clickhouse_cloud" {
   targets = [{
   __address__ = "api.clickhouse.cloud",
@@ -344,8 +344,8 @@ instances:
   ## 相关页面
 </div>
 
-* [监控概览](/zh/products/cloud/features/monitoring/overview) — 对比 ClickHouse Cloud 的所有监控方式
-* [Cloud Console 监控](/zh/products/cloud/features/monitoring/cloud-console) — 无需外部工具的内置仪表盘
-* [社区和合作伙伴集成](/zh/products/cloud/features/monitoring/integrations) — Datadog agent 集成和社区解决方案
+* [监控概览](/zh/products/cloud/features/monitoring/overview) — 比较 ClickHouse Cloud 的所有监控方式
+* [Cloud Console 监控](/zh/products/cloud/features/monitoring/cloud-console) — 内置仪表盘，无需外部工具
+* [社区与合作伙伴集成](/zh/products/cloud/features/monitoring/integrations) — Datadog agent 集成和社区解决方案
 * [查询系统表](/zh/products/cloud/features/monitoring/system-tables) — 通过 SQL 直接访问系统指标
-* [Managed Postgres Prometheus 端点](/zh/products/managed-postgres/monitoring/prometheus) — 从您的 Managed Postgres 服务抓取指标
+* [Managed Postgres Prometheus 端点](/zh/products/managed-postgres/monitoring/prometheus) — 从 Managed Postgres 服务抓取指标

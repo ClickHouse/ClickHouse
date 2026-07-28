@@ -57,6 +57,8 @@ Dans ce fichier de documentation, tous les arguments positionnels obligatoires s
 * `current_disk_with_path (current, current_disk, current_path)`
   Afficher l’état actuel au format :
   `Disk: "current_disk" Path: "current path on current disk"`
+* `du [--human-readable] [<path>]`
+  Afficher la taille totale en octets du fichier ou du répertoire situé à `path` sur le disque courant. Pour un répertoire, la taille de tous les fichiers qu’il contient est additionnée récursivement. Si `path` n’est pas spécifié, le répertoire courant est utilisé. Avec `--human-readable` (`-h`), la taille est affichée dans un format lisible par l’humain (par exemple `1.23 GiB`).
 * `help [<command>]`
   Afficher le message d’aide pour la commande `command`. Si `command` n’est pas spécifiée, afficher des informations sur toutes les commandes.
 * `move (mv) <path-from> <path-to>`.
@@ -75,9 +77,13 @@ Dans ce fichier de documentation, tous les arguments positionnels obligatoires s
   Lire un fichier depuis `path-from` vers `path` (`stdout` si non fourni).
 * `read-bitmap <path-from> [--values]`
   Inspecter un fichier sidecar delete-bitmap (`.rbm`) situé à `path-from`. Affiche le magic et la version, la validité du CRC, la cardinalité (nombre de lignes supprimées) et la plage de lignes. Avec `--values`, affiche également tous les set bits (les offsets des lignes supprimées) dans l’ordre croissant.
-* `read-checksums <path>`
-  Lire un fichier `checksums.txt` d’une data part `MergeTree` sur le disque courant et l’afficher sur `stdout` sous la forme d’un tableau lisible par l’humain, séparé par des tabulations, avec les colonnes `name`, `file_size`, `file_hash`, `uncompressed_size` et `uncompressed_hash`. Les deux dernières colonnes ne sont présentes que pour les fichiers compressés.
 * `switch-disk [--path path] <disk>`
   Basculer vers le disque `disk` au chemin `path` (si `path` n’est pas spécifié, la valeur par défaut est le chemin précédent sur le disque `disk`).
 * `write (w) [--path-from path] <path-to>`.
   Écrire un fichier depuis `path` (`stdin` si `path` n’est pas fourni, l’entrée doit se terminer par Ctrl+D) vers `path-to`.
+* `wc <path> [--bytes] [--lines] [--words]`
+  Compter les octets, les lignes et les mots dans le fichier situé à `path` sur le disque courant (comme la commande Unix `wc`). Sans option, les trois décomptes sont affichés dans l’ordre suivant : lignes, mots, puis octets. Utilisez `--bytes` (`-c`), `--lines` (`-l`), `--words` (`-w`) pour sélectionner des décomptes spécifiques.
+* `sed <expression> <path>`
+  Appliquer l’`expression` `sed` au fichier situé à `path` sur le disque courant, directement dans le fichier. Nécessite que `sed` soit installé sur l’hôte. Une seule expression `sed` sans options est prise en charge (par exemple `'s/foo/bar/g'`, `'/foo/d'`), pas plusieurs expressions (`-e ... -e ...`) ni des options combinées à une adresse (par exemple `-n` avec `4,10p`).
+* `read-checksums <path>`
+  Lire un fichier `checksums.txt` d’une data part `MergeTree` sur le disque courant et l’afficher sur `stdout` sous la forme d’un tableau lisible par l’humain, séparé par des tabulations, avec les colonnes `name`, `file_size`, `file_hash`, `uncompressed_size` et `uncompressed_hash`. Les deux dernières colonnes ne sont présentes que pour les fichiers compressés.

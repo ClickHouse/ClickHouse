@@ -79,7 +79,7 @@ postgres=> SHOW rds.logical_replication ;
    GRANT rds_replication TO clickpipes_user;
    ```
 
-4. レプリケーションしたいテーブルを含む [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html) を作成します。パフォーマンスへのオーバーヘッドを避けるため、publication には必要なテーブルだけを含めることを強く推奨します。
+4. レプリケーションしたいテーブルを含む [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html) を作成します。パフォーマンスのオーバーヘッドを避けるため、publication には必要なテーブルだけを含めることを強く推奨します。
 
 <Warning>
   publication に含める各テーブルでは、**主キー** が定義されているか、または **replica identity** が `FULL` に設定されている必要があります。スコープ設定のガイダンスについては、[Postgres よくある質問](/ja/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) を参照してください。
@@ -97,7 +97,20 @@ postgres=> SHOW rds.logical_replication ;
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` publication には、指定したテーブルから生成された変更イベントの集合が含まれ、後でレプリケーションストリームを取り込むために使用されます。
+`clickpipes` publication は、変更イベントが ClickPipes にストリーミングされるテーブルの集合を定義します。すべてのテーブルをレプリケーションする予定でない限り、`FOR ALL TABLES` は使用しないことを推奨します。不要なテーブルを含めると、Postgres から ClickPipes への WAL トラフィックが増加し、レプリケーション全体の効率が低下するためです。
+
+<div id="iam-authentication">
+  ### IAM authentication を使用する (任意)
+</div>
+
+password の代わりに、AWS IAM のロールベースアクセスを使用して ClickPipes ユーザーを認証できます。これには、`rds.iam_auth_for_replication` パラメータを `1` に設定する必要があります。次のようにユーザーを作成し、その後、上記と同じスキーマおよびレプリケーションの権限を付与してください。
+
+```sql
+CREATE USER clickpipes_iam_user;
+GRANT rds_iam TO clickpipes_iam_user;
+```
+
+この方法でClickPipesが認証できるようにするために必要なIAMロールとポリシーの設定手順については、[AWS IAM DB認証 (RDS/Aurora) ](/ja/integrations/clickpipes/postgres/auth)を参照してください。
 
 <div id="configure-network-access">
   ## ネットワークアクセスの設定
@@ -107,7 +120,7 @@ postgres=> SHOW rds.logical_replication ;
   ### IP ベースのアクセス制御
 </div>
 
-Aurora クラスターへのトラフィックを制限する場合は、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/home#list-of-static-ips) を、Aurora のセキュリティグループの `Inbound rules` に追加してください。
+Aurora クラスターへのトラフィックを制限する場合は、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/home#list-of-static-ips) を Aurora のセキュリティグループの `Inbound rules` に追加してください。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="Aurora PostgreSQL でセキュリティグループの場所を確認する" size="lg" border />
 

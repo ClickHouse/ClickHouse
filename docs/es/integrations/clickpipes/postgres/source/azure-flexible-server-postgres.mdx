@@ -76,7 +76,7 @@ Conéctese a Azure Flexible Server Postgres con el usuario administrador y ejecu
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-La publicación `clickpipes` contendrá el conjunto de eventos de cambio generados por las tablas especificadas y más adelante se usará para ingestar el flujo de replicación.
+La publicación `clickpipes` define el conjunto de tablas cuyos eventos de cambio se enviarán a ClickPipes. Recomendamos no usar `FOR ALL TABLES` a menos que pretenda replicar todas las tablas, ya que incluir tablas innecesarias aumenta el tráfico de WAL de Postgres a ClickPipes y reduce la eficiencia general de la replicación.
 
 <div id="add-clickpipes-ips-to-firewall">
   ## Agrega las IP de ClickPipes al firewall

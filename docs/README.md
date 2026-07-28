@@ -1,158 +1,109 @@
-# Contributing to ClickHouse Documentation
+# Contributing to ClickHouse documentation
 
-## Why Do You Need to Document ClickHouse
+This folder contains the documentation for ClickHouse.
+Content is built with [Mintlify](https://www.mintlify.com/) and hosted at [clickhouse.com/docs](https://clickhouse.com/docs).
 
-The main reason is that ClickHouse is an open source project, and if you don't write the docs, nobody does. "Incomplete or Confusing Documentation" is the top complaint about open source software by the results of a [Github Open Source Survey](http://opensourcesurvey.org/2017/) of 2017. Documentation is highly valued but often overlooked. One of the most important contributions someone can make to an open source repository is a documentation update.
+<a name="run-docs-locally"/>
 
-Many developers can say that the code is the best docs by itself, and they are right. But, ClickHouse is not a project for C++ developers. Most of its users don't know C++, and they can't understand the code quickly. ClickHouse is large enough to absorb almost any change without a noticeable trace. Nobody will find your very useful function, or an important setting, or a very informative new column in a system table if it is not referenced in the documentation.
+## Run the docs site locally
 
-If you want to help ClickHouse with documentation you can face, for example, the following questions:
+To run the docs locally in order to preview changes, you will need to install the Mintlify CLI tool.
+Follow the instructions to [install the CLI](https://www.mintlify.com/docs/cli/install).
+
+You can then run `mint dev` from the `/docs` of this repository to stand up a local development server with hot-reload on `localhost:3000`.
+
+## How to contribute to docs
+
+"Incomplete or confusing documentation" is the top complaint about open source software based on the results of a 2017 [Github Open Source Survey](http://opensourcesurvey.org/2017/).
+Documentation is highly valued but often overlooked.
+One of the most important contributions someone can make to an open source repository is a documentation update, and we welcome contributions from everyone - including first-time contributors.
+
+To contribute follow the steps below:
+
+1. Fork the repo on GitHub
+2. If you only want to make a docs update, clone just what you need. A shallow, sparse clone skips the C++ source and full
+   history:
+
+```bash
+git clone --depth 1 --filter=blob:none --sparse https://github.com/<your-username>/ClickHouse.git                                 
+cd ClickHouse                                                                     
+git sparse-checkout set docs ci
+```
+
+This gives you the `docs/` and `ci/` folders (plus top-level files) at a fraction  
+of the download size.
+
+3. Create a branch off master.
+4. Edit or add English content under `docs/` — translations are generated, so there is no need to edit the locale files
+5. Preview locally with [`mint dev`](#run-docs-locally) from the `docs/` folder.
+6. Push your branch and open a pull request against master
+7. A maintainer will review your PR, possibly request changes, and ask you to sign the Contributor License Agreement
+8. When CI is green and your PR is ready to ship, a maintainer will merge it, and as a thank you, your name will land in `system.contributors`
+
+If you're a first-time contributor and any of the steps above are confusing,
+we recommend [first contributions](https://github.com/firstcontributions/first-contributions#first-contributions)
+which walks you through how to make your first contribution.
+
+## Docs folder summary
+
+| Folder | Description |
+|--------|-------------|
+| `get-started/` | Introductory content: quickstarts, setup, sample datasets, and migration guides |
+| `guides/` | How-to guides and use-case documentation for ClickHouse and ClickHouse Cloud |
+| `concepts/` | Conceptual topics: core concepts, features, and best practices |
+| `reference/` | Reference documentation: SQL functions, data types, table engines, formats, and interfaces |
+| `integrations/` | Documentation for integrations: ClickPipes, connectors, and language clients |
+| `products/` | Product-specific documentation: Cloud, BYOC, Kubernetes operator, and more |
+| `clickstack/` | Documentation for ClickStack, the observability stack |
+| `chdb/` | Documentation for chDB, the in-process ClickHouse engine |
+| `resources/` | Supporting material: about, changelogs, contribution guides, and support center |
+| `changelogs/` | Release changelogs for each ClickHouse version |
+| `en/` | Legacy content from the previous (Docusaurus) documentation site — do not add new content here |
+| `ar/`, `es/`, `fr/`, `ja/`, `ko/`, `pt-BR/`, `ru/`, `zh/` | Generated translations — do not edit these directly; edit the English content instead |
+| `images/` | Image assets used across the documentation |
+| `snippets/` | Reusable content snippets that can be imported into multiple pages |
+| `_templates/` | Templates for writing new documentation pages (functions, settings, engines, etc.) |
+| `_includes/` | Shared content included across multiple pages |
+| `_site/` | Site customizations: styles, scripts, logos, and redirects |
+| `_migration/` | Tooling used for the migration from the previous documentation site |
+
+Top-level site tabs and languages are configured in `docs.json`, while each section's sidebar entries are defined in its own `navigation.json` file.
+
+## Docs translations
+
+The English language docs function as the source of truth, and we provide AI generated translations of our documentation for the following languages:
+- Japanese (`/ja`)
+- Korean (`/ko`)
+- Spanish (`/es`)
+- Brazilian-Portuguese (`/pt-BR`)
+- Russian (`/ru`)
+- Simplified Chinese (`/zh`)
+- Arabic (`/ar`)
+- French (`/fr`)
+
+While we do our best to ensure translations are of a high-quality, by maintaining an extensive manually curated glossary and working with a trusted translation provider,
+we expect that they may not always be perfect, as LLMs do make mistakes.
+We welcome and appreciate corrections to our translated docs from native-speakers in our community.
+
+## Why should you document ClickHouse?
+
+Many developers can say that the code is the best docs by itself, and they are right.
+But, ClickHouse is not a project for C++ developers.
+Most of its users don't know C++, and they can't understand the code quickly.
+ClickHouse is large enough to absorb almost any change without a noticeable trace.
+Nobody will find your very useful function, or an important setting, or a very informative new column in a system table if it is not referenced in the documentation.
+
+Here are two common questions:
 
 - "I don't know how to write."
 
-    We have prepared some [recommendations](#what-to-write) for you.
+    We have prepared some [recommendations](#common-recommendations) for you.
 
 - "I know what I want to write, but I don't know how to contribute to docs."
 
-    Here are some [tips](#how-to-contribute).
+    Here are some [tips](#how-to-contribute-to-docs).
 
 Writing the docs is extremely useful for project's users and developers, and grows your karma.
-
-**Contents**
-
-- [What is the ClickHouse Documentation](#clickhouse-docs)
-- [How to Contribute to ClickHouse Documentation](#how-to-contribute)
-    - [Markdown Dialect Cheatsheet](#markdown-cheatsheet)
-    - [Adding a New File](#adding-a-new-file)
-    - [Adding a New Language](#adding-a-new-language)
--  [How to Write Content for ClickHouse Documentation](#what-to-write)
-    - [Documentation for Different Audience](#target-audience)
-    - [Common Recommendations](#common-recommendations)
-    - [Description Templates](#templates)
-- [How to Build Documentation](#how-to-build-docs)
-
-
-<a name="clickhouse-docs"/>
-
-## What is the ClickHouse Documentation
-
-The documentation contains information about all the aspects of the ClickHouse lifecycle: developing, testing, installing, operating, and using. The base language of the documentation is English. The English version is the most current. All other languages are supported by contributors from different countries as much as possible.
-
-At the moment, [documentation](https://clickhouse.com/docs) exists in English, Russian, and Chinese. We store the reference documentation alongside the ClickHouse source code in the [GitHub repository](https://github.com/ClickHouse/ClickHouse/tree/master/docs), and user guides in a separate repo [ClickHouse/clickhouse-docs](https://github.com/ClickHouse/clickhouse-docs).
-
-To get the latter launch the `get-clickhouse-docs.sh` script.
-
-Each language lies in the corresponding folder. Files that are not translated from English are symbolic links to the English ones.
-
-<a name="how-to-contribute"/>
-
-## How to Contribute to ClickHouse Documentation
-
-You can contribute to the documentation in many ways, for example:
-
-- Fork the ClickHouse and ClickHouse-docs repositories, edit, commit, push, and open a pull request.
-
-    Add the `pr-documentation` label to this pull request for proper automatic checks applying. If you do not have permission to add labels, then the reviewer of your PR will add it.
-
-- Open a required file in the ClickHouse repository and edit it from the GitHub web interface.
-
-    You can do it on GitHub, or on the [ClickHouse Documentation](https://clickhouse.com/docs/en/) site. Each page of ClickHouse Documentation site contains an "Edit this page" (🖋) element in the upper right corner. Clicking this symbol, you get to the ClickHouse docs file opened for editing.
-
-    When you are saving a file, GitHub opens a pull-request for your contribution. Add the `documentation` label to this pull request for proper automatic checks applying. If you have no permissions for adding labels, the reviewer of your PR adds it.
-
-Contribute all new information in English. Other languages are translations from English.
-
-<a name="markdown-cheatsheet"/>
-
-### Markdown Dialect Cheatsheet
-
-- Headings: Place them on a separate line and start with `# `, `## ` or `### `. Use the [Title Case](https://titlecase.com/) for them. Example:
-
-    ```text
-    # The First Obligatory Title on a Page.
-    ```
-
-- Bold text: `**asterisks**` or `__underlines__`.
-- Links: `[link text](uri)`. Examples:
-
-    - External link: `[ClickHouse repo](https://github.com/ClickHouse/ClickHouse)`
-    - Cross link: `[How to build docs](tools/README.md)`
-
-- Images: `![Exclamation sign](uri)`. You can refer to local images as well as remote in internet.
-- Lists: Lists can be of two types:
-
-    - `- unordered`: Each item starts from the `-`.
-    - `1. ordered`: Each item starts from the number.
-
-    A list must be separated from the text by an empty line. Nested lists must be indented with 4 spaces.
-
-- Inline code: `` `in backticks` ``.
-- Multiline code blocks:
-    <pre lang="no-highlight"><code>```lang_name
-    code
-    lines
-    ```</code></pre>
-- Note:
-
-    ```text
-    !!! info "Header"
-        4 spaces indented text.
-    ```
-
-- Warning:
-
-    ```text
-    !!! warning "Header"
-        4 spaces indented text.
-    ```
-
-- Text hidden behind a cut (single string that opens on click):
-
-    ```text
-    <details markdown="1"> <summary>Visible text</summary>
-        Hidden content.
-    </details>`.
-    ```
-- Colored text: `<span style="color: red;">text</span>`.
-- Heading anchor to be linked to: `# Title {#anchor-name}`.
-- Table:
-    ```
-    | Header    1 | Header    2 | Header    3 |
-    | ----------- | ----------- | ----------- |
-    | Cell     A1 | Cell     A2 | Cell     A3 |
-    | Cell     B1 | Cell     B2 | Cell     B3 |
-    | Cell     C1 | Cell     C2 | Cell     C3 |
-    ```
-
-<a name="adding-a-new-file"/>
-
-### Adding a New File
-
-{## When adding a new file:
-
-- Make symbolic links for all other languages. You can use the following commands:
-
-    ```bash
-    $ cd /ClickHouse/clone/directory/docs
-    $ ln -sr en/new/file.md lang/new/file.md
-    ```
-##}
-<a name="adding-a-new-language"/>
-
-### Adding a New Language
-
-1. Create a new docs subfolder named using the [ISO-639-1 language code](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes).
-2. Add Markdown files with the translation, mirroring the folder structure of other languages.
-3. Commit and open a pull-request with the new content.
-
-When everything is ready, we will add the new language to the website.
-
-<a name="what-to-write"/>
-
-## How to Write Content for ClickHouse Documentation
-
-
-<a name="target-audience"/>
 
 ### Documentation for Different Audiences
 
@@ -231,4 +182,4 @@ Guidelines:
 
 ## How to Build Documentation
 
-You can build your documentation manually by following the instructions in the docs repo [contrib-writing-guide](https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/contrib-writing-guide.md). Also, our CI runs the documentation build after the `documentation` label is added to PR. You can see the results of a build in the GitHub interface. If you have no permissions to add labels, a reviewer of your PR will add it.
+You can build your documentation manually by following the instructions in the docs repo [contrib-writing-guide](https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/contrib-writing-guide.md). Also, our CI runs the documentation build after the `pr-documentation` label is added to PR. You can see the results of a build in the GitHub interface. If you have no permissions to add labels, a reviewer of your PR will add it.

@@ -15,10 +15,13 @@ doc_type: 'reference'
 | [DELETE](/ja/reference/statements/alter/delete)                         |
 | [UPDATE](/ja/reference/statements/alter/update)                         |
 | [ORDER BY](/ja/reference/statements/alter/order-by)                     |
+| [SAMPLE BY](/ja/reference/statements/alter/sample-by)                   |
 | [INDEX](/ja/reference/statements/alter/skipping-index)                  |
+| [PROJECTION](/ja/reference/statements/alter/projection)                 |
 | [CONSTRAINT](/ja/reference/statements/alter/constraint)                 |
 | [TTL](/ja/reference/statements/alter/ttl)                               |
 | [STATISTICS](/ja/reference/statements/alter/statistics)                 |
+| [SETTING](/ja/reference/statements/alter/setting)                       |
 | [APPLY DELETED MASK](/ja/reference/statements/alter/apply-deleted-mask) |
 | [APPLY PATCHES](/ja/reference/statements/alter/apply-patches)           |
 
@@ -40,12 +43,14 @@ doc_type: 'reference'
 | [ROLE](/ja/reference/statements/alter/role)                         |
 | [QUOTA](/ja/reference/statements/alter/quota)                       |
 | [ROW POLICY](/ja/reference/statements/alter/row-policy)             |
+| [MASKING POLICY](/ja/reference/statements/alter/masking-policy)     |
 | [SETTINGS PROFILE](/ja/reference/statements/alter/settings-profile) |
 
-| ステートメント                                                                | 説明                                                                                            |
-| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| [ALTER TABLE ... MODIFY COMMENT](/ja/reference/statements/alter/comment)  | 事前に設定されていたかどうかにかかわらず、テーブルのコメントを追加、変更、または削除します。                                                |
-| [ALTER NAMED COLLECTION](/ja/reference/statements/alter/named-collection) | [Named Collections](/ja/concepts/features/configuration/server-config/named-collections) を変更します。 |
+| ステートメント                                                                           | 説明                                                                                            |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [ALTER TABLE ... MODIFY COMMENT](/ja/reference/statements/alter/comment)             | 事前に設定されていたかどうかにかかわらず、テーブルのコメントを追加、変更、または削除します。                                                |
+| [ALTER DATABASE ... MODIFY COMMENT](/ja/reference/statements/alter/database-comment) | 事前に設定されていたかどうかにかかわらず、データベースのコメントを追加、変更、または削除します。                                              |
+| [ALTER NAMED COLLECTION](/ja/reference/statements/alter/named-collection)            | [Named Collections](/ja/concepts/features/configuration/server-config/named-collections) を変更します。 |
 
 <div id="mutations">
   ## ミューテーション

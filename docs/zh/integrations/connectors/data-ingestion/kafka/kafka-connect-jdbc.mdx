@@ -35,129 +35,119 @@ JDBC Connector 按照 [Confluent Community License](https://www.confluent.io/con
 
 <ConnectionDetails />
 
-<div id="1-install-kafka-connect-and-connector">
-  #### 1. 安装 Kafka Connect 和连接器
-</div>
+<Steps>
+  <Step title="安装 Kafka Connect 和连接器" id="1-install-kafka-connect-and-connector">
+    我们假设你已经下载了 Confluent 软件包并已在本地完成安装。请按照[此处](https://docs.confluent.io/kafka-connect-jdbc/current/#install-the-jdbc-connector)文档中的说明安装连接器。
 
-我们假设你已经下载了 Confluent 软件包，并已在本地完成安装。请按照[此处](https://docs.confluent.io/kafka-connect-jdbc/current/#install-the-jdbc-connector)文档中的说明安装连接器。
+    如果你使用 confluent-hub 安装方式，本地配置文件将会被更新。
 
-如果你使用 confluent-hub 安装方式，本地配置文件会被更新。
+    为了将数据从 Kafka 发送到 ClickHouse，我们使用该连接器的 Sink 组件。
+  </Step>
 
-要将数据从 Kafka 发送到 ClickHouse，我们使用该连接器的 sink 组件。
+  <Step title="下载并安装 JDBC 驱动" id="2-download-and-install-the-jdbc-driver">
+    从[此处](https://github.com/ClickHouse/clickhouse-java/releases)下载并安装 ClickHouse JDBC 驱动 `clickhouse-jdbc-<version>-shaded.jar`。按照[此处](https://docs.confluent.io/kafka-connect-jdbc/current/#installing-jdbc-drivers)的说明将其安装到 Kafka Connect 中。其他驱动可能也可以使用，但尚未经过测试。
 
-<div id="2-download-and-install-the-jdbc-driver">
-  #### 2. 下载并安装 JDBC 驱动
-</div>
+    <Note>
+      常见问题：文档建议将 jar 复制到 `share/java/kafka-connect-jdbc/`。如果你遇到 Connect 无法找到该驱动的问题，请将驱动复制到 `share/confluent-hub-components/confluentinc-kafka-connect-jdbc/lib/`。或者修改 `plugin.path` 以包含该驱动——见下文。
+    </Note>
+  </Step>
 
-从[这里](https://github.com/ClickHouse/clickhouse-java/releases)下载 ClickHouse JDBC 驱动 `clickhouse-jdbc-<version>-shaded.jar` 并完成安装。然后按照[这里](https://docs.confluent.io/kafka-connect-jdbc/current/#installing-jdbc-drivers)的说明，将其安装到 Kafka Connect 中。其他驱动也许可以使用，但尚未经过测试。
+  <Step title="准备配置" id="3-prepare-configuration">
+    请按照[这些说明](https://docs.confluent.io/cloud/current/cp-component/connect-cloud-config.html#set-up-a-local-connect-worker-with-cp-install)设置与你的安装类型对应的 Connect，并注意 standalone 和分布式集群之间的差异。如果使用 Confluent Cloud，则应采用分布式部署。
 
-<Note>
-  常见问题：文档建议将 jar 复制到 `share/java/kafka-connect-jdbc/`。如果你遇到 Connect 无法识别该驱动的问题，请将驱动复制到 `share/confluent-hub-components/confluentinc-kafka-connect-jdbc/lib/`。或者修改 `plugin.path`，将该驱动所在路径包含进去——参见下文。
-</Note>
+    以下参数与将 JDBC 连接器 搭配 ClickHouse 使用相关。完整参数列表可在[此处](https://docs.confluent.io/kafka-connect-jdbc/current/sink-connector/index.html)查看：
 
-<div id="3-prepare-configuration">
-  #### 3. 准备配置
-</div>
+    * `_connection.url_` - 应采用 `jdbc:clickhouse://&lt;clickhouse host>:&lt;clickhouse http port>/&lt;target database>` 的形式
+    * `connection.user` - 对目标数据库具有写入权限的用户
+    * `table.name.format`- 要插入数据的 ClickHouse 表。该表必须已存在。
+    * `batch.size` - 单个批次发送的行数。请确保该值设置得足够大。根据 ClickHouse 的[建议](/zh/reference/statements/insert-into#performance-considerations)，1000 应视为最小值。
+    * `tasks.max` - JDBC Sink 连接器 支持运行一个或多个任务。这可以用来提升性能。结合批次大小，这是提升性能的主要方式。
+    * `value.converter.schemas.enable` - 如果使用 Schema Registry，则设为 false；如果将 schema 嵌入消息中，则设为 true。
+    * `value.converter` - 根据你的数据类型进行设置，例如对于 JSON，设为 `io.confluent.connect.json.JsonSchemaConverter`。
+    * `key.converter` - 设为 `org.apache.kafka.connect.storage.StringConverter`。我们使用 String 类型的 key。
+    * `pk.mode` - 与 ClickHouse 无关。设为 none。
+    * `auto.create` - 不受支持，必须设为 false。
+    * `auto.evolve` - 我们建议将此项设为 false，尽管未来可能会支持。
+    * `insert.mode` - 设为 &quot;insert&quot;。当前不支持其他模式。
+    * `key.converter` - 根据你的 key 类型进行设置。
+    * `value.converter` - 根据 topic 中的数据类型进行设置。该数据必须具有受支持的 schema，即 JSON、Avro 或 Protobuf 格式。
 
-请按照[这些说明](https://docs.confluent.io/cloud/current/cp-component/connect-cloud-config.html#set-up-a-local-connect-worker-with-cp-install)设置与你的安装类型对应的 Connect，并注意 standalone 和分布式集群之间的差异。如果使用 Confluent Cloud，则应采用分布式部署。
+    如果使用我们的样本数据集进行测试，请确保设置以下内容：
 
-以下参数与将 JDBC 连接器 搭配 ClickHouse 使用相关。完整参数列表可在[此处](https://docs.confluent.io/kafka-connect-jdbc/current/sink-connector/index.html)查看：
+    * `value.converter.schemas.enable` - 设为 false，因为我们使用 Schema Registry。如果你将 schema 嵌入每条消息中，则设为 true。
+    * `key.converter` - 设为 &quot;org.apache.kafka.connect.storage.StringConverter&quot;。我们使用 String 类型的 key。
+    * `value.converter` - 设为 &quot;io.confluent.connect.json.JsonSchemaConverter&quot;。
+    * `value.converter.schema.registry.url` - 设置 schema server 的 URL，并通过参数 `value.converter.schema.registry.basic.auth.user.info` 提供 schema server 的凭据。
 
-* `_connection.url_` - 应采用 `jdbc:clickhouse://&lt;clickhouse host>:&lt;clickhouse http port>/&lt;target database>` 的形式
-* `connection.user` - 对目标数据库具有写入权限的用户
-* `table.name.format`- 要插入数据的 ClickHouse 表。该表必须已存在。
-* `batch.size` - 单个批次发送的行数。请确保该值设置得足够大。根据 ClickHouse 的[建议](/zh/reference/statements/insert-into#performance-considerations)，1000 应视为最小值。
-* `tasks.max` - JDBC Sink 连接器 支持运行一个或多个任务。这可以用来提升性能。结合批次大小，这是提升性能的主要方式。
-* `value.converter.schemas.enable` - 如果使用 Schema Registry，则设为 false；如果将 schema 嵌入消息中，则设为 true。
-* `value.converter` - 根据你的数据类型进行设置，例如对于 JSON，设为 `io.confluent.connect.json.JsonSchemaConverter`。
-* `key.converter` - 设为 `org.apache.kafka.connect.storage.StringConverter`。我们使用 String 类型的 key。
-* `pk.mode` - 与 ClickHouse 无关。设为 none。
-* `auto.create` - 不受支持，必须设为 false。
-* `auto.evolve` - 我们建议将此项设为 false，尽管未来可能会支持。
-* `insert.mode` - 设为 &quot;insert&quot;。当前不支持其他模式。
-* `key.converter` - 根据你的 key 类型进行设置。
-* `value.converter` - 根据 topic 中的数据类型进行设置。该数据必须具有受支持的 schema，即 JSON、Avro 或 Protobuf 格式。
+    GitHub 样本数据的配置文件示例可在[此处](https://github.com/ClickHouse/kafka-samples/tree/main/github_events/jdbc_sink)找到，前提是 Connect 以 standalone 模式运行，且 Kafka 托管在 Confluent Cloud 中。
+  </Step>
 
-如果使用我们的样本数据集进行测试，请确保设置以下内容：
+  <Step title="创建 ClickHouse 表" id="4-create-the-clickhouse-table">
+    请确保该表已创建；如果它因前面的示例已存在，请先将其删除。下面展示了一个与精简版 GitHub 数据集兼容的示例。请注意，其中不包含任何当前尚不受支持的 Array 或 Map 类型：
 
-* `value.converter.schemas.enable` - 设为 false，因为我们使用 Schema Registry。如果你将 schema 嵌入每条消息中，则设为 true。
-* `key.converter` - 设为 &quot;org.apache.kafka.connect.storage.StringConverter&quot;。我们使用 String 类型的 key。
-* `value.converter` - 设为 &quot;io.confluent.connect.json.JsonSchemaConverter&quot;。
-* `value.converter.schema.registry.url` - 设置 schema server 的 URL，并通过参数 `value.converter.schema.registry.basic.auth.user.info` 提供 schema server 的凭据。
+    ```sql
+    CREATE TABLE github
+    (
+        file_time DateTime,
+        event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+        actor_login LowCardinality(String),
+        repo_name LowCardinality(String),
+        created_at DateTime,
+        updated_at DateTime,
+        action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+        comment_id UInt64,
+        path String,
+        ref LowCardinality(String),
+        ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+        creator_user_login LowCardinality(String),
+        number UInt32,
+        title String,
+        state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+        assignee LowCardinality(String),
+        closed_at DateTime,
+        merged_at DateTime,
+        merge_commit_sha String,
+        merged_by LowCardinality(String),
+        review_comments UInt32,
+        member_login LowCardinality(String)
+    ) ENGINE = MergeTree ORDER BY (event_type, repo_name, created_at)
+    ```
+  </Step>
 
-GitHub 样本数据的配置文件示例可在[此处](https://github.com/ClickHouse/kafka-samples/tree/main/github_events/jdbc_sink)找到，前提是 Connect 以 standalone 模式运行，且 Kafka 托管在 Confluent Cloud 中。
+  <Step title="启动 Kafka Connect" id="5-start-kafka-connect">
+    以 [standalone](https://docs.confluent.io/cloud/current/cp-component/connect-cloud-config.html#standalone-cluster) 或 [distributed](https://docs.confluent.io/cloud/current/cp-component/connect-cloud-config.html#distributed-cluster) 模式启动 Kafka Connect。
 
-<div id="4-create-the-clickhouse-table">
-  #### 4. 创建 ClickHouse 表
-</div>
+    ```bash
+    ./bin/connect-standalone connect.properties.ini github-jdbc-sink.properties.ini
+    ```
+  </Step>
 
-请确保创建该表；如果它因前面的示例已存在，请先将其删除。下面展示了一个与精简版 GitHub 数据集兼容的示例。请注意，其中不包含当前尚不支持的 Array 或 Map 类型：
+  <Step title="将数据添加到 Kafka" id="6-add-data-to-kafka">
+    使用提供的[脚本和配置](https://github.com/ClickHouse/kafka-samples/tree/main/producer)向 Kafka 写入消息。你需要修改 github.config，加入你的 Kafka 凭据。该脚本当前已配置为与 Confluent Cloud 配合使用。
 
-```sql
-CREATE TABLE github
-(
-    file_time DateTime,
-    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
-    actor_login LowCardinality(String),
-    repo_name LowCardinality(String),
-    created_at DateTime,
-    updated_at DateTime,
-    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
-    comment_id UInt64,
-    path String,
-    ref LowCardinality(String),
-    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
-    creator_user_login LowCardinality(String),
-    number UInt32,
-    title String,
-    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
-    assignee LowCardinality(String),
-    closed_at DateTime,
-    merged_at DateTime,
-    merge_commit_sha String,
-    merged_by LowCardinality(String),
-    review_comments UInt32,
-    member_login LowCardinality(String)
-) ENGINE = MergeTree ORDER BY (event_type, repo_name, created_at)
-```
+    ```bash
+    python producer.py -c github.config
+    ```
 
-<div id="5-start-kafka-connect">
-  #### 5. 启动 Kafka Connect
-</div>
+    此脚本可用于将任何 ndjson 文件插入到 Kafka topic 中。它会尝试自动为你推断 schema。提供的示例 config 只会插入 10k 条消息——如有需要，请[在此修改](https://github.com/ClickHouse/clickhouse-docs/tree/main/docs/integrations/data-ingestion/kafka/code/producer/github.config#L25)。此 configuration 在插入到 Kafka 时还会从数据集中移除所有不兼容的 Array 字段。
 
-以[独立模式](https://docs.confluent.io/cloud/current/cp-component/connect-cloud-config.html#standalone-cluster)或[分布式模式](https://docs.confluent.io/cloud/current/cp-component/connect-cloud-config.html#distributed-cluster)启动 Kafka Connect。
+    这是 JDBC 连接器 将消息转换为 INSERT 语句所必需的。如果你使用自己的数据，请确保要么在每条消息中都插入 schema (将 &#95;value.converter.schemas.enable &#95;设为 true) ，要么确保你的 client 发布的消息引用了 registry 中的 schema。
 
-```bash
-./bin/connect-standalone connect.properties.ini github-jdbc-sink.properties.ini
-```
+    Kafka Connect 应该会开始消费消息并将行插入到 ClickHouse 中。请注意，关于 &quot;[JDBC Compliant Mode] Transaction isn&#39;t supported.&quot; 的警告是预期行为，可以忽略。
 
-<div id="6-add-data-to-kafka">
-  #### 6. 向 Kafka 添加数据
-</div>
+    对目标表 &quot;Github&quot; 执行一个简单的查询应能确认数据已插入。
 
-使用提供的[脚本和配置](https://github.com/ClickHouse/kafka-samples/tree/main/producer)向 Kafka 插入消息。你需要修改 github.config，填入你的 Kafka 凭据。该脚本当前已配置为与 Confluent Cloud 配合使用。
+    ```sql
+    SELECT count() FROM default.github;
+    ```
 
-```bash
-python producer.py -c github.config
-```
-
-此脚本可用于将任何 ndjson 文件插入到 Kafka topic 中。它会尝试自动为你推断 schema。提供的示例配置只会插入 1 万条消息——如有需要，可[在此修改](https://github.com/ClickHouse/clickhouse-docs/tree/main/docs/integrations/data-ingestion/kafka/code/producer/github.config#L25)。此配置还会在插入 Kafka 时，从 dataset 中移除所有不兼容的 Array 字段。
-
-JDBC 连接器 需要这样做，才能将消息转换为 INSERT 语句。如果你使用自己的数据，请确保要么在每条消息中插入 schema (将 &#95;value.converter.schemas.enable &#95;设为 true) ，要么确保你的客户端发布的消息引用了 registry 中的 schema。
-
-Kafka Connect 应该会开始消费消息并将行插入 ClickHouse。请注意，关于 &quot;[JDBC Compliant Mode] Transaction isn&#39;t supported.&quot; 的警告是预期行为，可以忽略。
-
-对目标表 &quot;Github&quot; 执行一次简单查询即可确认数据已插入。
-
-```sql
-SELECT count() FROM default.github;
-```
-
-```response
-| count\(\) |
-| :--- |
-| 10000 |
-```
+    ```response
+    | count\(\) |
+    | :--- |
+    | 10000 |
+    ```
+  </Step>
+</Steps>
 
 <div id="recommended-further-reading">
   ### 推荐延伸阅读

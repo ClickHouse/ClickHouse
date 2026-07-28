@@ -22,9 +22,7 @@ Ce guide part du principe que vous avez terminé [Configuration de votre OpenTel
 Le ClickStack collector peut être déployé soit sous forme de **conteneur Docker** (voir [Configuration de votre OpenTelemetry Collector](/fr/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector)), soit comme **release Helm** dans Kubernetes via le chart Helm OpenTelemetry upstream avec l’image du ClickStack collector (voir [Déploiement du collector](/fr/clickstack/ingesting-data/collector#configuring-the-collector)). **Veillez à noter son OTLP endpoint** ainsi que le `OTLP_AUTH_TOKEN` défini lors de son déploiement.
 
 <Steps>
-  <Step>
-    ## Réunissez les prérequis
-
+  <Step title="Réunissez les prérequis" id="gather-prerequisites">
     Vous aurez besoin de :
 
     * Un **compte AWS** avec un ou plusieurs groupes de journaux CloudWatch, ainsi que des identifiants disposant des autorisations IAM ci-dessous.
@@ -33,9 +31,7 @@ Le ClickStack collector peut être déployé soit sous forme de **conteneur Dock
     * La valeur `OTLP_AUTH_TOKEN` que vous avez définie sur votre collecteur ClickStack. Si vous ne l’avez pas sécurisé, vous pouvez supprimer l’en-tête `authorization` de la configuration ci-dessous.
   </Step>
 
-  <Step>
-    ## Configurer les identifiants AWS
-
+  <Step title="Configurer les identifiants AWS" id="configure-aws">
     Le receiver utilise les identifiants AWS définis dans les variables d’environnement standard. Exportez-les sur l’hôte où le collector sera exécuté.
 
     **Pour les utilisateurs d’AWS SSO :**
@@ -83,9 +79,7 @@ Le ClickStack collector peut être déployé soit sous forme de **conteneur Dock
     </Info>
   </Step>
 
-  <Step>
-    ## Configurer le receiver CloudWatch
-
+  <Step title="Configurer le receiver CloudWatch" id="configure-receiver">
     Exportez l’endpoint de votre ClickStack collector ainsi que votre jeton d’authentification, puis créez un fichier `otel-collector-config.yaml`.
 
     <Info>
@@ -220,9 +214,7 @@ Le ClickStack collector peut être déployé soit sous forme de **conteneur Dock
     </Info>
   </Step>
 
-  <Step>
-    ## Démarrer le collector receiver
-
+  <Step title="Démarrer le collector receiver" id="start-collector">
     Créez un `docker-compose.yaml` à côté de `otel-collector-config.yaml`. L’entrée `extra_hosts` permet au conteneur d’accéder à un ClickStack collector exécuté sur le même hôte via `host.docker.internal` ; le montage bind au format long génère explicitement une erreur si le fichier de configuration est manquant, au lieu de créer silencieusement un répertoire vide :
 
     ```shell
@@ -262,9 +254,7 @@ Le ClickStack collector peut être déployé soit sous forme de **conteneur Dock
     ```
   </Step>
 
-  <Step>
-    ## Vérifier dans l’interface ClickStack
-
+  <Step title="Vérifier dans l’interface ClickStack" id="confirm-in-ui">
     Ouvrez votre service dans la [console ClickHouse Cloud](https://console.clickhouse.cloud) et sélectionnez **ClickStack** dans le menu de gauche.
 
     <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="Lancer ClickStack" border />
@@ -296,9 +286,7 @@ Le ClickStack collector peut être déployé soit sous forme de **conteneur Dock
     * Confirmez que `OTLP_AUTH_TOKEN` correspond à la valeur définie sur votre ClickStack collector.
   </Step>
 
-  <Step>
-    ## Importer le dashboard CloudWatch (facultatif)
-
+  <Step title="Importer le dashboard CloudWatch (facultatif)" id="import-dashboard">
     Un dashboard préconfiguré indiquant le volume des logs, leur répartition par niveau de gravité et la distribution des erreurs est disponible au téléchargement.
 
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">Télécharger `cloudwatch-logs-dashboard.json`</TrackedLink>, puis, dans la ClickStack UI, accédez à **Dashboards** et cliquez sur **Import**.
@@ -310,9 +298,7 @@ Le ClickStack collector peut être déployé soit sous forme de **conteneur Dock
     <Image img="/images/clickstack/cloudwatch/finish-clickstack-import.webp" size="lg" alt="Boîte de dialogue de finalisation de l’importation" />
   </Step>
 
-  <Step>
-    ## Pour en savoir plus
-
+  <Step title="Pour en savoir plus" id="further-reading">
     * [Référence de l’intégration CloudWatch Logs](/fr/clickstack/integration-examples/cloudwatch) pour le jeu de données de démonstration, le guide de dépannage complet et les options de réglage.
     * [Sécuriser le collector](/fr/clickstack/ingesting-data/collector#securing-the-collector) avec TLS sur le point de terminaison OTLP et des utilisateurs d’ingestion à privilèges minimaux.
     * [Traitement, filtrage et enrichissement](/fr/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching) des événements dans le collector.

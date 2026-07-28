@@ -1,0 +1,284 @@
+{
+  "icon": "/images/icons/icon-concepts.svg",
+  "item": "Основные понятия",
+  "pages": [
+    "ru/concepts/index",
+    {
+      "expanded": true,
+      "group": "Основы",
+      "pages": [
+        "ru/concepts/core-concepts/glossary",
+        "ru/concepts/core-concepts/parts",
+        "ru/concepts/core-concepts/partitions",
+        "ru/concepts/core-concepts/merges",
+        "ru/concepts/core-concepts/primary-indexes",
+        "ru/concepts/core-concepts/query-parallelism",
+        "ru/concepts/core-concepts/academic-overview"
+      ],
+      "root": "ru/concepts/core-concepts/index"
+    },
+    {
+      "expanded": true,
+      "group": "Концепции ClickHouse",
+      "pages": [
+        {
+          "group": "Материализованные представления",
+          "pages": [
+            "ru/concepts/features/materialized-views/incremental-materialized-view",
+            "ru/concepts/features/materialized-views/refreshable-materialized-view",
+            "ru/concepts/features/materialized-views/cascading-materialized-views"
+          ],
+          "root": "ru/concepts/features/materialized-views/index"
+        },
+        {
+          "group": "Словари",
+          "pages": [
+            "ru/concepts/features/dictionaries/best-practices"
+          ],
+          "root": "ru/concepts/features/dictionaries/index"
+        },
+        {
+          "group": "Проекции",
+          "pages": [
+            "ru/concepts/features/projections/projections",
+            "ru/concepts/features/projections/materialized-views-versus-projections"
+          ]
+        },
+        {
+          "group": "Производительность",
+          "pages": [
+            "ru/concepts/features/performance/prewhere",
+            "ru/concepts/features/performance/allocation-profiling",
+            "ru/concepts/features/performance/allocation-profiling-old",
+            {
+              "group": "Кэши",
+              "pages": [
+                "ru/concepts/features/performance/caches/caches",
+                "ru/concepts/features/performance/caches/query-cache",
+                "ru/concepts/features/performance/caches/query-condition-cache",
+                "ru/concepts/features/performance/caches/userspace-page-cache"
+              ]
+            },
+            {
+              "group": "Индексы пропуска данных",
+              "pages": [
+                "ru/concepts/features/performance/skip-indexes/skipping-indexes",
+                "ru/concepts/features/performance/skip-indexes/skipping-indexes-examples"
+              ]
+            },
+            "ru/concepts/features/performance/lazy-materialization",
+            {
+              "group": "Устранение неполадок",
+              "pages": [
+                "ru/concepts/features/performance/troubleshoot/debugging-memory-issues",
+                "ru/concepts/features/performance/troubleshoot/oom-canary",
+                "ru/concepts/features/performance/troubleshoot/performance-test",
+                "ru/concepts/features/performance/troubleshoot/sampling-query-profiler"
+              ]
+            }
+          ],
+          "root": "ru/concepts/features/performance/index"
+        },
+        {
+          "group": "Operations",
+          "pages": [
+            {
+              "group": "Вставка",
+              "pages": [
+                "ru/concepts/features/operations/insert/inserting-data",
+                "ru/concepts/features/operations/insert/asyncinserts",
+                "ru/concepts/features/operations/insert/bulkinserts",
+                "ru/concepts/features/operations/insert/deduplication",
+                "ru/concepts/features/operations/insert/deduplicating-inserts-on-retries",
+                "ru/concepts/features/operations/insert/transactions"
+              ]
+            },
+            {
+              "group": "Выборка",
+              "pages": [
+                "ru/concepts/features/operations/select/joining-tables"
+              ]
+            },
+            {
+              "group": "Обновление",
+              "pages": [
+                "ru/concepts/features/operations/update/overview",
+                "ru/concepts/features/operations/update/on-fly-mutations",
+                "ru/concepts/features/operations/update/replacing-merge-tree"
+              ],
+              "root": "ru/concepts/features/operations/update/index"
+            },
+            {
+              "group": "Удаление",
+              "pages": [
+                "ru/concepts/features/operations/delete/overview",
+                "ru/concepts/features/operations/delete/delete-mutations",
+                "ru/concepts/features/operations/delete/drop-partition",
+                "ru/concepts/features/operations/delete/lightweight-delete",
+                "ru/concepts/features/operations/delete/truncate",
+                "ru/concepts/features/operations/delete/ttl"
+              ],
+              "root": "ru/concepts/features/operations/delete/index"
+            }
+          ]
+        },
+        {
+          "group": "Конфигурация",
+          "pages": [
+            {
+              "group": "Настройки",
+              "pages": [
+                "ru/concepts/features/configuration/settings/overview",
+                "ru/concepts/features/configuration/settings/settings-query-level",
+                "ru/concepts/features/configuration/settings/settings-users",
+                "ru/concepts/features/configuration/settings/settings-profiles",
+                "ru/concepts/features/configuration/settings/constraints-on-settings",
+                "ru/concepts/features/configuration/settings/query-complexity",
+                "ru/concepts/features/configuration/settings/permissions-for-queries",
+                "ru/concepts/features/configuration/settings/memory-overcommit",
+                "ru/concepts/features/configuration/settings/server-overload",
+                "ru/concepts/features/configuration/settings/tcp-connection-limits",
+                "ru/concepts/features/configuration/settings/alternative-query-languages"
+              ]
+            },
+            {
+              "group": "Конфигурация сервера",
+              "pages": [
+                "ru/concepts/features/configuration/server-config/configuration-files",
+                "ru/concepts/features/configuration/server-config/storing-data",
+                "ru/concepts/features/configuration/server-config/named-collections",
+                "ru/concepts/features/configuration/server-config/workload-scheduling",
+                "ru/concepts/features/configuration/server-config/quotas",
+                "ru/concepts/features/configuration/server-config/composable-protocols",
+                "ru/concepts/features/configuration/server-config/startup-scripts"
+              ]
+            }
+          ]
+        },
+        {
+          "group": "Безопасность и аутентификация",
+          "pages": [
+            "ru/concepts/features/security/access-rights",
+            "ru/concepts/features/security/network-ports",
+            {
+              "group": "TLS",
+              "pages": [
+                "ru/concepts/features/security/tls/configuring-tls",
+                "ru/concepts/features/security/tls/configuring-tls-acme-client"
+              ],
+              "root": "ru/concepts/features/security/tls/index"
+            },
+            {
+              "group": "Внешние аутентификаторы",
+              "pages": [
+                {
+                  "group": "SSL",
+                  "pages": [
+                    "ru/concepts/features/security/external-authenticators/ssl-x509",
+                    "ru/concepts/features/security/ssl-user-auth"
+                  ]
+                },
+                {
+                  "group": "LDAP",
+                  "pages": [
+                    "ru/concepts/features/security/external-authenticators/ldap",
+                    "ru/concepts/features/security/configuring-ldap"
+                  ]
+                },
+                "ru/concepts/features/security/external-authenticators/http",
+                "ru/concepts/features/security/external-authenticators/kerberos",
+                "ru/concepts/features/security/external-authenticators/jwt"
+              ],
+              "root": "ru/concepts/features/security/external-authenticators/index"
+            }
+          ],
+          "root": "ru/concepts/features/security/index"
+        },
+        {
+          "group": "Резервное копирование и восстановление",
+          "pages": [
+            "ru/concepts/features/backup-restore/overview",
+            "ru/concepts/features/backup-restore/local-disk",
+            "ru/concepts/features/backup-restore/s3-endpoint",
+            "ru/concepts/features/backup-restore/azure-blob-storage",
+            "ru/concepts/features/backup-restore/snapshot",
+            "ru/concepts/features/backup-restore/alternative-methods"
+          ]
+        },
+        {
+          "group": "Интерфейсы",
+          "pages": [
+            "ru/concepts/features/interfaces/cli",
+            "ru/concepts/features/interfaces/client",
+            {
+              "group": "Драйверы и интерфейсы",
+              "pages": [
+                "ru/concepts/features/interfaces/http",
+                "ru/concepts/features/interfaces/tcp",
+                "ru/concepts/features/interfaces/jdbc",
+                "ru/concepts/features/interfaces/mysql",
+                "ru/concepts/features/interfaces/odbc",
+                "ru/concepts/features/interfaces/postgresql",
+                "ru/concepts/features/interfaces/prometheus",
+                "ru/concepts/features/interfaces/ssh",
+                "ru/concepts/features/interfaces/grpc",
+                "ru/concepts/features/interfaces/arrowflight"
+              ],
+              "root": "ru/concepts/features/interfaces/overview"
+            },
+            "ru/concepts/features/interfaces/cpp",
+            "ru/concepts/features/interfaces/schema-inference",
+            "ru/concepts/features/interfaces/documentation-search",
+            "ru/concepts/features/interfaces/web-sql",
+            "ru/concepts/features/interfaces/web-ui-color-coding",
+            "ru/concepts/features/interfaces/web-ui-pinned-columns",
+            "ru/concepts/features/interfaces/web-terminal",
+            {
+              "group": "Сторонние клиенты",
+              "pages": [],
+              "root": "ru/concepts/features/interfaces/third-party/index"
+            }
+          ],
+          "root": "ru/concepts/features/interfaces/native-clients-interfaces-index"
+        },
+        {
+          "group": "Инструменты и утилиты",
+          "pages": [
+            "ru/concepts/features/tools-and-utilities/backupview",
+            "ru/concepts/features/tools-and-utilities/clickhouse-benchmark",
+            "ru/concepts/features/tools-and-utilities/clickhouse-compressor",
+            "ru/concepts/features/tools-and-utilities/clickhouse-disks",
+            "ru/concepts/features/tools-and-utilities/clickhouse-format",
+            "ru/concepts/features/tools-and-utilities/clickhouse-keeper-client",
+            "ru/concepts/features/tools-and-utilities/clickhouse-keeper-http-api",
+            "ru/concepts/features/tools-and-utilities/clickhouse-local",
+            "ru/concepts/features/tools-and-utilities/clickhouse-obfuscator",
+            "ru/concepts/features/tools-and-utilities/odbc-bridge",
+            "ru/concepts/features/tools-and-utilities/static-files-disk-uploader"
+          ],
+          "root": "ru/concepts/features/tools-and-utilities/index"
+        }
+      ],
+      "root": "ru/concepts/features/index"
+    },
+    {
+      "expanded": true,
+      "group": "Лучшие практики",
+      "pages": [
+        "ru/concepts/best-practices/choosing-a-primary-key",
+        "ru/concepts/best-practices/select-data-type",
+        "ru/concepts/best-practices/use-materialized-views",
+        "ru/concepts/best-practices/minimize-optimize-joins",
+        "ru/concepts/best-practices/partitioning-keys",
+        "ru/concepts/best-practices/selecting-an-insert-strategy",
+        "ru/concepts/best-practices/using-data-skipping-indices",
+        "ru/concepts/best-practices/avoid-mutations",
+        "ru/concepts/best-practices/avoid-optimize-final",
+        "ru/concepts/best-practices/avoidnullablecolumns",
+        "ru/concepts/best-practices/json-type"
+      ],
+      "root": "ru/concepts/best-practices/index"
+    }
+  ],
+  "root": "ru/concepts/index"
+}

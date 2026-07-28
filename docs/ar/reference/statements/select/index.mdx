@@ -36,21 +36,24 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 
 جميع البنود اختيارية، باستثناء قائمة التعبيرات المطلوبة التي تأتي مباشرة بعد `SELECT`، والتي تُشرح بمزيد من التفصيل [أدناه](#select-clause).
 
-تُشرح تفاصيل كل بند اختياري في أقسام منفصلة، وهي مُدرجة بالترتيب نفسه الذي تُنفَّذ به:
+تُشرح تفاصيل كل بند اختياري في أقسام منفصلة، وهي مُدرجة بالترتيب نفسه الذي تُنفَّذ به (باستثناء `SELECT` و `DISTINCT`، المُدرجَين أولًا للتيسير: لا تُقيَّم تعبيراتهما إلا بعد اكتمال البنود السابقة، كما هو موضح [أدناه](#select-clause)):
 
 * [بند WITH](/ar/reference/statements/select/with)
 * [بند SELECT](#select-clause)
+* [بند ALL](/ar/reference/statements/select/all)
 * [بند DISTINCT](/ar/reference/statements/select/distinct)
 * [بند FROM](/ar/reference/statements/select/from)
 * [بند SAMPLE](/ar/reference/statements/select/sample)
+* [بند ARRAY JOIN](/ar/reference/statements/select/array-join)
 * [بند JOIN](/ar/reference/statements/select/join)
 * [بند PREWHERE](/ar/reference/statements/select/prewhere)
 * [بند WHERE](/ar/reference/statements/select/where)
-* [بند WINDOW](/ar/reference/functions/window-functions/index)
 * [بند GROUP BY](/ar/reference/statements/select/group-by)
-* [بند LIMIT BY](/ar/reference/statements/select/limit-by)
 * [بند HAVING](/ar/reference/statements/select/having)
+* [بند WINDOW](/ar/reference/functions/window-functions/index)
 * [بند QUALIFY](/ar/reference/statements/select/qualify)
+* [بند ORDER BY](/ar/reference/statements/select/order-by)
+* [بند LIMIT BY](/ar/reference/statements/select/limit-by)
 * [بند LIMIT](/ar/reference/statements/select/limit)
 * [بند OFFSET](/ar/reference/statements/select/offset)
 * [بند UNION](/ar/reference/statements/select/union)
