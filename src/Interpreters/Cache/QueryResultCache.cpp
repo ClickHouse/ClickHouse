@@ -622,6 +622,13 @@ QueryResultCacheWriter::QueryResultCacheWriter(const QueryResultCacheWriter & ot
     , key(other.key)
     , max_entry_size_in_bytes(other.max_entry_size_in_bytes)
     , max_entry_size_in_rows(other.max_entry_size_in_rows)
+    /// The copy keeps the original's notion of when the query started, so `min_query_runtime` is still
+    /// measured from the construction of the first writer. A copy is made when the plan holding the writer
+    /// is cloned - e.g. by `FutureSetFromSubquery::buildOrderedSetInplace`, where the copy is the only
+    /// writer that is ever finalized - and restarting the timer there would make cache eligibility depend
+    /// on the plan shape: a subquery would silently stop populating the cache just because its plan became
+    /// clonable.
+    , query_start_time(other.query_start_time)
     , min_query_runtime(other.min_query_runtime)
     , squash_partial_results(other.squash_partial_results)
     , max_block_size(other.max_block_size)

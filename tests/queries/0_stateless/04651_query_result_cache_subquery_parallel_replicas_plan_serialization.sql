@@ -13,6 +13,11 @@ DROP TABLE IF EXISTS t_qrc_pr;
 CREATE TABLE t_qrc_pr (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_qrc_pr SELECT number FROM numbers(1000);
 
+-- Subquery caching is a Planner feature: with the old analyzer no subquery cache entry is created at
+-- all, so the last check below would trivially return 0. Pin the analyzer, because some CI jobs run
+-- the whole suite with `enable_analyzer = 0`.
+SET enable_analyzer = 1;
+
 SET use_query_cache = 1;
 SET query_cache_for_subqueries = 1;
 SET serialize_query_plan = 1;
