@@ -55,6 +55,7 @@
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 #include <Storages/MergeTree/OverlappingPartCovering.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
@@ -667,7 +668,13 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                   *
                   * Otherwise `metadata_version` for not first replica will be initialized with 0 by default.
                   */
-                setInMemoryMetadata(metadata_snapshot->withMetadataVersion(metadata_version));
+                /// This metadata snapshot lives for the table's lifetime, so route the clone into the
+                /// dedicated MergeTree arena explicitly (rather than relying on the factory-level scope
+                /// in registerStorageMergeTree), so it converges with the ALTER / restart paths.
+                {
+                    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+                    setInMemoryMetadata(metadata_snapshot->withMetadataVersion(metadata_version));
+                }
                 metadata_snapshot = getInMemoryMetadataPtr(getContext(), true);
             }
         }
@@ -2461,11 +2468,14 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
             continue;
         }
 
-        /// Same rationale as `MergeTreeData::loadDataPart`: the per-part `SingleDiskVolume` and
-        /// the resulting attached `IMergeTreeDataPart` live for the part's lifetime.
-        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-
-        const auto volume = std::make_shared<SingleDiskVolume>("volume_" + detached_part_info.dir_name, detached_part_info.disk);
+        /// Same rationale as `MergeTreeData::loadDataPart`: the per-part `SingleDiskVolume` lives for
+        /// the part's lifetime, so create it in the dedicated arena; `build()` and the metadata load
+        /// below run outside it (the load's transient scratch stays on the default per-CPU arenas).
+        VolumePtr volume;
+        {
+            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+            volume = std::make_shared<SingleDiskVolume>("volume_" + detached_part_info.dir_name, detached_part_info.disk);
+        }
         auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(rename_parts.source_dir) / rename_parts.old_and_new_names.front().new_dir, getReadSettings())
             .withPartFormatFromDisk()
             .build();
@@ -3347,7 +3357,8 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
             IDataPartStorage::ClonePartParams clone_params
             {
                 .copy_instead_of_hardlink = (*storage_settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks] || ((our_zero_copy_enabled || source_zero_copy_enabled) && part_desc->src_table_part->isStoredOnRemoteDiskWithZeroCopySupport()),
-                .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
+                .metadata_version_to_write = metadata_snapshot->getMetadataVersion(),
+                .invalidated_columns_to_write = {BlockNumberColumn::name, BlockOffsetColumn::name},
             };
             auto [res_part, temporary_part_lock] = cloneAndLoadDataPart(
                 part_desc->src_table_part,
@@ -6914,7 +6925,11 @@ void StorageReplicatedMergeTree::alter(
         changeSettings(future_metadata.settings_changes, table_lock_holder);
 
         if (statistics_changed)
+        {
+            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             setInMemoryMetadata(future_metadata);
+        }
 
         /// Safe because the early max_query_size check already passed.
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
@@ -6923,7 +6938,11 @@ void StorageReplicatedMergeTree::alter(
 
     if (commands.isCommentAlter())
     {
-        setInMemoryMetadata(future_metadata);
+        {
+            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+            setInMemoryMetadata(future_metadata);
+        }
 
         /// Safe because the early max_query_size check already passed.
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
@@ -6947,7 +6966,11 @@ void StorageReplicatedMergeTree::alter(
         for (auto & index : future_metadata.secondary_indices)
             index.escape_filenames = committed_metadata->escape_index_filenames;
 
-        setInMemoryMetadata(future_metadata);
+        {
+            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+            setInMemoryMetadata(future_metadata);
+        }
 
         /// Safe because the early max_query_size check already passed.
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
@@ -7075,7 +7098,11 @@ void StorageReplicatedMergeTree::alter(
 
             /// The comment is not replicated as of today, but we can implement it later.
             if (comment_is_changed)
+            {
+                /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
                 setInMemoryMetadata(metadata_copy);
+            }
 
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy, /*validate_new_create_query=*/true);
         }
@@ -9315,7 +9342,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
             /// Save deduplication block ids with special prefix replace_partition
 
             if (!canReplacePartition(src_part))
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Cannot replace partition '{}' because part '{}"
                                 "' has inconsistent granularity with table", partition_id, src_part->name);
 
@@ -9347,7 +9374,8 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
             IDataPartStorage::ClonePartParams clone_params
             {
                 .copy_instead_of_hardlink = always_use_copy_instead_of_hardlinks || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
-                .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
+                .metadata_version_to_write = metadata_snapshot->getMetadataVersion(),
+                .invalidated_columns_to_write = {BlockNumberColumn::name, BlockOffsetColumn::name},
             };
             if (replace)
             {
@@ -9610,7 +9638,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         for (const auto & src_part : src_all_parts)
         {
             if (!dest_table_storage->canReplacePartition(src_part))
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Cannot move partition '{}' because part '{}"
                                 "' has inconsistent granularity with table", partition_id, src_part->name);
 
@@ -9638,7 +9666,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             IDataPartStorage::ClonePartParams clone_params
             {
                 .copy_instead_of_hardlink = (*storage_settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks] || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
-                .metadata_version_to_write = dest_metadata_snapshot->getMetadataVersion()
+                .metadata_version_to_write = dest_metadata_snapshot->getMetadataVersion(),
+                .invalidated_columns_to_write = {BlockNumberColumn::name, BlockOffsetColumn::name},
             };
             auto [dst_part, dst_part_lock] = dest_table_storage->cloneAndLoadDataPart(
                 src_part,

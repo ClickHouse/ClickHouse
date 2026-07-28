@@ -38,6 +38,10 @@ doc_type: 'reference'
 
 入力文字列 `s` の各ビットを、ビットごとに確率 `p` で反転します。
 
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返す場合があります。
+</Note>
+
 **構文**
 
 ```sql
@@ -81,6 +85,10 @@ FROM numbers(3)
 システムから取得した初期状態を用いる線形合同法の擬似乱数生成器を使用しているため、見た目はランダムでも、真の乱数ではなく、初期状態がわかっている場合は予測される可能性があります。
 真の乱数性が重要な用途では、システムレベルの呼び出しや外部ライブラリとの連携など、別の方法の使用を検討してください。
 
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
+
 **構文**
 
 ```sql
@@ -117,8 +125,12 @@ SELECT rand();
 
 一様分布に従うランダムな `UInt64` 値を返します。
 
-システムから取得した初期状態を用いる線形合同法の乱数生成器を使用します。つまり、見かけ上はランダムでも、真の乱数ではなく、初期状態がわかっていれば予測可能です。
+システムから取得した初期状態を用いる線形合同法の擬似乱数生成器を使用します。つまり、見かけ上はランダムでも、真の乱数ではなく、初期状態がわかっていれば予測可能です。
 真の乱数が重要な場合は、システムレベルの呼び出しや外部ライブラリとの統合など、別の方法の使用を検討してください。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -153,6 +165,10 @@ SELECT rand64();
 導入バージョン: v22.10.0
 
 [ベルヌーイ分布](https://en.wikipedia.org/wiki/Bernoulli_distribution) に従うランダムな Float64 値を返します。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対しても異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -193,7 +209,11 @@ SELECT randBernoulli(.75) FROM numbers(5)
 
 導入バージョン: v22.10.0
 
-[二項分布](https://en.wikipedia.org/wiki/Binomial_distribution)に従う Float64 型の乱数を返します。
+[二項分布](https://en.wikipedia.org/wiki/Binomial_distribution)に従うランダムな Float64 値を返します。
+
+<Note>
+  この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -209,7 +229,7 @@ randBinomial(experiments, probability[, x])
 
 **戻り値**
 
-指定された二項分布に従うランダムな Float64 の数値を返します。 [`UInt64`](/ja/reference/data-types/int-uint)
+指定された二項分布に従うランダムな Float64 値を返します。 [`UInt64`](/ja/reference/data-types/int-uint)
 
 **例**
 
@@ -236,6 +256,10 @@ SELECT randBinomial(100, .75) FROM numbers(5)
 導入バージョン: v22.11.0
 
 `0` (以上) から `1` (未満) の範囲で一様分布に従うランダムな `Float64` 値を返します。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -270,6 +294,10 @@ SELECT randCanonical();
 導入バージョン: v22.10.0
 
 [カイ二乗分布](https://en.wikipedia.org/wiki/Chi-squared_distribution)に従うランダムな Float64 値を返します。
+
+<Note>
+  この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -319,6 +347,10 @@ SELECT randChiSquared(10) FROM numbers(5)
 
 データセット内のすべての行に対して、一貫したランダムシードや識別子を適用する場合に役立ちます
 
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
+
 **構文**
 
 ```sql
@@ -365,7 +397,11 @@ SELECT randConstant(10) AS random_value;
 
 導入バージョン: v22.10.0
 
-[指数分布](https://en.wikipedia.org/wiki/Exponential_distribution)に従う、ランダムな Float64 型の値を返します。
+[指数分布](https://en.wikipedia.org/wiki/Exponential_distribution)に従う、ランダムな Float64 値を返します。
+
+<Note>
+  この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -407,6 +443,10 @@ SELECT randExponential(1/10) FROM numbers(5)
 導入バージョン: v22.10.0
 
 [F分布](https://en.wikipedia.org/wiki/F-distribution)に従うランダムな Float64 値を返します。
+
+<Note>
+  この関数は非決定論的です。同じ引数でも異なる結果を返す場合があります。
+</Note>
 
 **構文**
 
@@ -450,6 +490,10 @@ SELECT randFisherF(10, 3) FROM numbers(5)
 
 [対数正規分布](https://en.wikipedia.org/wiki/Log-normal_distribution) に従う、ランダムな Float64 値を返します。
 
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
+
 **構文**
 
 ```sql
@@ -492,6 +536,10 @@ SELECT randLogNormal(100, 5) FROM numbers(5)
 
 [負の二項分布](https://en.wikipedia.org/wiki/Negative_binomial_distribution)に従うランダムな Float64 値を返します。
 
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
+
 **構文**
 
 ```sql
@@ -506,7 +554,7 @@ randNegativeBinomial(experiments, probability[, x])
 
 **戻り値**
 
-指定された負の二項分布に従うランダムな Float64 の数値を返します [`UInt64`](/ja/reference/data-types/int-uint)
+指定された負の二項分布に従うランダムな Float64 値を返します [`UInt64`](/ja/reference/data-types/int-uint)
 
 **例**
 
@@ -533,6 +581,10 @@ SELECT randNegativeBinomial(100, .75) FROM numbers(5)
 導入バージョン: v22.10.0
 
 [正規分布](https://en.wikipedia.org/wiki/Normal_distribution)から生成されたランダムな Float64 値を返します。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -574,7 +626,11 @@ SELECT randNormal(10, 2) FROM numbers(5)
 
 導入バージョン: v22.10.0
 
-[ポアソン分布](https://en.wikipedia.org/wiki/Poisson_distribution)に従うランダムな Float64 型の値を返します。
+[ポアソン分布](https://en.wikipedia.org/wiki/Poisson_distribution)に従うランダムな Float64 値を返します。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -615,7 +671,11 @@ SELECT randPoisson(10) FROM numbers(5)
 
 導入バージョン: v22.10.0
 
-[スチューデントのt分布](https://en.wikipedia.org/wiki/Student%27s_t-distribution)に従う、ランダムな Float64 型の数値を返します。
+[スチューデントのt分布](https://en.wikipedia.org/wiki/Student%27s_t-distribution)に従う、ランダムな Float64 値を返します。
+
+<Note>
+  この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -657,6 +717,10 @@ SELECT randStudentT(10) FROM numbers(5)
 導入バージョン: v22.10.0
 
 区間 $[\min, \max]$ に一様に分布するランダムな Float64 値を返します。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対しても、異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -701,6 +765,10 @@ SELECT randUniform(5.5, 10) FROM numbers(5)
 指定した文字数の固定長のランダム文字列を生成します。
 返される文字は必ずしも ASCII 文字とは限らず、表示可能文字でない場合があります。
 
+<Note>
+  この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+</Note>
+
 **構文**
 
 ```sql
@@ -724,9 +792,9 @@ SELECT randomFixedString(13) AS rnd, toTypeName(rnd)
 ```
 
 ```response title=Response
-┌─rnd──────┬─toTypeName(randomFixedString(13))─┐
-│ j▒h㋖HɨZ'▒ │ FixedString(13)                 │
-└──────────┴───────────────────────────────────┘
+┌─rnd────────┬─toTypeName(randomFixedString(13))─┐
+│ j▒h㋖HɨZ'▒ │ FixedString(13)                   │
+└────────────┴───────────────────────────────────┘
 ```
 
 <div id="randomPrintableASCII">
@@ -738,6 +806,10 @@ SELECT randomFixedString(13) AS rnd, toTypeName(rnd)
 指定した文字数のランダムな[ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters)文字列を生成します。
 
 `length < 0` を指定した場合、この関数の動作は未定義です。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -779,6 +851,10 @@ SELECT number, randomPrintableASCII(30) AS str, length(str) FROM system.numbers 
 指定した文字数のランダムな文字列を生成します。
 返される文字は必ずしも ASCII 文字とは限らないため、表示できない場合があります。
 
+<Note>
+  この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+</Note>
+
 **構文**
 
 ```sql
@@ -817,6 +893,10 @@ SELECT randomString(5) AS str FROM numbers(2)
 未割り当ての[プレーン](https://en.wikipedia.org/wiki/Plane_\(Unicode\)) (プレーン4〜13) に属するコードポイントは返されません。
 ただし、ClickHouse server とやり取りするクライアント側で、生成された UTF-8 文字列を正しく表示できない場合があります。
 
+<Note>
+  この関数は非決定論的です。同じ引数であっても、異なる結果を返すことがあります。
+</Note>
+
 **構文**
 
 ```sql
@@ -841,7 +921,7 @@ SELECT randomStringUTF8(13)
 
 ```response title=Response
 ┌─randomStringUTF8(13)─┐
-│ 𘤗𙉝д兠庇󡅴󱱎󦐪􂕌𔊹𓰛       │
+│ 󶡕𲉗𩍄ԍ╃𑄅󦨁󷌁󬾣𹼫󤓆󺜘󩶧         │
 └──────────────────────┘
 ```
 

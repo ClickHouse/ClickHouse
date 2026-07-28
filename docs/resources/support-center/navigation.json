@@ -3,6 +3,7 @@
     {
       "group": "Knowledgebase",
       "pages": [
+        "resources/support-center/home",
         {
           "group": "Performance & optimization",
           "pages": [
@@ -85,6 +86,7 @@
         {
           "group": "Troubleshooting & errors",
           "pages": [
+            "resources/support-center/troubleshooting/index",
             "resources/support-center/troubleshooting/troubleshooting",
             "resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
             "resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
@@ -95,8 +97,7 @@
             "resources/support-center/knowledge-base/troubleshooting/part-intersects-previous-part",
             "resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot",
             "resources/support-center/knowledge-base/troubleshooting/restore-replica-after-storage-failure"
-          ],
-          "root": "resources/support-center/troubleshooting/index"
+          ]
         },
         {
           "group": "Tables & schema",
@@ -185,9 +186,11 @@
         {
           "group": "General & FAQs",
           "pages": [
+            "resources/support-center/knowledge-base/general-faqs/faq-index",
             {
               "group": "General",
               "pages": [
+                "resources/support-center/knowledge-base/general-faqs/index",
                 "resources/support-center/knowledge-base/general-faqs/columnar-database",
                 "resources/support-center/knowledge-base/general-faqs/concurrency",
                 "resources/support-center/knowledge-base/general-faqs/cost-based",
@@ -204,39 +207,37 @@
                 "resources/support-center/knowledge-base/general-faqs/updates",
                 "resources/support-center/knowledge-base/general-faqs/who-is-using-clickhouse",
                 "resources/support-center/knowledge-base/general-faqs/why-recommend-clickhouse-keeper-over-zookeeper"
-              ],
-              "root": "resources/support-center/knowledge-base/general-faqs/index"
+              ]
             },
             {
               "group": "Use cases",
               "pages": [
+                "resources/support-center/knowledge-base/general-faqs/use-cases-index",
                 "resources/support-center/knowledge-base/general-faqs/key-value",
                 "resources/support-center/knowledge-base/general-faqs/time-series",
                 "resources/support-center/knowledge-base/general-faqs/use-clickhouse-for-log-analytics",
                 "resources/support-center/knowledge-base/general-faqs/vector-search"
-              ],
-              "root": "resources/support-center/knowledge-base/general-faqs/use-cases-index"
+              ]
             },
             {
               "group": "Integration",
               "pages": [
+                "resources/support-center/knowledge-base/integrations/index",
                 "resources/support-center/knowledge-base/data-import-export/json-import",
                 "resources/support-center/knowledge-base/integrations/oracle-odbc"
-              ],
-              "root": "resources/support-center/knowledge-base/integrations/index"
+              ]
             },
             {
               "group": "Operations",
               "pages": [
+                "resources/support-center/knowledge-base/general-faqs/operations-index",
                 "resources/support-center/knowledge-base/tables-schema/delete-old-data",
                 "resources/support-center/knowledge-base/cloud-services/multi-region-replication",
                 "resources/support-center/knowledge-base/setup-installation/production",
                 "resources/support-center/knowledge-base/general-faqs/separate-storage"
-              ],
-              "root": "resources/support-center/knowledge-base/general-faqs/operations-index"
+              ]
             }
-          ],
-          "root": "resources/support-center/knowledge-base/general-faqs/faq-index"
+          ]
         },
         {
           "group": "Tips & tricks",
@@ -250,8 +251,7 @@
             "resources/support-center/tips-and-tricks/too-many-parts"
           ]
         }
-      ],
-      "root": "resources/support-center/home"
+      ]
     }
   ],
   "icon": "/images/icons/icon-support-center.svg",

@@ -69,6 +69,30 @@ FORMAT Prometheus
 
 Количество частей данных MergeTree с метками состояния части, типа части и признака того, является ли она частью проекции.
 
+<div id="filesystem-cache-evictions-total">
+  ### `filesystem_cache_evictions_total`
+</div>
+
+Количество сегментов файла, вытесненных из файлового кэша, с меткой имени кэша. По умолчанию отключено; включается с помощью `expose_prometheus_eviction_metrics`.
+
+<div id="filesystem-cache-evicted-bytes-total">
+  ### `filesystem_cache_evicted_bytes_total`
+</div>
+
+Общее количество байтов сегментов файла, вытесненных из файлового кэша, с меткой имени кэша. Отключено по умолчанию; включите с помощью `expose_prometheus_eviction_metrics`.
+
+<div id="filesystem-cache-evictions-by-user-total">
+  ### `filesystem_cache_evictions_by_user_total`
+</div>
+
+Количество сегментов файла, вытесненных из файлового кэша, с метками «имя кэша» и «идентификатор пользователя». Отключено по умолчанию; включите с помощью `expose_prometheus_eviction_metrics` и `expose_prometheus_eviction_metrics_per_user`.
+
+<div id="filesystem-cache-evicted-bytes-by-user-total">
+  ### `filesystem_cache_evicted_bytes_by_user_total`
+</div>
+
+Общее количество байтов сегментов файла, вытесненных из файлового кэша, с метками имени кэша и идентификатора пользователя. По умолчанию отключено; включите с помощью `expose_prometheus_eviction_metrics` и `expose_prometheus_eviction_metrics_per_user`.
+
 <div id="see-also">
   ## См. также
 </div>

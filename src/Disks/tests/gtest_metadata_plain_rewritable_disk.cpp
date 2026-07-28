@@ -625,6 +625,40 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveFile)
     EXPECT_NE(a_file_path, b_file_path);
 }
 
+TEST_F(MetadataPlainRewritableDiskTest, RewriteFileUpdatesSize)
+{
+    auto metadata = getMetadataStorage("RewriteFileUpdatesSize");
+    auto object_storage = getObjectStorage("RewriteFileUpdatesSize");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        size_t file_size = writeObject(object_storage, tx->generateObjectKeyForPath("A/file").serialize(), "test");
+        tx->createMetadataFile("A/file", {StoredObject("A/file", "file", file_size)});
+        size_t root_file_size = writeObject(object_storage, tx->generateObjectKeyForPath("root_file").serialize(), "test");
+        tx->createMetadataFile("root_file", {StoredObject("root_file", "root_file", root_file_size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_EQ(metadata->getFileSize("A/file"), 4u);
+    EXPECT_EQ(metadata->getFileSize("root_file"), 4u);
+
+    {
+        auto tx = metadata->createTransaction();
+        size_t file_size = writeObject(object_storage, tx->generateObjectKeyForPath("A/file").serialize(), "Hello world!");
+        tx->createMetadataFile("A/file", {StoredObject("A/file", "file", file_size)});
+        size_t root_file_size = writeObject(object_storage, tx->generateObjectKeyForPath("root_file").serialize(), "Hello world!");
+        tx->createMetadataFile("root_file", {StoredObject("root_file", "root_file", root_file_size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_EQ(metadata->getFileSize("A/file"), 12u);
+    EXPECT_EQ(metadata->getFileSize("root_file"), 12u);
+
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("A/file").front().remote_path), "Hello world!");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("root_file").front().remote_path), "Hello world!");
+}
+
 TEST_F(MetadataPlainRewritableDiskTest, MoveFileUndo)
 {
     auto metadata = getMetadataStorage("MoveFileUndo");

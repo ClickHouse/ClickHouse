@@ -57,6 +57,8 @@ doc_type: 'reference'
 * `current_disk_with_path (current, current_disk, current_path)`
   اطبع الحالة الحالية بالتنسيق:
   `Disk: "current_disk" Path: "current path on current disk"`
+* `du [--human-readable] [<path>]`
+  اطبع الحجم الإجمالي بالبايت للملف أو الدليل الموجود في `path` على القرص الحالي. وبالنسبة إلى الدليل، يُجمع حجم جميع الملفات التي يحتويها بشكل تكراري. وإذا لم يتم تحديد `path`، فسيُستخدم الدليل الحالي. ومع `--human-readable` (`-h`) يُطبع الحجم بصيغة مقروءة بشريًا (مثل `1.23 GiB`).
 * `help [<command>]`
   اطبع رسالة المساعدة الخاصة بالأمر `command`. وإذا لم يتم تحديد `command`، فاطبع معلومات عن جميع الأوامر.
 * `move (mv) <path-from> <path-to>`.
@@ -75,9 +77,13 @@ doc_type: 'reference'
   اقرأ ملفًا من `path-from` إلى `path` (`stdout` إذا لم يتم توفيره).
 * `read-bitmap <path-from> [--values]`
   افحص ملف `delete-bitmap` الجانبي (`.rbm`) في `path-from`. يطبع الأمر القيمة السحرية والإصدار وصلاحية CRC والكاردينالية (عدد الصفوف المحذوفة) ونطاق الصفوف. ومع `--values`، يفرغ أيضًا جميع البتات المضبوطة (إزاحات الصفوف المحذوفة) بترتيب تصاعدي.
-* `read-checksums <path>`
-  اقرأ ملف `checksums.txt` الخاص بـ `MergeTree` data part على القرص الحالي واطبعه إلى `stdout` كجدول مفصول بعلامات جدولة ومقروء بشريًا، بالأعمدة `name` و`file_size` و`file_hash` و`uncompressed_size` و`uncompressed_hash`. ويظهر العمودان الأخيران فقط للملفات المضغوطة.
 * `switch-disk [--path path] <disk>`
   بدّل إلى القرص `disk` على المسار `path` (إذا لم يتم تحديد `path`، فالقيمة الافتراضية هي المسار السابق على القرص `disk`).
 * `write (w) [--path-from path] <path-to>`.
   اكتب ملفًا من `path` (`stdin` إذا لم يتم توفير `path`، ويجب إنهاء الإدخال عبر Ctrl+D) إلى `path-to`.
+* `wc <path> [--bytes] [--lines] [--words]`
+  احسب عدد البايتات والأسطر والكلمات في الملف الموجود في `path` على القرص الحالي (كما في Unix `wc`). ومن دون أي علامة، تُطبع القيم الثلاث كلها بترتيب الأسطر ثم الكلمات ثم البايتات. استخدم `--bytes` (`-c`) و`--lines` (`-l`) و`--words` (`-w`) لتحديد القيم المطلوبة.
+* `sed <expression> <path>`
+  طبّق `expression` الخاصة بـ `sed` على الملف الموجود في `path` على القرص الحالي، مباشرةً على الملف نفسه. يتطلب ذلك أن يكون `sed` مثبتًا على المضيف. لا يُدعم إلا تعبير `sed` واحد من دون خيارات (مثل `'s/foo/bar/g'` و`'/foo/d'`)، ولا تُدعم تعبيرات متعددة (`-e ... -e ...`) أو خيارات مدمجة مع عنوان (مثل `-n` مع `4,10p`).
+* `read-checksums <path>`
+  اقرأ ملف `checksums.txt` الخاص بـ `MergeTree` data part على القرص الحالي واطبعه إلى `stdout` كجدول مفصول بعلامات الجدولة ومقروء بشريًا، بالأعمدة `name` و`file_size` و`file_hash` و`uncompressed_size` و`uncompressed_hash`. ويظهر العمودان الأخيران فقط للملفات المضغوطة.

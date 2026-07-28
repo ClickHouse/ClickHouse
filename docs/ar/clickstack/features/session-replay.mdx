@@ -90,18 +90,18 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يدعم Browser SDK أيضًا [إخفاء المدخلات والنصوص](/ar/clickstack/ingesting-data/sdks/browser#options) للتطبيقات الحساسة للخصوصية، و[إرفاق معلومات المستخدم](/ar/clickstack/ingesting-data/sdks/browser#attach-user-information-or-metadata) حتى تتمكن من البحث في الجلسات وتصفيتها حسب المستخدم داخل ClickStack UI.
 
 <div id="viewing-replays">
-  ## عرض إعادات تشغيل الجلسات
+  ## عرض إعادة تشغيل الجلسات
 </div>
 
 انتقل إلى **Client Sessions** من الشريط الجانبي الأيسر في واجهة ClickStack ‏(HyperDX). يعرض هذا القسم جميع جلسات المتصفح الملتقطة، مع مدتها وعدد الأحداث فيها.
 
 <Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="عرض البحث لإعادة تشغيل الجلسة" size="lg" />
 
-انقر على زر التشغيل لأي جلسة لإعادة تشغيلها. يعرض منظور إعادة التشغيل على اليمين تجربة المستخدم كما أُعيد بناؤها، وعلى اليسار مخططًا زمنيًا لأحداث المتصفح — مثل طلبات الشبكة، وسجلات وحدة التحكم، والأخطاء.
+انقر على زر التشغيل لأي جلسة لإعادة تشغيلها. يعرض منظور إعادة تشغيل الجلسة على اليمين تجربة المستخدم كما أُعيد بناؤها، وعلى اليسار مخططًا زمنيًا لأحداث المتصفح — مثل طلبات الشبكة، وسجلات وحدة التحكم، والأخطاء.
 
 <Image img="/images/clickstack/session-replay/session-replay.webp" alt="تشغيل إعادة تشغيل الجلسة" size="lg" />
 
-بدّل بين وضعي **Highlighted** و**All Events** لضبط مستوى التفاصيل المعروض على المخطط الزمني. تُميَّز الأخطاء باللون الأحمر، ويؤدي النقر على أي حدث إلى الانتقال بإعادة التشغيل إلى تلك النقطة من الجلسة.
+بدّل بين وضعي **Highlighted** و**All Events** لضبط مستوى التفاصيل المعروض على المخطط الزمني. تُميَّز الأخطاء باللون الأحمر، ويؤدي النقر على أي حدث إلى الانتقال بإعادة تشغيل الجلسة إلى تلك النقطة من الجلسة.
 
 <div id="session-to-trace">
   ### من الجلسة إلى التتبّع
@@ -109,7 +109,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 عند تحديد طلب شبكة أو خطأ في المخطط الزمني للجلسة، يمكنك النقر للانتقال إلى علامة التبويب **Trace** لتتبّع الطلب عبر خدماتك الخلفية — مع الاطلاع على السجلات ووحدات span واستعلامات قاعدة البيانات المرتبطة التي نتجت عن تفاعل المستخدم هذا.
 
-يعمل ذلك لأن إعداد `tracePropagationTargets` يربط وحدات span في المتصفح بوحدات span على الخادم عبر ترويسة `traceparent`، مما ينشئ تتبّعًا موزعًا ومترابطًا يبدأ من نقرة المستخدم ويمتد حتى قاعدة البيانات. وللاطلاع على شرح عملي مفصل لهذا الأمر، بما في ذلك إضافة OpenTelemetry إلى كلٍّ من الواجهة الأمامية والخلفية، راجع [Instrumenting your NextJS application with OpenTelemetry and ClickStack](https://clickhouse.com/blog/instrumenting-nextjs-opentelemetry-clickstack).
+يعمل ذلك لأن إعداد `tracePropagationTargets` يربط وحدات span في المتصفح بوحدات span على الخادم عبر ترويسة `traceparent`، مما ينشئ تتبّعًا موزعًا ومترابطًا يبدأ من نقرة المستخدم ويمتد حتى قاعدة البيانات. وللاطلاع على شرح عملي مفصل لهذا الأمر، بما في ذلك إضافة OpenTelemetry إلى كلٍّ من الواجهة الأمامية والخلفية، راجع [Instrumenting your NextJS application with OpenTelemetry and ClickStack](https://clickhouse.com/blog/instrumenting-your-app-with-otel-clickstack).
 
 <Frame>
   <img src="/images/clickstack/session-replay/clickpy-trace.webp" alt="الانتقال من إعادة تشغيل الجلسة إلى تتبّعات الخدمات الخلفية في ClickStack" />
@@ -144,9 +144,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## تعرّف على المزيد
 </div>
 
-* [عرض توضيحي لإعادة تشغيل الجلسات](/ar/clickstack/example-datasets/session-replay) — تطبيق تجريبي محلي تفاعلي مع إرشادات خطوة بخطوة
-* [مرجع Browser SDK](/ar/clickstack/ingesting-data/sdks/browser) — جميع خيارات SDK، وsource maps، وcustom actions، والإعدادات المتقدمة
-* [Search](/ar/clickstack/features/search) — صيغة البحث لتصفية الجلسات والأحداث
-* [لوحات المعلومات](/ar/clickstack/features/dashboards/overview) — أنشئ تصورات مرئية ولوحات معلومات من بيانات الجلسات وبيانات التتبّع
-* [التنبيهات](/ar/clickstack/features/alerts) — أعدّ تنبيهات للأخطاء وزمن الاستجابة والإشارات الأخرى
+* [عرض توضيحي لإعادة تشغيل الجلسات](/ar/clickstack/example-datasets/session-replay) — تطبيق عرض توضيحي محلي تفاعلي مع إرشادات خطوة بخطوة
+* [مرجع Browser SDK](/ar/clickstack/ingesting-data/sdks/browser) — خيارات SDK الكاملة، وخرائط المصدر، والإجراءات المخصصة، والتهيئة المتقدمة
+* [البحث](/ar/clickstack/features/search) — صياغة البحث لتصفية الجلسات والأحداث
+* [لوحات المعلومات](/ar/clickstack/features/dashboards/overview) — إنشاء تصورات ولوحات معلومات من بيانات الجلسات وبيانات التتبّع
+* [التنبيهات](/ar/clickstack/features/alerts) — إعداد تنبيهات للأخطاء وزمن الاستجابة وإشارات أخرى
 * [معمارية ClickStack](/ar/clickstack/architecture) — كيف تتكامل ClickHouse وHyperDX وOTel collector معًا

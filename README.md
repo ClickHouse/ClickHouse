@@ -35,7 +35,9 @@ curl https://clickhouse.com/ | sh
 
 ## Monthly Release & Community Call
 
-Join us for the [ClickHouse **26.5** Release Call](https://clickhouse.com/company/events/v26-5-community-release-call) on May 21, 2026.
+The [ClickHouse **26.7** Release Call](https://www.youtube.com/watch?v=mKBNLaFOVDA) took place on July 23, 2026 — watch the recording and the [slides](https://presentations.clickhouse.com/2026-release-26.7/).
+
+The [ClickHouse **26.6** special "10 Year Anniversary" Release Call](https://www.youtube.com/watch?v=-NmqMH9y4EY) — recording and [slides](https://presentations.clickhouse.com/2026-release-26.6/).
 
 Watch all release presentations and videos at [ClickHouse Theater](https://presentations.clickhouse.com/) and [YouTube Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3jAlSy1JxyP8zluvXaN3nxU).
 

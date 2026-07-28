@@ -170,10 +170,10 @@ ClickHouse 为数据摄取提供了两种主要接口：**原生接口**和**HTT
   ### HTTP
 </div>
 
-与许多传统数据库不同，ClickHouse 也支持 HTTP 接口。**相比之下，它更强调兼容性和灵活性。**它支持以[任何受支持的格式](/zh/guides/clickhouse/data-formats/intro)发送数据——包括 JSON、CSV、Parquet 等——并且已被大多数 ClickHouse 客户端广泛支持，包括 Python、Java、JavaScript 和 Rust。
+与许多传统数据库不同，ClickHouse 也支持 HTTP 接口。**相比之下，它更强调兼容性和灵活性。** 它允许以[任何受支持的格式](/zh/guides/clickhouse/data-formats/intro)发送数据——包括 JSON、CSV、Parquet 等——并且被大多数 ClickHouse 客户端广泛支持，包括 Python、Java、JavaScript 和 Rust。
 
-与 ClickHouse 的原生协议相比，这种方式通常更合适，因为它便于通过负载均衡器轻松切换流量。我们预计原生协议在插入性能上会略有优势，因为它的额外开销更低一些。
+与 ClickHouse 的原生协议相比，这通常是更合适的选择，因为它便于通过负载均衡器灵活切换流量。我们预计原生协议在插入性能上会略有优势，因为它的额外开销更小。
 
-不过，HTTP 接口缺少原生协议那样更深度的集成，也无法执行客户端侧优化，例如物化值的计算或自动转换为 Native 格式。虽然 HTTP 插入仍可通过标准 HTTP 请求头进行压缩 (例如 `Content-Encoding: lz4`) ，但压缩作用于整个载荷，而不是单独的数据块。因此，在更看重协议简单性、负载均衡或广泛格式兼容性，而非极致性能的环境中，通常会优先选择这种接口。
+不过，HTTP 接口缺少原生协议那样更深度的集成，也无法执行 materialized 值计算或自动转换为 Native 格式 之类的客户端侧优化。虽然 HTTP 插入仍可通过标准 HTTP 请求头进行压缩 (例如 `Content-Encoding: lz4`) ，但压缩作用于整个载荷，而不是单独的数据块。在更看重协议简洁性、负载均衡或广泛格式兼容性，而非极致性能的环境中，这种接口通常更受青睐。
 
 有关这些接口的更详细说明，请参见[此处](/zh/concepts/features/interfaces/overview)。
