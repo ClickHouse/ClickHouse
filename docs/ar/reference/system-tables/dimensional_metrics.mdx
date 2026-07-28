@@ -69,6 +69,30 @@ FORMAT Prometheus
 
 عدد أجزاء بيانات MergeTree، موسومة بحسب حالة الجزء ونوعه وما إذا كان جزء إسقاط.
 
+<div id="filesystem-cache-evictions-total">
+  ### `filesystem_cache_evictions_total`
+</div>
+
+عدد مقاطع الملفات التي أُزيلت من ذاكرة التخزين المؤقت لنظام الملفات، وموسومة باسم ذاكرة التخزين المؤقت. معطّل افتراضيًا؛ فعِّله باستخدام `expose_prometheus_eviction_metrics`.
+
+<div id="filesystem-cache-evicted-bytes-total">
+  ### `filesystem_cache_evicted_bytes_total`
+</div>
+
+إجمالي عدد بايتات مقاطع الملفات التي أُزيلت من ذاكرة التخزين المؤقت لنظام الملفات، وموسومة حسب اسم ذاكرة التخزين المؤقت. يكون معطّلًا افتراضيًا؛ فعِّله باستخدام `expose_prometheus_eviction_metrics`.
+
+<div id="filesystem-cache-evictions-by-user-total">
+  ### `filesystem_cache_evictions_by_user_total`
+</div>
+
+عدد مقاطع الملفات التي جرى إخراجها من ذاكرة التخزين المؤقت لنظام الملفات، موسومًا باسم ذاكرة التخزين المؤقت ومعرّف المستخدم. تكون غير مفعّلة افتراضيًا؛ فعِّلها باستخدام `expose_prometheus_eviction_metrics` و`expose_prometheus_eviction_metrics_per_user`.
+
+<div id="filesystem-cache-evicted-bytes-by-user-total">
+  ### `filesystem_cache_evicted_bytes_by_user_total`
+</div>
+
+إجمالي بايتات مقاطع الملفات التي أُزيلت من ذاكرة التخزين المؤقت لنظام الملفات، والموسومة باسم ذاكرة التخزين المؤقت ومعرّف المستخدم. تكون معطّلة افتراضيًا؛ فعِّلها باستخدام `expose_prometheus_eviction_metrics` و `expose_prometheus_eviction_metrics_per_user`.
+
 <div id="see-also">
   ## راجع أيضًا
 </div>

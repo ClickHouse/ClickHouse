@@ -27,9 +27,7 @@ doc_type: 'guide'
 你可以在 Python REPL 中或通过脚本运行以下步骤。
 
 <Steps>
-  <Step>
-    ## 安装库
-
+  <Step title="安装库" id="install-libraries">
     运行以下命令安装所需库：
 
     ```python
@@ -38,9 +36,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 配置凭据
-
+  <Step title="配置凭据" id="setup-credentials">
     接下来，您需要提供您的 OpenAI API 密钥：
 
     ```python
@@ -53,9 +49,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 初始化 MCP Server 与 OpenAI AI 智能体
-
+  <Step title="初始化 MCP Server 与 OpenAI AI 智能体" id="initialize-mcp-and-agent">
     现在，将 ClickHouse MCP 服务器配置为指向 ClickHouse SQL playground，
     初始化您的 OpenAI agent 并向其提问：
 
@@ -67,7 +61,7 @@ doc_type: 'guide'
     def simple_render_chunk(chunk):
         """Simple version that just filters important events"""
 
-        # 工具调用
+        # Tool calls
         if (hasattr(chunk, 'type') and
                 chunk.type == 'run_item_stream_event'):
 
@@ -78,13 +72,13 @@ doc_type: 'guide'
 
             elif chunk.name == 'tool_output':
                 try:
-                    # 兼容字符串和已解析的输出
+                    # Handle both string and already-parsed output
                     if isinstance(chunk.item.output, str):
                         output = json.loads(chunk.item.output)
                     else:
                         output = chunk.item.output
 
-                    # 同时兼容字典和列表两种格式
+                    # Handle both dict and list formats
                     if isinstance(output, dict):
                         if output.get('type') == 'text':
                             text = output['text']
@@ -93,7 +87,7 @@ doc_type: 'guide'
                             else:
                                 print(f"✅ Result: {text[:100]}...")
                     elif isinstance(output, list) and len(output) > 0:
-                        # 处理列表格式
+                        # Handle list format
                         first_item = output[0]
                         if isinstance(first_item, dict) and first_item.get('type') == 'text':
                             text = first_item['text']
@@ -102,11 +96,11 @@ doc_type: 'guide'
                             else:
                                 print(f"✅ Result: {text[:100]}...")
                     else:
-                        # 回退方案：直接打印原始输出
+                        # Fallback - just print the raw output
                         print(f"✅ Result: {str(output)[:100]}...")
 
                 except (json.JSONDecodeError, AttributeError, KeyError) as e:
-                    # 如果解析失败，则回退到原始输出
+                    # Fallback to raw output if parsing fails
                     print(f"✅ Result: {str(chunk.item.output)[:100]}...")
 
             elif chunk.name == 'message_output_created':
@@ -117,7 +111,7 @@ doc_type: 'guide'
                 except (AttributeError, IndexError):
                     print(f"💬 Response: {str(chunk.item)[:100]}...")
 
-        # 流式输出的文本增量
+        # Text deltas for streaming
         elif (hasattr(chunk, 'type') and
               chunk.type == 'raw_response_event' and
               hasattr(chunk, 'data') and

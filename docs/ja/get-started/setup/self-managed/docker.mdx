@@ -31,8 +31,7 @@ docker pull clickhouse/clickhouse-server
   ### 互換性
 </div>
 
-* amd64 イメージでは、[SSE3 命令](https://en.wikipedia.org/wiki/SSE3)のサポートが必要です。
-  2005 年以降のほぼすべての x86 CPU は SSE3 をサポートしています。
+* amd64 イメージでは、[x86-64-v3 マイクロアーキテクチャレベル](https://en.wikipedia.org/wiki/X86-64#Microarchitecture_levels) (AVX2, BMI1, BMI2, F16C, FMA, LZCNT, MOVBE, XSAVE) のサポートが必要です。2015 年以降のほぼすべての x86 CPU は x86-64-v3 をサポートしています。
 * arm64 イメージでは、[ARMv8.2-A アーキテクチャ](https://en.wikipedia.org/wiki/AArch64#ARMv8.2-A)のサポートに加えて、
   Load-Acquire RCpc レジスタも必要です。このレジスタは ARMv8.2-A ではオプションですが、
   [ARMv8.3-A](https://en.wikipedia.org/wiki/AArch64#ARMv8.3-A) では必須です。Graviton &gt;=2、Azure、GCP のインスタンスでサポートされています。

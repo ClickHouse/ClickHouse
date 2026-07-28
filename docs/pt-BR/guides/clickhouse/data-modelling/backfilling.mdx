@@ -503,7 +503,7 @@ GROUP BY
  project
 ```
 
-Aqui, criamos uma tabela Null, `pypi_v2,` para receber as linhas que serão usadas para criar nossa visão materializada. Observe como limitamos o schema apenas às colunas de que precisamos. Nossa visão materializada realiza uma agregação sobre as linhas inseridas nessa tabela (um bloco por vez), enviando os resultados para nossa tabela de destino, `pypi_downloads_per_day`.
+Aqui, criamos uma tabela Null, `pypi_v2,` para receber as linhas que serão usadas para criar nossa visão materializada. Observe como limitamos o esquema apenas às colunas de que precisamos. Nossa visão materializada realiza uma agregação sobre as linhas inseridas nessa tabela (um bloco por vez), enviando os resultados para nossa tabela de destino, `pypi_downloads_per_day`.
 
 <Note>
   Usamos `pypi_downloads_per_day` como nossa tabela de destino aqui. Para maior resiliência, os usuários podem criar uma tabela duplicada, `pypi_downloads_per_day_v2`, e usá-la como tabela de destino da visão, como mostrado nos exemplos anteriores. Após a conclusão da inserção, as partições em `pypi_downloads_per_day_v2` poderiam, por sua vez, ser movidas para `pypi_downloads_per_day.` Isso permitiria a recuperação caso nossa inserção falhe devido a problemas de memória ou interrupções no servidor; ou seja, basta truncar `pypi_downloads_per_day_v2`, ajustar as configurações e tentar novamente.

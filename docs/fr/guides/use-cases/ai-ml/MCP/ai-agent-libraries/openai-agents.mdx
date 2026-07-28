@@ -28,9 +28,7 @@ peut interagir avec le [SQL playground de ClickHouse](https://sql.clickhouse.com
 Vous pouvez exécuter les étapes suivantes soit depuis votre REPL Python, soit à l&#39;aide d&#39;un script.
 
 <Steps>
-  <Step>
-    ## Installer les bibliothèques
-
+  <Step title="Installer les bibliothèques" id="install-libraries">
     Installez les bibliothèques requises en exécutant les commandes suivantes :
 
     ```python
@@ -39,9 +37,7 @@ Vous pouvez exécuter les étapes suivantes soit depuis votre REPL Python, soit 
     ```
   </Step>
 
-  <Step>
-    ## Configurer les informations d’identification
-
+  <Step title="Configurer les informations d’identification" id="setup-credentials">
     Ensuite, vous devrez fournir votre clé d’API OpenAI :
 
     ```python
@@ -54,9 +50,7 @@ Vous pouvez exécuter les étapes suivantes soit depuis votre REPL Python, soit 
     ```
   </Step>
 
-  <Step>
-    ## Initialiser le serveur MCP et l&#39;agent OpenAI
-
+  <Step title="Initialiser le serveur MCP et l'agent OpenAI" id="initialize-mcp-and-agent">
     Configurez maintenant le ClickHouse MCP server pour qu&#39;il pointe vers le ClickHouse SQL playground,
     initialisez votre agent OpenAI et posez-lui une question :
 

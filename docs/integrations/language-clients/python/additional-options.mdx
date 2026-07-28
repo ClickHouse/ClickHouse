@@ -16,71 +16,63 @@ There are a handful of settings that control ClickHouse Connect behavior globall
 ```python
 from clickhouse_connect import common
 
-common.set_setting('autogenerate_session_id', False)
-common.get_setting('invalid_setting_action')
-'drop'
+common.set_setting("autogenerate_session_id", False)
+print(common.get_setting("invalid_setting_action"))
+# Output: error
 ```
 
 <Note>
-These common settings `autogenerate_session_id`, `product_name`, and `readonly` should _always_ be modified before creating a client with the `clickhouse_connect.get_client` method. Changing these settings after client creation doesn't affect the behavior of existing clients.
+Configure common settings before creating clients. Client creation copies settings such as generated session/query IDs and product identification into client-specific state, so later global changes don't update existing clients.
 </Note>
 
 The following global settings are currently defined:
 
-| Setting Name                        | Default | Options                 | Description                                                                                                                                                                                                                                                   |
-|-------------------------------------|---------|-------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| autogenerate_session_id             | True    | True, False             | Autogenerate a new UUID(1) session ID (if not provided) for each client session. If no session ID is provided (either at the client or query level), ClickHouse will generate a random internal ID for each query.                                            |
-| dict_parameter_format               | 'json'  | 'json', 'map'           | This controls whether parameterized queries convert a Python dictionary to JSON or ClickHouse Map syntax. `json` should be used for inserts into JSON columns, `map` for ClickHouse Map columns.                                                              |
-| invalid_setting_action              | 'error' | 'drop', 'send', 'error' | Action to take when an invalid or readonly setting is provided (either for the client session or query). If `drop`, the setting will be ignored, if `send`, the setting will be sent to ClickHouse, if `error` a client side ProgrammingError will be raised. |
-| max_connection_age                  | 600     |                         | Maximum seconds that an HTTP Keep Alive connection will be kept open/reused. This prevents bunching of connections against a single ClickHouse node behind a load balancer/proxy. Defaults to 10 minutes.                                                     |
-| product_name                        |         |                         | A string that is passed with the query to ClickHouse for tracking the app using ClickHouse Connect. Should be in the form &lt;product name;&gl/&lt;product version&gt;.                                                                                       |
-| readonly                            | 0       | 0, 1                    | Implied "read_only" ClickHouse settings for versions prior to 19.17. Can be set to match the ClickHouse "read_only" value for settings to allow operation with very old ClickHouse versions.                                                                  |
-| send_os_user                        | True    | True, False             | Include the detected operating system user in client information sent to ClickHouse (HTTP User-Agent string).                                                                                                                                                 |
-| send_integration_tags               | True    | True, False             | Include the used integration libraries/version (e.g. Pandas/SQLAlchemy/etc.) in client information sent to ClickHouse (HTTP User-Agent string).                                                                                                               |
-| use_protocol_version                | True    | True, False             | Use the client protocol version. This is needed for `DateTime` timezone columns but breaks with the current version of chproxy.                                                                                                                               |
-| max_error_size                      | 1024    |                         | Maximum number of characters that will be returned in a client error messages. Use 0 for this setting to get the full ClickHouse error message. Defaults to 1024 characters.                                                                                  |
-| http_buffer_size                    | 10MB    |                         | Size (in bytes) of the "in-memory" buffer used for HTTP streaming queries.                                                                                                                                                                                    |
-| preserve_pandas_datetime_resolution | False   | True, False             | When True and using pandas 2.x, preserves the datetime64/timedelta64 dtype resolution (e.g., 's', 'ms', 'us', 'ns'). If False (or on pandas &lt;2.x), coerces to nanosecond ('ns') resolution for compatibility.                                              |
+| Setting name | Default | Options | Description |
+|--------------|---------|---------|-------------|
+| `autogenerate_session_id` | `True` | `True`, `False` | Generate a UUID session ID for each synchronous client unless a session ID is supplied. The async factory overrides this to `False` by default. |
+| `autogenerate_query_id` | `True` | `True`, `False` | Generate a UUID query ID for each request unless one is supplied. |
+| `dict_parameter_format` | `"json"` | `"json"`, `"map"` | Format Python dictionaries used in client-side parameter binding as JSON or ClickHouse map literals. |
+| `invalid_setting_action` | `"error"` | `"drop"`, `"send"`, `"error"` | Drop, send, or reject a setting that is unrecognized by the server or is readonly. `"error"` raises `ProgrammingError`. |
+| `max_connection_age` | `600` | Any number of seconds | Maximum age for a reused HTTP keep-alive connection. Rotation helps distribute connections across nodes behind a load balancer. |
+| `product_name` | `""` | Any string | Product identifier added to client information. Use a value such as `"my-product/1.0"`. |
+| `readonly` | `0` | `0`, `1` | Compatibility hint for the `readonly` setting on very old ClickHouse servers. |
+| `send_os_user` | `True` | `True`, `False` | Include the detected operating system user in client information. |
+| `send_integration_tags` | `True` | `True`, `False` | Include integrations used by the client, such as Pandas or SQLAlchemy, in the HTTP User-Agent. |
+| `use_protocol_version` | `True` | `True`, `False` | Negotiate the client protocol version used by Native-format features such as `DateTime` column timezone metadata. Disable this for proxies that reject `client_protocol_version`. |
+| `max_error_size` | `1024` | Any non-negative integer | Maximum number of characters included in a client error. Use `0` for the complete message. |
+| `http_buffer_size` | `10485760` | Bytes | In-memory buffer size for streaming HTTP queries, 10 MiB by default. |
 
 ## Compression {#compression}
 
-ClickHouse Connect supports lz4, zstd, brotli, and gzip compression for both query results and inserts. Always keep in mind that using compression usually involves a tradeoff between network bandwidth/transfer speed against CPU usage (both on the client and the server.)
+ClickHouse Connect supports lz4, zstd, brotli, gzip, and deflate response compression. Native inserts support lz4, zstd, brotli, and gzip. Compression trades CPU time for reduced network transfer.
 
 To receive compressed data, the ClickHouse server `enable_http_compression` must be set to 1, or the user must have permission to change the setting on a "per query" basis.
 
-Compression is controlled by the `compress` parameter when calling the `clickhouse_connect.get_client` factory method. By default, `compress` is set to `True`, which will trigger the default compression settings. For queries executed with the `query`, `query_np`, and `query_df` client methods,  ClickHouse Connect will add the `Accept-Encoding` header with
-the `lz4`, `zstd`, `br` (brotli, if the brotli library is installed), `gzip`, and `deflate` encodings to queries executed with the `query` client method (and indirectly, `query_np` and `query_df`). (For the majority of requests the ClickHouse
-server will return with a `zstd` compressed payload.) For inserts, by default ClickHouse Connect will compress insert blocks with `lz4` compression, and send the `Content-Encoding: lz4` HTTP header.
+Compression is controlled by the `compress` argument to `get_client` and `get_async_client`. The default, `True`, advertises every available response encoding and compresses Native insert blocks with lz4. Set `compress=False` to disable compression or pass one of `"lz4"`, `"zstd"`, `"br"`, or `"gzip"` to request a specific method.
 
-The `get_client` `compress` parameter can also be set to a specific compression method, one of `lz4`, `zstd`, `br`, or `gzip`. That method will then be used for both inserts and query results (if supported by the ClickHouse server.) The required `zstd` and `lz4` compression libraries are now installed by default with ClickHouse Connect. If `br`/brotli is specified, the brotli library must be installed separately.
+The raw client methods don't use the client-level `compress` setting. `raw_query` and `raw_stream` return uncompressed data, and `raw_insert` takes its own `compression` argument describing compression already applied to the payload.
 
-Note that the `raw*` client methods don't use the compression specified by the client configuration.
+lz4 and zstd support are installed with ClickHouse Connect. On Python 3.14, zstd uses the standard library `compression.zstd` module. Python 3.10 through 3.13 use `backports.zstd`. A custom CPython 3.14+ interpreter built without zstd support still imports; zstd is dropped from the available methods and an error is raised only when zstd is explicitly requested. Brotli is optional and must be installed separately before using `compress="br"`.
 
-We also recommend against using `gzip` compression, as it is significantly slower than the alternatives for both compressing and decompressing data.
+gzip is generally slower than lz4 or zstd for ClickHouse workloads.
 
 ## HTTP proxy support {#http-proxy-support}
 
-ClickHouse Connect adds basic HTTP proxy support using the `urllib3` library. It recognizes the standard `HTTP_PROXY` and `HTTPS_PROXY` environment variables. Note that using these environment variables will apply to any client created with the `clickhouse_connect.get_client` method. Alternatively, to configure per client, you can use the `http_proxy` or `https_proxy` arguments to the get_client method. For details on the implementation of HTTP Proxy support, see the [urllib3](https://urllib3.readthedocs.io/en/stable/advanced-usage.html#http-and-https-proxies) documentation.
+ClickHouse Connect recognizes the standard `HTTP_PROXY` and `HTTPS_PROXY` environment variables. These variables apply to every client in the process. To configure a proxy per client, pass `http_proxy` or `https_proxy` to `get_client` or `get_async_client`.
 
-To use a SOCKS proxy, you can send a `urllib3` `SOCKSProxyManager` as the `pool_mgr` argument to `get_client`. Note that this will require installing the PySocks library either directly or using the `[socks]` option for the `urllib3` dependency.
+The synchronous client uses `urllib3`. To use a SOCKS proxy, install PySocks and pass a `urllib3.contrib.socks.SOCKSProxyManager` as the `pool_mgr` argument to `get_client`. `pool_mgr` is not supported by the async client.
 
-## "Old" JSON data type {#old-json-data-type}
+## Variant, Dynamic, and JSON data types {#variant-dynamic-json-data-types}
 
-The experimental `Object` (or `Object('json')`) data type is deprecated and should be avoided in a production environment. ClickHouse Connect continues to provide limited support for the data type for backward compatibility. Note that this support doesn't include queries that are expected to return "top level" or "parent" JSON values as dictionaries or the equivalent, and such queries will result in an exception.
-
-## "New" Variant/Dynamic/JSON datatypes (experimental feature) {#new-variantdynamicjson-datatypes-experimental-feature}
-
-Beginning with the 0.8.0 release, `clickhouse-connect` provides experimental support for the new (also experimental) ClickHouse types Variant, Dynamic, and JSON.
+ClickHouse Connect supports the current ClickHouse `Variant`, `Dynamic`, and `JSON` types. The legacy `Object('json')` type was removed in clickhouse-connect 0.14 and is not supported.
 
 ### Usage notes {#usage-notes}
-- JSON data can be inserted as either a Python dictionary or a JSON string containing a JSON object `{}`. Other forms of JSON data aren't supported.
-- Queries using subcolumns/paths for these types will return the type of the sub column.
-- See the main ClickHouse [documentation](/) for other usage notes.
 
-### Known limitations {#known-limitations}
-- Each of these types must be enabled in the ClickHouse settings before using.
-- The "new" JSON type is available starting with the ClickHouse 24.8 release
-- Due to internal format changes, `clickhouse-connect` is only compatible with Variant types beginning with the ClickHouse 24.7 release
-- Returned JSON objects will only return the `max_dynamic_paths` number of elements (which defaults to 1024). This will be fixed in a future release.
-- Inserts into `Dynamic` columns will always be the String representation of the Python value. This will be fixed in a future release, once https://github.com/ClickHouse/ClickHouse/issues/70395 has been fixed.
-- The implementation for the new types hasn't been optimized in C code, so performance may be somewhat slower than for simpler, established data types.
+- `Variant` values are read as the matching Python type. Native inserts select a member based on the Python value type.
+- When multiple `Variant` members map to the same Python type, wrap the value with `clickhouse_connect.datatypes.dynamic.typed_variant(value, "TypeName")` to select the member explicitly.
+- The `typed` Variant read format returns `TypedVariant(value, type_name)` objects and preserves the originating member type. Enable it with `query_formats={"Variant": "typed"}`.
+- `Dynamic` values are read as the matching Python type. Inserts are currently sent through the String representation.
+- `JSON` values can be inserted as Python dictionaries or JSON object strings. The default read format returns dictionaries; use the `"string"` read format to return JSON strings.
+- Queries that select a `Variant`, `Dynamic`, or `JSON` subcolumn return the subcolumn's concrete type.
+
+Some values stored in the shared-data area of `JSON` or `Dynamic` columns use types that the client cannot yet decode. Those values are returned as raw bytes. These complex types also use the pure Python conversion path, so they can be slower than established scalar types.

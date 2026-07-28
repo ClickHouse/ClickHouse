@@ -22,7 +22,6 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   * Maven Central (项目页面) ：https://mvnrepository.com/artifact/com.clickhouse/client-v2
   * 夜间构建 (仓库链接) ：https://central.sonatype.com/repository/maven-snapshots/
-  * 旧版 Nightly 构建制品库 (仓库链接) ：https://s01.oss.sonatype.org/content/repositories/snapshots/
 
   <br />
 
@@ -709,7 +708,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   ### getTableSchema(String table)
 
-  拉取 `table` 的表 schema。
+  拉取 `table` 的 schema。
 
   **签名**
 
@@ -807,7 +806,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
       ClickHouseBinaryFormatReader reader = client.newBinaryFormatReader(response);
       while (reader.next() != null) {
-          
+
           Object[] uint64 = reader.getObjectArray("uint64_arr"); // Array(UInt64) -> BigInteger[]
           Object[] arr2d = reader.getObjectArray("arr2d");       // Array(Array(Int64)) -> Object[]
 

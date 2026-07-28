@@ -38,9 +38,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
 * Você tem o Docker instalado na sua máquina
 
 <Steps>
-  <Step>
-    ## Configurar a estrutura de diretórios e o ambiente de teste
-
+  <Step title="Configurar a estrutura de diretórios e o ambiente de teste" id="set-up">
     <ExampleFiles />
 
     Neste tutorial, você usará o [Docker compose](https://docs.docker.com/compose/) para
@@ -53,12 +51,12 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
     mkdir cluster_2S_2R
     cd cluster_2S_2R
 
-    # Criar diretórios do clickhouse-keeper
+    # Create clickhouse-keeper directories
     for i in {01..03}; do
       mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
     done
 
-    # Criar diretórios do clickhouse-server
+    # Create clickhouse-server directories
     for i in {01..04}; do
       mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
     done
@@ -172,14 +170,12 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
     <ConfigExplanation />
   </Step>
 
-  <Step>
-    ## Configurar nós do ClickHouse
-
+  <Step title="Configurar nós do ClickHouse" id="configure-clickhouse-servers">
     ### Configuração do servidor
 
     Agora modifique cada arquivo de configuração vazio `config.xml` localizado em
-    `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. As linhas destacadas
-    abaixo precisam ser alteradas para serem específicas a cada nó:
+    `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. As linhas que estão
+    destacadas abaixo precisam ser alteradas para serem específicas a cada nó:
 
     ```xml highlight={9,64-67}
     <clickhouse replace="true">
@@ -296,11 +292,11 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
 
     ```xml
     <remote_servers>
-       <!-- nome do cluster (não deve conter pontos) -->
+       <!-- cluster name (should not contain dots) -->
       <cluster_2S_2R>
           <!-- <allow_distributed_ddl_queries>false</allow_distributed_ddl_queries> -->
           <shard>
-              <!-- Opcional. Define se os dados devem ser gravados em apenas uma das réplicas. Padrão: false (gravar dados em todas as réplicas). -->
+              <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
               <internal_replication>true</internal_replication>
               <replica>
                   <host>clickhouse-01</host>
@@ -426,9 +422,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
     </Note>
   </Step>
 
-  <Step>
-    ## Configurar o ClickHouse Keeper
-
+  <Step title="Configurar o ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
     Em seguida, você vai configurar o ClickHouse Keeper, que é usado para coordenação.
 
     ### Configuração do Keeper
@@ -446,9 +440,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
     <CloudTip />
   </Step>
 
-  <Step>
-    ## Teste a configuração
-
+  <Step title="Teste a configuração" id="test-the-setup">
     Verifique se o Docker está em execução na sua máquina.
     Inicie o cluster com o comando `docker-compose up` a partir da raiz do diretório `cluster_2S_2R`:
 
@@ -475,7 +467,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
     consulta a seguir. O comando para se conectar ao primeiro nó é o seguinte:
 
     ```bash
-    # Conecte-se a qualquer nó
+    # Connect to any node
     docker exec -it clickhouse-01 clickhouse-client
     ```
 
@@ -531,9 +523,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
     Na próxima etapa, você criará uma tabela no cluster.
   </Step>
 
-  <Step>
-    ## Criar um banco de dados
-
+  <Step title="Criar um banco de dados" id="creating-a-database">
     Agora que você verificou que o cluster está configurado corretamente e em execução,
     você recriará a mesma tabela usada no tutorial do conjunto de dados de exemplo [preços de imóveis no Reino Unido](/pt-BR/get-started/sample-datasets/uk-price-paid).
     Ela contém cerca de 30 milhões de linhas com os valores pagos
@@ -592,9 +582,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
     ```
   </Step>
 
-  <Step>
-    ## Crie uma tabela no cluster
-
+  <Step title="Crie uma tabela no cluster" id="creating-a-table">
     Agora que o banco de dados foi criado, você criará uma tabela com replicação.
 
     Execute a seguinte consulta em qualquer um dos clientes host:
@@ -665,9 +653,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
     ```
   </Step>
 
-  <Step>
-    ## Inserir dados em uma tabela distribuída
-
+  <Step title="Inserir dados em uma tabela distribuída" id="inserting-data-using-distributed">
     Para inserir dados na tabela, `ON CLUSTER` não pode ser usado, pois não
     se aplica a consultas DML (Data Manipulation Language), como `INSERT`, `UPDATE`
     e `DELETE`. Para inserir dados, é necessário usar o motor de tabela
@@ -748,11 +734,11 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
 
     ```response
        ┌──count()─┐
-    1. │ 30212555 │ -- 30,21 milhões
+    1. │ 30212555 │ -- 30.21 million
        └──────────┘
 
        ┌──count()─┐
-    1. │ 15105983 │ -- 15,11 milhões
+    1. │ 15105983 │ -- 15.11 million
        └──────────┘
     ```
   </Step>
@@ -763,11 +749,11 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
 </div>
 
 A vantagem desta topologia de cluster com 2 shards e 2 réplicas é que ela oferece escalabilidade e tolerância a falhas.
-Os dados são distribuídos entre hosts separados, reduzindo os requisitos de armazenamento e I/O por nó, enquanto as consultas são processadas em paralelo nos dois shards para melhorar o desempenho e a eficiência de memória.
-Mais importante, o cluster pode tolerar a perda de um nó e continuar atendendo consultas sem interrupção, pois cada shard tem uma réplica de backup disponível em outro nó.
+Os dados são distribuídos entre hosts separados, reduzindo os requisitos de armazenamento e E/S por nó, enquanto as consultas são processadas em paralelo nos dois shards para melhorar o desempenho e a eficiência de memória.
+O mais importante é que o cluster pode tolerar a perda de um nó e continuar atendendo consultas sem interrupção, já que cada shard tem uma réplica de backup disponível em outro nó.
 
-A principal desvantagem desta topologia de cluster é a maior sobrecarga de armazenamento — ela exige o dobro da capacidade de armazenamento em comparação com uma configuração sem réplicas, já que cada shard é duplicado.
-Além disso, embora o cluster possa sobreviver à falha de um único nó, a perda simultânea de dois nós pode torná-lo inoperante, dependendo de quais nós falhem e de como os shards estão distribuídos.
+A principal desvantagem desta topologia de cluster é o aumento da sobrecarga de armazenamento — ela exige o dobro da capacidade de armazenamento em comparação com uma configuração sem réplicas, já que cada shard é duplicado.
+Além disso, embora o cluster possa suportar a falha de um único nó, a perda simultânea de dois nós pode torná-lo inoperante, dependendo de quais nós falhem e de como os shards estejam distribuídos.
 Essa topologia equilibra disponibilidade e custo, tornando-a adequada para ambientes de produção em que algum nível de tolerância a falhas é necessário sem o custo de fatores de replicação mais altos.
 
 Para saber como o ClickHouse Cloud processa consultas, oferecendo escalabilidade e tolerância a falhas, consulte a seção [&quot;Parallel Replicas&quot;](/pt-BR/products/cloud/features/infrastructure/parallel-replicas).

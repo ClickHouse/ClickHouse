@@ -1,7 +1,7 @@
 ---
 sidebarTitle: '连接您的 Iceberg 目录'
 title: '如何在 ClickHouse Cloud 中连接您的 Iceberg 目录'
-useCases: ['Data warehousing']
+useCases: ['数据仓储']
 products: ['Cloud']
 skillLevel: 'Beginner'
 description: '了解如何将 ClickHouse Cloud 连接到您的数据目录，以查询 Iceberg 表。'
@@ -31,8 +31,8 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 <CloudPrerequisites />
 
 * 可访问 **兼容 Iceberg 的数据湖**
-* **Data Lake Catalog** (URL 和凭据)
-* 根据数据湖目录类型，还需要对象存储凭据 (例如兼容 S3 的存储)
+* **Data Lake Catalog** (URL 和凭据) 
+* 根据数据湖目录类型，还需要对象存储凭据 (例如兼容 S3 的存储) 
 * 在目录中注册的至少一个现有 Iceberg 表
 
 如果您的 Iceberg 目录中还没有数据，可以上传此数据集。我们将在此处使用该数据集进行演示。
@@ -51,14 +51,12 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 完成后，你将把 ClickHouse Cloud 连接到你的 Iceberg 目录，并能够在不复制数据的情况下对 Iceberg 表运行 SQL 查询。
 
 <Steps titleSize="h3">
-  <Step>
-    ### 创建 DataLakeCatalog 连接
-
+  <Step title="创建 DataLakeCatalog 连接" id="create-a-datalakecatalog-connection">
     在此步骤中，你将连接到 ClickHouse Cloud 中的 Data Lake Catalog。
 
     1. 打开你的 ClickHouse Cloud 服务。
 
-    2. 导航到 **Data Sources → Connect to your Data Lake Catalog**。
+    2. 导航到 **Data Sources â Connect to your Data Lake Catalog**。
 
     3. 在下拉菜单中选择你的数据目录。
 
@@ -77,12 +75,10 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     5. 保存该目录。现在，你应该会在 Data Sources 页面中看到已加载的数据目录，以及该数据库中可用表的数量。
   </Step>
 
-  <Step>
-    ### 查询 Iceberg 表
-
+  <Step title="查询 Iceberg 表" id="query-iceberg-table">
     在此步骤中，你将从 数据目录 查询一个 Iceberg 表。
 
-    1. 点击 `Show Tables` 或 `SQL Console` 后，你将进入 SQL 控制台，
+    1. 点击 `Show Tables` 或 `SQL Console` 后，你将进入 SQL 控制台
        并看到与你的数据湖关联且已 materialized 的新数据库。如果你是通过 `SQL Console` 进入，请将数据库下拉菜单切换为你的 Iceberg 数据库。
     2. 你应该会在文件树中看到一个或多个 Iceberg 表。运行以下查询：
 
@@ -94,7 +90,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   </Step>
 </Steps>
 
-## 后续步骤
+<div id="next-steps">
+  ## 后续步骤
+</div>
 
 现在你已连接到数据湖，可以试着在 ClickHouse 中写入 Iceberg 表。
 

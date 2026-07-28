@@ -20,9 +20,7 @@ doc_type: 'guide'
 * 你希望获得**稳定的亚秒级读取性能**，而无需重新扫描所有原始行。
 
 <Steps>
-  <Step>
-    ## 创建原始事件表
-
+  <Step title="创建原始事件表" id="create-raw-events-table">
     ```sql
     CREATE TABLE events_raw
     (
@@ -46,16 +44,14 @@ doc_type: 'guide'
     * `TTL` 会在 90 天后清理原始数据 (可根据保留需求调整) 。
   </Step>
 
-  <Step>
-    ## 设计 rollup (聚合) 表
-
+  <Step title="设计 rollup (聚合) 表" id="design-rollup">
     我们将按**小时**粒度进行预聚合。
     选择的粒度应与最常见的分析时间窗口相匹配。
 
     ```sql
     CREATE TABLE events_rollup_1h
     (
-        bucket_start  DateTime,            -- 小时起始时间
+        bucket_start  DateTime,            -- start of the hour
         country       LowCardinality(String),
         event_type    LowCardinality(String),
         users_uniq    AggregateFunction(uniqExact, UInt64),
@@ -71,9 +67,7 @@ doc_type: 'guide'
     我们存储**聚合状态** (例如 `AggregateFunction(sum, ...)`) ，它们以紧凑形式表示部分聚合，后续可再进行合并或最终计算。
   </Step>
 
-  <Step>
-    ## 创建一个用于填充 rollup 的 materialized view
-
+  <Step title="创建一个用于填充 rollup 的 materialized view" id="create-materialized-view-to-populate-rollup">
     这个 materialized view 会在向 `events_raw` 插入数据时自动触发，并将**聚合状态**写入 rollup。
 
     ```sql
@@ -93,9 +87,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 插入一些样例数据
-
+  <Step title="插入一些样例数据" id="insert-some-sample-data">
     插入一些样例数据：
 
     ```sql
@@ -107,9 +99,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 查询 rollup
-
+  <Step title="查询 rollup" id="querying-the-rollup">
     你既可以在读取时**合并**状态，也可以对其进行**最终计算**：
 
     <Tabs>
@@ -157,9 +147,7 @@ doc_type: 'guide'
     </Tip>
   </Step>
 
-  <Step>
-    ## 按主键字段过滤可获得最佳性能
-
+  <Step title="按主键字段过滤可获得最佳性能" id="filtering-performance">
     你可以使用 `EXPLAIN` 命令来查看索引如何用于减少读取的数据：
 
     ```sql title="Query"
@@ -204,9 +192,7 @@ doc_type: 'guide'
     为了获得最佳过滤性能，你需要确保查询会利用主键字段来裁剪数据。
   </Step>
 
-  <Step>
-    ## 常见变体
-
+  <Step title="常见变体" id="common-variations">
     * **不同粒度**：添加按日 rollup：
 
     ```sql
@@ -248,16 +234,12 @@ doc_type: 'guide'
     * **历史回填**：加载历史数据时，将数据插入 `events_raw`，让 materialized view 自动构建汇总。对于现有行，如果适用，可在创建 materialized view 时使用 `POPULATE`，或使用 `INSERT SELECT`。
   </Step>
 
-  <Step>
-    ## 清理与保留
-
+  <Step title="清理与保留" id="clean-up-and-retention">
     * 延长原始数据的生存时间 (TTL) (例如 30/90 天) ，但让汇总数据保留更久 (例如 1 年) 。
     * 如果已启用分层存储，你还可以使用**生存时间 (TTL) 将**旧 parts 迁移到成本更低的存储。
   </Step>
 
-  <Step>
-    ## 故障排查
-
+  <Step title="故障排查" id="troubleshooting">
     * materialized view 没有更新？请检查插入是否写入 **events&#95;raw** (而不是 rollup 表) ，并确认 materialized view 的目标是否正确 (`TO events_rollup_1h`) 。
     * 查询很慢？请确认查询命中了 rollup (直接查询 rollup 表) ，并且时间过滤条件与 rollup 粒度一致。
     * 回填结果不一致？请使用 `SYSTEM FLUSH LOGS`，并检查 `system.query_log` / `system.parts` 以确认插入和合并是否正常。

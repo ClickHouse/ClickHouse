@@ -68,6 +68,8 @@ struct MergeTreeReaderSettings
     bool secondary_indices_enable_bulk_filtering = true;
     UInt64 merge_tree_min_bytes_for_seek = 0;
     UInt64 merge_tree_min_rows_for_seek = 0;
+    UInt64 merge_tree_coarse_index_granularity = 8;
+    UInt64 merge_tree_generic_exclusion_search_max_steps = 0;
     size_t filesystem_prefetches_limit = 0;
     bool enable_analyzer = false;
     bool load_marks_asynchronously = false;

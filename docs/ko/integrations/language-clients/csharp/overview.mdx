@@ -45,6 +45,12 @@ ClickHouse에 연결하기 위한 공식 C# 클라이언트입니다.
 * .NET 9.0
 * .NET 10.0
 
+<div id="supported-clickhouse-versions">
+  ## 지원되는 ClickHouse 버전
+</div>
+
+이 클라이언트는 공식적으로 최신 릴리스 3개와 최신 LTS 릴리스 2개를 지원합니다.
+
 <div id="installation">
   ## 설치
 </div>
@@ -106,15 +112,18 @@ ClickHouse 연결을 구성하는 방법은 두 가지입니다.
   ### 데이터 포맷 및 직렬화
 </div>
 
-| 속성                      | 유형                       | 기본값      | 연결 문자열 키                  | 설명                                                                                                   |
-| ----------------------- | ------------------------ | -------- | ------------------------- | ---------------------------------------------------------------------------------------------------- |
-| UseCompression          | `bool`                   | `true`   | `Compression`             | 데이터 전송에 gzip 압축을 사용합니다                                                                               |
-| UseCustomDecimals       | `bool`                   | `true`   | `UseCustomDecimals`       | 임의 정밀도에는 `ClickHouseDecimal`을 사용하고, false이면 .NET `decimal`을 사용합니다(128비트 제한)                          |
-| ReadStringsAsByteArrays | `bool`                   | `false`  | `ReadStringsAsByteArrays` | `String` 및 `FixedString` 컬럼을 `string` 대신 `byte[]`로 읽습니다. 바이너리 데이터에 유용합니다                             |
-| UseFormDataParameters   | `bool`                   | `false`  | `UseFormDataParameters`   | 매개변수를 URL 쿼리 문자열 대신 폼 데이터로 전송합니다                                                                     |
-| ParameterTypeResolver   | `IParameterTypeResolver` | `null`   | —                         | `@` 스타일 매개변수 유형 매핑을 위한 사용자 지정 리졸버입니다. [사용자 지정 매개변수 유형 매핑](#parameter-type-mapping)을 참조하십시오           |
-| JsonReadMode            | `JsonReadMode`           | `Binary` | `JsonReadMode`            | JSON 데이터를 반환하는 방식입니다: `Binary`(`JsonObject` 반환) 또는 `String`(원시 JSON 문자열 반환)                          |
-| JsonWriteMode           | `JsonWriteMode`          | `String` | `JsonWriteMode`           | JSON 데이터를 전송하는 방식입니다: `String`(`JsonSerializer`를 통해 직렬화하며 모든 입력 허용) 또는 `Binary`(타입 힌트가 있는 등록된 POCO만) |
+| 속성                      | 유형                       | 기본값            | 연결 문자열 키                  | 설명                                                                                                                                                             |
+| ----------------------- | ------------------------ | -------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| UseCompression          | `bool`                   | `true`         | `Compression`             | 데이터 전송에 gzip 압축을 사용합니다                                                                                                                                         |
+| UseCustomDecimals       | `bool`                   | `true`         | `UseCustomDecimals`       | 임의 정밀도에는 `ClickHouseDecimal`을 사용하고, false이면 .NET `decimal`을 사용합니다(128비트 제한)                                                                                    |
+| ReadStringsAsByteArrays | `bool`                   | `false`        | `ReadStringsAsByteArrays` | `String` 및 `FixedString` 컬럼을 `string` 대신 `byte[]`로 읽습니다. 바이너리 데이터에 유용합니다                                                                                       |
+| UseFormDataParameters   | `bool`                   | `false`        | `UseFormDataParameters`   | 매개변수를 URL 쿼리 문자열 대신 폼 데이터로 전송합니다                                                                                                                               |
+| ReadBufferSize          | `int`                    | `8192` (8 KiB) | `ReadBufferSize`          | HTTP 쿼리 응답을 읽는 데 사용하는 버퍼 크기(바이트)입니다. 큰 결과 집합에서 버퍼를 다시 채우는 횟수를 줄이려면 값을 늘리십시오. 85,000바이트 이상 값은 Large Object Heap에 할당되며, 이로 인해 LOH 단편화와 더 긴 GC 일시 중지가 발생할 수 있습니다. |
+| ParameterTypeResolver   | `IParameterTypeResolver` | `null`         | —                         | `@` 스타일 매개변수 유형 매핑을 위한 사용자 지정 리졸버입니다. [사용자 지정 매개변수 유형 매핑](#parameter-type-mapping)을 참조하십시오                                                                     |
+| ParameterFormatter      | `IParameterFormatter`    | `null`         | —                         | 매개변수 값 직렬화를 위한 사용자 지정 포매터입니다. [사용자 지정 매개변수 값 포맷팅](#parameter-value-formatting)을 참조하십시오                                                                         |
+| ReadValueConverter      | `IReadValueConverter`    | `null`         | —                         | 데이터 리더가 반환하는 값에 적용되는 사용자 지정 변환입니다. [사용자 지정 읽기 값 변환](#read-value-conversion)을 참조하십시오                                                                            |
+| JsonReadMode            | `JsonReadMode`           | `Binary`       | `JsonReadMode`            | JSON 데이터를 반환하는 방식입니다: `Binary`(`JsonObject` 반환) 또는 `String`(원시 JSON 문자열 반환)                                                                                    |
+| JsonWriteMode           | `JsonWriteMode`          | `String`       | `JsonWriteMode`           | JSON 데이터를 전송하는 방식입니다: `String`(`JsonSerializer`를 통해 직렬화하며 모든 입력 허용) 또는 `Binary`(타입 힌트가 있는 등록된 POCO만)                                                           |
 
 <div id="session-management">
   ### 세션 관리
@@ -162,10 +171,11 @@ ClickHouse 연결을 구성하는 방법은 두 가지입니다.
   ### 사용자 지정 설정 &amp; 역할
 </div>
 
-| 속성             | 유형                            | 기본값   | 연결 문자열 키    | 설명                                             |
-| -------------- | ----------------------------- | ----- | ----------- | ---------------------------------------------- |
-| CustomSettings | `IDictionary<string, object>` | 비어 있음 | `set_*` 접두사 | ClickHouse 서버 설정이며, 아래 참고 사항을 참조하십시오           |
-| Roles          | `IReadOnlyList<string>`       | 비어 있음 | `Roles`     | 쉼표로 구분된 ClickHouse 역할(예: `Roles=admin,reader`) |
+| 속성              | 유형                                    | 기본값   | 연결 문자열 키    | 설명                                                        |
+| --------------- | ------------------------------------- | ----- | ----------- | --------------------------------------------------------- |
+| CustomSettings  | `IDictionary<string, object>`         | 비어 있음 | `set_*` 접두사 | ClickHouse 서버 설정이며, 아래 참고 사항을 참조하십시오                      |
+| Roles           | `IReadOnlyList<string>`               | 비어 있음 | `Roles`     | 쉼표로 구분된 ClickHouse 역할(예: `Roles=admin,reader`)            |
+| ApplicationInfo | `IReadOnlyDictionary<string, string>` | 비어 있음 | —           | 애플리케이션별 쿼리 식별을 위해 HTTP `User-Agent` 헤더에 추가되는 자유 형식 태그입니다. |
 
 <Note>
   연결 문자열을 사용해 사용자 지정 설정을 지정할 때는 `set_` 접두사를 사용하십시오. 예: &quot;set&#95;max&#95;threads=4&quot;. `ClickHouseClientSettings` 객체를 사용할 때는 `set_` 접두사를 사용하지 마십시오.
@@ -203,18 +213,21 @@ Host=localhost;set_max_threads=4;set_readonly=1;set_max_memory_usage=10000000000
 
 `QueryOptions`를 사용하면 쿼리마다 클라이언트 수준 설정을 재정의할 수 있습니다. 모든 속성은 선택 사항이며, 지정한 경우에만 클라이언트 기본값을 덮어씁니다.
 
-| Property              | Type                          | Description                                                                                                    |
-| --------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| QueryId               | `string`                      | `system.query_log`에서 추적하거나 취소할 때 사용할 사용자 지정 쿼리 식별자                                                             |
-| Database              | `string`                      | 이 쿼리에 사용할 기본 데이터베이스를 재정의합니다                                                                                    |
-| Roles                 | `IReadOnlyList<string>`       | 이 쿼리에 적용할 클라이언트 역할을 재정의합니다                                                                                     |
-| CustomSettings        | `IDictionary<string, object>` | 이 쿼리에 대한 ClickHouse 서버 설정입니다(예: `max_threads`)                                                                 |
-| CustomHeaders         | `IDictionary<string, string>` | 이 쿼리에 대한 추가 HTTP 헤더                                                                                            |
-| UseSession            | `bool?`                       | 이 쿼리의 세션 동작을 재정의합니다                                                                                            |
-| SessionId             | `string`                      | 이 쿼리의 세션 ID입니다(`UseSession = true` 필요)                                                                         |
-| BearerToken           | `string`                      | 이 쿼리에 사용할 인증 토큰을 재정의합니다                                                                                        |
-| ParameterTypeResolver | `IParameterTypeResolver`      | `@` 스타일 매개변수 유형 매핑에 사용할 클라이언트 수준 리졸버를 재정의합니다. [Custom parameter type mapping](#parameter-type-mapping)을 참조하십시오 |
-| MaxExecutionTime      | `TimeSpan?`                   | 서버 측 쿼리 시간 초과입니다(`max_execution_time` 설정으로 전달됨). 이를 초과하면 서버가 쿼리를 취소합니다                                         |
+| Property              | Type                          | Description                                                                                                                                                                                 |
+| --------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| QueryId               | `string`                      | `system.query_log`에서 추적하거나 취소할 때 사용할 사용자 지정 쿼리 식별자                                                                                                                                          |
+| Database              | `string`                      | 이 쿼리에 사용할 기본 데이터베이스를 재정의합니다                                                                                                                                                                 |
+| Roles                 | `IReadOnlyList<string>`       | 이 쿼리에 적용할 클라이언트 역할을 재정의합니다                                                                                                                                                                  |
+| CustomSettings        | `IDictionary<string, object>` | 이 쿼리에 대한 ClickHouse 서버 설정입니다(예: `max_threads`)                                                                                                                                              |
+| CustomHeaders         | `IDictionary<string, string>` | 이 쿼리에 대한 추가 HTTP 헤더                                                                                                                                                                         |
+| UseSession            | `bool?`                       | 이 쿼리의 세션 동작을 재정의합니다                                                                                                                                                                         |
+| SessionId             | `string`                      | 이 쿼리의 세션 ID입니다(`UseSession = true` 필요)                                                                                                                                                      |
+| BearerToken           | `string`                      | 이 쿼리에 사용할 인증 토큰을 재정의합니다                                                                                                                                                                     |
+| ParameterTypeResolver | `IParameterTypeResolver`      | `@` 스타일 매개변수 유형 매핑에 사용할 클라이언트 수준 리졸버를 재정의합니다. [사용자 지정 매개변수 유형 매핑](#parameter-type-mapping)을 참조하십시오                                                                              |
+| ParameterFormatter    | `IParameterFormatter`         | `@` 스타일 매개변수 값 직렬화에 사용할 클라이언트 수준 포매터를 재정의합니다. [사용자 지정 매개변수 값 포맷팅](#parameter-value-formatting)을 참조하십시오                                                                      |
+| ReadValueConverter    | `IReadValueConverter`         | 데이터 리더가 반환하는 값에 적용되는 클라이언트 수준 변환을 재정의합니다. [사용자 지정 읽기 값 변환](#read-value-conversion)을 참조하십시오                                                                                    |
+| MaxExecutionTime      | `TimeSpan?`                   | 서버 측 쿼리 시간 초과입니다(`max_execution_time` 설정으로 전달됨). 이를 초과하면 서버가 쿼리를 취소합니다                                                                                                                      |
+| AcceptEncoding        | `string`                      | 쿼리별 `Accept-Encoding` 헤더를 재정의합니다(예: `"zstd"`, `"zstd, gzip;q=0.5"`). 또한 URL에 `enable_http_compression=1`을 강제로 설정합니다. [Per-query transport compression](#per-query-accept-encoding)을 참조하십시오. |
 
 **예시:**
 
@@ -340,7 +353,7 @@ ClickHouse Cloud 서비스의 세부 정보는 ClickHouse Cloud 콘솔에서 확
 
 <Image img="/images/_snippets/connection-details-csharp.webp" size="md" alt="ClickHouse Cloud C# 연결 세부 정보" border />
 
-자가 관리형 ClickHouse를 사용하는 경우 연결 세부 정보는 ClickHouse 관리자에 의해 설정됩니다.
+자가 관리형 ClickHouse를 사용하는 경우 연결 세부 정보는 ClickHouse 관리자가 설정합니다.
 
 연결 문자열 사용:
 
@@ -367,7 +380,7 @@ using var client = new ClickHouseClient(settings);
 의존성 주입 시나리오에서는 `IHttpClientFactory`를 사용하세요:
 
 ```csharp
-// DI 구성에서
+// In your DI configuration
 services.AddHttpClient("ClickHouse", client =>
 {
     client.Timeout = TimeSpan.FromMinutes(5);
@@ -376,7 +389,7 @@ services.AddHttpClient("ClickHouse", client =>
     AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
 });
 
-// 팩토리로 클라이언트 생성
+// Create client with factory
 var factory = serviceProvider.GetRequiredService<IHttpClientFactory>();
 var client = new ClickHouseClient("Host=localhost", factory, "ClickHouse");
 ```
@@ -574,6 +587,77 @@ while (reader.Read())
 }
 ```
 
+<div id="poco-read">
+  #### POCO 읽기
+</div>
+
+컬럼을 인덱스나 이름으로 읽는 대신, 쿼리 결과를 사용자 정의 클래스에 직접 스트리밍할 수 있습니다. 클라이언트에 해당 타입을 한 번만 등록한 다음 `QueryAsync<T>`를 사용하십시오:
+
+```csharp
+// Define a POCO matching your result columns
+public class SensorReading
+{
+    public ulong Id { get; set; }
+    public DateTime Timestamp { get; set; }
+
+    [ClickHouseColumn(Name = "sensor_name")]
+    public string SensorName { get; set; }
+    public double Value { get; set; }
+
+}
+
+// Register the type (once per client lifetime)
+client.RegisterPocoType<SensorReading>();
+
+// Stream results as typed objects
+await foreach (var reading in client.QueryAsync<SensorReading>(
+    "SELECT Id, sensor_name, Value, Timestamp FROM sensors"))
+{
+    Console.WriteLine($"{reading.SensorName}: {reading.Value}");
+}
+```
+
+<div id="poco-read-registration">
+  ##### 등록
+</div>
+
+`RegisterPocoType<T>()`는 삽입과 읽기 매핑을 모두 설정하고, 두 매핑을 모두 사전에 검증합니다. `RegisterBinaryInsertType<T>()`는 변경 없이 유지되며, 하위 호환성(backwards compatibility)을 위해 계속 삽입 전용으로 남아 있습니다.
+
+등록된 형식은 다음 조건을 충족해야 합니다.
+
+* 매개변수가 없는 public 생성자
+* public이며 `init`이 아닌 setter가 있는 public 속성이 1개 이상 있어야 합니다. `required` 속성도 지원됩니다.
+
+<div id="poco-read-column-matching">
+  ##### 컬럼 매칭
+</div>
+
+컬럼 매칭은 대소문자를 구분합니다. 결과 컬럼이 누락되면 해당 속성은 기본값으로 유지되며, 추가 결과 컬럼은 무시됩니다.
+
+자동 변환은 수행되지 않으며, 유형이 일치하지 않으면 `InvalidOperationException` 예외가 발생합니다.
+
+<div id="poco-read-mapto">
+  ##### 단일 행 구체화하기
+</div>
+
+리더를 수동으로 순회할 때는 `ClickHouseDataReader.MapTo<T>()`를 사용하여 리더를 다음으로 진행시키지 않고 현재 행을 등록된 POCO로 구체화합니다:
+
+```csharp
+var reader = await client.ExecuteReaderAsync("SELECT Id, SensorName, Value, Timestamp FROM sensors");
+
+while (reader.Read())
+{
+    SensorReading reading = reader.MapTo<SensorReading>();
+    Console.WriteLine($"{reading.SensorName}: {reading.Value}");
+}
+```
+
+<div id="poco-read-diagnostics">
+  ##### 등록 진단
+</div>
+
+`LoggerFactory`가 설정되면 `RegisterPocoType<T>()` 및 `RegisterBinaryInsertType<T>()`는 어떤 속성이 어떤 컬럼에 매핑되었는지와 어떤 항목이 왜 건너뛰어졌는지를 보여주는 `Debug` 수준의 로그(카테고리: `ClickHouse.Driver.Client`)를 출력합니다. [로깅 및 진단](#logging-and-diagnostics)을 참조하십시오.
+
 ***
 
 <div id="sql-parameters">
@@ -599,6 +683,28 @@ INSERT INTO table VALUES ({val1:Int32}, {val2:Array(UInt8)})
 <Note>
   SQL &#39;bind&#39; 매개변수는 HTTP URI 쿼리 매개변수로 전달되므로, 너무 많이 사용하면 &quot;URL이 너무 깁니다&quot; 예외가 발생할 수 있습니다. 이 제한을 피하려면 대량 데이터 삽입에는 `InsertBinaryAsync`를 사용하세요.
 </Note>
+
+<div id="identifier-parameters">
+  #### Identifier 매개변수
+</div>
+
+`Identifier` 매개변수 유형을 사용하면 따옴표로 묶은 문자열 리터럴 대신 데이터베이스, 테이블 또는 컬럼 이름을 안전하게 바인딩할 수 있습니다. SQL에서는 `{name:Identifier}` 구문을 사용하거나, `ClickHouseDbParameter.ClickHouseType = "Identifier"`로 설정하여 사용할 수 있습니다:
+
+```csharp
+var parameters = new ClickHouseParameterCollection();
+parameters.AddParameter("name", "my_database");
+
+await client.ExecuteNonQueryAsync("CREATE DATABASE {name:Identifier}", parameters);
+```
+
+```csharp
+var parameters = new ClickHouseParameterCollection();
+parameters.AddParameter("col", "user_id");
+
+var reader = await client.ExecuteReaderAsync("SELECT {col:Identifier} FROM t", parameters);
+```
+
+값은 있는 그대로 전송되며, server는 이를 일반 SQL 식별자로 치환하고 자체적으로 backtick 인용과 escaping을 적용합니다. 특수 문자(backtick 포함)가 있는 식별자도 안전하게 round-trip됩니다.
 
 ***
 
@@ -628,14 +734,22 @@ var reader = await client.ExecuteReaderAsync(
 ***
 
 <div id="parameter-type-mapping">
-  ### 사용자 지정 매개변수 유형 매핑
+  ### 사용자 지정 매개변수 타입 매핑
 </div>
 
-`@` 스타일 매개변수(예: `WHERE id = @id`)를 사용하면 드라이버가 .NET 값 형식을 기준으로 ClickHouse 유형을 자동으로 추론합니다. 예를 들어 `int`는 `Int32`로, `DateTime`은 `DateTime`으로 매핑됩니다.
+`@` 스타일 매개변수(예: `WHERE id = @id`)를 사용하면 드라이버가 .NET 값 형식을 기준으로 ClickHouse 타입을 자동으로 추론합니다. 예를 들어 `int`는 `Int32`로 매핑됩니다.
+
+<Warning>
+  **추론된 DateTime 매개변수의 동작**
+
+  SQL에 `{name:Type}` 힌트가 없고 `ClickHouseType`도 설정되지 않은 `@` 스타일 매개변수의 경우, 시점을 포함하는 값은 단순한 `DateTime`이 아니라 `DateTime('UTC')`로 추론됩니다. `Kind`가 `Utc` 또는 `Local`인 `DateTime`과 모든 `DateTimeOffset` 값은 `DateTime('UTC')`로 전송되므로, 서버 시간대와 관계없이 시점이 유지됩니다.
+
+  명시적 힌트(`{name:DateTime}`)는 추론보다 우선하며, 쿼리를 작성할 때 권장되는 방식입니다.
+</Warning>
 
 이 기본 동작을 재정의하려면 `ClickHouseClientSettings`에서 `ParameterTypeResolver`를 설정하십시오. 이렇게 하면 각 개별 매개변수에 `ClickHouseType`을 일일이 설정하지 않고도, 모든 `DateTime` 매개변수에 밀리초 정밀도를 위해 `DateTime64(3)`를 사용하거나 모든 decimal에 특정 scale을 적용할 수 있어 유용합니다.
 
-**간단한 유형 매핑에 `DictionaryParameterTypeResolver` 사용:**
+**간단한 타입 매핑에 `DictionaryParameterTypeResolver` 사용:**
 
 ```csharp
 using ClickHouse.Driver.ADO.Parameters;
@@ -651,8 +765,8 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 using var client = new ClickHouseClient(settings);
 
 var parameters = new ClickHouseParameterCollection();
-parameters.AddParameter("dt", DateTime.UtcNow);     // DateTime64(3)에 매핑됨
-parameters.AddParameter("amount", 99.1234m);         // Decimal64(4)에 매핑됨
+parameters.AddParameter("dt", DateTime.UtcNow);     // Mapped to DateTime64(3)
+parameters.AddParameter("amount", 99.1234m);         // Mapped to Decimal64(4)
 
 await client.ExecuteReaderAsync("SELECT @dt, @amount", parameters);
 ```
@@ -667,7 +781,7 @@ public class SmartDecimalResolver : IParameterTypeResolver
     public string ResolveType(Type clrType, object value, string parameterName)
     {
         if (clrType != typeof(decimal))
-            return null; // 기본 타입 추론으로 넘어감
+            return null; // Fall through to default
 
         var scale = (decimal.GetBits((decimal)value)[3] >> 16) & 0x7F;
         return scale <= 4 ? $"Decimal64({scale})" : $"Decimal128({scale})";
@@ -690,6 +804,128 @@ public class SmartDecimalResolver : IParameterTypeResolver
 
 ***
 
+<div id="parameter-value-formatting">
+  ### 사용자 지정 매개변수 값 포맷팅
+</div>
+
+`IParameterFormatter`는 매개변수 값이 어떻게 직렬화되는지 결정하는 후크입니다. 기본 제공 포맷팅(예: DateTime 정밀도, Decimal 문화권 형식, 문자열 이스케이프 처리, 숫자 표현)이 스키마 또는 다운스트림 도구에서 기대하는 방식과 맞지 않을 때 사용합니다.
+
+매개변수화된 모든 쿼리에 포맷터를 적용하려면 `ClickHouseClientSettings`에서 `ParameterFormatter`를 설정합니다. 이 포맷터는 값, 확인된 ClickHouse type name, 그리고 매개변수 이름을 받아 서버로 전송할 문자열 표현을 반환합니다. 기본 포맷터를 사용하려면 `null`을 반환합니다.
+
+**간단한 CLR 형식별 포맷팅에는 `DictionaryParameterFormatter` 사용:**
+
+```csharp
+using ClickHouse.Driver.ADO.Parameters;
+
+var settings = new ClickHouseClientSettings("Host=localhost")
+{
+    ParameterFormatter = new DictionaryParameterFormatter(new Dictionary<Type, Func<object, string>>
+    {
+        [typeof(DateTime)] = v => ((DateTime)v).ToString("yyyy-MM-ddTHH:mm:ss.ffffff",
+            System.Globalization.CultureInfo.InvariantCulture),
+        [typeof(decimal)] = v => ((decimal)v).ToString("F4",
+            System.Globalization.CultureInfo.InvariantCulture),
+    }),
+};
+using var client = new ClickHouseClient(settings);
+```
+
+**고급 사용 사례를 위한 사용자 지정 `IParameterFormatter`:**
+
+```csharp
+public class FixedDecimalFormatter : IParameterFormatter
+{
+    public string Format(object value, string typeName, string parameterName)
+    {
+        if (value is decimal d)
+            return d.ToString("F4", System.Globalization.CultureInfo.InvariantCulture);
+        return null; // Fall through for anything else
+    }
+}
+```
+
+`QueryOptions.ParameterFormatter`를 통해 쿼리별로 포맷터를 설정할 수도 있습니다. 설정된 경우 클라이언트 수준 포맷터보다 우선 적용됩니다.
+
+**복합 값:**
+
+포맷터는 최상위 컬렉션 매개변수와 복합 값(`Array`, `Tuple`, `Map`, `Nullable`, `LowCardinality`, `Variant`) 내부의 각 요소 모두에 대해 실행됩니다. 예를 들어 `typeof(int)` 매핑은 `Array(Int32)`의 각 `Int32` 요소를 개별적으로 포맷합니다.
+
+**복합 컨텍스트에서의 작은따옴표 래핑:**
+
+복합 리터럴 안에 포함된 문자열 계열 ClickHouse 타입(`String`, `FixedString`, `Enum8`, `Enum16`, `IPv4`, `IPv6`, `UUID`)의 경우, 드라이버는 포맷터의 출력값을 작은따옴표로 감싸지만 그 내용은 이스케이프하지 않습니다. 반환된 문자열에 이스케이프되지 않은 작은따옴표나 백슬래시가 포함되어 있으면 복합 리터럴의 형식이 잘못되어 서버가 쿼리를 거부합니다.
+
+최상위 문자열 매개변수(복합 값에 포함되지 않은 경우)는 감싸지지 않은 채 그대로 사용되므로, 이 경우에는 이스케이프가 필요하지 않습니다.
+
+**포맷터 우선순위:**
+
+1. `IParameterFormatter` (`QueryOptions.ParameterFormatter`에서 가져오고, 없으면 `ClickHouseClientSettings.ParameterFormatter`로 대체). `null`이 아닌 값을 반환하면 해당 값을 사용합니다.
+2. `HttpParameterFormatter`의 내장 타입별 포맷팅.
+
+포맷터는 `null` 또는 `DBNull` 값에는 적용되지 않으며, 이러한 값은 항상 ClickHouse null 센티널(`\N`)로 직렬화됩니다.
+
+***
+
+<div id="read-value-conversion">
+  ### 사용자 지정 읽기 값 변환
+</div>
+
+`IReadValueConverter`를 사용하면 역직렬화 후 데이터 리더가 반환하는 값을 CLR 타입은 변경하지 않은 채 변환할 수 있습니다. 일반적인 용도로는 시간대가 없는 `DateTime` 컬럼에서 `DateTime.Kind = Utc`를 설정하거나, 문자열을 트리밍하거나 정규화하거나, `JSON column`이 application code에 전달되기 전에 후처리하는 작업이 있습니다.
+
+모든 읽기에 컨버터를 적용하려면 `ClickHouseClientSettings`에서 `ReadValueConverter`를 설정하십시오. 컨버터는 boxed(`GetValue`) 경로와 generic(`GetFieldValue<T>`) 경로 모두에서 각 행의 각 컬럼마다 한 번 호출됩니다. 컨버터를 설정하지 않으면 오버헤드가 전혀 없으며 리더는 값을 직접 반환합니다.
+
+**간단한 CLR 타입별 변환에 `DictionaryReadValueConverter` 사용:**
+
+```csharp
+using ClickHouse.Driver.ADO.Readers;
+
+var converter = new DictionaryReadValueConverter()
+    .For<DateTime>(dt => DateTime.SpecifyKind(dt, DateTimeKind.Utc))
+    .For<string>(s => s.Trim());
+
+var settings = new ClickHouseClientSettings("Host=localhost")
+{
+    ReadValueConverter = converter,
+};
+using var client = new ClickHouseClient(settings);
+```
+
+런타임 CLR 유형이 `For<T>`에 등록되지 않은 값은 변경되지 않은 채 그대로 전달됩니다. 디스패치는 정확히 일치하는 CLR 유형을 기준으로 이루어지므로, 리더가 실제로 생성하는 유형을 등록하십시오(예: `JsonReadMode.Binary`의 JSON 컬럼에는 `For<JsonObject>`를 사용).
+
+**고급 시나리오를 위한 사용자 지정 `IReadValueConverter`:**
+
+ClickHouse 측 타입 문자열을 기준으로 디스패치해야 한다면(예를 들어 `DateTime`과 `DateTime('UTC')`를 구분해야 하는 경우 — 둘 다 동일한 CLR 유형으로 나타남), `IReadValueConverter`를 직접 구현하십시오:
+
+```csharp
+public class UtcKindForNoTzDateTimeConverter : IReadValueConverter
+{
+    public object ConvertValue(object value, string columnName, string clickHouseType)
+    {
+        if (value is DateTime dt && clickHouseType == "DateTime")
+            return DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+        return value;
+    }
+
+    public T ConvertValue<T>(T value, string columnName, string clickHouseType)
+    {
+        if (typeof(T) == typeof(DateTime) && value is DateTime dt && clickHouseType == "DateTime")
+            return (T)(object)DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+        return value;
+    }
+}
+```
+
+컨버터는 런타임 CLR 형식을 보존해야 합니다. 컬럼 메타데이터(`GetFieldType`, `GetSchemaTable`)는 이를 거쳐 다시 처리되지 않으므로, 반환되는 값과 일관성을 유지해야 합니다.
+
+`QueryOptions.ReadValueConverter`를 통해 쿼리별 컨버터를 설정할 수도 있습니다. 이 값을 설정하면 클라이언트 수준 컨버터보다 우선합니다.
+
+**디스패치 경계:**
+
+컨버터는 역직렬화된 전체 셀 값을 대상으로 컬럼마다 한 번씩 호출되며, **복합 컨테이너 내부로 재귀적으로 들어가지는 않습니다**. `Array(Int32)` 컬럼에서는 전달되는 값이 `int[]`이고, `Tuple(Int32, String)`에서는 `ITuple`입니다.
+
+컨버터는 ADO.NET `ClickHouseConnection` 경로에서 동작하며, 이 설정은 클라이언트에서 생성된 연결에 상속됩니다.
+
+***
+
 <div id="raw-streaming">
   ### Raw 스트리밍
 </div>
@@ -707,6 +943,43 @@ var json = await reader.ReadToEndAsync();
 ```
 
 일반적으로 사용되는 포맷: `JSONEachRow`, `CSV`, `TSV`, `Parquet`, `Native`. 모든 옵션은 [포맷 문서](/ko/reference/formats/index)를 참조하십시오.
+
+***
+
+<div id="per-query-accept-encoding">
+  ### 쿼리별 전송 압축
+</div>
+
+기본적으로 `Compression=true`(connection string의 기본값)인 경우 클라이언트는 `gzip, deflate`를 협상하며, HTTP 클라이언트는 스트림 압축을 자동으로 해제합니다.
+
+원시 내보내기(예: Parquet, Arrow, Native)에서는 connection 전체 설정을 변경하지 않고도 CPU 사용량과 대역폭을 절충하기 위해 다른 코덱(예: `zstd` 또는 `lz4`)을 협상할 수 있습니다. `QueryOptions.AcceptEncoding` 및 `ClickHouseCommand.AcceptEncoding`은 단일 요청에 대해 HTTP `Accept-Encoding` 헤더를 설정하고, 기존에 적용된 기본값을 대체하며, URL에 `enable_http_compression=1`을 강제로 추가합니다(ClickHouse는 `Accept-Encoding`을 적용하기 전에 이를 요구합니다).
+
+```csharp
+using var result = await client.ExecuteRawResultAsync(
+    "SELECT * FROM events FORMAT Parquet",
+    options: new QueryOptions { AcceptEncoding = "zstd" });
+
+// Decode yourself or write to a file
+await using var body = await result.ReadAsStreamAsync();
+```
+
+<div id="per-query-accept-encoding-httpclient">
+  #### HttpClient 구성
+</div>
+
+드라이버가 생성하는 기본 `HttpClient`에는 `AutomaticDecompression = GZip | Deflate`가 설정되어 있으며, 해당 알고리즘으로 압축된 데이터를 자동으로 압축 해제하고 응답에서 `Content-Encoding`을 제거합니다. 일반적인 쿼리에는 이 설정이 적합하지만, 원시 압축 데이터를 직접 처리하려는 경우에는 적합하지 않습니다.
+
+이 경우 `AutomaticDecompression = DecompressionMethods.None`으로 설정된 `HttpClient` 또는 `HttpClientFactory`를 ClickHouseClient에 전달하십시오.
+
+<Warning>
+  `AcceptEncoding`에서 구성된 `HttpClient`가 자동으로 압축 해제할 수 없는 코덱을 요청하는 경우에는 `ExecuteRawResultAsync`만 안전합니다. 동일한 쿼리 경로에서 `ExecuteReaderAsync`, `ExecuteScalarAsync` 또는 `ExecuteNonQueryAsync`를 호출하면 압축된 바이트를 일반 결과 포맷으로 해석하려고 시도하여 깨진 결과가 생성됩니다.
+</Warning>
+
+<div id="per-query-accept-encoding-errors">
+  #### 오류 본문
+</div>
+
+서버가 4xx/5xx로 응답하고 `enable_http_compression=1`이 설정된 경우, 정상 응답에 사용했을 것과 동일한 코덱으로 오류 본문을 압축합니다. 드라이버는 BCL에 포함된 코덱(`gzip`, `deflate`, `br`/`brotli`)에 대해서는 이를 압축 해제하므로 `ClickHouseServerException`에 표시되는 메시지를 읽을 수 있습니다. 디코딩할 수 없는 코덱(`zstd`, `lz4`, …)의 경우, 드라이버는 코덱 이름을 포함하고 원래 오류 텍스트는 `system.query_log`에서 확인하라고 안내하는 자리표시자 메시지를 반환합니다.
 
 ***
 
@@ -1174,24 +1447,24 @@ var settings = new ClickHouseClientSettings("Host=localhost")
   #### 기타 타입
 </div>
 
-| ClickHouse 타입           | .NET 타입                             |
-| ----------------------- | ----------------------------------- |
-| UUID                    | `Guid`                              |
-| IPv4                    | `IPAddress`                         |
-| IPv6                    | `IPAddress`                         |
-| Nothing                 | `DBNull`                            |
-| Dynamic                 | 참고 참조                               |
-| Array(T)                | `T[]`                               |
-| Tuple(T1, T2, ...)      | `Tuple<T1, T2, ...>` / `LargeTuple` |
-| Map(K, V)               | `Dictionary<K, V>`                  |
-| Nullable(T)             | `T?`                                |
-| Enum8                   | `string`                            |
-| Enum16                  | `string`                            |
-| LowCardinality(T)       | T와 동일                               |
-| SimpleAggregateFunction | 기반 타입과 동일                           |
-| Nested(...)             | `Tuple[]`                           |
-| Variant(T1, T2, ...)    | 참고 참조                               |
-| QBit(T, dimension)      | `T[]`                               |
+| ClickHouse 타입           | .NET 타입                                                                                                                    |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| UUID                    | `Guid`                                                                                                                     |
+| IPv4                    | `IPAddress`                                                                                                                |
+| IPv6                    | `IPAddress`                                                                                                                |
+| Nothing                 | `DBNull`                                                                                                                   |
+| Dynamic                 | 참고 사항을 참조하세요                                                                                                                      |
+| Array(T)                | `T[]` (중첩된 `Array(Array(T))`는 가변 `T[][]`로 읽히며, 직사각형 데이터를 다차원 CLR 배열로 구체화하려면 `reader.GetFieldValue<T[,]>(ordinal)`를 사용하십시오) |
+| Tuple(T1, T2, ...)      | `Tuple<T1, T2, ...>` / `LargeTuple`                                                                                        |
+| Map(K, V)               | `Dictionary<K, V>`                                                                                                         |
+| Nullable(T)             | `T?`                                                                                                                       |
+| Enum8                   | `string`                                                                                                                   |
+| Enum16                  | `string`                                                                                                                   |
+| LowCardinality(T)       | T와 동일                                                                                                                      |
+| SimpleAggregateFunction | 기반 타입과 동일                                                                                                                  |
+| Nested(...)             | `Tuple[]`                                                                                                                  |
+| Variant(T1, T2, ...)    | 참고 사항을 참조하세요                                                                                                                      |
+| QBit(T, dimension)      | `T[]`                                                                                                                      |
 
 <Note>
   Dynamic 및 Variant 타입은 각 행의 실제 기반 타입에 해당하는 타입으로 변환됩니다.
@@ -1284,14 +1557,20 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 </div>
 
 | ClickHouse 타입 | Accepted .NET Types                                               | 참고 사항                                                                       |
-| --------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| Date            | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 타입             | Unix 일수로 변환되어 UInt16으로 저장됩니다                                                |
-| Date32          | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 타입             | Unix 일수로 변환되어 Int32로 저장됩니다                                                  |
-| DateTime        | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 타입             | 자세한 내용은 아래를 참조하십시오                                                          |
-| DateTime32      | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 타입             | DateTime과 동일합니다                                                             |
-| DateTime64      | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 타입             | 정밀도는 Scale parameter를 기준으로 결정됩니다                                            |
-| Time            | `TimeSpan`, `int`                                                 | ±999:59:59 범위로 제한되며, int는 초 단위로 처리됩니다                                       |
-| Time64          | `TimeSpan`, `decimal`, `double`, `float`, `int`, `long`, `string` | 문자열은 `[-]HHH:MM:SS[.fraction]` 형식으로 parse되며, ±999:59:59.999999999 범위로 제한됩니다 |
+| ------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Date          | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 타입             | Unix 일수로 변환되어 UInt16으로 저장되며, 지원 범위는 `[1970-01-01, 2149-06-06]`입니다           |
+| Date32        | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 타입             | Unix 일수로 변환되어 Int32로 저장되며, 지원 범위는 `[1900-01-01, 2299-12-31]`입니다             |
+| DateTime      | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 타입             | 자세한 내용은 아래를 참조하십시오. 지원 범위는 UTC 기준 `[1970-01-01, 2106-02-07 06:28:15]`입니다    |
+| DateTime32    | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 타입             | DateTime과 동일합니다                                                             |
+| DateTime64    | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 타입             | 정밀도는 Scale parameter를 기준으로 결정됩니다                                            |
+| Time          | `TimeSpan`, `int`                                                 | ±999:59:59 범위로 제한되며, int는 초 단위로 처리됩니다                                       |
+| Time64        | `TimeSpan`, `decimal`, `double`, `float`, `int`, `long`, `string` | 문자열은 `[-]HHH:MM:SS[.fraction]` 형식으로 parse되며, ±999:59:59.999999999 범위로 제한됩니다 |
+
+<Note>
+  **범위를 벗어난 값**
+
+  바이너리 쓰기 경로에서는 지원 범위를 벗어나는 `Date`, `Date32`, `DateTime`, `DateTime32` 값에 대해 `Write` 시점에 `ArgumentOutOfRangeException`이 발생하며, 예외 메시지에는 컬럼 타입과 지원 범위가 포함됩니다. 이전에는 범위를 벗어난 값이 32비트 정수를 거치며 조용히 잘린 뒤 server에서 reinterpret되어, 실제처럼 보이지만 잘못된 timestamp가 생성될 수 있었습니다.
+</Note>
 
 드라이버는 값을 쓸 때 `DateTime.Kind`를 따릅니다:
 
@@ -1307,17 +1586,17 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 
 ```csharp
 var utcTime = new DateTime(2024, 1, 15, 12, 0, 0, DateTimeKind.Utc);
-// 12:00 UTC로 저장됨
-// DateTime('Europe/Amsterdam') 컬럼에서 읽기: 13:00 (UTC+1)
-// DateTime('UTC') 컬럼에서 읽기: 12:00 UTC
+// Stored as 12:00 UTC
+// Read from DateTime('Europe/Amsterdam') column: 13:00 (UTC+1)
+// Read from DateTime('UTC') column: 12:00 UTC
 ```
 
 **예시: 지정되지 않은 DateTime(현지 시계 시간)**
 
 ```csharp
 var wallClock = new DateTime(2024, 1, 15, 14, 30, 0, DateTimeKind.Unspecified);
-// DateTime('Europe/Amsterdam') 컬럼에 쓰기: Amsterdam 시간 기준 14:30으로 저장됨
-// DateTime('Europe/Amsterdam') 컬럼에서 읽기: 14:30
+// Written to DateTime('Europe/Amsterdam') column: stored as 14:30 Amsterdam time
+// Read back from DateTime('Europe/Amsterdam') column: 14:30
 ```
 
 **권장 사항:** 가장 단순하고 예측 가능한 동작을 위해 모든 DateTime 작업에는 `DateTimeKind.Utc` 또는 `DateTimeOffset`을 사용하십시오. 이렇게 하면 서버 시간대, 클라이언트 시간대, 컬럼 시간대와 관계없이 코드가 항상 일관되게 동작합니다.
@@ -1479,24 +1758,24 @@ await client.InsertBinaryAsync(
   #### 기타 타입
 </div>
 
-| ClickHouse 타입         | 허용되는 .NET 타입                     | 비고                                         |
-| ----------------------- | -------------------------------- | ------------------------------------------ |
-| UUID                    | `Guid`, `string`                 | 문자열은 Guid로 파싱됨                             |
-| IPv4                    | `IPAddress`, `string`            | IPv4여야 하며, 문자열은 `IPAddress.Parse()`로 파싱됨   |
-| IPv6                    | `IPAddress`, `string`            | IPv6여야 하며, 문자열은 `IPAddress.Parse()`로 파싱됨   |
-| Nothing                 | 임의                               | 아무것도 기록하지 않음(no-op)                        |
-| Dynamic                 | —                                | **지원되지 않음** (`NotImplementedException` 발생) |
-| Array(T)                | `IList`, `null`                  | `null`은 빈 배열로 기록됨                          |
-| Tuple(T1, T2, ...)      | `ITuple`, `IList`                | 요소 수는 튜플의 원소 수와 일치해야 함                     |
-| Map(K, V)               | `IDictionary`                    |                                            |
-| Nullable(T)             | `null`, `DBNull`, 또는 T에서 허용하는 타입 | 값 앞에 null 플래그 바이트를 기록함                     |
-| Enum8                   | `string`, `sbyte`, 숫자 타입         | 문자열은 enum 딕셔너리에서 조회됨                       |
-| Enum16                  | `string`, `short`, 숫자 타입         | 문자열은 enum 딕셔너리에서 조회됨                       |
-| LowCardinality(T)       | T에서 허용하는 타입                      | 기반 타입에 위임                                  |
-| SimpleAggregateFunction | 기반 타입에서 허용하는 타입                  | 기반 타입에 위임                                  |
-| Nested(...)             | 튜플의 `IList`                      | 요소 수는 필드 수와 일치해야 함                         |
-| Variant(T1, T2, ...)    | T1, T2, ... 중 하나에 일치하는 값         | 일치하는 타입이 없으면 `ArgumentException` 발생        |
-| QBit(T, dim)            | `IList`                          | Array에 위임되며, 차원은 메타데이터로만 사용됨               |
+| ClickHouse 타입           | 허용되는 .NET 타입                     | 비고                                                                                                                                                                                |
+| ----------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| UUID                    | `Guid`, `string`                 | 문자열은 Guid로 파싱됨                                                                                                                                                                    |
+| IPv4                    | `IPAddress`, `string`            | IPv4여야 하며, 문자열은 `IPAddress.Parse()`로 파싱됨                                                                                                                                          |
+| IPv6                    | `IPAddress`, `string`            | IPv6여야 하며, 문자열은 `IPAddress.Parse()`로 파싱됨                                                                                                                                          |
+| Nothing                 | 임의                               | 아무것도 기록하지 않음(no-op)                                                                                                                                                               |
+| Dynamic                 | —                                | **지원되지 않음** (`NotImplementedException` 발생)                                                                                                                                        |
+| Array(T)                | `IList`, `null`                  | `null`은 빈 배열로 기록됨. 중첩 타입(`Array(Array(T))` 및 그보다 더 깊은 중첩)의 경우 계단형 구조(`T[][]`, `List<List<T>>`)와 직사각형 다차원 CLR 배열(`T[,]`, `T[,,]`, …)이 모두 허용되며, CLR rank는 ClickHouse 중첩 깊이와 일치해야 함. |
+| Tuple(T1, T2, ...)      | `ITuple`, `IList`                | 요소 수는 튜플의 원소 수와 일치해야 함. 요소가 7개를 초과하는 경우 [ValueTuple 주의사항](#valuetuple-caveat)을 참조하십시오.                                                                                            |
+| Map(K, V)               | `IDictionary`                    |                                                                                                                                                                                   |
+| Nullable(T)             | `null`, `DBNull`, 또는 T에서 허용하는 타입 | 값 앞에 null 플래그 바이트를 기록함                                                                                                                                                            |
+| Enum8                   | `string`, `sbyte`, 숫자 타입         | 문자열은 enum 딕셔너리에서 조회됨                                                                                                                                                              |
+| Enum16                  | `string`, `short`, 숫자 타입         | 문자열은 enum 딕셔너리에서 조회됨                                                                                                                                                              |
+| LowCardinality(T)       | T에서 허용하는 타입                      | 기반 타입에 위임                                                                                                                                                                         |
+| SimpleAggregateFunction | 기반 타입에서 허용하는 타입                  | 기반 타입에 위임                                                                                                                                                                         |
+| Nested(...)             | 튜플의 `IList`                      | 요소 수는 필드 수와 일치해야 함                                                                                                                                                                |
+| Variant(T1, T2, ...)    | T1, T2, ... 중 하나에 일치하는 값         | 일치하는 타입이 없으면 `ArgumentException` 발생                                                                                                                                               |
+| QBit(T, dim)            | `IList`                          | Array에 위임되며, 차원은 메타데이터로만 사용됨                                                                                                                                                      |
 
 ***
 
@@ -2547,6 +2826,35 @@ dotnet ef database update
 <div id="limitations">
   ## 제한 사항
 </div>
+
+<div id="valuetuple-caveat">
+  ### 요소가 8개 이상이고 마지막 위치에 중첩 튜플이 있는 튜플
+</div>
+
+요소가 7개를 초과하는 C# `ValueTuple` 타입은 컴파일러가 생성한 중첩 방식을 사용합니다. 즉, 8번째 제네릭 인수(`TRest`)는 나머지 요소를 담는 또 다른 `ValueTuple`입니다. 예를 들어 `(int, int, int, int, int, int, int, string, string)`는 `ValueTuple<int, int, int, int, int, int, int, ValueTuple<string, string>>`로 컴파일됩니다.
+
+이로 인해 ClickHouse 컬럼이 8개 요소로 이루어진 튜플이고 마지막 요소 자체도 튜플인 경우 모호성이 생깁니다. 예를 들어 `Tuple(Int32, Int32, Int32, Int32, Int32, Int32, Int32, Tuple(String, String))`가 이에 해당합니다. 드라이버는 다음 두 경우를 구분할 수 없습니다.
+
+* 컴파일러가 생성한 TRest 중첩을 사용하는 **9개 요소의 평면 튜플**
+* 마지막 요소가 중첩된 `Tuple(String, String)`인 **8개 요소 튜플**
+
+두 경우 모두 동일한 .NET Type인 `ValueTuple<int, int, int, int, int, int, int, ValueTuple<string, string>>`가 생성됩니다.
+
+드라이버는 8번째 인수를 TRest로 처리합니다(즉, 평탄화합니다). 따라서 마지막에 중첩 튜플이 있는 8개 요소 케이스는 잘못 serialize됩니다.
+
+이는 `System.Tuple`와 `ValueTuple` 모두에 영향을 줍니다. 둘 다 요소가 7개를 초과하면 TRest 중첩을 사용하기 때문입니다. 요소가 7개 이하인 튜플이나 마지막 요소 자체가 튜플이 아닌 튜플은 영향을 받지 않습니다.
+
+**우회 방법:** 드라이버가 이를 TRest 중첩과 구분할 수 있도록 내부 튜플을 한 겹 더 감싸십시오:
+
+```csharp
+// Instead of this (ambiguous — is it 8 elements or 9 flat?):
+Tuple.Create(1, 2, 3, 4, 5, 6, 7, Tuple.Create("a", "b"))
+
+// Do this (unambiguous — inner tuple is wrapped):
+Tuple.Create(1, 2, 3, 4, 5, 6, 7, Tuple.Create(Tuple.Create("a", "b")))
+```
+
+***
 
 <div id="aggregatefunction-columns">
   ### AggregateFunction 컬럼

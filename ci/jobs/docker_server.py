@@ -185,6 +185,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="allows binaries built on different branch if source digest matches current repo state",
     )
+    parser.add_argument(
+        "--apt-mirror-region",
+        type=str,
+        default="",
+        help="if set, point apt at the in-region AWS Ubuntu mirror for this region "
+        "(e.g. us-east-1) instead of Canonical's archive.ubuntu.com / "
+        "ports.ubuntu.com, which are frequently unreachable from the runners. "
+        "Empty means use the Dockerfile default (canonical mirror).",
+    )
 
     return parser.parse_args()
 
@@ -260,6 +269,7 @@ def buildx_args(
     version: str,
     sha: str,
     action_url: str,
+    apt_mirror_region: str,
 ) -> List[str]:
     args = [
         "--provenance=true",
@@ -275,6 +285,17 @@ def buildx_args(
         url = urls[arch]
         args.append(f"--build-arg=REPOSITORY='{url}'")
         args.append(f"--build-arg=deb_location_url='{url}'")
+    # Point apt at the in-region AWS Ubuntu mirror. Canonical's archive.ubuntu.com
+    # (amd64) and ports.ubuntu.com (arm64) are frequently unreachable over IPv4
+    # from the runners; the in-region mirror is reachable and fast. The Dockerfile
+    # defaults stay canonical so images build normally outside CI.
+    if apt_mirror_region:
+        args.append(
+            f"--build-arg=apt_archive=http://{apt_mirror_region}.ec2.archive.ubuntu.com"
+        )
+        args.append(
+            f"--build-arg=apt_ports_archive=http://{apt_mirror_region}.ec2.ports.ubuntu.com"
+        )
     return args
 
 
@@ -288,6 +309,7 @@ def build_and_push_image(
     direct_urls: Dict[str, List[str]],
     run_url: str,
     sha: str,
+    apt_mirror_region: str,
 ) -> List[Result]:
     result = []
     if os != "ubuntu":
@@ -338,6 +360,7 @@ def build_and_push_image(
                 version=version,
                 action_url=run_url,
                 sha=sha,
+                apt_mirror_region=apt_mirror_region,
             )
         )
         if not push:
@@ -512,9 +535,11 @@ def main():
         assert False, f"Unexpected job name [{info.job_name}]"
 
     push = args.push
+    apt_mirror_region = args.apt_mirror_region
     del args.image_path
     del args.image_repo
     del args.push
+    del args.apt_mirror_region
 
     if (
         info.is_push_event
@@ -586,6 +611,7 @@ def main():
                     direct_urls,
                     run_url=info.run_url,
                     sha=info.sha,
+                    apt_mirror_region=apt_mirror_region,
                 )
             )
 

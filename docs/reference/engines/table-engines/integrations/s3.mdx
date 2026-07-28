@@ -166,7 +166,8 @@ ENGINE = S3(
            'http://minio:10000/clickhouse//test_{_partition_id}.csv',
            'minioadmin',
            'minioadminpassword',
-           'CSV')
+           'CSV',
+           partition_strategy='wildcard')
 PARTITION BY column3
 ```
 
@@ -315,9 +316,9 @@ CREATE TABLE table_with_asterisk (name String, value UInt32)
 
 ## Storage settings {#storage-settings}
 
-- [s3_truncate_on_insert](/reference/settings/session-settings#s3_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
-- [s3_create_new_file_on_insert](/reference/settings/session-settings#s3_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
-- [s3_skip_empty_files](/reference/settings/session-settings#s3_skip_empty_files) - allows to skip empty files while reading. Enabled by default.
+- [s3_truncate_on_insert](/reference/settings/session-settings/s3#s3_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
+- [s3_create_new_file_on_insert](/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [s3_skip_empty_files](/reference/settings/session-settings/s3#s3_skip_empty_files) - allows to skip empty files while reading. Enabled by default.
 
 ## S3-related settings {#settings}
 
