@@ -625,7 +625,7 @@ void MergeTextIndexesTask::finalize()
         params.positions ? TextIndexHeader::Version::WithPositions : TextIndexHeader::Version::WithCodec);
     TextIndexSerialization::serializeHeader(
         sparse_index, postings_serialization.getPostingListCodec()->getType(), serialization_version, params.positions,
-        static_cast<UInt8>(TextIndexPositionCodec::Encoding::Blocked), index_stream->compressed_hashing);
+        params.positions_codec, index_stream->compressed_hashing);
 
     for (auto & stream : output_streams_holders)
         stream->finalize();

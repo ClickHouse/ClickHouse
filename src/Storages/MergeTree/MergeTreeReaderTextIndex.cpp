@@ -1137,7 +1137,7 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
         {
             /// The header deserialization rejects any codec but Blocked, so the part's positions
             /// are always the blocked candidate-driven layout here.
-            chassert(static_cast<TextIndexPositionCodec::Encoding>(granule->getPositionsCodec()) == TextIndexPositionCodec::Encoding::Blocked);
+            chassert(static_cast<TextIndexPositionCodec::Encoding>(granule->getPositionsCodec()) == TextIndexPositionCodec::Encoding::BlockedPfor);
             return std::make_shared<TextIndexPostingsCacheCell>(
                 std::make_shared<PaddedPODArray<UInt32>>(phraseSearchBlocked(*search_query)));
         });

@@ -1138,13 +1138,9 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
 
         UInt64 positions_codec = 0;
         readVarUInt(positions_codec, istr);
-        if (positions_codec != static_cast<UInt64>(TextIndexPositionCodec::Encoding::Blocked))
-        {
-            if (positions_codec <= static_cast<UInt64>(TextIndexPositionCodec::Encoding::LegacyPfor))
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Text index positions in this part use a pre-release format (codec {}); drop and re-create the index", positions_codec);
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown positions codec in text index header: {}", positions_codec);
-        }
+        if (positions_codec != static_cast<UInt64>(TextIndexPositionCodec::Encoding::BlockedPfor))
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Unknown positions codec {} in text index header; a newer server version may be required to read this part", positions_codec);
         header.positions_codec = static_cast<UInt8>(positions_codec);
     }
 
@@ -1461,7 +1457,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
 
     TextIndexSerialization::serializeHeader(
         sparse_index_block, posting_list_codec_type, serialization_version, params.positions,
-        static_cast<UInt8>(TextIndexPositionCodec::Encoding::Blocked), index_stream->compressed_hashing);
+        params.positions_codec, index_stream->compressed_hashing);
 }
 
 void MergeTreeIndexGranuleTextWritable::deserializeBinary(ReadBuffer &, MergeTreeIndexVersion)
@@ -1974,6 +1970,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
         dictionary_block_frontcoding_compression,
         posting_list_block_size,
         positions,
+        static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor), /// not user-configurable yet
         std::move(preprocessor_ast),
         std::move(postprocessor_ast)};
 

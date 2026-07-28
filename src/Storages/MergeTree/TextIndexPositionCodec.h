@@ -5,17 +5,14 @@
 namespace DB
 {
 
-/// Positions layout marker persisted in the text index header (one byte per part). Only 'Blocked'
-/// is supported (not user-configurable); 0/1 are pre-release roaringish layouts, so such parts must
-/// be dropped and re-created.
+/// Codec of the positions stream (.pos), persisted in the text index header (one byte per part) so every part
+/// self-describes its positions encoding and future codecs can be added without breaking readers.
 class TextIndexPositionCodec
 {
 public:
     enum class Encoding : UInt8
     {
-        LegacyRaw = 0,
-        LegacyPfor = 1,
-        Blocked = 2,
+        BlockedPfor = 1,
     };
 };
 
