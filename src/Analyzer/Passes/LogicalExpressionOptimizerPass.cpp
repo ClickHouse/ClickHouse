@@ -2294,7 +2294,10 @@ private:
         /// resolve cache can hand the same node to several use sites, and the pass visitor is not
         /// deduplicating, so a shared AND would otherwise accumulate the same derived conjunct once per
         /// visit and desync from a singly-referenced copy (e.g. a GROUP BY key matched by formatted name).
-        QueryTreeNodePtrWithHashSet existing_conjuncts;
+        /// `indexHint(X)` is not interchangeable with plain `X`: a hint dedupes only hint-destined
+        /// derivations, while contradictions and cross-source conjuncts must still materialize.
+        QueryTreeNodePtrWithHashSet existing_plain_conjuncts;
+        QueryTreeNodePtrWithHashSet existing_hint_conjuncts;
         for (const auto & argument : function_node.getArguments().getNodes())
         {
             /// emplace computes getTreeHash for each conjunct; respect the budget here as well.
@@ -2304,9 +2307,9 @@ private:
             const auto * argument_function = argument->as<FunctionNode>();
             if (argument_function && argument_function->getFunctionName() == "indexHint"
                 && argument_function->getArguments().getNodes().size() == 1)
-                existing_conjuncts.emplace(argument_function->getArguments().getNodes().front());
+                existing_hint_conjuncts.emplace(argument_function->getArguments().getNodes().front());
             else
-                existing_conjuncts.emplace(argument);
+                existing_plain_conjuncts.emplace(argument);
         }
 
         /// Step 2: populate from constants, to generate new comparing pair with constant in one side
@@ -2347,7 +2350,7 @@ private:
                         and_node->getArguments().getNodes().push_back(constant->clone());
                         and_node->resolveAsFunction(
                             FunctionFactory::instance().get(compare_function_name, getContext()));
-                        if (existing_conjuncts.emplace(and_node).second)
+                        if (!existing_plain_conjuncts.contains(and_node))
                         {
                             /// Do not append a derived conjunct implied by an existing or already-derived
                             /// one; contradictions are appended so the next pass folds the AND to `false`.
@@ -2358,6 +2361,7 @@ private:
                                 derived_conjunct_filters, left.node, std::move(derived_filter), true, getContext());
                             if (add_result == AddComparisonFilterResult::ALWAYS_FALSE)
                             {
+                                existing_plain_conjuncts.emplace(and_node);
                                 function_node.getArguments().getNodes().push_back(and_node);
                             }
                             else if (add_result != AddComparisonFilterResult::ALWAYS_TRUE)
@@ -2366,9 +2370,10 @@ private:
                                 {
                                     /// Derived across a join: the only conjunct pushable to the other
                                     /// side (e.g. it shrinks a hash join build side), keep it executable.
+                                    existing_plain_conjuncts.emplace(and_node);
                                     function_node.getArguments().getNodes().push_back(and_node);
                                 }
-                                else
+                                else if (existing_hint_conjuncts.emplace(and_node).second)
                                 {
                                     /// Within one source it filters nothing beyond the original chain,
                                     /// so add it as `indexHint`: it still prunes, but does not execute.

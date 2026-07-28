@@ -64,6 +64,14 @@ SELECT count() FROM t_chain_hint AS l JOIN t_chain_hint_r AS r ON l.a = r.c WHER
     SETTINGS optimize_and_compare_chain = 1;
 SELECT count() FROM t_chain_hint AS l JOIN t_chain_hint_r AS r ON l.a = r.c WHERE l.b < r.d AND r.d < 100
     SETTINGS optimize_and_compare_chain = 0;
+-- A user-written hint must not suppress executable derived conjuncts.
+SELECT 'hint_does_not_suppress';
+SELECT count() FROM t_chain_hint WHERE a = b AND b = 5 AND indexHint(a = 5) AND a != 5;
+SELECT count() FROM (EXPLAIN QUERY TREE
+    SELECT count() FROM t_chain_hint AS l JOIN t_chain_hint_r AS r ON l.a = r.c
+    WHERE l.b < r.d AND r.d < 100 AND indexHint(l.b < 100))
+    WHERE explain LIKE '%function_name: less,%';
+
 DROP TABLE t_chain_hint_r;
 
 DROP TABLE t_chain_hint;
