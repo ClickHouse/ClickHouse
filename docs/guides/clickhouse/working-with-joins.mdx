@@ -99,7 +99,7 @@ A `FULL OUTER JOIN` query combines the `LEFT` and `RIGHT OUTER JOIN` and returns
 <Image img="/images/starter_guides/joins/outer_join.webp" alt="Outer Join" />
 
 <Note>
-ClickHouse can be [configured](/reference/settings/session-settings#join_use_nulls) to return [NULL](/reference/syntax#null)s instead of default values (however, for [performance reasons](/reference/data-types/nullable#storage-features), that is less recommended).
+ClickHouse can be [configured](/reference/settings/session-settings/join#join_use_nulls) to return [NULL](/reference/syntax#null)s instead of default values (however, for [performance reasons](/reference/data-types/nullable#storage-features), that is less recommended).
 </Note>
 
 This query finds all movies that have no genre by querying for all rows from the `movies` table that don’t have matches in the `genres` table, and therefore get (at query time) the default value 0 for the `movie_id` column:
@@ -222,7 +222,7 @@ LIMIT 10;
 └─────────────────────────────────────────────┘
 ```
 
-The `INNER JOIN` clause in the syntactically optimized `CROSS JOIN` query version contains the `ALL` keyword, that got explicitly added in order to keep the cartesian product semantics of the `CROSS JOIN` even when being rewritten into an `INNER JOIN`, for which the cartesian product can be [disabled](/reference/settings/session-settings#join_default_strictness).
+The `INNER JOIN` clause in the syntactically optimized `CROSS JOIN` query version contains the `ALL` keyword, that got explicitly added in order to keep the cartesian product semantics of the `CROSS JOIN` even when being rewritten into an `INNER JOIN`, for which the cartesian product can be [disabled](/reference/settings/session-settings/join#join_default_strictness).
 
 ```sql
 ALL

@@ -27,25 +27,19 @@ doc_type: 'guide'
 * Anthropic API Key 또는 다른 LLM 제공업체의 API Key가 필요합니다
 
 <Steps>
-  <Step>
-    ## Slack App 만들기
-
+  <Step title="Slack App 만들기" id="create-a-slack-app">
     1. [slack.com/apps](https://slack.com/apps)로 이동해 `Create New App`을 클릭합니다.
     2. `From scratch` 옵션을 선택한 뒤 앱 이름을 입력합니다.
     3. Slack 워크스페이스를 선택합니다.
   </Step>
 
-  <Step>
-    ## 워크스페이스에 앱 설치하기
-
+  <Step title="워크스페이스에 앱 설치하기" id="install-the-app-to-your-workspace">
     다음으로, 이전 단계에서 만든 앱을 워크스페이스에 추가해야 합니다.
     Slack 문서의 [&quot;Add apps to your Slack workspace&quot;](https://slack.com/intl/en-gb/help/articles/202035138-Add-apps-to-your-Slack-workspace)
     안내를 따르면 됩니다.
   </Step>
 
-  <Step>
-    ## Slack 앱 설정 구성하기
-
+  <Step title="Slack 앱 설정 구성하기" id="configure-slack-app-settings">
     * `App Home`으로 이동합니다
       * `Show Tabs` → `Messages Tab`에서 `Allow users to send Slash commands and messages from the messages tab`을 활성화합니다
       * `Socket Mode`로 이동합니다
@@ -70,9 +64,7 @@ doc_type: 'guide'
         * Save Changes
   </Step>
 
-  <Step>
-    ## 환경 변수 추가하기 (`.env`)
-
+  <Step title={<>환경 변수 추가하기 (<code>.env</code>)</>} id="add-env-vars">
     다음 환경 변수를 포함하는 `.env` 파일을 프로젝트 루트에 생성합니다.
     이렇게 하면 앱이 [ClickHouse의 SQL playground](https://sql.clickhouse.com/)에 연결할 수 있습니다.
 
@@ -91,9 +83,7 @@ doc_type: 'guide'
     Cloud 인스턴스를 사용할 수도 있습니다.
   </Step>
 
-  <Step>
-    ## 봇 사용하기
-
+  <Step title="봇 사용하기" id="using-the-bot">
     1. **봇 시작하기:**
 
        ```sh

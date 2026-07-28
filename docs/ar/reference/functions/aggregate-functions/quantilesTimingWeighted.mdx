@@ -13,9 +13,9 @@ doc_type: 'reference'
 
 استُحدث في: v1.1.0
 
-تحسب هذه الدالة عدة [كمّيات مئينية](https://en.wikipedia.org/wiki/Quantile) لتسلسل من البيانات الرقمية عند مستويات مختلفة في الوقت نفسه، وبدقة محددة، مع مراعاة وزن كل عنصر في التسلسل.
+تحسب هذه الدالة عدة [كمّات](https://en.wikipedia.org/wiki/Quantile) لتسلسل من البيانات الرقمية عند مستويات مختلفة في الوقت نفسه، وبدقة محددة، مع مراعاة وزن كل عنصر في التسلسل.
 
-تعادل هذه الدالة [`quantileTimingWeighted`](/ar/reference/functions/aggregate-functions/quantileTimingWeighted)، لكنها تتيح حساب عدة مستويات من الكمّيات المئينية في تمريرة واحدة، ما يجعلها أكثر كفاءة من استدعاء دوال الكمّيات المئينية الفردية.
+تعادل هذه الدالة [`quantileTimingWeighted`](/ar/reference/functions/aggregate-functions/quantileTimingWeighted)، لكنها تتيح حساب عدة مستويات من الكمّات في تمريرة واحدة، ما يجعلها أكثر كفاءة من استدعاء دوال الكمّ الفردية.
 
 النتيجة حتمية (أي إنها لا تعتمد على ترتيب معالجة الاستعلام). وقد حُسِّنت هذه الدالة للعمل مع التسلسلات التي تصف توزيعات مثل أزمنة تحميل صفحات الويب أو أزمنة استجابة الخادم الخلفي.
 
@@ -29,7 +29,7 @@ doc_type: 'reference'
 بخلاف ذلك، تُقرَّب نتيجة الحساب إلى أقرب مضاعف لـ 16 مللي ثانية.
 
 <Note>
-  عند حساب الكمّيات المئينية لزمن تحميل الصفحة، تكون هذه الدالة أكثر كفاءة ودقة من [`quantiles`](/ar/reference/functions/aggregate-functions/quantiles).
+  عند حساب الكمّات لزمن تحميل الصفحة، تكون هذه الدالة أكثر كفاءة ودقة من [`quantiles`](/ar/reference/functions/aggregate-functions/quantiles).
 </Note>
 
 **الصيغة**
@@ -40,20 +40,20 @@ quantilesTimingWeighted(level1, level2, ...)(expr, weight)
 
 **المعلمات**
 
-* `level` — مستويات الكوانتايل. عدد ثابت واحد أو أكثر من الأعداد ذات الفاصلة العائمة من 0 إلى 1. نوصي باستخدام قيم `level` ضمن النطاق `[0.01, 0.99]`. [`Float*`](/ar/reference/data-types/float)
+* `level` — مستويات الكمّ. عدد ثابت واحد أو أكثر من الأعداد ذات الفاصلة العائمة من 0 إلى 1. نوصي باستخدام قيم `level` ضمن النطاق `[0.01, 0.99]`. [`Float*`](/ar/reference/data-types/float)
 
 **الوسيطات**
 
-* `expr` — تعبير على قيم عمود يُرجع عددًا من النوع Float*. إذا مُرِّرت قيم سالبة إلى الدالة، يكون السلوك غير معرّف. وإذا كانت القيمة أكبر من 30,000 (أي زمن تحميل صفحة يزيد على 30 ثانية)، فيُفترض أنها 30,000. [`Float*`](/ar/reference/data-types/float)
+* `expr` — تعبير على قيم العمود ينتج أنواع بيانات رقمية أو `Date` أو `DateTime`. إذا مُرِّرت قيم سالبة إلى الدالة، يكون السلوك غير معرّف. وإذا كانت القيمة أكبر من 30,000 (أي زمن تحميل صفحة يزيد على 30 ثانية)، فيُفترض أنها 30,000. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime)
 * `weight` — عمود يحتوي على أوزان عناصر التسلسل. والوزن هو عدد مرات تكرار القيمة. [`UInt*`](/ar/reference/data-types/int-uint)
 
 **القيمة المُعادة**
 
-مصفوفة من الكوانتايلات للمستويات المحددة، وبالترتيب نفسه الذي حُدِّدت به المستويات. [`Array(Float32)`](/ar/reference/data-types/array)
+مصفوفة من الكمّات للمستويات المحددة، وبالترتيب نفسه الذي حُدِّدت به المستويات. [`Array(Float32)`](/ar/reference/data-types/array)
 
 **أمثلة**
 
-**حساب عدة كوانتايلات زمنية موزونة**
+**حساب عدة كمّات زمنية موزونة**
 
 ```sql title=Query
 SELECT quantilesTimingWeighted(0.5, 0.99)(response_time, weight) FROM t;

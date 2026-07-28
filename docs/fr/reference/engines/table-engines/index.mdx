@@ -29,16 +29,21 @@ Les moteurs de table les plus polyvalents et les plus complets pour les charges 
 
 Moteurs de la famille :
 
-| Moteurs MergeTree                                                                                              |
-| -------------------------------------------------------------------------------------------------------------- |
-| [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree)                                       |
-| [ReplacingMergeTree](/fr/reference/engines/table-engines/mergetree-family/replacingmergetree)                     |
-| [SummingMergeTree](/fr/reference/engines/table-engines/mergetree-family/summingmergetree)                         |
-| [AggregatingMergeTree](/fr/reference/engines/table-engines/mergetree-family/aggregatingmergetree)                 |
-| [CollapsingMergeTree](/fr/reference/engines/table-engines/mergetree-family/collapsingmergetree)                   |
-| [VersionedCollapsingMergeTree](/fr/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree) |
-| [GraphiteMergeTree](/fr/reference/engines/table-engines/mergetree-family/graphitemergetree)                       |
-| [CoalescingMergeTree](/fr/reference/engines/table-engines/mergetree-family/coalescingmergetree)                   |
+| Moteurs MergeTree                                                                                                    |
+| -------------------------------------------------------------------------------------------------------------------- |
+| [Vue d’ensemble de la famille MergeTree](/fr/reference/engines/table-engines/mergetree-family/index)                    |
+| [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree)                                             |
+| [ReplacingMergeTree](/fr/reference/engines/table-engines/mergetree-family/replacingmergetree)                           |
+| [SummingMergeTree](/fr/reference/engines/table-engines/mergetree-family/summingmergetree)                               |
+| [AggregatingMergeTree](/fr/reference/engines/table-engines/mergetree-family/aggregatingmergetree)                       |
+| [CollapsingMergeTree](/fr/reference/engines/table-engines/mergetree-family/collapsingmergetree)                         |
+| [VersionedCollapsingMergeTree](/fr/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree)       |
+| [GraphiteMergeTree](/fr/reference/engines/table-engines/mergetree-family/graphitemergetree)                             |
+| [CoalescingMergeTree](/fr/reference/engines/table-engines/mergetree-family/coalescingmergetree)                         |
+| [Recherche vectorielle exacte et approximative](/fr/reference/engines/table-engines/mergetree-family/annindexes)        |
+| [Clé de partitionnement personnalisée](/fr/reference/engines/table-engines/mergetree-family/custom-partitioning-key)    |
+| [Moteurs de table Replicated*](/fr/reference/engines/table-engines/mergetree-family/replication)                        |
+| [Recherche en texte intégral avec des index de texte](/fr/reference/engines/table-engines/mergetree-family/textindexes) |
 
 <div id="log">
   ### Log
@@ -48,11 +53,12 @@ Des [moteurs](/fr/reference/engines/table-engines/log-family/index) légers offr
 
 Moteurs de la famille :
 
-| Moteurs Log                                                        |
-| ------------------------------------------------------------------ |
-| [TinyLog](/fr/reference/engines/table-engines/log-family/tinylog)     |
-| [StripeLog](/fr/reference/engines/table-engines/log-family/stripelog) |
-| [Log](/fr/reference/engines/table-engines/log-family/log)             |
+| Moteurs Log                                                                 |
+| --------------------------------------------------------------------------- |
+| [Famille de moteurs Log](/fr/reference/engines/table-engines/log-family/index) |
+| [TinyLog](/fr/reference/engines/table-engines/log-family/tinylog)              |
+| [StripeLog](/fr/reference/engines/table-engines/log-family/stripelog)          |
+| [Log](/fr/reference/engines/table-engines/log-family/log)                      |
 
 <div id="integration-engines">
   ### Moteurs d&#39;intégration
@@ -60,48 +66,64 @@ Moteurs de la famille :
 
 Moteurs permettant de communiquer avec d&#39;autres systèmes de stockage et de traitement de données.
 
-Moteurs de cette famille :
+Moteurs de la famille :
 
-| Moteurs d&#39;intégration                                                         |
-| --------------------------------------------------------------------------------- |
-| [ODBC](/fr/reference/engines/table-engines/integrations/odbc)                         |
-| [JDBC](/fr/reference/engines/table-engines/integrations/jdbc)                        |
-| [MySQL](/fr/reference/engines/table-engines/integrations/mysql)                      |
-| [MongoDB](/fr/reference/engines/table-engines/integrations/mongodb)                  |
-| [Redis](/fr/reference/engines/table-engines/integrations/redis)                      |
-| [HDFS](/fr/reference/engines/table-engines/integrations/hdfs)                        |
-| [S3](/fr/reference/engines/table-engines/integrations/s3)                            |
-| [Kafka](/fr/reference/engines/table-engines/integrations/kafka)                      |
-| [EmbeddedRocksDB](/fr/reference/engines/table-engines/integrations/embedded-rocksdb) |
-| [RabbitMQ](/fr/reference/engines/table-engines/integrations/rabbitmq)                |
-| [PostgreSQL](/fr/reference/engines/table-engines/integrations/postgresql)            |
-| [S3Queue](/fr/reference/engines/table-engines/integrations/s3queue)                  |
-| [TimeSeries](/fr/reference/engines/table-engines/integrations/time-series)           |
+| Moteurs d&#39;intégration                                                                       |
+| ----------------------------------------------------------------------------------------------- |
+| [Moteurs de table pour les intégrations](/fr/reference/engines/table-engines/integrations/index)   |
+| [ODBC](/fr/reference/engines/table-engines/integrations/odbc)                                      |
+| [JDBC](/fr/reference/engines/table-engines/integrations/jdbc)                                      |
+| [MySQL](/fr/reference/engines/table-engines/integrations/mysql)                                    |
+| [MongoDB](/fr/reference/engines/table-engines/integrations/mongodb)                                |
+| [Redis](/fr/reference/engines/table-engines/integrations/redis)                                    |
+| [HDFS](/fr/reference/engines/table-engines/integrations/hdfs)                                      |
+| [S3](/fr/reference/engines/table-engines/integrations/s3)                                          |
+| [Kafka](/fr/reference/engines/table-engines/integrations/kafka)                                    |
+| [EmbeddedRocksDB](/fr/reference/engines/table-engines/integrations/embedded-rocksdb)               |
+| [RabbitMQ](/fr/reference/engines/table-engines/integrations/rabbitmq)                              |
+| [PostgreSQL](/fr/reference/engines/table-engines/integrations/postgresql)                          |
+| [S3Queue](/fr/reference/engines/table-engines/integrations/s3queue)                                |
+| [TimeSeries](/fr/reference/engines/table-engines/integrations/time-series)                         |
+| [ArrowFlight](/fr/reference/engines/table-engines/integrations/arrowflight)                        |
+| [AzureQueue](/fr/reference/engines/table-engines/integrations/azure-queue)                         |
+| [AzureBlobStorage](/fr/reference/engines/table-engines/integrations/azureBlobStorage)              |
+| [DeltaLake](/fr/reference/engines/table-engines/integrations/deltalake)                            |
+| [ExternalDistributed](/fr/reference/engines/table-engines/integrations/ExternalDistributed)        |
+| [Hive](/fr/reference/engines/table-engines/integrations/hive)                                      |
+| [Hudi](/fr/reference/engines/table-engines/integrations/hudi)                                      |
+| [Iceberg](/fr/reference/engines/table-engines/integrations/iceberg)                                |
+| [MaterializedPostgreSQL](/fr/reference/engines/table-engines/integrations/materialized-postgresql) |
+| [NATS](/fr/reference/engines/table-engines/integrations/nats)                                      |
+| [Paimon](/fr/reference/engines/table-engines/integrations/paimon)                                  |
+| [SQLite](/fr/reference/engines/table-engines/integrations/sqlite)                                  |
+| [YTsaurus](/fr/reference/engines/table-engines/integrations/ytsaurus)                              |
 
 <div id="special-engines">
   ### Moteurs spéciaux
 </div>
 
-Moteurs de cette famille :
+Moteurs de la famille :
 
-| Moteurs spéciaux                                                        |
-| ----------------------------------------------------------------------- |
-| [Distributed](/fr/reference/engines/table-engines/special/distributed)     |
-| [Dictionary](/fr/reference/engines/table-engines/special/dictionary)       |
-| [Merge](/fr/reference/engines/table-engines/special/merge)                 |
-| [Executable](/fr/reference/engines/table-engines/special/executable)       |
-| [File](/fr/reference/engines/table-engines/special/file)                   |
-| [Null](/fr/reference/engines/table-engines/special/null)                   |
-| [Set](/fr/reference/engines/table-engines/special/set)                     |
-| [Join](/fr/reference/engines/table-engines/special/join)                   |
-| [URL](/fr/reference/engines/table-engines/special/url)                     |
-| [View](/fr/reference/engines/table-engines/special/view)                   |
-| [Memory](/fr/reference/engines/table-engines/special/memory)               |
-| [Buffer](/fr/reference/engines/table-engines/special/buffer)               |
-| [External Data](/fr/reference/engines/table-engines/special/external-data) |
-| [GenerateRandom](/fr/reference/engines/table-engines/special/generate)     |
-| [KeeperMap](/fr/reference/engines/table-engines/special/keepermap)         |
-| [FileLog](/fr/reference/engines/table-engines/special/filelog)             |
+| Moteurs spéciaux                                                            |
+| --------------------------------------------------------------------------- |
+| [Moteurs de table spéciaux](/fr/reference/engines/table-engines/special/index) |
+| [Alias](/fr/reference/engines/table-engines/special/alias)                     |
+| [Distributed](/fr/reference/engines/table-engines/special/distributed)         |
+| [Dictionary](/fr/reference/engines/table-engines/special/dictionary)           |
+| [Merge](/fr/reference/engines/table-engines/special/merge)                     |
+| [Executable](/fr/reference/engines/table-engines/special/executable)           |
+| [File](/fr/reference/engines/table-engines/special/file)                       |
+| [Null](/fr/reference/engines/table-engines/special/null)                       |
+| [Set](/fr/reference/engines/table-engines/special/set)                         |
+| [Join](/fr/reference/engines/table-engines/special/join)                       |
+| [URL](/fr/reference/engines/table-engines/special/url)                         |
+| [View](/fr/reference/engines/table-engines/special/view)                       |
+| [Memory](/fr/reference/engines/table-engines/special/memory)                   |
+| [Buffer](/fr/reference/engines/table-engines/special/buffer)                   |
+| [External Data](/fr/reference/engines/table-engines/special/external-data)     |
+| [GenerateRandom](/fr/reference/engines/table-engines/special/generate)         |
+| [KeeperMap](/fr/reference/engines/table-engines/special/keepermap)             |
+| [FileLog](/fr/reference/engines/table-engines/special/filelog)                 |
 
 <div id="table_engines-virtual_columns">
   ## Colonnes virtuelles

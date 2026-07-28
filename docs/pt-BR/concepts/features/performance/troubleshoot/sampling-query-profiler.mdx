@@ -58,9 +58,7 @@ A consulta de exemplo a seguir encontra os stack traces mais frequentes de uma c
 Em implantações autogerenciadas, para usar o profiler de consultas, siga as etapas abaixo:
 
 <Steps>
-  <Step>
-    ### Instale o ClickHouse com informações de depuração
-
+  <Step title="Instale o ClickHouse com informações de depuração" id="debug-info">
     Instale o pacote `clickhouse-common-static-dbg`:
 
     1. Siga as instruções na etapa [&quot;Configurar o repositório Debian&quot;](/pt-BR/get-started/setup/self-managed/debian-ubuntu#setup-the-debian-repository)
@@ -69,9 +67,7 @@ Em implantações autogerenciadas, para usar o profiler de consultas, siga as et
     4. Execute `clickhouse-client`. Os símbolos de depuração de `clickhouse-common-static-dbg` serão carregados automaticamente pelo servidor — você não precisa fazer nada de especial para habilitá-los
   </Step>
 
-  <Step>
-    ### Verifique a configuração do servidor
-
+  <Step title="Verifique a configuração do servidor" id="server-config">
     Certifique-se de que a seção [`trace_log`](/pt-BR/reference/settings/server-settings/settings#trace_log) do seu [arquivo de configuração do servidor](/pt-BR/concepts/features/configuration/server-config/configuration-files) esteja configurada. Ela vem habilitada por padrão:
 
     ```xml
@@ -97,9 +93,7 @@ Em implantações autogerenciadas, para usar o profiler de consultas, siga as et
     Após a reinicialização do servidor, o ClickHouse não limpa a tabela, e todos os endereços de memória virtual armazenados podem se tornar inválidos.
   </Step>
 
-  <Step>
-    ### Configure os temporizadores do profiler
-
+  <Step title="Configure os temporizadores do profiler" id="configure-profile-timers">
     Configure as definições [`query_profiler_cpu_time_period_ns`](/pt-BR/reference/settings/session-settings#query_profiler_cpu_time_period_ns) ou [`query_profiler_real_time_period_ns`](/pt-BR/reference/settings/session-settings#query_profiler_real_time_period_ns).
     Ambas as configurações podem ser usadas simultaneamente.
 
@@ -111,9 +105,7 @@ Em implantações autogerenciadas, para usar o profiler de consultas, siga as et
     Se você precisar perfilar cada consulta individualmente, use uma frequência de amostragem mais alta.
   </Step>
 
-  <Step>
-    ### Analise a tabela de sistema `trace_log`
-
+  <Step title={<>Analise a tabela de sistema <code>trace_log</code></>} id="analyze-trace-log-system-table">
     Para analisar a tabela de sistema `trace_log`, habilite as funções de introspecção com a configuração [`allow_introspection_functions`](/pt-BR/reference/settings/session-settings#allow_introspection_functions):
 
     ```sql

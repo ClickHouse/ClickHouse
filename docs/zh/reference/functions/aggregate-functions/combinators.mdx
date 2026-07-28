@@ -134,6 +134,108 @@ WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
 
 将用于表的聚合函数转换为用于数组的聚合函数，对数组中对应位置的元素进行聚合，并返回结果数组。例如，对于数组 `[1, 2]`、`[3, 4, 5]` 和 `[6, 7]`，`sumForEach` 会将对应位置的元素相加，并返回结果 `[10, 13, 5]`。
 
+<div id="-tuple">
+  ## -Tuple
+</div>
+
+`-Tuple` 后缀可以附加到任何聚合函数上。组合后的函数会为底层聚合函数的每个参数接收一个 `Tuple` 类型的参数；所有 Tuple 都必须包含相同数量的元素。聚合会在每个元素位置上独立进行，接收每个 `Tuple` 中对应位置的元素，并返回一个由结果组成的 `Tuple`。
+
+如果第一个输入 `Tuple` 具有显式的元素名称，这些名称会在结果中保留。
+
+能够自行处理 `NULL` 值的聚合函数 (`anyRespectNulls`、`anyLastRespectNulls`、`RESPECT NULLS` 修饰符) 不支持将 `Nullable(Tuple(...))` 类型用作参数；请改用 `Nullable` 元素。
+
+**语法**
+
+```sql
+<aggFunction>Tuple(tuple1[, tuple2, ...])
+```
+
+**参数**
+
+* `tuple1[, tuple2, ...]` — `Tuple` 类型的列，每个参数对应底层聚合函数的一个参数，且所有列的元素数量必须相同。每个元素都必须是底层聚合函数在对应参数位置支持的类型。
+
+**返回值**
+
+* 一个 `Tuple`，其中包含对每个元素分别独立应用聚合函数后得到的结果。
+
+类型：`Tuple(aggFunction(element1), aggFunction(element2), ...)`。
+
+**示例**
+
+查询：
+
+```sql
+SELECT sumTuple(t) FROM
+(
+    SELECT tuple(toInt64(1), toFloat64(2.5)) AS t
+    UNION ALL
+    SELECT tuple(toInt64(3), toFloat64(4.5))
+    UNION ALL
+    SELECT tuple(toInt64(5), toFloat64(6.5))
+);
+```
+
+结果：
+
+```text
+┌─sumTuple(t)─┐
+│ (9,13.5)    │
+└─────────────┘
+```
+
+与 `GROUP BY` 配合使用：
+
+```sql
+SELECT
+    k,
+    avgTuple(t)
+FROM
+(
+    SELECT
+        number % 2 AS k,
+        tuple(toInt64(number), toFloat64(number) * 1.5) AS t
+    FROM numbers(6)
+)
+GROUP BY k
+ORDER BY k;
+```
+
+```text
+┌─k─┬─avgTuple(t)─┐
+│ 0 │ (2,3)       │
+│ 1 │ (3,4.5)     │
+└───┴─────────────┘
+```
+
+用于多参数聚合函数时：每个 `Tuple` 参数都会为底层函数提供一个参数，各元素则按位置一一配对：
+
+```text
+corrTuple((a1, a2), (b1, b2)) = (corr(a1, b1), corr(a2, b2))
+```
+
+```sql
+SELECT corrTuple((a1, a2), (b1, b2))
+FROM
+(
+    SELECT
+        toFloat64(number) AS a1,
+        toFloat64(number * 2) AS a2,
+        toFloat64(100 - number) AS b1,
+        toFloat64(number * 3) AS b2
+    FROM numbers(10)
+);
+```
+
+```text
+┌─corrTuple((a1, a2), (b1, b2))─┐
+│ (-1,1)                        │
+└───────────────────────────────┘
+```
+
+`a1` 和 `b1` 呈负相关，而 `a2` 和 `b2` 成正比，因此结果为 `(-1, 1)`。
+
+`-Tuple` 可以与其他组合器 (如 `-If`) 结合使用。例如：`sumTupleIf(tuple_column, cond)`。
+
 <div id="-distinct">
   ## -Distinct
 </div>

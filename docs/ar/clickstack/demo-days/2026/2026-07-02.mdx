@@ -1,0 +1,178 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-07-02
+title: 'أيام العروض التوضيحية - 2026-07-02'
+sidebarTitle: '2026-07-02'
+description: 'أيام العروض التوضيحية في ClickStack بتاريخ 2026-07-02'
+doc_type: 'guide'
+keywords: ['ClickStack', 'أيام العروض التوضيحية']
+---
+
+<div id="notebook-citations">
+  ## استشهادات دفاتر الملاحظات
+</div>
+
+*عرض توضيحي من [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/ns5aVkpgTQg" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+يمكن الآن الربط مباشرةً ببطاقات دفاتر الملاحظات (الخلايا)، بما في ذلك عبر الفروع. في Markdown المخصص، يمكنك استخدام رابط مطلق أو رابط hash نسبي، ما يجعل توجيه شخص ما إلى الدليل الدقيق وراء استنتاجٍ ما أسهل بكثير.
+
+أما التغيير الأكبر فهو على جانب agent. فالملخصات المُنشأة في دفاتر الملاحظات تتضمن الآن استشهادات بالبطاقات التي تستند إليها، بحيث يمكن للقراء الانتقال مباشرةً إلى البيانات الأساسية بدلًا من الاكتفاء بالملخص على سبيل الثقة.
+
+كما غيّرنا أيضًا طريقة فتح دفاتر الملاحظات الحالية. إذ تكون بطاقة الملخص موسعة افتراضيًا بدلًا من أن تكون مطوية، وهذا غالبًا ما تريده عند العودة إلى إحداها.
+
+<div id="otel-metrics-table-primary-key-optimization">
+  ## تحسين المفتاح الأساسي لجدول مقاييس OTel
+</div>
+
+*عرض توضيحي من [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/GIwNxRJGQKg" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+شرح متعمق لكيفية التحقق من المفاتيح الأساسية في جداول مقاييس OTel وتقليصها. والمقياس المفيد هنا هو عدد بايتات المفتاح الأساسي لكل granule: أي الحجم الإجمالي للمفتاح الأساسي مقسومًا على عدد الـ granules. وهذا يراعي تلقائيًا أن الجداول الأكبر تحتوي على عدد أكبر من الـ granules، ويمنحنا مقارنة عادلة.
+
+بلغ المخطط الأصلي نحو 148 بايتًا لكل granule. أما المخطط الجديد فأصبح أقرب إلى 17 بايتًا، أي تقليصًا بنحو 9 أضعاف في حجم المفتاح الأساسي، مع انخفاض مماثل تقريبًا في استخدام الذاكرة في بيئة الإنتاج.
+
+تغييرات المخطط صغيرة نسبيًا. يستخدم `MetricName` الآن `LowCardinality`، وهذا مناسب ما لم تكن تتعامل مع عدد هائل من أسماء المقاييس المميزة. وحتى في هذه الحالة، لا يفترض أن يصبح ذلك مصدر قلق إلا في الحالات القصوى. كما انتقلت الطوابع الزمنية من `DateTime64` بدقة نانوثانية إلى `DateTime` عادي بدقة ثانية، وهو أكثر من كافٍ للمقاييس. ولا يزال بإمكانك الاحتفاظ بدقة النانوثانية عبر تعديل المخطط بنفسك.
+
+أضفنا أيضًا فهارس min/max صريحة للوقت، واستبدلنا خريطة السمات الكاملة في المفتاح الأساسي بقيمة hash. وقد طُبِّقت التغييرات نفسها على جميع مخططات جداول المقاييس، كما نعمل أيضًا على إدراجها في مشروع OTel Collector الأصلي.
+
+**طلبات السحب ذات الصلة:** [#2545](https://github.com/hyperdxio/hyperdx/pull/2545) إصلاح: تغيير PK للمقاييس لتحسين استخدام الذاكرة
+
+<div id="trend-and-spark-lines-behind-numbers">
+  ## خطوط الاتجاه/السباركلاين خلف الأرقام
+</div>
+
+*عرض توضيحي بواسطة [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/4XwOkyNqDEY" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+يمكن الآن لبطاقات الأرقام عرض خط اتجاه أو مخطط مساحي خلف القيمة. كانت هذه ميزة شائعة في Grafana منذ فترة طويلة، وقد وصلت الآن إلى ClickStack.
+
+يمكنك تفعيلها من إعدادات العرض الخاصة بالبطاقة. يكون الإعداد الافتراضي بدون مخطط في الخلفية، مع توفر الخط والمساحة كخيارين آخرين. ولا تتطلب سوى قدر بسيط جدًا من الإعداد، لكنها تجعل لوحات المعلومات تبدو أكثر اكتمالًا بشكل ملحوظ.
+
+في الوقت الحالي، لا تعمل المخططات الخلفية إلا مع بطاقات الأرقام التعريفية، لذا لا يمكنك بعد استخدام custom SQL. ونحن ندرس ذلك كخطوة لاحقة بعد الاستماع إلى المستخدمين الذين يريدون تحكمًا أكبر في ما يعرضه المخطط.
+
+**طلبات السحب ذات الصلة:** [#2489](https://github.com/hyperdxio/hyperdx/pull/2489) feat(dashboards): background trend sparkline on number tiles, [#2501](https://github.com/hyperdxio/hyperdx/pull/2501) fix(dashboards): match the number-tile background sparkline to the displayed value, [#2520](https://github.com/hyperdxio/hyperdx/pull/2520) refactor(dashboards): extract shared Sparkline primitive from number tile
+
+<div id="table-visual-improvements">
+  ## تحسينات مرئية على الجداول
+</div>
+
+*عرض توضيحي بواسطة [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/yl7j7E9OGk4" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+حصلت بطاقات الجداول على بعض التحسينات التي تجعلها أسهل قراءةً، وجاء كل منها استجابةً لملاحظات محددة من المستخدمين. يمكنك الآن تفعيل خلفيات الصفوف المتناوبة من إعدادات العرض، مما يجعل تصفح الجداول العريضة أو الكثيفة أسهل بكثير. وهناك أيضًا فاصل أوضح وأنظف بين صف العناوين والبيانات التي تليه.
+
+يمكن الآن تخصيص ألوان للأعمدة باستخدام خيارات التنسيق نفسها المتاحة في بطاقات الأرقام. اضبط لونًا افتراضيًا واحدًا، أو أضف عتبات تُقيَّم على مستوى كل خلية، بحيث تظهر الأخطاء باللون الأحمر بينما تبقى القيم العادية باللون الأخضر.
+
+قد تبدو هذه تغييرات صغيرة، لكن كل واحدة منها جاءت من تعليقات حقيقية من مستخدمينا على شاكلة: &quot;أتمنى لو كان هذا الجدول يدعم ذلك&quot;.
+
+**طلبات السحب ذات الصلة:** [#2519](https://github.com/hyperdxio/hyperdx/pull/2519) feat(dashboard): table tile header separator and optional alternate row background, [#2517](https://github.com/hyperdxio/hyperdx/pull/2517) feat(dashboards): per-column color on table tiles
+
+<div id="grafana-plugin-improvements">
+  ## تحسينات إضافة Grafana
+</div>
+
+*عرض توضيحي بواسطة [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/doFNUMZotJU" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+نظرة سريعة على ما سيصل قريبًا إلى إضافة ClickStack لـ Grafana.
+
+أصبح إعداد مصدر البيانات يدعم الآن وضع الجدول الواحد إلى جانب الإعداد الحالي متعدد قواعد البيانات. وجّهه إلى جدول واحد، مثل سجلات بيئة الإنتاج، وسينتقل محرر الاستعلامات إلى أداة إنشاء مدمجة مصممة للاستكشاف. ستحصل على عوامل تصفية سريعة لحقول مثل اسم الخدمة، مع التصفية بالتضمين والاستبعاد، وسيظل SQL متاحًا عندما تحتاج إليه.
+
+ونوفّر أيضًا لوحات معلومات جاهزة لسجلات OTel وتتبعاته، باستخدام نمط drill-down نفسه الذي اعتاده المستخدمون. تتضمن لوحة معلومات السجلات نظرة عامة لكل خدمة، ومخططات للحجم، وتفاصيل السجلات. ويغطي قسم Explore للتتبعات عروض الخدمات، وخرائط latency الحرارية، وتقسيم العمليات. وهناك أيضًا لوحة معلومات موحدة للخدمات تجمع بين السجلات والتتبعات، مجمعة حسب اسم span، بحيث يمكنك فحص خدمة واحدة من دون التنقل بين الأدوات.
+
+تعمل جميع لوحات المعلومات هذه مع المخطط الافتراضي مباشرةً من دون أي إعداد إضافي. ويمكن للمستخدمين الجدد البدء فورًا، ثم استخدامها كنقطة انطلاق لإنشاء لوحات المعلومات الخاصة بهم.
+
+توجد أيضًا أداتا إنشاء جديدتان بأسلوب المعالج. تتيح لك أداة إنشاء المتغيرات اختيار قيم الأعمدة بدلًا من كتابة custom SQL. على سبيل المثال، يمكنك إنشاء متغير من أسماء كبسولات ومعاينة القيم التي يعيدها.
+
+وتنشئ أداة إنشاء التعليقات التوضيحية تعليقات توضيحية من استعلام لاكتشاف التغييرات على حقل تختاره. وجّهها إلى سمة الإصدار الخاصة بخدمة ما، ويمكنها إضافة وسم نشر في كل مرة تتغير فيها تلك القيمة، من دون أن تضطر إلى كتابة SQL بنفسك.
+
+<div id="sidebar-and-span-view-improvements">
+  ## تحسينات الشريط الجانبي وعرض span
+</div>
+
+*عرض توضيحي بواسطة [@karl-power](https://github.com/karl-power)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/vbeufXNyBkw" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+حزمة كبيرة من التحسينات على التنقل واستعراض التتبعات.
+
+يمكن الآن تثبيت الشريط الجانبي مفتوحًا أثناء العمل من صفحة Search، بحيث يمكنك التمرير وتحديد صفوف أخرى من دون إغلاقه. كما يحتفظ التنقل بسياق علامة التبويب الحالية. ويستخدم زر الرجوع مسارًا تنقليًا لإعادتك إلى المكان الذي جئت منه بالضبط بدلًا من مجرد إغلاق اللوحة.
+
+توجد أيضًا نافذة منبثقة لاختصارات لوحة المفاتيح، بحيث يسهل العثور على الاختصارات المتاحة. كما تعرض السجلات المرتبطة بتتبع شارة تنقلك إليه مباشرةً.
+
+أما عرض span فقد نال الترقية الأبرز. تُلوَّن spans حسب اسم الخدمة، مع التبديل بين ألوان مختلفة عند تغيّر الخدمات، كما تجعل الخريطة المصغّرة الجديدة قراءة التتبعات الكبيرة أسهل بكثير من مجرد جدار من الأشرطة الرمادية. يمكنك السحب عبر نطاق زمني للتكبير، وإعادة ضبط العرض بنقرة واحدة. ويتيح لك أيضًا مكدس محفوظات جديد التنقل بين التتبعات والعودة إلى المكان الذي كنت فيه.
+
+تتضمن spans المحددة عناصر تحكم أفضل للتوسيع والطي، مما يوفّر عليك إغلاق كل عنصر فرعي على حدة. وقد دمجنا أيضًا إصلاحًا ساهم به المجتمع يمنح spans القصيرة جدًا حدًا أدنى لعرض التصيير. فعلى سبيل المثال، يظل span الذي يستغرق بضع ميكروثوانٍ مرئيًا على المخطط الزمني من دون أن تضطر إلى التكبير إلى أقصى حد.
+
+**طلبات السحب ذات الصلة:** [#2552](https://github.com/hyperdxio/hyperdx/pull/2552) feat: add trace timeline minimap
+
+<div id="metrics-queries-dashboard-evals-and-better-alert-error-reporting-in-mcp">
+  ## استعلامات المقاييس، وتقييمات لوحات المعلومات، وتحسين تقارير أخطاء التنبيهات في MCP
+</div>
+
+*عرض توضيحي من [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/yjceqgveZr8" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+وصلت ثلاثة تحسينات إلى خادم MCP معًا في هذا الإصدار.
+
+يمكن لـ MCP الآن تشغيل استعلامات المقاييس مباشرةً، بما في ذلك من دفتر الملاحظات، من دون المرور عبر لوحة معلومات لمجرد الوصول إلى البيانات الأساسية.
+
+كما أضفنا تقييمًا شاملًا لبناء لوحات المعلومات. وهو ينجح حاليًا في نحو 75% من الحالات، ونواصل بثبات إضافة حالات مُشوِّشة لتقليل فرص التحايل عليه. وعندما ينشئ MCP لوحة معلومات معطّلة في الاستخدام الفعلي، يمكن إدراج هذا الإخفاق ضمن مجموعة التقييم. وبمرور الوقت، يُفترض أن يلتقط ذلك مشكلات مثل أن تُنتج مصادر Raw SQL استعلامًا غير صحيح قبل أن تتحول إلى إخفاقات متكررة.
+
+أصبحت أخطاء الأدوات الآن تُصنَّف حسب الفئة بدلًا من أن تُدرج كلها ضمن فئة عامة واحدة. ويُعالَج استعلام SQL غير صحيح من مستخدم بشكل منفصل عن الإخفاق الداخلي، مثل مهلة قاعدة البيانات. وهذا يمنحنا التمييز الذي نحتاج إليه لبناء تنبيهات أكثر فائدة حول سلامة MCP.
+
+**طلبات السحب ذات الصلة:** [#2437](https://github.com/hyperdxio/hyperdx/pull/2437) feat(mcp): دعم مصدر المقاييس من الدرجة الأولى, [#2571](https://github.com/hyperdxio/hyperdx/pull/2571) feat(hdx-eval): إضافة سيناريو تقييم لبناء لوحة معلومات, [#2570](https://github.com/hyperdxio/hyperdx/pull/2570) feat(mcp): تصنيف أخطاء أدوات MCP حسب الفئة لأغراض التنبيه
+
+<div id="otel-collector-batch-processor-updates">
+  ## تحديثات معالج الدُفعات في OTel collector
+</div>
+
+*عرض توضيحي من [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/rlSm_9ivsQ4" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ينقل OpenTelemetry تجميع الدُفعات من معالج الدُفعات المستقل إلى إعدادات المُصدِّر. وكان ClickStack collector يدعم النهجين بالفعل، لذا لم تكن هناك أي شيفرة تحتاج إلى تغيير. وفي النهاية، اقتصر الأمر على تحديث في التوثيق.
+
+في النموذج القديم، كان معالج دُفعات مخصّص يوجد داخل المسار ويخزّن الصفوف مؤقتًا قبل تمريرها إلى المُصدِّر. وكانت له إعداداته الخاصة لحجم الدُفعة، والحد الأقصى لحجم الدُفعة، والمهلة.
+
+أما النموذج الذي يعمل OpenTelemetry على توحيده، فيُبقي مُجمِّع الدُفعات إلى جانب المُصدِّر بدلًا من وضعه ضمن سلسلة المعالجات. وتظل معظم المفاهيم نفسها، بما في ذلك الحدّان الأدنى والأقصى لأحجام الدُفعات وحجم قائمة الانتظار. كما تدعم الإعدادات المعتمدة على المُصدِّر أيضًا سلوك الحظر، والحدود المستندة إلى البايتات، والاستمرارية، وهي أمور لم تكن متاحة في معالج الدُفعات القديم.
+
+توصي الوثائق الآن بالإعدادات المعتمدة على المُصدِّر وتشرح كيفية ترحيل إعدادات معالج الدُفعات الحالية. كما تقترح حدًا أدنى قدره 5,000 صف مع مهلة قصيرة بوصفه قيمة افتراضية مناسبة لمعظم عمليات النشر. ولا يزال سوء إعدادات تجميع الدُفعات أحد أكثر الأسباب شيوعًا وراء تجربة أولية سيئة مع ClickHouse.
+
+<div id="surrounding-context-for-arbitrary-attributes">
+  ## السياق المحيط للسمات المختلفة
+</div>
+
+*عرض توضيحي من [@MikeShi42](https://github.com/MikeShi42)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BZTG8TTTyoA" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+يتيح لك السياق المحيط فتح سطر سجل ومعرفة ما الذي كان يحدث حوله. افتراضيًا، يُجمَّع هذا السياق حسب الخدمة أو الكبسولة أو العقدة. يعمل ذلك جيدًا في معظم عمليات النشر التي تستخدم مخطط OTel، لكن من يستخدمون مخططًا مخصصًا لم تكن لديهم طريقة سهلة لبناء هذا العرض استنادًا إلى سماتهم الخاصة.
+
+يمكنك الآن استخدام أي سمة في سطر السجل لتحديد عرض السياق، سواء أكانت من مخطط OTel أم من مخطط مخصص. ولا تزال خيارات الخدمة والكبسولة والعقدة المألوفة متاحة، لكن يمكنك أيضًا بسهولة التجميع حسب إصدار SDK لبيانات القياس عن بُعد أو أي حقل آخر في سطر السجل. كما يمكنك مسح التحديد في أي وقت والبدء من جديد.
+
+**طلبات السحب ذات الصلة:** [#2558](https://github.com/hyperdxio/hyperdx/pull/2558) إصلاح: دعم تعبير اسم الخدمة وعوامل تصفية السمات السريعة في السياق المحيط

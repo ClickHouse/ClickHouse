@@ -1,0 +1,86 @@
+{
+  "groups": [
+    {
+      "group": "开始使用",
+      "pages": [
+        "zh/products/managed-postgres/overview",
+        "zh/products/managed-postgres/quickstart"
+      ]
+    },
+    {
+      "group": "功能",
+      "pages": [
+        "zh/products/managed-postgres/connection",
+        "zh/products/managed-postgres/settings",
+        "zh/products/managed-postgres/scaling",
+        "zh/products/managed-postgres/security",
+        "zh/products/managed-postgres/rbac",
+        "zh/products/managed-postgres/local-development",
+        "zh/products/managed-postgres/high-availability",
+        "zh/products/managed-postgres/read-replicas",
+        "zh/products/managed-postgres/backup-and-restore",
+        "zh/products/managed-postgres/extensions",
+        {
+          "group": "pg_clickhouse",
+          "pages": [
+            "zh/products/managed-postgres/extensions/pg_clickhouse/reference",
+            "zh/products/managed-postgres/extensions/pg_clickhouse/tutorial"
+          ],
+          "root": "zh/products/managed-postgres/extensions/pg_clickhouse/introduction"
+        },
+        "zh/products/managed-postgres/upgrades",
+        "zh/products/managed-postgres/openapi",
+        "zh/products/managed-postgres/terraform"
+      ]
+    },
+    {
+      "group": "基准测试",
+      "pages": [
+        "zh/products/managed-postgres/benchmarks"
+      ]
+    },
+    {
+      "group": "定价",
+      "pages": [
+        "zh/products/managed-postgres/pricing"
+      ]
+    },
+    {
+      "group": "ClickHouse 集成",
+      "pages": [
+        "zh/products/managed-postgres/clickhouse-integration"
+      ]
+    },
+    {
+      "group": "迁移",
+      "pages": [
+        "zh/products/managed-postgres/migrations/overview",
+        "zh/products/managed-postgres/migrations/pg_dump-pg_restore",
+        "zh/products/managed-postgres/migrations/logical-replication",
+        "zh/products/managed-postgres/migrations/peerdb",
+        "zh/products/managed-postgres/migrations/clickpipes",
+        "zh/products/managed-postgres/migrations/data-validation",
+        "zh/products/managed-postgres/migrations/clickhouse-cloud",
+        "zh/products/managed-postgres/migrations/faq"
+      ]
+    },
+    {
+      "group": "监控",
+      "pages": [
+        "zh/products/managed-postgres/monitoring/overview",
+        "zh/products/managed-postgres/monitoring/dashboard",
+        "zh/products/managed-postgres/monitoring/metrics",
+        "zh/products/managed-postgres/monitoring/prometheus",
+        "zh/products/managed-postgres/monitoring/query-insights"
+      ]
+    },
+    {
+      "group": "常见问题",
+      "pages": [
+        "zh/products/managed-postgres/faq"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-postgres.svg",
+  "item": "Managed Postgres"
+}
