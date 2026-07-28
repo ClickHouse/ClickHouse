@@ -18,8 +18,10 @@
 #include <Core/Settings.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <string>
 
@@ -272,12 +274,27 @@ const SettingFieldTimezone & Settings::operator[](SettingsTimezone) const
 /// Exceptions.
 ///
 /// The build uses `-fignore-exceptions`: `throw`, `try` and `catch` still compile, but no landing
-/// pads or unwind tables are emitted, so nothing can be caught. That is sound here because an
-/// exception can only mean a bug or a resource limit - a syntax error is reported by
-/// `tryParseQuery` returning null, and `src/Parsers` contains no `catch` at all, which a style
-/// check enforces. Defining `__cxa_throw` here keeps libc++abi's exception machinery out of the
-/// bundle entirely; the exception object is constructed and then we stop.
+/// pads or unwind tables are emitted, so nothing can be caught. Defining `__cxa_throw` here keeps
+/// libc++abi's exception machinery out of the bundle entirely; the exception object is constructed
+/// and then we stop.
+///
+/// A syntax error is not an exception - `tryParseQuery` reports it by returning null - but an
+/// exception is not confined to bugs either: `IParser::Pos` throws `TOO_DEEP_RECURSION` and
+/// `TOO_SLOW` when a query exceeds the depth or backtracking limit, and a few parsers throw on
+/// input they have already committed to, so ordinary input can reach this. There is nothing to
+/// unwind to, so the module traps - but it records the message first, and a trap leaves linear
+/// memory intact, so the embedder can read `ch_error_data`/`ch_error_size` and then instantiate
+/// the module again. See `utils/wasm-parser/README.md`.
 /// ---------------------------------------------------------------------------------------------
+
+namespace
+{
+
+/// Written from `__cxa_throw`, which must not allocate: the throw may be `std::bad_alloc`.
+char last_error[1024];
+uint32_t last_error_size = 0;
+
+}
 
 extern "C"
 {
@@ -292,12 +309,34 @@ void __cxa_free_exception(void *) noexcept
 {
 }
 
+const char * ch_error_data()
+{
+    return last_error;
+}
+
+uint32_t ch_error_size()
+{
+    return last_error_size;
+}
+
 [[noreturn]] void __cxa_throw(void * thrown, void *, void (*)(void *))
 {
     /// `DB::Exception` derives from `Poco::Exception`, whose `what()` is the message.
     const auto * as_std_exception = static_cast<const std::exception *>(static_cast<const Poco::Exception *>(thrown));
-    std::fprintf(stderr, "ClickHouse parser: unrecoverable error: %s\n", as_std_exception->what());
-    std::abort();
+    const char * message = as_std_exception->what();
+
+    size_t length = std::strlen(message);
+    if (length > sizeof(last_error) - 1)
+        length = sizeof(last_error) - 1;
+    std::memcpy(last_error, message, length);
+    last_error[length] = 0;
+    last_error_size = static_cast<uint32_t>(length);
+
+    std::fprintf(stderr, "ClickHouse parser: unrecoverable error: %s\n", message);
+
+    /// `__builtin_trap` rather than `std::abort`: a trap returns control to the embedder with the
+    /// instance's memory still readable, while `abort` may end the WASI process instead.
+    __builtin_trap();
 }
 
 }

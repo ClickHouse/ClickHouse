@@ -7,7 +7,8 @@
 #   curl -sL https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-33/wasi-sdk-33.0-$(uname -m)-linux.tar.gz | tar xz -C tmp
 #
 # The result exports a small C interface (see wasm_parser.cpp) and runs on any engine - it needs
-# no flags and no exception-handling proposal. Test it with:
+# no flags and no exception-handling proposal, at the cost of trapping rather than returning an
+# error when the parser throws (see README.md). Test it with:
 #   node utils/wasm-parser/test.mjs <output-directory>/parser.wasm
 
 set -euo pipefail
@@ -177,6 +178,7 @@ echo "Linking..."
     -Wl,--no-entry -mexec-model=reactor -Wl,--strip-all \
     -Wl,--export=ch_format,--export=ch_alloc,--export=ch_free \
     -Wl,--export=ch_result_data,--export=ch_result_size \
+    -Wl,--export=ch_error_data,--export=ch_error_size \
     "$OUT"/obj/*.o -lwasi-emulated-signal -lwasi-emulated-mman \
     -o "$OUT/parser.wasm"
 

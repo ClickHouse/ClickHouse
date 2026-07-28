@@ -22,12 +22,26 @@ The module is a WASI reactor and exports a C interface (see `wasm_parser.cpp`):
 | `ch_alloc(size)` / `ch_free(ptr)` | allocate a buffer to write the query into |
 | `ch_format(ptr, size, one_line)` | parse and format; 1 = ok, 0 = parse error |
 | `ch_result_data()` / `ch_result_size()` | the formatted query, or the error message |
+| `ch_error_data()` / `ch_error_size()` | the message of the exception that made the module trap |
 
 It runs on any engine: no flags, and in particular no WebAssembly exception-handling proposal.
-The build uses `-fignore-exceptions`, which is sound because a syntax error is not an exception -
-`tryParseQuery` returns null - and `src/Parsers` contains no `catch` at all, which a style check
-enforces. An exception can therefore only mean a bug or a resource limit, and there is nothing to
-unwind to.
+The build uses `-fignore-exceptions`: nothing can be caught, and `src/Parsers` contains no `catch`
+at all, which a style check enforces.
+
+A syntax error is not an exception - `tryParseQuery` returns null and `ch_format` returns 0 - but
+an exception is not confined to bugs either. `IParser::Pos` throws `TOO_DEEP_RECURSION` and
+`TOO_SLOW` when a query exceeds the depth or backtracking limit that `ch_format` passes, and a few
+parsers throw on input they have already committed to, so ordinary input can reach a `throw`. There
+is nothing to unwind to, so `__cxa_throw` records the message and traps. A trap returns control to
+the embedder and leaves linear memory intact, so the contract for a caller is:
+
+* if the call traps, read `ch_error_data`/`ch_error_size` for the message, then throw the instance
+  away and instantiate the module again - the module is compiled once and instantiating is cheap,
+  but the allocator was interrupted mid-operation, so the instance must not be reused.
+
+Making those queries return an error instead of trapping needs real unwinding, i.e. building with
+`-fwasm-exceptions` and catching in `ch_format`. That costs bundle size and requires the engine to
+implement the exception-handling proposal, which is why this build does not do it.
 
 ## What it costs
 

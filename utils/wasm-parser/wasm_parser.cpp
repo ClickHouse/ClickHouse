@@ -48,9 +48,10 @@ void ch_free(uint8_t * ptr)
 
 int ch_format(const char * query, uint32_t size, int one_line)
 {
-    /// `tryParseQuery` reports a syntax error by returning null and filling in the message; it does
-    /// not throw, and nothing in `src/Parsers` catches. So there is nothing to catch here either,
-    /// which is what lets this build with `-fno-exceptions`.
+    /// `tryParseQuery` reports a syntax error by returning null and filling in the message, and
+    /// nothing in `src/Parsers` catches, so there is nothing to catch here either - which is what
+    /// lets this build without exception support. A parser that does throw anyway (the depth and
+    /// backtracking limits below, for instance) traps the module; see `wasm_runtime.cpp`.
     std::string error;
     const char * end = query + size;
     DB::ParserQuery parser(end);
