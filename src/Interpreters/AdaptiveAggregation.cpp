@@ -62,6 +62,12 @@ void Aggregator::publishStagedChunk(
 
 void AdaptiveAggregationSession::StagedBacklog::publish(const StagedChunkPtr & chunk)
 {
+    undrained_records.fetch_add(chunk->keys.size(), std::memory_order_relaxed);
+    registerChunk(chunk);
+}
+
+void AdaptiveAggregationSession::StagedBacklog::registerChunk(const StagedChunkPtr & chunk)
+{
     std::shared_lock registry_lock(registry_mutex);
     for (size_t b = 0; b < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++b)
     {
@@ -257,8 +263,6 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
         batch_records += mini->keys.size();
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSealedChunks);
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedRecordsMerged, batch_records - keys.size());
-    /// The merged-away records will never be drained: the counter must not keep phantoms.
-    adaptive.session->undrained_records.fetch_sub(batch_records - keys.size(), std::memory_order_relaxed);
 
     LOG_TRACE(
         log,

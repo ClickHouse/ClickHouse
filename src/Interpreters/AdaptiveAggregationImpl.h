@@ -159,8 +159,14 @@ struct AdaptiveAggregationSession
     class StagedBacklog
     {
     public:
-        /// Registers an immutable chunk with every bucket holding a non-empty slice.
+        /// Registers an immutable chunk with every bucket holding a non-empty slice and counts
+        /// its records as outstanding. Only finalized chunks reach this point, so publication
+        /// increments, draining decrements, and nothing needs a compensating adjustment.
         void publish(const StagedChunkPtr & chunk);
+
+        /// Puts a chunk a pressure sweep spared back on the buckets for the merge-time drain.
+        /// Its records are still outstanding, so only the registration is repeated.
+        void requeue(const StagedChunkPtr & chunk) { registerChunk(chunk); }
 
         /// Claims every enqueued chunk and drops the per-bucket registrations at once: each
         /// chunk is then owned by the returned list alone, so it frees the moment its drain
@@ -176,7 +182,14 @@ struct AdaptiveAggregationSession
         /// exactly that lifetime.
         const std::vector<StagedChunkPtr> & forMergeBucket(size_t bucket) const { return buckets[bucket].backlog; }
 
+        /// Drains report their actual progress, so a cancelled drain does not discount records
+        /// it never touched. Read for logging at the finish, after every producer flushed.
+        void recordDrained(size_t records) { undrained_records.fetch_sub(records, std::memory_order_relaxed); }
+        size_t undrainedRecords() const { return undrained_records.load(std::memory_order_relaxed); }
+
     private:
+        void registerChunk(const StagedChunkPtr & chunk);
+
         struct Bucket
         {
             /// Guards the backlog list against concurrent appends, and against the swap-out
@@ -194,6 +207,8 @@ struct AdaptiveAggregationSession
         /// double-counting drain at merge time. Publishers share the lock (per-bucket mutexes
         /// still order their pushes); only a collecting sweep takes it exclusively.
         SharedMutex registry_mutex;
+
+        std::atomic<size_t> undrained_records{0};
     };
 
     StagedBacklog backlog;
@@ -218,11 +233,6 @@ struct AdaptiveAggregationSession
     std::atomic<bool> cancelled{false};
     std::once_flag init_flag;
     std::atomic<bool> initialized{false};
-
-    /// Records currently enqueued and not yet drained: publishes add, drains subtract their
-    /// actual progress, and the seal subtracts what its deduplication merges away. Read for
-    /// logging at the finish, after every producer flushed.
-    std::atomic<size_t> undrained_records{0};
 
     /// The thaw sampler (see the tuning constants in `Aggregator.cpp`). At publish the threads
     /// fold a sparse sample of their staged record hashes in here; repeats of a key collapse

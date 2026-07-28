@@ -1302,7 +1302,7 @@ void AggregatingTransform::initGenerate()
         LOG_TRACE(
             log,
             "Adaptive aggregation: {} delayed records queued for the merge-time drain",
-            adaptive_context->session->undrained_records.load(std::memory_order_relaxed));
+            adaptive_context->session->backlog.undrainedRecords());
 
     /// In the case of two different aggregators existing simultaneously due to a mixed pipeline of aggregate projections,
     /// it is necessary to check whether any of the aggregators contains temporary data.

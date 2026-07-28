@@ -773,8 +773,6 @@ void NO_INLINE Aggregator::publishDelayedRecords(
     adaptive.miss_key_sizes.clear();
     adaptive.miss_multiplicities.clear();
 
-    shared.undrained_records.fetch_add(keys.size(), std::memory_order_relaxed);
-
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedRecords, total);
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedRecordsMerged, total - keys.size());
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedBytes, keys.key_bytes.size());
@@ -913,7 +911,7 @@ void Aggregator::drainAdaptiveBucketForMerge(
         });
 
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationDrainedRecords, drained);
-    shared.undrained_records.fetch_sub(drained, std::memory_order_relaxed);
+    shared.backlog.recordDrained(drained);
 }
 
 template <AdaptiveKeyStorage key_storage, typename Method>
@@ -1175,10 +1173,10 @@ void Aggregator::drainStagedChunksEarly(AdaptiveAggregationSession & shared, Ada
     /// Chunks the watermark spared go back to the backlogs for the merge-time drain.
     for (auto & chunk : chunks)
         if (chunk)
-            shared.backlog.publish(chunk);
+            shared.backlog.requeue(chunk);
 
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureDrainedRecords, drained_records);
-    shared.undrained_records.fetch_sub(drained_records, std::memory_order_relaxed);
+    shared.backlog.recordDrained(drained_records);
     shared.early_drain_started.store(true, std::memory_order_relaxed);
     LOG_TRACE(log, "Adaptive aggregation: pressure sweep drained {} staged records early", drained_records);
 
