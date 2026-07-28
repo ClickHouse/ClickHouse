@@ -107,9 +107,9 @@ Cambia entre los modos **Highlighted** y **All Events** para ajustar el nivel de
   ### De la sesión a la traza
 </div>
 
-Al seleccionar una solicitud de red o un error en la línea de tiempo de la sesión, puedes ir a la pestaña **Trace** para seguir la solicitud a través de tus servicios de backend y ver los logs, spans y consultas a la base de datos que desencadenó esa interacción del usuario.
+Al seleccionar una solicitud de red o un error en la línea de tiempo de la sesión, puedes ir a la pestaña **Traza** para seguir la solicitud a través de tus servicios de backend y ver los logs, spans y consultas a la base de datos que desencadenó esa interacción del usuario.
 
-Esto funciona porque la configuración `tracePropagationTargets` vincula los spans del navegador con los spans del servidor mediante el encabezado `traceparent`, creando una traza distribuida conectada desde el clic del usuario hasta la base de datos. Para ver un recorrido detallado de cómo funciona esto en la práctica, incluida la instrumentación tanto del frontend como del backend, consulta [Instrumenting your NextJS application with OpenTelemetry and ClickStack](https://clickhouse.com/blog/instrumenting-nextjs-opentelemetry-clickstack).
+Esto funciona porque la configuración `tracePropagationTargets` vincula los spans del navegador con los spans del servidor mediante el encabezado `traceparent`, creando una traza distribuida conectada desde el clic del usuario hasta la base de datos. Para ver un recorrido detallado de cómo funciona esto en la práctica, incluida la instrumentación tanto del frontend como del backend, consulta [Instrumenting your NextJS application with OpenTelemetry and ClickStack](https://clickhouse.com/blog/instrumenting-your-app-with-otel-clickstack).
 
 <Frame>
   <img src="/images/clickstack/session-replay/clickpy-trace.webp" alt="Profundizando desde una sesión reproducida hasta las trazas de backend en ClickStack" />
@@ -144,9 +144,9 @@ Hay dos formas de ver cómo funciona la reproducción de sesiones:
   ## Más información
 </div>
 
-* [Demo de reproducción de sesiones](/es/clickstack/example-datasets/session-replay) — aplicación de demostración local e interactiva con instrucciones paso a paso
-* [Referencia del SDK para navegador](/es/clickstack/ingesting-data/sdks/browser) — opciones completas del SDK, source maps, acciones personalizadas y configuración avanzada
+* [Demo de reproducción de sesiones](/es/clickstack/example-datasets/session-replay) — demo local interactiva con instrucciones paso a paso
+* [Referencia del SDK para navegador](/es/clickstack/ingesting-data/sdks/browser) — todas las opciones del SDK, source maps, acciones personalizadas y configuración avanzada
 * [Búsqueda](/es/clickstack/features/search) — sintaxis de búsqueda para filtrar sesiones y eventos
-* [Dashboards](/es/clickstack/features/dashboards/overview) — cree visualizaciones y dashboards a partir de datos de sesiones y trazas
-* [Alertas](/es/clickstack/features/alerts) — configure alertas para errores, latencia y otras señales
-* [Arquitectura de ClickStack](/es/clickstack/architecture) — cómo se integran ClickHouse, HyperDX y el OTel collector
+* [Dashboards](/es/clickstack/features/dashboards/overview) — crear visualizaciones y dashboards a partir de datos de sesión y de trazas
+* [Alertas](/es/clickstack/features/alerts) — configurar alertas sobre errores, latencia y otras señales
+* [Arquitectura de ClickStack](/es/clickstack/architecture) — cómo encajan ClickHouse, HyperDX y el OTel collector

@@ -1,0 +1,89 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_aggregate_functions>1</allow_experimental_time_series_aggregate_functions>
+        <max_insert_threads>8</max_insert_threads>
+    </settings>
+
+    <!--
+        Benchmarks the `timeSeries*ToGrid` aggregate functions, focusing on the grid-filling stage
+        (`doInsertResultInto`). Only the linear-regression functions (`timeSeriesDerivToGrid` /
+        `timeSeriesPredictLinearToGrid`) choose there between recomputing each window and the sliding two-stack
+        queue, governed by `AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS` / `BPW_TO_FORCE_TWO_STACKS`; the other
+        functions always recompute.
+
+        The grid is long (10001 points) and there is roughly one sample per grid step, so the number of populated
+        buckets in a window is about `window / step` and the same buckets are re-visited at every grid point. This
+        makes the per-grid-point work in `doInsertResultInto` dominate over the one-off bucketing/aggregation of the
+        samples (which would instead dominate if many samples fell into each bucket).
+
+        `window` is swept across the two-stack thresholds (with ~1 populated bucket per step, the average populated
+        buckets per window ~= window/step): 50/step=5 (below AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS=10 -> recompute),
+        160/step=16 (between the thresholds -> two-stacks via the average path), and 1000/step=100
+        (>= BPW_TO_FORCE_TWO_STACKS=20 -> two-stacks via the hard cap). The data is dense (~1 sample per bucket), so
+        every query uses the range-scan bucket iteration; the sparse scenario below covers the collect-and-sort path.
+        Functions are ordered from the cheapest per-bucket merge (resample, instant, changes) to the most expensive
+        (linear regression).
+    -->
+    <substitutions>
+        <substitution>
+            <name>window</name>
+            <values>
+                <value>50</value>
+                <value>160</value>
+                <value>1000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE ts_grid (id UInt16, timestamp DateTime, value Float64) ENGINE = MergeTree ORDER BY (id, timestamp)
+    </create_query>
+    <create_query>
+        CREATE TABLE ts_grid_sparse (id UInt16, timestamp DateTime, value Float64) ENGINE = MergeTree ORDER BY (id, timestamp)
+    </create_query>
+
+    <!-- 400 series, one sample every 10s over [0, 100000) -> 10000 samples/series, 4M rows total.
+         The value is a sawtooth counter (0..999) so rate/changes/resets have transitions and resets to count. -->
+    <fill_query>
+        INSERT INTO ts_grid
+        SELECT
+            (number % 400)::UInt16 AS id,
+            toDateTime(intDiv(number, 400) * 10) AS timestamp,
+            (intDiv(number, 400) % 1000)::Float64 AS value
+        FROM numbers_mt(400 * 10000)
+    </fill_query>
+
+    <!-- Sparse counterpart: ~1 sample per 100s (10x fewer) while step stays 10, so only ~1 in 10 buckets is
+         populated -> density ~0.1 < BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN=0.4 -> exercises the collect-and-sort
+         bucket iteration in doInsertResultInto (the dense fill above always range-scans). 400 series, 1000
+         samples/series, 400K rows. -->
+    <fill_query>
+        INSERT INTO ts_grid_sparse
+        SELECT
+            (number % 400)::UInt16 AS id,
+            toDateTime(intDiv(number, 400) * 100) AS timestamp,
+            (intDiv(number, 400) % 1000)::Float64 AS value
+        FROM numbers_mt(400 * 1000)
+    </fill_query>
+
+    <!-- step = 10 over [0, 100000] -> 10001 grid points, ~1 populated bucket per step, window/10 buckets per window. -->
+    <query>SELECT id, timeSeriesResampleToGridWithStaleness(0, 100000, 10, {window})(timestamp, value) FROM ts_grid GROUP BY id FORMAT Null</query>
+    <query>SELECT id, timeSeriesInstantRateToGrid(0, 100000, 10, {window})(timestamp, value) FROM ts_grid GROUP BY id FORMAT Null</query>
+    <query>SELECT id, timeSeriesInstantDeltaToGrid(0, 100000, 10, {window})(timestamp, value) FROM ts_grid GROUP BY id FORMAT Null</query>
+    <query>SELECT id, timeSeriesChangesToGrid(0, 100000, 10, {window})(timestamp, value) FROM ts_grid GROUP BY id FORMAT Null</query>
+    <query>SELECT id, timeSeriesResetsToGrid(0, 100000, 10, {window})(timestamp, value) FROM ts_grid GROUP BY id FORMAT Null</query>
+    <query>SELECT id, timeSeriesRateToGrid(0, 100000, 10, {window})(timestamp, value) FROM ts_grid GROUP BY id FORMAT Null</query>
+    <query>SELECT id, timeSeriesDeltaToGrid(0, 100000, 10, {window})(timestamp, value) FROM ts_grid GROUP BY id FORMAT Null</query>
+    <query>SELECT id, timeSeriesDerivToGrid(0, 100000, 10, {window})(timestamp, value) FROM ts_grid GROUP BY id FORMAT Null</query>
+    <query>SELECT id, timeSeriesPredictLinearToGrid(0, 100000, 10, {window}, 60)(timestamp, value) FROM ts_grid GROUP BY id FORMAT Null</query>
+
+    <!-- Sort-path coverage on the sparse table, at a single fixed window=1000 (buckets_per_window=100 >=
+         BPW_TO_FORCE_TWO_STACKS=20, so the regression functions force two-stacks): the cheapest function (resample)
+         plus the two regression functions. The literal window (no {window}) means each runs once, not per sweep. -->
+    <query>SELECT id, timeSeriesResampleToGridWithStaleness(0, 100000, 10, 1000)(timestamp, value) FROM ts_grid_sparse GROUP BY id FORMAT Null</query>
+    <query>SELECT id, timeSeriesDerivToGrid(0, 100000, 10, 1000)(timestamp, value) FROM ts_grid_sparse GROUP BY id FORMAT Null</query>
+    <query>SELECT id, timeSeriesPredictLinearToGrid(0, 100000, 10, 1000, 60)(timestamp, value) FROM ts_grid_sparse GROUP BY id FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS ts_grid</drop_query>
+    <drop_query>DROP TABLE IF EXISTS ts_grid_sparse</drop_query>
+</test>

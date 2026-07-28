@@ -1,0 +1,5 @@
+-- single-row scalar in a skipped sharding-key argument
+2
+-- the same in CREATE TABLE ... AS SELECT
+2
+-- multi-row scalar in a skipped sharding-key argument is an error
