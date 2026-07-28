@@ -1191,19 +1191,9 @@ static NameToNameVector collectFilesForRenames(
     /// Files owned by the indices that survive this mutation. `metadata_snapshot` is already the
     /// post-drop metadata, so a dropped index is absent here.
     ///
-    /// The suffix enumeration below is speculative (the dropped index's type, and therefore its real
-    /// substream list, is already gone), so a candidate can name a file that belongs to a different,
-    /// surviving index whenever the two stream names coincide. That happens in both directions with
-    /// `escape_index_filenames` = 0, where the stream name is the index name verbatim: dropping `a`
-    /// reaches index `a.pos`, and dropping `a.pos` reaches the `.pos` substream of text index `a`.
-    /// Collect the concrete data and mark filenames of every surviving substream so neither can be
-    /// scheduled for deletion.
-    ///
-    /// Ownership comes from each surviving index's OWN `getSubstreams`, never from the speculative
-    /// list, and only for the extension that substream declares: minmax owns no `.pos` substream at
-    /// all, and a text index's `.pos` substream is stored as `.idx`, not `.idx2`. Claiming a
-    /// substream or an extension the type does not write would instead protect - and therefore leak
-    /// - the files of the index actually being dropped.
+    /// Ownership must come from each surviving index's own `getSubstreams`, and only for the
+    /// extension that substream declares: claiming a substream or extension the type does not write
+    /// would protect, and so leak, a file of the index being dropped.
     static const std::array<String, 4> owned_substream_suffixes = {"", ".dct", ".pst", ".pos"};
     static const std::array<String, 2> owned_index_extensions = {".idx2", ".idx"};
 
@@ -1664,10 +1654,8 @@ struct MutationContext
     /// the freshly recomputed entries and the preserved ones, without hardlinking (and risking
     /// truncating) the source's skp_idx.packed inode.
     NameSet preserved_skip_index_archive_file_names;
-    /// Orphan skip-index files on parts corrupted by the released #109595 bug: on disk but missing
-    /// from `checksums.txt`, so no checksums-based resolver sees them. Filled by
-    /// `updateIndicesToRecalculateAndDrop`, merged into `files_to_skip` so the hardlink loop drops
-    /// them instead of carrying the broken files forward.
+    /// Skip-index files on disk but missing from `checksums.txt`, so no checksums-based resolver
+    /// sees them. Merged into `files_to_skip` so the hardlink loop drops them.
     NameSet orphan_skip_index_files;
     ColumnsStatistics stats_to_recalc;
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
@@ -2182,13 +2170,9 @@ void PartMergerWriter::finalize()
 }
 
 /// Is `index` resolvable from `checksums.txt` (or from the packed archive) using only files it
-/// actually owns? `getAllSubstreamsInPart` probes speculative extensions - minmax tries its legacy
-/// `.idx` for a `.idx2` substream - so with `escape_index_filenames` = 0, where the stream name is
-/// the index name verbatim, that probe can land on a sibling's file: a corrupted minmax index named
-/// `a.pos` reaches the checksummed `skp_idx_a.pos.idx` of text index `a`, which declares its `.pos`
-/// substream with extension `.idx`. Counting a sibling's file as evidence of health would classify
-/// a corrupted index as intact, so neither the full rewrite would rebuild it nor the some-columns
-/// path would strip its orphan files.
+/// actually owns? `getAllSubstreamsInPart` probes speculative extensions, so with
+/// `escape_index_filenames` = 0 that probe can land on a sibling's file, and a sibling's file is not
+/// evidence that this index is intact.
 static bool isIndexResolvableFromOwnFiles(
     const IMergeTreeIndex & index,
     const MergeTreeDataPartPtr & source_part,
@@ -2342,10 +2326,8 @@ private:
             if (index_ptr->isInert())
                 continue;
 
-            /// Part corrupted by the pre-#109595 bug: index files on disk but missing from
-            /// `checksums.txt`. Nothing is resolvable to preserve, so force a recalculate and let
-            /// the writer rebuild the index from column data (otherwise this full rewrite would
-            /// drop the orphan files, leaving the index absent on disk).
+            /// Nothing resolvable to preserve: force a recalculate so the writer rebuilds the
+            /// index from column data, rather than dropping the orphan files and leaving it absent.
             bool index_present_on_disk = ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot);
             bool index_resolvable_from_checksums = isIndexResolvableFromOwnFiles(
                 *index_ptr, ctx->source_part, ctx->metadata_snapshot, *ctx->data->getSettings(), idx.name);
