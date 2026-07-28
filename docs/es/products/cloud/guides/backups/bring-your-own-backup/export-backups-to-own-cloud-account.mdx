@@ -1,0 +1,190 @@
+---
+sidebarTitle: 'Exportar copias de seguridad'
+slug: /cloud/manage/backups/export-backups-to-own-cloud-account
+title: 'Exportar copias de seguridad a su propia cuenta en la nube'
+description: 'Describe cómo exportar copias de seguridad a su propia cuenta en la nube'
+doc_type: 'guide'
+---
+
+ClickHouse Cloud admite la creación de copias de seguridad en la cuenta de su propio proveedor de servicios en la nube (CSP) (AWS S3, Google Cloud Storage o Azure Blob Storage).
+Para obtener más información sobre cómo funcionan las copias de seguridad en ClickHouse Cloud, incluidas las copias de seguridad &quot;completas&quot; frente a las &quot;incrementales&quot;, consulte la documentación sobre [copias de seguridad](/es/products/cloud/guides/backups/review-and-restore-backups).
+
+En esta guía, mostramos ejemplos de cómo crear copias de seguridad completas e incrementales en el almacenamiento de objetos de AWS, GCP y Azure, así como de cómo restaurarlas.
+
+<Note>
+  Si exporta copias de seguridad a una región distinta dentro del mismo proveedor de nube, se aplicarán cargos por [transferencia de datos](/es/products/cloud/reference/billing/network-data-transfer).
+
+  Las copias de seguridad entre distintas nubes solo se admiten mediante los comandos de copia de seguridad/restauración descritos en esta página, y no a través de la UI.
+</Note>
+
+<div id="requirements">
+  ## Requisitos
+</div>
+
+Necesitará los siguientes datos para exportar/restaurar copias de seguridad en el bucket de almacenamiento de su propio proveedor de servicios en la nube (CSP).
+
+<div id="aws">
+  ### AWS
+</div>
+
+1. endpoint de S3 de AWS, en el formato:
+
+```text
+  s3://<bucket_name>.s3.amazonaws.com/<directory>
+```
+
+Por ejemplo:
+
+```text
+  s3://testchbackups.s3.amazonaws.com/backups/
+```
+
+Dónde:
+
+* `testchbackups` es el nombre del bucket de S3 al que se exportarán las copias de seguridad.
+  * `backups` es un subdirectorio opcional.
+
+2. La clave de acceso y la clave secreta de AWS. También se admite la autenticación basada en roles de AWS y puede usarse en lugar de la clave de acceso y la clave secreta de AWS.
+
+<Note>
+  Para usar la autenticación basada en roles, siga la [configuración](/es/products/cloud/guides/data-sources/accessing-s3-data-securely) de Secure S3. Además, deberá añadir los permisos `s3:PutObject` y `s3:DeleteObject` a la política de IAM descrita [aquí.](/es/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role)
+</Note>
+
+<div id="azure">
+  ### Azure
+</div>
+
+1. Cadena de conexión de Azure Storage.
+2. Nombre del contenedor en la cuenta de almacenamiento de Azure.
+3. Blob de Azure en el contenedor.
+
+<div id="google-cloud-storage-gcs">
+  ### Google Cloud Storage (GCS)
+</div>
+
+1. endpoint de GCS, con el formato:
+
+   ```text
+   https://storage.googleapis.com/<bucket_name>/
+   ```
+2. Clave de acceso HMAC y secreto HMAC.
+
+<hr />
+
+<div id="backup-restore">
+  ## Copia de seguridad / Restauración
+</div>
+
+<div id="backup--restore-to-aws-s3-bucket">
+  ## Copia de seguridad / restauración en un bucket de S3 de AWS
+</div>
+
+<div id="take-a-db-backup">
+  ### Hacer una copia de seguridad de la base de datos
+</div>
+
+**Copia de seguridad completa**
+
+```sql
+BACKUP DATABASE test_backups 
+TO S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<key secret>')
+```
+
+Donde `uuid` es un identificador único que se utiliza para diferenciar un conjunto de copias de seguridad.
+
+<Note>
+  Deberá usar un UUID diferente para cada copia de seguridad nueva en este subdirectorio; de lo contrario, obtendrá un error `BACKUP_ALREADY_EXISTS`.
+  Por ejemplo, si realiza copias de seguridad diarias, deberá usar un UUID nuevo cada día.
+</Note>
+
+**Copia de seguridad incremental**
+
+```sql
+BACKUP DATABASE test_backups 
+TO S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<key secret>') 
+SETTINGS base_backup = S3('https://testchbackups.s3.amazonaws.com/backups/<base-backup-uuid>', '<key id>', '<key secret>')
+```
+
+<div id="restore-from-a-backup">
+  ### Restaurar a partir de una copia de seguridad
+</div>
+
+```sql
+RESTORE DATABASE test_backups 
+AS test_backups_restored 
+FROM S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<key secret>')
+```
+
+Consulte: [Configuración de BACKUP/RESTORE para usar un endpoint de S3](/es/concepts/features/backup-restore/s3-endpoint) para obtener más información.
+
+<div id="backup--restore-to-azure-blob-storage">
+  ## Copia de seguridad / restauración en Azure Blob Storage
+</div>
+
+<div id="take-a-db-backup">
+  ### Hacer una copia de seguridad de la base de datos
+</div>
+
+**Copia de seguridad completa**
+
+```sql
+BACKUP DATABASE test_backups 
+TO AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>');
+```
+
+Donde `uuid` es un identificador único que se utiliza para distinguir un conjunto de copias de seguridad.
+
+**Copia de seguridad incremental**
+
+```sql
+BACKUP DATABASE test_backups 
+TO AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>/my_incremental') 
+SETTINGS base_backup = AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>')
+```
+
+<div id="restore-from-a-backup">
+  ### Restaurar a partir de una copia de seguridad
+</div>
+
+```sql
+RESTORE DATABASE test_backups 
+AS test_backups_restored_azure 
+FROM AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>')
+```
+
+Consulte: [Configuración de BACKUP/RESTORE para usar un endpoint de AzureBlobStorage](/es/concepts/features/backup-restore/azure-blob-storage#configuring-backuprestore-to-use-an-azureblobstorage-endpoint) para más detalles.
+
+<div id="backup--restore-to-google-cloud-storage-gcs">
+  ## Copia de seguridad / restauración en Google Cloud Storage (GCS)
+</div>
+
+<div id="take-a-db-backup">
+  ### Hacer una copia de seguridad de la base de datos
+</div>
+
+**Copia de seguridad completa**
+
+```sql
+BACKUP DATABASE test_backups 
+TO S3('https://storage.googleapis.com/<bucket>/<uuid>', <hmac-key>', <hmac-secret>)
+```
+
+donde `uuid` es un identificador único que se utiliza para diferenciar un conjunto de copias de seguridad.
+
+**Copia de seguridad incremental**
+
+```sql
+BACKUP DATABASE test_backups 
+TO S3('https://storage.googleapis.com/test_gcs_backups/<uuid>/my_incremental', 'key', 'secret')
+SETTINGS base_backup = S3('https://storage.googleapis.com/test_gcs_backups/<uuid>', 'key', 'secret')
+```
+
+<div id="restore-from-a-backup">
+  ### Restaurar a partir de una copia de seguridad
+</div>
+
+```sql
+RESTORE DATABASE test_backups 
+AS test_backups_restored_gcs 
+FROM S3('https://storage.googleapis.com/test_gcs_backups/<uuid>', 'key', 'secret')
+```

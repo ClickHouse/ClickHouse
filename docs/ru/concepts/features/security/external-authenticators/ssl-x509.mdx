@@ -1,0 +1,47 @@
+---
+description: 'Документация по SSL X.509'
+slug: /operations/external-authenticators/ssl-x509
+title: 'Аутентификация с помощью сертификата SSL X.509'
+doc_type: 'reference'
+---
+
+import SelfManaged from '/snippets/ru/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+Параметр [SSL &#39;strict&#39;](/ru/reference/settings/server-settings/settings#openssl) включает обязательную проверку сертификатов для входящих соединений. В этом случае могут устанавливаться только соединения с доверенными сертификатами. Соединения с недоверенными сертификатами будут отклоняться. Таким образом, проверка сертификатов позволяет однозначно аутентифицировать входящее соединение. Для идентификации подключённого пользователя используется поле сертификата `Common Name` или `subjectAltName extension`. `subjectAltName extension` поддерживает использование одного символа подстановки &#39;*&#39; в конфигурации сервера. Это позволяет сопоставить несколько сертификатов одному и тому же пользователю. Кроме того, перевыпуск и отзыв сертификатов не влияют на конфигурацию ClickHouse.
+
+Чтобы включить аутентификацию по SSL-сертификатам, в файле настроек `users.xml ` необходимо указать список `Common Name` или `Subject Alt Name` для каждого пользователя ClickHouse:
+
+**Пример**
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <users>
+        <user_name_1>
+            <ssl_certificates>
+                <common_name>host.domain.com:example_user</common_name>
+                <common_name>host.domain.com:example_user_dev</common_name>
+                <!-- Другие имена -->
+            </ssl_certificates>
+            <!-- Другие настройки -->
+        </user_name_1>
+        <user_name_2>
+            <ssl_certificates>
+                <subject_alt_name>DNS:host.domain.com</subject_alt_name>
+                <!-- Другие имена -->
+            </ssl_certificates>
+            <!-- Другие настройки -->
+        </user_name_2>
+        <user_name_3>
+            <ssl_certificates>
+                <!-- Поддержка wildcards -->
+                <subject_alt_name>URI:spiffe://foo.com/*/bar</subject_alt_name>
+            </ssl_certificates>
+        </user_name_3>
+    </users>
+</clickhouse>
+```
+
+Чтобы SSL-[`цепочка доверия`](https://en.wikipedia.org/wiki/Chain_of_trust) работала корректно, также важно убедиться, что параметр [`caConfig`](/ru/reference/settings/server-settings/settings#openssl) настроен правильно.

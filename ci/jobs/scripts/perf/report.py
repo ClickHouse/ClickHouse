@@ -1,14 +1,10 @@
 #!/usr/bin/python3
 
 import argparse
-import ast
-import collections
 import csv
 import itertools
-import json
 import os
 import os.path
-import pprint
 import sys
 import traceback
 
@@ -492,6 +488,45 @@ if args.report == "main":
 
     add_changes()
 
+    def add_unconfirmed_changes():
+        # Queries flagged as changed on the main run whose difference did not
+        # reproduce when rerun after a server restart (compare.sh's
+        # confirm_changes). They do not fail the check, but are kept visible
+        # with both the original and the rerun statistics.
+        #
+        # The confirmation step is optional and fail-open, so a missing file
+        # is normal and must not become a report error (which would fail the
+        # check) -- only read it if it exists.
+        if not os.path.exists("report/unconfirmed-changes.tsv"):
+            return
+        rows = tsvRows("report/unconfirmed-changes.tsv")
+        if not rows:
+            return
+
+        global tables
+        text = tableStart("Unconfirmed Changes")
+        columns = [
+            "Old,&nbsp;s",  # 0
+            "New,&nbsp;s",  # 1
+            "Relative difference (new&nbsp;&minus;&nbsp;old) / old",  # 2
+            "p&nbsp;<&nbsp;0.01 threshold",  # 3
+            "Rerun relative difference",  # 4
+            "Rerun threshold",  # 5
+            "Test",  # 6
+            "#",  # 7
+            "Query",  # 8
+        ]
+        text += tableHeader(columns)
+
+        for row in rows:
+            anchor = f"{currentTableAnchor()}.{row[6]}.{row[7]}"
+            text += tableRow(row, anchor=anchor)
+
+        text += tableEnd()
+        tables.append(text)
+
+    add_unconfirmed_changes()
+
     def add_unstable_queries():
         global unstable_queries, very_unstable_queries, tables
 
@@ -568,7 +603,7 @@ if args.report == "main":
             "Longest query, total for measured runs,&nbsp;s",  # 4
             "Average query wall clock time,&nbsp;s",  # 5
             "Shortest query, total for measured runs,&nbsp;s",  # 6
-            "",  # Runs                                               #7
+            "",  # Runs (average per query)                          #7
         ]
         attrs = ["" for c in columns]
         attrs[7] = None
@@ -576,10 +611,25 @@ if args.report == "main":
         text = tableStart("Test Times")
         text += tableHeader(columns, attrs)
 
+        # Worst per-single-run wall time per test, written by compare.sh:
+        # each query is judged against its own adaptive run count, so a mixed
+        # test cannot hide a slow query behind a high average count. Absent in
+        # older workspaces - the legacy per-test approximation applies then
+        # (the existence check keeps tsvRows from recording a report error).
+        max_single_run_times = {}
+        if os.path.exists("report/max-single-run-times.tsv"):
+            max_single_run_times = {
+                r[0]: float(r[1])
+                for r in tsvRows("report/max-single-run-times.tsv")
+            }
+
         allowed_average_run_time = 3.75  # 60 seconds per test at (7 + 1) * 2 runs
         for r in rows:
             anchor = f"{currentTableAnchor()}.{r[0]}"
-            total_runs = (int(r[7]) + 1) * 2  # one prewarm run, two servers
+            # Run counts are adaptive per query; r[7] is the per-test average
+            # (ceil), which keeps this budget proportional to the actual total
+            # number of runs of the test instead of a median proxy.
+            total_runs = (float(r[7]) + 1) * 2  # one prewarm run, two servers
             if r[0] != "Total" and float(r[5]) > allowed_average_run_time * total_runs:
                 # FIXME should be 15s max -- investigate parallel_insert
                 slow_average_tests += 1
@@ -592,10 +642,15 @@ if args.report == "main":
             else:
                 attrs[5] = ""
 
-            if (
-                r[0] != "Total"
-                and float(r[4]) > get_allowed_single_run_time(r[0]) * total_runs
-            ):
+            if r[0] in max_single_run_times:
+                query_too_slow = max_single_run_times[
+                    r[0]
+                ] > get_allowed_single_run_time(r[0])
+            else:
+                query_too_slow = float(r[4]) > get_allowed_single_run_time(
+                    r[0]
+                ) * total_runs
+            if r[0] != "Total" and query_too_slow:
                 slow_average_tests += 1
                 attrs[4] = f'style="background: {color_bad}"'
                 errors_explained.append(

@@ -1,0 +1,53 @@
+---
+description: 'Документация по Role'
+sidebarTitle: 'ROLE'
+slug: /sql-reference/statements/create/role
+title: 'CREATE ROLE'
+doc_type: 'reference'
+---
+
+Создаёт новые [роли](/ru/concepts/features/security/access-rights#role-management). Роль — это набор [привилегий](/ru/reference/statements/grant#granting-privilege-syntax). [Пользователь](/ru/reference/statements/create/user), которому назначена роль, получает все привилегии этой роли.
+
+Синтаксис:
+
+```sql
+CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
+    [IN access_storage_type]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
+```
+
+<div id="managing-roles">
+  ## Управление ролями
+</div>
+
+Пользователю можно назначить несколько ролей. Пользователи могут применять назначенные им роли в любых комбинациях с помощью оператора [SET ROLE](/ru/reference/statements/set-role). Итоговый набор привилегий представляет собой объединение всех привилегий всех применённых ролей. Если привилегии предоставлены пользователю напрямую, они также объединяются с привилегиями, предоставленными через роли.
+
+Пользователь может иметь роли по умолчанию, которые применяются при входе в систему. Чтобы задать роли по умолчанию, используйте оператор [SET DEFAULT ROLE](/ru/reference/statements/set-role#set-default-role) или оператор [ALTER USER](/ru/reference/statements/alter/user).
+
+Чтобы отозвать роль, используйте оператор [REVOKE](/ru/reference/statements/revoke).
+
+Чтобы удалить роль, используйте оператор [DROP ROLE](/ru/reference/statements/drop#drop-role). Удалённая роль автоматически отзывается у всех пользователей и ролей, которым она была назначена.
+
+<div id="examples">
+  ## Примеры
+</div>
+
+```sql
+CREATE ROLE accountant;
+GRANT SELECT ON db.* TO accountant;
+```
+
+Эта последовательность запросов создает роль `accountant` с правом чтения данных из базы данных `db`.
+
+Назначение роли пользователю `mira`:
+
+```sql
+GRANT accountant TO mira;
+```
+
+После назначения роли пользователь может активировать её и выполнять разрешённые запросы. Например:
+
+```sql
+SET ROLE accountant;
+SELECT * FROM db.*;
+```

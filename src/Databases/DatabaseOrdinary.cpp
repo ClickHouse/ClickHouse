@@ -50,6 +50,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
@@ -73,6 +74,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNKNOWN_TABLE;
+    extern const int QUERY_IS_TOO_LARGE;
 }
 
 namespace DatabaseMetadataDiskSetting
@@ -699,7 +701,7 @@ DatabaseDetachedTablesSnapshotIteratorPtr DatabaseOrdinary::getDetachedTablesIte
     return DatabaseWithOwnTablesBase::getDetachedTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
 }
 
-Strings DatabaseOrdinary::getAllTableNames(ContextPtr) const
+VectorWithMemoryTracking<String> DatabaseOrdinary::getAllTableNames(ContextPtr) const
 {
     std::set<String> unique_names;
     {
@@ -711,6 +713,23 @@ Strings DatabaseOrdinary::getAllTableNames(ContextPtr) const
             unique_names.emplace(table_name);
     }
     return {unique_names.begin(), unique_names.end()};
+}
+
+void DatabaseOrdinary::eraseAsyncLoadState(const String & table_name)
+{
+    /// Drop pending async load/startup task references so that `getAllTableNames`
+    /// (and the hints derived from it) do not still suggest a no-longer-present name.
+    startup_table.erase(table_name);
+    load_table.erase(table_name);
+}
+
+StoragePtr DatabaseOrdinary::detachTableUnlocked(const String & table_name)
+{
+    /// Detach first: if the base throws (e.g. UNKNOWN_TABLE) the table is not
+    /// detached, so its async-load state must stay intact. Erase only on success.
+    auto table = DatabaseWithOwnTablesBase::detachTableUnlocked(table_name);
+    eraseAsyncLoadState(table_name);
+    return table;
 }
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
@@ -743,6 +762,20 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     applyMetadataChangesToCreateQuery(ast, metadata, local_context, validate_new_create_query);
 
     statement = getObjectDefinitionFromCreateQuery(ast);
+
+    if (validate_new_create_query)
+    {
+        size_t max_query_size = local_context->getSettingsRef()[Setting::max_query_size];
+        if (max_query_size && statement.size() > max_query_size)
+            throw Exception(
+                ErrorCodes::QUERY_IS_TOO_LARGE,
+                "The resulting metadata of table {} ({} bytes) would exceed max_query_size ({}), "
+                "which would make the table unloadable. Reduce the number of columns or increase max_query_size.",
+                table_id.getNameForLogs(),
+                statement.size(),
+                max_query_size);
+    }
+
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);

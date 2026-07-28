@@ -1,0 +1,67 @@
+---
+sidebarTitle: '排序键'
+description: '如何定义自定义排序键。'
+slug: /integrations/clickpipes/postgres/ordering_keys
+title: '排序键'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', '数据摄取', '实时同步']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+排序键 (也称 sorting key) 定义了数据在 ClickHouse 中如何在磁盘上排序，以及如何为表建立索引。从 Postgres 复制数据时，ClickPipes 默认使用 Postgres 表的主键，作为 ClickHouse 中对应表的排序键。在大多数情况下，Postgres 主键已经足够作为排序键，因为 ClickHouse 本身已针对快速扫描进行了优化，通常不需要自定义排序键。
+
+如[迁移指南](/zh/get-started/migrate/postgres/migration-guide/migration-guide-part3)所述，对于更大规模的使用场景，你应在 ClickHouse 的排序键中加入 Postgres 主键之外的其他列，以优化查询。
+
+默认情况下，在使用 CDC 时，选择与 Postgres 主键不同的排序键可能会导致 ClickHouse 中的数据去重问题。这是因为 ClickHouse 中的排序键同时承担两种作用：既控制数据的索引和排序，又充当去重键。解决这一问题最简单的方法是定义可刷新materialized view。
+
+<div id="use-refreshable-materialized-views">
+  ## 使用可刷新materialized view
+</div>
+
+定义自定义排序键 (ORDER BY) 的一种简单方法是使用[可刷新materialized view](/zh/concepts/features/materialized-views/refreshable-materialized-view) (MV) 。借助这种方式，你可以定期 (例如每 5 分钟或 10 分钟) 按所需的排序键复制整个表。
+
+下面是一个使用自定义 ORDER BY 且包含必要去重的可刷新 MV 示例：
+
+```sql
+CREATE MATERIALIZED VIEW posts_final
+REFRESH EVERY 10 second ENGINE = ReplacingMergeTree(_peerdb_version)
+ORDER BY (owneruserid,id) -- 不同的排序键，但带有后缀的 postgres 主键
+AS
+SELECT * FROM posts FINAL 
+WHERE _peerdb_is_deleted = 0; -- 此处执行去重
+```
+
+<div id="custom-ordering-keys-without-refreshable-materialized-views">
+  ## 不使用可刷新materialized view 的自定义排序键
+</div>
+
+如果由于数据规模过大而无法使用可刷新materialized view，下面提供了一些建议，帮助你在较大的表上定义自定义排序键，并解决与去重相关的问题。
+
+<div id="choose-ordering-key-columns-that-dont-change-for-a-given-row">
+  ### 选择对于给定行保持不变的排序键列
+</div>
+
+为 ClickHouse 的排序键包含额外列时 (除了来自 Postgres 的主键之外) ，我们建议选择对每一行都保持不变的列。这有助于避免 ReplacingMergeTree 中的数据一致性和去重问题。
+
+例如，在多租户 SaaS 应用中，使用 (`tenant_id`, `id`) 作为排序键是一个不错的选择。这些列可以唯一标识每一行，并且即使其他列发生变化，某个 `id` 对应的 `tenant_id` 也保持不变。由于按 `id` 去重与按 (`tenant_id`, `id`) 去重是一致的，因此这有助于避免在 `tenant_id` 发生变化时可能出现的数据[去重问题](https://docs.peerdb.io/mirror/ordering-key-different)。
+
+<div id="set-replica-identity-on-postgres-tables-to-custom-ordering-key">
+  ### 将 Postgres 表的副本标识设置为自定义排序键
+</div>
+
+为了让 Postgres CDC 按预期运行，需要修改表上的 `REPLICA IDENTITY`，使其包含排序键列。这对于准确处理 DELETE 至关重要。
+
+如果 `REPLICA IDENTITY` 不包含排序键列，Postgres CDC 将无法捕获主键以外其他列的值——这是 Postgres 逻辑解码的一项限制。这样一来，Postgres 中除主键外的所有排序键列都会是 NULL。这会影响去重，也就是说，某一行的旧版本可能无法与最新的已删除版本 (其中 `_peerdb_is_deleted` 设置为 1) 进行去重。
+
+在上面使用 `owneruserid` 和 `id` 的示例中，如果主键还不包含 `owneruserid`，则需要在 (`owneruserid`, `id`) 上创建一个 `UNIQUE INDEX`，并将其设置为该表的 `REPLICA IDENTITY`。这样可以确保 Postgres CDC 捕获到实现准确复制和去重所需的列值。
+
+下面是如何在 events 表上执行此操作的示例。请务必将此设置应用到所有修改了排序键的表。
+
+```sql
+-- 在 (owneruserid, id) 上创建唯一索引
+CREATE UNIQUE INDEX posts_unique_owneruserid_idx ON posts(owneruserid, id);
+-- 将 REPLICA IDENTITY 设置为使用此索引
+ALTER TABLE posts REPLICA IDENTITY USING INDEX posts_unique_owneruserid_idx;
+```
