@@ -27676,10 +27676,6 @@
     "source": "/operations/system-tables/metrics"
   },
   {
-    "destination": "/reference/system-tables/models",
-    "source": "/operations/system-tables/models"
-  },
-  {
     "destination": "/reference/system-tables/moves",
     "source": "/operations/system-tables/moves"
   },
