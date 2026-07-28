@@ -1,5 +1,8 @@
 #pragma once
 
+#include <functional>
+
+#include <Common/FieldVisitorToString.h>
 #include <Parsers/FunctionSecretArgumentsFinder.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -63,6 +66,15 @@ public:
 
             return false;
         }
+        bool tryGetLiteralText(String * res) const override
+        {
+            const auto * literal = argument->as<ConstantNode>();
+            if (!literal)
+                return false;
+            if (res)
+                *res = applyVisitor(FieldVisitorToString(), literal->getValue());
+            return true;
+        }
     private:
         const IQueryTreeNode * argument = nullptr;
     };
@@ -108,5 +120,18 @@ public:
 
 using FunctionSecretArgumentsFinderTreeNode = FunctionSecretArgumentsFinderTreeNodeImpl<FunctionNode>;
 using TableFunctionSecretArgumentsFinderTreeNode = FunctionSecretArgumentsFinderTreeNodeImpl<TableFunctionNode>;
+
+/// Visits the secret value slots selected by a finder result in a resolved argument list, for the
+/// query-tree surfaces (`EXPLAIN QUERY TREE`, projection names): the span members and the arguments
+/// with a partial replacement (for a `key = value` argument, its value; a tree dump cannot represent
+/// partial masking, so the whole value is masked: fail closed), and the values of the nested secret
+/// maps (`headers(..)` / `extra_credentials(..)`; a malformed child is visited whole). The callback
+/// receives the top-level argument index and a mutable reference to each secret value node, so it can
+/// mask a constant in place or replace a non-constant node entirely (the parsers accept identifiers
+/// and expressions as values, which have no display mask of their own).
+void forEachSecretArgumentNode(
+    QueryTreeNodes & arguments,
+    const FunctionSecretArgumentsFinder::Result & secret_arguments,
+    const std::function<void(size_t, QueryTreeNodePtr &)> & on_secret);
 
 }
