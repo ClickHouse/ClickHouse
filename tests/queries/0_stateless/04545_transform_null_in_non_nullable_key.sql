@@ -8,12 +8,14 @@
 -- Regression test for issue #111340: `transform_null_in = 1`, non-Nullable key column, `IN`/`NOT IN`
 -- a subquery whose result is Nullable. Previously threw CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN (349).
 --
--- Cases A, B, D, D2, C, C2 -- C16, E, F, H, H2, I, J, G, K cover, in order: the folded-default pair,
+-- Cases A, B, D, D2, C, C2 -- C21, E, F, H, H2, I, J, G, K cover, in order: the folded-default pair,
 -- the numeric analogue and its type-level-granularity sibling, the cross-type superset direction and
--- its counterexample, the two silent-collapse families (text key against a different type / key with a
--- finer Decimal or DateTime64 scale, or a scaled key against a scale-less integer or float source)
--- with their exactness controls (injective numeric narrowing, identical text types, identical
--- composite element types, a finer-scale source, a scale-zero key), the `NOT has` caller, the
+-- its counterexample, the three silent-collapse families (text key against a different type / key with
+-- a finer Decimal or DateTime64 scale, or a scaled key against a scale-less integer or float source /
+-- temporal key whose target drops its time of day or its calendar date) with their controls
+-- (injective numeric narrowing, identical text types, identical composite element types, a
+-- component-equal temporal pair, and three liveness controls: a finer-scale source, a scale-zero key,
+-- a widening temporal pair), the `NOT has` caller, the
 -- `LowCardinality(Nullable(T))` source, the multi-column set and its emptiness ordering, the
 -- all-NULL empty set, the positive `IN` direction,
 -- and the two shapes that must stay unchanged (`Tuple(Nullable, Nullable)` key, duplicate key mapping).
@@ -61,10 +63,13 @@ INSERT INTO t_nopk VALUES (1, 'a'), (2, 'b'), (3, 'c');
 SELECT s FROM t_nopk WHERE s IN (SELECT s FROM t_nopk UNION ALL SELECT NULL) ORDER BY s;
 
 -- A NULL element of a Nullable source set can never match a non-Nullable key, so it is dropped from
--- the pruning set entirely. The remaining set is an exact image of the user predicate, so exact
--- `NOT IN` partition / minmax pruning is preserved. Two properties are asserted per case: the set
--- size (proves the NULL row was dropped rather than folded to the key default) and `Parts: 2/3`
--- (proves the atom stayed exact, so minmax could prune the third part).
+-- the pruning set entirely. When the remaining set is also an exact image of the user predicate --
+-- which needs the conversion between the key and set element types to be lossless in BOTH directions,
+-- and is what the cases in this block are built to hold -- exact `NOT IN` partition / minmax pruning is
+-- preserved. Two properties are asserted per case: the set size (proves the NULL row was dropped rather
+-- than folded to the key default) and `Parts: 2/3` (proves the atom stayed exact, so minmax could prune
+-- the third part). Later cases whose conversion is NOT lossless assert `Parts: 3/3` instead; only that
+-- negative-direction part count separates an exact atom from a merely relaxed one.
 SELECT 'String key NOT IN, partition pruning';
 DROP TABLE IF EXISTS t_np SETTINGS ignore_drop_queries_probability = 0;
 CREATE TABLE t_np (s String) ENGINE = MergeTree ORDER BY s PARTITION BY s;
@@ -200,11 +205,14 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_f1 WHERE s IN (SELE
 
 -- Case C10 (CONTROL, must NOT change): IDENTICAL text types share a representation, so no padding or
 -- trimming happens and the atom stays exact. Together with cases A/B/F/J (`String`/`Nullable(String)`)
--- this is what stops the text arm from being "fixed" by declining every text pair.
+-- this is what stops the text arm from being "fixed" by declining every text pair. `canBeSafelyCast` is
+-- true for the forward direction as well (the types are equal), so this atom really is exact, and the
+-- `NOT IN` part count is what asserts that rather than mere liveness.
 SELECT 'Same-width FixedString source stays exact';
 SELECT hex(s) FROM t_f2 WHERE s IN (SELECT CAST('ab', 'Nullable(FixedString(2))') UNION ALL SELECT NULL) ORDER BY s;
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_f2 WHERE s IN (SELECT CAST('ab', 'Nullable(FixedString(2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%in 1-element set%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_f2 WHERE s IN (SELECT CAST('ab', 'Nullable(FixedString(2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 1/3%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_f2 WHERE s NOT IN (SELECT CAST('ab', 'Nullable(FixedString(2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 2/3%';
 
 -- Case C11: the collapse test must recurse into composites, the way `canBeSafelyCast` -- the
 -- predicate it complements -- already does. A `Tuple(String, UInt64)` key against a
@@ -221,10 +229,13 @@ SELECT hex(k.1) FROM t_tc WHERE k IN (SELECT CAST(tuple('a', 1), 'Nullable(Tuple
 SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_tc WHERE k IN (SELECT CAST(tuple('a', 1), 'Nullable(Tuple(FixedString(2), UInt64))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%element set%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_tc WHERE k IN (SELECT CAST(tuple('a', 1), 'Nullable(Tuple(FixedString(2), UInt64))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%Parts: 3/3%';
 -- CONTROL: identical element types recurse to no collapse, so the atom stays exact and prunes. This is
--- what stops the recursion from being "fixed" by declining every composite pair.
+-- what stops the recursion from being "fixed" by declining every composite pair. `canBeSafelyCast`
+-- recurses elementwise to the equal-types base case here, so both directions are lossless and the
+-- `NOT IN` part count asserts the exactness this comment claims.
 SELECT hex(k.1) FROM t_tc WHERE k IN (SELECT CAST(tuple('b', 2), 'Nullable(Tuple(String, UInt64))') UNION ALL SELECT NULL) ORDER BY k SETTINGS enable_nullable_tuple_type = 1;
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_tc WHERE k IN (SELECT CAST(tuple('b', 2), 'Nullable(Tuple(String, UInt64))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%in 1-element set%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_tc WHERE k IN (SELECT CAST(tuple('b', 2), 'Nullable(Tuple(String, UInt64))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%Parts: 1/3%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_tc WHERE k NOT IN (SELECT CAST(tuple('b', 2), 'Nullable(Tuple(String, UInt64))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%Parts: 2/3%';
 
 -- Cases C12 -- C16: the scale-loss family also fires when the set element reports NO scale at all,
 -- and the two branches of `DecimalUtils::convertToImpl` that reach it lose different things, so each
@@ -265,10 +276,10 @@ INSERT INTO t_dw VALUES (9007199254740992), (9007199254740993), (99);
 SELECT d FROM t_dw WHERE d IN (SELECT CAST(9007199254740992, 'Nullable(Float64)') UNION ALL SELECT NULL) ORDER BY d;
 SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dw WHERE d IN (SELECT CAST(9007199254740992, 'Nullable(Float64)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
 
--- Case C15: `Time64` shares the scale machinery, and unlike `DateTime64` it gets no help from
--- `Set::execute`, whose sub-second precision guard is keyed on `TypeIndex::DateTime64` alone. So the
--- integer branch really does collapse here, and the arm must reach every scaled key family rather
--- than `Decimal` only.
+-- Case C15: `Time64` reaches the collapsing integer branch through the same scale machinery as
+-- `Decimal` and `DateTime64`, so the arm must reach every scaled key family rather than `Decimal` only.
+-- Whether `Set::execute` additionally masks the fractional rows at runtime is beside the point: the
+-- pruning set built here is an under-approximation either way, so the atom must decline.
 SELECT 'Time64 key, integer source, declined';
 DROP TABLE IF EXISTS t_t64 SETTINGS ignore_drop_queries_probability = 0;
 CREATE TABLE t_t64 (d Time64(4)) ENGINE = MergeTree ORDER BY d PARTITION BY d;
@@ -278,26 +289,39 @@ SELECT d FROM t_t64 WHERE d NOT IN (SELECT CAST(1, 'Nullable(UInt64)') UNION ALL
 SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_t64 WHERE d IN (SELECT CAST(1, 'Nullable(UInt64)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_t64 WHERE d IN (SELECT CAST(1, 'Nullable(UInt64)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
 
--- Case C14 (CONTROL, must NOT change): a set scale FINER than the key's loses nothing, so the atom
--- stays exact and keeps pruning. This is what stops the scaled-key arm from being "fixed" by
--- declining every scaled key.
-SELECT 'Finer-scale Decimal source stays exact';
+-- Case C14 (CONTROL, must NOT change): a set scale FINER than the key's drops no digits, so the arm
+-- must NOT fire and the atom stays LIVE. This is what stops the scaled-key arm from being "fixed" by
+-- declining every scaled key. It is a liveness control, not an exactness one: the FORWARD cast
+-- `Decimal(10, 6) -> Decimal(10, 4)` is rejected by `canBeSafelyCast` (its Decimal branch returns false
+-- once the source scale exceeds the target's), so the atom is relaxed and `NOT IN` prunes nothing. The
+-- positive assertion still separates declined from live, because a declined atom prints no set
+-- condition at all, and the `notIn ... Parts: 3/3` pair pins the relaxed shape.
+SELECT 'Finer-scale Decimal source stays live, relaxed';
 SELECT d FROM t_di WHERE d IN (SELECT CAST(1, 'Nullable(Decimal(10, 6))') UNION ALL SELECT NULL) ORDER BY d;
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_di WHERE d IN (SELECT CAST(1, 'Nullable(Decimal(10, 6))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%in 1-element set%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_di WHERE d IN (SELECT CAST(1, 'Nullable(Decimal(10, 6))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 1/3%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_di WHERE d NOT IN (SELECT CAST(1, 'Nullable(Decimal(10, 6))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%notIn 1-element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_di WHERE d NOT IN (SELECT CAST(1, 'Nullable(Decimal(10, 6))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
 
 -- Case C16 (CONTROL, must NOT change): a key scale of ZERO makes the integer branch's division the
--- identity, so nothing collapses and the atom must stay exact. This is what stops the integer arm
--- from being keyed merely on "the key is a scaled type".
-SELECT 'Scale-zero Decimal key, integer source, stays exact';
+-- identity, so nothing collapses and the arm must NOT fire. This is what stops the integer arm from
+-- being keyed merely on "the key is a scaled type". Like C14 this is a liveness control:
+-- `canBeSafelyCast(UInt64, Decimal(20, 0))` is false too (its unsigned branch accepts only an unsigned
+-- or a `String` target, and `Decimal` is neither), so the atom is relaxed and `NOT IN` prunes nothing.
+SELECT 'Scale-zero Decimal key, integer source, stays live, relaxed';
 SELECT d FROM t_df WHERE d IN (SELECT CAST(16777216, 'Nullable(UInt64)') UNION ALL SELECT NULL) ORDER BY d;
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_df WHERE d IN (SELECT CAST(16777216, 'Nullable(UInt64)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%in 1-element set%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_df WHERE d IN (SELECT CAST(16777216, 'Nullable(UInt64)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 1/3%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_df WHERE d NOT IN (SELECT CAST(16777216, 'Nullable(UInt64)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%notIn 1-element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_df WHERE d NOT IN (SELECT CAST(16777216, 'Nullable(UInt64)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
 
 -- Case C5 (CONTROL, must NOT change): an injective same-family numeric narrowing stays exact and
 -- keeps pruning. `castColumnAccurate` REJECTS an out-of-range `UInt64 -> UInt32` value rather than
--- truncating it, so no two keys can share a set value and the atom is genuinely exact. This control
--- is what stops the exactness gate from being "fixed" by declining every cross-type conversion.
+-- truncating it, so no two keys can share a set value, and the forward `UInt32 -> UInt64` cast is
+-- accepted by `canBeSafelyCast` (widening within the unsigned family), so BOTH directions are lossless
+-- and the atom is genuinely exact. This control is what stops the exactness gate from being "fixed" by
+-- declining every cross-type conversion. Exactness is asserted where it is claimed: only the `NOT IN`
+-- part count distinguishes an exact atom (`Parts: 2/3`) from a relaxed one (`Parts: 3/3`).
 SELECT 'Injective numeric narrowing stays exact';
 DROP TABLE IF EXISTS t_nn SETTINGS ignore_drop_queries_probability = 0;
 CREATE TABLE t_nn (k UInt64) ENGINE = MergeTree ORDER BY k PARTITION BY k;
@@ -306,6 +330,73 @@ SELECT k FROM t_nn WHERE k IN (SELECT CAST(50000, 'Nullable(UInt32)') UNION ALL 
 SELECT k FROM t_nn WHERE k NOT IN (SELECT CAST(50000, 'Nullable(UInt32)') UNION ALL SELECT NULL) ORDER BY k;
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_nn WHERE k IN (SELECT CAST(50000, 'Nullable(UInt32)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%in 1-element set%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_nn WHERE k IN (SELECT CAST(50000, 'Nullable(UInt32)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 1/3%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_nn WHERE k NOT IN (SELECT CAST(50000, 'Nullable(UInt32)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 2/3%';
+
+-- Cases C17 -- C21: the third silent-collapse family, temporal GRANULARITY. It is invisible to the
+-- scale arm above, because a scale is not what is lost: `Date`/`Date32` carry a calendar date only,
+-- `Time`/`Time64` a time of day only, `DateTime`/`DateTime64` both, so a conversion whose target drops
+-- one of the key's components maps many keys onto one set value. There is no round-trip check to save
+-- these either -- the strict `accurate::convertNumeric` path requires an integer or float SOURCE -- so
+-- the casts succeed silently. These are wrong results on master too.
+SELECT 'DateTime key, Date source, declined';
+DROP TABLE IF EXISTS t_dd SETTINGS ignore_drop_queries_probability = 0;
+CREATE TABLE t_dd (d DateTime) ENGINE = MergeTree ORDER BY d PARTITION BY d;
+-- Two timestamps on the SAME day (both cast to '2020-01-01') plus one on another day, so `Parts: 3/3`
+-- is meaningful and the collapse is exhibited rather than assumed.
+INSERT INTO t_dd VALUES ('2020-01-01 00:00:00'), ('2020-01-01 12:34:56'), ('2020-01-02 00:00:00');
+-- Both same-day rows match the set value at runtime, so both must come back.
+SELECT d FROM t_dd WHERE d IN (SELECT CAST('2020-01-01', 'Nullable(Date)') UNION ALL SELECT NULL) ORDER BY d;
+SELECT d FROM t_dd WHERE d NOT IN (SELECT CAST('2020-01-01', 'Nullable(Date)') UNION ALL SELECT NULL) ORDER BY d;
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dd WHERE d IN (SELECT CAST('2020-01-01', 'Nullable(Date)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dd WHERE d IN (SELECT CAST('2020-01-01', 'Nullable(Date)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
+
+-- Case C18: the other direction, where the CALENDAR DATE is thrown off instead. This one is the worse
+-- of the two: before the arm the pruning set held a time-of-day value that no `DateTime` key range can
+-- contain, so every part was pruned and the query returned NOTHING.
+SELECT 'DateTime key, Time source, declined';
+SELECT d FROM t_dd WHERE d IN (SELECT CAST('00:00:00', 'Nullable(Time)') UNION ALL SELECT NULL) ORDER BY d;
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dd WHERE d IN (SELECT CAST('00:00:00', 'Nullable(Time)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dd WHERE d IN (SELECT CAST('00:00:00', 'Nullable(Time)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
+
+-- Case C19: the same date-dropping direction through the SCALED family. Both sides report a scale and
+-- the key's is not coarser, so the scale arm cannot see it: the lost component is the calendar date.
+SELECT 'DateTime64 key, Time64 source, declined';
+DROP TABLE IF EXISTS t_d64 SETTINGS ignore_drop_queries_probability = 0;
+CREATE TABLE t_d64 (d DateTime64(4)) ENGINE = MergeTree ORDER BY d PARTITION BY d;
+INSERT INTO t_d64 VALUES ('2020-01-01 00:00:00.0000'), ('2020-01-01 12:34:56.0000'), ('2020-01-02 00:00:00.0000');
+SELECT d FROM t_d64 WHERE d IN (SELECT CAST('00:00:00.0000', 'Nullable(Time64(4))') UNION ALL SELECT NULL) ORDER BY d;
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_d64 WHERE d IN (SELECT CAST('00:00:00.0000', 'Nullable(Time64(4))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_d64 WHERE d IN (SELECT CAST('00:00:00.0000', 'Nullable(Time64(4))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
+
+-- Case C20: the temporal arm must recurse into composites like the text and scale arms, so a
+-- `Tuple(DateTime, UInt64)` key collapses on its FIRST element exactly as C17 does.
+SELECT 'Tuple key, collapsing temporal element, declined';
+DROP TABLE IF EXISTS t_td SETTINGS ignore_drop_queries_probability = 0;
+CREATE TABLE t_td (k Tuple(DateTime, UInt64)) ENGINE = MergeTree ORDER BY k PARTITION BY k;
+INSERT INTO t_td SELECT tuple(toDateTime('2020-01-01 00:00:00'), 1);
+INSERT INTO t_td SELECT tuple(toDateTime('2020-01-01 12:34:56'), 1);
+INSERT INTO t_td SELECT tuple(toDateTime('2020-01-02 00:00:00'), 2);
+SELECT k FROM t_td WHERE k IN (SELECT CAST(tuple(toDate('2020-01-01'), 1), 'Nullable(Tuple(Date, UInt64))') UNION ALL SELECT NULL) ORDER BY k SETTINGS enable_nullable_tuple_type = 1;
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_td WHERE k IN (SELECT CAST(tuple(toDate('2020-01-01'), 1), 'Nullable(Tuple(Date, UInt64))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_td WHERE k IN (SELECT CAST(tuple(toDate('2020-01-01'), 1), 'Nullable(Tuple(Date, UInt64))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%Parts: 3/3%';
+
+-- Case C21 (CONTROL, must NOT change): a component-EQUAL temporal pair loses nothing, so the arm must
+-- NOT fire. This is what stops it from being "fixed" by declining every temporal pair. The forward
+-- `DateTime -> DateTime` cast is the equal-types base case of `canBeSafelyCast`, so this atom is
+-- genuinely exact and its `NOT IN` prunes -- which is what the part counts assert.
+SELECT 'Component-equal temporal pair stays exact';
+SELECT d FROM t_dd WHERE d IN (SELECT CAST('2020-01-01 00:00:00', 'Nullable(DateTime)') UNION ALL SELECT NULL) ORDER BY d;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dd WHERE d IN (SELECT CAST('2020-01-01 00:00:00', 'Nullable(DateTime)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%in 1-element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dd WHERE d IN (SELECT CAST('2020-01-01 00:00:00', 'Nullable(DateTime)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 1/3%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dd WHERE d NOT IN (SELECT CAST('2020-01-01 00:00:00', 'Nullable(DateTime)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 2/3%';
+-- CONTROL: a WIDENING temporal pair (`DateTime` key, `DateTime64` element) carries both components on
+-- both sides, so the arm must not fire here either. The forward `DateTime64 -> DateTime` cast is
+-- rejected by `canBeSafelyCast` (its branch accepts only a `String` target), so this one is a liveness
+-- control: the atom stays live and relaxed.
+SELECT 'Widening temporal pair stays live, relaxed';
+SELECT d FROM t_dd WHERE d IN (SELECT CAST('2020-01-01 00:00:00', 'Nullable(DateTime64(4))') UNION ALL SELECT NULL) ORDER BY d;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dd WHERE d IN (SELECT CAST('2020-01-01 00:00:00', 'Nullable(DateTime64(4))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%in 1-element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dd WHERE d NOT IN (SELECT CAST('2020-01-01 00:00:00', 'Nullable(DateTime64(4))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
 
 -- Case E: the `NOT has` sibling caller shares the same helper and must get the same treatment.
 -- `optimize_rewrite_has_to_in = 0` keeps the query on the `has` path.
@@ -449,3 +540,6 @@ DROP TABLE t_di;
 DROP TABLE t_df;
 DROP TABLE t_dw;
 DROP TABLE t_t64;
+DROP TABLE t_dd;
+DROP TABLE t_d64;
+DROP TABLE t_td;

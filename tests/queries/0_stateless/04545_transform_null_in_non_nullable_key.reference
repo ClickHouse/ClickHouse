@@ -89,12 +89,14 @@ Same-width FixedString source stays exact
 6162
 1
 1
+1
 Tuple key, collapsing element type, declined
 61
 6100
 1
 1
 62
+1
 1
 1
 Decimal key, integer source, declined
@@ -122,18 +124,53 @@ Time64 key, integer source, declined
 00:00:02.0000
 1
 1
-Finer-scale Decimal source stays exact
+Finer-scale Decimal source stays live, relaxed
 1
 1
 1
-Scale-zero Decimal key, integer source, stays exact
+1
+1
+Scale-zero Decimal key, integer source, stays live, relaxed
 16777216
+1
+1
 1
 1
 Injective numeric narrowing stays exact
 50000
 10
 90000
+1
+1
+1
+DateTime key, Date source, declined
+2020-01-01 00:00:00
+2020-01-01 12:34:56
+2020-01-02 00:00:00
+1
+1
+DateTime key, Time source, declined
+2020-01-01 00:00:00
+2020-01-02 00:00:00
+1
+1
+DateTime64 key, Time64 source, declined
+2020-01-01 00:00:00.0000
+2020-01-02 00:00:00.0000
+1
+1
+Tuple key, collapsing temporal element, declined
+('2020-01-01 00:00:00',1)
+('2020-01-01 12:34:56',1)
+1
+1
+Component-equal temporal pair stays exact
+2020-01-01 00:00:00
+1
+1
+1
+Widening temporal pair stays live, relaxed
+2020-01-01 00:00:00
 1
 1
 String key NOT has, partition pruning

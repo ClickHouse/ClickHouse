@@ -2651,7 +2651,10 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
 ///   - a scaled key (Decimal / DateTime64 / Time64) whose runtime cast goes through
 ///     `DecimalUtils::convertToImpl`, which rejects only on range overflow: a coarser target scale
 ///     divides the extra digits away (1.2345 and 1.2300 both become 1.23), an integer target takes
-///     the whole part, and a float target loses mantissa precision.
+///     the whole part, and a float target loses mantissa precision;
+///   - a temporal key whose target cannot represent one of its components: casting a timestamp into
+///     `Date`/`Date32` throws off the time of day, and casting a date or timestamp into `Time`/`Time64`
+///     throws off the calendar date.
 ///
 /// It is a detector, not an exhaustive account of the conversions that can collapse. A conversion
 /// it does not classify is treated as merely approximate by the caller, which is weaker than
@@ -2711,6 +2714,30 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
     if (key_which.isStringOrFixedString() && !key_unwrapped->equals(*set_unwrapped))
         return true;
 
+    /// A temporal conversion between two temporal types collapses whenever the TARGET cannot
+    /// represent a component the KEY carries. `Date`/`Date32` carry a calendar date only,
+    /// `Time`/`Time64` a time of day only, `DateTime`/`DateTime64` both. Casting a timestamp into
+    /// `Date` "throws off the time component" (`ConvertImpl`'s own words), so a whole day of keys maps
+    /// onto one set value; casting a date or a timestamp into `Time` throws off the calendar date, so
+    /// every key sharing a clock reading collapses. Unlike same-family numeric narrowing there is no
+    /// round-trip check to reject the lossy value: `can_apply_accurate_cast` requires an integer or
+    /// float SOURCE, so a temporal source never reaches the strict `accurate::convertNumeric` path and
+    /// the conversion always succeeds silently. This is a component test, not a scale test -- the scale
+    /// arm below cannot see it, because neither `Date` nor `DateTime` nor `Time` reports a scale, and
+    /// for `DateTime64`/`Time64` the collapsing component is not the sub-second one.
+    if (key_which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64()
+        && set_which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64())
+    {
+        auto carries_date = [](const WhichDataType & which)
+        { return which.isDateOrDate32() || which.isDateTimeOrDateTime64(); };
+        auto carries_time_of_day = [](const WhichDataType & which)
+        { return which.isTimeOrTime64() || which.isDateTimeOrDateTime64(); };
+
+        if ((carries_date(key_which) && !carries_date(set_which))
+            || (carries_time_of_day(key_which) && !carries_time_of_day(set_which)))
+            return true;
+    }
+
     /// A scaled key (`Decimal`, `DateTime64`, `Time64`) is cast at runtime through
     /// `DecimalUtils::convertToImpl`, which rejects only on RANGE overflow. Two of its branches lose
     /// information silently, and they need different tests because they lose different things.
@@ -2744,7 +2771,10 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
     /// caller. Of those, same-family numeric narrowing is genuinely injective:
     /// `accurate::convertNumeric` is instantiated with `strict = true` and compares the round trip,
     /// so `accurateCast(4294967297::UInt64, 'UInt32')` throws CANNOT_CONVERT_TYPE rather than
-    /// truncating, and the query fails loudly instead of answering from a collapsed set.
+    /// truncating, and the query fails loudly instead of answering from a collapsed set. That
+    /// strictness is what the arms above are enumerating exceptions to, and it is available only when
+    /// the SOURCE is an integer or a float (`can_apply_accurate_cast`), which is why the temporal arm
+    /// above cannot rely on it.
     return false;
 }
 
