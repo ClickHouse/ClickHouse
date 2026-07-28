@@ -378,7 +378,7 @@ For GCS, substitute your HMAC key and HMAC secret where you see `access_key_id` 
 | `structure`                             | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                    |
 | `compression_method`                    | Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension.                                                                                                                                                                                         |
 | `headers`                               | Parameter is optional. Allows headers to be passed in the S3 request. Pass in the format `headers(key=value)` e.g. `headers('x-amz-request-payer' = 'requester')`.                                                                                                                                                                                                               |
-| `partition_strategy`                    | Parameter is optional. Supported values: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Defaults to the `file_like_engine_default_partition_strategy` setting (`wildcard` under `compatibility` settings older than `26.6`, `hive` otherwise). |
+| `partition_strategy`                    | Parameter is optional. Supported values: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. If the path contains a `{_partition_id}` placeholder, defaults to `wildcard` — the only strategy compatible with such a path. Otherwise defaults to the `file_like_engine_default_partition_strategy` setting (`wildcard` under `compatibility` settings older than `26.6`, `hive` otherwise). |
 | `partition_columns_in_data_file`        | Parameter is optional. Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.                                                                                                                                                                                                          |
 | `extra_credentials`                     | Parameter is optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps. |
 | `storage_class_name`                    | Parameter is optional. Supported values: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Only S3 storage classes that allow immediate retrieval are supported (archival classes such as `GLACIER` and `DEEP_ARCHIVE` are not). Allows to specify [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/). Defaults to `STANDARD`. |
@@ -580,7 +580,7 @@ FROM s3(creds, url='https://s3-object-url.csv')
 
 Supported for INSERT queries only.
 
-`wildcard`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. It is selected by default only when the `compatibility` setting is older than `26.6`. When `compatibility` is set to `26.6` or later, or when current defaults apply, the default is `hive`, so paths containing `{_partition_id}` must explicitly set `partition_strategy='wildcard'` (see the `file_like_engine_default_partition_strategy` setting).
+`wildcard`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Selected by default when the path contains a `{_partition_id}` placeholder (the only strategy compatible with such a path), and otherwise under `compatibility` settings older than `26.6`; in the remaining cases the default is `hive` (see the `file_like_engine_default_partition_strategy` setting).
 
 `hive` implements hive style partitioning for reads & writes. It generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
@@ -728,9 +728,9 @@ Peak memory usage: 192.27 KiB.
 
 ## Storage Settings {#storage-settings}
 
-- [s3_truncate_on_insert](/reference/settings/session-settings#s3_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
-- [s3_create_new_file_on_insert](/reference/settings/session-settings#s3_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
-- [s3_skip_empty_files](/reference/settings/session-settings#s3_skip_empty_files) - allows to skip empty files while reading. Enabled by default.
+- [s3_truncate_on_insert](/reference/settings/session-settings/s3#s3_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
+- [s3_create_new_file_on_insert](/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [s3_skip_empty_files](/reference/settings/session-settings/s3#s3_skip_empty_files) - allows to skip empty files while reading. Enabled by default.
 
 ## Nested Avro Schemas {#nested-avro-schemas}
 
@@ -826,7 +826,7 @@ The same setting switches the `GCS` table engine between the two backends. Nativ
 | `format`                     | The [format](/reference/formats/index) of the file.                                                                                                                                        |
 | `structure`                  | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                            |
 | `compression_method`         | Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension. |
-| `partition_strategy`         | Optional. Supported values: `wildcard` or `hive`. `wildcard` requires `{_partition_id}` in the path. It is the default only when `compatibility` is older than `26.6`; otherwise, including when current defaults apply, the default is `hive`. |
+| `partition_strategy`         | Optional. Supported values: `wildcard` or `hive`. `wildcard` requires `{_partition_id}` in the path. It is the default when the path contains `{_partition_id}` (the only strategy compatible with such a path), or when `compatibility` is older than `26.6`; otherwise, including when current defaults apply, the default is `hive`. |
 
 <Info>
 **GCS**
@@ -983,7 +983,7 @@ FROM gcs(creds, url='https://s3-object-url.csv')
 
 If you specify `PARTITION BY` expression when inserting data into `GCS` table, a separate file is created for each partition value. Splitting the data into separate files helps to improve reading operations efficiency.
 
-When `compatibility` is set to `26.6` or later, or when current defaults apply, `hive` is the default partition strategy. Because paths containing `{_partition_id}` require `wildcard`, the following examples set `partition_strategy='wildcard'` explicitly.
+A path containing `{_partition_id}` implies the `wildcard` partition strategy, so the explicit `partition_strategy='wildcard'` in the examples below is optional. For paths without the placeholder, the default is `hive` when `compatibility` is `26.6` or later (including current defaults); see the `file_like_engine_default_partition_strategy` setting.
 
 **Examples**
 
@@ -1093,7 +1093,7 @@ azureBlobStorage(named_collection[, option=value [,..]])
 | `format`                         | The [format](/reference/formats/index) of the file.                                                                                                                                                                                                                                                                                                         |
 | `compression`                    | Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension (same as setting to `auto`).                                                                                                                                                                                       |
 | `structure`                      | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                             |
-| `partition_strategy`             | Optional. Supported values: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Defaults to the `file_like_engine_default_partition_strategy` setting (`WILDCARD` when `compatibility` is older than `26.6`; `HIVE` otherwise, including when current defaults apply). |
+| `partition_strategy`             | Optional. Supported values: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. If the path contains a `{_partition_id}` placeholder, defaults to `WILDCARD` — the only strategy compatible with such a path. Otherwise defaults to the `file_like_engine_default_partition_strategy` setting (`WILDCARD` under `compatibility` settings older than `26.6`, `HIVE` otherwise). |
 | `partition_columns_in_data_file` | Optional. Only used with `HIVE` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.                                                                                                                                                                                                 |
 | `extra_credentials`              | Use `client_id` and `tenant_id` for authentication. If extra_credentials are provided, they are given priority over `account_name` and `account_key`.                                                                                                                                                                                                     |
 
@@ -1179,7 +1179,7 @@ LIMIT 5;
 
 ### Writing with partitions {#writing-with-partitions}
 
-When `compatibility` is set to `26.6` or later, or when current defaults apply, `HIVE` is the default partition strategy. Paths containing `{_partition_id}` therefore require an explicit `WILDCARD` strategy.
+A path containing `{_partition_id}` implies the `WILDCARD` partition strategy. For paths without the placeholder, the default is `HIVE` when `compatibility` is `26.6` or later (including current defaults); see the `file_like_engine_default_partition_strategy` setting.
 
 ```sql
 INSERT INTO TABLE FUNCTION azureBlobStorage(
@@ -1227,7 +1227,7 @@ FROM azureBlobStorage(
 
 Supported for INSERT queries only.
 
-`WILDCARD`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. It is selected by default only when the `compatibility` setting is older than `26.6`. When `compatibility` is set to `26.6` or later, or when current defaults apply, the default is `HIVE`, so paths containing `{_partition_id}` must explicitly select `WILDCARD` (see the `file_like_engine_default_partition_strategy` setting).
+`WILDCARD`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Selected by default when the path contains a `{_partition_id}` placeholder (the only strategy compatible with such a path), and otherwise under `compatibility` settings older than `26.6`; in the remaining cases the default is `HIVE` (see the `file_like_engine_default_partition_strategy` setting).
 
 `HIVE` implements hive style partitioning for reads & writes. It generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
@@ -1431,9 +1431,9 @@ SELECT * FROM HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parque
 
 ## Storage Settings {#storage-settings}
 
-- [hdfs_truncate_on_insert](/reference/settings/session-settings#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
-- [hdfs_create_new_file_on_insert](/reference/settings/session-settings#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
-- [hdfs_skip_empty_files](/reference/settings/session-settings#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [hdfs_truncate_on_insert](/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
+- [hdfs_create_new_file_on_insert](/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [hdfs_skip_empty_files](/reference/settings/session-settings/hdfs#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
 
 ## Related {#related}
 
