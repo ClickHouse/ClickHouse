@@ -1025,18 +1025,13 @@ def _ensure_lldb_installed():
         print(f"Could not install lldb on the fly: {e}", file=sys.stderr)
         return
     # `brew install llvm` is keg-only — it does not symlink `lldb` onto the
-    # system PATH — so prepend the formula's bin dir, matching how the macOS
-    # job PATH is assembled in runner-init.py, or `shutil.which("lldb")` in
-    # `get_stacktraces_from_lldb` stays empty and the install is wasted.
-    try:
-        prefix = subprocess.run(
-            ["brew", "--prefix", "llvm"],
-            check=True, capture_output=True, text=True, timeout=30,
-        ).stdout.strip()
-        if prefix:
-            os.environ["PATH"] = f"{prefix}/bin:{os.environ.get('PATH', '')}"
-    except Exception as e:
-        print(f"Could not resolve brew llvm prefix: {e}", file=sys.stderr)
+    # system PATH — so prepend the formula's bin dir, or `shutil.which("lldb")`
+    # in `get_stacktraces_from_lldb` stays empty and the install is wasted. The
+    # keg-only `opt/llvm` path is stable across versions, so derive it directly
+    # (the same way `runner-init.py`'s `macos_job_path` assembles the job PATH)
+    # rather than spending a second `brew --prefix llvm` subprocess on it.
+    brew_prefix = "/opt/homebrew" if platform.machine() == "arm64" else "/usr/local"
+    os.environ["PATH"] = f"{brew_prefix}/opt/llvm/bin:{os.environ.get('PATH', '')}"
 
 
 # collect server stacktraces using lldb (used uniformly on Linux and macOS)
