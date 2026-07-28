@@ -31,17 +31,21 @@ def started_cluster():
         cluster.shutdown()
 
 
+FAILPOINTS = ("azure_inject_forbidden_response", "azure_inject_auth_failure")
+
+
 @pytest.fixture(autouse=True, scope="function")
 def reset_failpoint_between_tests(started_cluster):
-    try:
-        node.query("SYSTEM DISABLE FAILPOINT azure_inject_forbidden_response")
-    except Exception:
-        pass
+    def _disable_all():
+        for fp in FAILPOINTS:
+            try:
+                node.query(f"SYSTEM DISABLE FAILPOINT {fp}")
+            except Exception:
+                pass
+
+    _disable_all()
     yield
-    try:
-        node.query("SYSTEM DISABLE FAILPOINT azure_inject_forbidden_response")
-    except Exception:
-        pass
+    _disable_all()
 
 
 def _create_table(endpoint, name, blob):
@@ -113,3 +117,31 @@ def test_azure_403_at_merge_not_broken_part(started_cluster):
         )
     finally:
         node.query("SYSTEM DISABLE FAILPOINT azure_inject_forbidden_response")
+
+
+def test_azure_auth_failure_at_merge_not_broken_part(started_cluster):
+    # A credential/token failure (AuthenticationException, not an HTTP 403) during a merge read
+    # must also be treated as retryable, never reclassified as POTENTIALLY_BROKEN_DATA_PART.
+    node.query(
+        """
+        CREATE TABLE t_auth_merge (k UInt64, v String)
+        ENGINE = MergeTree() ORDER BY k
+        SETTINGS storage_policy = 'azure_policy', min_bytes_for_wide_part = 0
+        """
+    )
+    for i in range(3):
+        node.query(
+            f"INSERT INTO t_auth_merge SELECT number + {i * 100}, toString(number) FROM numbers(100)"
+        )
+    assert node.query("SELECT count() FROM t_auth_merge").strip() == "300"
+
+    _drop_caches()
+
+    node.query("SYSTEM ENABLE FAILPOINT azure_inject_auth_failure")
+    try:
+        err = node.query_and_get_error("OPTIMIZE TABLE t_auth_merge FINAL")
+        assert "POTENTIALLY_BROKEN_DATA_PART" not in err, (
+            f"unexpected broken-part error:\n{err}"
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT azure_inject_auth_failure")

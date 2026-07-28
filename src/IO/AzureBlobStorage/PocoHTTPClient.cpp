@@ -20,6 +20,7 @@
 #include <Poco/URI.h>
 #include <azure/core/http/policies/policy.hpp>
 #include <azure/storage/common/storage_exception.hpp>
+#include <azure/core/credentials/credentials.hpp>
 
 
 namespace DB::ErrorCodes
@@ -32,6 +33,7 @@ namespace DB::ErrorCodes
 namespace DB::FailPoints
 {
     extern const char azure_inject_forbidden_response[];
+    extern const char azure_inject_auth_failure[];
 }
 
 namespace ProfileEvents
@@ -152,6 +154,12 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::Send(
                 1, 0,
                 Azure::Core::Http::HttpStatusCode::Forbidden,
                 "Forbidden (injected by failpoint)"));
+    });
+
+    /// Test-only: simulate a credential/RBAC token-acquisition failure (not an HTTP response).
+    fiu_do_on(DB::FailPoints::azure_inject_auth_failure,
+    {
+        throw Azure::Core::Credentials::AuthenticationException("Authentication failed (injected by failpoint)");
     });
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::AzureRequests};
