@@ -54204,7 +54204,11 @@
     "source": "/zh/use-cases/observability/clickstack/demo-days/2026/2026-06-12"
   },
   {
-    "destination": "/skill.md",
+    "destination": "https://clickhouse.com/skill.md",
     "source": "/SKILL.md"
+  },
+  {
+    "destination": "https://clickhouse.com/skill.md",
+    "source": "/skill.md"
   }
 ]
