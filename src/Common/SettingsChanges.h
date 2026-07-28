@@ -22,7 +22,9 @@ struct SettingChange
     SettingChange(std::string_view name_, const Field & value_) : name(name_), value(value_) {}
     SettingChange(std::string_view name_, Field && value_) : name(name_), value(std::move(value_)) {}
 
-    friend bool operator ==(const SettingChange & lhs, const SettingChange & rhs) { return (lhs.name == rhs.name) && (lhs.value == rhs.value); }
+    /// `shorthand` is part of the identity of a change: it is what makes the change rejected for a
+    /// setting that is not Bool, so a shorthand change is not the same thing as an explicit `= true`.
+    friend bool operator ==(const SettingChange & lhs, const SettingChange & rhs) { return (lhs.name == rhs.name) && (lhs.value == rhs.value) && (lhs.shorthand == rhs.shorthand); }
     friend bool operator !=(const SettingChange & lhs, const SettingChange & rhs) { return !(lhs == rhs); }
 };
 

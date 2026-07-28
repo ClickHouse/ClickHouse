@@ -71,6 +71,7 @@ void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases
     {
         hash_state.update(change.name.size());
         hash_state.update(change.name);
+        hash_state.update(change.shorthand);
         applyVisitor(FieldVisitorHash(hash_state), change.value);
     }
 }
@@ -90,6 +91,12 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
             first = false;
 
         formatSettingName(change.name, ostr);
+
+        /// The valueless form has to survive a format/parse round trip: written back as
+        /// `name = true` it would be accepted for a setting of any type, which is exactly what the
+        /// shorthand check exists to prevent. The value is Bool `true` and never secret.
+        if (change.shorthand)
+            continue;
 
         auto format_if_secret = [&]() -> bool
         {
