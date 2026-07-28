@@ -354,8 +354,15 @@ DROP TABLE IF EXISTS t_jveto;
 CREATE TABLE t_jveto (i Int32, c JSON(x String)) ENGINE = Memory;
 INSERT INTO t_jveto VALUES (1, '{"x":"a"}'), (2, '{"x":"b"}');
 SELECT countIf((i = 1) AND (i = 2) AND (c != '{"x":1}'::JSON(x Int64))) FROM t_jveto; -- { serverError NO_COMMON_TYPE }
--- ... and the veto is not over-broad: a SAFE comparison in the same shape still folds away.
-SELECT countIf((i = 1) AND (i = 2) AND (c != '{"x":"zz"}')) AS safe_still_folds FROM t_jveto;
+-- ... and the veto's breadth is measured rather than assumed: to be able to veto at all it has to park
+-- before conversion with no converted value, so it keys on the expression TYPE and a SAFE comparison
+-- over the same JSON column is vetoed too, retaining that AND as well. That is a disclosed cost, not a
+-- wrong answer: the contradiction is still false at runtime, only the fold is forgone.
+SELECT countIf((i = 1) AND (i = 2) AND (c != '{"x":"zz"}')) AS safe_result_unaffected FROM t_jveto;
+SELECT 'safe json comparison is vetoed too', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t_jveto WHERE (i = 1) AND (i = 2) AND (c != '{"x":"zz"}')) WHERE explain ILIKE '%constant_value: UInt64_0%';
+-- ... while the same contradiction WITHOUT a dynamic-structure term still folds, so the veto is scoped
+-- to the dynamic-structure case and the fold is not disabled wholesale.
+SELECT 'plain contradiction still folds', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t_jveto WHERE (i = 1) AND (i = 2)) WHERE explain ILIKE '%constant_value: UInt64_0%';
 
 -- =====================================================================================
 -- (c) Queries that the rewrite used to FAIL outright. Kept last: on an unfixed build these
