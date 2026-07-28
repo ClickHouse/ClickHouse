@@ -176,7 +176,7 @@ A key-value pair consists of a key followed by a `key_value_delimiter` and a val
 
 **Syntax**
 ```sql
-extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character])
+extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **Arguments**
@@ -299,7 +299,7 @@ Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
 │ {'age':'a\\x0A\\n\\0'} │
 └────────────────────────┘
 ```)",
-            .syntax = "extractKeyValuePairs(input)",
+            .syntax = "extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])",
             .introduced_in = {23, 4},
             .category = FunctionDocumentation::Category::Map
         }
@@ -332,7 +332,7 @@ Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
 │ {'age':'a\n\n\0'} │
 └───────────────────┘
 ```)",
-            .syntax = "extractKeyValuePairsWithEscaping(input)",
+            .syntax = "extractKeyValuePairsWithEscaping(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])",
             .introduced_in = {23, 4},
             .category = FunctionDocumentation::Category::Map
         }
