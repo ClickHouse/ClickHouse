@@ -421,6 +421,10 @@ static void BM_RuntimeFilterApproximateFindUInt64(benchmark::State & state)
     benchmarkFind(state, RuntimeFilterKind::Approximate, type, build_column, probe_column);
 }
 
+/// Not a production path: `BuildRuntimeFilterTransform` only builds an `ApproximateRuntimeFilter` when
+/// `ApproximateRuntimeFilter::isDataTypeSupported` holds, and it rejects `Nullable(UInt64)`, so a nullable
+/// join key always goes through `ExactContainsRuntimeFilter`. This measures the approximate filter on a
+/// `ColumnNullable` in isolation, as a reference point for the exact nullable benchmark above.
 static void BM_RuntimeFilterApproximateFindNullableUInt64(benchmark::State & state)
 {
     const auto key_count = static_cast<size_t>(state.range(0));
@@ -663,8 +667,9 @@ BENCHMARK(BM_RuntimeFilterApproximateFindUInt64)
     ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/100})
     ->Args({/*key_count=*/100000, /*rows=*/65536, /*hit_ratio=*/50});
 
-/// ApproximateRuntimeFilter does not support hashing actual NULL values in ColumnNullable.
-/// Benchmark only the non-null ColumnNullable overhead here; NULL-heavy cases are covered by the exact filter benchmark above.
+/// `ApproximateRuntimeFilter` does not support hashing actual NULL values in `ColumnNullable`, and the planner never
+/// selects it for a nullable key (see the comment on the benchmark). Benchmark only the non-null `ColumnNullable`
+/// overhead here; NULL-heavy cases are covered by the exact filter benchmark above.
 BENCHMARK(BM_RuntimeFilterApproximateFindNullableUInt64)->Args({/*key_count=*/10000, /*rows=*/65536, /*null_percent=*/0});
 
 BENCHMARK(BM_RuntimeFilterApproximateFindString)
