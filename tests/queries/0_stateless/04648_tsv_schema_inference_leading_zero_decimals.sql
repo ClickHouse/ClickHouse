@@ -188,3 +188,10 @@ DESC format(TSKV, unhex('783D615C783245620A'));
 SELECT * FROM format(TSKV, unhex('783D615C783245620A'));
 DESC format(TSKV, unhex('783D305C700A'));
 SELECT * FROM format(TSKV, unhex('783D305C700A'));
+-- The guard requires both a decoded escape and a numeric inferred type, so a decoded escape in a Date or
+-- in a nested value keeps that type. DESC only: both reads fail here and on master alike.
+-- 783D323032302D30312D305C7833310A is `x=2020-01-0\x31` plus a newline, 633D5B305C783245355D0A is
+-- `c=[0\x2E5]` plus a newline.
+SELECT 'group 15: a decoded escape outside the numeric guard keeps its type';
+DESC format(TSKV, unhex('783D323032302D30312D305C7833310A'));
+DESC format(TSKV, unhex('633D5B305C783245355D0A'));

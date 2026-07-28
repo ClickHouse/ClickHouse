@@ -144,3 +144,6 @@ x	Nullable(String)
 a.b
 x	Nullable(String)					
 0\\p
+group 15: a decoded escape outside the numeric guard keeps its type
+x	Nullable(Date)					
+c	Array(Nullable(Float64))					
