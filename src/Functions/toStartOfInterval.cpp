@@ -290,7 +290,16 @@ private:
                     origin /= SECONDS_PER_DAY;
                 }
 
-                result_data[i] = static_cast<ResultDataType::FieldType>(origin + offset);
+                /// The offset is measured from the origin, so the interval start is their sum. The offset can be
+                /// negative (an interval boundary that falls before the epoch), so for an extreme origin near the
+                /// lower bound of Int64 the sum can overflow. Guard it like the subtraction above.
+                Int64 result = 0;
+                if (common::addOverflow(origin, offset, result))
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+                        "The interval start computed from the origin ({}) of function {} does not fit into Int64",
+                        origin, getName());
+
+                result_data[i] = static_cast<ResultDataType::FieldType>(result);
             }
         }
         else // Overload: Default
