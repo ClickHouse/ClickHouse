@@ -95,9 +95,6 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
                 });
                 object_storage->removeObjectsIfExist(objects);
             });
-            /// Only report the objects as removed when the whole batch succeeded.
-            /// On failure the batch may have been partially removed, so publishing the full
-            /// count here would turn the profile event into a false "all cleaned up" signal.
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, objects.size());
         }
         catch (...)
@@ -138,9 +135,6 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
             doWithRetries([&]{
                 object_storage->tagObjects(objects, tag_key, tag_value);
             });
-            /// Only report the objects as tagged when the whole batch succeeded.
-            /// Objects are tagged one by one, so a later failure can leave earlier objects
-            /// already tagged; publishing the full count on failure would misreport the batch.
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTaggedObjects, objects.size());
         }
         catch (...)
