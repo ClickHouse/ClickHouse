@@ -3,16 +3,20 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/RowPolicyDefs.h>
 #include <Access/EnabledRowPolicies.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/SelectQueryInfo.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -21,6 +25,14 @@ namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
 }
+
+/// A row policy resolved against a projection's columns, ready to be applied as a FilterStep.
+struct MergeTreeProjectionRowPolicyFilter
+{
+    ActionsDAG dag;
+    String filter_column_name;
+    Names required_columns;
+};
 
 StorageFromMergeTreeProjection::StorageFromMergeTreeProjection(
     StorageID storage_id_, StoragePtr parent_storage_, StorageMetadataPtr parent_metadata_, ProjectionDescriptionRawPtr projection_)
@@ -46,8 +58,14 @@ void StorageFromMergeTreeProjection::read(
     context->checkAccess(AccessType::SELECT, parent_storage->getStorageID());
 
     /// row policies live on the parent table, so enforce them here or the projection leaks hidden rows
-    if (auto row_level_filter = buildRowPolicyFilter(context))
-        query_info.row_level_filter = std::move(row_level_filter);
+    auto row_policy = buildRowPolicyFilter(context);
+
+    /// read the policy columns too, even if the query did not ask for them
+    Names read_column_names = column_names;
+    if (row_policy)
+        for (const auto & name : row_policy->required_columns)
+            if (std::find(read_column_names.begin(), read_column_names.end(), name) == read_column_names.end())
+                read_column_names.push_back(name);
 
     /// A UNIQUE KEY parent rejects projection reads in the MergeTreeDataSelectExecutor
     /// constructor below (the universal projection-read chokepoint), since reading a
@@ -72,7 +90,7 @@ void StorageFromMergeTreeProjection::read(
                     .readFromParts(
                         std::make_shared<RangesInDataParts>(projection_parts),
                         snapshot_data.mutations_snapshot->cloneEmpty(),
-                        column_names,
+                        read_column_names,
                         storage_snapshot,
                         query_info,
                         context,
@@ -89,9 +107,27 @@ void StorageFromMergeTreeProjection::read(
         read_nothing->setStepDescription("Read from NullSource (Projection)");
         query_plan.addStep(std::move(read_nothing));
     }
+
+    if (row_policy)
+    {
+        query_plan.addStep(std::make_unique<FilterStep>(
+            query_plan.getCurrentHeader(), std::move(row_policy->dag), row_policy->filter_column_name, true /* remove filter column */));
+
+        /// drop the policy columns we added on top of what the query requested
+        if (read_column_names.size() != column_names.size())
+        {
+            auto target = storage_snapshot->getSampleBlockForColumns(column_names);
+            auto convert = ActionsDAG::makeConvertingActions(
+                query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
+                target.getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name,
+                context);
+            query_plan.addStep(std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert)));
+        }
+    }
 }
 
-FilterDAGInfoPtr StorageFromMergeTreeProjection::buildRowPolicyFilter(const ContextPtr & context) const
+std::unique_ptr<MergeTreeProjectionRowPolicyFilter> StorageFromMergeTreeProjection::buildRowPolicyFilter(const ContextPtr & context) const
 {
     const auto parent_storage_id = parent_storage->getStorageID();
     auto row_policy_filter = context->getRowPolicyFilter(
@@ -114,14 +150,14 @@ FilterDAGInfoPtr StorageFromMergeTreeProjection::buildRowPolicyFilter(const Cont
                 projection->name, parent_storage_id.getNameForLogs(), column_name);
     }
 
-    /// resolve the policy against the projection columns so the read can filter and drop extra columns
+    /// resolve the policy against the projection columns
     ASTPtr expr = row_policy_filter->expression->clone();
     auto syntax_result = TreeRewriter(context).analyze(expr, projection_columns.getAll());
     ExpressionAnalyzer analyzer(expr, syntax_result, context);
-    auto filter_actions_dag = analyzer.getActionsDAG(false /* add_aliases */, false /* remove_unused_result */);
+    auto dag = analyzer.getActionsDAG(false /* add_aliases */, false /* remove_unused_result */);
 
     /// the filter column is the single output added on top of the inputs
-    ExpressionActions filter_actions(filter_actions_dag.clone(), ExpressionActionsSettings(context));
+    ExpressionActions filter_actions(dag.clone(), ExpressionActionsSettings(context));
     NamesAndTypesList added;
     NamesAndTypesList deleted;
     filter_actions.getSampleBlock().getNamesAndTypesList().getDifference(
@@ -136,8 +172,11 @@ FilterDAGInfoPtr StorageFromMergeTreeProjection::buildRowPolicyFilter(const Cont
         for (const auto & row_policy : row_policy_filter->policies)
             context->getQueryContext()->addUsedRowPolicy(row_policy->getFullName().toString());
 
-    return std::make_shared<FilterDAGInfo>(
-        FilterDAGInfo{std::move(filter_actions_dag), added.front().name, true /* do_remove_column */});
+    auto result = std::make_unique<MergeTreeProjectionRowPolicyFilter>();
+    result->filter_column_name = added.front().name;
+    result->required_columns = filter_actions.getRequiredColumns();
+    result->dag = std::move(dag);
+    return result;
 }
 
 StorageSnapshotPtr
