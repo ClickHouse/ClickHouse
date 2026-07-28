@@ -16,11 +16,8 @@ public:
     static constexpr UInt32 NUM_BUCKETS = 1ULL << BITS_FOR_BUCKET;
     static constexpr UInt32 MAX_BUCKET = NUM_BUCKETS - 1;
 
-    // TODO: currently hashing contains redundant computations when doing distributed or external aggregations
-    size_t hash(const Key & x) const
-    {
-        return const_cast<Self &>(*this).dispatch(*this, x, [&](const auto &, const auto &, size_t hash) { return hash; });
-    }
+    /// The hash does not depend on the bucket, so any submap's hash function serves.
+    size_t hash(const Key & x) const { return impls[0].hash(x); }
 
     size_t operator()(const Key & x) const { return hash(x); }
 
@@ -103,15 +100,20 @@ public:
         impls[getBucketFromHash(saved_hash)].emplace(std::forward<KeyHolder>(key_holder), it, inserted, saved_hash);
     }
 
-    LookupResult ALWAYS_INLINE find(const Key & x, size_t saved_hash)
+    LookupResult ALWAYS_INLINE find(const Key & x, size_t hash_value)
     {
-        return impls[getBucketFromHash(saved_hash)].find(x, saved_hash);
+        return impls[getBucketFromHash(hash_value)].find(x, hash_value);
+    }
+
+    ConstLookupResult ALWAYS_INLINE find(const Key & x, size_t hash_value) const
+    {
+        return impls[getBucketFromHash(hash_value)].find(x, hash_value);
     }
 
     template <typename KeyHolder>
-    void ALWAYS_INLINE prefetch(KeyHolder && key_holder, size_t saved_hash)
+    void ALWAYS_INLINE prefetch(KeyHolder && key_holder, size_t hash_value) const
     {
-        impls[getBucketFromHash(saved_hash)].prefetch(std::forward<KeyHolder>(key_holder), saved_hash);
+        impls[getBucketFromHash(hash_value)].prefetch(std::forward<KeyHolder>(key_holder), hash_value);
     }
 
     template <typename KeyHolder>
@@ -120,12 +122,12 @@ public:
         dispatch(*this, std::forward<KeyHolder>(key_holder), typename Impl::PrefetchCallable{});
     }
 
-    LookupResult ALWAYS_INLINE find(const Key x)
+    LookupResult ALWAYS_INLINE find(const Key & x)
     {
         return dispatch(*this, x, typename Impl::FindCallable{});
     }
 
-    ConstLookupResult ALWAYS_INLINE find(const Key x) const
+    ConstLookupResult ALWAYS_INLINE find(const Key & x) const
     {
         return dispatch(*this, x, typename Impl::FindCallable{});
     }

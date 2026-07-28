@@ -463,12 +463,12 @@ public:
 
     /// Same as `dispatch`, but uses a hash the caller saved from an earlier `hash(x)` instead of recomputing it.
     template <typename Self, typename KeyHolder, typename Func>
-    static auto ALWAYS_INLINE dispatchWithHash(Self & self, KeyHolder && key_holder, size_t saved_hash, Func && func)
+    static auto ALWAYS_INLINE dispatchWithHash(Self & self, KeyHolder && key_holder, size_t hash_value, Func && func)
     {
         return dispatchOnKeyClass(
             [&](auto key_class, size_t) -> auto & { return self.template submapForClass<decltype(key_class)::value>(); },
             std::forward<KeyHolder>(key_holder),
-            [saved_hash](const auto &) { return saved_hash; },
+            [hash_value](const auto &) { return hash_value; },
             std::forward<Func>(func));
     }
 
@@ -505,9 +505,9 @@ public:
     }
 
     template <typename KeyHolder>
-    void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted, size_t saved_hash)
+    void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted, size_t hash_value)
     {
-        this->dispatchWithHash(*this, key_holder, saved_hash, EmplaceCallable(it, inserted));
+        this->dispatchWithHash(*this, key_holder, hash_value, EmplaceCallable(it, inserted));
     }
 
     static bool keyGoesToLongStringMap(std::string_view key)
@@ -533,9 +533,9 @@ public:
     };
 
     template <typename KeyHolder>
-    void ALWAYS_INLINE prefetch(KeyHolder && key_holder)
+    void ALWAYS_INLINE prefetch(KeyHolder && key_holder) const
     {
-        this->dispatch(*this, std::forward<KeyHolder>(key_holder), PrefetchCallable{});
+        dispatch(*this, std::forward<KeyHolder>(key_holder), PrefetchCallable{});
     }
 
     struct FindCallable
@@ -558,15 +558,20 @@ public:
         return dispatch(*this, x, FindCallable{});
     }
 
-    LookupResult ALWAYS_INLINE find(const Key & x, size_t saved_hash)
+    LookupResult ALWAYS_INLINE find(const Key & x, size_t hash_value)
     {
-        return dispatchWithHash(*this, x, saved_hash, FindCallable{});
+        return dispatchWithHash(*this, x, hash_value, FindCallable{});
+    }
+
+    ConstLookupResult ALWAYS_INLINE find(const Key & x, size_t hash_value) const
+    {
+        return dispatchWithHash(*this, x, hash_value, FindCallable{});
     }
 
     template <typename KeyHolder>
-    void ALWAYS_INLINE prefetch(KeyHolder && key_holder, size_t saved_hash)
+    void ALWAYS_INLINE prefetch(KeyHolder && key_holder, size_t hash_value) const
     {
-        this->dispatchWithHash(*this, std::forward<KeyHolder>(key_holder), saved_hash, PrefetchCallable{});
+        dispatchWithHash(*this, std::forward<KeyHolder>(key_holder), hash_value, PrefetchCallable{});
     }
 
     ConstLookupResult ALWAYS_INLINE find(const Key & x) const
@@ -574,9 +579,14 @@ public:
         return dispatch(*this, x, FindCallable{});
     }
 
-    bool ALWAYS_INLINE has(const Key & x, size_t = 0) const
+    bool ALWAYS_INLINE has(const Key & x) const
     {
         return dispatch(*this, x, FindCallable{}) != nullptr;
+    }
+
+    bool ALWAYS_INLINE has(const Key & x, size_t hash_value) const
+    {
+        return dispatchWithHash(*this, x, hash_value, FindCallable{}) != nullptr;
     }
 
     void write(DB::WriteBuffer & wb) const
