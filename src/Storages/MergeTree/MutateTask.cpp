@@ -1197,30 +1197,41 @@ static NameToNameVector collectFilesForRenames(
     /// escape_index_filenames = 0, where the stream name is the index name verbatim: dropping `a`
     /// reaches index `a.pos`, and dropping `a.pos` reaches the `.pos` substream of text index `a`.
     /// Collect the concrete data and mark filenames of every surviving substream so neither can be
-    /// scheduled for deletion. Substream suffixes are matched against the same speculative list used
-    /// below, because a surviving index's type is available but its stream names are what matter.
+    /// scheduled for deletion.
+    ///
+    /// Ownership comes from each surviving index's OWN getSubstreams(), never from the speculative
+    /// list: minmax owns no `.pos` substream, so letting a minmax index named `a` claim
+    /// skp_idx_a.pos.* would instead leak the files of a dropped index named `a.pos`.
     static const std::array<String, 4> owned_substream_suffixes = {"", ".dct", ".pst", ".pos"};
     static const std::array<String, 2> owned_index_extensions = {".idx2", ".idx"};
 
     NameSet surviving_index_owned_files;
-    for (const auto & index : metadata_snapshot->getSecondaryIndices())
     {
-        const String index_file_name = getIndexFileName(index.name, metadata_snapshot->escape_index_filenames);
-        for (const auto & suffix : owned_substream_suffixes)
-        {
-            const String stream_name = index_file_name + suffix;
-            auto protect = [&](const String & extension)
-            {
-                auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, source_part->checksums);
-                if (!actual)
-                    actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, source_part->getDataPartStorage());
-                if (actual)
-                    surviving_index_owned_files.insert(*actual + extension);
-            };
+        const auto & index_factory = MergeTreeIndexFactory::instance();
+        const auto & data_settings = *source_part->storage.getSettings();
 
-            for (const auto & extension : owned_index_extensions)
-                protect(extension);
-            protect(mrk_extension);
+        for (const auto & index : metadata_snapshot->getSecondaryIndices())
+        {
+            auto surviving_index = index_factory.get(metadata_snapshot, index, data_settings);
+            const String index_file_name = surviving_index->getFileName();
+
+            for (const auto & substream : surviving_index->getSubstreams())
+            {
+                const String stream_name = index_file_name + substream.suffix;
+                auto protect = [&](const String & extension)
+                {
+                    auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, source_part->checksums);
+                    if (!actual)
+                        actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, source_part->getDataPartStorage());
+                    if (actual)
+                        surviving_index_owned_files.insert(*actual + extension);
+                };
+
+                /// Both minmax extensions, so an upgraded part's legacy `.idx` is protected too.
+                for (const auto & extension : owned_index_extensions)
+                    protect(extension);
+                protect(mrk_extension);
+            }
         }
     }
 
@@ -3345,18 +3356,22 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         /// speculative suffix never claims one of them. The collision goes both ways when
         /// escape_index_filenames = 0: dropping `a` reaches index `a.pos`, and dropping `a.pos`
         /// reaches the `.pos` substream of text index `a`.
+        ///
+        /// Ownership comes from each surviving index's OWN getSubstreams(): minmax owns no `.pos`,
+        /// so letting it claim skp_idx_<name>.pos.* would leak a dropped `<name>.pos` index instead.
         NameSet surviving_index_owned_files;
         for (const auto & index : ctx->metadata_snapshot->getSecondaryIndices())
         {
             if (ctx->indices_to_drop_names.contains(index.name))
                 continue;
 
-            const String surviving_file_name = getIndexFileName(index.name, escape_filenames);
-            for (const auto & sub : known_substream_suffixes)
+            auto surviving_index = index_factory.get(ctx->metadata_snapshot, index, *ctx->data->getSettings());
+            const String surviving_file_name = surviving_index->getFileName();
+            for (const auto & substream : surviving_index->getSubstreams())
             {
                 for (const auto & ext : known_index_extensions)
-                    surviving_index_owned_files.insert(surviving_file_name + sub + ext);
-                surviving_index_owned_files.insert(surviving_file_name + sub + ctx->mrk_extension);
+                    surviving_index_owned_files.insert(surviving_file_name + substream.suffix + ext);
+                surviving_index_owned_files.insert(surviving_file_name + substream.suffix + ctx->mrk_extension);
             }
         }
 

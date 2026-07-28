@@ -137,6 +137,52 @@ run_inverse_case() {
     ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${tbl} SYNC"
 }
 
+# Dropping the index whose NAME carries the suffix, where the sibling is an
+# ordinary minmax index that owns no `.pos` substream at all. The survivor must
+# not over-claim skp_idx_a.pos.*, or the dropped index's own files leak into the
+# new part (and a later re-ADD without MATERIALIZE INDEX could then read stale
+# index data).
+run_suffix_named_drop_case() {
+    local label="$1" escape="$2" packed="$3"
+    local tbl="t_sfx_${label}"
+
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${tbl} SYNC"
+
+    ${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE ${tbl}
+    (
+        k UInt64,
+        v UInt64,
+        w UInt64,
+        INDEX a v TYPE minmax GRANULARITY 1,
+        INDEX \`a.pos\` w TYPE minmax GRANULARITY 1
+    )
+    ENGINE = MergeTree ORDER BY k
+    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+             index_granularity = 100, replace_long_file_name_to_hash = 0,
+             escape_index_filenames = ${escape},
+             packed_skip_index_max_bytes = ${packed}"
+
+    ${CLICKHOUSE_CLIENT} -q "INSERT INTO ${tbl} (k, v, w) SELECT number, number, number FROM numbers(500)"
+    ${CLICKHOUSE_CLIENT} -q "OPTIMIZE TABLE ${tbl} FINAL"
+
+    ${CLICKHOUSE_CLIENT} -q "ALTER TABLE ${tbl} DROP INDEX \`a.pos\` SETTINGS mutations_sync = 2"
+
+    local part
+    part=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active ORDER BY name LIMIT 1")
+
+    echo "${label}_dropped_index_gone:"
+    ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = '${tbl}' AND name = 'a.pos'"
+    echo "${label}_dropped_files_not_leaked:"
+    if [ -e "${part}skp_idx_a.pos.idx2" ] || [ -e "${part}skp_idx_a%2Epos.idx2" ]; then echo 1; else echo 0; fi
+    echo "${label}_survivor_still_prunes:"
+    ${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ${tbl} WHERE v = 42) WHERE explain ILIKE '%Granules: 1/5%'"
+    echo "${label}_check_table:"
+    ${CLICKHOUSE_CLIENT} -q "CHECK TABLE ${tbl}" | cut -f2
+
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${tbl} SYNC"
+}
+
 # Unescaped names are the shape that collides: the stream name is the index name
 # verbatim, so `a` + ".pos" == the stream name of index `a.pos`.
 run_case "standalone_unescaped" 0 0
@@ -149,3 +195,7 @@ run_case "packed_unescaped" 0 1048576
 # Inverse direction: drop the index whose name IS the sibling substream suffix.
 run_inverse_case "inverse_unescaped" 0
 run_inverse_case "inverse_escaped" 1
+# Same suffix collision, but the dropped index is the one whose NAME ends in the
+# suffix and the survivor owns no such substream.
+run_suffix_named_drop_case "suffixdrop_unescaped" 0 0
+run_suffix_named_drop_case "suffixdrop_packed" 0 1048576
