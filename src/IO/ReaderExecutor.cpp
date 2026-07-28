@@ -369,7 +369,6 @@ ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want)
 ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t max_serve)
 {
     chassert(!cache_chain.empty());
-    const ByteRange window{window_offset, max_serve};
     /// Resolve only the window START: probe each tier (front = fastest); a hit serves one block from
     /// cache, an all-miss fetches the covering cell(s) and populates. Coarse fetch, fine serve -- the
     /// fetched cell tail primes the following windows as hits.
@@ -410,9 +409,16 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
 
     /// A cell a sibling is already downloading is fetched through below (its `write` lands 0).
 
-    /// No writing tier (all bypass): stream the window straight from source, no populate.
+    /// No writing tier (all bypass): read straight from source, no populate. Serve up to the miss
+    /// cell (block-capped, like the cache paths) so the next window re-probes at the cell boundary -
+    /// a passive `*_if_exists_otherwise_bypass` tier gets every cell checked, not just the window head.
     if (claimed.empty())
-        return readSource(window_offset, max_serve).slice(window);
+    {
+        size_t miss_end = window_offset + max_serve;
+        for (const auto & m : miss_tiers)
+            miss_end = std::min(miss_end, m.cell.end());
+        return readSource(window_offset, serve_len(miss_end));
+    }
 
     /// Fetch the whole start cells (across the objects they span), populate each, serve one block.
     size_t fetch_lo = window_offset;

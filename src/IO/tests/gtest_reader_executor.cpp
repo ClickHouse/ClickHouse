@@ -108,8 +108,8 @@ struct MockCacheState
 class MockFileCacheProvider : public ICacheProvider
 {
 public:
-    MockFileCacheProvider(size_t block_size_, std::shared_ptr<MockCacheState> state_)
-        : block_size(block_size_), state(std::move(state_)) {}
+    MockFileCacheProvider(size_t block_size_, std::shared_ptr<MockCacheState> state_, bool bypass_ = false)
+        : block_size(block_size_), state(std::move(state_)), bypass(bypass_) {}
 
     CacheTier tier() const override { return CacheTier::PageCache; }
     bool fillsWholeCell() const override { return true; }
@@ -119,6 +119,8 @@ public:
 
     CacheWriterPtr openWriter(const StoredObject &, size_t, ByteRange cell) override
     {
+        if (bypass)   /// a passive `*_if_exists_otherwise_bypass` tier: serves hits, never populates
+            return nullptr;
         return std::make_unique<Writer>(cell, state);
     }
 
@@ -224,6 +226,7 @@ private:
 
     size_t block_size;
     std::shared_ptr<MockCacheState> state;
+    bool bypass;
 };
 
 /// A source buffer that mimics object storage opened with `use_external_buffer=true`: it owns no
@@ -587,6 +590,41 @@ TEST_F(ReaderExecutorTest, SiblingLedCellIsFetchedThrough)
     for (const auto & wr : state->writes)
         EXPECT_GE(wr.offset, 256u) << "wrote into the sibling-led block";
     EXPECT_FALSE(state->resident.subtract(ByteRange{0, block}).empty());
+}
+
+TEST_F(ReaderExecutorTest, BypassTierServesCachedCellAfterHeadMiss)
+{
+    /// A read-only (bypass) tier - `openWriter` returns null, like `*_if_exists_otherwise_bypass = 1`
+    /// - has no writer, so an all-miss window reads from source. It must still serve a cell cached
+    /// AFTER a head miss: read source only up to the miss cell and re-probe, never swallow the whole
+    /// window. Regression for the bot finding (window read the whole `window_size` and skipped a warm
+    /// later block). Mirrors its trace: block cached at [block, 2*block), miss at 0.
+    const size_t block = 256;
+    StoredObjects objects{makeFile("a.bin", 4 * block)};
+
+    auto state = std::make_shared<MockCacheState>(/*file_size=*/4 * block);
+    /// Pre-cache the SECOND block [block, 2*block) with the correct bytes.
+    state->resident.add(ByteRange{block, block});
+    for (size_t i = block; i < 2 * block; ++i)
+        state->store[i] = static_cast<char>(patternByte(i));
+
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state, /*bypass=*/true));
+
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 4 * block, .block_size = block, .cache_chain = std::move(chain)});
+
+    auto data = drain(ex);
+    ASSERT_EQ(data.size(), 4 * block);
+    for (size_t i = 0; i < data.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+
+    /// The cached block is served from the tier; the other three come from source. Before the fix the
+    /// head miss read the whole window (4*block) from source and never probed the warm block.
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 3 * block)
+        << "the cell cached after a head miss was re-read from source (bypass path swallowed the window)";
+    EXPECT_TRUE(state->writes.empty()) << "a bypass tier must not populate";
 }
 
 TEST_F(ReaderExecutorTest, MultiObjectDataIsCorrect)
