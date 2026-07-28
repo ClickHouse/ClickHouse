@@ -5147,6 +5147,16 @@ def do_run_tests(
         MEMORY_PRESSURE_THRESHOLD = 0.8
         last_memory_check = time()
 
+        # How often (seconds) to probe the server for a hang while it answers.
+        HUNG_CHECK_INTERVAL = 30.0
+        # Abort the run after this many CONSECUTIVE probe failures.
+        HUNG_CHECK_MAX_FAILURES = 10
+        # None => probe immediately on the first loop iteration.
+        last_hung_check = None
+        last_hung_check_ok = None
+        hung_check_delay = HUNG_CHECK_INTERVAL
+        hung_check_failures = 0
+
         # Set when the parent stops the run because the global time limit was
         # reached, so the final `StopTesting` is raised with the benign
         # `GLOBAL_TIME_LIMIT_EXIT_CODE` rather than the "Server died" code.
@@ -5191,6 +5201,13 @@ def do_run_tests(
                 args.stop_time
                 and time() > args.stop_time
                 and not stop_testing.is_set()
+                # Only claim the benign deadline once the server has answered at
+                # or after it: otherwise a death in the last probe interval would
+                # be reported as an expected timeout instead of a server death.
+                and (
+                    not args.hung_check
+                    or (last_hung_check_ok is not None and last_hung_check_ok >= args.stop_time)
+                )
             ):
                 print("Global time limit reached - stopping all tests gracefully.")
                 # Ignore SIGTERM in the parent for the rest of the run: when we
@@ -5205,12 +5222,35 @@ def do_run_tests(
                 stop_testing.set()
 
             # Periodically check the server for hangs
-            # and stop all processes in this case
-            if args.hung_check:
-                if not check_server_liveness(args):
-                    print("Hung check failed: server is not responding")
-                    print_c_stacktraces(args)
-                    stop_testing.set()
+            # and stop all processes in this case.
+            if args.hung_check and (
+                last_hung_check is None
+                or time() - last_hung_check >= hung_check_delay
+                # The deadline needs a fresh confirmation (see the block above);
+                # only while no failure sequence is pending, so this never
+                # bypasses the back-off.
+                or (
+                    hung_check_failures == 0
+                    and args.stop_time
+                    and time() > args.stop_time
+                    and (last_hung_check_ok is None or last_hung_check_ok < args.stop_time)
+                )
+            ):
+                # One attempt per poll: the retry window is owned by this loop so
+                # it keeps running the memory shed and the deadline check.
+                if check_server_liveness(args, max_retries=1):
+                    hung_check_failures = 0
+                    hung_check_delay = HUNG_CHECK_INTERVAL
+                    last_hung_check_ok = time()
+                else:
+                    hung_check_failures += 1
+                    if hung_check_failures >= HUNG_CHECK_MAX_FAILURES:
+                        print("Hung check failed: server is not responding")
+                        print_c_stacktraces(args)
+                        stop_testing.set()
+                    else:
+                        hung_check_delay = min(2 ** (hung_check_failures - 1), 10)
+                last_hung_check = time()
 
             if stop_testing.is_set():
                 # Mask SIGTERM during the cleanup: when we terminate a worker,
@@ -5269,6 +5309,48 @@ def do_run_tests(
                         )
                         runner_process_killed.set()
                     processes.remove(p)
+
+        # The workers are gone, so no further loop iteration will run. Finish any
+        # pending failure sequence here and take a terminal confirmation:
+        # otherwise a death after the last successful probe would leave the run
+        # reporting a generic failure instead of `Server died` (master's single
+        # blocking call spanned the whole window and so could not miss it).
+        if args.hung_check and not stop_testing.is_set():
+            while hung_check_failures < HUNG_CHECK_MAX_FAILURES:
+                # Honour whatever is left of the back-off the loop already
+                # started, so the drain cannot collapse two attempts into one
+                # and condemn a server that would have answered on retry.
+                if hung_check_failures > 0 and last_hung_check is not None:
+                    remaining = last_hung_check + hung_check_delay - time()
+                    if remaining > 0:
+                        sleep(remaining)
+                if check_server_liveness(args, max_retries=1):
+                    hung_check_failures = 0
+                    break
+                hung_check_failures += 1
+                last_hung_check = time()
+                hung_check_delay = min(2 ** (hung_check_failures - 1), 10)
+            if hung_check_failures >= HUNG_CHECK_MAX_FAILURES:
+                print("Hung check failed: server is not responding")
+                print_c_stacktraces(args)
+                stop_testing.set()
+                raise StopTesting(
+                    "test run was stopped (see earlier output for the cause)"
+                )
+            # The server answered, so the workers stopped because the global
+            # deadline passed, not because it died. Claim it here: the workers
+            # are gone, so no further loop iteration will run to do it.
+            if (
+                args.stop_time
+                and time() > args.stop_time
+                and not global_time_limit_reached
+            ):
+                print("Global time limit reached - stopping all tests gracefully.")
+                signal.signal(signal.SIGTERM, signal.SIG_IGN)
+                raise StopTesting(
+                    "global time limit reached",
+                    exit_code=GLOBAL_TIME_LIMIT_EXIT_CODE,
+                )
 
     if test_suite.sequential_tests:
         # Sequential runner shares the total_failures_shared counter with parallel workers
