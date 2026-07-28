@@ -1,4 +1,5 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <mysqlxx/Exception.h>
 #include "config.h"
 
 #if USE_MYSQL
@@ -73,6 +74,29 @@ namespace ErrorCodes
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
 }
 
+namespace
+{
+    /// A connection failure to the (unreachable) remote is demoted to Warning; any other exception
+    /// (e.g. a permission error reading INFORMATION_SCHEMA, or a permanent metadata problem after the
+    /// connect succeeds) stays at Error so it is not hidden. Must be called from within a catch block
+    /// (it rethrows the active exception to classify it by type).
+    LogsLevel toleratedConnectionFailureLogLevel()
+    {
+        try
+        {
+            throw;
+        }
+        catch (const mysqlxx::ConnectionFailed &)
+        {
+            return LogsLevel::warning;
+        }
+        catch (...)
+        {
+            return LogsLevel::error;
+        }
+    }
+}
+
 constexpr static const auto suffix = ".remove_flag";
 static constexpr const std::chrono::seconds cleaner_sleep_time{30};
 static const Poco::Timespan lock_acquire_timeout{10ull, 0ull};
@@ -105,12 +129,12 @@ DatabaseMySQL::DatabaseMySQL(
     {
         if (attach)
         {
-            tryLogCurrentException("DatabaseMySQL", "", LogsLevel::warning);
+            tryLogCurrentException("DatabaseMySQL", "", toleratedConnectionFailureLogLevel());
         }
 #if CLICKHOUSE_CLOUD
         else if (SharedDatabaseCatalog::initialized() && !SharedDatabaseCatalog::isInitialQuery(context_))
         {
-            tryLogCurrentException("DatabaseMySQL", "", LogsLevel::warning);
+            tryLogCurrentException("DatabaseMySQL", "", toleratedConnectionFailureLogLevel());
         }
 #endif
         else
@@ -193,7 +217,7 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
                             backQuote(table_name), getCurrentExceptionMessage(true));
         }
 
-        tryLogCurrentException(__PRETTY_FUNCTION__, "", LogsLevel::warning);
+        tryLogCurrentException(__PRETTY_FUNCTION__, "", toleratedConnectionFailureLogLevel());
     }
 
     if (!local_tables_cache.contains(table_name))

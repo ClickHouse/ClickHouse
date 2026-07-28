@@ -28,7 +28,10 @@ PG_SCAN_QUERY_ID="${CLICKHOUSE_DATABASE}_pg_scan_${RANDOM}${RANDOM}"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${PG_DB}"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${MYSQL_DB}"
 
-TEST_START=$(${CLICKHOUSE_CLIENT} -q "SELECT now()")
+# Microsecond-precision run discriminator: the background cleaner has no query_id, so its text_log
+# rows are isolated by time. Second-resolution now() cannot tell this run's rows from a stale row
+# written in the same second by an earlier run against the same endpoint, so use event_time_microseconds.
+RUN_START=$(${CLICKHOUSE_CLIENT} -q "SELECT toUnixTimestamp64Micro(now64(6))")
 
 # PostgreSQL database engine does not connect at CREATE time, so an unreachable host is fine
 # here. CREATE also schedules the background cleaner task (removeOutdatedTables), which fails
@@ -47,7 +50,7 @@ ${CLICKHOUSE_CLIENT_QUIET} --query_id "${PG_SCAN_QUERY_ID}" -q \
 # Wait for the background cleaner task's first (immediately scheduled) run to hit the connection failure.
 for _ in {1..120}
 do
-    cleaner_rows=$(${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log; SELECT count() FROM system.text_log WHERE event_time >= '${TEST_START}' AND logger_name LIKE '%DatabasePostgreSQL::removeOutdatedTables%'")
+    cleaner_rows=$(${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log; SELECT count() FROM system.text_log WHERE toUnixTimestamp64Micro(event_time_microseconds) > ${RUN_START} AND logger_name LIKE '%DatabasePostgreSQL::removeOutdatedTables%'")
     [[ "$cleaner_rows" -ge 1 ]] && break
     sleep 0.5
 done
@@ -63,8 +66,8 @@ ${CLICKHOUSE_CLIENT} -q "
     SELECT 'pg_scan_no_error', count() = 0 FROM system.text_log WHERE query_id = '${PG_SCAN_QUERY_ID}' AND level = 'Error';
     SELECT 'pg_scan_warning_seen', count() >= 1 FROM system.text_log WHERE query_id = '${PG_SCAN_QUERY_ID}' AND logger_name LIKE '%DatabasePostgreSQL::getTablesIterator%' AND level = 'Warning';
     SELECT 'pg_pool_warning_seen', count() >= 1 FROM system.text_log WHERE query_id = '${PG_SCAN_QUERY_ID}' AND logger_name = 'PostgreSQLConnectionPool' AND level = 'Warning';
-    SELECT 'pg_cleaner_no_error', count() = 0 FROM system.text_log WHERE event_time >= '${TEST_START}' AND (logger_name LIKE '%DatabasePostgreSQL::removeOutdatedTables%' OR logger_name = 'PostgreSQLConnectionPool') AND level = 'Error';
-    SELECT 'pg_cleaner_warning_seen', count() >= 1 FROM system.text_log WHERE event_time >= '${TEST_START}' AND logger_name LIKE '%DatabasePostgreSQL::removeOutdatedTables%' AND level = 'Warning' AND message LIKE '%127.0.0.1:1%';
+    SELECT 'pg_cleaner_no_error', count() = 0 FROM system.text_log WHERE toUnixTimestamp64Micro(event_time_microseconds) > ${RUN_START} AND (logger_name LIKE '%DatabasePostgreSQL::removeOutdatedTables%' OR logger_name = 'PostgreSQLConnectionPool') AND level = 'Error';
+    SELECT 'pg_cleaner_warning_seen', count() >= 1 FROM system.text_log WHERE toUnixTimestamp64Micro(event_time_microseconds) > ${RUN_START} AND logger_name LIKE '%DatabasePostgreSQL::removeOutdatedTables%' AND level = 'Warning' AND message LIKE '%127.0.0.1:1%';
 "
 
 ${CLICKHOUSE_CLIENT_QUIET} -q "DROP DATABASE ${PG_DB}"

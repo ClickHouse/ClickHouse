@@ -51,14 +51,30 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Only a tolerated connection failure to the (unreachable) remote is demoted to Warning; any
-    /// other exception (e.g. a real logic error) stays at Error so it is not hidden. `get()` throws
-    /// POSTGRESQL_CONNECTION_FAILURE once every replica's connection attempt fails.
+    /// A connection failure to the (unreachable) remote is demoted to Warning; any other exception
+    /// (e.g. a permission error or a real logic error) stays at Error so it is not hidden. Two shapes
+    /// reach the tolerated catches: PoolWithFailover::get rewraps a failed connect as
+    /// POSTGRESQL_CONNECTION_FAILURE, while a connection that drops mid-query (inside
+    /// fetchPostgreSQLTablesList / fetchTable) surfaces as a raw pqxx::broken_connection. Must be called
+    /// from within a catch block (it rethrows the active exception to classify it by type).
     LogsLevel toleratedConnectionFailureLogLevel()
     {
-        return getCurrentExceptionCode() == ErrorCodes::POSTGRESQL_CONNECTION_FAILURE
-            ? LogsLevel::warning
-            : LogsLevel::error;
+        try
+        {
+            throw;
+        }
+        catch (const pqxx::broken_connection &)
+        {
+            return LogsLevel::warning;
+        }
+        catch (const Exception & e)
+        {
+            return e.code() == ErrorCodes::POSTGRESQL_CONNECTION_FAILURE ? LogsLevel::warning : LogsLevel::error;
+        }
+        catch (...)
+        {
+            return LogsLevel::error;
+        }
     }
 }
 
