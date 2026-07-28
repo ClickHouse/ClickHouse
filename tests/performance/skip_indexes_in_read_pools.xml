@@ -23,7 +23,7 @@
         CREATE TABLE t_skip_index_pools
         (
             id UInt64,
-            category String,
+            category UInt64,
             v1 UInt64,
             v2 UInt64,
             v3 UInt64,
@@ -39,15 +39,15 @@
         INSERT INTO t_skip_index_pools
         SELECT
             number,
-            if(number BETWEEN 45000000 AND 45050000, 'needle', concat('hay_', toString(number % 64))),
+            if(number BETWEEN 45000000 AND 45050000, 9999, number % 64),
             number, number * 2, number * 3
         FROM numbers(90000000)
         SETTINGS max_insert_threads = 8
     </fill_query>
     <fill_query>OPTIMIZE TABLE t_skip_index_pools FINAL</fill_query>
 
-    <query>SELECT sum(v1), sum(v2), sum(v3) FROM t_skip_index_pools WHERE category = 'needle' SETTINGS use_indexes_refiner_in_read_pools = {pools}</query>
-    <query>SELECT sum(v1), sum(v2), sum(v3) FROM t_skip_index_pools WHERE category = 'needle' SETTINGS use_indexes_refiner_in_read_pools = {pools}, allow_prefetched_read_pool_for_local_filesystem = 1, local_filesystem_read_method = 'pread_threadpool'</query>
+    <query>SELECT sum(v1), sum(v2), sum(v3) FROM t_skip_index_pools WHERE category = 9999 SETTINGS use_indexes_refiner_in_read_pools = {pools}</query>
+    <query>SELECT sum(v1), sum(v2), sum(v3) FROM t_skip_index_pools WHERE category = 9999 SETTINGS use_indexes_refiner_in_read_pools = {pools}, allow_prefetched_read_pool_for_local_filesystem = 1, local_filesystem_read_method = 'pread_threadpool'</query>
 
     <drop_query>DROP TABLE IF EXISTS t_skip_index_pools</drop_query>
 </test>
