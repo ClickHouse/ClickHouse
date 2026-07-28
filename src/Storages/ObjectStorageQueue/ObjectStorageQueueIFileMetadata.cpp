@@ -329,10 +329,8 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
     std::unique_lock processing_lock(file_status->processing_lock, std::defer_lock);
     bool processing_lock_acquired = processing_lock.try_lock();
 
-    /// Test-only: simulate the file being grabbed by another consumer on this server, taking the
-    /// same std::nullopt path as a real processing-lock conflict. It is a ONCE failpoint, so it
-    /// fires for the first file after being enabled and then disarms itself; this exercises the
-    /// num_successful_objects < batch size path in ObjectStorageQueueSource::FileIterator::next.
+    /// Test-only: simulate the file being grabbed by another consumer (a processing-lock conflict).
+    /// ONCE, so it skips the first file after being enabled, exercising the batch compaction path.
     fiu_do_on(FailPoints::object_storage_queue_skip_one_file_in_batch, { processing_lock_acquired = false; });
 
     if (!processing_lock_acquired)
