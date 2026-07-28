@@ -1,0 +1,22 @@
+=== Dynamic: legacy string-wrapped values keep the released resolution ===
+1	42	Int64
+2	hello	String
+3	2020-01-01	Date
+4	true	Bool
+5	NULL	String
+=== Dynamic: native unquoted JSON values ===
+6	42	Int64
+7	[1,2]	Array(Int64)
+8	true	Bool
+9		None
+=== Dynamic: string-wrapped composite value is no longer truncated at the comma ===
+10	[1,2]	Array(Int64)
+=== Variant(String, Array(UInt64)): string-wrapped values resolved by the Variant text parse ===
+1	42	String
+2	hello	String
+3	[]	Array(UInt64)
+6		None
+7	[1,2]	Array(UInt64)
+=== Variant(String, Array(UInt64)): native unquoted JSON values ===
+4	[1,2]	Array(UInt64)
+5		None

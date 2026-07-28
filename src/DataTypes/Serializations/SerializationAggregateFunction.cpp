@@ -521,11 +521,23 @@ void SerializationAggregateFunction::deserializeTextJSON(IColumn & column, ReadB
     /// value/array as a JSON string holding its textual representation, e.g. `{"x": "[1,2,3]"}` in `array` mode.
     /// The native JSON form `{"x": [1,2,3]}` added by this change reads `[` directly, so a string-wrapped array would
     /// otherwise be rejected. Keep accepting the legacy string-wrapped form alongside the native one.
-    /// Note that this does not shadow any native quoted form: scalar values parse identically through the
-    /// whole-text parse of the unwrapped content (JSON escapes are decoded by `readJSONString`), and the
-    /// `JSON` type itself has no native quoted-token form (a JSON document root must be an object, so e.g.
-    /// `{"x": "hello"}` is rejected for plain `JSON` columns as well), while its released string-wrapped
-    /// object form `{"x": "{\"a\":1}"}` only works through this branch.
+    /// Note that this does not shadow any native quoted form for fixed scalar argument types: they parse
+    /// identically through the whole-text parse of the unwrapped content (JSON escapes are decoded by
+    /// `readJSONString`), and the `JSON` type itself has no native quoted-token form (a JSON document root
+    /// must be an object, so e.g. `{"x": "hello"}` is rejected for plain `JSON` columns as well), while its
+    /// released string-wrapped object form `{"x": "{\"a\":1}"}` only works through this branch.
+    /// The self-describing `Dynamic` and `Variant` argument types also deliberately resolve a quoted token as
+    /// the released string-wrapped form rather than as a JSON string scalar: released resolved the unwrapped
+    /// content by its own text, so `{"x": "42"}` for a `Dynamic` argument produced the number `42` and
+    /// `{"x": "2020-01-01"}` a `Date`, and routing the quoted token to `deserializeTextJSON` (which would keep
+    /// the `String` alternative) would change that. The native unquoted forms (`{"x": 42}`, `{"x": [1, 2]}`)
+    /// are new here and reach the JSON parser as usual.
+    /// The one released resolution the whole-text parse does not reproduce for these types is the degenerate
+    /// output of the released per-value `deserializeTextCSV` when a composite alternative is present: for
+    /// `Variant(String, Array(UInt64))` released turned `{"x": "42"}` into the array `[42]` and `{"x": "NULL"}`
+    /// into `[0]`, and truncated `{"x": "[1, 2]"}` at the comma into the string `'[1'`. That is the same
+    /// degenerate CSV-field behavior the `array` mode drops for composite element forms, so the whole-text
+    /// parse of the content is used instead (the string `'42'`, a `NULL` variant and the array `[1, 2]`).
     /// The one released form the whole-text parse of the unwrapped content does not reproduce is a
     /// `Nullable` single argument: released parsed the content with `deserializeTextCSV`, which recognizes
     /// the CSV null representation (`\N` by default) and never treats `NULL` as a null for string-like
