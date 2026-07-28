@@ -1840,37 +1840,57 @@ def test_shutdown_witness_decides_both_ways(workspace):
     )
 
 
-def test_teardown_block_creates_the_shutdown_witness():
-    # The Python side is useless if the runner never writes the file. Pin the actual
-    # creating statement in the extracted block, not just its name appearing there.
-    import re
-
-    block = _read_run_fuzzer_block("server teardown poll")
-    assert re.search(r"^\s*echo\s+.*>\s*server_stopping\.txt\s*$", block, re.MULTILINE), (
-        "the teardown block must CREATE server_stopping.txt; a mention alone leaves "
-        f"the post-stop window uncovered:\n{block[:400]}"
-    )
-
-
 def test_shutdown_witness_is_consulted_and_cleaned():
     # The witness only works if it is (a) read when deciding whether the stop was
     # ours and (b) cleaned pre-run like the markers -- a leftover from a previous
     # run on a reused worktree would suppress a genuine server signal.
+    #
+    # That the file is really written is proven BEHAVIORALLY by executing the block:
+    # test_fuzzer_liveness_loop.py::test_teardown_poll_creates_the_shutdown_witness.
+    # A text pin cannot see that write being made unreachable; conversely execution
+    # cannot see its ORDER against the asynchronous `stop_server &` (an observer
+    # inside it races the parent and loses), so the order stays pinned on the text
+    # below. The two halves cover what the other structurally cannot.
+    import ast
+    import inspect
+
     assert job.SERVER_STOPPING in job._STALE_RUN_STATE, (
         "the shutdown witness must be cleaned pre-run, or a stale one silences a "
         "real signal in the next run"
     )
-    # The read now lives in _early_abort_stopped_by_harness (extracted so both
-    # polarities are testable), so follow it there: run_fuzz_job must still call
-    # the helper, and the helper must still be what consults the file.
-    assert "_early_abort_stopped_by_harness" in set(
-        job.run_fuzz_job.__code__.co_names
-    ), "run_fuzz_job no longer consults the shutdown witness helper"
+    # The read lives in _early_abort_stopped_by_harness (extracted so both
+    # polarities are testable), so follow it there: the helper must still consult
+    # the file...
     assert "SERVER_STOPPING" in set(
         job._early_abort_stopped_by_harness.__code__.co_names
     ), "the witness helper no longer reads SERVER_STOPPING"
-    # run-fuzzer.sh must write it BEFORE stopping the server, otherwise the very
-    # window it exists to cover is still uncovered.
+    # ...and run_fuzz_job must use its verdict AS RETURNED. A name-membership check
+    # accepts `not _early_abort_stopped_by_harness(...)`, which inverts the decision
+    # while satisfying every other assertion here -- so require the call's value to
+    # be bound directly, with both witnesses passed to it.
+    tree = ast.parse(inspect.getsource(job.run_fuzz_job))
+    direct = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Assign)
+        and isinstance(n.value, ast.Call)
+        and isinstance(n.value.func, ast.Name)
+        and n.value.func.id == "_early_abort_stopped_by_harness"
+    ]
+    assert len(direct) == 1, (
+        "run_fuzz_job must bind _early_abort_stopped_by_harness(...) directly; "
+        "wrapping it (e.g. in `not`) inverts the shutdown verdict, which both "
+        "suppresses genuine startup signals and exposes our own SIGTERM"
+    )
+    args = {ast.dump(a) for a in direct[0].value.args}
+    for witness in ("marker_result", "watchdog_result"):
+        assert any(witness in a for a in args), (
+            f"the {witness} witness must reach the helper, or a classified run "
+            "loses its own evidence that the stop was ours"
+        )
+    # Order: run-fuzzer.sh must write the witness BEFORE stopping the server, or the
+    # very window it exists to cover stays uncovered. Text-based because the stop is
+    # asynchronous (see the note above).
     block = _read_run_fuzzer_block("server teardown poll")
     write = block.index("server_stopping.txt")
     stop = block.index("stop_server &")

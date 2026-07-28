@@ -1292,6 +1292,39 @@ def test_teardown_poll_normal_stop_propagates_exit_code(tmp_path):
     assert not (tmp_path / "harness_watchdog.txt").exists()
 
 
+def test_teardown_poll_creates_the_shutdown_witness(tmp_path):
+    # RUN the block and check the file is really there afterwards. A text pin on the
+    # write cannot see it being made unreachable (`if false`, or an early `return`
+    # above it) -- executing the block can, and the Python-side classifier is
+    # useless without the file.
+    #
+    # Scope, deliberately: this proves the write HAPPENS, not that it happens before
+    # the stop. `stop_server &` is asynchronous, so an observer inside it races the
+    # parent and loses -- a probe there reports "witness present" even with the
+    # write moved below the stop (measured, 5/5 runs). Order is therefore pinned on
+    # the block text, in
+    # test_ast_fuzzer_memory_stuck.py::test_shutdown_witness_is_consulted_and_cleaned.
+    out = _run_block(
+        tmp_path,
+        "server teardown poll",
+        preamble=(
+            "stop_server() { :; }\n"
+            "bash -c 'exit 0' & server_bg_pid=$!\n"
+            "server_pid=$server_bg_pid\n"
+        ),
+        epilogue='echo "SERVER_EXIT_CODE=$server_exit_code"',
+    )
+    witness = tmp_path / "server_stopping.txt"
+    assert witness.exists(), (
+        "the teardown block must CREATE server_stopping.txt; without it an abort "
+        "between the graceful stop and the status.tsv write reports our own "
+        f"SIGTERM as the failure.\nstdout={out.stdout}\nstderr={out.stderr}"
+    )
+    assert "phase=shutdown" in witness.read_text(encoding="utf-8"), (
+        "the witness must carry the shutdown phase it records"
+    )
+
+
 def test_teardown_poll_escalation_sigkills_and_records_watchdog(tmp_path):
     # The server subshell hangs past the 180-iteration deadline: SIGKILL +
     # stage=teardown watchdog line, and the exit code reflects the kill (137).
