@@ -64,6 +64,14 @@ SESSION_SETTINGS_HEADING_RE = re.compile(
     r"\{#(?P<anchor>[^}\s]+)\}[ \t]*$",
     re.MULTILINE,
 )
+SETTINGS_INFO_BLOCK_DEFAULT_RE = re.compile(
+    r'<SettingsInfoBlock\b[^>]*\bdefault_value="(?P<default>.*?)"',
+    re.DOTALL,
+)
+SETTINGS_MARKDOWN_DEFAULT_RE = re.compile(
+    r"^[ \t]*-[ \t]+\*\*Default(?: value)?:\*\*[ \t]*(?P<default>[^\n]*)",
+    re.IGNORECASE | re.MULTILINE,
+)
 MARKDOWN_HEADING_RE = re.compile(
     r"^(?P<hashes>#{1,4})[ \t]+(?P<title>.+?)[ \t]*$")
 MARKDOWN_HEADING_ID_RE = re.compile(
@@ -72,6 +80,10 @@ MARKDOWN_FENCE_RE = re.compile(r"^(?P<fence>`{3,}|~{3,})")
 MINTLIFY_HEADING_PUNCTUATION_RE = re.compile(r"[?,;:!'\"()\[\]{}]")
 IMPORT_RE = re.compile(
     r'^import\s+(?P<symbol>[A-Za-z_$][\w$]*)\s+from\s+[^\n]+;\s*$', re.MULTILINE)
+NAMED_IMPORT_RE = re.compile(
+    r'^import\s+\{\s*(?P<symbol>[A-Za-z_$][\w$]*)\s*\}\s+from\s+[^\n]+;\s*$',
+    re.MULTILINE,
+)
 
 SETTINGS_SPLIT_FAMILIES = {
     "session-settings": {
@@ -599,6 +611,7 @@ class SettingSection:
     name: str
     anchor: str
     markdown: str
+    default_value: str | None = None
 
     @property
     def tokens(self):
@@ -652,10 +665,27 @@ def parse_settings_page(content):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(generated_body)
         markdown = generated_body[match.start():end].strip("\n") + "\n"
         markdown = markdown.replace(match.group(0), match.group(0).rstrip(), 1)
+        default_match = SETTINGS_INFO_BLOCK_DEFAULT_RE.search(markdown)
+        if not default_match:
+            default_match = SETTINGS_MARKDOWN_DEFAULT_RE.search(markdown)
+        default_value = None
+        if default_match:
+            default_value = html.unescape(
+                default_match.group("default").strip().strip("`")
+            )
+            default_value = (
+                default_value
+                .replace("\r", "\\r")
+                .replace("\n", "\\n")
+                .replace("\t", "\\t")
+            ) or '""'
+            if default_value.lower() == "empty string":
+                default_value = '""'
         sections.append(SettingSection(
             match.group("name"),
             match.group("anchor"),
             markdown,
+            default_value,
         ))
     if preamble is None:
         preamble = generated_body[:matches[0].start()].strip("\n")
@@ -976,9 +1006,26 @@ def _rewrite_session_setting_links(markdown, routes):
 
 def _component_imports_for_page(preamble, markdown):
     imports = []
-    for match in IMPORT_RE.finditer(preamble):
-        if re.search(rf"<{re.escape(match.group('symbol'))}\b", markdown):
-            imports.append(match.group(0).strip())
+    candidates = [
+        (match.group("symbol"), match.group(0).strip())
+        for regex in (IMPORT_RE, NAMED_IMPORT_RE)
+        for match in regex.finditer(preamble)
+    ]
+    for symbol, import_line in candidates:
+        if not re.search(rf"<{re.escape(symbol)}\b", markdown):
+            continue
+        # Mintlify's JSX snippet renderer requires `VersionHistory` to use its
+        # named export. A default import silently omits the component.
+        if (
+            symbol == "VersionHistory"
+            and import_line.startswith(f"import {symbol} from ")
+        ):
+            import_line = import_line.replace(
+                f"import {symbol} from ",
+                f"import {{ {symbol} }} from ",
+                1,
+            )
+        imports.append(import_line)
     return imports
 
 
@@ -1047,12 +1094,26 @@ def _settings_explorer_component(pages, family=None):
     def subtree_count(page):
         return len(page.sections) + sum(subtree_count(child) for child in page.children)
 
+    def explorer_setting(section, page):
+        entry = {
+            "name": section.name,
+            "href": f"{page.route}#{section.anchor}",
+        }
+        default_value = section.default_value
+        if default_value is None and family["component_name"] != "ServerSettingsExplorer":
+            # The generated session, MergeTree, and format detail pages omit
+            # `SettingsInfoBlock` only when the current default is an empty string.
+            default_value = '""'
+        if default_value is not None:
+            entry["default"] = default_value
+        return entry
+
     def explorer_entry(page):
         entry = {
             "label": page.label,
             "count": subtree_count(page),
             "settings": [
-                {"name": section.name, "href": f"{page.route}#{section.anchor}"}
+                explorer_setting(section, page)
                 for section in page.sections
             ],
             "children": [explorer_entry(child) for child in page.children],
@@ -1075,7 +1136,6 @@ def _settings_explorer_component(pages, family=None):
   });
   const [expandedGroups, setExpandedGroups] = useState(() => new Set());
   const [searchTerm, setSearchTerm] = useState("");
-
   const normalizedSearch = searchTerm.trim().toLowerCase();
   const toPlainSearchTerms = (value) => value
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
@@ -1165,7 +1225,7 @@ def _settings_explorer_component(pages, family=None):
   const branch = (value) => (
     <span
       aria-hidden="true"
-      className="select-none text-gray-400 dark:text-gray-600"
+      className="shrink-0 select-none text-gray-400 dark:text-gray-600"
       style={{ whiteSpace: "pre" }}
     >
       {value}
@@ -1221,13 +1281,34 @@ def _settings_explorer_component(pages, family=None):
           return (
             <div
               key={item.value.name}
-              className="flex min-w-max items-baseline whitespace-nowrap"
+              className="grid min-w-max items-start gap-x-3 whitespace-nowrap"
+              style={{ gridTemplateColumns: "44ch max-content" }}
             >
-              <span aria-hidden="true" style={{ display: "inline-block", width: "1rem" }} />
-              {branch(branchPrefix(childContinuations, itemIsLast))}
-              <a href={item.value.href} className="no-underline hover:underline">
-                {item.value.name}
-              </a>
+              <span className="flex min-w-0 items-start">
+                <span aria-hidden="true" className="w-4 shrink-0" />
+                {branch(branchPrefix(childContinuations, itemIsLast))}
+                <a
+                  href={item.value.href}
+                  className="min-w-0 whitespace-normal no-underline hover:underline"
+                  style={{ overflowWrap: "anywhere" }}
+                >
+                  {item.value.name.split("_").map((part, index, parts) => (
+                    <span key={`${part}-${index}`}>
+                      {part}
+                      {index < parts.length - 1 ? "_" : ""}
+                      {index < parts.length - 1 && <wbr />}
+                    </span>
+                  ))}
+                </a>
+              </span>
+              {item.value.default !== undefined && (
+                <span
+                  title="Default value"
+                  className="whitespace-nowrap text-gray-500 dark:text-gray-400"
+                >
+                  (default: {item.value.default})
+                </span>
+              )}
             </div>
           );
         })}
