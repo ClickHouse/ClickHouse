@@ -61,6 +61,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const QueryPlanSerializationSettingsBool optimize_group_by_constant_keys;
     extern const QueryPlanSerializationSettingsBool enable_producing_buckets_out_of_order_in_aggregation;
+    extern const QueryPlanSerializationSettingsBool enable_parallel_single_level_merge;
     extern const QueryPlanSerializationSettingsBool enable_adaptive_aggregator;
     extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
@@ -1072,6 +1073,7 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation] = params.stats_collecting_params.max_size_to_preallocate;
 
     settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation] = params.enable_producing_buckets_out_of_order_in_aggregation;
+    settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge] = params.enable_parallel_single_level_merge;
 
     settings[QueryPlanSerializationSetting::enable_adaptive_aggregator] = params.enable_adaptive_aggregator;
     settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold] = params.adaptive_aggregator_freeze_threshold;
@@ -1215,6 +1217,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         stats_collecting_params,
         ctx.settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation],
         ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte],
+        ctx.settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge],
         ctx.settings[QueryPlanSerializationSetting::enable_adaptive_aggregator],
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold]};
 

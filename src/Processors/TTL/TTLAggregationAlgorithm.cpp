@@ -120,6 +120,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         /*stats_collecting_params_=*/{},
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
         settings[Setting::serialize_string_in_memory_with_zero_byte],
+        /*enable_parallel_single_level_merge_=*/false,
         /* enable_adaptive_aggregator */ false,
         /* adaptive_aggregator_freeze_threshold */ 0);
 

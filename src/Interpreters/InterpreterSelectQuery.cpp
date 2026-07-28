@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeInterval.h>
 
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -34,7 +35,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/convertColumnToType.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/getTableExpressions.h>
@@ -213,6 +214,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsBool enable_parallel_single_level_merge;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
@@ -1623,45 +1625,36 @@ static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & quer
 /// The LIMIT/OFFSET expression value can be either UInt64 or Float64, negative or positive.
 static std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
 {
-    const auto & [field, type] = evaluateConstantExpression(node, context);
+    const auto [column, type] = evaluateConstantExpressionAsColumn(node, context);
 
     if (!isNativeNumber(type))
         throw Exception(
             ErrorCodes::INVALID_LIMIT_EXPRESSION, "Illegal type {} of {} expression, must be numeric type", type->getName(), expr);
 
     // First check if it is nonnegative limit since they are more common
+    if (ColumnPtr converted = convertColumnToTypeOrNull(*column, type, std::make_shared<DataTypeUInt64>()))
+        return {converted->getUInt(0), 0, false};
+
+    if (ColumnPtr converted = convertColumnToTypeOrNull(*column, type, std::make_shared<DataTypeInt64>()))
     {
-        const Field converted_value = convertFieldToType(field, DataTypeUInt64());
-        if (!converted_value.isNull())
-            return {converted_value.safeGet<UInt64>(), 0, false};
+        Int64 int_value = converted->getInt(0);
+        chassert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
+
+        const UInt64 magnitude = -static_cast<UInt64>(int_value);
+        return {magnitude, 0, true};
     }
 
+    if (ColumnPtr converted = convertColumnToTypeOrNull(*column, type, std::make_shared<DataTypeFloat64>()))
     {
-        const Field converted_value = convertFieldToType(field, DataTypeInt64());
-        if (!converted_value.isNull())
-        {
-            Int64 int_value = converted_value.safeGet<Int64>();
-            chassert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
-
-            const UInt64 magnitude = -static_cast<UInt64>(int_value);
-            return {magnitude, 0, true};
-        }
-    }
-
-    {
-        Field converted_value = convertFieldToType(field, DataTypeFloat64());
-        if (!converted_value.isNull())
-        {
-            auto value = converted_value.safeGet<Float64>();
-            if (value < 1 && value > 0)
-                return {0, value, false};
-        }
+        auto value = converted->getFloat64(0);
+        if (value < 1 && value > 0)
+            return {0, value, false};
     }
 
     throw Exception(
         ErrorCodes::INVALID_LIMIT_EXPRESSION,
         "The value {} of {} expression is not representable as UInt64 or Int64 or Float64 in the range (0, 1)",
-        applyVisitor(FieldVisitorToString(), field),
+        applyVisitor(FieldVisitorToString(), (*column)[0]),
         expr);
 }
 
@@ -3015,6 +3008,7 @@ static Aggregator::Params getAggregatorParams(
         stats_collecting_params,
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
         settings[Setting::serialize_string_in_memory_with_zero_byte],
+        settings[Setting::enable_parallel_single_level_merge],
         settings[Setting::enable_adaptive_aggregator],
         settings[Setting::adaptive_aggregator_freeze_threshold]};
 }

@@ -26,6 +26,7 @@ namespace DB
 namespace Setting
 {
 extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
+extern const SettingsBool enable_parallel_single_level_merge;
 extern const SettingsBool enable_software_prefetch_in_aggregation;
 extern const SettingsUInt64 group_by_two_level_threshold;
 extern const SettingsUInt64 group_by_two_level_threshold_bytes;
@@ -260,6 +261,7 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*stats_collecting_params_=*/{},
             /*enable_producing_buckets_out_of_order_in_aggregation_=*/false,
             /*serialize_string_with_zero_byte_=*/false,
+            /*enable_parallel_single_level_merge_=*/settings[Setting::enable_parallel_single_level_merge],
             /*enable_adaptive_aggregator_=*/false,
             /*adaptive_aggregator_freeze_threshold_=*/0);
 
