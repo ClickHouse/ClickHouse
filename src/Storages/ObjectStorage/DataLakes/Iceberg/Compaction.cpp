@@ -937,9 +937,6 @@ namespace
             /// overwrites which have only position delete files
             if (update.added_files == 0 && (update.added_position_deletes == update.added_delete_files) && update.added_position_deletes != 0)
                 return std::nullopt;
-            /// overwrites that are truncate-like and purely remove data as an overwrite
-            if (update.added_files == 0 && update.added_delete_files == 0 && update.added_position_deletes == 0)
-                return std::nullopt;
             [[fallthrough]];
         }
         case SnapshotSummaryOperation::REPLACE:
