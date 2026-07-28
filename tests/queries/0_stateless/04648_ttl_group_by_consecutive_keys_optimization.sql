@@ -1,7 +1,7 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
 
--- Oracle: the `AggregationOptimizedEqualRangesOfKeys` assertion. The count/sum line is not
--- one, it holds with the fix reverted.
+-- Oracle: the `AggregationOptimizedEqualRangesOfKeys` assertion. The `count`/`sum` line is
+-- not one, it holds with the fix reverted.
 
 DROP TABLE IF EXISTS t_ttl_group_by_consecutive_keys;
 
