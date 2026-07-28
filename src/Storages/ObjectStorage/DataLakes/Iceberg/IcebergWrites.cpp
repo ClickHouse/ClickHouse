@@ -1147,18 +1147,19 @@ bool IcebergStorageSink::initializeMetadata()
     std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
     std::vector<Int64> manifest_entry_sizes;
 
-    auto cleanup = [&] (bool retry_because_of_metadata_conflict)
+    auto cleanup = [&] (bool retry_because_of_metadata_conflict, bool remove_objects = true)
     {
-        if (!retry_because_of_metadata_conflict)
+        if (remove_objects)
         {
-            for (const auto & [_, writer] : writer_per_partition_key)
-                writer.clearAllDataFiles();
+            if (!retry_because_of_metadata_conflict)
+            {
+                for (const auto & [_, writer] : writer_per_partition_key)
+                    writer.clearAllDataFiles();
+            }
+            for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
+                object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
+            object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
         }
-
-        for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
-            object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
-
-        object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
 
         if (retry_because_of_metadata_conflict)
         {
@@ -1221,7 +1222,7 @@ bool IcebergStorageSink::initializeMetadata()
             }
         }
     };
-
+    bool commit_result_unknown = false;
     try
     {
         for (const auto & [partition_key, writer] : writer_per_partition_key)
@@ -1319,13 +1320,15 @@ bool IcebergStorageSink::initializeMetadata()
             if (catalog)
             {
                 auto catalog_filename = resolver.resolveForCatalog(metadata_info.path);
-
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
+                commit_result_unknown = true;
                 if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
                 {
+                    commit_result_unknown = false;
                     cleanup(true);
                     return false;
                 }
+                commit_result_unknown = false;
             }
         }
 
@@ -1334,7 +1337,7 @@ bool IcebergStorageSink::initializeMetadata()
     }
     catch (...)
     {
-        cleanup(false);
+        cleanup(false, /*remove_objects =*/!commit_result_unknown);
         throw;
     }
     return true;

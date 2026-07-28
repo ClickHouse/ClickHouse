@@ -723,29 +723,32 @@ static bool writeConsolidatedManifestFile(
     std::vector<std::vector<std::pair<Field, DataTypePtr>>> entry_partition_summaries;
 
     /// Cleanup for both commit conflict and exceptions; paths are tracked before writeObject so partially-created objects are removed (removeObjectIfExists tolerates missing objects).
-    auto cleanup = [&]()
+    auto cleanup = [&](bool remove_objects = true)
     {
-        for (const auto & mp : consolidated_manifest_paths)
+        if (remove_objects)
         {
+            for (const auto & mp : consolidated_manifest_paths)
+            {
+                try
+                {
+                    object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(mp)));
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Failed to remove orphaned manifest file during cleanup");
+                }
+            }
             try
             {
-                object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(mp)));
+                object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(new_snapshot.manifest_list_path)));
             }
             catch (...)
             {
-                tryLogCurrentException(log, "Failed to remove orphaned manifest file during cleanup");
+                tryLogCurrentException(log, "Failed to remove orphaned manifest list during cleanup");
             }
         }
-        try
-        {
-            object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(new_snapshot.manifest_list_path)));
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Failed to remove orphaned manifest list during cleanup");
-        }
     };
-
+    bool commit_result_unknown = false;
     try
     {
         for (auto & [partition_key, pd] : partitions_map)
@@ -891,18 +894,21 @@ static bool writeConsolidatedManifestFile(
             {
                 auto catalog_filename = path_resolver.resolveForCatalog(generated_metadata_info.path);
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
+                commit_result_unknown = true;
                 if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot.snapshot))
                 {
                     LOG_INFO(log, "Metadata commit conflict detected via catalog, cleaning up temporary files");
+                    commit_result_unknown = false;
                     cleanup();
                     return false;
                 }
+                commit_result_unknown = false;
             }
         }
     }
     catch (...)
     {
-        cleanup();
+        cleanup(/*remove_objects =*/!commit_result_unknown);
         throw;
     }
 
