@@ -1084,6 +1084,23 @@ bool IcebergStorageSink::initializeMetadata()
     Int64 total_data_files = 0;
     for (const auto & [_, writer] : writer_per_partition_key)
         total_data_files += static_cast<Int64>(writer.getDataFiles().size());
+
+    /// Re-validate on every attempt: the metadata-conflict retry (see cleanup below) reloads `metadata`
+    /// and comes back here, so a reloaded self-contradictory table must fail without orphaning the data
+    /// files already written during consume(). generateNextMetadata enforces the same invariant, but its
+    /// throw fires before the cleanup lambda is armed, so clear the finalized data files here on failure.
+    /// (The constructor validates the initial metadata up front, before any data is written.)
+    try
+    {
+        MetadataGenerator::validateParentSnapshotResolvable(metadata, parent_snapshot);
+    }
+    catch (...)
+    {
+        for (const auto & [_, writer] : writer_per_partition_key)
+            writer.clearAllDataFiles();
+        throw;
+    }
+
     auto [new_snapshot, manifest_list_path] = MetadataGenerator(metadata).generateNextMetadata(
         filename_generator,
         metadata_info.path,
