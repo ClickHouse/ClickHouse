@@ -1384,7 +1384,7 @@ def test_register_existing_delta_table_preserves_raw_schema(started_cluster):
     execute_multiple_spark_queries(
         node1,
         [
-            f"CREATE TABLE delta.`{location}` (b BINARY, t TIMESTAMP_NTZ, s STRING) USING delta"
+            f"CREATE TABLE delta.\\`{location}\\` (b BINARY, t TIMESTAMP_NTZ, s STRING) USING delta"
         ],
         retry_on_timeout=True,
     )
