@@ -180,7 +180,7 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
             "(key: {}, offset: {})", key_metadata->key, offset);
     }
 
-    auto entry = std::make_shared<Entry>(
+    auto entry = createEntry(
         key_metadata->key,
         offset,
         size,
@@ -206,7 +206,7 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::addForRestore( /// NOLINT
     /// everything else goes to probationary.
     bool is_protected = (original_queue_type == QueueEntryType::SLRU_Protected);
 
-    auto entry = std::make_shared<Entry>(
+    auto entry = createEntry(
         key_metadata->key,
         offset,
         size,
@@ -590,12 +590,12 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
                 /// and reset size for the old entry,
                 /// thus size will be transferred from one entry to another.
                 /// PreActive: iterateImpl skips this entry until setIterator atomically transitions it to Active.
-                auto empty_entry = std::make_shared<Entry>(
+                auto empty_entry = createEntry(
                     entry->key,
                     entry->offset,
                     /* size */0,
                     entry->getKeyMetadata(),
-                    entry->usage_counters,
+                    getUsageCounters(*entry),
                     Entry::State::PreActive);
                 auto new_iterator = probationary_queue.add(std::move(empty_entry), lk, /* state_lock */nullptr);
                 downgraded_entries->add(DowngradedEntryInfo{
@@ -770,12 +770,12 @@ bool SLRUFileCachePriority::tryIncreasePriority(
 
         /// PreActive: iterateImpl skips this entry until setIterator atomically transitions it to Active.
         /// prev_entry is in Moving state here, so its KeyMetadata is still alive.
-        auto empty_entry = std::make_shared<Entry>(
+        auto empty_entry = createEntry(
             prev_entry->key,
             prev_entry->offset,
             /* size */0,
             prev_entry->getKeyMetadata(),
-            prev_entry->usage_counters,
+            getUsageCounters(*prev_entry),
             Entry::State::PreActive);
 
         return protected_queue.add(

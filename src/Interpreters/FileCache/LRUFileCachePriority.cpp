@@ -122,7 +122,7 @@ IFileCachePriority::IteratorPtr LRUFileCachePriority::add( /// NOLINT
     bool)
 {
     return std::make_shared<LRUIterator>(add(
-        std::make_shared<Entry>(
+        createEntry(
             key_metadata->key,
             offset,
             size,

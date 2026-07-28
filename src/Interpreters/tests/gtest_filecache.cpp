@@ -3265,6 +3265,7 @@ TEST_F(FileCacheTest, LRUDecrementSizeToZeroDropsElement)
         it = priority.add(key_metadata, /* offset */0, /* size */5, write_lock, &state_lock);
     }
 
+    ASSERT_FALSE(it->getEntry()->tracksUsage());
     ASSERT_EQ(priority.getSize(state_guard.lock()), 5);
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 1);
 
@@ -3645,6 +3646,8 @@ TEST_F(FileCacheTest, UsageAccounting)
         it_b = priority.add(key_metadata_b, 0, 7, write_lock, &state_lock);
     }
 
+    ASSERT_TRUE(it_a->getEntry()->tracksUsage());
+    ASSERT_TRUE(it_b->getEntry()->tracksUsage());
     auto usage = priority.getUsageStatPerClient();
     ASSERT_EQ(usage.at(user_a.user_id).size, 10);
     ASSERT_EQ(usage.at(user_a.user_id).elements, 1);

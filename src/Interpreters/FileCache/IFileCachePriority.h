@@ -97,12 +97,13 @@ public:
         const KeyMetadataWeakPtr key_metadata;
 
         std::atomic<size_t> size;
-        const FileCacheUsageCountersPtr usage_counters;
 
         std::string toString(const std::string & prefix = "") const;
 
         /// Locks `key_metadata`, throwing if it expired.
         KeyMetadataPtr getKeyMetadata() const;
+
+        bool tracksUsage() const { return tracks_usage; }
 
         enum class State
         {
@@ -133,7 +134,6 @@ public:
             size_t offset_,
             size_t size_,
             KeyMetadataPtr key_metadata_,
-            FileCacheUsageCountersPtr usage_counters_ = {},
             State initial_state = State::Active);
         Entry(const Entry & other);
 
@@ -193,6 +193,15 @@ public:
                 printUnexpectedState(prev, magic_enum::enum_name(from_state), fmt::format("{}", magic_enum::enum_name(to_state))));
         }
 
+    protected:
+        Entry(
+            const Key & key_,
+            size_t offset_,
+            size_t size_,
+            KeyMetadataPtr key_metadata_,
+            State initial_state,
+            bool tracks_usage_);
+
     private:
         std::string printUnexpectedState(
             State prev_state, std::string_view expected_state, std::string type) const
@@ -202,6 +211,7 @@ public:
                 magic_enum::enum_name(prev_state), expected_state, type, toString());
         }
 
+        const bool tracks_usage;
         std::atomic<State> state = State::Active;
     };
     using EntryPtr = std::shared_ptr<Entry>;
@@ -513,6 +523,19 @@ public:
     const FileCacheUsageTrackerPtr & getUsageTracker() const { return usage_tracker; }
 
 protected:
+    struct TrackedEntry final : Entry
+    {
+        TrackedEntry(
+            const Key & key_,
+            size_t offset_,
+            size_t size_,
+            KeyMetadataPtr key_metadata_,
+            FileCacheUsageCountersPtr usage_counters_,
+            State initial_state);
+
+        const FileCacheUsageCountersPtr usage_counters;
+    };
+
     IFileCachePriority(QueueType queue_type_, size_t max_size_, size_t max_elements_);
 
     virtual void holdImpl(size_t /* size */, size_t /* elements */, const CacheStateGuard::Lock &) {}
@@ -527,16 +550,26 @@ protected:
         return usage_tracker->getOrCreate(user_id);
     }
 
+    static EntryPtr createEntry(
+        const Key & key,
+        size_t offset,
+        size_t size,
+        KeyMetadataPtr key_metadata,
+        FileCacheUsageCountersPtr usage_counters,
+        Entry::State initial_state = Entry::State::Active);
+
+    static const FileCacheUsageCountersPtr & getUsageCounters(const Entry & entry);
+
     static void addTrackedUsage(const Entry & entry, size_t size_delta, size_t elements_delta)
     {
-        if (entry.usage_counters)
-            entry.usage_counters->add(size_delta, elements_delta);
+        if (const auto & counters = getUsageCounters(entry))
+            counters->add(size_delta, elements_delta);
     }
 
     static void subTrackedUsage(const Entry & entry, size_t size_delta, size_t elements_delta)
     {
-        if (entry.usage_counters)
-            entry.usage_counters->sub(size_delta, elements_delta);
+        if (const auto & counters = getUsageCounters(entry))
+            counters->sub(size_delta, elements_delta);
     }
 
     const QueueType queue_type;

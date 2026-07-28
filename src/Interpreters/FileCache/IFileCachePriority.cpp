@@ -79,13 +79,23 @@ IFileCachePriority::Entry::Entry(
     size_t offset_,
     size_t size_,
     KeyMetadataPtr key_metadata_,
-    FileCacheUsageCountersPtr usage_counters_,
     State initial_state)
+    : Entry(key_, offset_, size_, std::move(key_metadata_), initial_state, false)
+{
+}
+
+IFileCachePriority::Entry::Entry(
+    const Key & key_,
+    size_t offset_,
+    size_t size_,
+    KeyMetadataPtr key_metadata_,
+    State initial_state,
+    bool tracks_usage_)
     : key(key_)
     , offset(offset_)
     , key_metadata(key_metadata_)
     , size(size_)
-    , usage_counters(std::move(usage_counters_))
+    , tracks_usage(tracks_usage_)
     , state(initial_state)
 {
 }
@@ -95,8 +105,46 @@ IFileCachePriority::Entry::Entry(const Entry & other)
     , offset(other.offset)
     , key_metadata(other.key_metadata)
     , size(other.size.load())
-    , usage_counters(other.usage_counters)
+    , tracks_usage(false)
 {
+    chassert(!other.tracksUsage());
+}
+
+IFileCachePriority::TrackedEntry::TrackedEntry(
+    const Key & key_,
+    size_t offset_,
+    size_t size_,
+    KeyMetadataPtr key_metadata_,
+    FileCacheUsageCountersPtr usage_counters_,
+    State initial_state)
+    : Entry(key_, offset_, size_, std::move(key_metadata_), initial_state, true)
+    , usage_counters(std::move(usage_counters_))
+{
+    chassert(usage_counters);
+}
+
+IFileCachePriority::EntryPtr IFileCachePriority::createEntry(
+    const Key & key,
+    size_t offset,
+    size_t size,
+    KeyMetadataPtr key_metadata,
+    FileCacheUsageCountersPtr usage_counters,
+    Entry::State initial_state)
+{
+    if (usage_counters)
+    {
+        return std::make_shared<TrackedEntry>(
+            key, offset, size, std::move(key_metadata), std::move(usage_counters), initial_state);
+    }
+    return std::make_shared<Entry>(key, offset, size, std::move(key_metadata), initial_state);
+}
+
+const FileCacheUsageCountersPtr & IFileCachePriority::getUsageCounters(const Entry & entry)
+{
+    static const FileCacheUsageCountersPtr no_counters;
+    if (!entry.tracksUsage())
+        return no_counters;
+    return static_cast<const TrackedEntry &>(entry).usage_counters;
 }
 
 std::string IFileCachePriority::Entry::toString(const std::string & prefix) const
