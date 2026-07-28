@@ -20,6 +20,8 @@ public:
 
     void describePipeline(FormatSettings & settings) const override;
 
+    QueryPlanStepPtr clone() const override;
+
 private:
     void updateOutputHeader() override;
 

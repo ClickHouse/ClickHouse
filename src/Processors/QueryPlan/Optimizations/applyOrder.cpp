@@ -71,19 +71,7 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
             (properties->sort_scope == SortingProperty::SortScope::Global
             || (distinct_step->isPreliminary() && properties->sort_scope == SortingProperty::SortScope::Stream)))
         {
-            SortDescription prefix_sort_description;
-            const auto & column_names = distinct_step->getColumnNames();
-            std::unordered_set<std::string_view> columns(column_names.begin(), column_names.end());
-
-            for (auto & sort_column_desc : properties->sort_description)
-            {
-                if (!columns.contains(sort_column_desc.column_name))
-                    break;
-
-                prefix_sort_description.emplace_back(sort_column_desc);
-            }
-
-            distinct_step->applyOrder(std::move(prefix_sort_description));
+            distinct_step->applyOrder(getCollationAwareSortPrefixInColumns(properties->sort_description, distinct_step->getColumnNames()));
         }
 
         /// Distinct never breaks global order
@@ -137,14 +125,26 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
 
     if (auto * limit_by_step = typeid_cast<LimitByStep *>(parent->step.get()))
     {
-        if (properties->sort_scope == SortingProperty::SortScope::Global)
-            limit_by_step->applyOrder(properties->sort_description);
+        if (properties->sort_scope != SortingProperty::SortScope::Global)
+            return {};
+
+        auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, limit_by_step->getColumns());
+        if (prefix.size() == limit_by_step->getColumns().size())
+            limit_by_step->applyOrder(prefix);
+
+        return std::move(*properties);
     }
 
     if (auto * negative_limit_by_step = typeid_cast<NegativeLimitByStep *>(parent->step.get()))
     {
-        if (properties->sort_scope == SortingProperty::SortScope::Global)
-            negative_limit_by_step->applyOrder(properties->sort_description);
+        if (properties->sort_scope != SortingProperty::SortScope::Global)
+            return {};
+
+        auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, negative_limit_by_step->getColumns());
+        if (prefix.size() == negative_limit_by_step->getColumns().size())
+            negative_limit_by_step->applyOrder(prefix);
+
+        return std::move(*properties);
     }
 
     if (auto * transforming = dynamic_cast<ITransformingStep *>(parent->step.get()))
@@ -153,7 +153,7 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
             return std::move(*properties);
     }
 
-    if (auto * /*union_step*/ _ = typeid_cast<UnionStep *>(parent->step.get()))
+    if (auto * union_step = typeid_cast<UnionStep *>(parent->step.get()))
     {
         SortDescription common_sort_description = std::move(properties->sort_description);
 
@@ -162,6 +162,12 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
 
         if (!common_sort_description.empty())
         {
+            /// We are about to advertise per-stream sortedness to steps above the union
+            /// (which may convert Sorting to FinishSorting or enable DISTINCT-in-order).
+            /// Narrowing the union pipeline would concatenate sorted streams and silently
+            /// invalidate this property, so forbid it.
+            union_step->disableNarrowing();
+
             /// `UnionStep` concatenates child pipelines without a sorted merge, so with multiple
             /// children each stream stays sorted by the common prefix.
             auto sort_scope = parent->children.size() == 1 ? properties->sort_scope : SortingProperty::SortScope::Stream;

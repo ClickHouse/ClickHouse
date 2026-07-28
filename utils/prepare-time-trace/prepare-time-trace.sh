@@ -81,7 +81,9 @@ ENGINE = MergeTree
 ORDER BY (date, file, pull_request_number, commit_sha, check_name);
 ///
 
-find "$INPUT_DIR" -type f -executable -or -name '*.o' -or -name '*.a' | grep -v cargo | xargs wc -c | grep -v 'total' > "${OUTPUT_DIR}/binary_sizes.txt"
+# xargs -r: with no matching objects (cross-arch/non-Linux builds) emit no row at
+# all, instead of GNU xargs running 'wc -c' once with no args and writing '0'.
+find "$INPUT_DIR" -type f -executable -or -name '*.o' -or -name '*.a' | grep -v cargo | xargs -r wc -c | grep -v 'total' > "${OUTPUT_DIR}/binary_sizes.txt"
 
 # Additionally, collect information about the symbols inside translation units
 true<<///
@@ -123,5 +125,6 @@ then
       ${NM} --demangle --defined-only --print-size '{}' | grep -v -P '[0-9a-zA-Z] r ' | sed 's@^@{} @' > '{}.symbols'
     "
 
-    find "$INPUT_DIR" -type f -name '*.o.symbols' | xargs cat > "${OUTPUT_DIR}/binary_symbols.txt"
+    # xargs -r: with no '*.o.symbols' files emit nothing rather than running cat once.
+    find "$INPUT_DIR" -type f -name '*.o.symbols' | xargs -r cat > "${OUTPUT_DIR}/binary_symbols.txt"
 fi

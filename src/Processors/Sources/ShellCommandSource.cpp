@@ -3,7 +3,9 @@
 #include <poll.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 #include <Common/Stopwatch.h>
+#include <Common/UDFProcessSubtreeSampler.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -137,11 +139,13 @@ public:
         int stdout_fd_,
         int stderr_fd_,
         size_t timeout_milliseconds_,
-        ExternalCommandStderrReaction stderr_reaction_)
+        ExternalCommandStderrReaction stderr_reaction_,
+        UDFProcessSubtreeSampler * sampler_)
         : stdout_fd(stdout_fd_)
         , stderr_fd(stderr_fd_)
         , timeout_milliseconds(timeout_milliseconds_)
         , stderr_reaction(stderr_reaction_)
+        , sampler(sampler_)
     {
         makeFdNonBlocking(stdout_fd);
         makeFdNonBlocking(stderr_fd);
@@ -267,7 +271,17 @@ public:
                 }
 
                 if (res > 0)
+                {
                     bytes_read += res;
+                    if (sampler)
+                    {
+                        sampler->recordOutputBytes(static_cast<size_t>(res));
+                        /// The child produced this output, so it was running; sample its subtree VmHWM.
+                        /// It may have already exited (short-lived UDF) — then the read finds no VmHWM
+                        /// and this is a harmless no-op. Also a no-op on the pool path (executable_root_pid <= 0).
+                        sampler->sampleExecutablePeak();
+                    }
+                }
             }
         }
 
@@ -278,6 +292,22 @@ public:
         }
         else
         {
+            /// Concluding best-effort tail sample. The function has closed stdout, so
+            /// this is the last point it is typically still alive; take one final
+            /// subtree sample (bypassing the throttle) to catch a peak reached after
+            /// the last IO sample but before EOF. Fired once; a no-op on the pool path
+            /// and harmless if the child has already exited. This is a single tail
+            /// attempt, not continuous sampling during the post-output reap.
+            /// This concluding sample is best-effort and is intentionally NOT covered
+            /// by a deterministic test — whether the child is still resident when EOF
+            /// is detected is timing-dependent, so any assertion on it would be
+            /// flaky; the deterministic guarantees (output-phase capture, max-not-sum,
+            /// parent-independence) are covered by the integration tests.
+            if (sampler && !final_sample_taken)
+            {
+                final_sample_taken = true;
+                sampler->sampleExecutablePeak(/*is_final=*/true);
+            }
             return false;
         }
 
@@ -331,6 +361,8 @@ private:
     int stderr_fd;
     size_t timeout_milliseconds;
     ExternalCommandStderrReaction stderr_reaction;
+    UDFProcessSubtreeSampler * sampler;
+    bool final_sample_taken = false;
 
     static constexpr size_t BUFFER_SIZE = 4_KiB;
     static constexpr size_t MAX_STDERR_SIZE = 1_MiB;  /// Safety limit for stderr accumulation
@@ -344,8 +376,8 @@ private:
 class TimeoutWriteBufferFromFileDescriptor : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
-    explicit TimeoutWriteBufferFromFileDescriptor(int fd_, size_t timeout_milliseconds_)
-        : fd(fd_), timeout_milliseconds(timeout_milliseconds_)
+    explicit TimeoutWriteBufferFromFileDescriptor(int fd_, size_t timeout_milliseconds_, UDFProcessSubtreeSampler * sampler_)
+        : fd(fd_), timeout_milliseconds(timeout_milliseconds_), sampler(sampler_)
     {
         makeFdNonBlocking(fd);
     }
@@ -368,7 +400,17 @@ public:
                 throw ErrnoException(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Cannot write into pipe");
 
             if (res > 0)
+            {
                 bytes_written += res;
+                if (sampler)
+                {
+                    sampler->recordInputBytes(static_cast<size_t>(res));
+                    /// The child's stdin is still open (this write succeeded), so it was
+                    /// running; sample its subtree VmHWM. It may exit before we sample — a
+                    /// harmless no-op. Also a no-op on the pool path (executable_root_pid <= 0).
+                    sampler->sampleExecutablePeak();
+                }
+            }
         }
     }
 
@@ -385,6 +427,7 @@ public:
 private:
     int fd;
     size_t timeout_milliseconds;
+    UDFProcessSubtreeSampler * sampler;
 };
 
 class ShellCommandHolder
@@ -446,7 +489,7 @@ namespace
             , sample_block(sample_block_)
             , command(std::move(command_))
             , configuration(configuration_)
-            , timeout_command_out(command->out.getFD(), command->err.getFD(), command_read_timeout_milliseconds, stderr_reaction)
+            , timeout_command_out(command->out.getFD(), command->err.getFD(), command_read_timeout_milliseconds, stderr_reaction, configuration_.sampler.get())
             , command_holder(std::move(command_holder_))
             , process_pool(process_pool_)
             , check_exit_code(check_exit_code_)
@@ -527,6 +570,64 @@ namespace
             for (auto & thread : send_data_threads)
                 if (thread.joinable())
                     thread.join();
+
+            /// Record this borrow's resource usage before the child is gone. The two
+            /// executable UDF types measure it differently.
+            if (configuration.sampler)
+            {
+                if (process_pool)
+                {
+                    /// Resource accounting must observe the borrow's resident set before
+                    /// the worker is torn down or the slot is handed back to the pool —
+                    /// either path destroys `/proc/<pid>/{stat,status}` and the sampler
+                    /// would then read zero CPU and zero `VmHWM`.
+                    /// `recordReleased` reads procfs and may throw, but `cleanup` is
+                    /// called from the destructor — swallow any exception so the
+                    /// destructor stays noexcept.
+                    try
+                    {
+                        configuration.sampler->recordReleased();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException("ShellCommandSource");
+                    }
+                }
+                else if (command)
+                {
+                    /// Peak memory was sampled from /proc VmHWM during IO, while the child
+                    /// was provably alive; by cleanup the child has closed stdout and is
+                    /// exiting, so its `/proc` mm fields are gone — no useful sample here.
+                    ///
+                    /// Capture wait4 rusage for CPU. When `prepare` already waited the child
+                    /// via its blocking `wait` (`check_exit_code=true`), `isWaitCalled()` is
+                    /// true and this is skipped. A child lingering past the poll budget is left
+                    /// to `~ShellCommand`'s bounded `command_termination_timeout` + SIGTERM, so
+                    /// profiling cannot turn cleanup into a query hang. No status check: a
+                    /// non-zero exit must not raise CHILD_WAS_NOT_EXITED_NORMALLY here.
+                    if (!command->isWaitCalled())
+                    {
+                        try
+                        {
+                            command->tryWaitWithoutStatusCheck();
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException("ShellCommandSource");
+                        }
+                    }
+
+                    /// Peak memory is independent of the wait: it comes from /proc VmHWM
+                    /// sampled during IO and stamped by recordExecutableElapsed. CPU requires
+                    /// the wait4 rusage and is recorded only when the wait succeeded.
+                    configuration.sampler->recordExecutableElapsed();
+
+                    if (command->wasChildResourceUsageCaptured())
+                        configuration.sampler->recordExecutableFinished(
+                            command->getChildUserTimeMicroseconds(),
+                            command->getChildSystemTimeMicroseconds());
+                }
+            }
 
             if (command_is_invalid)
                 command = nullptr;
@@ -714,6 +815,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
 {
     ShellCommand::Config command_config(command);
     command_config.arguments = arguments;
+    command_config.pipe_capacity = configuration.command_pipe_capacity;
     for (size_t i = 1; i < input_pipes.size(); ++i)
         command_config.write_fds.emplace_back(i + 2);
 
@@ -722,6 +824,8 @@ Pipe ShellCommandSourceCoordinator::createPipe(
 
     auto destructor_strategy = ShellCommand::DestructorStrategy{true /*terminate_in_destructor*/, SIGTERM, configuration.command_termination_timeout_seconds};
     command_config.terminate_in_destructor_strategy = destructor_strategy;
+
+    command_config.register_in_udf_process_registry = configuration.is_user_defined_function;
 
     bool is_executable_pool = (process_pool != nullptr);
     if (is_executable_pool)
@@ -743,6 +847,13 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             },
             configuration.max_command_execution_time_seconds * 10000);
 
+        /// Pool wait is frozen here on both the success and the timeout-failure
+        /// paths so that `PoolWaitMicroseconds` always records contention for a
+        /// slot. Any time spent below in `buildCommand` (cold spawn) lands in
+        /// `ElapsedMicroseconds` instead.
+        if (source_configuration.sampler)
+            source_configuration.sampler->recordPoolWaitDone();
+
         if (!result)
             throw Exception(
                 ErrorCodes::TIMEOUT_EXCEEDED,
@@ -750,13 +861,43 @@ Pipe ShellCommandSourceCoordinator::createPipe(
                 configuration.max_command_execution_time_seconds);
 
         process = process_holder->buildCommand();
+
+        /// Borrow acquired: capture pid for procfs sampling. The pre-snapshot
+        /// runs here so `clear_refs` and the utime/stime baseline cover only
+        /// the work attributable to this borrow.
+        ///
+        /// `recordPidAcquired` allocates (vector return from `walkSubtree`,
+        /// `unordered_set` and `unordered_map` inserts) and is not noexcept.
+        /// If it throws here, `process_holder` is still a local — ownership
+        /// does not transfer to `ShellCommandSource` until further below — so
+        /// stack unwinding would destroy it without calling `returnObject`,
+        /// permanently shrinking the pool's effective capacity by one. Swallow
+        /// the exception so the local stays intact for the normal hand-off;
+        /// sampling is best-effort and dropping one pre baseline is harmless.
+        if (source_configuration.sampler)
+        {
+            try
+            {
+                source_configuration.sampler->recordPidAcquired(process->getPid());
+            }
+            catch (...)
+            {
+                tryLogCurrentException("ShellCommandSource");
+            }
+        }
     }
     else
     {
+        command_config.collect_resource_usage = (source_configuration.sampler != nullptr);
         if (configuration.execute_direct)
             process = ShellCommand::executeDirect(command_config);
         else
             process = ShellCommand::execute(command_config);
+
+        /// Record the child pid so sampleExecutablePeak can walk the subtree
+        /// during IO. No-op when sampler is null.
+        if (source_configuration.sampler)
+            source_configuration.sampler->recordExecutablePid(process->getPid());
     }
 
     std::vector<ShellCommandSource::SendDataTask> tasks;
@@ -781,8 +922,12 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         }
 
         int write_buffer_fd = write_buffer->getFD();
+        /// Only the primary stdin pipe (i == 0) contributes to InputBytes.
+        /// Additional write descriptors carry side-channel data that isn't
+        /// part of the UDF's observable input.
+        UDFProcessSubtreeSampler * write_sampler = (i == 0) ? source_configuration.sampler.get() : nullptr;
         auto timeout_write_buffer
-            = std::make_shared<TimeoutWriteBufferFromFileDescriptor>(write_buffer_fd, configuration.command_write_timeout_milliseconds);
+            = std::make_shared<TimeoutWriteBufferFromFileDescriptor>(write_buffer_fd, configuration.command_write_timeout_milliseconds, write_sampler);
 
         input_pipes[i].resize(1);
 

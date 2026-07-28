@@ -1,0 +1,127 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/mysql
+title: 'MySQL 字典源'
+sidebarTitle: 'MySQL'
+description: '将 MySQL 配置为 ClickHouse 的字典源。'
+doc_type: 'reference'
+---
+
+设置示例：
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(MYSQL(
+        port 3306
+        user 'clickhouse'
+        password 'qwerty'
+        replica(host 'example01-1' priority 1)
+        replica(host 'example01-2' priority 1)
+        db 'db_name'
+        table 'table_name'
+        where 'id=10'
+        invalidate_query 'SQL_QUERY'
+        fail_on_connection_loss 'true'
+        query 'SELECT id, value_1, value_2 FROM db_name.table_name'
+        enable_compression 1
+    ))
+    ```
+  </Tab>
+
+  <Tab title="配置文件">
+    ```xml
+    <source>
+      <mysql>
+          <port>3306</port>
+          <user>clickhouse</user>
+          <password>qwerty</password>
+          <replica>
+              <host>example01-1</host>
+              <priority>1</priority>
+          </replica>
+          <replica>
+              <host>example01-2</host>
+              <priority>1</priority>
+          </replica>
+          <db>db_name</db>
+          <table>table_name</table>
+          <where>id=10</where>
+          <invalidate_query>SQL_QUERY</invalidate_query>
+          <fail_on_connection_loss>true</fail_on_connection_loss>
+          <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
+          <enable_compression>1</enable_compression>
+      </mysql>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+设置字段：
+
+| Setting                   | Description                                                                                                    |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `port`                    | MySQL 服务器的端口。可以为所有副本统一指定，也可以为每个副本单独指定 (在 `<replica>` 内) 。                                                      |
+| `user`                    | MySQL 用户名。可以为所有副本统一指定，也可以为每个副本单独指定 (在 `<replica>` 内) 。                                                         |
+| `password`                | MySQL 用户的密码。可以为所有副本统一指定，也可以为每个副本单独指定 (在 `<replica>` 内) 。                                                       |
+| `replica`                 | 副本配置段。可以有多个。                                                                                                   |
+| `replica/host`            | MySQL 主机。                                                                                                      |
+| `replica/priority`        | 副本优先级。尝试连接时，ClickHouse 会按优先级顺序遍历各个副本。数字越小，优先级越高。                                                               |
+| `db`                      | 数据库名称。                                                                                                         |
+| `table`                   | 表名称。                                                                                                           |
+| `where`                   | 筛选条件。其语法与 MySQL 的 `WHERE` 子句相同，例如 `id > 10 AND id < 20`。可选。                                                    |
+| `invalidate_query`        | 用于检查字典状态的查询。可选。更多信息，请参见[使用 LIFETIME 刷新字典数据](/zh/reference/statements/create/dictionary/lifetime)一节。               |
+| `fail_on_connection_loss` | 控制连接丢失时服务器的行为。如果为 `true`，当客户端与服务器之间的连接断开时，会立即抛出异常。如果为 `false`，服务器会在报告错误之前至少重试拉取数据三次。请注意，重试会增加响应时间。默认值：`false`。 |
+| `query`                   | 自定义查询。可选。                                                                                                      |
+| `enable_compression`      | 为 MySQL 协议连接启用 zlib 压缩。设置为 `1` 时，ClickHouse 会向 MySQL 服务器请求协议级压缩。也可以在 `<replica>` 内为每个副本单独设置。默认值：`0`。           |
+
+<Note>
+  `table` 或 `where` 字段不能与 `query` 字段同时使用。此外，必须声明 `table` 或 `query` 其中之一。
+</Note>
+
+<Note>
+  没有显式的 `secure` 参数。建立 SSL 连接时，安全连接是必需的。
+</Note>
+
+MySQL 可以通过套接字连接到本地主机。为此，请设置 `host` 和 `socket`。
+
+设置示例：
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(MYSQL(
+        host 'localhost'
+        socket '/path/to/socket/file.sock'
+        user 'clickhouse'
+        password 'qwerty'
+        db 'db_name'
+        table 'table_name'
+        where 'id=10'
+        invalidate_query 'SQL_QUERY'
+        fail_on_connection_loss 'true'
+        query 'SELECT id, value_1, value_2 FROM db_name.table_name'
+    ))
+    ```
+  </Tab>
+
+  <Tab title="配置文件">
+    ```xml
+    <source>
+      <mysql>
+          <host>localhost</host>
+          <socket>/path/to/socket/file.sock</socket>
+          <user>clickhouse</user>
+          <password>qwerty</password>
+          <db>db_name</db>
+          <table>table_name</table>
+          <where>id=10</where>
+          <invalidate_query>SQL_QUERY</invalidate_query>
+          <fail_on_connection_loss>true</fail_on_connection_loss>
+          <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
+      </mysql>
+    </source>
+    ```
+  </Tab>
+</Tabs>

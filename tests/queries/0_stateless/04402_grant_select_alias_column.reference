@@ -1,0 +1,15 @@
+-- read alias column
+012
+-- read alias column with always-false WHERE
+-- read alias column with always-true WHERE
+012
+-- read alias column with WHERE on the alias itself
+012
+-- count() with a grant on only the alias column
+1
+-- count() with always-false WHERE
+0
+-- reading the underlying physical column directly is still denied
+ACCESS_DENIED
+-- referencing the physical column in WHERE is still denied
+ACCESS_DENIED

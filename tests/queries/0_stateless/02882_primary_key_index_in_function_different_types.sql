@@ -1,4 +1,5 @@
 -- add_minmax_index_for_numeric_columns=0: Different plan
+SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS test_table;
 CREATE TABLE test_table
 (

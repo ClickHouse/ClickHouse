@@ -1,0 +1,3 @@
+-- Must not use the index with and without the optimization
+-- Sanity check: a non-empty needle still uses the index
+1

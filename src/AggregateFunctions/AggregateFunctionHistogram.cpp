@@ -369,7 +369,7 @@ public:
         this->data(place).add(static_cast<Data::Mean>(val), 1, max_bins);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs), max_bins);
     }
@@ -436,7 +436,7 @@ AggregateFunctionPtr createAggregateFunctionHistogram(const std::string & name, 
 void registerAggregateFunctionHistogram(AggregateFunctionFactory & factory);
 void registerAggregateFunctionHistogram(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("histogram", {createAggregateFunctionHistogram, {}});
+    factory.registerFunction("histogram", {createAggregateFunctionHistogram, {.description = R"DOC(Calculates an adaptive histogram with up to the specified number of bins over the input values, returning an array of (lower, upper, height) tuples.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
 }
 
 }

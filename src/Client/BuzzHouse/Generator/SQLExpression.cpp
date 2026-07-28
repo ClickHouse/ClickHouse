@@ -300,15 +300,9 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
             lv->set_no_quote_str(fmt::format("{}({})", rg.pickRandomly(sfuncs), rg.nextStrlen()));
         }
         break;
-        case LitOp::LitUUID:
-            lv->set_no_quote_str(fmt::format("'{}'{}", rg.nextUUID(), complex ? "::UUID" : ""));
-            break;
-        case LitOp::LitIPv4:
-            lv->set_no_quote_str(fmt::format("'{}'{}", rg.nextIPv4(), complex ? "::IPv4" : ""));
-            break;
-        case LitOp::LitIPv6:
-            lv->set_no_quote_str(fmt::format("'{}'{}", rg.nextIPv6(), complex ? "::IPv6" : ""));
-            break;
+        case LitOp::LitUUID: lv->set_no_quote_str(fmt::format("'{}'{}", rg.nextUUID(), complex ? "::UUID" : "")); break;
+        case LitOp::LitIPv4: lv->set_no_quote_str(fmt::format("'{}'{}", rg.nextIPv4(), complex ? "::IPv4" : "")); break;
+        case LitOp::LitIPv6: lv->set_no_quote_str(fmt::format("'{}'{}", rg.nextIPv6(), complex ? "::IPv6" : "")); break;
         case LitOp::LitGeo: {
             std::uniform_int_distribution<uint32_t> geo_range(1, static_cast<uint32_t>(GeoTypes_MAX));
             const GeoTypes gt = static_cast<GeoTypes>(geo_range(rg.generator));
@@ -316,9 +310,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
             lv->set_no_quote_str(fmt::format("'{}'{}{}", strAppendGeoValue(rg, gt), complex ? "::" : "", complex ? GeoTypes_Name(gt) : ""));
         }
         break;
-        case LitOp::LitStr:
-            lv->set_no_quote_str(rg.nextString("'", true, rg.nextStrlen()));
-            break;
+        case LitOp::LitStr: lv->set_no_quote_str(rg.nextString("'", true, rg.nextStrlen())); break;
         case LitOp::LitSpecial: {
             SpecialVal * val = lv->mutable_special_val();
             std::uniform_int_distribution<uint32_t> special_range(1, static_cast<uint32_t>(SpecialVal::SpecialValEnum_MAX));
@@ -341,9 +333,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
                 fmt::format("'{}'{}", strBuildJSON(rg, jrange(rg.generator), jrange(rg.generator)), complex ? "::JSON" : ""));
         }
         break;
-        case LitOp::LitNULLVal:
-            lv->mutable_special_val()->set_val(SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL);
-            break;
+        case LitOp::LitNULLVal: lv->mutable_special_val()->set_val(SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL); break;
         case LitOp::LitFraction: {
             std::uniform_int_distribution<uint32_t> frange(1, 999);
 
@@ -530,6 +520,30 @@ Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr 
     return res;
 }
 
+void StatementGenerator::generateExprIn(RandomGenerator & rg, ExprInType * expr)
+{
+    const uint32_t nopt = rg.nextSmallNumber();
+
+    if (nopt < 5 && this->allow_subqueries)
+    {
+        this->generateSubquery(rg, expr->mutable_sel());
+    }
+    else if (nopt < 9)
+    {
+        ExprList * elist2 = rg.nextBool() ? expr->mutable_tuple() : expr->mutable_array();
+        const uint32_t nclauses = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 4));
+
+        for (uint32_t i = 0; i < nclauses; i++)
+        {
+            this->generateExpression(rg, i == 0 ? elist2->mutable_expr() : elist2->add_extra_exprs());
+        }
+    }
+    else
+    {
+        this->generateExpression(rg, expr->mutable_single_expr());
+    }
+}
+
 void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
 {
     if (this->fc.max_depth <= this->depth)
@@ -545,7 +559,7 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
     predMask[static_cast<size_t>(PredOp::InExpr)] = this->fc.max_depth > this->depth && this->fc.max_width > this->width;
     predMask[static_cast<size_t>(PredOp::AnyExpr)]
         = this->fc.max_depth > this->depth && this->fc.max_width > (this->width + 1) && this->allow_subqueries;
-    predMask[static_cast<size_t>(PredOp::IsNullExpr)] = this->fc.max_depth > this->depth;
+    predMask[static_cast<size_t>(PredOp::IsTruthExpr)] = this->fc.max_depth > this->depth;
     predMask[static_cast<size_t>(PredOp::ExistsExpr)] = this->fc.max_depth > this->depth && this->allow_subqueries;
     predMask[static_cast<size_t>(PredOp::LikeExpr)] = this->fc.max_depth > this->depth;
     predMask[static_cast<size_t>(PredOp::SearchExpr)] = this->fc.max_depth > this->depth;
@@ -573,14 +587,28 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
         }
         break;
         case PredOp::BinaryExpr: {
-            const bool limited = rg.nextBool();
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             BinaryExpr * bexpr = cexpr->mutable_binary_expr();
-            std::uniform_int_distribution<uint32_t> op_range(
-                limited ? static_cast<uint32_t>(BinaryOperator::BINOP_AND) : 1,
-                static_cast<uint32_t>(limited ? BinaryOperator::BINOP_OR : BinaryOperator_MAX));
 
-            bexpr->set_op(static_cast<BinaryOperator>(op_range(rg.generator)));
+            if (rg.nextSmallNumber() < 3)
+            {
+                /// Deliberately emit a comparison predicate against an arbitrary right-hand
+                /// expression. The contiguous range `BINOP_LE` .. `BINOP_IS_NOT_DISTINCT_FROM`
+                /// covers every comparison operator, including `IS [NOT] DISTINCT FROM`.
+                bexpr->set_op(
+                    static_cast<BinaryOperator>(rg.randomInt<uint32_t>(
+                        static_cast<uint32_t>(BinaryOperator::BINOP_LE),
+                        static_cast<uint32_t>(BinaryOperator::BINOP_IS_NOT_DISTINCT_FROM))));
+            }
+            else
+            {
+                const bool limited = rg.nextBool();
+                std::uniform_int_distribution<uint32_t> op_range(
+                    limited ? static_cast<uint32_t>(BinaryOperator::BINOP_AND) : 1,
+                    static_cast<uint32_t>(limited ? BinaryOperator::BINOP_OR : BinaryOperator_MAX));
+
+                bexpr->set_op(static_cast<BinaryOperator>(op_range(rg.generator)));
+            }
             this->depth++;
             this->generateExpression(rg, bexpr->mutable_lhs());
             this->width++;
@@ -606,7 +634,6 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
         }
         break;
         case PredOp::InExpr: {
-            const uint32_t nopt2 = rg.nextSmallNumber();
             const uint32_t nclauses = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 4));
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             ExprIn * ein = cexpr->mutable_expr_in();
@@ -620,25 +647,7 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             {
                 this->generateExpression(rg, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
             }
-            if (nopt2 < 5 && this->allow_subqueries)
-            {
-                this->generateSubquery(rg, ein->mutable_sel());
-            }
-            else if (nopt2 < 9)
-            {
-                ExprList * elist2 = rg.nextBool() ? ein->mutable_tuple() : ein->mutable_array();
-                const uint32_t nclauses2
-                    = rg.nextSmallNumber() < 9 ? nclauses : std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 4));
-
-                for (uint32_t i = 0; i < nclauses2; i++)
-                {
-                    this->generateExpression(rg, i == 0 ? elist2->mutable_expr() : elist2->add_extra_exprs());
-                }
-            }
-            else
-            {
-                this->generateExpression(rg, ein->mutable_single_expr());
-            }
+            generateExprIn(rg, ein->mutable_in_type());
             this->depth--;
         }
         break;
@@ -649,20 +658,22 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
                 1, static_cast<uint32_t>(rg.nextLargeNumber() < 5 ? BinaryOperator_MAX : BinaryOperator::BINOP_LEEQGR));
 
             eany->set_op(static_cast<BinaryOperator>(op_range(rg.generator)));
-            eany->set_anyall(static_cast<AnyAllSome>(rg.randomInt<uint32_t>(1, static_cast<uint32_t>(AnyAllSome_MAX))));
+            eany->set_anyall(static_cast<ExprAny::AnyAllSome>(rg.randomInt<uint32_t>(1, static_cast<uint32_t>(ExprAny::AnyAllSome_MAX))));
             this->depth++;
             this->generateExpression(rg, eany->mutable_expr());
             this->width++;
-            generateSubquery(rg, eany->mutable_sel());
+            generateExprIn(rg, eany->mutable_in_type());
             this->width--;
             this->depth--;
         }
         break;
-        case PredOp::IsNullExpr: {
+        case PredOp::IsTruthExpr: {
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
-            ExprNullTests * enull = cexpr->mutable_expr_null_tests();
+            ExprTruthTests * enull = cexpr->mutable_expr_truth_tests();
 
             enull->set_not_(rg.nextBool());
+            if (rg.nextSmallNumber() < 3)
+                enull->set_truth_value(static_cast<ExprTruthTests_TruthValueTest>(rg.nextSmallNumber() % 4));
             this->depth++;
             this->generateExpression(rg, enull->mutable_expr());
             this->depth--;
@@ -771,7 +782,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate;
         const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
         std::uniform_int_distribution<uint32_t> comb_range(
-            1, static_cast<uint32_t>(this->allow_not_deterministic ? SQLFuncCall::AggregateCombinator_MAX : SQLFuncCall::ArgMax));
+            1, static_cast<uint32_t>(this->allow_not_deterministic ? SQLFuncCall::AggregateCombinator_MAX : SQLFuncCall::Tuple));
         uint32_t min_params = 0;
         uint32_t max_params = 0;
 
@@ -843,6 +854,13 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
             }
         }
 
+        /// -Tuple must be applied before any combinator that appends a scalar argument: only
+        /// <base>TupleIf is supported (not <base>IfTuple), and -Tuple wraps every existing
+        /// argument in tuple(...), which would corrupt an already-appended condition/key.
+        constexpr uint32_t scalar_tail_combinators
+            = (1u << static_cast<uint32_t>(SQLFuncCall_AggregateCombinator::SQLFuncCall_AggregateCombinator_If))
+            | (1u << static_cast<uint32_t>(SQLFuncCall_AggregateCombinator::SQLFuncCall_AggregateCombinator_ArgMin))
+            | (1u << static_cast<uint32_t>(SQLFuncCall_AggregateCombinator::SQLFuncCall_AggregateCombinator_ArgMax));
         uint32_t used_comb_mask = 0;
         for (uint32_t i = 0; i < ncombinators; i++)
         {
@@ -885,8 +903,36 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
                     this->width++;
                     generated_params += 4;
                     break;
-                default:
+                case SQLFuncCall_AggregateCombinator::SQLFuncCall_AggregateCombinator_Tuple:
+                    /// -Tuple needs at least one argument (each must be a Tuple of the same size).
+                    /// A zero-arg base aggregate like count would emit an invalid countTuple(), so skip it.
+                    /// It must also come before If/ArgMin/ArgMax: only <base>TupleIf is supported, not
+                    /// <base>IfTuple, and wrapping their scalar tail would emit e.g. sumIfTuple(tuple(x), tuple(cond)).
+                    if (func_call->args_size() == 0 || (used_comb_mask & scalar_tail_combinators))
+                    {
+                        continue;
+                    }
+                    /// The combinator requires every argument to be a Tuple of the same size, so most
+                    /// of the times wrap each argument in a 1-element tuple to make the call valid.
+                    if (rg.nextSmallNumber() < 9)
+                    {
+                        for (int j = 0; j < func_call->args_size(); j++)
+                        {
+                            SQLFuncArg & arg = *func_call->mutable_args(j);
+
+                            if (arg.has_expr())
+                            {
+                                Expr prev;
+
+                                prev.Swap(arg.mutable_expr());
+                                SQLFuncCall * tup = arg.mutable_expr()->mutable_comp_expr()->mutable_func_call();
+                                tup->mutable_func()->set_catalog_func("tuple");
+                                tup->add_args()->mutable_expr()->Swap(&prev);
+                            }
+                        }
+                    }
                     break;
+                default: break;
             }
             func_call->add_combinators(comb);
         }
@@ -1120,9 +1166,9 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     const bool allTables = rg.nextMediumNumber() < 4;
     const auto & level_rels = this->levels[this->current_level].rels;
     const auto has_dictionary_lambda
-        = [&](const SQLDictionary & d) { return d.isAttached() && (d.is_deterministic || this->allow_not_deterministic); };
+        = [&](const SQLDictionary & d) { return d.isAttached() && (d.isDeterministic() || this->allow_not_deterministic); };
     const auto has_join_table_lambda = [&](const SQLTable & t)
-    { return t.isAttached() && (allTables || t.isJoinEngine()) && (t.is_deterministic || this->allow_not_deterministic); };
+    { return t.isAttached() && (allTables || t.isJoinEngine()) && (t.isDeterministic() || this->allow_not_deterministic); };
 
     /// expMask[static_cast<size_t>(ExpOp::Literal)] = true;
     /// expMask[static_cast<size_t>(ExpOp::ColumnRef)] = true;
@@ -1161,15 +1207,9 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
 
     switch (static_cast<ExpOp>(expGen.nextOp())) /// drifts over time
     {
-        case ExpOp::Literal:
-            generateLiteralValue(rg, true, expr);
-            break;
-        case ExpOp::ColumnRef:
-            generateColRef(rg, expr);
-            break;
-        case ExpOp::Predicate:
-            generatePredicate(rg, expr);
-            break;
+        case ExpOp::Literal: generateLiteralValue(rg, true, expr); break;
+        case ExpOp::ColumnRef: generateColRef(rg, expr); break;
+        case ExpOp::Predicate: generatePredicate(rg, expr); break;
         case ExpOp::CastExpr: {
             uint32_t col_counter = 0;
             const uint64_t type_mask_backup = this->next_type_mask;
@@ -1203,6 +1243,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             this->depth++;
             this->generateExpression(rg, inter->mutable_expr());
             this->depth--;
+            inter->set_use_extract(rg.nextBool());
         }
         break;
         case ExpOp::ColumnsExpr: {
@@ -1369,20 +1410,13 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
                         }
                         nargs = 1;
                         break;
-                    case WINntile:
-                        nargs = 1;
-                        break;
-                    case WINnth_value:
-                        nargs = 2;
-                        break;
+                    case WINntile: nargs = 1; break;
+                    case WINnth_value: nargs = 2; break;
                     case WINlag:
                     case WINlagInFrame:
                     case WINlead:
-                    case WINleadInFrame:
-                        nargs = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 3));
-                        break;
-                    default:
-                        break;
+                    case WINleadInFrame: nargs = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 3)); break;
+                    default: break;
                 }
                 wc->set_func(wfs);
                 if (rg.nextLargeNumber() < 21)

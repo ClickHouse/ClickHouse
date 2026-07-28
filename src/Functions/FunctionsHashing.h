@@ -245,13 +245,36 @@ struct HalfMD5Impl
         } buf;
 
         using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
-        const auto ctx = EVP_MD_CTX_ptr(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+
+        /// A context is initialized with the MD5 digest once, then only copied on each call
+        /// (the same approach as in FunctionsStringHashFixedString.cpp). Copying an already
+        /// initialized context with `EVP_MD_CTX_copy_ex` is faster than re-initializing with
+        /// `EVP_md5` every time: in OpenSSL 3.x the latter re-fetches the digest from the
+        /// provider method store under a read lock, and with this function called once per row
+        /// all hashing threads serialize on it (with musl's `pthread_rwlock` on aarch64 this
+        /// doubled `cryptographic_hashes` times in CI, `__pthread_rwlock_tryrdlock` dominating
+        /// the profile).
+        static const EVP_MD_CTX_ptr ctx_template = []
+        {
+            EVP_MD_CTX_ptr new_ctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+            if (!new_ctx)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
+            if (EVP_DigestInit_ex(new_ctx.get(), EVP_md5(), nullptr) != 1)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
+            return new_ctx;
+        }();
+
+        thread_local EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
 
         if (!ctx)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
+        {
+            ctx.reset(EVP_MD_CTX_new());
+            if (!ctx)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
+        }
 
-        if (EVP_DigestInit_ex(ctx.get(), EVP_md5(), nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
+        if (EVP_MD_CTX_copy_ex(ctx.get(), ctx_template.get()) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_copy_ex failed: {}", getOpenSSLErrors());
 
         if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed: {}", getOpenSSLErrors());
@@ -366,7 +389,7 @@ struct SipHash128ReferenceKeyedImpl
   * Usually there is no reason to use MurmurHash.
   * It is needed for the cases when you already have MurmurHash in some applications and you want to reproduce it
   * in ClickHouse as is. For example, it is needed to reproduce the behaviour
-  * for NGINX a/b testing module: https://nginx.ru/en/docs/http/ngx_http_split_clients_module.html
+  * for NGINX a/b testing module: https://nginx.org/en/docs/http/ngx_http_split_clients_module.html
   */
 struct MurmurHash2Impl32
 {
@@ -723,6 +746,33 @@ struct ImplXxHash64
     static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
+/// https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.xxhash64.html
+struct ImplXxHash64Spark
+{
+    static constexpr auto name = "xxHash64Spark";
+    using ReturnType = Int64;
+
+    /// Some restrictions apply:
+    /// (1) While the Spark equivalent function supports >1 argument, only a single argument was verified
+    ///     to return the same result in ClickHouse and Spark.
+    /// (2) Only String and NULL arguments were verified to return the same result in ClickHouse and Spark.
+    /// (3) NULL arguments must return a custom hash value
+    static constexpr size_t number_of_arguments = 1; /// (1)
+    static constexpr bool use_default_implementation_for_nulls = false;
+    static constexpr bool check_all_arguments_are_strings = true; /// (2)
+    static constexpr Int64 custom_null_hash = 42; /// (3)
+
+    static auto apply(const char * s, const size_t len) { return XXH_INLINE_XXH64(s, len, 42); }
+
+    static Int64 combineHashes(UInt64 /*h1*/, UInt64 /*h2*/)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} cannot be called with more than one argument", name);
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
+};
+
 struct ImplXXH3
 {
     static constexpr auto name = "xxh3";
@@ -912,8 +962,9 @@ public:
     static constexpr auto name = Impl::name;
     static constexpr UInt128 NULL_HASH = UInt128({0xc58ad2da03d9a871ul, 0x5715f196cbea7a40ul});
 
-    /// Keep default implementation of useDefaultImplementationForNulls for compatibility.
-    /// E.g. someHash(NULL) is NULL, but someHash(tuple(NULL)) is not NULL.
+    /// Keep default implementation of `useDefaultImplementationForNulls` for compatibility unless an implementation opts
+    /// out via `Impl::use_default_implementation_for_nulls`.
+    /// E.g. `someHash(NULL)` is `NULL`, but `someHash(tuple(NULL))` is not `NULL`.
 
 private:
     using ToType = typename Impl::ReturnType;
@@ -1226,8 +1277,14 @@ private:
 
             if constexpr (Keyed)
             {
-                auto key_cols_replicated = key_cols.replicateForArray(offsets);
-                executeForArgument(key_cols_replicated, nested_type, nested_column, vec_temp, nested_is_first);
+                /// When every array is empty the nested column is empty too. There is nothing to
+                /// hash, but replicating the key columns would produce empty key columns, and the
+                /// recursive call would then read a key for a row that doesn't exist. Skip it.
+                if (nested_size != 0)
+                {
+                    auto key_cols_replicated = key_cols.replicateForArray(offsets);
+                    executeForArgument(key_cols_replicated, nested_type, nested_column, vec_temp, nested_is_first);
+                }
             }
             else
                 executeForArgument(key_cols, nested_type, nested_column, vec_temp, nested_is_first);
@@ -1312,7 +1369,10 @@ private:
             }
             else
             {
-                null_hash = static_cast<ToType>(NULL_HASH);
+                if constexpr (requires { Impl::custom_null_hash; })
+                    null_hash = Impl::custom_null_hash;
+                else
+                    null_hash = static_cast<ToType>(NULL_HASH);
             }
 
             typename ColumnVector<ToType>::Container original_vec_to;
@@ -1461,9 +1521,27 @@ public:
     {
         return name;
     }
-
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override
+    {
+        if constexpr (requires { Impl::number_of_arguments; })
+            return false;
+        else
+            return true;
+    }
+    size_t getNumberOfArguments() const override
+    {
+        if constexpr (requires { Impl::number_of_arguments; })
+            return Impl::number_of_arguments;
+        else
+            return 0;
+    }
+    bool useDefaultImplementationForNulls() const override
+    {
+        if constexpr (requires { Impl::use_default_implementation_for_nulls; })
+            return Impl::use_default_implementation_for_nulls;
+        else
+            return true;
+    }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -1471,8 +1549,26 @@ public:
     /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
     bool useDefaultImplementationForVariant() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        if constexpr (requires { Impl::check_all_arguments_are_strings; })
+        {
+            if (Impl::check_all_arguments_are_strings)
+            {
+                for (const auto & argument : arguments)
+                {
+                    const DataTypePtr nested_type = removeNullable(argument);
+                    const WhichDataType which(nested_type);
+                    if (!which.isString() && !which.isNothing())
+                        throw Exception(
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of argument of function {}. Must be String or NULL",
+                            argument->getName(),
+                            getName());
+                }
+            }
+        }
+
         /// backward-compatible
         if constexpr (std::is_same_v<ToType, UInt128> && !Impl::return_bigint_instead_of_fixedstring)
         {
@@ -1841,6 +1937,7 @@ using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
 
 using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
 using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
+using FunctionXxHash64Spark = FunctionAnyHash<ImplXxHash64Spark>;
 using FunctionXXH3 = FunctionAnyHash<ImplXXH3>;
 using FunctionXXH3_128 = FunctionAnyHash<ImplXXH3_128>;
 
