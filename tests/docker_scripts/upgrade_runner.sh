@@ -107,8 +107,10 @@ configure_opts=(
     # Let's enable S3 storage by default
     --s3-storage
 )
+use_encrypted_storage=0
 if [ $((RANDOM % 2)) -eq 0 ]; then
     configure_opts+=(--encrypted-storage)
+    use_encrypted_storage=1
 fi
 
 # Start server from previous release
@@ -125,13 +127,18 @@ clickhouse-client --receive_timeout 30 --query="SELECT 'Server version: ', versi
 
 mkdir tmp_stress_output
 
+# clickhouse-test must know which storage backend the server actually uses, or its storage skip tags
+# are ignored and incompatible tests run on an unsupported backend: --s3-storage (object storage is the
+# default MergeTree policy above) covers no-object-storage/no-s3-storage; --encrypted-storage mirrors the
+# coin flip above and covers no-encrypted-storage (stress.py forwards it to clickhouse-test).
+
 # `02255_broken_parts_chain_on_start` corrupts a part the server itself wrote, and its leftover damaged table
 #       reddens this job after the restart. The skip must live here, not in the test file: this stage runs the
 #       FROZEN previous-release checkout (`previous_release_repository` above), so neither deleting nor tagging
 #       the test on master changes what runs, while `--skip` is matched by `clickhouse-test` against the test
 #       name. Removable once no supported previous release ships
 #       `tests/queries/0_stateless/02255_broken_parts_chain_on_start.sh` (converted to `tests/integration/test_broken_parts_chain_on_start` on master).
-stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\""  --skip-func-tests "--skip 02255_broken_parts_chain_on_start" --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
+stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\" --s3-storage" --skip-func-tests "--skip 02255_broken_parts_chain_on_start" --encrypted-storage "$use_encrypted_storage" --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 
