@@ -24,6 +24,12 @@ public:
     bool supportsSampling() const override { return getNested()->supportsSampling(); }
     bool supportsFinal() const override { return getNested()->supportsFinal(); }
     bool supportsPrewhere() const override { return getNested()->supportsPrewhere(); }
+    /// Unlike `supportsPrewhere()`, these two don't default to something forwarding would match:
+    /// `canMoveConditionsToPrewhere()` can recurse (e.g. `StorageMerge`), and `supportedPrewhereColumns()`
+    /// defaults to "all columns". Left unforwarded, a lazily-loaded table would admit a PREWHERE
+    /// the nested storage's own `read()` can't satisfy.
+    bool canMoveConditionsToPrewhere() const override { return getNested()->canMoveConditionsToPrewhere(); }
+    std::optional<NameSet> supportedPrewhereColumns() const override { return getNested()->supportedPrewhereColumns(); }
     bool supportsReplication() const override { return getNested()->supportsReplication(); }
     bool supportsParallelInsert() const override { return getNested()->supportsParallelInsert(); }
     bool supportsDeduplication() const override { return getNested()->supportsDeduplication(); }

@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+--       ^^^^^^^^^^^^^^^^^^^^^^^ for the lazy_load_tables section below.
+
 -- `StorageMerge::supportedPrewhereColumns` compares the root type only against each child's
 -- *declared* columns. A nested `Merge` can declare a matching type while its own leaf differs, so
 -- PREWHERE was admitted, built against the root type, then re-derived against the leaf's type -
@@ -101,3 +104,39 @@ DROP TABLE mvm_merge;
 DROP VIEW mvm_view;
 DROP TABLE mvm_dst;
 DROP TABLE mvm_src;
+
+-- With `lazy_load_tables = 1`, a re-attached table is a `StorageTableProxy` wrapping the real
+-- storage. `StorageProxy` forwards `supportsPrewhere()` but did not forward `supportedPrewhereColumns()`
+-- (default: `std::nullopt`, meaning "everything supported") nor `canMoveConditionsToPrewhere()`, so a
+-- lazily-loaded `outer` here would admit `PREWHERE x != 0` unrestricted and abort in `ActionsDAG`,
+-- even though the same table is correctly rejected before the DETACH/ATTACH round trip.
+
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS lazy_load_tables = 1;
+
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.lazy_leaf (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.lazy_leaf SELECT number, number + 1 FROM numbers(10);
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.lazy_inner (x Nullable(UInt64), y UInt64)
+    ENGINE = Merge({CLICKHOUSE_DATABASE_1:Identifier}, '^lazy_leaf$');
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.lazy_outer (x Nullable(UInt64), y UInt64)
+    ENGINE = Merge({CLICKHOUSE_DATABASE_1:Identifier}, '^lazy_inner$');
+
+DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
+SELECT '-- re-attached tables are lazy proxies --';
+SELECT name, engine FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} ORDER BY name;
+
+SELECT '-- the proxy must still reject the mismatched column, not abort --';
+SELECT x, y FROM {CLICKHOUSE_DATABASE_1:Identifier}.lazy_outer PREWHERE x != 0 ORDER BY x LIMIT 3; -- { serverError ILLEGAL_PREWHERE }
+
+SELECT '-- a matching column still supports PREWHERE through the proxy --';
+SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.lazy_outer PREWHERE y != 0;
+SELECT x, y FROM {CLICKHOUSE_DATABASE_1:Identifier}.lazy_outer PREWHERE y != 0 ORDER BY y LIMIT 3;
+
+SELECT '-- the same predicates as WHERE keep working through the proxy --';
+SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.lazy_outer WHERE x != 0;
+SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.lazy_outer WHERE y != 0;
+SELECT x, y FROM {CLICKHOUSE_DATABASE_1:Identifier}.lazy_outer WHERE x != 0 ORDER BY x LIMIT 3;
+
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

@@ -36,3 +36,19 @@
 1	2
 2	3
 3	4
+-- re-attached tables are lazy proxies --
+lazy_inner	TableProxy
+lazy_leaf	TableProxy
+lazy_outer	TableProxy
+-- the proxy must still reject the mismatched column, not abort --
+-- a matching column still supports PREWHERE through the proxy --
+10
+0	1
+1	2
+2	3
+-- the same predicates as WHERE keep working through the proxy --
+9
+10
+1	2
+2	3
+3	4
