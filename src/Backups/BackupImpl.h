@@ -65,6 +65,7 @@ public:
     std::map<String, String> getEngineSettings() const override;
     time_t getTimestamp() const override { return timestamp; }
     UUID getUUID() const override { return *uuid; }
+    const String & getBackupId() const override { return backup_id; }
     BackupPtr getBaseBackup() const override;
     size_t getNumFiles() const override;
     UInt64 getTotalSize() const override;
@@ -158,6 +159,7 @@ private:
     std::unordered_map<String, BackupFileInfo> lightweight_snapshot_file_infos TSA_GUARDED_BY(mutex);
 
     std::optional<UUID> uuid;
+    String backup_id; /// Set from params on write, from the manifest on read; empty for legacy backups without the field.
     time_t timestamp = 0;
     size_t num_files = 0;
     UInt64 total_size = 0;

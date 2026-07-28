@@ -4,6 +4,9 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStorage.h>
+#include <Coordination/KeeperStorageImpl.h>
+#include <Coordination/KeeperMemNodesStorage.h>
+#include <Coordination/KeeperStorage_fwd.h>
 #include <Coordination/ZooKeeperDataReader.h>
 #include <Coordination/KeeperContext.h>
 #include <Common/TerminalSize.h>
@@ -47,7 +50,7 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
         keeper_context->setDigestEnabled(true);
         keeper_context->setSnapshotDisk(std::make_shared<DiskLocal>("Keeper-snapshots", options["output-dir"].as<std::string>()));
 
-        DB::KeeperStorage storage(/* tick_time_ms */ 500, /* superdigest */ "", keeper_context, /* initialize_system_nodes */ false);
+        DB::KeeperMemoryStorage storage(/* tick_time_ms */ 500, /* superdigest */ "", keeper_context);
 
         DB::deserializeKeeperStorageFromSnapshotsDir(storage, options["zookeeper-snapshots-dir"].as<std::string>(), logger);
         storage.initializeSystemNodes();

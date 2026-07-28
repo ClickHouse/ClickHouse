@@ -1,0 +1,33 @@
+---
+title: 'ClickPipe에서 특정 테이블 삭제'
+description: 'ClickPipe에서 특정 테이블 삭제'
+sidebarTitle: '테이블 삭제'
+slug: /integrations/clickpipes/postgres/removing_tables
+doc_type: 'guide'
+keywords: ['ClickPipes', 'postgresql', 'CDC', '데이터 수집', '실시간 동기화']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+경우에 따라서는 Postgres ClickPipe에서 특정 테이블을 제외하는 것이 적절합니다. 예를 들어, 어떤 테이블이 분석 워크로드에 필요하지 않다면 이를 제외하여 ClickHouse의 스토리지 및 복제 비용을 줄일 수 있습니다.
+
+<div id="remove-tables-steps">
+  ## 특정 테이블 제거 단계
+</div>
+
+첫 번째 단계는 파이프에서 테이블을 제거하는 것입니다. 다음 단계에 따라 수행할 수 있습니다.
+
+1. 파이프를 [일시 중지](/ko/integrations/clickpipes/postgres/pause-and-resume)합니다.
+2. Edit Table Settings를 클릭합니다.
+3. 테이블을 찾습니다. 검색창에서 검색하면 됩니다.
+4. 선택된 체크박스를 클릭하여 테이블 선택을 해제합니다.
+
+<br />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp" border size="md" />
+
+5. Update를 클릭합니다.
+6. 업데이트가 성공하면 **Metrics** 탭에서 상태가 **Running**으로 표시됩니다. 이 테이블은 더 이상 이 ClickPipe에서 복제되지 않습니다.

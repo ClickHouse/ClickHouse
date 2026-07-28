@@ -286,6 +286,12 @@ if [ $((RANDOM % 2)) -eq 1 ]; then
         > /etc/clickhouse-server/config.d/enable_max_min_fair_scheduler.xml
 fi
 
+# Cap the recursion-controlling parser/AST settings. The stress test ignores `no-*` build
+# tags and runs the query fuzzer over every query, so deeply nested expressions (e.g. test
+# 04412's formatQuery of a 20000-deep array literal) would otherwise build huge queries that
+# hang the server under sanitizers and trip the hung check.
+cp -av --dereference /repo/ci/jobs/scripts/fuzzer/limit-recursion-settings.xml /etc/clickhouse-server/users.d/
+
 start_server || { echo "Failed to start server"; exit 1; }
 
 cd /repo/tests/ || exit 1  # clickhouse-test can find queries dir from there

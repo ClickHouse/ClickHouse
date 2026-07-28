@@ -1,0 +1,242 @@
+---
+sidebarTitle: 'JDBC에서 Date/Time 값 다루기'
+keywords: ['java', 'jdbc', 'driver', 'integrate', 'guide', 'Date', 'Time']
+description: 'JDBC에서 Date/Time 값을 사용하는 가이드'
+slug: /integrations/language-clients/java/jdbc_date_time_guide
+title: 'Date/Time 값 가이드'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+---
+
+Date, Time, Timestamp 값은 이와 관련된 일반적인 문제가 몇 가지 있으므로 주의가 필요합니다.
+가장 흔한 문제는 시간대를 처리하는 방법입니다. 또 다른 문제는 문자열 표현과 이를 사용하는 방법입니다.
+그 밖에도 각 데이터베이스와 드라이버에는 고유한 특성과 제한 사항이 있습니다.
+
+이 문서는 작업을 설명하고 구현 세부 사항을 제공하며 문제를 짚어, 의사결정에 도움이 되는 가이드를 제공하는 것을 목표로 합니다.
+
+<div id="timezones">
+  ## 시간대
+</div>
+
+시간대는 다루기 어렵다는 점을 모두 알고 있습니다(일광 절약 시간제, 잦은 오프셋 변경 등). 하지만 이 절에서 다루는 것은 시간대와 관련된 또 다른 문제, 즉 시간대가 타임스탬프의 문자열 표현과 어떻게 연결되는지입니다.
+
+<div id="clickhouse-datetime-string-conversion">
+  ### ClickHouse가 DateTime 문자열을 변환하는 방식
+</div>
+
+ClickHouse는 `DateTime` 문자열 값을 변환할 때 다음 규칙을 사용합니다.
+
+* 컬럼이 시간대와 함께 정의된 경우(`DateTime64(9, ‘Asia/Tokyo’)`), 문자열 값은 해당 시간대의 타임스탬프로 처리됩니다. `2026-01-01 13:00:00`은 `UTC` 기준으로 `2026-01-01 04:00:00`이 됩니다.
+* 컬럼에 시간대 정의가 없으면 서버 시간대만 사용됩니다. 중요: `session_timezone` 설정은 아무런 영향을 주지 않습니다. 따라서 서버 시간대가 `UTC`이고 세션 시간대가 `America/Los_Angeles`인 경우, `2026-01-01 13:00:00`은 `UTC` 시간으로 기록됩니다.
+* 시간대 정의가 없는 컬럼에서 값을 읽을 때는 `session_timezone`이 사용되고, 설정되지 않은 경우에는 서버 시간대가 사용됩니다. 따라서 타임스탬프를 문자열로 읽을 때는 `session_timezone`의 영향을 받을 수 있습니다. 이는 잘못된 동작이 아니지만, 염두에 두어야 합니다.
+
+<div id="writing-timestamps-across-timezones">
+  ### 여러 시간대에 걸쳐 타임스탬프 기록하기
+</div>
+
+이제 로컬 시간대가 `UTC-8`인 `us-west` 리전에서 실행 중인 애플리케이션이 있고, `UTC`로는 `2026-01-01 10:00:00`에 해당하는 로컬 타임스탬프 `2026-01-01 02:00:00`를 기록해야 한다고 가정해 보겠습니다.
+
+* 이를 문자열로 기록하려면 서버 시간대 또는 컬럼 시간대로 변환해야 합니다.
+* 이를 언어 네이티브 시간 구조로 기록하려면 드라이버가 대상 시간대를 알아야 하지만, 다음과 같은 문제가 있습니다:
+  * 항상 가능한 것은 아닙니다
+  * 이를 위한 드라이버 API는 잘 설계되어 있지 않습니다
+  * 유일한 방법은 어떤 변환이 수행되는지 명시해 애플리케이션이 이를 보정하도록 하는 것뿐입니다(또는 Unix 타임스탬프를 숫자로 기록할 수도 있습니다)
+
+<div id="java-and-jdbc-timestamp-apis">
+  ### Java 및 JDBC 타임스탬프 API
+</div>
+
+Java와 JDBC에서는 타임스탬프를 설정하는 방식이 서로 다릅니다.
+
+1. 실제로는 Unix 타임스탬프인 `Timestamp` 클래스를 사용합니다.
+   1. `Calendar` 객체와 함께 사용하면 `Timestamp`를 해당 캘린더의 시간대 기준으로 다시 해석할 수 있습니다.
+   2. `Timestamp`에는 직관적이지 않은 내부 캘린더가 있습니다.
+2. 어떤 시간대로든 쉽게 변환할 수 있는 `LocalDateTime` 클래스를 사용합니다. 다만 대상 시간대를 전달할 수 있는 메서드는 없습니다.
+3. `ZonedDateTime` 클래스를 사용합니다. 이 클래스는 시간대가 지정되지 않은 `DateTime`에 쓸 때 시간대 변환에 도움이 됩니다(이 경우 서버 시간대를 사용하면 되기 때문입니다).
+   1. 하지만 시간대가 정의된 컬럼에 `ZonedDateTime`을 쓰려면 사용자가 드라이버 변환을 직접 보정해야 합니다.
+4. `Long`을 사용해 Unix 타임스탬프 밀리초를 기록합니다.
+5. `String`을 사용해 모든 변환을 애플리케이션 측에서 처리합니다(이 방식은 이식성이 높지 않습니다).
+
+<Warning>
+  ID로 시간대를 찾을 때는 `java.time.ZoneId#of(java.lang.String)`를 사용하는 것이 좋습니다.
+  이 메서드는 시간대를 찾지 못하면 예외를 발생시킵니다(`java.util.TimeZone#getTimeZone(java.lang.String)`는 조용히 `GMT`로 대체됨).
+
+  `Tokyo` 시간대를 올바르게 가져오는 방법은 다음과 같습니다.
+
+  `TimeZone.getTimeZone(ZoneId.of("Asia/Tokyo"))`
+</Warning>
+
+<div id="date">
+  ## Date
+</div>
+
+날짜는 본질적으로 시간대와 무관합니다. 날짜를 저장하는 타입으로는 `Date`와 `Date32`가 있습니다. 두 타입 모두 epoch(`1970-01-01`) 이후 경과한 일 수를 사용합니다. `Date`는 양수인 일 수만 사용하므로 범위가 `2149-06-06`에서 끝납니다. `Date32`는 `1970-01-01` 이전 날짜까지 포함할 수 있도록 음수인 일 수를 처리하지만, 범위는 더 좁습니다(`1900-01-01`부터 `2100-01-01`까지이며, 여기서 0은 `1970-01-01`입니다). ClickHouse는 어떤 시간대에서든 `2026-01-01`을 `2026-01-01`로 인식하며, 컬럼 정의에는 시간대 매개변수가 없습니다.
+
+<div id="using-localdate">
+  ### `java.time.LocalDate` 사용
+</div>
+
+Java에서 날짜 값을 나타내는 데 가장 적합한 클래스는 `java.time.LocalDate`입니다. 클라이언트는 이 클래스를 사용해 `Date` 및 `Date32` 컬럼 값을 저장합니다(`LocalDate.ofEpochDay((long)readUnsignedShortLE())`를 읽음).
+
+`java.time.LocalDate`는 시간대 변환의 영향을 받지 않으며 최신 시간 API의 일부이므로 사용을 권장합니다.
+
+<div id="using-java-sql-date">
+  ### `java.sql.Date` 사용
+</div>
+
+`LocalDate`는 Java 8에서 도입되었습니다. 그전에는 날짜를 기록하고 읽는 데 `java.sql.Date`를 사용했습니다. 내부적으로 이 클래스는 인스턴트(시간상의 절대적인 한 시점을 나타내는 값)를 감싸는 래퍼입니다. 이 때문에 `toString()`은 JVM의 시간대에 따라 다른 날짜를 반환합니다. 따라서 `드라이버`가 값을 주의 깊게 구성해야 하며, 사용자도 이 점을 알고 있어야 합니다.
+
+<div id="calendar-based-reinterpretation">
+  ### Calendar 기반 재해석
+</div>
+
+`java.sql.ResultSet`에는 `Calendar`를 받아 날짜 값을 가져오는 메서드가 있으며, `java.sql.PreparedStatement`에도 이와 유사한 메서드가 있습니다. 이는 JDBC 드라이버가 지정된 시간대에 맞춰 날짜 값을 다시 해석할 수 있도록 설계된 기능입니다. 예를 들어, DB에 `2026-01-01`이라는 값이 저장되어 있지만 애플리케이션에서는 이 날짜를 `Tokyo` 시간대의 자정으로 해석하려고 할 수 있습니다. 이 경우 반환되는 `java.sql.Date` 객체는 특정 시점을 갖게 되며, 이를 로컬 시간대로 변환하면 시차 때문에 날짜가 달라질 수 있습니다. `LocalDate`에서도 `java.time.LocalDate#atStartOfDay(java.time.ZoneId)`를 사용하면 같은 동작을 구현할 수 있습니다.
+
+ClickHouse JDBC 드라이버는 항상 **로컬** 날짜의 자정을 가리키는 `java.sql.Date` 객체를 반환합니다. 다시 말해, 날짜가 `2026-01-01`이면 이는 JVM 시간대의 `2026-01-01 12:00 AM`을 의미합니다(동작 방식은 PostgreSQL 및 MariaDB JDBC 드라이버와 동일합니다).
+
+<div id="time">
+  ## 시간
+</div>
+
+Time 값은 Date 값과 마찬가지로 대부분의 경우 시간대의 영향을 받지 않습니다. ClickHouse는 시간 리터럴 값을 어느 시간대로도 변환하지 않으므로 `’6:30’`은 어디서 읽어도 동일합니다.
+
+<div id="clickhouse-time-types">
+  ### ClickHouse Time 타입
+</div>
+
+`Time` 및 `Time64`는 `25.6`에 도입되었습니다. 그전에는 대신 타임스탬프 타입인 `DateTime` 및 `DateTime64`를 사용했습니다(이 가이드의 뒷부분에서 설명합니다). `Time`은 초를 나타내는 32비트 정수로 저장되며, 범위는 `[-999:59:59, 999:59:59]`입니다. `Time64`는 부호 없는 Decimal64로 인코딩되며, 정밀도(precision)에 따라 서로 다른 시간 단위를 저장합니다. 일반적으로는 3(밀리초), 6(마이크로초), 9(나노초)를 사용합니다. 정밀도 값의 범위는 `[0, 9]`입니다.
+
+<div id="java-type-mapping">
+  ### Java 타입 매핑
+</div>
+
+클라이언트는 `Time` 및 `Time64`를 읽어 `LocalDateTime`으로 저장합니다. 이는 음수 시간 범위를 지원하기 위해서입니다(`LocalTime`은 이를 지원하지 않음). 이 경우 날짜 부분은 epoch 날짜인 `1970-01-01`이므로 음수 값은 이 날짜보다 이전 시점을 가리킵니다.
+
+시간 타입의 주요 지원은 `LocalTime`(값이 하루 이내인 경우)과 전체 값 범위를 다루기 위한 `Duration`을 사용해 구현됩니다. `LocalDateTime`은 읽기 전용으로만 사용할 수 있습니다.
+
+<div id="using-java-sql-time">
+  ### `java.sql.Time` 사용
+</div>
+
+`java.sql.Time`은 `LocalTime` 범위 내에서만 사용할 수 있습니다. 내부적으로 `java.sql.Time`은 문자열 리터럴로 변환됩니다. `PreparedStatement#setTime()`에 Calendar 매개변수를 사용하면 값을 변경할 수 있습니다.
+
+<div id="totime-function">
+  ### `toTime` 함수
+</div>
+
+<Note>
+  * `toTime`은 항상 `Date`, `DateTime` 또는 이와 유사한 유형을 인수로 받습니다. 문자열은 허용되지 않습니다. 관련 이슈: https://github.com/ClickHouse/ClickHouse/issues/89896
+  * [`toTimeWithFixedDate`](/ko/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate)의 별칭입니다.
+  * 시간대 관련 이슈가 있습니다: https://github.com/ClickHouse/ClickHouse/pull/90310
+</Note>
+
+<div id="timestamp">
+  ## 타임스탬프
+</div>
+
+타임스탬프는 특정 시점을 나타냅니다. 예를 들어, Unix 타임스탬프는 `1970-01-01 00:00:00` `UTC`를 기준으로 경과한 초 수로 어떤 시점이든 표현합니다(`Unix` 시간 이전의 타임스탬프는 음수, 이후의 타임스탬프는 양수로 나타냅니다). 관측자가 `UTC` 시간대를 사용하거나 로컬 시간대 대신 이를 사용할 경우, 이 표현 방식은 계산하고 처리하기 쉽습니다.
+
+<div id="clickhouse-timestamp-types">
+  ### ClickHouse 타임스탬프 타입
+</div>
+
+ClickHouse에는 `DateTime`(32비트 정수, 해상도는 항상 초)과 `DateTime64`(64비트 정수, 해상도는 정의에 따라 달라짐) 타임스탬프 타입이 있습니다. 값은 항상 UTC 타임스탬프로 저장됩니다. 즉, 숫자로 표현할 때는 시간대 변환이 적용되지 않습니다.
+
+<div id="string-representation-and-timezone-behavior">
+  ### 문자열 표현과 시간대 동작
+</div>
+
+문자열 표현에는 몇 가지 복잡한 점이 있습니다.
+
+* 컬럼 정의에 시간대가 지정되지 않은 상태에서 쓰기 시 문자열이 전달되면, 서버 시간대 기준으로 UTC 타임스탬프 숫자로 변환됩니다. 이런 컬럼에서 값을 읽을 때는 UTC 타임스탬프가 서버 또는 session 시간대를 사용하는 리터럴 타임스탬프로 변환됩니다(비슷한 방식이 시간대가 명시적으로 정의되지 않은 표현식의 타임스탬프 리터럴에도 적용됩니다).
+* 컬럼 정의에 시간대가 지정된 경우에는 모든 문자열 변환에 해당 시간대만 사용됩니다. 이는 시간대가 지정되지 않은 경우의 로직과 다르므로, 쿼리에서 각 컬럼에 데이터가 어떻게 기록되는지 정확히 이해해야 합니다.
+* 시간대가 포함된 포맷의 날짜가 문자열로 전달되면 변환 함수가 필요합니다. 일반적으로 [`parseDateTimeBestEffort`](/ko/reference/functions/regular-functions/type-conversion-functions#parseDateTimeBestEffort)를 사용합니다.
+
+<div id="how-jdbc-driver-handles-timestamps">
+  ### JDBC 드라이버의 타임스탬프 처리 방식
+</div>
+
+JDBC 드라이버에서는 타임스탬프를 숫자 형식으로 변환합니다:
+
+```java
+"fromUnixTimestamp64Nano(" + epochSeconds * 1_000_000_000L + nanos + ")"
+```
+
+이 표현 방식은 데이터를 통일된 포맷으로 서버에 전송하므로 타임스탬프 값에서 발생하는 대부분의 변환 문제를 해결합니다. 다만 이 방식은 SQL 문을 약간 조정해야 하지만, 어떤 컬럼에든 타임스탬프를 기록하는 가장 단순하고 직관적인 방법입니다.
+
+`DateTime` 및 `DateTime64`는 클라이언트에서 `java.time.ZonedDateTime`으로 읽고 저장하므로, 이러한 값을 다른 시간대로 변환하는 데 도움이 됩니다(시간대 정보는 유지됩니다).
+
+<div id="common-pitfall-todatetime64">
+  ### `toDateTime64`에서 흔히 겪는 문제
+</div>
+
+다음 코드 예시는 올바른 것처럼 보이지만 assertion 검증에서 실패합니다:
+
+```java
+String sql = "SELECT toDateTime64(?, 3)";
+try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+    LocalDateTime localTs = LocalDateTime.parse("2021-01-01T01:34:56");
+    stmt.setObject(1, localTs);
+    try (ResultSet rs = stmt.executeQuery()) {
+        rs.next();
+        assertEquals(rs.getObject(1, LocalDateTime.class), localTs);
+    }
+}
+```
+
+이는 `toDateTime64`가 서버 시간대를 사용하며 원래 시간대는 인식하지 못하기 때문입니다.
+
+<div id="conversion-tables">
+  ## 변환 표
+</div>
+
+아래 표에 변환 쌍이 명시되어 있지 않으면 해당 변환은 지원되지 않습니다. 예를 들어 `Date` 컬럼에는 시간 정보가 없으므로 `java.sql.Timestamp`로 읽을 수 없습니다.
+드라이버는 정수 값을 어떤 날짜/시간 값으로도 변환하지 않습니다. `pstmt.setLong("timestamp", 1772132359L)`를 호출하면 `1772132359`가 숫자 형태로 server에 기록되며, 이는
+초 단위의 UTC Unix 타임스탬프로 처리됩니다.
+
+<div id="writing-values-setobject">
+  ### `PreparedStatement#setObject`로 값 쓰기
+</div>
+
+다음 표는 `PreparedStatement#setObject(column, value)`로 값을 설정할 때 값이 어떻게 변환되는지 보여줍니다.
+
+| `value`의 클래스              | 변환                                                             |
+| ------------------------- | -------------------------------------------------------------- |
+| `java.time.LocalDate`     | `YYYY-MM-DD` 형식으로 포맷됩니다.                                       |
+| `java.sql.Date`           | 기본 캘린더를 사용해 변환한 뒤 `LocalDate`(`YYYY-MM-DD`) 형식으로 포맷됩니다.        |
+| `java.time.LocalTime`     | `HH:mm:ss` 형식으로 포맷됩니다.                                         |
+| `java.time.Duration`      | `HHH:mm:ss` 형식으로 포맷됩니다. 값은 음수일 수 있습니다.                         |
+| `java.sql.Time`           | 기본 캘린더를 사용해 변환한 뒤 `LocalTime`(`HH:mm`) 형식으로 포맷됩니다.             |
+| `java.time.LocalDateTime` | 나노초 단위의 Unix 타임스탬프로 변환한 뒤 `fromUnixTimestamp64Nano`로 감쌉니다. |
+| `java.time.ZonedDateTime` | 나노초 단위의 Unix 타임스탬프로 변환한 뒤 `fromUnixTimestamp64Nano`로 감쌉니다. |
+| `java.sql.Timestamp`      | 나노초 단위의 Unix 타임스탬프로 변환한 뒤 `fromUnixTimestamp64Nano`로 감쌉니다. |
+
+<Note>
+  컬럼의 유형은 알 수 없는 것으로 간주해야 합니다. prepared statement에 무엇을 전달할지는 애플리케이션에서 결정해야 합니다.
+</Note>
+
+<div id="reading-values-getobject">
+  ### `ResultSet#getObject`로 값 읽기
+</div>
+
+다음 표는 `ResultSet#getObject(column, class)`로 읽을 때 값이 어떻게 변환되는지 보여줍니다.
+
+| `column`의 ClickHouse 데이터 타입 | `class`의 값                | 변환                                                                                                                                                                              |
+| --------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Date` 또는 `Date32`          | `java.time.LocalDate`     | DB 값(일 수)이 `LocalDate`로 변환됩니다.                                                                                                                                                  |
+| `Date` 또는 `Date32`          | `java.sql.Date`           | DB 값(일 수)은 먼저 `LocalDate`로 변환된 후, 시간 부분에 로컬 시간대의 자정을 사용하여 `java.sql.Date`로 변환됩니다. 캘린더를 사용하면 로컬 시간대 대신 해당 캘린더의 시간대가 사용됩니다. 예시: DB 값 `1970-01-10` → `LocalDate`는 `1970-01-10`입니다. |
+| `Time` 또는 `Time64`          | `java.time.LocalTime`     | DB 값은 `LocalDateTime`으로 변환된 후 `LocalTime`으로 변환됩니다. 이는 하루 이내의 시간에 대해서만 작동합니다.                                                                                                    |
+| `Time` 또는 `Time64`          | `java.time.LocalDateTime` | DB 값이 `LocalDateTime`으로 변환됩니다.                                                                                                                                                  |
+| `Time` 또는 `Time64`          | `java.sql.Time`           | DB 값은 `LocalDateTime`으로 변환된 후 기본 캘린더를 사용해 `java.sql.Time`으로 변환됩니다. 이는 하루 이내의 시간에 대해서만 작동합니다.                                                                                    |
+| `Time` 또는 `Time64`          | `java.time.Duration`      | DB 값은 `LocalDateTime`으로 변환된 후 `Duration`으로 변환됩니다.                                                                                                                               |
+| `DateTime` 또는 `DateTime64`  | `java.time.LocalDateTime` | DB 값은 `ZonedDateTime`으로 변환된 후 `LocalDateTime`으로 변환됩니다.                                                                                                                          |
+| `DateTime` 또는 `DateTime64`  | `java.time.ZonedDateTime` | DB 값이 `ZonedDateTime`으로 변환됩니다.                                                                                                                                                  |
+| `DateTime` 또는 `DateTime64`  | `java.sql.Timestamp`      | DB 값은 `ZonedDateTime`으로 변환된 후 기본 시간대를 사용해 `java.sql.Timestamp`로 변환됩니다.                                                                                                          |
+
+<div id="using-calendar-based-methods">
+  ### 캘린더 기반 메서드 사용하기
+</div>
+
+값을 각각 `PreparedStatement#setTime(param, value, calendar)` 및 `PreparedStatement#setDate(param, value, calendar)`로 저장했다면 `ResultSet#getTime(column, calendar)` 및 `ResultSet#getDate(column, calendar)`를 사용하십시오.

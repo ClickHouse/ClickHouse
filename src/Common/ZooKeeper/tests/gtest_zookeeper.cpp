@@ -1,6 +1,8 @@
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <Common/ZooKeeper/Types.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include <gtest/gtest.h>
@@ -16,6 +18,31 @@ TEST(ZooKeeperTest, TestMatchPath)
     ASSERT_EQ(matchPath("/", "/"), PathMatchResult::EXACT);
     ASSERT_EQ(matchPath("/path", "/path/"), PathMatchResult::EXACT);
     ASSERT_EQ(matchPath("/path/", "/path"), PathMatchResult::EXACT);
+}
+
+TEST(ZooKeeperTest, ExtractZooKeeperPathAndCollapseTrailingSlashes)
+{
+    using zkutil::extractZooKeeperPathAndCollapseTrailingSlashes;
+
+    /// Any number of trailing slashes collapses to the same canonical path, so that different spellings
+    /// of the same keeper path compare equal (used by the SYSTEM DROP REPLICA self-protection guards).
+    ASSERT_EQ(extractZooKeeperPathAndCollapseTrailingSlashes("/a/b", false), "/a/b");
+    ASSERT_EQ(extractZooKeeperPathAndCollapseTrailingSlashes("/a/b/", false), "/a/b");
+    ASSERT_EQ(extractZooKeeperPathAndCollapseTrailingSlashes("/a/b//", false), "/a/b");
+    ASSERT_EQ(extractZooKeeperPathAndCollapseTrailingSlashes("/a/b///", false), "/a/b");
+
+    /// Auxiliary keeper prefix is stripped and the remaining path is canonicalized the same way.
+    ASSERT_EQ(extractZooKeeperPathAndCollapseTrailingSlashes("aux:/a/b", false), "/a/b");
+    ASSERT_EQ(extractZooKeeperPathAndCollapseTrailingSlashes("aux:/a/b///", false), "/a/b");
+
+    /// Root-only inputs collapse to "" or "/" (both are rejected by the "empty or root-only" check in the
+    /// parser and never equal a real database/table path in the guards): normalizeZooKeeperPath first strips
+    /// a single trailing slash, so "/" and "aux:/" become "", while "//"/"///" become "/".
+    ASSERT_EQ(extractZooKeeperPathAndCollapseTrailingSlashes("/", false), "");
+    ASSERT_EQ(extractZooKeeperPathAndCollapseTrailingSlashes("aux:/", false), "");
+    ASSERT_EQ(extractZooKeeperPathAndCollapseTrailingSlashes("//", false), "/");
+    ASSERT_EQ(extractZooKeeperPathAndCollapseTrailingSlashes("///", false), "/");
+    ASSERT_EQ(extractZooKeeperPathAndCollapseTrailingSlashes("aux://", false), "/");
 }
 
 TEST(ZooKeeperTest, ListRequestWireRoundTrip)
@@ -48,4 +75,33 @@ TEST(ZooKeeperTest, ListRequestWireRoundTrip)
     roundtrip(OpNum::FilteredListWithStatsAndData, ListRequestType::ALL, true, true);
     roundtrip(OpNum::FilteredListWithStatsAndData, ListRequestType::EPHEMERAL_ONLY, true, false);
     roundtrip(OpNum::FilteredListWithStatsAndData, ListRequestType::ALL, false, true);
+}
+
+TEST(ZooKeeperTest, Create2ResponseWireRoundTrip)
+{
+    ZooKeeperCreate2Response original;
+    original.path_created = "/created/node";
+    original.zstat.czxid = 42;
+    original.zstat.mzxid = 43;
+    original.zstat.ctime = 1000;
+    original.zstat.mtime = 2000;
+    original.zstat.version = 3;
+    original.zstat.cversion = 1;
+    original.zstat.aversion = 0;
+    original.zstat.ephemeralOwner = 0;
+    original.zstat.dataLength = 13;
+    original.zstat.numChildren = 0;
+    original.zstat.pzxid = 44;
+
+    WriteBufferFromOwnString out;
+    original.writeImpl(out);
+
+    ZooKeeperCreate2Response decoded;
+    ReadBufferFromString in(out.str());
+    decoded.readImpl(in);
+
+    EXPECT_TRUE(in.eof());
+    EXPECT_EQ(decoded.path_created, original.path_created);
+    EXPECT_EQ(decoded.zstat, original.zstat);
+    EXPECT_EQ(decoded.zstat.dataLength, 13);
 }

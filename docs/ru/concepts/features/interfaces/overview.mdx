@@ -1,0 +1,46 @@
+---
+description: 'Обзор сетевых интерфейсов, драйверов и инструментов для подключения к
+  ClickHouse'
+keywords: ['clickhouse', 'сеть', 'интерфейсы', 'http', 'tcp', 'grpc', 'командная строка',
+  'клиент', 'jdbc', 'odbc', 'драйвер']
+sidebarTitle: 'Обзор'
+slug: /interfaces/overview
+title: 'Драйверы и интерфейсы'
+doc_type: 'справочник'
+---
+
+ClickHouse предоставляет два сетевых интерфейса (при необходимости их можно защитить с помощью TLS для дополнительной безопасности):
+
+* [HTTP](/ru/concepts/features/interfaces/http), который хорошо документирован и удобен для прямого использования.
+* [Native TCP](/ru/concepts/features/interfaces/tcp), у которого меньше накладных расходов.
+
+В большинстве случаев вместо прямого взаимодействия с ними рекомендуется использовать подходящий инструмент или библиотеку. ClickHouse официально поддерживает следующее:
+
+* [Клиент командной строки](/ru/concepts/features/interfaces/cli)
+* [JDBC-драйвер](/ru/concepts/features/interfaces/jdbc)
+* [ODBC-драйвер](/ru/concepts/features/interfaces/odbc)
+* [Клиентская библиотека C++](/ru/concepts/features/interfaces/cpp)
+
+ClickHouse также поддерживает два протокола RPC:
+
+* [Протокол gRPC](/ru/concepts/features/interfaces/grpc), специально разработанный для ClickHouse.
+* [Apache Arrow Flight](/ru/concepts/features/interfaces/arrowflight).
+
+Сервер ClickHouse предоставляет встроенные визуальные интерфейсы для опытных пользователей:
+
+* Интерфейс play: откройте `/play` в браузере;
+* Advanced Dashboard: откройте `/dashboard` в браузере;
+* Просмотр символов бинарного файла для инженеров ClickHouse: откройте `/binary` в браузере;
+* Интерфейс ClickStack для обсервабилити: откройте `/clickstack` в браузере;
+
+<Info>
+  **ClickStack**
+
+  Эта версия ClickStack отлично подходит для локальной отладки и быстрого анализа, но не предназначена для production-сред. Полнофункциональный ClickStack, готовый к промышленной эксплуатации, см. в [Open Source ClickStack](/ru/clickstack/getting-started/oss).
+</Info>
+
+Также доступен широкий выбор сторонних библиотек для работы с ClickHouse:
+
+* [Клиентские библиотеки](/ru/integrations/language-clients/third-party/client-libraries)
+* [Интеграции](/ru/integrations/connectors/tools/third-party-libraries)
+* [Визуальные интерфейсы](/ru/integrations/connectors/tools/gui)

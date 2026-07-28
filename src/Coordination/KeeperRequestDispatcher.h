@@ -15,9 +15,10 @@ extern template class NonblockingBoundedQueue<DB::KeeperResponseForSession>;
 namespace DB
 {
 
-/// Takes client requests from KeeperTCPHandler (or whoever else calls putRequest), passes them
-/// to nuraft leader, detects when they're committed (or failed), and passes responses back to
-/// KeeperTCPHandler (or whoever registers their response callback by calling registerSession).
+/// KeeperRequestDispatcher takes client requests from KeeperTCPHandler (or whoever else calls
+/// putRequest), passes them to nuraft leader, detects when they're committed (or failed), and
+/// passes responses back to KeeperTCPHandler (or whoever registers their response callback by
+/// calling registerSession).
 ///
 /// Considerations:
 ///  * Forwarding. If nuraft leader is not on this node, requests are sent to the leader node.
@@ -80,6 +81,7 @@ namespace DB
 ///  equally fast because KeeperRequestDispatcher shouldn't be the bottleneck.
 ///  One part where performance may matter is commit callback; we shouldn't waste any time there
 ///  because the commit thread is likely a bottleneck.)
+
 class KeeperRequestDispatcher
 {
 public:

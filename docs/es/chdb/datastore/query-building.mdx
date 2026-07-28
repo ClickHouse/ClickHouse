@@ -1,0 +1,629 @@
+---
+title: 'Construcción de consultas con DataStore'
+sidebarTitle: 'Construcción de consultas'
+slug: /chdb/datastore/query-building
+description: 'Cree consultas de estilo SQL con DataStore mediante un encadenamiento fluido de métodos'
+keywords: ['chdb', 'datastore', 'consulta', 'select', 'filtro', 'where', 'join', 'groupby']
+doc_type: 'reference'
+---
+
+DataStore proporciona métodos para construir consultas de estilo SQL que se traducen en consultas SQL optimizadas. Todas las operaciones se evalúan de forma diferida hasta que se necesitan los resultados.
+
+<div id="overview">
+  ## Resumen de los métodos de consulta
+</div>
+
+| Método             | Equivalente en SQL | Descripción          |
+| ------------------ | ------------------ | -------------------- |
+| `select(*cols)`    | `SELECT cols`      | Seleccionar columnas |
+| `filter(cond)`     | `WHERE cond`       | Filtrar filas        |
+| `where(cond)`      | `WHERE cond`       | Alias de filter      |
+| `sort(*cols)`      | `ORDER BY cols`    | Ordenar filas        |
+| `orderby(*cols)`   | `ORDER BY cols`    | Alias de sort        |
+| `limit(n)`         | `LIMIT n`          | Limitar filas        |
+| `offset(n)`        | `OFFSET n`         | Saltar filas         |
+| `distinct()`       | `DISTINCT`         | Eliminar duplicados  |
+| `groupby(*cols)`   | `GROUP BY cols`    | Agrupar filas        |
+| `having(cond)`     | `HAVING cond`      | Filtrar grupos       |
+| `join(right, ...)` | `JOIN`             | join DataStores      |
+| `union(other)`     | `UNION`            | Combinar resultados  |
+
+***
+
+<div id="selection">
+  ## Selección
+</div>
+
+<div id="select">
+  ### `select`
+</div>
+
+Selecciona columnas específicas del DataStore.
+
+```python
+select(*fields: Union[str, Expression]) -> DataStore
+```
+
+**Ejemplos:**
+
+```python
+from chdb.datastore import DataStore
+from pathlib import Path
+Path("employees.csv").write_text("""\
+name,age,city,salary,department,dept_id,status,email,manager_id,bonus
+Alice,28,NYC,75000,Engineering,1,active,alice@company.com,3,5000
+Bob,35,LA,85000,Engineering,1,active,bob@company.com,3,
+Charlie,52,NYC,95000,Product,2,active,charlie@company.com,,10000
+Diana,32,SF,70000,Design,3,active,diana@company.com,3,3000
+Eve,23,LA,48000,Product,2,inactive,eve@company.com,2,
+""")
+
+ds = DataStore.from_file("employees.csv")
+
+# Seleccionar por nombres de columna
+result = ds.select('name', 'age', 'salary')
+
+# Seleccionar todas las columnas
+result = ds.select('*')
+
+# Seleccionar con expresiones
+result = ds.select(
+    'name',
+    (ds['salary'] * 12).as_('annual_salary'),
+    ds['age'].as_('employee_age')
+)
+
+# Estilo equivalente en pandas
+result = ds[['name', 'age', 'salary']]
+```
+
+***
+
+<div id="filtering">
+  ## Filtrado
+</div>
+
+<div id="filter">
+  ### `filter` / `where`
+</div>
+
+Filtra las filas según las condiciones. Ambos métodos son equivalentes.
+
+```python
+filter(condition) -> DataStore
+where(condition) -> DataStore  # alias
+```
+
+**Ejemplos:**
+
+```python
+ds = DataStore.from_file("employees.csv")
+
+# Condición única
+result = ds.filter(ds['age'] > 30)
+result = ds.where(ds['salary'] >= 50000)
+
+# Múltiples condiciones (AND)
+result = ds.filter((ds['age'] > 30) & (ds['department'] == 'Engineering'))
+
+# Múltiples condiciones (OR)
+result = ds.filter((ds['city'] == 'NYC') | (ds['city'] == 'LA'))
+
+# Condición NOT
+result = ds.filter(~(ds['status'] == 'inactive'))
+
+# Condiciones de cadena de texto
+result = ds.filter(ds['name'].str.contains('John'))
+result = ds.filter(ds['email'].str.endswith('@company.com'))
+
+# Comprobaciones de NULL
+result = ds.filter(ds['manager_id'].notnull())
+result = ds.filter(ds['bonus'].isnull())
+
+# Condición IN
+result = ds.filter(ds['department'].isin(['Engineering', 'Product', 'Design']))
+
+# Condición BETWEEN
+result = ds.filter(ds['salary'].between(50000, 100000))
+
+# Filtros encadenados (AND)
+result = (ds
+    .filter(ds['age'] > 25)
+    .filter(ds['salary'] > 50000)
+    .filter(ds['city'] == 'NYC')
+)
+```
+
+<div id="pandas-filtering">
+  ### Filtrado estilo Pandas
+</div>
+
+```python
+# Indexación booleana (equivalente a filter)
+result = ds[ds['age'] > 30]
+result = ds[(ds['age'] > 30) & (ds['salary'] > 50000)]
+
+# Método query
+result = ds.query('age > 30 and salary > 50000')
+```
+
+***
+
+<div id="sorting">
+  ## Ordenación
+</div>
+
+<div id="sort">
+  ### `sort` / `orderby`
+</div>
+
+Ordena las filas por una o más columnas.
+
+```python
+sort(*fields, ascending=True) -> DataStore
+orderby(*fields, ascending=True) -> DataStore  # alias
+```
+
+**Ejemplos:**
+
+```python
+ds = DataStore.from_file("employees.csv")
+
+# Columna única ascendente
+result = ds.sort('name')
+
+# Columna única descendente
+result = ds.sort('salary', ascending=False)
+
+# Múltiples columnas
+result = ds.sort('department', 'salary')
+
+# Orden mixto (usar lista para el parámetro ascending)
+result = ds.sort('department', 'salary', ascending=[True, False])
+
+# Estilo Pandas
+result = ds.sort_values('salary', ascending=False)
+result = ds.sort_values(['department', 'salary'], ascending=[True, False])
+```
+
+***
+
+<div id="limiting">
+  ## Límites y paginación
+</div>
+
+<div id="limit">
+  ### `limit`
+</div>
+
+Limita el número de filas que se devuelven.
+
+```python
+limit(n: int) -> DataStore
+```
+
+<div id="offset">
+  ### `offset`
+</div>
+
+Omite las primeras n filas.
+
+```python
+offset(n: int) -> DataStore
+```
+
+**Ejemplos:**
+
+```python
+ds = DataStore.from_file("employees.csv")
+
+# Primeras 10 filas
+result = ds.limit(10)
+
+# Omitir las primeras 100, tomar las siguientes 50
+result = ds.offset(100).limit(50)
+
+# Estilo Pandas
+result = ds.head(10)
+result = ds.tail(10)
+result = ds.iloc[100:150]
+```
+
+***
+
+<div id="distinct">
+  ## Distinct
+</div>
+
+<div id="distinct-method">
+  ### `distinct`
+</div>
+
+Elimina las filas duplicadas.
+
+```python
+distinct(subset=None, keep='first') -> DataStore
+```
+
+**Ejemplos:**
+
+```python
+from pathlib import Path
+Path("events.csv").write_text("""\
+user_id,event_type,timestamp
+1,click,2024-01-15 10:30:00
+2,view,2024-01-15 11:00:00
+1,purchase,2024-01-15 11:30:00
+3,click,2024-01-16 09:00:00
+2,click,2024-01-16 10:00:00
+""")
+
+ds = DataStore.from_file("events.csv")
+
+# Eliminar todas las filas duplicadas
+result = ds.distinct()
+
+# Eliminar duplicados basándose en columnas específicas
+result = ds.distinct(subset=['user_id', 'event_type'])
+
+# Estilo Pandas
+result = ds.drop_duplicates()
+result = ds.drop_duplicates(subset=['user_id'])
+```
+
+***
+
+<div id="grouping">
+  ## Agrupación
+</div>
+
+<div id="groupby">
+  ### `groupby`
+</div>
+
+Agrupa las filas por una o más columnas. Devuelve un objeto `LazyGroupBy`.
+
+```python
+groupby(*fields, sort=True, as_index=True, dropna=True) -> LazyGroupBy
+```
+
+**Ejemplos:**
+
+```python
+from pathlib import Path
+Path("sales.csv").write_text("""\
+region,product,category,amount,quantity,price,date,order_id
+East,Widget,Electronics,5200,10,120,2024-01-15,1001
+West,Gadget,Electronics,800,5,160,2024-02-20,1002
+East,Gizmo,Home,6500,3,100,2024-03-10,1003
+North,Widget,Electronics,4500,6,150,2024-06-18,1004
+West,Gadget,Electronics,2000,8,250,2024-09-14,1005
+""")
+
+ds = DataStore.from_file("sales.csv")
+
+# Agrupar por una sola columna
+by_region = ds.groupby('region')
+
+# Agrupar por múltiples columnas
+by_region_product = ds.groupby('region', 'product')
+
+# Agregación después de groupby
+result = ds.groupby('region')['amount'].sum()
+result = ds.groupby('region').agg({'amount': 'sum', 'quantity': 'mean'})
+
+# Múltiples agregaciones
+result = ds.groupby('category').agg({
+    'price': ['min', 'max', 'mean'],
+    'quantity': 'sum'
+})
+
+# Agregación con nombre
+result = ds.groupby('region').agg(
+    total_amount=('amount', 'sum'),
+    avg_quantity=('quantity', 'mean'),
+    order_count=('order_id', 'count')
+)
+```
+
+<div id="having">
+  ### `having`
+</div>
+
+Filtra los grupos después de la agregación.
+
+```python
+having(condition: Union[Condition, str]) -> DataStore
+```
+
+**Ejemplos:**
+
+```python
+# Filtrar grupos con total > 10000
+result = (ds
+    .groupby('region')
+    .agg({'amount': 'sum'})
+    .having(ds['sum'] > 10000)
+)
+
+# Usando having al estilo SQL
+result = (ds
+    .select('region', 'SUM(amount) as total')
+    .groupby('region')
+    .having('total > 10000')
+)
+```
+
+***
+
+<div id="joining">
+  ## JOIN
+</div>
+
+<div id="join">
+  ### `join`
+</div>
+
+Realiza un join entre dos DataStores.
+
+```python
+join(right, on=None, how='inner', left_on=None, right_on=None) -> DataStore
+```
+
+**Parámetros:**
+
+| Parámetro  | Tipo      | Predeterminado | Descripción                                                                      |
+| ---------- | --------- | -------------- | -------------------------------------------------------------------------------- |
+| `right`    | DataStore | *requerido*    | DataStore de la derecha para hacer join                                          |
+| `on`       | str/list  | `None`         | Columnas usadas para el join                                                     |
+| `how`      | str       | `'inner'`      | Tipo de join: &#39;inner&#39;, &#39;left&#39;, &#39;right&#39;, &#39;outer&#39; |
+| `left_on`  | str/list  | `None`         | Columnas de join de la izquierda                                                 |
+| `right_on` | str/list  | `None`         | Columnas de join de la derecha                                                   |
+
+**Ejemplos:**
+
+```python
+from pathlib import Path
+Path("departments.csv").write_text("""\
+dept_id,department_name
+1,Engineering
+2,Product
+3,Design
+""")
+
+employees = DataStore.from_file("employees.csv")
+departments = DataStore.from_file("departments.csv")
+
+# Inner join en una sola columna
+result = employees.join(departments, on='dept_id')
+
+# Left join
+result = employees.join(departments, on='dept_id', how='left')
+
+# Join con nombres de columna distintos
+result = employees.join(
+    departments,
+    left_on='department_id',
+    right_on='id',
+    how='inner'
+)
+
+# Merge al estilo Pandas
+from chdb import datastore as pd
+result = pd.merge(employees, departments, on='dept_id')
+result = pd.merge(employees, departments, left_on='department_id', right_on='id')
+```
+
+<div id="union">
+  ### `union`
+</div>
+
+Combina los resultados de dos DataStore.
+
+```python
+union(other, all=False) -> DataStore
+```
+
+**Ejemplos:**
+
+```python
+from pathlib import Path
+Path("sales_2023.csv").write_text("""\
+region,product,amount,date
+East,Widget,1200,2023-06-15
+West,Gadget,800,2023-09-20
+North,Gizmo,600,2023-11-10
+""")
+Path("sales_2024.csv").write_text("""\
+region,product,amount,date
+East,Widget,1500,2024-03-10
+North,Gizmo,900,2024-07-22
+West,Gadget,1100,2024-05-05
+""")
+
+ds1 = DataStore.from_file("sales_2023.csv")
+ds2 = DataStore.from_file("sales_2024.csv")
+
+# UNION (elimina duplicados)
+result = ds1.union(ds2)
+
+# UNION ALL (conserva duplicados)
+result = ds1.union(ds2, all=True)
+
+# Estilo Pandas
+from chdb import datastore as pd
+result = pd.concat([ds1, ds2])
+```
+
+***
+
+<div id="conditional">
+  ## Expresiones condicionales
+</div>
+
+<div id="when">
+  ### `when`
+</div>
+
+Crea expresiones `CASE WHEN`.
+
+```python
+when(condition, value) -> CaseWhenBuilder
+```
+
+**Ejemplos:**
+
+```python
+ds = DataStore.from_file("employees.csv")
+
+# Caso simple case-when
+result = ds.select(
+    'name',
+    ds.when(ds['salary'] > 100000, 'High')
+      .when(ds['salary'] > 50000, 'Medium')
+      .otherwise('Low')
+      .as_('salary_tier')
+)
+
+# Con asignación de columna
+ds['salary_tier'] = (
+    ds.when(ds['salary'] > 100000, 'High')
+      .when(ds['salary'] > 50000, 'Medium')
+      .otherwise('Low')
+)
+```
+
+***
+
+<div id="raw-sql">
+  ## Raw SQL
+</div>
+
+<div id="run-sql">
+  ### `run_sql` / `sql`
+</div>
+
+Ejecuta consultas en Raw SQL.
+
+```python
+run_sql(query: str) -> DataStore
+sql(query: str) -> DataStore  # alias
+```
+
+**Ejemplos:**
+
+```python
+from chdb.datastore import DataStore
+
+# Ejecutar Raw SQL
+result = DataStore().sql("""
+    SELECT 
+        department,
+        COUNT(*) as count,
+        AVG(salary) as avg_salary
+    FROM file('employees.csv', 'CSVWithNames')
+    WHERE status = 'active'
+    GROUP BY department
+    HAVING count > 5
+    ORDER BY avg_salary DESC
+    LIMIT 10
+""")
+
+# SQL sobre un DataStore existente
+ds = DataStore.from_file("employees.csv")
+result = ds.sql("SELECT * FROM __table__ WHERE age > 30")
+```
+
+<div id="to-sql">
+  ### `to_sql`
+</div>
+
+Vea el SQL generado sin ejecutarlo.
+
+```python
+to_sql(**kwargs) -> str
+```
+
+**Ejemplos:**
+
+```python
+ds = DataStore.from_file("employees.csv")
+
+query = (ds
+    .filter(ds['age'] > 30)
+    .groupby('department')
+    .agg({'salary': 'mean'})
+    .sort('mean', ascending=False)
+)
+
+print(query.to_sql())
+# Salida:
+# SELECT department, AVG(salary) AS mean
+# FROM file('employees.csv', 'CSVWithNames')
+# WHERE age > 30
+# GROUP BY department
+# ORDER BY mean DESC
+```
+
+***
+
+<div id="chaining">
+  ## Encadenamiento de métodos
+</div>
+
+Todos los métodos de consulta admiten el encadenamiento fluido:
+
+```python
+from chdb.datastore import DataStore
+
+ds = DataStore.from_file("sales.csv")
+
+result = (ds
+    .select('region', 'product', 'amount', 'date')
+    .filter(ds['date'] >= '2024-01-01')
+    .filter(ds['amount'] > 100)
+    .groupby('region', 'product')
+    .agg({
+        'amount': ['sum', 'mean'],
+        'date': 'count'
+    })
+    .having(ds['sum'] > 10000)
+    .sort('sum', ascending=False)
+    .limit(20)
+)
+
+# Ver SQL
+print(result.to_sql())
+
+# Ejecutar
+df = result.to_df()
+```
+
+***
+
+<div id="aliasing">
+  ## Alias
+</div>
+
+<div id="as">
+  ### `as_`
+</div>
+
+Establece un alias para una columna o subconsulta.
+
+```python
+as_(alias: str) -> DataStore
+```
+
+**Ejemplos:**
+
+```python
+# Alias de columna
+result = ds.select(
+    ds['name'].as_('employee_name'),
+    (ds['salary'] * 12).as_('annual_salary')
+)
+
+# Alias de subconsulta
+subquery = ds.filter(ds['age'] > 30).as_('senior_employees')
+```

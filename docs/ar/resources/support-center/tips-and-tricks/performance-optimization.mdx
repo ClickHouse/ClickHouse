@@ -1,0 +1,153 @@
+---
+slug: /community-wisdom/performance-optimization
+sidebarTitle: 'تحسين الأداء'
+doc_type: 'guide'
+keywords: [
+  'تحسين الأداء',
+  'أداء الاستعلام',
+  'ضبط قاعدة البيانات',
+  'الاستعلامات البطيئة',
+  'تحسين الذاكرة',
+  'تحليل الكاردينالية',
+  'استراتيجيات الفهرسة',
+  'تحسين التجميع',
+  'تقنيات أخذ العينات',
+  'أداء قاعدة البيانات',
+  'تحليل الاستعلام',
+  'استكشاف مشكلات الأداء وإصلاحها'
+]
+title: 'دروس - تحسين الأداء'
+description: 'أمثلة واقعية على استراتيجيات تحسين الأداء'
+---
+
+*هذا الدليل جزء من مجموعة من الدروس المستفادة من لقاءات المجتمع. ولمزيد من الحلول والرؤى العملية، يمكنك [التصفح حسب مشكلة محددة](/ar/resources/support-center/tips-and-tricks/community-wisdom).*
+*هل تواجه مشكلات مع العروض المادية؟ اطّلع على دليل رؤى المجتمع حول [العروض المادية](/ar/resources/support-center/tips-and-tricks/materialized-views).*
+*إذا كنت تواجه استعلامات بطيئة وتبحث عن مزيد من الأمثلة، فلدينا أيضًا دليل [تحسين الاستعلامات](/ar/guides/clickhouse/performance-and-monitoring/query-optimization).*
+
+<div id="cardinality-ordering">
+  ## رتّب حسب الكاردينالية (من الأقل إلى الأعلى)
+</div>
+
+يكون الفهرس الأساسي في ClickHouse أكثر فعالية عندما تأتي الأعمدة منخفضة الكاردينالية أولًا، ما يتيح له تخطي أجزاء كبيرة من البيانات بكفاءة. أمّا الأعمدة عالية الكاردينالية التي تأتي لاحقًا في المفتاح، فتوفّر فرزًا أدق داخل تلك الأجزاء. ابدأ بالأعمدة التي تحتوي على عدد قليل من القيم الفريدة (مثل status وcategory وcountry)، وأنهِ بالأعمدة التي تحتوي على عدد كبير من القيم الفريدة (مثل user&#95;id وtimestamp وsession&#95;id).
+
+اطّلع على مزيد من الوثائق حول الكاردينالية والفهارس الأساسية:
+
+* [اختيار مفتاح أساسي](/ar/concepts/best-practices/choosing-a-primary-key)
+* [الفهارس الأساسية](/ar/concepts/core-concepts/primary-indexes)
+
+<div id="time-granularity">
+  ## درجة الدقة الزمنية مهمة
+</div>
+
+عند استخدام الطوابع الزمنية في عبارة ORDER BY، ضع في اعتبارك المفاضلة بين الكاردينالية والدقة. فالطوابع الزمنية بدقة الميكروثانية تؤدي إلى كاردينالية مرتفعة جدًا (يكاد يكون هناك قيمة فريدة لكل صف)، مما يقلل من فعالية الفهرس الأساسي المتناثر في ClickHouse. أما الطوابع الزمنية المقرّبة فتؤدي إلى كاردينالية أقل، ما يتيح للفهرس تخطي البيانات بكفاءة أكبر، لكنك تفقد بعض الدقة في الاستعلامات المعتمدة على الوقت.
+
+```sql runnable editable
+-- Challenge: Try different time functions like toStartOfMinute or toStartOfWeek
+-- Experiment: Compare the cardinality differences with your own timestamp data
+SELECT 
+    'Microsecond precision' as granularity,
+    uniq(created_at) as unique_values,
+    'Creates massive cardinality - bad for sort key' as impact
+FROM github.github_events
+WHERE created_at >= '2024-01-01'
+UNION ALL
+SELECT 
+    'Hour precision',
+    uniq(toStartOfHour(created_at)),
+    'Much better for sort key - enables skip indexing'
+FROM github.github_events
+WHERE created_at >= '2024-01-01'
+UNION ALL  
+SELECT 
+    'Day precision',
+    uniq(toStartOfDay(created_at)),
+    'Best for reporting queries'
+FROM github.github_events
+WHERE created_at >= '2024-01-01';
+```
+
+<div id="focus-on-individual-queries-not-averages">
+  ## ركّز على الاستعلامات الفردية، لا على المتوسطات
+</div>
+
+عند استكشاف مشكلات أداء ClickHouse، لا تعتمد على متوسط زمن الاستعلامات أو المقاييس العامة للنظام. بدلًا من ذلك، حدّد سبب بطء استعلامات بعينها. فقد يبدو متوسط أداء النظام جيدًا، بينما تعاني بعض الاستعلامات الفردية من استنفاد الذاكرة، أو ضعف التصفية، أو عمليات عالية الكاردينالية.
+
+وفقًا لـ Alexey، المدير التقني في ClickHouse: *&quot;الطريقة الصحيحة هي أن تسأل نفسك: لماذا استغرق هذا الاستعلام تحديدًا خمس ثوانٍ... لا يهمني إن كان الوسيط أو الاستعلامات الأخرى تُعالَج بسرعة. ما يهمني فقط هو استعلامي&quot;*
+
+عندما يكون الاستعلام بطيئًا، فلا تكتفِ بالنظر إلى المتوسطات. اسأل: &quot;لماذا كان هذا الاستعلام تحديدًا بطيئًا؟&quot; وافحص أنماط استخدام الموارد الفعلية.
+
+<div id="memory-and-row-scanning">
+  ## الذاكرة ومسح الصفوف
+</div>
+
+Sentry منصة لتتبّع الأخطاء موجّهة للمطورين أولًا، وتعالج مليارات الأحداث يوميًا لأكثر من 4 ملايين مطور. وكانت الفكرة الأساسية لديهم: *&quot;إن الكاردينالية لمفتاح التجميع هي ما يحدد استهلاك الذاكرة في هذه الحالة تحديدًا&quot;* — فعمليات التجميع ذات الكاردينالية العالية تدمّر الأداء بسبب نفاد الذاكرة، لا بسبب مسح الصفوف.
+
+عندما تفشل الاستعلامات، حدّد ما إذا كانت المشكلة في الذاكرة (عدد كبير جدًا من المجموعات) أم في المسح (عدد كبير جدًا من الصفوف).
+
+استعلام مثل `GROUP BY user_id, error_message, url_path` ينشئ حالة ذاكرة منفصلة لكل تركيبة فريدة من القيم الثلاث معًا. ومع زيادة عدد المستخدمين وأنواع الأخطاء ومسارات URL، قد ينتهي بك الأمر بسهولة إلى توليد ملايين من حالات التجميع التي يجب الاحتفاظ بها في الذاكرة في الوقت نفسه.
+
+في الحالات القصوى، تستخدم Sentry أخذ العينات الحتمي. وتؤدي عينة بنسبة 10% إلى خفض استخدام الذاكرة بنسبة 90% مع الحفاظ على دقة تقارب 5% لمعظم عمليات التجميع:
+
+```sql
+WHERE cityHash64(user_id) % 10 = 0  -- Always same 10% of users
+```
+
+يضمن هذا ظهور المستخدمين أنفسهم في كل استعلام، مما يوفّر نتائج متسقة عبر الفترات الزمنية. والفكرة الأساسية هنا هي أن `cityHash64()` يُنتج قيم تجزئة ثابتة للمدخل نفسه، لذا فإن `user_id = 12345` سيُنتج دائمًا القيمة نفسها، ما يضمن أن هذا المستخدم سيظهر دائمًا ضمن العينة البالغة 10% أو لن يظهر أبدًا — من دون أي تبدّل بين الاستعلامات.
+
+<div id="bit-mask-optimization">
+  ## تحسين قناع البت في Sentry
+</div>
+
+عند إجراء التجميع حسب أعمدة عالية الكاردينالية (مثل عناوين URL)، تُنشئ كل قيمة فريدة حالة تجميع منفصلة في الذاكرة، مما يؤدي إلى استنفاد الذاكرة. يتمثل حل Sentry في أنه بدلاً من التجميع حسب سلاسل URL الفعلية، يُجرى التجميع حسب تعبيرات Boolean تتحول إلى أقنعة بت.
+
+إليك استعلامًا يمكنك تجربته على جداولك الخاصة إذا كانت هذه الحالة تنطبق عليك:
+
+```sql
+-- Memory-Efficient Aggregation Pattern: Each condition = one integer per group
+-- Key insight: sumIf() creates bounded memory regardless of data volume
+-- Memory per group: N integers (N * 8 bytes) where N = number of conditions
+
+SELECT 
+    your_grouping_column,
+    
+    -- Each sumIf creates exactly one integer counter per group
+    -- Memory stays constant regardless of how many rows match each condition
+    sumIf(1, your_condition_1) as condition_1_count,
+    sumIf(1, your_condition_2) as condition_2_count,
+    sumIf(1, your_text_column LIKE '%pattern%') as pattern_matches,
+    sumIf(1, your_numeric_column > threshold_value) as above_threshold,
+    
+    -- Complex multi-condition aggregations still use constant memory
+    sumIf(1, your_condition_1 AND your_text_column LIKE '%pattern%') as complex_condition_count,
+    
+    -- Standard aggregations for context
+    count() as total_rows,
+    avg(your_numeric_column) as average_value,
+    max(your_timestamp_column) as latest_timestamp
+    
+FROM your_schema.your_table
+WHERE your_timestamp_column >= 'start_date' 
+  AND your_timestamp_column < 'end_date'
+GROUP BY your_grouping_column
+HAVING condition_1_count > minimum_threshold 
+   OR condition_2_count > another_threshold
+ORDER BY (condition_1_count + condition_2_count + pattern_matches) DESC
+LIMIT 20
+```
+
+بدلًا من تخزين كل سلسلة نصية فريدة في الذاكرة، فإنك تخزّن، على هيئة أعداد صحيحة، إجابات الأسئلة المتعلقة بتلك السلاسل. وهكذا تصبح حالة التجميع محدودة وصغيرة للغاية، مهما بلغ تنوع البيانات.
+
+من فريق الهندسة في Sentry: &quot;أصبحت هذه الاستعلامات المكثفة أسرع بأكثر من 10 مرات، وأصبح استخدام الذاكرة لدينا أقل بمئة مرة (والأهم من ذلك أنه أصبح ضمن حد ثابت). لم يعد أكبر عملائنا يواجهون أخطاء عند البحث عن إعادات العرض، ويمكننا الآن دعم عملاء بأي حجم دون نفاد الذاكرة.&quot;
+
+<div id="video-sources">
+  ## مصادر الفيديو
+</div>
+
+* [Lost in the Haystack - Optimizing High Cardinality Aggregations](https://www.youtube.com/watch?v=paK84-EUJCA) - دروس Sentry من بيئة الإنتاج حول تحسين الذاكرة
+* [ClickHouse Performance Analysis](https://www.youtube.com/watch?v=lxKbvmcLngo) - أليكسي ميلوفيدوف حول منهجية استكشاف الأخطاء وإصلاحها
+* [ClickHouse Meetup: Query Optimization Techniques](https://www.youtube.com/watch?v=JBomQk4Icjo) - استراتيجيات تحسين من المجتمع
+
+**اقرأ بعد ذلك**:
+
+* [دليل تحسين الاستعلامات](/ar/guides/clickhouse/performance-and-monitoring/query-optimization)
+* [رؤى المجتمع حول العروض المادية](/ar/resources/support-center/tips-and-tricks/materialized-views)

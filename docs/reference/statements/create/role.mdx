@@ -1,0 +1,49 @@
+---
+description: 'Documentation for Role'
+sidebarTitle: 'ROLE'
+slug: /sql-reference/statements/create/role
+title: 'CREATE ROLE'
+doc_type: 'reference'
+---
+
+Creates new [roles](/concepts/features/security/access-rights#role-management). Role is a set of [privileges](/reference/statements/grant#granting-privilege-syntax). A [user](/reference/statements/create/user) assigned a role gets all the privileges of this role.
+
+Syntax:
+
+```sql
+CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
+    [IN access_storage_type]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
+```
+
+## Managing Roles {#managing-roles}
+
+A user can be assigned multiple roles. Users can apply their assigned roles in arbitrary combinations by the [SET ROLE](/reference/statements/set-role) statement. The final scope of privileges is a combined set of all the privileges of all the applied roles. If a user has privileges granted directly to it's user account, they are also combined with the privileges granted by roles.
+
+User can have default roles which apply at user login. To set default roles, use the [SET DEFAULT ROLE](/reference/statements/set-role#set-default-role) statement or the [ALTER USER](/reference/statements/alter/user) statement.
+
+To revoke a role, use the [REVOKE](/reference/statements/revoke) statement.
+
+To delete role, use the [DROP ROLE](/reference/statements/drop#drop-role) statement. The deleted role is being automatically revoked from all the users and roles to which it was assigned.
+
+## Examples {#examples}
+
+```sql
+CREATE ROLE accountant;
+GRANT SELECT ON db.* TO accountant;
+```
+
+This sequence of queries creates the role `accountant` that has the privilege of reading data from the `db` database.
+
+Assigning the role to the user `mira`:
+
+```sql
+GRANT accountant TO mira;
+```
+
+After the role is assigned, the user can apply it and execute the allowed queries. For example:
+
+```sql
+SET ROLE accountant;
+SELECT * FROM db.*;
+```

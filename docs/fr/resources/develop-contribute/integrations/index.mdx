@@ -1,0 +1,30 @@
+---
+slug: /integrations/integration-development
+title: 'Développement d’intégrations'
+sidebarTitle: 'Vue d’ensemble'
+description: 'Guides pour créer, tester et documenter des intégrations ClickHouse.'
+keywords: ['développement d’intégration', 'créer une intégration', 'partenaire', 'partenaire d’intégration']
+doc_type: 'landing-page'
+---
+
+Ces guides s’adressent à vous si vous développez un produit qui se connecte à ClickHouse. Ils présentent les points d’intégration, expliquent comment valider votre connecteur et comment publier sa documentation sur ce site.
+
+<Info>
+  **Partner portal**
+
+  Utilisez le [partner portal](https://clickhouse.com/partners) pour enregistrer votre intégration et accéder aux ressources partenaires. Les guides ci-dessous expliquent comment créer, tester et documenter votre connecteur.
+</Info>
+
+<div id="guides">
+  ## Guides
+</div>
+
+Lisez-les dans cet ordre :
+
+| Guide                                                                                                   | Ce qu’il couvre                                                                                   |
+| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| [Créer des intégrations](/fr/resources/develop-contribute/integrations/building-integrations)              | Parcours d’ingestion et de consommation, protocoles réseau, clients et conventions de user-agent  |
+| [Tester votre intégration](/fr/resources/develop-contribute/integrations/testing-your-integration)         | Modes de déploiement, jeux de données, couverture des types et éléments à signaler avant la revue |
+| [Documenter votre intégration](/fr/resources/develop-contribute/integrations/documenting-your-integration) | Sections de documentation requises, règles de style et modèle de PR pour la page de votre produit |
+
+Après avoir prototypé et testé votre intégration, ajoutez sa page sous [`/docs/integrations/<category>/<your-integration>/`](/fr/resources/develop-contribute/integrations/documenting-your-integration) et ouvrez une pull request dans [`clickhouse-docs`](https://github.com/ClickHouse/clickhouse-docs).

@@ -1,0 +1,25 @@
+---
+date: 2023-06-07
+title: "ClickHouse の自動スキーマ移行ツール"
+description: "ClickHouse の自動スキーマ移行ツールと、時間の経過とともに変化するデータベーススキーマを管理する方法について学びます。"
+tags: ['ツールとユーティリティ']
+keywords: ['自動スキーマ移行']
+---
+
+<div id="automatic-schema-migration-tools-for-clickhouse">
+  ## ClickHouse向けの自動スキーマ移行ツール
+</div>
+
+ClickHouseに適したスキーマ移行ツールや、時間の経過とともに変化する可能性があるClickHouseのデータベーススキーマを管理するベストプラクティスについて、よく質問をいただきます。
+
+ClickHouse向けの標準的なスキーマ移行ツールはありませんが、ClickHouseをサポートする自動スキーマ移行ツールとして、私たちが把握しているものを以下にまとめました (順不同) 。
+
+* [Goose](https://github.com/pressly/goose)
+* [Sqitch](https://sqitch.org/docs/manual/sqitchtutorial-clickhouse/)
+* [Atlas](https://atlasgo.io/guides/clickhouse?utm_source=clickhouse\&utm_term=knowledge)
+* [Bytebase](https://www.bytebase.com/)
+* [Flyway](https://documentation.red-gate.com/fd/supported-databases-and-versions-143754067.html)
+* [Liquibase](https://www.liquibase.com/)
+* `clickhouse-migrations`という名前のシンプルな[コミュニティツール](https://github.com/VVVi/clickhouse-migrations)
+* Goで書かれた別の[コミュニティツール](https://github.com/golang-migrate/migrate/tree/master/database/clickhouse)
+* [Houseplant](https://houseplant.readthedocs.io)

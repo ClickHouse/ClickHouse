@@ -1,0 +1,433 @@
+---
+title: 'Профилирование DataStore'
+sidebarTitle: 'Профилирование'
+slug: /chdb/debugging/profiling
+description: 'Оценивайте производительность DataStore с помощью встроенного профилировщика'
+keywords: ['chdb', 'DataStore', 'профилирование', 'производительность', 'время выполнения', 'бенчмарк']
+doc_type: 'guide'
+---
+
+Профилировщик DataStore помогает измерять время выполнения и выявлять узкие места.
+
+<div id="quick-start">
+  ## Быстрый старт
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config, get_profiler
+
+# Включить профилирование
+config.enable_profiling()
+
+# Выполните операции
+ds = pd.read_csv("large_data.csv")
+result = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('category')
+    .agg({'amount': 'sum'})
+    .sort('sum', ascending=False)
+    .head(10)
+    .to_df()
+)
+
+# Просмотреть отчёт
+profiler = get_profiler()
+print(profiler.report())
+```
+
+<div id="enabling">
+  ## Включение профилирования
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# Включить профилирование
+config.enable_profiling()
+
+# Отключить профилирование
+config.disable_profiling()
+
+# Проверить, включено ли профилирование
+print(config.profiling_enabled)  # True or False
+```
+
+***
+
+<div id="api">
+  ## API профилировщика
+</div>
+
+<div id="get-profiler">
+  ### Получение объекта профилировщика
+</div>
+
+```python
+from chdb.datastore.config import get_profiler
+
+profiler = get_profiler()
+```
+
+<div id="report">
+  ### report()
+</div>
+
+Выводит отчёт о производительности.
+
+```python
+profiler.report(min_duration_ms=0.1)
+```
+
+**Параметры:**
+
+| Параметр          | Тип   | По умолчанию | Описание                                                        |
+| ----------------- | ----- | ------------ | --------------------------------------------------------------- |
+| `min_duration_ms` | float | `0.1`        | Показывать только шаги с длительностью не меньше этого значения |
+
+**Пример вывода:**
+
+```text
+======================================================================
+EXECUTION PROFILE
+======================================================================
+   45.79ms (100.0%) Total Execution
+     23.25ms ( 50.8%) Query Planning [ops_count=2]
+     22.29ms ( 48.7%) SQL Segment 1 [ops=2]
+       20.48ms ( 91.9%) SQL Execution
+        1.74ms (  7.8%) Result to DataFrame
+----------------------------------------------------------------------
+      TOTAL:    45.79ms
+======================================================================
+```
+
+Отчёт показывает:
+
+* Длительность каждого шага в миллисекундах
+* Долю времени относительно родительского и общего вызова
+* Иерархическую вложенность операций
+* Метаданные для каждого шага (например, `ops_count`, `ops`)
+
+<div id="step">
+  ### step()
+</div>
+
+Вручную измерьте время выполнения блока кода.
+
+```python
+with profiler.step("custom_operation"):
+    # Ваш код здесь
+    expensive_operation()
+```
+
+<div id="clear">
+  ### clear()
+</div>
+
+Очищает все данные профилирования.
+
+```python
+profiler.clear()
+```
+
+<div id="summary">
+  ### summary()
+</div>
+
+Возвращает словарь, сопоставляющий имена шагов с их длительностью (мс).
+
+```python
+summary = profiler.summary()
+for name, duration in summary.items():
+    print(f"{name}: {duration:.2f}ms")
+```
+
+Пример вывода:
+
+```text
+Total Execution: 45.79ms
+Total Execution.Cache Check: 0.00ms
+Total Execution.Query Planning: 23.25ms
+Total Execution.SQL Segment 1: 22.29ms
+Total Execution.SQL Segment 1.SQL Execution: 20.48ms
+Total Execution.SQL Segment 1.Result to DataFrame: 1.74ms
+```
+
+***
+
+<div id="understanding">
+  ## Как читать отчёт
+</div>
+
+<div id="step-names">
+  ### Названия шагов
+</div>
+
+| Название шага         | Описание                                      |
+| --------------------- | --------------------------------------------- |
+| `Total Execution`     | Общее время выполнения                        |
+| `Query Planning`      | Время, затраченное на планирование запроса    |
+| `SQL Segment N`       | Выполнение сегмента SQL N                     |
+| `SQL Execution`       | Непосредственное выполнение SQL-запроса       |
+| `Result to DataFrame` | Преобразование результатов в DataFrame pandas |
+| `Cache Check`         | Проверка кэша запросов                        |
+| `Cache Write`         | Запись результатов в кэш                      |
+
+<div id="duration">
+  ### Длительность
+</div>
+
+* **Этапы планирования** (Планирование запроса): Обычно выполняются быстро
+* **Этапы выполнения** (Выполнение SQL): Здесь происходит основная работа
+* **Этапы передачи** (Результат в DataFrame): Преобразование данных в DataFrame pandas
+
+<div id="bottlenecks">
+  ### Выявление узких мест
+</div>
+
+```text
+======================================================================
+EXECUTION PROFILE
+======================================================================
+  200.50ms (100.0%) Total Execution
+    10.25ms (  5.1%) Query Planning [ops_count=4]
+   190.00ms ( 94.8%) SQL Segment 1 [ops=4]
+     185.00ms ( 97.4%) SQL Execution    <- Основное узкое место
+       5.00ms (  2.6%) Result to DataFrame
+----------------------------------------------------------------------
+      TOTAL:   200.50ms
+======================================================================
+```
+
+***
+
+<div id="patterns">
+  ## Шаблоны профилирования
+</div>
+
+<div id="single-query">
+  ### Профилирование отдельного запроса
+</div>
+
+```python
+config.enable_profiling()
+profiler = get_profiler()
+profiler.clear()  # Очистить предыдущие данные
+
+# Выполнить запрос
+result = ds.filter(...).groupby(...).agg(...).to_df()
+
+# Просмотреть профиль этого запроса
+print(profiler.report())
+```
+
+<div id="multiple-queries">
+  ### Профилирование нескольких запросов
+</div>
+
+```python
+config.enable_profiling()
+profiler = get_profiler()
+profiler.clear()
+
+# Запрос 1
+with profiler.step("Query 1"):
+    result1 = query1.to_df()
+
+# Запрос 2
+with profiler.step("Query 2"):
+    result2 = query2.to_df()
+
+print(profiler.report())
+```
+
+<div id="compare">
+  ### Сравнение подходов
+</div>
+
+```python
+profiler = get_profiler()
+
+# Подход 1: сначала фильтрация, затем группировка
+profiler.clear()
+with profiler.step("filter_then_groupby"):
+    result1 = ds.filter(ds['x'] > 10).groupby('y').sum().to_df()
+summary1 = profiler.summary()
+time1 = summary1.get('filter_then_groupby', 0)
+
+# Подход 2: сначала группировка, затем фильтрация
+profiler.clear()
+with profiler.step("groupby_then_filter"):
+    result2 = ds.groupby('y').sum().filter(ds['x'] > 10).to_df()
+summary2 = profiler.summary()
+time2 = summary2.get('groupby_then_filter', 0)
+
+print(f"Approach 1: {time1:.2f}ms")
+print(f"Approach 2: {time2:.2f}ms")
+print(f"Winner: {'Approach 1' if time1 < time2 else 'Approach 2'}")
+```
+
+***
+
+<div id="optimization">
+  ## Советы по оптимизации
+</div>
+
+<div id="check-sql">
+  ### 1. Проверьте время выполнения SQL
+</div>
+
+Если `SQL execution` — узкое место:
+
+* Добавьте больше фильтров, чтобы уменьшить объем данных
+* Используйте Parquet вместо CSV
+* Проверьте наличие подходящих индексов (для источников баз данных)
+
+<div id="check-io">
+  ### 2. Проверьте время операций I/O
+</div>
+
+Если `read_csv` или `read_parquet` — узкое место:
+
+* Используйте Parquet (столбцовый, сжатый формат)
+* Читайте только нужные столбцы
+* По возможности фильтруйте на стороне источника
+
+<div id="check-transfer">
+  ### 3. Проверьте передачу данных
+</div>
+
+Если `to_df` работает медленно:
+
+* Результирующий набор может быть слишком большим
+* Добавьте больше фильтров или ограничьте выборку
+* Используйте `head()` для предварительного просмотра
+
+<div id="compare-engines">
+  ### 4. Сравните движки
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# Профилирование с chdb
+config.use_chdb()
+profiler.clear()
+result_chdb = query.to_df()
+time_chdb = profiler.total_duration_ms
+
+# Профилирование с pandas
+config.use_pandas()
+profiler.clear()
+result_pandas = query.to_df()
+time_pandas = profiler.total_duration_ms
+
+print(f"chdb: {time_chdb:.2f}ms")
+print(f"pandas: {time_pandas:.2f}ms")
+```
+
+***
+
+<div id="best-practices">
+  ## Рекомендации
+</div>
+
+<div id="best-practice-1">
+  ### 1. Профилируйте перед оптимизацией
+</div>
+
+```python
+# Не гадайте — измеряйте!
+config.enable_profiling()
+result = your_query.to_df()
+print(get_profiler().report())
+```
+
+<div id="best-practice-2">
+  ### 2. Очищайте состояние между тестами
+</div>
+
+```python
+profiler.clear()  # Очистить предыдущие данные
+# Запустить тест
+print(profiler.report())
+```
+
+<div id="best-practice-3">
+  ### 3. Используйте min_duration_ms для Focus
+</div>
+
+```python
+# Показывать только операции >= 100 мс
+profiler.report(min_duration_ms=100)
+```
+
+<div id="best-practice-4">
+  ### 4. Профилируйте на репрезентативных данных
+</div>
+
+```python
+# Профилируйте с реальными объёмами данных
+# Небольшие тестовые данные могут не выявить реальных узких мест
+```
+
+<div id="best-practice-5">
+  ### 5. Отключите в продакшне
+</div>
+
+```python
+# Разработка
+config.enable_profiling()
+
+# Продакшн
+config.set_profiling_enabled(False)  # Избежать накладных расходов
+```
+
+***
+
+<div id="example">
+  ## Пример: полный сеанс профилирования
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config, get_profiler
+
+# Настройка
+config.enable_profiling()
+config.enable_debug()  # Также смотрим, что происходит
+profiler = get_profiler()
+
+# Загрузка данных
+profiler.clear()
+print("=== Loading Data ===")
+ds = pd.read_csv("sales_2024.csv")  # 10M строк
+print(profiler.report())
+
+# Запрос 1: Простой фильтр
+profiler.clear()
+print("\n=== Query 1: Simple Filter ===")
+result1 = ds.filter(ds['amount'] > 1000).to_df()
+print(profiler.report())
+
+# Запрос 2: Сложная агрегация
+profiler.clear()
+print("\n=== Query 2: Complex Aggregation ===")
+result2 = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('region', 'category')
+    .agg({
+        'amount': ['sum', 'mean', 'count'],
+        'quantity': 'sum'
+    })
+    .sort('sum', ascending=False)
+    .head(20)
+    .to_df()
+)
+print(profiler.report())
+
+# Итог
+print("\n=== Summary ===")
+print(f"Query 1: {len(result1)} rows")
+print(f"Query 2: {len(result2)} rows")
+```

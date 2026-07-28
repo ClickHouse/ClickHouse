@@ -381,7 +381,10 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
 
             if (delimiter.size() == 1 && c == delimiter[0])
                 c = delimiter[0] == 'a' ? 'b' : 'a';
-            ret += String(this->randomInt<uint32_t>(0, std::min(limit, UINT32_C(65536))), c);
+            const uint32_t count = this->randomInt<uint32_t>(0, std::min(limit, UINT32_C(65536)));
+            /// A backslash escapes the char that follows it, so an odd-length raw run swallows
+            /// the closing delimiter. Emit `\\` pairs, keeping the decoded run length at `count`
+            ret += String(c == '\\' ? count * 2 : count, c);
         }
         else
         {

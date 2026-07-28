@@ -8,5 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 alive_host=$CLICKHOUSE_HOST
 not_alive_host="255.255.255.255"
 
-CLICKHOUSE_HOST=$not_alive_host $CLICKHOUSE_CLIENT --connect_timeout 1 --query "SELECT 1" |& grep -Fo 'Network is unreachable: 255.255.255.255:9000'
+# The errno text before the address differs per OS (e.g. "Network is unreachable" on Linux,
+# "Address family not supported" on macOS); match only the (host:port) suffix ClickHouse always appends.
+CLICKHOUSE_HOST=$not_alive_host $CLICKHOUSE_CLIENT --connect_timeout 1 --query "SELECT 1" |& grep -Fo '(255.255.255.255:9000)'
 CLICKHOUSE_HOST=$alive_host $CLICKHOUSE_CLIENT --query "SELECT 1"

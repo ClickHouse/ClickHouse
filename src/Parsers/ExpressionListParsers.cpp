@@ -470,6 +470,8 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 {
     ParserIdentifier id_parser;
     ParserLiteral literal_parser;
+
+    ParserAllCollectionsOfLiterals collections_parser(/* allow_map_= */ false);
     ParserFunction func_parser;
 
     ASTPtr identifier;
@@ -478,8 +480,10 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (!id_parser.parse(pos, identifier, expected))
         return false;
 
-    /// If it's neither literal, nor identifier, nor function, than it's possible list of pairs
-    if (!func_parser.parse(pos, value, expected) && !literal_parser.parse(pos, value, expected) && !id_parser.parse(pos, value, expected))
+    /// If it's neither literal (scalar or collection), nor identifier, nor function, then it's possibly a list of pairs
+    if (!func_parser.parse(pos, value, expected) && !literal_parser.parse(pos, value, expected)
+        && !(pos->type == TokenType::OpeningSquareBracket && collections_parser.parse(pos, value, expected))
+        && !id_parser.parse(pos, value, expected))
     {
         ParserKeyValuePairsList kv_pairs_list;
         ParserToken open(TokenType::OpeningRoundBracket);
@@ -2987,6 +2991,61 @@ private:
     bool if_permitted;
 };
 
+/// Layer for table function `eval`, which accepts either a usual expression argument
+/// or a bare `SELECT` query argument. The query argument is wrapped into a subquery,
+/// so `eval(SELECT ...)` is just syntactic sugar for `eval((SELECT ...))`.
+class EvalLayer : public Layer
+{
+public:
+    bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
+    {
+        if (state == 0)
+        {
+            state = 1;
+
+            ASTPtr query;
+            auto select_pos = pos;
+            auto select_expected = expected;
+
+            if (ParserSelectWithUnionQuery().parse(select_pos, query, select_expected)
+                && ParserToken(TokenType::ClosingRoundBracket).ignore(select_pos, select_expected))
+            {
+                pos = select_pos;
+                expected = select_expected;
+                elements = {make_intrusive<ASTSubquery>(std::move(query))};
+                finished = true;
+                return true;
+            }
+        }
+
+        if (ParserToken(TokenType::Comma).ignore(pos, expected))
+        {
+            action = Action::OPERAND;
+            return mergeElement();
+        }
+
+        if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+        {
+            action = Action::OPERATOR;
+
+            if (!isCurrentElementEmpty() || !elements.empty())
+                if (!mergeElement())
+                    return false;
+
+            finished = true;
+        }
+
+        return true;
+    }
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        node = makeASTFunction("eval", std::move(elements));
+        return true;
+    }
+};
+
 /// We use Layers to parse elements consisting of other elements.
 /// In some cases, we are interested in the first element that is an identifier
 /// e.g. for a table function it would be the name of the function
@@ -3033,6 +3092,8 @@ static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_
             return std::make_unique<ViewLayer>(false);
         if (function_name_lowercase == "viewifpermitted")
             return std::make_unique<ViewLayer>(true);
+        if (function_name_lowercase == "eval")
+            return std::make_unique<EvalLayer>();
     }
 
     if (function_name == "tuple")

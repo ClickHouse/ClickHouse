@@ -1,0 +1,479 @@
+---
+description: '本页说明如何通过 XML 或 YAML 语法的配置文件来配置 ClickHouse server。'
+sidebarTitle: '配置文件'
+slug: /operations/configuration-files
+title: '配置文件'
+doc_type: 'guide'
+---
+
+<Note>
+  ClickHouse Cloud 不支持基于 XML 的 profile 和配置文件。因此，在 ClickHouse Cloud 中，你不会找到 `config.xml` 文件。应改用 SQL 命令通过 profile 管理设置。
+
+  更多详情，请参阅[“配置设置”](/zh/products/cloud/reference/settings)
+</Note>
+
+ClickHouse server 可以通过 XML 或 YAML 语法的配置文件进行配置。
+在大多数安装类型中，ClickHouse server 默认使用 `/etc/clickhouse-server/config.xml` 作为配置文件，但也可以在服务器启动时使用命令行选项 `--config-file` 或 `-C` 手动指定配置文件的位置。
+其他配置文件可以放在相对于主配置文件的 `config.d/` 目录中，例如 `/etc/clickhouse-server/config.d/` 目录。
+在这些目录中的文件和主配置会在配置应用到 ClickHouse server 之前，通过预处理步骤先合并。
+配置文件按字母顺序合并。
+为简化更新并提高模块化程度，最佳实践是保持默认的 `config.xml` 文件不作修改，并将额外的自定义配置放入 `config.d/` 中。
+ClickHouse Keeper 的配置位于 `/etc/clickhouse-keeper/keeper_config.xml`。
+同样，Keeper 的其他配置文件需要放在 `/etc/clickhouse-keeper/keeper_config.d/` 中。
+
+可以混合使用 XML 和 YAML 配置文件，例如，你可以有一个主配置文件 `config.xml`，以及其他配置文件 `config.d/network.xml`、`config.d/timezone.yaml` 和 `config.d/keeper.yaml`。
+不支持在同一个配置文件中混合使用 XML 和 YAML。
+XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
+在 YAML 配置文件中，`clickhouse:` 是可选的；如果省略，解析器会自动插入它。
+
+<div id="merging">
+  ## 合并配置
+</div>
+
+两个配置文件 (通常是主配置文件和来自 `config.d/` 的另一个配置文件) 会按如下方式合并：
+
+* 如果某个节点 (即通向某个元素的 path) 同时出现在两个文件中，且不带有 `replace` 或 `remove` 属性，则该节点会包含在合并后的配置文件中，两个节点的子节点也都会被包含并递归合并。
+* 如果两个节点中的一个包含 `replace` 属性，则该节点会包含在合并后的配置文件中，但只会包含带有 `replace` 属性的那个节点的子节点。
+* 如果两个节点中的一个包含 `remove` 属性，则该节点不会包含在合并后的配置文件中 (如果它已存在，则会被删除) 。
+
+例如，给定两个配置文件：
+
+```xml title="config.xml"
+<clickhouse>
+    <config_a>
+        <setting_1>1</setting_1>
+    </config_a>
+    <config_b>
+        <setting_2>2</setting_2>
+    </config_b>
+    <config_c>
+        <setting_3>3</setting_3>
+    </config_c>
+</clickhouse>
+```
+
+和
+
+```xml title="config.d/other_config.xml"
+<clickhouse>
+    <config_a>
+        <setting_4>4</setting_4>
+    </config_a>
+    <config_b replace="replace">
+        <setting_5>5</setting_5>
+    </config_b>
+    <config_c remove="remove">
+        <setting_6>6</setting_6>
+    </config_c>
+</clickhouse>
+```
+
+合并后的配置文件如下：
+
+```xml
+<clickhouse>
+    <config_a>
+        <setting_1>1</setting_1>
+        <setting_4>4</setting_4>
+    </config_a>
+    <config_b>
+        <setting_5>5</setting_5>
+    </config_b>
+</clickhouse>
+```
+
+<div id="from_env_zk">
+  ### 通过环境变量和 ZooKeeper 节点进行替换
+</div>
+
+若要指定将某个元素的值替换为环境变量的值，可以使用属性 `from_env`。
+
+例如，当环境变量 `$MAX_QUERY_SIZE = 150000` 时：
+
+```xml
+<clickhouse>
+    <profiles>
+        <default>
+            <max_query_size from_env="MAX_QUERY_SIZE"/>
+        </default>
+    </profiles>
+</clickhouse>
+```
+
+最终生成的配置如下：
+
+```xml
+<clickhouse>
+    <profiles>
+        <default>
+            <max_query_size>150000</max_query_size>
+        </default>
+    </profiles>
+</clickhouse>
+```
+
+也可以使用 `from_zk` (ZooKeeper 节点) 实现同样的功能：
+
+```xml
+<clickhouse>
+    <postgresql_port from_zk="/zk_configs/postgresql_port"/>
+</clickhouse>
+```
+
+```shell
+# clickhouse-keeper-client
+/ :) touch /zk_configs
+/ :) create /zk_configs/postgresql_port "9005"
+/ :) get /zk_configs/postgresql_port
+9005
+```
+
+最终配置如下：
+
+```xml
+<clickhouse>
+    <postgresql_port>9005</postgresql_port>
+</clickhouse>
+```
+
+<div id="default-values">
+  #### 默认值
+</div>
+
+带有 `from_env` 或 `from_zk` 属性的元素还可以额外指定 `replace="1"` 属性 (后者必须出现在 `from_env`/`from_zk` 之前) 。
+在这种情况下，该元素可以定义默认值。
+如果环境变量或 ZooKeeper 节点已设置，该元素将采用其值；否则将采用默认值。
+
+下面重复前面的示例，不过这里假设 `MAX_QUERY_SIZE` 未设置：
+
+```xml
+<clickhouse>
+    <profiles>
+        <default>
+            <max_query_size replace="1" from_env="MAX_QUERY_SIZE">150000</max_query_size>
+        </default>
+    </profiles>
+</clickhouse>
+```
+
+最终配置如下：
+
+```xml
+<clickhouse>
+    <profiles>
+        <default>
+            <max_query_size>150000</max_query_size>
+        </default>
+    </profiles>
+</clickhouse>
+```
+
+<div id="substitution-with-file-content">
+  ## 使用文件内容进行替换
+</div>
+
+也可以用文件内容替换配置中的部分内容。这可以通过两种方式实现：
+
+* *替换值*：如果某个元素带有 `incl` 属性，其值将被替换为所引用文件的内容。默认情况下，包含替换内容的文件路径为 `/etc/metrika.xml`。这可以在 server 配置的 [`include_from`](/zh/reference/settings/server-settings/settings#include_from) 元素中修改。替换值在该文件的 `/clickhouse/substitution_name` 元素中指定。如果 `incl` 中指定的替换项不存在，则会记录到日志中。要防止 ClickHouse 记录缺失的替换项，请指定属性 `optional="true"` (例如，[macros](/zh/reference/settings/server-settings/settings#macros) 的设置) 。
+* *替换元素*：如果要用替换内容替换整个元素，请使用 `include` 作为元素名。元素名 `include` 可以与属性 `from_zk = "/path/to/node"` 结合使用。在这种情况下，元素值会被替换为 ZooKeeper 中 `/path/to/node` 节点的内容。如果将整个 XML 子树存储为 ZooKeeper 节点，这种方式同样适用，它会被完整插入到源元素中。
+
+下面给出一个示例：
+
+```xml
+<clickhouse>
+    <!-- 将 `/profiles-in-zookeeper` ZK 路径下的 XML 子树追加到 `<profiles>` 元素。 -->
+    <profiles from_zk="/profiles-in-zookeeper" />
+
+    <users>
+        <!-- 将 `include` 元素替换为 `/users-in-zookeeper` ZK 路径下的子树。 -->
+        <include from_zk="/users-in-zookeeper" />
+        <include from_zk="/other-users-in-zookeeper" />
+    </users>
+</clickhouse>
+```
+
+如果你想将替换内容与现有配置合并，而不是追加，可以使用 `merge="true"` 属性。例如：`<include from_zk="/some_path" merge="true">`。在这种情况下，现有配置会与替换内容合并，且现有配置中的设置会被替换内容中的值覆盖。
+
+<div id="encryption">
+  ## 加密并隐藏配置
+</div>
+
+你可以使用对称加密来加密配置元素，例如明文密码或私钥。
+为此，先配置[加密编解码器](/zh/reference/statements/create/table#encryption-codecs)，然后为要加密的元素添加属性 `encrypted_by`，并将其值设为加密编解码器的名称。
+
+与属性 `from_zk`、`from_env` 和 `incl` 以及元素 `include` 不同，预处理后的文件中不会进行替换 (即不会解密加密后的值) 。
+解密只会在服务器进程运行时发生。
+
+例如：
+
+```xml
+<clickhouse>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex>00112233445566778899aabbccddeeff</key_hex>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+
+    <interserver_http_credentials>
+        <user>admin</user>
+        <password encrypted_by="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
+    </interserver_http_credentials>
+
+</clickhouse>
+```
+
+属性 [`from_env`](#from_env_zk) 和 [`from_zk`](#from_env_zk) 也可用于 `encryption_codecs`：
+
+```xml
+<clickhouse>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex from_env="CLICKHOUSE_KEY_HEX"/>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+
+    <interserver_http_credentials>
+        <user>admin</user>
+        <password encrypted_by="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
+    </interserver_http_credentials>
+
+</clickhouse>
+```
+
+```xml
+<clickhouse>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex from_zk="/clickhouse/aes128_key_hex"/>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+
+    <interserver_http_credentials>
+        <user>admin</user>
+        <password encrypted_by="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
+    </interserver_http_credentials>
+
+</clickhouse>
+```
+
+加密密钥和加密后的值可以在任意一个配置文件中定义。
+
+`config.xml` 示例：
+
+```xml
+<clickhouse>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex from_zk="/clickhouse/aes128_key_hex"/>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+
+</clickhouse>
+```
+
+`users.xml` 示例如下：
+
+```xml
+<clickhouse>
+
+    <users>
+        <test_user>
+            <password encrypted_by="AES_128_GCM_SIV">96280000000D000000000030D4632962295D46C6FA4ABF007CCEC9C1D0E19DA5AF719C1D9A46C446</password>
+            <profile>default</profile>
+        </test_user>
+    </users>
+
+</clickhouse>
+```
+
+要对值进行加密，可以使用 (示例) 程序 `encrypt_decrypt`：
+
+```bash
+./encrypt_decrypt /etc/clickhouse-server/config.xml -e AES_128_GCM_SIV abcd
+```
+
+```text
+961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85
+```
+
+即使配置元素已加密，这些加密元素仍会出现在预处理后的配置文件中。
+如果这对您的 ClickHouse 部署造成问题，可以采用以下两种方式之一：要么将预处理文件的权限设置为 600，要么使用属性 `hide_in_preprocessed`。
+
+例如：
+
+```xml
+<clickhouse>
+
+    <interserver_http_credentials hide_in_preprocessed="true">
+        <user>admin</user>
+        <password>secret</password>
+    </interserver_http_credentials>
+
+</clickhouse>
+```
+
+<div id="user-settings">
+  ## 用户设置
+</div>
+
+`config.xml` 文件可以指定一个单独的配置文件，其中包含用户设置、profile 和 quotas。该配置的相对路径在 `users_config` 元素中设置。默认值为 `users.xml`。如果省略 `users_config`，则用户设置、profile 和 quotas 直接在 `config.xml` 中指定。
+
+与 `config.xml` 和 `config.d/` 类似，用户配置也可以拆分到多个单独的文件中。
+目录名称定义为：将 `users_config` 设置去掉 `.xml` 后缀后，再拼接 `.d``。
+默认使用 `users.d`目录，因为`users&#95;config`的默认值为`users.xml&#96;。
+
+请注意，配置文件会先在考虑相关设置的情况下进行[合并](#merging)，之后才会处理 include。
+
+<div id="example">
+  ## XML 示例
+</div>
+
+例如，你可以像下面这样为每个用户分别创建一个配置文件：
+
+```bash
+$ cat /etc/clickhouse-server/users.d/alice.xml
+```
+
+```xml
+<clickhouse>
+    <users>
+      <alice>
+          <profile>analytics</profile>
+            <networks>
+                  <ip>::/0</ip>
+            </networks>
+          <password_sha256_hex>...</password_sha256_hex>
+          <quota>analytics</quota>
+      </alice>
+    </users>
+</clickhouse>
+```
+
+<div id="example-1">
+  ## YAML 示例
+</div>
+
+你可以在这里查看用 YAML 编写的默认配置：[`config.yaml.example`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example)。
+
+YAML 和 XML 格式在 ClickHouse 配置上存在一些差异。
+下面介绍一些使用 YAML 格式编写配置的技巧。
+
+带有文本值的 XML 标签在 YAML 中可表示为键值对
+
+```yaml
+key: value
+```
+
+相应的 XML：
+
+```xml
+<key>value</key>
+```
+
+嵌套的 XML 节点可表示为 YAML 映射：
+
+```yaml
+map_key:
+  key1: val1
+  key2: val2
+  key3: val3
+```
+
+对应的 XML：
+
+```xml
+<map_key>
+    <key1>val1</key1>
+    <key2>val2</key2>
+    <key3>val3</key3>
+</map_key>
+```
+
+如需多次创建同一个 XML 标签，请使用 YAML 序列：
+
+```yaml
+seq_key:
+  - val1
+  - val2
+  - key1: val3
+  - map:
+      key2: val4
+      key3: val5
+```
+
+对应的 XML：
+
+```xml
+<seq_key>val1</seq_key>
+<seq_key>val2</seq_key>
+<seq_key>
+    <key1>val3</key1>
+</seq_key>
+<seq_key>
+    <map>
+        <key2>val4</key2>
+        <key3>val5</key3>
+    </map>
+</seq_key>
+```
+
+如需提供 XML 属性，可以使用带有 `@` 前缀的属性键。请注意，`@` 在 YAML 标准中是保留字符，因此必须用双引号括起来：
+
+```yaml
+map:
+  "@attr1": value1
+  "@attr2": value2
+  key: 123
+```
+
+对应的 XML：
+
+```xml
+<map attr1="value1" attr2="value2">
+    <key>123</key>
+</map>
+```
+
+也可以在 YAML 序列中使用属性：
+
+```yaml
+seq:
+  - "@attr1": value1
+  - "@attr2": value2
+  - 123
+  - abc
+```
+
+对应的 XML：
+
+```xml
+<seq attr1="value1" attr2="value2">123</seq>
+<seq attr1="value1" attr2="value2">abc</seq>
+```
+
+上述语法无法将带有 XML 属性的 XML 文本节点表示为 YAML。这种特殊情况可以通过
+`#text` 属性键来实现：
+
+```yaml
+map_key:
+  "@attr1": value1
+  "#text": value2
+```
+
+对应的 XML：
+
+```xml
+<map_key attr1="value1">value2</map>
+```
+
+<div id="implementation-details">
+  ## 实现细节
+</div>
+
+对于每个配置文件，服务器在启动时还会生成 `file-preprocessed.xml` 文件。这些文件包含所有已完成的替换和覆盖，仅供参考使用。如果配置文件中使用了 ZooKeeper 替换，但在服务器启动时 ZooKeeper 不可用，则服务器会从预处理文件中加载配置。
+
+服务器会跟踪配置文件的变更，以及执行替换和覆盖时所使用的文件和 ZooKeeper 节点，并动态重新加载用户和集群的设置。这意味着你可以在不重启服务器的情况下修改集群、用户及其设置。

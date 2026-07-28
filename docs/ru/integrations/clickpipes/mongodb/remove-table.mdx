@@ -1,0 +1,33 @@
+---
+title: 'Удаление определённых таблиц из ClickPipe'
+description: 'Удаление определённых таблиц из ClickPipe'
+sidebarTitle: 'Удаление таблицы'
+slug: /integrations/clickpipes/mongodb/removing_tables
+doc_type: 'guide'
+keywords: ['ClickPipes', 'MongoDB', 'CDC', 'ингестия данных', 'синхронизация в реальном времени']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+В некоторых случаях имеет смысл исключить определённые таблицы из MongoDB ClickPipe — например, если какая-то таблица не нужна для вашей аналитической рабочей нагрузки, её пропуск поможет снизить затраты на хранилище и репликацию в ClickHouse.
+
+<div id="remove-tables-steps">
+  ## Как удалить определённые таблицы
+</div>
+
+Сначала нужно удалить таблицу из пайпа. Для этого выполните следующие действия:
+
+1. [Приостановите](/ru/integrations/clickpipes/mongodb/pause-and-resume) пайп.
+2. Нажмите Edit Table Settings.
+3. Найдите нужную таблицу — это можно сделать через строку поиска.
+4. Снимите выделение с таблицы, нажав на установленный флажок.
+
+<br />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp" border size="md" />
+
+5. Нажмите Update.
+6. После успешного обновления на вкладке **Metrics** статус будет **Running**. Эта таблица больше не будет реплицироваться данным ClickPipe.

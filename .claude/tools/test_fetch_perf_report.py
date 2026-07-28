@@ -152,7 +152,142 @@ def test_summary_counts():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def test_maybe_decompress_handles_plain_gzip_zstd():
+    import gzip as _gzip
+    import subprocess as _sp
+
+    plain = b"metric\tleft\tright\nmemory_usage\t100\t90\n"
+    assert fpr.maybe_decompress(plain) == plain
+    assert fpr.maybe_decompress(_gzip.compress(plain)) == plain
+    zst = _sp.run(["zstd", "-cq"], input=plain, capture_output=True).stdout
+    assert zst[:4] == b"\x28\xb5\x2f\xfd"  # sanity: really zstd-framed
+    assert fpr.maybe_decompress(zst) == plain
+
+
+def test_stream_to_file_handles_plain_gzip_zstd():
+    import gzip as _gzip
+    import io as _io
+    import subprocess as _sp
+
+    plain = b"metric\tleft\tright\n" + b"memory_usage\t100\t90\n" * 10000  # >4 bytes, multi-chunk
+    zst = _sp.run(["zstd", "-cq"], input=plain, capture_output=True).stdout
+    variants = {"plain": plain, "gzip": _gzip.compress(plain), "zstd": zst}
+
+    with tempfile.TemporaryDirectory() as tmp:
+        for name, body in variants.items():
+            dest = os.path.join(tmp, name)
+            # A BytesIO stands in for the urlopen response: same .read(size) contract.
+            fpr._stream_to_file(_io.BytesIO(body), dest)
+            with open(dest, "rb") as f:
+                assert f.read() == plain, name
+
+
+def test_stream_to_file_zstd_cli_fallback():
+    # Force the `zstd` CLI path even where `zstandard` is installed, so the fallback the PR
+    # advertises is exercised regardless of the host's optional dependencies.
+    import io as _io
+    import subprocess as _sp
+    import sys as _sys
+
+    plain = b"metric\tleft\tright\n" + b"memory_usage\t100\t90\n" * 10000
+    zst = _sp.run(["zstd", "-cq"], input=plain, capture_output=True).stdout
+
+    saved = _sys.modules.get("zstandard", "MISSING")
+    _sys.modules["zstandard"] = None  # makes `import zstandard` raise ImportError
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = os.path.join(tmp, "out")
+            fpr._stream_to_file(_io.BytesIO(zst), dest)
+            with open(dest, "rb") as f:
+                assert f.read() == plain
+    finally:
+        if saved == "MISSING":
+            _sys.modules.pop("zstandard", None)
+        else:
+            _sys.modules["zstandard"] = saved
+
+
+def test_stream_to_file_zstd_cli_times_out():
+    # A wedged zstd must not hang the report forever: the watchdog kills it and the failure
+    # becomes a normal per-shard error. Uses a fake `zstd` on PATH that ignores stdin and never
+    # exits, plus a shrunk timeout so the test stays fast.
+    import io as _io
+    import stat as _stat
+    import sys as _sys
+    import time as _time
+
+    saved_mod = _sys.modules.get("zstandard", "MISSING")
+    saved_path = os.environ["PATH"]
+    saved_timeout = fpr._ZSTD_CLI_TIMEOUT_SEC
+    _sys.modules["zstandard"] = None  # force the CLI fallback
+    with tempfile.TemporaryDirectory() as tmp:
+        fake = os.path.join(tmp, "zstd")
+        with open(fake, "w") as f:
+            f.write("#!/bin/sh\nexec sleep 300\n")
+        os.chmod(fake, os.stat(fake).st_mode | _stat.S_IEXEC)
+        os.environ["PATH"] = tmp + os.pathsep + saved_path
+        fpr._ZSTD_CLI_TIMEOUT_SEC = 2
+        try:
+            zst_magic_input = b"\x28\xb5\x2f\xfd" + b"\x00" * 4096
+            dest = os.path.join(tmp, "out")
+            t0 = _time.time()
+            try:
+                fpr._stream_to_file(_io.BytesIO(zst_magic_input), dest)
+                assert False, "expected the wedged zstd to raise"
+            except RuntimeError as e:
+                assert "zstd decompression failed" in str(e), e
+            assert _time.time() - t0 < 30, "watchdog did not bound the wedged child"
+        finally:
+            fpr._ZSTD_CLI_TIMEOUT_SEC = saved_timeout
+            os.environ["PATH"] = saved_path
+            if saved_mod == "MISSING":
+                _sys.modules.pop("zstandard", None)
+            else:
+                _sys.modules["zstandard"] = saved_mod
+
+
+def test_prefixed_reader_reassembles_stream():
+    import io as _io
+
+    payload = bytes(range(256)) * 8
+    reader = fpr._PrefixedReader(payload[:4], _io.BytesIO(payload[4:]))
+    # Small reads across the prefix boundary and a final read-all must round-trip.
+    got = reader.read(2) + reader.read(5) + reader.read()
+    assert got == payload
+
+
+def test_download_shard_isolates_failures():
+    import gzip as _gzip
+    import subprocess as _sp
+    import urllib.error as _ue
+
+    shard = {"arch": "arm", "shard_num": 1, "tsv_url": "https://example/all-query-metrics.tsv"}
+    failures = [
+        _ue.URLError("connection refused"),
+        _sp.TimeoutExpired(cmd="zstd", timeout=120),
+        FileNotFoundError("zstd"),  # zstd binary unavailable
+        _gzip.BadGzipFile("not a gzip file"),
+        RuntimeError("HTTP 403"),
+    ]
+    original = fpr.download_url
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            for exc in failures:
+                fpr.download_url = lambda *a, _e=exc, **k: (_ for _ in ()).throw(_e)
+                result = fpr.download_shard(shard, tmp)  # must not raise
+                assert result[0] is shard and result[1] is None, (exc, result)
+                assert "Failed to download" in result[2], (exc, result)
+    finally:
+        fpr.download_url = original
+
+
 if __name__ == "__main__":
     test_classification_matches_compare_sh()
     test_summary_counts()
+    test_maybe_decompress_handles_plain_gzip_zstd()
+    test_stream_to_file_handles_plain_gzip_zstd()
+    test_stream_to_file_zstd_cli_fallback()
+    test_stream_to_file_zstd_cli_times_out()
+    test_prefixed_reader_reassembles_stream()
+    test_download_shard_isolates_failures()
     print("All fetch_perf_report tests passed (or skipped).")

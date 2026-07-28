@@ -1,0 +1,315 @@
+---
+slug: /best-practices/use-json-where-appropriate
+sidebarTitle: 'JSON 사용'
+title: 'JSON을 적절히 사용하기'
+description: 'JSON을 사용해야 하는 경우를 설명하는 페이지'
+keywords: ['JSON']
+show_related_blogs: true
+doc_type: '참고'
+---
+
+import WhenToUseJson from '/snippets/ko/_when-to-use-json.mdx';
+
+ClickHouse는 이제 반정형 데이터와 동적 데이터를 위해 설계된 네이티브 JSON 컬럼 타입을 제공합니다. **이는 데이터 포맷이 아니라 컬럼 타입**이라는 점을 명확히 해야 합니다. JSON은 문자열로 또는 [JSONEachRow](/ko/reference/formats/JSON/JSONEachRow)와 같은 지원 포맷을 통해 ClickHouse에 삽입할 수 있지만, 그렇다고 JSON 컬럼 타입을 사용하는 것은 아닙니다. JSON 타입은 단순히 JSON을 저장한다고 해서 사용하는 것이 아니라, 데이터 구조가 동적일 때만 사용해야 합니다.
+
+<WhenToUseJson />
+
+<div id="considerations-and-tips-for-using-json">
+  ## JSON 사용 시 고려사항과 팁
+</div>
+
+JSON 타입은 경로를 서브컬럼으로 평탄화해 효율적인 열 지향 저장을 가능하게 합니다. 하지만 유연한 만큼 주의도 필요합니다. 효과적으로 사용하려면 다음 사항을 권장합니다.
+
+* 알려진 서브컬럼에 대해 타입을 지정해 불필요한 타입 추론을 피할 수 있도록 [컬럼 정의의 힌트](/ko/reference/data-types/newjson)를 사용해 **경로의 타입을 지정하세요**.
+* 값이 필요하지 않다면 [SKIP 및 SKIP REGEXP](/ko/reference/data-types/newjson)를 사용해 **경로를 건너뛰세요**. 이렇게 하면 저장 공간을 줄이고 성능을 개선할 수 있습니다.
+* **[`max_dynamic_paths`](/ko/reference/data-types/newjson#reaching-the-limit-of-dynamic-paths-inside-json)를 너무 크게 설정하지 마세요**. 값이 너무 크면 리소스 사용량이 늘고 효율이 떨어집니다. 일반적으로 10,000 미만으로 유지하는 것이 좋습니다.
+
+<Info>
+  **타입 힌트**
+
+  타입 힌트는 단순히 불필요한 타입 추론을 피하는 방법에 그치지 않습니다. 저장 및 처리 과정의 간접 단계를 아예 없애 줍니다. 타입 힌트가 있는 JSON 경로는 항상 일반 컬럼과 같은 방식으로 저장되므로 [**discriminator columns**](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data)이나 쿼리 시점의 동적 판별이 필요하지 않습니다. 즉, 타입 힌트가 잘 정의되어 있으면 중첩된 JSON 필드도 처음부터 최상위 필드로 모델링한 것과 동일한 성능과 효율을 얻을 수 있습니다. 따라서 대부분 일관적이면서도 JSON의 유연성이 여전히 필요한 데이터셋에서는 스키마나 수집 파이프라인을 재구성하지 않고도 성능을 유지할 수 있는 실용적인 방법이 됩니다.
+</Info>
+
+<div id="advanced-features">
+  ## 고급 기능
+</div>
+
+* JSON 컬럼은 다른 컬럼과 마찬가지로 **프라이머리 키(primary key)에 사용할 수 있습니다**. 하위 컬럼에는 코덱을 지정할 수 없습니다.
+* [`JSONAllPathsWithTypes()` 및 `JSONDynamicPaths()`](/ko/reference/data-types/newjson#introspection-functions)와 같은 함수를 통해 내부 검사를 수행할 수 있습니다.
+* `.^` 구문을 사용해 중첩된 하위 객체를 읽을 수 있습니다.
+* 쿼리 구문은 표준 SQL과 다를 수 있으며, 중첩 필드에는 특별한 형 변환이나 연산자가 필요할 수 있습니다.
+
+자세한 내용은[ ClickHouse JSON 문서](/ko/reference/data-types/newjson)를 참고하거나, 블로그 게시물[ ClickHouse를 위한 강력한 새 JSON 데이터 타입](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse)을 살펴보십시오.
+
+<div id="examples">
+  ## 예시
+</div>
+
+다음 JSON 예시는 [Python PyPI 데이터셋](https://clickpy.clickhouse.com/)의 한 행을 나타냅니다.
+
+```json
+{
+  "date": "2022-11-15",
+  "country_code": "ES",
+  "project": "clickhouse-connect",
+  "type": "bdist_wheel",
+  "installer": "pip",
+  "python_minor": "3.9",
+  "system": "Linux",
+  "version": "0.3.0"
+}
+```
+
+이 스키마가 고정되어 있고 타입을 명확히 정의할 수 있다고 가정해 보겠습니다. 데이터가 NDJSON 포맷(한 줄에 JSON 행 1개)이라고 해도 이러한 스키마에 JSON 타입을 사용할 필요는 없습니다. 스키마를 일반적인 타입으로 정의하면 됩니다.
+
+```sql
+CREATE TABLE pypi (
+  `date` Date,
+  `country_code` String,
+  `project` String,
+  `type` String,
+  `installer` String,
+  `python_minor` String,
+  `system` String,
+  `version` String
+)
+ENGINE = MergeTree
+ORDER BY (project, date)
+```
+
+그리고 JSON 행을 삽입합니다:
+
+```sql
+INSERT INTO pypi FORMAT JSONEachRow
+{"date":"2022-11-15","country_code":"ES","project":"clickhouse-connect","type":"bdist_wheel","installer":"pip","python_minor":"3.9","system":"Linux","version":"0.3.0"}
+```
+
+250만 편의 학술 논문이 포함된 [arXiv dataset](https://www.kaggle.com/datasets/Cornell-University/arxiv?resource=download)을 살펴보겠습니다. NDJSON 형식으로 제공되는 이 데이터셋의 각 행은 출판된 학술 논문 1편을 나타냅니다. 예시 행은 아래와 같습니다:
+
+```json
+{
+  "id": "2101.11408",
+  "submitter": "Daniel Lemire",
+  "authors": "Daniel Lemire",
+  "title": "Number Parsing at a Gigabyte per Second",
+  "comments": "Software at https://github.com/fastfloat/fast_float and\n  https://github.com/lemire/simple_fastfloat_benchmark/",
+  "journal-ref": "Software: Practice and Experience 51 (8), 2021",
+  "doi": "10.1002/spe.2984",
+  "report-no": null,
+  "categories": "cs.DS cs.MS",
+  "license": "http://creativecommons.org/licenses/by/4.0/",
+  "abstract": "With disks and networks providing gigabytes per second ....\n",
+  "versions": [
+    {
+      "created": "Mon, 11 Jan 2021 20:31:27 GMT",
+      "version": "v1"
+    },
+    {
+      "created": "Sat, 30 Jan 2021 23:57:29 GMT",
+      "version": "v2"
+    }
+  ],
+  "update_date": "2022-11-07",
+  "authors_parsed": [
+    [
+      "Lemire",
+      "Daniel",
+      ""
+    ]
+  ]
+}
+```
+
+여기서 사용하는 JSON은 중첩 구조를 포함하고 있어 복잡하지만, 구조를 예측할 수 있습니다. 필드의 수와 유형은 바뀌지 않습니다. 이 예시에서는 JSON 타입을 사용할 수도 있지만, [튜플](/ko/reference/data-types/tuple)과 [Nested](/ko/reference/data-types/nested-data-structures/index) 타입을 사용해 구조를 명시적으로 정의할 수도 있습니다:
+
+```sql
+CREATE TABLE arxiv
+(
+  `id` String,
+  `submitter` String,
+  `authors` String,
+  `title` String,
+  `comments` String,
+  `journal-ref` String,
+  `doi` String,
+  `report-no` String,
+  `categories` String,
+  `license` String,
+  `abstract` String,
+  `versions` Array(Tuple(created String, version String)),
+  `update_date` Date,
+  `authors_parsed` Array(Array(String))
+)
+ENGINE = MergeTree
+ORDER BY update_date
+```
+
+다시 데이터를 JSON 형식으로 삽입할 수 있습니다:
+
+```sql
+INSERT INTO arxiv FORMAT JSONEachRow 
+{"id":"2101.11408","submitter":"Daniel Lemire","authors":"Daniel Lemire","title":"Number Parsing at a Gigabyte per Second","comments":"Software at https://github.com/fastfloat/fast_float and\n  https://github.com/lemire/simple_fastfloat_benchmark/","journal-ref":"Software: Practice and Experience 51 (8), 2021","doi":"10.1002/spe.2984","report-no":null,"categories":"cs.DS cs.MS","license":"http://creativecommons.org/licenses/by/4.0/","abstract":"With disks and networks providing gigabytes per second ....\n","versions":[{"created":"Mon, 11 Jan 2021 20:31:27 GMT","version":"v1"},{"created":"Sat, 30 Jan 2021 23:57:29 GMT","version":"v2"}],"update_date":"2022-11-07","authors_parsed":[["Lemire","Daniel",""]]}
+```
+
+`tags`라는 또 다른 컬럼이 추가되었다고 가정해 보겠습니다. 이것이 단순한 문자열 목록이라면 `Array(String)`로 모델링할 수 있지만, 여기서는 서로 다른 타입이 섞인 임의의 태그 구조를 추가할 수 있다고 가정하겠습니다(`score`는 문자열일 수도 있고 정수일 수도 있습니다). 수정된 JSON 문서는 다음과 같습니다:
+
+```sql
+{
+ "id": "2101.11408",
+ "submitter": "Daniel Lemire",
+ "authors": "Daniel Lemire",
+ "title": "Number Parsing at a Gigabyte per Second",
+ "comments": "Software at https://github.com/fastfloat/fast_float and\n  https://github.com/lemire/simple_fastfloat_benchmark/",
+ "journal-ref": "Software: Practice and Experience 51 (8), 2021",
+ "doi": "10.1002/spe.2984",
+ "report-no": null,
+ "categories": "cs.DS cs.MS",
+ "license": "http://creativecommons.org/licenses/by/4.0/",
+ "abstract": "With disks and networks providing gigabytes per second ....\n",
+ "versions": [
+ {
+   "created": "Mon, 11 Jan 2021 20:31:27 GMT",
+   "version": "v1"
+ },
+ {
+   "created": "Sat, 30 Jan 2021 23:57:29 GMT",
+   "version": "v2"
+ }
+ ],
+ "update_date": "2022-11-07",
+ "authors_parsed": [
+ [
+   "Lemire",
+   "Daniel",
+   ""
+ ]
+ ],
+ "tags": {
+   "tag_1": {
+     "name": "ClickHouse user",
+     "score": "A+",
+     "comment": "A good read, applicable to ClickHouse"
+   },
+   "28_03_2025": {
+     "name": "professor X",
+     "score": 10,
+     "comment": "Didn't learn much",
+     "updates": [
+       {
+         "name": "professor X",
+         "comment": "Wolverine found more interesting"
+       }
+     ]
+   }
+ }
+}
+```
+
+이 경우 arXiv 문서를 전체를 JSON으로 모델링하거나 JSON `tags` 컬럼만 추가할 수 있습니다. 아래에 두 가지 예시를 모두 제공합니다:
+
+```sql
+CREATE TABLE arxiv
+(
+  `doc` JSON(update_date Date)
+)
+ENGINE = MergeTree
+ORDER BY doc.update_date
+```
+
+<Note>
+  JSON 정의에서 `update_date` 컬럼에 대한 type hint를 제공합니다. `update_date`를 정렬/프라이머리 키(primary key)에 사용하기 때문입니다. 이렇게 하면 ClickHouse가 이 컬럼이 NULL이 될 수 없음을 알 수 있고, 어떤 `update_date` 서브컬럼을 사용해야 하는지도 정확히 판단할 수 있습니다(타입마다 여러 개가 있을 수 있으므로, 그렇지 않으면 모호해집니다).
+</Note>
+
+이 테이블에 데이터를 삽입한 다음 [`JSONAllPathsWithTypes`](/ko/reference/functions/regular-functions/json-functions#JSONAllPathsWithTypes) 함수와 [`PrettyJSONEachRow`](/ko/reference/formats/JSON/PrettyJSONEachRow) 출력 형식을 사용해 이후 추론된 스키마를 확인할 수 있습니다:
+
+```sql
+INSERT INTO arxiv FORMAT JSONAsObject 
+{"id":"2101.11408","submitter":"Daniel Lemire","authors":"Daniel Lemire","title":"Number Parsing at a Gigabyte per Second","comments":"Software at https://github.com/fastfloat/fast_float and\n  https://github.com/lemire/simple_fastfloat_benchmark/","journal-ref":"Software: Practice and Experience 51 (8), 2021","doi":"10.1002/spe.2984","report-no":null,"categories":"cs.DS cs.MS","license":"http://creativecommons.org/licenses/by/4.0/","abstract":"With disks and networks providing gigabytes per second ....\n","versions":[{"created":"Mon, 11 Jan 2021 20:31:27 GMT","version":"v1"},{"created":"Sat, 30 Jan 2021 23:57:29 GMT","version":"v2"}],"update_date":"2022-11-07","authors_parsed":[["Lemire","Daniel",""]],"tags":{"tag_1":{"name":"ClickHouse user","score":"A+","comment":"A good read, applicable to ClickHouse"},"28_03_2025":{"name":"professor X","score":10,"comment":"Didn't learn much","updates":[{"name":"professor X","comment":"Wolverine found more interesting"}]}}}
+```
+
+```sql
+SELECT JSONAllPathsWithTypes(doc)
+FROM arxiv
+FORMAT PrettyJSONEachRow
+
+{
+  "JSONAllPathsWithTypes(doc)": {
+    "abstract": "String",
+    "authors": "String",
+    "authors_parsed": "Array(Array(Nullable(String)))",
+    "categories": "String",
+    "comments": "String",
+    "doi": "String",
+    "id": "String",
+    "journal-ref": "String",
+    "license": "String",
+    "submitter": "String",
+    "tags.28_03_2025.comment": "String",
+    "tags.28_03_2025.name": "String",
+    "tags.28_03_2025.score": "Int64",
+    "tags.28_03_2025.updates": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+    "tags.tag_1.comment": "String",
+    "tags.tag_1.name": "String",
+    "tags.tag_1.score": "String",
+    "title": "String",
+    "update_date": "Date",
+    "versions": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))"
+  }
+}
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+또는 앞서 살펴본 스키마와 JSON `tags` 컬럼을 사용해 이를 모델링할 수도 있습니다. 일반적으로는 이 방법이 더 선호되며, ClickHouse에서 필요한 추론을 최소화할 수 있습니다:
+
+```sql
+CREATE TABLE arxiv
+(
+    `id` String,
+    `submitter` String,
+    `authors` String,
+    `title` String,
+    `comments` String,
+    `journal-ref` String,
+    `doi` String,
+    `report-no` String,
+    `categories` String,
+    `license` String,
+    `abstract` String,
+    `versions` Array(Tuple(created String, version String)),
+    `update_date` Date,
+    `authors_parsed` Array(Array(String)),
+    `tags` JSON()
+)
+ENGINE = MergeTree
+ORDER BY update_date
+```
+
+```sql
+INSERT INTO arxiv FORMAT JSONEachRow 
+{"id":"2101.11408","submitter":"Daniel Lemire","authors":"Daniel Lemire","title":"Number Parsing at a Gigabyte per Second","comments":"Software at https://github.com/fastfloat/fast_float and\n  https://github.com/lemire/simple_fastfloat_benchmark/","journal-ref":"Software: Practice and Experience 51 (8), 2021","doi":"10.1002/spe.2984","report-no":null,"categories":"cs.DS cs.MS","license":"http://creativecommons.org/licenses/by/4.0/","abstract":"With disks and networks providing gigabytes per second ....\n","versions":[{"created":"Mon, 11 Jan 2021 20:31:27 GMT","version":"v1"},{"created":"Sat, 30 Jan 2021 23:57:29 GMT","version":"v2"}],"update_date":"2022-11-07","authors_parsed":[["Lemire","Daniel",""]],"tags":{"tag_1":{"name":"ClickHouse user","score":"A+","comment":"A good read, applicable to ClickHouse"},"28_03_2025":{"name":"professor X","score":10,"comment":"Didn't learn much","updates":[{"name":"professor X","comment":"Wolverine found more interesting"}]}}}
+```
+
+이제 `tags` 서브컬럼의 타입을 추론할 수 있습니다.
+
+```sql
+SELECT JSONAllPathsWithTypes(tags)
+FROM arxiv
+FORMAT PrettyJSONEachRow
+
+{
+  "JSONAllPathsWithTypes(tags)": {
+    "28_03_2025.comment": "String",
+    "28_03_2025.name": "String",
+    "28_03_2025.score": "Int64",
+    "28_03_2025.updates": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+    "tag_1.comment": "String",
+    "tag_1.name": "String",
+    "tag_1.score": "String"
+  }
+}
+```
+
+```response
+1 row in set. Elapsed: 0.002 sec.
+```

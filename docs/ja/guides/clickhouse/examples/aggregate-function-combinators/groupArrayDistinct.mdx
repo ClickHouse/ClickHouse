@@ -1,0 +1,48 @@
+---
+slug: '/examples/aggregate-function-combinators/groupArrayDistinct'
+title: 'groupArrayDistinct'
+description: 'groupArrayDistinct combinatorの使用例'
+keywords: ['groupArray', 'Distinct', 'combinator', 'examples', 'groupArrayDistinct']
+sidebarTitle: 'groupArrayDistinct'
+doc_type: 'reference'
+---
+
+import { RunnableCode } from "/snippets/ja/components/RunnableCode/RunnableCode.jsx";
+
+<div id="description">
+  ## 説明
+</div>
+
+[`groupArrayDistinct`](/ja/reference/functions/aggregate-functions/combinators#-foreach) combinator は、
+[`groupArray`](/ja/reference/functions/aggregate-functions/sum) aggregate function に適用でき、重複しない引数の値からなる配列を作成します。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+この例では、[SQL playground](https://sql.clickhouse.com/) で利用できる `hits` データセットを使用します。
+
+たとえば、Web サイト内の各ランディングページのドメイン (`URLDomain`) ごとに、
+そのドメインにアクセスした訪問者について記録されている一意の User Agent の OS コード (`OS`) を
+すべて調べたいとします。これにより、サイトのどの部分に対してどのような
+オペレーティングシステムが利用されているかを把握できます。
+
+<RunnableCode>
+  ```sql
+  SELECT
+      URLDomain,
+      groupArrayDistinct(OS) AS distinct_os_codes
+  FROM metrica.hits_v1
+  WHERE URLDomain != '' -- ドメインが記録されている hits のみを対象とする
+  GROUP BY URLDomain
+  ORDER BY URLDomain ASC
+  LIMIT 20;
+  ```
+</RunnableCode>
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [`groupArray`](/ja/reference/functions/aggregate-functions/groupArray)
+* [`Distinct combinator`](/ja/reference/functions/aggregate-functions/combinators#-distinct)

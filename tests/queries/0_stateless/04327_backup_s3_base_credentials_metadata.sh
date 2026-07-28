@@ -104,3 +104,9 @@ rewrite_backup_metadata inc_6 "S3('$(s3_url base)')" "S3('$(s3_url base)', 'test
 check_base_backup_in_metadata inc_6
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "RESTORE TABLE data AS data_6 FROM S3($(s3_location inc_6))" | cut -f2
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "SELECT count() FROM data_6"
+
+echo 'inc_7: google ADC secrets in base credentials are redacted'
+$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "BACKUP TABLE data TO S3($(s3_location inc_7)) SETTINGS base_backup=S3($(s3_location_root base), google_adc_client_secret = 'SECRET_ADC_CLIENT_SECRET', google_adc_refresh_token = 'SECRET_ADC_REFRESH_TOKEN')" | cut -f2
+check_base_backup_in_metadata inc_7
+$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "RESTORE TABLE data AS data_7 FROM S3($(s3_location inc_7)) SETTINGS base_backup=S3($(s3_location_root base))" | cut -f2
+$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "SELECT count() FROM data_7"

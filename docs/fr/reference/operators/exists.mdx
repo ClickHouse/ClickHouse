@@ -1,0 +1,58 @@
+---
+description: "Documentation de l’opérateur `EXISTS`"
+slug: /sql-reference/operators/exists
+title: 'EXISTS'
+doc_type: 'reference'
+---
+
+L’opérateur `EXISTS` vérifie si le résultat d’une sous-requête contient des enregistrements. S’il est vide, l’opérateur renvoie `0`. Sinon, il renvoie `1`.
+
+`EXISTS` peut également être utilisé dans une clause [WHERE](/fr/reference/statements/select/where).
+
+<Tip>
+  Les références aux tables et aux colonnes de la requête principale ne sont pas prises en charge dans une sous-requête.
+</Tip>
+
+**Syntaxe**
+
+```sql
+EXISTS(subquery)
+```
+
+**Exemple**
+
+Requête vérifiant l’existence de valeurs dans une sous-requête :
+
+```sql title="Query"
+SELECT EXISTS(SELECT * FROM numbers(10) WHERE number > 8), EXISTS(SELECT * FROM numbers(10) WHERE number > 11)
+```
+
+```text title="Response"
+┌─in(1, _subquery1)─┬─in(1, _subquery2)─┐
+│                 1 │                 0 │
+└───────────────────┴───────────────────┘
+```
+
+Requête avec une sous-requête renvoyant plusieurs lignes :
+
+```sql title="Query"
+SELECT count() FROM numbers(10) WHERE EXISTS(SELECT number FROM numbers(10) WHERE number > 8);
+```
+
+```text title="Response"
+┌─count()─┐
+│      10 │
+└─────────┘
+```
+
+Requête avec une sous-requête qui renvoie un résultat vide :
+
+```sql title="Query"
+SELECT count() FROM numbers(10) WHERE EXISTS(SELECT number FROM numbers(10) WHERE number > 11);
+```
+
+```text title="Response"
+┌─count()─┐
+│       0 │
+└─────────┘
+```

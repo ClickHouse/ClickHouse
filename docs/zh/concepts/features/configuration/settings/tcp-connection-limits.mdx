@@ -1,0 +1,46 @@
+---
+description: 'TCP 连接限制。'
+sidebarTitle: 'TCP 连接限制'
+slug: /operations/settings/tcp-connection-limits
+title: 'TCP 连接限制'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 概述
+</div>
+
+你可能会遇到 ClickHouse TCP 连接 (即通过[命令行客户端](/zh/concepts/features/interfaces/client)建立的连接) 在执行一定数量的查询后，或达到一定耗时后自动断开。
+断开后，不会自动重连 (除非由其他操作触发，
+例如在命令行客户端中再次发送查询) 。
+
+可通过将服务器设置
+`tcp_close_connection_after_queries_num` (用于查询限制)
+或 `tcp_close_connection_after_queries_seconds` (用于持续时间限制) 设置为大于 0 来启用连接限制。
+如果两个限制都已启用，则哪个限制先达到，连接就会先因其而关闭。
+
+当达到限制并断开连接时，客户端会收到
+`TCP_CONNECTION_LIMIT_REACHED` 异常，并且**触发断开的那条查询绝不会被处理**。
+
+<div id="query-limits">
+  ## 查询限制
+</div>
+
+假设将 `tcp_close_connection_after_queries_num` 设置为 N，则该连接最多允许
+N 个成功查询。到第 N + 1 个查询时，客户端会断开连接。
+
+每个已处理的查询都会计入查询限制。因此，连接命令行客户端时，
+可能会自动执行一条初始系统警告查询，这也会计入限制。
+
+当 TCP 连接处于空闲状态时 (即在一段时间内未处理查询，
+该时长由会话设置 `poll_interval` 指定) ，此前累计的查询次数会重置为 0。
+这意味着，如果期间发生空闲，
+单个连接中的查询总次数可能会超过
+`tcp_close_connection_after_queries_num`。
+
+<div id="duration-limits">
+  ## 持续时间限制
+</div>
+
+连接持续时间从客户端一建立连接时就开始计算。
+在经过 `tcp_close_connection_after_queries_seconds` 秒后，客户端会在下一次执行查询时断开连接。

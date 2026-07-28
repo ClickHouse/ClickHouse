@@ -1,0 +1,53 @@
+---
+description: 'توثيق SET ROLE'
+sidebarTitle: 'SET ROLE'
+slug: /sql-reference/statements/set-role
+title: 'تعليمة SET ROLE'
+doc_type: 'reference'
+---
+
+يُفعِّل الأدوار الخاصة بالمستخدم الحالي.
+
+```sql
+SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
+```
+
+<div id="set-default-role">
+  ## SET DEFAULT ROLE
+</div>
+
+يعيّن الأدوار الافتراضية لمستخدم.
+
+تُفعَّل الأدوار الافتراضية تلقائيًا عند تسجيل دخول المستخدم. ولا يمكنك تعيين أدوار افتراضية إلا من بين الأدوار الممنوحة مسبقًا. وإذا لم يكن الدور ممنوحًا للمستخدم، فإن ClickHouse يُصدر استثناءً.
+
+```sql
+SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]
+```
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+عيّن عدة أدوار افتراضية لمستخدم:
+
+```sql
+SET DEFAULT ROLE role1, role2, ... TO user
+```
+
+عيّن جميع الأدوار الممنوحة كأدوار افتراضية لمستخدم:
+
+```sql
+SET DEFAULT ROLE ALL TO user
+```
+
+أزِل الأدوار الافتراضية من المستخدم:
+
+```sql
+SET DEFAULT ROLE NONE TO user
+```
+
+اجعل جميع الأدوار الممنوحة أدوارًا افتراضية، باستثناء الدورين المحددين `role1` و`role2`:
+
+```sql
+SET DEFAULT ROLE ALL EXCEPT role1, role2 TO user
+```

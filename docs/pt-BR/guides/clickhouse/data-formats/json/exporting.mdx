@@ -1,0 +1,189 @@
+---
+title: 'Exportando JSON'
+slug: /integrations/data-formats/json/exporting
+description: 'Como exportar dados em JSON do ClickHouse'
+keywords: ['json', 'clickhouse', 'formatos', 'exportação']
+doc_type: 'guide'
+---
+
+Quase qualquer formato JSON usado para importação também pode ser usado para exportação. O mais popular é [`JSONEachRow`](/pt-BR/reference/formats/JSON/JSONEachRow):
+
+```sql
+SELECT * FROM sometable FORMAT JSONEachRow
+```
+
+```response
+{"path":"Bob_Dolman","month":"2016-11-01","hits":245}
+{"path":"1-krona","month":"2017-01-01","hits":4}
+{"path":"Ahmadabad-e_Kalij-e_Sofla","month":"2017-01-01","hits":3}
+```
+
+Ou podemos usar [`JSONCompactEachRow`](/pt-BR/reference/formats/JSON/JSONCompactEachRow) para economizar espaço em disco, omitindo os nomes das colunas:
+
+```sql
+SELECT * FROM sometable FORMAT JSONCompactEachRow
+```
+
+```response
+["Bob_Dolman", "2016-11-01", 245]
+["1-krona", "2017-01-01", 4]
+["Ahmadabad-e_Kalij-e_Sofla", "2017-01-01", 3]
+```
+
+<div id="overriding-data-types-as-strings">
+  ## Forçando tipos de dados como strings
+</div>
+
+O ClickHouse respeita os tipos de dados e exporta JSON de acordo com os padrões. Mas, nos casos em que precisamos que todos os valores sejam codificados como strings, podemos usar o formato [JSONStringsEachRow](/pt-BR/reference/formats/JSON/JSONStringsEachRow):
+
+```sql
+SELECT * FROM sometable FORMAT JSONStringsEachRow
+```
+
+```response
+{"path":"Bob_Dolman","month":"2016-11-01","hits":"245"}
+{"path":"1-krona","month":"2017-01-01","hits":"4"}
+{"path":"Ahmadabad-e_Kalij-e_Sofla","month":"2017-01-01","hits":"3"}
+```
+
+Agora, a coluna numérica `hits` está codificada como string. A exportação como strings tem suporte em todos os formatos JSON*; basta conferir os formatos `JSONStrings\*` e `JSONCompactStrings\*`:
+
+```sql
+SELECT * FROM sometable FORMAT JSONCompactStringsEachRow
+```
+
+```response
+["Bob_Dolman", "2016-11-01", "245"]
+["1-krona", "2017-01-01", "4"]
+["Ahmadabad-e_Kalij-e_Sofla", "2017-01-01", "3"]
+```
+
+<div id="exporting-metadata-together-with-data">
+  ## Exportando metadados junto com os dados
+</div>
+
+O formato [JSON](/pt-BR/reference/formats/JSON/JSON), muito usado em aplicativos, exporta não apenas os dados resultantes, mas também os tipos das colunas e as estatísticas da consulta:
+
+```sql
+SELECT * FROM sometable FORMAT JSON
+```
+
+```response
+{
+        "meta":
+        [
+                {
+                        "name": "path",
+                        "type": "String"
+                },
+                ...
+        ],
+
+        "data":
+        [
+                {
+                        "path": "Bob_Dolman",
+                        "month": "2016-11-01",
+                        "hits": 245
+                },
+                ...
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.000497457,
+                "rows_read": 3,
+                "bytes_read": 87
+        }
+}
+```
+
+O formato [JSONCompact](/pt-BR/reference/formats/JSON/JSONCompact) exibirá os mesmos metadados, mas usará uma forma mais compacta para os próprios dados:
+
+```sql
+SELECT * FROM sometable FORMAT JSONCompact
+```
+
+```response
+{
+        "meta":
+        [
+                {
+                        "name": "path",
+                        "type": "String"
+                },
+                ...
+        ],
+
+        "data":
+        [
+                ["Bob_Dolman", "2016-11-01", 245],
+                ["1-krona", "2017-01-01", 4],
+                ["Ahmadabad-e_Kalij-e_Sofla", "2017-01-01", 3]
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.00074981,
+                "rows_read": 3,
+                "bytes_read": 87
+        }
+}
+```
+
+Considere as variantes [`JSONStrings`](/pt-BR/reference/formats/JSON/JSONStrings) ou [`JSONCompactStrings`](/pt-BR/reference/formats/JSON/JSONCompactStrings) para codificar todos os valores como strings.
+
+<div id="compact-way-to-export-json-data-and-structure">
+  ## Forma compacta de exportar dados e estrutura em JSON
+</div>
+
+Uma forma mais eficiente de exportar os dados, bem como sua estrutura, é usar o formato [`JSONCompactEachRowWithNamesAndTypes`](/pt-BR/reference/formats/JSON/JSONCompactEachRowWithNamesAndTypes):
+
+```sql
+SELECT * FROM sometable FORMAT JSONCompactEachRowWithNamesAndTypes
+```
+
+```response
+["path", "month", "hits"]
+["String", "Date", "UInt32"]
+["Bob_Dolman", "2016-11-01", 245]
+["1-krona", "2017-01-01", 4]
+["Ahmadabad-e_Kalij-e_Sofla", "2017-01-01", 3]
+```
+
+Isso usará um formato JSON compacto, precedido por duas linhas de cabeçalho com os nomes e tipos das colunas. Esse formato pode então ser usado para fazer a ingestão de dados em outra instância do ClickHouse (ou em outros apps).
+
+<div id="exporting-json-to-a-file">
+  ## Exportando JSON para um arquivo
+</div>
+
+Para salvar os dados JSON exportados em um arquivo, podemos usar a cláusula [INTO OUTFILE](/pt-BR/reference/statements/select/into-outfile):
+
+```sql
+SELECT * FROM sometable INTO OUTFILE 'out.json' FORMAT JSONEachRow
+```
+
+```response
+36838935 rows in set. Elapsed: 2.220 sec. Processed 36.84 million rows, 1.27 GB (16.60 million rows/s., 572.47 MB/s.)
+```
+
+O ClickHouse levou apenas 2 segundos para exportar quase 37 milhões de registros em um arquivo JSON. Também podemos exportar usando uma cláusula `COMPRESSION` para ativar a compressão durante a exportação:
+
+```sql
+SELECT * FROM sometable INTO OUTFILE 'out.json.gz' FORMAT JSONEachRow
+```
+
+```response
+36838935 rows in set. Elapsed: 22.680 sec. Processed 36.84 million rows, 1.27 GB (1.62 million rows/s., 56.02 MB/s.)
+```
+
+Demora mais para ser concluído, mas gera um arquivo compactado bem menor:
+
+```bash
+2.2G    out.json
+576M    out.json.gz
+```

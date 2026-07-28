@@ -8,6 +8,7 @@ strip = true
 inherits = "release"
 lto = true
 
+@RUST_DEV_PROFILE@
 [source.vendored-sources]
 directory = "@RUST_VENDOR_DIR@"
 
@@ -32,7 +33,7 @@ replace-with = "vendored-sources"
 git = "https://github.com/azat-rust/cursive_table_view"
 branch = "next"
 replace-with = "vendored-sources"
-[source."git+https://github.com/azat-rust/flamelens?branch=diff-mode"]
+[source."git+https://github.com/azat-rust/flamelens?branch=reverse-stack"]
 git = "https://github.com/azat-rust/flamelens"
-branch = "diff-mode"
+branch = "reverse-stack"
 replace-with = "vendored-sources"

@@ -1,0 +1,80 @@
+---
+description: 'SETステートメントのドキュメント'
+sidebarTitle: 'SET'
+slug: /sql-reference/statements/set
+title: 'SETステートメント'
+doc_type: 'reference'
+---
+
+```sql
+SET param = value
+```
+
+現在のセッションに対して、[設定](/ja/concepts/features/configuration/settings/overview) `param` に `value` を割り当てます。この方法では、[サーバー設定](/ja/reference/settings/server-settings/settings) は変更できません。
+
+また、指定した設定プロファイルに含まれるすべての値を、1 つのクエリでまとめて設定することもできます。
+
+```sql
+SET profile = 'profile-name-from-the-settings-file'
+```
+
+true に設定するブール型の設定では、値の指定を省略した短縮構文を使用できます。設定名だけを指定した場合は、自動的に `1` (true) に設定されます。
+
+```sql
+-- これらは同等です:
+SET force_index_by_date = 1
+SET force_index_by_date
+```
+
+<div id="set-time-zone">
+  ## SET TIME ZONE
+</div>
+
+```sql
+SET TIME ZONE [=] 'timezone'
+```
+
+セッションのタイムゾーンを設定します。これは `SET session_timezone = 'timezone'` のエイリアスで、PostgreSQL やその他の SQL データベースとの互換性のために提供されています。
+
+多くの SQL クライアント、ORM、JDBCドライバーは、接続時に自動的に `SET TIME ZONE` を実行します。この構文により、そのようなツールを ClickHouse でもカスタムの回避策なしで利用できます。
+
+```sql
+SET TIME ZONE 'UTC';
+SET TIME ZONE 'Europe/Amsterdam';
+SET TIME ZONE 'America/New_York';
+
+-- 現在のセッションのタイムゾーンを確認する
+SELECT getSetting('session_timezone');
+```
+
+timezone の値には、[IANA Time Zone Database](https://www.iana.org/time-zones) にある有効な名前を指定する必要があります。無効な timezone 名を指定すると、エラーになります。
+
+`session_timezone` 設定の詳細については、[session&#95;timezone](/ja/reference/settings/session-settings#session_timezone) を参照してください。
+
+<div id="setting-query-parameters">
+  ## クエリパラメータの設定
+</div>
+
+`SET` ステートメントは、パラメータ名の先頭に `param_` を付けることで、クエリパラメータを定義する際にも使用できます。
+クエリパラメータを使うと、実行時に実際の値に置き換えられるプレースホルダーを含む汎用的なクエリを記述できます。
+
+```sql
+SET param_name = value
+```
+
+クエリ内でクエリパラメータを使用するには、`{name: datatype}` という構文で参照します。
+
+```sql
+SET param_id = 42;
+SET param_name = 'John';
+
+SELECT * FROM users
+WHERE id = {id: UInt32}
+AND name = {name: String};
+```
+
+クエリパラメータは、同じクエリを異なる値で複数回実行する必要がある場合に特に便利です。
+
+`Identifier` 型での使用を含むクエリパラメータの詳細については、[クエリパラメータの定義と使用](/ja/reference/syntax#defining-and-using-query-parameters)を参照してください。
+
+詳しくは、[Settings](/ja/reference/settings/session-settings)を参照してください。

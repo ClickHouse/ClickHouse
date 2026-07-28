@@ -1,0 +1,109 @@
+---
+position: 5
+slug: /clickhouse-operator/guides/scaling
+title: Mise à l’échelle des clusters
+keywords: ['kubernetes', 'mise à l’échelle', 'répliques', 'shards', 'keeper', 'quorum']
+description: 'Comment mettre à l’échelle les répliques et les shards ClickHouse ainsi que les membres du quorum Keeper, et ce que l’opérateur fait automatiquement.'
+doc_type: 'guide'
+---
+
+Pour mettre un cluster à l’échelle, modifiez le nombre de répliques et de shards dans la ressource personnalisée. L’opérateur fait converger le cluster en cours d’exécution vers la nouvelle topologie : il crée ou supprime les StatefulSets associés à chaque réplique, maintient le schéma synchronisé et indique l’avancement via les conditions d’état.
+
+Ce guide explique comment mettre à l’échelle les répliques et les shards d’un `ClickHouseCluster`, comment redimensionner en toute sécurité le quorum d’un `KeeperCluster`, et quelles conditions surveiller pendant une opération de mise à l’échelle.
+
+<Note>
+  Un `ClickHouseCluster` a toujours besoin d’un Keeper, référencé via le champ requis `spec.keeperClusterRef` — l’opérateur coordonne le cluster par son intermédiaire, quelle que soit sa taille. Pour exécuter plus d’une réplique par shard, les données doivent également résider dans des tables `ReplicatedMergeTree`, car seule la réplication permet à une deuxième réplique de servir les mêmes lignes.
+</Note>
+
+<div id="scaling-replicas">
+  ## Mise à l’échelle des répliques
+</div>
+
+`spec.replicas` définit le nombre de répliques dans chaque shard. Chaque réplique s’exécute dans son propre StatefulSet nommé `<cluster>-clickhouse-<shard>-<replica>`, de sorte qu’un cluster avec `shards: 2` et `replicas: 3` exécute six StatefulSets.
+
+Augmentez ou réduisez ce nombre directement :
+
+```yaml
+spec:
+  replicas: 3   # was 1
+  keeperClusterRef:
+    name: my-keeper
+```
+
+Lors d’une montée en charge, l’opérateur crée les nouveaux StatefulSets par réplique, attend que chaque pod soit prêt, puis synchronise le schéma sur les nouvelles répliques (voir [Synchronisation automatique du schéma](#automatic-schema-sync)). Lors d’une réduction d’échelle, il supprime les StatefulSets en trop et nettoie les enregistrements obsolètes des répliques de bases de données répliquées laissés par les répliques supprimées.
+
+<div id="scaling-shards">
+  ## Mise à l’échelle des shards
+</div>
+
+`spec.shards` définit le nombre de shards. Chaque nouveau shard ajoute un ensemble complet de StatefulSets par réplique, et l’opérateur crée un [PodDisruptionBudget par shard](/fr/products/kubernetes-operator/guides/configuration#pod-disruption-budgets) afin qu’une perturbation sur un shard ne soit pas comptabilisée sur un autre.
+
+```yaml
+spec:
+  shards: 3   # was 1
+  replicas: 2
+```
+
+Chaque shard contient une portion distincte des données, et l’opérateur ne copie ni ne déplace de lignes d’un shard à l’autre. Une table `Distributed` ou un schéma de routage explicite détermine sur quel shard une ligne est écrite ; ainsi, l’ajout d’un shard fournit une nouvelle destination pour les écritures à venir sans modifier les lignes déjà stockées sur les shards existants.
+
+<div id="automatic-schema-sync">
+  ## Synchronisation automatique du schéma
+</div>
+
+Lorsque `spec.settings.enableDatabaseSync` vaut `true` (par défaut), l’opérateur maintient le schéma synchronisé à mesure que la topologie évolue :
+
+* **En cas d’augmentation du nombre de répliques** — dès qu’au moins deux répliques sont prêtes, l’opérateur réplique les définitions de bases de données vers les répliques nouvellement créées, afin qu’une nouvelle réplique rejoigne le cluster avec les mêmes bases de données `Replicated` et d’intégration que le reste du cluster.
+* **En cas de réduction du nombre de répliques** — avant qu’une réplique ne disparaisse, l’opérateur supprime l’enregistrement de cette réplique de chaque base de données `Replicated` avec `SYSTEM DROP DATABASE REPLICA`, afin que le cluster réduit n’attende pas une réplique de base de données `Replicated` qui n’existe plus.
+
+Cela couvre les bases de données `Replicated` et les moteurs de base de données d’intégration. Cela ne déplace pas les données des tables — les données des lignes résident dans des tables `ReplicatedMergeTree` et sont répliquées via Keeper indépendamment de cette synchronisation du schéma. Avec une seule réplique prête, il n’y a rien à répliquer ; l’opérateur ignore donc cette étape et consigne l’absence de cible.
+
+Définissez `enableDatabaseSync: false` pour désactiver ce comportement, par exemple lorsqu’un outil externe gère la propagation du schéma. L’opérateur signale alors la raison `SchemaSyncDisabled` sur la condition `SchemaInSync`.
+
+<div id="scaling-conditions">
+  ## Conditions à surveiller
+</div>
+
+Suivez la progression de la ressource personnalisée pendant l’exécution d’une opération de mise à l’échelle :
+
+```bash
+kubectl get clickhousecluster sample -o yaml | sed -n '/conditions:/,/^[^ ]/p'
+```
+
+| Condition            | Raison                 | Signification                                                                                         |
+| -------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------- |
+| `ClusterSizeAligned` | `UpToDate`             | Le nombre de répliques en cours d’exécution correspond à la topologie demandée                        |
+| `ClusterSizeAligned` | `ScalingUp`            | L’opérateur ajoute des répliques                                                                      |
+| `ClusterSizeAligned` | `ScalingDown`          | L’opérateur supprime des répliques                                                                    |
+| `SchemaInSync`       | `ReplicasInSync`       | Les bases de données existent sur toutes les répliques et les métadonnées obsolètes ont été nettoyées |
+| `SchemaInSync`       | `DatabasesNotCreated`  | L’opérateur n’a pas encore terminé de créer les bases de données sur les nouvelles répliques          |
+| `SchemaInSync`       | `ReplicasNotCleanedUp` | Les métadonnées d’une réplique obsolète après une réduction ne sont pas encore supprimées             |
+| `SchemaInSync`       | `SchemaSyncDisabled`   | `enableDatabaseSync` est `false`                                                                      |
+| `Ready`              | `AllShardsReady`       | Chaque shard a une réplique prête                                                                     |
+| `Ready`              | `SomeShardsNotReady`   | Au moins un shard n’a aucune réplique prête                                                           |
+
+Une opération de mise à l’échelle est terminée lorsque `ClusterSizeAligned` indique `UpToDate`, `SchemaInSync` indique `ReplicasInSync` et `Ready` indique `AllShardsReady`.
+
+<div id="scaling-keeper">
+  ## Mise à l’échelle de Keeper
+</div>
+
+Un `KeeperCluster` exécute un quorum RAFT. L’opérateur en modifie donc les membres **une réplique à la fois**, et uniquement lorsque le cluster est stable. Cela protège le quorum : un cluster `2F+1` tolère `F` membres indisponibles. Ainsi, un cluster à 3 nœuds continue de fonctionner avec un membre indisponible, et un cluster à 5 nœuds avec deux.
+
+```yaml
+spec:
+  replicas: 5   # was 3
+```
+
+Lors d&#39;une montée en charge, l&#39;opérateur ajoute au quorum l&#39;ID de réplique disponible le plus faible ; lors d&#39;une réduction, il supprime l&#39;ID le plus élevé. Chaque étape attend que le quorum se stabilise avant de lancer la suivante. Le [Keeper PodDisruptionBudget](/fr/products/kubernetes-operator/guides/configuration#pod-disruption-budgets) utilise par défaut `maxUnavailable: replicas/2` afin de préserver le quorum lors d&#39;interruptions volontaires.
+
+La condition `ScaleAllowed` indique si la composition du quorum peut être modifiée à cet instant :
+
+| Raison                     | Signification                                                                             |
+| -------------------------- | ----------------------------------------------------------------------------------------- |
+| `ReadyToScale`             | Le quorum est stable et l&#39;opérateur peut ajouter ou supprimer un membre               |
+| `ReplicaHasPendingChanges` | Une réplique a encore une modification de configuration en attente                        |
+| `ReplicaNotReady`          | Une réplique n&#39;est pas prête ; les changements de membres sont donc en attente        |
+| `NoQuorum`                 | Le cluster n&#39;a pas de quorum et ne peut pas modifier sa composition en toute sécurité |
+| `WaitingFollowers`         | L&#39;opérateur attend que les followers rattrapent leur retard                           |
+
+Faites évoluer Keeper par étapes d&#39;une unité et laissez `ScaleAllowed` revenir à `ReadyToScale` entre chaque changement. Passer directement à plusieurs membres d&#39;un coup ne contourne pas la réconciliation un par un : l&#39;opérateur continue malgré tout à faire évoluer le quorum d&#39;un membre par étape.

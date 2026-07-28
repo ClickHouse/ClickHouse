@@ -4241,7 +4241,13 @@ class ClickHouseCluster:
             bufsize=0,
         )
 
-    def shutdown(self, kill=True, ignore_fatal=False, ignore_logical_errors=False):
+    def shutdown(
+        self,
+        kill=True,
+        ignore_fatal=False,
+        ignore_logical_errors=False,
+        ignore_sanitizer=False,
+    ):
         sanitizer_assert_instance = None
         failure_logs = []
 
@@ -4267,7 +4273,7 @@ class ClickHouseCluster:
                     exit_code = res["StatusCode"]
                     logging.info(f"The server {name} exited with code: {exit_code}")
 
-                if instance.contains_in_log(
+                if not ignore_sanitizer and instance.contains_in_log(
                     SANITIZER_SIGN, from_host=True, filename="stderr.log"
                 ):
                     sanitizer_assert_instance = instance.grep_in_log(
@@ -4314,6 +4320,28 @@ class ClickHouseCluster:
                     for line in f:
                         if SANITIZER_SIGN in line:
                             sanitizer_assert_instance = line.split("|")[0].strip()
+                            break
+
+            if not sanitizer_assert_instance and not ignore_sanitizer and self.use_keeper:
+                # Keeper (zooN) containers are not in self.instances, so the per-instance
+                # scan above never covers them. Sanitizers write to raw stderr, which the
+                # keeper entrypoint redirects (via --logger.stderr) to a host-mounted
+                # stderr.log; scan it so a Keeper sanitizer report is detected reliably
+                # and ends up in the collected logs.
+                for i in range(1, 4):
+                    keeper_stderr = os.path.join(
+                        self.keeper_instance_dir_prefix + f"{i}", "log", "stderr.log"
+                    )
+                    if not os.path.exists(keeper_stderr):
+                        continue
+                    with open(keeper_stderr, "r", errors="replace") as f:
+                        if any(SANITIZER_SIGN in line for line in f):
+                            sanitizer_assert_instance = f"zoo{i}"
+                            logging.error(
+                                "Sanitizer in Keeper instance zoo%s log %s",
+                                i,
+                                keeper_stderr,
+                            )
                             break
         else:
             logging.warning(
@@ -5408,7 +5436,13 @@ class ClickHouseInstance:
             logging.warning(f"Stop ClickHouse raised an error {e}")
 
     def start_clickhouse(
-        self, start_wait_sec=60, retry_start=True, expected_to_fail=False
+        self,
+        start_wait_sec=60,
+        retry_start=True,
+        expected_to_fail=False,
+        environment=None,
+        wait_start=True,
+        daemon=False
     ):
         if not self.stay_alive:
             raise Exception(
@@ -5425,12 +5459,23 @@ class ClickHouseInstance:
             if pid is None:
                 logging.debug("No clickhouse process running. Start new one.")
                 exec_id = self.exec_in_container(
-                    ["bash", "-c", self.clickhouse_start_command],
+                    [
+                        "bash",
+                        "-c",
+                        (
+                            self.clickhouse_start_command_in_daemon
+                            if daemon
+                            else self.clickhouse_start_command
+                        ),
+                    ],
                     user=str(os.getuid()),
                     detach=True,
                     use_cli=False,
                     get_exec_id=True,
+                    environment=environment,
                 )
+                if not wait_start:
+                    return exec_id
                 if expected_to_fail:
                     self.wait_start_failed(start_wait_sec + start_time - time.time())
                     return
@@ -5522,9 +5567,9 @@ class ClickHouseInstance:
             "ClickHouse server is still running, but was expected to shutdown. Check logs."
         )
 
-    def restart_clickhouse(self, stop_start_wait_sec=60, kill=False):
+    def restart_clickhouse(self, stop_start_wait_sec=60, kill=False, daemon=False):
         self.stop_clickhouse(stop_start_wait_sec, kill)
-        self.start_clickhouse(stop_start_wait_sec)
+        self.start_clickhouse(stop_start_wait_sec, daemon=daemon)
 
     def exec_in_container(
         self,

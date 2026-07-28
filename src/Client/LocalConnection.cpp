@@ -1,3 +1,4 @@
+#include <Core/ProtocolDefines.h>
 #include <Client/LocalConnection.h>
 #include <memory>
 #include <Client/ClientBase.h>
@@ -818,6 +819,11 @@ const String & LocalConnection::getServerDisplayName(const ConnectionTimeouts &)
 }
 
 void LocalConnection::sendExternalTablesData(ExternalTablesData &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+}
+
+void LocalConnection::sendScalarsData(Scalars &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }

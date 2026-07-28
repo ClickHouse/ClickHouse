@@ -1,0 +1,398 @@
+---
+description: 'Documentação da coluna'
+sidebarTitle: 'COLUMN'
+slug: /sql-reference/statements/alter/column
+title: 'Manipulação de coluna'
+doc_type: 'reference'
+---
+
+Um conjunto de consultas que permite alterar a estrutura da tabela.
+
+Sintaxe:
+
+```sql
+ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
+```
+
+Na consulta, especifique uma lista de uma ou mais ações separadas por vírgulas.
+Cada ação é uma operação sobre uma coluna.
+
+As seguintes ações são suportadas:
+
+* [ADD COLUMN](#add-column) — Adiciona uma nova coluna à tabela.
+* [DROP COLUMN](#drop-column) — Exclui a coluna.
+* [RENAME COLUMN](#rename-column) — Renomeia uma coluna existente.
+* [CLEAR COLUMN](#clear-column) — Redefine os valores da coluna.
+* [COMMENT COLUMN](#comment-column) — Adiciona um comentário de texto à coluna.
+* [MODIFY COLUMN](#modify-column) — Altera o tipo da coluna, a expressão padrão, o TTL e as configurações da coluna.
+* [MODIFY COLUMN REMOVE](#modify-column-remove) — Remove uma das propriedades da coluna.
+* [MODIFY COLUMN MODIFY SETTING](#modify-column-modify-setting) - Altera as configurações da coluna.
+* [MODIFY COLUMN RESET SETTING](#modify-column-reset-setting) - Redefine as configurações da coluna.
+* [MODIFY COLUMN ADD ENUM VALUES](#modify-column-add-enum-values) - Adiciona novos valores ao Enum.
+* [MATERIALIZE COLUMN](#materialize-column) — Materializa a coluna nas partes em que ela está ausente.
+  Essas ações são descritas em detalhes abaixo.
+
+<div id="add-column">
+  ## ADD COLUMN
+</div>
+
+```sql
+ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
+```
+
+Adiciona uma nova coluna à tabela com `name`, `type`, [`codec`](/pt-BR/reference/statements/create/table#column_compression_codec) e `default_expr` especificados (consulte a seção [Expressões padrão](/pt-BR/reference/statements/create/table#default_values)).
+
+Se a cláusula `IF NOT EXISTS` estiver incluída, a consulta não retornará erro se a coluna já existir. Se você especificar `AFTER name_after` (o nome de outra coluna), a coluna será adicionada depois da coluna especificada na lista de colunas da tabela. Se quiser adicionar uma coluna no início da tabela, use a cláusula `FIRST`. Caso contrário, a coluna será adicionada ao final da tabela. Em uma cadeia de ações, `name_after` pode ser o nome de uma coluna adicionada em uma das ações anteriores.
+
+Adicionar uma coluna apenas altera a estrutura da tabela, sem executar nenhuma ação sobre os dados. Os dados não são gravados em disco após `ALTER`. Se não houver dados para uma coluna ao ler da tabela, ela será preenchida com valores padrão (executando a expressão padrão, se houver, ou usando zeros ou strings vazias). A coluna passa a aparecer no disco após a mesclagem das partes de dados (consulte [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree)).
+
+Essa abordagem permite concluir a consulta `ALTER` instantaneamente, sem aumentar o volume dos dados antigos.
+
+Exemplo:
+
+```sql
+ALTER TABLE alter_test ADD COLUMN Added1 UInt32 FIRST;
+ALTER TABLE alter_test ADD COLUMN Added2 UInt32 AFTER NestedColumn;
+ALTER TABLE alter_test ADD COLUMN Added3 UInt32 AFTER ToDrop;
+DESC alter_test FORMAT TSV;
+```
+
+```text
+Added1  UInt32
+CounterID       UInt32
+StartDate       Date
+UserID  UInt32
+VisitID UInt32
+NestedColumn.A  Array(UInt8)
+NestedColumn.S  Array(String)
+Added2  UInt32
+ToDrop  UInt32
+Added3  UInt32
+```
+
+<div id="drop-column">
+  ## DROP COLUMN
+</div>
+
+```sql
+DROP COLUMN [IF EXISTS] name
+```
+
+Exclui a coluna com o nome `name`. Se a cláusula `IF EXISTS` for especificada, a consulta não retornará erro se a coluna não existir.
+
+Exclui dados do sistema de arquivos. Como isso remove arquivos inteiros, a consulta é concluída quase instantaneamente.
+
+<Tip>
+  Você não pode excluir uma coluna se ela for referenciada por uma [visão materializada](/pt-BR/reference/statements/create/view). Caso contrário, será retornado um erro.
+</Tip>
+
+Exemplo:
+
+```sql
+ALTER TABLE visits DROP COLUMN browser
+```
+
+<div id="rename-column">
+  ## RENAME COLUMN
+</div>
+
+```sql
+RENAME COLUMN [IF EXISTS] name to new_name
+```
+
+Renomeia a coluna `name` para `new_name`. Se a cláusula `IF EXISTS` for especificada, a consulta não retornará erro se a coluna não existir. Como a renomeação não envolve os dados subjacentes, a consulta é concluída quase instantaneamente.
+
+**NOTA**: As colunas especificadas na expressão de chave da tabela (seja com `ORDER BY` ou `PRIMARY KEY`) não podem ser renomeadas. Tentar alterar essas colunas resultará em `SQL Error [524]`.
+
+Exemplo:
+
+```sql
+ALTER TABLE visits RENAME COLUMN webBrowser TO browser
+```
+
+<div id="clear-column">
+  ## CLEAR COLUMN
+</div>
+
+```sql
+CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
+```
+
+Redefine todos os dados de uma coluna na partição especificada. Leia mais sobre como definir o nome da partição na seção [Como definir a expressão da partição](/pt-BR/reference/statements/alter/partition#how-to-set-partition-expression).
+
+Se a cláusula `IF EXISTS` for especificada, a consulta não retornará erro se a coluna não existir.
+
+Exemplo:
+
+```sql
+ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
+```
+
+<div id="comment-column">
+  ## COMMENT COLUMN
+</div>
+
+```sql
+COMMENT COLUMN [IF EXISTS] name 'Text comment'
+```
+
+Adiciona um comentário à coluna. Se a cláusula `IF EXISTS` for especificada, a consulta não retornará erro se a coluna não existir.
+
+Cada coluna pode ter um comentário. Se já houver um comentário para a coluna, um novo comentário substituirá o anterior.
+
+Os comentários são armazenados na coluna `comment_expression` retornada pela consulta [DESCRIBE TABLE](/pt-BR/reference/statements/describe-table).
+
+Exemplo:
+
+```sql
+ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used for accessing the site.'
+```
+
+<div id="modify-column">
+  ## MODIFY COLUMN
+</div>
+
+```sql
+MODIFY COLUMN [IF EXISTS] name
+    [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+    | ADD ENUM VALUES ( 'name' [= number] [, ...] )
+ALTER COLUMN [IF EXISTS] name
+    TYPE [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+    | ADD ENUM VALUES ( 'name' [= number] [, ...] )
+```
+
+Esta consulta altera as propriedades da coluna `name`:
+
+* Tipo
+
+* Expressão padrão
+
+* Codec de compressão
+
+* TTL
+
+* Configurações no nível da coluna
+
+* Valores de enum para os tipos Enum/Enum8/Enum16
+
+Para ver exemplos de modificação de CODECS de compressão de colunas, consulte [Column Compression Codecs](/pt-BR/reference/statements/create/table#column_compression_codec).
+
+Para ver exemplos de modificação de TTL de colunas, consulte [Column TTL](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#mergetree-column-ttl).
+
+Para ver exemplos de modificação de configurações no nível da coluna, consulte [Column-level Settings](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#column-level-settings).
+
+Se a cláusula `IF EXISTS` for especificada, a consulta não retornará erro se a coluna não existir.
+
+Ao alterar o tipo, os valores são convertidos como se as funções [toType](/pt-BR/reference/functions/regular-functions/type-conversion-functions) tivessem sido aplicadas a eles. Se apenas a expressão padrão for alterada, a consulta não faz nada complexo e é concluída quase instantaneamente.
+
+Exemplo:
+
+```sql
+ALTER TABLE visits MODIFY COLUMN browser Array(String)
+```
+
+Alterar o tipo da coluna é a única ação complexa — isso modifica o conteúdo dos arquivos de dados. Em tabelas grandes, isso pode levar bastante tempo.
+
+A consulta também pode alterar a ordem das colunas usando a cláusula `FIRST | AFTER`; veja a descrição de [ADD COLUMN](#add-column), mas, nesse caso, o tipo da coluna é obrigatório.
+
+Exemplo:
+
+```sql
+CREATE TABLE users (
+    c1 Int16,
+    c2 String
+) ENGINE = MergeTree
+ORDER BY c1;
+
+DESCRIBE users;
+┌─name─┬─type───┬
+│ c1   │ Int16  │
+│ c2   │ String │
+└──────┴────────┴
+
+ALTER TABLE users MODIFY COLUMN c2 String FIRST;
+
+DESCRIBE users;
+┌─name─┬─type───┬
+│ c2   │ String │
+│ c1   │ Int16  │
+└──────┴────────┴
+
+ALTER TABLE users ALTER COLUMN c2 TYPE String AFTER c1;
+
+DESCRIBE users;
+┌─name─┬─type───┬
+│ c1   │ Int16  │
+│ c2   │ String │
+└──────┴────────┴
+```
+
+A consulta `ALTER` é atômica. Para tabelas MergeTree, ela também não requer bloqueios.
+
+A consulta `ALTER` para alterar colunas é replicada. As instruções são salvas no ZooKeeper e, em seguida, cada réplica as aplica. Todas as consultas `ALTER` são executadas na mesma ordem. A consulta aguarda a conclusão das ações apropriadas nas outras réplicas. No entanto, uma consulta para alterar colunas em uma tabela replicada pode ser interrompida, e todas as ações serão executadas de forma assíncrona.
+
+<Note>
+  Tenha cuidado ao alterar uma coluna Nullable para Non-Nullable. Certifique-se de que ela não contenha nenhum valor NULL; caso contrário, isso causará problemas na leitura. Nesse caso, a solução alternativa seria interromper a mutação e reverter a coluna para o tipo Nullable.
+</Note>
+
+<div id="modify-column-remove">
+  ## MODIFY COLUMN REMOVE
+</div>
+
+Remove uma das propriedades da coluna: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`, `SETTINGS`.
+
+Sintaxe:
+
+```sql
+ALTER TABLE table_name MODIFY COLUMN column_name REMOVE property;
+```
+
+**Exemplo**
+
+Remova o TTL:
+
+```sql
+ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
+```
+
+**Veja também**
+
+* [REMOVE TTL](/pt-BR/reference/statements/alter/ttl).
+
+<div id="modify-column-modify-setting">
+  ## MODIFY COLUMN MODIFY SETTING
+</div>
+
+Modifica uma configuração de coluna.
+
+Sintaxe:
+
+```sql
+ALTER TABLE table_name MODIFY COLUMN column_name MODIFY SETTING name=value,...;
+```
+
+**Exemplo**
+
+Altere `max_compress_block_size` da coluna para `1MB`:
+
+```sql
+ALTER TABLE table_name MODIFY COLUMN column_name MODIFY SETTING max_compress_block_size = 1048576;
+```
+
+<div id="modify-column-reset-setting">
+  ## MODIFY COLUMN RESET SETTING
+</div>
+
+Redefine uma configuração de coluna; isso também remove a declaração da configuração na expressão da coluna da consulta CREATE da tabela.
+
+Sintaxe:
+
+```sql
+ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING name,...;
+```
+
+**Exemplo**
+
+Restaure a configuração da coluna `max_compress_block_size` para o valor padrão:
+
+```sql
+ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING max_compress_block_size;
+```
+
+<div id="modify-column-add-enum-values">
+  ## MODIFY COLUMN ADD ENUM VALUES
+</div>
+
+Adiciona novos valores a uma coluna do tipo `Enum`, `Enum8`, `Enum16`, `Nullable(Enum)`, `Nullable(Enum8)` ou `Nullable(Enum16)`
+
+Sintaxe:
+
+```sql
+ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('EnumName' [= number], ...);
+```
+
+**Exemplo**
+
+Adicione dois valores à coluna `enum_column_name`:
+
+```sql
+ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('Hundred' = 100, 'HundredOne');
+```
+
+<div id="materialize-column">
+  ## MATERIALIZE COLUMN
+</div>
+
+Materializa uma coluna com uma expressão de valor `DEFAULT` ou `MATERIALIZED`. Ao adicionar uma coluna materializada usando `ALTER TABLE table_name ADD COLUMN column_name MATERIALIZED`, as linhas existentes sem valores materializados não são preenchidas automaticamente. A instrução `MATERIALIZE COLUMN` pode ser usada para reescrever os dados existentes da coluna após a adição ou atualização de uma expressão `DEFAULT` ou `MATERIALIZED` (o que atualiza apenas os metadados, mas não altera os dados existentes). Observe que materializar uma coluna na chave de ordenação é uma operação inválida, pois isso pode quebrar a ordenação.
+Implementado como uma [mutação](/pt-BR/reference/statements/alter/index#mutations).
+
+Para colunas com uma expressão de valor `MATERIALIZED` nova ou atualizada, todas as linhas existentes são reescritas.
+
+Para colunas com uma expressão de valor `DEFAULT` nova ou atualizada, o comportamento depende da versão do ClickHouse:
+
+* No ClickHouse &lt; v24.2, todas as linhas existentes são reescritas.
+* O ClickHouse &gt;= v24.2 distingue se o valor de uma linha em uma coluna com expressão de valor `DEFAULT` foi especificado explicitamente no momento da inserção ou não, ou seja, se foi calculado a partir da expressão de valor `DEFAULT`. Se o valor foi especificado explicitamente, o ClickHouse o mantém como está. Se o valor foi calculado, o ClickHouse o altera para a expressão de valor `MATERIALIZED` nova ou atualizada.
+
+Sintaxe:
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] MATERIALIZE COLUMN col [IN PARTITION partition | IN PARTITION ID 'partition_id'];
+```
+
+* Se você especificar uma PARTITION, uma coluna será materializada somente para a partição especificada.
+
+**Exemplo**
+
+```sql
+DROP TABLE IF EXISTS tmp;
+SET mutations_sync = 2;
+CREATE TABLE tmp (x Int64) ENGINE = MergeTree() ORDER BY tuple() PARTITION BY tuple();
+INSERT INTO tmp SELECT * FROM system.numbers LIMIT 5;
+ALTER TABLE tmp ADD COLUMN s String MATERIALIZED toString(x);
+
+ALTER TABLE tmp MATERIALIZE COLUMN s;
+
+SELECT groupArray(x), groupArray(s) FROM (select x,s from tmp order by x);
+
+┌─groupArray(x)─┬─groupArray(s)─────────┐
+│ [0,1,2,3,4]   │ ['0','1','2','3','4'] │
+└───────────────┴───────────────────────┘
+
+ALTER TABLE tmp MODIFY COLUMN s String MATERIALIZED toString(round(100/x));
+
+INSERT INTO tmp SELECT * FROM system.numbers LIMIT 5,5;
+
+SELECT groupArray(x), groupArray(s) FROM tmp;
+
+┌─groupArray(x)─────────┬─groupArray(s)──────────────────────────────────┐
+│ [0,1,2,3,4,5,6,7,8,9] │ ['0','1','2','3','4','20','17','14','12','11'] │
+└───────────────────────┴────────────────────────────────────────────────┘
+
+ALTER TABLE tmp MATERIALIZE COLUMN s;
+
+SELECT groupArray(x), groupArray(s) FROM tmp;
+
+┌─groupArray(x)─────────┬─groupArray(s)─────────────────────────────────────────┐
+│ [0,1,2,3,4,5,6,7,8,9] │ ['inf','100','50','33','25','20','17','14','12','11'] │
+└───────────────────────┴───────────────────────────────────────────────────────┘
+```
+
+**Veja também**
+
+* [MATERIALIZED](/pt-BR/reference/statements/create/view#materialized-view).
+
+<div id="limitations">
+  ## Limitações
+</div>
+
+A consulta `ALTER` permite criar e excluir elementos individuais (colunas) em estruturas de dados aninhadas, mas não estruturas de dados aninhadas inteiras. Para adicionar uma estrutura de dados aninhada, você pode adicionar colunas com um nome como `name.nested_name` e o tipo `Array(T)`. Uma estrutura de dados aninhada equivale a várias colunas de array com nomes que têm o mesmo prefixo antes do ponto.
+
+A renomeação de colunas com pontos no nome tem suporte parcial. Os pontos são reservados para acesso a subcolunas de [Nested](/pt-BR/reference/data-types/nested-data-structures/index), portanto o prefixo (nome pai) deve permanecer o mesmo. Apenas o sufixo (nome da subcoluna) pode ser alterado. Por exemplo, `a.b` pode ser renomeado para `a.c`, mas renomear `a.b` para `b.d` não é permitido porque isso altera o prefixo pai de Nested.
+
+Não há suporte para excluir colunas da chave primária ou da chave de amostragem (colunas usadas na expressão `ENGINE`). Alterar o tipo de colunas incluídas na chave primária só é possível se essa mudança não fizer com que os dados sejam modificados (por exemplo, é permitido adicionar valores a um Enum ou alterar um tipo de `DateTime` para `UInt32`).
+
+Se a consulta `ALTER` não for suficiente para fazer as alterações na tabela de que você precisa, você pode criar uma nova tabela, copiar os dados para ela usando a consulta [INSERT SELECT](/pt-BR/reference/statements/insert-into#inserting-the-results-of-select), depois trocar as tabelas usando a consulta [RENAME](/pt-BR/reference/statements/rename#rename-table) e excluir a tabela antiga.
+
+A consulta `ALTER` bloqueia todas as leituras e escritas da tabela. Em outras palavras, se um `SELECT` demorado estiver em execução no momento da consulta `ALTER`, a consulta `ALTER` aguardará sua conclusão. Ao mesmo tempo, todas as novas consultas para a mesma tabela ficarão aguardando enquanto esse `ALTER` estiver em execução.
+
+Para tabelas que não armazenam dados por si mesmas (como [Merge](/pt-BR/reference/statements/alter/index) e [Distributed](/pt-BR/reference/statements/alter/index)), `ALTER` apenas altera a estrutura da tabela e não altera a estrutura das tabelas subordinadas. Por exemplo, ao executar `ALTER` em uma tabela `Distributed`, você também precisará executar `ALTER` nas tabelas em todos os servidores remotos.

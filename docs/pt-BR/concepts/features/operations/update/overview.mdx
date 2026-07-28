@@ -1,0 +1,374 @@
+---
+slug: /updating-data/overview
+title: 'Atualizações no ClickHouse'
+description: 'Guia sobre quais métodos de atualização estão disponíveis e como escolher o método correto para sua carga de trabalho.'
+keywords: ['update', 'atualização de dados', 'mutações', 'atualizações leves']
+doc_type: 'guide'
+sidebarTitle: 'Trabalhando com atualizações'
+---
+
+Quando se trata de lidar com atualizações, bancos de dados analíticos e transacionais adotam abordagens diferentes, devido às filosofias de design subjacentes e aos casos de uso para os quais foram criados.
+O ClickHouse é um [banco de dados orientado a colunas](/pt-BR/get-started/about/intro#row-oriented-vs-column-oriented-storage), otimizado para análises com predominância de leitura e operações append-only de alta taxa de transferência.
+Na prática, as tabelas costumam ser reestruturadas para converter exclusões e atualizações em operações de append processadas de forma assíncrona e/ou no momento da leitura, aproveitando os pontos fortes do ClickHouse para ingestão de dados em alta taxa de transferência.
+O ClickHouse também oferece suporte a operações robustas de atualização e exclusão.
+
+Este guia apresenta uma visão geral dos métodos de atualização disponíveis no ClickHouse e ajuda você a escolher a estratégia de atualização certa para sua carga de trabalho.
+
+<div id="choosing-an-update-strategy">
+  ## Escolhendo uma estratégia de atualização
+</div>
+
+Há duas abordagens fundamentais para atualizar dados no ClickHouse:
+
+1. Usar **motores de tabela especializados** que tratam as atualizações por meio de inserções
+2. Usar **atualizações declarativas**, como as instruções [`UPDATE ... SET`](/pt-BR/reference/statements/update) ou [`ALTER TABLE ... UPDATE`](/pt-BR/reference/statements/alter/update)
+
+Dentro de cada uma das duas categorias acima, há várias formas de atualizar dados.
+Cada uma tem suas vantagens e características de desempenho, e você deve selecionar o método apropriado com base no seu modelo de dados e na quantidade de dados que pretende atualizar.
+
+<div id="when-to-choose-specialised-table-engines">
+  ### Quando usar motores de tabela especializados
+</div>
+
+Motores de tabela especializados são a melhor escolha quando há grandes volumes de atualizações, alterações frequentes no nível de linha ou a necessidade de processar um fluxo contínuo de eventos de atualização e exclusão.
+
+Os motores que você encontrará com mais frequência são:
+
+| Motor                                                                                        | Sintaxe                              | Quando usar                                                                                                                                                                                                                                    |
+| -------------------------------------------------------------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [ReplacingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/replacingmergetree)   | `ENGINE = ReplacingMergeTree`        | Use ao atualizar grandes volumes de dados. Este motor de tabela é otimizado para a desduplicação de dados durante as mesclagens.                                                                                                               |
+| [CoalescingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/coalescingmergetree) | `ENGINE = CoalescingMergeTree`       | Use quando os dados chegam em fragmentos e você precisa de coalescência no nível de coluna, em vez da substituição da linha inteira.                                                                                                           |
+| [CollapsingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/collapsingmergetree) | `ENGINE = CollapsingMergeTree(Sign)` | Use ao atualizar linhas individuais com frequência ou em cenários nos quais você precisa manter o estado mais recente de objetos que mudam ao longo do tempo. Por exemplo, acompanhamento da atividade de usuários ou estatísticas de artigos. |
+
+Como os motores de tabela da família MergeTree fazem mesclagens de partes de dados em segundo plano, eles oferecem *consistência eventual*, e a palavra-chave [`FINAL`](/pt-BR/reference/statements/select/from#final-modifier) precisa ser usada para garantir a desduplicação adequada nesse período ao consultar a tabela.
+Também há outros [tipos de motores](/pt-BR/reference/engines/table-engines/mergetree-family/index), mas estes são os mais usados.
+
+<div id="when-to-use-declaritive-updates">
+  ### Quando usar atualizações declarativas
+</div>
+
+Instruções declarativas de UPDATE podem ser mais simples para operações de atualização sem a complexidade de gerenciar a lógica de desduplicação, mas, em geral, são mais adequadas para atualizar quantidades menores de linhas e com menos frequência do que abordagens com motores especializados.
+
+| Método                                                  | Sintaxe                        | Quando usar                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Atualizações leves](/pt-BR/reference/statements/update)      | `UPDATE [table] SET ... WHERE` | Use na maioria dos cenários, principalmente para executar UPDATEs pequenos e frequentes (até ~10% da tabela) como parte da sua aplicação ou dos seus fluxos de trabalho. Por exemplo, quando um usuário quer excluir seu histórico de eventos, e esses eventos estão distribuídos em uma tabela multitenant com muitos usuários. Essa abordagem cria patch parts para visibilidade imediata, sem reescrever colunas inteiras. Ela adiciona sobrecarga às consultas `SELECT`, mas tem latência previsível. |
+| [Mutação de UPDATE](/pt-BR/reference/statements/alter/update) | `ALTER TABLE [table] UPDATE`   | Use ao realizar gerenciamento de dados em maior escala, especialmente quando a atualização está alinhada ao particionamento da tabela. Por exemplo, quando você precisa atualizar uma coluna de todas as linhas de um mês em uma tabela particionada por mês.                                                                                                                                                                                                                                             |
+
+<div id="insert-based-updates">
+  ## Atualizações com motores de tabela especializados
+</div>
+
+<div id="replacingmergetree">
+  ### ReplacingMergeTree
+</div>
+
+O `ReplacingMergeTree` remove linhas duplicadas com a mesma chave de ordenação durante as mesclagens em segundo plano, mantendo apenas a versão mais recente.
+
+```sql
+CREATE TABLE posts
+(
+    Id UInt32,
+    Title String,
+    ViewCount UInt32,
+    Version UInt32
+)
+ENGINE = ReplacingMergeTree(Version)
+ORDER BY Id
+```
+
+Este motor é ideal para atualizações de alta frequência em linhas individuais, em que as atualizações são identificadas por uma chave estável.
+Benchmarks mostram que ele pode ser até 4.700x mais rápido do que mutações para atualizações de uma única linha.
+
+Para atualizar uma linha, basta inserir uma nova versão com os mesmos valores da chave de ordenação e um número de versão maior. As versões antigas são removidas durante as mesclagens em segundo plano. Como a desduplicação é eventual (ou seja, só acontece durante as mesclagens), você deve usar o modificador `FINAL` ou uma lógica de consulta equivalente para obter resultados corretos e desduplicados. O modificador `FINAL` adiciona uma sobrecarga na consulta que varia de 21% a 550%, dependendo dos dados.
+
+`ReplacingMergeTree` não pode atualizar valores da chave de ordenação. Ele também oferece suporte a uma coluna `Deleted` para exclusões lógicas.
+
+Leia mais: [guia do ReplacingMergeTree](/pt-BR/concepts/features/operations/update/replacing-merge-tree) | [referência do ReplacingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/replacingmergetree)
+
+<div id="coalescingmergetree">
+  ### CoalescingMergeTree
+</div>
+
+CoalescingMergeTree consolida registros esparsos, mantendo o valor não nulo mais recente de cada coluna durante as operações de mesclagem. Isso permite upserts no nível da coluna, em vez de substituir linhas inteiras.
+
+```sql
+CREATE TABLE electric_vehicle_state
+(
+    vin String, -- número de identificação do veículo
+    last_update DateTime64 Materialized now64(), -- opcional (usado com argMax)
+    battery_level Nullable(UInt8), -- em %
+    lat Nullable(Float64), -- latitude (°)
+    lon Nullable(Float64), -- longitude (°)
+    firmware_version Nullable(String),
+    cabin_temperature Nullable(Float32), -- em °C
+    speed_kmh Nullable(Float32) -- do sensor
+)
+ENGINE = CoalescingMergeTree
+ORDER BY vin;
+```
+
+Este motor foi projetado para cenários em que os dados chegam em fragmentos de várias fontes ou em que diferentes colunas são preenchidas em momentos distintos. Casos de uso comuns incluem telemetria de IoT de subsistemas fragmentados, enriquecimento de perfis de usuários e pipelines de ETL com dimensões que chegam com atraso.
+
+Quando linhas com a mesma chave de ordenação são mescladas, o CoalescingMergeTree mantém o valor não nulo mais recente de cada coluna, em vez de substituir a linha inteira. As colunas que não fazem parte da chave devem ser `Nullable` para que isso funcione como esperado. Assim como no ReplacingMergeTree, use `FINAL` para obter resultados corretos e coalescidos.
+
+Este motor está disponível a partir da versão 25.6 do ClickHouse.
+
+Leia mais: [CoalescingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/coalescingmergetree)
+
+<div id="collapsingmergetree">
+  ### CollapsingMergeTree
+</div>
+
+Partindo da ideia de que atualizações são custosas, mas `inserts` podem ser usados para realizá-las, `CollapsingMergeTree` usa uma coluna `Sign` para informar ao ClickHouse como tratar as linhas durante as mesclagens. Se `-1` for inserido na coluna de sinal, a linha será colapsada (excluída) quando emparelhada com uma linha `+1` correspondente. As linhas a serem atualizadas são identificadas com base na chave de ordenação usada na cláusula `ORDER BY` ao criar a tabela.
+
+```sql
+CREATE TABLE user_activity
+(
+    UserID UInt64,
+    PageViews UInt8,
+    Duration UInt8,
+    Sign Int8
+)
+ENGINE = CollapsingMergeTree(Sign)
+ORDER BY UserID
+
+-- Estado inicial
+INSERT INTO user_activity VALUES (4324182021466249494, 5, 146, 1)
+
+-- Cancelar linha antiga e inserir novo estado
+INSERT INTO user_activity VALUES (4324182021466249494, 5, 146, -1)
+INSERT INTO user_activity VALUES (4324182021466249494, 6, 185, 1)
+
+-- Consulta com agregação adequada
+SELECT
+    UserID,
+    sum(PageViews * Sign) AS PageViews,
+    sum(Duration * Sign) AS Duration
+FROM user_activity
+GROUP BY UserID
+HAVING sum(Sign) > 0
+```
+
+```response
+┌──────────────UserID─┬─PageViews─┬─Duration─┐
+│ 4324182021466249494 │         6 │      185 │
+└─────────────────────┴───────────┴──────────┘
+```
+
+Ao contrário de `ReplacingMergeTree`, `CollapsingMergeTree` permite modificar os valores da chave de ordenação. Ele é especialmente adequado para operações reversíveis com semântica de cancelamento, como transações financeiras ou rastreamento de estado em jogos.
+
+<Note>
+  A abordagem de atualização acima exige que sua aplicação mantenha o estado no cliente para inserir a linha de cancelamento. Embora isso seja mais eficiente do ponto de vista do ClickHouse, pode ser complexo em escala. As consultas também precisam de agregação com multiplicação pelo sinal para produzir resultados corretos.
+</Note>
+
+Leia mais: [CollapsingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/collapsingmergetree)
+
+<div id="sql-style-updates">
+  ## Atualizações declarativas
+</div>
+
+Esses métodos funcionam com tabelas que usam motores da [família MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/index).
+
+| Método                                     | Sintaxe                    | Melhor para                                                                                                    | Desvantagens                                                      |
+| ------------------------------------------ | -------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| [Mutações](#mutations)                     | `ALTER TABLE ... UPDATE`   | Atualizações em massa pouco frequentes; ideal quando a atualização está alinhada ao particionamento da tabela. | I/O intenso; reescreve colunas                                    |
+| [Atualizações leves](#lightweight-updates) | `UPDATE ... SET ... WHERE` | Pequenas atualizações (~0.1-10% das linhas); atualizações frequentes com necessidade de desempenho             | Adiciona sobrecarga ao SELECT; partes de patch contam para os limites |
+
+<div id="mutations">
+  ### Mutações
+</div>
+
+As mutações (`ALTER TABLE ... UPDATE`) reescrevem todas as partes que contêm linhas que satisfazem a expressão `WHERE`.
+
+```sql
+ALTER TABLE posts UPDATE AnswerCount = AnswerCount + 1 WHERE AnswerCount = 0
+```
+
+As mutações consomem muito I/O, reescrevendo todas as partes que correspondem à expressão `WHERE`.
+Não há atomicidade nesse processo.
+As partes são substituídas por partes mutadas assim que ficam prontas, e uma consulta `SELECT` iniciada durante uma mutação verá dados de partes que já foram mutadas junto com dados de partes que ainda não foram mutadas.
+Você pode acompanhar o estado do progresso por meio da tabela [`system.mutations`](/pt-BR/reference/system-tables/mutations).
+
+<Warning>
+  As mutações são intensivas em I/O e devem ser usadas com moderação, pois podem afetar o desempenho de `SELECT` no cluster. Se as mutações entrarem na fila mais rápido do que são processadas, o desempenho das consultas será degradado. Monitore a fila por meio de `system.mutations`.
+</Warning>
+
+Leia mais: [ALTER TABLE UPDATE](/pt-BR/reference/statements/alter/update)
+
+<div id="on-the-fly-mutations">
+  #### Mutações on-the-fly
+</div>
+
+Com mutações via `ALTER TABLE ... UPDATE`, pode ser necessário esperar que elas sejam aplicadas por um processo em segundo plano para que os valores alterados apareçam nas suas consultas.
+O ClickHouse oferece uma forma de mudar esse comportamento por meio de &quot;mutações on-the-fly&quot;.
+Quando as mutações on-the-fly estão habilitadas, as linhas atualizadas são marcadas imediatamente, e as consultas `SELECT` subsequentes retornam automaticamente os valores alterados.
+
+As mutações on-the-fly podem ser habilitadas para tabelas da família `MergeTree` ativando a configuração no nível da consulta `apply_mutations_on_fly`.
+
+```sql
+SET apply_mutations_on_fly = 1;
+```
+
+<Accordion title="Exemplo">
+  Vamos criar uma tabela e executar algumas mutações:
+
+  ```sql
+  CREATE TABLE test_on_fly_mutations (id UInt64, v String)
+  ENGINE = MergeTree ORDER BY id;
+
+  -- Desative a materialização em segundo plano das mutações para demonstrar
+  -- o comportamento padrão quando as mutações on-the-fly não estão habilitadas
+  SYSTEM STOP MERGES test_on_fly_mutations;
+  SET mutations_sync = 0;
+
+  -- Insira algumas linhas na nossa nova tabela
+  INSERT INTO test_on_fly_mutations VALUES (1, 'a'), (2, 'b'), (3, 'c');
+
+  -- Atualize os valores das linhas
+  ALTER TABLE test_on_fly_mutations UPDATE v = 'd' WHERE id = 1;
+  ALTER TABLE test_on_fly_mutations DELETE WHERE v = 'd';
+  ALTER TABLE test_on_fly_mutations UPDATE v = 'e' WHERE id = 2;
+  ALTER TABLE test_on_fly_mutations DELETE WHERE v = 'e';
+  ```
+
+  Vamos verificar o resultado das atualizações com uma consulta `SELECT`:
+
+  ```sql
+  -- Desative explicitamente as mutações on-the-fly
+  SET apply_mutations_on_fly = 0;
+
+  SELECT id, v FROM test_on_fly_mutations ORDER BY id;
+  ```
+
+  Observe que os valores das linhas ainda não foram atualizados quando consultamos a nova tabela:
+
+  ```response
+  ┌─id─┬─v─┐
+  │  1 │ a │
+  │  2 │ b │
+  │  3 │ c │
+  └────┴───┘
+  ```
+
+  Agora, vamos ver o que acontece quando habilitamos as mutações on-the-fly:
+
+  ```sql
+  -- Habilite as mutações on-the-fly
+  SET apply_mutations_on_fly = 1;
+
+  SELECT id, v FROM test_on_fly_mutations ORDER BY id;
+  ```
+
+  A consulta `SELECT` agora retorna o resultado correto imediatamente, sem precisar esperar que as mutações sejam aplicadas:
+
+  ```response
+  ┌─id─┬─v─┐
+  │  3 │ c │
+  └────┴───┘
+  ```
+</Accordion>
+
+<div id="performance-impact">
+  ##### Impacto no desempenho
+</div>
+
+Quando as mutações on-the-fly estão habilitadas, as mutações não são materializadas imediatamente, mas são aplicadas apenas durante consultas `SELECT`. No entanto, observe que as mutações ainda são materializadas de forma assíncrona em segundo plano, o que é um processo custoso.
+
+Se o número de mutações enviadas exceder constantemente, ao longo de um determinado intervalo de tempo, o número de mutações processadas em segundo plano, a fila de mutações não materializadas que precisam ser aplicadas continuará crescendo. Isso acabará degradando o desempenho das consultas `SELECT`.
+
+Sugerimos habilitar a configuração `apply_mutations_on_fly` junto com outras configurações no nível de `MergeTree`, como `number_of_mutations_to_throw` e `number_of_mutations_to_delay`, para limitar o crescimento infinito de mutações não materializadas.
+
+<div id="support-for-subqueries-and-non-deterministic-functions">
+  ##### Suporte a subconsultas e funções não determinísticas
+</div>
+
+As mutações on-the-fly têm suporte limitado a subconsultas e funções não determinísticas. Apenas subconsultas escalares com resultado de tamanho razoável (controlado pela configuração `mutations_max_literal_size_to_replace`) são compatíveis. Apenas funções não determinísticas constantes são compatíveis (por exemplo, a função `now()`).
+
+Esses comportamentos são controlados pelas seguintes configurações:
+
+| Configuração                                      | Descrição                                                                                                                                         | Padrão           |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `mutations_execute_nondeterministic_on_initiator` | Se verdadeiro, as funções não determinísticas são executadas na réplica iniciadora e substituídas por literais nas consultas `UPDATE` e `DELETE`. | `false`          |
+| `mutations_execute_subqueries_on_initiator`       | Se verdadeiro, as subconsultas escalares são executadas na réplica iniciadora e substituídas por literais nas consultas `UPDATE` e `DELETE`.      | `false`          |
+| `mutations_max_literal_size_to_replace`           | O tamanho máximo, em bytes, dos literais serializados a serem substituídos nas consultas `UPDATE` e `DELETE`.                                     | `16384` (16 KiB) |
+
+<div id="lightweight-updates">
+  ### Atualizações leves
+</div>
+
+As atualizações leves usam &quot;patch parts&quot; — partes de dados especiais que contêm apenas as colunas e linhas atualizadas — em vez de reescrever colunas inteiras, como ocorre nas mutações tradicionais.
+
+```sql
+UPDATE posts SET AnswerCount = AnswerCount + 1 WHERE Id = 404346
+```
+
+Essa abordagem usa a sintaxe padrão de `UPDATE` e cria partes de patch imediatamente, sem esperar por merges. Os valores atualizados ficam visíveis de imediato nas consultas `SELECT` por meio da aplicação de patches, mas só são materializados fisicamente durante merges subsequentes. Isso torna as atualizações leves ideais para atualizar uma pequena porcentagem de linhas (até ~10% da tabela) com latência previsível. Benchmarks mostram que elas podem ser até 23x mais rápidas do que mutações.
+
+A desvantagem é que as consultas `SELECT` têm uma sobrecarga ao aplicar patches, e as partes de patch contam para os limites de partes. Acima do limite de ~10%, a sobrecarga dos patches durante a leitura cresce proporcionalmente, tornando as mutações síncronas mais eficientes para atualizações maiores.
+
+Leia mais: [Lightweight UPDATE](/pt-BR/reference/statements/update)
+
+### Mutações on-the-fly
+
+As mutações on-the-fly oferecem um mecanismo para atualizar linhas, de modo que consultas `SELECT` subsequentes retornem automaticamente os valores alterados sem precisar aguardar o processamento em segundo plano. Isso resolve, na prática, a limitação de atomicidade das mutações normais.
+
+```sql
+SET apply_mutations_on_fly = 1;
+
+SELECT ViewCount FROM posts WHERE Id = 404346
+```
+
+```response
+┌─ViewCount─┐
+│     26762 │
+└───────────┘
+```
+
+```sql
+-- Incrementa o contador
+ALTER TABLE posts UPDATE ViewCount = ViewCount + 1 WHERE Id = 404346
+
+-- O valor atualizado é imediatamente visível
+SELECT ViewCount FROM posts WHERE Id = 404346
+```
+
+```response
+┌─ViewCount─┐
+│     26763 │
+└───────────┘
+```
+
+Tanto a mutação quanto as consultas `SELECT` subsequentes precisam estar com a configuração `apply_mutations_on_fly = 1` habilitada. As condições da mutação são armazenadas no ClickHouse Keeper, que mantém tudo em memória, e aplicadas on-the-fly durante as consultas.
+
+Observe que uma mutação ainda é usada para atualizar os dados — ela só não é materializada imediatamente. A mutação ainda será aplicada em segundo plano como um processo assíncrono e acarreta a mesma sobrecarga elevada de uma mutação comum. As expressões que podem ser usadas com essa operação também são limitadas (consulte os [detalhes](#support-for-subqueries-and-non-deterministic-functions)).
+
+<Warning>
+  Mutações on-the-fly devem ser usadas apenas para um pequeno número de operações — talvez algumas poucas dezenas, no máximo. O Keeper armazena condições em memória, portanto o uso excessivo afeta a estabilidade do cluster. Uma carga elevada no Keeper pode causar timeouts de sessão que afetam tabelas não relacionadas.
+</Warning>
+
+Leia mais: [Mutações on-the-fly](#on-the-fly-mutations)
+
+<div id="comparison-summary">
+  ## Resumo da comparação
+</div>
+
+A tabela a seguir resume a sobrecarga no desempenho das consultas com base em [benchmarks](https://clickhouse.com/blog/updates-in-clickhouse-3-benchmarks). As mutações servem como referência, já que as consultas voltam a ser executadas em velocidade máxima assim que a mutação é concluída e os dados são regravados fisicamente.
+
+| Método                                                                                                 | Queda de desempenho da consulta  | Sobrecarga de memória            | Observações                                                                         |
+| ------------------------------------------------------------------------------------------------------ | -------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------- |
+| [Mutações](/pt-BR/reference/statements/alter/update)                                                         | Referência                       | Referência                       | Velocidade máxima após a conclusão; dados regravados fisicamente                    |
+| [Mutações on-the-fly](#on-the-fly-mutations)                                                           | Variável                         | Variável                         | Visibilidade imediata; o desempenho se degrada se muitas atualizações se acumularem |
+| [Atualizações leves](/pt-BR/reference/statements/update#lightweight-update-requirements)                     | 7–18% (média ~12%)               | +20–210%                         | Mais eficiente para consultas; melhor para atualizar ≤10% da tabela                 |
+| [ReplacingMergeTree](/pt-BR/concepts/features/operations/update/replacing-merge-tree) + `FINAL`              | 21–550% (média ~280%)            | 20–200× a referência             | Precisa ler todas as versões de linha; maior sobrecarga nas consultas               |
+| [CoalescingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/coalescingmergetree) + `FINAL` | Semelhante ao ReplacingMergeTree | Semelhante ao ReplacingMergeTree | A coalescência em nível de coluna adiciona uma sobrecarga comparável                |
+| [CollapsingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/collapsingmergetree)           | Depende da agregação             | Depende da agregação             | A sobrecarga depende da complexidade da consulta                                    |
+
+<div id="more-resources">
+  ## Mais recursos
+</div>
+
+Se você se interessa por uma análise aprofundada de como as atualizações no ClickHouse evoluíram ao longo do tempo, juntamente com uma análise de benchmarks, veja:
+
+* [Atualizações no ClickHouse Parte 1: Motores Criados para Finalidades Específicas](https://clickhouse.com/blog/updates-in-clickhouse-1-purpose-built-engines)
+* [Atualizações no ClickHouse Parte 2: Atualizações no Estilo SQL](https://clickhouse.com/blog/updates-in-clickhouse-2-sql-style-updates)
+* [Atualizações no ClickHouse Parte 3: Benchmarks](https://clickhouse.com/blog/updates-in-clickhouse-3-benchmarks)

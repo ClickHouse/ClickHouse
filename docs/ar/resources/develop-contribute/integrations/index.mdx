@@ -1,0 +1,30 @@
+---
+slug: /integrations/integration-development
+title: 'تطوير التكاملات'
+sidebarTitle: 'نظرة عامة'
+description: 'أدلة لبناء تكاملات ClickHouse واختبارها وتوثيقها.'
+keywords: ['تطوير التكاملات', 'بناء تكامل', 'شريك', 'شريك تكامل']
+doc_type: 'landing-page'
+---
+
+تفيدك هذه الأدلة إذا كنت تطوّر منتجًا يتكامل مع ClickHouse. وهي تغطي واجهة التكامل، وكيفية التحقق من صحة الموصّل، وكيفية نشر الوثائق على هذا الموقع.
+
+<Info>
+  **بوابة الشركاء**
+
+  استخدم [بوابة الشركاء](https://clickhouse.com/partners) لتسجيل التكامل والوصول إلى موارد الشركاء. وتوضّح الأدلة أدناه كيفية بناء الموصّل واختباره وتوثيقه.
+</Info>
+
+<div id="guides">
+  ## الأدلة
+</div>
+
+اقرأها بهذا الترتيب:
+
+| الدليل                                                                                            | ما الذي يغطيه                                                                       |
+| ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| [إنشاء التكاملات](/ar/resources/develop-contribute/integrations/building-integrations)               | مسارات إدخال البيانات واستهلاكها، وبروتوكولات النقل، والعملاء، واصطلاحات user-agent |
+| [اختبار التكامل الخاص بك](/ar/resources/develop-contribute/integrations/testing-your-integration)    | أنماط النشر، ومجموعات البيانات، وتغطية الأنواع، وما يجب الإبلاغ عنه قبل المراجعة    |
+| [توثيق التكامل الخاص بك](/ar/resources/develop-contribute/integrations/documenting-your-integration) | أقسام التوثيق المطلوبة، وقواعد الأسلوب، وقالب Pull Request لصفحة منتجك              |
+
+بعد إنشاء نموذج أولي واختباره، أضف صفحة التكامل الخاصة بك ضمن [`/docs/integrations/<category>/<your-integration>/`](/ar/resources/develop-contribute/integrations/documenting-your-integration) وافتح Pull Request على مستودع [`clickhouse-docs`](https://github.com/ClickHouse/clickhouse-docs).

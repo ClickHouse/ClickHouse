@@ -1,0 +1,429 @@
+---
+description: 'إعدادات لتكوين المستخدمين والأدوار.'
+sidebarTitle: 'إعدادات المستخدمين'
+slug: /operations/settings/settings-users
+title: 'إعدادات المستخدمين والأدوار'
+doc_type: 'reference'
+---
+
+يحتوي قسم `users` في ملف التهيئة `users.xml` على إعدادات المستخدمين.
+
+<Note>
+  يدعم ClickHouse أيضًا [سير عمل قائم على SQL](/ar/concepts/features/security/access-rights#access-control-usage) لإدارة المستخدمين. نوصي باستخدامه.
+</Note>
+
+بنية قسم `users`:
+
+```xml
+<users>
+    <!-- If user name was not specified, 'default' user is used. -->
+    <user_name>
+        <!-- Exactly one authentication method may be specified at the users.user_name level. For example: -->
+        <password></password>
+        <!-- Or (exclusive) -->
+        <password_sha256_hex></password_sha256_hex>
+ 
+        <!-- Or (exclusive) (N.B. multiple SSH keys are allowed for backwards compatibility) -->
+        <ssh_keys>
+            <ssh_key>
+                <type>ssh-ed25519</type>
+                <base64_key>AAAAC3NzaC1lZDI1NTE5AAAAIDNf0r6vRl24Ix3tv2IgPmNPO2ATa2krvt80DdcTatLj</base64_key>
+            </ssh_key>
+            <ssh_key>
+                <type>ecdsa-sha2-nistp256</type>
+                <base64_key>AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBNxeV2uN5UY6CUbCzTA1rXfYimKQA5ivNIqxdax4bcMXz4D0nSk2l5E1TkR5mG8EBWtmExSPbcEPJ8V7lyWWbA8=</base64_key>
+            </ssh_key>
+            <ssh_key>
+                <type>ssh-rsa</type>
+                <base64_key>AAAAB3NzaC1yc2EAAAADAQABAAABgQCpgqL1SHhPVBOTFlOm0pu+cYBbADzC2jL41sPMawYCJHDyHuq7t+htaVVh2fRgpAPmSEnLEC2d4BEIKMtPK3bfR8plJqVXlLt6Q8t4b1oUlnjb3VPA9P6iGcW7CV1FBkZQEVx8ckOfJ3F+kI5VsrRlEDgiecm/C1VPl0/9M2llW/mPUMaD65cM9nlZgM/hUeBrfxOEqM11gDYxEZm1aRSbZoY4dfdm3vzvpSQ6lrCrkjn3X2aSmaCLcOWJhfBWMovNDB8uiPuw54g3ioZ++qEQMlfxVsqXDGYhXCrsArOVuW/5RbReO79BvXqdssiYShfwo+GhQ0+aLWMIW/jgBkkqx/n7uKLzCMX7b2F+aebRYFh+/QXEj7SnihdVfr9ud6NN3MWzZ1ltfIczlEcFLrLJ1Yq57wW6wXtviWh59WvTWFiPejGjeSjjJyqqB49tKdFVFuBnIU5u/bch2DXVgiAEdQwUrIp1ACoYPq22HFFAYUJrL32y7RxX3PGzuAv3LOc=</base64_key>
+            </ssh_key>
+        </ssh_keys>
+
+        <!-- Or (exclusive) for multiple authentication methods: -->
+        <auth_methods>
+            <method1>
+                <password></password>
+            </method1>
+            <method2>
+                <password_sha256_hex></password_sha256_hex>
+            </method2>
+            <!-- ... -->
+            <methodN>
+                <!-- ... -->
+            </methodN>
+        </auth_methods>
+
+        <access_management>0|1</access_management>
+
+        <networks incl="networks" replace="replace">
+        </networks>
+
+        <profile>profile_name</profile>
+
+        <quota>default</quota>
+        <default_database>default</default_database>
+        <databases>
+            <database_name>
+                <table_name>
+                    <filter>expression</filter>
+                </table_name>
+            </database_name>
+        </databases>
+
+        <grants>
+            <query>GRANT SELECT ON system.*</query>
+        </grants>
+    </user_name>
+    <!-- Other users settings -->
+</users>
+```
+
+<div id="user-namepassword">
+  ### user_name/password
+</div>
+
+يمكن تحديد كلمة المرور بصيغة نص صريح أو بصيغة SHA256 (بتنسيق hex).
+
+* لتعيين كلمة مرور بصيغة نص صريح (**غير مستحسن**)، ضعها داخل العنصر `password`.
+
+  على سبيل المثال: `<password>qwerty</password>`. ويمكن ترك كلمة المرور فارغة.
+
+<a id="password_sha256_hex" />
+
+* لتعيين كلمة مرور باستخدام تجزئة SHA256 الخاصة بها، ضعها داخل العنصر `password_sha256_hex`.
+
+  على سبيل المثال: `<password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>`.
+
+  مثال على كيفية إنشاء كلمة مرور من shell:
+
+  ```bash
+  PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
+  ```
+
+  السطر الأول من الناتج هو كلمة المرور. والسطر الثاني هو تجزئة SHA256 المقابلة لها.
+
+<a id="password_double_sha1_hex" />
+
+* للتوافق مع عملاء MySQL، يمكن تحديد كلمة المرور باستخدام تجزئة double SHA1. ضعها داخل العنصر `password_double_sha1_hex`.
+
+  على سبيل المثال: `<password_double_sha1_hex>08b4a0f1de6ad37da17359e592c8d74788a83eb0</password_double_sha1_hex>`.
+
+  مثال على كيفية إنشاء كلمة مرور من shell:
+
+  ```bash
+  PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
+  ```
+
+  السطر الأول من الناتج هو كلمة المرور. والسطر الثاني هو تجزئة double SHA1 المقابلة لها.
+
+<div id="totp-authentication-configuration">
+  ### تهيئة مصادقة TOTP
+</div>
+
+يمكن استخدام كلمة المرور لمرة واحدة المستندة إلى الوقت (TOTP) لمصادقة مستخدمي ClickHouse، وذلك عبر إنشاء رموز وصول مؤقتة صالحة لمدة محدودة.
+تتوافق طريقة المصادقة هذه باستخدام TOTP مع معايير [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238)، مما يجعلها متوافقة مع تطبيقات TOTP الشائعة مثل Google Authenticator و1Password وأدوات مماثلة.
+يمكن إعدادها من خلال ملف التهيئة `users.xml` بالإضافة إلى المصادقة المستندة إلى كلمة المرور.
+وهي غير مدعومة بعد في التحكم في الوصول المعتمد على SQL.
+
+للمصادقة باستخدام TOTP، يجب على المستخدمين تقديم كلمة المرور الأساسية إلى جانب كلمة مرور لمرة واحدة يُنشئها تطبيق TOTP الخاص بهم، وذلك إما عبر خيار سطر الأوامر `--one-time-password` أو بإلحاقها بكلمة المرور الأساسية باستخدام المحرف &#39;+&#39;.
+على سبيل المثال، إذا كانت كلمة المرور الأساسية هي `some_password` وكان رمز TOTP المُنشأ هو `345123`، فيمكن للمستخدم تحديد `--password some_password+345123` أو `--password some_password --one-time-password 345123` عند الاتصال بـ ClickHouse. وإذا لم تُحدَّد كلمة مرور، فسيطلب `clickhouse-client` إدخالها تفاعليًا.
+
+لتمكين مصادقة TOTP لمستخدم، اضبط القسم `time_based_one_time_password` في `users.xml`. يحدد هذا القسم إعدادات TOTP، مثل السرّ، وفترة الصلاحية، وعدد الخانات، وخوارزمية التجزئة.
+
+**مثال**
+
+````xml
+<clickhouse>
+    <!-- ... -->
+    <users>
+        <my_user>
+            <!-- Primary password-based authentication: -->
+            <password>some_password</password>
+            <password_sha256_hex>1464acd6765f91fccd3f5bf4f14ebb7ca69f53af91b0a5790c2bba9d8819417b</password_sha256_hex>
+            <!-- ... or any other supported authentication method ... -->
+
+            <!-- TOTP authentication configuration -->
+            <time_based_one_time_password>
+                <secret>JBSWY3DPEHPK3PXP</secret>      <!-- Base32-encoded TOTP secret -->
+                <period>30</period>                    <!-- Optional: OTP validity period in seconds -->
+                <digits>6</digits>                     <!-- Optional: Number of digits in the OTP -->
+                <algorithm>SHA1</algorithm>            <!-- Optional: Hash algorithm: SHA1, SHA256, SHA512 -->
+            </time_based_one_time_password>
+        </my_user>
+    </users>
+</clickhouse>
+
+Parameters:
+
+- secret - (Required) The base32-encoded secret key used to generate TOTP codes.
+- period - Optional. Sets the validity period of each OTP in seconds. Must be a positive number not exceeding 120. Default is 30.
+- digits - Optional. Specifies the number of digits in each OTP. Must be between 4 and 10. Default is 6.
+- algorithm - Optional. Defines the hash algorithm for generating OTPs. Supported values are SHA1, SHA256, and SHA512. Default is SHA1.
+
+Generating a TOTP Secret
+
+To generate a TOTP-compatible secret for use with ClickHouse, run the following command in the terminal:
+
+```bash
+$ base32 -w32 < /dev/urandom | head -1
+````
+
+سينتج هذا الأمر قيمة secret مُرمَّزة بترميز base32 يمكن إضافتها إلى الحقل `secret` في users.xml.
+
+لتمكين TOTP لمستخدم معيّن، أضِف قسم `time_based_one_time_password` آخر إلى أي حقل موجود يعتمد على `password` (مثل `password` أو `password_sha256_hex`).
+
+يمكن استخدام أداة [qrencode](https://linux.die.net/man/1/qrencode) لإنشاء رمز QR لسرّ TOTP.
+
+```bash
+$ qrencode -t ansiutf8 'otpauth://totp/ClickHouse?issuer=ClickHouse&secret=JBSWY3DPEHPK3PXP'
+```
+
+بعد إعداد TOTP لمستخدم، يمكن استخدام كلمة مرور تُستخدم لمرة واحدة كجزء من عملية المصادقة، كما هو موضح أعلاه.
+
+### اسم المستخدم/مفتاح SSH
+
+يتيح هذا الإعداد المصادقة باستخدام مفاتيح SSH.
+
+إذا كان لديك مفتاح SSH (كما يُنشأ بواسطة `ssh-keygen`) مثل
+
+```text
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDNf0r6vRl24Ix3tv2IgPmNPO2ATa2krvt80DdcTatLj john@example.com
+```
+
+يُفترض أن يكون العنصر `ssh_key`
+
+```xml
+<ssh_key>
+     <type>ssh-ed25519</type>
+     <base64_key>AAAAC3NzaC1lZDI1NTE5AAAAIDNf0r6vRl24Ix3tv2IgPmNPO2ATa2krvt80DdcTatLj</base64_key>
+ </ssh_key>
+```
+
+استبدل `ssh-ed25519` بـ `ssh-rsa` أو `ecdsa-sha2-nistp256` عند استخدام الخوارزميات الأخرى المدعومة.
+
+### طرق مصادقة متعددة
+
+يمكن تهيئة مستخدم واحد بعدة طرق مصادقة باستخدام العنصر `<auth_methods>`. ويتيح ذلك للمستخدم المصادقة باستخدام أي طريقة من الطرق المُدرجة — فعلى سبيل المثال، يمكن أن تكون لدى المستخدم كلمة مرور وبيانات اعتماد LDAP معًا، ويُقبل تسجيل الدخول بأيٍّ منهما.
+
+كل عنصر فرعي ضمن `<auth_methods>` هو غلاف يحمل اسمًا اعتباطيًا ويحتوي على نوع مصادقة واحد فقط. ولا يهم اسم الغلاف (مثل `<method1>` أو `<primary>` أو `<a1>`)، إذ لا يُستخدم إلا عنصر المصادقة الداخلي.
+
+**مثال: كلمات مرور متعددة**
+
+```xml
+<users>
+    <my_user>
+        <auth_methods>
+            <primary>
+                <password>password_one</password>
+            </primary>
+            <secondary>
+                <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>
+            </secondary>
+        </auth_methods>
+    </my_user>
+</users>
+```
+
+**مثال: أنواع مختلطة من المصادقة**
+
+```xml
+<users>
+    <my_user>
+        <auth_methods>
+            <a1>
+                <password>plaintext_pass</password>
+            </a1>
+            <a2>
+                <password_sha256_hex>e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855</password_sha256_hex>
+            </a2>
+            <a3>
+                <ldap>
+                    <server>my_ldap_server</server>
+                </ldap>
+            </a3>
+        </auth_methods>
+    </my_user>
+</users>
+```
+
+أنواع المصادقة التالية مدعومة داخل `<auth_methods>`:
+
+* **`password`** — كلمة مرور بنص صريح
+* **`password_sha256_hex`** — تجزئة كلمة مرور SHA256
+* **`password_scram_sha256_hex`** — تجزئة كلمة مرور SCRAM-SHA-256
+* **`password_double_sha1_hex`** — تجزئة كلمة مرور double SHA1
+* **`ldap`** — مصادقة خادم LDAP
+* **`kerberos`** — مصادقة Kerberos
+* **`ssl_certificates`** — مصادقة شهادات SSL
+* **`ssh_keys`** — مصادقة مفاتيح SSH
+* **`http_authentication`** — مصادقة HTTP
+
+**القواعد والقيود:**
+
+* **لا يمكن** استخدام `<auth_methods>` مع طرق المصادقة المحددة على مستوى المستخدم في الوقت نفسه. استخدم أحد الأسلوبين فقط، وليس كليهما.
+* يجب أن يحتوي `<auth_methods>` على طريقة مصادقة واحدة على الأقل.
+* يجب أن يحتوي كل عنصر غلاف داخل `<auth_methods>` على نوع مصادقة واحد فقط (باستثناء `<ssh_keys>`، إذ يمكن أن يحتوي على عدة أنواع حفاظًا على التوافق مع الإصدارات السابقة).
+* يُحدَّد TOTP (`<time_based_one_time_password>`) على مستوى المستخدم (خارج `<auth_methods>`) ويُطبَّق على جميع الطرق المستندة إلى كلمة المرور في القائمة. ويَلزم وجود طريقة واحدة على الأقل مستندة إلى كلمة المرور عند تمكين TOTP.
+
+**مثال: `auth_methods` مع TOTP**
+
+```xml
+<users>
+    <my_user>
+        <auth_methods>
+            <a1>
+                <password>my_password</password>
+            </a1>
+            <a2>
+                <ldap>
+                    <server>ldap_server_1</server>
+                </ldap>
+            </a2>
+        </auth_methods>
+        <time_based_one_time_password>
+            <secret>JBSWY3DPEHPK3PXP</secret>
+        </time_based_one_time_password>
+    </my_user>
+</users>
+```
+
+في هذا المثال، يُطبَّق التحقق عبر TOTP على الطريقة المستندة إلى كلمة المرور (`<password>`)، بينما تُجري طريقة LDAP المصادقة بشكل مستقل على الخادم الخارجي.
+
+### access_management
+
+يؤدي هذا الإعداد إلى تمكين أو تعطيل استخدام [التحكم في الوصول وإدارة الحسابات](/ar/concepts/features/security/access-rights#access-control-usage) القائمَين على SQL لهذا المستخدم.
+
+القيم الممكنة:
+
+* 0 — معطّل.
+* 1 — مفعّل.
+
+القيمة الافتراضية: 0.
+
+### grants
+
+يتيح هذا الإعداد منح أي امتيازات للمستخدم المحدد.
+يجب أن يكون كل عنصر في القائمة عبارة عن استعلام `GRANT` من دون تحديد أي جهات ممنوح لها.
+
+مثال:
+
+```xml
+<user1>
+    <grants>
+        <query>GRANT SHOW ON *.*</query>
+        <query>GRANT CREATE ON *.* WITH GRANT OPTION</query>
+        <query>GRANT SELECT ON system.*</query>
+    </grants>
+</user1>
+```
+
+لا يمكن تحديد هذا الإعداد في الوقت نفسه مع الإعدادات
+`dictionaries` و`access_management` و`named_collection_control` و`show_named_collections_secrets`
+و`allow_databases`.
+
+### user_name/networks
+
+قائمة الشبكات التي يمكن للمستخدم الاتصال منها بخادم ClickHouse.
+
+يمكن أن يتخذ كل عنصر في القائمة أحد الأشكال التالية:
+
+* `<ip>` — عنوان IP أو قناع شبكة.
+
+  أمثلة: `213.180.204.3`, `10.0.0.1/8`, `10.0.0.1/255.255.255.0`, `2a02:6b8::3`, `2a02:6b8::3/64`, `2a02:6b8::3/ffff:ffff:ffff:ffff::`.
+
+* `<host>` — اسم المضيف.
+
+  مثال: `example01.host.ru`.
+
+  للتحقق من الوصول، يُجرى استعلام DNS، ثم تُقارَن جميع عناوين IP المُعادة بعنوان النظير.
+
+* `<host_regexp>` — تعبير نمطي لأسماء المضيفين.
+
+  مثال: `^example\d\d-\d\d-\d\.host\.ru$`
+
+  للتحقق من الوصول، يُجرى [استعلام DNS PTR](https://en.wikipedia.org/wiki/Reverse_DNS_lookup) لعنوان النظير، ثم يُطبَّق التعبير النمطي المحدد. بعد ذلك، يُجرى استعلام DNS آخر لنتائج استعلام PTR، وتُقارَن جميع العناوين المستلمة بعنوان النظير. نوصي بشدة بأن ينتهي التعبير النمطي بالرمز $.
+
+تُخزَّن جميع نتائج طلبات DNS مؤقتًا حتى إعادة تشغيل الخادم.
+
+**أمثلة**
+
+للسماح للمستخدم بالوصول من أي شبكة، حدِّد:
+
+```xml
+<ip>::/0</ip>
+```
+
+<Note>
+  من غير الآمن إتاحة الوصول من أي شبكة، ما لم يكن لديك جدار حماية مُعَدّ بشكل صحيح أو لم يكن الخادم متصلًا مباشرةً بالإنترنت.
+</Note>
+
+لقصر الوصول على localhost فقط، حدِّد:
+
+```xml
+<ip>::1</ip>
+<ip>127.0.0.1</ip>
+```
+
+### user_name/profile
+
+يمكنك إسناد ملف تعريف للإعدادات إلى المستخدم. تُضبط ملفات تعريف الإعدادات في قسم منفصل ضمن ملف `users.xml`. لمزيد من المعلومات، راجع [ملفات تعريف الإعدادات](/ar/concepts/features/configuration/settings/settings-profiles).
+
+### user_name/quota
+
+تتيح لك الحصص تتبّع استخدام الموارد أو الحدّ منه خلال فترة زمنية. تُضبط الحصص في قسم `quotas`
+ضمن ملف الإعداد `users.xml`.
+
+يمكنك تعيين مجموعة حصص للمستخدم. للاطلاع على وصف مفصل لإعداد الحصص، راجع [الحصص](/ar/concepts/features/configuration/server-config/quotas).
+
+### user_name/databases
+
+في هذا القسم، يمكنك تقييد الصفوف التي يعرضها ClickHouse في استعلامات `SELECT` التي ينفّذها المستخدم الحالي، وبذلك تطبّق أمانًا أساسيًا على مستوى الصفوف.
+
+**مثال**
+
+يفرض هذا الإعداد أن المستخدم `user1` لا يمكنه رؤية سوى صفوف `table1` في نتائج استعلامات `SELECT` التي تكون فيها قيمة الحقل `id` مساوية لـ 1000.
+
+```xml
+<user1>
+    <databases>
+        <database_name>
+            <table1>
+                <filter>id = 1000</filter>
+            </table1>
+        </database_name>
+    </databases>
+</user1>
+```
+
+يمكن أن يكون `filter` أي تعبير يُنتج قيمة من النوع [UInt8](/ar/reference/data-types/int-uint). وعادةً ما يتضمن مقارنات وعوامل منطقية. لا تُعاد للمستخدم الصفوف من `database_name.table1` التي تكون نتيجة `filter` فيها 0. ولا تتوافق هذه التصفية مع عمليات `PREWHERE` وتُعطِّل تحسين `WHERE→PREWHERE`.
+
+## الأدوار
+
+يمكنك إنشاء أيٍّ من الأدوار المعرَّفة مسبقًا باستخدام قسم `roles` في ملف الإعدادات `user.xml`.
+
+بنية قسم `roles`:
+
+```xml
+<roles>
+    <test_role>
+        <grants>
+            <query>GRANT SHOW ON *.*</query>
+            <query>REVOKE SHOW ON system.*</query>
+            <query>GRANT CREATE ON *.* WITH GRANT OPTION</query>
+        </grants>
+    </test_role>
+</roles>
+```
+
+يمكن أيضًا منح هذه الأدوار للمستخدمين ضمن قسم `users`:
+
+```xml
+<users>
+    <user_name>
+        ...
+        <grants>
+            <query>GRANT test_role</query>
+        </grants>
+    </user_name>
+<users>
+```

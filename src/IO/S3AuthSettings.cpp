@@ -174,6 +174,32 @@ void S3AuthSettings::updateIfChanged(const S3AuthSettings & settings)
         server_side_encryption_kms_config = settings.server_side_encryption_kms_config;
 }
 
+void S3AuthSettings::clearServerManagedRequestAuth()
+{
+    headers.clear();
+    access_headers.clear();
+    impl->set("server_side_encryption_customer_key_base64", "");
+    server_side_encryption_kms_config = {};
+}
+
+void S3AuthSettings::clearRoleArn()
+{
+    impl->set("role_arn", "");
+    impl->set("role_session_name", "");
+    impl->set("external_id", "");
+}
+
+void S3AuthSettings::clearServerManagedGcpOAuth()
+{
+    impl->set("http_client", "");
+    impl->set("service_account", "");
+    impl->set("metadata_service", "");
+    impl->set("request_token_path", "");
+    impl->set("google_adc_client_id", "");
+    impl->set("google_adc_client_secret", "");
+    impl->set("google_adc_refresh_token", "");
+}
+
 HTTPHeaderEntries S3AuthSettings::getHeaders() const
 {
     bool auth_settings_is_default = !impl->isChanged("access_key_id");

@@ -1,0 +1,81 @@
+---
+description: 'OSのページキャッシュではなく、
+プロセス内メモリにデータをキャッシュできるキャッシュ機構。'
+sidebarTitle: 'ユーザー空間ページキャッシュ'
+slug: /operations/userspace-page-cache
+title: 'ユーザー空間ページキャッシュ'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 概要
+</div>
+
+> ユーザー空間ページキャッシュは、OS のページキャッシュに依存せず、プロセス内メモリにデータをキャッシュできる新しいキャッシュ機構です。
+
+ClickHouse ではすでに、Amazon S3、Google Cloud ストレージ (GCS) 、Azure Blob Storage などのリモートオブジェクトストレージに対するキャッシュ手段として、[ファイルシステムキャッシュ](/ja/concepts/features/configuration/server-config/storing-data) を提供しています。
+ユーザー空間ページキャッシュは、通常の OS キャッシュでは十分な効果が得られない場合に、リモートデータへのアクセスを高速化することを目的として設計されています。
+
+ファイルシステムキャッシュとの違いは次のとおりです。
+
+| Filesystem Cache                 | Userspace page cache       |
+| -------------------------------- | -------------------------- |
+| データをローカルのファイルシステムに書き込む           | メモリ内にのみ存在する                |
+| ディスク容量を消費する (tmpfs に設定することも可能)   | ファイルシステムに依存しない             |
+| server の再起動後も保持される               | server の再起動後は保持されない        |
+| server の memory usage には現れない     | server の memory usage に現れる |
+| ディスク上とメモリ内 (OS ページキャッシュ) の両方に適する | **ディスクレス server に適している**   |
+
+<div id="configuration-settings-and-usage">
+  ## 設定項目と使用方法
+</div>
+
+<div id="usage">
+  ### 使用方法
+</div>
+
+ユーザー空間ページキャッシュを有効にするには、まずサーバー側で設定します。
+
+```bash
+cat config.d/page_cache.yaml
+page_cache_max_size: 100G
+```
+
+<Note>
+  ユーザー空間ページキャッシュは、指定した量までメモリを使用しますが、
+  そのメモリ量が予約されるわけではありません。サーバーのほかの用途で必要になった場合は、
+  このメモリは追い出されます。
+</Note>
+
+次に、クエリレベルでこれを有効にします。
+
+```sql
+SET use_page_cache_for_disks_without_file_cache=1;
+```
+
+<div id="settings">
+  ### 設定
+</div>
+
+| Setting                                                 | Description                                                                                                                                                                                              | Default     |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| `use_page_cache_for_disks_without_file_cache`           | ファイルシステムキャッシュが有効になっていないリモートディスクに対して、ユーザー空間ページキャッシュを使用します。                                                                                                                                                | `0`         |
+| `use_page_cache_with_distributed_cache`                 | 分散キャッシュの使用時に、ユーザー空間ページキャッシュを使用します。                                                                                                                                                                       | `0`         |
+| `read_from_page_cache_if_exists_otherwise_bypass_cache` | [`read_from_filesystem_cache_if_exists_otherwise_bypass_cache`](/ja/reference/settings/session-settings#read_from_filesystem_cache_if_exists_otherwise_bypass_cache) と同様に、パッシブモードでユーザー空間ページキャッシュを使用します。     | `0`         |
+| `page_cache_inject_eviction`                            | ユーザー空間ページキャッシュが、ときどき一部のページをランダムに無効化します。テスト用です。                                                                                                                                                           | `0`         |
+| `page_cache_block_size`                                 | ユーザー空間ページキャッシュに格納するファイル chunk のサイズ (バイト単位) です。キャッシュを経由するすべての読み取りは、このサイズの倍数に切り上げられます。                                                                                                                     | `1048576`   |
+| `page_cache_history_window_ms`                          | 解放されたメモリをユーザー空間ページキャッシュで再利用できるようになるまでの遅延です。                                                                                                                                                              | `1000`      |
+| `page_cache_policy`                                     | ユーザー空間ページキャッシュのポリシー名です。                                                                                                                                                                                  | `SLRU`      |
+| `page_cache_size_ratio`                                 | ユーザー空間ページキャッシュにおける protected queue のサイズを、cache 全体のサイズに対する比率で指定します。                                                                                                                                       | `0.5`       |
+| `page_cache_min_size`                                   | ユーザー空間ページキャッシュの最小サイズです。                                                                                                                                                                                  | `104857600` |
+| `page_cache_max_size`                                   | ユーザー空間ページキャッシュの最大サイズです。cache を無効にするには 0 を設定します。page&#95;cache&#95;min&#95;size より大きい場合、総メモリ使用量が制限 (`max_server_memory_usage`[`_to_ram_ratio`]) を下回るようにしつつ、使用可能なメモリの大部分を使うため、この範囲内で cache サイズが継続的に調整されます。 | `0`         |
+| `page_cache_free_memory_ratio`                          | ユーザー空間ページキャッシュで使用せずに確保しておく、メモリ制限に対する割合です。Linux の min&#95;free&#95;kbytes 設定に相当します。                                                                                                                       | `0.15`      |
+| `page_cache_lookahead_blocks`                           | ユーザー空間ページキャッシュでミスした場合、それらも cache に存在しなければ、基盤ストレージから連続する最大この数の block を一度に読み取ります。各 block は page&#95;cache&#95;block&#95;size バイトです。                                                                        | `16`        |
+| `page_cache_shards`                                     | mutex の競合を減らすために、ユーザー空間ページキャッシュをこの数の分片にストライプ化します。Experimental であり、パフォーマンス改善につながる可能性は高くありません。                                                                                                             | `4`         |
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* [ファイルシステムキャッシュ](/ja/concepts/features/configuration/server-config/storing-data)
+* [ClickHouse v25.3 リリース ウェビナー](https://www.youtube.com/live/iCKEzp0_Z2Q?feature=shared\&t=1320)

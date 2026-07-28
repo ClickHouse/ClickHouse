@@ -3,13 +3,14 @@
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Core/Types.h>
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Interpreters/FileCache/Guards.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
 
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <memory>
+#include <utility>
 
 #include <fmt/ranges.h>
 
@@ -22,7 +23,8 @@ struct FileSegmentInfo;
 class EvictionInfo;
 using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 struct CacheUsageStatGuard;
-class BackgroundSchedulePool;
+struct CacheUsage;
+using CacheUsagePtr = std::shared_ptr<CacheUsage>;
 
 
 class IFileCachePriority : private boost::noncopyable
@@ -328,7 +330,7 @@ public:
     /// Collect eviction candidates sufficient to free `size` bytes
     /// and `elements` elements from cache.
     virtual bool collectCandidatesForEviction(
-        const EvictionInfo & eviction_info,
+        EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         InvalidatedEntriesInfos & invalidated_entries,
@@ -373,17 +375,17 @@ public:
     /// Used to cleanup invalidated queue entries.
     static void removeEntries(const std::vector<InvalidatedEntryInfo> & entries, const CachePriorityGuard::WriteLock &);
 
-    /// Configure the background invalidated-entries cleanup (before startup).
-    void setCleanupSettings(size_t threshold, size_t interval_ms, size_t batch)
+    /// Hook fired from invalidate() once pending invalidated entries reach
+    /// `threshold` (FileCache wakes its cleanup task). Wrappers propagate it down.
+    virtual void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate)
     {
         invalidated_threshold.store(threshold, std::memory_order_relaxed);
-        cleanup_interval_ms = interval_ms;
-        cleanup_batch = batch;
+        invalidate_notifier = on_invalidate;
     }
 
-    void startup(BackgroundSchedulePool & pool, CachePriorityGuard & cache_guard);
-
-    void deactivateBackgroundOperations();
+    /// Remove up to `max_batch` pending invalidated entries from the queue under the write
+    /// lock. Returns the number of pending entries removed. Driven by FileCache's cleanup task.
+    virtual size_t removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard) = 0;
 
     struct UsageStat
     {
@@ -453,6 +455,13 @@ public:
 
     virtual void setCacheUsageStatGuard(std::shared_ptr<CacheUsageStatGuard>) {}
 
+    /// Idle-client TTL tracking (distributed-cache server). Only the overcommit
+    /// policy keeps per-user `CacheUsage`; the base is a no-op.
+    virtual void touchClientAccess(const UserID &) {}
+    /// Idle clients (>= ttl) paired with their usage, so the caller can re-check
+    /// before purging without a second lookup.
+    virtual std::vector<std::pair<UserID, CacheUsagePtr>> collectIdleClients(std::chrono::seconds) const { return {}; }
+
     /// Invoked by `EvictionCandidates::evict` for each successfully-evicted
     /// segment.
     using OnEvictCallback = std::function<void(const FileSegment & segment, const UserID & user_id)>;
@@ -471,18 +480,6 @@ protected:
     /// because for releasing hold space we do not need strong guarantees.
     virtual void releaseImpl(size_t /* size */, size_t /* elements */) {}
 
-    /// Register a hook called from invalidate() once the number of pending
-    /// invalidated entries reaches `threshold`.
-    virtual void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate)
-    {
-        invalidated_threshold.store(threshold, std::memory_order_relaxed);
-        invalidate_notifier = on_invalidate;
-    }
-
-    /// Remove up to `max_batch` pending invalidated entries from the queue under the write
-    /// lock. Returns the number of pending entries removed.
-    virtual size_t removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard) = 0;
-
     const QueueType queue_type;
     std::atomic<size_t> max_size = 0;
     std::atomic<size_t> max_elements = 0;
@@ -492,15 +489,6 @@ protected:
     /// Fire `invalidate_notifier` once a queue accumulates this many pending invalidated entries.
     std::atomic<size_t> invalidated_threshold = 0;
     std::function<void()> invalidate_notifier;
-
-private:
-    void cleanupTaskFunc();
-
-    /// The single cleanup task lives on the top-level priority only.
-    BackgroundSchedulePoolTaskHolder cleanup_task;
-    CachePriorityGuard * cleanup_guard = nullptr;
-    size_t cleanup_interval_ms = 0;
-    size_t cleanup_batch = 0;
 };
 
 using IFileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;

@@ -1,0 +1,85 @@
+---
+slug: /use-cases/observability/clickstack/sdks
+description: 'ClickStack용 Language SDKs - ClickHouse Observability Stack'
+title: 'Language SDKs'
+doc_type: 'guide'
+keywords: ['ClickStack SDKs', 'ClickStack language SDKs', 'OpenTelemetry SDKs ClickStack', '애플리케이션 계측 SDKs
+', '텔레메트리 수집 SDKs']
+---
+
+데이터는 일반적으로 **OpenTelemetry (OTel) collector**를 통해 ClickStack으로 전송되며, 언어별 SDK에서 직접 보내거나 에이전트 역할을 하는 중간 OpenTelemetry collector를 거쳐 보낼 수 있습니다. 예를 들어 인프라 메트릭과 로그를 수집하는 경우가 여기에 해당합니다.
+
+Language SDKs는 애플리케이션 내부에서 텔레메트리를 수집하고, 특히 **트레이스**와 **로그**를 수집하는 역할을 합니다. 또한 이 데이터를 OTLP endpoint를 통해 OpenTelemetry collector로 내보내며, collector는 이를 ClickHouse로 수집합니다.
+
+브라우저 기반 환경에서는 SDK가 UI 이벤트, 클릭, 탐색을 포함한 **세션 데이터**도 수집할 수 있으며, 이를 통해 사용자 세션 리플레이를 지원합니다.
+
+<div id="how-it-works">
+  ## 작동 방식
+</div>
+
+1. 애플리케이션은 ClickStack SDK(예: Node.js, Python, Go)를 사용합니다. 이러한 SDK는 OpenTelemetry SDK를 기반으로 하며, 추가 기능과 사용성 개선이 적용되어 있습니다.
+2. SDK는 OTLP(HTTP 또는 gRPC)를 통해 트레이스와 로그를 수집하고 내보냅니다.
+3. OpenTelemetry Collector는 텔레메트리를 수신하고, 구성된 exporter를 통해 ClickHouse에 기록합니다.
+
+<div id="supported-languages">
+  ## 지원 언어
+</div>
+
+<Info>
+  **OpenTelemetry 호환성**
+
+  ClickStack에서는 향상된 텔레메트리와 기능을 제공하는 자체 language SDKs를 지원하지만, 기존 OpenTelemetry SDKs도 문제없이 사용할 수 있습니다.
+</Info>
+
+<br />
+
+| 언어           | 설명                             | 링크                                                 |
+| ------------ | ------------------------------ | -------------------------------------------------- |
+| AWS Lambda   | AWS Lambda 함수 계측               | [문서](/ko/clickstack/ingesting-data/sdks/aws-lambda)   |
+| Browser      | 브라우저 기반 애플리케이션용 JavaScript SDK | [문서](/ko/clickstack/ingesting-data/sdks/browser)      |
+| Elixir       | Elixir 애플리케이션                  | [문서](/ko/clickstack/ingesting-data/sdks/elixir)       |
+| Go           | Go 애플리케이션 및 마이크로서비스            | [문서](/ko/clickstack/ingesting-data/sdks/golang)       |
+| Java         | Java 애플리케이션                    | [문서](/ko/clickstack/ingesting-data/sdks/java)         |
+| NestJS       | NestJS 애플리케이션                  | [문서](/ko/clickstack/ingesting-data/sdks/nestjs)       |
+| Next.js      | Next.js 애플리케이션                 | [문서](/ko/clickstack/ingesting-data/sdks/nextjs)       |
+| Node.js      | 서버 측 애플리케이션용 JavaScript 런타임    | [문서](/ko/clickstack/ingesting-data/sdks/nodejs)       |
+| Deno         | Deno 애플리케이션                    | [문서](/ko/clickstack/ingesting-data/sdks/deno)         |
+| Python       | Python 애플리케이션 및 웹 서비스          | [문서](/ko/clickstack/ingesting-data/sdks/python)       |
+| React Native | React Native 모바일 애플리케이션        | [문서](/ko/clickstack/ingesting-data/sdks/react-native) |
+| Ruby         | Ruby on Rails 애플리케이션 및 웹 서비스   | [문서](/ko/clickstack/ingesting-data/sdks/ruby)         |
+
+<div id="securing-api-key">
+  ## API Key로 보안 설정
+</div>
+
+<Info>
+  **Managed ClickStack에는 필요하지 않음**
+
+  Managed ClickStack에는 API Key가 필요하지 않습니다.
+</Info>
+
+OTel collector를 통해 ClickStack으로 데이터를 전송하려면 SDK에서 수집 API key를 지정해야 합니다. 이는 SDK의 `init` 함수 또는 `OTEL_EXPORTER_OTLP_HEADERS` 환경 변수를 사용해 설정할 수 있습니다:
+
+```shell
+OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
+```
+
+이 API Key는 ClickStack UI(HyperDX) 애플리케이션에서 생성되며, 앱의 `Team Settings → API Keys`에서 확인할 수 있습니다.
+
+OpenTelemetry를 지원하는 대부분의 [language SDKs](/ko/clickstack/ingesting-data/sdks/index) 및 텔레메트리 라이브러리에서는 애플리케이션에서 `OTEL_EXPORTER_OTLP_ENDPOINT` 환경 변수를 설정하거나 SDK를 초기화할 때 이를 지정하면 됩니다:
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+```
+
+<div id="kubernetes-integration">
+  ## Kubernetes 통합
+</div>
+
+모든 SDK는 Kubernetes 환경에서 실행될 때 Kubernetes 메타데이터(파드 이름, 네임스페이스 등)와 자동으로 연관되도록 지원합니다. 이를 통해 다음 작업을 수행할 수 있습니다.
+
+* 서비스와 연관된 파드 및 노드의 Kubernetes 메트릭 확인
+* 애플리케이션 로그와 트레이스를 인프라 메트릭과 연관시키기
+* Kubernetes 클러스터 전반에서 리소스 사용량과 성능 추적
+
+이 기능을 활성화하려면 OpenTelemetry collector가 리소스 태그를 파드에 전달하도록 구성하십시오. 자세한 설정 방법은 [Kubernetes 통합 가이드](/ko/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods)를 참조하십시오.

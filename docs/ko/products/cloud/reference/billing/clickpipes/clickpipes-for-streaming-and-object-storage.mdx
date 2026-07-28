@@ -1,0 +1,100 @@
+---
+sidebarTitle: '스트리밍 및 객체 스토리지'
+slug: /cloud/reference/billing/clickpipes/streaming-and-object-storage
+title: '스트리밍 및 객체 스토리지를 위한 ClickPipes'
+description: '스트리밍 및 객체 스토리지 ClickPipes의 청구 개요'
+doc_type: 'reference'
+keywords: ['청구', 'ClickPipes', '스트리밍 가격', '비용', '가격']
+---
+
+import ClickPipesFAQ from '/snippets/ko/_clickpipes_faq.mdx';
+
+이 섹션에서는 스트리밍 및 객체 스토리지를 위한 ClickPipes의 가격 모델을 설명합니다.
+
+<div id="what-does-the-clickpipes-pricing-structure-look-like">
+  ## ClickPipes 요금 구조는 어떻게 구성되나요?
+</div>
+
+두 가지 과금 항목으로 구성됩니다:
+
+* **컴퓨트**: **단위당 시간당** 요금입니다.
+  컴퓨트는 실제로 데이터를 수집하는지와 관계없이 ClickPipes 레플리카 파드를 실행하는 비용을 의미합니다.
+  이는 모든 ClickPipes 유형에 적용됩니다.
+* **수집된 데이터**: **GB당** 요금입니다.
+  수집된 데이터 요율은 모든 스트리밍 ClickPipes에 적용됩니다.
+  (Kafka, Confluent, Amazon MSK, Amazon Kinesis, Redpanda, WarpStream, Azure Event Hubs)
+  레플리카 파드를 통해 전송되는 데이터에 대해 적용됩니다. 수집된 데이터 크기(GB)는 소스에서 수신한 바이트 수를 기준으로 과금됩니다(비압축 또는 압축).
+
+<div id="what-are-clickpipes-replicas">
+  ## ClickPipes 레플리카란 무엇입니까?
+</div>
+
+ClickPipes는 ClickHouse Cloud 서비스와 별도로 실행되고 확장되는 전용 인프라를 통해 원격 데이터 소스의 데이터를 수집합니다.
+이러한 이유로 전용 컴퓨트 레플리카를 사용합니다.
+
+<div id="what-is-the-default-number-of-replicas-and-their-size">
+  ## 기본 레플리카 수와 크기는 얼마입니까?
+</div>
+
+각 ClickPipe에는 기본적으로 1개의 레플리카가 할당되며, 512 MiB의 RAM과 0.125 vCPU(XS)가 제공됩니다.
+이는 ClickHouse 컴퓨트 단위 **0.0625**에 해당합니다(1 단위 = 8 GiB RAM, 2 vCPU).
+
+<div id="what-are-the-clickpipes-public-prices">
+  ## ClickPipes의 공개 요금은 얼마입니까?
+</div>
+
+* 컴퓨트: 유닛당 시간당 $0.20(기본 레플리카 크기에서는 레플리카당 시간당 $0.0125)
+* 수집된 데이터: GB당 $0.04
+
+컴퓨트 요금은 ClickPipe의 레플리카 **수**와 **크기**에 따라 달라집니다. 기본 레플리카 크기는 vertical scaling으로 조정할 수 있으며, 각 레플리카 크기별 요금은 다음과 같습니다:
+
+| 레플리카 크기        | 컴퓨트 유닛 | RAM     | vCPU   | 시간당 가격  |
+| -------------- | ------ | ------- | ------ | ------- |
+| 초소형 (XS) (기본값) | 0.0625 | 512 MiB | 0.125. | $0.0125 |
+| 소형 (S)         | 0.125  | 1 GiB   | 0.25   | $0.025  |
+| 중형 (M)         | 0.25   | 2 GiB   | 0.5    | $0.05   |
+| 대형 (L)         | 0.5    | 4 GiB   | 1.0    | $0.10   |
+| 초대형 (XL)       | 1.0    | 8 GiB   | 2.0    | $0.20   |
+
+<div id="how-does-it-look-in-an-illustrative-example">
+  ## 예시로 살펴보면 어떻게 될까요?
+</div>
+
+아래 예시는 별도 언급이 없는 한 단일 M 크기 레플리카를 가정합니다.
+
+<table>
+  <thead>
+    <tr>
+      <th />
+
+      <th>24시간 동안 100 GB</th>
+      <th>24시간 동안 1 TB</th>
+      <th>24시간 동안 10 TB</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>스트리밍 ClickPipe</td>
+      <td>(0.25 x 0.20 x 24) + (0.04 x 100) = $5.20</td>
+      <td>(0.25 x 0.20 x 24) + (0.04 x 1000) = $41.20</td>
+      <td>레플리카 4개 기준: <br /> (0.25 x 0.20 x 24 x 4) + (0.04 x 10000) = $404.80</td>
+    </tr>
+
+    <tr>
+      <td>객체 스토리지 ClickPipe $^*$</td>
+      <td>(0.25 x 0.20 x 24) = $1.20</td>
+      <td>(0.25 x 0.20 x 24) = $1.20</td>
+      <td>(0.25 x 0.20 x 24) = $1.20</td>
+    </tr>
+  </tbody>
+</table>
+
+$^1$ *오케스트레이션용 ClickPipes 컴퓨트만 포함되며,
+실제 데이터 전송은 기본 ClickHouse 서비스에서 처리된다고 가정합니다.*
+
+<div id="faq-streaming-and-object-storage">
+  ## 스트리밍 및 객체 스토리지 ClickPipes에 대한 FAQ
+</div>
+
+<ClickPipesFAQ />

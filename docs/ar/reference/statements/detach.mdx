@@ -1,0 +1,73 @@
+---
+description: 'توثيق DETACH'
+sidebarTitle: 'DETACH'
+slug: /sql-reference/statements/detach
+title: 'تعليمة DETACH'
+doc_type: 'reference'
+---
+
+يجعل الخادم &quot;ينسى&quot; وجود جدول، أو عرض مادي، أو قاموس، أو قاعدة بيانات.
+
+**البنية**
+
+```sql
+DETACH TABLE|VIEW|DICTIONARY|DATABASE [IF EXISTS] [db.]name [ON CLUSTER cluster] [PERMANENTLY] [SYNC]
+```
+
+إن فصل كيان ما لا يحذف البيانات أو البيانات الوصفية الخاصة بجدول أو materialized view أو Dictionary أو قاعدة بيانات. إذا لم يُفصل الكيان باستخدام `PERMANENTLY`، فسيقرأ الخادم البيانات الوصفية عند تشغيله في المرة التالية ويُعيد إلحاق الجدول/العرض/القاموس/قاعدة البيانات. أما إذا فُصل الكيان باستخدام `PERMANENTLY`، فلن تتم إعادة إلحاقه تلقائيًا.
+
+وسواء فُصل جدول أو قاموس أو قاعدة بيانات بشكل دائم أم لا، ففي كلتا الحالتين يمكنك إعادة إلحاقه باستخدام استعلام [ATTACH](/ar/reference/statements/attach).
+كما يمكن أيضًا إعادة إلحاق جداول سجلات النظام (مثل `query_log` و`text_log` وغير ذلك). أما جداول النظام الأخرى فلا يمكن إعادة إلحاقها. وعند تشغيل الخادم في المرة التالية، سيُعيد الخادم إلحاق تلك الجداول مرة أخرى.
+
+لا يعمل `ATTACH MATERIALIZED VIEW` مع الصياغة المختصرة (من دون `SELECT`)، لكن يمكنك إلحاقه باستخدام استعلام `ATTACH TABLE`.
+
+لاحظ أنه لا يمكنك فصل جدول بشكل دائم إذا كان مفصولًا بالفعل (مؤقتًا). لكن يمكنك إعادة إلحاقه ثم فصله بشكل دائم مرة أخرى.
+
+كذلك، لا يمكنك [DROP](/ar/reference/statements/drop#drop-table) جدول منفصل، أو تنفيذ [CREATE TABLE](/ar/reference/statements/create/table) بالاسم نفسه لكيان فُصل بشكل دائم، أو استبداله بجدول آخر باستخدام استعلام [RENAME TABLE](/ar/reference/statements/rename).
+
+ينفّذ المُعدِّل `SYNC` الإجراء من دون تأخير.
+
+**مثال**
+
+إنشاء جدول:
+
+```sql title="Query"
+CREATE TABLE test ENGINE = MergeTree ORDER BY () AS SELECT * FROM numbers(10);
+SELECT * FROM test;
+```
+
+```text title="Response"
+┌─number─┐
+│      0 │
+│      1 │
+│      2 │
+│      3 │
+│      4 │
+│      5 │
+│      6 │
+│      7 │
+│      8 │
+│      9 │
+└────────┘
+```
+
+فصل الجدول:
+
+```sql title="Query"
+DETACH TABLE test;
+SELECT * FROM test;
+```
+
+```text title="Response"
+Received exception from server (version 21.4.1):
+Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.test does not exist.
+```
+
+<Note>
+  في ClickHouse Cloud، يجب على المستخدمين استخدام العبارة `PERMANENTLY`، مثل: `DETACH TABLE <table> PERMANENTLY`. وإذا لم تُستخدم هذه العبارة، فستُرفَق الجداول من جديد عند إعادة تشغيل العنقود، مثلًا أثناء الترقيات.
+</Note>
+
+**انظر أيضًا**
+
+* [العرض المُجسَّد](/ar/reference/statements/create/view#materialized-view)
+* [القواميس](/ar/reference/statements/create/dictionary)

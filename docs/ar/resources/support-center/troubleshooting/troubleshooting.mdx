@@ -1,0 +1,229 @@
+---
+title: 'استكشاف الأخطاء وإصلاحها'
+description: 'دليل استكشاف مشكلات التثبيت وإصلاحها'
+slug: /guides/troubleshooting
+doc_type: 'guide'
+keywords: ['استكشاف الأخطاء وإصلاحها', 'تصحيح الأخطاء', 'حل المشكلات', 'الأخطاء', 'التشخيص']
+---
+
+<div id="installation">
+  ## التثبيت
+</div>
+
+<div id="cant-import-gpg-keys-from-keyserverubuntucom-with-apt-key">
+  ### يتعذر استيراد مفاتيح GPG من keyserver.ubuntu.com باستخدام apt-key
+</div>
+
+لقد أُوقِفت ميزة `apt-key` في [Advanced package tool (APT)](https://manpages.debian.org/bookworm/apt/apt-key.8.en.html). ينبغي استخدام الأمر `gpg` بدلًا منها. يُرجى الرجوع إلى مقالة [دليل التثبيت](/ar/get-started/setup/install).
+
+<div id="cant-import-gpg-keys-from-keyserverubuntucom-with-gpg">
+  ### تعذّر استيراد مفاتيح GPG من keyserver.ubuntu.com باستخدام gpg
+</div>
+
+1. تحقّق مما إذا كان `gpg` مُثبّتًا:
+
+```shell
+sudo apt-get install gnupg
+```
+
+<div id="cant-get-deb-packages-from-clickhouse-repository-with-apt-get">
+  ### تعذّر الحصول على حزم deb من مستودع ClickHouse باستخدام apt-get
+</div>
+
+1. تحقّق من إعدادات جدار الحماية.
+2. إذا لم تتمكن من الوصول إلى المستودع لأي سبب، فنزّل الحزم كما هو موضح في مقالة [دليل التثبيت](/ar/get-started/setup/install)، ثم ثبّتها يدويًا باستخدام الأمر `sudo dpkg -i <packages>`. وستحتاج أيضًا إلى الحزمة `tzdata`.
+
+<div id="cant-update-deb-packages-from-clickhouse-repository-with-apt-get">
+  ### يتعذر تحديث حزم deb من مستودع ClickHouse باستخدام apt-get
+</div>
+
+قد تحدث هذه المشكلة عند تغيير مفتاح GPG.
+
+يرجى استخدام الإرشادات الواردة في صفحة [الإعداد](/ar/get-started/setup/self-managed/debian-ubuntu) لتحديث تكوين المستودع.
+
+<div id="you-get-different-warnings-with-apt-get-update">
+  ### تظهر لك تحذيرات مختلفة عند تشغيل `apt-get update`
+</div>
+
+تأتي رسائل التحذير الكاملة بأحد الشكلين التاليين:
+
+```shell
+N: Skipping acquire of configured file 'main/binary-i386/Packages' as repository 'https://packages.clickhouse.com/deb stable InRelease' doesn't support architecture 'i386'
+```
+
+```shell
+E: Failed to fetch https://packages.clickhouse.com/deb/dists/stable/main/binary-amd64/Packages.gz  File has unexpected size (30451 != 28154). Mirror sync in progress?
+```
+
+```shell
+E: Repository 'https://packages.clickhouse.com/deb stable InRelease' changed its 'Origin' value from 'Artifactory' to 'ClickHouse'
+E: Repository 'https://packages.clickhouse.com/deb stable InRelease' changed its 'Label' value from 'Artifactory' to 'ClickHouse'
+N: Repository 'https://packages.clickhouse.com/deb stable InRelease' changed its 'Suite' value from 'stable' to ''
+N: This must be accepted explicitly before updates for this repository can be applied. See apt-secure(8) manpage for details.
+```
+
+```shell
+Err:11 https://packages.clickhouse.com/deb stable InRelease
+400  Bad Request [IP: 172.66.40.249 443]
+```
+
+لحل المشكلة المذكورة أعلاه، يُرجى استخدام البرنامج النصي التالي:
+
+```shell
+sudo rm /var/lib/apt/lists/packages.clickhouse.com_* /var/lib/dpkg/arch /var/lib/apt/lists/partial/packages.clickhouse.com_*
+sudo apt-get clean
+sudo apt-get autoclean
+```
+
+<div id="cant-get-packages-with-yum-because-of-wrong-signature">
+  ### يتعذر الحصول على الحزم باستخدام Yum بسبب توقيع غير صحيح
+</div>
+
+مشكلة محتملة: ذاكرة التخزين المؤقت غير صحيحة، وربما تلفت بعد تحديث مفتاح GPG في 2022-09.
+
+الحل هو تنظيف ذاكرة التخزين المؤقت ومجلد lib الخاصَّين بـ Yum:
+
+```shell
+sudo find /var/lib/yum/repos/ /var/cache/yum/ -name 'clickhouse-*' -type d -exec rm -rf {} +
+sudo rm -f /etc/yum.repos.d/clickhouse.repo
+```
+
+بعد ذلك، اتبع [دليل التثبيت](/ar/get-started/setup/self-managed/redhat)
+
+<div id="connecting-to-the-server">
+  ## الاتصال بالخادم
+</div>
+
+المشكلات المحتملة:
+
+* الخادم غير قيد التشغيل.
+* معلمات الإعداد غير المتوقعة أو غير الصحيحة.
+
+<div id="server-is-not-running">
+  ### الخادم لا يعمل
+</div>
+
+<div id="check-if-server-is-running">
+  #### تحقّق مما إذا كان الخادم يعمل
+</div>
+
+```shell
+sudo service clickhouse-server status
+```
+
+إذا لم يكن الخادم يعمل، فشغّله باستخدام الأمر:
+
+```shell
+sudo service clickhouse-server start
+```
+
+<div id="check-the-logs">
+  #### تحقّق من السجلات
+</div>
+
+يوجد السجل الرئيسي لـ `clickhouse-server` افتراضيًا في `/var/log/clickhouse-server/clickhouse-server.log`.
+
+إذا بدأ الخادم بنجاح، فينبغي أن ترى السلاسل التالية:
+
+* `<Information> Application: starting up.` — تم بدء تشغيل الخادم.
+* `<Information> Application: Ready for connections.` — الخادم قيد التشغيل وجاهز للاتصالات.
+
+إذا فشل تشغيل `clickhouse-server` بسبب خطأ في التهيئة، فينبغي أن ترى السلسلة `<Error>` متبوعةً بوصف الخطأ. على سبيل المثال:
+
+```plaintext
+2019.01.11 15:23:25.549505 [ 45 ] {} <Error> ExternalDictionaries: Failed reloading 'event2id' external dictionary: Poco::Exception. Code: 1000, e.code() = 111, e.displayText() = Connection refused, e.what() = Connection refused
+```
+
+إذا لم يظهر لك أي خطأ في نهاية الملف، فراجِع الملف بالكامل بدءًا من السلسلة التالية:
+
+```plaintext
+<Information> Application: starting up.
+```
+
+إذا حاولت تشغيل مثيلٍ ثانٍ من `clickhouse-server` على الخادم، فسيظهر لك السجل التالي:
+
+```plaintext
+2019.01.11 15:25:11.151730 [ 1 ] {} <Information> : Starting ClickHouse 19.1.0 with revision 54413
+2019.01.11 15:25:11.154578 [ 1 ] {} <Information> Application: starting up
+2019.01.11 15:25:11.156361 [ 1 ] {} <Information> StatusFile: Status file ./status already exists - unclean restart. Contents:
+PID: 8510
+Started at: 2019-01-11 15:24:23
+Revision: 54413
+
+2019.01.11 15:25:11.156673 [ 1 ] {} <Error> Application: DB::Exception: Cannot lock file ./status. Another server instance in same directory is already running.
+2019.01.11 15:25:11.156682 [ 1 ] {} <Information> Application: shutting down
+2019.01.11 15:25:11.156686 [ 1 ] {} <Debug> Application: Uninitializing subsystem: Logging Subsystem
+2019.01.11 15:25:11.156716 [ 2 ] {} <Information> BaseDaemon: Stop SignalListener thread
+```
+
+<div id="see-systemd-logs">
+  #### اطّلع على سجلات system.d
+</div>
+
+إذا لم تجد أي معلومات مفيدة في سجلات `clickhouse-server` أو لم تكن هناك سجلات أصلًا، يمكنك عرض سجلات `system.d` باستخدام الأمر:
+
+```shell
+sudo journalctl -u clickhouse-server
+```
+
+<div id="start-clickhouse-server-in-interactive-mode">
+  #### شغّل clickhouse-server في الوضع التفاعلي
+</div>
+
+```shell
+sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-server/config.xml
+```
+
+يشغّل هذا الأمر الخادم كتطبيق تفاعلي باستخدام المعلمات الافتراضية لبرنامج نصي التشغيل التلقائي. في هذا الوضع، يطبع `clickhouse-server` جميع رسائل الأحداث في الطرفية.
+
+<div id="configuration-parameters">
+  ### معلمات التهيئة
+</div>
+
+تحقّق مما يلي:
+
+1. إعدادات Docker:
+
+   * إذا كنت تشغّل ClickHouse في Docker ضمن شبكة IPv6، فتأكد من ضبط `network=host`.
+
+2. إعدادات نقطة النهاية.
+   * تحقّق من الإعدادين [listen&#95;host](/ar/reference/settings/server-settings/settings#listen_host) و[tcp&#95;port](/ar/reference/settings/server-settings/settings#tcp_port).
+   * يقبل خادم ClickHouse، افتراضيًا، الاتصالات عبر localhost فقط.
+
+3. إعدادات بروتوكول HTTP:
+
+   * تحقّق من إعدادات البروتوكول الخاصة بـ HTTP API.
+
+4. إعدادات الاتصال الآمن.
+
+   * تحقّق من:
+     * الإعداد [tcp&#95;port&#95;secure](/ar/reference/settings/server-settings/settings#tcp_port_secure).
+     * إعدادات [شهادات SSL](/ar/reference/settings/server-settings/settings#openssl).
+   * استخدم المعلمات المناسبة عند الاتصال. على سبيل المثال، استخدم المعلمة `port_secure` مع `clickhouse_client`.
+
+5. إعدادات المستخدم:
+
+   * قد تكون تستخدم اسم مستخدم أو كلمة مرور غير صحيحة.
+
+<div id="query-processing">
+  ## معالجة الاستعلامات
+</div>
+
+إذا تعذّر على ClickHouse معالجة الاستعلام، فإنه يرسل وصفًا للخطأ إلى العميل. في `clickhouse-client` تحصل على وصف للخطأ في الطرفية. وإذا كنت تستخدم واجهة HTTP، يرسل ClickHouse وصف الخطأ في جسم الاستجابة. على سبيل المثال:
+
+```shell
+$ curl 'http://localhost:8123/' --data-binary "SELECT a"
+Code: 47, e.displayText() = DB::Exception: Unknown identifier: a. Note that there are no tables (FROM clause) in your query, context: required_names: 'a' source_tables: table_aliases: private_aliases: column_aliases: public_columns: 'a' masked_columns: array_join_columns: source_columns: , e.what() = DB::Exception
+```
+
+إذا شغّلت `clickhouse-client` باستخدام المعلَمة `stack-trace`، فسيُرجع ClickHouse تتبّع مكدس الخادم مع وصف للخطأ.
+
+قد تظهر لك رسالة تفيد بانقطاع الاتصال. في هذه الحالة، يمكنك إعادة تنفيذ الاستعلام. وإذا انقطع الاتصال في كل مرة تنفّذ فيها الاستعلام، فتحقّق من سجلات الخادم بحثًا عن أخطاء.
+
+<div id="efficiency-of-query-processing">
+  ## كفاءة معالجة الاستعلامات
+</div>
+
+إذا لاحظت أن ClickHouse يعمل ببطء شديد، فأنت بحاجة إلى تحليل الحمل على موارد الخادم والشبكة الناتج عن استعلاماتك.
+
+يمكنك استخدام الأداة `clickhouse-benchmark` لتحليل الاستعلامات. وهي تعرض عدد الاستعلامات المُعالَجة في الثانية، وعدد الصفوف المُعالَجة في الثانية، والقيم المئينية لأزمنة معالجة الاستعلامات.

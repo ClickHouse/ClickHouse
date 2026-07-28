@@ -1,0 +1,16 @@
+alias spellings unify
+([101],[101])
+argument-independent states unify
+(15,15)
+only-null placeholder ignores parameters
+(NULL,91)
+placeholder and differing parameters in a union
+(NULL,26)
+placeholder after a real element
+AggregateFunction(quantileExactTuple(0.5), Tuple(Float64, Nullable(Nothing)))
+(91,NULL)
+plain only-null placeholder ignores parameters
+\N
+cross-parameter merge without placeholder
+(91,91)
+incompatible states are still rejected

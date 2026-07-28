@@ -1,0 +1,72 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/cassandra
+title: 'Fuente de diccionario de Cassandra'
+sidebarTitle: 'Cassandra'
+description: 'Configura Cassandra como fuente de diccionario en ClickHouse.'
+doc_type: 'referencia'
+---
+
+Ejemplo de configuración:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(CASSANDRA(
+        host 'localhost'
+        port 9042
+        user 'username'
+        password 'qwerty123'
+        keyspace 'database_name'
+        column_family 'table_name'
+        allow_filtering 1
+        partition_key_prefix 1
+        consistency 'One'
+        where '"SomeColumn" = 42'
+        max_threads 8
+        query 'SELECT id, value_1, value_2 FROM database_name.table_name'
+    ))
+    ```
+  </Tab>
+
+  <Tab title="Archivo de configuración">
+    ```xml
+    <source>
+        <cassandra>
+            <host>localhost</host>
+            <port>9042</port>
+            <user>username</user>
+            <password>qwerty123</password>
+            <keyspase>database_name</keyspase>
+            <column_family>table_name</column_family>
+            <allow_filtering>1</allow_filtering>
+            <partition_key_prefix>1</partition_key_prefix>
+            <consistency>One</consistency>
+            <where>"SomeColumn" = 42</where>
+            <max_threads>8</max_threads>
+            <query>SELECT id, value_1, value_2 FROM database_name.table_name</query>
+        </cassandra>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+Campos de configuración:
+
+| Configuración          | Descripción                                                                                                                                                                                                                                                                                                                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `host`                 | El host de Cassandra o una lista de hosts separada por comas.                                                                                                                                                                                                                                                                                                                                    |
+| `port`                 | El puerto de los servidores Cassandra. Si no se especifica, se usa el puerto predeterminado `9042`.                                                                                                                                                                                                                                                                                              |
+| `user`                 | Nombre del usuario de Cassandra.                                                                                                                                                                                                                                                                                                                                                                 |
+| `password`             | Contraseña del usuario de Cassandra.                                                                                                                                                                                                                                                                                                                                                             |
+| `keyspace`             | Nombre del keyspace (base de datos).                                                                                                                                                                                                                                                                                                                                                             |
+| `column_family`        | Nombre de la familia de columnas (tabla).                                                                                                                                                                                                                                                                                                                                                        |
+| `allow_filtering`      | Indicador para permitir o no condiciones potencialmente costosas sobre las columnas de la clave de clustering. El valor predeterminado es `1`.                                                                                                                                                                                                                                                   |
+| `partition_key_prefix` | Número de columnas de la clave de partición en la clave primaria de la tabla de Cassandra. Es obligatorio para los diccionarios de clave compuesta. El orden de las columnas clave en la definición del diccionario debe ser el mismo que en Cassandra. El valor predeterminado es `1` (la primera columna clave es una clave de partición y las demás columnas clave son claves de clustering). |
+| `consistency`          | Nivel de consistencia. Valores posibles: `One`, `Two`, `Three`, `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. El valor predeterminado es `One`.                                                                                                                                                                                                             |
+| `where`                | Criterio de selección opcional.                                                                                                                                                                                                                                                                                                                                                                  |
+| `max_threads`          | Número máximo de hilos que se usarán para cargar datos desde varias particiones en diccionarios de clave compuesta.                                                                                                                                                                                                                                                                              |
+| `query`                | Consulta personalizada. Opcional.                                                                                                                                                                                                                                                                                                                                                                |
+
+<Note>
+  Los campos `column_family` y `where` no pueden usarse junto con el campo `query`. Además, debe declararse uno de los campos `column_family` o `query`.
+</Note>

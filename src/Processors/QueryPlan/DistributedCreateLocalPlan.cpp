@@ -32,10 +32,6 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     if (build_logical_plan && !default_database.empty())
         new_context->setCurrentDatabase(default_database);
 
-    /// Do not push down limit to local plan, as it will break `rows_before_limit_at_least` counter.
-    if (!build_logical_plan && processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
-        processed_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
-
     /// Do not apply AST optimizations, because query
     /// is already optimized and some optimizations
     /// can be applied only for non-distributed tables
@@ -45,6 +41,8 @@ std::unique_ptr<QueryPlan> createLocalPlan(
         .ignoreASTOptimizations();
 
     select_query_options.build_logical_plan = build_logical_plan;
+    select_query_options.is_local_shard_plan
+        = !build_logical_plan && processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {

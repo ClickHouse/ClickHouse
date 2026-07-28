@@ -1,0 +1,125 @@
+---
+sidebarTitle: 'SQL 转储'
+slug: /integrations/data-formats/sql
+title: '在 ClickHouse 中插入与转储 SQL 数据'
+description: '介绍如何使用 SQL 转储在其他数据库与 ClickHouse 之间传输数据。'
+doc_type: 'guide'
+keywords: ['SQL 格式', '数据导出', '数据导入', '备份', 'SQL 转储']
+---
+
+ClickHouse 可通过多种方式轻松集成到 OLTP 数据库基础设施中。其中一种方式是使用 SQL 转储在其他数据库与 ClickHouse 之间传输数据。
+
+<div id="creating-sql-dumps">
+  ## 创建 SQL 转储
+</div>
+
+可以使用 [SQLInsert](/zh/reference/formats/SQLInsert) 以 SQL 格式转储数据。ClickHouse 会按 `INSERT INTO <table name> VALUES(...` 的形式写入数据，并使用 [`output_format_sql_insert_table_name`](/zh/reference/settings/formats#output_format_sql_insert_table_name) 设置项中的值作为表名：
+
+```sql
+SET output_format_sql_insert_table_name = 'some_table';
+SELECT * FROM some_data
+INTO OUTFILE 'dump.sql'
+FORMAT SQLInsert
+```
+
+可通过禁用 [`output_format_sql_insert_include_column_names`](/zh/reference/settings/formats#output_format_sql_insert_include_column_names) 选项来省略列名：
+
+```sql
+SET output_format_sql_insert_include_column_names = 0
+```
+
+现在我们可以将 [dump.sql](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/dump.sql) 文件导入另一个 OLTP 数据库：
+
+```bash
+mysql some_db < dump.sql
+```
+
+我们假设 `some_table` 表存在于 `some_db` MySQL 数据库中。
+
+某些 DBMS 可能会限制单个批次中可处理的值数量。默认情况下，ClickHouse 会创建包含 65k 个值的批次，但可以通过 [`output_format_sql_insert_max_batch_size`](/zh/reference/settings/formats#output_format_sql_insert_max_batch_size) 选项进行调整：
+
+```sql
+SET output_format_sql_insert_max_batch_size = 1000;
+```
+
+<div id="exporting-a-set-of-values">
+  ### 导出一组值
+</div>
+
+ClickHouse 提供 [Values](/zh/reference/formats/Values) 格式，它与 SQLInsert 类似，但省略了 `INSERT INTO table VALUES` 这一部分，仅返回一组值：
+
+```sql
+SELECT * FROM some_data LIMIT 3 FORMAT Values
+```
+
+```response
+('Bangor_City_Forest','2015-07-01',34),('Alireza_Afzal','2017-02-01',24),('Akhaura-Laksam-Chittagong_Line','2015-09-01',30)
+```
+
+<div id="inserting-data-from-sql-dumps">
+  ## 从 SQL 转储导入数据
+</div>
+
+要读取 SQL 转储，请使用 [MySQLDump](/zh/reference/formats/MySQLDump)：
+
+```sql
+SELECT *
+FROM file('dump.sql', MySQLDump)
+LIMIT 5
+```
+
+```response
+┌─path───────────────────────────┬──────month─┬─hits─┐
+│ Bangor_City_Forest             │ 2015-07-01 │   34 │
+│ Alireza_Afzal                  │ 2017-02-01 │   24 │
+│ Akhaura-Laksam-Chittagong_Line │ 2015-09-01 │   30 │
+│ 1973_National_500              │ 2017-10-01 │   80 │
+│ Attachment                     │ 2017-09-01 │ 1356 │
+└────────────────────────────────┴────────────┴──────┘
+```
+
+默认情况下，ClickHouse 会跳过未知列 (由 [input&#95;format&#95;skip&#95;unknown&#95;fields](/zh/reference/settings/formats#input_format_skip_unknown_fields) 选项控制) ，并处理转储文件中找到的第一张表的数据 (如果单个文件中包含多个表的转储) 。DDL 语句会被跳过。要将 MySQL 转储中的数据加载到表中 ([mysql.sql](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/mysql.sql) 文件) ：
+
+```sql
+INSERT INTO some_data
+FROM INFILE 'mysql.sql' FORMAT MySQLDump
+```
+
+我们还可以根据 MySQL 转储文件自动创建表：
+
+```sql
+CREATE TABLE table_from_mysql
+ENGINE = MergeTree
+ORDER BY tuple() AS
+SELECT *
+FROM file('mysql.sql', MySQLDump)
+```
+
+这里我们根据 ClickHouse 自动推断出的结构创建了一个名为 `table_from_mysql` 的表。ClickHouse 要么根据数据识别类型，要么在可用时使用 DDL：
+
+```sql
+DESCRIBE TABLE table_from_mysql;
+```
+
+```response
+┌─name──┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ path  │ Nullable(String) │              │                    │         │                  │                │
+│ month │ Nullable(Date32) │              │                    │         │                  │                │
+│ hits  │ Nullable(UInt32) │              │                    │         │                  │                │
+└───────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="other-formats">
+  ## 其他格式
+</div>
+
+ClickHouse 支持多种格式，包括文本格式和二进制格式，以适配各种场景和平台。你可以在以下文章中进一步了解更多格式及其使用方式：
+
+* [CSV 和 TSV 格式](/zh/guides/clickhouse/data-formats/csv-tsv)
+* [Parquet](/zh/guides/clickhouse/data-formats/parquet)
+* [JSON 格式](/zh/guides/clickhouse/data-formats/json/intro)
+* [Regex 和 Template](/zh/guides/clickhouse/data-formats/templates-regex)
+* [Native 和二进制格式](/zh/guides/clickhouse/data-formats/binary)
+* **SQL 格式**
+
+你还可以查看 [clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)——这是一个便携且功能齐全的工具，可用于处理本地/远程文件，而无需 ClickHouse 服务器。

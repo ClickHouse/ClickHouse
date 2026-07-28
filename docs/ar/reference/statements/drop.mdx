@@ -1,0 +1,177 @@
+---
+description: 'توثيق عبارات DROP'
+sidebarTitle: 'DROP'
+slug: /sql-reference/statements/drop
+title: 'عبارات DROP'
+doc_type: 'reference'
+---
+
+يحذف كيانًا موجودًا. إذا حُدِّدت العبارة `IF EXISTS`، فلن تُرجع هذه الاستعلامات خطأً إذا لم يكن الكيان موجودًا. وإذا حُدِّد المُعدِّل `SYNC`، فسيُحذف الكيان دون تأخير.
+
+<div id="drop-database">
+  ## DROP DATABASE
+</div>
+
+يحذف جميع الجداول داخل قاعدة البيانات `db`، ثم يحذف قاعدة البيانات `db` نفسها.
+
+الصيغة:
+
+```sql
+DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster] [SYNC]
+```
+
+<div id="drop-table">
+  ## DROP TABLE
+</div>
+
+يحذف جدولًا واحدًا أو أكثر.
+
+<Tip>
+  للتراجع عن حذف جدول، يُرجى مراجعة [UNDROP TABLE](/ar/reference/statements/undrop)
+</Tip>
+
+البنية:
+
+```sql
+DROP [TEMPORARY] TABLE [IF EXISTS] [IF EMPTY]  [db1.]name_1[, [db2.]name_2, ...] [ON CLUSTER cluster] [SYNC]
+```
+
+القيود:
+
+* إذا تم تحديد البند `IF EMPTY`، فلن يتحقق الخادم من خلو الجدول إلا على النسخة المتماثلة التي استقبلت الاستعلام.
+* حذف عدة جداول دفعة واحدة ليس عملية ذرية، أي إذا فشل حذف أحد الجداول، فلن تُحذف الجداول التالية.
+
+<div id="drop-dictionary">
+  ## DROP DICTIONARY
+</div>
+
+يحذف القاموس.
+
+الصيغة:
+
+```sql
+DROP DICTIONARY [IF EXISTS] [db.]name [SYNC]
+```
+
+<div id="drop-user">
+  ## DROP USER
+</div>
+
+يحذف مستخدمًا.
+
+الصيغة:
+
+```sql
+DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
+```
+
+<div id="drop-role">
+  ## DROP ROLE
+</div>
+
+يحذف دورًا. ويُلغى الدور المحذوف من جميع الكيانات التي كان مُعيَّنًا لديها.
+
+الصيغة:
+
+```sql
+DROP ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
+```
+
+<div id="drop-row-policy">
+  ## DROP ROW POLICY
+</div>
+
+يحذف ROW سياسة. وتُلغى ROW سياسة المحذوفة من جميع الكيانات التي كانت مُعيَّنة لها.
+
+البنية:
+
+```sql
+DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
+```
+
+<div id="drop-masking-policy">
+  ## DROP MASKING POLICY
+</div>
+
+يحذف سياسة إخفاء البيانات.
+
+الصيغة:
+
+```sql
+DROP MASKING POLICY [IF EXISTS] name ON [database.]table [ON CLUSTER cluster_name] [FROM access_storage_type]
+```
+
+<div id="drop-quota">
+  ## DROP QUOTA
+</div>
+
+يحذف QUOTA. ويُلغى QUOTA المحذوف من جميع الكيانات التي كان مُعيَّنًا لها.
+
+الصيغة:
+
+```sql
+DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
+```
+
+<div id="drop-settings-profile">
+  ## DROP SETTINGS PROFILE
+</div>
+
+يحذف ملف تعريف إعدادات. ويُلغى ملف تعريف الإعدادات المحذوف من جميع الكيانات التي كان مُعيَّنًا لها.
+
+بناء الجملة:
+
+```sql
+DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
+```
+
+<div id="drop-view">
+  ## DROP VIEW
+</div>
+
+يحذف عرضًا. ويمكن أيضًا حذف العروض باستخدام الأمر `DROP TABLE`، لكن `DROP VIEW` يتحقق من أن `[db.]name` عبارة عن عرض.
+
+البنية:
+
+```sql
+DROP VIEW [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
+```
+
+<div id="drop-function">
+  ## DROP FUNCTION
+</div>
+
+يحذف دالة معرّفة من قِبل المستخدم أُنشئت باستخدام [CREATE FUNCTION](/ar/reference/statements/create/function).
+لا يمكن حذف دوال النظام.
+
+**الصيغة**
+
+```sql
+DROP FUNCTION [IF EXISTS] function_name [on CLUSTER cluster]
+```
+
+**مثال**
+
+```sql
+CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
+DROP FUNCTION linear_equation;
+```
+
+<div id="drop-named-collection">
+  ## DROP NAMED COLLECTION
+</div>
+
+يحذف مجموعة مسماة.
+
+**الصيغة**
+
+```sql
+DROP NAMED COLLECTION [IF EXISTS] name [on CLUSTER cluster]
+```
+
+**مثال**
+
+```sql
+CREATE NAMED COLLECTION foobar AS a = '1', b = '2';
+DROP NAMED COLLECTION foobar;
+```

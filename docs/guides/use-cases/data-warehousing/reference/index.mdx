@@ -1,0 +1,20 @@
+---
+description: 'Reference guides for connecting ClickHouse to data lake catalogs including AWS Glue, Unity, REST, Lakekeeper, Nessie, and OneLake.'
+slug: /use-cases/data-lake/reference
+title: 'Catalog guides'
+keywords: ['data lake', 'lakehouse', 'catalog', 'glue', 'unity', 'rest', 'lakekeeper', 'nessie', 'OneLake']
+doc_type: 'landing-page'
+---
+
+ClickHouse integrates with a range of data lake catalogs through the [`DataLakeCatalog`](/reference/engines/database-engines/datalake) database engine. The following guides walk through connecting ClickHouse to each supported catalog, including configuration, authentication, and querying examples.
+
+| Catalog | Description |
+|---------|-------------|
+| [AWS Glue](/guides/use-cases/data-warehousing/glue-catalog) | Query Iceberg tables registered in the AWS Glue Data Catalog from data stored in S3. |
+| [Databricks Unity Catalog](/guides/use-cases/data-warehousing/unity-catalog) | Connect to Databricks Unity Catalog for Delta Lake and Iceberg tables. |
+| [Iceberg REST Catalog](/guides/use-cases/data-warehousing/rest-catalog) | Use any catalog implementing the Iceberg REST specification, such as Tabular. |
+| [Lakekeeper](/guides/use-cases/data-warehousing/lakekeeper-catalog) | Connect to the Lakekeeper Catalog for Iceberg tables. |
+| [Project Nessie](/guides/use-cases/data-warehousing/nessie-catalog) | Query Iceberg tables using the Nessie Catalog with Git-like data version control. |
+| [Microsoft OneLake](/guides/use-cases/data-warehousing/onelake-catalog) | Query Iceberg tables in Microsoft Fabric OneLake. |
+| [Polaris catalog](/guides/use-cases/data-warehousing/polaris-catalog) | Connect to the Polaris catalog for Iceberg tables. |
+| [BigLake Metastore](/guides/use-cases/data-warehousing/biglake-catalog) | Query Iceberg tables registered in BigLake Metastore. |

@@ -1,0 +1,176 @@
+---
+description: '在 ClickHouse 中配置和管理资源使用配额的指南'
+sidebarTitle: '配额'
+slug: /operations/quotas
+title: '配额'
+doc_type: 'guide'
+---
+
+<Info>
+  **ClickHouse Cloud 中的配额**
+
+  ClickHouse Cloud 支持配额，但必须使用 [DDL 语法](/zh/reference/statements/create/quota) 创建。下文介绍的 XML 配置方式**不受支持**。
+</Info>
+
+配额可用于在一段时间内限制资源使用，或跟踪资源使用情况。
+配额在用户配置中设置，通常是 &#39;users.xml&#39;。
+
+系统还提供了限制单个查询复杂度的功能。请参见[查询复杂度限制](/zh/concepts/features/configuration/settings/query-complexity)一节。
+
+与查询复杂度限制相比，配额：
+
+* 它限制的是一段时间内可运行的一组查询，而不是单个查询。
+* 会统计分布式查询处理中所有远程服务器消耗的资源。
+
+下面来看一下 &#39;users.xml&#39; 文件中定义配额的部分。
+
+```xml
+<!-- 配额 -->
+<quotas>
+    <!-- 配额名称。 -->
+    <default>
+        <!-- 针对某一时间段的限制。您可以设置多个具有不同限制的时间间隔。 -->
+        <interval>
+            <!-- 时间间隔长度。 -->
+            <duration>3600</duration>
+
+            <!-- 不限制。仅收集指定时间间隔内的数据。 -->
+            <queries>0</queries>
+            <query_selects>0</query_selects>
+            <query_inserts>0</query_inserts>
+            <errors>0</errors>
+            <result_rows>0</result_rows>
+            <read_rows>0</read_rows>
+            <execution_time>0</execution_time>
+        </interval>
+    </default>
+```
+
+默认情况下，配额会按小时统计资源消耗，但不限制使用量。
+每个时间间隔内计算出的资源消耗会在每次请求后输出到服务器日志中。
+
+```xml
+<statbox>
+    <!-- 某一时间段的限制。您可以设置多个具有不同限制的时间间隔。 -->
+    <interval>
+        <!-- 时间间隔的长度。 -->
+        <duration>3600</duration>
+
+        <queries>1000</queries>
+        <query_selects>100</query_selects>
+        <query_inserts>100</query_inserts>
+        <written_bytes>5000000</written_bytes>
+        <errors>100</errors>
+        <result_rows>1000000000</result_rows>
+        <read_rows>100000000000</read_rows>
+        <execution_time>900</execution_time>
+        <failed_sequential_authentications>5</failed_sequential_authentications>
+    </interval>
+
+    <interval>
+        <duration>86400</duration>
+
+        <queries>10000</queries>
+        <query_selects>10000</query_selects>
+        <query_inserts>10000</query_inserts>
+        <errors>1000</errors>
+        <result_rows>5000000000</result_rows>
+        <result_bytes>160000000000</result_bytes>
+        <read_rows>500000000000</read_rows>
+        <result_bytes>16000000000000</result_bytes>
+        <execution_time>7200</execution_time>
+    </interval>
+</statbox>
+```
+
+对于 &#39;statbox&#39; 配额，会按每小时和每 24 小时 (86,400 秒) 设置限制。时间间隔从某个由实现定义的固定时刻开始计算。换句话说，这个 24 小时的时间间隔不一定从午夜开始。
+
+当时间间隔结束时，所有累计的值都会被清零。接下来的一个小时内，配额计算会重新开始。
+
+以下是可以限制的数量：
+
+`queries` – 请求总数。
+
+`query_selects` – select 请求总数。
+
+`query_inserts` – insert 请求总数。
+
+`errors` – 抛出异常的查询数量。
+
+`result_rows` – 返回结果中的总行数。
+
+`result_bytes` - 返回结果的总字节数。
+
+`read_rows` – 在所有远程服务器上运行查询时，从表中读取的源行总数。
+
+`read_bytes` - 在所有远程服务器上运行查询时，从表中读取的总字节数。
+
+`written_bytes` - 写入操作的总字节数。
+
+`execution_time` – 查询执行总时间，以秒为单位 (墙钟时间) 。
+
+`failed_sequential_authentications` - 连续身份验证失败总数。
+
+`queries_per_normalized_hash` – 任意单个归一化查询的最大执行次数。归一化查询是指将字面量替换为占位符后的查询，因此 `SELECT 1` 和 `SELECT 2` 会被视为同一个归一化查询。此限制会针对每种不同的归一化查询模式分别单独跟踪。
+
+如果在至少一个时间间隔内超过该限制，则会抛出异常，异常文本会说明超出的是哪项限制、对应的是哪个时间间隔，以及新的时间间隔何时开始 (届时可以再次发送查询) 。
+
+配额可以使用配额键功能，按多个键分别独立统计资源。下面是一个示例：
+
+```xml
+<!-- For the global reports designer. -->
+<web_global>
+    <!-- keyed – The quota_key "key" is passed in the query parameter,
+            and the quota is tracked separately for each key value.
+        For example, you can pass a username as the key,
+            so the quota will be counted separately for each username.
+        Using keys makes sense only if quota_key is transmitted by the program, not by a user.
+
+        You can also write <keyed_by_ip />, so the IP address is used as the quota key.
+        (But keep in mind that users can change the IPv6 address fairly easily.)
+
+        Instead of <keyed_by_ip /> you can use <keyed_by_forwarded_ip />, so the address
+        from the X-Forwarded-For header is used as the quota key.
+
+        For both <keyed_by_ip /> and <keyed_by_forwarded_ip /> you can additionally specify
+        <ipv4_prefix_bits> and <ipv6_prefix_bits> to group clients by subnet instead of by a
+        single address: the IP address is masked to the given prefix length before being used
+        as the quota key. For example, <ipv4_prefix_bits>24</ipv4_prefix_bits> shares one bucket
+        across a /24 IPv4 subnet, and <ipv6_prefix_bits>64</ipv6_prefix_bits> across a /64 IPv6
+        subnet. These elements can only be used together with <keyed_by_ip /> or
+        <keyed_by_forwarded_ip />.
+    -->
+    <keyed />
+```
+
+还可以按归一化查询哈希值来设置配额键，这样每种不同的查询模式都会拥有各自独立的配额桶。在 XML 配置中，写法如下：`<keyed_by_normalized_query_hash />`：
+
+```xml
+<my_quota>
+    <keyed_by_normalized_query_hash />
+    <interval>
+        <duration>3600</duration>
+        <queries>100</queries>
+    </interval>
+</my_quota>
+```
+
+同样也可以用 DDL 语法来表示：
+
+```sql
+CREATE QUOTA my_quota KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX queries = 100 TO my_user;
+```
+
+在此示例中，用户每小时最多可执行每种不同的归一化查询 100 次。`SELECT number FROM numbers(1)` 和 `SELECT number FROM numbers(2)` 共用同一个配额桶 (因为它们具有相同的规范化结果) ，而 `SELECT number, number FROM numbers(1)` 则使用单独的配额桶。
+
+配额在配置的 &#39;users&#39; 部分中分配给用户。请参见“访问权限”一节。
+
+对于分布式查询处理，累计计数存储在请求发起方服务器上。因此，如果用户切换到另一台服务器，那里的配额将会“重新开始”。
+
+服务器重启后，配额会被重置。
+
+<div id="related-content">
+  ## 相关内容
+</div>
+
+* 博客：[使用 ClickHouse 构建单页应用](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)

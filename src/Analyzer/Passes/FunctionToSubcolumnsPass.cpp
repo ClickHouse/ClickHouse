@@ -541,15 +541,20 @@ std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
 /// elsewhere in the query (e.g., in SELECT alongside WHERE m['key'] = val).
 /// Normally the optimizer skips a column if it's used both in a transformable
 /// function and as a plain column reference, because introducing a new
-/// subcolumn identifier complicates analysis. But for Map key lookups the
-/// transformation is beneficial when the occurrence is in WHERE/PREWHERE: only
-/// the relevant bucket is read for the filter, while the full map is still read
-/// for matching rows in SELECT. The reads are independent and semantically correct.
+/// subcolumn identifier complicates analysis. But for Map key lookups, Tuple
+/// element access, Variant element access and QBit element access the transformation is beneficial when the occurrence is in
+/// WHERE/PREWHERE: only the relevant subcolumn is read for the filter (letting a
+/// skip index on that subcolumn prune granules), while the full column is still
+/// read for matching rows in SELECT. The reads are independent and semantically
+/// correct.
 /// Note: this exception does NOT apply to HAVING or other clauses where the
 /// subcolumn would need to appear in GROUP BY.
 std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full_column =
 {
     {TypeIndex::Map, "arrayElement"},
+    {TypeIndex::Tuple, "tupleElement"},
+    {TypeIndex::Variant, "variantElement"},
+    {TypeIndex::QBit, "tupleElement"},
 };
 
 /// Optimizes:

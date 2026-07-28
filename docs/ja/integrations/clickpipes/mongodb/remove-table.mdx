@@ -1,0 +1,33 @@
+---
+title: 'ClickPipe から特定のテーブルを削除する'
+description: 'ClickPipe から特定のテーブルを削除する'
+sidebarTitle: 'テーブルを削除'
+slug: /integrations/clickpipes/mongodb/removing_tables
+doc_type: 'guide'
+keywords: ['ClickPipes', 'MongoDB', 'CDC', 'データインジェスト', 'リアルタイム同期']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+場合によっては、MongoDB ClickPipe から特定のテーブルを除外するのが合理的です。たとえば、あるテーブルが分析ワークロードに不要な場合、それをスキップすることで ClickHouse のストレージコストとレプリケーションコストを削減できます。
+
+<div id="remove-tables-steps">
+  ## 特定のテーブルを削除する手順
+</div>
+
+最初のステップは、パイプからそのテーブルを削除することです。これは、次の手順で行えます。
+
+1. パイプを[一時停止](/ja/integrations/clickpipes/mongodb/pause-and-resume)します。
+2. Edit Table Settings をクリックします。
+3. 対象のテーブルを探します。検索バーで検索できます。
+4. 選択済みのチェックボックスをクリックして、テーブルの選択を解除します。
+
+<br />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp" border size="md" />
+
+5. update をクリックします。
+6. 更新が正常に完了すると、**メトリクス** タブの status は **Running** になります。このテーブルはこの ClickPipe では以後レプリケートされなくなります。

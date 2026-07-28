@@ -1,0 +1,51 @@
+---
+title: 'Mise en pause et reprise d’un ClickPipe MongoDB'
+description: 'Mise en pause et reprise d’un ClickPipe MongoDB'
+sidebarTitle: 'Mettre une table en pause'
+slug: /integrations/clickpipes/mongodb/pause_and_resume
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'ingestion de données', 'synchronisation en temps réel']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Dans certains cas, il peut être utile de mettre en pause un ClickPipe MongoDB. Par exemple, vous souhaiterez peut-être effectuer des analyses sur des données existantes dans un état figé. Il se peut aussi que vous soyez en train d’effectuer des mises à niveau de MongoDB. Voici comment mettre en pause puis reprendre un ClickPipe MongoDB.
+
+<div id="pause-clickpipe-steps">
+  ## Étapes pour mettre en pause un ClickPipe MongoDB
+</div>
+
+1. Dans l’onglet Sources de données, cliquez sur le ClickPipe MongoDB que vous souhaitez mettre en pause.
+2. Allez dans l’onglet **Paramètres**.
+3. Cliquez sur le bouton **Pause**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp" border size="md" />
+
+4. Une boîte de dialogue de confirmation devrait s’afficher. Cliquez de nouveau sur **Pause**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp" border size="md" />
+
+4. Allez dans l’onglet **Métriques**.
+5. Attendez que le statut du pipe soit **En pause**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp" border size="md" />
+
+<div id="resume-clickpipe-steps">
+  ## Étapes pour reprendre un ClickPipe MongoDB
+</div>
+
+1. Dans l’onglet Sources de données, cliquez sur le ClickPipe MongoDB que vous souhaitez reprendre. L’état du mirror doit être initialement **En pause**.
+2. Accédez à l’onglet **Paramètres**.
+3. Cliquez sur le bouton **Reprendre**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp" border size="md" />
+
+4. Une boîte de dialogue de confirmation devrait s’afficher. Cliquez de nouveau sur **Reprendre**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp" border size="md" />
+
+5. Accédez à l’onglet **Métriques**.
+6. Attendez que l’état du pipe passe à **En cours d’exécution**.

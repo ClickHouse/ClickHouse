@@ -1,0 +1,35 @@
+---
+description: 'Документация по изменению выражения SAMPLE BY'
+sidebarTitle: 'SAMPLE BY'
+slug: /sql-reference/statements/alter/sample-by
+title: 'Изменение выражений ключа сэмплирования'
+doc_type: 'reference'
+---
+
+Доступны следующие операции:
+
+<div id="modify">
+  ## ИЗМЕНИТЬ
+</div>
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY SAMPLE BY new_expression
+```
+
+Команда изменяет [ключ выборки](/ru/reference/engines/table-engines/mergetree-family/mergetree) таблицы на `new_expression` (выражение или кортеж выражений). Новый ключ выборки должен входить в состав первичного ключа.
+
+<div id="remove">
+  ## УДАЛЕНИЕ
+</div>
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] REMOVE SAMPLE BY
+```
+
+Команда удаляет [ключ выборки](/ru/reference/engines/table-engines/mergetree-family/mergetree) таблицы.
+
+Команды `MODIFY` и `REMOVE` являются легковесными в том смысле, что изменяют только метаданные или удаляют файлы.
+
+<Note>
+  Поддерживается только для таблиц семейства [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree) (включая [реплицируемые](/ru/reference/engines/table-engines/mergetree-family/replication) таблицы).
+</Note>

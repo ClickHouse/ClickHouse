@@ -1,0 +1,37 @@
+---
+description: 'Documentation sur les instructions ALTER TABLE ... UPDATE'
+sidebarTitle: 'UPDATE'
+slug: /sql-reference/statements/alter/update
+title: 'Instructions ALTER TABLE ... UPDATE'
+doc_type: 'reference'
+---
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
+```
+
+Manipule les données correspondant à l’expression de filtrage spécifiée. Cette opération est implémentée sous forme de [mutation](/fr/reference/statements/alter/index#mutations).
+
+<Note>
+  Le préfixe `ALTER TABLE` distingue cette syntaxe de celle de la plupart des autres systèmes prenant en charge SQL. Il indique que, contrairement à des requêtes similaires dans les bases de données OLTP, il s’agit d’une opération lourde qui n’est pas conçue pour être utilisée fréquemment.
+</Note>
+
+`filter_expr` doit être de type `UInt8`. Cette requête met à jour les valeurs des colonnes spécifiées avec celles des expressions correspondantes dans les lignes pour lesquelles `filter_expr` prend une valeur non nulle. Les valeurs sont converties vers le type de la colonne à l’aide de l’opérateur `CAST`. La mise à jour de colonnes utilisées dans le calcul de la clé primaire ou de la clé de partitionnement n’est pas prise en charge.
+
+Une requête peut contenir plusieurs commandes séparées par des virgules.
+
+Le mode de synchronisation du traitement de la requête est défini par le paramètre [mutations&#95;sync](/fr/reference/settings/session-settings#mutations_sync). Par défaut, il est asynchrone.
+
+**Voir aussi**
+
+* [Mutations](/fr/reference/statements/alter/index#mutations)
+* [Synchronisation des requêtes ALTER](/fr/reference/statements/alter/index#synchronicity-of-alter-queries)
+* Paramètre [mutations&#95;sync](/fr/reference/settings/session-settings#mutations_sync)
+* [Lightweight `UPDATE`](/fr/reference/statements/update) - Alternative légère de mise à jour utilisant des patch parts
+* [`APPLY PATCHES`](/fr/reference/statements/alter/apply-patches) - Appliquer manuellement les patches issus des lightweight updates
+
+<div id="related-content">
+  ## Contenu associé
+</div>
+
+* Blog : [Gérer les mises à jour et les suppressions dans ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

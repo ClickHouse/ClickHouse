@@ -1,0 +1,68 @@
+---
+noindex: true
+title: "Резервная копия и восстановление ClickHouse (вручную)"
+sidebarTitle: "Резервная копия и восстановление"
+description: "Выполняйте создание резервной копии и восстановление данных ClickHouse вручную с помощью SQL-команд и хранилища S3."
+---
+
+Выполняйте создание резервной копии и восстановление данных ClickHouse вручную с помощью SQL-команд и хранилища S3. Полное описание синтаксиса см. в [официальной документации ClickHouse по созданию резервных копий](https://clickhouse.com/docs/operations/backup).
+
+Сведения об операциях создания резервных копий через API см. в разделе [Управление резервными копиями через API](/ru/products/clickhouse-private/guides/manage-backups-via-the-private-api).
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+* S3 бакет в том же регионе, что и ваш кластер
+* Роль IAM, связанная с сервисным аккаунтом Kubernetes, должна иметь доступ на чтение, запись и просмотр содержимого бакета
+
+<div id="s3-path-format">
+  ## Формат пути в S3
+</div>
+
+Во всех командах создания резервной копии используется следующий путь в S3:
+
+```text
+https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID
+```
+
+| Variable             | Описание                                                                                                                     |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `$REGION`            | Регион S3 (например, `us-west-2`)                                                                                            |
+| `$S3_BUCKET`         | Имя S3 бакета для резервных копий                                                                                            |
+| `$CLUSTER_S3_PREFIX` | Префикс ключа S3 для кластера, указанный в ресурсе `clickhousecluster` в поле `spec.s3.keyPrefix` (например, `ch-s3-{uuid}`) |
+| `$BACKUP_ID`         | Уникальный идентификатор (UUID) этой резервной копии                                                                         |
+
+<div id="perform-a-full-backup">
+  ## Выполните полную резервную копию
+</div>
+
+Из одного из серверных подов выполните:
+
+```sql
+BACKUP TABLE system.users, TABLE system.roles, TABLE system.settings_profiles, TABLE system.row_policies, TABLE system.quotas, TABLE system.functions, ALL EXCEPT DATABASES INFORMATION_SCHEMA,information_schema, system TO S3('https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID') SETTINGS id='$BACKUP_ID' ASYNC;
+```
+
+Резервная копия создается асинхронно. Проверьте ход выполнения в таблице [`system.backups`](https://clickhouse.com/docs/operations/system-tables/backups):
+
+```sql
+SELECT * FROM system.backups WHERE id = '$BACKUP_ID';
+```
+
+<div id="incremental-backups">
+  ## Инкрементные резервные копии
+</div>
+
+См. [Создание инкрементной резервной копии](https://clickhouse.com/docs/operations/backup#take-an-incremental-backup) в официальной документации.
+
+<div id="restore-from-a-backup">
+  ## Восстановление из резервной копии
+</div>
+
+Выполните на кластере, в который нужно восстановить данные:
+
+```sql
+RESTORE ALL FROM S3('https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID') SETTINGS id='$RESTORE_ID', allow_different_database_def=true;
+```
+
+`$RESTORE_ID` — это любой уникальный идентификатор, который вы присваиваете операции восстановления.

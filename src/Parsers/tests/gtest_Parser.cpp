@@ -1,6 +1,7 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTRenameQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ParserCreateUserQuery.h>
 #include <Parsers/Access/ParserCreateMaskingPolicyQuery.h>
@@ -142,6 +143,28 @@ TEST(ParserExecuteAsQuery, OutputOptionChildOrderIsCanonical)
         ASSERT_NE(nullptr, reparsed) << "reparse of: " << formatted;
         EXPECT_EQ(ast->getTreeHash(false), reparsed->getTreeHash(false)) << "roundtrip of: " << query;
     }
+}
+
+TEST(ParserCreateDatabaseQuery, MaskDataLakeCatalogStorageCredentials)
+{
+    /// Both the `aws_*` and the backward-compatible `storage_aws_*` static credentials must be hidden
+    /// in `SHOW CREATE DATABASE` for the `DataLakeCatalog` engine, otherwise secrets leak.
+    const String query =
+        "CREATE DATABASE test_unity ENGINE = DataLakeCatalog('http://localhost:8181') "
+        "SETTINGS aws_access_key_id = 'AKIA_PLAIN', aws_secret_access_key = 'plain_secret', "
+        "storage_aws_access_key_id = 'AKIA_STORAGE', storage_aws_secret_access_key = 'storage_secret'";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    /// formatForLogging always hides secrets.
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_secret"), String::npos);
+    EXPECT_EQ(masked.find("storage_secret"), String::npos);
+    EXPECT_EQ(masked.find("AKIA_PLAIN"), String::npos);
+    EXPECT_EQ(masked.find("AKIA_STORAGE"), String::npos);
+    EXPECT_NE(masked.find("[HIDDEN]"), String::npos);
 }
 
 TEST_P(ParserTest, parseQuery)
@@ -375,6 +398,44 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateDatabaseQuery, ParserTest,
         }
 })));
 
+INSTANTIATE_TEST_SUITE_P(ParserCreateTableQuery_SQL_SECURITY, ParserTest,
+    ::testing::Combine(
+        ::testing::Values(std::make_shared<ParserCreateQuery>()),
+        ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
+        {
+            "CREATE TABLE t (x UInt8) ENGINE = Memory SQL SECURITY INVOKER",
+            "CREATE TABLE t\n(\n    `x` UInt8\n)\nENGINE = Memory\nSQL SECURITY INVOKER"
+        },
+        {
+            "CREATE TABLE t (x UInt8) ENGINE = Memory SQL SECURITY NONE",
+            "CREATE TABLE t\n(\n    `x` UInt8\n)\nENGINE = Memory\nSQL SECURITY NONE"
+        },
+        {
+            "CREATE TABLE t (x UInt8) ENGINE = Memory DEFINER = alice SQL SECURITY DEFINER",
+            "CREATE TABLE t\n(\n    `x` UInt8\n)\nENGINE = Memory\nDEFINER = alice SQL SECURITY DEFINER"
+        },
+        {
+            "CREATE TABLE t (x UInt8) ENGINE = Memory DEFINER = CURRENT_USER",
+            "CREATE TABLE t\n(\n    `x` UInt8\n)\nENGINE = Memory\nDEFINER = CURRENT_USER SQL SECURITY DEFINER"
+        },
+        {
+            "CREATE TABLE t (x UInt8) ENGINE = Memory SQL SECURITY DEFINER",
+            "CREATE TABLE t\n(\n    `x` UInt8\n)\nENGINE = Memory\nDEFINER = CURRENT_USER SQL SECURITY DEFINER"
+        },
+        {
+            "CREATE TABLE db.t ON CLUSTER c (x UInt8) ENGINE = MergeTree ORDER BY x SQL SECURITY INVOKER",
+            "CREATE TABLE db.t ON CLUSTER c\n(\n    `x` UInt8\n)\nENGINE = MergeTree\nORDER BY x\nSQL SECURITY INVOKER"
+        },
+        {
+            "ATTACH TABLE t UUID '123e4567-e89b-12d3-a456-426614174000' (x UInt8) ENGINE = Memory SQL SECURITY INVOKER",
+            "ATTACH TABLE t UUID '123e4567-e89b-12d3-a456-426614174000'\n(\n    `x` UInt8\n)\nENGINE = Memory\nSQL SECURITY INVOKER"
+        },
+        {
+            "CREATE TABLE t\n(\n    `x` UInt8\n)\nENGINE = Memory\nDEFINER = alice SQL SECURITY DEFINER",
+            "CREATE TABLE t\n(\n    `x` UInt8\n)\nENGINE = Memory\nDEFINER = alice SQL SECURITY DEFINER"
+        }
+})));
+
 INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
     ::testing::Combine(
         ::testing::Values(std::make_shared<ParserCreateUserQuery>()),
@@ -477,8 +538,52 @@ INSTANTIATE_TEST_SUITE_P(ParserRenameQuery, ParserTest,
         {
             "RENAME TABLE eligible_test TO eligible_test2",
             "RENAME TABLE eligible_test TO eligible_test2"
+        },
+        {
+            "RENAME DATABASE db1 TO db2",
+            "RENAME DATABASE db1 TO db2"
+        },
+        {
+            "RENAME DATABASE IF EXISTS db1 TO db2",
+            "RENAME DATABASE IF EXISTS db1 TO db2"
         }
 })));
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+/// Regression test for the UBSan "member call on null pointer of type DB::IAST" at
+/// ASTRenameQuery::formatQueryImpl (RENAME DATABASE branch). A RENAME DATABASE node always
+/// carries both database identifiers when produced by the parser, but a directly-constructed
+/// or fuzzer-mutated AST can leave from.database / to.database null. Formatting such a node
+/// must trip the chassert guarding the invariant, not dereference null.
+///
+/// The round-trip cases above cannot catch this: they only exercise the parse -> format path
+/// and pass even if the chassert is removed. Each death test matches the specific chassert
+/// message, so removing the guard (which would leave a raw null dereference with a different
+/// death signature) makes the test fail -- giving the fix real regression coverage.
+static ASTPtr makeRenameDatabaseAST(bool from_null, bool to_null)
+{
+    ASTRenameQuery::Element element;
+    element.from.database = from_null ? nullptr : make_intrusive<ASTIdentifier>("db1");
+    element.to.database = to_null ? nullptr : make_intrusive<ASTIdentifier>("db2");
+    auto query = make_intrusive<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(element)});
+    query->database = true;
+    return query;
+}
+
+TEST(ParserRenameQueryDeathTest, FormatNullFromDatabaseAborts)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    ASTPtr ast = makeRenameDatabaseAST(/*from_null=*/true, /*to_null=*/false);
+    EXPECT_DEATH(ast->formatWithSecretsOneLine(), "elements.at\\(0\\).from.database");
+}
+
+TEST(ParserRenameQueryDeathTest, FormatNullToDatabaseAborts)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    ASTPtr ast = makeRenameDatabaseAST(/*from_null=*/false, /*to_null=*/true);
+    EXPECT_DEATH(ast->formatWithSecretsOneLine(), "elements.at\\(0\\).to.database");
+}
+#endif
 
 static constexpr size_t kDummyMaxQuerySize = 256 * 1024;
 static constexpr size_t kDummyMaxParserDepth = 256;

@@ -1,0 +1,88 @@
+---
+date: 2023-03-24
+title: "S3에서 연도와 월별로 파티션별 쓰기를 수행하려면 어떻게 해야 하나요?"
+description: "ClickHouse에서 데이터를 정리하기 위한 사용자 지정 경로 구조를 사용해 연도와 월별로 파티션된 데이터를 S3 버킷에 쓰는 방법을 알아보세요."
+tags: ['데이터 내보내기', '네이티브 클라이언트 및 인터페이스']
+keywords: ['S3', '파티션별 쓰기']
+---
+
+<div id="learn-how-to-do-partitioned-writes-by-year-and-month-on-s3">
+  ## S3에서 연도와 월별로 파티션별 쓰기를 수행하는 방법 알아보기
+</div>
+
+S3 버킷의 경로를 다음과 같은 구조로 나누어 데이터를 내보내고 싶습니다.
+
+* 2022
+  * 1
+  * 2
+  * ...
+  * 12
+* 2021
+  * 1
+  * 2
+  * ...
+  * 12
+
+이와 같은 방식입니다 ...
+
+<div id="answer">
+  ## 답변
+</div>
+
+다음과 같은 ClickHouse 테이블을 가정하겠습니다:
+
+```sql
+CREATE TABLE sample_data (
+    `name` String,
+    `age` Int,
+    `time` DateTime
+) ENGINE = MergeTree
+ORDER BY
+    name
+```
+
+항목 10000개를 추가합니다:
+
+```sql
+INSERT INTO
+    sample_data
+SELECT
+    *
+FROM
+    generateRandom(
+        'name String, age Int, time DateTime',
+        10,
+        10,
+        10
+    )
+LIMIT
+    10000;
+```
+
+S3 버킷 `my_bucket`에 원하는 구조를 만들려면 다음을 실행하십시오(참고로 이 예시에서는 파일을 Parquet 포맷으로 기록합니다):
+
+```sql
+INSERT INTO
+    FUNCTION s3(
+        'https://s3-host:4321/my_bucket/{_partition_id}/file.parquet.gz',
+        's3-access-key',
+        's3-secret-access-key',
+        Parquet,
+        'name String, age Int, time DateTime'
+    ) PARTITION BY concat(
+        formatDateTime(time, '%Y'),
+        '/',
+        formatDateTime(time, '%m')
+    )
+SELECT
+    name,
+    age,
+    time
+FROM
+    sample_data
+Query id: 55adcf22-f6af-491e-b697-d09694bbcc56
+
+Ok.
+
+0 rows in set. Elapsed: 15.579 sec. Processed 10.00 thousand rows, 219.93 KB (641.87 rows/s., 14.12 KB/s.)
+```

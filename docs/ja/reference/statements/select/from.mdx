@@ -1,0 +1,112 @@
+---
+description: 'FROM句のドキュメント'
+sidebarTitle: 'FROM'
+slug: /sql-reference/statements/select/from
+title: 'FROM句'
+doc_type: 'reference'
+---
+
+`FROM`句は、データの読み取り元を指定します。
+
+* [テーブル](/ja/reference/engines/table-engines/index)
+* [サブクエリ](/ja/reference/statements/select/index)
+* [テーブル関数](/ja/reference/functions/table-functions/index)
+
+`FROM`句の機能を拡張するために、[JOIN](/ja/reference/statements/select/join)句や [ARRAY JOIN](/ja/reference/statements/select/array-join)句を使用することもできます。
+
+サブクエリは、`FROM`句内で括弧で囲んで指定できる別の `SELECT` クエリです。
+
+SQL 標準の `VALUES` 句もテーブル式として使用できます。
+
+```sql
+SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, val);
+```
+
+詳細は [Values テーブル関数](/ja/reference/functions/table-functions/values#sql-standard-values-clause) を参照してください。
+
+`FROM` には、カンマ区切りで複数のデータソースを指定でき、これはそれらに対して [CROSS JOIN](/ja/reference/statements/select/join) を実行するのと同等です。
+
+`FROM` は、必要に応じて `SELECT` 句の前に置くこともできます。これは標準 SQL に対する ClickHouse 固有の拡張で、`SELECT` ステートメントを読みやすくします。例:
+
+```sql
+FROM table
+SELECT *
+```
+
+<div id="final-modifier">
+  ## FINAL 修飾子
+</div>
+
+`FINAL` を指定すると、ClickHouse は結果を返す前にデータを完全にマージします。これにより、対象のテーブルエンジンでマージ時に行われるすべてのデータ変換も実行されます。
+
+これは、次のテーブルエンジンを使用するテーブルからデータを選択する場合に適用されます。
+
+* `ReplacingMergeTree`
+* `SummingMergeTree`
+* `AggregatingMergeTree`
+* `CollapsingMergeTree`
+* `VersionedCollapsingMergeTree`
+
+`FINAL` を使用する `SELECT` クエリは並列で実行されます。[max&#95;final&#95;threads](/ja/reference/settings/session-settings#max_final_threads) 設定は、使用するスレッド数を制限します。
+
+<div id="drawbacks">
+  ### 欠点
+</div>
+
+`FINAL` を使用するクエリは、`FINAL` を使用しない同様のクエリに比べて、実行速度がわずかに遅くなります。理由は次のとおりです。
+
+* クエリの実行中にデータがマージされるため。
+* `FINAL` を使用するクエリでは、クエリで指定したカラムに加えて、主キーカラムも読み取る場合があるため。
+
+通常はマージ時に行われる処理を、クエリ実行時にメモリ上で行う必要があるため、`FINAL` には追加のコンピュートおよびメモリリソースが必要です。ただし、正確な結果を得るために `FINAL` の使用が必要になることがあります (データがまだ完全にマージされていない可能性があるためです) 。それでも、マージを強制するために `OPTIMIZE` を実行するよりは低コストです。
+
+`FINAL` の代わりに、`MergeTree` エンジンのバックグラウンド処理がまだ完了していないことを前提にした別のクエリを使用し、集計 を適用して対応できる場合もあります (たとえば、重複を除外する場合など) 。必要な結果を得るためにクエリで `FINAL` を使用する必要があるなら、使用して問題ありませんが、追加の処理が必要になる点には注意してください。
+
+`FINAL` は、セッションまたはユーザープロファイルを使用して、クエリ内のすべてのテーブルに対し [FINAL](/ja/reference/settings/session-settings#final) 設定で自動的に適用できます。
+
+<div id="example-usage">
+  ### 使用例
+</div>
+
+`FINAL` キーワードの使用方法
+
+```sql
+SELECT x, y FROM mytable FINAL WHERE x > 1;
+```
+
+クエリレベル設定として `FINAL` を使用する
+
+```sql
+SELECT x, y FROM mytable WHERE x > 1 SETTINGS final = 1;
+```
+
+セッションレベルの設定として `FINAL` を使用する
+
+```sql
+SET final = 1;
+SELECT x, y FROM mytable WHERE x > 1;
+```
+
+<div id="aliases-and-final">
+  ### 別名とFINAL
+</div>
+
+テーブルに別名がある場合、`FINAL` はその別名の後に記述します。これは、通常テーブルに別名を付ける [`JOIN`](/ja/reference/statements/select/join) クエリで特によく見られます。
+
+```sql
+SELECT t1.id, t2.name
+FROM table1 AS t1 FINAL
+INNER JOIN table2 AS t2 FINAL ON t1.id = t2.id;
+```
+
+`FINAL` はテーブル参照に対する修飾子であるため、`table [AS alias]` 式全体の後ろに置く必要があります。別名の前に置くと (`FROM table1 FINAL AS t1`) 、構文エラーになります。
+
+<div id="implementation-details">
+  ## 実装の詳細
+</div>
+
+`FROM` 句が省略されている場合、データは `system.one` テーブルから読み取られます。
+`system.one` テーブルにはちょうど1行だけが含まれます (このテーブルは、他の DBMS にある DUAL テーブルと同じ役割を果たします) 。
+
+クエリを実行するには、クエリに記載されているすべてのカラムが適切なテーブルから抽出されます。外側のクエリに不要なカラムは、サブクエリから除外されます。
+クエリにカラムが1つも記載されていない場合 (たとえば `SELECT count() FROM t`) 、行数を計算するため、いずれにしても何らかのカラムがテーブルから抽出されます (最小のものが優先されます) 。

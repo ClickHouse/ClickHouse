@@ -1,0 +1,961 @@
+---
+sidebarTitle: '저장 프로시저 및 쿼리 매개변수'
+keywords: ['clickhouse', '저장 프로시저', 'prepared statements', '쿼리 매개변수', 'UDF', '매개변수화된 뷰']
+description: 'ClickHouse의 저장 프로시저, prepared statements 및 쿼리 매개변수에 대한 가이드'
+slug: /guides/developer/stored-procedures-and-prepared-statements
+title: 'ClickHouse의 저장 프로시저 및 쿼리 매개변수'
+doc_type: 'guide'
+---
+
+기존 관계형 데이터베이스에 익숙하다면 ClickHouse에서 저장 프로시저와 prepared statements를 찾고 있을 수 있습니다.
+이 가이드에서는 이러한 개념에 대한 ClickHouse의 접근 방식을 설명하고, 권장되는 대안을 소개합니다.
+
+<div id="alternatives-to-stored-procedures">
+  ## ClickHouse의 저장 프로시저 대안
+</div>
+
+ClickHouse는 제어 흐름 로직(`IF`/`ELSE`, 루프 등)이 포함된 전통적인 저장 프로시저를 지원하지 않습니다.
+이는 분석형 데이터베이스인 ClickHouse의 아키텍처를 기반으로 한 의도적인 설계 결정입니다.
+분석형 데이터베이스에서는 루프 사용을 권장하지 않습니다. O(n)개의 단순 쿼리를 처리하는 작업은 일반적으로 더 적은 수의 복잡한 쿼리를 처리하는 것보다 느리기 때문입니다.
+
+ClickHouse는 다음과 같은 작업에 최적화되어 있습니다.
+
+* **분석 워크로드** - 대규모 데이터셋에 대한 복잡한 집계
+* **배치 처리** - 대용량 데이터를 효율적으로 처리
+* **선언형 쿼리** - 데이터를 어떻게 처리할지가 아니라 어떤 데이터를 가져올지 설명하는 SQL 쿼리
+
+절차적 로직이 포함된 저장 프로시저는 이러한 최적화 방향과 맞지 않습니다. 대신 ClickHouse는 이러한 강점에 부합하는 대안을 제공합니다.
+
+<div id="user-defined-functions">
+  ### 사용자 정의 함수(UDFs)
+</div>
+
+사용자 정의 함수를 사용하면 제어 흐름 없이 재사용 가능한 로직을 캡슐화할 수 있습니다. ClickHouse는 2가지 타입을 지원합니다:
+
+<div id="lambda-based-udfs">
+  #### 람다 기반 UDF
+</div>
+
+SQL 표현식과 람다 구문을 사용해 함수를 만듭니다:
+
+<Accordion title="예시에 사용할 샘플 데이터">
+  ```sql
+  -- products 테이블 생성
+  CREATE TABLE products (
+      product_id UInt32,
+      product_name String,
+      price Decimal(10, 2)
+  )
+  ENGINE = MergeTree()
+  ORDER BY product_id;
+
+  -- 샘플 데이터 삽입
+  INSERT INTO products (product_id, product_name, price) VALUES
+  (1, 'Laptop', 899.99),
+  (2, 'Wireless Mouse', 24.99),
+  (3, 'USB-C Cable', 12.50),
+  (4, 'Monitor', 299.00),
+  (5, 'Keyboard', 79.99),
+  (6, 'Webcam', 54.95),
+  (7, 'Desk Lamp', 34.99),
+  (8, 'External Hard Drive', 119.99),
+  (9, 'Headphones', 149.00),
+  (10, 'Phone Stand', 15.99);
+  ```
+</Accordion>
+
+```sql
+-- 간단한 계산용 함수
+CREATE FUNCTION calculate_tax AS (price, rate) -> price * rate;
+
+SELECT
+    product_name,
+    price,
+    calculate_tax(price, 0.08) AS tax
+FROM products;
+```
+
+```sql
+-- if()를 사용한 조건부 로직
+CREATE FUNCTION price_tier AS (price) ->
+    if(price < 100, 'Budget',
+       if(price < 500, 'Mid-range', 'Premium'));
+
+SELECT
+    product_name,
+    price,
+    price_tier(price) AS tier
+FROM products;
+```
+
+```sql
+-- 문자열 처리
+CREATE FUNCTION format_phone AS (phone) ->
+    concat('(', substring(phone, 1, 3), ') ',
+           substring(phone, 4, 3), '-',
+           substring(phone, 7, 4));
+
+SELECT format_phone('5551234567');
+-- 결과: (555) 123-4567
+```
+
+**제한 사항:**
+
+* 루프나 복잡한 제어 흐름은 사용할 수 없습니다
+* 데이터를 수정할 수 없습니다 (`INSERT`/`UPDATE`/`DELETE`)
+* 재귀 함수는 허용되지 않습니다
+
+전체 구문은 [`CREATE FUNCTION`](/ko/reference/statements/create/function)에서 확인하십시오.
+
+<div id="executable-udfs">
+  #### 실행형 UDF
+</div>
+
+더 복잡한 로직이 필요하면 외부 프로그램을 호출하는 실행형 UDF를 사용합니다:
+
+```xml
+<!-- /etc/clickhouse-server/sentiment_analysis_function.xml -->
+<functions>
+    <function>
+        <type>executable</type>
+        <name>sentiment_score</name>
+        <return_type>Float32</return_type>
+        <argument>
+            <type>String</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>python3 /opt/scripts/sentiment.py</command>
+    </function>
+</functions>
+```
+
+```sql
+-- 실행형 UDF 사용
+SELECT
+    review_text,
+    sentiment_score(review_text) AS score
+FROM customer_reviews;
+```
+
+실행형 UDF는 어떤 언어로든(Python, Node.js, Go 등) 원하는 로직을 구현할 수 있습니다.
+
+자세한 내용은 [실행형 UDF](/ko/reference/functions/regular-functions/udf)를 참조하십시오.
+
+<div id="parameterized-views">
+  ### 매개변수화된 뷰
+</div>
+
+매개변수화된 뷰는 데이터셋을 반환하는 함수처럼 작동합니다.
+동적 필터링이 필요한 재사용 가능한 쿼리에 적합합니다:
+
+<Accordion title="예시에 사용할 샘플 데이터">
+  ```sql
+  -- sales 테이블 생성
+  CREATE TABLE sales (
+    date Date,
+    product_id UInt32,
+    product_name String,
+    category String,
+    quantity UInt32,
+    revenue Decimal(10, 2),
+    sales_amount Decimal(10, 2)
+  )
+  ENGINE = MergeTree()
+  ORDER BY (date, product_id);
+
+  -- 샘플 데이터 삽입
+  INSERT INTO sales VALUES
+  ('2024-01-05', 12345, 'Laptop Pro', 'Electronics', 2, 1799.98, 1799.98),
+  ('2024-01-06', 12345, 'Laptop Pro', 'Electronics', 1, 899.99, 899.99),
+  ('2024-01-10', 12346, 'Wireless Mouse', 'Electronics', 5, 124.95, 124.95),
+  ('2024-01-15', 12347, 'USB-C Cable', 'Accessories', 10, 125.00, 125.00),
+  ('2024-01-20', 12345, 'Laptop Pro', 'Electronics', 3, 2699.97, 2699.97),
+  ('2024-01-25', 12348, 'Monitor 4K', 'Electronics', 2, 598.00, 598.00),
+  ('2024-02-01', 12345, 'Laptop Pro', 'Electronics', 1, 899.99, 899.99),
+  ('2024-02-05', 12349, 'Keyboard Mechanical', 'Accessories', 4, 319.96, 319.96),
+  ('2024-02-10', 12346, 'Wireless Mouse', 'Electronics', 8, 199.92, 199.92),
+  ('2024-02-15', 12350, 'Webcam HD', 'Electronics', 3, 164.85, 164.85);
+  ```
+</Accordion>
+
+```sql
+-- 매개변수화된 뷰(Parameterized View) 생성
+CREATE VIEW sales_by_date AS
+SELECT
+    date,
+    product_id,
+    sum(quantity) AS total_quantity,
+    sum(revenue) AS total_revenue
+FROM sales
+WHERE date BETWEEN {start_date:Date} AND {end_date:Date}
+GROUP BY date, product_id;
+```
+
+```sql
+-- 매개변수를 사용하여 뷰 쿼리
+SELECT *
+FROM sales_by_date(start_date='2024-01-01', end_date='2024-01-31')
+WHERE product_id = 12345;
+```
+
+<div id="common-use-cases">
+  #### 일반적인 사용 사례
+</div>
+
+* 동적 날짜 범위 필터링
+* 사용자별 데이터 세분화
+* [멀티 테넌트 데이터 액세스](/ko/products/cloud/guides/best-practices/multitenancy)
+* 보고서 템플릿
+* [데이터 마스킹](/ko/products/cloud/guides/security/data-masking)
+
+```sql
+-- 더 복잡한 매개변수화된 뷰
+CREATE VIEW top_products_by_category AS
+SELECT
+    category,
+    product_name,
+    revenue,
+    rank
+FROM (
+    SELECT
+        category,
+        product_name,
+        revenue,
+        rank() OVER (PARTITION BY category ORDER BY revenue DESC) AS rank
+    FROM (
+        SELECT
+            category,
+            product_name,
+            sum(sales_amount) AS revenue
+        FROM sales
+        WHERE category = {category:String}
+            AND date >= {min_date:Date}
+        GROUP BY category, product_name
+    )
+)
+WHERE rank <= {top_n:UInt32};
+
+-- 사용 예시
+SELECT * FROM top_products_by_category(
+    category='Electronics',
+    min_date='2024-01-01',
+    top_n=10
+);
+```
+
+자세한 내용은 [매개변수화된 뷰](/ko/reference/statements/create/view#parameterized-view) 섹션을 참고하십시오.
+
+<div id="materialized-views">
+  ### Materialized views
+</div>
+
+Materialized views는 일반적으로 저장 프로시저에서 처리하는 비용이 큰 집계를 미리 계산하는 데 적합합니다. 기존 데이터베이스에 익숙하다면 materialized view를, 데이터가 원본 테이블에 삽입될 때 이를 자동으로 변환하고 집계하는 **INSERT trigger**라고 생각하면 됩니다:
+
+```sql
+-- 원본 테이블
+CREATE TABLE page_views (
+    user_id UInt64,
+    page String,
+    timestamp DateTime,
+    session_id String
+)
+ENGINE = MergeTree()
+ORDER BY (user_id, timestamp);
+
+-- 집계된 통계를 유지하는 materialized view
+CREATE MATERIALIZED VIEW daily_user_stats
+ENGINE = SummingMergeTree()
+ORDER BY (date, user_id)
+AS SELECT
+    toDate(timestamp) AS date,
+    user_id,
+    count() AS page_views,
+    uniq(session_id) AS sessions,
+    uniq(page) AS unique_pages
+FROM page_views
+GROUP BY date, user_id;
+
+-- 원본 테이블에 샘플 데이터 삽입
+INSERT INTO page_views VALUES
+(101, '/home', '2024-01-15 10:00:00', 'session_a1'),
+(101, '/products', '2024-01-15 10:05:00', 'session_a1'),
+(101, '/checkout', '2024-01-15 10:10:00', 'session_a1'),
+(102, '/home', '2024-01-15 11:00:00', 'session_b1'),
+(102, '/about', '2024-01-15 11:05:00', 'session_b1'),
+(101, '/home', '2024-01-16 09:00:00', 'session_a2'),
+(101, '/products', '2024-01-16 09:15:00', 'session_a2'),
+(103, '/home', '2024-01-16 14:00:00', 'session_c1'),
+(103, '/products', '2024-01-16 14:05:00', 'session_c1'),
+(103, '/products', '2024-01-16 14:10:00', 'session_c1'),
+(102, '/home', '2024-01-17 10:30:00', 'session_b2'),
+(102, '/contact', '2024-01-17 10:35:00', 'session_b2');
+
+-- 사전 집계된 데이터 쿼리
+SELECT
+    user_id,
+    sum(page_views) AS total_views,
+    sum(sessions) AS total_sessions
+FROM daily_user_stats
+WHERE date BETWEEN '2024-01-01' AND '2024-01-31'
+GROUP BY user_id;
+```
+
+<div id="refreshable-materialized-views">
+  #### 갱신 가능 materialized view
+</div>
+
+야간 저장 프로시저와 같은 예약된 일괄 처리 작업에는:
+
+```sql
+-- 매일 오전 2시에 자동으로 갱신됩니다
+CREATE MATERIALIZED VIEW monthly_sales_report
+REFRESH EVERY 1 DAY OFFSET 2 HOUR
+AS SELECT
+    toStartOfMonth(order_date) AS month,
+    region,
+    product_category,
+    count() AS order_count,
+    sum(amount) AS total_revenue,
+    avg(amount) AS avg_order_value
+FROM orders
+WHERE order_date >= today() - INTERVAL 13 MONTH
+GROUP BY month, region, product_category;
+
+-- 쿼리는 항상 최신 데이터를 반환합니다
+SELECT * FROM monthly_sales_report
+WHERE month = toStartOfMonth(today());
+```
+
+고급 활용 패턴은 [Cascading Materialized Views](/ko/concepts/features/materialized-views/cascading-materialized-views)를 참조하십시오.
+
+<div id="external-orchestration">
+  ### 외부 오케스트레이션
+</div>
+
+복잡한 비즈니스 로직, ETL 워크플로, 또는 여러 단계로 이루어진 프로세스는 언제든지 언어 클라이언트를 사용해
+ClickHouse 외부에서 구현할 수 있습니다.
+
+<div id="using-application-code">
+  #### 애플리케이션 코드 사용
+</div>
+
+다음은 MySQL 저장 프로시저를 ClickHouse에서 애플리케이션 코드로 구현하는 방식을 나란히 비교한 것입니다:
+
+<Tabs>
+  <Tab title="MySQL 저장 프로시저">
+    ```sql
+    DELIMITER $$
+
+    CREATE PROCEDURE process_order(
+        IN p_order_id INT,
+        IN p_customer_id INT,
+        IN p_order_total DECIMAL(10,2),
+        OUT p_status VARCHAR(50),
+        OUT p_loyalty_points INT
+    )
+    BEGIN
+        DECLARE v_customer_tier VARCHAR(20);
+        DECLARE v_previous_orders INT;
+        DECLARE v_discount DECIMAL(10,2);
+
+        -- 트랜잭션 시작
+        START TRANSACTION;
+
+        -- 고객 정보 조회
+        SELECT tier, total_orders
+        INTO v_customer_tier, v_previous_orders
+        FROM customers
+        WHERE customer_id = p_customer_id;
+
+        -- 등급에 따른 할인 계산
+        IF v_customer_tier = 'gold' THEN
+            SET v_discount = p_order_total * 0.15;
+        ELSEIF v_customer_tier = 'silver' THEN
+            SET v_discount = p_order_total * 0.10;
+        ELSE
+            SET v_discount = 0;
+        END IF;
+
+        -- 주문 레코드 삽입
+        INSERT INTO orders (order_id, customer_id, order_total, discount, final_amount)
+        VALUES (p_order_id, p_customer_id, p_order_total, v_discount,
+                p_order_total - v_discount);
+
+        -- 고객 통계 업데이트
+        UPDATE customers
+        SET total_orders = total_orders + 1,
+            lifetime_value = lifetime_value + (p_order_total - v_discount),
+            last_order_date = NOW()
+        WHERE customer_id = p_customer_id;
+
+        -- 적립 포인트 계산 (1달러당 1포인트)
+        SET p_loyalty_points = FLOOR(p_order_total - v_discount);
+
+        -- 적립 포인트 트랜잭션 삽입
+        INSERT INTO loyalty_points (customer_id, points, transaction_date, description)
+        VALUES (p_customer_id, p_loyalty_points, NOW(),
+                CONCAT('Order #', p_order_id));
+
+        -- 고객 등급 업그레이드 여부 확인
+        IF v_previous_orders + 1 >= 10 AND v_customer_tier = 'bronze' THEN
+            UPDATE customers SET tier = 'silver' WHERE customer_id = p_customer_id;
+            SET p_status = 'ORDER_COMPLETE_TIER_UPGRADED_SILVER';
+        ELSEIF v_previous_orders + 1 >= 50 AND v_customer_tier = 'silver' THEN
+            UPDATE customers SET tier = 'gold' WHERE customer_id = p_customer_id;
+            SET p_status = 'ORDER_COMPLETE_TIER_UPGRADED_GOLD';
+        ELSE
+            SET p_status = 'ORDER_COMPLETE';
+        END IF;
+
+        COMMIT;
+    END$$
+
+    DELIMITER ;
+
+    -- 저장 프로시저 호출
+    CALL process_order(12345, 5678, 250.00, @status, @points);
+    SELECT @status, @points;
+    ```
+  </Tab>
+
+  <Tab title="ClickHouse용 애플리케이션 코드">
+    <Info>
+      **쿼리 매개변수**
+
+      아래 예시에서는 ClickHouse에서 쿼리 매개변수를 사용합니다.
+      ClickHouse의 쿼리 매개변수에 아직 익숙하지 않다면 [&quot;ClickHouse에서 prepared statements의 대안&quot;](/ko/guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements#alternatives-to-prepared-statements-in-clickhouse)으로
+      먼저 이동하여 확인하십시오.
+    </Info>
+
+    ```python
+    # clickhouse-connect를 사용하는 Python 예시
+    import clickhouse_connect
+    from datetime import datetime
+    from decimal import Decimal
+
+    client = clickhouse_connect.get_client(host='localhost')
+
+    def process_order(order_id: int, customer_id: int, order_total: Decimal) -> tuple[str, int]:
+        """
+        Processes an order with business logic that would be in a stored procedure.
+        Returns: (status_message, loyalty_points)
+
+        Note: ClickHouse is optimized for analytics, not OLTP transactions.
+        For transactional workloads, use an OLTP database (PostgreSQL, MySQL)
+        and sync analytics data to ClickHouse for reporting.
+        """
+
+        # 1단계: 고객 정보 조회
+        result = client.query(
+            """
+            SELECT tier, total_orders
+            FROM customers
+            WHERE customer_id = {cid: UInt32}
+            """,
+            parameters={'cid': customer_id}
+        )
+
+        if not result.result_rows:
+            raise ValueError(f"Customer {customer_id} not found")
+
+        customer_tier, previous_orders = result.result_rows[0]
+
+        # 2단계: 등급에 따라 할인 계산(Python에서 비즈니스 로직 처리)
+        discount_rates = {'gold': 0.15, 'silver': 0.10, 'bronze': 0.0}
+        discount = order_total * Decimal(str(discount_rates.get(customer_tier, 0.0)))
+        final_amount = order_total - discount
+
+        # 3단계: 주문 기록 삽입
+        client.command(
+            """
+            INSERT INTO orders (order_id, customer_id, order_total, discount,
+                               final_amount, order_date)
+            VALUES ({oid: UInt32}, {cid: UInt32}, {total: Decimal64(2)},
+                    {disc: Decimal64(2)}, {final: Decimal64(2)}, now())
+            """,
+            parameters={
+                'oid': order_id,
+                'cid': customer_id,
+                'total': float(order_total),
+                'disc': float(discount),
+                'final': float(final_amount)
+            }
+        )
+
+        # 4단계: 갱신된 고객 통계 계산
+        new_order_count = previous_orders + 1
+
+        # 분석용 데이터베이스에서는 UPDATE보다 INSERT를 사용하는 편이 좋습니다
+        # 여기서는 ReplacingMergeTree 패턴을 사용합니다
+        client.command(
+            """
+            INSERT INTO customers (customer_id, tier, total_orders, last_order_date,
+                                  update_time)
+            SELECT
+                customer_id,
+                tier,
+                {new_count: UInt32} AS total_orders,
+                now() AS last_order_date,
+                now() AS update_time
+            FROM customers
+            WHERE customer_id = {cid: UInt32}
+            """,
+            parameters={'cid': customer_id, 'new_count': new_order_count}
+        )
+
+        # 5단계: 로열티 포인트 계산 및 기록
+        loyalty_points = int(final_amount)
+
+        client.command(
+            """
+            INSERT INTO loyalty_points (customer_id, points, transaction_date, description)
+            VALUES ({cid: UInt32}, {pts: Int32}, now(),
+                    {desc: String})
+            """,
+            parameters={
+                'cid': customer_id,
+                'pts': loyalty_points,
+                'desc': f'Order #{order_id}'
+            }
+        )
+
+        # 6단계: 등급 업그레이드 여부 확인(Python에서 비즈니스 로직 처리)
+        status = 'ORDER_COMPLETE'
+
+        if new_order_count >= 10 and customer_tier == 'bronze':
+            # silver 등급으로 업그레이드
+            client.command(
+                """
+                INSERT INTO customers (customer_id, tier, total_orders, last_order_date,
+                                      update_time)
+                SELECT
+                    customer_id, 'silver' AS tier, total_orders, last_order_date,
+                    now() AS update_time
+                FROM customers
+                WHERE customer_id = {cid: UInt32}
+                """,
+                parameters={'cid': customer_id}
+            )
+            status = 'ORDER_COMPLETE_TIER_UPGRADED_SILVER'
+
+        elif new_order_count >= 50 and customer_tier == 'silver':
+            # gold 등급으로 업그레이드
+            client.command(
+                """
+                INSERT INTO customers (customer_id, tier, total_orders, last_order_date,
+                                      update_time)
+                SELECT
+                    customer_id, 'gold' AS tier, total_orders, last_order_date,
+                    now() AS update_time
+                FROM customers
+                WHERE customer_id = {cid: UInt32}
+                """,
+                parameters={'cid': customer_id}
+            )
+            status = 'ORDER_COMPLETE_TIER_UPGRADED_GOLD'
+
+        return status, loyalty_points
+
+    # 함수 사용
+    status, points = process_order(
+        order_id=12345,
+        customer_id=5678,
+        order_total=Decimal('250.00')
+    )
+
+    print(f"Status: {status}, Loyalty Points: {points}")
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="key-differences">
+  #### 주요 차이점
+</div>
+
+1. **제어 흐름** - MySQL 저장 프로시저는 `IF/ELSE`, `WHILE` 루프를 사용합니다. ClickHouse에서는 이 로직을 애플리케이션 코드(Python, Java 등)에서 구현합니다
+2. **트랜잭션** - MySQL은 ACID 트랜잭션을 위해 `BEGIN/COMMIT/ROLLBACK`를 지원합니다. ClickHouse는 트랜잭션 업데이트가 아니라 추가 전용 워크로드에 최적화된 분석용 데이터베이스입니다
+3. **업데이트** - MySQL은 `UPDATE` SQL 문을 사용합니다. ClickHouse는 변경 가능한 데이터를 처리할 때 [ReplacingMergeTree](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree) 또는 [CollapsingMergeTree](/ko/reference/engines/table-engines/mergetree-family/collapsingmergetree)와 함께 `INSERT`를 사용하는 방식을 선호합니다
+4. **변수와 상태** - MySQL 저장 프로시저는 변수(`DECLARE v_discount`)를 선언할 수 있습니다. ClickHouse에서는 상태를 애플리케이션 코드에서 관리합니다
+5. **오류 처리** - MySQL은 `SIGNAL` 및 예외 처리기를 지원합니다. 애플리케이션 코드에서는 사용하는 언어의 네이티브 오류 처리(try/catch)를 사용합니다
+
+<Tip>
+  **각 접근 방식을 언제 사용해야 하는가:**
+
+  * **OLTP 워크로드** (주문, 결제, 사용자 계정) → 저장 프로시저와 함께 MySQL/PostgreSQL을 사용하세요
+  * **분석 워크로드** (보고, 집계, 시계열) → 애플리케이션 오케스트레이션과 함께 ClickHouse를 사용하세요
+  * **Hybrid 아키텍처** → 둘 다 사용하세요! 분석을 위해 OLTP의 트랜잭션 데이터를 ClickHouse로 스트리밍하세요
+</Tip>
+
+<div id="using-workflow-orchestration-tools">
+  #### 워크플로 오케스트레이션 도구 사용
+</div>
+
+* **Apache Airflow** - ClickHouse 쿼리로 구성된 복잡한 DAG의 실행 일정을 관리하고 모니터링합니다
+* **dbt** - SQL 기반 워크플로를 사용해 데이터를 변환합니다
+* **Prefect/Dagster** - 최신 Python 기반 오케스트레이션 도구입니다
+* **Custom schedulers** - Cron 작업, Kubernetes CronJobs 등
+
+**외부 오케스트레이션의 장점:**
+
+* 완전한 프로그래밍 언어 기능 활용
+* 더 뛰어난 오류 처리 및 재시도 로직
+* 외부 시스템(API, 다른 데이터베이스)과의 통합
+* 버전 관리 및 테스트
+* 모니터링 및 알림
+* 더 유연한 일정 관리
+
+<div id="alternatives-to-prepared-statements-in-clickhouse">
+  ## ClickHouse에서 prepared statements의 대안
+</div>
+
+ClickHouse는 RDBMS의 전통적인 &quot;prepared statements&quot;를 지원하지는 않지만, 같은 목적을 하는 **쿼리 매개변수**를 제공합니다. 즉, SQL 인젝션을 방지하는 안전한 매개변수화 쿼리를 사용할 수 있습니다.
+
+<div id="query-parameters-syntax">
+  ### 구문
+</div>
+
+쿼리 매개변수는 다음 두 가지 방법으로 정의할 수 있습니다.
+
+<div id="method-1-using-set">
+  #### 메서드 1: `SET` 사용
+</div>
+
+<Accordion title="예시 테이블과 데이터">
+  ```sql
+  -- user_events 테이블 생성 (ClickHouse 구문)
+  CREATE TABLE user_events (
+      event_id UInt32,
+      user_id UInt64,
+      event_name String,
+      event_date Date,
+      event_timestamp DateTime
+  ) ENGINE = MergeTree()
+  ORDER BY (user_id, event_date);
+
+  -- 여러 사용자와 이벤트에 대한 예시 데이터 삽입
+  INSERT INTO user_events (event_id, user_id, event_name, event_date, event_timestamp) VALUES
+  (1, 12345, 'page_view', '2024-01-05', '2024-01-05 10:30:00'),
+  (2, 12345, 'page_view', '2024-01-05', '2024-01-05 10:35:00'),
+  (3, 12345, 'add_to_cart', '2024-01-05', '2024-01-05 10:40:00'),
+  (4, 12345, 'page_view', '2024-01-10', '2024-01-10 14:20:00'),
+  (5, 12345, 'add_to_cart', '2024-01-10', '2024-01-10 14:25:00'),
+  (6, 12345, 'purchase', '2024-01-10', '2024-01-10 14:30:00'),
+  (7, 12345, 'page_view', '2024-01-15', '2024-01-15 09:15:00'),
+  (8, 12345, 'page_view', '2024-01-15', '2024-01-15 09:20:00'),
+  (9, 12345, 'page_view', '2024-01-20', '2024-01-20 16:45:00'),
+  (10, 12345, 'add_to_cart', '2024-01-20', '2024-01-20 16:50:00'),
+  (11, 12345, 'purchase', '2024-01-25', '2024-01-25 11:10:00'),
+  (12, 12345, 'page_view', '2024-01-28', '2024-01-28 13:30:00'),
+  (13, 67890, 'page_view', '2024-01-05', '2024-01-05 11:00:00'),
+  (14, 67890, 'add_to_cart', '2024-01-05', '2024-01-05 11:05:00'),
+  (15, 67890, 'purchase', '2024-01-05', '2024-01-05 11:10:00'),
+  (16, 12345, 'page_view', '2024-02-01', '2024-02-01 10:00:00'),
+  (17, 12345, 'add_to_cart', '2024-02-01', '2024-02-01 10:05:00');
+  ```
+</Accordion>
+
+```sql
+SET param_user_id = 12345;
+SET param_start_date = '2024-01-01';
+SET param_end_date = '2024-01-31';
+
+SELECT
+    event_name,
+    count() AS event_count
+FROM user_events
+WHERE user_id = {user_id: UInt64}
+    AND event_date BETWEEN {start_date: Date} AND {end_date: Date}
+GROUP BY event_name;
+```
+
+<div id="method-2-using-cli-parameters">
+  #### 방법 2: CLI 매개변수 사용
+</div>
+
+```bash
+clickhouse-client \
+    --param_user_id=12345 \
+    --param_start_date='2024-01-01' \
+    --param_end_date='2024-01-31' \
+    --query="SELECT count() FROM user_events
+             WHERE user_id = {user_id: UInt64}
+             AND event_date BETWEEN {start_date: Date} AND {end_date: Date}"
+```
+
+<div id="parameter-syntax">
+  ### 매개변수 구문
+</div>
+
+매개변수는 다음 구문을 사용해 참조합니다: `{parameter_name: DataType}`
+
+* `parameter_name` - 매개변수의 이름(`param_` 접두사 제외)
+* `DataType` - 매개변수를 변환할 ClickHouse 데이터 타입
+
+<div id="data-type-examples">
+  ### 데이터 타입 예시
+</div>
+
+<Accordion title="예시에 사용할 테이블 및 샘플 데이터">
+  ```sql
+  -- 1. 문자열 및 숫자 테스트용 테이블 생성
+  CREATE TABLE IF NOT EXISTS users (
+      name String,
+      age UInt8,
+      salary Float64
+  ) ENGINE = Memory;
+
+  INSERT INTO users VALUES
+      ('John Doe', 25, 75000.50),
+      ('Jane Smith', 30, 85000.75),
+      ('Peter Jones', 20, 50000.00);
+
+  -- 2. 날짜 및 타임스탬프 테스트용 테이블 생성
+  CREATE TABLE IF NOT EXISTS events (
+      event_date Date,
+      event_timestamp DateTime
+  ) ENGINE = Memory;
+
+  INSERT INTO events VALUES
+      ('2024-01-15', '2024-01-15 14:30:00'),
+      ('2024-01-15', '2024-01-15 15:00:00'),
+      ('2024-01-16', '2024-01-16 10:00:00');
+
+  -- 3. 배열 테스트용 테이블 생성
+  CREATE TABLE IF NOT EXISTS products (
+      id UInt32,
+      name String
+  ) ENGINE = Memory;
+
+  INSERT INTO products VALUES (1, 'Laptop'), (2, 'Monitor'), (3, 'Mouse'), (4, 'Keyboard');
+
+  -- 4. Map(구조체와 유사한 형태) 테스트용 테이블 생성
+  CREATE TABLE IF NOT EXISTS accounts (
+      user_id UInt32,
+      status String,
+      type String
+  ) ENGINE = Memory;
+
+  INSERT INTO accounts VALUES
+      (101, 'active', 'premium'),
+      (102, 'inactive', 'basic'),
+      (103, 'active', 'basic');
+
+  -- 5. Identifier 테스트용 테이블 생성
+  CREATE TABLE IF NOT EXISTS sales_2024 (
+      value UInt32
+  ) ENGINE = Memory;
+
+  INSERT INTO sales_2024 VALUES (100), (200), (300);
+  ```
+</Accordion>
+
+<Tabs>
+  <Tab title="문자열 & 숫자">
+    ```sql
+    SET param_name = 'John Doe';
+    SET param_age = 25;
+    SET param_salary = 75000.50;
+
+    SELECT name, age, salary FROM users
+    WHERE name = {name: String}
+      AND age >= {age: UInt8}
+      AND salary <= {salary: Float64};
+    ```
+  </Tab>
+
+  <Tab title="날짜 & 시간">
+    ```sql
+    SET param_date = '2024-01-15';
+    SET param_timestamp = '2024-01-15 14:30:00';
+
+    SELECT * FROM events
+    WHERE event_date = {date: Date}
+       OR event_timestamp > {timestamp: DateTime};
+    ```
+  </Tab>
+
+  <Tab title="배열">
+    ```sql
+    SET param_ids = [1, 2, 3, 4, 5];
+
+    SELECT * FROM products WHERE id IN {ids: Array(UInt32)};
+    ```
+  </Tab>
+
+  <Tab title="맵">
+    ```sql
+    SET param_filters = {'target_status': 'active'};
+
+    SELECT user_id, status, type FROM accounts
+    WHERE status = arrayElement(
+        mapValues({filters: Map(String, String)}),
+        indexOf(mapKeys({filters: Map(String, String)}), 'target_status')
+    );
+    ```
+  </Tab>
+
+  <Tab title="식별자">
+    ```sql
+    SET param_table = 'sales_2024';
+
+    SELECT count() FROM {table: Identifier};
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+[language clients](/ko/integrations/language-clients/index)에서 쿼리 매개변수를 사용하는 방법은
+사용하려는 언어 클라이언트의 문서를 참조하십시오.
+
+<div id="limitations-of-query-parameters">
+  ### 쿼리 매개변수의 제한 사항
+</div>
+
+쿼리 매개변수는 **범용 텍스트 치환이 아닙니다**. 다음과 같은 명확한 제한이 있습니다.
+
+1. **주로 SELECT SQL 문에서 사용하도록 설계되었습니다** - SELECT 쿼리에서 가장 잘 지원됩니다
+2. **식별자 또는 리터럴로만 사용할 수 있습니다** - 임의의 SQL 구문 조각을 대체할 수는 없습니다
+3. **DDL 지원은 제한적입니다** - `CREATE TABLE`에서는 지원되지만 `ALTER TABLE`에서는 지원되지 않습니다
+
+**작동하는 경우:**
+
+```sql
+-- ✓ WHERE 절의 값
+SELECT * FROM users WHERE id = {user_id: UInt64};
+
+-- ✓ 테이블/데이터베이스 이름
+SELECT * FROM {db: Identifier}.{table: Identifier};
+
+-- ✓ IN 절의 값
+SELECT * FROM products WHERE id IN {ids: Array(UInt32)};
+
+-- ✓ CREATE TABLE
+CREATE TABLE {table_name: Identifier} (id UInt64, name String) ENGINE = MergeTree() ORDER BY id;
+```
+
+**동작하지 않는 방법:**
+
+```sql
+-- ✗ SELECT의 컬럼 이름 (Identifier 사용 시 주의 필요)
+SELECT {column: Identifier} FROM users;  -- 제한적 지원
+
+-- ✗ 임의의 SQL 단편
+SELECT * FROM users {where_clause: String};  -- 지원되지 않음
+
+-- ✗ ALTER TABLE 문
+ALTER TABLE {table: Identifier} ADD COLUMN new_col String;  -- 지원되지 않음
+
+-- ✗ 다중 SQL 문
+{statements: String};  -- 지원되지 않음
+```
+
+<div id="security-best-practices">
+  ### 보안 모범 사례
+</div>
+
+**사용자 입력에는 항상 쿼리 매개변수를 사용하세요:**
+
+```python
+# ✓ 안전 - 매개변수 사용
+user_input = request.get('user_id')
+result = client.query(
+    "SELECT * FROM orders WHERE user_id = {uid: UInt64}",
+    parameters={'uid': user_input}
+)
+
+# ✗ 위험 - SQL 인젝션 위험!
+user_input = request.get('user_id')
+result = client.query(f"SELECT * FROM orders WHERE user_id = {user_input}")
+```
+
+**입력 타입 검증:**
+
+```python
+def get_user_orders(user_id: int, start_date: str):
+    # 쿼리 전 타입 유효성 검사
+    if not isinstance(user_id, int) or user_id <= 0:
+        raise ValueError("Invalid user_id")
+
+    # 매개변수를 통해 타입 안전성 보장
+    return client.query(
+        """
+        SELECT * FROM orders
+        WHERE user_id = {uid: UInt64}
+            AND order_date >= {start: Date}
+        """,
+        parameters={'uid': user_id, 'start': start_date}
+    )
+```
+
+<div id="mysql-protocol-prepared-statements">
+  ### MySQL 프로토콜 prepared statements
+</div>
+
+ClickHouse의 [MySQL 인터페이스](/ko/concepts/features/interfaces/mysql)에는 prepared statements(`COM_STMT_PREPARE`, `COM_STMT_EXECUTE`, `COM_STMT_CLOSE`)에 대한 최소한의 지원이 포함되어 있습니다. 이는 주로 쿼리를 prepared statements로 감싸는 Tableau Online과 같은 도구의 연결을 가능하게 하기 위한 것입니다.
+
+**주요 제한 사항:**
+
+* **매개변수 바인딩은 지원되지 않습니다** - 바인딩된 매개변수와 함께 `?` 플레이스홀더를 사용할 수 없습니다
+* 쿼리는 저장되지만 `PREPARE` 시점에는 파싱되지 않습니다
+* 구현은 최소한으로만 제공되며, 특정 BI 도구와의 호환성을 위해 설계되었습니다
+
+**작동하지 않는 예시:**
+
+```sql
+-- MySQL 스타일의 매개변수가 포함된 prepared statement는 ClickHouse에서 작동하지 않습니다
+PREPARE stmt FROM 'SELECT * FROM users WHERE id = ?';
+EXECUTE stmt USING @user_id;  -- 매개변수 바인딩은 지원되지 않습니다
+```
+
+<Tip>
+  **대신 ClickHouse의 네이티브 쿼리 매개변수를 사용하세요.** 모든 ClickHouse 인터페이스에서 완전한 매개변수 바인딩 지원, 타입 안전성, SQL 인젝션 방지를 제공합니다.
+
+  ```sql
+  -- ClickHouse 네이티브 쿼리 매개변수(권장)
+  SET param_user_id = 12345;
+  SELECT * FROM users WHERE id = {user_id: UInt64};
+  ```
+</Tip>
+
+자세한 내용은 [MySQL 인터페이스 문서](/ko/concepts/features/interfaces/mysql)와 [ClickHouse의 MySQL 지원에 관한 블로그 게시물](https://clickhouse.com/blog/mysql-support-in-clickhouse-the-journey)을 참조하세요.
+
+<div id="summary">
+  ## 요약
+</div>
+
+<div id="summary-stored-procedures">
+  ### 저장 프로시저의 ClickHouse 대안
+</div>
+
+| 기존 저장 프로시저 패턴      | ClickHouse 대안                                 |
+| ------------------ | --------------------------------------------- |
+| 단순 계산 및 변환         | 사용자 정의 함수(UDFs)                               |
+| 재사용 가능한 매개변수화 쿼리   | 매개변수화된 뷰                                      |
+| 사전 계산된 집계          | 구체화 뷰(materialized view)                     |
+| 예약된 Batch 처리       | 갱신 가능 materialized view                                   |
+| 복잡한 다단계 ETL        | 체인된 materialized view 또는 외부 오케스트레이션(Python, Airflow, dbt) |
+| 제어 흐름이 포함된 비즈니스 로직 | 애플리케이션 코드                                     |
+
+<div id="summary-query-parameters">
+  ### 쿼리 매개변수 사용
+</div>
+
+쿼리 매개변수는 다음과 같은 용도로 사용할 수 있습니다.
+
+* SQL 인젝션 방지
+* 타입 안전성이 있는 매개변수화된 쿼리
+* 애플리케이션에서의 동적 필터링
+* 재사용 가능한 쿼리 템플릿
+
+<div id="related-documentation">
+  ## 관련 문서
+</div>
+
+* [`CREATE FUNCTION`](/ko/reference/statements/create/function) - 사용자 정의 함수
+* [`CREATE VIEW`](/ko/reference/statements/create/view) - 매개변수화된 뷰와 materialized view를 비롯한 뷰
+* [SQL 구문 - 쿼리 매개변수](/ko/reference/syntax#defining-and-using-query-parameters) - 쿼리 매개변수의 전체 구문
+* [연쇄 materialized view](/ko/concepts/features/materialized-views/cascading-materialized-views) - 고급 materialized view 패턴
+* [실행형 UDFs](/ko/reference/functions/regular-functions/udf) - 외부 함수 실행

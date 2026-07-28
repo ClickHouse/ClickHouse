@@ -1,0 +1,111 @@
+---
+sidebarTitle: '常见问题'
+description: '关于 MongoDB 的 ClickPipes 常见问题。'
+slug: /integrations/clickpipes/mongodb/faq
+title: 'MongoDB 的 ClickPipes 常见问题'
+doc_type: 'reference'
+keywords: ['ClickPipes', 'MongoDB', 'CDC', '数据摄取', '实时同步']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<div id="can-i-query-for-individual-fields-in-the-json-datatype">
+  ### 我可以查询 JSON 数据类型中的单个字段吗？
+</div>
+
+对于直接访问字段 (例如 `{"user_id": 123}`) ，你可以使用**点表示法**：
+
+```sql
+SELECT doc.user_id as user_id FROM your_table;
+```
+
+要直接访问嵌套对象中的字段，例如 `{"address": { "city": "San Francisco", "state": "CA" }}`，请使用 `^` 运算符：
+
+```sql
+SELECT doc.^address.city AS city FROM your_table;
+```
+
+对于聚合操作，可使用 `CAST` 函数或 `::` 语法将该字段转换为合适的类型：
+
+```sql
+SELECT sum(doc.shipping.cost::Float32) AS total_shipping_cost FROM t1;
+```
+
+要进一步了解如何处理 JSON，请参阅我们的 [JSON 使用指南](/zh/integrations/clickpipes/mongodb/quickstart)。
+
+<div id="how-do-i-flatten-the-nested-mongodb-documents-in-clickhouse">
+  ### 如何在 ClickHouse 中展平嵌套的 MongoDB 文档？
+</div>
+
+默认情况下，MongoDB 文档会以 ClickHouse 中的 JSON type 进行复制，并保留其嵌套结构。你可以通过多种方式展平这些数据。如果想将数据展平成列，可以使用普通视图、materialized view，或在查询时直接访问。
+
+1. **普通视图**：使用普通视图来封装展平逻辑。
+2. **Materialized Views**：对于较小的数据集，可以使用带有 [`FINAL` 修饰符](/zh/reference/statements/select/from#final-modifier) 的可刷新 materialized view，定期对数据进行展平和去重。对于较大的数据集，我们建议使用不带 `FINAL` 的增量materialized view 实时展平数据，然后在查询时对数据去重。
+3. **查询时访问**：与其展平数据，不如在查询中使用点表示法直接访问嵌套字段。
+
+有关详细示例，请参阅我们的 [JSON 使用指南](/zh/integrations/clickpipes/mongodb/quickstart)。
+
+<div id="can-i-connect-mongodb-databases-that-dont-have-a-public-ip-or-are-in-private-networks">
+  ### 可以连接没有公网 IP 或位于私有网络中的 MongoDB 数据库吗？
+</div>
+
+我们支持通过 AWS PrivateLink 连接没有公网 IP 或位于私有网络中的 MongoDB 数据库。目前暂不支持 Azure Private Link 和 GCP Private Service Connect。
+
+<div id="what-happens-if-i-delete-a-database-table-from-my-mongodb-database">
+  ### 如果我从 MongoDB 数据库中删除某个数据库/表，会发生什么？
+</div>
+
+当你从 MongoDB 中删除某个数据库/表时，ClickPipes 会继续运行，但被删除的数据库/表将不再复制变更。ClickHouse 中对应的表会被保留。
+
+<div id="how-does-mongodb-cdc-connector-handle-transactions">
+  ### MongoDB CDC (变更数据捕获) Connector 如何处理事务？
+</div>
+
+事务中的每个文档变更都会单独处理并写入 ClickHouse。变更会按照它们在 oplog 中出现的顺序应用，并且只有已提交的变更才会复制到 ClickHouse。如果 MongoDB 事务发生回滚，这些变更就不会出现在 change stream 中。
+
+更多示例，请参阅我们的 [JSON 使用指南](/zh/integrations/clickpipes/mongodb/quickstart)。
+
+<div id="resume-point-may-no-longer-be-in-the-oplog-error">
+  ### 如何处理 `resume of change stream was not possible, as the resume point may no longer be in the oplog.` 错误？
+</div>
+
+此错误通常发生在 oplog 已被截断，而 ClickPipe 无法从预期位置恢复 change stream 时。要解决此问题，请[重新同步 ClickPipe](/zh/integrations/clickpipes/mongodb/resync)。为避免此问题再次发生，建议延长 oplog retention 时间。请参阅 [MongoDB Atlas](/zh/integrations/clickpipes/mongodb/source/atlas#enable-oplog-retention)、[自管理 MongoDB](/zh/integrations/clickpipes/mongodb/source/generic#enable-oplog-retention) 或 [Amazon DocumentDB](/zh/integrations/clickpipes/mongodb/source/documentdb#configure-change-stream-log-retention) 的相关说明。
+
+<div id="how-is-replication-managed">
+  ### 如何管理复制？
+</div>
+
+我们使用 MongoDB 原生的 Change Streams API 来跟踪数据库中的更改。Change Streams API 利用 MongoDB 的 oplog (操作日志) 提供可恢复的数据变更流。ClickPipe 使用 MongoDB 的恢复令牌来跟踪 oplog 中的位置，并确保每一项更改都被复制到 ClickHouse。
+
+<div id="which-read-preference-should-i-use">
+  ### 应该使用哪种读取偏好？
+</div>
+
+该使用哪种读取偏好，取决于您的具体使用场景。如果您希望尽量降低主节点的负载，建议使用 `secondaryPreferred` 读取偏好。如果您希望优化摄取延迟，建议使用 `primaryPreferred` 读取偏好。更多详细信息，请参阅 [MongoDB 文档](https://www.mongodb.com/docs/manual/core/read-preference/#read-preference-modes-1)。
+
+<div id="does-the-mongodb-clickpipe-support-sharded-cluster">
+  ### MongoDB ClickPipe 是否支持分片集群？
+</div>
+
+是的，MongoDB ClickPipe 同时支持副本集和分片集群。
+
+<div id="documentdb-support">
+  ### MongoDB ClickPipe 支持 Amazon DocumentDB 吗？
+</div>
+
+是的，MongoDB ClickPipe 支持 Amazon DocumentDB 5.0。详情请参阅 [Amazon DocumentDB 源端设置指南](/zh/integrations/clickpipes/mongodb/source/documentdb)。
+
+<div id="privatelink-support">
+  ### MongoDB ClickPipe 支持 PrivateLink 吗？
+</div>
+
+我们目前仅支持在 AWS 中为 MongoDB (以及 DocumentDB) 集群提供 PrivateLink。
+
+请注意，与单节点关系型数据库不同，MongoDB 客户端需要成功完成副本集发现，才能遵循已配置的 `ReadPreference`。这要求为集群中的所有节点设置 PrivateLink，以便 MongoDB 客户端能够成功建立副本集连接，并在当前连接的节点发生故障时切换到其他节点。
+
+如果你希望连接到集群中的单个节点，可以在 ClickPipes 设置期间通过在连接字符串中指定 `/?directConnection=true` 来跳过副本集发现。在这种情况下，PrivateLink 的设置方式将类似于单节点关系型数据库，也是支持 PrivateLink 的最简单选项。
+
+对于副本集连接，你可以通过 VPC 资源或 VPC endpoint service 为 MongoDB 设置 PrivateLink。如果你选择 VPC 资源，则需要创建一个 `GROUP` 资源配置，以及为集群中的每个节点分别创建一个 `CHILD` 资源配置。如果你选择 VPC endpoint service，则需要为集群中的每个节点创建单独的 Endpoint Service (以及单独的 NLB) 。
+
+更多详细信息，请参阅 [适用于 ClickPipes 的 AWS PrivateLink](/zh/integrations/clickpipes/aws-privatelink) 文档。如需帮助，请联系 ClickHouse 支持团队。

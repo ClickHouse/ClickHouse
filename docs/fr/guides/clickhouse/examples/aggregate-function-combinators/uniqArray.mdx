@@ -1,0 +1,68 @@
+---
+slug: '/examples/aggregate-function-combinators/uniqArray'
+title: 'uniqArray'
+description: "Exemple d’utilisation du combinateur uniqArray"
+keywords: ['uniq', 'array', 'combinateur', 'exemples', 'uniqArray']
+sidebarTitle: 'uniqArray'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Description
+</div>
+
+Le combinateur [`Array`](/fr/reference/functions/aggregate-functions/combinators#-array)
+peut être appliqué à la fonction [`uniq`](/fr/reference/functions/aggregate-functions/uniq)
+pour calculer le nombre approximatif d’éléments uniques dans l’ensemble des tableaux,
+à l’aide de la fonction de combinateur d’agrégation `uniqArray`.
+
+La fonction `uniqArray` est utile lorsque vous devez compter les éléments uniques de
+plusieurs tableaux dans un jeu de données. Elle est équivalente à l’utilisation de `uniq(arrayJoin())`, où
+`arrayJoin` aplatit d’abord les tableaux, puis `uniq` compte les éléments uniques.
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+Dans cet exemple, nous utiliserons un échantillon de données sur les centres d’intérêt des utilisateurs dans différentes
+catégories pour montrer le fonctionnement de `uniqArray`. Nous le comparerons à
+`uniq(arrayJoin())` afin d’illustrer la différence dans le comptage des éléments uniques.
+
+```sql title="Query"
+CREATE TABLE user_interests
+(
+    user_id UInt32,
+    interests Array(String)
+) ENGINE = Memory;
+
+INSERT INTO user_interests VALUES
+    (1, ['reading', 'gaming', 'music']),
+    (2, ['gaming', 'sports', 'music']),
+    (3, ['reading', 'cooking']);
+
+SELECT 
+    uniqArray(interests) AS unique_interests_total,
+    uniq(arrayJoin(interests)) AS unique_interests_arrayJoin
+FROM user_interests;
+```
+
+La fonction `uniqArray` compte les éléments distincts dans l’ensemble des tableaux combinés, à l’instar de `uniq(arrayJoin())`.
+Dans cet exemple :
+
+* `uniqArray` renvoie 5, car il y a 5 centres d’intérêt distincts parmi tous les utilisateurs : &#39;reading&#39;, &#39;gaming&#39;, &#39;music&#39;, &#39;sports&#39;, &#39;cooking&#39;
+* `uniq(arrayJoin())` renvoie également 5, ce qui montre que les deux fonctions comptent les éléments distincts dans l’ensemble des tableaux
+
+```response title="Response"
+   ┌─unique_interests_total─┬─unique_interests_arrayJoin─┐
+1. │                      5 │                          5 │
+   └────────────────────────┴────────────────────────────┘
+```
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [`uniq`](/fr/reference/functions/aggregate-functions/uniq)
+* [`arrayJoin`](/fr/reference/functions/regular-functions/array-join)
+* [`Array combinateur`](/fr/reference/functions/aggregate-functions/combinators#-array)
+* [`uniqCombined`](/fr/reference/functions/aggregate-functions/uniqCombined)

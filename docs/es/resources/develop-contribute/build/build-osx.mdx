@@ -1,0 +1,114 @@
+---
+description: 'Guía para compilar ClickHouse desde fuente en sistemas macOS'
+sidebarTitle: 'Compilar en macOS para macOS'
+slug: /development/build-osx
+title: 'Compilar en macOS para macOS'
+keywords: ['MacOS', 'Mac', 'compilar']
+doc_type: 'guide'
+---
+
+<Info>
+  **Esta guía de compilación está dirigida a colaboradores que modifican el propio ClickHouse.**
+
+  Si no va a modificar el código fuente de ClickHouse, puede instalar una versión precompilada de ClickHouse como se describe en [Quick Start](/es/get-started/setup/install).
+</Info>
+
+ClickHouse puede compilarse en macOS x86&#95;64 (Intel) y arm64 (Apple Silicon) con macOS 10.15 (Catalina) o superior.
+
+Como compilador, solo se admite Clang de Homebrew.
+
+<div id="install-prerequisites">
+  ## Instalar los requisitos previos
+</div>
+
+Primero, consulta la [documentación general sobre los requisitos previos](/es/resources/develop-contribute/introduction/developer-instruction).
+
+A continuación, instala [Homebrew](https://brew.sh/) y ejecuta
+
+Luego, ejecuta:
+
+```bash
+brew update
+brew install ccache cmake ninja libtool gettext llvm lld binutils grep findutils nasm bash rust rustup
+```
+
+<Note>
+  Apple usa de forma predeterminada un sistema de archivos que no distingue entre mayúsculas y minúsculas. Aunque esto normalmente no afecta a la compilación (sobre todo, las compilaciones desde cero funcionarán), puede causar problemas en operaciones con archivos como `git mv`.
+  Para trabajar seriamente en desarrollo en macOS, asegúrate de que el código fuente esté almacenado en un volumen de disco que sí distinga entre mayúsculas y minúsculas; por ejemplo, consulta [estas instrucciones](https://brianboyko.medium.com/a-case-sensitive-src-folder-for-mac-programmers-176cc82a3830).
+</Note>
+
+<div id="build-clickhouse">
+  ## Compilar ClickHouse
+</div>
+
+Para compilarlo, debe usar el compilador Clang de Homebrew:
+
+```bash
+cd ClickHouse
+mkdir build
+export PATH=$(brew --prefix llvm)/bin:$PATH
+cmake -S . -B build
+cmake --build build
+# El binario resultante se creará en: build/programs/clickhouse
+```
+
+<Note>
+  Si se encuentra con errores `ld: archive member '/' not a mach-o file in ...` durante el enlazado, es posible que necesite
+  usar llvm-ar estableciendo la opción `-DCMAKE_AR=/opt/homebrew/opt/llvm/bin/llvm-ar`.
+</Note>
+
+<div id="caveats">
+  ## Consideraciones
+</div>
+
+Si tiene previsto ejecutar `clickhouse-server`, asegúrese de aumentar la variable `maxfiles` del sistema.
+
+<Note>
+  Tendrá que usar sudo.
+</Note>
+
+Para ello, cree el archivo `/Library/LaunchDaemons/limit.maxfiles.plist` con el siguiente contenido:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+        "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>limit.maxfiles</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>launchctl</string>
+      <string>limit</string>
+      <string>maxfiles</string>
+      <string>524288</string>
+      <string>524288</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>ServiceIPC</key>
+    <false/>
+  </dict>
+</plist>
+```
+
+Asigna al archivo los permisos adecuados:
+
+```bash
+sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
+```
+
+Verifique que el archivo sea correcto:
+
+```bash
+plutil /Library/LaunchDaemons/limit.maxfiles.plist
+```
+
+Recargue el archivo (o reinicie):
+
+```bash
+sudo launchctl load -w /Library/LaunchDaemons/limit.maxfiles.plist
+```
+
+Para comprobar que funciona, usa los comandos `ulimit -n` o `launchctl limit maxfiles`.

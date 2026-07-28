@@ -1,5 +1,5 @@
 -- Regression test for #103508:
--- `NOT_FOUND_COLUMN_IN_BLOCK` — the new analyzer renamed `timestamp` to
+-- `NOT_FOUND_COLUMN_IN_BLOCK` — the analyzer renamed `timestamp` to
 -- `timestamp_0` inside a CTE wrapping a `Distributed` table when the
 -- underlying local table was non-empty, breaking the outer `SELECT`.
 -- The bug requires at least one row in the local table to surface; with

@@ -1,0 +1,12 @@
+--- schema (native) ---
+u	UUID					
+ip4	UInt32					
+ip6	FixedString(16)					
+i128	FixedString(16)					
+i256	FixedString(32)					
+--- UUID value (native reader) ---
+00112233-4455-6677-8899-aabbccddeeff
+--- native reader == library reader (native-written file)? ---
+OK
+--- UUID cross-compat: native-written read by library == read by native ---
+OK

@@ -1,0 +1,33 @@
+---
+description: 'MOVE 액세스 엔터티 SQL 문에 대한 문서'
+sidebarTitle: 'MOVE'
+slug: /sql-reference/statements/move
+title: 'MOVE 액세스 엔터티 SQL 문'
+doc_type: 'reference'
+---
+
+이 SQL 문은 액세스 엔터티를 한 액세스 저장소에서 다른 액세스 저장소로 이동하는 데 사용됩니다.
+
+구문:
+
+```sql
+MOVE {USER, ROLE, QUOTA, SETTINGS PROFILE, ROW POLICY} name1 [, name2, ...] TO access_storage_type
+```
+
+현재 ClickHouse에는 5개의 액세스 저장소가 있습니다.
+
+* `local_directory`
+* `memory`
+* `replicated`
+* `users_xml` (ro)
+* `ldap` (ro)
+
+예시:
+
+```sql
+MOVE USER test TO local_directory
+```
+
+```sql
+MOVE ROLE test TO memory
+```

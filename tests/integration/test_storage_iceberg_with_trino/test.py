@@ -471,3 +471,76 @@ def test_v3_iceberg_system_tables(iceberg_db):
         f'SELECT count(*) FROM "{NAMESPACE}"."{table_name}$history"',
     )
     assert history.strip() == "2", f"$history count: {history!r}"
+
+
+def test_optimize_manifest_trino_field_ids(iceberg_db):
+    # Field-id regression: renaming a column keeps its Iceberg field-id but changes the name, so a
+    # correct Trino read of the new name after OPTIMIZE ... MANIFEST proves the rewrite kept field-ids.
+    cluster = iceberg_db
+    node = cluster.instances["node1"]
+
+    table_name = f"optimize_manifest_fieldid_{_get_uuid_str()}"
+    full = f"{CATALOG_DATABASE}.`{NAMESPACE}.{table_name}`"
+
+    # Manifest compaction is supported only for Iceberg format-version 2 (v1 and v3 are rejected).
+    node.query(
+        f"""
+        CREATE TABLE {full} (id Int32, secret String)
+        {_engine_clause(table_name)}
+        SETTINGS iceberg_format_version = 2
+        """,
+        settings=WRITE_SETTINGS,
+    )
+
+    # Several separate inserts -> several data manifests to consolidate.
+    for i in range(1, 6):
+        node.query(
+            f"INSERT INTO {full} VALUES ({i}, 'val{i}')",
+            settings=WRITE_SETTINGS,
+        )
+
+    # Rename the column: the Iceberg field-id is preserved, only the name changes. The data files
+    # keep the original field-id, so a correct read of the new name relies on field-id resolution.
+    node.query(
+        f"ALTER TABLE {full} RENAME COLUMN secret TO revealed",
+        settings=WRITE_SETTINGS,
+    )
+
+    read_sql = f'SELECT id, revealed FROM "{NAMESPACE}"."{table_name}" ORDER BY id'
+    expected = "1\tval1\n2\tval2\n3\tval3\n4\tval4\n5\tval5\n"
+
+    before = _trino_exec(cluster, read_sql)
+    assert before == expected, (
+        f"Trino read of renamed column before compaction: expected {expected!r}, got {before!r}"
+    )
+
+    snaps_before = _trino_exec(
+        cluster, f'SELECT count(*) FROM "{NAMESPACE}"."{table_name}$snapshots"'
+    ).strip()
+
+    node.query(
+        f"OPTIMIZE TABLE {full} MANIFEST",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "iceberg_manifest_min_count_to_compact": 2,
+            "allow_insert_into_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    # Confirm the compaction actually ran (committed a new snapshot), so the read-back below is not a
+    # vacuous no-op pass.
+    snaps_after = _trino_exec(
+        cluster, f'SELECT count(*) FROM "{NAMESPACE}"."{table_name}$snapshots"'
+    ).strip()
+    assert int(snaps_after) > int(snaps_before), (
+        f"OPTIMIZE TABLE ... MANIFEST did not commit a new snapshot "
+        f"({snaps_before} -> {snaps_after})"
+    )
+
+    # After the manifest rewrite, Trino must still resolve the renamed column by its preserved
+    # field-id and return the original data.
+    after = _trino_exec(cluster, read_sql)
+    assert after == expected, (
+        f"Trino read of renamed column after OPTIMIZE MANIFEST: expected {expected!r}, got {after!r}"
+    )

@@ -1,0 +1,140 @@
+---
+description: 'Guia para usar o OpenTelemetry para rastreamento distribuído e coleta
+  de métricas no ClickHouse'
+sidebarTitle: 'Rastreando o ClickHouse com OpenTelemetry'
+slug: /operations/opentelemetry
+title: 'Rastreando o ClickHouse com OpenTelemetry'
+doc_type: 'guide'
+---
+
+[OpenTelemetry](https://opentelemetry.io/) é um padrão aberto para coletar traces e métricas de aplicações distribuídas. O ClickHouse oferece algum suporte a OpenTelemetry.
+
+<div id="supplying-trace-context-to-clickhouse">
+  ## Fornecendo contexto de rastreamento ao ClickHouse
+</div>
+
+O ClickHouse aceita cabeçalhos HTTP de contexto de rastreamento, conforme descrito na [recomendação do W3C](https://www.w3.org/TR/trace-context/). Ele também aceita contexto de rastreamento por um protocolo nativo usado na comunicação entre servidores do ClickHouse ou entre o cliente e o servidor. Para testes manuais, cabeçalhos de contexto de rastreamento em conformidade com a recomendação Trace Context podem ser fornecidos ao `clickhouse-client` usando as flags `--opentelemetry-traceparent` e `--opentelemetry-tracestate`.
+
+Se nenhum contexto de rastreamento pai for fornecido, ou se o contexto de rastreamento informado não estiver em conformidade com o padrão W3C mencionado acima, o ClickHouse poderá iniciar um novo rastreamento, com probabilidade controlada pela configuração [opentelemetry&#95;start&#95;trace&#95;probability](/pt-BR/reference/settings/session-settings#opentelemetry_start_trace_probability).
+
+<div id="propagating-the-trace-context">
+  ## Propagação do contexto de rastreamento
+</div>
+
+O contexto de rastreamento é propagado para serviços downstream nos seguintes casos:
+
+* Consultas para servidores ClickHouse remotos, como ao usar o motor de tabela [Distributed](/pt-BR/reference/engines/table-engines/special/distributed).
+
+* Função de tabela [url](/pt-BR/reference/functions/table-functions/url). As informações do contexto de rastreamento são enviadas nos cabeçalhos HTTP.
+
+<div id="tracing-clickhouse-keeper-requests">
+  ## Rastreamento de solicitações do ClickHouse Keeper
+</div>
+
+O ClickHouse oferece rastreamento com OpenTelemetry para solicitações do [ClickHouse Keeper](/pt-BR/guides/oss/deployment-and-scaling/keeper/index) (serviço de coordenação compatível com ZooKeeper). Esse recurso oferece visibilidade detalhada do ciclo de vida das operações do Keeper, desde o envio da solicitação pelo cliente até o processamento no servidor.
+
+<div id="enabling-keeper-tracing">
+  ### Habilitando o rastreamento do Keeper
+</div>
+
+Para habilitar o rastreamento das requisições do Keeper, configure as seguintes definições na configuração do cliente ZooKeeper/Keeper:
+
+```xml
+<clickhouse>
+    <zookeeper>
+        <node>
+            <host>keeper1</host>
+            <port>9181</port>
+        </node>
+        <!-- Habilitar a propagação de contexto de rastreamento do OpenTelemetry -->
+        <pass_opentelemetry_tracing_context>true</pass_opentelemetry_tracing_context>
+    </zookeeper>
+</clickhouse>
+```
+
+<div id="keeper-span-types">
+  ### Tipos de spans do Keeper
+</div>
+
+Quando o rastreamento está habilitado, o ClickHouse cria spans para operações do Keeper tanto no lado do cliente quanto no lado do servidor:
+
+**Spans do lado do cliente:**
+
+* `zookeeper.create` — Criar um novo nó
+* `zookeeper.get` — Obter os dados do nó
+* `zookeeper.set` — Definir os dados do nó
+* `zookeeper.remove` — Remover um nó
+* `zookeeper.list` — Listar nós filhos
+* `zookeeper.exists` — Verificar se um nó existe
+* `zookeeper.multi` — Executar várias operações de forma atômica
+* `zookeeper.client.requests_queue` — Tempo gasto na fila de solicitações antes do envio
+
+**Spans do lado do servidor (Keeper):**
+
+* `keeper.receive_request` — Recebimento e análise da solicitação do cliente
+* `keeper.dispatcher.requests_queue` — Solicitações na fila do dispatcher
+* `keeper.write.pre_commit` — Pré-processamento de solicitações de escrita antes do commit do Raft
+* `keeper.write.commit` — Processamento de solicitações de escrita após o commit do Raft
+* `keeper.read.wait_for_write` — Solicitações de leitura aguardando escritas das quais dependem
+* `keeper.read.process` — Processamento de solicitações de leitura
+* `keeper.dispatcher.responses_queue` — Respostas na fila do dispatcher
+* `keeper.send_response` — Envio da resposta ao cliente
+
+<div id="sampling-and-performance">
+  ### Amostragem e desempenho
+</div>
+
+Para gerenciar a sobrecarga do rastreamento, o Keeper implementa amostragem dinâmica. A taxa de amostragem é ajustada automaticamente entre 1/10.000 e 1/10 com base no tamanho da solicitação. As durações de todas as solicitações (amostradas e não amostradas) são registradas em métricas de histograma para monitoramento de desempenho.
+
+<div id="tracing-the-clickhouse-itself">
+  ## Rastreando o próprio ClickHouse
+</div>
+
+O ClickHouse cria `trace spans` para cada consulta e para alguns estágios da execução da consulta, como o planejamento da consulta ou consultas distribuídas.
+
+Para serem úteis, as informações de rastreamento precisam ser exportadas para um sistema de monitoramento compatível com OpenTelemetry, como [Jaeger](https://jaegertracing.io/) ou [Prometheus](https://prometheus.io/). O ClickHouse evita depender de um sistema de monitoramento específico e, em vez disso, fornece os dados de rastreamento apenas por meio de uma tabela de sistema. As informações de trace span do OpenTelemetry [exigidas pelo padrão](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/overview.md#span) são armazenadas na tabela [system.opentelemetry&#95;span&#95;log](/pt-BR/reference/system-tables/opentelemetry_span_log).
+
+A tabela deve estar habilitada na configuração do servidor; consulte o elemento `opentelemetry_span_log` no arquivo de configuração padrão `config.xml`. Ela é habilitada por padrão.
+
+As tags ou atributos são salvos como dois arrays paralelos, contendo as chaves e os valores. Use [ARRAY JOIN](/pt-BR/reference/statements/select/array-join) para trabalhar com eles.
+
+<div id="log-query-settings">
+  ## Registro das configurações da consulta
+</div>
+
+A configuração [log&#95;query&#95;settings](/pt-BR/reference/settings/session-settings) permite registrar alterações nas configurações da consulta durante sua execução. Quando habilitada, qualquer modificação feita nas configurações da consulta será registrada no log do span do OpenTelemetry. Esse recurso é especialmente útil em ambientes de produção para rastrear alterações de configuração que possam afetar o desempenho da consulta.
+
+<div id="integration-with-monitoring-systems">
+  ## Integração com sistemas de monitoramento
+</div>
+
+No momento, não existe uma ferramenta pronta para exportar os dados de rastreamento do ClickHouse para um sistema de monitoramento.
+
+Para testes, é possível configurar a exportação usando uma visão materializada com o motor [URL](/pt-BR/reference/engines/table-engines/special/url) sobre a tabela [system.opentelemetry&#95;span&#95;log](/pt-BR/reference/system-tables/opentelemetry_span_log), para enviar os dados de log recebidos a um endpoint HTTP de um coletor de traces. Por exemplo, para enviar os dados mínimos de span para uma instância do Zipkin em execução em `http://localhost:9411`, no formato JSON v2 do Zipkin:
+
+```sql
+CREATE MATERIALIZED VIEW default.zipkin_spans
+ENGINE = URL('http://127.0.0.1:9411/api/v2/spans', 'JSONEachRow')
+SETTINGS output_format_json_named_tuples_as_objects = 1,
+    output_format_json_array_of_rows = 1 AS
+SELECT
+    lower(hex(trace_id)) AS traceId,
+    CASE WHEN parent_span_id = 0 THEN '' ELSE lower(hex(parent_span_id)) END AS parentId,
+    lower(hex(span_id)) AS id,
+    operation_name AS name,
+    start_time_us AS timestamp,
+    finish_time_us - start_time_us AS duration,
+    cast(tuple('clickhouse'), 'Tuple(serviceName text)') AS localEndpoint,
+    cast(tuple(
+        attribute.values[indexOf(attribute.names, 'db.statement')]),
+        'Tuple("db.statement" text)') AS tags
+FROM system.opentelemetry_span_log
+```
+
+Em caso de erro, a parte dos dados de log em que o erro ocorreu será perdida silenciosamente. Verifique o log do servidor em busca de mensagens de erro se os dados não chegarem.
+
+<div id="related-content">
+  ## Conteúdo relacionado
+</div>
+
+* Blog: [Criando uma solução de observabilidade com ClickHouse - Parte 2 - traces](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)

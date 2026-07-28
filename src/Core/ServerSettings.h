@@ -33,7 +33,6 @@ struct ServerSettingsImpl;
     M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, UInt64Auto) \
-    M(CLASS_NAME, InsertDeduplicationVersions) \
 
 
 SERVER_SETTINGS_SUPPORTED_TYPES(ServerSettings, DECLARE_SETTING_TRAIT)

@@ -1,0 +1,117 @@
+---
+description: 'توثيق HTTP'
+slug: /operations/external-authenticators/http
+title: 'HTTP'
+doc_type: 'reference'
+---
+
+import SelfManaged from '/snippets/ar/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+يمكن استخدام خادم HTTP لمصادقة مستخدمي ClickHouse. ولا يمكن استخدام مصادقة HTTP إلا كمُصادِق خارجي للمستخدمين الحاليين، والمُعرَّفين في `users.xml` أو في مسارات التحكم بالوصول المحلية. حاليًا، لا يتم دعم سوى مخطط مصادقة [Basic](https://datatracker.ietf.org/doc/html/rfc7617) باستخدام طريقة GET.
+
+<div id="http-auth-server-definition">
+  ## تعريف خادم مصادقة HTTP
+</div>
+
+لتعريف خادم مصادقة HTTP، يجب إضافة القسم `http_authentication_servers` إلى ملف `config.xml`.
+
+**مثال**
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <http_authentication_servers>
+        <basic_auth_server>
+          <uri>http://localhost:8000/auth</uri>
+          <connection_timeout_ms>1000</connection_timeout_ms>
+          <receive_timeout_ms>1000</receive_timeout_ms>
+          <send_timeout_ms>1000</send_timeout_ms>
+          <max_tries>3</max_tries>
+          <retry_initial_backoff_ms>50</retry_initial_backoff_ms>
+          <retry_max_backoff_ms>1000</retry_max_backoff_ms>
+          <forward_headers>
+            <name>Custom-Auth-Header-1</name>
+            <name>Custom-Auth-Header-2</name>
+          </forward_headers>
+
+        </basic_auth_server>
+    </http_authentication_servers>
+</clickhouse>
+
+```
+
+لاحظ أنه يمكنك تعريف عدة خوادم HTTP داخل القسم `http_authentication_servers` باستخدام أسماء مختلفة.
+
+**المعلمات**
+
+* `uri` - عنوان URI لإرسال طلب المصادقة
+
+المهل الزمنية بالمللي ثانية على المقبس المستخدم للتواصل مع الخادم:
+
+* `connection_timeout_ms` - القيمة الافتراضية: 1000 مللي ثانية.
+* `receive_timeout_ms` - القيمة الافتراضية: 1000 مللي ثانية.
+* `send_timeout_ms` - القيمة الافتراضية: 1000 مللي ثانية.
+
+معلمات إعادة المحاولة:
+
+* `max_tries` - الحد الأقصى لعدد المحاولات لإرسال طلب مصادقة. القيمة الافتراضية: 3
+* `retry_initial_backoff_ms` - الفاصل الزمني الأولي للتراجع عند إعادة المحاولة. القيمة الافتراضية: 50 مللي ثانية
+* `retry_max_backoff_ms` - الحد الأقصى للفاصل الزمني للتراجع. القيمة الافتراضية: 1000 مللي ثانية
+
+الرؤوس المُمرَّرة:
+
+يحدّد هذا الجزء الرؤوس التي سيتم تمريرها من رؤوس طلب العميل إلى خدمة المصادقة الخارجية عبر HTTP. لاحظ أن الرؤوس ستُطابَق مع الرؤوس المعرّفة في الإعدادات بطريقة غير حساسة لحالة الأحرف، لكن سيتم تمريرها كما هي، أي دون تعديل.
+
+<div id="enabling-http-auth-in-users-xml">
+  ### تمكين مصادقة HTTP في `users.xml`
+</div>
+
+لتمكين مصادقة HTTP لهذا المستخدم، حدِّد قسم `http_authentication` بدلًا من `password` أو أي أقسام مشابهة في تعريف المستخدم.
+
+المعلمات:
+
+* `server` - اسم خادم مصادقة HTTP المُهيّأ في ملف `config.xml` الرئيسي كما سبق توضيحه.
+* `scheme` - مخطط مصادقة HTTP. لا يُدعَم حاليًا إلا `Basic`. القيمة الافتراضية: Basic
+
+مثال (يوضع في `users.xml`):
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <my_user>
+        <!- ... -->
+        <http_authentication>
+            <server>basic_server</server>
+            <scheme>basic</scheme>
+        </http_authentication>
+    </test_user_2>
+</clickhouse>
+```
+
+<Note>
+  لاحظ أنه لا يمكن استخدام مصادقة HTTP مع أي آلية مصادقة أخرى. وسيؤدي وجود أي أقسام أخرى مثل `password` إلى جانب `http_authentication` إلى إيقاف ClickHouse.
+</Note>
+
+<div id="enabling-http-auth-using-sql">
+  ### تمكين مصادقة HTTP باستخدام SQL
+</div>
+
+عند تمكين [التحكم بالوصول وإدارة الحسابات المعتمدان على SQL](/ar/concepts/features/security/access-rights#access-control-usage) في ClickHouse، يمكن أيضًا إنشاء المستخدمين الذين تُحدَّد هويتهم عبر مصادقة HTTP باستخدام عبارات SQL.
+
+```sql
+CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server' SCHEME 'Basic'
+```
+
+...أو تكون `Basic` هي القيمة الافتراضية من دون تعريف صريح للمخطط
+
+```sql
+CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server'
+```
+
+<div id="passing-session-settings">
+  ### تمرير إعدادات الجلسة
+</div>
+
+إذا كان جسم الاستجابة من خادم مصادقة HTTP بتنسيق JSON ويحتوي على كائن فرعي `settings`، فسيحاول ClickHouse تحليل أزواج `key: value` فيه باعتبارها قيماً نصية وتعيينها كإعدادات جلسة للجلسة الحالية للمستخدم المُستوثَق منه. وإذا فشل التحليل، فسيتم تجاهل جسم الاستجابة الوارد من الخادم.
