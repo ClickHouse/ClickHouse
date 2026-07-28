@@ -3300,6 +3300,38 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
     /// (valid; `MATERIALIZE INDEX` rebuilds it). Only full (non-packed) Wide storage holds orphans.
     if (is_full_part_storage && isWidePart(source_part))
     {
+        /// Files that a HEALTHY index resolves from `checksums.txt`, keyed by the index that owns
+        /// them. An index's speculative extension probe can address a sibling's file when two index
+        /// names collide (the same hazard the `DROP INDEX` bookkeeping guards against), so such a
+        /// file must not be treated as this index's orphan. Keyed by owner because a corrupted
+        /// index's own files are exactly what we are looking for and must not be excluded.
+        std::unordered_map<String, NameSet> healthy_index_owned_files;
+        for (const auto & index : indices)
+        {
+            auto owner = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
+            const String owner_file_name = owner->getFileName();
+            NameSet owned;
+            for (const auto & substream : owner->getAllSubstreamsInPart(
+                     source_part->checksums, owner_file_name, &source_part->getDataPartStorage()))
+            {
+                const String stream_name = owner_file_name + substream.suffix;
+                if (auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, source_part->checksums))
+                    owned.insert(*actual + substream.extension);
+                if (auto actual_mrk = IMergeTreeDataPart::getStreamNameOrHash(stream_name, ctx->mrk_extension, source_part->checksums))
+                    owned.insert(*actual_mrk + ctx->mrk_extension);
+            }
+            if (!owned.empty())
+                healthy_index_owned_files.emplace(index.name, std::move(owned));
+        }
+
+        auto owned_by_another_index = [&](const String & index_name, const String & file_name)
+        {
+            for (const auto & [owner_name, owned] : healthy_index_owned_files)
+                if (owner_name != index_name && owned.contains(file_name))
+                    return true;
+            return false;
+        };
+
         for (const auto & index : indices)
         {
             auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
@@ -3316,21 +3348,31 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
                 continue;
 
             /// Enumerate the orphan files from storage (not in checksums). Walk every declared
-            /// substream (text owns `.dct`/`.pst`/`.pos` side streams, each with its own data + mark)
-            /// and probe both minmax extensions per substream so a legacy `.idx` orphan is caught too.
+            /// substream (text owns `.dct`/`.pst`/`.pos` side streams, each with its own data + mark),
+            /// taking only the extension that substream declares plus minmax's legacy `.idx` for a
+            /// `.idx2` substream. A file another index owns is never claimed: with unescaped names a
+            /// corrupted text index `a` would otherwise take skp_idx_a.pos.idx2 from a healthy minmax
+            /// index named `a.pos`, whose checksum entry is inherited, so the file would be skipped
+            /// while its checksum survived and `CHECK TABLE` would fail.
             const String file_name = index_ptr->getFileName();
-            static const std::array<String, 2> index_extensions = {".idx2", ".idx"};
             for (const auto & index_substream : index_ptr->getSubstreams())
             {
                 const String stream_name = file_name + index_substream.suffix;
-                for (const auto & extension : index_extensions)
+                auto collect = [&](const String & extension)
                 {
-                    if (auto actual = IMergeTreeDataPart::getStreamNameOrHash(
-                            stream_name, extension, source_part->getDataPartStorage()))
+                    auto actual = IMergeTreeDataPart::getStreamNameOrHash(
+                        stream_name, extension, source_part->getDataPartStorage());
+                    if (actual && !owned_by_another_index(index.name, *actual + extension))
                         ctx->orphan_skip_index_files.insert(*actual + extension);
-                }
-                if (auto actual_mrk = IMergeTreeDataPart::getStreamNameOrHash(
-                        stream_name, ctx->mrk_extension, source_part->getDataPartStorage()))
+                };
+
+                collect(index_substream.extension);
+                if (index_substream.extension == ".idx2")
+                    collect(".idx");
+
+                auto actual_mrk = IMergeTreeDataPart::getStreamNameOrHash(
+                    stream_name, ctx->mrk_extension, source_part->getDataPartStorage());
+                if (actual_mrk && !owned_by_another_index(index.name, *actual_mrk + ctx->mrk_extension))
                     ctx->orphan_skip_index_files.insert(*actual_mrk + ctx->mrk_extension);
             }
         }
