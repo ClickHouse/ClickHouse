@@ -14,13 +14,20 @@ SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10;
 
 -- Lazy materialization must fire for all the queries below, otherwise they assert nothing.
+-- Both the local and the distributed plan are checked: the bug only shows under
+-- `make_distributed_plan`, so a guard covering the local plan alone could pass vacuously.
 SELECT 'lazy materialization applied:', countIf(explain LIKE '%LazilyReadFromMergeTree%') > 0
 FROM (EXPLAIN SELECT v, ver, k FROM t_lm_header_order FINAL PREWHERE k > 0 LIMIT 4);
 
--- Lazy materialization replaces the LimitStep node with a JoinLazyColumnsStep subplan whose
--- header follows the main/lazy split, not the projection. make_distributed_plan rebuilds the
+SELECT 'lazy materialization applied (distributed):', countIf(explain LIKE '%LazilyReadFromMergeTree%') > 0
+FROM (EXPLAIN SELECT v, ver, k FROM t_lm_header_order FINAL PREWHERE k > 0 LIMIT 4
+      SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1);
+
+-- Lazy materialization replaces the `LimitStep` node with a `JoinLazyColumnsStep` subplan whose
+-- header follows the main/lazy split, not the projection. `make_distributed_plan` rebuilds the
 -- plan bottom-up and re-derives every header, so a replacement that lost the replaced node's
--- header order raised LOGICAL_ERROR "incompatible header with root step".
+-- header order raised `LOGICAL_ERROR` `Cannot add step Expression to QueryPlan because it has
+-- incompatible header with root step JoinLazyColumnsStep`.
 SELECT v, ver, k FROM t_lm_header_order FINAL PREWHERE k > 0 LIMIT 4
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1;
 

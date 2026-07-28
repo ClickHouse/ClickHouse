@@ -1,4 +1,5 @@
 lazy materialization applied:	1
+lazy materialization applied (distributed):	1
 100	1	1
 200	1	2
 300	1	3
