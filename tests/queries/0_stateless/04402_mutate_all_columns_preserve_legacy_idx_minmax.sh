@@ -11,16 +11,16 @@
 # `no-object-storage` / `no-shared-merge-tree` / `no-replicated-database`: this
 # test renames real on-disk index files in the local part directory and relies
 # on ATTACH recomputing `checksums.txt` from those files. On object storage the
-# files in the data dir are DiskObjectStorageMetadata pointer files, and the
+# files in the data dir are `DiskObjectStorageMetadata` pointer files, and the
 # replicated/shared engines gate ATTACH on ZooKeeper checksum digests, so the
 # local-disk file surgery below does not apply there. The bug is in
 # `MutateAllPartColumnsTask`'s index-preservation loop and is independent of the
-# disk layer, so a plain local MergeTree is sufficient.
+# disk layer, so a plain local `MergeTree` is sufficient.
 #
 # `no-random-merge-tree-settings`: the test renames a specific standalone
 # index file (skp_idx_mm_v.idx2) and depends on a fixed granule count. Randomized
 # merge-tree settings (`packed_skip_index_max_bytes` packs the index into
-# skp_idx.packed, index_granularity_bytes / adaptive granularity change the
+# `skp_idx.packed`, index_granularity_bytes / adaptive granularity change the
 # granule count) would break the file surgery. The settings the test relies on
 # are pinned explicitly in the CREATE below for the same reason.
 #
@@ -88,7 +88,7 @@ ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_legacy_minmax ATTACH PARTITION tuple()"
 echo "before:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_legacy_minmax WHERE v = 42) WHERE explain ILIKE '%Granules: 1/20%'"
 
-# Full part rewrite: DROP COLUMN of a MATERIALIZED column takes
+# Full part rewrite: `DROP COLUMN` of a MATERIALIZED column takes
 # `MutateAllPartColumnsTask`. The minmax index is not recalculated, so it is
 # hardlinked from the source part. Before the fix the legacy ".idx" data file
 # was dropped here and the index no longer pruned (Granules: 20/20).
@@ -104,7 +104,7 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_legacy_minmax WHERE v = 42"
 # The on-disk size accounting must include the preserved legacy ".idx" payload.
 # `calculateSecondaryIndicesSizesOnDisk` used to enumerate `getSubstreams` (only
 # ".idx2"), so on the repaired part it counted the mark file but missed the ".idx"
-# data file and reported secondary_indices_compressed_bytes = 0. The fix probes the
+# data file and reported `secondary_indices_compressed_bytes` = 0. The fix probes the
 # substreams actually present via getAllSubstreamsInPart(checksums, ...).
 echo "size accounting:"
 ${CLICKHOUSE_CLIENT} -q "SELECT secondary_indices_compressed_bytes > 0 FROM system.parts WHERE database = currentDatabase() AND table = 't_legacy_minmax' AND active"

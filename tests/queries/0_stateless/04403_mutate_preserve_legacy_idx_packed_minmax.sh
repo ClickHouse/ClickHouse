@@ -2,7 +2,7 @@
 # Tags: no-fasttest, no-replicated-database, no-shared-merge-tree, no-object-storage, no-random-merge-tree-settings
 #
 # `no-fasttest`: this test does local-disk part-file surgery (rewrites the
-# skp_idx.packed footer in the detached part dir) like other fixture-surgery
+# `skp_idx.packed` footer in the detached part dir) like other fixture-surgery
 # tests (e.g. 02864_restore_table_with_broken_part). The Fast test macOS
 # (arm_darwin) environment does not reliably expose that layout, so the surgery
 # cannot run there. The bug is disk-layer independent and is fully covered by
@@ -11,10 +11,10 @@
 # `no-object-storage` / `no-shared-merge-tree` / `no-replicated-database`: the
 # test rewrites a real on-disk archive file in the local part directory and
 # relies on ATTACH recomputing `checksums.txt` from it. On object storage the
-# files are DiskObjectStorageMetadata pointer files, and the replicated/shared
+# files are `DiskObjectStorageMetadata` pointer files, and the replicated/shared
 # engines gate ATTACH on ZooKeeper checksum digests, so the local-disk surgery
-# does not apply there. The bug is in MutateTask's packed-archive preservation
-# loop and is independent of the disk layer, so a plain local MergeTree suffices.
+# does not apply there. The bug is in `MutateTask`'s packed-archive preservation
+# loop and is independent of the disk layer, so a plain local `MergeTree` suffices.
 #
 # `no-random-merge-tree-settings`: the test depends on a fixed granule count and
 # on both minmax indices living inside skp_idx.packed. The relevant settings are
@@ -23,13 +23,13 @@
 #
 # Regression test for the second backward-compatibility gap flagged on PR #109616
 # (issue #109595), in the PACKED-ARCHIVE preservation path (companion to the
-# per-file hardlink path covered by 04402). A mutation that rebuilds skp_idx.packed
+# per-file hardlink path covered by 04402). A mutation that rebuilds `skp_idx.packed`
 # because one packed index (mm_w) is recomputed must preload the surviving packed
 # members of the OTHER, non-recalculated index (mm_v) into the new archive. The
 # preserve loop used to enumerate the current writer substreams via `getSubstreams`.
 # For minmax the on-disk format changed from ".idx" (v1) to ".idx2" (v2), so
 # `getSubstreams` reports only ".idx2". On an upgraded part that still carries a
-# legacy "skp_idx_mm_v.idx" member inside skp_idx.packed, the loop preloaded the
+# legacy "skp_idx_mm_v.idx" member inside `skp_idx.packed`, the loop preloaded the
 # mark member but never the ".idx" data member: the rebuilt archive kept mm_v's
 # mark but dropped its data, silently losing the index after the mutation (CHECK
 # TABLE still passed because the old archive checksum is removed and rewritten).
@@ -41,7 +41,7 @@
 # build a packed part with two minmax indices, DETACH it, rewrite the packed
 # footer to rename "skp_idx_mm_v.idx2" to "skp_idx_mm_v.idx" (for a non-nullable
 # column the v1 and v2 minmax payloads are byte-identical), drop `checksums.txt` so
-# ATTACH recomputes it, then ATTACH and run an ALTER UPDATE that touches only w
+# ATTACH recomputes it, then ATTACH and run an `ALTER UPDATE` that touches only w
 # (recomputes mm_w, rebuilds the archive) while mm_v is preserved.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -142,7 +142,7 @@ ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_legacy_packed ATTACH PARTITION tuple()"
 echo "before:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_legacy_packed WHERE v = 42) WHERE explain ILIKE '%Granules: 1/20%'"
 
-# Rebuild the archive: ALTER UPDATE touches only w, so mm_w is recomputed (and the
+# Rebuild the archive: `ALTER UPDATE` touches only w, so mm_w is recomputed (and the
 # packed archive is rewritten) while mm_v is preserved. Before the fix the legacy
 # ".idx" data member of mm_v was dropped from the new archive and no longer pruned.
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_legacy_packed UPDATE w = w + 0 WHERE 1 SETTINGS mutations_sync = 2"

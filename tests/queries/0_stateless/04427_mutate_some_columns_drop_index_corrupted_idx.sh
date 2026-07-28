@@ -6,7 +6,7 @@
 # repairs a part corrupted by the released #109595 bug (skp_idx_<name>.* on
 # disk, no per-file entries in `checksums.txt`) by recomputing the index. This
 # test covers the two remaining paths that a corrupted part can go through:
-#   A) a some-columns mutation (ALTER UPDATE of a non-indexed column), and
+#   A) a some-columns mutation (`ALTER UPDATE` of a non-indexed column), and
 #   B) `DROP INDEX`.
 # Their bookkeeping resolved index files only through `checksums.txt`, so the
 # orphan standalone files were hardlinked into the new part unchanged and
@@ -68,7 +68,7 @@ orphan_on_disk () {
     if ls "${part}"skp_idx_mm_v.* >/dev/null 2>&1; then echo 1; else echo 0; fi
 }
 
-# --- Path A: some-columns mutation (ALTER UPDATE of the non-indexed column w) ---
+# --- Path A: some-columns mutation (`ALTER UPDATE` of the non-indexed column w) ---
 make_corrupted_part t_some
 echo "A_corrupted_orphan_on_disk:"
 orphan_on_disk t_some

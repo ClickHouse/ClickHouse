@@ -2,12 +2,12 @@
 # Tags: no-fasttest, no-replicated-database, no-shared-merge-tree, no-object-storage, no-random-merge-tree-settings
 #
 # Regression for the migration case flagged on PR #109616 (issue #109595).
-# The pre-#109595 releases (26.3+) rewrote a mutated Wide part's `checksums.txt`
+# The pre-#109595 releases (26.3+) rewrote a mutated `Wide` part's `checksums.txt`
 # WITHOUT the hardlinked skip-index files, producing a corrupted part shape:
 # skp_idx_<name>.* files present on disk, but no per-file entries in
 # `checksums.txt`. Such an index is already dead (reads probe checksums and see
 # nothing, so it never prunes; `CHECK TABLE` fails with
-# UNEXPECTED_FILE_IN_DATA_PART). A later full-part-rewrite mutation used to take
+# `UNEXPECTED_FILE_IN_DATA_PART`). A later full-part-rewrite mutation used to take
 # the preserve path (`getAllSubstreamsInPart` over checksums returns no substreams)
 # and drop the orphan files without repairing the part, losing the index
 # forever. The fix detects the shape (index present on disk but unresolvable
@@ -27,7 +27,7 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_corrupt_minmax SYNC"
 
 # v = k is monotone, so a minmax index over v prunes a point query to a single
 # granule. `index_granularity` = 100 over 2000 rows gives 20 granules. m is a
-# MATERIALIZED column so that DROP COLUMN m forces a full-part rewrite
+# MATERIALIZED column so that `DROP COLUMN` m forces a full-part rewrite
 # (`MutateAllPartColumnsTask`).
 ${CLICKHOUSE_CLIENT} -q "
 CREATE TABLE t_corrupt_minmax
@@ -66,7 +66,7 @@ cp "${DATA_PATH}/saved_mm_v.cmrk2" "${CORRUPT_PART}skp_idx_mm_v.cmrk2"
 echo "corrupted_prunes:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_corrupt_minmax WHERE v = 1042) WHERE explain ILIKE '%Granules: 1/20%'"
 
-# Full-part rewrite (`MutateAllPartColumnsTask` via DROP COLUMN of a MATERIALIZED
+# Full-part rewrite (`MutateAllPartColumnsTask` via `DROP COLUMN` of a MATERIALIZED
 # column). Before the fix the preserve path found no substreams in checksums and
 # dropped the orphan files, permanently losing the index. The fix forces a
 # recalculate so the writer rebuilds the index from column data.

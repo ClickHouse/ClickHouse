@@ -67,7 +67,7 @@ orphan_on_disk () {
 # Count the fabricated files one by one instead of globbing. A glob over
 # skp_idx_txt.* stays green even if an entire substream silently stops being
 # written -- in particular the positional .pos pair, which only exists while
-# support_phrase_search is on -- and that would make the orphan-cleanup
+# `support_phrase_search` is on -- and that would make the orphan-cleanup
 # assertions vacuous for exactly the substreams this test is about. Expect 8:
 # base, .dct, .pst and .pos, each with a data file and a mark file.
 side_streams_on_disk () {
@@ -84,7 +84,7 @@ side_streams_on_disk () {
     echo "${n}"
 }
 
-# --- Path A: some-columns mutation (ALTER UPDATE of the non-indexed column w) ---
+# --- Path A: some-columns mutation (`ALTER UPDATE` of the non-indexed column w) ---
 make_corrupted_part t_some
 echo "A_corrupted_orphan_on_disk:"
 orphan_on_disk t_some
@@ -134,7 +134,7 @@ side_streams_on_disk t_ok
 echo "C_check_table:"
 ${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_ok SETTINGS check_query_single_value_result = 1"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ok WHERE hasToken(s, 'hello10')"
-# hasPhrase reads the positional substream, so this fails if .pos was dropped.
+# `hasPhrase` reads the positional substream, so this fails if .pos was dropped.
 echo "C_has_phrase:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ok WHERE hasPhrase(s, 'needle alpha')"
 # ...and the index must still PRUNE for it, which a count alone cannot show: a

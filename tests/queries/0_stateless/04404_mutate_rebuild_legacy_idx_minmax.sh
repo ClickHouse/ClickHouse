@@ -11,15 +11,15 @@
 # `no-object-storage` / `no-shared-merge-tree` / `no-replicated-database`: the
 # test renames real on-disk index files in the local part directory and relies
 # on ATTACH recomputing `checksums.txt` from those files. On object storage the
-# files in the data dir are DiskObjectStorageMetadata pointer files, and the
+# files in the data dir are `DiskObjectStorageMetadata` pointer files, and the
 # replicated/shared engines gate ATTACH on ZooKeeper checksum digests, so the
-# local-disk file surgery does not apply there. The bug is in MutateTask's
+# local-disk file surgery does not apply there. The bug is in `MutateTask`'s
 # per-substream file bookkeeping and is independent of the disk layer.
 #
 # `no-random-merge-tree-settings`: the test renames a specific standalone index
 # file (skp_idx_mm_v.idx2) and depends on a fixed granule count. Randomized
 # merge-tree settings (`packed_skip_index_max_bytes` packs the index into
-# skp_idx.packed, index_granularity_bytes / adaptive granularity change the
+# `skp_idx.packed`, index_granularity_bytes / adaptive granularity change the
 # granule count) would break the file surgery. The settings the test relies on
 # are pinned explicitly in the CREATE below.
 #
@@ -33,7 +33,7 @@
 # index's current writer substreams via `getSubstreams`. For minmax the on-disk
 # format changed from ".idx" (v1) to ".idx2" (v2), so `getSubstreams` reports
 # only ".idx2". On an upgraded part that still carries a legacy
-# "skp_idx_<name>.idx" file, an ALTER UPDATE of the indexed column recomputes
+# "skp_idx_<name>.idx" file, an `ALTER UPDATE` of the indexed column recomputes
 # the index and writes a fresh ".idx2", but the old ".idx" was neither added to
 # files_to_skip nor stripped from the inherited checksums -- so it got
 # hardlinked into the new part and leaked dead next to the fresh ".idx2", with a
@@ -88,14 +88,14 @@ ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_rebuild_minmax ATTACH PARTITION tuple()"
 echo "before:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_rebuild_minmax WHERE v = 42) WHERE explain ILIKE '%Granules: 1/20%'"
 
-# Rebuild mutation: ALTER UPDATE of the indexed column v recomputes mm_v. The
+# Rebuild mutation: `ALTER UPDATE` of the indexed column v recomputes mm_v. The
 # writer produces a fresh ".idx2". Before the fix the legacy ".idx" was
 # hardlinked into the new part (leaked dead) with a stale checksum entry.
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_rebuild_minmax UPDATE v = v WHERE 1 SETTINGS mutations_sync = 2"
 
 # The new ACTIVE part must carry the freshly written ".idx2" and NOT the stale
 # legacy ".idx": the rebuild path must strip/skip it, not hardlink it. Resolve
-# the active part directory via system.parts (the mutation leaves the old parts
+# the active part directory via `system.parts` (the mutation leaves the old parts
 # inactive but still on disk, so a plain directory scan would pick the wrong one).
 NEW_PART_DIR=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 't_rebuild_minmax' AND active ORDER BY name LIMIT 1")
 echo "legacy_idx_leaked:"

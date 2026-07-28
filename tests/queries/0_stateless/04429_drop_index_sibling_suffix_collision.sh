@@ -5,9 +5,10 @@
 # `packed_skip_index_max_bytes`, which are exactly the settings the collision
 # depends on.
 #
-# `no-fasttest`: the inverse cases build a text index, and the Fast test binary is
-# configured with ENABLE_LIBRARIES = 0, so the text index type is not registered
-# there. The test needs no on-disk part surgery otherwise.
+# `no-fasttest`: the test reads on-disk part layout directly - individual `skp_idx_*` filenames and
+# the size of `skp_idx.packed` - which is only meaningful on a local disk. It performs no part-file
+# surgery. (The earlier justification here, that the text index type is unregistered in the Fast
+# test build, was wrong: `registerCreator` for `text` in `MergeTreeIndices` is unconditional.)
 #
 # `DROP INDEX` must not delete files owned by a surviving index.
 #
@@ -106,7 +107,7 @@ run_inverse_case() {
     part=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active ORDER BY name LIMIT 1")
 
     # The text index's positional substream files, by their real on-disk names. The
-    # assertion is file survival rather than a hasPhrase result on purpose: with
+    # assertion is file survival rather than a `hasPhrase` result on purpose: with
     # `escape_index_filenames` = 0 the minmax index `a.pos` and the text index's own
     # `.pos` substream want the same mark filename, so this table is already
     # unreadable for phrase search before any `DROP INDEX` runs (that write-time
@@ -180,7 +181,7 @@ run_suffix_named_drop_case() {
     echo "${label}_dropped_index_gone:"
     ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = '${tbl}' AND name = 'a.pos'"
     # With packing enabled the dropped index's data is a virtual member of
-    # skp_idx.packed, so a filesystem check cannot see it. Compare against a table
+    # `skp_idx.packed`, so a filesystem check cannot see it. Compare against a table
     # that only ever had the surviving index: an identical archive size and an
     # identical accounted index size mean the member really went away, whereas a
     # retained member would make both larger.
@@ -299,7 +300,7 @@ run_case "standalone_unescaped" 0 0
 # Escaping makes the sibling's file skp_idx_a%2Epos.*, so no collision is
 # possible; kept as a control that the guard does not break the ordinary path.
 run_case "standalone_escaped" 1 0
-# Same collision, but the files live inside skp_idx.packed and are removed by the
+# Same collision, but the files live inside `skp_idx.packed` and are removed by the
 # archive filter rather than by a rename-to-empty.
 run_case "packed_unescaped" 0 1048576
 # Inverse direction: drop the index whose name IS the sibling substream suffix.

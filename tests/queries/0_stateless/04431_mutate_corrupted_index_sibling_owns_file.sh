@@ -11,10 +11,10 @@
 # extension `.idx`. Counting a sibling's file as evidence of health classified the corrupted index as
 # intact, so `MutateAllPartColumnsTask` did not rebuild it and the some-columns orphan scan
 # hardlinked its orphan files forward, leaving `CHECK TABLE` failing with
-# UNEXPECTED_FILE_IN_DATA_PART on both paths.
+# `UNEXPECTED_FILE_IN_DATA_PART` on both paths.
 #
 # no-fasttest: local-disk part-file surgery, and the text index type is not registered in the Fast
-# test build (ENABLE_LIBRARIES = 0).
+# test build (`ENABLE_LIBRARIES` = 0).
 # no-object-storage/-shared/-replicated: relies on the local on-disk file layout.
 # no-random-merge-tree-settings: pins `escape_index_filenames` and `packed_skip_index_max_bytes`,
 # which are exactly the settings the collision depends on.
@@ -105,7 +105,7 @@ text_streams_on_disk () {
     echo "${n}"
 }
 
-# --- Path A: full-part rewrite (DROP COLUMN of the MATERIALIZED Map column m) ---
+# --- Path A: full-part rewrite (`DROP COLUMN` of the MATERIALIZED `Map` column m) ---
 # `m` is a MATERIALIZED `Map`, i.e. a column with dynamic subcolumns, so dropping it forces
 # `MutateAllPartColumnsTask` (same device as 04426). Verified by `MutationAllPartColumns`: an
 # ordinary `UInt64` column would be handled as a file rename and take the some-columns path
@@ -140,7 +140,7 @@ echo "A_rows:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_full"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_full SYNC"
 
-# --- Path B: some-columns mutation (ALTER UPDATE of the non-indexed column u) ---
+# --- Path B: some-columns mutation (`ALTER UPDATE` of the non-indexed column u) ---
 # Only `u` is rewritten, so the orphan scan decides: the corrupted index's orphan file must be
 # RECORDED and left behind instead of being hardlinked into the new part.
 make_corrupted_part t_some
