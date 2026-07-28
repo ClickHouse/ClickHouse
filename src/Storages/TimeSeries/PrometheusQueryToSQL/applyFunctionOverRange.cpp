@@ -93,10 +93,15 @@ namespace
                  /* drop_metric_name = */ false,
              }},
 
+            {"deriv",
+             {
+                 "timeSeriesDerivToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
             /// TODO:
             /// resets
             /// predict_linear
-            /// deriv
             /// avg_over_time
             /// min_over_time
             /// max_over_time
