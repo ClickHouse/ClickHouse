@@ -93,7 +93,12 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, int timeout
         {
             if (errno == EINTR)
             {
-                if (original_timeout >= 0)
+                /// Only a positive timeout accrues against a deadline. A zero timeout is a
+                /// non-blocking readiness probe (callers use getManyReady(..., 0) to detect an
+                /// already-ready timer/socket/cancel) and a negative timeout is an infinite wait:
+                /// for both, retry the wait unchanged on EINTR. Returning early for a zero timeout
+                /// would let a signal hide an already-ready event for that iteration.
+                if (original_timeout > 0)
                 {
                     const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
                     if (elapsed_microseconds >= timeout_microseconds)

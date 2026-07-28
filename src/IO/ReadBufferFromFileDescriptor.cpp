@@ -174,6 +174,13 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
         if (result >= 0 || errno != EINTR)
             break;
 
+        /// A zero timeout is a non-blocking readiness probe (used e.g. to check for a pending cancel):
+        /// there is no deadline to exhaust, so just retry the probe on EINTR. Returning early here
+        /// would let a signal hide an already-ready fd for that check. Only a positive timeout accrues
+        /// against the deadline.
+        if (timeout_microseconds == 0)
+            continue;
+
         const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
         if (elapsed_microseconds >= timeout_microseconds)
         {
