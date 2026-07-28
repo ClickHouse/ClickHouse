@@ -1,8 +1,7 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
 
--- The count()/sum() assertion below is not the oracle: it also holds with the fix reverted.
--- The load-bearing assertion is the AggregationOptimizedEqualRangesOfKeys one, which reads 0
--- when TTL GROUP BY aggregation is built with the wrong min_hit_rate setting.
+-- Oracle: the `AggregationOptimizedEqualRangesOfKeys` assertion. The count/sum line is not
+-- one, it holds with the fix reverted.
 
 DROP TABLE IF EXISTS t_ttl_group_by_consecutive_keys;
 
