@@ -14,7 +14,7 @@ import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 ## Description {#description}
 
 Contains information about global settings for the server, which are specified in `config.xml`.
-Currently, the table shows only settings from the first layer of `config.xml` and doesn't support nested configs (e.g. [logger](../../operations/server-configuration-parameters/settings.md#logger)).
+The table also includes supported nested settings with a fixed structure; dynamic sections such as lists are not included.
 
 ## Columns {#columns}
 
