@@ -6,7 +6,8 @@
 # Regression test: the DDL shard lock at `<ddl entry>/shards/<shard>/lock` may legitimately
 # disappear while its owning session is still healthy, because the lock lives inside the queue entry
 # subtree and other actors remove that subtree recursively. `ZooKeeperLock::unlock` must tolerate that
-# instead of raising `LOGICAL_ERROR` "Lock is lost, node does not exist", which aborts the server.
+# instead of raising `LOGICAL_ERROR` `Lock is lost, node does not exist`, which aborts the server in
+# debug and sanitizer builds (in a release build it is caught in `~ZooKeeperLock` and only logged).
 # The removal below stands in for any such actor; what is asserted is `unlock`'s reaction to it.
 #
 # Synchronization invariant: the test proceeds only once the lock node is observed to EXIST, which
@@ -127,7 +128,8 @@ fi
 
 wait "$alter_pid" 2>/dev/null ||:
 
-# Liveness half: without the fix the `LOGICAL_ERROR` aborted the server here.
+# Liveness half: without the fix the `LOGICAL_ERROR` aborted the server here. Stateless CI always
+# links `abort_on_logical_error.yaml`, so this holds even on the non-sanitizer flavours.
 ${CLICKHOUSE_CLIENT} -q "SELECT 'server is alive'"
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
