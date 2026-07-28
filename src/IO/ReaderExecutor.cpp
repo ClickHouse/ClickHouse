@@ -366,7 +366,7 @@ ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want)
     return chain;
 }
 
-ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t max_serve)
+ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t max_serve)
 {
     chassert(!cache_chain.empty());
     const ByteRange window{window_offset, max_serve};
@@ -600,7 +600,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
 
     ChainedBuffers chain = cache_chain.empty()
         ? readSource(position_physical, max_serve)
-        : serveThroughCaches(position_physical, max_serve);
+        : readThroughCaches(position_physical, max_serve);
 
     const size_t got = chain.empty() ? 0 : chain.range().size;
     if (got == 0)

@@ -5,13 +5,13 @@
 namespace DB
 {
 
-void IntervalSet::add(ByteRange r)
+void IntervalSet::add(ByteRange range)
 {
-    if (r.size == 0)
+    if (range.size == 0)
         return;
 
-    size_t new_start = r.offset;
-    size_t new_end = r.end();
+    size_t new_start = range.offset;
+    size_t new_end = range.end();
 
     auto erase_from = intervals.begin();
     while (erase_from != intervals.end() && erase_from->end() < new_start)
@@ -29,13 +29,13 @@ void IntervalSet::add(ByteRange r)
     intervals.insert(insert_pos, ByteRange{new_start, new_end - new_start});
 }
 
-VectorWithMemoryTracking<ByteRange> IntervalSet::subtract(ByteRange r) const
+VectorWithMemoryTracking<ByteRange> IntervalSet::subtract(ByteRange range) const
 {
     VectorWithMemoryTracking<ByteRange> out;
-    if (r.size == 0)
+    if (range.size == 0)
         return out;
-    size_t cur = r.offset;
-    size_t end = r.end();
+    size_t cur = range.offset;
+    size_t end = range.end();
     for (const auto & i : intervals)
     {
         if (i.end() <= cur)
@@ -53,12 +53,12 @@ VectorWithMemoryTracking<ByteRange> IntervalSet::subtract(ByteRange r) const
     return out;
 }
 
-void IntervalSet::remove(ByteRange r)
+void IntervalSet::remove(ByteRange range)
 {
-    if (r.size == 0)
+    if (range.size == 0)
         return;
-    const size_t rs = r.offset;
-    const size_t re = r.end();
+    const size_t rs = range.offset;
+    const size_t re = range.end();
 
     VectorWithMemoryTracking<ByteRange> next;
     for (const auto & i : intervals)
@@ -68,7 +68,7 @@ void IntervalSet::remove(ByteRange r)
             next.push_back(i);   /// no overlap, keep as-is
             continue;
         }
-        /// Overlap: keep the parts of `i` outside `r` (left and/or right), in order.
+        /// Overlap: keep the parts of `i` outside `range` (left and/or right), in order.
         if (i.offset < rs)
             next.push_back({i.offset, rs - i.offset});
         if (i.end() > re)

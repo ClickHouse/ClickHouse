@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/// A set of disjoint, sorted byte intervals. `ReaderExecutor` tracks window
+/// A set of disjoint (non-intersecting), sorted byte intervals. `ReaderExecutor` tracks window
 /// coverage with one: every byte appended to the result is `add`-ed first, and
 /// reads only fill what `subtract` reports as uncovered - so the assembled chain
 /// is disjoint by construction regardless of overlapping cache tiers.
@@ -14,14 +14,14 @@ class IntervalSet
 {
 public:
     /// Add a range, merging overlaps and adjacencies.
-    void add(ByteRange r);
+    void add(ByteRange range);
 
-    /// Returns `r` minus all intervals in the set, as disjoint sub-ranges in
+    /// Returns `range` minus all intervals in the set, as disjoint sub-ranges in
     /// increasing-offset order.
-    VectorWithMemoryTracking<ByteRange> subtract(ByteRange r) const;
+    VectorWithMemoryTracking<ByteRange> subtract(ByteRange range) const;
 
-    /// Remove `r`'s bytes from the set, trimming/splitting any overlapping intervals.
-    void remove(ByteRange r);
+    /// Remove `range`'s bytes from the set, trimming/splitting any overlapping intervals.
+    void remove(ByteRange range);
 
     /// Total bytes held (sum of the disjoint intervals' sizes).
     size_t totalBytes() const;

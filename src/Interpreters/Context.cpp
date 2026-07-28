@@ -8355,7 +8355,7 @@ ReadSettings Context::getReadSettings() const
     res.reader_executor.window_size = settings_ref[Setting::reader_executor_window_size];
     res.reader_executor.block_size = settings_ref[Setting::reader_executor_block_size];
     /// Below 4 KiB the executor would serve near-empty windows / stall on tiny source reads.
-    static constexpr UInt64 min_reader_executor_size = 4096;
+    static constexpr UInt64 min_reader_executor_size = MIN_READER_EXECUTOR_SIZE;
     if (res.reader_executor.window_size < min_reader_executor_size)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for reader_executor_window_size: must be at least {} bytes",
             res.reader_executor.window_size, min_reader_executor_size);

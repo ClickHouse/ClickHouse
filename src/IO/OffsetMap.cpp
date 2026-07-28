@@ -53,8 +53,11 @@ void OffsetMap::build(const StoredObjects & objects)
 
 VectorWithMemoryTracking<OffsetMap::ObjectRange> OffsetMap::map(ByteRange file_range) const
 {
+    chassert(file_range.end() <= total_size);
     VectorWithMemoryTracking<ObjectRange> result;
 
+    /// Linear scan: a read spans a handful of objects at most (usually one), so a lookup index
+    /// would not pay off.
     for (const auto & seg : segments)
     {
         size_t seg_start = seg.file_offset;

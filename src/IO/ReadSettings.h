@@ -158,10 +158,10 @@ struct ReadSettings
     {
         bool enabled = false;
         bool use_long_connections = true;
-        size_t window_size = 4 * 1_MiB;
-        size_t block_size = 1_MiB;
-        size_t min_bytes_for_seek = 2 * 1_MiB;
-        size_t max_tail_for_drain = 1_MiB;
+        size_t window_size = DEFAULT_READER_EXECUTOR_WINDOW_SIZE;
+        size_t block_size = DEFAULT_READER_EXECUTOR_BLOCK_SIZE;
+        size_t min_bytes_for_seek = DEFAULT_READER_EXECUTOR_MIN_BYTES_FOR_SEEK;
+        size_t max_tail_for_drain = DEFAULT_READER_EXECUTOR_MAX_TAIL_FOR_DRAIN;
     };
     ReaderExecutorSettings reader_executor;
 

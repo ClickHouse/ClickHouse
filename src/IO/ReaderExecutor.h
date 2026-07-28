@@ -12,6 +12,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
+#include <Core/Defines.h>
 
 #include <array>
 #include <functional>
@@ -38,19 +39,15 @@ using CacheChain = VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>;
 class ReaderExecutor
 {
 public:
-    static constexpr size_t DEFAULT_WINDOW_SIZE = 4 * 1024 * 1024; /// 4 MiB
-    static constexpr size_t DEFAULT_BLOCK_SIZE = 1 * 1024 * 1024; /// 1 MiB
-    static constexpr size_t DEFAULT_MIN_BYTES_FOR_SEEK = 2 * 1024 * 1024; /// 2 MiB
-    static constexpr size_t DEFAULT_MAX_TAIL_FOR_DRAIN = 1 * 1024 * 1024; /// 1 MiB
-
     /// Tunables the caller fills from settings. `long_connection_limit` null disables connection
     /// reuse; `cache_chain` empty disables caching; `encryption_header_cache` null disables it.
+    /// Defaults live in `Core/Defines.h` (shared with the `reader_executor_*` settings).
     struct Options
     {
-        size_t window_size = DEFAULT_WINDOW_SIZE;
-        size_t min_bytes_for_seek = DEFAULT_MIN_BYTES_FOR_SEEK;
-        size_t block_size = DEFAULT_BLOCK_SIZE;
-        size_t max_tail_for_drain = DEFAULT_MAX_TAIL_FOR_DRAIN;
+        size_t window_size = DEFAULT_READER_EXECUTOR_WINDOW_SIZE;
+        size_t min_bytes_for_seek = DEFAULT_READER_EXECUTOR_MIN_BYTES_FOR_SEEK;
+        size_t block_size = DEFAULT_READER_EXECUTOR_BLOCK_SIZE;
+        size_t max_tail_for_drain = DEFAULT_READER_EXECUTOR_MAX_TAIL_FOR_DRAIN;
         std::shared_ptr<LongConnectionLimit> long_connection_limit = nullptr;
         std::shared_ptr<EncryptionHeaderCache> encryption_header_cache = nullptr;
         CacheChain cache_chain = {};
@@ -193,7 +190,7 @@ private:
     /// Serve the window through the cache chain: the cached prefix, else claim and fetch the miss
     /// cells and populate. A cell a sibling already downloads is fetched through from source.
     /// Precondition: `!cache_chain.empty()`.
-    ChainedBuffers serveThroughCaches(size_t window_offset, size_t max_serve);
+    ChainedBuffers readThroughCaches(size_t window_offset, size_t max_serve);
     void dropLongConnection();
 
     /// The only logical<->physical converters: physical = header-inclusive file coords; logical =
