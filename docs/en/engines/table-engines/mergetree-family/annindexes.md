@@ -755,8 +755,8 @@ The value must be *exactly* one vector's byte size:
 Notes:
 
 - A multiple of the vector size (or any other value) silently disables the point read - the query still returns correct results, just without the I/O saving.
-- The setting is applied only to the full-precision vector data. The compact quantized codes and, for the `product` method, the per-part codebook keep their default block size (the single-value codebook must stay in one block).
 - Storing one vector per block makes the vector column's blocks small, so a full *sequential* scan of that column (for example a brute-force search with the codec disabled) becomes somewhat slower. Set `max_compress_block_size` only on columns whose dominant access is quantized-codes rescoring.
+- Note that this setting should be specified when the table is created. If the setting is modified on an existing table, only newly written parts will be suitable for single-block point reads.
 
 ### Quantized Bit (QBit) {#approximate-nearest-neighbor-search-qbit}
 
