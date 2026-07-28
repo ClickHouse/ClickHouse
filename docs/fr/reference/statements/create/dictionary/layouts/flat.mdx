@@ -1,0 +1,44 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/flat
+title: 'layout de dictionnaire flat'
+sidebarTitle: 'flat'
+description: 'Stocke un dictionnaire en mémoire sous forme de tableaux plats.'
+doc_type: 'reference'
+---
+
+Avec le layout `flat`, le dictionnaire est entièrement stocké en mémoire sous forme de tableaux plats.
+La quantité de mémoire utilisée est proportionnelle à la valeur de la plus grande clé (en termes d&#39;espace occupé).
+
+<Tip>
+  Ce type de layout offre les meilleures performances parmi toutes les méthodes disponibles pour stocker un dictionnaire.
+</Tip>
+
+La clé du dictionnaire est de type [UInt64](/fr/reference/data-types/int-uint) et la valeur est limitée à `max_array_size` (par défaut — 500 000).
+Si une clé plus grande est rencontrée lors de la création du dictionnaire, ClickHouse lève une exception et ne crée pas le dictionnaire.
+La taille initiale des tableaux plats du dictionnaire est contrôlée par le paramètre `initial_array_size` (par défaut — 1024).
+
+Tous les types de sources sont pris en charge.
+Lors de la mise à jour du dictionnaire, les données (depuis un fichier ou une table) sont lues dans leur intégralité.
+
+Exemple de configuration :
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
+    ```
+  </Tab>
+
+  <Tab title="Fichier de configuration">
+    ```xml
+    <layout>
+      <flat>
+        <initial_array_size>50000</initial_array_size>
+        <max_array_size>5000000</max_array_size>
+      </flat>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />

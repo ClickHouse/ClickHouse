@@ -101,8 +101,6 @@ std::unordered_map<String, KQLFunctionValue> KQLFunctionFactory::kql_functions
        {"array_shift_left", KQLFunctionValue::array_shift_left},
        {"array_shift_right", KQLFunctionValue::array_shift_right},
        {"array_slice", KQLFunctionValue::array_slice},
-       {"array_sort_asc", KQLFunctionValue::array_sort_asc},
-       {"array_sort_desc", KQLFunctionValue::array_sort_desc},
        {"array_split", KQLFunctionValue::array_split},
        {"array_sum", KQLFunctionValue::array_sum},
        {"bag_keys", KQLFunctionValue::bag_keys},
@@ -513,12 +511,6 @@ std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String & kql_functio
 
         case KQLFunctionValue::array_slice:
             return std::make_unique<ArraySlice>();
-
-        case KQLFunctionValue::array_sort_asc:
-            return std::make_unique<ArraySortAsc>();
-
-        case KQLFunctionValue::array_sort_desc:
-            return std::make_unique<ArraySortDesc>();
 
         case KQLFunctionValue::array_split:
             return std::make_unique<ArraySplit>();
