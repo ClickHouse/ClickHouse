@@ -663,7 +663,7 @@ SELECT arrayDistinct([1, 2, 2, 3, 1]);
   ## arrayDotProduct
 </div>
 
-지원 버전: v23.5.0
+도입 버전: v23.5.0
 
 두 배열의 내적을 반환합니다.
 
@@ -679,15 +679,16 @@ arrayDotProduct(v1, v2)
 
 **인수**
 
-* `v1` — 첫 번째 벡터입니다. [`Array((U)Int* | Float* | Decimal)`](/ko/reference/data-types/array) 또는 [`Tuple((U)Int* | Float* | Decimal)`](/ko/reference/data-types/tuple)
-* `v2` — 두 번째 벡터입니다. [`Array((U)Int* | Float* | Decimal)`](/ko/reference/data-types/array) 또는 [`Tuple((U)Int* | Float* | Decimal)`](/ko/reference/data-types/tuple)
+* `v1` — 첫 번째 벡터입니다. [`Array((U)Int* | Float* | BFloat16 | Decimal)`](/ko/reference/data-types/array) 또는 [`Tuple((U)Int* | Float* | Decimal)`](/ko/reference/data-types/tuple)
+* `v2` — 두 번째 벡터입니다. [`Array((U)Int* | Float* | BFloat16 | Decimal)`](/ko/reference/data-types/array) 또는 [`Tuple((U)Int* | Float* | Decimal)`](/ko/reference/data-types/tuple)
 
 **반환 값**
 
 두 벡터의 내적입니다.
 
 <Note>
-  반환 타입은 인수의 타입에 따라 결정됩니다. 배열 또는 Tuple에 서로 다른 타입의 요소가 섞여 있으면 결과 타입은 공통 상위 타입이 됩니다.
+  반환 타입은 인수의 타입에 따라 결정됩니다. 배열 또는 튜플에 서로 다른 타입의 요소가 섞여 있으면 결과 타입은 공통 상위 타입이 됩니다.
+  두 `BFloat16` 배열은 `Float32`로 누적 연산되며 `Float32`를 반환합니다(`Float32` 배열 두 개와 동일한 규칙).
 </Note>
 
 [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal`](/ko/reference/data-types/decimal)
@@ -758,7 +759,7 @@ SELECT arrayElement(arr, 2) FROM (SELECT [1, 2, 3] AS arr)
 2
 ```
 
-**음수 인덱스 사용**
+**음수 인덱싱**
 
 ```sql title=Query
 SELECT arrayElement(arr, -1) FROM (SELECT [1, 2, 3] AS arr)
@@ -1729,6 +1730,10 @@ SELECT arrayJaccardIndex([1, 2], [2, 3]) AS res
 이 함수가 적용된 컬럼의 값을 제외하면 다른 컬럼의 값은 모두 그대로 복사되며,
 해당 값은 대응하는 배열 값으로 대체됩니다.
 
+<Note>
+  이 함수는 비결정적입니다. 즉, 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -1764,7 +1769,7 @@ SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
 **arrayJoin은 쿼리의 모든 절에 영향을 미칩니다**
 
 ```sql title=Query
--- arrayJoin 함수는 WHERE 절을 포함한 쿼리의 모든 절에 영향을 미칩니다. 서브쿼리가 1개의 행을 반환했음에도 결과가 2임에 주목하십시오.
+-- The arrayJoin function affects all sections of the query, including the WHERE section. Notice the result 2, even though the subquery returned 1 row.
 
 SELECT sum(1) AS impressions
 FROM
@@ -1783,7 +1788,7 @@ WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 **여러 arrayJoin 함수 사용하기**
 
 ```sql title=Query
-- 하나의 쿼리에서 여러 arrayJoin 함수를 사용할 수 있습니다. 이 경우 변환이 여러 번 수행되며 행이 곱셈 방식으로 늘어납니다.
+-- A query can use multiple arrayJoin functions. In this case, the transformation is performed multiple times and the rows are multiplied.
 
 SELECT
     sum(1) AS impressions,
@@ -1798,30 +1803,33 @@ FROM
 GROUP BY
     2,
     3
+ORDER BY
+    city,
+    browser
 ```
 
 ```response title=Response
 ┌─impressions─┬─city─────┬─browser─┐
-│           2 │ Istanbul │ Chrome  │
-│           1 │ Istanbul │ Firefox │
 │           2 │ Berlin   │ Chrome  │
 │           1 │ Berlin   │ Firefox │
 │           2 │ Bobruisk │ Chrome  │
 │           1 │ Bobruisk │ Firefox │
+│           2 │ Istanbul │ Chrome  │
+│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
 
 **최적화로 인한 예상치 못한 결과**
 
 ```sql title=Query
--- 동일한 표현식으로 여러 arrayJoin을 사용하면 최적화로 인해 예상치 못한 결과가 발생할 수 있습니다.
--- 이러한 경우, 조인 결과에 영향을 주지 않는 추가 연산으로 반복되는 배열 표현식을 수정하는 것을 권장합니다.
-- e.g. arrayJoin(arraySort(arr)), arrayJoin(arrayConcat(arr, []))
+-- Using multiple arrayJoin with the same expression may not produce the expected result due to optimizations.
+-- For these cases, consider modifying the repeated array expression with extra operations that do not affect join result.
+-- e.g. arrayJoin(arraySort(arr)), arrayJoin(arrayConcat(arr, []))
 
 SELECT
     arrayJoin(dice) as first_throw,
-    /* arrayJoin(dice) as second_throw */ -- 기술적으로는 올바르지만 결과 집합을 소멸시킵니다
-    arrayJoin(arrayConcat(dice, [])) as second_throw -- 재평가를 강제하기 위해 의도적으로 표현식을 변경함
+    /* arrayJoin(dice) as second_throw */ -- is technically correct, but will annihilate result set
+    arrayJoin(arrayConcat(dice, [])) as second_throw -- intentionally changed expression to force re-evaluation
 FROM (
     SELECT [1, 2, 3, 4, 5, 6] as dice
 );
@@ -1871,8 +1879,8 @@ FROM (
 **ARRAY JOIN 구문 사용하기**
 
 ```sql title=Query
--- 아래 `SELECT` 쿼리에서 더 다양한 활용이 가능한 ARRAY JOIN 구문을 참고하십시오.
--- ARRAY JOIN을 사용하면 요소 수가 동일한 여러 배열을 한 번에 변환할 수 있습니다.
+-- Note the ARRAY JOIN syntax in the `SELECT` query below, which provides broader possibilities.
+-- ARRAY JOIN allows you to convert multiple arrays with the same number of elements at a time.
 
 SELECT
     sum(1) AS impressions,
@@ -1890,20 +1898,23 @@ ARRAY JOIN
 GROUP BY
     2,
     3
+ORDER BY
+    2,
+    3
 ```
 
 ```response title=Response
 ┌─impressions─┬─city─────┬─browser─┐
-│           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │
 │           1 │ Bobruisk │ Chrome  │
+│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
 
 **튜플 사용하기**
 
 ```sql title=Query
--- 튜플을 사용할 수도 있습니다
+-- You can also use Tuple
 
 SELECT
     sum(1) AS impressions,
@@ -1918,13 +1929,16 @@ FROM
 GROUP BY
     2,
     3
+ORDER BY
+    2,
+    3
 ```
 
 ```response title=Response
 ┌─impressions─┬─city─────┬─browser─┐
-│           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │
 │           1 │ Bobruisk │ Chrome  │
+│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
 
@@ -2320,6 +2334,10 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
   정렬된 요소만 유지하려면 `arrayResize`를 사용하십시오.
 </Tip>
 
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -2404,6 +2422,10 @@ SELECT arrayPartialReverseSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
   이 함수는 상수를 구체화하지 않습니다.
 
   `limit` 값은 `[1..N]` 범위에 있어야 합니다. 이 범위를 벗어난 값은 전체 [`arrayShuffle`](#arrayShuffle)을 수행하는 것과 동일합니다.
+</Note>
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
 </Note>
 
 **구문**
@@ -2496,6 +2518,10 @@ SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffl
 <Tip>
   정렬된 요소만 유지하려면 `arrayResize`를 사용하세요.
 </Tip>
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -2743,7 +2769,7 @@ arrayPushFront(arr, x)
 
 **인수**
 
-* `arr` — 끝에 값 `x`를 추가할 대상 배열입니다. [`Array(T)`](/ko/reference/data-types/array). - `x` —
+* `arr` — 끝에 값 `x`를 추가할 배열입니다. [`Array(T)`](/ko/reference/data-types/array). - `x` —
 * 배열의 시작 부분에 추가할 단일 값입니다. [`Array(T)`](/ko/reference/data-types/array).
 
 <Note>
@@ -2814,7 +2840,7 @@ arrayROCAUC(scores, labels[, scale[, partial_offsets]])
 
 **반환 값**
 
-ROC(receiver operating characteristic) 곡선 아래 면적을 반환합니다. [`Float64`](/ko/reference/data-types/float)
+ROC(수신자 조작 특성) 곡선 아래 면적을 반환합니다. [`Float64`](/ko/reference/data-types/float)
 
 **예시**
 
@@ -2834,7 +2860,11 @@ SELECT arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 
 도입 버전: v23.10.0
 
-입력 배열에서 무작위로 선택한 `samples`개의 요소로 이루어진 부분 집합을 반환합니다. `samples`가 입력 배열의 크기를 초과하면 표본 크기는 배열 크기로 제한됩니다. 즉, 배열의 모든 요소가 반환되지만 요소의 순서는 보장되지 않습니다. 이 함수는 평면 배열과 중첩 배열을 모두 처리할 수 있습니다.
+입력 배열에서 무작위로 선택한 `samples`개의 요소로 이루어진 부분 집합을 반환합니다. `samples`가 입력 배열의 크기를 초과하면 표본 크기는 배열 크기로 제한됩니다. 즉, 배열의 모든 원소가 반환되지만 원소의 순서는 보장되지 않습니다. 이 함수는 평면 배열과 중첩 배열을 모두 처리할 수 있습니다.
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -3506,6 +3536,10 @@ SELECT arrayShingles([1, 2, 3, 4], 3) as res;
   이 함수는 상수를 구체화하지 않습니다.
 </Note>
 
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -3533,7 +3567,7 @@ SELECT arrayShuffle([1, 2, 3, 4]);
 [1,4,2,3]
 ```
 
-**seed 없이 사용하는 예시(일관된 결과)**
+**시드 없이 사용하는 예시(일관된 결과)**
 
 ```sql title=Query
 SELECT arrayShuffle([1, 2, 3, 4], 41);
@@ -4198,7 +4232,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
   ## empty
 </div>
 
-지원 시작 버전: v1.1.0
+도입 버전: v1.1.0
 
 입력 배열이 비어 있는지 확인합니다.
 
@@ -4263,7 +4297,7 @@ emptyArrayDate()
 **사용 예시**
 
 ```sql title=Query
-SELECT emptyArrayDate
+SELECT emptyArrayDate()
 ```
 
 ```response title=Response
@@ -4274,7 +4308,7 @@ SELECT emptyArrayDate
   ## emptyArrayDateTime
 </div>
 
-v1.1.0에서 도입됨
+도입 버전: v1.1.0
 
 빈 DateTime 배열을 반환합니다
 
@@ -4297,7 +4331,7 @@ emptyArrayDateTime()
 **사용 예시**
 
 ```sql title=Query
-SELECT emptyArrayDateTime
+SELECT emptyArrayDateTime()
 ```
 
 ```response title=Response
@@ -4331,7 +4365,7 @@ emptyArrayFloat32()
 **사용 예시**
 
 ```sql title=Query
-SELECT emptyArrayFloat32
+SELECT emptyArrayFloat32()
 ```
 
 ```response title=Response
@@ -4342,7 +4376,7 @@ SELECT emptyArrayFloat32
   ## emptyArrayFloat64
 </div>
 
-v1.1.0에 도입됨
+도입 버전: v1.1.0
 
 빈 Float64 배열을 반환합니다
 
@@ -4365,7 +4399,7 @@ emptyArrayFloat64()
 **사용 예시**
 
 ```sql title=Query
-SELECT emptyArrayFloat64
+SELECT emptyArrayFloat64()
 ```
 
 ```response title=Response
@@ -4399,7 +4433,7 @@ emptyArrayInt16()
 **사용 예시**
 
 ```sql title=Query
-SELECT emptyArrayInt16
+SELECT emptyArrayInt16()
 ```
 
 ```response title=Response
@@ -4433,7 +4467,7 @@ emptyArrayInt32()
 **사용 예시**
 
 ```sql title=Query
-SELECT emptyArrayInt32
+SELECT emptyArrayInt32()
 ```
 
 ```response title=Response
@@ -4467,7 +4501,7 @@ emptyArrayInt64()
 **사용 예시**
 
 ```sql title=Query
-SELECT emptyArrayInt64
+SELECT emptyArrayInt64()
 ```
 
 ```response title=Response
@@ -4501,7 +4535,7 @@ emptyArrayInt8()
 **사용 예시**
 
 ```sql title=Query
-SELECT emptyArrayInt8
+SELECT emptyArrayInt8()
 ```
 
 ```response title=Response
@@ -4512,7 +4546,7 @@ SELECT emptyArrayInt8
   ## emptyArrayString
 </div>
 
-v1.1.0에 도입됨
+도입 버전: v1.1.0
 
 빈 String 배열을 반환합니다
 
@@ -4535,7 +4569,7 @@ emptyArrayString()
 **사용 예시**
 
 ```sql title=Query
-SELECT emptyArrayString
+SELECT emptyArrayString()
 ```
 
 ```response title=Response
@@ -4592,7 +4626,7 @@ SELECT emptyArrayToSingle(a), emptyArrayToSingle(b), emptyArrayToSingle(c) FROM 
   ## emptyArrayUInt16
 </div>
 
-v1.1.0에서 도입됨
+도입 버전: v1.1.0
 
 빈 UInt16 배열을 반환합니다
 
@@ -4615,7 +4649,7 @@ emptyArrayUInt16()
 **사용 예시**
 
 ```sql title=Query
-SELECT emptyArrayUInt16
+SELECT emptyArrayUInt16()
 ```
 
 ```response title=Response
@@ -4649,7 +4683,7 @@ emptyArrayUInt32()
 **사용 예시**
 
 ```sql title=Query
-SELECT emptyArrayUInt32
+SELECT emptyArrayUInt32()
 ```
 
 ```response title=Response
@@ -4683,7 +4717,7 @@ emptyArrayUInt64()
 **사용 예시**
 
 ```sql title=Query
-SELECT emptyArrayUInt64
+SELECT emptyArrayUInt64()
 ```
 
 ```response title=Response
@@ -4717,7 +4751,7 @@ emptyArrayUInt8()
 **사용 예시**
 
 ```sql title=Query
-SELECT emptyArrayUInt8
+SELECT emptyArrayUInt8()
 ```
 
 ```response title=Response
@@ -5172,78 +5206,6 @@ SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
 5
 ```
 
-<div id="kql_array_sort_asc">
-  ## kql_array_sort_asc
-</div>
-
-도입 버전: v23.10.0
-
-하나 이상의 배열을 오름차순으로 정렬합니다. 첫 번째 배열을 정렬하고, 이후 배열은 첫 번째 배열의 정렬된 순서에 맞춰 재배열됩니다. NULL 값은 끝에 배치됩니다. 이 함수는 KQL(Kusto Query Language) 호환 함수입니다.
-
-**구문**
-
-```sql
-kql_array_sort_asc(array1[, array2, ..., nulls_last])
-```
-
-**인수**
-
-* `array1` — 정렬할 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
-* `array2` — 선택 사항입니다. `array1`의 정렬 순서에 맞춰 재정렬할 추가 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
-* `nulls_last` — 선택 사항입니다. null 값을 마지막에 배치할지 여부를 나타내는 불리언 값입니다. 기본값은 true입니다. [`UInt8`](/ko/reference/data-types/int-uint)
-
-**반환 값**
-
-오름차순으로 정렬된 배열의 튜플을 반환합니다. [`Tuple(Array, ...)`](/ko/reference/data-types/tuple)
-
-**예시**
-
-**기본 사용법**
-
-```sql title=Query
-SELECT kql_array_sort_asc([3, 1, 2])
-```
-
-```response title=Response
-([1, 2, 3])
-```
-
-<div id="kql_array_sort_desc">
-  ## kql_array_sort_desc
-</div>
-
-도입 버전: v23.10.0
-
-하나 이상의 배열을 내림차순으로 정렬합니다. 첫 번째 배열이 정렬되고, 그 뒤의 배열은 첫 번째 배열의 정렬된 순서에 맞춰 다시 정렬됩니다. NULL 값은 맨 끝에 배치됩니다. 이 함수는 KQL(Kusto Query Language) 호환 함수입니다.
-
-**구문**
-
-```sql
-kql_array_sort_desc(array1[, array2, ..., nulls_last])
-```
-
-**인수**
-
-* `array1` — 정렬할 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
-* `array2` — `array1`의 정렬 순서에 맞춰 다시 정렬할 선택적 추가 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
-* `nulls_last` — null 값이 마지막에 오도록 할지 여부를 나타내는 선택적 불리언 값입니다. 기본값은 true입니다. [`UInt8`](/ko/reference/data-types/int-uint)
-
-**반환 값**
-
-내림차순으로 정렬된 배열 튜플을 반환합니다. [`Tuple(Array, ...)`](/ko/reference/data-types/tuple)
-
-**예시**
-
-**기본 사용법**
-
-```sql title=Query
-SELECT kql_array_sort_desc([3, 1, 2])
-```
-
-```response title=Response
-([3, 2, 1])
-```
-
 <div id="length">
   ## length
 </div>
@@ -5254,7 +5216,8 @@ SELECT kql_array_sort_desc([3, 1, 2])
 
 * String 또는 FixedString 인수의 경우 문자열의 바이트 수를 계산합니다.
 * 배열 인수의 경우 배열의 요소 수를 계산합니다.
-* FixedString 인수에 적용하면 이 함수는 상수 표현식입니다.
+* QBit 인수의 경우 벡터의 차원을 계산합니다.
+* FixedString 또는 QBit 인수에 적용하면 이 함수는 상수 표현식입니다.
 
 문자열의 바이트 수는
 유니코드 &quot;코드 포인트&quot;의 개수와 같지 않으며, 유니코드 &quot;grapheme clusters&quot;
@@ -5268,15 +5231,15 @@ SELECT kql_array_sort_desc([3, 1, 2])
 length(x)
 ```
 
-**별칭**: `CARDINALITY`, `OCTET_LENGTH`
+**별칭**: `OCTET_LENGTH`, `CARDINALITY`
 
 **인수**
 
-* `x` — 바이트 수(String/FixedString) 또는 요소 수(배열)를 계산할 값입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`Array(T)`](/ko/reference/data-types/array)
+* `x` — 바이트 수(String/FixedString), 요소 수(배열), 또는 차원(QBit)을 계산할 값입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`Array(T)`](/ko/reference/data-types/array) 또는 [`QBit`](/ko/reference/data-types/qbit)
 
 **반환 값**
 
-String/FixedString `x`의 바이트 수 또는 배열 `x`의 요소 수를 반환합니다. [`UInt64`](/ko/reference/data-types/int-uint)
+String/FixedString `x`의 바이트 수, 배열 `x`의 요소 수, 또는 QBit `x`의 차원을 반환합니다. [`UInt64`](/ko/reference/data-types/int-uint)
 
 **예시**
 
@@ -5298,6 +5261,16 @@ SELECT length(['Hello', 'world'])
 
 ```response title=Response
 2
+```
+
+**QBit 예시**
+
+```sql title=Query
+SELECT length([0, 0, 0, 0, 0, 0, 0, 0]::QBit(Float32, 8))
+```
+
+```response title=Response
+8
 ```
 
 **constexpr 예시**
@@ -5382,6 +5355,108 @@ SELECT notEmpty([1,2]);
 
 ```response title=Response
 1
+```
+
+<div id="randomHadamardTransform">
+  ## randomHadamardTransform
+</div>
+
+도입 버전: v26.7.0
+
+부동소수점 벡터에 무작위 Hadamard 변환을 적용합니다: `y = (1/sqrt(k)) * (H * D * x)`, 여기서
+`D`는 `seed`로 선택되는 결정적 +/-1 부호의 대각 행렬이며, `H`는 Walsh-Hadamard
+변환입니다.
+
+이 변환은 **노름을 보존하는** 직교 회전으로, 벡터의 에너지를 좌표 전반에 균등하게
+분산시켜 각 좌표의 분포를 근사적인 가우시안으로 만들고
+데이터와 무관하게 합니다. 스칼라 양자화 전에 수행하는 전처리 단계로 유용하며, 또한
+잘라내면 Johnson-Lindenstrauss / subsampled-randomized-Hadamard (SRHT) 랜덤 프로젝션으로도 사용할 수 있습니다.
+
+전체 변환(잘라내기 없음)은 입력 길이를 유지합니다. 다음 길이에서는 정확합니다:
+
+* 2의 거듭제곱(일반적인 고속 Walsh-Hadamard 변환);
+* `2^k * m`이고 `m`이 `{12, 20}`에 속하는 경우(`+/-1` Hadamard 행렬이 존재하는 차수, 예: `768 = 64 * 12`,
+  `1536 = 128 * 12`, `3072 = 256 * 12`, `2560 = 128 * 20`), 정확한 Kronecker 변환
+  `H_(2^k) (x) H_m`으로 적용됩니다(부동소수점 곱셈 없음);
+* `2^k * m`이고 그 밖의 홀수 `m`이 `64` 이하인 경우(`+/-1` Hadamard 행렬이 없는 차수 -- 이러한 행렬은
+  차수 `1`, `2`, 그리고 `4`의 배수에서만 존재합니다), 정확한 Kronecker 변환
+  `H_(2^k) (x) C_m`으로 적용되며, 여기서 `C_m`은 실수 직교 Discrete Hartley Transform 행렬입니다. 이는
+  `3584 = 512 * 7`, `1152 = 128 * 9`, `1408 = 128 * 11`과 같은 나머지 임베딩 계열도 포함합니다.
+
+가장 큰 홀수 인수가 `64`를 초과하는 길이의 전체 변환에는 정확한 형태가 없으므로,
+더 긴 2의 거듭제곱 길이로 0 패딩해야 합니다. 이 경우 더 긴 벡터를 조용히 반환하는 대신
+**예외를 발생시키며 거부됩니다**. 지원되는 길이를 사용하거나, 임의 길이에 대한 잘린
+프로젝션을 계산하려면 `output_dims`를 전달하십시오(아래 참조).
+
+결과는 입력과 동일한 요소 타입을 가지며, 빈 입력 배열은 빈 배열을 반환합니다.
+
+* `seed`(선택 사항, 기본값 `0`): 부호 패턴을 선택합니다. 동일한 seed는 항상 동일한
+  변환을 생성합니다.
+* `output_dims`(선택 사항, 기본값은 변환 길이): 처음 `output_dims`
+  좌표만 유지하여 이 변환을 **모든** 길이를 허용하는 랜덤 프로젝션으로 바꿉니다. 이
+  `1/sqrt(output_dims)` 스케일링은 전체 변환에서는 결과의 노름을 보존하고,
+  잘라낸 경우에는 기댓값 기준으로 노름이 보존되도록 합니다. 이 값은 변환 길이를 초과해서는 안 됩니다. 또한
+  Discrete Hartley 인자 `C_m`의 잘린 접두부에는
+  `+/-1` Hadamard 행렬과 같은 균등한 leverage가 없으므로, Hartley 계열 길이(또는 정확한 인수가 없는 임의 길이)에서
+  `output_dims`로 잘라내는 경우에는 0 패딩된 2의 거듭제곱 변환이 사용되며, 이 방식은
+  해당 속성을 유지합니다.
+
+**구문**
+
+```sql
+randomHadamardTransform(vector[, seed[, output_dims]])
+```
+
+**인수**
+
+* `vector` — 변환할 벡터입니다. [`Array(BFloat16)`](/ko/reference/data-types/array) 또는 [`Array(Float32)`](/ko/reference/data-types/array) 또는 [`Array(Float64)`](/ko/reference/data-types/array)
+* `seed` — 선택 사항입니다. 결정론적인 +/-1 부호에 사용할 시드 값입니다(기본값 0). [`UInt*`](/ko/reference/data-types/int-uint)
+* `output_dims` — 선택 사항입니다. 결과를 앞부분의 좌표를 기준으로 이 개수만큼만 남기고 잘라냅니다(기본값: 전체 변환 길이이며, 지원되는 모든 차원에서 입력 길이와 같습니다). output&#95;dims를 지정하면 정확한 전체 변환 형식이 없는 길이에도 변환을 적용할 수 있습니다. [`UInt*`](/ko/reference/data-types/int-uint)
+
+**반환 값**
+
+변환된 벡터입니다(입력과 동일한 요소 타입). 길이는 변환 길이이며(지원되는 차원의 전체 변환에서는 입력 길이와 같음), 필요에 따라 output&#95;dims만큼 잘릴 수 있습니다. [`Array(BFloat16)`](/ko/reference/data-types/array) 또는 [`Array(Float32)`](/ko/reference/data-types/array) 또는 [`Array(Float64)`](/ko/reference/data-types/array)
+
+**예시**
+
+**길이가 2의 거듭제곱인 경우의 전체 변환**
+
+```sql title=Query
+SELECT length(randomHadamardTransform([1, 2, 3, 4]::Array(Float32)))
+```
+
+```response title=Response
+4
+```
+
+**노름이 보존됩니다**
+
+```sql title=Query
+SELECT round(arraySum(x -> x * x, randomHadamardTransform([1, 2, 3, 4]::Array(Float32))) - 30, 4)
+```
+
+```response title=Response
+0
+```
+
+**3차원으로 축소된 프로젝션(어떤 길이든 허용)**
+
+```sql title=Query
+SELECT length(randomHadamardTransform([1, 2, 3, 4, 5, 6, 7, 8]::Array(Float32), 42, 3))
+```
+
+```response title=Response
+3
+```
+
+**2^k * m 차원의 정확한 변환은 입력 길이를 그대로 유지합니다(패딩 없음)**
+
+```sql title=Query
+SELECT length(randomHadamardTransform(CAST(range(1152), 'Array(Float32)')))
+```
+
+```response title=Response
+1152
 ```
 
 <div id="range">

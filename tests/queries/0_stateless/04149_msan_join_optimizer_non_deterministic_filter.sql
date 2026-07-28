@@ -27,7 +27,7 @@
 -- Both bugs are in the planner-based path (`Processors/QueryPlan/Optimizations/`). The old
 -- analyzer does not run these JOIN-conversion optimizers, and it also rejects the scalar
 -- subquery shape `(SELECT p = 1)` from `PedroTadim`'s reproducer with `UNKNOWN_IDENTIFIER`
--- in `TreeRewriter::collectUsedColumns`. So we force the new analyzer for this whole test;
+-- in `TreeRewriter::collectUsedColumns`. So we force the analyzer for this whole test;
 -- this matches sibling JOIN-conversion regression tests (03130, 03210, 03595, 03623, 04003).
 SET enable_analyzer = 1;
 

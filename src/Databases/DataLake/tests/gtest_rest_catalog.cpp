@@ -31,6 +31,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 }
 
@@ -81,6 +83,12 @@ public:
         if (path == "/v1/config")
         {
             writeJSON(response, R"({"defaults":{},"overrides":{}})");
+            return;
+        }
+
+        if (path == "/v1/oauth/tokens")
+        {
+            writeJSON(response, R"({"token_type":"Bearer","expires_in":3600,"access_token":"mock-access-token"})");
             return;
         }
 
@@ -194,6 +202,19 @@ private:
     std::unique_ptr<Poco::Net::HTTPServer> server;
 };
 
+void expectThrowsCode(std::function<void()> fn, int expected_code)
+{
+    try
+    {
+        fn();
+        FAIL() << "expected DB::Exception with code " << expected_code;
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), expected_code);
+    }
+}
+
 bool restCatalogEmpty(CatalogShape shape)
 {
     RestCatalogTestServer server(shape);
@@ -256,6 +277,150 @@ TEST(RestCatalog, EmptyKeepsFoundTableStateSticky)
 TEST(RestCatalog, EmptyReturnsTrueWhenNoTablesExist)
 {
     EXPECT_TRUE(restCatalogEmpty(CatalogShape::Empty));
+}
+
+TEST(RestCatalog, ApplySettingsChangesWithoutAuthenticationRejected)
+{
+    RestCatalogTestServer server(CatalogShape::Empty);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    RestCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* catalog_credential */"",
+        /* auth_scope */"",
+        /* auth_header */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        context);
+
+    DB::SettingsChanges changes;
+    changes.emplace_back("catalog_credential", "id:secret");
+    expectThrowsCode([&] { catalog.applySettingsChanges(changes); }, DB::ErrorCodes::BAD_ARGUMENTS);
+}
+
+TEST(RestCatalog, ApplySettingsChangesCredentialMode)
+{
+    RestCatalogTestServer server(CatalogShape::Empty);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    RestCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* catalog_credential */"client-1:secret-1",
+        /* auth_scope */"scope",
+        /* auth_header */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        context);
+
+    EXPECT_EQ(catalog.getStateSnapshot()->client_id, "client-1");
+
+    DB::SettingsChanges changes;
+    changes.emplace_back("catalog_credential", "client-2:secret-2");
+    catalog.applySettingsChanges(changes);
+
+    const auto snapshot = catalog.getStateSnapshot();
+    EXPECT_EQ(snapshot->client_id, "client-2");
+    EXPECT_EQ(snapshot->client_secret, "secret-2");
+
+    DB::SettingsChanges mode_switch;
+    mode_switch.emplace_back("auth_header", "Authorization: Bearer token");
+    expectThrowsCode([&] { catalog.applySettingsChanges(mode_switch); }, DB::ErrorCodes::BAD_ARGUMENTS);
+
+    DB::SettingsChanges unknown_setting;
+    unknown_setting.emplace_back("warehouse", "other");
+    expectThrowsCode([&] { catalog.applySettingsChanges(unknown_setting); }, DB::ErrorCodes::BAD_ARGUMENTS);
+
+    /// Malformed credential (no `:` separator) fails the ALTER atomically.
+    DB::SettingsChanges malformed;
+    malformed.emplace_back("catalog_credential", "no-separator");
+    expectThrowsCode([&] { catalog.applySettingsChanges(malformed); }, DB::ErrorCodes::BAD_ARGUMENTS);
+    EXPECT_EQ(catalog.getStateSnapshot()->client_id, "client-2");
+}
+
+TEST(RestCatalog, ApplySettingsChangesAuthHeaderMode)
+{
+    RestCatalogTestServer server(CatalogShape::Empty);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    RestCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* catalog_credential */"",
+        /* auth_scope */"",
+        /* auth_header */"Authorization: Bearer token-1",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        context);
+
+    DB::SettingsChanges changes;
+    changes.emplace_back("auth_header", "Authorization: Bearer token-2");
+    catalog.applySettingsChanges(changes);
+
+    const auto snapshot = catalog.getStateSnapshot();
+    ASSERT_TRUE(snapshot->auth_header.has_value());
+    EXPECT_EQ(snapshot->auth_header->value, " Bearer token-2");
+
+    DB::SettingsChanges mode_switch;
+    mode_switch.emplace_back("catalog_credential", "id:secret");
+    expectThrowsCode([&] { catalog.applySettingsChanges(mode_switch); }, DB::ErrorCodes::BAD_ARGUMENTS);
+}
+
+TEST(RestCatalog, OneLakeApplySettingsChangesBearerMode)
+{
+    RestCatalogTestServer server(CatalogShape::Empty);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    OneLakeCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* onelake_tenant_id */"tenant-1",
+        /* onelake_client_id */"",
+        /* onelake_client_secret */"",
+        /* bearer_token */"token-1",
+        /* auth_scope */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        context);
+
+    const auto snapshot_before = catalog.getStateSnapshot();
+    EXPECT_EQ(snapshot_before->tenant_id, "tenant-1");
+    EXPECT_EQ(snapshot_before->bearer_token, "token-1");
+    ASSERT_TRUE(snapshot_before->auth_header.has_value());
+    EXPECT_EQ(snapshot_before->auth_header->value, "Bearer token-1");
+
+    DB::SettingsChanges changes;
+    changes.emplace_back("onelake_bearer_token", "token-2");
+    changes.emplace_back("onelake_tenant_id", "tenant-2");
+    catalog.applySettingsChanges(changes);
+
+    const auto snapshot_after = catalog.getStateSnapshot();
+    EXPECT_EQ(snapshot_after->tenant_id, "tenant-2");
+    EXPECT_EQ(snapshot_after->bearer_token, "token-2");
+    ASSERT_TRUE(snapshot_after->auth_header.has_value());
+    EXPECT_EQ(snapshot_after->auth_header->value, "Bearer token-2");
+
+    EXPECT_EQ(snapshot_before->tenant_id, "tenant-1");
+    EXPECT_EQ(snapshot_before->bearer_token, "token-1");
+
+    DB::SettingsChanges mode_switch;
+    mode_switch.emplace_back("onelake_tenant_id", "tenant-3");
+    mode_switch.emplace_back("onelake_client_id", "client-1");
+    expectThrowsCode([&] { catalog.applySettingsChanges(mode_switch); }, DB::ErrorCodes::BAD_ARGUMENTS);
+    EXPECT_EQ(catalog.getStateSnapshot()->tenant_id, "tenant-2");
+
+    DB::SettingsChanges unknown_setting;
+    unknown_setting.emplace_back("warehouse", "other");
+    expectThrowsCode([&] { catalog.applySettingsChanges(unknown_setting); }, DB::ErrorCodes::BAD_ARGUMENTS);
+
+    DB::SettingsChanges empty_value;
+    empty_value.emplace_back("onelake_bearer_token", "");
+    expectThrowsCode([&] { catalog.applySettingsChanges(empty_value); }, DB::ErrorCodes::BAD_ARGUMENTS);
 }
 
 #endif

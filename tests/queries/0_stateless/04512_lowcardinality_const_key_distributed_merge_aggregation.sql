@@ -3,7 +3,7 @@
 -- Const(LowCardinality(...)), aborting with a LOGICAL_ERROR in
 -- HashMethodSingleLowCardinalityColumn. Must not crash.
 
--- QUALIFY is only supported by the new analyzer; force it so the old-analyzer CI lane
+-- QUALIFY is only supported by the analyzer; force it so the old-analyzer CI lane
 -- runs the query instead of erroring with NOT_IMPLEMENTED.
 SET enable_analyzer = 1;
 SET allow_suspicious_low_cardinality_types = 1;

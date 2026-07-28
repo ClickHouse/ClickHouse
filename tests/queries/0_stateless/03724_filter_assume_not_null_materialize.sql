@@ -12,7 +12,7 @@ SELECT (assumeNotNull(materialize(NULL)), 1); -- { serverError ILLEGAL_COLUMN }
 
 SELECT 1 WHERE (assumeNotNull(NULL), 1) = (1, 1); -- { serverError ILLEGAL_COLUMN }
 
--- With the new analyzer, tuple comparison with Nothing-type elements returns Nullable(UInt8), yielding NULL (empty result).
+-- With the analyzer, tuple comparison with Nothing-type elements returns Nullable(UInt8), yielding NULL (empty result).
 -- With the old analyzer, the filter type is resolved as Nothing, causing ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER.
 SET enable_analyzer = 1;
 SELECT 1 WHERE (assumeNotNull(materialize(NULL)), 1) = (1, 1);

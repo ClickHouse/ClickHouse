@@ -1,6 +1,7 @@
 #include <Core/Joins.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/TableJoin.h>
@@ -77,6 +78,53 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
         return std::ranges::any_of(js.join_algorithms, [](JoinAlgorithm a)
         {
             return a == JoinAlgorithm::GRACE_HASH || a == JoinAlgorithm::AUTO;
+        });
+    }
+    /// Unknown step kind - be conservative.
+    return true;
+}
+
+/// Return `true` when deferring to `optimizeReadInOrder`'s second-pass through-join
+/// traversal would fail because the eventual physical join breaks the read-in-order
+/// chain on the preserved side. Two distinct failure modes are covered:
+///
+///  1. The join does not emit left rows in their original stream order
+///     (`preservesLeftBlockOrder() == false`). `findReadingStep` rejects such joins
+///     directly. `PartialMergeJoin` (`partial_merge` / `prefer_partial_merge`) is the
+///     case here: it re-sorts left blocks by the join key.
+///  2. The join preserves left order but its physicalization inserts a `Sort ... before
+///     JOIN` on the preserved input (`FullSortingMergeJoin`, `full_sorting_merge`; see
+///     `addSortingForMergeJoin` in `JoinStepLogical.cpp`). `findReadingStep` only
+///     descends through `Expression`/`Filter`/`ArrayJoin`/preliminary `Distinct`/
+///     `CreatingSets` steps, so it stops at that `SortingStep` and never installs
+///     `requestReadingInOrder`.
+///
+/// In both modes deferring would silently disable BOTH `topKThroughJoin` and the second
+/// pass, so we must NOT defer and instead let `topKThroughJoin` inject its own
+/// `Sort + Limit`.
+///
+/// For a physical `JoinStep` we read `preservesLeftBlockOrder()` directly and also flag
+/// `FullSortingMergeJoin` explicitly (it preserves order but adds the pre-JOIN sort). For
+/// `JoinStepLogical` the algorithm is chosen later from `JoinSettings::join_algorithms`,
+/// so we conservatively flag any configured `PARTIAL_MERGE` / `PREFER_PARTIAL_MERGE` /
+/// `FULL_SORTING_MERGE`. `GRACE_HASH` / `AUTO` are already covered by
+/// `joinMayHaveDelayedBlocks`. See issues #110662 and #109216.
+bool joinDefeatsReadInOrderThroughJoin(const IQueryPlanStep & step)
+{
+    if (const auto * physical = typeid_cast<const JoinStep *>(&step))
+    {
+        const auto & join_ptr = physical->getJoin();
+        if (!join_ptr || !join_ptr->preservesLeftBlockOrder())
+            return true;
+        return typeid_cast<const FullSortingMergeJoin *>(join_ptr.get()) != nullptr;
+    }
+    if (const auto * logical = typeid_cast<const JoinStepLogical *>(&step))
+    {
+        return std::ranges::any_of(logical->getJoinSettings().join_algorithms, [](JoinAlgorithm a)
+        {
+            return a == JoinAlgorithm::PARTIAL_MERGE
+                || a == JoinAlgorithm::PREFER_PARTIAL_MERGE
+                || a == JoinAlgorithm::FULL_SORTING_MERGE;
         });
     }
     /// Unknown step kind - be conservative.
@@ -326,13 +374,23 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     /// optimizations whenever the planner picks one - which is the steady state today,
     /// because `max_bytes_ratio_before_external_join` defaults to `0.5` and wraps every
     /// hash join in `SpillingHashJoin`.
+    ///
+    /// Finally, the eventual physical join must keep the read-in-order chain intact on the
+    /// preserved side. Two merge-join algorithms break it: `partial_merge` builds a
+    /// `PartialMergeJoin` that re-sorts left blocks (`preservesLeftBlockOrder() == false`,
+    /// rejected directly by `findReadingStep`), and `full_sorting_merge` builds a
+    /// `FullSortingMergeJoin` whose physicalization inserts a `Sort ... before JOIN` on the
+    /// preserved input (`addSortingForMergeJoin`), which `findReadingStep` will not descend
+    /// through. In either case deferring would silently disable both optimizations.
+    /// See issues #110662 and #109216.
     const bool second_pass_can_apply
         = settings.read_in_order
         && settings.read_in_order_through_join
         && settings.join_swap_table.has_value() && !settings.join_swap_table.value()
         && join_kind == JoinKind::Left
         && (join_strictness == JoinStrictness::All || join_strictness == JoinStrictness::Any)
-        && !joinMayHaveDelayedBlocks(*join_node->step);
+        && !joinMayHaveDelayedBlocks(*join_node->step)
+        && !joinDefeatsReadInOrderThroughJoin(*join_node->step);
     if (second_pass_can_apply)
     {
         if (const auto * reading = findMergeTreeRead(preserved_input_node))

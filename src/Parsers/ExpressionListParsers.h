@@ -307,7 +307,9 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/// Parser for key-value pair, where value can be list of pairs.
+/// Parser for key-value pair, where value can be a scalar literal, an array of literals
+/// (with tuples of literals inside, e.g. [(0, 0.6), (1, 0.4)]), an identifier, a function,
+/// or a nested list of pairs.
 class ParserKeyValuePair : public IParserBase
 {
 protected:

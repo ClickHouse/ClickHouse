@@ -18,7 +18,7 @@ SELECT count()
 FROM (SELECT DISTINCT s FROM (SELECT if(number % 2 = 0, 'a', 'A') AS s FROM numbers(1000) ORDER BY s COLLATE 'en-u-ks-level2'))
 SETTINGS optimize_distinct_in_order = 1, max_block_size = 7;
 
--- DISTINCT in order + collation: exact values, new analyzer.
+-- DISTINCT in order + collation: exact values, analyzer.
 SELECT arraySort(groupArray(s))
 FROM (SELECT DISTINCT s FROM (SELECT arrayJoin(['a', 'A', 'a', 'A', 'á', 'Á', 'b']) AS s ORDER BY s COLLATE 'en-u-ks-level2'))
 SETTINGS optimize_distinct_in_order = 1;
@@ -43,7 +43,7 @@ SELECT count()
 FROM (SELECT if(number % 2 = 0, 'a', 'A') AS s FROM numbers(1000) ORDER BY s COLLATE 'en-u-ks-level2' LIMIT 1 BY s)
 SETTINGS max_block_size = 7;
 
--- LIMIT BY in order + collation: exact values, new analyzer.
+-- LIMIT BY in order + collation: exact values, analyzer.
 SELECT arraySort(groupArray(s))
 FROM (SELECT arrayJoin(['a', 'A', 'a', 'A', 'á', 'Á', 'b']) AS s ORDER BY s COLLATE 'en-u-ks-level2' LIMIT 1 BY s);
 

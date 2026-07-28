@@ -522,8 +522,8 @@ keywords: ['ClickHouse 2019', '2019 更新日志', '发行说明', '版本历史
   #### 新功能
 </div>
 
-* 分层存储：支持为使用 MergeTree 引擎的表使用多个存储卷。可以将新数据存储在 SSD 上，并自动将旧数据迁移到 HDD。([示例](https://clickhouse.github.io/clickhouse-presentations/meetup30/new_features/#12))。[#4918](https://github.com/ClickHouse/ClickHouse/pull/4918) ([Igr](https://github.com/ObjatieGroba)) [#6489](https://github.com/ClickHouse/ClickHouse/pull/6489) ([alesapin](https://github.com/alesapin))
-* 添加表函数 `input`，用于在 `INSERT SELECT` 查询中读取输入数据。[#5450](https://github.com/ClickHouse/ClickHouse/pull/5450) ([palasonic1](https://github.com/palasonic1)) [#6832](https://github.com/ClickHouse/ClickHouse/pull/6832) ([Anton Popov](https://github.com/CurtizJ))
+* 分层存储：支持为使用 MergeTree 引擎的表使用多个存储卷。可以将新数据存储在 SSD 上，并自动将旧数据迁移到 HDD。[#4918](https://github.com/ClickHouse/ClickHouse/pull/4918) ([Igr](https://github.com/ObjatieGroba)) [#6489](https://github.com/ClickHouse/ClickHouse/pull/6489) ([alesapin](https://github.com/alesapin))
+* 添加表函数 `input`，用于在 `INSERT SELECT` 查询中读取传入数据。[#5450](https://github.com/ClickHouse/ClickHouse/pull/5450) ([palasonic1](https://github.com/palasonic1)) [#6832](https://github.com/ClickHouse/ClickHouse/pull/6832) ([Anton Popov](https://github.com/CurtizJ))
 * 添加 `sparse_hashed` 字典布局，其功能上等同于 `hashed` 布局，但更节省内存。它大约只占用一半内存，但代价是值检索速度更慢。[#6894](https://github.com/ClickHouse/ClickHouse/pull/6894) ([Azat Khuzhin](https://github.com/azat))
 * 实现了可为访问字典定义用户列表的能力。仅供当前已连接的数据库使用。[#6907](https://github.com/ClickHouse/ClickHouse/pull/6907) ([Guillaume Tassery](https://github.com/YiuRULE))
 * 为 `SHOW` 查询添加 `LIMIT` 选项。[#6944](https://github.com/ClickHouse/ClickHouse/pull/6944) ([Philipp Malkovsky](https://github.com/malkfilipp))
@@ -613,7 +613,7 @@ keywords: ['ClickHouse 2019', '2019 更新日志', '发行说明', '版本历史
   #### 构建/测试/打包改进
 </div>
 
-* 将不稳定的 [flapping](https://clickhouse-test-reports.s3.yandex.net/6944/aab95fd5175a513413c7395a73a82044bdafb906/functional_stateless_tests_\(debug\).html) 测试 `00715_fetch_merged_or_mutated_part_zookeeper` 重写为 shell 脚本，修复了该问题，因为它需要等待变更生效。 [#6977](https://github.com/ClickHouse/ClickHouse/pull/6977) ([Alexander Kazakov](https://github.com/Akazz))
+* 将不稳定的 flapping 测试 `00715_fetch_merged_or_mutated_part_zookeeper` 重写为 shell 脚本，修复了该问题，因为它需要等待变更生效。 [#6977](https://github.com/ClickHouse/ClickHouse/pull/6977) ([Alexander Kazakov](https://github.com/Akazz))
 * 修复了函数 `groupUniqArray` 在空 Array 参数下触发的 UBSan 和 MemSan 失败。原因是空的 `PaddedPODArray` 被放入了哈希表的零单元中，因为零单元值的构造函数未被调用。 [#6937](https://github.com/ClickHouse/ClickHouse/pull/6937) ([Amos Bird](https://github.com/amosbird))
 
 <div id="clickhouse-release-19-14-3-3-2019-09-10">
@@ -762,7 +762,7 @@ keywords: ['ClickHouse 2019', '2019 更新日志', '发行说明', '版本历史
 * 发送插入数据时发生的服务器异常现在也会由客户端处理。[#5891](https://github.com/ClickHouse/ClickHouse/issues/5891) [#6711](https://github.com/ClickHouse/ClickHouse/pull/6711) ([dimarub2000](https://github.com/dimarub2000))
 * 新增指标 `DistributedFilesToInsert`，用于显示文件系统中由分布式表选中并发送到远程服务器的文件总数。该数值会汇总所有分片。[#6600](https://github.com/ClickHouse/ClickHouse/pull/6600) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * 将大部分 JOIN 的准备逻辑从 `ExpressionAction/ExpressionAnalyzer` 移至 `AnalyzedJoin`。[#6785](https://github.com/ClickHouse/ClickHouse/pull/6785) ([Artem Zuikov](https://github.com/4ertus2))
-* 修复 TSan [警告](https://clickhouse-test-reports.s3.yandex.net/6399/c1c1d1daa98e199e620766f1bd06a5921050a00d/functional_stateful_tests_\(thread\).html) &#39;lock-order-inversion&#39;。 [#6740](https://github.com/ClickHouse/ClickHouse/pull/6740) ([Vasily Nemkov](https://github.com/Enmk))
+* 修复 TSan 警告 &#39;lock-order-inversion&#39;。 [#6740](https://github.com/ClickHouse/ClickHouse/pull/6740) ([Vasily Nemkov](https://github.com/Enmk))
 * 改进了在缺少 Linux 能力时的信息提示。以 &quot;fatal&quot; 级别记录致命错误，使其更容易在 `system.text_log` 中找到。[#6441](https://github.com/ClickHouse/ClickHouse/pull/6441) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * 启用在 `GROUP BY`、`ORDER BY` 期间将临时数据转储到磁盘以限制内存使用量时，此前不会检查磁盘剩余空间。此次修复新增了一个设置 `min_free_disk_space`：当磁盘剩余空间小于阈值时，查询会停止并抛出 `ErrorCodes::NOT_ENOUGH_SPACE`。[#6678](https://github.com/ClickHouse/ClickHouse/pull/6678) ([Weiqing Xu](https://github.com/weiqxu)) [#6691](https://github.com/ClickHouse/ClickHouse/pull/6691) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * 移除了按线程递归的 rwlock。这样设计没有意义，因为线程会在不同查询之间复用。`SELECT` 查询可能在一个线程中获取锁，由另一个线程继续持有锁，并在第一个线程中退出。同时，第一个线程可能又被 `DROP` 查询复用。这会导致误报 &quot;Attempt to acquire exclusive lock recursively&quot; 消息。[#6771](https://github.com/ClickHouse/ClickHouse/pull/6771) ([alexey-milovidov](https://github.com/alexey-milovidov))

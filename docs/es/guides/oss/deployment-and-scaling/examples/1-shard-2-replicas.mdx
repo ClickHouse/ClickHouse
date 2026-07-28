@@ -39,9 +39,7 @@ La arquitectura del clúster que vas a configurar se muestra a continuación:
 * Tienes Docker instalado en tu equipo
 
 <Steps>
-  <Step>
-    ## Configurar la estructura de directorios y el entorno de prueba
-
+  <Step title="Configurar la estructura de directorios y el entorno de prueba" id="set-up">
     <ExampleFiles />
 
     En este tutorial, utilizará [Docker compose](https://docs.docker.com/compose/) para
@@ -54,12 +52,12 @@ La arquitectura del clúster que vas a configurar se muestra a continuación:
     mkdir cluster_1S_2R
     cd cluster_1S_2R
 
-    # Crear directorios de clickhouse-keeper
+    # Create clickhouse-keeper directories
     for i in {01..03}; do
       mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
     done
 
-    # Crear directorios de clickhouse-server
+    # Create clickhouse-server directories
     for i in {01..02}; do
       mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
     done
@@ -143,14 +141,12 @@ La arquitectura del clúster que vas a configurar se muestra a continuación:
     <ConfigExplanation />
   </Step>
 
-  <Step>
-    ## Configurar nodos de ClickHouse
-
+  <Step title="Configurar nodos de ClickHouse" id="configure-clickhouse-servers">
     ### Configuración del servidor
 
     Ahora modifique cada archivo de configuración vacío `config.xml` ubicado en
-    `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. Las líneas resaltadas
-    a continuación deben cambiarse para que sean específicas de cada nodo:
+    `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. Las líneas que se
+    muestran a continuación deben cambiarse para que sean específicas de cada nodo:
 
     ```xml highlight={9,53-57}
     <clickhouse replace="true">
@@ -255,11 +251,11 @@ La arquitectura del clúster que vas a configurar se muestra a continuación:
 
     ```xml
     <remote_servers>
-        <!-- nombre del clúster (no debe contener puntos) -->
+        <!-- cluster name (should not contain dots) -->
         <cluster_1S_2R>
             <!-- <allow_distributed_ddl_queries>false</allow_distributed_ddl_queries> -->
             <shard>
-                <!-- Opcional. Indica si se deben escribir datos en una sola réplica. Valor predeterminado: false (escribe datos en todas las réplicas). -->
+                <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
                 <internal_replication>true</internal_replication>
                 <replica>
                     <host>clickhouse-01</host>
@@ -327,7 +323,7 @@ La arquitectura del clúster que vas a configurar se muestra a continuación:
     ### Configuración de usuario
 
     Ahora modifique cada archivo de configuración vacío `users.xml` ubicado en
-    `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d` con el siguiente contenido:
+    `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d` con lo siguiente:
 
     ```xml title="/users.d/users.xml"
     <?xml version="1.0"?>
@@ -374,7 +370,7 @@ La arquitectura del clúster que vas a configurar se muestra a continuación:
     | `fs/volumes/clickhouse-01/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-01/etc/clickhouse-server/users.d/users.xml) |
     | `fs/volumes/clickhouse-02/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-02/etc/clickhouse-server/users.d/users.xml) |
 
-    En este ejemplo, el usuario predeterminado se configura sin contraseña para simplificar.
+    En este ejemplo, el usuario `default` se configura sin contraseña para simplificar.
     En la práctica, esto no es recomendable.
 
     <Note>
@@ -382,9 +378,7 @@ La arquitectura del clúster que vas a configurar se muestra a continuación:
     </Note>
   </Step>
 
-  <Step>
-    ## Configurar ClickHouse Keeper
-
+  <Step title="Configurar ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
     ### Configuración de ClickHouse Keeper
 
     <KeeperConfig />
@@ -400,9 +394,7 @@ La arquitectura del clúster que vas a configurar se muestra a continuación:
     <CloudTip />
   </Step>
 
-  <Step>
-    ## Prueba la configuración
-
+  <Step title="Prueba la configuración" id="test-the-setup">
     Asegúrate de que Docker se esté ejecutando en tu equipo.
     Inicia el clúster con el comando `docker-compose up` desde la raíz del directorio `cluster_1S_2R`:
 
@@ -427,7 +419,7 @@ La arquitectura del clúster que vas a configurar se muestra a continuación:
     siguiente consulta. A continuación se muestra el comando para conectarse al primer nodo:
 
     ```bash
-    # Conectarse a cualquier nodo
+    # Connect to any node
     docker exec -it clickhouse-01 clickhouse-client
     ```
 
@@ -481,9 +473,7 @@ La arquitectura del clúster que vas a configurar se muestra a continuación:
     En el siguiente paso, creará una tabla en el clúster.
   </Step>
 
-  <Step>
-    ## Crear una base de datos
-
+  <Step title="Crear una base de datos" id="creating-a-database">
     Ahora que ha verificado que el clúster está correctamente configurado y en funcionamiento,
     va a recrear la misma tabla que se usa en el tutorial del conjunto de datos de ejemplo de [precios de propiedades en el Reino Unido](/es/get-started/sample-datasets/uk-price-paid).
     Contiene alrededor de 30 millones de filas con precios pagados
@@ -540,9 +530,7 @@ La arquitectura del clúster que vas a configurar se muestra a continuación:
     ```
   </Step>
 
-  <Step>
-    ## Crear una tabla en el clúster
-
+  <Step title="Crear una tabla en el clúster" id="creating-a-table">
     Ahora que se ha creado la base de datos, cree una tabla en el clúster.
     Ejecute la siguiente consulta desde cualquiera de los clientes host:
 
@@ -596,9 +584,7 @@ La arquitectura del clúster que vas a configurar se muestra a continuación:
     ```
   </Step>
 
-  <Step>
-    ## Insertar datos
-
+  <Step title="Insertar datos" id="inserting-data">
     Dado que el conjunto de datos es grande y tarda varios minutos en ingestarse por completo, comenzaremos insertando solo un pequeño subconjunto.
 
     Inserte un subconjunto más pequeño de los datos mediante la siguiente consulta desde `clickhouse-01`:
@@ -690,7 +676,7 @@ La arquitectura del clúster que vas a configurar se muestra a continuación:
     docker stop clickhouse-01
     ```
 
-    Verifique que el host está caído ejecutando:
+    Verifique que el host esté apagado ejecutando:
 
     ```bash
     docker-compose ps
@@ -713,7 +699,7 @@ La arquitectura del clúster que vas a configurar se muestra a continuación:
     ```
 
     ```response title="Response"
-    ┌─id─┬─name───────────────┐
+       ┌─id─┬─name───────────────┐
     1. │  1 │ Clicky McClickface │
     2. │  2 │ Alexey Milovidov   │
        └────┴────────────────────┘
@@ -732,7 +718,7 @@ La arquitectura del clúster que vas a configurar se muestra a continuación:
     ```
 
     ```response title="Response"
-    ┌─id─┬─name───────────────┐
+       ┌─id─┬─name───────────────┐
     1. │  1 │ Clicky McClickface │
     2. │  2 │ Alexey Milovidov   │
        └────┴────────────────────┘
@@ -787,8 +773,8 @@ La arquitectura del clúster que vas a configurar se muestra a continuación:
     ```
 
     ```response title="Response"
-    ┌──count()─┐
-    1. │ 30212555 │ -- 30.21 millones
+       ┌──count()─┐
+    1. │ 30212555 │ -- 30.21 million
        └──────────┘
     ```
   </Step>

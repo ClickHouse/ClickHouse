@@ -1,3 +1,5 @@
+#include <memory>
+#include <optional>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 
 #include <base/sleep.h>
@@ -18,6 +20,8 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 
 namespace DB
 {
@@ -185,16 +189,14 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
 {
     checkStackSize();
 
-    /// Do not push down limit to local plan, as it will break `rows_before_limit_at_least` counter.
-    if (processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
-        processed_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
-
     /// Since we're passing a pre-analyzed query tree (not AST), the interpreter won't run
     /// query tree passes anyway. We must NOT set ignoreASTOptimizations() here because it
     /// causes isASTLevelOptimizationAllowed() to return false in PlannerContext, which changes
     /// how constant node names are generated (using source expression instead of _CAST wrapper),
     /// leading to column name mismatches with the expected header.
     auto select_query_options = SelectQueryOptions(processed_stage);
+    select_query_options.is_local_shard_plan
+        = processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     /// Positional arguments in the outer query were already resolved by the initiator.
     /// Use a context flag instead of disabling enable_positional_arguments so that
@@ -297,4 +299,75 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     return {std::move(query_plan), true};
 }
 
+/// Collect every ReadFromMergeTree in a shipped fragment. Unlike findReadingSteps, this descends into a
+/// UnionStep even when it is the fragment root: in a fragment a root UNION is a view expansion whose
+/// branches must all be coordinated. This matches how the remote fragment marks its reads
+/// (ConvertToDistributedVisitor::buildPlanFragment); otherwise a non-aggregating `SELECT * FROM view`
+/// leaves later union branches as plain local reads whose rows are also returned by the remote fragment.
+static void collectReadFromMergeTreeSteps(QueryPlan::Node * node, std::vector<QueryPlan::Node *> & result)
+{
+    if (!node)
+        return;
+
+    if (typeid_cast<ReadFromMergeTree *>(node->step.get()))
+    {
+        result.push_back(node);
+        return;
+    }
+
+    for (auto * child : node->children)
+        collectReadFromMergeTreeSteps(child, result);
+}
+
+QueryPlanPtr createLocalPlanFragmentForParallelReplicas(
+    ContextPtr context, QueryPlanPtr plan_fragment, ParallelReplicasReadingCoordinatorPtr coordinator, size_t replica_number)
+{
+    std::vector<QueryPlan::Node *> reading_nodes;
+    collectReadFromMergeTreeSteps(plan_fragment->getRootNode(), reading_nodes);
+    if (reading_nodes.empty())
+    {
+        /// it can happen if merge tree table is empty — it'll be replaced with ReadFromPreparedSource
+        return plan_fragment;
+    }
+
+    for (auto * reading_node : reading_nodes)
+    {
+        auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
+
+        MergeTreeAllRangesCallback all_ranges_cb = [coordinator](InitialAllRangesAnnouncement announcement) -> std::optional<InitialAllRangesAnnouncementResponse>
+        { return coordinator->handleInitialAllRangesAnnouncement(std::move(announcement)); };
+
+        MergeTreeReadTaskCallback read_task_cb = [coordinator](ParallelReadRequest req) -> std::optional<ParallelReadResponse>
+        {
+            fiu_do_on(FailPoints::slowdown_parallel_replicas_local_plan_read, { sleepForMilliseconds(20); });
+            return coordinator->handleRequest(std::move(req));
+        };
+
+        auto read_from_merge_tree_parallel_replicas = reading->createLocalParallelReplicasReadingStep(
+            context, nullptr, std::move(all_ranges_cb), std::move(read_task_cb), replica_number);
+        reading_node->step = std::move(read_from_merge_tree_parallel_replicas);
+    }
+
+    auto query_plan = std::make_unique<QueryPlan>();
+    auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(std::move(plan_fragment), std::move(context));
+    query_plan->addStep(std::move(read_from_local));
+
+    return query_plan;
+}
+
+QueryPlanPtr createRemotePlanFragmentForParallelReplicas(
+    ContextPtr context,
+    QueryPlanPtr plan_fragment,
+    ParallelReplicasReadingCoordinatorPtr coordinator,
+    const ClusterPtr & cluster,
+    const std::vector<ConnectionPoolPtr> & connection_pools,
+    std::optional<size_t> exclude_pool_index)
+{
+    auto read_from_remote = std::make_unique<ReadFromParallelReplicasStep>(
+        std::move(plan_fragment), cluster, coordinator, context, connection_pools, exclude_pool_index, cluster->getShardsInfo().at(0).pool);
+
+    auto query_plan = std::make_unique<QueryPlan>();
+    query_plan->addStep(std::move(read_from_remote));
+    return query_plan;
+}
 }
