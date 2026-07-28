@@ -22,6 +22,9 @@ SET enable_parallel_replicas = 1, max_parallel_replicas = 3,
     parallel_replicas_for_non_replicated_merge_tree = 1;
 -- The plan-shape assertions below grep the legacy EXPLAIN step names; 'pretty' rewrites them.
 SET explain_query_plan_default = 'legacy';
+-- Stress threads inject `join_algorithm` and `join_use_nulls` as client options, which would make the
+-- ASOF assertion throw and would turn the FULL join's default-filled cells into NULL.
+SET join_algorithm = 'hash', join_use_nulls = 0;
 
 -- Mechanism: a non-replica-safe non-leftmost join must leave no remote-replicas read in the plan.
 SELECT 'inner/any non-leftmost: reads from remote replicas';
