@@ -569,6 +569,14 @@ private:
         const std::string & func_name,
         bool allow_constant_transformation,
         RPN & out);
+    /// `key <=> NULL` is "key IS NULL", so it produces the `isNull` atom, but only for a
+    /// bare key column: that atom ignores the monotonic-functions chain, which would be
+    /// unsound for a wrapped key.
+    void extractIsNullAtomForNotDistinctFrom(
+        const RPNBuilderTreeNode & key_arg,
+        const BuildInfo & info,
+        const Field & const_value,
+        RPN & out);
     /// The shared core of comparison-atom extraction; the comparison is already in
     /// `key_expr <op> const` form, and the constant is not NULL or NaN.
     void extractComparisonAtomsForKeyArgument(
