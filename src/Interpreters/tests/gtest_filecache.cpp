@@ -3617,6 +3617,60 @@ TEST_F(FileCacheTest, PriorityQueueElementsMetrics)
     run_cycle(IFileCachePriority::QueueType::Query);
 }
 
+TEST_F(FileCacheTest, SLRUDowngradeMetric)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    /// protected = 10 bytes / 1 element, probationary = 20 bytes / 2 elements.
+    SLRUFileCachePriority priority(IFileCachePriority::QueueType::Main, 30, 3, 1.0 / 3, "test_downgrade");
+
+    const auto cache_path = caches_dir / "test_slru_downgrade";
+    fs::create_directories(cache_path);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    const auto key = DB::FileCacheKey::fromPath("downgrade_key");
+    const auto & origin = FileCache::getCommonOrigin();
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
+
+    CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
+
+    auto add_segment = [&](size_t offset, size_t size, IFileCachePriority::QueueEntryType qtype)
+    {
+        IFileCachePriority::IteratorPtr it;
+        {
+            auto write_lock = cache_guard.writeLock();
+            auto state_lock = state_guard.lock();
+            it = priority.addForRestore(key_metadata, offset, size, qtype, write_lock, &state_lock);
+        }
+        const auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, origin);
+        /// The cache directory survives across runs and the file is opened with
+        /// `O_APPEND`, so a leftover file from a previous run would double in size
+        /// and fail the size check in the `FileSegment` constructor.
+        if (fs::exists(path))
+            fs::remove(path);
+        fs::create_directories(fs::path(path).parent_path());
+        WriteBufferFromFile wb(path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        DB::writeString(std::string(size, '0'), wb);
+        wb.finalize();
+        auto file_segment = std::make_shared<FileSegment>(
+            key, offset, size, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings{}, false, nullptr, key_metadata, it);
+        LockedKey(key_metadata).emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment)));
+        return it;
+    };
+
+    add_segment(0, 10, IFileCachePriority::QueueEntryType::SLRU_Protected);
+    auto prob_it = add_segment(10, 10, IFileCachePriority::QueueEntryType::SLRU_Probationary);
+
+    auto & events = CurrentThread::getProfileEvents();
+    const auto downgraded_before = events[ProfileEvents::FilesystemCacheDowngradedFileSegments];
+    const auto evicted_before = events[ProfileEvents::FilesystemCacheEvictedFileSegments];
+
+    ASSERT_TRUE(priority.tryIncreasePriority(*prob_it, true, cache_guard, state_guard));
+
+    ASSERT_EQ(events[ProfileEvents::FilesystemCacheDowngradedFileSegments], downgraded_before + 1);
+    ASSERT_EQ(events[ProfileEvents::FilesystemCacheEvictedFileSegments], evicted_before);
+}
+
 TEST_F(FileCacheTest, UsageAccounting)
 {
     ServerUUID::setRandomForUnitTests();

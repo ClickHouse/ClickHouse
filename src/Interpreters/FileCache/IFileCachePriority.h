@@ -50,7 +50,7 @@ class FileCacheUsageTracker
 {
 public:
     FileCacheUsageCountersPtr getOrCreate(const String & user_id);
-    std::unordered_map<String, FileCacheUsageStat> snapshot();
+    std::unordered_map<String, FileCacheUsageStat> snapshotAndPrune();
 
 private:
     std::mutex mutex;
@@ -135,7 +135,7 @@ public:
             size_t size_,
             KeyMetadataPtr key_metadata_,
             State initial_state = State::Active);
-        Entry(const Entry & other);
+        Entry(const Entry &) = delete;
 
         State getState() const { return state.load(); }
 

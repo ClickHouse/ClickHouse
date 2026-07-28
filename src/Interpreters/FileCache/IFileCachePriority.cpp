@@ -38,7 +38,7 @@ FileCacheUsageCountersPtr FileCacheUsageTracker::getOrCreate(const String & user
     return usage;
 }
 
-std::unordered_map<String, FileCacheUsageStat> FileCacheUsageTracker::snapshot()
+std::unordered_map<String, FileCacheUsageStat> FileCacheUsageTracker::snapshotAndPrune()
 {
     std::lock_guard lock(mutex);
     std::unordered_map<String, FileCacheUsageStat> result;
@@ -91,16 +91,6 @@ IFileCachePriority::Entry::Entry(
     , tracks_usage(tracks_usage_)
     , state(initial_state)
 {
-}
-
-IFileCachePriority::Entry::Entry(const Entry & other)
-    : key(other.key)
-    , offset(other.offset)
-    , key_metadata(other.key_metadata)
-    , size(other.size.load())
-    , tracks_usage(false)
-{
-    chassert(!other.tracksUsage());
 }
 
 IFileCachePriority::TrackedEntry::TrackedEntry(
@@ -172,7 +162,7 @@ std::unordered_map<std::string, IFileCachePriority::UsageStat> IFileCachePriorit
 {
     if (!usage_tracker)
         return {};
-    return usage_tracker->snapshot();
+    return usage_tracker->snapshotAndPrune();
 }
 
 void IFileCachePriority::removeEntries(
