@@ -271,4 +271,33 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
     adaptive.pending_staged_bytes = 0;
 }
 
+/// The flushed variants' sizes are meaningless by the time the external path finishes, so a
+/// stored entry keeps its sizes: only the verdict is written, and only when the session staged
+/// enough records to trust the thaw sampler. Runs without a measurement leave the entry alone.
+void Aggregator::recordAdaptiveStagingVerdict(AdaptiveAggregationSession & shared) const
+{
+    const auto & stats_params = params.stats_collecting_params;
+    if (!stats_params.isCollectionAndUseEnabled())
+        return;
+
+    bool measured = false;
+    bool repeat_dominated = false;
+    {
+        std::lock_guard lock(shared.thaw_sample_mutex);
+        measured = shared.staged_records >= adaptive_thaw_min_staged_records;
+        repeat_dominated = shared.thaw_all.load(std::memory_order_relaxed);
+    }
+    if (!measured)
+        return;
+
+    auto & stats = getHashTablesStatistics<AggregationEntry>();
+    AggregationEntry entry{.sum_of_sizes = 0, .median_size = 0, .adaptive_staging_repeat_dominated = repeat_dominated};
+    if (const auto prev = stats.getSizeHint(stats_params))
+    {
+        entry.sum_of_sizes = prev->sum_of_sizes;
+        entry.median_size = prev->median_size;
+    }
+    stats.update(entry, stats_params);
+}
+
 }

@@ -1133,6 +1133,10 @@ void AggregatingTransform::initGenerate()
             /// finish barrier guarantees a quiescent, uncontended sweep). The external branch
             /// below flushes it together with the other still-in-memory variants.
             params->aggregator.drainStagedChunksEarly(shared, AdaptiveDrainGoal::All);
+
+            /// The external merge bypasses `prepareVariantsToMerge`, which is where the thaw
+            /// verdict is normally recorded.
+            params->aggregator.recordAdaptiveStagingVerdict(shared);
         }
         if (shared.early_drain_started.load(std::memory_order_relaxed))
         {

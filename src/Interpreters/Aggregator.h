@@ -329,6 +329,11 @@ public:
 
     /// `adaptive_session` (or nullptr when the adaptive aggregation is off) feeds the
     /// thaw verdict into the hash-table statistics next to the observed sizes.
+    /// Records the thaw verdict in the hash-table statistics when the session measured one.
+    /// The in-memory merge records it inside `prepareVariantsToMerge`; the external merge never
+    /// reaches that, so the finish path calls this instead.
+    void recordAdaptiveStagingVerdict(AdaptiveAggregationSession & shared) const;
+
     ManyAggregatedDataVariants prepareVariantsToMerge(
         ManyAggregatedDataVariants && data_variants, AdaptiveAggregationSession * adaptive_session) const;
 
