@@ -1731,14 +1731,9 @@ static Field applyFunctionForField(
     const DataTypePtr & arg_type,
     const Field & arg_value)
 {
-    /// The const column's outer `LowCardinality` wrapper must match the function's declared argument
-    /// type (`arg_type` is the running chain type, which can be out of step). Same as the cached branch
-    /// of `applyFunction` and `applyFunctionChainToColumn`.
-    auto declared_type = getArgumentTypeOfMonotonicFunction(*func);
-    auto column_type = declared_type->lowCardinality() == arg_type->lowCardinality() ? arg_type : declared_type;
     ColumnsWithTypeAndName columns
     {
-            { column_type->createColumnConst(1, arg_value), column_type, "x" },
+            { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
         };
 
     auto col = func->execute(columns, func->getResultType(), 1, /* dry_run = */ false);
@@ -1774,30 +1769,27 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     {
         /// When cache is missed, we calculate the whole column where the field comes from. This will avoid repeated calculation.
         ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
-        /// The argument column's outer `LowCardinality` wrapper must match the function's declared
-        /// argument type before executing (strip if the declared type is plain, re-wrap if it is
-        /// `LowCardinality`), as the sibling `applyFunctionChainToColumn` does.
-        auto arg_type = getArgumentTypeOfMonotonicFunction(*func);
-        if (args[0].column)
+        /// Normalize the chain's INPUT column only. The chain is built in
+        /// `isKeyPossiblyWrappedByMonotonicFunctions` against a recursively `LowCardinality`-stripped key
+        /// type, while the index column handed to us keeps its raw type, which may still be
+        /// `LowCardinality` (statistics and partition pruning pass the raw key column). Strip it once here
+        /// so the first function receives what it declared. Interior links need no adjustment: each one
+        /// is built against the previous function's `getResultType()` and the cache below stores exactly
+        /// that type and representation.
+        if (args[0].column && args[0].column->lowCardinality() && !getArgumentTypeOfMonotonicFunction(*func)->lowCardinality())
         {
-            if (!arg_type->lowCardinality() && args[0].column->lowCardinality())
-            {
-                args[0].column = args[0].column->convertToFullColumnIfLowCardinality();
-                args[0].type = removeLowCardinality(args[0].type);
-            }
-            else if (arg_type->lowCardinality() && !args[0].column->lowCardinality())
-            {
-                auto lc_col = arg_type->createColumn();
-                assert_cast<ColumnLowCardinality &>(*lc_col)
-                    .insertRangeFromFullColumn(*args[0].column, 0, args[0].column->size());
-                args[0].column = std::move(lc_col);
-                args[0].type = arg_type;
-            }
+            args[0].column = args[0].column->convertToFullColumnIfLowCardinality();
+            args[0].type = removeLowCardinality(args[0].type);
         }
-        field.columns->emplace_back(ColumnWithTypeAndName {nullptr, removeLowCardinality(func->getResultType()), result_name});
+        /// Cache the result under the function's own result type and representation, so the next function
+        /// in the chain receives its declared argument type. Stripping `LowCardinality` here instead would
+        /// break that agreement for a chain that re-introduces it, e.g.
+        /// `CAST(CAST(s, 'LowCardinality(String)'), 'String')`, whose outer `FunctionCast` declares a
+        /// `LowCardinality(String)` argument and (having
+        /// `useDefaultImplementationForLowCardinalityColumns = false`) reads the raw column.
+        field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
         (*columns)[result_idx].column
-            = func->execute(args, (*columns)[result_idx].type, args.front().column->size(), /* dry_run = */ false)
-                  ->convertToFullColumnIfLowCardinality();
+            = func->execute(args, (*columns)[result_idx].type, args.front().column->size(), /* dry_run = */ false);
     }
 
     return {field.columns, field.row_idx, result_idx};

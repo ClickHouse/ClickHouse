@@ -1,12 +1,14 @@
 -- Regression test for a LOGICAL_ERROR ("Bad cast from ColumnString to ColumnLowCardinality") during
 -- primary-key index analysis over a LowCardinality key wrapped in a nested CAST chain that
 -- re-introduces LowCardinality mid-chain, e.g. CAST(CAST(s, 'LowCardinality(String)'), 'String').
--- The monotonic-function chain is built against the recursively-stripped (non-LowCardinality) key
--- type, but an inner CAST wrapper is resolved for a LowCardinality source, so KeyCondition fed it a
--- full ColumnString and its checkAndGetColumn<ColumnLowCardinality> aborted (in debug/sanitizer) or
--- failed the query (in release). applyFunction / applyFunctionForField now match the argument
--- column's LowCardinality-ness to the function's declared argument type (re-wrap or strip), like the
--- sibling applyFunctionChainToColumn.
+-- Each chain function is built against the previous one's result type, so an inner
+-- CAST(..., 'LowCardinality(String)') legitimately makes the next wrapper declare a LowCardinality
+-- argument. applyFunction used to cache every intermediate result with LowCardinality stripped from
+-- both the type and the column, so that next wrapper (which has
+-- useDefaultImplementationForLowCardinalityColumns = false) received a full ColumnString and its
+-- checkAndGetColumn<ColumnLowCardinality> aborted (in debug/sanitizer) or failed the query (in
+-- release). The cache now keeps each function's own result type and representation, so every function
+-- receives exactly the argument type it was built for.
 
 SET allow_suspicious_low_cardinality_types = 1;
 
