@@ -3,15 +3,9 @@
 #include <Interpreters/FileCache/Metadata.h>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 void FileCacheUsageCounters::add(size_t size_delta, size_t elements_delta) noexcept
 {

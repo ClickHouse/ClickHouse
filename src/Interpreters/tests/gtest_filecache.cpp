@@ -3623,6 +3623,7 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
 
     /// protected = 10 bytes / 1 element, probationary = 20 bytes / 2 elements.
     SLRUFileCachePriority priority(IFileCachePriority::QueueType::Main, 30, 3, 1.0 / 3, "test_downgrade");
+    priority.setUsageTracker(std::make_shared<FileCacheUsageTracker>());
 
     const auto cache_path = caches_dir / "test_slru_downgrade";
     fs::create_directories(cache_path);
@@ -3661,6 +3662,11 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
     add_segment(0, 10, IFileCachePriority::QueueEntryType::SLRU_Protected);
     auto prob_it = add_segment(10, 10, IFileCachePriority::QueueEntryType::SLRU_Probationary);
 
+    const auto & user_id = origin.user_id;
+    auto usage = priority.getUsageStatPerClient();
+    ASSERT_EQ(usage.at(user_id).size, 20);
+    ASSERT_EQ(usage.at(user_id).elements, 2);
+
     auto & events = CurrentThread::getProfileEvents();
     const auto downgraded_before = events[ProfileEvents::FilesystemCacheDowngradedFileSegments];
     const auto evicted_before = events[ProfileEvents::FilesystemCacheEvictedFileSegments];
@@ -3669,6 +3675,9 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
 
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheDowngradedFileSegments], downgraded_before + 1);
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheEvictedFileSegments], evicted_before);
+    usage = priority.getUsageStatPerClient();
+    ASSERT_EQ(usage.at(user_id).size, 20);
+    ASSERT_EQ(usage.at(user_id).elements, 2);
 }
 
 TEST_F(FileCacheTest, UsageAccounting)
