@@ -213,6 +213,29 @@ private:
     /// nested tables yet.
     void assertCoordinationIdentityMatchesNestedTables() const;
 
+    /// Throw when the coordination path / replica name could not be expanded from the current server
+    /// configuration (the constructor records that instead of throwing, to keep a misconfigured setup
+    /// droppable). Called by everything that forms a Keeper path from the coordination identity.
+    void assertCoordinationIdentityResolved() const;
+
+    /// The coordination identity persisted in a nested table's engine arguments.
+    struct PersistedNestedIdentity
+    {
+        /// Keeper path of the shared replicated tree of this nested table (`keeper_path/tables/table`).
+        String zookeeper_path;
+        /// Name of this replica in that tree.
+        String replica_name;
+    };
+
+    /// Read the coordination identity persisted in the metadata of the nested tables this replica owns,
+    /// keyed by PostgreSQL table name. Tables whose engine carries no such identity (a plain, unreplicated
+    /// nested table) are omitted. Never regenerates the definition from the live settings.
+    std::map<String, PersistedNestedIdentity> readPersistedNestedIdentities() const;
+
+    /// Switch the coordination identity of this handler to the one persisted in the nested tables it owns,
+    /// so that the teardown deletes the coordination state that actually exists. Only used on the DROP path.
+    void adoptPersistedCoordinationIdentityForTeardown();
+
     /// Publish this replica's naming-affecting settings at <keeper_path>/naming (first replica) or check
     /// them against the already published ones (joining replica), throwing BAD_ARGUMENTS on a mismatch.
     /// All coordinated replicas derive the ClickHouse names of the shared nested tables from the shared
@@ -367,7 +390,8 @@ private:
     /// `leader_node`) consumes the slot; the others create the nested tables as replicas of the same
     /// shared replicated tree and wait to take over.
     bool coordination_enabled = false;
-    /// Fully macro-expanded values (computed once in the constructor).
+    /// Fully macro-expanded values (computed once in the constructor; the DROP path may replace them with the
+    /// identity persisted in the nested tables, see `adoptPersistedCoordinationIdentityForTeardown`).
     String coordination_keeper_path;
     /// The naming-affecting settings of this replica, in the canonical form stored at <keeper_path>/naming
     /// (computed once in the constructor; see `ensureCoordinatedNamingCompatible`).
@@ -377,6 +401,10 @@ private:
     /// same-named registration attempt by another replica is rejected instead of silently collapsing two
     /// replicas onto one node (computed once in the constructor; stable across restarts and DETACH/ATTACH).
     String coordination_replica_owner;
+    /// Non-empty when the coordination path / replica name could not be expanded from the current server
+    /// configuration (a macro they go through was removed after the engine was created). The constructor
+    /// records the failure instead of throwing, so that such a setup can still be dropped.
+    String coordination_identity_error;
     /// Set by coordinatedTeardownBeforeDataDrop (the race-free pre-data last-replica decision) so that the
     /// post-data shutdownFinal does not re-decide when this replica already claimed the last-replica role and
     /// removed the shared /replicas node itself (its absence would otherwise read as "another replica was last").

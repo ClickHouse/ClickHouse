@@ -649,15 +649,31 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
         const String raw_keeper_path = replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path];
         const String raw_replica_name = replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_replica_name];
         const auto macros = getContext()->getMacros();
+        /// A macro these settings expand through can disappear from the server configuration after the engine
+        /// was created. Do not throw from the constructor in that case: `beforeDropDatabase` builds a handler
+        /// purely to run the coordinated teardown, so a throwing constructor would make a misconfigured setup
+        /// undroppable. Record the failure instead - the startup paths refuse to proceed with an unresolved
+        /// identity, and the teardown recovers the real identity from the nested-table metadata.
+        try
         {
-            Macros::MacroExpansionInfo info;
-            info.table_id = macro_table_id;
-            coordination_keeper_path = macros->expand(raw_keeper_path, info);
+            {
+                Macros::MacroExpansionInfo info;
+                info.table_id = macro_table_id;
+                coordination_keeper_path = macros->expand(raw_keeper_path, info);
+            }
+            {
+                Macros::MacroExpansionInfo info;
+                info.table_id = macro_table_id;
+                coordination_replica_name = macros->expand(raw_replica_name, info);
+            }
         }
+        catch (...)
         {
-            Macros::MacroExpansionInfo info;
-            info.table_id = macro_table_id;
-            coordination_replica_name = macros->expand(raw_replica_name, info);
+            coordination_identity_error = getCurrentExceptionMessage(/* with_stacktrace */ false);
+            coordination_keeper_path.clear();
+            coordination_replica_name.clear();
+            LOG_ERROR(log, "Cannot resolve the coordination identity from the current configuration: {}",
+                      coordination_identity_error);
         }
 
         coordination_naming_fingerprint = coordinatedNamingFingerprint(replication_settings, postgres_database_, postgres_table_);
@@ -1618,6 +1634,7 @@ void PostgreSQLReplicationHandler::registerReplicaThenEnsureNestedTables()
     /// `assertValidCoordinationReplicaName`). This runs before any Keeper path is formed from it - both the
     /// registration node and the nested replicated tables come later - and refusing here (rather than in the
     /// handler's constructor) keeps `DROP DATABASE` of a misconfigured setup possible.
+    assertCoordinationIdentityResolved();
     assertValidCoordinationReplicaName(coordination_replica_name);
 
     /// For the same reason, refuse to proceed when the expanded coordination identity no longer matches the
@@ -1669,6 +1686,19 @@ void PostgreSQLReplicationHandler::registerReplicaThenEnsureNestedTables()
 }
 
 
+void PostgreSQLReplicationHandler::assertCoordinationIdentityResolved() const
+{
+    /// The constructor tolerates an unexpandable coordination path / replica name so that a misconfigured
+    /// setup stays droppable (see there). Everything that forms a Keeper path from the identity must refuse
+    /// to run with an unresolved one - the retrying startup task recovers by itself once the configuration
+    /// is restored.
+    if (!coordination_identity_error.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot resolve materialized_postgresql_keeper_path / materialized_postgresql_replica_name from the "
+            "current server configuration: {}", coordination_identity_error);
+}
+
+
 void PostgreSQLReplicationHandler::assertCoordinationIdentityMatchesNestedTables() const
 {
     /// `coordination_keeper_path` and `coordination_replica_name` are expanded from the *current* server
@@ -1690,39 +1720,10 @@ void PostgreSQLReplicationHandler::assertCoordinationIdentityMatchesNestedTables
     /// literals is not an option either: `materialized_postgresql_replica_name` must stay per-replica, and a
     /// coordinated single-table engine may be created through a `Replicated` database, which replicates the
     /// CREATE query verbatim to every replica.
-    for (const auto & [table_name, materialized_storage] : materialized_storages)
+    for (const auto & [table_name, persisted] : readPersistedNestedIdentities())
     {
-        if (!materialized_storage->tryGetNested())
-            continue;
-
-        const auto nested_id = materialized_storage->getNestedStorageID();
-        auto database = DatabaseCatalog::instance().tryGetDatabase(nested_id.database_name);
-        if (!database)
-            continue;
-
-        /// The persisted definition is what matters here, so ask for it with a context that has no query
-        /// context: `DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl` otherwise regenerates the
-        /// definition from the live settings, which is exactly the value this check must not trust.
-        ASTPtr create_ast = database->tryGetCreateTableQuery(nested_id.table_name, getContext()->getGlobalContext());
-        const auto * create_query = create_ast ? create_ast->as<ASTCreateQuery>() : nullptr;
-        if (!create_query || !create_query->storage || !create_query->storage->engine)
-            continue;
-
-        /// Both replicated nested engines take the fully expanded Keeper path and replica name as their first
-        /// two arguments (see `getCreateNestedTableQuery`). Anything else is not a coordinated nested table.
-        const auto & engine = *create_query->storage->engine;
-        if (!engine.arguments || engine.arguments->children.size() < 2)
-            continue;
-
-        const auto * path_literal = engine.arguments->children[0]->as<ASTLiteral>();
-        const auto * replica_name_literal = engine.arguments->children[1]->as<ASTLiteral>();
-        if (!path_literal || !replica_name_literal
-            || path_literal->value.getType() != Field::Types::String
-            || replica_name_literal->value.getType() != Field::Types::String)
-            continue;
-
-        const String persisted_zookeeper_path = path_literal->value.safeGet<String>();
-        const String persisted_replica_name = replica_name_literal->value.safeGet<String>();
+        const String & persisted_zookeeper_path = persisted.zookeeper_path;
+        const String & persisted_replica_name = persisted.replica_name;
 
         const auto expected_spec = makeNestedEngineSpec(table_name);
         if (persisted_zookeeper_path == expected_spec.zookeeper_path && persisted_replica_name == expected_spec.replica_name)
@@ -1742,6 +1743,115 @@ void PostgreSQLReplicationHandler::assertCoordinationIdentityMatchesNestedTables
             coordination_keeper_path, coordination_replica_name, table_name,
             persisted_replica_name, persisted_zookeeper_path);
     }
+}
+
+
+std::map<String, PostgreSQLReplicationHandler::PersistedNestedIdentity> PostgreSQLReplicationHandler::readPersistedNestedIdentities() const
+{
+    /// Collect the (table name -> nested table) pairs whose persisted metadata can hold a coordination
+    /// identity. The storages this handler knows about are the authoritative source, but a handler that
+    /// `DatabaseMaterializedPostgreSQL::beforeDropDatabase` built purely to run the teardown (the attach /
+    /// restart window, in which the background startup task has not built the real handler yet) has none
+    /// attached - the nested tables of the database engine then live in that database under the PostgreSQL
+    /// table names, so read them from the database directly.
+    std::map<String, StorageID> nested_tables;
+    for (const auto & [table_name, materialized_storage] : materialized_storages)
+        nested_tables.emplace(table_name, materialized_storage->getNestedStorageID());
+
+    if (nested_tables.empty() && is_materialized_postgresql_database)
+    {
+        if (auto database = DatabaseCatalog::instance().tryGetDatabase(current_database_name))
+        {
+            for (auto it = database->getTablesIterator(getContext()->getGlobalContext()); it->isValid(); it->next())
+                nested_tables.emplace(it->name(), StorageID(current_database_name, it->name()));
+        }
+    }
+
+    std::map<String, PersistedNestedIdentity> result;
+    for (const auto & [table_name, nested_id] : nested_tables)
+    {
+        auto database = DatabaseCatalog::instance().tryGetDatabase(nested_id.database_name);
+        if (!database)
+            continue;
+
+        /// The persisted definition is what matters here, so ask for it with a context that has no query
+        /// context: `DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl` otherwise regenerates the
+        /// definition from the live settings, which is exactly the value that must not be trusted here.
+        ASTPtr create_ast = database->tryGetCreateTableQuery(nested_id.table_name, getContext()->getGlobalContext());
+        const auto * create_query = create_ast ? create_ast->as<ASTCreateQuery>() : nullptr;
+        if (!create_query || !create_query->storage || !create_query->storage->engine)
+            continue;
+
+        /// Both replicated nested engines take the fully expanded Keeper path and replica name as their first
+        /// two arguments (see `getCreateNestedTableQuery`). Anything else is not a coordinated nested table.
+        const auto & engine = *create_query->storage->engine;
+        if (!engine.arguments || engine.arguments->children.size() < 2)
+            continue;
+
+        const auto * path_literal = engine.arguments->children[0]->as<ASTLiteral>();
+        const auto * replica_name_literal = engine.arguments->children[1]->as<ASTLiteral>();
+        if (!path_literal || !replica_name_literal
+            || path_literal->value.getType() != Field::Types::String
+            || replica_name_literal->value.getType() != Field::Types::String)
+            continue;
+
+        PersistedNestedIdentity identity;
+        identity.zookeeper_path = path_literal->value.safeGet<String>();
+        identity.replica_name = replica_name_literal->value.safeGet<String>();
+        result.emplace(table_name, std::move(identity));
+    }
+
+    return result;
+}
+
+
+void PostgreSQLReplicationHandler::adoptPersistedCoordinationIdentityForTeardown()
+{
+    /// The teardown of a coordinated setup - unregistering this replica, the race-free last-replica decision
+    /// and, for the last replica, the removal of the shared coordination nodes - must operate on the identity
+    /// the shared data this replica owns actually lives under, NOT on whatever the current server
+    /// configuration happens to expand the coordination settings to. Otherwise a DROP after a
+    /// configuration-only macro change (which the startup refuses, see
+    /// `assertCoordinationIdentityMatchesNestedTables`, but which leaves the database mounted and droppable)
+    /// would unregister and do last-replica accounting under the new identity, orphaning the original
+    /// /replicas subtree together with the shared replication slot, publication and snapshot marker.
+    ///
+    /// Unlike the startup, adopting the persisted identity here is the right thing to do: this path only
+    /// deletes state, it never resumes replication under it, and the persisted nested-table metadata is the
+    /// authoritative record of the identity the shared data was created with.
+    const auto persisted_identities = readPersistedNestedIdentities();
+    for (const auto & [table_name, persisted] : persisted_identities)
+    {
+        /// Derive the coordination path from the nested table's Keeper path, which `makeNestedEngineSpec`
+        /// formed as <keeper_path>/tables/<escaped table name>.
+        const String suffix = "/tables/" + escapeForFileName(table_name);
+        if (!persisted.zookeeper_path.ends_with(suffix))
+            continue;
+
+        const String persisted_keeper_path = persisted.zookeeper_path.substr(0, persisted.zookeeper_path.size() - suffix.size());
+        if (persisted_keeper_path == coordination_keeper_path && persisted.replica_name == coordination_replica_name)
+            return;
+
+        LOG_WARNING(log,
+            "The coordination settings of this MaterializedPostgreSQL replica now expand to keeper path '{}' and "
+            "replica name '{}', while the nested tables it owns were created under keeper path '{}' and replica "
+            "name '{}'. Tearing down the setup that actually exists, so the shared coordination state cannot be "
+            "orphaned; the configuration this replica was created with should be restored if it is still in use "
+            "by other replicas.",
+            coordination_keeper_path, coordination_replica_name, persisted_keeper_path, persisted.replica_name);
+
+        coordination_keeper_path = persisted_keeper_path;
+        coordination_replica_name = persisted.replica_name;
+        return;
+    }
+
+    /// No nested table to learn the identity from. If the settings could not be expanded at all (a macro they
+    /// go through was removed from the configuration), there is nothing to tear down under, so refuse instead
+    /// of touching an arbitrary Keeper path.
+    if (!coordination_identity_error.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot resolve the coordination identity of this MaterializedPostgreSQL replica, and it owns no "
+            "nested table to recover it from: {}", coordination_identity_error);
 }
 
 
@@ -2024,6 +2134,12 @@ void PostgreSQLReplicationHandler::coordinatedTeardownBeforeDataDrop()
     /// shared slot, publication and snapshot_completed marker survived, and a later recreate on the same
     /// keeper path would resume from confirmed_flush_lsn into empty tables.
     auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::coordinatedTeardownBeforeDataDrop");
+
+    /// Tear down the identity the shared data actually lives under, not the one the current configuration
+    /// expands to (they differ after a configuration-only macro change, which the startup refuses but which
+    /// must not make the drop orphan the original coordination state). Everything below, including the
+    /// post-data teardown in `shutdownFinal`, then works on the adopted identity.
+    adoptPersistedCoordinationIdentityForTeardown();
 
     /// Make the fail-close last-replica decision first: unregisterReplicaAndCheckLast throws if Keeper is
     /// unreachable, which aborts the drop before any nested table is removed (and, importantly, before the
@@ -2637,6 +2753,11 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 /// Used by MaterializedPostgreSQL database engine.
 std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
 {
+    /// Runs before `startup` on the database-engine path and consults the coordination state below, so it
+    /// needs a resolved coordination identity just as much (the startup task retries once it is resolvable).
+    if (coordination_enabled)
+        assertCoordinationIdentityResolved();
+
     postgres::Connection connection(connection_info);
     std::set<String> result_tables;
     bool publication_exists_before_startup = false;

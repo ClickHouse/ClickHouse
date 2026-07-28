@@ -68,7 +68,8 @@ namespace ErrorCodes
         "`materialized_postgresql_keeper_path` it forms the coordination identity of the replica, which must " \
         "stay the same for the lifetime of the setup: both are re-expanded from the server configuration on " \
         "every startup, so a configuration-only change of a macro they expand through is refused (it would " \
-        "move the coordination bookkeeping away from the shared data this replica already holds).", 0) \
+        "move the coordination bookkeeping away from the shared data this replica already holds). Dropping the " \
+        "engine after such a change still works and tears down the identity persisted in the nested tables.", 0) \
 
 DECLARE_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS, MATERIALIZED_POSTGRESQL_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS, MaterializedPostgreSQLSettings, MaterializedPostgreSQLSetting)

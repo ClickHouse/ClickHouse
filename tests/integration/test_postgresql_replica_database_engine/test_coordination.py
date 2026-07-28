@@ -2239,7 +2239,8 @@ def test_coordination_identity_must_stay_stable_across_restart(started_cluster):
         "materialized_postgresql_replica_name = '{replica}'",
         "materialized_postgresql_tables_list = 'test_table'",
     ]
-    macros_config = "/etc/clickhouse-server/config.d/macros.xml"
+    # The macros of an integration-test instance are generated into conf.d, not config.d.
+    macros_config = "/etc/clickhouse-server/conf.d/macros.xml"
     rejection_line = "coordination identity of this MaterializedPostgreSQL replica changed"
 
     pg_manager.create_postgres_table("test_table")
@@ -2300,3 +2301,86 @@ def test_coordination_identity_must_stay_stable_across_restart(started_cluster):
 
     assert not replication_slot_exists()
     assert not publication_exists()
+
+
+def coordination_path_exists(node, path):
+    parent, leaf = path.rsplit("/", 1)
+    return (
+        int(
+            node.query(
+                f"SELECT count() FROM system.zookeeper "
+                f"WHERE path = '{parent}' AND name = '{leaf}'"
+            )
+        )
+        > 0
+    )
+
+
+@pytest.mark.parametrize("macro_change", ["rename", "remove"])
+def test_drop_after_coordination_identity_change_tears_down_original_identity(
+    started_cluster, macro_change
+):
+    # A configuration-only change of the macros the coordination settings expand through is refused at
+    # startup, but the database stays mounted and droppable. The drop must then tear down the coordination
+    # state that actually exists - the one persisted in the nested tables - and not the identity the current
+    # configuration expands to: otherwise it would unregister and do the last-replica accounting under the
+    # new identity, orphaning the original /replicas subtree together with the shared replication slot,
+    # publication and snapshot_completed marker forever.
+    #
+    # "rename" changes the value of the {replica} macro; "remove" takes the macro away entirely, so the
+    # settings cannot be expanded at all - a case in which the handler must still be constructible, or the
+    # database could never be dropped.
+    keeper_path_resolved = "/clickhouse/mat_pg/1/identity_drop_test"
+    identity_settings = [
+        "materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree'",
+        "materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{shard}/identity_drop_test'",
+        "materialized_postgresql_replica_name = '{replica}'",
+        "materialized_postgresql_tables_list = 'test_table'",
+    ]
+    macros_config = "/etc/clickhouse-server/conf.d/macros.xml"
+    if macro_change == "rename":
+        # Change the value of the {replica} macro.
+        original, changed = "coord_instance1", "coord_instance1_renamed"
+    else:
+        # Rename the macro itself, so {replica} cannot be expanded at all any more.
+        original, changed = "replica>", "replica_gone>"
+
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+    try:
+        pg_manager.create_materialized_db(
+            ip=cluster.postgres_ip,
+            port=cluster.postgres_port,
+            settings=identity_settings,
+        )
+        check_tables_are_synchronized(instance, "test_table")
+        assert (
+            instance.query(
+                f"SELECT name FROM system.zookeeper "
+                f"WHERE path = '{keeper_path_resolved}/replicas' ORDER BY name"
+            ).split()
+            == ["coord_instance1"]
+        )
+
+        instance.replace_in_config(macros_config, original, changed)
+        instance.restart_clickhouse()
+
+        # The drop succeeds and removes the whole original coordination path together with the shared
+        # PostgreSQL objects - this replica was the only one, so it is the last replica of the setup that
+        # the nested tables belong to.
+        instance.query("DROP DATABASE test_database SYNC")
+        assert not coordination_path_exists(instance, keeper_path_resolved)
+        assert not replication_slot_exists()
+        assert not publication_exists()
+    finally:
+        instance.replace_in_config(macros_config, changed, original)
+        if not instance.get_process_pid("clickhouse"):
+            instance.start_clickhouse()
+        else:
+            instance.restart_clickhouse()
+        try:
+            pg_manager.drop_materialized_db()
+        except Exception:
+            pass
