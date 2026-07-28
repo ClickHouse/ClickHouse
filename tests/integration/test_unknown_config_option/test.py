@@ -1873,6 +1873,7 @@ def test_non_regular_users_config_still_checks_server_config(
     pipe_path = "/etc/clickhouse-server/users_pipe.xml"
     users_config_path = "/etc/clickhouse-server/config.d/users_config_pipe.xml"
     typo_config_path = "/etc/clickhouse-server/config.d/typo_with_pipe_users_config.xml"
+    writer_pid_path = "/tmp/users_pipe_writer.pid"
     try:
         # Serve a copy of the active users config through the FIFO, and merge the very same
         # `users.d` fragments into it (`getConfigMergeFiles` derives the directory from the config
@@ -1888,11 +1889,13 @@ def test_non_regular_users_config_still_checks_server_config(
             ]
         )
         # A FIFO yields EOF once every writer closes, so keep refilling it for each read.
+        # Record the refill loop's pid: cleanup must not match it by command line, because
+        # `pkill -f` would also match the cleanup command's own `bash -c` line and kill itself.
         node.exec_in_container(
             [
                 "bash",
                 "-c",
-                "nohup bash -c 'while true; do "
+                f"setsid bash -c 'echo $$ > {writer_pid_path}; while true; do "
                 f"cat /etc/clickhouse-server/users_pipe_source.xml > {pipe_path}; "
                 "done' >/dev/null 2>&1 &",
             ],
@@ -1918,10 +1921,11 @@ def test_non_regular_users_config_still_checks_server_config(
             [
                 "bash",
                 "-c",
+                f"writer=$(cat {writer_pid_path} 2>/dev/null); "
+                'if [ -n "$writer" ]; then kill -- "-$writer" || true; fi; '
                 f"rm -f {typo_config_path} {users_config_path} {pipe_path} "
                 "/etc/clickhouse-server/users_pipe.d "
-                "/etc/clickhouse-server/users_pipe_source.xml; "
-                "pkill -f 'users_pipe_source.xml' || true",
+                f"/etc/clickhouse-server/users_pipe_source.xml {writer_pid_path}",
             ]
         )
         node.query("SYSTEM RELOAD CONFIG")
