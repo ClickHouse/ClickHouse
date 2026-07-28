@@ -165,7 +165,9 @@ namespace
         void performSinglepartUpload()
         {
             auto block_blob_client = client->GetBlockBlobClient(dest_blob);
-            auto read_buffer = create_read_buffer();
+            /// Skip the first `offset` bytes of the source, same as the multipart path
+            /// (processUploadPartRequest); otherwise a ranged copy reads from byte 0.
+            auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), offset, total_size);
 
             PODArray<char> memory;
             {
