@@ -1,6 +1,8 @@
 #include <Common/PageCache.h>
 
+#if !defined(OS_WINDOWS)
 #include <sys/mman.h>
+#endif
 #include <Common/Allocator.h>
 #include <Common/JemallocCacheAllocator.h>
 #include <Common/MemoryTracker.h>
