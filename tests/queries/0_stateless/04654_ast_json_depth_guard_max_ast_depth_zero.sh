@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-old-analyzer
+# ^ `QueryNormalizer` treats `max_ast_depth = 0` as a literal limit of zero instead of "no limit",
+#   so with the old analyzer every query below fails with `TOO_DEEP_AST` before it runs.
 
 # `max_ast_depth = 0` disables the semantic AST depth check, but JSON AST deserialization
 # recurses over the JSON document, so the stack-safety ceiling must still apply: an overly
