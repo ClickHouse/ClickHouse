@@ -34,7 +34,11 @@ Join-tree shapes the rewrite does not handle must decline (keep the ARRAY JOIN) 
 1
 1
 1
+1
+1
 A non-LEFT ARRAY JOIN over only-empty arrays leaves the aggregation with no input, so empty_result_for_aggregation_by_empty_set must keep returning an empty result and the rewrite must decline.
+1
+1
 1
 3
 1

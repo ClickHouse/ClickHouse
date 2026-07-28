@@ -77,8 +77,13 @@ SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj
 SELECT (SELECT count() FROM (SELECT id, count() FROM t_count_aj ARRAY JOIN arr AS value GROUP BY id)) = (SELECT count() FROM (SELECT id, count() FROM t_count_aj ARRAY JOIN arr AS value GROUP BY id) SETTINGS optimize_functions_to_subcolumns = 0);
 SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT id, count() FROM t_count_aj ARRAY JOIN arr AS value GROUP BY id) WHERE explain ILIKE '%ARRAY JOIN%';
 
--- With the setting disabled, the optimization must not fire (backward compatible).
+-- With the setting disabled, the optimization must not fire (backward compatible). Assert the ARRAY
+-- JOIN survives and no sum() replaced the count(), not merely that arr.size0 is absent: this pass and
+-- the downstream subcolumn pass read the same setting, so a size0-only check would still pass if this
+-- pass ignored it and only the subcolumn folding declined.
 SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj ARRAY JOIN arr AS value SETTINGS optimize_functions_to_subcolumns = 0) WHERE explain ILIKE '%arr.size0%';
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj ARRAY JOIN arr AS value SETTINGS optimize_functions_to_subcolumns = 0) WHERE explain ILIKE '%ARRAY JOIN%';
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj ARRAY JOIN arr AS value SETTINGS optimize_functions_to_subcolumns = 0) WHERE explain ILIKE '%sum(length%';
 
 SELECT 'A non-LEFT ARRAY JOIN over only-empty arrays leaves the aggregation with no input, so empty_result_for_aggregation_by_empty_set must keep returning an empty result and the rewrite must decline.';
 DROP TABLE IF EXISTS t_count_aj_empty;
@@ -88,7 +93,11 @@ INSERT INTO t_count_aj_empty SELECT number, [], map() FROM numbers(3);
 SELECT count() FROM t_count_aj_empty ARRAY JOIN arr SETTINGS empty_result_for_aggregation_by_empty_set = 1;
 SELECT count(*) FROM t_count_aj_empty ARRAY JOIN arr SETTINGS empty_result_for_aggregation_by_empty_set = 1;
 SELECT count() FROM t_count_aj_empty ARRAY JOIN m SETTINGS empty_result_for_aggregation_by_empty_set = 1;
+-- Assert the ARRAY JOIN is still there, not just that arr.size0 is absent: a pass that ignored the
+-- setting would drop the ARRAY JOIN for a plain sum(length(arr)) and still satisfy a size0-only check.
 SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj_empty ARRAY JOIN arr SETTINGS empty_result_for_aggregation_by_empty_set = 1) WHERE explain ILIKE '%arr.size0%';
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj_empty ARRAY JOIN arr SETTINGS empty_result_for_aggregation_by_empty_set = 1) WHERE explain ILIKE '%ARRAY JOIN%';
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj_empty ARRAY JOIN arr SETTINGS empty_result_for_aggregation_by_empty_set = 1) WHERE explain ILIKE '%sum(length%';
 -- The setting is per-query-scope, so an inner SELECT that carries it must decline on its own.
 SELECT * FROM (SELECT count() FROM t_count_aj_empty ARRAY JOIN arr SETTINGS empty_result_for_aggregation_by_empty_set = 1);
 -- LEFT ARRAY JOIN emits one row per input row, so its aggregation input is empty only when the table
