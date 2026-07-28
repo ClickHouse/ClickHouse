@@ -7,6 +7,7 @@
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Functions/geometryConverters.h>
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -122,6 +123,46 @@ inline void skipWKTSeparators(ReadBuffer & in_buffer)
         in_buffer.ignore();
 }
 
+/// After the type keyword the grammar allows either the coordinate list, which starts with '(',
+/// or the token EMPTY in place of it: "LINESTRING EMPTY" == "LINESTRING()". Returns true for the
+/// EMPTY form. Any other token is invalid WKT (readWKT rejects it too), so it is reported here
+/// rather than left half-consumed for readOpenBracket, which would accept the '(' that follows
+/// and silently import "LINESTRING E(1 1, 2 2)".
+/// Called ONLY right after the type keyword: EMPTY is not a list element, so "POLYGON(EMPTY)"
+/// keeps failing, as it does in readWKT.
+inline bool readWKTEmptyToken(ReadBuffer & in_buffer)
+{
+    skipWKTSeparators(in_buffer);
+    char ch = 0;
+    /// At EOF let readOpenBracket report the missing '('.
+    if (!in_buffer.peek(ch) || ch == '(')
+        return false;
+
+    std::string token;
+    while (in_buffer.peek(ch) && !isWKTSeparator(ch) && ch != '(')
+    {
+        token.push_back(ch);
+        in_buffer.ignore();
+    }
+    if (!boost::iequals(token, "EMPTY"))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: expected '(' or EMPTY, got {}", token);
+    return true;
+}
+
+/// "()" (separators allowed in between) is an empty element list: "LINESTRING()" == "LINESTRING
+/// EMPTY". Legal at every nesting depth, so "POLYGON(())" is a polygon with one empty ring.
+/// Call right after readOpenBracket; consumes the closing ')' when the list is empty.
+inline bool checkWKTEmptyList(ReadBuffer & in_buffer)
+{
+    skipWKTSeparators(in_buffer);
+    char ch = 0;
+    if (!in_buffer.peek(ch) || ch != ')')
+        return false;
+    in_buffer.ignore();
+    return true;
+}
+
 inline CartesianPoint parseWKTPoint(ReadBuffer & in_buffer, bool precise_float_parsing)
 {
     Float64 x = 0;
@@ -180,6 +221,8 @@ inline LineString<CartesianPoint> parseWKTLine(ReadBuffer & in_buffer, bool prec
 {
     LineString<CartesianPoint> ls;
     readOpenBracket(in_buffer);
+    if (checkWKTEmptyList(in_buffer))
+        return ls;
     while (true)
     {
         ls.push_back(parseWKTPoint(in_buffer, precise_float_parsing));
@@ -193,6 +236,8 @@ inline Ring<CartesianPoint> parseWKTRing(ReadBuffer & in_buffer, bool precise_fl
 {
     Ring<CartesianPoint> ring;
     readOpenBracket(in_buffer);
+    if (checkWKTEmptyList(in_buffer))
+        return ring;
     while (true)
     {
         ring.push_back(parseWKTPoint(in_buffer, precise_float_parsing));
@@ -206,6 +251,8 @@ inline Polygon<CartesianPoint> parseWKTPolygon(ReadBuffer & in_buffer, bool prec
 {
     Polygon<CartesianPoint> poly;
     readOpenBracket(in_buffer);
+    if (checkWKTEmptyList(in_buffer))
+        return poly;
     bool should_complete_outer = true;
     while (true)
     {
@@ -229,6 +276,8 @@ inline MultiPoint<CartesianPoint> parseWKTMultiPoint(ReadBuffer & in_buffer, boo
 {
     MultiPoint<CartesianPoint> result;
     readOpenBracket(in_buffer);
+    if (checkWKTEmptyList(in_buffer))
+        return result;
     while (true)
     {
         /// Both MULTIPOINT (1 1, 2 2) and MULTIPOINT ((1 1), (2 2)) are valid WKT spellings.
@@ -253,6 +302,8 @@ inline MultiLineString<CartesianPoint> parseWKTMultiLineString(ReadBuffer & in_b
 {
     MultiLineString<CartesianPoint> result;
     readOpenBracket(in_buffer);
+    if (checkWKTEmptyList(in_buffer))
+        return result;
     while (true)
     {
         result.push_back(parseWKTLine(in_buffer, precise_float_parsing));
@@ -266,6 +317,8 @@ inline MultiPolygon<CartesianPoint> parseWKTMultiPolygon(ReadBuffer & in_buffer,
 {
     MultiPolygon<CartesianPoint> poly;
     readOpenBracket(in_buffer);
+    if (checkWKTEmptyList(in_buffer))
+        return poly;
     while (true)
     {
         poly.push_back(parseWKTPolygon(in_buffer, precise_float_parsing));
@@ -293,24 +346,56 @@ GeometricObject parseWKTFormat(ReadBuffer & in_buffer, bool precise_float_parsin
         in_buffer.ignore();
     }
 
+    /// The keyword is matched case-insensitively with boost::iequals, like readWKT
+    /// (boost::geometry::read_wkt). Diagnostics keep the original spelling.
     GeometricObject result;
-    if (type == "POINT")
+    if (boost::iequals(type, "POINT"))
     {
+        /// A ClickHouse Point is Tuple(Float64, Float64) with no empty representation, so
+        /// "POINT EMPTY" is rejected here as it is in readWKT (#110692). Report it explicitly
+        /// instead of failing on the missing '('.
+        if (readWKTEmptyToken(in_buffer))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: empty points are not supported");
         readOpenBracket(in_buffer);
         auto point = parseWKTPoint(in_buffer, precise_float_parsing);
         readCloseBracket(in_buffer);
         result = point;
     }
-    else if (type == "LINESTRING")
-        result = parseWKTLine(in_buffer, precise_float_parsing);
-    else if (type == "POLYGON")
-        result = parseWKTPolygon(in_buffer, precise_float_parsing);
-    else if (type == "MULTIPOINT")
-        result = parseWKTMultiPoint(in_buffer, precise_float_parsing);
-    else if (type == "MULTILINESTRING")
-        result = parseWKTMultiLineString(in_buffer, precise_float_parsing);
-    else if (type == "MULTIPOLYGON")
-        result = parseWKTMultiPolygon(in_buffer, precise_float_parsing);
+    else if (boost::iequals(type, "LINESTRING"))
+    {
+        if (readWKTEmptyToken(in_buffer))
+            result = LineString<CartesianPoint>{};
+        else
+            result = parseWKTLine(in_buffer, precise_float_parsing);
+    }
+    else if (boost::iequals(type, "POLYGON"))
+    {
+        if (readWKTEmptyToken(in_buffer))
+            result = Polygon<CartesianPoint>{};
+        else
+            result = parseWKTPolygon(in_buffer, precise_float_parsing);
+    }
+    else if (boost::iequals(type, "MULTIPOINT"))
+    {
+        if (readWKTEmptyToken(in_buffer))
+            result = MultiPoint<CartesianPoint>{};
+        else
+            result = parseWKTMultiPoint(in_buffer, precise_float_parsing);
+    }
+    else if (boost::iequals(type, "MULTILINESTRING"))
+    {
+        if (readWKTEmptyToken(in_buffer))
+            result = MultiLineString<CartesianPoint>{};
+        else
+            result = parseWKTMultiLineString(in_buffer, precise_float_parsing);
+    }
+    else if (boost::iequals(type, "MULTIPOLYGON"))
+    {
+        if (readWKTEmptyToken(in_buffer))
+            result = MultiPolygon<CartesianPoint>{};
+        else
+            result = parseWKTMultiPolygon(in_buffer, precise_float_parsing);
+    }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: type {}", type);
 
