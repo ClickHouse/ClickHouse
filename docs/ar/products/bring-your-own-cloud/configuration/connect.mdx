@@ -11,6 +11,24 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 توضح هذه الصفحة الطرق المختلفة للاتصال بخدمات ClickHouse لديك في BYOC. يمكنك الاختيار بين موازنات التحميل العامة، أو موازنات التحميل الخاصة، أو نقاط النهاية الخاصة بـ PrivateLink/Private Service Connect، وذلك استنادًا إلى متطلبات الأمان والشبكة لديك.
 
+<div id="connection-via">
+  ## اختيار مسار اتصال في وحدة التحكم
+</div>
+
+تتوفر تفاصيل الاتصال لكل خدمة BYOC في وحدة تحكم ClickHouse Cloud: افتح الخدمة وانقر على **Connect**.
+
+بالنسبة إلى خدمات BYOC، يتضمن مربع الحوار **Connect** قائمة منسدلة باسم **Connection via**. استخدمها لاختيار طريقة الوصول إلى الخدمة:
+
+* **موازن التحميل العام** — نقطة النهاية المتاحة عبر الإنترنت.
+* **موازن التحميل الخاص** — نقطة النهاية الداخلية التي يتم الوصول إليها عبر VPC peering أو الشبكات المتصلة. لا تظهر إلا عند تمكين [موازن التحميل الخاص](#private-load-balancer) لبنيتك التحتية.
+* **PrivateLink** (AWS) / **Private Service Connect** (GCP) — اسم مضيف نقطة النهاية الخاصة لدى موفر السحابة. لا يظهر إلا عند تمكين [PrivateLink or Private Service Connect](#privatelink-or-private-service-connect).
+
+يؤدي اختيار مسار إلى تحديث اسم المضيف في جميع أمثلة الاتصال داخل مربع الحوار — أمر HTTPS (`curl`)، والعميل الأصلي، وJDBC، وMySQL، ومقتطفات عملاء اللغات (بايثون، وNode.js، وJava، وGo، وC#) — بحيث يمكنك نسخ أمر جاهز للاستخدام للمسار الذي تحتاجه بالضبط من دون تعديل اسم المضيف يدويًا.
+
+لا تعرض القائمة المنسدلة إلا المسارات المُمكّنة لبنيتك التحتية، ويُحدَّث محتواها في كل مرة يُفتح فيها مربع الحوار — لذلك يظهر موازن التحميل الخاص أو نقطة نهاية PrivateLink المُمكّنة حديثًا عند فتح **Connect** في المرة التالية، من دون أي تأخير في الانتشار. وعندما لا يتوفر سوى مسار واحد، تظهر القائمة المنسدلة معطلة مع تحديد نقطة النهاية تلك.
+
+<Image img="/images/cloud/reference/byoc-connect-via.png" size="lg" alt="مربع الحوار Connect مع توسيع القائمة المنسدلة Connection via، ويعرض مسارات موازن التحميل العام وموازن التحميل الخاص وPrivateLink" background="black" />
+
 <div id="public-load-balancer">
   ## موازن التحميل العام
 </div>
@@ -71,12 +89,15 @@ sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com
 
 1. **فعِّل موازن التحميل الخاص** (إذا لم يكن مفعّلًا بالفعل). تواصل مع ClickHouse Support إذا كنت بحاجة إلى [تمكين موازن تحميل خاص](/ar/products/bring-your-own-cloud/configuration/configurations#load-balancers) لنشرك.
 2. **تأكّد من توفّر الاتصال بالشبكة**:
-   * بالنسبة إلى VPC peering: أكمل إعداد VPC peering (راجع [إعداد الشبكات الخاصة](/ar/products/bring-your-own-cloud/onboarding/network))
+   * بالنسبة إلى VPC peering: أكمل إعداد VPC peering (راجع [Private Networking Setup](/ar/products/bring-your-own-cloud/onboarding/network))
    * بالنسبة إلى الشبكات الخاصة الأخرى: تأكّد من تكوين التوجيه للوصول إلى VPC الخاص بـ BYOC
 3. **احصل على نقطة النهاية الخاصة بك**:
    تتوفّر نقطة النهاية الخاصة في وحدة تحكم ClickHouse Cloud ضمن قسم &quot;Connect&quot; في خدمتك. تأتي نقطة النهاية الخاصة بالتنسيق نفسه المستخدم في نقطة النهاية العامة، ولكن مع إضافة اللاحقة `-private` إلى جزء معرّف الخدمة. على سبيل المثال:
+
    * **نقطة النهاية العامة**: `sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
    * **نقطة النهاية الخاصة**: `sb9jmrq2ne-private.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
+
+   بدلًا من تكوين اسم المضيف `-private` يدويًا، اختر **Private load balancer** من القائمة المنسدلة **Connection via** في مربع الحوار **Connect** لنسخ نقطة النهاية وأوامر الاتصال الجاهزة مباشرةً.
 
 <div id="public-ip-filtering">
   ### تصفية عناوين IP
@@ -114,12 +135,14 @@ sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com
   ### الاتصال عبر PrivateLink/Private Service Connect
 </div>
 
-أكمل إعداد PrivateLink أو Private Service Connect (راجع [إعداد الشبكات الخاصة](/ar/products/bring-your-own-cloud/onboarding/network)). بعد اكتمال الإعداد، يمكنك الاتصال بخدمة ClickHouse الخاصة بك باستخدام تنسيق نقطة نهاية خاص بـ PrivateLink. تتضمن نقطة نهاية PrivateLink نطاقًا فرعيًا `vpce` للإشارة إلى أن التوجيه يتم عبر نقطة نهاية VPC. ويقوم تحليل DNS داخل VPC لديك بتوجيه حركة المرور تلقائيًا عبر نقطة نهاية PrivateLink.
+أكمل إعداد PrivateLink أو Private Service Connect (راجع [Private Networking Setup](/ar/products/bring-your-own-cloud/onboarding/network)). بعد اكتمال الإعداد، يمكنك الاتصال بخدمة ClickHouse الخاصة بك باستخدام تنسيق نقطة نهاية خاص بـ PrivateLink. تتضمن نقطة نهاية PrivateLink نطاقًا فرعيًا `vpce` للإشارة إلى أن التوجيه يتم عبر نقطة نهاية VPC. ويقوم تحليل DNS داخل VPC لديك بتوجيه حركة المرور تلقائيًا عبر نقطة نهاية PrivateLink.
 
 يشبه تنسيق نقطة نهاية PrivateLink نقطة النهاية العامة، لكنه يتضمن نطاقًا فرعيًا `vpce` بين النطاق الفرعي للخدمة والنطاق الفرعي للبنية التحتية الخاصة بـ BYOC. على سبيل المثال:
 
 * **نقطة النهاية العامة**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
 * **نقطة نهاية PrivateLink**: `h5ju65kv87.vpce.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+
+بمجرد إعداد نقطة النهاية وإضافتها إلى قائمة السماح، حدِّد **PrivateLink** (أو **Private Service Connect** على GCP) من القائمة المنسدلة **Connection via** في مربع الحوار **Connect** لنسخ تفاصيل الاتصال الخاصة بنقطة النهاية الخاصة مباشرةً.
 
 <div id="endpoint-id-allowlist">
   ### قائمة السماح لـ Endpoint ID

@@ -63,6 +63,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
+#include <IO/AsyncReadCounters.h>
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
@@ -412,7 +413,8 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
 
     element.thread_ids = info.thread_ids;
     element.peak_threads_usage = info.peak_threads_usage;
-    element.profile_counters = info.profile_counters;
+    if (info.profile_counters)
+        element.profile_counters = *info.profile_counters;
 
     /// We need to refresh the access info since dependent views might have added extra information, either during
     /// creation of the view (PushingToViews chain) or while executing its internal SELECT
@@ -446,7 +448,17 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
         element.used_sql_user_defined_functions = factories_info.sql_user_defined_functions;
     }
 
-    element.async_read_counters = context_ptr->getAsyncReadCounters();
+    if (auto async_read_counters = context_ptr->getAsyncReadCounters())
+    {
+        auto add_counter = [&](const char * name, size_t value)
+        {
+            if (value)
+                element.async_read_counters.emplace(name, value);
+        };
+        add_counter("max_parallel_read_tasks", async_read_counters->max_parallel_read_tasks.load(std::memory_order_relaxed));
+        add_counter("max_parallel_prefetch_tasks", async_read_counters->max_parallel_prefetch_tasks.load(std::memory_order_relaxed));
+        add_counter("total_prefetch_tasks", async_read_counters->total_prefetch_tasks.load(std::memory_order_relaxed));
+    }
     addPrivilegesInfoToQueryLogElement(element, context_ptr);
 }
 
@@ -535,7 +547,7 @@ QueryLogElement logQueryStart(
             interpreter->extendQueryLogElem(elem, query_ast, context, query_database, query_table);
 
         if (settings[Setting::log_query_settings])
-            elem.query_settings = std::make_shared<Settings>(context->getSettingsRef());
+            elem.query_settings = context->getSettingsRef().changedToMap();
 
         elem.log_comment = settings[Setting::log_comment];
         if (elem.log_comment.size() > settings[Setting::max_query_size])
@@ -549,7 +561,7 @@ QueryLogElement logQueryStart(
                     "Not adding query settings to 'system.query_log' since setting `log_query_settings` is false"
                     " (the setting was changed for the query).");
 
-            query_log->add(elem);
+            query_log->add([&](QueryLogElement & e) { e = elem; });
         }
         else if (elem.type < settings[Setting::log_queries_min_type])
         {
@@ -753,7 +765,7 @@ static void logQueryFinishImpl(
             && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
         {
             if (auto query_log = context->getQueryLog())
-                query_log->add(elem);
+                query_log->add([&](QueryLogElement & e) { e = elem; });
         }
 
     }
@@ -890,7 +902,7 @@ void logQueryException(
         && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
     {
         if (auto query_log = context->getQueryLog())
-            query_log->add(elem);
+            query_log->add([&](QueryLogElement & e) { e = elem; });
     }
 
     if (query_span)
@@ -971,7 +983,7 @@ void logExceptionBeforeStart(
         elem.tid = txn->tid;
 
     if (settings[Setting::log_query_settings])
-        elem.query_settings = std::make_shared<Settings>(settings);
+        elem.query_settings = settings.changedToMap();
 
     if (settings[Setting::calculate_text_stack_trace])
         elem.stack_trace = getExceptionStackTraceString(std::current_exception());
@@ -1005,7 +1017,7 @@ void logExceptionBeforeStart(
                     "Not adding query settings to 'system.query_log' since setting `log_query_settings` is false"
                     " (the setting was changed for the query).");
 
-            query_log->add(elem);
+            query_log->add([&](QueryLogElement & e) { e = elem; });
         }
         else if (!settings[Setting::log_queries])
         {
@@ -2019,9 +2031,17 @@ static BlockIO executeQueryImpl(
         if (process_list_entry)
         {
             /// Query was killed before execution
-            if (process_list_entry->getQueryStatus()->isKilled())
+            auto query_status = process_list_entry->getQueryStatus();
+            if (query_status->isKilled())
+            {
+                /// The deadline (max_execution_time) can fire while the query is still pending (e.g. slow to
+                /// analyze/plan). Report it as a timeout, not a generic cancellation, so callers see the same
+                /// TIMEOUT_EXCEEDED they would get had the deadline fired during execution.
+                if (query_status->getCancelReason() == CancelReason::TIMEOUT)
+                    query_status->throwIfKilled();
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
-                    "Query '{}' is killed in pending state", process_list_entry->getQueryStatus()->getInfo().client_info.current_query_id);
+                    "Query '{}' is killed in pending state", query_status->getInfo().client_info.current_query_id);
+            }
         }
 
         /// Hold element of process list till end of query execution.

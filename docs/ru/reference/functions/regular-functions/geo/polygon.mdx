@@ -771,6 +771,78 @@ SELECT polygonsIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535
 
 UInt8: 0 — false, 1 — true
 
+<div id="geometryintersectcartesian">
+  ## geometryIntersectCartesian
+</div>
+
+Возвращает true, если две геометрии пересекаются (то есть имеют общую точку, линию или область).
+
+В отличие от [`polygonsIntersectCartesian`](#polygonsintersectcartesian), функция принимает любой тип геометрических данных
+(`Point`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`), включая универсальный
+тип [`Geometry`](/ru/reference/data-types/geo#geometry), при этом оба аргумента могут быть разных типов.
+
+Координаты заданы в декартовой системе координат.
+
+<div id="example">
+  ### Пример
+</div>
+
+```sql
+SELECT geometryIntersectCartesian([(2., 2.), (2., 3.), (3., 3.), (3., 2.)]::Ring, [(1., 1.), (1., 4.), (4., 4.), (4., 1.)]::Ring)
+```
+
+```response
+1
+```
+
+<div id="input-parameters">
+  ### Входные параметры
+</div>
+
+Две геометрии любого геометрического типа данных (или `Geometry`).
+
+<div id="returned-value">
+  ### Возвращаемое значение
+</div>
+
+UInt8, 0 для false, 1 для true
+
+<div id="geometryintersectspherical">
+  ## geometryIntersectSpherical
+</div>
+
+Возвращает true, если две геометрии пересекаются (то есть имеют хотя бы одну общую точку, линию или область).
+
+В отличие от [`polygonsIntersectSpherical`](#polygonsintersectspherical), принимает любой геометрический тип данных
+(`Point`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`), включая универсальный тип
+[`Geometry`](/ru/reference/data-types/geo#geometry), при этом оба аргумента могут быть разных типов.
+
+Координаты интерпретируются как расположенные на идеальной сфере.
+
+<div id="example">
+  ### Пример
+</div>
+
+```sql
+SELECT geometryIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]]::MultiPolygon, (4.36, 50.85)::Point)
+```
+
+```response
+1
+```
+
+<div id="input-parameters">
+  ### Входные параметры
+</div>
+
+Две геометрии любого геометрического типа данных (или `Geometry`).
+
+<div id="returned-value">
+  ### Возвращаемое значение
+</div>
+
+UInt8: 0 для false, 1 для true
+
 <div id="polygonconvexhullcartesian">
   ## polygonConvexHullCartesian
 </div>

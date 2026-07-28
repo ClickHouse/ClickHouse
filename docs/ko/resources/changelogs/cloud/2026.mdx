@@ -2,14 +2,62 @@
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
 title: 'Cloud 변경 로그 - 2026'
-description: '각 ClickHouse Cloud 릴리스의 새로운 기능과 변경 사항을 설명하는 ClickHouse Cloud 변경 로그'
+description: '각 ClickHouse Cloud 릴리스의 새로운 내용을 설명하는 ClickHouse Cloud 변경 로그입니다'
 doc_type: 'changelog'
-keywords: ['변경 로그', '릴리스 노트', '업데이트', '새로운 기능', 'Cloud 변경 사항']
+keywords: ['변경 로그', '릴리스 노트', '업데이트', '새 기능', 'Cloud 변경 사항']
 ---
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-이 ClickHouse Cloud changelog 외에도 [Cloud 호환성](/ko/products/cloud/guides/cloud-compatibility) 페이지를 참조하십시오.
+이 Cloud 변경 로그와 함께 [Cloud Compatibility](/ko/products/cloud/guides/cloud-compatibility) 페이지도 확인하십시오.
+
+<Update label="2026년 07월 13일">
+  이번 주 업데이트에는 일반 HTTPS를 통한 sticky 레플리카 라우팅, 사용자 지정 청구 주기 시작일, 그리고 객체 스토리지 ClickPipes를 위한 새로운 초기 적재 제어 기능이 포함됩니다.
+
+  ### HTTPS를 통한 sticky 레플리카 라우팅 (비공개 프리뷰)
+
+  이제 일반 서비스 URL에 `?session_id=` 매개변수를 추가하면 별도의 hostname이나 DNS 변경 없이 표준 HTTPS를 통해 쿼리를 특정 레플리카에 고정할 수 있습니다. 이를 통해 임시 테이블과 같은 세션 범위 객체를 여러 쿼리에서 계속 사용할 수 있으며, 반복되는 쿼리가 예열된 레플리카 로컬 캐시를 활용하는 데도 도움이 됩니다. 이 기능은 모든 Enterprise 고객에게 비공개 프리뷰로 순차 배포되고 있으며, Scale 고객은 요청 시 사용할 수 있습니다. 기존의 하위 도메인 기반 라우팅도 계속 작동하지만, 최종적으로는 이 방식으로 이전될 예정입니다. 자세한 내용은 [Replica-aware 라우팅](/ko/manage/replica-aware-routing) 문서를 참조하십시오.
+
+  ### 사용자 지정 청구 주기 시작일
+
+  이제 조직의 청구일, 즉 각 청구 주기가 시작되는 월별 날짜의 변경을 요청할 수 있습니다. 예를 들어 인보이스를 달력 월 기준에 맞출 수 있습니다. 원하는 날짜를 기재하여 지원 티켓을 열어 주십시오. 청구일은 UTC 기준으로 적용되며, 각 인보이스에는 청구일부터 다음 달 같은 날짜 직전까지의 사용량이 포함됩니다.
+
+  ### 객체 스토리지 ClickPipes의 초기 적재 건너뛰기
+
+  이제 객체 스토리지 [ClickPipes](/ko/integrations/clickpipes) (S3, GCS, Azure Blob Storage)에서는 파이프를 생성할 때 초기 적재를 제어하는 두 가지 방법을 제공합니다. **Start after**는 지정된 객체 키까지의 파일(해당 키 포함)을 건너뛰고, **Skip initial load**는 기존 파일을 완전히 건너뛰고 새 객체 알림만 처리합니다. 이전에는 새 파이프가 항상 해당 경로의 모든 파일을 backfill했습니다. 이 두 옵션은 서로 함께 사용할 수 없으며, 특정 파이프에 대해 영구적으로 적용됩니다. 건너뛴 backfill은 나중에 다시 트리거할 수 없습니다. UI, Cloud API, Terraform v3.18.0 이상에서 사용할 수 있습니다.
+</Update>
+
+<Update label="2026년 06월 30일">
+  이번 주 업데이트에는 Postgres 및 ClickHouse internals를 위한 새로운 관측성 기능, Kafka exactly-once 전달을 포함한 ClickPipes 제어 기능 확장, 그리고 Azure Marketplace BYOC, 공식 Airflow provider, ClickHouse Agents 업데이트 등 여러 플랫폼 추가 사항이 포함됩니다.
+
+  ### ClickPipes의 Kafka exactly-once 전달
+
+  이제 [ClickPipes](/ko/integrations/clickpipes/kafka/index) 가져오기 흐름에서 Kafka 가져오기에 대해 exactly-once 전달을 직접 활성화할 수 있으며, 동일한 옵션이 프로그래밍 방식 설정을 위해 Public API에도 제공됩니다.
+
+  ### CDC 소스용 통합 TLS 제어
+
+  이제 CDC 소스 전반에서 TLS 활성화 및 검증 수준이 일관되게 적용됩니다. OpenAPI create 및 update endpoint는 `postgres_skip_cert_verification`, `postgres_disable_tls`, `mongo_skip_cert_verification` 필드를 전달하므로 API를 통해 certificate 처리를 관리할 수 있습니다.
+
+  ### 복제된 데이터베이스가 ClickPipes 선택기로 복귀
+
+  이제 복제된 데이터베이스를 ClickPipes 대상 선택기에서 다시 선택할 수 있습니다.
+
+  ### ClickHouse Agents 업데이트 (공개 베타)
+
+  이제 [ClickHouse Agents](/ko/products/cloud/features/ai-ml/agents/index)는 대화를 정리하기 위한 Chat Projects, token 및 context-window 사용량을 보여주는 context usage gauge, agent가 작성한 스킬, 그리고 ClickHouse 모범 사례 스킬 번들을 지원합니다. 이번 릴리스에는 설정, 탐색, 단축키, 고정 기능에 대한 개선 사항도 포함됩니다.
+
+  ### Azure Marketplace의 ClickHouse BYOC
+
+  이제 ClickHouse [Bring Your Own Cloud](/ko/products/cloud/guides/infrastructure/deployment-options/byoc/overview)가 Azure Marketplace에 등록되어, 고객은 Private Offer를 통해 구매하고 Azure account를 통해 청구되는 BYOC를 배포할 수 있습니다. 플랫폼 측에는 Azure BYOC marketplace listing 및 product ID에 대한 청구 지원도 추가되었습니다.
+
+  ### 공식 ClickHouse Airflow provider
+
+  이제 ClickHouse용 공식 Apache Airflow provider를 PyPI에서 사용할 수 있으며 Airflow registry에도 등록되어, ClickHouse로 데이터를 보내고 가져오는 데 기존 community plugin에 의존하던 방식을 대체합니다.
+
+  ### 청구 가시성 및 marketplace 개선 사항
+
+  이제 청구에는 셀프서비스 credit 이력 테이블, 사용 및 만료 금액을 보여주는 prepaid summary, 그리고 GCP MPPO 이메일 지원이 포함됩니다.
+</Update>
 
 <Update label="2026년 6월 3일">
   Open House 2026 주간에는 데이터가 위치한 환경에서 ClickHouse를 실행하고 에이전트형 AI 지원 워크플로우를 플랫폼에 통합하는 것을 중심으로 다양한 신규 출시가 잇따랐습니다.
@@ -139,10 +187,10 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
   ### 데이터 카탈로그 통합 확장
 
-  데이터 소스 UI를 통한 [데이터 카탈로그 통합](/ko/products/cloud/features/data-catalogs) 지원이 확대되어, 더 많은 인증 방식, 테이블 형식, 데이터 카탈로그 유형을 지원합니다.
+  데이터 소스 UI를 통한 [Data Catalog 통합](/ko/products/cloud/features/data-catalogs) 지원이 확대되어, 더 많은 인증 방식, 테이블 형식, 데이터 카탈로그 유형을 지원합니다.
 
   * [AWS Glue Catalog](/ko/guides/use-cases/data-warehousing/glue-catalog)에 대한 IAM 지원
-  * 데이터 카탈로그 통합용 [BigLake Metastore](/ko/guides/use-cases/data-warehousing/biglake-catalog) 지원
+  * Data Catalog 통합용 [BigLake Metastore](/ko/guides/use-cases/data-warehousing/biglake-catalog) 지원
   * [Unity Catalog](/ko/guides/use-cases/data-warehousing/unity-catalog)의 Delta Tables 지원
 </Update>
 
@@ -159,7 +207,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
   ### ClickPipes용 Terraform 및 OpenAPI (일반 제공)
 
-  ClickHouse [Terraform 프로바이더](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs)의 ClickPipes 리소스가 이제 안정 릴리스의 일부로 일반 제공되며, [OpenAPI 엔드포인트](/ko/api-reference/organization/get-list-of-available-organizations)도 더 이상 베타로 표시되지 않습니다. 여기에는 CDC 커넥터(Postgres, MySQL, MongoDB)에 대한 전체 지원이 포함됩니다. 자세한 내용은 [Terraform 문서](/ko/integrations/clickpipes/programmatic-access/terraform), [OpenAPI 문서](/ko/integrations/clickpipes/programmatic-access/openapi), [블로그 게시물](https://clickhouse.com/blog/terraform-ga)을 참조하십시오.
+  ClickHouse [Terraform 프로바이더](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs)의 ClickPipes 리소스가 이제 안정 릴리스의 일부로 일반 제공되며, [OpenAPI 엔드포인트](/ko/products/cloud/api-reference/organization/get-list-of-available-organizations)도 더 이상 베타로 표시되지 않습니다. 여기에는 CDC 커넥터(Postgres, MySQL, MongoDB)에 대한 전체 지원이 포함됩니다. 자세한 내용은 [Terraform 문서](/ko/integrations/clickpipes/programmatic-access/terraform), [OpenAPI 문서](/ko/integrations/clickpipes/programmatic-access/openapi), [블로그 게시물](https://clickhouse.com/blog/terraform-ga)을 참조하십시오.
 </Update>
 
 <Update label="2026년 4월 17일">

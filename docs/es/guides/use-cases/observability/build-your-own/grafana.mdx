@@ -38,7 +38,7 @@ Una vez configurado, puedes ir a [Grafana Explore](https://grafana.com/docs/graf
   ## Logs
 </div>
 
-Si cumples con los requisitos de Grafana para logs, puedes seleccionar `Query Type: Log` en el constructor de consultas y hacer clic en `Run Query`. El constructor de consultas creará una consulta para mostrar los logs y garantizar que se rendericen correctamente, p. ej.
+Si cumples con los requisitos de Grafana para logs, puedes seleccionar `Query Type: Log` en el constructor de consultas y hacer clic en `Run Query`. El constructor de consultas formulará una consulta para listar los logs y garantizar que se muestren correctamente, p. ej.
 
 ```sql
 SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as traceID FROM "default"."otel_logs" WHERE ( timestamp >= $__fromTime AND timestamp <= $__toTime ) ORDER BY timestamp DESC LIMIT 1000

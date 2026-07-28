@@ -50,175 +50,167 @@ TLS включается путём указания `spec.settings.tls.serverCe
   если не задано `enabled: true`.
 </Note>
 
-<div id="step-1-ca">
-  ## Шаг 1 — Инициализируйте CA с помощью cert-manager
-</div>
+<Steps>
+  <Step title="Подготовьте CA с помощью cert-manager" id="step-1-ca">
+    Наиболее воспроизводимый вариант — использовать самоподписанный CA, который затем подписывает
+    сертификат сервера. Это даёт вам стабильный `ca.crt`, которому могут доверять клиенты.
 
-Наиболее воспроизводимый вариант настройки — самоподписанный центр сертификации (CA), который затем подписывает сертификат сервера.
-Это даёт вам стабильный `ca.crt`, которому могут доверять клиенты.
-
-```yaml
-# A self-signed issuer used only to mint the CA certificate
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: selfsigned-bootstrap
-  namespace: <namespace>
-spec:
-  selfSigned: {}
----
-# The CA certificate itself
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: clickhouse-ca
-  namespace: <namespace>
-spec:
-  isCA: true
-  commonName: clickhouse-ca
-  secretName: clickhouse-ca
-  privateKey:
-    algorithm: ECDSA
-    size: 256
-  issuerRef:
-    name: selfsigned-bootstrap
+    ```yaml
+    # A self-signed issuer used only to mint the CA certificate
+    apiVersion: cert-manager.io/v1
     kind: Issuer
----
-# A CA issuer that signs leaf certificates from the CA above
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: clickhouse-ca-issuer
-  namespace: <namespace>
-spec:
-  ca:
-    secretName: clickhouse-ca
-```
-
-В продакшне замените самоподписанный bootstrap на реальный центр сертификации (корпоративный CA, Vault, ACME и т. д.). Меняется только Step 2 — конфигурация кластера
-остается той же.
-
-<div id="step-2-cert">
-  ## Шаг 2 — Выпустите сертификат сервера
-</div>
-
-Запросите конечный сертификат у CA. Значения `dnsNames` должны охватывать все способы,
-которыми клиенты обращаются к подам. Оператор создает один **headless** Service с именем
-`<cluster-name>-clickhouse-headless`, и каждый под реплики доступен по адресу
-`<cluster-name>-clickhouse-<shard>-<index>-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local`.
-Подстановочный знак для домена headless Service покрывает все реплики:
-
-```yaml
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: clickhouse-server
-  namespace: <namespace>
-spec:
-  secretName: clickhouse-cert        # <-- the Secret the operator will read
-  duration: 8760h                    # 1 year
-  renewBefore: 720h                  # rotate 30 days early
-  issuerRef:
-    name: clickhouse-ca-issuer
+    metadata:
+      name: selfsigned-bootstrap
+      namespace: <namespace>
+    spec:
+      selfSigned: {}
+    ---
+    # The CA certificate itself
+    apiVersion: cert-manager.io/v1
+    kind: Certificate
+    metadata:
+      name: clickhouse-ca
+      namespace: <namespace>
+    spec:
+      isCA: true
+      commonName: clickhouse-ca
+      secretName: clickhouse-ca
+      privateKey:
+        algorithm: ECDSA
+        size: 256
+      issuerRef:
+        name: selfsigned-bootstrap
+        kind: Issuer
+    ---
+    # A CA issuer that signs leaf certificates from the CA above
+    apiVersion: cert-manager.io/v1
     kind: Issuer
-  dnsNames:
-    - "*.<cluster-name>-clickhouse-headless.<namespace>.svc"
-    - "*.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local"
-    - "localhost"
-```
+    metadata:
+      name: clickhouse-ca-issuer
+      namespace: <namespace>
+    spec:
+      ca:
+        secretName: clickhouse-ca
+    ```
 
-<Note>
-  Оператор **не** создаёт общекластерный Service (с балансировкой нагрузки). Если вам
-  нужна единая стабильная конечная точка для подключения, создайте собственный Service `ClusterIP`,
-  выбирающий поды кластера, и добавьте его DNS-имя в `dnsNames` выше.
-</Note>
+    В продакшне замените самоподписанный bootstrap на реальный issuer (корпоративный CA, Vault, ACME и т. д.). Меняется только шаг 2 — схема подключения кластера остаётся той же.
+  </Step>
 
-cert-manager создаёт Secret `clickhouse-cert` с `tls.crt`, `tls.key` и
-`ca.crt` и обновляет его до истечения срока действия. Убедитесь, что он существует:
+  <Step title="Выпустите сертификат сервера" id="step-2-cert">
+    Запросите конечный сертификат у CA. Значения `dnsNames` должны охватывать все способы,
+    которыми клиенты обращаются к подам. Оператор создает один **headless** Service с именем
+    `<cluster-name>-clickhouse-headless`, и каждый под реплики доступен по адресу
+    `<cluster-name>-clickhouse-<shard>-<index>-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local`.
+    Подстановочный знак для домена headless Service покрывает все реплики:
 
-```bash
-kubectl -n <namespace> get secret clickhouse-cert -o jsonpath='{.data}' | jq 'keys'
-# ["ca.crt","tls.crt","tls.key"]
-```
+    ```yaml
+    apiVersion: cert-manager.io/v1
+    kind: Certificate
+    metadata:
+      name: clickhouse-server
+      namespace: <namespace>
+    spec:
+      secretName: clickhouse-cert        # <-- the Secret the operator will read
+      duration: 8760h                    # 1 year
+      renewBefore: 720h                  # rotate 30 days early
+      issuerRef:
+        name: clickhouse-ca-issuer
+        kind: Issuer
+      dnsNames:
+        - "*.<cluster-name>-clickhouse-headless.<namespace>.svc"
+        - "*.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local"
+        - "localhost"
+    ```
 
-<div id="step-3-enable">
-  ## Шаг 3 — Включите TLS в кластере
-</div>
+    <Note>
+      Оператор **не** создаёт общекластерный Service (с балансировкой нагрузки). Если вам
+      нужна единая стабильная конечная точка для подключения, создайте собственный Service `ClusterIP`,
+      выбирающий поды кластера, и добавьте его DNS-имя в `dnsNames` выше.
+    </Note>
 
-Укажите Secret для кластера:
+    cert-manager создаёт Secret `clickhouse-cert` с `tls.crt`, `tls.key` и
+    `ca.crt` и обновляет его до истечения срока действия. Убедитесь, что он существует:
 
-```yaml
-apiVersion: clickhouse.com/v1alpha1
-kind: ClickHouseCluster
-metadata:
-  name: <cluster-name>
-  namespace: <namespace>
-spec:
-  settings:
-    tls:
-      enabled: true
-      required: true            # disable the insecure ports entirely
-      serverCertSecret:
-        name: clickhouse-cert
-```
+    ```bash
+    kubectl -n <namespace> get secret clickhouse-cert -o jsonpath='{.data}' | jq 'keys'
+    # ["ca.crt","tls.crt","tls.key"]
+    ```
+  </Step>
 
-<div id="what-the-operator-does">
-  ### Что делает оператор
-</div>
+  <Step title="Включите TLS в кластере" id="step-3-enable">
+    Настройте кластер на использование Secret:
 
-Когда `tls.enabled: true`, оператор:
+    ```yaml
+    apiVersion: clickhouse.com/v1alpha1
+    kind: ClickHouseCluster
+    metadata:
+      name: <cluster-name>
+      namespace: <namespace>
+    spec:
+      settings:
+        tls:
+          enabled: true
+          required: true            # disable the insecure ports entirely
+          serverCertSecret:
+            name: clickhouse-cert
+    ```
 
-* **Открывает защищенные порты** на каждом поде и в headless Service: `9440`
-  (native TLS) и `8443` (HTTPS). Они добавляются наряду с уже существующими портами.
-* **Монтирует Secret** в `/etc/clickhouse-server/tls/` и генерирует
-  блок ClickHouse `openSSL` с `verificationMode: relaxed`,
-  `disableProtocols: sslv2,sslv3` и `preferServerCiphers: true`. Это
-  настройки по умолчанию — чтобы переопределить их, см. [Настройка параметров TLS](#custom-tls-settings).
+    ### Что делает оператор
 
-Если также задать `required: true`, оператор дополнительно:
+    Когда задано `tls.enabled: true`, оператор:
 
-* **Удаляет незащищенные порты** `9000` (native) и `8123` (HTTP) — остаются только TLS-варианты, поэтому клиенты без TLS больше не смогут подключаться.
-* **Переключает liveness probe пода** на защищенный native-порт `9440`, чтобы проверка
-  работоспособности продолжала работать без plaintext listener.
+    * **Открывает защищённые порты** на каждом поде и в headless Service: `9440`
+      (native TLS) и `8443` (HTTPS). Они добавляются наряду с уже существующими портами.
+    * **Монтирует Secret** в `/etc/clickhouse-server/tls/` и генерирует блок
+      ClickHouse `openSSL` с `verificationMode: relaxed`,
+      `disableProtocols: sslv2,sslv3` и `preferServerCiphers: true`. Это значения
+      по умолчанию — чтобы переопределить их, см. [Настройка параметров TLS](#custom-tls-settings).
 
-<Note>
-  Порты TLS `8443` и `9440` резервируются вебхуком **безусловно**,
-  даже когда TLS отключен, поэтому последующее переключение `tls.enabled` никогда не приводит к конфликту с
-  элементом `spec.additionalPorts`. См.
-  [Configuration → `additionalPorts`](/ru/products/kubernetes-operator/guides/configuration#additional-ports).
-</Note>
+    Если также задано `required: true`, оператор дополнительно:
 
-<div id="step-4-connect">
-  ## Шаг 4 — Подключение по TLS
-</div>
+    * **Удаляет небезопасные порты** `9000` (native) и `8123` (HTTP) — остаются только TLS-
+      варианты, поэтому клиенты, работающие без шифрования, больше не смогут подключаться.
+    * **Переключает проверку работоспособности пода** на защищённый native-порт `9440`, чтобы
+      проверка состояния продолжала работать без слушателя plaintext.
 
-При `required: true` клиенты должны использовать защищённые порты и доверять CA. Обращайтесь
-к конкретному поду реплики через headless Service (или через собственный Service
-типа `Кластерный IP`, если вы его создали).
+    <Note>
+      Порты TLS `8443` и `9440` **безусловно** зарезервированы вебхуком,
+      даже когда TLS отключён, поэтому последующее переключение `tls.enabled` никогда не приведёт к конфликту с
+      записью `spec.additionalPorts`. См.
+      [Конфигурация → `additionalPorts`](/ru/products/kubernetes-operator/guides/configuration#additional-ports).
+    </Note>
+  </Step>
 
-**Собственный протокол** (`clickhouse-client`, порт `9440`):
+  <Step title="Подключение по TLS" id="step-4-connect">
+    При `required: true` клиенты должны использовать защищённые порты и доверять CA. Обращайтесь
+    к конкретному поду реплики через headless Service (или через собственный Service `ClusterIP`,
+    если вы его создали).
 
-```bash
-clickhouse-client --secure \
-  --host <cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local \
-  --port 9440 \
-  --ca-certificate /path/to/ca.crt \
-  --query "SELECT 1"
-```
+    **Собственный протокол** (`clickhouse-client`, порт `9440`):
 
-**HTTPS** (порт `8443`):
+    ```bash
+    clickhouse-client --secure \
+      --host <cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local \
+      --port 9440 \
+      --ca-certificate /path/to/ca.crt \
+      --query "SELECT 1"
+    ```
 
-```bash
-curl --cacert /path/to/ca.crt \
-  "https://<cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local:8443/?query=SELECT%201"
-```
+    **HTTPS** (порт `8443`):
 
-Получите `ca.crt` напрямую из объекта Secret для локального тестирования:
+    ```bash
+    curl --cacert /path/to/ca.crt \
+      "https://<cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local:8443/?query=SELECT%201"
+    ```
 
-```bash
-kubectl -n <namespace> get secret clickhouse-cert \
-  -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
-```
+    Извлеките `ca.crt` непосредственно из Secret для локального тестирования:
+
+    ```bash
+    kubectl -n <namespace> get secret clickhouse-cert \
+      -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
+    ```
+  </Step>
+</Steps>
 
 <div id="keeper-tls">
   ## Шифрование трафика Keeper

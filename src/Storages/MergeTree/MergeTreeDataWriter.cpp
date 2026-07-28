@@ -26,11 +26,14 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/intExp.h>
 #include <Common/logger_useful.h>
@@ -84,6 +87,7 @@ namespace Setting
     extern const SettingsBool throw_on_max_partitions_per_insert_block;
     extern const SettingsUInt64 min_free_disk_bytes_to_perform_insert;
     extern const SettingsFloat min_free_disk_ratio_to_perform_insert;
+    extern const SettingsUInt64 unique_key_max_encoded_size;
 }
 
 namespace MergeTreeSetting
@@ -886,7 +890,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         reservation = data.reserveSpacePreferringTTLRules(metadata_snapshot, expected_size, move_ttl_infos, time(nullptr), 0, true);
     }
 
-    VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
+    /// The `SingleDiskVolume` is stored on the part and lives for its whole lifetime, so build it in
+    /// the dedicated arena (`build()` below self-scopes; the tail metadata is re-homed further down).
+    VolumePtr data_part_volume;
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        data_part_volume = createVolumeFromReservation(reservation, volume);
+    }
 
     /// The part directory name can be non-unique because of stale files from previous runs (an insert
     /// interrupted or rolled back after the directory was created but before it was committed, then
@@ -907,8 +917,17 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         }
     }
 
+    auto part_format = data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr);
+    /// UNIQUE KEY parts must use Full part storage: the dense-index sidecar
+    /// (`unique_key_index.sst`) is opened directly by filesystem path via RocksDB
+    /// `SstFileReader`, which cannot read a file packed inside an archive. Packed
+    /// storage would leave the sidecar existsFile-visible but unopenable, failing
+    /// every subsequent load of the part.
+    if (metadata_snapshot->hasUniqueKey())
+        part_format.storage_type = MergeTreeDataPartStorageType::Full;
+
     auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings(), /*part_may_exist_on_disk=*/ may_exist)
-        .withPartFormat(data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr))
+        .withPartFormat(part_format)
         .withPartInfo(new_part_info)
         .build();
 
@@ -979,6 +998,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     new_data_part->ttl_infos.update(move_ttl_infos);
 
+    /// partition / ttl_infos / minmax (and patch source parts) are built above outside any
+    /// dedicated-arena scope, so they were allocated in the default arenas. Re-home them into the
+    /// dedicated arena, matching the merge / mutation / load paths.
+    new_data_part->moveMetadataToDedicatedArena();
+
     /// Pass empty TTL infos so that `RECOMPRESS` codecs are not selected at insert time;
     /// recompression should happen during merges, not on the initial write path.
     auto compression_codec = data.getCompressionCodecForPart(0, {}, time(nullptr));
@@ -1009,6 +1033,15 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
+
+    if (metadata_snapshot->hasUniqueKey())
+        UniqueKeyDenseIndexOps::writeDenseIndexOnInsert(
+            *data_part_storage,
+            metadata_snapshot,
+            block,
+            perm_ptr,
+            context->getSettingsRef()[Setting::unique_key_max_encoded_size],
+            context);
 
     if ((*data.getSettings())[MergeTreeSetting::materialize_projections_on_insert])
     {

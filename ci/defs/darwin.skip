@@ -3,10 +3,6 @@
 # These are env/harness/portability issues that likely pass on the CI runner or are fixable,
 # not permanent platform gaps - each is a candidate to re-verify or fix, not to keep forever.
 
-# Custom-disk static-storage behavior differs (TABLE_IS_PERMANENTLY_READ_ONLY). Worth a look.
-02454_create_table_with_custom_disk
-04498_alter_table_with_custom_disk
-
 # Times out on the macOS CI runner: the Python script hangs silently before sending any query
 # (no query reaches the server), while the identical test with the same numpy/scipy/pandas versions
 # passes in ~3s locally. Looks like a runner-specific hang in the scipy import. Needs further investigation.
