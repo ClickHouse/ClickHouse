@@ -130,16 +130,16 @@ def pack_part_recursive(part_path, output_dir, file_order_hint):
 
 def test_packed_io(started_cluster):
     node.query(
-        "CREATE OR REPLACE TABLE t_packed_local (id UInt64, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '10M'"
+        "CREATE OR REPLACE TABLE t_packed_local (id UInt64, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '10M', auto_statistics_types = ''"
     )
     node.query(
-        "CREATE OR REPLACE TABLE t_full_local (id UInt64, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = 0"
+        "CREATE OR REPLACE TABLE t_full_local (id UInt64, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = 0, auto_statistics_types = ''"
     )
     node.query(
-        "CREATE OR REPLACE TABLE t_full_s3 (id UInt64, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '0', storage_policy = 's3'"
+        "CREATE OR REPLACE TABLE t_full_s3 (id UInt64, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '0', auto_statistics_types = '', storage_policy = 's3'"
     )
     node.query(
-        "CREATE OR REPLACE TABLE t_packed_s3 (id UInt64, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '10M', storage_policy = 's3'"
+        "CREATE OR REPLACE TABLE t_packed_s3 (id UInt64, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '10M', auto_statistics_types = '', storage_policy = 's3'"
     )
     node.query(
         "INSERT INTO t_full_local SELECT number, randomPrintableASCII(10) FROM numbers(100)"
@@ -173,16 +173,16 @@ def test_packed_io(started_cluster):
 
 def test_packed_io_projections(started_cluster):
     node.query(
-        "CREATE OR REPLACE TABLE t_packed_local_proj (id UInt64, s String, PROJECTION p (SELECT sum(id), max(s))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '10M'"
+        "CREATE OR REPLACE TABLE t_packed_local_proj (id UInt64, s String, PROJECTION p (SELECT sum(id), max(s))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '10M', auto_statistics_types = ''"
     )
     node.query(
-        "CREATE OR REPLACE TABLE t_full_local_proj (id UInt64, s String, PROJECTION p (SELECT sum(id), max(s))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = 0"
+        "CREATE OR REPLACE TABLE t_full_local_proj (id UInt64, s String, PROJECTION p (SELECT sum(id), max(s))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = 0, auto_statistics_types = ''"
     )
     node.query(
-        "CREATE OR REPLACE TABLE t_full_s3_proj (id UInt64, s String, PROJECTION p (SELECT sum(id), max(s))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '0', storage_policy = 's3'"
+        "CREATE OR REPLACE TABLE t_full_s3_proj (id UInt64, s String, PROJECTION p (SELECT sum(id), max(s))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '0', auto_statistics_types = '', storage_policy = 's3'"
     )
     node.query(
-        "CREATE OR REPLACE TABLE t_packed_s3_proj (id UInt64, s String, PROJECTION p (SELECT sum(id), max(s))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '10M', storage_policy = 's3'"
+        "CREATE OR REPLACE TABLE t_packed_s3_proj (id UInt64, s String, PROJECTION p (SELECT sum(id), max(s))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '10M', auto_statistics_types = '', storage_policy = 's3'"
     )
     node.query(
         "INSERT INTO t_full_local_proj SELECT number, randomPrintableASCII(10) FROM numbers(100)"
@@ -287,6 +287,9 @@ def test_packed_io_file_order(started_cluster):
             min_rows_for_full_part_storage = '100M',
             min_bytes_for_full_part_storage = '100M',
             assign_part_uuids = 1,
+            -- The test asserts exact file positions inside the packed blob; statistics
+            -- materialized on INSERT would insert statistics_<col>.stats files.
+            auto_statistics_types = '',
             storage_policy = 's3'
         """
     )
@@ -385,6 +388,9 @@ def test_packed_io_compact_file_order(started_cluster):
             min_rows_for_full_part_storage = '100M',
             min_bytes_for_full_part_storage = '100M',
             assign_part_uuids = 1,
+            -- The test asserts exact file positions inside the packed blob; statistics
+            -- materialized on INSERT would insert statistics_<col>.stats files.
+            auto_statistics_types = '',
             storage_policy = 's3',
             write_marks_for_substreams_in_compact_parts = 1
         """
