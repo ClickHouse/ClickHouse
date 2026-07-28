@@ -272,9 +272,11 @@ def test_iceberg_truncate_no_stray_metadata_file(started_cluster_iceberg_no_spar
 
 
 def test_iceberg_truncate_snapshot_summary(started_cluster_iceberg_no_spark):
-    """The truncate snapshot summary must report `operation=overwrite`, the `deleted-*`
+    """The truncate snapshot summary must report `operation=delete`, the `deleted-*`
     counters, and zeroed table-wide `total-*` totals, while the preceding ClickHouse
-    append must still carry `changed-partition-count`. Uses a local (non-catalog) table
+    append must still carry `changed-partition-count`. Encoding truncate as `delete`
+    (rather than `overwrite`) is what lets `OPTIMIZE TABLE` data compaction accept a
+    post-truncate history -- see `test_iceberg_truncate_then_optimize`. Uses a local (non-catalog) table
     so ClickHouse both writes and truncates, reading the summaries back via
     `system.iceberg_history` — which also covers the filesystem truncate path that
     writes the metadata file and version hint directly."""
@@ -306,8 +308,8 @@ def test_iceberg_truncate_snapshot_summary(started_cluster_iceberg_no_spark):
     assert s_append["changed-partition-count"] == "1", s_append
     assert s_append["total-records"] == "3", s_append
 
-    # The truncate snapshot: overwrite, all data removed, running totals reset to 0.
-    assert op_truncate == "OVERWRITE", op_truncate
+    # The truncate snapshot: delete, all data removed, running totals reset to 0.
+    assert op_truncate == "DELETE", op_truncate
     assert s_truncate["deleted-records"] == "3", s_truncate
     assert int(s_truncate["deleted-data-files"]) >= 1, s_truncate
     assert s_truncate["total-records"] == "0", s_truncate
@@ -315,6 +317,51 @@ def test_iceberg_truncate_snapshot_summary(started_cluster_iceberg_no_spark):
     assert s_truncate["total-delete-files"] == "0", s_truncate
     assert s_truncate["total-position-deletes"] == "0", s_truncate
     assert s_truncate["total-equality-deletes"] == "0", s_truncate
+
+
+def test_iceberg_truncate_then_optimize(started_cluster_iceberg_no_spark):
+    """`OPTIMIZE TABLE` must succeed on a table that has a `TRUNCATE` in its history.
+
+    Data compaction validates the whole snapshot history up front, so a truncate snapshot
+    must be a shape it accepts. This drives insert -> truncate -> insert -> `OPTIMIZE TABLE`
+    and asserts compaction succeeds and the post-truncate data is intact.
+
+    Note: must be plain `OPTIMIZE TABLE`, not `OPTIMIZE TABLE ... MANIFEST` -- only the
+    data-compaction path scans the whole history, so a `MANIFEST` variant would pass
+    vacuously. Uses a local (non-catalog) table so ClickHouse both writes and compacts."""
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    table_name = "test_iceberg_truncate_then_optimize_" + get_uuid_str()
+
+    create_iceberg_table(
+        "local",
+        instance,
+        table_name,
+        started_cluster_iceberg_no_spark,
+        "(x Int)",
+        2,
+    )
+
+    instance.query(f"INSERT INTO {table_name} VALUES (1), (2), (3);")
+    instance.query(
+        f"TRUNCATE TABLE {table_name}",
+        settings={"allow_experimental_insert_into_iceberg": 1},
+    )
+    # Reuse the table after truncate so history is APPEND -> DELETE -> APPEND and there is
+    # live data for the compactor to consider.
+    instance.query(f"INSERT INTO {table_name} VALUES (4), (5), (6);")
+
+    # Guard the premise: the truncate really produced the delete snapshot the fix targets.
+    history = read_iceberg_history(instance, "default", table_name)
+    assert [op for op, _ in history] == ["APPEND", "DELETE", "APPEND"], history
+
+    # Pre-fix this threw NOT_IMPLEMENTED ("Unsupported snapshot's operation type"); it must now succeed.
+    instance.query(
+        f"OPTIMIZE TABLE {table_name}",
+        settings={"allow_experimental_iceberg_compaction": 1},
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {table_name}").strip()) == 3
+    assert instance.query(f"SELECT x FROM {table_name} ORDER BY x").split() == ["4", "5", "6"]
 
 
 def test_iceberg_truncate_rejected_when_pinned_to_explicit_metadata_file(started_cluster_iceberg_no_spark):
