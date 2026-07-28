@@ -1,5 +1,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
+#include <Core/Block.h>
 #include <Common/assert_cast.h>
 
 #include <Common/logger_useful.h>
@@ -1180,6 +1181,16 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * union_step = typeid_cast<UnionStep *>(child.get()))
     {
+        /// This rewrite forces every union branch input header to the pushed-down filter's
+        /// output header, which assumes the union forwards each branch unchanged. Skip it
+        /// when the union normalizes a branch (its output differs from some input header),
+        /// e.g. it drops a Const that diverged across branches. Otherwise a branch still
+        /// outputting Const would get a full input header and the mismatch would move here.
+        const auto & union_output = *union_step->getOutputHeader();
+        for (const auto & input_header : union_step->getInputHeaders())
+            if (!blocksHaveEqualStructure(*input_header, union_output))
+                return 0;
+
         /// Union does not change header.
         /// We can push down filter and update header.
         auto union_input_headers = child->getInputHeaders();
