@@ -591,11 +591,10 @@ struct HashMethodHashed
 
     PaddedPODArray<UInt128> precomputed_keys;
 
-    /// Hash all rows of the key columns.
+    /// No precomputation, keys are hashed on demand.
     HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &)
         : key_columns(std::move(key_columns_))
     {
-        precomputeRange(0, key_columns.front()->size());
     }
 
     /// Hash the rows [begin, begin + count).
@@ -614,10 +613,11 @@ struct HashMethodHashed
 
     ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
     {
-        return precomputed_keys[row];
+        if (!precomputed_keys.empty())
+            return precomputed_keys[row];
+        return hash128(row, key_columns.size(), key_columns);
     }
 
-private:
     void precomputeRange(size_t begin, size_t count)
     {
         if (count == 0)
