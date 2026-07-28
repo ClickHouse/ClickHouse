@@ -526,6 +526,7 @@ const char * auto_contributors[] {
     "Grigory Buteyko",
     "Grigory Korolev",
     "Grigory Pervakov",
+    "Groene AI",
     "GruffGemini",
     "Grégoire Pineau",
     "Guillaume Tassery",

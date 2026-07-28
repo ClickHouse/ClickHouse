@@ -24,13 +24,11 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/PartitionPruner.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
+#include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ExpressionVisitor.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
 #include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
-
-
-namespace fs = std::filesystem;
 
 namespace DB::ErrorCodes
 {
@@ -322,6 +320,10 @@ public:
             /// We cannot allow to throw exceptions from ScanCallback,
             /// otherwise delta-kernel will panic and call terminate.
             context->setScanException();
+            /// Wake up the consumer in `next`: `setScanException` makes the scan thread exit
+            /// through the `shutdown` check without notifying, so without this the consumer
+            /// could wait on `data_files_cv` forever.
+            context->data_files_cv.notify_all();
         }
     }
 
@@ -341,7 +343,8 @@ public:
             return;
         }
 
-        std::string full_path = fs::path(context->data_prefix) / DB::unescapeForFileName(KernelUtils::fromDeltaString(path));
+        std::string full_path = DB::resolvePathInsideTable(
+            context->data_prefix, DB::unescapeForFileName(KernelUtils::fromDeltaString(path)));
         auto object = std::make_shared<DB::ObjectInfo>(std::move(full_path));
 
         if (transform && !context->partition_columns.empty())

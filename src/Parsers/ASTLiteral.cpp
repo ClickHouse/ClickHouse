@@ -1,5 +1,6 @@
 
 #include <Common/SipHash.h>
+#include <Common/checkStackSize.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/quoteString.h>
@@ -46,6 +47,8 @@ private:
 template<>
 String FieldVisitorToColumnName::operator() (const Tuple & x) const
 {
+    checkStackSize();
+
     WriteBufferFromOwnString wb;
 
     wb << "tuple(";

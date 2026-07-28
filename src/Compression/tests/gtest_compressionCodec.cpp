@@ -1324,6 +1324,94 @@ TEST(LZ4Test, DecompressMalformedInput)
     ASSERT_THROW(codec->decompress(source, source_size, memory.data()), Exception);
 }
 
+TEST(T64Test, DecompressMalformedInputBytesToSkip)
+{
+    /// Malformed input with a 2-byte payload and a large declared decompressed size.
+    /// T64 rejects it because the payload is shorter than the 16-byte min/max header.
+    constexpr unsigned char block[] = {
+        0x93,                   /// T64 method byte
+        0x0B, 0x00, 0x00, 0x00, /// compressed_size = 11 (9-byte header + 2-byte payload)
+        0x85, 0x68, 0x00, 0x00, /// decompressed_size = 26757
+        0x84, 0x2C,             /// 2-byte payload, shorter than the 16-byte T64 header
+    };
+
+    const char * source = reinterpret_cast<const char *>(block);
+    const UInt32 source_size = static_cast<UInt32>(std::size(block));
+
+    DB::Memory<> dest;
+    dest.resize(26757);
+
+    auto codec = makeCodec("T64", std::make_shared<DataTypeUInt64>());
+    ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
+}
+
+TEST(T64Test, DecompressMalformedInputShortHeader)
+{
+    /// Malformed input whose payload is present but shorter than the 16-byte
+    /// min/max header required by T64 (bytes_size = 8 < header_size = 16).
+    constexpr unsigned char block[] = {
+        0x93,                   /// T64 method byte
+        0x11, 0x00, 0x00, 0x00, /// compressed_size = 17 (9-byte header + 8-byte payload)
+        0x08, 0x00, 0x00, 0x00, /// decompressed_size = 8
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, /// 8-byte payload; shorter than the 16-byte T64 header
+    };
+
+    const char * source = reinterpret_cast<const char *>(block);
+    const UInt32 source_size = static_cast<UInt32>(std::size(block));
+
+    DB::Memory<> dest;
+    dest.resize(8);
+
+    auto codec = makeCodec("T64", std::make_shared<DataTypeUInt64>());
+    ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
+}
+
+TEST(CompressionCodecMultipleTest, DecompressMalformedInputReversedRange)
+{
+    /// Reproducer for process abort when `compression_methods_size + 1 > source_size`:
+    /// PODArray constructed from reversed pointer range → ~2^64-byte allocation.
+    /// source[0] = 0x9a = 154 codecs claimed in a 1-byte payload.
+    constexpr unsigned char block[] = {
+        0x91,                   /// Multiple method byte
+        0x0A, 0x00, 0x00, 0x00, /// compressed_size = 10 (9-byte header + 1-byte payload)
+        0x00, 0x00, 0x00, 0x00, /// decompressed_size = 0
+        0x9A,                   /// claims 154 codecs in a 1-byte payload
+    };
+
+    const char * source = reinterpret_cast<const char *>(block);
+    const UInt32 source_size = static_cast<UInt32>(std::size(block));
+
+    DB::Memory<> dest;
+    dest.resize(64);
+
+    auto codec = CompressionCodecFactory::instance().get(static_cast<UInt8>(CompressionMethodByte::Multiple));
+    ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
+}
+
+TEST(CompressionCodecMultipleTest, DecompressMalformedInputShortBlockHeader)
+{
+    /// Reproducer for OOB read when the compressed payload after the methods list
+    /// is shorter than COMPRESSED_BLOCK_HEADER_SIZE (9 bytes).
+    /// 1 codec declared; 4 bytes of compressed data follow — too short for a block header.
+    constexpr unsigned char block[] = {
+        0x91,                   /// Multiple method byte
+        0x0F, 0x00, 0x00, 0x00, /// compressed_size = 15 (9-byte header + 6-byte payload)
+        0x00, 0x00, 0x00, 0x00, /// decompressed_size = 0
+        0x01,                   /// compression_methods_size = 1
+        0x82,                   /// LZ4 method byte
+        0x00, 0x01, 0x02, 0x03, /// 4-byte compressed data; source_size=4 < COMPRESSED_BLOCK_HEADER_SIZE=9
+    };
+
+    const char * source = reinterpret_cast<const char *>(block);
+    const UInt32 source_size = static_cast<UInt32>(std::size(block));
+
+    DB::Memory<> dest;
+    dest.resize(64);
+
+    auto codec = CompressionCodecFactory::instance().get(static_cast<UInt8>(CompressionMethodByte::Multiple));
+    ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
+}
+
 TEST(DoubleDeltaTest, TranscodeRawInput)
 {
     std::vector<DataTypePtr> types = {

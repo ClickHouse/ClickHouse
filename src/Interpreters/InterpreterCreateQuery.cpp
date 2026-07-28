@@ -171,6 +171,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_DATABASE;
     extern const int PATH_ACCESS_DENIED;
+    extern const int ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int ENGINE_REQUIRED;
     extern const int UNKNOWN_STORAGE;
@@ -296,7 +297,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     }
     else
     {
-        bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+        bool is_on_cluster = getContext()->isDDLOrOnClusterInternal();
         if (create.uuid != UUIDHelpers::Nil && !is_on_cluster && !internal)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Ordinary database engine does not support UUID");
 
@@ -947,7 +948,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
-            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
+            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
+                getContext(),
+                SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
         }
         else
         {
@@ -1102,7 +1105,9 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 /// We should treat SELECT as an initial query in order to properly analyze it.
                 auto context = Context::createCopy(getContext());
                 context->setQueryKindInitial();
-                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), context, SelectQueryOptions{}.analyze().createView());
+                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
+                    context,
+                    SelectQueryOptions{}.analyze().createView().checkSubqueryTableAccess());
             }
             else
             {
@@ -1111,8 +1116,11 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                     SelectQueryOptions().analyze()).getSampleBlock();
             }
         }
-        catch (Exception &)
+        catch (Exception & e)
         {
+            if (e.code() == ErrorCodes::ACCESS_DENIED)
+                throw;
+
             if (!getContext()->getSettingsRef()[Setting::allow_materialized_view_with_bad_select])
                 throw;
             check_columns = false;
@@ -1393,7 +1401,7 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     const auto * kind_upper = create.is_dictionary ? "DICTIONARY" : "TABLE";
     bool is_replicated_database_internal = database->getEngineName() == "Replicated" && getContext()->getClientInfo().is_replicated_database_internal;
     bool from_path = create.attach_from_path.has_value();
-    bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    bool is_on_cluster = getContext()->isDDLOrOnClusterInternal();
 
     if (database->getEngineName() == "Replicated" && create.uuid != UUIDHelpers::Nil && !is_replicated_database_internal && !internal && !is_on_cluster && !create.attach)
     {
@@ -1598,7 +1606,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         fs::path user_files = fs::path(getContext()->getUserFilesPath()).lexically_normal();
         fs::path root_path = fs::path(getContext()->getPath()).lexically_normal();
 
-        if (getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+        if (!getContext()->isDDLOrOnClusterInternal())
         {
             fs::path data_path = fs::path(*create.attach_from_path).lexically_normal();
             if (data_path.is_relative())
@@ -1618,7 +1626,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                                 "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
         }
     }
-    else if (create.attach && !create.attach_short_syntax && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+    else if (create.attach && !create.attach_short_syntax && !getContext()->isDDLOrOnClusterInternal())
     {
         auto log = getLogger("InterpreterCreateQuery");
         LOG_WARNING(log, "ATTACH TABLE query with full table definition is not recommended: "
@@ -1922,9 +1930,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// Before actually creating the table, check if it will lead to cyclic dependencies.
     checkTableCanBeAddedWithNoCyclicDependencies(create, query_ptr, getContext());
 
-    /// Initial queries in Replicated database at this point have query_kind = ClientInfo::QueryKind::SECONNDARY_QUERY,
+    /// Initial queries in Replicated database at this point have is_ddl_or_on_cluster_internal = true,
     /// so we need to check whether the query is initial through getZooKeeperMetadataTransaction()->isInitialQuery()
-    bool is_initial_query = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY ||
+    bool is_initial_query = !getContext()->isDDLOrOnClusterInternal() ||
                             (getContext()->getZooKeeperMetadataTransaction() && getContext()->getZooKeeperMetadataTransaction()->isInitialQuery());
     bool is_predefined_database = DatabaseCatalog::isPredefinedDatabase(create.getDatabase());
     if (!internal && is_initial_query && !is_predefined_database)
@@ -2180,6 +2188,11 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
         if (!interpreter_rename.renamedInsteadOfExchange())
         {
+            /// After the exchange the temporary name holds the replaced table, which may be of a different
+            /// kind than the new one (e.g. a dictionary replaced by a view), so the drop must match its kind.
+            if (auto replaced = DatabaseCatalog::instance().tryGetTable(StorageID{create.getDatabase(), create.getTable()}, current_context))
+                ast_drop->is_dictionary = replaced->isDictionary();
+
             /// Target table was replaced with new one, drop old table
             auto drop_context = make_drop_context();
             InterpreterDropQuery(ast_drop, drop_context).execute();

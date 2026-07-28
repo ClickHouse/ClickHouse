@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Common/PODArray.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
@@ -293,32 +294,38 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        /// Temporarily do a const_cast to sort the values. It helps to reduce the computational burden on the initiator node.
-        this->data(const_cast<AggregateDataPtr>(place)).sort();
+        /// serialize() must not mutate the state: it takes a ConstAggregateDataPtr and the same
+        /// state can be shared between rows (a replicated/const aggregate-state column used as a
+        /// GROUP BY key) and serialized concurrently by several pipeline threads. sort() reorders
+        /// the value buffer in place, so sorting the shared buffer directly is a data race. Sort a
+        /// local copy of the node pointers; the values are always written in sorted order.
+        const auto & data_ref = data(place);
+        PODArray<Node *> sorted_value;
+        sorted_value.assign(data_ref.value.begin(), data_ref.value.end());
+        if (!data_ref.sorted)
+            std::stable_sort(sorted_value.begin(), sorted_value.end(), typename Data::Comparator{});
 
-        writeBinary(data(place).sorted, buf);
+        writeBinary(true, buf);
 
-        auto & value = data(place).value;
-
-        size_t size = std::min(static_cast<size_t>(events_size + 1), value.size());
+        size_t size = std::min(static_cast<size_t>(events_size + 1), sorted_value.size());
         switch (seq_base_kind)
         {
             case SequenceBase::Head:
                 writeVarUInt(size, buf);
                 for (size_t i = 0; i < size; ++i)
-                    value[i]->write(buf);
+                    sorted_value[i]->write(buf);
                 break;
 
             case SequenceBase::Tail:
                 writeVarUInt(size, buf);
                 for (size_t i = 0; i < size; ++i)
-                    value[value.size() - size + i]->write(buf);
+                    sorted_value[sorted_value.size() - size + i]->write(buf);
                 break;
 
             case SequenceBase::FirstMatch:
             case SequenceBase::LastMatch:
-                writeVarUInt(value.size(), buf);
-                for (auto & node : value)
+                writeVarUInt(sorted_value.size(), buf);
+                for (auto & node : sorted_value)
                     node->write(buf);
                 break;
         }

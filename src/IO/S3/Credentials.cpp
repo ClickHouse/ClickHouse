@@ -851,8 +851,8 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
     AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
 }
 
-AssumeRoleRequest::AssumeRoleRequest(std::string role_arn_, std::string role_session_name_)
-    : role_arn(std::move(role_arn_)), role_session_name(std::move(role_session_name_))
+AssumeRoleRequest::AssumeRoleRequest(std::string role_arn_, std::string role_session_name_, std::string external_id_)
+    : role_arn(std::move(role_arn_)), role_session_name(std::move(role_session_name_)), external_id(std::move(external_id_))
 {
 }
 
@@ -865,6 +865,8 @@ void AssumeRoleRequest::AddQueryStringParameters(Aws::Http::URI & uri) const
 {
     uri.AddQueryStringParameter("RoleArn", role_arn);
     uri.AddQueryStringParameter("RoleSessionName", role_session_name);
+    if (!external_id.empty())
+        uri.AddQueryStringParameter("ExternalId", external_id);
 }
 
 AssumeRoleResult::AssumeRoleResult(Aws::AmazonWebServiceResult<Aws::Utils::Xml::XmlDocument> result)
@@ -951,12 +953,14 @@ AssumeRoleOutcome AWSAssumeRoleClient::assumeRole(const AssumeRoleRequest & requ
 AwsAuthSTSAssumeRoleCredentialsProvider::AwsAuthSTSAssumeRoleCredentialsProvider(
     std::string role_arn_,
     std::string session_name_,
+    std::string external_id_,
     uint64_t expiration_window_seconds_,
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider,
     DB::S3::PocoHTTPClientConfiguration & client_configuration,
     const std::string & sts_endpoint_override)
     : role_arn(std::move(role_arn_))
     , session_name(session_name_.empty() ? "ClickHouseSession" : std::move(session_name_))
+    , external_id(std::move(external_id_))
     , expiration_window_seconds(expiration_window_seconds_)
     , client(std::make_shared<AWSAssumeRoleClient>(credentials_provider, client_configuration, sts_endpoint_override))
     , logger(getLogger("AwsAuthSTSAssumeRoleCredentialsProvider"))
@@ -973,7 +977,7 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
 {
     LOG_INFO(logger, "Credentials are empty or expired, attempting to renew with AssumeRole");
 
-    AssumeRoleRequest request(role_arn, session_name);
+    AssumeRoleRequest request(role_arn, session_name, external_id);
     auto outcome = client->assumeRole(request);
     if (!outcome.IsSuccess())
     {

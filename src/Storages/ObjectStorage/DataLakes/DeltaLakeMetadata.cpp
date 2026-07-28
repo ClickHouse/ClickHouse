@@ -310,7 +310,7 @@ struct DeltaLakeMetadataImpl
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `add` field");
 
                 auto path = add_object->getValue<String>("path");
-                auto full_path = fs::path(read_path_string) / path;
+                auto full_path = resolvePathInsideTable(read_path_string, path);
                 result.insert(full_path);
 
                 auto filename = fs::path(path).filename().string();
@@ -355,7 +355,7 @@ struct DeltaLakeMetadataImpl
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `remove` field");
 
                 auto path = remove_object->getValue<String>("path");
-                result.erase(fs::path(read_path_string) / path);
+                result.erase(resolvePathInsideTable(read_path_string, path));
             }
         }
     }
@@ -566,7 +566,7 @@ struct DeltaLakeMetadataImpl
                 continue;
 
             auto filename = fs::path(path).filename().string();
-            auto full_path = fs::path(configuration_ptr->getPathForRead().path) / path;
+            auto full_path = resolvePathInsideTable(configuration_ptr->getPathForRead().path, path);
             auto it = file_partition_columns.find(full_path);
             if (it == file_partition_columns.end())
             {
@@ -598,7 +598,7 @@ struct DeltaLakeMetadataImpl
             }
 
             LOG_TEST(log, "Adding {}", path);
-            const auto [_, inserted] = result.insert(std::filesystem::path(configuration_ptr->getPathForRead().path) / path);
+            const auto [_, inserted] = result.insert(full_path);
             if (!inserted)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", path);
         }
