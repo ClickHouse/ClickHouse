@@ -1,41 +1,42 @@
 """
 Shell-level contract test for the `limits_fast.yaml` gate in `tests/config/install.sh`.
 
-`users.d/limits_fast.yaml` pins `max_execution_time` / `max_execution_time_leaf` to 60
-seconds. It is installed by one branch near the end of `install.sh`, and that branch was
-dead from #98026 (2026-02-26) until this test was added: the guard read
-`[[ $(is_fast_build) == 1 ]]` while `is_fast_build` only `return`s an exit code and prints
-nothing, so the command substitution was always empty and the symlink was never created on
-any job. Nothing asserted on the symlink, so reverting the fix passed CI.
+The gate is a conjunction of two independent decisions and this test pins both: the job
+scope (`--fast-test` only) and `is_fast_build` (not a sanitizer, debug, coverage, object
+storage or encrypted storage build). Assertions are on the resulting symlink and its
+target, not on `set -x` trace text, so they do not drift with logging changes.
 
-The gate is a conjunction of two independent decisions and this test pins both:
+`install.sh` is driven for real. A stub `clickhouse` earlier on `PATH` supplies the
+`system.build_options` ROWS as a synthetic table and hands the query text through to a real
+`clickhouse local`, so the SQL predicates in `is_fast_build` are genuinely evaluated and a
+mutation to them fails these tests. Neither the shell function nor its SQL is stubbed.
 
-  - job scope: only the Fast test job (`--fast-test`), whose runner already kills a test
-    file after 60 seconds of wall clock (`ci/jobs/fast_test.py:378` `--timeout 60`), so a
-    60 second per-query limit cannot fire there on a healthy test. Other jobs satisfying
-    `is_fast_build` run the long tests that Fast test skips, where the cap would redden
-    green runs.
-  - `is_fast_build` itself: not a sanitizer or debug build, not a coverage build (the
-    reason #98026 reverted the original fix), and no object storage or encrypted storage.
-
-`install.sh` is driven for real, with a stub `clickhouse` earlier on `PATH` that answers
-the `system.build_options` probes. The shell function under test is never stubbed, so the
-test cannot pass because of a mock. Assertions are on the resulting symlink rather than on
-`set -x` trace text, so they do not drift with logging changes.
+Gotcha: `install.sh` derives SRC_PATH from its own location, so a script under test must
+live in `tests/config/`; a copy elsewhere makes every `ln -sf` source wrong and the script
+dies before reaching the gate, which looks exactly like "no symlink" and would turn every
+negative case into a false pass. `_assert_gate_reached` is what rules that out.
 """
 
 import os
+import shutil
 import subprocess
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 _INSTALL_SH = os.path.join(_REPO_ROOT, "tests", "config", "install.sh")
+_LIMITS_FAST = os.path.join(
+    _REPO_ROOT, "tests", "config", "users.d", "limits_fast.yaml"
+)
 
-# Answers the two `system.build_options` probes in `is_fast_build`, plus the
-# `clickhouse --query` calls the surrounding script makes. The probes are SQL expressions
-# over the row, not the row itself, so the stub models the row VALUE (`STUB_WITH_COVERAGE`)
-# and evaluates the predicate the way the server would; returning the raw value instead
-# would make the coverage cases pass for the wrong reason. `STUB_WITH_COVERAGE_ROW` = "0"
-# models the row being absent, where a real server returns zero rows, i.e. no output.
+# A fast build: optimized, NDEBUG, no sanitizer. The stub feeds these to a real server as
+# row VALUES, so the predicates under test decide the verdict, not the stub.
+_FAST_CXX_FLAGS = "-O3 -DNDEBUG -std=c++2c"
+_SANITIZER_CXX_FLAGS = "-O2 -DNDEBUG -fsanitize=address,undefined"
+_DEBUG_CXX_FLAGS = "-O0 -g -std=c++2c"
+
+# Rewrites `system.build_options` to a synthetic table carrying the requested rows and
+# forwards the rest of the query text unchanged to a real `clickhouse local`. `*_ROW` set to
+# anything but "1" omits that row, reproducing a previous-release binary that lacks it,
+# where a real server returns zero rows and therefore an empty result.
 _CLICKHOUSE_STUB = r"""#!/usr/bin/env python3
 import os
 import sys
@@ -44,42 +45,61 @@ argv = sys.argv[1:]
 if argv and argv[0] == "--version":
     print("ClickHouse local version 26.8.1.1.")
     sys.exit(0)
+
+
+def sql_str(value):
+    return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+def build_options_rows():
+    rows = []
+    if os.environ.get("STUB_CXX_FLAGS_ROW", "1") == "1":
+        rows.append(("CXX_FLAGS", os.environ["STUB_CXX_FLAGS"]))
+    if os.environ.get("STUB_WITH_COVERAGE_ROW", "1") == "1":
+        rows.append(("WITH_COVERAGE", os.environ["STUB_WITH_COVERAGE"]))
+    rows.append(("USE_OPENSSL_FIPS", os.environ["STUB_USE_OPENSSL_FIPS"]))
+    literals = ", ".join(
+        "(" + sql_str(name) + ", " + sql_str(value) + ")" for name, value in rows
+    )
+    return (
+        "WITH build_options AS (SELECT arrayJoin(CAST(["
+        + literals
+        + "], 'Array(Tuple(String, String))')) AS t, t.1 AS name, t.2 AS value) "
+    )
+
+
 if len(argv) >= 3 and argv[0] == "local" and argv[1] == "--query":
     query = argv[2]
-    if "WITH_COVERAGE" in query:
-        # SELECT upper(value) IN ('ON', '1') FROM system.build_options WHERE name = ...
-        if os.environ.get("STUB_WITH_COVERAGE_ROW", "1") != "1":
-            print("")  # no such row -> zero rows -> empty output
-        else:
-            value = os.environ.get("STUB_WITH_COVERAGE", "OFF")
-            print("1" if value.upper() in ("ON", "1") else "0")
-    elif "-fsanitize=" in query and "NOT LIKE" in query:
-        # the is_fast_build predicate: 1 means "this IS a fast build"
-        if os.environ.get("STUB_CXX_FLAGS_ROW", "1") != "1":
-            print("")  # no such row -> zero rows -> empty output
-        else:
-            print(os.environ.get("STUB_IS_FAST_BUILD", "1"))
-    elif "-fsanitize=" in query:
-        # is_sanitizer_build
-        print("0")
-    elif "USE_OPENSSL_FIPS" in query:
-        print("0")
-    else:
+    if "system.build_options" not in query:
         print("")
-    sys.exit(0)
+        sys.exit(0)
+    real = os.environ["STUB_REAL_CLICKHOUSE"]
+    rewritten = build_options_rows() + query.replace(
+        "system.build_options", "build_options"
+    )
+    os.execv(real, [real, "local", "--query", rewritten])
 sys.exit(0)
 """
 
 
-def _run_install(tmp_path, script=None, args=(), env=None):
-    """Run install.sh into a scratch destination and report whether the symlink appeared.
+def _real_clickhouse():
+    """The binary the stub delegates to.
 
-    `install.sh` derives SRC_PATH from its own location, so a script under test must live
-    in `tests/config/`; a copy elsewhere makes every `ln -sf` source path wrong and the
-    script dies before reaching the gate, which looks exactly like "no symlink" and would
-    turn every negative case into a false pass. Guard against that by requiring the gate
-    to have been reached (the last `ln -sf` of the run must have happened).
+    The `CI Tests` job puts one on PATH before pytest starts: `ci_tests_job.py` enters
+    `ClickHouseService`, whose `__enter__` calls `Utils.add_to_PATH` and downloads
+    `clickhouse` into that directory. Deliberately not skipping when it is missing -- a
+    skip would let the suite go silently vacuous if that plumbing ever changes.
     """
+    path = shutil.which("clickhouse")
+    assert path, (
+        "no `clickhouse` binary on PATH; these tests evaluate the install.sh SQL "
+        "predicates against a real server and cannot run without one"
+    )
+    return path
+
+
+def _run_install(tmp_path, script=None, args=(), env=None):
+    """Run install.sh into a scratch destination and report on the limits_fast symlink."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     stub = bin_dir / "clickhouse"
@@ -92,6 +112,7 @@ def _run_install(tmp_path, script=None, args=(), env=None):
     client_dir.mkdir(parents=True)
 
     run_env = dict(os.environ)
+    run_env["STUB_REAL_CLICKHOUSE"] = _real_clickhouse()
     run_env["PATH"] = f"{bin_dir}{os.pathsep}{run_env['PATH']}"
     # install.sh reads these unconditionally; keep every case explicit rather than
     # inheriting whatever the CI job exported.
@@ -101,6 +122,9 @@ def _run_install(tmp_path, script=None, args=(), env=None):
         "USE_ENCRYPTED_STORAGE",
     ):
         run_env.pop(name, None)
+    run_env.setdefault("STUB_CXX_FLAGS", _FAST_CXX_FLAGS)
+    run_env.setdefault("STUB_WITH_COVERAGE", "OFF")
+    run_env.setdefault("STUB_USE_OPENSSL_FIPS", "0")
     run_env.update(env or {})
 
     proc = subprocess.run(
@@ -114,7 +138,8 @@ def _run_install(tmp_path, script=None, args=(), env=None):
     # Deliberately not asserting proc.returncode == 0: install.sh runs `set -e` and its
     # later steps assume a real server environment, so a nonzero exit is acceptable here.
     # What matters is that the gate was reached, and that the symlink decision is right.
-    return proc, (server_dir / "users.d" / "limits_fast.yaml").is_symlink()
+    link = server_dir / "users.d" / "limits_fast.yaml"
+    return proc, link
 
 
 def _assert_gate_reached(proc):
@@ -128,90 +153,98 @@ def _assert_gate_reached(proc):
     )
 
 
+def _assert_installed(proc, link):
+    _assert_gate_reached(proc)
+    assert link.is_symlink(), "limits_fast.yaml must be installed for this job"
+    assert os.path.realpath(link) == os.path.realpath(_LIMITS_FAST), (
+        f"limits_fast.yaml points at {os.path.realpath(link)}, expected "
+        f"{os.path.realpath(_LIMITS_FAST)}"
+    )
+
+
+def _assert_not_installed(proc, link, why):
+    _assert_gate_reached(proc)
+    assert not link.is_symlink(), why
+
+
 def test_fast_test_job_installs_limits_fast(tmp_path):
     """The one job that gets the profile: --fast-test on a non-sanitizer build."""
-    proc, linked = _run_install(tmp_path, args=["--fast-test"])
-    _assert_gate_reached(proc)
-    assert linked, "limits_fast.yaml must be installed for the Fast test job"
+    proc, link = _run_install(tmp_path, args=["--fast-test"])
+    _assert_installed(proc, link)
 
 
 def test_stateless_job_does_not_install_limits_fast(tmp_path):
-    """A stateless job satisfies is_fast_build but must NOT get the 60s cap.
-
-    Without --fast-test the profile would apply to jobs that run the `long` tests Fast
-    test skips, several of which exceed 60 seconds in a single query on every run.
-    """
-    proc, linked = _run_install(tmp_path)
-    _assert_gate_reached(proc)
-    assert not linked, "limits_fast.yaml must not be installed without --fast-test"
-
-
-def test_sanitizer_or_debug_build_does_not_install_limits_fast(tmp_path):
-    proc, linked = _run_install(
-        tmp_path, args=["--fast-test"], env={"STUB_IS_FAST_BUILD": "0"}
+    """A stateless job satisfies is_fast_build but must not get the 60s cap."""
+    proc, link = _run_install(tmp_path)
+    _assert_not_installed(
+        proc, link, "limits_fast.yaml must not be installed without --fast-test"
     )
-    _assert_gate_reached(proc)
-    assert not linked, "sanitizer and debug builds are too slow for a 60s cap"
+
+
+def test_sanitizer_build_does_not_install_limits_fast(tmp_path):
+    """A sanitizer build carries -fsanitize= in CXX_FLAGS and is too slow for the cap."""
+    proc, link = _run_install(
+        tmp_path, args=["--fast-test"], env={"STUB_CXX_FLAGS": _SANITIZER_CXX_FLAGS}
+    )
+    _assert_not_installed(proc, link, "sanitizer builds are too slow for a 60s cap")
+
+
+def test_debug_build_does_not_install_limits_fast(tmp_path):
+    """A debug build lacks -DNDEBUG; the predicate must require it, not just no sanitizer."""
+    proc, link = _run_install(
+        tmp_path, args=["--fast-test"], env={"STUB_CXX_FLAGS": _DEBUG_CXX_FLAGS}
+    )
+    _assert_not_installed(proc, link, "debug builds are too slow for a 60s cap")
 
 
 def test_coverage_build_does_not_install_limits_fast(tmp_path):
-    """The #98026 revert reason: a coverage build passes the CXX_FLAGS predicate.
-
-    Coverage flags are applied per-directory, so they never reach CXX_FLAGS; the guard
-    must use the dedicated `WITH_COVERAGE` row instead.
-    """
-    proc, linked = _run_install(
+    """Coverage flags are per-directory and never reach CXX_FLAGS, so the dedicated
+    WITH_COVERAGE row is what has to exclude such a build."""
+    proc, link = _run_install(
         tmp_path, args=["--fast-test"], env={"STUB_WITH_COVERAGE": "ON"}
     )
-    _assert_gate_reached(proc)
-    assert not linked, "coverage builds are ~2-3x slower and must not be capped"
+    _assert_not_installed(proc, link, "coverage builds are ~2-3x slower")
 
 
 def test_coverage_row_value_is_matched_case_insensitively(tmp_path):
-    proc, linked = _run_install(
+    """cmake can render the row as 'on'; the check must not be case sensitive."""
+    proc, link = _run_install(
         tmp_path, args=["--fast-test"], env={"STUB_WITH_COVERAGE": "on"}
     )
-    _assert_gate_reached(proc)
-    assert not linked, "the WITH_COVERAGE check must accept 'on' as well as 'ON'"
+    _assert_not_installed(
+        proc, link, "the WITH_COVERAGE check must accept 'on' as well as 'ON'"
+    )
 
 
 def test_s3_storage_does_not_install_limits_fast(tmp_path):
-    proc, linked = _run_install(tmp_path, args=["--fast-test", "--s3-storage"])
-    _assert_gate_reached(proc)
-    assert not linked, "tests on MinIO are slow and must not be capped"
+    """Tests on MinIO are slow."""
+    proc, link = _run_install(tmp_path, args=["--fast-test", "--s3-storage"])
+    _assert_not_installed(proc, link, "object storage runs must not be capped")
 
 
 def test_azure_storage_does_not_install_limits_fast(tmp_path):
-    proc, linked = _run_install(tmp_path, args=["--fast-test", "--azure"])
-    _assert_gate_reached(proc)
-    assert not linked, "tests on azurite are slow and must not be capped"
+    """Tests on azurite are slow."""
+    proc, link = _run_install(tmp_path, args=["--fast-test", "--azure"])
+    _assert_not_installed(proc, link, "object storage runs must not be capped")
 
 
 def test_exported_encrypted_storage_does_not_install_limits_fast(tmp_path):
-    """The guard must respect an EXPORTED USE_ENCRYPTED_STORAGE.
-
-    `stress_runner.sh` exports a randomized value rather than passing the flag, so
-    `is_fast_build` must not shadow it with a local default of its own.
-    """
-    proc, linked = _run_install(
+    """`stress_runner.sh` exports a randomized USE_ENCRYPTED_STORAGE rather than passing a
+    flag, so is_fast_build must not shadow it with a local default of its own."""
+    proc, link = _run_install(
         tmp_path, args=["--fast-test"], env={"USE_ENCRYPTED_STORAGE": "1"}
     )
-    _assert_gate_reached(proc)
-    assert not linked, "encrypted storage is slow and must not be capped"
+    _assert_not_installed(proc, link, "encrypted storage is slow and must not be capped")
 
 
 def test_missing_coverage_row_fails_open(tmp_path):
-    """An absent `WITH_COVERAGE` row must degrade to the pre-guard behaviour.
-
-    A previous-release binary can lack the row (it exists on 26.5+ but not 25.8), and
-    `upgrade_runner.sh` runs install.sh with such a binary on PATH. The probe then yields
-    an empty string, which must not be read as an integer nor abort the script.
-    """
-    proc, linked = _run_install(
+    """A previous-release binary can lack the WITH_COVERAGE row (26.5+ has it, 25.8 does
+    not) and `upgrade_runner.sh` runs install.sh with one on PATH; the empty result must
+    degrade to the pre-guard behaviour rather than abort or be read as an integer."""
+    proc, link = _run_install(
         tmp_path, args=["--fast-test"], env={"STUB_WITH_COVERAGE_ROW": "0"}
     )
-    _assert_gate_reached(proc)
-    assert linked, "an absent WITH_COVERAGE row must not exclude a fast build"
+    _assert_installed(proc, link)
     assert "integer expression expected" not in (proc.stdout + proc.stderr), (
         "the guards must compare strings, not integers, so an empty probe result is "
         "not a shell error"
@@ -219,18 +252,15 @@ def test_missing_coverage_row_fails_open(tmp_path):
 
 
 def test_missing_cxx_flags_row_is_not_a_shell_error(tmp_path):
-    """The build-kind probe must also tolerate an empty result as a plain string.
-
-    Same previous-release reachability as above. Comparing an empty result with `-eq`
-    makes bash print `integer expression expected` and return 2, which is fail-open by
-    accident rather than by construction; the noise appears on a path the script really
-    reaches, so compare strings instead.
-    """
-    proc, linked = _run_install(
+    """Same previous-release reachability for the build-kind probe: an empty result must be
+    compared as a string, otherwise bash prints `integer expression expected` on a path the
+    script really reaches and the fail-open is accidental rather than by construction."""
+    proc, link = _run_install(
         tmp_path, args=["--fast-test"], env={"STUB_CXX_FLAGS_ROW": "0"}
     )
-    _assert_gate_reached(proc)
-    assert not linked, "an unknown build kind must not be treated as a fast build"
+    _assert_not_installed(
+        proc, link, "an unknown build kind must not be treated as a fast build"
+    )
     assert "integer expression expected" not in (
         proc.stdout + proc.stderr
     ), "the build-kind check must compare strings, not integers"
