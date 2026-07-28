@@ -15,38 +15,36 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يوضح هذا الدليل خطوة بخطوة كيفية إعداد Amazon Aurora MySQL لنسخ البيانات إلى ClickHouse Cloud باستخدام [MySQL ClickPipe](/ar/integrations/clickpipes/mysql/index). للاطلاع على الأسئلة الشائعة حول MySQL CDC، راجع [صفحة الأسئلة الشائعة لـ MySQL](/ar/integrations/clickpipes/mysql/faq).
 
 <div id="enable-binlog-retention-aurora">
-  ## تمكين الاحتفاظ بـ binlog
+  ## تمكين الاحتفاظ بالسجل الثنائي
 </div>
 
-يُعد binlog مجموعةً من ملفات السجل التي تحتوي على معلومات عن التعديلات التي تُجرى على البيانات في مثيل خادم MySQL، وتكون ملفات binlog مطلوبةً للنسخ المتماثل. لتهيئة الاحتفاظ بـ binlog في Aurora MySQL، يجب [تمكين التسجيل الثنائي](#enable-binlog-logging) و[زيادة فترة الاحتفاظ بالـ binlog](#binlog-retention-interval).
+السجل الثنائي عبارة عن مجموعة من ملفات السجل التي تحتوي على معلومات عن تعديلات البيانات التي أُجريت على مثيل خادم MySQL، وتُعد ملفات السجل الثنائي مطلوبة للنسخ المتماثل. لتهيئة الاحتفاظ بالسجل الثنائي في Aurora MySQL، يجب [تمكين التسجيل الثنائي](#enable-binlog-logging) و[زيادة فترة الاحتفاظ بالـ binlog](#binlog-retention-interval).
 
-<div id="enable-binlog-logging">
-  ### 1. تمكين التسجيل الثنائي عبر النسخ الاحتياطية المؤتمتة
-</div>
+<Steps>
+  <Step title="تمكين التسجيل الثنائي عبر النسخ الاحتياطي التلقائي" id="enable-binlog-logging">
+    تُحدد ميزة النسخ الاحتياطية التلقائية ما إذا كان التسجيل الثنائي مُمكّنًا أو معطّلًا في MySQL. يمكن تهيئة النسخ الاحتياطية التلقائية لمثيلك في RDS Console بالانتقال إلى **Modify** &gt; **Additional configuration** &gt; **Backup** وتحديد مربع الاختيار **Enable automated backups** (إذا لم يكن محددًا بالفعل).
 
-تحدد ميزة النسخ الاحتياطية المؤتمتة ما إذا كان التسجيل الثنائي مفعّلًا أو معطّلًا في MySQL. يمكنك تهيئة النسخ الاحتياطية المؤتمتة لمثيلك من خلال RDS Console بالانتقال إلى **Modify** &gt; **Additional configuration** &gt; **Backup** ثم تحديد مربع الاختيار **Enable automated backups** (إذا لم يكن محددًا بالفعل).
+    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="تمكين النسخ الاحتياطية التلقائية في Aurora" size="lg" border />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="تمكين النسخ الاحتياطية المؤتمتة في Aurora" size="lg" border />
+    نوصي بتعيين **Backup retention period** إلى قيمة طويلة بشكل معقول، بحسب حالة استخدام النسخ المتماثل.
+  </Step>
 
-نوصي بضبط **فترة الاحتفاظ بالنسخ الاحتياطية** على مدة طويلة نسبيًا، وفقًا لحالة استخدام النسخ المتماثل.
+  <Step title="Increase the binlog retention interval" id="binlog-retention-interval">
+    <Warning>
+      إذا حاولت ClickPipes استئناف النسخ المتماثل وكانت ملفات binlog المطلوبة قد حُذفت بسبب قيمة الاحتفاظ بالـ binlog المُعَدّة، فسينتقل ClickPipe إلى حالة خطأ وستلزم إعادة المزامنة.
+    </Warning>
 
-<div id="binlog-retention-interval">
-  ### 2. زيادة فترة الاحتفاظ بالـ binlog
-</div>
+    بشكل افتراضي، يحذف Aurora MySQL السجل الثنائي بأسرع وقت ممكن (أي *الحذف المؤجل*). نوصي بزيادة فترة الاحتفاظ بالـ binlog إلى **72 ساعة** على الأقل لضمان توفر ملفات السجل الثنائي للنسخ المتماثل في سيناريوهات الفشل. لتعيين فترة احتفاظ للسجل الثنائي ([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours))، استخدم الإجراء [`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration):
 
-<Warning>
-  إذا حاولت ClickPipes استئناف النسخ المتماثل وكانت ملفات binlog المطلوبة قد حُذفت بسبب قيمة الاحتفاظ بالـ binlog المُعَدّة، فسينتقل ClickPipe إلى حالة خطأ وستلزم إعادة المزامنة.
-</Warning>
+    [//]: # "ملاحظة: يوصي معظم موفري CDC باستخدام الحد الأقصى لفترة الاحتفاظ في Aurora RDS (7 أيام/168 ساعة). ونظرًا لأن ذلك يؤثر في استخدام القرص، فإننا نوصي، من باب التحفظ، بحد أدنى قدره 3 أيام/72 ساعة."
 
-بشكل افتراضي، يحذف Aurora MySQL السجل الثنائي بأسرع وقت ممكن (أي *الحذف المؤجل*). نوصي بزيادة فترة الاحتفاظ بالـ binlog إلى **72 ساعة** على الأقل لضمان توفر ملفات السجل الثنائي للنسخ المتماثل في سيناريوهات الفشل. لتعيين فترة احتفاظ للسجل الثنائي ([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours))، استخدم الإجراء [`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration):
+    ```text
+    mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
+    ```
 
-[//]: # "ملاحظة: يوصي معظم موفري CDC باستخدام الحد الأقصى لفترة الاحتفاظ في Aurora RDS (7 أيام/168 ساعة). ونظرًا لأن ذلك يؤثر في استخدام القرص، فإننا نوصي، من باب التحفظ، بحد أدنى قدره 3 أيام/72 ساعة."
-
-```text
-mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
-```
-
-إذا لم يتم تعيين هذا الإعداد، أو تم تعيينه على فترة زمنية قصيرة، فقد يؤدي ذلك إلى حدوث فجوات في سجلات MySQL الثنائية، مما يعيق قدرة ClickPipes على استئناف النسخ المتماثل.
+    إذا لم يتم تعيين هذا الإعداد، أو تم تعيينه على فترة زمنية قصيرة، فقد يؤدي ذلك إلى حدوث فجوات في سجلات MySQL الثنائية، مما يعيق قدرة ClickPipes على استئناف النسخ المتماثل.
+  </Step>
+</Steps>
 
 <div id="binlog-settings">
   ## تكوين إعدادات binlog
@@ -91,7 +89,7 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
 </div>
 
 <Tip>
-  يدعم MySQL ClickPipe أيضًا النسخ المتماثل من دون وضع GTID. ومع ذلك، يُوصى بتمكين وضع GTID لتحسين الأداء وتسهيل استكشاف الأخطاء وإصلاحها.
+  يدعم MySQL ClickPipe أيضًا النسخ المتماثل دون وضع GTID. ومع ذلك، يُوصى بتمكين وضع GTID لتحسين الأداء وتسهيل استكشاف الأخطاء وإصلاحها.
 </Tip>
 
 تُعد [Global Transaction Identifiers (GTIDs)](https://dev.mysql.com/doc/refman/8.0/en/replication-gtids.html) معرّفات فريدة تُسنَد إلى كل معاملة تم تثبيتها في MySQL. وهي تُبسّط النسخ المتماثل لـ binlog وتجعل استكشاف الأخطاء وإصلاحها أكثر سهولة. **نوصي** بتمكين وضع GTID، بحيث يتمكن MySQL ClickPipe من استخدام النسخ المتماثل المستند إلى GTID.
@@ -134,6 +132,18 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
+<div id="iam-authentication">
+  ### استخدام مصادقة IAM (اختياري)
+</div>
+
+بدلًا من كلمة المرور، يمكنك مصادقة مستخدم ClickPipes باستخدام الوصول المستند إلى الدور في AWS IAM. أنشئ المستخدم كما يلي، ثم امنحه امتيازات المخطط والنسخ المتماثل نفسها الموضحة أعلاه:
+
+```sql
+CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
+```
+
+راجع [مصادقة قاعدة البيانات عبر AWS IAM (RDS/Aurora)](/ar/integrations/clickpipes/postgres/auth) للاطّلاع على الخطوات الكاملة لإعداد دور IAM والسياسة اللازمين لكي تتمكن ClickPipes من المصادقة بهذه الطريقة.
+
 <div id="configure-network-access">
   ## إعداد الوصول إلى الشبكة
 </div>
@@ -155,7 +165,7 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
 للاتصال بمثيل Aurora MySQL الخاص بك عبر شبكة خاصة، يمكنك استخدام AWS PrivateLink. اتبع [دليل إعداد AWS PrivateLink لـ ClickPipes](/ar/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) لإعداد الاتصال.
 
 <div id="whats-next">
-  ## ما التالي؟
+  ## ما الخطوة التالية؟
 </div>
 
-الآن، بعد أن أصبح مثيل Amazon Aurora MySQL الخاص بك مُعَدًّا للنسخ المتماثل عبر binlog ومتصلًا بشكل آمن بـ ClickHouse Cloud، يمكنك [إنشاء أول MySQL ClickPipe لك](/ar/integrations/clickpipes/mysql/index#create-your-clickpipe). للاطلاع على الأسئلة الشائعة حول MySQL CDC، راجع [صفحة الأسئلة الشائعة لـ MySQL](/ar/integrations/clickpipes/mysql/faq).
+الآن بعد تهيئة مثيل Amazon Aurora MySQL لديك لإجراء النسخ المتماثل عبر `binlog` والاتصال الآمن بـ ClickHouse Cloud، يمكنك [إنشاء أول MySQL ClickPipe لديك](/ar/integrations/clickpipes/mysql/index#create-your-clickpipe). وللاطلاع على الأسئلة الشائعة حول MySQL CDC، راجع [صفحة الأسئلة الشائعة الخاصة بـ MySQL](/ar/integrations/clickpipes/mysql/faq).

@@ -507,7 +507,7 @@ SYSTEM STOP MERGES;
 
 4. 可选但建议执行：找到 ZooKeeper 的 leader 节点，将其重新启动后再停止。这样会强制 ZooKeeper 在转换前先将一致性快照写入磁盘。
 
-5. 在 leader 节点上运行 `clickhouse-keeper-converter`。如果你安装了完整的 ClickHouse 可执行文件，请改用 `keeper-converter` 子命令 (`clickhouse keeper-converter`) 。如果两者都不可用，请[下载该可执行文件](/zh/getting-started/quick-start/oss#install-clickhouse)。
+5. 在 leader 节点上运行 `clickhouse-keeper-converter`。如果你安装了完整的 ClickHouse 可执行文件，请改用 `keeper-converter` 子命令 (`clickhouse keeper-converter`) 。如果两者都不可用，请[下载该可执行文件](/zh/get-started/setup/self-managed/quick-install#install-clickhouse-using-curl)。
 
 ```bash
 clickhouse-keeper-converter \
@@ -779,270 +779,266 @@ curl 127.0.0.1:9363/metrics
 
 本指南提供了配置 ClickHouse Keeper 所需的简单最小设置，并附带一个测试分布式操作的示例。该示例在 Linux 上使用 3 个节点进行。
 
-<div id="1-configure-nodes-with-keeper-settings">
-  ### 1. 使用 Keeper 设置来配置节点
-</div>
+<Steps>
+  <Step title="使用 Keeper 设置配置节点" id="1-configure-nodes-with-keeper-settings">
+    1. 在 3 台主机 (`chnode1`、`chnode2`、`chnode3`) 上安装 3 个 ClickHouse 实例。 (有关 ClickHouse 的安装详情，请参阅[快速入门](/zh/get-started/setup/install)。)
 
-1. 在 3 台主机 (`chnode1`、`chnode2`、`chnode3`) 上安装 3 个 ClickHouse 实例。 (有关 ClickHouse 的安装详情，请参阅[快速入门](/zh/get-started/setup/install)。)
+    2. 在每个节点上，添加以下配置项，以允许通过网络接口进行对外通信。
+       ```xml
+       <listen_host>0.0.0.0</listen_host>
+       ```
 
-2. 在每个节点上，添加以下配置项，以允许通过网络接口进行对外通信。
-   ```xml
-   <listen_host>0.0.0.0</listen_host>
-   ```
+    3. 将以下 ClickHouse Keeper 配置添加到三台服务器中的每一台，并为各服务器更新 `<server_id>` 设置；例如，`chnode1` 应设为 `1`，`chnode2` 应设为 `2`，依此类推。
 
-3. 将以下 ClickHouse Keeper 配置添加到三台服务器中的每一台，并为各服务器更新 `<server_id>` 设置；例如，`chnode1` 应设为 `1`，`chnode2` 应设为 `2`，依此类推。
+       ```xml
+       <keeper_server>
+           <tcp_port>9181</tcp_port>
+           <server_id>1</server_id>
+           <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+           <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
 
-   ```xml
-   <keeper_server>
-       <tcp_port>9181</tcp_port>
-       <server_id>1</server_id>
-       <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
-       <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+           <coordination_settings>
+               <operation_timeout_ms>10000</operation_timeout_ms>
+               <session_timeout_ms>30000</session_timeout_ms>
+               <raft_logs_level>warning</raft_logs_level>
+           </coordination_settings>
 
-       <coordination_settings>
-           <operation_timeout_ms>10000</operation_timeout_ms>
-           <session_timeout_ms>30000</session_timeout_ms>
-           <raft_logs_level>warning</raft_logs_level>
-       </coordination_settings>
+           <raft_configuration>
+               <server>
+                   <id>1</id>
+                   <hostname>chnode1.domain.com</hostname>
+                   <port>9234</port>
+               </server>
+               <server>
+                   <id>2</id>
+                   <hostname>chnode2.domain.com</hostname>
+                   <port>9234</port>
+               </server>
+               <server>
+                   <id>3</id>
+                   <hostname>chnode3.domain.com</hostname>
+                   <port>9234</port>
+               </server>
+           </raft_configuration>
+       </keeper_server>
+       ```
 
-       <raft_configuration>
-           <server>
-               <id>1</id>
-               <hostname>chnode1.domain.com</hostname>
-               <port>9234</port>
-           </server>
-           <server>
-               <id>2</id>
-               <hostname>chnode2.domain.com</hostname>
-               <port>9234</port>
-           </server>
-           <server>
-               <id>3</id>
-               <hostname>chnode3.domain.com</hostname>
-               <port>9234</port>
-           </server>
-       </raft_configuration>
-   </keeper_server>
-   ```
+       以下是上文中使用的基本设置：
 
-   以下是上文中使用的基本设置：
+       | 参数                        | 描述                                     | 示例                                |
+       | ------------------------- | -------------------------------------- | --------------------------------- |
+       | tcp&#95;port              | Keeper 客户端使用的端口                        | 9181，默认对应 ZooKeeper 中的 2181       |
+       | server&#95;id             | Raft 配置中每个 ClickHouse Keeper 服务器使用的标识符 | 1                                 |
+       | coordination&#95;settings | 协调相关参数部分，例如超时                          | timeouts: 10000, log level: trace |
+       | server                    | 参与节点的服务器定义                             | 各服务器定义的列表                         |
+       | raft&#95;configuration    | Keeper 集群中各服务器的配置                      | 每个服务器的 server 和 settings          |
+       | id                        | Keeper 服务中服务器的数字 ID                    | 1                                 |
+       | hostname                  | Keeper 集群中各服务器的主机名、IP 或 FQDN           | `chnode1.domain.com`              |
+       | port                      | 用于服务器间 Keeper 连接监听的端口                  | 9234                              |
 
-   | 参数                        | 描述                                     | 示例                                |
-   | ------------------------- | -------------------------------------- | --------------------------------- |
-   | tcp&#95;port              | Keeper 客户端使用的端口                        | 9181，默认对应 ZooKeeper 中的 2181       |
-   | server&#95;id             | Raft 配置中每个 ClickHouse Keeper 服务器使用的标识符 | 1                                 |
-   | coordination&#95;settings | 协调相关参数部分，例如超时                          | timeouts: 10000, log level: trace |
-   | server                    | 参与节点的服务器定义                             | 各服务器定义的列表                         |
-   | raft&#95;configuration    | Keeper 集群中各服务器的配置                      | 每个服务器的 server 和 settings          |
-   | id                        | Keeper 服务中服务器的数字 ID                    | 1                                 |
-   | hostname                  | Keeper 集群中各服务器的主机名、IP 或 FQDN           | `chnode1.domain.com`              |
-   | port                      | 用于服务器间 Keeper 连接监听的端口                  | 9234                              |
+    4. 启用 ZooKeeper 组件。它将使用 ClickHouse Keeper 引擎：
 
-4. 启用 ZooKeeper 组件。它将使用 ClickHouse Keeper 引擎：
+       ```xml
+           <zookeeper>
+               <node>
+                   <host>chnode1.domain.com</host>
+                   <port>9181</port>
+               </node>
+               <node>
+                   <host>chnode2.domain.com</host>
+                   <port>9181</port>
+               </node>
+               <node>
+                   <host>chnode3.domain.com</host>
+                   <port>9181</port>
+               </node>
+           </zookeeper>
+       ```
 
-   ```xml
-       <zookeeper>
-           <node>
-               <host>chnode1.domain.com</host>
-               <port>9181</port>
-           </node>
-           <node>
-               <host>chnode2.domain.com</host>
-               <port>9181</port>
-           </node>
-           <node>
-               <host>chnode3.domain.com</host>
-               <port>9181</port>
-           </node>
-       </zookeeper>
-   ```
+       以下是上文中使用的基本设置：
 
-   以上是前面用到的基本设置：
+       | 参数   | 描述                                    | 示例                     |
+       | ---- | ------------------------------------- | ---------------------- |
+       | node | 用于 ClickHouse Keeper 连接的节点列表          | 为每台服务器配置一个 settings 条目 |
+       | host | 每个 ClickHouse Keeper 节点的主机名、IP 或 FQDN | `chnode1.domain.com`   |
+       | port | ClickHouse Keeper 客户端端口               | 9181                   |
 
-   | 参数   | 描述                                    | 示例                     |
-   | ---- | ------------------------------------- | ---------------------- |
-   | node | 用于 ClickHouse Keeper 连接的节点列表          | 为每台服务器配置一个 settings 条目 |
-   | host | 每个 ClickHouse Keeper 节点的主机名、IP 或 FQDN | `chnode1.domain.com`   |
-   | port | ClickHouse Keeper 客户端端口               | 9181                   |
+    5. 重启 ClickHouse，并验证每个 Keeper 实例都在运行。在每台服务器上执行以下命令。如果 Keeper 正在运行且状态正常，`ruok` 命令将返回 `imok`：
+       ```bash
+       # echo ruok | nc localhost 9181; echo
+       imok
+       ```
 
-5. 重启 ClickHouse，并验证每个 Keeper 实例都在运行。在每台服务器上执行以下命令。如果 Keeper 正在运行且状态正常，`ruok` 命令将返回 `imok`：
-   ```bash
-   # echo ruok | nc localhost 9181; echo
-   imok
-   ```
+    6. `system` 数据库中有一张名为 `zookeeper` 的表，包含你的 ClickHouse Keeper 实例的详细信息。我们来查看这张表：
 
-6. `system` 数据库中有一张名为 `zookeeper` 的表，包含你的 ClickHouse Keeper 实例的详细信息。我们来查看这张表：
+       ```sql
+       SELECT *
+       FROM system.zookeeper
+       WHERE path IN ('/', '/clickhouse')
+       ```
 
-   ```sql
-   SELECT *
-   FROM system.zookeeper
-   WHERE path IN ('/', '/clickhouse')
-   ```
+       表如下所示：
 
-   表如下所示：
+       ```response
+       ┌─name───────┬─value─┬─czxid─┬─mzxid─┬───────────────ctime─┬───────────────mtime─┬─version─┬─cversion─┬─aversion─┬─ephemeralOwner─┬─dataLength─┬─numChildren─┬─pzxid─┬─path────────┐
+       │ clickhouse │       │   124 │   124 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        2 │        0 │              0 │          0 │           2 │  5693 │ /           │
+       │ task_queue │       │   125 │   125 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        1 │        0 │              0 │          0 │           1 │   126 │ /clickhouse │
+       │ tables     │       │  5693 │  5693 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        3 │        0 │              0 │          0 │           3 │  6461 │ /clickhouse │
+       └────────────┴───────┴───────┴───────┴─────────────────────┴─────────────────────┴─────────┴──────────┴──────────┴────────────────┴────────────┴─────────────┴───────┴─────────────┘
+       ```
+  </Step>
 
-   ```response
-   ┌─name───────┬─value─┬─czxid─┬─mzxid─┬───────────────ctime─┬───────────────mtime─┬─version─┬─cversion─┬─aversion─┬─ephemeralOwner─┬─dataLength─┬─numChildren─┬─pzxid─┬─path────────┐
-   │ clickhouse │       │   124 │   124 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        2 │        0 │              0 │          0 │           2 │  5693 │ /           │
-   │ task_queue │       │   125 │   125 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        1 │        0 │              0 │          0 │           1 │   126 │ /clickhouse │
-   │ tables     │       │  5693 │  5693 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        3 │        0 │              0 │          0 │           3 │  6461 │ /clickhouse │
-   └────────────┴───────┴───────┴───────┴─────────────────────┴─────────────────────┴─────────┴──────────┴──────────┴────────────────┴────────────┴─────────────┴───────┴─────────────┘
-   ```
+  <Step title="在 ClickHouse 中配置集群" id="2--configure-a-cluster-in-clickhouse">
+    1. 让我们在其中 2 个节点上配置一个简单集群：包含 2 个分片，且每个分片只有 1 个副本。第三个节点将用于满足 ClickHouse Keeper 对仲裁的要求。更新 `chnode1` 和 `chnode2` 上的配置。以下集群在每个节点上定义了 1 个分片，总共 2 个分片，且不进行复制。在此示例中，一部分数据会位于一个节点上，另一部分会位于另一个节点上：
 
-<div id="2--configure-a-cluster-in-clickhouse">
-  ### 2. 在 ClickHouse 中配置集群
-</div>
+       ```xml
+           <remote_servers>
+               <cluster_2S_1R>
+                   <shard>
+                       <replica>
+                           <host>chnode1.domain.com</host>
+                           <port>9000</port>
+                           <user>default</user>
+                           <password>ClickHouse123!</password>
+                       </replica>
+                   </shard>
+                   <shard>
+                       <replica>
+                           <host>chnode2.domain.com</host>
+                           <port>9000</port>
+                           <user>default</user>
+                           <password>ClickHouse123!</password>
+                       </replica>
+                   </shard>
+               </cluster_2S_1R>
+           </remote_servers>
+       ```
 
-1. 我们来配置一个简单集群：在其中 2 个节点上设置 2 个分片，且每个分片只有 1 个副本。第三个节点将用于满足 ClickHouse Keeper 的法定人数要求。更新 `chnode1` 和 `chnode2` 上的配置。以下集群在每个节点上定义了 1 个分片，总共 2 个分片，且不使用复制。在此示例中，部分数据会位于一个节点上，另一部分数据会位于另一个节点上：
+       | 参数       | 描述                      | 示例                   |
+       | -------- | ----------------------- | -------------------- |
+       | shard    | 集群定义中的副本列表              | 每个分片的副本列表            |
+       | replica  | 每个副本的设置列表               | 每个副本的设置项             |
+       | host     | 承载副本分片的服务器主机名、IP 或 FQDN | `chnode1.domain.com` |
+       | port     | 使用原生 TCP 协议通信时所用的端口     | 9000                 |
+       | user     | 用于向集群实例进行身份验证的用户名       | default              |
+       | password | 为允许连接到集群实例而为该用户设置的密码    | `ClickHouse123!`     |
 
-   ```xml
-       <remote_servers>
-           <cluster_2S_1R>
-               <shard>
-                   <replica>
-                       <host>chnode1.domain.com</host>
-                       <port>9000</port>
-                       <user>default</user>
-                       <password>ClickHouse123!</password>
-                   </replica>
-               </shard>
-               <shard>
-                   <replica>
-                       <host>chnode2.domain.com</host>
-                       <port>9000</port>
-                       <user>default</user>
-                       <password>ClickHouse123!</password>
-                   </replica>
-               </shard>
-           </cluster_2S_1R>
-       </remote_servers>
-   ```
+    2. 重启 ClickHouse 并验证集群已创建：
 
-   | 参数       | 描述                             | 示例                   |
-   | -------- | ------------------------------ | -------------------- |
-   | shard    | 集群定义中的副本列表                     | 每个分片的副本列表示例          |
-   | replica  | 每个副本的设置列表                      | 每个副本的设置项             |
-   | host     | 承载副本分片的服务器的 hostname、IP 或 FQDN | `chnode1.domain.com` |
-   | port     | 使用原生 TCP 协议通信的端口               | 9000                 |
-   | user     | 用于向集群实例进行身份验证的用户名              | default              |
-   | password | 允许连接到集群实例的用户密码                 | `ClickHouse123!`     |
+       ```sql
+       SHOW clusters;
+       ```
 
-2. 重启 ClickHouse 并验证集群已创建：
+       你应该能看到你的集群：
 
-   ```sql
-   SHOW clusters;
-   ```
+       ```response
+       ┌─cluster───────┐
+       │ cluster_2S_1R │
+       └───────────────┘
+       ```
+  </Step>
 
-   你应该会看到你的集群：
+  <Step title="创建并测试分布式表" id="3-create-and-test-distributed-table">
+    1. 在新集群上，使用 `chnode1` 上的 ClickHouse client 创建一个新数据库。`ON CLUSTER` 子句会自动在两个节点上创建该数据库。
+       ```sql
+       CREATE DATABASE db1 ON CLUSTER 'cluster_2S_1R';
+       ```
 
-   ```response
-   ┌─cluster───────┐
-   │ cluster_2S_1R │
-   └───────────────┘
-   ```
+    2. 在 `db1` 数据库中创建一张新表。再次使用 `ON CLUSTER`，会在两个节点上创建该表。
+       ```sql
+       CREATE TABLE db1.table1 on cluster 'cluster_2S_1R'
+       (
+           `id` UInt64,
+           `column1` String
+       )
+       ENGINE = MergeTree
+       ORDER BY column1
+       ```
 
-<div id="3-create-and-test-distributed-table">
-  ### 3. 创建并测试分布式表
-</div>
+    3. 在 `chnode1` 节点上添加几行数据：
+       ```sql
+       INSERT INTO db1.table1
+           (id, column1)
+       VALUES
+           (1, 'abc'),
+           (2, 'def')
+       ```
 
-1. 在 `chnode1` 上使用 ClickHouse client，在新集群中创建一个新数据库。`ON CLUSTER` 子句会自动在两个节点上创建该数据库。
-   ```sql
-   CREATE DATABASE db1 ON CLUSTER 'cluster_2S_1R';
-   ```
+    4. 在 `chnode2` 节点上添加几行数据：
+       ```sql
+       INSERT INTO db1.table1
+           (id, column1)
+       VALUES
+           (3, 'ghi'),
+           (4, 'jkl')
+       ```
 
-2. 在 `db1` 数据库中创建一个新表。同样，`ON CLUSTER` 会在两个节点上创建该表。
-   ```sql
-   CREATE TABLE db1.table1 on cluster 'cluster_2S_1R'
-   (
-       `id` UInt64,
-       `column1` String
-   )
-   ENGINE = MergeTree
-   ORDER BY column1
-   ```
+    5. 请注意，在每个节点上运行 `SELECT` 语句时，只会显示该节点上的数据。例如，在 `chnode1` 上：
 
-3. 在 `chnode1` 节点上插入两行数据：
-   ```sql
-   INSERT INTO db1.table1
-       (id, column1)
-   VALUES
-       (1, 'abc'),
-       (2, 'def')
-   ```
+       ```sql
+       SELECT *
+       FROM db1.table1
+       ```
 
-4. 在 `chnode2` 节点上再插入两行数据：
-   ```sql
-   INSERT INTO db1.table1
-       (id, column1)
-   VALUES
-       (3, 'ghi'),
-       (4, 'jkl')
-   ```
+       ```response
+       Query id: 7ef1edbc-df25-462b-a9d4-3fe6f9cb0b6d
 
-5. 请注意，在每个节点上执行 `SELECT` 语句时，只会看到该节点上的数据。例如，在 `chnode1` 上：
+       ┌─id─┬─column1─┐
+       │  1 │ abc     │
+       │  2 │ def     │
+       └────┴─────────┘
 
-   ```sql
-   SELECT *
-   FROM db1.table1
-   ```
+       2 rows in set. Elapsed: 0.006 sec.
+       ```
 
-   ```response
-   Query id: 7ef1edbc-df25-462b-a9d4-3fe6f9cb0b6d
+       在 `chnode2` 上：
 
-   ┌─id─┬─column1─┐
-   │  1 │ abc     │
-   │  2 │ def     │
-   └────┴─────────┘
+    6. ```sql
+       SELECT *
+       FROM db1.table1
+       ```
 
-   2 rows in set. Elapsed: 0.006 sec.
-   ```
+       ```response
+       Query id: c43763cc-c69c-4bcc-afbe-50e764adfcbf
 
-   在 `chnode2` 上：
+       ┌─id─┬─column1─┐
+       │  3 │ ghi     │
+       │  4 │ jkl     │
+       └────┴─────────┘
+       ```
 
-6. ```sql
-   SELECT *
-   FROM db1.table1
-   ```
+    7. 你可以创建一张 `Distributed` 表，用来表示两个分片上的数据。使用 `Distributed` 表引擎的表本身不存储任何数据，但支持在多台服务器上进行分布式查询处理。读取会访问所有分片，写入也可以分发到各个分片。在 `chnode1` 上运行以下查询：
+       ```sql
+       CREATE TABLE db1.dist_table (
+           id UInt64,
+           column1 String
+       )
+       ENGINE = Distributed(cluster_2S_1R,db1,table1)
+       ```
 
-   ```response
-   Query id: c43763cc-c69c-4bcc-afbe-50e764adfcbf
+    8. 请注意，查询 `dist_table` 会返回来自这两个分片的全部四行数据：
 
-   ┌─id─┬─column1─┐
-   │  3 │ ghi     │
-   │  4 │ jkl     │
-   └────┴─────────┘
-   ```
+       ```sql
+       SELECT *
+       FROM db1.dist_table
+       ```
 
-7. 你可以创建一个 `Distributed` 表，用来表示这两个分片上的数据。使用 `Distributed` 表引擎的表本身不存储任何数据，但支持在多个服务器上进行分布式查询处理。读取会访问所有分片，写入也可以分发到各个分片。请在 `chnode1` 上运行以下查询：
-   ```sql
-   CREATE TABLE db1.dist_table (
-       id UInt64,
-       column1 String
-   )
-   ENGINE = Distributed(cluster_2S_1R,db1,table1)
-   ```
+       ```response
+       Query id: 495bffa0-f849-4a0c-aeea-d7115a54747a
 
-8. 可以看到，查询 `dist_table` 会返回来自这两个分片的全部四行数据：
+       ┌─id─┬─column1─┐
+       │  1 │ abc     │
+       │  2 │ def     │
+       └────┴─────────┘
+       ┌─id─┬─column1─┐
+       │  3 │ ghi     │
+       │  4 │ jkl     │
+       └────┴─────────┘
 
-   ```sql
-   SELECT *
-   FROM db1.dist_table
-   ```
-
-   ```response
-   Query id: 495bffa0-f849-4a0c-aeea-d7115a54747a
-
-   ┌─id─┬─column1─┐
-   │  1 │ abc     │
-   │  2 │ def     │
-   └────┴─────────┘
-   ┌─id─┬─column1─┐
-   │  3 │ ghi     │
-   │  4 │ jkl     │
-   └────┴─────────┘
-
-   4 rows in set. Elapsed: 0.018 sec.
-   ```
+       4 rows in set. Elapsed: 0.018 sec.
+       ```
+  </Step>
+</Steps>
 
 <div id="summary">
   ### 摘要

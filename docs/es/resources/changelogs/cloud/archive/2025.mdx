@@ -181,7 +181,7 @@ para empezar a usarlo.
 
 * Nos complace anunciar la disponibilidad general de **ClickPipes para Postgres CDC**
   en ClickHouse Cloud. Con solo unos clics, ahora puede replicar sus bases de datos de Postgres
-  y habilitar análisis en tiempo real ultrarrápidos. El conector ofrece
+  y acceder a analítica en tiempo real ultrarrápida. El conector ofrece
   una sincronización de datos más rápida, latencia de apenas unos segundos, cambios de esquema automáticos,
   conectividad totalmente segura y mucho más. Consulte el
   [blog](https://clickhouse.com/blog/postgres-cdc-connector-clickpipes-ga) para
@@ -190,7 +190,7 @@ para empezar a usarlo.
 * Se introdujeron nuevas mejoras en los dashboards de la consola SQL:
   * Compartir: Puede compartir su dashboard con los miembros de su equipo. Se admiten cuatro niveles de acceso, que pueden ajustarse tanto globalmente como por usuario:
     * *Acceso de escritura*: Añadir/editar visualizaciones, ajustar la configuración de actualización e interactuar con dashboards mediante filtros.
-    * *Propietario*: Compartir un dashboard, eliminar un dashboard y todos los demás permisos de un usuario con &quot;acceso de escritura&quot;.
+    * *Owner*: Compartir un dashboard, eliminar un dashboard y todos los demás permisos de un usuario con &quot;acceso de escritura&quot;.
     * *Acceso de solo lectura*: Ver e interactuar con el dashboard mediante filtros
     * *Sin acceso*: No puede ver un dashboard
   * En el caso de los dashboards existentes, los administradores de la organización pueden asignárselos a sí mismos como propietarios.
@@ -271,11 +271,11 @@ para empezar a usarlo.
   ## 7 de marzo de 2025
 </div>
 
-* Nuevo endpoint de la API `UsageCost`: la especificación de la API ahora admite un nuevo endpoint
+* Nuevo endpoint de API `UsageCost`: la especificación de la API ahora admite un nuevo endpoint
   para obtener información de uso. Este es un endpoint a nivel de organización y los costos de uso
   se pueden consultar para un máximo de 31 días. Las métricas que se pueden
-  obtener incluyen Storage, Compute, Transferencia de datos y ClickPipes. Consulte
-  la [documentación](/es/api-reference/billing/get-organization-usage-costs) para más detalles.
+  obtener incluyen almacenamiento, cómputo, Transferencia de datos y ClickPipes. Consulte
+  la [documentación](/es/products/cloud/api-reference/billing/get-organization-usage-costs) para más detalles.
 * La versión [v2.1.0](https://registry.terraform.io/providers/ClickHouse/clickhouse/2.1.0/docs/resources/service#nestedatt--endpoints_configuration) del proveedor de Terraform permite habilitar el endpoint de MySQL.
 
 <div id="february-21-2025">
@@ -429,17 +429,17 @@ Se ha añadido soporte para la autenticación basada en JWT en el controlador JD
 JDBC / Java estará disponible en[ 0.8.0](https://github.com/ClickHouse/clickhouse-java/releases/tag/v0.8.0) cuando se publique; la fecha estimada aún está pendiente.
 
 <div id="prometheus-integration-improvements">
-  ### Mejoras en la integración con Prometheus
+  ### Mejoras en la integración de Prometheus
 </div>
 
-Hemos añadido varias mejoras a la integración con Prometheus:
+Hemos añadido varias mejoras a la integración de Prometheus:
 
-* **Endpoint a nivel de organización**. Hemos incorporado una mejora en nuestra integración con Prometheus para ClickHouse Cloud. Además de las métricas a nivel de servicio, la API ahora incluye un endpoint para las **métricas a nivel de organización**. Este nuevo endpoint recopila automáticamente métricas de todos los servicios de su organización, lo que agiliza la exportación de métricas a su collector de Prometheus. Estas métricas pueden integrarse con herramientas de visualización como Grafana y Datadog para ofrecer una visión más completa del rendimiento de su organización.
+* **Endpoint a nivel de organización**. Hemos incorporado una mejora a nuestra integración de Prometheus para ClickHouse Cloud. Además de las métricas a nivel de servicio, la API ahora incluye un endpoint para **métricas a nivel de organización**. Este nuevo endpoint recopila automáticamente las métricas de todos los servicios de su organización, lo que agiliza la exportación de métricas a su collector de Prometheus. Estas métricas pueden integrarse con herramientas de visualización como Grafana y Datadog para ofrecer una visión más completa del rendimiento de su organización.
 
   Esta funcionalidad ya está disponible para todos los usuarios. Puede encontrar más detalles [aquí](/es/products/cloud/features/monitoring/prometheus).
 
-* **Métricas filtradas**. Hemos añadido compatibilidad para devolver una lista filtrada de métricas en nuestra integración con Prometheus para ClickHouse Cloud. Esta funcionalidad ayuda a reducir el tamaño del payload de la respuesta, ya que le permite centrarse en las métricas que son críticas para supervisar el estado de su servicio.
+* **Métricas filtradas**. Hemos añadido compatibilidad para devolver una lista filtrada de métricas en nuestra integración de Prometheus para ClickHouse Cloud. Esta funcionalidad ayuda a reducir el tamaño del payload de la respuesta, ya que le permite centrarse en las métricas críticas para supervisar el estado de su servicio.
 
-  Esta funcionalidad está disponible mediante un parámetro de consulta opcional en la API, lo que facilita optimizar la recopilación de datos y agilizar las integraciones con herramientas como Grafana y Datadog.
+  Esta funcionalidad está disponible mediante un parámetro de consulta opcional de la API, lo que facilita optimizar la recopilación de datos y agilizar las integraciones con herramientas como Grafana y Datadog.
 
   La funcionalidad de métricas filtradas ya está disponible para todos los usuarios. Puede encontrar más detalles [aquí](/es/products/cloud/features/monitoring/prometheus).

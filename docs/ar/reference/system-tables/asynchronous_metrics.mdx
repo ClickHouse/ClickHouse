@@ -318,6 +318,18 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 
 عدد أخطاء ذاكرة ECC غير القابلة للتصحيح. وتشير أي قيمة غير صفرية لهذا المؤشر إلى وجود RAM تالفة يجب استبدالها فورًا، لأنها تدل على احتمال تلف البيانات. المصدر: `/sys/devices/system/edac/mc/`
 
+<div id="executableuserdefinedfunctionmemoryresidentbytes">
+  ### ExecutableUserDefinedFunctionMemoryResidentBytes
+</div>
+
+إجمالي حجم الذاكرة المقيمة (VmRSS) عبر جميع العمليات النشطة للدوال المعرّفة من قبل المستخدم من نوعَي `executable` و`executable_pool` وعملياتها التابعة، بالبايت. ويشمل ذلك عمّال `executable_pool` الخاملين. وتُحتسب الصفحات المشتركة مرة واحدة لكل عملية، لذا يمثّل هذا المجموع حدًا أعلى وقد يتجاوز البصمة الفعلية الفريدة للذاكرة الفيزيائية لعمليات UDF.
+
+<div id="executableuserdefinedfunctionprocesses">
+  ### ExecutableUserDefinedFunctionProcesses
+</div>
+
+عدد العمليات العاملة التي أُنشئت للدوال المعرّفة من قِبل المستخدم من نوع executable وexecutable&#95;pool، بما في ذلك العمليات المتفرعة منها.
+
 <div id="filesystemcachebytes">
   ### FilesystemCacheBytes
 </div>

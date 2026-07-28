@@ -28,7 +28,7 @@ ClickHouse には、リアルタイムなシナリオで大量のデータに対
 </Frame>
 
 <div id="how-do-projections-work">
-  ## プロジェクション はどのように機能しますか？
+  ## プロジェクションはどのように機能しますか？
 </div>
 
 実際のところ、PROJECTION は元のテーブルに追加される
@@ -197,10 +197,10 @@ WHERE query_id='<query_id>'
 ```
 
 <div id="using-projections-to-speed-up-UK-price-paid">
-  ### プロジェクションを使用して UK price paid クエリを高速化する
+  ### PROJECTIONを使用して UK price paid クエリを高速化する
 </div>
 
-プロジェクションを使ってクエリ性能をどのように向上できるかを示すために、実際のデータセットを使った例を見てみましょう。この例では、3,003 万行を含む [UK Property Price Paid](/ja/get-started/sample-datasets/uk-price-paid) チュートリアルのテーブルを使用します。このデータセットは、[sql.clickhouse.com](https://sql.clickhouse.com/?query_id=6IDMHK3OMR1C97J6M9EUQS) 環境でも利用できます。
+PROJECTIONを使ってクエリパフォーマンスをどのように向上できるかを示すために、実際のデータセットを使った例を見てみましょう。この例では、3,003 万行を含む [UK Property Price Paid](/ja/get-started/sample-datasets/uk-price-paid) チュートリアルのテーブルを使用します。このデータセットは、[sql.clickhouse.com](https://sql.clickhouse.com/?query_id=6IDMHK3OMR1C97J6M9EUQS) 環境でも利用できます。
 
 テーブルがどのように作成され、データが挿入されたかを確認したい場合は、[&quot;The UK property prices dataset&quot;](/ja/get-started/sample-datasets/uk-price-paid) ページを参照してください。
 
@@ -241,7 +241,7 @@ ENGINE = MergeTree
 ORDER BY (postcode1, postcode2, addr1, addr2);
 ```
 
-プロジェクションを使って、このクエリを高速化できるか見てみましょう。
+PROJECTIONを使って、このクエリを高速化できるか見てみましょう。
 
 元のテーブルと結果を保持するため、新しいテーブルを作成し、`INSERT INTO SELECT` を使ってデータをコピーします:
 
@@ -250,7 +250,7 @@ CREATE TABLE uk.uk_price_paid_with_projections AS uk_price_paid;
 INSERT INTO uk.uk_price_paid_with_projections SELECT * FROM uk.uk_price_paid;
 ```
 
-`prj_oby_town_price` というプロジェクションを作成してデータを投入します。これにより、
+`prj_oby_town_price` というPROJECTIONを作成してデータを投入します。これにより、
 町名と価格で並べ替えたプライマリインデックスを持つ追加の (非表示の) テーブルが生成され、
 特定の町における最高価格の取引について郡を一覧表示するクエリを最適化できます。
 
@@ -274,7 +274,7 @@ SETTINGS mutations_sync = 1
 [`mutations_sync`](/ja/reference/settings/session-settings#mutations_sync) 設定は、
 同期実行を強制するために使用されます。
 
-プロジェクション `prj_gby_county` を作成してデータを投入します。これは追加の (非表示の) テーブルであり、
+PROJECTION `prj_gby_county` を作成してデータを投入します。これは追加の (非表示の) テーブルであり、
 英国にある既存の130のすべてのカウンティについて、avg(price) の集計値を段階的に事前計算します。
 
 ```sql
@@ -295,19 +295,19 @@ SETTINGS mutations_sync = 1
 ```
 
 <Note>
-  上記の `prj_gby_county` 射影のように、射影で `GROUP BY` 句が使われている場合、
+  上記の `prj_gby_county` PROJECTIONのように、PROJECTIONで `GROUP BY` 句が使われている場合、
   (隠し) テーブルの基盤となるストレージエンジンは `AggregatingMergeTree`
   となり、すべての集約関数は
   `AggregateFunction` に変換されます。これにより、データの増分集約が適切に行われます。
 </Note>
 
 以下の図は、メインテーブル `uk_price_paid_with_projections`
-と、その 2 つの射影を可視化したものです。
+と、その 2 つのPROJECTIONを可視化したものです。
 
-<Image img="/images/data-modeling/projections_2.webp" size="md" alt="メインテーブル uk_price_paid_with_projections とその 2 つの射影の可視化" />
+<Image img="/images/data-modeling/projections_2.webp" size="md" alt="メインテーブル uk_price_paid_with_projections とその 2 つのPROJECTIONの可視化" />
 
 ここで、ロンドンの county のうち価格が最も高い 3 件を
-一覧表示するクエリを再度実行すると、クエリのパフォーマンスが改善していることがわかります。
+一覧表示するクエリを再度実行すると、クエリパフォーマンスが改善していることがわかります。
 
 <RunnableCode>
   ```sql
@@ -668,6 +668,6 @@ SELECT * FROM page_views WHERE region = 'us_west' AND user_id = 107;
   ## 関連コンテンツ
 </div>
 
-* [ClickHouse におけるプライマリインデックスの実践入門](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
+* [ClickHouse におけるプライマリインデックスの実践的な入門](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
 * [materialized view](/ja/concepts/features/materialized-views/index)
 * [ALTER PROJECTION](/ja/reference/statements/alter/projection)

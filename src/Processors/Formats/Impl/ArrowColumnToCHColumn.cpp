@@ -1353,6 +1353,11 @@ static ColumnPtr readOffsetsFromArrowListColumn(const std::shared_ptr<arrow::Chu
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         auto & list_chunk = dynamic_cast<ArrowListArray &>(*(arrow_column->chunk(chunk_i)));
+        /// A zero-length list chunk accesses no offsets (the loop below is skipped), so no bytes
+        /// are required.  Skip before checkedCast to accept the 0-byte offsets buffer that Apache
+        /// Arrow Java < 19.0.0 emits for an empty nested List/Map (see checkBinaryOffsetsBuffer).
+        if (list_chunk.length() == 0)
+            continue;
         auto arrow_offsets_array = list_chunk.offsets();
         /// The offsets array is a numeric Int32/Int64 array, validate its buffer before Value() calls.
         using OffsetArray = typename ArrowOffsetArray<ArrowListArray>::type;
@@ -1538,6 +1543,21 @@ static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(const std::shar
         /// Validate the parent list validity bitmap before Flatten(): when null_count > 0,
         /// Flatten calls IsValid on the parent list array which reads buffers[0].
         checkValidityBitmap(list_chunk, column_name);
+
+        /// A zero-length list chunk may carry a 0-byte offsets buffer (Apache Arrow Java < 19.0.0
+        /// emits one for an empty nested List/Map).  Arrow's Flatten() would read offset[0] from
+        /// that missing buffer and return a slice with a garbage offset; instead push an empty
+        /// slice of the values array, which preserves the child type with zero rows.
+        if (list_chunk.length() == 0)
+        {
+            const auto & values = list_chunk.values();
+            if (!values)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow List chunk has no values array for column '{}'", column_name);
+            array_vector.emplace_back(values->Slice(0, 0));
+            continue;
+        }
 
         /// Validate the offsets buffer before Flatten() reads it: Flatten() iterates
         /// over offset[0..length] to slice the values array, so it needs (length+1) entries.
