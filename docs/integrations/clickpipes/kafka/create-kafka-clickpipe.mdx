@@ -17,32 +17,26 @@ import { Image } from "/snippets/components/Image.jsx";
 Kafka ClickPipes can be deployed and managed manually using the ClickPipes UI, as well as programmatically using [OpenAPI](/integrations/clickpipes/programmatic-access/openapi) and [Terraform](/integrations/clickpipes/programmatic-access/terraform).
 
 <Steps>
-<Step>
-## Navigate to data sources {#1-load-sql-console}
+<Step title="Navigate to data sources" id="1-load-sql-console">
 Select the `Data Sources` button on the left-side menu and click on "Set up a ClickPipe".
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Select imports" size="md"/>
 </Step>
-<Step>
-## Select a data source {#2-select-data-source}
+<Step title="Select a data source" id="2-select-data-source">
 Select your Kafka data source from the list.
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="Select data source type" size="md"/>
 </Step>
-<Step>
-## Configure the data source {#3-configure-data-source}
+<Step title="Configure the data source" id="3-configure-data-source">
 Fill out the form by providing your ClickPipe with a name, a description (optional), your credentials, and other connection details.
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2.webp" alt="Fill out connection details" size="md"/>
 </Step>
-<Step>
-## Configure a schema registry (optional) {#4-configure-your-schema-registry}
+<Step title="Configure a schema registry (optional)" id="4-configure-your-schema-registry">
 A valid schema is required for Avro and Protobuf topics. See [Schema registries](/integrations/clickpipes/kafka/schema-registries) for more details on how to configure a schema registry.
 </Step>
-<Step>
-## Configure a reverse private endpoint (optional) {#5-configure-reverse-private-endpoint}
+<Step title="Configure a reverse private endpoint (optional)" id="5-configure-reverse-private-endpoint">
 Configure a Reverse Private Endpoint to allow ClickPipes to connect to your Kafka cluster using AWS PrivateLink.
 See our [AWS PrivateLink documentation](/integrations/clickpipes/aws-privatelink) for more information.
 </Step>
-<Step>
-## Configure SSH tunneling (optional) {#6-configure-ssh-tunneling}
+<Step title="Configure SSH tunneling (optional)" id="6-configure-ssh-tunneling">
 
 You can use SSH tunneling if your Kafka broker isn't publicly accessible. Instead of connecting directly, ClickPipes establishes an SSH connection to a bastion host (a server in your network that is publicly accessible) and then forwards traffic through it to your Kafka broker on your private network.
 
@@ -61,13 +55,11 @@ You can use SSH tunneling if your Kafka broker isn't publicly accessible. Instea
 Make sure to whitelist [ClickPipes IP addresses](/integrations/clickpipes/home#list-of-static-ips) in your firewall rules for the SSH bastion host so that ClickPipes can establish the SSH tunnel.
 </Note>
 </Step>
-<Step>
-## Select your topic {#7-select-your-topic}
+<Step title="Select your topic" id="7-select-your-topic">
 Select your topic and the UI will display a sample document from the topic.
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3.webp" alt="Set your topic" size="md"/>
 </Step>
-<Step>
-## Configure your destination table {#8-configure-your-destination-table}
+<Step title="Configure your destination table" id="8-configure-your-destination-table">
 
 In the next step, you can select whether you want to ingest data into a new ClickHouse table or reuse an existing one. Follow the instructions in the screen to modify your table name, schema, and settings. You can see a real-time preview of your changes in the sample table at the top.
 
@@ -77,16 +69,14 @@ You can also customize the advanced settings using the controls provided
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_table_settings.webp" alt="Set advanced controls" size="md"/>
 </Step>
-<Step>
-## Configure permissions {#9-configure-permissions}
+<Step title="Configure permissions" id="9-configure-permissions">
 ClickPipes will create a dedicated user for writing data into a destination table. You can select a role for this internal user using a custom role or one of the predefined role:
 - `Full access`: with the full access to the cluster. It might be useful if you use Materialized View or Dictionary with the destination table.
 - `Only destination table`: with the `INSERT` permissions to the destination table only.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Permissions" size="md"/>
 </Step>
-<Step>
-## Complete setup {#10-complete-setup}
+<Step title="Complete setup" id="10-complete-setup">
 Clicking on "Create ClickPipe" will create and run your ClickPipe. It will now be listed in the Data Sources section.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="View overview" size="md"/>

@@ -77,6 +77,7 @@ def generate_cluster_def(common_path, port, azure_container):
                 <endpoint>http://minio1:9001/root/var/lib/clickhouse/user_files/iceberg_data/default/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <skip_access_check>true</skip_access_check>
             </disk_s3_common>
             <disk_azure_common>
                 <type>object_storage</type>
@@ -92,6 +93,7 @@ def generate_cluster_def(common_path, port, azure_container):
                 <disk>disk_s3_common</disk>
                 <path>/tmp/s3_cache/</path>
                 <max_size>1000000000</max_size>
+                <skip_access_check>true</skip_access_check>
             </disk_s3_with_cache>
             <disk_azure_with_cache>
                 <type>cache</type>
@@ -258,6 +260,15 @@ def test_single_iceberg_file(started_cluster, format_version, storage_type, with
             )
         instance.query(
             f"SELECT * FROM icebergS3(path = '{storage_path}',  SETTINGS disk = '{disk_name}')"
+        )
+
+    if storage_type == "local":
+        assert instance.query(
+            f"SELECT * FROM icebergLocal(path = '{storage_path}', SETTINGS disk = '{disk_name}')"
+        ) == instance.query("SELECT number, toString(number + 1) FROM numbers(100)")
+        # The disk-type mismatch check must still fire for the S3-flavoured function.
+        assert "Disk type doesn't match" in instance.query_and_get_error(
+            f"SELECT * FROM icebergS3(path = '{storage_path}', SETTINGS disk = '{disk_name}')"
         )
 
 

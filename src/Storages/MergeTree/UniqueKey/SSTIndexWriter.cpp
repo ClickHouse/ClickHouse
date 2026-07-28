@@ -2,6 +2,7 @@
 
 #include <Columns/IColumn.h>
 #include <Core/SortDescription.h>
+#include <DataTypes/IDataType.h>
 #include <Disks/IDisk.h>
 #include <Disks/IVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -85,6 +86,29 @@ LoggerPtr getWriterLogger()
     return getLogger("SSTIndexWriter");
 }
 
+/// RocksDB SST needs strictly-ascending keys; when UK is a non-Nullable
+/// ascending prefix of ORDER BY the block is already sorted by UK, so the
+/// sorted writer can take it as-is and skip the re-sort.
+bool isBlockSortedByUniqueKey(
+    const Names & uk_names, const Names & sort_names,
+    const std::vector<bool> & sort_reverse_flags, const Block & block)
+{
+    if (uk_names.size() > sort_names.size())
+        return false;
+    for (size_t i = 0; i < uk_names.size(); ++i)
+        if (uk_names[i] != sort_names[i])
+            return false;
+    /// A descending ORDER BY column on the UK prefix would feed RocksDB
+    /// decreasing keys, so the block is not sorted by UK in that case.
+    for (size_t i = 0; i < uk_names.size(); ++i)
+        if (i < sort_reverse_flags.size() && sort_reverse_flags[i])
+            return false;
+    for (const auto & name : uk_names)
+        if (block.getByName(name).type->isNullable())
+            return false;
+    return true;
+}
+
 }
 
 struct SSTIndexWriter::Impl
@@ -100,6 +124,10 @@ struct SSTIndexWriter::Impl
     WriteSettings write_settings;
     bool opened = false;
     Stopwatch lifetime_watch;
+    /// Previous key fed to `addEncoded`, for the adjacent-duplicate check
+    /// (callers feed keys in ascending encoded order, so equal keys are adjacent).
+    std::string last_key;
+    UInt32 last_row_number = 0;
 
     Impl()
         : writer(rocksdb::EnvOptions{}, makeSSTOptions())
@@ -194,6 +222,16 @@ void SSTIndexWriter::addEncoded(const std::string_view & encoded_key, UInt32 row
     if (!impl->opened)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "SSTIndexWriter::addEncoded called on closed writer");
 
+    /// Detect a duplicate UNIQUE KEY within the block here, before RocksDB
+    /// rejects the non-increasing `Put` with a raw low-level error. Interim
+    /// fail-closed stance: no INSERT-time dedup yet, so a clear defined error.
+    if (entries_added > 0 && encoded_key == impl->last_key)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "INSERT block contains duplicate UNIQUE KEY values (part rows {} and {}). "
+            "INSERT-time UNIQUE KEY deduplication is not yet implemented; "
+            "deduplicate the block before inserting.",
+            impl->last_row_number, row_number);
+
     char value_buf[4];
     encodeRowNumberBE(row_number, value_buf);
 
@@ -206,6 +244,8 @@ void SSTIndexWriter::addEncoded(const std::string_view & encoded_key, UInt32 row
             "SSTIndexWriter::addEncoded failed (row_number={}): {}",
             row_number, status.ToString());
 
+    impl->last_key.assign(encoded_key.data(), encoded_key.size());
+    impl->last_row_number = row_number;
     ++entries_added;
 #else
     (void)encoded_key; (void)row_number;
@@ -300,6 +340,30 @@ UInt64 SSTIndexWriter::finalizeToStorage()
 #else
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
         "SSTIndexWriter requires RocksDB support (USE_ROCKSDB=1)");
+#endif
+}
+
+
+UInt64 SSTIndexWriter::write(
+    IDataPartStorage & part_storage,
+    const Block & block,
+    const Names & uk_names,
+    const Names & sort_names,
+    const std::vector<bool> & sort_reverse_flags,
+    const IColumn::Permutation * permutation,
+    UInt64 max_encoded_size,
+    ContextPtr context)
+{
+    if (uk_names.empty())
+        return 0;
+
+#if USE_ROCKSDB
+    if (isBlockSortedByUniqueKey(uk_names, sort_names, sort_reverse_flags, block))
+        return writeFromBlock(part_storage, block, uk_names, permutation, max_encoded_size, context);
+    return writeFromBlockUnsorted(part_storage, block, uk_names, permutation, max_encoded_size, context);
+#else
+    (void)sort_names; (void)sort_reverse_flags;
+    return writeFromBlock(part_storage, block, uk_names, permutation, max_encoded_size, context);
 #endif
 }
 
