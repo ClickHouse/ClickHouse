@@ -1778,7 +1778,7 @@ bool Aggregator::executeOnBlock(Columns columns,
                     && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
                 {
                     flushPendingChunks(*adaptive);
-                    drainStagedChunksEarly(*adaptive->session, AdaptiveDrainGoal::UntilLowWatermark);
+                    drainStagedChunksUnderMemoryPressure(*adaptive->session);
                 }
 
                 /// Checking the constraints.

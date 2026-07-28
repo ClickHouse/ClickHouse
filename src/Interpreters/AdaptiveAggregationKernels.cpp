@@ -16,6 +16,7 @@
 #include <Common/logger_useful.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/memcpySmall.h>
+#include <base/arithmeticOverflow.h>
 #include <base/memcmpSmall.h>
 #include <base/unaligned.h>
 #include <Interpreters/AdaptiveAggregationImpl.h>
@@ -1151,99 +1152,243 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
         addBatch(slice_begin, slice_end, prep.instructions.data() + i, places.data(), bucket_arena);
 }
 
-void Aggregator::drainStagedChunksEarly(AdaptiveAggregationSession & shared, AdaptiveDrainGoal goal) const
+AggregatedDataVariantsPtr Aggregator::createAdaptiveDrainTable(AggregatedDataVariants::Type type) const
 {
-    /// Blocking on purpose: a producer over the memory trigger must not keep staging while the
-    /// sweep sheds - pausing production here is the backpressure that makes the bound hold.
-    /// Threads woken after another thread's sweep usually find memory back under the trigger
-    /// and leave without work.
-    std::unique_lock sweep_lock(shared.pressure_sweep_mutex);
-    if (goal == AdaptiveDrainGoal::UntilLowWatermark
-        && getCurrentQueryMemoryUsage() < static_cast<Int64>(params.max_bytes_before_external_group_by))
+    auto table = std::make_shared<AggregatedDataVariants>();
+    table->aggregator = this;
+    table->keys_size = params.keys_size;
+    table->key_sizes = key_sizes;
+    table->init(type);
+    /// Bucket b's drained states live in pool b, mirroring the merge-time layout.
+    while (table->aggregates_pools.size() < ADAPTIVE_AGGREGATION_NUM_BUCKETS)
+        table->aggregates_pools.push_back(std::make_shared<Arena>());
+    return table;
+}
+
+size_t Aggregator::drainOneStagedChunk(
+    AggregatedDataVariants & table,
+    StagedChunkPtr & chunk,
+    std::atomic<bool> & is_cancelled,
+    PaddedPODArray<AggregateDataPtr> & places_scratch,
+    std::vector<StagedChunkPtr> & single_scratch) const
+{
+    size_t drained = 0;
+    single_scratch[0] = chunk;
+    for (size_t b = 0; b < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++b)
+    {
+        const size_t records = chunk->keys.recordsForBucket(b);
+        if (!records)
+            continue;
+        Arena * arena = table.aggregates_pools.at(b).get();
+
+        visitTwoLevelVariant(
+            table,
+            [&](auto & method)
+            {
+                drained += drainAdaptiveBucketBacklog<AdaptiveKeyStorage::CopyToArena>(
+                    method, arena, single_scratch, b, records, places_scratch, is_cancelled);
+            });
+    }
+    single_scratch[0].reset();
+    chunk.reset();
+    return drained;
+}
+
+void Aggregator::spillDetachedAdaptiveTable(AdaptiveAggregationSession & shared, AggregatedDataVariants & table) const
+{
+    if (shared.cancelled.load(std::memory_order_relaxed))
         return;
+    LOG_TRACE(log, "Adaptive aggregation: writing a detached drain table ({} keys) to disk", table.size());
+    consumeToTemporaryFile(table);
+}
+
+void Aggregator::drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) const
+{
+    std::unique_lock sweep_lock(shared.pressure_sweep_mutex);
+
+    /// A leftover record with nothing enqueued means the accounting lost track of a chunk; a
+    /// leftover after the loop means the drain stopped early. Either would silently drop rows
+    /// from the result, so both fail loudly.
+    const auto check_nothing_left = [&]
+    {
+        if (!shared.cancelled.load(std::memory_order_relaxed) && shared.backlog.undrainedRecords() != 0)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Adaptive aggregation: the finish drain left {} staged records behind.",
+                shared.backlog.undrainedRecords());
+    };
 
     auto chunks = shared.backlog.takeAllForPressureDrain();
     if (chunks.empty())
+    {
+        check_nothing_left();
         return;
+    }
 
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureSweeps);
-
-    auto & routing = *shared.early_drain_variants;
-    constexpr size_t num_buckets = ADAPTIVE_AGGREGATION_NUM_BUCKETS;
-
-    /// Bucket b's drained states live in pool b, mirroring the merge-time layout.
-    while (routing.aggregates_pools.size() < num_buckets)
-        routing.aggregates_pools.push_back(std::make_shared<Arena>());
-
-    /// The sweep aims below the trigger with some headroom, so a query hovering at the
-    /// threshold does not fire a sweep for every published block.
-    const Int64 low_watermark = static_cast<Int64>(params.max_bytes_before_external_group_by / 4 * 3);
+    while (shared.early_drain_variants->aggregates_pools.size() < ADAPTIVE_AGGREGATION_NUM_BUCKETS)
+        shared.early_drain_variants->aggregates_pools.push_back(std::make_shared<Arena>());
 
     PaddedPODArray<AggregateDataPtr> places_scratch;
     std::vector<StagedChunkPtr> single(1);
-    size_t drained_records = 0;
 
+    size_t drained_records = 0;
     for (auto & chunk : chunks)
     {
-        /// A sweep can spill gigabytes to disk; a cancelled query stops it at the next chunk
-        /// (and the per-bucket drain checks the flag as well). The undrained chunks go back
-        /// to the backlogs below, where they die with the session.
+        /// A cancelled query stops at the next chunk; the leftovers go back to the backlogs,
+        /// where they die with the session.
         if (shared.cancelled.load(std::memory_order_relaxed))
             break;
 
-        single[0] = chunk;
-        for (size_t b = 0; b < num_buckets; ++b)
+        /// Detach and write before absorbing another chunk, so a part stays close to the
+        /// floor and only one detached table exists at a time. The current memory reading is
+        /// deliberately not consulted: the query is external already, and skipping the spill
+        /// during a dip would only let the remainder grow into one arbitrarily large table.
+        if (shared.early_drain_variants->size() >= adaptive_pressure_spill_min_keys)
         {
-            const size_t records = chunk->keys.recordsForBucket(b);
-            if (!records)
-                continue;
-            Arena * arena = routing.aggregates_pools.at(b).get();
-
-            visitTwoLevelVariant(
-                routing,
-                [&](auto & method)
-                {
-                    drained_records += drainAdaptiveBucketBacklog<AdaptiveKeyStorage::CopyToArena>(
-                        method, arena, single, b, records, places_scratch, shared.cancelled);
-                });
+            auto full = std::move(shared.early_drain_variants);
+            shared.early_drain_variants = createAdaptiveDrainTable(full->type);
+            spillDetachedAdaptiveTable(shared, *full);
         }
-        single[0].reset();
-        chunk.reset();
 
-        if (goal == AdaptiveDrainGoal::UntilLowWatermark && getCurrentQueryMemoryUsage() < low_watermark)
-            break;
-
-        /// For a mostly-distinct key stream the transfer itself inflates memory (a staged
-        /// record is slimmer than a table cell plus its states), so waiting for the end of
-        /// the sweep would peak well above the trigger. Spill the routing table as soon as
-        /// it holds a reasonably sized part while memory is still above the trigger; this
-        /// applies to the finish-path full sweep as well, whose leftovers otherwise inflate
-        /// unchecked right before the external merge.
-        if (routing.size() >= adaptive_pressure_spill_min_keys
-            && getCurrentQueryMemoryUsage() > static_cast<Int64>(params.max_bytes_before_external_group_by))
-        {
-            LOG_TRACE(
-                log, "Adaptive aggregation: spilling the routing table ({} keys) under memory pressure", routing.size());
-            writeToTemporaryFile(routing);
-            while (routing.aggregates_pools.size() < num_buckets)
-                routing.aggregates_pools.push_back(std::make_shared<Arena>());
-        }
+        drained_records += drainOneStagedChunk(*shared.early_drain_variants, chunk, shared.cancelled, places_scratch, single);
     }
 
-    /// Chunks the watermark spared go back to the backlogs for the merge-time drain.
     for (auto & chunk : chunks)
         if (chunk)
             shared.backlog.requeue(chunk);
 
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureDrainedRecords, drained_records);
     shared.backlog.recordDrained(drained_records);
-    shared.early_drain_started.store(true, std::memory_order_relaxed);
-    LOG_TRACE(log, "Adaptive aggregation: pressure sweep drained {} staged records early", drained_records);
+    LOG_TRACE(log, "Adaptive aggregation: finish drain converted {} staged records", drained_records);
 
-    /// A routing residue below the spill floor stays in memory on purpose: a table that small
-    /// is never why memory is over the trigger, and it cannot accumulate past the floor across
-    /// sweeps - the in-loop spill catches it there. It merges (or, on the external path, gets
-    /// flushed at the finish) like any other variant.
+    check_nothing_left();
+}
+
+void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession & shared) const
+{
+    PaddedPODArray<AggregateDataPtr> places_scratch;
+    std::vector<StagedChunkPtr> single(1);
+
+    /// The coordinator lock is held only to claim work: a batch of chunks carrying about one
+    /// spill floor of records. Floor-sized batches are drained into a producer-local table
+    /// and written entirely outside the lock, so the transformation and the writes of
+    /// successive batches run in parallel across the producers that hit the trigger; only a
+    /// sub-floor tail is drained into the shared table under the lock, where its residue
+    /// keeps accumulating toward the floor instead of fragmenting per producer.
+    std::vector<StagedChunkPtr> batch;
+    size_t batch_records = 0;
+    size_t estimated_bytes = 0;
+    AggregatedDataVariants::Type routing_type = AggregatedDataVariants::Type::EMPTY;
+    {
+        std::unique_lock sweep_lock(shared.pressure_sweep_mutex);
+        if (getCurrentQueryMemoryUsage() < static_cast<Int64>(params.max_bytes_before_external_group_by))
+            return;
+
+        auto chunks = shared.backlog.takeAllForPressureDrain();
+        if (chunks.empty())
+            return;
+
+        ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureSweeps);
+
+        size_t batch_key_bytes = 0;
+        size_t split = 0;
+        for (; split < chunks.size() && batch_records < adaptive_pressure_spill_min_keys; ++split)
+        {
+            batch_records += chunks[split]->keys.size();
+            batch_key_bytes += chunks[split]->keys.key_bytes.size();
+        }
+        batch.assign(std::make_move_iterator(chunks.begin()), std::make_move_iterator(chunks.begin() + split));
+        for (size_t i = split; i < chunks.size(); ++i)
+            shared.backlog.requeue(chunks[i]);
+
+        if (batch_records < adaptive_pressure_spill_min_keys)
+        {
+            /// The tail regime: too little for a part of reasonable size.
+            while (shared.early_drain_variants->aggregates_pools.size() < ADAPTIVE_AGGREGATION_NUM_BUCKETS)
+                shared.early_drain_variants->aggregates_pools.push_back(std::make_shared<Arena>());
+
+            size_t drained_records = 0;
+            for (auto & chunk : batch)
+            {
+                if (shared.cancelled.load(std::memory_order_relaxed))
+                    break;
+                drained_records += drainOneStagedChunk(*shared.early_drain_variants, chunk, shared.cancelled, places_scratch, single);
+            }
+            for (auto & chunk : batch)
+                if (chunk)
+                    shared.backlog.requeue(chunk);
+
+            ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureDrainedRecords, drained_records);
+            shared.backlog.recordDrained(drained_records);
+            LOG_TRACE(log, "Adaptive aggregation: pressure sweep drained {} staged records early", drained_records);
+
+            /// Tail drains can push the shared residue past the floor over time; detach it
+            /// under the lock and write it outside, like a producer-local table. The
+            /// reservation waits if it must: skipping here would let later tails grow the
+            /// shared table without bound, and waiting while holding the coordinator lock is
+            /// safe because writers release their reservations through `detached_spill_mutex`
+            /// alone. Only cancellation declines.
+            AggregatedDataVariantsPtr detached_shared;
+            AdaptiveAggregationSession::SpillReservation reservation;
+            if (shared.early_drain_variants->size() >= adaptive_pressure_spill_min_keys
+                && reservation.reserveOrWait(shared, shared.early_drain_variants->allocatedBytes()))
+            {
+                detached_shared = std::move(shared.early_drain_variants);
+                shared.early_drain_variants = createAdaptiveDrainTable(detached_shared->type);
+            }
+
+            sweep_lock.unlock();
+            if (detached_shared)
+                spillDetachedAdaptiveTable(shared, *detached_shared);
+            return;
+        }
+
+        routing_type = shared.early_drain_variants->type;
+
+        /// The estimate saturates instead of wrapping: an absurd product only means "ask for
+        /// the whole budget", which the empty-budget grant still admits alone.
+        size_t per_record_bytes = sizeof(UInt64) * 4 + total_size_of_aggregate_states;
+        if (common::mulOverflow(batch_records, per_record_bytes, estimated_bytes)
+            || common::addOverflow(estimated_bytes, batch_key_bytes, estimated_bytes))
+            estimated_bytes = std::numeric_limits<size_t>::max();
+    }
+
+    /// The budget is claimed with the coordinator lock released, so a producer that must wait
+    /// for a writer does not block the other producers' claims; staging is paused either way,
+    /// which is the backpressure that keeps the backlog bounded under slow storage. The wait
+    /// ends only with a grant or with cancellation.
+    AdaptiveAggregationSession::SpillReservation reservation;
+    if (!reservation.reserveOrWait(shared, estimated_bytes))
+    {
+        for (auto & chunk : batch)
+            shared.backlog.requeue(chunk);
+        return;
+    }
+
+    auto local = createAdaptiveDrainTable(routing_type);
+
+    size_t drained_records = 0;
+    for (auto & chunk : batch)
+    {
+        if (shared.cancelled.load(std::memory_order_relaxed))
+            break;
+        drained_records += drainOneStagedChunk(*local, chunk, shared.cancelled, places_scratch, single);
+    }
+    for (auto & chunk : batch)
+        if (chunk)
+            shared.backlog.requeue(chunk);
+
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureDrainedRecords, drained_records);
+    shared.backlog.recordDrained(drained_records);
+    LOG_TRACE(log, "Adaptive aggregation: pressure sweep drained {} staged records into a producer-local table", drained_records);
+
+    /// Correct the estimate upward to the built table's real footprint; never downward, so
+    /// the serialization scratch still to come is not double-booked to someone else.
+    reservation.resize(std::max(estimated_bytes, local->allocatedBytes()));
+
+    if (drained_records)
+        spillDetachedAdaptiveTable(shared, *local);
 }
 
 }

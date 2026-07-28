@@ -65,12 +65,4 @@ enum class AdaptiveKeyStorage
     CopyToArena,
 };
 
-/// Why an early drain runs: the memory valve stops at its watermark and re-enqueues the rest,
-/// the finish path takes everything to put the backlogs into disk-mergeable form.
-enum class AdaptiveDrainGoal
-{
-    UntilLowWatermark,
-    All,
-};
-
 }

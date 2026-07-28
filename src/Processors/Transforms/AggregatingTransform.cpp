@@ -1327,7 +1327,7 @@ void AggregatingTransform::initGenerate()
         /// no-ops under the trigger, sheds staged records when over it, and spills the routing
         /// table if shedding is not enough - which makes the choice below go external.
         if (params->params.max_bytes_before_external_group_by)
-            params->aggregator.drainStagedChunksEarly(shared, AdaptiveDrainGoal::UntilLowWatermark);
+            params->aggregator.drainStagedChunksUnderMemoryPressure(shared);
 
         if (aggregator_has_temporary_data())
         {
@@ -1336,13 +1336,13 @@ void AggregatingTransform::initGenerate()
             /// disk-mergeable form by draining everything into the routing table now (the
             /// finish barrier guarantees a quiescent, uncontended sweep). The external branch
             /// below flushes it together with the other still-in-memory variants.
-            params->aggregator.drainStagedChunksEarly(shared, AdaptiveDrainGoal::All);
+            params->aggregator.drainStagedChunksAtFinish(shared);
 
             /// The external merge bypasses `prepareVariantsToMerge`, which is where the thaw
             /// verdict is normally recorded.
             params->aggregator.recordAdaptiveStagingVerdict(shared);
         }
-        if (shared.early_drain_started.load(std::memory_order_relaxed))
+        if (shared.early_drain_variants->hasData())
         {
             /// Early-drained records live in the routing table: it holds part of the result
             /// and joins the merge set like any other variant.

@@ -237,9 +237,6 @@ struct AdaptiveAggregationSession
     /// need none either. Producers over the trigger block on it deliberately - pausing
     /// production is the backpressure that lets the sweep win.
     std::mutex pressure_sweep_mutex;
-    /// Whether any early drain moved records into `early_drain_variants`: the finish path then
-    /// includes it in the merge set.
-    std::atomic<bool> early_drain_started{false};
     /// Reservations of detached-table bytes against `adaptive_pressure_detached_bytes_budget`,
     /// released as their writes finish. Guarded by a mutex with a condition variable so a
     /// producer that cannot reserve waits for a writer instead of staging on into an

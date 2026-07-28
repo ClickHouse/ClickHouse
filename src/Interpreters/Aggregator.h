@@ -244,6 +244,21 @@ public:
         bool & no_more_keys,
         AdaptiveAggregationProducer * adaptive) const;
 
+    /// One staged chunk into one drain table, bucket slice by bucket slice; frees the chunk.
+    size_t drainOneStagedChunk(
+        AggregatedDataVariants & table,
+        StagedChunkPtr & chunk,
+        std::atomic<bool> & is_cancelled,
+        PaddedPODArray<AggregateDataPtr> & places_scratch,
+        std::vector<StagedChunkPtr> & single_scratch) const;
+
+    /// A fresh drain destination of the session's method type, with one arena per bucket.
+    AggregatedDataVariantsPtr createAdaptiveDrainTable(AggregatedDataVariants::Type type) const;
+
+    /// Writes a detached drain table through the ordinary external machinery and tears it
+    /// down; skipped for a cancelled query, whose table just destroys itself.
+    void spillDetachedAdaptiveTable(AdaptiveAggregationSession & shared, AggregatedDataVariants & table) const;
+
     /// Drains one bucket's whole backlog into the destination variant's two-level bucket. Called
     /// by the merge task that owns the bucket, before it merges that bucket: production finished
     /// before the merge sources were created and the ownership is exclusive, so the backlog is
@@ -261,15 +276,17 @@ public:
     /// time the last finisher assembles the merge.
     void flushPendingChunks(AdaptiveAggregationProducer & adaptive) const;
 
-    /// Swaps the enqueued chunks out of the backlogs and drains them chunk-major into
-    /// `early_drain_variants` (all of one chunk's bucket slices, then the next), so each chunk
-    /// frees the moment it is consumed. Runs on at most one thread at a time. The memory-
-    /// pressure valve calls it with a watermark: it stops once memory falls below it and
-    /// re-enqueues what it did not drain; whenever the routing table reaches the spill floor
-    /// while memory is still over the trigger, it spills mid-drain, so the transfer itself
-    /// cannot peak above the trigger. The finish path calls it with `AdaptiveDrainGoal::All`
-    /// to put the backlogs into disk-mergeable form when a producer has spilled.
-    void drainStagedChunksEarly(AdaptiveAggregationSession & shared, AdaptiveDrainGoal goal) const;
+    /// The production-time memory valve: claims a bounded batch of staged chunks under the
+    /// sweep lock, drains it into a producer-local table outside the lock, and writes that
+    /// table through the ordinary external machinery; a sub-floor tail accumulates in the
+    /// session's shared table instead. Producers over the trigger block on the claim
+    /// deliberately - pausing production is the backpressure that makes the bound hold.
+    void drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession & shared) const;
+
+    /// The finish drain: converts everything still enqueued into disk-mergeable form when the
+    /// merge goes external, spilling at the part floor as it goes, and throws if anything
+    /// would be left behind.
+    void drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) const;
 
     /** This array serves two purposes.
       *
