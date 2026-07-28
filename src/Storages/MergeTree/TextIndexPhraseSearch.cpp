@@ -1,41 +1,37 @@
 #include <Storages/MergeTree/TextIndexPhraseSearch.h>
 
-#include <utility>
-
 namespace DB
 {
 
-PaddedPODArray<UInt32> TextIndexPhraseSearch::matchCandidatePositions(
-    const PaddedPODArray<UInt32> & candidates,
+void TextIndexPhraseSearch::matchCandidatePositions(
+    std::span<const UInt32> candidates,
     const std::vector<PaddedPODArray<UInt32>> & per_token_offsets,
     const std::vector<PaddedPODArray<UInt32>> & per_token_positions,
-    const std::vector<size_t> & term_to_unique)
+    const std::vector<size_t> & term_to_unique,
+    PaddedPODArray<UInt32> & matching)
 {
-    PaddedPODArray<UInt32> matching;
     if (candidates.empty() || term_to_unique.empty())
-        return matching;
-
-    auto candidate_slice = [&](size_t unique_idx, size_t candidate_idx) -> std::pair<const UInt32 *, const UInt32 *>
-    {
-        const auto & offsets = per_token_offsets[unique_idx];
-        const auto & positions = per_token_positions[unique_idx];
-        const UInt32 begin = candidate_idx == 0 ? 0 : offsets[candidate_idx - 1];
-        return {positions.data() + begin, positions.data() + offsets[candidate_idx]};
-    };
+        return;
 
     /// Per candidate: keep the positions of term k that continue a phrase started k terms back,
-    /// advancing with a two-pointer over each next term's sorted positions.
+    /// advancing with a two-pointer over each next term's sorted positions. A candidate matches
+    /// at the first position that survives to the last term.
     std::vector<UInt32> chain;
     std::vector<UInt32> next;
     for (size_t i = 0; i < candidates.size(); ++i)
     {
-        const auto [first_begin, first_end] = candidate_slice(term_to_unique[0], i);
-        chain.assign(first_begin, first_end);
+        const size_t u0 = term_to_unique[0];
+        chain.assign(
+            per_token_positions[u0].data() + per_token_offsets[u0][i],
+            per_token_positions[u0].data() + per_token_offsets[u0][i + 1]);
 
-        for (size_t k = 1; k < term_to_unique.size() && !chain.empty(); ++k)
+        bool matched = term_to_unique.size() == 1 && !chain.empty();
+        for (size_t k = 1; k < term_to_unique.size(); ++k)
         {
-            const auto [begin, end] = candidate_slice(term_to_unique[k], i);
-            const UInt32 * next_position = begin;
+            const size_t u = term_to_unique[k];
+            const UInt32 * next_position = per_token_positions[u].data() + per_token_offsets[u][i];
+            const UInt32 * const end = per_token_positions[u].data() + per_token_offsets[u][i + 1];
+            const bool last = k + 1 == term_to_unique.size();
             next.clear();
             for (UInt32 position : chain)
             {
@@ -44,16 +40,25 @@ PaddedPODArray<UInt32> TextIndexPhraseSearch::matchCandidatePositions(
                 if (next_position == end)
                     break;
                 if (*next_position == position + 1)
-                    next.push_back(*next_position);
+                {
+                    if (last)
+                    {
+                        matched = true;
+                        break;
+                    }
+                    next.push_back(position + 1);
+                }
             }
+            if (last)
+                break;
             chain.swap(next);
+            if (chain.empty())
+                break;
         }
 
-        if (!chain.empty())
+        if (matched)
             matching.push_back(candidates[i]);
     }
-
-    return matching;
 }
 
 }

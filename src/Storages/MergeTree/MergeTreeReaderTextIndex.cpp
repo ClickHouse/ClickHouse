@@ -1056,8 +1056,6 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const TextS
     PaddedPODArray<UInt32> matching;
     std::vector<PaddedPODArray<UInt32>> chunk_offsets(unique_tokens.size());
     std::vector<PaddedPODArray<UInt32>> chunk_positions(unique_tokens.size());
-    std::vector<UInt32> chain;
-    std::vector<UInt32> next;
     UInt64 match_us = 0;
 
     for (size_t chunk_lo = 0; chunk_lo < candidates.size(); chunk_lo += CHUNK)
@@ -1067,45 +1065,9 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const TextS
             decode_chunk(u, chunk_lo, chunk_hi, chunk_offsets[u], chunk_positions[u]);
 
         Stopwatch match_watch;
-        for (size_t i = chunk_lo; i < chunk_hi; ++i)
-        {
-            const size_t j = i - chunk_lo;
-            const size_t u0 = term_to_unique[0];
-            chain.assign(chunk_positions[u0].data() + chunk_offsets[u0][j], chunk_positions[u0].data() + chunk_offsets[u0][j + 1]);
-
-            bool matched = false;
-            for (size_t k = 1; k < term_to_unique.size(); ++k)
-            {
-                const size_t uk = term_to_unique[k];
-                const UInt32 * next_position = chunk_positions[uk].data() + chunk_offsets[uk][j];
-                const UInt32 * const end = chunk_positions[uk].data() + chunk_offsets[uk][j + 1];
-                const bool last = k + 1 == term_to_unique.size();
-                next.clear();
-                for (UInt32 position : chain)
-                {
-                    while (next_position != end && *next_position < position + 1)
-                        ++next_position;
-                    if (next_position == end)
-                        break;
-                    if (*next_position == position + 1)
-                    {
-                        if (last)
-                        {
-                            matched = true;
-                            break;
-                        }
-                        next.push_back(position + 1);
-                    }
-                }
-                if (last)
-                    break;
-                chain.swap(next);
-                if (chain.empty())
-                    break;
-            }
-            if (matched)
-                matching.push_back(candidates[i]);
-        }
+        TextIndexPhraseSearch::matchCandidatePositions(
+            std::span<const UInt32>(candidates.data() + chunk_lo, chunk_hi - chunk_lo),
+            chunk_offsets, chunk_positions, term_to_unique, matching);
         match_us += match_watch.elapsedMicroseconds();
     }
     decode_us += block_decode_us;

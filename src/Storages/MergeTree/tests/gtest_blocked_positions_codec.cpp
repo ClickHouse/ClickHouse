@@ -234,6 +234,19 @@ DB::PaddedPODArray<UInt32> toPod(const std::vector<uint32_t> & v)
     return out;
 }
 
+/// Test-side wrapper over the appending kernel.
+DB::PaddedPODArray<UInt32> matchCandidates(
+    const DB::PaddedPODArray<UInt32> & candidates,
+    const std::vector<DB::PaddedPODArray<UInt32>> & offsets,
+    const std::vector<DB::PaddedPODArray<UInt32>> & positions,
+    const std::vector<size_t> & term_to_unique)
+{
+    DB::PaddedPODArray<UInt32> matching;
+    DB::TextIndexPhraseSearch::matchCandidatePositions(
+        std::span<const UInt32>(candidates.data(), candidates.size()), offsets, positions, term_to_unique, matching);
+    return matching;
+}
+
 }
 
 TEST(BlockedPositionsMatch, TwoTerms)
@@ -241,13 +254,13 @@ TEST(BlockedPositionsMatch, TwoTerms)
     /// candidate 5: term0 at {3, 7}, term1 at {8} -> 7+1 matches; candidate 9: {2} then {10} -> no.
     const auto candidates = toPod({5, 9});
     std::vector<DB::PaddedPODArray<UInt32>> offsets;
-    offsets.push_back(toPod({2, 3}));
-    offsets.push_back(toPod({1, 2}));
+    offsets.push_back(toPod({0, 2, 3}));
+    offsets.push_back(toPod({0, 1, 2}));
     std::vector<DB::PaddedPODArray<UInt32>> positions;
     positions.push_back(toPod({3, 7, 2}));
     positions.push_back(toPod({8, 10}));
 
-    const auto matching = DB::TextIndexPhraseSearch::matchCandidatePositions(candidates, offsets, positions, {0, 1});
+    const auto matching = matchCandidates(candidates, offsets, positions, {0, 1});
     ASSERT_EQ(matching.size(), 1u);
     EXPECT_EQ(matching[0], 5u);
 }
@@ -257,19 +270,19 @@ TEST(BlockedPositionsMatch, RepeatedTerm)
     /// "foo foo": candidate 1 has foo at {0,1,2} (consecutive), candidate 2 only at {4}.
     const auto candidates = toPod({1, 2});
     std::vector<DB::PaddedPODArray<UInt32>> offsets;
-    offsets.push_back(toPod({3, 4}));
+    offsets.push_back(toPod({0, 3, 4}));
     std::vector<DB::PaddedPODArray<UInt32>> positions;
     positions.push_back(toPod({0, 1, 2, 4}));
 
-    const auto matching = DB::TextIndexPhraseSearch::matchCandidatePositions(candidates, offsets, positions, {0, 0});
+    const auto matching = matchCandidates(candidates, offsets, positions, {0, 0});
     ASSERT_EQ(matching.size(), 1u);
     EXPECT_EQ(matching[0], 1u);
 
-    const auto triple = DB::TextIndexPhraseSearch::matchCandidatePositions(candidates, offsets, positions, {0, 0, 0});
+    const auto triple = matchCandidates(candidates, offsets, positions, {0, 0, 0});
     ASSERT_EQ(triple.size(), 1u);
     EXPECT_EQ(triple[0], 1u);
 
-    const auto quad = DB::TextIndexPhraseSearch::matchCandidatePositions(candidates, offsets, positions, {0, 0, 0, 0});
+    const auto quad = matchCandidates(candidates, offsets, positions, {0, 0, 0, 0});
     EXPECT_TRUE(quad.empty());
 }
 
@@ -277,27 +290,27 @@ TEST(BlockedPositionsMatch, ThreeTermsChain)
 {
     const auto candidates = toPod({7});
     std::vector<DB::PaddedPODArray<UInt32>> offsets;
-    offsets.push_back(toPod({1}));
-    offsets.push_back(toPod({1}));
-    offsets.push_back(toPod({1}));
+    offsets.push_back(toPod({0, 1}));
+    offsets.push_back(toPod({0, 1}));
+    offsets.push_back(toPod({0, 1}));
     std::vector<DB::PaddedPODArray<UInt32>> positions;
     positions.push_back(toPod({0}));
     positions.push_back(toPod({1}));
     positions.push_back(toPod({2}));
 
-    auto matching = DB::TextIndexPhraseSearch::matchCandidatePositions(candidates, offsets, positions, {0, 1, 2});
+    auto matching = matchCandidates(candidates, offsets, positions, {0, 1, 2});
     ASSERT_EQ(matching.size(), 1u);
     EXPECT_EQ(matching[0], 7u);
 
     /// Break the chain: the last term moves off position 2.
     positions[2] = toPod({3});
-    matching = DB::TextIndexPhraseSearch::matchCandidatePositions(candidates, offsets, positions, {0, 1, 2});
+    matching = matchCandidates(candidates, offsets, positions, {0, 1, 2});
     EXPECT_TRUE(matching.empty());
 }
 
 TEST(BlockedPositionsMatch, Empty)
 {
-    EXPECT_TRUE(DB::TextIndexPhraseSearch::matchCandidatePositions({}, {}, {}, {}).empty());
+    EXPECT_TRUE(matchCandidates({}, {}, {}, {}).empty());
 }
 
 TEST(BlockedPositionsCodec, RejectsFrequencyAboveUInt32)
