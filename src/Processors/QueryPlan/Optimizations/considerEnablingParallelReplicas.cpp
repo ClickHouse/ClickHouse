@@ -290,6 +290,22 @@ void considerEnablingParallelReplicas(
     if (!source_reading_step)
         return;
 
+    /// If the matched node is the reading step itself (e.g. a window function over a bare table scan:
+    /// replicas would execute only the reading, everything above is computed on the initiator), we cannot
+    /// estimate the number of bytes replicas would send to the initiator: the reading step records only
+    /// input bytes (see `RuntimeDataflowStatisticsCacheUpdater::recordInputColumns`), while output bytes
+    /// are recorded by the transforms of the steps above it. Proceeding would feed `output_bytes = 0` into
+    /// the cost model, i.e. treat shipping the whole read result over the network as free, and could enable
+    /// parallel replicas for plans that are cheaper to execute locally. Skip the optimization instead.
+    if (corresponding_node_in_single_replica_plan->step.get() == source_reading_step)
+    {
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "The matched node is the reading step itself, cannot estimate the amount of data sent to the initiator. "
+            "Skipping optimization");
+        return;
+    }
+
     const auto analysis
         = source_reading_step->getAnalyzedResult() ? source_reading_step->getAnalyzedResult() : source_reading_step->selectRangesToRead();
     if (!analysis)
