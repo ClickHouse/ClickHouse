@@ -1,0 +1,38 @@
+---
+title: 'Añadir tablas específicas a un ClickPipe'
+description: 'Describe los pasos necesarios para añadir tablas específicas a un ClickPipe.'
+sidebarTitle: 'Añadir tabla'
+slug: /integrations/clickpipes/mongodb/add_table
+show_title: false
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'ingestión de datos', 'sincronización en tiempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Hay casos en los que puede resultar útil añadir tablas específicas a un pipe. Esto se vuelve una necesidad habitual a medida que crece tu carga de trabajo transaccional o analítica.
+
+<div id="add-tables-steps">
+  ## Pasos para agregar tablas específicas a un ClickPipe
+</div>
+
+Esto se puede hacer siguiendo estos pasos:
+
+1. [Pausa](/es/integrations/clickpipes/mongodb/pause-and-resume) el pipe.
+2. Haz clic en Edit Table settings.
+3. Localiza la tabla; puedes hacerlo buscándola en la barra de búsqueda.
+4. Selecciona la tabla haciendo clic en la casilla de verificación.
+
+<br />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp" border size="md" />
+
+5. Haz clic en update.
+6. Tras una actualización correcta, el pipe tendrá los estados `Setup`, `Snapshot` y `Running`, en ese orden. La carga inicial de la tabla se puede seguir en la pestaña **Tables**.
+
+<Info>
+  El CDC de las tablas existentes se reanuda automáticamente una vez que se completa la instantánea de la nueva tabla.
+</Info>
