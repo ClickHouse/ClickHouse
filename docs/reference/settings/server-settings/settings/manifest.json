@@ -1,6 +1,6 @@
 {
   "version": 6,
-  "settings": 520,
+  "settings": 521,
   "anchorRoutes": {
     "abort_on_logical_error": "/reference/settings/server-settings/settings/other",
     "access_control_improvements": "/reference/settings/server-settings/settings/access-control",
@@ -184,6 +184,7 @@
     "jemalloc_flush_profile_on_memory_exceeded": "/reference/settings/server-settings/settings/jemalloc-flush",
     "jemalloc_flush_profile_on_memory_exceeded_interval": "/reference/settings/server-settings/settings/jemalloc-flush",
     "jemalloc_max_background_threads_num": "/reference/settings/server-settings/settings/jemalloc",
+    "jemalloc_merge_tree_arenas": "/reference/settings/server-settings/settings/jemalloc",
     "jemalloc_profiler_sampling_rate": "/reference/settings/server-settings/settings/jemalloc",
     "keep_alive_timeout": "/reference/settings/server-settings/settings/other",
     "keeper_hosts": "/reference/settings/server-settings/settings/keeper",
@@ -1332,7 +1333,7 @@
       "path": "/reference/settings/server-settings/settings/allow",
       "label": "allow_*",
       "settings": 6,
-      "characters": 1687
+      "characters": 1756
     },
     {
       "path": "/reference/settings/server-settings/settings/allow-experimental",
@@ -1434,7 +1435,7 @@
       "path": "/reference/settings/server-settings/settings/default",
       "label": "default_*",
       "settings": 4,
-      "characters": 870
+      "characters": 951
     },
     {
       "path": "/reference/settings/server-settings/settings/default-replica",
@@ -1452,7 +1453,7 @@
       "path": "/reference/settings/server-settings/settings/disable",
       "label": "disable_*",
       "settings": 3,
-      "characters": 1872
+      "characters": 1896
     },
     {
       "path": "/reference/settings/server-settings/settings/disk-connections",
@@ -1464,7 +1465,7 @@
       "path": "/reference/settings/server-settings/settings/distributed",
       "label": "distributed_*",
       "settings": 7,
-      "characters": 1490
+      "characters": 1574
     },
     {
       "path": "/reference/settings/server-settings/settings/distributed-cache",
@@ -1530,7 +1531,7 @@
       "path": "/reference/settings/server-settings/settings/http",
       "label": "http_*",
       "settings": 3,
-      "characters": 5710
+      "characters": 5736
     },
     {
       "path": "/reference/settings/server-settings/settings/http-connections",
@@ -1578,25 +1579,25 @@
       "path": "/reference/settings/server-settings/settings/interserver",
       "label": "interserver_*",
       "settings": 2,
-      "characters": 1446
+      "characters": 1476
     },
     {
       "path": "/reference/settings/server-settings/settings/interserver-http",
       "label": "interserver_http_*",
       "settings": 3,
-      "characters": 3142
+      "characters": 3227
     },
     {
       "path": "/reference/settings/server-settings/settings/interserver-https",
       "label": "interserver_https_*",
       "settings": 2,
-      "characters": 567
+      "characters": 652
     },
     {
       "path": "/reference/settings/server-settings/settings/jemalloc",
       "label": "jemalloc_*",
-      "settings": 3,
-      "characters": 1116
+      "settings": 4,
+      "characters": 1791
     },
     {
       "path": "/reference/settings/server-settings/settings/jemalloc-enable",
@@ -1614,7 +1615,7 @@
       "path": "/reference/settings/server-settings/settings/keeper",
       "label": "keeper_*",
       "settings": 2,
-      "characters": 488
+      "characters": 572
     },
     {
       "path": "/reference/settings/server-settings/settings/keeper-server-socket",
@@ -1626,7 +1627,7 @@
       "path": "/reference/settings/server-settings/settings/license",
       "label": "license_*",
       "settings": 2,
-      "characters": 194
+      "characters": 363
     },
     {
       "path": "/reference/settings/server-settings/settings/listen",
@@ -1986,13 +1987,13 @@
       "path": "/reference/settings/server-settings/settings/tcp-port",
       "label": "tcp_port_*",
       "settings": 2,
-      "characters": 335
+      "characters": 339
     },
     {
       "path": "/reference/settings/server-settings/settings/temporary-data",
       "label": "temporary_data_*",
       "settings": 2,
-      "characters": 1364
+      "characters": 1449
     },
     {
       "path": "/reference/settings/server-settings/settings/text-index",
@@ -2022,7 +2023,7 @@
       "path": "/reference/settings/server-settings/settings/tmp",
       "label": "tmp_*",
       "settings": 2,
-      "characters": 1616
+      "characters": 1701
     },
     {
       "path": "/reference/settings/server-settings/settings/top-level",
@@ -2070,7 +2071,7 @@
       "path": "/reference/settings/server-settings/settings/users",
       "label": "users_*",
       "settings": 2,
-      "characters": 466
+      "characters": 551
     },
     {
       "path": "/reference/settings/server-settings/settings/vector-similarity",
@@ -2082,7 +2083,7 @@
       "path": "/reference/settings/server-settings/settings/workload",
       "label": "workload_*",
       "settings": 2,
-      "characters": 1048
+      "characters": 1083
     },
     {
       "path": "/reference/settings/server-settings/settings/zookeeper",
@@ -2094,7 +2095,7 @@
       "path": "/reference/settings/server-settings/settings/other",
       "label": "Other",
       "settings": 118,
-      "characters": 98035
+      "characters": 99451
     }
   ]
 }
