@@ -1150,10 +1150,12 @@ bool isJSONTypeHintOnlyChange(const IDataType * from_type, const IDataType * to_
     return true;
 }
 
-/// If true, then in order to ALTER the type of the column from the type from to the type to
-/// we don't need to rewrite the data, we only need to update metadata and columns.txt in part directories.
-/// The function works for Arrays and Nullables of the same structure.
-bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to, const ContextPtr & context)
+/// Category 1: "true" metadata-only conversion. The on-disk byte representation is identical;
+/// only the logical type changes (e.g. `Date` <-> `UInt16`, enum widening). These are safe
+/// everywhere, including columns whose values are persisted positionally (primary index,
+/// partition key, secondary indexes), because those bytes decode to the same value under the
+/// new type. Works recursively for `Array` and `Nullable` of the same structure.
+bool isTrueMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 {
     auto is_compatible_enum_types_conversion = [](const IDataType * from_type, const IDataType * to_type)
     {
@@ -1193,13 +1195,6 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to, cons
         if (is_compatible_enum_types_conversion(from, to))
             return true;
 
-        /// JSON type hint changes are metadata-only when the experimental setting is enabled
-        if (context && context->getSettingsRef()[Setting::allow_experimental_json_lazy_type_hints])
-        {
-            if (isJSONTypeHintOnlyChange(from, to))
-                return true;
-        }
-
         /// Types changed, but representation on disk didn't
         auto it_range = allowed_conversions.equal_range(typeid(*from));
         for (auto it = it_range.first; it != it_range.second; ++it)
@@ -1230,6 +1225,53 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to, cons
     }
 }
 
+/// If true, then in order to ALTER the type of the column from the type `from` to the type `to`
+/// we don't need to rewrite the data, we only need to update metadata and columns.txt in part
+/// directories. This is the union of two categories: a byte-identical (`isTrueMetadataOnlyConversion`)
+/// change and a lazy-cast (`isLazyMetadataConversion`) change.
+bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to, const ContextPtr & context)
+{
+    return isTrueMetadataOnlyConversion(from, to) || isLazyMetadataConversion(from, to, context);
+}
+
+}
+
+bool isLazyMetadataConversion(const IDataType * from, const IDataType * to, const ContextPtr & context)
+{
+    if (!context || !context->getSettingsRef()[Setting::allow_experimental_json_lazy_type_hints])
+        return false;
+
+    /// Identical types are byte-identical, not a lazy conversion.
+    if (from->equals(*to))
+        return false;
+
+    /// Unwrap `Array`/`Nullable` wrappers (mirroring `isTrueMetadataOnlyConversion`) to reach a
+    /// JSON type at any depth, e.g. `Array(JSON(...))`.
+    while (true)
+    {
+        if (isJSONTypeHintOnlyChange(from, to))
+            return true;
+
+        const auto * arr_from = typeid_cast<const DataTypeArray *>(from);
+        const auto * arr_to = typeid_cast<const DataTypeArray *>(to);
+        if (arr_from && arr_to)
+        {
+            from = arr_from->getNestedType().get();
+            to = arr_to->getNestedType().get();
+            continue;
+        }
+
+        const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from);
+        const auto * nullable_to = typeid_cast<const DataTypeNullable *>(to);
+        if (nullable_from && nullable_to)
+        {
+            from = nullable_from->getNestedType().get();
+            to = nullable_to->getNestedType().get();
+            continue;
+        }
+
+        return false;
+    }
 }
 
 bool AlterCommand::isSettingsAlter() const

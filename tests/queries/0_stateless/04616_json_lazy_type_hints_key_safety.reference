@@ -1,0 +1,20 @@
+ORDER BY subcolumn, type change -> reject:
+PARTITION BY subcolumn, type change -> reject:
+skip index on subcolumn, type change -> reject:
+add unrelated path, key unchanged -> metadata-only mutations:	0
+add unrelated path, count j.a >= 40 after reload (expect 24):	24
+toString(j.a) key, type change -> metadata-only mutations:	0
+toString(j.a) key, count after reload (expect 1):	1
+toString(j.a) skip index, type change -> metadata-only mutations:	0
+toString(j.a) skip index, count after reload (expect 1):	1
+projection on whole column -> metadata-only mutations:	0
+projection read after reload:	0	0
+projection read after reload:	1	1
+projection read after reload:	2	2
+plain column total change -> metadata-only mutations:	0
+plain column total change, read after reload:	0	0
+plain column total change, read after reload:	1	1
+plain column total change, read after reload:	2	2
+plain column total change, read after reload:	3	3
+lossy plain change -> metadata-only mutations:	0
+setting off, key subcolumn change -> reject (mutation path):

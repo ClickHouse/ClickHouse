@@ -5319,6 +5319,107 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 }
             }
         }
+        else if (command.type == AlterCommand::MODIFY_COLUMN && command.data_type
+            && old_metadata.getColumns().hasPhysical(command.column_name)
+            && new_metadata.getColumns().hasPhysical(command.column_name)
+            && isLazyMetadataConversion(old_types.at(command.column_name), command.data_type.get(), local_context))
+        {
+            /// A "lazy" metadata-only conversion (e.g. a JSON type-hint change) changes the on-disk
+            /// serialization but skips the mutation branch above, so it never rebuilds `primary.idx`,
+            /// the partition-key files, or `skp_idx_*` files. For ordinary column reads this is fine
+            /// (old parts are read with their old type and CAST), but the primary/partition key and
+            /// secondary indexes persist the *result* of an expression, serialized positionally and
+            /// read back with the current type without per-part CAST reconciliation. Refuse the change
+            /// when it alters the result type of such a persisted expression that depends on this
+            /// column; otherwise the stale on-disk bytes become unreadable/misread with the new type.
+            const auto & old_columns_desc = old_metadata.getColumns();
+
+            auto expression_depends_on_column = [&](const ExpressionActionsPtr & expr) -> bool
+            {
+                if (!expr)
+                    return false;
+                for (const auto & required : expr->getRequiredColumns())
+                {
+                    if (required == command.column_name)
+                        return true;
+                    auto storage_column = old_columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required);
+                    if (storage_column && storage_column->getNameInStorage() == command.column_name)
+                        return true;
+                }
+                return false;
+            };
+
+            auto result_types_changed = [](const DataTypes & old_result_types, const DataTypes & new_result_types) -> bool
+            {
+                if (old_result_types.size() != new_result_types.size())
+                    return true;
+                for (size_t i = 0; i < old_result_types.size(); ++i)
+                    if (old_result_types[i]->getName() != new_result_types[i]->getName())
+                        return true;
+                return false;
+            };
+
+            /// Primary/sorting key -> `primary.idx`. A full mutation cannot perform this either
+            /// (altering a key column / key subcolumn is forbidden), so no hint to disable the setting.
+            if (old_metadata.hasSortingKey()
+                && expression_depends_on_column(old_metadata.getSortingKey().expression)
+                && result_types_changed(old_metadata.getSortingKey().data_types, new_metadata.getSortingKey().data_types))
+            {
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "ALTER of column {} changes the type of a value used in the primary/sorting key; "
+                    "this is forbidden because the primary index cannot be rebuilt by a metadata-only ALTER",
+                    backQuoteIfNeed(command.column_name));
+            }
+
+            /// Partition key -> partition value / minmax files.
+            if (old_metadata.hasPartitionKey()
+                && expression_depends_on_column(old_metadata.getPartitionKey().expression)
+                && result_types_changed(old_metadata.getPartitionKey().data_types, new_metadata.getPartitionKey().data_types))
+            {
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "ALTER of column {} changes the type of a value used in the partition key; "
+                    "this is forbidden because the partition key representation cannot be rebuilt by a metadata-only ALTER",
+                    backQuoteIfNeed(command.column_name));
+            }
+
+            /// Explicit secondary (skip) indexes -> `skp_idx_*` files. Here a full mutation *can*
+            /// perform the change (it rebuilds the index according to `alter_column_secondary_index_mode`),
+            /// so point the user at disabling the lazy setting.
+            const auto & new_indices = new_metadata.getSecondaryIndices();
+            for (const auto & old_index : old_metadata.getSecondaryIndices())
+            {
+                if (old_index.isImplicitlyCreated() || !expression_depends_on_column(old_index.expression))
+                    continue;
+
+                auto new_index_it = std::find_if(
+                    new_indices.begin(), new_indices.end(),
+                    [&](const IndexDescription & index) { return index.name == old_index.name; });
+                if (new_index_it == new_indices.end())
+                    continue;
+
+                if (result_types_changed(old_index.data_types, new_index_it->data_types))
+                {
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "ALTER of column {} changes the type of a value stored by the skip index '{}'; "
+                        "a metadata-only ALTER cannot rebuild the index. Disable setting "
+                        "'allow_experimental_json_lazy_type_hints' to run this change as a full mutation, "
+                        "or drop the index first",
+                        backQuoteIfNeed(command.column_name),
+                        old_index.name);
+                }
+            }
+
+            /// Projections are intentionally not checked here for the only current lazy conversion
+            /// (a JSON type-hint change). A projection cannot reference a JSON subcolumn at all
+            /// (`Projections cannot contain individual subcolumns`) and a whole JSON column cannot be
+            /// a projection key, so no projection persists a JSON-typed-path-derived value positionally;
+            /// the whole JSON column stored in a projection is read back with per-part CAST like any
+            /// ordinary column. If a future lazy conversion applies to a type that CAN appear in a
+            /// projection key or aggregate state, this needs a result-type check for projections too.
+        }
     }
 
     checkColumnFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);
