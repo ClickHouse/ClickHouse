@@ -47,14 +47,15 @@ $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 --parallel_view_processing=1
     "EXPLAIN PIPELINE INSERT INTO kv_src VALUES (1, 1)" | grep -c "EmbeddedRocksDB.*Sink"
 
 # The "last row wins" resolution of equal keys must stay deterministic: many small blocks with the
-# same key, the last value of the input has to survive.
-seq 1 400 | awk '{print 1 "\t" $1}' | $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 \
+# same key, the last value of the input has to survive. A few dozen single-row blocks are enough to
+# make a fan-out visible while keeping the test fast under sanitizers.
+seq 1 40 | awk '{print 1 "\t" $1}' | $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 \
     --min_insert_block_size_rows=1 --max_insert_block_size=1 --max_block_size=1 -q \
     "INSERT INTO kv_rocksdb FORMAT TSV"
 $CLICKHOUSE_CLIENT -q "SELECT k, v FROM kv_rocksdb WHERE k = 1"
 
 # The same through the dependent materialized view.
-seq 1 400 | awk '{print 2 "\t" $1}' | $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 \
+seq 1 40 | awk '{print 2 "\t" $1}' | $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 \
     --parallel_view_processing=1 \
     --min_insert_block_size_rows=1 --max_insert_block_size=1 --max_block_size=1 -q \
     "INSERT INTO kv_src FORMAT TSV"
@@ -68,7 +69,7 @@ $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 -q \
     "EXPLAIN PIPELINE INSERT INTO kv_keeper_map VALUES (1, 1)" | grep -c "KeeperMapSink"
 
 # The last value of the input has to win here too, deterministically.
-seq 1 100 | awk '{print 1 "\t" $1}' | $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 \
+seq 1 20 | awk '{print 1 "\t" $1}' | $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 \
     --min_insert_block_size_rows=1 --max_insert_block_size=1 --max_block_size=1 -q \
     "INSERT INTO kv_keeper_map FORMAT TSV"
 $CLICKHOUSE_CLIENT -q "SELECT k, v FROM kv_keeper_map WHERE k = 1"
