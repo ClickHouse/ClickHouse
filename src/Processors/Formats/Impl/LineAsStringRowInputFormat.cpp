@@ -112,7 +112,7 @@ SELECT * FROM line_as_string;
 
 ## Description {#description}
 
-The `LineAsStringWithNames` format is similar to the [`LineAsString`](./LineAsString.md) format but prints the header row with column names.
+The `LineAsStringWithNames` format is similar to the [`LineAsString`](/reference/formats/LineAsString/LineAsString) format but prints the header row with column names.
 
 ## Example usage {#example-usage}
 
@@ -146,7 +146,7 @@ Peter    35
 
 ## Description {#description}
 
-The `LineAsStringWithNames` format is similar to the [`LineAsString`](./LineAsString.md) format 
+The `LineAsStringWithNames` format is similar to the [`LineAsString`](/reference/formats/LineAsString/LineAsString) format
 but prints two header rows: one with column names, the other with types.
 
 ## Example usage {#example-usage}
