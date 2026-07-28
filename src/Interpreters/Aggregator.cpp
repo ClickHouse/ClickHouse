@@ -2106,13 +2106,11 @@ void Aggregator::executeFrozen(
     AdaptiveAggregationThreadContext & adaptive,
     bool all_keys_are_const) const
 {
-    auto & routing_variants = *adaptive.shared_state->routing_variants;
-
 #define M(NAME) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
         executeFrozenImpl( \
             *result.NAME, \
-            *routing_variants.NAME##_two_level, \
+            std::type_identity<std::decay_t<decltype(*result.NAME##_two_level)>>{}, \
             result.aggregates_pool, \
             columns, \
             row_begin, \
@@ -2133,7 +2131,7 @@ void Aggregator::executeFrozen(
 template <typename LocalMethod, typename SharedMethod>
 void NO_INLINE Aggregator::executeFrozenImpl(
     LocalMethod & local_method,
-    const SharedMethod & shared_method,
+    std::type_identity<SharedMethod>,
     Arena * aggregates_pool,
     const Columns & columns,
     size_t row_begin,
@@ -2146,7 +2144,12 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     Arena scratch_pool;
 
     typename LocalMethod::StateNoCache local_find_state(key_columns, key_sizes, aggregation_state_cache);
-    const auto & shared_table = shared_method.data;
+    /// Routing needs only the two-level twin's TYPE: the hash is the local table's canonical
+    /// hash (identical to the twin's by construction - the pairing in `executeFrozen` binds a
+    /// method to its own two-level form, which keeps the hash function), and the bucket
+    /// mapping is static. Borrowing the shared table's method instance here would race with a
+    /// pressure spill re-initializing it; the mutable early-drain table must not double as a
+    /// hash-policy object.
 
     auto update_bypass_sampling = [&](size_t hits, size_t rows)
     {
@@ -2167,7 +2170,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     {
         auto && key_holder = local_find_state.getKeyHolder(0, scratch_pool);
         const auto & key = keyHolderGetKey(key_holder);
-        const UInt64 hash = shared_table.hash(key);
+        const UInt64 hash = local_method.data.hash(key);
 
         bool found = false;
         AggregateDataPtr found_place = nullptr;
@@ -2245,7 +2248,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         {
             auto && key_holder = local_find_state.getKeyHolder(i, scratch_pool);
             const auto & key = keyHolderGetKey(key_holder);
-            const UInt64 hash = shared_table.hash(key);
+            const UInt64 hash = local_method.data.hash(key);
 
             if (!bypass_local_probe)
             {
@@ -2315,7 +2318,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     {
         auto && key_holder = local_find_state.getKeyHolder(i, scratch_pool);
         const auto & key = keyHolderGetKey(key_holder);
-        const UInt64 hash = shared_table.hash(key);
+        const UInt64 hash = local_method.data.hash(key);
 
         if (!bypass_local_probe)
         {

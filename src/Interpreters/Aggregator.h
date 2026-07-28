@@ -696,7 +696,7 @@ private:
     template <typename LocalMethod, typename SharedMethod>
     void executeFrozenImpl(
         LocalMethod & local_method,
-        const SharedMethod & shared_method,
+        std::type_identity<SharedMethod>,
         Arena * aggregates_pool,
         const Columns & columns,
         size_t row_begin,
