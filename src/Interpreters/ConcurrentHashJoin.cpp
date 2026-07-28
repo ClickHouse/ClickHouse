@@ -233,6 +233,10 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                     if (table_join_->enableJoinInMemoryCompression())
                     {
                         inner_hash_join->data->setLogicalJoinTotalBytesCounter(&global_total_bytes);
+                        /// The counter above lags by the delta of the insert that is currently running
+                        /// in this slot; tell the slot which part of its count is already in there so it
+                        /// can add the pending delta back (see setPublishedLogicalJoinLocalBytes).
+                        inner_hash_join->data->setPublishedLogicalJoinLocalBytes(&inner_hash_join->local_total_bytes);
                         inner_hash_join->data->setSharedMemoryUsageBaseline(&shared_memory_usage_before_adding_blocks);
                         /// When a `SpillingHashJoin` wraps us, arm the compression trigger at its
                         /// spill threshold too, so a compressible build side compresses before the

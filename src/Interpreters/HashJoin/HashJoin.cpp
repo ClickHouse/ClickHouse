@@ -974,10 +974,21 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
         /// For a `parallel_hash` slot with `enable_join_in_memory_compression`, compare the logical
         /// join's total (the sum over all slots, which is what `max_bytes_in_join` is enforced on)
         /// against the half-threshold, not this slot's local count. The global counter is only
-        /// updated after each slot insert completes, so it can lag the local count; take the max.
+        /// updated after each slot insert completes, so while this call runs it still lags by this
+        /// insert's own delta: add that delta back (this slot's current count minus the part already
+        /// published to the counter) so the trigger sees the logical total as of the end of this
+        /// insert. Without it, a threshold crossed inside the last non-empty slot of a source block is
+        /// observed by no slot at all and the next block spills first - see
+        /// setPublishedLogicalJoinLocalBytes. Take the max with the local count so a slot that holds
+        /// most of the build side on its own still fires.
         size_t observed_bytes_in_join = total_bytes_in_join;
         if (logical_join_total_bytes)
-            observed_bytes_in_join = std::max(observed_bytes_in_join, logical_join_total_bytes->load(std::memory_order_relaxed));
+        {
+            size_t logical_bytes_in_join = logical_join_total_bytes->load(std::memory_order_relaxed);
+            if (published_logical_join_local_bytes && total_bytes_in_join > *published_logical_join_local_bytes)
+                logical_bytes_in_join += total_bytes_in_join - *published_logical_join_local_bytes;
+            observed_bytes_in_join = std::max(observed_bytes_in_join, logical_bytes_in_join);
+        }
 
         /// The `SpillingHashJoin` wrapper switches to `GraceHashJoin` (spills) when the stored size
         /// reaches half of `max_bytes_before_external_join`, checking before each insert. With

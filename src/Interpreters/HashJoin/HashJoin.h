@@ -497,6 +497,19 @@ public:
     /// the limit, and the query would throw before anything compresses.
     void setLogicalJoinTotalBytesCounter(const std::atomic<size_t> * counter) { logical_join_total_bytes = counter; }
 
+    /// Companion of setLogicalJoinTotalBytesCounter: points to the part of this slot's byte count that
+    /// the counter above already includes (`ConcurrentHashJoin::InternalHashJoin::local_total_bytes`,
+    /// published by `updateTotalRowsAndBytesUnlocked` after each insert completes). The counter therefore
+    /// lags by the current insert's own delta while `shrinkStoredBlocksToFit` runs at the end of that
+    /// insert, and without this the logical total that crosses a threshold inside the last non-empty slot
+    /// of a source block is observed by no slot at all: every earlier slot saw a lower total, and the next
+    /// source block is first met by `SpillingHashJoin`'s pre-insert spill check, which switches to
+    /// `GraceHashJoin` before any slot can compress. The slots of one source block are filled
+    /// sequentially, so the current insert's delta is the only unpublished one, and adding it back
+    /// reconstructs the logical total as of the end of this insert. Read under the slot's mutex, which
+    /// the wrapper holds across the insert and the publication, so it never races.
+    void setPublishedLogicalJoinLocalBytes(const size_t * published_bytes) { published_logical_join_local_bytes = published_bytes; }
+
     /// When this HashJoin is one slot of a `ConcurrentHashJoin` (`parallel_hash`), points to the
     /// concurrent join's shared query-memory baseline for the `max_memory_usage` (and available-memory)
     /// compression trigger in `shrinkStoredBlocksToFit`. The slots build sequentially, so each slot would
@@ -660,6 +673,10 @@ private:
     /// See setLogicalJoinTotalBytesCounter. Null unless this instance is a `ConcurrentHashJoin` slot
     /// with `enable_join_in_memory_compression` on.
     const std::atomic<size_t> * logical_join_total_bytes = nullptr;
+
+    /// See setPublishedLogicalJoinLocalBytes. Null unless this instance is a `ConcurrentHashJoin` slot
+    /// with `enable_join_in_memory_compression` on.
+    const size_t * published_logical_join_local_bytes = nullptr;
 
     /// See setSharedMemoryUsageBaseline. Null unless this instance is a `ConcurrentHashJoin` slot
     /// with `enable_join_in_memory_compression` on.
