@@ -13,7 +13,6 @@ env:
   PYTHONUNBUFFERED: 1
   CHECKOUT_REF: ""
 
-
 jobs:
 
   config_workflow:
@@ -22,22 +21,20 @@ jobs:
     name: "Config Workflow"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
+          cat > ./ci/tmp/workflow_config_vectorsearchstress.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
           EOF
           cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
@@ -48,98 +45,33 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "VectorSearchStress" --ci --timestamp
-
-  dockers_build_amd:
-    runs-on: [self-hosted, style-checker]
-    needs: [config_workflow]
-    name: "Dockers Build (amd)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (amd)' --workflow "VectorSearchStress" --ci --timestamp
-
-  dockers_build_arm:
-    runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow]
-    name: "Dockers Build (arm)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "VectorSearchStress" --ci --timestamp
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Config Workflow' --workflow "VectorSearchStress" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Config Workflow' --workflow "VectorSearchStress" --ci |& tee ./ci/tmp/job.log
+          fi
 
   vector_search_stress:
-    runs-on: [self-hosted, arm-large-storage]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm]
+    runs-on: [self-hosted, arm-small]
+    needs: [config_workflow]
     name: "Vector Search Stress"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
+          cat > ./ci/tmp/workflow_config_vectorsearchstress.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
           EOF
           cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
@@ -150,31 +82,34 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Vector Search Stress' --workflow "VectorSearchStress" --ci --timestamp
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Vector Search Stress' --workflow "VectorSearchStress" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Vector Search Stress' --workflow "VectorSearchStress" --ci |& tee ./ci/tmp/job.log
+          fi
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, vector_search_stress]
-    if: ${{ always() }}
+    needs: [config_workflow, vector_search_stress]
+    if: ${{ !cancelled() }}
     name: "Finish Workflow"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
+          cat > ./ci/tmp/workflow_config_vectorsearchstress.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
           EOF
           cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
@@ -185,4 +120,9 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Finish Workflow' --workflow "VectorSearchStress" --ci --timestamp
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Finish Workflow' --workflow "VectorSearchStress" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Finish Workflow' --workflow "VectorSearchStress" --ci |& tee ./ci/tmp/job.log
+          fi

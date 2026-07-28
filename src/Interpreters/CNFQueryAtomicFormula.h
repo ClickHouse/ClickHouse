@@ -1,9 +1,12 @@
 #pragma once
 
-#include <Parsers/IAST_fwd.h>
+#include <memory>
 
 namespace DB
 {
+
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
 
 struct CNFQueryAtomicFormula
 {

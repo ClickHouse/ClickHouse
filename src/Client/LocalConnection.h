@@ -5,13 +5,12 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
-#include <Common/QueryScope.h>
-#include <Common/ThreadStatus.h>
+#include <Storages/ColumnsDescription.h>
+#include <Common/CurrentThread.h>
 
 
 namespace DB
 {
-class ColumnsDescription;
 class PullingAsyncPipelineExecutor;
 class PushingAsyncPipelineExecutor;
 class PushingPipelineExecutor;
@@ -44,7 +43,7 @@ struct LocalQueryState
 
     /// Current block to be sent next.
     std::optional<Block> block;
-    std::shared_ptr<ColumnsDescription> columns_description;
+    std::optional<ColumnsDescription> columns_description;
     std::optional<ProfileInfo> profile_info;
 
     /// Is request cancelled
@@ -63,7 +62,7 @@ struct LocalQueryState
     Stopwatch after_send_progress;
     Stopwatch after_send_profile_events;
 
-    QueryScope query_scope_holder;
+    std::unique_ptr<CurrentThread::QueryScope> query_scope_holder;
 };
 
 
@@ -106,8 +105,6 @@ public:
 
     void setDefaultDatabase(const String & database) override;
 
-    void setCancelCallback(std::function<bool()> callback) override { is_cancelled_callback = std::move(callback); }
-
     void getServerVersion(const ConnectionTimeouts & timeouts,
                           String & name,
                           UInt64 & version_major,
@@ -145,11 +142,7 @@ public:
 
     void sendExternalTablesData(ExternalTablesData &) override;
 
-    void sendScalarsData(Scalars & data) override;
-
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
-
-    void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) override;
 
     bool poll(size_t timeout_microseconds/* = 0 */) override;
 
@@ -191,9 +184,6 @@ private:
     bool send_progress;
     bool send_profile_events;
     String server_display_name;
-    /// Optional callback to check if the query was cancelled (e.g. via Ctrl+C).
-    /// Set by the client application; used as `interactive_cancel_callback` on the query context.
-    std::function<bool()> is_cancelled_callback;
     String description = "clickhouse-local";
 
     std::optional<LocalQueryState> state;

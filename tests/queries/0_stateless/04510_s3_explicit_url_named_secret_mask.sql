@@ -2,10 +2,9 @@
 -- no-fasttest: the S3 table engine is not available in the fast test build.
 
 -- session_token, the Google ADC secrets (google_adc_client_secret, google_adc_refresh_token) and
--- the extra_credentials assume-role material (external_id) passed to the explicit-url or
--- named-collection S3 form must be masked like secret_access_key. Every secret value below is tagged
--- so the final assertion can prove none of them leaks. They used to leak in plaintext in SHOW CREATE
--- and logged query text.
+-- the extra_credentials assume-role material (external_id) passed to the explicit-url S3 form must
+-- be masked like secret_access_key. Every secret value below is tagged so the final assertion can
+-- prove none of them leaks. They used to leak in plaintext in SHOW CREATE and logged query text.
 
 -- Engine form: SHOW CREATE hides every secret; the non-secret extra_credentials identifiers
 -- (role_arn, role_session_name) stay visible while external_id is hidden.
@@ -170,43 +169,9 @@ SELECT * FROM s3('https://user:SEKRIT_PW@localhost:11111/x/o''clock?X-Amz-Signat
 SELECT * FROM s3(concat('https://user:SEKRIT_PW@localhost:11111/x?X-Amz-Signature=', 'SEKRIT_SIG'),
                  'TSV', 'x UInt8'); -- { serverError BAD_ARGUMENTS }
 
--- Same for BACKUP and the Backup database reconstructor.
+-- Same for BACKUP.
 BACKUP TABLE nonexistent_04510 TO S3('https://user:SEKRIT_PW@localhost:11111/x?X-Amz-Signature=SEKRIT_SIG',
                  'ak', 'SEKRIT_SAK'); -- { serverError BAD_ARGUMENTS }
-CREATE DATABASE db_04510_authurl ENGINE = Backup('', S3('https://user:SEKRIT_PW@localhost:11111/x?X-Amz-Signature=SEKRIT_SIG',
-                 'ak', 'SEKRIT_SAK')); -- { serverError BAD_ARGUMENTS }
-
--- Named-collection form: an extra_credentials override alongside a collection must be masked too.
--- The collection need not exist; masking runs on the AST before the collection is resolved.
-SELECT * FROM s3(nc_04510_missing, extra_credentials(external_id = 'SEKRIT_EID'),
-                 format = 'TSV', structure = 'x UInt8'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
-
--- A url override on a named collection can carry credentials too.
-SELECT * FROM s3(nc_authurl_missing, url = 'https://user:SEKRIT_PW@localhost:11111/x?X-Amz-Signature=SEKRIT_SIG',
-                 format = 'TSV', structure = 'x UInt8'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
-
--- Named-collection form: a headers() override must have its values masked too.
-SELECT * FROM s3(nc_headers_missing, headers('Authorization' = 'SEKRIT_HDRVAL'),
-                 format = 'TSV', structure = 'x UInt8'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
-
--- Named-collection form: a headers() override with a malformed child must fail closed.
-SELECT * FROM s3(nc_badhdr_missing, headers('Authorization: SEKRIT_RAWHDR'),
-                 format = 'TSV', structure = 'x UInt8'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
-
--- A positional argument swept inside a named secret span must not be echoed as a bogus key.
-SELECT * FROM s3(nc_span_missing, secret_access_key = 'SEKRIT_SPAN1', 'SEKRIT_MIDPOS',
-                 session_token = 'SEKRIT_SPAN2',
-                 format = 'TSV', structure = 'x UInt8'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
-
--- A constant-expression key can be an effective secret override for a named collection too.
-SELECT * FROM s3(nc_exprkey_missing, concat('secret_', 'access_key') = 'SEKRIT_EXPRVAL',
-                 format = 'TSV', structure = 'x UInt8'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
-
--- The named-collection form permits no positional argument at all, so one placed before the first
--- named override must also be masked.
-SELECT * FROM s3(nc_prepos_missing, 'SEKRIT_PREPOS',
-                 secret_access_key = 'SEKRIT_SK',
-                 format = 'TSV', structure = 'x UInt8'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
 
 -- BACKUP ... TO S3 explicit-url form.
 BACKUP TABLE nonexistent_04510 TO S3('url_bkp_named', 'ak', 'SEKRIT_SAK',
@@ -233,52 +198,6 @@ BACKUP TABLE nonexistent_04510 TO S3(nc_bkporder_missing,
 -- are unknowable, so everything after the url must be masked.
 BACKUP TABLE nonexistent_04510 TO S3('url_bkp_mixed',
                  access_key_id = 'ak', 'SEKRIT_BKPMIX'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-
--- Backup database engine reconstructs the nested S3 destination; extra_credentials must be masked.
-CREATE DATABASE db_04510_ec ENGINE = Backup('', S3('url_dbec', 'ak', 'SEKRIT_SAK',
-                 extra_credentials(external_id = 'SEKRIT_EID'))); -- { serverError BAD_ARGUMENTS }
-
--- The reconstructor must fail closed on an invalid extra positional argument (a session token).
-CREATE DATABASE db_04510_postok ENGINE = Backup('', S3('url_dbpostok', 'ak', 'SEKRIT_SAK',
-                 'SEKRIT_DBTOK')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-
--- Named-collection locator in the reconstructor: the filename stays visible, but a second positional
--- is invalid and must be masked.
-CREATE DATABASE db_04510_ncpos ENGINE = Backup('', S3(nc_dbnc_missing, 'visible_dbnc_dir',
-                 'SEKRIT_DBNCPOS')); -- { serverError BAD_ARGUMENTS }
-
--- The reconstructor also keeps the filename visible when it follows a named override.
-CREATE DATABASE db_04510_ncorder ENGINE = Backup('', S3(nc_dbord_missing,
-                 secret_access_key = 'SEKRIT_DBORD', 'visible_dbnc_dir2')); -- { serverError BAD_ARGUMENTS }
-
--- Non-string scalar overrides are valid and non-secret; the reconstructor keeps them visible.
-CREATE DATABASE db_04510_ncenv ENGINE = Backup('', S3(nc_dbenv_missing,
-                 secret_access_key = 'SEKRIT_DBENVKEY', use_environment_credentials = 1)); -- { serverError BAD_ARGUMENTS }
-
--- A non-secret named value that is an expression (a computed filename, or a nested headers() /
--- extra_credentials() map) is accepted by the backup named-collection path, which the parser evaluates
--- as a constant. The reconstructor cannot classify it and its formatted text would carry any nested
--- secret verbatim, so it fails closed to [HIDDEN] rather than leak.
-CREATE DATABASE db_04510_ncexpr ENGINE = Backup('', S3(nc_dbexpr_missing,
-                 secret_access_key = 'SEKRIT_DBEXPRKEY',
-                 filename = headers('Authorization' = 'SEKRIT_NESTEDHDR'))); -- { serverError BAD_ARGUMENTS }
-
--- The reconstructor masks everything after the url on an invalid positional count too.
-CREATE DATABASE db_04510_mixed ENGINE = Backup('', S3('url_dbmixed',
-                 access_key_id = 'ak', 'SEKRIT_DBMIX')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-
--- A url override built from an expression can embed credentials in its pieces; the reconstructor
--- must hide it even when it is the only secret-bearing argument.
-CREATE DATABASE db_04510_ncurl ENGINE = Backup('', S3(nc_dburl_missing,
-                 url = concat('https://user:SEKRIT_PW@', 'localhost/x?X-Amz-Signature=SEKRIT_SIG'))); -- { serverError BAD_ARGUMENTS }
-
--- The reconstructor must fail closed on an unsupported tail (headers), not emit it verbatim.
-CREATE DATABASE db_04510_hdr ENGINE = Backup('', S3('url_dbhdr', 'ak', 'SEKRIT_SAK',
-                 headers('X-Auth' = 'SEKRIT_HDR'))); -- { serverError BAD_ARGUMENTS }
-
--- The reconstructor must also fail closed on a constant-expression extra_credentials key.
-CREATE DATABASE db_04510_expr ENGINE = Backup('', S3('url_dbexpr', 'ak', 'SEKRIT_SAK',
-                 extra_credentials(concat('extern', 'al_id') = 'SEKRIT_EXPR'))); -- { serverError BAD_ARGUMENTS }
 
 -- The S3 database engine accepts no positional beyond secret_access_key; an extra positional must
 -- be masked in the logged query text.
@@ -307,10 +226,6 @@ EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3('http://localhost:11111/test/
 -- their own, so the dump-only tree replaces them with a hidden constant.
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3('http://localhost:11111/test/04510qt', 'ak', 'SEKRIT_SAK', 'TSV', 'x UInt8', session_token = SEKRIT_IDTOK);
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3('http://localhost:11111/test/04510qt', NOSIGN, 'TSV', 'x UInt8', headers('Authorization' = SEKRIT_BEARER));
-
--- A named url override is an `equals` node in the tree; its credential-bearing value must be hidden.
--- Without passes the collection need not exist.
-EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3(nc_04510_missing, url = 'https://user:SEKRIT_PW@localhost:11111/test/04510qt?X-Amz-Signature=SEKRIT_SIG', structure = 'x UInt8');
 
 -- A table function can sit under a UNION (or any other carrier); the dump masking visitor must descend
 -- into every node, not only query/join carriers, or the secret leaks in the tree dump.

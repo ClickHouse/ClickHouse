@@ -4,7 +4,6 @@ sidebar_label: 'Named collections'
 sidebar_position: 69
 slug: /operations/named-collections
 title: 'Named collections'
-doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -322,8 +321,6 @@ The description of parameters see [postgresql](../sql-reference/table-functions/
 - `username` for `user`
 - `db` for `database`.
 
-The connection-pool settings of the [PostgreSQL table engine](../engines/table-engines/integrations/postgresql.md) (`postgresql_connection_pool_size` and the other `postgresql_*` settings) can also be stored in the collection or passed as `key = value` overrides. They apply to the `PostgreSQL` table engine, the `postgresql` table function, and the `PostgreSQL` database engine; an explicit `SETTINGS` clause on a table takes precedence over the values from the collection.
-
 Parameter `addresses_expr` is used in a collection instead of `host:port`. The parameter is optional, because there are other optional ones: `host`, `hostname`, `port`. The following pseudo code explains the priority:
 
 ```sql
@@ -370,6 +367,8 @@ SELECT * FROM postgresql(mypg, table = 'test');
 │ 2 │ two │
 │ 1 │ one │
 └───┴─────┘
+
+
 SELECT * FROM postgresql(mypg, table = 'test', schema = 'public');
 
 ┌─a─┐
@@ -550,7 +549,7 @@ SETTINGS kafka_num_consumers = 4,
 
 ## Named collections for backups {#named-collections-for-backups}
 
-For the description of parameters see [Backup and Restore](/operations/backup/overview).
+For the description of parameters see [Backup and Restore](./backup.md).
 
 ### DDL example {#ddl-example-4}
 

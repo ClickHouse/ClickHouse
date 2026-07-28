@@ -5,16 +5,11 @@
 namespace DB
 {
 
-class SerializationNothing final : public SimpleTextSerialization
+class SerializationNothing : public SimpleTextSerialization
 {
 private:
     [[noreturn]] static void throwNoSerialization();
-    SerializationNothing() = default;
-
 public:
-    static UInt128 getHash();
-    static SerializationPtr create();
-
     void serializeBinary(const Field &, WriteBuffer &, const FormatSettings &) const override                       { throwNoSerialization(); }
     void deserializeBinary(Field &, ReadBuffer &, const FormatSettings &) const override                            { throwNoSerialization(); }
     void serializeBinary(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override             { throwNoSerialization(); }

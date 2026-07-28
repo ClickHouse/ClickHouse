@@ -6,7 +6,6 @@ keywords: ['Template']
 output_format: true
 slug: /interfaces/formats/Template
 title: 'Template'
-doc_type: 'guide'
 ---
 
 | Input | Output | Alias |
@@ -134,7 +133,7 @@ Let's look at two examples of how we can use the `Template` format, first for se
 
 ### Selecting data {#selecting-data}
 
-```sql title="Query"
+```sql
 SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase ORDER BY c DESC LIMIT 5 FORMAT Template SETTINGS
 format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format', format_template_rows_between_delimiter = '\n    '
 ```
@@ -159,7 +158,9 @@ format_template_resultset = '/some/path/resultset.format', format_template_row =
 <tr> <td>${0:XML}</td> <td>${1:XML}</td> </tr>
 ```
 
-```html title="Response"
+Result:
+
+```html
 <!DOCTYPE HTML>
 <html> <head> <title>Search phrases</title> </head>
  <body>

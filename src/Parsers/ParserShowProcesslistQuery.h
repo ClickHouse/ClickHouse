@@ -18,7 +18,7 @@ protected:
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
-        auto query = make_intrusive<ASTShowProcesslistQuery>();
+        auto query = std::make_shared<ASTShowProcesslistQuery>();
 
         if (!ParserKeyword(Keyword::SHOW_PROCESSLIST).ignore(pos, expected))
             return false;

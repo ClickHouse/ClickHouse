@@ -3,8 +3,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include <DataTypes/IDataType.h>
-
 #include <Interpreters/Context.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -40,7 +38,7 @@ public:
 
         /// Check that query has only SELECT clause
         if (!query_node || (query_node->hasWith() || query_node->hasPrewhere() || query_node->hasWhere() || query_node->hasGroupBy() ||
-            query_node->hasHaving() || query_node->hasWindow() || query_node->hasQualify() || query_node->hasOrderBy() || query_node->hasLimitByLimit() || query_node->hasLimitByOffset() ||
+            query_node->hasHaving() || query_node->hasWindow() || query_node->hasOrderBy() || query_node->hasLimitByLimit() || query_node->hasLimitByOffset() ||
             query_node->hasLimitBy() || query_node->hasLimit() || query_node->hasOffset()))
             return;
 
@@ -73,11 +71,6 @@ public:
         if (count_distinct_argument_column->getNodeType() != QueryTreeNodeType::COLUMN)
             return;
         auto & count_distinct_argument_column_typed = count_distinct_argument_column->as<ColumnNode &>();
-
-        /// `countDistinct`/`uniqExact` skip NULLs, but `GROUP BY` on a Nullable column produces a NULL group
-        /// that `count` would include. Skip the rewrite for nullable arguments to preserve semantics.
-        if (isNullableOrLowCardinalityNullable(count_distinct_argument_column_typed.getColumnType()))
-            return;
 
         /// Build subquery SELECT count_distinct_argument_column FROM table_expression GROUP BY count_distinct_argument_column
         auto subquery = std::make_shared<QueryNode>(Context::createCopy(query_node->getContext()));

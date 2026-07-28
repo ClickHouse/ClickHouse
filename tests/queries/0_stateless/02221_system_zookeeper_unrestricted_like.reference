@@ -8,7 +8,6 @@ blocks
 columns
 columns
 creator_info
-deduplication_hashes
 failed_parts
 flags
 host
@@ -50,7 +49,6 @@ blocks
 columns
 columns
 creator_info
-deduplication_hashes
 failed_parts
 flags
 host
