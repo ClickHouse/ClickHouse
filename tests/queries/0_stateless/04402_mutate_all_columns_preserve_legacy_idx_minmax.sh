@@ -34,7 +34,7 @@
 # never found the ".idx" data file, silently dropping the index after the
 # mutation (`CHECK TABLE` still passed because the orphan mark got checksummed).
 # The fix enumerates the substreams actually present in the source part via
-# getAllSubstreamsInPart(source_part->checksums, ...), which probes both ".idx"
+# `getAllSubstreamsInPart`, which probes both ".idx"
 # and ".idx2".
 #
 # The modern writer only produces ".idx2", so the legacy shape is fabricated:
@@ -105,7 +105,7 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_legacy_minmax WHERE v = 42"
 # `calculateSecondaryIndicesSizesOnDisk` used to enumerate `getSubstreams` (only
 # ".idx2"), so on the repaired part it counted the mark file but missed the ".idx"
 # data file and reported `secondary_indices_compressed_bytes` = 0. The fix probes the
-# substreams actually present via getAllSubstreamsInPart(checksums, ...).
+# substreams actually present via `getAllSubstreamsInPart`.
 echo "size accounting:"
 ${CLICKHOUSE_CLIENT} -q "SELECT secondary_indices_compressed_bytes > 0 FROM system.parts WHERE database = currentDatabase() AND table = 't_legacy_minmax' AND active"
 

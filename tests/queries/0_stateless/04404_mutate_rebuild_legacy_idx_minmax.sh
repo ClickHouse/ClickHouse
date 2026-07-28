@@ -28,8 +28,8 @@
 # PRESERVE path (a full-part rewrite that hardlinks a non-recalculated index).
 # This one covers the REBUILD path: a mutation that recalculates the index.
 #
-# collectFilesToSkip (skip list for the hardlink loop) and
-# remove_per_substream_checksums (stale-checksum stripper) used to enumerate the
+# `collectFilesToSkip` (skip list for the hardlink loop) and
+# `remove_per_substream_checksums` (stale-checksum stripper) used to enumerate the
 # index's current writer substreams via `getSubstreams`. For minmax the on-disk
 # format changed from ".idx" (v1) to ".idx2" (v2), so `getSubstreams` reports
 # only ".idx2". On an upgraded part that still carries a legacy
@@ -39,7 +39,7 @@
 # hardlinked into the new part and leaked dead next to the fresh ".idx2", with a
 # stale checksum entry pointing at it. The fix enumerates the substreams
 # actually present in the source part via
-# getAllSubstreamsInPart(source_part->checksums, ...), which probes both ".idx"
+# `getAllSubstreamsInPart`, which probes both ".idx"
 # and ".idx2".
 #
 # The modern writer only produces ".idx2", so the legacy shape is fabricated:

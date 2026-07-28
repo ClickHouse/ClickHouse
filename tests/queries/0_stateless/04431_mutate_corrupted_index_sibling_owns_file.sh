@@ -62,8 +62,10 @@ make_corrupted_part () {
 
     rm -rf "${data_path}/saved_${tbl}"
     mkdir -p "${data_path}/saved_${tbl}"
+    # ONLY the minmax index's own `.idx2` payload. Its mark file `skp_idx_a.pos.cmrk2` is the same
+    # filename the text index's positional substream writes, so copying it back would overwrite the
+    # healthy sibling's mark and corrupt the very index this test asserts stays intact.
     cp "${active}"skp_idx_a.pos.idx2 "${data_path}/saved_${tbl}/"
-    cp "${active}"skp_idx_a.pos.cmrk2 "${data_path}/saved_${tbl}/" 2>/dev/null
 
     # DROP + re-ADD makes the active part carry no checksums entries for `a.pos`, then the saved
     # files are re-injected on disk. Re-ADD without `MATERIALIZE INDEX` leaves it unmaterialized,
@@ -73,7 +75,7 @@ make_corrupted_part () {
 
     local corrupt
     corrupt=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active ORDER BY name LIMIT 1")
-    cp "${data_path}/saved_${tbl}/"skp_idx_a.pos.* "${corrupt}"
+    cp "${data_path}/saved_${tbl}/skp_idx_a.pos.idx2" "${corrupt}"
 }
 
 orphan_on_disk () {
@@ -157,7 +159,7 @@ ${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_some SETTINGS check_query_single_value_re
 # lookup has to reach its `.dct` and `.pst` substreams. (Its positional substream is not asserted
 # here - see the note on `text_streams_on_disk`.)
 echo "B_text_index_usable:"
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_some WHERE hasToken(s, 'hello10')" 2>&1 | tail -1
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_some WHERE hasToken(s, 'hello10')"
 echo "B_sibling_text_streams_after:"
 text_streams_on_disk t_some
 echo "B_rows:"

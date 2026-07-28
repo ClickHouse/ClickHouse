@@ -29,8 +29,8 @@
 # legacy skp_idx_mm_v.idx and a fresh skp_idx_mm_v.idx2 for the same index.
 #
 # `getDeserializedFormat` returns only the preferred read layout (".idx2" wins
-# for minmax), so the mutation cleanup bookkeeping (collectFilesToSkip skip-list
-# for recalc'd/dropped indices, and remove_per_substream_checksums) never saw the
+# for minmax), so the mutation cleanup bookkeeping (`collectFilesToSkip` skip-list
+# for recalc'd/dropped indices, and `remove_per_substream_checksums`) never saw the
 # stale ".idx" on a mixed part -- so the next `ALTER UPDATE` or `DROP INDEX`
 # hardlinked the dead ".idx" forward with a stale checksum instead of cleaning it
 # up, keeping the part mixed forever. The fix enumerates the UNION of all
