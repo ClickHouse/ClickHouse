@@ -10,7 +10,7 @@ the real threads.  If that child dies from a signal, LSan prints two lines back 
     Child exited with signal N.
 
 Both spellings are ambiguous on their own, so the filter requires two conditions together: the
-test carries the kills-processes-by-cmdline tag (only such a test can kill the probe child, which
+test carries the `kills-processes-by-cmdline` tag (only such a test can kill the probe child, which
 inherits the client's argv), and the reported signal is not SIGSYS (which is how seccomp kills the
 child when it really denies the ptrace call).
 
@@ -75,7 +75,7 @@ class _Args:
 
 
 def _kept(lines, tmp_path, extra_log_lines=None, tagged=True):
-    """Lines that survive the real sanitizer-log filtering in TestCase.process_result_impl.
+    """Lines that survive the real sanitizer-log filtering in `TestCase.process_result_impl`.
 
     The filter is not reimplemented here: sanitizer logs are written where the runner looks for
     them and the production method is called, so disconnecting the filter from the runner fails
