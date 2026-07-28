@@ -43,20 +43,20 @@ quantileTDigestWeighted(level)(expr, weight)
 
 **المعلمات**
 
-* `level` — اختياري. مستوى الكَمّي. عدد ثابت بفاصلة عائمة من 0 إلى 1. نوصي باستخدام قيمة `level` ضمن النطاق `[0.01, 0.99]`. القيمة الافتراضية: 0.5. عند `level=0.5` تحسب الدالة الوسيط. [`Float*`](/ar/reference/data-types/float)
+* `level` — اختياري. مستوى quantile. عدد ثابت بفاصلة عائمة من 0 إلى 1. نوصي باستخدام قيمة `level` ضمن النطاق `[0.01, 0.99]`. القيمة الافتراضية: 0.5. عند `level=0.5` تحسب الدالة الوسيط. [`Float*`](/ar/reference/data-types/float)
 
 **الوسيطات**
 
-* `expr` — تعبير على قيم العمود ينتج أنواع بيانات رقمية أو Date أو DateTime. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime)
+* `expr` — تعبير على قيم العمود ينتج أنواع بيانات رقمية أو `Date` أو `DateTime`. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime)
 * `weight` — عمود يحتوي على أوزان عناصر التسلسل. الوزن هو عدد مرات تكرار القيمة. [`UInt*`](/ar/reference/data-types/int-uint)
 
 **القيمة المعادة**
 
-الكَمّي التقريبي للمستوى المحدد. [`Float64`](/ar/reference/data-types/float) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime)
+quantile التقريبي للمستوى المحدد. بالنسبة إلى مدخلات `Date` و`DateTime`، يطابق تنسيق الإخراج تنسيق الإدخال. [`Float32`](/ar/reference/data-types/float) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime)
 
 **أمثلة**
 
-**حساب الكَمّي المُرجّح باستخدام t-digest**
+**حساب quantile المُرجّح باستخدام t-digest**
 
 ```sql title=Query
 SELECT quantileTDigestWeighted(number, 1) FROM numbers(10);
