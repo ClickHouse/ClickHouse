@@ -75,3 +75,22 @@ PREWHERE throwIf(secret = 'private', 'row policy leak') = 0 ORDER BY id;
 
 DROP ROW POLICY rp_prewhere_rls_proj ON prewhere_rls_proj;
 DROP TABLE prewhere_rls_proj;
+
+-- A policy on a virtual column fails closed: virtuals like `_part_offset` mean different rows on the
+-- reordered projection, so they cannot be enforced there (a clean ACCESS_DENIED, not UNKNOWN_IDENTIFIER).
+DROP TABLE IF EXISTS virt_rls_proj;
+DROP ROW POLICY IF EXISTS rp_virt_rls_proj ON virt_rls_proj;
+
+CREATE TABLE virt_rls_proj (id UInt64, val UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO virt_rls_proj VALUES (1, 10), (2, 20), (3, 30);
+
+ALTER TABLE virt_rls_proj ADD PROJECTION p (SELECT id, val ORDER BY val);
+ALTER TABLE virt_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+
+CREATE ROW POLICY rp_virt_rls_proj ON virt_rls_proj FOR SELECT USING _part_offset < 1 TO ALL;
+
+SELECT '-- policy on a virtual column: read is refused';
+SELECT id FROM mergeTreeProjection(currentDatabase(), 'virt_rls_proj', 'p') ORDER BY id; -- { serverError ACCESS_DENIED }
+
+DROP ROW POLICY rp_virt_rls_proj ON virt_rls_proj;
+DROP TABLE virt_rls_proj;

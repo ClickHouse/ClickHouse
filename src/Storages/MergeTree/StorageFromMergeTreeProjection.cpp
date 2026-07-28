@@ -23,6 +23,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
+    extern const int UNKNOWN_IDENTIFIER;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 /// A row policy resolved against a projection's columns, ready to be applied as a FilterStep.
@@ -136,11 +138,28 @@ std::unique_ptr<MergeTreeProjectionRowPolicyFilter> StorageFromMergeTreeProjecti
     if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
         return nullptr;
 
-    /// Resolve the policy against the parent table columns so its referenced columns are known.
+    /// Resolve the policy against the parent's persistent columns. If it references anything the
+    /// projection cannot provide (e.g. a virtual column), fail closed with a clear ACCESS_DENIED
+    /// instead of a confusing UNKNOWN_IDENTIFIER from the resolver.
     ASTPtr expr = row_policy_filter->expression->clone();
-    auto syntax_result = TreeRewriter(context).analyze(expr, parent_metadata->getColumns().getAll());
-    ExpressionAnalyzer analyzer(expr, syntax_result, context);
-    auto dag = analyzer.getActionsDAG(false /* add_aliases */, false /* remove_unused_result */);
+    ActionsDAG dag = [&]
+    {
+        try
+        {
+            auto syntax_result = TreeRewriter(context).analyze(expr, parent_metadata->getColumns().getAll());
+            ExpressionAnalyzer analyzer(expr, syntax_result, context);
+            return analyzer.getActionsDAG(false /* add_aliases */, false /* remove_unused_result */);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::UNKNOWN_IDENTIFIER && e.code() != ErrorCodes::NO_SUCH_COLUMN_IN_TABLE)
+                throw;
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "Cannot read from projection `{}` of table {} because its row policy references a column "
+                "the projection cannot provide (e.g. a virtual column), so the row policy cannot be enforced",
+                projection->name, parent_storage_id.getNameForLogs());
+        }
+    }();
 
     /// the filter column is the single output added on top of the inputs
     ExpressionActions filter_actions(dag.clone(), ExpressionActionsSettings(context));
@@ -153,9 +172,8 @@ std::unique_ptr<MergeTreeProjectionRowPolicyFilter> StorageFromMergeTreeProjecti
             "Cannot determine row policy filter column for projection `{}` of table {}",
             projection->name, parent_storage_id.getNameForLogs());
 
-    /// Refuse the read when the policy needs a column the projection does not store. This includes
-    /// ALIAS/DEFAULT columns: the projection stores their physical dependencies under different names
-    /// and does not carry the column itself, so the policy cannot be evaluated here. Fail closed.
+    /// Refuse the read when the policy needs a column the projection does not physically store, e.g.
+    /// an ALIAS/DEFAULT column (the projection keeps only its physical deps, under other names).
     const auto & projection_columns = projection->metadata->getColumns();
     for (const auto & column_name : filter_actions.getRequiredColumns())
     {
