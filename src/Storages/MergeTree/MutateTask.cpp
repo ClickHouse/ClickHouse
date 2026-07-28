@@ -3430,23 +3430,14 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         static const std::array<String, 2> known_index_extensions = {".idx2", ".idx"};
         const bool escape_filenames = ctx->metadata_snapshot->escape_index_filenames;
 
-        /// Exact in-archive filenames owned by the indices that survive this mutation, so a
-        /// speculative suffix never claims one of them. The collision goes both ways when
-        /// `escape_index_filenames` = 0: dropping `a` reaches index `a.pos`, and dropping `a.pos`
-        /// reaches the `.pos` substream of text index `a`.
+        /// Exact in-archive filenames owned by the surviving indices, so a speculative suffix never
+        /// claims one of them. Ownership comes from each survivor's own `getSubstreams` and only for
+        /// the extension it declares; over-claiming would protect, and so leak, a dropped index's
+        /// file.
         ///
-        /// Ownership comes from each surviving index's OWN `getSubstreams`, and only for the
-        /// extension that substream declares: minmax owns no `.pos`, and a text index's `.pos` is
-        /// stored as `.idx`, not `.idx2`. Over-claiming either would protect, and so leak, the files
-        /// of the index being dropped.
-        ///
-        /// Only an index that is ITSELF packed can own a member of this archive. A text index is
-        /// never packed (`MergeTreeDataPartWriterOnDisk` excludes it), so a standalone text index `a`
-        /// must not protect `skp_idx_a.pos.cmrk2` on behalf of a packed minmax index `a.pos` that is
-        /// being dropped - that would retain the dropped index's packed mark.
-        ///
-        /// The test has to be on the SURVIVOR, not on the candidate filename: the survivor's
-        /// speculative name and the dropped index's real member are the same string here, so asking
+        /// Only an index that is itself packed can own a member of this archive, and the test has to
+        /// be on the survivor rather than on the candidate filename: in a collision the survivor's
+        /// speculative name and the dropped index's real member are the same string, so asking
         /// whether that string is in the archive is always true exactly when it matters.
         NameSet surviving_index_owned_files;
         for (const auto & index : ctx->metadata_snapshot->getSecondaryIndices())
