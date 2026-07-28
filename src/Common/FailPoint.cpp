@@ -130,6 +130,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(query_metric_log_pause_before_finish) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
+    PAUSEABLE_ONCE(kafka2_remove_zk_before_get_children) \
+    PAUSEABLE_ONCE(kafka2_remove_zk_before_final_multi) \
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(terminate_with_exception) \
@@ -142,6 +144,13 @@ static struct InitFiu
     REGULAR(delta_kernel_force_credentials_fingerprint_drift) \
     ONCE(delta_kernel_force_stale_token_error) \
     REGULAR(object_storage_force_refresh_callback_success) \
+    REGULAR(refresh_mv_skip_attach_feature_flag_check) \
+    REGULAR(refresh_mv_force_scheduling_feature_flags_missing) \
+    REGULAR(refresh_mv_force_coordination_version_conflict) \
+    REGULAR(refresh_mv_force_coordination_running_znode_lost) \
+    PAUSEABLE(refresh_mv_pause_before_exchange) \
+    PAUSEABLE(refresh_mv_pause_after_interrupt_check) \
+    REGULAR(refresh_mv_skip_execution) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
     ONCE(space_saving_copy_arena_throw) \
     REGULAR(keepermap_fail_drop_data) \
