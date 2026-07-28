@@ -235,7 +235,7 @@ Si usas Grafana Cloud, puedes instalar Alloy desde el menú Alloy en Grafana sig
 
 <br />
 
-Esto debería configurar Alloy con un componente `prometheus.remote_write` para enviar datos a un endpoint de Grafana Cloud con un token de autenticación. Después, solo tendrás que modificar la configuración de Alloy (ubicada en `/etc/alloy/config.alloy` en Linux) para incluir un scraper para el ClickHouse Cloud Prometheus Endpoint.
+Esto debería configurar Alloy con un componente `prometheus.remote_write` para enviar datos a un endpoint de Grafana Cloud con un token de autenticación. Después, solo tendrás que modificar la configuración de Alloy (ubicada en `/etc/alloy/config.alloy` en Linux) para incluir un scraper para el endpoint de Prometheus de ClickHouse Cloud.
 
 A continuación se muestra una configuración de ejemplo de Alloy con un componente `prometheus.scrape` para recopilar métricas del ClickHouse Cloud Endpoint, junto con el componente `prometheus.remote_write` configurado automáticamente. Ten en cuenta que el componente de configuración `basic_auth` contiene el ID y el secreto de nuestra API key de Cloud como nombre de usuario y contraseña, respectivamente.
 
@@ -285,8 +285,8 @@ Tenga en cuenta que el parámetro de configuración `honor_labels` debe establec
 Los usuarios de Grafana autogestionado pueden encontrar las instrucciones para instalar el agente Alloy [aquí](https://grafana.com/docs/alloy/latest/get-started/install/). Suponemos que los usuarios han configurado Alloy para enviar métricas de Prometheus al destino deseado. El componente `prometheus.scrape` que aparece a continuación hace que Alloy recopile métricas del ClickHouse Cloud Endpoint. Suponemos que `prometheus.remote_write` recibe las métricas recopiladas. Ajuste la clave `forward_to` para que apunte al destino de destino si esta no existe.
 
 ```yaml
-// El componente prometheus.scrape hace que Alloy realice scraping del endpoint de Prometheus de ClickHouse Cloud.
-  // Ajuste la clave forward_to para que coincida con su receiver de remote_write si difiere.
+// prometheus.scrape component causes Alloy to scrape the ClickHouse Cloud Prometheus endpoint.
+  // Adjust the forward_to key to match your remote_write receiver if it differs.
   prometheus.scrape "clickhouse_cloud" {
   targets = [{
   __address__ = "api.clickhouse.cloud",
@@ -344,8 +344,8 @@ instances:
   ## Páginas relacionadas
 </div>
 
-* [Resumen de monitorización](/es/products/cloud/features/monitoring/overview) — Compare todos los enfoques de monitorización de ClickHouse Cloud
-* [Monitorización en Cloud Console](/es/products/cloud/features/monitoring/cloud-console) — dashboards integrados que no requieren herramientas externas
-* [Integraciones de la comunidad y de socios](/es/products/cloud/features/monitoring/integrations) — Integración del agente de Datadog y soluciones de la comunidad
-* [Consulta de system tables](/es/products/cloud/features/monitoring/system-tables) — Acceso directo por SQL a las métricas del sistema
+* [Resumen de monitorización](/es/products/cloud/features/monitoring/overview) — Compare todos los enfoques de monitorización para ClickHouse Cloud
+* [Monitorización en Cloud Console](/es/products/cloud/features/monitoring/cloud-console) — Paneles integrados que no requieren herramientas externas
+* [Integraciones de la comunidad y de socios](/es/products/cloud/features/monitoring/integrations) — Integración con el agente de Datadog y soluciones de la comunidad
+* [Consulta de tablas del sistema](/es/products/cloud/features/monitoring/system-tables) — Acceso directo por SQL a las métricas del sistema
 * [endpoint de Prometheus de Managed Postgres](/es/products/managed-postgres/monitoring/prometheus) — Extraiga métricas de sus servicios de Managed Postgres

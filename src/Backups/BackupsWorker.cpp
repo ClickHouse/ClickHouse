@@ -628,6 +628,9 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(
     backup_create_params.data_file_name_prefix_length = *backup_settings.data_file_name_prefix_length;
     backup_create_params.backup_coordination = backup_coordination;
     backup_create_params.backup_uuid = backup_settings.backup_uuid;
+    /// The logical backup id, not BackupStarter's `-internal-` suffixed infos-map key -- internal ON CLUSTER
+    /// workers never write a manifest (writeBackupMetadata asserts !is_internal_backup), so this is the id readers see.
+    backup_create_params.backup_id = backup_settings.id.empty() ? toString(*backup_settings.backup_uuid) : backup_settings.id;
     backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
     backup_create_params.fsync_backup_files = backup_settings.fsync_backup_files;
     backup_create_params.allow_s3_native_copy = backup_settings.allow_s3_native_copy;
@@ -770,7 +773,7 @@ void BackupsWorker::writeBackupEntries(
     LOG_TRACE(log, "{}, num backup entries={}", Stage::WRITING_BACKUP, backup_entries.size());
     backup_coordination->setStage(Stage::WRITING_BACKUP, "", /* sync = */ true);
 
-    auto file_infos = backup_coordination->getFileInfos();
+    const auto & file_infos = backup_coordination->getFileInfos();
     if (file_infos.size() != backup_entries.size())
     {
         throw Exception(
@@ -1301,7 +1304,7 @@ std::pair<bool, BackupStatus> BackupsWorker::addInfo(const OperationID & id, con
     }
 
     if (backup_log)
-        backup_log->add(BackupLogElement{info});
+        backup_log->add([&](BackupLogElement & element) { BackupLogElement::fromInfo(element, info); });
 
     infos[id] = std::move(extended_info);
 
@@ -1346,7 +1349,7 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
     }
 
     if (backup_log)
-        backup_log->add(BackupLogElement{info});
+        backup_log->add([&](BackupLogElement & element) { BackupLogElement::fromInfo(element, info); });
 
     num_active_backups += getNumActiveBackupsChange(status) - getNumActiveBackupsChange(old_status);
     num_active_restores += getNumActiveRestoresChange(status) - getNumActiveRestoresChange(old_status);

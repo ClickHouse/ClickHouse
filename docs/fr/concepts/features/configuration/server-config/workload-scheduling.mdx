@@ -1,22 +1,38 @@
 ---
-description: 'Documentation sur l’ordonnancement des charges de travail'
-sidebarTitle: 'Ordonnancement des charges de travail'
+description: 'Documentation sur l’ordonnancement des workloads'
+sidebarTitle: 'Ordonnancement des workloads'
 slug: /operations/workload-scheduling
-title: 'Ordonnancement des charges de travail'
+title: 'Ordonnancement des workloads'
 doc_type: 'reference'
 ---
 
-Lorsque ClickHouse exécute plusieurs requêtes simultanément, elles peuvent utiliser des ressources partagées (par exemple, les disques et les cœurs de CPU). Des contraintes et des politiques d’ordonnancement peuvent être appliquées pour réguler l’utilisation et le partage des ressources entre différentes charges de travail. Une hiérarchie d’ordonnancement commune peut être configurée pour toutes les ressources. La racine de cette hiérarchie représente les ressources partagées, tandis que les feuilles correspondent à des charges de travail spécifiques, où sont placées les requêtes qui dépassent la capacité des ressources.
+Lorsque ClickHouse exécute plusieurs requêtes simultanément, elles utilisent des ressources partagées (CPU, mémoire et E/S). Des contraintes et des politiques d’ordonnancement peuvent être appliquées pour réguler l’utilisation et le partage des ressources entre différents workloads. Une hiérarchie d’ordonnancement commune peut être configurée pour toutes les ressources. La racine de cette hiérarchie représente les ressources partagées, tandis que les feuilles correspondent à des workloads spécifiques, contenant les demandes de ressources et les allocations propres à certaines requêtes et activités en arrière-plan.
 
-<Note>
-  Actuellement, les [E/S de disque distantes](#disk_config) et le [CPU](#cpu_scheduling) peuvent être ordonnancés selon la méthode décrite. Pour des limites de mémoire flexibles, voir [surallocation de mémoire](/fr/concepts/features/configuration/settings/memory-overcommit)
-</Note>
-
-<div id="disk_config">
-  ## Configuration du disque
+<div id="resources">
+  ## Ressources
 </div>
 
-Pour activer l’ordonnancement des charges IO pour un disque donné, vous devez créer des ressources de lecture et d’écriture pour les accès WRITE et READ :
+Par défaut, l’ordonnancement des charges de travail est désactivé. Pour l’activer, vous devez créer des ressources qui seront utilisées pour la planification, ainsi qu’au moins un workload. Toutes les ressources sont indépendantes et peuvent être combinées librement.
+
+Pour activer la planification CPU, vous devez créer une ressource CPU pour les threads MASTER ou WORKER (voir [planification CPU](#cpu_scheduling) pour plus de détails) :
+
+```sql
+CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+```
+
+Pour activer la réservation de mémoire pour les workloads, vous devez créer la ressource MEMORY (voir [Réservations de mémoire](#memory-reservations) pour plus de détails) :
+
+```sql
+CREATE RESOURCE memory (MEMORY RESERVATION)
+```
+
+Pour activer l’ordonnancement des slots de requête, vous devez créer une ressource QUERY (voir [Ordonnancement des slots de requête](#query_scheduling) pour en savoir plus) :
+
+```sql
+CREATE RESOURCE query (QUERY)
+```
+
+Pour activer l’ordonnancement des E/S pour un disque spécifique, vous devez créer des ressources en lecture et en écriture pour les accès READ et WRITE :
 
 ```sql
 CREATE RESOURCE resource_name (WRITE DISK disk_name, READ DISK disk_name)
@@ -25,17 +41,432 @@ CREATE RESOURCE read_resource_name (WRITE DISK write_disk_name)
 CREATE RESOURCE write_resource_name (READ DISK read_disk_name)
 ```
 
-Une ressource peut être utilisée pour autant de disques que nécessaire, pour READ ou WRITE, ou pour READ et WRITE à la fois. Il existe une syntaxe permettant d’utiliser une ressource pour tous les disques :
+Une ressource peut être utilisée avec un nombre quelconque de disques, en READ, en WRITE, ou à la fois en READ et en WRITE. Il existe une syntaxe permettant d’utiliser une ressource pour tous les disques :
 
 ```sql
 CREATE RESOURCE all_io (READ ANY DISK, WRITE ANY DISK);
 ```
 
-Une autre façon d’indiquer quels disques sont utilisés par une ressource consiste à utiliser le `storage_configuration` du serveur :
+Les ressources sont classées par mode de partage :
+
+* **Ressources partagées dans le temps** (CPU, IO, slots de requête) - gèrent les requêtes de ressources mises en file d&#39;attente aux feuilles de la hiérarchie d&#39;ordonnancement. Les requêtes sont ordonnancées selon les politiques et les contraintes définies par la hiérarchie. Les requêtes de ressources sont créées lorsqu&#39;une requête accède à la ressource correspondante. Par exemple, lorsqu&#39;une requête lit des données sur le disque ou utilise le CPU pour le traitement, des requêtes de ressources sont créées pour chaque quantum de travail effectué ou pour chaque quantité d&#39;octets envoyés ou reçus via un socket.
+* **Ressources partagées dans l&#39;espace** (Memory) - gèrent les allocations de ressources aux feuilles de la hiérarchie d&#39;ordonnancement. Les allocations peuvent être actives ou en attente. Les allocations en attente sont bloquées jusqu&#39;à ce que suffisamment d&#39;espace soit libéré ou qu&#39;une autre allocation soit évincée (interrompue de force). Les décisions sont fondées sur les limites et les politiques définies par la hiérarchie. Il existe une correspondance un à un entre les allocations et les requêtes (ou les activités en arrière-plan). Une allocation est créée lorsqu&#39;une requête commence son exécution et elle est libérée lorsqu&#39;elle se termine. Les allocations actives peuvent augmenter ou diminuer leur taille de manière dynamique.
+
+<div id="workloads">
+  ## Hiérarchie des workloads
+</div>
+
+ClickHouse fournit une syntaxe SQL pratique pour définir la hiérarchie d’ordonnancement. Toutes les ressources sont réparties dans une hiérarchie WORKLOAD commune. Les règles de répartition peuvent différer sur certains points selon les ressources, mais la hiérarchie reste la même. Chaque WORKLOAD comporte les nœuds d’ordonnancement nécessaires pour chaque ressource. Un workload enfant peut être créé au sein de n’importe quel workload pour construire la hiérarchie. ClickHouse n’impose aucune structure spécifique ou prédéfinie pour la hiérarchie des workloads.
+
+Voici un exemple de hiérarchie qui répartit toutes les ressources entre les workloads &quot;user&quot; et &quot;system&quot;, avec une garantie respective de 90 % et 10 %. Notez que les poids définis pour les workloads sont utilisés pour l’équité max-min et ne fournissent donc qu’une garantie minimale au mieux (et non une limite ou un quota maximal). L’ordonnancement est effectué indépendamment sur chaque hôte et, par conséquent, les limites définies par les paramètres `max_*` s’appliquent à chaque hôte. Le workload &quot;user&quot; subdivise ses ressources entre les workloads &quot;development&quot; et &quot;production&quot;, &quot;production&quot; disposant de 3 fois plus de ressources que &quot;development&quot; :
+
+```sql
+CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+CREATE RESOURCE memory (MEMORY RESERVATION)
+CREATE RESOURCE s3_read (READ DISK s3)
+CREATE RESOURCE s3_write (WRITE DISK s3)
+CREATE WORKLOAD all SETTINGS max_concurrent_threads_ratio_to_cores = 2, max_memory_ratio = 0.8, max_bytes_per_second = '2Gi'
+CREATE WORKLOAD user IN all SETTINGS weight = 9
+CREATE WORKLOAD system IN all
+CREATE WORKLOAD development IN user
+CREATE WORKLOAD production IN user SETTINGS weight = 3
+```
+
+```mermaid
+graph LR
+  subgraph Resources
+    cpu["cpu"]
+    mem["memory"]
+    nr["s3_read"]
+    nw["s3_write"]
+    mem["memory"]
+    oth["..."]
+  end
+
+  subgraph Workloads
+    all["all"]
+    usr["user"]
+    sys["system"]
+    wl1["..."]
+    dev["development"]
+    prd["production"]
+    wl2["..."]
+    all --> |≥90%| usr
+    all --> |≥10%| sys
+    all --> wl1
+    usr --> |≥25%| dev
+    usr --> |≥75%| prd
+    usr --> wl2
+  end
+
+  cpu --> |2xCores| all
+  mem --> |0.8xRAM| all
+  nr --> |2GBps| all
+  nw --> |2GBps| all
+  oth --> all
+```
+
+Le nom d’un workload feuille sans enfants peut être utilisé dans les paramètres de requête `SETTINGS workload = 'name'`. Consultez [Workload markup](#workload-markup) pour plus de détails.
+
+Pour personnaliser un workload, les paramètres suivants peuvent être utilisés :
+
+* `priority` - (time-shared uniquement) les workloads frères sont servis selon des valeurs statiques (une valeur plus faible signifie une priorité plus élevée). Détermine la préemption.
+* `precedence` - (space-shared uniquement) les workloads frères sont admis selon des valeurs statiques (une valeur plus faible signifie une préséance plus élevée). Détermine l’éviction et l’admission.
+* `weight` - les workloads frères ayant la même priorité statique ou la même préséance se partagent les ressources en fonction de leurs poids, de manière équitable. Affecte la préemption, l’éviction et l’admission.
+* `max_io_requests` - la limite du nombre de requêtes d’E/S concurrentes dans ce workload.
+* `max_bytes_inflight` - la limite du nombre total d’octets en cours de traitement pour les requêtes concurrentes dans ce workload.
+* `max_bytes_per_second` - la limite du débit en octets en lecture ou en écriture de ce workload.
+* `max_burst_bytes` - le nombre maximal d’octets pouvant être traités par le workload sans être bridé (pour chaque ressource indépendamment).
+* `max_concurrent_threads` - la limite du nombre de threads pour les requêtes dans ce workload.
+* `max_concurrent_threads_ratio_to_cores` - identique à `max_concurrent_threads`, mais normalisé par rapport au nombre de cœurs CPU disponibles.
+* `max_cpus` - la limite du nombre de cœurs CPU pour servir les requêtes dans ce workload.
+* `max_cpu_share` - identique à `max_cpus`, mais normalisé par rapport au nombre de cœurs CPU disponibles.
+* `max_burst_cpu_seconds` - le nombre maximal de secondes CPU pouvant être consommées par le workload sans être bridé en raison de `max_cpus`.
+* `max_memory` - la limite de la mémoire totale réservée à ce workload.
+
+Toutes les limites spécifiées via les workload settings sont indépendantes pour chaque ressource. Par exemple, un workload avec `max_bytes_per_second = '10Mi'` aura une limite de bande passante de 10 MB/s pour chaque ressource de lecture et d’écriture, indépendamment. Si une limite commune pour la lecture et l’écriture est requise, envisagez d’utiliser la même ressource pour l’accès READ et WRITE.
+
+Il n’existe aucun moyen de spécifier des hiérarchies de workloads différentes pour différentes ressources. Mais il existe un moyen de spécifier une valeur de workload setting différente pour une ressource spécifique :
+
+```sql
+CREATE OR REPLACE WORKLOAD all SETTINGS max_io_requests = 100, max_bytes_per_second = '1Mi' FOR network_read, max_bytes_per_second = '2Mi' FOR network_write
+```
+
+Notez également qu’un workload ou une ressource ne peut pas être supprimé s’il est référencé par un autre workload. Pour mettre à jour la définition d’un workload, utilisez la requête `CREATE OR REPLACE WORKLOAD`.
+
+<Note>
+  Les paramètres du workload sont convertis en un ensemble approprié de nœuds d’ordonnancement. Pour plus de détails sur les mécanismes sous-jacents, consultez la description des [types et options](#hierarchy) des nœuds d’ordonnancement.
+</Note>
+
+<div id="workload-markup">
+  ## Marquage des workloads
+</div>
+
+Les requêtes peuvent être marquées à l’aide du paramètre `workload` pour distinguer différents workloads. Si `workload` n’est pas défini, la valeur &quot;default&quot; est utilisée. Notez que vous pouvez également spécifier une autre valeur à l’aide de profils de paramètres. Des contraintes sur les paramètres peuvent être utilisées pour rendre `workload` constant si vous souhaitez que toutes les requêtes d’un utilisateur soient marquées avec une valeur fixe du paramètre `workload`.
 
 <Warning>
-  La planification des workloads via la configuration ClickHouse est obsolète. Utilisez plutôt la syntaxe SQL.
+  Le paramètre de requête `workload` ne peut faire référence qu’à des workloads terminaux (c’est-à-dire des workloads sans enfants).
 </Warning>
+
+```sql
+SELECT count() FROM my_table WHERE value = 42 SETTINGS workload = 'production'
+SELECT count() FROM my_table WHERE value = 13 SETTINGS workload = 'development'
+```
+
+Il est possible d’attribuer un paramètre `workload` aux activités en arrière-plan. Les merges et les mutations utilisent respectivement les paramètres serveur `merge_workload` et `mutation_workload`. Ces valeurs peuvent également être redéfinies pour des tables spécifiques à l’aide des paramètres MergeTree `merge_workload` et `mutation_workload`.
+
+<div id="cpu_scheduling">
+  ## Ordonnancement du CPU
+</div>
+
+Pour activer l’ordonnancement du CPU pour les workloads, créez une ressource CPU et définissez une limite pour le nombre de threads concurrents :
+
+```sql
+CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100
+```
+
+Lorsque le serveur ClickHouse exécute de nombreuses requêtes concurrentes avec [plusieurs threads](/fr/reference/settings/session-settings#max_threads) et que tous les slots CPU sont utilisés, l’état de surcharge est atteint. Dans cet état, chaque slot CPU libéré est réattribué au workload approprié conformément aux politiques d’ordonnancement. Pour les requêtes partageant le même workload, les slots sont alloués en round robin. Pour les requêtes appartenant à des workloads distincts, les slots sont alloués selon les poids, priorités et limites spécifiés pour les workloads.
+
+Le temps CPU est consommé par les threads lorsqu’ils ne sont pas bloqués et travaillent sur des tâches gourmandes en CPU. À des fins d’ordonnancement, on distingue deux types de threads :
+
+* Master thread — le premier thread qui commence à travailler sur une requête ou une activité en arrière-plan comme une merge ou une mutation.
+* Worker thread — les threads supplémentaires que le master peut créer pour travailler sur des tâches gourmandes en CPU.
+
+Il peut être souhaitable d’utiliser des ressources distinctes pour les master threads et les worker threads afin d’obtenir une meilleure réactivité. Un grand nombre de worker threads peut facilement monopoliser les ressources CPU lorsque des valeurs élevées du paramètre de requête `max_threads` sont utilisées. Les requêtes entrantes doivent alors se bloquer et attendre qu’un slot CPU se libère pour que leurs master threads puissent commencer l’exécution. Pour éviter cela, la configuration suivante peut être utilisée :
+
+```sql
+CREATE RESOURCE worker_cpu (WORKER THREAD)
+CREATE RESOURCE master_cpu (MASTER THREAD)
+CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100 FOR worker_cpu, max_concurrent_threads = 1000 FOR master_cpu
+```
+
+Cela créera des limites distinctes pour les threads principaux et les threads workers. Même si les 100 slots CPU des workers sont tous occupés, les nouvelles requêtes ne seront pas bloquées tant qu’il restera des slots CPU principaux disponibles. Elles commenceront à s’exécuter avec un seul thread. Ensuite, si des slots CPU workers deviennent disponibles, ces requêtes pourront monter en charge et lancer leurs threads workers. En revanche, une telle approche ne lie pas le nombre total de slots au nombre de processeurs CPU, et l’exécution d’un trop grand nombre de threads concurrents dégradera les performances.
+
+Limiter la concurrence des threads principaux ne limitera pas le nombre de requêtes concurrentes. Des slots CPU peuvent être libérés en cours d’exécution d’une requête, puis réattribués à d’autres threads. Par exemple, 4 requêtes concurrentes avec une limite de 2 threads principaux concurrents peuvent toutes s’exécuter en parallèle. Dans ce cas, chaque requête recevra 50 % d’un processeur CPU. Il faut utiliser une logique distincte pour limiter le nombre de requêtes concurrentes, et cela n’est pas actuellement pris en charge pour les workloads.
+
+Des limites distinctes de concurrence des threads peuvent être utilisées pour les workloads :
+
+```sql
+CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+CREATE WORKLOAD all
+CREATE WORKLOAD admin IN all SETTINGS max_concurrent_threads = 10
+CREATE WORKLOAD production IN all SETTINGS max_concurrent_threads = 100
+CREATE WORKLOAD analytics IN production SETTINGS max_concurrent_threads = 60, weight = 9
+CREATE WORKLOAD ingestion IN production
+```
+
+Cet exemple de configuration fournit des pools de slots CPU distincts pour admin et production. Le pool de production est partagé entre l’analytics et l’ingestion. En outre, si le pool de production est surchargé, 9 slots libérés sur 10 seront réattribués aux requêtes analytiques si nécessaire. Les requêtes d’ingestion ne recevraient alors qu’1 slot sur 10 pendant les périodes de surcharge. Cela peut améliorer la latence des requêtes orientées utilisateur. L’analytics a sa propre limite de 60 threads concurrents, ce qui laisse toujours au moins 40 threads pour prendre en charge l’ingestion. En l’absence de surcharge, l’ingestion peut utiliser les 100 threads.
+
+Pour exclure une requête de l’ordonnancement CPU, définissez le paramètre de requête [use&#95;concurrency&#95;control](/fr/reference/settings/session-settings#use_concurrency_control) sur 0.
+
+L’ordonnancement CPU n’est pas encore pris en charge pour les merge et les mutations.
+
+Pour garantir des allocations équitables entre les workloads, il est nécessaire d’effectuer une préemption et une réduction dynamique pendant l’exécution de la requête. La préemption est activée avec le paramètre serveur `cpu_slot_preemption`. S’il est activé, chaque thread renouvelle périodiquement son slot CPU (selon le paramètre serveur `cpu_slot_quantum_ns`). Un tel renouvellement peut bloquer l’exécution si le CPU est surchargé. Lorsque l’exécution reste bloquée pendant une durée prolongée (voir le paramètre serveur `cpu_slot_preemption_timeout_ms`), la requête réduit alors sa capacité, et le nombre de threads exécutés en parallèle diminue dynamiquement. Notez que l’équité du temps CPU est garantie entre les workloads, mais qu’entre les requêtes d’un même workload, elle peut ne pas être respectée dans certains cas limites.
+
+<Warning>
+  L’ordonnancement des slots permet de contrôler la [concurrence des requêtes](/fr/reference/settings/session-settings#max_threads), mais ne garantit pas une allocation équitable du temps CPU, sauf si le paramètre serveur `cpu_slot_preemption` est défini sur `true` ; sinon, l’équité est assurée en fonction du nombre d’allocations de slots CPU entre les workloads concurrents. Cela n’implique pas une quantité égale de secondes CPU, car sans préemption, un slot CPU peut être conservé indéfiniment. Un thread acquiert un slot au début et le libère une fois le travail terminé.
+</Warning>
+
+<Note>
+  La déclaration d’une ressource CPU désactive l’effet des paramètres [`concurrent_threads_soft_limit_num`](/fr/reference/settings/server-settings/settings#concurrent_threads_soft_limit_num) et [`concurrent_threads_soft_limit_ratio_to_cores`](/fr/reference/settings/server-settings/settings#concurrent_threads_soft_limit_ratio_to_cores). À la place, le workload setting `max_concurrent_threads` est utilisé pour limiter le nombre de CPU alloués à une charge de travail spécifique. Pour retrouver le comportement précédent, créez uniquement la ressource WORKER THREAD, définissez `max_concurrent_threads` pour la charge de travail `all` sur la même valeur que `concurrent_threads_soft_limit_num`, puis utilisez le paramètre de requête `workload = "all"`. Cette configuration correspond au paramètre [`concurrent_threads_scheduler`](/fr/reference/settings/server-settings/settings#concurrent_threads_scheduler) défini sur la valeur &quot;fair&#95;round&#95;robin&quot;.
+</Note>
+
+<div id="threads_vs_cpus">
+  ## Threads vs. CPU
+</div>
+
+Il existe deux façons de contrôler la consommation de CPU d’une charge de travail :
+
+* Limite du nombre de threads : `max_concurrent_threads` et `max_concurrent_threads_ratio_to_cores`
+* Bridage du CPU : `max_cpus`, `max_cpu_share` et `max_burst_cpu_seconds`
+
+<Warning>
+  Les paramètres de bridage du CPU ne sont actifs que si le paramètre serveur `cpu_slot_preemption` est activé, et sont ignorés sinon.
+</Warning>
+
+La première permet de contrôler dynamiquement le nombre de threads lancés pour une query, en fonction de la charge actuelle du serveur. En pratique, elle abaisse la limite imposée par le paramètre de query `max_threads`. La seconde bride la consommation de CPU de la charge de travail à l’aide de l’algorithme du seau à jetons. Elle n’affecte pas directement le nombre de threads, mais bride la consommation totale de CPU de tous les threads de la charge de travail.
+
+Le bridage par seau à jetons avec `max_cpus` et `max_burst_cpu_seconds` signifie ce qui suit. Sur tout intervalle de `delta` secondes, la consommation totale de CPU de toutes les queries de la charge de travail ne doit pas dépasser `max_cpus * delta + max_burst_cpu_seconds` secondes CPU. Cela limite la consommation moyenne à `max_cpus` sur le long terme, mais cette limite peut être dépassée à court terme. Par exemple, avec `max_burst_cpu_seconds = 60` et `max_cpus=0.001`, il est possible d’exécuter soit 1 thread pendant 60 secondes, soit 2 threads pendant 30 secondes, soit 60 threads pendant 1 seconde sans bridage. La valeur par défaut de `max_burst_cpu_seconds` est de 1 seconde. Des valeurs plus faibles peuvent entraîner une sous-utilisation des cœurs autorisés par `max_cpus` en présence de nombreux threads concurrents.
+
+Lorsqu’il détient un slot CPU, un thread peut se trouver dans l’un de ces trois états principaux :
+
+* **Running:** consomme effectivement des ressources CPU. Le temps passé dans cet état est pris en compte par le bridage du CPU.
+* **Ready:** attend qu’un CPU devienne disponible. Le temps passé dans cet état n’est pas pris en compte par le bridage du CPU.
+* **Blocked:** effectue des opérations d’IO ou d’autres appels système bloquants (par exemple, en attente d’un mutex). Le temps passé dans cet état n’est pas pris en compte par le bridage du CPU.
+
+Considérons un exemple de configuration combinant à la fois le bridage du CPU et les limites du nombre de threads :
+
+```sql
+CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+CREATE WORKLOAD all SETTINGS max_concurrent_threads_ratio_to_cores = 2
+CREATE WORKLOAD admin IN all SETTINGS max_concurrent_threads = 2, priority = -1
+CREATE WORKLOAD production IN all SETTINGS weight = 4
+CREATE WORKLOAD analytics IN production SETTINGS max_cpu_share = 0.7, weight = 3
+CREATE WORKLOAD ingestion IN production
+CREATE WORKLOAD development IN all SETTINGS max_cpu_share = 0.3
+```
+
+Ici, nous limitons le nombre total de threads pour toutes les requêtes à 2 fois le nombre de CPU disponibles. Le workload Admin est limité à exactement deux threads au maximum, quel que soit le nombre de CPU disponibles. Admin a une priorité de -1 (inférieure à la valeur par défaut 0) et obtient en premier un slot CPU si nécessaire. Lorsque l’admin n’exécute pas de requêtes, les ressources CPU sont réparties entre les workloads de production et de développement. Les parts garanties de temps CPU sont basées sur des poids (4 pour 1) : au moins 80 % vont à la production (si nécessaire) et au moins 20 % au développement (si nécessaire). Tandis que les poids constituent des garanties, le throttling CPU définit des limites : la production n’est pas limitée et peut consommer 100 %, tandis que le développement a une limite de 30 %, qui s’applique même s’il n’y a pas de requêtes provenant d’autres workloads. Le workload de production n’est pas une feuille ; ses ressources sont donc réparties entre analytics et ingestion selon des poids (3 pour 1). Cela signifie qu’analytics bénéficie d’une garantie d’au moins 0.8 * 0.75 = 60 % et, sur la base de `max_cpu_share`, d’une limite de 70 % des ressources CPU totales. Quant à l’ingestion, si elle conserve une garantie d’au moins 0.8 * 0.25 = 20 %, elle n’a pas de limite supérieure.
+
+<Note>
+  Si vous souhaitez maximiser l’utilisation du CPU sur votre serveur ClickHouse, évitez d’utiliser `max_cpus` et `max_cpu_share` pour le workload racine `all`. Définissez plutôt une valeur plus élevée pour `max_concurrent_threads`. Par exemple, sur un système avec 8 CPU, définissez `max_concurrent_threads = 16`. Cela permet à 8 threads d’exécuter des tâches CPU pendant que 8 autres threads peuvent gérer des opérations d’E/S. Des threads supplémentaires créeront une pression sur le CPU, ce qui garantit l’application des règles d’ordonnancement. À l’inverse, définir `max_cpus = 8` ne créera jamais de pression sur le CPU, car le serveur ne peut pas dépasser les 8 CPU disponibles.
+</Note>
+
+<div id="memory-reservations">
+  ## Réservations de mémoire
+</div>
+
+<Note>
+  La planification des réservations de mémoire est expérimentale. Elle ne prend effet que lorsqu&#39;une ressource `MEMORY RESERVATION` existe, et sa syntaxe SQL ainsi que son comportement peuvent évoluer dans les versions futures. Elle n&#39;est pas encore prise en charge pour les merges et les mutations, et l&#39;éviction d&#39;une requête en cours s&#39;effectue au mieux : elle prend effet au prochain point de synchronisation mémoire de la requête, et non instantanément.
+</Note>
+
+Pour activer les réservations de mémoire pour les workloads, créez une ressource MEMORY RESERVATION et définissez au moins une limite pour la mémoire totale réservée à l&#39;aide des paramètres de workload :
+
+```sql
+CREATE RESOURCE memory (MEMORY RESERVATION)
+CREATE WORKLOAD all SETTINGS max_memory = '2Gi'
+```
+
+ClickHouse suit les allocations mémoire de toutes les requêtes et activités en arrière-plan. Le nombre d’octets alloués est agrégé dans la hiérarchie d’ordonnancement jusqu’à la racine. Chaque requête possède une allocation associée dans le workload feuille auquel elle appartient. Si une requête a le paramètre `reserve_memory` supérieur à zéro, l’allocation est alors créée à l’état en attente. Une allocation en attente réserve la quantité de mémoire demandée dans la hiérarchie des workloads. S’il n’y a pas assez de mémoire disponible, l’allocation reste en attente jusqu’à ce qu’une quantité suffisante de mémoire soit libérée ou que d’autres allocations soient évincées (tuées). Lorsque l’allocation est acceptée, elle passe à l’état d’exécution. Une allocation en cours d’exécution peut augmenter ou diminuer dynamiquement en taille en fonction de la consommation mémoire de la requête. Le cycle de vie d’une allocation peut être représenté par le diagramme d’état suivant :
+
+```mermaid
+stateDiagram-v2
+    [*] --> Pending: init [reserve_memory > 0]
+    [*] --> Running: init [reserve_memory == 0]
+
+    Pending --> Running: admit
+
+    state Running {
+        %% Region 1: increase flow
+        NotIncreasing --> Increasing: request
+        Increasing --> NotIncreasing: approve
+
+        --
+
+        %% Region 2: decrease flow
+        NotDecreasing --> Decreasing: request
+        Decreasing --> NotDecreasing: approve
+    }
+
+    Running --> Killed: evict
+    Running --> Released: finish
+```
+
+Les allocations en attente d&#39;un workload feuille sont admises selon l&#39;ordre FIFO. Lorsque plusieurs workloads ont des allocations en attente, elles sont admises selon les paramètres de préséance et de pondération. Les workloads de préséance plus élevée sont servis en premier. Les workloads frères ayant la même préséance se partagent la mémoire selon leurs pondérations, de façon équitable selon le principe max-min, ce qui signifie que le workload dont l&#39;utilisation mémoire normalisée est la plus faible (utilisation actuelle plus augmentation demandée, divisée par la pondération) est servi en premier. La logique inverse s&#39;applique lors de l&#39;éviction. Lorsqu&#39;il faut libérer de la mémoire, les workloads de préséance plus faible et dont l&#39;utilisation mémoire normalisée est plus élevée sont évincés en premier.
+
+Notez que les ressources partagées dans le temps utilisent la priorité, tandis que les ressources partagées dans l&#39;espace utilisent la préséance. Ce sont des paramètres indépendants, qui peuvent donc être définis sur des valeurs différentes. Une priorité plus élevée implique une préemption non destructive (retard ou limitation), tandis qu&#39;une préséance plus élevée peut impliquer une éviction destructive (arrêt avec une erreur). Un workload peut avoir une priorité élevée pour l&#39;ordonnancement CPU, tout en conservant la même préséance pour la réservation mémoire afin d&#39;éviter d&#39;évincer d&#39;autres workloads et de perdre le travail qu&#39;ils ont déjà effectué.
+
+Tout workload avec une limite `max_memory` garantit que la mémoire totale allouée dans son sous-arbre ne dépasse pas cette limite. Si une allocation en attente ou en cours d&#39;augmentation dépasse cette limite, une procédure d&#39;éviction est lancée pour libérer de la mémoire. La procédure d&#39;éviction sélectionne une victime à tuer. Le workload correspondant au plus proche ancêtre commun du killer et de la victime empêche l&#39;éviction dans les situations suivantes :
+
+* Une allocation en attente ne peut pas évincer des allocations en cours dans le même workload. (Les workloads du killer et de la victime coïncident).
+* Une allocation en attente de préséance plus faible ne tue jamais un workload de préséance plus élevée.
+* Une allocation en attente ne peut pas tuer une allocation de même préséance. Notez que des allocations en cours de même préséance peuvent s&#39;évincer mutuellement en fonction de l&#39;utilisation mémoire normalisée.
+  Si l&#39;éviction est empêchée ou ne libère pas assez de mémoire, la nouvelle allocation est bloquée jusqu&#39;à ce qu&#39;une quantité suffisante de mémoire soit libérée. Ces règles permettent la mise en file d&#39;attente des requêtes excessives en fonction de la pression mémoire et offrent un moyen pratique d&#39;éviter les erreurs MEMORY&#95;LIMIT&#95;EXCEEDED.
+
+<Note>
+  Les limites de workload sont indépendantes des autres moyens de limiter la consommation de mémoire, comme le paramètre de requête [max&#95;memory&#95;usage](/fr/reference/settings/session-settings#max_memory_usage). Elles peuvent être utilisées ensemble pour mieux contrôler la consommation de mémoire. Il est possible de définir des limites mémoire indépendantes en fonction des utilisateurs (et non des workloads). Cette approche est moins flexible et n&#39;offre pas de fonctionnalités comme la réservation de mémoire et la mise en file d&#39;attente des requêtes en attente. Voir [Memory overcommit](/fr/concepts/features/configuration/settings/memory-overcommit)
+</Note>
+
+Le paramètre de workload `max_waiting_queries` limite le nombre d&#39;allocations en attente pour le workload. Lorsque la limite est atteinte, le serveur renvoie une erreur `SERVER_OVERLOADED`. Notez que `max_waiting_queries` n&#39;est pas hérité par les workloads enfants et n&#39;a de sens que pour les workloads feuille.
+
+L&#39;ordonnancement de la réservation de mémoire n&#39;est pas encore pris en charge pour les fusions et les mutations.
+
+Seules les requêtes dont le paramètre `reserve_memory` est supérieur à zéro peuvent être bloquées dans l’attente d’une réservation de mémoire. Cependant, les requêtes pour lesquelles `reserve_memory` vaut zéro sont elles aussi prises en compte dans l’empreinte mémoire de leur workload, et elles peuvent être évincées si nécessaire afin de libérer de la mémoire pour d’autres allocations en attente ou en augmentation. Les requêtes sans marquage de workload approprié ne sont pas soumises à l’ordonnancement de la réservation de mémoire et ne peuvent pas être évincées par le planificateur.
+
+Pour fournir à une requête une réservation de mémoire non élastique, définissez les paramètres de requête `reserve_memory` et `max_memory_usage` à la même valeur. Dans ce cas, la requête réservera une quantité fixe de mémoire et ne pourra pas augmenter dynamiquement son allocation. Notez qu’une réservation de mémoire élastique peut être augmentée au-delà de `reserve_memory`, jusqu’à `max_memory_usage`, sans être arrêtée, sauf en cas de pression mémoire. En revanche, elle ne peut pas être réduite en dessous de `reserve_memory`, même lorsque la consommation réelle est inférieure.
+
+Prenons un exemple de configuration :
+
+```sql
+CREATE RESOURCE memory (MEMORY RESERVATION)
+CREATE WORKLOAD all SETTINGS max_memory = '10Gi'
+CREATE WORKLOAD system IN all SETTINGS weight = 1
+CREATE WORKLOAD user IN all SETTINGS weight = 9
+CREATE WORKLOAD production IN user SETTINGS precedence = 1, weight = 3
+CREATE WORKLOAD staging IN user SETTINGS precedence = 1, weight = 1
+CREATE WORKLOAD testing IN user SETTINGS precedence = 2
+```
+
+Dans cet exemple, la mémoire totale réservée par toutes les requêtes et activités en arrière-plan ne peut pas dépasser 10 GiB. Le workload système bénéficie d’une garantie d’au moins 1 GiB (10 % de 10 GiB), tandis que le workload utilisateur bénéficie d’une garantie d’au moins 9 GiB (90 % de 10 GiB). Au sein du workload utilisateur, les workloads production et staging se partagent la mémoire selon des poids de 3 pour 1, avec une préséance égale de 1. Le workload de test a une préséance de 2, inférieure à celle de production et de staging. Par conséquent, le workload de test ne peut utiliser que la mémoire non utilisée par production et staging.
+
+En cas de pression sur la mémoire, les allocations du workload de test seront évincées en premier. Ensuite, s’il faut libérer davantage de mémoire, les allocations du workload staging seront évincées avant celles du workload production si elles dépassent leurs garanties. Notez que les requêtes en attente dans production et staging peuvent évincer des allocations en cours d’exécution dans le workload de test afin de libérer de la mémoire, mais elles ne peuvent pas s’évincer mutuellement, car elles ont la même préséance. En cas de pression sur la mémoire, elles attendront dans des files d’attente, ce qui permet au système d’éviter les erreurs MEMORY&#95;LIMIT&#95;EXCEEDED dues à un trop grand nombre de requêtes exécutées simultanément.
+
+Notez que le workload système a une préséance de 0 (par défaut), supérieure à celle des workloads production, staging et test, mais qu’il ne s’agit pas de workloads frères. Leur plus proche ancêtre commun est le workload all, dont les deux enfants ont la même préséance. Ainsi, un workload système en attente ne peut en évincer aucun, et inversement. Cela garantit que les activités système ne peuvent pas être facilement évincées.
+
+<div id="query_scheduling">
+  ## Ordonnancement des slots de requête
+</div>
+
+Pour activer l’ordonnancement des slots de requête pour les workloads, créez la ressource QUERY et définissez une limite sur le nombre de requêtes simultanées ou de requêtes par seconde :
+
+```sql
+CREATE RESOURCE query (QUERY)
+CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_second = 10, max_burst_queries = 20
+```
+
+Le paramètre de workload `max_concurrent_queries` limite le nombre de requêtes concurrentes pouvant s’exécuter simultanément pour un workload donné. Il s’agit de l’équivalent du paramètre de requête [`max_concurrent_queries_for_all_users`](/fr/reference/settings/session-settings#max_concurrent_queries_for_all_users) et du paramètre du serveur [max&#95;concurrent&#95;queries](/fr/reference/settings/server-settings/settings#max_concurrent_queries). Les requêtes async insert et certaines requêtes spécifiques, comme KILL, ne sont pas comptabilisées dans cette limite.
+
+Les paramètres de workload `max_queries_per_second` et `max_burst_queries` limitent le nombre de requêtes pour le workload à l’aide d’un mécanisme de limitation de débit de type token bucket. Cela garantit que, sur tout intervalle de temps `T`, pas plus de `max_queries_per_second * T + max_burst_queries` nouvelles requêtes ne commenceront à s’exécuter.
+
+Le paramètre de workload `max_waiting_queries` limite le nombre de requêtes en attente pour le workload. Lorsque la limite est atteinte, le serveur renvoie une erreur `SERVER_OVERLOADED`. Notez que `max_waiting_queries` n’est pas hérité par les workloads enfants et n’a de sens que pour les workloads feuilles.
+
+<Note>
+  Les requêtes bloquées attendent indéfiniment et n’apparaissent pas dans `SHOW PROCESSLIST` tant que toutes les contraintes ne sont pas satisfaites.
+</Note>
+
+<div id="workload_entity_storage">
+  ## Stockage des workloads et des ressources
+</div>
+
+Les définitions de tous les workloads et de toutes les ressources, sous la forme de requêtes `CREATE WORKLOAD` et `CREATE RESOURCE`, sont stockées de manière persistante soit sur le disque dans `workload_path`, soit dans ZooKeeper dans `workload_zookeeper_path`. Le stockage dans ZooKeeper est recommandé pour garantir la cohérence entre les nœuds. Sinon, la clause `ON CLUSTER` peut être utilisée avec le stockage sur disque.
+
+<div id="config_based_workloads">
+  ## Charges de travail et ressources définies par configuration
+</div>
+
+En plus des définitions basées sur SQL, les charges de travail et les ressources peuvent être prédéfinies dans le fichier de configuration du serveur. Cela est utile dans les environnements cloud, où certaines restrictions sont imposées par l’infrastructure, tandis que d’autres limites peuvent être modifiées par les clients. Les entités définies par configuration ont priorité sur celles définies en SQL et ne peuvent pas être modifiées ni supprimées à l’aide de commandes SQL.
+
+<div id="config_based_workloads_format">
+  ### Format de la configuration
+</div>
+
+```xml
+<clickhouse>
+    <resources_and_workloads>
+        CREATE RESOURCE memory (MEMORY RESERVATION);
+        CREATE RESOURCE s3disk_read (READ DISK s3);
+        CREATE RESOURCE s3disk_write (WRITE DISK s3);
+        CREATE WORKLOAD all SETTINGS max_memory = '2Gi', max_io_requests = 500 FOR s3disk_read, max_io_requests = 1000 FOR s3disk_write, max_bytes_per_second = '1280Mi' FOR s3disk_read, max_bytes_per_second = '3200Mi' FOR s3disk_write;
+        CREATE WORKLOAD production IN all SETTINGS weight = 3;
+    </resources_and_workloads>
+</clickhouse>
+```
+
+La configuration utilise la même syntaxe SQL que les instructions `CREATE WORKLOAD` et `CREATE RESOURCE`. Toutes les requêtes doivent être valides.
+
+<div id="config_based_workloads_usage_recommendations">
+  ### Recommandations d’utilisation
+</div>
+
+Pour les environnements cloud, une configuration typique peut inclure :
+
+1. Définir le workload racine et les ressources d’E/S réseau dans la configuration afin de fixer les limites de l’infrastructure
+2. Définir `throw_on_unknown_workload` pour faire respecter ces limites
+3. Créer un `CREATE WORKLOAD default IN all` pour appliquer automatiquement les limites à toutes les requêtes (puisque la valeur par défaut du paramètre de requête `workload` est &#39;default&#39;)
+4. Autoriser les utilisateurs à créer des workloads supplémentaires dans la hiérarchie configurée
+
+Cela garantit que toutes les activités d’arrière-plan et les requêtes respectent les limites de l’infrastructure, tout en laissant une certaine souplesse pour les politiques d’ordonnancement propres aux utilisateurs.
+
+Un autre cas d’usage consiste à utiliser une configuration différente selon les nœuds d’un cluster hétérogène.
+
+<div id="strict_resource_access">
+  ## Accès strict aux ressources
+</div>
+
+Pour obliger toutes les requêtes à respecter les politiques d’ordonnancement des ressources, il existe un paramètre du serveur `throw_on_unknown_workload`. S’il est défini sur `true`, chaque requête doit utiliser un paramètre de requête `workload` valide, faute de quoi l’exception `RESOURCE_ACCESS_DENIED` est levée. S’il est défini sur `false`, une telle requête n’utilise pas l’ordonnanceur de ressources, c’est-à-dire qu’elle bénéficie d’un accès illimité à n’importe quelle `RESOURCE`. Le paramètre de requête &#39;use&#95;concurrency&#95;control = 0&#39; permet à une requête de contourner l’ordonnanceur CPU et d’obtenir un accès illimité au CPU. Pour imposer l’ordonnancement CPU, créez une contrainte de paramètre afin que &#39;use&#95;concurrency&#95;control&#39; reste une valeur constante en lecture seule.
+
+<Note>
+  Ne définissez pas `throw_on_unknown_workload` sur `true` tant que `CREATE WORKLOAD default` n’a pas été exécuté. Cela peut entraîner des problèmes au démarrage du serveur si une requête sans paramètre `workload` explicite est exécutée pendant le démarrage.
+</Note>
+
+<div id="hierarchy">
+  ### Hiérarchie des nœuds d’ordonnancement
+</div>
+
+Du point de vue du sous-système d’ordonnancement, chaque ressource correspond à une hiérarchie de nœuds d’ordonnancement. ClickHouse crée automatiquement tous les nœuds d’ordonnancement nécessaires à partir des définitions WORKLOAD et RESOURCE. Les nœuds d’ordonnancement sont des détails d’implémentation de bas niveau, accessibles dans la table [system.scheduler](/fr/reference/system-tables/scheduler).
+
+```sql
+CREATE RESOURCE network_write (WRITE DISK s3)
+CREATE RESOURCE memory (MEMORY RESERVATION)
+CREATE WORKLOAD all SETTINGS max_io_requests = 100, max_memory = '2Gi'
+CREATE WORKLOAD development IN all
+CREATE WORKLOAD production IN all SETTINGS weight = 3
+```
+
+```mermaid
+graph TD
+    nw_root(["network_write"])
+    -->nw_all{{"all"}}
+    -->nw_semp[\"semaphore"/]
+    -->|100 concurrent requests| nw_fair("p0_fair")
+    -->|75% bandwidth| nw_prod{{"production"}}
+    -->nw_prod_q["fifo"]
+    nw_fair
+    -->|25% bandwidth| nw_dev{{"development"}}
+    -->nw_dev_q["fifo"]
+
+    mem_root(["memory"])
+    -->mem_all{{"all"}}
+    -->mem_semp[\"limit"/]
+    -->|2Gi RAM| mem_fair("p0_fair")
+    -->|75% RAM| mem_prod{{"production"}}
+    -->mem_prod_q["queue"]
+    mem_fair
+    -->|25% RAM| mem_dev{{"development"}}
+    -->mem_dev_q["queue"]
+```
+
+**Types de nœuds à temps partagé :**
+
+* `inflight_limit` (contrainte) - bloque si le nombre de requêtes simultanément en vol dépasse `max_requests`, ou si leur coût total dépasse `max_cost` ; doit avoir un seul enfant.
+* `bandwidth_limit` (contrainte) - bloque si le débit actuel dépasse `max_speed` (0 signifie illimité) ou si la rafale dépasse `max_burst` (par défaut, égal à `max_speed`) ; doit avoir un seul enfant.
+* `fair` (politique) - sélectionne la prochaine requête à traiter dans l’un de ses nœuds enfants selon l’équité max-min ; les nœuds enfants peuvent spécifier `weight` (la valeur par défaut est 1).
+* `priority` (politique) - sélectionne la prochaine requête à traiter dans l’un de ses nœuds enfants selon des priorités statiques (une valeur plus faible signifie une priorité plus élevée) ; les nœuds enfants doivent spécifier `priority` (la valeur par défaut est 0).
+* `fifo` (file d’attente) - feuille de la hiérarchie capable de contenir des requêtes qui dépassent la capacité des ressources.
+
+**Types de nœuds à espace partagé :**
+
+* `limit` - garantit que l’allocation totale de l’enfant ne dépasse jamais une limite et déclenche, si nécessaire, une procédure d’éviction dans un sous-arbre ; doit avoir un seul enfant.
+* `fair_allocation` - applique l’éviction selon l’équité max-min ; une allocation en attente n’évince jamais une allocation en cours d’exécution ; les nœuds enfants peuvent spécifier `weight` (la valeur par défaut est 1).
+* `precedence_allocation` - applique l’éviction selon une précédence statique (une valeur plus faible signifie une précédence plus élevée) ; une allocation en attente de précédence plus élevée évince les allocations de précédence plus faible ; les nœuds enfants doivent spécifier `precedence` (la valeur par défaut est 0).
+* `queue` - feuille de la hiérarchie capable de contenir des allocations en cours d’exécution et en attente.
+
+<div id="deprecated-configuration">
+  ## Configuration XML obsolète
+</div>
+
+Une autre façon d’indiquer quels disques sont utilisés par une ressource consiste à utiliser le `storage_configuration` du serveur :
 
 Pour activer la planification des E/S pour un disque spécifique, vous devez spécifier `read_resource` et/ou `write_resource` dans la configuration de stockage. Cela indique à ClickHouse quelle ressource utiliser pour chaque requête de lecture et d’écriture sur le disque concerné. Les ressources de lecture et d’écriture peuvent faire référence au même nom de ressource, ce qui est utile pour les SSD locaux ou les HDD. Plusieurs disques différents peuvent également faire référence à la même ressource, ce qui est utile pour les disques distants si vous souhaitez permettre une répartition équitable de la bande passante réseau entre, par exemple, les workloads &quot;production&quot; et &quot;development&quot;.
 
@@ -69,349 +500,6 @@ Exemple :
 ```
 
 Notez que les options de configuration du serveur priment sur la méthode SQL de définition des ressources.
-
-<div id="workload_markup">
-  ## Marquage des charges de travail
-</div>
-
-Les requêtes peuvent être marquées à l’aide du paramètre `workload` pour distinguer différentes charges de travail. Si `workload` n’est pas défini, la valeur &quot;default&quot; est utilisée. Notez que vous pouvez également spécifier une autre valeur à l’aide de profils de paramètres. Des contraintes sur les paramètres peuvent être utilisées pour rendre `workload` constant si vous souhaitez que toutes les requêtes d’un utilisateur soient marquées avec une valeur fixe du paramètre `workload`.
-
-Il est possible d’attribuer un paramètre `workload` aux activités en arrière-plan. Les merges et les mutations utilisent respectivement les paramètres serveur `merge_workload` et `mutation_workload`. Ces valeurs peuvent également être redéfinies pour des tables spécifiques à l’aide des paramètres MergeTree `merge_workload` et `mutation_workload`
-
-Prenons l’exemple d’un système avec deux charges de travail différentes : &quot;production&quot; et &quot;développement&quot;.
-
-```sql
-SELECT count() FROM my_table WHERE value = 42 SETTINGS workload = 'production'
-SELECT count() FROM my_table WHERE value = 13 SETTINGS workload = 'development'
-```
-
-<div id="hierarchy">
-  ## Hiérarchie d’ordonnancement des ressources
-</div>
-
-Du point de vue du sous-système d’ordonnancement, une ressource correspond à une hiérarchie de nœuds d’ordonnancement.
-
-```mermaid
-graph TD
-    subgraph network_read
-    nr_root(("/"))
-    -->|100 concurrent requests| nr_fair("fair")
-    -->|75% bandwidth| nr_prod["prod"]
-    nr_fair
-    -->|25% bandwidth| nr_dev["dev"]
-    end
-
-    subgraph network_write
-    nw_root(("/"))
-    -->|100 concurrent requests| nw_fair("fair")
-    -->|75% bandwidth| nw_prod["prod"]
-    nw_fair
-    -->|25% bandwidth| nw_dev["dev"]
-    end
-```
-
-<Warning>
-  L’ordonnancement des workloads à l’aide de la configuration de ClickHouse est obsolète. Il faut utiliser la syntaxe SQL à la place. La syntaxe SQL crée automatiquement tous les nœuds d’ordonnancement nécessaires, et la description ci-dessous des nœuds d’ordonnancement doit être considérée comme des détails d’implémentation de bas niveau, accessibles via la table [system.scheduler](/fr/reference/system-tables/scheduler).
-</Warning>
-
-**Types de nœuds possibles :**
-
-* `inflight_limit` (constraint) - bloque si le nombre de requêtes concurrentes en vol dépasse `max_requests`, ou si leur coût total dépasse `max_cost` ; doit avoir un seul enfant.
-* `bandwidth_limit` (constraint) - bloque si la bande passante actuelle dépasse `max_speed` (0 signifie illimité) ou si le burst dépasse `max_burst` (par défaut, égal à `max_speed`) ; doit avoir un seul enfant.
-* `fair` (policy) - sélectionne la prochaine requête à traiter dans l’un de ses nœuds enfants selon l’équité max-min ; les nœuds enfants peuvent spécifier `weight` (la valeur par défaut est 1).
-* `priority` (policy) - sélectionne la prochaine requête à traiter dans l’un de ses nœuds enfants selon des priorités statiques (une valeur plus faible signifie une priorité plus élevée) ; les nœuds enfants peuvent spécifier `priority` (la valeur par défaut est 0).
-* `fifo` (queue) - feuille de la hiérarchie capable de stocker les requêtes qui dépassent la capacité de la ressource.
-
-Pour pouvoir utiliser toute la capacité de la ressource sous-jacente, vous devez utiliser `inflight_limit`. Notez qu’un nombre trop faible de `max_requests` ou une valeur trop faible de `max_cost` peut entraîner une utilisation incomplète de la ressource, tandis que des valeurs trop élevées peuvent entraîner des files d’attente vides dans le scheduler, ce qui fera que les policies seront ignorées (manque d’équité ou priorités ignorées) dans le sous-arbre. En revanche, si vous voulez protéger les ressources contre une utilisation excessive, vous devez utiliser `bandwidth_limit`. Il applique une limitation lorsque la quantité de ressources consommée en `duration` secondes dépasse `max_burst + max_speed * duration` octets. Deux nœuds `bandwidth_limit` sur la même ressource peuvent être utilisés pour limiter la bande passante de crête sur de courts intervalles et la bande passante moyenne sur des intervalles plus longs.
-
-L’exemple suivant montre comment définir les hiérarchies d’ordonnancement des IO illustrées dans l’image :
-
-```xml
-<clickhouse>
-    <resources>
-        <network_read>
-            <node path="/">
-                <type>inflight_limit</type>
-                <max_requests>100</max_requests>
-            </node>
-            <node path="/fair">
-                <type>fair</type>
-            </node>
-            <node path="/fair/prod">
-                <type>fifo</type>
-                <weight>3</weight>
-            </node>
-            <node path="/fair/dev">
-                <type>fifo</type>
-            </node>
-        </network_read>
-        <network_write>
-            <node path="/">
-                <type>inflight_limit</type>
-                <max_requests>100</max_requests>
-            </node>
-            <node path="/fair">
-                <type>fair</type>
-            </node>
-            <node path="/fair/prod">
-                <type>fifo</type>
-                <weight>3</weight>
-            </node>
-            <node path="/fair/dev">
-                <type>fifo</type>
-            </node>
-        </network_write>
-    </resources>
-</clickhouse>
-```
-
-<div id="workload_classifiers">
-  ## Classificateurs de workloads
-</div>
-
-<Warning>
-  Le Workload scheduling via la configuration ClickHouse est obsolète. Utilisez plutôt la syntaxe SQL. Les classificateurs sont créés automatiquement lors de l&#39;utilisation de la syntaxe SQL.
-</Warning>
-
-Les classificateurs de workloads servent à définir la correspondance entre le `workload` spécifié par une requête et les files d&#39;attente terminales à utiliser pour certaines ressources. Pour le moment, la classification des workloads reste simple : seule une correspondance statique est disponible.
-
-Exemple :
-
-```xml
-<clickhouse>
-    <workload_classifiers>
-        <production>
-            <network_read>/fair/prod</network_read>
-            <network_write>/fair/prod</network_write>
-        </production>
-        <development>
-            <network_read>/fair/dev</network_read>
-            <network_write>/fair/dev</network_write>
-        </development>
-        <default>
-            <network_read>/fair/dev</network_read>
-            <network_write>/fair/dev</network_write>
-        </default>
-    </workload_classifiers>
-</clickhouse>
-```
-
-<div id="workloads">
-  ## Hiérarchie des charges de travail
-</div>
-
-ClickHouse fournit une syntaxe SQL pratique pour définir la hiérarchie d’ordonnancement. Toutes les ressources créées avec `CREATE RESOURCE` partagent la même structure hiérarchique, mais peuvent différer sur certains points. Chaque charge de travail créée avec `CREATE WORKLOAD` comporte quelques nœuds d’ordonnancement créés automatiquement pour chaque ressource. Une charge de travail enfant peut être créée au sein d’une autre charge de travail parente. Voici un exemple qui définit exactement la même hiérarchie que la configuration XML ci-dessus :
-
-```sql
-CREATE RESOURCE network_write (WRITE DISK s3)
-CREATE RESOURCE network_read (READ DISK s3)
-CREATE WORKLOAD all SETTINGS max_io_requests = 100
-CREATE WORKLOAD development IN all
-CREATE WORKLOAD production IN all SETTINGS weight = 3
-```
-
-Le nom d’un workload feuille sans enfants peut être utilisé dans les paramètres de requête `SETTINGS workload = 'name'`.
-
-Pour personnaliser un workload, les paramètres suivants peuvent être utilisés :
-
-* `priority` - les workloads frères sont servis selon des valeurs de priorité statiques (une valeur plus faible signifie une priorité plus élevée).
-* `weight` - les workloads frères ayant la même priorité statique se partagent les ressources en fonction de leurs poids.
-* `max_io_requests` - la limite du nombre de requêtes d’E/S concurrentes dans ce workload.
-* `max_bytes_inflight` - la limite du nombre total d’octets en cours de traitement pour les requêtes concurrentes dans ce workload.
-* `max_bytes_per_second` - la limite du débit en octets en lecture ou en écriture de ce workload.
-* `max_burst_bytes` - le nombre maximal d’octets pouvant être traités par le workload sans être bridé (pour chaque ressource indépendamment).
-* `max_concurrent_threads` - la limite du nombre de threads pour les requêtes dans ce workload.
-* `max_concurrent_threads_ratio_to_cores` - identique à `max_concurrent_threads`, mais normalisé par rapport au nombre de cœurs CPU disponibles.
-* `max_cpus` - la limite du nombre de cœurs CPU pour servir les requêtes dans ce workload.
-* `max_cpu_share` - identique à `max_cpus`, mais normalisé par rapport au nombre de cœurs CPU disponibles.
-* `max_burst_cpu_seconds` - le nombre maximal de secondes CPU pouvant être consommées par le workload sans être bridé en raison de `max_cpus`.
-
-Toutes les limites spécifiées via les workload settings sont indépendantes pour chaque ressource. Par exemple, un workload avec `max_bytes_per_second = 10485760` aura une limite de bande passante de 10 MB/s pour chaque ressource de lecture et d’écriture, indépendamment. Si une limite commune pour la lecture et l’écriture est requise, envisagez d’utiliser la même ressource pour l’accès READ et WRITE.
-
-Il n’existe aucun moyen de spécifier des hiérarchies de workloads différentes pour différentes ressources. Mais il existe un moyen de spécifier une valeur de workload setting différente pour une ressource spécifique :
-
-```sql
-CREATE OR REPLACE WORKLOAD all SETTINGS max_io_requests = 100, max_bytes_per_second = 1000000 FOR network_read, max_bytes_per_second = 2000000 FOR network_write
-```
-
-Notez également qu’un workload ou une ressource ne peut pas être supprimé s’il est référencé par un autre workload. Pour mettre à jour la définition d’un workload, utilisez la requête `CREATE OR REPLACE WORKLOAD`.
-
-<Note>
-  Les paramètres du workload sont convertis en un ensemble approprié de nœuds d’ordonnancement. Pour plus de détails sur les mécanismes sous-jacents, consultez la description des [types et options](#hierarchy) des nœuds d’ordonnancement.
-</Note>
-
-<div id="cpu_scheduling">
-  ## Ordonnancement du CPU
-</div>
-
-Pour activer l’ordonnancement du CPU pour les charges de travail, créez une ressource CPU et définissez une limite pour le nombre de threads concurrents :
-
-```sql
-CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
-CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100
-```
-
-Lorsque le serveur ClickHouse exécute de nombreuses requêtes concurrentes avec [plusieurs threads](/fr/reference/settings/session-settings#max_threads) et que tous les slots CPU sont utilisés, l’état de surcharge est atteint. Dans cet état, chaque slot CPU libéré est réattribué à la charge de travail appropriée conformément aux politiques d’ordonnancement. Pour les requêtes partageant la même charge de travail, les slots sont alloués en round robin. Pour les requêtes appartenant à des charges de travail distinctes, les slots sont alloués selon les poids, priorités et limites spécifiés pour les charges de travail.
-
-Le temps CPU est consommé par les threads lorsqu’ils ne sont pas bloqués et travaillent sur des tâches gourmandes en CPU. À des fins d’ordonnancement, on distingue deux types de threads :
-
-* Master thread — le premier thread qui commence à travailler sur une requête ou une activité en arrière-plan comme une merge ou une mutation.
-* Worker thread — les threads supplémentaires que le master peut créer pour travailler sur des tâches gourmandes en CPU.
-
-Il peut être souhaitable d’utiliser des ressources distinctes pour les master threads et les worker threads afin d’obtenir une meilleure réactivité. Un grand nombre de worker threads peut facilement monopoliser les ressources CPU lorsque des valeurs élevées du paramètre de requête `max_threads` sont utilisées. Les requêtes entrantes doivent alors se bloquer et attendre qu’un slot CPU se libère pour que leur master thread puisse commencer l’exécution. Pour éviter cela, la configuration suivante peut être utilisée :
-
-```sql
-CREATE RESOURCE worker_cpu (WORKER THREAD)
-CREATE RESOURCE master_cpu (MASTER THREAD)
-CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100 FOR worker_cpu, max_concurrent_threads = 1000 FOR master_cpu
-```
-
-Cela créera des limites distinctes pour les threads principaux et les threads workers. Même si les 100 slots CPU des workers sont tous occupés, les nouvelles requêtes ne seront pas bloquées tant qu’il restera des slots CPU principaux disponibles. Elles commenceront à s’exécuter avec un seul thread. Ensuite, si des slots CPU workers deviennent disponibles, ces requêtes pourront monter en charge et lancer leurs threads workers. En revanche, une telle approche ne lie pas le nombre total de slots au nombre de processeurs CPU, et l’exécution d’un trop grand nombre de threads concurrents dégradera les performances.
-
-Limiter la concurrence des threads principaux ne limitera pas le nombre de requêtes concurrentes. Des slots CPU peuvent être libérés en cours d’exécution d’une requête, puis réattribués à d’autres threads. Par exemple, 4 requêtes concurrentes avec une limite de 2 threads principaux concurrents peuvent toutes s’exécuter en parallèle. Dans ce cas, chaque requête recevra 50 % d’un processeur CPU. Il faut utiliser une logique distincte pour limiter le nombre de requêtes concurrentes, et cela n’est pas actuellement pris en charge pour les workloads.
-
-Des limites distinctes de concurrence des threads peuvent être utilisées pour les workloads :
-
-```sql
-CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
-CREATE WORKLOAD all
-CREATE WORKLOAD admin IN all SETTINGS max_concurrent_threads = 10
-CREATE WORKLOAD production IN all SETTINGS max_concurrent_threads = 100
-CREATE WORKLOAD analytics IN production SETTINGS max_concurrent_threads = 60, weight = 9
-CREATE WORKLOAD ingestion IN production
-```
-
-Cet exemple de configuration fournit des pools de slots CPU distincts pour admin et production. Le pool de production est partagé entre l’analytics et l’ingestion. En outre, si le pool de production est surchargé, 9 slots libérés sur 10 seront réattribués aux requêtes analytiques si nécessaire. Les requêtes d’ingestion ne recevraient alors qu’1 slot sur 10 pendant les périodes de surcharge. Cela peut améliorer la latence des requêtes orientées utilisateur. L’analytics a sa propre limite de 60 threads concurrents, ce qui laisse toujours au moins 40 threads pour prendre en charge l’ingestion. En l’absence de surcharge, l’ingestion peut utiliser les 100 threads.
-
-Pour exclure une requête de l’ordonnancement CPU, définissez le paramètre de requête [use&#95;concurrency&#95;control](/fr/reference/settings/session-settings#use_concurrency_control) sur 0.
-
-L’ordonnancement CPU n’est pas encore pris en charge pour les fusions et les mutations.
-
-Pour garantir des allocations équitables entre les charges de travail, il est nécessaire d’effectuer une préemption et une réduction dynamique pendant l’exécution de la requête. La préemption est activée avec le paramètre serveur `cpu_slot_preemption`. S’il est activé, chaque thread renouvelle périodiquement son slot CPU (selon le paramètre serveur `cpu_slot_quantum_ns`). Un tel renouvellement peut bloquer l’exécution si le CPU est surchargé. Lorsque l’exécution reste bloquée pendant une durée prolongée (voir le paramètre serveur `cpu_slot_preemption_timeout_ms`), la requête réduit alors sa capacité, et le nombre de threads exécutés en parallèle diminue dynamiquement. Notez que l’équité du temps CPU est garantie entre les charges de travail, mais qu’entre les requêtes d’une même charge de travail, elle peut ne pas être respectée dans certains cas limites.
-
-<Warning>
-  L’ordonnancement des slots permet de contrôler la [concurrence des requêtes](/fr/reference/settings/session-settings#max_threads), mais ne garantit pas une allocation équitable du temps CPU, sauf si le paramètre serveur `cpu_slot_preemption` est défini sur `true` ; sinon, l’équité est assurée en fonction du nombre d’allocations de slots CPU entre les charges de travail concurrentes. Cela n’implique pas une quantité égale de secondes CPU, car sans préemption, un slot CPU peut être conservé indéfiniment. Un thread acquiert un slot au début et le libère une fois le travail terminé.
-</Warning>
-
-<Note>
-  La déclaration d’une ressource CPU désactive l’effet des paramètres [`concurrent_threads_soft_limit_num`](/fr/reference/settings/server-settings/settings#concurrent_threads_soft_limit_num) et [`concurrent_threads_soft_limit_ratio_to_cores`](/fr/reference/settings/server-settings/settings#concurrent_threads_soft_limit_ratio_to_cores). À la place, le workload setting `max_concurrent_threads` est utilisé pour limiter le nombre de CPU alloués à une charge de travail spécifique. Pour retrouver le comportement précédent, créez uniquement la ressource WORKER THREAD, définissez `max_concurrent_threads` pour la charge de travail `all` sur la même valeur que `concurrent_threads_soft_limit_num`, puis utilisez le paramètre de requête `workload = "all"`. Cette configuration correspond au paramètre [`concurrent_threads_scheduler`](/fr/reference/settings/server-settings/settings#concurrent_threads_scheduler) défini sur la valeur &quot;fair&#95;round&#95;robin&quot;.
-</Note>
-
-<div id="threads_vs_cpus">
-  ## Threads vs. CPU
-</div>
-
-Il existe deux façons de contrôler la consommation de CPU d’une charge de travail :
-
-* Limite du nombre de threads : `max_concurrent_threads` et `max_concurrent_threads_ratio_to_cores`
-* Bridage du CPU : `max_cpus`, `max_cpu_share` et `max_burst_cpu_seconds`
-
-La première permet de contrôler dynamiquement le nombre de threads lancés pour une query, en fonction de la charge actuelle du serveur. En pratique, elle abaisse la limite imposée par le paramètre de query `max_threads`. La seconde bride la consommation de CPU de la charge de travail à l’aide de l’algorithme du seau à jetons. Elle n’affecte pas directement le nombre de threads, mais bride la consommation totale de CPU de tous les threads de la charge de travail.
-
-Le bridage par seau à jetons avec `max_cpus` et `max_burst_cpu_seconds` signifie ce qui suit. Sur tout intervalle de `delta` secondes, la consommation totale de CPU de toutes les queries de la charge de travail ne doit pas dépasser `max_cpus * delta + max_burst_cpu_seconds` secondes CPU. Cela limite la consommation moyenne à `max_cpus` sur le long terme, mais cette limite peut être dépassée à court terme. Par exemple, avec `max_burst_cpu_seconds = 60` et `max_cpus=0.001`, il est possible d’exécuter soit 1 thread pendant 60 secondes, soit 2 threads pendant 30 secondes, soit 60 threads pendant 1 seconde sans bridage. La valeur par défaut de `max_burst_cpu_seconds` est de 1 seconde. Des valeurs plus faibles peuvent entraîner une sous-utilisation des cœurs autorisés par `max_cpus` en présence de nombreux threads concurrents.
-
-<Warning>
-  Les paramètres de bridage du CPU ne sont actifs que si le paramètre serveur `cpu_slot_preemption` est activé, et sont ignorés sinon.
-</Warning>
-
-Lorsqu’il détient un slot CPU, un thread peut se trouver dans l’un de ces trois états principaux :
-
-* **Running:** consomme effectivement des ressources CPU. Le temps passé dans cet état est pris en compte par le bridage du CPU.
-* **Ready:** attend qu’un CPU devienne disponible. N’est pas pris en compte par le bridage du CPU.
-* **Blocked:** effectue des opérations d’IO ou d’autres appels système bloquants (par exemple, en attente d’un mutex). N’est pas pris en compte par le bridage du CPU.
-
-Considérons un exemple de configuration combinant à la fois le bridage du CPU et les limites du nombre de threads :
-
-```sql
-CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
-CREATE WORKLOAD all SETTINGS max_concurrent_threads_ratio_to_cores = 2
-CREATE WORKLOAD admin IN all SETTINGS max_concurrent_threads = 2, priority = -1
-CREATE WORKLOAD production IN all SETTINGS weight = 4
-CREATE WORKLOAD analytics IN production SETTINGS max_cpu_share = 0.7, weight = 3
-CREATE WORKLOAD ingestion IN production
-CREATE WORKLOAD development IN all SETTINGS max_cpu_share = 0.3
-```
-
-Ici, nous limitons le nombre total de threads pour toutes les requêtes à 2 fois le nombre de CPU disponibles. Le workload Admin est limité à exactement deux threads au maximum, quel que soit le nombre de CPU disponibles. Admin a une priorité de -1 (inférieure à la valeur par défaut 0) et obtient en premier un slot CPU si nécessaire. Lorsque l’admin n’exécute pas de requêtes, les ressources CPU sont réparties entre les workloads de production et de développement. Les parts garanties de temps CPU sont basées sur des poids (4 pour 1) : au moins 80 % vont à la production (si nécessaire) et au moins 20 % au développement (si nécessaire). Tandis que les poids constituent des garanties, le throttling CPU définit des limites : la production n’est pas limitée et peut consommer 100 %, tandis que le développement a une limite de 30 %, qui s’applique même s’il n’y a pas de requêtes provenant d’autres workloads. Le workload de production n’est pas une feuille ; ses ressources sont donc réparties entre analytics et ingestion selon des poids (3 pour 1). Cela signifie qu’analytics bénéficie d’une garantie d’au moins 0.8 * 0.75 = 60 % et, sur la base de `max_cpu_share`, d’une limite de 70 % des ressources CPU totales. Quant à l’ingestion, si elle conserve une garantie d’au moins 0.8 * 0.25 = 20 %, elle n’a pas de limite supérieure.
-
-<Note>
-  Si vous souhaitez maximiser l’utilisation du CPU sur votre serveur ClickHouse, évitez d’utiliser `max_cpus` et `max_cpu_share` pour le workload racine `all`. Définissez plutôt une valeur plus élevée pour `max_concurrent_threads`. Par exemple, sur un système avec 8 CPU, définissez `max_concurrent_threads = 16`. Cela permet à 8 threads d’exécuter des tâches CPU pendant que 8 autres threads peuvent gérer des opérations d’E/S. Des threads supplémentaires créeront une pression sur le CPU, ce qui garantit l’application des règles d’ordonnancement. À l’inverse, définir `max_cpus = 8` ne créera jamais de pression sur le CPU, car le serveur ne peut pas dépasser les 8 CPU disponibles.
-</Note>
-
-<div id="query_scheduling">
-  ## Ordonnancement des slots de requête
-</div>
-
-Pour activer l’ordonnancement des slots de requête pour les workloads, créez la ressource QUERY et définissez une limite sur le nombre de requêtes simultanées ou de requêtes par seconde :
-
-```sql
-CREATE RESOURCE query (QUERY)
-CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_second = 10, max_burst_queries = 20
-```
-
-Le paramètre de workload `max_concurrent_queries` limite le nombre de requêtes concurrentes pouvant s’exécuter simultanément pour un workload donné. Il s’agit de l’équivalent du paramètre de requête [`max_concurrent_queries_for_all_users`](/fr/reference/settings/session-settings#max_concurrent_queries_for_all_users) et du paramètre du serveur [max&#95;concurrent&#95;queries](/fr/reference/settings/server-settings/settings#max_concurrent_queries). Les requêtes async insert et certaines requêtes spécifiques, comme KILL, ne sont pas comptabilisées dans cette limite.
-
-Les paramètres de workload `max_queries_per_second` et `max_burst_queries` limitent le nombre de requêtes pour le workload à l’aide d’un mécanisme de limitation de débit de type token bucket. Cela garantit que, sur tout intervalle de temps `T`, pas plus de `max_queries_per_second * T + max_burst_queries` nouvelles requêtes ne commenceront à s’exécuter.
-
-Le paramètre de workload `max_waiting_queries` limite le nombre de requêtes en attente pour le workload. Lorsque la limite est atteinte, le serveur renvoie une erreur `SERVER_OVERLOADED`.
-
-<Note>
-  Les requêtes bloquées attendront indéfiniment et n’apparaîtront pas dans `SHOW PROCESSLIST` tant que toutes les contraintes ne seront pas satisfaites.
-</Note>
-
-<div id="workload_entity_storage">
-  ## Stockage des workloads et des ressources
-</div>
-
-Les définitions de tous les workloads et de toutes les ressources, sous la forme de requêtes `CREATE WORKLOAD` et `CREATE RESOURCE`, sont stockées de manière persistante soit sur le disque dans `workload_path`, soit dans ZooKeeper dans `workload_zookeeper_path`. Le stockage dans ZooKeeper est recommandé pour garantir la cohérence entre les nœuds. Sinon, la clause `ON CLUSTER` peut être utilisée avec le stockage sur disque.
-
-<div id="config_based_workloads">
-  ## Charges de travail et ressources définies par configuration
-</div>
-
-En plus des définitions basées sur SQL, les charges de travail et les ressources peuvent être prédéfinies dans le fichier de configuration du serveur. Cela est utile dans les environnements cloud, où certaines restrictions sont imposées par l’infrastructure, tandis que d’autres limites peuvent être modifiées par les clients. Les entités définies par configuration ont priorité sur celles définies en SQL et ne peuvent pas être modifiées ni supprimées à l’aide de commandes SQL.
-
-<div id="config_based_workloads_format">
-  ### Format de la configuration
-</div>
-
-```xml
-<clickhouse>
-    <resources_and_workloads>
-        CREATE RESOURCE s3disk_read (READ DISK s3);
-        CREATE RESOURCE s3disk_write (WRITE DISK s3);
-        CREATE WORKLOAD all SETTINGS max_io_requests = 500 FOR s3disk_read, max_io_requests = 1000 FOR s3disk_write, max_bytes_per_second = 1342177280 FOR s3disk_read, max_bytes_per_second = 3355443200 FOR s3disk_write;
-        CREATE WORKLOAD production IN all SETTINGS weight = 3;
-    </resources_and_workloads>
-</clickhouse>
-```
-
-La configuration utilise la même syntaxe SQL que les instructions `CREATE WORKLOAD` et `CREATE RESOURCE`. Toutes les requêtes doivent être valides.
-
-<div id="config_based_workloads_usage_recommendations">
-  ### Recommandations d’utilisation
-</div>
-
-Pour les environnements cloud, une configuration typique peut inclure :
-
-1. Définir le workload racine et les ressources d’E/S réseau dans la configuration afin de fixer les limites de l’infrastructure
-2. Définir `throw_on_unknown_workload` pour faire respecter ces limites
-3. Créer un `CREATE WORKLOAD default IN all` pour appliquer automatiquement les limites à toutes les requêtes (puisque la valeur par défaut du paramètre de requête `workload` est &#39;default&#39;)
-4. Autoriser les utilisateurs à créer des workloads supplémentaires dans la hiérarchie configurée
-
-Cela garantit que toutes les activités d’arrière-plan et les requêtes respectent les limites de l’infrastructure, tout en laissant une certaine souplesse pour les politiques d’ordonnancement propres aux utilisateurs.
-
-Un autre cas d’usage consiste à utiliser une configuration différente selon les nœuds d’un cluster hétérogène.
-
-<div id="strict_resource_access">
-  ## Accès strict aux ressources
-</div>
-
-Pour obliger toutes les requêtes à respecter les politiques d’ordonnancement des ressources, il existe un paramètre du serveur `throw_on_unknown_workload`. S’il est défini sur `true`, chaque requête doit utiliser un paramètre de requête `workload` valide, faute de quoi l’exception `RESOURCE_ACCESS_DENIED` est levée. S’il est défini sur `false`, une telle requête n’utilise pas l’ordonnanceur de ressources, c’est-à-dire qu’elle bénéficie d’un accès illimité à n’importe quelle `RESOURCE`. Le paramètre de requête &#39;use&#95;concurrency&#95;control = 0&#39; permet à une requête de contourner l’ordonnanceur CPU et d’obtenir un accès illimité au CPU. Pour imposer l’ordonnancement CPU, créez une contrainte de paramètre afin que &#39;use&#95;concurrency&#95;control&#39; reste une valeur constante en lecture seule.
-
-<Note>
-  Ne définissez pas `throw_on_unknown_workload` sur `true` tant que `CREATE WORKLOAD default` n’a pas été exécuté. Cela peut entraîner des problèmes au démarrage du serveur si une requête sans paramètre `workload` explicite est exécutée pendant le démarrage.
-</Note>
 
 <div id="see-also">
   ## Voir aussi

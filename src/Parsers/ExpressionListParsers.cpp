@@ -470,6 +470,8 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 {
     ParserIdentifier id_parser;
     ParserLiteral literal_parser;
+
+    ParserAllCollectionsOfLiterals collections_parser(/* allow_map_= */ false);
     ParserFunction func_parser;
 
     ASTPtr identifier;
@@ -478,8 +480,10 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (!id_parser.parse(pos, identifier, expected))
         return false;
 
-    /// If it's neither literal, nor identifier, nor function, than it's possible list of pairs
-    if (!func_parser.parse(pos, value, expected) && !literal_parser.parse(pos, value, expected) && !id_parser.parse(pos, value, expected))
+    /// If it's neither literal (scalar or collection), nor identifier, nor function, then it's possibly a list of pairs
+    if (!func_parser.parse(pos, value, expected) && !literal_parser.parse(pos, value, expected)
+        && !(pos->type == TokenType::OpeningSquareBracket && collections_parser.parse(pos, value, expected))
+        && !id_parser.parse(pos, value, expected))
     {
         ParserKeyValuePairsList kv_pairs_list;
         ParserToken open(TokenType::OpeningRoundBracket);

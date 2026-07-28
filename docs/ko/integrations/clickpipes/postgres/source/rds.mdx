@@ -97,7 +97,24 @@ RDS Postgres 인스턴스에 관리자 사용자로 접속한 다음, 아래 명
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` publication에는 지정된 테이블에서 생성된 변경 이벤트 집합이 포함되며, 이후 복제 스트림을 수집하는 데 사용됩니다.
+`clickpipes` publication은 변경 이벤트가 ClickPipes로 스트리밍될 테이블 집합을 정의합니다. 모든 테이블을 복제하려는 경우가 아니라면 `FOR ALL TABLES` 사용은 권장하지 않습니다. 불필요한 테이블을 포함하면 Postgres에서 ClickPipes로 전송되는 WAL 트래픽이 증가하고 전체 복제 효율이 저하되기 때문입니다.
+
+<div id="iam-authentication">
+  ### IAM authentication 사용(선택 사항)
+</div>
+
+비밀번호 대신 AWS IAM 역할 기반 접근을 사용해 ClickPipes 사용자를 인증할 수 있습니다. 다음과 같이 사용자를 생성한 다음, 위에 나온 것과 동일한 스키마(schema) 및 복제 권한을 부여하십시오:
+
+```sql
+CREATE USER clickpipes_iam_user;
+GRANT rds_iam TO clickpipes_iam_user;
+```
+
+<Note>
+  복제에 IAM authentication을 사용하려면 `rds.iam_auth_for_replication` 매개변수를 `1`로 설정해야 합니다. 이 기능은 PostgreSQL 11 버전부터 지원되며, 그보다 이전 버전에서는 `Initial Load Only` ClickPipes만 실행할 수 있습니다.
+</Note>
+
+ClickPipes가 이 방식으로 인증할 수 있도록 필요한 IAM role 및 policy를 설정하는 전체 단계는 [AWS IAM DB authentication (RDS/Aurora)](/ko/integrations/clickpipes/postgres/auth)를 참조하십시오.
 
 <div id="configure-network-access">
   ## 네트워크 액세스 설정

@@ -1,5 +1,7 @@
+#include <Common/Exception.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Port.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/LazyFinalKeyAnalysisStep.h>
 #include <Processors/QueryPlan/LazyReadReplacingFinalStep.h>
 #include <Processors/Sources/LazyReadReplacingFinalSource.h>
@@ -8,6 +10,21 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+static_assert(
+    static_cast<size_t>(LazyReadReplacingFinalStep::Stage::ReadAndAggregate)
+        == static_cast<size_t>(AggregatingStep::AggregatingStage::PartialAggregation),
+    "ReadAndAggregate must match the group the flattened AggregatingTransform sits at, "
+    "so getGeneratingStepGroup() maps it to FinalAggregation");
+static_assert(
+    static_cast<size_t>(LazyReadReplacingFinalStep::Stage::ReplacingMerge)
+        == static_cast<size_t>(AggregatingStep::AggregatingStage::FinalAggregation),
+    "ReplacingMerge must match the group getGeneratingStepGroup() returns for the runtime merge wave");
 
 LazyReadReplacingFinalStep::LazyReadReplacingFinalStep(
     StorageMetadataPtr metadata_snapshot_,
@@ -45,6 +62,21 @@ QueryPlanRawPtrs LazyReadReplacingFinalStep::getChildPlans()
     }
 
     return {&*explain_plan};
+}
+
+std::vector<size_t> LazyReadReplacingFinalStep::getStepGroups() const
+{
+    return {static_cast<size_t>(Stage::ReadAndAggregate), static_cast<size_t>(Stage::ReplacingMerge)};
+}
+
+String LazyReadReplacingFinalStep::getStepGroupName(size_t group) const
+{
+    switch (static_cast<Stage>(group))
+    {
+        case Stage::ReadAndAggregate: return "read & aggregate";
+        case Stage::ReplacingMerge:   return "replacing merge";
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown LazyReadReplacingFinal group {}", group);
 }
 
 }

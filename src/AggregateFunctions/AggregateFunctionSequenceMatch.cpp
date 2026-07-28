@@ -863,9 +863,9 @@ AggregateFunctionPtr createAggregateFunctionSequenceBase(
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("sequenceMatch", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatch, AggregateFunctionSequenceMatchData>, {}});
-    factory.registerFunction("sequenceCount", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceCount, AggregateFunctionSequenceMatchData>, {}});
-    factory.registerFunction("sequenceMatchEvents", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatchEvents, AggregateFunctionSequenceMatchData>, {}});
+    factory.registerFunction("sequenceMatch", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatch, AggregateFunctionSequenceMatchData>, {.description = R"DOC(Checks whether the sequence of events, ordered by the timestamp argument, contains a chain of events matching the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
+    factory.registerFunction("sequenceCount", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceCount, AggregateFunctionSequenceMatchData>, {.description = R"DOC(Counts the number of non-overlapping chains of events, ordered by the timestamp argument, that match the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
+    factory.registerFunction("sequenceMatchEvents", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatchEvents, AggregateFunctionSequenceMatchData>, {.description = R"DOC(A variant of sequenceMatch that returns information about the events that matched the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
 }
 
 }

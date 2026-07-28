@@ -182,7 +182,7 @@ public:
 REGISTER_FUNCTION(seriesDecomposeSTL)
 {
     FunctionDocumentation::Description description = R"(
-Decomposes a series data using STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf) into a season, a trend and a residual component.
+Decomposes a series data using STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.math.unm.edu/~lil/Stat581/STL.pdf) into a season, a trend and a residual component.
     )";
     FunctionDocumentation::Syntax syntax = "seriesDecomposeSTL(series, period)";
     FunctionDocumentation::Arguments arguments = {

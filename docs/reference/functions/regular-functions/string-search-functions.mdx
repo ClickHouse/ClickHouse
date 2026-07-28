@@ -38,14 +38,14 @@ Introduced in: v21.1.0
 
 Returns number of matches of a regular expression in a string.
 
-<Note>
+<Info>
 **Version dependent behavior**
 
 The behavior of this function depends on the ClickHouse version:
 
 - in versions < v25.6, the function stops counting at the first empty match even if a pattern accepts.
 - in versions >= 25.6, the function continues execution when an empty match occurs. The legacy behavior can be restored using setting `count_matches_stop_at_empty_match = true`;
-</Note>
+</Info>
 
     
 
@@ -74,8 +74,8 @@ SELECT countMatches('hello 123 world 456 test', '[0-9]+')
 
 ```response title=Response
 ┌─countMatches('hello 123 world 456 test', '[0-9]+')─┐
-│                                                   2 │
-└─────────────────────────────────────────────────────┘
+│                                                  2 │
+└────────────────────────────────────────────────────┘
 ```
 
 ## countMatchesCaseInsensitive {#countMatchesCaseInsensitive}
@@ -294,8 +294,8 @@ SELECT extract('test@clickhouse.com', '.*@(.*)$')
 
 ```response title=Response
 ┌─extract('test@clickhouse.com', '.*@(.*)$')─┐
-│ clickhouse.com                            │
-└───────────────────────────────────────────┘
+│ clickhouse.com                             │
+└────────────────────────────────────────────┘
 ```
 
 **No match returns empty string**
@@ -936,8 +936,8 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick brown')
 
 ```response title=Response
 ┌─hasPhrase('the quick brown fox jumps', 'quick brown')─┐
-│                                                      1 │
-└────────────────────────────────────────────────────────┘
+│                                                     1 │
+└───────────────────────────────────────────────────────┘
 ```
 
 **Non-consecutive tokens**
@@ -948,8 +948,8 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick fox')
 
 ```response title=Response
 ┌─hasPhrase('the quick brown fox jumps', 'quick fox')─┐
-│                                                    0 │
-└──────────────────────────────────────────────────────┘
+│                                                   0 │
+└─────────────────────────────────────────────────────┘
 ```
 
 ## hasSubsequence {#hasSubsequence}
@@ -1443,14 +1443,14 @@ Introduced in: v18.16.0
 
 Like [`position`](#position) but with arguments `haystack` and `locate` switched.
 
-<Note>
+<Info>
 **Version dependent behavior**
 
 The behavior of this function depends on the ClickHouse version:
 - in versions < v24.3, `locate` was an alias of function `position` and accepted arguments `(haystack, needle[, start_pos])`.
 - in versions >= 24.3, `locate` is an individual function (for better compatibility with MySQL) and accepts arguments `(needle, haystack[, start_pos])`.
 The previous behavior can be restored using setting `function_locate_has_mysql_compatible_argument_order = false`.
-</Note>
+</Info>
     
 
 **Syntax**
@@ -1555,8 +1555,8 @@ SELECT match('abcde', 'b.*d'), match('abcde', '^b.*d$')
 
 ```response title=Response
 ┌─match('abcde', 'b.*d')─┬─match('abcde', '^b.*d$')─┐
-│                       1 │                         0 │
-└─────────────────────────┴───────────────────────────┘
+│                      1 │                        0 │
+└────────────────────────┴──────────────────────────┘
 ```
 
 ## multiFuzzyMatchAllIndices {#multiFuzzyMatchAllIndices}
@@ -2076,13 +2076,13 @@ Returns `1`, if there was at least one match, otherwise `0`, if there was not at
 **Given '你好，世界' ('Hello, world') as a UTF-8 string, check if there are any 你 or 界 characters in the string**
 
 ```sql title=Query
-SELECT multiSearchAnyUTF8('你好，世界', ['你', '界'])
+SELECT multiSearchAnyUTF8('你好，世界', ['你', '界']) AS result
 ```
 
 ```response title=Response
-┌─multiSearchA⋯你', '界'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─result─┐
+│      1 │
+└────────┘
 ```
 
 ## multiSearchFirstIndex {#multiSearchFirstIndex}
@@ -2574,7 +2574,7 @@ SELECT ngramDistanceUTF8('abcde','cde')
 ```
 
 ```response title=Response
-┌─ngramDistanceUTF8('abcde','cde')─┐
+┌─ngramDistanceUTF8('abcde', 'cde')─┐
 │                               0.5 │
 └───────────────────────────────────┘
 ```
@@ -2650,7 +2650,7 @@ SELECT ngramSearchCaseInsensitive('Hello World','hello')
 ```
 
 ```response title=Response
-┌─ngramSearchCaseInsensitive('Hello World','hello')─┐
+┌─ngramSearchCaseInsensitive('Hello World', 'hello')─┐
 │                                                  1 │
 └────────────────────────────────────────────────────┘
 ```

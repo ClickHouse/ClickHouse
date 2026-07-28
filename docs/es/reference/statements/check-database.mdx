@@ -1,0 +1,60 @@
+---
+description: 'Documentación de CHECK DATABASE'
+sidebarTitle: 'CHECK DATABASE'
+slug: /sql-reference/statements/check-database
+title: 'Sentencia CHECK DATABASE'
+doc_type: 'reference'
+---
+
+La consulta `CHECK DATABASE` verifica el estado de una base de datos.
+
+Su uso principal es con el motor de base de datos [`DataLakeCatalog`](/es/reference/engines/database-engines/datalake), donde comprueba que el catálogo externo que respalda la base de datos sea accesible y que se pueda recuperar su lista de tablas. Se trata de una comprobación ligera: confirma la conectividad y la autenticación sin leer ningún dato de las tablas.
+
+<div id="syntax">
+  ## Sintaxis
+</div>
+
+La sintaxis básica de la consulta es la siguiente:
+
+```sql
+CHECK DATABASE database_name
+```
+
+* `database_name`: Especifica el nombre de la base de datos que desea comprobar.
+
+La consulta no devuelve ningún conjunto de resultados. Si la comprobación se realiza correctamente, la consulta finaliza sin producir ninguna fila. Si la comprobación falla —por ejemplo, cuando no se puede acceder al catálogo o las credenciales ya no son válidas—, la consulta lanza una excepción que describe el fallo.
+
+<div id="behavior">
+  ## Comportamiento
+</div>
+
+Para una base de datos con el motor [`DataLakeCatalog`](/es/reference/engines/database-engines/datalake), `CHECK DATABASE`:
+
+* Se conecta al catálogo externo (por ejemplo, AWS Glue, Databricks Unity, Hive Metastore o un catálogo REST de Iceberg) y obtiene su lista de tablas.
+* Informa que la comprobación fue correcta si el catálogo es accesible y la autenticación es válida.
+* No requiere que el catálogo contenga ninguna tabla: un catálogo vacío, pero accesible, sigue considerándose en buen estado.
+
+Para los motores de base de datos que no implementan una comprobación de estado específica, `CHECK DATABASE` finaliza correctamente sin realizar ninguna acción.
+
+Para ejecutar `CHECK DATABASE`, se requiere el privilegio `CHECK` sobre la base de datos (consulte [`GRANT`](/es/reference/statements/grant)).
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+Compruebe la base de datos `DataLakeCatalog` llamada `datalake`:
+
+```sql title="Query"
+CHECK DATABASE datalake;
+```
+
+Si se puede acceder al catálogo y las credenciales son válidas, la consulta se completa correctamente y no devuelve ninguna fila.
+
+Si no se puede acceder al catálogo, la consulta lanza una excepción. El mensaje exacto depende del tipo de catálogo y del fallo subyacente (por ejemplo, un error de conexión, un estado HTTP como `401 Unauthorized` o un fallo de resolución de DNS).
+
+<div id="see-also">
+  ## Véase también
+</div>
+
+* [`CHECK TABLE`](/es/reference/statements/check-table)
+* [`DataLakeCatalog`](/es/reference/engines/database-engines/datalake)

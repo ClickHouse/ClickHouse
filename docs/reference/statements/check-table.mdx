@@ -29,7 +29,7 @@ CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT
 - `part_name`: (Optional) If you want to check a specific part in the table, you can add string literal to specify a part name.
 - `FORMAT format`: (Optional) Allows you to specify the output format of the result.
 - `SETTINGS`: (Optional) Allows additional settings.
-  - (Optional): [check_query_single_value_result](/reference/settings/session-settings#check_query_single_value_result): This setting controls if the output is detailed (`0`) or summarized (`1`).
+  - (Optional): [check_query_single_value_result](/reference/settings/session-settings/check#check_query_single_value_result): This setting controls if the output is detailed (`0`) or summarized (`1`).
   - Other settings can be applied as well. If you don't require a deterministic order for the results, you can set max_threads to a value greater than one to speed up the query.
 
 The query response depends on the value of the `check_query_single_value_result` setting.
@@ -155,6 +155,8 @@ SETTINGS check_query_single_value_result = 0
 │ default  │ t1       │ all_7_38_2  │         1 │         │
 └──────────┴──────────┴─────────────┴───────────┴─────────┘
 ```
+
+To check the health of a whole database rather than the integrity of individual tables, use the [`CHECK DATABASE`](/reference/statements/check-database) query. It is primarily intended for databases with the [`DataLakeCatalog`](/reference/engines/database-engines/datalake) engine, where it verifies that the external catalog is reachable.
 
 ## If the Data Is Corrupted {#if-the-data-is-corrupted}
 

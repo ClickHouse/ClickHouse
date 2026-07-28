@@ -267,6 +267,7 @@ public:
     }
 
     ColumnSizeByName getColumnSizes() const override { auto target = tryGetTargetTable(); return target ? target->getColumnSizes() : ColumnSizeByName{}; }
+    ColumnSizeByName getColumnSizes(const Names & columns) const override { auto target = tryGetTargetTable(); return target ? target->getColumnSizes(columns) : ColumnSizeByName{}; }
     std::optional<ColumnSizeByName> tryGetColumnSizes() const override
     {
         auto target = tryGetTargetTable();
