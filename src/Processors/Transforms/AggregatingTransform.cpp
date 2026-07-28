@@ -1083,7 +1083,7 @@ void AggregatingTransform::onCancel() noexcept
     /// A pressure sweep checks this between chunks and buckets: it can spill gigabytes to
     /// disk, and a cancelled query must not wait that out.
     if (adaptive_context)
-        adaptive_context->session->cancelled.store(true, std::memory_order_relaxed);
+        adaptive_context->session->cancel();
 }
 
 size_t AggregatingTransform::getGeneratingStepGroup() const

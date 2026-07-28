@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <variant>
@@ -62,9 +63,16 @@ constexpr size_t adaptive_thaw_repeat_factor = 12;
 /// bucket instead of one tiny slice per consumed block; a batch of at least half the target
 /// is enqueued as-is. Also bounds the coalescing buffer per thread.
 constexpr size_t adaptive_seal_target_bytes = 4 << 20;
-/// A pressure sweep spills the routing table mid-drain only once it holds at least this many
-/// keys, so the spilled parts stay reasonably sized instead of one tiny file per chunk.
+/// A drain table is detached and written only once it holds at least this many keys, so the
+/// spilled parts stay reasonably sized instead of one tiny file per chunk; the same floor
+/// sizes the batch a pressure sweep claims for a producer-local drain.
 constexpr size_t adaptive_pressure_spill_min_keys = 1'000'000;
+/// The in-flight concurrency budget for detached tables awaiting serialization, across the
+/// session (roughly four floor-sized tables). It bounds how much detached work exists at
+/// once, not memory exactly: a reservation is corrected upward once the table is built, and
+/// `allocatedBytes` cannot see heap owned internally by complex aggregate states. The finish
+/// drain ignores the budget because it must leave nothing behind.
+constexpr size_t adaptive_pressure_detached_bytes_budget = 256 << 20;
 
 /// The staged records route by the two-level bucket of their key's hash, so the backlogs and
 /// the routing structures come in the same 256 buckets as the two-level hash tables.
@@ -220,8 +228,8 @@ struct AdaptiveAggregationSession
 
     /// An empty two-level variant of the query's aggregation method, initialized by the first
     /// thread that freezes. Under memory pressure the production-time sweeps drain staged
-    /// records into it early (see `pressureDrainStagedBlocks`); it joins the merge set when it
-    /// holds data.
+    /// records into it early (see `drainStagedChunksUnderMemoryPressure`); it joins the merge
+    /// set when it holds data.
     AggregatedDataVariantsPtr early_drain_variants;
 
     /// Serializes pressure sweeps: one sweeper at a time sheds memory, and a single sweeper
@@ -232,10 +240,104 @@ struct AdaptiveAggregationSession
     /// Whether any early drain moved records into `early_drain_variants`: the finish path then
     /// includes it in the merge set.
     std::atomic<bool> early_drain_started{false};
-    /// Set when the query is cancelled. The pressure sweeps check it between chunks and
-    /// buckets, so a dying query does not wait out a full sweep - which can include spilling
-    /// gigabytes to disk - before it stops.
+    /// Reservations of detached-table bytes against `adaptive_pressure_detached_bytes_budget`,
+    /// released as their writes finish. Guarded by a mutex with a condition variable so a
+    /// producer that cannot reserve waits for a writer instead of staging on into an
+    /// unbounded backlog; the wait breaks on cancellation (`cancel` notifies).
+    std::mutex detached_spill_mutex;
+    std::condition_variable detached_spill_cv;
+    size_t estimated_detached_spill_bytes = 0;
+
+    /// The RAII side of the budget: acquire (or wait), correct to the real footprint once the
+    /// table is built, release on destruction even if the write throws.
+    class SpillReservation
+    {
+    public:
+        SpillReservation() = default;
+        SpillReservation(const SpillReservation &) = delete;
+        SpillReservation & operator=(const SpillReservation &) = delete;
+        ~SpillReservation() { release(); }
+
+        /// Waits for writers to release enough budget; gives up only when the query is
+        /// cancelled. A request larger than the whole budget is granted when it is alone, so
+        /// one oversized table cannot deadlock the valve.
+        bool reserveOrWait(AdaptiveAggregationSession & session_, size_t bytes_)
+        {
+            std::unique_lock lock(session_.detached_spill_mutex);
+            session_.detached_spill_cv.wait(
+                lock, [&] { return fits(session_, bytes_) || session_.cancelled.load(std::memory_order_relaxed); });
+            if (session_.cancelled.load(std::memory_order_relaxed) || !fits(session_, bytes_))
+                return false;
+            grab(session_, bytes_);
+            return true;
+        }
+
+        /// Corrects the reservation to the built table's real footprint.
+        void resize(size_t bytes_)
+        {
+            bool released_some = false;
+            {
+                std::lock_guard lock(session->detached_spill_mutex);
+                if (bytes_ >= bytes)
+                    session->estimated_detached_spill_bytes += bytes_ - bytes;
+                else
+                {
+                    session->estimated_detached_spill_bytes -= bytes - bytes_;
+                    released_some = true;
+                }
+                bytes = bytes_;
+            }
+            if (released_some)
+                session->detached_spill_cv.notify_all();
+        }
+
+        void release()
+        {
+            if (!session)
+                return;
+            {
+                std::lock_guard lock(session->detached_spill_mutex);
+                session->estimated_detached_spill_bytes -= bytes;
+            }
+            session->detached_spill_cv.notify_all();
+            session = nullptr;
+            bytes = 0;
+        }
+
+    private:
+        static bool fits(const AdaptiveAggregationSession & session_, size_t bytes_)
+        {
+            if (session_.estimated_detached_spill_bytes == 0)
+                return true;
+            return session_.estimated_detached_spill_bytes < adaptive_pressure_detached_bytes_budget
+                && bytes_ <= adaptive_pressure_detached_bytes_budget - session_.estimated_detached_spill_bytes;
+        }
+
+        void grab(AdaptiveAggregationSession & session_, size_t bytes_)
+        {
+            session = &session_;
+            bytes = bytes_;
+            session_.estimated_detached_spill_bytes += bytes_;
+        }
+
+        AdaptiveAggregationSession * session = nullptr;
+        size_t bytes = 0;
+    };
+    /// Set when the query is cancelled (see `cancel`). The pressure sweeps check it between
+    /// chunks and buckets, so a dying query does not wait out a full sweep - which can include
+    /// spilling gigabytes to disk - before it stops.
     std::atomic<bool> cancelled{false};
+
+    /// Stops the sweeps at their next check and wakes any producer waiting for spill budget;
+    /// the fence keeps the store from racing past a waiter that already checked the flag.
+    void cancel()
+    {
+        cancelled.store(true, std::memory_order_relaxed);
+        {
+            std::lock_guard lock(detached_spill_mutex);
+        }
+        detached_spill_cv.notify_all();
+    }
     std::once_flag init_flag;
     std::atomic<bool> initialized{false};
 
