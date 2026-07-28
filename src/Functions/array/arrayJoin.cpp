@@ -113,7 +113,7 @@ WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 └─────────────┘
         )"},
         {"Using multiple arrayJoin functions", R"(
--- A query can use multiple arrayJoin functions. In this case, the transformation is performed multiple times and the rows are multiplied.
+- A query can use multiple arrayJoin functions. In this case, the transformation is performed multiple times and the rows are multiplied.
 
 SELECT
     sum(1) AS impressions,
@@ -128,24 +128,21 @@ FROM
 GROUP BY
     2,
     3
-ORDER BY
-    city,
-    browser
         )", R"(
 ┌─impressions─┬─city─────┬─browser─┐
+│           2 │ Istanbul │ Chrome  │
+│           1 │ Istanbul │ Firefox │
 │           2 │ Berlin   │ Chrome  │
 │           1 │ Berlin   │ Firefox │
 │           2 │ Bobruisk │ Chrome  │
 │           1 │ Bobruisk │ Firefox │
-│           2 │ Istanbul │ Chrome  │
-│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
         )"
         },
         {"Unexpected results due to optimizations", R"(
 -- Using multiple arrayJoin with the same expression may not produce the expected result due to optimizations.
 -- For these cases, consider modifying the repeated array expression with extra operations that do not affect join result.
--- e.g. arrayJoin(arraySort(arr)), arrayJoin(arrayConcat(arr, []))
+- e.g. arrayJoin(arraySort(arr)), arrayJoin(arrayConcat(arr, []))
 
 SELECT
     arrayJoin(dice) as first_throw,
@@ -215,14 +212,11 @@ ARRAY JOIN
 GROUP BY
     2,
     3
-ORDER BY
-    2,
-    3
         )", R"(
 ┌─impressions─┬─city─────┬─browser─┐
+│           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │
 │           1 │ Bobruisk │ Chrome  │
-│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
         )"
         },
@@ -242,14 +236,11 @@ FROM
 GROUP BY
     2,
     3
-ORDER BY
-    2,
-    3
         )", R"(
 ┌─impressions─┬─city─────┬─browser─┐
+│           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │
 │           1 │ Bobruisk │ Chrome  │
-│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
         )"
         }

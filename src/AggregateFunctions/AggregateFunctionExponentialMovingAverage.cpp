@@ -57,7 +57,7 @@ public:
         data(place).add(value, time, half_decay);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).merge(data(rhs), half_decay);
     }

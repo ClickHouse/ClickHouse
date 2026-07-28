@@ -10,7 +10,6 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/AsyncLoader_fwd.h>
 
 #include <ctime>
@@ -18,7 +17,6 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <vector>
 
 
@@ -45,25 +43,6 @@ class IRestoreCoordination;
 struct LightWeightTableDetails
 {
     String name;
-};
-
-/// Advisory hint passed to getTablesIterator: lets DataLake catalogs restrict
-/// which namespaces are listed instead of enumerating the whole catalog.
-struct TablesFilter
-{
-    /// How the `name` column is constrained: `Equals` (`name = 'ns.table'`) or
-    /// `Like` (`name LIKE 'ns.%'`); `None` means no usable predicate.
-    enum class Kind
-    {
-        None,
-        Equals,
-        Like,
-    };
-
-    Kind kind = Kind::None;
-
-    /// `Equals`: the literal value (e.g. `ns.table`). `Like`: the pattern (e.g. `ns.%`).
-    String pattern;
 };
 
 class IDatabaseTablesIterator
@@ -300,19 +279,6 @@ public:
     /// Wait for all tables to be loaded and started up. If `skip_not_loaded` is true, then not yet loaded or not yet started up (at the moment of iterator creation) tables are excluded.
     virtual DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const = 0; /// NOLINT
 
-    /// Same as getTablesIterator, but accepts a structured hint with an
-    /// optional namespace prefix. Implementations that can push the hint down
-    /// to an external catalog (e.g. DataLake) override this; the default
-    /// implementation simply forwards to getTablesIterator.
-    virtual DatabaseTablesIteratorPtr getTablesIteratorWithHint(
-        ContextPtr context,
-        const FilterByNameFunction & filter_by_table_name,
-        bool skip_not_loaded,
-        const TablesFilter & /*tables_filter*/) const
-    {
-        return getTablesIterator(context, filter_by_table_name, skip_not_loaded);
-    }
-
     /// Same as above, but may return non-fully initialized StoragePtr objects which are not suitable for reading.
     /// Useful for queries like "SHOW TABLES"
     virtual std::vector<LightWeightTableDetails> getLightweightTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const /// NOLINT
@@ -328,25 +294,14 @@ public:
         return result;
     }
 
-    /// Lightweight tables iterator with a TablesFilter hint. Default delegates
-    /// to the existing getLightweightTablesIterator (ignoring the hint).
-    virtual std::vector<LightWeightTableDetails> getLightweightTablesIteratorWithHint(
-        ContextPtr context,
-        const FilterByNameFunction & filter_by_table_name,
-        bool skip_not_loaded,
-        const TablesFilter & /*tables_filter*/) const
-    {
-        return getLightweightTablesIterator(context, filter_by_table_name, skip_not_loaded);
-    }
-
     virtual DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
         ContextPtr /*context*/, const FilterByNameFunction & /*filter_by_table_name = {}*/, bool /*skip_not_loaded = false*/) const;
 
     /// Returns list of table names.
-    virtual VectorWithMemoryTracking<String> getAllTableNames(ContextPtr context) const
+    virtual Strings getAllTableNames(ContextPtr context) const
     {
         // NOTE: This default implementation wait for all tables to be loaded and started up. It should be reimplemented for databases that support async loading.
-        VectorWithMemoryTracking<String> result;
+        Strings result;
         for (auto table_it = getTablesIterator(context); table_it->isValid(); table_it->next())
             result.emplace_back(table_it->name());
         return result;
@@ -423,10 +378,10 @@ public:
         return getCreateTableQueryImpl(name, context, /*throw_on_error=*/ false);
     }
 
-    /// Throws if the table does not exist. If a similarly-named table exists (in this or
-    /// another database), the exception message contains a "Maybe you meant ...?" hint,
-    /// like the one produced for `SELECT` queries.
-    ASTPtr getCreateTableQuery(const String & name, ContextPtr context) const;
+    ASTPtr getCreateTableQuery(const String & name, ContextPtr context) const
+    {
+        return getCreateTableQueryImpl(name, context, /*throw_on_error=*/ true);
+    }
 
     /// Get the CREATE DATABASE query for current database.
     ASTPtr getCreateDatabaseQuery() const

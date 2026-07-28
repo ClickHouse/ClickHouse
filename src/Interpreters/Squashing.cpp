@@ -313,7 +313,7 @@ Chunk Squashing::squash(ChunksWithOffsetsAndLengths && input_data)
     if (input_data.empty())
         return {};
 
-    MutableColumns mutable_columns;
+    std::vector<IColumn::MutablePtr> mutable_columns;
     size_t rows = 0;
     for (const auto & data : input_data)
         rows += data.length;

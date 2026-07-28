@@ -11,7 +11,6 @@
 #include <Storages/NATS/NATSSettings.h>
 #include <Storages/NATS/NATS_fwd.h>
 #include <Poco/Semaphore.h>
-#include <Storages/IStreamingStorage.h>
 #include <Common/thread_local_rng.h>
 
 namespace DB
@@ -25,7 +24,7 @@ using INATSProducerPtr = std::unique_ptr<INATSProducer>;
 
 struct NATSSettings;
 
-class StorageNATS final : public IStreamingStorage, WithContext
+class StorageNATS final : public IStorage, WithContext
 {
 public:
     StorageNATS(
@@ -46,7 +45,6 @@ public:
 
     void startup() override;
     void shutdown(bool is_drop) override;
-    ActionLock getActionLock(StorageActionBlockType action_type) override;
 
     /// This is a bad way to let storage know in shutdown() that table is going to be dropped. There are some actions which need
     /// to be done only when table is dropped (not when detached). Also connection must be closed only in shutdown, but those
@@ -113,18 +111,13 @@ private:
 
     /// True if consumers have subscribed to all subjects
     std::atomic<bool> consumers_ready{false};
-
-    /// One-shot request from STOP/PAUSE: unsubscribe and drop buffered messages.
-    std::atomic<bool> subscription_stale{false};
-
-    /// Shared by `initializeConsumersFunc` and `threadFunc`, which can run concurrently, so it is atomic
-    /// and claimed via the CAS overload of `StreamingBackgroundControl::claimCycle`.
-    std::atomic<UInt64> last_seen_refresh_epoch = 0;
+    /// Needed for tell MV or producer background tasks
+    /// that they must finish as soon as possible.
+    std::atomic<bool> shutdown_called{false};
+    std::atomic<bool> mv_attached = false;
 
     mutable bool drop_table = false;
     bool throw_on_startup_failure;
-
-    void scheduleStreamingTasksImpl() override;
 
     INATSConsumerPtr createConsumer();
     INATSProducerPtr createProducer(String subject);
@@ -133,7 +126,7 @@ private:
 
     /// Functions working in the background
     void initializeConsumersFunc();
-    void threadFunc();
+    void streamingToViewsFunc();
 
     void createConsumersConnection();
     void createConsumers();
@@ -151,7 +144,7 @@ private:
     size_t getMaxBlockSize() const;
     void deactivateTask(BackgroundSchedulePoolTaskHolder & task);
 
-    bool streamToViews(UInt64 cycle_epoch);
+    bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
 };
 

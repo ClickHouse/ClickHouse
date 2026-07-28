@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas, no-fasttest, no-object-storage, long, no-flaky-check, no-msan
+# Tags: no-parallel-replicas, no-fasttest, no-object-storage, long, no-flaky-check
 
 # Tests that text indexes built on JSONAllValues work correctly on a real-world
 # GitHub Events dataset (ghdata_sample.json) with various query patterns.
@@ -8,7 +8,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 set -e
 
 # Pin date_time_input_format to 'basic' so JSON path inference matches the

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/Distributed/parseRemoteFunctionArguments.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/StorageID.h>
 

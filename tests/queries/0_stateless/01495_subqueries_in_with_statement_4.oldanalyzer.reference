@@ -1,6 +1,5 @@
 0	0
-WITH
-    it AS
+WITH it AS
     (
         SELECT *
         FROM numbers(1)

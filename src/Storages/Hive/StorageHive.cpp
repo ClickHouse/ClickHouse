@@ -8,9 +8,7 @@
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/FieldVisitorToString.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/SipHash.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
@@ -72,13 +70,6 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
 }
 
-namespace HiveSetting
-{
-    extern const HiveSettingsBool enable_orc_file_minmax_index;
-    extern const HiveSettingsBool enable_orc_stripe_minmax_index;
-    extern const HiveSettingsBool enable_parquet_rowgroup_minmax_index;
-}
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -107,7 +98,7 @@ public:
         HiveMetastoreClientPtr hive_metastore_client;
         std::string database_name;
         std::string table_name;
-        HiveFilesWithSkipSplits hive_files;
+        HiveFiles hive_files;
         NamesAndTypesList partition_name_types;
 
         std::atomic<size_t> next_uri_to_read = 0;
@@ -197,15 +188,15 @@ public:
         }
     }
 
-    FormatSettings updateFormatSettings(const std::unordered_set<int> & skip_splits)
+    FormatSettings updateFormatSettings(const HiveFilePtr & hive_file)
     {
         auto updated = format_settings;
         if (format == "HiveText")
             updated.hive_text.input_field_names = text_input_field_names;
         else if (format == "ORC")
-            updated.orc.skip_stripes = skip_splits;
+            updated.orc.skip_stripes = hive_file->getSkipSplits();
         else if (format == "Parquet")
-            updated.parquet.skip_row_groups = skip_splits;
+            updated.parquet.skip_row_groups = hive_file->getSkipSplits();
         return updated;
     }
 
@@ -223,7 +214,7 @@ public:
                 if (current_idx >= source_info->hive_files.size())
                     return {};
 
-                current_file = source_info->hive_files[current_idx].file;
+                current_file = source_info->hive_files[current_idx];
                 current_path = current_file->getPath();
 
                 /// This is the case that all columns to read are partition keys. We can construct const columns
@@ -287,7 +278,7 @@ public:
                     to_read_block,
                     context,
                     max_block_size,
-                    updateFormatSettings(source_info->hive_files[current_idx].skip_splits),
+                    updateFormatSettings(current_file),
                     FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
 
                 Pipe pipe(input_format);
@@ -580,7 +571,7 @@ static HiveFilePtr createHiveFile(
     return hive_file;
 }
 
-HiveFilesWithSkipSplits StorageHive::collectHiveFilesFromPartition(
+HiveFiles StorageHive::collectHiveFilesFromPartition(
     const Apache::Hadoop::Hive::Partition & partition,
     const ActionsDAG * filter_actions_dag,
     const HiveTableMetadataPtr & hive_table_metadata,
@@ -640,10 +631,9 @@ HiveFilesWithSkipSplits StorageHive::collectHiveFilesFromPartition(
     for (size_t i = 0; i < partition_names.size(); ++i)
         block.getByPosition(i).column->get(0, fields[i]);
 
-    /// Without a filter there is nothing to prune by, so collect all files of the partition.
-    if (filter_actions_dag && prune_level >= PruneLevel::Partition)
+    if (prune_level >= PruneLevel::Partition)
     {
-        Ranges ranges;
+        std::vector<Range> ranges;
         ranges.reserve(partition_names.size());
         for (size_t i = 0; i < partition_names.size(); ++i)
             ranges.emplace_back(fields[i]);
@@ -654,21 +644,21 @@ HiveFilesWithSkipSplits StorageHive::collectHiveFilesFromPartition(
             return {};
     }
 
-    HiveFilesWithSkipSplits hive_files;
+    HiveFiles hive_files;
     auto file_infos = listDirectory(partition.sd.location, hive_table_metadata, fs);
     hive_files.reserve(file_infos.size());
     for (const auto & file_info : file_infos)
     {
         auto hive_file = getHiveFileIfNeeded(file_info, fields, filter_actions_dag, hive_table_metadata, context_, prune_level);
-        if (hive_file.file)
+        if (hive_file)
         {
             LOG_TRACE(
                 log,
                 "Append hive file {} from partition {}, prune_level:{}",
-                hive_file.file->getPath(),
+                hive_file->getPath(),
                 boost::join(partition.values, ","),
                 pruneLevelToString(prune_level));
-            hive_files.push_back(std::move(hive_file));
+            hive_files.push_back(hive_file);
         }
     }
     return hive_files;
@@ -680,35 +670,7 @@ StorageHive::listDirectory(const String & path, const HiveTableMetadataPtr & hiv
     return hive_table_metadata->getFilesByLocation(fs, path);
 }
 
-/// The `hive_files_cache` lives on the per-remote-table `HiveTableMetadata`, so it is shared by every
-/// `StorageHive` table over the same remote Hive table. A cached `IHiveFile` bakes in table-specific
-/// state: the partition values, the minmax-index column layout (`index_names_and_types`), the file
-/// format, and the minmax-index settings. `Hive` explicitly allows different ClickHouse schemas/settings
-/// over one remote table, so two such tables must not share a cached file - otherwise the second table
-/// would prune (and materialize partition columns) against the first table's cached layout, silently
-/// keeping or skipping the wrong data. Key the cache by the remote path plus a signature of that
-/// table-specific state so mismatched tables get independent entries while an identical table still
-/// reuses the cache. Any new `HiveSettings` value that changes how a cached file is built or pruned must
-/// be added to this signature.
-static String getHiveFileCacheKey(
-    const String & path,
-    const String & format_name,
-    const FieldVector & partition_values,
-    const NamesAndTypesList & index_names_and_types,
-    const HiveSettings & storage_settings)
-{
-    SipHash hash;
-    hash.update(format_name);
-    hash.update(index_names_and_types.toString());
-    hash.update(static_cast<UInt8>(storage_settings[HiveSetting::enable_orc_file_minmax_index] ? 1 : 0));
-    hash.update(static_cast<UInt8>(storage_settings[HiveSetting::enable_orc_stripe_minmax_index] ? 1 : 0));
-    hash.update(static_cast<UInt8>(storage_settings[HiveSetting::enable_parquet_rowgroup_minmax_index] ? 1 : 0));
-    for (const auto & value : partition_values)
-        hash.update(applyVisitor(FieldVisitorToString(), value));
-    return path + "#" + getSipHash128AsHexString(hash);
-}
-
-HiveFileWithSkipSplits StorageHive::getHiveFileIfNeeded(
+HiveFilePtr StorageHive::getHiveFileIfNeeded(
     const FileInfo & file_info,
     const FieldVector & fields,
     const ActionsDAG * filter_actions_dag,
@@ -722,8 +684,7 @@ HiveFileWithSkipSplits StorageHive::getHiveFileIfNeeded(
         return {};
 
     auto cache = hive_table_metadata->getHiveFilesCache();
-    const String cache_key = getHiveFileCacheKey(file_info.path, format_name, fields, hivefile_name_types, *storage_settings);
-    auto hive_file = cache->get(cache_key);
+    auto hive_file = cache->get(file_info.path);
     if (!hive_file || hive_file->getLastModTs() < file_info.last_modify_time)
     {
         LOG_TRACE(log, "Create hive file {}, prune_level {}", file_info.path, pruneLevelToString(prune_level));
@@ -737,20 +698,14 @@ HiveFileWithSkipSplits StorageHive::getHiveFileIfNeeded(
             hivefile_name_types,
             storage_settings,
             context_->getGlobalContext());
-        cache->set(cache_key, hive_file);
+        cache->set(file_info.path, hive_file);
     }
     else
     {
         LOG_TRACE(log, "Get hive file {} from cache, prune_level {}", file_info.path, pruneLevelToString(prune_level));
     }
 
-    /// Splits (Parquet row groups / ORC stripes) to skip while reading this file for the current query.
-    /// This set depends on the query filter, so it is kept query-local rather than stored on the shared
-    /// cached file: an unfiltered read leaves it empty (read all splits), and concurrent queries with
-    /// different filters do not interfere with each other's pruning.
-    std::unordered_set<int> skip_splits;
-
-    if (filter_actions_dag && prune_level >= PruneLevel::File)
+    if (prune_level >= PruneLevel::File)
     {
         ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context_, /* boolean_context */ true);
         const KeyCondition hivefile_key_condition(inverted_dag, getContext(), hivefile_name_types.getNames(), hivefile_minmax_idx_expr);
@@ -775,6 +730,7 @@ HiveFileWithSkipSplits StorageHive::getHiveFileIfNeeded(
             if (hive_file->useSplitMinMaxIndex())
             {
                 /// Load sub-file level minmax index and apply
+                std::unordered_set<int> skip_splits;
                 hive_file->loadSplitMinMaxIndexes();
                 const auto & sub_minmax_idxes = hive_file->getSubMinMaxIndexes();
                 for (size_t i = 0; i < sub_minmax_idxes.size(); ++i)
@@ -792,10 +748,11 @@ HiveFileWithSkipSplits StorageHive::getHiveFileIfNeeded(
                         skip_splits.insert(static_cast<int>(i));
                     }
                 }
+                hive_file->setSkipSplits(skip_splits);
             }
         }
     }
-    return {hive_file, std::move(skip_splits)};
+    return hive_file;
 }
 
 bool StorageHive::supportsSubsetOfColumns() const
@@ -852,7 +809,7 @@ private:
     size_t max_block_size;
     size_t num_streams;
 
-    std::optional<HiveFilesWithSkipSplits> hive_files;
+    std::optional<HiveFiles> hive_files;
 
     void createFiles();
 };
@@ -984,7 +941,7 @@ void ReadFromHive::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     pipeline.init(std::move(pipe));
 }
 
-HiveFilesWithSkipSplits StorageHive::collectHiveFiles(
+HiveFiles StorageHive::collectHiveFiles(
     size_t max_threads,
     const ActionsDAG * filter_actions_dag,
     const HiveTableMetadataPtr & hive_table_metadata,
@@ -998,7 +955,7 @@ HiveFilesWithSkipSplits StorageHive::collectHiveFiles(
         return {};
 
     /// Hive files to collect
-    HiveFilesWithSkipSplits hive_files;
+    HiveFiles hive_files;
     Int64 hit_parttions_num = 0;
     Int64 hive_max_query_partitions = context_->getSettingsRef()[Setting::max_partitions_to_read];
     /// Mutext to protect hive_files, which maybe appended in multiple threads
@@ -1039,19 +996,14 @@ HiveFilesWithSkipSplits StorageHive::collectHiveFiles(
         auto file_infos = listDirectory(hive_table_metadata->getTable()->sd.location, hive_table_metadata, fs);
         for (const auto & file_info : file_infos)
         {
-            /// Capture `file_info` by value: `file_infos` is scoped to this `else` block and is destroyed
-            /// at the closing brace below, before the `pool.wait()` that joins the tasks - a task still
-            /// running (or queued) at that point would otherwise read a dangling reference into the freed
-            /// vector. `partitions` in the branch above is a function-scope local and outlives `pool.wait`,
-            /// so its `[&]` capture of `partition` is safe and left unchanged.
             pool.scheduleOrThrowOnError(
-                [&, file_info]()
+                [&]()
                 {
                     auto hive_file = getHiveFileIfNeeded(file_info, {}, filter_actions_dag, hive_table_metadata, context_, prune_level);
-                    if (hive_file.file)
+                    if (hive_file)
                     {
                         std::lock_guard lock(hive_files_mutex);
-                        hive_files.push_back(std::move(hive_file));
+                        hive_files.push_back(hive_file);
                     }
                 });
         }
@@ -1092,15 +1044,15 @@ StorageHive::totalRowsImpl(const Settings & settings, const ActionsDAG * filter_
     auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
     HDFSBuilderWrapper builder = createHDFSBuilder(hdfs_namenode_url, getContext()->getGlobalContext()->getConfigRef());
     HDFSFSPtr fs = createHDFSFS(builder.get());
-    HiveFilesWithSkipSplits hive_files = collectHiveFiles(settings[Setting::max_threads], filter_actions_dag, hive_table_metadata, fs, context_, prune_level);
+    HiveFiles hive_files = collectHiveFiles(settings[Setting::max_threads], filter_actions_dag, hive_table_metadata, fs, context_, prune_level);
 
     UInt64 total_rows = 0;
     for (const auto & hive_file : hive_files)
     {
-        auto file_rows = hive_file.file->getRows();
+        auto file_rows = hive_file->getRows();
         if (!file_rows)
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Rows of hive file:{} with format:{} not initialized", hive_file.file->getPath(), format_name);
+                ErrorCodes::LOGICAL_ERROR, "Rows of hive file:{} with format:{} not initialized", hive_file->getPath(), format_name);
         total_rows += *file_rows;
     }
     return total_rows;

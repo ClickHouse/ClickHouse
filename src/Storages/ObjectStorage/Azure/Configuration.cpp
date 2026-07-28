@@ -878,27 +878,14 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
 void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
     AzureStorageParsedArguments parsed_arguments;
-    if (is_onelake)
+    if (!onelake_client_id.empty())
     {
         parsed_arguments.initializeForOneLake(engine_args, context, onelake_use_blob_endpoint);
-        if (!onelake_access_token.empty())
-        {
-            /// Pre-obtained bearer token from `onelake_bearer_token`.
-            /// Use epoch as the expiry time. There is no refresh -- the database must be
-            /// recreated with a new token once it expires.
-            parsed_arguments.connection_params.auth_method = std::make_shared<AzureBlobStorage::StaticCredential>(
-                onelake_access_token,
-                std::chrono::system_clock::time_point{}
-            );
-        }
-        else
-        {
-            parsed_arguments.connection_params.auth_method = std::make_shared<Azure::Identity::ClientSecretCredential>(
-                onelake_tenant_id,
-                onelake_client_id,
-                onelake_client_secret
-            );
-        }
+        parsed_arguments.connection_params.auth_method = std::make_shared<Azure::Identity::ClientSecretCredential>(
+            onelake_tenant_id,
+            onelake_client_id,
+            onelake_client_secret
+        );
     }
     else
     {

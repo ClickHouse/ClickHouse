@@ -52,7 +52,6 @@ public:
 
     std::shared_ptr<MergeTreeIndexGranularity> optimize() override { return nullptr; }
     std::string describe() const override;
-    std::shared_ptr<MergeTreeIndexGranularity> clone() const override { return std::make_shared<MergeTreeIndexGranularityConstant>(*this); }
 };
 
 }

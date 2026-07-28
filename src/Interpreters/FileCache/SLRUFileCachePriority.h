@@ -78,12 +78,12 @@ public:
         const CacheStateGuard::Lock *) override;
 
     bool collectCandidatesForEviction(
-        EvictionInfo & eviction_info,
+        const EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         InvalidatedEntriesInfos & invalidated_entries,
         IFileCachePriority::IteratorPtr reservee,
-        EvictionCursor eviction_cursor,
+        bool continue_from_last_eviction_pos,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
@@ -103,7 +103,7 @@ public:
 
     void shuffle(const CachePriorityGuard::WriteLock &) override;
 
-    void resetEvictionPos(EvictionCursor cursor) override;
+    void resetEvictionPos() override;
 
     PriorityDumpPtr dump(const CachePriorityGuard::ReadLock &) override;
 
@@ -124,9 +124,6 @@ public:
 protected:
     void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate) override
     {
-        /// Remember the hook on this priority as well: `OvercommitFileCachePriority`
-        /// reads it back when wiring newly created per-user priorities.
-        IFileCachePriority::setInvalidateNotifier(threshold, on_invalidate);
         protected_queue.setInvalidateNotifier(threshold, on_invalidate);
         probationary_queue.setInvalidateNotifier(threshold, on_invalidate);
     }
@@ -162,12 +159,12 @@ private:
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::WriteLock & lock);
 
     bool collectCandidatesForEvictionInProtected(
-        EvictionInfo & eviction_info,
+        const EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         InvalidatedEntriesInfos & invalidated_entries,
         IFileCachePriority::IteratorPtr reservee,
-        EvictionCursor eviction_cursor,
+        bool continue_from_last_eviction_pos,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,

@@ -93,9 +93,6 @@ int mainEntryClickHouseStop(int argc, char ** argv);
 int mainEntryClickHouseStatus(int argc, char ** argv);
 int mainEntryClickHouseRestart(int argc, char ** argv);
 
-// packed-io: list/extract/create ClickHouse packed-format archives
-int mainEntryClickHousePackedIO(int argc, char ** argv);
-
 /// Private-only programs
 #if CLICKHOUSE_CLOUD
 int mainEntryClickHouseSharedCatalogUtil(int argc, char ** argv);
@@ -104,6 +101,7 @@ int mainEntryClickHouseDistributedCache(int argc, char ** argv);
 #endif
 int mainEntryClickHouseSharedMergeTreeGarbageCleaner(int argc, char ** argv);
 int mainEntryClickHouseClearZooKeeperLocks(int argc, char ** argv);
+int mainEntryClickHousePackedIO(int argc, char ** argv);
 int mainEntryClickHouseMangler(int argc, char ** argv);
 #endif
 
@@ -182,13 +180,13 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"restart", mainEntryClickHouseRestart},
     // help
     {"help", mainEntryHelp},
-    {"packed-io", mainEntryClickHousePackedIO},
 
 /// Private-only programs
 #if CLICKHOUSE_CLOUD
     {"shared-merge-tree-garbage-cleaner", mainEntryClickHouseSharedMergeTreeGarbageCleaner},
     {"clear-zookeeper-locks", mainEntryClickHouseClearZooKeeperLocks},
     {"shared-catalog-util", mainEntryClickHouseSharedCatalogUtil},
+    {"packed-io", mainEntryClickHousePackedIO},
     {"mangler", mainEntryClickHouseMangler},
 #if ENABLE_DISTRIBUTED_CACHE
     {"distributed-cache", mainEntryClickHouseDistributedCache}

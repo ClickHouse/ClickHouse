@@ -13,7 +13,6 @@ SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1;
 SET use_statistics = 0;
-SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_prewhere_map_cost;
 CREATE TABLE t_prewhere_map_cost (id UInt64, modality LowCardinality(String), h Map(String, String))

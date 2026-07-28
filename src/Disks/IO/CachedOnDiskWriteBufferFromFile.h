@@ -39,10 +39,8 @@ public:
     /**
     * Write a range of file segments. Allocate file segment of `max_file_segment_size` and write to
     * it until it is full and then allocate next file segment.
-    * On a `false` return, `failure_reason` is set to a human-readable reason why write-through
-    * caching was stopped (e.g. cache capacity reached, or covering segment being evicted).
     */
-    bool write(char * data, size_t size, size_t offset, FileSegmentKind segment_kind, std::string & failure_reason);
+    bool write(char * data, size_t size, size_t offset, FileSegmentKind segment_kind);
 
     void finalize();
 
@@ -55,9 +53,7 @@ public:
     void setFileFinishedForDistributedCache();
 
 private:
-    /// Returns nullptr if write-through caching should be skipped for this write,
-    /// setting `failure_reason` to the reason why.
-    FileSegment * allocateFileSegment(size_t offset, FileSegmentKind segment_kind, std::string & failure_reason);
+    FileSegment & allocateFileSegment(size_t offset, FileSegmentKind segment_kind);
 
     void appendFilesystemCacheLog(const FileSegment & file_segment);
 

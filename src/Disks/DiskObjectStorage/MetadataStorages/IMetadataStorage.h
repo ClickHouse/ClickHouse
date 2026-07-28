@@ -293,7 +293,6 @@ public:
     virtual BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & /*cluster*/, int64_t /*max_count*/) { return {}; }
     virtual int64_t recordAsRemoved(const StoredObjects & /*blobs*/) { return 0; }
     virtual bool hasPendingRemovalBlobs(const StoredObjects & /*blobs*/) const { return false; }
-    virtual int64_t getDeadBlobsQueueEstimate() { return 0; }
 
     struct BlobsReplication
     {
@@ -305,7 +304,6 @@ public:
     virtual BlobsToReplicate getBlobsToReplicate(const ClusterConfigurationPtr & /*cluster*/, int64_t /*max_count*/) { return {}; }
     virtual int64_t recordAsReplicated(const BlobsToReplicate & /*blobs*/) { return 0; }
     virtual bool hasUnreplicatedBlobs(const Location & /*location_to_check*/) { return false; }
-    virtual int64_t getMissingBlobsQueueEstimate() { return 0; }
 
     /// Re-read paths or their full subtrees from disk and update cache.
     /// Can return serialized description of cache update which can be used to populate cache on other nodes.

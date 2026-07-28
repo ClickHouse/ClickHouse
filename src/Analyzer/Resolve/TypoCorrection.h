@@ -4,8 +4,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include <Common/VectorWithMemoryTracking.h>
-
 namespace DB
 {
 
@@ -49,7 +47,7 @@ struct TypoCorrection
         bool allow_table_expression_identifiers,
         std::unordered_set<Identifier> & valid_identifiers_result);
 
-    static VectorWithMemoryTracking<String> collectIdentifierTypoHints(
+    static std::vector<String> collectIdentifierTypoHints(
         const Identifier & unresolved_identifier,
         const std::unordered_set<Identifier> & valid_identifiers);
 };

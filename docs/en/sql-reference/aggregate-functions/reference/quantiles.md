@@ -1,7 +1,7 @@
 ---
-description: 'Computes multiple quantiles of a numeric data sequence at different levels simultaneously.'
+description: 'quantiles, quantilesExactExclusive, quantilesExactInclusive, quantilesGK'
 slug: /sql-reference/aggregate-functions/reference/quantiles
-title: 'quantiles'
+title: 'quantiles Functions'
 doc_type: 'reference'
 ---
 

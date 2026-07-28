@@ -54,8 +54,8 @@ FROM format('GeoJSON', '{
     ]
 }');
 
--- A missing id should produce NULL (`id` is Nullable(String)); a null geometry should produce the None variant.
-SELECT id IS NULL, variantType(geometry)
+-- Missing id should produce empty string; null geometry should produce None variant.
+SELECT id = '', variantType(geometry)
 FROM format('GeoJSON', '{
     "type": "FeatureCollection",
     "features": [

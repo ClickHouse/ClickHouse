@@ -83,12 +83,12 @@ public:
         const CacheStateGuard::Lock &) override;
 
     bool collectCandidatesForEviction(
-        EvictionInfo & eviction_info,
+        const EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         InvalidatedEntriesInfos & invalidated_entries,
         IFileCachePriority::IteratorPtr reservee,
-        EvictionCursor eviction_cursor,
+        bool continue_from_last_eviction_pos,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
@@ -116,15 +116,7 @@ public:
         const OriginInfo & origin_info,
         const CacheStateGuard::Lock & lock) override;
 
-    void resetEvictionPos(EvictionCursor cursor) override;
-
-    void setOnEvictCallback(OnEvictCallback callback) override
-    {
-        for (auto & p : priorities_holder)
-            if (p)
-                p->setOnEvictCallback(callback);
-        IFileCachePriority::setOnEvictCallback(std::move(callback));
-    }
+    void resetEvictionPos() override;
 
 protected:
     void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate) override

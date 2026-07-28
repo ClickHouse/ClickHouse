@@ -286,16 +286,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             else
                 table->checkTableCanBeDetached();
 
-            bool check_ref_deps = false;
-            bool check_loading_deps = false;
-            if (query.permanently)
-            {
-                /// Check dependencies before `flushAndShutdown` so a failed check leaves the storage untouched.
-                check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
-                check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
-                DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
-            }
-
             table->flushAndShutdown();
             TableExclusiveLockHolder table_lock;
 
@@ -304,6 +294,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             if (query.permanently)
             {
+                /// Server may fail to restart of DETACH PERMANENTLY if table has dependent ones
+                bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
+                bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
                 DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
                 NamedCollectionFactory::instance().removeDependencies(table_id);
                 /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
@@ -535,10 +528,6 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
                 {
                     auto table_ptr = iterator->table();
-                    /// Storage object could not be resolved (e.g. unresolvable DataLakeCatalog
-                    /// metadata); nothing to drop/truncate for it here.
-                    if (!table_ptr)
-                        continue;
 
                     /// Skip tables that don't support truncation (e.g. views)
                     /// when doing TRUNCATE ALL TABLES.
@@ -688,9 +677,6 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         for (auto it = database->getTablesIterator(table_context); it->isValid(); it->next())
         {
             const auto & table_ptr = it->table();
-            /// Storage object could not be resolved (e.g. unresolvable DataLakeCatalog metadata).
-            if (!table_ptr)
-                continue;
 
             /// Skip tables that don't support truncation (e.g. views).
             if (!table_ptr->supportsTruncate())

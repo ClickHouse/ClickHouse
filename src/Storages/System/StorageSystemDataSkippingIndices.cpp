@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemDataSkippingIndices.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -306,6 +305,3 @@ void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder 
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDataSkippingIndices) }

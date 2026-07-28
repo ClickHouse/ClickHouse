@@ -2,7 +2,6 @@
 
 SET enable_analyzer = 1;
 SET use_join_disjunctions_push_down = 1;
-SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t04330;
 DROP TABLE IF EXISTS nr04330;
@@ -52,7 +51,7 @@ FROM (
     WHERE (l.x = 'FRANCE' AND r.y = 'GERMANY') OR (l.x = 'GERMANY' AND r.y = 'FRANCE')
     ORDER BY l.x
 )
-WHERE explain ILIKE '%Filter column: %' SETTINGS use_join_disjunctions_push_down = 1, enable_join_runtime_filters = 0, enable_parallel_replicas = 0, query_plan_optimize_join_order_randomize = 0 -- Pinned because the test asserts on join plan/order
+WHERE explain ILIKE '%Filter column: %' SETTINGS use_join_disjunctions_push_down = 1, enable_join_runtime_filters = 0, enable_parallel_replicas = 0
 FORMAT TSV;
 
 SELECT '--- plan (disabled) ---';
@@ -65,7 +64,7 @@ FROM (
     WHERE (l.x = 'FRANCE' AND r.y = 'GERMANY') OR (l.x = 'GERMANY' AND r.y = 'FRANCE')
     ORDER BY l.x
 )
-WHERE explain ILIKE '%Filter column: %' SETTINGS use_join_disjunctions_push_down = 0, enable_join_runtime_filters = 0, enable_parallel_replicas = 0, query_plan_optimize_join_order_randomize = 0 -- Pinned because the test asserts on join plan/order
+WHERE explain ILIKE '%Filter column: %' SETTINGS use_join_disjunctions_push_down = 0, enable_join_runtime_filters = 0, enable_parallel_replicas = 0
 FORMAT TSV;
 
 -- Result must be identical with push-down enabled (sanity check that the optimization is result-preserving).

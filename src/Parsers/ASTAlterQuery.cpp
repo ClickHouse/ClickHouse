@@ -1,7 +1,6 @@
 #include <Parsers/ASTAlterQuery.h>
 
 #include <Core/ServerSettings.h>
-#include <Databases/DataLake/DataLakeConstants.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <base/scope_guard.h>
@@ -285,12 +284,6 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
                      ;
         constraint->format(ostr, settings, state, frame);
     }
-    else if (type == ASTAlterCommand::MODIFY_CONSTRAINT)
-    {
-        ostr << "MODIFY CONSTRAINT " << (if_exists ? "IF EXISTS " : "")
-                     ;
-        constraint_decl->format(ostr, settings, state, frame);
-    }
     else if (type == ASTAlterCommand::ADD_PROJECTION)
     {
         ostr << "ADD PROJECTION " << (if_not_exists ? "IF NOT EXISTS " : "")
@@ -513,9 +506,7 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     else if (type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
     {
         ostr << "MODIFY SETTING ";
-        auto modified_frame{frame};
-        modified_frame.create_engine_name = DataLake::DATABASE_ENGINE_NAME;
-        settings_changes->format(ostr, settings, state, modified_frame);
+        settings_changes->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::MODIFY_QUERY)
     {

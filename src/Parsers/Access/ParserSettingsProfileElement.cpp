@@ -330,12 +330,6 @@ bool ParserAlterSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Exp
                 action = "MODIFY";
                 target = "";
             }
-            else if (ParserKeyword{Keyword::SET}.ignore(pos, expected))
-            {
-                /// `SET` is an alias for `MODIFY SETTING`: it modifies individual settings in place.
-                action = "MODIFY";
-                target = "SETTINGS";
-            }
 
             if (!action.empty())
             {

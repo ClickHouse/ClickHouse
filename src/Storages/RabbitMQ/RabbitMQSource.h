@@ -5,8 +5,6 @@
 #include <Storages/RabbitMQ/RabbitMQConsumer.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
 
-#include <optional>
-
 
 namespace DB
 {
@@ -25,8 +23,7 @@ public:
             StreamingHandleErrorMode handle_error_mode_,
             bool nack_broken_messages_,
             bool ack_in_suffix,
-            LoggerPtr log_,
-            std::optional<UInt64> cancel_epoch_ = {});
+            LoggerPtr log_);
 
     ~RabbitMQSource() override;
 
@@ -40,9 +37,7 @@ public:
     bool needChannelUpdate();
     void updateChannel();
     bool sendAck();
-    bool sendNack(bool requeue = false);
-
-    bool wasConsumptionAborted() const { return consumption_aborted; }
+    bool sendNack();
 
 private:
     StorageRabbitMQ & storage;
@@ -55,10 +50,8 @@ private:
     const bool nack_broken_messages;
 
     bool is_finished = false;
-    bool consumption_aborted = false;
     const Block non_virtual_header;
     const Block virtual_header;
-    const UInt64 cancel_epoch;
 
     LoggerPtr log;
     RabbitMQConsumerPtr consumer;
@@ -79,8 +72,7 @@ private:
         StreamingHandleErrorMode handle_error_mode_,
         bool nack_broken_messages_,
         bool ack_in_suffix,
-        LoggerPtr log_,
-        std::optional<UInt64> cancel_epoch_ = {});
+        LoggerPtr log_);
 
     Chunk generateImpl();
 };

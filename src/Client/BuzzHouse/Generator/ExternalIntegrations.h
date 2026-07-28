@@ -96,10 +96,6 @@ public:
 
     virtual String truncateStatement() { return String(); }
 
-    /// Trailing keywords after the table name. `SYNC` is ClickHouse-only syntax, so it is
-    /// appended only by the ClickHouse peer; MySQL/PostgreSQL/SQLite leave this empty.
-    virtual String truncateSuffix() { return String(); }
-
     bool truncatePeerTableOnRemote(const SQLTable &);
 
     bool performQueryOnServerOrRemote(PeerTableDatabase, const String &);
@@ -136,8 +132,6 @@ public:
     String getSQLQuotedTableName(std::shared_ptr<SQLDatabase> db, const String &) override;
 
     String truncateStatement() override;
-
-    String truncateSuffix() override;
 
     bool optimizeTableForOracle(PeerTableDatabase pt, const SQLTable & t) override;
 

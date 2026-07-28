@@ -38,7 +38,6 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/sync_insert.xml",
-                "configs/allow_server_credentials.xml",
             ],
         )
 
