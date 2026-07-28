@@ -7,7 +7,6 @@
 #if USE_AVRO
 
 #include <cstddef>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <Columns/ColumnConst.h>

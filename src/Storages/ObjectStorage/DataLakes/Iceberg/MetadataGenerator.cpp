@@ -222,7 +222,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
     if (is_truncate)
     {
-        summary->set(Iceberg::f_operation, Iceberg::f_overwrite);
+        summary->set(Iceberg::f_operation, Iceberg::f_delete);
         if (!parent_snapshot)
         {
             summary->set(Iceberg::f_deleted_records, std::to_string(0));
