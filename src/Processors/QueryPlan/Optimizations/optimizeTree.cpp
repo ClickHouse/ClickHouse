@@ -502,9 +502,12 @@ void optimizeTreeSecondPass(
                 local_optimization_settings.reuse_storage_ordering_for_window_functions
                     = subquery_optimization_settings.reuse_storage_ordering_for_window_functions;
                 local_optimization_settings.enable_parallel_replicas = false;
-                /// Runtime filters are already in the cloned fragment (added on the outer plan); re-adding
-                /// them here would filter the coordinated read twice.
-                local_optimization_settings.enable_join_runtime_filters = false;
+                /// Plan-based PR adds the join runtime filters on the outer plan before cloning the
+                /// fragment, so they are already in this local plan; re-adding them would filter the
+                /// coordinated read twice. Classic PR (this same step, with parallel_replicas_local_plan)
+                /// builds a fresh local plan with no filters yet, so it must still add them.
+                if (optimization_settings.enable_parallel_replicas)
+                    local_optimization_settings.enable_join_runtime_filters = false;
             }
 
             auto local_plan = read_from_local->extractQueryPlan();
