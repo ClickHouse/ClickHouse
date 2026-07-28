@@ -25,8 +25,7 @@ This example can be found as a notebook in the [examples repository](https://git
 You can run the following steps either from your Python REPL or via script.
 
 <Steps>
-<Step>
-## Install libraries {#install-libraries}
+<Step title="Install libraries" id="install-libraries">
 
 Install the required libraries by running the following commands:
 
@@ -35,8 +34,7 @@ pip install -q --upgrade pip
 pip install -q llama-index clickhouse-connect llama-index-llms-anthropic llama-index-tools-mcp
 ```
 </Step>
-<Step>
-## Setup credentials {#setup-credentials}
+<Step title="Setup credentials" id="setup-credentials">
 
 Next, you'll need to provide your Anthropic API key:
 
@@ -56,8 +54,7 @@ If you don't have an Anthropic API key, and want to use another LLM provider,
 you can find the instructions for setting up your credentials in the [LlamaIndex "LLMs" docs](https://docs.llamaindex.ai/en/stable/examples/)
 </Info>
 </Step>
-<Step>
-## Initialize MCP server {#initialize-mcp-and-agent}
+<Step title="Initialize MCP server" id="initialize-mcp-and-agent">
 
 Now configure the ClickHouse MCP server to point at the ClickHouse SQL playground.
 You'll need to convert those from Python functions into Llama Index tools:
@@ -89,8 +86,7 @@ mcp_tool_spec = McpToolSpec(
 tools = await mcp_tool_spec.to_tool_list_async()
 ```
 </Step>
-<Step>
-## Create an agent {#create-agent}
+<Step title="Create an agent" id="create-agent">
 
 You're now ready to create an agent that has access to those tools. Set the maximum
 number of tool calls in one run to 10. You can modify this parameter if you want:
@@ -105,8 +101,7 @@ agent_worker = FunctionCallingAgentWorker.from_tools(
 agent = AgentRunner(agent_worker)
 ```
 </Step>
-<Step>
-## Initialize the LLM {#initialize-llm}
+<Step title="Initialize the LLM" id="initialize-llm">
 
 Initialize the Claude Sonnet 4.0 model with the following code:
 
@@ -115,8 +110,7 @@ from llama_index.llms.anthropic import Anthropic
 llm = Anthropic(model="claude-sonnet-4-0")
 ```
 </Step>
-<Step>
-## Run the agent {#run-agent}
+<Step title="Run the agent" id="run-agent">
 
 Finally, you can ask the agent a question:
 

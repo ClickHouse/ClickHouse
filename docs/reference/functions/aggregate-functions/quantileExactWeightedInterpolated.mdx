@@ -37,12 +37,12 @@ quantileExactWeightedInterpolated(level)(expr, weight)
 
 **Arguments**
 
-- `expr` — Expression over the column values resulting in numeric data types, Date or DateTime. [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal*`](/reference/data-types/decimal) or [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime)
+- `expr` — Expression over the column values resulting in numeric data types, `Date`, `DateTime` or `DateTime64`. [`(U)Int*`](/reference/data-types/int-uint) or [`Int128`](/reference/data-types/int-uint) or [`UInt128`](/reference/data-types/int-uint) or [`Int256`](/reference/data-types/int-uint) or [`UInt256`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal*`](/reference/data-types/decimal) or [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64)
 - `weight` — Column with weights of sequence members. Weight is a number of value occurrences. [`UInt*`](/reference/data-types/int-uint)
 
 **Returned value**
 
-Quantile of the specified level. [`Float64`](/reference/data-types/float) or [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime)
+Quantile of the specified level. Numeric arguments produce `Float64`, while `Decimal`, `Date`, `DateTime` and `DateTime64` arguments keep their input format. [`Float64`](/reference/data-types/float) or [`Decimal*`](/reference/data-types/decimal) or [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64)
 
 **Examples**
 

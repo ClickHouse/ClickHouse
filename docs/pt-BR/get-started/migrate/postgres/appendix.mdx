@@ -172,41 +172,41 @@ GROUP BY `table`
 Mais detalhes sobre como otimizar e medir a compressão podem ser encontrados [aqui](/pt-BR/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
 
 <div id="data-type-mappings">
-  ## Mapeamentos de tipos de dados
+  ## Mapeamento de tipos de dados
 </div>
 
 A tabela a seguir mostra os tipos de dados do ClickHouse equivalentes aos do Postgres.
 
-| Tipo de dado do Postgres | Tipo do ClickHouse                                                                                                                                                                     |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DATE`                   | [Date](/pt-BR/reference/data-types/date)                                                                                                                                                     |
-| `TIMESTAMP`              | [DateTime](/pt-BR/reference/data-types/datetime)                                                                                                                                             |
-| `REAL`                   | [Float32](/pt-BR/reference/data-types/float)                                                                                                                                                 |
-| `DOUBLE`                 | [Float64](/pt-BR/reference/data-types/float)                                                                                                                                                 |
-| `DECIMAL, NUMERIC`       | [Decimal](/pt-BR/reference/data-types/decimal)                                                                                                                                               |
-| `SMALLINT`               | [Int16](/pt-BR/reference/data-types/int-uint)                                                                                                                                                |
-| `INTEGER`                | [Int32](/pt-BR/reference/data-types/int-uint)                                                                                                                                                |
-| `BIGINT`                 | [Int64](/pt-BR/reference/data-types/int-uint)                                                                                                                                                |
-| `SERIAL`                 | [UInt32](/pt-BR/reference/data-types/int-uint)                                                                                                                                               |
-| `BIGSERIAL`              | [UInt64](/pt-BR/reference/data-types/int-uint)                                                                                                                                               |
-| `TEXT, CHAR, BPCHAR`     | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |
-| `INTEGER`                | Nullable([Int32](/pt-BR/reference/data-types/int-uint))                                                                                                                                      |
-| `ARRAY`                  | [Array](/pt-BR/reference/data-types/array)                                                                                                                                                   |
-| `FLOAT4`                 | [Float32](/pt-BR/reference/data-types/float)                                                                                                                                                 |
-| `BOOLEAN`                | [Bool](/pt-BR/reference/data-types/boolean)                                                                                                                                                  |
-| `VARCHAR`                | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |
-| `BIT`                    | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |
-| `BIT VARYING`            | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |
-| `BYTEA`                  | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |
-| `NUMERIC`                | [Decimal](/pt-BR/reference/data-types/decimal)                                                                                                                                               |
-| `GEOGRAPHY`              | [Point](/pt-BR/reference/data-types/geo#point), [Ring](/pt-BR/reference/data-types/geo#ring), [Polygon](/pt-BR/reference/data-types/geo#polygon), [MultiPolygon](/pt-BR/reference/data-types/geo#multipolygon) |
-| `GEOMETRY`               | [Point](/pt-BR/reference/data-types/geo#point), [Ring](/pt-BR/reference/data-types/geo#ring), [Polygon](/pt-BR/reference/data-types/geo#polygon), [MultiPolygon](/pt-BR/reference/data-types/geo#multipolygon) |
-| `INET`                   | [IPv4](/pt-BR/reference/data-types/ipv4), [IPv6](/pt-BR/reference/data-types/ipv6)                                                                                                                 |
-| `MACADDR`                | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |
-| `CIDR`                   | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |
-| `HSTORE`                 | [Map(K, V)](/pt-BR/reference/data-types/map), [Map](/pt-BR/reference/data-types/map)(K,[Variant](/pt-BR/reference/data-types/variant))                                                                   |
-| `UUID`                   | [UUID](/pt-BR/reference/data-types/uuid)                                                                                                                                                     |
-| `ARRAY<T>`               | [ARRAY(T)](/pt-BR/reference/data-types/array)                                                                                                                                                |
-| `JSON`                   | [String](/pt-BR/reference/data-types/string), [Variant](/pt-BR/reference/data-types/variant), [Nested](/pt-BR/reference/data-types/nested-data-structures/index), [Tuple](/pt-BR/reference/data-types/tuple)   |
-| `JSON`                   | [String](/pt-BR/reference/data-types/string), [Variant](/pt-BR/reference/data-types/variant), [Nested](/pt-BR/reference/data-types/nested-data-structures), [Tuple](/pt-BR/reference/data-types/tuple)         |
-| `JSONB`                  | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |
+| Tipo de dados do Postgres | Tipo do ClickHouse                                                                                                                                                                     |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATE`                    | [Date](/pt-BR/reference/data-types/date)                                                                                                                                                     |
+| `TIMESTAMP`               | [DateTime](/pt-BR/reference/data-types/datetime)                                                                                                                                             |
+| `REAL`                    | [Float32](/pt-BR/reference/data-types/float)                                                                                                                                                 |
+| `DOUBLE`                  | [Float64](/pt-BR/reference/data-types/float)                                                                                                                                                 |
+| `DECIMAL, NUMERIC`        | [Decimal](/pt-BR/reference/data-types/decimal)                                                                                                                                               |
+| `SMALLINT`                | [Int16](/pt-BR/reference/data-types/int-uint)                                                                                                                                                |
+| `INTEGER`                 | [Int32](/pt-BR/reference/data-types/int-uint)                                                                                                                                                |
+| `BIGINT`                  | [Int64](/pt-BR/reference/data-types/int-uint)                                                                                                                                                |
+| `SERIAL`                  | [UInt32](/pt-BR/reference/data-types/int-uint)                                                                                                                                               |
+| `BIGSERIAL`               | [UInt64](/pt-BR/reference/data-types/int-uint)                                                                                                                                               |
+| `TEXT, CHAR, BPCHAR`      | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |
+| `INTEGER`                 | Nullable([Int32](/pt-BR/reference/data-types/int-uint))                                                                                                                                      |
+| `ARRAY`                   | [Array](/pt-BR/reference/data-types/array)                                                                                                                                                   |
+| `FLOAT4`                  | [Float32](/pt-BR/reference/data-types/float)                                                                                                                                                 |
+| `BOOLEAN`                 | [Bool](/pt-BR/reference/data-types/boolean)                                                                                                                                                  |
+| `VARCHAR`                 | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |
+| `BIT`                     | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |
+| `BIT VARYING`             | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |
+| `BYTEA`                   | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |
+| `NUMERIC`                 | [Decimal](/pt-BR/reference/data-types/decimal)                                                                                                                                               |
+| `GEOGRAPHY`               | [Point](/pt-BR/reference/data-types/geo#point), [Ring](/pt-BR/reference/data-types/geo#ring), [Polygon](/pt-BR/reference/data-types/geo#polygon), [MultiPolygon](/pt-BR/reference/data-types/geo#multipolygon) |
+| `GEOMETRY`                | [Point](/pt-BR/reference/data-types/geo#point), [Ring](/pt-BR/reference/data-types/geo#ring), [Polygon](/pt-BR/reference/data-types/geo#polygon), [MultiPolygon](/pt-BR/reference/data-types/geo#multipolygon) |
+| `INET`                    | [IPv4](/pt-BR/reference/data-types/ipv4), [IPv6](/pt-BR/reference/data-types/ipv6)                                                                                                                 |
+| `MACADDR`                 | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |
+| `CIDR`                    | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |
+| `HSTORE`                  | [Map(K, V)](/pt-BR/reference/data-types/map), [Map](/pt-BR/reference/data-types/map)(K,[Variant](/pt-BR/reference/data-types/variant))                                                                   |
+| `UUID`                    | [UUID](/pt-BR/reference/data-types/uuid)                                                                                                                                                     |
+| `ARRAY<T>`                | [ARRAY(T)](/pt-BR/reference/data-types/array)                                                                                                                                                |
+| `JSON`                    | [String](/pt-BR/reference/data-types/string), [Variant](/pt-BR/reference/data-types/variant), [Nested](/pt-BR/reference/data-types/nested-data-structures/index), [Tuple](/pt-BR/reference/data-types/tuple)   |
+| `JSON`                    | [String](/pt-BR/reference/data-types/string), [Variant](/pt-BR/reference/data-types/variant), [Nested](/pt-BR/reference/data-types/nested-data-structures), [Tuple](/pt-BR/reference/data-types/tuple)         |
+| `JSONB`                   | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |

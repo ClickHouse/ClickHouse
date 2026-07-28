@@ -134,15 +134,16 @@ ninja -j 1 clickhouse
 
 <Note>
   `clickhouse-server`、`clickhouse-client`、および同様のバイナリは、ビルド完了後、`programs/` ディレクトリ内で `clickhouse` 実行可能ファイルを指すシンボリックリンクになります。
+</Note>
 
-  :::tip
+<Tip>
   CMake には、上記コマンドのショートカットがあります。
 
   ```sh
   cmake -S . -B build  # ビルドを設定。リポジトリのトップレベルディレクトリから実行
   cmake --build build  # コンパイル
   ```
-</Note>
+</Tip>
 
 <div id="running-the-clickhouse-executable">
   ## ClickHouse 実行可能ファイルの実行

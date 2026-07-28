@@ -66,6 +66,7 @@ public:
     void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
 
     bool isDefaultAt(size_t n) const override;
+    UInt64 getNumberOfDefaultRows() const override;
     std::string_view getDataAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
     void insert(const Field & x) override;
@@ -149,7 +150,7 @@ public:
     const StatisticsPtr & getStatistics() const { return statistics; }
     StatisticsPtr getOrCalculateStatistics() const;
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
-    StatisticsPtr calculateStatisticsForRange(size_t start, size_t end) const;
+    Statistics calculateStatisticsForRange(size_t start, size_t end) const;
     bool hasStatistics() const override { return true; }
     void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
 };

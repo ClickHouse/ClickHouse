@@ -43,8 +43,7 @@ Unlike file-based log integrations (nginx, Redis), CloudWatch requires running a
 </Note>
 
 <Steps>
-<Step>
-#### Get ClickStack API key {#get-api-key}
+<Step title="Get ClickStack API key" id="get-api-key">
 
 The OpenTelemetry Collector sends data to ClickStack's OTLP endpoint, which requires authentication.
 
@@ -60,8 +59,7 @@ Save this as an environment variable:
 export CLICKSTACK_API_KEY="your-api-key-here"
 ```
 </Step>
-<Step>
-#### Configure AWS credentials {#configure-aws}
+<Step title="Configure AWS credentials" id="configure-aws">
 
 Export your AWS credentials as environment variables. The method depends on your authentication type:
 
@@ -111,8 +109,7 @@ The AWS account associated with these credentials needs the following IAM policy
 
 Replace `YOUR_ACCOUNT_ID` with your AWS account ID.
 </Step>
-<Step>
-#### Configure the CloudWatch receiver {#configure-receiver}
+<Step title="Configure the CloudWatch receiver" id="configure-receiver">
 
 Create an `otel-collector-config.yaml` file with the CloudWatch receiver configuration.
 
@@ -240,8 +237,7 @@ For more configuration options, see the [CloudWatch receiver documentation](http
 The CloudWatch receiver only fetches logs from recent time windows (based on `poll_interval`). When first started, it begins from the current time. Historical logs aren't retrieved by default.
 </Note>
 </Step>
-<Step>
-#### Start the collector {#start-collector}
+<Step title="Start the collector" id="start-collector">
 
 Create a `docker-compose.yaml` file:
 
@@ -275,8 +271,7 @@ View collector logs:
 docker compose logs -f otel-collector
 ```
 </Step>
-<Step>
-#### Verify logs in HyperDX {#verify-logs}
+<Step title="Verify logs in HyperDX" id="verify-logs">
 
 Once the collector is running:
 
@@ -302,8 +297,7 @@ Look for these key attributes in the logs:
 For users who want to test the CloudWatch logs integration before configuring their production AWS environment, we provide a sample dataset with pre-generated logs showing realistic patterns from multiple AWS services.
 
 <Steps>
-<Step>
-#### Download the sample dataset {#download-sample}
+<Step title="Download the sample dataset" id="download-sample">
 
 ```bash
 curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/aws/cloudwatch/cloudwatch-logs.jsonl
@@ -314,8 +308,7 @@ The dataset includes 24 hours of CloudWatch logs from multiple services:
 - **ECS services**: API gateway with rate limiting and timeouts
 - **Background jobs**: Batch processing with retry patterns
 </Step>
-<Step>
-#### Start ClickStack {#start-clickstack}
+<Step title="Start ClickStack" id="start-clickstack">
 
 If you don't already have ClickStack running:
 
@@ -327,8 +320,7 @@ docker run -d --name clickstack \
 
 Wait a few moments for ClickStack to fully start up.
 </Step>
-<Step>
-#### Import the demo dataset {#import-demo-data}
+<Step title="Import the demo dataset" id="import-demo-data">
 
 ```bash
 docker exec -i clickstack clickhouse-client --query="
@@ -338,8 +330,7 @@ docker exec -i clickstack clickhouse-client --query="
 
 This imports the logs directly into ClickStack's logs table.
 </Step>
-<Step>
-#### Verify the demo data {#verify-demo-logs}
+<Step title="Verify the demo data" id="verify-demo-logs">
 
 Once imported:
 
@@ -365,11 +356,11 @@ HyperDX displays timestamps in your browser's local timezone. The demo data span
 To help you monitor CloudWatch logs with ClickStack, we provide a pre-built dashboard with essential visualizations.
 
 <Steps>
-<Step>
-#### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">Download</TrackedLink> the dashboard configuration {#download}
+<Step title="Download the dashboard configuration" id="download">
+
+<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">Download the dashboard configuration file</TrackedLink>.
 </Step>
-<Step>
-#### Import the dashboard {#import-dashboard}
+<Step title="Import the dashboard" id="import-dashboard">
 
 1. Open HyperDX and navigate to the Dashboards section
 2. Click **Import Dashboard** in the upper right corner under the ellipses
@@ -380,8 +371,7 @@ To help you monitor CloudWatch logs with ClickStack, we provide a pre-built dash
 
 <Image img="/images/clickstack/cloudwatch/finish-import.webp" alt="Finish import dialog"/>
 </Step>
-<Step>
-#### View the dashboard {#created-dashboard}
+<Step title="View the dashboard" id="created-dashboard">
 
 The dashboard will be created with all visualizations pre-configured:
 

@@ -16,10 +16,10 @@ Introduced in: v20.1.0
 Totals a `value` array according to the keys specified in the `key` array. Returns a tuple of two arrays: keys in sorted order, and values summed for the corresponding keys.
 It differs from the [`sumMap`](/reference/functions/aggregate-functions/sumMap) function in that it does summation with overflow - i.e. returns the same data type for the summation as the argument data type.
 
-:::note
+<Note>
 - Passing a tuple of key and value arrays is identical to passing an array of keys and an array of values.
 - The number of elements in `key` and `value` must be the same for each row that is totaled.
-:::
+</Note>
     
 
 **Syntax**

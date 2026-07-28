@@ -29,9 +29,7 @@ For detailed infrastructure specifications, see [reference/infrastructure-requir
 
 <Steps>
 
-<Step stepNumber={0}>
-
-## Step 0: Service Account Setup
+<Step stepNumber={0} title="Step 0: Service Account Setup" id="step-0-service-account-setup">
 
 In FedRAMP environments where direct user authentication is restricted, create a service account for impersonation.
 
@@ -110,9 +108,7 @@ gcloud config unset auth/impersonate_service_account
 
 </Step>
 
-<Step stepNumber={1}>
-
-## Step 1: Set Environment Variables (`00-env.sh`)
+<Step stepNumber={1} title={<>Step 1: Set Environment Variables (<code>00-env.sh</code>)</>} id="step-1-set-environment-variables-00-envsh">
 
 Create this file and source it before running any other scripts. Update all values for your environment.
 
@@ -228,9 +224,7 @@ source ./00-env.sh
 
 </Step>
 
-<Step stepNumber={2}>
-
-## Step 2: Create Artifact Registry (`01-artifact-registry.sh`)
+<Step stepNumber={2} title={<>Step 2: Create Artifact Registry (<code>01-artifact-registry.sh</code>)</>} id="step-2-create-artifact-registry-01-artifact-registrysh">
 
 ``` bash expandable
 #!/bin/bash
@@ -274,9 +268,7 @@ echo "Repository URL: ${GAR_HOST}"
 
 </Step>
 
-<Step stepNumber={3}>
-
-## Step 3: Copy Container Images (`02-copy-images.sh`)
+<Step stepNumber={3} title={<>Step 3: Copy Container Images (<code>02-copy-images.sh</code>)</>} id="step-3-copy-container-images-02-copy-imagessh">
 
 Requires [skopeo](https://github.com/containers/skopeo) to retain all architectures.
 
@@ -355,9 +347,7 @@ gcloud artifacts docker images list ${GAR_HOST} --format="table(package,version)
 
 </Step>
 
-<Step stepNumber={4}>
-
-## Step 4: Configure VPC and Subnet (`03-vpc-subnet.sh`)
+<Step stepNumber={4} title={<>Step 4: Configure VPC and Subnet (<code>03-vpc-subnet.sh</code>)</>} id="step-4-configure-vpc-and-subnet-03-vpc-subnetsh">
 
 This script assumes you have an existing VPC with a bastion host. It creates or updates the GKE subnet with required secondary ranges.
 
@@ -442,9 +432,7 @@ echo "Bastion:      ${BASTION_SUBNET_RANGE}"
 
 </Step>
 
-<Step stepNumber={5}>
-
-## Step 5: Create Cloud NAT (`04-cloud-nat.sh`)
+<Step stepNumber={5} title={<>Step 5: Create Cloud NAT (<code>04-cloud-nat.sh</code>)</>} id="step-5-create-cloud-nat-04-cloud-natsh">
 
 Private GKE nodes require Cloud NAT for outbound internet access.
 
@@ -500,9 +488,7 @@ echo "Region: ${GCP_REGION}"
 
 </Step>
 
-<Step stepNumber={6}>
-
-## Step 6: Create GCP Service Account (`05-service-account.sh`)
+<Step stepNumber={6} title={<>Step 6: Create GCP Service Account (<code>05-service-account.sh</code>)</>} id="step-6-create-gcp-service-account-05-service-accountsh">
 
 ``` bash
 #!/bin/bash
@@ -535,9 +521,7 @@ echo "Service Account: ${GSA_EMAIL}"
 
 </Step>
 
-<Step stepNumber={7}>
-
-## Step 7: Create GCS Bucket (`06-gcs-bucket.sh`)
+<Step stepNumber={7} title={<>Step 7: Create GCS Bucket (<code>06-gcs-bucket.sh</code>)</>} id="step-7-create-gcs-bucket-06-gcs-bucketsh">
 
 ``` bash expandable
 #!/bin/bash
@@ -588,9 +572,7 @@ echo "Endpoint: https://storage.googleapis.com"
 
 </Step>
 
-<Step stepNumber={8}>
-
-## Step 8: Create GKE Cluster (`07-gke-cluster.sh`)
+<Step stepNumber={8} title={<>Step 8: Create GKE Cluster (<code>07-gke-cluster.sh</code>)</>} id="step-8-create-gke-cluster-07-gke-clustersh">
 
 Creates a **fully private GKE cluster** -- worker nodes have only internal IPs, the control plane has no public endpoint, and all access must come from within the VPC via the bastion.
 
@@ -672,9 +654,7 @@ echo "  - kubectl requires bastion access"
 
 </Step>
 
-<Step stepNumber={9}>
-
-## Step 9: Create Node Pools (`08-node-pools.sh`)
+<Step stepNumber={9} title={<>Step 9: Create Node Pools (<code>08-node-pools.sh</code>)</>} id="step-9-create-node-pools-08-node-poolssh">
 
 | Node Pool | Machine Type | Disk | Labels | Taints |
 |----|----|----|----|----|
@@ -751,9 +731,7 @@ kubectl get nodes -L clickhouseGroup
 
 </Step>
 
-<Step stepNumber={10}>
-
-## Step 10: Deploy Local SSD DaemonSet (`09-local-ssd-daemonset.sh`)
+<Step stepNumber={10} title={<>Step 10: Deploy Local SSD DaemonSet (<code>09-local-ssd-daemonset.sh</code>)</>} id="step-10-deploy-local-ssd-daemonset-09-local-ssd-daemonsetsh">
 
 GKE Container-Optimized OS has a read-only root filesystem, so we cannot create `/nvme`. The DaemonSet formats and mounts the local SSD at `/mnt/disks/ssd0`.
 
@@ -855,9 +833,7 @@ echo "instead of /nvme/disk (GKE COS has read-only root)"
 
 </Step>
 
-<Step stepNumber={11}>
-
-## Step 11: Add Topology Labels (`10-topology-labels.sh`)
+<Step stepNumber={11} title={<>Step 11: Add Topology Labels (<code>10-topology-labels.sh</code>)</>} id="step-11-add-topology-labels-10-topology-labelssh">
 
 ``` bash
 #!/bin/bash
@@ -894,9 +870,7 @@ kubectl get nodes -L clickhouseGroup,topologyZone
 
 </Step>
 
-<Step stepNumber={12}>
-
-## Step 12: Install Kubernetes Prerequisites
+<Step stepNumber={12} title="Step 12: Install Kubernetes Prerequisites" id="step-12-install-kubernetes-prerequisites">
 
 ### Install VolumeSnapshot CRDs (`11-volumesnapshot-crds.sh`)
 
@@ -1052,9 +1026,7 @@ kubectl get storageclass
 
 </Step>
 
-<Step stepNumber={13}>
-
-## Step 13: FIPS Steps (Conditional)
+<Step stepNumber={13} title="Step 13: FIPS Steps (Conditional)" id="step-13-fips-steps-conditional">
 
 Skip this section if `ENABLE_FIPS=false`.
 
@@ -1126,9 +1098,7 @@ echo "=========================================="
 
 </Step>
 
-<Step stepNumber={14}>
-
-## Step 14: Install Operator (`16-install-operator.sh`)
+<Step stepNumber={14} title={<>Step 14: Install Operator (<code>16-install-operator.sh</code>)</>} id="step-14-install-operator-16-install-operatorsh">
 
 ``` bash expandable
 #!/bin/bash
@@ -1183,9 +1153,7 @@ kubectl get pods -n clickhouse-operator-system
 
 </Step>
 
-<Step stepNumber={15}>
-
-## Step 15: Deploy ClickHouse Cluster (`17-install-cluster.sh`)
+<Step stepNumber={15} title={<>Step 15: Deploy ClickHouse Cluster (<code>17-install-cluster.sh</code>)</>} id="step-15-deploy-clickhouse-cluster-17-install-clustersh">
 
 ``` bash expandable
 #!/bin/bash
@@ -1301,9 +1269,7 @@ echo "  kubectl get pods -n ${NAMESPACE} -w"
 
 </Step>
 
-<Step stepNumber={16}>
-
-## Step 16: Bind Workload Identity (`18-bind-helm-workload-identity.sh`)
+<Step stepNumber={16} title={<>Step 16: Bind Workload Identity (<code>18-bind-helm-workload-identity.sh</code>)</>} id="step-16-bind-workload-identity-18-bind-helm-workload-identitysh">
 
 The Helm chart creates its own service account (`ch-${CLUSTER_NAME}-sa`). You must bind Workload Identity to this SA for GCS access.
 
@@ -1406,9 +1372,7 @@ kubectl get pods -n ${NAMESPACE}
 
 </Step>
 
-<Step stepNumber={17}>
-
-## Step 17: Verify Installation
+<Step stepNumber={17} title="Step 17: Verify Installation" id="step-17-verify-installation">
 
 ### Standard Mode (no TLS)
 

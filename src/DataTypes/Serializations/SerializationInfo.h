@@ -40,7 +40,15 @@ public:
         size_t num_rows = 0;
         size_t num_defaults = 0;
 
-        void add(const IColumn & column);
+        /// True when `num_defaults` was counted exactly rather than sampled. Consumers
+        /// that would produce wrong results from a sampled estimate (trivial count
+        /// rewrite, sparsity pruning) must require this flag.
+        bool exact_num_defaults = false;
+
+        /// `exact` controls whether `num_defaults` is computed precisely (O(rows)
+        /// per column, sets `exact_num_defaults`) or sampled (cheap, leaves the flag
+        /// at its current value).
+        void add(const IColumn & column, bool exact);
         void add(const Data & other);
         void remove(const Data & other);
         void addDefaults(size_t length);

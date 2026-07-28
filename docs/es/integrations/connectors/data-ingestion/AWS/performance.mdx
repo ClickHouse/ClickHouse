@@ -9,10 +9,10 @@ keywords: ['S3', 'rendimiento', 'optimización', 'almacenamiento de objetos', 'c
 
 import { Image } from "/snippets/es/components/Image.jsx";
 
-Esta sección se centra en optimizar el rendimiento al leer e insertar datos desde S3 mediante las [funciones de tabla de S3](/es/reference/functions/table-functions/s3).
+Esta sección se centra en optimizar el rendimiento al leer e insertar datos desde S3 mediante las [table functions de S3](/es/reference/functions/table-functions/s3).
 
 <Info>
-  **La lección descrita en esta guía también puede aplicarse a otras implementaciones de almacenamiento de objetos con sus propias funciones de tabla específicas, como [GCS](/es/reference/functions/table-functions/gcs) y [Azure Blob storage](/es/reference/functions/table-functions/azureBlobStorage).**
+  **La lección descrita en esta guía también puede aplicarse a otras implementaciones de almacenamiento de objetos con sus propias table functions específicas, como [GCS](/es/reference/functions/table-functions/gcs) y [Azure Blob storage](/es/reference/functions/table-functions/azureBlobStorage).**
 </Info>
 
 Antes de ajustar los hilos y los tamaños de bloque para mejorar el rendimiento de las inserciones, recomendamos comprender cómo funcionan las inserciones en S3. Si ya conoce su funcionamiento, o simplemente quiere algunos consejos rápidos, vaya a nuestro ejemplo [a continuación](/es/integrations/connectors/data-ingestion/AWS/performance#example-dataset).
@@ -33,18 +33,18 @@ Al ejecutar un `INSERT INTO SELECT`, ClickHouse recibe una porción de datos y �
 
 El tamaño del bloque de inserción afecta tanto al [uso de E/S de disco](https://en.wikipedia.org/wiki/Category:Disk_file_systems) como al uso de memoria de un servidor ClickHouse. Los bloques de inserción más grandes consumen más memoria, pero generan partes iniciales más grandes y en menor número. Cuantas menos partes tenga que crear ClickHouse para cargar una gran cantidad de datos, menor será la E/S de disco y menos [fusiones automáticas en segundo plano serán necesarias](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges).
 
-Al usar una consulta `INSERT INTO SELECT` en combinación con un motor de tabla de integración o una función de tabla, los datos son extraídos por el servidor ClickHouse:
+Al usar una consulta `INSERT INTO SELECT` en combinación con un motor de tabla de integración o una función de tabla, el servidor ClickHouse extrae los datos:
 
 <Image img="/images/integrations/data-ingestion/s3/pull.webp" size="lg" border alt="Extracción de datos desde fuentes externas en ClickHouse" />
 
 Hasta que los datos se cargan por completo, el servidor ejecuta un bucle:
 
 ```bash
-① Extraer y analizar la siguiente porción de datos y formar un bloque de datos en memoria (uno por clave de particionamiento) a partir de ella.
+① Pull and parse the next portion of data and form an in-memory data block (one per partitioning key) from it.
 
-② Escribir el bloque en una nueva parte en el almacenamiento.
+② Write the block into a new part on storage.
 
-Ir a ① 
+Go to ① 
 ```
 
 En ①, el tamaño depende del tamaño del bloque de inserción, que puede controlarse con dos ajustes:
@@ -94,25 +94,25 @@ Las partes que se han fusionado en partes más grandes se marcan como [inactivas
 
 Un servidor de ClickHouse puede procesar e insertar datos en paralelo. El nivel de paralelismo de inserción afecta al rendimiento de ingestión y al uso de memoria de un servidor de ClickHouse. Cargar y procesar datos en paralelo requiere más memoria principal, pero aumenta el rendimiento de ingestión, ya que los datos se procesan más rápido.
 
-Las funciones de tabla como s3 permiten especificar conjuntos de nombres de archivos que se van a cargar mediante patrones glob. Cuando un patrón glob coincide con varios archivos existentes, ClickHouse puede paralelizar las lecturas entre estos archivos y dentro de ellos, e insertar los datos en paralelo en una tabla utilizando hilos de inserción que se ejecutan en paralelo (por servidor):
+Las table functions como s3 permiten especificar conjuntos de nombres de archivos que se van a cargar mediante patrones glob. Cuando un patrón glob coincide con varios archivos existentes, ClickHouse puede paralelizar las lecturas entre estos archivos y dentro de ellos, e insertar los datos en paralelo en una tabla utilizando hilos de inserción que se ejecutan en paralelo (por servidor):
 
 <Image img="/images/integrations/data-ingestion/s3/insert_threads.webp" size="lg" border alt="Hilos de inserción en paralelo en ClickHouse" />
 
 Hasta que se procesen todos los datos de todos los archivos, cada hilo de inserción ejecuta un bucle:
 
 ```bash
-① Obtener la siguiente porción de datos de archivo sin procesar (el tamaño de la porción se basa en el tamaño de bloque configurado) y crear un bloque de datos en memoria a partir de ella.
+① Get the next portion of unprocessed file data (portion size is based on the configured block size) and create an in-memory data block from it.
 
-② Escribir el bloque en una nueva parte en el almacenamiento.
+② Write the block into a new part on storage.
 
-Ir a ①. 
+Go to ①. 
 ```
 
 La cantidad de estos hilos de inserción en paralelo se puede configurar con la opción [`max_insert_threads`](/es/reference/settings/session-settings#max_insert_threads). El valor predeterminado es `1` para ClickHouse de código abierto y 4 para [ClickHouse Cloud](https://clickhouse.com/cloud).
 
 Con una gran cantidad de archivos, el procesamiento en paralelo mediante varios hilos de inserción funciona bien. Puede saturar por completo tanto los núcleos de CPU disponibles como el ancho de banda de la red (para descargas paralelas de archivos). En escenarios en los que solo se van a cargar en una tabla unos pocos archivos grandes, ClickHouse establece automáticamente un alto grado de paralelismo en el procesamiento de datos y optimiza el uso del ancho de banda de red creando hilos de lectura adicionales por cada hilo de inserción para leer (descargar) en paralelo más rangos distintos dentro de archivos grandes.
 
-Para la función s3 y la tabla, la descarga en paralelo de un archivo individual viene determinada por los valores [max&#95;download&#95;threads](https://clickhouse.com/codebrowser/ClickHouse/src/Core/Settings.h.html#DB::SettingsTraits::Data::max_download_threads) y [max&#95;download&#95;buffer&#95;size](https://clickhouse.com/codebrowser/ClickHouse/src/Core/Settings.h.html#DB::SettingsTraits::Data::max_download_buffer_size). Los archivos solo se descargarán en paralelo si su tamaño es mayor que `2 * max_download_buffer_size`. De forma predeterminada, el valor de `max_download_buffer_size` se establece en 10 MiB. En algunos casos, puede aumentar con seguridad este tamaño de búfer a 50 MB (`max_download_buffer_size=52428800`) para garantizar que cada archivo se descargue con un único hilo. Esto puede reducir el tiempo que cada hilo dedica a realizar llamadas a S3 y, por tanto, también disminuir el tiempo de espera en S3. Además, en el caso de los archivos demasiado pequeños para la lectura en paralelo, ClickHouse realiza automáticamente una precarga de datos leyendo previamente esos archivos de forma asíncrona para aumentar el rendimiento.
+Para la función s3 y la tabla, la descarga en paralelo de un archivo individual viene determinada por los valores [max&#95;download&#95;threads](/operations/settings/settings#max_download_threads) y [max&#95;download&#95;buffer&#95;size](/operations/settings/settings#max_download_buffer_size). Los archivos solo se descargarán en paralelo si su tamaño es mayor que `2 * max_download_buffer_size`. De forma predeterminada, el valor de `max_download_buffer_size` se establece en 10 MiB. En algunos casos, puede aumentar con seguridad este tamaño de búfer a 50 MB (`max_download_buffer_size=52428800`) para garantizar que cada archivo se descargue con un único hilo. Esto puede reducir el tiempo que cada hilo dedica a realizar llamadas a S3 y, por tanto, también disminuir el tiempo de espera en S3. Además, en el caso de los archivos demasiado pequeños para la lectura en paralelo, ClickHouse realiza automáticamente una precarga de datos leyendo previamente esos archivos de forma asíncrona para aumentar el rendimiento.
 
 <div id="measuring-performance">
   ## Medición del rendimiento

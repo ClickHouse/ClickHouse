@@ -12,7 +12,7 @@ integration:
 
 import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
 import { Image } from "/snippets/zh/components/Image.jsx";
-import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -35,7 +35,7 @@ Astrato 使用下推 SQL 直接查询 ClickHouse Cloud 或本地部署。这意�
 </div>
 
 * 在侧边栏中选择 **Data**，然后选择 **数据连接** 选项卡
-   (或直接访问此链接：https://app.astrato.io/data/sources) 
+  (或直接访问此链接：https://app.astrato.io/data/sources)
   ​
 * 点击屏幕右上角的 **New Data Connection** 按钮。
 
@@ -45,7 +45,7 @@ Astrato 使用下推 SQL 直接查询 ClickHouse Cloud 或本地部署。这意�
 
 <Image size="sm" img="/images/integrations/data-visualization/astrato_2a_clickhouse_connection.webp" alt="Astrato ClickHouse 数据连接" border />
 
-* 在连接对话框中填写必填字段。
+* 在连接对话框中填写必填字段
 
 <Image size="sm" img="/images/integrations/data-visualization/astrato_2b_clickhouse_connection.webp" alt="Astrato 连接到 ClickHouse 的必填字段" border />
 
@@ -71,7 +71,7 @@ Astrato 使用下推 SQL 直接查询 ClickHouse Cloud 或本地部署。这意�
 
 选择好数据后，接下来定义 **数据视图**。点击网页右上角的 define。
 
-在这里，你可以对数据进行 join，还可以**创建统一治理的维度和度量指标**，非常适合在不同团队之间保持业务逻辑的一致性。
+在这里，你可以对数据进行 join，还可以**创建统一治理的维度和度量**，非常适合在不同团队之间保持业务逻辑的一致性。
 
 <Image size="lg" img="/images/integrations/data-visualization/astrato_4b_clickhouse_data_view_joins.webp" alt="Astrato 连接到 ClickHouse 用户访问权限" border />
 
@@ -80,13 +80,13 @@ Astrato 使用下推 SQL 直接查询 ClickHouse Cloud 或本地部署。这意�
 <Image size="lg" img="/images/integrations/data-visualization/astrato_4c_clickhouse_completed_data_view.webp" alt="Astrato 连接到 ClickHouse 用户访问权限" border />
 
 <div id="creating-a-dashboard">
-  ## 创建仪表板
+  ## 创建仪表盘
 </div>
 
 只需几个步骤，你就可以在 Astrato 中创建第一个图表。
 
 1. 打开可视化面板
-2. 选择一种可视化 (先从柱状图开始) 
+2. 选择一种可视化 (先从柱状图开始)
 3. 添加维度
 4. 添加度量
 
@@ -101,9 +101,9 @@ Astrato 使用下推 SQL 直接查询 ClickHouse Cloud 或本地部署。这意�
 <Image size="lg" img="/images/integrations/data-visualization/astrato_5b_clickhouse_view_sql.webp" alt="Astrato 连接到 ClickHouse 用户访问权限" border />
 
 <div id="example-completed-dashboard">
-  ### 示例完整仪表板
+  ### 示例完整仪表盘
 </div>
 
-现在，距离打造一个美观且完整的仪表板或数据应用已经不远了。想查看更多我们的成果，请访问官网上的演示画廊：https://astrato.io/gallery
+现在，距离打造一个美观且完整的仪表盘或数据应用已经不远了。想查看更多我们的成果，请访问官网上的演示画廊：https://astrato.io/gallery
 
 <Image size="lg" img="/images/integrations/data-visualization/astrato_5c_clickhouse_complete_dashboard.webp" alt="Astrato 连接到 ClickHouse 用户访问权限" border />

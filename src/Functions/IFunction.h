@@ -417,6 +417,13 @@ public:
     /// Function should implement this method if its result type doesn't depend on the arguments types.
     virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
 
+    /// Overload that receives argument types for functions whose return type depends on argument types.
+    /// By default delegates to the no-argument version above.
+    virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic(const DataTypes & /*arguments*/) const
+    {
+        return getReturnTypeForDefaultImplementationForDynamic();
+    }
+
     /// Whether this function allows omitting parentheses in SQL (e.g., NOW, CURRENT_TIMESTAMP)
     virtual bool allowsOmittingParentheses() const { return false; }
 
@@ -575,6 +582,10 @@ public:
 
     virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
     virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
+    virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic(const DataTypes & /*arguments*/) const
+    {
+        return getReturnTypeForDefaultImplementationForDynamic();
+    }
 
     virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
 

@@ -71,7 +71,7 @@ ColumnsDescription StorageSystemDictionaries::getColumnsDescription()
         {"uuid", std::make_shared<DataTypeUUID>(), "Dictionary UUID."},
         {"status", std::make_shared<DataTypeEnum8>(getExternalLoaderStatusEnumAllPossibleValues()),
             "Dictionary status. Possible values: "
-            "NOT_LOADED — Dictionary was not loaded because it was not used, "
+            "NOT_LOADED — Dictionary not currently loaded in memory, "
             "LOADED — Dictionary loaded successfully, "
             "FAILED — Unable to load the dictionary as a result of an error, "
             "LOADING — Dictionary is loading now, "

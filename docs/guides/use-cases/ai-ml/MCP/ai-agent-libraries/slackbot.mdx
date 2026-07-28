@@ -24,22 +24,19 @@ The code for this example can be found in the [examples repository](https://gith
 - You'll need an Anthropic API key, or API key from another LLM provider
 
 <Steps>
-<Step>
-## Create a Slack App {#create-a-slack-app}
+<Step title="Create a Slack App" id="create-a-slack-app">
 
 1. Go to [slack.com/apps](https://slack.com/apps) and click `Create New App`.
 2. Choose option `From scratch` and give your app a name.
 3. Select your Slack workspace.
 </Step>
-<Step>
-## Install the app to your workspace {#install-the-app-to-your-workspace}
+<Step title="Install the app to your workspace" id="install-the-app-to-your-workspace">
 
 Next, you'll need to add the app created in the previous step to your workspace.
 You can follow the instructions for ["Add apps to your Slack workspace"](https://slack.com/intl/en-gb/help/articles/202035138-Add-apps-to-your-Slack-workspace)
 in the Slack documentation.
 </Step>
-<Step>
-## Configure Slack app settings {#configure-slack-app-settings}
+<Step title="Configure Slack app settings" id="configure-slack-app-settings">
 
 - Go to `App Home`
   - Under `Show Tabs` → `Messages Tab`: Enable `Allow users to send Slash commands and messages from the messages tab`
@@ -64,8 +61,7 @@ in the Slack documentation.
       - `message:im`
     - Save Changes
 </Step>
-<Step>
-## Add environment variables (`.env`) {#add-env-vars}
+<Step title={<>Add environment variables (<code>.env</code>)</>} id="add-env-vars">
 
 Create a `.env` file in the project root with the following environment variables
 which will allow your app to connect to [ClickHouse's SQL playground](https://sql.clickhouse.com/).
@@ -84,8 +80,7 @@ CLICKHOUSE_SECURE=true
 You can adapt the ClickHouse variables to use your own ClickHouse server
 or Cloud instance, if you would prefer.
 </Step>
-<Step>
-## Using the bot {#using-the-bot}
+<Step title="Using the bot" id="using-the-bot">
 
 1. **Start the bot:**
 

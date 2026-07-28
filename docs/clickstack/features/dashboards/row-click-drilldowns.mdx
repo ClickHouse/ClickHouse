@@ -23,15 +23,13 @@ Both use cases below start from the same catalog (a service inventory) and drill
 An overview table with one row per service answers "which service is unhealthy?". A row click can open a per-service dashboard that answers "what is happening inside it?", scoped to the service you clicked. The pattern below pairs a service inventory table with a `Service Detail` dashboard.
 
 <Steps>
-<Step>
-### Build the detail dashboard {#detail-dashboard}
+<Step title="Build the detail dashboard" id="detail-dashboard">
 
 Create a dashboard named `Service Detail` and add a [custom filter](/clickstack/features/dashboards/overview#custom-filters) with the expression `ServiceName` on your traces source. The dashboard-level filter re-scopes every tile to a single service, so the tiles themselves do not hardcode a service in their queries. Add the per-service views you want: RED key figures (requests, errors, P95 duration), a latency-percentile chart (P50, P95, P99), request rate over time, and a per-endpoint breakdown grouped by `SpanName`.
 
 Save this dashboard first so you can select it as the target in the next step.
 </Step>
-<Step>
-### Build the service inventory {#service-inventory}
+<Step title="Build the service inventory" id="service-inventory">
 
 On an overview dashboard, add a **Table** tile on your traces source grouped by `ServiceName`. Give it the RED columns that score each service, each one an aliased series:
 
@@ -49,8 +47,7 @@ Order by `Requests` descending so the busiest services sort to the top. This tab
 By default a table renders its group-by column (here `ServiceName`) on the right, after the series. A catalog reads better with each row's identity first. Open the tile's **Display Settings** and turn on **Display Group By Columns on Left** to move the group-by column to the front.
 </Tip>
 </Step>
-<Step>
-### Wire up the row click {#wire-dashboard}
+<Step title="Wire up the row click" id="wire-dashboard">
 
 On the inventory table, open **Row Click Action**, select **Dashboard**, and choose `Service Detail` from the dashboard list. Picking the dashboard directly pins it by ID. The link keeps working if the dashboard is renamed later, and it survives dashboard export and import. (Reserve the **Template** option for choosing a different dashboard per row; see [Set up a row-click action](#set-up).)
 
@@ -61,8 +58,7 @@ Because `Service Detail` declares a `ServiceName` custom filter, the drawer pre-
 
 Click **Apply** and save. The clicked row's service now flows into the dashboard's `ServiceName` filter.
 </Step>
-<Step>
-### Click a row {#click-dashboard}
+<Step title="Click a row" id="click-dashboard">
 
 Hovering a row reveals a link affordance on the right edge of the table, with a hint describing the action (`Open dashboard "Service Detail"`). Clicking the row opens the `Service Detail` dashboard with its `Service` filter set to the clicked value, so every tile (the RED key figures, the latency percentiles, the per-endpoint breakdown) re-scopes to that one service in a single click.
 
@@ -77,8 +73,7 @@ Sometimes you do not want another aggregate view; you want the raw events instea
 Starting from the same service inventory table, point its row click at the traces themselves rather than the detail dashboard.
 
 <Steps>
-<Step>
-### Point the row click at Search {#wire-search}
+<Step title="Point the row click at Search" id="wire-search">
 
 On the inventory table, open **Row Click Action** and select **Search**. Choose your traces source (only log and trace sources are listed). Add one filter:
 
@@ -87,8 +82,7 @@ On the inventory table, open **Row Click Action** and select **Search**. Choose 
 
 Click **Apply** and save.
 </Step>
-<Step>
-### Click a row {#click-search}
+<Step title="Click a row" id="click-search">
 
 Clicking a service row now opens the Search page on that traces source, filtered to `ServiceName = <service>`, so you land on the spans for just that service over the same time range.
 

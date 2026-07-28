@@ -1,0 +1,97 @@
+-- Tags: long
+-- Tagged `long` because the throwing wide-integer (Int256/UInt256) divisions in this file are
+-- ~1000x slower under sanitizers, which pushes a single run over the flaky-check per-test time
+-- limit even though it is ~0.2s on a release build.
+--
+-- Exceptional cases of arithmetic over mixed type pairs involving Decimal and 128/256-bit
+-- integers, continued from 04523_type_pair_matrix_errors. Companion of
+-- 04513_type_pair_matrix_comparison and 04514_type_pair_matrix_arithmetic, which cover the
+-- non-throwing matrix.
+--
+-- This file covers integer division overflow of the most negative value (the minimal signed
+-- number divided by minus one) and unsupported type-pair combinations; 04523 covers comparison
+-- overflow and division by zero. The two files are split only to fit each within the flaky-check
+-- per-run time budget.
+--
+-- Every case, throwing and non-throwing alike, is exercised in all four constness shapes:
+-- vector/vector, left-const, right-const, and both-const. FunctionBinaryArithmetic has distinct
+-- executor branches per constness (and modulo/moduloLegacy route a right-constant divisor through
+-- ModuloByConstantImpl::vectorConstant with its own zero and lowest() checks), so a regression
+-- on the constant side would be missed by the vector/vector shape alone. The both-const shape
+-- uses identity(...) so the analyzer does not fold the expression away before the executor runs.
+
+-- A throwing function call "fn(a, b)" in all four constness shapes.
+{% macro fn_throws(fn, a, b, err) -%}
+SELECT {{ fn }}(materialize({{ a }}), materialize({{ b }})); -- { serverError {{ err }} }
+SELECT {{ fn }}({{ a }}, materialize({{ b }})); -- { serverError {{ err }} }
+SELECT {{ fn }}(materialize({{ a }}), {{ b }}); -- { serverError {{ err }} }
+SELECT {{ fn }}(identity({{ a }}), identity({{ b }})); -- { serverError {{ err }} }
+{%- endmacro %}
+
+-- The non-throwing OrZero / OrNull overflow-suppression probes, packed into one wide SELECT so
+-- the whole constness matrix costs four statements instead of forty. wa/wb wrap the left and right
+-- operand: materialize gives a vector column, identity gives a ColumnConst that the analyzer does
+-- not fold away (identity is not suitable for constant folding), so calling this with the four
+-- (wa, wb) combinations exercises the vector/vector, left-const, right-const, and both-const
+-- executor branches of FunctionBinaryArithmetic. The modulo* right-const columns in particular
+-- route the divisor through ModuloByConstantImpl::vectorConstant, which has its own lowest()
+-- and zero handling.
+{% macro wrapper_row(wa, wb) -%}
+SELECT
+    intDivOrZero({{ wa }}(CAST('-57896044618658097711785492504343953926634992332820282019728792003956564819968', 'Int256')), {{ wb }}(toInt8(-1))),
+    intDivOrNull({{ wa }}(CAST('-57896044618658097711785492504343953926634992332820282019728792003956564819968', 'Int256')), {{ wb }}(toInt8(-1))),
+    intDivOrZero({{ wa }}(CAST('-170141183460469231731687303715884105728', 'Int128')), {{ wb }}(toInt64(-1))),
+    intDivOrNull({{ wa }}(CAST('-170141183460469231731687303715884105728', 'Int128')), {{ wb }}(toInt64(-1))),
+    intDivOrZero({{ wa }}(toInt8(-128)), {{ wb }}(toInt256(-1))),
+    intDivOrNull({{ wa }}(toInt8(-128)), {{ wb }}(toInt256(-1))),
+    moduloOrZero({{ wa }}(CAST('-57896044618658097711785492504343953926634992332820282019728792003956564819968', 'Int256')), {{ wb }}(toInt8(-1))),
+    moduloOrNull({{ wa }}(CAST('-57896044618658097711785492504343953926634992332820282019728792003956564819968', 'Int256')), {{ wb }}(toInt8(-1))),
+    moduloOrZero({{ wa }}(CAST('-170141183460469231731687303715884105728', 'Int128')), {{ wb }}(toInt64(-1))),
+    moduloOrNull({{ wa }}(CAST('-170141183460469231731687303715884105728', 'Int128')), {{ wb }}(toInt64(-1))),
+    moduloOrZero({{ wa }}(toInt8(-128)), {{ wb }}(toInt128(-1))),
+    moduloOrNull({{ wa }}(toInt8(-128)), {{ wb }}(toInt128(-1))),
+    moduloOrZero({{ wa }}(toInt8(-128)), {{ wb }}(toInt256(-1))),
+    moduloOrNull({{ wa }}(toInt8(-128)), {{ wb }}(toInt256(-1))),
+    intDivOrZero({{ wa }}(toUInt8(1)), {{ wb }}(toUInt256(0))),
+    moduloOrNull({{ wa }}(toInt256(-1)), {{ wb }}(toUInt64(0)));
+{%- endmacro %}
+
+SELECT '-- division of the minimal signed number by minus one, wide and narrow dividends';
+{{ fn_throws('intDiv', "CAST('-57896044618658097711785492504343953926634992332820282019728792003956564819968', 'Int256')", 'toInt8(-1)', 'ILLEGAL_DIVISION') }}
+{{ fn_throws('intDiv', "CAST('-170141183460469231731687303715884105728', 'Int128')", 'toInt64(-1)', 'ILLEGAL_DIVISION') }}
+{{ fn_throws('intDiv', 'toInt8(-128)', 'toInt256(-1)', 'ILLEGAL_DIVISION') }}
+{{ fn_throws('modulo', "CAST('-57896044618658097711785492504343953926634992332820282019728792003956564819968', 'Int256')", 'toInt8(-1)', 'ILLEGAL_DIVISION') }}
+{{ fn_throws('modulo', "CAST('-170141183460469231731687303715884105728', 'Int128')", 'toInt64(-1)', 'ILLEGAL_DIVISION') }}
+{{ fn_throws('modulo', 'toInt8(-128)', 'toInt128(-1)', 'ILLEGAL_DIVISION') }}
+{{ fn_throws('modulo', 'toInt8(-128)', 'toInt256(-1)', 'ILLEGAL_DIVISION') }}
+
+SELECT '-- positiveModulo by the most negative divisor value';
+{{ fn_throws('positiveModulo', 'toInt256(-100)', 'toInt8(-128)', 'ILLEGAL_DIVISION') }}
+
+-- Unlike intDiv/modulo below, the OrNull wrapper of positiveModulo does not suppress the most
+-- negative divisor error (and positiveModuloOrZero does not exist), so it still throws.
+SELECT '-- positiveModuloOrNull does not suppress the most negative divisor error';
+{{ fn_throws('positiveModuloOrNull', 'toInt256(-100)', 'toInt8(-128)', 'ILLEGAL_DIVISION') }}
+
+-- Both the OrZero and the OrNull wrapper suppress the division overflow (and the plain division by
+-- zero) for every intDiv / modulo case, in either width order and in every constness shape. A
+-- regression that appeared only when the dividend or the divisor stayed a ColumnConst would be
+-- missed by the vector/vector shape alone, so all four shapes are exercised here.
+SELECT '-- OrZero and OrNull variants of the same exceptional cases do not throw, vector/vector';
+{{ wrapper_row('materialize', 'materialize') }}
+SELECT '-- the same in the left-const shape';
+{{ wrapper_row('identity', 'materialize') }}
+SELECT '-- the same in the right-const shape';
+{{ wrapper_row('materialize', 'identity') }}
+SELECT '-- the same in the both-const shape';
+{{ wrapper_row('identity', 'identity') }}
+
+SELECT '-- combinations of a floating point number and a wide integer';
+SELECT materialize(toFloat64(1)) + materialize(toUInt256(1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT materialize(toUInt256(1)) - materialize(toFloat64(1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT materialize(toFloat32(1)) * materialize(toInt128(1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT intDiv(materialize(toUInt256(1)), materialize(toFloat64(1)));
+SELECT modulo(materialize(toInt128(1)), materialize(toFloat32(1)));
+
+SELECT '-- isDistinctFrom does not support Decimal vs wide integer';
+SELECT isDistinctFrom(materialize(toDecimal32('1.00', 2)), materialize(toUInt128(1))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

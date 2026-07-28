@@ -187,6 +187,7 @@ static void testServerSideEncryption(
         {
             .use_environment_credentials = use_environment_credentials,
             .use_insecure_imds_request = use_insecure_imds_request,
+            .forbid_implicit_credentials = false,
         }
     );
 
@@ -387,7 +388,7 @@ TEST(IOTestAwsS3Client, DetectRegionFromS3ExpressEndpoint)
         /*server_side_encryption_customer_key_base64=*/"",
         {},
         headers,
-        DB::S3::CredentialsConfiguration{});
+        DB::S3::CredentialsConfiguration{.forbid_implicit_credentials = false});
 
     ASSERT_TRUE(client);
     EXPECT_EQ(client->getRegion(), "eu-north-1");
@@ -546,7 +547,8 @@ TEST(IOTestAwsS3Client, AssumeRole)
                 .role_arn = role_arn,
                 .role_session_name = role_session_name,
                 .external_id = external_id,
-                .sts_endpoint_override = sts_http.getUrl()
+                .sts_endpoint_override = sts_http.getUrl(),
+                .forbid_implicit_credentials = false,
             }
         );
 

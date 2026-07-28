@@ -64,7 +64,7 @@ import clickhouse_connect
 if __name__ == '__main__':
     client = clickhouse_connect.get_client()
     query = 'SELECT number, toString(number) AS number_as_str FROM system.numbers LIMIT 5'
-    fmt = 'CSVWithNames'  # or CSV, or CSVWithNamesAndTypes, or TabSeparated, etc.
+    fmt = 'CSVWithNames'  # o CSV, o CSVWithNamesAndTypes, o TabSeparated, etc.
     stream = client.raw_stream(query=query, fmt=fmt)
     with open("output.csv", "wb") as f:
         for chunk in stream:
@@ -82,7 +82,7 @@ El código anterior genera un archivo `output.csv` con el siguiente contenido:
 4,"4"
 ```
 
-Del mismo modo, puede guardar datos en [TabSeparated](/es/reference/formats/TabSeparated/TabSeparated) y en otros formatos. Consulte [Formatos de entrada y salida de datos](/es/reference/formats/index) para ver un resumen de todas las opciones de formato disponibles.
+Del mismo modo, puede guardar datos en [TabSeparated](/es/reference/formats/TabSeparated/TabSeparated) y en otros formatos. Consulte [Formatos de entrada y salida de datos](/es/reference/formats) para ver un resumen de todas las opciones de formato disponibles.
 
 <div id="multithreaded-multiprocess-and-asyncevent-driven-use-cases">
   ## Casos de uso multihilo, multiproceso y asíncronos/controlados por eventos

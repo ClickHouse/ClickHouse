@@ -450,6 +450,19 @@ BlockIO InterpreterGrantQuery::execute()
     RolesOrUsersSet roles_to_revoke;
     collectRolesToGrantOrRevoke(access_control, query, roles_to_grant, roles_to_revoke);
 
+    /// A role cannot be granted to itself.
+    for (const auto & grantee_id : grantees)
+    {
+        if (std::find(roles_to_grant.begin(), roles_to_grant.end(), grantee_id) != roles_to_grant.end())
+        {
+            auto entity = access_control.tryRead(grantee_id);
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot grant role '{}' to itself",
+                entity ? entity->getName() : String{});
+        }
+    }
+
     /// Replacing empty database with the default. This step must be done before replication to avoid privilege escalation.
     String current_database = getContext()->getCurrentDatabase();
     elements_to_grant.replaceEmptyDatabase(current_database);

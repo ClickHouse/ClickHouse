@@ -7,7 +7,7 @@ title: 'Analyzer'
 doc_type: 'reference'
 ---
 
-In ClickHouse version `24.3`, the new query analyzer was enabled by default.
+In ClickHouse version `24.3`, the analyzer was enabled by default.
 You can read more details about how it works [here](/guides/developer/understanding-query-execution-with-the-analyzer#analyzer).
 
 ## Known incompatibilities {#known-incompatibilities}
@@ -58,6 +58,8 @@ FROM numbers(10)
 WHERE number > 5
 GROUP BY n
 ```
+
+As a migration aid, the analyzer can replicate the old `HAVING`-to-`WHERE` rewrite for non-aggregate AND-conjuncts. Enable `analyzer_compatibility_allow_non_aggregate_in_having = 1` to opt into this behavior. The setting is available since ClickHouse `26.7`. The setting is ignored for `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS`, and `GROUPING SETS`. Conjuncts containing aggregate, `grouping`, or non-deterministic functions stay in `HAVING`; if any conjunct contains a window function or a stateful function (for example `rowNumberInBlock`), the rewrite is disabled for the whole `HAVING`, matching the legacy behavior.
 
 ### `CREATE VIEW` with an invalid query {#create-view-with-invalid-query}
 
@@ -126,7 +128,7 @@ To ensure consistent and expected results, especially when migrating old queries
 
 #### Handling of type modifiers for columns in the `USING` clause {#handling-of-type-modifiers-for-columns-in-using-clause}
 
-In the new version of the analyzer, the rules for determining the common supertype for columns specified in the `USING` clause have been standardized to produce more predictable outcomes,
+In the analyzer, the rules for determining the common supertype for columns specified in the `USING` clause have been standardized to produce more predictable outcomes,
 especially when dealing with type modifiers like `LowCardinality` and `Nullable`.
 
 - `LowCardinality(T)` and `T`: When a column of type `LowCardinality(T)` is joined with a column of type `T`, the resulting common supertype will be `T`, effectively discarding the `LowCardinality` modifier.
@@ -200,7 +202,7 @@ The list of features that the analyzer currently doesn't support is given below:
 
 ## Cloud Migration {#cloud-migration}
 
-We are enabling the new query analyzer on all instances where it is currently disabled to support new functional and performance optimizations. This change enforces stricter SQL scoping rules, requiring customers to manually update non-compliant queries.
+We are enabling the analyzer on all instances where it is currently disabled to support new functional and performance optimizations. This change enforces stricter SQL scoping rules, requiring customers to manually update non-compliant queries.
 
 ### Migration workflow {#migration-workflow}
 
@@ -253,6 +255,22 @@ SELECT user_id, device_id FROM table GROUP BY user_id
 SELECT user_id, any(device_id) FROM table GROUP BY user_id
 -- OR
 SELECT user_id, device_id FROM table GROUP BY user_id, device_id
+```
+
+### Non-Aggregated Columns in HAVING {#non-aggregated-columns-in-having}
+
+Error: `Column ... is not under aggregate function and not in GROUP BY keys (NOT_AN_AGGREGATE)`. Exception code: 215
+
+Cause: The old analyzer silently moved non-aggregate AND-conjuncts of `HAVING` to `WHERE`, treating them as pre-aggregation filters. The analyzer adheres to standard SQL: `HAVING` may only reference aggregation keys and aggregate functions.
+
+Solution: Move the predicate from `HAVING` to `WHERE` manually, or enable `analyzer_compatibility_allow_non_aggregate_in_having = 1` (available since ClickHouse `26.7`) to restore the legacy rewrite as a migration aid. The compatibility setting is ignored for `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS`, and `GROUPING SETS`. Conjuncts containing aggregate, `grouping`, or non-deterministic functions stay in `HAVING`; if any conjunct contains a window function or a stateful function (for example `rowNumberInBlock`), the rewrite is disabled for the whole `HAVING`, matching the legacy behavior.
+
+```sql
+/* ORIGINAL QUERY */
+SELECT category, sum(value) FROM t GROUP BY category HAVING service = 'svc1';
+
+/* FIXED QUERY */
+SELECT category, sum(value) FROM t WHERE service = 'svc1' GROUP BY category;
 ```
 
 ### Duplicate CTE names {#duplicate-cte-names}

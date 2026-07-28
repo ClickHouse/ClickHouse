@@ -686,7 +686,7 @@ metric_name2[...] = ...
 :::info
 This is an experimental feature that may change in backwards-incompatible ways in the future releases.
 Enable usage of the TimeSeries table engine
-with [allow_experimental_time_series_table](/operations/settings/settings#allow_experimental_time_series_table) setting.
+with [allow_experimental_time_series_table](/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table) setting.
 Input the command `set allow_experimental_time_series_table = 1`.
 :::
 
@@ -774,7 +774,7 @@ If both forms are used in the same `CREATE TABLE` statement, the declared types 
 ## Target tables {#target-tables}
 
 A `TimeSeries` table doesn't have its own data, everything is stored in its target tables.
-This is similar to how a [materialized view](../../../sql-reference/statements/create/view#materialized-view) works,
+This is similar to how a [materialized view](/reference/statements/create/view#materialized-view) works,
 with the difference that a materialized view has one target table
 whereas a `TimeSeries` table has three target tables named [samples](#samples-table), [tags](#tags-table), and [metrics](#metrics-table).
 
@@ -865,7 +865,7 @@ TAGS INNER COLUMNS
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
     `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
 )
-TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
+TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1
 METRICS INNER COLUMNS
 (
     `metric_family_name` String,
@@ -907,6 +907,7 @@ CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 ENGINE = AggregatingMergeTree
 PRIMARY KEY metric_name
 ORDER BY (metric_name, id)
+SETTINGS allow_dimensions_outside_sorting_key = 1
 ```
 
 ```sql
@@ -989,10 +990,10 @@ for the `id` column.
 ## Table engines of inner target tables {#inner-table-engines}
 
 By default inner target tables use the following table engines:
-- the [samples](#samples-table) table uses [MergeTree](../mergetree-family/mergetree);
-- the [tags](#tags-table) table uses [AggregatingMergeTree](../mergetree-family/aggregatingmergetree) because the same data is often inserted multiple times to this table so we need a way
+- the [samples](#samples-table) table uses [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree);
+- the [tags](#tags-table) table uses [AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/aggregatingmergetree) because the same data is often inserted multiple times to this table so we need a way
 to remove duplicates, and also because it's required to do aggregation for columns `min_time` and `max_time`;
-- the [metrics](#metrics-table) table uses [ReplacingMergeTree](../mergetree-family/replacingmergetree) because the same data is often inserted multiple times to this table so we need a way
+- the [metrics](#metrics-table) table uses [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) because the same data is often inserted multiple times to this table so we need a way
 to remove duplicates.
 
 Other table engines also can be used for inner target tables if it's specified so:
@@ -1003,6 +1004,13 @@ SAMPLES ENGINE=ReplicatedMergeTree
 TAGS ENGINE=ReplicatedAggregatingMergeTree
 METRICS ENGINE=ReplicatedReplacingMergeTree
 ```
+
+The [tags](#tags-table) table keeps the tag columns (and the `tags`/`all_tags` Maps) outside its sorting key,
+which `AggregatingMergeTree` rejects by default (see [`allow_dimensions_outside_sorting_key`](/reference/engines/table-engines/mergetree-family/aggregatingmergetree)).
+This is safe here because those columns are functionally dependent on `id`, which is part of the sorting key, so all
+rows that a background merge collapses together share the same values. When the inner tags table is generated or its
+engine is specified inline as above, `TimeSeries` sets `allow_dimensions_outside_sorting_key = 1` on it automatically;
+for a manually created [external](#external-target-tables) aggregating tags table you must set it yourself.
 
 ## External target tables {#external-target-tables}
 
@@ -1061,9 +1069,9 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 # Functions {#functions}
 
 Here is a list of functions supporting a `TimeSeries` table as an argument:
-- [timeSeriesSamples](../../../sql-reference/table-functions/timeSeriesSamples.md)
-- [timeSeriesTags](../../../sql-reference/table-functions/timeSeriesTags.md)
-- [timeSeriesMetrics](../../../sql-reference/table-functions/timeSeriesMetrics.md)
+- [timeSeriesSamples](/reference/functions/table-functions/timeSeriesSamples)
+- [timeSeriesTags](/reference/functions/table-functions/timeSeriesTags)
+- [timeSeriesMetrics](/reference/functions/table-functions/timeSeriesMetrics)
 )DOCS_MD",
         .syntax = "ENGINE = TimeSeries()"});
 }

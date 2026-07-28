@@ -16,8 +16,7 @@ Four optimizations cover most of what helps in practice. They're listed roughly 
 The summaries below are short on purpose. For the reasoning behind each change, benchmarks, and the recipes for rolling it out to existing data, see [Performance tuning](/clickstack/managing/performance-tuning).
 
 <Steps>
-<Step>
-## Materialize frequently queried attributes {#materialize-attributes}
+<Step title="Materialize frequently queried attributes" id="materialize-attributes">
 
 Filtering on `LogAttributes['service.version']` asks ClickHouse to load and decode the whole `LogAttributes` Map for every row it examines. Promote the attribute to a `MATERIALIZED` column and the same filter becomes a column read, usually an order of magnitude faster. ClickStack rewrites the filter automatically once the column exists, so saved searches and dashboards keep working unchanged.
 
@@ -33,8 +32,7 @@ Existing rows stay empty for the new column until you also `ALTER TABLE otel_log
 
 Read more: [Materialize frequently queried attributes](/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes).
 </Step>
-<Step>
-## Add skip indexes {#add-skip-indexes}
+<Step title="Add skip indexes" id="add-skip-indexes">
 
 Skip indexes let ClickHouse rule out granules of data that can't match a filter, turning a scan into a small targeted read. Three types are worth knowing about:
 
@@ -51,8 +49,7 @@ A skip index only pays for its evaluation cost if it actually prunes granules. C
 
 Read more: [Adding skip indexes](/clickstack/managing/performance-tuning#adding-skip-indexes).
 </Step>
-<Step>
-## Pre-compute repeated aggregations {#materialized-views}
+<Step title="Pre-compute repeated aggregations" id="materialized-views">
 
 When the same aggregation runs again and again on a dashboard (top services by error rate, p99 latency per endpoint, request counts per minute), a materialized view computes the result at insert time and writes it to a small rollup table. Dashboards then hit the rollup instead of the raw logs or traces, which is cheap by comparison.
 
@@ -60,8 +57,7 @@ This pays off when the dashboard is hot and the underlying table is large. The c
 
 Read more: [Exploiting materialized views](/clickstack/managing/performance-tuning#exploiting-materialized-views).
 </Step>
-<Step>
-## Choose a primary key for your access pattern {#choose-primary-key}
+<Step title="Choose a primary key for your access pattern" id="choose-primary-key">
 
 The primary key controls how rows are sorted on disk. Filters on the leading columns of that key let ClickHouse seek straight to the relevant region; filters that don't lead with one of those columns scan the whole partition.
 

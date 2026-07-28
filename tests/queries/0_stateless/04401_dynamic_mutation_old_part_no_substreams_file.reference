@@ -1,0 +1,8 @@
+columns_substreams.txt present before: 1
+columns_substreams.txt present after delete+attach: 0
+Data after mutation:
+2000	2000	2000
+Int64	1000
+String	1000
+CHECK TABLE result: 1
+columns_substreams.txt regenerated with variant_discr: 1

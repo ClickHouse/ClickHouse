@@ -1,0 +1,10 @@
+-- plain keys, condition values 0/1/2
+333	166
+-- nullable keys, condition values 0/1/2
+285	143
+-- inner join, condition values 0/1/2
+333
+-- parallel_hash, condition values 0/1/2
+333
+-- continuation chunks: OR disjuncts, nullable keys, mask, tiny max_joined_block_size_rows
+42419	21581506

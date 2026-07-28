@@ -263,7 +263,7 @@ EvictionInfoPtr SplitFileCachePriority::collectEvictionInfo(
 }
 
 bool SplitFileCachePriority::collectCandidatesForEviction(
-    const EvictionInfo & eviction_info,
+    EvictionInfo & eviction_info,
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
     InvalidatedEntriesInfos & invalidated_entries,

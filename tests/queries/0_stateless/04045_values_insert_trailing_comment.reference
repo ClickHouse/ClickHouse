@@ -1,2 +1,6 @@
+--- send_table_structure_on_insert_with_inline_data=1 ---
+123456	1	10	100
+123457	2	20	100
+--- send_table_structure_on_insert_with_inline_data=0 ---
 123456	1	10	100
 123457	2	20	100

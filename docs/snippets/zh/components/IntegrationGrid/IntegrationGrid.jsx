@@ -272,8 +272,8 @@ export const IntegrationGrid = () => {
       return {
         slug: item.slug.startsWith("/") ? item.slug : `/${item.slug}`,
         docsLink: item.docsLink,
-        integration_logo: item.logo?.url ? `https://staging-cms.clickhouse.com${item.logo.url}` : "",
-        integration_logo_dark: item.logo_dark?.url ? `https://staging-cms.clickhouse.com${item.logo_dark.url}` : undefined,
+        integration_logo: item.logo?.url ? `https://clickhouse.com${item.logo.url}` : "",
+        integration_logo_dark: item.logo_dark?.url ? `https://clickhouse.com${item.logo_dark.url}` : undefined,
         integration_type: integrationTypes,
         integration_title: item.name,
         integration_tier: integrationTier
@@ -295,27 +295,6 @@ export const IntegrationGrid = () => {
         if (typeof window !== "undefined") window.__chIntegrationsCache = data
       }
       const fetchIntegrations = async () => {
-        try {
-          const base = typeof window !== "undefined" && window.location.pathname.startsWith("/docs") ? "/docs" : ""
-          const fallbackResponse = await fetch(base + "https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/integrations-fallback.json", {
-            cache: "force-cache"
-          })
-
-          if (fallbackResponse.ok) {
-            const fallbackData = await fallbackResponse.json()
-            const transformedData = transformCMSData(fallbackData.data || [])
-            setIntegrations(transformedData)
-            cacheIntegrations(transformedData)
-            setError(null)
-            setLoading(false)
-            console.log("Loaded fallback integrations data")
-          } else {
-            console.warn("Fallback file not available, will try CMS only")
-          }
-        } catch (fallbackErr) {
-          console.error("Failed to load fallback integrations data:", fallbackErr)
-        }
-
         try {
           const controller = new AbortController()
           const timeoutId = setTimeout(() => {
@@ -663,7 +642,7 @@ export const IntegrationGrid = () => {
               style={{ padding: "6px 12px" }}
               onClick={() => setSelectedFilter("All")}
             >
-              全部
+              All
             </button>
             {integrationTypes.map((type) => (
               <button
@@ -691,7 +670,7 @@ export const IntegrationGrid = () => {
               style={{ padding: "6px 12px" }}
               onClick={() => setSelectedTier("All")}
             >
-              全部层级
+              All tiers
             </button>
             {integrationTiers.map((tier) => (
               <button

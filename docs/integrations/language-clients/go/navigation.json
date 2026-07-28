@@ -1,9 +1,9 @@
 {
+  "expanded": true,
   "group": "Go",
   "icon": "/images/integrations/logos/golang.svg",
-  "root": "integrations/language-clients/go/index",
-  "expanded": true,
   "pages": [
+    "integrations/language-clients/go/index",
     "integrations/language-clients/go/clickhouse-api",
     "integrations/language-clients/go/configuration",
     "integrations/language-clients/go/config-reference",

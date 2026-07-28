@@ -301,6 +301,22 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
             pos = pos_before_func;
         }
 
+        /// Query parameter as a setting value, e.g. `SET max_threads = {threads:UInt64}`
+        /// or `SELECT ... SETTINGS max_threads = {threads:UInt64}`.
+        /// Keep it as an ASTQueryParameter wrapped into a Field (same mechanism as disk(...) above);
+        /// it is resolved later by ReplaceQueryParameterVisitor once parameter values are known.
+        {
+            ParserSubstitution substitution_p;
+            ASTPtr substitution;
+            if (substitution_p.parse(pos, substitution, expected))
+            {
+                change.name = name;
+                change.value = createFieldFromAST(substitution);
+
+                return true;
+            }
+        }
+
         if (!value_p.parse(pos, node, expected))
             return false;
     }

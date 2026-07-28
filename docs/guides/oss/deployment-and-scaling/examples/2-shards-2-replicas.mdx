@@ -36,8 +36,7 @@ The architecture of the cluster you will be setting up is shown below:
 - You have docker installed on your machine
 
 <Steps>
-<Step>
-## Set up directory structure and test environment {#set-up}
+<Step title="Set up directory structure and test environment" id="set-up">
 
 <ExampleFiles/>
 
@@ -169,8 +168,7 @@ done
 
 <ConfigExplanation/>
 </Step>
-<Step>
-## Configure ClickHouse nodes {#configure-clickhouse-servers}
+<Step title="Configure ClickHouse nodes" id="configure-clickhouse-servers">
 
 ### Server setup {#server-setup}
 
@@ -422,8 +420,7 @@ In practice, this is discouraged.
 In this example, each `users.xml` file is identical for all nodes in the cluster.
 </Note>
 </Step>
-<Step>
-## Configure ClickHouse Keeper {#configure-clickhouse-keeper-nodes}
+<Step title="Configure ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
 
 Next you will configure ClickHouse Keeper, which is used for coordination.
 
@@ -441,8 +438,7 @@ Next you will configure ClickHouse Keeper, which is used for coordination.
 
 <CloudTip/>
 </Step>
-<Step>
-## Test the setup {#test-the-setup}
+<Step title="Test the setup" id="test-the-setup">
 
 Make sure that docker is running on your machine.
 Start the cluster using the `docker-compose up` command from the root of the `cluster_2S_2R` directory:
@@ -525,8 +521,7 @@ WHERE path IN ('/', '/clickhouse')
 With this, you have successfully set up a ClickHouse cluster with two shards and two replicas.
 In the next step, you will create a table in the cluster.
 </Step>
-<Step>
-## Create a database {#creating-a-database}
+<Step title="Create a database" id="creating-a-database">
 
 Now that you have verified the cluster is correctly setup and is running, you
 will be recreating the same table as the one used in the [UK property prices](/get-started/sample-datasets/uk-price-paid)
@@ -585,8 +580,7 @@ SHOW DATABASES;
    └────────────────────┘
 ```
 </Step>
-<Step>
-## Create a table on the cluster {#creating-a-table}
+<Step title="Create a table on the cluster" id="creating-a-table">
 
 Now that the database has been created, next you will create a table with replication.
 
@@ -656,8 +650,7 @@ SHOW TABLES IN uk;
    └─────────────────────┘
 ```
 </Step>
-<Step>
-## Insert data into a distributed table {#inserting-data-using-distributed}
+<Step title="Insert data into a distributed table" id="inserting-data-using-distributed">
 
 To insert data into the table, `ON CLUSTER` can't be used as it does
 not apply to DML (Data Manipulation Language) queries such as `INSERT`, `UPDATE`,

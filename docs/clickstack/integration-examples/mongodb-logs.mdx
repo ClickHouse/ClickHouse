@@ -28,8 +28,7 @@ If you would like to test the MongoDB integration before configuring your own ex
 - Access to MongoDB log files
 
 <Steps>
-<Step>
-#### Verify MongoDB logging configuration {#verify-mongodb}
+<Step title="Verify MongoDB logging configuration" id="verify-mongodb">
 
 MongoDB 4.4+ outputs structured JSON logs by default. Check your log file location:
 
@@ -61,8 +60,7 @@ sudo systemctl restart mongod
 docker restart <mongodb-container>
 ```
 </Step>
-<Step>
-#### Create a custom OTel collector configuration for MongoDB {#custom-otel}
+<Step title="Create a custom OTel collector configuration for MongoDB" id="custom-otel">
 
 ClickStack allows you to extend the base OpenTelemetry Collector configuration by mounting a custom configuration file and setting an environment variable. The custom configuration is merged with the base configuration managed by HyperDX via OpAMP.
 
@@ -126,8 +124,7 @@ service:
 - This configuration uses `start_at: beginning` to read all existing logs when the collector starts. For production deployments, change to `start_at: end` to avoid re-ingesting logs on collector restarts.
 </Note>
 </Step>
-<Step>
-#### Configure ClickStack to load custom configuration {#load-custom}
+<Step title="Configure ClickStack to load custom configuration" id="load-custom">
 
 To enable custom collector configuration in your existing ClickStack deployment, you must:
 
@@ -172,8 +169,7 @@ docker run --name clickstack \
 Ensure the ClickStack collector has appropriate permissions to read the MongoDB log files. In production, use read-only mounts (`:ro`) and follow the principle of least privilege.
 </Note>
 </Step>
-<Step>
-#### Verify Logs in HyperDX {#verifying-logs}
+<Step title="Verify Logs in HyperDX" id="verifying-logs">
 
 Once configured, log into HyperDX and verify that logs are flowing:
 
@@ -188,8 +184,7 @@ Once configured, log into HyperDX and verify that logs are flowing:
 Test the MongoDB integration with a pre-generated sample dataset before configuring your production systems.
 
 <Steps>
-<Step>
-#### Download the sample dataset {#download-sample}
+<Step title="Download the sample dataset" id="download-sample">
 
 Download the sample log file:
 
@@ -197,8 +192,7 @@ Download the sample log file:
 curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mongodb/mongod.log
 ```
 </Step>
-<Step>
-#### Create test collector configuration {#test-config}
+<Step title="Create test collector configuration" id="test-config">
 
 Create a file named `mongodb-demo.yaml` with the following configuration:
 
@@ -257,8 +251,7 @@ service:
 EOF
 ```
 </Step>
-<Step>
-#### Run ClickStack with demo configuration {#run-demo}
+<Step title="Run ClickStack with demo configuration" id="run-demo">
 
 Run ClickStack with the demo logs and configuration:
 
@@ -288,11 +281,11 @@ Once ClickStack is running:
 ## Dashboards and visualization {#dashboards}
 
 <Steps>
-<Step>
-#### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mongodb-logs-dashboard.json'} download="mongodb-logs-dashboard.json" eventName="docs.mongodb_logs_monitoring.dashboard_download">Download</TrackedLink> the dashboard configuration {#download}
+<Step title="Download the dashboard configuration" id="download">
+
+<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mongodb-logs-dashboard.json'} download="mongodb-logs-dashboard.json" eventName="docs.mongodb_logs_monitoring.dashboard_download">Download the dashboard configuration file</TrackedLink>.
 </Step>
-<Step>
-#### Import pre-built dashboard {#import-dashboard}
+<Step title="Import pre-built dashboard" id="import-dashboard">
 
 1. Open HyperDX and navigate to the Dashboards section.
 2. Click "Import Dashboard" in the upper right corner under the ellipses.
@@ -303,8 +296,7 @@ Once ClickStack is running:
 
 <Image img="/images/clickstack/mongodb/finish-import.webp" alt="Finish importing MongoDB logs dashboard"/>
 </Step>
-<Step>
-#### The dashboard will be created with all visualizations pre-configured {#created-dashboard}
+<Step title="The dashboard will be created with all visualizations pre-configured" id="created-dashboard">
 
 For the demo dataset, set the time range to include **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
 
