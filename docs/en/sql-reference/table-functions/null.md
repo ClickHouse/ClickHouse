@@ -20,7 +20,7 @@ null('structure')
 
 - `structure` — A list of columns and column types. [String](../../sql-reference/data-types/string.md).
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 A temporary `Null`-engine table with the specified structure.
 

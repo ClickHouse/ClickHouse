@@ -77,8 +77,7 @@ The setting is now back to its default:
 └─────────┘
 ```
 
-<a id="custom_settings"></a>
-## Custom settings {#custom-settings}
+## Custom settings {#custom_settings}
 
 In addition to the common [settings](/operations/settings/settings.md), users can define custom settings.
 Custom settings enable you to pass **session-specific parameters** that can be referenced within queries, policies, or functions. This is useful when you need to:

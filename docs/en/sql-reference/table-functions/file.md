@@ -59,7 +59,7 @@ DESC format(LineAsString, 'Hello\nWorld')
 ```
 :::
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 A table for reading or writing data in a file.
 

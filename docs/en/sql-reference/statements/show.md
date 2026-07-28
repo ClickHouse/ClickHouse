@@ -186,7 +186,7 @@ SHOW TABLES FROM system LIMIT 2
 - [`Create Tables`](/sql-reference/statements/create/table)
 - [`SHOW CREATE TABLE`](#show-create-table--dictionary--view--database)
 
-## SHOW COLUMNS {#show-columns}
+## SHOW COLUMNS {#show_columns}
 
 The `SHOW COLUMNS` statement displays a list of columns.
 

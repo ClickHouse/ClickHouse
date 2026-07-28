@@ -111,8 +111,7 @@ If the type is not `Nullable` and if `NULL` is specified, it will be treated as 
 
 See also [data_type_default_nullable](../../../operations/settings/settings.md#data_type_default_nullable) setting.
 
-<a id="default_values"></a>
-## Default Values {#default-values}
+## Default Values {#default_values}
 
 The column description can specify a default value expression in the form of `DEFAULT expr`, `MATERIALIZED expr`, or `ALIAS expr`. Example: `URLDomain String DEFAULT domain(URL)`.
 
