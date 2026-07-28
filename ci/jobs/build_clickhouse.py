@@ -1,5 +1,7 @@
 import argparse
+import json
 import os
+import shlex
 import shutil
 
 from ci.defs.defs import BuildTypes, ToolSet, chcache_secret
@@ -153,6 +155,94 @@ def setup_build_caches_env(info):
         os.environ["CH_USER"] = "ci_builder"
         os.environ["CH_PASSWORD"] = chcache_secret.get_value()
         os.environ["CH_USE_LOCAL_CACHE"] = "false"
+
+
+JEMALLOC_SAFETY_MACROS = ("JEMALLOC_OPT_SAFETY_CHECKS", "JEMALLOC_OPT_SIZE_CHECKS")
+JEMALLOC_SOURCE_MARKER = "/contrib/jemalloc/src/"
+
+
+def effective_macro_state(command, macro):
+    """True if defined on this compile line, False if `-U`ed, None if never mentioned.
+
+    The preprocessor applies `-D`/`-U` in command-line order, so the last mention
+    wins: `-DX -UX` leaves X undefined, `-UX -DX` leaves it defined.
+    """
+    state = None
+    for token in shlex.split(command):
+        if token == f"-D{macro}" or token.startswith(f"-D{macro}="):
+            state = True
+        elif token == f"-U{macro}":
+            state = False
+    return state
+
+
+def assert_jemalloc_safety_macros_armed(compile_commands_path):
+    """Fail unless every jemalloc TU, and only those, really define both macros.
+
+    `ENABLE_JEMALLOC_SAFETY_CHECKS` promises two `-D`s that gate jemalloc's
+    sized-deallocation and slab-bit detectors, and `JEMALLOC_OPT_SIZE_CHECKS` has no
+    mallctl, so a lost definition leaves the lane fuzzing green as an ordinary
+    `amd_debug` session. What decides is the effective compiler invocation, not the
+    cmake text, so it is read here from the generated `compile_commands.json`.
+    """
+    if not os.path.isfile(compile_commands_path):
+        raise AssertionError(
+            f"{compile_commands_path} is missing, so the jemalloc safety macros "
+            "cannot be verified; CMakeLists.txt:50 sets CMAKE_EXPORT_COMPILE_COMMANDS "
+            "unconditionally, so a configured tree always has it"
+        )
+    with open(compile_commands_path, "r", encoding="utf-8") as file:
+        entries = json.load(file)
+
+    jemalloc = [e for e in entries if JEMALLOC_SOURCE_MARKER in e["file"]]
+    # A rename of jemalloc's source layout must not make this check vacuous.
+    if not jemalloc:
+        raise AssertionError(
+            f"no {JEMALLOC_SOURCE_MARKER!r} translation unit in "
+            f"{compile_commands_path} (of {len(entries)} entries); jemalloc's source "
+            "layout changed, so re-derive this check rather than letting it pass "
+            "vacuously"
+        )
+
+    for macro in JEMALLOC_SAFETY_MACROS:
+        unarmed = {
+            e["file"]: effective_macro_state(e["command"], macro)
+            for e in jemalloc
+            if effective_macro_state(e["command"], macro) is not True
+        }
+        if unarmed:
+            sample = sorted(unarmed)[:5]
+            raise AssertionError(
+                f"-D{macro} is not in effect for {len(unarmed)} of {len(jemalloc)} "
+                f"jemalloc translation units (states: "
+                f"{sorted(set(unarmed.values()), key=str)}, first: {sample}). This "
+                "build type promises it, and losing it disarms a detector while the "
+                "lane still fuzzes green. It happens when the cmake option is not "
+                "passed at all, when a later -U from another target_compile_options / "
+                "add_definitions cancels the -D on the same compile line (the last "
+                "mention wins), or when the ARCH_AMD64 guard in "
+                "contrib/jemalloc-cmake/CMakeLists.txt turns the option off."
+            )
+
+        leaked = sorted(
+            e["file"]
+            for e in entries
+            if JEMALLOC_SOURCE_MARKER not in e["file"]
+            and effective_macro_state(e["command"], macro) is True
+        )
+        if leaked:
+            raise AssertionError(
+                f"-D{macro} reaches {len(leaked)} non-jemalloc translation units "
+                f"(first: {leaked[:5]}). The macro is jemalloc-internal: it must stay "
+                "PRIVATE to the _jemalloc target, or other code is compiled against a "
+                "different config_opt_* view of jemalloc's headers than jemalloc "
+                "itself."
+            )
+
+    print(
+        f"jemalloc safety macros: {', '.join(JEMALLOC_SAFETY_MACROS)} in effect for "
+        f"all {len(jemalloc)} jemalloc translation units, and for no other"
+    )
 
 
 def main():
@@ -356,6 +446,19 @@ def main():
             else:
                 results.append(retry_result)
                 res = False
+
+        # The lane's whole value depends on the two jemalloc safety macros really
+        # reaching the compiler, so assert it here rather than after ~40 minutes of
+        # compiling. Only this build type promises them.
+        if res and build_type == BuildTypes.AMD_JEMALLOC_SAFETY:
+            results.append(
+                Result.from_commands_run(
+                    name="jemalloc safety macros",
+                    command=assert_jemalloc_safety_macros_armed,
+                    command_args=[f"{build_dir}/compile_commands.json"],
+                )
+            )
+            res = results[-1].is_ok()
 
         # Pre-seed .ninja_log from toolchain for timing-based scheduling
         if res:
