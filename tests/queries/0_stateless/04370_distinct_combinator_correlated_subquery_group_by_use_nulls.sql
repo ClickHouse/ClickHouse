@@ -4,7 +4,7 @@
 -- reinterpret the column (release). Fixed by #100365 at the analyzer level; this asserts
 -- correct results across a few combinators, which also guards the release silent-UB path.
 
--- Correlated subqueries are a new-analyzer feature; force it so the old-analyzer CI job
+-- Correlated subqueries are an analyzer feature; force it so the old-analyzer CI job
 -- does not fail with UNKNOWN_IDENTIFIER instead of exercising the fix.
 SET enable_analyzer = 1;
 

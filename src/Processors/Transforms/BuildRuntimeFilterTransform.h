@@ -31,6 +31,7 @@ public:
         UInt64 blocks_to_skip_before_reenabling_,
         Float64 max_ratio_of_set_bits_in_bloom_filter_,
         bool allow_to_use_not_exact_filter_,
+        bool track_key_range_,
         std::optional<UInt64> distinct_keys_hint_,
         ContextPtr query_context_);
 
