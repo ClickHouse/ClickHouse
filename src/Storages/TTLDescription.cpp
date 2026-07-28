@@ -301,6 +301,51 @@ std::vector<ColumnPtr> collectSuspectMaterializations(const DataTypePtr & type, 
     return {};
 }
 
+/// True if casting `from_type` to `to_type` can pick the stored `Variant`/`Dynamic` alternative by parsing
+/// the *row contents* instead of deriving it from the source type. `FunctionCast::createColumnToVariantWrapper`
+/// routes a string source to `createStringToVariantWrapper` under `cast_string_to_variant_use_inference`
+/// (enabled by default), and `createColumnToDynamicWrapper` does the same under
+/// `cast_string_to_dynamic_use_inference`. Container casts recurse into their elements, so this check
+/// mirrors that recursion; a `Variant` source, in contrast, is never re-parsed (it goes to
+/// `createVariantToDynamicWrapper`, which preserves the alternative each row already stores).
+bool castMayInferPayloadFromString(const DataTypePtr & from_type, const DataTypePtr & to_type)
+{
+    /// The wrappers look through `Nullable`/`LowCardinality` on both sides.
+    auto from = removeNullable(removeLowCardinality(from_type));
+    auto to = removeNullable(removeLowCardinality(to_type));
+
+    const WhichDataType which_to(*to);
+    if ((which_to.isVariant() || which_to.isDynamic()) && WhichDataType(*from).isStringOrFixedString())
+        return true;
+
+    if (const auto * from_array = typeid_cast<const DataTypeArray *>(from.get()))
+    {
+        const auto * to_array = typeid_cast<const DataTypeArray *>(to.get());
+        return to_array && castMayInferPayloadFromString(from_array->getNestedType(), to_array->getNestedType());
+    }
+
+    if (const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.get()))
+    {
+        const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get());
+        if (!to_tuple || from_tuple->getElements().size() != to_tuple->getElements().size())
+            return false;
+        for (size_t i = 0; i < from_tuple->getElements().size(); ++i)
+            if (castMayInferPayloadFromString(from_tuple->getElements()[i], to_tuple->getElements()[i]))
+                return true;
+        return false;
+    }
+
+    if (const auto * from_map = typeid_cast<const DataTypeMap *>(from.get()))
+    {
+        const auto * to_map = typeid_cast<const DataTypeMap *>(to.get());
+        return to_map
+            && (castMayInferPayloadFromString(from_map->getKeyType(), to_map->getKeyType())
+                || castMayInferPayloadFromString(from_map->getValueType(), to_map->getValueType()));
+    }
+
+    return false;
+}
+
 /// Build the single-row representative values of a non-suspect type for executing a typed `CAST` during
 /// the DDL-time probe. The plain default value is degenerate for wrappers that would hide the payload
 /// structure from the consumers of the cast result: a `Nullable` default row is NULL (the
@@ -486,13 +531,17 @@ std::vector<ColumnPtr> makeRepresentativeColumns(const DataTypePtr & type, std::
 ///
 /// A typed `CAST` is the exception to the first condition: its output payloads are fixed by the *source
 /// type* alone (the cast wrapper fills the discriminators derived from it), independent of the values. So
-/// `CAST(s, 'Dynamic')` with `s String` can only ever store the `String` payload, and probing its consumer
+/// `CAST(n, 'Dynamic')` with `n UInt32` can only ever store the `UInt32` payload, and probing its consumer
 /// with the static enumeration would reject a valid TTL such as
-/// `DELETE WHERE length(CAST(s, 'Dynamic')) > 3` over synthetic `AggregateFunction`/`UInt64` payloads
+/// `DELETE WHERE toDateTime(CAST(n, 'Dynamic')) < now()` over synthetic `AggregateFunction` payloads
 /// the cast can never produce. An untainted `CAST` is instead executed on the representative values of its
 /// source type (non-NULL, one-element containers - the plain default would hide nested payload structure -
 /// and one value per `Variant` alternative, which the cast preserves row by row) and the union of its
 /// actual outputs is propagated to the consumers.
+///
+/// A cast of a *string* to a carrier is in turn the exception to that exception - it parses the stored
+/// alternative out of the row contents, so it is value-dependent after all and stays fail-closed; see the
+/// `source_payload_may_be_inferred` check below.
 void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::string_view expression_kind)
 {
     /// Per-node "candidate" materializations: the single-row columns whose payloads the node can produce
@@ -590,7 +639,23 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
                 if (result_in_scope)
                 {
                     const auto & function_name = node->function_base->getName();
-                    if (function_name == "CAST" || function_name == "_CAST")
+
+                    /// A cast of a *string* to a carrier is not source-type-determined: with
+                    /// `cast_string_to_variant_use_inference` (on by default) and
+                    /// `cast_string_to_dynamic_use_inference`, `createColumnToVariantWrapper` /
+                    /// `createColumnToDynamicWrapper` parse the alternative out of the row contents, so
+                    /// `CAST(s, 'Variant(String, UInt32, AggregateFunction(max, UInt32))')` stores the
+                    /// `String` alternative for the representative `''` but the `UInt32` one for a row
+                    /// `s = '42'`. A single representative value therefore says nothing about the runtime
+                    /// domain. The settings are also per-query while the stored TTL expression is rebuilt
+                    /// and executed under other contexts, so, like the strict probe above, the DDL-time
+                    /// verdict must hold for either of them: keep such casts on the fail-closed path.
+                    bool source_payload_may_be_inferred = false;
+                    for (const auto & child : node->children)
+                        if (!child->column && castMayInferPayloadFromString(child->result_type, node->result_type))
+                            source_payload_may_be_inferred = true;
+
+                    if ((function_name == "CAST" || function_name == "_CAST") && !source_payload_may_be_inferred)
                     {
                         /// A source type can need more than one representative value (a `Variant` needs
                         /// one per alternative), so run the cast over the cartesian product of them and
