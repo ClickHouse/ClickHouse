@@ -51,6 +51,8 @@ namespace DB
 namespace FailPoints
 {
     extern const char backup_fail_before_writing_metadata[];
+    extern const char backup_fail_while_finalizing_archive[];
+    extern const char backup_fail_before_removing_lock_file[];
 }
 
 namespace ErrorCodes
@@ -303,7 +305,13 @@ void BackupImpl::closeArchive(bool finalize)
     if (archive_writer)
     {
         if (finalize)
+        {
+            fiu_do_on(FailPoints::backup_fail_while_finalizing_archive,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_while_finalizing_archive is triggered");
+            });
             archive_writer->finalize();
+        }
         else
             archive_writer->cancel();
     }
@@ -1297,21 +1305,33 @@ void BackupImpl::finalizeWriting()
     if (writing_finalized)
         return;
 
-    if (!params.is_internal_backup)
+    if (params.is_internal_backup)
     {
-        LOG_TRACE(log, "Finalizing backup {}", backup_name_for_logging);
-        fiu_do_on(FailPoints::backup_fail_before_writing_metadata,
-        {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_before_writing_metadata is triggered");
-        });
-        writeBackupMetadata();
-        closeArchive(/* finalize= */ true);
-        setCompressedSize();
-        removeLockFile();
-        LOG_TRACE(log, "Finalized backup {}", backup_name_for_logging);
+        /// A non-initiator host writes data files only: it publishes no metadata and owns no lock file.
+        writing_finalized = true;
+        return;
     }
 
+    LOG_TRACE(log, "Finalizing backup {}", backup_name_for_logging);
+    fiu_do_on(FailPoints::backup_fail_before_writing_metadata,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_before_writing_metadata is triggered");
+    });
+    writeBackupMetadata();
+    closeArchive(/* finalize= */ true);
+
+    /// The backup is published at this point: `.backup` is readable at the destination, or the archive
+    /// has been finalized. A published backup must never be removed as a failed one, so arm the guard
+    /// read by setIsCorrupted() before the steps that can still fail below.
     writing_finalized = true;
+
+    fiu_do_on(FailPoints::backup_fail_before_removing_lock_file,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_before_removing_lock_file is triggered");
+    });
+    setCompressedSize();
+    removeLockFile();
+    LOG_TRACE(log, "Finalized backup {}", backup_name_for_logging);
 }
 
 

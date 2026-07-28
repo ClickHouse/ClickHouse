@@ -193,6 +193,8 @@ static struct InitFiu
     REGULAR(storage_cluster_read_sleep) \
     ONCE(backup_add_empty_memory_table) \
     ONCE(backup_fail_before_writing_metadata) \
+    ONCE(backup_fail_while_finalizing_archive) \
+    ONCE(backup_fail_before_removing_lock_file) \
     PAUSEABLE_ONCE(backup_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_on_start) \
     PAUSEABLE(sc_state_application_pause) \

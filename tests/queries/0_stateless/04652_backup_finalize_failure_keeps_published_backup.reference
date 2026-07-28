@@ -1,0 +1,35 @@
+bug_dir_error
+FAULT_INJECTED
+bug_dir_metadata_kept
+1
+bug_dir_restored
+RESTORED
+10	45
+chain_victim_created
+BACKUP_CREATED
+chain_victim_restored
+RESTORED
+15	105
+bug_archive_error
+FAULT_INJECTED
+bug_archive_kept
+1
+bug_archive_restored
+RESTORED
+15	105
+control_early_error
+FAULT_INJECTED
+control_early_archive_removed
+0
+control_early_destination_reusable
+BACKUP_CREATED
+control_mid_error
+FAULT_INJECTED
+control_mid_archive_removed
+0
+control_mid_destination_reusable
+BACKUP_CREATED
+control_clean
+BACKUP_CREATED
+RESTORED
+15	105
