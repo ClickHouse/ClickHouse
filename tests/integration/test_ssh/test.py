@@ -222,7 +222,7 @@ def test_password_user_rejected_with_none_auth(started_cluster):
 def test_paramiko_password(started_cluster):
     instance.query("CREATE USER OR REPLACE mister IDENTIFIED BY 'P@$$WORD';")
 
-    pkey = paramiko.Ed25519Key.from_private_key_file(f"{SCRIPT_DIR}/keys/lucy_ed25519")
+    paramiko.Ed25519Key.from_private_key_file(f"{SCRIPT_DIR}/keys/lucy_ed25519")
     client = paramiko.SSHClient()
     policy = paramiko.AutoAddPolicy()
     client.set_missing_host_key_policy(policy)

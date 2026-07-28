@@ -77,7 +77,7 @@ def test_single_node_broken_log(started_cluster):
 
         node1_conn.create("/test_broken_log")
         for _ in range(10):
-            node1_conn.create(f"/test_broken_log/node", b"somedata1", sequence=True)
+            node1_conn.create("/test_broken_log/node", b"somedata1", sequence=True)
 
         def verify_nodes(zk_conn):
             children = zk_conn.get_children("/test_broken_log")
@@ -111,7 +111,7 @@ def test_single_node_broken_log(started_cluster):
         keeper_utils.wait_until_connected(cluster, node1)
 
         node1_conn = get_fake_zk("node1")
-        node1_conn.create(f"/test_broken_log_final_node", b"somedata1")
+        node1_conn.create("/test_broken_log_final_node", b"somedata1")
 
         verify_nodes(node1_conn)
         assert node1_conn.get("/test_broken_log_final_node")[0] == b"somedata1"

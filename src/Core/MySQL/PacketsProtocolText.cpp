@@ -38,7 +38,7 @@ ResultSetRow::ResultSetRow(const Serializations & serializations, const DataType
         else if (type_index == TypeIndex::DateTime64)
         {
             WriteBufferFromOwnString ostr;
-            ColumnPtr col = columns[i]->convertToFullIfNeeded();
+            ColumnPtr col = columns[i]->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
             if (col->isNullable())
                 col = assert_cast<const ColumnNullable &>(*col).getNestedColumnPtr();
             auto components = MySQLUtils::getNormalizedDateTime64Components(data_type, col, row_num);
