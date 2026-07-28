@@ -68,6 +68,35 @@ namespace Setting
 namespace
 {
 
+bool containsTextIndexRead(QueryPlan & plan)
+{
+    auto * root = plan.getRootNode();
+    if (!root)
+        return false;
+
+    std::vector<QueryPlan::Node *> stack;
+    stack.push_back(root);
+    std::unordered_set<QueryPlan::Node *> visited;
+
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+
+        if (!node || !visited.insert(node).second)
+            continue;
+
+        if (const auto * read_from_merge_tree = typeid_cast<const ReadFromMergeTree *>(node->step.get());
+            read_from_merge_tree && read_from_merge_tree->hasTextIndexInMetadata())
+            return true;
+
+        for (auto * child : node->children)
+            stack.push_back(child);
+    }
+
+    return false;
+}
+
 bool isVectorQueryPlanCacheRelatedSetting(const String & setting_name)
 {
     // Any setting that controls the plan cache itself should not affect the cache key.
@@ -445,6 +474,12 @@ void VectorQueryPlanCache::Writer::setPlan(QueryPlan & plan)
     std::lock_guard lock(mutex);
     if (skip_insert)
         return;
+
+    if (containsTextIndexRead(plan))
+    {
+        LOG_TRACE(logger, "Skipped plan clone for query {} because it reads from a table with a text index", doubleQuoteString(key.query_string));
+        return;
+    }
 
     /// Store a cloned plan to avoid mutation during pipeline build.
     try
