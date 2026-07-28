@@ -1740,7 +1740,9 @@ static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullabl
         const auto * map_type = assert_cast<const DataTypeMap *>(type.get());
         auto key_type = adjustNullableRecursively(map_type->getKeyType(), make_nullable, settings);
         auto value_type = adjustNullableRecursively(map_type->getValueType(), make_nullable, settings);
-        return key_type && value_type ? std::make_shared<DataTypeMap>(removeNullable(key_type), value_type) : nullptr;
+        /// Map keys can never be Nullable; strip it inside LowCardinality too
+        /// (e.g. a dictionary-encoded ORC map key inferred as LowCardinality(String)).
+        return key_type && value_type ? std::make_shared<DataTypeMap>(removeNullableOrLowCardinalityNullable(key_type), value_type) : nullptr;
     }
 
     if (which.isLowCardinality())

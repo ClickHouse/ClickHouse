@@ -10,7 +10,7 @@ FROM format('GeoJSON', '{"type":"FeatureCollection","features":[{"type":"Feature
 SELECT geometry.Polygon
 FROM format('GeoJSON', '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,0]]],"geometries":[]},"properties":{}}]}'); -- { serverError INCORRECT_DATA }
 
--- A MultiPoint (stored as NULL under the 'null' setting) with a 'geometries' member is rejected too.
+-- A MultiPoint with a 'geometries' member is rejected too.
 SELECT count()
 FROM format('GeoJSON', '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"MultiPoint","coordinates":[[0,0]],"geometries":[]},"properties":{}}]}')
 SETTINGS input_format_geojson_unsupported_geometry_handling = 'null'; -- { serverError INCORRECT_DATA }

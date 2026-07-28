@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -30,6 +31,7 @@
 #include <DataFile.hh>
 #include <Encoder.hh>
 #include <Node.hh>
+#include <NodeImpl.hh>
 #include <Schema.hh>
 #include <Common/re2.h>
 
@@ -108,7 +110,7 @@ AvroSerializer::SchemaWithSerializeFn createBigIntegerSchemaWithSerializeFn(cons
 }
 
 }
-AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeFn(const DataTypePtr & data_type, size_t & type_name_increment, const String & column_name)
+AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeFn(const DataTypePtr & data_type, size_t & type_name_increment, const String & column_name, const String & column_path)
 {
     ++type_name_increment;
 
@@ -239,7 +241,13 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             return createDecimalSchemaWithSerializeFn<DataTypeDecimal256>(data_type);
         }
         case TypeIndex::String:
-            if (traits->isStringAsString(column_name))
+        {
+            /// Iceberg `string` and `binary` both read as DataTypeString; on the Iceberg path pick
+            /// from the source logical type, else keep the regex-driven choice.
+            bool as_string = traits->isStringAsString(column_name);
+            if (column_mapper && column_mapper->hasIcebergStringInfo())
+                as_string = column_mapper->isIcebergStringPath(column_path);
+            if (as_string)
                 return {
                     avro::StringSchema(),
                     [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
@@ -254,6 +262,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
                         encoder.encodeBytes(reinterpret_cast<const uint8_t *>(s.data()), s.size());
                     }
                 };
+        }
         case TypeIndex::FixedString:
         {
             auto size = data_type->getSizeOfValueInMemory();
@@ -325,7 +334,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         case TypeIndex::Array:
         {
             const auto & array_type = assert_cast<const DataTypeArray &>(*data_type);
-            auto nested_mapping = createSchemaWithSerializeFn(array_type.getNestedType(), type_name_increment, column_name);
+            auto nested_mapping = createSchemaWithSerializeFn(array_type.getNestedType(), type_name_increment, column_name, Nested::concatenateName(column_path, "element"));
             auto schema = avro::ArraySchema(nested_mapping.schema);
             return {
                 schema,
@@ -353,7 +362,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         case TypeIndex::Nullable:
         {
             auto nested_type = removeNullable(data_type);
-            auto nested_mapping = createSchemaWithSerializeFn(nested_type, type_name_increment, column_name);
+            auto nested_mapping = createSchemaWithSerializeFn(nested_type, type_name_increment, column_name, column_path);
             if (nested_type->getTypeId() == TypeIndex::Nothing)
             {
                 return nested_mapping;
@@ -379,7 +388,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         case TypeIndex::LowCardinality:
         {
             const auto & nested_type = removeLowCardinality(data_type);
-            auto nested_mapping = createSchemaWithSerializeFn(nested_type, type_name_increment, column_name);
+            auto nested_mapping = createSchemaWithSerializeFn(nested_type, type_name_increment, column_name, column_path);
             return {nested_mapping.schema, [nested_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
                 const auto & col = assert_cast<const ColumnLowCardinality &>(column);
@@ -400,7 +409,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
 
             for (const auto & nested_type : nested_types)
             {
-                const auto [schema, serialize] = createSchemaWithSerializeFn(nested_type, type_name_increment, column_name);
+                const auto [schema, serialize] = createSchemaWithSerializeFn(nested_type, type_name_increment, column_name, column_path);
                 union_schema.addType(schema);
                 nested_serializers.push_back(serialize);
             }
@@ -443,7 +452,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             auto schema = avro::RecordSchema(column_name + "_" + std::to_string(type_name_increment));
             for (size_t i = 0; i != nested_types.size(); ++i)
             {
-                auto nested_mapping = createSchemaWithSerializeFn(nested_types[i], type_name_increment, nested_names[i]);
+                auto nested_mapping = createSchemaWithSerializeFn(nested_types[i], type_name_increment, nested_names[i], Nested::concatenateName(column_path, nested_names[i]));
                 schema.addField(nested_names[i], nested_mapping.schema);
                 nested_serializers.push_back(nested_mapping.serialize);
             }
@@ -470,7 +479,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             };
 
             const auto & values_type = map_type.getValueType();
-            auto values_mapping = createSchemaWithSerializeFn(values_type, type_name_increment, column_name + ".value");
+            auto values_mapping = createSchemaWithSerializeFn(values_type, type_name_increment, column_name + ".value", Nested::concatenateName(column_path, "value"));
             auto schema = avro::MapSchema(values_mapping.schema);
 
             return {schema, [keys_serializer, values_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
@@ -503,8 +512,8 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for Avro output", data_type->getName());
 }
 
-AvroSerializer::AvroSerializer(const ColumnsWithTypeAndName & columns, std::unique_ptr<AvroSerializerTraits> traits_, const FormatSettings & settings_)
-    : traits(std::move(traits_)), settings(settings_)
+AvroSerializer::AvroSerializer(const ColumnsWithTypeAndName & columns, std::unique_ptr<AvroSerializerTraits> traits_, const FormatSettings & settings_, ColumnMapperPtr column_mapper_)
+    : traits(std::move(traits_)), settings(settings_), column_mapper(std::move(column_mapper_))
 {
     avro::RecordSchema record_schema("row");
 
@@ -513,7 +522,7 @@ AvroSerializer::AvroSerializer(const ColumnsWithTypeAndName & columns, std::uniq
     {
         try
         {
-            auto field_mapping = createSchemaWithSerializeFn(column.type, type_name_increment, column.name);
+            auto field_mapping = createSchemaWithSerializeFn(column.type, type_name_increment, column.name, /*column_path=*/column.name);
             serialize_fns.push_back(field_mapping.serialize);
             //TODO: verify name starts with A-Za-z_
             record_schema.addField(column.name, field_mapping.schema);
@@ -524,7 +533,63 @@ AvroSerializer::AvroSerializer(const ColumnsWithTypeAndName & columns, std::uniq
             throw;
         }
     }
+
+    if (column_mapper)
+        setIcebergFieldIds(record_schema.root(), /*path=*/"");
+
     valid_schema.setSchema(record_schema);
+}
+
+void AvroSerializer::setIcebergFieldIds(const avro::NodePtr & node, const String & path)
+{
+    switch (node->type())
+    {
+        case avro::AVRO_RECORD:
+        {
+            /// Set each field's id by its dotted path (as in IcebergSchemaProcessor) and descend.
+            auto * node_record = dynamic_cast<avro::NodeRecord *>(node.get());
+            if (!node_record)
+                return;
+
+            const auto & encoding = column_mapper->getStorageColumnEncoding();
+            const size_t num_fields = node->leaves();
+
+            std::vector<int> field_ids(num_fields, -1);
+            for (size_t i = 0; i < num_fields; ++i)
+            {
+                const String field_path = Nested::concatenateName(path, node->nameAt(static_cast<int>(i)));
+                if (auto it = encoding.find(field_path); it != encoding.end())
+                    field_ids[i] = static_cast<int>(it->second);
+
+                setIcebergFieldIds(node->leafAt(static_cast<int>(i)), field_path);
+            }
+            node_record->setFieldIds(field_ids);
+            return;
+        }
+        case avro::AVRO_UNION:
+        {
+            /// Nullable/Variant union: the id belongs to the wrapped type, so descend without
+            /// extending the path (nested records in e.g. Nullable(Tuple(...)) still get ids).
+            for (size_t i = 0; i < node->leaves(); ++i)
+                setIcebergFieldIds(node->leafAt(static_cast<int>(i)), path);
+            return;
+        }
+        case avro::AVRO_ARRAY:
+        {
+            /// The element sits under "<path>.element" (matches traverseComplexType for lists).
+            setIcebergFieldIds(node->leafAt(0), Nested::concatenateName(path, "element"));
+            return;
+        }
+        case avro::AVRO_MAP:
+        {
+            /// Only the map value (leaf 1) can carry a nested record; keys are always strings.
+            if (node->leaves() >= 2)
+                setIcebergFieldIds(node->leafAt(1), Nested::concatenateName(path, "value"));
+            return;
+        }
+        default:
+            return;
+    }
 }
 
 void AvroSerializer::serializeRow(const Columns & columns, size_t row_num, avro::Encoder & encoder)
@@ -560,10 +625,10 @@ static avro::Codec getCodec(const std::string & codec_name)
 }
 
 AvroRowOutputFormat::AvroRowOutputFormat(
-    WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
+    WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_, ColumnMapperPtr column_mapper_)
     : IRowOutputFormat(header_, out_)
     , settings(settings_)
-    , serializer(header_->getColumnsWithTypeAndName(), std::make_unique<AvroSerializerTraits>(settings), settings)
+    , serializer(header_->getColumnsWithTypeAndName(), std::make_unique<AvroSerializerTraits>(settings), settings, std::move(column_mapper_))
 {
 }
 
@@ -657,9 +722,10 @@ void registerOutputFormatAvro(FormatFactory & factory)
         WriteBuffer & buf,
         const Block & sample,
         const FormatSettings & settings,
-        FormatFilterInfoPtr /*format_filter_info*/)
+        FormatFilterInfoPtr format_filter_info)
     {
-        return std::make_shared<AvroRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
+        ColumnMapperPtr column_mapper = format_filter_info ? format_filter_info->column_mapper : nullptr;
+        return std::make_shared<AvroRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings, column_mapper);
     });
     factory.markFormatHasNoAppendSupport("Avro");
     factory.markOutputFormatNotTTYFriendly("Avro");

@@ -13,10 +13,9 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 <Info>
   **이 가이드에서 설명하는 내용은 [GCS](/ko/reference/functions/table-functions/gcs), [Azure Blob storage](/ko/reference/functions/table-functions/azureBlobStorage)처럼 전용 테이블 함수를 제공하는 다른 객체 스토리지 구현에도 적용할 수 있습니다.**
-
 </Info>
 
-스레드와 블록 크기를 조정해 삽입 성능을 개선하기에 앞서, 먼저 S3 삽입이 동작하는 방식을 이해하는 것이 좋습니다. 이미 이 동작 방식에 익숙하거나 빠른 팁만 확인하려면 아래 [예시](/ko/integrations/connectors/data-ingestion/AWS/performance#example-dataset)로 이동하십시오.
+스레드와 블록 크기를 조정해 삽입 성능을 개선하기에 앞서, 먼저 S3 삽입 메커니즘을 이해하는 것이 좋습니다. 이미 이 삽입 메커니즘에 익숙하거나 빠른 팁만 확인하려면 아래 [예시](/ko/integrations/connectors/data-ingestion/AWS/performance#example-dataset)로 이동하십시오.
 
 <div id="insert-mechanics-single-node">
   ## 삽입 메커니즘(단일 노드)
@@ -41,11 +40,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 데이터가 완전히 로드될 때까지 서버는 다음 루프를 실행합니다:
 
 ```bash
-① 다음 데이터 부분을 가져와 파싱하고, 이를 기반으로 인메모리 데이터 블록(파티셔닝 키당 하나)을 구성합니다.
+① Pull and parse the next portion of data and form an in-memory data block (one per partitioning key) from it.
 
-② 블록을 스토리지의 새 파트에 씁니다.
+② Write the block into a new part on storage.
 
-①로 돌아갑니다. 
+Go to ① 
 ```
 
 ①에서 크기는 삽입 블록 크기에 따라 달라지며, 이는 다음 두 가지 설정으로 제어할 수 있습니다:
@@ -102,18 +101,18 @@ ClickHouse 서버는 데이터를 병렬로 처리하고 삽입할 수 있습니
 모든 파일의 데이터가 모두 처리될 때까지 각 삽입 스레드는 다음 루프를 실행합니다:
 
 ```bash
-① 처리되지 않은 파일 데이터의 다음 부분을 가져오고(부분 크기는 설정된 블록 크기를 기반으로 함), 이를 메모리 내 데이터 블록으로 생성합니다.
+① Get the next portion of unprocessed file data (portion size is based on the configured block size) and create an in-memory data block from it.
 
-② 블록을 스토리지의 새 파트에 씁니다.
+② Write the block into a new part on storage.
 
-①로 돌아갑니다. 
+Go to ①. 
 ```
 
 이러한 병렬 삽입에 사용하는 삽입 스레드 수는 [`max_insert_threads`](/ko/reference/settings/session-settings#max_insert_threads) 설정으로 구성할 수 있습니다. 기본값은 오픈소스 ClickHouse에서 `1`, [ClickHouse Cloud](https://clickhouse.com/cloud)에서는 4입니다.
 
 파일 수가 많을 때는 여러 삽입 스레드를 통한 병렬 처리가 효과적입니다. 이 방식은 사용 가능한 CPU 코어와 네트워크 대역폭(병렬 파일 다운로드 시)까지 모두 충분히 활용할 수 있습니다. 반면 소수의 큰 파일만 테이블에 로드하는 시나리오에서는 ClickHouse가 자동으로 높은 수준의 데이터 처리 병렬성을 확보하고, 큰 파일의 서로 다른 범위를 병렬로 읽기(다운로드)할 수 있도록 각 삽입 스레드마다 추가 읽기 스레드를 생성해 네트워크 대역폭 사용도 최적화합니다.
 
-s3 함수와 테이블의 경우, 개별 파일의 병렬 다운로드는 [max&#95;download&#95;threads](https://clickhouse.com/codebrowser/ClickHouse/src/Core/Settings.h.html#DB::SettingsTraits::Data::max_download_threads) 및 [max&#95;download&#95;buffer&#95;size](https://clickhouse.com/codebrowser/ClickHouse/src/Core/Settings.h.html#DB::SettingsTraits::Data::max_download_buffer_size) 값에 따라 결정됩니다. 파일 크기가 `2 * max_download_buffer_size`보다 큰 경우에만 병렬 다운로드가 수행됩니다. 기본적으로 `max_download_buffer_size`의 기본값은 10MiB입니다. 경우에 따라 각 파일이 단일 스레드로 다운로드되도록 하기 위해 이 버퍼 크기를 50 MB(`max_download_buffer_size=52428800`)로 안전하게 늘릴 수 있습니다. 이렇게 하면 각 스레드가 S3 호출에 소비하는 시간을 줄일 수 있고, 결과적으로 S3 대기 시간도 낮출 수 있습니다. 또한 병렬 읽기에 너무 작은 파일의 경우 처리량을 높이기 위해 ClickHouse는 이러한 파일을 비동기적으로 미리 읽어 데이터를 자동으로 프리페치합니다.
+s3 함수와 테이블의 경우, 개별 파일의 병렬 다운로드는 [max&#95;download&#95;threads](/ko/operations/settings/settings#max_download_threads) 및 [max&#95;download&#95;buffer&#95;size](/ko/operations/settings/settings#max_download_buffer_size) 값에 따라 결정됩니다. 파일 크기가 `2 * max_download_buffer_size`보다 큰 경우에만 병렬 다운로드가 수행됩니다. 기본적으로 `max_download_buffer_size`의 기본값은 10MiB입니다. 경우에 따라 각 파일이 단일 스레드로 다운로드되도록 하기 위해 이 버퍼 크기를 50 MB(`max_download_buffer_size=52428800`)로 안전하게 늘릴 수 있습니다. 이렇게 하면 각 스레드가 S3 호출에 소비하는 시간을 줄일 수 있고, 결과적으로 S3 대기 시간도 낮출 수 있습니다. 또한 병렬 읽기에 너무 작은 파일의 경우 처리량을 높이기 위해 ClickHouse는 이러한 파일을 비동기적으로 미리 읽어 데이터를 자동으로 프리페치합니다.
 
 <div id="measuring-performance">
   ## 성능 측정
@@ -354,7 +353,7 @@ SETTINGS max_threads = 92
 
 클러스터를 사용해 S3 읽기를 수행하려면 [클러스터 활용](/ko/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#utilizing-clusters)에 설명된 대로 `s3Cluster` 함수를 사용해야 합니다. 이렇게 하면 읽기가 여러 노드에 분산됩니다.
 
-처음에 삽입 쿼리를 수신한 서버는 먼저 glob 패턴을 확인한 다음, 일치하는 각 파일의 처리를 자신과 다른 서버에 동적으로 분배합니다.
+처음에 삽입 쿼리를 수신한 서버는 먼저 글롭 패턴을 확인한 다음, 일치하는 각 파일의 처리를 자신과 다른 서버에 동적으로 분배합니다.
 
 <Image img="/images/integrations/data-ingestion/s3/s3Cluster.webp" size="lg" border alt="ClickHouse의 s3Cluster 함수" />
 
