@@ -160,7 +160,7 @@ struct AdaptiveAggregationSession
         Columns argument_columns;
 
         /// The aggregate-function instructions over `argument_columns`, built in the chunk's
-        /// own stable storage when the chunk is published (see `enqueueStagedChunk`), so a
+        /// own stable storage when the chunk is published (see `publishStagedChunk`), so a
         /// published chunk is immutable and the drains read it without coordination.
         std::unique_ptr<const StagedChunkPreparation> prepared;
 
@@ -198,7 +198,9 @@ struct AdaptiveAggregationSession
             return true;
         }
     };
-    using StagedChunkPtr = std::shared_ptr<StagedChunk>;
+    /// A published chunk is immutable; only the producer building a chunk holds it mutably.
+    using StagedChunkPtr = std::shared_ptr<const StagedChunk>;
+    using MutableStagedChunkPtr = std::shared_ptr<StagedChunk>;
 
     /// TODO (nihalzp): Consider using a lock-free queue for the backlog, to avoid contention on the mutex.
     struct Bucket
@@ -482,7 +484,7 @@ public:
         /// bucket-grouped chunk before they reach the backlogs (see `stageChunk`), so the
         /// merge-time drain gets a few large contiguous slices per bucket instead of one tiny
         /// slice per consumed block. Flushed by `flushPendingChunks` when the input ends.
-        std::vector<AdaptiveAggregationSession::StagedChunkPtr> pending_chunks;
+        std::vector<AdaptiveAggregationSession::MutableStagedChunkPtr> pending_chunks;
         size_t pending_staged_bytes = 0;
     };
 
@@ -812,7 +814,7 @@ private:
     /// repeat-heavy staged stream copies each key's bytes once and the drain emplaces it once.
     template <typename SharedKey, typename State>
     void buildDeduplicatedCountChunk(
-        const AdaptiveAggregationSession::StagedChunkPtr & block,
+        const AdaptiveAggregationSession::MutableStagedChunkPtr & block,
         AdaptiveAggregationProducer & adaptive,
         State & local_find_state,
         Arena & scratch_pool,
@@ -823,7 +825,7 @@ private:
     /// one chunk once enough bytes accumulate.
     void stageChunk(
         AdaptiveAggregationProducer & adaptive,
-        AdaptiveAggregationSession::StagedChunkPtr block,
+        AdaptiveAggregationSession::MutableStagedChunkPtr block,
         size_t estimated_payload_bytes) const;
 
     /// Merges the buffered batches into one bucket-grouped chunk of the same shape (bucket b's
@@ -833,14 +835,16 @@ private:
     /// The value-staged variant of the seal merge: keys repeating across the batches collapse
     /// into one record with a summed run length while the records are copied into the chunk.
     void sealValueStagedChunkDeduplicated(
-        const std::vector<AdaptiveAggregationSession::StagedChunkPtr> & minis,
+        const std::vector<AdaptiveAggregationSession::MutableStagedChunkPtr> & minis,
         AdaptiveAggregationSession::StagedChunk & chunk) const;
 
-    /// The single publication point: finishes the chunk (builds its preparation in place) and
-    /// registers it with every bucket holding a non-empty slice. Chunks are immutable from
-    /// here on.
-    void enqueueStagedChunk(
-        AdaptiveAggregationSession & shared, const AdaptiveAggregationSession::StagedChunkPtr & block) const;
+    /// The single publication point: finishes the chunk (builds its preparation in place,
+    /// checks the structural invariants in debug builds) and hands it over as immutable.
+    void publishStagedChunk(AdaptiveAggregationSession & shared, AdaptiveAggregationSession::MutableStagedChunkPtr block) const;
+
+    /// Registers an immutable chunk with every bucket holding a non-empty slice.
+    static void registerStagedChunk(
+        AdaptiveAggregationSession & shared, const AdaptiveAggregationSession::StagedChunkPtr & block);
 
     /// Builds the staged chunk's shared preparation: the aggregate-function instructions over
     /// its argument columns, in the chunk's own stable storage.

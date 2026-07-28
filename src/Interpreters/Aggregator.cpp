@@ -2369,7 +2369,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
 
 template <typename SharedKey, typename State>
 void NO_INLINE Aggregator::buildDeduplicatedCountChunk(
-    const AdaptiveAggregationSession::StagedChunkPtr & block,
+    const AdaptiveAggregationSession::MutableStagedChunkPtr & block,
     AdaptiveAggregationProducer & adaptive,
     State & local_find_state,
     Arena & scratch_pool,
@@ -2675,18 +2675,23 @@ void NO_INLINE Aggregator::publishDelayedRecords(
     stageChunk(adaptive, std::move(block), estimated_payload_bytes);
 }
 
-void Aggregator::enqueueStagedChunk(
-    AdaptiveAggregationSession & shared, const AdaptiveAggregationSession::StagedChunkPtr & block) const
+void Aggregator::publishStagedChunk(
+    AdaptiveAggregationSession & shared, AdaptiveAggregationSession::MutableStagedChunkPtr block) const
 {
-    constexpr size_t num_buckets = AdaptiveAggregationSession::NUM_BUCKETS;
-
     chassert(block->wellFormed());
 
     /// Prepared here, on the publishing thread, so the chunk is immutable once any bucket can
-    /// see it. A chunk re-enqueued by a pressure sweep keeps the preparation it already has.
-    if (auto * payload = std::get_if<AdaptiveAggregationSession::AggregatePayload>(&block->payload);
-        payload && !payload->prepared)
+    /// see it.
+    if (std::holds_alternative<AdaptiveAggregationSession::AggregatePayload>(block->payload))
         prepareStagedChunk(*block);
+
+    registerStagedChunk(shared, std::move(block));
+}
+
+void Aggregator::registerStagedChunk(
+    AdaptiveAggregationSession & shared, const AdaptiveAggregationSession::StagedChunkPtr & block)
+{
+    constexpr size_t num_buckets = AdaptiveAggregationSession::NUM_BUCKETS;
 
     std::shared_lock registry_lock(shared.backlog_registry_mutex);
     for (size_t b = 0; b < num_buckets; ++b)
@@ -2701,14 +2706,14 @@ void Aggregator::enqueueStagedChunk(
 }
 
 void Aggregator::stageChunk(
-    AdaptiveAggregationProducer & adaptive, AdaptiveAggregationSession::StagedChunkPtr block, size_t estimated_payload_bytes) const
+    AdaptiveAggregationProducer & adaptive, AdaptiveAggregationSession::MutableStagedChunkPtr block, size_t estimated_payload_bytes) const
 {
     /// Coalescing pays in proportion to how many batches merge into one chunk. A batch of at
     /// least half the seal target could only ever merge with one neighbor, gaining almost
     /// nothing for a full extra copy of its data, so it is enqueued as-is.
     if (estimated_payload_bytes * 2 >= adaptive_seal_target_bytes)
     {
-        enqueueStagedChunk(*adaptive.session, block);
+        publishStagedChunk(*adaptive.session, std::move(block));
         return;
     }
 
@@ -2726,7 +2731,7 @@ void Aggregator::flushPendingChunks(AdaptiveAggregationProducer & adaptive) cons
 }
 
 void Aggregator::sealValueStagedChunkDeduplicated(
-    const std::vector<AdaptiveAggregationSession::StagedChunkPtr> & minis,
+    const std::vector<AdaptiveAggregationSession::MutableStagedChunkPtr> & minis,
     AdaptiveAggregationSession::StagedChunk & chunk) const
 {
     constexpr size_t num_buckets = AdaptiveAggregationSession::NUM_BUCKETS;
@@ -2856,7 +2861,7 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
 
     if (num_minis == 1)
     {
-        enqueueStagedChunk(*adaptive.session, minis.front());
+        publishStagedChunk(*adaptive.session, minis.front());
         minis.clear();
         adaptive.pending_staged_bytes = 0;
         return;
@@ -2993,7 +2998,7 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
         num_minis,
         keys.size());
 
-    enqueueStagedChunk(*adaptive.session, chunk);
+    publishStagedChunk(*adaptive.session, std::move(chunk));
     minis.clear();
     adaptive.pending_staged_bytes = 0;
 }
@@ -3333,7 +3338,7 @@ void Aggregator::drainStagedChunksEarly(AdaptiveAggregationSession & shared, Ada
     /// Chunks the watermark spared go back to the backlogs for the merge-time drain.
     for (auto & chunk : chunks)
         if (chunk)
-            enqueueStagedChunk(shared, chunk);
+            registerStagedChunk(shared, chunk);
 
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureDrainedRecords, drained_records);
     shared.undrained_records.fetch_sub(drained_records, std::memory_order_relaxed);
