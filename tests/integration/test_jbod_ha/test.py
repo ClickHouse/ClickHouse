@@ -1,14 +1,7 @@
-import json
-import random
-import re
-import string
-import threading
 import time
-from multiprocessing.dummy import Pool
 
 import pytest
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -192,4 +185,4 @@ def test_jbod_ha_fetch_partition(start_cluster):
 
     finally:
         for node in [node1, node2]:
-            node.query("DROP TABLE IF EXISTS tbl SYNC".format(i + 1))
+            node.query("DROP TABLE IF EXISTS tbl SYNC")

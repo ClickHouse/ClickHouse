@@ -82,7 +82,7 @@ ColumnPtr IPolygonDictionary::getColumn(
     DefaultOrFilter default_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+    chassert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     const auto requested_key_points = extractPoints(key_columns);
 
@@ -614,6 +614,14 @@ struct Data
 
 void addNewPoint(IPolygonDictionary::Coord x, IPolygonDictionary::Coord y, Data & data, Offset & offset)
 {
+    if (isNaN(x) || isNaN(y))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "PolygonDictionary polygon point component must not be NaN");
+
+    if (std::isinf(x) || std::isinf(y))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "PolygonDictionary polygon point component must not be infinite");
+
     if (offset.atLastPointOfRing())
     {
         if (offset.atLastRingOfPolygon())

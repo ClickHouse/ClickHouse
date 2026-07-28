@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <cstddef>
+#include <utility>
 
 namespace DB::Jemalloc
 {
@@ -142,7 +143,7 @@ struct MibCache
 
 private:
     static constexpr size_t max_mib_length = 4;
-    size_t mib[max_mib_length];
+    size_t mib[max_mib_length]{};
     size_t mib_length = max_mib_length;
     bool valid = false;
 };
@@ -203,3 +204,20 @@ public:
 }
 
 #endif
+
+namespace DB
+{
+
+/// Replace `value` with a fresh copy of itself and drop the original. Because the copy is a new
+/// allocation, its storage is served by whatever arena the calling thread is currently bound to.
+/// This does not select an arena itself: enter a `ScopedJemallocThreadArena` scope first, then call
+/// this to re-home an already-built object into that arena. Pure copy + move, so it is harmless and
+/// works whether or not jemalloc is compiled in.
+template <typename T>
+void reallocateByCopy(T & value)
+{
+    auto copy = value;
+    value = std::move(copy);
+}
+
+}

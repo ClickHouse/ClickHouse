@@ -8,6 +8,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Core/UUID.h>
 
 namespace DB
 {

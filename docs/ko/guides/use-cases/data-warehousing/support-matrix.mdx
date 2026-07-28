@@ -1,0 +1,174 @@
+---
+title: '지원 매트릭스'
+sidebarTitle: '지원 매트릭스'
+slug: /use-cases/data-lake/support-matrix
+description: 'ClickHouse의 오픈 테이블 포맷 통합 및 데이터 카탈로그 연결에 대한 종합적인 지원 매트릭스입니다.'
+keywords: ['데이터 레이크', 'lakehouse', '지원', 'iceberg', 'delta lake', 'hudi', 'paimon', '카탈로그', '기능']
+doc_type: 'reference'
+---
+
+이 페이지에서는 ClickHouse의 데이터 레이크 통합에 대한 종합적인 지원 매트릭스를 제공합니다. 각 오픈 테이블 포맷에서 사용할 수 있는 기능, ClickHouse가 연결할 수 있는 카탈로그, 그리고 각 카탈로그에서 지원되는 기능을 다룹니다.
+
+<div id="format-support">
+  ## 오픈 테이블 포맷 지원
+</div>
+
+ClickHouse는 [Apache Iceberg](/ko/reference/engines/table-engines/integrations/iceberg), [Delta Lake](/ko/reference/engines/table-engines/integrations/deltalake), [Apache Hudi](/ko/reference/engines/table-engines/integrations/hudi), [Apache Paimon](/ko/reference/functions/table-functions/paimon) 등 4가지 오픈 테이블 포맷을 지원합니다. 아래에서 포맷을 선택하면 해당 지원 매트릭스를 확인할 수 있습니다.
+
+**범례:** ✅ 지원 | ⚠️ 부분 지원 / Experimental | ❌ 미지원
+
+<Tabs>
+  <Tab title="Apache Iceberg">
+    | 기능                           |  상태 | 비고                                                                                                                                                                                                                                                        |
+    | ---------------------------- | :-: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | **스토리지 백엔드**                 |     |                                                                                                                                                                                                                                                           |
+    | AWS S3                       |  ✅  | [`icebergS3()`](/ko/reference/functions/table-functions/iceberg) 또는 `iceberg()` alias를 통해 사용                                                                                                                                                                 |
+    | GCS                          |  ✅  | [`icebergS3()`](/ko/reference/functions/table-functions/iceberg) 또는 `iceberg()` alias를 통해 사용                                                                                                                                                                 |
+    | Azure Blob Storage           |  ✅  | [`icebergAzure()`](/ko/reference/functions/table-functions/iceberg)를 통해 사용                                                                                                                                                                                   |
+    | HDFS                         |  ⚠️ | [`icebergHDFS()`](/ko/reference/functions/table-functions/iceberg)를 통해 사용합니다. 더 이상 권장되지 않습니다.                                                                                                                                                                |
+    | Local filesystem             |  ✅  | [`icebergLocal()`](/ko/reference/functions/table-functions/iceberg)를 통해 사용                                                                                                                                                                                   |
+    | **접근 방식**                    |     |                                                                                                                                                                                                                                                           |
+    | 테이블 함수                       |  ✅  | 백엔드별 변형을 제공하는 [`icebergS3()`](/ko/reference/functions/table-functions/iceberg)                                                                                                                                                                               |
+    | 테이블 엔진                       |  ✅  | 백엔드별 변형을 제공하는 [`IcebergS3`](/ko/reference/engines/table-engines/integrations/iceberg)                                                                                                                                                                        |
+    | 클러스터 분산 읽기                   |  ✅  | [`icebergS3Cluster`](/ko/reference/functions/table-functions/icebergCluster), [`icebergAzureCluster`](/ko/reference/functions/table-functions/icebergCluster), [`icebergHDFSCluster`](/ko/reference/functions/table-functions/icebergCluster)                      |
+    | 이름이 지정된 컬렉션                  |  ✅  | [명명된 컬렉션 정의](/ko/reference/functions/table-functions/iceberg#defining-a-named-collection)                                                                                                                                                                    |
+    |                              |     |                                                                                                                                                                                                                                                           |
+    | **읽기 기능**                    |     |                                                                                                                                                                                                                                                           |
+    | 읽기 지원                        |  ✅  | 모든 ClickHouse SQL 함수와 함께 전체 SELECT를 지원                                                                                                                                                                                                                    |
+    | 파티션 프루닝                      |  ✅  | [Partition pruning](/ko/reference/engines/table-engines/integrations/iceberg#partition-pruning)을 참조하십시오.                                                                                                                                                     |
+    | 숨겨진 파티셔닝                     |  ✅  | Iceberg transform 기반 파티셔닝을 지원                                                                                                                                                                                                                             |
+    | 파티션 진화                       |  ✅  | 시간에 따라 파티션 사양이 변경되는 테이블 읽기를 지원                                                                                                                                                                                                                            |
+    | 스키마 진화                       |  ✅  | 컬럼 추가, 제거, 재정렬을 지원합니다. [Schema evolution](/ko/reference/engines/table-engines/integrations/iceberg#schema-evolution)을 참조하십시오.                                                                                                                                |
+    | 유형 승격 / 확장                   |  ✅  | `int` → `long`, `float` → `double`, `decimal(P,S)` → `decimal(P',S)`를 지원하며, 여기서 P&#39; &gt; P입니다. [Schema evolution](/ko/reference/engines/table-engines/integrations/iceberg#schema-evolution)을 참조하십시오.                                                     |
+    | 시점 이동 / 스냅샷                  |  ✅  | `iceberg_timestamp_ms` 또는 `iceberg_snapshot_id` 설정을 통해 지원합니다. [Time travel](/ko/reference/engines/table-engines/integrations/iceberg#time-travel)을 참조하십시오.                                                                                                   |
+    | 위치 삭제                        |  ✅  | [Processing deleted rows](/ko/reference/engines/table-engines/integrations/iceberg#deleted-rows)를 참조하십시오.                                                                                                                                                    |
+    | 동등성 삭제                       |  ✅  | v25.8+부터 테이블 엔진에서만 지원됩니다. [Processing deleted rows](/ko/reference/engines/table-engines/integrations/iceberg#deleted-rows)를 참조하십시오.                                                                                                                          |
+    | 읽기 시 머지                      |  ⚠️ | 실험적 기능입니다. [delete operations](/ko/reference/functions/table-functions/iceberg#iceberg-writes-delete)에서 지원됩니다.                                                                                                                                               |
+    | 포맷 버전                        |  ⚠️ | v1 및 v2를 지원합니다. V3는 지원되지 않습니다.                                                                                                                                                                                                                            |
+    | 컬럼 통계                        |  ✅  |                                                                                                                                                                                                                                                           |
+    | 블룸 필터 / puffin 파일            |  ❌  | puffin 파일의 블룸 필터 인덱스는 지원되지 않습니다                                                                                                                                                                                                                           |
+    | 가상 컬럼                        |  ✅  | `_path`, `_file`, `_size`, `_time`, `_etag`. [Virtual columns](/ko/reference/functions/table-functions/iceberg#virtual-columns)을 참조하십시오.                                                                                                                     |
+    |                              |     |                                                                                                                                                                                                                                                           |
+    | **쓰기 기능**                    |     |                                                                                                                                                                                                                                                           |
+    | 테이블 생성                       |  ✅  | 실험적 기능입니다. `allow_insert_into_iceberg = 1`이 필요합니다. v25.7+부터 지원됩니다. [Creating a table](/ko/reference/functions/table-functions/iceberg#create-iceberg-table)을 참조하십시오.                                                                                         |
+    | INSERT                       |  ✅  | 26.2부터 베타입니다. `allow_insert_into_iceberg = 1`이 필요합니다. [데이터 삽입](/ko/reference/functions/table-functions/iceberg#writes-inserts)을 참조하십시오.                                                                                                                      |
+    | DELETE                       |  ✅  | 실험적 기능입니다. `allow_insert_into_iceberg = 1`이 필요합니다. `ALTER TABLE ... DELETE WHERE`를 통해 수행합니다. [데이터 삭제](/ko/reference/functions/table-functions/iceberg#iceberg-writes-delete)를 참조하십시오.                                                                        |
+    | ALTER TABLE (schema changes) |  ✅  | 실험적 기능입니다. `allow_insert_into_iceberg = 1`이 필요합니다. 컬럼 추가, 삭제, 수정, 이름 변경을 지원합니다. [스키마 진화](/ko/reference/functions/table-functions/iceberg#iceberg-writes-schema-evolution)를 참조하십시오.                                                                           |
+    | Compaction                   |  ⚠️ | 실험적 기능입니다. `allow_experimental_iceberg_compaction = 1`이 필요합니다. 포지션 삭제 파일을 데이터 파일에 머지합니다. [Compaction](/ko/reference/functions/table-functions/iceberg#iceberg-writes-compaction)을 참조하십시오. 다른 Iceberg compaction 작업은 지원되지 않습니다.                               |
+    | UPDATE / MERGE               |  ❌  | 지원되지 않습니다. Compaction을 참조하십시오.                                                                                                                                                                                                                            |
+    | Copy-on-write                |  ❌  | 지원되지 않습니다                                                                                                                                                                                                                                                 |
+    | Expire snapshots             |  ❌  | 지원되지 않습니다                                                                                                                                                                                                                                                 |
+    | Remove orphan files          |  ❌  | 지원되지 않습니다                                                                                                                                                                                                                                                 |
+    | Writing partitions           |  ✅  | 지원됩니다.                                                                                                                                                                                                                                                    |
+    | Altering partitions          |  ❌  | ClickHouse에서 파티셔닝 방식 변경은 지원되지 않습니다. ClickHouse는 파티셔닝이 진화된 Iceberg 테이블에 쓸 수 있습니다.                                                                                                                                                                          |
+    |                              |     |                                                                                                                                                                                                                                                           |
+    | **메타데이터**                    |     |                                                                                                                                                                                                                                                           |
+    | Branching and tagging        |  ❌  | Iceberg 브랜치/태그 참조는 지원되지 않습니다                                                                                                                                                                                                                              |
+    | Metadata file resolution     |  ✅  | 카탈로그, 단순 디렉터리 나열, &#39;version-hint&#39;, 특정 경로를 사용한 메타데이터 파일 확인을 지원합니다. `iceberg_metadata_file_path` 및 `iceberg_metadata_table_uuid`로 구성할 수 있습니다. [메타데이터 파일 확인](/ko/reference/engines/table-engines/integrations/iceberg#metadata-file-resolution)을 참조하십시오. |
+    | Data caching                 |  ✅  | S3/Azure/HDFS 스토리지 엔진과 동일한 메커니즘입니다. [데이터 캐시](/ko/reference/engines/table-engines/integrations/iceberg#data-cache)를 참조하십시오.                                                                                                                                   |
+    | Metadata caching             |  ✅  | 매니페스트와 메타데이터 파일이 메모리에 캐시됩니다. 기본적으로 `use_iceberg_metadata_files_cache`를 통해 활성화됩니다. [메타데이터 캐시](/ko/reference/engines/table-engines/integrations/iceberg#metadata-cache)를 참조하십시오.                                                                               |
+  </Tab>
+
+  <Tab title="Delta Lake">
+    버전 25.6부터 ClickHouse는 Delta Lake Rust 커널을 사용하여 Delta Lake 테이블을 읽으며, 더 폭넓은 기능을 지원합니다. 다만 Azure Blob Storage의 데이터에 액세스할 때는 알려진 문제가 있습니다. 따라서 Azure Blob Storage에서 데이터를 읽을 때는 이 커널이 비활성화됩니다. 아래에는 어떤 기능에 이 커널이 필요한지 표시되어 있습니다.
+
+    | Feature                 | Status | Notes                                                                                                                                                           |
+    | ----------------------- | :----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | **스토리지 백엔드**            |        |                                                                                                                                                                 |
+    | AWS S3                  |    ✅   | [`deltaLake()`](/ko/reference/functions/table-functions/deltalake) 또는 `deltaLakeS3()`를 통해 사용                                                                       |
+    | GCS                     |    ✅   | [`deltaLake()`](/ko/reference/functions/table-functions/deltalake) 또는 `deltaLakeS3()`를 통해 사용                                                                       |
+    | Azure Blob Storage      |    ✅   | [`deltaLakeAzure()`](/ko/reference/functions/table-functions/deltalake)를 통해 사용                                                                                     |
+    | HDFS                    |    ❌   | 지원되지 않음                                                                                                                                                         |
+    | 로컬 파일 시스템               |    ✅   | [`deltaLakeLocal()`](/ko/reference/functions/table-functions/deltalake)를 통해 사용                                                                                     |
+    | **접근 방식**               |        |                                                                                                                                                                 |
+    | 테이블 함수                  |    ✅   | 백엔드별 변형을 지원하는 [`deltaLake()`](/ko/reference/functions/table-functions/deltalake)                                                                                   |
+    | 테이블 엔진                  |    ✅   | [`DeltaLake`](/ko/reference/engines/table-engines/integrations/deltalake)                                                                                          |
+    | 클러스터 분산 읽기              |    ✅   | [`deltaLakeCluster`](/ko/reference/functions/table-functions/deltalakeCluster), [`deltaLakeAzureCluster`](/ko/reference/functions/table-functions/deltalakeCluster)   |
+    | 이름이 지정된 컬렉션             |    ✅   | [명명된 컬렉션](/ko/reference/functions/table-functions/deltalake#arguments)                                                                                             |
+    | **읽기 기능**               |        |                                                                                                                                                                 |
+    | 읽기 지원                   |    ✅   | 모든 ClickHouse SQL 함수와 함께 전체 SELECT 지원                                                                                                                           |
+    | 파티션 프루닝                 |    ✅   | Delta 커널이 필요합니다.                                                                                                                                                |
+    | 스키마 진화                  |    ✅   | Delta 커널이 필요합니다.                                                                                                                                                |
+    | Time travel             |    ✅   | Delta 커널이 필요합니다.                                                                                                                                                |
+    | 삭제 벡터                   |    ✅   |                                                                                                                                                                 |
+    | 컬럼 매핑                   |    ✅   |                                                                                                                                                                 |
+    | 변경 데이터 피드               |    ✅   | Delta 커널이 필요합니다.                                                                                                                                                |
+    | 가상 컬럼                   |    ✅   | `_path`, `_file`, `_size`, `_time`, `_etag`. 자세한 내용은 [가상 컬럼](/ko/reference/functions/table-functions/deltalake#virtual-columns)을 참조하십시오.                           |
+    | **쓰기 기능**               |        |                                                                                                                                                                 |
+    | INSERT                  |    ✅   | 실험적 기능입니다. `allow_experimental_delta_lake_writes = 1`이 필요합니다. [DeltaLake 엔진](/ko/reference/engines/table-engines/integrations/deltalake)을 참조하십시오. Delta 커널이 필요합니다. |
+    | DELETE / UPDATE / MERGE |    ❌   | 지원되지 않음                                                                                                                                                         |
+    | CREATE 빈 테이블            |    ❌   | 새로운 빈 Delta Lake 테이블 생성은 지원되지 않습니다. `CREATE TABLE` 작업은 객체 스토리지에 기존 Delta Lake가 이미 존재한다고 가정합니다.                                                                  |
+    | **캐싱**                  |        |                                                                                                                                                                 |
+    | 데이터 캐싱                  |    ✅   | S3/Azure/HDFS 스토리지 엔진과 동일한 메커니즘입니다. [데이터 캐시](/ko/reference/engines/table-engines/integrations/deltalake#data-cache)를 참조하십시오.                                       |
+  </Tab>
+
+  <Tab title="Apache Hudi">
+    | 기능                       |  상태 | 참고                                                                                                                       |
+    | ------------------------ | :-: | ------------------------------------------------------------------------------------------------------------------------ |
+    | **스토리지 백엔드**             |     |                                                                                                                          |
+    | AWS S3                   |  ✅  | [`hudi()`](/ko/reference/functions/table-functions/hudi)를 통해 지원                                                             |
+    | GCS                      |  ✅  | [`hudi()`](/ko/reference/functions/table-functions/hudi)를 통해 지원                                                             |
+    | Azure Blob Storage       |  ❌  | 지원되지 않음                                                                                                                  |
+    | HDFS                     |  ❌  | 지원되지 않음                                                                                                                  |
+    | 로컬 파일 시스템                |  ❌  | 지원되지 않음                                                                                                                  |
+    | **액세스 메서드**              |     |                                                                                                                          |
+    | 테이블 함수                   |  ✅  | [`hudi()`](/ko/reference/functions/table-functions/hudi)                                                                    |
+    | 테이블 엔진                   |  ✅  | [`Hudi`](/ko/reference/engines/table-engines/integrations/hudi)                                                             |
+    | 클러스터 분산 읽기               |  ✅  | [`hudiCluster`](/ko/reference/functions/table-functions/hudiCluster) (S3만)                                                  |
+    | 이름이 지정된 컬렉션              |  ✅  | [Hudi 인수](/ko/reference/functions/table-functions/hudi#arguments)                                                           |
+    | **읽기 기능**                |     |                                                                                                                          |
+    | 읽기 지원                    |  ✅  | 모든 ClickHouse SQL 함수와 함께 완전한 SELECT 지원                                                                                   |
+    | 스키마 진화                   |  ❌  | 지원되지 않음                                                                                                                  |
+    | 과거 시점 조회                 |  ❌  | 지원되지 않음                                                                                                                  |
+    | 가상 컬럼                    |  ✅  | `_path`, `_file`, `_size`, `_time`, `_etag`. [가상 컬럼](/ko/reference/functions/table-functions/hudi#virtual-columns)을 참조하십시오. |
+    | **쓰기 기능**                |     |                                                                                                                          |
+    | INSERT / DELETE / UPDATE |  ❌  | 읽기 전용 통합                                                                                                                 |
+    | **캐싱**                   |     |                                                                                                                          |
+    | 데이터 캐싱                   |  ❌  | 지원되지 않음                                                                                                                  |
+  </Tab>
+
+  <Tab title="Apache Paimon">
+    | 기능                       |  상태 | 비고                                                                                                                                                                                                                                     |
+    | ------------------------ | :-: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | **스토리지 백엔드**             |     |                                                                                                                                                                                                                                        |
+    | S3                       |  ✅  | 실험적입니다. [`paimon()`](/ko/reference/functions/table-functions/paimon) 또는 `paimonS3()`를 통해 사용할 수 있습니다                                                                                                                                       |
+    | GCS                      |  ✅  | 실험적입니다. [`paimon()`](/ko/reference/functions/table-functions/paimon) 또는 `paimonS3()`를 통해 사용할 수 있습니다                                                                                                                                       |
+    | Azure Blob Storage       |  ✅  | 실험적입니다. [`paimonAzure()`](/ko/reference/functions/table-functions/paimon)를 통해 사용할 수 있습니다                                                                                                                                                  |
+    | HDFS                     |  ⚠️ | 실험적입니다. [`paimonHDFS()`](/ko/reference/functions/table-functions/paimon)를 통해 사용할 수 있습니다. 지원 중단 예정입니다.                                                                                                                                     |
+    | 로컬 파일 시스템                |  ✅  | 실험적입니다. [`paimonLocal()`](/ko/reference/functions/table-functions/paimon)를 통해 사용할 수 있습니다                                                                                                                                                  |
+    | **액세스 방식**               |     |                                                                                                                                                                                                                                        |
+    | 테이블 함수                   |  ✅  | 실험적입니다. 백엔드별 변형과 함께 [`paimon()`](/ko/reference/functions/table-functions/paimon)을 사용할 수 있습니다                                                                                                                                              |
+    | 테이블 엔진                   |  ❌  | 전용 테이블 엔진은 없습니다                                                                                                                                                                                                                        |
+    | 클러스터 분산 읽기               |  ✅  | 실험적입니다. [`paimonS3Cluster`](/ko/reference/functions/table-functions/paimonCluster), [`paimonAzureCluster`](/ko/reference/functions/table-functions/paimonCluster), [`paimonHDFSCluster`](/ko/reference/functions/table-functions/paimonCluster) |
+    | 이름이 지정된 컬렉션              |  ✅  | 실험적입니다. [명명된 컬렉션 정의](/ko/reference/functions/table-functions/paimon#defining-a-named-collection)                                                                                                                                          |
+    | **읽기 기능**                |     |                                                                                                                                                                                                                                        |
+    | 읽기 지원                    |  ✅  | 실험적입니다. 모든 ClickHouse SQL 함수와 함께 SELECT를 완전히 지원합니다                                                                                                                                                                                     |
+    | 스키마 진화                   |  ❌  | 지원되지 않습니다                                                                                                                                                                                                                              |
+    | 타임 트래블                   |  ❌  | 지원되지 않습니다                                                                                                                                                                                                                              |
+    | 가상 컬럼                    |  ✅  | 실험적입니다. `_path`, `_file`, `_size`, `_time`, `_etag`. [가상 컬럼](/ko/reference/functions/table-functions/paimon#virtual-columns)을 참조하십시오.                                                                                                     |
+    | **쓰기 기능**                |     |                                                                                                                                                                                                                                        |
+    | INSERT / DELETE / UPDATE |  ❌  | 읽기 전용 통합입니다                                                                                                                                                                                                                            |
+    | **캐싱**                   |     |                                                                                                                                                                                                                                        |
+    | 데이터 캐싱                   |  ❌  | 지원되지 않습니다                                                                                                                                                                                                                              |
+  </Tab>
+</Tabs>
+
+<div id="catalog-support">
+  ## 카탈로그 지원
+</div>
+
+ClickHouse는 [`DataLakeCatalog`](/ko/reference/engines/database-engines/datalake) 데이터베이스 엔진을 사용해 외부 데이터 카탈로그에 연결할 수 있으며, 이 엔진은 카탈로그를 ClickHouse 데이터베이스로 노출합니다. 카탈로그에 등록된 테이블은 자동으로 표시되며, 표준 SQL로 쿼리할 수 있습니다.
+
+현재 다음 카탈로그를 지원합니다. 전체 설정 방법은 각 카탈로그의 참고 가이드를 참조하십시오.
+
+| Catalog                                                                      | Formats        |      Read      | Create table | INSERT | 참고 가이드                                                              |
+| ---------------------------------------------------------------------------- | -------------- | :------------: | :----------: | :----: | ---------------------------------------------------------------------------- |
+| [AWS Glue Catalog](/ko/guides/use-cases/data-warehousing/glue-catalog)          | Iceberg        |      ✅ 베타      |       ❌      |    ❌   | [Glue 카탈로그 가이드](/ko/guides/use-cases/data-warehousing/glue-catalog)             |
+| [BigLake Metastore](/ko/guides/use-cases/data-warehousing/biglake-catalog)      | Iceberg        |      ✅ 베타      |       ❌      |    ❌   | [BigLake 메타스토어 가이드](/ko/guides/use-cases/data-warehousing/biglake-catalog)      |
+| [Databricks Unity Catalog](/ko/guides/use-cases/data-warehousing/unity-catalog) | Delta, Iceberg |      ✅ 베타      |     ✅ 베타     |  ✅ 베타  | [Unity Catalog 가이드](/ko/guides/use-cases/data-warehousing/unity-catalog)        |
+| [Iceberg REST](/ko/guides/use-cases/data-warehousing/rest-catalog)              | Iceberg        |      ✅ 베타      |       ❌      |    ❌   | [REST 카탈로그 가이드](/ko/guides/use-cases/data-warehousing/rest-catalog)             |
+| [Lakekeeper](/ko/guides/use-cases/data-warehousing/lakekeeper-catalog)          | Iceberg        |      ✅ 베타      |       ❌      |    ❌   | [Lakekeeper 카탈로그 가이드](/ko/guides/use-cases/data-warehousing/lakekeeper-catalog) |
+| [Project Nessie](/ko/guides/use-cases/data-warehousing/nessie-catalog)          | Iceberg        | ✅ Experimental |       ❌      |    ❌   | [Nessie 카탈로그 가이드](/ko/guides/use-cases/data-warehousing/nessie-catalog)         |
+| [Microsoft OneLake](/ko/guides/use-cases/data-warehousing/onelake-catalog)      | Iceberg        |      ✅ 베타      |     ✅ 베타     |  ✅ 베타  | [OneLake 카탈로그 가이드](/ko/guides/use-cases/data-warehousing/onelake-catalog)       |
+
+현재 모든 카탈로그 통합은 Experimental 또는 베타 설정을 활성화해야 사용할 수 있습니다. Microsoft OneLake와 Databricks Unity Catalog를 제외한 모든 카탈로그는 **읽기 전용** 액세스만 제공합니다. 즉, 카탈로그 연결을 통해 테이블을 쿼리할 수는 있지만, 테이블을 생성하거나 데이터를 쓸 수는 없습니다. 카탈로그의 데이터를 ClickHouse로 로드해 더 빠르게 분석하려면 [분석 가속화 가이드](/ko/guides/use-cases/data-warehousing/getting-started/accelerating-analytics)에 설명된 대로 `INSERT INTO SELECT`를 사용하십시오. 오픈 테이블 포맷에 데이터를 다시 쓰려면 [데이터 쓰기 가이드](/ko/guides/use-cases/data-warehousing/getting-started/writing-data)에 설명된 대로 독립형 Iceberg 테이블을 생성하십시오.

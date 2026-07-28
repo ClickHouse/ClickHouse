@@ -11,6 +11,8 @@
             <nuraft_streaming_mode>true</nuraft_streaming_mode>
             <nuraft_max_log_gap_in_stream>16</nuraft_max_log_gap_in_stream>
             <nuraft_max_bytes_in_flight_in_stream>4194304</nuraft_max_bytes_in_flight_in_stream>
+            <nuraft_max_uncommitted_log_entries>12345</nuraft_max_uncommitted_log_entries>
+            <nuraft_append_entries_backward_probe_throttle_threshold>7</nuraft_append_entries_backward_probe_throttle_threshold>
         </coordination_settings>
         <raft_configuration>
             <server>

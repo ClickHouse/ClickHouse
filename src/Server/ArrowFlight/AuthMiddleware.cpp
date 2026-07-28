@@ -1,4 +1,5 @@
 #include <Server/ArrowFlight/AuthMiddleware.h>
+#include <Core/UUID.h>
 
 #if USE_ARROWFLIGHT
 

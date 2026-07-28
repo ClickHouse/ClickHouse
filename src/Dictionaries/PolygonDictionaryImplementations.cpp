@@ -110,7 +110,7 @@ bool PolygonDictionaryIndexEach::find(const Point & point, size_t & polygon_inde
     {
         for (const auto & candidate : cell->polygon_ids)
         {
-            size_t unused;
+            size_t unused = 0;
             if (buckets[candidate].find(point, unused))
             {
                 polygon_index = candidate;
@@ -203,8 +203,8 @@ DictionaryPtr createLayout(const std::string & /*name*/,
     const auto simple_polygon_array = DataTypeArray(std::make_shared<DataTypeArray>(f64));
     const auto simple_polygon_tuple = DataTypeArray(std::make_shared<DataTypeTuple>(DataTypes{f64, f64}));
 
-    IPolygonDictionary::InputType input_type;
-    IPolygonDictionary::PointType point_type;
+    IPolygonDictionary::InputType input_type = {};
+    IPolygonDictionary::PointType point_type = {};
 
     if (key_type->equals(multi_polygon_array))
     {
@@ -274,14 +274,27 @@ DictionaryPtr createLayout(const std::string & /*name*/,
         return std::make_unique<PolygonDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, configuration);
 }
 
+void registerDictionaryPolygon(DictionaryFactory & factory);
 void registerDictionaryPolygon(DictionaryFactory & factory)
 {
-    factory.registerLayout("polygon_simple", createLayout<PolygonDictionarySimple>, true);
-    factory.registerLayout("polygon_index_each", createLayout<PolygonDictionaryIndexEach>, true);
-    factory.registerLayout("polygon_index_cell", createLayout<PolygonDictionaryIndexCell>, true);
+    factory.registerLayout("polygon_simple", createLayout<PolygonDictionarySimple>, true, true, Documentation{
+        .description = "A polygon dictionary that performs a linear scan over all polygons for each queried point. The simplest but slowest polygon layout.",
+        .syntax = "LAYOUT(POLYGON_SIMPLE())",
+        .related = {"polygon"}});
+    factory.registerLayout("polygon_index_each", createLayout<PolygonDictionaryIndexEach>, true, true, Documentation{
+        .description = "A polygon dictionary that builds a separate grid index for each polygon.",
+        .syntax = "LAYOUT(POLYGON_INDEX_EACH())",
+        .related = {"polygon"}});
+    factory.registerLayout("polygon_index_cell", createLayout<PolygonDictionaryIndexCell>, true, true, Documentation{
+        .description = "A polygon dictionary that builds a single grid index over all polygons.",
+        .syntax = "LAYOUT(POLYGON_INDEX_CELL())",
+        .related = {"polygon"}});
 
     /// Alias to the most performant dictionary type - polygon_index_cell
-    factory.registerLayout("polygon", createLayout<PolygonDictionaryIndexCell>, true);
+    factory.registerLayout("polygon", createLayout<PolygonDictionaryIndexCell>, true, true, Documentation{
+        .description = "Maps points (coordinates) to the polygons that contain them, for geographical lookups. This is an alias for the `polygon_index_cell` layout.",
+        .syntax = "LAYOUT(POLYGON())",
+        .related = {"polygon_simple", "polygon_index_each", "polygon_index_cell"}});
 }
 
 }
