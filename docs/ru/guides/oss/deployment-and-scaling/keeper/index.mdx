@@ -507,7 +507,7 @@ SYSTEM STOP MERGES;
 
 4. Необязательно, но рекомендуется: найдите узел-лидер ZooKeeper, запустите его и затем снова остановите. Это принудительно заставит ZooKeeper записать на диск согласованный снимок перед преобразованием.
 
-5. Запустите `clickhouse-keeper-converter` на узле-лидере. Если у вас установлен полный бинарный файл ClickHouse, используйте вместо него подкоманду `keeper-converter` (`clickhouse keeper-converter`). Если недоступно ни то ни другое, [скачайте бинарный файл](/ru/getting-started/quick-start/oss#install-clickhouse).
+5. Запустите `clickhouse-keeper-converter` на узле-лидере. Если у вас установлен полный бинарный файл ClickHouse, используйте вместо него подкоманду `keeper-converter` (`clickhouse keeper-converter`). Если недоступно ни то ни другое, [скачайте бинарный файл](/ru/get-started/setup/self-managed/quick-install#install-clickhouse-using-curl).
 
 ```bash
 clickhouse-keeper-converter \
@@ -779,270 +779,266 @@ curl 127.0.0.1:9363/metrics
 
 В этом руководстве приведены простые и минимально необходимые настройки для конфигурации ClickHouse Keeper, а также пример проверки распределённых операций. В примере используются 3 узла Linux.
 
-<div id="1-configure-nodes-with-keeper-settings">
-  ### 1. Настройте параметры Keeper на узлах
-</div>
+<Steps>
+  <Step title="Настройте узлы, указав параметры Keeper" id="1-configure-nodes-with-keeper-settings">
+    1. Установите 3 экземпляра ClickHouse на 3 хостах (`chnode1`, `chnode2`, `chnode3`). (Подробности по установке ClickHouse см. в разделе [Быстрый старт](/ru/get-started/setup/install).)
 
-1. Установите 3 экземпляра ClickHouse на 3 хостах (`chnode1`, `chnode2`, `chnode3`). (Подробности по установке ClickHouse см. в разделе [Быстрый старт](/ru/get-started/setup/install).)
+    2. На каждом узле добавьте следующую запись, чтобы разрешить внешние подключения через сетевой интерфейс.
+       ```xml
+       <listen_host>0.0.0.0</listen_host>
+       ```
 
-2. На каждом узле добавьте следующую запись, чтобы разрешить внешние подключения через сетевой интерфейс.
-   ```xml
-   <listen_host>0.0.0.0</listen_host>
-   ```
+    3. Добавьте следующую конфигурацию ClickHouse Keeper на все три сервера, изменив параметр `<server_id>` для каждого из них; для `chnode1` это будет `1`, для `chnode2` — `2` и т. д.
 
-3. Добавьте следующую конфигурацию ClickHouse Keeper на все три сервера, изменив параметр `<server_id>` для каждого из них; для `chnode1` это будет `1`, для `chnode2` — `2` и т. д.
+       ```xml
+       <keeper_server>
+           <tcp_port>9181</tcp_port>
+           <server_id>1</server_id>
+           <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+           <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
 
-   ```xml
-   <keeper_server>
-       <tcp_port>9181</tcp_port>
-       <server_id>1</server_id>
-       <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
-       <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+           <coordination_settings>
+               <operation_timeout_ms>10000</operation_timeout_ms>
+               <session_timeout_ms>30000</session_timeout_ms>
+               <raft_logs_level>warning</raft_logs_level>
+           </coordination_settings>
 
-       <coordination_settings>
-           <operation_timeout_ms>10000</operation_timeout_ms>
-           <session_timeout_ms>30000</session_timeout_ms>
-           <raft_logs_level>warning</raft_logs_level>
-       </coordination_settings>
+           <raft_configuration>
+               <server>
+                   <id>1</id>
+                   <hostname>chnode1.domain.com</hostname>
+                   <port>9234</port>
+               </server>
+               <server>
+                   <id>2</id>
+                   <hostname>chnode2.domain.com</hostname>
+                   <port>9234</port>
+               </server>
+               <server>
+                   <id>3</id>
+                   <hostname>chnode3.domain.com</hostname>
+                   <port>9234</port>
+               </server>
+           </raft_configuration>
+       </keeper_server>
+       ```
 
-       <raft_configuration>
-           <server>
-               <id>1</id>
-               <hostname>chnode1.domain.com</hostname>
-               <port>9234</port>
-           </server>
-           <server>
-               <id>2</id>
-               <hostname>chnode2.domain.com</hostname>
-               <port>9234</port>
-           </server>
-           <server>
-               <id>3</id>
-               <hostname>chnode3.domain.com</hostname>
-               <port>9234</port>
-           </server>
-       </raft_configuration>
-   </keeper_server>
-   ```
+       Вот основные настройки, которые использовались выше:
 
-   Вот основные настройки, которые использовались выше:
+       | Параметр                  | Описание                                                                          | Пример                                                    |
+       | ------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------- |
+       | tcp&#95;port              | порт, используемый клиентами Keeper                                               | 9181, эквивалент порта 2181 по умолчанию, как в ZooKeeper |
+       | server&#95;id             | идентификатор каждого сервера ClickHouse Keeper, используемый в конфигурации Raft | 1                                                         |
+       | coordination&#95;settings | раздел с параметрами, такими как тайм-ауты                                        | тайм-ауты: 10000, уровень логирования: trace              |
+       | server                    | описание участвующего сервера                                                     | список описаний всех серверов                             |
+       | raft&#95;configuration    | настройки каждого сервера в кластере Keeper                                       | сервер и настройки для каждого                            |
+       | id                        | числовой идентификатор сервера для сервисов Keeper                                | 1                                                         |
+       | hostname                  | имя хоста, IP-адрес или FQDN каждого сервера в кластере Keeper                    | `chnode1.domain.com`                                      |
+       | port                      | порт для межсерверных соединений Keeper                                           | 9234                                                      |
 
-   | Параметр                  | Описание                                                                          | Пример                                                    |
-   | ------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------- |
-   | tcp&#95;port              | порт, используемый клиентами Keeper                                               | 9181, эквивалент порта 2181 по умолчанию, как в ZooKeeper |
-   | server&#95;id             | идентификатор каждого сервера ClickHouse Keeper, используемый в конфигурации Raft | 1                                                         |
-   | coordination&#95;settings | раздел с параметрами, такими как тайм-ауты                                        | тайм-ауты: 10000, уровень логирования: trace              |
-   | server                    | описание участвующего сервера                                                     | список описаний всех серверов                             |
-   | raft&#95;configuration    | настройки каждого сервера в кластере Keeper                                       | сервер и настройки для каждого                            |
-   | id                        | числовой идентификатор сервера для сервисов Keeper                                | 1                                                         |
-   | hostname                  | имя хоста, IP-адрес или FQDN каждого сервера в кластере Keeper                    | `chnode1.domain.com`                                      |
-   | port                      | порт для межсерверных соединений Keeper                                           | 9234                                                      |
+    4. Включите компонент ZooKeeper. Для него будет использоваться движок ClickHouse Keeper:
 
-4. Включите компонент ZooKeeper. Для него будет использоваться движок ClickHouse Keeper:
+       ```xml
+           <zookeeper>
+               <node>
+                   <host>chnode1.domain.com</host>
+                   <port>9181</port>
+               </node>
+               <node>
+                   <host>chnode2.domain.com</host>
+                   <port>9181</port>
+               </node>
+               <node>
+                   <host>chnode3.domain.com</host>
+                   <port>9181</port>
+               </node>
+           </zookeeper>
+       ```
 
-   ```xml
-       <zookeeper>
-           <node>
-               <host>chnode1.domain.com</host>
-               <port>9181</port>
-           </node>
-           <node>
-               <host>chnode2.domain.com</host>
-               <port>9181</port>
-           </node>
-           <node>
-               <host>chnode3.domain.com</host>
-               <port>9181</port>
-           </node>
-       </zookeeper>
-   ```
+       Вот основные настройки, которые использовались выше:
 
-   Выше использовались следующие основные настройки:
+       | Параметр | Описание                                                    | Пример                                  |
+       | -------- | ----------------------------------------------------------- | --------------------------------------- |
+       | node     | список узлов для подключений к ClickHouse Keeper            | запись в настройках для каждого сервера |
+       | host     | имя хоста, IP-адрес или FQDN каждого узла ClickHouse Keeper | `chnode1.domain.com`                    |
+       | port     | клиентский порт ClickHouse Keeper                           | 9181                                    |
 
-   | Параметр | Описание                                                    | Пример                                  |
-   | -------- | ----------------------------------------------------------- | --------------------------------------- |
-   | node     | список узлов для подключений к ClickHouse Keeper            | запись в настройках для каждого сервера |
-   | host     | имя хоста, IP-адрес или FQDN каждого узла ClickHouse Keeper | `chnode1.domain.com`                    |
-   | port     | клиентский порт ClickHouse Keeper                           | 9181                                    |
+    5. Перезапустите ClickHouse и убедитесь, что каждый экземпляр Keeper запущен. Выполните следующую команду на каждом сервере. Команда `ruok` возвращает `imok`, если Keeper запущен и работает нормально:
+       ```bash
+       # echo ruok | nc localhost 9181; echo
+       imok
+       ```
 
-5. Перезапустите ClickHouse и убедитесь, что каждый экземпляр Keeper запущен. Выполните следующую команду на каждом сервере. Команда `ruok` возвращает `imok`, если Keeper запущен и работает нормально:
-   ```bash
-   # echo ruok | nc localhost 9181; echo
-   imok
-   ```
+    6. В базе данных `system` есть таблица `zookeeper`, содержащая сведения о ваших экземплярах ClickHouse Keeper. Давайте посмотрим на эту таблицу:
 
-6. В базе данных `system` есть таблица `zookeeper`, содержащая сведения о ваших экземплярах ClickHouse Keeper. Давайте посмотрим на эту таблицу:
+       ```sql
+       SELECT *
+       FROM system.zookeeper
+       WHERE path IN ('/', '/clickhouse')
+       ```
 
-   ```sql
-   SELECT *
-   FROM system.zookeeper
-   WHERE path IN ('/', '/clickhouse')
-   ```
+       Таблица выглядит так:
 
-   Таблица выглядит так:
+       ```response
+       ┌─name───────┬─value─┬─czxid─┬─mzxid─┬───────────────ctime─┬───────────────mtime─┬─version─┬─cversion─┬─aversion─┬─ephemeralOwner─┬─dataLength─┬─numChildren─┬─pzxid─┬─path────────┐
+       │ clickhouse │       │   124 │   124 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        2 │        0 │              0 │          0 │           2 │  5693 │ /           │
+       │ task_queue │       │   125 │   125 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        1 │        0 │              0 │          0 │           1 │   126 │ /clickhouse │
+       │ tables     │       │  5693 │  5693 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        3 │        0 │              0 │          0 │           3 │  6461 │ /clickhouse │
+       └────────────┴───────┴───────┴───────┴─────────────────────┴─────────────────────┴─────────┴──────────┴──────────┴────────────────┴────────────┴─────────────┴───────┴─────────────┘
+       ```
+  </Step>
 
-   ```response
-   ┌─name───────┬─value─┬─czxid─┬─mzxid─┬───────────────ctime─┬───────────────mtime─┬─version─┬─cversion─┬─aversion─┬─ephemeralOwner─┬─dataLength─┬─numChildren─┬─pzxid─┬─path────────┐
-   │ clickhouse │       │   124 │   124 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        2 │        0 │              0 │          0 │           2 │  5693 │ /           │
-   │ task_queue │       │   125 │   125 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        1 │        0 │              0 │          0 │           1 │   126 │ /clickhouse │
-   │ tables     │       │  5693 │  5693 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        3 │        0 │              0 │          0 │           3 │  6461 │ /clickhouse │
-   └────────────┴───────┴───────┴───────┴─────────────────────┴─────────────────────┴─────────┴──────────┴──────────┴────────────────┴────────────┴─────────────┴───────┴─────────────┘
-   ```
+  <Step title="Настройте кластер в ClickHouse" id="2--configure-a-cluster-in-clickhouse">
+    1. Давайте настроим простой кластер с 2 сегментами и только одной репликой на двух узлах. Третий узел будет использоваться для обеспечения кворума, необходимого ClickHouse Keeper. Обновите конфигурацию на `chnode1` и `chnode2`. Следующая конфигурация кластера задает по 1 сегменту на каждом узле, то есть всего 2 сегмента без репликации. В этом примере часть данных будет находиться на одном узле, а часть — на другом:
 
-<div id="2--configure-a-cluster-in-clickhouse">
-  ### 2.  Настройте кластер в ClickHouse
-</div>
+       ```xml
+           <remote_servers>
+               <cluster_2S_1R>
+                   <shard>
+                       <replica>
+                           <host>chnode1.domain.com</host>
+                           <port>9000</port>
+                           <user>default</user>
+                           <password>ClickHouse123!</password>
+                       </replica>
+                   </shard>
+                   <shard>
+                       <replica>
+                           <host>chnode2.domain.com</host>
+                           <port>9000</port>
+                           <user>default</user>
+                           <password>ClickHouse123!</password>
+                       </replica>
+                   </shard>
+               </cluster_2S_1R>
+           </remote_servers>
+       ```
 
-1. Настроим простой кластер с 2 сегментами и только одной репликой на двух узлах. Третий узел будет использоваться для достижения кворума, необходимого для ClickHouse Keeper. Обновите конфигурацию на `chnode1` и `chnode2`. Следующая конфигурация кластера определяет по 1 сегменту на каждом узле, всего 2 сегмента, без репликации. В этом примере часть данных будет находиться на одном узле, а часть — на другом:
+       | Параметр | Описание                                                                                                 | Пример                             |
+       | -------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+       | shard    | список реплик в определении кластера                                                                     | список реплик для каждого сегмента |
+       | replica  | список настроек для каждой реплики                                                                       | параметры каждой реплики           |
+       | host     | имя хоста, IP-адрес или FQDN сервера, на котором будет размещена реплика сегмента                        | `chnode1.domain.com`               |
+       | port     | порт, используемый для взаимодействия через собственный TCP-протокол                                     | 9000                               |
+       | user     | имя пользователя, которое будет использоваться для аутентификации при подключении к экземплярам кластера | default                            |
+       | password | пароль пользователя, которому разрешены подключения к экземплярам кластера                               | `ClickHouse123!`                   |
 
-   ```xml
-       <remote_servers>
-           <cluster_2S_1R>
-               <shard>
-                   <replica>
-                       <host>chnode1.domain.com</host>
-                       <port>9000</port>
-                       <user>default</user>
-                       <password>ClickHouse123!</password>
-                   </replica>
-               </shard>
-               <shard>
-                   <replica>
-                       <host>chnode2.domain.com</host>
-                       <port>9000</port>
-                       <user>default</user>
-                       <password>ClickHouse123!</password>
-                   </replica>
-               </shard>
-           </cluster_2S_1R>
-       </remote_servers>
-   ```
+    2. Перезапустите ClickHouse и убедитесь, что кластер создан:
 
-   | Параметр | Описание                                                                                 | Пример                                 |
-   | -------- | ---------------------------------------------------------------------------------------- | -------------------------------------- |
-   | shard    | список реплик в определении кластера                                                     | список реплик для каждого сегмента     |
-   | replica  | список настроек для каждой реплики                                                       | параметры настройки для каждой реплики |
-   | host     | имя хоста, IP-адрес или FQDN сервера, на котором будет размещена реплика сегмента        | `chnode1.domain.com`                   |
-   | port     | порт, используемый для связи по нативному TCP-протоколу                                  | 9000                                   |
-   | user     | имя пользователя, которое будет использоваться для аутентификации в экземплярах кластера | default                                |
-   | password | пароль пользователя, заданного для разрешения подключений к экземплярам кластера         | `ClickHouse123!`                       |
+       ```sql
+       SHOW clusters;
+       ```
 
-2. Перезапустите ClickHouse и убедитесь, что кластер создан:
+       Вы должны увидеть свой кластер:
 
-   ```sql
-   SHOW clusters;
-   ```
+       ```response
+       ┌─cluster───────┐
+       │ cluster_2S_1R │
+       └───────────────┘
+       ```
+  </Step>
 
-   Вы должны увидеть свой кластер:
+  <Step title="Создайте и протестируйте distributed таблицу" id="3-create-and-test-distributed-table">
+    1. Создайте новую базу данных в новом кластере с помощью клиента ClickHouse на `chnode1`. Предложение `ON CLUSTER` автоматически создаёт базу данных на обоих узлах.
+       ```sql
+       CREATE DATABASE db1 ON CLUSTER 'cluster_2S_1R';
+       ```
 
-   ```response
-   ┌─cluster───────┐
-   │ cluster_2S_1R │
-   └───────────────┘
-   ```
+    2. Создайте новую таблицу в базе данных `db1`. И снова `ON CLUSTER` создаёт таблицу на обоих узлах.
+       ```sql
+       CREATE TABLE db1.table1 on cluster 'cluster_2S_1R'
+       (
+           `id` UInt64,
+           `column1` String
+       )
+       ENGINE = MergeTree
+       ORDER BY column1
+       ```
 
-<div id="3-create-and-test-distributed-table">
-  ### 3. Создайте и протестируйте distributed таблицу
-</div>
+    3. На узле `chnode1` добавьте пару строк:
+       ```sql
+       INSERT INTO db1.table1
+           (id, column1)
+       VALUES
+           (1, 'abc'),
+           (2, 'def')
+       ```
 
-1. Создайте новую базу данных в новом кластере с помощью клиента ClickHouse на `chnode1`. Предложение `ON CLUSTER` автоматически создает базу данных на обоих узлах.
-   ```sql
-   CREATE DATABASE db1 ON CLUSTER 'cluster_2S_1R';
-   ```
+    4. Добавьте пару строк на узле `chnode2`:
+       ```sql
+       INSERT INTO db1.table1
+           (id, column1)
+       VALUES
+           (3, 'ghi'),
+           (4, 'jkl')
+       ```
 
-2. Создайте новую таблицу в базе данных `db1`. И снова `ON CLUSTER` создает таблицу на обоих узлах.
-   ```sql
-   CREATE TABLE db1.table1 on cluster 'cluster_2S_1R'
-   (
-       `id` UInt64,
-       `column1` String
-   )
-   ENGINE = MergeTree
-   ORDER BY column1
-   ```
+    5. Обратите внимание, что выполнение оператора `SELECT` на каждом узле показывает только данные, находящиеся на этом узле. Например, на `chnode1`:
 
-3. На узле `chnode1` добавьте пару строк:
-   ```sql
-   INSERT INTO db1.table1
-       (id, column1)
-   VALUES
-       (1, 'abc'),
-       (2, 'def')
-   ```
+       ```sql
+       SELECT *
+       FROM db1.table1
+       ```
 
-4. Добавьте пару строк на узле `chnode2`:
-   ```sql
-   INSERT INTO db1.table1
-       (id, column1)
-   VALUES
-       (3, 'ghi'),
-       (4, 'jkl')
-   ```
+       ```response
+       Query id: 7ef1edbc-df25-462b-a9d4-3fe6f9cb0b6d
 
-5. Обратите внимание: выполнение оператора `SELECT` на каждом узле показывает только данные с этого узла. Например, на `chnode1`:
+       ┌─id─┬─column1─┐
+       │  1 │ abc     │
+       │  2 │ def     │
+       └────┴─────────┘
 
-   ```sql
-   SELECT *
-   FROM db1.table1
-   ```
+       2 rows in set. Elapsed: 0.006 sec.
+       ```
 
-   ```response
-   Query id: 7ef1edbc-df25-462b-a9d4-3fe6f9cb0b6d
+       На `chnode2`:
 
-   ┌─id─┬─column1─┐
-   │  1 │ abc     │
-   │  2 │ def     │
-   └────┴─────────┘
+    6. ```sql
+       SELECT *
+       FROM db1.table1
+       ```
 
-   2 rows in set. Elapsed: 0.006 sec.
-   ```
+       ```response
+       Query id: c43763cc-c69c-4bcc-afbe-50e764adfcbf
 
-   На `chnode2`:
+       ┌─id─┬─column1─┐
+       │  3 │ ghi     │
+       │  4 │ jkl     │
+       └────┴─────────┘
+       ```
 
-6. ```sql
-   SELECT *
-   FROM db1.table1
-   ```
+    7. Вы можете создать таблицу `Distributed`, чтобы представить данные на двух сегментах. Таблицы с движком таблицы `Distributed` не хранят собственные данные, но позволяют выполнять распределённую обработку запросов на нескольких серверах. Чтение выполняется со всех сегментов, а операции записи можно распределять между сегментами. Выполните следующий запрос на `chnode1`:
+       ```sql
+       CREATE TABLE db1.dist_table (
+           id UInt64,
+           column1 String
+       )
+       ENGINE = Distributed(cluster_2S_1R,db1,table1)
+       ```
 
-   ```response
-   Query id: c43763cc-c69c-4bcc-afbe-50e764adfcbf
+    8. Обратите внимание, что запрос к `dist_table` возвращает все четыре строки данных из двух сегментов:
 
-   ┌─id─┬─column1─┐
-   │  3 │ ghi     │
-   │  4 │ jkl     │
-   └────┴─────────┘
-   ```
+       ```sql
+       SELECT *
+       FROM db1.dist_table
+       ```
 
-7. Вы можете создать таблицу `Distributed`, чтобы представить данные на двух сегментах. Таблицы с движком таблицы `Distributed` не хранят собственные данные, но позволяют выполнять распределенную обработку запросов на нескольких серверах. Чтение выполняется со всех сегментов, а запись может распределяться между сегментами. Выполните следующий запрос на `chnode1`:
-   ```sql
-   CREATE TABLE db1.dist_table (
-       id UInt64,
-       column1 String
-   )
-   ENGINE = Distributed(cluster_2S_1R,db1,table1)
-   ```
+       ```response
+       Query id: 495bffa0-f849-4a0c-aeea-d7115a54747a
 
-8. Обратите внимание, что запрос к `dist_table` возвращает все четыре строки данных с двух сегментов:
+       ┌─id─┬─column1─┐
+       │  1 │ abc     │
+       │  2 │ def     │
+       └────┴─────────┘
+       ┌─id─┬─column1─┐
+       │  3 │ ghi     │
+       │  4 │ jkl     │
+       └────┴─────────┘
 
-   ```sql
-   SELECT *
-   FROM db1.dist_table
-   ```
-
-   ```response
-   Query id: 495bffa0-f849-4a0c-aeea-d7115a54747a
-
-   ┌─id─┬─column1─┐
-   │  1 │ abc     │
-   │  2 │ def     │
-   └────┴─────────┘
-   ┌─id─┬─column1─┐
-   │  3 │ ghi     │
-   │  4 │ jkl     │
-   └────┴─────────┘
-
-   4 rows in set. Elapsed: 0.018 sec.
-   ```
+       4 rows in set. Elapsed: 0.018 sec.
+       ```
+  </Step>
+</Steps>
 
 <div id="summary">
   ### Краткое содержание

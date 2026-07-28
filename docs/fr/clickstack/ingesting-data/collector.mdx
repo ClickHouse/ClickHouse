@@ -581,7 +581,7 @@ Tous les détails sur la configuration de cette fonctionnalité sont disponibles
   ## Mise à l’échelle
 </div>
 
-Le ClickStack OTel collector joue le rôle d’une instance de gateway - voir [Rôles des collectors](#collector-roles). Celles-ci constituent un service autonome, généralement par centre de données ou par région. Elles reçoivent les événements des applications (ou d’autres collectors dans le rôle d’agent) via un unique endpoint OTLP. En général, un ensemble d’instances de collector est déployé, avec un load balancer prêt à l’emploi pour répartir la charge entre elles.
+Le ClickStack OTel collector joue le rôle d’une instance de gateway - voir [Rôles du collector](#collector-roles). Celles-ci constituent un service autonome, généralement par centre de données ou par région. Elles reçoivent les événements des applications (ou d’autres collectors dans le rôle d’agent) via un unique endpoint OTLP. En général, un ensemble d’instances de collector est déployé, avec un load balancer prêt à l’emploi pour répartir la charge entre elles.
 
 <Image img="/images/use-cases/observability/clickstack-with-gateways.webp" alt="Mise à l’échelle avec des gateways" size="lg" />
 
@@ -629,6 +629,6 @@ Pour les instances agent chargées d’acheminer les événements vers une gatew
   ## Choix du schéma : Map vs JSON
 </div>
 
-Le collector ClickStack crée par défaut des tables qui stockent les attributs dans des colonnes `Map(LowCardinality(String), String)`. Il s’agit du schéma recommandé pour les workloads d’observabilité. Un schéma de type `JSON` est disponible en bêta pour l’évaluation sur des workloads disposant d’un ensemble de clés d’attributs réduit et stable.
+Le ClickStack collector crée par défaut des tables qui stockent les attributs dans des colonnes `Map(LowCardinality(String), String)`. Il s’agit du schéma recommandé pour les charges de travail d’observabilité. Un schéma de type `JSON` est disponible en bêta pour évaluation sur des charges de travail avec un ensemble de clés d’attributs réduit et stable.
 
-Pour une comparaison complète, savoir dans quels cas chacun convient, connaître les variables d’environnement requises pour activer le schéma de type `JSON` et suivre le guide de migration, consultez [Map vs JSON type](/fr/clickstack/ingesting-data/schema/map-vs-json).
+Pour une comparaison complète, les cas où chacun est adapté, les variables d’environnement requises pour activer le schéma de type `JSON`, ainsi que le guide de migration, consultez [Map vs type JSON](/fr/clickstack/ingesting-data/schema/map-vs-json).
