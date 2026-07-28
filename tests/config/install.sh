@@ -73,7 +73,22 @@ function check_clickhouse_version()
 
 function is_fast_build()
 {
-    return $(clickhouse local --query "SELECT value NOT LIKE '%-fsanitize=%' AND value LIKE '%-DNDEBUG%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
+    # Tests with MinIO/azure can be slow
+    if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]] || [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
+        return 1
+    fi
+    # Encrypted storage is slow (but it is enabled only for object storages)
+    if [[ "$USE_ENCRYPTED_STORAGE" == "1" ]]; then
+        return 1
+    fi
+    # Coverage instrumentation is ~2-3x slower. WITH_COVERAGE has a dedicated row in
+    # system.build_options; the coverage flags are applied per-directory, so they never
+    # reach CXX_FLAGS and cannot be probed from there.
+    if [[ "$(clickhouse local --query "SELECT upper(value) IN ('ON', '1') FROM system.build_options WHERE name = 'WITH_COVERAGE'")" == "1" ]]; then
+        return 1
+    fi
+    # sanitizers and debug builds are slow
+    [ "$(clickhouse local --query "SELECT value NOT LIKE '%-fsanitize=%' AND value LIKE '%-DNDEBUG%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" -eq 1 ]
 }
 
 echo "Going to install test configs from $SRC_PATH into $DEST_SERVER_PATH"
@@ -270,7 +285,7 @@ ln -sf $SRC_PATH/users.d/limits.yaml $DEST_SERVER_PATH/users.d/
 if check_clickhouse_version 26.1; then
     ln -sf $SRC_PATH/users.d/distributed_index_analysis.yaml $DEST_SERVER_PATH/users.d/
 fi
-if [[ $(is_fast_build) == 1 ]]; then
+if is_fast_build; then
     ln -sf $SRC_PATH/users.d/limits_fast.yaml $DEST_SERVER_PATH/users.d/
 fi
 
