@@ -9,7 +9,7 @@ namespace DB
 
 ASTPtr ASTWindowDefinition::clone() const
 {
-    auto result = make_intrusive<ASTWindowDefinition>();
+    auto result = std::make_shared<ASTWindowDefinition>();
 
     result->parent_window_name = parent_window_name;
 
@@ -143,7 +143,7 @@ std::string ASTWindowDefinition::getDefaultWindowName() const
 
 ASTPtr ASTWindowListElement::clone() const
 {
-    auto result = make_intrusive<ASTWindowListElement>();
+    auto result = std::make_shared<ASTWindowListElement>();
 
     result->name = name;
     result->definition = definition->clone();

@@ -37,6 +37,8 @@ public:
 private:
     friend class ReadFromMergeTreeIndex;
 
+    MergeTreeData::DataPartsVector getFilteredDataParts(const ExpressionActionsPtr & virtual_columns_filter) const;
+
     StoragePtr source_table;
     bool with_marks;
     bool with_minmax;

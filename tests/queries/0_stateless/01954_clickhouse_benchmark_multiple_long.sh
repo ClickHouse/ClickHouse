@@ -133,7 +133,7 @@ function test_clickhouse_benchmark_multi_hosts()
         echo "server1 (port=$port1) handled $queries1 queries" >&2
     fi
     if [[ $queries2 -lt 4000 ]] || [[ $queries2 -gt 6000 ]]; then
-        echo "server2 (port=$port2) handled $queries2 queries" >&2
+        echo "server1 (port=$port2) handled $queries2 queries" >&2
     fi
 }
 function test_clickhouse_benchmark_multi_hosts_roundrobin()
@@ -158,7 +158,7 @@ function test_clickhouse_benchmark_multi_hosts_roundrobin()
         echo "server1 (port=$port1) handled $queries1 queries (with --roundrobin)" >&2
     fi
     if [[ $queries2 -lt 9000 ]] || [[ $queries2 -gt 11000 ]]; then
-        echo "server2 (port=$port2) handled $queries2 queries (with --roundrobin)" >&2
+        echo "server1 (port=$port2) handled $queries2 queries (with --roundrobin)" >&2
     fi
 }
 

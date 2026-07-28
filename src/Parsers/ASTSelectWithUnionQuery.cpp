@@ -10,7 +10,7 @@ namespace DB
 
 ASTPtr ASTSelectWithUnionQuery::clone() const
 {
-    auto res = make_intrusive<ASTSelectWithUnionQuery>(*this);
+    auto res = std::make_shared<ASTSelectWithUnionQuery>(*this);
     res->children.clear();
 
     res->list_of_selects = list_of_selects->clone();
@@ -60,14 +60,11 @@ void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSe
             || mode == SelectUnionMode::EXCEPT_DISTINCT;
     };
 
-    auto get_mode = [&](ASTs::const_iterator it) -> SelectUnionMode
+    auto get_mode = [&](ASTs::const_iterator it)
     {
-        if (is_normalized)
-            return union_mode;
-        auto index = static_cast<size_t>(it - list_of_selects->children.begin()) - 1;
-        if (index >= list_of_modes.size())
-            return union_mode;
-        return list_of_modes[index];
+        return is_normalized
+            ? union_mode
+            : list_of_modes[it - list_of_selects->children.begin() - 1];
     };
 
     for (ASTs::const_iterator it = list_of_selects->children.begin(); it != list_of_selects->children.end(); ++it)
@@ -97,29 +94,10 @@ void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSe
         if (union_node)
             need_parens = true;
 
-        /// When `settings_ast` is set on the whole SelectWithUnionQuery (inherited
-        /// from ASTQueryWithOutput), or a parent query (e.g. EXPLAIN) will append
-        /// SETTINGS after this node (signalled via `frame.parent_has_trailing_settings`),
-        /// and no `out_file` or `format_ast` precedes it in the formatted output,
-        /// the base class formats `SETTINGS ...` immediately after the UNION chain.
-        /// Without parentheses around individual SELECTs, the re-parser's
-        /// `ParserSelectQuery` would consume SETTINGS as part of the last individual
-        /// SELECT, moving it from the outer query to the last SelectQuery and breaking
-        /// the formatting roundtrip.
-        /// When `out_file` or `format_ast` is present, they are formatted before
-        /// SETTINGS, and `ParserSelectQuery` stops before them (it doesn't handle
-        /// INTO OUTFILE or FORMAT), so SETTINGS remains on the outer query.
-        /// Wrapping each SELECT in parentheses prevents this: the parser treats
-        /// each `(SELECT ...)` as a self-contained subquery, and SETTINGS stays on
-        /// the outer query. `ParserUnionQueryElement` flattens single-child
-        /// subqueries back to `SelectQuery`, preserving the AST structure.
-        if ((settings_ast || frame.parent_has_trailing_settings) && !out_file && !format_ast && (*it)->as<ASTSelectQuery>())
-            need_parens = true;
-
         if (need_parens)
         {
             ostr << indent_str;
-            auto subquery = make_intrusive<ASTSubquery>(*it);
+            auto subquery = std::make_shared<ASTSubquery>(*it);
             subquery->format(ostr, settings, state, frame);
         }
         else

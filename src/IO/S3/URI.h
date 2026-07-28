@@ -36,10 +36,7 @@ struct URI
     bool is_virtual_hosted_style;
 
     URI() = default;
-    explicit URI(
-        const std::string & uri_,
-        bool allow_archive_path_syntax = false,
-        bool keep_presigned_query_parameters = true);
+    explicit URI(const std::string & uri_, bool allow_archive_path_syntax = false);
     void addRegionToURI(const std::string & region);
 
     static void validateBucket(const std::string & bucket, const Poco::URI & uri);

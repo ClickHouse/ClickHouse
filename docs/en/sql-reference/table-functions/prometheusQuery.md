@@ -4,7 +4,6 @@ sidebar_label: 'prometheusQuery'
 sidebar_position: 145
 slug: /sql-reference/table-functions/prometheusQuery
 title: 'prometheusQuery'
-doc_type: 'reference'
 ---
 
 # prometheusQuery Table Function

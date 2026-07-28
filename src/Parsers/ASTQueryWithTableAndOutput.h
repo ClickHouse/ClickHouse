@@ -14,24 +14,12 @@ namespace DB
   */
 class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
 {
-    struct ASTQueryWithTableAndOutputFlags
-    {
-        using ParentFlags = ASTQueryWithOutput::ASTQueryWithOutputFlags;
-        static constexpr UInt32 RESERVED_BITS = ParentFlags::RESERVED_BITS + 1;
-
-        UInt32 _parent_reserved : ParentFlags::RESERVED_BITS;
-        UInt32 is_temporary : 1;
-    };
 public:
     ASTPtr database;
     ASTPtr table;
+
     UUID uuid = UUIDHelpers::Nil;
-
-    /// Note that flags are initialized to zero (false) by default
-    ASTQueryWithTableAndOutput() = default;
-
-    bool isTemporary() const { return flags<ASTQueryWithTableAndOutputFlags>().is_temporary; }
-    void setIsTemporary(bool value) { flags<ASTQueryWithTableAndOutputFlags>().is_temporary = value; }
+    bool temporary{false};
 
     String getDatabase() const;
     String getTable() const;
@@ -52,7 +40,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = make_intrusive<ASTQueryWithTableAndOutputImpl<AstIDAndQueryNames>>(*this);
+        auto res = std::make_shared<ASTQueryWithTableAndOutputImpl<AstIDAndQueryNames>>(*this);
         res->children.clear();
         cloneOutputOptions(*res);
         cloneTableOptions(*res);
@@ -65,7 +53,7 @@ protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         ostr
-            << (isTemporary() ? AstIDAndQueryNames::QueryTemporary : AstIDAndQueryNames::Query)
+            << (temporary ? AstIDAndQueryNames::QueryTemporary : AstIDAndQueryNames::Query)
             << " ";
 
         if (database)

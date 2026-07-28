@@ -1,0 +1,6 @@
+<clickhouse>
+    <nats>
+        <user>click</user>
+        <password>house</password>
+    </nats>
+</clickhouse>

@@ -1,5 +1,4 @@
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
-#include <Parsers/ASTWithAlias.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -8,7 +7,7 @@ namespace DB
 {
 ASTPtr ASTDictionaryAttributeDeclaration::clone() const
 {
-    const auto res = make_intrusive<ASTDictionaryAttributeDeclaration>(*this);
+    const auto res = std::make_shared<ASTDictionaryAttributeDeclaration>(*this);
     res->children.clear();
 
     if (type)
@@ -53,10 +52,7 @@ void ASTDictionaryAttributeDeclaration::formatImpl(WriteBuffer & ostr, const For
     if (expression)
     {
         ostr << ' ' << "EXPRESSION" << ' ';
-        auto nested_frame = frame;
-        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(expression.get()); ast_alias && !ast_alias->tryGetAlias().empty())
-            nested_frame.need_parens = true;
-        expression->format(ostr, settings, state, nested_frame);
+        expression->format(ostr, settings, state, frame);
     }
 
     if (hierarchical)

@@ -1,9 +1,6 @@
 #pragma once
 
-#include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include "config.h"
-#include <optional>
-#include <vector>
 
 #if USE_AVRO
 
@@ -15,7 +12,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ExpireSnapshotsTypes.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
 namespace DB::Iceberg
@@ -24,36 +20,20 @@ namespace DB::Iceberg
 void mutate(
     const MutationCommands & commands,
     ContextPtr context,
-    StorageMetadataPtr storage_metadata,
+    StorageMetadataPtr metadata,
     StorageID storage_id,
     ObjectStoragePtr object_storage,
-    const DataLakeStorageSettings & data_lake_settings,
-    PersistentTableComponents & persistent_table_components,
-    const String & write_format,
+    StorageObjectStorageConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings,
-    std::shared_ptr<DataLake::ICatalog> catalog,
-    const String & blob_storage_type_name,
-    const String & blob_storage_namespace_name);
+    std::shared_ptr<DataLake::ICatalog> catalog);
 
 void alter(
     const AlterCommands & params,
     ContextPtr context,
     ObjectStoragePtr object_storage,
-    const DataLakeStorageSettings & data_lake_settings,
-    PersistentTableComponents & persistent_table_components,
-    const String & write_format);
+    StorageObjectStorageConfigurationPtr configuration
+);
 
-ExpireSnapshotsResult expireSnapshots(
-    const ExpireSnapshotsOptions & options,
-    ContextPtr context,
-    ObjectStoragePtr object_storage,
-    const DataLakeStorageSettings & data_lake_settings,
-    PersistentTableComponents & persistent_table_components,
-    const String & write_format,
-    std::shared_ptr<DataLake::ICatalog> catalog,
-    const String & blob_storage_type_name,
-    const String & blob_storage_namespace_name,
-    const String & table_name);
 }
 
 #endif

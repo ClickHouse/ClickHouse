@@ -1,5 +1,4 @@
 SET join_algorithm = 'hash';
-SET query_plan_join_swap_table=false;
 
 SELECT n, j FROM (SELECT number as n FROM numbers(4)) nums
 ANY LEFT JOIN (

@@ -4,7 +4,6 @@ import sys
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.blobs import wait_blobs_count_synchronization
 
 
 @pytest.fixture(scope="module")
@@ -27,6 +26,16 @@ def cluster():
         cluster.shutdown()
 
 
+def assert_objects_count(cluster, objects_count, path="data/"):
+    minio = cluster.minio_client
+    s3_objects = list(minio.list_objects(cluster.minio_bucket, path, recursive=True))
+    if objects_count != len(s3_objects):
+        for s3_object in s3_objects:
+            object_meta = minio.stat_object(cluster.minio_bucket, s3_object.object_name)
+            logging.info("Existing S3 object: %s", str(object_meta))
+        assert objects_count == len(s3_objects)
+
+
 def test_set_s3(cluster):
     node = cluster.instances["node"]
 
@@ -42,7 +51,7 @@ def test_set_s3(cluster):
         )
         == "0\t0\n1\t1\n0\t0\n"
     )
-    wait_blobs_count_synchronization(cluster.minio_client, 1)
+    assert_objects_count(cluster, 1)
 
     node.query("INSERT INTO TABLE testLocalSet VALUES (2)")
     node.query("INSERT INTO TABLE testS3Set VALUES (2)")
@@ -53,7 +62,7 @@ def test_set_s3(cluster):
         )
         == "0\t0\n1\t1\n1\t1\n"
     )
-    wait_blobs_count_synchronization(cluster.minio_client, 2)
+    assert_objects_count(cluster, 2)
 
     node.restart_clickhouse()
     assert (
@@ -72,7 +81,7 @@ def test_set_s3(cluster):
         )
         == "0\t0\n0\t0\n0\t0\n"
     )
-    wait_blobs_count_synchronization(cluster.minio_client, 0)
+    assert_objects_count(cluster, 0)
 
     node.query("DROP TABLE testLocalSet")
     node.query("DROP TABLE testS3Set")
@@ -105,7 +114,7 @@ def test_join_s3(cluster):
         )
         == "\t\na\ta\n\t\n"
     )
-    wait_blobs_count_synchronization(cluster.minio_client, 10)
+    assert_objects_count(cluster, 10)
 
     node.query("INSERT INTO testLocalJoin VALUES (2, 'b')")
     node.query("INSERT INTO testS3Join VALUES (2, 'b')")
@@ -116,7 +125,7 @@ def test_join_s3(cluster):
         )
         == "\t\na\ta\nb\tb\n"
     )
-    wait_blobs_count_synchronization(cluster.minio_client, 11)
+    assert_objects_count(cluster, 11)
 
     node.restart_clickhouse()
     assert (
@@ -135,7 +144,7 @@ def test_join_s3(cluster):
         )
         == "\t\n\t\n\t\n"
     )
-    wait_blobs_count_synchronization(cluster.minio_client, 0)
+    assert_objects_count(cluster, 0)
 
     node.query("DROP TABLE testLocalJoin")
     node.query("DROP TABLE testS3Join")

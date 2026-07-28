@@ -4,7 +4,6 @@ sidebar_label: 'DESCRIBE TABLE'
 sidebar_position: 42
 slug: /sql-reference/statements/describe-table
 title: 'DESCRIBE TABLE'
-doc_type: 'reference'
 ---
 
 Returns information about table columns.
@@ -65,26 +64,6 @@ The second query additionally shows subcolumns:
 │ user.age  │ UInt8                         │              │                    │         │                  │                │            1 │
 └───────────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┴──────────────┘
 ```
-
-The DESCRIBE statement can also be used with subqueries or scalar expressions:
-
-``` SQL
-DESCRIBE SELECT 1 FORMAT TSV;
-```
-
-or
-
-``` SQL
-DESCRIBE (SELECT 1) FORMAT TSV;
-```
-
-Result:
-
-``` text
-1       UInt8
-```
-
-This usage returns metadata about the result columns of the specified query or subquery. It is useful for understanding the structure of complex queries before execution.
 
 **See Also**
 

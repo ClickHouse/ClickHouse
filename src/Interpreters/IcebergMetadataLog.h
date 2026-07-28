@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/SettingsEnums.h>
 #include <Interpreters/SystemLog.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>

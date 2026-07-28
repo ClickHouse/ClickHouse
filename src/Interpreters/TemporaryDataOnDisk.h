@@ -10,6 +10,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 
 #include <Disks/IVolume.h>
+#include <Disks/TemporaryFileOnDisk.h>
 
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
@@ -38,40 +39,25 @@ class TemporaryFileHolder;
 
 class FileCache;
 
-struct TemporaryDataMetrics
-{
-    CurrentMetrics::Metric current_metric = CurrentMetrics::TemporaryFilesUnknown;
-    std::optional<ProfileEvents::Event> bytes_compressed = {};
-    std::optional<ProfileEvents::Event> bytes_uncompressed = {};
-    std::optional<ProfileEvents::Event> num_files = {};
-};
-
 struct TemporaryDataOnDiskSettings
 {
     /// Max size on disk, if 0 there will be no limit
     size_t max_size_on_disk = 0;
 
     /// Compression codec for temporary data, if empty no compression will be used. LZ4 by default
-    String compression_codec = {};
+    String compression_codec = "LZ4";
 
     /// Read/Write internal buffer size
     size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
 
-    /// Counters to update when files are created or data is written
-    TemporaryDataMetrics metrics;
+    /// Metrics counter to increment when temporary file in current scope are created
+    CurrentMetrics::Metric current_metric = CurrentMetrics::TemporaryFilesUnknown;
 };
 
 /// Creates temporary files located on specified resource (disk, fs_cache, etc.)
-using TemporaryFileProvider = std::function<std::unique_ptr<TemporaryFileHolder>(const TemporaryDataOnDiskSettings &, size_t)>;
+using TemporaryFileProvider = std::function<std::unique_ptr<TemporaryFileHolder>(size_t)>;
 TemporaryFileProvider createTemporaryFileProvider(VolumePtr volume);
 TemporaryFileProvider createTemporaryFileProvider(FileCache * file_cache);
-
-#if ENABLE_DISTRIBUTED_CACHE
-struct DistributedCacheTag
-{};
-
-TemporaryFileProvider createTemporaryFileProvider(DistributedCacheTag);
-#endif
 
 /*
  * Used to account amount of temporary data written to disk.
@@ -89,9 +75,9 @@ public:
     };
 
     /// Root scope
-    template <typename... Args>
-    explicit TemporaryDataOnDiskScope(TemporaryDataOnDiskSettings settings_, Args &&... storage_args)
-        : file_provider(createTemporaryFileProvider(std::forward<Args>(storage_args)...))
+    template <typename T>
+    TemporaryDataOnDiskScope(T && storage, TemporaryDataOnDiskSettings settings_)
+        : file_provider(createTemporaryFileProvider(std::forward<T>(storage)))
         , settings(std::move(settings_))
     {}
 
@@ -102,7 +88,7 @@ public:
         , settings(std::move(settings_))
     {}
 
-    TemporaryDataOnDiskScopePtr childScope(TemporaryDataMetrics metrics_, UInt64 buffer_size_ = 0, String compression_codec_ = {});
+    TemporaryDataOnDiskScopePtr childScope(CurrentMetrics::Metric current_metric);
 
     const TemporaryDataOnDiskSettings & getSettings() const { return settings; }
 protected:
@@ -146,11 +132,6 @@ public:
 
     Holder * getHolder() { return holder.get(); }
     const Holder * getHolder() const { return holder.get(); }
-    std::unique_ptr<Holder> releaseHolder()
-    {
-        impl.reset();
-        return std::move(holder);
-    }
 
     void reset()
     {
@@ -169,21 +150,15 @@ protected:
 class TemporaryFileHolder
 {
 public:
-    explicit TemporaryFileHolder(const TemporaryDataMetrics &);
+    TemporaryFileHolder();
 
     virtual std::unique_ptr<WriteBuffer> write() = 0;
-    virtual std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size) const = 0;
-
-    virtual void releaseWriteBuffer(std::unique_ptr<WriteBuffer> /*write_buffer*/)
-    {}
+    virtual std::unique_ptr<ReadBuffer> read(size_t buffer_size) const = 0;
 
     /// Get location for logging
     virtual String describeFilePath() const = 0;
 
     virtual ~TemporaryFileHolder() = default;
-
-private:
-    CurrentMetrics::Increment metric_increment;
 };
 
 /// Reads raw data from temporary file
@@ -218,13 +193,7 @@ public:
     void cancelImpl() noexcept override;
 
     std::unique_ptr<ReadBuffer> read();
-    std::unique_ptr<SeekableReadBuffer> readRaw();
-
-    CompressedWriteBuffer & getCompressedWriteBuffer();
-
     Stat finishWriting();
-
-    Stat getStat() const;
 
     String describeFilePath() const;
 
@@ -238,17 +207,11 @@ private:
     std::once_flag write_finished;
 
     Stat stat;
-    TemporaryDataMetrics metrics;
 };
 
 
 /// High level interfaces for reading and writing temporary data by blocks.
-class TemporaryBlockStreamReaderHolder : public WrapperGuard<NativeReader, ReadBuffer>
-{
-public:
-    using WrapperGuard<NativeReader, ReadBuffer>::WrapperGuard;
-};
-
+using TemporaryBlockStreamReaderHolder = WrapperGuard<NativeReader, ReadBuffer>;
 
 class TemporaryBlockStreamHolder : public WrapperGuard<NativeWriter, TemporaryDataBuffer>
 {

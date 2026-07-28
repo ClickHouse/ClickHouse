@@ -42,6 +42,7 @@ public:
     bool isComparable() const override { return key_type->isComparable() && value_type->isComparable(); }
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return true; }
+    bool hasDynamicSubcolumnsDeprecated() const override { return nested->hasDynamicSubcolumnsDeprecated(); }
     DataTypePtr getNormalizedType() const override
     {
         return std::make_shared<DataTypeMap>(key_type->getNormalizedType(), value_type->getNormalizedType());
@@ -54,7 +55,7 @@ public:
     const DataTypePtr & getNestedType() const { return nested; }
     DataTypePtr getNestedTypeWithUnnamedTuple() const;
 
-    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
+    SerializationPtr doGetDefaultSerialization() const override;
 
     static bool isValidKeyType(DataTypePtr key_type);
 

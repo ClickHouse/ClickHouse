@@ -36,11 +36,11 @@ ALTER TABLE t_shared APPLY PATCHES SETTINGS mutations_sync = 2;
 SELECT * FROM t_shared ORDER BY id;
 SELECT name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' ORDER BY name;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT ProfileEvents['ReadTasksWithAppliedPatches']
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query = 'SELECT * FROM t_shared ORDER BY id;' AND type = 'QueryFinish'
+WHERE current_database = currentDatabase() AND query = 'SELECT * FROM t_shared ORDER BY id;' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds;
 
 DROP TABLE t_shared SYNC;

@@ -16,7 +16,6 @@ target_compile_options (_poco_util
         -Wno-suggest-override
         -Wno-unused-parameter
         -Wno-zero-as-null-pointer-constant
-        -Wno-implicit-int-conversion
 )
 target_include_directories (_poco_util SYSTEM PUBLIC "include")
 target_link_libraries (_poco_util PUBLIC Poco::JSON Poco::XML Poco::Net)

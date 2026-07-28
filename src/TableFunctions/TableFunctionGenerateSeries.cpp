@@ -42,11 +42,7 @@ private:
         const std::string & table_name,
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
-    const char * getStorageEngineName() const override
-    {
-        /// No underlying storage engine
-        return "";
-    }
+    const char * getStorageEngineName() const override { return "SystemNumbers"; }
 
     UInt64 evaluateArgument(ContextPtr context, ASTPtr & argument) const;
 
@@ -115,8 +111,8 @@ UInt64 TableFunctionGenerateSeries<alias_num>::evaluateArgument(ContextPtr conte
 
 void registerTableFunctionGenerateSeries(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionGenerateSeries<0>>({}, {.allow_readonly = true});
-    factory.registerFunction<TableFunctionGenerateSeries<1>>({}, {.allow_readonly = true});
+    factory.registerFunction<TableFunctionGenerateSeries<0>>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionGenerateSeries<1>>({.documentation = {}, .allow_readonly = true});
 }
 
 }

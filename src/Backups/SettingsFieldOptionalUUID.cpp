@@ -2,8 +2,6 @@
 #include <Common/ErrorCodes.h>
 #include <Core/SettingsFields.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-
 
 namespace DB
 {
@@ -13,34 +11,33 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_BACKUP_SETTINGS;
 }
 
-SettingFieldOptionalUUID::operator Field() const { return Field(value ? toString(*value) : ""); }
 
-SettingFieldOptionalUUID::SettingFieldOptionalUUID(const Field & field)
-{
-    if (field.getType() == Field::Types::Null)
+    SettingFieldOptionalUUID::SettingFieldOptionalUUID(const Field & field)
     {
-        value = std::nullopt;
-        return;
-    }
-
-    if (field.getType() == Field::Types::String)
-    {
-        const String & str = field.safeGet<String>();
-        if (str.empty())
+        if (field.getType() == Field::Types::Null)
         {
             value = std::nullopt;
             return;
         }
 
-        UUID id;
-        if (tryParse(id, str))
+        if (field.getType() == Field::Types::String)
         {
-            value = id;
-            return;
-        }
-    }
+            const String & str = field.safeGet<String>();
+            if (str.empty())
+            {
+                value = std::nullopt;
+                return;
+            }
 
-    throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Cannot parse uuid from {}", field);
-}
+            UUID id;
+            if (tryParse(id, str))
+            {
+                value = id;
+                return;
+            }
+        }
+
+        throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Cannot parse uuid from {}", field);
+    }
 
 }

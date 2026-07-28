@@ -27,7 +27,7 @@ $CLICKHOUSE_CLIENT -q "
 
     SELECT format, status, rows, data_kind, format
     FROM system.asynchronous_insert_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = '$CLICKHOUSE_DATABASE' AND table = 't_async_insert_native_4'
+    WHERE database = '$CLICKHOUSE_DATABASE' AND table = 't_async_insert_native_4'
     ORDER BY format;
 
     DROP TABLE t_async_insert_native_4;

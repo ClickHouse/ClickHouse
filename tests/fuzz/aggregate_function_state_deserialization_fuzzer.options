@@ -1,2 +1,0 @@
-[libfuzzer]
-timeout = 20

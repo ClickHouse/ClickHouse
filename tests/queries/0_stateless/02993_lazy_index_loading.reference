@@ -1,7 +1,7 @@
 Row 1:
 ──────
-round(primar⋯memory, -7): 10000000 -- 10.00 million
-round(primar⋯ocated, -7): 10000000 -- 10.00 million
+round(primar⋯memory, -7): 100000000 -- 100.00 million
+round(primar⋯ocated, -7): 100000000 -- 100.00 million
 Row 1:
 ──────
 primary_key_bytes_in_memory:           0
@@ -14,5 +14,5 @@ primary_key_bytes_in_memory_allocated: 0
 1
 Row 1:
 ──────
-round(primar⋯memory, -7): 10000000 -- 10.00 million
-round(primar⋯ocated, -7): 10000000 -- 10.00 million
+round(primar⋯memory, -7): 100000000 -- 100.00 million
+round(primar⋯ocated, -7): 100000000 -- 100.00 million

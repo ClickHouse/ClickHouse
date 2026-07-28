@@ -134,8 +134,8 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
 
     node.query(
         """
-        SYSTEM CLEAR FILESYSTEM CACHE;
-        INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000;
+        SYSTEM DROP FILESYSTEM CACHE;
+        INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
         SELECT * FROM test FORMAT Null;
         """
     )
@@ -187,7 +187,7 @@ def test_caches_with_the_same_configuration(cluster, node_name):
     node = cluster.instances[node_name]
     cache_path = "cache1"
 
-    node.query("SYSTEM CLEAR FILESYSTEM CACHE;")
+    node.query("SYSTEM DROP FILESYSTEM CACHE;")
     for table in ["test", "test2"]:
         node.query(
             f"""
@@ -258,7 +258,7 @@ def test_caches_with_the_same_configuration(cluster, node_name):
 def test_caches_with_the_same_configuration_2(cluster, node_name):
     node = cluster.instances[node_name]
 
-    node.query("SYSTEM CLEAR FILESYSTEM CACHE;")
+    node.query("SYSTEM DROP FILESYSTEM CACHE;")
     for table in ["cache1", "cache2"]:
         node.query(
             f"""
@@ -460,8 +460,9 @@ def test_force_filesystem_cache_on_merges(cluster):
 
         node.query(
             """
-            SYSTEM CLEAR FILESYSTEM CACHE;
-            INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000;
+            SYSTEM DROP FILESYSTEM CACHE;
+            INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
+            INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
             """
         )
         assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
@@ -485,7 +486,7 @@ def test_force_filesystem_cache_on_merges(cluster):
             "select current_size from system.filesystem_cache_settings where cache_name = 'force_cache_on_merges'"
         ) == node.query("select sum(downloaded_size) from system.filesystem_cache")
 
-        node.query("SYSTEM CLEAR FILESYSTEM CACHE")
+        node.query("SYSTEM DROP FILESYSTEM CACHE")
         node.query("OPTIMIZE TABLE test FINAL")
 
         r_cache_count_3 = to_int(
@@ -510,7 +511,7 @@ def test_system_sync_filesystem_cache(cluster):
     node.query(
         f"""
 DROP TABLE IF EXISTS test;
-SYSTEM CLEAR FILESYSTEM CACHE;
+SYSTEM DROP FILESYSTEM CACHE;
 
 CREATE TABLE test (a Int32, b String)
 ENGINE = MergeTree() ORDER BY tuple()
@@ -696,7 +697,7 @@ def test_dynamic_resize(cluster):
     node.query(
         f"""
 DROP TABLE IF EXISTS test;
-SYSTEM CLEAR FILESYSTEM CACHE;
+SYSTEM DROP FILESYSTEM CACHE;
 CREATE TABLE test (a String)
 ENGINE = MergeTree() ORDER BY tuple()
 SETTINGS disk = '{cache_name}', min_bytes_for_wide_part = 10485760;
@@ -830,9 +831,6 @@ SETTINGS disk = disk(type = cache,
     """
     )
 
-    wait_for_cache_initialized(node, "test_filesystem_cache_log")
-
-
     node.query(
         """
 INSERT INTO test SELECT 1, 'test';
@@ -873,7 +871,7 @@ def test_dynamic_resize_disabled(cluster):
     node.query(
         f"""
 DROP TABLE IF EXISTS test;
-SYSTEM CLEAR FILESYSTEM CACHE;
+SYSTEM DROP FILESYSTEM CACHE;
 CREATE TABLE test (a String)
 ENGINE = MergeTree() ORDER BY tuple()
 SETTINGS disk = '{cache_name}', min_bytes_for_wide_part = 10485760;

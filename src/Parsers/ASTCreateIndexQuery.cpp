@@ -16,7 +16,7 @@ String ASTCreateIndexQuery::getID(char delim) const
 
 ASTPtr ASTCreateIndexQuery::clone() const
 {
-    auto res = make_intrusive<ASTCreateIndexQuery>(*this);
+    auto res = std::make_shared<ASTCreateIndexQuery>(*this);
     res->children.clear();
 
     res->index_name = index_name->clone();
@@ -63,7 +63,7 @@ void ASTCreateIndexQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettin
 
 ASTPtr ASTCreateIndexQuery::convertToASTAlterCommand() const
 {
-    auto command = make_intrusive<ASTAlterCommand>();
+    auto command = std::make_shared<ASTAlterCommand>();
 
     command->type = ASTAlterCommand::ADD_INDEX;
     command->if_not_exists = if_not_exists;

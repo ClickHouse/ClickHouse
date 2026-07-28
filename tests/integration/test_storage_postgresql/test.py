@@ -1,5 +1,4 @@
 import logging
-import time
 from multiprocessing.dummy import Pool
 
 import pytest
@@ -148,7 +147,7 @@ def test_postgres_conversions(started_cluster):
     cursor.execute(
         """CREATE TABLE IF NOT EXISTS test_array_dimensions
            (
-                a Date[] NOT NULL,                          -- Date32
+                a Date[] NOT NULL,                          -- Date
                 b Timestamp[] NOT NULL,                     -- DateTime64(6)
                 c real[][] NOT NULL,                        -- Float32
                 d double precision[][] NOT NULL,            -- Float64
@@ -169,7 +168,7 @@ def test_postgres_conversions(started_cluster):
         DESCRIBE TABLE postgresql('postgres1:5432', 'postgres', 'test_array_dimensions', 'postgres', '{pg_pass}')"""
     )
     expected = (
-        "a\tArray(Date32)\t\t\t\t\t\n"
+        "a\tArray(Date)\t\t\t\t\t\n"
         "b\tArray(DateTime64(6))\t\t\t\t\t\n"
         "c\tArray(Array(Float32))\t\t\t\t\t\n"
         "d\tArray(Array(Float64))\t\t\t\t\t\n"
@@ -729,16 +728,11 @@ def test_auto_close_connection(started_cluster):
     """
     )
 
-    # Wait for auto-close to take effect (connections may still be closing under TSAN)
-    for _ in range(20):
-        count = int(
-            node2.query(
-                f"SELECT numbackends FROM test.stat WHERE datname = '{database_name}'"
-            )
+    count = int(
+        node2.query(
+            f"SELECT numbackends FROM test.stat WHERE datname = '{database_name}'"
         )
-        if count <= 2:
-            break
-        time.sleep(0.5)
+    )
 
     # Connection from python + pg_stat table also has a connection at the moment of current query
     assert count == 2
@@ -898,117 +892,48 @@ def test_postgres_datetime(started_cluster):
     assert result == "2025-01-02 03:04:05.678900\n"
 
 
-def test_postgres_reading_clone(started_cluster):
-    cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute(f"DROP TABLE IF EXISTS test_clone")
-    cursor.execute("CREATE TABLE test_clone AS (SELECT number FROM generate_series(0, 99) AS number)")
 
-    node1.query("DROP TABLE IF EXISTS test_clone")
-    node1.query(
-        f"CREATE TABLE test_clone ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_clone', 'postgres', '{pg_pass}')"
-    )
+def test_postgres_array_parser_dimension_underflow(started_cluster):
+    """Regression test for `size_t` underflow in the PostgreSQL array parser.
 
-    result = node1.query(
-        "SELECT count() FROM (SELECT (SELECT tx.number) = 1 as x FROM test_clone AS tx) WHERE x SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0"
-    )
-    assert result.strip() == "1"
+    When `pqxx::array_parser` emits `row_end` while the parser's `dimension`
+    counter is 0 (for example, an array text starting with `}`), the previous
+    code decremented `dimension` past 0 — a `size_t` underflow to `SIZE_MAX` —
+    and then indexed `dimensions[SIZE_MAX]`, which is out-of-bounds. The fix
+    throws a `BAD_ARGUMENTS` exception in this case instead.
 
-
-def test_postgres_insert_boolean_array(started_cluster):
-    """Test for https://github.com/ClickHouse/ClickHouse/issues/72754
-    Inserting into PostgreSQL BOOLEAN[] was causing a logical error due to
-    incorrect column type creation for Bool arrays.
+    PostgreSQL itself validates array literals at INSERT time, so the bug is
+    unreachable via a column declared as `boolean[]`/`integer[]` on the
+    PostgreSQL side. The reproducer below stores the malformed payload in a
+    PostgreSQL `text` column and declares the same column as `Array(Int32)` on
+    the ClickHouse side via the `PostgreSQL` table engine. ClickHouse then
+    dispatches the raw `'}'` value through the `vtArray` branch of
+    `insertPostgreSQLValue`, which calls `pqxx::array_parser` on it and
+    reproduces the bug.
     """
     cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute("DROP TABLE IF EXISTS test_bool_array")
-    cursor.execute("CREATE TABLE test_bool_array (id INTEGER, flags BOOLEAN[])")
-
-    table_func = f"postgresql('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres', 'test_bool_array', 'postgres', '{pg_pass}')"
-
-    # Insert boolean arrays using ClickHouse Bool type
-    node1.query(
-        f"INSERT INTO TABLE FUNCTION {table_func} VALUES (1, [true, false, true])"
-    )
-    node1.query(
-        f"INSERT INTO TABLE FUNCTION {table_func} SELECT 2, [false, false]"
-    )
-    node1.query(
-        f"INSERT INTO TABLE FUNCTION {table_func} SELECT 3, []"
-    )
-
-    # Verify data was inserted correctly
-    cursor.execute("SELECT id, flags FROM test_bool_array ORDER BY id")
-    result = cursor.fetchall()
-    assert result[0] == (1, [True, False, True])
-    assert result[1] == (2, [False, False])
-    assert result[2] == (3, [])
-
-    # Verify we can read the data back through ClickHouse
-    result = node1.query(f"SELECT * FROM {table_func} ORDER BY id")
-    expected = "1\t[1,0,1]\n2\t[0,0]\n3\t[]\n"
-    assert result == expected
-
-    cursor.execute("DROP TABLE test_bool_array")
-
-
-def test_postgres_date32(started_cluster):
-    """Test that PostgreSQL DATE values outside the Date (UInt16) range are correctly read.
-
-    This is a regression test for https://github.com/ClickHouse/ClickHouse/issues/73084
-    PostgreSQL DATE type supports a much wider range than ClickHouse Date (1970-2149).
-    Large dates like '2276-11-21' must be read correctly using Date32.
-    """
-    cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute("DROP TABLE IF EXISTS test_date32")
-    cursor.execute("CREATE TABLE test_date32 (d DATE)")
-
-    # Insert dates that would overflow with the old Date (UInt16) type
-    # Date range is ~1970-2149, these dates are beyond that
+    cursor.execute("DROP TABLE IF EXISTS test_array_underflow")
     cursor.execute(
-        "INSERT INTO test_date32 VALUES ('2276-11-21'), ('2269-07-01'), ('2200-01-01'), ('1950-06-15')"
+        "CREATE TABLE test_array_underflow (id integer, payload text)"
+    )
+    cursor.execute("INSERT INTO test_array_underflow VALUES (1, '}')")
+    started_cluster.postgres_conn.commit()
+
+    node1.query("DROP TABLE IF EXISTS pg_array_underflow")
+    node1.query(
+        f"CREATE TABLE pg_array_underflow (id Int32, payload Array(Int32)) "
+        f"ENGINE = PostgreSQL("
+        f"'{started_cluster.postgres_ip}:{started_cluster.postgres_port}', "
+        f"'postgres', 'test_array_underflow', 'postgres', '{pg_pass}')"
     )
 
-    # Read dates back using the postgresql table function
-    result = node1.query(
-        f"SELECT d FROM postgresql('postgres1:5432', 'postgres', 'test_date32', 'postgres', '{pg_pass}') ORDER BY d"
-    )
-    expected = "1950-06-15\n2200-01-01\n2269-07-01\n2276-11-21\n"
-    assert result == expected, f"Expected:\n{expected}\nGot:\n{result}"
-
-    # Also verify the column type is Date32
-    result = node1.query(
-        f"DESCRIBE TABLE postgresql('postgres1:5432', 'postgres', 'test_date32', 'postgres', '{pg_pass}')"
-    )
-    assert "Date32" in result, f"Expected Date32 type, got: {result}"
-
-    cursor.execute("DROP TABLE test_date32")
-
-
-def test_postgres_date32_array(started_cluster):
-    """Test that PostgreSQL DATE[] arrays with large dates are correctly read as Array(Date32)."""
-    cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute("DROP TABLE IF EXISTS test_date32_array")
-    cursor.execute("CREATE TABLE test_date32_array (dates DATE[] NOT NULL)")
-
-    # Insert array with dates that would overflow with Date (UInt16)
-    cursor.execute(
-        "INSERT INTO test_date32_array VALUES (ARRAY['2276-11-21'::date, '2269-07-01'::date, '1950-06-15'::date])"
+    error = node1.query_and_get_error("SELECT id, payload FROM pg_array_underflow")
+    assert "Unexpected array closing bracket" in error, (
+        f"Expected BAD_ARGUMENTS('Unexpected array closing bracket'), got: {error}"
     )
 
-    # Read dates back (array elements are in insertion order)
-    result = node1.query(
-        f"SELECT dates FROM postgresql('postgres1:5432', 'postgres', 'test_date32_array', 'postgres', '{pg_pass}')"
-    )
-    expected = "['2276-11-21','2269-07-01','1950-06-15']\n"
-    assert result == expected, f"Expected:\n{expected}\nGot:\n{result}"
-
-    # Verify the column type is Array(Date32)
-    result = node1.query(
-        f"DESCRIBE TABLE postgresql('postgres1:5432', 'postgres', 'test_date32_array', 'postgres', '{pg_pass}')"
-    )
-    assert "Array(Date32)" in result, f"Expected Array(Date32) type, got: {result}"
-
-    cursor.execute("DROP TABLE test_date32_array")
+    node1.query("DROP TABLE pg_array_underflow")
+    cursor.execute("DROP TABLE test_array_underflow")
 
 
 if __name__ == "__main__":

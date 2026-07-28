@@ -13,12 +13,14 @@ struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /// Snapshot of storage that fixes set columns that can be read in query.
-/// There are 2 sources of columns: regular columns from metadata and virtual columns.
+/// There are 3 sources of columns: regular columns from metadata,
+/// dynamic columns from object Types, virtual columns.
 struct StorageSnapshot
 {
     const IStorage & storage;
     const StorageMetadataPtr metadata;
     const VirtualsDescriptionPtr virtual_columns;
+    const ColumnsDescription object_columns;
 
     /// Additional data, on which set of columns may depend.
     /// E.g. data parts in MergeTree, list of blocks in Memory, etc.
@@ -42,12 +44,12 @@ struct StorageSnapshot
     StorageSnapshot(
         const IStorage & storage_,
         StorageMetadataPtr metadata_,
-        DataPtr data_);
+        ColumnsDescription object_columns_);
 
     StorageSnapshot(
         const IStorage & storage_,
         StorageMetadataPtr metadata_,
-        VirtualsDescriptionPtr virtual_columns_,
+        ColumnsDescription object_columns_,
         DataPtr data_);
 
     std::shared_ptr<StorageSnapshot> clone(DataPtr data_) const;
@@ -74,9 +76,7 @@ struct StorageSnapshot
     /// list of names is not empty and the names do not repeat.
     void check(const Names & column_names) const;
 
-    /// Get default expression for a column.
-    /// Takes into account physical and virtual columns.
-    std::optional<ColumnDefault> getDefault(const String & column_name) const;
+    DataTypePtr getConcreteType(const String & column_name) const;
 };
 
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;

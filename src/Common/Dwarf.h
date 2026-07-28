@@ -147,7 +147,6 @@ public:
         bool has_file_and_line = false;
         Path file;
         uint64_t line = 0;
-        uint64_t column = 0;
     };
 
     /**
@@ -304,7 +303,7 @@ private:
             std::string_view debugStr,
             std::string_view debugLineStr);
 
-        bool findAddress(uintptr_t target, Path & file, uint64_t & line, uint64_t & column);
+        bool findAddress(uintptr_t target, Path & file, uint64_t & line);
 
         /** Gets full file name at given index including directory. */
         Path getFullFileName(uint64_t index) const;
