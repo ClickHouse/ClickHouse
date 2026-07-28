@@ -257,6 +257,7 @@ LARGE_FILE_WHITELIST=(
     -e string_int_list_inconsistent_offset_multiple_batches.parquet
     -e known_failures.txt
     -e keeper-java-client-test.jar
+    -e docs/gt-lock.json
 )
 # GNU stat (Linux) uses -c, BSD stat (macOS) uses -f — detect once instead of failing per file.
 if stat -c '%s %n' /dev/null >/dev/null 2>&1; then

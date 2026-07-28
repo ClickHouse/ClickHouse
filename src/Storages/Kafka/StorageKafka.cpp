@@ -131,7 +131,7 @@ private:
         if (kafka_storage.shutdown_called)
             throw Exception(ErrorCodes::ABORTED, "Table is detached");
 
-        if (kafka_storage.mv_attached)
+        if (!DatabaseCatalog::instance().getDependentViews(kafka_storage.getStorageID()).empty())
             throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka with attached materialized views");
 
         ProfileEvents::increment(ProfileEvents::KafkaDirectReads);
@@ -174,7 +174,7 @@ StorageKafka::StorageKafka(
     const String & comment,
     std::unique_ptr<KafkaSettings> kafka_settings_,
     const String & collection_name_)
-    : IStorage(table_id_)
+    : IStreamingStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , kafka_settings(std::move(kafka_settings_))
     , macros_info{.table_id = table_id_}
@@ -300,6 +300,12 @@ void StorageKafka::startup()
         task->holder->activateAndSchedule();
     }
     StreamingStorageRegistry::instance().registerTable(getStorageID());
+}
+
+void StorageKafka::scheduleStreamingTasksImpl()
+{
+    for (auto & task : tasks)
+        task->holder->schedule();
 }
 
 
@@ -605,13 +611,14 @@ void StorageKafka::threadFunc(size_t idx)
     try
     {
         auto table_id = getStorageID();
-        // Check if at least one direct dependency is attached
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-        if (num_views)
+        const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
+        const bool deps_ready = num_views == 0 || StorageKafkaUtils::checkDependencies(table_id, getContext());
+        const bool run_cycle = deps_ready && stream_control.claimCycle(task->last_seen_refresh_epoch);
+
+        if (num_views && run_cycle)
         {
             auto start_time = std::chrono::steady_clock::now();
-
-            mv_attached.store(true);
 
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!task->stream_cancelled)
@@ -625,12 +632,15 @@ void StorageKafka::threadFunc(size_t idx)
                 LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
                 // Exit the loop & reschedule if some stream stalled
-                auto some_stream_is_stalled = streamToViews();
+                auto some_stream_is_stalled = streamToViews(cycle_epoch);
                 if (some_stream_is_stalled)
                 {
                     LOG_TRACE(log, "Stream(s) stalled. Rescheduling in {} ms.", (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
                     break;
                 }
+
+                if (stream_control.isBlocked() || stream_control.isCancelRequested(cycle_epoch))
+                    break;
 
                 auto ts = std::chrono::steady_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time);
@@ -641,6 +651,10 @@ void StorageKafka::threadFunc(size_t idx)
                 }
             }
         }
+        else if (num_views && stream_control.isBlocked())
+            LOG_DEBUG(log, "Consumption is stopped");
+        else if (num_views)
+            ProfileEvents::increment(ProfileEvents::KafkaMVNotReady);
         else
             LOG_DEBUG(log, "No attached views");
 
@@ -662,15 +676,13 @@ void StorageKafka::threadFunc(size_t idx)
         }
     }
 
-    mv_attached.store(false);
-
     // Wait for attached views
     if (!task->stream_cancelled)
         task->holder->scheduleAfter((*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
 }
 
 
-bool StorageKafka::streamToViews()
+bool StorageKafka::streamToViews(UInt64 cycle_epoch)
 {
     Stopwatch watch;
 
@@ -715,7 +727,7 @@ bool StorageKafka::streamToViews()
     pipes.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)
     {
-        auto source = std::make_shared<KafkaSource>(*this, storage_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false);
+        auto source = std::make_shared<KafkaSource>(*this, storage_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false, cycle_epoch);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 

@@ -267,12 +267,14 @@ En plus de la forme avec sous-requête décrite ci-dessus, le côté droit de `S
 | --------------------------------------------------------- | ---------------------------------- |
 | `expr = SOME(arr)`                                        | `has(arr, expr)`                   |
 | `expr <> ALL(arr)`                                        | `NOT has(arr, expr)`               |
-| `expr OP SOME(arr)` (tout autre opérateur de comparaison) | `arrayExists(x -> expr OP x, arr)` |
-| `expr OP ALL(arr)` (tout autre opérateur de comparaison)  | `arrayAll(x -> expr OP x, arr)`    |
+| `expr OP SOME(arr)` (tout autre opérateur pris en charge) | `arrayExists(x -> expr OP x, arr)` |
+| `expr OP ALL(arr)` (tout autre opérateur pris en charge)  | `arrayAll(x -> expr OP x, arr)`    |
 
 `SOME` est le quantificateur existentiel (le synonyme SQL de `ANY`). `=` et `<>` sont traités à part et réécrits en `has` / `NOT has`, car ils disposent d&#39;une implémentation optimisée ; la forme générale s&#39;appuie sur les fonctions d&#39;ordre supérieur `arrayExists` / `arrayAll`.
 
-La forme tableau n&#39;est reconnue que pour les opérateurs de comparaison `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, et `>=`. Les autres opérateurs qui acceptent un tableau à droite — par exemple `LIKE`, `ILIKE`, `NOT LIKE`, `REGEXP` et `IN` — ne sont **pas** réécrits en quantificateur de tableau et conservent leur sens habituel. Par exemple, `'abc' LIKE SOME(['a%', 'b%'])` n&#39;est pas une syntaxe de quantificateur de tableau ; utilisez directement `arrayExists` / `arrayAll` dans ces cas.
+La forme tableau est reconnue pour les opérateurs de comparaison `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`, les prédicats de comparaison à mot-clé `IS DISTINCT FROM` et `IS NOT DISTINCT FROM`, ainsi que les prédicats de recherche de chaînes `LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE` et `REGEXP`. Les prédicats de comparaison à mot-clé et les prédicats de recherche de chaînes ne sont reconnus que pour la forme tableau, pas pour la forme avec sous-requête (qui est ramenée à `IN`/`NOT IN`). Les opérateurs qui n&#39;ont pas de signification de quantificateur de tableau — par exemple `IN` lui-même — ne sont **pas** réécrits et conservent leur sens habituel.
+
+Les prédicats de recherche de chaînes fonctionnent parce que `MatchImpl` (l&#39;implémentation sous-jacente à `LIKE` / `ILIKE` / `REGEXP`) prend en charge un haystack constant avec une needle non constante. Par exemple, `'abc' LIKE SOME(['a%', 'b%'])` est réécrit en `arrayExists(x -> 'abc' LIKE x, ['a%', 'b%'])`, et `'abc' NOT LIKE ALL(['x%', 'y%'])` en `arrayAll(x -> 'abc' NOT LIKE x, ['x%', 'y%'])`. Cela permet de faire correspondre une chaîne à plusieurs patterns ; pour une correspondance en un seul passage combiné, vous pouvez toujours utiliser une fonction de recherche multi-pattern telle que `multiMatchAny` (expressions régulières) ou `multiSearchAny` (substrings).
 
 <Info>
   **`ANY` n&#39;est pas pris en charge pour la forme tableau**
@@ -282,21 +284,22 @@ La forme tableau n&#39;est reconnue que pour les opérateurs de comparaison `=`,
 
 ```sql title="Query"
 SELECT
-    3 = SOME([1, 2, 3, 4]) AS in_array,
-    5 < SOME([1, 2, 6])    AS less_than_some,
-    5 > ALL([1, 2, 3])     AS greater_than_all;
+    3 = SOME([1, 2, 3, 4])         AS in_array,
+    5 < SOME([1, 2, 6])            AS less_than_some,
+    5 > ALL([1, 2, 3])             AS greater_than_all,
+    'abc' LIKE SOME(['a%', 'z%'])  AS like_some;
 ```
 
 ```text title="Response"
-┌─in_array─┬─less_than_some─┬─greater_than_all─┐
-│        1 │              1 │                1 │
-└──────────┴────────────────┴──────────────────┘
+┌─in_array─┬─less_than_some─┬─greater_than_all─┬─like_some─┐
+│        1 │              1 │                1 │         1 │
+└──────────┴────────────────┴──────────────────┴───────────┘
 ```
 
 <Info>
   **La gestion de `NULL` diffère de celle de la forme avec sous-requête**
 
-  Comme la forme avec tableau est réécrite par le parseur (où les paramètres de requête tels que `transform_null_in` ne sont pas disponibles, et où une colonne de tableau propre à chaque ligne ne peut pas utiliser le chemin `IN` de l&#39;analyseur avec gestion sûre de `NULL`), elle s&#39;appuie sur la sémantique bivalente de `has` (pour `=` / `<>`) et de `arrayExists` / `arrayAll` (qui convertissent en `0` un résultat de comparaison `NULL` inconnu). Cela peut différer de la forme avec sous-requête, dont la gestion de `NULL` est ramenée à `IN` / `NOT IN` et dépend de `transform_null_in` :
+  Comme la forme tableau est réécrite par le parseur (où les paramètres de requête tels que `transform_null_in` ne sont pas disponibles, et où une colonne de tableau propre à chaque ligne ne peut pas utiliser le chemin `IN` de l&#39;analyseur avec gestion sûre de `NULL`), elle s&#39;appuie sur la sémantique bivalente de `has` (pour `=` / `<>`) et de `arrayExists` / `arrayAll` (qui convertissent en `0` un résultat de comparaison `NULL` inconnu). Cela peut différer de la forme avec sous-requête, dont la gestion de `NULL` est ramenée à `IN` / `NOT IN` et dépend de `transform_null_in` :
 
   ```sql
   SELECT NULL = SOME([NULL]);   -- has([NULL], NULL)                  -> 1
@@ -525,6 +528,63 @@ SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt
 │ 2024-07-15 23:59:59.999 │ DateTime64(3)  │
 └─────────────────────────┴────────────────┘
 ```
+
+<div id="at-time-zone">
+  ### AT TIME ZONE et AT LOCAL
+</div>
+
+Les opérateurs postfixes `AT TIME ZONE` et `AT LOCAL` convertissent une valeur `DateTime` ou `DateTime64` vers un autre fuseau horaire. Ils constituent un sucre syntaxique de la fonction existante [`toTimeZone`](/fr/reference/functions/regular-functions/date-time-functions#toTimezone) :
+
+| Syntaxe                  | Équivalent                     |
+| ------------------------ | ------------------------------ |
+| `expr AT TIME ZONE zone` | `toTimeZone(expr, zone)`       |
+| `expr AT LOCAL`          | `toTimeZone(expr, timeZone())` |
+
+`zone` peut être n’importe quelle expression de chaîne constante qui s’évalue en un nom de fuseau horaire valide (par ex. `'America/Denver'`, `'UTC'` ou `concat('America', '/', 'Denver')`). Comme `AT TIME ZONE` est réécrit en `toTimeZone`, les mêmes règles s’appliquent aux arguments de fuseau horaire : les expressions non constantes, comme une référence de colonne, nécessitent [`allow_nonconst_timezone_arguments = 1`](/fr/reference/settings/session-settings#allow_nonconst_timezone_arguments).
+
+`AT LOCAL` utilise le [fuseau horaire de session](/fr/reference/settings/session-settings#session_timezone) actuel (ou le fuseau horaire par défaut du serveur si aucun fuseau horaire de session n’est défini). Sur les tables `Distributed`, `session_timezone` doit être défini explicitement ; lorsqu’il est vide, `timeZone()` est local au shard et ne peut pas être utilisé comme argument constant de `toTimeZone`, ce qui provoque une exception `ILLEGAL_COLUMN`.
+
+<Note>
+  Contrairement à PostgreSQL, où `timestamp without time zone AT TIME ZONE zone` réinterprète la valeur telle qu’affichée comme appartenant au fuseau donné avant la conversion, ClickHouse conserve toujours le même instant absolu et modifie uniquement l’étiquette de fuseau horaire utilisée pour l’affichage. Les deux formes sont équivalentes à `toTimeZone` et ne modifient pas le timestamp sous-jacent.
+</Note>
+
+`AT TIME ZONE` a une préséance d’opérateur de 13 (au-dessus de `*`/`/`/`%` à 12, et au-dessus de `+`/`-` à 11), comme dans PostgreSQL. Cela signifie que `a * ts AT TIME ZONE 'tz'` s’associe comme `a * (ts AT TIME ZONE 'tz')`, et que `ts + interval AT TIME ZONE 'tz'` s’associe comme `ts + (interval AT TIME ZONE 'tz')`. Pour appliquer la conversion de fuseau horaire après l’opération arithmétique, utilisez des parenthèses explicites :
+
+```sql
+-- Explicit parens required to add first, then convert timezone
+SELECT (TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR) AT TIME ZONE 'America/Denver';
+-- Equivalent to:
+SELECT toTimeZone(TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR, 'America/Denver');
+```
+
+Exemples :
+
+```sql
+SET session_timezone = 'UTC';
+
+SELECT TIMESTAMP '2001-02-16 20:38:40' AT TIME ZONE 'America/Denver';
+```
+
+```text
+┌─toTimeZone(toDateTime('2001-02-16 20:38:40'), 'America/Denver')─┐
+│ 2001-02-16 13:38:40                                              │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT TIMESTAMP '2001-02-16 20:38:40' AT LOCAL;
+```
+
+```text
+┌─toTimeZone(toDateTime('2001-02-16 20:38:40'), timeZone())─┐
+│ 2001-02-16 20:38:40                                        │
+└────────────────────────────────────────────────────────────┘
+```
+
+**Voir aussi**
+
+* [`toTimeZone`](/fr/reference/functions/regular-functions/date-time-functions#toTimezone)
+* [`timeZone`](/fr/reference/functions/regular-functions/date-time-functions#timezone)
 
 <div id="logical-and-operator">
   ## Opérateur logique AND

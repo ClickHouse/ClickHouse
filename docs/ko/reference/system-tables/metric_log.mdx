@@ -110,7 +110,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — Parquet 메타데이터가 캐시에서 발견되지 않아 디스크에서 읽어야 했던 횟수입니다.
 * `ProfileEvent_ParquetMetadataCacheWeightLost` ([UInt64](/ko/reference/data-types/int-uint)) — Parquet 메타데이터 캐시에서 축출된 대략적인 바이트 수입니다.
 * `ProfileEvent_IcebergIteratorInitializationMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — Iceberg 데이터 iterator의 동기 초기화에 소요된 총 시간입니다.
-* `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — Iceberg 데이터 iterator의 동기 초기화에 소요된 총 시간입니다.
+* `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 상태에서 Iceberg 스토리지 메타데이터를 업데이트하는 데 소요된 총 시간입니다(`buildStorageMetadataFromState`).
 * `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/ko/reference/data-types/int-uint)) — Iceberg iterator에서 반환된 객체 정보의 총 개수입니다.
 * `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/ko/reference/data-types/int-uint)) — 파티셔닝 및 시퀀스 번호 기준으로 적합한 쌍 중 minmax 분석으로 채택된 data files-position delete file 쌍의 총 개수입니다.
 * `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/ko/reference/data-types/int-uint)) — 파티셔닝 및 시퀀스 번호 기준으로 적합한 쌍 중 minmax 분석으로 채택된 data files-position delete file 쌍의 총 개수입니다.
@@ -531,8 +531,6 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
   9. &#39;enable&#95;mixed&#95;granularity&#95;parts&#39;와 같은 파트 포맷 관련 설정이 레플리카마다 다릅니다.
      서버가 이 상황을 정상적으로 감지했으며, 바이트 수준까지 동일한 결과를 보장하기 위해 레플리카에서 병합된 파트를 다운로드합니다.
 * `ProfileEvent_DataAfterMutationDiffersFromReplica` ([UInt64](/ko/reference/data-types/int-uint)) — mutation 이후 데이터가 다른 레플리카의 데이터와 바이트 단위까지 동일하지 않았던 횟수입니다. &#39;DataAfterMergeDiffersFromReplica&#39;에 설명된 이유 외에도, 비결정적 mutation으로 인해 발생할 수 있습니다.
-* `ProfileEvent_PolygonsAddedToPool` ([UInt64](/ko/reference/data-types/int-uint)) — &#39;pointInPolygon&#39; 함수의 캐시(풀)에 다각형이 추가된 횟수입니다.
-* `ProfileEvent_PolygonsInPoolAllocatedBytes` ([UInt64](/ko/reference/data-types/int-uint)) — &#39;pointInPolygon&#39; 함수의 캐시(풀)에 추가된 다각형에 할당된 바이트 수입니다.
 * `ProfileEvent_NaiveBayesClassifierModelsLoaded` ([UInt64](/ko/reference/data-types/int-uint)) — 로드된 Naive Bayes Classifier 모델 수입니다.
 * `ProfileEvent_NaiveBayesClassifierModelsAllocatedBytes` ([UInt64](/ko/reference/data-types/int-uint)) — Naive Bayes Classifier 모델에 할당된 바이트 수입니다.
 * `ProfileEvent_USearchAddCount` ([UInt64](/ko/reference/data-types/int-uint)) — usearch 인덱스에 벡터를 추가한 횟수입니다.

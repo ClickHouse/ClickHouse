@@ -3,7 +3,7 @@ sidebarTitle: 'Obtenha os detalhes de conexão do Cloud'
 title: 'Obtenha os detalhes de conexão do Cloud'
 useCases: ['All']
 products: ['Cloud']
-description: 'Saiba como encontrar o hostname, a porta e as credenciais do seu serviço no ClickHouse Cloud para se conectar por clientes externos, CLIs e aplicativos.'
+description: 'Saiba como encontrar o hostname, a porta e as credenciais do seu serviço do ClickHouse Cloud para se conectar por clientes externos, CLIs e aplicativos.'
 ---
 
 import BackToQuickstarts from '/get-started/quickstarts/_back-to-quickstarts.mdx'
@@ -40,17 +40,13 @@ Neste guia de início rápido, você aprenderá a localizar os detalhes de conex
 Ao final, você saberá onde encontrar esses detalhes no ClickHouse Cloud console e como verificar a conectividade usando um comando `curl` simples, ficando pronto para se conectar com ferramentas como `clickhouse-local`, `clickhouse-client` ou qualquer driver do ClickHouse.
 
 <Steps titleSize="h3">
-  <Step>
-    ### Abra o ClickHouse Cloud console
-
+  <Step title="Abra o ClickHouse Cloud console" id="open-the-cloud-console">
     Acesse o [ClickHouse Cloud console](https://console.clickhouse.cloud/) e entre na sua conta.
 
     No dashboard principal, localize o serviço ao qual você quer se conectar. Se o serviço estiver inativo, clique nele e aguarde até que volte a ficar ativo antes de prosseguir — ele precisará estar em execução para que você verifique a conectividade em uma etapa posterior.
   </Step>
 
-  <Step>
-    ### Encontre seus detalhes de conexão
-
+  <Step title="Encontre seus detalhes de conexão" id="find-your-connection-details">
     Clique no seu serviço para abrir a página de detalhes e, em seguida, clique no botão **Connect** na barra lateral esquerda:
 
     <img className="block dark:hidden w-2/3 mx-auto" src="/images/get-started/quickstarts/connect-light.webp" alt="Botão Connect no ClickHouse Cloud console (modo claro)" />
@@ -59,10 +55,10 @@ Ao final, você saberá onde encontrar esses detalhes no ClickHouse Cloud consol
 
     Na primeira vez que você clicar nesse botão, verá uma caixa de diálogo com suas credenciais:
 
-    | Detalhe      | Descrição                                   |
-    | ------------ | ------------------------------------------- |
+    | Detalhe             | Descrição                                   |
+    | ------------------- | ------------------------------------------- |
     | **Nome de usuário** | Seu nome de usuário (normalmente `default`) |
-    | **Senha** | A senha gerada para o seu serviço           |
+    | **Senha**           | A senha gerada para o seu serviço           |
 
     Também há um menu suspenso com exemplos de strings de conexão pré-formatadas para diferentes protocolos e interfaces (por exemplo, `clickhouse-client`, HTTPS, JDBC etc.), que você pode copiar diretamente.
 
@@ -77,9 +73,7 @@ Ao final, você saberá onde encontrar esses detalhes no ClickHouse Cloud consol
     </Note>
   </Step>
 
-  <Step>
-    ### Entenda os protocolos de conexão
-
+  <Step title="Entenda os protocolos de conexão" id="understand-the-connection-protocols">
     O ClickHouse Cloud expõe dois protocolos de rede principais, cada um em sua própria porta:
 
     * **Native protocol (port 9440)** - Um protocolo binário usado por `clickhouse-client`, `clickhouse-local` e pela maioria dos drivers específicos de linguagem. É a opção mais rápida e oferece suporte a todos os recursos do ClickHouse. TLS é obrigatório no Cloud.
@@ -90,9 +84,7 @@ Ao final, você saberá onde encontrar esses detalhes no ClickHouse Cloud consol
     Na maioria dos guias de início rápido e fluxos de trabalho de CLI desta série, você usará o **native protocol na porta 9440**.
   </Step>
 
-  <Step>
-    ### Salve seus detalhes de conexão para reutilização
-
+  <Step title="Salve seus detalhes de conexão para reutilização" id="save-your-connection-details-for-reuse">
     Você usará esses detalhes de conexão com frequência nos guias de início rápido. Para evitar digitá-los novamente sempre, você pode exportá-los como variáveis de ambiente na sua sessão de terminal:
 
     ```bash
@@ -111,9 +103,11 @@ Ao final, você saberá onde encontrar esses detalhes no ClickHouse Cloud consol
   </Step>
 </Steps>
 
-## Próximos passos
+<div id="next-steps">
+  ## Próximos passos
+</div>
 
-Agora você tem todos os detalhes de conexão necessários para se conectar ao seu serviço ClickHouse Cloud usando qualquer ferramenta externa. O hostname, a porta, o nome de usuário e a senha que você encontrou aqui serão usados ao longo do restante desta série de guias de início rápido.
+Agora você tem todos os detalhes de conexão necessários para se conectar ao seu serviço do ClickHouse Cloud usando qualquer ferramenta externa. O hostname, a porta, o nome de usuário e a senha que você encontrou aqui serão usados ao longo do restante desta série de guias de início rápido.
 
 Confira a seguir estes guias de início rápido:
 

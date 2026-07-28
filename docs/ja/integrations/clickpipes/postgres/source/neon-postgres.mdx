@@ -59,7 +59,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` publication には、指定したテーブルから生成される変更イベントのセットが含まれ、後でレプリケーションストリームを取り込むために使用されます。
+`clickpipes` publication は、変更イベントが ClickPipes にストリーミングされる対象テーブルの集合を定義します。すべてのテーブルをレプリケーションする予定でない限り、`FOR ALL TABLES` の使用は推奨しません。不要なテーブルを含めると、Postgres から ClickPipes への WAL トラフィックが増加し、レプリケーション全体の効率が低下するためです。
 
 <div id="enable-logical-replication">
   ## 論理レプリケーションを有効にする
@@ -77,9 +77,9 @@ Neon では、UI から論理レプリケーションを有効にできます。
 Neon Postgres インスタンスで、以下の設定を確認しましょう。
 
 ```sql
-SHOW wal_level; -- logical である必要があります
-SHOW max_wal_senders; -- 10 である必要があります
-SHOW max_replication_slots; -- 10 である必要があります
+SHOW wal_level; -- should be logical
+SHOW max_wal_senders; -- should be 10
+SHOW max_replication_slots; -- should be 10
 ```
 
 <div id="ip-whitelisting-for-neon-enterprise-plan">

@@ -1,14 +1,34 @@
 ---
-description: '索引文档'
+description: 'Index 文档'
 sidebar: 'sqlreference'
 slug: /sql-reference/functions
 title: '函数概览'
 doc_type: 'landing-page'
+mode: wide
 ---
 
-| Page                                                                                | Description           |
-| ----------------------------------------------------------------------------------- | --------------------- |
-| [Regular Functions](/zh/reference/functions/regular-functions/regular-functions-index) | 结果对每一行都独立于其他所有行的函数。   |
-| [Aggregate Functions](/zh/reference/functions/aggregate-functions/index)               | 跨多行对一组值进行聚合的函数。       |
-| [Table Functions](/zh/reference/functions/table-functions/index)                       | 用于构造表的方法。             |
-| [Window Functions](/zh/reference/functions/window-functions/index)                     | 可针对与当前行相关的一组行执行计算的函数。 |
+<CardGroup cols={2}>
+  <Card title="常规函数" icon="function" href="/zh/reference/functions/regular-functions/overview">
+    其结果对每一行都独立于其他所有行的函数。
+  </Card>
+
+  <Card title="聚合函数" icon="calculator" href="/zh/reference/functions/aggregate-functions/index">
+    跨多行累积一组值的函数。
+  </Card>
+
+  <Card title="表函数" icon="table" href="/zh/reference/functions/table-functions/index">
+    用于构造表的方法。
+  </Card>
+
+  <Card title="窗口函数" icon="chart-column" href="/zh/reference/functions/window-functions/index">
+    可让你对与当前行相关的一组行执行计算的函数。
+  </Card>
+
+  <Card title="用户自定义函数" icon="code" href="/zh/reference/functions/regular-functions/udf">
+    由用户定义的可执行函数。
+  </Card>
+
+  <Card title="WebAssembly UDF" icon="cube" href="/zh/reference/functions/regular-functions/wasm_udf">
+    使用 WebAssembly 实现的用户自定义函数。
+  </Card>
+</CardGroup>

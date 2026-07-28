@@ -53,6 +53,17 @@ struct DeserializeBinaryBulkStateMapKeysOrValuesWithBuckets : public ISerializat
             new_state->bucket_keys_or_values_states[bucket] = bucket_keys_or_values_states[bucket] ? bucket_keys_or_values_states[bucket]->clone() : nullptr;
         return new_state;
     }
+
+    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
+    {
+        if (buckets_info_state)
+            callback(buckets_info_state);
+        for (const auto & bucket_state : bucket_keys_or_values_states)
+        {
+            if (bucket_state)
+                callback(bucket_state);
+        }
+    }
 };
 
 

@@ -190,6 +190,7 @@ class JobConfigs:
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="python3 ./ci/jobs/copilot_review_job.py --codex",
         allow_failure=True,
+        enable_gh_auth=True,
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
         ],
@@ -377,6 +378,14 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
+    release_build_jobs_with_examples = [
+        job.set_command(f"{job.command} --build-examples").set_provides(
+            ArtifactNames.CLICKHOUSE_EXAMPLES
+        )
+        if f"({BuildTypes.ARM_RELEASE})" in job.name
+        else job
+        for job in release_build_jobs
+    ]
     cfi_build_job = common_build_job_config.parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_CFI,
@@ -409,17 +418,22 @@ class JobConfigs:
     # populates the cache so that read-only PR release builds get cache hits.
     # They provide no artifacts and run no profile/master-head post hooks - the
     # only purpose is to warm sccache.
-    sccache_warmup_build_jobs = common_build_job_config.parametrize(
-        Job.ParamSet(
-            parameter=BuildTypes.AMD_RELEASE_PR_CACHE_WARMUP,
-            runs_on=RunnerLabels.ARM_LARGE,
-            timeout=3 * 3600,
-        ),
-        Job.ParamSet(
-            parameter=BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP,
-            runs_on=RunnerLabels.ARM_LARGE,
-        ),
-    )
+    sccache_warmup_build_jobs = [
+        job.set_command(f"{job.command} --build-examples")
+        if f"({BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP})" in job.name
+        else job
+        for job in common_build_job_config.parametrize(
+            Job.ParamSet(
+                parameter=BuildTypes.AMD_RELEASE_PR_CACHE_WARMUP,
+                runs_on=RunnerLabels.ARM_LARGE,
+                timeout=3 * 3600,
+            ),
+            Job.ParamSet(
+                parameter=BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP,
+                runs_on=RunnerLabels.ARM_LARGE,
+            ),
+        )
+    ]
     extra_validation_build_jobs = common_build_job_config.set_post_hooks(
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
@@ -680,16 +694,16 @@ class JobConfigs:
     functional_tests_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_asan_ubsan, distributed plan, parallel",
-            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
+            # `--distributed-plan` fans each query across local parallel replicas,
+            # multiplying the server-side memory of every in-flight query, so the
+            # aggregate RSS of the parallel suite's co-scheduled queries is heavier
+            # than a normal ASan run and overruns the sanitizer memory cap on the
+            # default 64 GiB runner. Use a LARGE runner (same 32 vCPU as MEDIUM_CPU,
+            # but 128 GiB instead of 64 GiB RAM) so the suite keeps full concurrency
+            # and the default timeout instead of cutting workers - which barely
+            # moved peak RSS and only made the job slower.
+            runs_on=RunnerLabels.AMD_LARGE,
             requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
-            # This variant runs the parallel suite at reduced concurrency (see the
-            # distributed-plan branch in `functional_tests.py`) to keep the
-            # aggregate server RSS under the sanitizer memory cap, which lowers
-            # throughput. Allow more wall-clock than the common 2.5h budget so the
-            # reduced concurrency cannot turn into a job timeout: the job ran ~2h36m
-            # at 8 workers, and the further cut to 7 workers pushes it to ~2h57m, so
-            # 3.5h keeps a comfortable margin.
-            timeout=int(3600 * 3.5),
         ),
         *[
             Job.ParamSet(
@@ -1480,7 +1494,7 @@ class JobConfigs:
             # introduced under ./docs.
             exclude_paths=[
                 "./docs/README.md",
-                "./docs/_description_templates/",
+                "./docs/_templates/",
                 "./docs/_includes/",
                 "./docs/changelog_entry_guidelines.md",
                 "./docs/changelogs/",
@@ -1703,7 +1717,19 @@ class JobConfigs:
         command="python3 ./ci/jobs/llvm_coverage_job.py",
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py"],
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/llvm_coverage_job.py"],
+            # llvm_coverage_job.py shells out to all of these; a change to any of
+            # them must mark this job (and, transitively via `requires`, the
+            # coverage build and every FT/IT/UT coverage shard) as affected -
+            # otherwise praktika's changed-files filter drops the job even when
+            # filter_job.py's should_skip_job says it should run.
+            include_paths=[
+                "./ci/jobs/llvm_coverage_job.py",
+                "./ci/jobs/scripts/merge_llvm_coverage.sh",
+                "./ci/jobs/scripts/generate_diff_coverage_report.sh",
+                "./ci/jobs/scripts/print_uncovered_code.py",
+                "./ci/jobs/scripts/dedup_lcov_instantiations.py",
+                "./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
+            ],
         ),
         timeout=3600,
         enable_gh_auth=True,

@@ -2304,7 +2304,7 @@ TEST(FunctionsStress, stress)
     int num_threads = options.num_threads;
     if (num_threads <= 0)
     {
-        if (hasPHDRCache())
+        if (hasAsyncSignalSafeUnwind())
             num_threads = std::thread::hardware_concurrency();
         else
             /// In TSAN build, with too many threads, this test gets >30s stalls on lock
