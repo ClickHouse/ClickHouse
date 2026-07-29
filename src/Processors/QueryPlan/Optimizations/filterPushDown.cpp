@@ -49,10 +49,8 @@ namespace DB::ErrorCodes
 namespace DB::QueryPlanOptimizations
 {
 
-/// True if a value of this type can be compared without any risk of throwing. Only unwrapped scalars
-/// qualify. Decimal raises DECIMAL_OVERFLOW on a scale mismatch, Variant/Dynamic depend on the
-/// alternative a row carries, and a zero-sized Tuple is not comparable at all (NOT_IMPLEMENTED), so
-/// containers are rejected wholesale rather than walked.
+/// True if comparing a value of this type cannot throw. Decimal, Variant/Dynamic and containers can,
+/// so only unwrapped scalars qualify.
 static bool typeIsTotallyComparable(const DataTypePtr & type)
 {
     WhichDataType which(removeNullable(removeLowCardinality(type)));
@@ -62,10 +60,8 @@ static bool typeIsTotallyComparable(const DataTypePtr & type)
         || which.isNothing();
 }
 
-/// True if comparing these argument types cannot throw. Equal types compare directly, but mixed types
-/// are converted first, and converting a String to Date or Enum throws on a value that does not parse
-/// (CANNOT_PARSE_DATE, UNKNOWN_ELEMENT_OF_ENUM). Native numbers convert between each other without
-/// throwing, so that is the only mixing allowed.
+/// True if comparing these argument types cannot throw. Mixed types are converted first, and only
+/// native numbers convert between each other without throwing.
 static bool comparisonIsTotal(const DataTypes & argument_types)
 {
     for (const auto & type : argument_types)
@@ -1386,12 +1382,8 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
                 return 0;
         }
 
-        /// A same-typed column count is not enough. The planner may retain the predicate column when a
-        /// parent reuses it (e.g. SELECT x > 0 ... WHERE x > 0), so a single-UInt8 set key would become
-        /// x > 0 instead of x. Two outputs may also alias the same input (SELECT a AS x, a AS y), which
-        /// coarsens the set key: rows differing only in the dropped column collapse onto each other and
-        /// cancel. So the new set key must be a permutation of the original one: every column resolves
-        /// to a branch input, and each input is used exactly once.
+        /// The same width and types are not enough: the new set key must be a permutation of the
+        /// original, so every column resolves to a branch input and each input is used exactly once.
         std::unordered_map<std::string_view, const ActionsDAG::Node *> output_by_name;
         for (const auto * out : filter->getExpression().getOutputs())
             output_by_name.emplace(out->result_name, out);
