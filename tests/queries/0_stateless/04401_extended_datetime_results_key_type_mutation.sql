@@ -110,15 +110,18 @@ CREATE TABLE ti (ts DateTime64(3), INDEX idx toStartOfDay(ts) TYPE minmax GRANUL
 ALTER TABLE ti MODIFY COMMENT 'touch' SETTINGS enable_extended_results_for_datetime_functions = 1;
 INSERT INTO ti VALUES ('2020-01-01 00:00:00'), ('2020-06-01 00:00:00');
 SELECT count() FROM ti WHERE ts >= '2020-05-01 00:00:00';
+SELECT count() FROM ti WHERE toStartOfDay(ts) >= toStartOfDay(toDateTime64('2020-05-01 00:00:00', 3)) SETTINGS force_data_skipping_indices = 'idx';
 
 DROP TABLE ti;
 
--- Same for a Date32 argument with toMonday.
+-- Same for a Date32 argument with toMonday. force_data_skipping_indices makes the query fail unless the
+-- index is actually usable, so this does not pass by silently falling back to a full scan.
 SET enable_extended_results_for_datetime_functions = 0;
 CREATE TABLE ti (d Date32, INDEX idx toMonday(d) TYPE set(0) GRANULARITY 1) ENGINE = MergeTree() ORDER BY tuple();
 ALTER TABLE ti MODIFY COMMENT 'touch' SETTINGS enable_extended_results_for_datetime_functions = 1;
-INSERT INTO ti VALUES ('2020-01-01');
+INSERT INTO ti VALUES ('2020-01-01'), ('2020-06-01'), ('2021-03-01');
 SELECT count() FROM ti;
+SELECT count() FROM ti WHERE toMonday(d) = toMonday(toDate32('2020-06-01')) SETTINGS force_data_skipping_indices = 'idx';
 
 DROP TABLE ti;
 
@@ -126,8 +129,9 @@ DROP TABLE ti;
 SET cast_keep_nullable = 0;
 CREATE TABLE ti (x Nullable(UInt32), INDEX idx CAST(x AS UInt32) TYPE set(0) GRANULARITY 1) ENGINE = MergeTree() ORDER BY tuple();
 ALTER TABLE ti MODIFY COMMENT 'touch' SETTINGS cast_keep_nullable = 1;
-INSERT INTO ti VALUES (1);
+INSERT INTO ti VALUES (1), (2), (3);
 SELECT count() FROM ti;
+SELECT count() FROM ti WHERE CAST(x AS UInt32) = 2 SETTINGS force_data_skipping_indices = 'idx';
 
 DROP TABLE ti;
 
