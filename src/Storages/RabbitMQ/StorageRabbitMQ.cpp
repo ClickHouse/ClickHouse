@@ -172,7 +172,26 @@ StorageRabbitMQ::StorageRabbitMQ(
 
         context_->getRemoteHostFilter().checkHostAndPort(parsed_address.first, toString(parsed_address.second));
     }
-    else if (!(*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address].changed)
+    else if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address].changed)
+    {
+        /// `rabbitmq_address` names the same server as `rabbitmq_host_port`, only in the URI form,
+        /// so it has to pass the same `remote_host_filter` check. Without it the filter could be
+        /// bypassed simply by choosing the other way of spelling the address.
+        const auto address_string = getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address]);
+
+        std::optional<AMQP::Address> address;
+        try
+        {
+            address.emplace(address_string);
+        }
+        catch (const std::exception & e)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid `rabbitmq_address`: {}", e.what());
+        }
+
+        context_->getRemoteHostFilter().checkHostAndPort(address->hostname(), toString(address->port()));
+    }
+    else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "RabbitMQ requires either `rabbitmq_host_port` or `rabbitmq_address` setting");
 
     configuration =

