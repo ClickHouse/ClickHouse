@@ -220,7 +220,8 @@ SET join_algorithm = 'direct,parallel_hash,hash';
 -- context, so it gets a buffer even though the top-level context alone says otherwise, and the join
 -- must stay unreordered here too. `query_plan_optimize_join_order_randomize` is a seed rather than a
 -- flag, so a fixed value pins one join order: 2 is an order that reordered the buffered join and
--- read the buffer before its writer finished.
+-- read the buffer before its writer finished. The order limit is pinned as well, because the runner
+-- can randomize it to 0, which skips reordering entirely and would make this case vacuous.
 -- ------------------------------------------------------------------------------------------------
 SET correlated_subqueries_use_in_memory_buffer = 0;
 SET correlated_subqueries_default_join_kind = 'left';
@@ -231,7 +232,8 @@ SELECT c FROM (
         SELECT i FROM t_chunk_buffer_set_op WHERE (SELECT _part_offset) >= 0)
       SETTINGS correlated_subqueries_use_in_memory_buffer = 1,
                correlated_subqueries_default_join_kind = 'right',
-               query_plan_optimize_join_order_randomize = 2
+               query_plan_optimize_join_order_randomize = 2,
+               query_plan_optimize_join_order_limit = 10
     UNION ALL
     SELECT 0
 )
