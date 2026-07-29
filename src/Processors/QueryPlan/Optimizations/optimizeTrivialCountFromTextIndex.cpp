@@ -287,6 +287,10 @@ String makeStepDescription(const ResolvedQuery & resolved)
 
 bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings)
 {
+    /// `ReadFromTextIndexCount` is not serializable, so it must not end up in a distributed plan fragment.
+    if (settings.make_distributed_plan)
+        return false;
+
     auto * aggregating = typeid_cast<AggregatingStep *>(node.step.get());
     if (!aggregating)
         return false;
