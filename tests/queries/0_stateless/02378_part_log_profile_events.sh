@@ -6,13 +6,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# `max_bytes_to_merge_at_max_space_in_pool = 1` disables background merges, so the table keeps one
+# part per inserted block until the `OPTIMIZE TABLE test FINAL` below merges them. That setting is
+# only read when selecting a background merge, so `OPTIMIZE` still merges every part of a partition.
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS test;
 
-    -- max_bytes_to_merge_at_max_space_in_pool = 1 disables background merges, so the table has
-    -- one part per inserted block until OPTIMIZE FINAL below merges them. Merges started by
-    -- OPTIMIZE FINAL ignore this setting. (No backticks: this comment is inside a
-    -- double-quoted shell string, where they would trigger command substitution.)
     CREATE TABLE test (key UInt64, val UInt64) engine = MergeTree Order by key PARTITION BY key >= 128
         SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1;
     SET max_block_size = 64, max_insert_block_size = 64, min_insert_block_size_rows = 64;
