@@ -505,6 +505,29 @@ KILL MUTATION WHERE table = 't_absent_bool_dotted' AND database = currentDatabas
 SELECT count() FROM t_absent_bool_dotted WHERE `a.b`.x = 150;
 SELECT count() FROM t_absent_bool_dotted WHERE `a.b`.x = 150 SETTINGS use_skip_indexes = 0;
 
+SELECT '-- 24. a SERIALIZATION-DEFINED subcolumn whose parent the part does not carry refuses too';
+-- Case 22 for the subcolumns case 21 lets through: `vec.8` is a `QBit` bit plane, which only the
+-- parent's custom serialization defines, so no part list can express it - but this part holds no
+-- `vec` at all, and its granule was written for `QBit(Float32, 4)`. Reading the part's silence as
+-- unrepresentable here would skip the type check and prune with a stale granule.
+-- The backticked spelling is what makes the index require the SUBCOLUMN `vec.8`: it is one
+-- identifier, so it resolves against the subcolumn-aware column list, while an unbackticked `vec.8`
+-- is the dot operator and requires the physical parent `vec` instead.
+DROP TABLE IF EXISTS t_absent_qbit_sub;
+CREATE TABLE t_absent_qbit_sub (k UInt64, other String) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_absent_qbit_sub SELECT number, toString(number) FROM numbers(64);
+ALTER TABLE t_absent_qbit_sub ADD COLUMN vec QBit(Float32, 4)
+DEFAULT arrayMap(x -> toFloat32(k + x), range(4))::QBit(Float32, 4) SETTINGS mutations_sync = 2, alter_sync = 2;
+ALTER TABLE t_absent_qbit_sub ADD INDEX idx `vec.8` TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
+ALTER TABLE t_absent_qbit_sub MATERIALIZE INDEX idx SETTINGS mutations_sync = 2, alter_sync = 2;
+SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_absent_qbit_sub' AND active AND column = 'vec';
+SYSTEM STOP MERGES t_absent_qbit_sub;
+ALTER TABLE t_absent_qbit_sub MODIFY COLUMN vec QBit(Float64, 4);
+KILL MUTATION WHERE table = 't_absent_qbit_sub' AND database = currentDatabase() FORMAT Null;
+SELECT count() FROM t_absent_qbit_sub WHERE `vec.8` = CAST(unhex('00'), 'FixedString(1)');
+SELECT count() FROM t_absent_qbit_sub WHERE `vec.8` = CAST(unhex('00'), 'FixedString(1)') SETTINGS use_skip_indexes = 0;
+
 DROP TABLE t_stale_nullable;
 DROP TABLE t_stale_plain;
 DROP TABLE t_stale_json;
@@ -545,3 +568,4 @@ DROP TABLE t_keep_quant_dotted;
 DROP TABLE t_absent_sub;
 DROP TABLE t_absent_bool_prefix;
 DROP TABLE t_absent_bool_dotted;
+DROP TABLE t_absent_qbit_sub;
