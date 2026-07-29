@@ -16,7 +16,7 @@
 
     <create_query>
         CREATE TABLE t_chain_derived_join ENGINE = MergeTree ORDER BY tuple() AS
-        SELECT number AS k, number AS v FROM numbers_mt(10000000)
+        SELECT number AS k, number - (number % 2) AS v FROM numbers_mt(10000000)
     </create_query>
 
     <!-- Filter tax: three derived string comparisons sharing a 100-byte prefix with the constant. -->
