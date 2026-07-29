@@ -29,6 +29,10 @@ public:
     void copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                         DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) override;
 
+    /// Buffered ranged copy, inherited by every reader that has no native ranged copy.
+    void copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, bool encrypted_in_backup,
+                             DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) override;
+
     const ReadSettings & getReadSettings() const override { return read_settings; }
     const WriteSettings & getWriteSettings() const override { return write_settings; }
     size_t getWriteBufferSize() const override { return write_buffer_size; }
