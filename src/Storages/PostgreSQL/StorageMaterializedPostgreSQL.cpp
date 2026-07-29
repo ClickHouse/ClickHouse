@@ -29,6 +29,8 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 
+#include <Databases/LoadingStrictnessLevel.h>
+
 #include <Interpreters/applyTableOverride.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -799,6 +801,35 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         /// The `PostgreSQLSettings` are not passed: this engine does not use a connection pool,
         /// so the `postgresql_*` pool settings are rejected instead of being silently ignored.
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext(), /*storage_settings=*/ nullptr);
+
+        /// A named collection may specify the endpoint as `addresses_expr`, which fills only
+        /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string
+        /// below is built from `host` / `port`. This engine keeps a single replication connection,
+        /// so exactly one address is accepted; canonicalize it back into `host` / `port`. This mirrors
+        /// `registerDatabaseMaterializedPostgreSQL`.
+        if (configuration.host.empty())
+        {
+            if (configuration.addresses.size() == 1)
+            {
+                configuration.host = configuration.addresses.front().first;
+                configuration.port = configuration.addresses.front().second;
+            }
+            else if (!isLoadingFromExistingMetadata(args.mode) && !args.query.attach_short_syntax)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Engine `MaterializedPostgreSQL` requires a single `host:port` address, but `addresses_expr` defines {} addresses",
+                                configuration.addresses.size());
+            }
+            /// When replaying previously persisted metadata (server startup, and DETACH / ATTACH
+            /// with the short syntax, which re-reads the stored definition) a legacy multi-address
+            /// definition keeps its historical behavior: it could be created before this validation
+            /// existed (replication starts asynchronously, so the broken connection string never
+            /// aborted the CREATE), and the table must keep loading with replication failing and
+            /// retrying in the background rather than abort startup. A user ATTACH with a full
+            /// table definition is a fresh definition, not a replay, and stays fail-closed
+            /// (the same distinction `StorageDistributed` draws for its skipping-indices check).
+        }
+
         auto connection_info = postgres::formatConnectionString(
             configuration.database,
             configuration.host,
