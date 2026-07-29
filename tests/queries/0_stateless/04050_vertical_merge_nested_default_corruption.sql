@@ -333,6 +333,11 @@ SELECT count() FROM system.parts_columns
 
 OPTIMIZE TABLE t_nested_mixed_parts FINAL;
 
+-- `` `n.b` `` must be expired instead of materialized from the recomputed `tmp`: expired columns are
+-- not written, so they have no row in `system.parts_columns` (0 rows here, 1 row without the fix).
+SELECT count() FROM system.parts_columns
+    WHERE database = currentDatabase() AND table = 't_nested_mixed_parts' AND active AND column = 'n.b';
+
 -- The merge must complete without corrupting the shared Nested offsets, so the sibling survives.
 SELECT count(), countDistinct(_part) FROM t_nested_mixed_parts;
 SELECT id, `n.a` FROM t_nested_mixed_parts ORDER BY id;
