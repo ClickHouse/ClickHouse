@@ -3376,16 +3376,10 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             if (resolvable_from_checksums)
                 continue;
 
-            /// Enumerate the orphan files from storage. Walk every declared substream (text owns
-            /// `.dct`/`.pst`/`.pos` side streams, each with its own data + mark), taking only the
-            /// extension that substream declares plus minmax's legacy `.idx` for a `.idx2` substream.
-            ///
-            /// A file registered in `checksums.txt` is never an orphan, whichever index registered
-            /// it. Index names can share an on-disk name -- with `escape_index_filenames` = 0 the
-            /// `.pst` substream of a text index `a` and a minmax index named `a.pst` both address
-            /// `skp_idx_a.pst.cmrk2` -- and the registered owner may be an index this same mutation
-            /// drops, so it cannot be found in the (already post-drop) metadata. Claiming such a
-            /// file skips it while its checksum entry survives, and `CHECK TABLE` then fails.
+            /// Walk every declared substream, taking only the extension it declares plus minmax's
+            /// legacy `.idx` for a `.idx2` substream. A file registered in `checksums.txt` is not an
+            /// orphan: index names can share an on-disk name, and the registered owner may be an
+            /// index this same mutation drops, so it is absent from the post-drop metadata.
             const String file_name = index_ptr->getFileName();
             for (const auto & index_substream : index_ptr->getSubstreams())
             {
