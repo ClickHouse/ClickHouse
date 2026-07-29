@@ -17,11 +17,11 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
   O uso de JDBC requer o ClickHouse JDBC Bridge, portanto você precisará usar o `clickhouse-local` em uma máquina local para transmitir os dados do seu banco de dados para o ClickHouse Cloud. Visite a página [**Using clickhouse-local**](/pt-BR/get-started/migrate/other-methods/clickhouse-local-etl) na seção **Migrate** da documentação para mais detalhes.
 </Note>
 
-**Visão geral:** O <a href="https://github.com/ClickHouse/clickhouse-jdbc-bridge" target="_blank">ClickHouse JDBC Bridge</a>, em combinação com a [função de tabela JDBC](/pt-BR/reference/functions/table-functions/jdbc) ou o [engine de integração](/pt-BR/reference/engines/table-engines/integrations/index) ou o [engine de tabela JDBC](/pt-BR/reference/engines/table-engines/integrations/jdbc), permite que o ClickHouse acesse dados de qualquer fonte de dados externa para a qual haja um <a href="https://en.wikipedia.org/wiki/JDBC_driver" target="_blank">driver JDBC</a> disponível:
+**Visão geral:** O <a href="https://github.com/ClickHouse/clickhouse-jdbc-bridge" target="_blank">ClickHouse JDBC Bridge</a>, em combinação com a [função de tabela JDBC](/pt-BR/reference/functions/table-functions/jdbc) ou o [engine de tabela JDBC](/pt-BR/reference/engines/table-engines/integrations/jdbc), permite que o ClickHouse acesse dados de qualquer fonte de dados externa para a qual haja um <a href="https://en.wikipedia.org/wiki/JDBC_driver" target="_blank">driver JDBC</a> disponível:
 
 <Image img="/images/integrations/data-ingestion/dbms/jdbc-01.webp" size="lg" alt="Diagrama da arquitetura do ClickHouse JDBC Bridge" background="white" />
 
-Isso é útil quando não há um [integration engine](/pt-BR/reference/engines/table-engines/integrations), uma table function ou um dicionário externo nativo disponível para a fonte de dados externa, mas existe um driver JDBC para essa fonte de dados.
+Isso é útil quando não há um [integration engine](/pt-BR/reference/engines/table-engines/integrations/index), uma função de tabela ou um dicionário externo nativo disponível para a fonte de dados externa, mas existe um driver JDBC para essa fonte de dados.
 
 Você pode usar o ClickHouse JDBC Bridge tanto para leituras quanto para gravações, inclusive em paralelo para várias fontes de dados externas. Por exemplo, é possível executar consultas distribuídas no ClickHouse em tempo real em várias fontes de dados externas e internas.
 
@@ -155,7 +155,7 @@ Para instalar o ClickHouse JDBC Bridge externamente, siga estas etapas:
 
 1. Instale, configure e execute o ClickHouse JDBC Bridge em um host dedicado, seguindo as etapas descritas na seção 1 deste guia.
 
-2. Em cada host do ClickHouse, adicione o seguinte bloco de configuração à <a href="/pt-BR/concepts/features/configuration/server-config/configuration-files#configuration_files" target="_blank">configuração do servidor ClickHouse</a> (dependendo do formato de configuração escolhido, use a versão em XML ou YAML):
+2. Em cada host do ClickHouse, adicione o seguinte bloco de configuração à <a href="/pt-BR/concepts/features/configuration/server-config/configuration-files" target="_blank">configuração do servidor ClickHouse</a> (dependendo do formato de configuração escolhido, use a versão em XML ou YAML):
 
 <Tabs>
   <Tab title="XML">
