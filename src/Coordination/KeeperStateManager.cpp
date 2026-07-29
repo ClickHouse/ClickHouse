@@ -398,8 +398,14 @@ constexpr auto current_server_state_version = ServerStateVersion::V1;
 /// Returns nullptr only when the content is provably unusable; a failure to read the file is
 /// propagated instead, because callers act on nullptr by deleting or truncating the file.
 /// throw_on_corrupted_checksum keeps read_state failing loudly on a bad checksum in debug builds.
+/// corrupted_path, when given, records a checksum mismatch instead of throwing, so the caller can
+/// finish trying the other copies before deciding that nothing is recoverable.
 nuraft::ptr<nuraft::srv_state> readAndVerifyStateFile(
-    const DiskPtr & disk, const String & path, bool throw_on_corrupted_checksum, LoggerPtr logger)
+    const DiskPtr & disk,
+    const String & path,
+    bool throw_on_corrupted_checksum,
+    LoggerPtr logger,
+    std::optional<String> * corrupted_path = nullptr)
 {
     /// Read first, parse from memory, so an IO failure cannot be read as a content verdict.
     String content;
@@ -430,6 +436,9 @@ nuraft::ptr<nuraft::srv_state> readAndVerifyStateFile(
         if (read_checksum != hash.get64())
         {
             constexpr auto error_format = "Invalid checksum while reading state from {}. Got {}, expected {}";
+            if (corrupted_path != nullptr && !corrupted_path->has_value())
+                *corrupted_path = path;
+
             if (throw_on_corrupted_checksum)
             {
 #ifdef NDEBUG
@@ -532,9 +541,13 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 
     /// A read failure is deliberately not caught: every nullptr below deletes the file just read,
     /// and no state at all makes NuRaft restart from term 0 with an empty vote.
+    /// A checksum mismatch is remembered rather than thrown, because a torn live file is exactly
+    /// what the backup exists to survive: recovering from state-OLD has to be tried first, and the
+    /// mismatch is only surfaced (in debug builds) if nothing could be recovered at all.
+    std::optional<String> corrupted_path;
     const auto try_read_file = [&](const auto & path) -> nuraft::ptr<nuraft::srv_state>
     {
-        auto state = readAndVerifyStateFile(disk, path, /*throw_on_corrupted_checksum=*/true, logger);
+        auto state = readAndVerifyStateFile(disk, path, /*throw_on_corrupted_checksum=*/false, logger, &corrupted_path);
         if (state)
             LOG_INFO(logger, "Read state from {}", fs::path(disk->getPath()) / path);
         return state;
@@ -578,6 +591,13 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
     {
         disk->removeFile(copy_lock_file);
     }
+
+#ifndef NDEBUG
+    /// Nothing was recoverable, so a checksum mismatch seen on the way here is a real corruption
+    /// rather than a torn file the backup covered for.
+    if (corrupted_path.has_value())
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid checksum while reading state from {}", disk->getPath() + *corrupted_path);
+#endif
 
     if (log_store->next_slot() != 1)
         LOG_ERROR(

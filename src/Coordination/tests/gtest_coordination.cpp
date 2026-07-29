@@ -1327,6 +1327,53 @@ TEST_P(CoordinationTest, TestDurableStateBackupIsSynced)
         std::filesystem::remove("./state-OLD");
 }
 
+/// An interrupted rewrite usually leaves some bytes behind rather than an empty file, so the live
+/// state file fails its checksum instead of being empty. Recovery from the backup must still
+/// happen, in debug builds too, where a checksum mismatch is otherwise reported as corruption.
+/// See https://github.com/ClickHouse/ClickHouse/issues/111454.
+TEST_P(CoordinationTest, TestDurableStatePartialWriteRecoversFromBackup)
+{
+    ChangelogDirTest logs("./logs");
+    this->setLogDirectory("./logs");
+
+    auto disk = std::make_shared<DB::DiskLocal>("StateFile", ".");
+    this->keeper_context->setStateFileDisk(disk);
+
+    std::optional<DB::KeeperStateManager> state_manager;
+    const auto reload_state_manager = [&]
+    {
+        state_manager.emplace(1, "localhost", 9181, this->keeper_context);
+        state_manager->loadLogStore(1, 0);
+    };
+
+    reload_state_manager();
+
+    auto state = nuraft::cs_new<nuraft::srv_state>();
+    state->set_term(1);
+    state->set_voted_for(2);
+    state->allow_election_timer(true);
+    state_manager->save_state(*state);
+
+    /// Reconstruct what a crash inside the rewrite leaves behind: a valid backup, plus a live file
+    /// holding a partial write, so it is non-empty but fails its checksum.
+    ASSERT_TRUE(std::filesystem::exists("./state"));
+    std::filesystem::copy_file("./state", "./state-OLD");
+    const auto full_size = std::filesystem::file_size("./state");
+    ASSERT_GT(full_size, 10u);
+    std::filesystem::resize_file("./state", full_size - 1);
+
+    reload_state_manager();
+    auto recovered = state_manager->read_state();
+    ASSERT_NE(recovered, nullptr);
+    ASSERT_EQ(recovered->get_term(), 1);
+    ASSERT_EQ(recovered->get_voted_for(), 2);
+
+    if (std::filesystem::exists("./state"))
+        std::filesystem::remove("./state");
+    if (std::filesystem::exists("./state-OLD"))
+        std::filesystem::remove("./state-OLD");
+}
+
 /// NuRaft keeps the server alive after save_state throws, so a peer retry re-enters save_state
 /// while the live state file is still torn from the failed attempt. The retry must not copy that
 /// unusable file over the backup, which at that point holds the only recoverable state.
