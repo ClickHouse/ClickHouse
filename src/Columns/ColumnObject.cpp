@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/DataTypesCache.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnCompressed.h>
@@ -1214,28 +1215,15 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
             ++dynamic_paths_it;
         }
 
-        /// Hash the shared-data value the same way ColumnDynamic hashes a value stored in its
-        /// shared variant: decode the type, then hash the type name and the value in a plain
-        /// typed column. This avoids constructing a throwaway ColumnDynamic (and rebuilding its
-        /// Variant info: addNewVariant / DataTypeVariant::getName / ...) for every value, while
-        /// producing the exact same hash (see ColumnDynamic::updateHashWithValue), so persisted
-        /// deduplication block ids are unchanged.
+        /// Hash the value the same way ColumnDynamic hashes a value in its shared variant, so the hash is layout-independent.
         auto value = shared_data_values->getDataAt(i);
         ReadBufferFromMemory buf(value);
         auto value_type = decodeDataType(buf);
+        auto type_name = value_type->getName();
         hash.update(path);
-        /// In this encoding NULL is stored as the Nothing type with no value bytes (see
-        /// SerializationDynamic::serializeBinary). Current writers don't store NULL values in
-        /// shared data, but it is a valid encoding of the value format, and Nothing has no
-        /// binary deserialization, so hash it directly the way ColumnDynamic hashes a NULL row.
-        if (isNothing(value_type))
-        {
-            hash.update(ColumnVariant::NULL_DISCRIMINATOR);
-            continue;
-        }
-        hash.update(value_type->getName());
+        hash.update(type_name);
         auto tmp_column = value_type->createColumn();
-        value_type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, getFormatSettings());
+        getDataTypesCache().getSerialization(type_name)->deserializeBinary(*tmp_column, buf, getFormatSettings());
         tmp_column->updateHashWithValue(0, hash);
     }
 

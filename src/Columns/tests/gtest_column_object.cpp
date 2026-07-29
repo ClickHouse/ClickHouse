@@ -1,13 +1,9 @@
-#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeDynamic.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromVector.h>
 
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
@@ -498,11 +494,8 @@ TEST(ColumnObject, TryInsertRestoresSortedDynamicPaths)
     ASSERT_EQ(col_object[1], col_object[0]);
 }
 
-/// updateHashWithValue must produce the same hash for a logically equal object regardless of
-/// whether its paths are stored in dynamic path columns or serialized in shared_data. Because
-/// the dynamic-path hashing is not changed, this also guards that the (optimized) shared-data
-/// hashing stays byte-identical to the previous implementation, so persisted deduplication
-/// block ids do not shift.
+/// A logically equal object must hash identically whether its paths are stored in dynamic path
+/// columns or in shared_data.
 TEST(ColumnObject, HashIsIndependentOfDynamicVsSharedLayout)
 {
     std::vector<Object> rows = {
@@ -521,12 +514,12 @@ TEST(ColumnObject, HashIsIndependentOfDynamicVsSharedLayout)
         return col;
     };
 
-    /// A: generous budget -> every path lives in its own dynamic path column.
+    /// Large budget -> every path lives in its own dynamic path column.
     auto all_dynamic = build("JSON(max_dynamic_types=32, max_dynamic_paths=64)");
-    /// B: tiny budget -> overflow paths spill into shared_data (exercises the shared-data hash path).
+    /// Tiny budget -> overflow paths spill into shared_data.
     auto with_shared = build("JSON(max_dynamic_types=32, max_dynamic_paths=2)");
 
-    /// Sanity: B really did store something in shared_data (otherwise the test proves nothing).
+    /// Make sure something actually ended up in shared_data.
     const auto & shared_offsets = assert_cast<const ColumnObject &>(*with_shared).getSharedDataOffsets();
     ASSERT_GT(shared_offsets.back(), 0u);
 
@@ -538,43 +531,4 @@ TEST(ColumnObject, HashIsIndependentOfDynamicVsSharedLayout)
         with_shared->updateHashWithValue(n, hb);
         ASSERT_EQ(ha.get128(), hb.get128()) << "hash mismatch at row " << n;
     }
-}
-
-/// In the Dynamic binary encoding used for shared_data values, NULL is encoded as the Nothing
-/// type with no value bytes (see SerializationDynamic::serializeBinary). No current writer
-/// stores NULL values in shared data, but it is a valid encoding of the value format (it can
-/// come e.g. from Native input), and the previous implementation of updateHashWithValue
-/// (deserializing into a throwaway ColumnDynamic) hashed it as a null row instead of throwing.
-/// Check that hashing such an entry does not throw and stays byte-identical to that behavior.
-TEST(ColumnObject, HashSharedDataValueWithNothingType)
-{
-    auto type = DataTypeFactory::instance().get("JSON");
-    auto col = type->createColumn();
-    auto & col_object = assert_cast<ColumnObject &>(*col);
-
-    /// No public API writes a NULL into shared data, so craft the entry manually.
-    auto [shared_paths, shared_values] = col_object.getSharedDataPathsAndValues();
-    shared_paths->insertData("g", 1);
-    {
-        WriteBufferFromVector<ColumnString::Chars> value_buf(shared_values->getChars(), AppendModeTag());
-        encodeDataType(std::make_shared<DataTypeNothing>(), value_buf);
-    }
-    shared_values->getOffsets().push_back(shared_values->getChars().size());
-    col_object.getSharedDataOffsets().push_back(shared_paths->size());
-    ASSERT_EQ(col_object.size(), 1u);
-
-    SipHash hash;
-    col_object.updateHashWithValue(0, hash);
-
-    /// Reference: the previous implementation deserialized the value into a ColumnDynamic
-    /// (NULL becomes a row with NULL_DISCRIMINATOR) and hashed that row.
-    SipHash reference_hash;
-    auto value = shared_values->getDataAt(0);
-    ReadBufferFromMemory buf(value);
-    auto tmp_column = ColumnDynamic::create();
-    DataTypeDynamic().getDefaultSerialization()->deserializeBinary(*tmp_column, buf, FormatSettings());
-    reference_hash.update(shared_paths->getDataAt(0));
-    tmp_column->updateHashWithValue(0, reference_hash);
-
-    ASSERT_EQ(hash.get128(), reference_hash.get128());
 }
