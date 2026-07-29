@@ -754,6 +754,7 @@ The value must be *exactly* one vector's byte size:
 
 Notes:
 
+- This optimization is effective only for `wide` parts. A large vector dataset with millions of vectors will naturally populate `wide` parts as the parts merge.
 - A multiple of the vector size (or any other value) silently disables the point read - the query still returns correct results, just without the I/O saving.
 - Storing one vector per block makes the vector column's blocks small, so a full *sequential* scan of that column (for example a brute-force search with the codec disabled) becomes somewhat slower. Set `max_compress_block_size` only on columns whose dominant access is quantized-codes rescoring.
 - Note that this setting should be specified when the table is created. If the setting is modified on an existing table, only newly written parts will be suitable for single-block point reads.
