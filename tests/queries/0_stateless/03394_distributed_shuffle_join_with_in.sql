@@ -18,6 +18,10 @@ INSERT INTO test SELECT 'path_' || number::String, 'en', number FROM numbers(5);
 INSERT INTO test SELECT 'path_' || (number%3)::String, 'de', number%4 FROM numbers(10);
 
 SET query_plan_join_swap_table = 0;
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
+-- Pinned because the test asserts that the runtime join filter is built; the default threshold
+-- skips it when the probe side is estimated to be tiny.
+SET join_runtime_filter_min_probe_rows = 0;
 
 
 SET
