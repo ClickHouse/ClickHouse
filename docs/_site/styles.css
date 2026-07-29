@@ -825,25 +825,12 @@ html:not(.dark) .pagination-prev:hover {
     max-width: none !important;
 }
 
-/* Fix code block text alignment: JetBrains Mono renders box-drawing characters
-   (─, ┌, ┐, │, etc.) at ~13.6px vs ASCII at ~8.6px because it falls back to a
-   system font for box-drawing. Monaco renders both at equal width. Target the
-   pre.shiki and code elements directly since Mintlify overrides .font-mono. */
-[data-component-part="code-block-root"] pre.shiki,
-[data-component-part="code-block-root"] code,
-[data-component-part="code-block-root"] .line,
-[data-component-part="code-block-root"] .line span {
-    font-family: "Monaco", "Menlo", "Consolas", "Ubuntu Mono", monospace !important;
+/* Use Mintlify's configured Paper Mono face throughout code blocks. */
+[data-component-part="code-block-root"] .font-mono {
     font-variant-ligatures: none !important;
     font-feature-settings: "kern" 0 !important;
-}
-
-/* Slightly reduce the code-block font size to limit horizontal scrolling.
-   Tighten line-height to match monospace table output while ensuring
-   box-drawing characters render fully. */
-[data-component-part="code-block-root"] .font-mono {
     font-size: 0.8125rem !important;
-    line-height: 1.5 !important;
+    line-height: 1.25 !important;
 }
 
 
