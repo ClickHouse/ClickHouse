@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include <Core/ProtocolDefines.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/VarInt.h>
 #include <IO/WriteBufferFromString.h>
