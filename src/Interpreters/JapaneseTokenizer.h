@@ -35,6 +35,12 @@ struct JapaneseTokenizer final : public ITokenizerHelper<JapaneseTokenizer>
 
 private:
     void ensureLoaded() const;
+    void reset() const
+    {
+        previous_data = nullptr;
+        previous_len = 0;
+        current = nullptr;
+    }
 
     /// Mutable parsing state; not concurrency-safe — clone per thread.
     mutable MecabDictionaryPtr dictionary;

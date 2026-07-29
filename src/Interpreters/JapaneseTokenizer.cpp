@@ -48,9 +48,7 @@ bool JapaneseTokenizer::nextInString(
         lattice->set_sentence(data, length);
         if (!MeCab::Tagger::parse(dictionary->getModel(), lattice.get()))
         {
-            previous_data = nullptr;
-            previous_len = 0;
-            current = nullptr;
+            reset();
             throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "MeCab failed to parse input: {}", lattice->what());
         }
 
@@ -63,10 +61,9 @@ bool JapaneseTokenizer::nextInString(
     while (current && (current->stat == MECAB_EOS_NODE || current->length == 0))
         current = current->next;
 
-    if (!current)
+    if (current == nullptr)
     {
-        previous_data = nullptr;
-        previous_len = 0;
+        reset();
         return false;
     }
 
