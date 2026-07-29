@@ -19,6 +19,10 @@ CREATE TABLE t_106533_stats (id UInt64, val Float64)
 ENGINE = MergeTree ORDER BY id
 SETTINGS auto_statistics_types = 'minmax', index_granularity = 3, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 
+-- The `Parts: 1/2` assertion below counts active parts, so a background merge collapsing the two
+-- inserts would make it read `Parts: 1/1` and fail regardless of the fix.
+SYSTEM STOP MERGES t_106533_stats;
+
 -- Part 1 mixes a NaN with finite values; part 2 is entirely finite.
 INSERT INTO t_106533_stats VALUES (1, 1.0), (2, nan), (3, 3.0);
 INSERT INTO t_106533_stats VALUES (4, 100.0), (5, 150.0), (6, 200.0);
