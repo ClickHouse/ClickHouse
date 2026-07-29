@@ -47,6 +47,7 @@ namespace DB::QueryPlanOptimizations
 namespace
 {
 
+/// Returns the output column of a bare argument-less count(), or nothing for anything else.
 std::optional<String> matchBareCount(const AggregatingStep & aggregating)
 {
     if (aggregating.isGroupingSets())
@@ -68,6 +69,7 @@ std::optional<String> matchBareCount(const AggregatingStep & aggregating)
     return desc.column_name;
 }
 
+/// Collects the text-index virtual columns a predicate DAG reduces to. Fails if any branch is not index-answerable.
 bool collectTextIndexPredicateColumns(const ActionsDAG::Node * node, NameSet & out_columns)
 {
     switch (node->type)
@@ -119,6 +121,7 @@ struct MatchedSubtree
     NameSet predicate_columns;
 };
 
+/// Matches Aggregating -> (Expression|Filter)* -> ReadFromMergeTree and collects its text-predicate columns.
 std::optional<MatchedSubtree> matchSubtree(QueryPlan::Node & aggregating_node)
 {
     MatchedSubtree matched;
@@ -167,6 +170,7 @@ std::optional<MatchedSubtree> matchSubtree(QueryPlan::Node & aggregating_node)
     return matched;
 }
 
+/// Guards only proceed when the part-wide cardinalities equal the true row count.
 bool guardsHold(const ReadFromMergeTree & reading)
 {
     auto context = reading.getContext();
@@ -231,6 +235,7 @@ struct ResolvedQuery
     TextSearchQueryPtr query;
 };
 
+/// Recovers the exact-mode text search query for the predicate column from the index read tasks.
 std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & reading, const NameSet & predicate_columns)
 {
     if (predicate_columns.size() != 1)
@@ -273,6 +278,7 @@ std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & readin
     return {};
 }
 
+/// Counts matching rows in one part from the text-index posting metadata, without reading column or postings data.
 std::optional<UInt64> computeCountForPart(
     const RangesInDataPart & part_with_ranges,
     const ResolvedQuery & resolved,
