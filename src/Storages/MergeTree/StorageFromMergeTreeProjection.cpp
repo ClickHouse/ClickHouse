@@ -10,6 +10,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -158,6 +159,11 @@ std::unique_ptr<MergeTreeProjectionRowPolicyFilter> StorageFromMergeTreeProjecti
         return nullptr;
 
     ASTPtr expr = row_policy_filter->expression->clone();
+
+    /// Expand SQL UDFs first so any column reference they introduce (e.g. a `_part_offset` argument or a
+    /// column named directly in the UDF body) is visible to the alias expansion and offset remap below,
+    /// rather than being reintroduced later by `TreeRewriter`.
+    UserDefinedSQLFunctionVisitor::visit(expr, context);
 
     /// Expand parent ALIAS/DEFAULT columns to their physical dependencies, which the projection may
     /// store even though it does not expose the alias itself (e.g. `c ALIAS b + 1` -> reads `b`).
