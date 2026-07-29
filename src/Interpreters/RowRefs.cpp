@@ -11,6 +11,7 @@
 #include <Core/Joins.h>
 #include <DataTypes/IDataType.h>
 #include <base/types.h>
+#include <Common/NaNUtils.h>
 #include <Common/RadixSort.h>
 
 #include <mutex>
@@ -97,6 +98,15 @@ public:
 
         chassert(!sorted.load(std::memory_order_acquire));
 
+        /// `NaN` is incomparable, so it cannot participate in an ordering-based lookup, and keeping it
+        /// would make the sort comparators below violate strict weak ordering (undefined behaviour,
+        /// scrambling the finite entries too). Excluded like a `NULL` asof key, cf. `HashJoin::addBlockToJoin`.
+        if constexpr (is_floating_point<TKey>)
+        {
+            if (isNaN(key))
+                return;
+        }
+
         entries.emplace_back(key, static_cast<UInt32>(row_refs.size()));
         row_refs.emplace_back(RowRef(block_no, row_num));
     }
@@ -160,6 +170,13 @@ public:
         using ColumnType = ColumnVectorOrDecimal<TKey>;
         const auto & column = assert_cast<const ColumnType &>(asof_column);
         TKey k = column.getElement(row_num);
+
+        /// No inequality holds for `NaN`, so it matches nothing (see `insert`).
+        if constexpr (is_floating_point<TKey>)
+        {
+            if (isNaN(k))
+                return nullptr;
+        }
 
         size_t pos = boundSearch(k);
         if (pos != entries.size())

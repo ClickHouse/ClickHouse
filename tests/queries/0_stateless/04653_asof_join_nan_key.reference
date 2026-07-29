@@ -1,0 +1,104 @@
+oracle	multi	ge	1	[11]
+oracle	multi	ge	2	[12]
+oracle	multi	ge	3	[13]
+oracle	multi	ge	4	[]
+oracle	multi	gt	1	[11]
+oracle	multi	gt	2	[12]
+oracle	multi	gt	3	[13]
+oracle	multi	gt	4	[]
+oracle	multi	le	1	[12]
+oracle	multi	le	2	[13]
+oracle	multi	le	3	[]
+oracle	multi	le	4	[]
+oracle	multi	lt	1	[12]
+oracle	multi	lt	2	[13]
+oracle	multi	lt	3	[]
+oracle	multi	lt	4	[]
+oracle	one	ge	1	[13]
+oracle	one	ge	2	[]
+oracle	one	gt	1	[13]
+oracle	one	gt	2	[]
+oracle	one	le	1	[]
+oracle	one	le	2	[]
+oracle	one	lt	1	[]
+oracle	one	lt	2	[]
+-- { echoOn }
+
+-- Every ASOF answer over the NaN-bearing right table must equal the NaN-free expectation: a NaN in
+-- the right key must not change what a finite left key matches, and a NaN left key must match
+-- nothing. `mismatches` lists (id, expected, got) so a regression reads as a semantic diff.
+SELECT 'one ge hash' AS cell, min(ok) AS all_ok, groupArrayIf((id, expected, got), NOT ok) AS mismatches FROM (SELECT g.id AS id, o.v AS expected, g.got AS got, o.v = g.got AS ok FROM (SELECT l.id AS id, groupArray(r.v) AS got FROM l_one AS l ASOF LEFT JOIN r_nan AS r ON l.e = r.e AND l.t >= r.t GROUP BY l.id) AS g JOIN (SELECT id, v FROM asof_oracle WHERE src = 'one' AND op = 'ge') AS o ON o.id = g.id) SETTINGS join_algorithm = 'hash';
+one ge hash	1	[]
+SELECT 'one gt hash' AS cell, min(ok) AS all_ok, groupArrayIf((id, expected, got), NOT ok) AS mismatches FROM (SELECT g.id AS id, o.v AS expected, g.got AS got, o.v = g.got AS ok FROM (SELECT l.id AS id, groupArray(r.v) AS got FROM l_one AS l ASOF LEFT JOIN r_nan AS r ON l.e = r.e AND l.t >  r.t GROUP BY l.id) AS g JOIN (SELECT id, v FROM asof_oracle WHERE src = 'one' AND op = 'gt') AS o ON o.id = g.id) SETTINGS join_algorithm = 'hash';
+one gt hash	1	[]
+SELECT 'one le hash' AS cell, min(ok) AS all_ok, groupArrayIf((id, expected, got), NOT ok) AS mismatches FROM (SELECT g.id AS id, o.v AS expected, g.got AS got, o.v = g.got AS ok FROM (SELECT l.id AS id, groupArray(r.v) AS got FROM l_one AS l ASOF LEFT JOIN r_nan AS r ON l.e = r.e AND l.t <= r.t GROUP BY l.id) AS g JOIN (SELECT id, v FROM asof_oracle WHERE src = 'one' AND op = 'le') AS o ON o.id = g.id) SETTINGS join_algorithm = 'hash';
+one le hash	1	[]
+SELECT 'one lt hash' AS cell, min(ok) AS all_ok, groupArrayIf((id, expected, got), NOT ok) AS mismatches FROM (SELECT g.id AS id, o.v AS expected, g.got AS got, o.v = g.got AS ok FROM (SELECT l.id AS id, groupArray(r.v) AS got FROM l_one AS l ASOF LEFT JOIN r_nan AS r ON l.e = r.e AND l.t <  r.t GROUP BY l.id) AS g JOIN (SELECT id, v FROM asof_oracle WHERE src = 'one' AND op = 'lt') AS o ON o.id = g.id) SETTINGS join_algorithm = 'hash';
+one lt hash	1	[]
+SELECT 'one ge fsmj' AS cell, min(ok) AS all_ok, groupArrayIf((id, expected, got), NOT ok) AS mismatches FROM (SELECT g.id AS id, o.v AS expected, g.got AS got, o.v = g.got AS ok FROM (SELECT l.id AS id, groupArray(r.v) AS got FROM l_one AS l ASOF LEFT JOIN r_nan AS r ON l.e = r.e AND l.t >= r.t GROUP BY l.id) AS g JOIN (SELECT id, v FROM asof_oracle WHERE src = 'one' AND op = 'ge') AS o ON o.id = g.id) SETTINGS join_algorithm = 'full_sorting_merge';
+one ge fsmj	1	[]
+SELECT 'one gt fsmj' AS cell, min(ok) AS all_ok, groupArrayIf((id, expected, got), NOT ok) AS mismatches FROM (SELECT g.id AS id, o.v AS expected, g.got AS got, o.v = g.got AS ok FROM (SELECT l.id AS id, groupArray(r.v) AS got FROM l_one AS l ASOF LEFT JOIN r_nan AS r ON l.e = r.e AND l.t >  r.t GROUP BY l.id) AS g JOIN (SELECT id, v FROM asof_oracle WHERE src = 'one' AND op = 'gt') AS o ON o.id = g.id) SETTINGS join_algorithm = 'full_sorting_merge';
+one gt fsmj	1	[]
+SELECT 'one le fsmj' AS cell, min(ok) AS all_ok, groupArrayIf((id, expected, got), NOT ok) AS mismatches FROM (SELECT g.id AS id, o.v AS expected, g.got AS got, o.v = g.got AS ok FROM (SELECT l.id AS id, groupArray(r.v) AS got FROM l_one AS l ASOF LEFT JOIN r_nan AS r ON l.e = r.e AND l.t <= r.t GROUP BY l.id) AS g JOIN (SELECT id, v FROM asof_oracle WHERE src = 'one' AND op = 'le') AS o ON o.id = g.id) SETTINGS join_algorithm = 'full_sorting_merge';
+one le fsmj	1	[]
+SELECT 'one lt fsmj' AS cell, min(ok) AS all_ok, groupArrayIf((id, expected, got), NOT ok) AS mismatches FROM (SELECT g.id AS id, o.v AS expected, g.got AS got, o.v = g.got AS ok FROM (SELECT l.id AS id, groupArray(r.v) AS got FROM l_one AS l ASOF LEFT JOIN r_nan AS r ON l.e = r.e AND l.t <  r.t GROUP BY l.id) AS g JOIN (SELECT id, v FROM asof_oracle WHERE src = 'one' AND op = 'lt') AS o ON o.id = g.id) SETTINGS join_algorithm = 'full_sorting_merge';
+one lt fsmj	1	[]
+SELECT 'one ge parallel_hash' AS cell, min(ok) AS all_ok, groupArrayIf((id, expected, got), NOT ok) AS mismatches FROM (SELECT g.id AS id, o.v AS expected, g.got AS got, o.v = g.got AS ok FROM (SELECT l.id AS id, groupArray(r.v) AS got FROM l_one AS l ASOF LEFT JOIN r_nan AS r ON l.e = r.e AND l.t >= r.t GROUP BY l.id) AS g JOIN (SELECT id, v FROM asof_oracle WHERE src = 'one' AND op = 'ge') AS o ON o.id = g.id) SETTINGS join_algorithm = 'parallel_hash';
+one ge parallel_hash	1	[]
+-- The right table is NaN-free here, so nothing but a NaN left key can go wrong. The NaN left row
+-- sorts last, which is what routes full_sorting_merge through the saved-state path.
+SELECT 'multi ge hash' AS cell, min(ok) AS all_ok, groupArrayIf((id, expected, got), NOT ok) AS mismatches FROM (SELECT g.id AS id, o.v AS expected, g.got AS got, o.v = g.got AS ok FROM (SELECT l.id AS id, groupArray(r.v) AS got FROM l_multi AS l ASOF LEFT JOIN r_clean AS r ON l.e = r.e AND l.t >= r.t GROUP BY l.id) AS g JOIN (SELECT id, v FROM asof_oracle WHERE src = 'multi' AND op = 'ge') AS o ON o.id = g.id) SETTINGS join_algorithm = 'hash';
+multi ge hash	1	[]
+SELECT 'multi gt hash' AS cell, min(ok) AS all_ok, groupArrayIf((id, expected, got), NOT ok) AS mismatches FROM (SELECT g.id AS id, o.v AS expected, g.got AS got, o.v = g.got AS ok FROM (SELECT l.id AS id, groupArray(r.v) AS got FROM l_multi AS l ASOF LEFT JOIN r_clean AS r ON l.e = r.e AND l.t >  r.t GROUP BY l.id) AS g JOIN (SELECT id, v FROM asof_oracle WHERE src = 'multi' AND op = 'gt') AS o ON o.id = g.id) SETTINGS join_algorithm = 'hash';
+multi gt hash	1	[]
+SELECT 'multi le hash' AS cell, min(ok) AS all_ok, groupArrayIf((id, expected, got), NOT ok) AS mismatches FROM (SELECT g.id AS id, o.v AS expected, g.got AS got, o.v = g.got AS ok FROM (SELECT l.id AS id, groupArray(r.v) AS got FROM l_multi AS l ASOF LEFT JOIN r_clean AS r ON l.e = r.e AND l.t <= r.t GROUP BY l.id) AS g JOIN (SELECT id, v FROM asof_oracle WHERE src = 'multi' AND op = 'le') AS o ON o.id = g.id) SETTINGS join_algorithm = 'hash';
+multi le hash	1	[]
+SELECT 'multi lt hash' AS cell, min(ok) AS all_ok, groupArrayIf((id, expected, got), NOT ok) AS mismatches FROM (SELECT g.id AS id, o.v AS expected, g.got AS got, o.v = g.got AS ok FROM (SELECT l.id AS id, groupArray(r.v) AS got FROM l_multi AS l ASOF LEFT JOIN r_clean AS r ON l.e = r.e AND l.t <  r.t GROUP BY l.id) AS g JOIN (SELECT id, v FROM asof_oracle WHERE src = 'multi' AND op = 'lt') AS o ON o.id = g.id) SETTINGS join_algorithm = 'hash';
+multi lt hash	1	[]
+SELECT 'multi ge fsmj' AS cell, min(ok) AS all_ok, groupArrayIf((id, expected, got), NOT ok) AS mismatches FROM (SELECT g.id AS id, o.v AS expected, g.got AS got, o.v = g.got AS ok FROM (SELECT l.id AS id, groupArray(r.v) AS got FROM l_multi AS l ASOF LEFT JOIN r_clean AS r ON l.e = r.e AND l.t >= r.t GROUP BY l.id) AS g JOIN (SELECT id, v FROM asof_oracle WHERE src = 'multi' AND op = 'ge') AS o ON o.id = g.id) SETTINGS join_algorithm = 'full_sorting_merge';
+multi ge fsmj	1	[]
+SELECT 'multi gt fsmj' AS cell, min(ok) AS all_ok, groupArrayIf((id, expected, got), NOT ok) AS mismatches FROM (SELECT g.id AS id, o.v AS expected, g.got AS got, o.v = g.got AS ok FROM (SELECT l.id AS id, groupArray(r.v) AS got FROM l_multi AS l ASOF LEFT JOIN r_clean AS r ON l.e = r.e AND l.t >  r.t GROUP BY l.id) AS g JOIN (SELECT id, v FROM asof_oracle WHERE src = 'multi' AND op = 'gt') AS o ON o.id = g.id) SETTINGS join_algorithm = 'full_sorting_merge';
+multi gt fsmj	1	[]
+SELECT 'multi le fsmj' AS cell, min(ok) AS all_ok, groupArrayIf((id, expected, got), NOT ok) AS mismatches FROM (SELECT g.id AS id, o.v AS expected, g.got AS got, o.v = g.got AS ok FROM (SELECT l.id AS id, groupArray(r.v) AS got FROM l_multi AS l ASOF LEFT JOIN r_clean AS r ON l.e = r.e AND l.t <= r.t GROUP BY l.id) AS g JOIN (SELECT id, v FROM asof_oracle WHERE src = 'multi' AND op = 'le') AS o ON o.id = g.id) SETTINGS join_algorithm = 'full_sorting_merge';
+multi le fsmj	1	[]
+SELECT 'multi lt fsmj' AS cell, min(ok) AS all_ok, groupArrayIf((id, expected, got), NOT ok) AS mismatches FROM (SELECT g.id AS id, o.v AS expected, g.got AS got, o.v = g.got AS ok FROM (SELECT l.id AS id, groupArray(r.v) AS got FROM l_multi AS l ASOF LEFT JOIN r_clean AS r ON l.e = r.e AND l.t <  r.t GROUP BY l.id) AS g JOIN (SELECT id, v FROM asof_oracle WHERE src = 'multi' AND op = 'lt') AS o ON o.id = g.id) SETTINGS join_algorithm = 'full_sorting_merge';
+multi lt fsmj	1	[]
+-- A right table of nothing but NaN can never satisfy an inequality.
+SELECT 'all-nan right hash' AS cell, groupArray(r.v) AS got FROM (SELECT 1 AS e, 5.0 AS t) AS l ASOF JOIN r_all_nan AS r ON l.e = r.e AND l.t >= r.t SETTINGS join_algorithm = 'hash';
+all-nan right hash	[]
+SELECT 'all-nan right fsmj' AS cell, groupArray(r.v) AS got FROM (SELECT 1 AS e, 5.0 AS t) AS l ASOF JOIN r_all_nan AS r ON l.e = r.e AND l.t >= r.t SETTINGS join_algorithm = 'full_sorting_merge';
+all-nan right fsmj	[]
+-- Inner ASOF JOIN drops a NaN left row entirely, rather than extending it.
+SELECT 'inner drops nan left' AS cell, count() AS rows FROM l_one AS l ASOF JOIN r_nan AS r ON l.e = r.e AND l.t >= r.t SETTINGS join_algorithm = 'hash';
+inner drops nan left	1
+-- Narrower float widths take the same code path.
+SELECT 'Float32 fin ge' AS cell, groupArray(r.v) AS got FROM (SELECT toUInt8(1) AS e, toFloat32(5.0) AS t) AS l ASOF JOIN (SELECT toUInt8(1) AS e, toFloat32(arrayJoin([1.0, 2.0, 3.0, 0. / 0.])) AS t, toUInt8(if(isNaN(t), 99, 10 + t)) AS v) AS r ON l.e = r.e AND l.t >= r.t SETTINGS join_algorithm = 'hash';
+Float32 fin ge	[13]
+SELECT 'Float32 nan ge' AS cell, groupArray(r.v) AS got FROM (SELECT toUInt8(1) AS e, toFloat32(0. / 0.) AS t) AS l ASOF JOIN (SELECT toUInt8(1) AS e, toFloat32(arrayJoin([1.0, 2.0, 3.0])) AS t, toUInt8(10 + t) AS v) AS r ON l.e = r.e AND l.t >= r.t SETTINGS join_algorithm = 'hash';
+Float32 nan ge	[]
+SELECT 'BFloat16 fin le' AS cell, groupArray(r.v) AS got FROM (SELECT toUInt8(1) AS e, toBFloat16(5.0) AS t) AS l ASOF JOIN (SELECT toUInt8(1) AS e, toBFloat16(arrayJoin([1.0, 2.0, 3.0, 0. / 0.])) AS t, toUInt8(if(isNaN(t), 99, 10 + t)) AS v) AS r ON l.e = r.e AND l.t <= r.t SETTINGS join_algorithm = 'hash';
+BFloat16 fin le	[]
+SELECT 'BFloat16 nan ge' AS cell, groupArray(r.v) AS got FROM (SELECT toUInt8(1) AS e, toBFloat16(0. / 0.) AS t) AS l ASOF JOIN (SELECT toUInt8(1) AS e, toBFloat16(arrayJoin([1.0, 2.0, 3.0])) AS t, toUInt8(10 + t) AS v) AS r ON l.e = r.e AND l.t >= r.t SETTINGS join_algorithm = 'hash';
+BFloat16 nan ge	[]
+-- NULL and NaN exclusions compose: the NULL row was already skipped, the NaN row is now too, so 13
+-- (the largest finite value below 5.0) is the answer.
+SELECT 'Nullable fin ge' AS cell, groupArray(r.v) AS got FROM (SELECT toUInt8(1) AS e, toNullable(5.0) AS t) AS l ASOF JOIN (SELECT toUInt8(1) AS e, arrayJoin([toNullable(1.0), 2.0, 3.0, NULL, 0. / 0.]) AS t, toUInt8(multiIf(t IS NULL, 88, isNaN(t), 99, 10 + t)) AS v) AS r ON l.e = r.e AND l.t >= r.t SETTINGS join_algorithm = 'hash';
+Nullable fin ge	[13]
+-- USING resolves to the same ASOF clause as ON.
+SELECT 'USING nan left' AS cell, groupArray(r.v) AS got FROM (SELECT toUInt8(1) AS e, 0. / 0. AS t) AS l ASOF JOIN (SELECT toUInt8(1) AS e, arrayJoin([1.0, 2.0, 3.0]) AS t, toUInt8(7) AS v) AS r USING (e, t) SETTINGS join_algorithm = 'hash';
+USING nan left	[]
+-- Types with no NaN representation, and float values that are not NaN, must keep matching.
+SELECT 'Decimal64 fin ge' AS cell, groupArray(r.v) AS got FROM (SELECT toUInt8(1) AS e, toDecimal64(5.0, 3) AS t) AS l ASOF JOIN (SELECT toUInt8(1) AS e, toDecimal64(arrayJoin([1.0, 2.0, 3.0]), 3) AS t, toUInt8(13) AS v) AS r ON l.e = r.e AND l.t >= r.t SETTINGS join_algorithm = 'hash';
+Decimal64 fin ge	[13]
+SELECT 'DateTime64 fin ge' AS cell, groupArray(r.v) AS got FROM (SELECT toUInt8(1) AS e, toDateTime64('2020-01-05 00:00:00', 3) AS t) AS l ASOF JOIN (SELECT toUInt8(1) AS e, toDateTime64(concat('2020-01-0', toString(number + 1), ' 00:00:00'), 3) AS t, toUInt8(number) AS v FROM numbers(3)) AS r ON l.e = r.e AND l.t >= r.t SETTINGS join_algorithm = 'hash';
+DateTime64 fin ge	[2]
+SELECT 'signed zero ge' AS cell, groupArray(r.v) AS got FROM (SELECT toUInt8(1) AS e, -0.0 AS t) AS l ASOF JOIN (SELECT toUInt8(1) AS e, 0.0 AS t, toUInt8(5) AS v) AS r ON l.e = r.e AND l.t >= r.t SETTINGS join_algorithm = 'hash';
+signed zero ge	[5]
+SELECT 'inf left ge' AS cell, groupArray(r.v) AS got FROM (SELECT toUInt8(1) AS e, 1 / 0. AS t) AS l ASOF JOIN (SELECT toUInt8(1) AS e, arrayJoin([1.0, 2.0, 3.0]) AS t, toUInt8(6) AS v) AS r ON l.e = r.e AND l.t >= r.t SETTINGS join_algorithm = 'hash';
+inf left ge	[6]
+-- Past 256 entries the lookup vector is built the same way for floats, since only non-float keys
+-- take the radix sort path.
+SELECT 'over 256 entries ge' AS cell, groupArray(r.v) AS got FROM (SELECT toUInt8(1) AS e, 500.0 AS t) AS l ASOF JOIN (SELECT toUInt8(1) AS e, if(number = 0, 0. / 0., toFloat64(number)) AS t, toUInt16(number) AS v FROM numbers(400)) AS r ON l.e = r.e AND l.t >= r.t SETTINGS join_algorithm = 'hash';
+over 256 entries ge	[399]
+SELECT 'over 256 entries nan left' AS cell, groupArray(r.v) AS got FROM (SELECT toUInt8(1) AS e, 0. / 0. AS t) AS l ASOF JOIN (SELECT toUInt8(1) AS e, toFloat64(number) AS t, toUInt16(number) AS v FROM numbers(400)) AS r ON l.e = r.e AND l.t >= r.t SETTINGS join_algorithm = 'hash';
+over 256 entries nan left	[]

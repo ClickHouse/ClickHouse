@@ -10,8 +10,10 @@
 #include <base/types.h>
 
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
+#include <Common/NaNUtils.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <Columns/ColumnSparse.h>
@@ -177,6 +179,46 @@ ColumnPtr replicateRow(const IColumn & column, size_t num)
     MutableColumnPtr res = column.cloneEmpty();
     res->insertManyFrom(column, 0, num);
     return res;
+}
+
+/// Adds the `NaN` positions of a float `column` to `null_map`, allocating one if the column is not
+/// `Nullable`. Does nothing for a non-float column, or a float column holding no `NaN`.
+template <typename T>
+bool markNaNsAsNullImpl(const IColumn & column, ColumnPtr & null_map)
+{
+    const auto * float_column = checkAndGetColumn<ColumnVector<T>>(&column);
+    if (!float_column)
+        return false;
+
+    const auto & data = float_column->getData();
+    const size_t size = data.size();
+
+    size_t first_nan = 0;
+    while (first_nan < size && !isNaN(data[first_nan]))
+        ++first_nan;
+    if (first_nan == size)
+        return true;
+
+    MutableColumnPtr mutable_null_map;
+    if (null_map)
+        mutable_null_map = IColumn::mutate(std::move(null_map));
+    else
+        mutable_null_map = ColumnUInt8::create(size, UInt8(0));
+
+    auto & null_map_data = assert_cast<ColumnUInt8 &>(*mutable_null_map).getData();
+    chassert(null_map_data.size() == size);
+    for (size_t row = first_nan; row < size; ++row)
+        null_map_data[row] |= static_cast<UInt8>(isNaN(data[row]));
+
+    null_map = std::move(mutable_null_map);
+    return true;
+}
+
+void markNaNsAsNull(const IColumn & column, ColumnPtr & null_map)
+{
+    markNaNsAsNullImpl<Float64>(column, null_map)
+        || markNaNsAsNullImpl<Float32>(column, null_map)
+        || markNaNsAsNullImpl<BFloat16>(column, null_map);
 }
 
 template <typename TColumns>
@@ -377,6 +419,11 @@ void FullMergeJoinCursor::setChunk(Chunk && chunk)
     {
         asof_column = std::move(sort_columns.back());
         sort_columns.pop_back();
+
+        /// A `NaN` asof key is incomparable, so it must not match anything, exactly like a `NULL` one.
+        /// Recording it in the null map, which every asof matching path already consults, keeps this
+        /// out of the per-row loops.
+        markNaNsAsNull(*asof_column, null_maps.back());
     }
 }
 
