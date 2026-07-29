@@ -479,17 +479,10 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
         throw;
     }
 
-    /// Armed as soon as the result part is committed (active) and before any post-commit work that
-    /// can throw. The result part is visible to the selector from now on whether or not the rest of
-    /// this function succeeds, so a dependent merge must be selectable immediately in both cases. If
-    /// this were armed only after the throw-capable work below, a throw there would leave it unset:
-    /// the retry then finds the part already committed, retires the queue entry via
-    /// `checkExistingPart` without ever reaching here, and no wakeup happens, so the next merge in a
-    /// chain waits for the selector's backoff timer (up to `max_merge_selecting_sleep_ms`) and
-    /// SYSTEM SYNC MERGES can hit `max_execution_time` even though its prerequisite part exists.
-    /// Arming early is safe: the callback only schedules the selecting task, and it runs after
-    /// `merge_mutate_entry` is destroyed because member destruction order is fixed by the declaration
-    /// order in ReplicatedMergeMutateTaskBase, not by where it is assigned.
+    /// Must be armed here, before any post-commit work that can throw: the result part is already
+    /// active, so a dependent merge has to be selectable whether or not the rest of this function
+    /// succeeds. Running after `merge_mutate_entry` is destroyed is guaranteed by the member
+    /// declaration order in ReplicatedMergeMutateTaskBase, not by where this is assigned.
     finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
 
     /// From here the result part is committed (active), so every step up to `write_part_log` is
