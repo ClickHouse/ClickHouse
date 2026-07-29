@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <limits>
 #include <unordered_set>
 
 namespace DB
@@ -55,6 +56,10 @@ void writeBigEndian(WriteBuffer & out, T value)
     transformEndianness<std::endian::big, std::endian::native>(value);
     out.write(reinterpret_cast<const char *>(&value), sizeof(T));
 }
+
+/// Every `NON_NEG` field of the header is a signed 32-bit value in CDF-1 and CDF-2, so a file that
+/// has to put a larger number anywhere in its header can only be written as CDF-5.
+constexpr UInt64 MAX_CDF2_SIZE = std::numeric_limits<Int32>::max();
 
 /// `NON_NEG` in the specification: a 32-bit value in CDF-1 and CDF-2, and a 64-bit value in CDF-5.
 void writeSize(WriteBuffer & out, UInt64 value, UInt8 version)
@@ -325,13 +330,15 @@ String chooseFillValue(const IColumn & column, const UInt8 * null_map, const Str
     }
 }
 
-void writeStringColumn(WriteBuffer & out, const IColumn & column, UInt64 string_length)
+void writeStringColumn(WriteBuffer & out, const IColumn & column, const UInt8 * null_map, UInt64 string_length)
 {
     static constexpr char zeros[64] = {};
 
     for (size_t i = 0; i < column.size(); ++i)
     {
-        std::string_view value = column.getDataAt(i);
+        /// A NULL is written as an empty string. The column under a `ColumnNullable` is allowed to
+        /// hold arbitrary garbage in the rows that are NULL, so it must not be looked at.
+        std::string_view value = null_map && null_map[i] ? std::string_view{} : column.getDataAt(i).toView();
         UInt64 to_write = std::min<UInt64>(value.size(), string_length);
         writeString(value.substr(0, to_write), out);
 
@@ -433,8 +440,14 @@ void NetCDFOutputFormat::finalizeImpl()
             else
             {
                 /// The dimension of the variable is the length of the longest string in the column.
+                /// The rows that are NULL are written as empty strings, and the data under them is
+                /// arbitrary, so they are not taken into account.
+                const UInt8 * null_map = variable.null_map
+                    ? assert_cast<const ColumnUInt8 &>(*variable.null_map).getData().data()
+                    : nullptr;
                 for (size_t i = 0; i < variable.data->size(); ++i)
-                    variable.string_length = std::max<UInt64>(variable.string_length, variable.data->getDataAt(i).size());
+                    if (!null_map || !null_map[i])
+                        variable.string_length = std::max<UInt64>(variable.string_length, variable.data->getDataAt(i).size());
             }
 
             /// A dimension of a length of zero is only allowed for the unlimited dimension.
@@ -466,9 +479,19 @@ void NetCDFOutputFormat::finalizeImpl()
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                 "The size of the variable {} does not fit in 64 bits", variable.name);
 
-        /// The size of a variable is a 32-bit field in CDF-1 and CDF-2.
-        needs_64_bit_data |= netCDFTypeRequiresCDF5(variable.type) || variable.size >= (1ULL << 32);
+        /// The declared size of a variable is written to the header rounded up to four bytes, and
+        /// the length of the dimension of a string column is written to the header as well, so the
+        /// file has to be CDF-5 as soon as any of them is too large for a 32-bit field. Otherwise
+        /// the header would be truncated and the file would not be readable back.
+        UInt64 declared_size = num_rows == 0 ? variable.element_size : variable.size;
+        needs_64_bit_data |= netCDFTypeRequiresCDF5(variable.type)
+            || variable.string_length > MAX_CDF2_SIZE
+            || declared_size > MAX_CDF2_SIZE
+            || alignUpTo4(declared_size) > MAX_CDF2_SIZE;
     }
+
+    /// The length of the dimension of the rows is a header field of the same kind.
+    needs_64_bit_data |= num_rows > MAX_CDF2_SIZE;
 
     version = needs_64_bit_data ? 5 : 2;
 
@@ -557,13 +580,15 @@ void NetCDFOutputFormat::writeHeader(WriteBuffer & buffer) const
 
 void NetCDFOutputFormat::writeVariableData(const Variable & variable) const
 {
+    /// A string column has no `_FillValue`: the NULLs are written as empty strings, so the null map
+    /// is needed for it as well.
     const UInt8 * null_map = nullptr;
-    if (variable.null_map && !variable.fill_value.empty())
+    if (variable.null_map && (variable.is_string || !variable.fill_value.empty()))
         null_map = assert_cast<const ColumnUInt8 &>(*variable.null_map).getData().data();
 
     if (variable.is_string)
     {
-        writeStringColumn(out, *variable.data, variable.string_length);
+        writeStringColumn(out, *variable.data, null_map, variable.string_length);
     }
     else
     {

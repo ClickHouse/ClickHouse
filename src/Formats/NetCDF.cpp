@@ -103,6 +103,14 @@ UInt64 readSize(ReadBuffer & in, UInt8 version, const char * what)
     return static_cast<UInt64>(value);
 }
 
+/// Skips a `NON_NEG` field without looking at it. It is used for the declared size of a variable,
+/// which is written as all ones for variables larger than 4 GiB in CDF-2, and would therefore be
+/// rejected as negative by `readSize`.
+void skipSize(ReadBuffer & in, UInt8 version)
+{
+    in.ignore(version == 5 ? 8 : 4);
+}
+
 /// `OFFSET` in the specification: a 32-bit value in CDF-1 and a 64-bit value in CDF-2 and CDF-5.
 UInt64 readOffset(ReadBuffer & in, UInt8 version)
 {
@@ -403,8 +411,9 @@ NetCDFHeader readNetCDFHeader(ReadBuffer & in)
         /// The declared size is redundant: it is the size of the data of the variable, or of one of
         /// its records, rounded up to four bytes. It is also unusable, because it is written as all
         /// ones for variables larger than 4 GiB in CDF-2, so the size is recalculated from the
-        /// dimensions below.
-        readSize(in, header.version, "variable size");
+        /// dimensions below. The field is skipped without validation, because the all-ones sentinel
+        /// is a legitimate value that does not fit into the signed 32-bit field.
+        skipSize(in, header.version);
         variable.begin = readOffset(in, header.version);
 
         variable.is_record = !variable.dimension_ids.empty() && header.unlimited_dimension_id == variable.dimension_ids[0];
