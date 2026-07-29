@@ -4,11 +4,12 @@
 -- one; the old-analyzer variant also forbids changing enable_analyzer inside a subquery.
 --
 -- Regression test for issue #101567: OOB in splitExpressionStep and splitFilterStep during
--- optimizeLazyMaterialization2. Both are covered, one query each, since a single query
--- reaches only one of them: the projection query below absorbs its predicate into PREWHERE
--- so no FilterStep survives to split. Each query selects several columns, so the split runs
--- with more than one required output, which is the shape the issue flagged. The EXPLAIN
--- assertions fail if the lazy split path is not produced, so neither can pass as a no-op.
+-- optimizeLazyMaterialization2. The first query covers splitExpressionStep over a projection;
+-- it absorbs its predicate into the projection PREWHERE, so no FilterStep survives to split.
+-- The second query keeps its filter, so it additionally covers splitFilterStep. Both select
+-- several columns, so the split runs with more than one required output, which is the shape
+-- the issue flagged. The EXPLAIN assertions fail if the lazy split path is not produced, so
+-- neither query can pass as a no-op.
 
 DROP TABLE IF EXISTS test_split_oob4;
 CREATE TABLE test_split_oob4
