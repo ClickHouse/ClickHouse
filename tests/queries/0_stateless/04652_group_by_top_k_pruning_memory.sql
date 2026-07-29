@@ -8,6 +8,10 @@
 -- by block sizes or by the sanitizer builds' allocation overhead.
 
 SET enable_group_by_top_k_optimization = 1;
+-- The optimization declines any aggregation carrying a `GROUP BY` row limit, and
+-- the stateless test profile sets `max_rows_to_group_by` to a huge-but-non-zero
+-- 10G (`tests/config/users.d/limits.yaml`), which is enough to gate it off.
+SET max_rows_to_group_by = 0;
 -- The cap is randomized by clickhouse-test; 0 disables it so the heap engages.
 SET query_plan_max_limit_for_top_k_optimization = 0;
 -- Do not let the profitability freeze drop the heap: these streams never skip a
