@@ -27,25 +27,19 @@ doc_type: 'guide'
 * Вам понадобится API-ключ Anthropic или API-ключ другого провайдера LLM
 
 <Steps>
-  <Step>
-    ## Создайте приложение Slack
-
+  <Step title="Создайте приложение Slack" id="create-a-slack-app">
     1. Перейдите на [slack.com/apps](https://slack.com/apps) и нажмите `Create New App`.
     2. Выберите вариант `From scratch` и укажите имя приложения.
     3. Выберите своё рабочее пространство Slack.
   </Step>
 
-  <Step>
-    ## Установите приложение в своё рабочее пространство
-
+  <Step title="Установите приложение в своё рабочее пространство" id="install-the-app-to-your-workspace">
     Затем вам нужно добавить в своё рабочее пространство приложение, созданное на предыдущем шаге.
     Вы можете воспользоваться инструкциями из [&quot;Add apps to your Slack workspace&quot;](https://slack.com/intl/en-gb/help/articles/202035138-Add-apps-to-your-Slack-workspace)
     в документации Slack.
   </Step>
 
-  <Step>
-    ## Настройте параметры приложения Slack
-
+  <Step title="Настройте параметры приложения Slack" id="configure-slack-app-settings">
     * Перейдите в `App Home`
       * В разделе `Show Tabs` → `Messages Tab` включите `Allow users to send Slash commands and messages from the messages tab`
       * Перейдите в `Socket Mode`
@@ -70,9 +64,7 @@ doc_type: 'guide'
         * Save Changes
   </Step>
 
-  <Step>
-    ## Добавьте переменные окружения (`.env`)
-
+  <Step title={<>Добавьте переменные окружения (<code>.env</code>)</>} id="add-env-vars">
     Создайте файл `.env` в корне проекта со следующими переменными окружения,
     которые позволят вашему приложению подключиться к [Песочнице ClickHouse](https://sql.clickhouse.com/).
 
@@ -92,9 +84,7 @@ doc_type: 'guide'
     или экземпляр Cloud.
   </Step>
 
-  <Step>
-    ## Использование бота
-
+  <Step title="Использование бота" id="using-the-bot">
     1. **Запустите бота:**
 
        ```sh

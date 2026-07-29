@@ -6,7 +6,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -52,8 +51,6 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/JoinOperator.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/DirectJoinMergeTreeEntity.h>
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 
@@ -68,7 +65,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
@@ -542,10 +538,7 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
     }
     else if (join_expression_constant.has_value())
     {
-        if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JOIN ON constant supported only with join algorithm 'hash'");
-
-        bool join_expression_value = join_expression_constant.value();
+        const bool join_expression_value = *join_expression_constant;
         if (!join_expression_value)
         {
             auto actions_dag = build_context.expression_actions.getActionsDAG();
