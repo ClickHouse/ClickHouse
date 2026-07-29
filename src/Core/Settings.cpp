@@ -8628,8 +8628,14 @@ returns
    └───────┴────────┴──────┴─────┴─────────┴───────┘
 ```
 
+The setting is read when the view is created, and the outcome is stored with the view definition:
+a view created while it was enabled keeps exposing its declared schema afterwards, on every replica
+and across restarts, and a view created while it was disabled is never exposed later. Turning the
+setting on or off does not change views that already exist.
+
 > [!WARNING]
-> If the setting is turned on, it throws on schema mismatch.
+> A view that exposes a declared schema also enforces it: querying it throws `TYPE_MISMATCH` if the
+> actual schema after parameter substitution differs from the declared one.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_eval_table_function, false, R"(
 Enable experimental table function `eval`.
