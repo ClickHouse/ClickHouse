@@ -13,6 +13,7 @@
 #include <Interpreters/convertFieldToType.h>
 
 #include <Common/assert_cast.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -89,6 +90,7 @@ std::optional<Field> convertFieldToTypeCheckEnum(
 {
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         Field result = convertFieldToType(from_value, to_type, &from_type, {}, /*strict=*/ true);
 
         /// `convertFieldToType` with `strict=true` returns Null on failed conversion (out-of-range,
@@ -101,10 +103,11 @@ std::optional<Field> convertFieldToTypeCheckEnum(
 
         return result;
     }
-    catch (const Exception & e)
+    catch (Exception & e)
     {
         if (!forbid_unknown_enum_values && isEnum(to_type) && e.code() == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM)
             return {};
+        e.recordToSystemErrors();
         throw;
     }
 }

@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include <Common/logger_useful.h>
+#include <Common/Exception.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -374,12 +375,16 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 {
                     try
                     {
+                        Exception::SuppressErrorCodesScope suppress_error_codes;
                         const_value = convertFieldToType(const_value, *column_type);
                     }
-                    catch (const Exception & e)
+                    catch (Exception & e)
                     {
                         if (!isParseError(e.code()))
+                        {
+                            e.recordToSystemErrors();
                             throw;
+                        }
 
                         /// The string value is not valid for the column type (e.g. unknown enum element).
                         /// For equality, the condition can never match, so selectivity is 0.

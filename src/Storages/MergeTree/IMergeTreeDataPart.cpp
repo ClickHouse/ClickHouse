@@ -2825,15 +2825,13 @@ void IMergeTreeDataPart::checkConsistencyBase() const
             if (!parent_part)
             {
                 for (const String & col_name : partition_key.expression->getRequiredColumns())
-                    try
-                    {
-                        check_file_not_empty("minmax_" + escapeForFileName(col_name) + ".idx");
-                    }
-                    catch (Exception&)
-                    {
-                        /// check hash one more time
+                {
+                    const String legacy_file = "minmax_" + escapeForFileName(col_name) + ".idx";
+                    if (getDataPartStorage().existsFile(legacy_file))
+                        check_file_not_empty(legacy_file);
+                    else
                         check_file_not_empty("minmax_" + sipHash128String(escapeForFileName(col_name)) + ".idx");
-                    }
+                }
             }
         }
     }

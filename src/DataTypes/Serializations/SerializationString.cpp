@@ -17,6 +17,8 @@
 #include <base/unit.h>
 #include <Common/assert_cast.h>
 
+#include <optional>
+
 #ifdef __SSE2__
     #include <emmintrin.h>
 #endif
@@ -416,6 +418,10 @@ static inline ReturnType read(IColumn & column, Reader && reader)
 
     try
     {
+        std::optional<Exception::SuppressErrorCodesScope> suppress_error_codes;
+        if constexpr (!throw_exception)
+            suppress_error_codes.emplace();
+
         if constexpr (throw_exception)
         {
             reader(data);
@@ -429,15 +435,28 @@ static inline ReturnType read(IColumn & column, Reader && reader)
         offsets.push_back(data.size());
         return ReturnType(true);
     }
-    catch (...)
+    catch (Exception & e)
     {
         restore_column();
         if constexpr (throw_exception)
+        {
             throw;
-        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
-        rethrowIfNotParseError();
-        if constexpr (!throw_exception)
+        }
+        else
+        {
+            /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
+            if (!isParseError(e.code()))
+            {
+                e.recordToSystemErrors();
+                throw;
+            }
             return false;
+        }
+    }
+    catch (...)
+    {
+        restore_column();
+        throw;
     }
 }
 

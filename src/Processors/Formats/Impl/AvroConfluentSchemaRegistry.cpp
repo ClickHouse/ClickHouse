@@ -49,6 +49,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int INCOMPATIBLE_SCHEMA;
     extern const int NETWORK_ERROR;
+    extern const int POCO_EXCEPTION;
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
     extern const int SOCKET_TIMEOUT;
 }
@@ -109,12 +110,16 @@ auto runWithRetry(
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             return op();
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             if (attempt >= retry.max_retries || !isRetryableException(e))
+            {
+                e.recordToSystemErrors();
                 throw;
+            }
             LOG_DEBUG(
                 getLogger("ConfluentSchemaRegistry"),
                 "Retry {}/{} for {} after transient error: {}",
@@ -215,7 +220,7 @@ avro::ValidSchema ConfluentSchemaRegistry::fetchSchema(
             }
             catch (const Poco::Exception & e)
             {
-                throw Exception(Exception::CreateFromPocoTag{}, e);
+                throw Exception(ErrorCodes::POCO_EXCEPTION, "{}", e.displayText());
             }
             catch (const avro::Exception & e)
             {
@@ -343,7 +348,7 @@ uint32_t ConfluentSchemaRegistry::registerSchema(
             }
             catch (const Poco::Exception & e)
             {
-                throw Exception(Exception::CreateFromPocoTag{}, e);
+                throw Exception(ErrorCodes::POCO_EXCEPTION, "{}", e.displayText());
             }
             catch (const avro::Exception & e)
             {

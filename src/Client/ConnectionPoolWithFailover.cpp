@@ -5,6 +5,7 @@
 #include <Poco/Net/DNS.h>
 
 #include <Common/BitHelpers.h>
+#include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/isLocalAddress.h>
@@ -259,7 +260,16 @@ ConnectionPoolWithFailover::tryGetEntry(
         ConnectionEstablisherAsync connection_establisher_async(pool, &timeouts, settings, log, table_to_check);
         while (true)
         {
-            connection_establisher_async.resume();
+            try
+            {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
+                connection_establisher_async.resume();
+            }
+            catch (Exception & e)
+            {
+                e.recordToSystemErrors();
+                throw;
+            }
 
             if (connection_establisher_async.isFinished())
                 break;

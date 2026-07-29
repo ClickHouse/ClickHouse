@@ -18,6 +18,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/Exception.h>
 
 namespace fs = std::filesystem;
 
@@ -281,6 +282,7 @@ bool SystemRemoteDataPathsSource::nextFile()
 
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             const auto & disk = disks[current_disk].second;
 
             /// Stop if current path is a file
@@ -304,13 +306,14 @@ bool SystemRemoteDataPathsSource::nextFile()
 
             paths_stack.emplace_back(std::move(dir));
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             /// Files or directories can disappear due to concurrent operations
             if (e.code() == ErrorCodes::FILE_DOESNT_EXIST ||
                 e.code() == ErrorCodes::DIRECTORY_DOESNT_EXIST)
                 continue;
 
+            e.recordToSystemErrors();
             throw;
         }
         catch (const fs::filesystem_error & e)
@@ -384,6 +387,7 @@ Chunk SystemRemoteDataPathsSource::generate()
         StoredObjects storage_objects;
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             storage_objects = disk->getMetadataStorage()->getStorageObjects(local_path);
         }
         catch (Exception & e)
@@ -397,6 +401,7 @@ Chunk SystemRemoteDataPathsSource::generate()
                 continue;
 
             e.addMessage("While parsing file {}", local_path);
+            e.recordToSystemErrors();
             throw;
         }
 

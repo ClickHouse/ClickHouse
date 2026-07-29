@@ -177,6 +177,23 @@ public:
         }
     }
 
+    [[noreturn]] static void rethrowExceptionAndRecord(const std::exception_ptr & exception)
+    {
+        try
+        {
+            std::rethrow_exception(exception);
+        }
+        catch (DB::Exception & e)
+        {
+            e.recordToSystemErrors();
+            throw;
+        }
+        catch (...)
+        {
+            throw;
+        }
+    }
+
     void initScanState()
     {
         if (filter.has_value() && enable_engine_predicate)
@@ -278,6 +295,7 @@ public:
             {
                 try
                 {
+                    DB::Exception::SuppressErrorCodesScope suppress_error_codes;
                     initScanState();
 
                     LOG_TEST(log, "Starting iterator loop (predicate exception: {})", bool(engine_predicate_exception));
@@ -337,10 +355,13 @@ public:
                     }
                     return;
                 }
-                catch (const DB::Exception & e)
+                catch (DB::Exception & e)
                 {
                     if (retried || !tryRefreshAndRetryScanState(e))
+                    {
+                        e.recordToSystemErrors();
                         throw;
+                    }
                     retried = true;
                 }
             }
@@ -381,10 +402,10 @@ public:
                 }
 
                 if (engine_predicate_exception && throw_on_engine_predicate_error)
-                    std::rethrow_exception(engine_predicate_exception);
+                    rethrowExceptionAndRecord(engine_predicate_exception);
 
                 if (scan_exception)
-                    std::rethrow_exception(scan_exception);
+                    rethrowExceptionAndRecord(scan_exception);
 
                 if (data_files.empty() || shutdown)
                 {
@@ -705,12 +726,16 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStats() const
     const auto pre_fingerprint = kernel_state_credentials_fingerprint;
     try
     {
+        DB::Exception::SuppressErrorCodesScope suppress_error_codes;
         snapshot_stats = getSnapshotStatsImpl();
     }
-    catch (const DB::Exception & e)
+    catch (DB::Exception & e)
     {
         if (!tryRefreshAfterStaleTokenError(e, pre_fingerprint, "stats scan"))
+        {
+            e.recordToSystemErrors();
             throw;
+        }
         /// Invalidate the cached engine so `initOrUpdateSnapshot` rebuilds with the
         /// freshened credentials, then re-run the stats scan against the new engine.
         kernel_snapshot_state.reset();
@@ -904,12 +929,16 @@ void TableSnapshot::initOrUpdateSnapshot() const
 
     try
     {
+        DB::Exception::SuppressErrorCodesScope suppress_error_codes;
         kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, version_to_build);
     }
-    catch (const DB::Exception & e)
+    catch (DB::Exception & e)
     {
         if (!tryRefreshAfterStaleTokenError(e, current_credentials_fingerprint, "snapshot init"))
+        {
+            e.recordToSystemErrors();
             throw;
+        }
         kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, version_to_build);
     }
     kernel_state_credentials_fingerprint = helper->getCredentialsFingerprint();

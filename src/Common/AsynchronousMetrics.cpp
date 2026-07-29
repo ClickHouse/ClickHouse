@@ -2,6 +2,7 @@
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
 #include <IO/UncompressedCache.h>
+#include <Formats/ParseError.h>
 #include <Interpreters/Context.h>
 #include <base/cgroupsv2.h>
 #include <base/find_symbols.h>
@@ -24,6 +25,7 @@
 
 #include <boost/locale/date_time_facet.hpp>
 
+#include <exception>
 #include <ranges>
 #include <string_view>
 
@@ -53,9 +55,12 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int CORRUPTED_DATA;
     extern const int CANNOT_SYSCONF;
     extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int FILE_DOESNT_EXIST;
 }
 
@@ -64,6 +69,39 @@ namespace ErrorCodes
 
 static constexpr size_t small_buffer_size = 4096;
 
+namespace
+{
+
+bool isExpectedOSMetricError(int code)
+{
+    return code == ErrorCodes::CANNOT_OPEN_FILE
+        || code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
+        || code == ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR
+        || code == ErrorCodes::CANNOT_SEEK_THROUGH_FILE
+        || code == ErrorCodes::CANNOT_SYSCONF
+        || code == ErrorCodes::FILE_DOESNT_EXIST
+        || isParseError(code);
+}
+
+void recordUnexpectedOSMetricException(std::exception_ptr exception)
+{
+    try
+    {
+        std::rethrow_exception(exception);
+    }
+    catch (Exception & e)
+    {
+        if (!isExpectedOSMetricError(e.code()))
+            e.recordToSystemErrors(/* force */ true);
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        /// Ok: Non-DB exceptions never affect system error counters.
+    }
+}
+
+}
+
 void AsynchronousMetrics::openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out)
 {
     std::error_code ec;
@@ -71,9 +109,10 @@ void AsynchronousMetrics::openFileIfExists(const char * filename, std::optional<
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             out.emplace(filename, small_buffer_size);
         }
-        catch (const ErrnoException & e)
+        catch (ErrnoException & e)
         {
             if (e.code() == ErrorCodes::CANNOT_OPEN_FILE)
             {
@@ -85,8 +124,14 @@ void AsynchronousMetrics::openFileIfExists(const char * filename, std::optional<
             }
             else
             {
+                e.recordToSystemErrors();
                 throw;
             }
+        }
+        catch (Exception & e)
+        {
+            e.recordToSystemErrors();
+            throw;
         }
     }
 }
@@ -98,9 +143,10 @@ std::unique_ptr<ReadBufferFromFilePRead> AsynchronousMetrics::openFileIfExists(c
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             return std::make_unique<ReadBufferFromFilePRead>(filename, small_buffer_size);
         }
-        catch (const ErrnoException & e)
+        catch (ErrnoException & e)
         {
             if (e.code() == ErrorCodes::CANNOT_OPEN_FILE)
             {
@@ -112,8 +158,14 @@ std::unique_ptr<ReadBufferFromFilePRead> AsynchronousMetrics::openFileIfExists(c
             }
             else
             {
+                e.recordToSystemErrors();
                 throw;
             }
+        }
+        catch (Exception & e)
+        {
+            e.recordToSystemErrors();
+            throw;
         }
     }
     return {};
@@ -166,6 +218,7 @@ AsynchronousMetrics::AsynchronousMetrics(
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         const auto [cgroup_path, version] = ICgroupsReader::getCgroupsPath();
         LOG_INFO(getLogger("AsynchronousMetrics"),
             "Will use cgroup reader from '{}' (cgroups version: {})",
@@ -175,6 +228,7 @@ AsynchronousMetrics::AsynchronousMetrics(
     }
     catch (...)
     {
+        recordUnexpectedOSMetricException(std::current_exception());
         tryLogCurrentException(getLogger("AsynchronousMetrics"), "cgroups are not available");
     }
 
@@ -226,6 +280,7 @@ void AsynchronousMetrics::openSensors() TSA_REQUIRES(data_mutex)
         Int64 temperature = 0;
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             readText(temperature, *file);
         }
         catch (const ErrnoException & e)
@@ -236,6 +291,11 @@ void AsynchronousMetrics::openSensors() TSA_REQUIRES(data_mutex)
                 thermal_device_index,
                 errnoToString(e.getErrno()));
             continue;
+        }
+        catch (Exception & e)
+        {
+            e.recordToSystemErrors();
+            throw;
         }
 
         thermal.emplace_back(std::move(file));
@@ -343,6 +403,7 @@ void AsynchronousMetrics::openSensorsChips() TSA_REQUIRES(data_mutex)
             String sensor_name{};
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 if (sensor_name_file_exists)
                 {
                     ReadBufferFromFilePRead sensor_name_in(sensor_name_file, small_buffer_size);
@@ -363,6 +424,11 @@ void AsynchronousMetrics::openSensorsChips() TSA_REQUIRES(data_mutex)
                     sensor_index,
                     errnoToString(e.getErrno()));
                 continue;
+            }
+            catch (Exception & e)
+            {
+                e.recordToSystemErrors();
+                throw;
             }
 
             hwmon_devices[hwmon_name][sensor_name] = std::move(file);
@@ -1377,6 +1443,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             loadavg->rewind();
 
             Float64 loadavg1 = 0;
@@ -1414,6 +1481,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
         catch (...)
         {
+            recordUnexpectedOSMetricException(std::current_exception());
             tryLogCurrentException(__PRETTY_FUNCTION__);
 
             /// A slight improvement for the rare case when ClickHouse is run inside LXC and LXCFS is used.
@@ -1428,6 +1496,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             uptime->rewind();
 
             Float64 uptime_seconds = 0;
@@ -1437,6 +1506,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
         catch (...)
         {
+            recordUnexpectedOSMetricException(std::current_exception());
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openFileIfExists("/proc/uptime", uptime);
         }
@@ -1447,6 +1517,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             cgroupcpu_max->rewind();
 
             uint64_t quota = 0;
@@ -1474,6 +1545,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
         catch (...)
         {
+            recordUnexpectedOSMetricException(std::current_exception());
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
@@ -1481,6 +1553,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             cgroupcpu_cfs_quota->rewind();
             cgroupcpu_cfs_period->rewind();
 
@@ -1495,6 +1568,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
         catch (...)
         {
+            recordUnexpectedOSMetricException(std::current_exception());
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
@@ -1508,6 +1582,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             ReadBufferFromFilePRead & in = cgroupcpu_stat ? *cgroupcpu_stat : *cgroupcpuacct_stat;
             ProcStatValuesCPU current_values{};
 
@@ -1558,6 +1633,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
         catch (...)
         {
+            recordUnexpectedOSMetricException(std::current_exception());
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openCgroupv2MetricFile("cpu.stat", cgroupcpu_stat);
             if (!cgroupcpu_stat)
@@ -1568,6 +1644,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             proc_stat->rewind();
 
             int64_t hz = sysconf(_SC_CLK_TCK);
@@ -1682,6 +1759,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
         catch (...)
         {
+            recordUnexpectedOSMetricException(std::current_exception());
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openFileIfExists("/proc/stat", proc_stat);
         }
@@ -1691,6 +1769,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             cgroupmem_limit_in_bytes->rewind();
             uint64_t limit = 0;
             tryReadText(limit, *cgroupmem_limit_in_bytes);
@@ -1719,6 +1798,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
         catch (...)
         {
+            recordUnexpectedOSMetricException(std::current_exception());
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
@@ -1726,6 +1806,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             meminfo->rewind();
 
             uint64_t free_plus_cached_bytes = 0;
@@ -1809,6 +1890,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
         catch (...)
         {
+            recordUnexpectedOSMetricException(std::current_exception());
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openFileIfExists("/proc/meminfo", meminfo);
         }
@@ -1819,6 +1901,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             cpuinfo->rewind();
 
             // We need the following lines:
@@ -1860,6 +1943,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
         catch (...)
         {
+            recordUnexpectedOSMetricException(std::current_exception());
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openFileIfExists("/proc/cpuinfo", cpuinfo);
         }
@@ -1870,10 +1954,12 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             readPressureFile(new_values, "CPU", cpu_pressure.value(), prev_pressure_vals, first_run);
         }
         catch (...)
         {
+            recordUnexpectedOSMetricException(std::current_exception());
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openFileIfExists("/proc/pressure/cpu", cpu_pressure);
         }
@@ -1883,10 +1969,12 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             readPressureFile(new_values, "MEM", memory_pressure.value(), prev_pressure_vals, first_run);
         }
         catch (...)
         {
+            recordUnexpectedOSMetricException(std::current_exception());
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openFileIfExists("/proc/pressure/memory", memory_pressure);
         }
@@ -1896,10 +1984,12 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             readPressureFile(new_values, "IO", io_pressure.value(), prev_pressure_vals, first_run);
         }
         catch (...)
         {
+            recordUnexpectedOSMetricException(std::current_exception());
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openFileIfExists("/proc/pressure/io", io_pressure);
         }
@@ -1909,6 +1999,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             file_nr->rewind();
 
             uint64_t open_files = 0;
@@ -1918,6 +2009,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
         catch (...)
         {
+            recordUnexpectedOSMetricException(std::current_exception());
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openFileIfExists("/proc/sys/fs/file-nr", file_nr);
         }
@@ -1930,6 +2022,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         for (auto & [name, device] : block_devs)
         {
             device->rewind();
@@ -2039,6 +2132,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     }
     catch (...)
     {
+        recordUnexpectedOSMetricException(std::current_exception());
         LOG_DEBUG(log, "Cannot read statistics from block devices: {}", getCurrentExceptionMessage(false));
 
         /// Try to reopen block devices in case of error
@@ -2057,6 +2151,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             net_dev->rewind();
 
             /// Skip first two lines:
@@ -2151,6 +2246,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
         catch (...)
         {
+            recordUnexpectedOSMetricException(std::current_exception());
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openFileIfExists("/proc/net/dev", net_dev);
         }
@@ -2169,6 +2265,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         {
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 file->rewind();
                 /// Header
                 skipToNextLineOrEOF(*file);
@@ -2239,6 +2336,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             }
             catch (...)
             {
+                recordUnexpectedOSMetricException(std::current_exception());
                 tryLogCurrentException(__PRETTY_FUNCTION__);
                 openFileIfExists(path, file);
             }
@@ -2286,6 +2384,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             vm_max_map_count->rewind();
 
             uint64_t max_map_count = 0;
@@ -2294,6 +2393,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
         catch (...)
         {
+            recordUnexpectedOSMetricException(std::current_exception());
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openFileIfExists("/proc/sys/vm/max_map_count", vm_max_map_count);
         }
@@ -2303,6 +2403,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             vm_maps->rewind();
 
             uint64_t num_maps = 0;
@@ -2326,6 +2427,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
         catch (...)
         {
+            recordUnexpectedOSMetricException(std::current_exception());
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openFileIfExists("/proc/self/maps", vm_maps);
         }
@@ -2335,6 +2437,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             process_status->rewind();
 
             UInt64 signal_queue_size = 0;
@@ -2380,6 +2483,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
         catch (...)
         {
+            recordUnexpectedOSMetricException(std::current_exception());
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openFileIfExists("/proc/self/status", process_status);
         }
@@ -2387,6 +2491,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         for (size_t i = 0, size = thermal.size(); i < size; ++i)
         {
             ReadBufferFromFilePRead & in = *thermal[i];
@@ -2400,6 +2505,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     }
     catch (...)
     {
+        recordUnexpectedOSMetricException(std::current_exception());
         if (errno != ENODATA)   /// Ok for thermal sensors.
             tryLogCurrentException(__PRETTY_FUNCTION__);
 
@@ -2416,6 +2522,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         for (const auto & [hwmon_name, sensors] : hwmon_devices)
         {
             for (const auto & [sensor_name, sensor_file] : sensors)
@@ -2444,6 +2551,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     }
     catch (...)
     {
+        recordUnexpectedOSMetricException(std::current_exception());
         if (errno != ENODATA)   /// Ok for thermal sensors.
             tryLogCurrentException(__PRETTY_FUNCTION__);
 
@@ -2463,6 +2571,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         for (size_t i = 0, size = edac.size(); i < size; ++i)
         {
             /// NOTE maybe we need to take difference with previous values.
@@ -2497,6 +2606,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     }
     catch (...)
     {
+        recordUnexpectedOSMetricException(std::current_exception());
         tryLogCurrentException(__PRETTY_FUNCTION__);
 
         /// EDAC files can be re-created on module load/unload

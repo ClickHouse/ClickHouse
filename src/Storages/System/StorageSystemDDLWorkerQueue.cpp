@@ -11,6 +11,7 @@
 #include <Interpreters/ZooKeeperLog.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/Exception.h>
 #include <Core/Settings.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ParserQuery.h>
@@ -95,10 +96,11 @@ static String clusterNameFromDDLQuery(ContextPtr context, const DDLTask & task)
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         query = parseQuery(
             parser_query, begin, end, description, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     }
-    catch (const Exception & e)
+    catch (Exception & e)
     {
         LOG_INFO(getLogger("StorageSystemDDLWorkerQueue"), "Failed to determine cluster");
         if (e.code() == ErrorCodes::SYNTAX_ERROR)
@@ -106,6 +108,7 @@ static String clusterNameFromDDLQuery(ContextPtr context, const DDLTask & task)
             /// ignore parse error and present available information
             return "";
         }
+        e.recordToSystemErrors();
         throw;
     }
 

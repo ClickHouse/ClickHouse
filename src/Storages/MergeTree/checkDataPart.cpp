@@ -14,6 +14,7 @@
 #include <IO/HashingReadBuffer.h>
 #include <IO/S3Common.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -364,6 +365,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         IMergeTreeDataPart::Checksums projection_checksums;
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             bool noop = false;
             auto projection_storage = data_part_storage.getProjection(projection_file);
 
@@ -392,7 +394,11 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         catch (...)
         {
             if (isRetryableException(std::current_exception()))
+            {
+                if (auto * e = current_exception_cast<Exception *>())
+                    e->recordToSystemErrors();
                 throw;
+            }
 
             is_broken_projection = true;
             projections_on_disk.erase(projection_file);
@@ -500,7 +506,11 @@ IMergeTreeDataPart::Checksums checkDataPart(
         auto cache_name = data_part_storage.getCacheName();
 
         if (!cache_name)
+        {
+            if (auto * e = current_exception_cast<Exception *>())
+                e->recordToSystemErrors();
             throw;
+        }
 
         LOG_DEBUG(
             getLogger("checkDataPart"),
@@ -541,6 +551,8 @@ IMergeTreeDataPart::Checksums checkDataPart(
         {
             if (isRetryableException(std::current_exception()))
             {
+                if (auto * e = current_exception_cast<Exception *>())
+                    e->recordToSystemErrors(/* force */ true);
                 LOG_DEBUG(
                     getLogger("checkDataPart"),
                     "Got retriable error {} checking data part {}, will return empty", data_part->name, getCurrentExceptionMessage(false));
@@ -557,6 +569,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         ReadSettings read_settings;
         return checkDataPart(
             data_part,
@@ -574,6 +587,8 @@ IMergeTreeDataPart::Checksums checkDataPart(
     {
         if (isRetryableException(std::current_exception()))
         {
+            if (auto * e = current_exception_cast<Exception *>())
+                e->recordToSystemErrors(/* force */ true);
             LOG_DEBUG(
                 getLogger("checkDataPart"),
                 "Got retriable error {} checking data part {}, will return empty", data_part->name, getCurrentExceptionMessage(false));

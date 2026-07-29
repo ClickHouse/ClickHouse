@@ -92,6 +92,7 @@ protected:
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             auto buf = BuilderRWBufferFromHTTP(getPingURI())
                            .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                            .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(getContext()->getSettingsRef(), getContext()->getServerSettings()))

@@ -9,6 +9,7 @@
 #include "config.h"
 
 #include <Common/likePatternToRegexp.h>
+#include <Common/Exception.h>
 #include <Common/isValidUTF8.h>
 
 #include <Core/Field.h>
@@ -368,14 +369,18 @@ public:
                 /// behavior. Only the expected parse error is swallowed; anything else propagates.
                 try
                 {
+                    Exception::SuppressErrorCodesScope suppress_error_codes;
                     data.regexp = likePatternToRegexp(pattern_str);
                     if (is_ilike)
                         data.regexp = "(?i)" + data.regexp;
                 }
-                catch (const Exception & e)
+                catch (Exception & e)
                 {
                     if (e.code() != ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE)
+                    {
+                        e.recordToSystemErrors();
                         throw;
+                    }
                     conversion_failed = true;
                 }
             }

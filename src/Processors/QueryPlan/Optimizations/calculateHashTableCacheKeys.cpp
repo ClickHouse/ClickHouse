@@ -250,6 +250,7 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
         /// the number of groups and may not be serializable.
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             const auto cache_keys = calculateHashTableCacheKeys(*aggregating_node);
             if (auto it = cache_keys.find(aggregating_node); it != cache_keys.end())
                 keys_to_set.emplace_back(typeid_cast<AggregatingStep *>(aggregating_node->step.get()), it->second);

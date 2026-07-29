@@ -25,6 +25,8 @@
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -224,6 +226,10 @@ ReturnType SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & 
 
     try
     {
+        std::optional<Exception::SuppressErrorCodesScope> suppress_error_codes;
+        if constexpr (!throw_exception)
+            suppress_error_codes.emplace();
+
         bool first = true;
         while (!istr.eof() && *istr.position() != '}')
         {
@@ -275,7 +281,7 @@ ReturnType SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & 
         else if (!checkChar('}', istr))
             return on_error_no_throw();
     }
-    catch (...)
+    catch (Exception & e)
     {
         if (size)
         {
@@ -284,10 +290,28 @@ ReturnType SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & 
         }
 
         if constexpr (throw_exception)
+        {
             throw;
-        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
-        rethrowIfNotParseError();
-        return ReturnType(false);
+        }
+        else
+        {
+            /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
+            if (!isParseError(e.code()))
+            {
+                e.recordToSystemErrors();
+                throw;
+            }
+            return ReturnType(false);
+        }
+    }
+    catch (...)
+    {
+        if (size)
+        {
+            nested_tuple.getColumnPtr(0) = key_column.cut(0, offsets.back());
+            nested_tuple.getColumnPtr(1) = value_column.cut(0, offsets.back());
+        }
+        throw;
     }
 
     offsets.push_back(offsets.back() + size);

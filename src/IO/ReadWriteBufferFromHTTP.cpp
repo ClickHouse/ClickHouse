@@ -319,6 +319,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
 
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             callable();
             return;
         }
@@ -369,7 +370,19 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                           error_message,
                           attempt, read_settings.http_settings.max_tries);
 
-            std::rethrow_exception(exception);
+            try
+            {
+                std::rethrow_exception(exception);
+            }
+            catch (Exception & e)
+            {
+                e.recordToSystemErrors();
+                throw;
+            }
+            catch (...)
+            {
+                throw;
+            }
         }
         else
         {
@@ -466,6 +479,7 @@ bool ReadWriteBufferFromHTTP::nextImpl()
             {
                 try
                 {
+                    Exception::SuppressErrorCodesScope suppress_error_codes;
                     impl = initialize();
                 }
                 catch (HTTPException & e)
@@ -477,6 +491,12 @@ bool ReadWriteBufferFromHTTP::nextImpl()
                         return;
                     }
 
+                    e.recordToSystemErrors();
+                    throw;
+                }
+                catch (Exception & e)
+                {
+                    e.recordToSystemErrors();
                     throw;
                 }
 
@@ -754,9 +774,10 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
     Poco::Net::HTTPResponse response;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         getHeadResponse(response);
     }
-    catch (const HTTPException & e)
+    catch (HTTPException & e)
     {
         /// Maybe the web server doesn't support HEAD requests.
         /// E.g. webhdfs reports status 400.
@@ -772,6 +793,12 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
             return HTTPFileInfo{};
         }
 
+        e.recordToSystemErrors();
+        throw;
+    }
+    catch (Exception & e)
+    {
+        e.recordToSystemErrors();
         throw;
     }
 

@@ -37,6 +37,7 @@
 #include <Analyzer/Resolve/TypoCorrection.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/Exception.h>
 #include <Common/quoteString.h>
 
 #include <base/scope_guard.h>
@@ -4644,9 +4645,10 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
           */
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             resolveExpressionNode(table_function_argument, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, false /*ignore_alias*/, false /*allow_niladic_functions*/);
         }
-        catch (const Exception & exception)
+        catch (Exception & exception)
         {
             if (exception.code() == ErrorCodes::UNKNOWN_IDENTIFIER)
             {
@@ -4664,6 +4666,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 continue;
             }
 
+            exception.recordToSystemErrors();
             throw;
         }
 

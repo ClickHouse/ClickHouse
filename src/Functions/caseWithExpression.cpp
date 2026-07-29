@@ -226,12 +226,16 @@ public:
                 FunctionBasePtr function_base;
                 try
                 {
+                    Exception::SuppressErrorCodesScope suppress_error_codes;
                     function_base = fun_transform->build(transform_args);
                 }
                 catch (Exception & e)
                 {
                     if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+                    {
+                        e.recordToSystemErrors();
                         throw;
+                    }
 
                     /// Function `transform` doesn't support some data types, e.g. Int128.
                     /// Fall back to multiIf.

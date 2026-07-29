@@ -51,6 +51,7 @@ struct HighlightQueryImpl
 
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             while (!token_iterator->isEnd())
             {
                 bool res = parser.parse(token_iterator, ast, expected);
@@ -64,12 +65,15 @@ struct HighlightQueryImpl
                     ++token_iterator;
             }
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             /// Skip highlighting on parse/syntax errors, just return what we have so far for this row.
             /// Rethrow all other exceptions (memory, resource, etc.) to avoid hiding real failures.
             if (e.code() != ErrorCodes::SYNTAX_ERROR)
+            {
+                e.recordToSystemErrors();
                 throw;
+            }
         }
 
         const auto expanded = expandHighlights(expected.highlights);

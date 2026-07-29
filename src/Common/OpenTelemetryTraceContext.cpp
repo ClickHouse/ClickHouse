@@ -91,6 +91,7 @@ bool Span::addAttribute(std::string_view name, std::function<String()> value_sup
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         auto value = value_supplier();
         return value.empty() ? false : addAttributeImpl(name, value);
     }

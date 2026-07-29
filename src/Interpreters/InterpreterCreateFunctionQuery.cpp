@@ -27,6 +27,7 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 
@@ -262,6 +263,7 @@ namespace
             /// sidecar is treated as "no previous working directory to clean up".
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 result.previous_working_dir = DriverUtils::readDriverWorkingDirectory(current_context, function_name);
             }
             catch (...)

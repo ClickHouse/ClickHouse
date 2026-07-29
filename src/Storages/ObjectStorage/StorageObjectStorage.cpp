@@ -195,21 +195,29 @@ StorageObjectStorage::StorageObjectStorage(
             updated_configuration = true;
         }
     }
-    catch (...)
+    catch (Exception & e)
     {
         // If we don't have format or schema yet, we can't ignore failed configuration update,
         // because relevant configuration is crucial for format and schema inference
         if (mode <= LoadingStrictnessLevel::CREATE || need_resolve_columns_or_format)
         {
+            e.recordToSystemErrors();
             throw;
         }
         // A credential-restriction denial raised while rebuilding the client for the current session must not be
         // swallowed: otherwise a restricted session would fall through to a client that an earlier opt-in session
         // left credentialed in the shared object storage. Fail closed and propagate the denial instead.
-        if (getCurrentExceptionCode() == ErrorCodes::ACCESS_DENIED)
+        if (e.code() == ErrorCodes::ACCESS_DENIED)
         {
+            e.recordToSystemErrors();
             throw;
         }
+        tryLogCurrentException(log, /*start of message = */ "", LogsLevel::warning);
+    }
+    catch (...)
+    {
+        if (mode <= LoadingStrictnessLevel::CREATE || need_resolve_columns_or_format)
+            throw;
         tryLogCurrentException(log, /*start of message = */ "", LogsLevel::warning);
     }
 
@@ -247,7 +255,18 @@ StorageObjectStorage::StorageObjectStorage(
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             sample_path = getPathSample(context);
+        }
+        catch (Exception & e)
+        {
+            if (e.code() == ErrorCodes::ACCESS_DENIED)
+                e.recordToSystemErrors(/* force */ true);
+            LOG_WARNING(
+                log,
+                "Failed to list object storage, cannot use hive partitioning. "
+                "Error: {}",
+                getCurrentExceptionMessage(true));
         }
         catch (...)
         {

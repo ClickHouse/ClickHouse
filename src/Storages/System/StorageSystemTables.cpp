@@ -604,37 +604,43 @@ protected:
                             }
                             else if (src_index == 21 && columns_mask[src_index])
                             {
+                                std::optional<UInt64> total_rows;
                                 try
                                 {
-                                    if (auto total_rows = table.second->totalRows(context))
-                                        res_columns[res_index]->insert(*total_rows);
-                                    else
-                                        res_columns[res_index]->insertDefault();
+                                    Exception::SuppressErrorCodesScope suppress_error_codes;
+                                    total_rows = table.second->totalRows(context);
                                 }
-                                catch (const Exception &)
+                                catch (Exception & e)
                                 {
+                                    e.recordToSystemErrors(/* force */ true);
                                     /// Even if the method throws, it should not prevent querying system.tables.
                                     tryLogCurrentException("StorageSystemTables");
-                                    res_columns[res_index]->insertDefault();
                                 }
+                                if (total_rows)
+                                    res_columns[res_index]->insert(*total_rows);
+                                else
+                                    res_columns[res_index]->insertDefault();
                                 ++res_index;
                             }
                             // total_bytes
                             else if (src_index == 22 && columns_mask[src_index])
                             {
+                                std::optional<UInt64> total_bytes;
                                 try
                                 {
-                                    if (auto total_bytes = table.second->totalBytes(context))
-                                        res_columns[res_index]->insert(*total_bytes);
-                                    else
-                                        res_columns[res_index]->insertDefault();
+                                    Exception::SuppressErrorCodesScope suppress_error_codes;
+                                    total_bytes = table.second->totalBytes(context);
                                 }
-                                catch (const Exception &)
+                                catch (Exception & e)
                                 {
+                                    e.recordToSystemErrors(/* force */ true);
                                     /// Even if the method throws, it should not prevent querying system.tables.
                                     tryLogCurrentException("StorageSystemTables");
-                                    res_columns[res_index]->insertDefault();
                                 }
+                                if (total_bytes)
+                                    res_columns[res_index]->insert(*total_bytes);
+                                else
+                                    res_columns[res_index]->insertDefault();
                                 ++res_index;
                             }
                             /// Fill the rest columns with defaults
@@ -902,58 +908,64 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
+                    std::optional<UInt64> total_rows;
                     try
                     {
-                        auto total_rows = table ? table->totalRows(context) : std::nullopt;
-                        if (total_rows)
-                            res_columns[res_index]->insert(*total_rows);
-                        else
-                            res_columns[res_index]->insertDefault();
+                        Exception::SuppressErrorCodesScope suppress_error_codes;
+                        total_rows = table ? table->totalRows(context) : std::nullopt;
                     }
-                    catch (const Exception &)
+                    catch (Exception & e)
                     {
+                        e.recordToSystemErrors(/* force */ true);
                         /// Even if the method throws, it should not prevent querying system.tables.
                         tryLogCurrentException("StorageSystemTables");
-                        res_columns[res_index]->insertDefault();
                     }
+                    if (total_rows)
+                        res_columns[res_index]->insert(*total_rows);
+                    else
+                        res_columns[res_index]->insertDefault();
                     ++res_index;
                 }
 
                 if (columns_mask[src_index++])
                 {
+                    std::optional<UInt64> total_bytes;
                     try
                     {
-                        auto total_bytes = table ? table->totalBytes(context_copy) : std::nullopt;
-                        if (total_bytes)
-                            res_columns[res_index]->insert(*total_bytes);
-                        else
-                            res_columns[res_index]->insertDefault();
+                        Exception::SuppressErrorCodesScope suppress_error_codes;
+                        total_bytes = table ? table->totalBytes(context_copy) : std::nullopt;
                     }
-                    catch (const Exception &)
+                    catch (Exception & e)
                     {
+                        e.recordToSystemErrors(/* force */ true);
                         /// Even if the method throws, it should not prevent querying system.tables.
                         tryLogCurrentException("StorageSystemTables");
-                        res_columns[res_index]->insertDefault();
                     }
+                    if (total_bytes)
+                        res_columns[res_index]->insert(*total_bytes);
+                    else
+                        res_columns[res_index]->insertDefault();
                     ++res_index;
                 }
 
                 if (columns_mask[src_index++])
                 {
+                    std::optional<UInt64> total_bytes_uncompressed;
                     try
                     {
-                        auto total_bytes_uncompressed = table ? table->totalBytesUncompressed(context_copy->getSettingsRef()) : std::nullopt;
-                        if (total_bytes_uncompressed)
-                            res_columns[res_index]->insert(*total_bytes_uncompressed);
-                        else
-                            res_columns[res_index]->insertDefault();
+                        Exception::SuppressErrorCodesScope suppress_error_codes;
+                        total_bytes_uncompressed = table ? table->totalBytesUncompressed(context_copy->getSettingsRef()) : std::nullopt;
                     }
-                    catch (const Exception &)
+                    catch (Exception & e)
                     {
+                        e.recordToSystemErrors(/* force */ true);
                         /// Even if the method throws, it should not prevent querying system.tables.
                         tryLogCurrentException("StorageSystemTables");
-                        res_columns[res_index]->insertDefault();
                     }
+                    if (total_bytes_uncompressed)
+                        res_columns[res_index]->insert(*total_bytes_uncompressed);
+                    else
+                        res_columns[res_index]->insertDefault();
                     ++res_index;
                 }
 

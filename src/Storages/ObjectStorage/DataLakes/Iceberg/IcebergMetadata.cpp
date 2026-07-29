@@ -333,16 +333,21 @@ Int32 IcebergMetadata::parseTableSchema(
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             auto [schema, current_schema_id] = parseTableSchemaV1Method(metadata_object);
             schema_processor.addIcebergTableSchema(schema);
             return current_schema_id;
         }
-        catch (const Exception & first_error)
+        catch (Exception & first_error)
         {
             if (first_error.code() != ErrorCodes::BAD_ARGUMENTS)
+            {
+                first_error.recordToSystemErrors();
                 throw;
+            }
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
                 schema_processor.addIcebergTableSchema(schema);
                 LOG_WARNING(
@@ -353,10 +358,13 @@ Int32 IcebergMetadata::parseTableSchema(
                     first_error.displayText());
                 return current_schema_id;
             }
-            catch (const Exception & second_error)
+            catch (Exception & second_error)
             {
-                if (first_error.code() != ErrorCodes::BAD_ARGUMENTS)
+                if (second_error.code() != ErrorCodes::BAD_ARGUMENTS)
+                {
+                    second_error.recordToSystemErrors();
                     throw;
+                }
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Cannot parse Iceberg table schema both with v1 and v2 methods. Old method error: {}. New method error: {}",
@@ -828,9 +836,10 @@ void IcebergMetadata::createInitial(
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         writeMessageToFile(metadata_content, filename, object_storage, local_context, "*", "", compression_method);
     }
-    catch (const Exception & e)
+    catch (Exception & e)
     {
         /// The write uses `If-None-Match: *`, so S3 returns PreconditionFailed when the metadata file
         /// already exists (e.g. leftover data after `DROP TABLE` with `iceberg_delete_data_on_drop` off,
@@ -838,6 +847,7 @@ void IcebergMetadata::createInitial(
         if (if_not_exists && e.code() == ErrorCodes::S3_ERROR
             && e.message().find("PreconditionFailed") != String::npos)
             return;
+        e.recordToSystemErrors();
         throw;
     }
 

@@ -1108,7 +1108,11 @@ private:
 
         try
         {
-            auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
+            typename PooledConnection::Ptr connection_to_store;
+            {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
+                connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
+            }
             connection_to_store->assign(connection);
             connection_to_store->notifySocketInode();
 
@@ -1120,6 +1124,13 @@ private:
 
             CurrentMetrics::add(getMetrics().stored_count, 1);
             ProfileEvents::increment(getMetrics().preserved, 1);
+        }
+        catch (Exception & e)
+        {
+            if (e.code() != ErrorCodes::HTTP_CONNECTION_LIMIT_REACHED)
+                e.recordToSystemErrors(/* force */ true);
+            ProfileEvents::increment(getMetrics().reset, 1);
+            tryLogCurrentException("HTTPConnectionPool", "Failed to preserve connection for reuse");
         }
         catch (...)
         {

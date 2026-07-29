@@ -145,15 +145,19 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
         DataTypePtr type;
         try
         {
+            std::optional<Exception::SuppressErrorCodesScope> suppress_error_codes;
+            if (format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference)
+                suppress_error_codes.emplace();
             type = ArrowIPC::fieldToCHType(field, format_settings, make_nullable);
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             /// `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference`: drop a
             /// top-level column whose Arrow type the reader cannot map, instead of failing inference.
             if (format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference
                 && (e.code() == ErrorCodes::NOT_IMPLEMENTED || e.code() == ErrorCodes::UNKNOWN_TYPE))
                 continue;
+            e.recordToSystemErrors();
             throw;
         }
 

@@ -120,6 +120,7 @@ Chunk SystemDatabaseReplicasSource::generate()
                     "down");
                 continue;
             }
+            e.recordToSystemErrors();
             throw;
         }
 

@@ -163,6 +163,7 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
         {
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 auto connection = ConnectionType::createConnection(connection_parameters, my_context);
                 const auto basic_suggestion = std::is_same_v<ConnectionType, LocalConnection>;
                 auto suggestion_query = getLoadSuggestionQuery(*connection, suggestion_limit, basic_suggestion, connection_parameters.timeouts);
@@ -171,13 +172,18 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
                     suggestion_query,
                     my_context->getClientInfo());
             }
-            catch (const Exception & e)
+            catch (Exception & e)
             {
                 last_error = e.code();
                 if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
+                {
+                    if (retry == 9)
+                        e.recordToSystemErrors();
                     continue;
+                }
                 if (e.code() != ErrorCodes::USER_SESSION_LIMIT_EXCEEDED)
                 {
+                    e.recordToSystemErrors();
                     /// We should not use std::cerr here, because this method works concurrently with the main thread.
                     /// WriteBufferFromFileDescriptor will write directly to the file descriptor, avoiding data race on std::cerr.
                     ///

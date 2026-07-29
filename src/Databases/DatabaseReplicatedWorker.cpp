@@ -550,11 +550,23 @@ static bool getRMVCoordinationInfo(
         return false;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         String data;
         if (!zookeeper->tryGet(*coordination_path, data, &stats))
             return false;
         coordination_znode.parse(data, /*running_znode_exists=*/ false, log);
         return true;
+    }
+    catch (const Coordination::Exception &)
+    {
+        tryLogCurrentException(log, "Unable to get coordination information: " + *coordination_path);
+        return false;
+    }
+    catch (Exception & e)
+    {
+        e.recordToSystemErrors(/* force */ true);
+        tryLogCurrentException(log, "Unable to get coordination information: " + *coordination_path);
+        return false;
     }
     catch (...)
     {

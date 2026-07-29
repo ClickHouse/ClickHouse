@@ -38,6 +38,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int POCO_EXCEPTION;
     extern const int STD_EXCEPTION;
     extern const int AVRO_EXCEPTION;
@@ -45,6 +46,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MREMAP;
+    extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
+    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+    extern const int CANNOT_PARSE_NUMBER;
     extern const int POTENTIALLY_BROKEN_DATA_PART;
     extern const int CORRUPTED_DATA;
 }
@@ -73,18 +77,25 @@ std::function<void(std::string_view format_string, int code, bool remote, const 
 
 namespace
 {
-thread_local bool suppress_error_codes = false;
+thread_local size_t suppress_error_codes_depth = 0;
 }
 
-Exception::SuppressErrorCodesScope::SuppressErrorCodesScope()
-    : previous(suppress_error_codes)
+Exception::SuppressErrorCodesScope::SuppressErrorCodesScope(bool enabled_)
+    : enabled(enabled_)
 {
-    suppress_error_codes = true;
+    if (enabled)
+        ++suppress_error_codes_depth;
 }
 
 Exception::SuppressErrorCodesScope::~SuppressErrorCodesScope()
 {
-    suppress_error_codes = previous;
+    if (enabled)
+        --suppress_error_codes_depth;
+}
+
+bool Exception::isErrorCodeSuppressionActive()
+{
+    return suppress_error_codes_depth > 0;
 }
 
 constexpr bool debug_or_sanitizer_build =
@@ -116,7 +127,7 @@ size_t Exception::handleErrorCode(
         Exception::callback(format_string, code, remote, trace);
     }
 
-    if (suppress_error_codes)
+    if (suppress_error_codes_depth > 0)
         return static_cast<size_t>(Exception::ErrorIndexState::Suppressed);
 
     return ErrorCodes::increment(code, remote, msg, std::string(format_string), trace);
@@ -152,6 +163,8 @@ Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
     capture_thread_frame_pointers = getThreadFramePointers();
     message_format_string = msg_masked.format_string;
     error_index = handleErrorCode(msg_masked.msg, message_format_string, code, remote, getStackFramePointers());
+    if (error_index == static_cast<size_t>(ErrorIndexState::Suppressed))
+        delayed_error_index = std::make_shared<DelayedErrorIndex>();
 }
 
 Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
@@ -163,12 +176,21 @@ Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
     capture_thread_frame_pointers = getThreadFramePointers();
     message_format_string = msg_masked.format_string;
     error_index = handleErrorCode(message(), message_format_string, code, remote, getStackFramePointers());
+    if (error_index == static_cast<size_t>(ErrorIndexState::Suppressed))
+        delayed_error_index = std::make_shared<DelayedErrorIndex>();
 }
 
-void Exception::recordToSystemErrors()
+void Exception::recordToSystemErrors(bool force)
 {
-    if (error_index == static_cast<size_t>(ErrorIndexState::Suppressed))
-        error_index = ErrorCodes::increment(code(), remote, message(), std::string(message_format_string), getStackFramePointers());
+    if ((!force && suppress_error_codes_depth > 0)
+        || error_index != static_cast<size_t>(ErrorIndexState::Suppressed)
+        || !delayed_error_index)
+        return;
+
+    std::lock_guard lock(delayed_error_index->mutex);
+    if (delayed_error_index->value == static_cast<size_t>(ErrorIndexState::Suppressed))
+        delayed_error_index->value = ErrorCodes::increment(
+            code(), remote, message(), std::string(message_format_string), getStackFramePointers());
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
@@ -207,9 +229,16 @@ Exception::Exception(CreateFromSTDTag, const std::exception & exc)
 void Exception::addMessage(const MessageMasked & msg_masked)
 {
     extendedMessage(msg_masked.msg);
-    if (error_index != static_cast<size_t>(ErrorIndexState::NotRecorded)
-        && error_index != static_cast<size_t>(ErrorIndexState::Suppressed))
-        ErrorCodes::extendedMessage(code(), remote, error_index, message());
+    size_t current_error_index = error_index;
+    if (current_error_index == static_cast<size_t>(ErrorIndexState::Suppressed) && delayed_error_index)
+    {
+        std::lock_guard lock(delayed_error_index->mutex);
+        current_error_index = delayed_error_index->value;
+    }
+
+    if (current_error_index != static_cast<size_t>(ErrorIndexState::NotRecorded)
+        && current_error_index != static_cast<size_t>(ErrorIndexState::Suppressed))
+        ErrorCodes::extendedMessage(code(), remote, current_error_index, message());
 }
 
 
@@ -739,11 +768,19 @@ bool ExecutionStatus::tryDeserializeText(const std::string & data)
     ExecutionStatus tmp;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes_scope;
         tmp.deserializeText(data);
     }
-    catch (...) // Ok: tryDeserializeText is a try-pattern, failure is expected
+    catch (Exception & e)
     {
-        return false;
+        if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
+            || e.code() == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE
+            || e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED
+            || e.code() == ErrorCodes::CANNOT_PARSE_NUMBER)
+            return false;
+
+        e.recordToSystemErrors();
+        throw;
     }
 
     *this = std::move(tmp);

@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeCommittingBlock.h>
+
 #include <Storages/StorageMergeTree.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>

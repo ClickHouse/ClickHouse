@@ -40,6 +40,7 @@ FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const Action
     ColumnsWithTypeAndName filter_output;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         filter_output = ActionsDAG::evaluatePartialResult(
             combined_dag_input,
             { filter_node },

@@ -467,15 +467,22 @@ bool PaimonRestCatalog::existsTable(const String & database_name, const String &
 {
     try
     {
+        DB::Exception::SuppressErrorCodesScope suppress_error_codes;
         createReadBuffer(
             std::filesystem::path(API_VERSION) / prefix / DATABASES_ENDPOINT / database_name / TABLES_ENDPOINT / table_name, "GET");
     }
-    catch (const DB::HTTPException & e)
+    catch (DB::HTTPException & e)
     {
         if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
         {
             return false;
         }
+        e.recordToSystemErrors();
+        throw;
+    }
+    catch (DB::Exception & e)
+    {
+        e.recordToSystemErrors();
         throw;
     }
     return true;
@@ -485,6 +492,7 @@ bool PaimonRestCatalog::tryGetTableMetadata(const String & database_name, const 
 {
     try
     {
+        DB::Exception::SuppressErrorCodesScope suppress_error_codes;
         auto table_json_ptr = requestRest(
             std::filesystem::path(API_VERSION) / prefix / DATABASES_ENDPOINT / database_name / TABLES_ENDPOINT / table_name, "GET");
         if (result.requiresLocation())
@@ -585,12 +593,18 @@ bool PaimonRestCatalog::tryGetTableMetadata(const String & database_name, const 
         }
         return true;
     }
-    catch (const DB::HTTPException & e)
+    catch (DB::HTTPException & e)
     {
         if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
         {
             return false;
         }
+        e.recordToSystemErrors();
+        throw;
+    }
+    catch (DB::Exception & e)
+    {
+        e.recordToSystemErrors();
         throw;
     }
 }

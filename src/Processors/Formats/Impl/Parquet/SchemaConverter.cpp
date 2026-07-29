@@ -401,6 +401,9 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
     PageDecoderInfo decoder;
     try
     {
+        std::optional<Exception::SuppressErrorCodesScope> suppress_error_codes;
+        if (options.format.parquet.skip_columns_with_unsupported_types_in_schema_inference)
+            suppress_error_codes.emplace();
         processPrimitiveColumn(*node.element, primitive_type_hint, decoder, decoded_type, inferred_type, geo_metadata);
     }
     catch (Exception & e)
@@ -413,6 +416,7 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
         else
         {
             e.addMessage("column '" + node.getNameForLogging() + "'");
+            e.recordToSystemErrors();
             throw;
         }
     }

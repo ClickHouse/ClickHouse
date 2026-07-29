@@ -154,6 +154,7 @@ StoragePolicy::StoragePolicy(StoragePolicyPtr storage_policy,
             auto old_volume = storage_policy->getVolumeByName(volume->getName());
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 auto new_volume = updateVolumeFromConfig(old_volume, config, config_prefix + ".volumes." + volume->getName(), disks);
                 volume = std::move(new_volume);
             }
@@ -161,12 +162,18 @@ StoragePolicy::StoragePolicy(StoragePolicyPtr storage_policy,
             {
                 /// Default policies are allowed to be missed in configuration.
                 if (e.code() != ErrorCodes::NO_ELEMENTS_IN_CONFIG || storage_policy->getName() != DEFAULT_STORAGE_POLICY_NAME)
+                {
+                    e.recordToSystemErrors();
                     throw;
+                }
 
                 Poco::Util::AbstractConfiguration::Keys keys;
                 config.keys(config_prefix, keys);
                 if (!keys.empty())
+                {
+                    e.recordToSystemErrors();
                     throw;
+                }
             }
         }
     }

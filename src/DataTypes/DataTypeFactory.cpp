@@ -173,6 +173,7 @@ DataTypePtr DataTypeFactory::getImpl(const ASTPtr & ast) const
         {
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 return createEnumFromValues(enum_type->name, enum_type->values);
             }
             catch (...) // Ok: tryGet is a try-pattern
@@ -191,6 +192,7 @@ DataTypePtr DataTypeFactory::getImpl(const ASTPtr & ast) const
         {
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 return createTupleFromAST(tuple_type);
             }
             catch (...) // Ok: tryGet is a try-pattern
@@ -247,6 +249,7 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
 
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             data_type = (*creator)(parameters);
         }
         catch (...) // Ok: tryGetDataType is a try-pattern

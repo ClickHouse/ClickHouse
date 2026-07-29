@@ -10,6 +10,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
@@ -396,7 +397,12 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
 
         try
         {
-            if (!isSelfHostID(log, host, maybe_secure_port, port))
+            bool is_self_host = false;
+            {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
+                is_self_host = isSelfHostID(log, host, maybe_secure_port, port);
+            }
+            if (!is_self_host)
                 continue;
 
             if (host.isLoopbackHost())
@@ -419,10 +425,13 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
                 }
             }
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             if (e.code() != ErrorCodes::DNS_ERROR)
+            {
+                e.recordToSystemErrors();
                 throw;
+            }
 
             if (!first_exception)
                 first_exception = std::current_exception();
@@ -465,7 +474,15 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
         }
 
         /// We don't know for sure if we should process task or not
-        std::rethrow_exception(first_exception);
+        try
+        {
+            std::rethrow_exception(first_exception);
+        }
+        catch (Exception & e)
+        {
+            e.recordToSystemErrors();
+            throw;
+        }
     }
 
     return host_in_hostlist;
@@ -624,6 +641,7 @@ bool DDLTask::isSelfHostID(LoggerPtr log, const HostID & checking_host_id, std::
 {
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         return (maybe_self_secure_port && checking_host_id.isLocalAddress(*maybe_self_secure_port))
             || checking_host_id.isLocalAddress(self_port);
     }
@@ -639,6 +657,11 @@ bool DDLTask::isSelfHostID(LoggerPtr log, const HostID & checking_host_id, std::
         LOG_WARNING(log, "Unable to check if host {} is a local address, exception: {}", checking_host_id.host_name, e.displayText());
         return false;
     }
+    catch (Exception & e)
+    {
+        e.recordToSystemErrors();
+        throw;
+    }
 }
 
 bool DDLTask::isSelfHostname(
@@ -646,6 +669,7 @@ bool DDLTask::isSelfHostname(
 {
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         return (maybe_self_secure_port && HostID(checking_host_name, *maybe_self_secure_port).isLocalAddress(*maybe_self_secure_port))
             || HostID(checking_host_name, self_port).isLocalAddress(self_port);
     }
@@ -660,6 +684,11 @@ bool DDLTask::isSelfHostname(
         /// Avoid "Host not found" exceptions
         LOG_WARNING(log, "Unable to check if host {} is a local address, exception: {}", checking_host_name, e.displayText());
         return false;
+    }
+    catch (Exception & e)
+    {
+        e.recordToSystemErrors();
+        throw;
     }
 }
 

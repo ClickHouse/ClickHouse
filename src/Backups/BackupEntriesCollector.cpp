@@ -242,7 +242,10 @@ void BackupEntriesCollector::gatherMetadataAndCheckConsistency()
         syncMetadataGatheringWithOtherHosts(attempt_no, inconsistency_error, need_another_attempt);
 
         if (inconsistency_error && (std::chrono::steady_clock::now() > collect_metadata_end_time))
+        {
+            inconsistency_error->recordToSystemErrors();
             inconsistency_error->rethrow();
+        }
 
         /// Rethrow or just log the inconsistency error.
         if (!need_another_attempt)
@@ -272,6 +275,7 @@ void BackupEntriesCollector::tryGatherMetadataAndCompareWithPrevious(int attempt
 {
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         /// Collect information about databases and tables specified in the BACKUP query.
         database_infos.clear();
         table_infos.clear();
@@ -282,7 +286,10 @@ void BackupEntriesCollector::tryGatherMetadataAndCompareWithPrevious(int attempt
     catch (Exception & e)
     {
         if (e.code() != ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP)
+        {
+            e.recordToSystemErrors();
             throw;
+        }
 
         /// If gatherDatabasesMetadata() or gatherTablesMetadata() threw a INCONSISTENT_METADATA_FOR_BACKUP error then the metadata is not consistent by itself,
         /// for example a CREATE QUERY could contain a wrong table name if the table has been just renamed. We need another attempt in that case.
@@ -302,7 +309,10 @@ void BackupEntriesCollector::tryGatherMetadataAndCompareWithPrevious(int attempt
         /// Usually two passes is minimum.
         /// (Because we need to compare with table names from the previous pass to be sure we are not going to miss anything).
         if (attempt_no >= 1)
+        {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             inconsistency_error = Exception{ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "{}", mismatch_description};
+        }
         need_another_attempt = true;
     }
 }
@@ -330,6 +340,7 @@ void BackupEntriesCollector::syncMetadataGatheringWithOtherHosts(int attempt_no,
         if ((other_host_result != "consistent") && (other_host_result != "need_another_attempt"))
         {
             LOG_WARNING(log, "Found inconsistency on host {}: {}", other_host, other_host_result);
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             inconsistency_error = Exception{ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Found inconsistency on host {}: {}", other_host, other_host_result};
             need_another_attempt = true;
             return;

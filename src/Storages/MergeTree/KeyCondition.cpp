@@ -26,6 +26,7 @@
 #include <Functions/IFunctionDateOrDateTime.h>
 #include <Functions/geometryConverters.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/Exception.h>
 #include <Common/HilbertUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MortonUtils.h>
@@ -2401,6 +2402,7 @@ static bool applyDeterministicDagToColumn(
     /// however, there could be other functions that can throw on some inputs.
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         dag.actions->execute(block, false, true);
     }
     catch (const Exception &)

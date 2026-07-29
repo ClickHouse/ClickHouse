@@ -366,9 +366,10 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         info.cache_file_reader = open_cache_file(path);
     }
-    catch (const Exception & e)
+    catch (Exception & e)
     {
         /// A fully downloaded regular segment is renamed from `<offset>` to `<offset>_<size>`
         /// (`FileSegment::renameToIncludeSizeInNameUnlocked`) while we may still be reading it —
@@ -378,7 +379,10 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
         /// surface only as `FILE_DOESNT_EXIST` (the old name is gone); any other error is unrelated to
         /// the rename, so propagate it immediately.
         if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+        {
+            e.recordToSystemErrors();
             throw;
+        }
 
         /// Recompute the path while holding the segment lock — the rename runs under the same lock, so
         /// this serializes against it and observes the final name — and retry once. If the path is
@@ -389,7 +393,10 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
             current_path = file_segment.getPath();
         }
         if (current_path == path)
+        {
+            e.recordToSystemErrors();
             throw;
+        }
 
         path = current_path;
         info.cache_file_reader = open_cache_file(path);
@@ -1270,6 +1277,7 @@ bool CachedOnDiskReadBufferFromFile::writeCache(
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         file_segment.write(data, size, offset);
     }
     catch (ErrnoException & e)
@@ -1291,6 +1299,11 @@ bool CachedOnDiskReadBufferFromFile::writeCache(
             "Filesystem cache disk IO error (errno {}): {}. "
             "Consider setting skip_cache_on_disk_failure=true in cache config.",
             code, e.displayText());
+    }
+    catch (Exception & e)
+    {
+        e.recordToSystemErrors();
+        throw;
     }
 
     watch.stop();

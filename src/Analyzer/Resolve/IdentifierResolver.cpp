@@ -32,6 +32,7 @@
 #include <Analyzer/Resolve/TypoCorrection.h>
 
 #include <Core/Settings.h>
+#include <Common/Exception.h>
 #include <fmt/ranges.h>
 #include <Core/Joins.h>
 #include <base/scope_guard.h>
@@ -316,9 +317,10 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         /// synchronization to make sure we see all of the data (e.g. if refresh happened on another replica).
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(storage_id, context);
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             /// `EXCHANGE TABLES` + `DROP` during refresh can race with this resolution:
             /// `resolveStorageID` above stamps the original UUID onto `storage_id`, then the
@@ -335,7 +337,10 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
             /// the retry loop and the `SYSTEM SYNC REPLICA` call that this path needs.
             if ((e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::TABLE_UUID_MISMATCH)
                 || !storage_id.hasUUID())
+            {
+                e.recordToSystemErrors();
                 throw;
+            }
             StorageID name_only_id(storage_id.database_name, storage_id.table_name);
             std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(name_only_id, context);
         }

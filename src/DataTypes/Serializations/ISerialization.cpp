@@ -590,15 +590,26 @@ bool tryDeserializeText(const F deserialize, DB::IColumn & column)
     size_t prev_size = column.size();
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         deserialize(column);
         return true;
+    }
+    catch (Exception & e)
+    {
+        if (column.size() > prev_size)
+            column.popBack(column.size() - prev_size);
+        if (!isParseError(e.code()))
+        {
+            e.recordToSystemErrors();
+            throw;
+        }
+        return false;
     }
     catch (...) // Ok: tryDeserializeText is a try-pattern
     {
         if (column.size() > prev_size)
             column.popBack(column.size() - prev_size);
-        rethrowIfNotParseError();
-        return false;
+        throw;
     }
 }
 

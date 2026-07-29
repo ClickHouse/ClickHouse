@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <Formats/ParseError.h>
 #include <base/cgroupsv2.h>
 #include <base/getMemoryAmount.h>
 #include <Common/Jemalloc.h>
@@ -18,6 +19,7 @@
 #include <fmt/ranges.h>
 
 #include <filesystem>
+#include <exception>
 #include <optional>
 
 #include <unistd.h>
@@ -37,12 +39,43 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int FILE_DOESNT_EXIST;
 }
 
 #if defined(OS_LINUX)
 namespace
 {
+
+bool isExpectedMemoryMetricError(int code)
+{
+    return code == ErrorCodes::CANNOT_OPEN_FILE
+        || code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
+        || code == ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR
+        || code == ErrorCodes::CANNOT_SEEK_THROUGH_FILE
+        || code == ErrorCodes::FILE_DOESNT_EXIST
+        || isParseError(code);
+}
+
+void recordUnexpectedMemoryMetricException(std::exception_ptr exception)
+{
+    try
+    {
+        std::rethrow_exception(exception);
+    }
+    catch (Exception & e)
+    {
+        if (!isExpectedMemoryMetricError(e.code()))
+            e.recordToSystemErrors(/* force */ true);
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        /// Ok: Non-DB exceptions never affect system error counters.
+    }
+}
 
 /// Format is
 ///   kernel 5
@@ -373,6 +406,7 @@ MemoryWorker::MemoryWorker(
 #if defined(OS_LINUX)
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             static constexpr uint64_t cgroups_memory_usage_tick_ms{50};
 
             const auto [cgroup_path, version] = ICgroupsReader::getCgroupsPath();
@@ -416,6 +450,7 @@ MemoryWorker::MemoryWorker(
                             level.stat_path = stat_path.string();
                         try
                         {
+                            Exception::SuppressErrorCodesScope suppress_open_error_codes;
                             level.max_buf = std::make_unique<ReadBufferFromFile>(level.max_path);
                             level.current_buf = std::make_unique<ReadBufferFromFile>(level.current_path);
                             if (!level.stat_path.empty())
@@ -423,6 +458,7 @@ MemoryWorker::MemoryWorker(
                         }
                         catch (...)
                         {
+                            recordUnexpectedMemoryMetricException(std::current_exception());
                             /// Keep the level (with its paths) but leave the buffers null:
                             /// `readAvailableForDynamicLimit` retries the open on each tick and
                             /// fails the tick closed until it succeeds, instead of silently
@@ -449,10 +485,12 @@ MemoryWorker::MemoryWorker(
                     /// so `current_path` is left empty.
                     try
                     {
+                        Exception::SuppressErrorCodesScope suppress_open_error_codes;
                         level.max_buf = std::make_unique<ReadBufferFromFile>(level.max_path);
                     }
                     catch (...)
                     {
+                        recordUnexpectedMemoryMetricException(std::current_exception());
                         /// Keep the level for a later reopen attempt; see the v2 branch above.
                         level.max_buf.reset();
                         tryLogCurrentException(log, "Cannot open cgroup memory limit file");
@@ -465,6 +503,7 @@ MemoryWorker::MemoryWorker(
         }
         catch (...)
         {
+            recordUnexpectedMemoryMetricException(std::current_exception());
             tryLogCurrentException(log, "Cannot use cgroups reader");
             /// Fail closed: the hierarchy walk above may have already assigned `cgroups_reader`
             /// and pushed some (but not all) ancestor levels before throwing. Leaving that
@@ -674,6 +713,7 @@ std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit()
         {
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 /// Lazily (re)open files that were never opened or failed to open at
                 /// construction, and reopen any descriptor that became unusable after a
                 /// previous read failure. A persistent open failure keeps throwing here and
@@ -736,6 +776,7 @@ std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit()
             }
             catch (...)
             {
+                recordUnexpectedMemoryMetricException(std::current_exception());
                 any_read_failure = true;
                 /// Drop the (possibly corrupt) descriptors so the next tick reopens cleanly.
                 level.max_buf.reset();
@@ -776,6 +817,7 @@ std::optional<uint64_t> MemoryWorker::readSystemAvailableMemory()
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         if (!meminfo_buf)
             meminfo_buf = std::make_unique<ReadBufferFromFile>(std::string{path});
         meminfo_buf->rewind();
@@ -801,6 +843,7 @@ std::optional<uint64_t> MemoryWorker::readSystemAvailableMemory()
     }
     catch (...)
     {
+        recordUnexpectedMemoryMetricException(std::current_exception());
         if (!std::exchange(meminfo_warnings_printed, true))
             tryLogCurrentException(log, fmt::format("Cannot read '{}'", path));
         /// Reopen on next attempt in case the descriptor became unusable.
@@ -844,7 +887,17 @@ void MemoryWorker::updateResidentMemoryThread()
 
             Stopwatch total_watch;
 
-            Int64 resident = getMemoryUsage(first_run);
+            Int64 resident = 0;
+            try
+            {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
+                resident = getMemoryUsage(first_run);
+            }
+            catch (...)
+            {
+                recordUnexpectedMemoryMetricException(std::current_exception());
+                throw;
+            }
 
             /// Speculatively reserve growth headroom on top of the observed RSS.
             /// `resident - prev_resident` is how much RSS actually grew during the last tick;

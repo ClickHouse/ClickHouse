@@ -47,6 +47,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CHECKSUM_DOESNT_MATCH;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int CORRUPTED_DATA;
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int NOT_IMPLEMENTED;
@@ -646,18 +648,38 @@ public:
     }
 
     /// start_log_index -- all entries with index < start_log_index will be skipped, but accounted into total_entries_read_from_log
-    ChangelogReadResult readChangelog(LogEntryStorage & entry_storage, uint64_t start_log_index, LoggerPtr log)
+    ChangelogReadResult readChangelog(
+        LogEntryStorage & entry_storage, uint64_t start_log_index, LoggerPtr log, bool allow_torn_tail)
     {
         ChangelogReadResult result{};
         result.compressed_log = compression_method != CompressionMethod::None;
         const auto & filepath = changelog_description->path;
         try
         {
-            while (!read_buf->eof())
+            while (true)
             {
+                bool eof = false;
+                if (allow_torn_tail)
+                {
+                    Exception::SuppressErrorCodesScope suppress_error_codes;
+                    eof = read_buf->eof();
+                }
+                else
+                    eof = read_buf->eof();
+
+                if (eof)
+                    break;
+
                 result.last_position = read_buf->count();
 
-                auto record = readChangelogRecord(*read_buf, filepath);
+                auto record = [&]
+                {
+                    if (!allow_torn_tail)
+                        return readChangelogRecord(*read_buf, filepath);
+
+                    Exception::SuppressErrorCodesScope suppress_error_codes;
+                    return readChangelogRecord(*read_buf, filepath);
+                }();
 
                 /// Check for duplicated changelog ids
                 if (entry_storage.contains(record.header.index))
@@ -689,10 +711,18 @@ public:
                     LOG_TRACE(log, "Reading changelog from path {}, entries {}", filepath, result.total_entries_read_from_log);
             }
         }
-        catch (const Exception & ex)
+        catch (Exception & ex)
         {
+            const bool expected_torn_tail = allow_torn_tail
+                && (ex.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF || ex.code() == ErrorCodes::CANNOT_READ_ALL_DATA);
             if (ex.code() == ErrorCodes::UNKNOWN_FORMAT_VERSION)
+            {
+                ex.recordToSystemErrors();
                 throw;
+            }
+
+            if (!expected_torn_tail)
+                ex.recordToSystemErrors(/* force */ true);
 
             result.error = true;
             LOG_WARNING(log, "Cannot completely read changelog on path {}, error: {}", filepath, ex.message());
@@ -1722,7 +1752,8 @@ ChangelogFileDescriptionPtr Changelog::getChangelogFileDescription(const std::fi
 void Changelog::readChangelog(ChangelogFileDescriptionPtr changelog_description, LogEntryStorage & entry_storage)
 {
     ChangelogReader reader(changelog_description);
-    reader.readChangelog(entry_storage, changelog_description->from_log_index, getLogger("Changelog"));
+    reader.readChangelog(
+        entry_storage, changelog_description->from_log_index, getLogger("Changelog"), /*allow_torn_tail=*/false);
 }
 
 void Changelog::spliceChangelog(ChangelogFileDescriptionPtr source_changelog, ChangelogFileDescriptionPtr destination_changelog)
@@ -1972,7 +2003,11 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
             }
 
             ChangelogReader reader(changelog_description_ptr);
-            auto log_read_result = reader.readChangelog(entry_storage, start_to_read_from, log);
+            auto log_read_result = reader.readChangelog(
+                entry_storage,
+                start_to_read_from,
+                log,
+                /*allow_torn_tail=*/changelog_start_index == existing_changelogs.rbegin()->first);
 
             /// We didn't find the first required log in this changelog so we move to the next changelog
             /// This can happen in case we failed to rename changelog to a name with correct first and last log index
@@ -2172,12 +2207,18 @@ void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
         {
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 disk->moveFile(path.generic_string(), new_path.generic_string());
             }
-            catch (const DB::Exception & e)
+            catch (DB::Exception & e)
             {
                 if (e.code() == DB::ErrorCodes::NOT_IMPLEMENTED)
                     moveChangelogBetweenDisks(changelog_disk, changelog_description, disk, new_path, keeper_context);
+                else
+                {
+                    e.recordToSystemErrors();
+                    throw;
+                }
             }
         }
         else

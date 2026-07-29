@@ -202,6 +202,7 @@ void LocalConnection::sendQuery(
 
     state->query_id = query_id;
     state->query = query;
+    state->suppress_error_codes = Exception::isErrorCodeSuppressionActive();
     state->query_scope_holder = QueryScope::create(query_context);
     state->stage = QueryProcessingStage::Enum(stage);
     state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
@@ -301,7 +302,8 @@ void LocalConnection::sendQuery(
         }
 
         state->input_pipeline = std::make_unique<QueryPipeline>(std::move(pipe));
-        state->input_pipeline_executor = std::make_unique<PullingAsyncPipelineExecutor>(*state->input_pipeline);
+        state->input_pipeline_executor = std::make_unique<PullingAsyncPipelineExecutor>(
+            *state->input_pipeline, state->suppress_error_codes);
 
     });
     query_context->setInputBlocksReaderCallback([this] (ContextPtr context) -> Block
@@ -344,7 +346,7 @@ void LocalConnection::sendQuery(
         else if (state->io.pipeline.pulling())
         {
             state->block = state->io.pipeline.getHeader();
-            state->executor = std::make_unique<PullingAsyncPipelineExecutor>(state->io.pipeline);
+            state->executor = std::make_unique<PullingAsyncPipelineExecutor>(state->io.pipeline, state->suppress_error_codes);
             state->io.pipeline.setConcurrencyControl(false);
         }
         else if (state->io.pipeline.completed())

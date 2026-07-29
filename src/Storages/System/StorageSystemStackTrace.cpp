@@ -20,6 +20,7 @@
 #include <IO/ReadHelpers.h>
 #include <Common/PipeFDs.h>
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 #include <Common/ThreadStatus.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/logger_useful.h>
@@ -249,15 +250,17 @@ ThreadIdToName getFilteredThreadNames(const ActionsDAG::Node * predicate, Contex
 
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             ReadBufferFromFile comm(fmt::format("/proc/self/task/{}/comm", tid), comm_buf_size);
             readEscapedStringUntilEOL(thread_name, comm);
             comm.close();
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             /// Ignore TOCTOU error
             if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
                 continue;
+            e.recordToSystemErrors();
             throw;
         }
 
@@ -302,6 +305,7 @@ bool isSignalBlocked(UInt64 tid, int signal)
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         ReadBufferFromFile status(fmt::format("/proc/{}/status", tid));
         while (!status.eof())
         {
@@ -321,11 +325,14 @@ bool isSignalBlocked(UInt64 tid, int signal)
         if (parseHexNumber(line, sig_blk))
             return sig_blk & (1ULL << (signal - 1));
     }
-    catch (const Exception & e)
+    catch (Exception & e)
     {
         /// Ignore TOCTOU error
         if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+        {
+            e.recordToSystemErrors();
             throw;
+        }
     }
 
     return false;

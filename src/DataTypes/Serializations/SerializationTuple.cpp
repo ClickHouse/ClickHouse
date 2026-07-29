@@ -13,6 +13,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -116,6 +118,10 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
 
     try
     {
+        std::optional<Exception::SuppressErrorCodesScope> suppress_error_codes;
+        if constexpr (!throw_exception)
+            suppress_error_codes.emplace();
+
         if (!impl())
         {
             restore_elements();
@@ -142,16 +148,30 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
             }
         }
     }
-    catch (...)
+    catch (Exception & e)
     {
         restore_elements();
         if constexpr (throw_exception)
+        {
             throw;
-        /// Only a genuine parse failure means "this value did not parse"; other errors
-        /// (e.g. MEMORY_LIMIT_EXCEEDED) must propagate instead of being reported as a
-        /// failed parse and silently turned into a default/skip.
-        rethrowIfNotParseError();
-        return ReturnType(false);
+        }
+        else
+        {
+            /// Only a genuine parse failure means "this value did not parse"; other errors
+            /// (e.g. MEMORY_LIMIT_EXCEEDED) must propagate instead of being reported as a
+            /// failed parse and silently turned into a default/skip.
+            if (!isParseError(e.code()))
+            {
+                e.recordToSystemErrors();
+                throw;
+            }
+            return ReturnType(false);
+        }
+    }
+    catch (...)
+    {
+        restore_elements();
+        throw;
     }
 
     return ReturnType(true);

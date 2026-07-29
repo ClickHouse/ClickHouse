@@ -154,6 +154,7 @@ bool JSONCompactEachRowFormatReader::parseFieldDelimiterWithDiagnosticInfo(Write
 {
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         JSONUtils::skipComma(*in);
     }
     catch (const DB::Exception &)

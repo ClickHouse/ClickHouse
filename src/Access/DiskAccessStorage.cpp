@@ -253,6 +253,7 @@ bool DiskAccessStorage::readLists()
 
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             for (auto & [id, name] : readListFile(file_path))
                 ids_entities.emplace_back(id, std::make_shared<EntityOnDisk>(std::move(name), type));
         }
@@ -617,6 +618,7 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
             /// Remove conflicting entity <old_id>.sql (same name and type, different id).
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 deleteAccessEntityOnDisk(*old_id_to_delete);
             }
             catch (...)

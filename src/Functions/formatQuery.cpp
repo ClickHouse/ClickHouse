@@ -25,6 +25,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int SYNTAX_ERROR;
 }
 
 namespace
@@ -120,7 +121,22 @@ private:
 
             try
             {
-                ast = parseQuery(parser, begin, end, /*query_description*/ {}, max_query_size, max_parser_depth, max_parser_backtracks);
+                if (error_handling == ErrorHandling::Null)
+                {
+                    Exception::SuppressErrorCodesScope suppress_error_codes;
+                    try
+                    {
+                        ast = parseQuery(parser, begin, end, /*query_description*/ {}, max_query_size, max_parser_depth, max_parser_backtracks);
+                    }
+                    catch (Exception & e)
+                    {
+                        if (e.code() != ErrorCodes::SYNTAX_ERROR)
+                            e.recordToSystemErrors(/* force */ true);
+                        throw;
+                    }
+                }
+                else
+                    ast = parseQuery(parser, begin, end, /*query_description*/ {}, max_query_size, max_parser_depth, max_parser_backtracks);
             }
             catch (...)
             {

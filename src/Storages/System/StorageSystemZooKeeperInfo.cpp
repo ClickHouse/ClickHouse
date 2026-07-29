@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
+#include <Common/Exception.h>
 #include <Storages/System/StorageSystemZooKeeperInfo.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Poco/NumberParser.h>
@@ -411,6 +412,7 @@ std::expected<String,String> StorageSystemZooKeeperInfo::sendFourLetterCommand(c
     String response;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         socket = Poco::Net::StreamSocket();
         socket.connect(address);
         socket.setNoDelay(true);

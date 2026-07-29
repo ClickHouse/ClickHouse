@@ -16,6 +16,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_ACCESS_TYPE;
+}
+
 namespace
 {
     bool parseParameterRegExp(IParser::Pos & pos, Expected & expected, String & parameter_regexp)
@@ -96,10 +101,16 @@ bool parseAccessFlags(IParser::Pos & pos, Expected & expected, AccessFlags & acc
 
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             access_flags = AccessFlags{str};
         }
-        catch (const Exception &)
+        catch (Exception & e)
         {
+            if (e.code() != ErrorCodes::UNKNOWN_ACCESS_TYPE)
+            {
+                e.recordToSystemErrors();
+                throw;
+            }
             return false;
         }
 

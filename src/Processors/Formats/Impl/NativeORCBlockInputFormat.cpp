@@ -456,6 +456,7 @@ convertFieldToORCLiteral(const orc::Type & orc_type, const Field & field, DataTy
 {
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         /// We always fallback to return null if possible CH type hint not consistent with ORC type
         switch (orc_type.getKind())
         {

@@ -14,6 +14,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnDefault.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -62,6 +63,7 @@ void StorageSystemKeeperChangelogs::fillData(MutableColumns & res_columns, Conte
         UInt32 modification_time = 0;
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             if (entry.disk->existsFile(entry.path))
             {
                 size_bytes = entry.disk->getFileSize(entry.path);

@@ -881,9 +881,10 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
 
     try
     {
+        DB::Exception::SuppressErrorCodesScope suppress_error_codes;
         return create_buffer(false);
     }
-    catch (const DB::HTTPException & e)
+    catch (DB::HTTPException & e)
     {
         const auto status = e.getHTTPStatus();
         if (update_token_if_expired &&
@@ -892,6 +893,12 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
         {
             return create_buffer(true);
         }
+        e.recordToSystemErrors();
+        throw;
+    }
+    catch (DB::Exception & e)
+    {
+        e.recordToSystemErrors();
         throw;
     }
 }
@@ -1058,7 +1065,11 @@ RestCatalog::Namespaces RestCatalog::listChildNamespaces(const std::string & bas
             if (!page_token.empty())
                 params.push_back({"pageToken", page_token});
 
-            auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / NAMESPACES_ENDPOINT, params);
+            DB::ReadWriteBufferFromHTTPPtr buf;
+            {
+                DB::Exception::SuppressErrorCodesScope suppress_error_codes;
+                buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / NAMESPACES_ENDPOINT, params);
+            }
             String next_page_token;
             auto page_namespaces = parseNamespaces(*buf, base_namespace, next_page_token);
             LOG_DEBUG(
@@ -1093,7 +1104,7 @@ RestCatalog::Namespaces RestCatalog::listChildNamespaces(const std::string & bas
             "Received error while fetching list of namespaces from iceberg catalog `{}`. ",
             warehouse);
 
-        if (e.code() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
             message += "Namespace provided in the `parent` query parameter is not found. ";
 
         message += fmt::format(
@@ -1101,6 +1112,11 @@ RestCatalog::Namespaces RestCatalog::listChildNamespaces(const std::string & bas
             e.code(), e.getHTTPStatus(), e.displayText());
 
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "{}", message);
+    }
+    catch (DB::Exception & e)
+    {
+        e.recordToSystemErrors();
+        throw;
     }
 }
 
@@ -1306,12 +1322,22 @@ bool RestCatalog::tryGetTableMetadata(
 {
     try
     {
+        DB::Exception::SuppressErrorCodesScope suppress_error_codes;
         return getTableMetadataImpl(namespace_name, table_name, result);
     }
-    catch (const DB::Exception & ex)
+    catch (DB::HTTPException & ex)
     {
         LOG_DEBUG(log, "tryGetTableMetadata response: {}", ex.what());
-        return false;
+        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+            return false;
+        ex.recordToSystemErrors();
+        throw;
+    }
+    catch (DB::Exception & ex)
+    {
+        LOG_DEBUG(log, "tryGetTableMetadata response: {}", ex.what());
+        ex.recordToSystemErrors();
+        throw;
     }
 }
 
@@ -1482,7 +1508,19 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
 
     try
     {
+        DB::Exception::SuppressErrorCodesScope suppress_error_codes;
         sendRequest(*state_snapshot, endpoint, request_body);
+    }
+    catch (DB::HTTPException & ex)
+    {
+        if (ex.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_CONFLICT)
+            ex.recordToSystemErrors();
+        DB::tryLogCurrentException(log);
+    }
+    catch (DB::Exception & e)
+    {
+        e.recordToSystemErrors();
+        DB::tryLogCurrentException(log);
     }
     catch (...)
     {
@@ -1525,11 +1563,17 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 
     try
     {
+        DB::Exception::SuppressErrorCodesScope suppress_error_codes;
         sendRequest(*state_snapshot, endpoint, request_body);
     }
     catch (const DB::HTTPException & ex)
     {
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Failed to create table {}", ex.displayText());
+    }
+    catch (DB::Exception & e)
+    {
+        e.recordToSystemErrors();
+        throw;
     }
 }
 
@@ -1591,12 +1635,21 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
 
     try
     {
+        DB::Exception::SuppressErrorCodesScope suppress_error_codes;
         sendRequest(*state_snapshot, endpoint, request_body);
     }
-    catch (const DB::HTTPException & ex)
+    catch (DB::HTTPException & ex)
     {
         LOG_TRACE(log, "Unsucceeded request {}", ex.what());
+        if (ex.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_CONFLICT
+            && ex.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_PRECONDITION_FAILED)
+            ex.recordToSystemErrors();
         return false;
+    }
+    catch (DB::Exception & e)
+    {
+        e.recordToSystemErrors();
+        throw;
     }
     return true;
 }
@@ -1654,12 +1707,21 @@ bool RestCatalog::updateSchema(
 
     try
     {
+        DB::Exception::SuppressErrorCodesScope suppress_error_codes;
         sendRequest(*state_snapshot, endpoint, request_body);
     }
-    catch (const DB::HTTPException & ex)
+    catch (DB::HTTPException & ex)
     {
         LOG_TRACE(log, "Unsucceeded request {}", ex.what());
+        if (ex.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_CONFLICT
+            && ex.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_PRECONDITION_FAILED)
+            ex.recordToSystemErrors();
         return false;
+    }
+    catch (DB::Exception & e)
+    {
+        e.recordToSystemErrors();
+        throw;
     }
     return true;
 }
@@ -1672,11 +1734,17 @@ void RestCatalog::dropTable(const String & namespace_name, const String & table_
     Poco::JSON::Object::Ptr request_body = nullptr;
     try
     {
+        DB::Exception::SuppressErrorCodesScope suppress_error_codes;
         sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true);
     }
     catch (const DB::HTTPException & ex)
     {
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Failed to drop table {}", ex.displayText());
+    }
+    catch (DB::Exception & e)
+    {
+        e.recordToSystemErrors();
+        throw;
     }
 }
 

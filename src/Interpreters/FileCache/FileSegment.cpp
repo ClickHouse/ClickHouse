@@ -13,6 +13,7 @@
 #include <base/hex.h>
 #include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/Exception.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
@@ -810,6 +811,7 @@ void FileSegment::renameToIncludeSizeInNameUnlocked(const FileSegmentGuard::Lock
     /// (`<offset>_<size>`) name, both of which the loader handles correctly.
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         fs::rename(old_path, new_path);
         size_in_filename = true;
 

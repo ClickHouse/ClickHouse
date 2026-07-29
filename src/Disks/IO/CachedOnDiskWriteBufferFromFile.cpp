@@ -245,6 +245,7 @@ FileSegmentRangeWriter::~FileSegmentRangeWriter()
 {
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         if (!finalized)
             finalize();
     }
@@ -498,6 +499,7 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool t
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         fiu_do_on(FailPoints::write_through_cache_fail,
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint: write through cache failed");
@@ -521,7 +523,21 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool t
         }
 
         if (throw_on_error)
+        {
+            e.recordToSystemErrors();
             throw;
+        }
+
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return;
+    }
+    catch (Exception & e)
+    {
+        if (throw_on_error)
+        {
+            e.recordToSystemErrors();
+            throw;
+        }
 
         tryLogCurrentException(__PRETTY_FUNCTION__);
         return;
@@ -553,6 +569,7 @@ void CachedOnDiskWriteBufferFromFile::finalizeImpl()
         {
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 cache_writer->finalize();
                 cache_writer.reset();
             }

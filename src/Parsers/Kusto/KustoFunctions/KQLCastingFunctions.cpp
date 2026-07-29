@@ -9,6 +9,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 bool ToBool::convertImpl(String & out, IParser::Pos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
@@ -127,11 +132,17 @@ bool ToTimeSpan::convertImpl(String & out, IParser::Pos & pos)
         ++pos;
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             auto result = kqlCallToExpression("time", {arg}, pos);
             out = fmt::format("{}", result);
         }
-        catch (const Exception &)
+        catch (Exception & e)
         {
+            if (e.code() != ErrorCodes::BAD_ARGUMENTS)
+            {
+                e.recordToSystemErrors();
+                throw;
+            }
             out = "NULL";
         }
     }

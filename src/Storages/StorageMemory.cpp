@@ -638,9 +638,10 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
         std::unique_ptr<ReadBufferFromFileBase> in = nullptr;
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             in = backup->readFile(index_file_path);
         }
-        catch (const DB::Exception & e)
+        catch (DB::Exception & e)
         {
             if (e.code() == ErrorCodes::BACKUP_ENTRY_NOT_FOUND && file_size == 0)
             {
@@ -651,7 +652,10 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
                 return;
             }
             else
+            {
+                e.recordToSystemErrors();
                 throw;
+            }
         }
         CompressedReadBuffer compressed_in{*in};
         index.read(compressed_in);

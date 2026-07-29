@@ -1961,6 +1961,7 @@ FunctionCast::WrapperType FunctionCast::createWrapperIfCanConvert(const DataType
 {
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         /// We can avoid try/catch here if we will implement check that 2 types can be cast, but it
         /// requires quite a lot of work. By now let's simply use try/catch.
         /// First, check that we can create a wrapper.

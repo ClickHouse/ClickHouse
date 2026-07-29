@@ -228,6 +228,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 }
                 else
                 {
+                    Exception::SuppressErrorCodesScope suppress_error_codes;
                     socket->connect(*it, connection_timeout);
                 }
 
@@ -239,8 +240,16 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             {
                 LOG_TRACE(log_wrapper.get(), "Failed to connect to {}:{}, address: {}, error: {}", host, port, it->toString(), e.displayText());
                 if (++it == addresses.end())
+                {
+                    e.recordToSystemErrors();
                     throw;
+                }
                 continue;
+            }
+            catch (Exception & e)
+            {
+                e.recordToSystemErrors();
+                throw;
             }
             catch (Poco::Net::NetException & e)
             {
@@ -795,6 +804,7 @@ bool Connection::ping(const ConnectionTimeouts & timeouts)
 {
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         TimeoutSetter timeout_setter(*socket, timeouts.sync_request_timeout, true);
 
         UInt64 pong = 0;

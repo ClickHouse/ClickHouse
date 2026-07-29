@@ -157,9 +157,10 @@ StoragePtr DatabaseHDFS::tryGetTable(const String & name, ContextPtr context_) c
 {
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         return getTableImpl(name, context_);
     }
-    catch (const Exception & e)
+    catch (Exception & e)
     {
         // Ignore exceptions thrown by TableFunctionHDFS, which indicate that there is no table
         if (e.code() == ErrorCodes::BAD_ARGUMENTS
@@ -170,8 +171,11 @@ StoragePtr DatabaseHDFS::tryGetTable(const String & name, ContextPtr context_) c
             || e.code() == ErrorCodes::HDFS_ERROR
             || e.code() == ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE)
         {
+            if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                e.recordToSystemErrors(/* force */ true);
             return nullptr;
         }
+        e.recordToSystemErrors();
         throw;
     }
     catch (const Poco::URISyntaxException &)

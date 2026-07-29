@@ -26,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int BAD_GET;
 }
 
 
@@ -324,14 +325,20 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             Field type_test = Settings::castValueUtil(name, true);
             if (type_test.getType() == Field::Types::Which::Bool)
                 node = make_intrusive<ASTLiteral>(Field(true));
             else
                 return false;
         }
-        catch (const Exception &)
+        catch (Exception & e)
         {
+            if (e.code() != ErrorCodes::BAD_GET)
+            {
+                e.recordToSystemErrors();
+                throw;
+            }
             return false;
         }
     }

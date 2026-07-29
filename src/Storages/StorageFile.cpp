@@ -507,6 +507,7 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             std::unique_ptr<ReadBufferFromFileBase> res;
             if (use_table_fd)
                 res = std::make_unique<MMapReadBufferFromFileDescriptor>(table_fd, 0);
@@ -520,6 +521,11 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
         {
             /// Fallback if mmap is not supported.
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMapFailed);
+        }
+        catch (Exception & e)
+        {
+            e.recordToSystemErrors();
+            throw;
         }
     }
 
@@ -1977,6 +1983,7 @@ Chunk StorageFileSource::generate()
         {
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 auto buckets_opt = input_format->getMatchedBuckets();
                 if (buckets_opt.has_value())
                 {

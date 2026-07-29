@@ -319,6 +319,7 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
     ASTPtr ast_storage;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         auto storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(TSA_SUPPRESS_WARNING_FOR_READ(database_name), table_name), getContext(), remote_database_name, table_name);
         ast_storage = replication_handler->getCreateNestedTableQuery(storage.get(), table_name);
         assert_cast<ASTCreateQuery *>(ast_storage.get())->uuid = table_uuid;

@@ -463,6 +463,7 @@ StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_cont
     auto virtuals = createVirtuals();
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         const auto & access = query_context->getAccess();
         if (auto first_table = traverseTablesUntil([access](auto && table)
         {
@@ -483,10 +484,13 @@ StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_cont
             }
         }
     }
-    catch (const Exception & e)
+    catch (Exception & e)
     {
         if (e.code() != ErrorCodes::UNKNOWN_DATABASE)
+        {
+            e.recordToSystemErrors();
             throw;
+        }
     }
 
     return std::make_shared<StorageInMemoryMetadata>(base_metadata->withVirtuals(std::move(virtuals)));
@@ -1819,12 +1823,14 @@ std::optional<IStorage::ColumnSizeByName> StorageMerge::tryGetColumnSizes() cons
 {
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         return getColumnSizes();
     }
-    catch (const Exception & e)
+    catch (Exception & e)
     {
         if (e.code() == ErrorCodes::UNKNOWN_DATABASE)
             return std::nullopt;
+        e.recordToSystemErrors();
         throw;
     }
 }

@@ -1602,6 +1602,7 @@ VectorWithMemoryTracking<char> RecordBatchDecoder::reachableTopLevelBuffers(
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         if (const auto * counts = batch.variadicBufferCounts())
         {
             for (Int64 c : *counts)

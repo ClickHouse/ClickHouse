@@ -432,6 +432,7 @@ namespace
 
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 /// We're just searching for dependencies here, it's not safe to execute subqueries now.
                 /// Use copy of the global_context and set current database, because expressions can contain currentDatabase() function.
                 ContextMutablePtr global_context_copy = Context::createCopy(global_context);
@@ -575,6 +576,7 @@ namespace
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             ParserSelectWithUnionQuery parser;
             String description = fmt::format("Query for ClickHouse dictionary {}.{}", backQuoteIfNeed(data.table_name.database), backQuoteIfNeed(data.table_name.table));
             String fixed_query = removeWhereConditionPlaceholder(query);
@@ -585,12 +587,20 @@ namespace
             DDLDependencyVisitor::Visitor visitor{data};
             visitor.visit(select);
         }
+        catch (Exception & e)
+        {
+            if (data.can_throw)
+            {
+                e.recordToSystemErrors();
+                throw;
+            }
+            tryLogCurrentException("DDLDependencyVisitor");
+        }
         catch (...)
         {
             if (data.can_throw)
                 throw;
-            else
-                tryLogCurrentException("DDLDependencyVisitor");
+            tryLogCurrentException("DDLDependencyVisitor");
         }
     }
 }

@@ -44,6 +44,7 @@ bool tryEstimateWithStatistics(
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             auto stats = part.data_part->loadStatistics();
             if (!stats.empty())
             {

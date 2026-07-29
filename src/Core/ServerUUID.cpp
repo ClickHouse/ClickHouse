@@ -13,7 +13,13 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+    extern const int CANNOT_PARSE_UUID;
+    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int CANNOT_CREATE_FILE;
+    extern const int FILE_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
 }
 
@@ -39,11 +45,25 @@ UUID loadServerUUID(const fs::path & server_uuid_file, Poco::Logger * log)
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             UUID uuid;
             ReadBufferFromFile in(server_uuid_file);
             readUUIDText(uuid, in);
             assertEOF(in);
             return uuid;
+        }
+        catch (Exception & e)
+        {
+            if (e.code() != ErrorCodes::CANNOT_OPEN_FILE
+                && e.code() != ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED
+                && e.code() != ErrorCodes::CANNOT_PARSE_UUID
+                && e.code() != ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR
+                && e.code() != ErrorCodes::CANNOT_SEEK_THROUGH_FILE
+                && e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                e.recordToSystemErrors(/* force */ true);
+            /// As for now it's ok to just overwrite it, because persistency in not essential.
+            LOG_ERROR(log, "Cannot read server UUID from file {}: {}. Will overwrite it",
+                      server_uuid_file.string(), getCurrentExceptionMessage(true));
         }
         catch (...)
         {

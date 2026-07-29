@@ -107,14 +107,18 @@ namespace
 
         if constexpr (std::is_same_v<Factory, FunctionFactory>)
         {
+            bool resolved = false;
+            UInt8 deterministic = 0;
+            UInt8 higher_order = 0;
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 auto resolver = factory.tryGet(name, context);
                 if (resolver)
                 {
-                    res_columns[14]->insert(resolver->isDeterministic() ? UInt8{1} : UInt8{0});
-                    res_columns[15]->insert(resolver->isHigherOrderFunction() ? UInt8{1} : UInt8{0});
-                    return;
+                    deterministic = resolver->isDeterministic() ? UInt8{1} : UInt8{0};
+                    higher_order = resolver->isHigherOrderFunction() ? UInt8{1} : UInt8{0};
+                    resolved = true;
                 }
             }
             catch (...)
@@ -124,6 +128,13 @@ namespace
                     "Cannot resolve function {} for introspection: {}",
                     name,
                     getCurrentExceptionMessage(/* with_stacktrace */ false));
+            }
+
+            if (resolved)
+            {
+                res_columns[14]->insert(deterministic);
+                res_columns[15]->insert(higher_order);
+                return;
             }
         }
         res_columns[14]->insertDefault();
@@ -193,14 +204,18 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         ASTPtr ast;
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             ast = user_defined_sql_functions_factory.get(function_name);
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             if (e.code() == ErrorCodes::UNKNOWN_FUNCTION)
                 tryLogCurrentException(getLogger("system.functions"), fmt::format("Function {} does not exist", function_name), LogsLevel::debug);
             else
+            {
+                e.recordToSystemErrors();
                 throw;
+            }
         }
         /// WASM functions are stored in the same SQL objects storage but have their own origin.
         /// They are emitted separately below; skip them here to avoid duplicates.

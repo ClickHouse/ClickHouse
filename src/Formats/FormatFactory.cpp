@@ -711,6 +711,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             file_size = getFileSizeFromReadBuffer(buf);
             parallel_read = file_size >= 2 * settings[Setting::max_download_buffer_size];
         }

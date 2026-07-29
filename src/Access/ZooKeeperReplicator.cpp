@@ -128,6 +128,7 @@ static void retryOnZooKeeperUserError(size_t attempts, Func && function)
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             function();
             return;
         }
@@ -136,7 +137,15 @@ static void retryOnZooKeeperUserError(size_t attempts, Func && function)
             if (Coordination::isUserError(keeper_exception.code) && attempts > 1)
                 attempts -= 1;
             else
+            {
+                keeper_exception.recordToSystemErrors();
                 throw;
+            }
+        }
+        catch (Exception & e)
+        {
+            e.recordToSystemErrors();
+            throw;
         }
     }
 }

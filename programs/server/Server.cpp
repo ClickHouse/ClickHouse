@@ -15,6 +15,7 @@
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
 #include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
@@ -843,6 +844,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
 #if defined(OS_LINUX)
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         const std::unordered_set<std::string> fast_clock_sources = {
             // ARM clock
             "arch_sys_counter",
@@ -878,6 +880,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         const char * filename = "/proc/sys/vm/overcommit_memory";
         if (readNumber(filename) == 2)
             server.context()->addOrUpdateWarningMessage(
@@ -890,6 +893,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
         if (readLine(filename).find("[always]") != std::string::npos)
             server.context()->addOrUpdateWarningMessage(
@@ -902,6 +906,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         const char * filename = "/proc/sys/kernel/pid_max";
         if (readNumber(filename) < 30000)
             server.context()->addOrUpdateWarningMessage(
@@ -914,6 +919,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         const char * filename = "/proc/sys/kernel/threads-max";
         if (readNumber(filename) < 30000)
             server.context()->addOrUpdateWarningMessage(
@@ -926,6 +932,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         const char * filename = "/proc/sys/kernel/task_delayacct";
         if (readNumber(filename) == 0)
             server.context()->addOrUpdateWarningMessage(
@@ -948,6 +955,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         /// Check if any mdraid arrays are currently being checked, repaired, or degraded.
         /// Resynchronization can significantly degrade disk I/O performance.
         /// A degraded array means one or more disks are missing or faulty.

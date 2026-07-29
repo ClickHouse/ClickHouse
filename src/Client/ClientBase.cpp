@@ -1173,6 +1173,7 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(tty_file_name, buf_size);
 
             /// It is possible that the terminal file has writeable permissions
@@ -1182,12 +1183,15 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
 
             return;
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             tty_buf.reset();
 
             if (e.code() != ErrorCodes::CANNOT_OPEN_FILE)
+            {
+                e.recordToSystemErrors();
                 throw;
+            }
 
             /// It is normal if file exists, indicated as writeable but still cannot be opened.
             /// Fallback to other options.
@@ -1466,6 +1470,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 connection->sendQuery(
                     connection_parameters.timeouts,
                     query,
@@ -1491,7 +1496,17 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                 throw;
             }
 
-            receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
+            SCOPE_EXIT({
+                if (server_exception)
+                    server_exception->recordToSystemErrors();
+                if (client_exception)
+                    client_exception->recordToSystemErrors();
+            });
+
+            {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
+                receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
+            }
 
             if (!out_file_if_truncated.empty())
             {
@@ -1503,7 +1518,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             break;
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             if (!out_file_if_truncated.empty())
                 cleanupTempFile(parsed_query, out_file);
@@ -1517,6 +1532,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             }
             else
             {
+                e.recordToSystemErrors();
                 throw;
             }
         }
@@ -3526,6 +3542,7 @@ void ClientBase::startKeystrokeInterceptorIfExists()
         progress_table_toggle_on = false;
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             keystroke_interceptor->startIntercept();
         }
         catch (const Exception &)
@@ -3542,6 +3559,7 @@ void ClientBase::stopKeystrokeInterceptorIfExists()
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             keystroke_interceptor->stopIntercept();
         }
         catch (...)
@@ -3593,6 +3611,7 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         std::string result;
 
         /// Send the query
@@ -4319,12 +4338,18 @@ void ClientBase::runInteractive()
                 if (should_create_parent_directories && history_file.has_parent_path())
                     fs::create_directories(history_file.parent_path());
 
-                FS::createFile(history_file);
+                {
+                    Exception::SuppressErrorCodesScope suppress_error_codes;
+                    FS::createFile(history_file);
+                }
             }
-            catch (const ErrnoException & e)
+            catch (ErrnoException & e)
             {
                 if (e.getErrno() != EEXIST)
+                {
+                    e.recordToSystemErrors();
                     error_stream << getCurrentExceptionMessage(false) << '\n';
+                }
             }
         }
 

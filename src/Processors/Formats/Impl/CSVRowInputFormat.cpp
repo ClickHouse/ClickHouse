@@ -9,6 +9,7 @@
 #include <Formats/verbosePrintString.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/ParseError.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Processors/Formats/Impl/CSVRowInputFormat.h>
@@ -300,6 +301,7 @@ bool CSVFormatReader::parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out)
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
         assertChar(delimiter, *buf);
     }
@@ -428,8 +430,10 @@ bool CSVFormatReader::readFieldOrDefault(DB::IColumn & column, const DB::DataTyp
         if (!field.empty() && !tmp_buf.eof())
             is_bad_value = true;
     }
-    catch (const Exception &)
+    catch (Exception & e)
     {
+        if (!isParseError(e.code()))
+            throw;
         is_bad_value = true;
     }
 

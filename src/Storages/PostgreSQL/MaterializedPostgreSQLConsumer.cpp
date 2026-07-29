@@ -77,7 +77,7 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
         {
             storages.emplace(table_name, StorageData(storage_info, log));
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             /// The structure of the PostgreSQL table might no longer match the structure of
             /// the nested ClickHouse table (for example, a column was added or dropped in
@@ -87,7 +87,10 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
             /// structure-mismatch error is handled this way; any other error is a real problem
             /// and must propagate.
             if (e.code() != ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR)
+            {
+                e.recordToSystemErrors();
                 throw;
+            }
 
             tryLogCurrentException(
                 log,
@@ -253,7 +256,7 @@ void MaterializedPostgreSQLConsumer::insertValue(StorageData & storage_data, con
 
         insertDefaultPostgreSQLValue(*column, *column_type_and_name.column);
     }
-    catch (const Exception & e)
+    catch (Exception & e)
     {
         /// insertPostgreSQLValue translates a foreign pqxx::conversion_error into a DB::Exception with
         /// BAD_ARGUMENTS, so a bad source value now surfaces here as that instead of the raw pqxx error.
@@ -261,7 +264,10 @@ void MaterializedPostgreSQLConsumer::insertValue(StorageData & storage_data, con
         /// keeps advancing. Letting it propagate would leave the WAL position unadvanced and cause the
         /// buffered row to be re-inserted on every retry (indefinite row duplication).
         if (e.code() != ErrorCodes::BAD_ARGUMENTS)
+        {
+            e.recordToSystemErrors();
             throw;
+        }
 
         LOG_ERROR(log, "Conversion failed while inserting PostgreSQL value {}, "
                   "will insert default value. Error: {}", value, e.message());
@@ -1007,11 +1013,12 @@ bool MaterializedPostgreSQLConsumer::consume()
                 /// LOG_DEBUG(log, "Current message: {}", (*row)[1]);
                 processReplicationMessage((*row)[1].c_str(), (*row)[1].size());
             }
-            catch (const Exception & e)
+            catch (Exception & e)
             {
                 if (e.code() == ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR)
                     continue;
 
+                e.recordToSystemErrors();
                 throw;
             }
         }

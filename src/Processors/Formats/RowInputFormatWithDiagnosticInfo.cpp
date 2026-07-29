@@ -126,6 +126,7 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         tryDeserializeField(type, column, file_column);
     }
     catch (...)

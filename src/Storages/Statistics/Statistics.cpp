@@ -61,6 +61,7 @@ std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value,
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         auto column = data_type->createColumn();
         column->insert(value);
         ColumnsWithTypeAndName arguments({ColumnWithTypeAndName(std::move(column), data_type, "stats_const")});

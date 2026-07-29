@@ -289,6 +289,7 @@ KeeperHandlingConsumer::createLocksInfoIfFree(const TopicPartition & partition_t
     keeper->createAncestors(lock_file_path);
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         using zkutil::EphemeralNodeHolder;
         LockedTopicPartitionInfo lock_info{
             EphemeralNodeHolder::create(lock_file_path, *keeper, replica_name),
@@ -307,7 +308,7 @@ KeeperHandlingConsumer::createLocksInfoIfFree(const TopicPartition & partition_t
 
         return lock_info;
     }
-    catch (const Coordination::Exception & e)
+    catch (Coordination::Exception & e)
     {
         if (e.code == Coordination::Error::ZNODEEXISTS)
         {
@@ -318,6 +319,12 @@ KeeperHandlingConsumer::createLocksInfoIfFree(const TopicPartition & partition_t
                 partition_to_lock.partition_id);
             return std::nullopt;
         }
+        e.recordToSystemErrors();
+        throw;
+    }
+    catch (Exception & e)
+    {
+        e.recordToSystemErrors();
         throw;
     }
 }

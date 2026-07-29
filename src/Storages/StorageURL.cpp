@@ -107,6 +107,8 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ACCESS_DENIED;
+    extern const int UNACCEPTABLE_URL;
 }
 
 static constexpr auto bad_arguments_error_message = "Storage URL requires 1-4 arguments: "
@@ -132,6 +134,23 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
 
 namespace
 {
+    void recordCurrentExceptionIfPolicy()
+    {
+        try
+        {
+            throw;
+        }
+        catch (Exception & e)
+        {
+            if (e.code() == ErrorCodes::ACCESS_DENIED || e.code() == ErrorCodes::UNACCEPTABLE_URL)
+                e.recordToSystemErrors(/* force */ true);
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+            /// Ok: Non-DB exceptions never affect system error counters.
+        }
+    }
+
     void checkExperimentalURLWildcardFromIndexPages(const ContextPtr & context)
     {
         if (context->getSettingsRef()[Setting::allow_experimental_url_wildcard_from_index_pages])
@@ -593,9 +612,10 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     bool delay_initialization)
 {
     String first_exception_message;
+    std::exception_ptr last_exception;
     ReadSettings read_settings = context_->getReadSettings();
 
-    size_t options = std::distance(option, end);
+    const size_t options = std::distance(option, end);
     std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> last_skipped_empty_res;
     for (; option != end; ++option)
     {
@@ -611,6 +631,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             auto res = BuilderRWBufferFromHTTP(request_uri)
                            .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                            .withMethod(http_method)
@@ -636,15 +657,11 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         }
         catch (...)
         {
-            if (options == 1)
-                throw;
-
+            recordCurrentExceptionIfPolicy();
+            last_exception = std::current_exception();
             if (first_exception_message.empty())
                 first_exception_message = getCurrentExceptionMessage(false);
-
             tryLogCurrentException(__PRETTY_FUNCTION__);
-
-            continue;
         }
     }
 
@@ -653,7 +670,27 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     if (last_skipped_empty_res.second)
         return last_skipped_empty_res;
 
-    throw Exception(ErrorCodes::NETWORK_ERROR, "All uri ({}) options are unreachable: {}", options, first_exception_message);
+    if (last_exception && options == 1)
+    {
+        try
+        {
+            std::rethrow_exception(last_exception);
+        }
+        catch (Exception & e)
+        {
+            e.recordToSystemErrors();
+            throw;
+        }
+        catch (...)
+        {
+            throw;
+        }
+    }
+
+    if (last_exception)
+        throw Exception(ErrorCodes::NETWORK_ERROR, "All uri ({}) options are unreachable: {}", options, first_exception_message);
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "At least one URL option is required");
 }
 
 void StorageURLSource::addNumRowsToCache(const String & uri, size_t num_rows)
@@ -2390,6 +2427,7 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
     StorageURL::Configuration configuration;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         configuration = StorageURL::getConfiguration(probe_args, context, &args.table_id);
     }
     catch (...) // NOLINT(bugprone-empty-catch) // Ok: not a URL-engine argument shape we can classify; the plain URL path below reports any errors.

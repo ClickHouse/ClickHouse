@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
 #include <Common/likePatternToRegexp.h>
 
 #include <IO/ReadBufferFromString.h>
@@ -2928,6 +2929,7 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         {
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 AggregateFunctionProperties properties;
                 auto new_func = AggregateFunctionFactory::instance().get(
                     new_name, NullsAction::EMPTY, new_arg_types, type_aggr->getParameters(), properties);
@@ -3106,6 +3108,7 @@ DataTypePtr QueryFuzzer::getRandomType()
             }
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 AggregateFunctionProperties properties;
                 auto func = AggregateFunctionFactory::instance().get(name, NullsAction::EMPTY, arg_types, {}, properties);
                 return std::make_shared<DataTypeAggregateFunction>(func, arg_types, Array{});

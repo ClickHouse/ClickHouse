@@ -156,15 +156,17 @@ void CompressionCodecFactory::fillCodecDescriptions(MutableColumns & res_columns
             CompressionCodecPtr tmp;
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 tmp = it.second({}, nullptr);
             }
-            catch (const Exception & e)
+            catch (Exception & e)
             {
                 /// Ok: the encryption codecs register a creator that throws `OPENSSL_ERROR` when the server is built
                 /// without SSL support. They cannot expose a description, so skip them rather than failing the whole
                 /// `system.codecs` query. Any other failure is unexpected and must propagate.
                 if (e.code() == ErrorCodes::OPENSSL_ERROR)
                     return;
+                e.recordToSystemErrors();
                 throw;
             }
 
@@ -189,15 +191,17 @@ VectorWithMemoryTracking<std::pair<String, Documentation>> CompressionCodecFacto
         CompressionCodecPtr codec;
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             codec = creator({}, nullptr);
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             /// Ok: the encryption codecs register a creator that throws `OPENSSL_ERROR` when the server is built
             /// without SSL support. They have no documentation to expose, so skip them rather than failing the whole
             /// `system.documentation` query. Any other failure is unexpected and must propagate.
             if (e.code() == ErrorCodes::OPENSSL_ERROR)
                 continue;
+            e.recordToSystemErrors();
             throw;
         }
 

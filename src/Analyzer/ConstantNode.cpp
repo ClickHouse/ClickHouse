@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Common/assert_cast.h>
+#include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <DataTypes/FieldToDataType.h>
 #include <Common/SipHash.h>
@@ -228,6 +229,7 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             auto field_type = applyVisitor(FieldToDataType(), getValue());
             return requiresCastCall(field_type, getResultType());
         }

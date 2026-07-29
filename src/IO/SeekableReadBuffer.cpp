@@ -9,6 +9,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_READ_FROM_ISTREAM;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -76,7 +77,14 @@ std::optional<off_t> SeekableReadBuffer::tryGetPosition()
 {
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         return getPosition();
+    }
+    catch (Exception & e)
+    {
+        if (e.code() != ErrorCodes::UNSUPPORTED_METHOD)
+            e.recordToSystemErrors(/* force */ true);
+        return std::nullopt;
     }
     catch (...) // Ok: tryGetPosition is a try-pattern
     {

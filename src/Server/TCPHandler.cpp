@@ -2145,15 +2145,19 @@ void TCPHandler::receiveHello()
             session->setClientCertificate(peer_certificate);
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 session->authenticate(
                     SSLCertificateCredentials{user, peer_certificate.extractAllSubjects()},
                     getClientAddress(client_info), socket().peerAddress());
                 return;
             }
-            catch (const Exception & e)
+            catch (Exception & e)
             {
                 if (e.code() != DB::ErrorCodes::AUTHENTICATION_FAILED)
+                {
+                    e.recordToSystemErrors();
                     throw;
+                }
 
                 tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication", LogsLevel::information);
                 /// ^^ Log at debug level instead of default error level as authentication failures are not an unusual event.

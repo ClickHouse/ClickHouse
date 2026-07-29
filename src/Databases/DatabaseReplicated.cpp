@@ -268,6 +268,7 @@ void DatabaseReplicated::getStatus(ReplicatedStatus & response, const bool with_
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         std::vector<std::string> paths;
 
         paths.push_back(zookeeper_path + "/max_log_ptr");
@@ -296,6 +297,11 @@ void DatabaseReplicated::getStatus(ReplicatedStatus & response, const bool with_
     catch (const Coordination::Exception &)
     {
         response.zookeeper_exception = getCurrentExceptionMessage(false);
+    }
+    catch (Exception & e)
+    {
+        e.recordToSystemErrors();
+        throw;
     }
 }
 
@@ -329,6 +335,7 @@ ClusterPtr DatabaseReplicated::tryGetCluster() const
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         /// A quick fix for stateless tests with DatabaseReplicated. Its ZK
         /// node can be destroyed at any time. If another test lists
         /// system.clusters to get client command line suggestions, it will
@@ -337,7 +344,7 @@ ClusterPtr DatabaseReplicated::tryGetCluster() const
         /// failing test is `01526_client_start_and_exit`.
         cluster = getClusterImpl();
     }
-    catch (...)
+    catch (Exception & e)
     {
         /// Coordination errors (`KEEPER_EXCEPTION`), connection failures
         /// (`ALL_CONNECTION_TRIES_FAILED`), and the "no active replicas"
@@ -357,12 +364,20 @@ ClusterPtr DatabaseReplicated::tryGetCluster() const
         /// bugs in `getClusterImpl`, ...) and stays at the default
         /// `error` level so operators notice it.
         const auto code = getCurrentExceptionCode();
+        if (code != ErrorCodes::KEEPER_EXCEPTION
+            && code != ErrorCodes::ALL_CONNECTION_TRIES_FAILED
+            && code != ErrorCodes::NO_ACTIVE_REPLICAS)
+            e.recordToSystemErrors(/* force */ true);
         if (code == ErrorCodes::KEEPER_EXCEPTION
             || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED
             || code == ErrorCodes::NO_ACTIVE_REPLICAS)
             tryLogCurrentException(log, "Failed to get cluster info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
         else
             tryLogCurrentException(log);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
     }
     return cluster;
 }
@@ -382,9 +397,10 @@ ClusterPtr DatabaseReplicated::tryGetAllGroupsCluster() const
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         cluster_all_groups = getClusterImpl(/*all_groups*/ true);
     }
-    catch (...)
+    catch (Exception & e)
     {
         /// See the note in `tryGetCluster` above: downgrade the expected
         /// coordination/connection failures and the "no active replicas"
@@ -392,12 +408,20 @@ ClusterPtr DatabaseReplicated::tryGetAllGroupsCluster() const
         /// `information`, leave anything else at the default `error`
         /// level so unexpected problems are visible.
         const auto code = getCurrentExceptionCode();
+        if (code != ErrorCodes::KEEPER_EXCEPTION
+            && code != ErrorCodes::ALL_CONNECTION_TRIES_FAILED
+            && code != ErrorCodes::NO_ACTIVE_REPLICAS)
+            e.recordToSystemErrors(/* force */ true);
         if (code == ErrorCodes::KEEPER_EXCEPTION
             || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED
             || code == ErrorCodes::NO_ACTIVE_REPLICAS)
             tryLogCurrentException(log, "Failed to get all-groups cluster info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
         else
             tryLogCurrentException(log);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
     }
     return cluster_all_groups;
 }
@@ -558,6 +582,7 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         auto current_zookeeper = getZooKeeper();
         auto zk_res = current_zookeeper->tryGet(paths);
 
@@ -605,7 +630,7 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
 
         return ReplicasInfo{.replicas = replicas_info, .replicas_belong_to_shared_catalog = false};
     }
-    catch (...)
+    catch (Exception & e)
     {
         /// Same rationale as in `tryGetCluster` above: the caller (e.g.
         /// `system.clusters`) treats an empty `ReplicasInfo` as "skip the
@@ -616,10 +641,17 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
         /// default `send_logs_level = warning`, but keep anything
         /// unexpected at the default `error` level.
         const auto code = getCurrentExceptionCode();
+        if (code != ErrorCodes::KEEPER_EXCEPTION && code != ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
+            e.recordToSystemErrors(/* force */ true);
         if (code == ErrorCodes::KEEPER_EXCEPTION || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
             tryLogCurrentException(log, "Failed to get replicas info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
         else
             tryLogCurrentException(log);
+        return {};
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
         return {};
     }
 }
@@ -1239,6 +1271,7 @@ void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStora
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             args[0] = evaluateConstantExpressionAsLiteral(args_ref[0]->clone(), query_context);
             args[1] = evaluateConstantExpressionAsLiteral(args_ref[1]->clone(), query_context);
         }
@@ -2368,14 +2401,23 @@ void DatabaseReplicated::restoreDatabaseInKeeper(ContextPtr)
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         restoreDatabaseNodesInKeeper(zookeeper);
     }
-    catch (const zkutil::KeeperMultiException & e)
+    catch (zkutil::KeeperMultiException & e)
     {
         if (Coordination::Error::ZNODEEXISTS != e.code)
+        {
+            e.recordToSystemErrors();
             throw;
+        }
 
         LOG_INFO(log, "Metadata was restored previously: {}.", e.what());
+    }
+    catch (Exception & e)
+    {
+        e.recordToSystemErrors();
+        throw;
     }
 
     initDatabaseReplica(zookeeper, LoadingStrictnessLevel::CREATE);
@@ -2928,6 +2970,7 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
 
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             /// Metadata alter should go through database
             for (const auto & child : alter->command_list->children)
                 if (AlterCommand::parse(child->as<ASTAlterCommand>()))
@@ -2935,6 +2978,12 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
 
             /// It's ALTER PARTITION or mutation, doesn't involve database
             return false;
+        }
+        catch (Exception & e)
+        {
+            if (e.code() == ErrorCodes::LOGICAL_ERROR)
+                e.recordToSystemErrors(/* force */ true);
+            tryLogCurrentException(log);
         }
         catch (...)
         {

@@ -942,15 +942,19 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
             bool valid_index = true;
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 static const MergeTreeSettings default_settings;
                 MergeTreeIndexFactory::instance().validate(index, false, default_settings);
             }
-            catch (const Exception & e)
+            catch (Exception & e)
             {
                 if (e.code() == ErrorCodes::BAD_ARGUMENTS || e.code() == ErrorCodes::INCORRECT_QUERY)
                     valid_index = false;
                 else
+                {
+                    e.recordToSystemErrors();
                     throw;
+                }
             }
             if (valid_index)
                 secondary_indices.push_back(std::move(index));

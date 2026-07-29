@@ -59,6 +59,7 @@ bool CatBoostLibraryBridgeHelper::bridgeHandShake()
     String result;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         auto buf = BuilderRWBufferFromHTTP(getPingURI())
                        .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                        .withTimeouts(http_timeouts)

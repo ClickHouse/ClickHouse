@@ -2571,6 +2571,7 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             auto part_lock = lockParts();
             while (next_part_index < new_parts.size())
             {
@@ -2588,13 +2589,19 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
             }
             break;
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             if (e.code() != ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
+            {
+                e.recordToSystemErrors();
                 throw;
+            }
 
             if (Int64(watch.elapsedMilliseconds()) >= timeout_ms)
+            {
+                e.recordToSystemErrors();
                 throw;
+            }
 
             auto & part = new_parts[next_part_index];
             LOG_INFO(log, "Part {} is temporarily locked, will clear old parts and retry.", part->name);
@@ -3412,6 +3419,7 @@ std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPt
         {
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 auto calculated_checksums = checkDataPart(part, false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */true);
                 calculated_checksums.checkEqual(part->checksums, true, part->name);
 
@@ -3423,7 +3431,11 @@ std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPt
             catch (...)
             {
                 if (isRetryableException(std::current_exception()))
+                {
+                    if (auto * e = current_exception_cast<Exception *>())
+                        e->recordToSystemErrors();
                     throw;
+                }
 
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
                 return CheckResult(part->name, false, "Check of part finished with error: '" + getCurrentExceptionMessage(false) + "'");
@@ -3433,13 +3445,18 @@ std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPt
         {
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 checkDataPart(part, true, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */true);
                 return CheckResult(part->name, true, "");
             }
             catch (...)
             {
                 if (isRetryableException(std::current_exception()))
+                {
+                    if (auto * e = current_exception_cast<Exception *>())
+                        e->recordToSystemErrors();
                     throw;
+                }
 
                 return CheckResult(part->name, false, getCurrentExceptionMessage(false));
             }

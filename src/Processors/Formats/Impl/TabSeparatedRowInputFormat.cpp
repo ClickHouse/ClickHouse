@@ -197,6 +197,7 @@ bool TabSeparatedFormatReader::parseFieldDelimiterWithDiagnosticInfo(WriteBuffer
 {
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         assertChar('\t', *buf);
     }
     catch (const DB::Exception &)
@@ -231,6 +232,7 @@ bool TabSeparatedFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         if (!format_settings.tsv.crlf_end_of_line_input)
             assertChar('\n', *buf);
         else

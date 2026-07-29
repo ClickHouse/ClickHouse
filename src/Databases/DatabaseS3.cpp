@@ -149,9 +149,10 @@ StoragePtr DatabaseS3::tryGetTable(const String & name, ContextPtr context_) con
 {
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         return getTableImpl(name, context_);
     }
-    catch (const Exception & e)
+    catch (Exception & e)
     {
         /// Ignore exceptions thrown by TableFunctionS3, which indicate that there is no table.
         if (e.code() == ErrorCodes::BAD_ARGUMENTS
@@ -159,8 +160,11 @@ StoragePtr DatabaseS3::tryGetTable(const String & name, ContextPtr context_) con
             || e.code() == ErrorCodes::FILE_DOESNT_EXIST
             || e.code() == ErrorCodes::UNACCEPTABLE_URL)
         {
+            if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                e.recordToSystemErrors(/* force */ true);
             return nullptr;
         }
+        e.recordToSystemErrors();
         throw;
     }
     catch (const Poco::URISyntaxException &)

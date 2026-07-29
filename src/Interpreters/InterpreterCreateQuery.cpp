@@ -1099,6 +1099,15 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
             to_table = DatabaseCatalog::instance().getTable(
                 create.getTargetTableID(ViewTarget::To), getContext());
         }
+        catch (Exception & e)
+        {
+            if (!getContext()->getSettingsRef()[Setting::allow_materialized_view_with_bad_select])
+            {
+                e.recordToSystemErrors();
+                throw;
+            }
+            e.recordToSystemErrors(/* force */ true);
+        }
         catch (...)
         {
             if (!getContext()->getSettingsRef()[Setting::allow_materialized_view_with_bad_select])
@@ -1176,11 +1185,13 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
         }
         catch (Exception & e)
         {
-            if (e.code() == ErrorCodes::ACCESS_DENIED)
+            if (e.code() == ErrorCodes::ACCESS_DENIED
+                || !getContext()->getSettingsRef()[Setting::allow_materialized_view_with_bad_select])
+            {
+                e.recordToSystemErrors();
                 throw;
-
-            if (!getContext()->getSettingsRef()[Setting::allow_materialized_view_with_bad_select])
-                throw;
+            }
+            e.recordToSystemErrors(/* force */ true);
             check_columns = false;
         }
     }
@@ -2148,12 +2159,25 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// Checking that table may exists in detached/detached permanently state
         try
         {
-            database->checkMetadataFilenameAvailability(create.getTable());
+            if (create.if_not_exists)
+            {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
+                database->checkMetadataFilenameAvailability(create.getTable());
+            }
+            else
+            {
+                database->checkMetadataFilenameAvailability(create.getTable());
+            }
         }
-        catch (const Exception &)
+        catch (Exception & e)
         {
             if (create.if_not_exists)
+            {
+                if (e.code() != ErrorCodes::TABLE_ALREADY_EXISTS)
+                    e.recordToSystemErrors(/* force */ true);
                 return false;
+            }
+            e.recordToSystemErrors();
             throw;
         }
 
@@ -2506,12 +2530,25 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                 /// discovers the collision.
                 try
                 {
-                    database->checkMetadataFilenameAvailability(table_to_replace_name);
+                    if (create.if_not_exists)
+                    {
+                        Exception::SuppressErrorCodesScope suppress_error_codes;
+                        database->checkMetadataFilenameAvailability(table_to_replace_name);
+                    }
+                    else
+                    {
+                        database->checkMetadataFilenameAvailability(table_to_replace_name);
+                    }
                 }
-                catch (const Exception &)
+                catch (Exception & e)
                 {
                     if (create.if_not_exists)
+                    {
+                        if (e.code() != ErrorCodes::TABLE_ALREADY_EXISTS)
+                            e.recordToSystemErrors(/* force */ true);
                         return {};
+                    }
+                    e.recordToSystemErrors();
                     throw;
                 }
             }
@@ -2682,22 +2719,32 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                 if (auto to_drop = DatabaseCatalog::instance().tryGetTable(to_drop_id, current_context))
                     to_drop->checkTableSizeBelowDropLimit(current_context);
             });
+        const bool ignore_concurrent_create = is_plain_create && create.if_not_exists;
         try
         {
-            interpreter_rename.execute();
+            if (ignore_concurrent_create)
+            {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
+                interpreter_rename.execute();
+            }
+            else
+            {
+                interpreter_rename.execute();
+            }
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             /// A concurrent query created the target while we were populating the temporary table. For a plain
             /// `CREATE TABLE IF NOT EXISTS ... AS SELECT` this is a no-op: drop the temporary table and return
             /// without error. For a plain create without IF NOT EXISTS (and for REPLACE) the error propagates.
-            if (is_plain_create && create.if_not_exists && e.code() == ErrorCodes::TABLE_ALREADY_EXISTS)
+            if (ignore_concurrent_create && e.code() == ErrorCodes::TABLE_ALREADY_EXISTS)
             {
                 InterpreterDropQuery(ast_drop, make_internal_context(/*bypass_size_guard=*/true)).execute();
                 scrub_temp_table_from_query_log();
                 create.setTable(table_to_replace_name);
                 return {};
             }
+            e.recordToSystemErrors();
             throw;
         }
         renamed = true;

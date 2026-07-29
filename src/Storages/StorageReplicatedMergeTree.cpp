@@ -8,6 +8,7 @@
 #include <base/hex.h>
 #include <base/interpolate.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/MemoryTracker.h>
@@ -2837,6 +2838,8 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
             tryLogCurrentException(log, __PRETTY_FUNCTION__);
         }
 
+        if (auto * e = current_exception_cast<Exception *>())
+            e->recordToSystemErrors();
         throw;
     }
 
@@ -2868,6 +2871,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::executeFetchShared
         if (e.code() == ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS)
             e.addMessage("Too busy replica. Will try later.");
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        e.recordToSystemErrors();
         throw;
     }
 }
@@ -3163,10 +3167,15 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
         MergeTreeData * src_data = nullptr;
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             src_data = &checkStructureAndGetMergeTreeData(source_table, src_metadata_snapshot, dst_metadata_snapshot);
         }
-        catch (Exception &)
+        catch (Exception & e)
         {
+            if (e.code() != ErrorCodes::NOT_IMPLEMENTED
+                && e.code() != ErrorCodes::INCOMPATIBLE_COLUMNS
+                && e.code() != ErrorCodes::BAD_ARGUMENTS)
+                e.recordToSystemErrors();
             LOG_INFO(log, "Can't use {} as source table for REPLACE PARTITION command. Will fetch all parts. Reason: {}", source_table_id.getNameForLogs(), getCurrentExceptionMessage(false));
             return 0;
         }
@@ -7925,6 +7934,7 @@ void StorageReplicatedMergeTree::getStatus(ReplicatedStatus & res, bool with_zk_
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             std::vector<std::string> paths;
             paths.push_back(fs::path(zookeeper_path) / "log");
             paths.push_back(fs::path(zookeeper_path) / "replicas");
@@ -7968,6 +7978,11 @@ void StorageReplicatedMergeTree::getStatus(ReplicatedStatus & res, bool with_zk_
         catch (const Coordination::Exception &)
         {
             res.zookeeper_exception = getCurrentExceptionMessage(false);
+        }
+        catch (Exception & e)
+        {
+            e.recordToSystemErrors();
+            throw;
         }
     }
 }
@@ -8164,15 +8179,19 @@ void StorageReplicatedMergeTree::fetchPartition(
 
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             /// part name, metadata, part_path, true, 0, zookeeper
             if (!fetchPart(part_name, metadata_snapshot, from_zookeeper_name, part_path, true, 0, zookeeper, /* try_fetch_shared = */ false))
                 throw Exception(ErrorCodes::UNFINISHED, "Failed to fetch part {} from {}", part_name, from_);
         }
-        catch (const DB::Exception & e)
+        catch (DB::Exception & e)
         {
             if (e.code() != ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER && e.code() != ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
                 && e.code() != ErrorCodes::CANNOT_READ_ALL_DATA)
+            {
+                e.recordToSystemErrors();
                 throw;
+            }
 
             LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
         }
@@ -8313,6 +8332,7 @@ void StorageReplicatedMergeTree::fetchPartition(
 
                 try
                 {
+                    Exception::SuppressErrorCodesScope suppress_error_codes;
                     fetched = fetchPart(
                         part,
                         metadata_snapshot,
@@ -8323,11 +8343,14 @@ void StorageReplicatedMergeTree::fetchPartition(
                         zookeeper,
                         /*try_fetch_shared=*/ false);
                 }
-                catch (const DB::Exception & e)
+                catch (DB::Exception & e)
                 {
                     if (e.code() != ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER && e.code() != ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
                         && e.code() != ErrorCodes::CANNOT_READ_ALL_DATA)
+                    {
+                        e.recordToSystemErrors();
                         throw;
+                    }
 
                     LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
                 }
@@ -10315,17 +10338,21 @@ std::optional<CheckResult> StorageReplicatedMergeTree::checkDataNext(DataValidat
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             fiu_do_on(FailPoints::check_table_inject_retryable_zk_error,
             {
                 throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Injected retryable ZooKeeper error for the check_table_inject_retryable_zk_error failpoint");
             });
             return part_check_thread.checkPartAndFix(part->name, /* recheck_after */nullptr, /* throw_on_broken_projection */true);
         }
-        catch (const Exception & ex)
+        catch (Exception & ex)
         {
             /// A transient error does not prove the part is broken; rethrow so the CHECK query fails and can be retried.
             if (isRetryableException(std::current_exception()))
+            {
+                ex.recordToSystemErrors();
                 throw;
+            }
 
             tryLogCurrentException(log, __PRETTY_FUNCTION__);
             return CheckResult(part->name, false, "Check of part finished with error: '" + ex.message() + "'");

@@ -12,6 +12,7 @@
 #include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
 #include <filesystem>
+#include <optional>
 #include <Functions/FunctionHelpers.h>
 #include <Core/ColumnWithTypeAndName.h>
 
@@ -23,6 +24,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
     extern const int ILLEGAL_COLUMN;
     extern const int DATABASE_ACCESS_DENIED;
 }
@@ -145,12 +148,29 @@ public:
 
             try
             {
+                std::optional<Exception::SuppressErrorCodesScope> suppress_error_codes;
+                if (arguments.size() == 2)
+                    suppress_error_codes.emplace();
+
                 if (need_check && !fileOrSymlinkPathStartsWith(file_path.string(), user_files_absolute_path_string))
                     throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside {}", user_files_absolute_path.string());
 
                 ReadBufferFromFile in(file_path);
                 auto out = WriteBufferFromVector<ColumnString::Chars>(res_chars, AppendModeTag{});
                 copyData(in, out);
+            }
+            catch (Exception & e)
+            {
+                if (arguments.size() == 1)
+                    throw;
+
+                if (e.code() != ErrorCodes::CANNOT_OPEN_FILE && e.code() != ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR)
+                    e.recordToSystemErrors(/* force */ true);
+
+                if (vec_null_map_to)
+                    (*vec_null_map_to)[row] = true;
+                else
+                    res_chars.insert(default_result.data(), default_result.data() + default_result.size());
             }
             catch (...)
             {

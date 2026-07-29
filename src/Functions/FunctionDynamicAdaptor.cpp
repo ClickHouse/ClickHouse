@@ -85,13 +85,17 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
 
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             return function_overload_resolver->build(args);
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
                 && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+            {
+                e.recordToSystemErrors();
                 throw;
+            }
             return nullptr;
         }
     };
@@ -108,9 +112,10 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
 
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             return func_base->execute(args, res_type, rows, is_dry_run);
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             /// Only suppress NO_COMMON_TYPE, which is what getLeastSupertype throws when the
             /// alternative type is incompatible with the other argument (e.g. comparison functions
@@ -118,7 +123,10 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
             /// value-dependent and must propagate — for example, geoToS2 throws ILLEGAL_TYPE_OF_ARGUMENT
             /// for NaN coordinates after build() has already succeeded for a Float64 alternative.
             if (e.code() != ErrorCodes::NO_COMMON_TYPE)
+            {
+                e.recordToSystemErrors();
                 throw;
+            }
             return nullptr;
         }
     };

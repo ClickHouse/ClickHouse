@@ -155,6 +155,7 @@ public:
                 DB::ReadBufferFromFileDescriptor rb(fd, SMALL_READ_WRITE_BUFFER_SIZE);
                 try
                 {
+                    DB::Exception::SuppressErrorCodesScope suppress_error_codes;
                     UInt64 current_value = 0;
                     DB::readIntText(current_value, rb);
                     char c = 0;
@@ -162,10 +163,13 @@ public:
                     if (rb.count() > 0 && c == '\n' && rb.eof())
                         broken = false;
                 }
-                catch (const DB::Exception & e)
+                catch (DB::Exception & e)
                 {
                     if (e.code() != DB::ErrorCodes::CANNOT_READ_ALL_DATA && e.code() != DB::ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
+                    {
+                        e.recordToSystemErrors();
                         throw;
+                    }
                 }
             }
 
