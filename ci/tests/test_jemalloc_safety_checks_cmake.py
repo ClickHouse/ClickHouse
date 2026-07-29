@@ -1907,13 +1907,13 @@ def test_a_build_without_exported_compile_commands_fails_closed(tmp_path):
 
 
 def test_both_checkers_fail_closed_on_a_missing_file(tmp_path):
-    """The two paths handle the same state, so they must not drift apart again.
+    """The two paths handle the same state, so they must not drift apart.
 
-    They disagreed once: the positive check raised and this one returned `None`. An
-    asymmetry between two paths deciding the same question is the smell that one of them is
-    wrong, and the fail-open side was - so the symmetry itself is pinned, with the messages
-    required to stay distinguishable so a failure still says which direction was being
-    checked.
+    An asymmetry between two paths deciding the same question is the smell that one of them
+    is wrong, and only the fail-closed answer is defensible here - a missing file says the
+    question could not be asked, which is not an answer about the macros. So the symmetry
+    itself is pinned, with the messages required to stay distinguishable so a failure still
+    says which direction was being checked.
     """
     missing = str(tmp_path / "compile_commands.json")
     messages = []
@@ -2911,8 +2911,7 @@ def test_the_job_image_installs_the_compiler_these_cases_need():
 
     # Asserted as an `apt-get install` **operand**, not merely as text present somewhere:
     # a mention in a comment, or in a `--version` sanity line, is not an installation, and an
-    # an assertion satisfied by inactive text is the failure mode two removed cmake-text
-    # models in this PR's history were removed for. So find the install commands and
+    # assertion satisfied by inactive text asserts nothing. So find the install commands and
     # require the package among their operands.
     installed = _apt_installed_packages(text)
     assert installed, (
