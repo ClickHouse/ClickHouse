@@ -1,0 +1,57 @@
+---
+title: 'Установка в самоуправляемой среде'
+sidebarTitle: 'Обзор'
+description: 'Установите ClickHouse в собственной инфраструктуре.'
+doc_type: 'landing-page'
+keywords: ['установка', 'самоуправляемый', 'linux', 'macOS', 'windows', 'docker']
+---
+
+Установите ClickHouse на платформе под вашим управлением.
+
+<div id="local-development">
+  ## Локальная разработка
+</div>
+
+Запустите ClickHouse на своём компьютере, чтобы собирать, тестировать и экспериментировать.
+
+<CardGroup cols={2}>
+  <Card title="Быстрая установка" href="/ru/get-started/setup/self-managed/quick-install" icon="bolt">
+    Однострочный скрипт `curl`, который загружает один бинарный файл ClickHouse.
+  </Card>
+
+  <Card title="clickhousectl (CLI)" href="/ru/get-started/setup/self-managed/clickhousectl" icon="terminal">
+    Устанавливайте локальные версии и серверы ClickHouse и управляйте ими с помощью ClickHouse CLI.
+  </Card>
+
+  <Card title="Docker" href="/ru/get-started/setup/self-managed/docker" icon="docker">
+    Загрузите официальный Docker-образ и запустите контейнер.
+  </Card>
+
+  <Card title="Сборка из исходного кода" href="/ru/get-started/setup/self-managed/advanced" icon="code">
+    Сборка из исходного кода и другие расширенные варианты установки.
+  </Card>
+</CardGroup>
+
+<div id="production-server">
+  ## Production-сервер
+</div>
+
+Установите сервер ClickHouse из пакетов или бинарных файлов для длительной эксплуатации.
+
+<CardGroup cols={2}>
+  <Card title="Debian / Ubuntu" href="/ru/get-started/setup/self-managed/debian-ubuntu" icon="ubuntu">
+    Установите через официальный APT-репозиторий.
+  </Card>
+
+  <Card title="Red Hat / CentOS" href="/ru/get-started/setup/self-managed/redhat" icon="redhat">
+    Установите через официальный YUM/DNF-репозиторий.
+  </Card>
+
+  <Card title="NixOS" href="/ru/get-started/setup/self-managed/nixos" icon="snowflake">
+    Установите в NixOS с помощью менеджера пакетов.
+  </Card>
+
+  <Card title="Другие дистрибутивы Linux" href="/ru/get-started/setup/self-managed/other-linux" icon="linux">
+    Универсальная установка для Linux из tar-архива.
+  </Card>
+</CardGroup>

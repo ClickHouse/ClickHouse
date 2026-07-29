@@ -19,7 +19,6 @@
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 
-static constexpr auto TMP_TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt.tmp";
 namespace DB
 {
 
@@ -299,20 +298,36 @@ void VersionMetadataOnDisk::removeTmpMetadataFile()
     if (!data_part_storage.existsFile(TMP_TXN_VERSION_METADATA_FILE_NAME))
         return;
 
-    auto last_modified = data_part_storage.getLastModified();
-    size_t file_size = data_part_storage.getFileSize(TMP_TXN_VERSION_METADATA_FILE_NAME);
-    auto buf = data_part_storage.readFile(TMP_TXN_VERSION_METADATA_FILE_NAME, getReadSettings().adjustBufferSize(file_size), file_size);
+    /// The dump of the leftover file below is purely diagnostic and must be best-effort: the file
+    /// is an artifact of an interrupted write, so not only its content but even the disk-level
+    /// metadata describing it can be broken (e.g. a partially written local metadata file of an
+    /// object storage disk, for which already `getFileSize` throws while deserializing it).
+    /// A failure to read it must not prevent the cleanup, let alone fail the part loading and
+    /// with it the server startup. The removal itself is tolerant to such files:
+    /// `UnlinkFileOperation` reads the disk-level metadata with `tryReadMetadataFile`.
+    try
+    {
+        auto last_modified = data_part_storage.getLastModified();
+        size_t file_size = data_part_storage.getFileSize(TMP_TXN_VERSION_METADATA_FILE_NAME);
+        auto buf = data_part_storage.readFile(TMP_TXN_VERSION_METADATA_FILE_NAME, getReadSettings().adjustBufferSize(file_size), file_size);
 
-    String content;
-    readStringUntilEOF(content, *buf);
-    LOG_WARNING(
-        log,
-        "Object {}, found file {} that was last modified on {}, has size {} and the following content: {}",
-        getObjectName(),
-        TMP_TXN_VERSION_METADATA_FILE_NAME,
-        last_modified.epochTime(),
-        content.size(),
-        content);
+        String content;
+        readStringUntilEOF(content, *buf);
+        LOG_WARNING(
+            log,
+            "Object {}, found file {} that was last modified on {}, has size {} and the following content: {}",
+            getObjectName(),
+            TMP_TXN_VERSION_METADATA_FILE_NAME,
+            last_modified.epochTime(),
+            content.size(),
+            content);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            log,
+            fmt::format("Object {}, cannot read the content of {}", getObjectName(), TMP_TXN_VERSION_METADATA_FILE_NAME));
+    }
 
     if (!merge_tree_data_part->isStoredOnReadonlyDisk())
         data_part_storage.removeFile(TMP_TXN_VERSION_METADATA_FILE_NAME);

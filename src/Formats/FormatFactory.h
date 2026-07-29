@@ -1,12 +1,11 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
-#include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context_fwd.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <base/types.h>
-#include <Common/Allocator.h>
+#include <Common/Allocator_fwd.h>
 #include <Common/Documentation.h>
 #include <Common/NamePrompter.h>
 
@@ -86,7 +85,7 @@ public:
     using FileSegmentationEngineCreator = std::function<FileSegmentationEngine(
         const FormatSettings & settings)>;
 
-    std::vector<String> getAllRegisteredNames() const override;
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 private:
     // On the input side, there are two kinds of formats:
     //  * InputCreator - formats parsed sequentially, e.g. CSV. Almost all formats are like this.

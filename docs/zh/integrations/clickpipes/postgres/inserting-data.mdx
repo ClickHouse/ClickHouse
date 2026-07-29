@@ -1,0 +1,16 @@
+---
+slug: /integrations/postgresql/inserting-data
+title: '如何从 PostgreSQL 插入数据'
+keywords: ['postgres', 'postgresql', 'inserts']
+description: '本页介绍如何使用 ClickPipes、PeerDB 或 Postgres 表函数从 PostgreSQL 插入数据'
+doc_type: 'guide'
+---
+
+我们建议阅读[本指南](/zh/concepts/features/operations/insert/inserting-data)，了解向 ClickHouse 插入数据以优化插入性能的最佳实践。
+
+如需从 PostgreSQL 批量加载数据，可以使用：
+
+* [ClickPipes](/zh/integrations/clickpipes/postgres/index)：ClickHouse Cloud 的托管集成服务。
+* `PeerDB by ClickHouse`：一款专为将 PostgreSQL 数据库复制到自托管 ClickHouse 和 ClickHouse Cloud 而设计的 ETL 工具。
+* [Postgres Table Function](/zh/reference/functions/table-functions/postgresql) 可用于直接读取数据。如果基于已知水位线 (例如时间戳) 的批次复制已经足够，或者这只是一次性迁移，那么这种方式通常很合适。该方法可扩展到数千万行。需要迁移更大数据集的用户应考虑拆分为多个请求，每个请求处理一部分数据。可以先为每一部分数据使用暂存表，再将其分区移动到最终表中。这样一来，失败的请求也可以重试。有关此批量加载策略的更多详细信息，请参见此处。
+* 也可以将数据从 Postgres 导出为 CSV 格式，然后通过表函数从本地文件或对象存储将其插入 ClickHouse。

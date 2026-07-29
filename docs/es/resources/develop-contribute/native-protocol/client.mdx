@@ -1,0 +1,148 @@
+---
+slug: /native-protocol/client
+title: 'Paquetes del cliente nativo'
+description: 'Cliente del protocolo nativo'
+doc_type: 'reference'
+keywords: ['paquetes del cliente', 'cliente del protocolo nativo', 'paquetes del protocolo', 'comunicación del cliente', 'cliente TCP']
+---
+
+| valor | nombre            | descripción                      |
+| ----- | ----------------- | -------------------------------- |
+| 0     | [Hello](#hello)   | Inicio del handshake del cliente |
+| 1     | [consulta](#query)   | Solicitud de consulta            |
+| 2     | [Data](#data)     | Bloque con datos                 |
+| 3     | [Cancel](#cancel) | Cancelación de consulta          |
+| 4     | [Ping](#ping)     | Solicitud de ping                |
+| 5     | TableStatus       | Solicitud de estado de la tabla  |
+
+El paquete `Data` puede comprimirse.
+
+<div id="hello">
+  ## Hello
+</div>
+
+Por ejemplo, supongamos que usamos `Go Client` v1.10, que admite la versión de protocolo `54451`, y
+queremos conectarnos a la base de datos `default` con el usuario `default` y la contraseña `secret`.
+
+| campo                | tipo    | valor         | descripción                             |
+| -------------------- | ------- | ------------- | --------------------------------------- |
+| client&#95;name      | String  | `"Go Client"` | Nombre de la implementación del cliente |
+| version&#95;major    | UVarInt | `1`           | Versión principal del cliente           |
+| version&#95;minor    | UVarInt | `10`          | Versión secundaria del cliente          |
+| protocol&#95;version | UVarInt | `54451`       | Versión del protocolo TCP               |
+| database             | String  | `"default"`   | Nombre de la base de datos              |
+| username             | String  | `"default"`   | Nombre de usuario                       |
+| password             | String  | `"secret"`    | Contraseña                              |
+
+<div id="protocol-version">
+  ### Versión del protocolo
+</div>
+
+La versión del protocolo es la versión del protocolo TCP del cliente.
+
+Por lo general, coincide con la última revisión compatible del servidor, pero
+no debe confundirse con ella.
+
+<div id="defaults">
+  ### Valores predeterminados
+</div>
+
+Todos los valores deben **establecerse explícitamente**; no hay valores predeterminados del lado del servidor.
+Del lado del cliente, use la base de datos `"default"`, el nombre de usuario `"default"` y la contraseña `""` (cadena vacía)
+como valores predeterminados.
+
+<div id="query">
+  ## Consulta
+</div>
+
+| campo           | tipo                       | valor      | descripción                            |
+| --------------- | -------------------------- | ---------- | -------------------------------------- |
+| query&#95;id    | String                     | `1ff-a123` | ID de la consulta, puede ser UUIDv4    |
+| client&#95;info | [ClientInfo](#client-info) | Ver tipo   | Datos del cliente                      |
+| settings        | [Configuración](#settings) | Ver tipo   | Lista de configuraciones               |
+| secret          | String                     | `secret`   | Secreto entre servidores               |
+| [stage](#stage) | UVarInt                    | `2`        | Ejecutar hasta la etapa de la consulta |
+| compression     | UVarInt                    | `0`        | Desactivado=0, habilitado=1            |
+| body            | String                     | `SELECT 1` | Texto de la consulta                   |
+
+<div id="client-info">
+  ### Información del cliente
+</div>
+
+| field                    | type            | description                         |
+| ------------------------ | --------------- | ----------------------------------- |
+| query&#95;kind           | byte            | None=0, Initial=1, Secondary=2      |
+| initial&#95;user         | String          | Usuario inicial                     |
+| initial&#95;query&#95;id | String          | ID de consulta inicial              |
+| initial&#95;address      | String          | Dirección inicial                   |
+| initial&#95;time         | Int64           | Tiempo inicial                      |
+| interface                | byte            | TCP=1, HTTP=2                       |
+| os&#95;user              | String          | Usuario del SO                      |
+| client&#95;hostname      | String          | Nombre de host del cliente          |
+| client&#95;name          | String          | Nombre del cliente                  |
+| version&#95;major        | UVarInt         | Versión principal del cliente       |
+| version&#95;minor        | UVarInt         | Versión secundaria del cliente      |
+| protocol&#95;version     | UVarInt         | Versión del protocolo del cliente   |
+| quota&#95;key            | String          | Clave de cuota                      |
+| distributed&#95;depth    | UVarInt         | Profundidad de Distributed          |
+| version&#95;patch        | UVarInt         | Versión de parche del cliente       |
+| otel                     | Bool            | Los campos de traza están presentes |
+| trace&#95;id             | FixedString(16) | ID de traza                         |
+| span&#95;id              | FixedString(8)  | ID de span                          |
+| trace&#95;state          | String          | Estado del trazado                  |
+| trace&#95;flags          | Byte            | Indicadores de trazado              |
+
+<div id="settings">
+  ### Configuración
+</div>
+
+| campo     | tipo   | valor             | descripción               |
+| --------- | ------ | ----------------- | ------------------------- |
+| key       | String | `send_logs_level` | Clave de la configuración |
+| value     | String | `trace`           | Valor de la configuración |
+| important | Bool   | `true`            | Si se puede ignorar o no  |
+
+Se codifica como una lista; una clave y un valor en blanco indican el final de la lista.
+
+<div id="stage">
+  ### Etapa
+</div>
+
+| valor | nombre             | descripción                                                      |
+| ----- | ------------------ | ---------------------------------------------------------------- |
+| 0     | FetchColumns       | Solo obtiene los tipos de las columnas                           |
+| 1     | WithMergeableState | Hasta el estado fusionable                                       |
+| 2     | Complete           | Hasta la completitud plena (debería ser el valor predeterminado) |
+
+<div id="data">
+  ## Data
+</div>
+
+| campo   | tipo                 | descripción                       |
+| ------- | -------------------- | --------------------------------- |
+| info    | BlockInfo            | Información codificada del bloque |
+| columns | UVarInt              | Cantidad de columnas              |
+| rows    | UVarInt              | Cantidad de filas                 |
+| columns | [[]Columna](#column) | Columnas con datos                |
+
+<div id="column">
+  ### Columna
+</div>
+
+| campo | tipo   | valor           | descripción          |
+| ----- | ------ | --------------- | -------------------- |
+| name  | String | `foo`           | Nombre de la columna |
+| type  | String | `DateTime64(9)` | Tipo de la columna   |
+| data  | bytes  | ~               | Datos de la columna  |
+
+<div id="cancel">
+  ## Cancel
+</div>
+
+No tiene cuerpo de paquete. El servidor debe cancelar la consulta.
+
+<div id="ping">
+  ## Ping
+</div>
+
+Sin cuerpo del paquete. El servidor debe [responder con pong](/es/resources/develop-contribute/native-protocol/server#pong).
