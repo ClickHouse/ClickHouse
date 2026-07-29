@@ -506,7 +506,7 @@ static bool writeConsolidatedManifestFile(
 
         /// Derive partition value types from a schema that defines every source column the spec references, preferring the current schema then any historical one; register all schemas first so they can be queried by id.
         for (UInt32 i = 0; i < schemas->size(); ++i)
-            persistent_table_components.schema_processor->addIcebergTableSchema(schemas->getObject(i));
+            persistent_table_components.schema_processor->addIcebergTableSchema(schemas->getObject(i), context);
 
         auto build_sample_block = [&](Int32 schema_id) -> std::optional<Block>
         {

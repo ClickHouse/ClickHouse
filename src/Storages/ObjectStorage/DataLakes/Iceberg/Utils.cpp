@@ -1357,7 +1357,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     DataLake::TableMetadata table_metadata;
     table_metadata.withDataLakeSpecificProperties().withLocation();
     const auto & [namespace_name, table_name] = DataLake::parseTableName(table_identifier);
-    catalog->getTableMetadata(namespace_name, table_name, table_metadata);
+    catalog->getTableMetadata(namespace_name, table_name, local_context, table_metadata);
 
     auto specific_properties = table_metadata.getDataLakeSpecificProperties();
     if (!specific_properties.has_value() || specific_properties->iceberg_metadata_file_location.empty())
