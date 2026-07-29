@@ -213,6 +213,35 @@ static void checkNewAnalyzer(
     EXPECT_EQ(transformed_query, expected) << query;
 }
 
+/// Same as transformWithPostgreSQLEscaping, but through the modern analyzer - the default production path,
+/// which reconstructs the pushed-down AST via getASTForExternalDatabaseFromQueryTree.
+static std::string transformWithPostgreSQLEscapingNewAnalyzer(const State & state, const Names & column_names, const std::string & query)
+{
+    ParserSelectQuery parser;
+    ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
+
+    SelectQueryOptions select_query_options;
+    auto query_tree = buildQueryTree(ast, state.context);
+    QueryTreePassManager query_tree_pass_manager(state.context);
+    addQueryTreePasses(query_tree_pass_manager);
+    query_tree_pass_manager.run(query_tree);
+
+    InterpreterSelectQueryAnalyzer interpreter(query_tree, state.context, select_query_options);
+    interpreter.getQueryPlan();
+
+    auto planner_context = interpreter.getPlanner().getPlannerContext();
+    SelectQueryInfo query_info = buildSelectQueryInfo(query_tree, planner_context);
+    const auto * query_node = query_info.query_tree->as<QueryNode>();
+    if (!query_node)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryNode expected");
+
+    query_info.table_expression = findTableExpression(query_node->getJoinTree(), "table");
+
+    return transformQueryForExternalDatabase(
+        query_info, column_names, state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
+        LiteralEscapingStyle::PostgreSQL, "test", "table", state.context);
+}
+
 static void check(
     const State & state,
     size_t table_num,
@@ -518,5 +547,19 @@ TEST(TransformQueryForExternalDatabase, PostgreSQLEscapingInList)
     /// value a\b (SQL 'a\\b') must come out as E'a\\b'.
     EXPECT_EQ(
         transformWithPostgreSQLEscaping(state, 1, "SELECT field FROM table WHERE field IN ('a\\\\b', 'c')"),
+        R"(SELECT "field" FROM "test"."table" WHERE "field" IN (E'a\\b', E'c'))");
+
+    /// The modern analyzer is the default production path and rebuilds the AST through a different route
+    /// (getASTForExternalDatabaseFromQueryTree), so assert the same escaping holds there as well.
+    EXPECT_EQ(
+        transformWithPostgreSQLEscapingNewAnalyzer(state, {"field"}, "SELECT field FROM table WHERE field IN ('a''b', 'c')"),
+        R"(SELECT "field" FROM "test"."table" WHERE "field" IN (E'a''b', E'c'))");
+
+    EXPECT_EQ(
+        transformWithPostgreSQLEscapingNewAnalyzer(state, {"field", "value"}, "SELECT field, value FROM table WHERE (field, value) IN (('a''b', 'x'), ('y', 'z'))"),
+        R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN ((E'a''b', E'x'), (E'y', E'z')))");
+
+    EXPECT_EQ(
+        transformWithPostgreSQLEscapingNewAnalyzer(state, {"field"}, "SELECT field FROM table WHERE field IN ('a\\\\b', 'c')"),
         R"(SELECT "field" FROM "test"."table" WHERE "field" IN (E'a\\b', E'c'))");
 }

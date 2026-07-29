@@ -352,7 +352,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
            "AND NOT attisdropped AND attnum > 0 "
            "ORDER BY attnum ASC", generated, where, columns_part); /// Now we use variable `generated` to form query string. End of trick.
 
-    auto postgres_table_with_schema = postgres_schema.empty() ? postgres_table : doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(postgres_table);
+    auto postgres_table_with_schema = postgres_schema.empty() ? doubleQuoteString(postgres_table) : doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(postgres_table);
     table.physical_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, false);
 
     if (!table.physical_columns)

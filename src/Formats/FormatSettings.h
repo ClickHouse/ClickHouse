@@ -518,6 +518,11 @@ struct FormatSettings
         bool accurate_types_of_literals = true;
         bool allow_data_after_semicolon = false;
         bool escape_quote_with_quote = false;
+        /// Emit string literals as PostgreSQL `E'...'` escape-string constants (doubling both the
+        /// quote and the backslash), safe regardless of the server's `standard_conforming_strings`.
+        /// Used when building SQL sent to a PostgreSQL dictionary source; distinct from the plain
+        /// `''`-doubling `escape_quote_with_quote` used for Cassandra and the VALUES format.
+        bool escape_string_for_postgresql = false;
     } values{};
 
     enum class ORCCompression : uint8_t

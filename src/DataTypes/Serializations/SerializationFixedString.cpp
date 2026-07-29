@@ -242,7 +242,9 @@ void SerializationFixedString::serializeTextQuoted(const IColumn & column, size_
 {
     const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
     const char * end = getEndWithOptionalTrim(pos, n, settings);
-    if (settings.values.escape_quote_with_quote)
+    if (settings.values.escape_string_for_postgresql)
+        writeQuotedStringPostgreSQLLiteral({pos, static_cast<size_t>(end - pos)}, ostr);
+    else if (settings.values.escape_quote_with_quote)
     {
         writeChar('\'', ostr);
         writeAnyEscapedString<'\'', true, false>(pos, end, ostr);

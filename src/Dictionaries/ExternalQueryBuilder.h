@@ -3,6 +3,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Formats/FormatSettings.h>
 #include <Parsers/IdentifierQuotingStyle.h>
+#include <Parsers/LiteralEscapingStyle.h>
 
 #include <string>
 
@@ -33,7 +34,8 @@ struct ExternalQueryBuilder
         const std::string & table_,
         const std::string & query_,
         const std::string & where_,
-        IdentifierQuotingStyle quoting_style_);
+        IdentifierQuotingStyle quoting_style_,
+        LiteralEscapingStyle literal_escaping_style_ = LiteralEscapingStyle::Regular);
 
     ExternalQueryBuilder(const ExternalQueryBuilder &) = default;
 

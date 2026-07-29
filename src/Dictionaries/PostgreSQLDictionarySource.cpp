@@ -55,7 +55,8 @@ namespace
             qualified_name = QualifiedTableName::parseFromString(qualified_name.table);
 
         /// Do not need db because it is already in a connection string.
-        return {dict_struct, "", qualified_name.database, qualified_name.table, query, where, IdentifierQuotingStyle::DoubleQuotes};
+        return {dict_struct, "", qualified_name.database, qualified_name.table, query, where,
+                IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL};
     }
 }
 
