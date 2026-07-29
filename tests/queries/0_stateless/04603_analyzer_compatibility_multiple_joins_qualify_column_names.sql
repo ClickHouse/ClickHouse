@@ -3,10 +3,6 @@
 -- rewrite (when the `FROM` clause has two or more `JOIN`s), so that outer queries
 -- referencing hidden inner aliases (e.g. `SELECT ll.Date FROM (SELECT * FROM t AS ll
 -- LEFT JOIN x ... LEFT JOIN y ...)`) resolve again.
---
--- NOTE: this test encodes the FINAL expected behavior of the feature. The setting
--- itself is added by this change, but the analyzer hooks that implement it are added
--- by a later change. Every "setting ON" section below is EXPECTED TO FAIL until then.
 
 SET enable_analyzer = 1;
 
@@ -160,3 +156,30 @@ DESCRIBE (SELECT COLUMNS(Date), * FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT J
 SELECT '=== outer scope cannot see the bare COLUMNS(col) name, setting ON ===';
 -- fails on the old analyzer as well, since the identifier-list form never qualifies its columns
 SELECT ll.Date FROM (SELECT COLUMNS(Date) FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k); -- { serverError UNKNOWN_IDENTIFIER }
+
+-- ============================================================
+-- CTE used as a joined table expression: the qualifier is the CTE name
+-- ============================================================
+
+SET analyzer_compatibility_multiple_joins_qualify_column_names = 1;
+
+SELECT '=== describe: CTE joined in multiple joins gets CTE-name qualifier, setting ON ===';
+DESCRIBE (WITH ll AS (SELECT 1 AS k, 'D' AS Date)
+          SELECT * FROM ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k
+                           LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k);
+
+SELECT '=== family2: outer ref into CTE-based derived table, setting ON ===';
+SELECT ll.Date FROM (WITH ll AS (SELECT 1 AS k, 'D' AS Date)
+          SELECT * FROM ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k
+                           LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k);
+
+SELECT '=== describe: UNION CTE joined in multiple joins gets CTE-name qualifier, setting ON ===';
+DESCRIBE (WITH ll AS (SELECT 1 AS k, 'D' AS Date UNION ALL SELECT 2 AS k, 'E' AS Date)
+          SELECT * FROM ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k
+                           LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k);
+
+SELECT '=== family2: outer ref into UNION-CTE derived table, setting ON ===';
+SELECT ll.Date FROM (WITH ll AS (SELECT 1 AS k, 'D' AS Date UNION ALL SELECT 2 AS k, 'E' AS Date)
+          SELECT * FROM ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k
+                           LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k)
+ORDER BY ll.Date;

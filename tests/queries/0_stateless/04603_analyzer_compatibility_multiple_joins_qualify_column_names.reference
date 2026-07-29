@@ -90,3 +90,18 @@ ll.Date	String
 t1.k	UInt8					
 t2.k	UInt8					
 === outer scope cannot see the bare COLUMNS(col) name, setting ON ===
+=== describe: CTE joined in multiple joins gets CTE-name qualifier, setting ON ===
+ll.k	UInt8					
+ll.Date	String					
+t1.k	UInt8					
+t2.k	UInt8					
+=== family2: outer ref into CTE-based derived table, setting ON ===
+D
+=== describe: UNION CTE joined in multiple joins gets CTE-name qualifier, setting ON ===
+ll.k	UInt8					
+ll.Date	String					
+t1.k	UInt8					
+t2.k	UInt8					
+=== family2: outer ref into UNION-CTE derived table, setting ON ===
+D
+E
