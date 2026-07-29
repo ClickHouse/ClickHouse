@@ -27,6 +27,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/ErrnoException.h>
 
+#include <Access/ContextAccess.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -719,7 +720,7 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
         {"thread_name", std::make_shared<DataTypeString>(), "The name of the thread."},
         {"thread_id", std::make_shared<DataTypeUInt64>(), "The thread identifier"},
         {"query_id", std::make_shared<DataTypeString>(), "The ID of the query this thread belongs to."},
-        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. Basically just an array of addresses."},
+        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. Basically just an array of absolute (runtime) virtual addresses, in the same representation that `addressToSymbol` and `addressToLine` expect. Reading this column requires the `INTROSPECTION` privilege, because runtime addresses disclose the load bases of the process."},
         {"untracked_memory", std::make_shared<DataTypeInt64>(), "Per-thread counter of memory allocations not yet propagated to the parent MemoryTracker. May be negative if more was freed than allocated since the last flush."},
     }));
     storage_metadata.setVirtuals(createVirtuals());
@@ -776,6 +777,14 @@ void StorageSystemStackTrace::readImpl(
     size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
+
+    /// The `trace` column contains absolute (runtime) virtual addresses, which disclose the load
+    /// bases of the main binary and of the shared libraries. Require introspection access for it,
+    /// same as for `system.symbols`, which exposes addresses in the same representation. The other
+    /// columns stay available with a plain `SELECT` grant.
+    if (std::find(column_names.begin(), column_names.end(), "trace") != column_names.end())
+        context->getAccess()->checkAccess(AccessType::INTROSPECTION);
+
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
 
     auto reading = std::make_unique<ReadFromSystemStackTrace>(

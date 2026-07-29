@@ -671,6 +671,9 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
     size_t frame_index = stack_trace.offset;
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     size_t inline_frame_index = 0;
+    const auto * main_object = DB::SymbolIndex::instance().thisObject();
+    const std::optional<std::string> main_object_name
+        = main_object ? std::optional<std::string>(main_object->name) : std::nullopt;
     auto callback_wrapper = [&](const StackTrace::Frame & frame)
     {
         DB::WriteBufferFromOwnString out;
@@ -699,15 +702,21 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         else
             out << "?";
 
-        /// Print the absolute virtual address, matching what `findSymbol`, `addressToSymbol`,
-        /// `addressToLine`, `system.stack_trace.trace`, and `system.trace_log.trace` all consume
-        /// now that this PR unified every surface on virtual addresses. Printing the file-relative
-        /// `physical_addr` here would mean an address copied from a text stack trace no longer
-        /// round-trips through those tools on PIE and shared-library frames.
-        if (shouldShowAddress(frame.virtual_addr))
+        /// Print the object-relative address, not the absolute (runtime) one. This string form ends
+        /// up in client-visible exception messages and in the server log, so it must not disclose the
+        /// runtime load bases of the process; raw virtual addresses belong only on the explicitly
+        /// introspective surfaces (`system.stack_trace.trace`, `system.trace_log.trace`,
+        /// `addressToSymbol`, `addressToLine`), which require introspection to be usable.
+        ///
+        /// A file offset is only unambiguous together with the object it belongs to, because offsets
+        /// overlap between the main binary and shared libraries, so also print the object for frames
+        /// outside the main binary.
+        if (shouldShowAddress(frame.physical_addr))
         {
             out << " @ ";
-            DB::writePointerHex(frame.virtual_addr, out);
+            DB::writePointerHex(frame.physical_addr, out);
+            if (frame.object.has_value() && frame.object != main_object_name)
+                out << " in " << *frame.object;
         }
 
         callback(out.str());
