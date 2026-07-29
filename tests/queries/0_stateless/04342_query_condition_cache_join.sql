@@ -16,6 +16,10 @@ SET enable_analyzer = 1;
 SET use_query_condition_cache = 1;
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 SET enable_parallel_replicas = 0;
+-- The cache key is salted with the printed condition, which names the resolved table alias, so the two
+-- branches of a self-join key differently depending on which one the join order puts first. Pinned
+-- because the seed reorders the join, and the two runs below would then use different keys.
+SET query_plan_optimize_join_order_randomize = 0;
 
 DROP TABLE IF EXISTS t_qcc_join;
 
