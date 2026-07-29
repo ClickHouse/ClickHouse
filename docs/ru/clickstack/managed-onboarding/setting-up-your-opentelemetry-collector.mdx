@@ -12,12 +12,20 @@ hide_advert: true
 import GatherCredentials from '/snippets/ru/clickstack/_gather_credentials.mdx';
 import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.mdx';
 import ConfirmInUI from '/snippets/ru/clickstack/_confirm_in_ui.mdx';
+import { AgentPrompt } from '/snippets/ru/components/AgentPrompt/AgentPrompt.jsx';
 
 Это руководство поможет вам развернуть OpenTelemetry Collector для существующего сервиса Управляемый ClickStack или адаптировать уже имеющийся коллектор, а затем убедиться, что данные через него проходят.
 
+Перед использованием помощника настройки установите официальный пакет ClickHouse agent skills:
+
+```bash
+npx skills add clickhouse/agent-skills
+```
+
 <AgentPrompt
-  prompt="С помощью curl скачайте, прочитайте и выполните инструкции: https://clickhouse.com/docs/skills/clickstack-otel-collector/SKILL.md"
+  prompt="Используйте навык clickstack-otel-collector, чтобы подключить OpenTelemetry Collector к моему сервису Управляемый ClickStack."
   description="Ваш агент настроит для вас коллектор ClickStack OpenTelemetry. Работает с Claude Code, Cursor, Codex и другими агентами для программирования."
+  repositoryUrl="https://github.com/ClickHouse/agent-skills"
   outline={[
 "Установите clickhousectl, если он ещё не установлен, и выполните аутентификацию (будет запрошен API key ClickHouse Cloud — вставьте его в чат или выполните команду входа самостоятельно).",
 "Спросите у пользователя ID или имя целевого сервиса ClickHouse Cloud, затем получите его HTTPS-конечную точку.",
@@ -41,21 +49,15 @@ import ConfirmInUI from '/snippets/ru/clickstack/_confirm_in_ui.mdx';
 <Tabs>
   <Tab title="У меня нет коллектора">
     <Steps>
-      <Step>
-        ## Подготовьте учетные данные
-
+      <Step title="Подготовьте учетные данные" id="gather-credentials">
         <GatherCredentials />
       </Step>
 
-      <Step>
-        ## Создайте пользователя для ингестии
-
+      <Step title="Создайте пользователя для приёма данных" id="create-ingestion-user">
         <CreateIngestionUser />
       </Step>
 
-      <Step>
-        ## Разверните коллектор
-
+      <Step title="Разверните коллектор" id="deploy-the-collector">
         Разверните **дистрибутив OpenTelemetry Collector от ClickStack**, который уже настроен для Управляемого ClickStack. В примере ниже для простоты мы запускаем коллектор локально и генерируем тестовую телеметрию на той же машине.
 
         <Note>
@@ -94,9 +96,7 @@ import ConfirmInUI from '/snippets/ru/clickstack/_confirm_in_ui.mdx';
         </Info>
       </Step>
 
-      <Step>
-        ## Проверка конечной точки
-
+      <Step title="Проверка конечной точки" id="verify-the-endpoint">
         Сгенерируйте синтетический трафик на коллектор, чтобы убедиться в корректной работе всего конвейера. Мы используем [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen) — генератор OpenTelemetry Collector Contrib, который отправляет OTLP-журналы, трассировки и метрики, а также предоставляет флаги для формирования данных по сервисам, уровням серьёзности, статусам спанов и типам метрик.
 
         Запустите его из Docker-образа (установка не требуется). Определите небольшую вспомогательную функцию, чтобы приведённые ниже команды оставались читаемыми; `--add-host` позволяет контейнеру обращаться к коллектору, слушающему на хосте:
@@ -164,7 +164,7 @@ import ConfirmInUI from '/snippets/ru/clickstack/_confirm_in_ui.mdx';
             --telemetry-attributes 'http.route="/charge"'
           ```
 
-          Отправляйте метрики всех трёх распространённых типов, чтобы на диаграммах были counter, gauge и distribution:
+          Отправляйте метрики всех трёх распространённых типов, чтобы на графиках были Counter, Gauge и распределение:
 
           ```shell
           tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
@@ -186,9 +186,7 @@ import ConfirmInUI from '/snippets/ru/clickstack/_confirm_in_ui.mdx';
         Полный список флагов и другие варианты использования см. в разделе [Синтетические данные с telemetrygen](/ru/clickstack/example-datasets/telemetrygen).
       </Step>
 
-      <Step>
-        ## Проверьте в интерфейсе ClickStack
-
+      <Step title="Проверьте в интерфейсе ClickStack" id="confirm-in-ui">
         <ConfirmInUI />
       </Step>
     </Steps>
@@ -196,21 +194,15 @@ import ConfirmInUI from '/snippets/ru/clickstack/_confirm_in_ui.mdx';
 
   <Tab title="У меня есть коллектор">
     <Steps>
-      <Step>
-        ## Подготовьте учетные данные
-
+      <Step title="Подготовьте учетные данные" id="gather-credentials-existing">
         <GatherCredentials />
       </Step>
 
-      <Step>
-        ## Создайте пользователя для приёма данных
-
+      <Step title="Создайте пользователя для ингестии" id="create-ingestion-user-existing">
         <CreateIngestionUser />
       </Step>
 
-      <Step>
-        ## Адаптируйте конфигурацию коллектора
-
+      <Step title="Адаптируйте конфигурацию коллектора" id="adapt-collector">
         Расширьте существующую конфигурацию коллектора, чтобы отправлять данные в Управляемый ClickStack через [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
 
         <Info>
@@ -314,9 +306,7 @@ import ConfirmInUI from '/snippets/ru/clickstack/_confirm_in_ui.mdx';
         Дополнительные сведения о настройке коллекторов OpenTelemetry для работы с Управляемым ClickStack см. в разделе [Ингестия с OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).
       </Step>
 
-      <Step>
-        ## Проверьте конечную точку
-
+      <Step title="Проверьте конечную точку" id="verify-the-endpoint-existing">
         Сгенерируйте синтетический трафик к вашему коллектору, чтобы убедиться в корректной работе всего конвейера. Мы используем [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen) — генератор OpenTelemetry Collector Contrib, который отправляет OTLP-журналы, трассировки и метрики, а также предоставляет флаги для формирования данных по сервисам, уровням серьёзности, статусам спанов и типам метрик.
 
         Запустите его из Docker-образа (установка не требуется). Замените `<your-collector-host>` на хост, на котором слушает ваш collector, и задайте заголовок `authorization` (или альтернативный метод аутентификации) в соответствии с тем, что ожидает ваш collector:
@@ -339,7 +329,7 @@ import ConfirmInUI from '/snippets/ru/clickstack/_confirm_in_ui.mdx';
         <Info>
           **Чего ожидать**
 
-          Каждый запуск `tg` длится около 20 секунд (задаётся через `--duration 20s`) и на протяжении всего этого времени выводит подробные записи журнала — это нормально; каждый запуск завершается сам, как только истекают эти 20 секунд. Приведённых ниже журналов достаточно, чтобы подтвердить работу конвейера; дополнительный расширенный набор включает ещё несколько запусков и занимает несколько минут.
+          Каждый запуск `tg` длится около 20 секунд (это задается через `--duration 20s`) и все это время выводит подробные журналы — это нормально; каждый запуск завершается сам по себе, как только проходят эти 20 секунд. Приведенных ниже журналов достаточно, чтобы убедиться, что конвейер работает; дополнительный расширенный набор включает еще несколько запусков и занимает несколько минут.
         </Info>
 
         Определите небольшой вспомогательный объект `tg`, чтобы каждая команда задавала только то, что меняется (сервис, уровень серьёзности, status, атрибуты):
@@ -367,8 +357,8 @@ import ConfirmInUI from '/snippets/ru/clickstack/_confirm_in_ui.mdx';
 
         Одних журналов достаточно, чтобы убедиться в работоспособности конечной точки. Для получения более насыщенного демо-набора данных, карты сервисов с несколькими сервисами и графиков по различным типам метрик разверните и выполните приведённые ниже команды. Они используют вспомогательный инструмент `tg`, поэтому запускайте их в том же терминале.
 
-        <Accordion title="Включите более подробную телеметрию (необязательно)">
-          Отправьте трейсы с несколькими спанами из нескольких исправно работающих сервисов и одной зависимостью со сбоем. Так карта сервисов будет выглядеть реалистично: в основном всё работает нормально, но один сервис выдаёт ошибки, и при этом представления ошибок тоже будут заполнены:
+        <Accordion title="Собирайте более подробную телеметрию (необязательно)">
+          Отправьте трассы из нескольких спанов от нескольких работоспособных сервисов и одной сбоящей зависимости. Это придаст карте сервисов реалистичный вид: в основном всё будет работать нормально, но один сервис будет выдавать ошибки, и при этом в представлениях ошибок тоже появятся данные:
 
           ```shell
           # Healthy services: the bulk of the traffic, all spans Ok
@@ -392,7 +382,7 @@ import ConfirmInUI from '/snippets/ru/clickstack/_confirm_in_ui.mdx';
           tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
           ```
 
-          Для большего разнообразия добавьте ещё пару сервисов и экспоненциальную гистограмму:
+          Для ещё большего разнообразия добавьте ещё пару сервисов и экспоненциальную гистограмму:
 
           ```shell
           tg traces  --service catalog   --child-spans 2 --span-duration 60ms  --status-code Ok \
@@ -406,9 +396,7 @@ import ConfirmInUI from '/snippets/ru/clickstack/_confirm_in_ui.mdx';
         Полный список флагов и другие варианты использования см. в разделе [Синтетические данные с telemetrygen](/ru/clickstack/example-datasets/telemetrygen).
       </Step>
 
-      <Step>
-        ## Проверьте в интерфейсе ClickStack
-
+      <Step title="Проверьте в интерфейсе ClickStack" id="confirm-in-ui-existing">
         <ConfirmInUI />
       </Step>
     </Steps>

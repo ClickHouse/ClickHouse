@@ -35,9 +35,7 @@ Antes de iniciar o upgrade:
 </div>
 
 <Steps>
-  <Step>
-    ### 1. Faça upgrade do Chart do Helm do operator
-
+  <Step title="1. Faça upgrade do Chart do Helm do operator" id="1-upgrade-the-operator-helm-chart">
     Mantenha todos os values atuais do helm inalterados, atualizando apenas as versões do operator para as novas versões de destino.
 
     ```bash
@@ -50,9 +48,7 @@ Antes de iniciar o upgrade:
     > **Observação:** Fazer upgrade do operator pode acionar uma reinicialização progressiva de todos os clusters do ClickHouse que ele gerencia. Se você tiver vários clusters e quiser validar o upgrade em um deles antes de permitir que o operator reconcilie os demais, consulte [Protegendo clusters durante o upgrade](#protecting-clusters-during-upgrade) abaixo.
   </Step>
 
-  <Step>
-    ### 2. Valide o operator atualizado
-
+  <Step title="2. Valide o operator atualizado" id="2-validate-the-upgraded-operator">
     Confirme que a implantação do operator está em execução e íntegra:
 
     ```bash
@@ -68,9 +64,7 @@ Antes de iniciar o upgrade:
     ```
   </Step>
 
-  <Step>
-    ### 3. Faça upgrade do Chart do Helm onprem-clickhouse-cluster
-
+  <Step title="3. Faça upgrade do Chart do Helm onprem-clickhouse-cluster" id="3-upgrade-the-onprem-clickhouse-cluster-helm-chart">
     Faça upgrade do chart do helm `onprem-clickhouse-cluster` em cada cluster. Mantenha todos os values atuais do helm inalterados, atualizando apenas as versões das imagens do servidor ClickHouse e do Keeper para as novas versões de destino.
 
     ```bash
@@ -85,9 +79,7 @@ Antes de iniciar o upgrade:
     Isso aciona uma **reinicialização progressiva dos pods do Keeper e do servidor** (um pod por vez). Repita o processo para cada cluster.
   </Step>
 
-  <Step>
-    ### 4. Valide o cluster atualizado
-
+  <Step title="4. Valide o cluster atualizado" id="4-validate-the-upgraded-cluster">
     Depois que a reinicialização progressiva for concluída, confirme que o cluster está íntegro:
 
     ```bash
@@ -95,7 +87,7 @@ Antes de iniciar o upgrade:
     kubectl get pods -n <namespace>
     ```
 
-    Todos os pods devem estar no estado `Running`, e o CR `ClickhouseCluster` não deve exibir erros. Para validar ainda mais a conectividade, faça o redirecionamento de porta do serviço do ClickHouse (consulte a seção Port-forward no [tutorial](/pt-BR/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks) relevante) e execute uma consulta de teste.
+    Todos os pods devem estar no estado `Running`, e o CR `ClickhouseCluster` não deve exibir erros. Para validar ainda mais a conectividade, faça o redirecionamento de porta do serviço do ClickHouse (consulte a seção redirecionamento de porta no [tutorial](/pt-BR/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks) relevante) e execute uma consulta de teste.
   </Step>
 </Steps>
 

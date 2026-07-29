@@ -96,8 +96,8 @@ public:
     /// Some catalogs (Unity or Glue) may store not only Iceberg/DeltaLake tables but other kinds of "tables"
     /// as simple files or some in-memory tables, or even DataLake tables but in some private storages.
     /// ClickHouse can see these tables via catalog, but obviously cannot read them.
-    /// So we use these methods to identify such tables and show them in SHOW TABLES and
-    /// SHOW CREATE TABLE queries.
+    /// We use these methods to hide such tables from listings (SHOW TABLES, system.tables);
+    /// SHOW CREATE TABLE can still describe them (with engine `Other`).
     void setTableIsNotReadable(const std::string & reason)
     {
         if (is_default_readable_table)
@@ -148,6 +148,19 @@ private:
 };
 
 
+/// A table as returned by a catalog's bulk listing, without a per-table metadata fetch.
+struct CatalogTable
+{
+    /// Full name including namespace, e.g. "namespace.table".
+    std::string name;
+
+    /// Whether ClickHouse can read this table (Iceberg for Glue/REST/Hive, Delta for Unity).
+    /// Mixed catalogs set it from the bulk listing so SHOW TABLES can hide unreadable tables.
+    bool is_readable = true;
+};
+
+using CatalogTables = std::vector<CatalogTable>;
+
 /// Catalog-layer view of the `name` predicate (translated from `DB::TablesFilter`
 /// by `DatabaseDataLake`) so the catalog can restrict which namespaces it lists.
 struct TableNameFilter
@@ -196,17 +209,18 @@ public:
     /// Does catalog have any tables?
     virtual bool empty() const = 0;
 
-    /// Fetch tables' names list.
-    /// Contains full namespaces in names.
-    virtual DB::Names getTables() const = 0;
+    /// Fetch the list of tables (names contain full namespaces). Each entry carries an
+    /// `is_readable` flag so listings can drop unreadable tables without a metadata fetch.
+    virtual CatalogTables getTables() const = 0;
 
     /// Enumerate every namespace as a full dot-separated path (hierarchical catalogs
     /// return every nested level; flat catalogs their single-level names).
     virtual Namespaces getNamespaces() const = 0;
 
-    /// Fetch fully-qualified table names, restricted by the `name` predicate (see
-    /// `TableNameFilter`). Default impl prunes namespaces via `getNamespaces()`.
-    virtual DB::Names getTables(const TableNameFilter & filter) const;
+    /// Fetch the list of tables restricted by the `name` predicate (see `TableNameFilter`);
+    /// each entry carries an `is_readable` flag like getTables(). Default impl prunes
+    /// namespaces via `getNamespaces()`.
+    virtual CatalogTables getTables(const TableNameFilter & filter) const;
 
     /// Check that a table exists in a given namespace.
     virtual bool existsTable(
@@ -289,8 +303,8 @@ public:
 
 protected:
     /// List tables directly in `namespace_name` (non-recursive), as fully-qualified
-    /// `namespace.table` names.
-    virtual DB::Names listTablesInNamespaceDirect(const std::string & namespace_name) const = 0;
+    /// `namespace.table` entries carrying an `is_readable` flag like getTables().
+    virtual CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const = 0;
 
     /// Name of the warehouse,
     /// which is sometimes also called "catalog name".

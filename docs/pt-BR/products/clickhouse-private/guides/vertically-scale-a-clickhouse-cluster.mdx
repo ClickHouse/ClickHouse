@@ -11,13 +11,11 @@ Ajuste os recursos de CPU e memória de um cluster do ClickHouse usando a API Pr
   ## Pré-requisitos
 </div>
 
-* ClickHouse Private API instalada e acessível (por exemplo, via redirecionamento de porta para `http://localhost:8080/`)
+* ClickHouse API Privada instalada e acessível (por exemplo, via redirecionamento de porta para `http://localhost:8080/`)
 * Pelo menos um cluster do ClickHouse implantado (este guia usa `default-xx-01`)
 
 <Steps>
-  <Step>
-    ## 1. Criar a solicitação de escalonamento
-
+  <Step title="1. Criar a solicitação de escalonamento" id="1-create-the-scale-request">
     Crie um arquivo JSON com a alocação de recursos desejada:
 
     ```json
@@ -34,9 +32,7 @@ Ajuste os recursos de CPU e memória de um cluster do ClickHouse usando a API Pr
     Salve-o como `scale.json`.
   </Step>
 
-  <Step>
-    ## 2. Enviar a solicitação
-
+  <Step title="2. Enviar a solicitação" id="2-send-the-request">
     ```bash
     curl -X POST "http://localhost:8080/api/v1/instances/default-xx-01/scale" \
         -H "Content-Type: application/json" \
@@ -44,9 +40,7 @@ Ajuste os recursos de CPU e memória de um cluster do ClickHouse usando a API Pr
     ```
   </Step>
 
-  <Step>
-    ## 3. Aplicação da proporção CPU:memória
-
+  <Step title="3. Aplicação da proporção CPU:memória" id="3-cpumemory-ratio-enforcement">
     A API aplica uma **proporção de 1:4 entre CPU e memória** (1 núcleo de CPU para cada 4 GiB de memória), com uma margem de 5%.
 
     Se você informar apenas um tipo de recurso, a API calculará automaticamente o outro. Por exemplo, especificar apenas `"memory": "16Gi"` define a CPU como 4 núcleos.
@@ -61,9 +55,7 @@ Ajuste os recursos de CPU e memória de um cluster do ClickHouse usando a API Pr
     Unidades binárias (Ki, Mi, Gi) são recomendadas para memória.
   </Step>
 
-  <Step>
-    ## 4. Monitorar o progresso do escalonamento
-
+  <Step title="4. Monitorar o progresso do escalonamento" id="4-monitor-scaling-progress">
     Verifique o status do cluster para acompanhar a operação de escalonamento:
 
     ```bash
