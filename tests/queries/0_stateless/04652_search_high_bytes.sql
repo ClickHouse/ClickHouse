@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 -- Substring search must find needle bytes above 0x7F. StringZilla's SWAR byte broadcast
 -- sign-extended the needle byte before splatting it across a 64-bit word, so `sz_find_byte_serial`
 -- never matched a byte in 0x80..0xFF. The `westmere`, `haswell`, `neon` and `sve` kernels all
