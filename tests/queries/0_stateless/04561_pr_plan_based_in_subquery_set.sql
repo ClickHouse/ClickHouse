@@ -33,6 +33,15 @@ SET use_index_for_in_with_subqueries = 1;
 
 -- local_plan = 1: the initiator builds a local plan and ships a serialized fragment to the replicas.
 SET parallel_replicas_local_plan = 1;
+
+-- Guard the preconditions, so that losing either one turns this test red instead of silently making the
+-- assertions below pass under plain local execution: the plan must really contain a distributed read, and
+-- index analysis must really build the set (otherwise nothing consumes its subquery plan early).
+SELECT count() > 0 FROM (EXPLAIN SELECT count() FROM t_pr_in WHERE a IN (SELECT k FROM src_pr_in))
+    WHERE explain ILIKE '%ReadFromParallelReplicas%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_pr_in WHERE a IN (SELECT k FROM src_pr_in))
+    WHERE explain ILIKE '%Granules:%';
+
 SELECT count() FROM t_pr_in WHERE a IN (SELECT k FROM src_pr_in);
 SELECT count() FROM t_pr_in WHERE b IN (SELECT k FROM src_pr_in);
 SELECT b, count() FROM t_pr_in WHERE a IN (SELECT k FROM src_pr_in) GROUP BY b ORDER BY b;
