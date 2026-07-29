@@ -339,6 +339,57 @@ INSERT INTO t_keep_json_int SELECT number, toJSONString(map('a', toString(number
 SYSTEM STOP MERGES t_keep_json_int;
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_keep_json_int WHERE toString(j) = 'x') WHERE explain ILIKE '%Granules: 0/16%';
 
+SELECT '-- 19. the carrier of a SUBCOLUMN index is its parent, whose type the cache also erases';
+-- p.x is not a top-level column of the part, so the part-side type must be derived from the part's
+-- OWN Tuple type. DataTypeTuple::equals() recurses into DataTypeNumber<UInt8>::equals(), a bare
+-- typeid test, so Tuple(x UInt8) and Tuple(x Bool) share one interned entry while toString(p.x)
+-- changes '0'/'1' to 'false'/'true'. ATTACH PARTITION FROM makes the collision deterministic the
+-- same way case 15 does.
+DROP TABLE IF EXISTS t_sub_src;
+CREATE TABLE t_sub_src (k UInt64, p Tuple(x UInt8), INDEX idx toString(p.x) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree PARTITION BY intDiv(k, 1000) ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_sub_src SELECT number, tuple(number % 2) FROM numbers(64);
+SYSTEM STOP MERGES t_sub_src;
+DROP TABLE IF EXISTS t_sub_dst;
+CREATE TABLE t_sub_dst (k UInt64, p Tuple(x Bool), INDEX idx toString(p.x) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree PARTITION BY intDiv(k, 1000) ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_sub_dst SELECT 1000 + number, tuple(number % 2) FROM numbers(4);
+SYSTEM STOP MERGES t_sub_dst;
+ALTER TABLE t_sub_dst ATTACH PARTITION 0 FROM t_sub_src SETTINGS alter_sync = 2;
+SELECT count() FROM t_sub_dst WHERE toString(p.x) = 'true' AND k < 1000 SETTINGS use_query_condition_cache = 0;
+SELECT count() FROM t_sub_dst WHERE toString(p.x) = 'true' AND k < 1000 SETTINGS use_skip_indexes = 0, use_query_condition_cache = 0;
+
+SELECT '-- 20. over-fire control: an UNCHANGED subcolumn index must keep pruning';
+-- The refusal is about a parent type that CHANGED, not about the requirement being a subcolumn: a
+-- fix that refused every subcolumn index, or that compared a part-side parent against a
+-- metadata-side subcolumn, would lose pruning here. Both the bare and the expression shape.
+DROP TABLE IF EXISTS t_keep_sub_src;
+CREATE TABLE t_keep_sub_src (k UInt64, p Tuple(x UInt8), INDEX idx p.x TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree PARTITION BY intDiv(k, 1000) ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_keep_sub_src SELECT number, tuple(intDiv(number, 16)) FROM numbers(64);
+SYSTEM STOP MERGES t_keep_sub_src;
+DROP TABLE IF EXISTS t_keep_sub_dst;
+CREATE TABLE t_keep_sub_dst (k UInt64, p Tuple(x UInt8), INDEX idx p.x TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree PARTITION BY intDiv(k, 1000) ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_keep_sub_dst SELECT 1000 + number, tuple(9) FROM numbers(4);
+SYSTEM STOP MERGES t_keep_sub_dst;
+ALTER TABLE t_keep_sub_dst ATTACH PARTITION 0 FROM t_keep_sub_src SETTINGS alter_sync = 2;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_keep_sub_dst WHERE p.x = 0) WHERE explain ILIKE '%Granules: 4/17%';
+SELECT count() FROM t_keep_sub_dst WHERE p.x = 0;
+DROP TABLE IF EXISTS t_keep_subexpr_src;
+CREATE TABLE t_keep_subexpr_src (k UInt64, p Tuple(x UInt8), INDEX idx toString(p.x) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree PARTITION BY intDiv(k, 1000) ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_keep_subexpr_src SELECT number, tuple(intDiv(number, 16)) FROM numbers(64);
+SYSTEM STOP MERGES t_keep_subexpr_src;
+DROP TABLE IF EXISTS t_keep_subexpr_dst;
+CREATE TABLE t_keep_subexpr_dst (k UInt64, p Tuple(x UInt8), INDEX idx toString(p.x) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree PARTITION BY intDiv(k, 1000) ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_keep_subexpr_dst SELECT 1000 + number, tuple(9) FROM numbers(4);
+SYSTEM STOP MERGES t_keep_subexpr_dst;
+ALTER TABLE t_keep_subexpr_dst ATTACH PARTITION 0 FROM t_keep_subexpr_src SETTINGS alter_sync = 2;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_keep_subexpr_dst WHERE toString(p.x) = '0') WHERE explain ILIKE '%Granules: 4/17%';
+SELECT count() FROM t_keep_subexpr_dst WHERE toString(p.x) = '0';
+
 DROP TABLE t_stale_nullable;
 DROP TABLE t_stale_plain;
 DROP TABLE t_stale_json;
@@ -366,3 +417,9 @@ DROP TABLE t_stale_bool;
 DROP TABLE t_keep_bool;
 DROP TABLE t_keep_json_tz;
 DROP TABLE t_keep_json_int;
+DROP TABLE t_sub_src;
+DROP TABLE t_sub_dst;
+DROP TABLE t_keep_sub_src;
+DROP TABLE t_keep_sub_dst;
+DROP TABLE t_keep_subexpr_src;
+DROP TABLE t_keep_subexpr_dst;

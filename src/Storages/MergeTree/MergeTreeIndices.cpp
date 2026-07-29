@@ -184,14 +184,22 @@ bool hasSameMeaning(const IDataType & from, const IDataType & to)
 /// and whichever part is loaded first decides what both of them report. Part loading is concurrent
 /// and shuffled, so consulting it here would make the comparison below depend on load order.
 ///
-/// Returns null when the part's own list has no top-level entry for @required, which is the case for
-/// a subcolumn (`j.a`): the caller then falls back to the cached description, whose subcolumn
-/// resolution is the only one available. A subcolumn cannot itself be a top-level column of the
-/// part, so no carrier of a dropped attribute is left on the cached path.
-DataTypePtr tryGetPartOwnType(const IMergeTreeDataPart & part, const String & required)
+/// A subcolumn (`p.x`, `j.a`) is not a top-level entry, so it is resolved against the part's OWN
+/// parent type instead: the carrier of an attribute equals() drops is the parent, and the
+/// subcolumn's type is derived from it. @required is the part-side pair, which has already split
+/// the name (`a.b.c` is ambiguous between `a` + `b.c` and `a.b` + `c`).
+///
+/// Returns null when the part's own list answers neither way. For a subcolumn that is a
+/// DIFFERENCE, not an unknown, so the caller must not fall back to the cached description there.
+DataTypePtr tryGetPartOwnType(const IMergeTreeDataPart & part, const NameAndTypePair & required)
 {
-    if (auto own = part.getColumns().tryGetByName(required))
+    if (auto own = part.getColumns().tryGetByName(required.name))
         return own->type;
+
+    if (required.isSubcolumn())
+        if (auto parent = part.getColumns().tryGetByName(required.getNameInStorage()))
+            return parent->type->tryGetSubcolumnType(required.getSubcolumnName());
+
     return nullptr;
 }
 
@@ -214,10 +222,17 @@ bool IMergeTreeIndex::isPartTypeCompatible(const IMergeTreeDataPart & part) cons
 
         /// Prefer the part's own uncached list; see tryGetPartOwnType() for why the cached one cannot
         /// answer this question. tryGetColumn() above stays the EXISTENCE test: its nullopt is what
-        /// drives the refusal right above, and only it resolves subcolumns.
-        auto part_type = tryGetPartOwnType(part, column);
+        /// drives the refusal right above, and it is what splits a subcolumn's name.
+        auto part_type = tryGetPartOwnType(part, *part_column);
         if (!part_type)
+        {
+            /// The part's own parent type does not offer this subcolumn at all (its element was
+            /// renamed, or the parent is absent from this part). Refuse: falling back to the cached
+            /// description here would reintroduce the load-order dependency above.
+            if (part_column->isSubcolumn())
+                return false;
             part_type = part_column->type;
+        }
 
         /// A representation-preserving difference is not necessarily a meaning-preserving one: a
         /// timezone-only MODIFY COLUMN, or UInt8 -> Bool, leaves every byte alone and so reaches here
