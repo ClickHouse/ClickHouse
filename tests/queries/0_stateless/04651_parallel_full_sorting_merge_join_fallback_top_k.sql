@@ -81,6 +81,23 @@ FROM ( EXPLAIN actions = 0
              max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 );
 
+-- The pessimization is not unique to the full-sorting variants: `partial_merge` re-sorts the
+-- left blocks, so listing it defeats the deferral in exactly the same way. Pinned here so the
+-- `join_algorithm` documentation of the effect stays honest about its scope.
+SELECT 'hash_pm' AS label, countIf(explain LIKE '%Sorting%') AS sort_count, countIf(explain LIKE '%Limit%') AS limit_count
+FROM ( EXPLAIN actions = 0
+    SELECT l.k, r.value FROM pfsmj_topk_left AS l LEFT JOIN pfsmj_topk_right AS r ON r.k = l.k
+    ORDER BY l.k DESC LIMIT 10
+    SETTINGS optimize_read_in_order = 1,
+             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+             query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
+             enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
+             query_plan_optimize_lazy_materialization = 0,
+             enable_parallel_replicas = 0,
+             join_algorithm = 'hash,partial_merge',
+             max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
+);
+
 -- The plan shape differs, the results must not.
 SELECT 'result_hash' AS label, count(), max(k), min(k) FROM (
     SELECT l.k AS k, r.value FROM pfsmj_topk_left AS l LEFT JOIN pfsmj_topk_right AS r ON r.k = l.k

@@ -3577,12 +3577,12 @@ Specifies which [JOIN](../../sql-reference/statements/select/join.md) algorithm 
 
 Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
 
-Most algorithms affect a query only when they are the one selected for it. `full_sorting_merge` and `parallel_full_sorting_merge` are an exception: merely listing either of them — even as a lower-priority fallback that is not ultimately selected — has two effects on planning, because both are decided before the algorithm is picked:
+Most algorithms affect a query only when they are the one selected for it. Some, however, change planning merely by being listed — even as a lower-priority fallback that is not ultimately selected — because the decision is made before the algorithm is picked. There are two such effects:
 
-- Join-key type inference becomes stricter (a merge join cannot join keys of different types, for example `String` and `Nullable(String)`). This can change the result types of `USING` columns, and can make a join into a `Join`-engine table fail with `TYPE_MISMATCH`.
-- `ORDER BY ... LIMIT` on the preserved side of a join gets an explicit sort instead of a read in primary-key order, because a merge join would insert its own pre-join sort and break the ordered read. The result is the same, the plan is less efficient.
+- Join-key type inference becomes stricter (a merge join cannot join keys of different types, for example `String` and `Nullable(String)`). This can change the result types of `USING` columns, and can make a join into a `Join`-engine table fail with `TYPE_MISMATCH`. Triggered by `full_sorting_merge` and `parallel_full_sorting_merge`.
+- `ORDER BY ... LIMIT` on the preserved side of a join gets an explicit sort instead of a read in primary-key order, because the join is assumed to break the ordered read (a merge join inserts its own pre-join sort; a partial merge join re-sorts the left blocks; a join that can produce delayed blocks does not propagate the ordered read either). The result is the same, the plan is less efficient. Triggered by `full_sorting_merge`, `parallel_full_sorting_merge`, `partial_merge`, `prefer_partial_merge`, `grace_hash` and `auto`, and also by a non-zero `max_bytes_before_external_join` / `max_bytes_ratio_before_external_join`.
 
-Both apply even when the query eventually runs with `hash` or another algorithm. If this is undesirable, do not include `full_sorting_merge` / `parallel_full_sorting_merge` in `join_algorithm` for the affected queries.
+Both apply even when the query eventually runs with `hash` or another algorithm. If this is undesirable, do not list the algorithms above in `join_algorithm` for the affected queries.
 
 Possible values:
 
