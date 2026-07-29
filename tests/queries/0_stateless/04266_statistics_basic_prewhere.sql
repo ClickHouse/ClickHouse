@@ -219,3 +219,97 @@ SELECT position(prewhere_line, 'b.null') < position(prewhere_line, 'a.null') AS 
 );
 
 DROP TABLE test_const_null;
+
+-- =============================================================================
+-- `IS [NOT] DISTINCT FROM` / `<=>` selectivity uses `basic` statistics for
+-- `Nullable` columns. The checks compare `PREWHERE` order against a `probe`
+-- range whose selectivity is chosen so that the old unknown-condition fallback
+-- would pick the opposite order.
+-- =============================================================================
+DROP TABLE IF EXISTS test_null_safe_distinct_prewhere;
+
+CREATE TABLE test_null_safe_distinct_prewhere
+(
+    id UInt64,
+    nullable_value Nullable(Int64),
+    probe Int64,
+    float_key Float32
+) Engine = MergeTree() ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = '';
+
+INSERT INTO test_null_safe_distinct_prewhere
+SELECT
+    number,
+    if(number % 5 = 0, NULL, number % 100),
+    number,
+    toFloat32(number % 10)
+FROM numbers(1000);
+
+ALTER TABLE test_null_safe_distinct_prewhere ADD STATISTICS nullable_value TYPE basic;
+ALTER TABLE test_null_safe_distinct_prewhere ADD STATISTICS probe TYPE basic;
+ALTER TABLE test_null_safe_distinct_prewhere ADD STATISTICS float_key TYPE basic;
+ALTER TABLE test_null_safe_distinct_prewhere MATERIALIZE STATISTICS nullable_value, probe, float_key SETTINGS mutations_sync = 1;
+
+SELECT 'Null-safe equality with non-NULL constants uses equality statistics';
+SELECT position(prewhere_line, 'nullable_value') < position(prewhere_line, 'probe') AS null_safe_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_null_safe_distinct_prewhere
+        WHERE nullable_value IS NOT DISTINCT FROM 7 AND probe < 50
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+SELECT position(prewhere_line, 'nullable_value') < position(prewhere_line, 'probe') AS null_safe_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_null_safe_distinct_prewhere
+        WHERE isNotDistinctFrom(nullable_value, 7) AND probe < 50
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+SELECT position(prewhere_line, 'nullable_value') < position(prewhere_line, 'probe') AS null_safe_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_null_safe_distinct_prewhere
+        WHERE nullable_value <=> 7 AND probe < 50
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'Null-safe distinct with non-NULL constants includes NULL rows as TRUE';
+SELECT position(prewhere_line, 'probe') < position(prewhere_line, 'nullable_value') AS probe_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_null_safe_distinct_prewhere
+        WHERE nullable_value IS DISTINCT FROM 7 AND probe < 950
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+SELECT position(prewhere_line, 'probe') < position(prewhere_line, 'nullable_value') AS probe_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_null_safe_distinct_prewhere
+        WHERE isDistinctFrom(7, nullable_value) AND probe < 950
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'NULL constants use basic null-count statistics';
+SELECT position(prewhere_line, 'nullable_value') < position(prewhere_line, 'probe') AS null_safe_null_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_null_safe_distinct_prewhere
+        WHERE nullable_value IS NOT DISTINCT FROM NULL AND probe < 300
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+SELECT position(prewhere_line, 'probe') < position(prewhere_line, 'nullable_value') AS probe_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_null_safe_distinct_prewhere
+        WHERE isDistinctFrom(nullable_value, NULL) AND probe < 500
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'Impossible Float32 literal folds for null-safe predicates';
+SELECT position(prewhere_line, 'float_key') < position(prewhere_line, 'probe') AS impossible_equal_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_null_safe_distinct_prewhere
+        WHERE float_key IS NOT DISTINCT FROM 0.1 AND probe < 1
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+SELECT position(prewhere_line, 'probe') < position(prewhere_line, 'float_key') AS probe_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_null_safe_distinct_prewhere
+        WHERE float_key IS DISTINCT FROM 0.1 AND probe < 950
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+DROP TABLE test_null_safe_distinct_prewhere;

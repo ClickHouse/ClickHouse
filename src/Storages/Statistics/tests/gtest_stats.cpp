@@ -6,23 +6,25 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
-#include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/Statistics/StatisticsMinMax.h>
-#include <Storages/StatisticsDescription.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ExpressionListParsers.h>
+#include <Storages/StatisticsDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Common/Exception.h>
 
 using namespace DB;
 
@@ -214,6 +216,38 @@ ColumnStatisticsPtr createTestStats(
     return MergeTreeStatisticsFactory::instance().get(desc);
 }
 
+ColumnStatisticsPtr buildInt32Stats(const std::vector<StatisticsType> & types, size_t total)
+{
+    auto data_type = std::make_shared<DataTypeInt32>();
+    MutableColumnPtr col = data_type->createColumn();
+    for (size_t i = 0; i < total; ++i)
+        col->insert(static_cast<Int32>(i));
+
+    auto stats = createTestStats(types, data_type);
+    stats->build(std::move(col));
+    return stats;
+}
+
+ColumnStatisticsPtr buildDateStats(const std::vector<StatisticsType> & types, size_t total)
+{
+    auto data_type = std::make_shared<DataTypeDate>();
+    MutableColumnPtr col = data_type->createColumn();
+    for (size_t i = 0; i < total; ++i)
+        col->insert(static_cast<UInt16>(i));
+
+    auto stats = createTestStats(types, data_type);
+    ColumnPtr column = static_cast<const IColumn &>(*col).getPtr();
+    stats->build(column);
+    return stats;
+}
+
+StorageMetadataPtr makeMetadata(std::initializer_list<ColumnDescription> columns)
+{
+    auto metadata = std::make_shared<StorageInMemoryMetadata>();
+    metadata->setColumns(ColumnsDescription(columns));
+    return metadata;
+}
+
 /// Build a `Nullable(Int32)` column with `total` rows where every `null_every`-th row is NULL.
 /// Non-NULL row `i` carries value `static_cast<Int32>(i)`. Returns built statistics.
 ColumnStatisticsPtr buildNullableInt32Stats(
@@ -238,7 +272,7 @@ ColumnStatisticsPtr buildNullableInt32Stats(
 
 /// Estimate the row count for a SQL boolean expression evaluated against `estimator`.
 template <class Estimator>
-Float64 estimateRowsFor(Estimator & estimator, const String & expression)
+Float64 estimateRowsFor(Estimator & estimator, const String & expression, const StorageMetadataPtr & metadata = nullptr)
 {
     ParserExpressionWithOptionalAlias exp_parser(false);
     ContextPtr context = getContext().context;
@@ -248,7 +282,7 @@ Float64 estimateRowsFor(Estimator & estimator, const String & expression)
         {});
     ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
     RPNBuilderTreeNode node(ast.get(), tree_context);
-    return static_cast<Float64>(estimator->estimateRelationProfile(nullptr, node).rows);
+    return static_cast<Float64>(estimator->estimateRelationProfile(metadata, node).rows);
 }
 
 }
@@ -345,6 +379,92 @@ TEST(Statistics, NullableEstimatorWithBasic)
     check("a IS NULL AND a > 500 AND b IS NULL", 0.0, 1e-6); /// a IS NULL contradicts a > 500
 }
 
+TEST(Statistics, NullSafeEqualityEstimator)
+{
+    tryRegisterFunctions();
+
+    auto int_type = std::make_shared<DataTypeInt32>();
+    auto nullable_int_type = std::make_shared<DataTypeNullable>(int_type);
+
+    auto stats_a = buildInt32Stats({StatisticsType::Basic}, /*total=*/1000);
+    auto stats_n = buildNullableInt32Stats({StatisticsType::Basic}, /*total=*/1000, /*null_every=*/5);
+    auto stats_d = buildDateStats({StatisticsType::Basic}, /*total=*/1000);
+    ASSERT_EQ(stats_n->getNonNullRowCount(), 800u);
+
+    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.addStatistics("a", stats_a);
+    builder.addStatistics("n", stats_n);
+    builder.addStatistics("d", stats_d);
+    builder.incrementRowCount(1000);
+    auto estimator = builder.getEstimator();
+
+    auto metadata = makeMetadata(
+        {ColumnDescription("a", int_type), ColumnDescription("n", nullable_int_type), ColumnDescription("d", stats_d->getDataType())});
+
+    auto check = [&](const String & expression, Float64 expected)
+    {
+        Float64 actual = estimateRowsFor(estimator, expression, metadata);
+        EXPECT_NEAR(actual, expected, 1e-6) << "Expression: " << expression;
+    };
+
+    /// Non-nullable column: null-safe equality uses the same equality estimate and distinct is its complement.
+    check("a = 5", 10.0);
+    check("a IS NOT DISTINCT FROM 5", 10.0);
+    check("a <=> 5", 10.0);
+    check("isNotDistinctFrom(a, 5)", 10.0);
+    check("5 IS NOT DISTINCT FROM a", 10.0);
+    check("a IS DISTINCT FROM 5", 990.0);
+    check("isDistinctFrom(a, 5)", 990.0);
+    check("5 IS DISTINCT FROM a", 990.0);
+
+    /// NULL constants are IS NULL / IS NOT NULL.
+    check("n IS NOT DISTINCT FROM NULL", 200.0);
+    check("n <=> NULL", 200.0);
+    check("isNotDistinctFrom(n, NULL)", 200.0);
+    check("n IS DISTINCT FROM NULL", 800.0);
+    check("isDistinctFrom(n, NULL)", 800.0);
+    check("NULL IS NOT DISTINCT FROM n", 200.0);
+    check("NULL IS DISTINCT FROM n", 800.0);
+
+    /// Non-NULL constants on Nullable columns are two-valued: NULL rows are not UNKNOWN.
+    check("n IS NOT DISTINCT FROM 5", 8.0);
+    check("n <=> 5", 8.0);
+    check("isNotDistinctFrom(n, 5)", 8.0);
+    check("n IS DISTINCT FROM 5", 992.0);
+    check("isDistinctFrom(n, 5)", 992.0);
+    check("not(n IS NOT DISTINCT FROM 5)", 992.0);
+    check("not(n IS DISTINCT FROM 5)", 8.0);
+    check("not(n = 5)", 792.0);
+
+    /// Same-column null-safe predicates must be combined with NULL checks and ranges,
+    /// not multiplied as if the predicates were independent columns.
+    check("n IS NOT DISTINCT FROM 5 AND n IS NULL", 0.0);
+    check("n IS NOT DISTINCT FROM 5 OR n IS NULL", 208.0);
+    check("n IS DISTINCT FROM 5 AND n IS NULL", 200.0);
+    check("n IS DISTINCT FROM 5 OR n IS NULL", 992.0);
+    check("n IS NOT DISTINCT FROM 5 AND n IS NOT NULL", 8.0);
+    check("n IS DISTINCT FROM 5 AND n IS NOT NULL", 792.0);
+    check("n IS DISTINCT FROM 5 OR n IS NOT NULL", 1000.0);
+    check("n IS NOT DISTINCT FROM 5 AND n > 10", 0.0);
+    check("n IS NOT DISTINCT FROM 5 OR n > 500", 408.0);
+    check("n IS DISTINCT FROM 5 AND n > 500", 400.0);
+
+    /// Boolean IS TRUE / IS FALSE wrappers are null-safe comparisons around a predicate.
+    /// They should use the predicate estimate, but collapse to a two-valued result.
+    check("(n > 500) IS TRUE", 400.0);
+    check("(n > 500) IS NOT TRUE", 600.0);
+    check("(n > 500) IS FALSE", 400.0);
+    check("(n > 500) IS NOT FALSE", 600.0);
+    check("not((n > 500) IS TRUE)", 600.0);
+    check("not(n > 500)", 400.0);
+
+    /// Impossible converted constants fold like equality/inequality.
+    check("d IS NOT DISTINCT FROM 'not_a_date'", 0.0);
+    check("'not_a_date' IS NOT DISTINCT FROM d", 0.0);
+    check("d IS DISTINCT FROM 'not_a_date'", 1000.0);
+    check("'not_a_date' IS DISTINCT FROM d", 1000.0);
+}
+
 TEST(Statistics, LikeSelectivity)
 {
     /// Build a simple estimator to test LIKE / NOT LIKE / ILIKE / NOT ILIKE
@@ -414,7 +534,7 @@ TEST(Statistics, LikeSelectivity)
 /// STID 3524-3a4b (nullability) and STID 2404-35eb (value type): a statistics collector is declared
 /// on one column type, then the block column reaching `build` has a different type (a pending MODIFY
 /// COLUMN mutation, or an asymmetric merge where `structureEquals` only compares statistics types and
-/// misses a type-only change). Feeding the mismatched column to the collector previously mis-cast
+/// misses a type-only change). Feeding the mismatched column to the collector was previously incorrectly cast
 /// inside the aggregate function and aborted: `Bad cast ... ColumnNullable` for `uniq` on a Nullable
 /// type (3524-3a4b), and `Bad cast ColumnDecimal<Decimal256> to ColumnVector<long>` for `uniq` whose
 /// `<long>` (Int64) specialization was fed a Decimal256 block during mutation statistics rebuild

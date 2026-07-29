@@ -22,3 +22,16 @@ Fallback selectivity uses non-null row count (b before a)
 1
 Const-null insert: basic null count drives correct prewhere ordering
 1
+Null-safe equality with non-NULL constants uses equality statistics
+1
+1
+1
+Null-safe distinct with non-NULL constants includes NULL rows as TRUE
+1
+1
+NULL constants use basic null-count statistics
+1
+1
+Impossible Float32 literal folds for null-safe predicates
+1
+1
