@@ -551,7 +551,7 @@ Allows writing the [`CASE`](/sql-reference/operators#conditional-expression) ope
 Evaluates each condition in order. For the first condition that is true (non-zero and not `NULL`), returns the corresponding branch value.
 If none of the conditions are true, returns the `else` value.
 
-Setting [`short_circuit_function_evaluation`](/operations/settings/settings#short_circuit_function_evaluation) controls
+Setting [`short_circuit_function_evaluation`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controls
 whether short-circuit evaluation is used. If enabled, the `then_i` expression is evaluated only on rows where
 `((NOT cond_1) AND ... AND (NOT cond_{i-1}) AND cond_i)` is true.
 
