@@ -7,6 +7,16 @@
 SET join_use_nulls = 0; -- CI may inject True; a LEFT-join miss would then read NULL instead of 0
 SET join_algorithm = 'direct,hash'; -- CI may inject another algorithm; direct is what the DirectKeyValueJoin assertion below is about, hash is the fallback for the narrowing case
 
+-- Drop first: the stress job runs some workers with one shared database for every test
+-- (stress.py --database=test_N), where clickhouse-test neither creates nor drops a per-test
+-- database, so a second run would hit TABLE_ALREADY_EXISTS. The setting pin is required
+-- because that same job injects ignore_drop_queries_probability=0.2, which silently skips a
+-- DROP of a table that stores data on disk.
+DROP TABLE IF EXISTS kv     SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS l_kv   SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS o_kv   SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS l_kv32 SETTINGS ignore_drop_queries_probability = 0;
+
 -- A key-value entity is not a StorageJoin: its lookup is not built from a frozen hash table, so the
 -- narrowing rewrite added for Join-engine tables must not apply here. This pins the plan shape, not
 -- just the result, because both shapes answer correctly.
@@ -29,3 +39,9 @@ SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_kv32 AS l ANY LEFT J
 SELECT count() > 0 FROM (EXPLAIN PLAN description = 1
     SELECT sum(r.jv) FROM l_kv32 AS l ANY LEFT JOIN kv AS r USING (k))
 WHERE explain ILIKE '%DirectKeyValueJoin%';
+
+-- Leave nothing behind for the next run in the shared-database mode described above.
+DROP TABLE IF EXISTS kv     SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS l_kv   SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS o_kv   SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS l_kv32 SETTINGS ignore_drop_queries_probability = 0;
