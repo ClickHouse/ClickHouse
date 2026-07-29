@@ -91,10 +91,12 @@ def test_old_replica_joins_new_table(start_cluster):
 
 
 def test_alter_metadata_across_versions(start_cluster):
-    """A replicated `ALTER` on the current version serializes the changed definitions to
-    ZooKeeper in whatever form the user wrote them (`SAMPLE BY (b)`, `CHECK (a > 0)`). An old
-    replica attached to the same table must apply such `ALTER` log entries, and both replicas
-    must still pass the metadata comparison against ZooKeeper on restart."""
+    """A replicated `ALTER` on the current version writes the changed definitions to ZooKeeper
+    through the same backward-compatible serializer `CREATE` uses, so a parenthesized
+    `SAMPLE BY (b)` or `CHECK (a > 0)` is published in the canonical form an older version
+    stored. An old replica attached to the same table must apply such `ALTER` log entries, and
+    both replicas must still pass the metadata comparison against ZooKeeper on restart.
+    """
     node_new.query("""
         CREATE TABLE t_parens_altered (a UInt32, b UInt32, c UInt32, d DateTime)
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/t_parens_altered', 'r1')
@@ -112,8 +114,8 @@ def test_alter_metadata_across_versions(start_cluster):
 
     check_replication("t_parens_altered")
 
-    # On restart both replicas compare their local metadata against the ALTER-written
-    # ZooKeeper metadata: the parenthesized stored form must compare equal.
+    # On restart both replicas compare their local metadata, which keeps the parentheses the
+    # user wrote, against the canonical ALTER-written ZooKeeper metadata: they must compare equal.
     node_new.restart_clickhouse()
     node_old.restart_clickhouse()
 
