@@ -64,6 +64,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -1093,6 +1094,278 @@ def test_an_unrelated_compile_error_is_inconclusive_not_a_leak(compiler_probe, t
     assert "inconclusive" in message and "reaches" not in message, (
         "a missing pre-included header is inconclusive, not a leak; got:\n" f"{message}"
     )
+
+
+def _silent_failure_compiler(tmp_path: Path, body: str) -> Path:
+    """A stub "compiler" that fails while writing nothing at all, for all three directions.
+
+    The shape a real compiler takes when it is killed rather than diagnosing something: an
+    out-of-memory kill on a loaded build host leaves a nonzero status and an empty stderr.
+    Every direction used to read that as a clean compile, because a successful compile
+    produces the same empty text - so the status is the only thing that separates them, and
+    these rows are what keeps it being read.
+    """
+    stub = tmp_path / "silent-cc"
+    stub.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+    stub.chmod(0o755)
+    return stub
+
+
+def _assert_fails_silently(stub: Path, tmp_path: Path):
+    """Assert the premise: `stub` really exits nonzero and writes nothing.
+
+    Without this the three rows below could pass against a stub that had started diagnosing
+    something, which is the ordinary path they exist to be distinct from.
+    """
+    process = subprocess.run(
+        [str(stub), "-fsyntax-only", "-x", "c", "-"],
+        cwd=tmp_path,
+        input="int x;\n",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert process.returncode != 0, (
+        f"{stub.name} must fail for these rows to mean anything; it exited 0"
+    )
+    assert not process.stderr.strip() and not process.stdout.strip(), (
+        f"{stub.name} must write nothing, or these rows test the ordinary text path; got "
+        f"stderr={process.stderr!r} stdout={process.stdout!r}"
+    )
+    return process.returncode
+
+
+@pytest.mark.parametrize(
+    "label, body",
+    [
+        # A plain nonzero exit, the `/usr/bin/false` shape.
+        ("a silent nonzero exit", "exit 1"),
+        # Death by signal, which `subprocess` reports as a *negative* returncode - so this
+        # row also pins that the message renders it as a signal rather than as an exit code.
+        ("a silent death by signal", "kill -9 $$"),
+    ],
+)
+def test_a_silently_failing_probe_is_inconclusive_in_every_direction(
+    compiler_probe, tmp_path, label, body
+):
+    """A probe that fails without saying anything must not read as a clean compile.
+
+    All three directions used to decide from the *text* of stderr and throw the exit status
+    away, so an empty stderr - which is exactly what a successful compile produces - was
+    accepted as "nothing to report" by each of them. Each must now raise, and the three
+    messages must stay distinguishable so a failure still says which question went
+    unanswered.
+    """
+    stub = _silent_failure_compiler(tmp_path, body)
+    returncode = _assert_fails_silently(stub, tmp_path)
+
+    root = _probe_include_root(tmp_path)
+    commands = tmp_path / "compile_commands.json"
+    commands.write_text(
+        json.dumps(
+            [
+                {
+                    "directory": str(tmp_path),
+                    "file": JE,
+                    "command": f"{stub} -I{root} -o out.o -c {JE}",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    messages = {}
+    for name, call in (
+        ("armed", lambda: assert_jemalloc_safety_macros_armed(str(commands))),
+        ("absent", lambda: assert_jemalloc_safety_macros_absent(str(commands))),
+        (
+            "leak",
+            lambda: assert_jemalloc_macros_stay_private(
+                [
+                    {
+                        "directory": str(tmp_path),
+                        "file": OTHER,
+                        "command": f"{stub} -c {OTHER}",
+                    }
+                ]
+            ),
+        ),
+    ):
+        with pytest.raises(AssertionError) as raised:
+            call()
+        messages[name] = str(raised.value)
+
+    for name, message in messages.items():
+        assert "could not be answered" in message, (
+            f"{label}: the {name} direction must say the probe could not be answered rather "
+            f"than accepting a silent failure; got:\n{message}"
+        )
+        assert "reaches" not in message and "is armed for" not in message, (
+            f"{label}: the {name} direction must not turn a silent failure into a finding "
+            f"about the macros; got:\n{message}"
+        )
+    assert len(set(messages.values())) == 3, (
+        f"{label}: the three directions must stay distinguishable; got {messages}"
+    )
+    if returncode < 0:
+        signal_name = signal.Signals(-returncode).name
+        for name, message in messages.items():
+            assert signal_name in message, (
+                f"{label}: the {name} direction must render a death by signal as "
+                f"{signal_name} rather than as an exit code; got:\n{message}"
+            )
+            assert f"code {-returncode}" not in message, (
+                f"{label}: {-returncode} is a signal number, not an exit code; got:\n"
+                f"{message}"
+            )
+
+
+def test_an_armed_gate_is_not_concluded_from_the_echoed_marker(compiler_probe, tmp_path):
+    """The armed verdict needs a *failed assertion*, not the marker echoed in the caret line.
+
+    `JEMALLOC_GATE_ARMED_MARKER` is the `_Static_assert`'s message argument, so it is part of
+    the source line - and clang quotes that line back under any diagnostic there. A preamble
+    whose two booleans are declared rather than initialized (the shape a rewritten
+    initializer takes: a runtime value, no gate armed) fails with
+    `static assertion expression is not an integral constant expression` and echoes both
+    markers, so a marker-only test reported it as an armed gate.
+
+    The fixture cannot use `_probe_include_root`'s `prologue=`, which splices *above* the
+    extracted initializers; the initializers themselves have to be replaced.
+    """
+    text = re.sub(
+        r"/\*.*?\*/", "", JEMALLOC_PREAMBLE.read_text(encoding="utf-8"), flags=re.S
+    )
+    flags = sorted(match.group(1) for match in _CONFIG_FLAG_BLOCK_RE.finditer(text))
+    assert set(flags) == set(build_job.JEMALLOC_CONFIG_FLAGS), (
+        f"{JEMALLOC_PREAMBLE_REL}: expected both `config_opt_*` initializers to extract; got "
+        f"{flags}. Re-derive this fixture against the current header."
+    )
+    root = tmp_path / "include"
+    (root / "jemalloc" / "internal").mkdir(parents=True, exist_ok=True)
+    (root / "jemalloc" / "internal" / "jemalloc_preamble.h").write_text(
+        "#include <stdbool.h>\n"
+        + "".join(f"extern bool {flag};\n" for flag in flags),
+        encoding="utf-8",
+    )
+    commands = tmp_path / "compile_commands.json"
+    commands.write_text(
+        json.dumps(
+            [
+                {
+                    "directory": str(tmp_path),
+                    "file": JE,
+                    "command": f"{ToolSet.COMPILER_C} -I{root} -o out.o -c {JE}",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError) as raised:
+        assert_jemalloc_safety_macros_absent(str(commands))
+    message = str(raised.value)
+    # The premise: the marker really is echoed, so this case is the false positive and not
+    # merely a probe that failed quietly.
+    assert any(
+        build_job.JEMALLOC_GATE_ARMED_MARKER.format(flag=flag) in message for flag in flags
+    ), f"clang must echo the marker for this to be the case under test; got:\n{message}"
+    assert build_job.JEMALLOC_STATIC_ASSERT_FAILED not in message, (
+        "no assertion actually evaluated false here, so the discriminating phrase must be "
+        f"absent - re-derive this case; got:\n{message}"
+    )
+    assert "inconclusive" in message, (
+        "a diagnostic that echoes the marker without failing an assertion is a probe that "
+        f"could not answer, not an armed gate; got:\n{message}"
+    )
+    assert "is armed for" not in message, (
+        f"the gates are not armed here: the booleans are runtime values; got:\n{message}"
+    )
+
+
+def test_the_armed_verdict_is_decided_per_stderr_line(compiler_probe, tmp_path):
+    """One probe can carry a genuine failure for one gate and an echo for the other.
+
+    So requiring both tokens somewhere in stderr is not enough: with `safety` genuinely true
+    and `size` a runtime value, clang reports `static assertion failed` for the first and
+    `static assertion expression is not an integral constant expression` for the second, and
+    a whole-stderr test reads *both* as armed. Only `size` is wrong there, which is why the
+    two tokens have to be correlated on the same line.
+    """
+    marker = build_job.JEMALLOC_GATE_ARMED_MARKER
+    armed_flag, echoed_flag = build_job.JEMALLOC_CONFIG_FLAGS
+    source = (
+        "#include <stdbool.h>\n"
+        f"static const bool {armed_flag} = true;\n"
+        f"extern bool {echoed_flag};\n"
+        + "".join(
+            f'_Static_assert(!{flag}, "{marker.format(flag=flag)}");\n'
+            for flag in (armed_flag, echoed_flag)
+        )
+    )
+    stderr = subprocess.run(
+        [ToolSet.COMPILER_C, "-fsyntax-only", "-x", "c", "-"],
+        input=source,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stderr
+    # Premises: this really is the mixed shape, or the case asserts nothing.
+    for flag in (armed_flag, echoed_flag):
+        assert marker.format(flag=flag) in stderr, (
+            f"clang must echo {flag}'s marker for this case to be the mixed shape; got:\n"
+            f"{stderr}"
+        )
+    assert build_job.JEMALLOC_STATIC_ASSERT_FAILED in stderr, (
+        f"{armed_flag}'s assertion must genuinely fail here; got:\n{stderr}"
+    )
+
+    assert build_job._gate_reported_armed(stderr, armed_flag), (
+        f"{armed_flag}'s assertion evaluated false, so its gate is armed; got:\n{stderr}"
+    )
+    assert not build_job._gate_reported_armed(stderr, echoed_flag), (
+        f"{echoed_flag}'s marker is only echoed by an unrelated diagnostic, so it must not "
+        f"read as armed; got:\n{stderr}"
+    )
+
+
+def test_the_leak_direction_does_not_require_the_static_assert_phrase(
+    compiler_probe, tmp_path
+):
+    """Why the discriminating token is the absent direction's alone.
+
+    The leak markers sit inside `#error` *string literals* under `#ifdef`s, and clang never
+    echoes an inactive preprocessor block - so nothing there can echo a marker it did not
+    fire, and the hole the absent direction has does not exist. Requiring a second token
+    would instead make every real leak unreportable, because a fired `#error` says nothing
+    about static assertions.
+    """
+    header = tmp_path / "predefine.h"
+    header.write_text(f"#define {SAFETY_MACRO} 1\n", encoding="utf-8")
+    macros, stderr = build_job.run_jemalloc_leak_probe(
+        [ToolSet.COMPILER_C, f"-include{header}"], str(tmp_path), "c"
+    )
+    assert macros == [SAFETY_MACRO], (
+        f"a real leak must be reported; got {macros} with:\n{stderr}"
+    )
+    assert build_job.JEMALLOC_STATIC_ASSERT_FAILED not in stderr, (
+        "a fired `#error` carries no static assertion, so requiring that phrase in this "
+        f"direction would drop every real leak; got:\n{stderr}"
+    )
+    # And the echo the absent direction has to defend against cannot happen here: an
+    # unrelated fatal error in the same translation unit echoes no marker from the inactive
+    # `#ifdef` blocks.
+    unrelated, unrelated_stderr = build_job.run_jemalloc_leak_probe(
+        [ToolSet.COMPILER_C, f"-include{tmp_path / 'absent.h'}"], str(tmp_path), "c"
+    )
+    assert unrelated == [], (
+        f"an unrelated failure must report no leak; got {unrelated} with:\n"
+        f"{unrelated_stderr}"
+    )
+    for macro in REQUIRED_MACROS:
+        assert build_job.JEMALLOC_LEAK_MARKER.format(macro=macro) not in unrelated_stderr, (
+            f"{macro}'s marker lives in an inactive `#ifdef` block, which clang does not "
+            f"echo; got:\n{unrelated_stderr}"
+        )
 
 
 def test_the_armed_check_also_runs_the_leak_sweep(compiler_probe, tmp_path):
@@ -2637,7 +2910,7 @@ def test_the_job_image_installs_the_compiler_these_cases_need():
     )
 
     # Asserted as an `apt-get install` **operand**, not merely as text present somewhere:
-    # a mention in a comment, or in a `--version` sanity line, is not an installation, and
+    # a mention in a comment, or in a `--version` sanity line, is not an installation, and an
     # an assertion satisfied by inactive text is the failure mode two removed cmake-text
     # models in this PR's history were removed for. So find the install commands and
     # require the package among their operands.

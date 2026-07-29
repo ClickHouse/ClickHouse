@@ -4,6 +4,7 @@ import json
 import os
 import shlex
 import shutil
+import signal
 import subprocess
 
 from ci.defs.defs import BuildTypes, ToolSet, chcache_secret
@@ -261,14 +262,48 @@ def jemalloc_probe_flags(command):
     return flags
 
 
+def _describe_probe_exit(returncode):
+    """How a probe process ended, in words, for a probe that said nothing itself.
+
+    `subprocess` reports a death by signal as a **negative** returncode, so a raw `-9` would
+    read as an exit code rather than as SIGKILL - which is the shape an out-of-memory kill
+    takes on a loaded build host, and the most likely way a probe dies with nothing to say.
+    """
+    if returncode < 0:
+        try:
+            name = signal.Signals(-returncode).name
+        except ValueError:
+            name = f"signal {-returncode}"
+        return f"was killed by {name}"
+    return f"exited with code {returncode}"
+
+
+def _silent_probe_failure(returncode):
+    """The diagnostic for a probe that failed while writing nothing at all.
+
+    Neither runner may report such a probe as clean, and neither can tell from the text: an
+    empty stderr is exactly what a **successful** compile produces, so a runner that decides
+    on the text alone reads a crashed, killed or missing compiler as "nothing to report" and
+    passes the check it was asked to answer. Only the exit status separates the two, so it is
+    what the message is built from.
+    """
+    return (
+        f"the probe could not be answered: the compiler {_describe_probe_exit(returncode)} "
+        "without writing any diagnostic of its own"
+    )
+
+
 def run_jemalloc_probe(flags, directory):
     """Compile `JEMALLOC_PROBE_SOURCE` with `flags`; return the compiler's stderr, or None.
 
     `-fsyntax-only` keeps it at ~0.05s and `-x c -` feeds the probe on stdin, so nothing
-    is written into the build tree. Returns None when both `_Static_assert`s hold.
+    is written into the build tree. Returns None - and only then - when the compiler exits
+    successfully, i.e. when both `_Static_assert`s hold.
 
     A probe that cannot run at all (the recorded compiler gone, the recorded `directory`
-    gone) is reported as a failure too: an inconclusive probe must not pass.
+    gone) is reported as a failure too, and so is one that fails **silently**: the verdict
+    follows the process's outcome, never the presence of text, because a failure with an
+    empty stderr is indistinguishable from a clean compile by text alone.
     """
     try:
         process = subprocess.run(
@@ -281,7 +316,9 @@ def run_jemalloc_probe(flags, directory):
         )
     except OSError as error:
         return f"the probe could not be run at all: {error}"
-    return None if process.returncode == 0 else (process.stderr or "").strip()
+    if process.returncode == 0:
+        return None
+    return (process.stderr or "").strip() or _silent_probe_failure(process.returncode)
 
 
 # The leak probe's `#error` texts. They are matched in the compiler's stderr to tell a real
@@ -302,6 +339,40 @@ JEMALLOC_CONFIG_FLAGS = ("config_opt_safety_checks", "config_opt_size_checks")
 # the line, which the preamble does for `JEMALLOC_DEBUG` alone (`:191`, `:208`) and would also
 # do for a rewritten condition.
 JEMALLOC_GATE_ARMED_MARKER = "{flag} is in effect in this translation unit"
+
+# The marker above cannot decide the armed verdict on its own, because it is the
+# `_Static_assert`'s **message argument** and therefore part of the source line - which clang
+# quotes back in the caret block of *any* diagnostic at that line. So a probe that failed for
+# an unrelated reason echoes the marker while asserting nothing about the gate: measured, a
+# preamble whose two booleans are `extern bool` (an initializer rewritten to a runtime value,
+# no gate armed) yields `static assertion expression is not an integral constant expression`
+# and read as ARMED, and `-std=c11 -pedantic` yields `-Wgnu-folding-constant` with the marker
+# echoed twice. Rewording the marker so it no longer appears in the line is not the fix: the
+# message has to stay readable in the failure output, and the next diagnostic shape would
+# reintroduce the same hole. What separates the two is clang's own phrasing for an assertion
+# that genuinely evaluated false, present in the real case and absent in both false ones.
+#
+# The two are correlated **per stderr line**, not merely both-present-somewhere: one probe can
+# carry a genuine failure for one flag and an echo for the other (measured: `safety` truly
+# true while `size` is `extern bool` reports `static assertion failed` for the first and the
+# non-constant error for the second), and a whole-stderr test would report both as armed.
+JEMALLOC_STATIC_ASSERT_FAILED = "static assertion failed"
+
+
+def _gate_reported_armed(stderr, flag):
+    """Whether `stderr` says `flag`'s `_Static_assert` genuinely evaluated false.
+
+    Only the absent direction needs this. The leak direction's markers sit inside `#error`
+    *string literals* guarded by `#ifdef`, and clang never echoes an inactive preprocessor
+    block, so nothing there can echo a marker it did not fire - measured over a translation
+    unit carrying an unrelated fatal error, 0 false marker hits. Requiring a second token
+    there would restrict a direction that has no such hole.
+    """
+    marker = JEMALLOC_GATE_ARMED_MARKER.format(flag=flag)
+    return any(
+        marker in line and JEMALLOC_STATIC_ASSERT_FAILED in line
+        for line in stderr.splitlines()
+    )
 
 # The absent direction's probe. Unlike the leak probe it models a real jemalloc translation
 # unit: it `#include`s `jemalloc_preamble.h` first, so a definition arriving through one of
@@ -359,12 +430,15 @@ def run_jemalloc_leak_probe(
     """Ask the compiler whether either safety macro is defined on this compile line.
 
     Returns `(leaked_macros, stderr)`: the macros whose `#error` fired, and the compiler's
-    stderr. An empty list with an empty stderr means the line is clean.
+    stderr. An empty list with an empty stderr means the line is clean - and, because both
+    callers read exactly that pair as "clean", only a **successful** exit may produce it.
 
     A nonzero exit that carries neither `#error` marker is *inconclusive*, not a leak: a
     missing generated header, an unrelated diagnostic under `-Werror` or an assembler that
     does not understand `-fsyntax-only` all land here. The caller must not pass such a
-    probe, and must not report it as a leak either - hence the two return channels.
+    probe, and must not report it as a leak either - hence the two return channels. A
+    failure that writes **nothing** is inconclusive for the same reason and is given a
+    synthesised diagnostic, since an empty stderr would otherwise be the clean answer.
 
     `source` selects which probe is compiled, because the two callers model different
     translation units: the leak sweep asks about a non-jemalloc unit, which does not include
@@ -389,7 +463,7 @@ def run_jemalloc_leak_probe(
         for macro in JEMALLOC_SAFETY_MACROS
         if JEMALLOC_LEAK_MARKER.format(macro=macro) in stderr
     ]
-    return leaked, stderr
+    return leaked, stderr or _silent_probe_failure(process.returncode)
 
 
 def assert_jemalloc_macros_stay_private(entries):
@@ -564,6 +638,12 @@ def assert_jemalloc_safety_macros_absent(compile_commands_path):
     does not include the preamble - non-jemalloc translation units do not include it either,
     and its include chain is not on their include path.
 
+    **armed** is decided by `_gate_reported_armed`, which needs clang's own
+    `static assertion failed` phrasing on the same stderr line as the flag's marker. The
+    marker on its own is the assertion's message argument, hence part of the source line
+    clang quotes back under any diagnostic there, so it is echoed by failures that assert
+    nothing about the gate.
+
     Cost is one compile: the flags are per-target, so probing one entry per **distinct**
     flag set covers them all, exactly as the arming half does (a non-safety build has ~67
     jemalloc entries with one flag set between them).
@@ -624,11 +704,16 @@ def assert_jemalloc_safety_macros_absent(compile_commands_path):
             source=JEMALLOC_ABSENT_PROBE_SOURCE,
         )
         # A gate armed with neither of our macros present is a real finding of its own, so
-        # it gets its own message rather than reading as an inconclusive probe.
+        # it gets its own message rather than reading as an inconclusive probe. It is a
+        # finding only when the assertion genuinely evaluated false, though: the marker alone
+        # is echoed by any diagnostic at that line (see JEMALLOC_STATIC_ASSERT_FAILED), so
+        # both tokens must appear on the *same* stderr line. Anything else falls through to
+        # the inconclusive branch below - an unrelated diagnostic is a probe that could not
+        # answer, not a gate that is on.
         armed = [
             flag
             for flag in JEMALLOC_CONFIG_FLAGS
-            if JEMALLOC_GATE_ARMED_MARKER.format(flag=flag) in stderr
+            if _gate_reported_armed(stderr, flag)
         ]
         if armed and not macros:
             raise AssertionError(
