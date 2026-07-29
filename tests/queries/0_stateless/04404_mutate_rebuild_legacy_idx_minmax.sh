@@ -1,51 +1,17 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-replicated-database, no-shared-merge-tree, no-object-storage, no-random-merge-tree-settings
 #
-# `no-fasttest`: this test does local-disk part-file surgery (renames the
-# on-disk index file in the detached part dir) like other fixture-surgery
-# tests (e.g. 02864_restore_table_with_broken_part). The Fast test macOS
-# (arm_darwin) environment does not reliably expose that layout, so the rename
-# cannot run there. The bug is disk-layer independent and is fully covered by
-# the sanitizer stateless jobs.
+# `no-fasttest`: local-disk part-file surgery is not reliably available on the Fast test macOS runner.
+# `no-object-storage` / `no-shared-merge-tree` / `no-replicated-database`: the fixture edits real
+# local part files and relies on ATTACH recomputing `checksums.txt` from them.
+# `no-random-merge-tree-settings`: the fixture targets a standalone index file at a fixed granule
+# count; the settings it needs are pinned in the CREATE below.
 #
-# `no-object-storage` / `no-shared-merge-tree` / `no-replicated-database`: the
-# test renames real on-disk index files in the local part directory and relies
-# on ATTACH recomputing `checksums.txt` from those files. On object storage the
-# files in the data dir are `DiskObjectStorageMetadata` pointer files, and the
-# replicated/shared engines gate ATTACH on ZooKeeper checksum digests, so the
-# local-disk file surgery does not apply there. The bug is in `MutateTask`'s
-# per-substream file bookkeeping and is independent of the disk layer.
+# Rebuild-path counterpart of 04402: when a mutation recomputes the index and writes a fresh
+# `.idx2`, the legacy `.idx` must be neither hardlinked forward nor left in the inherited
+# checksums. It used to leak dead beside the fresh file with a stale checksum. Issue #109595.
 #
-# `no-random-merge-tree-settings`: the test renames a specific standalone index
-# file (skp_idx_mm_v.idx2) and depends on a fixed granule count. Randomized
-# merge-tree settings (`packed_skip_index_max_bytes` packs the index into
-# `skp_idx.packed`, index_granularity_bytes / adaptive granularity change the
-# granule count) would break the file surgery. The settings the test relies on
-# are pinned explicitly in the CREATE below.
-#
-# Regression test for the REBUILD-path half of the backward-compatibility gap
-# flagged on PR #109616 (issue #109595). The companion 04402 covers the
-# PRESERVE path (a full-part rewrite that hardlinks a non-recalculated index).
-# This one covers the REBUILD path: a mutation that recalculates the index.
-#
-# `collectFilesToSkip` (skip list for the hardlink loop) and
-# `remove_per_substream_checksums` (stale-checksum stripper) used to enumerate the
-# index's current writer substreams via `getSubstreams`. For minmax the on-disk
-# format changed from ".idx" (v1) to ".idx2" (v2), so `getSubstreams` reports
-# only ".idx2". On an upgraded part that still carries a legacy
-# "skp_idx_<name>.idx" file, an `ALTER UPDATE` of the indexed column recomputes
-# the index and writes a fresh ".idx2", but the old ".idx" was neither added to
-# files_to_skip nor stripped from the inherited checksums -- so it got
-# hardlinked into the new part and leaked dead next to the fresh ".idx2", with a
-# stale checksum entry pointing at it. The fix enumerates the substreams
-# actually present in the source part via
-# `getAllSubstreamsInPart`, which probes both ".idx"
-# and ".idx2".
-#
-# The modern writer only produces ".idx2", so the legacy shape is fabricated:
-# build a normal part, DETACH it, rename ".idx2" to ".idx" (for a non-nullable
-# column the v1 and v2 minmax payloads are byte-identical), drop `checksums.txt`
-# so ATTACH recomputes it, then ATTACH and run the rebuild mutation.
+# Legacy shape fabricated as in 04402, then the indexed column is updated to force the rebuild.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none

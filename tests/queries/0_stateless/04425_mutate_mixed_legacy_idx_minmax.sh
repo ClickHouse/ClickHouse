@@ -1,41 +1,16 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-replicated-database, no-shared-merge-tree, no-object-storage, no-random-merge-tree-settings
 #
-# `no-fasttest`: this test does local-disk part-file surgery (copies the on-disk
-# index file inside the detached part dir) like other fixture-surgery tests
-# (e.g. 02864_restore_table_with_broken_part). The Fast test macOS (arm_darwin)
-# environment does not reliably expose that layout, so the copy cannot run there.
-# The bug is disk-layer independent and is fully covered by the sanitizer
-# stateless jobs.
+# `no-fasttest`: local-disk part-file surgery is not reliably available on the Fast test macOS runner.
+# `no-object-storage` / `no-shared-merge-tree` / `no-replicated-database`: the fixture edits real
+# local part files and relies on ATTACH recomputing `checksums.txt` from them.
+# `no-random-merge-tree-settings`: the fixture targets a standalone index file at a fixed granule
+# count; the settings it needs are pinned in the CREATE below.
 #
-# `no-object-storage` / `no-shared-merge-tree` / `no-replicated-database`: the
-# test writes real on-disk index files in the local part directory and relies on
-# ATTACH recomputing `checksums.txt` from those files. On object storage the files
-# in the data dir are `DiskObjectStorageMetadata` pointer files, and the
-# replicated/shared engines gate ATTACH on ZooKeeper checksum digests, so the
-# local-disk file surgery does not apply there.
-#
-# `no-random-merge-tree-settings`: the test manipulates a specific standalone
-# index file (skp_idx_mm_v.idx2/.idx) and depends on a fixed granule count.
-# Randomized merge-tree settings (`packed_skip_index_max_bytes` packs the index
-# into `skp_idx.packed`, index_granularity_bytes / adaptive granularity change the
-# granule count) would break the file surgery. Settings the test relies on are
-# pinned in the CREATE below.
-#
-# Regression test for the MIXED-format half of the backward-compatibility gap
-# flagged on PR #109616 (issue #109595). 04402 covers the PRESERVE path, 04404
-# the REBUILD path -- both on a pure-legacy part (only skp_idx_<name>.idx). This
-# one covers a part POISONED by an intermediate buggy build: it carries BOTH a
-# legacy skp_idx_mm_v.idx and a fresh skp_idx_mm_v.idx2 for the same index.
-#
-# `getDeserializedFormat` returns only the preferred read layout (".idx2" wins
-# for minmax), so the mutation cleanup bookkeeping (`collectFilesToSkip` skip-list
-# for recalc'd/dropped indices, and `remove_per_substream_checksums`) never saw the
-# stale ".idx" on a mixed part -- so the next `ALTER UPDATE` or `DROP INDEX`
-# hardlinked the dead ".idx" forward with a stale checksum instead of cleaning it
-# up, keeping the part mixed forever. The fix enumerates the UNION of all
-# physical substreams present via `getAllSubstreamsInPart`, which reports both
-# ".idx" and ".idx2".
+# Mixed-format part: one index carrying BOTH a legacy `.idx` and a fresh `.idx2`, as an
+# intermediate buggy build could leave it. Cleanup keyed on the preferred read layout never saw
+# the stale `.idx`, so it was hardlinked forward with a stale checksum and the part stayed mixed
+# forever. Issue #109595.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none

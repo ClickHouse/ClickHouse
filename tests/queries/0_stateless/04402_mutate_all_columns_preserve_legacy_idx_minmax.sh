@@ -1,46 +1,19 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-replicated-database, no-shared-merge-tree, no-object-storage, no-random-merge-tree-settings
 #
-# `no-fasttest`: this test does local-disk part-file surgery (renames the
-# on-disk index file in the detached part dir) like other fixture-surgery
-# tests (e.g. 02864_restore_table_with_broken_part). The Fast test macOS
-# (arm_darwin) environment does not reliably expose that layout, so the rename
-# cannot run there. The bug is disk-layer independent and is fully covered by
-# the sanitizer stateless jobs.
+# `no-fasttest`: local-disk part-file surgery is not reliably available on the Fast test macOS runner.
+# `no-object-storage` / `no-shared-merge-tree` / `no-replicated-database`: the fixture edits real
+# local part files and relies on ATTACH recomputing `checksums.txt` from them.
+# `no-random-merge-tree-settings`: the fixture targets a standalone index file at a fixed granule
+# count; the settings it needs are pinned in the CREATE below.
 #
-# `no-object-storage` / `no-shared-merge-tree` / `no-replicated-database`: this
-# test renames real on-disk index files in the local part directory and relies
-# on ATTACH recomputing `checksums.txt` from those files. On object storage the
-# files in the data dir are `DiskObjectStorageMetadata` pointer files, and the
-# replicated/shared engines gate ATTACH on ZooKeeper checksum digests, so the
-# local-disk file surgery below does not apply there. The bug is in
-# `MutateAllPartColumnsTask`'s index-preservation loop and is independent of the
-# disk layer, so a plain local `MergeTree` is sufficient.
+# A full-part rewrite must keep a non-recalculated minmax index whose data file is still the
+# legacy `.idx` (v1) rather than the current `.idx2` (v2); it used to hardlink the mark but not
+# that data file, silently dropping the index. Issue #109595.
 #
-# `no-random-merge-tree-settings`: the test renames a specific standalone
-# index file (skp_idx_mm_v.idx2) and depends on a fixed granule count. Randomized
-# merge-tree settings (`packed_skip_index_max_bytes` packs the index into
-# `skp_idx.packed`, index_granularity_bytes / adaptive granularity change the
-# granule count) would break the file surgery. The settings the test relies on
-# are pinned explicitly in the CREATE below for the same reason.
-#
-# Regression test for the backward-compatibility gap flagged on PR #109616
-# (issue #109595). A full-part-rewrite mutation (`MutateAllPartColumnsTask`)
-# hardlinks non-recalculated skip indices from the source part. The loop used
-# to enumerate the index's current writer substreams via `getSubstreams`. For
-# minmax the on-disk format changed from ".idx" (v1) to ".idx2" (v2), so
-# `getSubstreams` reports only ".idx2". On an upgraded part that still carries
-# a legacy "skp_idx_<name>.idx" file the loop hardlinked the mark file but
-# never found the ".idx" data file, silently dropping the index after the
-# mutation (`CHECK TABLE` still passed because the orphan mark got checksummed).
-# The fix enumerates the substreams actually present in the source part via
-# `getAllSubstreamsInPart`, which probes both ".idx"
-# and ".idx2".
-#
-# The modern writer only produces ".idx2", so the legacy shape is fabricated:
-# build a normal part, DETACH it, rename ".idx2" to ".idx" (for a non-nullable
-# column the v1 and v2 minmax payloads are byte-identical), drop `checksums.txt`
-# so ATTACH recomputes it, then ATTACH and run the full-rewrite mutation.
+# The modern writer only emits `.idx2`, so the legacy shape is fabricated: DETACH, rename
+# `.idx2` to `.idx` (byte-identical payloads for a non-nullable column), drop `checksums.txt`
+# so ATTACH recomputes it, ATTACH, then mutate.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
