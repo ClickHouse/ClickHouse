@@ -126,4 +126,40 @@ EXCEPT ALL
 SELECT i FROM t_chunk_buffer_set_op WHERE 6 <=> (i + (SELECT _part_offset))
 ORDER BY i;
 
+-- ------------------------------------------------------------------------------------------------
+-- The cases above assert result rows, and the materialized no-buffer path returns the same rows, so
+-- they would still pass if buffering silently stopped being used and the fix stopped being exercised.
+-- Pin the buffer decision itself: a buffer must exist exactly where the fix has to force the safe
+-- layout (default and per-branch-off) and must be absent when the session setting reaches the
+-- top-level query context.
+-- ------------------------------------------------------------------------------------------------
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE SELECT i FROM t_chunk_buffer_set_op WHERE 8 = ((SELECT _part_offset) + i)
+      SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0,
+               correlated_subqueries_default_join_kind = 'left'
+    INTERSECT
+    SELECT i FROM t_chunk_buffer_set_op WHERE 8 <=> (i + (SELECT _part_offset))
+) WHERE explain ILIKE '%ReadFromCommonBuffer%';
+
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE SELECT i FROM t_chunk_buffer_set_op WHERE 8 = ((SELECT _part_offset) + i)
+      SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0,
+               correlated_subqueries_default_join_kind = 'left',
+               correlated_subqueries_use_in_memory_buffer = 0
+    EXCEPT ALL
+    SELECT i FROM t_chunk_buffer_set_op WHERE 6 <=> (i + (SELECT _part_offset))
+) WHERE explain ILIKE '%ReadFromCommonBuffer%';
+
+SET correlated_subqueries_use_in_memory_buffer = 0;
+
+SELECT count() FROM (
+    EXPLAIN PIPELINE SELECT i FROM t_chunk_buffer_set_op WHERE 8 = ((SELECT _part_offset) + i)
+      SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0,
+               correlated_subqueries_default_join_kind = 'left'
+    INTERSECT
+    SELECT i FROM t_chunk_buffer_set_op WHERE 8 <=> (i + (SELECT _part_offset))
+) WHERE explain ILIKE '%ReadFromCommonBuffer%';
+
+SET correlated_subqueries_use_in_memory_buffer = 1;
+
 DROP TABLE t_chunk_buffer_set_op;
