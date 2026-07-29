@@ -442,9 +442,8 @@ public:
         if (filter && metadata_snapshot->hasPrimaryKey())
         {
             const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
-            const Names & primary_key_column_names = primary_key.column_names;
             ActionsDAGWithInversionPushDown filter_dag(filter->getOutputs().front(), context, /* boolean_context */ true);
-            KeyCondition key_condition(filter_dag, context, primary_key_column_names, primary_key.expression);
+            KeyCondition key_condition(filter_dag, context, primary_key);
             LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
 
             if (!key_condition.alwaysFalse())

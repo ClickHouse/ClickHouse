@@ -12,6 +12,7 @@
 
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/BoolMask.h>
+#include <Storages/MergeTree/KeyOrder.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 
@@ -25,6 +26,7 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct ActionDAGNodes;
 class MergeTreeSetIndex;
+struct KeyDescription;
 
 
 /// Canonize the predicate
@@ -67,7 +69,10 @@ private:
     struct ThisIsPrivate {};
 
 public:
-    /// Construct key condition from ActionsDAG nodes
+    /// Construct key condition from ActionsDAG nodes.
+    /// This overload takes the key column names and expression without any direction information,
+    /// so the condition treats the key as ascending in every column. Use it only for keys that
+    /// cannot be reverse-sorted (e.g. skip index expressions, virtual row-offset columns).
     KeyCondition(
         const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context,
@@ -75,6 +80,17 @@ public:
         const ExpressionActionsPtr & key_expr,
         bool single_point_ = false,
         bool skip_analysis_ = false); /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
+
+    /// Same as above, but takes the key's KeyDescription. The condition honors the key's per-column
+    /// sort directions (reverse flags; an empty vector means all-ascending, e.g. a partition key).
+    /// Any condition over a key that can be reverse-sorted (a MergeTree primary key) must be
+    /// constructed this way, otherwise a reverse key would be analyzed as ascending.
+    KeyCondition(
+        const ActionsDAGWithInversionPushDown & filter_dag,
+        ContextPtr context,
+        const KeyDescription & key_description,
+        bool single_point_ = false,
+        bool skip_analysis_ = false);
 
     struct BloomFilterData
     {
@@ -167,6 +183,8 @@ public:
         const std::vector<UInt8> & equal_boundaries_mask,
         BoolMask initial_mask,
         const Hyperrectangle * key_bounds = nullptr) const;
+
+    const KeyOrder & getKeyOrder() const { return key_order; }
 
     /// Same as checkInRange, but calculate only may_be_true component of a result.
     /// This is more efficient than checkInRange(...).can_be_true.
@@ -653,5 +671,8 @@ private:
     /// Holds the result of (setting.date_time_overflow_behavior == DateTimeOverflowBehavior::Ignore)
     /// Used to check toDateTime monotonicity.
     bool date_time_overflow_behavior_ignore;
+
+    /// Holds whether the key columns are sorted in reverse (ORDER BY ... DESC) or not.
+    KeyOrder key_order;
 };
 }
