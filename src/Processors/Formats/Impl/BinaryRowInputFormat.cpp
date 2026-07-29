@@ -749,7 +749,7 @@ This only applies to RowBinary. In the Native format, `LowCardinality` uses a di
 A column can be defined as `LowCardinality(Nullable(T))`, but it is not possible to define it as `Nullable(LowCardinality(T))` - it will always result in an error from the server.
 </Note>
 
-While testing, [allow_suspicious_low_cardinality_types](/reference/settings/session-settings#allow_suspicious_low_cardinality_types) can be set to `1` to allow most of the data types inside `LowCardinality` for better coverage.
+While testing, [allow_suspicious_low_cardinality_types](/reference/settings/session-settings/allow-suspicious#allow_suspicious_low_cardinality_types) can be set to `1` to allow most of the data types inside `LowCardinality` for better coverage.
 
 ### Array {#array}
 
@@ -945,7 +945,7 @@ SELECT NULL :: Variant(UInt32, String)
 0xFF, // discriminant = NULL
 ```
 
-The [allow_suspicious_variant_types](/reference/settings/session-settings#allow_suspicious_variant_types) setting can be used to allow more exhaustive testing of the `Variant` type.
+The [allow_suspicious_variant_types](/reference/settings/session-settings/allow-suspicious#allow_suspicious_variant_types) setting can be used to allow more exhaustive testing of the `Variant` type.
 
 ### Dynamic {#dynamic}
 
@@ -1527,9 +1527,9 @@ Similar to the [`RowBinary`](/reference/formats/RowBinary/RowBinary) format, but
 <RowBinaryFormatSettings/>
 
 <Note>
-- If setting [`input_format_with_names_use_header`](/reference/settings/formats#input_format_with_names_use_header) is set to `1`,
+- If setting [`input_format_with_names_use_header`](/reference/settings/formats/input-format#input_format_with_names_use_header) is set to `1`,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped. 
-- If setting [`input_format_skip_unknown_fields`](/reference/settings/formats#input_format_skip_unknown_fields) is set to `1`.
+- If setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to `1`.
 Otherwise, the first row will be skipped.
 </Note>
 )DOCS_MD"});
@@ -1557,10 +1557,10 @@ Similar to the [RowBinary](/reference/formats/RowBinary/RowBinary) format, but w
 <RowBinaryFormatSettings/>
 
 <Note>
-If setting [`input_format_with_names_use_header`](/reference/settings/formats#input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/reference/settings/formats#input_format_skip_unknown_fields) is set to 1.
+If setting [`input_format_with_names_use_header`](/reference/settings/formats/input-format#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
-If setting [`input_format_with_types_use_header`](/reference/settings/formats#input_format_with_types_use_header) is set to `1`,
+If setting [`input_format_with_types_use_header`](/reference/settings/formats/input-format#input_format_with_types_use_header) is set to `1`,
 the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
 </Note>
 )DOCS_MD"});
