@@ -25,7 +25,8 @@ dyn_str_splits	1	1
 dyn_str_grace_hash	4
 dyn_u8_splits	1	1
 dyn_u8_grace_hash	4
+dyn_spill_splits	100	100
 dyn_spill_grace	1600
 dyn_spill_hash	1600
-spilled	04505_spill_dyn	1
-spilled	04505_spill_json	1
+spilled	04505_spill_dyn	ok
+spilled	04505_spill_json	ok

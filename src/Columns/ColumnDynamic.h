@@ -197,8 +197,10 @@ public:
     /// variant vs the shared variant).
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
-    /// Per-call scratch for the shared-representation rows of `computeHashInto`: the decoded type's
-    /// serialization and a one-row column, reused across rows carrying the same type.
+    /// Per-call scratch for the shared-representation rows of `computeHashInto`, keyed by decoded type.
+    /// `serialization` is what the cache is really for: it is resolved once per type and reused for
+    /// every row. `column` holds only the row currently being hashed and is replaced by a fresh empty
+    /// column each time, so no value state accumulates across rows (see `hashSharedValue`).
     struct SharedValueHashScratch
     {
         SerializationPtr serialization;

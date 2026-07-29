@@ -905,21 +905,26 @@ UInt32 ColumnDynamic::hashSharedValue(std::string_view value, SharedValueHashCac
     auto type = decodeDataType(buf);
 
     /// A `Nothing` prefix carries no value bytes, so decoding it would throw while merely hashing.
-    /// Defensive only: normal `ColumnDynamic` deserialization never stores such a blob in the shared
-    /// variant, but `ColumnObject`'s raw `shared_data` is read through the same Dynamic serialization.
+    /// `SerializationDynamic` writes exactly that for a NULL row, and `ColumnObject` already decodes
+    /// and branches on it in `repairDuplicatesInDynamicPathsAndSharedData`, so it is a state in-tree
+    /// code handles rather than an impossible one.
     if (isNothing(type))
         return WEAK_HASH32_INITIAL_VALUE;
 
     auto & entry = cache[type->getName()];
-    if (!entry.column)
-    {
+    if (!entry.serialization)
         entry.serialization = type->getDefaultSerialization();
+
+    /// Reset to an EMPTY column rather than popping the previous row: `popBack` is a row operation, so
+    /// a column that keeps state outside its rows would retain every value seen so far and re-hash all
+    /// of it here. `ColumnLowCardinality::popBack` drops indexes but not the dictionary, and
+    /// `computeHashInto` hashes the whole dictionary per call, which would make this loop quadratic;
+    /// `ColumnVariant` nests the same shape. `cloneEmpty` is `cloneResized(0)`, which those types
+    /// implement by clone-emptying that state, so one fresh column per row keeps the work O(1).
+    if (entry.column)
+        entry.column = entry.column->cloneEmpty();
+    else
         entry.column = type->createColumn();
-    }
-    /// The scratch column is reused across rows, so drop anything a previous row (or a throwing
-    /// deserialize) left in it before appending this value.
-    if (!entry.column->empty())
-        entry.column->popBack(entry.column->size());
 
     entry.serialization->deserializeBinary(*entry.column, buf, getFormatSettings());
 

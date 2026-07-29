@@ -266,6 +266,16 @@ CREATE TABLE d_spill (n UInt64, k Dynamic(max_types = 1)) ENGINE = MergeTree ORD
 INSERT INTO d_spill SELECT n, k FROM s_typed;
 INSERT INTO d_spill SELECT n + 1000, k FROM s_shared WHERE dynamicType(k) = 'Int64';
 
+-- Guard the layout this spill case depends on, the way `spill_splits` does for the JSON one. The
+-- `dyn_splits` cell above inspects `d_both`, a Memory table; `d_spill` is a MergeTree, so its
+-- typed/shared split additionally survives part serialization and read-back. Without this row, a
+-- change that normalized every row to one representation would leave the counts at 1600 and the cell
+-- would stay green while covering nothing.
+SELECT 'dyn_spill_splits',
+       countIf(n < 1000 AND NOT isDynamicElementInSharedData(k)),
+       countIf(n > 1000 AND isDynamicElementInSharedData(k))
+FROM d_spill;
+
 SELECT 'dyn_spill_grace', count()
 FROM d_spill AS a INNER JOIN d_spill AS b ON a.k = b.k
 SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 8, max_block_size = 11, joined_block_split_single_row = 0,
@@ -279,9 +289,28 @@ SETTINGS join_algorithm = 'hash';
 -- just as well: GraceHashJoin::flushBlocksToBuckets skips bucket 0 by construction and skips empty
 -- buckets, so "grace_hash was requested" does not imply a temp file was written. The FileBucket
 -- state-machine half of what these cells cover is only exercised if one was, so assert the write
--- directly -- ExternalJoinWritePart counts temp files written for the join.
+-- directly.
+--
+-- ExternalJoinWritePart alone does not do that: GraceHashJoin::addBuckets constructs both temp streams
+-- of every bucket up front and each holder's constructor already increments that counter, so it counts
+-- buckets rather than payload. Running these very two joins over an empty row set still reports
+-- ExternalJoinWritePart = 16 -- on zero payload bytes. So pair it with a byte threshold, the way
+-- 02402_external_disk_metrics does.
+--
+-- ExternalJoinUncompressedBytes is the counter to assert: it measures payload before compression, so
+-- unlike the compressed counter it does not move with temporary_files_codec. Measured over 40 runs
+-- under the test runner's own setting randomization, it stays in 12575..15305 bytes for the JSON join
+-- and 4485..7513 for the Dynamic one, so 2000 leaves better than a factor of two of headroom below the
+-- lowest draw while being unreachable without a real flush: bucket construction alone contributes 0,
+-- and keeping everything in the in-memory bucket (grace_hash_join_initial_buckets = 1) also leaves it
+-- at exactly 0. The counters are per query, so the threshold applies to both cells.
 SYSTEM FLUSH LOGS query_log;
-SELECT 'spilled', log_comment, max(ProfileEvents['ExternalJoinWritePart']) > 0
+SELECT 'spilled', log_comment,
+       if(max(ProfileEvents['ExternalJoinWritePart']) >= 1
+              AND max(ProfileEvents['ExternalJoinUncompressedBytes']) >= 2000,
+          'ok',
+          'fail: write_part=' || toString(max(ProfileEvents['ExternalJoinWritePart']))
+              || ' uncompressed=' || toString(max(ProfileEvents['ExternalJoinUncompressedBytes'])))
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment LIKE '04505_spill%' AND type = 'QueryFinish'
 GROUP BY log_comment

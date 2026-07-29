@@ -14,13 +14,16 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Core/Field.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
 
 #include <cstring>
@@ -1167,6 +1170,101 @@ TEST(ComputeHashInto, ReprIndependenceDynamicSharedVariant)
         EXPECT_EQ(finalizedRow(*shared_str, 1), leafHashOfString("abcdefghijk"))
             << "A String in the shared variant must hash as a String, not as its serialized blob";
     }
+}
+
+// The shared-variant path decodes each value into a scratch column cached per type. A scratch column
+// must be reset to an EMPTY column between rows, not merely popped: `popBack` is a row operation, so a
+// type that keeps state outside its rows retains every value seen so far and `computeHashInto` re-reads
+// all of it. `ColumnLowCardinality` is such a type -- `popBack` drops indexes only, `insertData` grows
+// the dictionary, and `computeHashInto` hashes the whole dictionary per call, which turns hashing N
+// shared rows into O(N^2) work over a dictionary that also grows to N entries.
+//
+// The values stay correct either way (the dictionary is gathered by index), so the assertions below are
+// split: first that the fix changes no hash VALUE, then that the retained state is gone. The retention
+// half is asserted structurally, via the dictionary size the scratch carries, rather than by timing.
+namespace
+{
+/// Serialize `n`-th row of `src` into the Dynamic binary form the shared variant stores.
+std::string dynamicSharedBlob(const IColumn & src, const DataTypePtr & type, size_t n)
+{
+    auto blob_holder = ColumnString::create();
+    ColumnDynamic::serializeValueIntoSharedVariant(*blob_holder, src, type, type->getDefaultSerialization(), n);
+    return std::string(blob_holder->getDataAt(0));
+}
+
+/// Largest dictionary held by any scratch column in `cache` (0 when no scratch is a LowCardinality).
+size_t maxScratchDictionarySize(const ColumnDynamic::SharedValueHashCache & cache)
+{
+    size_t max_dict = 0;
+    for (const auto & [_, entry] : cache)
+    {
+        if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(entry.column.get()))
+            max_dict = std::max(max_dict, lc->getDictionary().size());
+    }
+    return max_dict;
+}
+}
+
+TEST(ComputeHashInto, SharedValueScratchKeepsNoStateAcrossRows)
+{
+    // A plain `LowCardinality(String)` really does reach the shared variant: the cast wrapper preserves
+    // LowCardinality (it strips only Nullable and LowCardinality(Nullable)), so `x::LowCardinality(String)`
+    // inserted into a Dynamic whose single slot is taken lands there in this exact serialized form.
+    auto lc_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+
+    const size_t n = 64;
+    std::vector<std::string> values(n);
+    for (size_t i = 0; i < n; ++i)
+        values[i] = "lc" + std::to_string(i); // all DISTINCT, so a retained dictionary grows with i
+
+    // One-row source columns, plus the leaf hash each value has in its own typed LowCardinality column.
+    std::vector<std::string> blobs(n);
+    std::vector<UInt32> expected_leaf(n);
+    for (size_t i = 0; i < n; ++i)
+    {
+        auto one_row = lc_type->createColumn();
+        one_row->insertData(values[i].data(), values[i].size());
+        blobs[i] = dynamicSharedBlob(*one_row, lc_type, 0);
+        expected_leaf[i] = leafHashOfSingleRow(*one_row);
+    }
+
+    // Hash all N values through ONE cache, exactly as `computeHashInto` does for a row range.
+    ColumnDynamic::SharedValueHashCache cache;
+    for (size_t i = 0; i < n; ++i)
+    {
+        EXPECT_EQ(ColumnDynamic::hashSharedValue(blobs[i], cache), expected_leaf[i])
+            << "A LowCardinality(String) in the shared variant must hash as its typed leaf value (row " << i << ")";
+    }
+
+    // The scratch may hold the row currently being hashed, and `ColumnUnique::cloneEmpty` keeps one
+    // reserved slot for the default value, so 2 is the fixed steady-state size. Retaining previous rows
+    // instead would leave 1 + n here, and would have re-hashed that whole dictionary on every row.
+    EXPECT_LE(maxScratchDictionarySize(cache), 2u)
+        << "The per-type scratch column must not retain values from previously hashed rows";
+
+    // Same defect one level deeper: a Variant carrying a LowCardinality nests the same retained state,
+    // and `ColumnVariant::popBack` recurses into its variants without dropping it.
+    auto variant_type = DataTypeFactory::instance().get("Variant(LowCardinality(String), UInt64)");
+    ColumnDynamic::SharedValueHashCache variant_cache;
+    for (size_t i = 0; i < n; ++i)
+    {
+        auto one_row = variant_type->createColumn();
+        one_row->insert(Field(values[i]));
+        const auto blob = dynamicSharedBlob(*one_row, variant_type, 0);
+        EXPECT_EQ(ColumnDynamic::hashSharedValue(blob, variant_cache), leafHashOfSingleRow(*one_row))
+            << "A Variant(LowCardinality(String), ...) in the shared variant must hash as its typed leaf value (row " << i << ")";
+    }
+
+    size_t max_nested_dict = 0;
+    for (const auto & [_, entry] : variant_cache)
+    {
+        const auto & variant = assert_cast<const ColumnVariant &>(*entry.column);
+        for (size_t v = 0; v < variant.getNumVariants(); ++v)
+            if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(&variant.getVariantByLocalDiscriminator(v)))
+                max_nested_dict = std::max(max_nested_dict, lc->getDictionary().size());
+    }
+    EXPECT_LE(max_nested_dict, 2u)
+        << "A nested LowCardinality inside a Variant scratch must not retain previously hashed rows either";
 }
 
 
