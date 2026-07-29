@@ -557,6 +557,8 @@ public:
     std::unique_ptr<IPostingListCodec> posting_list_codec;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
     MergeTreeIndexTextPostprocessorPtr postprocessor;
+    /// Names of the index expression rewritten as `optimize_empty_string_comparisons` rewrites queries.
+    NameSet rewritten_index_column_names;
 };
 
 }

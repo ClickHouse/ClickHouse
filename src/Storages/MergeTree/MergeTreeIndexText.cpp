@@ -1749,6 +1749,70 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
     }
 }
 
+namespace
+{
+
+/// Rewrites `x = ''` / `x != ''` to `empty(x)` / `notEmpty(x)`, like `optimize_empty_string_comparisons` does in queries.
+bool rewriteEmptyStringComparisons(ASTPtr & ast)
+{
+    bool changed = false;
+
+    for (auto & child : ast->children)
+        changed |= rewriteEmptyStringComparisons(child);
+
+    const auto * function = ast->as<ASTFunction>();
+    if (!function || (function->name != "equals" && function->name != "notEquals")
+        || !function->arguments || function->arguments->children.size() != 2)
+        return changed;
+
+    auto is_empty_string_literal = [](const ASTPtr & node)
+    {
+        const auto * literal = node->as<ASTLiteral>();
+        return literal && literal->value.getType() == Field::Types::String && literal->value.safeGet<String>().empty();
+    };
+
+    const auto & arguments = function->arguments->children;
+    ASTPtr expression;
+
+    if (is_empty_string_literal(arguments[1]))
+        expression = arguments[0];
+    else if (is_empty_string_literal(arguments[0]))
+        expression = arguments[1];
+    else
+        return changed;
+
+    ast = makeASTFunction(function->name == "equals" ? "empty" : "notEmpty", expression);
+    return true;
+}
+
+/// The index expression is matched to the query expression by column name, but queries are analyzed with
+/// `optimize_empty_string_comparisons` (enabled by default), which rewrites `x = ''` to `empty(x)`, while the
+/// index expression is not. Therefore an index such as `arrayFilter(s -> s != '', arr)` is never matched (issue #111788).
+/// Collect the names the index expression has after the same rewrite, to match those queries as well.
+/// The names are only match keys, so the rewritten AST needs no validation.
+NameSet getRewrittenIndexColumnNames(const IndexDescription & index)
+{
+    NameSet names;
+
+    if (!index.expression_list_ast)
+        return names;
+
+    for (const auto & child : index.expression_list_ast->children)
+    {
+        ASTPtr rewritten = child->clone();
+        if (!rewriteEmptyStringComparisons(rewritten))
+            continue;
+
+        String name = rewritten->getColumnName();
+        if (!index.sample_block.has(name))
+            names.insert(std::move(name));
+    }
+
+    return names;
+}
+
+}
+
 MergeTreeIndexText::MergeTreeIndexText(
     StorageMetadataPtr metadata_snapshot_,
     const IndexDescription & index_,
@@ -1761,6 +1825,7 @@ MergeTreeIndexText::MergeTreeIndexText(
     , posting_list_codec(std::move(posting_list_codec_))
     , preprocessor(std::make_shared<MergeTreeIndexTextPreprocessor>(params.preprocessor, index_))
     , postprocessor(std::make_shared<MergeTreeIndexTextPostprocessor>(params.postprocessor, index_))
+    , rewritten_index_column_names(getRewrittenIndexColumnNames(index_))
 {
 }
 
@@ -1817,7 +1882,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator() const
 
 MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, index.alternative_column_names, tokenizer.get(), preprocessor, postprocessor, params.positions);
+    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, rewritten_index_column_names, tokenizer.get(), preprocessor, postprocessor, params.positions);
 }
 
 DataTypePtr MergeTreeIndexText::getNestedDataType(const DataTypePtr & data_type)

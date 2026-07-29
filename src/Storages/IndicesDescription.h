@@ -4,7 +4,6 @@
 
 #include <vector>
 #include <Core/Field.h>
-#include <Core/Names.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Common/NamePrompter.h>
@@ -48,10 +47,6 @@ struct IndexDescription
 
     /// Sample block with index columns. (NOTE: columns in block are empty, but not nullptr)
     Block sample_block;
-
-    /// Names of the index expression as rewritten by `optimize_empty_string_comparisons`,
-    /// used to match queries analyzed with that optimization by column name.
-    NameSet alternative_column_names;
 
     /// Index granularity, make sense for skip indices
     size_t granularity{};

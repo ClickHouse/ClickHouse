@@ -34,7 +34,6 @@ IndexDescription::IndexDescription(const IndexDescription & other)
     , column_names(other.column_names)
     , data_types(other.data_types)
     , sample_block(other.sample_block)
-    , alternative_column_names(other.alternative_column_names)
     , granularity(other.granularity)
     , is_implicitly_created(other.is_implicitly_created)
     , escape_filenames(other.escape_filenames)
@@ -75,7 +74,6 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
     column_names = other.column_names;
     data_types = other.data_types;
     sample_block = other.sample_block;
-    alternative_column_names = other.alternative_column_names;
     granularity = other.granularity;
     is_implicitly_created = other.is_implicitly_created;
     escape_filenames = other.escape_filenames;
@@ -140,44 +138,6 @@ void IndexDescription::recalculateWithNewColumns(const ColumnsDescription & new_
     *this = getIndexFromAST(definition_ast, new_columns, is_implicitly_created, escape_filenames, context);
 }
 
-namespace
-{
-
-/// Rewrites `x = ''` / `x != ''` to `empty(x)` / `notEmpty(x)`, like `optimize_empty_string_comparisons` does in queries.
-bool rewriteEmptyStringComparisons(ASTPtr & ast)
-{
-    bool changed = false;
-
-    for (auto & child : ast->children)
-        changed |= rewriteEmptyStringComparisons(child);
-
-    const auto * function = ast->as<ASTFunction>();
-    if (!function || (function->name != "equals" && function->name != "notEquals")
-        || !function->arguments || function->arguments->children.size() != 2)
-        return changed;
-
-    auto is_empty_string_literal = [](const ASTPtr & node)
-    {
-        const auto * literal = node->as<ASTLiteral>();
-        return literal && literal->value.getType() == Field::Types::String && literal->value.safeGet<String>().empty();
-    };
-
-    const auto & arguments = function->arguments->children;
-    ASTPtr expression;
-
-    if (is_empty_string_literal(arguments[1]))
-        expression = arguments[0];
-    else if (is_empty_string_literal(arguments[0]))
-        expression = arguments[1];
-    else
-        return changed;
-
-    ast = makeASTFunction(function->name == "equals" ? "empty" : "notEmpty", expression);
-    return true;
-}
-
-}
-
 void IndexDescription::initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context)
 {
     chassert(index_expression != nullptr);
@@ -201,20 +161,6 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
     expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
 
     sample_block = expression->getSampleBlock();
-
-    /// Remember the names of the rewritten index expression, so that matching by column name works
-    /// with queries rewritten by `optimize_empty_string_comparisons` (issue #111788).
-    /// The names are only match keys, so the rewritten AST needs no validation.
-    ASTPtr rewritten_list = expr_list->clone();
-    if (rewriteEmptyStringComparisons(rewritten_list))
-    {
-        for (const auto & child : rewritten_list->children)
-        {
-            String alternative_name = child->getColumnName();
-            if (!sample_block.has(alternative_name))
-                alternative_column_names.insert(std::move(alternative_name));
-        }
-    }
 }
 
 Field getFieldFromIndexArgumentAST(const ASTPtr & ast)
