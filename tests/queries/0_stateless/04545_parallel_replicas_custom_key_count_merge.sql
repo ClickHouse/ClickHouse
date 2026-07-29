@@ -160,13 +160,22 @@ SYSTEM FLUSH LOGS query_log;
 -- The secondary queries run with `current_database` = 'default', so they are scoped to this run through
 -- the query ids of their own initiators (the queries that ran in `currentDatabase()`). That keeps the
 -- assertion independent of any concurrent run of this test in another database.
+-- The initiators are matched by exact `log_comment`, not by prefix: `clickhouse-test` passes
+-- `--log_comment '<test basename>-<database>'`, so the queries above that set no `log_comment` of their
+-- own still carry a value starting with this test's number, and a prefix match would report them as
+-- extra rows.
 -- `enable_parallel_replicas = 0` is required: `system.query_log` is MergeTree-backed, so with the
 -- session's `parallel_replicas_for_non_replicated_merge_tree = 1` this query would itself be routed
 -- through custom-key parallel replicas and fail, as the session sets no custom key of its own.
-WITH (
+WITH ['04545_plain_count_an1', '04545_safe_bare_key_an0', '04545_safe_bare_key_an1',
+      '04545_safe_expression_key_an0', '04545_safe_hash_key_an1', '04545_server_constant_an0',
+      '04545_server_constant_an1', '04545_server_constant_hostname_an1',
+      '04545_server_constant_is_group_key_an0', '04545_server_constant_is_group_key_an1',
+      '04545_stateful_deterministic_an1'] AS probes,
+(
     SELECT groupArray(query_id) FROM system.query_log
     WHERE current_database = currentDatabase() AND is_initial_query = 1 AND type = 'QueryFinish'
-        AND startsWith(log_comment, '04545_') AND event_date >= today() - 1
+        AND has(probes, log_comment) AND event_date >= today() - 1
 ) AS initiators
 SELECT log_comment AS probe, count() AS secondary_queries, Settings['distributed_group_by_no_merge'] AS no_merge
 FROM system.query_log
