@@ -1952,9 +1952,24 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     : nullptr;
                 if (view)
                 {
+                    const auto & view_sql_security = storage_snapshot->metadata->sql_security_type;
+                    /// Context the pushed-down read and the inner-query analysis run under. It is assigned
+                    /// below, once the view is known to be over a `Distributed` table, and stays equal to
+                    /// query_context otherwise.
+                    ContextPtr inner_context = query_context;
+
                     auto underlying_dist = view->tryGetUnderlyingDistributed(storage_snapshot, query_context);
                     if (underlying_dist)
                     {
+                        /// For `SQL SECURITY NONE`, the inner query normally executes with a no-user
+                        /// (global) context via `getSQLSecurityOverriddenContext`, so caller-specific
+                        /// row policies do not apply to the underlying distributed table. Use that
+                        /// same context here to match `StorageView::readImpl`, which uses the override
+                        /// for both the inner interpreter and the inner storage read. (`DEFINER` views
+                        /// are rejected by `tryGetUnderlyingDistributed` outright.)
+                        if (view_sql_security && *view_sql_security == SQLSecurityType::NONE)
+                            inner_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
+
                         /// Suppress the pushdown when it would move an expression from the coordinator
                         /// onto the shards that is unsafe to evaluate per-shard:
                         ///   * non-deterministic / server-local functions (hostName, serverUUID,
@@ -1996,8 +2011,29 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         /// Distributed table and prunes correctly.
                         const bool force_skip_unused_shards = settings[Setting::force_optimize_skip_unused_shards] != 0;
 
+                        /// The two read-time gates keyed off the caller's settings — `force_optimize_skip_unused_shards`
+                        /// just above and `distributed_group_by_no_merge` in the `view` condition — are not
+                        /// sufficient when the pushed-down read runs under a different settings profile. For
+                        /// `SQL SECURITY NONE`, inner_context is copied from the global context, so its
+                        /// no-user profile can have either setting enabled even though the caller has it off,
+                        /// and both the processing-stage decision and `StorageDistributed::read` below use
+                        /// that context. Re-evaluate the two gates against the effective read settings:
+                        ///   * with `distributed_group_by_no_merge`, each shard would aggregate independently
+                        ///     and the initiator would only concatenate, so an outer GROUP BY key present on
+                        ///     several shards would yield one partial row per shard instead of the single
+                        ///     merged row `StorageView::readImpl` produces;
+                        ///   * with `force_optimize_skip_unused_shards`, the read would throw
+                        ///     `UNABLE_TO_SKIP_UNUSED_SHARDS` once `filter_actions_dag` is cleared below,
+                        ///     even though the non-pushdown path still propagates the outer `WHERE` to the
+                        ///     underlying `Distributed` table and prunes correctly.
+                        /// When inner_context is the caller's context these checks are simply redundant.
+                        const auto & inner_settings = inner_context->getSettingsRef();
+                        const bool inner_settings_forbid_pushdown = inner_settings[Setting::distributed_group_by_no_merge] != 0
+                            || inner_settings[Setting::force_optimize_skip_unused_shards] != 0;
+
                         if (has_row_policy
                             || force_skip_unused_shards
+                            || inner_settings_forbid_pushdown
                             || containsNonDeterministicFunction(table_expression_query_info.query_tree)
                             || containsSubqueryNode(table_expression_query_info.query_tree)
                             || astContainsNonDeterministicFunction(table_expression_query_info.additional_filter_ast, query_context)
@@ -2006,16 +2042,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                     if (underlying_dist)
                     {
-                        const auto & view_sql_security = storage_snapshot->metadata->sql_security_type;
-
-                        /// For SQL SECURITY NONE, the inner query normally executes with a no-user
-                        /// (global) context via getSQLSecurityOverriddenContext, so caller-specific
-                        /// row policies do not apply to the underlying distributed table. Use that
-                        /// same context here to match readImpl behaviour.
-                        const ContextPtr inner_context = (view_sql_security && *view_sql_security == SQLSecurityType::NONE)
-                            ? storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context)
-                            : query_context;
-
                         /// Analyze the view's inner query to obtain its query tree. Row policies are not
                         /// injected here: queries against a view (or underlying Distributed table) with a
                         /// row policy were already excluded from the pushdown above, so the canonical
