@@ -2102,7 +2102,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                                 chassert(access_check_dist_node);
                                 auto referenced_columns = collectSelectedColumnsFromTable(
                                     access_check_tree, underlying_dist->getStorageID(), query_context);
-                                checkAccessRights(access_check_dist_node->as<TableNode &>(), referenced_columns, query_context);
+                                const auto & access_check_dist_table = access_check_dist_node->as<TableNode &>();
+                                checkAccessRights(
+                                    access_check_dist_table.getStorage(),
+                                    access_check_dist_table.getStorageID(),
+                                    access_check_dist_table.getStorageSnapshot(),
+                                    referenced_columns,
+                                    query_context);
                             }
 
                             /// Merge table expression modifiers (FINAL, SAMPLE) from the outer view
