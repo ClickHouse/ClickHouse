@@ -101,7 +101,8 @@ private:
 /// such as the Cloud-only StorageSharedSet), or resolves to one through a chain of StorageAlias
 /// wrappers. Returns nullptr otherwise, including a broken alias whose target cannot be resolved.
 /// A set-backed table is consumed natively as a prepared set on the right of IN and cannot be read,
-/// so both the analyzer and the planner must recognize it through any alias wrapping.
-StorageSet * getSetStorageFromTable(const StoragePtr & storage);
+/// so every path that prepares such a set must recognize it through any alias wrapping.
+/// The result shares ownership: through an alias the caller holds only the wrapper, not the target.
+std::shared_ptr<StorageSet> getSetStorageFromTable(const StoragePtr & storage);
 
 }

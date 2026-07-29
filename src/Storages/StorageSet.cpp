@@ -200,13 +200,15 @@ SetPtr StorageSet::getSet() const
 }
 
 
-StorageSet * getSetStorageFromTable(const StoragePtr & storage)
+std::shared_ptr<StorageSet> getSetStorageFromTable(const StoragePtr & storage)
 {
     StoragePtr current = storage;
     /// Bound the walk so a self-referential or cyclic alias chain cannot loop forever.
     for (size_t depth = 0; current && depth < 64; ++depth)
     {
-        if (auto * storage_set = dynamic_cast<StorageSet *>(current.get()))
+        /// Share ownership with the caller: through an alias the caller holds only the wrapper, so
+        /// returning a raw pointer would leave the target owned by nothing once this returns.
+        if (auto storage_set = std::dynamic_pointer_cast<StorageSet>(current))
             return storage_set;
 
         if (const auto * alias = dynamic_cast<const StorageAlias *>(current.get()))

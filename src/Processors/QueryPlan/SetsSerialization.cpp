@@ -221,7 +221,7 @@ static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets
         auto table_node = resolveTable(identifier, context);
         /// Recognize a set-backed table through any StorageAlias wrapping, like the analyzer and the
         /// planner do, so a prepared set is still reused after the plan is deserialized.
-        const auto * storage_set = getSetStorageFromTable(table_node->getStorage());
+        auto storage_set = getSetStorageFromTable(table_node->getStorage());
         if (!storage_set)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Table {} is not a StorageSet", set.storage_name);
 

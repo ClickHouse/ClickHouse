@@ -1307,11 +1307,11 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
                 /// Recognize a set-backed table through any StorageAlias wrapping, like the analyzer
                 /// and the planner do, so this path also consumes it natively instead of falling
                 /// through to a read that the set storage does not support.
-                if (StorageSet * storage_set = getSetStorageFromTable(table))
+                if (std::shared_ptr<StorageSet> storage_set = getSetStorageFromTable(table))
                 {
 #if CLICKHOUSE_CLOUD
                     if (storage_set->getName() == "SharedSet")
-                        return data.prepared_sets->addFromStorage(set_key, right_in_operand, static_cast<StorageSharedSet *>(storage_set)->getSet(data.getContext()), table_id);
+                        return data.prepared_sets->addFromStorage(set_key, right_in_operand, static_cast<StorageSharedSet *>(storage_set.get())->getSet(data.getContext()), table_id);
 #endif
                     return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_set->getSet(), table_id);
                 }
