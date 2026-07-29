@@ -1064,8 +1064,11 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     /// only, physical columns only matter and stays exactly as narrow as it has always been. The
     /// integrity check, which refuses a type that cannot be read back, covers every persisted
     /// declaration of every fresh definition, so it runs for an ATTACH carrying a whole definition and
-    /// for a materialized view as well, and over columns of every kind. A definition read back from
-    /// stored metadata is marked `attach_short_syntax` and is checked by neither.
+    /// for a materialized view as well, and over columns of every kind. Metadata loading through
+    /// `createTableFromAST`, and a short `ATTACH TABLE t`, are marked `attach_short_syntax` and are
+    /// checked by neither. `RESTORE` and recovery of a lost `Replicated` replica carry no such marker,
+    /// so the integrity check does run for them; it cannot reject an already collapsed column, because
+    /// the stored name omits version 0 and `DataTypeVariant` squashes the pair before validation.
 
     /// If it's not attach and not materialized view to existing table,
     /// we need to validate data types (check for experimental or suspicious types).

@@ -230,7 +230,8 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
     };
 
     /// `forEachChild` does not reach the argument types of an aggregate function, which is the only
-    /// reason this recursion exists.
+    /// reason this recursion exists. `SimpleAggregateFunction` has the same gap, but its first argument
+    /// type is also its base type, so it is already reached without recursing into it.
     IDataType::ChildCallback check_type_and_aggregate_arguments;
     check_type_and_aggregate_arguments = [&](const IDataType & data_type)
     {
