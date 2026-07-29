@@ -91,9 +91,9 @@ Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTree
 
 bool isQueryPlanOnlyVirtualColumn(const String & column_name)
 {
-    /// These are filled by ReadFromMergeTree into shared_virtual_fields, i.e. their value only
-    /// exists inside a SELECT query plan. The mutation/merge read path (MergeTreeSequentialSource)
-    /// cannot produce them.
+    /// These are filled by `ReadFromMergeTree` into `shared_virtual_fields`, i.e. their value only
+    /// exists inside a `SELECT` query plan. The mutation/merge read path
+    /// (`MergeTreeSequentialSource`) cannot produce them.
     return column_name == "_sample_factor" || column_name == "_table" || column_name == "_database";
 }
 

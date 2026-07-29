@@ -718,7 +718,7 @@ static void rejectQueryPlanOnlyVirtualColumns(
     if (!ast)
         return;
 
-    /// Do not descend into subqueries: they are evaluated as their own SELECT.
+    /// Do not descend into subqueries: they are evaluated as their own `SELECT`.
     if (ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSubquery>())
         return;
 
@@ -847,7 +847,7 @@ void MutationsInterpreter::prepare(bool dry_run)
 
     /// Reject query-plan-only virtual columns (`_sample_factor`, `_table`, `_database`)
     /// referenced by the mutation's expressions before the mutation can start. See
-    /// rejectQueryPlanOnlyVirtualColumns above for why a raw name match is insufficient.
+    /// `rejectQueryPlanOnlyVirtualColumns` above for why a raw name match is insufficient.
     if (source.getMergeTreeData())
     {
         for (const auto & command : commands)
