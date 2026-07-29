@@ -49,14 +49,14 @@ ${CLICKHOUSE_CLIENT} -q "
     ENGINE = MergeTree ORDER BY a
 "
 ${CLICKHOUSE_CLIENT} \
-    --max_block_size=500000 --async_insert=1 --wait_for_async_insert=1 -q "
+    --max_block_size=50000 --async_insert=1 --wait_for_async_insert=1 --query_id insert_case3_${CLICKHOUSE_DATABASE} -q "
     INSERT INTO test_async_sel_alter_race
     SELECT number AS a, number * 2 AS b
-    FROM numbers(1000000)
-    WHERE sleepEachRow(0.000002) = 0
+    FROM numbers(100000)
+    WHERE sleepEachRow(0.00002) = 0
 " &
 INSERT_PID=$!
-sleep 0.5
+while [[ $(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.processes WHERE query_id = 'insert_case3_${CLICKHOUSE_DATABASE}'") == 0 ]]; do sleep 0.05; done
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE test_async_sel_alter_race MODIFY COLUMN b UInt32 FIRST"
 wait "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_alter_race WHERE b != a * 2"
@@ -69,14 +69,14 @@ ${CLICKHOUSE_CLIENT} -q "
     ENGINE = MergeTree ORDER BY a
 "
 ${CLICKHOUSE_CLIENT} \
-    --optimize_trivial_insert_select=1 --async_insert=1 --wait_for_async_insert=1 -q "
+    --optimize_trivial_insert_select=1 --async_insert=1 --wait_for_async_insert=1 --query_id insert_case4_${CLICKHOUSE_DATABASE} -q "
     INSERT INTO test_async_sel_add_col_single
     SELECT number AS a, number * 2 AS b
-    FROM numbers(200000)
-    WHERE sleepEachRow(0.000002) = 0
+    FROM numbers(20000)
+    WHERE sleepEachRow(0.00002) = 0
 " &
 INSERT_PID=$!
-sleep 0.2
+while [[ $(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.processes WHERE query_id = 'insert_case4_${CLICKHOUSE_DATABASE}'") == 0 ]]; do sleep 0.05; done
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE test_async_sel_add_col_single ADD COLUMN c UInt32 DEFAULT 42"
 wait "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_add_col_single"
@@ -91,14 +91,14 @@ ${CLICKHOUSE_CLIENT} -q "
     ENGINE = MergeTree ORDER BY a
 "
 ${CLICKHOUSE_CLIENT} \
-    --max_block_size=500000 --async_insert=1 --wait_for_async_insert=1 -q "
+    --max_block_size=50000 --async_insert=1 --wait_for_async_insert=1 --query_id insert_case5_${CLICKHOUSE_DATABASE} -q "
     INSERT INTO test_async_sel_add_col_multi
     SELECT number AS a, number * 2 AS b
-    FROM numbers(1000000)
-    WHERE sleepEachRow(0.000002) = 0
+    FROM numbers(100000)
+    WHERE sleepEachRow(0.00002) = 0
 " &
 INSERT_PID=$!
-sleep 0.5
+while [[ $(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.processes WHERE query_id = 'insert_case5_${CLICKHOUSE_DATABASE}'") == 0 ]]; do sleep 0.05; done
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE test_async_sel_add_col_multi ADD COLUMN c UInt32 DEFAULT 42"
 wait "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_add_col_multi"
@@ -123,14 +123,14 @@ ${CLICKHOUSE_CLIENT} -q "
     ENGINE = MergeTree ORDER BY a
 "
 ${CLICKHOUSE_CLIENT} \
-    --max_block_size=500000 --async_insert=1 --wait_for_async_insert=1 -q "
+    --max_block_size=50000 --async_insert=1 --wait_for_async_insert=1 --query_id insert_case6_${CLICKHOUSE_DATABASE} -q "
     INSERT INTO test_async_sel_mv_race_dst
     SELECT number AS a, number * 2 AS b
-    FROM numbers(1000000)
-    WHERE sleepEachRow(0.000002) = 0
+    FROM numbers(100000)
+    WHERE sleepEachRow(0.00002) = 0
 " &
 INSERT_PID=$!
-sleep 0.5
+while [[ $(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.processes WHERE query_id = 'insert_case6_${CLICKHOUSE_DATABASE}'") == 0 ]]; do sleep 0.05; done
 ${CLICKHOUSE_CLIENT} -q "
     CREATE MATERIALIZED VIEW test_async_sel_mv_race_mv TO test_async_sel_mv_race_target AS
     SELECT * FROM test_async_sel_mv_race_dst
@@ -180,14 +180,14 @@ ${CLICKHOUSE_CLIENT} -q "
     ENGINE = MergeTree ORDER BY a
 "
 ${CLICKHOUSE_CLIENT} \
-    --optimize_trivial_insert_select=1 --async_insert=1 --wait_for_async_insert=1 -q "
+    --optimize_trivial_insert_select=1 --async_insert=1 --wait_for_async_insert=1 --query_id insert_case9_${CLICKHOUSE_DATABASE} -q "
     INSERT INTO test_async_sel_transformer_single (* EXCEPT c)
     SELECT number AS a, number * 2 AS b
-    FROM numbers(200000)
-    WHERE sleepEachRow(0.000002) = 0
+    FROM numbers(20000)
+    WHERE sleepEachRow(0.00002) = 0
 " &
 INSERT_PID=$!
-sleep 0.2
+while [[ $(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.processes WHERE query_id = 'insert_case9_${CLICKHOUSE_DATABASE}'") == 0 ]]; do sleep 0.05; done
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE test_async_sel_transformer_single ADD COLUMN d UInt32 DEFAULT 99"
 wait "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_transformer_single"
@@ -202,14 +202,14 @@ ${CLICKHOUSE_CLIENT} -q "
     ENGINE = MergeTree ORDER BY a
 "
 ${CLICKHOUSE_CLIENT} \
-    --max_block_size=500000 --async_insert=1 --wait_for_async_insert=1 -q "
+    --max_block_size=50000 --async_insert=1 --wait_for_async_insert=1 --query_id insert_case10_${CLICKHOUSE_DATABASE} -q "
     INSERT INTO test_async_sel_transformer_multi (* EXCEPT c)
     SELECT number AS a, number * 2 AS b
-    FROM numbers(1000000)
-    WHERE sleepEachRow(0.000002) = 0
+    FROM numbers(100000)
+    WHERE sleepEachRow(0.00002) = 0
 " &
 INSERT_PID=$!
-sleep 0.5
+while [[ $(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.processes WHERE query_id = 'insert_case10_${CLICKHOUSE_DATABASE}'") == 0 ]]; do sleep 0.05; done
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE test_async_sel_transformer_multi ADD COLUMN d UInt32 DEFAULT 99"
 wait "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_transformer_multi"
