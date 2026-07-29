@@ -202,7 +202,7 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool 
     if (interface == Interface::TCP)
     {
         writeBinary(os_user, out);
-        writeBinary(client_hostname, out);
+        writeBinary(getClientHostName(), out);
         writeBinary(client_name, out);
         writeVarUInt(client_version_major, out);
         writeVarUInt(client_version_minor, out);
@@ -342,6 +342,8 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
     {
         readBinary(os_user, in);
         readBinary(client_hostname, in);
+        /// The name describes the peer, not us, so it must not be re-resolved locally.
+        resolve_client_hostname_on_demand = false;
         readBinary(client_name, in);
         readVarUInt(client_version_major, in);
         readVarUInt(client_version_minor, in);
@@ -453,6 +455,13 @@ bool ClientInfo::clientVersionEquals(const ClientInfo & other, bool compare_patc
            client_tcp_protocol_version == other.client_tcp_protocol_version;
 }
 
+const String & ClientInfo::getClientHostName() const
+{
+    if (resolve_client_hostname_on_demand)
+        return getFQDNOrHostName();
+    return client_hostname;
+}
+
 String ClientInfo::getVersionStr() const
 {
     return fmt::format("{}.{}.{} ({})", client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
@@ -466,7 +475,10 @@ void ClientInfo::fillOSUserHostNameAndVersionInfo()
     else
         os_user.clear();    /// Don't mind if we cannot determine user login.
 
-    client_hostname = getFQDNOrHostName();
+    /// Do not resolve the hostname here: `getClientHostName` does it on demand, so a process that never
+    /// reports the name (e.g. `clickhouse local`) does not pay for a DNS lookup at startup.
+    resolve_client_hostname_on_demand = true;
+    client_hostname.clear();
 
     client_agent = detectClientAgent();
 

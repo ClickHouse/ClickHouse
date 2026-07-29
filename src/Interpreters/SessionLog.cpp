@@ -223,7 +223,8 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(client_info.interface);
 
-    columns[i++]->insertData(client_info.client_hostname.data(), client_info.client_hostname.length());
+    const String & client_hostname = client_info.getClientHostName();
+    columns[i++]->insertData(client_hostname.data(), client_hostname.length());
     columns[i++]->insertData(client_info.client_name.data(), client_info.client_name.length());
     columns[i++]->insert(client_info.client_tcp_protocol_version);
     columns[i++]->insert(client_info.client_version_major);

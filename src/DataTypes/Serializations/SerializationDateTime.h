@@ -31,6 +31,11 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+
+private:
+    /// Needed for ISO output and for the `best_effort` date/time input formats. Not in `TimezoneMixin`, so that
+    /// merely naming a `DateTime` type does not build a UTC lookup table; see the note there.
+    const DateLUTImpl & utc_time_zone;
 };
 
 class SerializationTime final : public SerializationNumber<Int32>

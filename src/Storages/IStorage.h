@@ -230,6 +230,17 @@ public:
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
     }
 
+    /// Replace only the table comment, keeping the rest of the metadata as it is.
+    /// Attaching the system tables used to fetch the table back from `DatabaseCatalog` and copy its whole
+    /// `StorageInMemoryMetadata` - which carries the full `ColumnsDescription` - just to fill in the comment,
+    /// copying every system table's schema twice at every startup.
+    void setInMemoryMetadataComment(const String & comment)
+    {
+        auto updated = std::make_unique<StorageInMemoryMetadata>(*metadata.get());
+        updated->setComment(comment);
+        metadata.set(std::move(updated));
+    }
+
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
