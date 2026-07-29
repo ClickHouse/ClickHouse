@@ -1830,7 +1830,7 @@ static std::optional<FieldRef> applyFunction(const FunctionBasePtr & func, const
             return {};
         }
         /// Publish the entry only once it is complete, so a later probe never sees a half-built one.
-        columns->emplace_back(ColumnWithTypeAndName{std::move(result_column), std::move(result_type), result_name});
+        columns->emplace_back(ColumnWithTypeAndName{result_column, result_type, result_name});
     }
 
     return FieldRef{field.columns, field.row_idx, result_idx};
