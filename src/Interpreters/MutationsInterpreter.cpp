@@ -827,20 +827,23 @@ static void rejectQueryPlanOnlyVirtualColumns(const ASTAlterCommand & alter, con
 {
     NameSet aliases_in_progress;
 
-    auto reject = [&](const IAST * ast)
-    {
-        NameSet shadowed;
-        collectExpressionAliases(ast, shadowed);
-        rejectQueryPlanOnlyVirtualColumns(ast, columns, shadowed, aliases_in_progress);
-    };
+    /// An alias is visible to the whole command: one `UPDATE` assignment may refer to an alias
+    /// that another one defines, so collect the names over the predicate and every assignment
+    /// before rejecting anything.
+    NameSet shadowed;
+    collectExpressionAliases(alter.predicate, shadowed);
+    if (alter.update_assignments)
+        for (const auto & child : alter.update_assignments->children)
+            if (const auto * assignment = child->as<ASTAssignment>())
+                collectExpressionAliases(assignment->expression().get(), shadowed);
 
     if (alter.predicate)
-        reject(alter.predicate);
+        rejectQueryPlanOnlyVirtualColumns(alter.predicate, columns, shadowed, aliases_in_progress);
 
     if (alter.update_assignments)
         for (const auto & child : alter.update_assignments->children)
             if (const auto * assignment = child->as<ASTAssignment>())
-                reject(assignment->expression().get());
+                rejectQueryPlanOnlyVirtualColumns(assignment->expression().get(), columns, shadowed, aliases_in_progress);
 }
 
 void MutationsInterpreter::prepare(bool dry_run)
