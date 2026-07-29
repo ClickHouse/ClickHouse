@@ -354,6 +354,44 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, WindowFrameIsSignificant)
     EXPECT_FALSE(diffOf(cumulative, cumulative_parens).projections_changed);
 }
 
+TEST(ReplicatedMergeTreeTableMetadataCompare, ProjectionWithSettingsIsSignificant)
+{
+    /// A projection's `WITH SETTINGS` clause is an `ASTSetQuery`, whose `default_settings` (the
+    /// `x = DEFAULT` spelling) and `query_parameters` (the `param_x = ...` spelling) are not
+    /// children: reaching only `changes` would make these declarations compare equal.
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    MetadataFields granularity_default;
+    granularity_default.projections = "pr (SELECT b ORDER BY c) WITH SETTINGS (index_granularity = DEFAULT)";
+    MetadataFields block_size_default;
+    block_size_default.projections = "pr (SELECT b ORDER BY c) WITH SETTINGS (max_compress_block_size = DEFAULT)";
+    EXPECT_TRUE(diffOf(granularity_default, block_size_default).projections_changed);
+    EXPECT_FALSE(diffOf(granularity_default, granularity_default).projections_changed);
+
+    MetadataFields granularity_explicit;
+    granularity_explicit.projections = "pr (SELECT b ORDER BY c) WITH SETTINGS (index_granularity = 42)";
+    EXPECT_TRUE(diffOf(granularity_default, granularity_explicit).projections_changed);
+
+    MetadataFields no_settings;
+    EXPECT_TRUE(diffOf(granularity_default, no_settings).projections_changed);
+
+    MetadataFields param_one;
+    param_one.projections = "pr (SELECT b ORDER BY c) WITH SETTINGS (param_x = 1)";
+    MetadataFields param_two;
+    param_two.projections = "pr (SELECT b ORDER BY c) WITH SETTINGS (param_x = 2)";
+    EXPECT_TRUE(diffOf(param_one, param_two).projections_changed);
+
+    MetadataFields param_renamed;
+    param_renamed.projections = "pr (SELECT b ORDER BY c) WITH SETTINGS (param_y = 1)";
+    EXPECT_TRUE(diffOf(param_one, param_renamed).projections_changed);
+
+    /// Declarations that differ only in formatting are still equal.
+    MetadataFields granularity_default_parens;
+    granularity_default_parens.projections = "pr (SELECT (b) ORDER BY (c)) WITH SETTINGS (index_granularity = DEFAULT)";
+    EXPECT_FALSE(diffOf(granularity_default, granularity_default_parens).projections_changed);
+}
+
 TEST(ReplicatedMergeTreeTableMetadataCompare, AliasIsFramedInTheHash)
 {
     /// An alias is hashed right before what `getID` writes, so without a length prefix the bytes of

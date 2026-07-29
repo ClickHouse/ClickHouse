@@ -83,11 +83,29 @@ public:
 
 void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases*/) const
 {
+    /// None of the members below is a child, so the default implementation does not see them.
+    static_assert(sizeof(*this) == 112, "If members were added to ASTSetQuery, hash them here unless they are purely cosmetic.");
+
     for (const auto & change : changes)
     {
         hash_state.update(change.name.size());
         hash_state.update(change.name);
         applyVisitor(FieldVisitorHash(hash_state), change.value);
+    }
+
+    /// `x = DEFAULT` resets a setting and is not recorded in `changes`.
+    for (const auto & setting_name : default_settings)
+    {
+        hash_state.update(setting_name.size());
+        hash_state.update(setting_name);
+    }
+
+    for (const auto & [name, value] : query_parameters)
+    {
+        hash_state.update(name.size());
+        hash_state.update(name);
+        hash_state.update(value.size());
+        hash_state.update(value);
     }
 }
 
