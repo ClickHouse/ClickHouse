@@ -4,6 +4,7 @@
 #include <vector>
 #include <base/defines.h>
 #include <Common/BitHelpers.h>
+#include <Common/CacheLine.h>
 
 /// Vyukov queue.
 /// https://web.archive.org/web/20170205113402/http://www.1024cores.net/home/lock-free-algorithms/queues/bounded-mpmc-queue
@@ -159,6 +160,12 @@ public:
         size_t x = enqueue_pos.load(std::memory_order_relaxed);
         return x - std::min(x, y); // max(0, x - y)
     }
+
+    /// Number of pushes ever started. Acquire-ordered: a consumer observing this value also observes
+    /// every slot published before it, so it is an exact boundary for a full drain (unlike `size`).
+    size_t enqueuePosition() const { return enqueue_pos.load(std::memory_order_acquire); }
+    /// Number of pops ever completed. Only meaningful to the (single) consumer, which owns dequeue_pos.
+    size_t dequeuePosition() const { return dequeue_pos.load(std::memory_order_relaxed); }
 
 private:
     struct alignas(DB::CH_CACHE_LINE_SIZE) Slot
