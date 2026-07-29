@@ -11,7 +11,7 @@ node = cluster.add_instance(
     main_configs=["configs/config.d/storage_configuration.xml"],
     with_zookeeper=True,
     stay_alive=True,
-    tmpfs=["/jbod1:size=60M", "/jbod2:size=60M"],
+    tmpfs=["/jbod1:size=60M", "/jbod2:size=60M", "/readonly_local:size=60M"],
 )
 
 # A retried insert would allocate a different block number, and the whole scenario relies on the
@@ -413,3 +413,56 @@ def test_single_disk_policy_is_unaffected(start_cluster):
     node.query("ALTER TABLE dst_one ATTACH PARTITION tuple()")
     assert node.query("SELECT count() FROM dst_one").strip() == "1"
     assert node.query("SELECT v FROM dst_one").strip() == "from_src"
+
+
+def test_detach_ignores_a_name_taken_only_on_a_non_enumerable_disk(start_cluster):
+    """A name occupied on a read-only disk must not push the live part to a '_tryN' directory.
+
+    system.detached_parts skips read-only and write-once disks, and ATTACH PARTITION drops every
+    '_tryN' candidate. So if the allocator treated such a name as taken, the detached copy would
+    land under a name nothing can attach while the occupied one stays invisible, leaving the
+    partition unattachable even though both copies are on disk.
+    """
+    node.query("DROP TABLE IF EXISTS dst_ro SYNC")
+    node.query(
+        """
+        CREATE TABLE dst_ro (k UInt64, v String)
+        ENGINE = ReplicatedMergeTree('/clickhouse/dst_ro', 'r1') ORDER BY k
+        SETTINGS storage_policy = 'writable_and_readonly', old_parts_lifetime = 100000
+        """
+    )
+    node.query("SYSTEM STOP MERGES dst_ro")
+    node.query(f"INSERT INTO dst_ro {INSERT_SETTINGS} VALUES (1, 'from_dst')")
+    part = active_part("dst_ro")
+
+    # The live part has to be on the writable disk for the scenario to mean anything.
+    assert active_disk("dst_ro") == "jbod1"
+
+    # Occupy the same name on the read-only disk of the very same policy.
+    detached = data_path_on("dst_ro", "readonly_local") + "detached"
+    node.exec_in_container(
+        ["bash", "-c", f"mkdir -p '{detached}/{part}'"], privileged=True
+    )
+    # Precondition: that copy is invisible to the enumeration ATTACH PARTITION resolves against.
+    assert (
+        node.query(
+            "SELECT count() FROM system.detached_parts WHERE database = currentDatabase() "
+            "AND table = 'dst_ro'"
+        ).strip()
+        == "0"
+    )
+
+    node.query(f"ALTER TABLE dst_ro DETACH PART '{part}'")
+
+    # The name is free as far as every reader is concerned, so it must be used as is.
+    assert (
+        node.query(
+            "SELECT name FROM system.detached_parts WHERE database = currentDatabase() "
+            "AND table = 'dst_ro' ORDER BY name"
+        )
+        == f"{part}\n"
+    )
+
+    node.query("ALTER TABLE dst_ro ATTACH PARTITION tuple()")
+    assert node.query("SELECT count() FROM dst_ro").strip() == "1"
+    assert node.query("SELECT v FROM dst_ro").strip() == "from_dst"
