@@ -1211,7 +1211,7 @@ SELECT toTime(toDateTime(52225, 'UTC'))
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toTime = {1, 1};
+    FunctionDocumentation::IntroducedIn introduced_in_toTime = {25, 5};
     FunctionDocumentation::Category category_toTime = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toTime = {description_toTime, syntax_toTime, arguments_toTime, {}, returned_value_toTime, examples_toTime, introduced_in_toTime, category_toTime};
 
@@ -2402,7 +2402,7 @@ SELECT toTimeOrZero('12:30:45'), toTimeOrZero('invalid')
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toTimeOrZero = {1, 1};
+    FunctionDocumentation::IntroducedIn introduced_in_toTimeOrZero = {25, 5};
     FunctionDocumentation::Category category_toTimeOrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toTimeOrZero = {description_toTimeOrZero, syntax_toTimeOrZero, arguments_toTimeOrZero, {}, returned_value_toTimeOrZero, examples_toTimeOrZero, introduced_in_toTimeOrZero, category_toTimeOrZero};
 
@@ -3639,7 +3639,7 @@ SELECT toTimeOrNull('12:30:45'), toTimeOrNull('invalid')
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toTimeOrNull = {1, 1};
+    FunctionDocumentation::IntroducedIn introduced_in_toTimeOrNull = {25, 5};
     FunctionDocumentation::Category category_toTimeOrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toTimeOrNull = {description_toTimeOrNull, syntax_toTimeOrNull, arguments_toTimeOrNull, {}, returned_value_toTimeOrNull, examples_toTimeOrNull, introduced_in_toTimeOrNull, category_toTimeOrNull};
 
