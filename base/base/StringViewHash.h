@@ -174,7 +174,8 @@ constexpr bool operator== (std::string_view lhs, std::string_view rhs)
 {
     if consteval
     {
-        return lhs.compare(rhs) == 0;
+        /// Cannot use `==`: that is this operator. The standard defines it as exactly this.
+        return lhs.compare(rhs) == 0; // NOLINT(readability-string-compare)
     }
 
     if (lhs.size() != rhs.size())
