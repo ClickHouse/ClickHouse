@@ -77,3 +77,10 @@ SELECT CAST(toDecimal64(3599999, 0) AS Time64(0)) IN (SELECT CAST(3599999 AS Tim
 SELECT CAST(toDecimal64(4294967296, 0) AS DateTime64(0)) IN (SELECT toDateTime(4294967295));
 SELECT CAST(toDecimal64(-1, 0) AS DateTime64(0)) IN (SELECT toDateTime(0));
 SELECT CAST(toDecimal64(4294967295, 0) AS DateTime64(0)) IN (SELECT toDateTime(4294967295));
+
+-- Composite probes: lossy Time64/DateTime64 values nested in Array/Tuple/Map must not match either.
+SELECT [CAST('01:02:03.5' AS Time64(1))] IN (SELECT [CAST('01:02:03' AS Time)]);
+SELECT [CAST('01:02:03.0' AS Time64(1))] IN (SELECT [CAST('01:02:03' AS Time)]);
+SELECT map('k', CAST('01:02:03.5' AS Time64(1))) IN (SELECT map('k', CAST('01:02:03' AS Time)));
+SELECT (CAST('01:02:03.5' AS Time64(1)), 1) IN (SELECT (CAST('01:02:03' AS Time), 1));
+SELECT [CAST('2020-01-01 00:00:00.5' AS DateTime64(1))] IN (SELECT [CAST('2020-01-01 00:00:00' AS DateTime)]);
