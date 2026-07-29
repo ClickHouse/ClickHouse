@@ -536,9 +536,14 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
         read_task_callback_,
         replica_number);
 
-    /// `prefer_multiple_streams` lives outside `SelectQueryInfo`, so it is not carried by the
-    /// constructor — propagate it explicitly, like `clone` does.
+    /// `prefer_multiple_streams` and `virtual_row_conversion` are read-in-order state that lives
+    /// outside `SelectQueryInfo`, so the constructor does not carry them — propagate them
+    /// explicitly, like `clone` does. `virtual_row_conversion` matters because
+    /// `optimizeReadInOrder` keeps the read-in-order-through-join plan only when the virtual-row
+    /// markers are available (see the `joins_to_keep_in_order` check there); executing a rebuilt
+    /// read without them would make the sort after the join unable to tell which stream to pull.
     step->prefer_multiple_streams = prefer_multiple_streams;
+    step->virtual_row_conversion = virtual_row_conversion;
 
     return step;
 }
@@ -3673,6 +3678,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
     cloned_step->enable_remove_parts_from_snapshot_optimization = enable_remove_parts_from_snapshot_optimization;
     cloned_step->prefer_multiple_streams = prefer_multiple_streams;
+    cloned_step->virtual_row_conversion = virtual_row_conversion;
     return cloned_step;
 }
 
