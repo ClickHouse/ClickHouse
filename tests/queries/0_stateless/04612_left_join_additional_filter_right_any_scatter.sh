@@ -40,7 +40,10 @@ $CLICKHOUSE_CLIENT -q "
 
 # 1. The strictness really was promoted to RightAny. Without it the join stays Left ALL, which
 #    has need_replication and was already resized by the guard this fixes.
-$CLICKHOUSE_CLIENT --send_logs_level=debug -q "
+# $CLICKHOUSE_CLIENT already carries --send_logs_level, and passing it twice is rejected, so
+# replace it rather than appending another one.
+CLICKHOUSE_CLIENT_DEBUG=$(echo "$CLICKHOUSE_CLIENT" | sed "s/--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}/--send_logs_level=debug/")
+$CLICKHOUSE_CLIENT_DEBUG -q "
     SELECT l.k, r.a
     FROM (SELECT number AS k FROM numbers(2)) AS l
     LEFT JOIN (SELECT toNullable(number) AS a, 0 AS b FROM numbers(2)) AS r
