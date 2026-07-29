@@ -14,28 +14,33 @@
 -- the strict inequality fails.
 --
 -- We compare two queries that differ only in the idle-hold duration (rather than a fixed multiple or
--- a sleep-vs-no-sleep pair) so the result is robust to the unbounded, noisy set-building time: under
--- sanitizers or on a loaded runner the build can take a variable number of seconds, but that noise is
--- common to both queries and is dominated by the several-second difference in the idle-hold interval.
+-- a sleep-vs-no-sleep pair) so the result is robust to the noisy set-building time: under sanitizers
+-- or on a loaded runner the build can take a variable amount of time, but that noise is common to
+-- both queries and is dominated by the five-second difference in the idle-hold interval.
 --
 -- The server caps every sleep call at 3 seconds per block (for sleepEachRow the cap applies to the
 -- per-block total), so a single sleep(6) is rejected with TOO_SLOW. To hold for longer, each query
 -- reads 2 rows with max_block_size = 1, so sleepEachRow runs once per single-row block and each call
--- stays within the cap: 2 x 0.5 s = 1 s for the short hold, 2 x 3 s = 6 s for the long one.
+-- stays within the cap: 2 x 0.5 s = 1 s for the short hold, 2 x 3 s = 6 s for the long one. The set
+-- is made large by the width of its rows (a few thousand long strings, about 32 MiB in total) rather
+-- than by their number, so that building it stays cheap even with max_block_size = 1, which applies
+-- to the subquery as well.
 
 SET log_queries = 1;
 
 -- Build the set and hold it idle for a short interval before finishing.
 SELECT count()
 FROM numbers(2)
-WHERE sleepEachRow(0.5) = 0 AND number IN (SELECT number FROM numbers(4000000))
+WHERE sleepEachRow(0.5) = 0
+  AND concat(repeat('x', 16384), toString(number)) IN (SELECT concat(repeat('x', 16384), toString(number)) FROM numbers(2000))
 FORMAT Null
 SETTINGS max_threads = 1, max_block_size = 1, log_comment = '04506_memory_credits_hold_short';
 
 -- Build the identical set and hold it idle for a much longer interval before finishing.
 SELECT count()
 FROM numbers(2)
-WHERE sleepEachRow(3) = 0 AND number IN (SELECT number FROM numbers(4000000))
+WHERE sleepEachRow(3) = 0
+  AND concat(repeat('x', 16384), toString(number)) IN (SELECT concat(repeat('x', 16384), toString(number)) FROM numbers(2000))
 FORMAT Null
 SETTINGS max_threads = 1, max_block_size = 1, log_comment = '04506_memory_credits_hold_long';
 
