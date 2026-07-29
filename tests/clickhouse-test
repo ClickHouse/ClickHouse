@@ -3164,10 +3164,20 @@ class TestCase:
         # its output. Joining in report order instead puts the xtrace behind however long the
         # expect trace is, which pushes an early xtrace line out of this window's visible head.
         # Either departure silently drops retries the single-file code would have made.
-        retry_header = bash_tracing_file if bash_body else self.testcase_args.debug_log_file
-        debug_log_for_retry = trim_for_log(
-            retry_header + ":\n" + bash_body + expect_body + "\n", 100
-        )
+        #
+        # Only assembled when there is a reported block to substitute FOR. `str.replace` treats an
+        # empty needle as matching between every character, so pairing an empty `debug_log` with a
+        # non-empty payload would splice that payload through the whole description and break the
+        # very phrases the matcher looks for. A test with no diagnostics at all - every ordinary
+        # `.sql` one - is exactly the case that arrives here with `debug_log` empty.
+        debug_log_for_retry = ""
+        if debug_log:
+            retry_header = (
+                bash_tracing_file if bash_body else self.testcase_args.debug_log_file
+            )
+            debug_log_for_retry = trim_for_log(
+                retry_header + ":\n" + bash_body + expect_body + "\n", 100
+            )
         self.debug_log_retry_substitution = (
             (debug_log, debug_log_for_retry) if debug_log != debug_log_for_retry else None
         )

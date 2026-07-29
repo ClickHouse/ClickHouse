@@ -611,6 +611,7 @@ def _describe(
     exit_code=None,
     monkeypatch=None,
     stubs=None,
+    stderr_text="a non-empty stderr, so a FAIL path is taken\n",
 ):
     """Run the real ``process_result_impl`` over two artifact files and return its TestResult.
 
@@ -618,7 +619,8 @@ def _describe(
     drives it with no server and no subprocess.  A non-empty ``stderr_file`` and no reference file
     steer it onto the FAIL/STDERR return, one of the six returns that append ``debug_log`` to the
     description - so a dropped append empties that block in all six.  ``None`` for either text
-    means "do not create that file".
+    means "do not create that file", and ``stderr_text`` is what that stderr says, for the cases
+    that need a real transient error in it rather than only a reason to fail.
 
     Three of those six returns are driven, each reached by a different ``proc``:
 
@@ -642,7 +644,7 @@ def _describe(
     stdout_file = tmp_path / "04615_some_test.stdout"
     stdout_file.write_text("", encoding="utf-8")
     stderr_file = tmp_path / "04615_some_test.stderr"
-    stderr_file.write_text("a non-empty stderr, so a FAIL path is taken\n", encoding="utf-8")
+    stderr_file.write_text(stderr_text, encoding="utf-8")
 
     stub = SimpleNamespace(
         args=Namespace(cloud=False),
@@ -838,9 +840,10 @@ def test_the_wider_report_does_not_widen_retry_matching(tmp_path):
     assert marker in _CT_GLOBALS["MESSAGES_TO_RETRY"]
     retry_args = Namespace(check_zookeeper_session=False, dont_retry_failures=False)
 
-    def verdict(case, body, bash="BASH-MARKER-a07c\n"):
+    def verdict(case, body, bash="BASH-MARKER-a07c\n", stderr_text=None):
         stubs = []
-        described = _describe(tmp_path / case, body, bash, stubs=stubs)
+        extra = {} if stderr_text is None else {"stderr_text": stderr_text}
+        described = _describe(tmp_path / case, body, bash, stubs=stubs, **extra)
         assert described.status is _TestStatus.FAIL, described.status
         # Exactly what `run` does: narrow the description through the real
         # `retry_matcher_input`, then hand the result in as BOTH stdout and stderr. The stub is
@@ -925,6 +928,20 @@ def test_the_wider_report_does_not_widen_retry_matching(tmp_path):
     assert marker in retry_input, (
         "a marker just inside the historical window's head no longer reaches the matcher, so the "
         "payload is carrying per-artifact headers and trailers and its boundary has moved"
+    )
+    assert described.need_retry
+
+    # And with NO diagnostics at all - every ordinary `.sql` test - there must be no substitution
+    # to make. `str.replace` treats an empty needle as matching between every character, so an
+    # empty reported block paired with a non-empty payload would splice that payload through the
+    # description and break the very phrases this matcher searches for, suppressing the retry for
+    # a transient error that never went near a diagnostic file.
+    described, retry_input = verdict(
+        "none", None, None, stderr_text=f"Code: 107. DB::Exception: {marker}: while opening file\n"
+    )
+    assert marker in retry_input, (
+        "a transient error in stderr no longer reaches the matcher for a test with no diagnostic "
+        f"artifacts, so the narrowing is splicing a payload into it: {retry_input[:200]!r}"
     )
     assert described.need_retry
 
