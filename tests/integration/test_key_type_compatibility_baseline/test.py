@@ -5,8 +5,10 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 # Baseline (global default profile) pins compatibility = 24.1, where
-# geo_distance_returns_float64_on_float64_arguments defaults to 0 (geoDistance over Float64 -> Float32)
-# and function_date_trunc_return_type_behavior defaults to 1 (dateTrunc over DateTime64/Date32 -> Date/DateTime).
+# geo_distance_returns_float64_on_float64_arguments defaults to 0 (geoDistance over Float64 -> Float32),
+# function_date_trunc_return_type_behavior defaults to 1 (dateTrunc over DateTime64/Date32 -> Date/DateTime)
+# and use_variant_as_common_type defaults to 0 (if/multiIf over branches with no lossless common type
+# raise NO_COMMON_TYPE instead of resolving to a Variant).
 node_compat = cluster.add_instance(
     "node_compat", user_configs=["configs/compatibility.xml"], stay_alive=True
 )
@@ -104,3 +106,49 @@ def test_transient_session_override_still_neutralized_on_default_profile(started
         "SELECT count() FROM tg2 WHERE geoDistance(a, b, c, d) BETWEEN 0 AND 1e9 SETTINGS force_primary_key = 1"
     )
     node_default.query("DROP TABLE tg2 SYNC")
+
+
+def test_variant_key_type_follows_compatibility_baseline(started_cluster):
+    # use_variant_as_common_type decides how if/multiIf resolve branches with no lossless common type,
+    # and it flips with the profile (built-in default 1, but 0 up to 26.1). It must be pinned to the
+    # server baseline, not to the built-in literal: under compatibility = 24.1 the baseline resolves
+    # if(c, Decimal64, Float64) as NO_COMMON_TYPE, while the built-in literal resolves it as
+    # Variant(Decimal(18, 3), Float64) and then rejects the key for a different reason. The two error
+    # codes differ, so this asserts the helper really reads the baseline (a regression falling back to
+    # the built-in literals reports DATA_TYPE_CANNOT_BE_USED_IN_KEY here instead).
+    node_compat.query("DROP TABLE IF EXISTS tv SYNC")
+    assert "NO_COMMON_TYPE" in node_compat.query_and_get_error(
+        "CREATE TABLE tv (c UInt8, dec Decimal64(3), f64 Float64) "
+        "ENGINE = MergeTree() ORDER BY if(c, dec, f64)"
+    )
+
+
+def test_variant_index_type_follows_compatibility_baseline(started_cluster):
+    # Same setting, but through the skip-index seam and with a transient per-query override, which is
+    # the shape that actually poisons metadata on a compatibility-profile server. Only the `set` index
+    # accepts a Variant column (minmax/bloom_filter reject it up front), so `set` is required here.
+    #
+    # Without the pin, ADD INDEX under use_variant_as_common_type = 1 records a Variant index type that
+    # the baseline cannot resolve at all, and the table then fails to ATTACH on every subsequent load
+    # (NO_COMMON_TYPE while loading the metadata) rather than only failing the write. With the pin the
+    # index expression is resolved under the baseline, so the ALTER is rejected up front and the table
+    # stays loadable.
+    node_compat.query("DROP TABLE IF EXISTS tvi SYNC")
+    node_compat.query(
+        "CREATE TABLE tvi (c UInt8, dec Decimal64(3), f64 Float64) ENGINE = MergeTree() ORDER BY tuple()"
+    )
+    assert "NO_COMMON_TYPE" in node_compat.query_and_get_error(
+        "ALTER TABLE tvi ADD INDEX idx if(c, dec, f64) TYPE set(0) GRANULARITY 1 "
+        "SETTINGS use_variant_as_common_type = 1"
+    )
+    # No index was recorded, and the table survives a reload with the baseline profile.
+    assert (
+        node_compat.query(
+            "SELECT count() FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tvi'"
+        )
+        == "0\n"
+    )
+    node_compat.restart_clickhouse()
+    node_compat.query("INSERT INTO tvi VALUES (1, 1.5, 2.5)")
+    assert node_compat.query("SELECT count() FROM tvi") == "1\n"
+    node_compat.query("DROP TABLE tvi SYNC")
