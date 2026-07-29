@@ -112,7 +112,7 @@ A arquitetura do ClickStack varia conforme a forma como ele é implantado. Há d
     O Managed ClickStack é composto pelos seguintes componentes:
 
     1. **UI do ClickStack (HyperDX)**
-       A UI do HyperDX é totalmente integrada ao ClickHouse Cloud e gerenciada como parte do serviço. Ela oferece pesquisa de logs, exploração de traces, dashboards, alertas e correlação entre tipos de telemetria, com autenticação e controle de acesso integrados.
+       A interface do HyperDX é totalmente integrada ao ClickHouse Cloud e gerenciada como parte do serviço. Ela oferece pesquisa de logs, exploração de traces, dashboards, alertas e correlação entre tipos de telemetria, com autenticação e controle de acesso integrados.
 
     2. **OpenTelemetry Collector (autogerenciado)**
        Os usuários executam um OpenTelemetry Collector que recebe dados de telemetria de suas aplicações e infraestrutura. Esse collector encaminha os dados via OTLP para o ClickHouse Cloud. Embora qualquer OpenTelemetry Collector compatível com os padrões possa ser usado, recomendamos fortemente a **distribuição do ClickStack**, que vem pré-configurada e otimizada para ingestão no ClickHouse e funciona imediatamente com os esquemas do ClickStack.
