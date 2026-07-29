@@ -233,9 +233,10 @@ void deserializeFromSingleArgumentTextArray(IColumn & column, ReadBuffer & istr,
     createStateFromValues(function, column, arg_columns, tmp_column->size());
 }
 
-/// Backward compatibility for the `value` forms that released read as a quoted string and parsed with the
+/// Backward compatibility for the `value` forms that released read as a whole string and parsed with the
 /// argument type's `deserializeTextCSV`: the string-wrapped JSON form `{"x": "\\N"}` (see the comment in
-/// `deserializeTextJSON`) and the quoted `VALUES` form `('\\N')` (see the comment in `deserializeTextQuoted`).
+/// `deserializeTextJSON`), the quoted `VALUES` form `('\\N')` (see the comment in `deserializeTextQuoted`)
+/// and the whole field of the raw text formats (see the comment in `deserializeWholeText`).
 /// For a `Nullable` argument that CSV parse recognizes forms the parse of the unwrapped content through the
 /// argument type does not: see `deserializeFromSingleNullableArgumentLegacyValue`.
 bool useLegacyNullableValueParsing(const AggregateFunctionPtr & function, const FormatSettings & settings)
@@ -463,8 +464,8 @@ void SerializationAggregateFunction::deserializeTextQuoted(IColumn & column, Rea
     /// the argument type's `deserializeTextCSV`, so `INSERT ... VALUES ('\\N')` built a null state for a
     /// single `Nullable` argument. `SerializationNullable::deserializeTextQuoted` does not recognize the CSV
     /// null representation: it would store the literal `\\N` for a string-like nested type and throw for a
-    /// numeric one, so route quoted tokens of a single `Nullable` argument through the same helper as the
-    /// string-wrapped JSON form. The native unquoted `NULL` keyword is unaffected: it does not start with a
+    /// numeric one, so route quoted tokens of a single `Nullable` argument through the same helper the
+    /// whole-text path uses. The native unquoted `NULL` keyword is unaffected: it does not start with a
     /// quote and stays on the unified path below.
     if (useLegacyNullableValueParsing(function, settings) && !istr.eof() && *istr.position() == '\'')
     {
@@ -492,6 +493,22 @@ void SerializationAggregateFunction::deserializeWholeText(IColumn & column, Read
         deserializeFromSingleArgumentTextArray(column, istr, settings, function);
         if (!istr.eof())
             throwUnexpectedDataAfterParsedValue(column, istr, settings, "Array");
+        return;
+    }
+
+    /// Backward compatibility: released read the whole field as a string and parsed its content with the
+    /// argument type's `deserializeTextCSV`, so the CSV null representation (`\\N` by default) built a null
+    /// state for a single `Nullable` argument. `SerializationNullable::deserializeWholeText` recognizes only
+    /// the `NULL` and `ᴺᵁᴸᴸ` keywords, so route the field of a single `Nullable` argument through the same
+    /// helper as the quoted `VALUES` and the string-wrapped JSON forms. This path is what the formats with
+    /// `EscapingRule::Raw` use — `TSVRaw`, the `Raw*` family and `CustomSeparated` with
+    /// `format_custom_escaping_rule = 'Raw'` — because `ISerialization::deserializeTextRaw` reads the field
+    /// and forwards it here.
+    if (useLegacyNullableValueParsing(function, settings))
+    {
+        String s;
+        readStringUntilEOF(s, istr);
+        deserializeFromSingleNullableArgumentLegacyValue(column, s, settings, function);
         return;
     }
 
@@ -541,18 +558,12 @@ void SerializationAggregateFunction::deserializeTextJSON(IColumn & column, ReadB
     /// The one released form the whole-text parse of the unwrapped content does not reproduce is a
     /// `Nullable` single argument: released parsed the content with `deserializeTextCSV`, which recognizes
     /// the CSV null representation (`\N` by default) and never treats `NULL` as a null for string-like
-    /// nested types, so those two forms are handled separately below.
+    /// nested types, so those two forms are handled by the compatibility branch of `deserializeWholeText`.
     skipWhitespaceIfAny(istr);
     if (!istr.eof() && *istr.position() == '"')
     {
         String s;
         readJSONString(s, istr, settings.json);
-
-        if (useLegacyNullableValueParsing(function, settings))
-        {
-            deserializeFromSingleNullableArgumentLegacyValue(column, s, settings, function);
-            return;
-        }
 
         ReadBufferFromString str_buf(s);
         deserializeWholeText(column, str_buf, settings);
