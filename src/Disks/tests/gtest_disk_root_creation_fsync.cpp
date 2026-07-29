@@ -1,7 +1,7 @@
 /// Covers the durability of a newly created disk root, for the shapes that SQL cannot reach:
 /// a relative root, a root spelled with `..` after a symlink, a root that resolves to a regular
-/// file, and the exact number of directory fsyncs (SQL can only assert a lower bound, because
-/// `fsync_metadata` also contributes DirectorySync events).
+/// file, an unreadable parent, an empty encrypted prefix, and which directory is fsynced - a
+/// count alone cannot distinguish the created level from the parent that holds its entry.
 
 #include <gtest/gtest.h>
 

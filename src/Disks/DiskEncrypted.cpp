@@ -310,7 +310,7 @@ namespace
 
         delegate.createDirectories(path);
 
-        /// Deepest first, so a partial failure still leaves the shallowest levels durable.
+        /// Each created level's owning parent, independently: one level's failure must not stop the others.
         for (const auto & level : created_levels)
         {
             try

@@ -26,20 +26,24 @@ directory_syncs()
     "
 }
 
+# Exact, not a lower bound: the only producer of DirectorySync is the LocalDirectorySyncGuard
+# destructor, and every other consumer a CREATE TABLE could reach is behind `fsync_part_directory`,
+# which defaults to false and is not randomized. So dropping one required fsync fails here.
 # An empty result must never satisfy a comparison: `[[ "" -eq 0 ]]` is true.
-synced_at_least()
+synced_exactly()
 {
     local actual="$1" expected="$2"
-    [[ -n "$actual" && "$actual" -ge "$expected" ]]
+    [[ -n "$actual" && "$actual" -eq "$expected" ]]
 }
 
-# A newly created local disk root: every created level's parent must be synced.
+# A newly created local disk root: every created level's parent must be synced. `${BASE}` does not
+# exist either, so three levels are created (`${BASE}`, `a`, `b`) and three parents are synced.
 qid="local-$CLICKHOUSE_DATABASE-$RUN_ID"
 $CLICKHOUSE_CLIENT --query_id "$qid" -q "
     create table t_local (a Int32) engine = MergeTree order by tuple()
     settings disk = disk(type=local, path='${BASE}/a/b/');
 "
-synced_at_least "$(directory_syncs "$qid")" 2 && echo 'local root synced' || echo 'local root NOT synced'
+synced_exactly "$(directory_syncs "$qid")" 3 && echo 'local root synced' || echo 'local root NOT synced'
 
 # Create the disk wrapped by the encrypted disks below, so the counts that follow
 # only contain the syncs done for the encrypted prefix itself.
@@ -54,7 +58,7 @@ $CLICKHOUSE_CLIENT --query_id "$qid" -q "
     create table t_enc_one (a Int32) engine = MergeTree order by tuple()
     settings disk = disk(type=encrypted, key='1234567812345678', disk=${ENC_BASE}, path='enc1/');
 "
-synced_at_least "$(directory_syncs "$qid")" 1 && echo 'encrypted root synced' || echo 'encrypted root NOT synced'
+synced_exactly "$(directory_syncs "$qid")" 1 && echo 'encrypted root synced' || echo 'encrypted root NOT synced'
 
 # A nested encrypted prefix: both the prefix and the wrapped disk's root hold a new entry.
 qid="enc-nested-$CLICKHOUSE_DATABASE-$RUN_ID"
@@ -62,7 +66,7 @@ $CLICKHOUSE_CLIENT --query_id "$qid" -q "
     create table t_enc_nested (a Int32) engine = MergeTree order by tuple()
     settings disk = disk(type=encrypted, key='1234567812345678', disk=${ENC_BASE}, path='enc2/sub/');
 "
-synced_at_least "$(directory_syncs "$qid")" 2 && echo 'encrypted nested synced' || echo 'encrypted nested NOT synced'
+synced_exactly "$(directory_syncs "$qid")" 2 && echo 'encrypted nested synced' || echo 'encrypted nested NOT synced'
 
 # A remote wrapped disk cannot synchronize a directory, so nothing is attempted for it.
 qid="enc-remote-$CLICKHOUSE_DATABASE-$RUN_ID"
