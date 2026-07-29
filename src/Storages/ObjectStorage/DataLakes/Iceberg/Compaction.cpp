@@ -797,13 +797,21 @@ static bool writeConsolidatedManifestFile(
             const auto & resolved_spec = resolve_partition_spec(pd.partition_spec_id);
             entry_partition_spec_ids.push_back(pd.partition_spec_id);
 
+            /// The manifest's partition tuple must match the resolved spec; a mismatch (corrupt or inconsistently-evolved
+            /// metadata) would otherwise read past the end of partition_values while writing the consolidated manifest.
+            if (pd.partition_values.size() != resolved_spec.partition_columns.size())
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Iceberg manifest partition tuple has {} values but partition spec {} defines {} columns",
+                    pd.partition_values.size(),
+                    pd.partition_spec_id,
+                    resolved_spec.partition_columns.size());
+
             /// All files in this manifest share one partition value, so the summary's lower/upper bounds are exactly that value.
             std::vector<std::pair<Field, DataTypePtr>> partition_summary;
+            partition_summary.reserve(resolved_spec.partition_types.size());
             for (size_t i = 0; i < resolved_spec.partition_types.size(); ++i)
-            {
-                Field partition_value = i < pd.partition_values.size() ? pd.partition_values[i] : Field{};
-                partition_summary.emplace_back(partition_value, resolved_spec.partition_types[i]);
-            }
+                partition_summary.emplace_back(pd.partition_values[i], resolved_spec.partition_types[i]);
             entry_partition_summaries.push_back(std::move(partition_summary));
 
             generateManifestFile(

@@ -2,102 +2,82 @@
 title: Crear ClickPipe
 ---
 
-import S3DataSource from '/snippets/es/clickpipes/object-storage/amazon-s3/_1-data-source.mdx';
-import GCSSDataSource from '/snippets/es/clickpipes/object-storage/google-cloud-storage/_1-data-source.mdx';
+<Step title="Selecciona el formato de los datos" id="3-select-data-format">
+  La UI mostrará una lista de archivos del bucket especificado.
+  Selecciona el formato de tus datos (actualmente admitimos un subconjunto de formatos de ClickHouse) e indica si quieres habilitar la ingestión continua.
+  Consulta la sección &quot;ingesta continua&quot; en la página de resumen para obtener más información.
 
-import S3Connection from '/snippets/es/clickpipes/object-storage/amazon-s3/_2-connection.mdx';
-import GCSConnection from '/snippets/es/clickpipes/object-storage/google-cloud-storage/_2-connection.mdx';
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step3_object_storage.webp" alt="Configurar el formato de los datos y el topic" />
+  </Frame>
+</Step>
 
-<Steps>
-  <Step>
-    ## Seleccione el origen de datos
+<Step title="Configura la tabla, el esquema y la configuración" id="5-configure-table-schema-settings">
+  En el siguiente paso, puedes seleccionar si quieres ingestar datos en una nueva tabla de ClickHouse o reutilizar una existente.
+  Sigue las instrucciones que aparecen en pantalla para modificar el nombre de la tabla, el esquema y la configuración.
+  Puedes ver una vista previa en tiempo real de los cambios en la tabla de ejemplo de la parte superior.
 
-    **1.** En ClickHouse Cloud, seleccione **Data sources** en el menú principal de navegación y haga clic en **Create ClickPipe**.
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="Configurar la tabla, el esquema y la configuración" />
+  </Frame>
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Seleccionar importaciones" size="lg" border />
+  También puedes personalizar la configuración avanzada con los controles proporcionados.
 
-    {props.provider === 's3' && <S3DataSource />}
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="Configurar los controles avanzados" />
+  </Frame>
 
-    {props.provider === 'gcs' && <GCSSDataSource />}
-  </Step>
+  Como alternativa, puedes decidir ingestar tus datos en una tabla de ClickHouse existente.
+  En ese caso, la UI te permitirá mapear campos del origen a los campos de ClickHouse de la tabla de destino seleccionada.
 
-  <Step>
-    ## Configure la conexión de su ClickPipe
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="Usar una tabla existente" />
+  </Frame>
 
-    **1.** Para configurar un nuevo ClickPipe, debe indicar cómo conectarse a su servicio de almacenamiento de objetos y autenticarse en él.
+  <Info>
+    También puedes mapear [columnas virtuales](/es/reference/functions/table-functions/s3#virtual-columns), como `_path` o `_size`, a campos.
+  </Info>
+</Step>
 
-    {props.provider === 's3' && <S3Connection />}
+<Step title="Configura los permisos" id="6-configure-permissions">
+  Por último, puedes configurar los permisos para el usuario interno de ClickPipes.
 
-    {props.provider === 'gcs' && <GCSConnection />}
+  **Permisos:** ClickPipes creará un usuario dedicado para escribir datos en una tabla de destino. Puedes seleccionar un rol para este usuario interno usando un rol personalizado o uno de los roles predefinidos:
 
-    **2.** Haga clic en **Incoming data**. ClickPipes obtendrá los metadatos de su bucket para el siguiente paso.
-  </Step>
+  * `Full access`: con acceso completo al clúster. Es necesario si usas una vista materializada o un Diccionario con la tabla de destino.
+  * `Only destination table`: solo con permisos de `INSERT` para la tabla de destino.
 
-  <Step>
-    ## Seleccione el formato de los datos
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Permisos" />
+  </Frame>
+</Step>
 
-    La UI mostrará una lista de archivos en el bucket especificado.
-    Seleccione el formato de los datos (actualmente admitimos un subconjunto de los formatos de ClickHouse) y si desea habilitar la ingestión continua.
-    Consulte la sección &quot;continuous ingest&quot; en la página de descripción general para obtener más información.
+<Step title="Completa la configuración" id="7-complete-setup">
+  Al hacer clic en &quot;Complete Setup&quot;, el sistema registrará tu ClickPipe y podrás verlo en la tabla de resumen.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_object_storage.webp" alt="Definir el formato de los datos y el topic" size="lg" border />
-  </Step>
+  <div className="ch-image-sm">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="Aviso de éxito" />
+    </Frame>
+  </div>
 
-  <Step>
-    ## Configure la tabla, el esquema y la configuración
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="Aviso de eliminación" />
+  </Frame>
 
-    En el siguiente paso, puede elegir si desea ingestar datos en una tabla nueva de ClickHouse o reutilizar una existente.
-    Siga las instrucciones que aparecen en pantalla para modificar el nombre de la tabla, el esquema y la configuración.
-    Puede ver una vista previa en tiempo real de sus cambios en la tabla de muestra de la parte superior.
+  La tabla de resumen proporciona controles para mostrar datos de ejemplo del origen o de la tabla de destino en ClickHouse.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="Definir la tabla, el esquema y la configuración" size="lg" border />
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="Ver destino" />
+  </Frame>
 
-    También puede personalizar la configuración avanzada con los controles proporcionados
+  También incluye controles para eliminar el ClickPipe y mostrar un resumen del trabajo de ingestión.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="Definir controles avanzados" size="lg" border />
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="Ver resumen" />
+  </Frame>
 
-    Como alternativa, puede optar por ingestar los datos en una tabla existente de ClickHouse.
-    En ese caso, la UI le permitirá asignar campos del origen a los campos de ClickHouse en la tabla de destino seleccionada.
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="Usar una tabla existente" size="lg" border />
-
-    <Info>
-      También puede asignar [columnas virtuales](/es/reference/functions/table-functions/s3#virtual-columns), como `_path` o `_size`, a campos.
-    </Info>
-  </Step>
-
-  <Step>
-    ## Configure los permisos
-
-    Por último, puede configurar los permisos para el usuario interno de ClickPipes.
-
-    **Permisos:** ClickPipes creará un usuario dedicado para escribir datos en una tabla de destino. Puede seleccionar un rol para este usuario interno usando un rol personalizado o uno de los roles predefinidos:
-
-    * `Full access`: con acceso completo al clúster. Es obligatorio si usa una vista materializada o un Diccionario con la tabla de destino.
-    * `Only destination table`: solo con permisos `INSERT` sobre la tabla de destino.
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Permisos" size="lg" border />
-  </Step>
-
-  <Step>
-    ## Complete la configuración
-
-    Al hacer clic en &quot;Complete Setup&quot;, el sistema registrará su ClickPipe y podrá verlo en la tabla de resumen.
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="Aviso de éxito" size="sm" border />
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="Aviso de eliminación" size="lg" border />
-
-    La tabla de resumen ofrece controles para mostrar datos de muestra del origen o de la tabla de destino en ClickHouse
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="Ver destino" size="lg" border />
-
-    Así como controles para eliminar el ClickPipe y mostrar un resumen del job de ingestión.
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="Ver descripción general" size="lg" border />
-
-    **¡Enhorabuena!** Ha configurado correctamente su primer ClickPipe.
-    Si este es un ClickPipe configurado para ingestión continua, se ejecutará de forma continua e ingestará datos en tiempo real desde su origen de datos remoto.
-    De lo contrario, ingestará el lote y finalizará.
-  </Step>
-</Steps>
+  **¡Enhorabuena!** Has configurado correctamente tu primer ClickPipe.
+  Si se trata de un ClickPipe configurado para la ingestión continua, se ejecutará de forma continua e ingestará datos en tiempo real desde tu fuente de datos remota.
+  De lo contrario, ingestará el lote y finalizará.
+</Step>
