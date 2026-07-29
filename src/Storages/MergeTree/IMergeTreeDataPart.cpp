@@ -131,6 +131,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
     extern const int NO_FILE_IN_DATA_PART;
     extern const int EXPECTED_END_OF_FILE;
@@ -2668,12 +2669,14 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix, bool ignore_err
             throw;
     }
     /// - no free directory name left in detached/ (all the '_tryN' candidates are taken)
-    catch (const Exception &)
+    catch (const Exception & e)
     {
-        if (ignore_error)
+        if (ignore_error && e.code() == ErrorCodes::DIRECTORY_ALREADY_EXISTS)
         {
             // A background or startup detach that cannot pick a usable name must be logged and
             // skipped, not escalated: some of these callers terminate the server on an exception.
+            // Only that one code is tolerated: the block also covers the rename itself, and
+            // swallowing a storage failure there would forget the part while it is still in place.
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
         else

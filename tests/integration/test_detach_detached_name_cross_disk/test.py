@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -237,6 +239,29 @@ def test_exhausted_names_on_another_disk_fail_closed(start_cluster):
     assert node.query("SELECT count() FROM excl").strip() == "1"
 
 
+def swallowed_exhaustion_since_last_start(instance):
+    """Count name-exhaustion failures swallowed by renameToDetached during the current server run.
+
+    Scoped to the current run and attributed to the swallowing frame, because neither property
+    alone discriminates: the sentence is also logged by a user query in the sibling exhaustion
+    test, and also by AsyncLoader::worker when the exception escapes instead of being swallowed.
+
+    The window is cut at the last startup banner rather than at a line offset taken before the
+    restart: the integration logger runs with rotateOnOpen, so a restart opens a fresh
+    clickhouse-server.log and a pre-restart offset would point past the startup region.
+    """
+    counted = instance.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "awk '/Application: Starting ClickHouse/ { n = 0 } "
+            "/renameToDetached.*Cannot find a free directory name to detach to/ { n++ } "
+            "END { print n + 0 }' /var/log/clickhouse-server/clickhouse-server.log",
+        ],
+    )
+    return int(counted.strip())
+
+
 def test_exhausted_names_do_not_kill_the_server_on_start(start_cluster):
     """ignore_error = true: a startup detach must log and skip, never abort the process.
 
@@ -279,7 +304,11 @@ def test_exhausted_names_do_not_kill_the_server_on_start(start_cluster):
 
         # Without this the assertions below would hold trivially: they only mean something if the
         # startup detach really ran out of names and the exception was swallowed rather than raised.
-        assert node.contains_in_log("Cannot find a free directory name to detach to")
+        # Both halves of the check below are load-bearing. Windowing to this server run excludes
+        # the sibling exhaustion test, which logs the same sentence through a user query; and
+        # requiring renameToDetached's own logger prefix excludes the exception ESCAPING instead
+        # of being swallowed, which is logged by AsyncLoader::worker.
+        assert swallowed_exhaustion_since_last_start(node) > 0
 
         # The whole point: the server is up and answering after swallowing the exhaustion.
         assert node.query("SELECT 1").strip() == "1"
@@ -299,6 +328,54 @@ def test_exhausted_names_do_not_kill_the_server_on_start(start_cluster):
         )
         node.restart_clickhouse(kill=True)
         node.query("DROP TABLE IF EXISTS surv SYNC")
+
+
+def test_other_exceptions_still_propagate_when_ignoring_errors(start_cluster):
+    """ignore_error = true tolerates a name-exhaustion failure only, never a storage failure.
+
+    Name resolution shares its try block with the rename, so an unqualified handler would also
+    swallow a rename that failed for an unrelated reason - and the caller erases the part from
+    memory right after this returns, which would forget a part still sitting in its old directory.
+
+    Driven through SYSTEM RESTORE REPLICA, which detaches every part via
+    forcefullyMovePartToDetachedAndRemoveFromMemory and so passes ignore_error = true on a
+    Replicated table. The rewritable-metadata disk is what makes the move raise a DB::Exception
+    (a local disk only ever raises fs::filesystem_error there, which a pre-existing handler owns).
+    """
+    # The injected fault aborts a metadata transaction midway, so neither the table nor its
+    # Keeper path is reusable afterwards: give every run its own names and leave them behind.
+    table = "prop_" + uuid.uuid4().hex[:8]
+    node.query(
+        f"""
+        CREATE TABLE {table} (k UInt64, v String)
+        ENGINE = ReplicatedMergeTree('/clickhouse/{table}', 'r1') ORDER BY k
+        SETTINGS storage_policy = 'rewritable_only', old_parts_lifetime = 100000
+        """
+    )
+    node.query(f"SYSTEM STOP MERGES {table}")
+    node.query(f"INSERT INTO {table} {INSERT_SETTINGS} VALUES (1, 'live')")
+    assert node.query(f"SELECT count() FROM {table}").strip() == "1"
+
+    # RESTORE REPLICA requires the replica to be readonly with no metadata in Keeper.
+    cluster.get_kazoo_client("zoo1").delete(f"/clickhouse/{table}", recursive=True)
+    node.query(f"SYSTEM RESTART REPLICA {table}")
+    assert (
+        node.query(f"SELECT is_readonly FROM system.replicas WHERE table = '{table}'").strip()
+        == "1"
+    )
+
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT plain_object_storage_write_fail_on_directory_move")
+        error = node.query_and_get_error(f"SYSTEM RESTORE REPLICA {table}")
+
+        # FAULT_INJECTED, not DIRECTORY_ALREADY_EXISTS: it must reach the caller even though
+        # this detach opted into ignoring errors.
+        assert "FAULT_INJECTED" in error, error
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT plain_object_storage_write_fail_on_directory_move")
+        # Detach rather than drop: the replica is readonly with no metadata in Keeper, so a
+        # replicated DROP waits for a state that cannot be reached. PERMANENTLY frees the name.
+        node.query(f"DETACH TABLE {table} PERMANENTLY SYNC")
 
 
 def test_single_disk_policy_is_unaffected(start_cluster):
