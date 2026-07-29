@@ -1,0 +1,26 @@
+-- String, Wide: part type follows the full rewrite
+String	0
+Nullable(String)	1
+str	0
+1
+-- String, Compact: same rule
+Compact	String
+Nullable(String)
+str	0
+-- numeric T -> Nullable(T)
+UInt64	0
+Nullable(UInt64)	1
+7	0
+-- Variant extension
+Variant(String, UInt64)
+Variant(Float64, String, UInt64)
+1	7
+-- RENAME of a column whose part type lags
+String
+Nullable(String)	1
+1	str	0
+-- must not regress: a partial mutation still keeps the source part type
+part	String	0
+storage	Nullable(String)
+part-after-partial	String	0
+1	str	0	20

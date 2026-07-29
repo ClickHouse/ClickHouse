@@ -675,6 +675,11 @@ static bool isDeletedMaskUpdated(const MutationCommand & command, const NameSet 
 }
 
 /// Get the columns list of the resulting part in the same order as storage_columns.
+/// `rewrites_all_columns` tells whether the mutation will re-serialize every column of the part
+/// (MutateAllPartColumnsTask) rather than only the ones it updates. A re-serialized column is
+/// written from the mutation pipeline, which produces the storage type, so it must be recorded
+/// with the storage type; a column whose bytes are carried over unchanged keeps the source part's
+/// type, which may legitimately differ (e.g. after a metadata-only `T` -> `Nullable(T)` ALTER).
 static std::tuple<NamesAndTypesList, SerializationInfoByName, ColumnsSubstreams>
 getColumnsForNewDataPart(
     MergeTreeData::DataPartPtr source_part,
@@ -683,7 +688,8 @@ getColumnsForNewDataPart(
     NamesAndTypesList persistent_virtuals,
     const SerializationInfoByName & serialization_infos,
     const MutationCommands & commands_for_interpreter,
-    const MutationCommands & commands_for_removes)
+    const MutationCommands & commands_for_removes,
+    bool rewrites_all_columns)
 {
     MutationCommands all_commands;
     all_commands.insert(all_commands.end(), commands_for_interpreter.begin(), commands_for_interpreter.end());
@@ -900,6 +906,18 @@ getColumnsForNewDataPart(
                     source_col = source_columns_name_to_type.find(renamed_it->second);
                     if (source_col == source_columns_name_to_type.end())
                         it = storage_columns.erase(it);
+                    else if (rewrites_all_columns)
+                    {
+                        /// Keep the storage type. The source column's substream names carry the old
+                        /// name, so they cannot be reused either.
+                        if (fill_columns_substreams)
+                        {
+                            new_columns_substreams.addColumn(it->name);
+                            new_columns_substreams.addSubstreamToLastColumn(NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER);
+                        }
+
+                        ++it;
+                    }
                     else
                     {
                         /// Take a type from source part column.
@@ -953,10 +971,33 @@ getColumnsForNewDataPart(
                                 "Got incorrect mutation commands, column {} was renamed from {}, but it doesn't exist in source columns {}",
                                 it->name, renamed_from, source_columns.toString());
 
-                        it->type = maybe_name_and_type->type;
+                        if (rewrites_all_columns)
+                        {
+                            /// Keep the storage type, as below.
+                            if (fill_columns_substreams)
+                            {
+                                new_columns_substreams.addColumn(it->name);
+                                new_columns_substreams.addSubstreamToLastColumn(NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER);
+                            }
+                        }
+                        else
+                        {
+                            it->type = maybe_name_and_type->type;
 
+                            if (fill_columns_substreams)
+                                addRenamedColumnToColumnsSubstreams(new_columns_substreams, source_columns_substreams, it->name, renamed_from, *source_part->getColumnPosition(renamed_from));
+                        }
+                    }
+                    else if (rewrites_all_columns)
+                    {
+                        /// Keep the storage type `it->type` already holds. Its substreams follow that
+                        /// type and are only known once the writer has seen the first block, so
+                        /// record the placeholder as for any other not-yet-written column.
                         if (fill_columns_substreams)
-                            addRenamedColumnToColumnsSubstreams(new_columns_substreams, source_columns_substreams, it->name, renamed_from, *source_part->getColumnPosition(renamed_from));
+                        {
+                            new_columns_substreams.addColumn(it->name);
+                            new_columns_substreams.addSubstreamToLastColumn(NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER);
+                        }
                     }
                     else
                     {
@@ -3603,9 +3644,22 @@ bool MutateTask::prepare()
     /// It shouldn't be changed by mutation.
     ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
 
+    /// Whether this mutation re-serializes every column of the part rather than updating only some
+    /// of them: all columns from part are changed and may be some more that were missing before in
+    /// part. Decided here rather than at the task instantiation below because the resulting part's
+    /// column types depend on it (see getColumnsForNewDataPart).
+    /// TODO We can materialize compact part without copying data
+    /// Also currently mutations of types with dynamic subcolumns in Wide part are possible only by
+    /// rewriting the whole part.
+    const bool rewrites_all_columns = MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part)
+        || MutationHelpers::hasDynamicColumnsWithoutRecordedSubstreams(ctx->source_part)
+        || !isWidePart(ctx->source_part)
+        || !isFullPartStorage(ctx->source_part->getDataPartStorage())
+        || (ctx->interpreter && ctx->interpreter->isAffectingAllColumns());
+
     auto [new_columns, new_infos, new_columns_substreams] = MutationHelpers::getColumnsForNewDataPart(
         ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
-        ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames);
+        ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames, rewrites_all_columns);
 
     ctx->new_data_part->setColumns(new_columns, new_infos, ctx->metadata_snapshot->getMetadataVersion());
     if (!new_columns_substreams.empty())
@@ -3641,15 +3695,7 @@ bool MutateTask::prepare()
         ctx->new_data_part->existing_rows_count = ctx->source_part->existing_rows_count.value_or(ctx->source_part->rows_count);
     }
 
-    /// All columns from part are changed and may be some more that were missing before in part
-    /// TODO We can materialize compact part without copying data
-    /// Also currently mutations of types with dynamic subcolumns in Wide part are possible only by
-    /// rewriting the whole part.
-    if (MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part)
-        || MutationHelpers::hasDynamicColumnsWithoutRecordedSubstreams(ctx->source_part)
-        || !isWidePart(ctx->source_part)
-        || !isFullPartStorage(ctx->source_part->getDataPartStorage())
-        || (ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))
+    if (rewrites_all_columns)
     {
         /// In case of replicated merge tree with zero copy replication
         /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
