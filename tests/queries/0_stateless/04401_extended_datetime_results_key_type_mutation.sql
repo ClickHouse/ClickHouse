@@ -90,17 +90,20 @@ DROP TABLE IF EXISTS ti;
 SET enable_extended_results_for_datetime_functions = 0;
 CREATE TABLE ti (ts DateTime64(3), INDEX idx toStartOfTenMinutes(ts) TYPE set(0) GRANULARITY 1) ENGINE = MergeTree() ORDER BY ts;
 ALTER TABLE ti MODIFY COMMENT 'touch' SETTINGS enable_extended_results_for_datetime_functions = 1;
-INSERT INTO ti VALUES ('2020-01-01 00:00:00');
+INSERT INTO ti VALUES ('2020-01-01 00:00:00'), ('2020-01-01 01:00:00'), ('2020-01-01 02:00:00');
 SELECT count() FROM ti;
+SELECT count() FROM ti WHERE toStartOfTenMinutes(ts) = toStartOfTenMinutes(toDateTime64('2020-01-01 01:00:00', 3)) SETTINGS force_data_skipping_indices = 'idx';
 
 DROP TABLE ti;
 
--- A CLEAR COLUMN mutation run with the setting on must recalculate a set index without aborting.
+-- A CLEAR COLUMN mutation run with the setting on must recalculate a set index without aborting, and the
+-- recalculated index must still be usable.
 SET enable_extended_results_for_datetime_functions = 1;
 CREATE TABLE ti (ts DateTime64(3), x UInt32, INDEX idx toStartOfTenMinutes(ts) TYPE set(0) GRANULARITY 1) ENGINE = MergeTree() ORDER BY ts;
-INSERT INTO ti VALUES ('2020-01-01 00:00:00', 5);
+INSERT INTO ti VALUES ('2020-01-01 00:00:00', 5), ('2020-01-01 01:00:00', 6);
 ALTER TABLE ti CLEAR COLUMN x SETTINGS mutations_sync = 1;
 SELECT count() FROM ti;
+SELECT count() FROM ti WHERE toStartOfTenMinutes(ts) = toStartOfTenMinutes(toDateTime64('2020-01-01 01:00:00', 3)) SETTINGS force_data_skipping_indices = 'idx';
 
 DROP TABLE ti;
 
@@ -232,8 +235,9 @@ CREATE TABLE tlossy (dec Decimal64(3), f64 Float64, c UInt8) ENGINE = MergeTree(
 SET allow_lossy_numeric_supertype = 1;
 ALTER TABLE tlossy ADD INDEX idx if(c, dec, f64) TYPE set(0) GRANULARITY 1;
 SET allow_lossy_numeric_supertype = 0;
-INSERT INTO tlossy VALUES (1.5, 2.5, 1);
+INSERT INTO tlossy VALUES (1.5, 2.5, 1), (3.5, 4.5, 0);
 SELECT count() FROM tlossy;
+SELECT count() FROM tlossy WHERE if(c, dec, f64) = 4.5 SETTINGS force_data_skipping_indices = 'idx';
 
 DROP TABLE tlossy;
 
@@ -249,8 +253,9 @@ DROP TABLE tlossy;
 DROP TABLE IF EXISTS tvar;
 CREATE TABLE tvar (dec Decimal64(3), f64 Float64, c UInt8) ENGINE = MergeTree() ORDER BY c;
 ALTER TABLE tvar ADD INDEX idx if(c, dec, f64) TYPE set(0) GRANULARITY 1 SETTINGS use_variant_as_common_type = 0;
-INSERT INTO tvar VALUES (1.5, 2.5, 1);
+INSERT INTO tvar VALUES (1.5, 2.5, 1), (3.5, 4.5, 0);
 SELECT count() FROM tvar;
+SELECT count() FROM tvar WHERE if(c, dec, f64) = 4.5 SETTINGS force_data_skipping_indices = 'idx';
 
 DROP TABLE tvar;
 
