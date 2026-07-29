@@ -24,14 +24,22 @@ CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 # Fabricate a part in the released-bug shape: skp_idx_txt.* on disk but absent from
 # `checksums.txt`. Save the freshly written index files, DROP+re-ADD the index so the active
 # part has no skp_idx entries in checksums, then re-inject the files on disk.
+# Leaves the poisoned part's path in `CORRUPT_PART`, so callers never re-query it.
 make_corrupted_part () {
     local tbl="$1"
     local mode="${2:-all}"
-    ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${tbl} SYNC"
+    CORRUPT_PART=
     # m mirrors 04426: a MATERIALIZED Map column, so `DROP COLUMN m` reaches
     # `MutateAllPartColumnsTask`. A scalar MATERIALIZED column is not enough -- dropping one
     # still takes the some-columns path (verified via `MutationAllPartColumns` in `system.part_log`).
-    ${CLICKHOUSE_CLIENT} -q "
+    #
+    # Granule-selective like t_ok below: the phrase sits only in the first 100 rows, i.e. in one
+    # granule out of 20, so a `Granules: 1/20` assertion can tell a working positional index from
+    # a silently declining one. A pure modulo fixture puts the phrase in every granule and makes
+    # any pruning assertion vacuous. The modulo tokens stay for the `hasToken` counts.
+    local paths data_path active
+    paths=$(${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS ${tbl} SYNC;
     CREATE TABLE ${tbl}
     (
         k UInt64,
@@ -44,41 +52,36 @@ make_corrupted_part () {
     SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
              index_granularity = 100, replace_long_file_name_to_hash = 0,
              columns_and_secondary_indices_sizes_lazy_calculation = 0,
-             allow_experimental_text_index_phrase_search = 1"
-
-    # Granule-selective like t_ok below: the phrase sits only in the first 100 rows, i.e. in one
-    # granule out of 20, so a `Granules: 1/20` assertion can tell a working positional index from
-    # a silently declining one. A pure modulo fixture puts the phrase in every granule and makes
-    # any pruning assertion vacuous. The modulo tokens stay for the `hasToken` counts.
-    ${CLICKHOUSE_CLIENT} -q "INSERT INTO ${tbl} (k, s, w) SELECT number, if(number < 100, 'needle alpha beta', concat('hello', number % 50, ' world', number % 50)), number FROM numbers(2000)"
-
-    local data_path active
-    data_path=$(${CLICKHOUSE_CLIENT} -q "SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND table = '${tbl}'")
-    active=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active LIMIT 1")
+             allow_experimental_text_index_phrase_search = 1;
+    INSERT INTO ${tbl} (k, s, w) SELECT number, if(number < 100, 'needle alpha beta', concat('hello', number % 50, ' world', number % 50)), number FROM numbers(2000);
+    SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND table = '${tbl}';
+    SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active LIMIT 1")
+    data_path=$(echo "${paths}" | sed -n 1p)
+    active=$(echo "${paths}" | sed -n 2p)
 
     rm -rf "${data_path}/saved_${tbl}"
     mkdir -p "${data_path}/saved_${tbl}"
     cp "${active}"skp_idx_txt.* "${data_path}/saved_${tbl}/"
 
-    ${CLICKHOUSE_CLIENT} -q "ALTER TABLE ${tbl} DROP INDEX txt SETTINGS mutations_sync = 2"
-    ${CLICKHOUSE_CLIENT} -q "ALTER TABLE ${tbl} ADD INDEX txt(s) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1) GRANULARITY 1"
+    CORRUPT_PART=$(${CLICKHOUSE_CLIENT} -q "
+    ALTER TABLE ${tbl} DROP INDEX txt SETTINGS mutations_sync = 2;
+    ALTER TABLE ${tbl} ADD INDEX txt(s) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1) GRANULARITY 1;
+    SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active LIMIT 1")
 
-    local corrupt
-    corrupt=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active LIMIT 1")
     if [ "${mode}" = side_streams_only ]; then
         # Base .idx pair deliberately omitted: a part poisoned this way is still corrupted, but
         # a presence check that probes only the base .idx/.idx2 reports it as index-free.
         cp "${data_path}/saved_${tbl}/"skp_idx_txt.dct.* "${data_path}/saved_${tbl}/"skp_idx_txt.pst.* \
-           "${data_path}/saved_${tbl}/"skp_idx_txt.pos.* "${corrupt}"
+           "${data_path}/saved_${tbl}/"skp_idx_txt.pos.* "${CORRUPT_PART}"
     else
-        cp "${data_path}/saved_${tbl}/"skp_idx_txt.* "${corrupt}"
+        cp "${data_path}/saved_${tbl}/"skp_idx_txt.* "${CORRUPT_PART}"
     fi
 }
 
+# Both helpers take the part path, which every caller already holds from the statement that
+# produced the part -- re-querying `system.parts` here would only add a client round trip.
 orphan_on_disk () {
-    local tbl="$1"
-    local part
-    part=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active LIMIT 1")
+    local part="$1"
     if ls "${part}"skp_idx_txt.* >/dev/null 2>&1; then echo 1; else echo 0; fi
 }
 
@@ -89,9 +92,8 @@ orphan_on_disk () {
 # assertions vacuous for exactly the substreams this test is about. Expect 8:
 # base, .dct, .pst and .pos, each with a data file and a mark file.
 side_streams_on_disk () {
-    local tbl="$1"
-    local part n=0 f
-    part=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active LIMIT 1")
+    local part="$1"
+    local n=0 f
     for f in skp_idx_txt.idx skp_idx_txt.cmrk2 \
              skp_idx_txt.dct.idx skp_idx_txt.dct.cmrk2 \
              skp_idx_txt.pst.idx skp_idx_txt.pst.cmrk2 \
@@ -105,61 +107,67 @@ side_streams_on_disk () {
 # --- Path A: some-columns mutation (`ALTER UPDATE` of the non-indexed column w) ---
 make_corrupted_part t_some
 echo "A_corrupted_orphan_on_disk:"
-orphan_on_disk t_some
+orphan_on_disk "${CORRUPT_PART}"
 echo "A_corrupted_side_streams_on_disk:"
-side_streams_on_disk t_some
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_some UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2"
+side_streams_on_disk "${CORRUPT_PART}"
+new_part=$(${CLICKHOUSE_CLIENT} -q "
+ALTER TABLE t_some UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2;
+SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 't_some' AND active LIMIT 1")
 echo "A_orphan_after_update:"
-orphan_on_disk t_some
+orphan_on_disk "${new_part}"
 echo "A_check_table:"
-${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_some SETTINGS check_query_single_value_result = 1"
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_some WHERE hasToken(s, 'hello10')"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE t_some SYNC"
+${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_some SETTINGS check_query_single_value_result = 1;
+    SELECT count() FROM t_some WHERE hasToken(s, 'hello10');
+    DROP TABLE t_some SYNC"
 
 # --- Path B: `DROP INDEX` on a corrupted part ---
 make_corrupted_part t_drop
 echo "B_corrupted_orphan_on_disk:"
-orphan_on_disk t_drop
+orphan_on_disk "${CORRUPT_PART}"
 echo "B_corrupted_side_streams_on_disk:"
-side_streams_on_disk t_drop
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_drop DROP INDEX txt SETTINGS mutations_sync = 2"
+side_streams_on_disk "${CORRUPT_PART}"
+new_part=$(${CLICKHOUSE_CLIENT} -q "
+ALTER TABLE t_drop DROP INDEX txt SETTINGS mutations_sync = 2;
+SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 't_drop' AND active LIMIT 1")
 echo "B_orphan_after_drop_index:"
-orphan_on_disk t_drop
+orphan_on_disk "${new_part}"
 echo "B_check_table:"
-${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_drop SETTINGS check_query_single_value_result = 1"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE t_drop SYNC"
+${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_drop SETTINGS check_query_single_value_result = 1;
+    DROP TABLE t_drop SYNC"
 
 # --- Path C (no regression): a healthy text index survives a some-columns mutation ---
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_ok SYNC"
-${CLICKHOUSE_CLIENT} -q "
-CREATE TABLE t_ok (k UInt64, s String, w UInt64, INDEX txt(s) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1) GRANULARITY 1)
-ENGINE = MergeTree ORDER BY k
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-         index_granularity = 100, replace_long_file_name_to_hash = 0,
-         allow_experimental_text_index_phrase_search = 1"
 # Granule-selective on purpose: the phrase occurs only in the first 100 rows, i.e.
 # in one granule out of 20, so the EXPLAIN assertion below can actually tell a
 # working positional index from a silently declining one. A modulo fixture would
 # put the phrase in every granule and make any pruning assertion vacuous.
-${CLICKHOUSE_CLIENT} -q "INSERT INTO t_ok (k, s, w) SELECT number, if(number < 100, 'needle alpha beta', concat('hello', number % 50, ' world', number % 50)), number FROM numbers(2000)"
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_ok UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2"
+ok_out=$(${CLICKHOUSE_CLIENT} -q "
+DROP TABLE IF EXISTS t_ok SYNC;
+CREATE TABLE t_ok (k UInt64, s String, w UInt64, INDEX txt(s) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         index_granularity = 100, replace_long_file_name_to_hash = 0,
+         allow_experimental_text_index_phrase_search = 1;
+INSERT INTO t_ok (k, s, w) SELECT number, if(number < 100, 'needle alpha beta', concat('hello', number % 50, ' world', number % 50)), number FROM numbers(2000);
+ALTER TABLE t_ok UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2;
+SELECT count() > 0 FROM system.parts WHERE database = currentDatabase() AND table = 't_ok' AND active AND secondary_indices_marks_bytes > 0;
+SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 't_ok' AND active LIMIT 1")
 echo "C_healthy_index_survives:"
-${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM system.parts WHERE database = currentDatabase() AND table = 't_ok' AND active AND secondary_indices_marks_bytes > 0"
+echo "${ok_out}" | sed -n 1p
 # Every substream, including the positional pair, must survive the mutation
 # individually -- an aggregate mark size stays positive even if .pos is lost.
 echo "C_healthy_side_streams_on_disk:"
-side_streams_on_disk t_ok
+side_streams_on_disk "$(echo "${ok_out}" | sed -n 2p)"
 echo "C_check_table:"
-${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_ok SETTINGS check_query_single_value_result = 1"
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ok WHERE hasToken(s, 'hello10')"
-# `hasPhrase` reads the positional substream, so this fails if .pos was dropped.
-echo "C_has_phrase:"
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ok WHERE hasPhrase(s, 'needle alpha')"
-# ...and the index must still PRUNE for it, which a count alone cannot show: a
-# declining index would return the same 100 rows via a full scan.
-echo "C_has_phrase_prunes:"
-${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ok WHERE hasPhrase(s, 'needle alpha')) WHERE explain ILIKE '%Granules: 1/20%'"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ok SYNC"
+# `hasPhrase` reads the positional substream, so it fails if .pos was dropped, and the
+# index must still PRUNE for it, which a count alone cannot show: a declining index
+# would return the same 100 rows via a full scan.
+${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_ok SETTINGS check_query_single_value_result = 1;
+    SELECT count() FROM t_ok WHERE hasToken(s, 'hello10');
+    SELECT 'C_has_phrase:';
+    SELECT count() FROM t_ok WHERE hasPhrase(s, 'needle alpha');
+    SELECT 'C_has_phrase_prunes:';
+    SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ok WHERE hasPhrase(s, 'needle alpha')) WHERE explain ILIKE '%Granules: 1/20%';
+    DROP TABLE t_ok SYNC"
 
 # --- Paths D and E: the same corruption with the base .idx pair ALSO missing ---
 # Paths A-C keep the base skp_idx_txt.idx on disk, so a presence check that probes only the
@@ -169,10 +177,12 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ok SYNC"
 # them forward with no checksum entries. Expect 6 files (three substreams, data plus mark).
 make_corrupted_part t_side side_streams_only
 echo "D_corrupted_side_streams_on_disk:"
-side_streams_on_disk t_side
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_side UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2"
+side_streams_on_disk "${CORRUPT_PART}"
+new_part=$(${CLICKHOUSE_CLIENT} -q "
+ALTER TABLE t_side UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2;
+SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 't_side' AND active LIMIT 1")
 echo "D_orphan_after_update:"
-orphan_on_disk t_side
+orphan_on_disk "${new_part}"
 echo "D_check_table:"
 ${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_side SETTINGS check_query_single_value_result = 1;
     SELECT count() FROM t_side WHERE hasToken(s, 'hello10');
@@ -185,18 +195,20 @@ ${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_side SETTINGS check_query_single_value_re
 # A/B/D, where the orphans are removed and the index stays absent until `MATERIALIZE INDEX`.
 make_corrupted_part t_side_full side_streams_only
 echo "E_corrupted_side_streams_on_disk:"
-side_streams_on_disk t_side_full
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_side_full DROP COLUMN m SETTINGS mutations_sync = 2"
+side_streams_on_disk "${CORRUPT_PART}"
+new_part=$(${CLICKHOUSE_CLIENT} -q "
+ALTER TABLE t_side_full DROP COLUMN m SETTINGS mutations_sync = 2;
+SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 't_side_full' AND active LIMIT 1")
 # All 8 files, not just the 6 injected ones: a rebuild writes the base pair too.
 echo "E_side_streams_after_full_rewrite:"
-side_streams_on_disk t_side_full
+side_streams_on_disk "${new_part}"
 echo "E_check_table:"
-${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_side_full SETTINGS check_query_single_value_result = 1;
-    SELECT count() FROM t_side_full WHERE hasToken(s, 'hello10')"
 # The rebuilt index must actually prune, which the file count alone cannot show.
-echo "E_rebuilt_index_prunes:"
-${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_side_full WHERE hasPhrase(s, 'needle alpha')) WHERE explain ILIKE '%Granules: 1/20%'"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE t_side_full SYNC"
+${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_side_full SETTINGS check_query_single_value_result = 1;
+    SELECT count() FROM t_side_full WHERE hasToken(s, 'hello10');
+    SELECT 'E_rebuilt_index_prunes:';
+    SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_side_full WHERE hasPhrase(s, 'needle alpha')) WHERE explain ILIKE '%Granules: 1/20%';
+    DROP TABLE t_side_full SYNC"
 
 # --- Path F: a sibling index registers a file the corrupted text index also addresses ---
 # With `escape_index_filenames` = 0 an index NAME may equal a text substream name, so a minmax
@@ -211,7 +223,8 @@ run_sibling_owns_file_case () {
     local label="$1" sib="$2"
     local tbl="t_own_${label}"
 
-    ${CLICKHOUSE_CLIENT} -q "
+    local paths dp act
+    paths=$(${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS ${tbl} SYNC;
     CREATE TABLE ${tbl}
     (
@@ -226,11 +239,11 @@ run_sibling_owns_file_case () {
              escape_index_filenames = 0, packed_skip_index_max_bytes = 0,
              columns_and_secondary_indices_sizes_lazy_calculation = 0,
              allow_experimental_text_index_phrase_search = 1;
-    INSERT INTO ${tbl} (k, s, w) SELECT number, concat('hello', number % 50, ' world', number % 50), number FROM numbers(500)"
-
-    local dp act
-    dp=$(${CLICKHOUSE_CLIENT} -q "SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND table = '${tbl}'")
-    act=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active LIMIT 1")
+    INSERT INTO ${tbl} (k, s, w) SELECT number, concat('hello', number % 50, ' world', number % 50), number FROM numbers(500);
+    SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND table = '${tbl}';
+    SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active LIMIT 1")
+    dp=$(echo "${paths}" | sed -n 1p)
+    act=$(echo "${paths}" | sed -n 2p)
     rm -rf "${dp}/saved_${tbl}"
     mkdir -p "${dp}/saved_${tbl}"
     cp "${act}"skp_idx_a.* "${dp}/saved_${tbl}/"
@@ -238,14 +251,20 @@ run_sibling_owns_file_case () {
     # Corrupt the text index while NO sibling exists, so nothing inherits a checksum entry for
     # its files, then add the healthy sibling. Order matters: adding the sibling first would let
     # it register a name the text index also addresses before the entries are stripped.
-    ${CLICKHOUSE_CLIENT} -q "
+    # The sibling must be materialized and registered, else its file is not in `checksums.txt`,
+    # the collision never arises, and the final `CHECK TABLE` passes for the wrong reason.
+    local out cor f bn
+    out=$(${CLICKHOUSE_CLIENT} -q "
     ALTER TABLE ${tbl} DROP INDEX a SETTINGS mutations_sync = 2;
     ALTER TABLE ${tbl} ADD INDEX a(s) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1) GRANULARITY 1;
     ALTER TABLE ${tbl} ADD INDEX \`${sib}\` w TYPE minmax GRANULARITY 1;
-    ALTER TABLE ${tbl} MATERIALIZE INDEX \`${sib}\` SETTINGS mutations_sync = 2"
-
-    local cor f bn
-    cor=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active LIMIT 1")
+    ALTER TABLE ${tbl} MATERIALIZE INDEX \`${sib}\` SETTINGS mutations_sync = 2;
+    SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active LIMIT 1;
+    SELECT count() FROM system.data_skipping_indices
+    WHERE database = currentDatabase() AND table = '${tbl}' AND name = '${sib}' AND marks_bytes > 0;
+    SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ${tbl} WHERE w = 42)
+    WHERE explain ILIKE '%Granules: 1/5%'")
+    cor=$(echo "${out}" | sed -n 1p)
 
     # Measured BEFORE reinjection, so it discriminates: only the colliding name makes the sibling
     # write the contested `skp_idx_a.pst.cmrk2` (0 for the control, 1 for the collision). After
@@ -253,14 +272,8 @@ run_sibling_owns_file_case () {
     # would read 1 for both arms and prove nothing.
     echo "${label}_sibling_owns_contested_name:"
     if [ -e "${cor}skp_idx_a.pst.cmrk2" ]; then echo 1; else echo 0; fi
-    # The sibling must be materialized and registered, else its file is not in `checksums.txt`,
-    # the collision never arises, and the final `CHECK TABLE` passes for the wrong reason.
     echo "${label}_sibling_registered_and_prunes:"
-    ${CLICKHOUSE_CLIENT} -q "
-    SELECT count() FROM system.data_skipping_indices
-    WHERE database = currentDatabase() AND table = '${tbl}' AND name = '${sib}' AND marks_bytes > 0;
-    SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ${tbl} WHERE w = 42)
-    WHERE explain ILIKE '%Granules: 1/5%'"
+    echo "${out}" | sed -n '2,3p'
 
     # Re-inject the text index's files, never overwriting one the healthy sibling wrote.
     for f in "${dp}/saved_${tbl}/"skp_idx_a.*; do
