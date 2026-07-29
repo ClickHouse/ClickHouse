@@ -1,3 +1,8 @@
+t_array_size_shared	Compact	write_marks_for_substreams_in_compact_parts = 0
+t_array_size_shared_marks	Compact	write_marks_for_substreams_in_compact_parts = 1
 0	0	20000
+0	0	20000
+790000	1990000
+790000	1990000
 790000	1990000
 790000	1990000
