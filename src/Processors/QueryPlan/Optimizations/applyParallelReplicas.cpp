@@ -306,16 +306,11 @@ static bool planHasFinalMergeTreeRead(const QueryPlan::Node * node)
     return false;
 }
 
-/// Plan-based parallel replicas cannot yet ship a `FutureSetFromSubquery` (e.g. `WHERE x IN (SELECT ...)`):
-/// the shipped fragment is captured while the subquery's query plan is still populated, but the later
-/// `addStepsToBuildSets` pass calls `FutureSetFromSubquery::build`, which moves that plan out, so
-/// serializing the fragment at execution time finds a null plan and throws a `LOGICAL_ERROR` (issue
-/// #111876). Until that is fixed, detect the still-intact `DelayedCreatingSetsStep` (planted by
-/// `addBuildSubqueriesForSetsStepIfNeeded` and only converted away by `addStepsToBuildSets`, which runs
-/// after this pass) and execute the whole query locally, like the FINAL case above.
-/// TODO(#111876): serialize the subquery set's plan at fragment-capture time (in
-/// `createRemotePlanFragmentForParallelReplicas`, during `optimizeTreeSecondPass`, before
-/// `addStepsToBuildSets` empties the plan) so `IN (subquery)` can be distributed.
+/// A `FutureSetFromSubquery` (e.g. `WHERE x IN (SELECT ...)`) cannot yet be shipped: `addStepsToBuildSets`
+/// moves the subquery's plan out before the captured fragment is serialized, so serialization throws a
+/// `LOGICAL_ERROR` (#111876). Until fixed, detect the still-intact `DelayedCreatingSetsStep` and run the
+/// query locally, like the FINAL case above.
+/// TODO(#111876): serialize the subquery set at fragment-capture time so `IN (subquery)` can be distributed.
 static bool planHasSubquerySet(const QueryPlan::Node * node)
 {
     if (!node)
