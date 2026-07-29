@@ -225,9 +225,15 @@ test_introspection()
     grep -Fq "CREATE ROLE ${role2}" <<<"$access_out"
     grep -Fq "GRANT ${role1} TO ${user_a}" <<<"$access_out"
     grep -Fq "GRANT ${role2} TO ${user_b} WITH ADMIN OPTION" <<<"$access_out"
-    roles_out="$($CLICKHOUSE_CLIENT --query "SELECT name, storage FROM system.roles WHERE name IN ('${role1}', '${role2}') ORDER BY name")"
-    grep -Fxq "${role1}"$'\tlocal_directory' <<<"$roles_out"
-    grep -Fxq "${role2}"$'\tlocal_directory' <<<"$roles_out"
+    roles_out="$($CLICKHOUSE_CLIENT --query "
+        SELECT
+            name,
+            if(storage IN ('local_directory', 'replicated'), 'writable_access_storage', storage)
+        FROM system.roles
+        WHERE name IN ('${role1}', '${role2}')
+        ORDER BY name
+    ")"
+    [ "$roles_out" = "${role1}"$'\twritable_access_storage\n'"${role2}"$'\twritable_access_storage' ]
     grants_out="$($CLICKHOUSE_CLIENT --query "SELECT user_name, role_name, access_type, database, table, column, is_partial_revoke, grant_option FROM system.grants WHERE user_name IN ('${user_a}', '${user_b}') OR role_name IN ('${role1}', '${role2}') ORDER BY user_name, role_name, access_type, column FORMAT TSVRaw")"
     grep -Fq "${user_a}	\N	SELECT	${CLICKHOUSE_DATABASE}	${table_name}	\N	0	0" <<<"$grants_out"
     grep -Fq "${user_b}	\N	CREATE	\N	\N	\N	0	1" <<<"$grants_out"
