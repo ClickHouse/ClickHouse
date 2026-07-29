@@ -12,6 +12,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Common/filesystemHelpers.h>
 #include <filesystem>
 #include <Functions/FunctionHelpers.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -285,7 +286,7 @@ public:
             try
             {
                 if (need_check && !pathStartsWith(file_path.string(), user_files_absolute_path))
-                    throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside user files path");
+                    throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside {}", user_files_absolute_path);
 
                 ReadBufferFromFile in(file_path);
                 auto out = WriteBufferFromVector<ColumnString::Chars>(res_chars, AppendModeTag{});
@@ -320,7 +321,7 @@ REGISTER_FUNCTION(File)
 Reads a file as a string and loads the data into the specified column.
 The file content is not interpreted.
 
-Also see the [`file`](../table-functions/file.md) table function.
+Also see the [`file`](/reference/functions/table-functions/file) table function.
         )";
     FunctionDocumentation::Syntax syntax = "file(path[, default])";
     FunctionDocumentation::Arguments arguments = {
