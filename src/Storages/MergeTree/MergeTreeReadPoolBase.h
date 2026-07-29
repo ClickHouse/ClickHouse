@@ -102,18 +102,23 @@ protected:
         std::vector<MarkRanges> patches_ranges,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr) const;
 
+    /// `planned_last_mark`, when nonzero, is this reader's stripe end (see
+    /// `MergeTreeReadTask::createReaders`); 0 keeps the part's whole
+    /// per-query assignment end.
     MergeTreeReadTaskPtr createTask(
         MergeTreeReadTaskInfoPtr read_info,
         MarkRanges ranges,
         std::vector<MarkRanges> patches_ranges,
         MergeTreeReadTask * previous_task,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr) const;
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr,
+        size_t planned_last_mark = 0) const;
 
     MergeTreeReadTaskPtr createTask(
         MergeTreeReadTaskInfoPtr read_info,
         MarkRanges ranges,
         MergeTreeReadTask * previous_task,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr) const;
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr,
+        size_t planned_last_mark = 0) const;
 
     MergeTreeReadTask::Extras getExtras() const;
 

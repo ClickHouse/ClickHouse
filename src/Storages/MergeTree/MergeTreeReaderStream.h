@@ -35,6 +35,12 @@ public:
 
     virtual ~MergeTreeReaderStream();
 
+    /// Re-announce the planned read end when a reused reader's task series
+    /// moves to a different stripe of the part. Forwarded raw: the executor's
+    /// read bound is monotone-max, so a backward value (a stolen earlier
+    /// stripe) is absorbed there.
+    void updatePlannedLastMark(size_t planned_last_mark_);
+
     /// Returns true if the mark file has at most `max_transitions` distinct
     /// consecutive (offset_in_compressed_file, offset_in_decompressed_block)
     /// positions. Loads marks from cache if available.
@@ -88,6 +94,11 @@ protected:
     void loadMarks();
 
     const MergeTreeReaderSettings settings;
+    /// The reader's planned final mark in this part (see
+    /// `MergeTreeReaderSettings::planned_last_mark`). Starts from the settings
+    /// value the reader was created with; a reused reader updates it per task
+    /// (`updatePlannedLastMark`) when the task series changes its stripe.
+    size_t planned_last_mark = settings.planned_last_mark;
     const size_t marks_count;
     const size_t file_size;
 

@@ -94,6 +94,12 @@ public:
 
     virtual void updateAllMarkRanges(const MarkRanges & ranges) { all_mark_ranges = ranges; }
 
+    /// A reused reader's planned final mark can move with the task series (see
+    /// `MergeTreeReaderSettings::planned_last_mark`). Readers that announce it
+    /// through their streams must override and re-announce; the default is for
+    /// readers whose streams never announce a planned end.
+    virtual void updatePlannedLastMark(size_t /*planned_last_mark*/) {}
+
     StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
 
 protected:

@@ -216,6 +216,12 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
     }
 }
 
+void MergeTreeReaderTextIndex::updatePlannedLastMark(size_t planned_last_mark)
+{
+    if (fallback_reader)
+        fallback_reader->updatePlannedLastMark(planned_last_mark);
+}
+
 void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
 {
     IMergeTreeReader::updateAllMarkRanges(ranges);

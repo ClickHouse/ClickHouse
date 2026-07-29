@@ -100,6 +100,10 @@ private:
 
         InfoPtr read_info;
         MarkRanges ranges;
+        /// End of the owning thread's whole STRIPE of the part (the run of its
+        /// consecutive tasks over it) - back-filled by `fillPerThreadTasks`.
+        /// The reader reused across the run reads under this single planned end.
+        size_t planned_last_mark = 0;
         std::vector<MarkRanges> patches_ranges;
         Priority priority;
         std::unique_ptr<PrefetchedReaders> readers_future;

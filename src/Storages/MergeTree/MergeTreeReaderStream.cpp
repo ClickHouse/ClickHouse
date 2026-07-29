@@ -152,11 +152,22 @@ void MergeTreeReaderStream::init()
     /// of the LAST mark range any task of this part will read. The per-task
     /// `adjustRightMark` keeps advancing the serve bound below it; read-ahead
     /// must not speculate past it (`ReadBuffer::setPlannedReadEnd`).
-    if (settings.planned_last_mark)
-        if (size_t planned_right_offset = getRightOffset(std::min(settings.planned_last_mark, marks_count)))
+    if (planned_last_mark)
+        if (size_t planned_right_offset = getRightOffset(std::min(planned_last_mark, marks_count)))
             data_buffer->setPlannedReadEnd(planned_right_offset);
 
     initialized = true;
+}
+
+void MergeTreeReaderStream::updatePlannedLastMark(size_t planned_last_mark_)
+{
+    if (planned_last_mark_ == planned_last_mark)
+        return;
+
+    planned_last_mark = planned_last_mark_;
+    if (initialized && planned_last_mark)
+        if (size_t planned_right_offset = getRightOffset(std::min(planned_last_mark, marks_count)))
+            data_buffer->setPlannedReadEnd(planned_right_offset);
 }
 
 void MergeTreeReaderStream::seekToMarkAndColumn(size_t row_index, size_t column_position)

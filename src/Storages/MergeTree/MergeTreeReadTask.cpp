@@ -69,6 +69,14 @@ void MergeTreeReadTask::Readers::updateAllMarkRanges(const MarkRanges & ranges)
         reader->updateAllMarkRanges(ranges);
 }
 
+void MergeTreeReadTask::Readers::updatePlannedLastMark(size_t planned_last_mark)
+{
+    main->updatePlannedLastMark(planned_last_mark);
+
+    for (auto & reader : prewhere)
+        reader->updatePlannedLastMark(planned_last_mark);
+}
+
 MergeTreeReadTask::MergeTreeReadTask(
     MergeTreeReadTaskInfoPtr info_,
     Readers readers_,
@@ -156,12 +164,13 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     const MergeTreeReadTaskInfoPtr & read_info,
     const Extras & extras,
     const MarkRanges & ranges,
-    const std::vector<MarkRanges> & patches_ranges)
+    const std::vector<MarkRanges> & patches_ranges,
+    size_t planned_last_mark)
 {
     Readers new_readers;
 
     auto reader_settings = extras.reader_settings;
-    reader_settings.planned_last_mark = read_info->planned_last_mark;
+    reader_settings.planned_last_mark = planned_last_mark ? planned_last_mark : read_info->planned_last_mark;
 
     auto create_reader = [&](const NamesAndTypesList & columns_to_read, bool is_prewhere)
     {

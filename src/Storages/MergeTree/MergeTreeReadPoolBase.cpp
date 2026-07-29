@@ -385,7 +385,8 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     MarkRanges ranges,
     std::vector<MarkRanges> patches_ranges,
     MergeTreeReadTask * previous_task,
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater,
+    size_t planned_last_mark) const
 {
     auto get_part_name = [](const auto & task_info) -> String
     {
@@ -413,17 +414,21 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
 
     if (!previous_task)
     {
-        task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges);
+        task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges, planned_last_mark);
     }
     else if (get_part_name(previous_task->getInfo()) != get_part_name(*read_info))
     {
         extras.value_size_map = previous_task->getMainReader().getAvgValueSizeHints();
-        task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges);
+        task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges, planned_last_mark);
     }
     else
     {
+        /// The reused readers' task series moved to this task's stripe:
+        /// re-announce its planned end (a same-stripe continuation is a
+        /// no-op; a stolen stripe moves it).
         task_readers = previous_task->releaseReaders();
         task_readers.updateAllMarkRanges(ranges);
+        task_readers.updatePlannedLastMark(planned_last_mark ? planned_last_mark : read_info->planned_last_mark);
     }
 
     return createTask(read_info, std::move(task_readers), std::move(ranges), std::move(patches_ranges), updater);
@@ -433,10 +438,11 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     MergeTreeReadTaskInfoPtr read_info,
     MarkRanges ranges,
     MergeTreeReadTask * previous_task,
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater,
+    size_t planned_last_mark) const
 {
     auto patches_ranges = ranges_in_patch_parts.getRanges(read_info->data_part, read_info->patch_parts, ranges);
-    return createTask(std::move(read_info), std::move(ranges), std::move(patches_ranges), previous_task, updater);
+    return createTask(std::move(read_info), std::move(ranges), std::move(patches_ranges), previous_task, updater, planned_last_mark);
 }
 
 MergeTreeReadTask::Extras MergeTreeReadPoolBase::getExtras() const

@@ -26,6 +26,15 @@ public:
 
 private:
     MergeTreeReaderStream & getStream(const NameAndTypePair &) override { return *stream; }
+
+    void updatePlannedLastMark(size_t planned_last_mark) override
+    {
+        /// Keep the settings current for the lazily-created stream (`init`),
+        /// and re-announce on the live one.
+        settings.planned_last_mark = planned_last_mark;
+        if (stream)
+            stream->updatePlannedLastMark(planned_last_mark);
+    }
     void init();
 
     bool initialized = false;

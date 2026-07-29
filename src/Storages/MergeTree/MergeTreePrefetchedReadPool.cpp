@@ -108,7 +108,7 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
         task.patches_ranges = read_prefetch.ranges_in_patch_parts.getRanges(
             task.read_info->data_part, task.read_info->patch_parts, task.ranges);
 
-        readers = MergeTreeReadTask::createReaders(task.read_info, read_prefetch.getExtras(), task.ranges, task.patches_ranges);
+        readers = MergeTreeReadTask::createReaders(task.read_info, read_prefetch.getExtras(), task.ranges, task.patches_ranges, task.planned_last_mark);
 
         /// This is already a prefetch thread, so initiate the prefetches inline.
         read_prefetch.createPrefetchedTask(readers.main.get(), task.priority)();
@@ -217,7 +217,7 @@ void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & ta
     }
 
     auto extras = getExtras();
-    auto readers = MergeTreeReadTask::createReaders(task.read_info, extras, task.ranges, task.patches_ranges);
+    auto readers = MergeTreeReadTask::createReaders(task.read_info, extras, task.ranges, task.patches_ranges, task.planned_last_mark);
     task.readers_future = std::make_unique<PrefetchedReaders>(prefetch_threadpool, std::move(readers), task.priority, *this);
 }
 
@@ -414,7 +414,7 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::createTask(ThreadTask & task, 
     if (task.isValidReadersFuture())
         return MergeTreeReadPoolBase::createTask(task.read_info, task.readers_future->get(), task.ranges, task.patches_ranges, updater);
     else
-        return MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, task.patches_ranges, previous_task, updater);
+        return MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, task.patches_ranges, previous_task, updater, task.planned_last_mark);
 }
 
 void MergeTreePrefetchedReadPool::fillPerPartStatistics()
@@ -651,6 +651,26 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
 
             ++priority.value;
             ++total_tasks;
+        }
+    }
+
+    /// A thread's consecutive tasks over one part are its STRIPE; the reader is
+    /// reused across them, so every task announces the stripe's end, not its own.
+    for (auto & [thread_id, tasks] : per_thread_tasks)
+    {
+        for (size_t begin = 0; begin < tasks.size();)
+        {
+            size_t end = begin;
+            size_t stripe_last_mark = 0;
+            while (end < tasks.size() && tasks[end]->read_info == tasks[begin]->read_info)
+            {
+                for (const auto & range : tasks[end]->ranges)
+                    stripe_last_mark = std::max(stripe_last_mark, range.end);
+                ++end;
+            }
+            for (size_t task_i = begin; task_i < end; ++task_i)
+                tasks[task_i]->planned_last_mark = stripe_last_mark;
+            begin = end;
         }
     }
 

@@ -159,6 +159,7 @@ public:
         MergeTreeReaderPtr prepared_index;
 
         void updateAllMarkRanges(const MarkRanges & ranges);
+        void updatePlannedLastMark(size_t planned_last_mark);
     };
 
     struct BlockSizeParams
@@ -229,11 +230,16 @@ public:
 
     size_t getNumMarksToRead() const { return mark_ranges.getNumberOfMarks(); }
 
+    /// `planned_last_mark`, when nonzero, narrows the announced planned read
+    /// end from the part's whole per-query assignment
+    /// (`MergeTreeReadTaskInfo::planned_last_mark`) to THIS reader's stripe of
+    /// it (the pool's per-thread slice - see `MergeTreeReadPool::ThreadTask`).
     static Readers createReaders(
         const MergeTreeReadTaskInfoPtr & read_info,
         const Extras & extras,
         const MarkRanges & ranges,
-        const std::vector<MarkRanges> & patches_ranges);
+        const std::vector<MarkRanges> & patches_ranges,
+        size_t planned_last_mark = 0);
 
     static MergeTreeReadersChain createReadersChain(
         const Readers & readers,
