@@ -31,12 +31,14 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_QUERY;
-    extern const int NO_COMMON_TYPE;
+    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(size_t bits_per_row_, size_t hash_functions_, size_t index_columns_)
@@ -795,14 +797,21 @@ static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
 }
 
 
-/// Decide whether `map[key] = const` (where `key` is absent from the map) can be satisfied by the
-/// map value type's default. When `key` is missing, `arrayElement` returns the value type default,
-/// so a granule that lacks the key still matches if `default = const` holds at runtime. The result
-/// of that comparison must use the same semantics the query engine uses (e.g. String/FixedString
-/// equality ignores trailing NUL bytes), so we evaluate the real `equals` function on a default
-/// column of the map value type and a constant column of the comparison constant. Returns true when
-/// the default can match (the granule must not be pruned) and conservatively true if the comparison
-/// cannot be evaluated.
+/// True for the errors that are not a statement about the constant, so must not be answered by
+/// disabling the index. The complement (not representable, not comparable, ...) is open-ended
+/// because the target type raises its own codes, hence the exclusion form.
+static bool indexDecisionErrorMustPropagate(int code)
+{
+    return code == ErrorCodes::LOGICAL_ERROR || code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
+        || code == ErrorCodes::CANNOT_ALLOCATE_MEMORY || code == ErrorCodes::TOO_DEEP_RECURSION
+        || code == ErrorCodes::QUERY_WAS_CANCELLED;
+}
+
+
+/// True when an absent `key` can still satisfy `map[key] = const`, i.e. the granule must not be
+/// pruned, and conservatively true when the comparison cannot be evaluated. Runs the real `equals`
+/// so the answer uses the engine's own semantics. NULL is not a match: it is true for neither
+/// `equals` nor `notEquals`.
 static bool mapElementDefaultCanMatchConstant(
     const ContextPtr & context,
     const DataTypePtr & map_value_type,
@@ -825,19 +834,18 @@ static bool mapElementDefaultCanMatchConstant(
 
         Field result_field;
         result->get(0, result_field);
-        /// NULL (e.g. comparing with a Nullable default) means "may match" -> keep the granule.
-        return result_field.isNull() || result_field.safeGet<UInt64>() != 0;
+        /// A NULL comparison result (a Nullable value type has a NULL default) is not true, so an
+        /// absent key satisfies neither `equals` nor `notEquals` and the granule may be pruned.
+        if (result_field.isNull())
+            return false;
+        return result_field.safeGet<UInt64>() != 0;
     }
     catch (const Exception & e)
     {
-        /// Only tolerate the type-mismatch case (the default and the constant are not comparable):
-        /// be conservative and do not prune. Resource limits, query cancellation, allocation
-        /// failures, and internal errors must not be swallowed here, otherwise a query that should
-        /// fail would silently continue with the index disabled. The predicate was already accepted
-        /// by the query analyzer, so any other failure is unexpected and must propagate.
-        if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT || e.code() == ErrorCodes::NO_COMMON_TYPE)
-            return true;
-        throw;
+        /// The default and the constant are not comparable: be conservative and do not prune.
+        if (indexDecisionErrorMustPropagate(e.code()))
+            throw;
+        return true;
     }
 }
 
@@ -1018,15 +1026,33 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             else if (map_info->has_values_index)
             {
                 position = map_info->values_index_position;
-                const_value = value_field;
 
-                /// String/FixedString equality ignores trailing NUL padding, so a single hash of the
-                /// constant cannot soundly match every stored value when the constant and indexed
-                /// value types differ. Skip the index (scan) to avoid pruning a matching granule.
                 const auto values_index_value_type
                     = BloomFilter::getPrimitiveType(header.getByPosition(position).type);
-                if ((isStringOrFixedString(values_index_value_type) || isStringOrFixedString(value_type))
-                    && !value_type->equals(*values_index_value_type))
+
+                /// An indexed String or FixedString is hashable only against a constant storing the
+                /// same representation, so skip the index (scan) otherwise rather than prune a
+                /// matching granule. Wrappers do not change what is stored and are ignored.
+                const auto value_primitive_type = BloomFilter::getPrimitiveType(value_type);
+                if (isStringOrFixedString(values_index_value_type)
+                    && !value_primitive_type->equals(*values_index_value_type))
+                    return false;
+
+                /// `hashWithField` reads the Field as the indexed type, so normalize the constant
+                /// first. Not representable there means no single hash describes it, reported either
+                /// as Null or as a throw.
+                try
+                {
+                    const_value = convertFieldToType(value_field, *values_index_value_type, value_type.get());
+                }
+                catch (const Exception & e)
+                {
+                    if (indexDecisionErrorMustPropagate(e.code()))
+                        throw;
+                    return false;
+                }
+
+                if (const_value.isNull())
                     return false;
             }
             else
