@@ -4,11 +4,9 @@
 
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
-#include <Common/OpenSSLHelpers.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/ReadHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
@@ -31,6 +29,8 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 
 #include <mecab.h>
+
+#include <openssl/evp.h>
 
 #include <filesystem>
 
@@ -94,6 +94,28 @@ String toHexLowercase(std::string_view bytes)
         out[2 * i + 1] = digits[c & 0x0F];
     }
     return out;
+}
+
+/// Copies `source` to `out` and returns the lowercase-hex SHA-256 of the bytes, in a single streaming
+/// pass so peak memory does not grow with the archive size.
+String copyToFileAndHashSHA256(ReadBuffer & source, WriteBuffer & out)
+{
+    std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> ctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+    if (!ctx || !EVP_DigestInit_ex(ctx.get(), EVP_sha256(), nullptr))
+        throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Failed to initialize SHA-256 for the Japanese dictionary");
+
+    while (!source.eof())
+    {
+        const size_t chunk = source.available();
+        EVP_DigestUpdate(ctx.get(), source.position(), chunk);
+        out.write(source.position(), chunk);
+        source.position() += chunk;
+    }
+
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int digest_size = 0;
+    EVP_DigestFinal_ex(ctx.get(), digest, &digest_size);
+    return toHexLowercase({reinterpret_cast<const char *>(digest), digest_size});
 }
 
 /// True if S3 auth is configured under <japanese>; then an http(s) location uses the S3 client.
@@ -351,22 +373,17 @@ MecabDictionaryPtr MecabDictionaryManager::loadJapaneseDictionary()
         LOG_INFO(log, "Downloading Japanese dictionary from {}", location);
         fs::create_directories(cache_dir);
 
-        /// 1. Download the archive to a local file.
+        /// 1. Download the archive to a local file, hashing it in the same streaming pass so peak
+        ///    memory does not grow with the archive size.
+        String actual_sha;
         {
             auto source = openArchiveSource(location, context);
             WriteBufferFromFile out(archive_path.string());
-            copyData(*source, out);
+            actual_sha = copyToFileAndHashSHA256(*source, out);
             out.finalize();
         }
 
         /// 2. Verify the SHA-256 BEFORE using the archive (guards against corruption or tampering).
-        std::string contents;
-        {
-            ReadBufferFromFile in(archive_path.string());
-            readStringUntilEOF(contents, in);
-        }
-        const String actual_sha = toHexLowercase(encodeSHA256(contents));
-
         if (actual_sha != expected_sha)
         {
             fs::remove_all(cache_dir);
