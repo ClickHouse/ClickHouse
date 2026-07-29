@@ -7,6 +7,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <IO/AzureBlobStorage/isRetryableAzureException.h>
 #include <IO/ReadBufferFromString.h>
+#include <azure/core/credentials/credentials.hpp>
 #include <IO/AzureBlobStorage/PocoHTTPClient.h>
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
@@ -353,6 +354,16 @@ namespace
                 if (i + 1 >= max_retries || !isRetryableAzureException(e))
                     throw;
                 LOG_TEST(log, "GetProperties for {} failed at attempt {}, retrying: {}", path, i + 1, e.Message);
+                sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
+                sleep_time_with_backoff_milliseconds *= 2;
+            }
+            catch (const Azure::Core::Credentials::AuthenticationException & e)
+            {
+                /// Credential/RBAC token-acquisition failure is transient (same window as 403); retry
+                /// within the same budget, matching runWithRetries / checkDataPart.
+                if (i + 1 >= max_retries)
+                    throw;
+                LOG_TEST(log, "GetProperties for {} failed at attempt {} (auth), retrying: {}", path, i + 1, e.what());
                 sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
                 sleep_time_with_backoff_milliseconds *= 2;
             }
