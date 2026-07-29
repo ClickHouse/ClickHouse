@@ -28,6 +28,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_PARSE_DATETIME;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -35,6 +36,39 @@ namespace ErrorCodes
 void insertDefaultPostgreSQLValue(IColumn & column, const IColumn & sample_column)
 {
     column.insertFrom(sample_column, 0);
+}
+
+
+namespace
+{
+
+/// A PostgreSQL value arrives as a complete, already isolated string, so nothing may be left unread after
+/// parsing it as a date and time. Otherwise a value such as `2024 April 4` is silently truncated to the
+/// unix timestamp `2024` with the rest of the string thrown away.
+///
+/// The only tolerated leftover is the UTC offset that PostgreSQL renders for `timestamp with time zone`
+/// (`2025-01-02 03:04:05.6789+00`, also `+03:30` or `-08`). The offset is not applied - the value is
+/// interpreted in the time zone of the ClickHouse column, as before - but it must not be treated as garbage.
+void assertPostgreSQLDateTimeFullyParsed(ReadBuffer & in)
+{
+    if (!in.eof() && (*in.position() == '+' || *in.position() == '-'))
+    {
+        ++in.position();
+
+        bool has_digits = false;
+        while (!in.eof() && (isNumericASCII(*in.position()) || *in.position() == ':'))
+        {
+            has_digits |= isNumericASCII(*in.position());
+            ++in.position();
+        }
+
+        if (!has_digits)
+            throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse the time zone offset of a date and time value");
+    }
+
+    assertEOF(in);
+}
+
 }
 
 
@@ -117,6 +151,7 @@ try
             ReadBufferFromString in(value);
             time_t time = 0;
             readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(data_type.get())->getTimeZone());
+            assertPostgreSQLDateTimeFullyParsed(in);
             time = std::max<time_t>(time, 0);
             assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
             break;
@@ -126,6 +161,7 @@ try
             ReadBufferFromString in(value);
             DateTime64 time = 0;
             readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(data_type.get())->getTimeZone());
+            assertPostgreSQLDateTimeFullyParsed(in);
             assert_cast<DataTypeDateTime64::ColumnType &>(column).insertValue(time);
             break;
         }
@@ -284,6 +320,7 @@ void preparePostgreSQLArrayInfo(
             ReadBufferFromString in(field);
             time_t time = 0;
             readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(nested.get())->getTimeZone());
+            assertPostgreSQLDateTimeFullyParsed(in);
             time = std::max<time_t>(time, 0);
             return time;
         };
@@ -293,6 +330,7 @@ void preparePostgreSQLArrayInfo(
             ReadBufferFromString in(field);
             DateTime64 time = 0;
             readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(nested.get())->getTimeZone());
+            assertPostgreSQLDateTimeFullyParsed(in);
             time = std::max<time_t>(time, 0);
             return time;
         };

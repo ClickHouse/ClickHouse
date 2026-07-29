@@ -898,6 +898,25 @@ def test_postgres_datetime(started_cluster):
     assert result == "2025-01-02 03:04:05.678900\n"
 
 
+def test_postgres_datetime_trailing_garbage(started_cluster):
+    """A value that is not a date and time must be rejected instead of being silently truncated to
+    the leading four digits interpreted as a unix timestamp (`2024 April 4` -> `2024`)."""
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_datetime_garbage")
+    cursor.execute("CREATE TABLE test_datetime_garbage (ts text)")
+    cursor.execute("INSERT INTO test_datetime_garbage VALUES ('2024 April 4')")
+
+    for clickhouse_type in ["DateTime('UTC')", "DateTime64(6, 'UTC')"]:
+        node1.query("DROP TABLE IF EXISTS test_datetime_garbage")
+        node1.query(
+            f"CREATE TABLE test_datetime_garbage (ts {clickhouse_type}) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_datetime_garbage', 'postgres', '{pg_pass}')"
+        )
+        assert "CANNOT_PARSE" in node1.query_and_get_error("SELECT ts FROM test_datetime_garbage")
+
+    node1.query("DROP TABLE IF EXISTS test_datetime_garbage")
+    cursor.execute("DROP TABLE test_datetime_garbage")
+
+
 def test_postgres_reading_clone(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
     cursor.execute("DROP TABLE IF EXISTS test_clone")

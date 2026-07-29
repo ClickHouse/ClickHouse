@@ -30,6 +30,9 @@ namespace DB
         else
         {
             readDateTimeText(time, in);
+            /// `VALID UNTIL` holds a complete value, so a leftover such as the ` April 4` of `2024 April 4`
+            /// must be an error instead of silently yielding the unix timestamp `2024`.
+            assertEOF(in);
         }
 
         return time;
