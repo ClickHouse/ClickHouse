@@ -2289,6 +2289,16 @@ public:
     /// `SHOW CREATE TABLE` and `system.tables`, even though reads/writes go to the delegate.
     String getName() const override { return "URL"; }
 
+    /// Engine classification is used by policy checks (e.g. the `disable_insertion_and_mutation`
+    /// guard in `InterpreterInsertQuery`, which exempts external engines), so report the class of
+    /// the delegate instead of the `IStorage` default of a local engine. Deliberately not done in
+    /// `StorageProxy`: the lazy proxies (`StorageTableProxy`, `StorageTableFunctionProxy`) would
+    /// have to materialize and start up the nested storage just to answer a classification query.
+    bool isDataLake() const override { return nested->isDataLake(); }
+    bool isExternalDatabase() const override { return nested->isExternalDatabase(); }
+    bool isObjectStorage() const override { return nested->isObjectStorage(); }
+    bool isMessageQueue() const override { return nested->isMessageQueue(); }
+
     /// Forward the delegate's narrower PREWHERE contract. `StorageProxy` forwards `supportsPrewhere`,
     /// but not `supportedPrewhereColumns`/`canMoveConditionsToPrewhere`. Without these overrides the
     /// wrapper would fall back to `IStorage::supportedPrewhereColumns == std::nullopt` (unrestricted)
@@ -2589,12 +2599,24 @@ void registerStorageURL(StorageFactory & factory)
             /// still holds the raw user-provided URL. Without this override, e.g.
             /// `SET url_base = 'http://host'; ENGINE = URL('/data/**/part*.tsv', 'TSV')`
             /// would build the object storage from an unresolved relative URL.
-            /// `skip_userinfo=false`: the object storage stays in memory and credentials are
-            /// not persisted to the AST.
-            StorageURL::overrideURLInEngineArgs(engine_args, config.url, context, /*skip_userinfo=*/ false);
+            ///
+            /// `args.engine_args` is a reference to the arguments of the `CREATE` AST, so materialize
+            /// the resolved URL there with the same `skip_userinfo=true` policy as the other
+            /// `url_base` materialization paths: a resolved URL may carry `user:pass@` coming from
+            /// `url_base`, and persisting it would expose the credentials through `SHOW CREATE TABLE`
+            /// and the table metadata. The object storage itself has to be built from the fully
+            /// resolved URL including userinfo, so it is initialized from a scratch copy of the
+            /// arguments that never reaches the AST.
+            StorageURL::overrideURLInEngineArgs(engine_args, config.url, context, /*skip_userinfo=*/ true);
+
+            ASTs object_storage_args;
+            object_storage_args.reserve(engine_args.size());
+            for (const auto & engine_arg : engine_args)
+                object_storage_args.push_back(engine_arg->clone());
+            StorageURL::overrideURLInEngineArgs(object_storage_args, config.url, context, /*skip_userinfo=*/ false);
 
             auto configuration = std::make_shared<StorageWebConfiguration>();
-            StorageObjectStorageConfiguration::initialize(*configuration, engine_args, context, /* with_table_structure */ false);
+            StorageObjectStorageConfiguration::initialize(*configuration, object_storage_args, context, /* with_table_structure */ false);
 
             /// Same contract as `createStorageObjectStorage`: only a user-issued `CREATE` applies the
             /// `file_like_engine_default_partition_strategy` default; ATTACH / startup / RESTORE must

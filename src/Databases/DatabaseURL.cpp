@@ -86,6 +86,16 @@ public:
     StoragePtr getNested() const override { return nested; }
     String getName() const override { return nested->getName(); }
 
+    /// Engine classification is used by policy checks (e.g. the `disable_insertion_and_mutation`
+    /// guard in `InterpreterInsertQuery`, which exempts external engines), so report the class of
+    /// the delegate instead of the `IStorage` default of a local engine. Deliberately not done in
+    /// `StorageProxy`: the lazy proxies (`StorageTableProxy`, `StorageTableFunctionProxy`) would
+    /// have to materialize and start up the nested storage just to answer a classification query.
+    bool isDataLake() const override { return nested->isDataLake(); }
+    bool isExternalDatabase() const override { return nested->isExternalDatabase(); }
+    bool isObjectStorage() const override { return nested->isObjectStorage(); }
+    bool isMessageQueue() const override { return nested->isMessageQueue(); }
+
     /// Forward the delegate's planner-visible capability contracts. `StorageProxy` forwards only a
     /// part of them (e.g. `supportsPrewhere`, `supportsSubcolumns`), so without these overrides the
     /// wrapper would silently fall back to the `IStorage` defaults and a table of a `URL` database
