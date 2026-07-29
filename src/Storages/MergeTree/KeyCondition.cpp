@@ -359,12 +359,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (expression.find('\0') != String::npos)
                     return false;
 
-                String prefix;
-                if (!expressionHasUnescapedAlternation(expression))
-                    prefix = extractFixedPrefixFromRegularExpression(expression);
-                else
-                    prefix = extractCommonPrefixFromAlternationBranches(expression);
-
+                String prefix = extractFixedPrefixFromRegularExpression(expression);
                 if (prefix.empty())
                     return false;
 

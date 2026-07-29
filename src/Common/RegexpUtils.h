@@ -49,63 +49,18 @@ namespace DB
 ///   Since the next character is not fixed, we stop at "abc".
 ///   Prefix: "abc".
 ///
+/// "^(abc-xx|abc-yy)"
+///   An unescaped '|' inside a group gives two alternatives: the string starts
+///   with "abc-xx" or "abc-yy". Both start with "abc-".
+///   Prefix: "abc-".
+///
 /// '(' is treated as a stop character (')' cannot appear unescaped in a
 /// valid regex without a preceding '('). Patterns like
 /// "^(abc)def" could theoretically yield prefix "abcdef", but analyzing
 /// group semantics (optional groups, alternation inside groups, etc.)
-/// is complex and error-prone. The alternation helper
-/// `extractCommonPrefixFromAlternationBranches` handles the important case of
-/// "^(branch1|branch2|...)" separately.
+/// is complex and error-prone. The only supported group is a top-level
+/// alternation of plain literals, "^(branch1|branch2|...)$?", which is
+/// handled separately.
 String extractFixedPrefixFromRegularExpression(const String & regexp);
-
-/// Returns true if the expression contains any unescaped '|'.
-bool expressionHasUnescapedAlternation(const String & expression);
-
-/// Handles the simple alternation pattern "^(branch1|branch2|...)$?" where
-/// each branch is a plain literal string (no metacharacters, no nesting).
-///
-/// This is called when the expression contains an unescaped '|', meaning
-/// `extractFixedPrefixFromRegularExpression` cannot be used (it would stop
-/// at '|' or '('). Returns empty for any pattern more complex than simple
-/// literal branches inside a single group.
-///
-/// "^(abc-xx|abc-yy)"
-///   The '|' gives two alternatives: the string starts with "abc-xx" or "abc-yy".
-///   Both start with "abc-", so every matching string begins with "abc-".
-///   Prefix: "abc-".
-///
-/// "^(abc-xx-1|abc-xx-2|abc-yy-1)"
-///   Three alternatives. All three start with "abc-", but they diverge
-///   after that ('x' vs 'y'). So "abc-" is the longest common start.
-///   Prefix: "abc-".
-///
-/// "^(abc|def)"
-///   Two alternatives: "abc" and "def". They share nothing at the start —
-///   'a' vs 'd' already differ. We cannot guarantee any prefix.
-///   Prefix: "".
-///
-/// "^(abc|def)$"
-///   '$' means "must end at the end of the string". It constrains what
-///   comes after the match, but does not change what the string starts
-///   with. So the prefix analysis is the same as without '$'.
-///   Prefix: "".
-///
-/// Not supported (returns empty — could be improved in the future):
-///
-/// "^(abc.*|abd.*)"
-///   Branches contain '.*' (wildcard). We only handle plain literal branches.
-///   The common prefix "ab" could theoretically be extracted, but is not.
-///   Prefix: "".
-///
-/// "^(abc|abd)+"
-///   The '+' after the group means it must appear at least once.
-///   We only handle patterns where the group is followed by '$' or end
-///   of expression. Prefix: "".
-///
-/// "^(abc(1|2)|abc(3|4))"
-///   Branches contain nested groups. We only handle flat literal branches.
-///   The common prefix "abc" could theoretically be extracted, but is not.
-///   Prefix: "".
-String extractCommonPrefixFromAlternationBranches(const String & expression);
 
 }

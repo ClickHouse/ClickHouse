@@ -46,77 +46,7 @@ bool isLiteralEscape(char c)
     UNREACHABLE();
 }
 
-}
-
-
-String extractFixedPrefixFromRegularExpression(const String & regexp)
-{
-    /// We can only analyze regexes that start with '^' — those are the only ones that guarantee a fixed prefix.
-    if (regexp.size() <= 1 || regexp[0] != '^')
-        return {};
-
-    String fixed_prefix;
-    const char * begin = regexp.data() + 1;
-    const char * pos = begin;
-    const char * end = regexp.data() + regexp.size();
-
-    while (pos < end)
-    {
-        switch (*pos)
-        {
-            case '\0':
-                pos = end;
-            break;
-
-            case '\\':
-            {
-                ++pos;
-                if (pos == end)
-                    break;
-
-                if (isLiteralEscape(*pos))
-                {
-                    fixed_prefix += *pos;
-                    ++pos;
-                }
-                else
-                    pos = end;
-
-                break;
-            }
-
-            /// non-trivial cases
-            case '|':
-                fixed_prefix.clear();
-            [[fallthrough]];
-            case '(':
-            case '[':
-            case '^':
-            case '$':
-            case '.':
-            case '+':
-                pos = end;
-            break;
-
-            /// Quantifiers that allow a zero number of occurrences.
-            case '{':
-            case '?':
-            case '*':
-                if (!fixed_prefix.empty())
-                    fixed_prefix.pop_back();
-
-            pos = end;
-            break;
-            default:
-                fixed_prefix += *pos;
-            pos++;
-            break;
-        }
-    }
-
-    return fixed_prefix;
-}
-
+/// Returns true if the expression contains any unescaped '|'.
 bool expressionHasUnescapedAlternation(const String & expression)
 {
     for (size_t i = 0; i < expression.size(); ++i)
@@ -133,6 +63,51 @@ bool expressionHasUnescapedAlternation(const String & expression)
     return false;
 }
 
+/// Handles the simple alternation pattern "^(branch1|branch2|...)$?" where
+/// each branch is a plain literal string (no metacharacters, no nesting).
+///
+/// This is used when the expression contains an unescaped '|', meaning the
+/// character-by-character scan cannot be used (it would stop at '|' or '(').
+/// Returns empty for any pattern more complex than simple literal branches
+/// inside a single group.
+///
+/// "^(abc-xx|abc-yy)"
+///   The '|' gives two alternatives: the string starts with "abc-xx" or "abc-yy".
+///   Both start with "abc-", so every matching string begins with "abc-".
+///   Prefix: "abc-".
+///
+/// "^(abc-xx-1|abc-xx-2|abc-yy-1)"
+///   Three alternatives. All three start with "abc-", but they diverge
+///   after that ('x' vs 'y'). So "abc-" is the longest common start.
+///   Prefix: "abc-".
+///
+/// "^(abc|def)"
+///   Two alternatives: "abc" and "def". They share nothing at the start —
+///   'a' vs 'd' already differ. We cannot guarantee any prefix.
+///   Prefix: "".
+///
+/// "^(abc|def)$"
+///   '$' means "must end at the end of the string". It constrains what
+///   comes after the match, but does not change what the string starts
+///   with. So the prefix analysis is the same as without '$'.
+///   Prefix: "".
+///
+/// Not supported (returns empty — could be improved in the future):
+///
+/// "^(abc.*|abd.*)"
+///   Branches contain '.*' (wildcard). We only handle plain literal branches.
+///   The common prefix "ab" could theoretically be extracted, but is not.
+///   Prefix: "".
+///
+/// "^(abc|abd)+"
+///   The '+' after the group means it must appear at least once.
+///   We only handle patterns where the group is followed by '$' or end
+///   of expression. Prefix: "".
+///
+/// "^(abc(1|2)|abc(3|4))"
+///   Branches contain nested groups. We only handle flat literal branches.
+///   The common prefix "abc" could theoretically be extracted, but is not.
+///   Prefix: "".
 String extractCommonPrefixFromAlternationBranches(const String & expression)
 {
     /// We only handle "^(literal1|literal2|...)$?".
@@ -216,6 +191,81 @@ String extractCommonPrefixFromAlternationBranches(const String & expression)
     }
 
     return common_prefix;
+}
+
+}
+
+
+String extractFixedPrefixFromRegularExpression(const String & regexp)
+{
+    /// We can only analyze regexes that start with '^' — those are the only ones that guarantee a fixed prefix.
+    if (regexp.size() <= 1 || regexp[0] != '^')
+        return {};
+
+    /// The scan below stops at '|' and '(', so alternations are analyzed separately.
+    if (expressionHasUnescapedAlternation(regexp))
+        return extractCommonPrefixFromAlternationBranches(regexp);
+
+    String fixed_prefix;
+    const char * begin = regexp.data() + 1;
+    const char * pos = begin;
+    const char * end = regexp.data() + regexp.size();
+
+    while (pos < end)
+    {
+        switch (*pos)
+        {
+            case '\0':
+                pos = end;
+            break;
+
+            case '\\':
+            {
+                ++pos;
+                if (pos == end)
+                    break;
+
+                if (isLiteralEscape(*pos))
+                {
+                    fixed_prefix += *pos;
+                    ++pos;
+                }
+                else
+                    pos = end;
+
+                break;
+            }
+
+            /// non-trivial cases
+            case '|':
+                fixed_prefix.clear();
+            [[fallthrough]];
+            case '(':
+            case '[':
+            case '^':
+            case '$':
+            case '.':
+            case '+':
+                pos = end;
+            break;
+
+            /// Quantifiers that allow a zero number of occurrences.
+            case '{':
+            case '?':
+            case '*':
+                if (!fixed_prefix.empty())
+                    fixed_prefix.pop_back();
+
+            pos = end;
+            break;
+            default:
+                fixed_prefix += *pos;
+            pos++;
+            break;
+        }
+    }
+
+    return fixed_prefix;
 }
 
 }
