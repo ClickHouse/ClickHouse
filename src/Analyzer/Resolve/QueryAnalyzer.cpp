@@ -3195,11 +3195,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
                         if (!mat_subquery_is_resolved)
                         {
-                            /// Forbid resolving `test1` to this CTE again while its own body is
-                            /// being resolved, so a `FROM test1` inside the body binds to the base
-                            /// table (recursive CTEs are handled elsewhere). Insert the
-                            /// `cte_name_to_query_node` node, not the `TableNode` clone
-                            /// `resolved_identifier_node` - the guard never sees the latter.
+                            /// Not `resolved_identifier_node`: the guard only sees the map node.
                             auto cte_map_node = findCTENodeInScopes(materialized_cte_ptr->cte_name, scope);
 
                             if (cte_map_node)
@@ -5833,9 +5829,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     /// then reuse the existing storage.
                     auto & subquery = table_node->getMaterializedCTESubquery();
 
-                    /// This copy's body is unresolved, so it still needs the self-reference guard:
-                    /// without it a body reference like `FROM test1` binds back to the CTE, which
-                    /// re-enters this branch and recurses until `TOO_DEEP_SUBQUERIES`.
+                    /// This copy's body is unresolved, so it still needs the self-reference guard.
                     auto cte_map_node = findCTENodeInScopes(materialized_cte_ptr->cte_name, scope);
 
                     if (cte_map_node)
