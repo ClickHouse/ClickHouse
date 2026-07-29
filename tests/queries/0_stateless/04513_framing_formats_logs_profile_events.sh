@@ -311,3 +311,27 @@ else:
         print('MISMATCH: data packets =', len(data_packets))
 "
 ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT framing_throw_after_writing_packet"
+
+# The same fail-close guarantee has to hold when the failure happens in the payload reset that follows a
+# successful packet write: `WriteBufferFromVectorImpl::restart` allocates when it shrinks a payload
+# buffer that grew past the cap, so it can throw with the bytes of the packet just written still buffered
+# in `payload`. Here `framing_throw_during_payload_reset` throws exactly in that state; the recovery must
+# not emit the same `data` packet a second time.
+echo '--- a failed payload reset is not retried into a duplicated packet'
+${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT framing_throw_during_payload_reset"
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d "SELECT 1 AS x FORMAT JSONEachRow" | python3 -c "
+import sys, json
+lines = [line for line in sys.stdin.read().splitlines() if line]
+try:
+    packets = [json.loads(line) for line in lines]
+except json.JSONDecodeError:
+    print('MISMATCH: response is not valid NDJSON')
+else:
+    data_packets = [p for p in packets if p.get('packet') == 'data']
+    if len(data_packets) <= 1:
+        print('failed payload reset not duplicated: OK')
+    else:
+        print('MISMATCH: data packets =', len(data_packets))
+"
+${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT framing_throw_during_payload_reset"
