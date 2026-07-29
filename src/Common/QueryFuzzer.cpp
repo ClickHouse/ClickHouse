@@ -2784,32 +2784,26 @@ const std::unordered_set<String> & QueryFuzzer::geoAliasNames()
 
 DataTypePtr QueryFuzzer::fuzzContainerChildren(const DataTypePtr & type)
 {
-    ++container_rebuild_count;
-    last_container_rebuild = [&]() -> DataTypePtr
+    if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+        return std::make_shared<DataTypeArray>(fuzzDataType(type_array->getNestedType()));
+    if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
     {
-        if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
-            return std::make_shared<DataTypeArray>(fuzzDataType(type_array->getNestedType()));
-        if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
-        {
-            DataTypes elements = type_tuple->getElements();
-            fuzzDataTypes(elements);
-            return std::make_shared<DataTypeTuple>(elements);
-        }
-        if (const auto * type_variant = typeid_cast<const DataTypeVariant *>(type.get()))
-        {
-            DataTypes variants = type_variant->getVariants();
-            fuzzDataTypes(variants);
-            return std::make_shared<DataTypeVariant>(variants);
-        }
-        return nullptr;
-    }();
-    return last_container_rebuild;
+        DataTypes elements = type_tuple->getElements();
+        fuzzDataTypes(elements);
+        return std::make_shared<DataTypeTuple>(elements);
+    }
+    if (const auto * type_variant = typeid_cast<const DataTypeVariant *>(type.get()))
+    {
+        DataTypes variants = type_variant->getVariants();
+        fuzzDataTypes(variants);
+        return std::make_shared<DataTypeVariant>(variants);
+    }
+    return nullptr;
 }
 
 bool QueryFuzzer::fuzzAggregateName(String & name, size_t nargs)
 {
-    /// ASTDataType is opaque to the generic walk, so this is the only mutation path for the aggregate name.
-    /// makeAggregateFunctionType re-validates the candidate via the factory, falling back on rejection.
+    /// makeAggregateFunctionType re-validates the candidate and falls back if the factory rejects it.
     if (nargs > 0 && nargs < 3 && swapAggrs.contains(nargs) && fuzz_rand() % 3 == 0)
     {
         String candidate = pickRandomly(fuzz_rand, swapAggrs.at(nargs));
@@ -2824,8 +2818,7 @@ bool QueryFuzzer::fuzzAggregateName(String & name, size_t nargs)
 
 bool QueryFuzzer::fuzzAggregateParameters(Array & parameters)
 {
-    /// ASTDataType is opaque to the generic walk, so this is the only mutation path for an aggregate's literal
-    /// parameters (e.g. quantileExact(0.5)). The factory re-validates and rejects unusable fuzzed parameters.
+    /// The factory re-validates and rejects unusable fuzzed parameters.
     if (!parameters.empty() && fuzz_rand() % 3 == 0)
     {
         for (auto & param : parameters)
@@ -2839,11 +2832,8 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 {
     checkIterationLimit();
 
-    /// A custom-named type (SimpleAggregateFunction, Nested, geo Point/Ring/..., Bool) has a plain storage type
-    /// (e.g. SimpleAggregateFunction(sum, Nullable(Float64)) is Nullable(Float64), Point is Tuple(...)). It MUST
-    /// be rebuilt here, before the structural Array/Tuple/Nullable/... arms below: those match the storage type
-    /// and would silently strip the custom name. So the randomness stays INSIDE this block and a custom-named
-    /// type never reaches the storage-type arms.
+    /// A custom-named type (SimpleAggregateFunction, Nested, geo aliases, Bool) has a plain storage type, so it
+    /// must be handled before the structural arms below: those match the storage type and would strip the name.
     if (type->hasCustomName())
     {
         /// SimpleAggregateFunction: fuzz name (candidate set)/args/params, re-validate via the factory.
@@ -2880,11 +2870,8 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
             return type;
         }
 
-        /// Geo aliases (Point/MultiPoint/Ring/Polygon/MultiPolygon/LineString/MultiLineString/Geometry) are
-        /// fixed-name types whose storage carries nested structure (Tuple / Array / Variant). getName() emits the
-        /// alias regardless of the storage, so a mutated storage cannot round-trip under the alias. To still fuzz
-        /// that structure, occasionally emit the fuzzed storage type (dropping the alias -- a valid,
-        /// round-trippable mutation).
+        /// A geo alias emits its own name regardless of the storage, so a mutated storage cannot round-trip
+        /// under it. Occasionally emit the fuzzed storage type instead, dropping the alias.
         if (geoAliasNames().contains(type->getCustomName()->getName()) && fuzz_rand() % 4 == 0)
         {
             try
@@ -2898,11 +2885,8 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
             }
         }
 
-        /// Any other custom-named type (Bool, ...) is a parameterless fixed alias with no child types to fuzz.
-        /// Skip the structural arms below, which match its storage type and would silently strip the name, and
-        /// go straight to the wrapping/replacement mutations at the end: wrapping keeps the alias as the child
-        /// (Array(Bool)), and replacement drops it for an unrelated type, which is a legitimate mutation for a
-        /// leaf. Returning here instead would freeze such a type for every seed.
+        /// Any other custom-named type (Bool, ...) is a leaf alias with no children to fuzz. Go straight to the
+        /// wrapping/replacement tail: returning the type here would freeze it for every seed.
         return fuzzTypeWrapping(type);
     }
 
@@ -3022,9 +3006,8 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
     const auto * type_object = typeid_cast<const DataTypeObject *>(type.get());
     if (type_object && fuzz_rand() % 4 != 0)
     {
-        /// Fuzz the typed-path element types (recursively), then rebuild via the shared JSON Object generator
-        /// which randomizes the numeric parameters, keeping the SKIP paths / SKIP REGEXP lists intact so the
-        /// result stays a structurally valid, round-trippable DataTypeObject.
+        /// Fuzz the typed-path element types, then rebuild with randomized numeric parameters, keeping the
+        /// SKIP lists intact so the result stays round-trippable.
         std::unordered_map<String, DataTypePtr> typed_paths = type_object->getTypedPaths();
         for (auto & [path, path_type] : typed_paths)
             path_type = fuzzDataType(path_type);
@@ -3091,11 +3074,8 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         changed |= fuzzAggregateParameters(new_parameters);
         if (changed)
         {
-            /// Keep the leading serialization version (AggregateFunction(1, ...)) parsed from the source AST,
-            /// but only when the aggregate name is unchanged: a version valid for the old function may be
-            /// out of range for the new one (e.g. AggregateFunction(2, quantiles(...)) rebuilt as
-            /// AggregateFunction(2, sumMap, ...) round-trips through ParserDataType but sumMap::serialize
-            /// rejects version 2). When the name changed, drop to the default (empty) version.
+            /// Keep the source serialization version only while the name is unchanged: a version valid for the
+            /// old function may be out of range for the new one, so a rename drops back to the default.
             std::optional<size_t> version = name_changed ? std::nullopt : type_aggr->getVersionIfExplicit();
             if (auto fuzzed = makeAggregateFunctionType(new_name, new_arg_types, new_parameters, /*simple=*/false, version))
                 return fuzzed;
@@ -3108,8 +3088,7 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 
 DataTypePtr QueryFuzzer::fuzzTypeWrapping(const DataTypePtr & type)
 {
-    /// Wrap the type, or replace it with a random one. Wrapping keeps a custom name as the child, unlike the
-    /// structural arms which rebuild from the storage type and strip the name while claiming to be that type.
+    /// Wrap the type, or replace it with a random one. Wrapping keeps a custom name as the child.
     size_t tmp = fuzz_rand() % 8;
     if (tmp == 0)
         return std::make_shared<DataTypeArray>(type);
@@ -3155,9 +3134,8 @@ DataTypePtr QueryFuzzer::makeRandomObject(
     std::unordered_set<String> paths_to_skip,
     std::vector<String> path_regexps_to_skip)
 {
-    /// Randomize max_dynamic_paths / max_dynamic_types within the parser limits, keeping the given
-    /// typed paths and SKIP lists intact so the result stays a structurally valid, round-trippable
-    /// JSON Object (its getName() re-parses via ParserDataType to the same type).
+    /// Randomize the numeric parameters within the parser limits, keeping the given typed paths and SKIP
+    /// lists intact so getName() re-parses to the same type.
     const size_t max_dynamic_paths = (fuzz_rand() % 4 == 0)
         ? fuzz_rand() % (DataTypeObject::MAX_DYNAMIC_PATHS_LIMIT + 1)
         : DataTypeObject::DEFAULT_MAX_DYNAMIC_PATHS;
@@ -3191,10 +3169,8 @@ DataTypePtr QueryFuzzer::makeAggregateFunctionType(
             /// Preserve the source serialization version (AggregateFunction(1, ...)); empty keeps the default.
             result = std::make_shared<DataTypeAggregateFunction>(func, argument_types, parameters, version);
         }
-        /// The factory accepting the parameters is not enough: getName() must also round-trip. A Decimal or
-        /// big-integer parameter is accepted here but formatted as a quoted literal, so reparsing the emitted
-        /// name yields a String parameter the factory then rejects. Validate the emitted name and decline,
-        /// which covers any field type that has no SQL literal form.
+        /// The factory accepting the parameters is not enough: a Decimal or big-integer parameter is formatted
+        /// as a quoted literal, so the emitted name no longer reparses. Decline when it does not.
         if (!DataTypeFactory::instance().tryGet(result->getName()))
             return nullptr;
         return result;
@@ -3207,15 +3183,13 @@ DataTypePtr QueryFuzzer::makeAggregateFunctionType(
 
 namespace
 {
-    /// Valid timezone names the fuzzer may attach to DateTime / DateTime64 types. Shared by
-    /// makeRandomDateTime / makeRandomDateTime64.
+    /// Valid timezone names the fuzzer may attach to a DateTime / DateTime64.
     constexpr const char * fuzzer_timezones[] = {"UTC", "Europe/Moscow", "America/New_York", "Asia/Tokyo", "Australia/Sydney"};
 }
 
 DataTypePtr QueryFuzzer::makeRandomDateTime()
 {
-    /// One third of the time attach an explicit valid timezone, otherwise leave it default. Both forms
-    /// round-trip through ParserDataType.
+    /// One third of the time attach an explicit valid timezone, otherwise leave it default.
     if (fuzz_rand() % 3 == 0)
         return std::make_shared<DataTypeDateTime>(fuzzer_timezones[fuzz_rand() % std::size(fuzzer_timezones)]);
     return std::make_shared<DataTypeDateTime>();
@@ -3336,9 +3310,8 @@ DataTypePtr QueryFuzzer::getRandomType()
             }
             if (auto random = makeAggregateFunctionType(name, arg_types, Array{}, /*simple=*/false))
                 return random;
-            /// The random aggregate rejected the random argument types: fall back to argument-less count.
-            /// Built directly rather than through the helper, which swallows exceptions and returns null -
-            /// getRandomType must never hand a null type to its callers.
+            /// Fall back to argument-less count, built directly: the helper can return null and getRandomType
+            /// must never hand a null type to its callers.
             AggregateFunctionProperties properties;
             auto count = AggregateFunctionFactory::instance().get("count", NullsAction::EMPTY, {}, {}, properties);
             return std::make_shared<DataTypeAggregateFunction>(count, DataTypes{}, Array{});
@@ -7335,10 +7308,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         typeid_cast<ASTDataType *>(ast.get()) || typeid_cast<ASTTupleDataType *>(ast.get())
         || typeid_cast<ASTEnumDataType *>(ast.get()))
     {
-        /// A data type must be fuzzed only through the DataType layer, never by recursing into its argument
-        /// list with the generic expression fuzzer: ParserDataType does not accept function expressions, so an
-        /// injected one cannot be parsed back and trips the format-parse-format check (#109706).
-        /// typeid_cast and IAST::as match exactly, so every subclass has to be named above.
+        /// Fuzz a data type only through the DataType layer: ParserDataType does not accept an expression, so
+        /// one injected into the argument list cannot be parsed back (#109706). The casts above match exactly,
+        /// so every ASTDataType subclass has to be named there.
         if (fuzz_rand() % 10 == 0)
         {
             if (const auto old_type = DataTypeFactory::instance().tryGet(ast))

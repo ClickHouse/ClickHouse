@@ -20,14 +20,6 @@
 #include <Common/randomSeed.h>
 
 
-class QueryFuzzer_AggregateFunctionVersionPreserved_Test;
-class QueryFuzzer_AggregateFunctionVersionDroppedOnNameChange_Test;
-class QueryFuzzer_AggregateParameterKeepsNameReconstructible_Test;
-class QueryFuzzer_GeoAliasStorageIsFuzzed_Test;
-class QueryFuzzer_CustomNamedLeafAliasIsStillFuzzed_Test;
-class QueryFuzzer_StructuredTypeArmsMutateTheirOwnType_Test;
-class QueryFuzzer_DataTypeSubclassesAreNotFuzzedAsExpressions_Test;
-
 namespace DB
 {
 
@@ -57,15 +49,6 @@ class SettingsChanges;
  */
 class QueryFuzzer
 {
-    /// Grant the regression tests access to makeAggregateFunctionType / fuzzDataType.
-    friend class ::QueryFuzzer_AggregateFunctionVersionPreserved_Test;
-    friend class ::QueryFuzzer_AggregateFunctionVersionDroppedOnNameChange_Test;
-    friend class ::QueryFuzzer_AggregateParameterKeepsNameReconstructible_Test;
-    friend class ::QueryFuzzer_GeoAliasStorageIsFuzzed_Test;
-    friend class ::QueryFuzzer_CustomNamedLeafAliasIsStillFuzzed_Test;
-    friend class ::QueryFuzzer_StructuredTypeArmsMutateTheirOwnType_Test;
-    friend class ::QueryFuzzer_DataTypeSubclassesAreNotFuzzedAsExpressions_Test;
-
 public:
     explicit QueryFuzzer(pcg64 fuzz_rand_ = randomSeed(), std::ostream * out_stream_ = nullptr, std::ostream * debug_stream_ = nullptr)
         : seed(0)
@@ -183,8 +166,6 @@ public:
 private:
     UInt64 seed;
     pcg64 fuzz_rand;
-    size_t container_rebuild_count = 0;
-    DataTypePtr last_container_rebuild;
 
     std::ostream * out_stream = nullptr;
     std::ostream * debug_stream = nullptr;
@@ -256,50 +237,35 @@ private:
     ASTPtr makeFuzzedColumnTransformers();
     ASTPtr getRandomExpressionList(size_t nproj);
     DataTypePtr fuzzDataType(DataTypePtr type);
-    /// Recursively fuzz every element of a type list in place. Returns true if any element changed.
+    /// Fuzz every element of a type list in place. Returns true if any element changed.
     bool fuzzDataTypes(DataTypes & types);
-    /// If `type` is an Array/Tuple/Variant, rebuild it with its children fuzzed; otherwise return nullptr.
+    /// Rebuild an Array/Tuple/Variant with its children fuzzed; nullptr for anything else.
     DataTypePtr fuzzContainerChildren(const DataTypePtr & type);
-    /// How many times fuzzContainerChildren has been entered; lets a test observe the dispatch branch itself
-    /// rather than inferring it from the output, which other paths can coincidentally reproduce.
-    size_t getContainerRebuildCount() const { return container_rebuild_count; }
-    /// The type fuzzContainerChildren last returned. Entry alone does not prove the arm RETURNED that value,
-    /// and no property of the output identifies it - the wrapping/replacement tail can reproduce the kind, the
-    /// absent custom name and a differing name. A test compares this against what fuzzDataType handed back.
-    DataTypePtr getLastContainerRebuild() const { return last_container_rebuild; }
     /// Wrap or replace a type without touching its children; safe for a custom-named leaf alias.
     DataTypePtr fuzzTypeWrapping(const DataTypePtr & type);
     /// Every registered geo alias name, read out of Geometry's Variant storage.
     static const std::unordered_set<String> & geoAliasNames();
-    /// Occasionally swap an aggregate's name for a compatible candidate (same arity). Returns true if changed.
+    /// Swap an aggregate's name for a compatible candidate of the same arity.
     bool fuzzAggregateName(String & name, size_t nargs);
-    /// Occasionally fuzz an aggregate's literal parameters in place. Returns true if changed.
+    /// Fuzz an aggregate's literal parameters in place. Returns true if changed.
     bool fuzzAggregateParameters(Array & parameters);
     DataTypePtr getRandomType();
-    /// Builds a random, structurally valid QBit type (valid element type + a dimension/stride pair
-    /// satisfying dimension % stride == 0 and, when strided, stride % 8 == 0). Shared by fuzzDataType
-    /// and getRandomType so the stride constraints live in one place.
+    /// A random QBit with a valid element type and a dimension/stride pair satisfying the type's invariants.
     DataTypePtr makeRandomQBit();
-    /// Builds a structurally valid JSON Object type with the given typed paths / SKIP lists and randomized
-    /// max_dynamic_paths / max_dynamic_types (within parser limits). Shared by fuzzDataType and getRandomType.
+    /// A JSON Object with the given typed paths / SKIP lists and randomized numeric parameters.
     DataTypePtr makeRandomObject(
         std::unordered_map<String, DataTypePtr> typed_paths = {},
         std::unordered_set<String> paths_to_skip = {},
         std::vector<String> path_regexps_to_skip = {});
-    /// Builds an (Simple)AggregateFunction type from a name / argument types / parameters, re-validating via
-    /// the factory (and, for the simple form, checkSupportedFunctions). Returns nullptr if the aggregate
-    /// rejects the arguments. Shared by fuzzDataType and getRandomType so the factory + build logic lives in
-    /// one place. version carries the serialization version parsed from the source AST (empty for
-    /// SimpleAggregateFunction, which is never versioned) so a mutated versioned state keeps its version.
+    /// An (Simple)AggregateFunction re-validated via the factory; nullptr if the aggregate rejects the
+    /// arguments or the emitted name does not reparse. version is the one parsed from the source AST.
     DataTypePtr makeAggregateFunctionType(
         const String & name,
         const DataTypes & argument_types,
         const Array & parameters,
         bool simple,
         std::optional<size_t> version = std::nullopt);
-    /// Builds a DateTime / DateTime64 type, occasionally with an explicit valid timezone (otherwise no explicit
-    /// timezone). For DateTime64 the scale is passed in. Shared by fuzzDataType and getRandomType so the valid
-    /// timezone set lives in one place.
+    /// A DateTime / DateTime64, occasionally with an explicit valid timezone.
     DataTypePtr makeRandomDateTime();
     DataTypePtr makeRandomDateTime64(UInt32 scale);
     void fuzzJoinType(ASTTableJoin * table_join);
