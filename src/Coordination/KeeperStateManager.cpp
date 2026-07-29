@@ -397,12 +397,11 @@ constexpr auto current_server_state_version = ServerStateVersion::V1;
 
 /// Returns nullptr only when the content is provably unusable; a failure to read the file is
 /// propagated instead, because callers act on nullptr by deleting or truncating the file.
-/// throw_on_corrupted_checksum keeps read_state failing loudly on a bad checksum in debug builds.
-/// corrupted_path, when given, records a checksum mismatch for the caller to report later.
+/// A bad checksum never throws here, because the backup must still be tried; it is recorded in
+/// corrupted_path and read_state re-raises it at its tail once nothing was recoverable.
 nuraft::ptr<nuraft::srv_state> readAndVerifyStateFile(
     const DiskPtr & disk,
     const String & path,
-    bool throw_on_corrupted_checksum,
     LoggerPtr logger,
     std::optional<String> * corrupted_path = nullptr)
 {
@@ -438,16 +437,6 @@ nuraft::ptr<nuraft::srv_state> readAndVerifyStateFile(
             if (corrupted_path != nullptr && !corrupted_path->has_value())
                 *corrupted_path = path;
 
-            if (throw_on_corrupted_checksum)
-            {
-#ifdef NDEBUG
-                LOG_ERROR(logger, error_format, path, hash.get64(), read_checksum);
-                return nullptr;
-#else
-                throw Exception(ErrorCodes::CORRUPTED_DATA, error_format, disk->getPath() + path, hash.get64(), read_checksum);
-#endif
-            }
-
             LOG_ERROR(logger, error_format, path, hash.get64(), read_checksum);
             return nullptr;
         }
@@ -481,7 +470,7 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
     /// Only a live file that reads back and verifies may become the backup, so that a torn one
     /// cannot overwrite a still-valid state-OLD.
     if (disk->existsFile(server_state_file_name)
-        && readAndVerifyStateFile(disk, server_state_file_name, /*throw_on_corrupted_checksum=*/false, logger) != nullptr)
+        && readAndVerifyStateFile(disk, server_state_file_name, logger) != nullptr)
     {
         /// Back up the current state so it survives the rewrite below. The backup is kept
         /// until the new state file is fully written and synced (removed at the end), so a
@@ -544,7 +533,7 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
     std::optional<String> corrupted_path;
     const auto try_read_file = [&](const auto & path) -> nuraft::ptr<nuraft::srv_state>
     {
-        auto state = readAndVerifyStateFile(disk, path, /*throw_on_corrupted_checksum=*/false, logger, &corrupted_path);
+        auto state = readAndVerifyStateFile(disk, path, logger, &corrupted_path);
         if (state)
             LOG_INFO(logger, "Read state from {}", fs::path(disk->getPath()) / path);
         return state;
