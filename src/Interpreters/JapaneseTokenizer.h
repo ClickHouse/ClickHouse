@@ -24,12 +24,12 @@ struct JapaneseTokenizer final : public ITokenizerHelper<JapaneseTokenizer>
     static const char * getName() { return "japanese"; }
     static const char * getExternalName() { return getName(); }
     String getDescription() const override { return getName(); }
+    bool isStateful() const override { return true; }
 
     bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
 
     bool supportsStringLike() const override { return false; }
-    bool isStateful() const override { return true; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
@@ -39,7 +39,7 @@ private:
     {
         previous_data = nullptr;
         previous_len = 0;
-        current = nullptr;
+        current_node = nullptr;
     }
 
     /// Mutable parsing state; not concurrency-safe — clone per thread.
@@ -47,7 +47,7 @@ private:
     mutable std::unique_ptr<MeCab::Lattice> lattice;
     mutable const char * previous_data = nullptr;
     mutable size_t previous_len = 0;
-    mutable const MeCab::Node * current = nullptr;
+    mutable const MeCab::Node * current_node = nullptr;
 };
 
 }

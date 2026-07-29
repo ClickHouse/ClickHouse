@@ -182,12 +182,28 @@ The `japanese` tokenizer needs a MeCab dictionary, which ClickHouse does not shi
 - `dictionary_location` is the location of an archive (for example `.tar.zst`) of a compiled MeCab dictionary. Any official dictionary works, such as [IPADIC](https://github.com/taku910/mecab) or [UniDic](https://clrd.ninjal.ac.jp/unidic/). Supported locations:
   - a local `file://` path;
   - an `http(s)://` URL, fetched as a plain download (use this for a public or pre-signed object);
-  - an S3-compatible object store, addressed either as `s3://`/`gs://`/`oss://` or as a full `http(s)://endpoint/bucket/key` URL. This works with any S3-compatible service (AWS S3, GCS, MinIO, on-prem, ...), not only AWS. Add the S3 settings to the same `<japanese>` section — `access_key_id`, `secret_access_key`, `region`, `no_sign_request`, etc.; their presence is what makes an `http(s)://` URL use the S3 client rather than a plain download.
+  - an S3-compatible object store — AWS S3, GCS, MinIO, on-prem, etc. (not only AWS) — addressed as `s3://`/`gs://`/`oss://` or as a full `http(s)://endpoint/bucket/key` URL. For a private bucket, provide the S3 credentials as child elements of `<japanese>` (see the example below).
 - `dictionary_sha` is the SHA-256 of that archive. It is verified before the dictionary is loaded; on a mismatch the dictionary is not loaded and an error is raised.
 
 The archive is downloaded and extracted once, then cached locally. Because the dictionary determines how documents are tokenized, the same `dictionary_sha` must be configured on all replicas.
 
-Once the dictionary is configured, the `japanese` tokenizer is used like any other. For example:
+To read from a private S3-compatible bucket, add the S3 settings as child elements of `<japanese>`, next to `dictionary_location` and `dictionary_sha`:
+
+```xml
+<tokenizer>
+    <japanese>
+        <dictionary_location>s3://my-bucket/dictionary.tar.zst</dictionary_location>
+        <dictionary_sha>0123...cdef</dictionary_sha>
+        <access_key_id>...</access_key_id>
+        <secret_access_key>...</secret_access_key>
+        <region>us-east-1</region>
+    </japanese>
+</tokenizer>
+```
+
+The recognized settings (`access_key_id`, `secret_access_key`, `region`, `no_sign_request`, `use_environment_credentials`, ...) are the same S3 authentication settings used elsewhere in ClickHouse. Their presence is also what makes an `http(s)://` URL be fetched through the (request-signing) S3 client instead of as a plain download.
+
+Once the dictionary is configured, the `japanese` tokenizer can be used like that:
 
 ```sql title="Query"
 CREATE TABLE docs
@@ -208,18 +224,6 @@ SELECT id FROM docs WHERE hasAllTokens(body, '形態 解析', 'japanese') ORDER 
 ┌─id─┐
 │  1 │
 └────┘
-```
-
-You can inspect the tokenization directly with the [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function:
-
-```sql title="Query"
-SELECT tokens('日本語の形態素解析エンジン', 'japanese');
-```
-
-```text title="Response"
-┌─tokens('日本語の形態素解析エンジン', 'japanese')─┐
-│ ['日本語','の','形態','素','解析','エンジン']    │
-└──────────────────────────────────────────────────┘
 ```
 
 :::note

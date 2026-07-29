@@ -52,25 +52,25 @@ bool JapaneseTokenizer::nextInString(
             throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "MeCab failed to parse input: {}", lattice->what());
         }
 
-        current = lattice->bos_node();
-        if (current)
-            current = current->next; /// skip BOS
+        current_node = lattice->bos_node();
+        if (current_node)
+            current_node = current_node->next; /// skip BOS
     }
 
     /// Skip end-of-sentence and empty nodes; emit the surface form of the next real node.
-    while (current && (current->stat == MECAB_EOS_NODE || current->length == 0))
-        current = current->next;
+    while (current_node && (current_node->stat == MECAB_EOS_NODE || current_node->length == 0))
+        current_node = current_node->next;
 
-    if (current == nullptr)
+    if (current_node == nullptr)
     {
         reset();
         return false;
     }
 
-    token_start = current->surface - data;
-    token_length = current->length;
+    token_start = current_node->surface - data;
+    token_length = current_node->length;
     pos = token_start + token_length;
-    current = current->next;
+    current_node = current_node->next;
     return true;
 }
 
