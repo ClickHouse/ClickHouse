@@ -1,6 +1,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <Common/SipHash.h>
@@ -27,7 +28,16 @@ void ASTSubquery::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
     cte_name = r.getString("cte_name");
     r.readAlias(*this);
-    children = r.readChildren();
+
+    /// `ParserSubquery` only ever stores an `ASTSelectWithUnionQuery` here: the plain form comes from
+    /// `ParserSelectWithUnionQuery`, which never yields any other node type, and the `EXPLAIN` / `VALUES`
+    /// forms are rewritten into `SELECT * FROM viewExplain(...)` / `SELECT * FROM SQLStandardValues(...)`,
+    /// which are select-with-union queries as well. Consumers rely on exactly that: `interpretSubquery`
+    /// forwards `children.at(0)` to `InterpreterSelectWithUnionQuery`, whose constructor dereferences
+    /// `query_ptr->as<ASTSelectWithUnionQuery>()` without a null check. Reject any other child type here,
+    /// so malformed `clickhouse_json` fails at the deserialization boundary instead of reaching that
+    /// null dereference.
+    children = r.readChildrenOfType<ASTSelectWithUnionQuery>("Subquery");
 
     /// `formatImplWithoutAlias` dereferences `children[0]` when `cte_name` is empty,
     /// so the invariant must hold after JSON deserialization.
