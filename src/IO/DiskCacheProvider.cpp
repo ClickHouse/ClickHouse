@@ -275,7 +275,7 @@ DiskCacheWriter::DiskCacheWriter(
     FileCachePtr cache_,
     size_t object_file_offset_,
     const FilesystemCacheSettings & cache_settings_,
-    FileSegmentsHolderPtr holder_,
+    std::shared_ptr<FileSegmentsHolder> holder_,
     ByteRange aligned_range_in_file)
     : cache(std::move(cache_))
     , object_file_offset(object_file_offset_)
@@ -707,6 +707,16 @@ public:
     ICacheProvider::Resolution lookAt(
         const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t demand_end_in_file) override;
 
+    /// The RANGED walk (one cache transaction): `getOrSet` over the
+    /// grid-rounded ask resolves residency AND allocates - the cache's own
+    /// `splitRange` shapes the virgin segments, so cells = segments by
+    /// construction (no manual tiling, no cut-aliasing possible). Hits carry
+    /// readers; misses carry OPEN writers sharing the one holder. The bypass
+    /// configuration (`read_if_exists_otherwise_bypass`) keeps the read-only
+    /// stepping adapter - no segment creation, writer-less misses.
+    std::vector<ICacheProvider::Resolution> lookAt(
+        const StoredObject & object, size_t object_file_offset, ByteRange range) override;
+
 private:
     void roll(const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t demand_end_in_file);
 
@@ -969,6 +979,72 @@ std::unique_ptr<ICacheProvider::IProbeCursor> DiskCacheProvider::probe()
     return std::make_unique<ProbeCursor>(*this);
 }
 
+std::vector<ICacheProvider::Resolution> DiskCacheProvider::ProbeCursor::lookAt(
+    const StoredObject & object, size_t object_file_offset, ByteRange range)
+{
+    if (!provider.populatesOnMiss())
+        return ICacheProvider::IProbeCursor::lookAt(object, object_file_offset, range);
+
+    std::vector<ICacheProvider::Resolution> out;
+    const size_t object_size = object.bytes_size;
+    chassert(range.offset >= object_file_offset);
+    const size_t ask_lo_obj = range.offset - object_file_offset;
+    if (ask_lo_obj >= object_size)
+        return out;
+
+    auto resolved_key = provider.custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
+    auto resolved_origin = provider.custom_origin.value_or(provider.cache->getCommonOriginWithSegmentKeyType(object.local_path));
+
+    /// One transaction over the (object-clamped) ask: existing segments come
+    /// back whole, virgin territory comes back as demand-shaped segments cut by
+    /// the cache's `splitRange` on its own grid - the edge overhang is the
+    /// grid rounding `getOrSet` itself applies.
+    const size_t ask_hi_obj = std::min(range.end() - object_file_offset, object_size);
+    auto shared_holder = std::shared_ptr<FileSegmentsHolder>(provider.cache->getOrSet(
+        resolved_key,
+        ask_lo_obj,
+        ask_hi_obj - ask_lo_obj,
+        object_size,
+        CreateFileSegmentSettings{},
+        /*file_segments_limit=*/0,
+        resolved_origin,
+        provider.cache_settings.boundary_alignment));
+    auto book = std::make_shared<DiskCacheTouchBook>(shared_holder, object_file_offset);
+
+    for (const auto & segment_ptr : *shared_holder)
+    {
+        FileSegment & segment = *segment_ptr;
+        const auto & seg_range = segment.range();
+        const size_t seg_left = seg_range.left;
+        const size_t seg_end = seg_range.right + 1;
+        const size_t committed_end = segmentCommittedEnd(segment);
+
+        if (committed_end > seg_left)
+        {
+            ICacheProvider::Resolution hit;
+            hit.kind = ICacheProvider::Resolution::Kind::Hit;
+            hit.range = ByteRange{seg_left + object_file_offset, committed_end - seg_left};
+            hit.reader = std::make_unique<DiskCacheReader>(
+                shared_holder, hit.range, object_file_offset,
+                provider.local_throttler, &provider.reader_anchors, &provider.streaming_slot, book);
+            out.push_back(std::move(hit));
+        }
+        if (committed_end < seg_end)
+        {
+            ICacheProvider::Resolution miss;
+            miss.kind = ICacheProvider::Resolution::Kind::Miss;
+            /// The cell is the WHOLE segment (the writer appends from the live
+            /// committed frontier; the prefix hit above serves the committed part).
+            miss.range = ByteRange{seg_left + object_file_offset, seg_end - seg_left};
+            miss.writer = std::make_unique<DiskCacheWriter>(
+                provider.cache, object_file_offset, provider.cache_settings,
+                shared_holder, miss.range);
+            out.push_back(std::move(miss));
+        }
+    }
+    return out;
+}
+
 CacheWriterPtr DiskCacheProvider::openWriter(
     const StoredObject & object,
     size_t object_file_offset,
@@ -981,7 +1057,7 @@ CacheWriterPtr DiskCacheProvider::openWriter(
     auto resolved_origin = custom_origin.value_or(cache->getCommonOriginWithSegmentKeyType(object.local_path));
 
     chassert(cell.offset >= object_file_offset);
-    auto holder = cache->getOrSet(
+    std::shared_ptr<FileSegmentsHolder> holder = cache->getOrSet(
         resolved_key,
         cell.offset - object_file_offset,
         cell.size,

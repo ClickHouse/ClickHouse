@@ -200,6 +200,9 @@ public:
         /// Hit only. A re-ask of the same run may return a fresh reader or a
         /// null one - the walker collects exactly one per run either way.
         CacheReaderPtr reader;
+        /// Miss only, ranged `lookAt`: the cell's OPEN writer (populating
+        /// tiers; null on bypass/read-only configurations).
+        CacheWriterPtr writer;
     };
 
     /// One residency walk: step-wise probe state OWNED BY THE WALKER, so a
@@ -223,6 +226,28 @@ public:
         /// segment sizes follow what will actually be read (page cache: whole
         /// fixed blocks regardless). MUST NOT mutate the cache.
         virtual Resolution lookAt(const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t demand_end_in_file) = 0;
+
+        /// The RANGED walk: every resolution covering `range`, in offset
+        /// order - readers open on hits, WRITERS OPEN on misses (one cache
+        /// transaction resolves and allocates; the caller asks each tier only
+        /// for territory faster tiers miss, so no writer opens for pruned
+        /// cells). Cells at the range edges may overhang it (grid rounding,
+        /// object-end clamping). Default: adapt over the stepping `lookAt`
+        /// (no writers) until every provider implements it natively.
+        virtual std::vector<Resolution> lookAt(const StoredObject & object, size_t object_file_offset, ByteRange range)
+        {
+            std::vector<Resolution> out;
+            size_t pos = range.offset;
+            while (pos < range.end())
+            {
+                auto r = lookAt(object, object_file_offset, pos, range.end());
+                if (r.kind == Resolution::Kind::End)
+                    break;
+                pos = r.range.end();
+                out.push_back(std::move(r));
+            }
+            return out;
+        }
     };
 
     virtual std::unique_ptr<IProbeCursor> probe() = 0;

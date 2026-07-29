@@ -110,7 +110,7 @@ public:
         FileCachePtr cache_,
         size_t object_file_offset_,
         const FilesystemCacheSettings & cache_settings_,
-        FileSegmentsHolderPtr holder_,
+        std::shared_ptr<FileSegmentsHolder> holder_,
         ByteRange aligned_range_in_file);
 
     ByteRange range() const override { return aligned_range; }
@@ -131,7 +131,9 @@ private:
     FileCachePtr cache;
     size_t object_file_offset;
     FilesystemCacheSettings cache_settings;
-    FileSegmentsHolderPtr holder;
+    /// SHARED with sibling writers born of the same ranged `lookAt` - each
+    /// writer's `aligned_range` selects its own segment(s) from the holder.
+    std::shared_ptr<FileSegmentsHolder> holder;
     IntervalSet committed_ranges;
     /// Guards `committed_ranges` only. Per-segment write exclusion is the FileCache
     /// downloader (`getOrSetDownloader`), but the worker and the foreground can append
