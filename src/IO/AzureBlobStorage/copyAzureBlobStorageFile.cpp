@@ -479,8 +479,23 @@ void copyAzureBlobStorageFile(
                                "Will attempt to copy using read & write. source container = {} blob = {} and destination container = {} blob = {}",
                           e.what(), src_container_for_logging, src_blob, dest_container_for_logging, dest_blob);
             }
+            else if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Forbidden)
+            {
+                /// Transient RBAC-propagation 403: fall back to read+write, whose retry loops treat
+                /// 403 as retryable (isRetryableAzureException) instead of failing the copy.
+                LOG_TRACE(log, "Copy operation got 403 Forbidden; will retry using read & write. "
+                               "source container = {} blob = {} and destination container = {} blob = {}",
+                          src_container_for_logging, src_blob, dest_container_for_logging, dest_blob);
+            }
             else
                 throw;
+        }
+        catch (const Azure::Core::Credentials::AuthenticationException & e)
+        {
+            /// Credential/RBAC token failure during native copy: fall back to read+write.
+            LOG_TRACE(log, "Copy operation hit an authentication error ({}); will retry using read & write. "
+                           "source container = {} blob = {} and destination container = {} blob = {}",
+                      e.what(), src_container_for_logging, src_blob, dest_container_for_logging, dest_blob);
         }
     }
     if (!is_native_copy_done)
