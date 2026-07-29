@@ -20,15 +20,15 @@ La ingestión eficiente de datos es la base de las implementaciones de ClickHous
 </Note>
 
 <div id="synchronous-inserts-by-default">
-  ## Inserciones sincrónicas por defecto
+  ## Inserciones síncronas por defecto
 </div>
 
-Por defecto, las inserciones en ClickHouse son sincrónicas. Cada consulta de inserción crea inmediatamente una parte de almacenamiento en disco, incluidos sus metadatos e índices.
+Por defecto, las inserciones en ClickHouse son síncronas. Cada consulta de inserción crea inmediatamente una parte de almacenamiento en disco, incluidos sus metadatos e índices.
 
 <Info>
-  **Utilice inserciones sincrónicas si puede agrupar los datos en lotes en el cliente**
+  **Utilice inserciones síncronas si puede agrupar los datos en lotes en el cliente**
 
-  Si no es posible, consulte [Inserciones asincrónicas](#asynchronous-inserts) a continuación.
+  Si no es posible, consulte [Inserciones asíncronas](#asynchronous-inserts) a continuación.
 </Info>
 
 A continuación, resumimos brevemente cómo funcionan las inserciones de MergeTree en ClickHouse:
@@ -170,10 +170,10 @@ Incluso permite calcular en el lado del cliente los valores de las columnas MATE
   ### HTTP
 </div>
 
-A diferencia de muchas bases de datos tradicionales, ClickHouse también admite una interfaz HTTP. **Esta, en cambio, prioriza la compatibilidad y la flexibilidad.** Permite enviar datos en [cualquier formato compatible](/es/guides/clickhouse/data-formats/intro), incluidos JSON, CSV, Parquet y otros, y tiene amplio soporte en la mayoría de los clientes de ClickHouse, incluidos los de Python, Java, JavaScript y Rust.
+A diferencia de muchas bases de datos tradicionales, ClickHouse también admite una interfaz HTTP. **Esta, en cambio, prioriza la compatibilidad y la flexibilidad.** Permite enviar datos en [cualquier formato compatible](/es/guides/clickhouse/data-formats/intro), incluidos JSON, CSV, Parquet y otros, y es compatible de forma generalizada con la mayoría de los client de ClickHouse, incluidos Python, Java, JavaScript y Rust.
 
-A menudo se prefiere al protocolo nativo de ClickHouse, ya que permite gestionar fácilmente el tráfico con balanceadores de carga. Cabe esperar pequeñas diferencias en el rendimiento de las inserciones con el protocolo nativo, que tiene algo menos de sobrecarga.
+Esto suele ser preferible al protocolo nativo de ClickHouse, ya que permite redirigir el tráfico fácilmente mediante balanceadores de carga. Esperamos pequeñas diferencias en el rendimiento de inserción con el protocolo nativo, que tiene un poco menos de sobrecarga.
 
-Sin embargo, carece de la integración más profunda del protocolo nativo y no puede realizar optimizaciones del lado del cliente, como el cálculo de valores materializados o la conversión automática al formato Native. Aunque las inserciones HTTP pueden seguir comprimiéndose mediante encabezados HTTP estándar (p. ej., `Content-Encoding: lz4`), la compresión se aplica a toda la carga útil en lugar de a bloques de datos individuales. Esta interfaz suele preferirse en entornos donde la simplicidad del protocolo, el balanceo de carga o una amplia compatibilidad de formatos son más importantes que el rendimiento puro.
+Sin embargo, carece de la integración más profunda del protocolo nativo y no puede realizar optimizaciones del lado del client, como el cálculo de valores materializados o la conversión automática al formato Native. Aunque las inserciones HTTP aún pueden comprimirse mediante cabeceras HTTP estándar (por ejemplo, `Content-Encoding: lz4`), la compresión se aplica a toda la carga útil en lugar de a bloques de datos individuales. Esta interfaz suele preferirse en entornos donde la simplicidad del protocolo, el balanceo de carga o una amplia compatibilidad de formatos son más importantes que el rendimiento puro.
 
 Para obtener una descripción más detallada de estas interfaces, consulte [aquí](/es/concepts/features/interfaces/overview).

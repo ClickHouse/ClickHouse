@@ -25,14 +25,10 @@ Resync에는 다음 작업이 순서대로 포함됩니다.
 
 원본 ClickPipe의 모든 설정은 resync ClickPipe에도 유지됩니다. 원본 ClickPipe의 통계는 UI에서 초기화됩니다.
 
-<div id="use-cases-mongodb-resync">
-  ### ClickPipe를 resync하는 사용 사례
-</div>
-
-다음은 몇 가지 시나리오입니다:
-
-1. 원본 테이블에 대규모 스키마 변경을 수행해야 하는 경우, 기존 ClickPipe가 더 이상 정상적으로 동작하지 않아 다시 시작해야 할 수 있습니다. 변경을 적용한 후 Resync를 클릭하면 됩니다.
-2. 특히 ClickHouse에서는 대상 테이블의 ORDER BY 키를 변경해야 할 수 있습니다. 이 경우 Resync를 수행하면 올바른 정렬 키로 새 테이블에 데이터를 다시 채울 수 있습니다.
+<Note>
+  여러 번 resync를 수행할 수 있지만, 매번 병렬 스레드를 사용하는 초기 적재가 포함되므로
+  resync를 수행할 때는 원본 데이터베이스의 부하를 고려하십시오.
+</Note>
 
 <div id="guide-mongodb-resync">
   ### ClickPipe resync 가이드
