@@ -3197,25 +3197,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                         {
                             /// Forbid resolving `test1` to this CTE again while its own body is
                             /// being resolved, so a `FROM test1` inside the body binds to the base
-                            /// table (recursive CTEs are handled elsewhere). The guard in
-                            /// `tryResolveIdentifierFromCTE` checks the node stored in
-                            /// `cte_name_to_query_node`, so we must insert that exact node - not the
-                            /// TableNode placeholder/clone `resolved_identifier_node`, which the
-                            /// guard never sees. Without this, a set-operation body (e.g.
-                            /// `(SELECT ... FROM test1) EXCEPT ALL (SELECT ... FROM test1)`) lets a
-                            /// later branch self-reference the unmaterialized CTE, producing a read
-                            /// with no `DelayedPortsProcessor` gate.
-                            const auto & cte_name = materialized_cte_ptr->cte_name;
-                            QueryTreeNodePtr cte_map_node;
-                            for (auto * s = &scope; s; s = s->parent_scope)
-                            {
-                                auto it = s->cte_name_to_query_node.find(cte_name);
-                                if (it != s->cte_name_to_query_node.end())
-                                {
-                                    cte_map_node = it->second;
-                                    break;
-                                }
-                            }
+                            /// table (recursive CTEs are handled elsewhere). Insert the
+                            /// `cte_name_to_query_node` node, not the TableNode clone
+                            /// `resolved_identifier_node` - the guard never sees the latter.
+                            auto cte_map_node = findCTENodeInScopes(materialized_cte_ptr->cte_name, scope);
 
                             if (cte_map_node)
                                 ctes_in_resolve_process.insert(cte_map_node);
@@ -5070,6 +5055,18 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
     array_join_nodes = std::move(array_join_column_expressions);
 }
 
+QueryTreeNodePtr QueryAnalyzer::findCTENodeInScopes(const std::string & cte_name, IdentifierResolveScope & scope)
+{
+    for (auto * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
+    {
+        auto it = current_scope->cte_name_to_query_node.find(cte_name);
+        if (it != current_scope->cte_name_to_query_node.end())
+            return it->second;
+    }
+
+    return {};
+}
+
 void QueryAnalyzer::checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode & join_node, IdentifierResolveScope & scope)
 {
     Names column_names;
@@ -5786,16 +5783,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
 
                     /// Prevent recursive CTE references during subquery resolution.
                     const auto & cte_name = materialized_cte_ptr->cte_name;
-                    QueryTreeNodePtr cte_map_node;
-                    for (auto * s = &scope; s; s = s->parent_scope)
-                    {
-                        auto it = s->cte_name_to_query_node.find(cte_name);
-                        if (it != s->cte_name_to_query_node.end())
-                        {
-                            cte_map_node = it->second;
-                            break;
-                        }
-                    }
+                    auto cte_map_node = findCTENodeInScopes(cte_name, scope);
 
                     if (cte_map_node)
                         ctes_in_resolve_process.insert(cte_map_node);
@@ -5844,7 +5832,19 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     /// Resolve this clone's own subquery copy for correct EXPLAIN output,
                     /// then reuse the existing storage.
                     auto & subquery = table_node->getMaterializedCTESubquery();
+
+                    /// This copy's body is unresolved, so it still needs the self-reference guard:
+                    /// without it a body reference like `FROM test1` binds back to the CTE, which
+                    /// re-enters this branch and recurses until TOO_DEEP_SUBQUERIES.
+                    auto cte_map_node = findCTENodeInScopes(materialized_cte_ptr->cte_name, scope);
+
+                    if (cte_map_node)
+                        ctes_in_resolve_process.insert(cte_map_node);
+
                     resolveExpressionNode(subquery, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
+
+                    if (cte_map_node)
+                        ctes_in_resolve_process.erase(cte_map_node);
 
                     table_node->updateStorage(materialized_cte_ptr->storage, scope.context);
                     verifyMaterializedCTESubqueryMatchesStorage(

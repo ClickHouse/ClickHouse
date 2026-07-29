@@ -32,6 +32,27 @@ WITH test1 AS ((SELECT i FROM test1) UNION ALL (SELECT i FROM test1))
 SELECT count() FROM test1
 SETTINGS enable_materialized_cte = 0;
 
+-- Two consumers of the same materialized CTE: the second reference reuses the
+-- storage created by the first, and that path resolves its own copy of the body.
+-- Without the guard there, the body's `FROM test1` bound back to the CTE and
+-- recursed until TOO_DEEP_SUBQUERIES. A single consumer cannot catch this.
+SELECT 'two consumers';
+WITH test1 AS MATERIALIZED ((SELECT i FROM test1) UNION ALL (SELECT i FROM test1))
+SELECT count() FROM test1, test1 AS t2
+SETTINGS enable_materialized_cte = 1;
+WITH test1 AS ((SELECT i FROM test1) UNION ALL (SELECT i FROM test1))
+SELECT count() FROM test1, test1 AS t2
+SETTINGS enable_materialized_cte = 0;
+
+-- A set operation is not required to reach that path - two consumers suffice.
+SELECT 'two consumers, no set operation';
+WITH test1 AS MATERIALIZED (SELECT i FROM test1)
+SELECT count() FROM test1, test1 AS t2
+SETTINGS enable_materialized_cte = 1;
+WITH test1 AS (SELECT i FROM test1)
+SELECT count() FROM test1, test1 AS t2
+SETTINGS enable_materialized_cte = 0;
+
 -- Original fuzzer shape (STID 2467-2c2d): two-column DISTINCT + EXCEPT ALL.
 WITH test1 AS MATERIALIZED
 (
