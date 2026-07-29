@@ -29,3 +29,9 @@ has-filter tuple	1
 has-filter parallel_hash	1
 has-filter grace_hash	1
 has-filter json	1
+ran-filter	1
+ran-filter anti	1
+ran-filter tuple	1
+ran-filter parallel_hash	1
+ran-filter grace_hash	1
+ran-filter json	1

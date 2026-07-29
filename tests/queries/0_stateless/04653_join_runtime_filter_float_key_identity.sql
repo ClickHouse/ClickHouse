@@ -28,7 +28,8 @@ CREATE TABLE l_lc_f64 (k LowCardinality(Float64)) ENGINE = Log; INSERT INTO l_lc
 CREATE TABLE r_lc_f64 (k LowCardinality(Float64)) ENGINE = Log; INSERT INTO r_lc_f64 VALUES (nan);
 
 -- 1. NaN INNER JOIN NaN: the JOIN matches the identical bit patterns, `nan = nan` does not.
-SELECT 'f64 inner nan', count() FROM l_f64 JOIN r_f64 ON l_f64.k = r_f64.k SETTINGS join_algorithm = 'hash';
+-- The log_comment on six of the statements below is read back in section 11.
+SELECT 'f64 inner nan', count() FROM l_f64 JOIN r_f64 ON l_f64.k = r_f64.k SETTINGS join_algorithm = 'hash', log_comment = '04653_inner';
 SELECT 'f32 inner nan', count() FROM l_f32 JOIN r_f32 ON l_f32.k = r_f32.k SETTINGS join_algorithm = 'hash';
 SELECT 'bf16 inner nan', count() FROM l_bf16 JOIN r_bf16 ON l_bf16.k = r_bf16.k SETTINGS join_algorithm = 'hash';
 SELECT 'lc f64 inner nan', count() FROM l_lc_f64 JOIN r_lc_f64 ON l_lc_f64.k = r_lc_f64.k SETTINGS join_algorithm = 'hash';
@@ -44,7 +45,7 @@ CREATE TABLE r_zero_bf16 (k BFloat16) ENGINE = Log;    INSERT INTO r_zero_bf16 V
 
 -- 2. -0.0 LEFT ANTI JOIN 0.0: distinct keys for the JOIN, so the row belongs in the ANTI output,
 -- but `0.0 != -0.0` is false so the negated filter dropped it. No NaN involved.
-SELECT 'f64 anti negzero', count() FROM l_negzero_f64 LEFT ANTI JOIN r_zero_f64 ON l_negzero_f64.k = r_zero_f64.k SETTINGS join_algorithm = 'hash';
+SELECT 'f64 anti negzero', count() FROM l_negzero_f64 LEFT ANTI JOIN r_zero_f64 ON l_negzero_f64.k = r_zero_f64.k SETTINGS join_algorithm = 'hash', log_comment = '04653_anti';
 SELECT 'f32 anti negzero', count() FROM l_negzero_f32 LEFT ANTI JOIN r_zero_f32 ON l_negzero_f32.k = r_zero_f32.k SETTINGS join_algorithm = 'hash';
 SELECT 'bf16 anti negzero', count() FROM l_negzero_bf16 LEFT ANTI JOIN r_zero_bf16 ON l_negzero_bf16.k = r_zero_bf16.k SETTINGS join_algorithm = 'hash';
 
@@ -55,7 +56,7 @@ CREATE TABLE r_multi_nan (k Float64, j Int64) ENGINE = Log;     INSERT INTO r_mu
 
 -- 3. Multi-key LEFT ANTI builds one filter over Tuple(Float64, Int64), so the float is nested and a
 -- top-level type test would miss it.
-SELECT 'tuple anti negzero', count() FROM l_multi_negzero LEFT ANTI JOIN r_multi_zero ON l_multi_negzero.k = r_multi_zero.k AND l_multi_negzero.j = r_multi_zero.j SETTINGS join_algorithm = 'hash';
+SELECT 'tuple anti negzero', count() FROM l_multi_negzero LEFT ANTI JOIN r_multi_zero ON l_multi_negzero.k = r_multi_zero.k AND l_multi_negzero.j = r_multi_zero.j SETTINGS join_algorithm = 'hash', log_comment = '04653_tuple';
 -- 4. Multi-key INNER builds one filter per column.
 SELECT 'multikey inner nan', count() FROM l_multi_nan JOIN r_multi_nan ON l_multi_nan.k = r_multi_nan.k AND l_multi_nan.j = r_multi_nan.j SETTINGS join_algorithm = 'hash';
 
@@ -83,8 +84,8 @@ SELECT 'control array inner nan', count() FROM l_arr_nan JOIN r_arr_nan ON l_arr
 SELECT 'control map inner nan', count() FROM l_map_nan JOIN r_map_nan ON l_map_nan.k = r_map_nan.k SETTINGS join_algorithm = 'hash';
 
 -- 6. The fast path lives in the shared filter base, so every hash algorithm was affected.
-SELECT 'alg parallel_hash', count() FROM l_f64 JOIN r_f64 ON l_f64.k = r_f64.k SETTINGS join_algorithm = 'parallel_hash';
-SELECT 'alg grace_hash', count() FROM l_f64 JOIN r_f64 ON l_f64.k = r_f64.k SETTINGS join_algorithm = 'grace_hash';
+SELECT 'alg parallel_hash', count() FROM l_f64 JOIN r_f64 ON l_f64.k = r_f64.k SETTINGS join_algorithm = 'parallel_hash', log_comment = '04653_parallel_hash';
+SELECT 'alg grace_hash', count() FROM l_f64 JOIN r_f64 ON l_f64.k = r_f64.k SETTINGS join_algorithm = 'grace_hash', log_comment = '04653_grace_hash';
 
 CREATE TABLE l_nullable (k Nullable(Float64)) ENGINE = Log; INSERT INTO l_nullable VALUES (nan);
 CREATE TABLE r_nullable (k Nullable(Float64)) ENGINE = Log; INSERT INTO r_nullable VALUES (nan);
@@ -108,7 +109,7 @@ SELECT 'control nan anti', count() FROM l_f64 LEFT ANTI JOIN r_f64 ON l_f64.k = 
 -- cannot say whether a float is present and the fast path must be declined. Subquery sources because
 -- Log rejects columns with dynamic structure.
 SELECT 'json anti negzero', count() FROM (SELECT '{"a":-0.0}'::JSON AS k) AS t1
-LEFT ANTI JOIN (SELECT '{"a":0.0}'::JSON AS k) AS t2 USING (k) SETTINGS join_algorithm = 'hash';
+LEFT ANTI JOIN (SELECT '{"a":0.0}'::JSON AS k) AS t2 USING (k) SETTINGS join_algorithm = 'hash', log_comment = '04653_json';
 SELECT 'tuple json anti negzero', count() FROM (SELECT tuple('{"a":-0.0}'::JSON) AS k) AS t1
 LEFT ANTI JOIN (SELECT tuple('{"a":0.0}'::JSON) AS k) AS t2 USING (k) SETTINGS join_algorithm = 'hash';
 -- A DECLARED path is part of the static type, so the plain type walk already covered this one.
@@ -132,3 +133,31 @@ FROM (EXPLAIN PLAN SELECT count() FROM l_f64 JOIN r_f64 ON l_f64.k = r_f64.k SET
 SELECT 'has-filter json', countIf(explain ILIKE '%RuntimeFilter%') > 0
 FROM (EXPLAIN PLAN SELECT count() FROM (SELECT '{"a":-0.0}'::JSON AS k) AS t1
 LEFT ANTI JOIN (SELECT '{"a":0.0}'::JSON AS k) AS t2 USING (k) SETTINGS join_algorithm = 'hash');
+
+-- 11. The rows above check that the PLAN contains a runtime filter, which the build-side
+-- BuildRuntimeFilter step satisfies on its own. The probe side is a separate mechanism and it fails
+-- open: FunctionApplyFilter returns an all-true constant when the rendezvous lookup misses, so a
+-- broken probe side would leave every result correct and every assertion above green while the code
+-- this test covers never runs. RuntimeFilterRowsChecked is incremented only from IRuntimeFilter
+-- ::updateStats, reached only from the ZERO/ONE/MANY arms of the lookup, so it moves if and only if
+-- the probe-side filter actually ran. One row per planner branch, paired with the rows above.
+SYSTEM FLUSH LOGS system.query_log;
+
+SELECT 'ran-filter', ProfileEvents['RuntimeFilterRowsChecked'] > 0 FROM system.query_log
+WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND event_date >= yesterday()
+AND log_comment = '04653_inner' ORDER BY event_time DESC LIMIT 1;
+SELECT 'ran-filter anti', ProfileEvents['RuntimeFilterRowsChecked'] > 0 FROM system.query_log
+WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND event_date >= yesterday()
+AND log_comment = '04653_anti' ORDER BY event_time DESC LIMIT 1;
+SELECT 'ran-filter tuple', ProfileEvents['RuntimeFilterRowsChecked'] > 0 FROM system.query_log
+WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND event_date >= yesterday()
+AND log_comment = '04653_tuple' ORDER BY event_time DESC LIMIT 1;
+SELECT 'ran-filter parallel_hash', ProfileEvents['RuntimeFilterRowsChecked'] > 0 FROM system.query_log
+WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND event_date >= yesterday()
+AND log_comment = '04653_parallel_hash' ORDER BY event_time DESC LIMIT 1;
+SELECT 'ran-filter grace_hash', ProfileEvents['RuntimeFilterRowsChecked'] > 0 FROM system.query_log
+WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND event_date >= yesterday()
+AND log_comment = '04653_grace_hash' ORDER BY event_time DESC LIMIT 1;
+SELECT 'ran-filter json', ProfileEvents['RuntimeFilterRowsChecked'] > 0 FROM system.query_log
+WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND event_date >= yesterday()
+AND log_comment = '04653_json' ORDER BY event_time DESC LIMIT 1;
