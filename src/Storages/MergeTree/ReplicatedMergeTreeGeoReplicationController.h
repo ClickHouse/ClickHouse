@@ -1,6 +1,8 @@
 #pragma once
 
+#include <mutex>
 #include <optional>
+#include <base/defines.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -59,7 +61,10 @@ public:
 
     const String & getRegion() const { return region; }
 
-    void start();
+    /// Publishes this replica's region membership and enters leader election. Returns whether the region node is
+    /// published: the caller must not start the replication queue until it is, otherwise peers classify this
+    /// replica as out-of-region and a recovering replica falls back to a cross-region fetch.
+    bool start();
 
     void stop();
 
@@ -71,10 +76,15 @@ private:
     String log_name;
     BackgroundSchedulePool::TaskHolder task;
     String region;
-    zkutil::ZooKeeperPtr current_zookeeper;
-    zkutil::LeaderElectionPtr leader_election;
-    zkutil::EphemeralNodeHolderPtr leader_lease_holder;
-    zkutil::EphemeralNodeHolderPtr region_holder;
+
+    /// Guards all the controller state below. It is mutated from the controller task (`threadFunction`), from the
+    /// leader-election task (the `before_election` / `on_leader` callbacks) and from the shutdown path (`stop`,
+    /// destructor), so every access has to be serialized.
+    std::mutex state_mutex;
+    zkutil::ZooKeeperPtr current_zookeeper TSA_GUARDED_BY(state_mutex);
+    zkutil::LeaderElectionPtr leader_election TSA_GUARDED_BY(state_mutex);
+    zkutil::EphemeralNodeHolderPtr leader_lease_holder TSA_GUARDED_BY(state_mutex);
+    zkutil::EphemeralNodeHolderPtr region_holder TSA_GUARDED_BY(state_mutex);
     std::atomic_bool shutdown = false;
     /// Published from the controller / leader-election thread and read from the queue worker threads (`isLeader`).
     /// Exposing an atomic role flag - instead of letting worker threads read the `current_zookeeper` and
@@ -82,12 +92,14 @@ private:
     /// objects during a leader handoff or restart.
     std::atomic_bool is_leader = false;
 
-    void threadFunction();
+    /// Returns whether the region node has been published and leader election has been entered.
+    bool threadFunction();
 
     void resetPreviousTerm();
-    void createEphemeralRegionNode();
-    void enterLeaderElection();
-    void onLeader();
+    /// These three run with `state_mutex` held.
+    void createEphemeralRegionNode() TSA_REQUIRES(state_mutex);
+    void enterLeaderElection() TSA_REQUIRES(state_mutex);
+    void onLeader() TSA_REQUIRES(state_mutex);
 };
 
 }

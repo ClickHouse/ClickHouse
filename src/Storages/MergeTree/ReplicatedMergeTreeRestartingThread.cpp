@@ -169,14 +169,20 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
         return false;
     }
 
-    setNotReadonly();
-
-
     /// Publish this replica's region membership (and enter leader election) before starting queue processing.
     /// Queue workers classify same-region fetch sources from `/replicas/<name>/region`, so the region node must
     /// exist before they can execute fetches, otherwise a recovering replica could fetch cross-region purely
-    /// because region publication lagged behind queue startup.
-    storage.geo_replication_controller.start();
+    /// because region publication lagged behind queue startup. If publishing it failed, keep the table readonly
+    /// and retry the whole startup instead of starting the queue without region information.
+    if (!storage.geo_replication_controller.start())
+    {
+        LOG_WARNING(log, "Failed to publish the region for geo replication control. Will try again.");
+        chassert(storage.is_readonly);
+        return false;
+    }
+
+    setNotReadonly();
+
 
     /// Start queue processing
     storage.background_operations_assignee.start();

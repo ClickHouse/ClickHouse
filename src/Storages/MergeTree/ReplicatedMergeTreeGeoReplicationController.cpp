@@ -6,166 +6,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 
-namespace DB
-{
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsString geo_replication_control_region;
-    extern const MergeTreeSettingsUInt64 geo_replication_control_leader_election_period_ms;
-}
-
-namespace ErrorCodes
-{
-    extern const int NO_ZOOKEEPER;
-}
-
-ReplicatedMergeTreeGeoReplicationController::ReplicatedMergeTreeGeoReplicationController(StorageReplicatedMergeTree & storage_)
-    : storage(storage_)
-{
-    region = (*storage.getSettings())[MergeTreeSetting::geo_replication_control_region].toString();
-    if (!region.empty())
-    {
-        log_name = storage.getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::GeoReplicationController)";
-        task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this]{ threadFunction(); });
-        task->deactivate();
-    }
-}
-
-void ReplicatedMergeTreeGeoReplicationController::onLeader()
-{
-    auto lease_path = fs::path(storage.getZooKeeperPath()) / "regions" / region / "leader_lease";
-    current_zookeeper->createAncestors(lease_path);
-    leader_lease_holder = zkutil::EphemeralNodeHolder::create(lease_path, *current_zookeeper, storage.getReplicaName());
-    /// Publish the leader role to the worker threads only after the lease is actually held.
-    is_leader = true;
-}
-
-void ReplicatedMergeTreeGeoReplicationController::resetPreviousTerm()
-{
-    /// Destroying the ephemeral node holders and the leader election object issues `remove` requests to ZooKeeper.
-    /// This is called from the schedule pool thread (via `threadFunction`), from the shutdown path (via `stop`) and
-    /// from the destructor - none of which establish a ZooKeeper component otherwise - so set one here to satisfy
-    /// the mandatory component tracking (`enforce_component_tracking`).
-    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeGeoReplicationController::resetPreviousTerm");
-    is_leader = false;
-    region_holder.reset();
-    leader_lease_holder.reset();
-    leader_election.reset();
-}
-
-void ReplicatedMergeTreeGeoReplicationController::enterLeaderElection()
-{
-    auto election_path = fs::path(storage.getZooKeeperPath()) / "regions" / region / "leader_election";
-
-    current_zookeeper->createAncestors(fs::path(election_path) / "leader_election-");
-
-    leader_election = std::make_shared<zkutil::LeaderElection>(
-        storage.getContext()->getSchedulePool(),
-        election_path,
-        *current_zookeeper,
-        [this]()
-        {
-            if (shutdown)
-                return;
-            /// A new election round starts: drop any previous leader role before we know the new outcome, so
-            /// worker threads do not keep seeing this replica as a leader across a handoff.
-            is_leader = false;
-            leader_lease_holder.reset();
-        },
-        [this]()
-        {
-            if (shutdown)
-                return;
-            onLeader();
-        },
-        "",
-        (*storage.getSettings())[MergeTreeSetting::geo_replication_control_leader_election_period_ms]);
-}
-
-void ReplicatedMergeTreeGeoReplicationController::stop()
-{
-    shutdown = true;
-    if (task)
-        task->deactivate();
-    /// The task is deactivated above, so no one is touching these holders now.
-    /// Release them explicitly, otherwise this replica keeps publishing its region membership and holding the
-    /// leader lease while its replication queues are stopped, preventing another replica from becoming leader.
-    resetPreviousTerm();
-}
-
-void ReplicatedMergeTreeGeoReplicationController::start()
-{
-    if (!task)
-        return;
-
-    /// Clear `shutdown` before running: otherwise the controller pass can observe a stale `shutdown == true`,
-    /// returning early without ever creating the region node or entering leader election.
-    shutdown = false;
-    task->activate();
-
-    /// Run the first controller pass synchronously, before the caller activates the replication queue. Peers
-    /// classify same-region fetch sources from `/replicas/<name>/region`; if that node were published only
-    /// asynchronously after the queue starts, a replica recovering from a backlog could be misclassified as
-    /// out-of-region, exhaust `geo_replication_control_leader_wait_timeout`, and fall back to a cross-region
-    /// fetch purely because region publication lagged behind queue startup. Running the pass here publishes the
-    /// region node before the queue workers begin. Subsequent passes (leader re-election, retry after a transient
-    /// ZooKeeper error) run on the schedule pool via `task`.
-    threadFunction();
-}
-
-void ReplicatedMergeTreeGeoReplicationController::threadFunction()
-{
-    /// This runs on the background schedule pool and touches ZooKeeper (region node, leader election), so it must
-    /// set a component for the mandatory ZooKeeper component tracking.
-    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeGeoReplicationController::threadFunction");
-    try
-    {
-        resetPreviousTerm();
-        current_zookeeper = storage.getZooKeeper();
-
-        if (!current_zookeeper)
-            throw Exception(
-                ErrorCodes::NO_ZOOKEEPER,
-                "Zookeeper is not initialized, replica {} in region {} hasn't started leader election yet",
-                storage.getReplicaName(),
-                region);
-
-        createEphemeralRegionNode();
-        enterLeaderElection();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log_name.c_str());
-        task->scheduleAfter(DBMS_GEO_REPLICATION_CONTROL_INIT_PERIOD_MS);
-    }
-}
-
-bool ReplicatedMergeTreeGeoReplicationController::isLeader() const
-{
-    /// Feature disabled for this table (`region` is set once in the constructor and never mutated afterwards, so
-    /// reading it here is race-free): every replica may fetch from any region.
-    if (region.empty())
-        return true;
-
-    /// Read only the atomic role flag here. This is called from the queue worker threads, while the
-    /// `current_zookeeper` / `leader_lease_holder` shared_ptr members are mutated on the controller and
-    /// leader-election threads; reading those pointers here would be a data race. `is_leader` stays false until
-    /// this replica has actually won an election, so a replica whose controller has not entered a term yet is
-    /// treated as a follower rather than assuming leadership.
-    return is_leader;
-}
-
-void ReplicatedMergeTreeGeoReplicationController::createEphemeralRegionNode()
-{
-    auto region_path = fs::path(storage.getZooKeeperPath()) / "replicas" / storage.getReplicaName() / "region";
-    if (current_zookeeper->exists(region_path)) /// Old zookeeper is expired and new zookeeper has some delay removing the ephemeral node
-        current_zookeeper->remove(region_path);
-    region_holder = zkutil::EphemeralNodeHolder::create(region_path, *current_zookeeper, region);
-}
-
-}
-
 namespace zkutil
 {
 /**
@@ -300,5 +140,199 @@ private:
             task->scheduleAfter(time_wait_ms);
     }
 };
+
+}
+
+namespace DB
+{
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsString geo_replication_control_region;
+    extern const MergeTreeSettingsUInt64 geo_replication_control_leader_election_period_ms;
+}
+
+namespace ErrorCodes
+{
+    extern const int NO_ZOOKEEPER;
+}
+
+ReplicatedMergeTreeGeoReplicationController::ReplicatedMergeTreeGeoReplicationController(StorageReplicatedMergeTree & storage_)
+    : storage(storage_)
+{
+    region = (*storage.getSettings())[MergeTreeSetting::geo_replication_control_region].toString();
+    if (!region.empty())
+    {
+        log_name = storage.getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::GeoReplicationController)";
+        task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this]{ threadFunction(); });
+        task->deactivate();
+    }
+}
+
+void ReplicatedMergeTreeGeoReplicationController::onLeader()
+{
+    /// Runs with `state_mutex` held.
+    auto lease_path = fs::path(storage.getZooKeeperPath()) / "regions" / region / "leader_lease";
+    current_zookeeper->createAncestors(lease_path);
+    leader_lease_holder = zkutil::EphemeralNodeHolder::create(lease_path, *current_zookeeper, storage.getReplicaName());
+    /// Publish the leader role to the worker threads only after the lease is actually held.
+    is_leader = true;
+}
+
+void ReplicatedMergeTreeGeoReplicationController::resetPreviousTerm()
+{
+    /// Destroying the ephemeral node holders and the leader election object issues `remove` requests to ZooKeeper.
+    /// This is called from the schedule pool thread (via `threadFunction`), from the shutdown path (via `stop`) and
+    /// from the destructor - none of which establish a ZooKeeper component otherwise - so set one here to satisfy
+    /// the mandatory component tracking (`enforce_component_tracking`).
+    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeGeoReplicationController::resetPreviousTerm");
+    is_leader = false;
+
+    /// Stop the leader election before touching the holders, and do it without holding `state_mutex`:
+    /// `LeaderElection::shutdown` waits for the election task to finish, and that task can be blocked on
+    /// `state_mutex` inside the `before_election` / `on_leader` callbacks, so taking the mutex here would
+    /// deadlock. Once `shutdown` returns, no callback can run anymore and no one else touches the holders.
+    zkutil::LeaderElectionPtr election_to_stop;
+    {
+        std::lock_guard lock(state_mutex);
+        election_to_stop = leader_election;
+    }
+    if (election_to_stop)
+        election_to_stop->shutdown();
+
+    std::lock_guard lock(state_mutex);
+    region_holder.reset();
+    leader_lease_holder.reset();
+    leader_election.reset();
+    /// A callback that had already passed the `shutdown` check could have republished the lease while we were
+    /// stopping the election, so clear the role flag again after the holders are gone.
+    is_leader = false;
+}
+
+void ReplicatedMergeTreeGeoReplicationController::enterLeaderElection()
+{
+    auto election_path = fs::path(storage.getZooKeeperPath()) / "regions" / region / "leader_election";
+
+    current_zookeeper->createAncestors(fs::path(election_path) / "leader_election-");
+
+    leader_election = std::make_shared<zkutil::LeaderElection>(
+        storage.getContext()->getSchedulePool(),
+        election_path,
+        *current_zookeeper,
+        [this]()
+        {
+            /// The callbacks run on the election task and mutate the controller state, so they take the same
+            /// mutex as the controller task and the shutdown path.
+            std::lock_guard lock(state_mutex);
+            if (shutdown)
+                return;
+            /// A new election round starts: drop any previous leader role before we know the new outcome, so
+            /// worker threads do not keep seeing this replica as a leader across a handoff.
+            is_leader = false;
+            leader_lease_holder.reset();
+        },
+        [this]()
+        {
+            std::lock_guard lock(state_mutex);
+            if (shutdown)
+                return;
+            onLeader();
+        },
+        "",
+        (*storage.getSettings())[MergeTreeSetting::geo_replication_control_leader_election_period_ms]);
+}
+
+void ReplicatedMergeTreeGeoReplicationController::stop()
+{
+    shutdown = true;
+    if (task)
+        task->deactivate();
+    /// The controller task is deactivated above and `resetPreviousTerm` stops the leader election, so after this
+    /// no thread touches the holders. Release them explicitly, otherwise this replica keeps publishing its region
+    /// membership and holding the leader lease while its replication queues are stopped, preventing another
+    /// replica in the region from becoming leader.
+    resetPreviousTerm();
+}
+
+bool ReplicatedMergeTreeGeoReplicationController::start()
+{
+    if (!task)
+        return true;
+
+    /// Clear `shutdown` before running: otherwise the controller pass can observe a stale `shutdown == true`,
+    /// returning early without ever creating the region node or entering leader election.
+    shutdown = false;
+    task->activate();
+
+    /// Run the first controller pass synchronously, before the caller activates the replication queue. Peers
+    /// classify same-region fetch sources from `/replicas/<name>/region`; if that node were published only
+    /// asynchronously after the queue starts, a replica recovering from a backlog could be misclassified as
+    /// out-of-region, exhaust `geo_replication_control_leader_wait_timeout`, and fall back to a cross-region
+    /// fetch purely because region publication lagged behind queue startup. Running the pass here publishes the
+    /// region node before the queue workers begin. Subsequent passes (leader re-election, retry after a transient
+    /// ZooKeeper error) run on the schedule pool via `task`.
+    ///
+    /// The result is returned to the caller: if this first pass failed (a transient ZooKeeper error, for example),
+    /// the region node is not published yet, and starting the queue now would let a recovering replica fetch
+    /// cross-region until the retry succeeds. The caller keeps the table readonly and retries the whole startup.
+    return threadFunction();
+}
+
+bool ReplicatedMergeTreeGeoReplicationController::threadFunction()
+{
+    /// This runs on the background schedule pool and touches ZooKeeper (region node, leader election), so it must
+    /// set a component for the mandatory ZooKeeper component tracking.
+    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeGeoReplicationController::threadFunction");
+    try
+    {
+        resetPreviousTerm();
+
+        std::lock_guard lock(state_mutex);
+        if (shutdown)
+            return false;
+
+        current_zookeeper = storage.getZooKeeper();
+
+        if (!current_zookeeper)
+            throw Exception(
+                ErrorCodes::NO_ZOOKEEPER,
+                "Zookeeper is not initialized, replica {} in region {} hasn't started leader election yet",
+                storage.getReplicaName(),
+                region);
+
+        createEphemeralRegionNode();
+        enterLeaderElection();
+        return true;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log_name.c_str());
+        task->scheduleAfter(DBMS_GEO_REPLICATION_CONTROL_INIT_PERIOD_MS);
+        return false;
+    }
+}
+
+bool ReplicatedMergeTreeGeoReplicationController::isLeader() const
+{
+    /// Feature disabled for this table (`region` is set once in the constructor and never mutated afterwards, so
+    /// reading it here is race-free): every replica may fetch from any region.
+    if (region.empty())
+        return true;
+
+    /// Read only the atomic role flag here. This is called from the queue worker threads, while the
+    /// `current_zookeeper` / `leader_lease_holder` shared_ptr members are mutated on the controller and
+    /// leader-election threads; reading those pointers here would be a data race. `is_leader` stays false until
+    /// this replica has actually won an election, so a replica whose controller has not entered a term yet is
+    /// treated as a follower rather than assuming leadership.
+    return is_leader;
+}
+
+void ReplicatedMergeTreeGeoReplicationController::createEphemeralRegionNode()
+{
+    auto region_path = fs::path(storage.getZooKeeperPath()) / "replicas" / storage.getReplicaName() / "region";
+    if (current_zookeeper->exists(region_path)) /// Old zookeeper is expired and new zookeeper has some delay removing the ephemeral node
+        current_zookeeper->remove(region_path);
+    region_holder = zkutil::EphemeralNodeHolder::create(region_path, *current_zookeeper, region);
+}
 
 }
