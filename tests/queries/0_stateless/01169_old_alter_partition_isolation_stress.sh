@@ -113,12 +113,29 @@ thread_select & PID_2=$!
 
 thread_partition_src_to_dst & PID_3=$!
 thread_partition_dst_to_src & PID_4=$!
-wait $PID_3 && wait $PID_4
+
+# The stop flag must be raised even if a worker fails, otherwise errexit leaves the
+# loops running past teardown. Waiting for every worker here also keeps their
+# in-flight clients from outliving the test.
+function stop_threads()
+{
+    touch "$STOP_FILE"
+    wait "$PID_1" 2>/dev/null ||:
+    wait "$PID_2" 2>/dev/null ||:
+    wait "$PID_3" 2>/dev/null ||:
+    wait "$PID_4" 2>/dev/null ||:
+    rm -f "$STOP_FILE"
+}
+trap stop_threads EXIT
+
+# Each status is checked separately: `wait A && wait B` skips B when A fails.
+wait $PID_3
+wait $PID_4
 
 # Ask the loops to stop and let their in-flight queries finish (no orphaned clients).
 touch "$STOP_FILE"
-wait $PID_1 ||:
-wait $PID_2 ||:
+wait $PID_1
+wait $PID_2
 rm -f "$STOP_FILE"
 wait_for_queries_to_finish 40
 
