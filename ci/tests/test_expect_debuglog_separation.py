@@ -877,10 +877,11 @@ def test_the_wider_report_does_not_widen_retry_matching(tmp_path):
 
     # With BOTH artifacts oversized, the matcher's window must still be ONE historical trim over
     # their concatenation. Trimming each separately and joining the results would give the matcher
-    # two such windows, so a marker early in the xtrace - inside the combined hidden middle, but
-    # in the kept head of its own block - would leak back in.
+    # two such windows, so a marker in the hidden middle of the combined stream - but in the kept
+    # tail of its own block - would leak back in. Late in the xtrace is where those two shapes
+    # disagree: the single window hides it, a per-artifact window keeps it.
     both_bash = [f"+ traced command {i}\n" for i in range(400)]
-    both_bash[5] = f"+ got {marker} while tracing\n"
+    both_bash[380] = f"+ got {marker} while tracing\n"
     plain_expect = "".join(f"expect line {i}\n" for i in range(400))
     described, retry_input = verdict("both", plain_expect, "".join(both_bash))
     assert marker in described.description, described.description[:200]
@@ -893,6 +894,23 @@ def test_the_wider_report_does_not_widen_retry_matching(tmp_path):
     blocks = _artifact_blocks(described.description, tmp_path / "both")
     raw = "".join(blocks[suffix] for suffix in ("debuglog", "bashlog"))
     assert len(retry_input.splitlines()) < len(raw.splitlines())
+
+    # The ORDER inside that single window is part of the contract, not an implementation detail.
+    # The one shared file used to hold the xtrace FIRST - bash owns fd 3 from the moment
+    # `shell_config.sh` is sourced and writes as the test runs, while expect's trace is dominated
+    # by the verdict lines it emits after the spawned program has produced its output. So an early
+    # xtrace line sat in the kept HEAD of the historical window and retried. Concatenating in
+    # report order instead (expect trace first) pushes it behind the whole expect trace and into
+    # the hidden middle, silently dropping that retry for every test that has both artifacts.
+    early_bash = [f"+ traced command {i}\n" for i in range(400)]
+    early_bash[5] = f"+ got {marker} while tracing\n"
+    described, retry_input = verdict("order", plain_expect, "".join(early_bash))
+    assert marker in retry_input, (
+        "an early xtrace line no longer reaches the retry matcher, so the matcher's copy is "
+        "assembled in report order rather than in the order the single shared file had, and a "
+        "retry the pre-split code would have made is lost"
+    )
+    assert described.need_retry
 
 
 def test_run_matches_retries_against_the_narrowed_description():
@@ -970,10 +988,13 @@ def test_the_two_report_blocks_are_trimmed_independently():
     source = inspect.getsource(ClickHouseTestCase.process_result_impl)
 
     def limits(argname):
+        # The argument has to be that name and nothing else: the matcher's own call passes a
+        # CONCATENATION of the two dumps, so a prefix match would count it as a per-dump trim.
+        pattern = re.compile(rf"trim_for_log\({argname}\s*[,)]")
         return [
             _trim_limit(line.strip(), argname)
             for line in source.splitlines()
-            if f"trim_for_log({argname}" in line
+            if pattern.search(line)
         ]
 
     expect_limits = limits("expect_log")
@@ -987,16 +1008,32 @@ def test_the_two_report_blocks_are_trimmed_independently():
     assert bash_limits == [100], bash_limits
     assert expect_limits == [_TRIM_DEFAULT_LIMIT], expect_limits
 
-    # The retry matcher's copy is ONE trim over the concatenated RAW dumps, so its window is the
-    # one this code has always had rather than one such window per artifact. Trimming each dump
-    # separately and concatenating the results would double it.
-    retry_calls = [
-        line.strip()
-        for line in source.splitlines()
-        if "trim_for_log(raw_debug_log" in line
+    # The retry matcher's copy is ONE trim, at the historical bound, over the two RAW dumps
+    # concatenated - so its window is the one this code has always had rather than one such window
+    # per artifact, and the dumps enter it in the order the single shared file used to hold them:
+    # the xtrace first. Read from the AST rather than from the text, so neither the operand order
+    # nor the limit can drift behind a rename.
+    tree = ast.parse(textwrap.dedent(source))
+    retry_trims = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "trim_for_log"
+        and isinstance(node.args[0], ast.BinOp)
+        and isinstance(node.args[0].op, ast.Add)
     ]
-    assert len(retry_calls) == 1, retry_calls
-    assert _trim_limit(retry_calls[0], "raw_debug_log") == 100, retry_calls[0]
+    assert len(retry_trims) == 1, [ast.unparse(n) for n in retry_trims]
+    concatenation, *rest = retry_trims[0].args
+    assert [arg.value for arg in rest] == [100], ast.unparse(retry_trims[0])
+    operands = (concatenation.left, concatenation.right)
+    assert all(isinstance(operand, ast.Name) for operand in operands), ast.unparse(
+        concatenation
+    )
+    assert [operand.id for operand in operands] == ["bash_log", "expect_log"], (
+        "the matcher's copy no longer puts the xtrace first, so an early xtrace line falls "
+        f"behind the whole expect trace and out of the window: {ast.unparse(concatenation)}"
+    )
 
 
 def test_an_empty_bash_xtrace_file_produces_no_block(tmp_path):

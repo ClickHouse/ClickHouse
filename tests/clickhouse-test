@@ -3128,18 +3128,18 @@ class TestCase:
         # That wider REPORT must not widen retry matching: `run` feeds the description to
         # `check_if_need_retry` as both stdout and stderr, and `MESSAGES_TO_RETRY` holds
         # substrings as generic as `No such file or directory`, so every diagnostic line the
-        # matcher sees can retry a deterministic failure. `raw_debug_log` therefore keeps the
-        # untrimmed dumps, and the matcher's copy is ONE trim over their concatenation - the
-        # window this code has always had, rather than one such window per artifact.
+        # matcher sees can retry a deterministic failure. The matcher's copy is therefore ONE
+        # trim over the untrimmed dumps - the window this code has always had, rather than one
+        # such window per artifact.
         debug_log = ""
-        raw_debug_log = ""
+        expect_log = ""
+        bash_log = ""
         if os.path.exists(self.testcase_args.debug_log_file):
             with open(self.testcase_args.debug_log_file, "rb") as stream:
                 expect_log = self.testcase_args.debug_log_file + ":\n"
                 expect_log += str(stream.read(), errors="replace", encoding="utf-8")
                 expect_log += "\n"
             debug_log += trim_for_log(expect_log)
-            raw_debug_log += expect_log
         # Emptiness is tolerated here, unlike for the expect trace above: `shell_config.sh` opens
         # this file the moment it is sourced and only writes once a traced command runs, so a
         # zero-length one carries no diagnostics - and reporting its name would add a bare header
@@ -3151,10 +3151,17 @@ class TestCase:
                 bash_log += str(stream.read(), errors="replace", encoding="utf-8")
                 bash_log += "\n"
             debug_log += trim_for_log(bash_log, 100)
-            raw_debug_log += bash_log
         # Read by `run` through `retry_matcher_input`: the reported dumps are replaced by this
         # single historically-bounded trim before the description reaches the retry matcher.
-        debug_log_for_retry = trim_for_log(raw_debug_log, 100)
+        #
+        # The xtrace goes FIRST here, opposite to the report order above, because that is the
+        # order the one shared file used to hold: bash owns fd 3 from the moment `shell_config.sh`
+        # is sourced and writes while the test runs, whereas expect's trace is dominated by the
+        # verdict lines it emits once the spawned program has produced its output. Concatenating
+        # in report order instead puts the xtrace behind however long the expect trace is, which
+        # pushes an early xtrace line out of this window's visible head and drops a retry the
+        # single-file code would have made.
+        debug_log_for_retry = trim_for_log(bash_log + expect_log, 100)
         self.debug_log_retry_substitution = (
             (debug_log, debug_log_for_retry) if debug_log != debug_log_for_retry else None
         )
