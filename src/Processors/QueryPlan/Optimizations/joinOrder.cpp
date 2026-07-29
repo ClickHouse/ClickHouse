@@ -447,11 +447,6 @@ private:
     std::vector<Hyperedge> hyperedges;
     std::vector<std::vector<size_t>> node_to_edge_ids; /// node index -> hyperedge indices
 
-    /// Set by `tryJoin` when it encounters a single-table or constant predicate inside the join edges
-    /// that `dphyp` does not yet know how to attach. `solveDPhyp` returns `nullptr` so the fallback
-    /// algorithm chain (e.g. `dphyp,greedy`) can produce a valid plan.
-    bool dphyp_unsupported_predicate = false;
-
     /// Number of partial plans enumerated so far and the deterministic budget that bounds it.
     /// When the budget is exceeded the current solver gives up and returns `nullptr` so the next
     /// algorithm in the chain runs. Both are reset at the start of each solver.
@@ -476,7 +471,7 @@ void JoinOrderOptimizer::checkLimits()
 
 bool JoinOrderOptimizer::continueEnumeration()
 {
-    if (dphyp_unsupported_predicate || search_budget_exceeded)
+    if (search_budget_exceeded)
         return false;
     ++searched_plans;
     if (max_searched_plans && searched_plans > max_searched_plans)
@@ -1284,9 +1279,9 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                         continue;
 
                     auto applicable_edge = getApplicableExpressions(left->relations, right->relations);
-                    /// Only leave the edges that connect left and right.
-                    /// DPsize also includes non-connecting predicates (single-relation filters merged into the
-                    /// join graph), unlike DPhyp which bails out on them and falls back to another algorithm.
+                    /// Only leave the edges that connect left and right, plus the non-connecting
+                    /// predicates (single-relation filters merged into the join graph) whose placement
+                    /// rule selects this join step. `tryJoin` applies the same rules for DPhyp.
                     bool has_direct_connection = false;
                     std::vector<JoinActionRef *> edge;
                     for (auto & edge_it : applicable_edge)
@@ -1382,38 +1377,64 @@ void JoinOrderOptimizer::tryJoin(const BitSet & left_rels, const BitSet & right_
         return;
 
     auto applicable_predicates = getApplicableExpressions(left_rels, right_rels);
-    std::vector<JoinActionRef *> connecting_predicates;
+    /// Predicates attached to this join step: the ones connecting the two sides, plus the
+    /// non-connecting ones (single-relation filters and constants merged into the join graph)
+    /// whose placement rule selects this step. The placement rules are the same as in `solveDPsize`
+    /// (see the comments there) - they depend only on the shape of the join tree, not on the
+    /// enumeration algorithm, so no extra bookkeeping is needed to apply each predicate exactly once.
+    std::vector<JoinActionRef *> predicates;
+    bool has_direct_connection = false;
     for (auto * predicate : applicable_predicates)
     {
+        /// Placement is driven by the relations that must all be present before the predicate is
+        /// applicable: its source relations plus the null-supplying relation it is pinned to when it
+        /// is an `ON`-clause conjunct of an outer join - the same rule as `collectJoinEdgesMask`.
+        BitSet needed_rels = predicate->getSourceRelations();
+        if (auto pin_it = query_graph.outer_join_conditions.find(*predicate); pin_it != query_graph.outer_join_conditions.end())
+            needed_rels.set(pin_it->second);
+
         if (connects(predicate, left_rels, right_rels))
         {
-            connecting_predicates.push_back(predicate);
-            continue;
+            has_direct_connection = true;
+            predicates.push_back(predicate);
         }
-
-        /// Predicates spanning 2+ relations were already applied in a sub-join.
-        /// Single-table or constant predicates (e.g. moved into `ON` by
-        /// `query_plan_merge_filter_into_join_condition`) are not handled by `dphyp` here;
-        /// `dpsize` and `dpsub` attach them at the leaf join of their relation, but `dphyp` would
-        /// need extra bookkeeping to avoid double-application. For now, mark the query as
-        /// unsupported and let `solveDPhyp` return `nullptr` so the fallback chain runs.
-        if (predicate->getSourceRelations().count() < 2)
+        else if (needed_rels.count() == 1 && (needed_rels == left_rels || needed_rels == right_rels))
         {
-            LOG_TRACE(log, "DPhyp cannot attach non-connecting predicate {} (sources: {{ {} }}), falling back",
-                predicate->dump(), fmt::join(predicate->getSourceRelations(), ","));
-            dphyp_unsupported_predicate = true;
-            return;
+            /// A single-relation predicate is attached at the join step where its relation forms a
+            /// whole side, i.e. at the leaf join of that relation. Every join tree contains exactly
+            /// one such step per relation, so the predicate is applied exactly once regardless of
+            /// the chosen join order.
+            LOG_TEST(log, "DPhyp: adding single-relation predicate for {} and {} : {}",
+                fmt::join(left_rels, ","), fmt::join(right_rels, ","), predicate->dump());
+            predicates.push_back(predicate);
         }
+        else if (needed_rels.none() && left_rels.count() == 1 && right_rels.count() == 1)
+        {
+            LOG_TEST(log, "DPhyp: adding constant predicate for {} and {} : {}",
+                fmt::join(left_rels, ","), fmt::join(right_rels, ","), predicate->dump());
+            predicates.push_back(predicate);
+        }
+        else if (areIntersecting(needed_rels, left_rels) && areIntersecting(needed_rels, right_rels))
+        {
+            /// A pinned conjunct spanning the split (its sources on one side, its pin on the other):
+            /// this join is the lowest one that makes it applicable, so it belongs to this join's
+            /// `ON` condition.
+            LOG_TEST(log, "DPhyp: adding pinned predicate for {} and {} : {}",
+                fmt::join(left_rels, ","), fmt::join(right_rels, ","), predicate->dump());
+            predicates.push_back(predicate);
+        }
+        /// Otherwise the predicate spans 2+ relations of a single side and was already applied in a
+        /// sub-join.
     }
 
     /// When no explicit predicate connects the two sides, check transitive connectivity
     /// via column equivalence classes (e.g. A.key=B.key AND B.key=C.key implies A.key=C.key).
     /// `cleanupJoinPredicates` will synthesize the missing predicate after optimization.
-    if (connecting_predicates.empty()
+    if (!has_direct_connection
         && !query_graph.areTransitivelyConnected(left_rels, right_rels))
         return;
 
-    evaluateJoin(left_entry->second, right_entry->second, *join_kind, connecting_predicates);
+    evaluateJoin(left_entry->second, right_entry->second, *join_kind, predicates);
 }
 
 DPJoinEntryPtr JoinOrderOptimizer::evaluateJoin(
@@ -1650,8 +1671,6 @@ static void forEachNonEmptySubset(const BitSet & mask, F && func)
 /// Evaluate a csg-cmp pair for plan construction.
 void JoinOrderOptimizer::emitCsgCmp(const BitSet & left_csg, const BitSet & right_csg)
 {
-    if (dphyp_unsupported_predicate)
-        return;
     LOG_TEST(log, "DPhyp: emitCsgCmp({{ {} }}, {{ {} }})",
         fmt::join(left_csg, ","), fmt::join(right_csg, ","));
     tryJoin(left_csg, right_csg);
@@ -1661,9 +1680,6 @@ void JoinOrderOptimizer::emitCsgCmp(const BitSet & left_csg, const BitSet & righ
 /// `exclusion` (paper: X) prevents revisiting already-processed nodes.
 void JoinOrderOptimizer::enumerateCmpRec(const BitSet & csg, const BitSet & complement, const BitSet & exclusion)
 {
-    if (dphyp_unsupported_predicate)
-        return;
-
     LOG_TEST(log, "DPhyp: enumerateCmpRec(csg={{ {} }}, cmp={{ {} }}, excl={{ {} }})",
         fmt::join(csg, ","), fmt::join(complement, ","), fmt::join(exclusion, ","));
 
@@ -1707,8 +1723,6 @@ void JoinOrderOptimizer::enumerateCmpRec(const BitSet & csg, const BitSet & comp
 /// the complement can only contain relations ordered after the CSG's minimum.
 void JoinOrderOptimizer::emitCsg(const BitSet & csg)
 {
-    if (dphyp_unsupported_predicate)
-        return;
     LOG_TEST(log, "DPhyp: emitCsg({{ {} }})", fmt::join(csg, ","));
 
     BitSet exclusion = csg | BitSet::allSet(*csg.begin());
@@ -1745,9 +1759,6 @@ void JoinOrderOptimizer::emitCsg(const BitSet & csg)
 /// For each connected extension found in dp_table, calls `emitCsg` to generate complements.
 void JoinOrderOptimizer::enumerateCsgRec(const BitSet & csg, const BitSet & exclusion)
 {
-    if (dphyp_unsupported_predicate)
-        return;
-
     LOG_TEST(log, "DPhyp: enumerateCsgRec(csg={{ {} }}, excl={{ {} }})",
         fmt::join(csg, ","), fmt::join(exclusion, ","));
 
@@ -1792,7 +1803,6 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPhyp()
         return nullptr;
     }
 
-    dphyp_unsupported_predicate = false;
     search_budget_exceeded = false;
     searched_plans = 0;
 
@@ -1825,7 +1835,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPhyp()
     for (int i = static_cast<int>(num_relations) - 1; i >= 0; --i)
     {
         /// Once enumeration is aborted, the result is discarded below, so stop seeding.
-        if (dphyp_unsupported_predicate || search_budget_exceeded)
+        if (search_budget_exceeded)
             break;
 
         BitSet seed;
@@ -1837,10 +1847,9 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPhyp()
         enumerateCsgRec(seed, exclusion);
     }
 
-    if (dphyp_unsupported_predicate || search_budget_exceeded)
+    if (search_budget_exceeded)
     {
-        LOG_TRACE(log, "DPhyp could not produce a plan ({}), falling back",
-            dphyp_unsupported_predicate ? "unsupported predicate" : "search budget exceeded");
+        LOG_TRACE(log, "DPhyp could not produce a plan (search budget exceeded), falling back");
         return nullptr;
     }
 
