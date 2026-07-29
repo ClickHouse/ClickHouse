@@ -9,9 +9,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS test;
 
-    -- max_bytes_to_merge_at_max_space_in_pool = 1 disables background merges, so the table has
-    -- one part per inserted block until OPTIMIZE FINAL below merges them. Merges started by
-    -- OPTIMIZE FINAL ignore this setting.
+    -- `max_bytes_to_merge_at_max_space_in_pool = 1` disables background merges, so the table has
+    -- one part per inserted block until `OPTIMIZE FINAL` below merges them. Merges started by
+    -- `OPTIMIZE FINAL` ignore this setting.
     CREATE TABLE test (key UInt64, val UInt64) engine = MergeTree Order by key PARTITION BY key >= 128
         SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1;
     SET max_block_size = 64, max_insert_block_size = 64, min_insert_block_size_rows = 64;
@@ -35,9 +35,9 @@ ${CLICKHOUSE_CLIENT} --query "
 
 ${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE test FINAL;"
 
-# OPTIMIZE FINAL runs one foreground merge per partition, and the table has two partitions
-# (PARTITION BY key >= 128), so it produces exactly two MergeParts entries. Both merges run
-# synchronously inside the OPTIMIZE query and queue their part_log entry before it returns,
+# `OPTIMIZE FINAL` runs one foreground merge per partition, and the table has two partitions
+# (`PARTITION BY key >= 128`), so it produces exactly two `MergeParts` entries. Both merges run
+# synchronously inside the `OPTIMIZE` query and queue their `part_log` entry before it returns,
 # so a single flush below is enough to observe them.
 ${CLICKHOUSE_CLIENT} --query "
     SYSTEM FLUSH LOGS part_log;
