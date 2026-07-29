@@ -246,6 +246,14 @@ enum class CleanDeletedRows : uint8_t
 
 DECLARE_SETTING_ENUM(CleanDeletedRows)
 
+enum class UniqueKeyProbeImplementation : uint8_t
+{
+    Auto = 0, /// Pick the default; currently the simple baseline.
+    Simple,   /// Single-threaded baseline probe.
+};
+
+DECLARE_SETTING_ENUM(UniqueKeyProbeImplementation)
+
 enum class MySQLDataTypesSupport : uint8_t
 {
     DECIMAL, // convert MySQL's decimal and number to ClickHouse Decimal when applicable
