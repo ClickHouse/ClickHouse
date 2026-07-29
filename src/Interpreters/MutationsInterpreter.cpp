@@ -697,8 +697,9 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
 /// The walk keys on the identifier's short name, so that a qualified `t._sample_factor` is
 /// recognized, and approximates what the resolver would bind the name to: a compound whose
 /// qualifier-stripped suffix names a real column or subcolumn is that column, a lambda formal
-/// parameter shadows the name inside the lambda body, an `ALIAS` column stands for its defining
-/// expression, and a subquery is its own `SELECT` which can materialize these virtuals.
+/// parameter or an expression alias (`1 AS _table`) shadows the name, an `ALIAS` column stands
+/// for its defining expression, and a subquery is its own `SELECT` which can materialize these
+/// virtuals.
 static void rejectQueryPlanOnlyVirtualColumns(
     const IAST * ast, const ColumnsDescription & columns, NameSet & shadowed, NameSet & aliases_in_progress)
 {
@@ -740,6 +741,12 @@ static void rejectQueryPlanOnlyVirtualColumns(
         const auto & short_name = identifier->shortName();
 
         if (shadowed.contains(short_name))
+            return;
+
+        /// A member access rooted at a shadowed name belongs to that name, not to a virtual
+        /// column: inside `arrayMap(x -> x._table, arr)` the `x._table` is a tuple element of
+        /// the lambda parameter, whose short name is nevertheless `_table`.
+        if (identifier->compound() && shadowed.contains(identifier->name_parts.front()))
             return;
 
         /// A compound whose qualifier-stripped suffix names a real column or subcolumn is that
@@ -792,21 +799,43 @@ static void rejectQueryPlanOnlyVirtualColumns(
         rejectQueryPlanOnlyVirtualColumns(child.get(), columns, shadowed, aliases_in_progress);
 }
 
+/// Collect the expression aliases defined anywhere in `ast` (`1 AS _table`). An alias is visible
+/// to the whole expression it is defined in, not only to the subtree below it, so these names are
+/// shadowed for the entire walk rather than scoped as the tree is descended.
+static void collectExpressionAliases(const IAST * ast, NameSet & shadowed)
+{
+    if (!ast)
+        return;
+
+    if (const auto & alias = ast->tryGetAlias(); !alias.empty())
+        shadowed.insert(alias);
+
+    for (const auto & child : ast->children)
+        collectExpressionAliases(child.get(), shadowed);
+}
+
 /// Reject query-plan-only virtual columns referenced by a mutation command's expressions:
 /// the WHERE predicate (DELETE/UPDATE) and the right-hand sides of UPDATE assignments. The
 /// assignment target names an existing column (validated elsewhere) and is not an expression
 /// over the part, so it is not scanned.
 static void rejectQueryPlanOnlyVirtualColumns(const ASTAlterCommand & alter, const ColumnsDescription & columns)
 {
-    NameSet shadowed;
     NameSet aliases_in_progress;
+
+    auto reject = [&](const IAST * ast)
+    {
+        NameSet shadowed;
+        collectExpressionAliases(ast, shadowed);
+        rejectQueryPlanOnlyVirtualColumns(ast, columns, shadowed, aliases_in_progress);
+    };
+
     if (alter.predicate)
-        rejectQueryPlanOnlyVirtualColumns(alter.predicate, columns, shadowed, aliases_in_progress);
+        reject(alter.predicate);
 
     if (alter.update_assignments)
         for (const auto & child : alter.update_assignments->children)
             if (const auto * assignment = child->as<ASTAssignment>())
-                rejectQueryPlanOnlyVirtualColumns(assignment->expression().get(), columns, shadowed, aliases_in_progress);
+                reject(assignment->expression().get());
 }
 
 void MutationsInterpreter::prepare(bool dry_run)

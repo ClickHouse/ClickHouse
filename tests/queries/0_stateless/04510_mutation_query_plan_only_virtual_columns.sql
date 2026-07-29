@@ -51,6 +51,11 @@ DROP TABLE t_mut_qp_subcol;
 ALTER TABLE t_mut_qp_virtuals UPDATE arr = arrayMap(_table -> _table + 1, arr) WHERE c0 > 0;
 ALTER TABLE t_mut_qp_virtuals UPDATE arr = arrayMap(_sample_factor -> _sample_factor * 2, arr) WHERE c0 > 0;
 
+-- An expression alias defines the name for the whole expression, so the reference below binds
+-- to the alias rather than to the virtual column.
+ALTER TABLE t_mut_qp_virtuals UPDATE u = (1 AS _table) + _table WHERE c0 > 0;
+SELECT DISTINCT u FROM t_mut_qp_virtuals;
+
 -- A subquery is evaluated as its own SELECT and can materialize these virtuals.
 ALTER TABLE t_mut_qp_virtuals DELETE WHERE c0 IN (SELECT c0 FROM t_mut_qp_virtuals WHERE _sample_factor > 100);
 

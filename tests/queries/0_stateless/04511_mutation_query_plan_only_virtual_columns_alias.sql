@@ -47,3 +47,13 @@ ENGINE = MergeTree ORDER BY c0;
 INSERT INTO t_mut_qp_alias_shadow SELECT number FROM numbers(4);
 ALTER TABLE t_mut_qp_alias_shadow DELETE WHERE `_table` != '' AND c0 < 2; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 DROP TABLE t_mut_qp_alias_shadow;
+
+-- A member access rooted at a lambda parameter belongs to that parameter, not to the virtual
+-- column that shares the short name. Only the analyzer resolves such a member access.
+DROP TABLE IF EXISTS t_mut_qp_lambda_member;
+CREATE TABLE t_mut_qp_lambda_member (c0 UInt32, tup_arr Array(Tuple(_table String)))
+ENGINE = MergeTree ORDER BY c0;
+INSERT INTO t_mut_qp_lambda_member VALUES (1, [tuple('a')]), (2, [tuple('b')]);
+ALTER TABLE t_mut_qp_lambda_member UPDATE tup_arr = arrayMap(x -> tuple(x._table), tup_arr) WHERE c0 > 0;
+SELECT count() FROM t_mut_qp_lambda_member;
+DROP TABLE t_mut_qp_lambda_member;
