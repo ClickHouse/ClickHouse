@@ -1,4 +1,7 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-parallel
+-- no-parallel: asserts a query condition cache hit, and `SYSTEM DROP QUERY CONDITION CACHE` is global,
+--              so a concurrent test issuing it would wipe the warm-up entries no matter how disjoint
+--              the cache keys are. The other tests that assert cache counters are serialized too.
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/104985
 --
 -- A self-join whose WHERE is moved to PREWHERE must still hit the query condition cache on a warm run.
@@ -6,8 +9,8 @@
 -- was read under the WHERE-filter key while the per-granule entries were written under the PREWHERE key;
 -- the two keys never matched and every warm run re-scanned the whole table.
 --
--- A unique marker in the predicate keeps the cache keys disjoint from other tests, so no global
--- SYSTEM DROP QUERY CONDITION CACHE is needed and the test stays parallel-safe.
+-- A unique marker in the predicate keeps the cache keys disjoint from other tests, so this test never
+-- has to issue the global SYSTEM DROP QUERY CONDITION CACHE itself.
 
 SET enable_analyzer = 1;
 SET use_query_condition_cache = 1;
