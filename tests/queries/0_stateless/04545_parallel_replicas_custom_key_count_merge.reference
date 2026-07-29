@@ -2,6 +2,10 @@ count analyzer=1
 100000
 count analyzer=0
 100000
+count range mode analyzer=1
+100000
+count range mode analyzer=0
+100000
 count subquery
 100000
 sum analyzer=1
@@ -57,7 +61,10 @@ no_merge on secondary queries per custom key
 0	33334
 1	33333
 2	33333
+04545_plain_count_an0	3	
 04545_plain_count_an1	3	
+04545_plain_count_range_an0	3	
+04545_plain_count_range_an1	3	
 04545_safe_bare_key_an0	3	2
 04545_safe_bare_key_an1	3	2
 04545_safe_expression_key_an0	3	2

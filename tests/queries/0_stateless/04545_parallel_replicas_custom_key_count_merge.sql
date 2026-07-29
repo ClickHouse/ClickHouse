@@ -18,8 +18,8 @@ SET parallel_replicas_mode = 'custom_key_sampling';
 SET automatic_parallel_replicas_mode = 0;
 
 -- Plain count(): custom key is NOT a GROUP BY key -> must be merged -> single row.
--- The log_comment lets the assertion at the end confirm that the replicas really ran, so this case cannot
--- pass by parallel replicas being silently disabled for queries without GROUP BY.
+-- The log_comment lets the assertion at the end confirm that the replicas really ran, so these cases
+-- cannot pass by parallel replicas being silently disabled for queries without GROUP BY.
 SELECT 'count analyzer=1';
 SELECT count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545)
 SETTINGS parallel_replicas_custom_key = 'sipHash64(number)', enable_analyzer = 1,
@@ -27,7 +27,20 @@ SETTINGS parallel_replicas_custom_key = 'sipHash64(number)', enable_analyzer = 1
 
 SELECT 'count analyzer=0';
 SELECT count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545)
-SETTINGS parallel_replicas_custom_key = 'sipHash64(number)', enable_analyzer = 0;
+SETTINGS parallel_replicas_custom_key = 'sipHash64(number)', enable_analyzer = 0,
+    log_comment = '04545_plain_count_an0';
+
+-- The issue reports the same wrong result for the range mode, which builds a different filter, so the
+-- merge has to be kept there too.
+SELECT 'count range mode analyzer=1';
+SELECT count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545)
+SETTINGS parallel_replicas_mode = 'custom_key_range', parallel_replicas_custom_key = 'y',
+    enable_analyzer = 1, log_comment = '04545_plain_count_range_an1';
+
+SELECT 'count range mode analyzer=0';
+SELECT count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545)
+SETTINGS parallel_replicas_mode = 'custom_key_range', parallel_replicas_custom_key = 'y',
+    enable_analyzer = 0, log_comment = '04545_plain_count_range_an0';
 
 -- count() wrapped in a subquery (exact shape from the issue) -> single row.
 SELECT 'count subquery';
@@ -167,7 +180,8 @@ SYSTEM FLUSH LOGS query_log;
 -- `enable_parallel_replicas = 0` is required: `system.query_log` is MergeTree-backed, so with the
 -- session's `parallel_replicas_for_non_replicated_merge_tree = 1` this query would itself be routed
 -- through custom-key parallel replicas and fail, as the session sets no custom key of its own.
-WITH ['04545_plain_count_an1', '04545_safe_bare_key_an0', '04545_safe_bare_key_an1',
+WITH ['04545_plain_count_an0', '04545_plain_count_an1', '04545_plain_count_range_an0',
+      '04545_plain_count_range_an1', '04545_safe_bare_key_an0', '04545_safe_bare_key_an1',
       '04545_safe_expression_key_an0', '04545_safe_hash_key_an1', '04545_server_constant_an0',
       '04545_server_constant_an1', '04545_server_constant_hostname_an1',
       '04545_server_constant_is_group_key_an0', '04545_server_constant_is_group_key_an1',
