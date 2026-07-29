@@ -385,7 +385,7 @@ private:
             /// timeout, push a chunk with no rows: a source that yields without producing output
             /// stays ready and gets rescheduled at once, monopolizing the thread, while pushed
             /// output makes the port full and lets other processors run.
-            auto chunk = exchange->getChunk(std::chrono::milliseconds(10));
+            auto chunk = exchange->getChunk(waitTimeout());
             if (!chunk)
                 return Chunk(getPort().getHeader().cloneEmptyColumns(), 0);
             if (chunk->empty())
@@ -400,6 +400,13 @@ private:
         }
 
     private:
+        /// A stream with no columns (case of `SELECT count()`) cannot fill the output port, so this
+        /// source polls instead of yielding - keep its wait short so other processors run sooner.
+        std::chrono::milliseconds waitTimeout() const
+        {
+            return getPort().getHeader().empty() ? std::chrono::milliseconds(1) : std::chrono::milliseconds(10);
+        }
+
         InMemoryExchangePtr exchange;
     };
 
