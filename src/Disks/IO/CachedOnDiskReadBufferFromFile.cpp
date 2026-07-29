@@ -1038,14 +1038,32 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                     /// The object size known at read setup time (from listing).
                     const auto expected_object_size = state.buf->tryGetFileSize();
 
-                    if (remote_metadata.has_value() && expected_object_size.has_value())
+                    if (remote_metadata.has_value())
                     {
-                        /// The object size no longer matches the size known at read setup: the
-                        /// object was overwritten during the read (e.g. truncated below the bytes
-                        /// we still need). Fail with the same error code as the etag validation
-                        /// in `ReadBufferFromS3`: retryable by the user and, unlike a
-                        /// LOGICAL_ERROR, does not alert as a server bug.
-                        if (remote_metadata->size != *expected_object_size)
+                        /// We reached the real end of the (now shorter) object while predownloading,
+                        /// before reaching the bytes the reader actually needs: those lie beyond the
+                        /// truncated object, because
+                        /// offset == current_write_offset + bytes_to_predownload > remote_metadata->size.
+                        /// Report it as a truncation between listing and reading -- retryable, and
+                        /// (unlike a LOGICAL_ERROR) it does not alert as a server bug.
+                        if (remote_metadata->size == file_segment.getCurrentWriteOffset())
+                            throw Exception(
+                                ErrorCodes::CANNOT_READ_ALL_DATA,
+                                "Remote object was truncated between listing and reading: "
+                                "actual object size {}, expected object size {}, last modified {}, "
+                                "but need to read until offset {}. Current file segment: {}",
+                                remote_metadata->size,
+                                expected_object_size ? std::to_string(*expected_object_size) : "None",
+                                formatRemoteFileLastModified(remote_metadata),
+                                offset,
+                                file_segment.getInfoForLog());
+
+                        /// The object size no longer matches the size known at read setup, and the
+                        /// stream did not even end at the new size: the object was overwritten during
+                        /// the read. Fail with the same error code as the etag validation in
+                        /// `ReadBufferFromS3`: retryable by the user and, unlike a LOGICAL_ERROR, does
+                        /// not alert as a server bug.
+                        if (expected_object_size.has_value() && remote_metadata->size != *expected_object_size)
                             throw Exception(
                                 ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
                                 "Remote object was overwritten during read: "
@@ -1752,8 +1770,24 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
                 file_segment.setDownloadFinishedWithoutContinuation();
             }
 
-            /// The object size no longer matches the size known at read setup: the object was
-            /// overwritten during the read (e.g. truncated below the current offset). Fail with
+            /// The stream ended exactly at the current (smaller) object size: the object was
+            /// overwritten with shorter content between listing and reading. Retryable while the
+            /// object is being concurrently replaced, and (unlike a LOGICAL_ERROR) it does not
+            /// alert as a server bug.
+            if (remote_metadata->size == offset)
+                throw Exception(
+                    ErrorCodes::CANNOT_READ_ALL_DATA,
+                    "Remote object was truncated between listing and reading: "
+                    "read until offset {} but expected to read until position {}. "
+                    "Actual object size {}, expected object size {}, last modified {}, stop reason: {}. "
+                    "Current file segment: {}",
+                    offset, info.read_until_position, remote_metadata->size, file_size_,
+                    formatRemoteFileLastModified(remote_metadata),
+                    impl_read_stop_reason ? *impl_read_stop_reason : "None",
+                    file_segment.getInfoForLog());
+
+            /// The object size no longer matches the size known at read setup, and the stream did
+            /// not even end at the new size: the object was overwritten during the read. Fail with
             /// the same error code as the etag validation in `ReadBufferFromS3`: retryable by
             /// the user and, unlike a LOGICAL_ERROR, does not alert as a server bug.
             if (remote_metadata->size != file_size_)

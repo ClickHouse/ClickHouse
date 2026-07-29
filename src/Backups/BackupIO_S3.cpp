@@ -433,10 +433,16 @@ std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFile(const String & 
     /// truncated EOF. Backup metadata (`.backup`) is consumed with `readStringUntilEOF`, which never
     /// queries the size itself, so without an explicit `file_size` the full-object premature-EOF
     /// guard in `ReadBufferFromS3::nextImpl` would not fire and a truncated backup could be read.
-    const size_t file_size = getFileSize(file_name);
+    /// The ETag is threaded in as well: for a non-versioned bucket an in-place overwrite to exactly
+    /// the same size would otherwise pass the size check, and `RESTORE` could stitch together bytes
+    /// from two object generations. With `expected_etag` set, `ReadBufferFromS3` sends `If-Match` and
+    /// verifies the response ETag, so such an overwrite fails with `S3_OBJECT_CHANGED_DURING_READ`.
+    const auto object_info = S3::getObjectInfo(*client, s3_uri.bucket, getS3BackupObjectKey(s3_uri, file_name), s3_uri.version_id);
     return std::make_unique<ReadBufferFromS3>(
         client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, s3_settings.request_settings, read_settings,
-        /* use_external_buffer= */false, /* offset= */0, /* read_until_position= */0, /* restricted_seek= */false, file_size);
+        /* use_external_buffer= */false, /* offset= */0, /* read_until_position= */0, /* restricted_seek= */false, object_info.size,
+        ReadBufferFromS3::S3CredentialsRefreshCallback{[] { return nullptr; }}, /* blob_storage_log_= */ BlobStorageLogWriterPtr{},
+        /* expected_etag_= */ object_info.etag);
 }
 
 void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
@@ -605,8 +611,12 @@ void BackupWriterS3::copyFile(const String & destination, const String & source,
         [&, this]
         {
             LOG_TRACE(log, "Falling back to copy file inside backup from {} to {} through direct buffers", source, destination);
+            /// `size` is the known length of the source object and `createS3UploadBody` reads exactly that
+            /// many bytes with `readStrict`, so pass it as `file_size`: a mid-stream S3 close is then
+            /// reconnected and resumed by `ReadBufferFromS3::nextImpl` instead of failing the `BACKUP`.
             return std::make_unique<ReadBufferFromS3>(
-                client, s3_uri.bucket, source_key, s3_uri.version_id, s3_settings.request_settings, read_settings);
+                client, s3_uri.bucket, source_key, s3_uri.version_id, s3_settings.request_settings, read_settings,
+                /* use_external_buffer= */false, /* offset= */0, /* read_until_position= */0, /* restricted_seek= */false, size);
         });
 }
 

@@ -31,7 +31,10 @@ reference_count=$($CLICKHOUSE_CLIENT -q "SELECT count(), sum(cityHash64(key, val
 
 # Create the backup on S3 without the failpoint. `allow_s3_native_copy = false` forces the data
 # files to be read back through `ReadBufferFromS3` on restore instead of a server-side copy.
-$CLICKHOUSE_CLIENT --format Null -q "BACKUP TABLE data TO ${backup_name} SETTINGS allow_s3_native_copy = false"
+# `s3_disable_checksum = 1` only silences the `BackupsWorker` warning about checksums halving the
+# effective `max_backup_bandwidth`, which the stateless CI config sets; the warning would otherwise
+# land on stderr and fail the test.
+$CLICKHOUSE_CLIENT --s3_disable_checksum 1 --format Null -q "BACKUP TABLE data TO ${backup_name} SETTINGS allow_s3_native_copy = false"
 
 retries_before=$($CLICKHOUSE_CLIENT -q "
 SELECT coalesce(sum(value), 0) FROM system.events WHERE event = 'ReadBufferFromS3PrematureEofRetries'")
