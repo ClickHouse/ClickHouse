@@ -3176,13 +3176,24 @@ DataTypePtr QueryFuzzer::makeAggregateFunctionType(
     {
         AggregateFunctionProperties properties;
         auto func = AggregateFunctionFactory::instance().get(name, NullsAction::EMPTY, argument_types, parameters, properties);
+        DataTypePtr result;
         if (simple)
         {
             DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(func);
-            return createSimpleAggregateFunctionType(func, argument_types, parameters);
+            result = createSimpleAggregateFunctionType(func, argument_types, parameters);
         }
-        /// Preserve the source serialization version (AggregateFunction(1, ...)); empty keeps the default.
-        return std::make_shared<DataTypeAggregateFunction>(func, argument_types, parameters, version);
+        else
+        {
+            /// Preserve the source serialization version (AggregateFunction(1, ...)); empty keeps the default.
+            result = std::make_shared<DataTypeAggregateFunction>(func, argument_types, parameters, version);
+        }
+        /// The factory accepting the parameters is not enough: getName() must also round-trip. A Decimal or
+        /// big-integer parameter is accepted here but formatted as a quoted literal, so reparsing the emitted
+        /// name yields a String parameter the factory then rejects. Validate the emitted name and decline,
+        /// which covers any field type that has no SQL literal form.
+        if (!DataTypeFactory::instance().tryGet(result->getName()))
+            return nullptr;
+        return result;
     }
     catch (...) // NOLINT(bugprone-empty-catch) Ok: the aggregate may reject the given argument types
     {

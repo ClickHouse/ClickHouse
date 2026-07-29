@@ -1,14 +1,9 @@
 -- Tags: no-fasttest
 -- no-fasttest: needs the server-side AST fuzzer (ast_fuzzer_runs)
 
--- Regression test for #109706: the AST fuzzer wrapped a data-type argument in an expression
--- function (e.g. multiply()/if()/multiIf()), producing an ASTDataType whose argument is an
--- ASTFunction. That node cannot be produced by ParserDataType, so ASTDataType::formatImpl
--- emitted text that parses back to a different AST, tripping the format-parse-format
--- consistency check in executeQuery (LOGICAL_ERROR "Inconsistent AST formatting", which aborts
--- on DEBUG/sanitizer builds). The fuzzer must not inject expressions into data-type argument
--- lists. This runs the fuzzer over CREATE queries with argument-bearing types; before the fix
--- it aborted the server, now it just runs the fuzzed queries harmlessly.
+-- Regression test for #109706: the fuzzer must not inject expressions into data-type argument lists, since
+-- an ASTDataType carrying an ASTFunction argument formats to text that parses back differently and trips the
+-- consistency check in executeQuery. Runs the fuzzer over a CREATE query covering the argument-bearing types.
 
 SET send_logs_level = 'fatal';
 SET ast_fuzzer_runs = 20;

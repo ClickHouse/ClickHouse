@@ -20,6 +20,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserQuery.h>
 
+#include <functional>
 #include <map>
 #include <vector>
 
@@ -91,15 +92,10 @@ std::vector<std::pair<String, ASTPtr>> collectColumnTypes(const ASTPtr & create)
 
 }
 
-/// Deterministic regression test for #109706, independent of the global server-side fuzzer RNG.
-///
-/// The .sql smoke test (04344) is only probabilistic: the server-side fuzzer is seeded from
-/// randomSeed() and keeps global state, so an unfixed build can go green whenever a run simply never
-/// turns a type argument into an ASTFunction. This test pins down the bug class directly: an
-/// ASTDataType whose argument is an ASTFunction (e.g. `Nullable(multiply(2, 3))`) - exactly what the
-/// pre-fix fuzzer produced by descending into a data-type argument list with the generic expression
-/// fuzzer - is not round-trippable through ParserDataType, so it trips the consistency check. A
-/// structurally valid ASTDataType with the same shape must round-trip.
+/// Deterministic regression test for #109706: an ASTDataType whose argument is an ASTFunction (e.g.
+/// `Nullable(multiply(2, 3))`) is not round-trippable through ParserDataType and trips the consistency check,
+/// while a structurally valid ASTDataType of the same shape must round-trip. Pinned here rather than relying on
+/// 04344, whose server-side fuzzer is seeded from randomSeed() and can miss the shape entirely.
 TEST(QueryFuzzer, MalformedDataTypeArgumentRoundTrip)
 {
     /// The malformed shape the fuzzer must never generate: a function expression as a type argument.
@@ -159,10 +155,9 @@ TEST(QueryFuzzer, MalformedDataTypeArgumentRoundTrip)
     }
 }
 
-/// Regression test for the #109713 review point: rebuilding a versioned AggregateFunction state under
-/// the fuzzer must preserve the serialization version parsed from the source AST, instead of resetting
-/// it to std::nullopt (which normalizes to the function's current default). groupBitmap is versioned
-/// with a default version of 1, so an explicit version 0 is a value the default would silently overwrite.
+/// Rebuilding a versioned AggregateFunction state must preserve the serialization version parsed from the
+/// source AST rather than resetting it to std::nullopt, which normalizes to the function's current default.
+/// groupBitmap defaults to version 1, so an explicit version 0 is a value that default would overwrite.
 TEST(QueryFuzzer, AggregateFunctionVersionPreserved)
 {
     tryRegisterAggregateFunctions();
@@ -280,6 +275,66 @@ TEST(QueryFuzzer, AggregateFunctionVersionDroppedOnNameChange)
     EXPECT_TRUE(saw_same_name_rebuild) << "no same-name, changed-argument rebuild was observed";
 }
 
+/// The aggregate factory accepting a fuzzed parameter is not enough: the parameter must also have an SQL
+/// literal form. Decimal and big-integer fields (which fuzzField mints) are accepted by the factory but
+/// FieldVisitorToString renders them QUOTED, so reparsing the emitted name turns the parameter into a String
+/// the factory then rejects - i.e. the #109706 class this PR prevents. Every type the aggregate arms return
+/// must therefore reparse from its own getName().
+TEST(QueryFuzzer, AggregateParameterKeepsNameReconstructible)
+{
+    tryRegisterAggregateFunctions();
+
+    /// quantileExact takes one numeric parameter, so a Decimal substitution is accepted by the factory.
+    const DataTypes arg_types = {std::make_shared<DataTypeUInt64>()};
+    const Array numeric_parameters = {Field(0.5)};
+
+    /// The direct path: a Decimal parameter must be declined, while its numeric form must be accepted. Without
+    /// the emitted-name check the Decimal case returns a type whose name reads quantileExact('0.5').
+    QueryFuzzer direct;
+    EXPECT_NE(nullptr, direct.makeAggregateFunctionType("quantileExact", arg_types, numeric_parameters, /*simple=*/false))
+        << "a numeric parameter must stay acceptable";
+    for (const Field & unrepresentable :
+         Array{DecimalField<Decimal32>(Int32(5), 1), DecimalField<Decimal64>(Int64(5), 1), Field(Int128(3)), Field(UInt128(3))})
+    {
+        auto declined = direct.makeAggregateFunctionType("quantileExact", arg_types, Array{unrepresentable}, /*simple=*/false);
+        EXPECT_EQ(nullptr, declined) << "accepted a parameter with no SQL literal form: "
+                                     << (declined ? declined->getName() : String{});
+    }
+
+    /// And the production path: drive fuzzDataType over a parameterized aggregate and require every returned
+    /// type to reparse. fuzzAggregateParameters runs unrestricted fuzzField, so Decimal parameters do occur.
+    AggregateFunctionProperties properties;
+    auto source_func
+        = AggregateFunctionFactory::instance().get("quantileExact", NullsAction::EMPTY, arg_types, numeric_parameters, properties);
+
+    bool saw_parameter_change = false;
+    for (UInt64 seed = 0; seed < 4000; ++seed)
+    {
+        QueryFuzzer fuzzer;
+        fuzzer.setSeed(seed);
+        auto source_type = std::make_shared<DataTypeAggregateFunction>(source_func, arg_types, numeric_parameters);
+        DataTypePtr fuzzed;
+        try
+        {
+            fuzzed = fuzzer.fuzzDataType(source_type);
+        }
+        catch (const Exception &)
+        {
+            continue; /// a randomized shape rejected at construction time; the real fuzzer catches these too.
+        }
+
+        /// Whatever the arms produced - rebuilt aggregate, wrapped, or replaced - it must be reconstructible.
+        const String name = fuzzed->getName();
+        EXPECT_NE(nullptr, DataTypeFactory::instance().tryGet(name)) << "seed=" << seed << " emitted " << name;
+
+        const auto * aggr = typeid_cast<const DataTypeAggregateFunction *>(fuzzed.get());
+        if (aggr && aggr->getParameters() != numeric_parameters)
+            saw_parameter_change = true;
+    }
+    /// Guard against the loop passing vacuously: the parameter mutator must have fired at least once.
+    EXPECT_TRUE(saw_parameter_change) << "no aggregate parameter mutation was observed";
+}
+
 /// Every geo alias the factory reports must actually have its storage fuzzed, and every rebuild must stay
 /// parser-reconstructible. Enumerating from Geometry's variants covers a newly registered alias for free.
 TEST(QueryFuzzer, GeoAliasStorageIsFuzzed)
@@ -353,11 +408,14 @@ TEST(QueryFuzzer, GeoAliasStorageIsFuzzed)
 
         EXPECT_TRUE(saw_child_mutation) << "fuzzContainerChildren never fuzzed a child of " << alias;
 
-        /// And the production dispatch must route the alias there. No property of the output identifies the
+        /// And the production dispatch must route the alias there. No property of a single output identifies the
         /// rebuild - getRandomType can return another geo alias of the same kind, and even an exact name match
-        /// with a replayed rebuild happens by coincidence - so observe the branch itself.
+        /// with a replayed rebuild happens by coincidence - so observe the branch itself, then require that at
+        /// least one dispatched result actually carries a child mutation. Kind plus absent custom name alone
+        /// would still pass if the arm rebuilt the container around the ORIGINAL children, dropping the mutation.
         bool saw_dispatch = false;
-        for (UInt64 seed = 0; seed < 4000 && !saw_dispatch; ++seed)
+        bool saw_production_mutation = false;
+        for (UInt64 seed = 0; seed < 4000 && !saw_production_mutation; ++seed)
         {
             QueryFuzzer fuzzer;
             fuzzer.setSeed(seed);
@@ -378,8 +436,15 @@ TEST(QueryFuzzer, GeoAliasStorageIsFuzzed)
             /// custom name and keeps the storage's kind, so a returned alias means the value was discarded.
             EXPECT_EQ(plain->getTypeId(), fuzzed->getTypeId()) << alias << " seed=" << seed;
             EXPECT_FALSE(fuzzed->hasCustomName()) << alias << " -> " << fuzzed->getName() << " seed=" << seed;
+
+            /// A result equal to the unmutated storage only means every child mutation was a no-op for this
+            /// seed; keep looking. One differing result proves the production path preserves them.
+            if (fuzzed->getName() != unmutated)
+                saw_production_mutation = true;
         }
         EXPECT_TRUE(saw_dispatch) << "fuzzDataType never dispatched " << alias << " to the container rebuild";
+        EXPECT_TRUE(saw_production_mutation)
+            << "fuzzDataType dispatched " << alias << " but never returned a child mutation (always " << unmutated << ")";
     }
 }
 
@@ -556,4 +621,58 @@ TEST(QueryFuzzer, CustomNamedLeafAliasIsStillFuzzed)
 
     /// Was 0 before the fix, against ~1000 for the control.
     EXPECT_GT(mutation_rate("Bool"), control / 2) << "Bool is frozen in the custom-name block";
+}
+
+/// A deleted structured arm makes its type fall through to the wrapping/replacement tail, which still returns a
+/// valid type - so parseability alone cannot tell a live arm from a dead one. Each arm needs a witness the
+/// REPLACEMENT path cannot fabricate. `getRandomType` can mint DateTime, DateTime64, JSON, QBit and
+/// AggregateFunction from scratch, so for those the root family is not a witness; Nested and
+/// SimpleAggregateFunction are absent from it, and the JSON arm is the only producer of a JSON type that still
+/// carries the source SKIP list. Arms without such a witness (DateTime, DateTime64, QBit, AggregateFunction
+/// parameters) are covered by their own dedicated tests instead.
+TEST(QueryFuzzer, StructuredTypeArmsMutateTheirOwnType)
+{
+    tryRegisterAggregateFunctions();
+
+    /// (source type, predicate identifying a mutation only this type's own arm can produce)
+    using Witness = std::function<bool(const String &)>;
+    const std::vector<std::pair<String, Witness>> arms = {
+        /// Not reachable from getRandomType, so any returned SimpleAggregateFunction came from its arm.
+        {"SimpleAggregateFunction(sum, UInt64)",
+         [](const String & name) { return name.starts_with("SimpleAggregateFunction"); }},
+        /// Likewise for Nested, which the fuzzer can only rebuild, never invent.
+        {"Nested(a UInt32, b Array(Nullable(Int64)))", [](const String & name) { return name.starts_with("Nested"); }},
+        /// A random JSON has no SKIP list; only the arm rebuilds one while keeping the source's.
+        {"JSON(max_dynamic_paths=8, p1 UInt32, SKIP s)",
+         [](const String & name) { return name.starts_with("JSON") && name.find("SKIP s") != String::npos; }},
+    };
+
+    for (const auto & [type_name, is_own_arm_mutation] : arms)
+    {
+        const auto source = DataTypeFactory::instance().get(type_name);
+        size_t witnessed = 0;
+        for (UInt64 seed = 0; seed < 4000; ++seed)
+        {
+            QueryFuzzer fuzzer;
+            fuzzer.setSeed(seed);
+            DataTypePtr fuzzed;
+            try
+            {
+                fuzzed = fuzzer.fuzzDataType(source);
+            }
+            catch (const Exception &)
+            {
+                continue; /// a randomized shape rejected at construction time; the real fuzzer catches these too.
+            }
+
+            const String fuzzed_name = fuzzed->getName();
+            if (fuzzed_name == type_name || !is_own_arm_mutation(fuzzed_name))
+                continue;
+            ++witnessed;
+
+            /// The mutated type is fed back through ParserDataType by the fuzzer, so it must reconstruct.
+            EXPECT_NE(nullptr, DataTypeFactory::instance().tryGet(fuzzed_name)) << type_name << " -> " << fuzzed_name;
+        }
+        EXPECT_GT(witnessed, 0u) << "no mutation of " << type_name << " attributable to its own arm - the arm may be dead";
+    }
 }

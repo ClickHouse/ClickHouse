@@ -22,8 +22,10 @@
 
 class QueryFuzzer_AggregateFunctionVersionPreserved_Test;
 class QueryFuzzer_AggregateFunctionVersionDroppedOnNameChange_Test;
+class QueryFuzzer_AggregateParameterKeepsNameReconstructible_Test;
 class QueryFuzzer_GeoAliasStorageIsFuzzed_Test;
 class QueryFuzzer_CustomNamedLeafAliasIsStillFuzzed_Test;
+class QueryFuzzer_StructuredTypeArmsMutateTheirOwnType_Test;
 class QueryFuzzer_DataTypeSubclassesAreNotFuzzedAsExpressions_Test;
 
 namespace DB
@@ -55,11 +57,13 @@ class SettingsChanges;
  */
 class QueryFuzzer
 {
-    /// Grant the regression tests access to makeAggregateFunctionType / fuzzDataType (see #109713 review).
+    /// Grant the regression tests access to makeAggregateFunctionType / fuzzDataType.
     friend class ::QueryFuzzer_AggregateFunctionVersionPreserved_Test;
     friend class ::QueryFuzzer_AggregateFunctionVersionDroppedOnNameChange_Test;
+    friend class ::QueryFuzzer_AggregateParameterKeepsNameReconstructible_Test;
     friend class ::QueryFuzzer_GeoAliasStorageIsFuzzed_Test;
     friend class ::QueryFuzzer_CustomNamedLeafAliasIsStillFuzzed_Test;
+    friend class ::QueryFuzzer_StructuredTypeArmsMutateTheirOwnType_Test;
     friend class ::QueryFuzzer_DataTypeSubclassesAreNotFuzzedAsExpressions_Test;
 
 public:
