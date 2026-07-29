@@ -17,12 +17,12 @@ ${CLICKHOUSE_CLIENT} -m --query "
     DROP TABLE IF EXISTS t_set_alias;
     DROP TABLE IF EXISTS t_src;
 
-    CREATE TABLE t_set (arr Array(UInt8)) ENGINE = Set;
-    INSERT INTO t_set VALUES ([1, 2, 3]);
+    CREATE TABLE t_set (a UInt8, b UInt8) ENGINE = Set;
+    INSERT INTO t_set VALUES (1, 2);
     CREATE TABLE t_set_alias ENGINE = Alias('t_set');
 
-    CREATE TABLE t_src (a Array(UInt8)) ENGINE = MergeTree ORDER BY tuple();
-    INSERT INTO t_src VALUES ([1, 2, 3]), ([9, 9]);
+    CREATE TABLE t_src (a UInt8, b UInt8) ENGINE = MergeTree ORDER BY tuple();
+    INSERT INTO t_src VALUES (1, 2), (9, 9);
 
     CREATE USER ${user} NOT IDENTIFIED;
     GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_src TO ${user};
@@ -36,14 +36,14 @@ run_all_paths()
     for analyzer in 1 0; do
         echo "  enable_analyzer = ${analyzer}"
         ${CLICKHOUSE_CLIENT} --user="${user}" --query \
-            "SELECT [1, 2, 3] IN t_set_alias SETTINGS enable_analyzer = ${analyzer}" 2>&1 \
+            "SELECT (1, 2) IN t_set_alias SETTINGS enable_analyzer = ${analyzer}" 2>&1 \
             | grep -oE "ACCESS_DENIED|^[01]$" | uniq
     done
     # The plan is serialized to the shards, so the set is rebuilt from its table name there.
     echo "  serialized plan"
     ${CLICKHOUSE_CLIENT} --user="${user}" --query \
         "SELECT count() FROM cluster('test_cluster_two_shards', currentDatabase(), t_src)
-         WHERE a IN t_set_alias
+         WHERE (a, b) IN t_set_alias
          SETTINGS serialize_query_plan = 1, enable_analyzer = 1, prefer_localhost_replica = 0" 2>&1 \
         | grep -oE "ACCESS_DENIED|^[0-9]+$" | uniq
 }
@@ -67,9 +67,28 @@ run_all_paths
 # and one that misses a column is not. An ordinary alias on the right of IN behaves the same way.
 ${CLICKHOUSE_CLIENT} -m --query "
     REVOKE SELECT ON ${CLICKHOUSE_DATABASE}.t_set FROM ${user};
-    GRANT SELECT(arr) ON ${CLICKHOUSE_DATABASE}.t_set TO ${user};
+    GRANT SELECT(a) ON ${CLICKHOUSE_DATABASE}.t_set TO ${user};
 "
-echo "Target granted by column"
+echo "Target granted on some columns"
+run_all_paths
+
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT(b) ON ${CLICKHOUSE_DATABASE}.t_set TO ${user}"
+echo "Target granted on all columns"
+run_all_paths
+
+# The alias accepts a column-level grant covering every column as well.
+${CLICKHOUSE_CLIENT} -m --query "
+    REVOKE SELECT ON ${CLICKHOUSE_DATABASE}.t_set_alias FROM ${user};
+    GRANT SELECT(a, b) ON ${CLICKHOUSE_DATABASE}.t_set_alias TO ${user};
+"
+echo "Alias granted on all columns"
+run_all_paths
+
+${CLICKHOUSE_CLIENT} -m --query "
+    REVOKE SELECT ON ${CLICKHOUSE_DATABASE}.t_set_alias FROM ${user};
+    GRANT SELECT(a) ON ${CLICKHOUSE_DATABASE}.t_set_alias TO ${user};
+"
+echo "Alias granted on some columns"
 run_all_paths
 
 ${CLICKHOUSE_CLIENT} -m --query "

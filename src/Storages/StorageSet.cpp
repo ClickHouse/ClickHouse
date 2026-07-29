@@ -205,7 +205,9 @@ std::shared_ptr<StorageSet> getSetStorageFromTable(const StoragePtr & storage, c
 {
     /// Resolve first and only then check access: this is called for every table on the right of IN,
     /// so a check while walking would apply set semantics to aliases whose target is not set-backed.
-    std::vector<const StorageAlias *> aliases;
+    /// Keep the ids, not the storages: only the ids are needed below, and the walk does not keep
+    /// the wrappers themselves alive.
+    std::vector<StorageID> alias_ids;
     StoragePtr current = storage;
     std::shared_ptr<StorageSet> storage_set;
 
@@ -222,7 +224,7 @@ std::shared_ptr<StorageSet> getSetStorageFromTable(const StoragePtr & storage, c
         if (!alias)
             return nullptr;
 
-        aliases.push_back(alias);
+        alias_ids.push_back(alias->getStorageID());
         current = alias->tryGetTargetTable();
     }
 
@@ -237,13 +239,13 @@ std::shared_ptr<StorageSet> getSetStorageFromTable(const StoragePtr & storage, c
     /// Only the aliases add a check. A set-backed table named directly on the right of IN has never
     /// required SELECT on it, and that is left as it is. Without a context (a caller that only asks
     /// whether this is a set-backed table without consuming it) there is nothing to check either.
-    if (context && !aliases.empty())
+    if (context && !alias_ids.empty())
     {
         const auto metadata = storage_set->getInMemoryMetadataPtr(context, false);
         const Names column_names = metadata->getColumns().getNamesOfPhysical();
 
-        for (const auto * alias_in_chain : aliases)
-            context->checkAccess(AccessType::SELECT, alias_in_chain->getStorageID(), column_names);
+        for (const auto & alias_id : alias_ids)
+            context->checkAccess(AccessType::SELECT, alias_id, column_names);
         context->checkAccess(AccessType::SELECT, storage_set->getStorageID(), column_names);
     }
 
