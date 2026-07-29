@@ -27,8 +27,9 @@ OPTIMIZE TABLE test_split_oob4 FINAL;
 -- Plan check: the lazy-materialization split path must be present.
 -- query_plan_max_limit_for_lazy_materialization must be >= the LIMIT or the optimization
 -- is skipped (the CI randomizer can set it to 1, which would drop the lazy steps).
+-- pretty = 0: the pretty format prefixes step names, which would defeat the exact match.
 SELECT trimLeft(explain) AS s FROM (
-    EXPLAIN actions = 0
+    EXPLAIN actions = 0, pretty = 0
     SELECT url, extra1, extra2 FROM test_split_oob4 WHERE region = 'europe' ORDER BY url LIMIT 10
     SETTINGS query_plan_remove_unused_columns = 0, enable_multiple_prewhere_read_steps = 0,
         force_optimize_projection = 1, force_optimize_projection_name = 'region_proj',
