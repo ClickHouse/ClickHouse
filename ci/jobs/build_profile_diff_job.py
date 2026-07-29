@@ -116,13 +116,13 @@ TU_REPORT_RATIO = 1.3  # and 1.3x, significant at 20s and 1.5x
 TU_SIG_SECONDS = 20
 TU_SIG_RATIO = 1.5
 # Section-wide compile-time shift: the median PR/baseline ratio is subtracted
-# from every per-TU delta as machine-speed skew, so a change that slows every
-# translation unit down by the same factor produces no per-TU finding at all.
-# It is judged on the section level instead: a uniform slowdown of this ratio,
-# costing this much aggregate compile time across the matched translation
-# units, is significant on its own. The margins are wide because both sides
-# really do run on different machines - warmup baselines use the PR's flags,
-# but not the PR's runner.
+# from every per-TU delta as machine-speed skew, so a change that moves every
+# translation unit by the same factor produces no per-TU finding at all.
+# It is judged on the section level instead, in both directions: a uniform
+# shift of this ratio, costing or saving this much aggregate compile time
+# across the matched translation units, is significant on its own. The margins
+# are wide because both sides really do run on different machines - warmup
+# baselines use the PR's flags, but not the PR's runner.
 TU_SKEW_SIG_RATIO = 1.2
 TU_SKEW_SIG_SECONDS = 300
 SYMBOL_REPORT_BYTES = 16 << 10  # per-symbol size: report at 16 KiB,
@@ -938,12 +938,17 @@ def compare_compile_times(db: Db, pr_side, master_shas) -> Section:
             f"Median compile-time ratio to the baselines is ×{skew:.2f} (machine-speed difference or a change affecting every TU); per-TU deltas below are relative to that ratio.",
             f"The matched translation units cost {format_seconds_delta(matched_delta_s, sum(base for _, base in matched) / 1e6)} in total before that adjustment.",
         ]
-    # A section-wide slowdown is invisible per TU: every delta is measured
-    # against the median ratio, so a change that makes everything slower moves
-    # the ratio itself and leaves the deltas at zero. Judge it here instead.
-    if skew >= TU_SKEW_SIG_RATIO and matched_delta_s >= TU_SKEW_SIG_SECONDS:
+    # A section-wide shift is invisible per TU: every delta is measured against
+    # the median ratio, so a change that moves everything in the same direction
+    # moves the ratio itself and leaves the deltas at zero. Judge it here
+    # instead - symmetrically: a uniform speedup is as much a build-profile
+    # change as a uniform slowdown, and normalizing it away would report a
+    # large total compile-time drop as "no significant changes".
+    skew_ratio = max(skew, 1.0 / skew) if skew > 0 else 1.0
+    if skew_ratio >= TU_SKEW_SIG_RATIO and abs(matched_delta_s) >= TU_SKEW_SIG_SECONDS:
         section.significant = True
-        section.summary = f"every translation unit is ×{skew:.2f} slower (+{matched_delta_s:.0f} s over {len(matched)} matched translation units)"
+        direction = "slower" if matched_delta_s > 0 else "faster"
+        section.summary = f"every translation unit is ×{skew_ratio:.2f} {direction} ({matched_delta_s:+.0f} s over {len(matched)} matched translation units)"
     if findings:
         lines += [
             "",
@@ -1164,45 +1169,18 @@ def build_comment(info, pr_sha: str, base_sha: str, sections: List[Section], war
     return "\n".join(lines)
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--local", action="store_true", help="local run: no GH comment, print to stdout")
-    parser.add_argument("--pr-sha", help="override the PR-side commit sha")
-    parser.add_argument("--pr-number", type=int, help="override the PR number")
-    parser.add_argument("--base-sha", help="override the baseline master sha (required with --local)")
-    args = parser.parse_args()
+def update_comment(body: str, only_update: bool = False) -> None:
+    """Post or update the tagged PR comment. A GH hiccup must not fail the check."""
+    try:
+        GH.post_updateable_comment(comment_tags_and_bodies={COMMENT_TAG: body}, only_update=only_update)
+    except Exception:
+        # The comparison result is still in the job report.
+        print("WARNING: failed to post/update the PR comment")
+        traceback.print_exc()
 
-    info = LocalInfo() if args.local else Info()
-    pr_number = args.pr_number if args.pr_number is not None else info.pr_number
-    pr_sha = args.pr_sha or info.sha
-    if pr_number <= 0 and not args.local:
-        Result.create_from(status=Result.Status.SKIPPED, info="Not a PR run").complete_job()
-        return
 
-    db = Db()
-
-    if not has_pr_data(db, pr_number, pr_sha):
-        info_text = f"No {CHECK_NAME} build profile data for commit {pr_sha} - the build was skipped, reused from cache, or predates profile upload"
-        print(info_text)
-        if args.local:
-            return
-        # Replace any comparison posted for an older commit of this PR: leaving
-        # it in place would show a stale revision as if it were the current one.
-        # only_update: a PR that never built (a doc-only change reusing master's
-        # build) has nothing to say and should not get a comment at all.
-        try:
-            GH.post_updateable_comment(
-                comment_tags_and_bodies={
-                    COMMENT_TAG: f"### Build profile diff ({CHECK_NAME})\n\n{info_text}."
-                },
-                only_update=True,
-            )
-        except Exception:
-            print("WARNING: failed to post/update the PR comment")
-            traceback.print_exc()
-        Result.create_from(status=Result.Status.OK, info=info_text).complete_job()
-        return
-
+def run_comparison(db, info, args, pr_number: int, pr_sha: str):
+    """Resolve both sides, compare every aspect and render the comment body."""
     master_shas = get_master_shas(info)
     if not master_shas:
         if not args.local:
@@ -1247,7 +1225,60 @@ def main():
         compare_symbols(db, pr_side, base_side),
     ]
 
-    body = build_comment(info, pr_sha, base_sha, sections, warmup_sha)
+    return build_comment(info, pr_sha, base_sha, sections, warmup_sha), sections, base_sha
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--local", action="store_true", help="local run: no GH comment, print to stdout")
+    parser.add_argument("--pr-sha", help="override the PR-side commit sha")
+    parser.add_argument("--pr-number", type=int, help="override the PR number")
+    parser.add_argument("--base-sha", help="override the baseline master sha (required with --local)")
+    args = parser.parse_args()
+
+    info = LocalInfo() if args.local else Info()
+    pr_number = args.pr_number if args.pr_number is not None else info.pr_number
+    pr_sha = args.pr_sha or info.sha
+    if pr_number <= 0 and not args.local:
+        Result.create_from(status=Result.Status.SKIPPED, info="Not a PR run").complete_job()
+        return
+
+    db = Db()
+
+    if not has_pr_data(db, pr_number, pr_sha):
+        info_text = f"No {CHECK_NAME} build profile data for commit {pr_sha} - the build was skipped, reused from cache, or predates profile upload"
+        print(info_text)
+        if args.local:
+            return
+        # Replace any comparison posted for an older commit of this PR: leaving
+        # it in place would show a stale revision as if it were the current one.
+        # only_update: a PR that never built (a doc-only change reusing master's
+        # build) has nothing to say and should not get a comment at all.
+        update_comment(f"### Build profile diff ({CHECK_NAME})\n\n{info_text}.", only_update=True)
+        Result.create_from(status=Result.Status.OK, info=info_text).complete_job()
+        return
+
+    try:
+        body, sections, base_sha = run_comparison(db, info, args, pr_number, pr_sha)
+    except Exception as e:
+        # The tagged comment is pinned to the pull request, not to a commit, so
+        # every exit path has to refresh it: any of the baseline lookups, run
+        # resolutions or cluster reads can fail-close after an earlier commit
+        # already posted a comparison, and leaving that one in place would
+        # present a previous revision - possibly one the head reverted - as the
+        # current comparison. only_update, as above: a pull request that never
+        # got a comparison does not need one to say the job failed, the red
+        # check says it.
+        if not args.local:
+            update_comment(
+                f"### Build profile diff ({CHECK_NAME})\n\n"
+                f"Comparing commit `{pr_sha}` with master failed: "
+                f"{md_code(f'{type(e).__name__}: {e}'.replace(chr(10), ' '))}.\n\n"
+                "See the job log for details.",
+                only_update=True,
+            )
+        raise
+
     significant = [s for s in sections if s.significant]
 
     if args.local:
@@ -1255,13 +1286,7 @@ def main():
         print(body)
         return
 
-    try:
-        GH.post_updateable_comment(comment_tags_and_bodies={COMMENT_TAG: body})
-    except Exception:
-        # The comparison result is still in the job report; a GH hiccup should
-        # not fail the check.
-        print("WARNING: failed to post/update the PR comment")
-        traceback.print_exc()
+    update_comment(body)
 
     summaries = [s.summary or s.title for s in significant]
     result_info = "Significant changes: " + "; ".join(summaries) if significant else f"No significant changes vs master {base_sha[:9]}"

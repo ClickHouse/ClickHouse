@@ -59,10 +59,10 @@ _OLD_WARMUP_SHA = "oldwarmupsha"
 _SKEW_TUS = [f"skew_tu{i}.cpp" for i in range(12)]
 
 
-def _skew_rows(pr_number, sha, check_start_time, check_name, instance_id, dur_us):
+def _skew_rows(pr_number, sha, check_start_time, check_name, instance_id, dur_us, tus=None):
     return ",\n    ".join(
         f"({pr_number}, '{sha}', '{check_start_time}', '{check_name}', '{instance_id}', '{tu}', 'ExecuteCompiler', '', {dur_us})"
-        for tu in _SKEW_TUS
+        for tu in (tus if tus is not None else _SKEW_TUS)
     )
 
 
@@ -76,6 +76,13 @@ _SKEW_HALF_ROWS = ",\n    ".join(
     f"({_PR}, 'prsha-half-slowdown', '2026-07-02 00:00:00', 'arm_release', 'I13', '{tu}', 'ExecuteCompiler', '', {60000000 if i % 2 else 30000000})"
     for i, tu in enumerate(_SKEW_TUS)
 )
+# The mirror image of ``prsha-uniform-slowdown``: twelve translation units the
+# warmup build compiled at 65 s each, recompiled by the PR at 30 s. The median
+# ratio moves the same way, so every per-TU delta is zero here too and only the
+# section level can report the 420 s the pull request actually saved.
+_SPEEDUP_TUS = [f"fast_tu{i}.cpp" for i in range(12)]
+_SPEEDUP_BASE_ROWS = _skew_rows(0, _BASE_SHA, "2026-06-30 00:00:00", "arm_release_pr_cache_warmup", "W0", 65000000, tus=_SPEEDUP_TUS)
+_SPEEDUP_PR_ROWS = _skew_rows(_PR, "prsha-uniform-speedup", "2026-07-02 00:00:00", "arm_release", "I14", 30000000, tus=_SPEEDUP_TUS)
 
 _SCHEMA = f"""
 CREATE TABLE binary_sizes
@@ -216,7 +223,9 @@ INSERT INTO binary_sizes (pull_request_number, commit_sha, check_start_time, che
     ({_PR}, 'prsha-machine-skew', '2026-07-02 00:00:00', 'arm_release', 'I12', '{_MAIN}', 1500),
     ({_PR}, 'prsha-machine-skew', '2026-07-02 00:00:00', 'arm_release', 'I12', '{_STRIPPED}', 1500),
     ({_PR}, 'prsha-half-slowdown', '2026-07-02 00:00:00', 'arm_release', 'I13', '{_MAIN}', 1500),
-    ({_PR}, 'prsha-half-slowdown', '2026-07-02 00:00:00', 'arm_release', 'I13', '{_STRIPPED}', 1500);
+    ({_PR}, 'prsha-half-slowdown', '2026-07-02 00:00:00', 'arm_release', 'I13', '{_STRIPPED}', 1500),
+    ({_PR}, 'prsha-uniform-speedup', '2026-07-02 00:00:00', 'arm_release', 'I14', '{_MAIN}', 1500),
+    ({_PR}, 'prsha-uniform-speedup', '2026-07-02 00:00:00', 'arm_release', 'I14', '{_STRIPPED}', 1500);
 INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
     {_SKEW_BASE_ROWS};
 INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
@@ -225,6 +234,10 @@ INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time,
     {_SKEW_SLOW_ROWS};
 INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
     {_SKEW_NOISE_ROWS};
+INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
+    {_SPEEDUP_BASE_ROWS};
+INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
+    {_SPEEDUP_PR_ROWS};
 """
 
 
@@ -695,6 +708,28 @@ def test_uniform_compile_time_slowdown_is_significant():
     assert "| Translation unit |" not in section.body
 
 
+def test_uniform_compile_time_speedup_is_significant():
+    """The section-wide judgement is symmetric: a uniform speedup is reported too.
+
+    The check reports significant build-profile *changes*, not only
+    regressions. A pull request that makes every matched translation unit
+    uniformly faster moves the median ratio below 1, which zeroes every per-TU
+    delta exactly like the uniform-slowdown case - so a one-sided section-level
+    check would render a 420 s total drop as "no significant changes".
+    """
+    db = FixtureDb()
+    pr_side = job.resolve_run(db, job.PR_DAYS, _PR, "prsha-uniform-speedup")
+    assert pr_side is not None
+    section = job.compare_compile_times(db, pr_side, [_BASE_SHA])
+    # 12 TUs, 65 s -> 30 s each: x2.17 faster and -420 s in total.
+    assert section.significant
+    assert "faster" in section.summary
+    assert "×2.17" in section.summary
+    assert "-420.0 s" in section.body
+    # No per-TU finding: relative to the median every TU is unchanged.
+    assert "| Translation unit |" not in section.body
+
+
 def test_machine_speed_skew_alone_is_not_significant():
     """A few percent of runner difference stays an informational note."""
     db = FixtureDb()
@@ -727,6 +762,52 @@ def test_skew_is_the_true_median_on_an_even_translation_unit_count():
     assert "| `skew_tu0.cpp` | 30.0 s | 30.0 s | -15.0 s" in section.body
     # 6 x 30 s of real regression stays below the section-wide bar.
     assert not section.significant
+
+
+# --- the tagged PR comment --------------------------------------------------
+
+
+def test_a_failed_comparison_replaces_the_stale_comment(monkeypatch):
+    """A fail-close error must not leave the previous head's comparison pinned.
+
+    The `build-profile-diff` comment belongs to the pull request, not to a
+    commit, so it is only ever correct while it describes the head. Every
+    baseline lookup, run resolution and cluster read fails closed, and any of
+    them can fail after an earlier commit already posted a comparison - the job
+    then goes red while the comment still presents a previous revision as the
+    current one.
+    """
+
+    class FakeInfo:
+        pr_number = _PR
+        sha = "headsha"
+        repo_name = "ClickHouse/ClickHouse"
+
+    posted = {}
+
+    def fake_post(comment_tags_and_bodies, only_update=False):
+        posted.update(comment_tags_and_bodies)
+        posted["only_update"] = only_update
+
+    def failing_comparison(*_args, **_kwargs):
+        raise RuntimeError("No master baseline with build profile data found - cannot compare")
+
+    monkeypatch.setattr(sys, "argv", ["build_profile_diff_job.py"])
+    monkeypatch.setattr(job, "Info", FakeInfo)
+    monkeypatch.setattr(job, "Db", lambda: None)
+    monkeypatch.setattr(job, "has_pr_data", lambda *_args: True)
+    monkeypatch.setattr(job, "run_comparison", failing_comparison)
+    monkeypatch.setattr(job.GH, "post_updateable_comment", staticmethod(fake_post))
+
+    with pytest.raises(RuntimeError):
+        job.main()
+
+    body = posted[job.COMMENT_TAG]
+    assert "headsha" in body
+    assert "failed" in body
+    assert "No master baseline with build profile data found" in body
+    # A pull request that never got a comparison needs no comment to say so.
+    assert posted["only_update"]
 
 
 # --- the job's workflow gate ------------------------------------------------
