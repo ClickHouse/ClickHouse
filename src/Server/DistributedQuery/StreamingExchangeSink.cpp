@@ -1,7 +1,8 @@
 #include <limits>
 #include <memory>
 #include <base/defines.h>
-#ifdef OS_LINUX
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <Server/DistributedQuery/StreamingExchangeSink.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
@@ -11,10 +12,10 @@
 #include <Core/ProtocolDefines.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <Common/Epoll.h>
 #include <Common/logger_useful.h>
 #include <Poco/Net/NetException.h>
 
-#include <sys/epoll.h>
 #include <unistd.h>
 
 

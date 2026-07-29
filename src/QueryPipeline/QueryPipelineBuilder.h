@@ -17,6 +17,8 @@ using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams
 
 class QueryPlan;
 
+class IQueryPlanStep;
+
 class PipelineExecutor;
 using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
 
@@ -138,6 +140,7 @@ public:
         size_t min_block_size_rows,
         size_t min_block_size_bytes,
         size_t max_streams,
+        IQueryPlanStep * join_step,
         bool keep_left_read_in_order,
         Processors * collected_processors = nullptr);
 
@@ -147,6 +150,7 @@ public:
         JoinPtr join,
         SharedHeader & output_header,
         size_t max_block_size,
+        IQueryPlanStep * join_step,
         Processors * collected_processors = nullptr);
 
     /// Join two independent pipelines, processing them simultaneously.
@@ -156,6 +160,7 @@ public:
         JoinPtr table_join,
         SharedHeader & out_header,
         size_t max_block_size,
+        IQueryPlanStep * join_step,
         Processors * collected_processors = nullptr);
 
     /// Join two independent pipelines with a two-input joining transform created by the caller.
@@ -172,6 +177,7 @@ public:
         JoinPtr table_join,
         SharedHeader & out_header,
         size_t max_block_size,
+        IQueryPlanStep * join_step,
         Processors * collected_processors = nullptr);
 
     /// Add other pipeline and execute it before current one.
@@ -198,6 +204,8 @@ public:
 
     const Block & getHeader() const { return pipe.getHeader(); }
     const SharedHeader & getSharedHeader() const { return pipe.getSharedHeader(); }
+
+    const Processors & getProcessors() const { return pipe.getProcessors(); }
 
     void setProcessListElement(QueryStatusPtr elem);
     void setProgressCallback(ProgressCallback callback);
