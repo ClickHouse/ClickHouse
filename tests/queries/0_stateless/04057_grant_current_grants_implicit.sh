@@ -39,9 +39,21 @@ ${CLICKHOUSE_CLIENT} --user $user1 -q "GRANT CURRENT GRANTS(CREATE VIEW, DROP VI
 ${CLICKHOUSE_CLIENT} -q "SHOW GRANTS FOR $user2" | sed 's/ TO.*//'
 ${CLICKHOUSE_CLIENT} -q "REVOKE ALL ON *.* FROM $user2"
 
-echo "-- Test 4: GRANT CURRENT GRANTS (all) includes implicit privileges"
+echo "-- Test 4: GRANT CURRENT GRANTS (all) copies the stored grants as they are"
 ${CLICKHOUSE_CLIENT} --user $user1 -q "GRANT CURRENT GRANTS ON $db.* TO $user2"
 ${CLICKHOUSE_CLIENT} -q "SHOW GRANTS FOR $user2" | sed 's/ TO.*//'
+${CLICKHOUSE_CLIENT} -q "REVOKE ALL ON *.* FROM $user2"
+
+echo "-- Test 4a: the same for the explicit CURRENT GRANTS(ALL) form"
+${CLICKHOUSE_CLIENT} --user $user1 -q "GRANT CURRENT GRANTS(ALL ON $db.*) TO $user2"
+${CLICKHOUSE_CLIENT} -q "SHOW GRANTS FOR $user2" | sed 's/ TO.*//'
+${CLICKHOUSE_CLIENT} -q "REVOKE ALL ON *.* FROM $user2"
+
+echo "-- Test 4b: copying all grants does not leave a derived privilege behind after a revoke"
+${CLICKHOUSE_CLIENT} --user $user1 -q "GRANT CURRENT GRANTS ON $db.* TO $user2"
+${CLICKHOUSE_CLIENT} -q "REVOKE CREATE TABLE ON $db.* FROM $user2"
+${CLICKHOUSE_CLIENT} -q "SHOW GRANTS FOR $user2" | sed 's/ TO.*//'
+${CLICKHOUSE_CLIENT} --user $user2 -q "CREATE VIEW $db.test_view04057 AS SELECT 1; -- { serverError ACCESS_DENIED }"
 ${CLICKHOUSE_CLIENT} -q "REVOKE ALL ON *.* FROM $user2"
 
 # Test 5: user2 with no grants cannot CREATE VIEW or CREATE TABLE
