@@ -13,6 +13,7 @@
 #include <IO/copyData.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/supportWritingWithAppend.h>
 #include <Common/logger_useful.h>
 #include <Coordination/CoordinationSettings.h>
 
@@ -395,6 +396,22 @@ enum ServerStateVersion : uint8_t
 
 constexpr auto current_server_state_version = ServerStateVersion::V1;
 
+/// fdatasync an already-written file without changing a byte of it. IDisk has no fsync entry point
+/// for an existing file, but WriteMode::Append does not truncate (DiskLocal maps it to
+/// O_APPEND | O_CREAT | O_WRONLY), and sync() on a buffer with nothing buffered only reaches
+/// fdatasync, so opening for append and syncing is exactly that.
+/// Plain (s3_plain) metadata rejects WriteMode::Append with NOT_IMPLEMENTED, hence the capability
+/// check; where the capability is missing the file is left as it is.
+void syncExistingFile(const DiskPtr & disk, const String & path)
+{
+    if (!supportWritingWithAppend(disk))
+        return;
+
+    auto buf = disk->writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
+    buf->sync();
+    buf->finalize();
+}
+
 /// Returns nullptr only when the content is provably unusable; a failure to read the file is
 /// propagated instead, because callers act on nullptr by deleting or truncating the file.
 /// A bad checksum never throws here, because the backup must still be tried; it is recorded in
@@ -545,9 +562,13 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 
         if (state)
         {
-            /// The backup is kept even though the live file parsed: parsing proves the bytes are
-            /// complete, not that they reached the disk. save_state drops it once it has synced a
-            /// replacement.
+            /// Parsing proves the bytes are complete, not that they reached the disk, so make the
+            /// live file durable before acting on the term it holds. Otherwise the term could still
+            /// evaporate on the next power loss and the restart after that would fall back to the
+            /// older state-OLD, i.e. the node would forget a term it had already voted in.
+            syncExistingFile(disk, server_state_file_name);
+
+            /// The backup is kept regardless: save_state drops it once it has synced a replacement.
             return state;
         }
 

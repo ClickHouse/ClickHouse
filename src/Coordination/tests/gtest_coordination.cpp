@@ -1106,7 +1106,9 @@ public:
     std::unique_ptr<DB::WriteBufferFromFileBase>
     writeFile(const String & path, size_t buf_size, DB::WriteMode mode, const DB::WriteSettings & settings) override
     {
-        events->push_back("open:" + path);
+        /// Only Rewrite truncates, so the two modes are recorded apart: "open:" marks the
+        /// destructive open a durability assertion has to order against.
+        events->push_back((mode == DB::WriteMode::Append ? "append:" : "open:") + path);
         auto inner = DB::DiskLocal::writeFile(path, buf_size, mode, settings);
         return std::make_unique<RecordingWriteBuffer>(std::move(inner), path, events);
     }
@@ -1310,6 +1312,23 @@ TEST_P(CoordinationTest, TestDurableStateBackupIsSynced)
     ASSERT_EQ(both_valid->get_term(), 2);
     ASSERT_EQ(indexOf(*events, "remove:state-OLD"), std::string::npos);
     ASSERT_TRUE(std::filesystem::exists("./state-OLD"));
+
+    /// Returning a state means the node is about to act on that term, so the live file must be
+    /// durable by then. Without the sync the term could still be lost to a power failure, and the
+    /// restart after that would fall back to the older backup, i.e. the node would forget a term
+    /// it had already voted in. The sync must be an append (a rewrite would truncate the file it
+    /// is meant to preserve), and it must happen before read_state returns.
+    ASSERT_NE(indexOf(*events, "append:state"), std::string::npos);
+    ASSERT_NE(indexOf(*events, "sync:state"), std::string::npos);
+    ASSERT_LT(indexOf(*events, "append:state"), indexOf(*events, "sync:state"));
+    ASSERT_EQ(indexOf(*events, "open:state"), std::string::npos);
+
+    /// The sync must not have cost any content: the live file still has to hold the same state.
+    reload_state_manager();
+    auto after_sync = state_manager->read_state();
+    ASSERT_NE(after_sync, nullptr);
+    ASSERT_EQ(after_sync->get_term(), 2);
+    ASSERT_EQ(after_sync->get_voted_for(), 3);
 
     /// The next successful save re-establishes the live file and clears the backup.
     state_manager->save_state(*new_state);
