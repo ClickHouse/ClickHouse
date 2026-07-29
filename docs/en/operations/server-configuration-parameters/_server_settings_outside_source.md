@@ -134,13 +134,17 @@ bcrypt's computational overhead at higher work factors.
 
 Maximum number of `bcrypt_password` verifications allowed to run concurrently across the whole server.
 
-bcrypt is intentionally CPU-expensive, so a flood of authentication attempts with many distinct passwords can saturate all CPU cores and cause a denial of service. This setting bounds the worst-case bcrypt CPU usage regardless of how many distinct passwords are tried. Attempts that exceed the limit fail fast with the generic authentication error, exactly as if the password were wrong, and are counted by the `BcryptAuthenticationThrottled` event in [`system.events`](/operations/system-tables/events). Successful and repeated identical credentials are served from the bcrypt result cache and are never throttled.
+bcrypt is intentionally CPU-expensive, so a flood of authentication attempts with many distinct passwords can saturate all CPU cores and cause a denial of service. This setting bounds the worst-case bcrypt CPU usage regardless of how many distinct passwords are tried. Attempts that exceed the limit fail fast with the generic authentication error, exactly as if the password were wrong, and are counted by the `BcryptAuthenticationThrottled` event in [`system.events`](/operations/system-tables/events). Only the expensive path is limited: an attempt served from the bcrypt result cache is never throttled.
 
 A value of `0` (the default) means no limit, preserving the previous behavior. A non-zero value should be chosen with care: setting it too low can reject legitimate concurrent logins (for example during a fleet restart). A small fraction of the available CPU cores is a reasonable starting point.
 
 ```xml
 <max_concurrent_bcrypt_authentications>0</max_concurrent_bcrypt_authentications>
 ```
+
+:::note
+The bcrypt result cache is a fixed-capacity server-wide LRU that also stores negative results, so a sustained flood of distinct passwords can evict a cached entry. Once evicted, the next attempt with that password is a cache miss again and can be rejected by this limit, so a non-zero value does not guarantee that a given client is always admitted.
+:::
 
 :::note
 Like [`bcrypt_workfactor`](#bcrypt_workfactor), this setting is read once at server startup and is not re-applied by `SYSTEM RELOAD CONFIG`. A server restart is required for a change to take effect.
